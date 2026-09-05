@@ -16458,7 +16458,7 @@ impl ZeldaState {
     /// `Lanmola_Draw`'s prologue as its five source stores: the graphics
     /// angle, then the trail entry's direction, z offset, y and x bytes
     /// (the ROM pushes x, y, z and graphics and pops them in that order).
-    fn lanmola_draw_prefix_stores(&mut self, k: usize, from: u8, to: u8) {
+    pub(super) fn lanmola_draw_prefix_stores(&mut self, k: usize, from: u8, to: u8) {
         assert!(from <= to && to <= LANMOLA_DRAW_PREFIX_STORES);
         let j = k * 64 + usize::from(self.sprite_slot_view(k).subtype2());
         for store in from..to {
@@ -16481,24 +16481,15 @@ impl ZeldaState {
                     self.lanmola_segment_motion_mut(j).set_z_offset(z_offset);
                 }
                 3 => {
-                    let x_low = self
-                        .game_state
-                        .effects
-                        .sprite_histories
-                        .moldorm_history(j)
-                        .x() as u8;
+                    // The flat trail for heads 2 and 3 lives past the
+                    // 128-slot Moldorm model; store one byte, never a
+                    // model-read companion (f1515314 zeroed head 2's Y trail).
                     let y_low = self.sprite_slot_view(k).y_low();
-                    self.moldorm_history_mut(j).set_low_position(x_low, y_low);
+                    self.moldorm_history_mut(j).set_y_low(y_low);
                 }
                 4 => {
-                    let y_low = self
-                        .game_state
-                        .effects
-                        .sprite_histories
-                        .moldorm_history(j)
-                        .y() as u8;
                     let x_low = self.sprite_slot_view(k).x_low();
-                    self.moldorm_history_mut(j).set_low_position(x_low, y_low);
+                    self.moldorm_history_mut(j).set_x_low(x_low);
                 }
                 _ => unreachable!(),
             }

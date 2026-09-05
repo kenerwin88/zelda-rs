@@ -19148,6 +19148,29 @@ fn boulder_movement_checkpoints_resume_to_the_atomic_body() {
 }
 
 #[test]
+fn lanmola_draw_prefix_stores_keep_flat_trail_bytes_past_the_moldorm_model() {
+    let mut state = ZeldaState::new();
+    state.game_state.world.location.set_indoor_flag(1);
+    let k = 2;
+    state.sprite_slot_view_mut(k).set_sprite_type(0x54);
+    state.sprite_slot_view_mut(k).set_state(9);
+    state.sprite_slot_view_mut(k).set_subtype2(5);
+    state.sprite_slot_view_mut(k).set_x_low(0x77);
+    state.sprite_slot_view_mut(k).set_y_low(0x4c);
+    let j = k * 64 + 5;
+    assert!(j >= 128);
+    state.lanmola_draw_prefix_stores(k, 3, 5);
+    assert_eq!(
+        state.ram[crate::game_state::constants::MOLDORM_HISTORY_X_LO + j],
+        0x77
+    );
+    assert_eq!(
+        state.ram[crate::game_state::constants::MOLDORM_HISTORY_Y_LO + j],
+        0x4c
+    );
+}
+
+#[test]
 fn zora_fireball_movement_checkpoints_resume_to_the_atomic_body() {
     use crate::SpriteMoveXYCheckpoint as C;
     for checkpoint in [

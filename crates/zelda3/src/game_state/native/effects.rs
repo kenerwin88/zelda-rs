@@ -1886,6 +1886,25 @@ impl<'a> NativeMoldormHistoryBridgeMut<'a> {
             *b = y_low;
         }
     }
+
+    /// Publish only the X low byte of a flat Lanmola trail entry, as
+    /// `Lanmola_Draw` stores it. Slots at or past the 128-slot Moldorm model
+    /// (Lanmola heads 2 and 3) exist only in RAM, so the companion byte must
+    /// never be re-read from the bounded native model.
+    pub(crate) fn set_x_low(&mut self, x_low: u8) {
+        set_word_low_byte(&mut self.state.moldorm_x, self.slot, x_low);
+        if let Some(b) = self.ram.get_mut(MOLDORM_HISTORY_X_LO + self.slot) {
+            *b = x_low;
+        }
+    }
+
+    /// Publish only the Y low byte of a flat Lanmola trail entry.
+    pub(crate) fn set_y_low(&mut self, y_low: u8) {
+        set_word_low_byte(&mut self.state.moldorm_y, self.slot, y_low);
+        if let Some(b) = self.ram.get_mut(MOLDORM_HISTORY_Y_LO + self.slot) {
+            *b = y_low;
+        }
+    }
 }
 
 pub(crate) struct NativeSwamolaTargetBridgeMut<'a> {
