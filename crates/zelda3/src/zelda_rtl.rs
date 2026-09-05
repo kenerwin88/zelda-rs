@@ -41009,10 +41009,13 @@ impl ZeldaState {
                 "LinkOam equipment prefix reached an unsupported caller"
             );
         }
-        let authoritative_overworld_special_exit_mosaic_restored =
-            self.take_original_timing_overworld_special_exit_mosaic_restored();
-        let authoritative_overworld_special_exit_mosaic_returned =
-            self.take_original_timing_overworld_special_exit_mosaic_returned();
+        // A fresh Module0B/$24 caller consumes its own source checkpoints.
+        // Only an already suspended caller transfers them to this scheduler.
+        let special_exit_is_scheduled = self.game_execution_scheduler.current_work().is_some();
+        let authoritative_overworld_special_exit_mosaic_restored = special_exit_is_scheduled
+            && self.take_original_timing_overworld_special_exit_mosaic_restored();
+        let authoritative_overworld_special_exit_mosaic_returned = special_exit_is_scheduled
+            && self.take_original_timing_overworld_special_exit_mosaic_returned();
         if authoritative_overworld_special_exit_mosaic_restored {
             assert_eq!(
                 self.game_execution_scheduler.current_work(),

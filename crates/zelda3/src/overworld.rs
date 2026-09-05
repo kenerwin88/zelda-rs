@@ -6823,17 +6823,35 @@ impl ZeldaState {
             }
             1 => self.ApplyPaletteFilter_bounce(),
             _ => {
+                let special_exit = self.game_state.frame.main_module == 0x0b
+                    && self.game_state.frame.submodule == 0x24;
+                let restored = special_exit
+                    && self.take_original_timing_overworld_special_exit_mosaic_restored();
+                let returned = special_exit
+                    && self.take_original_timing_overworld_special_exit_mosaic_returned();
+                assert!(
+                    !(restored && returned),
+                    "special-exit terminal return must supersede its restore checkpoint"
+                );
                 self.set_screen_brightness(0x80);
                 self.set_subsubmodule(0);
                 if u16::from(self.game_state.world.location.overworld_screen_index()) & 0x3f == 0 {
                     self.DecodeAnimatedSpriteTile_variable(0x1e);
-                    if self.rom_startup_timing() {
+                    if self.rom_startup_timing() && !restored && !returned {
                         self.game_execution_scheduler.schedule_work(
                             GameWorkContinuation::FinishOverworldSpecialExitMosaic,
                             4,
                         );
                         return;
                     }
+                }
+                if restored {
+                    assert!(self.publish_overworld_special_exit_mosaic_restore_prefix());
+                    self.game_execution_scheduler.schedule_work(
+                        GameWorkContinuation::FinishOverworldSpecialExitMosaicSecondDecode,
+                        4,
+                    );
+                    return;
                 }
                 self.complete_overworld_start_mosaic_after_animated_sprite_tile();
             }
