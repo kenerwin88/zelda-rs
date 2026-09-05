@@ -1942,7 +1942,11 @@ impl SpriteMainExecutionTracker {
             _ => return Ok(()),
         };
         if !matched {
-            return Err("Trinexx breath tile-collision return has the wrong source stack".into());
+            // The collision helper and the bank-$1D `JSL` trampoline at
+            // $1D:8094 serve every bank-$1D sprite; a foreign caller's stack
+            // means this boundary is simply not the breath checkpoint (cold
+            // route frame 378813 stopped there under another sprite).
+            return Ok(());
         }
         let slot = self
             .current_slot
@@ -11986,10 +11990,13 @@ mod tests {
             tracker.progress(),
             SpriteMainProgress::TrinexxBreathTileCollisionReturned(12)
         );
+        // A foreign caller on the shared collision helper is not the breath
+        // checkpoint (cold route frame 378813).
         event.stack4 = Some(0xc9);
-        assert!(tracker
+        tracker
             .observe_trinexx_breath_tile_collision(&event)
-            .is_err());
+            .unwrap();
+        assert_eq!(tracker.trinexx_breath_tile_collision, None);
         let mut event = raw("frame", Some(0x06_e49d), Some(12), None);
         event.return_address = Some(0x1d_8097);
         tracker
@@ -12000,9 +12007,10 @@ mod tests {
             SpriteMainProgress::TrinexxBreathTileCollisionReturned(12)
         );
         event.return_address = Some(0x05_b890);
-        assert!(tracker
+        tracker
             .observe_trinexx_breath_tile_collision(&event)
-            .is_err());
+            .unwrap();
+        assert_eq!(tracker.trinexx_breath_tile_collision, None);
         let mut event = raw("frame", Some(0x1d_bd5f), Some(11), None);
         event.return_address = Some(0x1d_bdd5);
         assert!(tracker
