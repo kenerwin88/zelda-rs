@@ -794,6 +794,16 @@ pub enum MainLoopInterruption {
         slot: u8,
         probes_completed: bool,
     },
+    /// `Sprite_TrinexxD_Draw` (from `Sprite_Trinexx_FinalPhase`) stopped in
+    /// body segment `segment` after `stage` of its eight per-segment steps
+    /// (damage check, OAM pointer, OAM ext pointer, OAM flags, flashing
+    /// check, graphics, head graphics, draw). `segment == anim_clock` with
+    /// stage 0 is the finished loop with its scratch store pending.
+    SpriteMainTrinexxFinalPhaseDraw {
+        slot: u8,
+        segment: u8,
+        stage: u8,
+    },
     /// `SpriteDraw_Antfairy` published its leading subtype2 increment, but
     /// the animation/draw suffix, caller-specific active body, current-slot
     /// return, and lower `Sprite_Main` slots remain pending.
@@ -1014,6 +1024,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainFireDebirandoSpawn { .. }
                 | Self::SpriteMainTrinexxDeathExplosionSpawn { .. }
                 | Self::SpriteMainTrinexxFinalPhaseTileCollision { .. }
+                | Self::SpriteMainTrinexxFinalPhaseDraw { .. }
                 | Self::SpriteMainAfterAntfairySubtype2Increment(_)
                 | Self::SpriteMainAfterLanmolaSubtype2Increment(_)
                 | Self::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(_)
@@ -1146,6 +1157,11 @@ pub enum SpriteMainProgress {
     TrinexxFinalPhaseTileCollision {
         slot: u8,
         probes_completed: bool,
+    },
+    TrinexxFinalPhaseDraw {
+        slot: u8,
+        segment: u8,
+        stage: u8,
     },
     /// The current active slot completed `SpriteDraw_Antfairy`'s leading
     /// subtype2 increment. Its draw/body suffix and lower slots are pending.

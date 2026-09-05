@@ -948,6 +948,10 @@ struct SpriteMainExecutionTracker {
     /// store ($1D:AE77) this run.
     trinexx_final_phase_case0: Option<u8>,
     trinexx_final_phase_tile_collision: Option<(u8, bool)>,
+    /// The last traced `$0FB6` store: Sprite_TrinexxD_Draw's segment counter
+    /// while its loop runs.
+    trinexx_d_draw_counter: Option<u8>,
+    trinexx_final_phase_draw: Option<(u8, u8, u8)>,
     sidenexx_neck_target: Option<(u8, u8)>,
     trinexx_front_part: Option<(u8, u8)>,
     #[serde(default)]
@@ -1897,6 +1901,174 @@ impl SpriteMainExecutionTracker {
             return Err("Trinexx final-phase tile collision has the wrong active slot".into());
         }
         self.trinexx_final_phase_tile_collision = Some((slot, probes_completed));
+        Ok(())
+    }
+
+    fn observe_trinexx_final_phase_draw(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if event.event == "wram-write" {
+            if event.address == Some(0x0fb6) {
+                self.trinexx_d_draw_counter = event.value;
+            }
+            return Ok(());
+        }
+        if !matches!(event.event.as_str(), "nmi" | "frame") {
+            return Ok(());
+        }
+        self.trinexx_final_phase_draw = None;
+        let Some(pc) = event.pc.map(|pc| pc & 0x00ff_ffff) else {
+            return Ok(());
+        };
+        if !(0x1d_af94..=0x1d_b078).contains(&pc)
+            && !(0x1d_b560..=0x1d_b586).contains(&pc)
+            && !(0x1d_b079..=0x1d_b0c7).contains(&pc)
+        {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Trinexx final-phase draw omitted its active slot")?;
+        let ret24 = event.return_address.map(|r| r & 0x00ff_ffff);
+        let ret16 = event.return_address.map(|r| r & 0xffff);
+        let y = event
+            .y
+            .ok_or("Trinexx final-phase draw omitted its segment register")?;
+        if (0x1d_b079..=0x1d_b0c7).contains(&pc) {
+            // Sprite_Trinexx_CheckDamageToFlashingSegment, JSR'd at $1D:B043
+            // for segment 4 with the segment PHY'd above the loop frame. The
+            // four PHA'd coordinate bytes sit above its $B045 return until the
+            // matching PLAs; Sprite_CheckDamageFromLink clobbers Y.
+            let (stores, pushed) =
+                match pc {
+                    0x1d_b079 | 0x1d_b07c => (0u8, 0u8),
+                    0x1d_b07d | 0x1d_b080 => (0, 1),
+                    0x1d_b081 | 0x1d_b084 => (0, 2),
+                    0x1d_b085 | 0x1d_b088 => (0, 3),
+                    0x1d_b089 | 0x1d_b08c => (0, 4),
+                    0x1d_b08f | 0x1d_b092 => (1, 4),
+                    0x1d_b095 | 0x1d_b098 => (2, 4),
+                    0x1d_b09b | 0x1d_b09e => (3, 4),
+                    0x1d_b0a1 | 0x1d_b0a3 => (4, 4),
+                    0x1d_b0a6 => (5, 4),
+                    0x1d_b0a9 => (6, 4),
+                    0x1d_b0ad | 0x1d_b0af => (7, 4),
+                    0x1d_b0b2 | 0x1d_b0b4 => (8, 4),
+                    0x1d_b0b7 | 0x1d_b0b8 => (9, 4),
+                    0x1d_b0bb | 0x1d_b0bc => (10, 2),
+                    0x1d_b0bf | 0x1d_b0c0 => (11, 1),
+                    0x1d_b0c3 | 0x1d_b0c4 => (12, 0),
+                    0x1d_b0c7 => (13, 0),
+                    _ => return Err(
+                        "Trinexx flashing-segment check stopped inside Sprite_CheckDamageFromLink"
+                            .into(),
+                    ),
+                };
+            if pc == 0x1d_b0b7 || pc == 0x1d_b0b8 {
+                // One PLA has run: [y_low, x_high, x_low, $45, $B0].
+                if event.stack4 != Some(0x45) {
+                    return Err("Trinexx flashing-segment restore has the wrong stack".into());
+                }
+            } else {
+                let stack_ok = match pushed {
+                    0 => ret16 == Some(0xb045),
+                    1 => event.return_address.map(|r| r & 0x00ff_ff00) == Some(0xb0_4500),
+                    2 => {
+                        event.return_address.map(|r| (r >> 16) & 0xff) == Some(0x45)
+                            && event.stack4 == Some(0xb0)
+                    }
+                    3 => event.stack4 == Some(0x45),
+                    _ => true,
+                };
+                if !stack_ok {
+                    return Err("Trinexx flashing-segment check has the wrong source stack".into());
+                }
+            }
+            if stores < 7 && y != 4 {
+                return Err("Trinexx flashing-segment check is not on segment 4".into());
+            }
+            if event.x != Some(u16::from(slot)) {
+                return Err("Trinexx flashing-segment check has the wrong active slot".into());
+            }
+            self.trinexx_final_phase_draw = Some((slot, 4, 16 + stores));
+            return Ok(());
+        }
+        // Sprite_TrinexxD_Draw is JSR'd from Sprite_Trinexx_FinalPhase
+        // ($1D:ADD9 under SpriteActive_Main's $1F:xxxx return). PHX (the
+        // slot) covers the history lookup, PHY (the segment) the Link damage
+        // check through the OAM pointer advance and the flashing-segment
+        // call; the head draw helper adds its own $1D:B069 return.
+        #[derive(PartialEq)]
+        enum Stack {
+            Plain,
+            PushedSlot,
+            PushedSegment,
+            HeadHelper,
+        }
+        let (stack, segment, stage) = match pc {
+            0x1d_af94 | 0x1d_af97 => {
+                let counter = self
+                    .trinexx_d_draw_counter
+                    .ok_or("Trinexx final-phase draw loop head has no traced counter")?;
+                (Stack::Plain, u16::from(counter), 0u8)
+            }
+            0x1d_af98..=0x1d_af9e | 0x1d_afc6 => (Stack::Plain, y, 0),
+            0x1d_af9f..=0x1d_afc5 => (Stack::PushedSlot, y, 0),
+            0x1d_afc7..=0x1d_afc9 => (Stack::PushedSegment, y, 0),
+            0x1d_afca..=0x1d_afff => (Stack::PushedSegment, y / 2, 0),
+            0x1d_b000..=0x1d_b01a => {
+                return Err(
+                    "Trinexx final-phase draw stopped inside the Link damage stores".into(),
+                );
+            }
+            0x1d_b01b..=0x1d_b024 => (Stack::PushedSegment, y / 2, 1),
+            0x1d_b025..=0x1d_b02e => (Stack::PushedSegment, y / 2, 2),
+            0x1d_b02f..=0x1d_b031 => (Stack::PushedSegment, y / 2, 3),
+            0x1d_b032..=0x1d_b036 => (Stack::Plain, y, 3),
+            0x1d_b037..=0x1d_b042 => (Stack::Plain, y, 4),
+            0x1d_b043 | 0x1d_b046..=0x1d_b04e => (Stack::PushedSegment, y, 4),
+            0x1d_b051 => (Stack::PushedSegment, y, 5),
+            0x1d_b052..=0x1d_b055 => (Stack::Plain, y, 5),
+            0x1d_b058 | 0x1d_b05a => (Stack::Plain, y, 6),
+            0x1d_b05c => (Stack::Plain, y, 7),
+            0x1d_b060 => (Stack::Plain, y + 1, 0),
+            0x1d_b062 | 0x1d_b064 => (Stack::Plain, y, 6),
+            0x1d_b067 => (Stack::Plain, y, 7),
+            0x1d_b560..=0x1d_b583 => (Stack::HeadHelper, y, 7),
+            0x1d_b586 => (Stack::HeadHelper, y + 1, 0),
+            0x1d_b06a | 0x1d_b06d | 0x1d_b070 | 0x1d_b073 | 0x1d_b075 | 0x1d_b078 => {
+                (Stack::Plain, y + 1, 0)
+            }
+            _ => return Ok(()),
+        };
+        if (0x1d_afca..=0x1d_b031).contains(&pc) && y & 1 != 0 {
+            return Err("Trinexx final-phase draw segment register is not doubled".into());
+        }
+        let segment =
+            u8::try_from(segment).map_err(|_| "Trinexx final-phase draw segment overflowed")?;
+        if segment >= 24 {
+            return Err("Trinexx final-phase draw has an invalid segment".into());
+        }
+        let stack_ok = match stack {
+            Stack::Plain => ret24 == Some(0x1f_add9) && event.stack4 == Some(0xc2),
+            Stack::PushedSlot => {
+                ret24 == Some(0xad_d900 | u32::from(slot)) && event.stack4 == Some(0x1f)
+            }
+            Stack::PushedSegment => {
+                let pushed = if (0x1d_afca..=0x1d_b031).contains(&pc) {
+                    u32::from(segment)
+                } else {
+                    u32::from(y)
+                };
+                ret24 == Some(0xad_d900 | pushed) && event.stack4 == Some(0x1f)
+            }
+            Stack::HeadHelper => ret24 == Some(0xd9_b069) && event.stack4 == Some(0xad),
+        };
+        if !stack_ok {
+            return Err("Trinexx final-phase draw has the wrong source stack".into());
+        }
+        if stack != Stack::PushedSlot && event.x != Some(u16::from(slot)) {
+            return Err("Trinexx final-phase draw has the wrong active slot".into());
+        }
+        self.trinexx_final_phase_draw = Some((slot, segment, stage));
         Ok(())
     }
 
@@ -3072,6 +3244,14 @@ impl SpriteMainExecutionTracker {
                 probes_completed,
             };
         }
+        if let Some((slot, segment, stage)) = self.trinexx_final_phase_draw {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::TrinexxFinalPhaseDraw {
+                slot,
+                segment,
+                stage,
+            };
+        }
         if let Some(slot) = self.trinexx_head_draw_setup {
             assert_eq!(self.current_slot, Some(slot));
             return SpriteMainProgress::TrinexxHeadDrawSetup(slot);
@@ -3519,6 +3699,15 @@ impl SpriteMainExecutionTracker {
             } => MainLoopInterruption::SpriteMainTrinexxFinalPhaseTileCollision {
                 slot,
                 probes_completed,
+            },
+            SpriteMainProgress::TrinexxFinalPhaseDraw {
+                slot,
+                segment,
+                stage,
+            } => MainLoopInterruption::SpriteMainTrinexxFinalPhaseDraw {
+                slot,
+                segment,
+                stage,
             },
             SpriteMainProgress::TrinexxHeadFrontPart {
                 slot,
@@ -5300,6 +5489,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_trinexx_head_draw(returned_event)?;
                     execution.observe_trinexx_breath_tile_collision(returned_event)?;
                     execution.observe_trinexx_final_phase_tile_collision(returned_event)?;
+                    execution.observe_trinexx_final_phase_draw(returned_event)?;
                     execution.observe_sidenexx_neck_target(returned_event)?;
                 }
                 execution.observe_guard_animation_checkpoint(returned_event)?;
@@ -6130,6 +6320,8 @@ impl Snes9xOracleSemanticTrace {
                             execution.trinexx_breath_tile_collision = None;
                             execution.trinexx_final_phase_case0 = None;
                             execution.trinexx_final_phase_tile_collision = None;
+                            execution.trinexx_d_draw_counter = None;
+                            execution.trinexx_final_phase_draw = None;
                             execution.sidenexx_neck_target = None;
                             execution.trinexx_front_part = None;
                             execution.guard_prep_parry_hitbox = None;
@@ -6177,6 +6369,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.observe_trinexx_head_draw(&event)?;
                             execution.observe_trinexx_breath_tile_collision(&event)?;
                             execution.observe_trinexx_final_phase_tile_collision(&event)?;
+                            execution.observe_trinexx_final_phase_draw(&event)?;
                             execution.observe_sidenexx_neck_target(&event)?;
                             execution.observe_guard_animation_checkpoint(&event)?;
                         }
@@ -6641,6 +6834,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_trinexx_head_draw(&event)?;
                     execution.observe_trinexx_breath_tile_collision(&event)?;
                     execution.observe_trinexx_final_phase_tile_collision(&event)?;
+                    execution.observe_trinexx_final_phase_draw(&event)?;
                     execution.observe_sidenexx_neck_target(&event)?;
                     execution.observe_guard_animation_checkpoint(&event)?;
                     execution.observe_hog_spear_body_graphics_pending(&event)?;
@@ -7143,6 +7337,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_trinexx_head_draw(&event)?;
                     execution.observe_trinexx_breath_tile_collision(&event)?;
                     execution.observe_trinexx_final_phase_tile_collision(&event)?;
+                    execution.observe_trinexx_final_phase_draw(&event)?;
                     execution.observe_sidenexx_neck_target(&event)?;
                     execution.observe_guard_animation_checkpoint(&event)?;
                     execution.observe_hog_spear_body_graphics_pending(&event)?;
@@ -9105,6 +9300,15 @@ fn retire_resumed_main_loop_interruption(
                     slot,
                     probes_completed,
                 }),
+                MainLoopInterruption::SpriteMainTrinexxFinalPhaseDraw {
+                    slot,
+                    segment,
+                    stage,
+                } => Some(SpriteMainProgress::TrinexxFinalPhaseDraw {
+                    slot,
+                    segment,
+                    stage,
+                }),
                 MainLoopInterruption::SpriteMainTrinexxHeadFrontPart {
                     slot,
                     completed_stores,
@@ -10122,6 +10326,8 @@ mod tests {
             trinexx_breath_tile_collision: None,
             trinexx_final_phase_case0: None,
             trinexx_final_phase_tile_collision: None,
+            trinexx_d_draw_counter: None,
+            trinexx_final_phase_draw: None,
             sidenexx_neck_target: None,
             trinexx_front_part: None,
             guard_prep_parry_hitbox: None,
@@ -10389,6 +10595,105 @@ mod tests {
             )
             .unwrap());
         }
+    }
+
+    #[test]
+    fn trinexx_final_phase_draw_checkpoints_name_segment_and_stage() {
+        let mut tracker = SpriteMainExecutionTracker::default();
+        tracker.current_slot = Some(0);
+        let mut head = raw("nmi", Some(0x1d_b581), Some(0), None);
+        head.y = Some(4);
+        head.return_address = Some(0xd9_b069);
+        head.stack4 = Some(0xad);
+        tracker.observe_trinexx_final_phase_draw(&head).unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxFinalPhaseDraw {
+                slot: 0,
+                segment: 4,
+                stage: 7,
+            }
+        );
+        for (pc, x, y, ret, stack4, segment, stage) in [
+            (0x1d_afa9, 0x13, 2, 0xad_d900, 0x1f, 2, 0),
+            (0x1d_afd6, 0, 6, 0xad_d903, 0x1f, 3, 0),
+            (0x1d_b01d, 0, 6, 0xad_d903, 0x1f, 3, 1),
+            (0x1d_b02b, 0, 6, 0xad_d903, 0x1f, 3, 2),
+            (0x1d_b034, 0, 3, 0x1f_add9, 0xc2, 3, 3),
+            (0x1d_b03b, 0, 3, 0x1f_add9, 0xc2, 3, 4),
+            (0x1d_b055, 0, 3, 0x1f_add9, 0xc2, 3, 5),
+            (0x1d_b05c, 0, 1, 0x1f_add9, 0xc2, 1, 7),
+            (0x1d_b060, 0, 1, 0x1f_add9, 0xc2, 2, 0),
+            (0x1d_b06d, 0, 5, 0x1f_add9, 0xc2, 6, 0),
+            (0x1d_b078, 0, 5, 0x1f_add9, 0xc2, 6, 0),
+        ] {
+            let mut event = raw("frame", Some(pc), Some(x), None);
+            event.y = Some(y);
+            event.return_address = Some(ret);
+            event.stack4 = Some(stack4);
+            tracker.observe_trinexx_final_phase_draw(&event).unwrap();
+            assert_eq!(
+                tracker.progress(),
+                SpriteMainProgress::TrinexxFinalPhaseDraw {
+                    slot: 0,
+                    segment,
+                    stage,
+                },
+                "{pc:#x}"
+            );
+        }
+        let mut counter = raw("wram-write", Some(0x1d_b06d), Some(0), Some(0x0fb6));
+        counter.value = Some(5);
+        tracker.observe_trinexx_final_phase_draw(&counter).unwrap();
+        let mut loop_head = raw("frame", Some(0x1d_af94), Some(0), None);
+        loop_head.y = Some(4);
+        loop_head.return_address = Some(0x1f_add9);
+        loop_head.stack4 = Some(0xc2);
+        tracker
+            .observe_trinexx_final_phase_draw(&loop_head)
+            .unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxFinalPhaseDraw {
+                slot: 0,
+                segment: 5,
+                stage: 0,
+            }
+        );
+        let mut damage = raw("frame", Some(0x1d_b004), Some(0), None);
+        damage.y = Some(6);
+        damage.return_address = Some(0xad_d903);
+        damage.stack4 = Some(0x1f);
+        assert!(tracker.observe_trinexx_final_phase_draw(&damage).is_err());
+        for (pc, y, ret, stack4, stage) in [
+            (0x1d_b079, 4, 0x00_b045, 0x00, 16),
+            (0x1d_b08f, 4, 0x15_8300, 0x4e, 17),
+            (0x1d_b0a9, 4, 0x15_8300, 0x4e, 22),
+            (0x1d_b0b7, 0, 0x83_084e, 0x45, 25),
+            (0x1d_b0bc, 0, 0x45_4e08, 0xb0, 26),
+            (0x1d_b0c0, 0, 0xb0_454e, 0x00, 27),
+            (0x1d_b0c7, 0, 0x00_b045, 0x00, 29),
+        ] {
+            let mut event = raw("nmi", Some(pc), Some(0), None);
+            event.y = Some(y);
+            event.return_address = Some(ret);
+            event.stack4 = Some(stack4);
+            tracker.observe_trinexx_final_phase_draw(&event).unwrap();
+            assert_eq!(
+                tracker.progress(),
+                SpriteMainProgress::TrinexxFinalPhaseDraw {
+                    slot: 0,
+                    segment: 4,
+                    stage,
+                },
+                "{pc:#x}"
+            );
+        }
+        let mut inside = raw("nmi", Some(0x1d_b0aa), Some(0), None);
+        inside.y = Some(4);
+        assert!(tracker.observe_trinexx_final_phase_draw(&inside).is_err());
+        head.stack4 = Some(0xc2);
+        assert!(tracker.observe_trinexx_final_phase_draw(&head).is_err());
     }
 
     #[test]
@@ -16557,6 +16862,8 @@ mod tests {
             trinexx_breath_tile_collision: None,
             trinexx_final_phase_case0: None,
             trinexx_final_phase_tile_collision: None,
+            trinexx_d_draw_counter: None,
+            trinexx_final_phase_draw: None,
             sidenexx_neck_target: None,
             trinexx_front_part: None,
             guard_prep_parry_hitbox: None,
@@ -16663,6 +16970,8 @@ mod tests {
             trinexx_breath_tile_collision: None,
             trinexx_final_phase_case0: None,
             trinexx_final_phase_tile_collision: None,
+            trinexx_d_draw_counter: None,
+            trinexx_final_phase_draw: None,
             sidenexx_neck_target: None,
             trinexx_front_part: None,
             guard_prep_parry_hitbox: None,

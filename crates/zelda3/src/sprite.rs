@@ -2965,6 +2965,36 @@ impl ZeldaState {
                 self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
                 return;
             }
+            if let Some(SpriteMainCpuBoundary::TrinexxFinalPhaseDraw {
+                slot,
+                segment,
+                stage,
+                continuation: None,
+            }) = self.sprite_main_cpu_boundary
+            {
+                if slot == k as u8 {
+                    let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                    assert_ne!(nmi_slices, 0);
+                    self.sprite_main_cpu_boundary = None;
+                    assert_eq!(self.sprite_slot_view(k).state(), 9);
+                    assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xcb);
+                    self.sprite_timers_and_oam(k);
+                    let continuation =
+                        self.begin_trinexx_final_phase_draw_checkpoint(k, segment, stage);
+                    let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                    self.schedule_sprite_main_cpu_continuation(
+                        SpriteMainCpuBoundary::TrinexxFinalPhaseDraw {
+                            slot,
+                            segment,
+                            stage,
+                            continuation: Some(continuation),
+                        },
+                        nmi_slices,
+                        caller,
+                    );
+                    return;
+                }
+            }
             if let Some(SpriteMainCpuBoundary::TrinexxFinalPhaseTileCollision {
                 slot,
                 probes_completed,
@@ -4572,7 +4602,22 @@ impl ZeldaState {
                 self.sprite_prep_debirando_pit_after_before_spawn(interrupted_slot);
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
             }
-                        SpriteMainCpuBoundary::TrinexxFinalPhaseTileCollision {
+                                                SpriteMainCpuBoundary::TrinexxFinalPhaseDraw {
+                slot,
+                segment,
+                stage,
+                continuation,
+            } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.sprite_slot_view(k).state(), 9);
+                assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xcb);
+                let continuation = continuation
+                    .expect("Trinexx final-phase draw continuation lost its source locals");
+                self.resume_trinexx_final_phase_draw(k, segment, stage, continuation);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
+SpriteMainCpuBoundary::TrinexxFinalPhaseTileCollision {
                 slot,
                 probes_completed,
             } => {

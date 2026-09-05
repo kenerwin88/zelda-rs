@@ -54,6 +54,15 @@ const TRINEXX_BODY_OAM_OFFSETS: [u16; 24] = [
 const TRINEXX_FINAL_PHASE_X_VELOCITIES: [i8; 4] = [0, -31, 0, 31];
 const TRINEXX_FINAL_PHASE_Y_VELOCITIES: [i8; 4] = [31, 0, -31, 0];
 const TRINEXX_SIDE_HEAD_X_OFFSETS: [i8; 2] = [-14, 13];
+/// Per-segment steps of `Sprite_TrinexxD_Draw`'s body loop.
+pub(super) const TRINEXX_D_DRAW_SEGMENT_STEPS: u8 = 8;
+/// Stores of `Sprite_Trinexx_CheckDamageToFlashingSegment` (see
+/// `trinexx_flashing_segment_steps`), including the saved-position capture.
+pub(super) const TRINEXX_FLASHING_SEGMENT_STEPS: u8 = 14;
+/// `TrinexxFinalPhaseDraw` stages at or above this value name segment 4's
+/// flashing-segment check after `stage - 16` of its steps.
+pub(super) const TRINEXX_D_DRAW_FLASHING_STAGE_BASE: u8 = 16;
+
 /// Compare/count steps in Sprite_Sidenexx's state-2 neck-target loop: nine
 /// segments, three passes each, one store and one count per pass.
 pub(super) const SIDENEXX_NECK_TARGET_LOOP_STEPS: u8 = 54;
@@ -240,6 +249,13 @@ impl ZeldaState {
     /// `Sprite_Trinexx_FinalPhase` up to its AI-state switch. Returns `false`
     /// on the inactive and dying returns.
     fn trinexx_final_phase_prefix(&mut self, k: usize) -> bool {
+        self.trinexx_final_phase_graphics(k);
+        self.sprite_trinexxd_draw_for_small_bosses(k);
+        self.trinexx_final_phase_after_draw(k)
+    }
+
+    /// `Sprite_Trinexx_FinalPhase`'s leading graphics selection.
+    fn trinexx_final_phase_graphics(&mut self, k: usize) {
         let x_vel = self.sprite_slot_view(k).x_velocity() as i8;
         let y_vel = self.sprite_slot_view(k).y_velocity() as i8;
         let j_init = self.sprite_convert_velocity_to_angle_for_small_bosses(x_vel, y_vel) >> 1;
@@ -252,8 +268,11 @@ impl ZeldaState {
             gfx
         };
         self.sprite_slot_view_mut(k).set_graphics(graphics);
+    }
 
-        self.sprite_trinexxd_draw_for_small_bosses(k);
+    /// `Sprite_Trinexx_FinalPhase` after `Sprite_TrinexxD_Draw` up to its
+    /// AI-state switch. Returns `false` on the inactive and dying returns.
+    fn trinexx_final_phase_after_draw(&mut self, k: usize) -> bool {
         if self.sprite_return_if_inactive_for_small_bosses(k) {
             return false;
         }
@@ -380,92 +399,260 @@ impl ZeldaState {
     //   Sprite_SetY(k, old_y);
     // }
     pub(super) fn sprite_trinexx_check_damage_to_flashing_segment(&mut self, k: usize) {
-        let old_x = self.sprite_get_x(k);
-        let old_y = self.sprite_get_y(k);
-        let cur_x = self.game_state.sprites.workspace.current_sprite_x();
-        let cur_y = self.game_state.sprites.workspace.current_sprite_y();
-        self.sprite_set_x(k, cur_x);
-        self.sprite_set_y(k, cur_y);
-        self.sprite_slot_view_mut(k).set_deflection_bits(0x80);
-        self.sprite_slot_view_mut(k).set_flags3(0);
-        self.sprite_check_damage_from_link_for_small_bosses(k);
-        self.sprite_slot_view_mut(k).set_deflection_bits(0x84);
-        self.sprite_slot_view_mut(k).set_flags3(0x40);
-        self.sprite_set_x(k, old_x);
-        self.sprite_set_y(k, old_y);
+        let mut continuation = TrinexxFlashingSegmentContinuation::default();
+        self.trinexx_flashing_segment_steps(
+            k,
+            0,
+            TRINEXX_FLASHING_SEGMENT_STEPS,
+            &mut continuation,
+        );
+    }
+
+    /// `Sprite_Trinexx_CheckDamageToFlashingSegment` ($1D:B079) as its
+    /// thirteen source stores: the four swapped-in coordinate bytes, the
+    /// deflection/flags3 setup, the damage check, the deflection/flags3
+    /// restore, and the four PLA'd coordinate bytes. Step 0 saves the body
+    /// position the PHAs preserve.
+    fn trinexx_flashing_segment_steps(
+        &mut self,
+        k: usize,
+        from: u8,
+        to: u8,
+        continuation: &mut TrinexxFlashingSegmentContinuation,
+    ) {
+        assert!(from <= to && to <= TRINEXX_FLASHING_SEGMENT_STEPS);
+        for step in from..to {
+            match step {
+                0 => {
+                    continuation.old_x = self.sprite_get_x(k);
+                    continuation.old_y = self.sprite_get_y(k);
+                }
+                1 => {
+                    let cur_x = self.game_state.sprites.workspace.current_sprite_x();
+                    self.sprite_slot_view_mut(k).set_x_low(cur_x as u8);
+                }
+                2 => {
+                    let cur_x = self.game_state.sprites.workspace.current_sprite_x();
+                    self.sprite_slot_view_mut(k).set_x_high((cur_x >> 8) as u8);
+                }
+                3 => {
+                    let cur_y = self.game_state.sprites.workspace.current_sprite_y();
+                    self.sprite_slot_view_mut(k).set_y_low(cur_y as u8);
+                }
+                4 => {
+                    let cur_y = self.game_state.sprites.workspace.current_sprite_y();
+                    self.sprite_slot_view_mut(k).set_y_high((cur_y >> 8) as u8);
+                }
+                5 => self.sprite_slot_view_mut(k).set_deflection_bits(0x80),
+                6 => self.sprite_slot_view_mut(k).set_flags3(0),
+                7 => self.sprite_check_damage_from_link_for_small_bosses(k),
+                8 => self.sprite_slot_view_mut(k).set_deflection_bits(0x84),
+                9 => self.sprite_slot_view_mut(k).set_flags3(0x40),
+                10 => self
+                    .sprite_slot_view_mut(k)
+                    .set_y_high((continuation.old_y >> 8) as u8),
+                11 => self
+                    .sprite_slot_view_mut(k)
+                    .set_y_low(continuation.old_y as u8),
+                12 => self
+                    .sprite_slot_view_mut(k)
+                    .set_x_high((continuation.old_x >> 8) as u8),
+                13 => self
+                    .sprite_slot_view_mut(k)
+                    .set_x_low(continuation.old_x as u8),
+                _ => unreachable!(),
+            }
+        }
     }
 
     // void Sprite_TrinexxD_Draw(int k) {  // 9daf84
     pub(super) fn sprite_trinexx_d_draw(&mut self, k: usize) {
+        self.trinexx_d_draw_prologue(k);
+        for i in 0..usize::from(self.sprite_slot_view(k).anim_clock()) {
+            self.trinexx_d_draw_segment_steps(k, i, 0, TRINEXX_D_DRAW_SEGMENT_STEPS);
+        }
+        self.trinexx_d_draw_epilogue(k);
+    }
+
+    fn trinexx_d_draw_prologue(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).or_object_priority_bits(0x30);
         let mut info = DrawPrepOamCoordsRet::default();
         self.sprite_draw_trinexx_rock_head(k, &mut info);
+    }
 
-        for i in 0..usize::from(self.sprite_slot_view(k).anim_clock()) {
-            let j = (self
-                .sprite_slot_view(k)
-                .subtype2()
-                .wrapping_sub(TRINEXX_BODY_HISTORY_OFFSETS[i])
-                & 0x7f) as usize;
-            let history = self.game_state.effects.sprite_histories.moldorm_history(j);
-            let cur_x = history.x();
-            let cur_y = history.y();
-            self.sprite_workspace_mut().set_current_sprite_x(cur_x);
-            self.sprite_workspace_mut().set_current_sprite_y(cur_y);
-
-            let link_x = self.game_state.player.follower_link.x();
-            let link_y = self.game_state.player.follower_link.y();
-            if link_x.wrapping_sub(cur_x).wrapping_add(8) < 16
-                && link_y.wrapping_sub(cur_y).wrapping_add(16) < 16
-                && !sign8(self.sprite_slot_view(k).ai_state())
-                && (self.game_state.player.follower_link.blink_countdown()
-                    | self
-                        .game_state
-                        .player
-                        .follower_link
-                        .sprite_damage_disable_timer()
-                    | self.game_state.frame.submodule
-                    | self.game_state.frame.modal_pause_flag)
-                    == 0
-            {
-                self.follower_link_state_mut().set_given_damage(8);
-                self.follower_link_state_mut().set_auxiliary_state(1);
-                self.follower_link_state_mut().set_incapacitated_timer(16);
-                self.follower_link_state_mut().xor_actual_velocity_xy(255);
-            }
-
-            let oam = self
-                .game_state
-                .oam
-                .current_pointer()
-                .wrapping_add(TRINEXX_BODY_OAM_OFFSETS[i]);
-            let ext = self
-                .game_state
-                .oam
-                .current_extended_pointer()
-                .wrapping_add(TRINEXX_BODY_OAM_OFFSETS[i] >> 2);
-            self.oam_state_mut().set_current_pointer(oam);
-            self.oam_state_mut().set_current_extended_pointer(ext);
-
-            self.sprite_slot_view_mut(k).set_oam_flags(1);
-            if i == 4 && self.sprite_slot_view(k).ai_state() != 0 {
-                self.sprite_trinexx_check_damage_to_flashing_segment(k);
-                let oam_flags = (self.sprite_slot_view(k).subtype2() & 6)
-                    ^ self.sprite_slot_view(k).oam_flags();
-                self.sprite_slot_view_mut(k).set_oam_flags(oam_flags);
-            }
-
-            self.sprite_slot_view_mut(k)
-                .set_graphics(TRINEXX_BODY_SEGMENT_GRAPHICS[i]);
-            if self.sprite_slot_view(k).graphics() != 3 {
-                self.sprite_draw_single_large(k);
-            } else {
-                self.sprite_slot_view_mut(k).set_graphics(8);
-                self.sprite_draw_trinexx_rock_head(k, &mut info);
-            }
-        }
+    fn trinexx_d_draw_epilogue(&mut self, k: usize) {
         let anim_clock = self.sprite_slot_view(k).anim_clock();
         self.sprite_workspace_mut().set_shared_scratch_a(anim_clock);
+    }
+
+    /// Body segment `i` of `Sprite_TrinexxD_Draw` as eight steps: the
+    /// history position and Link damage check, the OAM pointer advance, the
+    /// OAM ext pointer advance, `oam_flags = 1`, the flashing-segment check,
+    /// the segment graphics, the head graphics override, and the draw call.
+    fn trinexx_d_draw_segment_steps(&mut self, k: usize, i: usize, from: u8, to: u8) {
+        assert!(from <= to && to <= TRINEXX_D_DRAW_SEGMENT_STEPS);
+        for step in from..to {
+            match step {
+                0 => {
+                    let j = (self
+                        .sprite_slot_view(k)
+                        .subtype2()
+                        .wrapping_sub(TRINEXX_BODY_HISTORY_OFFSETS[i])
+                        & 0x7f) as usize;
+                    let history = self.game_state.effects.sprite_histories.moldorm_history(j);
+                    let cur_x = history.x();
+                    let cur_y = history.y();
+                    self.sprite_workspace_mut().set_current_sprite_x(cur_x);
+                    self.sprite_workspace_mut().set_current_sprite_y(cur_y);
+
+                    let link_x = self.game_state.player.follower_link.x();
+                    let link_y = self.game_state.player.follower_link.y();
+                    if link_x.wrapping_sub(cur_x).wrapping_add(8) < 16
+                        && link_y.wrapping_sub(cur_y).wrapping_add(16) < 16
+                        && !sign8(self.sprite_slot_view(k).ai_state())
+                        && (self.game_state.player.follower_link.blink_countdown()
+                            | self
+                                .game_state
+                                .player
+                                .follower_link
+                                .sprite_damage_disable_timer()
+                            | self.game_state.frame.submodule
+                            | self.game_state.frame.modal_pause_flag)
+                            == 0
+                    {
+                        self.follower_link_state_mut().set_given_damage(8);
+                        self.follower_link_state_mut().set_auxiliary_state(1);
+                        self.follower_link_state_mut().set_incapacitated_timer(16);
+                        self.follower_link_state_mut().xor_actual_velocity_xy(255);
+                    }
+                }
+                1 => {
+                    let oam = self
+                        .game_state
+                        .oam
+                        .current_pointer()
+                        .wrapping_add(TRINEXX_BODY_OAM_OFFSETS[i]);
+                    self.oam_state_mut().set_current_pointer(oam);
+                }
+                2 => {
+                    let ext = self
+                        .game_state
+                        .oam
+                        .current_extended_pointer()
+                        .wrapping_add(TRINEXX_BODY_OAM_OFFSETS[i] >> 2);
+                    self.oam_state_mut().set_current_extended_pointer(ext);
+                }
+                3 => self.sprite_slot_view_mut(k).set_oam_flags(1),
+                4 => {
+                    if i == 4 && self.sprite_slot_view(k).ai_state() != 0 {
+                        self.sprite_trinexx_check_damage_to_flashing_segment(k);
+                        self.trinexx_d_draw_flashing_oam_flags(k);
+                    }
+                }
+                5 => self
+                    .sprite_slot_view_mut(k)
+                    .set_graphics(TRINEXX_BODY_SEGMENT_GRAPHICS[i]),
+                6 => {
+                    if TRINEXX_BODY_SEGMENT_GRAPHICS[i] == 3 {
+                        self.sprite_slot_view_mut(k).set_graphics(8);
+                    }
+                }
+                7 => {
+                    if TRINEXX_BODY_SEGMENT_GRAPHICS[i] != 3 {
+                        self.sprite_draw_single_large(k);
+                    } else {
+                        let mut info = DrawPrepOamCoordsRet::default();
+                        self.sprite_draw_trinexx_rock_head(k, &mut info);
+                    }
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    fn trinexx_d_draw_flashing_oam_flags(&mut self, k: usize) {
+        let oam_flags =
+            (self.sprite_slot_view(k).subtype2() & 6) ^ self.sprite_slot_view(k).oam_flags();
+        self.sprite_slot_view_mut(k).set_oam_flags(oam_flags);
+    }
+
+    /// Runs `Sprite_Trinexx_FinalPhase` on the interrupted host through
+    /// `Sprite_TrinexxD_Draw` segment `segment`'s first `stage` steps, or
+    /// (stage >= 16) through segment 4's flashing check after `stage - 16`
+    /// of its stores.
+    pub(super) fn begin_trinexx_final_phase_draw_checkpoint(
+        &mut self,
+        k: usize,
+        segment: u8,
+        stage: u8,
+    ) -> TrinexxFlashingSegmentContinuation {
+        assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xcb);
+        assert_ne!(self.overlord_slot_view(0).x_high(), 0);
+        self.trinexx_final_phase_graphics(k);
+        self.trinexx_d_draw_prologue(k);
+        let count = self.sprite_slot_view(k).anim_clock();
+        let mut continuation = TrinexxFlashingSegmentContinuation::default();
+        if stage >= TRINEXX_D_DRAW_FLASHING_STAGE_BASE {
+            let flashing = stage - TRINEXX_D_DRAW_FLASHING_STAGE_BASE;
+            assert!(segment == 4 && segment < count && flashing < TRINEXX_FLASHING_SEGMENT_STEPS);
+            assert_ne!(self.sprite_slot_view(k).ai_state(), 0);
+            for i in 0..4 {
+                self.trinexx_d_draw_segment_steps(k, i, 0, TRINEXX_D_DRAW_SEGMENT_STEPS);
+            }
+            self.trinexx_d_draw_segment_steps(k, 4, 0, 4);
+            self.trinexx_flashing_segment_steps(k, 0, flashing, &mut continuation);
+            return continuation;
+        }
+        assert!(stage < TRINEXX_D_DRAW_SEGMENT_STEPS);
+        assert!(
+            segment < count || (segment == count && stage == 0),
+            "Trinexx final-phase draw checkpoint segment {segment}/{stage} exceeds {count}"
+        );
+        for i in 0..usize::from(segment) {
+            self.trinexx_d_draw_segment_steps(k, i, 0, TRINEXX_D_DRAW_SEGMENT_STEPS);
+        }
+        if segment < count {
+            self.trinexx_d_draw_segment_steps(k, usize::from(segment), 0, stage);
+        }
+        continuation
+    }
+
+    pub(super) fn resume_trinexx_final_phase_draw(
+        &mut self,
+        k: usize,
+        segment: u8,
+        stage: u8,
+        mut continuation: TrinexxFlashingSegmentContinuation,
+    ) {
+        let count = self.sprite_slot_view(k).anim_clock();
+        if stage >= TRINEXX_D_DRAW_FLASHING_STAGE_BASE {
+            let flashing = stage - TRINEXX_D_DRAW_FLASHING_STAGE_BASE;
+            self.trinexx_flashing_segment_steps(
+                k,
+                flashing,
+                TRINEXX_FLASHING_SEGMENT_STEPS,
+                &mut continuation,
+            );
+            self.trinexx_d_draw_flashing_oam_flags(k);
+            self.trinexx_d_draw_segment_steps(k, 4, 5, TRINEXX_D_DRAW_SEGMENT_STEPS);
+            for i in 5..usize::from(count) {
+                self.trinexx_d_draw_segment_steps(k, i, 0, TRINEXX_D_DRAW_SEGMENT_STEPS);
+            }
+        } else if segment < count {
+            self.trinexx_d_draw_segment_steps(
+                k,
+                usize::from(segment),
+                stage,
+                TRINEXX_D_DRAW_SEGMENT_STEPS,
+            );
+            for i in usize::from(segment) + 1..usize::from(count) {
+                self.trinexx_d_draw_segment_steps(k, i, 0, TRINEXX_D_DRAW_SEGMENT_STEPS);
+            }
+        }
+        self.trinexx_d_draw_epilogue(k);
+        if self.trinexx_final_phase_after_draw(k) {
+            self.trinexx_final_phase_switch(k);
+        }
     }
 
     // void Sprite_CB_TrinexxRockHead(int k) {  // 9db0ca

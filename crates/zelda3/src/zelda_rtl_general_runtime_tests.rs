@@ -19026,6 +19026,52 @@ fn pre_dungeon_garnish_clear_publishes_only_completed_descending_stores() {
 }
 
 #[test]
+fn trinexx_final_phase_draw_checkpoints_resume_to_the_atomic_draw() {
+    for ai_state in [0u8, 2] {
+        for segment in 0..=6u8 {
+            for stage in (0..8u8).chain(16..30u8) {
+                if segment == 6 && stage != 0 {
+                    continue;
+                }
+                if stage >= 16 && (segment != 4 || ai_state == 0) {
+                    continue;
+                }
+                let mut state = ZeldaState::new();
+                state.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+                state.overlord_slot_view_mut(0).increment_x_high();
+                state.sprite_slot_view_mut(0).set_sprite_type(0xcb);
+                state.sprite_slot_view_mut(0).set_state(9);
+                state.sprite_slot_view_mut(0).set_ai_state(ai_state);
+                state.sprite_slot_view_mut(0).set_anim_clock(6);
+                state.sprite_slot_view_mut(0).set_a(5);
+                state.sprite_slot_view_mut(0).set_x_velocity(31);
+                state.sprite_slot_view_mut(0).set_x_low(0x23);
+                state.sprite_slot_view_mut(0).set_x_high(8);
+                state.sprite_slot_view_mut(0).set_y_low(0xb4);
+                state.sprite_slot_view_mut(0).set_y_high(0x15);
+                state.sprite_slot_view_mut(0).set_subtype2(0x40);
+                for j in 0..0x80 {
+                    state
+                        .moldorm_history_mut(j)
+                        .set_position(0x800 + j as u16 * 3, 0x1500 + j as u16 * 5);
+                }
+                let mut atomic = state.clone();
+                atomic.sprite_trinexx_final_phase(0);
+                let continuation =
+                    state.begin_trinexx_final_phase_draw_checkpoint(0, segment, stage);
+                state.resume_trinexx_final_phase_draw(0, segment, stage, continuation);
+                assert_eq!(
+                    state.ram, atomic.ram,
+                    "ai {ai_state} segment {segment} stage {stage}"
+                );
+                assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
+                assert_eq!(state.game_state.oam, atomic.game_state.oam);
+            }
+        }
+    }
+}
+
+#[test]
 fn trinexx_final_phase_tile_collision_checkpoints_resume_to_the_atomic_phase() {
     for (probes_completed, x_velocity, y_velocity) in [
         (false, 31u8, 0u8),
