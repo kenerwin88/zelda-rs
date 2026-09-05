@@ -43385,6 +43385,11 @@ impl ZeldaState {
                                     | DungeonSupertileTransitionWork::StraightInterroomBgCharacters34
                                     | DungeonSupertileTransitionWork::SpriteConversion
                                     | DungeonSupertileTransitionWork::RoomLoadSpriteReset { .. }
+                                    // Falling loads resume the same Module07
+                                    // Sprite_Main caller and must transfer its
+                                    // interrupted slot before running it.
+                                    | DungeonSupertileTransitionWork::FallingSpriteGraphics
+                                    | DungeonSupertileTransitionWork::FallingBgCharacters34
                             }
                     )
                 )
