@@ -41894,6 +41894,13 @@ impl ZeldaState {
                 // validated above. The handler and resumed CPU caller below
                 // must never run against a second, independently advanced
                 // scheduler generation.
+                if matches!(expected_work, GameWorkContinuation::FinishDungeonCachedSpriteMain { .. }) {
+                    // Preserve the final restore stores while this caller
+                    // still owns its backup, before committing its retirement
+                    // and publishing the accepting handler below.
+                    self.publish_cached_sprite_restore_before_acceptance();
+                    expected_work = self.game_execution_scheduler.current_work().unwrap();
+                }
                 self.game_execution_scheduler = scheduler_probe;
                 (consumed_timeline, expected_work, sprite_main_return_claims)
             });
@@ -53247,6 +53254,53 @@ impl ZeldaState {
         }
     }
 
+    fn publish_cached_sprite_restore_before_acceptance(&mut self) {
+        let Some(
+            work @ GameWorkContinuation::FinishDungeonCachedSpriteMain {
+                boundary: CachedSpriteCpuInterruption::Restoring { slot, live_fields },
+                live_slot_backup,
+                dungeon,
+            },
+        ) = self.game_execution_scheduler.current_work()
+        else {
+            return;
+        };
+        let Some(receipt) = self.original_timing_cached_sprite_execution_progress() else {
+            return;
+        };
+        if receipt.boundary != OriginalTimingBoundary::NmiAccepted {
+            return;
+        }
+        let CachedSpriteCpuInterruption::Restoring {
+            slot: next_slot,
+            live_fields: next_fields,
+        } = receipt.progress.into()
+        else {
+            panic!("a cached restore cannot return to its load or execute phase");
+        };
+        assert_eq!(
+            slot, next_slot,
+            "a cached restore cannot change slots before its NMI"
+        );
+        self.cached_sprite_slot_mut(usize::from(slot))
+            .restore_live_range_from_backup(
+                &live_slot_backup,
+                usize::from(live_fields),
+                usize::from(next_fields),
+            );
+        self.game_execution_scheduler.refine_scheduled_work(
+            work,
+            GameWorkContinuation::FinishDungeonCachedSpriteMain {
+                boundary: CachedSpriteCpuInterruption::Restoring {
+                    slot,
+                    live_fields: next_fields,
+                },
+                live_slot_backup,
+                dungeon,
+            },
+        );
+    }
+
     fn retire_or_defer_main_loop_common_suffix_by_wire(&mut self) {
         if self.original_timing_live_suffix_outstanding() {
             if self.pending_main_loop_common_suffix.is_none() {
@@ -53320,6 +53374,12 @@ impl ZeldaState {
     ) -> OriginalTimingNmiHandlerCompletion {
         if !completion_owner.completed() {
             return OriginalTimingNmiHandlerCompletion::none();
+        }
+        if completion_owner == OriginalTimingNmiHandlerCompletionOwner::AcceptedInThisSequence {
+            // A host can finish just before a cached-slot restore store and
+            // accept its next NMI just after it. Advance the native store
+            // cursor before this acceptance captures its scanout.
+            self.publish_cached_sprite_restore_before_acceptance();
         }
         assert_original_timing_carry_in_handler_has_receptive_display(
             OriginalTimingNmiPhaseClassification {

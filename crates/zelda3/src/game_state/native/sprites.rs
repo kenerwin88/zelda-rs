@@ -4179,6 +4179,19 @@ impl<'a> NativeCachedSpriteBridgeMut<'a> {
         self.adopt_live_slots_from_ram();
     }
 
+    pub(crate) fn restore_live_range_from_backup(
+        &mut self,
+        backup: &[u8; 24],
+        remaining_before: usize,
+        remaining_after: usize,
+    ) {
+        assert!(remaining_after <= remaining_before && remaining_before <= backup.len());
+        for i in (remaining_after..remaining_before).rev() {
+            self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot] = backup[i];
+        }
+        self.adopt_live_slots_from_ram();
+    }
+
     pub(crate) fn restore_live_from_backup(&mut self, backup: &[u8; 24]) {
         for i in (0..CACHED_SPRITE_LIVE_FIELDS.len()).rev() {
             self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot] = backup[i];
