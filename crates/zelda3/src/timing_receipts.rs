@@ -871,6 +871,11 @@ pub enum MainLoopInterruption {
         active_call: u8,
     },
     SpriteMainAbsorbableHorizontalTileLookup(u8),
+    /// Descending reset stores completed before the suspended Wallmaster caller.
+    SpriteMainWallmasterResetClear {
+        slot: u8,
+        cleared_bytes: u16,
+    },
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.
@@ -920,6 +925,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainKingZoraFlippersGraphicsStarted(_)
                 | Self::SpriteMainAfterSingleSmallDrawPosition(_)
                 | Self::SpriteMainAfterWallmasterResetPrefix(_)
+                | Self::SpriteMainWallmasterResetClear { .. }
                 | Self::SpriteMainZazakAfterGraphics(_)
                 | Self::SpriteMainItemReceiptGraphicsStarted(_)
                 | Self::SpriteMainAfterPrimaryTimerDecrements(_)
@@ -1091,6 +1097,10 @@ pub enum SpriteMainProgress {
         active_call: u8,
     },
     AbsorbableHorizontalTileLookup(u8),
+    WallmasterResetClear {
+        slot: u8,
+        cleared_bytes: u16,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

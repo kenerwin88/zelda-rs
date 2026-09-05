@@ -1626,6 +1626,10 @@ impl ZeldaState {
 
     pub(super) fn wall_master_send_player_after_reset_fixed_prefix(&mut self) {
         self.sprite_reset_all_no_disable_after_fixed_prefix();
+        self.wall_master_send_player_after_sprite_reset();
+    }
+
+    pub(super) fn wall_master_send_player_after_sprite_reset(&mut self) {
         self.clear_restart_check_flag();
         self.set_main_module(17);
         self.set_submodule(0);

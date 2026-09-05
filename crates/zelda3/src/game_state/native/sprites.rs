@@ -4970,6 +4970,16 @@ impl<'a> NativeSpriteWorkspaceBridgeMut<'a> {
         self.sync();
     }
 
+    /// Publish a byte range of the source's descending reset loop, keeping
+    /// both native interpretations of the shared WRAM region coherent.
+    pub(crate) fn clear_where_in_room_range(&mut self, range: std::ops::Range<usize>) {
+        assert!(range.start <= range.end && range.end <= SPRITE_WHERE_IN_ROOM_BYTES);
+        self.state.where_in_room[range.clone()].fill(0);
+        self.overworld_sprite_presence.markers[range.clone()].fill(0);
+        self.ram[SPRITE_WHERE_IN_ROOM + range.start..SPRITE_WHERE_IN_ROOM + range.end].fill(0);
+        self.sync();
+    }
+
     pub(crate) fn clear_draw_priority_override(&mut self) {
         self.state.clear_draw_priority_override();
         self.sync();

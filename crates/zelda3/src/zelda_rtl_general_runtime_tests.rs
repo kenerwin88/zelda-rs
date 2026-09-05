@@ -7649,6 +7649,45 @@ fn live_wallmaster_reset_prefix_publishes_before_resume_without_replaying_the_se
 }
 
 #[test]
+fn wallmaster_descending_clear_retains_the_unwritten_prefix_and_resumes_exactly() {
+    for cleared_bytes in [0u16, 3170, 3171, 4096] {
+        let mut state = ZeldaState::new();
+        state.set_main_module(7);
+        state.set_indoor_flag(1);
+        for room in 0..2048 {
+            state.sprite_workspace_mut().set_where_in_room(room, 0xa55a);
+        }
+        state.wall_master_send_player_through_reset_fixed_prefix();
+        let mut atomic = state.clone();
+        atomic.sprite_system_mut().set_cur_object_index(0);
+        atomic.wall_master_send_player_after_reset_fixed_prefix();
+        atomic.link_initialize();
+        atomic.complete_sprite_main_after_interrupted_slot(0);
+
+        let remaining = 4096 - usize::from(cleared_bytes);
+        let original = state.ram[0x1df80..0x1ef80].to_vec();
+        state
+            .sprite_workspace_mut()
+            .clear_where_in_room_range(remaining..4096);
+        assert_eq!(
+            &state.ram[0x1df80..0x1df80 + remaining],
+            &original[..remaining]
+        );
+        assert!(state.ram[0x1df80 + remaining..0x1ef80]
+            .iter()
+            .all(|&byte| byte == 0));
+        state.complete_sprite_main_after_cpu_boundary(
+            SpriteMainCpuBoundary::WallmasterResetClear {
+                slot: 0,
+                cleared_bytes,
+            },
+        );
+        assert_eq!(state.game_state, atomic.game_state);
+        assert_eq!(state.ram, atomic.ram);
+    }
+}
+
+#[test]
 fn live_big_key_publication_enters_the_existing_source_call_continuation() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();

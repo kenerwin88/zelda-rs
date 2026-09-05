@@ -5073,6 +5073,10 @@ enum SpriteMainCpuBoundary {
     AbsorbableHorizontalTileLookup {
         slot: u8,
     },
+    WallmasterResetClear {
+        slot: u8,
+        cleared_bytes: u16,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5315,6 +5319,9 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
             slot: active_slot, ..
         }
         | SpriteMainCpuBoundary::AfterWallmasterResetPrefix(active_slot)
+        | SpriteMainCpuBoundary::WallmasterResetClear {
+            slot: active_slot, ..
+        }
         | SpriteMainCpuBoundary::ZazakAfterGraphics(active_slot)
         | SpriteMainCpuBoundary::ProbeAfterOamCoordinates {
             slot: active_slot, ..
@@ -5581,6 +5588,16 @@ fn sprite_main_cpu_boundary_from_interruption(
                 continuation: None,
             })
         }
+        crate::MainLoopInterruption::SpriteMainWallmasterResetClear {
+            slot,
+            cleared_bytes,
+        } => {
+            assert!(slot < 16 && cleared_bytes <= 0x1000);
+            Some(SpriteMainCpuBoundary::WallmasterResetClear {
+                slot,
+                cleared_bytes,
+            })
+        }
         crate::MainLoopInterruption::SpriteMainAfterWallmasterResetPrefix(slot) => {
             assert!(
                 slot < 16,
@@ -5821,6 +5838,10 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         | crate::MainLoopInterruption::SpriteMainAbsorbableHorizontalTileLookup(slot)
         | crate::MainLoopInterruption::SpriteMainInitializePrepPending(slot)
         | crate::MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(slot) => slot < 16,
+        crate::MainLoopInterruption::SpriteMainWallmasterResetClear {
+            slot,
+            cleared_bytes,
+        } => slot < 16 && cleared_bytes <= 0x1000,
         crate::MainLoopInterruption::SpriteMainGuardPrepPatrolDelay { slot, active_call }
         | crate::MainLoopInterruption::SpriteMainGuardPrepTileCollisionReturned {
             slot,
@@ -6011,6 +6032,10 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
                 }
         }
         crate::SpriteMainProgress::AfterWallmasterResetPrefix(slot) => slot < 16,
+        crate::SpriteMainProgress::WallmasterResetClear {
+            slot,
+            cleared_bytes,
+        } => slot < 16 && cleared_bytes <= 0x1000,
         crate::SpriteMainProgress::AfterActiveCuccoX { slot, .. }
         | crate::SpriteMainProgress::AfterActiveCuccoYSubpixel { slot, .. }
         | crate::SpriteMainProgress::AfterCuccoFleeMovement { slot, .. }
@@ -6239,6 +6264,16 @@ fn sprite_main_cpu_boundary_from_progress(
                 continuation: None,
             }
         }
+        crate::SpriteMainProgress::WallmasterResetClear {
+            slot,
+            cleared_bytes,
+        } => {
+            assert!(slot < 16 && cleared_bytes <= 0x1000);
+            SpriteMainCpuBoundary::WallmasterResetClear {
+                slot,
+                cleared_bytes,
+            }
+        }
         crate::SpriteMainProgress::AfterWallmasterResetPrefix(slot) => {
             assert!(
                 slot < 16,
@@ -6446,6 +6481,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainKingZoraFlippersGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(_)
         | crate::MainLoopInterruption::SpriteMainAfterWallmasterResetPrefix(_)
+        | crate::MainLoopInterruption::SpriteMainWallmasterResetClear { .. }
         | crate::MainLoopInterruption::SpriteMainItemReceiptGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainWishPondTossedItemGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainZazakAfterGraphics(_)
@@ -6790,7 +6826,8 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::GuardPrepTileCollisionReturned { slot, .. }
         | SpriteMainCpuBoundary::GuardAnimation { slot, .. }
         | SpriteMainCpuBoundary::MiniMoldormHistory { slot, .. } => 2 * (16 - slot) - 1,
-        SpriteMainCpuBoundary::AfterWallmasterResetPrefix(slot) => 2 * (16 - slot) - 1,
+        SpriteMainCpuBoundary::AfterWallmasterResetPrefix(slot)
+        | SpriteMainCpuBoundary::WallmasterResetClear { slot, .. } => 2 * (16 - slot) - 1,
     }
 }
 

@@ -1009,6 +1009,7 @@ struct SpriteMainExecutionTracker {
     probe_after_oam_coordinates_slot: Option<u8>,
     #[serde(default)]
     wallmaster_reset_prefix_slot: Option<u8>,
+    wallmaster_reset_cleared_bytes: Option<u16>,
     #[serde(default)]
     zazak_graphics_slot: Option<u8>,
     #[serde(default)]
@@ -1724,12 +1725,23 @@ impl SpriteMainExecutionTracker {
     }
 
     fn observe_wallmaster_reset_prefix(&mut self, event: &RawTraceEvent) -> Result<(), String> {
-        if event.pc.map(|pc| pc & 0x00ff_ffff) != Some(WALLMASTER_RESET_AFTER_FIXED_PREFIX_PC)
-            || event.return_address.map(|pc| pc & 0x00ff_ffff)
-                != Some(WALLMASTER_AFTER_SPRITE_RESET_PC)
+        let pc = event.pc.map(|pc| pc & 0x00ff_ffff);
+        if !matches!(
+            pc,
+            Some(WALLMASTER_RESET_AFTER_FIXED_PREFIX_PC | 0x09_c47f | 0x09_c480)
+        ) || event.return_address.map(|pc| pc & 0x00ff_ffff)
+            != Some(WALLMASTER_AFTER_SPRITE_RESET_PC)
         {
             return Ok(());
         }
+        let cleared_bytes = match (pc, event.x) {
+            (Some(WALLMASTER_RESET_AFTER_FIXED_PREFIX_PC), Some(0xfff)) => None,
+            (Some(0x09_c47b | 0x09_c480), Some(x)) if x <= 0xfff => Some(0xfff - x),
+            (Some(0x09_c47f), Some(x)) if x <= 0xfff => Some(0x1000 - x),
+            (Some(0x09_c480), Some(0xffff)) => Some(0x1000),
+            _ => return Err("invalid Wallmaster reset clear cursor".to_string()),
+        };
+        self.wallmaster_reset_cleared_bytes = cleared_bytes;
         let slot = self
             .current_slot
             .ok_or("Snes9x reached the Wallmaster reset prefix before a sprite slot")?;
@@ -1824,6 +1836,12 @@ impl SpriteMainExecutionTracker {
                 Some(slot),
                 "Wallmaster reset prefix outlived its active sprite slot",
             );
+            if let Some(cleared_bytes) = self.wallmaster_reset_cleared_bytes {
+                return SpriteMainProgress::WallmasterResetClear {
+                    slot,
+                    cleared_bytes,
+                };
+            }
             return SpriteMainProgress::AfterWallmasterResetPrefix(slot);
         }
         if let Some(slot) = self.zazak_graphics_slot {
@@ -2244,6 +2262,13 @@ impl SpriteMainExecutionTracker {
             SpriteMainProgress::AfterSingleSmallDrawPosition(slot) => {
                 MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(slot)
             }
+            SpriteMainProgress::WallmasterResetClear {
+                slot,
+                cleared_bytes,
+            } => MainLoopInterruption::SpriteMainWallmasterResetClear {
+                slot,
+                cleared_bytes,
+            },
             SpriteMainProgress::AfterWallmasterResetPrefix(slot) => {
                 MainLoopInterruption::SpriteMainAfterWallmasterResetPrefix(slot)
             }
@@ -4271,6 +4296,7 @@ impl Snes9xOracleSemanticTrace {
             if let Some(execution) = self.sprite_main_execution.as_mut() {
                 execution.single_small_draw_position_slot = None;
                 execution.wallmaster_reset_prefix_slot = None;
+                execution.wallmaster_reset_cleared_bytes = None;
                 execution.zazak_graphics_slot = None;
             }
         }
@@ -4594,6 +4620,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.single_small_draw_position_slot = None;
                             execution.probe_after_oam_coordinates_slot = None;
                             execution.wallmaster_reset_prefix_slot = None;
+                            execution.wallmaster_reset_cleared_bytes = None;
                             execution.zazak_graphics_slot = None;
                             execution.follower_graphics = None;
                         }
@@ -4680,6 +4707,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.single_small_draw_position_slot = None;
                         execution.probe_after_oam_coordinates_slot = None;
                         execution.wallmaster_reset_prefix_slot = None;
+                        execution.wallmaster_reset_cleared_bytes = None;
                         execution.zazak_graphics_slot = None;
                         if let Some((caller, tracker)) = execution.follower_graphics.take() {
                             if tracker.phase != RescuedMaidenInitializationTrackerPhase::Converting
@@ -8174,6 +8202,7 @@ mod tests {
             single_small_draw_position_slot: None,
             probe_after_oam_coordinates_slot: None,
             wallmaster_reset_prefix_slot: None,
+            wallmaster_reset_cleared_bytes: None,
             zazak_graphics_slot: None,
             follower_graphics: None,
         });
@@ -9528,7 +9557,7 @@ mod tests {
         let mut nmi = raw(
             "nmi",
             Some(WALLMASTER_RESET_AFTER_FIXED_PREFIX_PC),
-            None,
+            Some(0xfff),
             None,
         );
         nmi.return_address = Some(WALLMASTER_AFTER_SPRITE_RESET_PC);
@@ -9544,6 +9573,48 @@ mod tests {
                 ),
                 OriginalTimingSemanticReceipt::SpriteMainProgressed(
                     SpriteMainProgress::AfterWallmasterResetPrefix(12),
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn wallmaster_reset_nmi_exports_the_completed_descending_clear() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+                &mut receipts,
+            )
+            .unwrap();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(12), None),
+                &mut receipts,
+            )
+            .unwrap();
+        let mut nmi = raw("nmi", Some(0x09_c47f), Some(0x039e), None);
+        nmi.return_address = Some(WALLMASTER_AFTER_SPRITE_RESET_PC);
+        source.consume_event(nmi, &mut receipts).unwrap();
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    MainLoopInterruption::SpriteMainWallmasterResetClear {
+                        slot: 12,
+                        cleared_bytes: 3170
+                    },
+                ),
+                OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                    SpriteMainProgress::WallmasterResetClear {
+                        slot: 12,
+                        cleared_bytes: 3170
+                    },
                 ),
             ],
         );
@@ -12941,6 +13012,7 @@ mod tests {
             single_small_draw_position_slot: None,
             probe_after_oam_coordinates_slot: None,
             wallmaster_reset_prefix_slot: None,
+            wallmaster_reset_cleared_bytes: None,
             zazak_graphics_slot: None,
             follower_graphics: None,
         });
@@ -13010,6 +13082,7 @@ mod tests {
             single_small_draw_position_slot: None,
             probe_after_oam_coordinates_slot: None,
             wallmaster_reset_prefix_slot: None,
+            wallmaster_reset_cleared_bytes: None,
             zazak_graphics_slot: None,
             follower_graphics: None,
         });

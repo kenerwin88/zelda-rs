@@ -1546,6 +1546,10 @@ impl ZeldaState {
 
     pub(super) fn sprite_reset_all_no_disable_after_fixed_prefix(&mut self) {
         self.sprite_workspace_mut().clear_where_in_room();
+        self.sprite_reset_all_after_room_mask_clear();
+    }
+
+    fn sprite_reset_all_after_room_mask_clear(&mut self) {
         self.clear_all_overworld_sprite_loaded_masks();
         self.dungeon_room_tracking_mut().reset_room_history();
     }
@@ -3365,8 +3369,9 @@ impl ZeldaState {
                 );
                 return;
             }
-            if self.sprite_main_cpu_boundary
-                == Some(SpriteMainCpuBoundary::AfterWallmasterResetPrefix(k as u8))
+            if matches!(self.sprite_main_cpu_boundary,
+                Some(SpriteMainCpuBoundary::AfterWallmasterResetPrefix(slot)
+                    | SpriteMainCpuBoundary::WallmasterResetClear { slot, .. }) if usize::from(slot) == k)
             {
                 let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
                 assert_ne!(
@@ -3391,6 +3396,12 @@ impl ZeldaState {
                     self.sprite_slot_view(k).deflection_bits(),
                 );
                 self.wall_master_send_player_through_reset_fixed_prefix();
+                if let SpriteMainCpuBoundary::WallmasterResetClear { cleared_bytes, .. } = boundary
+                {
+                    assert!(cleared_bytes <= 0x1000);
+                    self.sprite_workspace_mut()
+                        .clear_where_in_room_range(0x1000 - usize::from(cleared_bytes)..0x1000);
+                }
                 let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
                 self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
                 return;
@@ -4227,6 +4238,17 @@ impl ZeldaState {
                 self.wall_master_send_player_after_reset_fixed_prefix();
                 self.link_initialize();
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::WallmasterResetClear { slot, cleared_bytes } => {
+                assert!(cleared_bytes <= 0x1000);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.sprite_workspace_mut().clear_where_in_room_range(
+                    0..0x1000 - usize::from(cleared_bytes),
+                );
+                self.sprite_reset_all_after_room_mask_clear();
+                self.wall_master_send_player_after_sprite_reset();
+                self.link_initialize();
+                self.complete_sprite_main_after_interrupted_slot(usize::from(slot));
             }
             SpriteMainCpuBoundary::ZazakAfterGraphics(interrupted_slot) => {
                 let interrupted_slot = usize::from(interrupted_slot);
