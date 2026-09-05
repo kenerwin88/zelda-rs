@@ -827,7 +827,15 @@ impl ZeldaState {
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_state(value);
                 } else {
-                    if matches!(j, 160 | 252 | 4) {
+                    // The ROM branches on carry after the splash call at
+                    // countdown 160. A successful outdoor spawn's slot ASL
+                    // clears it; a failed or indoor spawn preserves CMP #160.
+                    let mut animation_lookup = j < 160;
+                    if j == 160 {
+                        let spawned = self.sprite_spawn_water_splash(k);
+                        animation_lookup =
+                            spawned >= 0 && !self.game_state.world.location.is_indoors();
+                    } else if matches!(j, 252 | 4) {
                         self.sprite_spawn_water_splash(k);
                     } else if j == 10 {
                         self.catfish_spawn_plop(k);
@@ -852,7 +860,7 @@ impl ZeldaState {
                             self.catfish_regurgitate_medallion(k);
                         }
                     }
-                    if j < 160 {
+                    if animation_lookup {
                         let value = CATFISH_BIG_FISH_CONVERSATE_GFX[usize::from(j >> 3)];
                         self.sprite_slot_view_mut(k).set_graphics(value);
                     }
@@ -10833,6 +10841,16 @@ impl ZeldaState {
     pub(super) fn great_catfish_draw(&mut self, k: usize) {
         let g = self.sprite_slot_view(k).graphics();
         if g != 0 {
+            if g == CATFISH_BIG_FISH_CONVERSATE_GFX[20] {
+                // The carry-dependent table overread selects the native
+                // four records at $1D:F9C0 on the following draw.
+                self.sprite_draw_multiple_from_encoded_records(
+                    k,
+                    &GREAT_CATFISH_SPLASH_CARRY_DRAW,
+                    None,
+                );
+                return;
+            }
             let base = usize::from(g - 1) * 4;
             self.sprite_draw_multiple(k, &GREAT_CATFISH_DRAW_FRAMES[base..base + 4], None);
         }

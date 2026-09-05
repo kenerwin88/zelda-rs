@@ -9922,6 +9922,29 @@ impl ZeldaState {
         Some((prepped.x, prepped.y, prepped.flags))
     }
 
+    /// Decode native eight-byte records, retaining word coordinates which
+    /// cannot be represented by the ordinary compact signed-byte tables.
+    pub(super) fn sprite_draw_multiple_from_encoded_records(
+        &mut self,
+        k: usize,
+        records: &[[u8; 8]],
+        info: Option<&mut PrepOamCoordsRet>,
+    ) {
+        let Some(info) = self.sprite_prepare_draw_multiple(k, info) else {
+            return;
+        };
+        self.sprite_draw_multiple_words_with_info(
+            k,
+            records.iter().map(|bytes| DrawMultipleWordData {
+                x: u16::from_le_bytes([bytes[0], bytes[1]]),
+                y: u16::from_le_bytes([bytes[2], bytes[3]]),
+                char_flags: u16::from_le_bytes([bytes[4], bytes[5]]),
+                ext: bytes[7],
+            }),
+            info,
+        );
+    }
+
     /// Draw the ROM's native eight-byte `DrawMultipleData` records after a
     /// 16-bit table-address calculation has wrapped into low WRAM.
     pub(super) fn sprite_draw_multiple_from_wram_records<const N: usize>(

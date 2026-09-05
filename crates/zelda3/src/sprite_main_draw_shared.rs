@@ -11942,8 +11942,20 @@ pub(super) const SPRITE_CATFISH_QUAKE_MEDALLION_Z_VELOCITIES: [u8; 4] = [0x20, 0
 pub(super) const CATFISH_BIG_FISH_EMERGE_GFX: [u8; 16] =
     [1, 2, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 0, 0, 0, 0];
 
-pub(super) const CATFISH_BIG_FISH_CONVERSATE_GFX: [u8; 20] =
-    [0, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 6, 6];
+// $1D:E0BF through E0D3. Index 20 reaches the first instruction byte
+// following the named table when the outdoor splash clears carry.
+pub(super) const CATFISH_BIG_FISH_CONVERSATE_GFX: [u8; 21] = [
+    0, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 6, 6, 0xbd,
+];
+
+// GreatCatfish_Draw computes E240 + (BD - 1) * 32 = F9C0. Preserve
+// the source's full 16-bit coordinates and eighth-byte extended attributes.
+pub(super) const GREAT_CATFISH_SPLASH_CARRY_DRAW: [[u8; 8]; 4] = [
+    [0xf0, 0x0d, 0xc9, 0x07, 0xd0, 0x03, 0x20, 0x4e],
+    [0xfa, 0xbd, 0xf0, 0x0d, 0xd0, 0x03, 0xfe, 0x80],
+    [0x0d, 0x60, 0x01, 0x02, 0x03, 0x01, 0x03, 0x01],
+    [0x02, 0x03, 0x0d, 0x0d, 0x0d, 0x0b, 0x0b, 0x06],
+];
 
 pub(super) const SPRITE_23_RED_BARI_BARI_IDLE_X_VELOCITIES: [u8; 2] = [8, 0xf8];
 

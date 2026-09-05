@@ -1,6 +1,37 @@
 use super::*;
 
 #[test]
+fn catfish_splash_carry_controls_the_conversation_table_overread() {
+    for (indoors, exhausted, expected) in [(false, false, 0xbd), (true, false, 0), (false, true, 0)]
+    {
+        let mut state = ZeldaState::new();
+        state.set_main_module(9);
+        state.set_submodule(0);
+        state.set_indoor_flag(u8::from(indoors));
+        state.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+        if exhausted {
+            for slot in 0..16 {
+                state.sprite_slot_view_mut(slot).set_state(9);
+            }
+        }
+        {
+            let mut sprite = state.sprite_slot_view_mut(11);
+            sprite.set_state(9);
+            sprite.set_sprite_type(0xc0);
+            sprite.set_ai_state(3);
+            sprite.set_delay_main(160);
+            sprite.set_x(0x40);
+            sprite.set_y(0x50);
+        }
+        state.catfish_big_fish(11);
+        assert_eq!(state.sprite_slot_view(11).graphics(), expected);
+        state.sprite_slot_view_mut(11).set_delay_main(159);
+        state.catfish_big_fish(11);
+        assert_eq!(state.sprite_slot_view(11).graphics(), 6);
+    }
+}
+
+#[test]
 fn buzzblob_x_subpixel_resume_does_not_repeat_its_direction_prefix() {
     for (velocity, delay) in [(2, 5), (0xfe, 5), (0x7f, 0)] {
         let mut atomic = ZeldaState::new();
