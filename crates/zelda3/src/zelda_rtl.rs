@@ -1277,6 +1277,7 @@ enum OriginalTimingTerminalSpotlightCpuAction {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct OriginalTimingSpotlightBuildLinkOamPlan {
     semantic: Vec<OriginalTimingSemanticReceipt>,
+    rebuild_progress: Option<SpotlightTableBuildProgress>,
     timeline: OriginalTimingMainLoopInterruptionTimeline,
     /// `LinkOam`, or the mid-loop Link position boundary when the host ended
     /// inside `Link_MovePosition` after the completed build (route host
@@ -9026,37 +9027,6 @@ pub(super) struct SpotlightTableBuildContinuation {
 }
 
 impl SpotlightTableBuildContinuation {
-    fn advance_local_cursor_to(mut self, progress: SpotlightTableBuildProgress) -> Self {
-        if self.source_progress == Some(progress) {
-            return self;
-        }
-        self.assert_recheckpoint_not_behind(progress);
-        let source = self.source_progress.unwrap();
-        assert_eq!(source.completed_iterations, progress.completed_iterations);
-        assert!(matches!(
-            source.checkpoint,
-            crate::SpotlightTableBuildCheckpoint::BeforeLoopCompletionTest { .. }
-        ));
-        let crate::SpotlightTableBuildCheckpoint::BeforeLowerCursorDecrement {
-            upper_cursor,
-            lower_cursor,
-        } = progress.checkpoint
-        else {
-            panic!("spotlight cursor advancement requires the source upper-cursor increment");
-        };
-        assert!(self.pending_loop_completion_test && !self.completed);
-        assert_ne!(self.upper_cursor, self.vertical_center);
-        self.pending_loop_completion_test = false;
-        self.upper_cursor = self.upper_cursor.wrapping_add(1);
-        self.pending_lower_cursor_decrement = true;
-        assert_eq!(
-            (self.upper_cursor, self.lower_cursor),
-            (upper_cursor, lower_cursor)
-        );
-        self.source_progress = Some(progress);
-        self
-    }
-
     fn assert_recheckpointed_at(self, progress: SpotlightTableBuildProgress) {
         assert_eq!(
             self.source_progress,
@@ -25423,6 +25393,8 @@ impl ZeldaState {
             checkpoint_claims.len() <= 1,
             "one recurring spotlight Build-LinkOam host cannot re-checkpoint its table twice",
         );
+        let mut cpu_probe = self.clone();
+        let mut rebuild_progress = None;
         let mut semantic_without_checkpoint = semantic.clone();
         if let Some(&(checkpoint_index, claim)) = checkpoint_claims.first() {
             assert_eq!(
@@ -25430,7 +25402,12 @@ impl ZeldaState {
                 crate::OriginalTimingBoundary::NmiAccepted,
                 "a recurring spotlight Build-LinkOam re-checkpoint must ride an accepting NMI",
             );
-            table_build = table_build.advance_local_cursor_to(claim.progress);
+            table_build.assert_recheckpoint_not_behind(claim.progress);
+            if table_build.source_progress != Some(claim.progress) {
+                rebuild_progress = Some(claim.progress);
+                table_build =
+                    cpu_probe.begin_iris_spotlight_configure_table_at_progress(claim.progress);
+            }
             let last_acceptance = semantic[..checkpoint_index]
                 .iter()
                 .rposition(|receipt| {
@@ -25570,7 +25547,6 @@ impl ZeldaState {
             projection_completed,
             iteration,
         };
-        let mut cpu_probe = self.clone();
         cpu_probe.game_execution_scheduler = scheduler_after_completion;
         let suffix_before = cpu_probe.pending_main_loop_common_suffix;
         let latch_before = cpu_probe.game_state.display.nmi_update_is_latched();
@@ -25682,6 +25658,7 @@ impl ZeldaState {
 
         Some(OriginalTimingSpotlightBuildLinkOamPlan {
             semantic,
+            rebuild_progress,
             timeline,
             interruption,
             work,
@@ -43661,6 +43638,14 @@ impl ZeldaState {
                         unreachable!("Build-LinkOam plan lost its table continuation")
                     };
                     table_build.assert_recheckpointed_at(claim.progress);
+                    if let Some(progress) = plan.rebuild_progress {
+                        assert_eq!(progress, claim.progress);
+                        assert_eq!(
+                            self.begin_iris_spotlight_configure_table_at_progress(progress),
+                            table_build,
+                            "spotlight source prefix changed after immutable preflight",
+                        );
+                    }
                 }
                 Some(GameWorkStep::Complete(plan.work))
             } else if let Some((_, expected_work, _)) =

@@ -5351,6 +5351,64 @@ fn run4789_terminal_spotlight_build_preflight_is_failure_atomic() {
 }
 
 #[test]
+fn spotlight_link_oam_publishes_later_table_stores_before_its_accepting_nmi() {
+    let mut state = run4786_spotlight_build_link_oam_state();
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    let prior = SpotlightTableBuildProgress {
+        completed_iterations: 214,
+        checkpoint: crate::SpotlightTableBuildCheckpoint::BeforeCircleCalculation {
+            pending_circle_input: 25,
+        },
+    };
+    let accepted = SpotlightTableBuildProgress {
+        completed_iterations: 214,
+        checkpoint: crate::SpotlightTableBuildCheckpoint::AfterUpperTableWrite {
+            lower_cursor: 262,
+        },
+    };
+    let table_build = state.begin_iris_spotlight_configure_table_at_progress(prior);
+    state.game_execution_scheduler.finish_work();
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishDungeonExitSpotlightBuild {
+            table_build,
+            projection_completed: false,
+            iteration: SpotlightIteration::closing(SpotlightIterationPhase::WholeTable),
+        },
+        1,
+    );
+    state
+        .original_timing_semantic_receipts
+        .as_mut()
+        .unwrap()
+        .semantic
+        .insert(
+            1,
+            OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
+                crate::SpotlightTableBuildProgressReceipt {
+                    progress: accepted,
+                    boundary: crate::OriginalTimingBoundary::NmiAccepted,
+                },
+            ),
+        );
+    let game_before = state.game_state.clone();
+    let plan = state
+        .original_timing_spotlight_build_link_oam_plan()
+        .unwrap();
+    assert_eq!(plan.rebuild_progress, Some(accepted));
+    assert_eq!(
+        state.game_state, game_before,
+        "preflight must remain immutable"
+    );
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert!(matches!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { .. })
+    ));
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 112);
+    assert!(state.original_timing_semantic_receipts.is_none());
+}
+
+#[test]
 fn run4786_link_oam_completes_the_build_before_run4787_finishes_its_suffix() {
     let mut state = run4786_spotlight_build_link_oam_state();
     let iteration = SpotlightIteration::closing(SpotlightIterationPhase::WholeTable);
