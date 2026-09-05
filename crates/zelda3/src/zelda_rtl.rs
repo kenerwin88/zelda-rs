@@ -31258,9 +31258,19 @@ impl ZeldaState {
             || self
                 .original_timing_main_loop_interruption()
                 .is_some_and(crate::MainLoopInterruption::is_sprite_main);
+        // The wire can also carry the caller past Sprite_Main into a module
+        // CPU phase (LinkOam) within this host; the Sprite_Main return is then
+        // owned by that continuation timeline rather than owed separately
+        // (route host 1509192, spiral room $5d initialization).
+        let continued_into_module_tail = self
+            .original_timing_main_loop_interruption()
+            .is_some_and(|interruption| {
+                module_cpu_phase_from_main_loop_interruption(interruption).is_some()
+            });
         self.original_timing_owes_sprite_main_return()
             || self.original_timing_owes_sprite_main_progress()
             || interrupted_in_sprite_main
+            || continued_into_module_tail
     }
 
     fn complete_dungeon_supertile_caller_return_host(
@@ -47318,6 +47328,22 @@ impl ZeldaState {
                                 .dungeon_submodule_cpu_schedule
                                 .take()
                                 .expect("spiral-room completion requires its CPU schedule");
+                            if std::env::var_os("ZELDA3_DEBUG_SPIRAL_ROOM_INIT").is_some() {
+                                eprintln!(
+                                    "[SPIRAL-INIT] host={} caller_nmis={} sprite_main_nmis={} suffix_nmis={} resumed_this_host={} owes_return={} owes_progress={} fresh={} interruption={:?} boundary={:?} claims={:?}",
+                                    self.frame_ctr_dbg,
+                                    schedule.caller_nmis,
+                                    schedule.caller_sprite_main_nmis,
+                                    schedule.caller_suffix_nmis,
+                                    self.wire_spiral_caller_resumed_this_host(),
+                                    self.original_timing_owes_sprite_main_return(),
+                                    self.original_timing_owes_sprite_main_progress(),
+                                    self.original_timing_hosts_fresh_iteration(),
+                                    self.original_timing_main_loop_interruption(),
+                                    schedule.sprite_main_boundary,
+                                    self.original_timing_sprite_main_return_claims_remaining,
+                                );
+                            }
                             if schedule.caller_nmis == 0
                                 || self.wire_spiral_caller_resumed_this_host()
                             {
