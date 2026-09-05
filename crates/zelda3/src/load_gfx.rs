@@ -3566,6 +3566,37 @@ impl ZeldaState {
         self.complete_apply_palette_filter_bounce_after_ranges();
     }
 
+    pub(super) fn apply_palette_filter_bounce_through_direction_toggle(&mut self) {
+        self.apply_palette_filter_bounce_prefix(0xf0);
+        let countdown = self.game_state.display.palette_filter.countdown_word();
+        let direction = self
+            .game_state
+            .display
+            .palette_filter
+            .darkening_or_lightening_screen_word();
+        let target = u16::from(self.game_state.display.mosaic_target_level);
+        if direction == 0 {
+            let next = countdown.wrapping_add(1);
+            assert_eq!(
+                next, target,
+                "source palette direction toggle requires its terminal countdown"
+            );
+            self.set_countdown_word(next);
+        } else {
+            assert_eq!(
+                countdown, target,
+                "source palette direction toggle requires its terminal countdown"
+            );
+        }
+        self.set_darkening_or_lightening_screen_word(direction ^ 2);
+    }
+
+    pub(super) fn complete_apply_palette_filter_bounce_after_direction_toggle(&mut self) {
+        self.set_countdown_word(0);
+        self.increment_subsubmodule();
+        self.increment_cgram_update_flag();
+    }
+
     const fn valid_apply_palette_filter_next_color(next_color: u8) -> bool {
         matches!(next_color, 0 | 1)
             || (next_color >= 0x20 && next_color <= 0xd8)

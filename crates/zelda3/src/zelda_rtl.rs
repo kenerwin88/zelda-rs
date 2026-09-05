@@ -8182,6 +8182,7 @@ pub(super) struct DungeonPegAttributeFlipContinuation {
 pub(super) enum SpiralStaircasePaletteTail {
     BuildQuadrantForVram,
     PrepareNextQuadrant,
+    FallingFadeInAfterDirectionToggle,
 }
 
 /// CPU caller which resumes after an interrupted palette-filter walk.
@@ -8194,6 +8195,7 @@ pub(super) enum SpiralStaircasePaletteTail {
 enum InterruptedPaletteFilterCaller {
     SpiralStairs,
     StraightInterroomStairs,
+    FallingRoom,
 }
 
 impl InterruptedPaletteFilterCaller {
@@ -23396,6 +23398,7 @@ impl ZeldaState {
                     // from its suspended animated-sprite decode continuation.
                     | OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicRestored
                     | OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicReturned
+                    | OriginalTimingSemanticReceipt::DungeonFallingFadeInPaletteDirectionToggled
                     // Module0F's entry call can return inside a fresh
                     // iteration whose trailing acceptance stays held; the
                     // pre-entry owner defers the token to the native entry
@@ -44283,6 +44286,10 @@ impl ZeldaState {
                 self.game_execution_scheduler.current_work(),
                 Some(
                     GameWorkContinuation::FinishOverworldScreenMapAndSpriteGraphicsTail
+                        | GameWorkContinuation::FinishSpiralStaircasePaletteFilter {
+                            tail: SpiralStaircasePaletteTail::FallingFadeInAfterDirectionToggle,
+                            ..
+                        }
                         // The whirlpool's long loads return into the same
                         // Module09 Sprite_Main suffix (route host 183230).
                         | GameWorkContinuation::FinishModule09LongLoad { .. }

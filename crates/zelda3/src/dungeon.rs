@@ -10911,7 +10911,42 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_07_0F_FallingFadeIn(&mut self) {
+        let mut direction_toggled = false;
+        if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+            if let Some(receipts) = self.original_timing_semantic_receipts.as_mut() {
+                receipts.semantic.retain(|receipt| {
+                    if *receipt == OriginalTimingSemanticReceipt::DungeonFallingFadeInPaletteDirectionToggled {
+                        assert!(!direction_toggled, "falling palette direction checkpoint replayed");
+                        direction_toggled = true;
+                        false
+                    } else { true }
+                });
+            }
+        }
+        if direction_toggled {
+            assert_eq!(
+                (
+                    self.game_state.frame.main_module,
+                    self.game_state.frame.submodule,
+                    self.game_state.frame.subsubmodule
+                ),
+                (7, 7, 15)
+            );
+            self.apply_palette_filter_bounce_through_direction_toggle();
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishSpiralStaircasePaletteFilter {
+                    tail: SpiralStaircasePaletteTail::FallingFadeInAfterDirectionToggle,
+                    caller: InterruptedPaletteFilterCaller::FallingRoom,
+                },
+                1,
+            );
+            return;
+        }
         self.ApplyPaletteFilter_bounce();
+        self.complete_falling_fade_in_after_palette();
+    }
+
+    pub(super) fn complete_falling_fade_in_after_palette(&mut self) {
         if self
             .game_state
             .display
@@ -11149,6 +11184,11 @@ impl ZeldaState {
         tail: SpiralStaircasePaletteTail,
     ) {
         match tail {
+            SpiralStaircasePaletteTail::FallingFadeInAfterDirectionToggle => {
+                self.complete_apply_palette_filter_bounce_after_direction_toggle();
+                self.complete_falling_fade_in_after_palette();
+                return;
+            }
             SpiralStaircasePaletteTail::BuildQuadrantForVram => {
                 self.WaterFlood_BuildOneQuadrantForVRAM();
             }

@@ -5776,6 +5776,16 @@ impl Snes9xOracleSemanticTrace {
                 }
                 self.flush_host_boundary_progress(receipts, OriginalTimingBoundary::NmiAccepted);
                 receipts.push(OriginalTimingSemanticReceipt::NmiAccepted(update_gate));
+                if event.pc == Some(0x00_e9bc) && event.return_address == Some(0x02_8ea4) {
+                    if (event.main, event.sub, event.subsub) != (Some(7), Some(7), Some(15)) {
+                        return Err(
+                            "falling fade-in palette checkpoint has the wrong source caller".into(),
+                        );
+                    }
+                    receipts.push(
+                        OriginalTimingSemanticReceipt::DungeonFallingFadeInPaletteDirectionToggled,
+                    );
+                }
                 if let Some(progress) = rescued_maiden_tilemap_clear_progress(&event)? {
                     receipts.push(
                         OriginalTimingSemanticReceipt::RescuedMaidenTilemapClearProgress(progress),
@@ -10173,6 +10183,27 @@ mod tests {
             execution.progress(),
             SpriteMainProgress::InitializePrepPending(1)
         );
+    }
+
+    #[test]
+    fn falling_palette_direction_checkpoint_is_bound_to_its_caller() {
+        for (caller, expected) in [(0x02_8ea4, true), (0x02_8ea3, false)] {
+            let mut source = empty_semantic_tracker();
+            let mut receipts = Vec::new();
+            let mut event = raw("nmi", Some(0x00_e9bc), Some(480), None);
+            event.main = Some(7);
+            event.sub = Some(7);
+            event.subsub = Some(15);
+            event.return_address = Some(caller);
+            event.nmi_latch = Some(1);
+            source.consume_event(event, &mut receipts).unwrap();
+            assert_eq!(
+                receipts.contains(
+                    &OriginalTimingSemanticReceipt::DungeonFallingFadeInPaletteDirectionToggled
+                ),
+                expected
+            );
+        }
     }
 
     #[test]

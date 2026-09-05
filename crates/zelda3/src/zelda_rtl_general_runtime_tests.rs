@@ -18025,6 +18025,40 @@ fn dungeon_map_floor_selection_respects_every_source_lower_bound() {
 }
 
 #[test]
+fn palette_direction_toggle_defers_countdown_clear_and_substage_publication() {
+    for (direction, countdown, target, exposed_countdown) in [(0, 30, 31, 31), (2, 0, 0, 0)] {
+        let mut atomic = ZeldaState::new();
+        atomic.set_main_module(7);
+        atomic.set_submodule(7);
+        atomic.set_subsubmodule(15);
+        atomic.set_countdown_word(countdown);
+        atomic.set_mosaic_target_level(target);
+        atomic.set_darkening_or_lightening_screen_word(direction);
+        let mut staged = atomic.clone();
+        let cgram_requests = staged.ram[0x15];
+        atomic.ApplyPaletteFilter_bounce();
+        staged.apply_palette_filter_bounce_through_direction_toggle();
+        assert_eq!(
+            staged
+                .game_state
+                .display
+                .palette_filter
+                .darkening_or_lightening_screen_word(),
+            direction ^ 2
+        );
+        assert_eq!(
+            staged.game_state.display.palette_filter.countdown_word(),
+            exposed_countdown
+        );
+        assert_eq!(staged.game_state.frame.subsubmodule, 15);
+        assert_eq!(staged.ram[0x15], cgram_requests);
+        staged.complete_apply_palette_filter_bounce_after_direction_toggle();
+        assert_eq!(staged.game_state.frame.subsubmodule, 16);
+        assert_eq!(staged.ram, atomic.ram);
+    }
+}
+
+#[test]
 fn dungeon_map_floor_selection_uses_word_increments_across_byte_wrap() {
     for (floor, input, expected) in [(0xff, 8, 0x100), (1, 4, 0)] {
         let mut state = ZeldaState::new();

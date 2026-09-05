@@ -1818,6 +1818,7 @@ pub enum OriginalTimingSemanticReceipt {
     SelectedGameEntranceBeforeSelection,
     /// The selected-game caller returned from Dungeon_LoadEntrance.
     SelectedGameEntranceReturned,
+    DungeonFallingFadeInPaletteDirectionToggled,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
