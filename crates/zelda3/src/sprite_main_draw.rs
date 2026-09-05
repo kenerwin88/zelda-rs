@@ -12330,8 +12330,27 @@ impl ZeldaState {
             self.buzzblob_select_new_direction(k);
         }
         if self.sprite_slot_view(k).delay_aux1() == 0 {
+            if let Some(SpriteMainCpuBoundary::BuzzblobAfterXSubpixel {
+                slot,
+                pending: None,
+            }) = self.sprite_main_cpu_boundary
+            {
+                if usize::from(slot) == k {
+                    let pending = self.sprite_move_x_through_subpixel(k);
+                    self.sprite_main_cpu_boundary =
+                        Some(SpriteMainCpuBoundary::BuzzblobAfterXSubpixel {
+                            slot,
+                            pending: Some(pending),
+                        });
+                    return;
+                }
+            }
             self.sprite_move_xy(k);
         }
+        self.buzzblob_after_movement(k);
+    }
+
+    pub(super) fn buzzblob_after_movement(&mut self, k: usize) {
         let _ = self.sprite_check_tile_collision(k);
         self.sprite_bounce_off_wall(k);
         self.sprite_check_damage_to_and_from_link(k);

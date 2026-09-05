@@ -4078,6 +4078,7 @@ impl ZeldaState {
                         | SpriteMainCpuBoundary::AfterActiveCuccoX { slot, .. }
                         | SpriteMainCpuBoundary::AfterActiveCuccoYSubpixel { slot, .. }
                         | SpriteMainCpuBoundary::MasterSwordLightBeamMovement { slot, .. }
+                        | SpriteMainCpuBoundary::BuzzblobAfterXSubpixel { slot, .. }
                         | SpriteMainCpuBoundary::MasterSwordLightBeamSpawn { slot, .. }
                         | SpriteMainCpuBoundary::AfterCuccoFleeMovement { slot, .. }
                         | SpriteMainCpuBoundary::AfterCuccoSubtypeIncrements { slot, .. }
@@ -4788,6 +4789,17 @@ impl ZeldaState {
             } => unreachable!(
                 "source master-sword movement boundary did not bind to native coordinate results"
             ),
+            SpriteMainCpuBoundary::BuzzblobAfterXSubpixel { slot, pending: Some((x_low, x_high)) } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.complete_sprite_move_x_after_subpixel(k, x_low, x_high);
+                self.sprite_move_y(k);
+                self.buzzblob_after_movement(k);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
+            SpriteMainCpuBoundary::BuzzblobAfterXSubpixel { pending: None, .. } => {
+                unreachable!("Buzzblob movement did not bind its pending coordinate result")
+            }
             SpriteMainCpuBoundary::AfterCuccoFleeMovement {
                 slot,
                 helper_ordinal,

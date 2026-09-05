@@ -906,6 +906,7 @@ pub enum MainLoopInterruption {
     LinkVelocityClearProgress {
         completed: u8,
     },
+    SpriteMainBuzzblobAfterXSubpixel(u8),
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.
@@ -973,6 +974,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainAfterAntfairySubtype2Increment(_)
                 | Self::SpriteMainAfterLanmolaSubtype2Increment(_)
                 | Self::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(_)
+                | Self::SpriteMainBuzzblobAfterXSubpixel(_)
                 | Self::SpriteMainHogSpearBodyGraphicsPending(_)
                 | Self::SpriteMainAbsorbableHorizontalTileLookup(_)
                 | Self::SpriteMainAbsorbableVerticalTileLookup(_)
@@ -1170,6 +1172,7 @@ pub enum SpriteMainProgress {
     MoblinAttributeLoaded(u8),
     HappinessPondRupeeGraphicsStarted(u8),
     MiniMoldormAiPending(u8),
+    BuzzblobAfterXSubpixel(u8),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

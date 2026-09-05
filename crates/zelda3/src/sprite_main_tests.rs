@@ -1,6 +1,49 @@
 use super::*;
 
 #[test]
+fn buzzblob_x_subpixel_resume_does_not_repeat_its_direction_prefix() {
+    for (velocity, delay) in [(2, 5), (0xfe, 5), (0x7f, 0)] {
+        let mut atomic = ZeldaState::new();
+        atomic.set_main_module(9);
+        atomic.set_submodule(0);
+        atomic.set_frame_counter(1);
+        atomic.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+        atomic.sprite_set_x(11, 0x40);
+        atomic.sprite_set_y(11, 0x50);
+        {
+            let mut sprite = atomic.sprite_slot_view_mut(11);
+            sprite.set_state(9);
+            sprite.set_sprite_type(0x0d);
+            sprite.set_delay_main(delay);
+            sprite.set_x_velocity(velocity);
+            sprite.set_y_velocity(0xfe);
+            sprite.set_x_subpixel(0xf0);
+        }
+        let mut staged = atomic.clone();
+        atomic.sprite_0_d_buzzblob(11);
+        staged.sprite_main_cpu_boundary = Some(SpriteMainCpuBoundary::BuzzblobAfterXSubpixel {
+            slot: 11,
+            pending: None,
+        });
+        staged.sprite_0_d_buzzblob(11);
+        assert_eq!(staged.sprite_slot_view(11).subtype2(), 1);
+        assert_eq!(staged.sprite_get_x(11), 0x40);
+        let Some(SpriteMainCpuBoundary::BuzzblobAfterXSubpixel {
+            pending: Some((low, high)),
+            ..
+        }) = staged.sprite_main_cpu_boundary.take()
+        else {
+            panic!("Buzzblob did not preserve the pending X coordinate");
+        };
+        staged.complete_sprite_move_x_after_subpixel(11, low, high);
+        staged.sprite_move_y(11);
+        staged.buzzblob_after_movement(11);
+        assert_eq!(staged.game_state, atomic.game_state);
+        assert_eq!(staged.ram, atomic.ram);
+    }
+}
+
+#[test]
 fn kholdstare_damage_continuation_preserves_completed_movement() {
     let mut atomic = ZeldaState::new();
     atomic.set_main_module(9);

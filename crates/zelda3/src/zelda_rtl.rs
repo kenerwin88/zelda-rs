@@ -5137,6 +5137,10 @@ enum SpriteMainCpuBoundary {
     MiniMoldormAiPending {
         slot: u8,
     },
+    BuzzblobAfterXSubpixel {
+        slot: u8,
+        pending: Option<(u8, u8)>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5416,6 +5420,9 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         }
         | SpriteMainCpuBoundary::AfterHelmasaurHardHatBeetleSubtype2Increment {
             slot: active_slot,
+        }
+        | SpriteMainCpuBoundary::BuzzblobAfterXSubpixel {
+            slot: active_slot, ..
         }
         | SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot: active_slot }
         | SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot: active_slot }
@@ -5871,6 +5878,13 @@ fn sprite_main_cpu_boundary_from_interruption(
             assert!(slot < 16);
             Some(SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot })
         }
+        crate::MainLoopInterruption::SpriteMainBuzzblobAfterXSubpixel(slot) => {
+            assert!(slot < 16);
+            Some(SpriteMainCpuBoundary::BuzzblobAfterXSubpixel {
+                slot,
+                pending: None,
+            })
+        }
         crate::MainLoopInterruption::SpriteMainAbsorbableHorizontalTileLookup(slot) => {
             assert!(slot < 16);
             Some(SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot })
@@ -6015,6 +6029,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         | crate::MainLoopInterruption::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(
             slot,
         )
+        | crate::MainLoopInterruption::SpriteMainBuzzblobAfterXSubpixel(slot)
         | crate::MainLoopInterruption::SpriteMainHogSpearBodyGraphicsPending(slot)
         | crate::MainLoopInterruption::SpriteMainAbsorbableHorizontalTileLookup(slot)
         | crate::MainLoopInterruption::SpriteMainAbsorbableVerticalTileLookup(slot)
@@ -6187,6 +6202,7 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         | crate::SpriteMainProgress::AfterAntfairySubtype2Increment(slot)
         | crate::SpriteMainProgress::AfterLanmolaSubtype2Increment(slot)
         | crate::SpriteMainProgress::AfterHelmasaurHardHatBeetleSubtype2Increment(slot)
+        | crate::SpriteMainProgress::BuzzblobAfterXSubpixel(slot)
         | crate::SpriteMainProgress::HogSpearBodyGraphicsPending(slot)
         | crate::SpriteMainProgress::AbsorbableHorizontalTileLookup(slot)
         | crate::SpriteMainProgress::AbsorbableVerticalTileLookup(slot)
@@ -6647,6 +6663,13 @@ fn sprite_main_cpu_boundary_from_progress(
             assert!(slot < 16);
             SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot }
         }
+        crate::SpriteMainProgress::BuzzblobAfterXSubpixel(slot) => {
+            assert!(slot < 16);
+            SpriteMainCpuBoundary::BuzzblobAfterXSubpixel {
+                slot,
+                pending: None,
+            }
+        }
         crate::SpriteMainProgress::AbsorbableHorizontalTileLookup(slot) => {
             assert!(slot < 16);
             SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot }
@@ -6796,6 +6819,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainAfterAntfairySubtype2Increment(_)
         | crate::MainLoopInterruption::SpriteMainAfterLanmolaSubtype2Increment(_)
         | crate::MainLoopInterruption::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(_)
+        | crate::MainLoopInterruption::SpriteMainBuzzblobAfterXSubpixel(_)
         | crate::MainLoopInterruption::SpriteMainHogSpearBodyGraphicsPending(_)
         | crate::MainLoopInterruption::SpriteMainAbsorbableHorizontalTileLookup(_)
         | crate::MainLoopInterruption::SpriteMainAbsorbableVerticalTileLookup(_)
@@ -6912,6 +6936,10 @@ fn same_sprite_main_source_checkpoint(
         | (
             SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot: left },
             SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot: right },
+        )
+        | (
+            SpriteMainCpuBoundary::BuzzblobAfterXSubpixel { slot: left, .. },
+            SpriteMainCpuBoundary::BuzzblobAfterXSubpixel { slot: right, .. },
         )
         | (
             SpriteMainCpuBoundary::InitializePrepPending { slot: left },
@@ -7154,6 +7182,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::AfterAntfairySubtype2Increment { slot, .. }
         | SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment { slot, .. }
         | SpriteMainCpuBoundary::AfterHelmasaurHardHatBeetleSubtype2Increment { slot }
+        | SpriteMainCpuBoundary::BuzzblobAfterXSubpixel { slot, .. }
         | SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot }
         | SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot }
         | SpriteMainCpuBoundary::AbsorbableVerticalTileLookup { slot }
