@@ -941,6 +941,7 @@ struct SpriteMainExecutionTracker {
     #[serde(default)]
     guard_animation_checkpoint: Option<(u8, zelda3::GuardAnimationCheckpoint)>,
     hog_spear_body_graphics_pending: Option<u8>,
+    initialize_prep_pending: Option<u8>,
     #[serde(default)]
     guard_animation_pose_slot: Option<u8>,
     #[serde(default)]
@@ -1030,6 +1031,7 @@ impl SpriteMainExecutionTracker {
         {
             return Err("guard patrol checkpoint lacks initializer call authority".into());
         }
+        self.initialize_prep_pending = None;
         self.initialize_reset_properties = None;
         self.initialize_load_properties = None;
         self.guard_prep_patrol_delay = Some((slot, self.initialize_active_main_calls));
@@ -1053,6 +1055,7 @@ impl SpriteMainExecutionTracker {
                 "guard parry checkpoint lacks its initializer active-call authority".into(),
             );
         }
+        self.initialize_prep_pending = None;
         self.initialize_reset_properties = None;
         self.initialize_load_properties = None;
         self.guard_prep_weapon_flags_pending_slot = None;
@@ -1122,6 +1125,7 @@ impl SpriteMainExecutionTracker {
                 "Snes9x Mini Moldorm history progress exceeded 128 stores: {completed_stores}"
             ));
         }
+        self.initialize_prep_pending = None;
         self.initialize_reset_properties = None;
         self.initialize_load_properties = None;
         self.mini_moldorm_history = Some((slot, completed_stores));
@@ -1483,7 +1487,29 @@ impl SpriteMainExecutionTracker {
         } else {
             SpriteInitializeResetPropertiesPhase::InitialPropertyLoad
         };
+        self.initialize_prep_pending = None;
         self.initialize_reset_properties = Some((slot, phase, completed_stores));
+        Ok(())
+    }
+
+    fn observe_initialize_prep_pending(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        let pc = event.pc.map(|pc| pc & 0xff_ffff);
+        let initializer_dispatch = matches!(pc, Some(0x06_8654 | 0x06_8657))
+            || (pc == Some(0x00_8781)
+                && event.return_address.map(|pc| pc & 0xff_ffff) == Some(0x06_865a));
+        if !initializer_dispatch || self.timers_and_oam_dispatch_state != Some(8) {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("sprite initializer dispatch has no active slot")?;
+        if event.x != Some(u16::from(slot)) {
+            return Err("sprite initializer dispatch disagrees with its active slot".into());
+        }
+        self.initialize_prep_pending = None;
+        self.initialize_reset_properties = None;
+        self.initialize_load_properties = None;
+        self.initialize_prep_pending = Some(slot);
         Ok(())
     }
 
@@ -1517,6 +1543,7 @@ impl SpriteMainExecutionTracker {
         } else {
             SpriteInitializeResetPropertiesPhase::InitialPropertyLoad
         };
+        self.initialize_prep_pending = None;
         self.initialize_reset_properties = None;
         self.initialize_load_properties = Some((slot, phase, completed_stores));
         Ok(())
@@ -1542,6 +1569,7 @@ impl SpriteMainExecutionTracker {
                 self.fire_debirando_property_reload, event.x,
             ));
         }
+        self.initialize_prep_pending = None;
         self.initialize_reset_properties = None;
         self.initialize_load_properties = None;
         self.fire_debirando_before_spawn_slot = Some(slot);
@@ -1803,6 +1831,10 @@ impl SpriteMainExecutionTracker {
                 spawned_slot,
                 progress,
             };
+        }
+        if let Some(slot) = self.initialize_prep_pending {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::InitializePrepPending(slot);
         }
         if let Some((slot, phase, completed_stores)) = self.initialize_load_properties {
             assert_eq!(
@@ -2205,6 +2237,9 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::AfterLanmolaSubtype2Increment(slot) => {
                 MainLoopInterruption::SpriteMainAfterLanmolaSubtype2Increment(slot)
+            }
+            SpriteMainProgress::InitializePrepPending(slot) => {
+                MainLoopInterruption::SpriteMainInitializePrepPending(slot)
             }
             SpriteMainProgress::HogSpearBodyGraphicsPending(slot) => {
                 MainLoopInterruption::SpriteMainHogSpearBodyGraphicsPending(slot)
@@ -3817,6 +3852,7 @@ impl Snes9xOracleSemanticTrace {
                 execution.observe_probe_after_oam_coordinates(returned_event)?;
                 execution.observe_initialize_reset_properties(returned_event)?;
                 execution.observe_initialize_load_properties(returned_event)?;
+                execution.observe_initialize_prep_pending(returned_event)?;
                 execution.observe_fire_debirando_before_spawn(returned_event)?;
                 execution.observe_zazak_graphics(returned_event)?;
                 execution.observe_wallmaster_reset_prefix(returned_event)?;
@@ -4418,6 +4454,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.guard_prep_patrol_delay = None;
                             execution.guard_animation_checkpoint = None;
                             execution.hog_spear_body_graphics_pending = None;
+                            execution.initialize_prep_pending = None;
                             execution.guard_animation_pose_slot = None;
                             execution.guard_prep_weapon_flags_pending_slot = None;
                             execution.mini_moldorm_history = None;
@@ -4458,6 +4495,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.guard_prep_patrol_delay = None;
                             execution.guard_animation_checkpoint = None;
                             execution.hog_spear_body_graphics_pending = None;
+                            execution.initialize_prep_pending = None;
                             execution.guard_animation_pose_slot = None;
                             if execution.timers_and_oam_dispatch_state == Some(8) {
                                 execution.initialize_active_main_calls = execution
@@ -4496,6 +4534,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.guard_prep_patrol_delay = None;
                         execution.guard_animation_checkpoint = None;
                         execution.hog_spear_body_graphics_pending = None;
+                        execution.initialize_prep_pending = None;
                         execution.guard_animation_pose_slot = None;
                         execution.guard_prep_weapon_flags_pending_slot = None;
                         execution.mini_moldorm_history = None;
@@ -5338,6 +5377,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_probe_after_oam_coordinates(&event)?;
                     execution.observe_initialize_reset_properties(&event)?;
                     execution.observe_initialize_load_properties(&event)?;
+                    execution.observe_initialize_prep_pending(&event)?;
                     execution.observe_fire_debirando_before_spawn(&event)?;
                     execution.observe_zazak_graphics(&event)?;
                     execution.observe_wallmaster_reset_prefix(&event)?;
@@ -7027,6 +7067,9 @@ fn retire_resumed_main_loop_interruption(
                 MainLoopInterruption::SpriteMainGuardPrepPatrolDelay { slot, active_call } => {
                     Some(SpriteMainProgress::GuardPrepPatrolDelay { slot, active_call })
                 }
+                MainLoopInterruption::SpriteMainInitializePrepPending(slot) => {
+                    Some(SpriteMainProgress::InitializePrepPending(slot))
+                }
                 MainLoopInterruption::SpriteMainHogSpearBodyGraphicsPending(slot) => {
                     Some(SpriteMainProgress::HogSpearBodyGraphicsPending(slot))
                 }
@@ -7963,6 +8006,7 @@ mod tests {
             guard_prep_patrol_delay: None,
             guard_animation_checkpoint: None,
             hog_spear_body_graphics_pending: None,
+            initialize_prep_pending: None,
             guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,
             mini_moldorm_history: None,
@@ -9557,6 +9601,31 @@ mod tests {
     }
 
     #[test]
+    fn initializer_dispatch_jump_table_requires_its_source_caller() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        for event in [
+            raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+            raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(1), None),
+        ] {
+            source.consume_event(event, &mut receipts).unwrap();
+        }
+        let execution = source.sprite_main_execution.as_mut().unwrap();
+        execution.timers_and_oam_dispatch_state = Some(8);
+        let mut event = raw("nmi", Some(0x008781), Some(1), None);
+        event.return_address = Some(0x06865a);
+        execution.observe_initialize_prep_pending(&event).unwrap();
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::InitializePrepPending(1)
+        );
+        execution.initialize_prep_pending = None;
+        event.return_address = Some(0x068659);
+        execution.observe_initialize_prep_pending(&event).unwrap();
+        assert_eq!(execution.initialize_prep_pending, None);
+    }
+
+    #[test]
     fn guard_patrol_endpoint_retains_the_initializer_active_call() {
         let mut source = empty_semantic_tracker();
         let mut receipts = Vec::new();
@@ -9609,6 +9678,7 @@ mod tests {
             SpriteMainProgress::HogSpearBodyGraphicsPending(13)
         );
         execution.hog_spear_body_graphics_pending = None;
+        execution.initialize_prep_pending = None;
         event.return_address = Some(0xc8cc3b);
         execution
             .observe_hog_spear_body_graphics_pending(&event)
@@ -12575,6 +12645,7 @@ mod tests {
             guard_prep_patrol_delay: None,
             guard_animation_checkpoint: None,
             hog_spear_body_graphics_pending: None,
+            initialize_prep_pending: None,
             guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,
             mini_moldorm_history: None,
@@ -12640,6 +12711,7 @@ mod tests {
             guard_prep_patrol_delay: None,
             guard_animation_checkpoint: None,
             hog_spear_body_graphics_pending: None,
+            initialize_prep_pending: None,
             guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,
             mini_moldorm_history: None,

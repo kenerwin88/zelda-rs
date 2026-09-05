@@ -19300,6 +19300,37 @@ fn forwarded_sprite_main_interruption_proves_spiral_caller_resumed() {
 }
 
 #[test]
+fn sprite_initializer_promotes_state_before_type_specific_prep() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+    state
+        .oam_state_mut()
+        .set_current_extended_pointer(BYTEWISE_EXTENDED_OAM as u16);
+    {
+        let mut sprite = state.sprite_slot_view_mut(0);
+        sprite.set_state(8);
+        sprite.set_sprite_type(0x1d);
+        sprite.set_graphics(6);
+        sprite.set_ignore_projectile(0);
+    }
+    state.arm_sprite_main_cpu_continuation(
+        SpriteMainCpuBoundary::InitializePrepPending { slot: 0 },
+        1,
+        SpriteMainCpuCaller::DungeonModule07,
+    );
+    state.sprite_main();
+    assert_eq!(state.sprite_slot_view(0).state(), 9);
+    assert_eq!(state.sprite_slot_view(0).graphics(), 0);
+    assert_eq!(state.sprite_slot_view(0).ignore_projectile(), 0);
+    state.complete_sprite_main_after_cpu_boundary(SpriteMainCpuBoundary::InitializePrepPending {
+        slot: 0,
+    });
+    assert_eq!(state.sprite_slot_view(0).state(), 9);
+    assert_eq!(state.sprite_slot_view(0).ignore_projectile(), 1);
+}
+
+#[test]
 fn hog_spear_body_boundary_keeps_both_increments_without_replaying_movement() {
     let mut state = ZeldaState::new();
     state.set_main_module(9);

@@ -3160,6 +3160,19 @@ impl ZeldaState {
                 return;
             }
             if self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::InitializePrepPending { slot: k as u8 })
+            {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(nmi_slices, 0);
+                let boundary = self.sprite_main_cpu_boundary.take().unwrap();
+                assert_eq!(self.sprite_slot_view(k).state(), 8);
+                self.sprite_timers_and_oam(k);
+                self.sprite_module_initialize_properties(k);
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
+                return;
+            }
+            if self.sprite_main_cpu_boundary
                 == Some(SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot: k as u8 })
             {
                 let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
@@ -4058,6 +4071,13 @@ impl ZeldaState {
                 ));
                 self.helmasaur_hard_hat_beetle_common_after_subtype2_increment(interrupted_slot);
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::InitializePrepPending { slot } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.sprite_slot_view(k).state(), 9);
+                self.sprite_module_initialize_after_properties(k);
+                self.complete_sprite_main_after_interrupted_slot(k);
             }
             SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot } => {
                 let interrupted_slot = usize::from(slot);

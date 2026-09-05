@@ -5062,6 +5062,9 @@ enum SpriteMainCpuBoundary {
         active_call: u8,
         saved_submodule: Option<u8>,
     },
+    InitializePrepPending {
+        slot: u8,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5327,6 +5330,7 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
             slot: active_slot,
         }
         | SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot: active_slot }
+        | SpriteMainCpuBoundary::InitializePrepPending { slot: active_slot }
         | SpriteMainCpuBoundary::GuardPrepWeaponFlagsPending {
             slot: active_slot, ..
         }
@@ -5700,6 +5704,10 @@ fn sprite_main_cpu_boundary_from_interruption(
                 saved_submodule: None,
             })
         }
+        crate::MainLoopInterruption::SpriteMainInitializePrepPending(slot) => {
+            assert!(slot < 16);
+            Some(SpriteMainCpuBoundary::InitializePrepPending { slot })
+        }
         crate::MainLoopInterruption::SpriteMainHogSpearBodyGraphicsPending(slot) => {
             assert!(slot < 16);
             Some(SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot })
@@ -5782,6 +5790,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
             slot,
         )
         | crate::MainLoopInterruption::SpriteMainHogSpearBodyGraphicsPending(slot)
+        | crate::MainLoopInterruption::SpriteMainInitializePrepPending(slot)
         | crate::MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(slot) => slot < 16,
         crate::MainLoopInterruption::SpriteMainGuardPrepPatrolDelay { slot, active_call }
         | crate::MainLoopInterruption::SpriteMainGuardPrepParryHitbox { slot, active_call } => {
@@ -5923,6 +5932,7 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         | crate::SpriteMainProgress::AfterLanmolaSubtype2Increment(slot)
         | crate::SpriteMainProgress::AfterHelmasaurHardHatBeetleSubtype2Increment(slot)
         | crate::SpriteMainProgress::HogSpearBodyGraphicsPending(slot)
+        | crate::SpriteMainProgress::InitializePrepPending(slot)
         | crate::SpriteMainProgress::GuardPrepWeaponFlagsPending(slot) => slot < 16,
         crate::SpriteMainProgress::GuardPrepPatrolDelay { slot, active_call }
         | crate::SpriteMainProgress::GuardPrepParryHitbox { slot, active_call } => {
@@ -6308,6 +6318,10 @@ fn sprite_main_cpu_boundary_from_progress(
                 saved_submodule: None,
             }
         }
+        crate::SpriteMainProgress::InitializePrepPending(slot) => {
+            assert!(slot < 16);
+            SpriteMainCpuBoundary::InitializePrepPending { slot }
+        }
         crate::SpriteMainProgress::HogSpearBodyGraphicsPending(slot) => {
             assert!(slot < 16);
             SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot }
@@ -6397,6 +6411,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainAfterLanmolaSubtype2Increment(_)
         | crate::MainLoopInterruption::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(_)
         | crate::MainLoopInterruption::SpriteMainHogSpearBodyGraphicsPending(_)
+        | crate::MainLoopInterruption::SpriteMainInitializePrepPending(_)
         | crate::MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(_)
         | crate::MainLoopInterruption::SpriteMainGuardPrepParryHitbox { .. }
         | crate::MainLoopInterruption::SpriteMainGuardPrepPatrolDelay { .. }
@@ -6480,6 +6495,10 @@ fn same_sprite_main_source_checkpoint(
         | (
             SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot: left },
             SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot: right },
+        )
+        | (
+            SpriteMainCpuBoundary::InitializePrepPending { slot: left },
+            SpriteMainCpuBoundary::InitializePrepPending { slot: right },
         ) => left == right,
         (
             SpriteMainCpuBoundary::InitializeResetProperties {
@@ -6702,6 +6721,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment { slot, .. }
         | SpriteMainCpuBoundary::AfterHelmasaurHardHatBeetleSubtype2Increment { slot }
         | SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot }
+        | SpriteMainCpuBoundary::InitializePrepPending { slot }
         | SpriteMainCpuBoundary::GuardPrepWeaponFlagsPending { slot, .. }
         | SpriteMainCpuBoundary::GuardPrepParryHitbox { slot, .. }
         | SpriteMainCpuBoundary::GuardPrepPatrolDelay { slot, .. }
