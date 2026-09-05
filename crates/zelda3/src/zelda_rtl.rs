@@ -20438,6 +20438,8 @@ impl ZeldaState {
                     )
                     | DungeonResetSpritesCpuProgress::SpritesDisabled
                     | DungeonResetSpritesCpuProgress::CollisionXSizeSet
+                    | DungeonResetSpritesCpuProgress::LoadStarted
+                    | DungeonResetSpritesCpuProgress::LoadBeforeOrigin
                     | DungeonResetSpritesCpuProgress::RoomHistorySearchStarted => false,
                     DungeonResetSpritesCpuProgress::Load(progress) => progress.slot >= 16,
                 }

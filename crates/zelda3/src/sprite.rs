@@ -123,6 +123,12 @@ pub enum DungeonResetSpritesCpuProgress {
     /// checkpoint anywhere inside that search before its first mutation.
     RoomHistorySearchStarted,
     Load(DungeonLoadSpritesCpuProgress),
+    /// Room origin and sorting setting are published, but the first room
+    /// record has not yet mutated a sprite or an overlord.
+    LoadStarted,
+    /// Reset and room history have completed; the loader is reading its
+    /// pointer and room number before the first room-origin store.
+    LoadBeforeOrigin,
 }
 
 fn hex_nibble(byte: u8) -> u8 {
@@ -1904,6 +1910,13 @@ impl ZeldaState {
                 self.dungeon_reset_sprites_before_room_load();
                 self.dungeon_load_sprites_through_cpu_progress(progress);
             }
+            DungeonResetSpritesCpuProgress::LoadStarted => {
+                self.dungeon_reset_sprites_before_room_load();
+                self.dungeon_load_sprites_prefix();
+            }
+            DungeonResetSpritesCpuProgress::LoadBeforeOrigin => {
+                self.dungeon_reset_sprites_before_room_load();
+            }
         }
     }
 
@@ -1944,6 +1957,12 @@ impl ZeldaState {
             DungeonResetSpritesCpuProgress::Load(progress) => {
                 self.dungeon_resume_load_sprites_after_cpu_progress(progress);
             }
+            DungeonResetSpritesCpuProgress::LoadStarted => {
+                if let Some((sprites, start)) = self.dungeon_sprite_records() {
+                    self.dungeon_load_sprite_records(&sprites, start);
+                }
+            }
+            DungeonResetSpritesCpuProgress::LoadBeforeOrigin => self.dungeon_load_sprites(),
         }
     }
 
@@ -1957,6 +1976,14 @@ impl ZeldaState {
         target: DungeonResetSpritesCpuProgress,
     ) -> bool {
         match (completed, target) {
+            (
+                DungeonResetSpritesCpuProgress::LoadBeforeOrigin,
+                DungeonResetSpritesCpuProgress::LoadBeforeOrigin,
+            )
+            | (
+                DungeonResetSpritesCpuProgress::LoadStarted,
+                DungeonResetSpritesCpuProgress::LoadStarted,
+            ) => true,
             (
                 DungeonResetSpritesCpuProgress::Disable(completed),
                 DungeonResetSpritesCpuProgress::Disable(target),
@@ -2190,8 +2217,14 @@ impl ZeldaState {
     }
 
     pub(super) fn dungeon_load_sprites(&mut self) {
+        if let Some((sprites, start)) = self.dungeon_load_sprites_prefix() {
+            self.dungeon_load_sprite_records(&sprites, start);
+        }
+    }
+
+    fn dungeon_load_sprites_prefix(&mut self) -> Option<(Vec<u8>, usize)> {
         let Some((sprites, start)) = self.dungeon_sprite_records() else {
-            return;
+            return None;
         };
         let room = self.game_state.dungeon.room_tracking.room_index2_word() as usize;
 
@@ -2201,7 +2234,10 @@ impl ZeldaState {
             .set_room_origin_x_high(((room & 0x0f) << 1) as u8);
         self.oam_state_mut()
             .set_sprite_sorting_setting(sprites[start]);
+        Some((sprites, start))
+    }
 
+    fn dungeon_load_sprite_records(&mut self, sprites: &[u8], start: usize) {
         let mut k = 0isize;
         let mut src = start + 1;
         while src < sprites.len() && sprites[src] != 0xff {

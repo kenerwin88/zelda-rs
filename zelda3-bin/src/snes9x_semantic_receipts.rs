@@ -7015,6 +7015,14 @@ fn dungeon_reset_sprites_caller_progress(
     event: &RawTraceEvent,
 ) -> Option<DungeonResetSpritesCpuProgress> {
     let pc = event.pc? & 0x00ff_ffff;
+    // First Dungeon_LoadSingleSprite call, after its two INYs and type
+    // read, before either the marker branch or normal-slot publication.
+    if (0x09_c32b..0x09_c330).contains(&pc) && event.y == Some(3) {
+        return Some(DungeonResetSpritesCpuProgress::LoadStarted);
+    }
+    if (0x09_c290..0x09_c2a6).contains(&pc) {
+        return Some(DungeonResetSpritesCpuProgress::LoadBeforeOrigin);
+    }
     if (DUNGEON_RESET_SPRITES_AFTER_DISABLE_PC..DUNGEON_RESET_SPRITES_COLLISION_Y_STORE_PC)
         .contains(&pc)
     {
@@ -12487,6 +12495,22 @@ mod tests {
             }),
             "the horizontal pass has not completed while X still names it",
         );
+    }
+
+    #[test]
+    fn first_dungeon_record_inspection_proves_the_completed_reset_prefix() {
+        assert_eq!(
+            dungeon_reset_sprites_caller_progress(&raw("frame", Some(0x09_c2a0), Some(2), None)),
+            Some(DungeonResetSpritesCpuProgress::LoadBeforeOrigin)
+        );
+        let mut event = raw("frame", Some(0x09_c32e), Some(19), None);
+        event.y = Some(3);
+        assert_eq!(
+            dungeon_reset_sprites_caller_progress(&event),
+            Some(DungeonResetSpritesCpuProgress::LoadStarted)
+        );
+        event.y = Some(6);
+        assert_eq!(dungeon_reset_sprites_caller_progress(&event), None);
     }
 
     #[test]

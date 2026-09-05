@@ -18195,6 +18195,8 @@ fn every_sprite_disable_receipt_prefix_resumes_to_the_atomic_c_endpoint() {
 #[test]
 fn every_dungeon_reset_caller_prefix_resumes_to_the_atomic_c_endpoint() {
     for progress in [
+        DungeonResetSpritesCpuProgress::LoadStarted,
+        DungeonResetSpritesCpuProgress::LoadBeforeOrigin,
         DungeonResetSpritesCpuProgress::SpritesDisabled,
         DungeonResetSpritesCpuProgress::CollisionXSizeSet,
         DungeonResetSpritesCpuProgress::RoomHistorySearchStarted,
@@ -18214,6 +18216,18 @@ fn every_dungeon_reset_caller_prefix_resumes_to_the_atomic_c_endpoint() {
         atomic.dungeon_reset_sprites();
 
         state.dungeon_reset_sprites_through_cpu_progress(progress);
+        if matches!(
+            progress,
+            DungeonResetSpritesCpuProgress::LoadStarted
+                | DungeonResetSpritesCpuProgress::LoadBeforeOrigin
+        ) {
+            let prefix_ram = state.ram.clone();
+            assert!(state.dungeon_advance_reset_sprites_cpu_progress(progress, progress));
+            assert_eq!(
+                state.ram, prefix_ram,
+                "an unchanged source checkpoint must not replay writes"
+            );
+        }
         match progress {
             DungeonResetSpritesCpuProgress::SpritesDisabled => {
                 assert_eq!(
@@ -18235,7 +18249,9 @@ fn every_dungeon_reset_caller_prefix_resumes_to_the_atomic_c_endpoint() {
                     0x5678,
                 );
             }
-            DungeonResetSpritesCpuProgress::RoomHistorySearchStarted => {
+            DungeonResetSpritesCpuProgress::RoomHistorySearchStarted
+            | DungeonResetSpritesCpuProgress::LoadBeforeOrigin
+            | DungeonResetSpritesCpuProgress::LoadStarted => {
                 assert_eq!(
                     state.game_state.sprites.garnish_runtime.sprcoll_x_size(),
                     0xffff,
