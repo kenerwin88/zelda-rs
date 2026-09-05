@@ -5644,9 +5644,13 @@ fn publish_pre_dungeon_sprite_reset_progress(
     let pre_overworld_caller = source_overworld_reload_active
         && matches!((event.main, event.sub), (Some(8), Some(0)))
         && return_address == Some(SPRITE_RELOAD_AFTER_DISABLE_PC);
+    // Death_Func15's JSL at $09:F588 has raw return $09:F58B.
+    // Its death counters and save/continue branch follow Sprite_ResetAll.
+    let game_over_caller = matches!((event.main, event.sub), (Some(0x12), Some(9)))
+        && return_address == Some(0x09_f58b);
     if !pc.is_some_and(|pc| {
         (SPRITE_RESET_ALL_NO_DISABLE_START_PC..SPRITE_RESET_ALL_END_PC).contains(&pc)
-    }) || !(pre_dungeon_caller || bird_travel_caller || pre_overworld_caller)
+    }) || !(pre_dungeon_caller || bird_travel_caller || pre_overworld_caller || game_over_caller)
     {
         return Ok(false);
     }
@@ -14277,6 +14281,47 @@ mod tests {
                 ),
             ],
         );
+    }
+
+    #[test]
+    fn game_over_sprite_reset_requires_its_exact_death_caller() {
+        let mut event = frame_with_sub("return", 609, 0x12, 9);
+        event.pc = Some(0x09_c47f);
+        event.return_address = Some(0x09_f58b);
+        let mut receipts = Vec::new();
+        assert!(publish_pre_dungeon_sprite_reset_progress(
+            &event,
+            OriginalTimingBoundary::NmiAccepted,
+            false,
+            &mut receipts
+        )
+        .unwrap());
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::SpriteResetAllProgress(
+                SpriteResetAllProgressReceipt {
+                    progress: SpriteResetAllProgress::SpriteDisableAllCompleted,
+                    boundary: OriginalTimingBoundary::NmiAccepted
+                },
+            )]
+        );
+        event.return_address = Some(0x09_f58c);
+        assert!(!publish_pre_dungeon_sprite_reset_progress(
+            &event,
+            OriginalTimingBoundary::NmiAccepted,
+            false,
+            &mut Vec::new()
+        )
+        .unwrap());
+        event.return_address = Some(0x09_f58b);
+        event.sub = Some(8);
+        assert!(!publish_pre_dungeon_sprite_reset_progress(
+            &event,
+            OriginalTimingBoundary::NmiAccepted,
+            false,
+            &mut Vec::new()
+        )
+        .unwrap());
     }
 
     #[test]

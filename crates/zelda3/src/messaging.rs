@@ -2044,6 +2044,27 @@ impl ZeldaState {
     }
 
     pub(super) fn Death_Func15(&mut self, count_as_death: bool) {
+        if let Some(receipt) = self.take_original_timing_sprite_reset_all_progress() {
+            assert_eq!(
+                (
+                    self.game_state.frame.main_module,
+                    self.game_state.frame.submodule
+                ),
+                (0x12, 9)
+            );
+            assert_eq!(
+                receipt.progress,
+                crate::SpriteResetAllProgress::SpriteDisableAllCompleted
+            );
+            self.death_func15_before_sprite_reset();
+            self.sprite_disable_all();
+            self.sprite_reset_all_no_disable_fixed_prefix();
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishGameOverDeathAfterSpriteReset { count_as_death },
+                1,
+            );
+            return;
+        }
         self.death_func15_common_prefix(count_as_death);
         self.death_func15_after_common_prefix();
     }
@@ -2052,6 +2073,12 @@ impl ZeldaState {
     /// death counters — the ROM completes this before the save-quit reset
     /// hold begins (route host 159333).
     pub(super) fn death_func15_common_prefix(&mut self, count_as_death: bool) {
+        self.death_func15_before_sprite_reset();
+        self.sprite_reset_all();
+        self.death_func15_after_sprite_reset(count_as_death);
+    }
+
+    fn death_func15_before_sprite_reset(&mut self) {
         self.set_music_control(0xf1);
         if self.game_state.world.location.is_indoors() {
             self.Dungeon_FlagRoomData_Quadrants();
@@ -2086,7 +2113,9 @@ impl ZeldaState {
             self.dungeon_key_slots_mut()
                 .set_keys_earned_slot(slot as usize, keys);
         }
-        self.sprite_reset_all();
+    }
+
+    fn death_func15_after_sprite_reset(&mut self, count_as_death: bool) {
         if self
             .game_state
             .inventory
@@ -2098,6 +2127,22 @@ impl ZeldaState {
                 .increment_pending_death_save_counter();
         }
         self.increment_game_over_check_flag();
+    }
+
+    pub(super) fn complete_game_over_death_after_sprite_reset(&mut self, count_as_death: bool) {
+        assert_eq!(
+            (
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule
+            ),
+            (0x12, 9)
+        );
+        self.sprite_reset_all_no_disable_after_fixed_prefix();
+        self.death_func15_after_sprite_reset(count_as_death);
+        self.death_func15_after_common_prefix();
+        if self.game_state.frame.submodule != 9 {
+            self.link_oam_main();
+        }
     }
 
     fn death_func15_after_common_prefix(&mut self) {

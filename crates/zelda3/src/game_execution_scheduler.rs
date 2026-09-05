@@ -471,6 +471,7 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishDesertPrayerPaletteFilter { .. }
                 | GameWorkContinuation::FinishGameOverSpotlightBuild { .. }
                 | GameWorkContinuation::FinishGameOverIrisGoalPaletteFill { .. }
+                | GameWorkContinuation::FinishGameOverDeathAfterSpriteReset { .. }
                 | GameWorkContinuation::FinishDungeonSubtilePaletteFilter
                 | GameWorkContinuation::FinishDungeonFallingRoomInitialization
                 | GameWorkContinuation::FinishRescuedMaidenTilemapClear { .. }

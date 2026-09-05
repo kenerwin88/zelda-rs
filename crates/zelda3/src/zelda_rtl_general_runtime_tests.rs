@@ -2303,6 +2303,93 @@ fn terminal_cached_restore_keeps_its_backup_until_pre_nmi_stores_publish() {
 }
 
 #[test]
+fn death_restart_keeps_room_module_and_counters_until_sprite_reset_returns() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.set_main_module(0x12);
+    state.set_submodule(9);
+    state.set_subsubmodule(0);
+    state.set_dungeon_room(0x4a);
+    state.set_indoor_flag(1);
+    state.save_progress_mut().set_progress_indicator(3);
+    state.save_progress_mut().set_dark_world_state(1);
+    state.save_progress_mut().set_palace_index_x2(0xff);
+    state
+        .save_progress_mut()
+        .set_total_death_save_counter(0xffff);
+    state
+        .player_resources_mut()
+        .increment_health_capacity_by(0x18);
+    let pending_deaths = state
+        .game_state
+        .inventory
+        .save_progress
+        .pending_death_save_counter();
+    let sram_before = state.sram.clone();
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        422610,
+        0,
+        vec![OriginalTimingSemanticReceipt::SpriteResetAllProgress(
+            crate::SpriteResetAllProgressReceipt {
+                progress: crate::SpriteResetAllProgress::SpriteDisableAllCompleted,
+                boundary: crate::OriginalTimingBoundary::NmiAccepted,
+            },
+        )],
+    ));
+
+    state.Death_Func15(true);
+    assert_eq!(
+        (
+            state.game_state.frame.main_module,
+            state.game_state.frame.submodule
+        ),
+        (0x12, 9)
+    );
+    assert_eq!(state.game_state.world.location.dungeon_room(), 0x4a);
+    assert_eq!(
+        state
+            .game_state
+            .inventory
+            .save_progress
+            .pending_death_save_counter(),
+        pending_deaths
+    );
+    assert_eq!(state.game_state.system_signals.game_over_check_flag(), 0);
+    assert_eq!(state.sram, sram_before);
+    assert_eq!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishGameOverDeathAfterSpriteReset {
+            count_as_death: true
+        })
+    );
+    assert!(state
+        .game_execution_scheduler
+        .work_suspends_translated_call_stack());
+    state
+        .game_execution_scheduler
+        .advance_work_one_nmi_slice_with_authoritative_completion(true);
+    state.complete_game_over_death_after_sprite_reset(true);
+    assert_eq!(
+        (
+            state.game_state.frame.main_module,
+            state.game_state.frame.submodule
+        ),
+        (5, 0)
+    );
+    assert_eq!(state.game_state.world.location.dungeon_room(), 0x20);
+    assert_eq!(
+        state
+            .game_state
+            .inventory
+            .save_progress
+            .pending_death_save_counter(),
+        pending_deaths + 1
+    );
+    assert_eq!(state.game_state.system_signals.game_over_check_flag(), 1);
+}
+
+#[test]
 fn live_mirror_warp_reload_retains_and_restores_source_scan_locals() {
     let mut state = ZeldaState::new();
     state.original_timing_owner = OriginalTimingOwnerState::Live;

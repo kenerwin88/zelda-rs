@@ -8629,6 +8629,11 @@ enum GameWorkContinuation {
     /// its second `DecodeAnimatedSpriteTile_variable` call. Only that decode,
     /// the submodule advance, and the Module09 caller suffix remain pending.
     FinishOverworldSpecialExitMosaicSecondDecode,
+    /// Death_Func15 has disabled sprites and entered the reset workspace
+    /// clear. Death counters and the save/continue caller remain suspended.
+    FinishGameOverDeathAfterSpriteReset {
+        count_as_death: bool,
+    },
 }
 
 const fn game_over_spotlight_build_uses_live_oam(work: Option<GameWorkContinuation>) -> bool {
@@ -8693,6 +8698,7 @@ impl GameWorkContinuation {
                 | Self::FinishOverworldMosaicSpriteGraphics
                 | Self::FinishOverworldSpecialExitMosaic
                 | Self::FinishOverworldSpecialExitMosaicSecondDecode
+                | Self::FinishGameOverDeathAfterSpriteReset { .. }
                 | Self::FinishModule09LongLoad { .. }
                 | Self::FinishOverworldMapQuadrants { .. }
                 | Self::FinishOverworldScreenMapAndSpriteGraphicsTail
@@ -8729,6 +8735,7 @@ impl GameWorkContinuation {
                 | Self::FinishOverworldSpotlightGoalResetTable { .. }
                 | Self::FinishGameOverSpotlightBuild { .. }
                 | Self::FinishGameOverIrisGoalPaletteFill { .. }
+                | Self::FinishGameOverDeathAfterSpriteReset { .. }
                 | Self::FinishWorldMapLightLoad
                 | Self::FinishWorldMapExitTilesets
                 | Self::FinishWorldMapAmbientMap8
@@ -43638,6 +43645,12 @@ impl ZeldaState {
                 authoritative_scheduled_caller_return_timeline.as_ref()
             {
                 Some(GameWorkStep::Complete(*expected_work))
+            } else if matches!(self.game_execution_scheduler.current_work(), Some(GameWorkContinuation::FinishGameOverDeathAfterSpriteReset { .. })) {
+                assert!(matches!(self.original_timing_owner, OriginalTimingOwnerState::Live));
+                if let Some(receipt) = self.take_original_timing_sprite_reset_all_progress() {
+                    assert_eq!(receipt.progress, crate::SpriteResetAllProgress::SpriteDisableAllCompleted);
+                }
+                self.game_execution_scheduler.advance_work_one_nmi_slice_with_authoritative_completion(false)
             } else if matches!(
                 self.game_execution_scheduler.current_work(),
                 Some(GameWorkContinuation::FinishDungeonSupertileTransition {
@@ -47391,6 +47404,12 @@ impl ZeldaState {
                         "the game-over goal palette continuation completed without its source caller return",
                     );
                     self.complete_game_over_iris_goal_palette_fill(completed_stores);
+                    self.complete_pending_main_loop_common_suffix_after_module_return();
+                }
+                GameWorkStep::Complete(GameWorkContinuation::FinishGameOverDeathAfterSpriteReset { count_as_death }) => {
+                    assert!(authoritative_scheduled_caller_return_timeline.is_some(),
+                        "Game Over's reset continuation requires its source caller return");
+                    self.complete_game_over_death_after_sprite_reset(count_as_death);
                     self.complete_pending_main_loop_common_suffix_after_module_return();
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishSpotlightIteration {
