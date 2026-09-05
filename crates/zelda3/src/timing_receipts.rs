@@ -909,6 +909,7 @@ pub enum MainLoopInterruption {
     SpriteMainBuzzblobAfterXSubpixel(u8),
     SpriteMainCatfishMedallionGraphicsStarted(u8),
     SpriteMainTrinexxHeadDrawSetup(u8),
+    SpriteMainTrinexxBreathTileCollisionReturned(u8),
     SpriteMainTrinexxHeadDraw {
         slot: u8,
         segment: u8,
@@ -966,6 +967,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainKingZoraFlippersGraphicsStarted(_)
                 | Self::SpriteMainCatfishMedallionGraphicsStarted(_)
                 | Self::SpriteMainTrinexxHeadDrawSetup(_)
+                | Self::SpriteMainTrinexxBreathTileCollisionReturned(_)
                 | Self::SpriteMainHappinessPondRupeeGraphicsStarted(_)
                 | Self::SpriteMainAfterSingleSmallDrawPosition(_)
                 | Self::SpriteMainAfterWallmasterResetPrefix(_)
@@ -1189,6 +1191,7 @@ pub enum SpriteMainProgress {
     BuzzblobAfterXSubpixel(u8),
     CatfishMedallionGraphicsStarted(u8),
     TrinexxHeadDrawSetup(u8),
+    TrinexxBreathTileCollisionReturned(u8),
     TrinexxHeadDraw {
         slot: u8,
         segment: u8,

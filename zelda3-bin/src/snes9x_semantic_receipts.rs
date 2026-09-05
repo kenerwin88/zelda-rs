@@ -940,6 +940,8 @@ struct SpriteMainExecutionTracker {
     hog_spear_active_body: bool,
     buzzblob_movement: Option<(u8, bool)>,
     trinexx_head_draw: Option<(u8, u8)>,
+    trinexx_head_draw_setup: Option<u8>,
+    trinexx_breath_tile_collision: Option<u8>,
     trinexx_front_part: Option<(u8, u8)>,
     #[serde(default)]
     guard_prep_parry_hitbox: Option<(u8, u8)>,
@@ -1505,6 +1507,31 @@ impl SpriteMainExecutionTracker {
         }
         self.trinexx_head_draw = None;
         self.trinexx_front_part = None;
+        self.trinexx_head_draw_setup = None;
+        if matches!(event.pc, Some(0x06_84c0 | 0x1d_bb8c)) {
+            // Sidenexx copied its base position into the sprite and
+            // Sprite_Get16BitCoords published it; only the RTL (or the
+            // pending JSR to the OAM coordinate prep) remains.
+            let slot = self
+                .current_slot
+                .ok_or("Trinexx head-draw setup omitted its active slot")?;
+            if event.x != Some(u16::from(slot)) {
+                return Err("Trinexx head-draw setup has the wrong active slot".into());
+            }
+            if event.pc == Some(0x06_84c0)
+                && (event.return_address.map(|r| r & 0x00ff_ffff) != Some(0x1d_bb8b)
+                    || event.stack4 != Some(0xdc))
+            {
+                return Err("Trinexx head-draw setup has the wrong source stack".into());
+            }
+            if event.pc == Some(0x1d_bb8c)
+                && event.return_address.map(|r| r & 0xffff) != Some(0xb8dc)
+            {
+                return Err("Trinexx head-draw setup has the wrong caller".into());
+            }
+            self.trinexx_head_draw_setup = Some(slot);
+            return Ok(());
+        }
         if matches!(
             event.pc,
             Some(0x1d_bce0 | 0x1d_bce1 | 0x1d_bce2 | 0x1d_bce3 | 0x1d_bce4 | 0x1d_bce6 | 0x1d_bce8)
@@ -1550,7 +1577,31 @@ impl SpriteMainExecutionTracker {
             self.trinexx_head_draw = Some((slot, segment));
             return Ok(());
         }
-        if event.pc != Some(0x1d_bbcf) {
+        // The straight-line neck angle calculation from the REP #$30 after
+        // PHX through the SEP #$30 before PLX only loads sine-table words
+        // and stores direct-page scratch ($08/$0A/$0C); every boundary in
+        // it leaves the pending segment undrawn with the slot still pushed.
+        if !matches!(
+            event.pc,
+            Some(
+                0x1d_bbbf
+                    | 0x1d_bbc1
+                    | 0x1d_bbc4
+                    | 0x1d_bbc5
+                    | 0x1d_bbc6
+                    | 0x1d_bbca
+                    | 0x1d_bbcc
+                    | 0x1d_bbce
+                    | 0x1d_bbcf
+                    | 0x1d_bbd2
+                    | 0x1d_bbd4
+                    | 0x1d_bbd7
+                    | 0x1d_bbd8
+                    | 0x1d_bbd9
+                    | 0x1d_bbdd
+                    | 0x1d_bbdf
+            )
+        ) {
             return Ok(());
         }
         let slot = self
@@ -1570,6 +1621,44 @@ impl SpriteMainExecutionTracker {
             .ok_or("Trinexx neck calculation has an invalid segment cursor")?
             as u8;
         self.trinexx_head_draw = Some((slot, segment));
+        Ok(())
+    }
+
+    fn observe_trinexx_breath_tile_collision(
+        &mut self,
+        event: &RawTraceEvent,
+    ) -> Result<(), String> {
+        if !matches!(event.event.as_str(), "nmi" | "frame") {
+            return Ok(());
+        }
+        self.trinexx_breath_tile_collision = None;
+        // Sprite_CC_CD_Common ($1D:BD44) ends with `JSR $8094` (a JSL to
+        // Sprite_CheckTileCollision, $06:E496) followed by `BEQ`/`STZ
+        // $0DD0,X`. Every boundary from the RTS closing
+        // Sprite_CheckTileCollision2 through the pending BEQ has published
+        // the wall-collision byte and still owes the state clear.
+        let matched = match event.pc {
+            Some(0x06_e5b7) => {
+                event.return_address.map(|r| r & 0xffff) == Some(0xe49b)
+                    && event.stack4 == Some(0x97)
+            }
+            Some(0x06_e49d | 0x06_e4a0) => {
+                event.return_address.map(|r| r & 0x00ff_ffff) == Some(0x1d_8097)
+            }
+            Some(0x1d_8097) => event.return_address.map(|r| r & 0xffff) == Some(0xbd5e),
+            Some(0x1d_bd5f) => true,
+            _ => return Ok(()),
+        };
+        if !matched {
+            return Err("Trinexx breath tile-collision return has the wrong source stack".into());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Trinexx breath tile-collision return omitted its active slot")?;
+        if event.x != Some(u16::from(slot)) {
+            return Err("Trinexx breath tile-collision return has the wrong active slot".into());
+        }
+        self.trinexx_breath_tile_collision = Some(slot);
         Ok(())
     }
 
@@ -2596,6 +2685,14 @@ impl SpriteMainExecutionTracker {
         if let Some(slot) = self.swamola_head_draw {
             return SpriteMainProgress::SwamolaHeadDraw(slot);
         }
+        if let Some(slot) = self.trinexx_breath_tile_collision {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::TrinexxBreathTileCollisionReturned(slot);
+        }
+        if let Some(slot) = self.trinexx_head_draw_setup {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::TrinexxHeadDrawSetup(slot);
+        }
         if let Some((slot, completed_stores)) = self.trinexx_front_part {
             assert_eq!(self.current_slot, Some(slot));
             return SpriteMainProgress::TrinexxHeadFrontPart {
@@ -3011,6 +3108,12 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::SwamolaSegmentDraw { slot, segment } => {
                 MainLoopInterruption::SpriteMainSwamolaSegmentDraw { slot, segment }
+            }
+            SpriteMainProgress::TrinexxHeadDrawSetup(slot) => {
+                MainLoopInterruption::SpriteMainTrinexxHeadDrawSetup(slot)
+            }
+            SpriteMainProgress::TrinexxBreathTileCollisionReturned(slot) => {
+                MainLoopInterruption::SpriteMainTrinexxBreathTileCollisionReturned(slot)
             }
             SpriteMainProgress::TrinexxHeadDraw { slot, segment } => {
                 MainLoopInterruption::SpriteMainTrinexxHeadDraw { slot, segment }
@@ -4164,6 +4267,12 @@ impl HostFrameWindow {
             returned.palette_countdown,
             returned.x,
         )?)
+        .or(link_velocity_running_test_interruption(
+            returned.pc,
+            Some(returned.main),
+            Some(returned.sub),
+            returned.a,
+        )?)
         .or_else(|| {
             main_loop_interruption_for_source_state(
                 returned.pc,
@@ -4787,6 +4896,7 @@ impl Snes9xOracleSemanticTrace {
                 // drawing caller. Retain its precise checkpoint until resume.
                 if self.nmi_resume_targets.is_empty() {
                     execution.observe_trinexx_head_draw(returned_event)?;
+                    execution.observe_trinexx_breath_tile_collision(returned_event)?;
                 }
                 execution.observe_guard_animation_checkpoint(returned_event)?;
                 execution.observe_hog_spear_body_graphics_pending(returned_event)?;
@@ -5609,6 +5719,8 @@ impl Snes9xOracleSemanticTrace {
                             execution.hog_spear_active_body = false;
                             execution.buzzblob_movement = None;
                             execution.trinexx_head_draw = None;
+                            execution.trinexx_head_draw_setup = None;
+                            execution.trinexx_breath_tile_collision = None;
                             execution.trinexx_front_part = None;
                             execution.guard_prep_parry_hitbox = None;
                             execution.guard_prep_patrol_delay = None;
@@ -5653,6 +5765,7 @@ impl Snes9xOracleSemanticTrace {
                         if let Some(execution) = self.sprite_main_execution.as_mut() {
                             execution.observe_buzzblob_movement(&event)?;
                             execution.observe_trinexx_head_draw(&event)?;
+                            execution.observe_trinexx_breath_tile_collision(&event)?;
                             execution.observe_guard_animation_checkpoint(&event)?;
                         }
                     }
@@ -6113,6 +6226,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_guard_prep_weapon_flags_pending(&event)?;
                     execution.observe_buzzblob_movement(&event)?;
                     execution.observe_trinexx_head_draw(&event)?;
+                    execution.observe_trinexx_breath_tile_collision(&event)?;
                     execution.observe_guard_animation_checkpoint(&event)?;
                     execution.observe_hog_spear_body_graphics_pending(&event)?;
                     execution.observe_absorbable_tile_lookup(&event)?;
@@ -6611,6 +6725,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_guard_prep_weapon_flags_pending(&event)?;
                     execution.observe_buzzblob_movement(&event)?;
                     execution.observe_trinexx_head_draw(&event)?;
+                    execution.observe_trinexx_breath_tile_collision(&event)?;
                     execution.observe_guard_animation_checkpoint(&event)?;
                     execution.observe_hog_spear_body_graphics_pending(&event)?;
                     execution.observe_absorbable_tile_lookup(&event)?;
@@ -7751,6 +7866,15 @@ fn main_loop_interruption_for_source_state(
             || (LINK_VELOCITY_BEFORE_STATE_BRANCH_START_PC
                 ..LINK_VELOCITY_BEFORE_STATE_BRANCH_END_PC)
                 .contains(&pc)
+            // The moving/running branch tests after LDA $0372: the BEQ at
+            // $07:E282, the moving-and-running scratch speed (LDA #$18 /
+            // STA $00 / BRA) and, on the non-moving path, the LDA $0372 /
+            // BEQ pair plus the still-pending STZ $57. None of these has
+            // published gameplay state.
+            || matches!(
+                pc,
+                0x07_e282 | 0x07_e284 | 0x07_e286 | 0x07_e288 | 0x07_e28d | 0x07_e290 | 0x07_e292
+            )
             || (LINK_VELOCITY_AFTER_SPEED_SELECTION_START_PC
                 ..LINK_VELOCITY_BEFORE_FIRST_STATE_STORE_END_PC)
                 .contains(&pc)
@@ -8019,9 +8143,33 @@ fn main_loop_interruption_for_event(
             MainLoopInterruption::SpritePreparationExtendedOamPacking { next_group_start },
         ));
     }
+    if let Some(interruption) =
+        link_velocity_running_test_interruption(pc, event.main, event.sub, event.a)?
+    {
+        return Ok(Some(interruption));
+    }
     Ok(main_loop_interruption_for_source_state(
         pc, event.main, event.sub, event.x,
     ))
+}
+
+/// Link_HandleVelocity's `LDA $0316` at $07:E29E is reached either by the
+/// BEQ on link_is_running ($0372) or after `STZ $57` and the dash counter
+/// test. A zero accumulator proves the BEQ path, so the speed-modifier
+/// clear has not executed and no gameplay state is stored yet.
+fn link_velocity_running_test_interruption(
+    pc: u32,
+    main: Option<u8>,
+    sub: Option<u8>,
+    a: Option<u16>,
+) -> Result<Option<MainLoopInterruption>, String> {
+    if main != Some(0x0f) || sub != Some(1) || pc & 0x00ff_ffff != 0x07_e29e {
+        return Ok(None);
+    }
+    if a.map(|a| a & 0xff) == Some(0) {
+        return Ok(Some(MainLoopInterruption::LinkPositionBeforeCoordinates));
+    }
+    Err("Link_HandleVelocity boundary after the running speed-modifier clear is unmodeled".into())
 }
 
 fn desert_prayer_iris_interruption(
@@ -8509,6 +8657,12 @@ fn retire_resumed_main_loop_interruption(
                 }
                 MainLoopInterruption::SpriteMainSwamolaSegmentDraw { slot, segment } => {
                     Some(SpriteMainProgress::SwamolaSegmentDraw { slot, segment })
+                }
+                MainLoopInterruption::SpriteMainTrinexxHeadDrawSetup(slot) => {
+                    Some(SpriteMainProgress::TrinexxHeadDrawSetup(slot))
+                }
+                MainLoopInterruption::SpriteMainTrinexxBreathTileCollisionReturned(slot) => {
+                    Some(SpriteMainProgress::TrinexxBreathTileCollisionReturned(slot))
                 }
                 MainLoopInterruption::SpriteMainTrinexxHeadDraw { slot, segment } => {
                     Some(SpriteMainProgress::TrinexxHeadDraw { slot, segment })
@@ -9525,6 +9679,8 @@ mod tests {
             hog_spear_active_body: false,
             buzzblob_movement: None,
             trinexx_head_draw: None,
+            trinexx_head_draw_setup: None,
+            trinexx_breath_tile_collision: None,
             trinexx_front_part: None,
             guard_prep_parry_hitbox: None,
             guard_prep_patrol_delay: None,
@@ -9790,6 +9946,116 @@ mod tests {
             )
             .unwrap());
         }
+    }
+
+    #[test]
+    fn trinexx_neck_checkpoint_covers_the_whole_angle_calculation_block() {
+        let mut tracker = SpriteMainExecutionTracker::default();
+        tracker.current_slot = Some(1);
+        let mut event = raw("frame", Some(0x1d_bbbf), Some(1), None);
+        event.y = Some(9);
+        event.return_address = Some(0xb8_dc01);
+        tracker.observe_trinexx_head_draw(&event).unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxHeadDraw {
+                slot: 1,
+                segment: 0
+            }
+        );
+        event.pc = Some(0x1d_bbdf);
+        event.y = Some(13);
+        tracker.observe_trinexx_head_draw(&event).unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxHeadDraw {
+                slot: 1,
+                segment: 4
+            }
+        );
+        event.pc = Some(0x1d_bbe1);
+        tracker.observe_trinexx_head_draw(&event).unwrap();
+        assert_ne!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxHeadDraw {
+                slot: 1,
+                segment: 4
+            }
+        );
+    }
+
+    #[test]
+    fn trinexx_breath_tile_collision_checkpoint_spans_the_return_chain() {
+        let mut tracker = SpriteMainExecutionTracker::default();
+        tracker.current_slot = Some(12);
+        let mut event = raw("frame", Some(0x06_e5b7), Some(12), None);
+        event.y = Some(3);
+        event.return_address = Some(0x1d_e49b);
+        event.stack4 = Some(0x97);
+        tracker
+            .observe_trinexx_breath_tile_collision(&event)
+            .unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxBreathTileCollisionReturned(12)
+        );
+        event.stack4 = Some(0xc9);
+        assert!(tracker
+            .observe_trinexx_breath_tile_collision(&event)
+            .is_err());
+        let mut event = raw("frame", Some(0x06_e49d), Some(12), None);
+        event.return_address = Some(0x1d_8097);
+        tracker
+            .observe_trinexx_breath_tile_collision(&event)
+            .unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxBreathTileCollisionReturned(12)
+        );
+        event.return_address = Some(0x05_b890);
+        assert!(tracker
+            .observe_trinexx_breath_tile_collision(&event)
+            .is_err());
+        let mut event = raw("frame", Some(0x1d_bd5f), Some(11), None);
+        event.return_address = Some(0x1d_bdd5);
+        assert!(tracker
+            .observe_trinexx_breath_tile_collision(&event)
+            .is_err());
+        let event = raw("frame", Some(0x1d_bd64), Some(12), None);
+        tracker
+            .observe_trinexx_breath_tile_collision(&event)
+            .unwrap();
+        assert_ne!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxBreathTileCollisionReturned(12)
+        );
+    }
+
+    #[test]
+    fn trinexx_head_draw_setup_checkpoint_requires_the_sidenexx_caller() {
+        let mut tracker = SpriteMainExecutionTracker::default();
+        tracker.current_slot = Some(2);
+        let mut event = raw("frame", Some(0x06_84c0), Some(2), None);
+        event.y = Some(1);
+        event.return_address = Some(0x1d_bb8b);
+        event.stack4 = Some(0xdc);
+        tracker.observe_trinexx_head_draw(&event).unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxHeadDrawSetup(2)
+        );
+        event.return_address = Some(0x1d_bb6b);
+        assert!(tracker.observe_trinexx_head_draw(&event).is_err());
+        event.return_address = Some(0x1d_bb8b);
+        event.x = Some(3);
+        assert!(tracker.observe_trinexx_head_draw(&event).is_err());
+        let mut event = raw("frame", Some(0x1d_bb8c), Some(2), None);
+        event.return_address = Some(0x1f_b8dc);
+        tracker.observe_trinexx_head_draw(&event).unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxHeadDrawSetup(2)
+        );
     }
 
     #[test]
@@ -15556,6 +15822,8 @@ mod tests {
             hog_spear_active_body: false,
             buzzblob_movement: None,
             trinexx_head_draw: None,
+            trinexx_head_draw_setup: None,
+            trinexx_breath_tile_collision: None,
             trinexx_front_part: None,
             guard_prep_parry_hitbox: None,
             guard_prep_patrol_delay: None,
@@ -15655,6 +15923,8 @@ mod tests {
             hog_spear_active_body: false,
             buzzblob_movement: None,
             trinexx_head_draw: None,
+            trinexx_head_draw_setup: None,
+            trinexx_breath_tile_collision: None,
             trinexx_front_part: None,
             guard_prep_parry_hitbox: None,
             guard_prep_patrol_delay: None,
@@ -15795,8 +16065,35 @@ mod tests {
     }
 
     #[test]
+    fn link_velocity_running_test_boundary_is_before_coordinates_only_on_the_beq_path() {
+        let mut event = raw("frame", Some(0x07_e29e), Some(0), None);
+        event.main = Some(0x0f);
+        event.sub = Some(1);
+        event.a = Some(0x2f00);
+        assert_eq!(
+            main_loop_interruption_for_event(&event).unwrap(),
+            Some(MainLoopInterruption::LinkPositionBeforeCoordinates)
+        );
+        event.a = Some(0x10);
+        assert!(main_loop_interruption_for_event(&event).is_err());
+        for pc in [0x07_e282, 0x07_e288, 0x07_e28d, 0x07_e290, 0x07_e292] {
+            assert_eq!(
+                main_loop_interruption_for_source_state(pc, Some(0x0f), Some(1), None),
+                Some(MainLoopInterruption::LinkPositionBeforeCoordinates),
+                "{pc:#x}"
+            );
+        }
+        assert_eq!(
+            main_loop_interruption_for_source_state(0x07_e294, Some(0x0f), Some(1), None),
+            None
+        );
+    }
+
+    #[test]
     fn nmi_before_link_coordinate_publication_becomes_a_backend_neutral_receipt() {
-        for pc in [0x07_e275, 0x07_e27d, 0x07_e27f, 0x07_e2ca, 0x07_e381] {
+        for pc in [
+            0x07_e275, 0x07_e27d, 0x07_e27f, 0x07_e28d, 0x07_e292, 0x07_e2ca, 0x07_e381,
+        ] {
             let mut tracker = Snes9xOracleSemanticTrace {
                 path: PathBuf::new(),
                 offset: 0,

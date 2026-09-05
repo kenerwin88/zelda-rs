@@ -19026,6 +19026,36 @@ fn pre_dungeon_garnish_clear_publishes_only_completed_descending_stores() {
 }
 
 #[test]
+fn trinexx_breath_tile_collision_checkpoint_resumes_to_the_atomic_breath() {
+    for sprite_type in [0xccu8, 0xcd] {
+        let mut state = ZeldaState::new();
+        state.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+        state.sprite_slot_view_mut(12).set_sprite_type(sprite_type);
+        state.sprite_slot_view_mut(12).set_state(9);
+        state.sprite_slot_view_mut(12).set_e(1);
+        state.sprite_slot_view_mut(12).set_subtype2(0x32);
+        state.sprite_slot_view_mut(12).set_x_velocity(0x10);
+        state.sprite_slot_view_mut(12).set_x_low(0x45);
+        state.sprite_slot_view_mut(12).set_x_high(8);
+        state.sprite_slot_view_mut(12).set_y_low(0xa9);
+        state.sprite_slot_view_mut(12).set_y_high(0x15);
+        let mut atomic = state.clone();
+        if sprite_type == 0xcc {
+            atomic.sprite_cc(12);
+        } else {
+            atomic.sprite_cd(12);
+        }
+        assert!(state.trinexx_breath_until_tile_collision(12));
+        assert_eq!(state.sprite_slot_view(12).subtype2(), 0x33);
+        assert_eq!(state.sprite_slot_view(12).state(), 9);
+        state.trinexx_breath_after_tile_collision(12);
+        assert_eq!(state.ram, atomic.ram, "breath type {sprite_type:#x}");
+        assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
+        assert_eq!(state.game_state.oam, atomic.game_state.oam);
+    }
+}
+
+#[test]
 fn trinexx_head_draw_checkpoint_keeps_coordinates_and_remaining_oam_stores() {
     for segment in 1..9 {
         let mut state = ZeldaState::new();

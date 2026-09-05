@@ -3247,9 +3247,7 @@ impl ZeldaState {
                 return;
             }
             if self.sprite_main_cpu_boundary
-                == Some(SpriteMainCpuBoundary::TrinexxHeadDrawSetup(
-                    k as u8,
-                ))
+                == Some(SpriteMainCpuBoundary::TrinexxHeadDrawSetup(k as u8))
             {
                 let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
                 assert_ne!(nmi_slices, 0);
@@ -3259,6 +3257,27 @@ impl ZeldaState {
                 let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
                 self.schedule_sprite_main_cpu_continuation(
                     SpriteMainCpuBoundary::TrinexxHeadDrawSetup(k as u8),
+                    nmi_slices,
+                    caller,
+                );
+                return;
+            }
+            if self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::TrinexxBreathTileCollisionReturned(
+                    k as u8,
+                ))
+            {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(nmi_slices, 0);
+                self.sprite_main_cpu_boundary = None;
+                self.sprite_timers_and_oam(k);
+                assert!(
+                    self.trinexx_breath_until_tile_collision(k),
+                    "Trinexx breath tile-collision checkpoint requires an active breath"
+                );
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::TrinexxBreathTileCollisionReturned(k as u8),
                     nmi_slices,
                     caller,
                 );
@@ -5066,6 +5085,10 @@ impl ZeldaState {
             }
             SpriteMainCpuBoundary::TrinexxHeadDrawSetup(slot) => {
                 self.sidenexx_after_head_draw_setup(usize::from(slot));
+                self.complete_sprite_main_after_interrupted_slot(usize::from(slot));
+            }
+            SpriteMainCpuBoundary::TrinexxBreathTileCollisionReturned(slot) => {
+                self.trinexx_breath_after_tile_collision(usize::from(slot));
                 self.complete_sprite_main_after_interrupted_slot(usize::from(slot));
             }
             SpriteMainCpuBoundary::GuardPrepWeaponFlagsPending {

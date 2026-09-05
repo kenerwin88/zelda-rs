@@ -5143,6 +5143,7 @@ enum SpriteMainCpuBoundary {
     },
     CatfishMedallionGraphicsStarted(u8),
     TrinexxHeadDrawSetup(u8),
+    TrinexxBreathTileCollisionReturned(u8),
     TrinexxHeadDraw {
         slot: u8,
         segment: u8,
@@ -5406,6 +5407,7 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         | SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(active_slot)
         | SpriteMainCpuBoundary::CatfishMedallionGraphicsStarted(active_slot)
         | SpriteMainCpuBoundary::TrinexxHeadDrawSetup(active_slot)
+        | SpriteMainCpuBoundary::TrinexxBreathTileCollisionReturned(active_slot)
         | SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(active_slot)
         | SpriteMainCpuBoundary::WishPondTossedItemGraphics {
             slot: active_slot, ..
@@ -5746,6 +5748,15 @@ fn sprite_main_cpu_boundary_from_interruption(
                 "source Trinexx medallion graphics receipt used invalid slot {slot}"
             );
             Some(SpriteMainCpuBoundary::TrinexxHeadDrawSetup(slot))
+        }
+        crate::MainLoopInterruption::SpriteMainTrinexxBreathTileCollisionReturned(slot) => {
+            assert!(
+                slot < 16,
+                "source Trinexx breath tile-collision receipt used invalid slot {slot}"
+            );
+            Some(SpriteMainCpuBoundary::TrinexxBreathTileCollisionReturned(
+                slot,
+            ))
         }
         crate::MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(slot) => {
             assert!(
@@ -6089,6 +6100,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         | crate::MainLoopInterruption::SpriteMainHappinessPondRupeeGraphicsStarted(slot)
         | crate::MainLoopInterruption::SpriteMainCatfishMedallionGraphicsStarted(slot)
         | crate::MainLoopInterruption::SpriteMainTrinexxHeadDrawSetup(slot)
+        | crate::MainLoopInterruption::SpriteMainTrinexxBreathTileCollisionReturned(slot)
         | crate::MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(slot)
         | crate::MainLoopInterruption::SpriteMainAfterWallmasterResetPrefix(slot)
         | crate::MainLoopInterruption::SpriteMainItemReceiptGraphicsStarted(slot)
@@ -6273,6 +6285,7 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         | crate::SpriteMainProgress::HappinessPondRupeeGraphicsStarted(slot)
         | crate::SpriteMainProgress::CatfishMedallionGraphicsStarted(slot)
         | crate::SpriteMainProgress::TrinexxHeadDrawSetup(slot)
+        | crate::SpriteMainProgress::TrinexxBreathTileCollisionReturned(slot)
         | crate::SpriteMainProgress::WishPondTossedItemGraphicsStarted(slot)
         | crate::SpriteMainProgress::AfterSingleSmallDrawPosition(slot)
         | crate::SpriteMainProgress::ZazakAfterGraphics(slot)
@@ -6595,6 +6608,13 @@ fn sprite_main_cpu_boundary_from_progress(
                 "source Trinexx medallion graphics progress used invalid slot {slot}"
             );
             SpriteMainCpuBoundary::TrinexxHeadDrawSetup(slot)
+        }
+        crate::SpriteMainProgress::TrinexxBreathTileCollisionReturned(slot) => {
+            assert!(
+                slot < 16,
+                "source Trinexx breath tile-collision progress used invalid slot {slot}"
+            );
+            SpriteMainCpuBoundary::TrinexxBreathTileCollisionReturned(slot)
         }
         crate::SpriteMainProgress::WishPondTossedItemGraphicsStarted(slot) => {
             assert!(
@@ -6919,6 +6939,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainHappinessPondRupeeGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainCatfishMedallionGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainTrinexxHeadDrawSetup(_)
+        | crate::MainLoopInterruption::SpriteMainTrinexxBreathTileCollisionReturned(_)
         | crate::MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(_)
         | crate::MainLoopInterruption::SpriteMainAfterWallmasterResetPrefix(_)
         | crate::MainLoopInterruption::SpriteMainWallmasterResetClear { .. }
@@ -7309,6 +7330,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(slot)
         | SpriteMainCpuBoundary::CatfishMedallionGraphicsStarted(slot)
         | SpriteMainCpuBoundary::TrinexxHeadDrawSetup(slot)
+        | SpriteMainCpuBoundary::TrinexxBreathTileCollisionReturned(slot)
         | SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(slot)
         | SpriteMainCpuBoundary::WishPondTossedItemGraphics { slot, .. }
         | SpriteMainCpuBoundary::BeforeZeldaFollowerGraphics(slot)

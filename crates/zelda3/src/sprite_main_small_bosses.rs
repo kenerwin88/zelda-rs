@@ -1036,7 +1036,10 @@ impl ZeldaState {
     }
 
     pub(super) fn sidenexx_head_draw_setup(&mut self, k: usize) {
-        assert!(matches!(self.sprite_slot_view(k).sprite_type(), 0xcc | 0xcd));
+        assert!(matches!(
+            self.sprite_slot_view(k).sprite_type(),
+            0xcc | 0xcd
+        ));
         assert_eq!(self.sprite_slot_view(k).e(), 0);
         self.sidenexx_before_head_draw(k);
         self.publish_trinexx_head_position(k);
@@ -1162,13 +1165,9 @@ impl ZeldaState {
             self.sprite_sidenexx(k);
             return;
         }
-        let _ = self.sprite_prep_oam_coord_or_double_ret(k);
-        if self.sprite_return_if_inactive(k) {
-            return;
+        if self.trinexx_breath_until_tile_collision(k) {
+            self.trinexx_breath_after_tile_collision(k);
         }
-        self.sprite_move_xy(k);
-        self.sprite_trinexx_fire_add_fire_garnish(k);
-        self.sprite_cc_cd_common(k);
     }
 
     // void Sprite_CD(int k) {  // sprite_main.c:1553
@@ -1177,24 +1176,55 @@ impl ZeldaState {
             self.sprite_sidenexx(k);
             return;
         }
+        if self.trinexx_breath_until_tile_collision(k) {
+            self.trinexx_breath_after_tile_collision(k);
+        }
+    }
+
+    /// The fire ($CC) or ice ($CD) breath body through the
+    /// `Sprite_CheckTileCollision` call that ends `Sprite_CC_CD_Common`
+    /// ($1D:BD5C). Returns `false` when `Sprite_ReturnIfInactive` took the
+    /// double return, so nothing after the OAM prep ran.
+    pub(super) fn trinexx_breath_until_tile_collision(&mut self, k: usize) -> bool {
+        let sprite_type = self.sprite_slot_view(k).sprite_type();
+        assert!(matches!(sprite_type, 0xcc | 0xcd));
+        assert_ne!(self.sprite_slot_view(k).e(), 0);
         let _ = self.sprite_prep_oam_coord_or_double_ret(k);
         if self.sprite_return_if_inactive(k) {
-            return;
+            return false;
         }
-        let old_xvel = self.sprite_slot_view(k).x_velocity();
-        let x_velocity = self
-            .sprite_slot_view(k)
-            .x_velocity()
-            .wrapping_add(self.sprite_slot_view(k).c());
-        self.sprite_slot_view_mut(k).set_x_velocity(x_velocity);
-        self.sprite_move_xy(k);
-        self.sprite_slot_view_mut(k).set_x_velocity(old_xvel);
-        self.sprite_cd_spawn_garnish(k);
-        self.sprite_cc_cd_common(k);
+        if sprite_type == 0xcc {
+            self.sprite_move_xy(k);
+            self.sprite_trinexx_fire_add_fire_garnish(k);
+        } else {
+            let old_xvel = self.sprite_slot_view(k).x_velocity();
+            let x_velocity = self
+                .sprite_slot_view(k)
+                .x_velocity()
+                .wrapping_add(self.sprite_slot_view(k).c());
+            self.sprite_slot_view_mut(k).set_x_velocity(x_velocity);
+            self.sprite_move_xy(k);
+            self.sprite_slot_view_mut(k).set_x_velocity(old_xvel);
+            self.sprite_cd_spawn_garnish(k);
+        }
+        self.sprite_cc_cd_common_until_tile_collision(k);
+        true
+    }
+
+    /// The pending `BEQ`/`STZ $0DD0,X` after `Sprite_CheckTileCollision`
+    /// returned ($1D:BD5F): the wall-collision byte it published is
+    /// re-read from the sprite slot.
+    pub(super) fn trinexx_breath_after_tile_collision(&mut self, k: usize) {
+        if self.sprite_slot_view(k).wall_collision() != 0 {
+            self.sprite_slot_view_mut(k).set_state(0);
+        }
     }
 
     // void Sprite_CC_CD_Common(int k) {  // 9dbd44
-    pub(super) fn sprite_cc_cd_common(&mut self, k: usize) {
+    // The trailing `if (Sprite_CheckTileCollision(k)) sprite_state[k] = 0;`
+    // is `trinexx_breath_after_tile_collision`, so an NMI landing between
+    // the collision call and the state clear can resume exactly there.
+    fn sprite_cc_cd_common_until_tile_collision(&mut self, k: usize) {
         if (self.game_state.frame.frame_counter & 3) == 0 {
             let m: i8 = if self.sprite_is_right_of_link(k).a != 0 {
                 -1
@@ -1208,9 +1238,7 @@ impl ZeldaState {
                 }
             }
         }
-        if self.sprite_check_tile_collision(k) != 0 {
-            self.sprite_slot_view_mut(k).set_state(0);
-        }
+        self.sprite_check_tile_collision(k);
     }
 
     // void Sprite_TrinexxFire_AddFireGarnish(int k) {  // 9dbdd6
