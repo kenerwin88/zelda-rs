@@ -5141,6 +5141,7 @@ enum SpriteMainCpuBoundary {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct GuardAnimationContinuation {
+    saved_initializer_submodule: Option<u8>,
     graphics: u8,
     direction: u8,
     checkpoint: crate::GuardAnimationCheckpoint,

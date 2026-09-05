@@ -937,6 +937,7 @@ struct SpriteMainExecutionTracker {
     timers_and_oam_dispatch_state: Option<u8>,
     #[serde(default)]
     initialize_active_main_calls: u8,
+    hog_spear_active_body: bool,
     #[serde(default)]
     guard_prep_parry_hitbox: Option<(u8, u8)>,
     guard_prep_patrol_delay: Option<(u8, u8)>,
@@ -1495,6 +1496,31 @@ impl SpriteMainExecutionTracker {
     }
 
     fn observe_guard_animation_checkpoint(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if event.pc == Some(0x05_cbe0) {
+            self.hog_spear_active_body = true;
+        }
+        if event.pc == Some(0x05_cab0)
+            && event.x == Some(0)
+            && self.hog_spear_active_body
+            && self.timers_and_oam_dispatch_state == Some(8)
+        {
+            let slot = self
+                .current_slot
+                .ok_or("Hog Spear initializer has no slot")?;
+            if !(1..=2).contains(&self.initialize_active_main_calls)
+                || event.sub != Some(0)
+                || event.return_address != Some(0xc68800 | u32::from(slot))
+            {
+                return Err("Hog Spear body return lacked its initializer caller proof".into());
+            }
+            self.guard_animation_checkpoint = Some((
+                slot,
+                zelda3::GuardAnimationCheckpoint::HogSpearInitializerBodyReturned {
+                    active_call: self.initialize_active_main_calls,
+                },
+            ));
+            return Ok(());
+        }
         if event.pc == Some(0x05_c243) && self.timers_and_oam_dispatch_state == Some(9) {
             let slot = self
                 .current_slot
@@ -4134,12 +4160,12 @@ impl Snes9xOracleSemanticTrace {
                     env::var(TRACE_PCS_ENV).ok().as_deref(),
                     &[
                         "0280d3", "0280d6", "0280d9", "0280dd", "028842", "05df49", "05df4d",
-                        "05cbcd", "05eb1d", "05eb21", "068328", "0683a7", "0684e2", "0684aa",
-                        "058af3", "0684eb", "069271", "06a628", "06a724", "06b9cc", "06b9d0",
-                        "0799ad", "079a0b", "008225", "0082c7", "00d4ed", "09c499", "09c4aa",
-                        "09c173", "09f63f", "09f825", "0ffdc3", "00d423", "00e75c", "00e766",
-                        "00d44c", "069853", "069860", "06988d", "0698b2", "06e4ab", "0ecfe2",
-                        "0ed088", "0ed0c2", "06d051", "02824d",
+                        "05cbe0", "05cbcd", "05eb1d", "05eb21", "068328", "0683a7", "0684e2",
+                        "0684aa", "058af3", "0684eb", "069271", "06a628", "06a724", "06b9cc",
+                        "06b9d0", "0799ad", "079a0b", "008225", "0082c7", "00d4ed", "09c499",
+                        "09c4aa", "09c173", "09f63f", "09f825", "0ffdc3", "00d423", "00e75c",
+                        "00e766", "00d44c", "069853", "069860", "06988d", "0698b2", "06e4ab",
+                        "0ecfe2", "0ed088", "0ed0c2", "06d051", "02824d",
                     ],
                 ),
             );
@@ -5362,6 +5388,7 @@ impl Snes9xOracleSemanticTrace {
                     }
                     SPRITE_ACTIVE_MAIN_ENTRY_PC => {
                         if let Some(execution) = self.sprite_main_execution.as_mut() {
+                            execution.hog_spear_active_body = false;
                             execution.guard_prep_parry_hitbox = None;
                             execution.guard_prep_patrol_delay = None;
                             execution.guard_prep_tile_collision_return = None;
@@ -5399,6 +5426,11 @@ impl Snes9xOracleSemanticTrace {
                                         "Snes9x state-8 initializer active-call count overflowed",
                                     )?;
                             }
+                        }
+                    }
+                    0x05_cbe0 => {
+                        if let Some(execution) = self.sprite_main_execution.as_mut() {
+                            execution.observe_guard_animation_checkpoint(&event)?;
                         }
                     }
                     SPRITE_TIMERS_AND_OAM_RETURN_PC => {
@@ -9220,6 +9252,7 @@ mod tests {
             timers_and_oam_slot: None,
             timers_and_oam_dispatch_state: None,
             initialize_active_main_calls: 0,
+            hog_spear_active_body: false,
             guard_prep_parry_hitbox: None,
             guard_prep_patrol_delay: None,
             guard_prep_tile_collision_return: None,
@@ -10608,6 +10641,38 @@ mod tests {
             tracker.guard_animation_checkpoint,
             Some((11, zelda3::GuardAnimationCheckpoint::HeadFlagsPending))
         );
+    }
+
+    #[test]
+    fn hog_spear_body_return_requires_nested_initializer_authority() {
+        for active_call in 1..=2 {
+            let mut tracker = SpriteMainExecutionTracker {
+                current_slot: Some(12),
+                timers_and_oam_dispatch_state: Some(8),
+                initialize_active_main_calls: active_call,
+                ..Default::default()
+            };
+            let mut event = raw("frame", Some(0x05_cab0), Some(0), None);
+            event.sub = Some(0);
+            event.return_address = Some(0xc6880c);
+            tracker.observe_guard_animation_checkpoint(&event).unwrap();
+            assert_eq!(tracker.guard_animation_checkpoint, None);
+            tracker
+                .observe_guard_animation_checkpoint(&raw("pc", Some(0x05_cbe0), Some(12), None))
+                .unwrap();
+            tracker.observe_guard_animation_checkpoint(&event).unwrap();
+            assert_eq!(
+                tracker.guard_animation_checkpoint,
+                Some((
+                    12,
+                    zelda3::GuardAnimationCheckpoint::HogSpearInitializerBodyReturned {
+                        active_call
+                    }
+                ))
+            );
+            event.return_address = Some(0xc6880b);
+            assert!(tracker.observe_guard_animation_checkpoint(&event).is_err());
+        }
     }
 
     #[test]
@@ -14993,6 +15058,7 @@ mod tests {
             timers_and_oam_slot: None,
             timers_and_oam_dispatch_state: None,
             initialize_active_main_calls: 0,
+            hog_spear_active_body: false,
             guard_prep_parry_hitbox: None,
             guard_prep_patrol_delay: None,
             guard_prep_tile_collision_return: None,
@@ -15087,6 +15153,7 @@ mod tests {
             timers_and_oam_slot: None,
             timers_and_oam_dispatch_state: None,
             initialize_active_main_calls: 0,
+            hog_spear_active_body: false,
             guard_prep_parry_hitbox: None,
             guard_prep_patrol_delay: None,
             guard_prep_tile_collision_return: None,

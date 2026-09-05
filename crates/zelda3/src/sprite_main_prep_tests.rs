@@ -200,6 +200,44 @@ fn standard_guard_patrol_checkpoint_restores_initializer_after_each_nested_call(
 }
 
 #[test]
+fn hog_spear_initializer_body_return_preserves_nested_caller() {
+    let mut atomic = fresh_state();
+    atomic.set_main_module(9);
+    atomic.set_indoor_flag(0);
+    atomic.set_submodule(0x23);
+    atomic.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+    atomic
+        .oam_state_mut()
+        .set_current_extended_pointer(BYTEWISE_EXTENDED_OAM as u16);
+    {
+        let mut sprite = atomic.sprite_slot_view_mut(10);
+        sprite.set_state(9);
+        sprite.set_sprite_type(0x45);
+        sprite.set_x(0x80);
+        sprite.set_y(0x80);
+        sprite.set_deflection_bits(0x20);
+    }
+    let initial = atomic.clone();
+    atomic.sprite_prep_trooper_and_archer_soldier(10);
+    for active_call in 1..=2 {
+        let mut staged = initial.clone();
+        let continuation = staged.guard_animation_until_checkpoint(
+            10,
+            crate::GuardAnimationCheckpoint::HogSpearInitializerBodyReturned { active_call },
+        );
+        assert_eq!(staged.game_state.frame.submodule, 0);
+        assert_eq!(
+            staged.sprite_slot_view(10).subtype2(),
+            (active_call - 1) * 2
+        );
+        staged.complete_guard_animation_at_checkpoint(10, continuation);
+        assert_eq!(staged.game_state, atomic.game_state);
+        assert_eq!(staged.ram, atomic.ram);
+        assert_eq!(staged.game_state.frame.submodule, 0x23);
+    }
+}
+
+#[test]
 fn standard_guard_tile_collision_checkpoint_restores_initializer_after_each_nested_call() {
     // The tile collision return follows movement but precedes the timer and
     // animation updates in each of the initializer's two active calls.

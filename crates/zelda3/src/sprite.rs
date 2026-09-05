@@ -3099,9 +3099,23 @@ impl ZeldaState {
                     let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
                     assert_ne!(nmi_slices, 0);
                     self.sprite_main_cpu_boundary = None;
-                    assert_eq!(self.sprite_slot_view(k).state(), 9);
-                    assert!((0x41..=0x44).contains(&self.sprite_slot_view(k).sprite_type()));
+                    let initializer = matches!(
+                        checkpoint,
+                        crate::GuardAnimationCheckpoint::HogSpearInitializerBodyReturned { .. }
+                    );
+                    assert_eq!(
+                        self.sprite_slot_view(k).state(),
+                        if initializer { 8 } else { 9 }
+                    );
+                    if initializer {
+                        assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x45);
+                    } else {
+                        assert!((0x41..=0x44).contains(&self.sprite_slot_view(k).sprite_type()));
+                    }
                     self.sprite_timers_and_oam(k);
+                    if initializer {
+                        self.sprite_module_initialize_properties(k);
+                    }
                     let continuation = self.guard_animation_until_checkpoint(k, checkpoint);
                     let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
                     self.schedule_sprite_main_cpu_continuation(

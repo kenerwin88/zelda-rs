@@ -125,11 +125,36 @@ impl ZeldaState {
         checkpoint: crate::GuardAnimationCheckpoint,
     ) -> GuardAnimationContinuation {
         use crate::GuardAnimationCheckpoint as Stage;
+        if let Stage::HogSpearInitializerBodyReturned { active_call } = checkpoint {
+            assert!((1..=2).contains(&active_call));
+            assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x45);
+            let saved = self.sprite_prep_trooper_and_archer_soldier_prefix(k);
+            for _ in 1..active_call {
+                self.sprite_active_main(k);
+            }
+            let (x, y, flags) = self
+                .sprite_prep_oam_coord_or_double_ret(k)
+                .expect("source Hog Spear body return requires visible OAM");
+            let poc = PrepOamCoordsRet { x, y, r4: 0, flags };
+            self.guard_animate_head(k, 0, &poc);
+            let direction = self.sprite_slot_view(k).direction();
+            self.guard_animate_body(k, SOLDIER_DRAW2_OAM_IDX[usize::from(direction)] >> 2, &poc);
+            return GuardAnimationContinuation {
+                saved_initializer_submodule: Some(saved),
+                graphics: self.sprite_slot_view(k).graphics(),
+                direction,
+                checkpoint,
+                poc_x: x,
+                poc_y: y,
+                poc_flags: flags,
+            };
+        }
         match checkpoint {
             Stage::DrawReturned => {
                 let (graphics, direction) = self.guard_main_prepare_animation_pose(k);
                 self.guard_handle_all_animation(k);
                 return GuardAnimationContinuation {
+                    saved_initializer_submodule: None,
                     graphics,
                     direction,
                     checkpoint,
@@ -259,6 +284,7 @@ impl ZeldaState {
             },
         );
         GuardAnimationContinuation {
+            saved_initializer_submodule: None,
             graphics,
             direction,
             checkpoint: if character_stored {
@@ -277,6 +303,37 @@ impl ZeldaState {
         k: usize,
         continuation: GuardAnimationContinuation,
     ) {
+        if let crate::GuardAnimationCheckpoint::HogSpearInitializerBodyReturned { active_call } =
+            continuation.checkpoint
+        {
+            let poc = PrepOamCoordsRet {
+                x: continuation.poc_x,
+                y: continuation.poc_y,
+                r4: 0,
+                flags: continuation.poc_flags,
+            };
+            self.guard_animate_weapon(k, &poc);
+            if self.sprite_slot_view(k).flags3() & 0x10 != 0 {
+                self.sprite_draw_shadow_custom_attract(
+                    k,
+                    (poc.x, poc.y, poc.flags),
+                    SOLDIER_DRAW_SHADOW[usize::from(continuation.direction)],
+                );
+            }
+            if self.hog_spear_man_after_animation_through_body_increments(k) {
+                self.guard_update_body_graphics(k);
+            }
+            for _ in active_call..2 {
+                self.sprite_active_main(k);
+            }
+            self.sprite_prep_trooper_and_archer_soldier_suffix(
+                k,
+                continuation
+                    .saved_initializer_submodule
+                    .expect("Hog Spear initializer lost its caller submodule"),
+            );
+            return;
+        }
         if continuation.checkpoint == crate::GuardAnimationCheckpoint::DrawReturned {
             self.guard_main_after_animation(k, continuation.graphics, continuation.direction);
             return;
@@ -352,7 +409,9 @@ impl ZeldaState {
                 }
                 self.guard_animate_weapon(k, &poc);
             }
-            Stage::WeaponCoordinates { .. } | Stage::DrawReturned => unreachable!(),
+            Stage::WeaponCoordinates { .. }
+            | Stage::DrawReturned
+            | Stage::HogSpearInitializerBodyReturned { .. } => unreachable!(),
         }
         if flags3 & 0x10 != 0 {
             self.sprite_draw_shadow_custom_attract(
@@ -402,6 +461,7 @@ impl ZeldaState {
         // The ROM's 16-bit Y store also touches the next character byte.
         oam.set_entry_char(addr, (y >> 8) as u8);
         GuardAnimationContinuation {
+            saved_initializer_submodule: None,
             graphics,
             direction,
             checkpoint: crate::GuardAnimationCheckpoint::WeaponCoordinates { entry },

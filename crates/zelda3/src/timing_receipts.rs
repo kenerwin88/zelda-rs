@@ -1194,6 +1194,11 @@ pub enum GuardAnimationCheckpoint {
     /// Guard_Animate returned; the caller has not restored its saved pose.
     DrawReturned,
     HeadExtendedPending,
+    /// The state-8 trooper initializer is inside a nested Hog Spear draw,
+    /// after its last body OAM entry and before its weapon draw.
+    HogSpearInitializerBodyReturned {
+        active_call: u8,
+    },
 }
 
 impl GuardAnimationCheckpoint {
@@ -1204,6 +1209,7 @@ impl GuardAnimationCheckpoint {
                 | Self::DrawReturned
                 | Self::HeadExtendedPending
                 | Self::HeadFlagsPending
+                | Self::HogSpearInitializerBodyReturned { active_call: 1 | 2 }
                 | Self::WeaponCoordinates { entry: 0 | 1 }
                 | Self::WeaponBeforeCoordinates { entry: 0 | 1 }
                 | Self::BodyBeforeEntry { entry: 0..=3 }

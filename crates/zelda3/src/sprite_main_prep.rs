@@ -318,7 +318,7 @@ impl ZeldaState {
         self.sprite_prep_trooper_and_archer_soldier_suffix(k, bak0);
     }
 
-    fn sprite_prep_trooper_and_archer_soldier_prefix(&mut self, k: usize) -> u8 {
+    pub(super) fn sprite_prep_trooper_and_archer_soldier_prefix(&mut self, k: usize) -> u8 {
         let bak0 = self.game_state.frame.submodule;
         self.set_submodule(0);
         let deflection_bits = (self.sprite_slot_view(k).deflection_bits() >> 1) | 0x80;
@@ -327,7 +327,7 @@ impl ZeldaState {
         bak0
     }
 
-    fn sprite_prep_trooper_and_archer_soldier_suffix(&mut self, k: usize, bak0: u8) {
+    pub(super) fn sprite_prep_trooper_and_archer_soldier_suffix(&mut self, k: usize, bak0: u8) {
         let deflection_bits = self.sprite_slot_view(k).deflection_bits().wrapping_shl(1);
         self.sprite_slot_view_mut(k)
             .set_deflection_bits(deflection_bits);

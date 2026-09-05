@@ -11237,6 +11237,13 @@ impl ZeldaState {
 
     pub(super) fn hog_spear_man_through_body_increments(&mut self, k: usize) -> bool {
         self.guard_handle_all_animation(k);
+        self.hog_spear_man_after_animation_through_body_increments(k)
+    }
+
+    pub(super) fn hog_spear_man_after_animation_through_body_increments(
+        &mut self,
+        k: usize,
+    ) -> bool {
         if self.sprite_return_if_inactive(k) {
             return false;
         }
