@@ -1770,8 +1770,15 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                                 let chr_base = frame.bg[layer_index].tile_adr as usize;
                                 let pattern_key = entry_word & 0xC3FF;
                                 let indices = four_bpp_cache.decode(bg_vram, chr_base, pattern_key);
+                                // Match the atlas by the UNFLIPPED live pattern: the
+                                // canonical cell is stored unflipped and the instance
+                                // flip is applied below. Matching the already-flipped
+                                // pattern and flipping again drew a V-flipped dungeon-map
+                                // room tile unflipped (route frame 732911).
+                                let unflipped =
+                                    four_bpp_cache.decode(bg_vram, chr_base, tile_number as u16);
                                 if let Some((source_key, src)) =
-                                    source_cell_by_indices(atlas, &indices)
+                                    source_cell_by_indices(atlas, &unflipped)
                                 {
                                     let id = *cell_ids
                                         .entry((src.id, hflip, vflip))
@@ -1830,7 +1837,13 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                             chr_base,
                             pattern_key,
                         );
-                        if let Some((source_key, src)) = source_cell_by_indices(atlas, &indices) {
+                        // Unflipped pattern for the atlas match; see the note above.
+                        let unflipped = four_bpp_cache.decode(
+                            frame.bg_vram.unwrap_or(frame.vram),
+                            chr_base,
+                            tile_number as u16,
+                        );
+                        if let Some((source_key, src)) = source_cell_by_indices(atlas, &unflipped) {
                             let id = *cell_ids.entry((src.id, hflip, vflip)).or_insert_with(|| {
                                 let indices = flip_index_pattern(&src.indices, hflip, vflip);
                                 let id = cells.len() as u32;
@@ -3071,6 +3084,94 @@ mod tests {
         let strict_pattern =
             extract_asset_resolved_modern_frame_from_sources(&frame, &table, &exact_pattern_atlas);
         assert!(!strict_pattern.has_unresolved_sources());
+    }
+
+    #[test]
+    fn flipped_bg_fallback_matches_atlas_by_unflipped_pattern() {
+        use crate::modern_source_atlas::ModernSourceAtlas;
+        // Route frame 732911 (dungeon map fade): tilemap entries 0x0b71 and
+        // 0x8b71 reference the same room tile, the second V-flipped. The tile
+        // has no atlas source key; the pixel-pattern fallback must look the
+        // atlas up by the UNFLIPPED live pattern and apply the instance flip,
+        // never match the flipped pattern and flip again. Whatever the atlas
+        // holds, the effective drawn pattern must equal the flipped live tile.
+        let mut vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let mut oam = vec![0u16; 0x110];
+        for sprite in 0..128usize {
+            oam[sprite * 2] = 0xf000;
+        }
+        // Tile 4 at chr_base 0x2000: row 0 blank, rows 1..7 filled with index 1.
+        for row in 1..8usize {
+            vram[0x2040 + row] = 0x00ff;
+        }
+        vram[0] = 0x8004; // BG1 (0,0): tile 4, V-flip
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.mode = 1;
+        frame.bg[0].tilemap_adr = 0;
+        frame.bg[0].tile_adr = 0x2000;
+        frame.screen_enabled = [0x01, 0x00];
+        let unflipped = decode_snes_4bpp_tile_indices(&vram, 0x2000, 4);
+        let flipped = decode_snes_4bpp_tile_indices(&vram, 0x2000, 0x8004);
+        assert_ne!(unflipped, flipped);
+        let effective = |modern: &ModernFrame, cells: &[ModernIndexTile]| -> [u8; 64] {
+            let tile = &modern.bg_layers[0].index_tiles[0];
+            flip_index_pattern(&cells[tile.cell_id as usize].indices, tile.hflip, tile.vflip)
+        };
+        let cell = |id: u32, indices: [u8; 64]| ModernIndexTile {
+            id,
+            indices,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        };
+        let generic_table = |slot: usize| -> (u8, u16, u16) {
+            if slot == 0x200 + 4 {
+                (1, 5, 3)
+            } else {
+                (0, 0, 0)
+            }
+        };
+        let stream_table = |slot: usize| -> (u8, u16, u16) {
+            if slot == 0x200 + 4 {
+                (CHR_KIND_BG_STREAM, 0x1234, 0x5678)
+            } else {
+                (0, 0, 0)
+            }
+        };
+        // The atlas holds only a cell equal to the FLIPPED pattern (some other
+        // authored tile happens to look like it): it must not be re-flipped.
+        let flipped_only = ModernSourceAtlas::from_keyed_cells_for_test(
+            vec![cell(0, flipped)],
+            &[(1, 7, 8, 0)],
+        );
+        // The atlas holds the canonical unflipped cell: matched, then flipped.
+        let canonical = ModernSourceAtlas::from_keyed_cells_for_test(
+            vec![cell(0, unflipped)],
+            &[(1, 7, 9, 0)],
+        );
+        for (label, table) in [
+            ("generic", &generic_table as &dyn SourceTableView),
+            ("stream", &stream_table as &dyn SourceTableView),
+        ] {
+            let (modern, cells) = extract_modern_frame_from_sources(&frame, table, &flipped_only);
+            assert_eq!(
+                effective(&modern, &cells),
+                flipped,
+                "{label}: flipped-pattern atlas cell must not be flipped again"
+            );
+            let (modern, cells) = extract_modern_frame_from_sources(&frame, table, &canonical);
+            assert_eq!(
+                effective(&modern, &cells),
+                flipped,
+                "{label}: canonical atlas cell is drawn with the instance flip"
+            );
+            assert_eq!(
+                modern.bg_layers[0].index_tiles[0].source_key,
+                crate::modern_source_atlas::modern_source_key(1, 7, 9),
+                "{label}: the canonical cell resolves the asset identity"
+            );
+        }
     }
 
     #[test]
