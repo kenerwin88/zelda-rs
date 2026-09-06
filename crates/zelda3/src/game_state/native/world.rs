@@ -2258,8 +2258,13 @@ pub(crate) struct WorldTransientState {
     pub(crate) tilemap_layer_copy: u16,
     pub(crate) special_exit_tilemap_layer_copy: u16,
     pub(crate) exit_tilemap_layer_copy: u16,
-    pub(crate) map_backup_main_layer: u8,
-    pub(crate) map_backup_subscreen_layer: u8,
+    /// Retired: MAPBAK_TM/MAPBAK_TS (0xc211/0xc212) are owned by
+    /// `display.ppu_scroll_copy` (write-through setters, game-over restore
+    /// readers). These two bytes are neither loaded, projected nor
+    /// coherence-checked here any more; the fields stay only so paired
+    /// checkpoints keep their positional serialization layout.
+    pub(crate) retired_map_backup_main_layer: u8,
+    pub(crate) retired_map_backup_subscreen_layer: u8,
     pub(crate) move_overlay_counter: u8,
     pub(crate) overworld_hole_scan_step: u8,
     pub(crate) dungeon_replacement_tiles: Vec<u16>,
@@ -2296,8 +2301,8 @@ impl Default for WorldTransientState {
             tilemap_layer_copy: 0,
             special_exit_tilemap_layer_copy: 0,
             exit_tilemap_layer_copy: 0,
-            map_backup_main_layer: 0,
-            map_backup_subscreen_layer: 0,
+            retired_map_backup_main_layer: 0,
+            retired_map_backup_subscreen_layer: 0,
             move_overlay_counter: 0,
             overworld_hole_scan_step: 0,
             dungeon_replacement_tiles: vec![0; DUNGEON_REPLACEMENT_TILE_WORDS],
@@ -2344,8 +2349,6 @@ impl WorldTransientState {
         check!(tilemap_layer_copy);
         check!(special_exit_tilemap_layer_copy);
         check!(exit_tilemap_layer_copy);
-        check!(map_backup_main_layer);
-        check!(map_backup_subscreen_layer);
         check!(move_overlay_counter);
         check!(overworld_hole_scan_step);
         if ram_byte(ram, MAIN_MODULE) != 7
@@ -2396,8 +2399,8 @@ impl WorldTransientState {
             tilemap_layer_copy: read_le_u16(ram, TM_COPY),
             special_exit_tilemap_layer_copy: read_le_u16(ram, TM_COPY_SPEXIT),
             exit_tilemap_layer_copy: read_le_u16(ram, TM_COPY_EXIT),
-            map_backup_main_layer: ram_byte(ram, MAPBAK_TM),
-            map_backup_subscreen_layer: ram_byte(ram, MAPBAK_TS),
+            retired_map_backup_main_layer: 0,
+            retired_map_backup_subscreen_layer: 0,
             move_overlay_counter: ram_byte(ram, MOVE_OVERLAY_CTR),
             overworld_hole_scan_step: ram_byte(ram, OVERWORLD_HOLE_SCAN_STEP),
             dungeon_replacement_tiles,
@@ -2511,8 +2514,6 @@ impl WorldTransientState {
         write_le_u16(ram, TM_COPY, self.tilemap_layer_copy);
         write_le_u16(ram, TM_COPY_SPEXIT, self.special_exit_tilemap_layer_copy);
         write_le_u16(ram, TM_COPY_EXIT, self.exit_tilemap_layer_copy);
-        ram[MAPBAK_TM] = self.map_backup_main_layer;
-        ram[MAPBAK_TS] = self.map_backup_subscreen_layer;
         ram[MOVE_OVERLAY_CTR] = self.move_overlay_counter;
         ram[OVERWORLD_HOLE_SCAN_STEP] = self.overworld_hole_scan_step;
     }
@@ -2774,14 +2775,6 @@ impl WorldTransientState {
 
     pub(crate) fn restore_exit_layer_masks(&mut self) {
         self.tilemap_layer_copy = self.exit_tilemap_layer_copy;
-    }
-
-    pub(crate) fn set_mapbak_ts(&mut self, value: u8) {
-        self.map_backup_subscreen_layer = value;
-    }
-
-    pub(crate) fn set_mapbak_tm(&mut self, value: u8) {
-        self.map_backup_main_layer = value;
     }
 
     pub(crate) fn increment_move_overlay_ctr(&mut self) -> u8 {
@@ -3695,16 +3688,6 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
 
     pub(crate) fn restore_exit_layer_masks(&mut self) {
         self.state.restore_exit_layer_masks();
-        self.adopt_live_door_animation_step_then_sync();
-    }
-
-    pub(crate) fn set_mapbak_ts(&mut self, value: u8) {
-        self.state.set_mapbak_ts(value);
-        self.adopt_live_door_animation_step_then_sync();
-    }
-
-    pub(crate) fn set_mapbak_tm(&mut self, value: u8) {
-        self.state.set_mapbak_tm(value);
         self.adopt_live_door_animation_step_then_sync();
     }
 

@@ -645,8 +645,6 @@ fn world_transient_state_owns_transient_behavior() {
     transient.set_quadrant_fullsize_x(0x20);
     transient.set_quadrant_fullsize_y(0x21);
     transient.restore_quadrant_fullsize_from_cached();
-    transient.set_mapbak_tm(0x11);
-    transient.set_mapbak_ts(0x12);
     transient.set_overworld_peg_puzzle_progress(0x1314);
     transient.set_dung_replacement_tile_state(2, 0x1516);
 
@@ -712,8 +710,6 @@ fn native_world_transient_bridge_dual_writes_changes_from_native_state() {
         bridge.set_quadrant_fullsize_x(0x0f);
         bridge.set_quadrant_fullsize_y(0x10);
         bridge.cache_quadrant_fullsize_state();
-        bridge.set_mapbak_tm(0x11);
-        bridge.set_mapbak_ts(0x12);
         bridge.set_overworld_peg_puzzle_progress(0x1314);
         bridge.set_dung_replacement_tile_state(2, 0x1516);
     }

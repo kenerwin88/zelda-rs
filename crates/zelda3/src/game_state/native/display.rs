@@ -5418,12 +5418,14 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
 
     pub(crate) fn set_sub_screen_layers(&mut self, value: u8) {
         self.display.set_sub_screen_layers(value);
+        crate::types::ww_check(TS_COPY, 1, "display.set_sub_screen_layers", u32::from(value));
         self.ram[TS_COPY] = value;
         self.debug_assert_screen_layer_masks_match_ram();
     }
 
     pub(crate) fn clear_sub_screen_layers_word(&mut self) {
         self.display.clear_sub_screen_layers_word_alias();
+        crate::types::ww_check(TS_COPY, 2, "display.clear_sub_screen_layers_word", 0);
         write_le_u16(self.ram, TS_COPY, 0);
         self.debug_assert_screen_layer_masks_match_ram();
         self.debug_assert_window_layer_masks_match_ram();
@@ -5431,18 +5433,21 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
 
     pub(crate) fn and_sub_screen_layers(&mut self, value: u8) {
         self.display.and_sub_screen_layers(value);
+        crate::types::ww_check(TS_COPY, 1, "display.and_sub_screen_layers", u32::from(self.display.sub_screen_layers));
         self.ram[TS_COPY] = self.display.sub_screen_layers;
         self.debug_assert_screen_layer_masks_match_ram();
     }
 
     pub(crate) fn or_sub_screen_layers(&mut self, value: u8) {
         self.display.or_sub_screen_layers(value);
+        crate::types::ww_check(TS_COPY, 1, "display.or_sub_screen_layers", u32::from(self.display.sub_screen_layers));
         self.ram[TS_COPY] = self.display.sub_screen_layers;
         self.debug_assert_screen_layer_masks_match_ram();
     }
 
     pub(crate) fn set_layer_masks_word(&mut self, value: u16) {
         self.display.set_layer_masks_word(value);
+        crate::types::ww_check(TM_COPY, 2, "display.set_layer_masks_word", u32::from(value));
         write_le_u16(self.ram, TM_COPY, value);
         self.debug_assert_screen_layer_masks_match_ram();
     }

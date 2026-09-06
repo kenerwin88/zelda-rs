@@ -17087,14 +17087,6 @@ impl ZeldaState {
         self.world_transient_mut().restore_exit_layer_masks();
     }
 
-    pub(crate) fn set_world_transient_map_backup_subscreen_layer(&mut self, value: u8) {
-        self.world_transient_mut().set_mapbak_ts(value);
-    }
-
-    pub(crate) fn set_world_transient_map_backup_main_layer(&mut self, value: u8) {
-        self.world_transient_mut().set_mapbak_tm(value);
-    }
-
     pub(crate) fn increment_move_overlay_ctr(&mut self) -> u8 {
         self.world_transient_mut().increment_move_overlay_ctr()
     }

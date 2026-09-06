@@ -2151,8 +2151,14 @@ impl ZeldaState {
         if self.game_state.inventory.player_resources.current_health() == 0 {
             let main_screen_layers = self.game_state.display.main_screen_layers;
             let sub_screen_layers = self.game_state.display.sub_screen_layers;
-            self.set_world_transient_map_backup_main_layer(main_screen_layers);
-            self.set_world_transient_map_backup_subscreen_layer(sub_screen_layers);
+            // C: `mapbak_TM = TM_copy; mapbak_TS = TS_copy`. MAPBAK_TM/MAPBAK_TS are
+            // owned by display.ppu_scroll_copy (the game-over restore reads them
+            // from there and its bundle projects them on every scroll sync); a
+            // separate world-transient copy re-stamped a stale subscreen mask over
+            // this backup and the dungeon came back with BG1 on the subscreen
+            // (f391181 scanline-0 gray).
+            self.set_mapbak_tm(main_screen_layers);
+            self.set_mapbak_ts(sub_screen_layers);
             self.save_main_module_for_menu();
             self.set_main_module(18);
             self.set_submodule(1);

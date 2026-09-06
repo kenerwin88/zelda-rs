@@ -9319,11 +9319,14 @@ fn write_rolling_paired_resume_capture(
             "checkpoint": checkpoint_name,
         }))?,
     )?;
-    prune_rolling_paired_resume_captures(
-        &rolling.root,
-        ROLLING_PAIRED_RESUME_GENERATIONS_KEPT,
-        &capture.dir,
-    );
+    // ZELDA3_ROLLING_RESUME_KEEP=<n> keeps more generations for bisection
+    // (diagnostic only; the default bounds the disk cost of long routes).
+    let keep = env::var("ZELDA3_ROLLING_RESUME_KEEP")
+        .ok()
+        .and_then(|raw| raw.trim().parse::<usize>().ok())
+        .filter(|keep| *keep >= 1)
+        .unwrap_or(ROLLING_PAIRED_RESUME_GENERATIONS_KEPT);
+    prune_rolling_paired_resume_captures(&rolling.root, keep, &capture.dir);
     Ok(capture.dir)
 }
 

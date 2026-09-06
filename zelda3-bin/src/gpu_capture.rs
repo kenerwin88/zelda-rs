@@ -131,6 +131,15 @@ pub(crate) struct QueuedGpuVideoDigest {
     ticket: renderer::ModernGpuReadbackTicket,
 }
 
+/// Live Snes9x comparisons present each compared frame to the native window
+/// unless `ZELDA3_COMPARE_OFFSCREEN=1` renders into the same modern GPU
+/// target without presenting. Measured on the f391181 window: presentation is
+/// not the bottleneck (the immediate readback wait is ~12 ms/frame either
+/// way), so this stays an operator convenience for headless runs.
+fn compare_presents_window() -> bool {
+    !std::env::var_os("ZELDA3_COMPARE_OFFSCREEN").is_some_and(|value| value != "0")
+}
+
 impl LiveGpuFrameCapture {
     pub fn from_game(game: &mut ZeldaState) -> Self {
         game.with_display_snapshot(|game| Self::from_current_game_with_probe_frame(game, None))
@@ -947,9 +956,19 @@ impl NativeWindowOracleRenderer {
             }
         }
         let render_started = Instant::now();
-        let report = self.frontend.present_modern_asset_live_frame_from_entries(
-            capture.modern_asset_present_input(&self.resources, &mut self.live_stats),
-        );
+        // ZELDA3_COMPARE_OFFSCREEN=1 renders into the same modern GPU target
+        // without presenting (headless operation); see compare_presents_window.
+        let report = if compare_presents_window() {
+            self.frontend.present_modern_asset_live_frame_from_entries(
+                capture.modern_asset_present_input(&self.resources, &mut self.live_stats),
+            )
+        } else {
+            self.frontend
+                .render_modern_asset_live_frame_offscreen_from_entries(
+                    capture.modern_asset_present_input(&self.resources, &mut self.live_stats),
+                )
+                .map_err(|error| format!("native offscreen renderer failed: {error:?}"))?
+        };
         if timing_enabled {
             self.render_nanos += render_started.elapsed().as_nanos();
         }
