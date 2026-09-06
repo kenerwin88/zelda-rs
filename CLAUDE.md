@@ -414,6 +414,15 @@ parity pass. A Rust regression therefore cannot truncate the reusable oracle.
 ## Gotchas
 
 - Never `git checkout <file>` — it nukes unstaged WIP. Surgically revert your own edits.
+- Removing or reordering a serialized `ZeldaState` field invalidates EVERY paired checkpoint
+  (`rust.z3state` is positional bincode: "unexpected end of file" on resume). Retire a native
+  field by keeping it as a dead byte (unprojected, unchecked) instead of deleting it.
+- Live GPU video comparison is ~55 frames/s (immediate readback ~12 ms/frame, not vsync); the
+  pipelined `./parity cached-av <cache>` runs ~1000 frames/s. Capture the oracle once per
+  route/core (`./parity oracle-av-capture <full-coverage session> --frames N`, Snes9x only,
+  ~75 min for the full route) and run `cached-av` as the fast full-route video+audio check
+  before spending a cold exact gate pass. The gate launcher skips the video preflight
+  (`ZELDA3_PRECOMMIT_VIDEO_PREFLIGHT=0`) because the exact stage compares video too.
 - `check_ram_readability.py` no longer false-positives on length constants
   (`_LEN/_LENGTH/_CAPACITY/_SIZE`) or C-style names in `//` comments, so the pre-commit
   hook passes clean. macOS has no `timeout`/`gtimeout` — use a background pid +
