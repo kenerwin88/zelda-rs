@@ -205,8 +205,13 @@ oracle cache in Rust. New sessions also write a complete canonical A/V hash
 ledger for every compared frame. `./parity av-compare <session>` checks its Rust
 RGB/audio hashes against the oracle-only cached ledger; `./parity
 receipt-compare <session>` recursively checks the sampled semantic receipts.
-These are fast regression/diagnostic tiers. They never promote the frontier;
-two cold pinned-core exact A/V receipts are still required. `./parity cached-av
+These are fast regression/diagnostic tiers. Since 2026-09-06 a FULL-ROUTE cached-av pass
+(from frame 0, no paired resume, both lanes, every cached frame matched) is accepted as the
+exact A/V receipt: `./parity promote --cached-av <run-dir>` records it in the ledger with the
+cache key, core, binary and result hashes (`kind: cached_av_pass`). The cache is Snes9x-only
+output (per-frame RGB/audio SHA-256 of the pinned trace core, input, SRAM, recorded cartridge
+RNG, host receipts), so a pass is exact video+audio parity against the pinned core; only the
+live re-execution and live RNG of the cold gate are skipped. Two cold receipts remain valid too. `./parity cached-av
 <cache>` is the no-Snes9x iteration path: it verifies a cold contiguous cache,
 replays Rust from its bound input, RNG, SRAM, and audio schedule, and stops at
 the first canonical A/V hash mismatch. It intentionally rejects resumed caches

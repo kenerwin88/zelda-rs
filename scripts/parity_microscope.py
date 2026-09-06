@@ -1362,13 +1362,18 @@ def command_cache(args: argparse.Namespace) -> int:
 
 
 def command_promote(args: argparse.Namespace) -> int:
-    ledger = evidence.promote_frontier(
-        ledger_path=args.ledger, binary=args.binary, pass_root=args.pass_root
-    )
+    if args.cached_av is not None:
+        ledger = evidence.promote_frontier_from_cached_av(
+            args.cached_av, ledger_path=args.ledger, binary=args.binary
+        )
+    else:
+        ledger = evidence.promote_frontier(
+            ledger_path=args.ledger, binary=args.binary, pass_root=args.pass_root
+        )
     promoted = ledger["promoted"]
     print(
         f"promoted exact A/V frontier {promoted['last_exact_video_frame']} "
-        f"for commit {promoted['commit']}"
+        f"for commit {promoted['commit']} ({promoted.get('kind', 'cold_confirmations')})"
     )
     print(f"stage and commit {args.ledger}; it is a metadata-only promotion")
     return 0
@@ -2377,7 +2382,8 @@ def parser() -> argparse.ArgumentParser:
     cache.add_argument("--cache-root", type=Path, default=evidence.ORACLE_CACHE_ROOT)
     cache.set_defaults(handler=command_cache)
 
-    promote = subcommands.add_parser("promote", help="promote two cold exact passes into the frontier ledger")
+    promote = subcommands.add_parser("promote", help="promote two cold exact passes (or one full-route cached-av pass) into the frontier ledger")
+    promote.add_argument("--cached-av", type=Path, default=None, help="promote this full-route Rust-only cached Snes9x A/V run directory instead of cold passes")
     promote.add_argument("--ledger", type=Path, default=evidence.DEFAULT_LEDGER)
     promote.add_argument("--binary", type=Path, default=DEFAULT_BINARY)
     promote.add_argument("--pass-root", type=Path, default=evidence.PASS_ROOT)

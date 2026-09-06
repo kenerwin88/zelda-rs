@@ -3905,6 +3905,9 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
     let candidate_manifest = serde_json::json!({
         "schema": 1,
         "kind": "zelda3-rust-only-cached-snes9x-av-replay",
+        "binary_sha256": std::env::current_exe()
+            .ok()
+            .and_then(|path| parity::evidence::sha256_file(&path).ok()),
         "oracle_cache": cache,
         "oracle_cache_key": manifest.get("cache_key"),
         "oracle_cache_manifest_sha256": parity::evidence::sha256_bytes(&manifest_bytes),

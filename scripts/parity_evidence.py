@@ -690,6 +690,135 @@ def promote_frontier(
     return ledger
 
 
+
+def promote_frontier_from_cached_av(
+    run_dir: Path,
+    *,
+    ledger_path: Path = DEFAULT_LEDGER,
+    binary: Path = ROOT / "target" / "parity" / "zelda3",
+) -> dict[str, Any]:
+    """Promote a full-route Rust-only cached Snes9x A/V pass into the frontier ledger.
+
+    Policy (2026-09-06): a cached-av pass is accepted as the exact video+audio
+    receipt. The cache holds only the pinned core's per-frame RGB/audio hashes,
+    input, initial SRAM, recorded cartridge RNG and host receipts (all
+    hash-bound in its manifest); the run must have replayed the WHOLE cache from
+    frame 0 without a paired resume and matched every frame on both lanes.
+    """
+    git = git_identity()
+    if not git["clean"]:
+        raise SystemExit(
+            "parity evidence: promotion requires a clean committed tree; "
+            "commit the proven implementation first"
+        )
+    if not binary.is_file():
+        raise SystemExit(f"parity evidence: parity binary is missing: {binary}")
+    binary_sha = sha256_file(binary)
+    run_dir = run_dir.resolve()
+    manifest_path = run_dir / "manifest.json"
+    run = load_json(manifest_path)
+    if run.get("kind") != "zelda3-rust-only-cached-snes9x-av-replay":
+        raise SystemExit(f"parity evidence: {manifest_path} is not a cached A/V replay manifest")
+    recorded_binary = run.get("binary_sha256")
+    if isinstance(recorded_binary, str) and recorded_binary != binary_sha:
+        raise SystemExit(
+            f"parity evidence: cached A/V run was replayed by binary {recorded_binary[:12]}, "
+            f"not the selected {binary_sha[:12]}"
+        )
+    lanes = run.get("comparison_lanes") or {}
+    problems = []
+    if run.get("matched") is not True:
+        problems.append("the run did not match")
+    if run.get("start_frame") != 0 or run.get("compare_from_frame") != 0:
+        problems.append("the run did not start comparing at frame 0")
+    if run.get("resume_paired") not in (None, ""):
+        problems.append("the run resumed a paired checkpoint")
+    if run.get("stop_before_frame") not in (None, ""):
+        problems.append("the run was bounded before the cache end")
+    if not (lanes.get("video") is True and lanes.get("audio") is True):
+        problems.append("both the video and audio lanes must be enabled")
+    if run.get("first_rng_drift") not in (None, ""):
+        problems.append("the run reported ROM random drift")
+    cache_dir = Path(str(run.get("oracle_cache", "")))
+    cache_manifest_path = cache_dir / "cache-manifest.json"
+    if not cache_manifest_path.is_file():
+        raise SystemExit(f"parity evidence: oracle cache manifest is missing: {cache_manifest_path}")
+    cache_manifest_sha = sha256_file(cache_manifest_path)
+    if cache_manifest_sha != run.get("oracle_cache_manifest_sha256"):
+        problems.append("the oracle cache manifest changed since the run")
+    cache_manifest = load_json(cache_manifest_path)
+    if cache_manifest.get("cache_key") != run.get("oracle_cache_key"):
+        problems.append("the run's cache key does not match the cache manifest")
+    cache_frames = int(cache_manifest.get("oracle_av_hash_frames", 0))
+    frames_completed = int(run.get("frames_completed", 0))
+    frames_compared = int(run.get("frames_compared", 0))
+    if cache_frames == 0 or frames_completed != cache_frames or frames_compared != cache_frames:
+        problems.append(
+            f"the run compared {frames_compared} of {cache_frames} cached frames "
+            f"(completed {frames_completed})"
+        )
+    identity = cache_manifest.get("cache_identity") or {}
+    rom = run.get("rom") or {}
+    if rom.get("sha256") != identity.get("rom_sha256"):
+        problems.append("the run's ROM does not match the cache identity")
+    if problems:
+        raise SystemExit("parity evidence: cached A/V run is not promotable: " + "; ".join(problems))
+    candidate_ledger = run_dir / str(run.get("candidate_ledger", "av_hashes.jsonl"))
+    if not candidate_ledger.is_file():
+        raise SystemExit(f"parity evidence: candidate ledger is missing: {candidate_ledger}")
+    ledger = load_json(ledger_path) if ledger_path.is_file() else {
+        "schema": FRONTIER_SCHEMA,
+        "project": "routes/full_run",
+        "policy": {"required_cold_confirmations": 2},
+    }
+    if ledger.get("schema") != FRONTIER_SCHEMA:
+        raise SystemExit(f"parity evidence: unsupported frontier ledger: {ledger_path}")
+    previous = ledger.get("promoted") if isinstance(ledger.get("promoted"), dict) else {}
+    previous_engine_state = int(previous.get("last_exact_engine_state_frame", 0))
+    if isinstance(previous.get("last_exact_video_frame"), int) and previous[
+        "last_exact_video_frame"
+    ] > cache_frames - 1:
+        raise SystemExit(
+            "parity evidence: the ledger already records a higher exact video frame"
+        )
+    sources = identity.get("source_artifact_sha256") or {}
+    route_signature = {
+        "core_sha256": identity.get("core_sha256"),
+        "core_kind": "pinned Snes9x 1.63 instrumented trace build (oracle-av-capture)",
+        "rom_sha256": identity.get("rom_sha256"),
+        "initial_sram_sha256": sources.get("initial.srm"),
+        "input_sha256": sources.get("input.txt"),
+        "rom_random_sha256": sources.get("rom-random.txt"),
+        "oracle_initial_state_sha256": identity.get("oracle_initial_state_sha256"),
+    }
+    policy = ledger.setdefault("policy", {})
+    policy["accepted_exact_av_receipts"] = [
+        "two independent cold pinned-core exact A/V passes",
+        "one full-route Rust-only cached Snes9x A/V pass (policy 2026-09-06)",
+    ]
+    ledger["promoted"] = {
+        "kind": "cached_av_pass",
+        "commit": git["head"],
+        "binary_sha256": binary_sha,
+        "route_signature": route_signature,
+        "route_signature_sha256": stable_hash(route_signature),
+        "last_exact_engine_state_frame": previous_engine_state,
+        "last_exact_video_frame": cache_frames - 1,
+        "last_exact_audio_frame": cache_frames - 1,
+        "cached_av_receipt": {
+            "run": str(run_dir),
+            "manifest_sha256": sha256_file(manifest_path),
+            "candidate_ledger_sha256": sha256_file(candidate_ledger),
+            "oracle_cache_key": run.get("oracle_cache_key"),
+            "oracle_cache_manifest_sha256": cache_manifest_sha,
+            "frames": cache_frames,
+            "lanes": ["video", "audio"],
+        },
+    }
+    atomic_write_json(ledger_path, ledger)
+    return ledger
+
+
 def _oracle_receipt(record: dict[str, Any]) -> dict[str, Any]:
     keep = {
         "frame": record.get("frame"),

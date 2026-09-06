@@ -484,3 +484,123 @@ class Schema2ColdEvidenceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CachedAvPromotionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.binary = self.root / "zelda3"
+        self.binary.write_bytes(b"binary")
+        self.cache = self.root / "cache"
+        self.cache.mkdir()
+        self.cache_manifest = {
+            "schema": 1,
+            "kind": "zelda3-content-addressed-oracle-evidence",
+            "cache_key": "k" * 64,
+            "oracle_av_hash_frames": 100,
+            "cache_identity": {
+                "core_sha256": "c" * 64,
+                "rom_sha256": "d" * 64,
+                "oracle_initial_state_sha256": "e" * 64,
+                "source_artifact_sha256": {
+                    "initial.srm": "1" * 64,
+                    "input.txt": "2" * 64,
+                    "rom-random.txt": "3" * 64,
+                },
+            },
+        }
+        (self.cache / "cache-manifest.json").write_text(
+            json.dumps(self.cache_manifest), encoding="utf-8"
+        )
+        self.run = self.root / "run-cached"
+        self.run.mkdir()
+        (self.run / "av_hashes.jsonl").write_text("{}\n" * 100, encoding="utf-8")
+        self.ledger = self.root / "parity-frontier.json"
+        self.ledger.write_text(
+            json.dumps(
+                {
+                    "schema": evidence.FRONTIER_SCHEMA,
+                    "project": "routes/full_run",
+                    "policy": {"required_cold_confirmations": 2},
+                    "promoted": {"last_exact_engine_state_frame": 7, "last_exact_video_frame": 50},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def write_run_manifest(self, **overrides) -> None:
+        manifest = {
+            "schema": 1,
+            "kind": "zelda3-rust-only-cached-snes9x-av-replay",
+            "binary_sha256": evidence.sha256_file(self.binary),
+            "oracle_cache": str(self.cache),
+            "oracle_cache_key": "k" * 64,
+            "oracle_cache_manifest_sha256": evidence.sha256_file(
+                self.cache / "cache-manifest.json"
+            ),
+            "rom": {"path": "rom.sfc", "sha256": "d" * 64},
+            "start_frame": 0,
+            "compare_from_frame": 0,
+            "frames_completed": 100,
+            "frames_compared": 100,
+            "stop_before_frame": None,
+            "resume_paired": None,
+            "comparison_lanes": {"video": True, "audio": True},
+            "matched": True,
+            "first_rng_drift": None,
+            "candidate_ledger": "av_hashes.jsonl",
+        }
+        manifest.update(overrides)
+        (self.run / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    def promote(self):
+        with mock.patch.object(
+            evidence, "git_identity", return_value={"clean": True, "head": "h" * 40}
+        ):
+            return evidence.promote_frontier_from_cached_av(
+                self.run, ledger_path=self.ledger, binary=self.binary
+            )
+
+    def test_full_route_cached_av_pass_promotes_video_and_audio(self) -> None:
+        self.write_run_manifest()
+        ledger = self.promote()
+        promoted = ledger["promoted"]
+        self.assertEqual(promoted["kind"], "cached_av_pass")
+        self.assertEqual(promoted["last_exact_video_frame"], 99)
+        self.assertEqual(promoted["last_exact_audio_frame"], 99)
+        self.assertEqual(promoted["last_exact_engine_state_frame"], 7)
+        self.assertEqual(promoted["binary_sha256"], evidence.sha256_file(self.binary))
+        self.assertEqual(promoted["route_signature"]["core_sha256"], "c" * 64)
+        self.assertEqual(promoted["cached_av_receipt"]["frames"], 100)
+        self.assertIn(
+            "one full-route Rust-only cached Snes9x A/V pass (policy 2026-09-06)",
+            ledger["policy"]["accepted_exact_av_receipts"],
+        )
+        self.assertEqual(json.loads(self.ledger.read_text())["promoted"]["kind"], "cached_av_pass")
+
+    def test_partial_resumed_or_mismatched_runs_are_rejected(self) -> None:
+        for overrides in (
+            {"matched": False},
+            {"start_frame": 5, "compare_from_frame": 5},
+            {"resume_paired": "/somewhere/frame-00000005"},
+            {"frames_compared": 99},
+            {"stop_before_frame": 60},
+            {"comparison_lanes": {"video": True, "audio": False}},
+            {"binary_sha256": "f" * 64},
+            {"rom": {"path": "rom.sfc", "sha256": "0" * 64}},
+        ):
+            self.write_run_manifest(**overrides)
+            with self.assertRaises(SystemExit, msg=str(overrides)):
+                self.promote()
+
+    def test_dirty_tree_is_rejected(self) -> None:
+        self.write_run_manifest()
+        with mock.patch.object(evidence, "git_identity", return_value={"clean": False}):
+            with self.assertRaises(SystemExit):
+                evidence.promote_frontier_from_cached_av(
+                    self.run, ledger_path=self.ledger, binary=self.binary
+                )
