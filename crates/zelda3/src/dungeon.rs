@@ -7621,6 +7621,11 @@ impl ZeldaState {
     pub(super) fn Dungeon_SetAttrForActivatedWaterOff(&mut self) {
         self.set_color_window_selection(2);
         self.set_color_math_control(0x32);
+        // ROM $01:EF9D `STZ $212D`: the routine disables the subscreen on the
+        // live PPU immediately, before clearing the TS copy, so the pool's
+        // drained floor is visible in the same frame (route f489892). The C
+        // port only writes the copy, which reaches the register one NMI later.
+        self.zelda_ppu_write(0x212d, 0);
         self.set_sub_screen_layers(0);
         self.set_bg12_window_selection(0);
         self.dungeon_room_load_mut().set_header_collision(0);
