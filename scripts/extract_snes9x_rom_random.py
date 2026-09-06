@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract a host-run-keyed Zelda RNG replay script from a Snes9x JSONL trace."""
+"""Extract a host-run-keyed Zelda RNG replay script from a Snes9x trace (Z3TRACE1 binary or JSON Lines)."""
 
 from __future__ import annotations
 
@@ -7,22 +7,20 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from snes9x_trace_format import iter_events  # noqa: E402
 
 
 RNG_SEED_ADDRESS = 0x0FA1
 CARTRIDGE_RNG_STORE_PC_LOW16 = 0xBA7F
 
 
-def extract_samples(lines: TextIO) -> list[tuple[int, int, bool]]:
+def extract_samples(source: Any) -> list[tuple[int, int, bool]]:
+    """`source` is a trace path, a binary/text stream, or an iterable of events."""
     samples: list[tuple[int, int, bool]] = []
-    for line_number, line in enumerate(lines, 1):
-        if not line.strip():
-            continue
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError as error:
-            raise ValueError(f"line {line_number}: invalid JSON: {error}") from error
+    for line_number, event in enumerate(iter_events(source), 1):
         if event.get("event") != "rng-write" or event.get("address") != RNG_SEED_ADDRESS:
             continue
         pc = event.get("pc")

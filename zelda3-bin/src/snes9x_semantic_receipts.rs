@@ -5,7 +5,6 @@
 
 use std::env;
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -4734,6 +4733,43 @@ struct RawTraceEvent {
 }
 
 impl RawTraceEvent {
+    /// Project one decoded Z3TRACE1 record onto the adapter's event view.
+    fn from_record(record: &parity::trace_format::TraceRecord) -> Self {
+        RawTraceEvent {
+            event: record.event().to_string(),
+            stage: record.stage_name().map(str::to_string),
+            run: Some(record.run),
+            pc: Some(record.pc),
+            s: Some(record.s),
+            return_address: Some(record.return_address),
+            stack1: Some(record.stack[0]),
+            stack4: Some(record.stack[3]),
+            a: Some(record.a),
+            main: Some(record.main),
+            sub: Some(record.sub),
+            subsub: Some(record.subsub),
+            room: Some(record.room),
+            frame_counter: Some(record.frame_counter),
+            nmi_latch: Some(record.nmi_latch),
+            link_y: Some(record.link_y),
+            bg2_v: Some(record.bg2_v),
+            bg2_h: Some(record.bg2_h),
+            spotlight_radius: Some(record.spotlight_radius),
+            spotlight_var4_low: Some(record.spotlight_var4_low),
+            palette_countdown: Some(record.palette_countdown),
+            spotlight_lower_cursor: Some(record.spotlight_lower_cursor),
+            joypad_high: Some(record.joypad_high),
+            joypad_low: Some(record.joypad_low),
+            joypad_high_filtered: Some(record.joypad_high_filtered),
+            joypad_low_filtered: Some(record.joypad_low_filtered),
+            x: Some(record.x),
+            y: Some(record.y),
+            address: record.address().and_then(|value| u16::try_from(value).ok()),
+            value: record.value().and_then(|value| u8::try_from(value).ok()),
+            nmi_ppu_register_operands: Some(record.nmi_ppu_register_operands),
+        }
+    }
+
     fn nmi_ppu_register_operands(&self) -> Result<NmiPpuRegisterOperands, String> {
         let bytes = self
             .nmi_ppu_register_operands
@@ -5862,20 +5898,15 @@ impl Snes9xOracleSemanticTrace {
         if !self.host_dialogue_scroll_progress.is_empty() {
             return Err("prior Snes9x dialogue scroll progress was not consumed".to_string());
         }
-        let mut file = File::open(&self.path).map_err(|error| {
-            format!(
-                "open Snes9x semantic trace {}: {error}",
-                self.path.display()
-            )
-        })?;
-        file.seek(SeekFrom::Start(self.offset)).map_err(|error| {
-            format!(
-                "seek Snes9x semantic trace {}: {error}",
-                self.path.display()
-            )
-        })?;
-        let mut reader = BufReader::new(file);
-        let mut line = String::new();
+        // The pinned core writes Z3TRACE1 binary records; re-open at the
+        // byte offset of the first record this host has not consumed.
+        let mut reader =
+            parity::trace_format::open_trace(&self.path, self.offset).map_err(|error| {
+                format!(
+                    "open Snes9x semantic trace {}: {error}",
+                    self.path.display()
+                )
+            })?;
         let mut receipts = Vec::new();
         let mut host_frame = HostFrameWindow::default();
         let mut dialogue_scroll = DialogueScrollHostWindow::default();
@@ -5884,23 +5915,19 @@ impl Snes9xOracleSemanticTrace {
         let zelda_run_game_loop_call_active_at_entry = self.zelda_run_game_loop_call_active;
         let mut returned_event = None;
         loop {
-            line.clear();
-            let bytes = reader.read_line(&mut line).map_err(|error| {
-                format!(
-                    "read Snes9x semantic trace {}: {error}",
-                    self.path.display()
-                )
-            })?;
-            if bytes == 0 {
-                break;
-            }
-            self.offset = self.offset.saturating_add(bytes as u64);
-            let event: RawTraceEvent = serde_json::from_str(&line).map_err(|error| {
-                format!(
-                    "parse Snes9x semantic trace at byte {}: {error}",
-                    self.offset
-                )
-            })?;
+            let record = match reader.next_record() {
+                Ok(Some(record)) => record,
+                Ok(None) => break,
+                Err(error) => {
+                    return Err(format!(
+                        "read Snes9x semantic trace {} at byte {}: {error}",
+                        self.path.display(),
+                        reader.offset()
+                    ))
+                }
+            };
+            self.offset = reader.offset();
+            let event = RawTraceEvent::from_record(&record);
             if event.event == "frame" && event.stage.as_deref() == Some("return") {
                 returned_event = Some(event.clone());
             }
@@ -15759,17 +15786,18 @@ mod tests {
         event
     }
 
+    /// Encode canonical JSON events as the pinned core's Z3TRACE1 binary
+    /// records, exactly as the adapter reads them in production.
     fn write_semantic_trace(path: &Path, events: &[serde_json::Value]) {
-        fs::write(
-            path,
-            events
-                .iter()
-                .map(serde_json::Value::to_string)
-                .collect::<Vec<_>>()
-                .join("\n")
-                + "\n",
-        )
-        .unwrap();
+        let mut bytes = parity::trace_format::MAGIC.to_vec();
+        for event in events {
+            bytes.extend(
+                parity::trace_format::TraceRecord::from_json(event)
+                    .unwrap()
+                    .encode_framed(),
+            );
+        }
+        fs::write(path, bytes).unwrap();
     }
 
     #[test]
@@ -16708,16 +16736,7 @@ mod tests {
                 "subsub": 0, "frame_counter": 0x8f, "nmi_latch": 0
             }),
         ];
-        fs::write(
-            &path,
-            events
-                .iter()
-                .map(serde_json::Value::to_string)
-                .collect::<Vec<_>>()
-                .join("\n")
-                + "\n",
-        )
-        .unwrap();
+        write_semantic_trace(&path, &events);
         let mut tracker = empty_semantic_tracker();
         tracker.path = path.clone();
         tracker.zelda_run_game_loop_call_active = true;
@@ -20840,13 +20859,7 @@ mod tests {
                 "subsub": 0, "frame_counter": 10, "nmi_latch": 1
             }),
         ];
-        let encoded = events
-            .iter()
-            .map(serde_json::Value::to_string)
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n";
-        fs::write(&path, encoded).unwrap();
+        write_semantic_trace(&path, &events);
         let mut tracker = Snes9xOracleSemanticTrace {
             path: path.clone(),
             offset: 0,
@@ -20936,16 +20949,7 @@ mod tests {
                 "subsub": 0, "frame_counter": 148, "nmi_latch": 0
             }),
         ];
-        fs::write(
-            &path,
-            first_host
-                .iter()
-                .map(serde_json::Value::to_string)
-                .collect::<Vec<_>>()
-                .join("\n")
-                + "\n",
-        )
-        .unwrap();
+        write_semantic_trace(&path, &first_host);
         let mut tracker = Snes9xOracleSemanticTrace {
             path: path.clone(),
             offset: 0,
@@ -21020,12 +21024,19 @@ mod tests {
             }),
         ];
         use std::io::Write as _;
+        // A later host appends framed records after the existing ones.
         let mut file = std::fs::OpenOptions::new()
             .append(true)
             .open(&path)
             .unwrap();
         for event in second_host {
-            writeln!(file, "{}", event).unwrap();
+            use std::io::Write as _;
+            file.write_all(
+                &parity::trace_format::TraceRecord::from_json(&event)
+                    .unwrap()
+                    .encode_framed(),
+            )
+            .unwrap();
         }
         drop(file);
 
@@ -21085,16 +21096,7 @@ mod tests {
                 "sub": 2, "subsub": 0, "frame_counter": 1, "nmi_latch": 0
             }),
         ];
-        fs::write(
-            &path,
-            events
-                .iter()
-                .map(serde_json::Value::to_string)
-                .collect::<Vec<_>>()
-                .join("\n")
-                + "\n",
-        )
-        .unwrap();
+        write_semantic_trace(&path, &events);
         let mut tracker = Snes9xOracleSemanticTrace {
             path: path.clone(),
             offset: 0,

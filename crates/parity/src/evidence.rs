@@ -3,7 +3,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs::{self, File};
-use std::io::{self, BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
+use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 
 const INDEX_MAGIC: &[u8; 8] = b"Z3PTIDX1";
@@ -14,15 +14,12 @@ const EVENT_BYTES: usize = 32;
 const RECORD_BYTES: u32 = 65;
 const MISSING_U32: u32 = u32::MAX;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 struct TraceFields {
     event: String,
     run: u32,
-    #[serde(default)]
     frame: Option<u32>,
-    #[serde(default)]
     pc: Option<u32>,
-    #[serde(default)]
     address: Option<u32>,
 }
 
@@ -222,26 +219,61 @@ pub fn build_trace_index(
             .map_err(|error| format!("cannot create {}: {error}", record_path.display()))?;
         let mut records_output = BufWriter::new(record_file);
         let mut digest = Sha256::new();
-        let mut line = String::new();
-        let mut offset = 0_u64;
+        // The pinned core writes Z3TRACE1 binary records: an 8-byte magic
+        // followed by `u16`-framed records. The digest covers the raw bytes
+        // so a changed source is detected exactly as before.
+        let mut magic = [0_u8; 8];
+        source
+            .read_exact(&mut magic)
+            .map_err(|error| format!("cannot read {}: {error}", trace_path.display()))?;
+        if &magic != crate::trace_format::MAGIC {
+            return Err(format!(
+                "{} is not a Z3TRACE1 binary trace",
+                trace_path.display()
+            ));
+        }
+        digest.update(magic);
+        let mut offset = 8_u64;
         let mut record_count = 0_u64;
         let mut previous_run = None;
+        let mut framed = Vec::new();
         loop {
-            line.clear();
-            let length = source
-                .read_line(&mut line)
-                .map_err(|error| format!("cannot read {}: {error}", trace_path.display()))?;
-            if length == 0 {
-                break;
+            let mut length_bytes = [0_u8; 2];
+            match source.read_exact(&mut length_bytes) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => break,
+                Err(error) => return Err(format!("cannot read {}: {error}", trace_path.display())),
             }
-            digest.update(line.as_bytes());
-            let fields: TraceFields = serde_json::from_str(&line).map_err(|error| {
-                format!(
-                    "invalid trace record {}:{}: {error}",
-                    trace_path.display(),
-                    record_count + 1
-                )
-            })?;
+            let body_length = usize::from(u16::from_le_bytes(length_bytes));
+            framed.clear();
+            framed.extend_from_slice(&length_bytes);
+            framed.resize(2 + body_length, 0);
+            source
+                .read_exact(&mut framed[2..])
+                .map_err(|error| format!("cannot read {}: {error}", trace_path.display()))?;
+            let length = framed.len();
+            digest.update(&framed);
+            let decoded =
+                crate::trace_format::TraceRecord::parse(&framed[2..]).map_err(|error| {
+                    format!(
+                        "invalid trace record {}:{}: {error}",
+                        trace_path.display(),
+                        record_count + 1
+                    )
+                })?;
+            let fields = TraceFields {
+                event: decoded.event().to_string(),
+                run: u32::try_from(decoded.run).map_err(|_| {
+                    format!(
+                        "trace run overflow at {}:{}",
+                        trace_path.display(),
+                        record_count + 1
+                    )
+                })?,
+                frame: Some(decoded.frame),
+                pc: Some(decoded.pc),
+                address: decoded.address(),
+            };
             if fields.event.as_bytes().len() > EVENT_BYTES {
                 return Err(format!(
                     "trace event name is longer than {EVENT_BYTES} bytes at {}:{}",
@@ -593,10 +625,19 @@ pub fn query_trace_index(
         source
             .seek(SeekFrom::Start(record.source_offset))
             .map_err(|error| format!("cannot seek {}: {error}", source_path.display()))?;
-        let mut line = vec![0_u8; record.source_length as usize];
+        let mut framed = vec![0_u8; record.source_length as usize];
         source
-            .read_exact(&mut line)
+            .read_exact(&mut framed)
             .map_err(|error| format!("cannot read {}: {error}", source_path.display()))?;
+        // Render the exact source record as its canonical JSON object so the
+        // query output stays line-oriented for callers.
+        let decoded = crate::trace_format::TraceRecord::parse(framed.get(2..).unwrap_or(&[]))
+            .map_err(|error| {
+                format!("corrupt trace record in {}: {error}", source_path.display())
+            })?;
+        let mut line = serde_json::to_vec(&decoded.to_json())
+            .map_err(|error| format!("cannot encode query output: {error}"))?;
+        line.push(b'\n');
         output
             .write_all(&line)
             .map_err(|error| format!("cannot write query output: {error}"))?;
@@ -865,20 +906,33 @@ mod tests {
         }
     }
 
+    /// Write a binary trace fixture from canonical JSON records.
+    fn write_binary_trace(path: &Path, lines: &[&str]) {
+        let mut bytes = crate::trace_format::MAGIC.to_vec();
+        for line in lines {
+            let value: serde_json::Value = serde_json::from_str(line).unwrap();
+            bytes.extend(
+                crate::trace_format::TraceRecord::from_json(&value)
+                    .unwrap()
+                    .encode_framed(),
+            );
+        }
+        fs::write(path, bytes).unwrap();
+    }
+
     #[test]
     fn trace_index_maps_resumed_runs_and_queries_original_records() {
         let temporary = TestDirectory::new();
-        let trace = temporary.0.join("trace.jsonl");
+        let trace = temporary.0.join("trace.bin");
         let manifest = temporary.0.join("manifest.json");
         let index = temporary.0.join("trace.zpti");
-        fs::write(
+        write_binary_trace(
             &trace,
-            concat!(
-                "{\"event\":\"frame\",\"run\":74,\"frame\":75,\"pc\":32849}\n",
-                "{\"event\":\"wram-write\",\"run\":85,\"frame\":87,\"pc\":1960771,\"address\":3328,\"value\":9}\n"
-            ),
-        )
-        .unwrap();
+            &[
+                "{\"event\":\"frame\",\"run\":74,\"frame\":75,\"pc\":32849}",
+                "{\"event\":\"wram-write\",\"run\":85,\"frame\":87,\"pc\":1960771,\"address\":3328,\"value\":9}",
+            ],
+        );
         fs::write(&manifest, "{\"timing\":{\"start_frame\":31200}}\n").unwrap();
 
         let header = build_trace_index(&trace, &manifest, &index).unwrap();
@@ -894,10 +948,14 @@ mod tests {
         };
         let (_, matched) = query_trace_index(&index, &query, &mut output).unwrap();
         assert_eq!(matched, 1);
-        assert_eq!(
-            String::from_utf8(output).unwrap(),
-            "{\"event\":\"wram-write\",\"run\":85,\"frame\":87,\"pc\":1960771,\"address\":3328,\"value\":9}\n"
-        );
+        let rendered: serde_json::Value =
+            serde_json::from_str(String::from_utf8(output).unwrap().trim()).unwrap();
+        assert_eq!(rendered["event"], "wram-write");
+        assert_eq!(rendered["run"], 85);
+        assert_eq!(rendered["frame"], 87);
+        assert_eq!(rendered["pc"], 1960771);
+        assert_eq!(rendered["address"], 3328);
+        assert_eq!(rendered["value"], 9);
     }
 
     #[test]
@@ -914,17 +972,16 @@ mod tests {
     #[test]
     fn trace_index_rejects_nonmonotonic_run_coordinates() {
         let temporary = TestDirectory::new();
-        let trace = temporary.0.join("trace.jsonl");
+        let trace = temporary.0.join("trace.bin");
         let manifest = temporary.0.join("manifest.json");
         let index = temporary.0.join("trace.zpti");
-        fs::write(
+        write_binary_trace(
             &trace,
-            concat!(
-                "{\"event\":\"frame\",\"run\":2}\n",
-                "{\"event\":\"frame\",\"run\":1}\n"
-            ),
-        )
-        .unwrap();
+            &[
+                "{\"event\":\"frame\",\"run\":2}",
+                "{\"event\":\"frame\",\"run\":1}",
+            ],
+        );
         fs::write(&manifest, "{}\n").unwrap();
         assert!(build_trace_index(&trace, &manifest, &index)
             .unwrap_err()
@@ -934,13 +991,13 @@ mod tests {
     #[test]
     fn trace_query_rejects_a_changed_source() {
         let temporary = TestDirectory::new();
-        let trace = temporary.0.join("trace.jsonl");
+        let trace = temporary.0.join("trace.bin");
         let manifest = temporary.0.join("manifest.json");
         let index = temporary.0.join("trace.zpti");
-        fs::write(&trace, "{\"event\":\"frame\",\"run\":1}\n").unwrap();
+        write_binary_trace(&trace, &["{\"event\":\"frame\",\"run\":1}"]);
         fs::write(&manifest, "{}\n").unwrap();
         build_trace_index(&trace, &manifest, &index).unwrap();
-        fs::write(&trace, "{\"event\":\"frame\",\"run\":2}\n").unwrap();
+        write_binary_trace(&trace, &["{\"event\":\"frame\",\"run\":2}"]);
         let error = query_trace_index(&index, &TraceQuery::default(), &mut Vec::new()).unwrap_err();
         assert!(error.contains("changed after indexing"));
     }
@@ -948,10 +1005,10 @@ mod tests {
     #[test]
     fn trace_query_rejects_a_changed_coordinate_manifest() {
         let temporary = TestDirectory::new();
-        let trace = temporary.0.join("trace.jsonl");
+        let trace = temporary.0.join("trace.bin");
         let manifest = temporary.0.join("manifest.json");
         let index = temporary.0.join("trace.zpti");
-        fs::write(&trace, "{\"event\":\"frame\",\"run\":1}\n").unwrap();
+        write_binary_trace(&trace, &["{\"event\":\"frame\",\"run\":1}"]);
         fs::write(&manifest, "{\"timing\":{\"start_frame\":10}}\n").unwrap();
         build_trace_index(&trace, &manifest, &index).unwrap();
         fs::write(&manifest, "{\"timing\":{\"start_frame\":11}}\n").unwrap();

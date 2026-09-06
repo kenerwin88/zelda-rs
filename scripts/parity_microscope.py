@@ -30,6 +30,7 @@ import parity_evidence as evidence  # noqa: E402
 import parity_probe  # noqa: E402
 import compare_snes9x_cpu_checkpoints as cpu_checkpoints  # noqa: E402
 from extract_snes9x_rom_random import extract_samples, write_script  # noqa: E402
+from snes9x_trace_format import iter_events  # noqa: E402
 
 
 DEFAULT_PROJECT = ROOT / "routes" / "full_run"
@@ -584,8 +585,7 @@ def materialize_source_session_rng(source: Path, output: Path) -> tuple[Path, in
     trace = source / artifact
     if not trace.is_file():
         raise SystemExit(f"parity microscope: source RNG trace is missing: {trace}")
-    with trace.open(encoding="utf-8") as stream:
-        samples = extract_samples(stream)
+    samples = extract_samples(trace)
     if not samples:
         raise SystemExit(f"parity microscope: source RNG trace has no cartridge samples: {trace}")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -615,8 +615,7 @@ def render_manifest_bound_live_rng_script(
     trace = source / artifact
     if not trace.is_file():
         raise SystemExit(f"parity microscope: source RNG trace is missing: {trace}")
-    with trace.open(encoding="utf-8") as stream:
-        samples = extract_samples(stream)
+    samples = extract_samples(trace)
     if not samples:
         raise SystemExit(f"parity microscope: source RNG trace has no cartridge samples: {trace}")
     rendered = io.StringIO()
@@ -642,8 +641,7 @@ def bind_live_rng_to_diagnostic_checkpoint(
         raise SystemExit(
             f"parity microscope: live-RNG bootstrap produced no oracle trace: {trace}"
         )
-    with trace.open(encoding="utf-8") as stream:
-        samples = extract_samples(stream)
+    samples = extract_samples(trace)
     if not samples:
         raise SystemExit("parity microscope: live-RNG bootstrap produced no cartridge RNG samples")
     checkpoint = parity_probe.default_frontier_checkpoint_dir(project)
@@ -742,16 +740,14 @@ def build_timeline(
     internal_frame_filter: str | None = None,
 ) -> tuple[dict[str, Any], str]:
     by_run: dict[int, list[dict[str, Any]]] = defaultdict(list)
-    with trace.open(encoding="utf-8") as stream:
-        for line_number, line in enumerate(stream, 1):
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError as error:
-                raise SystemExit(f"parity microscope: invalid trace {trace}:{line_number}: {error}") from error
+    try:
+        for line_number, event in enumerate(iter_events(trace), 1):
             run = event.get("run")
             if not isinstance(run, int):
-                raise SystemExit(f"parity microscope: trace event has no retro_run at line {line_number}")
+                raise SystemExit(f"parity microscope: trace event has no retro_run at record {line_number}")
             by_run[run].append(event)
+    except ValueError as error:
+        raise SystemExit(f"parity microscope: invalid trace {trace}: {error}") from error
     if not by_run:
         raise SystemExit(f"parity microscope: trace has no events: {trace}")
 
@@ -941,15 +937,10 @@ def build_frame_explanation(
             raise SystemExit(
                 f"parity microscope: host frame {frame} precedes resume frame {resume_frame}"
             )
-        events = []
-        with trace.open(encoding="utf-8") as stream:
-            for line_number, line in enumerate(stream, 1):
-                try:
-                    event = json.loads(line)
-                except json.JSONDecodeError as error:
-                    raise SystemExit(f"{trace}:{line_number}: invalid JSON: {error}") from error
-                if event.get("run") == run:
-                    events.append(event)
+        try:
+            events = [event for event in iter_events(trace) if event.get("run") == run]
+        except ValueError as error:
+            raise SystemExit(f"{trace}: {error}") from error
         entries = [
             event
             for event in events

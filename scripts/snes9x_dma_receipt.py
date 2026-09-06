@@ -16,8 +16,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any, Iterable
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from snes9x_trace_format import iter_events  # noqa: E402
 
 
 DMA_DOMAINS = {
@@ -38,16 +42,10 @@ def pc_address(value: int) -> str:
 
 
 def load_run(path: Path, run: int) -> list[dict[str, Any]]:
-    events: list[dict[str, Any]] = []
-    with path.open() as stream:
-        for line_number, line in enumerate(stream, 1):
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError as error:
-                raise SystemExit(f"{path}:{line_number}: invalid JSON: {error}") from error
-            if event.get("run") == run:
-                events.append(event)
-    return events
+    try:
+        return [event for event in iter_events(path) if event.get("run") == run]
+    except ValueError as error:
+        raise SystemExit(f"{path}: {error}") from error
 
 
 def frame_boundaries(events: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:

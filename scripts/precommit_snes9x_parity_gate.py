@@ -724,8 +724,7 @@ def _write_live_oracle_rng_script(trace_path: Path, output_path: Path) -> int:
     """Materialize the cartridge-only RNG script from a live trace receipt."""
     if not trace_path.is_file():
         raise FileNotFoundError(f"live oracle RNG trace was not produced: {trace_path}")
-    with trace_path.open(encoding="utf-8") as trace:
-        samples = extract_samples(trace)
+    samples = extract_samples(trace_path)
     with output_path.open("w", encoding="utf-8") as output:
         write_script(samples, output)
     return len(samples)

@@ -43,31 +43,31 @@ class PrepareSnes9xTraceOracleTests(unittest.TestCase):
 
     def test_trace_patch_stack_keeps_ledgers_before_presentation_receipts(self) -> None:
         self.assertEqual(
-            MODULE.TRACE_PATCHES[-7].name,
+            MODULE.TRACE_PATCHES[-8].name,
             "zelda3-dsp-phase-ledger.patch",
         )
-        patch = MODULE.TRACE_PATCHES[-7].read_text()
+        patch = MODULE.TRACE_PATCHES[-8].read_text()
         self.assertIn("zelda3_snes9x_debug_dsp_ledger_abi_version", patch)
         self.assertIn("zelda3_ledger_copy_state", patch)
         self.assertIn("Zelda3TraceDspLedgerBranch", patch)
-        self.assertEqual(MODULE.TRACE_PATCHES[-6].name, "zelda3-dma-ledger.patch")
-        dma_patch = MODULE.TRACE_PATCHES[-6].read_text()
+        self.assertEqual(MODULE.TRACE_PATCHES[-7].name, "zelda3-dma-ledger.patch")
+        dma_patch = MODULE.TRACE_PATCHES[-7].read_text()
         self.assertIn("zelda3_snes9x_debug_dma_ledger_count", dma_patch)
         self.assertIn("Zelda3TraceDmaByteBegin", dma_patch)
         self.assertEqual(
-            MODULE.TRACE_PATCHES[-5].name,
+            MODULE.TRACE_PATCHES[-6].name,
             "zelda3-trace-presented-cgram.patch",
         )
-        cgram_patch = MODULE.TRACE_PATCHES[-5].read_text()
+        cgram_patch = MODULE.TRACE_PATCHES[-6].read_text()
         self.assertIn("Zelda3TraceBeginPresentedPpuState", cgram_patch)
         self.assertIn("Zelda3TracePresentedCgramValue", cgram_patch)
         self.assertIn("std::memcmp(scanout_cgram, PPU.CGDATA", cgram_patch)
         self.assertIn("case 36: return Zelda3TracePresentedCgramValue", cgram_patch)
         self.assertEqual(
-            MODULE.TRACE_PATCHES[-4].name,
+            MODULE.TRACE_PATCHES[-5].name,
             "zelda3-trace-presented-hud.patch",
         )
-        hud_patch = MODULE.TRACE_PATCHES[-4].read_text()
+        hud_patch = MODULE.TRACE_PATCHES[-5].read_text()
         self.assertIn("Zelda3TracePresentedHudTilemapValue", hud_patch)
         self.assertIn("presented_hud_word_address = 0x6040", hud_patch)
         self.assertIn("case 37: return Zelda3TracePresentedHudTilemapValue", hud_patch)
@@ -78,19 +78,19 @@ class PrepareSnes9xTraceOracleTests(unittest.TestCase):
         self.assertIn("Zelda3TraceSetPresentedTopCrop(overscan_offset)", hud_patch)
         self.assertIn("case 40: return Zelda3TracePresentedAnimatedBgDestination", hud_patch)
         self.assertEqual(
-            MODULE.TRACE_PATCHES[-3].name,
+            MODULE.TRACE_PATCHES[-4].name,
             "zelda3-trace-presented-bg-tilemaps.patch",
         )
-        bg_patch = MODULE.TRACE_PATCHES[-3].read_text()
+        bg_patch = MODULE.TRACE_PATCHES[-4].read_text()
         self.assertIn("Zelda3TracePresentedBgTilemapMetaValue", bg_patch)
         self.assertIn("Zelda3TracePresentedBgTilemapWordValue", bg_patch)
         self.assertIn("std::memcmp(scanout_vram, Memory.VRAM", bg_patch)
         self.assertIn("case 41: return Zelda3TracePresentedBgTilemapMetaValue", bg_patch)
         self.assertEqual(
-            MODULE.TRACE_PATCHES[-2].name,
+            MODULE.TRACE_PATCHES[-3].name,
             "zelda3-trace-presented-window-mask.patch",
         )
-        window_patch = MODULE.TRACE_PATCHES[-2].read_text()
+        window_patch = MODULE.TRACE_PATCHES[-3].read_text()
         self.assertIn("Zelda3TracePresentedScreenWindowedValue", window_patch)
         self.assertIn("Zelda3TracePresentedWindowPredicateValue", window_patch)
         self.assertIn("Memory.FillRAM[0x212e]", window_patch)
@@ -98,10 +98,10 @@ class PrepareSnes9xTraceOracleTests(unittest.TestCase):
         self.assertIn("case 44: return Zelda3TracePresentedWindowPredicateValue", window_patch)
         self.assertIn("PPU.ClipWindowOverlapLogic[layer]", window_patch)
         self.assertEqual(
-            MODULE.TRACE_PATCHES[-1].name,
+            MODULE.TRACE_PATCHES[-2].name,
             "zelda3-trace-joypad-publication.patch",
         )
-        joypad_patch = MODULE.TRACE_PATCHES[-1].read_text()
+        joypad_patch = MODULE.TRACE_PATCHES[-2].read_text()
         self.assertIn("joypad_high", joypad_patch)
         self.assertIn("joypad_low_filtered", joypad_patch)
         self.assertIn("Memory.RAM[0x00f0]", joypad_patch)
@@ -231,6 +231,16 @@ class PrepareSnes9xTraceOracleTests(unittest.TestCase):
         self.assertIn('has_token(events, "rom-rng")', trace_patch)
         self.assertIn("TRACE_ROM_RNG", trace_patch)
         self.assertIn("(Registers.PBPC & 0xffff) == 0xba7f", trace_patch)
+
+
+    def test_binary_trace_format_patch_is_last_and_frames_records(self) -> None:
+        patch = MODULE.TRACE_PATCHES[-1]
+        self.assertEqual(patch.name, "zelda3-trace-binary-format.patch")
+        text = patch.read_text()
+        self.assertIn('"Z3TRACE1"', text)
+        self.assertIn("trace_record_length", text)
+        self.assertIn('std::fopen(path, "ab")', text)
+        self.assertNotIn('+\tstd::fputs("}', text)
 
 
 if __name__ == "__main__":

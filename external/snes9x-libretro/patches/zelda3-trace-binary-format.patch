@@ -1,0 +1,508 @@
+--- a/zelda3_trace.cpp
++++ b/zelda3_trace.cpp
+@@ -64,6 +64,141 @@
+ 
+ TraceConfig config = {};
+ uint64 retro_run_index = 0;
++
++// Binary trace record format "Z3TRACE1": the file begins with that 8-byte
++// magic; every record is a little-endian u16 length followed by a fixed
++// 106-byte machine-state header and a tag/length/value tail. The Rust
++// decoder (crates/parity/src/trace_format.rs) and the Python decoder
++// (scripts/snes9x_trace_format.py) mirror this layout exactly.
++constexpr unsigned trace_record_capacity = 4096;
++uint8 trace_record[trace_record_capacity];
++unsigned trace_record_length = 0;
++uint8 trace_tlv_scratch[256];
++
++enum TraceRecordKind : uint8
++{
++	RECORD_FRAME = 1,
++	RECORD_VIDEO = 2,
++	RECORD_NMI = 3,
++	RECORD_NMI_RESUME = 4,
++	RECORD_PC = 5,
++	RECORD_DMA = 6,
++	RECORD_HDMA_START = 7,
++	RECORD_HDMA_END = 8,
++	RECORD_RNG_PPU_READ = 9,
++	RECORD_PPU_READ = 10,
++	RECORD_PPU_WRITE = 11,
++	RECORD_RNG_WRITE = 12,
++	RECORD_WRAM_WRITE = 13,
++	RECORD_PIXEL_WRITE = 14,
++};
++
++enum TraceRecordStage : uint8
++{
++	STAGE_NONE = 0,
++	STAGE_ENTRY = 1,
++	STAGE_RETURN = 2,
++	STAGE_PRESENTED = 3,
++};
++
++enum TraceTag : uint8
++{
++	TAG_ADDRESS = 1,
++	TAG_VALUE = 2,
++	TAG_H_LATCHED = 3,
++	TAG_CHANNEL = 4,
++	TAG_SOURCE = 5,
++	TAG_B_ADDRESS = 6,
++	TAG_BYTES = 7,
++	TAG_MODE = 8,
++	TAG_FIXED = 9,
++	TAG_DECREMENT = 10,
++	TAG_VRAM_ADDRESS = 11,
++	TAG_CHANNELS = 12,
++	TAG_CHANNEL_STATE = 13,
++	TAG_PIX = 20,
++	TAG_Z1 = 21,
++	TAG_Z2 = 22,
++	TAG_TILE = 23,
++	TAG_TILE_NUMBER = 24,
++	TAG_TILE_ADDRESS = 25,
++	TAG_TILE_CACHE_VALID = 26,
++	TAG_TILE_CACHE_HASH = 27,
++	TAG_OBJ_TILE = 28,
++	TAG_OBJ_LINE = 29,
++	TAG_OBJ_X = 30,
++	TAG_OBJ_Y = 31,
++	TAG_OBJ_CACHE = 32,
++	TAG_OBJ_TILE_NUMBER = 33,
++	TAG_OBJ_CACHE_VALID = 34,
++	TAG_OBJ_CACHE_HASH = 35,
++};
++
++inline void record_u8(uint32 value)
++{
++	if (trace_record_length < trace_record_capacity)
++		trace_record[trace_record_length++] = (uint8) value;
++}
++
++inline void record_u16(uint32 value)
++{
++	record_u8(value & 0xff);
++	record_u8((value >> 8) & 0xff);
++}
++
++inline void record_u32(uint32 value)
++{
++	record_u16(value & 0xffff);
++	record_u16((value >> 16) & 0xffff);
++}
++
++inline void record_u64(uint64 value)
++{
++	record_u32((uint32) (value & 0xffffffffu));
++	record_u32((uint32) (value >> 32));
++}
++
++inline void record_tlv(uint8 tag, const uint8 *payload, unsigned length)
++{
++	if (length > 255 || trace_record_length + 2 + length > trace_record_capacity)
++		return;
++	record_u8(tag);
++	record_u8(length);
++	for (unsigned index = 0; index < length; index++)
++		record_u8(payload[index]);
++}
++
++inline void record_tlv_u8(uint8 tag, uint32 value)
++{
++	const uint8 payload[1] = { (uint8) value };
++	record_tlv(tag, payload, 1);
++}
++
++inline void record_tlv_u16(uint8 tag, uint32 value)
++{
++	const uint8 payload[2] = { (uint8) (value & 0xff), (uint8) ((value >> 8) & 0xff) };
++	record_tlv(tag, payload, 2);
++}
++
++inline void record_tlv_u32(uint8 tag, uint32 value)
++{
++	const uint8 payload[4] = {
++		(uint8) (value & 0xff), (uint8) ((value >> 8) & 0xff),
++		(uint8) ((value >> 16) & 0xff), (uint8) ((value >> 24) & 0xff),
++	};
++	record_tlv(tag, payload, 4);
++}
++
++inline void record_tlv_i32(uint8 tag, int32 value)
++{
++	record_tlv_u32(tag, (uint32) value);
++}
++
++inline void record_stage(TraceRecordStage stage)
++{
++	if (trace_record_length > 1)
++		trace_record[1] = (uint8) stage;
++}
+ bool nmi_resume_pending = false;
+ uint32 nmi_resume_pc = 0;
+ uint16 nmi_resume_stack = 0;
+@@ -367,9 +502,14 @@
+ 	const char *path = std::getenv("ZELDA3_SNES9X_TRACE");
+ 	if (!path || !*path)
+ 		return;
+-	config.output = std::fopen(path, "a");
++	config.output = std::fopen(path, "ab");
+ 	if (!config.output)
+ 		return;
++	if (std::ftell(config.output) == 0)
++	{
++		std::fwrite("Z3TRACE1", 1, 8, config.output);
++		std::fflush(config.output);
++	}
+ 
+ 	const char *events = std::getenv("ZELDA3_SNES9X_TRACE_EVENTS");
+ 	if (!events || !*events)
+@@ -423,74 +563,74 @@
+ 	return false;
+ }
+ 
+-void write_machine_state(const char *event)
++void write_machine_state(TraceRecordKind kind)
+ {
+ 	const uint32 return_address =
+ 		Memory.RAM[(Registers.S.W + 1) & 0xffff] |
+ 		(Memory.RAM[(Registers.S.W + 2) & 0xffff] << 8) |
+ 		(Memory.RAM[(Registers.S.W + 3) & 0xffff] << 16);
+-	std::fprintf(config.output,
+-		"{\"event\":\"%s\",\"run\":%llu,\"frame\":%u,\"v\":%d,\"cycles\":%d,"
+-		"\"pc\":%u,\"a\":%u,\"x\":%u,\"y\":%u,\"s\":%u,"
+-		"\"carry\":%u,\"p\":%u,"
+-		"\"main\":%u,\"sub\":%u,\"subsub\":%u,\"frame_counter\":%u,\"room\":%u,"
+-		"\"lights_out\":%u,\"palette_countdown\":%u,\"palette_direction\":%u,"
+-		"\"link_y\":%u,\"link_x\":%u,\"bg2_v\":%u,\"bg2_h\":%u,"
+-		"\"mosaic_target\":%u,"
+-		"\"spotlight_radius\":%u,\"spotlight_state\":%u,"
+-		"\"spotlight_var4_low\":%u,\"spotlight_lower_cursor\":%u,"
+-		"\"rng_seed\":%u,\"nmi_latch\":%u,\"nmi_disable\":%u,\"nmi_pending\":%u,"
+-		"\"joypad_high\":%u,\"joypad_low\":%u,"
+-		"\"joypad_high_filtered\":%u,\"joypad_low_filtered\":%u,"
+-		"\"nmi_ppu_register_operands\":[%u,%u,%u,%u,%u,%u,%u,%u,"
+-		"%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,"
+-		"%u,%u,%u,%u,%u,%u,%u],"
+-		"\"return_address\":%u,"
+-		"\"stack1\":%u,\"stack2\":%u,\"stack3\":%u,\"stack4\":%u",
+-		event, (unsigned long long) retro_run_index, IPPU.TotalEmulatedFrames,
+-		CPU.V_Counter, CPU.Cycles,
+-		Registers.PBPC & 0xffffff, Registers.A.W, Registers.X.W, Registers.Y.W,
+-		Registers.S.W, Zelda3TraceCpuCarry(), Zelda3TraceCpuStatus(),
+-		Memory.RAM[0x10], Memory.RAM[0x11], Memory.RAM[0xb0],
+-		Memory.RAM[0x1a], Memory.RAM[0xa0] | (Memory.RAM[0xa1] << 8),
+-		Memory.RAM[0xc005] | Memory.RAM[0xc006], Memory.RAM[0xc007],
+-		Memory.RAM[0xc009],
+-		Memory.RAM[0x20] | (Memory.RAM[0x21] << 8),
+-		Memory.RAM[0x22] | (Memory.RAM[0x23] << 8),
+-		Memory.RAM[0xe8] | (Memory.RAM[0xe9] << 8),
+-		Memory.RAM[0xe2] | (Memory.RAM[0xe3] << 8),
+-		Memory.RAM[0xc00b],
+-		Memory.RAM[0x067c] | (Memory.RAM[0x067d] << 8),
+-		Memory.RAM[0x067e] | (Memory.RAM[0x067f] << 8),
+-		Memory.RAM[0x067a],
+-		Memory.RAM[0x0006] | (Memory.RAM[0x0007] << 8),
+-		Memory.RAM[0x0fa1], Memory.RAM[0x12],
+-		Memory.RAM[0x0710], Memory.RAM[0x17],
+-		Memory.RAM[0x00f0], Memory.RAM[0x00f2],
+-		Memory.RAM[0x00f4], Memory.RAM[0x00f6],
+-		Memory.RAM[0x0096], Memory.RAM[0x0097], Memory.RAM[0x0098],
+-		Memory.RAM[0x0099], Memory.RAM[0x009a],
+-		Memory.RAM[0x009c], Memory.RAM[0x009d], Memory.RAM[0x009e],
+-		Memory.RAM[0x001c], Memory.RAM[0x001d],
+-		Memory.RAM[0x001e], Memory.RAM[0x001f],
+-		Memory.RAM[0x0120], Memory.RAM[0x0121],
+-		Memory.RAM[0x0124], Memory.RAM[0x0125],
+-		Memory.RAM[0x011e], Memory.RAM[0x011f],
+-		Memory.RAM[0x0122], Memory.RAM[0x0123],
+-		Memory.RAM[0x00e4], Memory.RAM[0x00e5],
+-		Memory.RAM[0x00ea], Memory.RAM[0x00eb],
+-		Memory.RAM[0x0013], Memory.RAM[0x0095], Memory.RAM[0x0094],
+-		Memory.RAM[0x0638], Memory.RAM[0x0639],
+-		Memory.RAM[0x063a], Memory.RAM[0x063b], return_address,
+-		Memory.RAM[(Registers.S.W + 1) & 0xffff],
+-		Memory.RAM[(Registers.S.W + 2) & 0xffff],
+-		Memory.RAM[(Registers.S.W + 3) & 0xffff],
+-		Memory.RAM[(Registers.S.W + 4) & 0xffff]);
++	trace_record_length = 0;
++	record_u8(kind);
++	record_u8(STAGE_NONE);
++	record_u64(retro_run_index);
++	record_u32(IPPU.TotalEmulatedFrames);
++	record_u16((uint16) (int16) CPU.V_Counter);
++	record_u32((uint32) CPU.Cycles);
++	record_u32(Registers.PBPC & 0xffffff);
++	record_u16(Registers.A.W);
++	record_u16(Registers.X.W);
++	record_u16(Registers.Y.W);
++	record_u16(Registers.S.W);
++	record_u8(Zelda3TraceCpuCarry());
++	record_u8(Zelda3TraceCpuStatus());
++	record_u8(Memory.RAM[0x10]);
++	record_u8(Memory.RAM[0x11]);
++	record_u8(Memory.RAM[0xb0]);
++	record_u8(Memory.RAM[0x1a]);
++	record_u16(Memory.RAM[0xa0] | (Memory.RAM[0xa1] << 8));
++	record_u8(Memory.RAM[0xc005] | Memory.RAM[0xc006]);
++	record_u8(Memory.RAM[0xc007]);
++	record_u8(Memory.RAM[0xc009]);
++	record_u16(Memory.RAM[0x20] | (Memory.RAM[0x21] << 8));
++	record_u16(Memory.RAM[0x22] | (Memory.RAM[0x23] << 8));
++	record_u16(Memory.RAM[0xe8] | (Memory.RAM[0xe9] << 8));
++	record_u16(Memory.RAM[0xe2] | (Memory.RAM[0xe3] << 8));
++	record_u8(Memory.RAM[0xc00b]);
++	record_u16(Memory.RAM[0x067c] | (Memory.RAM[0x067d] << 8));
++	record_u16(Memory.RAM[0x067e] | (Memory.RAM[0x067f] << 8));
++	record_u8(Memory.RAM[0x067a]);
++	record_u16(Memory.RAM[0x0006] | (Memory.RAM[0x0007] << 8));
++	record_u8(Memory.RAM[0x0fa1]);
++	record_u8(Memory.RAM[0x12]);
++	record_u8(Memory.RAM[0x0710]);
++	record_u8(Memory.RAM[0x17]);
++	record_u8(Memory.RAM[0x00f0]);
++	record_u8(Memory.RAM[0x00f2]);
++	record_u8(Memory.RAM[0x00f4]);
++	record_u8(Memory.RAM[0x00f6]);
++	static const uint16 nmi_ppu_register_operand_addresses[31] = {
++		0x0096, 0x0097, 0x0098, 0x0099, 0x009a, 0x009c, 0x009d, 0x009e,
++		0x001c, 0x001d, 0x001e, 0x001f, 0x0120, 0x0121, 0x0124, 0x0125,
++		0x011e, 0x011f, 0x0122, 0x0123, 0x00e4, 0x00e5, 0x00ea, 0x00eb,
++		0x0013, 0x0095, 0x0094, 0x0638, 0x0639, 0x063a, 0x063b,
++	};
++	for (unsigned index = 0; index < 31; index++)
++		record_u8(Memory.RAM[nmi_ppu_register_operand_addresses[index]]);
++	record_u32(return_address);
++	record_u8(Memory.RAM[(Registers.S.W + 1) & 0xffff]);
++	record_u8(Memory.RAM[(Registers.S.W + 2) & 0xffff]);
++	record_u8(Memory.RAM[(Registers.S.W + 3) & 0xffff]);
++	record_u8(Memory.RAM[(Registers.S.W + 4) & 0xffff]);
+ }
+ 
+ void finish_event()
+ {
+-	std::fputs("}\n", config.output);
++	const uint8 length[2] = {
++		(uint8) (trace_record_length & 0xff),
++		(uint8) ((trace_record_length >> 8) & 0xff),
++	};
++	std::fwrite(length, 1, 2, config.output);
++	std::fwrite(trace_record, 1, trace_record_length, config.output);
+ 	std::fflush(config.output);
+ }
+ 
+@@ -516,8 +656,8 @@
+ {
+ 	if (active(TRACE_FRAME))
+ 	{
+-		write_machine_state("video");
+-		std::fputs(",\"stage\":\"presented\"", config.output);
++		write_machine_state(RECORD_VIDEO);
++		record_stage(STAGE_PRESENTED);
+ 		finish_event();
+ 	}
+ 	std::memcpy(presented_oam, PPU.OAMData, sizeof(presented_oam));
+@@ -817,15 +957,26 @@
+ 	presented_pixel[9] = tile_cache
+ 		[presented_obj_tile_line + trace_pixel_x - presented_obj_tile_x];
+ 	if (config.output)
+-		std::fprintf(config.output,
+-			"{\"event\":\"pixel-write\",\"run\":%llu,\"frame\":%u,\"pix\":%d,\"z1\":%d,\"z2\":%d,\"tile\":%d,\"tile_number\":%d,\"tile_address\":%d,\"tile_cache_valid\":%d,\"tile_cache_hash\":%u,\"obj_tile\":%d,\"obj_line\":%d,\"obj_x\":%d,\"obj_y\":%d,\"obj_cache\":%d,\"obj_tile_number\":%u,\"obj_cache_valid\":%d,\"obj_cache_hash\":%u}\n",
+-			(unsigned long long) retro_run_index, IPPU.TotalEmulatedFrames,
+-			palette_index, z1, z2, presented_tile, presented_tile_number,
+-			presented_tile_address, presented_tile_cache_valid,
+-			presented_tile_cache_hash, presented_obj_tile,
+-			presented_obj_tile_line, presented_obj_tile_x, presented_obj_tile_y,
+-			presented_pixel[9], tile_number,
+-			IPPU.TileCached[TILE_4BIT][tile_number], tile_cache_hash);
++	{
++		write_machine_state(RECORD_PIXEL_WRITE);
++		record_tlv_i32(TAG_PIX, palette_index);
++		record_tlv_i32(TAG_Z1, z1);
++		record_tlv_i32(TAG_Z2, z2);
++		record_tlv_i32(TAG_TILE, presented_tile);
++		record_tlv_i32(TAG_TILE_NUMBER, presented_tile_number);
++		record_tlv_i32(TAG_TILE_ADDRESS, presented_tile_address);
++		record_tlv_i32(TAG_TILE_CACHE_VALID, presented_tile_cache_valid);
++		record_tlv_u32(TAG_TILE_CACHE_HASH, presented_tile_cache_hash);
++		record_tlv_i32(TAG_OBJ_TILE, presented_obj_tile);
++		record_tlv_i32(TAG_OBJ_LINE, presented_obj_tile_line);
++		record_tlv_i32(TAG_OBJ_X, presented_obj_tile_x);
++		record_tlv_i32(TAG_OBJ_Y, presented_obj_tile_y);
++		record_tlv_i32(TAG_OBJ_CACHE, presented_pixel[9]);
++		record_tlv_u32(TAG_OBJ_TILE_NUMBER, tile_number);
++		record_tlv_i32(TAG_OBJ_CACHE_VALID, IPPU.TileCached[TILE_4BIT][tile_number]);
++		record_tlv_u32(TAG_OBJ_CACHE_HASH, tile_cache_hash);
++		finish_event();
++	}
+ }
+ 
+ void Zelda3TraceSetPresentedTile(int tile, int tile_number, int tile_address,
+@@ -1647,8 +1798,8 @@
+ 		smp_instruction_count = 0;
+ 	if (!active(TRACE_FRAME))
+ 		return;
+-	write_machine_state("frame");
+-	std::fputs(",\"stage\":\"entry\"", config.output);
++	write_machine_state(RECORD_FRAME);
++	record_stage(STAGE_ENTRY);
+ 	finish_event();
+ }
+ 
+@@ -1656,8 +1807,8 @@
+ {
+ 	if (active(TRACE_FRAME))
+ 	{
+-		write_machine_state("frame");
+-		std::fputs(",\"stage\":\"return\"", config.output);
++		write_machine_state(RECORD_FRAME);
++		record_stage(STAGE_RETURN);
+ 		finish_event();
+ 	}
+ 	retro_run_index++;
+@@ -1669,13 +1820,13 @@
+ 	if (nmi_resume_pending && active(TRACE_NMI_RESUME) &&
+ 		pc == nmi_resume_pc && Registers.S.W == nmi_resume_stack)
+ 	{
+-		write_machine_state("nmi-resume");
++		write_machine_state(RECORD_NMI_RESUME);
+ 		finish_event();
+ 		nmi_resume_pending = false;
+ 	}
+ 	if (active(TRACE_PC) && includes(config.pc, config.pc_count, pc))
+ 	{
+-		write_machine_state("pc");
++		write_machine_state(RECORD_PC);
+ 		finish_event();
+ 	}
+ }
+@@ -1690,7 +1841,7 @@
+ 	}
+ 	if (active(TRACE_NMI))
+ 	{
+-		write_machine_state("nmi");
++		write_machine_state(RECORD_NMI);
+ 		finish_event();
+ 	}
+ }
+@@ -1699,13 +1850,15 @@
+ {
+ 	if (!active(TRACE_DMA))
+ 		return;
+-	write_machine_state("dma");
+-	std::fprintf(config.output,
+-		",\"channel\":%u,\"source\":%u,\"b_address\":%u,\"bytes\":%u,"
+-		"\"mode\":%u,\"fixed\":%u,\"decrement\":%u,\"vram_address\":%u",
+-		channel, ((uint32) dma->ABank << 16) | dma->AAddress, dma->BAddress,
+-		dma->TransferBytes ? dma->TransferBytes : 0x10000,
+-		dma->TransferMode, dma->AAddressFixed, dma->AAddressDecrement, PPU.VMA.Address);
++	write_machine_state(RECORD_DMA);
++	record_tlv_u8(TAG_CHANNEL, channel);
++	record_tlv_u32(TAG_SOURCE, ((uint32) dma->ABank << 16) | dma->AAddress);
++	record_tlv_u8(TAG_B_ADDRESS, dma->BAddress);
++	record_tlv_u32(TAG_BYTES, dma->TransferBytes ? dma->TransferBytes : 0x10000);
++	record_tlv_u8(TAG_MODE, dma->TransferMode);
++	record_tlv_u8(TAG_FIXED, dma->AAddressFixed);
++	record_tlv_u8(TAG_DECREMENT, dma->AAddressDecrement);
++	record_tlv_u16(TAG_VRAM_ADDRESS, PPU.VMA.Address);
+ 	finish_event();
+ }
+ 
+@@ -1836,10 +1989,8 @@
+ {
+ 	if (!active(TRACE_HDMA))
+ 		return;
+-	write_machine_state(phase[0] == 's' ? "hdma-start" : "hdma-end");
+-	std::fprintf(config.output, ",\"channels\":%u", channels);
+-	std::fprintf(config.output, ",\"channel_state\":[");
+-	bool first = true;
++	write_machine_state(phase[0] == 's' ? RECORD_HDMA_START : RECORD_HDMA_END);
++	record_tlv_u8(TAG_CHANNELS, channels);
+ 	for (unsigned channel = 0, mask = 1; channel < 8; channel++, mask <<= 1)
+ 	{
+ 		if (!(channels & mask))
+@@ -1848,17 +1999,24 @@
+ 		const uint32 source = dma->HDMAIndirectAddressing
+ 			? ((uint32) dma->IndirectBank << 16) | dma->IndirectAddress
+ 			: ((uint32) dma->ABank << 16) | dma->Address;
+-		std::fprintf(config.output,
+-			"%s{\"channel\":%u,\"source\":%u,\"table_address\":%u,"
+-			"\"indirect\":%u,\"line_count\":%u,\"repeat\":%u,"
+-			"\"do_transfer\":%u,\"b_address\":%u,\"mode\":%u,\"data\":[",
+-			first ? "" : ",", channel, source, dma->Address,
+-			dma->HDMAIndirectAddressing, dma->LineCount, dma->Repeat,
+-			dma->DoTransfer, dma->BAddress, dma->TransferMode);
+-		first = false;
+ 		const unsigned byte_count_by_mode[8] = { 1, 2, 2, 4, 4, 4, 2, 4 };
+ 		const unsigned byte_count = dma->DoTransfer ? byte_count_by_mode[dma->TransferMode] : 0;
+ 		const uint8 bank = source >> 16;
++		unsigned length = 0;
++		trace_tlv_scratch[length++] = channel;
++		trace_tlv_scratch[length++] = source & 0xff;
++		trace_tlv_scratch[length++] = (source >> 8) & 0xff;
++		trace_tlv_scratch[length++] = (source >> 16) & 0xff;
++		trace_tlv_scratch[length++] = (source >> 24) & 0xff;
++		trace_tlv_scratch[length++] = dma->Address & 0xff;
++		trace_tlv_scratch[length++] = (dma->Address >> 8) & 0xff;
++		trace_tlv_scratch[length++] = dma->HDMAIndirectAddressing;
++		trace_tlv_scratch[length++] = dma->LineCount;
++		trace_tlv_scratch[length++] = dma->Repeat;
++		trace_tlv_scratch[length++] = dma->DoTransfer;
++		trace_tlv_scratch[length++] = dma->BAddress;
++		trace_tlv_scratch[length++] = dma->TransferMode;
++		trace_tlv_scratch[length++] = byte_count;
+ 		for (unsigned byte = 0; byte < byte_count; byte++)
+ 		{
+ 			const uint32 offset = (source + byte) & 0xffff;
+@@ -1868,11 +2026,10 @@
+ 			const unsigned value = bank == 0x7e || bank == 0x7f || low_wram_mirror
+ 				? Memory.RAM[wram_offset]
+ 				: 0;
+-			std::fprintf(config.output, "%s%u", byte ? "," : "", value);
++			trace_tlv_scratch[length++] = value;
+ 		}
+-		std::fprintf(config.output, "]}");
++		record_tlv(TAG_CHANNEL_STATE, trace_tlv_scratch, length);
+ 	}
+-	std::fprintf(config.output, "]");
+ 	finish_event();
+ }
+ 
+@@ -1882,9 +2039,10 @@
+ 	if ((!rng || !active(TRACE_RNG)) &&
+ 		(!active(TRACE_PPU) || !includes(config.ppu, config.ppu_count, address)))
+ 		return;
+-	write_machine_state(rng ? "rng-ppu-read" : "ppu-read");
+-	std::fprintf(config.output, ",\"address\":%u,\"value\":%u,\"h_latched\":%u",
+-		address, value, PPU.HBeamPosLatched);
++	write_machine_state(rng ? RECORD_RNG_PPU_READ : RECORD_PPU_READ);
++	record_tlv_u32(TAG_ADDRESS, address);
++	record_tlv_u32(TAG_VALUE, value);
++	record_tlv_u16(TAG_H_LATCHED, PPU.HBeamPosLatched);
+ 	finish_event();
+ }
+ 
+@@ -1892,8 +2050,9 @@
+ {
+ 	if (!active(TRACE_PPU) || !includes(config.ppu, config.ppu_count, address))
+ 		return;
+-	write_machine_state("ppu-write");
+-	std::fprintf(config.output, ",\"address\":%u,\"value\":%u", address, value);
++	write_machine_state(RECORD_PPU_WRITE);
++	record_tlv_u32(TAG_ADDRESS, address);
++	record_tlv_u32(TAG_VALUE, value);
+ 	finish_event();
+ }
+ 
+@@ -1914,7 +2073,8 @@
+ 		active(TRACE_WRAM) && includes(config.wram, config.wram_count, offset);
+ 	if (!trace_rng && !trace_rom_rng && !trace_wram)
+ 		return;
+-	write_machine_state(trace_rng || trace_rom_rng ? "rng-write" : "wram-write");
+-	std::fprintf(config.output, ",\"address\":%u,\"value\":%u", offset, value);
++	write_machine_state(trace_rng || trace_rom_rng ? RECORD_RNG_WRITE : RECORD_WRAM_WRITE);
++	record_tlv_u32(TAG_ADDRESS, offset);
++	record_tlv_u32(TAG_VALUE, value);
+ 	finish_event();
+ }

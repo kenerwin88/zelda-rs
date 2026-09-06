@@ -18,6 +18,9 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from snes9x_trace_format import iter_events  # noqa: E402
+
 
 SCHEMA = 1
 MASTER_CYCLES_PER_SCANLINE = 1364
@@ -158,13 +161,8 @@ def extract(
     address_labels = {address: label for label, address in markers.items()}
     runs: OrderedDict[int, list[dict[str, Any]]] = OrderedDict()
     malformed_line = None
-    with trace_path.open() as stream:
-        for line_number, line in enumerate(stream, 1):
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                malformed_line = line_number
-                break
+    try:
+        for line_number, event in enumerate(iter_events(trace_path), 1):
             run = event.get("run")
             if not isinstance(run, int) or not first_run <= run <= last_run:
                 continue
@@ -172,8 +170,10 @@ def extract(
                 continue
             segments = runs.setdefault(run, [])
             append_event(segments, event, address_labels)
+    except ValueError as error:
+        malformed_line = str(error)
     if malformed_line is not None:
-        raise SystemExit(f"trace {trace_path} contains invalid JSON at line {malformed_line}")
+        raise SystemExit(f"trace {trace_path} contains an invalid record: {malformed_line}")
     if not runs:
         raise SystemExit(
             f"trace {trace_path} contains no CPU events for runs {first_run}..{last_run}"

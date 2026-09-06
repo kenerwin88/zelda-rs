@@ -390,6 +390,126 @@ fn cold_evidence(args: &[String]) {
     }
 }
 
+/// `zparity trace-decode TRACE.bin [--run N] [--event NAME] [--limit N]`:
+/// render Z3TRACE1 records as canonical JSON Lines on stdout.
+fn trace_decode(args: &[String]) {
+    let Some(path) = args.first() else {
+        eprintln!("usage: zparity trace-decode TRACE [--run N] [--run-range A-B] [--event NAME] [--limit N]");
+        exit(2);
+    };
+    let mut run_filter: Option<(u64, u64)> = None;
+    let mut event_filter: Option<String> = None;
+    let mut limit: Option<usize> = None;
+    let mut index = 1;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--run" => {
+                let value: u64 = args
+                    .get(index + 1)
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or_else(|| {
+                        eprintln!("--run needs an integer");
+                        exit(2)
+                    });
+                run_filter = Some((value, value));
+                index += 2;
+            }
+            "--run-range" => {
+                let text = args.get(index + 1).cloned().unwrap_or_default();
+                let (a, b) = text
+                    .split_once('-')
+                    .unwrap_or((text.as_str(), text.as_str()));
+                run_filter = Some((a.parse().unwrap_or(0), b.parse().unwrap_or(u64::MAX)));
+                index += 2;
+            }
+            "--event" => {
+                event_filter = args.get(index + 1).cloned();
+                index += 2;
+            }
+            "--limit" => {
+                limit = args.get(index + 1).and_then(|v| v.parse().ok());
+                index += 2;
+            }
+            other => {
+                eprintln!("unknown trace-decode option {other}");
+                exit(2);
+            }
+        }
+    }
+    let mut reader = parity::trace_format::open_trace(std::path::Path::new(path), 0)
+        .unwrap_or_else(|error| {
+            eprintln!("zparity trace-decode: {error}");
+            exit(1);
+        });
+    let stdout = std::io::stdout();
+    let mut out = std::io::BufWriter::new(stdout.lock());
+    let mut emitted = 0usize;
+    loop {
+        let record = match reader.next_record() {
+            Ok(Some(record)) => record,
+            Ok(None) => break,
+            Err(error) => {
+                eprintln!("zparity trace-decode: {error}");
+                exit(1);
+            }
+        };
+        if let Some((lo, hi)) = run_filter {
+            if record.run < lo {
+                continue;
+            }
+            if record.run > hi {
+                break;
+            }
+        }
+        if event_filter
+            .as_deref()
+            .is_some_and(|name| name != record.event())
+        {
+            continue;
+        }
+        use std::io::Write as _;
+        if writeln!(out, "{}", record.to_json()).is_err() {
+            break;
+        }
+        emitted += 1;
+        if limit.is_some_and(|max| emitted >= max) {
+            break;
+        }
+    }
+}
+
+/// `zparity trace-encode INPUT.jsonl OUTPUT.bin`: convert canonical JSON
+/// Lines records (fixtures, older traces) into the Z3TRACE1 binary format.
+fn trace_encode(args: &[String]) {
+    let (Some(input), Some(output)) = (args.first(), args.get(1)) else {
+        eprintln!("usage: zparity trace-encode INPUT.jsonl OUTPUT.bin");
+        exit(2);
+    };
+    let text = std::fs::read_to_string(input).unwrap_or_else(|error| {
+        eprintln!("zparity trace-encode: cannot read {input}: {error}");
+        exit(1);
+    });
+    let mut bytes = parity::trace_format::MAGIC.to_vec();
+    for (number, line) in text.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let value: serde_json::Value = serde_json::from_str(line).unwrap_or_else(|error| {
+            eprintln!("zparity trace-encode: line {}: {error}", number + 1);
+            exit(1);
+        });
+        let record = parity::trace_format::TraceRecord::from_json(&value).unwrap_or_else(|error| {
+            eprintln!("zparity trace-encode: line {}: {error}", number + 1);
+            exit(1);
+        });
+        bytes.extend(record.encode_framed());
+    }
+    std::fs::write(output, bytes).unwrap_or_else(|error| {
+        eprintln!("zparity trace-encode: cannot write {output}: {error}");
+        exit(1);
+    });
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
@@ -400,9 +520,11 @@ fn main() {
         Some("receipt-compare") => receipt_compare(&args[1..]),
         Some("av-compare") => av_compare(&args[1..]),
         Some("cold-evidence") => cold_evidence(&args[1..]),
+        Some("trace-decode") => trace_decode(&args[1..]),
+        Some("trace-encode") => trace_encode(&args[1..]),
         _ => {
             eprintln!(
-                "usage: zparity <coverage|trace-index|trace-query|cache-verify|receipt-compare|av-compare|cold-evidence> [options]"
+                "usage: zparity <coverage|trace-index|trace-query|cache-verify|receipt-compare|av-compare|cold-evidence|trace-decode|trace-encode> [options]"
             );
             eprintln!("(capture/check/drill parity subcommands were retired with legacy parity)");
             exit(2);

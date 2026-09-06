@@ -4,3 +4,4 @@ pub mod coverage;
 pub mod evidence;
 pub mod receipts;
 pub mod runner;
+pub mod trace_format;

@@ -18,7 +18,11 @@ The receipts are reproducible for the same source, patch, and toolchain; on
 macOS the linker retains its content-derived UUID so the cores remain loadable.
 
 Tracing is off unless `ZELDA3_SNES9X_TRACE` names an output file. Output is
-JSON Lines so it can be filtered with `jq` or compared mechanically.
+the `Z3TRACE1` binary record format described in
+`docs/parity/binary-trace-format.md`; render it as JSON Lines with
+`target/parity/zparity trace-decode FILE` (or
+`python3 scripts/snes9x_trace_format.py decode FILE`) to filter it with `jq`
+or compare it mechanically.
 
 ```sh
 ZELDA3_SNES9X_TRACE=/tmp/rng.jsonl \

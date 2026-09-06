@@ -26,6 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from snes9x_route_recorder import continuous_take_ids, load_manifest  # noqa: E402
+from snes9x_trace_format import iter_events  # noqa: E402
 
 
 def main() -> int:
@@ -38,10 +39,7 @@ def main() -> int:
     args = parser.parse_args()
 
     samples = []
-    for line_number, line in enumerate(args.trace.open(), 1):
-        if not line.strip():
-            continue
-        event = json.loads(line)
+    for line_number, event in enumerate(iter_events(args.trace), 1):
         if event.get("event") != "rng-write":
             continue
         run, value, carry = event["run"], event["value"], event["carry"]

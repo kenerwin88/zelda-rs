@@ -534,7 +534,7 @@ fn validate_replay_source_parents(
     Ok(())
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 struct OracleRngTraceEvent {
     run: u32,
     pc: u64,
@@ -542,23 +542,37 @@ struct OracleRngTraceEvent {
     carry: u8,
 }
 
-#[derive(Debug, Deserialize)]
-struct OracleTraceEventKind {
-    event: String,
-}
-
+/// Canonical-JSON entry point kept for fixtures and tests; the live reader
+/// decodes Z3TRACE1 records directly through `oracle_rng_sample_from_record`.
+#[cfg(test)]
 fn oracle_rng_sample_from_trace_line(
     line: &str,
     expected_trace_run: u32,
     execution_frame: u32,
 ) -> Result<Option<RomRandomSample>, String> {
-    let kind: OracleTraceEventKind = serde_json::from_str(line)
+    let value: serde_json::Value = serde_json::from_str(line)
         .map_err(|error| format!("invalid live oracle trace event: {error}"))?;
-    if kind.event != "rng-write" {
+    let record = parity::trace_format::TraceRecord::from_json(&value)
+        .map_err(|error| format!("invalid live oracle trace event: {error}"))?;
+    oracle_rng_sample_from_record(&record, expected_trace_run, execution_frame)
+}
+
+fn oracle_rng_sample_from_record(
+    record: &parity::trace_format::TraceRecord,
+    expected_trace_run: u32,
+    execution_frame: u32,
+) -> Result<Option<RomRandomSample>, String> {
+    if record.kind != parity::trace_format::KIND_RNG_WRITE {
         return Ok(None);
     }
-    let event: OracleRngTraceEvent = serde_json::from_str(line)
-        .map_err(|error| format!("invalid live oracle RNG trace event: {error}"))?;
+    let event = OracleRngTraceEvent {
+        run: u32::try_from(record.run)
+            .map_err(|_| format!("live oracle RNG trace run {} overflows", record.run))?,
+        pc: u64::from(record.pc),
+        value: u8::try_from(record.value().unwrap_or(0))
+            .map_err(|_| "live oracle RNG trace value exceeds one byte".to_string())?,
+        carry: record.carry,
+    };
     if event.pc & 0xffff != CARTRIDGE_RNG_STORE_PC_LOW16 {
         return Ok(None);
     }
@@ -597,17 +611,12 @@ fn trace_events_with_rom_rng(configured: Option<&str>) -> String {
 
 struct LiveOracleRngTrace {
     path: PathBuf,
-    reader: Option<BufReader<fs::File>>,
-    line: String,
+    reader: Option<parity::trace_format::TraceReader<fs::File>>,
 }
 
 impl LiveOracleRngTrace {
     fn new(path: PathBuf) -> Self {
-        Self {
-            path,
-            reader: None,
-            line: String::new(),
-        }
+        Self { path, reader: None }
     }
 
     fn samples_for_run(
@@ -616,8 +625,8 @@ impl LiveOracleRngTrace {
         execution_frame: u32,
     ) -> Result<Vec<RomRandomSample>, String> {
         if self.reader.is_none() {
-            match fs::File::open(&self.path) {
-                Ok(file) => self.reader = Some(BufReader::new(file)),
+            match parity::trace_format::open_trace(&self.path, 0) {
+                Ok(reader) => self.reader = Some(reader),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                     return Ok(Vec::new());
                 }
@@ -632,18 +641,18 @@ impl LiveOracleRngTrace {
         let reader = self.reader.as_mut().expect("reader initialized above");
         let mut samples = Vec::new();
         loop {
-            self.line.clear();
-            let bytes = reader.read_line(&mut self.line).map_err(|error| {
-                format!(
-                    "failed to read live oracle RNG trace {}: {error}",
-                    self.path.display()
-                )
-            })?;
-            if bytes == 0 {
-                break;
-            }
+            let record = match reader.next_record() {
+                Ok(Some(record)) => record,
+                Ok(None) => break,
+                Err(error) => {
+                    return Err(format!(
+                        "failed to read live oracle RNG trace {}: {error}",
+                        self.path.display()
+                    ))
+                }
+            };
             if let Some(sample) =
-                oracle_rng_sample_from_trace_line(&self.line, trace_run, execution_frame)?
+                oracle_rng_sample_from_record(&record, trace_run, execution_frame)?
             {
                 samples.push(sample);
             }
@@ -11502,22 +11511,25 @@ fn read_snes9x_retro_run_trace(
             path.display()
         )
     })?;
+    let records = parity::trace_format::read_all(path).map_err(|error| {
+        format!(
+            "failed to read Snes9x core trace {}: {error}",
+            path.display()
+        )
+    })?;
     let mut entry = None;
     let mut return_event = None;
     let mut hdma_events = Vec::new();
     let mut video_events = Vec::new();
     let mut saw_run = false;
-    for (line_index, line) in bytes.split(|byte| *byte == b'\n').enumerate() {
-        if line.iter().all(u8::is_ascii_whitespace) {
-            continue;
+    for record in &records {
+        let mut event = record.to_json();
+        // The core names HDMA rows `hdma-start`/`hdma-end`; this receipt
+        // reads them as the `hdma` domain with a start/end stage.
+        if let Some(phase) = record.event().strip_prefix("hdma-") {
+            event["event"] = serde_json::Value::String("hdma".to_string());
+            event["stage"] = serde_json::Value::String(phase.to_string());
         }
-        let event: serde_json::Value = serde_json::from_slice(line).map_err(|error| {
-            format!(
-                "invalid Snes9x core trace line {} in {}: {error}",
-                line_index + 1,
-                path.display()
-            )
-        })?;
         if event["run"].as_u64() != Some(u64::from(expected_run)) {
             continue;
         }
@@ -13817,17 +13829,24 @@ pub(crate) mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        fs::write(
-            &path,
-            concat!(
-                "{\"event\":\"frame\",\"stage\":\"entry\",\"run\":81,\"v\":225,\"cycles\":6,\"pc\":32822}\n",
-                "{\"event\":\"video\",\"stage\":\"presented\",\"run\":81,\"v\":225,\"cycles\":16,\"pc\":836060}\n",
-                "{\"event\":\"hdma\",\"stage\":\"start\",\"run\":81,\"v\":0,\"cycles\":1112,\"pc\":34000}\n",
-                "{\"event\":\"hdma\",\"stage\":\"end\",\"run\":81,\"v\":0,\"cycles\":1140,\"pc\":34000}\n",
-                "{\"event\":\"frame\",\"stage\":\"return\",\"run\":81,\"v\":225,\"cycles\":94,\"pc\":32969}\n",
-            ),
-        )
-        .unwrap();
+        // The core writes Z3TRACE1 records with `hdma-start`/`hdma-end`
+        // kinds; the reader renders them as the `hdma` domain with a stage.
+        let mut bytes = parity::trace_format::MAGIC.to_vec();
+        for line in [
+            r#"{"event":"frame","stage":"entry","run":81,"v":225,"cycles":6,"pc":32822}"#,
+            r#"{"event":"video","stage":"presented","run":81,"v":225,"cycles":16,"pc":836060}"#,
+            r#"{"event":"hdma-start","run":81,"v":0,"cycles":1112,"pc":34000}"#,
+            r#"{"event":"hdma-end","run":81,"v":0,"cycles":1140,"pc":34000}"#,
+            r#"{"event":"frame","stage":"return","run":81,"v":225,"cycles":94,"pc":32969}"#,
+        ] {
+            let value: serde_json::Value = serde_json::from_str(line).unwrap();
+            bytes.extend(
+                parity::trace_format::TraceRecord::from_json(&value)
+                    .unwrap()
+                    .encode_framed(),
+            );
+        }
+        fs::write(&path, bytes).unwrap();
         let trace = read_snes9x_retro_run_trace(&path, 81).unwrap().unwrap();
         let transaction = |start_v, start_h, end_v, end_h| LibretroCpuTimingTransaction {
             kind: 1,
