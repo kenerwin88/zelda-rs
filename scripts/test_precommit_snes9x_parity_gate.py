@@ -95,6 +95,7 @@ class AuthoritativePolicyTests(unittest.TestCase):
             str(paths["session"]),
             "--cold-evidence-invocation-id",
             gate.COLD_EVIDENCE_INVOCATION_ID_PLACEHOLDER,
+            "--ignore-engine-state",
         ]
         return command, paths
 
@@ -125,6 +126,17 @@ class AuthoritativePolicyTests(unittest.TestCase):
                 self._normalize(first_command, first_paths),
                 self._normalize(second_command, second_paths),
             )
+
+    def test_engine_state_opt_out_is_required_exactly_once(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            command, paths = self._command(root)
+            self._normalize(command, paths)
+            missing = [item for item in command if item != "--ignore-engine-state"]
+            with self.assertRaisesRegex(SystemExit, "exactly once"):
+                self._normalize(missing, paths)
+            with self.assertRaisesRegex(SystemExit, "exactly once"):
+                self._normalize(command + ["--ignore-engine-state"], paths)
 
     def test_forbidden_flag_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -243,6 +255,8 @@ class GateReuseTests(unittest.TestCase):
                 "--rom-random-script",
                 str(random_path),
             ]
+        if arguments.get("engine_state_from_frame") is None:
+            command.append("--ignore-engine-state")
         invocation_id = arguments.get("cold_evidence_invocation_id")
         if invocation_id is not None:
             command.extend(["--cold-evidence-invocation-id", str(invocation_id)])

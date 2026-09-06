@@ -175,11 +175,23 @@ def _normalized_authoritative_policy(
         str(requested_frames),
     ]:
         raise SystemExit("pre-commit gate: authoritative command has invalid positionals")
-    if (len(command) - 5) % 2:
+    # The compare binary compares engine state from --compare-from-frame by
+    # default; the cold exact A/V authority starts at frame 0, where Snes9x's
+    # $55 power-on RAM differs from the translated WRAM until the ROM clears
+    # it, so the authoritative command must carry the one explicit engine-state
+    # opt-out switch. Every other option is a key/value pair.
+    switches = [item for item in command[5:] if item == "--ignore-engine-state"]
+    if len(switches) != 1:
+        raise SystemExit(
+            "pre-commit gate: authoritative command must opt out of engine-state "
+            "comparison exactly once with --ignore-engine-state"
+        )
+    paired = [item for item in command[5:] if item != "--ignore-engine-state"]
+    if len(paired) % 2:
         raise SystemExit("pre-commit gate: authoritative command contains a switch option")
     options: dict[str, str] = {}
-    for index in range(5, len(command), 2):
-        option, value = command[index : index + 2]
+    for index in range(0, len(paired), 2):
+        option, value = paired[index : index + 2]
         if option in options:
             raise SystemExit(f"pre-commit gate: duplicate authoritative option {option}")
         options[option] = value
