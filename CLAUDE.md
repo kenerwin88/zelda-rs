@@ -418,11 +418,20 @@ parity pass. A Rust regression therefore cannot truncate the reusable oracle.
   (`rust.z3state` is positional bincode: "unexpected end of file" on resume). Retire a native
   field by keeping it as a dead byte (unprojected, unchecked) instead of deleting it.
 - Live GPU video comparison is ~55 frames/s (immediate readback ~12 ms/frame, not vsync); the
-  pipelined `./parity cached-av <cache>` runs ~1000 frames/s. Capture the oracle once per
-  route/core (`./parity oracle-av-capture <full-coverage session> --frames N`, Snes9x only,
-  ~75 min for the full route) and run `cached-av` as the fast full-route video+audio check
-  before spending a cold exact gate pass. The gate launcher skips the video preflight
-  (`ZELDA3_PRECOMMIT_VIDEO_PREFLIGHT=0`) because the exact stage compares video too.
+  pipelined `./parity cached-av <cache>` runs ~600-770 frames/s (full route ~35-45 min).
+  Capture the oracle once per route/core (`./parity oracle-av-capture <full-coverage
+  session> --frames N`, Snes9x only, ~75 min for the full route) and run `cached-av` as the
+  fast full-route video+audio check before spending a cold exact gate pass. The gate launcher
+  skips the video preflight (`ZELDA3_PRECOMMIT_VIDEO_PREFLIGHT=0`) because the exact stage
+  compares video too. Pass `--paired-checkpoint-interval 20000` to a full cached-av run: the
+  cache carries no oracle checkpoints, so each boundary writes a Rust-only checkpoint under
+  `<run>/paired/frame-XXXXXXXX` (deferred to the next serializable frame, e.g. 2000→2004)
+  that only `cached-av --resume-paired <dir> --compare-from-frame <frame>` accepts (the live
+  compare rejects `rust_only` manifests). Resume from the newest checkpoint below a mismatch
+  for a ~20 s repro instead of a from-zero replay. When cached-av is slow, profile it with
+  `sample <pid> 12 -file out.txt` on the running process rather than adding timers; the
+  hot spots found this way were a `getenv` inside the per-tile loop, SipHash on per-tile
+  maps, and per-pixel BG instance walks in the screen shader.
 - `check_ram_readability.py` no longer false-positives on length constants
   (`_LEN/_LENGTH/_CAPACITY/_SIZE`) or C-style names in `//` comments, so the pre-commit
   hook passes clean. macOS has no `timeout`/`gtimeout` — use a background pid +
