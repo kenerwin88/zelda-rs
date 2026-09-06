@@ -3460,6 +3460,8 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
     // publication) instead of failing the replay on an unlucky boundary.
     let mut paired_checkpoint_due = false;
     let timing_enabled = env::var_os("ZELDA3_SNES9X_TIMING").is_some();
+    let debug_wram_frames =
+        debug_frame_selection_from_env("ZELDA3_DEBUG_WRAM_FRAMES", Some("ZELDA3_DEBUG_WRAM_FRAME"));
     let replay_started = Instant::now();
     let mut receipt_nanos = 0_u128;
     let mut engine_nanos = 0_u128;
@@ -3662,6 +3664,19 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
             audio_nanos += audio_started.elapsed().as_nanos();
         }
         frames_completed = frames_completed.saturating_add(1);
+        // `ZELDA3_DEBUG_WRAM_FRAMES=a,b,lo-hi`: Rust WRAM after each listed
+        // frame, written beside the run's ledgers, for phase comparisons
+        // against oracle WRAM captures from a seeded live probe.
+        if debug_wram_frames.contains(&record.frame) {
+            fs::write(
+                output.join(format!("rust_wram_frame_{}.bin", record.frame)),
+                &game.ram[..],
+            )
+            .unwrap_or_else(|error| {
+                eprintln!("failed to write Rust WRAM capture: {error}");
+                process::exit(1);
+            });
+        }
         if first_rng_drift.is_none() {
             if let Err(error) = game.finish_rom_random_replay_through(frames_completed) {
                 eprintln!(

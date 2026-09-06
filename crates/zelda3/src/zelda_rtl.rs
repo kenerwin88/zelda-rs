@@ -15575,6 +15575,16 @@ fn room_71_item_graphics_return_crosses_completed_nmi(
         && oam_scanout_source == OamScanoutSource::ComposePublishedShadowDma
 }
 
+/// `ZELDA3_DIAGNOSTIC_TOLERATE_SONG_END_POLL=1`: development-only escape for
+/// oracle-seeded or resumed probes whose audio driver state is not the
+/// oracle's (see `finish_original_timing_host_dispatch`). Never set by the
+/// authoritative gate; a run with it set is not parity evidence.
+fn tolerate_unconsumed_song_end_poll_for_diagnostics() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os("ZELDA3_DIAGNOSTIC_TOLERATE_SONG_END_POLL").is_some())
+}
+
+
 impl ZeldaState {
     pub(crate) fn compatibility_state_len(&self) -> usize {
         self.ram.len()
@@ -30208,12 +30218,26 @@ impl ZeldaState {
         );
         let host_close_control = self.original_timing_host_close_control();
         if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+            let receipts = self
+                .original_timing_semantic_receipts
+                .as_mut()
+                .expect("live host close lost its timing receipts");
+            if !receipts.song_end_poll_native_sample_offsets.is_empty()
+                && tolerate_unconsumed_song_end_poll_for_diagnostics()
+            {
+                // Oracle-seeded / resumed diagnostic probes do not carry the
+                // oracle's audio driver state, so the native song-end poll
+                // consumer can legitimately disagree with the wire. Video
+                // evidence stays valid; audio is never authoritative here.
+                eprintln!(
+                    "diagnostic: dropping {} unconsumed APUI00 song-end poll offset(s) at host {}",
+                    receipts.song_end_poll_native_sample_offsets.len(),
+                    self.frame_ctr_dbg
+                );
+                receipts.song_end_poll_native_sample_offsets.clear();
+            }
             assert!(
-                self.original_timing_semantic_receipts
-                    .as_ref()
-                    .expect("live host close lost its timing receipts")
-                    .song_end_poll_native_sample_offsets
-                    .is_empty(),
+                receipts.song_end_poll_native_sample_offsets.is_empty(),
                 "source APUI00 song-end poll timing was not consumed by its native caller",
             );
         }

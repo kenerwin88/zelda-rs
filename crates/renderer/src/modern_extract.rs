@@ -186,15 +186,16 @@ fn compute_obj_drawn_tiles(frame: &GpuFrame<'_>) -> Vec<Vec<(u8, i16)>> {
     let oam = frame.oam;
     let obj = &frame.obj;
     let extra = frame.extra_left_right as i32;
+    let right_edge = 256 + extra;
     let mut drawn: Vec<Vec<(u8, i16)>> = vec![Vec::new(); 224];
 
     let top_crop = i32::from(frame.scanout_top_crop);
     for line in (1 + top_crop)..=(224 + top_crop) {
-        // +1 sentinels: 33 sprites / 35 tiles → the 33rd sprite and 35th tile are
-        // the ones that make the counter hit 0 and are NOT drawn (range/time over).
+        // +1 sentinel: 33 sprites → the 33rd sprite is the one that makes the
+        // counter hit 0 and is NOT drawn (range over).
         let mut sprites_left = 33i32;
-        let mut tiles_left = 35i32;
-        let mut sprites: Vec<(usize, i32, i32)> = Vec::with_capacity(34); // (sprite_num, x, size)
+        // (sprite_num, draw_x, hpos, size, visible_tiles)
+        let mut sprites: Vec<(usize, i32, i32, i32, i32)> = Vec::with_capacity(34);
 
         for sprite_num in 0..128usize {
             let idx = sprite_num * 2;
@@ -212,61 +213,57 @@ fn compute_obj_drawn_tiles(frame: &GpuFrame<'_>) -> Vec<Vec<(u8, i16)>> {
                 continue;
             }
             let object_x = (oam0 & 0xff) as i32 + (hi_bits & 1) * 256;
-            if object_x > 256 && object_x + sprite_size - 1 < 512 {
-                continue;
-            }
-            let mut x = object_x;
-            if x >= 256 + extra {
-                x -= 512;
-            }
-            if x <= -(sprite_size + extra) {
+            // Snes9x S9xSetupOBJ (normal FirstSprite case): OAM X 256..511 is
+            // HPos -256..-1, and HPos == -256 counts as HPos 0 for the range
+            // and tile budget while DrawOBJS still positions it at X = 256, so
+            // it consumes its whole width without drawing a pixel.
+            let hpos_raw = if object_x >= 256 { object_x - 512 } else { object_x };
+            let hpos = if hpos_raw == -256 { 0 } else { hpos_raw };
+            if !(hpos > -(sprite_size + extra) && hpos <= right_edge) {
                 continue;
             }
             sprites_left -= 1;
             if sprites_left == 0 {
                 break;
             }
-            sprites.push((sprite_num, x, sprite_size));
+            // GFX.OBJVisibleTiles[S]: tiles whose left edge is left of the
+            // right screen edge (a tile starting exactly at X = 256 does not
+            // count), clipped on the left to the tiles reaching X >= -7.
+            let visible_tiles = if hpos < -extra {
+                (sprite_size + hpos + extra + 7) >> 3
+            } else if hpos + sprite_size > right_edge - 1 {
+                (right_edge - hpos + 7) >> 3
+            } else {
+                sprite_size >> 3
+            };
+            let draw_x = if hpos_raw == -256 { right_edge } else { hpos };
+            sprites.push((sprite_num, draw_x, hpos, sprite_size, visible_tiles));
         }
 
         let out_y = (line - 1 - top_crop) as usize;
-        // Snes9x/hardware time-over allocation (gfx.cpp DrawOBJS): the tile
-        // budget is consumed by every in-range sprite's visible tiles first;
-        // when it overflows, whole sprites are skipped from the FRONT of the
-        // range list until the running total turns positive, the boundary
-        // sprite draws only its first `running` visible tiles, and a tile
-        // whose left edge sits exactly on the right screen edge consumes
-        // budget without drawing (route frame 141125's crowded sword-swing
-        // line keeps the LAST range sprites' tiles).
-        let consumes = |x: i32| x >= -7 - extra && x <= 256 + extra;
-        let counts: Vec<i32> = sprites
-            .iter()
-            .map(|&(_, sx, sprite_size)| {
-                let mut n = 0;
-                let mut col = 0;
-                while col < sprite_size {
-                    if consumes(col + sx) {
-                        n += 1;
-                    }
-                    col += 8;
-                }
-                n
-            })
-            .collect();
-        let total_tiles: i32 = counts.iter().sum();
-        let mut running = (tiles_left - 1) - total_tiles;
-        for (ordinal, (sprite_num, sx, sprite_size)) in sprites.into_iter().enumerate() {
-            running += counts[ordinal];
+        // Snes9x DrawOBJS: `tiles` starts at 34 minus every in-range sprite's
+        // visible tiles; each sprite in range order adds its count back and is
+        // skipped whole while the running total stays <= 0. The boundary
+        // sprite draws only while `--t >= 0`, where a column at X == 256 still
+        // decrements `t` but draws nothing (route frames 141125 and 1155743).
+        let total_tiles: i32 = sprites.iter().map(|s| s.4).sum();
+        let mut running = 34 - total_tiles;
+        for (sprite_num, draw_x, _hpos, sprite_size, visible_tiles) in sprites {
+            running += visible_tiles;
             if running <= 0 {
                 continue;
             }
-            let mut tiles_for_sprite = running;
+            let mut t = running;
             let mut col = 0;
             while col < sprite_size {
-                if consumes(col + sx) {
-                    tiles_for_sprite -= 1;
-                    if tiles_for_sprite >= 0 && col + sx < 256 + extra {
-                        drawn[out_y].push((sprite_num as u8, (sx + col) as i16));
+                let x = draw_x + col;
+                if x > right_edge {
+                    break;
+                }
+                if x >= -7 - extra {
+                    t -= 1;
+                    if t >= 0 && x != right_edge {
+                        drawn[out_y].push((sprite_num as u8, x as i16));
                     }
                 }
                 col += 8;
@@ -4955,6 +4952,65 @@ mod tests {
         );
         // A scanline none of the sprites cover stays empty.
         assert!(drawn[50].is_empty());
+    }
+
+    #[test]
+    fn obj_time_over_counts_visible_tiles_like_snes9x() {
+        // Route frame 1155743, scanline 108: seventeen 16x16 sprites fully on
+        // screen (34 tiles) plus one at x=248 whose second tile would start
+        // exactly at X=256. Snes9x counts that sprite as ONE visible tile
+        // (`(256 - HPos + 7) >> 3`), so the line is over budget by one and the
+        // first sprite keeps its first tile; counting the X=256 tile dropped
+        // the whole first sprite instead.
+        let vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let mut oam = vec![0u16; 0x110];
+        let mut place = |s: usize, x: u16| {
+            oam[s * 2] = (10u16 << 8) | (x & 0xff);
+            oam[s * 2 + 1] = 0;
+            let idx = s * 2;
+            let mut hi = oam[0x100 + idx / 16];
+            hi |= 2 << (idx % 16); // large size (16x16 for obj_size 0)
+            if x >= 256 {
+                hi |= 1 << (idx % 16);
+            }
+            oam[0x100 + idx / 16] = hi;
+        };
+        for s in 0..17usize {
+            place(s, (s as u16) * 12);
+        }
+        place(17, 248);
+        for s in 18..128usize {
+            oam[s * 2] = 0xf0u16 << 8; // off screen
+        }
+        let frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        let drawn = compute_obj_drawn_tiles(&frame);
+        let line = &drawn[10];
+        let tiles_of = |sn: u8| line.iter().filter(|&&(s, _)| s == sn).count();
+        assert_eq!(tiles_of(0), 1, "the boundary sprite keeps only its first tile");
+        assert_eq!(line.iter().find(|&&(s, _)| s == 0).map(|&(_, x)| x), Some(0));
+        for s in 1..17u8 {
+            assert_eq!(tiles_of(s), 2, "sprite {s} draws both tiles");
+        }
+        assert_eq!(tiles_of(17), 1, "the right-edge sprite draws its on-screen tile");
+        assert_eq!(line.len(), 34);
+
+        // An OAM x=256 sprite (HPos -256) counts as HPos 0 for the budget but
+        // draws nothing: with 17 full sprites it pushes the line two over, so
+        // the first sprite is skipped whole and the x=256 sprite emits no tile.
+        let mut oam2 = oam.clone();
+        {
+            let s = 17usize;
+            let idx = s * 2;
+            oam2[s * 2] = (10u16 << 8) | 0;
+            oam2[0x100 + idx / 16] |= 1 << (idx % 16);
+        }
+        let frame2 = test_gpu_frame(&vram, &cgram, &oam2, 15, false);
+        let drawn2 = compute_obj_drawn_tiles(&frame2);
+        let line2 = &drawn2[10];
+        assert!(line2.iter().all(|&(s, _)| s != 0), "first sprite skipped whole");
+        assert!(line2.iter().all(|&(s, _)| s != 17), "x=256 sprite draws nothing");
+        assert_eq!(line2.len(), 32);
     }
 
     #[test]
