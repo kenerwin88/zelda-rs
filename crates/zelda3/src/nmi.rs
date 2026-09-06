@@ -1741,8 +1741,20 @@ impl ZeldaState {
 
     pub(super) fn nmi_update_irqgfx(&mut self) {
         if self.game_state.display.has_pending_polyhedral_update() {
+            if self
+                .poly_completed_upload
+                .as_ref()
+                .is_some_and(|(host, _)| *host == self.frame_ctr_dbg)
+            {
+                // The bitmap completed in this host's thread slot, which the
+                // ROM runs after this NMI's thread swap; the next NMI uploads.
+                return;
+            }
             self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
-            let poly_buf = self.polyhedral_tile_buffer().to_vec();
+            let poly_buf = match self.poly_completed_upload.take() {
+                Some((_, completed)) => completed,
+                None => self.polyhedral_tile_buffer().to_vec(),
+            };
             let mut display_vram = None;
             self.mark_effective_dma_vram_range(0x5800..0x5c00);
             for i in 0..0x400 {
@@ -1753,7 +1765,20 @@ impl ZeldaState {
                 }
                 self.ppu.vram[dst] = value;
             }
-            if self.nmi_poly_upload_from_deferred {
+            // The pre-upload OBJ CHR latch models the intro's IRQ-driven poly
+            // thread, whose buffer completes mid-frame and is consumed by the
+            // following boundary NMI. The dungeon Crystal Maiden cutscene runs
+            // the same rasterizer, but its buffer is uploaded by the vblank NMI
+            // that precedes the scanout: Snes9x presents the new crystal tiles
+            // in that very frame (route f413572, every crystal frame of the
+            // cutscene was one image behind with the latch). Latch only while
+            // the intro poly thread owns the buffer.
+            let frame = self.game_state.frame;
+            let intro_poly = crate::zelda_rtl::rom_intro_poly_thread_is_active(
+                frame.main_module,
+                frame.submodule,
+            );
+            if self.nmi_poly_upload_from_deferred || !intro_poly {
                 self.set_obj_vram_latch_traced(None);
             } else if let Some(display_vram) = display_vram {
                 self.obj_vram_latch_generation = self.obj_vram_latch_generation.wrapping_add(1);
@@ -1761,6 +1786,10 @@ impl ZeldaState {
             }
             self.nmi_poly_upload_from_deferred = false;
             self.clear_pending_polyhedral_update();
+            if std::env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+                let sum: u64 = self.ppu.vram[0x5800..0x5c00].iter().map(|&w| u64::from(w)).sum();
+                eprintln!("[POLY-UPLOAD] host={} vram5800_sum={sum:08x}", self.frame_ctr_dbg);
+            }
         }
     }
 

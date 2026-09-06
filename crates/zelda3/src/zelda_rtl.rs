@@ -493,7 +493,7 @@ const fn attract_throne_room_nmi_slices(retained_sprite_subset_2: u8) -> u8 {
     ATTRACT_THRONE_ROOM_NMI_SLICES + if retained_sprite_subset_2 == 66 { 2 } else { 0 }
 }
 
-const fn rom_intro_poly_thread_is_active(main_module: u8, submodule: u8) -> bool {
+pub(crate) const fn rom_intro_poly_thread_is_active(main_module: u8, submodule: u8) -> bool {
     main_module == 0 && matches!(submodule, 3 | 4 | 5 | 7 | 9 | 11)
 }
 
@@ -14637,6 +14637,15 @@ pub struct ZeldaState {
     /// Hosts the in-flight shadow render has spanned.
     #[serde(skip)]
     poly_shadow_hosts: u8,
+    /// A dungeon / Triforce-room poly frame completed inside this host's
+    /// thread slot. The slot follows this host's NMI swap chronologically, so
+    /// the completed bitmap is uploaded by the NEXT host's NMI (oracle: the
+    /// crystal maiden's config-$96 frame completes at line 12 of run 413572
+    /// and reaches VRAM at run 413573's NMI, route f413572). The bitmap is
+    /// held as completed so the next slot may already start the following
+    /// frame in the shared WRAM buffer.
+    #[serde(skip)]
+    poly_completed_upload: Option<(u32, Vec<u8>)>,
     /// Master cycles from the most recent NMI acceptance to the handler's
     /// thread swap ($00:82C7), measured by the shadow on the RAM state at
     /// that NMI (held latch → fast path at V≈227, poly upload → V≈256, text
@@ -20982,6 +20991,7 @@ impl ZeldaState {
             poly_shadow_run: None,
             poly_shadow_master: 0,
             poly_shadow_hosts: 0,
+            poly_completed_upload: None,
             poly_next_host_swap_master: None,
             poly_next_host_nmi_state: None,
             poly_receipt_gates_prev: None,
@@ -21115,6 +21125,7 @@ impl ZeldaState {
         self.nmi_poly_deferred_upload_bypasses_latch = false;
         self.nmi_poly_upload_from_deferred = false;
         self.obj_vram_latch_generation = 0;
+        self.poly_completed_upload = None;
         self.snes9x_poly_scheduler_counter = 0;
         self.snes9x_hold_intro_step_this_frame = false;
         self.snes9x_intro_step_carry_phase_active = false;
@@ -21304,6 +21315,9 @@ impl ZeldaState {
                 .is_none()
             && self.interrupted_nmi_prepare_obj_cache_vram.is_none()
             && self.pending_main_loop_common_suffix.is_none()
+            // A poly bitmap completed in this host's slot is uploaded by the
+            // next host's NMI; it is runtime-only and must not be dropped.
+            && self.poly_completed_upload.is_none()
             // The save-quit reset hold is a suspended Death_Func15 call stack
             // spanning tens of hosts; never checkpoint inside it.
             && !self.save_quit_reset_hold
@@ -36426,6 +36440,17 @@ impl ZeldaState {
     /// and the modern asset/GPU renderer. The returned value must own anything
     /// it borrows from `game`, because live state is restored before returning.
     pub fn with_display_snapshot<R>(&mut self, capture: impl FnOnce(&mut ZeldaState) -> R) -> R {
+        if std::env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+            let live: u64 = self.ppu.vram[0x5800..0x5c00].iter().map(|&w| u64::from(w)).sum();
+            let snap: Option<u64> = self.display_snapshot.as_ref().map(|d| {
+                d.ppu.vram[0x5800..0x5c00].iter().map(|&w| u64::from(w)).sum()
+            });
+            eprintln!(
+                "[POLY-SCANOUT] host={} live5800_sum={live:08x} snapshot5800_sum={snap:08x?} snapshot_pub_host={:?}",
+                self.frame_ctr_dbg,
+                self.display_snapshot.as_ref().map(|d| d.publication_host_frame)
+            );
+        }
         let Some(mut display) = self.display_snapshot.take() else {
             return capture(self);
         };
@@ -53667,7 +53692,17 @@ impl ZeldaState {
             self.poly_next_host_swap_master = None;
             return;
         }
-        let upload = self.game_state.display.has_pending_polyhedral_update();
+        // The shadow's slot pairing consumes this stash one host later, so
+        // the swap-duration bookkeeping keeps attributing the upload to the
+        // NMI of the completing host (the calibration of the dialogue-phase
+        // cadence, hosts 414033-416096, rests on that pairing); only the
+        // uploaded VRAM content is deferred to the next host's NMI. A deferred
+        // upload executing at that next NMI therefore does not count again.
+        let upload = self.game_state.display.has_pending_polyhedral_update()
+            && !self
+                .poly_completed_upload
+                .as_ref()
+                .is_some_and(|(host, _)| *host < self.frame_ctr_dbg);
         // The NMI this trailing handler models is normally accepted at the
         // end of the current host's run (the last `NmiAccepted` of its
         // receipts). When the run boundary falls just before the acceptance,
@@ -53918,8 +53953,17 @@ impl ZeldaState {
         // loop ($09:F81D) spins until the main thread sets it (the crystal
         // maiden's `Sprite_AB_CrystalMaiden` at V≈65 of its main slot, once
         // per completed frame) and the NMI has cleared the upload byte $1F0C.
+        // A bitmap completed in an earlier host's slot is uploaded by THIS
+        // host's NMI, which precedes this host's slot chronologically: the
+        // thread may start its next frame in this slot (oracle run 413573:
+        // upload at its NMI, `$09:F825` restart at V=261 of the same run).
+        let pending_upload_precedes_this_slot = self
+            .poly_completed_upload
+            .as_ref()
+            .is_some_and(|(host, _)| *host < self.frame_ctr_dbg);
         let can_run_poly = self.game_state.ending.attract_scene.intro_did_run_step() != 0
-            && !self.game_state.display.has_pending_polyhedral_update();
+            && (!self.game_state.display.has_pending_polyhedral_update()
+                || pending_upload_precedes_this_slot);
         let live_timing = matches!(self.original_timing_owner, OriginalTimingOwnerState::Live);
         let source_started_preemptive_render =
             self.take_original_timing_preemptive_polyhedral_render_started();
@@ -54004,6 +54048,7 @@ impl ZeldaState {
                 self.poly_shadow_run = None;
                 self.poly_shadow_hosts = 0;
                 self.poly_shadow_master = 0;
+                self.poly_completed_upload = None;
             }
             let use_timed_worker = self.rom_startup_timing
                 && (rom_intro_poly_thread_is_active(frame.main_module, frame.submodule)
@@ -54232,6 +54277,12 @@ impl ZeldaState {
             }
             self.attract_scene_mut().clear_intro_did_run_step();
             self.request_polyhedral_nmi_update();
+            if incremental_shadow {
+                self.poly_completed_upload = Some((
+                    self.frame_ctr_dbg,
+                    self.ram[POLYHEDRAL_BUFFER..POLYHEDRAL_BUFFER + 0x800].to_vec(),
+                ));
+            }
         }
     }
 

@@ -5280,7 +5280,7 @@ pub(crate) fn run_compare_libretro_oracle(
         .unwrap_or_default();
     let mut engine_state_divergences: Vec<(u32, Vec<String>)> = Vec::new();
     let mut oracle_before_state = initial_oracle_state.clone();
-    let oracle_before_state_frame = start_frame;
+    let mut oracle_before_state_frame = start_frame;
     let mut video_mismatch_ranges = Vec::<(u32, u32)>::new();
     let mut first_video_mismatch = None::<String>;
     let mut live_oracle_rng_trace = live_oracle_rng_trace_path.map(LiveOracleRngTrace::new);
@@ -5722,6 +5722,7 @@ pub(crate) fn run_compare_libretro_oracle(
                         );
                         process::exit(1);
                     });
+                oracle_before_state_frame = frame_index;
             }
             early_oracle_capture = Some(oracle.run_frame_with_input(requested_input));
             if let Some(trace) = oracle_semantic_trace.as_mut() {
@@ -6098,6 +6099,7 @@ pub(crate) fn run_compare_libretro_oracle(
                         );
                         process::exit(1);
                     });
+                oracle_before_state_frame = frame_index;
             }
             oracle.run_frame_with_input(input)
         };
@@ -9093,7 +9095,16 @@ pub(crate) fn format_u32_ranges(ranges: &[(u32, u32)]) -> String {
         .join(", ")
 }
 
-fn oracle_preframe_snapshot_required(_frame: u32, _frames: u32, _compare_this_frame: bool) -> bool {
+fn oracle_preframe_snapshot_required(_frame: u32, _frames: u32, compare_this_frame: bool) -> bool {
+    // ZELDA3_DIAGNOSTIC_PREFRAME_SNAPSHOTS=1 opts a resumed diagnostic replay
+    // into per-frame Snes9x serialization so the first video mismatch writes
+    // its detailed pre-frame artifacts without a checkpoint at that exact
+    // frame (paired checkpoints do not carry every poly-thread transient, so a
+    // focused resume can miss the mismatch). Never set it on authoritative runs:
+    // the perturbation below is real.
+    if compare_this_frame && diagnostic_preframe_snapshots_enabled() {
+        return true;
+    }
     // Pinned Snes9x's save path is not observationally pure: SPC_DSP::copy_state
     // canonicalizes live BRR and echo-history storage while serializing. Calling
     // retro_serialize in the authoritative loop can therefore change later APU
@@ -9105,6 +9116,13 @@ fn oracle_preframe_snapshot_required(_frame: u32, _frames: u32, _compare_this_fr
     // diagnostics that need a pre-frame state must replay with that frame as
     // their start boundary instead of perturbing every preceding host call.
     false
+}
+
+fn diagnostic_preframe_snapshots_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        env::var_os("ZELDA3_DIAGNOSTIC_PREFRAME_SNAPSHOTS").is_some_and(|value| value != "0")
+    })
 }
 
 fn install_directory_atomically(
