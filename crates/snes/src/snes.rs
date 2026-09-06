@@ -16,7 +16,7 @@ use crate::ppu::PpuState;
 pub const WRAM_SIZE: usize = 0x20000;
 const SNES_CORE_SAVELOAD_SIZE: usize = 58;
 
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Snes {
     pub cpu: CpuState,
     pub apu: ApuState,

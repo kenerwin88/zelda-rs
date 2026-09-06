@@ -21,7 +21,7 @@ impl CartType {
     }
 }
 
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Cart {
     pub kind: CartType,
     pub rom: Vec<u8>,

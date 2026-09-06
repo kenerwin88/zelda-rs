@@ -12324,7 +12324,7 @@ pub enum SaveLoadCommand {
     Replay = 2,
 }
 
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct AssetPack {
     data: Vec<u8>,
     ranges: Vec<(usize, usize)>,
@@ -13752,7 +13752,7 @@ fn nmi_ppu_register_scanout_from_acceptance_snapshot(
     NmiPpuRegisterScanout::capture(&ppu)
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct InterruptedDungeonSubmodulePublication {
     retiring_pre_spotlight_scanout: Option<LiveSpotlightScanout>,
     oam_scanout_source: OamScanoutSource,
@@ -13829,7 +13829,7 @@ impl core::fmt::Display for OriginalTimingResumeCheckpointError {
 
 impl std::error::Error for OriginalTimingResumeCheckpointError {}
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 enum OriginalTimingOwnerState {
     Disabled,
     PendingColdStart,
@@ -13862,7 +13862,7 @@ impl Default for OriginalTimingOwnerState {
     }
 }
 
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ZeldaState {
     pub ram: Vec<u8>,
     #[serde(default)]
@@ -14772,7 +14772,7 @@ impl PolyWorkMetrics {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct EffectiveDmaWriteSet {
     active_snapshot_accepts_receipt: bool,
     active_snapshot_epoch: Option<u64>,
@@ -14853,7 +14853,7 @@ impl OriginalTimingNmiHandlerCompletion {
 /// and therefore attach to that active image. This is independent of rooms and
 /// modules; OAM, CGRAM, and PPU register latches join the receipt only when
 /// those same-boundary hardware writes actually complete.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct EffectivePresentedDma {
     vram_writes: Vec<(usize, u16)>,
     /// Pattern data completed by an explicit leading NMI whose raw VRAM
@@ -14952,13 +14952,13 @@ impl EffectivePresentedDma {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct ClosedOamBoundaryReceipt {
     publication_host_frame: u32,
     active_oam: Vec<u16>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct DisplaySnapshot {
     publication_epoch: u64,
     ram: Vec<u8>,
@@ -15276,14 +15276,14 @@ fn append_parity_trace(file_name: &str, trace: &str) {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct PreMainAnimatedTileDma {
     source_address: usize,
     destination_address: usize,
     data: Vec<u8>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct AnimatedBgScanout {
     destination_address: usize,
     vram: Vec<u16>,
@@ -15349,7 +15349,7 @@ impl NmiCopyPacketScanout {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct PreMainGraphicsDma {
     entry_frame: crate::game_state::FrameState,
     entry_plan: GraphicsDmaPlan,
@@ -15367,7 +15367,7 @@ const LINK_DMA_EXPANDED_HIGH_PLANES_START: usize = 0xbd40;
 const LINK_DMA_EXPANDED_HIGH_PLANES_LEN: usize = 0x80;
 const LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN: usize = LINK_DMA_EXPANDED_HIGH_PLANES_LEN / 2;
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 struct PreMainLinkDmaOperands {
     sources: LinkDmaSources,
     link_pack: u16,

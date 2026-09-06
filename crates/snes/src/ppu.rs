@@ -26,7 +26,7 @@ pub struct BgLayer {
     pub tile_adr: u16,
 }
 
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PpuPixelPrioBufs {
     pub data: Vec<u16>, // length PPU_X_PIXELS
 }
@@ -39,7 +39,7 @@ impl Default for PpuPixelPrioBufs {
     }
 }
 
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PpuState {
     pub line_has_sprites: bool,
     pub last_brightness_mult: u8,

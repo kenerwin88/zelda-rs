@@ -535,6 +535,7 @@ impl SpriteSlotsState {
     }
 
     fn set_byte_at(&mut self, offset: usize, value: u8) {
+        crate::types::ww_check(offset, 1, "SpriteSlotsState::set_byte_at", u32::from(value));
         self.work[Self::work_index(offset)] = value;
     }
 

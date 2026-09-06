@@ -4744,6 +4744,28 @@ pub(crate) fn run_compare_libretro_oracle(
         eprintln!("--resume-oracle-sram requires --resume-oracle-state");
         process::exit(2);
     }
+    // A bare `--resume-rust-state`/`--resume-oracle-state` pair restores both
+    // engines but would start the semantic adapter fresh, so the resume could
+    // silently differ from the cold run its checkpoint came from (f1371214:
+    // a stale NMI-resume target only the cold adapter carried). When the
+    // paired capture's sidecars sit beside the oracle state, restore them too
+    // so every resume is faithful to the cold adapter.
+    if resume_paired.is_none() {
+        if let Some(dir) = resume_oracle_state.as_deref().and_then(Path::parent) {
+            let semantic = dir.join("semantic-trace.checkpoint.json");
+            if resume_semantic_trace_checkpoint.is_none() && semantic.is_file() {
+                eprintln!(
+                    "restoring the paired Snes9x semantic trace checkpoint {}",
+                    semantic.display()
+                );
+                resume_semantic_trace_checkpoint = Some(semantic);
+            }
+            let original_timing = dir.join("original-timing.resume.json");
+            if resume_original_timing_checkpoint.is_none() && original_timing.is_file() {
+                resume_original_timing_checkpoint = Some(original_timing);
+            }
+        }
+    }
     if replay_save.is_some() && resume_rust_state.is_some() {
         eprintln!("--replay-save cannot be combined with paired resume states");
         process::exit(2);
@@ -5556,7 +5578,30 @@ pub(crate) fn run_compare_libretro_oracle(
         .ok()
         .and_then(|value| value.parse::<u32>().ok())
         .unwrap_or(240);
+    // ZELDA3_DEBUG_FULL_STATE_DUMP=<dir>:<frame>[,<frame>...] writes the complete
+    // translated engine state (`{:#?}`, including every serde-skipped field) to
+    // `<dir>/state-<frame>.txt` before running each listed host. Diffing a cold
+    // dump against a resumed dump at the same host names the transient state a
+    // paired checkpoint restore lost.
+    let full_state_dump = env::var("ZELDA3_DEBUG_FULL_STATE_DUMP").ok().and_then(|raw| {
+        let (dir, frames) = raw.split_once(':')?;
+        let frames: Vec<u32> = frames
+            .split(',')
+            .filter_map(|part| part.trim().parse::<u32>().ok())
+            .collect();
+        Some((PathBuf::from(dir), frames))
+    });
     for frame_index in start_frame..frames {
+        if let Some((dir, dump_frames)) = full_state_dump.as_ref() {
+            if dump_frames.contains(&frame_index) {
+                fs::create_dir_all(dir).ok();
+                let path = dir.join(format!("state-{frame_index}.txt"));
+                fs::write(&path, format!("{game:#?}")).unwrap_or_else(|error| {
+                    eprintln!("failed to write full state dump {}: {error}", path.display());
+                });
+                eprintln!("wrote full engine state dump for host {frame_index}: {}", path.display());
+            }
+        }
         let mut stop_after_exact_audio_mismatch = false;
         let mut video_mismatch_this_frame = false;
         while paired_resume_captures

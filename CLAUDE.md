@@ -170,6 +170,16 @@ frame-gated `eprintln`s should use `self.trace_frame_matches(N)`, not `== frame_
 a candidate fix with ONE from-scratch run before committing.
 See memory [[checkpoint-resume-debugging]].
 
+**Paired Snes9x resumes must restore the semantic adapter too.** A paired checkpoint dir
+holds `rust.z3state`, `oracle.state`, `semantic-trace.checkpoint.json` and
+`original-timing.resume.json`. Resume with `--resume-paired <dir>`; a bare
+`--resume-rust-state/--resume-oracle-state` pair now auto-loads the two sidecars when they
+sit beside the oracle state. Without them the adapter starts fresh and a resume can PASS a
+frame the cold run FAILS (f1371214: a stale poly-thread NMI-resume target only the cold
+adapter carried). Rule: if a resumed replay passes where the cold run failed, the carrier is
+adapter or serde-skipped engine state, not WRAM — restore the adapter first, then use
+`ZELDA3_DEBUG_FULL_STATE_DUMP` for the engine side.
+
 ## Parity-debugging tools (`scripts/`) — prefer these, in this order
 
 Before the numbered root-cause tools, run `./parity status` plus
@@ -247,7 +257,7 @@ parity pass. A Rust regression therefore cannot truncate the reusable oracle.
    (scans this repo's `const NAME: usize = 0xADDR;` definitions); `find_dual_ownership.py`'s
    undersized-table lint uses the same map.
 
-3. **`ZELDA3_WW_ADDR=0x<addr> [ZELDA3_WW_FRAME=<n>]` — RAM write-watchpoint (function-level
+3. **`ZELDA3_WW_ADDR=0x<addr> [ZELDA3_WW_FRAME=<n> or <lo>-<hi>]` — RAM write-watchpoint (function-level
    "who wrote this byte").** Pins the exact CALL SITE that writes a byte. Logs every
    write touching `<addr>` (optionally only on frame `<n>`, matched against `frame_ctr_dbg`)
    as `[WW] f=<frame> <descr> off=0x.. val=0x.. caller=<file:line>`. Centralized in
@@ -314,6 +324,13 @@ parity pass. A Rust regression therefore cannot truncate the reusable oracle.
 
 - `ZELDA3_REPLAY_WRAM_DUMP=<path>` — dump full 128KB WRAM at the final frame (the
   Rust-vs-Rust regression baseline for refactors).
+- `ZELDA3_DEBUG_FULL_STATE_DUMP=<dir>:<host>[,<host>...]` (compare harness) — write the
+  COMPLETE translated engine state (`{:#?}` of `ZeldaState`, every serde-skipped field
+  included) to `<dir>/state-<host>.txt` before running each listed host (~70 MB each).
+  The paired checkpoint drops every `#[serde(skip)]` field, so a cold-only divergence
+  that a resumed replay cannot reproduce is carried by one of them: dump the same hosts
+  from the cold run and from a resume, `diff` the two files, and the differing field is
+  the carrier (then serialize it or reset it at capture so resumes are faithful again).
 - `ZELDA3_REPLAY_RAM_WATCH_FRAME=<f> ZELDA3_REPLAY_RAM_WATCH_ADDR=<addr>` — print the
   watched byte + module state at every labeled step within a frame (find WHICH step
   writes a value).

@@ -94,6 +94,7 @@ const FEATURES0_MISC_BUG_FIXES_AUDIO: u32 = 4096;
 const MSU1_TAG: u32 = (b'1' as u32) << 24 | (b'U' as u32) << 16 | (b'S' as u32) << 8 | b'M' as u32;
 const OPUZ_TAG: u32 = (b'Z' as u32) << 24 | (b'U' as u32) << 16 | (b'P' as u32) << 8 | b'O' as u32;
 
+#[derive(Debug)]
 pub(super) struct MsuPlayer {
     buffer_size: u32,
     buffer_pos: u32,
@@ -463,6 +464,7 @@ impl LegacyAudioCompatibilityState {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct AudioState {
     audio_has_rendered: bool,
     msu_player: MsuPlayer,

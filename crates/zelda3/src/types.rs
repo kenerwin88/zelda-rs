@@ -172,6 +172,9 @@ pub fn read_le_u16(bytes: &[u8], offset: usize) -> u16 {
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 pub static WW_ADDR: AtomicUsize = AtomicUsize::new(usize::MAX);
 pub static WW_FRAME: AtomicU32 = AtomicU32::new(u32::MAX);
+/// Inclusive upper bound of the watched frame range (`ZELDA3_WW_FRAME=<lo>-<hi>`);
+/// equals `WW_FRAME` when a single frame is given.
+pub static WW_FRAME_HI: AtomicU32 = AtomicU32::new(u32::MAX);
 pub static WW_CUR_FRAME: AtomicU32 = AtomicU32::new(0);
 
 pub fn ww_set_cur_frame(frame: u32) {
@@ -182,11 +185,19 @@ pub fn ww_set_cur_frame(frame: u32) {
             .and_then(|s| usize::from_str_radix(s.trim().trim_start_matches("0x"), 16).ok());
         if let Some(a) = a {
             WW_ADDR.store(a, Ordering::Relaxed);
-            if let Some(f) = std::env::var("ZELDA3_WW_FRAME")
-                .ok()
-                .and_then(|s| s.trim().parse().ok())
-            {
-                WW_FRAME.store(f, Ordering::Relaxed);
+            if let Ok(spec) = std::env::var("ZELDA3_WW_FRAME") {
+                let spec = spec.trim();
+                let (lo, hi) = match spec.split_once('-') {
+                    Some((lo, hi)) => (lo.trim().parse().ok(), hi.trim().parse().ok()),
+                    None => {
+                        let f: Option<u32> = spec.parse().ok();
+                        (f, f)
+                    }
+                };
+                if let (Some(lo), Some(hi)) = (lo, hi) {
+                    WW_FRAME.store(lo, Ordering::Relaxed);
+                    WW_FRAME_HI.store(hi, Ordering::Relaxed);
+                }
             }
         } else {
             WW_ADDR.store(usize::MAX - 1, Ordering::Relaxed); // mark "checked, disabled"
@@ -202,7 +213,11 @@ fn ww_enabled_hit(offset: usize, len: usize) -> bool {
         return false;
     }
     let wf = WW_FRAME.load(Ordering::Relaxed);
-    wf == u32::MAX || wf == WW_CUR_FRAME.load(Ordering::Relaxed)
+    if wf == u32::MAX {
+        return true;
+    }
+    let cur = WW_CUR_FRAME.load(Ordering::Relaxed);
+    wf <= cur && cur <= WW_FRAME_HI.load(Ordering::Relaxed)
 }
 
 /// When `ZELDA3_WW_BACKTRACE=1`, return a full call-stack suffix to append to the

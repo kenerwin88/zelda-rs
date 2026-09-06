@@ -4812,6 +4812,12 @@ impl RawTraceEvent {
     }
 }
 
+/// Zelda's poly (intro / Triforce-room polyhedral) thread runs on stack page
+/// `$1F`; the main thread's stack lives in page `$01`.
+fn is_poly_thread_stack(stack: u16) -> bool {
+    (0x1f00..=0x1fff).contains(&stack)
+}
+
 fn nmi_resume_target(event: &RawTraceEvent) -> Result<(u32, u16), String> {
     Ok((
         event
@@ -8231,6 +8237,26 @@ impl Snes9xOracleSemanticTrace {
                 }
                 self.nmi_publication_pending = true;
                 self.pending_nmi_update_gate = Some(update_gate);
+                // An NMI that interrupts Zelda's poly thread (stack page $1F)
+                // resumes through the IRQ-driven thread switch before the next
+                // NMI while that thread lives. When the main thread retires
+                // the thread instead (the intro hands off to module 1 while
+                // the poly context is parked; route runs 965..967 accept
+                // `$09:FE65/S=$1F34` and then `$00:E304/S=$01F8` with no
+                // resume between), the parked context is never resumed. The
+                // next acceptance on the main stack proves the abandonment;
+                // retire the dead target instead of carrying it for the rest
+                // of the route, where its presence disabled every fine
+                // Sprite_Main observer on the host-return event (f1371214).
+                if !is_poly_thread_stack(target.1) {
+                    while self
+                        .nmi_resume_targets
+                        .last()
+                        .is_some_and(|&(_, stack)| is_poly_thread_stack(stack))
+                    {
+                        self.nmi_resume_targets.pop();
+                    }
+                }
                 self.nmi_resume_targets.push(target);
                 self.host_nmi_ppu_register_operands
                     .push(ppu_register_operands);
@@ -10859,6 +10885,57 @@ mod tests {
             ]
         );
         assert!(resumed.nmi_resume_targets.is_empty());
+    }
+
+    #[test]
+    fn abandoned_poly_thread_nmi_context_is_retired_at_the_next_main_stack_acceptance() {
+        // Route runs 965..967: the intro's parked poly context is interrupted at
+        // `$09:FE65/S=$1F34`, module 1 begins on the main stack, and the next
+        // NMI is accepted at the main-loop wait with no poly resume between.
+        let mut tracker = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        tracker
+            .consume_event(raw_at("nmi", 0x09fe65, 0x1f34), &mut receipts)
+            .unwrap();
+        assert_eq!(tracker.nmi_resume_targets, vec![(0x09fe65, 0x1f34)]);
+        publish_nmi(&mut tracker, &mut receipts);
+        receipts.clear();
+
+        tracker
+            .consume_event(raw_at("nmi", 0x008036, 0x01f8), &mut receipts)
+            .unwrap();
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::NmiAccepted(
+                NmiUpdateGate::Open
+            )]
+        );
+        assert_eq!(tracker.nmi_resume_targets, vec![(0x008036, 0x01f8)]);
+        publish_nmi(&mut tracker, &mut receipts);
+        tracker
+            .consume_event(raw_at("nmi-resume", 0x008036, 0x01f8), &mut receipts)
+            .unwrap();
+        assert!(tracker.nmi_resume_targets.is_empty());
+    }
+
+    #[test]
+    fn live_poly_thread_nmi_context_survives_its_own_resume_cycle() {
+        // While the poly thread lives its parked context resumes before the
+        // next acceptance; a poly-stack acceptance must not retire another.
+        let mut tracker = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        tracker
+            .consume_event(raw_at("nmi", 0x09fd81, 0x1f36), &mut receipts)
+            .unwrap();
+        publish_nmi(&mut tracker, &mut receipts);
+        tracker
+            .consume_event(raw_at("nmi-resume", 0x09fd81, 0x1f36), &mut receipts)
+            .unwrap();
+        assert!(tracker.nmi_resume_targets.is_empty());
+        tracker
+            .consume_event(raw_at("nmi", 0x09f81d, 0x1f3e), &mut receipts)
+            .unwrap();
+        assert_eq!(tracker.nmi_resume_targets, vec![(0x09f81d, 0x1f3e)]);
     }
 
     #[test]

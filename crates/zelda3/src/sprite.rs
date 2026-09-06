@@ -35,6 +35,7 @@ pub(super) struct SpriteSpawnInfo {
 }
 
 #[derive(Copy, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug)]
 pub(super) struct PrepOamCoordsRet {
     pub x: u16,
     pub y: u16,
