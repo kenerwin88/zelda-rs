@@ -484,13 +484,13 @@ pub fn decode_snes_2bpp_tile_indices(
 pub fn extract_modern_dungeon_frame_from_vram(
     frame: &GpuFrame<'_>,
 ) -> (ModernFrame, Vec<ModernIndexTile>) {
-    use std::collections::HashMap;
     let mut modern = extract_modern_frame(frame);
     fill_modern_cgram_colors(&mut modern, frame, true);
 
     let mut cells: Vec<ModernIndexTile> = Vec::new();
     // key: (CHR word base, tilemap word masked to tile#+flip) -> cell id
-    let mut cell_ids: HashMap<(usize, u16), u32> = HashMap::new();
+    let mut cell_ids: crate::fast_hash::FxHashMap<(usize, u16), u32> =
+        crate::fast_hash::FxHashMap::default();
 
     // BG1 (floor/statues, the subscreen color-math operand) and BG2 (walls) are
     // decoded as 4bpp; BG3 (the 2bpp HUD/message layer in mode 1) is decoded as
@@ -1000,6 +1000,14 @@ pub(crate) enum ForbidLiveCgramMode {
     Enforce,
 }
 
+/// `ZELDA3_TRACE_BG_TILE` diagnostic gate, read once: the check sits inside the
+/// per-tile BG extraction loop, where a `getenv` per tile cost ~28% of a
+/// cached-av replay frame.
+fn trace_bg_tile_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os("ZELDA3_TRACE_BG_TILE").is_some())
+}
+
 pub(crate) fn forbid_live_cgram_mode() -> ForbidLiveCgramMode {
     static MODE: std::sync::OnceLock<ForbidLiveCgramMode> = std::sync::OnceLock::new();
     *MODE.get_or_init(
@@ -1276,8 +1284,8 @@ fn content_hash32_slot(vram: &[u16], slot: usize) -> u32 {
 /// turn source provenance into cross-frame state.
 #[derive(Default)]
 struct FourBppFrameCache {
-    content_hashes: HashMap<usize, u32>,
-    decoded_tiles: HashMap<(usize, u16), [u8; 64]>,
+    content_hashes: crate::fast_hash::FxHashMap<usize, u32>,
+    decoded_tiles: crate::fast_hash::FxHashMap<(usize, u16), [u8; 64]>,
 }
 
 impl FourBppFrameCache {
@@ -1454,7 +1462,8 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
     let mut dbg_stale = 0usize;
     let mut dbg_samples: Vec<(usize, usize, u8, u16, u16)> = Vec::new();
     // key: (atlas cell id, hflip, vflip) -> local flip-baked cell id
-    let mut cell_ids: HashMap<(u32, bool, bool), u32> = HashMap::new();
+    let mut cell_ids: crate::fast_hash::FxHashMap<(u32, bool, bool), u32> =
+        crate::fast_hash::FxHashMap::default();
     let mut bg3_tile_screen_xy: HashMap<u16, (i16, i16)> = HashMap::new();
     let dialogue_vwf_tiles =
         DialogueVwfTileRegion::from_origin(frame.dialogue_layout_origin_tile_number);
@@ -1464,7 +1473,10 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
     // palette)` may hold different pixels across the route. The source dump keeps only
     // injective BG3 keys and drops ambiguous ones. Use kept source cells as PNG-backed
     // art; keep live decode for the dropped dynamic glyph slots.
-    let mut bg3_cell_ids: HashMap<(usize, u16), u32> = HashMap::new();
+    let mut bg3_cell_ids: crate::fast_hash::FxHashMap<(usize, u16), u32> =
+        crate::fast_hash::FxHashMap::default();
+    let mut bg3_bake_cache: crate::fast_hash::FxHashMap<(usize, u16, u8), ([u8; 64], u32)> =
+        crate::fast_hash::FxHashMap::default();
     let mut four_bpp_cache = FourBppFrameCache::default();
 
     for layer_index in 0..3usize {
@@ -1517,16 +1529,24 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                     let pal = ((entry_word >> 10) & 7) as u8;
                     let chr_base = frame.bg[layer_index].tile_adr as usize;
                     let stable_pack = (tile_number as u16) | (u16::from(pal) << 10);
-                    let raw = decode_snes_2bpp_tile_indices(
-                        frame.bg_vram.unwrap_or(frame.vram),
-                        chr_base,
-                        entry_word & 0x03ff,
-                    );
-                    let mut baked = [0u8; 64];
-                    for (b, &p) in baked.iter_mut().zip(raw.iter()) {
-                        *b = if p == 0 { 0 } else { pal * 4 + p };
-                    }
-                    let content_hash = index_pattern_hash32(&baked);
+                    // Per-frame memo: the unflipped decode + palette bake +
+                    // content hash depend only on (CHR base, tile, palette),
+                    // and the HUD/message layer repeats a few tiles hundreds
+                    // of times per frame.
+                    let (baked, content_hash) = *bg3_bake_cache
+                        .entry((chr_base, tile_number as u16, pal))
+                        .or_insert_with(|| {
+                            let raw = decode_snes_2bpp_tile_indices(
+                                frame.bg_vram.unwrap_or(frame.vram),
+                                chr_base,
+                                entry_word & 0x03ff,
+                            );
+                            let mut baked = [0u8; 64];
+                            for (b, &p) in baked.iter_mut().zip(raw.iter()) {
+                                *b = if p == 0 { 0 } else { pal * 4 + p };
+                            }
+                            (baked, index_pattern_hash32(&baked))
+                        });
                     let bg3_source_key = frame
                         .bg3_source_tiles
                         .iter()
@@ -1868,7 +1888,7 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                 if sy >= 224 {
                     sy -= bg_h;
                 }
-                if std::env::var_os("ZELDA3_TRACE_BG_TILE").is_some()
+                if trace_bg_tile_enabled()
                     && layer_index == 1
                     && sx == 192
                     && sy == 159
@@ -2198,8 +2218,6 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
     src_table: &S,
     atlas: &ModernSourceAtlas,
 ) -> (Vec<ModernIndexTile>, Vec<ModernIndexSpriteInstance>) {
-    use std::collections::HashMap;
-
     let debug_pixel = std::env::var("ZELDA3_DEBUG_MODERN_OBJ_PIXEL")
         .ok()
         .and_then(|value| {
@@ -2213,7 +2231,8 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
     let mut four_bpp_cache = FourBppFrameCache::default();
     let mut cells: Vec<ModernIndexTile> = Vec::new();
     // atlas cell id -> local dense cell id
-    let mut cell_ids: HashMap<u32, u32> = HashMap::new();
+    let mut cell_ids: crate::fast_hash::FxHashMap<u32, u32> =
+        crate::fast_hash::FxHashMap::default();
     let mut out = Vec::new();
 
     for sprite_num in 0..128usize {

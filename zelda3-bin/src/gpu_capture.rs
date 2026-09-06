@@ -348,16 +348,6 @@ impl LiveGpuFrameCapture {
         } else {
             &[]
         };
-        let bg3_vwf_glyph_run_ir_kinds: Vec<_> = if dialogue_generation_visible {
-            (0..game.published_bg3_vwf_glyph_runs().len())
-                .map(|index| {
-                    game.published_bg3_vwf_glyph_run_dialogue_ir(index)
-                        .map(|op| op.kind)
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
         let dialogue_message_id =
             dialogue_generation_visible.then(|| game.published_dialogue_message_id());
         let source_dialogue_ir = if dialogue_generation_visible {
@@ -368,6 +358,25 @@ impl LiveGpuFrameCapture {
         };
         let dialogue_ir = if dialogue_generation_visible {
             game.published_displayed_source_render_dialogue_ir()
+        } else {
+            Vec::new()
+        };
+        // Same result as `published_bg3_vwf_glyph_run_dialogue_ir(index)` per
+        // run, resolved against the one displayed IR computed above instead of
+        // re-expanding the message once per glyph run.
+        let bg3_vwf_glyph_run_ir_kinds: Vec<_> = if dialogue_generation_visible {
+            game.published_bg3_vwf_glyph_run_dialogue_offsets()
+                .iter()
+                .map(|&offset| {
+                    if offset == zelda3_compat::UNKNOWN_DIALOGUE_OFFSET {
+                        return None;
+                    }
+                    dialogue_ir
+                        .iter()
+                        .find(|op| op.offset == usize::from(offset))
+                        .map(|op| op.kind.clone())
+                })
+                .collect()
         } else {
             Vec::new()
         };

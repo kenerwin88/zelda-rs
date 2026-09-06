@@ -13,6 +13,7 @@
 //! Phase 1b — BG layer rendering:
 //! - [`BgLayerRenderer`]: single-layer BG pipeline (tilemap → atlas → CGRAM).
 
+pub mod fast_hash;
 mod frame_compare;
 pub mod gpu_frame;
 mod gpu_work_item;

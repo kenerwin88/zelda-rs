@@ -3390,18 +3390,109 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
     let mut engine_nanos = 0_u128;
     let mut audio_nanos = 0_u128;
     let mut serialization_nanos = 0_u128;
-    for (line_index, line) in BufReader::new(ledger_file).lines().enumerate() {
-        let receipt_started = Instant::now();
-        let line = line.unwrap_or_else(|error| {
-            eprintln!("failed to read {}: {error}", ledger_path.display());
+    // Ledger + receipt parsing (JSON, ~10% of a cached-av frame) runs on a
+    // producer thread; the pairing of one receipt line per ledger line and
+    // every provenance check are unchanged, the checks simply run here on the
+    // consumer side in the same order.
+    struct ParsedCachedAvInput {
+        line_index: usize,
+        record: CachedOracleAvRecord,
+        /// `None` for a frame before the resumed boundary: its receipt line was
+        /// consumed to keep the two ledgers paired but is never installed, so
+        /// only the record head (frame, input) is decoded for the provenance
+        /// checks. Parsing every skipped receipt cost ~0.3 ms per frame (two
+        /// minutes ahead of a 380k-frame boundary).
+        timing_receipts: Option<OriginalTimingHostReceipts>,
+    }
+    #[derive(serde::Deserialize)]
+    struct CachedOracleAvRecordHead {
+        schema: u32,
+        frame: u32,
+        input: String,
+    }
+    let (parsed_tx, parsed_rx) =
+        std::sync::mpsc::sync_channel::<Result<ParsedCachedAvInput, String>>(512);
+    let parse_ledger_path = ledger_path.clone();
+    let parse_thread = std::thread::Builder::new()
+        .name("cached-av-parse".into())
+        .spawn(move || {
+            let ledger_path = parse_ledger_path;
+            for (line_index, line) in BufReader::new(ledger_file).lines().enumerate() {
+                let item = (|| -> Result<ParsedCachedAvInput, String> {
+                    let line = line
+                        .map_err(|error| format!("failed to read {}: {error}", ledger_path.display()))?;
+                    let invalid_record = |error: serde_json::Error| {
+                        format!(
+                            "invalid cached A/V record {}:{}: {error}",
+                            ledger_path.display(),
+                            line_index + 1
+                        )
+                    };
+                    let skipped_frame = cache_start_frame
+                        .checked_add(u32::try_from(line_index).unwrap_or(u32::MAX))
+                        .is_some_and(|frame| frame < start_frame);
+                    let record = if skipped_frame {
+                        let head: CachedOracleAvRecordHead =
+                            serde_json::from_str(&line).map_err(invalid_record)?;
+                        CachedOracleAvRecord {
+                            schema: head.schema,
+                            frame: head.frame,
+                            input: head.input,
+                            oracle_audio_sample_frames: None,
+                            video: None,
+                            audio: None,
+                        }
+                    } else {
+                        serde_json::from_str(&line).map_err(invalid_record)?
+                    };
+                    let timing_receipt_line = timing_receipt_lines
+                        .next()
+                        .ok_or_else(|| {
+                            format!(
+                                "cached source receipt ledger ended before frame {}",
+                                record.frame
+                            )
+                        })?
+                        .map_err(|error| {
+                            format!(
+                                "failed to read cached source receipt at frame {}: {error}",
+                                record.frame
+                            )
+                        })?;
+                    let timing_receipts = if skipped_frame && record.frame < start_frame {
+                        None
+                    } else {
+                        Some(serde_json::from_str(&timing_receipt_line).map_err(|error| {
+                            format!(
+                                "invalid cached source receipt at frame {}: {error}",
+                                record.frame
+                            )
+                        })?)
+                    };
+                    Ok(ParsedCachedAvInput {
+                        line_index,
+                        record,
+                        timing_receipts,
+                    })
+                })();
+                let failed = item.is_err();
+                if parsed_tx.send(item).is_err() || failed {
+                    break;
+                }
+            }
+        })
+        .unwrap_or_else(|error| {
+            eprintln!("failed to start the cached A/V parse thread: {error}");
             process::exit(2);
         });
-        let record: CachedOracleAvRecord = serde_json::from_str(&line).unwrap_or_else(|error| {
-            eprintln!(
-                "invalid cached A/V record {}:{}: {error}",
-                ledger_path.display(),
-                line_index + 1
-            );
+    for parsed in parsed_rx.iter() {
+        let receipt_started = Instant::now();
+        let ParsedCachedAvInput {
+            line_index,
+            record,
+            timing_receipts,
+        } = parsed.unwrap_or_else(|error| {
+            eprintln!("{error}");
             process::exit(2);
         });
         if record.schema != 1 || record.frame != ledger_frames_seen {
@@ -3427,30 +3518,16 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
             );
             process::exit(2);
         }
-        let timing_receipt_line = timing_receipt_lines
-            .next()
-            .unwrap_or_else(|| {
-                eprintln!(
-                    "cached source receipt ledger ended before frame {}",
-                    record.frame
-                );
-                process::exit(2);
-            })
-            .unwrap_or_else(|error| {
-                eprintln!(
-                    "failed to read cached source receipt at frame {}: {error}",
-                    record.frame
-                );
-                process::exit(2);
-            });
-        let timing_receipts: OriginalTimingHostReceipts =
-            serde_json::from_str(&timing_receipt_line).unwrap_or_else(|error| {
-                eprintln!(
-                    "invalid cached source receipt at frame {}: {error}",
-                    record.frame
-                );
-                process::exit(2);
-            });
+        if record.frame < start_frame {
+            continue;
+        }
+        let Some(timing_receipts) = timing_receipts else {
+            eprintln!(
+                "cached source receipt for frame {} was not decoded (parse thread expected it before the boundary {start_frame})",
+                record.frame
+            );
+            process::exit(2);
+        };
         if !timing_receipts.matches_host_call(u64::from(record.frame), replay_input) {
             eprintln!(
                 "cached source receipt provenance mismatch at frame {}: host_call={} canonical_input={:04x} raw_input={replay_input:04x}",
@@ -3459,9 +3536,6 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
                 timing_receipts.input_state()
             );
             process::exit(2);
-        }
-        if record.frame < start_frame {
-            continue;
         }
         if stop_before_frame.is_some_and(|end| record.frame >= end) {
             break;
@@ -3587,6 +3661,10 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
             }
         }
     }
+    // Dropping the receiver ends the producer at its next send; a parse error
+    // it reported was already surfaced by the loop above.
+    drop(parsed_rx);
+    let _ = parse_thread.join();
     while matched || std::env::var_os("ZELDA3_CACHED_AV_CONTINUE").is_some() {
         let Some(pending) = pending_frames.pop_front() else {
             break;
@@ -5080,7 +5158,20 @@ pub(crate) fn run_compare_libretro_oracle(
         );
         checkpoint.apu
     });
-    let initial_sram = game.sram.clone();
+    let mut initial_sram = game.sram.clone();
+    // A paired resume restores both engines from progressed states, but the
+    // provenance SRAM recorded into any checkpoint this run writes must stay
+    // the route's initial SRAM: paired captures descending from a resume
+    // otherwise record the progressed save and every cache-bound consumer
+    // (`cached-av --resume-paired`) rejects them as a different route.
+    if let Some(dir) = resume_oracle_state.as_deref().and_then(Path::parent) {
+        let provenance = dir.join("initial.srm");
+        if provenance.is_file() {
+            if let Ok(bytes) = fs::read(&provenance) {
+                initial_sram = bytes;
+            }
+        }
+    }
     let mut oracle = match LibretroCore::load_with_sram(core_path, rom_path, Some(&initial_sram)) {
         Ok(core) => core,
         Err(e) => {

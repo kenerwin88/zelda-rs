@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use std::collections::HashMap;
+use crate::fast_hash::FxHashMap;
 use std::path::Path;
 
 /// A single palette-agnostic tile pattern: 64 4-bit indices (0–15), row-major,
@@ -27,7 +27,7 @@ pub struct ModernIndexAtlas {
     pub tile_width_px: u16,
     pub tile_height_px: u16,
     pub cells: Vec<ModernIndexTile>,
-    key_to_cell: HashMap<u16, usize>,
+    key_to_cell: FxHashMap<u16, usize>,
 }
 
 /// Look up the index tile for a tilemap word, ignoring palette and priority bits.
@@ -66,7 +66,7 @@ pub fn load_modern_overworld_index_atlas(repo_root: &Path) -> Result<ModernIndex
     }
 
     let mut cells = Vec::with_capacity(manifest.cells.len());
-    let mut key_to_cell: HashMap<u16, usize> = HashMap::new();
+    let mut key_to_cell: FxHashMap<u16, usize> = FxHashMap::default();
 
     for cell_json in &manifest.cells {
         let offset = cell_json.id as usize * 64;
@@ -136,14 +136,14 @@ impl ModernIndexAtlas {
             tile_width_px: 8,
             tile_height_px: 8,
             cells,
-            key_to_cell: HashMap::new(),
+            key_to_cell: FxHashMap::default(),
         }
     }
 
     /// Construct an in-memory atlas with explicit `(graphics_key, cell_index)` lookup
     /// entries, for unit tests that exercise `index_cell_for_tilemap_entry`.
     pub fn from_keyed_cells_for_test(cells: Vec<ModernIndexTile>, keys: &[(u16, usize)]) -> Self {
-        let mut key_to_cell = HashMap::new();
+        let mut key_to_cell = FxHashMap::default();
         for &(key, cell_idx) in keys {
             key_to_cell.insert(key, cell_idx);
         }

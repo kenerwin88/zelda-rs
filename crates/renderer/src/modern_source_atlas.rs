@@ -27,7 +27,7 @@
 
 use crate::modern_index_atlas::ModernIndexTile;
 use serde::Deserialize;
-use std::collections::HashMap;
+use crate::fast_hash::FxHashMap;
 use std::path::Path;
 
 /// `LogicalChrSrc::kind` for Link CHR tiles (mirrors `zelda3::CHR_KIND_LINK`;
@@ -48,9 +48,9 @@ pub fn modern_source_key(kind: u8, pack: u16, tile_off: u16) -> u64 {
 /// Atlas of unique palette-agnostic 8x8 cells keyed by logical CHR source.
 pub struct ModernSourceAtlas {
     pub cells: Vec<ModernIndexTile>,
-    key_to_cell: HashMap<u64, usize>,
+    key_to_cell: FxHashMap<u64, usize>,
     cell_source_keys: Vec<u64>,
-    pattern_to_cell: HashMap<[u8; 64], usize>,
+    pattern_to_cell: FxHashMap<[u8; 64], usize>,
 }
 
 /// Resolve the cell for a logical CHR source `{kind, pack, tile_off}`.
@@ -149,9 +149,9 @@ pub fn load_modern_source_atlas(repo_root: &Path) -> Result<ModernSourceAtlas, S
     let data = &buf[..info.buffer_size()];
 
     let mut cells = Vec::with_capacity(manifest.cells.len());
-    let mut key_to_cell: HashMap<u64, usize> = HashMap::new();
+    let mut key_to_cell: FxHashMap<u64, usize> = FxHashMap::default();
     let mut cell_source_keys = Vec::with_capacity(manifest.cells.len());
-    let mut pattern_to_cell: HashMap<[u8; 64], usize> = HashMap::new();
+    let mut pattern_to_cell: FxHashMap<[u8; 64], usize> = FxHashMap::default();
 
     for cell_json in &manifest.cells {
         let id = cell_json.id as usize;
@@ -222,7 +222,7 @@ impl ModernSourceAtlas {
         cells: Vec<ModernIndexTile>,
         keys: &[(u8, u16, u16, usize)],
     ) -> Self {
-        let mut key_to_cell: HashMap<u64, usize> = HashMap::new();
+        let mut key_to_cell: FxHashMap<u64, usize> = FxHashMap::default();
         let mut cell_source_keys = vec![crate::modern_hd_overrides::NO_SOURCE_KEY; cells.len()];
         for &(kind, pack, tile_off, cell_idx) in keys {
             let key = modern_source_key(kind, pack, tile_off);
@@ -233,7 +233,7 @@ impl ModernSourceAtlas {
                 }
             }
         }
-        let mut pattern_to_cell = HashMap::new();
+        let mut pattern_to_cell = FxHashMap::default();
         for (cell_idx, cell) in cells.iter().enumerate() {
             pattern_to_cell.entry(cell.indices).or_insert(cell_idx);
         }

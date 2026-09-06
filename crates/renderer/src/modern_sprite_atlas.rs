@@ -1,6 +1,6 @@
 use crate::modern_index_atlas::{source_key_from_manifest, ModernIndexTile, SourceKeyJson};
 use serde::Deserialize;
-use std::collections::HashMap;
+use crate::fast_hash::FxHashMap;
 use std::path::Path;
 
 /// Atlas of all unique palette-agnostic tile patterns for sprites.
@@ -11,7 +11,7 @@ pub struct ModernSpriteIndexAtlas {
     pub tile_width_px: u16,
     pub tile_height_px: u16,
     pub cells: Vec<ModernIndexTile>,
-    key_to_cell: HashMap<(u64, u16), usize>,
+    key_to_cell: FxHashMap<(u64, u16), usize>,
 }
 
 /// Look up the index tile for a `(context, tile)` pair.
@@ -53,7 +53,7 @@ pub fn load_modern_sprite_index_atlas(repo_root: &Path) -> Result<ModernSpriteIn
     }
 
     let mut cells = Vec::with_capacity(manifest.cells.len());
-    let mut key_to_cell: HashMap<(u64, u16), usize> = HashMap::new();
+    let mut key_to_cell: FxHashMap<(u64, u16), usize> = FxHashMap::default();
 
     for cell_json in &manifest.cells {
         let offset = cell_json.id as usize * 64;
@@ -114,7 +114,7 @@ impl ModernSpriteIndexAtlas {
         cells: Vec<ModernIndexTile>,
         keys: Vec<((u64, u16), usize)>,
     ) -> ModernSpriteIndexAtlas {
-        let mut key_to_cell = HashMap::new();
+        let mut key_to_cell = FxHashMap::default();
         for (key, cell_idx) in keys {
             key_to_cell.insert(key, cell_idx);
         }

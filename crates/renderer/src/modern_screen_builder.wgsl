@@ -155,20 +155,25 @@ fn bg_pixel(layer: u32, sx: u32, sy: u32, hi_priority: bool, is_main: bool) -> u
         sample_sy = mosaic_snap(sy);
     }
     var out = 0xffffffffu;
-    // Candidate bucketing is intentionally disabled by the packet mask. Keep
-    // the branch layout stable while every live frame uses the complete source
-    // instance traversal below.
-    if (((params.p8.y >> layer) & 1u) != 0u) {
-        let bucket_x = min(sample_sx / 8u, 31u);
-        let bucket_y = min(sample_sy / 8u, 27u);
-        let priority_index = select(0u, 1u, hi_priority);
-        let bucket = (((layer * 2u + priority_index) * 28u + bucket_y) * 32u + bucket_x);
-        let header = params.p8.x + bucket * 2u;
+    // BG row buckets (p8.w bit 2): the host appends every instance to each
+    // 8-pixel row bucket it can cover, in the coordinate space this layer is
+    // sampled in (wrapped BG rows for a per-scanline-scroll layer, screen
+    // rows otherwise), so walking one row bucket in order yields the same
+    // last-match result as the full class walk below.
+    if ((params.p8.w & 4u) != 0u) {
+        var row = sample_sy / 8u;
+        if (!mosaic_active() && ((params.p1.w >> layer) & 1u) != 0u) {
+            let lp = layer_param(layer);
+            let bg_h = i32(max(lp.w, 224u));
+            let scroll_base = params.p6.x + (sample_sy * 8u) + (layer * 2u);
+            let dv = i32(data[scroll_base + 1u]) - i32(lp.y);
+            row = u32(wrap_i32(i32(sample_sy) + dv + bg_h - 224, bg_h)) / 8u;
+        }
+        let header = params.p8.x + 16u + ((layer * 2u + select(0u, 1u, hi_priority)) * 64u + row) * 2u;
         let offset = data[header];
         let count = data[header + 1u];
-        let candidates = params.p8.x + params.p8.z + offset;
         for (var i = 0u; i < count; i = i + 1u) {
-            let inst_index = data[candidates + i];
+            let inst_index = data[params.p8.x + offset + i];
             let px = bg_instance_pixel(params.p5.y + inst_index * 8u, layer, sample_sx, sample_sy, hi_priority);
             if (px != 0xffffffffu) {
                 out = px;
@@ -176,8 +181,17 @@ fn bg_pixel(layer: u32, sx: u32, sy: u32, hi_priority: bool, is_main: bool) -> u
         }
         return out;
     }
-    let count = params.p0.z;
-    for (var i = 0u; i < count; i = i + 1u) {
+    // Instances are grouped by (layer, priority) class in traversal order;
+    // walking only this pass's segment yields the same last-match result as
+    // the full traversal (p8.w == 0 keeps the full walk for legacy packets).
+    var start = 0u;
+    var count = params.p0.z;
+    if (params.p8.w != 0u) {
+        let segment = params.p8.x + (layer * 2u + select(0u, 1u, hi_priority)) * 2u;
+        start = data[segment];
+        count = data[segment + 1u];
+    }
+    for (var i = start; i < start + count; i = i + 1u) {
         let px = bg_instance_pixel(params.p5.y + i * 8u, layer, sample_sx, sample_sy, hi_priority);
         if (px != 0xffffffffu) {
             out = px;
@@ -229,6 +243,22 @@ fn obj_pixel(sx: u32, sy: u32, is_main: bool) -> ObjPixel {
     if (layer_window_masks(4u, sx, sy, is_main)) {
         return transparent_obj();
     }
+    if ((params.p8.w & 2u) != 0u) {
+        // Candidates of this 8x8 screen cell in OAM order (see
+        // `modern_screen_builder_sprite_buckets`); the first covering one is
+        // the same sprite the full walk would find.
+        let header = params.p8.x + 784u + ((sy / 8u) * 32u + (sx / 8u)) * 2u;
+        let offset = data[header];
+        let count = data[header + 1u];
+        for (var i = 0u; i < count; i = i + 1u) {
+            let inst_index = data[params.p8.x + offset + i];
+            let obj = sprite_instance_pixel(params.p5.z + inst_index * 8u, sx, sy);
+            if (obj.px != 0xffffffffu) {
+                return obj;
+            }
+        }
+        return transparent_obj();
+    }
     let count = params.p0.w;
     for (var i = 0u; i < count; i = i + 1u) {
         let obj = sprite_instance_pixel(params.p5.z + i * 8u, sx, sy);
@@ -247,25 +277,28 @@ fn maybe_paint_bg(current: u32, enabled: u32, layer: u32, sx: u32, sy: u32, hi: 
     return select(current, px, px != 0xffffffffu);
 }
 
-fn maybe_paint_obj(current: u32, enabled: u32, prio: u32, sx: u32, sy: u32, is_main: bool) -> u32 {
-    if ((enabled & 0x10u) == 0u) {
-        return current;
-    }
-    let obj = obj_pixel(sx, sy, is_main);
+// The first covering sprite in OAM order owns the pixel whatever its
+// priority; the four OBJ paint slots only decide where that one sprite lands
+// in the layer order, so it is looked up once per screen.
+fn maybe_paint_obj(current: u32, obj: ObjPixel, prio: u32) -> u32 {
     return select(current, obj.px, obj.px != 0xffffffffu && obj.prio == prio);
 }
 
 fn composite_screen(sx: u32, sy: u32, enabled: u32, is_main: bool, backdrop: u32) -> u32 {
     var out = backdrop;
+    var obj = transparent_obj();
+    if ((enabled & 0x10u) != 0u) {
+        obj = obj_pixel(sx, sy, is_main);
+    }
     out = maybe_paint_bg(out, enabled, 2u, sx, sy, false, is_main);
-    out = maybe_paint_obj(out, enabled, 0u, sx, sy, is_main);
-    out = maybe_paint_obj(out, enabled, 1u, sx, sy, is_main);
+    out = maybe_paint_obj(out, obj, 0u);
+    out = maybe_paint_obj(out, obj, 1u);
     out = maybe_paint_bg(out, enabled, 1u, sx, sy, false, is_main);
     out = maybe_paint_bg(out, enabled, 0u, sx, sy, false, is_main);
-    out = maybe_paint_obj(out, enabled, 2u, sx, sy, is_main);
+    out = maybe_paint_obj(out, obj, 2u);
     out = maybe_paint_bg(out, enabled, 1u, sx, sy, true, is_main);
     out = maybe_paint_bg(out, enabled, 0u, sx, sy, true, is_main);
-    out = maybe_paint_obj(out, enabled, 3u, sx, sy, is_main);
+    out = maybe_paint_obj(out, obj, 3u);
     out = maybe_paint_bg(out, enabled, 2u, sx, sy, true, is_main);
     return out;
 }
