@@ -5,6 +5,10 @@
     "note": "Imported from the pre-existing local ratchet. It predates commit-bound promotion receipts and is not a durable promoted frontier."
   },
   "policy": {
+    "accepted_exact_av_receipts": [
+      "two independent cold pinned-core exact A/V passes",
+      "one full-route Rust-only cached Snes9x A/V pass (policy 2026-09-06)"
+    ],
     "promotion_requires_clean_committed_tree": true,
     "required_cold_confirmations": 2,
     "required_lanes": [
@@ -15,38 +19,34 @@
   },
   "project": "routes/full_run",
   "promoted": {
-    "binary_sha256": "0cb077ead679e9ecd8714a20e088ab1eb041bbb5c992aaf6c59b219840d5f962",
-    "cold_confirmation_receipts": [
-      {
-        "frames": 14002,
-        "path": ".git/parity-cold-passes/1787544629624078000-14002-3400e1b5e237.json",
-        "session_result_sha256": "e0fb2006b20aadc0e31caceaa08df1ce83f855f1b1ff60ee558886a314df2997",
-        "sha256": "4dfc05721809bbf45aa4ca940e6a63abec833a17961c689edc4cf50cd61ea770"
-      },
-      {
-        "frames": 14002,
-        "path": ".git/parity-cold-passes/1787544395506893000-14002-0d815b20124b.json",
-        "session_result_sha256": "e0fb2006b20aadc0e31caceaa08df1ce83f855f1b1ff60ee558886a314df2997",
-        "sha256": "0da426a6c56817da41758c1ec062a3b19d7596d1393af67c642762910def3a6a"
-      }
-    ],
-    "commit": "ff1b81ae79bcc7bdd6cdbde635266eef3d5b72ed",
-    "last_exact_audio_frame": 14002,
-    "last_exact_engine_state_frame": 14002,
-    "last_exact_video_frame": 14002,
-    "route_signature": {
-      "core_sha256": "f82658246a0c1fed7d53c485f3de79fcc671a45d9ed0a0ac6bf6eace9d46ff9a",
-      "generation_id": 2,
-      "initial_sram_sha256": "a6af0ddf25ae5feafba301100938f5ef81137ee76dcdc483a04fb6e961347828",
-      "input_sha256": "d55e86815c399ff2995cde0dfede417296ec3c614cdbba8229c807e6300b01e9",
-      "project": "routes/full_run",
-      "recorded_rng_sha256": "1550db69982ed535423c35eaea33ab758790301e073efacdeada6735b011685d",
-      "rom_sha256": "66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb",
-      "schema": 1,
-      "take_count": 38,
-      "total_frames": 1581079
+    "binary_sha256": "c0a0d57da2ecc90974bb9a8c18012cd8909d7eb0eb7cbe10bb17d1ddc7fc90ce",
+    "cached_av_receipt": {
+      "candidate_ledger_sha256": "3d52711c51a4f01031bd336aa582d4b6a316c71199710d3354ef015fcca1440c",
+      "frames": 1581079,
+      "lanes": [
+        "video",
+        "audio"
+      ],
+      "manifest_sha256": "e0674e0ea71cefbe43a0ee9bb8ce681a593240f2ff22d5eac0cdb2087c0c20fb",
+      "oracle_cache_key": "ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18",
+      "oracle_cache_manifest_sha256": "4c7f88fbf327a4b3af7d3f8614d82ebb2318f11b607798d5dddb4a97b7fe2715",
+      "run": "/Users/missingno/Documents/zelda3-rs/target/parity-cached-av/run-ed0121e1b093-20260906-191116"
     },
-    "route_signature_sha256": "ee5f162cff21db0fec57d44206dc80c3913b389f2981361181c22d84b93f2bb5"
+    "commit": "d1940e412fa754f020ec7b10d6e7883858741071",
+    "kind": "cached_av_pass",
+    "last_exact_audio_frame": 1581078,
+    "last_exact_engine_state_frame": 14002,
+    "last_exact_video_frame": 1581078,
+    "route_signature": {
+      "core_kind": "pinned Snes9x 1.63 instrumented trace build (oracle-av-capture)",
+      "core_sha256": "6f112667f7b590c3f789630171ce9af79b1793245ad2e14080522146ffd6d498",
+      "initial_sram_sha256": "a6af0ddf25ae5feafba301100938f5ef81137ee76dcdc483a04fb6e961347828",
+      "input_sha256": "9859eeb60bc238a5f7cfeed87dcd69441ff2975a9a1be013ad30df70e0fe2ace",
+      "oracle_initial_state_sha256": "dd30533d34bdf401cde955f8ce791960e84847c139087d35476d39a78bca0222",
+      "rom_random_sha256": "688bddd0921ceca56f1a066b98d630b02a8df244dabf9762ac5845a458e44abd",
+      "rom_sha256": "66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb"
+    },
+    "route_signature_sha256": "c097ae756ad4bb11ea51a7eb409275f030eb62429a10a064eec3072160a6d749"
   },
   "schema": 1
 }
