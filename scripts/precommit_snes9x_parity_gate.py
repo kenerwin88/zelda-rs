@@ -704,6 +704,14 @@ def _build_check_command(
         command.extend(
             ["--compare-engine-state-from-frame", str(engine_state_from_frame)]
         )
+    else:
+        # The compare binary now compares engine state from --compare-from-frame
+        # by default. The recorded-RNG video preflight and the exact A/V
+        # certification are A/V authorities that start cold at frame 0, where
+        # Snes9x's $55 power-on RAM legitimately differs from the translated
+        # zero-filled WRAM until the ROM clears it; engine state is the
+        # live-RNG calibration's diagnostic tier, so opt these stages out.
+        command.append("--ignore-engine-state")
     if cold_evidence_invocation_id is not None:
         command.extend(
             ["--cold-evidence-invocation-id", cold_evidence_invocation_id]
