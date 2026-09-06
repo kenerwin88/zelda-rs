@@ -3799,6 +3799,14 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
         eprintln!("failed to flush Rust A/V candidate ledger: {error}");
         process::exit(1);
     });
+    // `ZELDA3_REPLAY_WRAM_DUMP=<path>`: the full 128KB Rust WRAM after the last
+    // replayed frame, as in the live compare, for byte-diffing the cold cached
+    // lineage against an oracle WRAM capture at the same frame.
+    if let Some(path) = env::var_os("ZELDA3_REPLAY_WRAM_DUMP") {
+        if let Err(error) = fs::write(&path, &game.ram[..]) {
+            eprintln!("failed to write WRAM dump to {path:?}: {error}");
+        }
+    }
     oracle_slice_writer.flush().unwrap_or_else(|error| {
         eprintln!("failed to flush cached oracle A/V slice: {error}");
         process::exit(1);

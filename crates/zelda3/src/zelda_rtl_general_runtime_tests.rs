@@ -35443,3 +35443,43 @@ fn fire_debirando_dynamic_spawn_resumes_after_the_exact_source_publication() {
         "split execution must equal the atomic dynamic-spawn call and Fire Debirando suffix",
     );
 }
+
+#[test]
+fn parked_dungeon_sprite_main_terminal_return_retires_the_pending_suffix_once() {
+    // Route host 717302: a resumed live Module 7 Sprite_Main returns inside a
+    // typed terminal main-loop return whose wire is [SpriteMainReturned,
+    // CallStackContinued, MainLoopCommonSuffixCompleted, NmiAccepted(Open)].
+    // The typed return owns the shared ZeldaRunGameLoop suffix; the parked
+    // caller's completion must retire that one owner, not add a second
+    // NMI_PrepareSprites (which advanced the Link animated-tile DMA cycle one
+    // frame ahead of the oracle, visible at route frame 732911).
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.set_indoor_flag(1);
+    state.set_main_module(0x07);
+    state.set_submodule(2);
+    write_le_u16(&mut state.ram, LINK_DMA_COUNTDOWN, 9);
+    state.set_bg_tile_animation_countdown(7);
+    state.pending_main_loop_common_suffix =
+        Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch);
+
+    state.complete_parked_dungeon_sprite_main_suffix_by_wire(false);
+    assert!(state.pending_main_loop_common_suffix.is_none());
+    state.complete_pending_main_loop_common_suffix_after_module_return();
+
+    assert_eq!(read_le_u16(&state.ram, LINK_DMA_COUNTDOWN), 8);
+    assert_eq!(state.game_state.display.bg_tile_animation_countdown, 6);
+
+    // Control: without a pending typed suffix the parked caller still runs
+    // the ordinary one-shot suffix itself.
+    let mut bare = ZeldaState::new();
+    bare.set_rom_startup_timing(true);
+    bare.set_indoor_flag(1);
+    bare.set_main_module(0x07);
+    bare.set_submodule(2);
+    write_le_u16(&mut bare.ram, LINK_DMA_COUNTDOWN, 9);
+    bare.set_bg_tile_animation_countdown(7);
+    bare.complete_parked_dungeon_sprite_main_suffix_by_wire(false);
+    assert_eq!(read_le_u16(&bare.ram, LINK_DMA_COUNTDOWN), 8);
+    assert_eq!(bare.game_state.display.bg_tile_animation_countdown, 6);
+}

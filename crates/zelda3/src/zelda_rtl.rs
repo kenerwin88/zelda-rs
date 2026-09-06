@@ -55703,8 +55703,13 @@ impl ZeldaState {
         if live_nonterminal {
             self.retire_or_defer_main_loop_common_suffix_by_wire();
         } else {
-            self.nmi_prepare_sprites();
-            self.clear_nmi_update_latch();
+            // A typed terminal main-loop return already owns the shared
+            // ZeldaRunGameLoop suffix (`pending_main_loop_common_suffix`);
+            // retire that one owner here instead of running a bare
+            // NMI_PrepareSprites and then the pending one again (route host
+            // 717302: the second preparation advanced the Link animated-tile
+            // DMA cycle one frame ahead of the oracle, visible at 732911).
+            self.retire_or_run_main_loop_common_suffix_after_module_return();
         }
     }
 
