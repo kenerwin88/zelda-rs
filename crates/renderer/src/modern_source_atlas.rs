@@ -25,9 +25,9 @@
 //! bit range than the non-Link `kind << 32` keys (no collision risk between the
 //! two namespaces): `key = (3 << 24) | ((pack & 0x3ff) << 14) | (tile_off & 0x3fff)`.
 
+use crate::fast_hash::FxHashMap;
 use crate::modern_index_atlas::ModernIndexTile;
 use serde::Deserialize;
-use crate::fast_hash::FxHashMap;
 use std::path::Path;
 
 /// `LogicalChrSrc::kind` for Link CHR tiles (mirrors `zelda3::CHR_KIND_LINK`;

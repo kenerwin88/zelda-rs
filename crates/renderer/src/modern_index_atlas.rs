@@ -1,5 +1,5 @@
-use serde::Deserialize;
 use crate::fast_hash::FxHashMap;
+use serde::Deserialize;
 use std::path::Path;
 
 /// A single palette-agnostic tile pattern: 64 4-bit indices (0–15), row-major,

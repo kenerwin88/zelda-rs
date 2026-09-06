@@ -114,6 +114,10 @@ mod tests {
         let low_bits: std::collections::HashSet<u64> = (0u64..4096)
             .map(|pack| build.hash_one((3u64 << 32) | (pack << 16) | 0x12) & 0xffff)
             .collect();
-        assert!(low_bits.len() > 3800, "{} distinct low 16-bit values of 4096", low_bits.len());
+        assert!(
+            low_bits.len() > 3800,
+            "{} distinct low 16-bit values of 4096",
+            low_bits.len()
+        );
     }
 }

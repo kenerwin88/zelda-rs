@@ -1,6 +1,6 @@
+use crate::fast_hash::FxHashMap;
 use crate::modern_index_atlas::{source_key_from_manifest, ModernIndexTile, SourceKeyJson};
 use serde::Deserialize;
-use crate::fast_hash::FxHashMap;
 use std::path::Path;
 
 /// Atlas of all unique palette-agnostic tile patterns for sprites.

@@ -208,10 +208,15 @@ impl ModernScreenBuilderScratch {
             sprite_cells.len(),
             &mut self.sprite_instance_words,
         );
-        self.bg_row_buckets_enabled =
-            modern_screen_builder_bg_row_buckets(frame, &self.bg_instance_words, &mut self.reserved_words);
-        self.sprite_buckets_enabled =
-            modern_screen_builder_sprite_buckets(&self.sprite_instance_words, &mut self.reserved_words);
+        self.bg_row_buckets_enabled = modern_screen_builder_bg_row_buckets(
+            frame,
+            &self.bg_instance_words,
+            &mut self.reserved_words,
+        );
+        self.sprite_buckets_enabled = modern_screen_builder_sprite_buckets(
+            &self.sprite_instance_words,
+            &mut self.reserved_words,
+        );
         modern_screen_builder_cgram_words(frame, &mut self.cgram_words);
         modern_screen_builder_scroll_words(frame, &mut self.scroll_words);
         modern_screen_builder_main_tm_words(frame, &mut self.main_tm_words);
@@ -563,7 +568,10 @@ fn modern_screen_builder_params(
 /// traversal order, to each 8x8 screen cell its 8x8 footprint overlaps, so a
 /// per-pixel walk of one bucket meets the same first covering sprite as the
 /// full walk. Returns false (table untouched, full walk) when it cannot fit.
-fn modern_screen_builder_sprite_buckets(sprite_instance_words: &[u32], reserved: &mut Vec<u32>) -> bool {
+fn modern_screen_builder_sprite_buckets(
+    sprite_instance_words: &[u32],
+    reserved: &mut Vec<u32>,
+) -> bool {
     let instance_count = sprite_instance_words.len() / BG_INSTANCE_STRIDE_WORDS;
     let cell_count = SPRITE_BUCKET_GRID_W * SPRITE_BUCKET_GRID_H;
     let mut buckets: Vec<Vec<u32>> = vec![Vec::new(); cell_count];
@@ -710,31 +718,45 @@ mod tests {
 
         assert_eq!(params.len(), 36);
         assert_eq!(params[33], 0, "candidate selection must remain disabled");
-        assert_eq!(params[35], 1, "class-segmented BG instance lists are enabled");
+        assert_eq!(
+            params[35], 1,
+            "class-segmented BG instance lists are enabled"
+        );
         assert_eq!(params[34], RESERVED_POOL_START_WORDS as u32);
     }
 
     /// CPU mirror of the shader's per-instance coverage test (`bg_instance_pixel`
     /// without the cell/index lookup): does instance `base` cover sample (sx, sy)?
-    fn covers(frame: &ModernFrame, words: &[u32], base: usize, sx: i32, sy: i32, scroll_mask: u32) -> bool {
+    fn covers(
+        frame: &ModernFrame,
+        words: &[u32],
+        base: usize,
+        sx: i32,
+        sy: i32,
+        scroll_mask: u32,
+    ) -> bool {
         let inst_x = words[base + 1] as i32;
         let inst_y = words[base + 2] as i32;
         let layer = words[base + 5] as usize;
         let bg = &frame.bg_layers[layer];
-        let (local_x, local_y) = if !modern_screen_builder_mosaic_active(frame) && (scroll_mask >> layer) & 1 != 0 {
-            let bg_w = i32::from(bg.wrap_w).max(256);
-            let bg_h = i32::from(bg.wrap_h).max(224);
-            let off_x = bg_w - 256;
-            let off_y = bg_h - 224;
-            let sl = frame.bg_scroll_scanlines[sy as usize][layer];
-            let dh = i32::from(sl[0]) - i32::from(bg.scroll_x);
-            let dv = i32::from(sl[1]) - i32::from(bg.scroll_y);
-            let bx = (sx + dh + off_x).rem_euclid(bg_w);
-            let by = (sy + dv + off_y).rem_euclid(bg_h);
-            ((bx - (inst_x + off_x)).rem_euclid(bg_w), (by - (inst_y + off_y)).rem_euclid(bg_h))
-        } else {
-            (sx - inst_x, sy - inst_y)
-        };
+        let (local_x, local_y) =
+            if !modern_screen_builder_mosaic_active(frame) && (scroll_mask >> layer) & 1 != 0 {
+                let bg_w = i32::from(bg.wrap_w).max(256);
+                let bg_h = i32::from(bg.wrap_h).max(224);
+                let off_x = bg_w - 256;
+                let off_y = bg_h - 224;
+                let sl = frame.bg_scroll_scanlines[sy as usize][layer];
+                let dh = i32::from(sl[0]) - i32::from(bg.scroll_x);
+                let dv = i32::from(sl[1]) - i32::from(bg.scroll_y);
+                let bx = (sx + dh + off_x).rem_euclid(bg_w);
+                let by = (sy + dv + off_y).rem_euclid(bg_h);
+                (
+                    (bx - (inst_x + off_x)).rem_euclid(bg_w),
+                    (by - (inst_y + off_y)).rem_euclid(bg_h),
+                )
+            } else {
+                (sx - inst_x, sy - inst_y)
+            };
         (0..8).contains(&local_x) && (0..8).contains(&local_y)
     }
 
@@ -746,7 +768,11 @@ mod tests {
             bg.wrap_w = 512;
             bg.wrap_h = wrap_h;
             bg.scroll_x = if scroll { 37 } else { 0 };
-            bg.scroll_y = if scroll { 500 + layer_index as u16 * 9 } else { 0 };
+            bg.scroll_y = if scroll {
+                500 + layer_index as u16 * 9
+            } else {
+                0
+            };
             let mut seed = 0x1234_5678u32 ^ (layer_index as u32 * 0x9e37);
             let mut next = || {
                 seed ^= seed << 13;
@@ -756,9 +782,15 @@ mod tests {
             };
             for n in 0..600u32 {
                 let (x, y) = if scroll {
-                    ((next() % 80) as i16 * 8 - 37, (next() % 80) as i16 * 8 - 500)
+                    (
+                        (next() % 80) as i16 * 8 - 37,
+                        (next() % 80) as i16 * 8 - 500,
+                    )
                 } else {
-                    ((next() % 40) as i16 * 8 - 24, (next() % 36) as i16 * 8 - 20 + (n % 3) as i16)
+                    (
+                        (next() % 40) as i16 * 8 - 24,
+                        (next() % 36) as i16 * 8 - 20 + (n % 3) as i16,
+                    )
                 };
                 bg.index_tiles.push(ModernIndexTileInstance {
                     cell_id: n % 7,
@@ -795,11 +827,19 @@ mod tests {
     fn assert_row_buckets_exact(frame: &ModernFrame) {
         let mut scratch = ModernScreenBuilderScratch::default();
         scratch.build_bg_instances(frame, 8);
-        assert!(modern_screen_builder_bg_row_buckets(frame, &scratch.bg_instance_words, &mut scratch.reserved_words));
+        assert!(modern_screen_builder_bg_row_buckets(
+            frame,
+            &scratch.bg_instance_words,
+            &mut scratch.reserved_words
+        ));
         let words = &scratch.bg_instance_words;
         let reserved = &scratch.reserved_words;
         let scroll_mask = (0..3).fold(0u32, |m, l| {
-            if modern_screen_builder_layer_needs_scroll(frame, l) { m | 1 << l } else { m }
+            if modern_screen_builder_layer_needs_scroll(frame, l) {
+                m | 1 << l
+            } else {
+                m
+            }
         });
         let mosaic_active = modern_screen_builder_mosaic_active(frame);
         let mut checked = 0usize;
@@ -817,26 +857,48 @@ mod tests {
                         (sy / 8) as usize
                     };
                     let header = BG_ROW_TABLE_WORDS + (class * BG_ROW_BUCKETS_PER_CLASS + row) * 2;
-                    let (offset, count) = (reserved[header] as usize, reserved[header + 1] as usize);
+                    let (offset, count) =
+                        (reserved[header] as usize, reserved[header + 1] as usize);
                     let bucket: Vec<u32> = reserved[offset..offset + count].to_vec();
                     // Full class walk, last match wins.
                     let start = reserved[class * 2] as usize;
                     let n = reserved[class * 2 + 1] as usize;
                     let full: Vec<u32> = (start..start + n)
-                        .filter(|&i| covers(frame, words, i * BG_INSTANCE_STRIDE_WORDS, sx, sy, scroll_mask))
+                        .filter(|&i| {
+                            covers(
+                                frame,
+                                words,
+                                i * BG_INSTANCE_STRIDE_WORDS,
+                                sx,
+                                sy,
+                                scroll_mask,
+                            )
+                        })
                         .map(|i| i as u32)
                         .collect();
                     let via_bucket: Vec<u32> = bucket
                         .iter()
                         .copied()
-                        .filter(|&i| covers(frame, words, i as usize * BG_INSTANCE_STRIDE_WORDS, sx, sy, scroll_mask))
+                        .filter(|&i| {
+                            covers(
+                                frame,
+                                words,
+                                i as usize * BG_INSTANCE_STRIDE_WORDS,
+                                sx,
+                                sy,
+                                scroll_mask,
+                            )
+                        })
                         .collect();
                     assert_eq!(via_bucket, full, "class {class} at ({sx},{sy})");
                     checked += full.len();
                 }
             }
         }
-        assert!(checked > 1000, "the fixture must exercise real coverage ({checked})");
+        assert!(
+            checked > 1000,
+            "the fixture must exercise real coverage ({checked})"
+        );
     }
 
     #[test]
@@ -869,10 +931,18 @@ mod tests {
         let frame = row_bucket_frame(false, 256);
         let mut scratch = ModernScreenBuilderScratch::default();
         scratch.build_bg_instances(&frame, 8);
-        assert!(modern_screen_builder_bg_row_buckets(&frame, &scratch.bg_instance_words, &mut scratch.reserved_words));
+        assert!(modern_screen_builder_bg_row_buckets(
+            &frame,
+            &scratch.bg_instance_words,
+            &mut scratch.reserved_words
+        ));
         let pool_after_bg = scratch.reserved_words.len();
-        let sprites: Vec<u32> = [[0u32, 4, 4, 0, 0, 0, 0, 0], [0, 250, 220, 0, 0, 0, 0, 0]].concat();
-        assert!(modern_screen_builder_sprite_buckets(&sprites, &mut scratch.reserved_words));
+        let sprites: Vec<u32> =
+            [[0u32, 4, 4, 0, 0, 0, 0, 0], [0, 250, 220, 0, 0, 0, 0, 0]].concat();
+        assert!(modern_screen_builder_sprite_buckets(
+            &sprites,
+            &mut scratch.reserved_words
+        ));
         let r = &scratch.reserved_words;
         let cell = |cx: usize, cy: usize| {
             let h = SPRITE_BUCKET_TABLE_WORDS + (cy * SPRITE_BUCKET_GRID_W + cx) * 2;

@@ -756,9 +756,13 @@ struct PairedResumeManifest {
     boundary: String,
     frame: u32,
     rust_state: PairedResumeArtifact,
-    oracle_state: PairedResumeArtifact,
+    /// Absent on a Rust-only checkpoint written by the cached A/V replay when
+    /// its cache carries no oracle checkpoint at that boundary. Such a
+    /// checkpoint resumes only the Rust-only cached replay (which never loads
+    /// an oracle state); the live Snes9x compare rejects it.
+    oracle_state: Option<PairedResumeArtifact>,
     original_timing_resume_checkpoint: PairedResumeArtifact,
-    semantic_trace_checkpoint: PairedResumeArtifact,
+    semantic_trace_checkpoint: Option<PairedResumeArtifact>,
     core: PairedResumeProvenance,
     rom: PairedResumeProvenance,
     input_script: Option<PairedResumeProvenance>,
@@ -817,7 +821,36 @@ fn resolve_paired_resume_dir(path: &Path) -> Result<(PathBuf, Option<u32>), Stri
     Ok((checkpoint, Some(latest.frame)))
 }
 
+/// Verified member paths of a paired-resume checkpoint. `oracle_state` and
+/// `semantic_trace` are `None` for a Rust-only cached A/V checkpoint.
+struct PairedResumeArtifacts {
+    rust_state: PathBuf,
+    oracle_state: Option<PathBuf>,
+    original_timing_resume: PathBuf,
+    semantic_trace: Option<PathBuf>,
+}
+
+/// Paired-resume members for the live Snes9x compare, which needs the oracle
+/// state and semantic-trace checkpoint; a Rust-only checkpoint is rejected.
 fn paired_resume_paths(path: &Path) -> Result<(PathBuf, PathBuf, PathBuf, PathBuf), String> {
+    let artifacts = paired_resume_artifacts(path)?;
+    let (Some(oracle_state), Some(semantic_trace)) =
+        (artifacts.oracle_state, artifacts.semantic_trace)
+    else {
+        return Err(format!(
+            "{} is a Rust-only cached A/V checkpoint (no oracle state); it can resume only --replay-cached-snes9x-av",
+            path.display()
+        ));
+    };
+    Ok((
+        artifacts.rust_state,
+        oracle_state,
+        artifacts.original_timing_resume,
+        semantic_trace,
+    ))
+}
+
+fn paired_resume_artifacts(path: &Path) -> Result<PairedResumeArtifacts, String> {
     let (dir, expected_frame) = resolve_paired_resume_dir(path)?;
     let manifest_path = dir.join("manifest.json");
     let manifest_bytes = fs::read(&manifest_path)
@@ -875,15 +908,26 @@ fn paired_resume_paths(path: &Path) -> Result<(PathBuf, PathBuf, PathBuf, PathBu
             Ok(artifact_path)
         };
     let rust_state = verify_artifact("Rust state", &manifest.rust_state)?;
-    let oracle_state = verify_artifact("oracle state", &manifest.oracle_state)?;
+    let oracle_state = manifest
+        .oracle_state
+        .as_ref()
+        .map(|artifact| verify_artifact("oracle state", artifact))
+        .transpose()?;
     let original_timing_resume = verify_artifact(
         "original-timing checkpoint",
         &manifest.original_timing_resume_checkpoint,
     )?;
-    let semantic_trace = verify_artifact(
-        "semantic-trace checkpoint",
-        &manifest.semantic_trace_checkpoint,
-    )?;
+    let semantic_trace = manifest
+        .semantic_trace_checkpoint
+        .as_ref()
+        .map(|artifact| verify_artifact("semantic-trace checkpoint", artifact))
+        .transpose()?;
+    if oracle_state.is_some() != semantic_trace.is_some() {
+        return Err(format!(
+            "{} records only one of the oracle state and semantic-trace checkpoint",
+            manifest_path.display()
+        ));
+    }
     verify_artifact("initial SRAM", &manifest.initial_sram)?;
     let rust_checkpoint = load_play_crash_checkpoint(&rust_state)
         .map_err(|error| format!("failed to validate {}: {error}", rust_state.display()))?;
@@ -895,12 +939,12 @@ fn paired_resume_paths(path: &Path) -> Result<(PathBuf, PathBuf, PathBuf, PathBu
             rust_checkpoint.host_frame,
         ));
     }
-    Ok((
+    Ok(PairedResumeArtifacts {
         rust_state,
         oracle_state,
         original_timing_resume,
         semantic_trace,
-    ))
+    })
 }
 
 fn validate_paired_resume_provenance(
@@ -2609,8 +2653,7 @@ fn write_cached_av_paired_resume_from_sources(
     rom_sha256: &str,
     frame: u32,
     game: &ZeldaState,
-    oracle_source: &Path,
-    semantic_trace_source: &Path,
+    oracle_sources: Option<(&Path, &Path)>,
     final_dir: &Path,
 ) -> Result<PathBuf, String> {
     if !game.paired_resume_cpu_boundary_is_quiescent() {
@@ -2619,6 +2662,12 @@ fn write_cached_av_paired_resume_from_sources(
         );
     }
     let initial_sram_source = cache.join("initial.srm");
+    // Rust-only checkpoint: the cache has no oracle state at this boundary.
+    // Everything the Rust-only cached replay resumes from is still written and
+    // hashed; the oracle artifacts are recorded as absent so the live compare
+    // refuses the checkpoint instead of guessing.
+    let oracle_hashes = oracle_sources
+        .map(|(oracle_source, semantic_trace_source)| -> Result<(String, String), String> {
     let oracle_relative = oracle_source.strip_prefix(cache).map_err(|_| {
         format!(
             "oracle checkpoint {} is outside cache {}",
@@ -2675,6 +2724,9 @@ fn write_cached_av_paired_resume_from_sources(
             "cached semantic trace checkpoint hash mismatch: expected {expected_semantic_trace_sha256}, got {semantic_trace_sha256}"
         ));
     }
+            Ok((actual_oracle_sha256, semantic_trace_sha256))
+        })
+        .transpose()?;
     let cache_identity = cache_manifest
         .get("cache_identity")
         .ok_or_else(|| "cached A/V manifest has no cache identity".to_string())?;
@@ -2757,37 +2809,44 @@ fn write_cached_av_paired_resume_from_sources(
             &original_timing_resume_bytes,
         )
         .map_err(|error| format!("failed to write original-timing resume checkpoint: {error}"))?;
-        fs::copy(oracle_source, temporary_dir.join("oracle.state"))
-            .map_err(|error| format!("failed to copy cached final oracle state: {error}"))?;
         fs::copy(&initial_sram_source, temporary_dir.join("initial.srm"))
             .map_err(|error| format!("failed to copy cached initial SRAM: {error}"))?;
-        fs::copy(
-            semantic_trace_source,
-            temporary_dir.join("semantic-trace.checkpoint.json"),
-        )
-        .map_err(|error| format!("failed to copy cached semantic trace checkpoint: {error}"))?;
+        if let Some((oracle_source, semantic_trace_source)) = oracle_sources {
+            fs::copy(oracle_source, temporary_dir.join("oracle.state"))
+                .map_err(|error| format!("failed to copy cached final oracle state: {error}"))?;
+            fs::copy(
+                semantic_trace_source,
+                temporary_dir.join("semantic-trace.checkpoint.json"),
+            )
+            .map_err(|error| format!("failed to copy cached semantic trace checkpoint: {error}"))?;
+        }
+        let (oracle_state, semantic_trace_checkpoint) = match &oracle_hashes {
+            Some((oracle_sha256, semantic_trace_sha256)) => (
+                serde_json::json!({"artifact": "oracle.state", "sha256": oracle_sha256}),
+                serde_json::json!({
+                    "artifact": "semantic-trace.checkpoint.json",
+                    "sha256": semantic_trace_sha256,
+                }),
+            ),
+            None => (serde_json::Value::Null, serde_json::Value::Null),
+        };
         let manifest = serde_json::json!({
             "schema": PAIRED_RESUME_SCHEMA,
             "boundary": "pre-frame",
             "frame": frame,
             "cpu_boundary": "quiescent",
             "renderer_warmup_required": true,
+            "rust_only": oracle_hashes.is_none(),
             "rust_state": {
                 "artifact": "rust.z3state",
                 "sha256": parity::evidence::sha256_bytes(&rust_bytes),
             },
-            "oracle_state": {
-                "artifact": "oracle.state",
-                "sha256": actual_oracle_sha256,
-            },
+            "oracle_state": oracle_state,
             "original_timing_resume_checkpoint": {
                 "artifact": "original-timing.resume.json",
                 "sha256": parity::evidence::sha256_bytes(&original_timing_resume_bytes),
             },
-            "semantic_trace_checkpoint": {
-                "artifact": "semantic-trace.checkpoint.json",
-                "sha256": semantic_trace_sha256,
-            },
+            "semantic_trace_checkpoint": semantic_trace_checkpoint,
             "source": {
                 "kind": "matched-rust-only-cached-snes9x-av-replay",
                 "cache": cache,
@@ -2842,8 +2901,7 @@ fn write_cached_av_final_paired_resume(
         rom_sha256,
         frame,
         game,
-        &oracle_source,
-        &semantic_trace_source,
+        Some((&oracle_source, &semantic_trace_source)),
         &final_dir,
     )
 }
@@ -2953,7 +3011,13 @@ fn write_cached_av_periodic_paired_resume(
     frame: u32,
     game: &ZeldaState,
 ) -> Result<PathBuf, String> {
-    let (oracle, semantic) = cached_oracle_checkpoint_sources(cache, cache_manifest, frame)?;
+    // A cache captured without oracle checkpoints at this boundary yields a
+    // Rust-only checkpoint (see `PairedResumeManifest::oracle_state`).
+    let oracle_sources = cache
+        .join(format!("oracle-checkpoints/frame-{frame:08}/manifest.json"))
+        .is_file()
+        .then(|| cached_oracle_checkpoint_sources(cache, cache_manifest, frame))
+        .transpose()?;
     let paired_root = output.join("paired");
     let final_dir = paired_root.join(format!("frame-{frame:08}"));
     let checkpoint = write_cached_av_paired_resume_from_sources(
@@ -2964,8 +3028,9 @@ fn write_cached_av_periodic_paired_resume(
         rom_sha256,
         frame,
         game,
-        &oracle,
-        &semantic,
+        oracle_sources
+            .as_ref()
+            .map(|(oracle, semantic)| (oracle.as_path(), semantic.as_path())),
         &final_dir,
     )?;
     let latest = serde_json::json!({
@@ -3207,14 +3272,19 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
         process::exit(2);
     });
     let (mut game, start_frame) = if let Some(path) = resume_paired.as_deref() {
-        let (rust_state, _oracle_state, original_timing_resume, _semantic_trace) =
-            paired_resume_paths(path).unwrap_or_else(|error| {
-                eprintln!(
-                    "failed to resolve paired resume {}: {error}",
-                    path.display()
-                );
-                process::exit(2);
-            });
+        // The Rust-only cached replay never loads an oracle state, so a
+        // Rust-only checkpoint (no oracle artifacts) is accepted here.
+        let PairedResumeArtifacts {
+            rust_state,
+            original_timing_resume,
+            ..
+        } = paired_resume_artifacts(path).unwrap_or_else(|error| {
+            eprintln!(
+                "failed to resolve paired resume {}: {error}",
+                path.display()
+            );
+            process::exit(2);
+        });
         let (paired_dir, _) = resolve_paired_resume_dir(path).unwrap_or_else(|error| {
             eprintln!(
                 "failed to resolve paired resume {}: {error}",
@@ -3384,6 +3454,11 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
     let mut matched = true;
     let mut first_rng_drift = None;
     let mut pending_frames = VecDeque::<PendingCachedAvFrame>::new();
+    // A periodic paired checkpoint comes due at each interval multiple and is
+    // taken at the first later frame boundary the resume machinery can
+    // serialize (quiescent CPU, no unconsumed receipt or pending NMI
+    // publication) instead of failing the replay on an unlucky boundary.
+    let mut paired_checkpoint_due = false;
     let timing_enabled = env::var_os("ZELDA3_SNES9X_TIMING").is_some();
     let replay_started = Instant::now();
     let mut receipt_nanos = 0_u128;
@@ -3419,8 +3494,9 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
             let ledger_path = parse_ledger_path;
             for (line_index, line) in BufReader::new(ledger_file).lines().enumerate() {
                 let item = (|| -> Result<ParsedCachedAvInput, String> {
-                    let line = line
-                        .map_err(|error| format!("failed to read {}: {error}", ledger_path.display()))?;
+                    let line = line.map_err(|error| {
+                        format!("failed to read {}: {error}", ledger_path.display())
+                    })?;
                     let invalid_record = |error: serde_json::Error| {
                         format!(
                             "invalid cached A/V record {}:{}: {error}",
@@ -3598,9 +3674,15 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
                 }));
             }
         }
-        let paired_boundary = paired_checkpoint_interval
-            .filter(|interval| frames_completed % interval == 0)
-            .map(|_| (frames_completed, Box::new(game.clone())));
+        paired_checkpoint_due |=
+            paired_checkpoint_interval.is_some_and(|interval| frames_completed % interval == 0);
+        let paired_boundary = (paired_checkpoint_due
+            && game.paired_resume_cpu_boundary_is_quiescent()
+            && game.capture_original_timing_resume_checkpoint().is_ok())
+        .then(|| {
+            paired_checkpoint_due = false;
+            (frames_completed, Box::new(game.clone()))
+        });
         pending_frames.push_back(PendingCachedAvFrame {
             compare: record.frame >= compare_from_frame,
             record,
@@ -5674,23 +5756,31 @@ pub(crate) fn run_compare_libretro_oracle(
     // `<dir>/state-<frame>.txt` before running each listed host. Diffing a cold
     // dump against a resumed dump at the same host names the transient state a
     // paired checkpoint restore lost.
-    let full_state_dump = env::var("ZELDA3_DEBUG_FULL_STATE_DUMP").ok().and_then(|raw| {
-        let (dir, frames) = raw.split_once(':')?;
-        let frames: Vec<u32> = frames
-            .split(',')
-            .filter_map(|part| part.trim().parse::<u32>().ok())
-            .collect();
-        Some((PathBuf::from(dir), frames))
-    });
+    let full_state_dump = env::var("ZELDA3_DEBUG_FULL_STATE_DUMP")
+        .ok()
+        .and_then(|raw| {
+            let (dir, frames) = raw.split_once(':')?;
+            let frames: Vec<u32> = frames
+                .split(',')
+                .filter_map(|part| part.trim().parse::<u32>().ok())
+                .collect();
+            Some((PathBuf::from(dir), frames))
+        });
     for frame_index in start_frame..frames {
         if let Some((dir, dump_frames)) = full_state_dump.as_ref() {
             if dump_frames.contains(&frame_index) {
                 fs::create_dir_all(dir).ok();
                 let path = dir.join(format!("state-{frame_index}.txt"));
                 fs::write(&path, format!("{game:#?}")).unwrap_or_else(|error| {
-                    eprintln!("failed to write full state dump {}: {error}", path.display());
+                    eprintln!(
+                        "failed to write full state dump {}: {error}",
+                        path.display()
+                    );
                 });
-                eprintln!("wrote full engine state dump for host {frame_index}: {}", path.display());
+                eprintln!(
+                    "wrote full engine state dump for host {frame_index}: {}",
+                    path.display()
+                );
             }
         }
         let mut stop_after_exact_audio_mismatch = false;

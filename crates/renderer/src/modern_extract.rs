@@ -1888,11 +1888,7 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                 if sy >= 224 {
                     sy -= bg_h;
                 }
-                if trace_bg_tile_enabled()
-                    && layer_index == 1
-                    && sx == 192
-                    && sy == 159
-                {
+                if trace_bg_tile_enabled() && layer_index == 1 && sx == 192 && sy == 159 {
                     eprintln!(
                         "TRACE_BG_TILE layer={layer_index} tx={tx} ty={ty} addr=0x{addr:04x} word=0x{entry_word:04x} cell={cell_id} cell_flip=({hflip},{vflip}) source=0x{source_key:016x}"
                     );
