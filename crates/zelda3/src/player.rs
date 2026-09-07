@@ -21,128 +21,7 @@ fn player_memory_location_to_give_item_to(item: u8) -> usize {
         .unwrap_or(0)
 }
 
-fn replay_trace_u16_env(name: &str) -> Option<u16> {
-    let value = crate::debug_env::var(name).ok()?;
-    if let Some(hex) = value
-        .strip_prefix("0x")
-        .or_else(|| value.strip_prefix("0X"))
-    {
-        u16::from_str_radix(hex, 16).ok()
-    } else {
-        value.parse::<u16>().ok()
-    }
-}
-
 impl ZeldaState {
-    pub(super) fn replay_trace_player_state(&self, label: &str) {
-        if crate::debug_env::var_os("ZELDA3_REPLAY_TRACE_STATE").is_none() {
-            return;
-        }
-        let room = self.game_state.world.location.dungeon_room();
-        let x = self.game_state.player.follower_link.x();
-        let y = self.game_state.player.follower_link.y();
-        if let Some(frame) = replay_trace_u16_env("ZELDA3_REPLAY_TRACE_STATE_FRAME") {
-            if self.game_state.frame.frame_counter as u16 != frame {
-                return;
-            }
-        }
-        if let Some(frame_min) = replay_trace_u16_env("ZELDA3_REPLAY_TRACE_STATE_FRAME_MIN") {
-            if (self.game_state.frame.frame_counter as u16) < frame_min {
-                return;
-            }
-        }
-        if let Some(frame_max) = replay_trace_u16_env("ZELDA3_REPLAY_TRACE_STATE_FRAME_MAX") {
-            if self.game_state.frame.frame_counter as u16 > frame_max {
-                return;
-            }
-        }
-        if let Some(expected_room) = replay_trace_u16_env("ZELDA3_REPLAY_TRACE_STATE_ROOM") {
-            if room != expected_room {
-                return;
-            }
-        }
-        if let Some(expected_ow) = replay_trace_u16_env("ZELDA3_REPLAY_TRACE_STATE_OW") {
-            if u16::from(self.game_state.world.location.overworld_screen_index()) != expected_ow {
-                return;
-            }
-        }
-        if let Some(x_min) = replay_trace_u16_env("ZELDA3_REPLAY_TRACE_STATE_X_MIN") {
-            if x < x_min {
-                return;
-            }
-        }
-        if let Some(x_max) = replay_trace_u16_env("ZELDA3_REPLAY_TRACE_STATE_X_MAX") {
-            if x > x_max {
-                return;
-            }
-        }
-        if let Some(y_min) = replay_trace_u16_env("ZELDA3_REPLAY_TRACE_STATE_Y_MIN") {
-            if y < y_min {
-                return;
-            }
-        }
-        if let Some(y_max) = replay_trace_u16_env("ZELDA3_REPLAY_TRACE_STATE_Y_MAX") {
-            if y > y_max {
-                return;
-            }
-        }
-        eprintln!(
-            "state-trace frame={} {label} main={} sub={} state=0x{:02x} aux=0x{:02x} incap=0x{:02x} recoil=0x{:02x} scratch_a=0x{:02x} z=0x{:04x} vz=0x{:02x} vzcopy=0x{:02x} x=0x{x:04x} y=0x{y:04x} subpix=0x{:02x}/0x{:02x} vel=0x{:02x}/0x{:02x} dir=0x{:02x} last=0x{:02x} dlast=0x{:02x} pit=0x{:02x} below=0x{:02x} r14=0x{:04x} normal=0x{:04x} drag=0x{:02x} lspeed=0x{:02x}/0x{:02x}",
-            self.game_state.frame.frame_counter,
-            self.game_state.frame.main_module,
-            self.game_state.frame.submodule,
-            self.game_state.player.follower_link.handler_state(),
-            self.game_state.player.follower_link.auxiliary_state(),
-            self.game_state.player.follower_link.incapacitated_timer(),
-            self.game_state.player.follower_link.recoil_timer(),
-            self.ram[SCRATCH_A],
-            self.game_state.player.follower_link.z(),
-            self.game_state.player.follower_link.actual_z_velocity(),
-            self.game_state
-                .player
-                .follower_link
-                .actual_z_velocity_copy(),
-            self.game_state.player.follower_link.x_subpixel(),
-            self.game_state.player.follower_link.y_subpixel(),
-            self.game_state.player.follower_link.actual_x_velocity(),
-            self.game_state.player.follower_link.actual_y_velocity(),
-            self.game_state.player.follower_link.direction(),
-            self.game_state.player.follower_link.last_direction(),
-            self.game_state
-                .player
-                .follower_link
-                .last_direction_moved_towards(),
-            self.game_state.player.tile_detection.pit_tile(),
-            self.game_state.player.follower_link.tile_below(),
-            self.game_state.player.tile_detection.collision_bits(),
-            self.game_state.player.tile_detection.normal_tiles(),
-            self.game_state.player.follower_link.defense_flags(),
-            self.game_state.player.follower_link.speed_setting(),
-            self.game_state.player.follower_link.speed_modifier(),
-        );
-    }
-
-    pub(super) fn replay_trace_drag_tail(&self, label: &str) {
-        if crate::debug_env::var_os("ZELDA3_REPLAY_TRACE_SUB_FRAME").is_none() {
-            return;
-        }
-        eprintln!(
-            "drag-tail frame={} {label} r14=0x{:04x} tilecoll=0x{:02x} misc=0x{:04x} drag=0x{:02x} timer=0x{:02x} bframes=0x{:02x} lastmove=0x{:02x} face=0x{:02x}",
-            self.game_state.frame.frame_counter,
-            self.game_state.player.tile_detection.collision_bits(),
-            self.game_state.player.follower_link.tile_coll_flag(),
-            self.game_state.player.tile_detection.misc_tiles(),
-            self.game_state.player.follower_link.defense_flags(),
-            self.game_state.player.follower_link.push_fatigue_timer(),
-            self.game_state.player.follower_link.button_b_frames(),
-            self.game_state
-                .player
-                .follower_link
-                .last_direction_moved_towards(),
-            self.game_state.player.follower_link.facing(),
-        );
-    }
-
     pub(super) fn bit_sum4(value: u8) -> u8 {
         (value & 1) + ((value >> 1) & 1) + ((value >> 2) & 1) + ((value >> 3) & 1)
     }
@@ -173,7 +52,6 @@ impl ZeldaState {
     }
 
     pub(super) fn check_ability_to_swim(&mut self) {
-        self.replay_trace_submodule("check_ability_to_swim-entry");
         if !self.game_state.player.follower_link.is_bunny_mirror()
             && self.game_state.player.follower_link.has_flippers()
         {
@@ -189,7 +67,6 @@ impl ZeldaState {
             42
         };
         self.set_submodule(submodule);
-        self.replay_trace_submodule("check_ability_to_swim-exit");
     }
 
     pub(super) fn link_initialize(&mut self) {
@@ -2517,21 +2394,17 @@ impl ZeldaState {
         }
 
         if r14 & 2 != 0 || (r14 & 5) == 5 {
-            self.replay_trace_drag_tail("snaps-y-before-first-bonk");
             let bak = r14;
             self.link_bonk_and_smash();
             self.repel_dash();
             self.tile_detect_position_mut().set_collision_bits(bak);
-            self.replay_trace_drag_tail("snaps-y-after-first-bonk");
         }
 
         self.follower_link_state_mut().set_pit_correction_active();
 
         if !used_swim_axis_reprobe {
             if r14 & 2 == 2 {
-                self.replay_trace_drag_tail("snaps-y-before-add-vel");
                 self.link_add_in_velocity_y_falling();
-                self.replay_trace_drag_tail("snaps-y-after-add-vel");
             } else {
                 if self
                     .game_state
@@ -2558,10 +2431,8 @@ impl ZeldaState {
         }
 
         if (r14 & 5) == 5 {
-            self.replay_trace_drag_tail("snaps-y-before-second-bonk");
             self.link_bonk_and_smash();
             self.repel_dash();
-            self.replay_trace_drag_tail("snaps-y-after-second-bonk");
         } else if r14 & 2 == 0 {
             let y_vel = self.game_state.player.follower_link.y_velocity();
             let tt = if r14 & 4 != 0 {
@@ -2699,17 +2570,14 @@ impl ZeldaState {
             return false;
         }
 
-        self.replay_trace_drag_tail("tail-match-entry");
         let drag_bits = (self.game_state.player.follower_link.tile_coll_flag() & 1) << 1;
         self.follower_link_state_mut().or_defense_flags(drag_bits);
-        self.replay_trace_drag_tail("tail-after-lowbit");
         let push_fatigue_timer = self
             .follower_link_state_mut()
             .decrement_push_fatigue_timer();
         if self.game_state.player.follower_link.button_b_frames() == 0
             && !(push_fatigue_timer as i8).is_negative()
         {
-            self.replay_trace_drag_tail("tail-return-timer");
             return true;
         }
 
@@ -2720,7 +2588,6 @@ impl ZeldaState {
             tile_coll
         };
         self.follower_link_state_mut().or_defense_flags(drag_bits);
-        self.replay_trace_drag_tail("tail-after-fullbits");
         false
     }
 
@@ -3093,7 +2960,6 @@ impl ZeldaState {
     }
 
     pub(super) fn start_movement_collision_checks_y(&mut self) {
-        self.replay_trace_submodule("start-y-entry");
         if self.game_state.player.follower_link.y_velocity() == 0 {
             return;
         }
@@ -3118,7 +2984,6 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .set_last_direction_moved_towards(last_direction_moved_towards);
         self.tile_detect_movement_y(last_direction_moved_towards as u16);
-        self.replay_trace_submodule("start-y-after-tiledetect");
         if self.game_state.world.location.is_indoors() {
             self.start_movement_collision_checks_y_handle_indoors();
         } else {
@@ -3357,10 +3222,7 @@ impl ZeldaState {
     }
 
     pub(super) fn start_movement_collision_checks_y_handle_outdoors(&mut self) {
-        self.replay_trace_submodule("outdoor-y-entry");
-        self.replay_trace_drag_tail("outdoor-y-drag-entry");
         self.follower_link_state_mut().resolve_dash_speed_setting();
-        self.replay_trace_drag_tail("outdoor-y-after-speed-setting");
 
         if self.game_state.player.tile_detection.pit_tile() & 5 != 0
             && self.game_state.player.tile_detection.collision_bits() & 2 == 0
@@ -3573,19 +3435,15 @@ impl ZeldaState {
         }
 
         self.follower_link_state_mut().resolve_dash_speed_setting();
-        self.replay_trace_drag_tail("outdoor-y-after-late-speed-setting");
         if self.game_state.player.follower_link.speed_modifier() == 1 {
             self.follower_link_state_mut()
                 .promote_pending_speed_modifier();
         }
-        self.replay_trace_drag_tail("outdoor-y-after-speed-modifier");
 
         if self.game_state.player.tile_detection.collision_bits() & 7 == 0
             && self.game_state.player.tile_detection.slope_collision_bits() & 5 != 0
         {
-            self.replay_trace_drag_tail("outdoor-y-before-slopes");
             self.flag_moving_into_slopes_y();
-            self.replay_trace_drag_tail("outdoor-y-after-slopes");
             if self
                 .game_state
                 .player
@@ -3600,7 +3458,6 @@ impl ZeldaState {
 
         self.follower_link_state_mut()
             .clear_moving_against_diag_tile();
-        self.replay_trace_drag_tail("outdoor-y-after-clear-diag");
         if self
             .game_state
             .player
@@ -3634,7 +3491,6 @@ impl ZeldaState {
             self.follower_link_state_mut()
                 .set_gravestone_push_timeout(52);
         }
-        self.replay_trace_drag_tail("outdoor-y-after-gravestone");
 
         if self.game_state.player.tile_detection.spike_cactus_tiles() & 7 != 0 {
             if (self.game_state.player.follower_link.incapacitated_timer()
@@ -3665,9 +3521,7 @@ impl ZeldaState {
                 self.tile_detect_position_mut().set_collision_bits(r14);
             }
         }
-        self.replay_trace_drag_tail("outdoor-y-before-snaps");
         self.handle_pushing_bonking_snaps_y();
-        self.replay_trace_submodule("outdoor-y-after-snaps");
     }
 
     pub(super) fn start_movement_collision_checks_x_handle_outdoors(&mut self) {
@@ -4882,7 +4736,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_handle_cardinal_collision(&mut self) {
-        self.replay_trace_submodule("cardinal-entry");
         self.tile_detect_position_mut().clear_diag_state();
         self.tile_detect_position_mut().clear_diagonal_tile();
 
@@ -5010,7 +4863,6 @@ impl ZeldaState {
         }
 
         self.tile_detect_main_handler(0);
-        self.replay_trace_submodule("cardinal-after-tile-main");
         if self
             .game_state
             .player
@@ -5024,7 +4876,6 @@ impl ZeldaState {
 
         self.follower_link_state_mut()
             .refresh_direction_from_safe_return_delta();
-        self.replay_trace_submodule("cardinal-after-dir-vel");
 
         if self.game_state.world.location.is_outdoors()
             || self.game_state.dungeon.room_load.header_collision() != 4
@@ -5066,7 +4917,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_state_recoil(&mut self) {
-        self.replay_trace_player_state("recoil-entry");
         let old_x = self.game_state.player.follower_link.x();
         let old_y = self.game_state.player.follower_link.y();
         self.store_link_safe_return_position(old_x, old_y);
@@ -5112,7 +4962,6 @@ impl ZeldaState {
             self.link_handle_recoil_and_timer(false);
         }
         self.follower_link_state_mut().clear_z_high();
-        self.replay_trace_player_state("recoil-exit");
     }
 
     pub(super) fn link_state_sleeping(&mut self) {
@@ -9558,11 +9407,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_handle_recoil_and_timer(&mut self, jump_into_middle: bool) {
-        self.replay_trace_player_state(if jump_into_middle {
-            "recoil-timer-entry-jump"
-        } else {
-            "recoil-timer-entry"
-        });
         if !jump_into_middle {
             self.follower_link_state_mut().clear_page_movement_deltas();
             self.follower_link_state_mut()
@@ -9686,15 +9530,12 @@ impl ZeldaState {
             .should_probe_recoil_landing_tile()
         {
             self.player_tile_detect_nearby();
-            self.replay_trace_player_state("recoil-timer-after-nearby");
             if self.game_state.player.tile_detection.pit_tile() & 0x0f == 0x0f {
                 self.follower_link_state_mut().set_handler_state(1);
                 self.follower_link_state_mut().set_speed_setting(4);
-                self.replay_trace_player_state("recoil-timer-set-pit");
             }
         }
         self.follower_link_state_mut().clear_z_high();
-        self.replay_trace_player_state("recoil-timer-exit");
     }
 
     pub(super) fn gravestone_move(&mut self, k: usize) {

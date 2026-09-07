@@ -1913,20 +1913,6 @@ impl ZeldaState {
                 return;
             }
             let k = k as usize;
-            if crate::debug_env::var_os("ZELDA3_REPLAY_SPRITE_LOAD_DUMP").is_some() {
-                println!(
-                    "ow-load frame={} blk=0x{:04x} raw=0x{:02x} type=0x{:02x} slot={} old_t=0x{:02x} old_st=0x{:02x} old_c=0x{:02x} old_bump=0x{:02x}",
-                    self.game_state.frame.frame_counter,
-                    blk,
-                    sprite_to_spawn,
-                    sprite_to_spawn.wrapping_sub(1),
-                    k,
-                    self.sprite_slot_view(k).sprite_type(),
-                    self.sprite_slot_view(k).state(),
-                    self.sprite_slot_view(k).c(),
-                    self.sprite_slot_view(k).bump_damage(),
-                );
-            }
             self.set_overworld_sprite_loaded_mask(blk, loadedmask);
             self.sprite_slot_view_mut(k).set_n_word(blk);
             let value = sprite_to_spawn.wrapping_sub(1);
@@ -7439,27 +7425,6 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   ...see sprite.c...
     // }
     pub(super) fn sprite_give_damage(&mut self, k: usize, dmg: u8, r0_hit_timer: u8) {
-        if crate::debug_env::var_os("ZELDA3_TRACE_GIVE_DAMAGE").is_some()
-            && self.game_state.world.location.dungeon_room() == 0x00a8
-            && self.sprite_slot_view(k).sprite_type() == 0xa7
-            && k == 2
-        {
-            eprintln!(
-                "R give-damage entry fc={} k={} dmg=0x{:02x} hit=0x{:02x} type=0x{:02x} dmgtype=0x{:02x} x=0x{:04x} y=0x{:04x} f=0x{:02x} health=0x{:02x} give=0x{:02x} item=0x{:02x}",
-                self.game_state.frame.frame_counter,
-                k,
-                dmg,
-                r0_hit_timer,
-                self.sprite_slot_view(k).sprite_type(),
-                self.game_state.sprite_battle.damage_type_determiner(),
-                self.sprite_get_x(k),
-                self.sprite_get_y(k),
-                self.sprite_slot_view(k).f(),
-                self.sprite_slot_view(k).health(),
-                self.sprite_slot_view(k).incoming_damage(),
-                self.game_state.player.follower_link.item_in_hand(),
-            );
-        }
         if dmg == 249 {
             self.sprite_func18(k, 0xe3);
             return;
@@ -7540,23 +7505,6 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             self.set_sound_effect_2_with_sprite_pan(k, sfx);
         }
         self.sprite_set_damage_stun(k);
-        if crate::debug_env::var_os("ZELDA3_TRACE_GIVE_DAMAGE").is_some()
-            && self.game_state.world.location.dungeon_room() == 0x00a8
-            && self.sprite_slot_view(k).sprite_type() == 0xa7
-            && k == 2
-        {
-            eprintln!(
-                "R give-damage set-f fc={} k={} f=0x{:02x} dmg=0x{:02x} hit=0x{:02x} dmgtype=0x{:02x} xr=0x{:02x} yr=0x{:02x}",
-                self.game_state.frame.frame_counter,
-                k,
-                self.sprite_slot_view(k).f(),
-                dmg,
-                r0_hit_timer,
-                self.game_state.sprite_battle.damage_type_determiner(),
-                self.sprite_slot_view(k).x_recoil(),
-                self.sprite_slot_view(k).y_recoil(),
-            );
-        }
     }
 
     fn sprite_set_damage_stun(&mut self, k: usize) {
@@ -8631,41 +8579,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   ...see sprite.c...
     // }
     pub(super) fn sprite_stunned_main_func1(&mut self, k: usize) {
-        if crate::debug_env::var_os("ZELDA3_REPLAY_GARNISH_TRACE").is_some() {
-            eprintln!(
-                "R stunned-before fc=0x{:02x} rng=0x{:02x} k={} type=0x{:02x} state=0x{:02x} draw_work5=0x{:02x} delay=0x{:02x} stunned=0x{:02x} give=0x{:02x} z=0x{:02x} zv=0x{:02x} ai=0x{:02x}",
-                self.game_state.frame.frame_counter,
-                self.game_state.world.region.rng_seed(),
-                k,
-                self.sprite_slot_view(k).sprite_type(),
-                self.sprite_slot_view(k).state(),
-                self.sprite_slot_view(k).draw_work_byte_5(),
-                self.sprite_slot_view(k).delay_main(),
-                self.sprite_slot_view(k).stunned(),
-                self.sprite_slot_view(k).incoming_damage(),
-                self.sprite_slot_view(k).z(),
-                self.sprite_slot_view(k).z_velocity(),
-                self.sprite_slot_view(k).ai_state(),
-            );
-        }
         self.sprite_active_main_for_death(k);
-        if crate::debug_env::var_os("ZELDA3_REPLAY_GARNISH_TRACE").is_some() {
-            eprintln!(
-                "R stunned-after-active fc=0x{:02x} rng=0x{:02x} k={} type=0x{:02x} state=0x{:02x} draw_work5=0x{:02x} delay=0x{:02x} stunned=0x{:02x} give=0x{:02x} z=0x{:02x} zv=0x{:02x} ai=0x{:02x}",
-                self.game_state.frame.frame_counter,
-                self.game_state.world.region.rng_seed(),
-                k,
-                self.sprite_slot_view(k).sprite_type(),
-                self.sprite_slot_view(k).state(),
-                self.sprite_slot_view(k).draw_work_byte_5(),
-                self.sprite_slot_view(k).delay_main(),
-                self.sprite_slot_view(k).stunned(),
-                self.sprite_slot_view(k).incoming_damage(),
-                self.sprite_slot_view(k).z(),
-                self.sprite_slot_view(k).z_velocity(),
-                self.sprite_slot_view(k).ai_state(),
-            );
-        }
         if self.sprite_slot_view(k).draw_work_byte_5() != 0 {
             if self.sprite_slot_view(k).delay_main() < 32 {
                 let value = (self.sprite_slot_view(k).oam_flags() & 0xf1) | 4;
@@ -8675,16 +8589,6 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 | self.game_state.frame.submodule;
             let mask = SPRITE_STUNNED_MAIN_FUNC1_SPRITE_STUNNED_MAIN_FUNC1_MASKS
                 [usize::from(self.sprite_slot_view(k).delay_main() >> 4)];
-            if crate::debug_env::var_os("ZELDA3_REPLAY_GARNISH_TRACE").is_some() {
-                eprintln!(
-                    "R stunned-sparkle-check fc=0x{:02x} k={} t=0x{:02x} mask=0x{:02x} delay=0x{:02x}",
-                    self.game_state.frame.frame_counter,
-                    k,
-                    t,
-                    mask,
-                    self.sprite_slot_view(k).delay_main(),
-                );
-            }
             if t & mask != 0 {
                 return;
             }
@@ -8905,38 +8809,6 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         self.player_setup_action_hit_box(&mut hb);
         self.sprite_setup_hit_box(k, &mut hb);
         let overlap = self.check_if_hit_boxes_overlap(&hb);
-        if crate::debug_env::var_os("ZELDA3_TRACE_DAMAGE_FROM_LINK").is_some()
-            && self.game_state.world.location.dungeon_room() == 0x00a8
-            && self.sprite_slot_view(k).sprite_type() == 0xa7
-            && k == 2
-        {
-            eprintln!(
-                "R damage-from-link fc={} k={} overlap={} type=0x{:02x} dmgtype=0x{:02x} link=0x{:04x},0x{:04x} spr=0x{:04x},0x{:04x} hb={:02x}/{:02x},{:02x}/{:02x} sz={:02x},{:02x} sprhb={:02x}/{:02x},{:02x}/{:02x} sprsz={:02x},{:02x} item=0x{:02x} sword_delay=0x{:02x}",
-                self.game_state.frame.frame_counter,
-                k,
-                overlap,
-                self.sprite_slot_view(k).sprite_type(),
-                self.game_state.sprite_battle.damage_type_determiner(),
-                self.game_state.player.follower_link.x(),
-                self.game_state.player.follower_link.y(),
-                self.sprite_get_x(k),
-                self.sprite_get_y(k),
-                hb.r0_xlo,
-                hb.r8_xhi,
-                hb.r1_ylo,
-                hb.r9_yhi,
-                hb.r2,
-                hb.r3,
-                hb.r4_spr_xlo,
-                hb.r10_spr_xhi,
-                hb.r5_spr_ylo,
-                hb.r11_spr_yhi,
-                hb.r6_spr_xsize,
-                hb.r7_spr_ysize,
-                self.game_state.player.follower_link.item_in_hand(),
-                self.game_state.player.follower_link.sword_delay_timer(),
-            );
-        }
         if !overlap {
             return 0;
         }
@@ -9100,32 +8972,6 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         if sign8(self.sprite_slot_view(k).flags2()) {
             return carry;
         }
-        if crate::debug_env::var_os("ZELDA3_TRACE_SPRITE_DAMAGE").is_some()
-            && self.game_state.world.location.is_indoors()
-            && self.game_state.world.location.dungeon_room() == 0x00a8
-        {
-            eprintln!(
-                "R sprite-ignore-layer fc={} k={} type=0x{:02x} carry={} flags2=0x{:02x} flags4=0x{:02x} flags5=0x{:02x} shield=0x{:02x} bunny=0x{:02x} statebits=0x{:02x} facing=0x{:02x} d=0x{:02x} aux=0x{:02x} link=0x{:04x},0x{:04x} cur=0x{:04x},0x{:04x} z=0x{:02x}",
-                self.game_state.frame.frame_counter,
-                k,
-                self.sprite_slot_view(k).sprite_type(),
-                carry,
-                self.sprite_slot_view(k).flags2(),
-                self.sprite_slot_view(k).flags4(),
-                self.sprite_slot_view(k).flags5(),
-                self.game_state.inventory.items.shield_type(),
-                u8::from(self.game_state.player.follower_link.is_bunny_mirror()),
-                self.game_state.player.follower_link.state_bits(),
-                self.game_state.player.follower_link.facing(),
-                self.sprite_slot_view(k).direction(),
-                self.game_state.player.follower_link.auxiliary_state(),
-                self.game_state.player.follower_link.x(),
-                self.game_state.player.follower_link.y(),
-                self.game_state.sprites.workspace.current_sprite_x(),
-                self.game_state.sprites.workspace.current_sprite_y(),
-                self.sprite_slot_view(k).z(),
-            );
-        }
         if !carry || self.game_state.player.follower_link.has_auxiliary_state() {
             return false;
         }
@@ -9201,30 +9047,6 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         self.sprite_do_hit_boxes_fast(k, &mut hb);
         self.link_setup_hit_box_conditional(&mut hb);
         let overlap = self.check_if_hit_boxes_overlap(&hb);
-        if crate::debug_env::var_os("ZELDA3_TRACE_SPRITE_DAMAGE").is_some()
-            && self.game_state.world.location.is_indoors()
-            && self.game_state.world.location.dungeon_room() == 0x00a8
-        {
-            eprintln!(
-                "R sprite-damage-check fc={} k={} type=0x{:02x} st=0x{:02x} bump=0x{:02x} link=0x{:04x},0x{:04x} overlap={} blink=0x{:02x} disable=0x{:02x} aux=0x{:02x} incap=0x{:02x} hp=0x{:02x}",
-                self.game_state.frame.frame_counter,
-                k,
-                self.sprite_slot_view(k).sprite_type(),
-                self.sprite_slot_view(k).state(),
-                self.sprite_slot_view(k).bump_damage(),
-                self.game_state.player.follower_link.x(),
-                self.game_state.player.follower_link.y(),
-                overlap,
-                self.game_state.player.follower_link.blink_countdown(),
-                self.game_state
-                    .player
-                    .follower_link
-                    .sprite_damage_disable_timer(),
-                self.game_state.player.follower_link.auxiliary_state(),
-                self.game_state.player.follower_link.incapacitated_timer(),
-                self.game_state.inventory.player_resources.current_health(),
-            );
-        }
         if overlap {
             self.sprite_attempt_damage_to_link_plus_recoil(k);
         }
@@ -9263,63 +9085,9 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         self.player_setup_action_hit_box(&mut hb);
         let button_neg = sign8(self.game_state.player.follower_link.button_b_frames());
         let action_overlap = self.check_if_hit_boxes_overlap(&hb);
-        if crate::debug_env::var_os("ZELDA3_TRACE_GUARD_PARRY").is_some()
-            && self.game_state.world.location.dungeon_room() == 0x00a8
-            && self.sprite_slot_view(k).sprite_type() == 0xa7
-            && k == 2
-        {
-            eprintln!(
-                "R guard-parry action fc={} k={} button=0x{:02x} neg={} overlap={} link=0x{:04x},0x{:04x} spr=0x{:04x},0x{:04x} hb={:02x}/{:02x},{:02x}/{:02x} sz={:02x},{:02x} sprhb={:02x}/{:02x},{:02x}/{:02x} sprsz={:02x},{:02x}",
-                self.game_state.frame.frame_counter,
-                k,
-                self.game_state.player.follower_link.button_b_frames(),
-                button_neg,
-                action_overlap,
-                self.game_state.player.follower_link.x(),
-                self.game_state.player.follower_link.y(),
-                self.sprite_get_x(k),
-                self.sprite_get_y(k),
-                hb.r0_xlo,
-                hb.r8_xhi,
-                hb.r1_ylo,
-                hb.r9_yhi,
-                hb.r2,
-                hb.r3,
-                hb.r4_spr_xlo,
-                hb.r10_spr_xhi,
-                hb.r5_spr_ylo,
-                hb.r11_spr_yhi,
-                hb.r6_spr_xsize,
-                hb.r7_spr_ysize,
-            );
-        }
         if button_neg || !action_overlap {
             self.sprite_setup_hit_box(k, &mut hb);
             let body_overlap = self.check_if_hit_boxes_overlap(&hb);
-            if crate::debug_env::var_os("ZELDA3_TRACE_GUARD_PARRY").is_some()
-                && self.game_state.world.location.dungeon_room() == 0x00a8
-                && self.sprite_slot_view(k).sprite_type() == 0xa7
-                && k == 2
-            {
-                eprintln!(
-                    "R guard-parry body fc={} k={} overlap={} hb={:02x}/{:02x},{:02x}/{:02x} sz={:02x},{:02x} sprhb={:02x}/{:02x},{:02x}/{:02x} sprsz={:02x},{:02x}",
-                    self.game_state.frame.frame_counter,
-                    k,
-                    body_overlap,
-                    hb.r0_xlo,
-                    hb.r8_xhi,
-                    hb.r1_ylo,
-                    hb.r9_yhi,
-                    hb.r2,
-                    hb.r3,
-                    hb.r4_spr_xlo,
-                    hb.r10_spr_xhi,
-                    hb.r5_spr_ylo,
-                    hb.r11_spr_yhi,
-                    hb.r6_spr_xsize,
-                    hb.r7_spr_ysize,
-                );
-            }
             if !body_overlap {
                 self.sprite_attempt_damage_to_link_with_collision_check(k);
             } else {
@@ -9357,26 +9125,6 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   ...see sprite.c...
     // }
     pub(super) fn sprite_attempt_damage_to_link_plus_recoil(&mut self, k: usize) {
-        if crate::debug_env::var_os("ZELDA3_TRACE_SPRITE_DAMAGE").is_some()
-            && self.game_state.world.location.is_indoors()
-            && self.game_state.world.location.dungeon_room() == 0x00a8
-        {
-            eprintln!(
-                "R sprite-damage-plus entry fc={} k={} type=0x{:02x} blink=0x{:02x} disable=0x{:02x} aux=0x{:02x} incap=0x{:02x} vx=0x{:02x} vy=0x{:02x}",
-                self.game_state.frame.frame_counter,
-                k,
-                self.sprite_slot_view(k).sprite_type(),
-                self.game_state.player.follower_link.blink_countdown(),
-                self.game_state
-                    .player
-                    .follower_link
-                    .sprite_damage_disable_timer(),
-                self.game_state.player.follower_link.auxiliary_state(),
-                self.game_state.player.follower_link.incapacitated_timer(),
-                self.game_state.player.follower_link.actual_x_velocity(),
-                self.game_state.player.follower_link.actual_y_velocity(),
-            );
-        }
         if (self.game_state.player.follower_link.blink_countdown()
             | self
                 .game_state
@@ -9447,59 +9195,10 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   ...see sprite.c...
     // }
     pub(super) fn sprite_check_tile_property(&mut self, k: usize, j: i32) -> bool {
-        let orig_j = j;
-        let mut trace_tile_matches = crate::debug_env::var_os("ZELDA3_TRACE_TILE_COLLISION").is_some()
-            && crate::debug_env::var("ZELDA3_TRACE_TILE_COLLISION_FRAME")
-                .ok()
-                .and_then(|s| {
-                    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
-                        u8::from_str_radix(hex, 16).ok()
-                    } else {
-                        s.parse::<u8>().ok()
-                    }
-                })
-                .map_or(true, |target| self.game_state.frame.frame_counter == target);
-        if trace_tile_matches {
-            if let Ok(value) = crate::debug_env::var("ZELDA3_TRACE_TILE_COLLISION_TYPE") {
-                let target = value
-                    .strip_prefix("0x")
-                    .or_else(|| value.strip_prefix("0X"))
-                    .and_then(|hex| u8::from_str_radix(hex, 16).ok())
-                    .or_else(|| value.parse::<u8>().ok());
-                if target != Some(self.sprite_slot_view(k).sprite_type()) {
-                    trace_tile_matches = false;
-                }
-            }
-        }
-        if trace_tile_matches {
-            if let Ok(value) = crate::debug_env::var("ZELDA3_TRACE_TILE_COLLISION_SLOT") {
-                if value.parse::<usize>().ok() != Some(k) {
-                    trace_tile_matches = false;
-                }
-            }
-        }
         let j = (j >> 1) as usize;
 
         let (mut x, y, in_bounds) = self.sprite_tile_property_coordinates(j);
         if !in_bounds {
-            if trace_tile_matches {
-                eprintln!(
-                    "R tile fc={} k={} orig={} j={} x=0x{:04x} y=0x{:04x} in=0 floor=0x{:02x} flags2=0x{:02x} ret={}",
-                    self.game_state.frame.frame_counter,
-                    k,
-                    orig_j,
-                    j,
-                    x,
-                    y,
-                    self.sprite_slot_view(k).floor(),
-                    self.sprite_slot_view(k).flags2(),
-                    if self.sprite_slot_view(k).flags2() & 0x40 != 0 {
-                        0
-                    } else {
-                        1
-                    }
-                );
-            }
             if self.sprite_slot_view(k).flags2() & 0x40 != 0 {
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_state(value);
@@ -9508,23 +9207,6 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             return true;
         }
         let b = self.sprite_get_tile_attribute(k, &mut x, y);
-        if trace_tile_matches {
-            eprintln!(
-                "R tile fc={} k={} orig={} j={} x=0x{:04x} y=0x{:04x} in=1 floor=0x{:02x} b=0x{:02x} tile=0x{:02x} defl=0x{:02x} flags5=0x{:02x} tab3=0x{:02x}",
-                self.game_state.frame.frame_counter,
-                k,
-                orig_j,
-                j,
-                x,
-                y,
-                self.sprite_slot_view(k).floor(),
-                b,
-                self.game_state.sprites.workspace.tile_type(),
-                self.sprite_slot_view(k).deflection_bits(),
-                self.sprite_slot_view(k).flags5(),
-                SPRITE_CHECK_TILE_PROPERTY_SPRITE_TILE_ATTR_SIMPLIFIED[usize::from(b)] as u8
-            );
-        }
         self.sprite_classify_tile_property(k, x, y, b)
     }
 
@@ -9947,19 +9629,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     // }
     pub(super) fn sprite_spawn_secret(&mut self, k: usize) {
         if self.game_state.world.location.is_outdoors() {
-            let before_rng = self.game_state.world.region.rng_seed();
             let roll = self.get_random_number();
-            if crate::debug_env::var_os("ZELDA3_REPLAY_SPRITE_LOAD_DUMP").is_some() {
-                println!(
-                    "secret-spawn frame={} parent={} before=0x{:02x} roll=0x{:02x} b=0x{:02x} indoors={}",
-                    self.game_state.frame.frame_counter,
-                    k,
-                    before_rng,
-                    roll,
-                    self.game_state.dungeon_secret.pending_kind(),
-                    self.game_state.world.location.indoor_flag(),
-                );
-            }
             if (roll & 8) != 0 {
                 return;
             }
@@ -10318,18 +9988,6 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   ...see sprite.c:3143...
     // }
     pub(super) fn sprite_return_if_recoiling(&mut self, k: usize) -> bool {
-        let trace_recoil_matches = crate::debug_env::var_os("ZELDA3_TRACE_RECOIL").is_some()
-            && crate::debug_env::var("ZELDA3_TRACE_RECOIL_FRAME")
-                .ok()
-                .and_then(|value| {
-                    let trimmed = value.trim();
-                    if let Some(hex) = trimmed.strip_prefix("0x") {
-                        u8::from_str_radix(hex, 16).ok()
-                    } else {
-                        trimmed.parse::<u8>().ok()
-                    }
-                })
-                .is_none_or(|frame| frame == self.game_state.frame.frame_counter);
         if self.sprite_slot_view(k).f() == 0 {
             return false;
         }
@@ -10340,21 +9998,6 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         }
         let yvbak = self.sprite_slot_view(k).y_velocity();
         let xvbak = self.sprite_slot_view(k).x_velocity();
-        if trace_recoil_matches {
-            eprintln!(
-                "R recoil fc={} entry k={} f=0x{:02x} xr=0x{:02x} yr=0x{:02x} xv=0x{:02x} yv=0x{:02x} bump=0x{:02x} x=0x{:04x} y=0x{:04x}",
-                self.game_state.frame.frame_counter,
-                k,
-                self.sprite_slot_view(k).f(),
-                self.sprite_slot_view(k).x_recoil(),
-                self.sprite_slot_view(k).y_recoil(),
-                self.sprite_slot_view(k).x_velocity(),
-                self.sprite_slot_view(k).y_velocity(),
-                self.sprite_slot_view(k).bump_damage(),
-                self.sprite_get_x(k),
-                self.sprite_get_y(k),
-            );
-        }
         let new_f = self.sprite_slot_view(k).f().wrapping_sub(1);
         let value = new_f;
         self.sprite_slot_view_mut(k).set_f(value);
@@ -10382,20 +10025,6 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             } else {
                 0
             };
-            if trace_recoil_matches {
-                eprintln!(
-                    "R recoil fc={} collide k={} i=0x{:02x} mask=0x{:02x} t=0x{:02x} xv=0x{:02x} yv=0x{:02x} x=0x{:04x} y=0x{:04x}",
-                    self.game_state.frame.frame_counter,
-                    k,
-                    i,
-                    SPRITE_RETURN_IF_RECOILING_SPRITE_RECOIL_DIRECTION_MASKS[(i >> 2) as usize],
-                    t,
-                    self.sprite_slot_view(k).x_velocity(),
-                    self.sprite_slot_view(k).y_velocity(),
-                    self.sprite_get_x(k),
-                    self.sprite_get_y(k),
-                );
-            }
             if (bump as i8) >= 0 && t != 0 {
                 if t < 4 {
                     let value = 0;
@@ -10410,34 +10039,12 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 }
             } else {
                 self.sprite_move_xy(k);
-                if trace_recoil_matches {
-                    eprintln!(
-                        "R recoil fc={} move k={} x=0x{:04x} y=0x{:04x}",
-                        self.game_state.frame.frame_counter,
-                        k,
-                        self.sprite_get_x(k),
-                        self.sprite_get_y(k),
-                    );
-                }
             }
         }
         let value = yvbak;
         self.sprite_slot_view_mut(k).set_y_velocity(value);
         let value = xvbak;
         self.sprite_slot_view_mut(k).set_x_velocity(value);
-        if trace_recoil_matches {
-            eprintln!(
-                "R recoil fc={} exit k={} ret={} f=0x{:02x} xr=0x{:02x} yr=0x{:02x} x=0x{:04x} y=0x{:04x}",
-                self.game_state.frame.frame_counter,
-                k,
-                self.sprite_slot_view(k).sprite_type() != 0x7a,
-                self.sprite_slot_view(k).f(),
-                self.sprite_slot_view(k).x_recoil(),
-                self.sprite_slot_view(k).y_recoil(),
-                self.sprite_get_x(k),
-                self.sprite_get_y(k),
-            );
-        }
         self.sprite_slot_view(k).sprite_type() != 0x7a
     }
 
@@ -11142,32 +10749,6 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         loop {
             if j >= 0 && self.sprite_slot_view(j as usize).state() == 0 {
                 let ju = j as usize;
-                if crate::debug_env::var_os("ZELDA3_REPLAY_SPRITE_SPAWN_SCAN_DUMP").is_some() {
-                    println!(
-                        "dyn-scan frame={} parent={} what=0x{:02x} slot={} old_t=0x{:02x} old_st=0x{:02x} old_c=0x{:02x} old_bump=0x{:02x}",
-                        self.game_state.frame.frame_counter,
-                        k,
-                        what,
-                        ju,
-                        self.sprite_slot_view(ju).sprite_type(),
-                        self.sprite_slot_view(ju).state(),
-                        self.sprite_slot_view(ju).c(),
-                        self.sprite_slot_view(ju).bump_damage(),
-                    );
-                }
-                if crate::debug_env::var_os("ZELDA3_REPLAY_SPRITE_LOAD_DUMP").is_some() {
-                    println!(
-                        "dyn-spawn frame={} parent={} what=0x{:02x} slot={} old_t=0x{:02x} old_st=0x{:02x} old_c=0x{:02x} old_bump=0x{:02x}",
-                        self.game_state.frame.frame_counter,
-                        k,
-                        what,
-                        ju,
-                        self.sprite_slot_view(ju).sprite_type(),
-                        self.sprite_slot_view(ju).state(),
-                        self.sprite_slot_view(ju).c(),
-                        self.sprite_slot_view(ju).bump_damage(),
-                    );
-                }
                 self.sprite_spawn_dynamically_selected_prefix(
                     k,
                     what,
@@ -11176,20 +10757,6 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                     crate::SpriteDynamicSpawnProgress::SubtypeCleared,
                 );
                 break;
-            }
-            if j >= 0 && crate::debug_env::var_os("ZELDA3_REPLAY_SPRITE_SPAWN_SCAN_DUMP").is_some() {
-                let ju = j as usize;
-                println!(
-                    "dyn-scan frame={} parent={} what=0x{:02x} slot={} old_t=0x{:02x} old_st=0x{:02x} old_c=0x{:02x} old_bump=0x{:02x}",
-                    self.game_state.frame.frame_counter,
-                    k,
-                    what,
-                    ju,
-                    self.sprite_slot_view(ju).sprite_type(),
-                    self.sprite_slot_view(ju).state(),
-                    self.sprite_slot_view(ju).c(),
-                    self.sprite_slot_view(ju).bump_damage(),
-                );
             }
             j -= 1;
             if j < 0 {
@@ -11902,27 +11469,6 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         limit: i32,
     ) -> i32 {
         let j = self.garnish_alloc_limit(limit as usize);
-        if crate::debug_env::var_os("ZELDA3_REPLAY_GARNISH_TRACE").is_some() {
-            eprintln!(
-                "R garnish-spawn fc=0x{:02x} rng=0x{:02x} room=0x{:04x} k={} type=0x{:02x} state=0x{:02x} delay=0x{:02x} xarg=0x{:04x} yarg=0x{:04x} limit={} slot={} sx=0x{:04x} sy=0x{:04x} z=0x{:02x} r12=0x{:04x} r14=0x{:04x}",
-                self.game_state.frame.frame_counter,
-                self.game_state.world.region.rng_seed(),
-                self.game_state.world.location.dungeon_room(),
-                k,
-                self.sprite_slot_view(k).sprite_type(),
-                self.sprite_slot_view(k).state(),
-                self.sprite_slot_view(k).delay_main(),
-                x,
-                y,
-                limit,
-                j,
-                self.sprite_get_x(k),
-                self.sprite_get_y(k),
-                self.sprite_slot_view(k).z(),
-                self.game_state.player.tile_detection.slope_collision_bits(),
-                self.game_state.player.tile_detection.collision_bits(),
-            );
-        }
         if j >= 0 {
             let j = j as usize;
             let value = 5;

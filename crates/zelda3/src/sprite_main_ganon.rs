@@ -375,23 +375,6 @@ fn ganon_head_direction(link_x: u16, sprite_x: u16) -> u8 {
 }
 
 impl ZeldaState {
-    fn replay_trace_ganon_matches(&self) -> bool {
-        if crate::debug_env::var_os("ZELDA3_TRACE_GANON").is_none() {
-            return false;
-        }
-        crate::debug_env::var("ZELDA3_TRACE_GANON_FRAME")
-            .ok()
-            .and_then(|value| {
-                let trimmed = value.trim();
-                if let Some(hex) = trimmed.strip_prefix("0x") {
-                    u8::from_str_radix(hex, 16).ok()
-                } else {
-                    trimmed.parse::<u8>().ok()
-                }
-            })
-            .is_none_or(|frame| frame == self.game_state.frame.frame_counter)
-    }
-
     // void SwishEvery16Frames(int k) {  // 9d8aa9
     pub(super) fn swish_every16_frames(&mut self, k: usize) {
         if (self.game_state.frame.frame_counter & 15) == 0 {
@@ -519,24 +502,6 @@ impl ZeldaState {
 
     // void Sprite_D6_Ganon(int k) {  // 9d8eb4
     pub(super) fn sprite_d6_ganon(&mut self, k: usize) {
-        if self.replay_trace_ganon_matches() {
-            eprintln!(
-                "R ganon fc={} entry k={} ai=0x{:02x} delay=0x{:02x} health=0x{:02x} subtype=0x{:02x} d=0x{:02x} hit=0x{:02x} aux1=0x{:02x} aux2=0x{:02x} aux4=0x{:02x} x=0x{:04x} y=0x{:04x}",
-                self.game_state.frame.frame_counter,
-                k,
-                self.sprite_slot_view(k).ai_state(),
-                self.sprite_slot_view(k).delay_main(),
-                self.sprite_slot_view(k).health(),
-                self.sprite_slot_view(k).subtype(),
-                self.sprite_slot_view(k).direction(),
-                self.sprite_slot_view(k).hit_timer(),
-                self.sprite_slot_view(k).delay_aux1(),
-                self.sprite_slot_view(k).delay_aux2(),
-                self.sprite_slot_view(k).delay_aux4(),
-                self.sprite_get_x(k),
-                self.sprite_get_y(k),
-            );
-        }
         if sign8(self.sprite_slot_view(k).ai_state()) {
             if self.sprite_return_if_inactive(k) {
                 return;
@@ -1406,29 +1371,6 @@ impl ZeldaState {
     //   SpriteSfx_QueueSfx3WithPan(k, 0x28);
     // }
     pub(super) fn ganon_select_warp_location(&mut self, k: usize, a: u8) {
-        if self.replay_trace_ganon_matches() {
-            eprintln!(
-                "R ganon fc={} select k={} a=0x{:02x} ai=0x{:02x} delay=0x{:02x} health=0x{:02x} subtype=0x{:02x} d=0x{:02x} target=0x{:02x}/0x{:02x}",
-                self.game_state.frame.frame_counter,
-                k,
-                a,
-                self.sprite_slot_view(k).ai_state(),
-                self.sprite_slot_view(k).delay_main(),
-                self.sprite_slot_view(k).health(),
-                self.sprite_slot_view(k).subtype(),
-                self.sprite_slot_view(k).direction(),
-                self.game_state
-                    .effects
-                    .sprite_histories
-                    .swamola_target(0)
-                    .x_low(),
-                self.game_state
-                    .effects
-                    .sprite_histories
-                    .swamola_target(0)
-                    .y_low(),
-            );
-        }
         let rnd = self.get_random_number();
         // `GetRandomNumber() & 3 | sprite_subtype[k] << 2` — note C precedence:
         // `&` binds tighter than `|`, so `(rnd & 3) | (subtype << 2)`.

@@ -15588,43 +15588,6 @@ impl ZeldaState {
         dma
     }
 
-    fn replay_trace_col(&self, label: &str) {
-        let Some(target) = crate::debug_env::var("ZELDA3_REPLAY_TRACE_COL_FRAME")
-            .ok()
-            .and_then(|value| value.parse::<u32>().ok())
-        else {
-            return;
-        };
-        if self.frame_ctr_dbg != target {
-            return;
-        }
-        let frame = &self.game_state.frame;
-        eprintln!(
-            "replay-col frame={} {label} main={} sub={} subsub={} col=0x{:02x},0x{:02x} door=0x{:02x} last=0x{:02x} dlast=0x{:02x} speed=0x{:02x}/0x{:02x} dir=0x{:02x} state=0x{:02x} x=0x{:04x} y=0x{:04x}",
-            self.frame_ctr_dbg,
-            frame.main_module,
-            frame.submodule,
-            frame.subsubmodule,
-            self.game_state
-                .player
-                .tile_detection
-                .tile_collision_bits_primary(),
-            self.game_state
-                .player
-                .tile_detection
-                .tile_collision_bits_secondary(),
-            self.game_state.dungeon.doors.door_open_counter_low(),
-            self.game_state.player.follower_link.last_direction(),
-            self.game_state.player.follower_link.swim_direction_flags(),
-            self.game_state.player.follower_link.speed_setting(),
-            self.game_state.player.follower_link.speed_modifier(),
-            self.game_state.player.follower_link.direction(),
-            self.game_state.player.follower_link.handler_state(),
-            self.game_state.player.follower_link.x(),
-            self.game_state.player.follower_link.y(),
-        );
-    }
-
     /// Native↔RAM coherence guard. With `ZELDA3_ASSERT_NATIVE_COHERENT` set, report (or
     /// `=panic` to abort on) any native sub-state that has drifted out of sync with RAM
     /// at this labeled step — the signature of a stale-native-field or RAM-written-
@@ -15865,35 +15828,7 @@ impl ZeldaState {
         );
     }
 
-    #[track_caller]
-    pub(super) fn replay_trace_sfx(&self, func: &str, k: Option<usize>, raw: u8, out: u8) {
-        let Some(target) = Self::parse_trace_env_u32("ZELDA3_REPLAY_SFX_TRACE_FRAME") else {
-            return;
-        };
-        if self.frame_ctr_dbg != target && self.state_recorder.replay_frame_counter != target {
-            return;
-        }
-        let caller = std::panic::Location::caller();
-        let frame = &self.game_state.frame;
-        eprintln!(
-            "sfx-trace frame={} local={} fc=0x{:02x} func={} caller={}:{} k={} raw=0x{:02x} out=0x{:02x} se=0x{:02x}/0x{:02x}/0x{:02x} cf8=0x{:02x}",
-            self.state_recorder.replay_frame_counter,
-            self.frame_ctr_dbg,
-            frame.frame_counter,
-            func,
-            caller.file(),
-            caller.line(),
-            k.map(|value| value.to_string())
-                .unwrap_or_else(|| "-".to_string()),
-            raw,
-            out,
-            self.game_state.system_signals.ambient_sound_effect(),
-            self.game_state.system_signals.sound_effect_1(),
-            self.game_state.system_signals.sound_effect_2(),
-            self.game_state.system_signals.raw_sfx_pan_value(),
-        );
-    }
-
+    /// Parse a frame/number debug switch (`N` or `0xN`) through `debug_env`.
     fn parse_trace_env_u32(name: &str) -> Option<u32> {
         let value = crate::debug_env::var(name).ok()?;
         if let Some(hex) = value
@@ -15904,27 +15839,6 @@ impl ZeldaState {
         } else {
             value.parse::<u32>().ok()
         }
-    }
-
-    fn replay_trace_filter_matches_current_frame(&self) -> bool {
-        let Some(target) = Self::parse_trace_env_u32("ZELDA3_REPLAY_TRACE_SUB_FRAME") else {
-            return false;
-        };
-        let frame = &self.game_state.frame;
-        if frame.frame_counter as u32 != target {
-            return false;
-        }
-        if let Some(target) = Self::parse_trace_env_u32("ZELDA3_REPLAY_TRACE_SUB_MAIN") {
-            if frame.main_module as u32 != target {
-                return false;
-            }
-        }
-        if let Some(target) = Self::parse_trace_env_u32("ZELDA3_REPLAY_TRACE_SUB_OW") {
-            if u32::from(self.game_state.world.location.overworld_screen()) != target {
-                return false;
-            }
-        }
-        true
     }
 
     pub(crate) fn selected_save_slot_x2(&self) -> u16 {
@@ -15957,52 +15871,6 @@ impl ZeldaState {
 
     pub(crate) fn clear_selected_save_slot(&mut self) {
         self.set_selected_save_slot_x2(0);
-    }
-
-    fn replay_trace_submodule(&self, label: &str) {
-        if !self.replay_trace_filter_matches_current_frame() {
-            return;
-        }
-        let frame = &self.game_state.frame;
-        let world_location = &self.game_state.world.location;
-        eprintln!(
-            "replay-sub frame={} {label} main={} sub={} subsub={} state=0x{:02x} nearpit=0x{:02x} pit=0x{:02x} water=0x{:04x} deep=0x{:04x} flippers=0x{:02x} bunny=0x{:02x} pearl=0x{:02x} indoors={} ow=0x{:04x} vis=0x{:02x} x=0x{:04x} y=0x{:04x} subpix=0x{:02x}/0x{:02x} vel=0x{:02x}/0x{:02x} yvel=0x{:02x} dir=0x{:02x} last=0x{:02x} dlast=0x{:02x} r14=0x{:04x} r12=0x{:04x} normal=0x{:04x} vledge=0x{:02x} stair=0x{:02x} drag=0x{:02x} hp=0x{:02x}",
-            frame.frame_counter,
-            frame.main_module,
-            frame.submodule,
-            frame.subsubmodule,
-            self.game_state.player.follower_link.handler_state(),
-            self.game_state.player.follower_link.near_pit_state(),
-            self.game_state.player.tile_detection.pit_tile(),
-            self.game_state.player.tile_detection.water_staircase(),
-            self.game_state.player.tile_detection.deepwater(),
-            self.game_state.player.follower_link.flippers(),
-            self.game_state.player.follower_link.is_bunny_mirror() as u8,
-            self.game_state.player.follower_link.moon_pearl(),
-            world_location.indoor_flag(),
-            world_location.overworld_screen(),
-            self.game_state.player.follower_link.visibility_status(),
-            self.game_state.player.follower_link.x(),
-            self.game_state.player.follower_link.y(),
-            self.game_state.player.follower_link.x_subpixel(),
-            self.game_state.player.follower_link.y_subpixel(),
-            self.game_state.player.follower_link.actual_x_velocity(),
-            self.game_state.player.follower_link.actual_y_velocity(),
-            self.game_state.player.follower_link.y_velocity(),
-            self.game_state.player.follower_link.direction(),
-            self.game_state.player.follower_link.last_direction(),
-            self.game_state
-                .player
-                .follower_link
-                .last_direction_moved_towards(),
-            self.game_state.player.tile_detection.collision_bits(),
-            self.game_state.player.tile_detection.slope_collision_bits(),
-            self.game_state.player.tile_detection.normal_tiles(),
-            self.game_state.player.tile_detection.vertical_ledge(),
-            self.game_state.player.tile_detection.stair_tile(),
-            self.game_state.player.follower_link.defense_flags(),
-            self.game_state.inventory.player_resources.current_health(),
-        );
     }
 
     pub fn intro_poly_upload_delay(&self) -> u8 {
@@ -34029,13 +33897,6 @@ impl ZeldaState {
     }
 
     fn stage_live_animated_bg_scanout(&mut self) {
-        if crate::debug_env::var_os("ZELDA3_TRACE_DISPLAY_VRAM").is_some() {
-            eprintln!(
-                "TRACE_STAGE_LIVE_ANIMATED display={} deferred={}",
-                self.display_snapshot.is_some(),
-                self.deferred_display_snapshot.is_some(),
-            );
-        }
         if let Some(snapshot) = self.display_snapshot.as_mut() {
             snapshot.animated_bg_scanout_generation = AnimatedBgScanoutGeneration::LiveAfterNmi;
         }
@@ -34207,31 +34068,6 @@ impl ZeldaState {
         // tileset selected ($3b00 indoors, $3c00 outdoors). The resumed
         // bad-weather tail is the measured exception that publishes the live
         // post-NMI generation.
-        let animated_bg_destination = read_le_u16(&self.ram, ANIMATED_TILE_VRAM_ADDR) as usize;
-        if crate::debug_env::var_os("ZELDA3_TRACE_DISPLAY_VRAM").is_some()
-            && plan.animated_bg_scanout_generation
-                == AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
-        {
-            let retained_word = following
-                .host_boundary_animated_bg_scanout
-                .as_ref()
-                .and_then(|scanout| scanout.vram.first())
-                .copied();
-            eprintln!(
-                "TRACE_DISPLAY_VRAM host={} entry={:02x}/{:02x}/{:02x} following={:02x}/{:02x}/{:02x} vram={:?} animated={:?} destination=0x{animated_bg_destination:04x} captured_first=0x{:04x} following_first=0x{:04x} retained_first={retained_word:?}",
-                self.frame_ctr_dbg,
-                entry_frame.main_module,
-                entry_frame.submodule,
-                entry_frame.subsubmodule,
-                following_frame.main_module,
-                following_frame.submodule,
-                following_frame.subsubmodule,
-                plan.vram_generation,
-                plan.animated_bg_scanout_generation,
-                self.ppu.vram[animated_bg_destination],
-                following.ppu.vram[animated_bg_destination],
-            );
-        }
         let previous_animated_bg_vram = (plan.animated_bg_scanout_generation
             == AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi)
             .then(|| {
@@ -39258,7 +39094,6 @@ impl ZeldaState {
             self.dungeon_landing_spotlight_reset_prefix_scanlines = None;
             self.dungeon_landing_cpu_advance_pending = Some(advance);
         }
-        self.replay_trace_col("before-game-loop");
         self.replay_trace_ram_watch("before-game-loop");
         let resumed_main_entry = self.game_state.frame;
         if resume == PreMainNmiResume::DungeonSupertileQuadrantUploads
@@ -39270,7 +39105,6 @@ impl ZeldaState {
             self.dungeon_state_13_pre_main_publication_host_frame = Some(self.frame_ctr_dbg);
         }
         self.zelda_run_game_loop_after_leading_nmi();
-        self.replay_trace_col("after-game-loop");
         self.replay_trace_ram_watch("after-game-loop");
         if quadrant_cpu_advance == Some(DungeonQuadrantCpuAdvance::InterruptedAfterModule) {
             // The coarse translated loop ran NMI_PrepareSprites and its final
@@ -40682,7 +40516,6 @@ impl ZeldaState {
         self.assert_native_frame_state_matches_ram();
         self.assert_native_world_location_state_matches_ram();
         self.assert_native_display_state_matches_ram();
-        self.replay_trace_col("run-frame-entry");
         self.replay_trace_ram_watch("run-frame-entry");
         if CaptureDisplayDiagnostics::from_env().frame_boundary {
             eprintln!(
@@ -51220,10 +51053,8 @@ impl ZeldaState {
                 self.clear_nmi_update_latch();
                 self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
                 self.capture_display_snapshot();
-                self.replay_trace_col("before-game-loop");
                 self.replay_trace_ram_watch("before-game-loop");
                 self.zelda_run_game_loop_after_leading_nmi();
-                self.replay_trace_col("after-game-loop");
                 self.replay_trace_ram_watch("after-game-loop");
                 debug_assert!(matches!(
                     self.game_execution_scheduler.current_work(),
@@ -51252,10 +51083,8 @@ impl ZeldaState {
                 // the next upload authored by submodule 2. Capture between
                 // those two generations.
                 self.capture_display_snapshot();
-                self.replay_trace_col("before-game-loop");
                 self.replay_trace_ram_watch("before-game-loop");
                 self.zelda_run_game_loop_after_leading_nmi();
-                self.replay_trace_col("after-game-loop");
                 self.replay_trace_ram_watch("after-game-loop");
                 debug_assert!(self.dialogue_scroll_is_copying_remaining_pixels());
                 self.assert_native_frame_state_matches_ram();
@@ -51420,10 +51249,8 @@ impl ZeldaState {
             self.joypad_sampled_before_main = true;
         }
         if run_what & crate::RUN_MAIN != 0 {
-            self.replay_trace_col("before-game-loop");
             self.replay_trace_ram_watch("before-game-loop");
             self.zelda_run_game_loop();
-            self.replay_trace_col("after-game-loop");
             self.replay_trace_ram_watch("after-game-loop");
         }
         if matches!(
@@ -51495,7 +51322,6 @@ impl ZeldaState {
             );
         }
         self.stage_pending_dialogue_scroll_completion_after_captured_boundary();
-        self.replay_trace_col("before-nmi");
         self.replay_trace_ram_watch("before-nmi");
         let defer_interface_exit_bg_upload = interface_exit_bg_upload_misses_current_scanout(
             frame.main_module,
@@ -51584,7 +51410,6 @@ impl ZeldaState {
             // and releases the same latch in its dedicated continuation.
             self.clear_nmi_update_latch();
         }
-        self.replay_trace_col("after-nmi");
         self.replay_trace_ram_watch("after-nmi");
         self.assert_native_frame_state_matches_ram();
         self.assert_native_world_location_state_matches_ram();
@@ -52906,7 +52731,6 @@ impl ZeldaState {
                 &mut state_recorder,
                 replay_input_override,
             );
-            self.replay_trace_col("after-replay-command");
             self.replay_trace_ram_watch("after-replay-command");
             input_state
         } else {
@@ -56156,11 +55980,7 @@ impl ZeldaState {
     }
 
     fn link_state_pits_after_aux_state(&mut self) {
-        self.replay_trace_submodule("pits-entry");
-        self.replay_trace_player_state("pits-entry");
         self.tile_detect_main_handler(4);
-        self.replay_trace_submodule("pits-after-tile-detect");
-        self.replay_trace_player_state("pits-after-tile-detect");
         if self.game_state.player.tile_detection.pit_tile() & 1 == 0 {
             if self
                 .game_state
@@ -56193,13 +56013,10 @@ impl ZeldaState {
                 3 => self.link_state_temporary_bunny(),
                 _ => self.link_state_default(),
             }
-            self.replay_trace_submodule("pits-no-pit-exit");
             return;
         }
 
         self.player_tile_detect_nearby();
-        self.replay_trace_submodule("pits-after-nearby");
-        self.replay_trace_player_state("pits-after-nearby");
         self.follower_link_state_mut().set_speed_setting(4);
         if self.game_state.player.tile_detection.pit_tile() & 0x0f == 0 {
             self.follower_link_state_mut().clear_near_pit_state();
@@ -56217,12 +56034,10 @@ impl ZeldaState {
             if self.game_state.player.follower_link.button_mask_b_y() & 0x80 == 0 {
                 self.follower_link_state_mut().clear_direction_lock_bits(1);
             }
-            self.replay_trace_submodule("pits-clear-low-nibble-exit");
             return;
         }
 
         if self.game_state.player.tile_detection.pit_tile() & 0x0f != 0x0f {
-            self.replay_trace_player_state("pits-edge-slide-entry");
             let mut i = 3i8;
             loop {
                 if self.game_state.player.tile_detection.pit_tile() & 0x0f
@@ -56262,8 +56077,6 @@ impl ZeldaState {
             self.link_handle_velocity();
             self.link_handle_cardinal_collision();
             self.apply_links_movement_to_camera();
-            self.replay_trace_submodule("pits-edge-slide-exit");
-            self.replay_trace_player_state("pits-edge-slide-exit");
             return;
         }
 
@@ -56359,11 +56172,9 @@ impl ZeldaState {
                 self.set_submodule(0);
                 self.set_subsubmodule(0);
             } else {
-                self.replay_trace_submodule("pits-before-take-damage");
                 self.TakeDamageFromPit();
             }
         }
-        self.replay_trace_submodule("pits-exit");
     }
 
     fn link_state_tree_pull_reset_to_normal(&mut self) {

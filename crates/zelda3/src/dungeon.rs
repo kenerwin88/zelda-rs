@@ -1908,11 +1908,6 @@ impl ZeldaState {
             }
             0x61 | 0x62 | 0x90 | 0x91 => {
                 let count = size_1to15_or(width, height, 26);
-                if replay_room_write_trace_enabled() {
-                    eprintln!(
-                        "room-object idx=0x{idx:02x} src=0x{src:04x} dsto=0x{dsto:04x} count=0x{count:04x} branch=wall-vert-ud"
-                    );
-                }
                 self.RoomDraw_Downwards4x2VariableSpacing(2 * 64, src, dsto, count);
             }
             0x63 | 0x64 => {
@@ -5121,15 +5116,6 @@ impl ZeldaState {
 
     #[track_caller]
     pub(super) fn room_write_bg(&mut self, base: usize, dsto: u16, tile: u16) {
-        let offset = base + dsto as usize * 2;
-        if replay_room_write_trace_addr(offset) {
-            let caller = std::panic::Location::caller();
-            eprintln!(
-                "room-write addr=0x{offset:05x} base=0x{base:05x} dsto=0x{dsto:04x} tile=0x{tile:04x} caller={}:{}",
-                caller.file(),
-                caller.line()
-            );
-        }
         self.dungeon_room_tilemaps_mut()
             .set_room_tilemap_word(base, dsto, tile);
     }
@@ -6069,33 +6055,6 @@ impl ZeldaState {
         ];
         let attr = self.dungeon_tile_attribute(tiles[3] as usize);
         let tile_positions = [pos, pos + 64, pos + 1, pos + 65];
-        if crate::debug_env::var_os("ZELDA3_TRACE_SPRITE_DMA").is_some() {
-            let target = crate::debug_env::var("ZELDA3_TRACE_SPRITE_DMA_POS")
-                .ok()
-                .and_then(|value| {
-                    value
-                        .strip_prefix("0x")
-                        .or_else(|| value.strip_prefix("0X"))
-                        .and_then(|hex| u16::from_str_radix(hex, 16).ok())
-                        .or_else(|| value.parse::<u16>().ok())
-                });
-            if target.map_or(true, |target| tile_positions.contains(&target)) {
-                eprintln!(
-                    "R sprite_dma fc=0x{:02x} x=0x{:04x} y=0x{:04x} v=0x{:02x} pos=0x{:04x} src=0x{:04x} attr=0x{:02x} tiles={:04x},{:04x},{:04x},{:04x}",
-                    self.game_state.frame.frame_counter,
-                    x as u16,
-                    y as u16,
-                    v,
-                    pos,
-                    src,
-                    attr,
-                    tiles[0],
-                    tiles[1],
-                    tiles[2],
-                    tiles[3]
-                );
-            }
-        }
 
         for &tile_pos in &tile_positions {
             self.dungeon_bg2_attributes_mut()
@@ -8149,30 +8108,6 @@ impl ZeldaState {
                 let t = self.game_state.dungeon.room_tilemaps.bg2_tile(p + i) & 0x03fe;
                 let attr = if t == 0x00ee || t == 0x00fe { 0 } else { 0x20 };
                 self.dungeon_bg2_attributes_mut().set_bg2_attr(p + i, attr);
-                if crate::debug_env::var_os("ZELDA3_TRACE_OVERLAY_ATTR").is_some() {
-                    let pos = p + i;
-                    let trace_pos = crate::debug_env::var("ZELDA3_TRACE_OVERLAY_ATTR_POS")
-                        .ok()
-                        .and_then(|value| {
-                            value
-                                .strip_prefix("0x")
-                                .or_else(|| value.strip_prefix("0X"))
-                                .and_then(|hex| usize::from_str_radix(hex, 16).ok())
-                                .or_else(|| value.parse::<usize>().ok())
-                        });
-                    if trace_pos.map_or(true, |target| target == pos) {
-                        eprintln!(
-                            "R overlay_attr fc={} room=0x{:04x} overlay=0x{:02x} p=0x{:04x} pos=0x{:04x} tile=0x{:04x} attr=0x{:02x}",
-                            self.game_state.frame.frame_counter,
-                            self.game_state.world.location.dungeon_room(),
-                            self.game_state.dungeon.room_load.overlay_to_load(),
-                            p,
-                            pos,
-                            t,
-                            attr
-                        );
-                    }
-                }
             }
             p += 64;
         }
@@ -8647,141 +8582,6 @@ impl ZeldaState {
     }
 
     fn Dungeon_LoadObjectAttribute(&mut self) {
-        if crate::debug_env::var_os("ZELDA3_REPLAY_DUNGEON_ATTR_STATE_DUMP").is_some() {
-            eprintln!(
-                "dungeon-attr-state room=0x{:04x} star=0x{:04x} inter={:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x} in1={:04x},{:04x},{:04x},{:04x},{:04x},{:04x} misc=0x{:04x} torch=0x{:04x} chest=0x{:04x} big=0x{:04x} in2={:04x},{:04x},{:04x},{:04x} table1={:04x},{:04x},{:04x},{:04x} table2={:04x},{:04x},{:04x},{:04x} obj={:04x},{:04x},{:04x},{:04x}",
-                self.game_state.world.location.dungeon_room(),
-                self.game_state.dungeon.room_parser.star_switch_count_x2(),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_count(DungeonStairList::InterRoomUpNorth),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_count(DungeonStairList::WallUpNorthSpiral),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_count(DungeonStairList::WallUpNorthSpiralBg1),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_count(DungeonStairList::InterRoomUpNorthStraight),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_count(DungeonStairList::InterRoomUpSouthStraight),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_count(DungeonStairList::InterRoomSouthDown),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_count(DungeonStairList::WallDownNorthSpiral),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_count(DungeonStairList::WallDownNorthSpiralBg1),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_count(DungeonStairList::InterRoomDownNorthStraight),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_count(DungeonStairList::InRoomUpNorth),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_count(DungeonStairList::InRoomSouthDown),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_count(DungeonStairList::InterPseudoUpNorth),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_count(DungeonStairList::WaterSideStepSwitch),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_count(DungeonStairList::InRoomUpNorthWater),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_count(DungeonStairList::ActivatedWaterLadders),
-                self.game_state.dungeon.object_tracking.misc_object_index(),
-                self.game_state.dungeon.torch.torch_index(),
-                self.game_state.dungeon.room_items.num_chests_x2(),
-                self.game_state.dungeon.room_items.num_big_key_locks_x2(),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_count(DungeonStairList::Stairs1),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_count(DungeonStairList::Stairs2),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_count(DungeonStairList::WetStairs),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_count(DungeonStairList::InRoomUpSouthWater),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 0),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 2),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 4),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 6),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_tilemap_pos(DungeonStairList::Stairs1, 0),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_tilemap_pos(DungeonStairList::Stairs1, 2),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_tilemap_pos(DungeonStairList::Stairs1, 4),
-                self.game_state
-                    .dungeon
-                    .stair_lists
-                    .stair_list_tilemap_pos(DungeonStairList::Stairs1, 6),
-                self.game_state
-                    .dungeon
-                    .object_tracking
-                    .object_tilemap_pos(0),
-                self.game_state
-                    .dungeon
-                    .object_tracking
-                    .object_tilemap_pos(1),
-                self.game_state
-                    .dungeon
-                    .object_tracking
-                    .object_tilemap_pos(2),
-                self.game_state
-                    .dungeon
-                    .object_tracking
-                    .object_tilemap_pos(3),
-            );
-        }
         let mut i = 0usize;
         while i != self.game_state.dungeon.room_parser.star_switch_count_x2() as usize {
             let j = self
@@ -9334,25 +9134,6 @@ impl ZeldaState {
 
     fn Dungeon_LoadSingleDoorAttribute(&mut self, k: usize) {
         let t = self.game_state.dungeon.doors.door_type_and_slot(k) & 0xfe;
-        if crate::debug_env::var_os("ZELDA3_REPLAY_DOOR_ATTR_TRACE").is_some() {
-            eprintln!(
-                "door-attr frame={} entry k={} t=0x{:02x} raw=0x{:04x} opened=0x{:04x} opened_adj=0x{:04x} cur=0x{:04x} addr=0x{:04x} dir=0x{:04x} sub={} step=0x{:04x}",
-                self.game_state.frame.frame_counter,
-                k,
-                t,
-                self.game_state.dungeon.doors.door_type_word(k),
-                self.game_state.dungeon.doors.opened_doors(),
-                self.game_state
-                    .dungeon
-                    .doors
-                    .opened_doors_including_adjacent(),
-                self.game_state.dungeon.doors.current_door_pos(),
-                self.game_state.dungeon.doors.door_tilemap_address(k),
-                self.game_state.dungeon.doors.door_direction_word(k),
-                self.game_state.frame.submodule,
-                self.game_state.dungeon.doors.door_animation_step(),
-            );
-        }
         if !matches!(
             t,
             DOOR_TYPE_REGULAR
@@ -9410,24 +9191,12 @@ impl ZeldaState {
         }
 
         if (DOOR_TYPE_STAIR_MASK_LOCKED0..=DOOR_TYPE_STAIR_MASK_LOCKED3).contains(&t) {
-            if crate::debug_env::var_os("ZELDA3_REPLAY_DOOR_ATTR_TRACE").is_some() {
-                eprintln!(
-                    "door-attr frame={} stairmask-return k={} t=0x{:02x}",
-                    self.game_state.frame.frame_counter, k, t,
-                );
-            }
             return;
         }
         let mut attr = DUNGEON_LOAD_SINGLE_DOOR_ATTRIBUTE_TILE_ATTRS_BY_DOOR
             .get(t as usize >> 1)
             .copied()
             .unwrap_or(0x8080);
-        if crate::debug_env::var_os("ZELDA3_REPLAY_DOOR_ATTR_TRACE").is_some() {
-            eprintln!(
-                "door-attr frame={} alpha k={} t=0x{:02x} attr=0x{:04x}",
-                self.game_state.frame.frame_counter, k, t, attr,
-            );
-        }
         let dir = self.game_state.dungeon.doors.door_direction(k) & 3;
         let address = self.game_state.dungeon.doors.door_tilemap_address(k);
         let beta = matches!(
@@ -9656,99 +9425,8 @@ impl ZeldaState {
 
     fn write_attr2(&mut self, j: usize, attr: u16) {
         let attr_view = &self.game_state.dungeon.bg2_attributes;
-        let base = attr_view.bg2_attr_address(j);
         if attr_view.bg2_attr_pair(j).is_none() {
-            if crate::debug_env::var_os("ZELDA3_REPLAY_DUNGEON_ATTR_TRACE").is_some() {
-                eprintln!(
-                    "attr-write-oob frame={} fn=write_attr2 j=0x{:04x} attr=0x{:04x} base=0x{:05x} ram_len=0x{:05x} stairs1=0x{:04x} stairs2=0x{:04x} inter=0x{:04x} misc=0x{:04x} chest=0x{:04x} big=0x{:04x} counts={:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x}",
-                    self.state_recorder.replay_frame_counter,
-                    j,
-                    attr,
-                    base,
-                    self.compatibility_state_len(),
-                    self.game_state
-                        .dungeon
-                        .stair_lists
-                        .stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 0),
-                    self.game_state
-                        .dungeon
-                        .stair_lists
-                        .stair_list_tilemap_pos(DungeonStairList::Stairs1, 0),
-                    self.game_state.dungeon.stair_lists.inter_staircase_pos(0),
-                    self.game_state.dungeon.object_tracking.misc_object_index(),
-                    self.game_state.dungeon.room_items.num_chests_x2(),
-                    self.game_state.dungeon.room_items.num_big_key_locks_x2(),
-                    self.game_state
-                        .dungeon
-                        .stair_lists
-                        .stair_list_count(DungeonStairList::InRoomUpNorth),
-                    self.game_state
-                        .dungeon
-                        .stair_lists
-                        .stair_list_count(DungeonStairList::InRoomSouthDown),
-                    self.game_state
-                        .dungeon
-                        .stair_lists
-                        .stair_list_count(DungeonStairList::InterPseudoUpNorth),
-                    self.game_state
-                        .dungeon
-                        .stair_lists
-                        .stair_list_count(DungeonStairList::WaterSideStepSwitch),
-                    self.game_state
-                        .dungeon
-                        .stair_lists
-                        .stair_list_count(DungeonStairList::InRoomUpNorthWater),
-                    self.game_state
-                        .dungeon
-                        .stair_lists
-                        .stair_list_count(DungeonStairList::ActivatedWaterLadders),
-                    self.game_state
-                        .dungeon
-                        .stair_lists
-                        .stair_list_count(DungeonStairList::Stairs1),
-                    self.game_state
-                        .dungeon
-                        .stair_lists
-                        .stair_list_count(DungeonStairList::Stairs2),
-                );
-            }
             return;
-        }
-        if crate::debug_env::var_os("ZELDA3_REPLAY_DUNGEON_ATTR_TRACE").is_some() {
-            let frame_target = crate::debug_env::var("ZELDA3_REPLAY_DUNGEON_ATTR_FRAME")
-                .ok()
-                .and_then(|value| parse_usize_env(&value));
-            let target = crate::debug_env::var("ZELDA3_REPLAY_DUNGEON_ATTR_POS")
-                .ok()
-                .and_then(|value| parse_usize_env(&value));
-            let frame_matches = frame_target
-                .map(|target| self.state_recorder.replay_frame_counter as usize == target)
-                .unwrap_or(true);
-            if frame_matches
-                && match target {
-                    Some(target) => j == target || j + 1 == target,
-                    None => true,
-                }
-            {
-                let before = self.game_state.dungeon.bg2_attributes.bg2_attr_pair(j);
-                eprintln!(
-                    "attr-write frame={} fn=write_attr2 j=0x{:04x} attr=0x{:04x} addr=0x{:05x} before={}/{} door_open=0x{:04x} door_adj=0x{:04x} cur=0x{:04x} sub={} step=0x{:04x}",
-                    self.state_recorder.replay_frame_counter,
-                    j,
-                    attr,
-                    base,
-                    format_optional_hex(before.map(|pair| pair.0)),
-                    format_optional_hex(before.map(|pair| pair.1)),
-                    self.game_state.dungeon.doors.opened_doors(),
-                    self.game_state
-                        .dungeon
-                        .doors
-                        .opened_doors_including_adjacent(),
-                    self.game_state.dungeon.doors.current_door_pos(),
-                    self.game_state.frame.submodule,
-                    self.game_state.dungeon.doors.door_animation_step(),
-                );
-            }
         }
         self.dungeon_bg2_attributes_mut().set_bg2_attr_word(j, attr);
     }
@@ -13469,30 +13147,6 @@ fn object_subtype3_param(idx: u8) -> Option<usize> {
         0x1028, 0x1040, 0x1060, 0x1070, 0x1078, 0x1080, 0x0000,
     ];
     PARAMS.get(idx as usize).copied()
-}
-
-fn replay_room_write_trace_addr(offset: usize) -> bool {
-    let Ok(raw) = crate::debug_env::var("ZELDA3_REPLAY_ROOM_WRITE_TRACE_ADDR") else {
-        return false;
-    };
-    raw.split(',').any(|part| {
-        let part = part.trim();
-        if part.is_empty() {
-            return false;
-        }
-        let parsed = part
-            .strip_prefix("0x")
-            .or_else(|| part.strip_prefix("0X"))
-            .map_or_else(
-                || part.parse::<usize>().ok(),
-                |hex| usize::from_str_radix(hex, 16).ok(),
-            );
-        parsed == Some(offset)
-    })
-}
-
-fn replay_room_write_trace_enabled() -> bool {
-    crate::debug_env::var_os("ZELDA3_REPLAY_ROOM_WRITE_TRACE_ADDR").is_some()
 }
 
 impl ZeldaState {

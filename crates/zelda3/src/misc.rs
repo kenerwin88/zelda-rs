@@ -244,31 +244,6 @@ impl ZeldaState {
             );
         }
         self.set_rng_seed(t);
-        let trace_rng = crate::debug_env::var_os("ZELDA3_TRACE_RNG").is_some();
-        let trace_frame_matches = crate::debug_env::var("ZELDA3_TRACE_RNG_FRAME")
-            .ok()
-            .and_then(|value| {
-                let trimmed = value.trim();
-                if let Some(hex) = trimmed.strip_prefix("0x") {
-                    u8::from_str_radix(hex, 16).ok()
-                } else {
-                    trimmed.parse::<u8>().ok()
-                }
-            })
-            .is_none_or(|frame| frame == self.game_state.frame.frame_counter);
-        if trace_rng && trace_frame_matches {
-            let loc = std::panic::Location::caller();
-            eprintln!(
-                "R rng fc={} before=0x{:02x} after=0x{:02x} site={}:{} link=0x{:04x},0x{:04x}",
-                self.game_state.frame.frame_counter,
-                before,
-                t,
-                loc.file(),
-                loc.line(),
-                self.game_state.player.follower_link.x(),
-                self.game_state.player.follower_link.y(),
-            );
-        }
         result
     }
 
@@ -1718,7 +1693,6 @@ impl ZeldaState {
     pub(super) fn play_sfx_set_pan(&mut self, a: u8) -> u8 {
         self.set_raw_sfx_pan_value(a);
         let out = a | self.link_calculate_sfx_pan();
-        self.replay_trace_sfx("play_sfx_set_pan", None, a, out);
         out
     }
 

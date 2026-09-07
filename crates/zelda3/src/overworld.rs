@@ -71,51 +71,6 @@ impl ZeldaState {
             .bg2_attr_word(tile_index * 2)
     }
 
-    fn replay_trace_door_overlay(&self, label: &str, pos: u16) {
-        if crate::debug_env::var_os("ZELDA3_REPLAY_TRACE_DOOR").is_none() {
-            return;
-        }
-        let world_location = &self.game_state.world.location;
-        let screen = world_location.overworld_screen();
-        let screen_byte = world_location.overworld_screen_index();
-        if screen_byte != 0x5b && pos != 0x0e2e {
-            return;
-        }
-        let word0 = if pos < 0x2000 {
-            self.game_state
-                .dungeon
-                .room_tilemaps
-                .bg2_tile_by_byte_pos(pos)
-        } else {
-            0xffff
-        };
-        let word1 = if pos < 0x1ffe {
-            self.game_state
-                .dungeon
-                .room_tilemaps
-                .bg2_tile(((pos >> 1) + 1) as usize)
-        } else {
-            0xffff
-        };
-        eprintln!(
-            "door-trace frame={} {label} main={} sub={} subsub={} screen=0x{screen:04x} screenb=0x{screen_byte:02x} event=0x{:02x} owent=0x{:04x} big=0x{:04x} pos=0x{pos:04x} bg2=0x{word0:04x}/0x{word1:04x}",
-            self.game_state.frame.frame_counter,
-            self.game_state.frame.main_module,
-            self.game_state.frame.submodule,
-            self.game_state.frame.subsubmodule,
-            self.game_state
-                .world
-                .overworld
-                .event_info
-                .event_info(screen_byte as usize),
-            self.game_state.world.region.ow_entrance_value(),
-            self.game_state
-                .dungeon
-                .object_tracking
-                .big_rock_starting_address(),
-        );
-    }
-
     pub(super) fn Module08_OverworldLoad(&mut self) {
         match self.game_state.frame.submodule {
             0 => self.PreOverworld_LoadProperties(),
@@ -408,38 +363,6 @@ impl ZeldaState {
         self.world_palette_theme_mut()
             .save_special_exit_tile_themes();
         self.sprite_system_mut().save_special_exit_graphics_index();
-        if crate::debug_env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some() {
-            println!(
-                "spexit-save frame={} area=0x{:04x} screen=0x{:04x} x=0x{:04x} y=0x{:04x} bg=0x{:04x}/0x{:04x} src=0x{:04x} yunit=0x{:04x} dst=0x{:04x} cam=0x{:04x}/0x{:04x} room=0x{:04x} main={} sub={}",
-                self.game_state.frame.frame_counter,
-                self.game_state.world.region.spexit_area_index(),
-                self.special_exit_screen_index(),
-                self.game_state.player.special_exit_position.x(),
-                self.game_state.player.special_exit_position.y(),
-                self.game_state
-                    .display
-                    .ppu_scroll_copy
-                    .special_exit_bg2_h_copy2(),
-                self.game_state
-                    .display
-                    .ppu_scroll_copy
-                    .special_exit_bg2_v_copy2(),
-                self.overworld_spexit_map16_src_off(),
-                self.overworld_map16_y_unit(),
-                self.overworld_map16_dst_off(),
-                self.game_state
-                    .world
-                    .camera_boundaries
-                    .spexit_camera_x_scroll_low(),
-                self.game_state
-                    .world
-                    .camera_boundaries
-                    .spexit_camera_y_scroll_low(),
-                self.game_state.world.location.dungeon_room(),
-                self.game_state.frame.main_module,
-                self.game_state.frame.submodule,
-            );
-        }
 
         self.LoadOverworldFromDungeon();
         if self.game_state.world.location.dungeon_room() == 0x1010 {
@@ -964,7 +887,6 @@ impl ZeldaState {
     }
 
     pub(super) fn Module09_Overworld(&mut self) {
-        self.replay_trace_submodule("module09-entry");
         let entry_frame = (
             self.game_state.frame.main_module,
             self.game_state.frame.submodule,
@@ -1005,7 +927,6 @@ impl ZeldaState {
             47 => self.Overworld_Func2F(),
             submodule => panic!("Module09_Overworld invalid submodule_index: {submodule}"),
         }
-        self.replay_trace_submodule("module09-after-submodule");
         if self.rom_startup_timing() && self.game_execution_scheduler.work_is_pending() {
             return;
         }
@@ -1042,7 +963,6 @@ impl ZeldaState {
         }
         self.OverworldOverlay_HandleRain();
         self.replay_trace_ram_watch("module09-after-rain");
-        self.replay_trace_submodule("module09-exit");
     }
 
     /// Finish the caller suffix after an interrupted sprite load whose
@@ -1055,7 +975,6 @@ impl ZeldaState {
         {
             return;
         }
-        self.replay_trace_submodule("module09-exit");
     }
 
     pub(super) fn complete_module09_sprite_and_hud_suffix(&mut self) {
@@ -1307,7 +1226,6 @@ impl ZeldaState {
             self.OverworldOverlay_HandleRain();
             self.replay_trace_ram_watch("module09-after-rain");
         }
-        self.replay_trace_submodule("module09-exit");
     }
 
     /// Resume `Overworld_LoadOverlays2` through the exact first caller NMI.
@@ -1405,7 +1323,6 @@ impl ZeldaState {
     }
 
     pub(super) fn Module09_00_PlayerControl(&mut self) {
-        self.replay_trace_submodule("module09-player-entry");
         if (self
             .game_state
             .world
@@ -1465,7 +1382,6 @@ impl ZeldaState {
             self.ScrollAndCheckForSOWExit();
             self.replay_trace_ram_watch("module09-player-after-sow-exit");
         }
-        self.replay_trace_submodule("module09-player-exit");
     }
 
     pub(super) fn Overworld_UseEntrance(&mut self) {
@@ -2227,7 +2143,6 @@ impl ZeldaState {
     }
 
     pub(super) fn TakeDamageFromPit(&mut self) {
-        self.replay_trace_submodule("take_damage_from_pit-entry");
         self.follower_link_state_mut().set_visibility_status(12);
         let submodule = if self.game_state.world.location.is_indoors() {
             20
@@ -2239,7 +2154,6 @@ impl ZeldaState {
         if health >= 0xa8 {
             self.player_resources_mut().set_current_health(0);
         }
-        self.replay_trace_submodule("take_damage_from_pit-exit");
     }
 
     pub(super) fn Overworld_GetPitDestination(&mut self) {
@@ -4894,49 +4808,6 @@ impl ZeldaState {
     }
 
     pub(super) fn LoadOverworldFromSpecialOverworld(&mut self) {
-        if crate::debug_env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some() {
-            println!(
-                "spexit-restore-before frame={} area=0x{:04x} screen=0x{:04x} x=0x{:04x} y=0x{:04x} bg=0x{:04x}/0x{:04x} src=0x{:04x} cam=0x{:04x}/0x{:04x} bounds={:04x},{:04x},{:04x},{:04x}",
-                self.game_state.frame.frame_counter,
-                self.game_state.world.region.spexit_area_index(),
-                self.special_exit_screen_index(),
-                self.game_state.player.special_exit_position.x(),
-                self.game_state.player.special_exit_position.y(),
-                self.game_state
-                    .display
-                    .ppu_scroll_copy
-                    .special_exit_bg2_h_copy2(),
-                self.game_state
-                    .display
-                    .ppu_scroll_copy
-                    .special_exit_bg2_v_copy2(),
-                self.overworld_spexit_map16_src_off(),
-                self.game_state
-                    .world
-                    .camera_boundaries
-                    .spexit_camera_x_scroll_low(),
-                self.game_state
-                    .world
-                    .camera_boundaries
-                    .spexit_camera_y_scroll_low(),
-                self.game_state
-                    .world
-                    .camera_boundaries
-                    .spexit_room_bound_x_start(),
-                self.game_state
-                    .world
-                    .camera_boundaries
-                    .spexit_room_bound_x_end(),
-                self.game_state
-                    .world
-                    .camera_boundaries
-                    .spexit_room_bound_y_start(),
-                self.game_state
-                    .world
-                    .camera_boundaries
-                    .spexit_room_bound_y_end(),
-            );
-        }
         self.memorized_tile_mut().clear_count();
         self.restore_spexit_area_index();
         self.restore_spexit_layer_masks();
@@ -5002,25 +4873,6 @@ impl ZeldaState {
         self.Overworld_LoadGFXAndScreenSize();
         self.set_overworld_right_bottom_bound_low(228);
         self.clear_overworld_big_area_high();
-        if crate::debug_env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some() {
-            println!(
-                "spexit-restore-after frame={} area=0x{:04x} screen=0x{:04x} x=0x{:04x} y=0x{:04x} bg=0x{:04x}/0x{:04x} base=0x{:04x}/0x{:04x} mask=0x{:04x}/0x{:04x} room=0x{:04x} main={} sub={}",
-                self.game_state.frame.frame_counter,
-                self.game_state.world.region.overworld_area_index(),
-                u16::from(self.game_state.world.location.overworld_screen_index()),
-                self.game_state.player.follower_link.x(),
-                self.game_state.player.follower_link.y(),
-                self.game_state.display.ppu_scroll_copy.bg2_h_copy2(),
-                self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
-                self.game_state.world.scroll.overworld_offset_base_x(),
-                self.game_state.world.scroll.overworld_offset_base_y(),
-                self.game_state.world.scroll.overworld_offset_mask_x(),
-                self.game_state.world.scroll.overworld_offset_mask_y(),
-                self.game_state.world.location.dungeon_room(),
-                self.game_state.frame.main_module,
-                self.game_state.frame.submodule,
-            );
-        }
     }
 
     pub(super) fn Overworld_LoadGFXAndScreenSize(&mut self) {
@@ -5304,7 +5156,6 @@ impl ZeldaState {
     }
 
     pub(super) fn OverworldTransitionScrollAndLoadMap(&mut self) {
-        let before = self.overworld_map16_src_off();
         let dst = match self.screen_transition_direction_bits() {
             1 => self.BuildFullStripeDuringTransition_East(0),
             2 => self.BuildFullStripeDuringTransition_West(0),
@@ -5322,25 +5173,6 @@ impl ZeldaState {
         self.write_overworld_vram_word(dst + 1, 0xffff);
         if dst != 0 {
             self.set_pending_nmi_subroutine(3);
-        }
-        if crate::debug_env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some()
-            && matches!(
-                u16::from(self.game_state.world.location.overworld_screen_index()),
-                0 | 2
-            )
-        {
-            println!(
-                "owstripe-scroll frame={} screen=0x{:04x} dir=0x{:02x} before=0x{:04x} after=0x{:04x} yunit=0x{:04x} dst=0x{:04x} sub={} subsub={}",
-                self.game_state.frame.frame_counter,
-                u16::from(self.game_state.world.location.overworld_screen_index()),
-                self.screen_transition_direction_bits(),
-                before,
-                self.overworld_map16_src_off(),
-                self.overworld_map16_y_unit(),
-                self.overworld_map16_dst_off(),
-                self.game_state.frame.submodule,
-                self.game_state.frame.subsubmodule,
-            );
         }
     }
 
@@ -5812,7 +5644,6 @@ impl ZeldaState {
             self.dungeon_room_tilemaps_mut().set_bg1_tile(i, 0x0dc4);
         }
         let mut pos = self.game_state.world.region.ow_entrance_value();
-        self.replay_trace_door_overlay("draw-before-entrance", pos & 0x1fff);
         if pos != 0 && pos != 0xffff {
             if pos < 0x8000 {
                 self.dungeon_room_tilemaps_mut()
@@ -5821,7 +5652,6 @@ impl ZeldaState {
                 self.dungeon_room_tilemaps_mut()
                     .set_bg2_tile_by_byte_pos(pos.wrapping_add(2), 0x0da6);
                 self.Overworld_Memorize_Map16_Change(pos.wrapping_add(2), 0x0da6);
-                self.replay_trace_door_overlay("draw-normal-door", pos);
             } else {
                 pos &= 0x1fff;
                 self.dungeon_room_tilemaps_mut()
@@ -5830,17 +5660,12 @@ impl ZeldaState {
                 self.dungeon_room_tilemaps_mut()
                     .set_bg2_tile_by_byte_pos(pos.wrapping_add(2), 0x0db5);
                 self.Overworld_Memorize_Map16_Change(pos.wrapping_add(2), 0x0db5);
-                self.replay_trace_door_overlay("draw-open-door", pos);
             }
             self.set_ow_entrance_value(0);
         }
         self.Overworld_HandleOverlaysAndBombDoors();
         let screen_byte = self.game_state.world.location.overworld_screen_index() as usize;
         if screen_byte < SECONDARY_OVERLAY_BY_OVERWORLD_SCREEN.len() {
-            self.replay_trace_door_overlay(
-                "draw-after-overlays",
-                SECONDARY_OVERLAY_BY_OVERWORLD_SCREEN[screen_byte],
-            );
         }
     }
 
@@ -5928,9 +5753,6 @@ impl ZeldaState {
     }
 
     pub(super) fn OverworldHandleMapScroll(&mut self) {
-        let before = self.overworld_map16_src_off();
-        let before_y_unit = self.overworld_map16_y_unit();
-        let before_dst = self.overworld_map16_dst_off();
         let dir = self.screen_transition_direction_bits();
         let dst = match dir {
             1 => {
@@ -5975,30 +5797,6 @@ impl ZeldaState {
         }
         let screen_transition = self.screen_transition_direction_bits();
         self.set_screen_transition(screen_transition);
-        if crate::debug_env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some()
-            && matches!(
-                u16::from(self.game_state.world.location.overworld_screen_index()),
-                0 | 2 | 0x80
-            )
-        {
-            println!(
-                "owlive-scroll frame={} screen=0x{:04x} dir=0x{:02x} before=0x{:04x} after=0x{:04x} yunit=0x{:04x}->0x{:04x} dst=0x{:04x}->0x{:04x} trans=0x{:02x} sub={} subsub={} x=0x{:04x} y=0x{:04x}",
-                self.game_state.frame.frame_counter,
-                u16::from(self.game_state.world.location.overworld_screen_index()),
-                dir,
-                before,
-                self.overworld_map16_src_off(),
-                before_y_unit,
-                self.overworld_map16_y_unit(),
-                before_dst,
-                self.overworld_map16_dst_off(),
-                self.screen_transition(),
-                self.game_state.frame.submodule,
-                self.game_state.frame.subsubmodule,
-                self.game_state.player.follower_link.x(),
-                self.game_state.player.follower_link.y(),
-            );
-        }
     }
 
     pub(super) fn Overworld_RunScrollTransition(&mut self) {
@@ -6256,7 +6054,6 @@ impl ZeldaState {
 
         self.Dungeon_ResetTorchBackgroundAndPlayerInner();
         let mut map16 = self.overworld_map16_src_off();
-        let map16_before = map16;
         map16 &= SPECIAL_SWITCH_MAP16_MASKS[y_idx];
         let pushed = (current_area.wrapping_add_signed(SPECIAL_SWITCH_AREA_DELTAS[y_idx]) >> 1)
             as usize
@@ -6264,23 +6061,6 @@ impl ZeldaState {
         let map16_add = SPECIAL_SWITCH_MAP16_OFFSETS[y_idx * 64 + pushed];
         map16 = map16.wrapping_add(map16_add);
         self.set_overworld_map16_src_off(map16);
-        if crate::debug_env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some() {
-            println!(
-                "owtrans-map16 frame={} y={} pushed=0x{:02x} cur=0x{:04x} old=0x{:04x} mask=0x{:04x} add=0x{:04x} new=0x{:04x} screen=0x{:04x} x=0x{:04x} ycoord=0x{:04x} dir=0x{:02x}",
-                self.game_state.frame.frame_counter,
-                y_idx,
-                pushed,
-                current_area,
-                map16_before,
-                SPECIAL_SWITCH_MAP16_MASKS[y_idx],
-                map16_add,
-                map16,
-                u16::from(self.game_state.world.location.overworld_screen_index()),
-                self.game_state.player.follower_link.x(),
-                self.game_state.player.follower_link.y(),
-                self.game_state.player.follower_link.direction(),
-            );
-        }
 
         let old_screen = self.game_state.world.location.overworld_screen_index();
         if old_screen == 0x2a {
@@ -7304,32 +7084,6 @@ impl ZeldaState {
 
         let map8 = self.Overworld_GetMap16OfLink_Mult8();
         let a = map8[0] & 0x01ff;
-        if crate::debug_env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some()
-            && matches!(
-                u16::from(self.game_state.world.location.overworld_screen_index()),
-                0x0080 | 0x0081
-            )
-        {
-            let xc = self.game_state.player.follower_link.x().wrapping_add(8) >> 3;
-            let yc = self.game_state.player.follower_link.y().wrapping_add(12);
-            let pos = self.overworld_bg2_byte_pos(xc, yc);
-            println!(
-                "spexit-check frame={} screen=0x{:04x} x=0x{:04x} y=0x{:04x} base=0x{:04x}/0x{:04x} mask=0x{:04x}/0x{:04x} pos=0x{:04x} map8=0x{:04x} dirbits2=0x{:02x} sub={} subsub={}",
-                self.game_state.frame.frame_counter,
-                u16::from(self.game_state.world.location.overworld_screen_index()),
-                self.game_state.player.follower_link.x(),
-                self.game_state.player.follower_link.y(),
-                self.game_state.world.scroll.overworld_offset_base_x(),
-                self.game_state.world.scroll.overworld_offset_base_y(),
-                self.game_state.world.scroll.overworld_offset_mask_x(),
-                self.game_state.world.scroll.overworld_offset_mask_y(),
-                pos,
-                a,
-                self.screen_transition_direction_bits(),
-                self.game_state.frame.submodule,
-                self.game_state.frame.subsubmodule,
-            );
-        }
         for i in (0..3).rev() {
             if SPECIAL_SWITCH_AREA_B_TILE_IDS[i] == a
                 && SPECIAL_SWITCH_AREA_B_SCREENS[i]
@@ -7343,19 +7097,6 @@ impl ZeldaState {
                 self.set_submodule(36);
                 self.set_subsubmodule(0);
                 self.set_dungeon_room_index(0);
-                if crate::debug_env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some() {
-                    println!(
-                        "spexit-hit frame={} i={} screen=0x{:04x} map8=0x{:04x} dir=0x{:02x} trans=0x{:04x} x=0x{:04x} y=0x{:04x}",
-                        self.game_state.frame.frame_counter,
-                        i,
-                        u16::from(self.game_state.world.location.overworld_screen_index()),
-                        a,
-                        self.game_state.player.follower_link.direction(),
-                        self.screen_transition_word(),
-                        self.game_state.player.follower_link.x(),
-                        self.game_state.player.follower_link.y(),
-                    );
-                }
                 break;
             }
         }
@@ -7724,11 +7465,9 @@ impl ZeldaState {
             != 0
         {
             let pos = (SECONDARY_OVERLAY_BY_OVERWORLD_SCREEN[screen] >> 1) as usize;
-            self.replay_trace_door_overlay("secondary-before", (pos << 1) as u16);
             self.dungeon_room_tilemaps_mut().set_bg2_tile(pos, 0x0db4);
             self.dungeon_room_tilemaps_mut()
                 .set_bg2_tile(pos + 1, 0x0db5);
-            self.replay_trace_door_overlay("secondary-after", (pos << 1) as u16);
         }
     }
 

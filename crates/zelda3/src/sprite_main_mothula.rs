@@ -1308,33 +1308,13 @@ impl ZeldaState {
         }
 
         let t = self.sprite_slot_view(k).delay_aux3();
-        let trace_stalfos_head = crate::debug_env::var_os("ZELDA3_TRACE_STALFOS_HEAD").is_some()
-            && self.sprite_slot_view(k).sprite_type() == 0xa7
-            && k == 0
-            && self.game_state.world.location.dungeon_room() == 0x00a8;
         if t != 0 {
-            let old_head = self.sprite_slot_view(k).head_direction();
             self.sprite_slot_view_mut(k).set_ai_state(0);
             self.sprite_slot_view_mut(k).set_delay_main(32);
             self.sprite_zero_velocity_xy(k);
             let face = self.sprite_direction_to_face_link(k, None);
             let value = face;
             self.sprite_slot_view_mut(k).set_head_direction(value);
-            if trace_stalfos_head {
-                eprintln!(
-                    "R stalfos head aux3 fc={} t=0x{:02x} x=0x{:04x} y=0x{:04x} old=0x{:02x} face=0x{:02x} d=0x{:02x} c=0x{:02x} delay=0x{:02x} rng=0x{:02x}",
-                    self.game_state.frame.frame_counter,
-                    t,
-                    self.sprite_get_x(k),
-                    self.sprite_get_y(k),
-                    old_head,
-                    face,
-                    self.sprite_slot_view(k).direction(),
-                    self.sprite_slot_view(k).c(),
-                    self.sprite_slot_view(k).delay_main(),
-                    self.game_state.world.region.rng_seed(),
-                );
-            }
         }
         if t == 1 {
             self.stalfos_throw_bone(k);
@@ -1348,38 +1328,10 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_zazak_after_graphics_boundary(&mut self, k: usize) {
-        let trace_stalfos_head = crate::debug_env::var_os("ZELDA3_TRACE_STALFOS_HEAD").is_some()
-            && self.sprite_slot_view(k).sprite_type() == 0xa7
-            && k == 0
-            && self.game_state.world.location.dungeon_room() == 0x00a8;
         if self.sprite_slot_view(k).sprite_type() == 0xa7 {
             self.stalfos_draw(k);
         } else {
             self.zazak_draw(k);
-        }
-        if crate::debug_env::var_os("ZELDA3_TRACE_STALFOS_INACTIVE").is_some()
-            && self.sprite_slot_view(k).sprite_type() == 0xa7
-            && self.game_state.world.location.dungeon_room() == 0x00a8
-        {
-            eprintln!(
-                "R stalfos inactive-check fc={} k={} x=0x{:04x} y=0x{:04x} state=0x{:02x} flag=0x{:02x} sub=0x{:02x} defl=0x{:02x} pause=0x{:02x} delay=0x{:02x} ai=0x{:02x} z=0x{:02x} f=0x{:02x} xr=0x{:02x} yr=0x{:02x} bump=0x{:02x}",
-                self.game_state.frame.frame_counter,
-                k,
-                self.sprite_get_x(k),
-                self.sprite_get_y(k),
-                self.sprite_slot_view(k).state(),
-                self.game_state.frame.modal_pause_flag,
-                self.game_state.frame.submodule,
-                self.sprite_slot_view(k).deflection_bits(),
-                self.sprite_slot_view(k).pause(),
-                self.sprite_slot_view(k).delay_main(),
-                self.sprite_slot_view(k).ai_state(),
-                self.sprite_slot_view(k).z(),
-                self.sprite_slot_view(k).f(),
-                self.sprite_slot_view(k).x_recoil(),
-                self.sprite_slot_view(k).y_recoil(),
-                self.sprite_slot_view(k).bump_damage(),
-            );
         }
         if self.sprite_return_if_inactive(k) {
             return;
@@ -1387,55 +1339,13 @@ impl ZeldaState {
         if self.sprite_return_if_recoiling(k) {
             return;
         }
-        let trace_stalfos = crate::debug_env::var_os("ZELDA3_TRACE_STALFOS").is_some()
-            && self.sprite_slot_view(k).sprite_type() == 0xa7
-            && self.game_state.world.location.dungeon_room() == 0x00a8;
-        if trace_stalfos {
-            eprintln!(
-                "R stalfos pre-move fc={} k={} x=0x{:04x} y=0x{:04x} d=0x{:02x} head=0x{:02x} ai=0x{:02x} delay=0x{:02x} g=0x{:02x} wall=0x{:02x} xv=0x{:02x} yv=0x{:02x} z=0x{:02x} zv=0x{:02x}",
-                self.game_state.frame.frame_counter,
-                k,
-                self.sprite_get_x(k),
-                self.sprite_get_y(k),
-                self.sprite_slot_view(k).direction(),
-                self.sprite_slot_view(k).head_direction(),
-                self.sprite_slot_view(k).ai_state(),
-                self.sprite_slot_view(k).delay_main(),
-                self.sprite_slot_view(k).g(),
-                self.sprite_slot_view(k).wall_collision(),
-                self.sprite_slot_view(k).x_velocity(),
-                self.sprite_slot_view(k).y_velocity(),
-                self.sprite_slot_view(k).z(),
-                self.sprite_slot_view(k).z_velocity(),
-            );
-        }
         self.sprite_check_damage_to_and_from_link(k);
         self.sprite_move_xy(k);
-        let trace_tile = self.sprite_check_tile_collision(k);
-        if trace_stalfos {
-            eprintln!(
-                "R stalfos post-move fc={} k={} x=0x{:04x} y=0x{:04x} d=0x{:02x} head=0x{:02x} ai=0x{:02x} delay=0x{:02x} g=0x{:02x} wall=0x{:02x} tile=0x{:02x} xv=0x{:02x} yv=0x{:02x}",
-                self.game_state.frame.frame_counter,
-                k,
-                self.sprite_get_x(k),
-                self.sprite_get_y(k),
-                self.sprite_slot_view(k).direction(),
-                self.sprite_slot_view(k).head_direction(),
-                self.sprite_slot_view(k).ai_state(),
-                self.sprite_slot_view(k).delay_main(),
-                self.sprite_slot_view(k).g(),
-                self.sprite_slot_view(k).wall_collision(),
-                trace_tile,
-                self.sprite_slot_view(k).x_velocity(),
-                self.sprite_slot_view(k).y_velocity(),
-            );
-        }
+        self.sprite_check_tile_collision(k);
 
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {
-                    let old_delay = self.sprite_slot_view(k).delay_main();
-                    let rng_before = self.game_state.world.region.rng_seed();
                     let rng = self.get_random_number();
                     self.sprite_slot_view_mut(k)
                         .set_delay_main(STALFOS_HOP_DELAYS[usize::from(rng & 3)]);
@@ -1446,25 +1356,6 @@ impl ZeldaState {
                         .set_x_velocity(FLUTE_BOY_ANIMAL_X_VELOCITIES[j] as u8);
                     self.sprite_slot_view_mut(k)
                         .set_y_velocity(ZAZAK_Y_VELOCITIES[j] as u8);
-                    if crate::debug_env::var_os("ZELDA3_TRACE_STALFOS_DELAY").is_some()
-                        && self.sprite_slot_view(k).sprite_type() == 0xa7
-                        && self.game_state.world.location.dungeon_room() == 0x00a8
-                    {
-                        eprintln!(
-                            "R stalfos delay fc={} k={} x=0x{:04x} y=0x{:04x} old_delay=0x{:02x} new_delay=0x{:02x} head=0x{:02x} d=0x{:02x} ai=0x{:02x} rng_before=0x{:02x} rng=0x{:02x}",
-                            self.game_state.frame.frame_counter,
-                            k,
-                            self.sprite_get_x(k),
-                            self.sprite_get_y(k),
-                            old_delay,
-                            self.sprite_slot_view(k).delay_main(),
-                            self.sprite_slot_view(k).head_direction(),
-                            self.sprite_slot_view(k).direction(),
-                            self.sprite_slot_view(k).ai_state(),
-                            rng_before,
-                            rng,
-                        );
-                    }
                 }
             }
             1 => {
@@ -1492,52 +1383,18 @@ impl ZeldaState {
                 } else {
                     self.sprite_slot_view_mut(k).set_delay_main(32);
                 }
-                let old_head = self.sprite_slot_view(k).head_direction();
-                let rng_before = self.game_state.world.region.rng_seed();
                 let rng = self.get_random_number();
                 let rng_bit = rng & 1;
                 let value = ZAZAK_ALT_DIRECTIONS
                     [usize::from(self.sprite_slot_view(k).direction() * 2 + rng_bit)];
                 self.sprite_slot_view_mut(k).set_head_direction(value);
-                if trace_stalfos_head {
-                    eprintln!(
-                        "R stalfos head random fc={} x=0x{:04x} y=0x{:04x} old=0x{:02x} new=0x{:02x} d=0x{:02x} c_before=0x{:02x} rng_before=0x{:02x} rng=0x{:02x} bit=0x{:02x} delay=0x{:02x} wall=0x{:02x}",
-                        self.game_state.frame.frame_counter,
-                        self.sprite_get_x(k),
-                        self.sprite_get_y(k),
-                        old_head,
-                        self.sprite_slot_view(k).head_direction(),
-                        self.sprite_slot_view(k).direction(),
-                        self.sprite_slot_view(k).c(),
-                        rng_before,
-                        rng,
-                        rng_bit,
-                        self.sprite_slot_view(k).delay_main(),
-                        self.sprite_slot_view(k).wall_collision(),
-                    );
-                }
                 self.sprite_slot_view_mut(k).set_ai_state(0);
                 self.sprite_slot_view_mut(k).add_c(1);
                 if self.sprite_slot_view(k).c() == 4 {
                     self.sprite_slot_view_mut(k).set_c(0);
-                    let old_head = self.sprite_slot_view(k).head_direction();
                     let face = self.sprite_direction_to_face_link(k, None);
                     let value = face;
                     self.sprite_slot_view_mut(k).set_head_direction(value);
-                    if trace_stalfos_head {
-                        eprintln!(
-                            "R stalfos head face4 fc={} x=0x{:04x} y=0x{:04x} old=0x{:02x} face=0x{:02x} d=0x{:02x} c=0x{:02x} delay=0x{:02x} rng=0x{:02x}",
-                            self.game_state.frame.frame_counter,
-                            self.sprite_get_x(k),
-                            self.sprite_get_y(k),
-                            old_head,
-                            face,
-                            self.sprite_slot_view(k).direction(),
-                            self.sprite_slot_view(k).c(),
-                            self.sprite_slot_view(k).delay_main(),
-                            self.game_state.world.region.rng_seed(),
-                        );
-                    }
                     self.sprite_slot_view_mut(k).set_delay_main(24);
                 }
                 self.sprite_slot_view_mut(k).set_y_velocity(0);

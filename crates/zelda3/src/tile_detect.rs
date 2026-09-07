@@ -37,25 +37,6 @@ impl ZeldaState {
         if (0x10..0x1c).contains(&attr) {
             attr |= ((map8 >> 14) & 1) as u8;
         }
-        if crate::debug_env::var("ZELDA3_REPLAY_TRACE_TILE").is_ok()
-            && self.replay_trace_filter_matches_current_frame()
-        {
-            let world = &self.game_state.world.scroll;
-            eprintln!(
-                "tile-probe frame={} x=0x{:04x} y=0x{:04x} pos=0x{:04x} map16=0x{:04x} map8=0x{:04x} attr=0x{:02x} base=0x{:04x}/0x{:04x} mask=0x{:04x}/0x{:04x}",
-                self.game_state.frame.frame_counter,
-                x,
-                y,
-                pos,
-                map16,
-                map8,
-                attr,
-                world.overworld_offset_base_x(),
-                world.overworld_offset_base_y(),
-                world.overworld_offset_mask_x(),
-                world.overworld_offset_mask_y(),
-            );
-        }
         attr
     }
 
@@ -338,15 +319,6 @@ impl ZeldaState {
     pub(super) fn tile_detection_execute(&mut self, x: u16, y: u16, bits: u16) {
         let mut offset = 0usize;
         let is_indoors = self.game_state.world.location.is_indoors();
-        let trace = crate::debug_env::var("ZELDA3_REPLAY_TRACE_TILE").is_ok()
-            && self.replay_trace_filter_matches_current_frame();
-        let r14_before = self.game_state.player.tile_detection.collision_bits();
-        let r12_before = self.game_state.player.tile_detection.slope_collision_bits();
-        let misc_before = self.game_state.player.tile_detection.misc_tiles();
-        let normal_before = self.game_state.player.tile_detection.normal_tiles();
-        let pit_before = self.game_state.player.tile_detection.pit_tile();
-        let diag_before = self.game_state.player.tile_detection.diag_state();
-        let below_before = self.game_state.player.follower_link.tile_below();
         let tile = if is_indoors {
             self.follower_link_state_mut().clear_force_move_high_byte();
             offset = ((y & !7) as usize) * 8
@@ -377,37 +349,6 @@ impl ZeldaState {
             self.overworld_get_tile_attribute_at_location(x, y)
         };
         self.tile_detect_execute_inner(tile, offset as u16, bits, is_indoors);
-        if trace {
-            eprintln!(
-                "tile-exec frame={} x=0x{:04x} y=0x{:04x} bits=0x{:04x} indoors={} lower={} offs=0x{:04x} tile=0x{:02x} link=0x{:04x}/0x{:04x} speed=0x{:02x}/0x{:02x} r14=0x{:04x}->0x{:04x} r12=0x{:04x}->0x{:04x} misc=0x{:04x}->0x{:04x} normal=0x{:04x}->0x{:04x} pit=0x{:02x}->0x{:02x} diag=0x{:04x}->0x{:04x} below=0x{:02x}->0x{:02x}",
-                self.game_state.frame.frame_counter,
-                x,
-                y,
-                bits,
-                self.game_state.world.location.indoor_flag(),
-                self.game_state.player.follower_link.lower_level_state(),
-                offset,
-                tile,
-                self.game_state.player.follower_link.x(),
-                self.game_state.player.follower_link.y(),
-                self.game_state.player.follower_link.speed_setting(),
-                self.game_state.player.follower_link.speed_modifier(),
-                r14_before,
-                self.game_state.player.tile_detection.collision_bits(),
-                r12_before,
-                self.game_state.player.tile_detection.slope_collision_bits(),
-                misc_before,
-                self.game_state.player.tile_detection.misc_tiles(),
-                normal_before,
-                self.game_state.player.tile_detection.normal_tiles(),
-                pit_before,
-                self.game_state.player.tile_detection.pit_tile(),
-                diag_before,
-                self.game_state.player.tile_detection.diag_state(),
-                below_before,
-                self.game_state.player.follower_link.tile_below(),
-            );
-        }
     }
 
     #[rustfmt::skip]
