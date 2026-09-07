@@ -796,6 +796,12 @@ def promote_frontier_from_cached_av(
         "two independent cold pinned-core exact A/V passes",
         "one full-route Rust-only cached Snes9x A/V pass (policy 2026-09-06)",
     ]
+    # Keep a copy of the run manifest beside the ledger so the promoted
+    # receipt survives pruning of target/ and travels with the repository.
+    receipts_dir = ledger_path.parent / "receipts"
+    receipts_dir.mkdir(parents=True, exist_ok=True)
+    receipt_copy = receipts_dir / f"{run_dir.name}.manifest.json"
+    shutil.copyfile(manifest_path, receipt_copy)
     ledger["promoted"] = {
         "kind": "cached_av_pass",
         "commit": git["head"],
@@ -807,6 +813,7 @@ def promote_frontier_from_cached_av(
         "last_exact_audio_frame": cache_frames - 1,
         "cached_av_receipt": {
             "run": str(run_dir),
+            "receipt_path": receipt_copy.relative_to(ledger_path.parent).as_posix(),
             "manifest_sha256": sha256_file(manifest_path),
             "candidate_ledger_sha256": sha256_file(candidate_ledger),
             "oracle_cache_key": run.get("oracle_cache_key"),

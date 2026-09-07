@@ -576,6 +576,11 @@ class CachedAvPromotionTests(unittest.TestCase):
         self.assertEqual(promoted["binary_sha256"], evidence.sha256_file(self.binary))
         self.assertEqual(promoted["route_signature"]["core_sha256"], "c" * 64)
         self.assertEqual(promoted["cached_av_receipt"]["frames"], 100)
+        receipt_copy = self.ledger.parent / promoted["cached_av_receipt"]["receipt_path"]
+        self.assertTrue(receipt_copy.is_file())
+        self.assertEqual(
+            evidence.sha256_file(receipt_copy), promoted["cached_av_receipt"]["manifest_sha256"]
+        )
         self.assertIn(
             "one full-route Rust-only cached Snes9x A/V pass (policy 2026-09-06)",
             ledger["policy"]["accepted_exact_av_receipts"],
