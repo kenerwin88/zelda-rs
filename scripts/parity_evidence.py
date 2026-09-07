@@ -889,7 +889,11 @@ def record_engine_state_frontier(
                 "kind": "engine_state_prefix_cold_receipt",
                 "path": str(prefix_receipt),
                 "sha256": sha256_file(prefix_receipt),
-                "frames": prefix.get("target_frames", prefix.get("frames")),
+                "frames": (
+                    prefix.get("target_frames")
+                    or prefix.get("frames")
+                    or (prefix.get("authority") or {}).get("target_frames")
+                ),
             }
         )
     promoted["last_exact_engine_state_frame"] = frames_completed - 1

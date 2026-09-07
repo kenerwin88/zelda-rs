@@ -625,7 +625,9 @@ class EngineStateFrontierTests(unittest.TestCase):
             encoding="utf-8",
         )
         self.prefix = self.root / "prefix.json"
-        self.prefix.write_text(json.dumps({"target_frames": 40}), encoding="utf-8")
+        self.prefix.write_text(
+            json.dumps({"authority": {"target_frames": 40}}), encoding="utf-8"
+        )
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
