@@ -14049,6 +14049,7 @@ mod rtl_spotlight;
 mod rtl_oam_obj;
 mod rtl_publication;
 mod rtl_original_timing;
+mod rtl_frame_lanes;
 mod rtl_types_display;
 pub use rtl_types_display::*;
 mod rtl_types_cpu_plans;
