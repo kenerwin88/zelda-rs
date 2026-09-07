@@ -2806,39 +2806,6 @@ impl ZeldaState {
     }
 }
 
-// Silence dead-code warnings on the unused tables / constants while the
-// remaining segmented-history helpers are still being ported.
-#[allow(dead_code)]
-const _SMALL_BOSSES_TRINEXXD_GFX_KEEPALIVE: &[u8] = &TRINEXX_FINAL_PHASE_ALT_GRAPHICS;
-#[allow(dead_code)]
-const _SMALL_BOSSES_GFX3_KEEPALIVE: &[u8] = &TRINEXX_FINAL_PHASE_ANGLE_GRAPHICS;
-#[allow(dead_code)]
-const _SMALL_BOSSES_TRINEXX_XVEL_KEEPALIVE: &[i8] = &TRINEXX_FINAL_PHASE_X_VELOCITIES;
-#[allow(dead_code)]
-const _SMALL_BOSSES_TRINEXX_YVEL_KEEPALIVE: &[i8] = &TRINEXX_FINAL_PHASE_Y_VELOCITIES;
-#[allow(dead_code)]
-const _SMALL_BOSSES_HEAD_CHAR_KEEPALIVE: &[u8] = &YELLOW_STALFOS_HEAD_CHARS;
-#[allow(dead_code)]
-const _SMALL_BOSSES_HEAD_FLAGS_KEEPALIVE: &[u8] = &YELLOW_STALFOS_HEAD_FLAGS;
-#[allow(dead_code)]
-const _SMALL_BOSSES_GFX2_KEEPALIVE: &[u8] = &YELLOW_STALFOS_IDLE_GRAPHICS_BY_DIRECTION;
-#[allow(dead_code)]
-const _SMALL_BOSSES_VITREOUS_ANIMATE_GFX_KEEPALIVE: &[i8] = &VITREOUS_SIDE_GRAPHICS_BY_LINK_SIDE;
-#[allow(dead_code)]
-const _SMALL_BOSSES_VITREOUS_WHICH_KEEPALIVE: &[u8] = &VITREOUS_MINION_ACTIVATION_SLOTS;
-#[allow(dead_code)]
-const _SMALL_BOSSES_EYES_X_KEEPALIVE: &[i8] = &VITREOUS_SMALL_EYE_X_OFFSETS;
-#[allow(dead_code)]
-const _SMALL_BOSSES_EYES_Y_KEEPALIVE: &[i8] = &VITREOUS_SMALL_EYE_Y_OFFSETS;
-#[allow(dead_code)]
-const _SMALL_BOSSES_EYES_GFX_KEEPALIVE: &[u8] = &VITREOUS_SMALL_EYE_GRAPHICS;
-#[allow(dead_code)]
-const _SMALL_BOSSES_SCRATCH_KEEPALIVE: &[usize] = &[
-    SPRITE_DELAY_AUX3_SB,
-    SMALL_BOSS_SHARED_WORK_A,
-    OVERLORD_X_HI_SB,
-];
-
 #[cfg(test)]
 #[path = "sprite_main_small_bosses_tests.rs"]
 mod tests;

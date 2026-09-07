@@ -284,6 +284,12 @@ impl Snes9xColdCpuExecutor {
         };
         let mut accesses = Vec::new();
         let reset_pc = this.read_word(0x00_fffc, WordWrap::Bank, &mut accesses)?;
+        // The direct reset-vector read leaves its committed bus semantic
+        // pending like every other access; retire it here so the first
+        // `step()` starts from a quiescent machine.
+        if this.machine.pending_completion().is_some() {
+            this.machine.resume_pending_completion()?;
+        }
         this.machine.snes.cpu.pc = reset_pc;
         // cpu.cpp:S9xSoftResetCPU explicitly publishes `Registers.PCh` after
         // the direct reset-vector read, whose direct-memory path does not own

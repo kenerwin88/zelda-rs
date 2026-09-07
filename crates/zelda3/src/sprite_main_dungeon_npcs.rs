@@ -3041,25 +3041,6 @@ impl ZeldaState {
     }
 }
 
-// Keep the keepalive constants in scope for the signature_drift script and
-// future ports that may reference them.
-#[allow(dead_code)]
-const _DN_SCRATCH_KEEPALIVE: &[usize] = &[
-    SPRITE_DELAY_AUX2,
-    SPRITE_F,
-    SPRITE_Y_RECOIL,
-    SPRITE_WALLCOLL,
-    SPRITE_FLAGS,
-    SRAM_PROGRESS_INDICATOR_AUX,
-    LINK_DISABLE_SPRITE_DAMAGE_DN,
-    TILE_INTERACTION_SHARED_FLAG,
-    MESSAGING_MODULE,
-    GAME_OVER_CHECK_FLAG,
-    TILE_ACTION_INDEX_DN,
-    PLAYER_HANDLER_STATE_DN,
-    FLAG_UPDATE_HUD_NEXT_FRAME,
-];
-
 #[cfg(test)]
 #[path = "sprite_main_dungeon_npcs_tests.rs"]
 mod tests;
