@@ -33,7 +33,7 @@
       "run": "/Users/missingno/Documents/zelda3-rs/target/parity-cached-av/run-ed0121e1b093-20260906-191116"
     },
     "commit": "d1940e412fa754f020ec7b10d6e7883858741071",
-    "engine_state_commit": "e3616cca69c3382e9000914797a307f9b15fcd59",
+    "engine_state_commit": "682c7961205106532654b1d3b2e5ddf8d151b698",
     "engine_state_receipts": [
       {
         "engine_state_from_frame": 174000,
@@ -44,7 +44,7 @@
         "session": "/Users/missingno/Documents/zelda3-rs/routes/full_run/comparisons/precommit/run-1581079-rng-calibration-nzx495z3"
       },
       {
-        "frames": null,
+        "frames": 174000,
         "kind": "engine_state_prefix_cold_receipt",
         "path": ".git/parity-cold-passes/1788447502277568000-174000-04e67cd02ee9.json",
         "sha256": "307d6bedc2e9c2c0087fe919d423f52fc3f617de1afe7ff58a57a042760e4ec6"
