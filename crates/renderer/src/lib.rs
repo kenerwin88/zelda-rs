@@ -41,6 +41,8 @@ pub mod modern_sprite_atlas;
 mod modern_sprite_renderer;
 pub mod modern_variant_atlas;
 pub mod modern_variant_draw;
+#[cfg(test)]
+pub(crate) mod test_support;
 mod modern_variant_render_plan;
 pub mod renderer_mode;
 

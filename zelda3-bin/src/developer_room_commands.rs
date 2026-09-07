@@ -347,7 +347,7 @@ fn developer_room_kakariko_visible_cell(tile: u16) -> u16 {
     }
 }
 
-fn draw_snes_4bpp_tilemap_entry_to_rgba(
+pub(crate) fn draw_snes_4bpp_tilemap_entry_to_rgba(
     vram: &[u16],
     cgram: &[u16],
     chr_base_words: usize,

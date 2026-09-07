@@ -4,6 +4,36 @@
 
 use super::*;
 
+/// The IrisSpotlight_ConfigureTable interruption classification shared by the
+/// overworld and dungeon-exit spotlight CPU plans (`$00:F361..F3C4` table
+/// build, `$00:F3B7..F3C4` copy, `$00:F377` return).
+macro_rules! spotlight_table_interruption_methods {
+    () => {
+        pub(crate) const fn interrupted_during_table_build_or_copy(self) -> bool {
+            (self.interrupted_pc >= 0x00_f361 && self.interrupted_pc <= 0x00_f3c4)
+                || self.interrupted_return_address == 0x00_f377
+        }
+
+        pub(crate) const fn interrupted_during_table_copy(self) -> bool {
+            self.interrupted_pc >= 0x00_f3b7 && self.interrupted_pc <= 0x00_f3c4
+        }
+
+        pub(crate) fn normalized_interruption_phase(mut self) -> Self {
+            if self.interrupted_during_table_copy() {
+                self.interrupted_pc = 0x00_f3b7;
+                self.interrupted_return_address = 0;
+            } else if self.interrupted_during_table_build_or_copy() {
+                self.interrupted_pc = 0x00_f361;
+                self.interrupted_return_address = 0;
+            } else {
+                self.interrupted_pc = 0;
+                self.interrupted_return_address = 0;
+            }
+            self
+        }
+    };
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct OverworldSpotlightCpuPlan {
     pub(crate) interrupted_pc: u32,
@@ -37,31 +67,10 @@ impl OverworldSpotlightCpuPlan {
         )
     }
 
-    pub(crate) const fn interrupted_during_table_build_or_copy(self) -> bool {
-        (self.interrupted_pc >= 0x00_f361 && self.interrupted_pc <= 0x00_f3c4)
-            || self.interrupted_return_address == 0x00_f377
-    }
-
-    pub(crate) const fn interrupted_during_table_copy(self) -> bool {
-        self.interrupted_pc >= 0x00_f3b7 && self.interrupted_pc <= 0x00_f3c4
-    }
+    spotlight_table_interruption_methods!();
 
     pub(crate) const fn exits_module_before_next_nmi(self) -> bool {
         matches!(self.nmis_before_module_exit, Some(1))
-    }
-
-    pub(crate) fn normalized_interruption_phase(mut self) -> Self {
-        if self.interrupted_during_table_copy() {
-            self.interrupted_pc = 0x00_f3b7;
-            self.interrupted_return_address = 0;
-        } else if self.interrupted_during_table_build_or_copy() {
-            self.interrupted_pc = 0x00_f361;
-            self.interrupted_return_address = 0;
-        } else {
-            self.interrupted_pc = 0;
-            self.interrupted_return_address = 0;
-        }
-        self
     }
 }
 
@@ -104,28 +113,7 @@ impl DungeonExitSpotlightCpuPlan {
         )
     }
 
-    pub(crate) const fn interrupted_during_table_build_or_copy(self) -> bool {
-        (self.interrupted_pc >= 0x00_f361 && self.interrupted_pc <= 0x00_f3c4)
-            || self.interrupted_return_address == 0x00_f377
-    }
-
-    pub(crate) const fn interrupted_during_table_copy(self) -> bool {
-        self.interrupted_pc >= 0x00_f3b7 && self.interrupted_pc <= 0x00_f3c4
-    }
-
-    pub(crate) fn normalized_interruption_phase(mut self) -> Self {
-        if self.interrupted_during_table_copy() {
-            self.interrupted_pc = 0x00_f3b7;
-            self.interrupted_return_address = 0;
-        } else if self.interrupted_during_table_build_or_copy() {
-            self.interrupted_pc = 0x00_f361;
-            self.interrupted_return_address = 0;
-        } else {
-            self.interrupted_pc = 0;
-            self.interrupted_return_address = 0;
-        }
-        self
-    }
+    spotlight_table_interruption_methods!();
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

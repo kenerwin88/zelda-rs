@@ -25,7 +25,7 @@ fn link_move_position_axis_offsets(pass: u8) -> (usize, usize) {
     }
 }
 
-fn move_link_axis_by_velocity(
+pub(in crate::game_state) fn move_link_axis_by_velocity(
     ram: &mut [u8],
     subpixel_offset: usize,
     coord_offset: usize,
@@ -39,7 +39,7 @@ fn move_link_axis_by_velocity(
     (moved >> 8) as u16
 }
 
-fn move_link_axis_by_subpixel_delta(
+pub(in crate::game_state) fn move_link_axis_by_subpixel_delta(
     ram: &mut [u8],
     subpixel_offset: usize,
     coord_offset: usize,

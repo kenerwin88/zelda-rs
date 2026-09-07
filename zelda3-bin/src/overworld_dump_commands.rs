@@ -1,3 +1,4 @@
+use crate::developer_room_commands::draw_snes_4bpp_tilemap_entry_to_rgba;
 use std::collections::HashMap;
 use std::fs;
 use std::panic::{self, AssertUnwindSafe};
@@ -8,7 +9,6 @@ use crate::image_output::write_rgba_frame_png;
 use crate::index_source_keys::{IndexSourceKey, IndexSourceKeyMap};
 use crate::{load_translated_replay_state, parse_u16_auto};
 use renderer::modern_extract::decode_snes_4bpp_tile_indices;
-use renderer::modern_palette::snes_cgram_to_rgba;
 use serde::Serialize;
 use zelda3::ZeldaState;
 
@@ -459,41 +459,6 @@ fn render_snes_4bpp_tile_to_rgba(
         1,
     );
     rgba
-}
-
-fn draw_snes_4bpp_tilemap_entry_to_rgba(
-    vram: &[u16],
-    cgram: &[u16],
-    chr_base_words: usize,
-    tilemap_entry: u16,
-    out: &mut [u8],
-    out_width: usize,
-    out_x: usize,
-    out_y: usize,
-    scale: usize,
-) {
-    let palette_base = usize::from((tilemap_entry >> 10) & 0x07) * 16;
-    let indices = decode_snes_4bpp_tile_indices(vram, chr_base_words, tilemap_entry);
-    for y in 0..8usize {
-        for x in 0..8usize {
-            let palette_index = usize::from(indices[y * 8 + x]);
-            let color = snes_cgram_to_rgba(
-                cgram
-                    .get(palette_base + palette_index)
-                    .copied()
-                    .unwrap_or(0),
-            );
-            for yy in 0..scale {
-                for xx in 0..scale {
-                    let out_index =
-                        ((out_y + y * scale + yy) * out_width + out_x + x * scale + xx) * 4;
-                    if out_index + 4 <= out.len() {
-                        out[out_index..out_index + 4].copy_from_slice(&color);
-                    }
-                }
-            }
-        }
-    }
 }
 
 fn render_unique_overworld_cell_atlas(

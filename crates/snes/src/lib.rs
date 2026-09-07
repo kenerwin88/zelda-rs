@@ -27,6 +27,8 @@ pub mod tracing;
 
 #[cfg(test)]
 mod test_bootstrap_fixture;
+#[cfg(test)]
+pub(crate) mod test_util;
 
 pub use cpu_step::{cpu_run_opcode, cpu_run_opcode_timed, CpuInstructionTiming};
 pub use cpu_synchronous_executor::{

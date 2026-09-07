@@ -25,8 +25,10 @@ use crate::modern_mode1_effect_plan::{
     PreparedMode1EffectRenderStepKind,
 };
 use crate::modern_screen_builder::ModernGpuScreenBuilder;
+use crate::modern_software::in_cm_window;
 #[cfg(test)]
 use crate::modern_sprite_renderer::ModernGpuSpriteRenderer;
+use crate::modern_variant_draw::main_layer_window_masks_pixel;
 #[cfg(test)]
 use crate::modern_variant_render_plan::headless_variant_render_path;
 use crate::modern_variant_render_plan::{
@@ -1364,7 +1366,7 @@ fn bg_effect_packet_complex_reject_reason(
                 saw_scanline_disabled_pixel = true;
                 continue;
             }
-            if bg_layer_window_masks_packet_pixel(frame, layer, sx, sy) {
+            if main_layer_window_masks_pixel(frame, layer, sx, sy) {
                 saw_layer_window_pixel = true;
                 continue;
             }
@@ -1402,38 +1404,6 @@ fn bg_effect_packet_complex_reject_reason(
     None
 }
 
-fn bg_layer_window_masks_packet_pixel(frame: &ModernFrame, layer: u8, sx: u32, sy: usize) -> bool {
-    if frame.screen_windowed_main & (1u8 << layer) == 0 {
-        return false;
-    }
-    let window_flags = (frame.windowsel >> (u32::from(layer) * 4)) & 0x0f;
-    let w1_enabled = window_flags & 0x2 != 0;
-    let w2_enabled = window_flags & 0x8 != 0;
-    if !w1_enabled && !w2_enabled {
-        return false;
-    }
-    let [w1l, w1r, w2l, w2r] = frame
-        .window_scanlines
-        .get(sy)
-        .copied()
-        .unwrap_or([0u8; 4])
-        .map(u32::from);
-    let mut test1 = sx >= w1l && sx <= w1r;
-    let mut test2 = sx >= w2l && sx <= w2r;
-    if window_flags & 0x1 != 0 {
-        test1 = !test1;
-    }
-    if window_flags & 0x4 != 0 {
-        test2 = !test2;
-    }
-    match (w1_enabled, w2_enabled) {
-        (true, false) => test1,
-        (false, true) => test2,
-        (true, true) => test1 || test2,
-        (false, false) => false,
-    }
-}
-
 fn bg_packet_pixel_math_reject_reason(
     frame: &ModernFrame,
     layer: u8,
@@ -1449,7 +1419,7 @@ fn bg_packet_pixel_math_reject_reason(
     }
 
     let win = frame.window_scanlines.get(sy).copied().unwrap_or([0u8; 4]);
-    let cm_window = bg_packet_in_color_math_window(sx, win, frame.windowsel_cm);
+    let cm_window = in_cm_window(sx, win, frame.windowsel_cm);
     if !bg_packet_color_window_bit(cm_window, frame.clip_mode) {
         return Some(MixedOverlayComplexRejectReason::ColorMathClip);
     }
@@ -1478,26 +1448,6 @@ fn bg_packet_color_window_bit(in_window: bool, mode: u8) -> bool {
     let w = if in_window { 0xffu32 } else { 0 };
     let m = mode as usize & 7;
     ((w & MASKS[m]) ^ MASKS[m + 4]) != 0
-}
-
-fn bg_packet_in_color_math_window(sx: u32, win: [u8; 4], windowsel_cm: u8) -> bool {
-    let [w1l, w1r, w2l, w2r] = win.map(u32::from);
-    let mut inside = false;
-    if windowsel_cm & 0x2 != 0 {
-        let mut in_w1 = w1l <= w1r && sx >= w1l && sx <= w1r;
-        if windowsel_cm & 0x1 != 0 {
-            in_w1 = !in_w1;
-        }
-        inside |= in_w1;
-    }
-    if windowsel_cm & 0x8 != 0 {
-        let mut in_w2 = w2l <= w2r && sx >= w2l && sx <= w2r;
-        if windowsel_cm & 0x4 != 0 {
-            in_w2 = !in_w2;
-        }
-        inside |= in_w2;
-    }
-    inside
 }
 
 fn frame_uses_direct_final_index_math(frame: &ModernFrame) -> bool {
@@ -2335,7 +2285,7 @@ fn bg_packet_visible_on_main_at_pixel(
     {
         return false;
     }
-    !bg_layer_window_masks_packet_pixel(frame, layer, sx, sy)
+    !main_layer_window_masks_pixel(frame, layer, sx, sy)
 }
 
 fn sprite_packet_visible_on_main_at_pixel(frame: &ModernFrame, sx: u32, sy: usize) -> bool {
@@ -2349,7 +2299,7 @@ fn sprite_packet_visible_on_main_at_pixel(frame: &ModernFrame, sx: u32, sy: usiz
     {
         return false;
     }
-    !bg_layer_window_masks_packet_pixel(frame, 4, sx, sy)
+    !main_layer_window_masks_pixel(frame, 4, sx, sy)
 }
 
 /// Reasons a Stable (baked PNG) BG packet cannot be represented by the prefinal overlay
@@ -2404,7 +2354,7 @@ fn bg_stable_packet_reject(
                 saw_scanline_disabled_pixel = true;
                 continue;
             }
-            if bg_layer_window_masks_packet_pixel(frame, layer, sx, sy) {
+            if main_layer_window_masks_pixel(frame, layer, sx, sy) {
                 saw_layer_window_pixel = true;
                 continue;
             }

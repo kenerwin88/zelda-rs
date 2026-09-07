@@ -1,5 +1,5 @@
+use crate::write_asset_gpu_missing_report_or_exit;
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process;
 
@@ -112,51 +112,6 @@ fn parse_scripted_asset_gpu_smoke_options(args: &[String]) -> ScriptedAssetGpuSm
         progress_interval,
         missing_assets_out,
     }
-}
-
-fn write_asset_gpu_missing_report_or_exit(
-    path: &Path,
-    command: &str,
-    frame: u32,
-    input: u16,
-    error: &str,
-) {
-    if let Some(parent) = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        if let Err(e) = fs::create_dir_all(parent) {
-            eprintln!(
-                "failed to create missing-assets output directory {}: {e}",
-                parent.display()
-            );
-            process::exit(2);
-        }
-    }
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .unwrap_or_else(|e| {
-            eprintln!(
-                "failed to open missing-assets output {}: {e}",
-                path.display()
-            );
-            process::exit(2);
-        });
-    let record = serde_json::json!({
-        "command": command,
-        "frame": frame,
-        "input": format!("0x{input:04x}"),
-        "error": error,
-    });
-    writeln!(file, "{record}").unwrap_or_else(|e| {
-        eprintln!(
-            "failed to write missing-assets output {}: {e}",
-            path.display()
-        );
-        process::exit(2);
-    });
 }
 
 fn print_asset_gpu_smoke_progress(

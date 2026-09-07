@@ -8,9 +8,8 @@ use super::dungeon::{
 };
 use super::effects;
 use super::effects::{
-    BlastWallState, BombosSpellState, DiggingGamePrizeState,
-    EffectAngleScratchState, EntranceEffectState, QuakeBoltState, QuakeSpellState,
-    SkullWoodsFireState, TowerSealState,
+    BlastWallState, BombosSpellState, DiggingGamePrizeState, EffectAngleScratchState,
+    EntranceEffectState, QuakeBoltState, QuakeSpellState, SkullWoodsFireState, TowerSealState,
 };
 use super::ending::{AttractSceneState, EndingCreditState, IntroSceneState};
 use super::inventory::{

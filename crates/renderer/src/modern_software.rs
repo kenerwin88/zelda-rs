@@ -1676,7 +1676,7 @@ fn cw_bit(in_window: bool, mode: u8) -> bool {
 /// post-process shader: enabled W1/W2 masks (each with its inversion flag) are
 /// OR-combined. `windowsel_cm` bits: 0=W1inv, 1=W1en, 2=W2inv, 3=W2en.
 #[inline]
-fn in_cm_window(sx: u32, win: [u8; 4], windowsel_cm: u8) -> bool {
+pub(crate) fn in_cm_window(sx: u32, win: [u8; 4], windowsel_cm: u8) -> bool {
     let [w1l, w1r, w2l, w2r] = win.map(u32::from);
     let mut inside = false;
     if windowsel_cm & 0x2 != 0 {

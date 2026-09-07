@@ -458,6 +458,64 @@ pub(crate) struct SpriteSlotsState {
     work: Vec<u8>,
 }
 
+/// Byte-addressed slot bank shared by the sprite and ancilla slot states: the
+/// 8.8 / 8.16 fixed-point axis moves the ROM performs with `ADC` chains.
+trait SlotBankBytes {
+    fn bank_byte(&self, slot: usize, offset: usize) -> u8;
+    fn set_bank_byte(&mut self, slot: usize, offset: usize, value: u8);
+
+    fn move_axis24(
+        &mut self,
+        slot: usize,
+        subpixel_offset: usize,
+        low_offset: usize,
+        high_offset: usize,
+        velocity_offset: usize,
+    ) {
+        let pos = u32::from(self.bank_byte(slot, subpixel_offset))
+            | (u32::from(self.bank_byte(slot, low_offset)) << 8)
+            | (u32::from(self.bank_byte(slot, high_offset)) << 16);
+        let delta = ((self.bank_byte(slot, velocity_offset) as i8 as i32) << 4) as u32;
+        let moved = pos.wrapping_add(delta);
+        self.set_bank_byte(slot, subpixel_offset, moved as u8);
+        self.set_bank_byte(slot, low_offset, (moved >> 8) as u8);
+        self.set_bank_byte(slot, high_offset, (moved >> 16) as u8);
+    }
+
+    fn move_axis16(
+        &mut self,
+        slot: usize,
+        subpixel_offset: usize,
+        offset: usize,
+        velocity_offset: usize,
+    ) {
+        let pos = (u16::from(self.bank_byte(slot, offset)) << 8)
+            | u16::from(self.bank_byte(slot, subpixel_offset));
+        let delta = ((self.bank_byte(slot, velocity_offset) as i8 as i32) << 4) as u16;
+        let moved = pos.wrapping_add(delta);
+        self.set_bank_byte(slot, subpixel_offset, moved as u8);
+        self.set_bank_byte(slot, offset, (moved >> 8) as u8);
+    }
+}
+
+impl SlotBankBytes for SpriteSlotsState {
+    fn bank_byte(&self, slot: usize, offset: usize) -> u8 {
+        self.byte(slot, offset)
+    }
+    fn set_bank_byte(&mut self, slot: usize, offset: usize, value: u8) {
+        self.set_byte(slot, offset, value);
+    }
+}
+
+impl SlotBankBytes for AncillaSlotsState {
+    fn bank_byte(&self, slot: usize, offset: usize) -> u8 {
+        self.byte(slot, offset)
+    }
+    fn set_bank_byte(&mut self, slot: usize, offset: usize, value: u8) {
+        self.set_byte(slot, offset, value);
+    }
+}
+
 impl Default for SpriteSlotsState {
     fn default() -> Self {
         Self {
@@ -563,39 +621,6 @@ impl SpriteSlotsState {
     fn set_position(&mut self, slot: usize, low_offset: usize, high_offset: usize, value: u16) {
         self.set_byte(slot, low_offset, value as u8);
         self.set_byte(slot, high_offset, (value >> 8) as u8);
-    }
-
-    fn move_axis24(
-        &mut self,
-        slot: usize,
-        subpixel_offset: usize,
-        low_offset: usize,
-        high_offset: usize,
-        velocity_offset: usize,
-    ) {
-        let pos = u32::from(self.byte(slot, subpixel_offset))
-            | (u32::from(self.byte(slot, low_offset)) << 8)
-            | (u32::from(self.byte(slot, high_offset)) << 16);
-        let delta = ((self.byte(slot, velocity_offset) as i8 as i32) << 4) as u32;
-        let moved = pos.wrapping_add(delta);
-        self.set_byte(slot, subpixel_offset, moved as u8);
-        self.set_byte(slot, low_offset, (moved >> 8) as u8);
-        self.set_byte(slot, high_offset, (moved >> 16) as u8);
-    }
-
-    fn move_axis16(
-        &mut self,
-        slot: usize,
-        subpixel_offset: usize,
-        offset: usize,
-        velocity_offset: usize,
-    ) {
-        let pos =
-            (u16::from(self.byte(slot, offset)) << 8) | u16::from(self.byte(slot, subpixel_offset));
-        let delta = ((self.byte(slot, velocity_offset) as i8 as i32) << 4) as u16;
-        let moved = pos.wrapping_add(delta);
-        self.set_byte(slot, subpixel_offset, moved as u8);
-        self.set_byte(slot, offset, (moved >> 8) as u8);
     }
 }
 
@@ -1979,39 +2004,6 @@ impl AncillaSlotsState {
     fn set_position(&mut self, slot: usize, low_offset: usize, high_offset: usize, value: u16) {
         self.set_byte(slot, low_offset, value as u8);
         self.set_byte(slot, high_offset, (value >> 8) as u8);
-    }
-
-    fn move_axis24(
-        &mut self,
-        slot: usize,
-        subpixel_offset: usize,
-        low_offset: usize,
-        high_offset: usize,
-        velocity_offset: usize,
-    ) {
-        let pos = u32::from(self.byte(slot, subpixel_offset))
-            | (u32::from(self.byte(slot, low_offset)) << 8)
-            | (u32::from(self.byte(slot, high_offset)) << 16);
-        let delta = ((self.byte(slot, velocity_offset) as i8 as i32) << 4) as u32;
-        let moved = pos.wrapping_add(delta);
-        self.set_byte(slot, subpixel_offset, moved as u8);
-        self.set_byte(slot, low_offset, (moved >> 8) as u8);
-        self.set_byte(slot, high_offset, (moved >> 16) as u8);
-    }
-
-    fn move_axis16(
-        &mut self,
-        slot: usize,
-        subpixel_offset: usize,
-        offset: usize,
-        velocity_offset: usize,
-    ) {
-        let pos =
-            (u16::from(self.byte(slot, offset)) << 8) | u16::from(self.byte(slot, subpixel_offset));
-        let delta = ((self.byte(slot, velocity_offset) as i8 as i32) << 4) as u16;
-        let moved = pos.wrapping_add(delta);
-        self.set_byte(slot, subpixel_offset, moved as u8);
-        self.set_byte(slot, offset, (moved >> 8) as u8);
     }
 
     fn add_byte(&mut self, slot: usize, offset: usize, value: u8) -> u8 {

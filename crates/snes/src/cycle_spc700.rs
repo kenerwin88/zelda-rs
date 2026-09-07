@@ -2359,6 +2359,7 @@ impl<'a> Smp<'a> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::test_util::decode_base64_bytes;
     use serde_json::Value;
     use sha2::{Digest, Sha256};
     use std::fs;
@@ -2366,34 +2367,6 @@ pub(crate) mod tests {
 
     const OPCODE_LEDGER_PATH: &str =
         "../../external/snes9x-libretro/fixtures/snes9x-spc700-op-step-ledger.jsonl";
-
-    fn decode_base64_bytes(encoded: &str) -> Vec<u8> {
-        assert_eq!(encoded.len() % 4, 0);
-        let value = |byte: u8| match byte {
-            b'A'..=b'Z' => byte - b'A',
-            b'a'..=b'z' => byte - b'a' + 26,
-            b'0'..=b'9' => byte - b'0' + 52,
-            b'+' => 62,
-            b'/' => 63,
-            b'=' => 0,
-            _ => panic!("invalid fixture base64 digit"),
-        };
-        let mut decoded = Vec::with_capacity(encoded.len() / 4 * 3);
-        for chunk in encoded.as_bytes().chunks_exact(4) {
-            let bits = u32::from(value(chunk[0])) << 18
-                | u32::from(value(chunk[1])) << 12
-                | u32::from(value(chunk[2])) << 6
-                | u32::from(value(chunk[3]));
-            decoded.push((bits >> 16) as u8);
-            if chunk[2] != b'=' {
-                decoded.push((bits >> 8) as u8);
-            }
-            if chunk[3] != b'=' {
-                decoded.push(bits as u8);
-            }
-        }
-        decoded
-    }
 
     fn read_unsigned_varint(bytes: &[u8], index: &mut usize) -> u64 {
         let mut value = 0u64;

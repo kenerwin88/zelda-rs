@@ -14,6 +14,9 @@ mod messaging;
 mod misc;
 mod oam;
 mod player;
+pub(in crate::game_state) use player::{
+    move_link_axis_by_subpixel_delta, move_link_axis_by_velocity,
+};
 mod poly;
 mod sprites;
 mod system;

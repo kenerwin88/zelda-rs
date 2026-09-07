@@ -21099,7 +21099,6 @@ mod tests {
                 "subsub": 0, "frame_counter": 149, "nmi_latch": 0
             }),
         ];
-        use std::io::Write as _;
         // A later host appends framed records after the existing ones.
         let mut file = std::fs::OpenOptions::new()
             .append(true)

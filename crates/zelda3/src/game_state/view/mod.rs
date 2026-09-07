@@ -1,5 +1,6 @@
 //! Byte-backed typed views over game state.
 
+use super::native::{move_link_axis_by_subpixel_delta, move_link_axis_by_velocity};
 use crate::types::{read_le_u16, write_le_u16};
 
 fn copy_word(ram: &mut [u8], dst: usize, src: usize) {
@@ -65,31 +66,4 @@ fn move_axis16(ram: &mut [u8], subpixel_offset: usize, offset: usize, velocity_o
     let moved = pos.wrapping_add(delta);
     ram[subpixel_offset] = moved as u8;
     ram[offset] = (moved >> 8) as u8;
-}
-
-fn move_link_axis_by_velocity(
-    ram: &mut [u8],
-    subpixel_offset: usize,
-    coord_offset: usize,
-    velocity: u8,
-) -> u16 {
-    let pos = u32::from(ram[subpixel_offset]) | (u32::from(read_le_u16(ram, coord_offset)) << 8);
-    let delta = ((velocity as i8 as i32) << 4) as u32;
-    let moved = pos.wrapping_add(delta);
-    ram[subpixel_offset] = moved as u8;
-    write_le_u16(ram, coord_offset, (moved >> 8) as u16);
-    (moved >> 8) as u16
-}
-
-fn move_link_axis_by_subpixel_delta(
-    ram: &mut [u8],
-    subpixel_offset: usize,
-    coord_offset: usize,
-    delta: u16,
-) -> u16 {
-    let pos = u32::from(ram[subpixel_offset]) | (u32::from(read_le_u16(ram, coord_offset)) << 8);
-    let moved = pos.wrapping_add(delta as i16 as i32 as u32);
-    ram[subpixel_offset] = moved as u8;
-    write_le_u16(ram, coord_offset, (moved >> 8) as u16);
-    (moved >> 8) as u16
 }

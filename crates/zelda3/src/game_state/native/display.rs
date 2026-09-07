@@ -1027,11 +1027,13 @@ pub(crate) enum ProvenanceCheckMode {
 /// against the WRAM shadow at every CGRAM commit.
 pub(crate) fn palette_provenance_check_mode() -> Option<ProvenanceCheckMode> {
     static MODE: std::sync::OnceLock<Option<ProvenanceCheckMode>> = std::sync::OnceLock::new();
-    *MODE.get_or_init(|| match crate::debug_env::var("ZELDA3_PALETTE_PROVENANCE_CHECK") {
-        Ok(value) if value == "panic" => Some(ProvenanceCheckMode::Panic),
-        Ok(value) if !value.is_empty() && value != "0" => Some(ProvenanceCheckMode::Log),
-        _ => None,
-    })
+    *MODE.get_or_init(
+        || match crate::debug_env::var("ZELDA3_PALETTE_PROVENANCE_CHECK") {
+            Ok(value) if value == "panic" => Some(ProvenanceCheckMode::Panic),
+            Ok(value) if !value.is_empty() && value != "0" => Some(ProvenanceCheckMode::Log),
+            _ => None,
+        },
+    )
 }
 
 #[track_caller]
@@ -5418,7 +5420,12 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
 
     pub(crate) fn set_sub_screen_layers(&mut self, value: u8) {
         self.display.set_sub_screen_layers(value);
-        crate::types::ww_check(TS_COPY, 1, "display.set_sub_screen_layers", u32::from(value));
+        crate::types::ww_check(
+            TS_COPY,
+            1,
+            "display.set_sub_screen_layers",
+            u32::from(value),
+        );
         self.ram[TS_COPY] = value;
         self.debug_assert_screen_layer_masks_match_ram();
     }
@@ -5433,14 +5440,24 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
 
     pub(crate) fn and_sub_screen_layers(&mut self, value: u8) {
         self.display.and_sub_screen_layers(value);
-        crate::types::ww_check(TS_COPY, 1, "display.and_sub_screen_layers", u32::from(self.display.sub_screen_layers));
+        crate::types::ww_check(
+            TS_COPY,
+            1,
+            "display.and_sub_screen_layers",
+            u32::from(self.display.sub_screen_layers),
+        );
         self.ram[TS_COPY] = self.display.sub_screen_layers;
         self.debug_assert_screen_layer_masks_match_ram();
     }
 
     pub(crate) fn or_sub_screen_layers(&mut self, value: u8) {
         self.display.or_sub_screen_layers(value);
-        crate::types::ww_check(TS_COPY, 1, "display.or_sub_screen_layers", u32::from(self.display.sub_screen_layers));
+        crate::types::ww_check(
+            TS_COPY,
+            1,
+            "display.or_sub_screen_layers",
+            u32::from(self.display.sub_screen_layers),
+        );
         self.ram[TS_COPY] = self.display.sub_screen_layers;
         self.debug_assert_screen_layer_masks_match_ram();
     }
