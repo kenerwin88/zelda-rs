@@ -153,7 +153,7 @@ pub fn uint_max(a: u32, b: u32) -> u32 {
 }
 
 pub fn swap16(v: u16) -> u16 {
-    (v << 8) | (v >> 8)
+    v.rotate_right(8)
 }
 
 pub fn load24(bytes: &[u8]) -> u32 {

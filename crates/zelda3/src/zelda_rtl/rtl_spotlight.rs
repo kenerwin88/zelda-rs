@@ -349,7 +349,7 @@ impl ZeldaState {
                 == 2;
         let timeline = OriginalTimingMainLoopInterruptionTimeline {
             progress: crate::MainLoopProgress::CallStackContinued,
-            interruption: interruption,
+            interruption,
             nmi_phases_before_interruption: if publication_pending_at_entry {
                 if semantic
                     .iter()

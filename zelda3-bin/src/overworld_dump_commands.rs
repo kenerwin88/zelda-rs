@@ -96,7 +96,7 @@ impl UniqueOverworldCellCollector {
         let rows = if self.cells.is_empty() {
             0
         } else {
-            ((self.cells.len() as u16) + columns - 1) / columns
+            (self.cells.len() as u16).div_ceil(columns)
         };
         UniqueOverworldCellAtlasManifest {
             format: "zelda3_unique_overworld_cells_v1",
@@ -215,7 +215,7 @@ impl UniqueOverworldTileCollector {
         let rows = if self.tiles.is_empty() {
             0
         } else {
-            ((self.tiles.len() as u16) + columns - 1) / columns
+            (self.tiles.len() as u16).div_ceil(columns)
         };
         let atlas_tile_width_px = u16::from(8 * atlas_scale);
         let atlas_tile_height_px = u16::from(8 * atlas_scale);
@@ -504,7 +504,7 @@ fn render_unique_overworld_cell_atlas(
     let rows = if collector.cells.is_empty() {
         0usize
     } else {
-        (collector.cells.len() + columns - 1) / columns
+        collector.cells.len().div_ceil(columns)
     };
     let cell_px = 16usize;
     let grid_px = 1usize;
@@ -538,7 +538,7 @@ fn render_unique_overworld_tile_atlas(
     let rows = if collector.tiles.is_empty() {
         0usize
     } else {
-        (collector.tiles.len() + columns - 1) / columns
+        collector.tiles.len().div_ceil(columns)
     };
     let tile_px = 8usize;
     let grid_px = 1usize;

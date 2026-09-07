@@ -1720,7 +1720,7 @@ impl ZeldaState {
         let completed_active_oam = publication_plan
             .oam_scanout_source
             .active_nmi_dma_is_presented()
-            .then(|| display.completed_oam_dma_after_capture.as_deref())
+            .then_some(display.completed_oam_dma_after_capture.as_deref())
             .flatten()
             .filter(|oam| oam.len() == self.ppu.oam.len());
         if let Some(completed) = effective_active_oam.or(completed_active_oam) {
@@ -1728,7 +1728,7 @@ impl ZeldaState {
         } else if let Some(law) = (!publication_plan
             .oam_scanout_source
             .blocks_post_composition_override())
-        .then(|| self.oam_law_visible.as_deref())
+        .then_some(self.oam_law_visible.as_deref())
         .flatten()
         .filter(|law| law.len() == self.ppu.oam.len())
         {

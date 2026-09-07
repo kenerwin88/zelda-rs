@@ -589,9 +589,9 @@ impl ZeldaState {
         let mut r8 = r8;
         for _ in 0..loops {
             let x = (r8 >> 1) as usize;
-            self.set_overworld_tile_upload_word(dst + 0, ((r8 & 0x40) << 4) | ((r8 & 0x303f) >> 1) | ((r8 & 0x0f80) >> 2));
+            self.set_overworld_tile_upload_word(dst, ((r8 & 0x40) << 4) | ((r8 & 0x303f) >> 1) | ((r8 & 0x0f80) >> 2));
             self.set_overworld_tile_upload_word(dst + 1, r6);
-            let attr0 = self.overworld_tile_attribute_word(x + 0);
+            let attr0 = self.overworld_tile_attribute_word(x);
             self.set_overworld_tile_upload_word(dst + 2, attr0);
             if r6 & 1 == 0 {
                 for j in 1..=3 {
@@ -1257,7 +1257,7 @@ impl ZeldaState {
 
         if item == 0x1b || item == 0x1c {
             self.Palette_UpdateGlovesColor();
-        } else if matches!(item, 0x37 | 0x38 | 0x39) {
+        } else if matches!(item, 0x37..=0x39) {
             let bit = match item {
                 0x37 => 4,
                 0x38 => 1,
@@ -1492,7 +1492,6 @@ impl ZeldaState {
                 .inventory_items_mut()
                 .replace_first_empty_bottle_with(j as u8 + 3)
             {
-                return;
             }
         }
     }
@@ -1692,8 +1691,8 @@ impl ZeldaState {
 
     pub(super) fn play_sfx_set_pan(&mut self, a: u8) -> u8 {
         self.set_raw_sfx_pan_value(a);
-        let out = a | self.link_calculate_sfx_pan();
-        out
+        
+        a | self.link_calculate_sfx_pan()
     }
 
     pub(super) fn ancilla_sfx2_near(&mut self, a: u8) -> u8 {

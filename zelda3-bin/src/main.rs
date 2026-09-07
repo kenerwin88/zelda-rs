@@ -775,14 +775,14 @@ fn run_replay_save(args: &[String]) {
                 );
                 process::exit(1);
             }
-            if asset_gpu_progress_interval != 0 && frames % asset_gpu_progress_interval == 0 {
+            if asset_gpu_progress_interval != 0 && frames.is_multiple_of(asset_gpu_progress_interval) {
                 print_asset_gpu_smoke_progress("replay-save", frames, &game, renderer);
             }
         }
         if let Some(audio) = audio_trace_buffer.as_mut() {
             game.zelda_render_audio(audio, 735, 2);
             game.zelda_discard_unused_audio_frames();
-            if audio_trace_log != 0 && frames % audio_trace_log == 0 {
+            if audio_trace_log != 0 && frames.is_multiple_of(audio_trace_log) {
                 let stats = game.zelda_modern_audio_last_stats();
                 let s_samples = replay_checksum_samples(audio);
                 println!(
@@ -794,7 +794,7 @@ fn run_replay_save(args: &[String]) {
         if let Some(coverage) = route_coverage.as_mut() {
             coverage.record(route_coverage_frame_from_game(frames, &game));
         }
-        if asset_gpu_checkpoint_interval != 0 && frames % asset_gpu_checkpoint_interval == 0 {
+        if asset_gpu_checkpoint_interval != 0 && frames.is_multiple_of(asset_gpu_checkpoint_interval) {
             if let Some(dir) = asset_gpu_checkpoint_dir.as_deref() {
                 write_asset_gpu_checkpoint_or_exit(&game, frames, dir);
             }

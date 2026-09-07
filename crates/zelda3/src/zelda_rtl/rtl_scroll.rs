@@ -491,7 +491,7 @@ impl ZeldaState {
                         || self
                             .ppu
                             .forced_blank_from_scanline
-                            .is_some_and(|start| line - 1 >= usize::from(start))
+                            .is_some_and(|start| line > usize::from(start))
                         || (self.ppu.forced_blank
                             && self.ppu.forced_blank_from_scanline.is_none()
                             && self.ppu.forced_blank_scanlines == 0),

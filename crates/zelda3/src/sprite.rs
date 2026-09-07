@@ -4117,7 +4117,7 @@ impl ZeldaState {
                 assert_eq!(self.sprite_slot_view(k).state(), 9);
                 assert!(matches!(
                     self.sprite_slot_view(k).sprite_type(),
-                    0xa5 | 0xa6 | 0xa7
+                    0xa5..=0xa7
                 ));
                 self.sprite_timers_and_oam(k);
                 assert!(
@@ -5899,21 +5899,19 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             self.oam_allocate_from_region_a(num);
         }
 
-        if (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0 {
-            if self.sprite_slot_view(k).delay_main() != 0 {
+        if (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0
+            && self.sprite_slot_view(k).delay_main() != 0 {
                 let value = self.sprite_slot_view(k).delay_main().wrapping_sub(1);
                 self.sprite_slot_view_mut(k).set_delay_main(value);
             }
-        }
     }
 
     fn sprite_timers_and_oam_aux1_timer_decrement(&mut self, k: usize) {
-        if (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0 {
-            if self.sprite_slot_view(k).delay_aux1() != 0 {
+        if (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0
+            && self.sprite_slot_view(k).delay_aux1() != 0 {
                 let value = self.sprite_slot_view(k).delay_aux1().wrapping_sub(1);
                 self.sprite_slot_view_mut(k).set_delay_aux1(value);
             }
-        }
     }
 
     fn sprite_timers_and_oam_after_main_and_aux1_through_primary_timer_decrements(
@@ -7412,8 +7410,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         }
         let damage_type = self.game_state.sprite_battle.damage_type_determiner() as usize;
         let enemy_damage_index = self.sprite_slot_view(k).sprite_type() as usize * 16 + damage_type;
-        let dmg = SPRITE_APPLY_CALCULATED_DAMAGE_ENEMY_CONTACT_DAMAGE_BY_TYPE[damage_type * 8
-            | self
+        let dmg = SPRITE_APPLY_CALCULATED_DAMAGE_ENEMY_CONTACT_DAMAGE_BY_TYPE[(damage_type * 8) | self
                 .game_state
                 .sprites
                 .enemy_damage_subclasses
@@ -7806,7 +7803,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     pub(super) fn force_prize_drop(&mut self, k: usize, prize: u8, slot: u8) {
         let slot = usize::from(slot);
         let cycle_index = self.prize_drop_cycle_mut().take_next_index(slot);
-        let prize = usize::from(prize) * 8 | usize::from(cycle_index);
+        let prize = (usize::from(prize) * 8) | usize::from(cycle_index);
         self.prepare_enemy_drop(k, FORCE_PRIZE_DROP_PRIZE_ITEMS[prize]);
     }
 

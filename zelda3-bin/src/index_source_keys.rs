@@ -45,7 +45,7 @@ impl IndexSourceKeyMap {
         }
         let width = info.width as usize;
         let height = info.height as usize;
-        if width % 8 != 0 || height % 8 != 0 {
+        if !width.is_multiple_of(8) || !height.is_multiple_of(8) {
             return Err(format!(
                 "{}: PNG size {}x{} is not aligned to 8x8 cells",
                 png_path.display(),

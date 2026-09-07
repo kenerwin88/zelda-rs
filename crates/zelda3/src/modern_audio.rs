@@ -1314,7 +1314,7 @@ impl ModernAudioEngine {
             if self.dsp_flags & 0x20 == 0 && !echo_ring.is_empty() {
                 let previous = (self.echo_ring_index + echo_ring.len() - 1) % echo_ring.len();
                 echo_ring[previous] = (i32::from(*echo_input)
-                    + (i32::from(filtered) * i32::from(self.echo_feedback) >> 7))
+                    + ((i32::from(filtered) * i32::from(self.echo_feedback)) >> 7))
                     .clamp(i16::MIN as i32, i16::MAX as i32)
                     as i16
                     & !1;
@@ -1373,12 +1373,11 @@ impl ModernAudioEngine {
     }
 
     fn rebuild_staged_output(&mut self) {
-        let left = (i32::from(self.dsp_output_raw_main_left) * i32::from(self.master_volume_left)
-            >> 7)
-            + (i32::from(self.dsp_output_filtered_left) * i32::from(self.echo_mix_left) >> 7);
+        let left = ((i32::from(self.dsp_output_raw_main_left) * i32::from(self.master_volume_left)) >> 7)
+            + ((i32::from(self.dsp_output_filtered_left) * i32::from(self.echo_mix_left)) >> 7);
         let right =
-            (i32::from(self.dsp_output_raw_main_right) * i32::from(self.master_volume_right) >> 7)
-                + (i32::from(self.dsp_output_filtered_right) * i32::from(self.echo_mix_right) >> 7);
+            ((i32::from(self.dsp_output_raw_main_right) * i32::from(self.master_volume_right)) >> 7)
+                + ((i32::from(self.dsp_output_filtered_right) * i32::from(self.echo_mix_right)) >> 7);
         self.dsp_output_left = left.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
         self.dsp_output_right = right.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
     }
@@ -2101,7 +2100,7 @@ impl ModernAudioEngine {
                         && voice.exact_pitch_word != 0
                     {
                         let factor = (previous_voice_sample >> 4) + 0x400;
-                        let modulated = (i32::from(voice.exact_pitch_word) * factor >> 10)
+                        let modulated = ((i32::from(voice.exact_pitch_word) * factor) >> 10)
                             .clamp(0, 0x3fff) as u16;
                         voice.sample_step = sample_step_for_pitch_word(modulated, 32_000);
                         voice.render_pitch_word = modulated;
@@ -2143,8 +2142,8 @@ impl ModernAudioEngine {
                 }
                 let (mut voice_left, mut voice_right) = if voice.stereo_volume_configured {
                     (
-                        mix_sample * i32::from(voice.volume_left) >> 7,
-                        mix_sample * i32::from(voice.volume_right) >> 7,
+                        (mix_sample * i32::from(voice.volume_left)) >> 7,
+                        (mix_sample * i32::from(voice.volume_right)) >> 7,
                     )
                 } else {
                     let pan = i32::from(voice.pan);
@@ -2160,8 +2159,8 @@ impl ModernAudioEngine {
                     let (mut previous_left, mut previous_right) = if voice.stereo_volume_configured
                     {
                         (
-                            previous_output_sample * i32::from(voice.volume_left) >> 7,
-                            previous_output_sample * i32::from(voice.volume_right) >> 7,
+                            (previous_output_sample * i32::from(voice.volume_left)) >> 7,
+                            (previous_output_sample * i32::from(voice.volume_right)) >> 7,
                         )
                     } else {
                         let pan = i32::from(voice.pan);
@@ -2197,9 +2196,9 @@ impl ModernAudioEngine {
             };
             let raw_main_left = mixed_left;
             let raw_main_right = mixed_right;
-            mixed_left = (mixed_left * i32::from(self.master_volume_left) >> 7)
+            mixed_left = ((mixed_left * i32::from(self.master_volume_left)) >> 7)
                 .clamp(i16::MIN as i32, i16::MAX as i32);
-            mixed_right = (mixed_right * i32::from(self.master_volume_right) >> 7)
+            mixed_right = ((mixed_right * i32::from(self.master_volume_right)) >> 7)
                 .clamp(i16::MIN as i32, i16::MAX as i32);
             let history_index = usize::from(self.fir_history_index);
             self.fir_history_left[history_index] = self.echo_left[self.echo_ring_index] >> 1;
@@ -2208,12 +2207,10 @@ impl ModernAudioEngine {
             let mut filtered_right = 0i32;
             for tap in 0..8 {
                 let index = (history_index + tap + 1) & 7;
-                filtered_left += i32::from(self.fir_history_left[index])
-                    * i32::from(self.fir_coefficients[tap])
-                    >> 6;
-                filtered_right += i32::from(self.fir_history_right[index])
-                    * i32::from(self.fir_coefficients[tap])
-                    >> 6;
+                filtered_left += (i32::from(self.fir_history_left[index])
+                    * i32::from(self.fir_coefficients[tap])) >> 6;
+                filtered_right += (i32::from(self.fir_history_right[index])
+                    * i32::from(self.fir_coefficients[tap])) >> 6;
                 if tap == 6 {
                     filtered_left = i32::from(filtered_left as i16);
                     filtered_right = i32::from(filtered_right as i16);
@@ -2222,14 +2219,14 @@ impl ModernAudioEngine {
             filtered_left = filtered_left.clamp(i16::MIN as i32, i16::MAX as i32) & !1;
             filtered_right = filtered_right.clamp(i16::MIN as i32, i16::MAX as i32) & !1;
             let dry_left = mixed_left;
-            mixed_left += filtered_left * i32::from(self.echo_mix_left) >> 7;
-            mixed_right += filtered_right * i32::from(self.echo_mix_right) >> 7;
+            mixed_left += (filtered_left * i32::from(self.echo_mix_left)) >> 7;
+            mixed_right += (filtered_right * i32::from(self.echo_mix_right)) >> 7;
             let echo_write_left = (echo_input_left
-                + (filtered_left * i32::from(self.echo_feedback) >> 7))
+                + ((filtered_left * i32::from(self.echo_feedback)) >> 7))
                 .clamp(i16::MIN as i32, i16::MAX as i32)
                 & !1;
             let echo_write_right = (echo_input_right
-                + (filtered_right * i32::from(self.echo_feedback) >> 7))
+                + ((filtered_right * i32::from(self.echo_feedback)) >> 7))
                 .clamp(i16::MIN as i32, i16::MAX as i32)
                 & !1;
             self.debug_mix_samples
@@ -2257,10 +2254,10 @@ impl ModernAudioEngine {
             let current_left = mixed_left.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
             let current_right = mixed_right.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
             let mixed_left = (i32::from(self.dsp_output_left)
-                + (semantic_dac_delta_left * i32::from(self.master_volume_left) >> 7))
+                + ((semantic_dac_delta_left * i32::from(self.master_volume_left)) >> 7))
                 .clamp(i16::MIN as i32, i16::MAX as i32) as i16;
             let mixed_right = (i32::from(self.dsp_output_right)
-                + (semantic_dac_delta_right * i32::from(self.master_volume_right) >> 7))
+                + ((semantic_dac_delta_right * i32::from(self.master_volume_right)) >> 7))
                 .clamp(i16::MIN as i32, i16::MAX as i32) as i16;
             self.dsp_output_left = current_left;
             self.dsp_output_right = current_right;
@@ -2752,7 +2749,7 @@ impl ModernVoice {
             } else {
                 self.amplitude
             };
-            let sample = (i32::from(sample) * gain >> 11) & !1;
+            let sample = ((i32::from(sample) * gain) >> 11) & !1;
             if flat_dsp_pipeline {
                 self.dsp_sample_position = self
                     .dsp_sample_position
@@ -2835,7 +2832,7 @@ impl ModernVoice {
         } else {
             self.amplitude
         };
-        let sample = i32::from(noise_sample) * gain >> 11;
+        let sample = (i32::from(noise_sample) * gain) >> 11;
         if self.dsp_key_on_timed {
             self.advance_dsp_envelope_at_optional_counter(envelope_counter);
         }
@@ -3195,7 +3192,7 @@ fn decode_brr_bank_sample(bank_id: u8, source: u8) -> Option<DecodedBrrSample> {
 
 fn decode_brr_asset(brr: &[u8], loop_offset: usize) -> Option<DecodedBrrSample> {
     const MAX_BLOCKS: usize = 4096;
-    if brr.is_empty() || brr.len() % 9 != 0 || loop_offset % 9 != 0 {
+    if brr.is_empty() || !brr.len().is_multiple_of(9) || !loop_offset.is_multiple_of(9) {
         return None;
     }
     let mut pcm = Vec::new();
@@ -3381,7 +3378,7 @@ fn sample_step_for_pitch_word(pitch_word: u16, output_rate: usize) -> u64 {
 }
 
 fn staged_voice_channel_mix(voice: &ModernVoice, volume: i8, music_volume: u8) -> i32 {
-    let mut mixed = i32::from(voice.last_output_sample) * i32::from(volume) >> 7;
+    let mut mixed = (i32::from(voice.last_output_sample) * i32::from(volume)) >> 7;
     if voice.note_origin == Some(crate::game_output::AudioNoteOrigin::Music) {
         mixed = mixed * i32::from(music_volume) / 96;
     }

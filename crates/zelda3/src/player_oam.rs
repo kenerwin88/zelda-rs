@@ -2947,7 +2947,7 @@ impl ZeldaState {
             .y()
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         let hide = (self.game_state.player.follower_link.doorway_state() != 0
-            && (door_x < 4 || door_x >= 252 || door_y < 4 || door_y >= 224))
+            && (!(4..252).contains(&door_x) || !(4..224).contains(&door_y)))
             || {
                 hide_shadow = false;
                 submodule == 0 && self.game_state.player.follower_link.blink_countdown() != 0 && {

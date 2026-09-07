@@ -1307,7 +1307,7 @@ impl ZeldaState {
         } else if item == 1 && self.game_state.inventory.items.bow() != 1 {
             let idx = (self.game_state.inventory.items.bow() as usize - 2) * 16;
             &HUD_BOW_ITEM_TEXT[idx..idx + 16]
-        } else if item >= HUD_ITEM_BOTTLE_FIRST && item <= HUD_ITEM_BOTTLE_LAST {
+        } else if (HUD_ITEM_BOTTLE_FIRST..=HUD_ITEM_BOTTLE_LAST).contains(&item) {
             let idx = (self
                 .game_state
                 .inventory

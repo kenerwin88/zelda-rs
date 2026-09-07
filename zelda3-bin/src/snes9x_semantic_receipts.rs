@@ -4370,7 +4370,7 @@ fn sprite_prep_reset_properties_completed_stores(pc: u32) -> Option<u8> {
         .contains(&pc)
     {
         let offset = pc - SPRITE_PREP_RESET_PROPERTIES_START_PC;
-        return (offset % 3 == 0).then_some((offset / 3) as u8);
+        return offset.is_multiple_of(3).then_some((offset / 3) as u8);
     }
     if (SPRITE_PREP_RESET_PROPERTIES_ACCUMULATOR_CLEAR_PC
         ..SPRITE_PREP_RESET_PROPERTIES_LONG_STORES_START_PC)
@@ -4382,7 +4382,7 @@ fn sprite_prep_reset_properties_completed_stores(pc: u32) -> Option<u8> {
         .contains(&pc)
     {
         let offset = pc - SPRITE_PREP_RESET_PROPERTIES_LONG_STORES_START_PC;
-        return (offset % 4 == 0).then_some(35 + (offset / 4) as u8);
+        return offset.is_multiple_of(4).then_some(35 + (offset / 4) as u8);
     }
     (pc == SPRITE_PREP_RESET_PROPERTIES_RETURN_PC).then_some(40)
 }
@@ -9022,12 +9022,12 @@ fn spotlight_table_build_progress(
             } else if radius != 0 && completed_iterations >= iterations_before_iris {
                 let active_iterations = completed_iterations - iterations_before_iris;
                 let pending_circle_input = radius.saturating_sub(active_iterations);
-                Some(((u32::from(pending_circle_input) << 8) / u32::from(radius) >> 1) as u16)
+                Some((((u32::from(pending_circle_input) << 8) / u32::from(radius)) >> 1) as u16)
             } else {
                 None
             };
-            if retained_x == Some(observed_x) {
-                if matched
+            if retained_x == Some(observed_x)
+                && matched
                     .replace((completed_iterations, upper_cursor, lower_cursor))
                     .is_some()
                 {
@@ -9035,7 +9035,6 @@ fn spotlight_table_build_progress(
                         "Snes9x spotlight loop-test X {observed_x} maps to multiple source iterations without a unique source cursor",
                     ));
                 }
-            }
         }
         let (completed_iterations, upper_cursor, lower_cursor) = matched.ok_or_else(|| {
             format!(
@@ -9223,7 +9222,7 @@ fn rescued_maiden_tilemap_clear_progress(
                         "Snes9x rescued-maiden second INX checkpoint used invalid X=${x:04x}",
                     ));
                 }
-                ((x + 1) / 2) * 8
+                x.div_ceil(2) * 8
             }
             RESCUED_MAIDEN_TILEMAP_CLEAR_COMPARE_PC | RESCUED_MAIDEN_TILEMAP_CLEAR_BRANCH_PC => {
                 if x > 0x0800 || x & 1 != 0 {
@@ -9447,7 +9446,7 @@ fn spotlight_reset_table_completed_stores(pc: u32, x: u16) -> Option<u8> {
     // three-byte offsets from the first one.
     let (iteration_x, stores_in_iteration) = if pc < IRIS_SPOTLIGHT_RESET_TABLE_FIRST_DEX_PC {
         let offset = pc - IRIS_SPOTLIGHT_RESET_TABLE_FIRST_STORE_PC;
-        if offset % 3 != 0 {
+        if !offset.is_multiple_of(3) {
             return None;
         }
         (x, offset / 3)

@@ -2985,7 +2985,7 @@ impl ZeldaState {
             }
             let t3 = if yval < 226 { yval } else { 0 };
             let t4 = ((t3 * 84) >> 8) + 178;
-            let t5 = (((t2 as u8 as u16) * t4) >> 8) as u16;
+            let t5 = ((t2 as u8 as u16) * t4) >> 8;
             let t6 = ((t2 >> 8) * t4).wrapping_add(t5);
             let mut t7 = if below {
                 0x800u16.wrapping_sub(t6)
@@ -2995,7 +2995,7 @@ impl ZeldaState {
             let below2 = t7 < 0x800;
             t7 = t7.wrapping_sub(0x800);
             let t8 = if below2 { (!t7).wrapping_add(1) } else { t7 };
-            let t9 = (((t8 as u8 as u16) * 45) >> 8) as u16;
+            let t9 = ((t8 as u8 as u16) * 45) >> 8;
             let t10 = ((t8 >> 8) * 45).wrapping_add(t9);
             let t11 = if below2 {
                 0x80u16.wrapping_sub(t10)
@@ -3262,15 +3262,14 @@ impl ZeldaState {
     }
 
     pub(super) fn Module0E_03_01_03_DrawRooms(&mut self) {
-        if self.rom_startup_timing() {
-            if !self.take_original_timing_main_loop_iteration_returned_to_wait() {
+        if self.rom_startup_timing()
+            && !self.take_original_timing_main_loop_iteration_returned_to_wait() {
                 self.game_execution_scheduler.schedule_work(
                     GameWorkContinuation::FinishDungeonMapRoomDrawing,
                     DUNGEON_MAP_ROOM_DRAWING_NMI_SLICES,
                 );
                 return;
             }
-        }
         self.complete_dungeon_map_room_drawing();
     }
 

@@ -1111,7 +1111,7 @@ impl ZeldaState {
                         self.ancilla_transmute_to_splash(k);
                         return;
                     }
-                } else if matches!(a, 0x68 | 0x69 | 0x6a | 0x6b) {
+                } else if matches!(a, 0x68..=0x6b) {
                     self.ancilla_apply_conveyor(k);
                     old_y = self.ancilla_get_y(k);
                 } else {
@@ -1515,8 +1515,8 @@ impl ZeldaState {
             self.oam_state_mut().set_priority_word(0x3000);
         }
 
-        if self.game_state.frame.submodule == 0 && self.ancilla_slot_view(k).aux_timer() != 0 {
-            if sign8(self.ancilla_slot_view_mut(k).tick_work_byte_3()) {
+        if self.game_state.frame.submodule == 0 && self.ancilla_slot_view(k).aux_timer() != 0
+            && sign8(self.ancilla_slot_view_mut(k).tick_work_byte_3()) {
                 let frame_reset = BOOMERANG_DRAW_BOOMERANG_FRAME_RESET_BY_TYPE
                     [self.ancilla_slot_view(k).g() as usize];
                 self.ancilla_slot_view_mut(k).set_work_byte_3(frame_reset);
@@ -1527,7 +1527,6 @@ impl ZeldaState {
                 };
                 self.ancilla_slot_view_mut(k).add_work_byte_1_mod4(delta);
             }
-        }
 
         let j = self.ancilla_slot_view(k).work_byte_1() as usize;
         let offset = BOOMERANG_DRAW_BOOMERANG_DRAW_OFFSET[j];
@@ -4716,8 +4715,8 @@ impl ZeldaState {
     }
 
     fn ancilla3_a_big_bomb_explosion(&mut self, k: usize) {
-        if self.game_state.frame.submodule == 0 {
-            if self.ancilla_slot_view_mut(k).tick_work_byte_3() == 0 {
+        if self.game_state.frame.submodule == 0
+            && self.ancilla_slot_view_mut(k).tick_work_byte_3() == 0 {
                 let bomb_phase = self.ancilla_slot_view_mut(k).advance_item_to_link();
                 if bomb_phase == 2 {
                     self.ancilla_sfx2_pan(k, 0x0c);
@@ -4729,7 +4728,6 @@ impl ZeldaState {
                 self.ancilla_slot_view_mut(k)
                     .set_work_byte_3(BOMB_PHASE_TIMERS[bomb_phase as usize]);
             }
-        }
 
         self.oam_state_mut().set_priority_word(0x3000);
         let bomb_phase = self.ancilla_slot_view(k).item_to_link() as usize;
@@ -4748,7 +4746,7 @@ impl ZeldaState {
                 .wrapping_add(ANCILLA3_A_BIG_BOMB_EXPLOSION_SUPER_BOMB_EXPLODE_Y[i] as i16 as u16)
                 .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
             if x < 256 && y < 256 {
-                self.ancilla_allocate_oam_from_region_a_or_d_or_f((j * 2) as usize, 0x18);
+                self.ancilla_allocate_oam_from_region_a_or_d_or_f(j * 2, 0x18);
                 let base_oam = self.game_state.oam.current_pointer_usize();
                 let oam = base_oam + yy;
                 let next_oam = self.ancilla_draw_explosion(oam, j, 0, numframes, 0x32, x, y);
@@ -5425,7 +5423,7 @@ impl ZeldaState {
                         self.ancilla_transmute_to_splash(k);
                         return;
                     }
-                } else if matches!(a, 0x68 | 0x69 | 0x6a | 0x6b) {
+                } else if matches!(a, 0x68..=0x6b) {
                     self.ancilla_apply_conveyor(k);
                     old_y = self.ancilla_get_y(k);
                 } else {
@@ -5448,8 +5446,7 @@ impl ZeldaState {
             .player
             .follower_link
             .is_lifting_or_carrying()
-        {
-            if self.ancilla_slot_view_mut(k).tick_s_player() == 0 {
+            && self.ancilla_slot_view_mut(k).tick_s_player() == 0 {
                 self.ancilla_slot_view_mut(k).set_s_player(1);
                 self.ancilla_slot_view_mut(k).set_object_priority(0);
                 if self.ancilla_check_basic_sprite_collision(k).is_some() {
@@ -5460,7 +5457,6 @@ impl ZeldaState {
                     }
                 }
             }
-        }
         self.ancilla_set_y(k, old_y);
         self.ancilla_slot_view_mut(k).set_direction(s1a);
         self.ancilla_slot_view_mut(k).set_object_priority(s1b);
@@ -8943,7 +8939,7 @@ impl ZeldaState {
             let x = ANCILLA_ADD_GRAVE_STONE_MOVE_GRAVESTONE_X[j];
             let link_x = self.game_state.player.follower_link.x();
             if x < link_x && x.wrapping_add(15) >= link_x {
-                if (j == 13) == !self.game_state.player.follower_link.is_running() {
+                if (j == 13) != self.game_state.player.follower_link.is_running() {
                     break;
                 }
 
@@ -10190,8 +10186,7 @@ impl ZeldaState {
         }
         let damage_type = self.game_state.sprite_battle.damage_type_determiner() as usize;
         let enemy_damage_index = self.sprite_slot_view(k).sprite_type() as usize * 16 + damage_type;
-        let dmg = SPRITE_APPLY_CALCULATED_DAMAGE_FOR_ANCILLA_ENEMY_DAMAGES[damage_type * 8
-            | self
+        let dmg = SPRITE_APPLY_CALCULATED_DAMAGE_FOR_ANCILLA_ENEMY_DAMAGES[(damage_type * 8) | self
                 .game_state
                 .sprites
                 .enemy_damage_subclasses
@@ -10311,8 +10306,7 @@ impl ZeldaState {
     }
 
     fn ancilla_check_sprite_collision(&mut self, k: usize) -> Option<usize> {
-        for j in (0..16).rev() {
-            if (self.ancilla_slot_view(k).ancilla_type() == 9
+        (0..16).rev().find(|&j| (self.ancilla_slot_view(k).ancilla_type() == 9
                 || self.ancilla_slot_view(k).ancilla_type() == 0x1f
                 || (((j as u8 ^ self.game_state.frame.frame_counter) & 3)
                     | self.sprite_slot_view(j).pause())
@@ -10321,12 +10315,7 @@ impl ZeldaState {
                 && (self.sprite_slot_view(j).deflection_bits() & 2 != 0
                     || self.ancilla_slot_view(k).object_priority() == 0)
                 && self.ancilla_slot_view(k).floor() == self.sprite_slot_view(j).floor()
-                && self.ancilla_check_sprite_collision_single(k, j)
-            {
-                return Some(j);
-            }
-        }
-        None
+                && self.ancilla_check_sprite_collision_single(k, j))
     }
 
     fn ancilla_check_sprite_collision_single(&mut self, k: usize, j: usize) -> bool {

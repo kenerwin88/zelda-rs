@@ -2477,7 +2477,7 @@ impl ModernAudioSequencer {
             if program.bank == 2
                 && program.id == 0x1b
                 && program.variant_hash == 0xa44764fc
-                && matches!(step_index, 0 | 1 | 2)
+                && matches!(step_index, 0..=2)
             {
                 if let Some(exact) = pending.exact.as_mut() {
                     // The bytecode pattern owns these KOFs; the catalog step
@@ -8296,9 +8296,7 @@ fn semantic_bank2_allocator_voice(
     route: AudioRouteState,
     commands: EngineAudioCommandBatch,
 ) -> Option<u8> {
-    if commands.sfx(AudioSfxBank::Effect2).is_none() {
-        return None;
-    }
+    commands.sfx(AudioSfxBank::Effect2)?;
     let spc = route.spc?;
     (0..usize::from(spc.sfx_kof_count.min(8)))
         .filter_map(|index| {
@@ -8314,9 +8312,7 @@ fn semantic_bank1_allocator_voice(
     route: AudioRouteState,
     commands: EngineAudioCommandBatch,
 ) -> Option<u8> {
-    if commands.sfx(AudioSfxBank::Effect1).is_none() {
-        return None;
-    }
+    commands.sfx(AudioSfxBank::Effect1)?;
     let spc = route.spc?;
     (0..usize::from(spc.sfx_kof_count.min(8)))
         .filter_map(|index| {

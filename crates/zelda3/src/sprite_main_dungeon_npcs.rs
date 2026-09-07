@@ -1768,8 +1768,8 @@ impl ZeldaState {
             let tx = self.sprite_get_x(j_in);
             let ty = self.sprite_get_y(j_in);
             let pt = self.sprite_project_speed_towards_location(k, tx, ty, 19);
-            self.sprite_slot_view_mut(k).set_x_velocity(pt.x as u8);
-            self.sprite_slot_view_mut(k).set_y_velocity(pt.y as u8);
+            self.sprite_slot_view_mut(k).set_x_velocity(pt.x);
+            self.sprite_slot_view_mut(k).set_y_velocity(pt.y);
         }
         for j in (0..=15usize).rev() {
             // Note: C uses `!((j ^ fc) & 3 | sprite_delay_aux4[j])` — `|` has
@@ -1826,11 +1826,11 @@ impl ZeldaState {
         if self.sprite_check_damage_to_link_same_layer_for_dn(k) {
             let pt = self.sprite_project_speed_towards_link(k, 32);
             self.follower_link_state_mut()
-                .set_actual_velocity_xy(pt.x as u8, pt.y as u8);
+                .set_actual_velocity_xy(pt.x, pt.y);
             self.sprite_slot_view_mut(k)
-                .set_y_recoil((pt.y as u8) ^ 0xff);
+                .set_y_recoil(pt.y ^ 0xff);
             self.sprite_slot_view_mut(k)
-                .set_x_recoil((pt.x as u8) ^ 0xff);
+                .set_x_recoil(pt.x ^ 0xff);
             self.follower_link_state_mut().set_incapacitated_timer(4);
             self.sprite_slot_view_mut(k).set_f(12);
             self.sprite_sfx_queue_sfx2_with_pan(k, 0xb);
@@ -2063,9 +2063,9 @@ impl ZeldaState {
         }
         let pt = self.sprite_project_speed_towards_location(k, 0xcf5, 0x6fe, 16);
         self.sprite_slot_view_mut(k)
-            .set_x_velocity((pt.x as u8).wrapping_shl(1));
+            .set_x_velocity(pt.x.wrapping_shl(1));
         self.sprite_slot_view_mut(k)
-            .set_y_velocity((pt.y as u8).wrapping_shl(1));
+            .set_y_velocity(pt.y.wrapping_shl(1));
         self.follower_state_mut().and_event_flags(!3);
         let mut px = pt.x as i8;
         let mut py = pt.y as i8;
@@ -2140,10 +2140,10 @@ impl ZeldaState {
             2 => {
                 self.sprite_slot_view_mut(k).increment_ai_state();
                 let pt = self.sprite_project_speed_towards_location(k, 0xc45, 0x6fe, 9);
-                self.sprite_slot_view_mut(k).set_y_velocity(pt.y as u8);
-                self.sprite_slot_view_mut(k).set_x_velocity(pt.x as u8);
+                self.sprite_slot_view_mut(k).set_y_velocity(pt.y);
+                self.sprite_slot_view_mut(k).set_x_velocity(pt.x);
                 self.sprite_slot_view_mut(k)
-                    .set_direction(((pt.x as u8) >> 7) ^ 3);
+                    .set_direction((pt.x >> 7) ^ 3);
                 self.sprite_slot_view_mut(k).set_delay_main(32);
             }
             3 => {
@@ -2216,8 +2216,8 @@ impl ZeldaState {
                     KIKI_LEAVE_Y[j],
                     9,
                 );
-                self.sprite_slot_view_mut(k).set_x_velocity(pt.x as u8);
-                self.sprite_slot_view_mut(k).set_y_velocity(pt.y as u8);
+                self.sprite_slot_view_mut(k).set_x_velocity(pt.x);
+                self.sprite_slot_view_mut(k).set_y_velocity(pt.y);
             }
             s @ (3 | 5) => {
                 if self.sprite_slot_view(k).delay_aux1() == 0 {
@@ -2410,9 +2410,9 @@ impl ZeldaState {
         if (k ^ fc) & 0x1f == 0 {
             let pt = self.sprite_project_speed_towards_link(k, 16);
             self.sprite_slot_view_mut(k)
-                .set_x_velocity((pt.x as u8).wrapping_neg());
+                .set_x_velocity(pt.x.wrapping_neg());
             self.sprite_slot_view_mut(k)
-                .set_y_velocity((pt.y as u8).wrapping_neg());
+                .set_y_velocity(pt.y.wrapping_neg());
         }
         if self.sprite_main_cpu_boundary
             == Some(SpriteMainCpuBoundary::AfterCuccoFleeMovement {
@@ -2485,9 +2485,9 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_ai_state(2);
             let pt = self.sprite_project_speed_towards_link(k, 16);
             self.sprite_slot_view_mut(k)
-                .set_x_velocity((pt.x as u8).wrapping_neg());
+                .set_x_velocity(pt.x.wrapping_neg());
             self.sprite_slot_view_mut(k)
-                .set_y_velocity((pt.y as u8).wrapping_neg());
+                .set_y_velocity(pt.y.wrapping_neg());
             if self.chicken_incr_subtype2_for_draw(
                 k,
                 5,
@@ -2808,7 +2808,7 @@ impl ZeldaState {
                 }
                 self.complete_smithy_tempered_sword_receipt();
             }
-            7 | 8 | 9 => {}
+            7..=9 => {}
             10 => {
                 if let Some(j) = self.sprite_spawn_dynamically_for_dn(k, 0x1a) {
                     let lx = self.game_state.player.follower_link.x();

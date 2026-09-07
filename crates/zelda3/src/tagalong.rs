@@ -811,12 +811,11 @@ impl ZeldaState {
             return;
         }
         if self.game_state.sprites.follower_runtime.indicator() == 12 {
-            if !self.game_state.player.follower_link.has_auxiliary_state() {
-                if self.follower_can_drop() {
+            if !self.game_state.player.follower_link.has_auxiliary_state()
+                && self.follower_can_drop() {
                     self.follower_drop();
                     return;
                 }
-            }
         } else if self.game_state.sprites.follower_runtime.indicator() == 13 {
             if self.game_state.player.follower_link.auxiliary_state() == 2
                 || self.game_state.player.follower_link.near_pit_state_is(2)

@@ -1484,12 +1484,12 @@ impl ZeldaState {
         // bookkeeping; does not affect the VRAM bytes written below.
         let link_pack = captured_operands.map_or_else(
             || {
-                (self
+                self
                     .game_state
                     .player
                     .follower_link
                     .link_dma_graphics_index_word()
-                    >> 1) as u16
+                    >> 1
             },
             |operands| operands.link_pack,
         );

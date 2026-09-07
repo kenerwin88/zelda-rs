@@ -137,7 +137,7 @@ pub(crate) struct QueuedGpuVideoDigest {
 /// not the bottleneck (the immediate readback wait is ~12 ms/frame either
 /// way), so this stays an operator convenience for headless runs.
 fn compare_presents_window() -> bool {
-    !std::env::var_os("ZELDA3_COMPARE_OFFSCREEN").is_some_and(|value| value != "0")
+    std::env::var_os("ZELDA3_COMPARE_OFFSCREEN").is_none_or(|value| value == "0")
 }
 
 impl LiveGpuFrameCapture {
@@ -1755,7 +1755,7 @@ fn render_modern_asset_capture_rgba(
     if let Some(start) = start {
         let ns = RENDER_NS.fetch_add(start.elapsed().as_nanos() as u64, Ordering::Relaxed);
         let calls = CALLS.fetch_add(1, Ordering::Relaxed) + 1;
-        if calls % 2000 == 0 {
+        if calls.is_multiple_of(2000) {
             eprintln!(
                 "gpu_render_timing calls={calls} production_render_ms={}",
                 (ns + start.elapsed().as_nanos() as u64) / 1_000_000

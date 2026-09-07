@@ -10,7 +10,7 @@ pub(super) const SELECT_FILE_CHECKERBOARD_TILE_COUNT: usize = 1024;
 
 fn read_name_player_tab1_byte_word(tab: &[i16; 26], offs: usize) -> u16 {
     let lo = tab[offs / 2].to_le_bytes()[offs & 1] as u16;
-    let hi = tab[(offs + 1) / 2].to_le_bytes()[(offs + 1) & 1] as u16;
+    let hi = tab[offs.div_ceil(2)].to_le_bytes()[(offs + 1) & 1] as u16;
     lo | (hi << 8)
 }
 

@@ -36,7 +36,7 @@ pub fn NextDelim<'a>(s: &mut Option<&'a str>, sep: char) -> Option<&'a str> {
 }
 
 fn ToLower(a: u8) -> u8 {
-    a + ((a >= b'A' && a <= b'Z') as u8) * 32
+    a + (a.is_ascii_uppercase() as u8) * 32
 }
 
 pub fn StringEqualsNoCase(a: &str, b: &str) -> bool {

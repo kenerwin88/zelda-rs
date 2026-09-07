@@ -1449,7 +1449,7 @@ impl GameExecutionScheduler {
         self.scheduled_work()
             .map(|work| work.continuation)
             .or(self.after_pre_main_nmi)
-            .or_else(|| match self.continuation {
+            .or(match self.continuation {
                 Some(
                     GameExecutionContinuation::AfterCurrentTrailingNmi(continuation)
                     | GameExecutionContinuation::PostTrailingNmi(continuation),

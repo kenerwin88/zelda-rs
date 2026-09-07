@@ -2071,9 +2071,7 @@ impl DungeonRoomDoorSetupState {
     }
 
     pub(crate) fn has_exit_door_address(&self, address: u16) -> bool {
-        self.exit_door_addresses
-            .iter()
-            .any(|&existing| existing == address)
+        self.exit_door_addresses.contains(&address)
     }
 
     pub(crate) fn invisible_door_marker(&self) -> u16 {
@@ -3658,7 +3656,7 @@ impl DungeonScratchWordState {
     }
 
     pub(crate) fn clear_module_transition_counter(&mut self) {
-        self.r16 = (self.r16 & 0xff00) | 0;
+        self.r16 &= 0xff00;
     }
 
     pub(crate) fn set_minigame_previous_chest_choice(&mut self, value: u8) {

@@ -4194,7 +4194,7 @@ impl ZeldaState {
                         let slot = idx as usize;
                         self.tile_detect_position_mut()
                             .set_collision_bits(idx as u16);
-                        if !self.initialize_push_block(idx, (i * 2) as u8) {
+                        if !self.initialize_push_block(idx, i * 2) {
                             self.sprite_dungeon_draw_single_push_block(slot * 2);
                             self.tile_detect_position_mut().set_collision_bits(4);
                             let facing = self
@@ -4972,8 +4972,8 @@ impl ZeldaState {
                 }
             }
             1 => {
-                if self.game_state.frame.submodule == 0 {
-                    if (self.follower_link_state_mut().decrement_dash_countdown() as i8)
+                if self.game_state.frame.submodule == 0
+                    && (self.follower_link_state_mut().decrement_dash_countdown() as i8)
                         .is_negative()
                     {
                         self.follower_link_state_mut().set_dash_countdown(0);
@@ -4989,7 +4989,6 @@ impl ZeldaState {
                             self.follower_link_state_mut().set_dash_countdown(4);
                         }
                     }
-                }
             }
             2 => {
                 if (self.follower_link_state_mut().decrement_dash_countdown() as i8).is_negative() {
@@ -6926,8 +6925,7 @@ impl ZeldaState {
             .follower_link
             .spin_attack_delay_timer()
             != 0
-        {
-            if (self
+            && (self
                 .follower_link_state_mut()
                 .decrement_spin_attack_delay_timer() as i8)
                 < 0
@@ -6935,7 +6933,6 @@ impl ZeldaState {
                 self.follower_link_state_mut()
                     .set_spin_attack_delay_timer(0);
             }
-        }
 
         if !self
             .game_state
@@ -7141,16 +7138,15 @@ impl ZeldaState {
 
             self.follower_link_state_mut()
                 .set_item_action_debug_value_2(1);
-            if self.ancilla_add_somaria_block(0x2c, 1).is_none() {
-                if did_charge_magic
+            if self.ancilla_add_somaria_block(0x2c, 1).is_none()
+                && (did_charge_magic
                     || !self
                         .game_state
                         .enhanced_features
-                        .has(LINK_ITEM_CANE_OF_SOMARIA_FEATURES0_MISC_BUG_FIXES)
+                        .has(LINK_ITEM_CANE_OF_SOMARIA_FEATURES0_MISC_BUG_FIXES))
                 {
                     self.refund_magic(4);
                 }
-            }
             self.follower_link_state_mut()
                 .set_spin_attack_delay_timer(LINK_ITEM_CANE_OF_SOMARIA_ROD_ANIM_DELAYS[0]);
             self.follower_link_state_mut().clear_animation_step();
@@ -9226,8 +9222,7 @@ impl ZeldaState {
                         .follower_link
                         .spin_attack_step_counter()
                         < 64
-                    {
-                        if self
+                        && self
                             .follower_link_state_mut()
                             .increment_spin_attack_step_counter()
                             == 48
@@ -9235,7 +9230,6 @@ impl ZeldaState {
                             self.ancilla_sfx2_near(55);
                             self.ancilla_add_charged_spin_attack_sparkle();
                         }
-                    }
                 } else {
                     self.calculate_sword_hit_box();
                 }
@@ -9839,14 +9833,12 @@ impl ZeldaState {
                 .object_tracking
                 .replacement_tile_state(idx_word)
                 == 0
-        {
-            if !self.push_block_attempt_to_push_the_block(0, x, y) {
+            && !self.push_block_attempt_to_push_the_block(0, x, y) {
                 self.ancilla_sfx2_near(0x22);
                 self.dungeon_object_tracking_mut()
                     .set_replacement_tile_state(idx_word, 1);
                 return false;
             }
-        }
 
         self.dungeon_object_tracking_mut()
             .clear_changeable_object_index(slot);
@@ -9961,8 +9953,8 @@ impl ZeldaState {
     /// decompression the ROM blocks on (see the ground_apress_tail receipt).
     pub(super) fn player_handler_00_ground_3_after_a_press(&mut self, ran_a_press: bool) {
         let mut clear_vel_after = false;
-        if ran_a_press {
-            if !self.game_state.player.follower_link.has_action_state()
+        if ran_a_press
+            && !self.game_state.player.follower_link.has_action_state()
                 && !self
                     .game_state
                     .player
@@ -9980,7 +9972,7 @@ impl ZeldaState {
                         && self.game_state.frame.submodule != 2)
                         || matches!(
                             self.game_state.player.follower_link.handler_state(),
-                            8 | 9 | 10
+                            8..=10
                         ))
                 {
                     self.finish_ground_movement_clear_vel_tail();
@@ -9994,7 +9986,6 @@ impl ZeldaState {
                     }
                 }
             }
-        }
 
         let _ = &mut clear_vel_after;
         self.link_handle_cape_passive_lift_check();

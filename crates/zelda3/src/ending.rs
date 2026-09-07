@@ -3279,13 +3279,12 @@ impl ZeldaState {
 
     pub(super) fn intro_animate_triforce(&mut self) {
         self.activate_nmi_thread();
-        if self.rom_startup_timing() && self.intro_memory_darken_frame_delay == 0 {
-            if self.intro_poly_upload_delay != 0 {
+        if self.rom_startup_timing() && self.intro_memory_darken_frame_delay == 0
+            && self.intro_poly_upload_delay != 0 {
                 self.intro_poly_upload_delay = self.intro_poly_upload_delay.saturating_sub(1);
                 self.attract_scene_mut().mark_intro_did_run_step();
                 return;
             }
-        }
         if self.game_state.ending.attract_scene.intro_did_run_step() == 0 {
             self.intro_run_step();
             self.attract_scene_mut().mark_intro_did_run_step();
@@ -3375,7 +3374,7 @@ impl ZeldaState {
                 1 => self.exit_0_cca90(k),
                 2 => self.initialize_scene_sprite_copyright(k),
                 3 => self.initialize_scene_sprite_sparkle(k),
-                4 | 5 | 6 => self.initialize_scene_sprite_triforce_room_triangle(k),
+                4..=6 => self.initialize_scene_sprite_triforce_room_triangle(k),
                 7 => self.initialize_scene_sprite_credits_triangle(k),
                 _ => {}
             },
@@ -3384,7 +3383,7 @@ impl ZeldaState {
                 1 => self.exit_0_cca90(k),
                 2 => self.animate_scene_sprite_copyright(k),
                 3 => self.animate_scene_sprite_sparkle(k),
-                4 | 5 | 6 => self.intro_sprite_type_b_456(k),
+                4..=6 => self.intro_sprite_type_b_456(k),
                 7 => self.animate_scene_sprite_credits_triangle(k),
                 _ => {}
             },

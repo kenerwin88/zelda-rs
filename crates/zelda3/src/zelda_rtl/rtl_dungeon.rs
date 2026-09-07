@@ -582,13 +582,13 @@ impl ZeldaState {
             schedule.caller_nmis = 1;
             schedule.sprite_main_boundary = wire_sprite_main_boundary;
         }
-        let completed = self.continue_dungeon_room_load_after_sprite_reset(
+        
+        self.continue_dungeon_room_load_after_sprite_reset(
             schedule,
             input,
             oam_dma_source,
             true,
-        );
-        completed
+        )
     }
 
     pub(super) fn apply_pre_dungeon_garnish_disable_prefix(&mut self, slot: u8) {

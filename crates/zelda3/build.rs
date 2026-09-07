@@ -210,7 +210,7 @@ fn compile_sample_bank(manifest_dir: &Path, out_dir: &Path) {
             path.display()
         );
         assert!(
-            !brr.is_empty() && brr.len() % 9 == 0,
+            !brr.is_empty() && brr.len().is_multiple_of(9),
             "{}: invalid BRR stream",
             path.display()
         );

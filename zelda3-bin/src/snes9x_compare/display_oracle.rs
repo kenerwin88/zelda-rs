@@ -925,7 +925,7 @@ pub(crate) fn decode_presented_animated_bg_destination(
     value: Option<i32>,
 ) -> Result<Option<zelda3::PresentedAnimatedBgDestination>, String> {
     match value {
-        None | Some(-1) => return Ok(None),
+        None | Some(-1) => Ok(None),
         Some(0x3b00) => Ok(Some(zelda3::PresentedAnimatedBgDestination::Dungeon)),
         Some(0x3c00) => Ok(Some(zelda3::PresentedAnimatedBgDestination::Overworld)),
         // Zelda leaves this operand at Snes9x's 0x55 reset fill until graphics

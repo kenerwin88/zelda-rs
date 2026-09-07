@@ -856,7 +856,7 @@ fn snes_master_clock_to_apu_cycle(master_clock: u64) -> u64 {
 fn apu_cycle_to_snes_master_clock(apu_cycle: u64) -> u64 {
     let scaled = u128::from(apu_cycle) * u128::from(SNES9X_APU_RATIO_DENOMINATOR);
     let numerator = u128::from(SNES9X_APU_RATIO_NUMERATOR);
-    ((scaled + numerator - 1) / numerator) as u64
+    scaled.div_ceil(numerator) as u64
 }
 
 fn snes_frame_start_master_clock(frame: u64) -> u64 {

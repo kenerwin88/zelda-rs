@@ -902,7 +902,7 @@ impl ZeldaState {
                 | DialogueScrollPhase::CompletionStagedAfterSnapshot
         );
         dialogue_publication_candidate
-            .then(|| writes.active_snapshot_epoch)
+            .then_some(writes.active_snapshot_epoch)
             .flatten()
             .and_then(|snapshot_epoch| {
                 let metadata = writes.completed_dialogue_metadata.clone()?;

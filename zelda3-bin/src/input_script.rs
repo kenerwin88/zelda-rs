@@ -40,7 +40,7 @@ impl InputScript {
             .iter()
             .filter(|rule| rule.start <= frame && frame <= rule.end)
             .map(|rule| rule.input)
-            .last()
+            .next_back()
     }
 
     #[cfg(test)]

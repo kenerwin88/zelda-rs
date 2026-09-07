@@ -1987,7 +1987,7 @@ const fn rom_item_receipt_graphics_nmi_slices(gfx: u8) -> u8 {
         // item ID. $5b, $5c, and the separately packed $5d (the
         // heart-container receipt, route host 102905) all cross four NMI
         // boundaries.
-        0x5b | 0x5c | 0x5d => ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES,
+        0x5b..=0x5d => ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES,
         _ => 0,
     }
 }
@@ -6901,9 +6901,7 @@ fn dungeon_module_7_cpu_advance_across_envelope(
                     return module_cpu_phase_from_main_loop_interruption(interruption);
                 }
                 let sprite_main_returned = receipts
-                    .semantic()
-                    .iter()
-                    .any(|receipt| *receipt == OriginalTimingSemanticReceipt::SpriteMainReturned);
+                    .semantic().contains(&OriginalTimingSemanticReceipt::SpriteMainReturned);
                 let trailing_held = receipts.semantic().iter().any(|receipt| {
                     matches!(
                         receipt,
@@ -14007,7 +14005,7 @@ fn decompress_asset(src: &[u8]) -> Vec<u8> {
                 return dst;
             };
             cursor += 1;
-            dst.extend(std::iter::repeat(value).take(len));
+            dst.extend(std::iter::repeat_n(value, len));
         } else if cmd & 0x20 == 0 {
             let Some(lo) = src.get(cursor).copied() else {
                 return dst;

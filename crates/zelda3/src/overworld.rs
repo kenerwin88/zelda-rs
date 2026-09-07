@@ -231,7 +231,7 @@ impl ZeldaState {
         self.memorized_tile_mut().clear_count();
 
         let room = self.game_state.world.location.dungeon_room();
-        if room != 0x0104 && room < 0x0180 && room >= 0x0100 {
+        if room != 0x0104 && (0x0100..0x0180).contains(&room) {
             self.LoadCachedEntranceProperties();
         } else {
             let exit_screen = self
@@ -973,7 +973,6 @@ impl ZeldaState {
             .game_execution_scheduler
             .work_suspends_translated_call_stack()
         {
-            return;
         }
     }
 
@@ -6928,11 +6927,10 @@ impl ZeldaState {
             self.increment_submodule();
             return;
         }
-        if self.game_state.frame.submodule == 36 {
-            if self.publish_overworld_special_exit_mosaic_restore_prefix() {
+        if self.game_state.frame.submodule == 36
+            && self.publish_overworld_special_exit_mosaic_restore_prefix() {
                 self.DecodeAnimatedSpriteTile_variable(0x1e);
             }
-        }
         self.increment_submodule();
     }
 
@@ -7009,7 +7007,7 @@ impl ZeldaState {
 
     pub(super) fn Overworld_Func2F(&mut self) {
         self.dungeon_room_tilemaps_mut()
-            .set_bg2_tile_by_byte_pos(0x0720 as u16, 0x0212);
+            .set_bg2_tile_by_byte_pos(0x0720_u16, 0x0212);
         self.Overworld_Memorize_Map16_Change(0x0720, 0x0212);
         self.overworld_draw_map16(0x0720, 0x0212);
         self.set_bg_vram_load_mode(1);

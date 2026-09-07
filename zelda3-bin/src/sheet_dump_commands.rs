@@ -193,7 +193,7 @@ pub(crate) fn run_dump_sprite_sheet_png(args: &[String]) {
     let rows = if cell_count == 0 {
         0
     } else {
-        (cell_count + columns - 1) / columns
+        cell_count.div_ceil(columns)
     };
     let tile_px = 8usize;
     let width = columns * tile_px;
@@ -432,7 +432,7 @@ pub(crate) fn run_dump_dungeon_sheet_png(args: &[String]) {
     let rows = if cell_count == 0 {
         0
     } else {
-        (cell_count + columns - 1) / columns
+        cell_count.div_ceil(columns)
     };
     let tile_px = 8usize;
     let width = columns * tile_px;

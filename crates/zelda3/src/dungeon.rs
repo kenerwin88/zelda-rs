@@ -1316,7 +1316,7 @@ impl ZeldaState {
         let direction = self.game_state.player.follower_link.direction() & 0x0f;
         let (load_h, load_v) = if submodule == 0 {
             (bg_h & !0x01ff, bg_v & !0x01ff)
-        } else if submodule == 21 || (submodule < 18 && submodule >= 6) {
+        } else if submodule == 21 || (6..18).contains(&submodule) {
             (
                 bg_h.wrapping_add(0x20) & !0x01ff,
                 bg_v.wrapping_add(0x20) & !0x01ff,
@@ -2618,7 +2618,7 @@ impl ZeldaState {
                 self.DrawBigGraySegment(0x1212, src, &mut dst, dsto);
             }
             0x31 => {
-                let loc = dsto * 2 | 0x8000 | self.room_plane_tilemap_bit();
+                let loc = (dsto * 2) | 0x8000 | self.room_plane_tilemap_bit();
                 let chest = self
                     .dungeon_room_items_mut()
                     .append_chest_location_and_sync_big_key_count(loc);
@@ -4199,7 +4199,7 @@ impl ZeldaState {
         let load_ptr = self.game_state.dungeon.room_load.load_ptr_offset();
         self.dungeon_object_tracking_mut()
             .set_object_data_pos(index, load_ptr);
-        let tilemap_pos = dsto * 2 | self.room_plane_tilemap_bit();
+        let tilemap_pos = (dsto * 2) | self.room_plane_tilemap_bit();
         let below = [
             self.tile_word(src_below, 0),
             self.tile_word(src_below, 1),
@@ -4276,7 +4276,7 @@ impl ZeldaState {
             0x2000
         };
         self.dungeon_object_tracking_mut()
-            .set_object_tilemap_pos(index, dsto * 2 | plane);
+            .set_object_tilemap_pos(index, (dsto * 2) | plane);
         self.dungeon_room_items_mut()
             .set_replacement_tilemap_quad(index, [0x19d8, 0x19d9, 0x59d8, 0x59d9]);
         self.RoomDraw_Rightwards2x2(src, dsto);
@@ -4637,7 +4637,7 @@ impl ZeldaState {
             .set_object_data_pos(index, load_ptr);
         let plane_bit = self.room_plane_tilemap_bit();
         self.dungeon_object_tracking_mut()
-            .set_object_tilemap_pos(index, dsto * 2 | plane_bit);
+            .set_object_tilemap_pos(index, (dsto * 2) | plane_bit);
         self.dungeon_room_items_mut()
             .set_replacement_tilemap_quad(index, [0x0d0e, 0x0d1e, 0x4d0e, 0x4d1e]);
         let src = if self.game_state.inventory.save_progress.dark_world_state() != 0 {
@@ -7271,7 +7271,7 @@ impl ZeldaState {
                 .game_state
                 .dungeon
                 .object_tracking
-                .replacement_tile_state((i >> 1) as usize)
+                .replacement_tile_state(i >> 1)
                 == 5
             {
                 let value = self
@@ -8063,7 +8063,7 @@ impl ZeldaState {
             if marker == 0xffff {
                 break;
             }
-            let p = ((src[offset] as u16 >> 2) | ((src[offset + 1] as u16 >> 2) << 6)) as u16;
+            let p = (src[offset] as u16 >> 2) | ((src[offset + 1] as u16 >> 2) << 6);
             let kind = src[offset + 2];
             if kind == 0xa4 {
                 let mid = self.tile_word(0x05aa, 0);
@@ -8328,7 +8328,7 @@ impl ZeldaState {
                 .game_state
                 .dungeon
                 .stair_lists
-                .inter_staircase_pos((i >> 1) as usize) as usize;
+                .inter_staircase_pos(i >> 1) as usize;
             self.write_attr2(pos + xy(1, 0), 0x5e5e);
             self.write_attr2(pos + xy(1, 1), attr);
             self.write_attr2(pos + xy(1, 2), 0);
@@ -8347,7 +8347,7 @@ impl ZeldaState {
                 .game_state
                 .dungeon
                 .stair_lists
-                .inter_staircase_pos((i >> 1) as usize) as usize;
+                .inter_staircase_pos(i >> 1) as usize;
             self.write_attr2(pos + xy(1, 0), 0x5f5f);
             self.write_attr2(pos + xy(1, 1), attr);
             self.write_attr2(pos + xy(1, 2), 0);
@@ -8401,7 +8401,7 @@ impl ZeldaState {
                 .game_state
                 .dungeon
                 .stair_lists
-                .inter_staircase_pos((i >> 1) as usize) as usize;
+                .inter_staircase_pos(i >> 1) as usize;
             self.write_attr2(pos + xy(1, 0), 0x5e5e);
             self.write_attr2(pos + xy(1, 1), attr);
             self.write_attr2(pos + xy(1, 2), 0);
@@ -8420,7 +8420,7 @@ impl ZeldaState {
                 .game_state
                 .dungeon
                 .stair_lists
-                .inter_staircase_pos((i >> 1) as usize) as usize;
+                .inter_staircase_pos(i >> 1) as usize;
             self.write_attr2(pos + xy(1, 0), 0x5f5f);
             self.write_attr2(pos + xy(1, 1), attr);
             self.write_attr2(pos + xy(1, 2), 0);
@@ -8607,7 +8607,7 @@ impl ZeldaState {
                 .game_state
                 .dungeon
                 .stair_lists
-                .inter_staircase_pos((i >> 1) as usize) as usize;
+                .inter_staircase_pos(i >> 1) as usize;
             self.write_attr2(j + xy(1, 2), 0);
             self.write_attr2(j + xy(1, 0), 0x2626);
             self.write_attr2(j + xy(1, 1), attr);
@@ -8625,7 +8625,7 @@ impl ZeldaState {
                 .game_state
                 .dungeon
                 .stair_lists
-                .inter_staircase_pos((i >> 1) as usize) as usize;
+                .inter_staircase_pos(i >> 1) as usize;
             self.write_attr2(j + xy(1, 0), 0x5e5e);
             self.write_attr2(j + xy(1, 2), 0x5e5e);
             self.write_attr2(j + xy(1, 3), 0x5e5e);
@@ -8644,7 +8644,7 @@ impl ZeldaState {
                 .game_state
                 .dungeon
                 .stair_lists
-                .inter_staircase_pos((i >> 1) as usize) as usize;
+                .inter_staircase_pos(i >> 1) as usize;
             self.write_attr2(j + xy(1, 0), 0x5f5f);
             self.write_attr2(j + xy(1, 2), 0x5f5f);
             self.write_attr2(j + xy(1, 3), 0x5f5f);
@@ -8664,7 +8664,7 @@ impl ZeldaState {
                 .game_state
                 .dungeon
                 .stair_lists
-                .inter_staircase_pos((i >> 1) as usize) as usize;
+                .inter_staircase_pos(i >> 1) as usize;
             self.write_attr2(j + xy(1, 0), 0x3838);
             self.write_attr2(j + xy(1, 2), 0);
             self.write_attr2(j + xy(1, 3), 0);
@@ -8684,7 +8684,7 @@ impl ZeldaState {
                 .game_state
                 .dungeon
                 .stair_lists
-                .inter_staircase_pos((i >> 1) as usize) as usize;
+                .inter_staircase_pos(i >> 1) as usize;
             self.write_attr2(j + xy(1, 0), 0);
             self.write_attr2(j + xy(1, 1), 0);
             self.write_attr2(j + xy(1, 2), attr);
@@ -8704,7 +8704,7 @@ impl ZeldaState {
                 .game_state
                 .dungeon
                 .stair_lists
-                .inter_staircase_pos((i >> 1) as usize) as usize;
+                .inter_staircase_pos(i >> 1) as usize;
             self.write_attr2(j + xy(1, 2), attr);
             self.write_attr2(j + xy(1, 3), 0x2626);
             i += 2;
@@ -8721,7 +8721,7 @@ impl ZeldaState {
                 .game_state
                 .dungeon
                 .stair_lists
-                .inter_staircase_pos((i >> 1) as usize) as usize;
+                .inter_staircase_pos(i >> 1) as usize;
             self.write_attr2(j + xy(1, 0), 0x5e5e);
             self.write_attr2(j + xy(1, 1), attr);
             self.write_attr2(j + xy(1, 2), 0x5e5e);
@@ -8740,7 +8740,7 @@ impl ZeldaState {
                 .game_state
                 .dungeon
                 .stair_lists
-                .inter_staircase_pos((i >> 1) as usize) as usize;
+                .inter_staircase_pos(i >> 1) as usize;
             self.write_attr2(j + xy(1, 0), 0x5f5f);
             self.write_attr2(j + xy(1, 1), attr);
             self.write_attr2(j + xy(1, 2), 0x5f5f);
@@ -8760,7 +8760,7 @@ impl ZeldaState {
                 .game_state
                 .dungeon
                 .stair_lists
-                .inter_staircase_pos((i >> 1) as usize) as usize;
+                .inter_staircase_pos(i >> 1) as usize;
             self.write_attr2(j + xy(1, 0), 0x3838);
             self.write_attr2(j + xy(1, 1), attr);
             self.write_attr2(j + xy(1, 2), 0);
@@ -8780,7 +8780,7 @@ impl ZeldaState {
                 .game_state
                 .dungeon
                 .stair_lists
-                .inter_staircase_pos((i >> 1) as usize) as usize;
+                .inter_staircase_pos(i >> 1) as usize;
             self.write_attr2(j + xy(1, 0), 0);
             self.write_attr2(j + xy(1, 1), 0);
             self.write_attr2(j + xy(1, 2), attr);
@@ -8942,7 +8942,7 @@ impl ZeldaState {
                 .game_state
                 .dungeon
                 .object_tracking
-                .replacement_tile_state((i >> 1) as usize);
+                .replacement_tile_state(i >> 1);
             if (k & 0x00f0) != 0x0030 {
                 let j = (self
                     .game_state
@@ -9840,14 +9840,14 @@ impl ZeldaState {
             .player
             .follower_link
             .x()
-            .wrapping_add(LIFTABLE_TILE_PROBE_X_OFFSETS[facing] as i16 as u16)
+            .wrapping_add(LIFTABLE_TILE_PROBE_X_OFFSETS[facing] as u16)
             & 0x01f8;
         let y = self
             .game_state
             .player
             .follower_link
             .y()
-            .wrapping_add(LIFTABLE_TILE_PROBE_Y_OFFSETS[facing] as i16 as u16)
+            .wrapping_add(LIFTABLE_TILE_PROBE_Y_OFFSETS[facing] as u16)
             & 0x01f8;
         let offset = ((y << 3) | (x >> 3)) as usize
             + usize::from(
@@ -10304,9 +10304,8 @@ impl ZeldaState {
         let state_12_cpu_advance =
             (self.rom_startup_timing() && entry_subsubmodule == 12).then(|| {
                 let captured = self.take_dungeon_landing_cpu_advance();
-                let advance =
-                    captured.unwrap_or_else(|| begin_dungeon_supertile_state_12_cpu_advance(self));
-                advance
+                
+                captured.unwrap_or_else(|| begin_dungeon_supertile_state_12_cpu_advance(self))
             });
         let quadrant_cpu_advance = (self.rom_startup_timing()
             && matches!(entry_subsubmodule, 4..=7))
@@ -10893,14 +10892,12 @@ impl ZeldaState {
         if palette_filter_loop_master_cycles.is_some()
             && self.game_state.frame.submodule == 2
             && self.game_state.frame.subsubmodule == 10
-        {
-            if self.begin_dungeon_supertile_transition_work_with_palette(
+            && self.begin_dungeon_supertile_transition_work_with_palette(
                 DungeonSupertileTransitionWork::FilteredQuadrantTilemapBuild,
                 palette_filter_loop_master_cycles,
             ) {
                 return;
             }
-        }
         self.complete_dungeon_inter_room_transition_not_dark_room();
     }
 
@@ -12732,7 +12729,7 @@ impl ZeldaState {
             self.retain_palette_filter_input_cgram_on_next_display_capture();
             self.ApplyPaletteFilter_bounce();
             self.stage_straight_interroom_fadeout_obj_source();
-            let palette_countdown = self.game_state.display.palette_filter.countdown() as u8;
+            let palette_countdown = self.game_state.display.palette_filter.countdown();
             self.suspend_straight_interroom_fadeout_suffix_if_crosses_nmi(palette_countdown);
             if palette_countdown == 23 {
                 self.increment_subsubmodule();
@@ -12999,8 +12996,8 @@ impl ZeldaState {
         }
         self.link_move_position();
         self.link_handle_moving_animation_start_with_dash();
-        if self.game_state.player.follower_link.push_fatigue_timer() == 0 {
-            if self
+        if self.game_state.player.follower_link.push_fatigue_timer() == 0
+            && self
                 .dungeon_stair_movement_mut()
                 .decrement_staircase_countdown_underflowed()
             {
@@ -13011,7 +13008,6 @@ impl ZeldaState {
                 };
                 self.follower_link_state_mut().set_facing(facing);
             }
-        }
 
         let mut xd = (self.game_state.player.follower_link.x() as u8)
             .wrapping_sub(self.game_state.player.tile_detection.x_low()) as i8;
@@ -14770,8 +14766,7 @@ impl ZeldaState {
                             self.dialogue_message_index_mut().set_value(0x007a);
                             self.main_show_text_message();
                         }
-                    } else if door_type >= DOOR_TYPE_SMALL_KEY_DOOR
-                        && door_type < 0x2c
+                    } else if (DOOR_TYPE_SMALL_KEY_DOOR..0x2c).contains(&door_type)
                         && door_type != 0x2a
                         && self.game_state.inventory.player_resources.keys() != 0
                     {

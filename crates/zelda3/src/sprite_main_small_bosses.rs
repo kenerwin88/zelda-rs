@@ -950,7 +950,7 @@ impl ZeldaState {
             self.follower_link_state_mut().set_auxiliary_state(1);
             self.follower_link_state_mut().set_incapacitated_timer(16);
             self.follower_link_state_mut()
-                .set_actual_velocity_xy(pt.x as u8, pt.y as u8);
+                .set_actual_velocity_xy(pt.x, pt.y);
         }
     }
 

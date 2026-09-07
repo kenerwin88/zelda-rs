@@ -39,13 +39,11 @@ impl ZeldaState {
             && frame.main_module == 7
             && frame.submodule == 2
             && frame.subsubmodule == 12
-        {
-            if self.dungeon_landing_cpu_advance_pending.is_none() {
+            && self.dungeon_landing_cpu_advance_pending.is_none() {
                 let advance = begin_dungeon_supertile_state_12_cpu_advance(self);
                 self.dungeon_landing_spotlight_reset_prefix_scanlines = None;
                 self.dungeon_landing_cpu_advance_pending = Some(advance);
             }
-        }
         if self.rom_startup_timing()
             && frame.main_module == 7
             && ((frame.submodule == 0x0e && matches!(frame.subsubmodule, 3 | 6 | 7 | 19))

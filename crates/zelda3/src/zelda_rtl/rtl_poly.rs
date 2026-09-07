@@ -103,10 +103,9 @@ impl ZeldaState {
         // uploaded VRAM content is deferred to the next host's NMI. A deferred
         // upload executing at that next NMI therefore does not count again.
         let upload = self.game_state.display.has_pending_polyhedral_update()
-            && !self
+            && self
                 .poly_completed_upload
-                .as_ref()
-                .is_some_and(|(host, _)| *host < self.frame_ctr_dbg);
+                .as_ref().is_none_or(|(host, _)| *host >= self.frame_ctr_dbg);
         // The NMI this trailing handler models is normally accepted at the
         // end of the current host's run (the last `NmiAccepted` of its
         // receipts). When the run boundary falls just before the acceptance,

@@ -471,7 +471,7 @@ fn main() {
                 generated_dir.display()
             );
         };
-        extract_assets(repo_root, &rom, &generated_dir);
+        extract_assets(repo_root, rom, &generated_dir);
     }
 
     let asset_pack = pack_assets(&generated_dir);

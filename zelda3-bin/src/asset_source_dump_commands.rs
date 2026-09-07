@@ -320,7 +320,7 @@ fn load_existing_assets_by_source(
     }
     let width = info.width as usize;
     let height = info.height as usize;
-    if width % 8 != 0 || height % 8 != 0 {
+    if !width.is_multiple_of(8) || !height.is_multiple_of(8) {
         return Err(format!(
             "{}: PNG size {}x{} is not aligned to 8x8 cells",
             png_path.display(),
@@ -675,7 +675,7 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                             if entry_word == 0 {
                                 continue;
                             }
-                            let palette = ((entry_word >> 10) & 7) as u16;
+                            let palette = (entry_word >> 10) & 7 ;
                             let pack = (tile_number as u16) | (palette << 10);
                             let key = modern_source_key(CHR_KIND_BG3, pack, 0);
                             let raw = decode_snes_2bpp_tile_indices(
@@ -916,7 +916,7 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                 }
                 startup_walked = startup_walked.wrapping_add(1);
                 collect_used_slots(&mut startup_game, startup_walked);
-                if options.progress_interval != 0 && startup_walked % options.progress_interval == 0
+                if options.progress_interval != 0 && startup_walked.is_multiple_of(options.progress_interval)
                 {
                     eprintln!("[dump] startup progress frames={startup_walked}");
                 }
@@ -979,7 +979,7 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                 scripted_walked = scripted_walked.wrapping_add(1);
                 collect_used_slots(&mut game, absolute_frame.wrapping_add(1));
                 if options.progress_interval != 0
-                    && scripted_walked % options.progress_interval == 0
+                    && scripted_walked.is_multiple_of(options.progress_interval)
                 {
                     eprintln!(
                         "[dump] scripted progress frames={scripted_walked} route={}",
@@ -1007,7 +1007,7 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                 }
                 frames = frames.wrapping_add(1);
                 collect_used_slots(&mut game, frames);
-                if options.progress_interval != 0 && frames % options.progress_interval == 0 {
+                if options.progress_interval != 0 && frames.is_multiple_of(options.progress_interval) {
                     eprintln!("[dump] replay progress frames={frames} max_frames={max_frames}");
                 }
             }

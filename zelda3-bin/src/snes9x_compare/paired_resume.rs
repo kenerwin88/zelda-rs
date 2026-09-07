@@ -392,7 +392,7 @@ pub(crate) fn write_cached_av_paired_resume_from_sources(
                 oracle_relative.display()
             )
         })?;
-    let actual_oracle_sha256 = parity::evidence::sha256_file(&oracle_source)
+    let actual_oracle_sha256 = parity::evidence::sha256_file(oracle_source)
         .map_err(|error| format!("failed to hash {}: {error}", oracle_source.display()))?;
     if actual_oracle_sha256 != expected_oracle_sha256 {
         return Err(format!(
@@ -413,7 +413,7 @@ pub(crate) fn write_cached_av_paired_resume_from_sources(
             "cached semantic trace checkpoint is absent from the artifact inventory".to_string()
         })?;
     let semantic_trace_sha256 =
-        parity::evidence::sha256_file(&semantic_trace_source).map_err(|error| {
+        parity::evidence::sha256_file(semantic_trace_source).map_err(|error| {
             format!(
                 "failed to hash {}: {error}",
                 semantic_trace_source.display()
@@ -565,7 +565,7 @@ pub(crate) fn write_cached_av_paired_resume_from_sources(
                 .map_err(|error| format!("failed to encode paired frontier manifest: {error}"))?,
         )
         .map_err(|error| format!("failed to write paired frontier manifest: {error}"))?;
-        fs::rename(&temporary_dir, &final_dir).map_err(|error| {
+        fs::rename(&temporary_dir, final_dir).map_err(|error| {
             format!(
                 "failed to install paired frontier {}: {error}",
                 final_dir.display()

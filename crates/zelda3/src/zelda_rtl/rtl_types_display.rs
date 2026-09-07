@@ -1152,7 +1152,7 @@ impl EffectivePresentedDma {
             vram_writes: (!decoded_only)
                 .then_some(writes.clone())
                 .unwrap_or_default(),
-            decoded_bg_vram_writes: decoded_only.then_some(writes).unwrap_or_default(),
+            decoded_bg_vram_writes: if decoded_only { writes } else { Default::default() },
             completed_oam: None,
             completed_link_obj_dma: None,
             completed_cgram: None,

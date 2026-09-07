@@ -337,7 +337,7 @@ fn ganon_mult(a: u16, b: u8) -> u8 {
         return b;
     }
     let p: u32 = u32::from(a) * u32::from(b);
-    (((p >> 8) as u32).wrapping_add((p >> 7) & 1)) as u8
+    ((p >> 8).wrapping_add((p >> 7) & 1)) as u8
 }
 
 // static inline int8 GanonSin(uint16 a, uint8 b) {
@@ -1134,9 +1134,9 @@ impl ZeldaState {
                 let j = ((t >> 5).wrapping_sub(4) & 0xf) as usize;
                 // (int8)kGanonMath_X[j] >> 2 — arithmetic shift on signed.
                 self.sprite_slot_view_mut(i + 1)
-                    .set_x_velocity(((GANON_FIRE_BAT_CIRCLE_X_COMPONENTS[j] as i8) >> 2) as u8);
+                    .set_x_velocity((GANON_FIRE_BAT_CIRCLE_X_COMPONENTS[j] >> 2) as u8);
                 self.sprite_slot_view_mut(i + 1)
-                    .set_y_velocity(((GANON_FIRE_BAT_CIRCLE_Y_COMPONENTS[j] as i8) >> 2) as u8);
+                    .set_y_velocity((GANON_FIRE_BAT_CIRCLE_Y_COMPONENTS[j] >> 2) as u8);
             }
             // x = Sprite_GetX(0) + (int8)GanonSin(t, overlord_x_lo[2])
             // i32 to allow the negative-extend before re-casting to 16-bit / 8-bit.

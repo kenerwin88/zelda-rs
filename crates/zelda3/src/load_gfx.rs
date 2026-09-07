@@ -4162,7 +4162,7 @@ impl ZeldaState {
         };
         let t = (div >> 1) as usize;
         let r10 = SPOTLIGHT_CIRCLE_X_RADIUS_CURVE[t];
-        let p = 2 * (((r10 as u16) * (radius as u16) >> 8) as u8 as u16);
+        let p = 2 * ((((r10 as u16) * (radius as u16)) >> 8) as u8 as u16);
         if r10 == 0 {
             return 0x00ff;
         }

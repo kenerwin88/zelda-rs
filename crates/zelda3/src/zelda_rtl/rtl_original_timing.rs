@@ -196,7 +196,7 @@ impl ZeldaState {
             self.game_execution_scheduler.current_work(),
             receipts.semantic,
         ));
-        if let Some(range) = crate::debug_env::var("ZELDA3_DEBUG_INSTALL_RECEIPTS").ok() {
+        if let Ok(range) = crate::debug_env::var("ZELDA3_DEBUG_INSTALL_RECEIPTS") {
             let mut parts = range.split('-');
             let lo: u64 = parts.next().and_then(|v| v.parse().ok()).unwrap_or(0);
             let hi: u64 = parts.next().and_then(|v| v.parse().ok()).unwrap_or(lo);
@@ -7778,14 +7778,13 @@ impl ZeldaState {
             && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
         {
             self.take_original_timing_item_receipt_graphics_progress()
-                .map(|progress| {
+                .inspect(|progress| {
                     let slot = self.game_state.sprites.system.cur_object_index();
                     assert_eq!(
                         progress.caller,
                         ItemReceiptGraphicsCaller::SpriteMainDirect { slot },
                         "live direct item-receipt progress named a different source caller",
                     );
-                    progress
                 })
         } else {
             None
@@ -11626,7 +11625,7 @@ impl ZeldaState {
         let authoritative_scheduled_caller_nmi_timeline =
             (matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
                 && self.game_execution_scheduler.current_work().is_some())
-            .then(|| authoritative_main_loop_interruption_timeline.as_ref())
+            .then_some(authoritative_main_loop_interruption_timeline.as_ref())
             .flatten();
         let authoritative_scheduled_caller_return_timeline =
             (matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
@@ -12347,8 +12346,7 @@ impl ZeldaState {
         )
         .then(|| self.take_original_timing_sprite_main_progress())
         .flatten();
-        let authoritative_sprite_main_returned = (authoritative_big_key_drop_slot.is_some()
-            || matches!(
+        let authoritative_sprite_main_returned = if authoritative_big_key_drop_slot.is_some() || matches!(
                 self.game_execution_scheduler.current_work(),
                 Some(
                     GameWorkContinuation::FinishSpriteMain { .. }
@@ -12360,9 +12358,7 @@ impl ZeldaState {
                                     | ItemReceiptGraphicsContinuation::ResumeAncillaItemReceipt { .. },
                         }
                 )
-            ))
-        .then(|| self.take_original_timing_sprite_main_returned())
-        .unwrap_or(false);
+            ) { self.take_original_timing_sprite_main_returned() } else { false };
         let authoritative_big_key_drop_completed = authoritative_big_key_drop_slot
             .is_some_and(|sprite_slot| {
                 authoritative_sprite_main_returned
@@ -12564,14 +12560,13 @@ impl ZeldaState {
                     }
                 }
             }
-            .map(|accepts_nmi_at_return| {
+            .inspect(|_accepts_nmi_at_return| {
                 if timeline.progress == crate::MainLoopProgress::CallStackContinued {
                     assert!(
                         timeline.nmi_phases_after_progress.is_empty(),
                         "an uninterrupted source caller published an NMI lifecycle after its continuation receipt: {timeline:?}",
                     );
                 }
-                accepts_nmi_at_return
             })
         } else {
             None
@@ -12600,14 +12595,13 @@ impl ZeldaState {
             // this continued call (route host 123210, the desert-prayer
             // sequence). Match the idle Module0E consumer: mark the semantic
             // branch and let the C translation own every mutation.
-            if self.take_original_timing_dialogue_closed() {
-                if self.frame_module_hosts_dialogue() {
+            if self.take_original_timing_dialogue_closed()
+                && self.frame_module_hosts_dialogue() {
                     self.messaging_state_mut().set_text_render_state(4);
                 }
                 // Outside Module0E the native continued caller already
                 // executed the close (the saved module is restored); the
                 // receipt corroborates that completed C branch.
-            }
             let cpu_action = plan.cpu_action;
             self.complete_original_timing_main_loop_return(
                 timeline,
@@ -12832,9 +12826,7 @@ impl ZeldaState {
             }
             if plan.sprite_main_returned_claims != 0 {
                 assert!(
-                    !remaining_semantic.iter().any(
-                        |receipt| *receipt == OriginalTimingSemanticReceipt::SpriteMainReturned
-                    ),
+                    !remaining_semantic.contains(&OriginalTimingSemanticReceipt::SpriteMainReturned),
                     "uninterrupted main-loop execution did not consume its idle-body Sprite_Main return claim",
                 );
             }
@@ -17045,7 +17037,7 @@ impl ZeldaState {
                                 )
                                     && authoritative_scheduled_caller_return_timeline.is_none();
                                 let suffix_interruption = live_nonterminal
-                                    .then(|| authoritative_scheduled_caller_nmi_timeline)
+                                    .then_some(authoritative_scheduled_caller_nmi_timeline)
                                     .flatten()
                                     .map(|timeline| timeline.interruption);
                                 if suffix_interruption == Some(crate::MainLoopInterruption::LinkOam)

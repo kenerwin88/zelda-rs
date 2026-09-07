@@ -1479,8 +1479,7 @@ impl ZeldaState {
                     sprite.set_delay_main(32);
                     sprite.set_ai_state(0);
                 } else if delay_main < 0x80 {
-                    let t = usize::from(self.sprite_slot_view(k).direction() & 3) * 8
-                        | usize::from((delay_main >> 3) & 7);
+                    let t = (usize::from(self.sprite_slot_view(k).direction() & 3) * 8) | usize::from((delay_main >> 3) & 7);
                     self.sprite_slot_view_mut(k)
                         .set_head_direction(SOLDIER_HEAD_DIRECTIONS_BY_ANIM[t & 31]);
                 }

@@ -211,12 +211,12 @@ pub fn lookup_sfx_program_for_context(
     select_sfx_program_from(programs(), bank, id, context)
 }
 
-fn select_sfx_program_from<'a>(
-    programs: &'a [ModernSfxProgram],
+fn select_sfx_program_from(
+    programs: &[ModernSfxProgram],
     bank: u8,
     id: u8,
     context: ModernSfxRuntimeContext,
-) -> Option<&'a ModernSfxProgram> {
+) -> Option<&ModernSfxProgram> {
     programs
         .iter()
         .filter(|program| program.bank == bank && program.id == id)

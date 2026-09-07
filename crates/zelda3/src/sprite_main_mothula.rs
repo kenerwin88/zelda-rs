@@ -2601,7 +2601,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k)
                 .set_x_velocity(BOULDER_X_VELOCITIES[j] as u8);
             self.sprite_slot_view_mut(k)
-                .set_direction((((j & 2) as u8).wrapping_sub(1)) as u8);
+                .set_direction(((j & 2) as u8).wrapping_sub(1));
             self.sprite_sfx_queue_sfx2_with_pan(k, 0xb);
         }
     }
@@ -2689,11 +2689,10 @@ impl ZeldaState {
     pub(super) fn sprite_8_c_arrghus(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).or_object_priority(0x30);
         self.arrghus_draw(k);
-        if self.sprite_slot_view(k).state() != 9 || self.sprite_slot_view(k).z() < 96 {
-            if self.sprite_return_if_inactive(k) {
+        if (self.sprite_slot_view(k).state() != 9 || self.sprite_slot_view(k).z() < 96)
+            && self.sprite_return_if_inactive(k) {
                 return;
             }
-        }
 
         self.arrghus_handle_puffs(k);
         self.overlord_slot_view_mut(4).set_x_low(1);

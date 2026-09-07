@@ -1417,7 +1417,7 @@ impl ZeldaState {
         spr_offs: i32,
     ) {
         let mut oam = ((self.game_state.oam.current_pointer() as i32) + spr_offs * 4) as usize;
-        let r6 = (self.sprite_slot_view(k).direction() as u8)
+        let r6 = self.sprite_slot_view(k).direction()
             .wrapping_mul(4)
             .wrapping_add(((self.sprite_slot_view(k).a() ^ 1) << 1) & 2);
         let mut i: i32 = 1;
@@ -2370,7 +2370,7 @@ impl ZeldaState {
                 if delay == 192 {
                     self.sprite_sfx_queue_sfx3_with_pan(k, 0x27);
                 }
-                if delay >= 239 || delay < 16 {
+                if !(16..239).contains(&delay) {
                     let filter_k = if self.game_state.world.region.is_in_dark_world() {
                         k
                     } else {
@@ -7765,7 +7765,7 @@ impl ZeldaState {
             return;
         }
         if self.sprite_slot_view(k).delay_aux3() == 0 {
-            let _ = self.sprite_check_tile_collision2(k);
+            self.sprite_check_tile_collision2(k);
             self.sprite_bounce_off_wall(k);
         }
         self.sprite_absorbable_after_collision(k);
