@@ -94,7 +94,7 @@ const DUNGEON_INTER_STAIRCASE_TABLE_WORDS: usize =
 // on every stair sync (clobbering DungeonRoomItemState.chest_locations). Cap it at
 // the chest_locations boundary so chest_locations stays the sole owner of 0x6e0+.
 const DUNGEON_STAIR_TABLE_1_WORDS: usize = (DUNG_CHEST_LOCATIONS - DUNG_STAIRS_TABLE_1) / 2;
-const DUNGEON_STAIR_TABLE_2_WORDS: usize = (DUNGEON_DOOR_DEBRIS_X - DUNG_STAIRS_TABLE_2) / 2;
+const DUNGEON_STAIR_TABLE_2_WORDS: usize = (DUNG_STAIRS_TABLE_2_END - DUNG_STAIRS_TABLE_2) / 2;
 
 pub(crate) fn loaded_room_data_word(ram: &[u8], offset: usize, index: usize) -> u16 {
     read_le_u16(ram, offset + index * 2)
@@ -147,7 +147,9 @@ const STAR_SHAPED_SWITCHES_TILE_LOCAL: usize = 0x06a0;
 const POTS_REVEALED_IN_ROOM_DUNGEON_LOCAL: usize = 0x0f580;
 const DUNG_STAIRS_TABLE_1: usize = 0x06b8;
 const DUNG_STAIRS_TABLE_2: usize = 0x06ec;
-const DUNGEON_DOOR_DEBRIS_X: usize = 0x0728;
+/// End of dung_stairs_table_2 in the C port's layout (where it placed
+/// door_debris_x; the ROM keeps door debris at $03B6). Only a table bound.
+const DUNG_STAIRS_TABLE_2_END: usize = 0x0728;
 
 const DUNGEON_DRAW_OBJECT_OFFSETS_BG1: [u8; DUNGEON_DRAW_LINE_POINTER_BYTES] = [
     0, 0x20, 0x7e, 2, 0x20, 0x7e, 4, 0x20, 0x7e, 6, 0x20, 0x7e, 0x80, 0x20, 0x7e, 0x82, 0x20, 0x7e,

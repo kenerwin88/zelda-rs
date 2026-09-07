@@ -534,9 +534,15 @@ pub(crate) const PUSHEDBLOCKS_Y_HI: usize = 0x05ec;
 pub(crate) const PUSHEDBLOCKS_Y_LO: usize = 0x05f0;
 pub(crate) const PUSHEDBLOCKS_SUBPIXEL: usize = 0x05f4;
 pub(crate) const PUSHEDBLOCK_FACING_PLAYER: usize = 0x05f8;
-pub(crate) const DOOR_DEBRIS_X: usize = 0x0728;
-pub(crate) const DOOR_DEBRIS_Y: usize = 0x0732;
-pub(crate) const DOOR_DEBRIS_DIRECTION: usize = 0x073c;
+/// ROM `$03B6,X` (five words; the C port relocated the three door-debris
+/// arrays to 0x728/0x732/0x73c). Traced at the dungeon door loader
+/// `$01:D2A0/D2B1/D2BD` and the bomb clear `$08:9797`. They overlap the
+/// ancilla aux timers and ancilla_arr26, so the ancilla slot bank owns them.
+pub(crate) const DOOR_DEBRIS_X: usize = 0x03b6;
+/// ROM `$03BA,X` (five words).
+pub(crate) const DOOR_DEBRIS_Y: usize = 0x03ba;
+/// ROM `$03BE,X` (five bytes).
+pub(crate) const DOOR_DEBRIS_DIRECTION: usize = 0x03be;
 pub(crate) const TORCH_TIMERS: usize = 0x04f0;
 pub(crate) const DUNGEON_TORCH_ATTR: usize = 0x0333;
 pub(crate) const COUNTDOWN_TIMER_FOR_STAIRCASES: usize = 0x0378;

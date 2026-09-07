@@ -11958,8 +11958,8 @@ const OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP: usize = 0x0c20c;
 const OW_ENTRANCE_VALUE: usize = 0x696;
 const DOOR_OPEN_CLOSED_COUNTER: usize = 0x692;
 const BIG_ROCK_STARTING_ADDRESS: usize = 0x698;
-const DOOR_DEBRIS_X: usize = 0x728;
-const DOOR_DEBRIS_Y: usize = 0x732;
+const DOOR_DEBRIS_X: usize = 0x3b6;
+const DOOR_DEBRIS_Y: usize = 0x3ba;
 const DUNG_HDR_HOLE_TELEPORTER_PLANE: usize = 0x63c;
 const DUNG_DOOR_OPENED_INCL_ADJACENT: usize = 0x68c;
 const DUNGEON_TRAP_TRIGGER_LATCH: usize = 0x0b9e;
@@ -16238,7 +16238,7 @@ impl ZeldaState {
             game_state.world.overworld.bird_travel_destinations
         }
         pub(crate) fn door_debris_mut() -> NativeDoorDebrisBridgeMut {
-            game_state.effects.door_debris
+            game_state.sprites.ancilla_slots
         }
         pub(crate) fn digging_game_prize_mut() -> NativeDiggingGamePrizeBridgeMut {
             game_state.effects.digging_game_prize

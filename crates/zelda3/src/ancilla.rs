@@ -1210,7 +1210,7 @@ impl ZeldaState {
                 self.ancilla_get_y(k),
                 k as u8,
             );
-            if self.game_state.effects.door_debris.x_word(k) != 0 {
+            if self.door_debris_x_word(k) != 0 {
                 self.ancilla_slot_view_mut(k).set_step(1);
             }
         }
@@ -1889,19 +1889,13 @@ impl ZeldaState {
         self.ancilla_prep_adjusted_oam_coord(k);
         let mut oam = self.game_state.oam.current_pointer_usize();
         let y = self
-            .game_state
-            .effects
-            .door_debris
-            .y_word(k)
+            .door_debris_y_word(k)
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         let x = self
-            .game_state
-            .effects
-            .door_debris
-            .x_word(k)
+            .door_debris_x_word(k)
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
         let j = self.ancilla_slot_view(k).work_byte_25() as usize
-            + self.game_state.effects.door_debris.direction(k) as usize * 4;
+            + self.door_debris_direction(k) as usize * 4;
 
         for i in 0..2 {
             let t = j * 2 + i;
@@ -11416,5 +11410,28 @@ impl ZeldaState {
             .ancilla_slots
             .set_shared_byte(crate::game_state::constants::ANCILLA_ALLOC_ROTATE, value);
         self.ram[crate::game_state::constants::ANCILLA_ALLOC_ROTATE] = value;
+    }
+}
+
+impl ZeldaState {
+    /// `door_debris_x[k]` ($03B6,X words): RAM-resident, owned by the ancilla bank.
+    pub(crate) fn door_debris_x_word(&self, slot: usize) -> u16 {
+        crate::types::read_le_u16(
+            &self.ram,
+            crate::game_state::constants::DOOR_DEBRIS_X + slot * 2,
+        )
+    }
+
+    /// `door_debris_y[k]` ($03BA,X words).
+    pub(crate) fn door_debris_y_word(&self, slot: usize) -> u16 {
+        crate::types::read_le_u16(
+            &self.ram,
+            crate::game_state::constants::DOOR_DEBRIS_Y + slot * 2,
+        )
+    }
+
+    /// `door_debris_direction[k]` ($03BE,X bytes).
+    pub(crate) fn door_debris_direction(&self, slot: usize) -> u8 {
+        self.ram[crate::game_state::constants::DOOR_DEBRIS_DIRECTION + slot]
     }
 }

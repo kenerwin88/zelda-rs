@@ -1,4 +1,5 @@
 use super::*;
+use crate::game_state::native::sprites::AncillaSlotsState;
 
 #[test]
 fn effect_angle_scratch_loads_from_and_projects_to_ram() {
@@ -829,80 +830,49 @@ fn native_digging_game_prize_bridge_composes_edits_onto_live_ram() {
 }
 
 #[test]
-fn door_debris_state_loads_from_and_projects_to_ram() {
+fn door_debris_state_is_ram_resident_and_projects_nothing() {
     let mut ram = vec![0; WRAM_SIZE];
     write_le_u16(&mut ram, DOOR_DEBRIS_X + 4, 0x1234);
-    write_le_u16(&mut ram, DOOR_DEBRIS_Y + 4, 0x5678);
-    ram[DOOR_DEBRIS_X + 7] = 0x9a;
-    ram[DOOR_DEBRIS_Y + 7] = 0xbc;
-    ram[DOOR_DEBRIS_DIRECTION + 7] = 3;
-
+    ram[DOOR_DEBRIS_DIRECTION + 1] = 3;
     let debris = DoorDebrisState::load_from_ram(&ram);
-    assert_eq!(debris.x_word(2), 0x1234);
-    assert_eq!(debris.y_word(2), 0x5678);
-    assert_eq!(debris.x(7), 0x9a);
-    assert_eq!(debris.y(7), 0xbc);
-    assert_eq!(debris.direction(7), 3);
-    assert_eq!(debris.x_word(5), 0);
-
+    assert_eq!(debris, DoorDebrisState::default());
     let mut projected = vec![0; WRAM_SIZE];
     debris.write_to_ram(&mut projected);
-    assert_eq!(DoorDebrisState::load_from_ram(&projected), debris);
+    assert!(projected.iter().all(|byte| *byte == 0));
 }
 
 #[test]
-fn native_door_debris_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+fn native_door_debris_bridge_writes_through_the_ancilla_bank_with_rom_aliasing() {
+    use crate::game_state::constants::{ANCILLA_AUX_TIMER, ANCILLA_WORK_BYTE_26};
     let mut ram = vec![0; WRAM_SIZE];
-    ram[DOOR_DEBRIS_X + 3] = 0xff;
-    ram[DOOR_DEBRIS_Y + 3] = 0xff;
-    ram[DOOR_DEBRIS_DIRECTION + 3] = 0xff;
-
-    let mut debris = DoorDebrisState::load_from_ram(&ram);
+    let mut ancilla = AncillaSlotsState::load_from_ram(&ram);
     {
-        let mut bridge = NativeDoorDebrisBridgeMut::new(&mut debris, &mut ram);
+        let mut bridge = NativeDoorDebrisBridgeMut::new(&mut ancilla, &mut ram);
         bridge.set_y_low_and_x_low_from_word(3, 0x1234);
-        bridge.set_x_word(2, 0x4567);
-        bridge.set_y_word(2, 0x89ab);
-        bridge.set_direction(3, 2);
-        bridge.set_direction(12, 1);
     }
-
-    assert_eq!(debris.x(3), 0x12);
-    assert_eq!(debris.y(3), 0x34);
-    assert_eq!(debris.x_word(2), 0x4567);
-    assert_eq!(debris.y_word(2), 0x89ab);
-    assert_eq!(debris.direction(3), 2);
-    assert_eq!(ram[DOOR_DEBRIS_X + 3], 0x12);
+    // Byte-indexed split write (`STA $03BA,X` / `STA $03B6,X` with X = 3).
     assert_eq!(ram[DOOR_DEBRIS_Y + 3], 0x34);
-    assert_eq!(read_le_u16(&ram, DOOR_DEBRIS_X + 4), 0x4567);
-    assert_eq!(read_le_u16(&ram, DOOR_DEBRIS_Y + 4), 0x89ab);
-    assert_eq!(ram[DOOR_DEBRIS_DIRECTION + 3], 2);
-}
-
-#[test]
-fn native_door_debris_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    ram[DOOR_DEBRIS_X + 3] = 0xff;
-    ram[DOOR_DEBRIS_Y + 3] = 0xee;
-    ram[DOOR_DEBRIS_DIRECTION + 3] = 0xdd;
-
-    let mut native_ram = vec![0; WRAM_SIZE];
-    ram[DOOR_DEBRIS_X + 1] = 0x99;
-    native_ram[DOOR_DEBRIS_X + 3] = 0x12;
-    native_ram[DOOR_DEBRIS_Y + 3] = 0x34;
-    native_ram[DOOR_DEBRIS_DIRECTION + 3] = 1;
-    let mut debris = DoorDebrisState::load_from_ram(&native_ram);
-
+    assert_eq!(ram[DOOR_DEBRIS_X + 3], 0x12);
+    assert_eq!(AncillaSlotsState::load_from_ram(&ram), ancilla);
     {
-        let mut bridge = NativeDoorDebrisBridgeMut::new(&mut debris, &mut ram);
-        bridge.set_direction(3, 2);
+        let mut bridge = NativeDoorDebrisBridgeMut::new(&mut ancilla, &mut ram);
+        bridge.set_x_word(1, 0x1e70);
+        bridge.set_y_word(1, 0x0520);
+        bridge.set_direction(1, 0);
+        bridge.set_direction(12, 1);
+        bridge.set_x_word(5, 0xffff);
     }
-
-    assert_eq!(debris.x(3), 0x12);
-    assert_eq!(debris.y(3), 0x34);
-    assert_eq!(debris.direction(3), 2);
-    assert_eq!(ram[DOOR_DEBRIS_X + 1], 0);
-    assert_eq!(ram[DOOR_DEBRIS_X + 3], 0x12);
-    assert_eq!(ram[DOOR_DEBRIS_Y + 3], 0x34);
-    assert_eq!(ram[DOOR_DEBRIS_DIRECTION + 3], 2);
+    // Route frame 59340 (dungeon door loader, slot 1): $03B8 = 0x1e70,
+    // $03BC = 0x0520, $03BF = 0.
+    assert_eq!(read_le_u16(&ram, 0x3b8), 0x1e70);
+    assert_eq!(read_le_u16(&ram, 0x3bc), 0x0520);
+    assert_eq!(ram[0x3bf], 0);
+    // Hardware aliasing: door_debris_x[1] high byte is aux_timer slot 8 in the
+    // ten-slot model, door_debris_y[3] overlaps ancilla_arr26[0..1].
+    assert_eq!(ancilla.slot(8).aux_timer(), 0x1e);
+    assert_eq!(ancilla.slot(0).work_byte_26(), ram[ANCILLA_WORK_BYTE_26]);
+    assert_eq!(ram[ANCILLA_AUX_TIMER + 8], 0x1e);
+    // Out-of-range slots are ignored and the bank stays coherent with RAM.
+    assert_eq!(read_le_u16(&ram, DOOR_DEBRIS_X + 10), 0);
+    assert_eq!(AncillaSlotsState::load_from_ram(&ram), ancilla);
 }

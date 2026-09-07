@@ -9714,8 +9714,10 @@ impl ZeldaState {
         self.ancilla_slot_view_mut(k).set_ancilla_type(0);
         self.follower_link_state_mut().clear_hookshot_grave_latch();
         self.follower_link_state_mut().and_defense_flags(!4);
-        let debris_y = self.game_state.effects.door_debris.y(k);
-        let debris_x = self.game_state.effects.door_debris.x(k);
+        // `LDA $03BA,X` / `LDA $03B6,X`: byte-indexed reads of the RAM-resident
+        // door-debris arrays.
+        let debris_y = self.ram[crate::game_state::constants::DOOR_DEBRIS_Y + k];
+        let debris_x = self.ram[crate::game_state::constants::DOOR_DEBRIS_X + k];
         self.tile_detect_position_mut()
             .set_interaction_scratch_y_bytes(debris_y, debris_x);
         let big_rock = self
