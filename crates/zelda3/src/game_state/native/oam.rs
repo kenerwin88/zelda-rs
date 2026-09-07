@@ -356,54 +356,18 @@ impl<'a> NativeOamStateBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_current_pointer(&mut self, value: u16) {
-        self.state.set_current_pointer(value);
-        self.sync();
-    }
-
-    pub(crate) fn add_current_pointer(&mut self, value: u16) {
-        self.state.add_current_pointer(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_current_extended_pointer(&mut self, value: u16) {
-        self.state.set_current_extended_pointer(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_sprite_sorting_setting(&mut self, value: u8) {
-        self.state.set_sprite_sorting_setting(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_priority_value_2(&mut self, value: u16) {
-        self.state.set_priority_value_2(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_sort_sprites_offset(&mut self, value: u16) {
-        self.state.set_sort_sprites_offset(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_sort_sprites_offset(&mut self) {
-        self.state.clear_sort_sprites_offset();
-        self.sync();
-    }
-
-    pub(crate) fn set_player_oam_computed_value(&mut self, value: u8) {
-        self.state.set_player_oam_computed_value(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_sprite_sorting_setting(&mut self) {
-        self.state.clear_sprite_sorting_setting();
-        self.sync();
-    }
-
-    pub(crate) fn add_current_extended_pointer(&mut self, value: u16) {
-        self.state.add_current_extended_pointer(value);
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_current_pointer(value: u16);
+        fn add_current_pointer(value: u16);
+        fn set_current_extended_pointer(value: u16);
+        fn set_sprite_sorting_setting(value: u8);
+        fn set_priority_value_2(value: u16);
+        fn set_sort_sprites_offset(value: u16);
+        fn clear_sort_sprites_offset();
+        fn set_player_oam_computed_value(value: u8);
+        fn clear_sprite_sorting_setting();
+        fn add_current_extended_pointer(value: u16);
     }
 
     pub(crate) fn set_extended_byte(&mut self, index: usize, value: u8) {

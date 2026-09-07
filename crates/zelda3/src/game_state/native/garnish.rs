@@ -325,79 +325,23 @@ impl<'a> NativeGarnishSlotBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn set_garnish_type(&mut self, value: u8) {
-        self.state.set_garnish_type(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_x(&mut self, value: u16) {
-        self.state.set_x(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_x_low(&mut self, value: u8) {
-        self.state.set_x_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_x_high(&mut self, value: u8) {
-        self.state.set_x_high(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_y(&mut self, value: u16) {
-        self.state.set_y(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_y_low(&mut self, value: u8) {
-        self.state.set_y_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_y_high(&mut self, value: u8) {
-        self.state.set_y_high(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_x_velocity(&mut self, value: u8) {
-        self.state.set_x_velocity(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_y_velocity(&mut self, value: u8) {
-        self.state.set_y_velocity(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_x_subpixel(&mut self, value: u8) {
-        self.state.set_x_subpixel(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_y_subpixel(&mut self, value: u8) {
-        self.state.set_y_subpixel(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_countdown(&mut self, value: u8) {
-        self.state.set_countdown(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_sprite(&mut self, value: u8) {
-        self.state.set_sprite(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_floor(&mut self, value: u8) {
-        self.state.set_floor(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_oam_flags(&mut self, value: u8) {
-        self.state.set_oam_flags(value);
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_garnish_type(value: u8);
+        fn set_x(value: u16);
+        fn set_x_low(value: u8);
+        fn set_x_high(value: u8);
+        fn set_y(value: u16);
+        fn set_y_low(value: u8);
+        fn set_y_high(value: u8);
+        fn set_x_velocity(value: u8);
+        fn set_y_velocity(value: u8);
+        fn set_x_subpixel(value: u8);
+        fn set_y_subpixel(value: u8);
+        fn set_countdown(value: u8);
+        fn set_sprite(value: u8);
+        fn set_floor(value: u8);
+        fn set_oam_flags(value: u8);
     }
 }
 
@@ -621,105 +565,27 @@ impl<'a> NativeGarnishRuntimeBridgeMut<'a> {
         debug_assert_eq!(*self.state, GarnishRuntimeState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn set_active_type(&mut self, value: u8) {
-        self.state.set_active_type(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_active_type(&mut self) {
-        self.state.clear_active_type();
-        self.sync();
-    }
-
-    pub(crate) fn increment_boulder_trap_timer(&mut self) -> u8 {
-        let value = self.state.increment_boulder_trap_timer();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_active_overlord_index(&mut self, value: u8) {
-        self.state.set_active_overlord_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_haunted_grove_flute_event_latch(&mut self) {
-        self.state.increment_haunted_grove_flute_event_latch();
-        self.sync();
-    }
-
-    pub(crate) fn set_repulsespark_timer(&mut self, value: u8) {
-        self.state.set_repulsespark_timer(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_repulsespark_timer(&mut self) {
-        self.state.clear_repulsespark_timer();
-        self.sync();
-    }
-
-    pub(crate) fn decrement_repulsespark_timer(&mut self) {
-        self.state.decrement_repulsespark_timer();
-        self.sync();
-    }
-
-    pub(crate) fn set_repulsespark_anim_delay(&mut self, value: u8) {
-        self.state.set_repulsespark_anim_delay(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_repulsespark_anim_delay(&mut self) -> u8 {
-        let value = self.state.decrement_repulsespark_anim_delay();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_repulsespark_x_lo(&mut self, value: u8) {
-        self.state.set_repulsespark_x_lo(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_repulsespark_y_lo(&mut self, value: u8) {
-        self.state.set_repulsespark_y_lo(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_sprcoll_x_size(&mut self, value: u16) {
-        self.state.set_sprcoll_x_size(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_sprcoll_y_size(&mut self, value: u16) {
-        self.state.set_sprcoll_y_size(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_sprcoll_x_base(&mut self, value: u16) {
-        self.state.set_sprcoll_x_base(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_sprcoll_y_base(&mut self, value: u16) {
-        self.state.set_sprcoll_y_base(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_repulsespark_floor_status(&mut self, value: u8) {
-        self.state.set_repulsespark_floor_status(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_boulder_trap_count(&mut self) {
-        self.state.clear_boulder_trap_count();
-        self.sync();
-    }
-
-    pub(crate) fn increment_boulder_trap_count(&mut self) {
-        self.state.increment_boulder_trap_count();
-        self.sync();
-    }
-
-    pub(crate) fn clear_haunted_grove_flute_event_latch(&mut self) {
-        self.state.clear_haunted_grove_flute_event_latch();
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_active_type(value: u8);
+        fn clear_active_type();
+        fn increment_boulder_trap_timer() -> u8;
+        fn set_active_overlord_index(value: u8);
+        fn increment_haunted_grove_flute_event_latch();
+        fn set_repulsespark_timer(value: u8);
+        fn clear_repulsespark_timer();
+        fn decrement_repulsespark_timer();
+        fn set_repulsespark_anim_delay(value: u8);
+        fn decrement_repulsespark_anim_delay() -> u8;
+        fn set_repulsespark_x_lo(value: u8);
+        fn set_repulsespark_y_lo(value: u8);
+        fn set_sprcoll_x_size(value: u16);
+        fn set_sprcoll_y_size(value: u16);
+        fn set_sprcoll_x_base(value: u16);
+        fn set_sprcoll_y_base(value: u16);
+        fn set_repulsespark_floor_status(value: u8);
+        fn clear_boulder_trap_count();
+        fn increment_boulder_trap_count();
+        fn clear_haunted_grove_flute_event_latch();
     }
 }

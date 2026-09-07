@@ -531,61 +531,19 @@ impl<'a> NativeMirrorWarpBridgeMut<'a> {
         debug_assert_eq!(*self.mirror_warp, MirrorWarpState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn initialize_hdma_wave_state(&mut self) {
-        self.mirror_warp.initialize_hdma_wave_state();
-        self.sync();
-    }
-
-    pub(crate) fn reset_wave_and_subpixel(&mut self) {
-        self.mirror_warp.reset_wave_and_subpixel();
-        self.sync();
-    }
-
-    pub(crate) fn toggle_target_index(&mut self) {
-        self.mirror_warp.toggle_target_index();
-        self.sync();
-    }
-
-    pub(crate) fn set_displacement(&mut self, value: u16) {
-        self.mirror_warp.set_displacement(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_subpixel_low_from(&mut self, value: u16) {
-        self.mirror_warp.set_subpixel_low_from(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_wave_offset(&mut self, value: u16) {
-        self.mirror_warp.set_wave_offset(value);
-        self.sync();
-    }
-
-    pub(crate) fn shrink_target_offsets_for_dewaving(&mut self) {
-        self.mirror_warp.shrink_target_offsets_for_dewaving();
-        self.sync();
-    }
-
-    pub(crate) fn increment_load_step_counter(&mut self) -> u8 {
-        let value = self.mirror_warp.increment_load_step_counter();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn reset_load_step_counter(&mut self) {
-        self.mirror_warp.reset_load_step_counter();
-        self.sync();
-    }
-
-    pub(crate) fn set_animation_counter(&mut self, value: u8) {
-        self.mirror_warp.set_animation_counter(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_animation_counter(&mut self) -> u8 {
-        let value = self.mirror_warp.decrement_animation_counter();
-        self.sync();
-        value
+    forward_synced! {
+        mirror_warp;
+        fn initialize_hdma_wave_state();
+        fn reset_wave_and_subpixel();
+        fn toggle_target_index();
+        fn set_displacement(value: u16);
+        fn set_subpixel_low_from(value: u16);
+        fn set_wave_offset(value: u16);
+        fn shrink_target_offsets_for_dewaving();
+        fn increment_load_step_counter() -> u8;
+        fn reset_load_step_counter();
+        fn set_animation_counter(value: u8);
+        fn decrement_animation_counter() -> u8;
     }
 }
 

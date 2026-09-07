@@ -4566,85 +4566,24 @@ impl<'a> NativeSpotlightHdmaBridgeMut<'a> {
         debug_assert_eq!(*self.state, SpotlightHdmaState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn set_y_lower(&mut self, value: u16) {
-        self.state.set_y_lower(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_y_upper(&mut self, value: u16) {
-        self.state.set_y_upper(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_window_x_center(&mut self, value: u16) {
-        self.state.set_window_x_center(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_window_state(&mut self, value: u16) {
-        self.state.set_window_state(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_window_radius(&mut self, value: u16) {
-        self.state.set_window_radius(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_window_y_buffer(&mut self, value: u16) {
-        self.state.set_window_y_buffer(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_window_y_buffer(&mut self) -> u16 {
-        let value = self.state.decrement_window_y_buffer();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_window_radius_byte(&mut self, value: u8) {
-        self.state.set_window_radius_byte(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_window_state_byte(&mut self, value: u8) {
-        self.state.set_window_state_byte(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_window_y_buffer_byte(&mut self, value: u8) {
-        self.state.set_window_y_buffer_byte(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_window_y_buffer_byte(&mut self) {
-        self.state.increment_window_y_buffer_byte();
-        self.sync();
-    }
-
-    pub(crate) fn shr_window_radius_byte(&mut self, shift: u8) {
-        self.state.shr_window_radius_byte(shift);
-        self.sync();
-    }
-
-    pub(crate) fn add_window_radius_byte(&mut self, value: u8) {
-        self.state.add_window_radius_byte(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_hdma_table_dynamic_entry(&mut self, index: usize, value: u16) {
-        self.state.set_hdma_table_dynamic_entry(index, value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_hdma_table_dynamic(&mut self, count: usize) {
-        self.state.clear_hdma_table_dynamic(count);
-        self.sync();
-    }
-
-    pub(crate) fn clear_hdma_table_dynamic_range(&mut self, start: usize, count: usize) {
-        self.state.clear_hdma_table_dynamic_range(start, count);
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_y_lower(value: u16);
+        fn set_y_upper(value: u16);
+        fn set_window_x_center(value: u16);
+        fn set_window_state(value: u16);
+        fn set_window_radius(value: u16);
+        fn set_window_y_buffer(value: u16);
+        fn decrement_window_y_buffer() -> u16;
+        fn set_window_radius_byte(value: u8);
+        fn set_window_state_byte(value: u8);
+        fn set_window_y_buffer_byte(value: u8);
+        fn increment_window_y_buffer_byte();
+        fn shr_window_radius_byte(shift: u8);
+        fn add_window_radius_byte(value: u8);
+        fn set_hdma_table_dynamic_entry(index: usize, value: u16);
+        fn clear_hdma_table_dynamic(count: usize);
+        fn clear_hdma_table_dynamic_range(start: usize, count: usize);
     }
 
     fn sync_dynamic_table_words_from_ram(&mut self, source: usize, count: usize) {

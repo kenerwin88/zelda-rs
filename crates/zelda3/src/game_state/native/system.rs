@@ -513,89 +513,25 @@ impl<'a> NativeSystemSignalsBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn set_music_control(&mut self, value: u8) {
-        self.system_signals.set_music_control(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_current_music_control(&mut self, value: u8) {
-        self.system_signals.set_current_music_control(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_last_music_control(&mut self, value: u8) {
-        self.system_signals.set_last_music_control(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_queued_music_control(&mut self, value: u8) {
-        self.system_signals.set_queued_music_control(value);
-        self.sync();
-    }
-
-    pub(crate) fn select_overworld_song_bank(&mut self) {
-        self.system_signals.select_overworld_song_bank();
-        self.sync();
-    }
-
-    pub(crate) fn select_dungeon_song_bank(&mut self) {
-        self.system_signals.select_dungeon_song_bank();
-        self.sync();
-    }
-
-    pub(crate) fn set_ambient_sound_effect(&mut self, value: u8) {
-        self.system_signals.set_ambient_sound_effect(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_sound_effect_1(&mut self, value: u8) {
-        self.system_signals.set_sound_effect_1(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_sound_effect_2(&mut self, value: u8) {
-        self.system_signals.set_sound_effect_2(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_apui00(&mut self, value: u8) {
-        self.system_signals.set_apui00(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_msu_volume(&mut self, value: u8) {
-        self.system_signals.set_msu_volume(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_msu_resume_info(&mut self, slot: MsuResumeSlot, info: MsuResumeInfoState) {
-        self.system_signals.set_msu_resume_info(slot, info);
-        self.sync();
-    }
-
-    pub(crate) fn set_sound_effect_1_word(&mut self, value: u16) {
-        self.system_signals.set_sound_effect_1_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_ambient_sound_effect_word(&mut self, value: u16) {
-        self.system_signals.set_ambient_sound_effect_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_sound_effect_1(&mut self) {
-        self.system_signals.clear_sound_effect_1();
-        self.sync();
-    }
-
-    pub(crate) fn clear_sound_effect_2(&mut self) {
-        self.system_signals.clear_sound_effect_2();
-        self.sync();
-    }
-
-    pub(crate) fn clear_ambient_sound_effect(&mut self) {
-        self.system_signals.clear_ambient_sound_effect();
-        self.sync();
+    forward_synced! {
+        system_signals;
+        fn set_music_control(value: u8);
+        fn set_current_music_control(value: u8);
+        fn set_last_music_control(value: u8);
+        fn set_queued_music_control(value: u8);
+        fn select_overworld_song_bank();
+        fn select_dungeon_song_bank();
+        fn set_ambient_sound_effect(value: u8);
+        fn set_sound_effect_1(value: u8);
+        fn set_sound_effect_2(value: u8);
+        fn set_apui00(value: u8);
+        fn set_msu_volume(value: u8);
+        fn set_msu_resume_info(slot: MsuResumeSlot, info: MsuResumeInfoState);
+        fn set_sound_effect_1_word(value: u16);
+        fn set_ambient_sound_effect_word(value: u16);
+        fn clear_sound_effect_1();
+        fn clear_sound_effect_2();
+        fn clear_ambient_sound_effect();
     }
 
     pub(crate) fn queue_sound_effect_1_if_empty(&mut self, value: u8) -> bool {
@@ -616,76 +552,22 @@ impl<'a> NativeSystemSignalsBridgeMut<'a> {
         }
     }
 
-    pub(crate) fn increment_hud_update_flag(&mut self) -> u8 {
-        let value = self.system_signals.increment_hud_update_flag();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn clear_hud_update_flag(&mut self) {
-        self.system_signals.clear_hud_update_flag();
-        self.sync();
-    }
-
-    pub(crate) fn increment_cgram_update_flag(&mut self) -> u8 {
-        let value = self.system_signals.increment_cgram_update_flag();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn clear_cgram_update_flag(&mut self) {
-        self.system_signals.clear_cgram_update_flag();
-        self.sync();
-    }
-
-    pub(crate) fn set_bugs_fixed(&mut self, value: u8) {
-        self.system_signals.set_bugs_fixed(value);
-        self.sync();
-    }
-
-    pub(crate) fn save_current_music_as_last(&mut self) {
-        self.system_signals.save_current_music_as_last();
-        self.sync();
-    }
-
-    pub(crate) fn save_ambient_sound_effect_as_last(&mut self) {
-        self.system_signals.save_ambient_sound_effect_as_last();
-        self.sync();
-    }
-
-    pub(crate) fn clear_game_over_check_flag(&mut self) {
-        self.system_signals.clear_game_over_check_flag();
-        self.sync();
-    }
-
-    pub(crate) fn clear_restart_check_flag(&mut self) {
-        self.system_signals.clear_restart_check_flag();
-        self.sync();
-    }
-
-    pub(crate) fn set_restart_check_flag(&mut self, value: u8) {
-        self.system_signals.set_restart_check_flag(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_raw_sfx_pan_value(&mut self, value: u8) {
-        self.system_signals.set_raw_sfx_pan_value(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_game_over_check_flag(&mut self) {
-        self.system_signals.increment_game_over_check_flag();
-        self.sync();
-    }
-
-    pub(crate) fn set_death_backup_current_music(&mut self, value: u8) {
-        self.system_signals.set_death_backup_current_music(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_death_backup_ambient_sound(&mut self, value: u8) {
-        self.system_signals.set_death_backup_ambient_sound(value);
-        self.sync();
+    forward_synced! {
+        system_signals;
+        fn increment_hud_update_flag() -> u8;
+        fn clear_hud_update_flag();
+        fn increment_cgram_update_flag() -> u8;
+        fn clear_cgram_update_flag();
+        fn set_bugs_fixed(value: u8);
+        fn save_current_music_as_last();
+        fn save_ambient_sound_effect_as_last();
+        fn clear_game_over_check_flag();
+        fn clear_restart_check_flag();
+        fn set_restart_check_flag(value: u8);
+        fn set_raw_sfx_pan_value(value: u8);
+        fn increment_game_over_check_flag();
+        fn set_death_backup_current_music(value: u8);
+        fn set_death_backup_ambient_sound(value: u8);
     }
 }
 

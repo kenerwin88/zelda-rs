@@ -2412,67 +2412,20 @@ impl<'a> NativeSpriteSystemBridgeMut<'a> {
         debug_assert_eq!(*self.state, fresh);
     }
 
-    pub(crate) fn set_limit_instance(&mut self, value: u8) {
-        self.state.set_limit_instance(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_blind_head_anim_counter(&mut self, value: u8) {
-        self.state.set_blind_head_anim_counter(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_blind_head_anim_counter(&mut self) {
-        self.state.increment_blind_head_anim_counter();
-        self.sync();
-    }
-
-    pub(crate) fn increment_limit_instance(&mut self) -> u8 {
-        let value = self.state.increment_limit_instance();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn decrement_limit_instance(&mut self) -> u8 {
-        let value = self.state.decrement_limit_instance();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_chr_halfslot_state(&mut self, value: u8) {
-        self.state.set_chr_halfslot_state(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_alert_flag(&mut self, value: u8) {
-        self.state.set_alert_flag(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_alert_flag(&mut self) -> u8 {
-        let value = self.state.decrement_alert_flag();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_graphics_index(&mut self, value: u8) {
-        self.state.set_graphics_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn save_special_exit_graphics_index(&mut self) {
-        self.state.save_special_exit_graphics_index();
-        self.sync();
-    }
-
-    pub(crate) fn restore_special_exit_graphics_index(&mut self) {
-        self.state.restore_special_exit_graphics_index();
-        self.sync();
-    }
-
-    pub(crate) fn restore_exit_graphics_index(&mut self) {
-        self.state.restore_exit_graphics_index();
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_limit_instance(value: u8);
+        fn set_blind_head_anim_counter(value: u8);
+        fn increment_blind_head_anim_counter();
+        fn increment_limit_instance() -> u8;
+        fn decrement_limit_instance() -> u8;
+        fn set_chr_halfslot_state(value: u8);
+        fn set_alert_flag(value: u8);
+        fn decrement_alert_flag() -> u8;
+        fn set_graphics_index(value: u8);
+        fn save_special_exit_graphics_index();
+        fn restore_special_exit_graphics_index();
+        fn restore_exit_graphics_index();
     }
 
     pub(crate) fn fill_live_states(&mut self, value: u8) {
@@ -2485,29 +2438,13 @@ impl<'a> NativeSpriteSystemBridgeMut<'a> {
         *self.sprite_slots = SpriteSlotsState::load_from_ram(self.ram);
     }
 
-    pub(crate) fn set_alt_sprite_spawned_flag(&mut self, value: u8) {
-        self.state.set_alt_sprite_spawned_flag(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_cur_object_index(&mut self, value: u8) {
-        self.state.set_cur_object_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_alt_sprites_flag(&mut self, value: u8) {
-        self.state.set_alt_sprites_flag(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_alt_sprites_flag(&mut self) {
-        self.state.clear_alt_sprites_flag();
-        self.sync();
-    }
-
-    pub(crate) fn increment_ranged_based_toggler(&mut self) {
-        self.state.increment_ranged_based_toggler();
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_alt_sprite_spawned_flag(value: u8);
+        fn set_cur_object_index(value: u8);
+        fn set_alt_sprites_flag(value: u8);
+        fn clear_alt_sprites_flag();
+        fn increment_ranged_based_toggler();
     }
 }
 
@@ -2832,24 +2769,12 @@ impl<'a> NativeSpriteWorkspaceBridgeMut<'a> {
         debug_assert_eq!(*self.state, fresh);
     }
 
-    pub(crate) fn set_room_origin_x_high(&mut self, value: u8) {
-        self.state.set_room_origin_x_high(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_room_origin_y_high(&mut self, value: u8) {
-        self.state.set_room_origin_y_high(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_pickup_slot_cache(&mut self, value: u8) {
-        self.state.set_pickup_slot_cache(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_shared_scratch_a(&mut self, value: u8) {
-        self.state.set_shared_scratch_a(value);
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_room_origin_x_high(value: u8);
+        fn set_room_origin_y_high(value: u8);
+        fn set_pickup_slot_cache(value: u8);
+        fn set_shared_scratch_a(value: u8);
     }
 
     pub(crate) fn set_room_marker_word(&mut self, slot: usize, value: u16) {
@@ -2860,26 +2785,12 @@ impl<'a> NativeSpriteWorkspaceBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn set_tile_type(&mut self, value: u8) {
-        self.state.set_tile_type(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_prep_shared_counter(&mut self, value: u8) {
-        self.state.set_prep_shared_counter(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_prep_shared_counter(&mut self) -> u8 {
-        let value = self.state.increment_prep_shared_counter();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn decrement_prep_shared_counter(&mut self) -> u8 {
-        let value = self.state.decrement_prep_shared_counter();
-        self.sync();
-        value
+    forward_synced! {
+        state;
+        fn set_tile_type(value: u8);
+        fn set_prep_shared_counter(value: u8);
+        fn increment_prep_shared_counter() -> u8;
+        fn decrement_prep_shared_counter() -> u8;
     }
 
     pub(crate) fn decrement_armos_knight_remaining_count(&mut self) -> u8 {
@@ -2893,24 +2804,17 @@ impl<'a> NativeSpriteWorkspaceBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_reset_scratch_a(&mut self, value: u8) {
-        self.state.set_reset_scratch_a(value);
-        self.sync();
-    }
+    forward_synced! { state; fn set_reset_scratch_a(value: u8); }
 
     pub(crate) fn clear_agahnim_phase_scratch(&mut self) {
         self.state.set_reset_scratch_a(0);
         self.sync();
     }
 
-    pub(crate) fn set_reset_scratch_b(&mut self, value: u8) {
-        self.state.set_reset_scratch_b(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_graphics_subset(&mut self, slot: usize, value: u8) {
-        self.state.set_graphics_subset(slot, value);
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_reset_scratch_b(value: u8);
+        fn set_graphics_subset(slot: usize, value: u8);
     }
 
     pub(crate) fn clear_where_in_room(&mut self) {
@@ -2938,69 +2842,21 @@ impl<'a> NativeSpriteWorkspaceBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn clear_draw_priority_override(&mut self) {
-        self.state.clear_draw_priority_override();
-        self.sync();
-    }
-
-    pub(crate) fn set_draw_priority_override_low(&mut self, value: u8) {
-        self.state.set_draw_priority_override_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_current_sprite_x(&mut self, value: u16) {
-        self.state.set_current_sprite_x(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_current_sprite_x_low(&mut self, value: u8) {
-        self.state.set_current_sprite_x_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn add_current_sprite_x_low(&mut self, value: u8) {
-        self.state.add_current_sprite_x_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_current_sprite_y(&mut self, value: u16) {
-        self.state.set_current_sprite_y(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_current_sprite_y_low(&mut self, value: u8) {
-        self.state.set_current_sprite_y_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn add_current_sprite_y_low(&mut self, value: u8) {
-        self.state.add_current_sprite_y_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn subtract_current_sprite_y_low(&mut self, value: u8) {
-        self.state.subtract_current_sprite_y_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_oam_prep_coords(&mut self, x: u16, y: u16) {
-        self.state.set_oam_prep_coords(x, y);
-        self.sync();
-    }
-
-    pub(crate) fn set_killed_sprite_load_block(&mut self, block: u16) {
-        self.state.set_killed_sprite_load_block(block);
-        self.sync();
-    }
-
-    pub(crate) fn set_last_garnish_index(&mut self, index: i32) {
-        self.state.set_last_garnish_index(index);
-        self.sync();
-    }
-
-    pub(crate) fn set_where_in_room(&mut self, room: usize, value: u16) {
-        self.state.set_where_in_room(room, value);
-        self.sync();
+    forward_synced! {
+        state;
+        fn clear_draw_priority_override();
+        fn set_draw_priority_override_low(value: u8);
+        fn set_current_sprite_x(value: u16);
+        fn set_current_sprite_x_low(value: u8);
+        fn add_current_sprite_x_low(value: u8);
+        fn set_current_sprite_y(value: u16);
+        fn set_current_sprite_y_low(value: u8);
+        fn add_current_sprite_y_low(value: u8);
+        fn subtract_current_sprite_y_low(value: u8);
+        fn set_oam_prep_coords(x: u16, y: u16);
+        fn set_killed_sprite_load_block(block: u16);
+        fn set_last_garnish_index(index: i32);
+        fn set_where_in_room(room: usize, value: u16);
     }
 }
 
@@ -3221,10 +3077,7 @@ impl<'a> NativeOverworldSpritePresenceBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn set_marker(&mut self, index: usize, value: u8) {
-        self.state.set_marker(index, value);
-        self.sync();
-    }
+    forward_synced! { state; fn set_marker(index: usize, value: u8); }
 }
 
 pub(crate) struct NativeOverworldSpriteLoadedBridgeMut<'a> {
@@ -3249,19 +3102,11 @@ impl<'a> NativeOverworldSpriteLoadedBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn clear_loaded_mask(&mut self, block: u16, loaded_mask: u8) {
-        self.state.clear_loaded_mask(block, loaded_mask);
-        self.sync();
-    }
-
-    pub(crate) fn set_loaded_mask(&mut self, block: u16, loaded_mask: u8) {
-        self.state.set_loaded_mask(block, loaded_mask);
-        self.sync();
-    }
-
-    pub(crate) fn clear_all(&mut self) {
-        self.state.clear_all();
-        self.sync();
+    forward_synced! {
+        state;
+        fn clear_loaded_mask(block: u16, loaded_mask: u8);
+        fn set_loaded_mask(block: u16, loaded_mask: u8);
+        fn clear_all();
     }
 }
 
@@ -3425,51 +3270,17 @@ impl<'a> NativeEtherOrbitBridgeMut<'a> {
         debug_assert_eq!(*self.orbit, EtherOrbitState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn set_angle(&mut self, slot: usize, value: u8) {
-        self.orbit.set_angle(slot, value);
-        self.sync();
-    }
-
-    pub(crate) fn advance_angle(&mut self, slot: usize) -> u8 {
-        let next = self.orbit.advance_angle(slot);
-        self.sync();
-        next
-    }
-
-    pub(crate) fn set_radius(&mut self, value: u8) {
-        self.orbit.set_radius(value);
-        self.sync();
-    }
-
-    pub(crate) fn tick_spin_countdown(&mut self) -> u8 {
-        let value = self.orbit.tick_spin_countdown();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_spin_countdown(&mut self, value: u8) {
-        self.orbit.set_spin_countdown(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_beam_top_bucket(&mut self, value: u8) {
-        self.orbit.set_beam_top_bucket(value);
-        self.sync();
-    }
-
-    pub(crate) fn initialize_beam_adjusted_y(&mut self, value: u16) {
-        self.orbit.initialize_beam_adjusted_y(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_orb_position(&mut self, x: u16, y: u16) {
-        self.orbit.set_orb_position(x, y);
-        self.sync();
-    }
-
-    pub(crate) fn set_orbit_position(&mut self, x: u16, y: u16) {
-        self.orbit.set_orbit_position(x, y);
-        self.sync();
+    forward_synced! {
+        orbit;
+        fn set_angle(slot: usize, value: u8);
+        fn advance_angle(slot: usize) -> u8;
+        fn set_radius(value: u8);
+        fn tick_spin_countdown() -> u8;
+        fn set_spin_countdown(value: u8);
+        fn set_beam_top_bucket(value: u8);
+        fn initialize_beam_adjusted_y(value: u16);
+        fn set_orb_position(x: u16, y: u16);
+        fn set_orbit_position(x: u16, y: u16);
     }
 
     pub(crate) fn set_swordbeam_temp(&mut self, x: u16, y: u16) {
@@ -3486,10 +3297,7 @@ impl<'a> NativeEtherOrbitBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_beam_y(&mut self, value: u16) {
-        self.orbit.set_beam_y(value);
-        self.sync();
-    }
+    forward_synced! { orbit; fn set_beam_y(value: u16); }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -3579,14 +3387,10 @@ impl<'a> NativeChainChompHistoryBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn set_x(&mut self, position: usize, value: u16) {
-        self.history.set_x(position, value);
-        self.sync();
-    }
-
-    pub(crate) fn set_y(&mut self, position: usize, value: u16) {
-        self.history.set_y(position, value);
-        self.sync();
+    forward_synced! {
+        history;
+        fn set_x(position: usize, value: u16);
+        fn set_y(position: usize, value: u16);
     }
 }
 
@@ -3769,29 +3573,20 @@ impl<'a> NativeSpriteDrawWorkPositionBridgeMut<'a> {
         Self { state, ram }
     }
 
-    pub(crate) fn set_low_position(&mut self, x: u8, y: u8) {
-        self.state.set_low_position(x, y);
-        self.sync();
-    }
-
-    pub(crate) fn set_low_position_word(&mut self, value: u16) {
-        self.state.set_low_position_word(value);
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_low_position(x: u8, y: u8);
+        fn set_low_position_word(value: u16);
     }
 
     pub(crate) fn set_word_bytes(&mut self, low: u8, high: u8) {
         self.set_low_position(low, high);
     }
 
-    pub(crate) fn offset_low_position(&mut self, dx: u8, dy: u8) -> (u8, u8) {
-        let position = self.state.offset_low_position(dx, dy);
-        self.sync();
-        position
-    }
-
-    pub(crate) fn set_flags_high(&mut self, value: u8) {
-        self.state.set_flags_high(value);
-        self.sync();
+    forward_synced! {
+        state;
+        fn offset_low_position(dx: u8, dy: u8) -> (u8, u8);
+        fn set_flags_high(value: u8);
     }
 
     fn sync(&mut self) {
@@ -3817,14 +3612,10 @@ impl<'a> NativeSpriteHitboxWorkOffsetBridgeMut<'a> {
         Self { state, ram }
     }
 
-    pub(crate) fn set_x_high_offset(&mut self, value: u8) {
-        self.state.set_x_high_offset(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_offsets(&mut self, y_low: u8, x_high: u8) {
-        self.state.set_offsets(y_low, x_high);
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_x_high_offset(value: u8);
+        fn set_offsets(y_low: u8, x_high: u8);
     }
 
     fn sync(&mut self) {
@@ -3946,11 +3737,7 @@ impl<'a> NativePrizeDropCycleBridgeMut<'a> {
         Self { state, ram }
     }
 
-    pub(crate) fn take_next_index(&mut self, slot: usize) -> u8 {
-        let current = self.state.take_next_index(slot);
-        self.sync();
-        current
-    }
+    forward_synced! { state; fn take_next_index(slot: usize) -> u8; }
 
     fn sync(&mut self) {
         self.state.write_to_ram(self.ram);
@@ -4037,26 +3824,12 @@ impl<'a> NativeMazeGameTimerBridgeMut<'a> {
         Self { state, ram }
     }
 
-    pub(crate) fn clear_elapsed(&mut self) {
-        self.state.clear_elapsed();
-        self.sync();
-    }
-
-    pub(crate) fn increment_elapsed_low(&mut self) -> u16 {
-        let elapsed_low = self.state.increment_elapsed_low();
-        self.sync();
-        elapsed_low
-    }
-
-    pub(crate) fn increment_elapsed_high(&mut self) -> u16 {
-        let elapsed_high = self.state.increment_elapsed_high();
-        self.sync();
-        elapsed_high
-    }
-
-    pub(crate) fn capture_snapshot(&mut self) {
-        self.state.capture_snapshot();
-        self.sync();
+    forward_synced! {
+        state;
+        fn clear_elapsed();
+        fn increment_elapsed_low() -> u16;
+        fn increment_elapsed_high() -> u16;
+        fn capture_snapshot();
     }
 
     fn sync(&mut self) {

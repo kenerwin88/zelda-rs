@@ -4,6 +4,9 @@
 //! proven subsystem by subsystem. Native structs own domain fields and can be
 //! projected to or loaded from WRAM during the transition.
 
+#[macro_use]
+mod bridge_methods;
+
 mod ancilla;
 mod display;
 mod dungeon;

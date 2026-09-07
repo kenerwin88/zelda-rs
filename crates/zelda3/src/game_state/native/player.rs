@@ -7588,294 +7588,66 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
         debug_assert_eq!(*self.state, TileDetectionState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn set_y_high(&mut self, value: u8) {
-        self.state.set_y_high(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_y(&mut self, value: u16) {
-        self.state.set_y(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_x(&mut self, value: u16) {
-        self.state.set_x(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_location_calc_mask(&mut self, value: u16) {
-        self.state.set_location_calc_mask(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_interacting_tile(&mut self, value: u16) {
-        self.state.set_interacting_tile(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_interacting_tile_low(&mut self, value: u8) {
-        self.state.set_interacting_tile_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_fall_hole_scan_index(&mut self, value: u8) {
-        self.state.set_fall_hole_scan_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_interaction_scratch_y(&mut self, value: u16) {
-        self.state.set_interaction_scratch_y(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_interaction_scratch_x(&mut self, value: u16) {
-        self.state.set_interaction_scratch_x(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_diagonal_tile(&mut self, value: u16) {
-        self.state.set_diagonal_tile(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_diagonal_tile(&mut self) {
-        self.state.clear_diagonal_tile();
-        self.sync();
-    }
-
-    pub(crate) fn clear_stair_tile(&mut self) {
-        self.state.clear_stair_tile();
-        self.sync();
-    }
-
-    pub(crate) fn or_stair_tile(&mut self, value: u8) {
-        self.state.or_stair_tile(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_block_flags(&mut self, value: u16) {
-        self.state.set_block_flags(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_block_flags(&mut self) {
-        self.state.clear_block_flags();
-        self.sync();
-    }
-
-    pub(crate) fn set_door_direction_flags(&mut self, value: u16) {
-        self.state.set_door_direction_flags(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_door_direction_flags(&mut self) {
-        self.state.clear_door_direction_flags();
-        self.sync();
-    }
-
-    pub(crate) fn set_diag_state(&mut self, value: u16) {
-        self.state.set_diag_state(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_diag_state(&mut self) {
-        self.state.clear_diag_state();
-        self.sync();
-    }
-
-    pub(crate) fn clear_pit_tile(&mut self) {
-        self.state.clear_pit_tile();
-        self.sync();
-    }
-
-    pub(crate) fn or_pit_tile(&mut self, value: u8) {
-        self.state.or_pit_tile(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_deepwater(&mut self, value: u16) {
-        self.state.set_deepwater(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_deepwater(&mut self) {
-        self.state.clear_deepwater();
-        self.sync();
-    }
-
-    pub(crate) fn set_normal_tiles(&mut self, value: u16) {
-        self.state.set_normal_tiles(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_normal_tiles(&mut self) {
-        self.state.clear_normal_tiles();
-        self.sync();
-    }
-
-    pub(crate) fn set_misc_tiles(&mut self, value: u16) {
-        self.state.set_misc_tiles(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_misc_tiles(&mut self) {
-        self.state.clear_misc_tiles();
-        self.sync();
-    }
-
-    pub(crate) fn set_thick_grass(&mut self, value: u16) {
-        self.state.set_thick_grass(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_thick_grass(&mut self) {
-        self.state.clear_thick_grass();
-        self.sync();
-    }
-
-    pub(crate) fn clear_vertical_ledge(&mut self) {
-        self.state.clear_vertical_ledge();
-        self.sync();
-    }
-
-    pub(crate) fn or_vertical_ledge(&mut self, value: u8) {
-        self.state.or_vertical_ledge(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_horizontal_ledge(&mut self) {
-        self.state.clear_horizontal_ledge();
-        self.sync();
-    }
-
-    pub(crate) fn or_horizontal_ledge(&mut self, value: u8) {
-        self.state.or_horizontal_ledge(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_moving_floor_tiles(&mut self, value: u16) {
-        self.state.set_moving_floor_tiles(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_moving_floor_tiles(&mut self) {
-        self.state.clear_moving_floor_tiles();
-        self.sync();
-    }
-
-    pub(crate) fn set_icy_floor(&mut self, value: u16) {
-        self.state.set_icy_floor(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_icy_floor(&mut self) {
-        self.state.clear_icy_floor();
-        self.sync();
-    }
-
-    pub(crate) fn set_water_staircase(&mut self, value: u16) {
-        self.state.set_water_staircase(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_water_staircase(&mut self) {
-        self.state.clear_water_staircase();
-        self.sync();
-    }
-
-    pub(crate) fn set_shallow_water(&mut self, value: u16) {
-        self.state.set_shallow_water(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_shallow_water(&mut self) {
-        self.state.clear_shallow_water();
-        self.sync();
-    }
-
-    pub(crate) fn set_destruction_aftermath(&mut self, value: u16) {
-        self.state.set_destruction_aftermath(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_destruction_aftermath(&mut self) {
-        self.state.clear_destruction_aftermath();
-        self.sync();
-    }
-
-    pub(crate) fn set_read_something(&mut self, value: u16) {
-        self.state.set_read_something(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_read_something(&mut self) {
-        self.state.clear_read_something();
-        self.sync();
-    }
-
-    pub(crate) fn clear_ledges_down_leftright(&mut self) {
-        self.state.clear_ledges_down_leftright();
-        self.sync();
-    }
-
-    pub(crate) fn or_ledges_down_leftright(&mut self, value: u8) {
-        self.state.or_ledges_down_leftright(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_diagonal_ledge_tiles(&mut self) {
-        self.state.clear_diagonal_ledge_tiles();
-        self.sync();
-    }
-
-    pub(crate) fn or_diagonal_ledge_tiles(&mut self, value: u8) {
-        self.state.or_diagonal_ledge_tiles(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_chest(&mut self, value: u16) {
-        self.state.set_chest(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_chest(&mut self) {
-        self.state.clear_chest();
-        self.sync();
-    }
-
-    pub(crate) fn clear_key_lock_gravestones(&mut self) {
-        self.state.clear_key_lock_gravestones();
-        self.sync();
-    }
-
-    pub(crate) fn or_key_lock_gravestones(&mut self, value: u8) {
-        self.state.or_key_lock_gravestones(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_spike_cactus_tiles(&mut self, value: u8) {
-        self.state.set_spike_cactus_tiles(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_spike_cactus_tiles(&mut self) {
-        self.state.clear_spike_cactus_tiles();
-        self.sync();
-    }
-
-    pub(crate) fn or_spike_cactus_tiles(&mut self, value: u8) {
-        self.state.or_spike_cactus_tiles(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_tile_type(&mut self, value: u16) {
-        self.state.set_tile_type(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_tile_type(&mut self) {
-        self.state.clear_tile_type();
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_y_high(value: u8);
+        fn set_y(value: u16);
+        fn set_x(value: u16);
+        fn set_location_calc_mask(value: u16);
+        fn set_interacting_tile(value: u16);
+        fn set_interacting_tile_low(value: u8);
+        fn set_fall_hole_scan_index(value: u8);
+        fn set_interaction_scratch_y(value: u16);
+        fn set_interaction_scratch_x(value: u16);
+        fn set_diagonal_tile(value: u16);
+        fn clear_diagonal_tile();
+        fn clear_stair_tile();
+        fn or_stair_tile(value: u8);
+        fn set_block_flags(value: u16);
+        fn clear_block_flags();
+        fn set_door_direction_flags(value: u16);
+        fn clear_door_direction_flags();
+        fn set_diag_state(value: u16);
+        fn clear_diag_state();
+        fn clear_pit_tile();
+        fn or_pit_tile(value: u8);
+        fn set_deepwater(value: u16);
+        fn clear_deepwater();
+        fn set_normal_tiles(value: u16);
+        fn clear_normal_tiles();
+        fn set_misc_tiles(value: u16);
+        fn clear_misc_tiles();
+        fn set_thick_grass(value: u16);
+        fn clear_thick_grass();
+        fn clear_vertical_ledge();
+        fn or_vertical_ledge(value: u8);
+        fn clear_horizontal_ledge();
+        fn or_horizontal_ledge(value: u8);
+        fn set_moving_floor_tiles(value: u16);
+        fn clear_moving_floor_tiles();
+        fn set_icy_floor(value: u16);
+        fn clear_icy_floor();
+        fn set_water_staircase(value: u16);
+        fn clear_water_staircase();
+        fn set_shallow_water(value: u16);
+        fn clear_shallow_water();
+        fn set_destruction_aftermath(value: u16);
+        fn clear_destruction_aftermath();
+        fn set_read_something(value: u16);
+        fn clear_read_something();
+        fn clear_ledges_down_leftright();
+        fn or_ledges_down_leftright(value: u8);
+        fn clear_diagonal_ledge_tiles();
+        fn or_diagonal_ledge_tiles(value: u8);
+        fn set_chest(value: u16);
+        fn clear_chest();
+        fn clear_key_lock_gravestones();
+        fn or_key_lock_gravestones(value: u8);
+        fn set_spike_cactus_tiles(value: u8);
+        fn clear_spike_cactus_tiles();
+        fn or_spike_cactus_tiles(value: u8);
+        fn set_tile_type(value: u16);
+        fn clear_tile_type();
     }
 
     pub(crate) fn clear_tile_type_low(&mut self) {
@@ -7887,55 +7659,18 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
         self.ram[TILEDETECT_TILE_TYPE] = 0;
     }
 
-    pub(crate) fn clear_spike_floor_and_triggers(&mut self) {
-        self.state.clear_spike_floor_and_triggers();
-        self.sync();
-    }
-
-    pub(crate) fn or_spike_floor_and_triggers(&mut self, value: u8) {
-        self.state.or_spike_floor_and_triggers(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_dashable_tiles(&mut self) {
-        self.state.clear_dashable_tiles();
-        self.sync();
-    }
-
-    pub(crate) fn or_dashable_tiles(&mut self, value: u8) {
-        self.state.or_dashable_tiles(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_staircase_cache(&mut self, value: u8) {
-        self.state.set_staircase_cache(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_slope_collision_bits(&mut self, value: u16) {
-        self.state.set_slope_collision_bits(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_slope_collision_bits(&mut self) {
-        self.state.clear_slope_collision_bits();
-        self.sync();
-    }
-
-    pub(crate) fn or_slope_collision_bits(&mut self, value: u16) -> u16 {
-        let next = self.state.or_slope_collision_bits(value);
-        self.sync();
-        next
-    }
-
-    pub(crate) fn set_collision_bits(&mut self, value: u16) {
-        self.state.set_collision_bits(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_collision_bits(&mut self) {
-        self.state.clear_collision_bits();
-        self.sync();
+    forward_synced! {
+        state;
+        fn clear_spike_floor_and_triggers();
+        fn or_spike_floor_and_triggers(value: u8);
+        fn clear_dashable_tiles();
+        fn or_dashable_tiles(value: u8);
+        fn set_staircase_cache(value: u8);
+        fn set_slope_collision_bits(value: u16);
+        fn clear_slope_collision_bits();
+        fn or_slope_collision_bits(value: u16) -> u16;
+        fn set_collision_bits(value: u16);
+        fn clear_collision_bits();
     }
 
     /// Sets only the LOW byte of collision_bits (R14 @ 0x0e), preserving the high byte (0x0f =
@@ -7947,66 +7682,20 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn or_collision_bits(&mut self, value: u16) -> u16 {
-        let next = self.state.or_collision_bits(value);
-        self.sync();
-        next
-    }
-
-    pub(crate) fn set_layer_collision(&mut self, mask: u8, enabled: bool) {
-        self.state.set_layer_collision(mask, enabled);
-        self.sync();
-    }
-
-    pub(crate) fn set_layer_collision_flags(&mut self, value: u8) {
-        self.state.set_layer_collision_flags(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_tile_probe_anchor(&mut self, value: u16) {
-        self.state.set_tile_probe_anchor(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_inroom_staircase(&mut self) {
-        self.state.clear_inroom_staircase();
-        self.sync();
-    }
-
-    pub(crate) fn or_inroom_staircase(&mut self, bits: u16) -> u16 {
-        let next = self.state.or_inroom_staircase(bits);
-        self.sync();
-        next
-    }
-
-    pub(crate) fn set_liftable_tile_index(&mut self, value: u8) {
-        self.state.set_liftable_tile_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_tile_collision_bits_primary(&mut self, value: u8) {
-        self.state.set_tile_collision_bits_primary(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_liftable_action_index_primary(&mut self, value: u8) {
-        self.state.set_liftable_action_index_primary(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_liftable_action_index_secondary(&mut self, value: u8) {
-        self.state.set_liftable_action_index_secondary(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_interaction_scratch_x_low(&mut self) {
-        self.state.clear_interaction_scratch_x_low();
-        self.sync();
-    }
-
-    pub(crate) fn set_interaction_scratch_y_bytes(&mut self, low: u8, high: u8) {
-        self.state.set_interaction_scratch_y_bytes(low, high);
-        self.sync();
+    forward_synced! {
+        state;
+        fn or_collision_bits(value: u16) -> u16;
+        fn set_layer_collision(mask: u8, enabled: bool);
+        fn set_layer_collision_flags(value: u8);
+        fn set_tile_probe_anchor(value: u16);
+        fn clear_inroom_staircase();
+        fn or_inroom_staircase(bits: u16) -> u16;
+        fn set_liftable_tile_index(value: u8);
+        fn set_tile_collision_bits_primary(value: u8);
+        fn set_liftable_action_index_primary(value: u8);
+        fn set_liftable_action_index_secondary(value: u8);
+        fn clear_interaction_scratch_x_low();
+        fn set_interaction_scratch_y_bytes(low: u8, high: u8);
     }
 }
 
@@ -8280,25 +7969,12 @@ impl<'a> NativeBg1MovementAccumulatorBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn set_buffer(&mut self, value: u16) {
-        self.state.set_buffer(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_y_subpixel(&mut self, value: u8) {
-        self.state.set_y_subpixel(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_x_subpixel(&mut self, value: u8) {
-        self.state.set_x_subpixel(value);
-        self.sync();
-    }
-
-    pub(crate) fn advance_x_subpixel(&mut self, delta: u16) -> u16 {
-        let next = self.state.advance_x_subpixel(delta);
-        self.sync();
-        next
+    forward_synced! {
+        state;
+        fn set_buffer(value: u16);
+        fn set_y_subpixel(value: u8);
+        fn set_x_subpixel(value: u8);
+        fn advance_x_subpixel(delta: u16) -> u16;
     }
 }
 
@@ -8324,36 +8000,14 @@ impl<'a> NativePushedBlockBridgeMut<'a> {
         }
     }
 
-    pub(crate) fn set_animation_mode(&mut self, value: u8) {
-        self.state.set_animation_mode(value);
-        self.sync();
-    }
-
-    pub(crate) fn reset_animation_timer(&mut self) {
-        self.state.reset_animation_timer();
-        self.sync();
-    }
-
-    pub(crate) fn decrement_animation_timer(&mut self) -> u8 {
-        let timer = self.state.decrement_animation_timer();
-        self.sync();
-        timer
-    }
-
-    pub(crate) fn advance_animation_mode(&mut self) -> u8 {
-        let mode = self.state.advance_animation_mode();
-        self.sync();
-        mode
-    }
-
-    pub(crate) fn init_slot(&mut self, slot: usize, x: u16, y: u16) {
-        self.state.init_slot(slot, x, y);
-        self.sync();
-    }
-
-    pub(crate) fn set_push_direction(&mut self, value: u8) {
-        self.state.set_push_direction(value);
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_animation_mode(value: u8);
+        fn reset_animation_timer();
+        fn decrement_animation_timer() -> u8;
+        fn advance_animation_mode() -> u8;
+        fn init_slot(slot: usize, x: u16, y: u16);
+        fn set_push_direction(value: u8);
     }
 
     pub(crate) fn set_x_fixed24(&mut self, slot: usize, value: u32) {
@@ -8549,10 +8203,7 @@ impl<'a> NativeSwimAccelerationBridgeMut<'a> {
         }
     }
 
-    pub(crate) fn clear_mode_low_axis(&mut self) {
-        self.state.clear_mode_low_axis();
-        self.sync();
-    }
+    forward_synced! { state; fn clear_mode_low_axis(); }
 
     pub(crate) fn set_speed_active_flag(&mut self, offset: usize, value: u16) {
         if self.state.set_speed_active_flag(offset, value) {
@@ -8566,10 +8217,7 @@ impl<'a> NativeSwimAccelerationBridgeMut<'a> {
         }
     }
 
-    pub(crate) fn set_max_speed_both_axes(&mut self, value: u16) {
-        self.state.set_max_speed_both_axes(value);
-        self.sync();
-    }
+    forward_synced! { state; fn set_max_speed_both_axes(value: u16); }
 
     pub(crate) fn set_acceleration_direction(&mut self, offset: usize, value: u16) {
         if self.state.set_acceleration_direction(offset, value) {
@@ -8612,24 +8260,12 @@ impl<'a> NativeSpecialExitPositionBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn set_x(&mut self, value: u16) {
-        self.state.set_x(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_y(&mut self, value: u16) {
-        self.state.set_y(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
-        self.state.set_position(x, y);
-        self.sync();
-    }
-
-    pub(crate) fn offset_position(&mut self, x_delta: u16, y_delta: u16) {
-        self.state.offset_position(x_delta, y_delta);
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_x(value: u16);
+        fn set_y(value: u16);
+        fn set_position(x: u16, y: u16);
+        fn offset_position(x_delta: u16, y_delta: u16);
     }
 
     pub(crate) fn store_from_player(&mut self) {

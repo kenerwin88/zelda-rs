@@ -49,6 +49,77 @@ pub struct ProjectSpeedRet {
     pub ydiff: u8,
 }
 
+impl ProjectSpeedRet {
+    pub(crate) const ZERO: Self = Self {
+        x: 0,
+        y: 0,
+        xdiff: 0,
+        ydiff: 0,
+    };
+}
+
+/// Shared byte-wrapping projection used by sprites and ancillas.
+///
+/// Each caller keeps its own coordinate reads and zero-speed early return.
+/// The accumulator and comparisons intentionally retain the original integer
+/// algorithm; ordinary division or vector normalization changes its rounding.
+pub(crate) fn project_speed_from_differences(
+    mut speed: u8,
+    below: PairU8,
+    right: PairU8,
+) -> ProjectSpeedRet {
+    if speed == 0 {
+        return ProjectSpeedRet::ZERO;
+    }
+    let mut minor_magnitude = if (below.b as i8).is_negative() {
+        0u8.wrapping_sub(below.b)
+    } else {
+        below.b
+    };
+
+    let mut major_magnitude = if (right.b as i8).is_negative() {
+        0u8.wrapping_sub(right.b)
+    } else {
+        right.b
+    };
+    let mut swapped = false;
+    if major_magnitude < minor_magnitude {
+        swapped = true;
+        std::mem::swap(&mut minor_magnitude, &mut major_magnitude);
+    }
+    let mut x_velocity = speed;
+    let mut y_velocity = 0u8;
+    let mut accumulator = 0u8;
+    loop {
+        accumulator = accumulator.wrapping_add(minor_magnitude);
+        if accumulator >= major_magnitude {
+            accumulator = accumulator.wrapping_sub(major_magnitude);
+            y_velocity = y_velocity.wrapping_add(1);
+        }
+        speed = speed.wrapping_sub(1);
+        if speed == 0 {
+            break;
+        }
+    }
+    if swapped {
+        std::mem::swap(&mut x_velocity, &mut y_velocity);
+    }
+    ProjectSpeedRet {
+        x: if right.a != 0 {
+            0u8.wrapping_sub(x_velocity)
+        } else {
+            x_velocity
+        },
+        y: if below.a != 0 {
+            0u8.wrapping_sub(y_velocity)
+        } else {
+            y_velocity
+        },
+        xdiff: right.b,
+        ydiff: below.b,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SpriteHitBox {
     pub r0_xlo: u8,
@@ -310,5 +381,60 @@ mod sbc_tests {
         assert_eq!(sbc_u16(4, 4, true), (0, true));
         assert_eq!(sbc_u16(4, 4, false), (0xffff, false));
         assert_eq!(sbc_u16(0, 1, true), (0xffff, false));
+    }
+}
+
+#[cfg(test)]
+mod projection_tests {
+    use super::{project_speed_from_differences, PairU8};
+
+    #[test]
+    fn projection_matches_pre_consolidation_results_for_all_byte_differences() {
+        // Frozen from ancilla_project_speed_towards_player at a0254a49, before
+        // the shared helper existed. Each FNV-1a digest covers all 256 x 256
+        // low-byte differences and all four independent direction-flag pairs,
+        // in signs/y/x order, hashing x/y/xdiff/ydiff. Boundary speeds cover
+        // zero, ties, byte overflow, and the signed-byte transition.
+        let expected: &[(u8, u64)] = &[
+            (0, 0xa96777069d622325),
+            (1, 0xecbadd872992e419),
+            (2, 0x1bf63e3939d6bf55),
+            (3, 0x3c40784bf40bdc19),
+            (7, 0xf9b4e4c93b205b11),
+            (15, 0x15b7edb70520af81),
+            (16, 0x87571ffacde4a235),
+            (24, 0xea48f538f5e90635),
+            (31, 0x5886f73b3671b881),
+            (32, 0x37efe5667a7eeab5),
+            (48, 0x538ee794e5481855),
+            (63, 0x7b7bac52637fb2d1),
+            (64, 0x24ffa04dfbfa9415),
+            (127, 0xd0e17b5a3ccb9a61),
+            (128, 0xc39e2ae4510cca65),
+            (129, 0xe393d3efa3ee8919),
+            (254, 0x812c1da0f43000e5),
+            (255, 0x874563350f916aa1),
+        ];
+        for &(speed, expected_hash) in expected {
+            let mut hash = 0xcbf29ce484222325u64;
+            for signs in 0..4u8 {
+                for y in 0..=255u8 {
+                    for x in 0..=255u8 {
+                        let result = project_speed_from_differences(
+                            speed,
+                            PairU8 { a: signs & 1, b: y },
+                            PairU8 {
+                                a: signs >> 1,
+                                b: x,
+                            },
+                        );
+                        for byte in [result.x, result.y, result.xdiff, result.ydiff] {
+                            hash = (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3);
+                        }
+                    }
+                }
+            }
+            assert_eq!(hash, expected_hash, "projection changed at speed {speed}");
+        }
     }
 }

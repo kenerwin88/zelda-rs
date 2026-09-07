@@ -1,7 +1,10 @@
 // Methods ported from zelda3/src/sprite.c and included inside ZeldaState.
 
 use super::*;
-use crate::types::{sign16, sign8, PairU8, Point16U, PointU8, ProjectSpeedRet, SpriteHitBox};
+use crate::types::{
+    project_speed_from_differences, sign16, sign8, PairU8, Point16U, PointU8, ProjectSpeedRet,
+    SpriteHitBox,
+};
 
 mod sprite_shared;
 use sprite_shared::*;
@@ -639,68 +642,13 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn sprite_project_speed_towards_link(
-        &self,
-        k: usize,
-        mut vel: u8,
-    ) -> ProjectSpeedRet {
+    pub(super) fn sprite_project_speed_towards_link(&self, k: usize, vel: u8) -> ProjectSpeedRet {
         if vel == 0 {
-            return ProjectSpeedRet {
-                x: 0,
-                y: 0,
-                xdiff: 0,
-                ydiff: 0,
-            };
+            return ProjectSpeedRet::ZERO;
         }
         let below = self.sprite_is_below_link(k);
-        let mut r12 = if (below.b as i8).is_negative() {
-            0u8.wrapping_sub(below.b)
-        } else {
-            below.b
-        };
-
         let right = self.sprite_is_right_of_link(k);
-        let mut r13 = if (right.b as i8).is_negative() {
-            0u8.wrapping_sub(right.b)
-        } else {
-            right.b
-        };
-        let mut swapped = false;
-        if r13 < r12 {
-            swapped = true;
-            std::mem::swap(&mut r12, &mut r13);
-        }
-        let mut xvel = vel;
-        let mut yvel = 0u8;
-        let mut t = 0u8;
-        loop {
-            t = t.wrapping_add(r12);
-            if t >= r13 {
-                t = t.wrapping_sub(r13);
-                yvel = yvel.wrapping_add(1);
-            }
-            vel = vel.wrapping_sub(1);
-            if vel == 0 {
-                break;
-            }
-        }
-        if swapped {
-            std::mem::swap(&mut xvel, &mut yvel);
-        }
-        ProjectSpeedRet {
-            x: if right.a != 0 {
-                0u8.wrapping_sub(xvel)
-            } else {
-                xvel
-            },
-            y: if below.a != 0 {
-                0u8.wrapping_sub(yvel)
-            } else {
-                yvel
-            },
-            xdiff: right.b,
-            ydiff: below.b,
-        }
+        project_speed_from_differences(vel, below, right)
     }
 
     pub(super) fn sprite_project_speed_towards_location(
@@ -708,64 +656,14 @@ impl ZeldaState {
         k: usize,
         x: u16,
         y: u16,
-        mut vel: u8,
+        vel: u8,
     ) -> ProjectSpeedRet {
         if vel == 0 {
-            return ProjectSpeedRet {
-                x: 0,
-                y: 0,
-                xdiff: 0,
-                ydiff: 0,
-            };
+            return ProjectSpeedRet::ZERO;
         }
         let below = self.sprite_is_below_location(k, y);
-        let mut r12 = if (below.b as i8).is_negative() {
-            0u8.wrapping_sub(below.b)
-        } else {
-            below.b
-        };
         let right = self.sprite_is_right_of_location(k, x);
-        let mut r13 = if (right.b as i8).is_negative() {
-            0u8.wrapping_sub(right.b)
-        } else {
-            right.b
-        };
-        let mut swapped = false;
-        if r13 < r12 {
-            swapped = true;
-            std::mem::swap(&mut r12, &mut r13);
-        }
-        let mut xvel = vel;
-        let mut yvel = 0u8;
-        let mut t = 0u8;
-        loop {
-            t = t.wrapping_add(r12);
-            if t >= r13 {
-                t = t.wrapping_sub(r13);
-                yvel = yvel.wrapping_add(1);
-            }
-            vel = vel.wrapping_sub(1);
-            if vel == 0 {
-                break;
-            }
-        }
-        if swapped {
-            std::mem::swap(&mut xvel, &mut yvel);
-        }
-        ProjectSpeedRet {
-            x: if right.a != 0 {
-                0u8.wrapping_sub(xvel)
-            } else {
-                xvel
-            },
-            y: if below.a != 0 {
-                0u8.wrapping_sub(yvel)
-            } else {
-                yvel
-            },
-            xdiff: right.b,
-            ydiff: below.b,
-        }
+        project_speed_from_differences(vel, below, right)
     }
 
     // void Sprite_ApproachTargetSpeed(int k, uint8 x, uint8 y) {

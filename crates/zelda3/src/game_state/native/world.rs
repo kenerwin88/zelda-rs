@@ -2883,54 +2883,18 @@ impl<'a> NativeWorldPaletteThemeBridgeMut<'a> {
         debug_assert_eq!(*self.state, fresh);
     }
 
-    pub(crate) fn set_last_light_vs_dark_world(&mut self, value: u8) {
-        self.state.set_last_light_vs_dark_world(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_aux_bg_subset(&mut self, index: usize, value: u8) {
-        self.state.set_aux_bg_subset(index, value);
-        self.sync();
-    }
-
-    pub(crate) fn set_overworld_palette_aux1_hi(&mut self, value: u8) {
-        self.state.set_overworld_palette_aux1_hi(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_overworld_tile_theme_index(&mut self, value: u8) {
-        self.state.set_overworld_tile_theme_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_main_tile_theme_index(&mut self, value: u8) {
-        self.state.set_main_tile_theme_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_aux_tile_theme_index(&mut self, value: u8) {
-        self.state.set_aux_tile_theme_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_misc_sprites_graphics_index(&mut self, value: u8) {
-        self.state.set_misc_sprites_graphics_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn restore_exit_tile_themes(&mut self) {
-        self.state.restore_exit_tile_themes();
-        self.sync();
-    }
-
-    pub(crate) fn save_special_exit_tile_themes(&mut self) {
-        self.state.save_special_exit_tile_themes();
-        self.sync();
-    }
-
-    pub(crate) fn restore_special_exit_tile_themes(&mut self) {
-        self.state.restore_special_exit_tile_themes();
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_last_light_vs_dark_world(value: u8);
+        fn set_aux_bg_subset(index: usize, value: u8);
+        fn set_overworld_palette_aux1_hi(value: u8);
+        fn set_overworld_tile_theme_index(value: u8);
+        fn set_main_tile_theme_index(value: u8);
+        fn set_aux_tile_theme_index(value: u8);
+        fn set_misc_sprites_graphics_index(value: u8);
+        fn restore_exit_tile_themes();
+        fn save_special_exit_tile_themes();
+        fn restore_special_exit_tile_themes();
     }
 }
 
@@ -2957,34 +2921,14 @@ impl<'a> NativeWorldScrollBridgeMut<'a> {
         debug_assert_eq!(*self.state, ram_state);
     }
 
-    pub(crate) fn set_bg1_x_offset(&mut self, value: u16) {
-        self.state.set_bg1_x_offset(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_bg1_y_offset(&mut self, value: u16) {
-        self.state.set_bg1_y_offset(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_overworld_offset_base_y(&mut self, value: u16) {
-        self.state.set_overworld_offset_base_y(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_overworld_offset_base_x(&mut self, value: u16) {
-        self.state.set_overworld_offset_base_x(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_overworld_offset_mask_y(&mut self, value: u16) {
-        self.state.set_overworld_offset_mask_y(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_overworld_offset_mask_x(&mut self, value: u16) {
-        self.state.set_overworld_offset_mask_x(value);
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_bg1_x_offset(value: u16);
+        fn set_bg1_y_offset(value: u16);
+        fn set_overworld_offset_base_y(value: u16);
+        fn set_overworld_offset_base_x(value: u16);
+        fn set_overworld_offset_mask_y(value: u16);
+        fn set_overworld_offset_mask_x(value: u16);
     }
 }
 
@@ -3010,30 +2954,13 @@ impl<'a> NativeWorldCameraBoundariesBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn set_camera_y_coord_scroll_low(&mut self, value: u16) {
-        self.state.set_camera_y_coord_scroll_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_camera_y_coord_scroll_hi(&mut self, value: u16) {
-        self.state.set_camera_y_coord_scroll_hi(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_camera_x_coord_scroll_low(&mut self, value: u16) {
-        self.state.set_camera_x_coord_scroll_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_camera_x_coord_scroll_hi(&mut self, value: u16) {
-        self.state.set_camera_x_coord_scroll_hi(value);
-        self.sync();
-    }
-
-    pub(crate) fn add_camera_scroll_for_axis(&mut self, horizontal: bool, delta: i16) -> u16 {
-        let hi = self.state.add_camera_scroll_for_axis(horizontal, delta);
-        self.sync();
-        hi
+    forward_synced! {
+        state;
+        fn set_camera_y_coord_scroll_low(value: u16);
+        fn set_camera_y_coord_scroll_hi(value: u16);
+        fn set_camera_x_coord_scroll_low(value: u16);
+        fn set_camera_x_coord_scroll_hi(value: u16);
+        fn add_camera_scroll_for_axis(horizontal: bool, delta: i16) -> u16;
     }
 
     pub(crate) fn set_camera_scroll_from_link_for_axis(&mut self, horizontal: bool, value: u16) {
@@ -3042,74 +2969,22 @@ impl<'a> NativeWorldCameraBoundariesBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_up_down_scroll_target(&mut self, value: u16) {
-        self.state.set_up_down_scroll_target(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_up_down_scroll_target_end(&mut self, value: u16) {
-        self.state.set_up_down_scroll_target_end(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_left_right_scroll_target(&mut self, value: u16) {
-        self.state.set_left_right_scroll_target(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_left_right_scroll_target_end(&mut self, value: u16) {
-        self.state.set_left_right_scroll_target_end(value);
-        self.sync();
-    }
-
-    pub(crate) fn cache_scroll_targets(&mut self) {
-        self.state.cache_scroll_targets();
-        self.sync();
-    }
-
-    pub(crate) fn cache_camera_scroll(&mut self) {
-        self.state.cache_camera_scroll();
-        self.sync();
-    }
-
-    pub(crate) fn restore_scroll_targets_from_cached(&mut self) {
-        self.state.restore_scroll_targets_from_cached();
-        self.sync();
-    }
-
-    pub(crate) fn set_overworld_scroll_up_counter(&mut self, value: u16) {
-        self.state.set_overworld_scroll_up_counter(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_overworld_scroll_down_counter(&mut self, value: u16) {
-        self.state.set_overworld_scroll_down_counter(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_overworld_scroll_left_counter(&mut self, value: u16) {
-        self.state.set_overworld_scroll_left_counter(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_overworld_scroll_right_counter(&mut self, value: u16) {
-        self.state.set_overworld_scroll_right_counter(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_overworld_scroll_counter_for_axis(&mut self, ya: usize, value: u16) {
-        self.state.set_overworld_scroll_counter_for_axis(ya, value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_opposed_scroll_counters(&mut self, ya: usize) {
-        self.state.clear_opposed_scroll_counters(ya);
-        self.sync();
-    }
-
-    pub(crate) fn set_opposed_scroll_counter_pair(&mut self, ya: usize, value: u16) {
-        self.state.set_opposed_scroll_counter_pair(ya, value);
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_up_down_scroll_target(value: u16);
+        fn set_up_down_scroll_target_end(value: u16);
+        fn set_left_right_scroll_target(value: u16);
+        fn set_left_right_scroll_target_end(value: u16);
+        fn cache_scroll_targets();
+        fn cache_camera_scroll();
+        fn restore_scroll_targets_from_cached();
+        fn set_overworld_scroll_up_counter(value: u16);
+        fn set_overworld_scroll_down_counter(value: u16);
+        fn set_overworld_scroll_left_counter(value: u16);
+        fn set_overworld_scroll_right_counter(value: u16);
+        fn set_overworld_scroll_counter_for_axis(ya: usize, value: u16);
+        fn clear_opposed_scroll_counters(ya: usize);
+        fn set_opposed_scroll_counter_pair(ya: usize, value: u16);
     }
 
     pub(crate) fn set_special_exit_room_bounds(
@@ -3136,79 +3011,23 @@ impl<'a> NativeWorldCameraBoundariesBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn copy_spexit_scroll_targets(&mut self) {
-        self.state.copy_spexit_scroll_targets();
-        self.sync();
-    }
-
-    pub(crate) fn copy_spexit_scroll_counters(&mut self) {
-        self.state.copy_spexit_scroll_counters();
-        self.sync();
-    }
-
-    pub(crate) fn restore_spexit_scroll_targets(&mut self) {
-        self.state.restore_spexit_scroll_targets();
-        self.sync();
-    }
-
-    pub(crate) fn restore_spexit_scroll_counters(&mut self) {
-        self.state.restore_spexit_scroll_counters();
-        self.sync();
-    }
-
-    pub(crate) fn copy_exit_scroll_targets(&mut self) {
-        self.state.copy_exit_scroll_targets();
-        self.sync();
-    }
-
-    pub(crate) fn copy_exit_scroll_counters(&mut self) {
-        self.state.copy_exit_scroll_counters();
-        self.sync();
-    }
-
-    pub(crate) fn restore_exit_scroll_targets(&mut self) {
-        self.state.restore_exit_scroll_targets();
-        self.sync();
-    }
-
-    pub(crate) fn restore_exit_scroll_counters(&mut self) {
-        self.state.restore_exit_scroll_counters();
-        self.sync();
-    }
-
-    pub(crate) fn save_spexit_camera_coords(&mut self) {
-        self.state.save_spexit_camera_coords();
-        self.sync();
-    }
-
-    pub(crate) fn save_exit_camera_coords(&mut self) {
-        self.state.save_exit_camera_coords();
-        self.sync();
-    }
-
-    pub(crate) fn restore_exit_camera_scroll(&mut self) {
-        self.state.restore_exit_camera_scroll();
-        self.sync();
-    }
-
-    pub(crate) fn restore_special_exit_camera_scroll(&mut self) {
-        self.state.restore_special_exit_camera_scroll();
-        self.sync();
-    }
-
-    pub(crate) fn restore_camera_y_from_cached_indoor(&mut self) {
-        self.state.restore_camera_y_from_cached_indoor();
-        self.sync();
-    }
-
-    pub(crate) fn restore_camera_x_from_cached_indoor(&mut self) {
-        self.state.restore_camera_x_from_cached_indoor();
-        self.sync();
-    }
-
-    pub(crate) fn update_camera_hi_outdoor(&mut self) {
-        self.state.update_camera_hi_outdoor();
-        self.sync();
+    forward_synced! {
+        state;
+        fn copy_spexit_scroll_targets();
+        fn copy_spexit_scroll_counters();
+        fn restore_spexit_scroll_targets();
+        fn restore_spexit_scroll_counters();
+        fn copy_exit_scroll_targets();
+        fn copy_exit_scroll_counters();
+        fn restore_exit_scroll_targets();
+        fn restore_exit_scroll_counters();
+        fn save_spexit_camera_coords();
+        fn save_exit_camera_coords();
+        fn restore_exit_camera_scroll();
+        fn restore_special_exit_camera_scroll();
+        fn restore_camera_y_from_cached_indoor();
+        fn restore_camera_x_from_cached_indoor();
+        fn update_camera_hi_outdoor();
     }
 }
 
@@ -3231,94 +3050,26 @@ impl<'a> NativeWorldRegionBridgeMut<'a> {
         debug_assert_eq!(*self.state, WorldRegionState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn set_rng_seed(&mut self, value: u8) {
-        self.state.set_rng_seed(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_dark_world_region_index(&mut self, value: u8) {
-        self.state.set_dark_world_region_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_which_entrance(&mut self, value: u16) {
-        self.state.set_which_entrance(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_which_entrance_byte(&mut self, value: u8) {
-        self.state.set_which_entrance_byte(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_overworld_area_index(&mut self, value: u8) {
-        self.state.set_overworld_area_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_overworld_area_index_word(&mut self, value: u16) {
-        self.state.set_overworld_area_index_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_current_area_of_player_word(&mut self, value: u16) {
-        self.state.set_current_area_of_player_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_flag_overworld_area_changed(&mut self, value: u8) {
-        self.state.set_flag_overworld_area_changed(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_flag_overworld_area_changed(&mut self) {
-        self.state.clear_flag_overworld_area_changed();
-        self.sync();
-    }
-
-    pub(crate) fn clear_overlay_index_word(&mut self) {
-        self.state.clear_overlay_index_word();
-        self.sync();
-    }
-
-    pub(crate) fn set_overlay_index_word(&mut self, value: u16) {
-        self.state.set_overlay_index_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_overlay_high(&mut self, value: u8) {
-        self.state.set_overlay_high(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_prev_screen_index_word(&mut self, value: u16) {
-        self.state.set_prev_screen_index_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn save_spexit_area_index(&mut self) {
-        self.state.save_spexit_area_index();
-        self.sync();
-    }
-
-    pub(crate) fn restore_spexit_area_index(&mut self) {
-        self.state.restore_spexit_area_index();
-        self.sync();
-    }
-
-    pub(crate) fn save_exit_area_index(&mut self) {
-        self.state.save_exit_area_index();
-        self.sync();
-    }
-
-    pub(crate) fn restore_exit_area_index(&mut self) {
-        self.state.restore_exit_area_index();
-        self.sync();
-    }
-
-    pub(crate) fn set_ow_entrance_value(&mut self, value: u16) {
-        self.state.set_ow_entrance_value(value);
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_rng_seed(value: u8);
+        fn set_dark_world_region_index(value: u8);
+        fn set_which_entrance(value: u16);
+        fn set_which_entrance_byte(value: u8);
+        fn set_overworld_area_index(value: u8);
+        fn set_overworld_area_index_word(value: u16);
+        fn set_current_area_of_player_word(value: u16);
+        fn set_flag_overworld_area_changed(value: u8);
+        fn clear_flag_overworld_area_changed();
+        fn clear_overlay_index_word();
+        fn set_overlay_index_word(value: u16);
+        fn set_overlay_high(value: u8);
+        fn set_prev_screen_index_word(value: u16);
+        fn save_spexit_area_index();
+        fn restore_spexit_area_index();
+        fn save_exit_area_index();
+        fn restore_exit_area_index();
+        fn set_ow_entrance_value(value: u16);
     }
 }
 
@@ -3590,19 +3341,11 @@ impl<'a> NativeRoomBoundsBridgeMut<'a> {
         debug_assert_eq!(*self.state, RoomBoundsState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn set_y_bound(&mut self, index: usize, value: u16) {
-        self.state.set_y_bound(index, value);
-        self.sync();
-    }
-
-    pub(crate) fn set_x_bound(&mut self, index: usize, value: u16) {
-        self.state.set_x_bound(index, value);
-        self.sync();
-    }
-
-    pub(crate) fn set_packed_bounds(&mut self, top: u16, bottom: u16, left: u16, right: u16) {
-        self.state.set_packed_bounds(top, bottom, left, right);
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_y_bound(index: usize, value: u16);
+        fn set_x_bound(index: usize, value: u16);
+        fn set_packed_bounds(top: u16, bottom: u16, left: u16, right: u16);
     }
 
     pub(crate) fn restore_from_cached_safe_return_bounds(
@@ -3617,24 +3360,12 @@ impl<'a> NativeRoomBoundsBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn add_y_bounds_a(&mut self, value: u16) {
-        self.state.add_y_bounds_a(value);
-        self.sync();
-    }
-
-    pub(crate) fn add_y_bounds_b(&mut self, value: u16) {
-        self.state.add_y_bounds_b(value);
-        self.sync();
-    }
-
-    pub(crate) fn add_x_bounds_a(&mut self, value: u16) {
-        self.state.add_x_bounds_a(value);
-        self.sync();
-    }
-
-    pub(crate) fn add_x_bounds_b(&mut self, value: u16) {
-        self.state.add_x_bounds_b(value);
-        self.sync();
+    forward_synced! {
+        state;
+        fn add_y_bounds_a(value: u16);
+        fn add_y_bounds_b(value: u16);
+        fn add_x_bounds_a(value: u16);
+        fn add_x_bounds_b(value: u16);
     }
 }
 
@@ -3663,41 +3394,15 @@ impl<'a> NativeWorldLocationBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn set_dungeon_room(&mut self, value: u16) {
-        self.world_location.set_dungeon_room(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_dungeon_room_index(&mut self, value: u8) {
-        self.world_location.set_dungeon_room_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_dungeon_room_index_by(&mut self, value: u8) -> u8 {
-        let next = self.world_location.increment_dungeon_room_index_by(value);
-        self.sync();
-        next
-    }
-
-    pub(crate) fn decrement_dungeon_room_index_by(&mut self, value: u8) -> u8 {
-        let next = self.world_location.decrement_dungeon_room_index_by(value);
-        self.sync();
-        next
-    }
-
-    pub(crate) fn set_overworld_screen(&mut self, value: u8) {
-        self.world_location.set_overworld_screen(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_overworld_screen_word(&mut self, value: u16) {
-        self.world_location.set_overworld_screen_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_indoor_flag(&mut self, value: u8) {
-        self.world_location.set_indoor_flag(value);
-        self.sync();
+    forward_synced! {
+        world_location;
+        fn set_dungeon_room(value: u16);
+        fn set_dungeon_room_index(value: u8);
+        fn increment_dungeon_room_index_by(value: u8) -> u8;
+        fn decrement_dungeon_room_index_by(value: u8) -> u8;
+        fn set_overworld_screen(value: u8);
+        fn set_overworld_screen_word(value: u16);
+        fn set_indoor_flag(value: u8);
     }
 }
 
@@ -3727,19 +3432,11 @@ impl<'a> NativeOverworldEventInfoBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn set_event_info(&mut self, screen: usize, value: u8) {
-        self.event_info.set_event_info(screen, value);
-        self.sync();
-    }
-
-    pub(crate) fn set_event_bits(&mut self, screen: usize, mask: u8) {
-        self.event_info.set_event_bits(screen, mask);
-        self.sync();
-    }
-
-    pub(crate) fn clear_event_bits(&mut self, screen: usize, mask: u8) {
-        self.event_info.clear_event_bits(screen, mask);
-        self.sync();
+    forward_synced! {
+        event_info;
+        fn set_event_info(screen: usize, value: u8);
+        fn set_event_bits(screen: usize, mask: u8);
+        fn clear_event_bits(screen: usize, mask: u8);
     }
 }
 
@@ -3765,14 +3462,10 @@ impl<'a> NativeOverworldConfigTableBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn copy_music_primary(&mut self, data: &[u8]) {
-        self.config_table.copy_music_primary(data);
-        self.sync();
-    }
-
-    pub(crate) fn copy_music_secondary(&mut self, data: &[u8]) {
-        self.config_table.copy_music_secondary(data);
-        self.sync();
+    forward_synced! {
+        config_table;
+        fn copy_music_primary(data: &[u8]);
+        fn copy_music_secondary(data: &[u8]);
     }
 
     pub(crate) fn copy_sprite_graphics_range(
@@ -3799,10 +3492,7 @@ impl<'a> NativeOverworldConfigTableBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_music(&mut self, screen: usize, value: u8) {
-        self.config_table.set_music(screen, value);
-        self.sync();
-    }
+    forward_synced! { config_table; fn set_music(screen: usize, value: u8); }
 }
 
 pub(crate) struct NativeOverworldMapUiBridgeMut<'a> {
@@ -3824,69 +3514,21 @@ impl<'a> NativeOverworldMapUiBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn set_map_state(&mut self, value: u8) {
-        self.map_ui.set_map_state(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_map_state_word(&mut self, value: u16) {
-        self.map_ui.set_map_state_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_map_state(&mut self) {
-        self.map_ui.increment_map_state();
-        self.sync();
-    }
-
-    pub(crate) fn set_map_flags(&mut self, value: u8) {
-        self.map_ui.set_map_flags(value);
-        self.sync();
-    }
-
-    pub(crate) fn and_map_flags(&mut self, value: u8) {
-        self.map_ui.and_map_flags(value);
-        self.sync();
-    }
-
-    pub(crate) fn or_map_flags(&mut self, value: u8) {
-        self.map_ui.or_map_flags(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_birdtravel_status(&mut self, value: u8) {
-        self.map_ui.set_birdtravel_status(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_birdtravel_status_word(&mut self, value: u16) {
-        self.map_ui.set_birdtravel_status_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn and_birdtravel_status(&mut self, value: u8) {
-        self.map_ui.and_birdtravel_status(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_birdtravel_status(&mut self) {
-        self.map_ui.decrement_birdtravel_status();
-        self.sync();
-    }
-
-    pub(crate) fn increment_birdtravel_status(&mut self) {
-        self.map_ui.increment_birdtravel_status();
-        self.sync();
-    }
-
-    pub(crate) fn clear_bird_travel_stop_status(&mut self, slot: usize) {
-        self.map_ui.clear_bird_travel_stop_status(slot);
-        self.sync();
-    }
-
-    pub(crate) fn increment_bird_travel_stop_status(&mut self, slot: usize) {
-        self.map_ui.increment_bird_travel_stop_status(slot);
-        self.sync();
+    forward_synced! {
+        map_ui;
+        fn set_map_state(value: u8);
+        fn set_map_state_word(value: u16);
+        fn increment_map_state();
+        fn set_map_flags(value: u8);
+        fn and_map_flags(value: u8);
+        fn or_map_flags(value: u8);
+        fn set_birdtravel_status(value: u8);
+        fn set_birdtravel_status_word(value: u16);
+        fn and_birdtravel_status(value: u8);
+        fn decrement_birdtravel_status();
+        fn increment_birdtravel_status();
+        fn clear_bird_travel_stop_status(slot: usize);
+        fn increment_bird_travel_stop_status(slot: usize);
     }
 }
 
@@ -3912,35 +3554,14 @@ impl<'a> NativeWeatherVaneBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn set_countdown(&mut self, value: u16) {
-        self.weather_vane.set_countdown(value);
-        self.sync();
-    }
-
-    pub(crate) fn tick_countdown(&mut self) -> u16 {
-        let value = self.weather_vane.tick_countdown();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_music_latch(&mut self, value: u8) {
-        self.weather_vane.set_music_latch(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_source_slot(&mut self, value: u8) {
-        self.weather_vane.set_source_slot(value);
-        self.sync();
-    }
-
-    pub(crate) fn reset_oam_offset(&mut self) {
-        self.weather_vane.reset_oam_offset();
-        self.sync();
-    }
-
-    pub(crate) fn advance_oam_offset(&mut self, value: u8) {
-        self.weather_vane.advance_oam_offset(value);
-        self.sync();
+    forward_synced! {
+        weather_vane;
+        fn set_countdown(value: u16);
+        fn tick_countdown() -> u16;
+        fn set_music_latch(value: u8);
+        fn set_source_slot(value: u8);
+        fn reset_oam_offset();
+        fn advance_oam_offset(value: u8);
     }
 }
 
@@ -3969,10 +3590,7 @@ impl<'a> NativeBirdTravelDestinationBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn set_destination(&mut self, slot: usize, x: u16, y: u16) {
-        self.destinations.set_destination(slot, x, y);
-        self.sync();
-    }
+    forward_synced! { destinations; fn set_destination(slot: usize, x: u16, y: u16); }
 
     pub(crate) fn clear_destination(&mut self, slot: usize) {
         self.set_destination(slot, 0, 0);
@@ -3998,19 +3616,11 @@ impl<'a> NativeOverworldMapZoomBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn set_step_counter(&mut self, value: u8) {
-        self.zoom.set_step_counter(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_timer(&mut self, value: u8) {
-        self.zoom.set_timer(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_timer(&mut self) {
-        self.zoom.decrement_timer();
-        self.sync();
+    forward_synced! {
+        zoom;
+        fn set_step_counter(value: u8);
+        fn set_timer(value: u8);
+        fn decrement_timer();
     }
 }
 
@@ -4036,29 +3646,13 @@ impl<'a> NativeOverworldScreenSizeBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn clear_big_area_high(&mut self) {
-        self.screen_size.clear_big_area_high();
-        self.sync();
-    }
-
-    pub(crate) fn set_big_area_low(&mut self, value: u8) {
-        self.screen_size.set_big_area_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn backup_big_area_low(&mut self) {
-        self.screen_size.backup_big_area_low();
-        self.sync();
-    }
-
-    pub(crate) fn set_right_bottom_bound_low(&mut self, value: u8) {
-        self.screen_size.set_right_bottom_bound_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_right_bottom_bound_high(&mut self, value: u8) {
-        self.screen_size.set_right_bottom_bound_high(value);
-        self.sync();
+    forward_synced! {
+        screen_size;
+        fn clear_big_area_high();
+        fn set_big_area_low(value: u8);
+        fn backup_big_area_low();
+        fn set_right_bottom_bound_low(value: u8);
+        fn set_right_bottom_bound_high(value: u8);
     }
 }
 
@@ -4087,19 +3681,11 @@ impl<'a> NativeOverworldScrollDeltaBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn set_vertical_delta_low_byte(&mut self, value: u8) {
-        self.scroll_delta.set_vertical_delta_low_byte(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_horizontal_delta_low_byte(&mut self, value: u8) {
-        self.scroll_delta.set_horizontal_delta_low_byte(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_vertical_delta_word(&mut self, value: u16) {
-        self.scroll_delta.set_vertical_delta_word(value);
-        self.sync();
+    forward_synced! {
+        scroll_delta;
+        fn set_vertical_delta_low_byte(value: u8);
+        fn set_horizontal_delta_low_byte(value: u8);
+        fn set_vertical_delta_word(value: u16);
     }
 
     pub(crate) fn set_horizontal_delta_word(&mut self, value: u16) {
@@ -4111,10 +3697,7 @@ impl<'a> NativeOverworldScrollDeltaBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn clear_vertical_delta_low_byte(&mut self) {
-        self.scroll_delta.clear_vertical_delta_low_byte();
-        self.sync();
-    }
+    forward_synced! { scroll_delta; fn clear_vertical_delta_low_byte(); }
 }
 
 pub(crate) struct NativeOverworldMap16BridgeMut<'a> {
@@ -4192,36 +3775,14 @@ impl<'a> NativeOverworldEntranceBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn set_special_entrance_trigger(&mut self, value: u8) {
-        self.entrance.set_special_entrance_trigger(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_special_entrance_trigger(&mut self) {
-        self.entrance.clear_special_entrance_trigger();
-        self.sync();
-    }
-
-    pub(crate) fn set_sequence_counter(&mut self, value: u8) {
-        self.entrance.set_sequence_counter(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_sequence_counter(&mut self) {
-        self.entrance.clear_sequence_counter();
-        self.sync();
-    }
-
-    pub(crate) fn increment_sequence_counter(&mut self) -> u8 {
-        let next = self.entrance.increment_sequence_counter();
-        self.sync();
-        next
-    }
-
-    pub(crate) fn decrement_sequence_counter(&mut self) -> u8 {
-        let next = self.entrance.decrement_sequence_counter();
-        self.sync();
-        next
+    forward_synced! {
+        entrance;
+        fn set_special_entrance_trigger(value: u8);
+        fn clear_special_entrance_trigger();
+        fn set_sequence_counter(value: u8);
+        fn clear_sequence_counter();
+        fn increment_sequence_counter() -> u8;
+        fn decrement_sequence_counter() -> u8;
     }
 }
 
@@ -4244,14 +3805,10 @@ impl<'a> NativeOverworldExitBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn set_exit_screen(&mut self, value: u16) {
-        self.exit.set_exit_screen(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_special_exit_screen(&mut self, value: u16) {
-        self.exit.set_special_exit_screen(value);
-        self.sync();
+    forward_synced! {
+        exit;
+        fn set_exit_screen(value: u16);
+        fn set_special_exit_screen(value: u16);
     }
 }
 
@@ -4277,106 +3834,27 @@ impl<'a> NativeOverworldTransitionBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn set_direction_bits(&mut self, value: u8) {
-        self.transition.set_direction_bits(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_direction_bits_word(&mut self, value: u16) {
-        self.transition.set_direction_bits_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_direction_bits(&mut self) {
-        self.transition.clear_direction_bits();
-        self.sync();
-    }
-
-    pub(crate) fn clear_direction_bits_word(&mut self) {
-        self.transition.clear_direction_bits_word();
-        self.sync();
-    }
-
-    pub(crate) fn and_direction_bits(&mut self, value: u8) {
-        self.transition.and_direction_bits(value);
-        self.sync();
-    }
-
-    pub(crate) fn or_direction_bits(&mut self, value: u8) {
-        self.transition.or_direction_bits(value);
-        self.sync();
-    }
-
-    pub(crate) fn or_direction_bits_word(&mut self, value: u16) -> u16 {
-        let next = self.transition.or_direction_bits_word(value);
-        self.sync();
-        next
-    }
-
-    pub(crate) fn set_edge_direction_bits(&mut self, value: u8) {
-        self.transition.set_edge_direction_bits(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_edge_direction_bits(&mut self) {
-        self.transition.clear_edge_direction_bits();
-        self.sync();
-    }
-
-    pub(crate) fn set_direction_enum(&mut self, value: u8) {
-        self.transition.set_direction_enum(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_screen_transition(&mut self, value: u8) {
-        self.transition.set_screen_transition(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_screen_transition_word(&mut self, value: u16) {
-        self.transition.set_screen_transition_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_screen_transition(&mut self) {
-        self.transition.clear_screen_transition();
-        self.sync();
-    }
-
-    pub(crate) fn set_transition_counter(&mut self, value: u8) {
-        self.transition.set_transition_counter(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_transition_counter(&mut self) -> u8 {
-        let next = self.transition.increment_transition_counter();
-        self.sync();
-        next
-    }
-
-    pub(crate) fn set_countdown(&mut self, value: u8) {
-        self.transition.set_countdown(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_countdown(&mut self) -> u8 {
-        let next = self.transition.decrement_countdown();
-        self.sync();
-        next
-    }
-
-    pub(crate) fn save_previous_direction_bits(&mut self) {
-        self.transition.save_previous_direction_bits();
-        self.sync();
-    }
-
-    pub(crate) fn restore_previous_direction_bits(&mut self) {
-        self.transition.restore_previous_direction_bits();
-        self.sync();
-    }
-
-    pub(crate) fn set_previous_screen_transition(&mut self, value: u8) {
-        self.transition.set_previous_screen_transition(value);
-        self.sync();
+    forward_synced! {
+        transition;
+        fn set_direction_bits(value: u8);
+        fn set_direction_bits_word(value: u16);
+        fn clear_direction_bits();
+        fn clear_direction_bits_word();
+        fn and_direction_bits(value: u8);
+        fn or_direction_bits(value: u8);
+        fn or_direction_bits_word(value: u16) -> u16;
+        fn set_edge_direction_bits(value: u8);
+        fn clear_edge_direction_bits();
+        fn set_direction_enum(value: u8);
+        fn set_screen_transition(value: u8);
+        fn set_screen_transition_word(value: u16);
+        fn clear_screen_transition();
+        fn set_transition_counter(value: u8);
+        fn increment_transition_counter() -> u8;
+        fn set_countdown(value: u8);
+        fn decrement_countdown() -> u8;
+        fn save_previous_direction_bits();
+        fn restore_previous_direction_bits();
+        fn set_previous_screen_transition(value: u8);
     }
 }

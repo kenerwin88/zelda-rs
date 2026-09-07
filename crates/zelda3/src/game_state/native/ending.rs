@@ -1018,14 +1018,10 @@ impl<'a> NativeIntroSceneBridgeMut<'a> {
         debug_assert_eq!(*self.intro_scene, IntroSceneState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn pause_triangle_motion(&mut self) {
-        self.intro_scene.pause_triangle_motion();
-        self.sync();
-    }
-
-    pub(crate) fn resume_triangle_motion(&mut self) {
-        self.intro_scene.resume_triangle_motion();
-        self.sync();
+    forward_synced! {
+        intro_scene;
+        fn pause_triangle_motion();
+        fn resume_triangle_motion();
     }
 
     pub(crate) fn set_sprite_oam_cursor(&mut self, value: u16) {
@@ -1033,21 +1029,14 @@ impl<'a> NativeIntroSceneBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn allocate_oam_entries(&mut self, entry_count: usize) -> usize {
-        let cursor = self.intro_scene.allocate_oam_entries(entry_count);
-        self.sync();
-        cursor
-    }
+    forward_synced! { intro_scene; fn allocate_oam_entries(entry_count: usize) -> usize; }
 
     pub(crate) fn set_triforce_countdown(&mut self, value: u16) {
         self.intro_scene.triforce_countdown = value;
         self.sync();
     }
 
-    pub(crate) fn decrement_triforce_countdown(&mut self) {
-        self.intro_scene.decrement_triforce_countdown();
-        self.sync();
-    }
+    forward_synced! { intro_scene; fn decrement_triforce_countdown(); }
 }
 
 pub(crate) struct NativeIntroActorBridgeMut<'a> {
@@ -1199,10 +1188,7 @@ impl<'a> NativeEndingCreditBridgeMut<'a> {
         debug_assert_eq!(*self.credits, EndingCreditState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn clear_palace_death_count_digit_step(&mut self) {
-        self.credits.clear_palace_death_count_digit_step();
-        self.sync();
-    }
+    forward_synced! { credits; fn clear_palace_death_count_digit_step(); }
 
     pub(crate) fn set_palace_death_count_digit_step(&mut self, value: u16) {
         self.credits.palace_death_count_digit_step = value;

@@ -75,15 +75,10 @@ impl<'a> NativeScratchCounterBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn set(&mut self, value: u8) {
-        self.scratch_counter.set(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement(&mut self) -> u8 {
-        let value = self.scratch_counter.decrement();
-        self.sync();
-        value
+    forward_synced! {
+        scratch_counter;
+        fn set(value: u8);
+        fn decrement() -> u8;
     }
 }
 
@@ -229,34 +224,14 @@ impl<'a> NativeMemorizedTileBridgeMut<'a> {
         debug_assert_eq!(*self.memorized_tiles, fresh);
     }
 
-    pub(crate) fn set_count(&mut self, value: u16) {
-        self.memorized_tiles.set_count(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_count(&mut self) {
-        self.memorized_tiles.clear_count();
-        self.sync();
-    }
-
-    pub(crate) fn set_entry_addr(&mut self, byte_offset: usize, pos: u16) {
-        self.memorized_tiles.set_entry_addr(byte_offset, pos);
-        self.sync();
-    }
-
-    pub(crate) fn set_entry_value(&mut self, byte_offset: usize, tile: u16) {
-        self.memorized_tiles.set_entry_value(byte_offset, tile);
-        self.sync();
-    }
-
-    pub(crate) fn append_entry(&mut self, pos: u16, tile: u16) {
-        self.memorized_tiles.append_entry(pos, tile);
-        self.sync();
-    }
-
-    pub(crate) fn clear_entry_addresses(&mut self) {
-        self.memorized_tiles.clear_entry_addresses();
-        self.sync();
+    forward_synced! {
+        memorized_tiles;
+        fn set_count(value: u16);
+        fn clear_count();
+        fn set_entry_addr(byte_offset: usize, pos: u16);
+        fn set_entry_value(byte_offset: usize, tile: u16);
+        fn append_entry(pos: u16, tile: u16);
+        fn clear_entry_addresses();
     }
 }
 
@@ -353,34 +328,14 @@ impl<'a> NativeDungeonSecretBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn clear_pending_kind(&mut self) {
-        self.dungeon_secret.clear_pending_kind();
-        self.sync();
-    }
-
-    pub(crate) fn set_pending_kind(&mut self, value: u8) {
-        self.dungeon_secret.set_pending_kind(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_overworld_subst_counter(&mut self) {
-        self.dungeon_secret.increment_overworld_subst_counter();
-        self.sync();
-    }
-
-    pub(crate) fn set_powder_pending_kind(&mut self) {
-        self.dungeon_secret.set_powder_pending_kind();
-        self.sync();
-    }
-
-    pub(crate) fn or_pending_kind(&mut self, value: u8) {
-        self.dungeon_secret.or_pending_kind(value);
-        self.sync();
-    }
-
-    pub(crate) fn mark_graphics_kind(&mut self) {
-        self.dungeon_secret.mark_graphics_kind();
-        self.sync();
+    forward_synced! {
+        dungeon_secret;
+        fn clear_pending_kind();
+        fn set_pending_kind(value: u8);
+        fn increment_overworld_subst_counter();
+        fn set_powder_pending_kind();
+        fn or_pending_kind(value: u8);
+        fn mark_graphics_kind();
     }
 }
 
@@ -441,10 +396,7 @@ impl<'a> NativeSaveLoadTransferBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn set_source_offset(&mut self, value: u16) {
-        self.transfer.set_source_offset(value);
-        self.sync();
-    }
+    forward_synced! { transfer; fn set_source_offset(value: u16); }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -725,19 +677,11 @@ impl<'a> NativeDungeonMapDisplayBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn clear_scroll_state(&mut self) {
-        self.display.clear_scroll_state();
-        self.sync();
-    }
-
-    pub(crate) fn set_scroll_draw_offset(&mut self, value: u16) {
-        self.display.set_scroll_draw_offset(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_scroll_input(&mut self, value: u16) {
-        self.display.set_scroll_input(value);
-        self.sync();
+    forward_synced! {
+        display;
+        fn clear_scroll_state();
+        fn set_scroll_draw_offset(value: u16);
+        fn set_scroll_input(value: u16);
     }
 
     pub(crate) fn reset_marker_offsets(&mut self) {
@@ -750,10 +694,7 @@ impl<'a> NativeDungeonMapDisplayBridgeMut<'a> {
         self.sync_marker_offsets();
     }
 
-    pub(crate) fn set_location_marker_base_y(&mut self, value: u8) {
-        self.display.set_location_marker_base_y(value);
-        self.sync();
-    }
+    forward_synced! { display; fn set_location_marker_base_y(value: u8); }
 
     pub(crate) fn shift_marker_x_left(&mut self) -> u16 {
         let value = self.display.shift_marker_x_left();
@@ -773,69 +714,21 @@ impl<'a> NativeDungeonMapDisplayBridgeMut<'a> {
         value
     }
 
-    pub(crate) fn increment_dungmap_init_state(&mut self) {
-        self.display.increment_dungmap_init_state();
-        self.sync();
-    }
-
-    pub(crate) fn clear_dungmap_init_state(&mut self) {
-        self.display.clear_dungmap_init_state();
-        self.sync();
-    }
-
-    pub(crate) fn set_dungmap_cur_floor(&mut self, value: u16) {
-        self.display.set_dungmap_cur_floor(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_dungmap_cur_floor_byte(&mut self) {
-        self.display.decrement_dungmap_cur_floor_byte();
-        self.sync();
-    }
-
-    pub(crate) fn set_dungmap_floor_scroll_step(&mut self, value: u8) {
-        self.display.set_dungmap_floor_scroll_step(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_dungmap_floor_scroll_step(&mut self) {
-        self.display.clear_dungmap_floor_scroll_step();
-        self.sync();
-    }
-
-    pub(crate) fn increment_dungmap_floor_scroll_step(&mut self) {
-        self.display.increment_dungmap_floor_scroll_step();
-        self.sync();
-    }
-
-    pub(crate) fn set_dungmap_idx(&mut self, value: u16) {
-        self.display.set_dungmap_idx(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_dungmap_idx(&mut self) {
-        self.display.clear_dungmap_idx();
-        self.sync();
-    }
-
-    pub(crate) fn set_dungmap_scroll_target_y(&mut self, value: u16) {
-        self.display.set_dungmap_scroll_target_y(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_dungmap_player_marker_x(&mut self, value: u16) {
-        self.display.set_dungmap_player_marker_x(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_dungmap_player_marker_y(&mut self, value: u16) {
-        self.display.set_dungmap_player_marker_y(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_current_floor_high(&mut self) {
-        self.display.clear_current_floor_high();
-        self.sync();
+    forward_synced! {
+        display;
+        fn increment_dungmap_init_state();
+        fn clear_dungmap_init_state();
+        fn set_dungmap_cur_floor(value: u16);
+        fn decrement_dungmap_cur_floor_byte();
+        fn set_dungmap_floor_scroll_step(value: u8);
+        fn clear_dungmap_floor_scroll_step();
+        fn increment_dungmap_floor_scroll_step();
+        fn set_dungmap_idx(value: u16);
+        fn clear_dungmap_idx();
+        fn set_dungmap_scroll_target_y(value: u16);
+        fn set_dungmap_player_marker_x(value: u16);
+        fn set_dungmap_player_marker_y(value: u16);
+        fn clear_current_floor_high();
     }
 }
 
@@ -940,45 +833,16 @@ impl<'a> NativeMinigameBridgeMut<'a> {
         debug_assert_eq!(*self.minigame, MinigameState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn set_is_archer_or_shovel_game(&mut self, value: u8) {
-        self.minigame.set_is_archer_or_shovel_game(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_is_archer_or_shovel_game(&mut self) {
-        self.minigame.clear_is_archer_or_shovel_game();
-        self.sync();
-    }
-
-    pub(crate) fn set_credits(&mut self, value: u8) {
-        self.minigame.set_credits(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_credits(&mut self) -> u8 {
-        let value = self.minigame.decrement_credits();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn clear_flag_boomerang_in_place(&mut self) {
-        self.minigame.clear_flag_boomerang_in_place();
-        self.sync();
-    }
-
-    pub(crate) fn set_flag_boomerang_in_place(&mut self, value: u8) {
-        self.minigame.set_flag_boomerang_in_place(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_boomerang_temp_x(&mut self, value: u16) {
-        self.minigame.set_boomerang_temp_x(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_boomerang_temp_y(&mut self, value: u16) {
-        self.minigame.set_boomerang_temp_y(value);
-        self.sync();
+    forward_synced! {
+        minigame;
+        fn set_is_archer_or_shovel_game(value: u8);
+        fn clear_is_archer_or_shovel_game();
+        fn set_credits(value: u8);
+        fn decrement_credits() -> u8;
+        fn clear_flag_boomerang_in_place();
+        fn set_flag_boomerang_in_place(value: u8);
+        fn set_boomerang_temp_x(value: u16);
+        fn set_boomerang_temp_y(value: u16);
     }
 }
 
@@ -1117,60 +981,19 @@ impl<'a> NativeIntroSwordBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn reset_sword_state(&mut self) {
-        self.intro_sword.reset_sword_state();
-        self.sync();
-    }
-
-    pub(crate) fn set_ypos(&mut self, value: u16) {
-        self.intro_sword.set_ypos(value);
-        self.sync();
-    }
-
-    pub(crate) fn advance_ypos(&mut self) {
-        self.intro_sword.advance_ypos();
-        self.sync();
-    }
-
-    pub(crate) fn decrement_sparkle_timer(&mut self) {
-        self.intro_sword.decrement_sparkle_timer();
-        self.sync();
-    }
-
-    pub(crate) fn set_sparkle_timer(&mut self, value: u8) {
-        self.intro_sword.set_sparkle_timer(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_sparkle_step(&mut self, value: u8) {
-        self.intro_sword.set_sparkle_step(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_sparkle_step_check_negative(&mut self) -> bool {
-        let is_negative = self.intro_sword.decrement_sparkle_step_check_negative();
-        self.sync();
-        is_negative
-    }
-
-    pub(crate) fn advance_anim_step(&mut self) {
-        self.intro_sword.advance_anim_step();
-        self.sync();
-    }
-
-    pub(crate) fn advance_sparkle_y_offset(&mut self) {
-        self.intro_sword.advance_sparkle_y_offset();
-        self.sync();
-    }
-
-    pub(crate) fn set_flash_rgb_channel_word(&mut self, value: u16) {
-        self.intro_sword.set_flash_rgb_channel_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn cycle_flash_rgb_channel(&mut self) {
-        self.intro_sword.cycle_flash_rgb_channel();
-        self.sync();
+    forward_synced! {
+        intro_sword;
+        fn reset_sword_state();
+        fn set_ypos(value: u16);
+        fn advance_ypos();
+        fn decrement_sparkle_timer();
+        fn set_sparkle_timer(value: u8);
+        fn set_sparkle_step(value: u8);
+        fn decrement_sparkle_step_check_negative() -> bool;
+        fn advance_anim_step();
+        fn advance_sparkle_y_offset();
+        fn set_flash_rgb_channel_word(value: u16);
+        fn cycle_flash_rgb_channel();
     }
 }
 
@@ -1255,34 +1078,14 @@ impl<'a> NativeArcheryGameBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn clear_hit_counter(&mut self) {
-        self.archery_game.clear_hit_counter();
-        self.sync();
-    }
-
-    pub(crate) fn increment_hit_counter(&mut self) {
-        self.archery_game.increment_hit_counter();
-        self.sync();
-    }
-
-    pub(crate) fn set_arrows_left(&mut self, value: u8) {
-        self.archery_game.set_arrows_left(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_arrows_left(&mut self) {
-        self.archery_game.decrement_arrows_left();
-        self.sync();
-    }
-
-    pub(crate) fn increment_out_of_arrows(&mut self) {
-        self.archery_game.increment_out_of_arrows();
-        self.sync();
-    }
-
-    pub(crate) fn clear_out_of_arrows(&mut self) {
-        self.archery_game.clear_out_of_arrows();
-        self.sync();
+    forward_synced! {
+        archery_game;
+        fn clear_hit_counter();
+        fn increment_hit_counter();
+        fn set_arrows_left(value: u8);
+        fn decrement_arrows_left();
+        fn increment_out_of_arrows();
+        fn clear_out_of_arrows();
     }
 }
 

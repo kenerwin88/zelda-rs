@@ -194,36 +194,14 @@ impl<'a> NativeEffectAngleScratchBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn set_angle(&mut self, slot: usize, value: u8) {
-        self.state.set_angle(slot, value);
-        self.sync();
-    }
-
-    pub(crate) fn set_angles4(&mut self, values: &[u8], start: usize) {
-        self.state.set_angles4(values, start);
-        self.sync();
-    }
-
-    pub(crate) fn add_angle_mod64(&mut self, slot: usize, value: u8) -> u8 {
-        let angle = self.state.add_angle_mod64(slot, value);
-        self.sync();
-        angle
-    }
-
-    pub(crate) fn set_trailing_angle(&mut self, value: u8) {
-        self.state.set_trailing_angle(value);
-        self.sync();
-    }
-
-    pub(crate) fn add_trailing_angle_mod64(&mut self, value: u8) -> u8 {
-        let angle = self.state.add_trailing_angle_mod64(value);
-        self.sync();
-        angle
-    }
-
-    pub(crate) fn set_radial_radius(&mut self, value: u8) {
-        self.state.set_radial_radius(value);
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_angle(slot: usize, value: u8);
+        fn set_angles4(values: &[u8], start: usize);
+        fn add_angle_mod64(slot: usize, value: u8) -> u8;
+        fn set_trailing_angle(value: u8);
+        fn add_trailing_angle_mod64(value: u8) -> u8;
+        fn set_radial_radius(value: u8);
     }
 }
 
@@ -446,30 +424,13 @@ impl<'a> NativeQuakeSpellBridgeMut<'a> {
         debug_assert_eq!(*self.state, QuakeSpellState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn set_active_bolt_limit(&mut self, value: u8) {
-        self.state.set_active_bolt_limit(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_pending_step(&mut self, value: u8) {
-        self.state.set_pending_step(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_origin(&mut self, x: u16, y: u16) {
-        self.state.set_origin(x, y);
-        self.sync();
-    }
-
-    pub(crate) fn set_screen_shake_y(&mut self, value: u16) {
-        self.state.set_screen_shake_y(value);
-        self.sync();
-    }
-
-    pub(crate) fn invert_screen_shake_y(&mut self) -> u16 {
-        let value = self.state.invert_screen_shake_y();
-        self.sync();
-        value
+    forward_synced! {
+        state;
+        fn set_active_bolt_limit(value: u8);
+        fn set_pending_step(value: u8);
+        fn set_origin(x: u16, y: u16);
+        fn set_screen_shake_y(value: u16);
+        fn invert_screen_shake_y() -> u16;
     }
 }
 
@@ -842,46 +803,16 @@ impl<'a> NativeBombosSpellBridgeMut<'a> {
         debug_assert_eq!(*self.state, BombosSpellState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn set_mode(&mut self, value: u8) {
-        self.state.set_mode(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_fire_column_radius(&mut self, value: u8) {
-        self.state.set_fire_column_radius(value);
-        self.sync();
-    }
-
-    pub(crate) fn grow_fire_column_radius(&mut self, value: u8, limit: u8) -> u8 {
-        let radius = self.state.grow_fire_column_radius(value, limit);
-        self.sync();
-        radius
-    }
-
-    pub(crate) fn set_blast_release_locked(&mut self, value: bool) {
-        self.state.set_blast_release_locked(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_blast_release_countdown(&mut self, value: u8) {
-        self.state.set_blast_release_countdown(value);
-        self.sync();
-    }
-
-    pub(crate) fn tick_blast_release_countdown(&mut self) -> u8 {
-        let value = self.state.tick_blast_release_countdown();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_fire_column_seed_position(&mut self, slot: usize, x: u16, y: u16) {
-        self.state.set_fire_column_seed_position(slot, x, y);
-        self.sync();
-    }
-
-    pub(crate) fn set_blast_position(&mut self, slot: usize, x: u16, y: u16) {
-        self.state.set_blast_position(slot, x, y);
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_mode(value: u8);
+        fn set_fire_column_radius(value: u8);
+        fn grow_fire_column_radius(value: u8, limit: u8) -> u8;
+        fn set_blast_release_locked(value: bool);
+        fn set_blast_release_countdown(value: u8);
+        fn tick_blast_release_countdown() -> u8;
+        fn set_fire_column_seed_position(slot: usize, x: u16, y: u16);
+        fn set_blast_position(slot: usize, x: u16, y: u16);
     }
 }
 
@@ -2359,25 +2290,12 @@ impl<'a> NativeTowerSealBridgeMut<'a> {
         debug_assert_eq!(*self.state, TowerSealState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn set_ring_radius(&mut self, value: u8) {
-        self.state.set_ring_radius(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_center(&mut self, x: u16, y: u16) {
-        self.state.set_center(x, y);
-        self.sync();
-    }
-
-    pub(crate) fn tick_wait_countdown(&mut self) -> u8 {
-        let value = self.state.tick_wait_countdown();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_wait_countdown(&mut self, value: u8) {
-        self.state.set_wait_countdown(value);
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_ring_radius(value: u8);
+        fn set_center(x: u16, y: u16);
+        fn tick_wait_countdown() -> u8;
+        fn set_wait_countdown(value: u8);
     }
 }
 
@@ -2815,30 +2733,13 @@ impl<'a> NativeSkullWoodsFireBridgeMut<'a> {
         debug_assert_eq!(*self.state, EntranceEffectState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn clear_entrance_opening_started(&mut self) {
-        self.state.clear_entrance_opening_started();
-        self.sync();
-    }
-
-    pub(crate) fn set_entrance_opening_started(&mut self) {
-        self.state.set_entrance_opening_started();
-        self.sync();
-    }
-
-    pub(crate) fn set_inner_position(&mut self, x: u16, y: u16) {
-        self.state.set_inner_position(x, y);
-        self.sync();
-    }
-
-    pub(crate) fn set_outer_position(&mut self, x: u16, y: u16) {
-        self.state.set_outer_position(x, y);
-        self.sync();
-    }
-
-    pub(crate) fn retreat_inner_y(&mut self, value: u16) -> u16 {
-        let y = self.state.retreat_inner_y(value);
-        self.sync();
-        y
+    forward_synced! {
+        state;
+        fn clear_entrance_opening_started();
+        fn set_entrance_opening_started();
+        fn set_inner_position(x: u16, y: u16);
+        fn set_outer_position(x: u16, y: u16);
+        fn retreat_inner_y(value: u16) -> u16;
     }
 }
 
@@ -3007,20 +2908,11 @@ impl<'a> NativeBlastWallBridgeMut<'a> {
         debug_assert_eq!(*self.state, EntranceEffectState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn clear_entry_state(&mut self) {
-        self.state.clear_entry_state();
-        self.sync();
-    }
-
-    pub(crate) fn clear_secondary_state(&mut self) {
-        self.state.clear_secondary_state();
-        self.sync();
-    }
-
-    pub(crate) fn offset_center(&mut self, x_delta: i8, y_delta: i8) -> (u16, u16) {
-        let center = self.state.offset_center(x_delta, y_delta);
-        self.sync();
-        center
+    forward_synced! {
+        state;
+        fn clear_entry_state();
+        fn clear_secondary_state();
+        fn offset_center(x_delta: i8, y_delta: i8) -> (u16, u16);
     }
 }
 
@@ -3192,19 +3084,11 @@ impl<'a> NativeDiggingGamePrizeBridgeMut<'a> {
         debug_assert_eq!(*self.state, DiggingGamePrizeState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn increment_attempts(&mut self) {
-        self.state.increment_attempts();
-        self.sync();
-    }
-
-    pub(crate) fn mark_spawned(&mut self) {
-        self.state.mark_spawned();
-        self.sync();
-    }
-
-    pub(crate) fn clear_prize_spawned(&mut self) {
-        self.state.clear_prize_spawned();
-        self.sync();
+    forward_synced! {
+        state;
+        fn increment_attempts();
+        fn mark_spawned();
+        fn clear_prize_spawned();
     }
 }
 

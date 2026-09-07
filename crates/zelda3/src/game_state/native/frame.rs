@@ -199,49 +199,16 @@ impl<'a> NativeFrameStateBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_frame_counter(&mut self, value: u8) {
-        self.frame.set_frame_counter(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_frame_counter(&mut self) {
-        self.frame.increment_frame_counter();
-        self.sync();
-    }
-
-    pub(crate) fn set_saved_module_for_menu(&mut self, value: u8) {
-        self.frame.set_saved_module_for_menu(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_saved_module_for_menu(&mut self) {
-        self.frame.clear_saved_module_for_menu();
-        self.sync();
-    }
-
-    pub(crate) fn save_main_module_for_menu(&mut self) {
-        self.frame.save_main_module_for_menu();
-        self.sync();
-    }
-
-    pub(crate) fn save_submodule_for_menu(&mut self) {
-        self.frame.save_submodule_for_menu();
-        self.sync();
-    }
-
-    pub(crate) fn clear_modal_pause_flag(&mut self) {
-        self.frame.clear_modal_pause_flag();
-        self.sync();
-    }
-
-    pub(crate) fn set_modal_pause_flag(&mut self, value: u8) {
-        self.frame.set_modal_pause_flag(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_modal_pause_flag(&mut self) -> u8 {
-        let value = self.frame.increment_modal_pause_flag();
-        self.sync();
-        value
+    forward_synced! {
+        frame;
+        fn set_frame_counter(value: u8);
+        fn increment_frame_counter();
+        fn set_saved_module_for_menu(value: u8);
+        fn clear_saved_module_for_menu();
+        fn save_main_module_for_menu();
+        fn save_submodule_for_menu();
+        fn clear_modal_pause_flag();
+        fn set_modal_pause_flag(value: u8);
+        fn increment_modal_pause_flag() -> u8;
     }
 }

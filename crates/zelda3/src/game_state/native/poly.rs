@@ -643,10 +643,7 @@ impl<'a> NativePolyProjectedVerticesBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn set_position(&mut self, vertex: usize, x: u8, y: u8) {
-        self.state.set_position(vertex, x, y);
-        self.sync();
-    }
+    forward_synced! { state; fn set_position(vertex: usize, x: u8, y: u8); }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -710,14 +707,10 @@ impl<'a> NativePolyFaceCoordsBridgeMut<'a> {
         debug_assert_eq!(*self.state, PolyFaceCoordsState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn set_coord(&mut self, offset: usize, value: u8) {
-        self.state.set_coord(offset, value);
-        self.sync();
-    }
-
-    pub(crate) fn set_xy_coords_count(&mut self, value: u8) {
-        self.state.set_xy_coords_count(value);
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_coord(offset: usize, value: u8);
+        fn set_xy_coords_count(value: u8);
     }
 }
 
@@ -885,69 +878,20 @@ impl<'a> NativePolyRasterEdgeBridgeMut<'a> {
         debug_assert_eq!(*self.state, PolyRasterEdgeState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn set_left_current(&mut self, x: u8, y: u8) {
-        self.state.set_left_current(x, y);
-        self.sync();
-    }
-
-    pub(crate) fn set_right_current(&mut self, x: u8, y: u8) {
-        self.state.set_right_current(x, y);
-        self.sync();
-    }
-
-    pub(crate) fn set_left_target(&mut self, x: u8, y: u8) {
-        self.state.set_left_target(x, y);
-        self.sync();
-    }
-
-    pub(crate) fn set_right_target(&mut self, x: u8, y: u8) {
-        self.state.set_right_target(x, y);
-        self.sync();
-    }
-
-    pub(crate) fn set_left_current_x(&mut self, x: u8) {
-        self.state.set_left_current_x(x);
-        self.sync();
-    }
-
-    pub(crate) fn set_right_current_x(&mut self, x: u8) {
-        self.state.set_right_current_x(x);
-        self.sync();
-    }
-
-    pub(crate) fn set_total_num_steps(&mut self, value: u8) {
-        self.state.set_total_num_steps(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_total_num_steps(&mut self) -> i8 {
-        let value = self.state.decrement_total_num_steps();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_both_cur_vertex_idx(&mut self, value: u8) {
-        self.state.set_both_cur_vertex_idx(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_cur_vertex_idx0(&mut self, value: u8) {
-        self.state.set_cur_vertex_idx0(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_cur_vertex_idx1(&mut self, value: u8) {
-        self.state.set_cur_vertex_idx1(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_y0_cur(&mut self) {
-        self.state.increment_y0_cur();
-        self.sync();
-    }
-
-    pub(crate) fn increment_y1_cur(&mut self) {
-        self.state.increment_y1_cur();
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_left_current(x: u8, y: u8);
+        fn set_right_current(x: u8, y: u8);
+        fn set_left_target(x: u8, y: u8);
+        fn set_right_target(x: u8, y: u8);
+        fn set_left_current_x(x: u8);
+        fn set_right_current_x(x: u8);
+        fn set_total_num_steps(value: u8);
+        fn decrement_total_num_steps() -> i8;
+        fn set_both_cur_vertex_idx(value: u8);
+        fn set_cur_vertex_idx0(value: u8);
+        fn set_cur_vertex_idx1(value: u8);
+        fn increment_y0_cur();
+        fn increment_y1_cur();
     }
 }

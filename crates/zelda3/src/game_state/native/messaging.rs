@@ -1095,146 +1095,35 @@ impl<'a> NativeSelectFileMenuBridgeMut<'a> {
         debug_assert_eq!(*self.menu, SelectFileMenuState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn set_choice(&mut self, index: usize, value: u8) {
-        self.menu.set_choice(index, value);
-        self.sync();
-    }
-
-    pub(crate) fn set_cursor(&mut self, value: u8) {
-        self.menu.set_cursor(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_cursor(&mut self) {
-        self.menu.clear_cursor();
-        self.sync();
-    }
-
-    pub(crate) fn clear_transition_scratch(&mut self) {
-        self.menu.clear_transition_scratch();
-        self.sync();
-    }
-
-    pub(crate) fn increment_cursor(&mut self) -> u8 {
-        let value = self.menu.increment_cursor();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn decrement_cursor(&mut self) -> u8 {
-        let value = self.menu.decrement_cursor();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn clear_remembered_cursor(&mut self) {
-        self.menu.clear_remembered_cursor();
-        self.sync();
-    }
-
-    pub(crate) fn remember_current_cursor(&mut self) {
-        self.menu.remember_current_cursor();
-        self.sync();
-    }
-
-    pub(crate) fn restore_remembered_cursor(&mut self) {
-        self.menu.restore_remembered_cursor();
-        self.sync();
-    }
-
-    pub(crate) fn set_target_word(&mut self, value: u16) {
-        self.menu.set_target_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_copy_source_slot(&mut self, slot: u8) {
-        self.menu.set_copy_source_slot(slot);
-        self.sync();
-    }
-
-    pub(crate) fn set_name_scroll_x(&mut self, value: u16) {
-        self.menu.set_name_scroll_x(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_name_entry_state(&mut self) {
-        self.menu.clear_name_entry_state();
-        self.sync();
-    }
-
-    pub(crate) fn set_name_column(&mut self, value: u8) {
-        self.menu.set_name_column(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_name_cursor_y(&mut self, value: u8) {
-        self.menu.set_name_cursor_y(value);
-        self.sync();
-    }
-
-    pub(crate) fn step_name_cursor_y_toward(&mut self, target_y: u8) -> bool {
-        let moved = self.menu.step_name_cursor_y_toward(target_y);
-        self.sync();
-        moved
-    }
-
-    pub(crate) fn move_name_slot_left_wrapped(&mut self) -> u8 {
-        let value = self.menu.move_name_slot_left_wrapped();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn move_name_slot_right_wrapped(&mut self) -> u8 {
-        let value = self.menu.move_name_slot_right_wrapped();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_name_scroll_x_step(&mut self, value: u8) {
-        self.menu.set_name_scroll_x_step(value);
-        self.sync();
-    }
-
-    pub(crate) fn advance_name_scroll_x_step_by(&mut self, value: u8) -> u8 {
-        let step = self.menu.advance_name_scroll_x_step_by(value);
-        self.sync();
-        step
-    }
-
-    pub(crate) fn clear_name_scroll_y_step(&mut self) {
-        self.menu.clear_name_scroll_y_step();
-        self.sync();
-    }
-
-    pub(crate) fn increment_name_scroll_y_step(&mut self) -> u8 {
-        let step = self.menu.increment_name_scroll_y_step();
-        self.sync();
-        step
-    }
-
-    pub(crate) fn set_name_row(&mut self, value: u8) {
-        self.menu.set_name_row(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_name_scroll_x_direction(&mut self, value: u8) {
-        self.menu.set_name_scroll_x_direction(value);
-        self.sync();
-    }
-
-    pub(crate) fn mark_save_slot_present(&mut self, slot: usize) {
-        self.menu.mark_save_slot_present(slot);
-        self.sync();
-    }
-
-    pub(crate) fn clear_save_slot_flag(&mut self, slot: usize) {
-        self.menu.clear_save_slot_flag(slot);
-        self.sync();
-    }
-
-    pub(crate) fn clear_save_slot_flags(&mut self) {
-        self.menu.clear_save_slot_flags();
-        self.sync();
+    forward_synced! {
+        menu;
+        fn set_choice(index: usize, value: u8);
+        fn set_cursor(value: u8);
+        fn clear_cursor();
+        fn clear_transition_scratch();
+        fn increment_cursor() -> u8;
+        fn decrement_cursor() -> u8;
+        fn clear_remembered_cursor();
+        fn remember_current_cursor();
+        fn restore_remembered_cursor();
+        fn set_target_word(value: u16);
+        fn set_copy_source_slot(slot: u8);
+        fn set_name_scroll_x(value: u16);
+        fn clear_name_entry_state();
+        fn set_name_column(value: u8);
+        fn set_name_cursor_y(value: u8);
+        fn step_name_cursor_y_toward(target_y: u8) -> bool;
+        fn move_name_slot_left_wrapped() -> u8;
+        fn move_name_slot_right_wrapped() -> u8;
+        fn set_name_scroll_x_step(value: u8);
+        fn advance_name_scroll_x_step_by(value: u8) -> u8;
+        fn clear_name_scroll_y_step();
+        fn increment_name_scroll_y_step() -> u8;
+        fn set_name_row(value: u8);
+        fn set_name_scroll_x_direction(value: u8);
+        fn mark_save_slot_present(slot: usize);
+        fn clear_save_slot_flag(slot: usize);
+        fn clear_save_slot_flags();
     }
 }
 
@@ -1282,10 +1171,7 @@ impl<'a> NativeDialogueMessageIndexBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn set_value(&mut self, value: u16) {
-        self.message_index.set_value(value);
-        self.sync();
-    }
+    forward_synced! { message_index; fn set_value(value: u16); }
 }
 
 pub(crate) struct NativeMultiselectChoiceBridgeMut<'a> {
@@ -1310,29 +1196,13 @@ impl<'a> NativeMultiselectChoiceBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn set_value(&mut self, value: u8) {
-        self.choice.set_value(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_value(&mut self) {
-        self.choice.increment_value();
-        self.sync();
-    }
-
-    pub(crate) fn decrement_value(&mut self) {
-        self.choice.decrement_value();
-        self.sync();
-    }
-
-    pub(crate) fn restore_backup(&mut self) {
-        self.choice.restore_backup();
-        self.sync();
-    }
-
-    pub(crate) fn save_backup(&mut self) {
-        self.choice.save_backup();
-        self.sync();
+    forward_synced! {
+        choice;
+        fn set_value(value: u8);
+        fn increment_value();
+        fn decrement_value();
+        fn restore_backup();
+        fn save_backup();
     }
 }
 
@@ -1355,19 +1225,11 @@ impl<'a> NativeDialogueNumberBridgeMut<'a> {
         debug_assert_eq!(*self.number, DialogueNumberState::load_from_ram(self.ram));
     }
 
-    pub(crate) fn set_packed_digits(&mut self, low_pair: u8, high_pair: u8) {
-        self.number.set_packed_digits(low_pair, high_pair);
-        self.sync();
-    }
-
-    pub(crate) fn set_low_pair(&mut self, value: u8) {
-        self.number.set_low_pair(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_high_pair(&mut self, value: u8) {
-        self.number.set_high_pair(value);
-        self.sync();
+    forward_synced! {
+        number;
+        fn set_packed_digits(low_pair: u8, high_pair: u8);
+        fn set_low_pair(value: u8);
+        fn set_high_pair(value: u8);
     }
 }
 
@@ -1393,11 +1255,7 @@ impl<'a> NativeDialogueSourceOffsetBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn increment_bank_offset_low_nibble(&mut self) -> u8 {
-        let next = self.source_offset.increment_bank_offset_low_nibble();
-        self.sync();
-        next
-    }
+    forward_synced! { source_offset; fn increment_bank_offset_low_nibble() -> u8; }
 }
 
 pub(crate) struct NativeDecodedMessageTextBridgeMut<'a> {
@@ -1687,19 +1545,11 @@ impl<'a> NativeMessagingRenderBufferBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn xor_mask(&mut self, offset: usize, mask: u8) {
-        self.render_buffer.xor_mask(offset, mask);
-        self.sync();
-    }
-
-    pub(crate) fn clear_mask(&mut self, offset: usize, mask: u8) {
-        self.render_buffer.clear_mask(offset, mask);
-        self.sync();
-    }
-
-    pub(crate) fn set_word(&mut self, index: usize, value: u16) {
-        self.render_buffer.set_word(index, value);
-        self.sync();
+    forward_synced! {
+        render_buffer;
+        fn xor_mask(offset: usize, mask: u8);
+        fn clear_mask(offset: usize, mask: u8);
+        fn set_word(index: usize, value: u16);
     }
 
     pub(crate) fn set_word_at_byte_offset(&mut self, byte_offset: usize, value: u16) {
@@ -1708,10 +1558,7 @@ impl<'a> NativeMessagingRenderBufferBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn clear_range(&mut self, byte_count: usize) {
-        self.render_buffer.clear_range(byte_count);
-        self.sync();
-    }
+    forward_synced! { render_buffer; fn clear_range(byte_count: usize); }
 
     pub(crate) fn fill_word_range(&mut self, start_index: usize, count: usize, value: u16) {
         self.render_buffer
@@ -1751,40 +1598,15 @@ impl<'a> NativeVwfRenderBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_glyph_cursor(&mut self, value: u16) {
-        self.vwf_render.set_glyph_cursor(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_glyph_cursor(&mut self) {
-        self.vwf_render.clear_glyph_cursor();
-        self.sync();
-    }
-
-    pub(crate) fn increment_glyph_cursor(&mut self) -> u16 {
-        let value = self.vwf_render.increment_glyph_cursor();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn request_next_line(&mut self, value: u16) {
-        self.vwf_render.request_next_line(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_next_line_request(&mut self) {
-        self.vwf_render.clear_next_line_request();
-        self.sync();
-    }
-
-    pub(crate) fn set_current_line(&mut self, value: u16) {
-        self.vwf_render.set_current_line(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_line_render_offset(&mut self, value: u16) {
-        self.vwf_render.set_line_render_offset(value);
-        self.sync();
+    forward_synced! {
+        vwf_render;
+        fn set_glyph_cursor(value: u16);
+        fn clear_glyph_cursor();
+        fn increment_glyph_cursor() -> u16;
+        fn request_next_line(value: u16);
+        fn clear_next_line_request();
+        fn set_current_line(value: u16);
+        fn set_line_render_offset(value: u16);
     }
 
     pub(crate) fn set_tile_word_at_byte_offset(&mut self, byte_offset: usize, value: u16) {
@@ -1821,14 +1643,9 @@ impl<'a> NativeSharedMessageTimerBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn clear(&mut self) {
-        self.timer.clear();
-        self.sync();
-    }
-
-    pub(crate) fn tick(&mut self) -> u16 {
-        let value = self.timer.tick();
-        self.sync();
-        value
+    forward_synced! {
+        timer;
+        fn clear();
+        fn tick() -> u16;
     }
 }

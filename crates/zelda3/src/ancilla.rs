@@ -3,8 +3,8 @@
 use super::*;
 use crate::game_state::constants::DUNG_SAVEGAME_STATE_BITS;
 use crate::types::{
-    abs16, abs8, sign16, sign8, AncillaRadialProjection, PairU8, Point16U, ProjectSpeedRet,
-    SpriteHitBox,
+    abs16, abs8, project_speed_from_differences, sign16, sign8, AncillaRadialProjection, PairU8,
+    Point16U, ProjectSpeedRet, SpriteHitBox,
 };
 use crate::zelda_rtl::sprite::SpriteSpawnInfo;
 
@@ -7949,64 +7949,13 @@ impl ZeldaState {
         self.ancilla_move_x(k);
     }
 
-    fn ancilla_project_speed_towards_player(&self, k: usize, mut vel: u8) -> ProjectSpeedRet {
+    fn ancilla_project_speed_towards_player(&self, k: usize, vel: u8) -> ProjectSpeedRet {
         if vel == 0 {
-            return ProjectSpeedRet {
-                x: 0,
-                y: 0,
-                xdiff: 0,
-                ydiff: 0,
-            };
+            return ProjectSpeedRet::ZERO;
         }
         let below = self.ancilla_is_below_link(k);
-        let mut r12 = if (below.b as i8).is_negative() {
-            0u8.wrapping_sub(below.b)
-        } else {
-            below.b
-        };
-
         let right = self.ancilla_is_right_of_link(k);
-        let mut r13 = if (right.b as i8).is_negative() {
-            0u8.wrapping_sub(right.b)
-        } else {
-            right.b
-        };
-        let mut swapped = false;
-        if r13 < r12 {
-            swapped = true;
-            std::mem::swap(&mut r12, &mut r13);
-        }
-        let mut xvel = vel;
-        let mut yvel = 0u8;
-        let mut t = 0u8;
-        loop {
-            t = t.wrapping_add(r12);
-            if t >= r13 {
-                t = t.wrapping_sub(r13);
-                yvel = yvel.wrapping_add(1);
-            }
-            vel = vel.wrapping_sub(1);
-            if vel == 0 {
-                break;
-            }
-        }
-        if swapped {
-            std::mem::swap(&mut xvel, &mut yvel);
-        }
-        ProjectSpeedRet {
-            x: if right.a != 0 {
-                0u8.wrapping_sub(xvel)
-            } else {
-                xvel
-            },
-            y: if below.a != 0 {
-                0u8.wrapping_sub(yvel)
-            } else {
-                yvel
-            },
-            xdiff: right.b,
-            ydiff: below.b,
-        }
+        project_speed_from_differences(vel, below, right)
     }
 
     fn ancilla_get_radial_projection(&self, a: u8, r8: u8) -> AncillaRadialProjection {

@@ -315,69 +315,21 @@ impl<'a> NativeFollowerRuntimeBridgeMut<'a> {
         debug_assert_eq!(*self.state, projected);
     }
 
-    pub(crate) fn clear_palette_swap_flag(&mut self) {
-        self.state.clear_palette_swap_flag();
-        self.sync();
-    }
-
-    pub(crate) fn set_palette_swap_flag(&mut self, value: u8) {
-        self.state.set_palette_swap_flag(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_indicator(&mut self, value: u8) {
-        self.state.set_indicator(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_data_index(&mut self, value: u8) {
-        self.state.set_data_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn advance_data_index_wrapping_at_20(&mut self) {
-        self.state.advance_data_index_wrapping_at_20();
-        self.sync();
-    }
-
-    pub(crate) fn xor_indicator(&mut self, value: u8) {
-        self.state.xor_indicator(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_appearance_none_flag(&mut self, value: u8) {
-        self.state.set_appearance_none_flag(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_dropped(&mut self, value: u8) {
-        self.state.set_dropped(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_hookshot_interlock(&mut self) {
-        self.state.clear_hookshot_interlock();
-        self.sync();
-    }
-
-    pub(crate) fn set_hookshot_interlock(&mut self) {
-        self.state.set_hookshot_interlock();
-        self.sync();
-    }
-
-    pub(crate) fn clear_event_flags(&mut self) {
-        self.state.clear_event_flags();
-        self.sync();
-    }
-
-    pub(crate) fn or_event_flags(&mut self, value: u8) {
-        self.state.or_event_flags(value);
-        self.sync();
-    }
-
-    pub(crate) fn and_event_flags(&mut self, value: u8) {
-        self.state.and_event_flags(value);
-        self.sync();
+    forward_synced! {
+        state;
+        fn clear_palette_swap_flag();
+        fn set_palette_swap_flag(value: u8);
+        fn set_indicator(value: u8);
+        fn set_data_index(value: u8);
+        fn advance_data_index_wrapping_at_20();
+        fn xor_indicator(value: u8);
+        fn set_appearance_none_flag(value: u8);
+        fn set_dropped(value: u8);
+        fn clear_hookshot_interlock();
+        fn set_hookshot_interlock();
+        fn clear_event_flags();
+        fn or_event_flags(value: u8);
+        fn and_event_flags(value: u8);
     }
 
     pub(crate) fn set_hookshot_release_tail_index_from_tail_write_index(&mut self) {
@@ -386,69 +338,21 @@ impl<'a> NativeFollowerRuntimeBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_tail_write_index(&mut self, value: u8) {
-        self.state.set_tail_write_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_tail_write_index(&mut self) {
-        self.state.increment_tail_write_index();
-        self.sync();
-    }
-
-    pub(crate) fn set_reacquire_timer_low(&mut self, value: u8) {
-        self.state.set_reacquire_timer_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_reacquire_timer_low(&mut self) {
-        self.state.decrement_reacquire_timer_low();
-        self.sync();
-    }
-
-    pub(crate) fn set_reacquire_timer(&mut self, value: u16) {
-        self.state.set_reacquire_timer(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_tagalong_shared_state_a(&mut self) {
-        self.state.clear_tagalong_shared_state_a();
-        self.sync();
-    }
-
-    pub(crate) fn clear_draw_anim_frame(&mut self) {
-        self.state.clear_draw_anim_frame();
-        self.sync();
-    }
-
-    pub(crate) fn increment_and_cycle_draw_anim_frame(&mut self) {
-        self.state.increment_and_cycle_draw_anim_frame();
-        self.sync();
-    }
-
-    pub(crate) fn clear_jump_timer(&mut self) {
-        self.state.clear_jump_timer();
-        self.sync();
-    }
-
-    pub(crate) fn set_saved_y(&mut self, value: u16) {
-        self.state.set_saved_y(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_saved_x(&mut self, value: u16) {
-        self.state.set_saved_x(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_saved_indoor_flag(&mut self, value: u8) {
-        self.state.set_saved_indoor_flag(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_saved_floor(&mut self, value: u8) {
-        self.state.set_saved_floor(value);
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_tail_write_index(value: u8);
+        fn increment_tail_write_index();
+        fn set_reacquire_timer_low(value: u8);
+        fn decrement_reacquire_timer_low();
+        fn set_reacquire_timer(value: u16);
+        fn clear_tagalong_shared_state_a();
+        fn clear_draw_anim_frame();
+        fn increment_and_cycle_draw_anim_frame();
+        fn clear_jump_timer();
+        fn set_saved_y(value: u16);
+        fn set_saved_x(value: u16);
+        fn set_saved_indoor_flag(value: u8);
+        fn set_saved_floor(value: u8);
     }
 
     pub(crate) fn set_zelda_rescue_cutscene_state(&mut self, value: u8) {
