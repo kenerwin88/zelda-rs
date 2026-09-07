@@ -85,7 +85,7 @@ impl ZeldaState {
         eprintln!(
             "objpipe host={} stage={stage} pack={:04x} sum={sum:08x} w4020={:04x} w4030={:04x} w40b0={:04x} w4120={:04x}",
             self.frame_ctr_dbg,
-            read_le_u16(&self.ram, 0x100),
+            read_le_u16(&self.ram, LINK_DMA_GRAPHICS_INDEX),
             sample(0x20),
             sample(0x30),
             sample(0xb0),

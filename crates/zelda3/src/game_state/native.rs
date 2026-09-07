@@ -4,15 +4,19 @@
 //! proven subsystem by subsystem. Native structs own domain fields and can be
 //! projected to or loaded from WRAM during the transition.
 
+mod ancilla;
 mod display;
 mod dungeon;
 mod effects;
 mod ending;
+mod follower;
 mod frame;
+mod garnish;
 mod inventory;
 mod messaging;
 mod misc;
 mod oam;
+mod overlord;
 mod player;
 mod poly;
 mod sprites;

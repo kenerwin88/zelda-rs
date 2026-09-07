@@ -2,9 +2,10 @@
 
 use super::*;
 use crate::game_state::constants::{
-    ALT_SPRITE_STATE, ALT_SPRITE_TYPE, ANCILLA_TYPE, DIALOGUE_MESSAGE_INDEX, GARNISH_TYPE,
-    MAIN_MODULE, MESSAGING_MODULE, OVERLORD_TYPE, SUBMODULE, SUBSUBMODULE, TEXT_INCREMENTAL_STATE,
-    TEXT_RENDER_STATE,
+    ALT_SPRITE_STATE, ALT_SPRITE_TYPE, ANCILLA_TYPE, COMPOSITE_OF_LAYOUT_AND_QUADRANT,
+    DIALOGUE_MESSAGE_INDEX, DUNG_BLASTWALL_FLAG_Y, GARNISH_TYPE, LINK_QUADRANT_X, LINK_QUADRANT_Y,
+    MAIN_MODULE, MESSAGING_MODULE, OVERLORD_TYPE, QUADRANT_FULLSIZE_X, QUADRANT_FULLSIZE_Y,
+    SUBMODULE, SUBSUBMODULE, TEXT_INCREMENTAL_STATE, TEXT_RENDER_STATE,
 };
 use crate::types::Point16U;
 use crate::zelda_rtl::misc::DUNG_ANIMATED_TILES;
@@ -5579,17 +5580,17 @@ impl ZeldaState {
                 self.frame_ctr_dbg,
                 self.game_state.world.location.dungeon_room(),
                 self.game_state.dungeon.room_load.layout_quadrant_key(),
-                self.ram[0xaa],
+                self.ram[LINK_QUADRANT_Y],
                 flags,
                 horizontal_mask,
                 vertical_mask,
-                self.ram[0xa8],
-                self.ram[0xa9],
+                self.ram[COMPOSITE_OF_LAYOUT_AND_QUADRANT],
+                self.ram[LINK_QUADRANT_X],
                 blast_wall_x_open,
                 blast_wall_y_open,
                 reset_xy_flags,
-                self.ram[0xa6],
-                self.ram[0xa7],
+                self.ram[QUADRANT_FULLSIZE_X],
+                self.ram[QUADRANT_FULLSIZE_Y],
             );
         }
     }
@@ -5886,12 +5887,12 @@ impl ZeldaState {
                 self.frame_ctr_dbg,
                 self.game_state.world.location.dungeon_room(),
                 self.game_state.dungeon.room_load.layout_quadrant_key(),
-                self.ram[0xaa],
+                self.ram[LINK_QUADRANT_Y],
                 flags,
                 mask,
-                self.ram[0xa9],
+                self.ram[LINK_QUADRANT_X],
                 blast_wall_y_open,
-                self.ram[0x453],
+                self.ram[DUNG_BLASTWALL_FLAG_Y],
                 u8::from(blast_wall_y_open || flags & mask == 0) * 2,
             );
         }

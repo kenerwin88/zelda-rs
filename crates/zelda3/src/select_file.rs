@@ -7,6 +7,7 @@ mod select_file_shared;
 use select_file_shared::*;
 
 pub(super) const SELECT_FILE_CHECKERBOARD_TILE_COUNT: usize = 1024;
+const FILE_SELECT_GRAPHICS_LOW_WRAM: std::ops::Range<usize> = 0x0d00..0x1000;
 
 fn read_name_player_tab1_byte_word(tab: &[i16; 26], offs: usize) -> u16 {
     let lo = tab[offs / 2].to_le_bytes()[offs & 1] as u16;
@@ -79,12 +80,12 @@ impl ZeldaState {
         let current = usize::from(progress.word_offset);
         for word_offset in (current + 2..0x100).step_by(2) {
             for page in 0..3 {
-                let address = 0x0d00 + page * 0x100 + word_offset;
+                let address = FILE_SELECT_GRAPHICS_LOW_WRAM.start + page * 0x100 + word_offset;
                 self.ram[address..address + 2].fill(0);
             }
         }
         for page in 0..usize::from(progress.completed_page_stores) {
-            let address = 0x0d00 + page * 0x100 + current;
+            let address = FILE_SELECT_GRAPHICS_LOW_WRAM.start + page * 0x100 + current;
             self.ram[address..address + 2].fill(0);
         }
         self.game_state.sprites.sprite_slots = SpriteSlotsState::load_from_ram(&self.ram);
@@ -92,7 +93,7 @@ impl ZeldaState {
 
     /// Publish completion of the same source clear.
     pub(super) fn publish_file_select_graphics_low_wram_clear(&mut self) {
-        self.ram[0x0d00..0x1000].fill(0);
+        self.ram[FILE_SELECT_GRAPHICS_LOW_WRAM].fill(0);
         self.game_state.sprites.sprite_slots = SpriteSlotsState::load_from_ram(&self.ram);
     }
 

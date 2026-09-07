@@ -3,6 +3,7 @@
 //! `pub(super)` so the parent module and its siblings can call them.
 
 use super::*;
+use crate::game_state::constants::VIRQ_TRIGGER;
 
 impl ZeldaState {
     /// Capture the Zelda-level semantic continuation owned at one exact
@@ -13059,7 +13060,7 @@ impl ZeldaState {
         // Both polyhedral threads (Triforce room $FF=$90, dungeon crystal
         // maiden $FF=$30) run the same $09:F81D loop; the V-IRQ line the ROM
         // programmed bounds the main thread's slot [virq, 225).
-        let virq_scanline = match self.ram[0xff] {
+        let virq_scanline = match self.ram[VIRQ_TRIGGER] {
             line @ 1..=224 => u16::from(line),
             _ => 144,
         };
@@ -13187,7 +13188,7 @@ impl ZeldaState {
     pub(super) fn advance_poly_shadow_host(&mut self) -> bool {
         const THREAD_WORK_RANGE: std::ops::Range<usize> = 0x1f10..0x2000;
         const THREAD_BITMAP_RANGE: std::ops::Range<usize> = 0xe800..0xf000;
-        let virq_scanline = match self.ram[0xff] {
+        let virq_scanline = match self.ram[VIRQ_TRIGGER] {
             line @ 1..=224 => u16::from(line),
             _ => 144,
         };

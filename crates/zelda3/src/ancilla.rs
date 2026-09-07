@@ -1,6 +1,7 @@
 // Methods ported from zelda3/src/ancilla.c and included inside ZeldaState.
 
 use super::*;
+use crate::game_state::constants::DUNG_SAVEGAME_STATE_BITS;
 use crate::types::{
     abs16, abs8, sign16, sign8, AncillaRadialProjection, PairU8, Point16U, ProjectSpeedRet,
     SpriteHitBox,
@@ -7015,8 +7016,8 @@ impl ZeldaState {
                 self.ancilla_slot_view(k).z(),
                 self.ancilla_slot_view(k).g(),
                 self.game_state.dungeon.savegame_state.savegame_state_bits(),
-                self.ram[0x403],
-                self.ram[0x402],
+                self.ram[DUNG_SAVEGAME_STATE_BITS + 1],
+                self.ram[DUNG_SAVEGAME_STATE_BITS],
                 self.ram[MILESTONE_ITEM_GFX_SWAP_COUNTDOWN],
                 self.ancilla_slot_view(k).work_byte_3(),
                 self.game_state.player.follower_link.has_auxiliary_state(),
