@@ -1,0 +1,13 @@
+[package]
+name = "zelda3-map"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Portable dungeon definitions, independent of engine and legacy pack storage"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[lints]
+workspace = true

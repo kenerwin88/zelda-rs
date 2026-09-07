@@ -7781,6 +7781,9 @@ mod attract;
 mod audio;
 #[path = "dungeon.rs"]
 mod dungeon;
+#[cfg(feature = "map-preview")]
+#[path = "map_preview.rs"]
+pub mod map_preview;
 #[path = "ending.rs"]
 mod ending;
 #[path = "game_execution_scheduler.rs"]

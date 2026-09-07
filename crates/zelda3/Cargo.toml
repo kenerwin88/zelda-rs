@@ -13,6 +13,8 @@ autobins = false
 # `--no-default-features` and compiles them out.
 default = ["parity-debug"]
 parity-debug = []
+# Offline editor snapshots only; absent from ordinary game builds.
+map-preview = []
 
 [dependencies]
 bincode = "1"

@@ -9,6 +9,8 @@ members = [
     "crates/zelda3",
     "crates/platform",
     "crates/assets",
+    "crates/map-tools",
+    "crates/zelda3-map",
     "crates/renderer",
     "crates/parity",
     "zelda3-bin",

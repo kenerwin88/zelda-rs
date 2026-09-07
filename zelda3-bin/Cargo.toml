@@ -15,6 +15,11 @@ default = ["parity-debug"]
 # Forwarded to the engine crate; see crates/zelda3/Cargo.toml.
 parity-debug = ["zelda3/parity-debug"]
 
+[[example]]
+name = "dungeon-room-playtest"
+path = "examples/dungeon_room_playtest.rs"
+test = false
+
 [dependencies]
 bincode = "1"
 snes = { path = "../crates/snes" }

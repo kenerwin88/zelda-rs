@@ -3482,6 +3482,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "zelda3-map"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "zelda3-map-tools"
+version = "0.1.0"
+dependencies = [
+ "png",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "zelda3",
+ "zelda3-map",
+]
+
+[[package]]
 name = "zelda3-palette"
 version = "0.0.0"
 dependencies = [

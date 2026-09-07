@@ -51,6 +51,23 @@ and saved route artifacts.
 
 ## Generated Assets
 
+The Rust [portable dungeon project workflow](docs/assets/portable-dungeon-projects.md)
+exports all dungeon data into typed modern sources and rebuilds byte-exact stock
+packs without the original map data as an input. Use `dungeon-project --help`
+after building `zelda3-map-tools`.
+
+For standard Tiled `.tmj` dungeon maps with byte-exact vanilla compilation,
+see [Tiled dungeon maps](docs/assets/tiled-dungeon-maps.md). Build the standalone
+Rust tools with `cargo build -p zelda3-map-tools`; run `target/debug/dungeon-tiled`
+or `target/debug/dungeon-room` with `--help` for commands.
+The optional `--features preview` build adds room artwork and collision overlays.
+The [native map migration plan](docs/assets/native-map-format.md) describes how
+modern room definitions will become the canonical sources and runtime model.
+
+For the experimental lossless dungeon-room exporter/compiler and isolated
+playtest workflow, see [Dungeon room authoring](docs/assets/dungeon-room-authoring.md).
+Its first version supports position edits within existing room allocations.
+
 The playable binary embeds the split files under `generated/zelda3_assets/`.
 That directory is gitignored, so every builder must provide their own USA ROM
 when creating the binary.

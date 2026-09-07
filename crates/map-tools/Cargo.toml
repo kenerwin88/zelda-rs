@@ -1,0 +1,36 @@
+[package]
+name = "zelda3-map-tools"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Offline, lossless dungeon map authoring tools"
+
+[features]
+preview = ["dep:zelda3", "dep:png"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+zelda3-map = { path = "../zelda3-map" }
+png = { version = "0.17", optional = true }
+zelda3 = { path = "../zelda3", features = ["map-preview"], optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "dungeon-room"
+path = "src/bin/dungeon_room.rs"
+
+[[bin]]
+name = "dungeon-tiled"
+path = "src/bin/dungeon_tiled.rs"
+
+[[bin]]
+name = "dungeon-project"
+path = "src/bin/dungeon_project.rs"
+
+[lints]
+workspace = true
