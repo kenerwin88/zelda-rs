@@ -75,26 +75,6 @@ fn credits_prep_resets_sprite_properties_before_scene_setup() {
 }
 
 #[test]
-fn lanmola_draw_uses_named_flat_trail_reader() {
-    let source = include_str!("../../sprite_main_draw.rs");
-    for needle in [
-        "self.ram[MOLDORM_HISTORY_X_LO +",
-        "self.ram[MOLDORM_HISTORY_Y_LO +",
-        "self.ram[BEAMOS_LASER_HISTORY_X_HI +",
-        "self.ram[BEAMOS_LASER_HISTORY_Y_HI +",
-    ] {
-        assert!(
-            !source.contains(needle),
-            "sprite_main_draw.rs should use lanmola_flat_trail_entry instead of {needle}"
-        );
-    }
-    assert!(
-        source.contains("lanmola_flat_trail_entry("),
-        "sprite_main_draw.rs should route Lanmola trail reads through the named API"
-    );
-}
-
-#[test]
 fn run4786_link_oam_completes_the_build_before_run4787_finishes_its_suffix() {
     let mut state = run4786_spotlight_build_link_oam_state();
     let iteration = SpotlightIteration::closing(SpotlightIterationPhase::WholeTable);

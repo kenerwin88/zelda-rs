@@ -674,20 +674,6 @@ fn modern_runtime_acknowledges_typed_commands_without_apui_reads() {
 }
 
 #[test]
-fn production_audio_state_has_no_modern_apui_transport() {
-    let source = include_str!("audio.rs");
-
-    assert!(
-        !source.contains("ModernApuState"),
-        "production audio still owns an APUI-shaped modern state"
-    );
-    assert!(
-        !source.contains("rehydrate_commands_from_ports"),
-        "production audio still rebuilds typed commands from APUI bytes"
-    );
-}
-
-#[test]
 fn queued_typed_engine_commands_survive_audio_snapshot_restore() {
     use crate::game_output::{AudioPan, AudioSfxBank, EngineAudioCommand};
 

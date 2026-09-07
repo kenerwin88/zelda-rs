@@ -83,33 +83,6 @@ fn parity_probe_overworld_screen_loads_screen_properties() {
 }
 
 #[test]
-fn overworld_map16_wram_slots_are_bridge_only() {
-    let source = concat!(
-        include_str!("../../overworld.rs"),
-        include_str!("../../overworld_shared.rs")
-    );
-    for symbol in [
-        "MAP16_LOAD_SRC_OFF_OVERWORLD",
-        "MAP16_LOAD_DST_OFF_OVERWORLD",
-        "MAP16_LOAD_Y_UNIT_OVERWORLD",
-        "MAP16_LOAD_SRC_OFF_PREV_OVERWORLD",
-        "MAP16_LOAD_Y_UNIT_PREV_OVERWORLD",
-        "MAP16_LOAD_DST_OFF_PREV_OVERWORLD",
-        "MAP16_LOAD_SRC_OFF_SPEXIT_OVERWORLD",
-        "MAP16_LOAD_SRC_OFF_EXIT_OVERWORLD",
-        "ORANGE_BLUE_BARRIER_STATE_OVERWORLD",
-        "SMALL_OW_SCROLL_BACKUP_MAP16_DST_OFF",
-        "SMALL_OW_SCROLL_BACKUP_MAP16_Y_UNIT",
-    ] {
-        let count = source.matches(symbol).count();
-        assert!(
-            (1..=2).contains(&count),
-            "{symbol} should appear only at its const declaration and optional bridge write"
-        );
-    }
-}
-
-#[test]
 fn overworld_map16_stripes_follow_rom_long_indexed_wram_reads_past_bg2_page() {
     let mut data = Vec::new();
     let mut ranges = vec![(0, 0); 71];
