@@ -1351,18 +1351,18 @@ where
         .build_output_stream(
             config,
             move |data: &mut [T], _| {
-                if let Ok(mut queue) = queue.lock() {
+                match queue.lock() { Ok(mut queue) => {
                     let scale = volume_scale.lock().map(|value| *value).unwrap_or(1.0);
                     for sample in data {
                         let value = next_audio_timeline_sample(&mut queue, &underflow_samples);
                         let value = scale_i16_sample(value, scale);
                         *sample = T::from_i16(value);
                     }
-                } else {
+                } _ => {
                     for sample in data {
                         *sample = T::from_i16(0);
                     }
-                }
+                }}
             },
             move |err| {
                 faulted.store(true, Ordering::Release);

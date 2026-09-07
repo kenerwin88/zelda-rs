@@ -218,7 +218,7 @@ enum Snes9xOpcodePlan {
 // SMP cycles. Keep this invocation as the single production authority for the
 // split classifier; the macro also records which source stages are ported.
 macro_rules! define_snes9x_opcode_plans {
-    ($($opcode:literal => $plan:expr),+ $(,)?) => {
+    ($($opcode:literal => $plan:expr_2021),+ $(,)?) => {
         const SNES9X_OPCODE_PLANS: [Snes9xOpcodePlan; 256] = {
             let mut plans = [Snes9xOpcodePlan::Atomic; 256];
             $(plans[$opcode] = Snes9xOpcodePlan::Split($plan);)+
@@ -1767,7 +1767,7 @@ impl<'a> Smp<'a> {
 
     fn execute_opcode(&mut self, opcode: u8) {
         macro_rules! adjust {
-            ($op:ident, $x:expr) => {{
+            ($op:ident, $x:expr_2021) => {{
                 self.cycles(1);
                 let temp = $x;
                 $x = self.$op(temp);
@@ -1808,7 +1808,7 @@ impl<'a> Smp<'a> {
         }
 
         macro_rules! read_addr {
-            ($op:ident, $x:expr) => {{
+            ($op:ident, $x:expr_2021) => {{
                 self.scratch_dp = self.read_pc() as u16;
                 self.scratch_dp |= (self.read_pc() as u16) << 8;
                 self.scratch_rd = self.read(self.scratch_dp) as u16;
@@ -1818,7 +1818,7 @@ impl<'a> Smp<'a> {
         }
 
         macro_rules! read_addr_i {
-            ($op:ident, $x:expr) => {{
+            ($op:ident, $x:expr_2021) => {{
                 self.scratch_dp = self.read_pc() as u16;
                 self.scratch_dp |= (self.read_pc() as u16) << 8;
                 self.cycles(1);
@@ -1830,7 +1830,7 @@ impl<'a> Smp<'a> {
         }
 
         macro_rules! read_const {
-            ($op:ident, $x:expr) => {{
+            ($op:ident, $x:expr_2021) => {{
                 self.scratch_rd = self.read_pc() as u16;
                 let temp = $x;
                 $x = self.$op(temp, self.scratch_rd as u8);
@@ -1838,7 +1838,7 @@ impl<'a> Smp<'a> {
         }
 
         macro_rules! read_dp {
-            ($op:ident, $x:expr) => {{
+            ($op:ident, $x:expr_2021) => {{
                 self.scratch_dp = self.read_pc() as u16;
                 self.scratch_rd = self.read_dp(self.scratch_dp as u8) as u16;
                 let temp = $x;
@@ -1847,7 +1847,7 @@ impl<'a> Smp<'a> {
         }
 
         macro_rules! read_dp_i {
-            ($op:ident, $x:expr, $y:expr) => {{
+            ($op:ident, $x:expr_2021, $y:expr_2021) => {{
                 self.scratch_dp = self.read_pc() as u16;
                 self.cycles(1);
                 let index = $y;
@@ -1858,7 +1858,7 @@ impl<'a> Smp<'a> {
         }
 
         macro_rules! read_dpw {
-            ($op:ident, $is_cpw:expr) => {{
+            ($op:ident, $is_cpw:expr_2021) => {{
                 self.scratch_dp = self.read_pc() as u16;
                 self.scratch_rd = self.read_dp(self.scratch_dp as u8) as u16;
                 if !$is_cpw {
@@ -1909,14 +1909,14 @@ impl<'a> Smp<'a> {
         }
 
         macro_rules! set_flag {
-            ($x:expr, $y:expr, $is_dest_psw_i:expr) => {{
+            ($x:expr_2021, $y:expr_2021, $is_dest_psw_i:expr_2021) => {{
                 self.cycles(if $is_dest_psw_i { 2 } else { 1 });
                 $x = $y;
             }};
         }
 
         macro_rules! transfer {
-            ($x:expr, $y:expr, $is_dest_reg_sp:expr) => {{
+            ($x:expr_2021, $y:expr_2021, $is_dest_reg_sp:expr_2021) => {{
                 self.cycles(1);
                 $y = $x;
                 if !$is_dest_reg_sp {
@@ -1927,7 +1927,7 @@ impl<'a> Smp<'a> {
         }
 
         macro_rules! write_dp_const {
-            ($op:ident, $is_cmp:expr) => {{
+            ($op:ident, $is_cmp:expr_2021) => {{
                 self.scratch_rd = self.read_pc() as u16;
                 self.scratch_dp = self.read_pc() as u16;
                 self.scratch_wr = self.read_dp(self.scratch_dp as u8) as u16;
@@ -1941,7 +1941,7 @@ impl<'a> Smp<'a> {
         }
 
         macro_rules! write_dp_dp {
-            ($op:ident, $is_cmp:expr, $is_st:expr) => {{
+            ($op:ident, $is_cmp:expr_2021, $is_st:expr_2021) => {{
                 self.scratch_sp = self.read_pc() as u16;
                 self.scratch_rd = self.read_dp(self.scratch_sp as u8) as u16;
                 self.scratch_dp = self.read_pc() as u16;
@@ -1960,7 +1960,7 @@ impl<'a> Smp<'a> {
         }
 
         macro_rules! write_i_x_i_y {
-            ($op:ident, $is_cmp:expr) => {{
+            ($op:ident, $is_cmp:expr_2021) => {{
                 self.cycles(1);
                 self.scratch_rd = self.read_dp(self.reg_y) as u16;
                 self.scratch_wr = self.read_dp(self.reg_x) as u16;
@@ -1974,14 +1974,14 @@ impl<'a> Smp<'a> {
         }
 
         macro_rules! pull {
-            ($x:expr) => {{
+            ($x:expr_2021) => {{
                 self.cycles(2);
                 $x = self.read_sp();
             }};
         }
 
         macro_rules! write_dp_imm {
-            ($x:expr) => {{
+            ($x:expr_2021) => {{
                 let addr = self.read_pc();
                 self.read_dp(addr);
                 let temp = $x;
@@ -1990,7 +1990,7 @@ impl<'a> Smp<'a> {
         }
 
         macro_rules! write_dp_i {
-            ($x:expr, $y:expr) => {{
+            ($x:expr_2021, $y:expr_2021) => {{
                 let addr = self.read_pc() + $y;
                 self.cycles(1);
                 self.read_dp(addr);
@@ -2000,7 +2000,7 @@ impl<'a> Smp<'a> {
         }
 
         macro_rules! write_addr {
-            ($x:expr) => {{
+            ($x:expr_2021) => {{
                 let mut addr = self.read_pc() as u16;
                 addr |= (self.read_pc() as u16) << 8;
                 self.read(addr);
@@ -2010,7 +2010,7 @@ impl<'a> Smp<'a> {
         }
 
         macro_rules! write_addr_i {
-            ($x:expr) => {{
+            ($x:expr_2021) => {{
                 let mut addr = self.read_pc() as u16;
                 addr |= (self.read_pc() as u16) << 8;
                 self.cycles(1);

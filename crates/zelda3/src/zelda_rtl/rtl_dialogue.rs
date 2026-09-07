@@ -805,7 +805,7 @@ impl ZeldaState {
                 .words
                 .iter()
                 .enumerate()
-                .filter(|(offset, &value)| value != staged_completion.vram[*offset])
+                .filter(|&(ref offset, &value)| value != staged_completion.vram[*offset])
                 .count();
             eprintln!(
                 "[SCROLL] publish host={} phase={:?} differing={} token={:04x?} staged={:04x?}",

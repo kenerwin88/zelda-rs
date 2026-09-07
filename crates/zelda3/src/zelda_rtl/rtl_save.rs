@@ -295,7 +295,7 @@ impl ZeldaState {
                     self.state_recorder_save(&mut state_recorder, &mut file);
                     self.state_recorder = state_recorder;
                 }
-            } else if let Ok(mut file) = fs::File::open(path) {
+            } else { match fs::File::open(path) { Ok(mut file) => {
                 let action = if cmd == SaveLoadCommand::Load {
                     "Loading"
                 } else {
@@ -309,7 +309,7 @@ impl ZeldaState {
                     cmd == SaveLoadCommand::Replay,
                 );
                 self.state_recorder = state_recorder;
-            }
+            } _ => {}}}
         }
     }
 

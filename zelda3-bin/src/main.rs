@@ -1825,7 +1825,7 @@ fn run_smoke_render(args: &[String]) {
         .cgram
         .iter()
         .enumerate()
-        .filter(|(_, &value)| value != 0)
+        .filter(|&(_, &value)| value != 0)
         .take(24)
         .map(|(i, value)| format!("{i}:{value:04x}"))
         .collect::<Vec<_>>()
@@ -1836,7 +1836,7 @@ fn run_smoke_render(args: &[String]) {
         .data
         .iter()
         .enumerate()
-        .filter(|(_, &value)| value & 0xff != 0)
+        .filter(|&(_, &value)| value & 0xff != 0)
         .take(16)
         .map(|(i, value)| format!("{i}:{value:04x}"))
         .collect::<Vec<_>>()

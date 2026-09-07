@@ -1331,7 +1331,7 @@ impl ZeldaState {
         let mut cursor = 0usize;
         let mut produced = 0usize;
         macro_rules! push {
-            ($value:expr) => {{
+            ($value:expr_2021) => {{
                 let value: u8 = $value;
                 self.ram[(buffer_base + produced) & 0xffff] = value;
                 produced += 1;

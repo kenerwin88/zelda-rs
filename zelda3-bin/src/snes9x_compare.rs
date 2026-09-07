@@ -2549,7 +2549,9 @@ pub(crate) fn run_compare_libretro_oracle(
             );
             process::exit(1);
         });
-        env::set_var("ZELDA3_SNES9X_TRACE", &path);
+        // SAFETY: the compare harness configures the trace core before any
+        // worker thread reads the environment.
+        unsafe { env::set_var("ZELDA3_SNES9X_TRACE", &path) };
         // Only the cartridge routine's final store is needed here. The broader
         // `rng` stream also records beam-counter reads and unrelated $0fa1
         // writes, producing tens of thousands of events for a few hundred
@@ -2559,7 +2561,8 @@ pub(crate) fn run_compare_libretro_oracle(
         // the cartridge RNG store required by `LiveOracleRngTrace`.
         let trace_events =
             trace_events_with_rom_rng(env::var("ZELDA3_SNES9X_TRACE_EVENTS").ok().as_deref());
-        env::set_var("ZELDA3_SNES9X_TRACE_EVENTS", trace_events);
+        // SAFETY: same single-threaded configuration window as above.
+        unsafe { env::set_var("ZELDA3_SNES9X_TRACE_EVENTS", trace_events) };
         // The trace core exempts only the required `rom-rng` domain from its
         // frame filter. Preserve an explicitly requested diagnostic window so
         // PC/DMA/HDMA traces cannot silently expand to the entire route.

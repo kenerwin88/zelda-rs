@@ -3,7 +3,6 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use parity::coverage::{CoverageFrame, CoverageUniverse, ModuleState, RouteCoverage};
-use parity::runner::{self, Paths};
 
 #[test]
 fn report_lists_missed_expected_surfaces() {
@@ -823,43 +822,6 @@ fn write_complete_coverage_log(path: &Path, indoor_rooms: &[u16], overworld_scre
     }
 
     std::fs::write(path, serde_json::to_vec(&coverage).unwrap()).unwrap();
-}
-
-fn category_hit(report: &serde_json::Value, name: &str) -> Option<(u64, u64)> {
-    let category = report["categories"]
-        .as_array()?
-        .iter()
-        .find(|category| category["name"] == name)?;
-    Some((category["hit"].as_u64()?, category["expected"].as_u64()?))
-}
-
-fn worklist_entry<'a>(
-    worklist: &'a serde_json::Value,
-    category: &str,
-    id: &str,
-) -> Option<&'a serde_json::Value> {
-    worklist[category]
-        .as_array()?
-        .iter()
-        .find(|entry| entry["id"] == id)
-}
-
-fn worklist_strategy<'a>(
-    entry: &'a serde_json::Value,
-    kind: &str,
-) -> Option<&'a serde_json::Value> {
-    entry["strategies"]
-        .as_array()?
-        .iter()
-        .find(|strategy| strategy["kind"] == kind)
-}
-
-fn report_category_hit(
-    report: &parity::coverage::CoverageReport,
-    name: &str,
-) -> Option<(u64, u64)> {
-    let category = report.category(name)?;
-    Some((category.hit as u64, category.expected as u64))
 }
 
 fn delta_category_newly_covered(report: &serde_json::Value, name: &str) -> Option<Vec<String>> {
