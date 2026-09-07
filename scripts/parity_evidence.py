@@ -819,6 +819,86 @@ def promote_frontier_from_cached_av(
     return ledger
 
 
+
+def record_engine_state_frontier(
+    session_dir: Path,
+    *,
+    ledger_path: Path = DEFAULT_LEDGER,
+    prefix_receipt: Path | None = None,
+) -> dict[str, Any]:
+    """Record a passed engine-state (stage 1) calibration session in the ledger.
+
+    The session must have compared the engine-state lane through the route end
+    with status `passed`. When it compared only from `engine_state_from_frame`
+    onward (a ratchet continuation), `prefix_receipt` names the earlier cold
+    receipt that covered frames below that boundary; both are recorded.
+    """
+    git = git_identity()
+    if not git["clean"]:
+        raise SystemExit(
+            "parity evidence: recording the engine-state frontier requires a clean committed tree"
+        )
+    session_dir = session_dir.resolve()
+    manifest_path = session_dir / "manifest.json"
+    result_path = session_dir / "result.json"
+    manifest = load_json(manifest_path)
+    result = load_json(result_path)
+    lanes = manifest.get("comparison_lanes") or {}
+    problems = []
+    if manifest.get("status") != "passed" or result.get("status") != "passed":
+        problems.append("the session did not pass")
+    if manifest.get("parity_eligible") is not True:
+        problems.append("the session is not parity-eligible")
+    if lanes.get("engine_state") is not True:
+        problems.append("the engine-state lane was not enabled")
+    engine = result.get("engine_state") or {}
+    if engine.get("matched") is not True or engine.get("first_mismatch") is not None:
+        problems.append("the engine-state lane did not match")
+    frames_requested = int((manifest.get("timing") or {}).get("frames_requested", 0))
+    frames_completed = int(manifest.get("frames_completed", 0))
+    if frames_completed == 0 or frames_completed != frames_requested:
+        problems.append(f"the session completed {frames_completed} of {frames_requested} frames")
+    from_frame = int(lanes.get("engine_state_from_frame", 0) or 0)
+    if from_frame > 0 and prefix_receipt is None:
+        problems.append(
+            f"the session compared engine state only from frame {from_frame}; "
+            "pass --engine-state-prefix-receipt for the earlier coverage"
+        )
+    if prefix_receipt is not None and not prefix_receipt.is_file():
+        problems.append(f"prefix receipt is missing: {prefix_receipt}")
+    if problems:
+        raise SystemExit("parity evidence: engine-state session is not recordable: " + "; ".join(problems))
+    ledger = load_json(ledger_path)
+    if ledger.get("schema") != FRONTIER_SCHEMA:
+        raise SystemExit(f"parity evidence: unsupported frontier ledger: {ledger_path}")
+    promoted = ledger.setdefault("promoted", {})
+    receipts = [
+        {
+            "kind": "engine_state_calibration_session",
+            "session": str(session_dir),
+            "manifest_sha256": sha256_file(manifest_path),
+            "result_sha256": sha256_file(result_path),
+            "frames": frames_completed,
+            "engine_state_from_frame": from_frame,
+        }
+    ]
+    if prefix_receipt is not None:
+        prefix = load_json(prefix_receipt)
+        receipts.append(
+            {
+                "kind": "engine_state_prefix_cold_receipt",
+                "path": str(prefix_receipt),
+                "sha256": sha256_file(prefix_receipt),
+                "frames": prefix.get("target_frames", prefix.get("frames")),
+            }
+        )
+    promoted["last_exact_engine_state_frame"] = frames_completed - 1
+    promoted["engine_state_receipts"] = receipts
+    promoted["engine_state_commit"] = git["head"]
+    atomic_write_json(ledger_path, ledger)
+    return ledger
+
+
 def _oracle_receipt(record: dict[str, Any]) -> dict[str, Any]:
     keep = {
         "frame": record.get("frame"),

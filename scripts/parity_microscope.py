@@ -1362,6 +1362,17 @@ def command_cache(args: argparse.Namespace) -> int:
 
 
 def command_promote(args: argparse.Namespace) -> int:
+    if args.engine_state_session is not None:
+        ledger = evidence.record_engine_state_frontier(
+            args.engine_state_session,
+            ledger_path=args.ledger,
+            prefix_receipt=args.engine_state_prefix_receipt,
+        )
+        print(
+            f"recorded exact engine-state frontier {ledger['promoted']['last_exact_engine_state_frame']}"
+        )
+        print(f"stage and commit {args.ledger}; it is a metadata-only promotion")
+        return 0
     if args.cached_av is not None:
         ledger = evidence.promote_frontier_from_cached_av(
             args.cached_av, ledger_path=args.ledger, binary=args.binary
@@ -2384,6 +2395,8 @@ def parser() -> argparse.ArgumentParser:
 
     promote = subcommands.add_parser("promote", help="promote two cold exact passes (or one full-route cached-av pass) into the frontier ledger")
     promote.add_argument("--cached-av", type=Path, default=None, help="promote this full-route Rust-only cached Snes9x A/V run directory instead of cold passes")
+    promote.add_argument("--engine-state-session", type=Path, default=None, help="record this passed full-route engine-state calibration session as the engine-state frontier")
+    promote.add_argument("--engine-state-prefix-receipt", type=Path, default=None, help="cold receipt covering the frames below the session's engine_state_from_frame")
     promote.add_argument("--ledger", type=Path, default=evidence.DEFAULT_LEDGER)
     promote.add_argument("--binary", type=Path, default=DEFAULT_BINARY)
     promote.add_argument("--pass-root", type=Path, default=evidence.PASS_ROOT)

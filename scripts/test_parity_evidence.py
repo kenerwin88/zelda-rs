@@ -604,3 +604,85 @@ class CachedAvPromotionTests(unittest.TestCase):
                 evidence.promote_frontier_from_cached_av(
                     self.run, ledger_path=self.ledger, binary=self.binary
                 )
+
+
+class EngineStateFrontierTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.session = self.root / "run-100-rng-calibration-x"
+        self.session.mkdir()
+        self.ledger = self.root / "parity-frontier.json"
+        self.ledger.write_text(
+            json.dumps(
+                {
+                    "schema": evidence.FRONTIER_SCHEMA,
+                    "project": "routes/full_run",
+                    "policy": {},
+                    "promoted": {"last_exact_engine_state_frame": 7, "last_exact_video_frame": 99},
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.prefix = self.root / "prefix.json"
+        self.prefix.write_text(json.dumps({"target_frames": 40}), encoding="utf-8")
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def write_session(self, *, status="passed", from_frame=40, completed=100, matched=True) -> None:
+        (self.session / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "status": status,
+                    "parity_eligible": True,
+                    "frames_completed": completed,
+                    "timing": {"frames_requested": 100},
+                    "comparison_lanes": {
+                        "engine_state": True,
+                        "engine_state_from_frame": from_frame,
+                        "video": False,
+                        "audio": False,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (self.session / "result.json").write_text(
+            json.dumps(
+                {"status": status, "engine_state": {"matched": matched, "first_mismatch": None}}
+            ),
+            encoding="utf-8",
+        )
+
+    def test_passed_session_with_prefix_records_the_route_end(self) -> None:
+        self.write_session()
+        with mock.patch.object(
+            evidence, "git_identity", return_value={"clean": True, "head": "h" * 40}
+        ):
+            ledger = evidence.record_engine_state_frontier(
+                self.session, ledger_path=self.ledger, prefix_receipt=self.prefix
+            )
+        promoted = ledger["promoted"]
+        self.assertEqual(promoted["last_exact_engine_state_frame"], 99)
+        self.assertEqual(promoted["last_exact_video_frame"], 99)
+        self.assertEqual(len(promoted["engine_state_receipts"]), 2)
+        self.assertEqual(promoted["engine_state_receipts"][1]["frames"], 40)
+
+    def test_continuation_without_prefix_or_failed_session_is_rejected(self) -> None:
+        self.write_session()
+        with mock.patch.object(
+            evidence, "git_identity", return_value={"clean": True, "head": "h" * 40}
+        ):
+            with self.assertRaises(SystemExit):
+                evidence.record_engine_state_frontier(self.session, ledger_path=self.ledger)
+            self.write_session(matched=False)
+            with self.assertRaises(SystemExit):
+                evidence.record_engine_state_frontier(
+                    self.session, ledger_path=self.ledger, prefix_receipt=self.prefix
+                )
+            self.write_session(completed=90)
+            with self.assertRaises(SystemExit):
+                evidence.record_engine_state_frontier(
+                    self.session, ledger_path=self.ledger, prefix_receipt=self.prefix
+                )
