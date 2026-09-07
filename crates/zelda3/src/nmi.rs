@@ -83,7 +83,7 @@ pub(super) fn nmi_vram_copy_packets(data: &[u8]) -> Vec<NmiVramCopyPacket<'_>> {
 /// held in `env_name`. Absent or empty env → no match. Shared by the
 /// per-frame display/hardware debug probes so every probe accepts ranges.
 pub(crate) fn debug_frame_selection_env_matches(env_name: &str, frame: u32) -> bool {
-    let Some(selection) = std::env::var_os(env_name) else {
+    let Some(selection) = crate::debug_env::var_os(env_name) else {
         return false;
     };
     selection.to_string_lossy().split(',').any(|part| {
@@ -101,7 +101,7 @@ pub(crate) fn debug_frame_selection_env_matches(env_name: &str, frame: u32) -> b
 }
 
 fn debug_hardware_frame_matches(frame: u32) -> bool {
-    if std::env::var_os("ZELDA3_DEBUG_HARDWARE_FRAMES").is_none() {
+    if crate::debug_env::var_os("ZELDA3_DEBUG_HARDWARE_FRAMES").is_none() {
         return true;
     }
     debug_frame_selection_env_matches("ZELDA3_DEBUG_HARDWARE_FRAMES", frame)
@@ -325,7 +325,7 @@ impl ZeldaState {
         self.debug_obj_pipe("nmi_entry", &self.ppu.vram[0x4000..0x4400]);
         self.capture_cpu_schedules_before_nmi();
         self.stash_preemptive_poly_thread_nmi_swap();
-        let trace_nmi = std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some()
+        let trace_nmi = crate::debug_env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some()
             && debug_hardware_frame_matches(self.frame_ctr_dbg);
         self.ppu.forced_blank_from_scanline = None;
         self.ppu.retain_active_display_history = false;
@@ -510,7 +510,7 @@ impl ZeldaState {
     }
 
     pub(super) fn interrupt_nmi_audio_parts(&mut self) {
-        if std::env::var("ZELDA3_DEBUG_AUDIO_NMI_FRAME")
+        if crate::debug_env::var("ZELDA3_DEBUG_AUDIO_NMI_FRAME")
             .ok()
             .and_then(|value| value.parse::<u32>().ok())
             == Some(self.frame_ctr_dbg)
@@ -626,7 +626,7 @@ impl ZeldaState {
                 }
             }
         }
-        if std::env::var_os("ZELDA3_DEBUG_ANIMATED_BG_DMA").is_some() {
+        if crate::debug_env::var_os("ZELDA3_DEBUG_ANIMATED_BG_DMA").is_some() {
             let live_source = self
                 .ram
                 .get(src_addr..src_addr.saturating_add(0x400))
@@ -652,7 +652,7 @@ impl ZeldaState {
         }
         self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
         self.mark_effective_dma_vram_range(dst..dst + 0x200);
-        if std::env::var_os("ZELDA3_DEBUG_BOOT_DMA_SOURCE").is_some()
+        if crate::debug_env::var_os("ZELDA3_DEBUG_BOOT_DMA_SOURCE").is_some()
             && self.rom_startup_timing()
             && self.game_state.frame.main_module == 0
             && self.game_state.frame.submodule == 0
@@ -666,7 +666,7 @@ impl ZeldaState {
         for i in 0..0x200 {
             self.ppu.vram[dst + i] = read_word_from_slice(&data, i * 2);
         }
-        if std::env::var_os("ZELDA3_DEBUG_ANIMATED_BG_DMA").is_some() {
+        if crate::debug_env::var_os("ZELDA3_DEBUG_ANIMATED_BG_DMA").is_some() {
             eprintln!(
                 "animated_bg_dma_after host={} destination={dst:04x} vram_prefix={:04x?}",
                 self.frame_ctr_dbg,
@@ -769,7 +769,7 @@ impl ZeldaState {
             let completed_link_obj_sources = captured_link_operands
                 .map(|operands| operands.sources)
                 .unwrap_or_else(|| LinkDmaSources::load_from_ram(&self.ram));
-            let trace_link_dma = std::env::var_os("ZELDA3_DEBUG_LINK_DMA").is_some()
+            let trace_link_dma = crate::debug_env::var_os("ZELDA3_DEBUG_LINK_DMA").is_some()
                 && debug_hardware_frame_matches(self.frame_ctr_dbg);
             if trace_link_dma {
                 let live_operands = PreMainLinkDmaOperands::capture(&self.ram);
@@ -844,7 +844,7 @@ impl ZeldaState {
                 && frame.main_module == 0
                 && frame.submodule == 7
                 && !matches!(self.intro_bg_fade_poly_phase, 1 | 3));
-        let debug_display_vram = std::env::var("ZELDA3_DEBUG_DISPLAY_VRAM_FRAME")
+        let debug_display_vram = crate::debug_env::var("ZELDA3_DEBUG_DISPLAY_VRAM_FRAME")
             .ok()
             .and_then(|frame| frame.parse::<u32>().ok())
             .is_some_and(|frame| frame == self.frame_ctr_dbg);
@@ -932,7 +932,7 @@ impl ZeldaState {
         } else {
             GraphicsDmaGeneration::LiveAfterMain
         };
-        if std::env::var_os("ZELDA3_DEBUG_OAM_DMA").is_some()
+        if crate::debug_env::var_os("ZELDA3_DEBUG_OAM_DMA").is_some()
             && debug_hardware_frame_matches(self.frame_ctr_dbg)
         {
             let captured = oam_dma_source.unwrap_or_default();
@@ -973,7 +973,7 @@ impl ZeldaState {
             self.complete_oam_dma_from_source(&oam_buf);
         }
 
-        if std::env::var_os("ZELDA3_DEBUG_ATTRACT_NMI_UPLOAD").is_some()
+        if crate::debug_env::var_os("ZELDA3_DEBUG_ATTRACT_NMI_UPLOAD").is_some()
             && frame.main_module == 20
             && self.game_state.display.has_bg_vram_load()
         {
@@ -1786,7 +1786,7 @@ impl ZeldaState {
             }
             self.nmi_poly_upload_from_deferred = false;
             self.clear_pending_polyhedral_update();
-            if std::env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+            if crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some() {
                 let sum: u64 = self.ppu.vram[0x5800..0x5c00].iter().map(|&w| u64::from(w)).sum();
                 eprintln!("[POLY-UPLOAD] host={} vram5800_sum={sum:08x}", self.frame_ctr_dbg);
             }

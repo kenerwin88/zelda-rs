@@ -219,7 +219,7 @@ impl GameState {
     /// is how the other C-aliased overlaps get measured rather than argued about.
     fn scratch_conflict_window() -> (usize, usize) {
         const DEFAULT: (usize, usize) = (0x15800, 0x15880);
-        let Ok(spec) = std::env::var("ZELDA3_SCRATCH_CONFLICT_RANGE") else {
+        let Ok(spec) = crate::debug_env::var("ZELDA3_SCRATCH_CONFLICT_RANGE") else {
             return DEFAULT;
         };
         let parse = |t: &str| {
@@ -267,7 +267,7 @@ impl GameState {
         // write_to_ram has already resolved them last-writer-wins, so at group granularity
         // the conflict is invisible (this hid the 0x74 follower_link/tile_detection clobber
         // and the 0xb69 world.transient overrun until the group was split).
-        let split = std::env::var("ZELDA3_SCRATCH_CONFLICT_SPLIT").unwrap_or_default();
+        let split = crate::debug_env::var("ZELDA3_SCRATCH_CONFLICT_SPLIT").unwrap_or_default();
         let split: Vec<&str> = split.split(',').map(|s| s.trim()).collect();
         let all: [(&'static str, &dyn Fn(&mut [u8])); 27] = [
             ("frame", &|r: &mut [u8]| self.frame.write_to_ram(r)),
@@ -348,7 +348,7 @@ impl GameState {
         //   Useful when hunting an unknown writer, but on a byte with a single legitimate
         //   owner it also fires on ordinary native-vs-RAM drift, so it is not by itself
         //   evidence of dual ownership.
-        let stomp_mode = std::env::var("ZELDA3_SCRATCH_CONFLICT_MODE")
+        let stomp_mode = crate::debug_env::var("ZELDA3_SCRATCH_CONFLICT_MODE")
             .map(|m| m == "stomp")
             .unwrap_or(false);
 

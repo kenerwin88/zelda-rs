@@ -22,7 +22,7 @@ fn player_memory_location_to_give_item_to(item: u8) -> usize {
 }
 
 fn replay_trace_u16_env(name: &str) -> Option<u16> {
-    let value = std::env::var(name).ok()?;
+    let value = crate::debug_env::var(name).ok()?;
     if let Some(hex) = value
         .strip_prefix("0x")
         .or_else(|| value.strip_prefix("0X"))
@@ -35,7 +35,7 @@ fn replay_trace_u16_env(name: &str) -> Option<u16> {
 
 impl ZeldaState {
     pub(super) fn replay_trace_player_state(&self, label: &str) {
-        if std::env::var_os("ZELDA3_REPLAY_TRACE_STATE").is_none() {
+        if crate::debug_env::var_os("ZELDA3_REPLAY_TRACE_STATE").is_none() {
             return;
         }
         let room = self.game_state.world.location.dungeon_room();
@@ -123,7 +123,7 @@ impl ZeldaState {
     }
 
     pub(super) fn replay_trace_drag_tail(&self, label: &str) {
-        if std::env::var_os("ZELDA3_REPLAY_TRACE_SUB_FRAME").is_none() {
+        if crate::debug_env::var_os("ZELDA3_REPLAY_TRACE_SUB_FRAME").is_none() {
             return;
         }
         eprintln!(

@@ -232,7 +232,7 @@ impl ZeldaState {
             crate::rom_random::RomRandomResult::new(value, false)
         });
         let t = result.value();
-        if std::env::var_os("ZELDA3_DEBUG_ROM_RANDOM_TRACE").is_some() {
+        if crate::debug_env::var_os("ZELDA3_DEBUG_ROM_RANDOM_TRACE").is_some() {
             eprintln!(
                 "rom_random_ctx host={} module={:02x}/{:02x}/{:02x} cur_sprite={} value={:02x}",
                 self.frame_ctr_dbg,
@@ -244,8 +244,8 @@ impl ZeldaState {
             );
         }
         self.set_rng_seed(t);
-        let trace_rng = std::env::var_os("ZELDA3_TRACE_RNG").is_some();
-        let trace_frame_matches = std::env::var("ZELDA3_TRACE_RNG_FRAME")
+        let trace_rng = crate::debug_env::var_os("ZELDA3_TRACE_RNG").is_some();
+        let trace_frame_matches = crate::debug_env::var("ZELDA3_TRACE_RNG_FRAME")
             .ok()
             .and_then(|value| {
                 let trimmed = value.trim();
@@ -1774,7 +1774,7 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_prepare_sprites(&mut self) {
-        if std::env::var_os("ZELDA3_DEBUG_PREP").is_some() {
+        if crate::debug_env::var_os("ZELDA3_DEBUG_PREP").is_some() {
             eprintln!(
                 "[PREP] replay_frame={} fc_dbg={} fc={} cd={:04x} mod={:02x}/{:02x}",
                 self.state_recorder.replay_frame_counter,
@@ -1784,7 +1784,7 @@ impl ZeldaState {
                 self.game_state.frame.main_module,
                 self.game_state.frame.submodule,
             );
-            if std::env::var("ZELDA3_DEBUG_PREP_BT")
+            if crate::debug_env::var("ZELDA3_DEBUG_PREP_BT")
                 .ok()
                 .and_then(|v| v.parse::<u32>().ok())
                 .is_some_and(|target| target == self.frame_ctr_dbg)

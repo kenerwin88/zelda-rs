@@ -422,7 +422,7 @@ impl ModernAudioEngine {
                             (continuation, 3, Some(decoder))
                         })
                     };
-                if std::env::var_os("ZELDA3_AUDIO_CHECKPOINT_DEBUG").is_some() {
+                if crate::debug_env::var_os("ZELDA3_AUDIO_CHECKPOINT_DEBUG").is_some() {
                     eprintln!(
                         "modern checkpoint voice={voice_index} source={source} decode_offset={decode_offset:04x} block_start={block_start} block_address={:04x}",
                         sample.block_addresses[block_start / 16]

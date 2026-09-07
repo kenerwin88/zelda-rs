@@ -1913,7 +1913,7 @@ impl ZeldaState {
                 return;
             }
             let k = k as usize;
-            if std::env::var_os("ZELDA3_REPLAY_SPRITE_LOAD_DUMP").is_some() {
+            if crate::debug_env::var_os("ZELDA3_REPLAY_SPRITE_LOAD_DUMP").is_some() {
                 println!(
                     "ow-load frame={} blk=0x{:04x} raw=0x{:02x} type=0x{:02x} slot={} old_t=0x{:02x} old_st=0x{:02x} old_c=0x{:02x} old_bump=0x{:02x}",
                     self.game_state.frame.frame_counter,
@@ -7439,7 +7439,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   ...see sprite.c...
     // }
     pub(super) fn sprite_give_damage(&mut self, k: usize, dmg: u8, r0_hit_timer: u8) {
-        if std::env::var_os("ZELDA3_TRACE_GIVE_DAMAGE").is_some()
+        if crate::debug_env::var_os("ZELDA3_TRACE_GIVE_DAMAGE").is_some()
             && self.game_state.world.location.dungeon_room() == 0x00a8
             && self.sprite_slot_view(k).sprite_type() == 0xa7
             && k == 2
@@ -7540,7 +7540,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             self.set_sound_effect_2_with_sprite_pan(k, sfx);
         }
         self.sprite_set_damage_stun(k);
-        if std::env::var_os("ZELDA3_TRACE_GIVE_DAMAGE").is_some()
+        if crate::debug_env::var_os("ZELDA3_TRACE_GIVE_DAMAGE").is_some()
             && self.game_state.world.location.dungeon_room() == 0x00a8
             && self.sprite_slot_view(k).sprite_type() == 0xa7
             && k == 2
@@ -8631,7 +8631,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   ...see sprite.c...
     // }
     pub(super) fn sprite_stunned_main_func1(&mut self, k: usize) {
-        if std::env::var_os("ZELDA3_REPLAY_GARNISH_TRACE").is_some() {
+        if crate::debug_env::var_os("ZELDA3_REPLAY_GARNISH_TRACE").is_some() {
             eprintln!(
                 "R stunned-before fc=0x{:02x} rng=0x{:02x} k={} type=0x{:02x} state=0x{:02x} draw_work5=0x{:02x} delay=0x{:02x} stunned=0x{:02x} give=0x{:02x} z=0x{:02x} zv=0x{:02x} ai=0x{:02x}",
                 self.game_state.frame.frame_counter,
@@ -8649,7 +8649,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             );
         }
         self.sprite_active_main_for_death(k);
-        if std::env::var_os("ZELDA3_REPLAY_GARNISH_TRACE").is_some() {
+        if crate::debug_env::var_os("ZELDA3_REPLAY_GARNISH_TRACE").is_some() {
             eprintln!(
                 "R stunned-after-active fc=0x{:02x} rng=0x{:02x} k={} type=0x{:02x} state=0x{:02x} draw_work5=0x{:02x} delay=0x{:02x} stunned=0x{:02x} give=0x{:02x} z=0x{:02x} zv=0x{:02x} ai=0x{:02x}",
                 self.game_state.frame.frame_counter,
@@ -8675,7 +8675,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 | self.game_state.frame.submodule;
             let mask = SPRITE_STUNNED_MAIN_FUNC1_SPRITE_STUNNED_MAIN_FUNC1_MASKS
                 [usize::from(self.sprite_slot_view(k).delay_main() >> 4)];
-            if std::env::var_os("ZELDA3_REPLAY_GARNISH_TRACE").is_some() {
+            if crate::debug_env::var_os("ZELDA3_REPLAY_GARNISH_TRACE").is_some() {
                 eprintln!(
                     "R stunned-sparkle-check fc=0x{:02x} k={} t=0x{:02x} mask=0x{:02x} delay=0x{:02x}",
                     self.game_state.frame.frame_counter,
@@ -8905,7 +8905,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         self.player_setup_action_hit_box(&mut hb);
         self.sprite_setup_hit_box(k, &mut hb);
         let overlap = self.check_if_hit_boxes_overlap(&hb);
-        if std::env::var_os("ZELDA3_TRACE_DAMAGE_FROM_LINK").is_some()
+        if crate::debug_env::var_os("ZELDA3_TRACE_DAMAGE_FROM_LINK").is_some()
             && self.game_state.world.location.dungeon_room() == 0x00a8
             && self.sprite_slot_view(k).sprite_type() == 0xa7
             && k == 2
@@ -9100,7 +9100,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         if sign8(self.sprite_slot_view(k).flags2()) {
             return carry;
         }
-        if std::env::var_os("ZELDA3_TRACE_SPRITE_DAMAGE").is_some()
+        if crate::debug_env::var_os("ZELDA3_TRACE_SPRITE_DAMAGE").is_some()
             && self.game_state.world.location.is_indoors()
             && self.game_state.world.location.dungeon_room() == 0x00a8
         {
@@ -9201,7 +9201,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         self.sprite_do_hit_boxes_fast(k, &mut hb);
         self.link_setup_hit_box_conditional(&mut hb);
         let overlap = self.check_if_hit_boxes_overlap(&hb);
-        if std::env::var_os("ZELDA3_TRACE_SPRITE_DAMAGE").is_some()
+        if crate::debug_env::var_os("ZELDA3_TRACE_SPRITE_DAMAGE").is_some()
             && self.game_state.world.location.is_indoors()
             && self.game_state.world.location.dungeon_room() == 0x00a8
         {
@@ -9263,7 +9263,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         self.player_setup_action_hit_box(&mut hb);
         let button_neg = sign8(self.game_state.player.follower_link.button_b_frames());
         let action_overlap = self.check_if_hit_boxes_overlap(&hb);
-        if std::env::var_os("ZELDA3_TRACE_GUARD_PARRY").is_some()
+        if crate::debug_env::var_os("ZELDA3_TRACE_GUARD_PARRY").is_some()
             && self.game_state.world.location.dungeon_room() == 0x00a8
             && self.sprite_slot_view(k).sprite_type() == 0xa7
             && k == 2
@@ -9296,7 +9296,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         if button_neg || !action_overlap {
             self.sprite_setup_hit_box(k, &mut hb);
             let body_overlap = self.check_if_hit_boxes_overlap(&hb);
-            if std::env::var_os("ZELDA3_TRACE_GUARD_PARRY").is_some()
+            if crate::debug_env::var_os("ZELDA3_TRACE_GUARD_PARRY").is_some()
                 && self.game_state.world.location.dungeon_room() == 0x00a8
                 && self.sprite_slot_view(k).sprite_type() == 0xa7
                 && k == 2
@@ -9357,7 +9357,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   ...see sprite.c...
     // }
     pub(super) fn sprite_attempt_damage_to_link_plus_recoil(&mut self, k: usize) {
-        if std::env::var_os("ZELDA3_TRACE_SPRITE_DAMAGE").is_some()
+        if crate::debug_env::var_os("ZELDA3_TRACE_SPRITE_DAMAGE").is_some()
             && self.game_state.world.location.is_indoors()
             && self.game_state.world.location.dungeon_room() == 0x00a8
         {
@@ -9448,8 +9448,8 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     // }
     pub(super) fn sprite_check_tile_property(&mut self, k: usize, j: i32) -> bool {
         let orig_j = j;
-        let mut trace_tile_matches = std::env::var_os("ZELDA3_TRACE_TILE_COLLISION").is_some()
-            && std::env::var("ZELDA3_TRACE_TILE_COLLISION_FRAME")
+        let mut trace_tile_matches = crate::debug_env::var_os("ZELDA3_TRACE_TILE_COLLISION").is_some()
+            && crate::debug_env::var("ZELDA3_TRACE_TILE_COLLISION_FRAME")
                 .ok()
                 .and_then(|s| {
                     if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
@@ -9460,7 +9460,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 })
                 .map_or(true, |target| self.game_state.frame.frame_counter == target);
         if trace_tile_matches {
-            if let Ok(value) = std::env::var("ZELDA3_TRACE_TILE_COLLISION_TYPE") {
+            if let Ok(value) = crate::debug_env::var("ZELDA3_TRACE_TILE_COLLISION_TYPE") {
                 let target = value
                     .strip_prefix("0x")
                     .or_else(|| value.strip_prefix("0X"))
@@ -9472,7 +9472,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             }
         }
         if trace_tile_matches {
-            if let Ok(value) = std::env::var("ZELDA3_TRACE_TILE_COLLISION_SLOT") {
+            if let Ok(value) = crate::debug_env::var("ZELDA3_TRACE_TILE_COLLISION_SLOT") {
                 if value.parse::<usize>().ok() != Some(k) {
                     trace_tile_matches = false;
                 }
@@ -9949,7 +9949,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         if self.game_state.world.location.is_outdoors() {
             let before_rng = self.game_state.world.region.rng_seed();
             let roll = self.get_random_number();
-            if std::env::var_os("ZELDA3_REPLAY_SPRITE_LOAD_DUMP").is_some() {
+            if crate::debug_env::var_os("ZELDA3_REPLAY_SPRITE_LOAD_DUMP").is_some() {
                 println!(
                     "secret-spawn frame={} parent={} before=0x{:02x} roll=0x{:02x} b=0x{:02x} indoors={}",
                     self.game_state.frame.frame_counter,
@@ -10318,8 +10318,8 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   ...see sprite.c:3143...
     // }
     pub(super) fn sprite_return_if_recoiling(&mut self, k: usize) -> bool {
-        let trace_recoil_matches = std::env::var_os("ZELDA3_TRACE_RECOIL").is_some()
-            && std::env::var("ZELDA3_TRACE_RECOIL_FRAME")
+        let trace_recoil_matches = crate::debug_env::var_os("ZELDA3_TRACE_RECOIL").is_some()
+            && crate::debug_env::var("ZELDA3_TRACE_RECOIL_FRAME")
                 .ok()
                 .and_then(|value| {
                     let trimmed = value.trim();
@@ -11142,7 +11142,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         loop {
             if j >= 0 && self.sprite_slot_view(j as usize).state() == 0 {
                 let ju = j as usize;
-                if std::env::var_os("ZELDA3_REPLAY_SPRITE_SPAWN_SCAN_DUMP").is_some() {
+                if crate::debug_env::var_os("ZELDA3_REPLAY_SPRITE_SPAWN_SCAN_DUMP").is_some() {
                     println!(
                         "dyn-scan frame={} parent={} what=0x{:02x} slot={} old_t=0x{:02x} old_st=0x{:02x} old_c=0x{:02x} old_bump=0x{:02x}",
                         self.game_state.frame.frame_counter,
@@ -11155,7 +11155,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                         self.sprite_slot_view(ju).bump_damage(),
                     );
                 }
-                if std::env::var_os("ZELDA3_REPLAY_SPRITE_LOAD_DUMP").is_some() {
+                if crate::debug_env::var_os("ZELDA3_REPLAY_SPRITE_LOAD_DUMP").is_some() {
                     println!(
                         "dyn-spawn frame={} parent={} what=0x{:02x} slot={} old_t=0x{:02x} old_st=0x{:02x} old_c=0x{:02x} old_bump=0x{:02x}",
                         self.game_state.frame.frame_counter,
@@ -11177,7 +11177,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 );
                 break;
             }
-            if j >= 0 && std::env::var_os("ZELDA3_REPLAY_SPRITE_SPAWN_SCAN_DUMP").is_some() {
+            if j >= 0 && crate::debug_env::var_os("ZELDA3_REPLAY_SPRITE_SPAWN_SCAN_DUMP").is_some() {
                 let ju = j as usize;
                 println!(
                     "dyn-scan frame={} parent={} what=0x{:02x} slot={} old_t=0x{:02x} old_st=0x{:02x} old_c=0x{:02x} old_bump=0x{:02x}",
@@ -11902,7 +11902,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         limit: i32,
     ) -> i32 {
         let j = self.garnish_alloc_limit(limit as usize);
-        if std::env::var_os("ZELDA3_REPLAY_GARNISH_TRACE").is_some() {
+        if crate::debug_env::var_os("ZELDA3_REPLAY_GARNISH_TRACE").is_some() {
             eprintln!(
                 "R garnish-spawn fc=0x{:02x} rng=0x{:02x} room=0x{:04x} k={} type=0x{:02x} state=0x{:02x} delay=0x{:02x} xarg=0x{:04x} yarg=0x{:04x} limit={} slot={} sx=0x{:04x} sy=0x{:04x} z=0x{:02x} r12=0x{:04x} r14=0x{:04x}",
                 self.game_state.frame.frame_counter,

@@ -26,10 +26,10 @@ if ! command -v codesign >/dev/null 2>&1; then
 fi
 
 if [[ "$PROFILE" == "release" ]]; then
-  cargo build -p zelda3-bin --release
+  cargo build -p zelda3-bin --release --no-default-features
   BINARY="${TARGET_DIR}/release/zelda3"
 else
-  cargo build -p zelda3-bin
+  cargo build -p zelda3-bin --no-default-features
   BINARY="${TARGET_DIR}/debug/zelda3"
 fi
 

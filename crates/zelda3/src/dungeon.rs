@@ -5675,7 +5675,7 @@ impl ZeldaState {
         );
         let reset_xy_flags = self.game_state.dungeon.door_setup.reset_xy_check_flags();
         self.apply_reset_xy_quadrant_overrides(reset_xy_flags);
-        if std::env::var_os("ZELDA3_DEBUG_QUADRANT").is_some() {
+        if crate::debug_env::var_os("ZELDA3_DEBUG_QUADRANT").is_some() {
             eprintln!(
                 "[QUADRANT-LAYOUT] host={} room={:#x} key={:#x} ram_aa={:#x} flags={:#x} x_mask={:#x} y_mask={:#x} ram_a8={:#x} ram_a9={:#x} blast=({},{}) reset_xy={:#x} -> fullsize=({},{})",
                 self.frame_ctr_dbg,
@@ -5982,7 +5982,7 @@ impl ZeldaState {
             LAYOUT_QUADRANT_FLAGS[self.game_state.dungeon.room_load.layout_quadrant_key() as usize];
         let mask = self.game_state.player.follower_link.quadrant_y_mask();
         let blast_wall_y_open = self.game_state.dungeon.room_effects.blast_wall_y_open();
-        if std::env::var_os("ZELDA3_DEBUG_QUADRANT").is_some() {
+        if crate::debug_env::var_os("ZELDA3_DEBUG_QUADRANT").is_some() {
             eprintln!(
                 "[QUADRANT] host={} room={:#x} key={:#x} ram_aa={:#x} flags={:#x} y_mask={:#x} ram_a9={:#x} blast_y={} ram_453={:#x} -> fullsize_y={}",
                 self.frame_ctr_dbg,
@@ -6069,8 +6069,8 @@ impl ZeldaState {
         ];
         let attr = self.dungeon_tile_attribute(tiles[3] as usize);
         let tile_positions = [pos, pos + 64, pos + 1, pos + 65];
-        if std::env::var_os("ZELDA3_TRACE_SPRITE_DMA").is_some() {
-            let target = std::env::var("ZELDA3_TRACE_SPRITE_DMA_POS")
+        if crate::debug_env::var_os("ZELDA3_TRACE_SPRITE_DMA").is_some() {
+            let target = crate::debug_env::var("ZELDA3_TRACE_SPRITE_DMA_POS")
                 .ok()
                 .and_then(|value| {
                     value
@@ -8149,9 +8149,9 @@ impl ZeldaState {
                 let t = self.game_state.dungeon.room_tilemaps.bg2_tile(p + i) & 0x03fe;
                 let attr = if t == 0x00ee || t == 0x00fe { 0 } else { 0x20 };
                 self.dungeon_bg2_attributes_mut().set_bg2_attr(p + i, attr);
-                if std::env::var_os("ZELDA3_TRACE_OVERLAY_ATTR").is_some() {
+                if crate::debug_env::var_os("ZELDA3_TRACE_OVERLAY_ATTR").is_some() {
                     let pos = p + i;
-                    let trace_pos = std::env::var("ZELDA3_TRACE_OVERLAY_ATTR_POS")
+                    let trace_pos = crate::debug_env::var("ZELDA3_TRACE_OVERLAY_ATTR_POS")
                         .ok()
                         .and_then(|value| {
                             value
@@ -8647,7 +8647,7 @@ impl ZeldaState {
     }
 
     fn Dungeon_LoadObjectAttribute(&mut self) {
-        if std::env::var_os("ZELDA3_REPLAY_DUNGEON_ATTR_STATE_DUMP").is_some() {
+        if crate::debug_env::var_os("ZELDA3_REPLAY_DUNGEON_ATTR_STATE_DUMP").is_some() {
             eprintln!(
                 "dungeon-attr-state room=0x{:04x} star=0x{:04x} inter={:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x} in1={:04x},{:04x},{:04x},{:04x},{:04x},{:04x} misc=0x{:04x} torch=0x{:04x} chest=0x{:04x} big=0x{:04x} in2={:04x},{:04x},{:04x},{:04x} table1={:04x},{:04x},{:04x},{:04x} table2={:04x},{:04x},{:04x},{:04x} obj={:04x},{:04x},{:04x},{:04x}",
                 self.game_state.world.location.dungeon_room(),
@@ -9334,7 +9334,7 @@ impl ZeldaState {
 
     fn Dungeon_LoadSingleDoorAttribute(&mut self, k: usize) {
         let t = self.game_state.dungeon.doors.door_type_and_slot(k) & 0xfe;
-        if std::env::var_os("ZELDA3_REPLAY_DOOR_ATTR_TRACE").is_some() {
+        if crate::debug_env::var_os("ZELDA3_REPLAY_DOOR_ATTR_TRACE").is_some() {
             eprintln!(
                 "door-attr frame={} entry k={} t=0x{:02x} raw=0x{:04x} opened=0x{:04x} opened_adj=0x{:04x} cur=0x{:04x} addr=0x{:04x} dir=0x{:04x} sub={} step=0x{:04x}",
                 self.game_state.frame.frame_counter,
@@ -9410,7 +9410,7 @@ impl ZeldaState {
         }
 
         if (DOOR_TYPE_STAIR_MASK_LOCKED0..=DOOR_TYPE_STAIR_MASK_LOCKED3).contains(&t) {
-            if std::env::var_os("ZELDA3_REPLAY_DOOR_ATTR_TRACE").is_some() {
+            if crate::debug_env::var_os("ZELDA3_REPLAY_DOOR_ATTR_TRACE").is_some() {
                 eprintln!(
                     "door-attr frame={} stairmask-return k={} t=0x{:02x}",
                     self.game_state.frame.frame_counter, k, t,
@@ -9422,7 +9422,7 @@ impl ZeldaState {
             .get(t as usize >> 1)
             .copied()
             .unwrap_or(0x8080);
-        if std::env::var_os("ZELDA3_REPLAY_DOOR_ATTR_TRACE").is_some() {
+        if crate::debug_env::var_os("ZELDA3_REPLAY_DOOR_ATTR_TRACE").is_some() {
             eprintln!(
                 "door-attr frame={} alpha k={} t=0x{:02x} attr=0x{:04x}",
                 self.game_state.frame.frame_counter, k, t, attr,
@@ -9658,7 +9658,7 @@ impl ZeldaState {
         let attr_view = &self.game_state.dungeon.bg2_attributes;
         let base = attr_view.bg2_attr_address(j);
         if attr_view.bg2_attr_pair(j).is_none() {
-            if std::env::var_os("ZELDA3_REPLAY_DUNGEON_ATTR_TRACE").is_some() {
+            if crate::debug_env::var_os("ZELDA3_REPLAY_DUNGEON_ATTR_TRACE").is_some() {
                 eprintln!(
                     "attr-write-oob frame={} fn=write_attr2 j=0x{:04x} attr=0x{:04x} base=0x{:05x} ram_len=0x{:05x} stairs1=0x{:04x} stairs2=0x{:04x} inter=0x{:04x} misc=0x{:04x} chest=0x{:04x} big=0x{:04x} counts={:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x}",
                     self.state_recorder.replay_frame_counter,
@@ -9714,11 +9714,11 @@ impl ZeldaState {
             }
             return;
         }
-        if std::env::var_os("ZELDA3_REPLAY_DUNGEON_ATTR_TRACE").is_some() {
-            let frame_target = std::env::var("ZELDA3_REPLAY_DUNGEON_ATTR_FRAME")
+        if crate::debug_env::var_os("ZELDA3_REPLAY_DUNGEON_ATTR_TRACE").is_some() {
+            let frame_target = crate::debug_env::var("ZELDA3_REPLAY_DUNGEON_ATTR_FRAME")
                 .ok()
                 .and_then(|value| parse_usize_env(&value));
-            let target = std::env::var("ZELDA3_REPLAY_DUNGEON_ATTR_POS")
+            let target = crate::debug_env::var("ZELDA3_REPLAY_DUNGEON_ATTR_POS")
                 .ok()
                 .and_then(|value| parse_usize_env(&value));
             let frame_matches = frame_target
@@ -10643,7 +10643,7 @@ impl ZeldaState {
             // inside Module07_02_01 would execute the prefix twice in the
             // isolated instruction stream.
             let schedule = dungeon_room_load_cpu_schedule(self);
-            if std::env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
+            if crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
                 eprintln!(
                     "dungeon_room_load_cpu_schedule host={} room={:04x} room_load_nmis={} auxiliary_graphics_nmis={} caller_nmis={} prefix_nmis={} sprite_main_nmis={} suffix_nmis={} boundary={:?}",
                     self.frame_ctr_dbg,
@@ -11799,7 +11799,7 @@ impl ZeldaState {
     }
 
     pub(super) fn apply_dungeon_quadrant_cpu_advance(&mut self, advance: DungeonModuleCpuAdvance) {
-        if std::env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
+        if crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
             eprintln!(
                 "dungeon_quadrant_cpu_apply host={} phase={:?} active_return={}",
                 self.frame_ctr_dbg,
@@ -13472,7 +13472,7 @@ fn object_subtype3_param(idx: u8) -> Option<usize> {
 }
 
 fn replay_room_write_trace_addr(offset: usize) -> bool {
-    let Ok(raw) = std::env::var("ZELDA3_REPLAY_ROOM_WRITE_TRACE_ADDR") else {
+    let Ok(raw) = crate::debug_env::var("ZELDA3_REPLAY_ROOM_WRITE_TRACE_ADDR") else {
         return false;
     };
     raw.split(',').any(|part| {
@@ -13492,7 +13492,7 @@ fn replay_room_write_trace_addr(offset: usize) -> bool {
 }
 
 fn replay_room_write_trace_enabled() -> bool {
-    std::env::var_os("ZELDA3_REPLAY_ROOM_WRITE_TRACE_ADDR").is_some()
+    crate::debug_env::var_os("ZELDA3_REPLAY_ROOM_WRITE_TRACE_ADDR").is_some()
 }
 
 impl ZeldaState {
@@ -14370,7 +14370,7 @@ impl ZeldaState {
             self.begin_spiral_stair_return_main_loop_reentry();
             self.module07_00_player_control();
             self.link_oam_main();
-            if std::env::var_os("ZELDA3_DEBUG_SPIRAL_RETURN").is_some() {
+            if crate::debug_env::var_os("ZELDA3_DEBUG_SPIRAL_RETURN").is_some() {
                 let reentered_equipment: [u16; 4] = std::array::from_fn(|word| {
                     read_le_u16(&self.ram, OAM_BUF + 112 * 4 + word * 2)
                 });

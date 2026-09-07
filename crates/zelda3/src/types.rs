@@ -180,12 +180,12 @@ pub static WW_CUR_FRAME: AtomicU32 = AtomicU32::new(0);
 pub fn ww_set_cur_frame(frame: u32) {
     if WW_ADDR.load(Ordering::Relaxed) == usize::MAX {
         // lazy one-time env init (usize::MAX sentinel also means "not yet checked")
-        let a = std::env::var("ZELDA3_WW_ADDR")
+        let a = crate::debug_env::var("ZELDA3_WW_ADDR")
             .ok()
             .and_then(|s| usize::from_str_radix(s.trim().trim_start_matches("0x"), 16).ok());
         if let Some(a) = a {
             WW_ADDR.store(a, Ordering::Relaxed);
-            if let Ok(spec) = std::env::var("ZELDA3_WW_FRAME") {
+            if let Ok(spec) = crate::debug_env::var("ZELDA3_WW_FRAME") {
                 let spec = spec.trim();
                 let (lo, hi) = match spec.split_once('-') {
                     Some((lo, hi)) => (lo.trim().parse().ok(), hi.trim().parse().ok()),
@@ -208,6 +208,9 @@ pub fn ww_set_cur_frame(frame: u32) {
 
 #[inline]
 fn ww_enabled_hit(offset: usize, len: usize) -> bool {
+    if !crate::debug_env::ENABLED {
+        return false;
+    }
     let a = WW_ADDR.load(Ordering::Relaxed);
     if a >= usize::MAX - 1 || !(offset <= a && a < offset + len) {
         return false;
@@ -229,7 +232,7 @@ fn ww_backtrace_suffix() -> String {
     static BT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
     let mut s = BT.load(Ordering::Relaxed);
     if s == 0 {
-        s = if std::env::var("ZELDA3_WW_BACKTRACE").is_ok() {
+        s = if crate::debug_env::var("ZELDA3_WW_BACKTRACE").is_ok() {
             2
         } else {
             1

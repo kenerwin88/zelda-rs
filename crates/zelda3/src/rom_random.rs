@@ -180,7 +180,7 @@ impl RomRandomReplay {
             .expect("ROM random replay consumed outside a host frame");
         let caller = std::panic::Location::caller();
         let Some(sample) = self.samples.pop_front() else {
-            if std::env::var_os("ZELDA3_DEBUG_ALLOW_UNEXPECTED_ROM_RANDOM").is_some() {
+            if crate::debug_env::var_os("ZELDA3_DEBUG_ALLOW_UNEXPECTED_ROM_RANDOM").is_some() {
                 eprintln!(
                     "unexpected_rom_random frame={execution_frame} callsite={}:{} fallback=00 carry=0",
                     caller.file(),
@@ -194,7 +194,7 @@ impl RomRandomReplay {
                 caller.line(),
             )
         };
-        if std::env::var_os("ZELDA3_DEBUG_ROM_RANDOM_TRACE").is_some() {
+        if crate::debug_env::var_os("ZELDA3_DEBUG_ROM_RANDOM_TRACE").is_some() {
             eprintln!(
                 "rom_random_take frame={execution_frame} sample_frame={} value={:02x} carry={} callsite={}:{}",
                 sample.execution_frame,
@@ -207,7 +207,7 @@ impl RomRandomReplay {
         let carried = self.carried > 0;
         self.carried = self.carried.saturating_sub(1);
         if sample.execution_frame != execution_frame && !carried {
-            if std::env::var_os("ZELDA3_DEBUG_ROM_RANDOM_FRAME_DRIFT").is_none() {
+            if crate::debug_env::var_os("ZELDA3_DEBUG_ROM_RANDOM_FRAME_DRIFT").is_none() {
                 panic!(
                     "ROM random call order diverged: replay expected execution frame {}, Rust called during {execution_frame}; callsite={}:{}",
                     sample.execution_frame,

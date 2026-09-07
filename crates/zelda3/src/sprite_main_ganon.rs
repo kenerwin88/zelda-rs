@@ -376,10 +376,10 @@ fn ganon_head_direction(link_x: u16, sprite_x: u16) -> u8 {
 
 impl ZeldaState {
     fn replay_trace_ganon_matches(&self) -> bool {
-        if std::env::var_os("ZELDA3_TRACE_GANON").is_none() {
+        if crate::debug_env::var_os("ZELDA3_TRACE_GANON").is_none() {
             return false;
         }
-        std::env::var("ZELDA3_TRACE_GANON_FRAME")
+        crate::debug_env::var("ZELDA3_TRACE_GANON_FRAME")
             .ok()
             .and_then(|value| {
                 let trimmed = value.trim();

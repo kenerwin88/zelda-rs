@@ -1079,7 +1079,7 @@ impl ZeldaState {
             return;
         };
         self.do3_to_4_high_to_vram(0x4000, &source, chr_source::CHR_KIND_SPRITE, 0);
-        if std::env::var_os("ZELDA3_DEBUG_DEFAULT_GFX").is_some() {
+        if crate::debug_env::var_os("ZELDA3_DEBUG_DEFAULT_GFX").is_some() {
             eprintln!(
                 "default_gfx source_len={} vram40b0={:04x} vram40b1={:04x} vram40b2={:04x} vram40b3={:04x}",
                 source.len(),

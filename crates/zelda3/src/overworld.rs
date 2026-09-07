@@ -72,7 +72,7 @@ impl ZeldaState {
     }
 
     fn replay_trace_door_overlay(&self, label: &str, pos: u16) {
-        if std::env::var_os("ZELDA3_REPLAY_TRACE_DOOR").is_none() {
+        if crate::debug_env::var_os("ZELDA3_REPLAY_TRACE_DOOR").is_none() {
             return;
         }
         let world_location = &self.game_state.world.location;
@@ -408,7 +408,7 @@ impl ZeldaState {
         self.world_palette_theme_mut()
             .save_special_exit_tile_themes();
         self.sprite_system_mut().save_special_exit_graphics_index();
-        if std::env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some() {
+        if crate::debug_env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some() {
             println!(
                 "spexit-save frame={} area=0x{:04x} screen=0x{:04x} x=0x{:04x} y=0x{:04x} bg=0x{:04x}/0x{:04x} src=0x{:04x} yunit=0x{:04x} dst=0x{:04x} cam=0x{:04x}/0x{:04x} room=0x{:04x} main={} sub={}",
                 self.game_state.frame.frame_counter,
@@ -4894,7 +4894,7 @@ impl ZeldaState {
     }
 
     pub(super) fn LoadOverworldFromSpecialOverworld(&mut self) {
-        if std::env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some() {
+        if crate::debug_env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some() {
             println!(
                 "spexit-restore-before frame={} area=0x{:04x} screen=0x{:04x} x=0x{:04x} y=0x{:04x} bg=0x{:04x}/0x{:04x} src=0x{:04x} cam=0x{:04x}/0x{:04x} bounds={:04x},{:04x},{:04x},{:04x}",
                 self.game_state.frame.frame_counter,
@@ -5002,7 +5002,7 @@ impl ZeldaState {
         self.Overworld_LoadGFXAndScreenSize();
         self.set_overworld_right_bottom_bound_low(228);
         self.clear_overworld_big_area_high();
-        if std::env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some() {
+        if crate::debug_env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some() {
             println!(
                 "spexit-restore-after frame={} area=0x{:04x} screen=0x{:04x} x=0x{:04x} y=0x{:04x} bg=0x{:04x}/0x{:04x} base=0x{:04x}/0x{:04x} mask=0x{:04x}/0x{:04x} room=0x{:04x} main={} sub={}",
                 self.game_state.frame.frame_counter,
@@ -5323,7 +5323,7 @@ impl ZeldaState {
         if dst != 0 {
             self.set_pending_nmi_subroutine(3);
         }
-        if std::env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some()
+        if crate::debug_env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some()
             && matches!(
                 u16::from(self.game_state.world.location.overworld_screen_index()),
                 0 | 2
@@ -5975,7 +5975,7 @@ impl ZeldaState {
         }
         let screen_transition = self.screen_transition_direction_bits();
         self.set_screen_transition(screen_transition);
-        if std::env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some()
+        if crate::debug_env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some()
             && matches!(
                 u16::from(self.game_state.world.location.overworld_screen_index()),
                 0 | 2 | 0x80
@@ -6264,7 +6264,7 @@ impl ZeldaState {
         let map16_add = SPECIAL_SWITCH_MAP16_OFFSETS[y_idx * 64 + pushed];
         map16 = map16.wrapping_add(map16_add);
         self.set_overworld_map16_src_off(map16);
-        if std::env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some() {
+        if crate::debug_env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some() {
             println!(
                 "owtrans-map16 frame={} y={} pushed=0x{:02x} cur=0x{:04x} old=0x{:04x} mask=0x{:04x} add=0x{:04x} new=0x{:04x} screen=0x{:04x} x=0x{:04x} ycoord=0x{:04x} dir=0x{:02x}",
                 self.game_state.frame.frame_counter,
@@ -7304,7 +7304,7 @@ impl ZeldaState {
 
         let map8 = self.Overworld_GetMap16OfLink_Mult8();
         let a = map8[0] & 0x01ff;
-        if std::env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some()
+        if crate::debug_env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some()
             && matches!(
                 u16::from(self.game_state.world.location.overworld_screen_index()),
                 0x0080 | 0x0081
@@ -7343,7 +7343,7 @@ impl ZeldaState {
                 self.set_submodule(36);
                 self.set_subsubmodule(0);
                 self.set_dungeon_room_index(0);
-                if std::env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some() {
+                if crate::debug_env::var_os("ZELDA3_REPLAY_SPEXIT_DUMP").is_some() {
                     println!(
                         "spexit-hit frame={} i={} screen=0x{:04x} map8=0x{:04x} dir=0x{:02x} trans=0x{:04x} x=0x{:04x} y=0x{:04x}",
                         self.game_state.frame.frame_counter,

@@ -832,7 +832,7 @@ impl ZeldaState {
         let current_vwf_glyph_completed = self.dialogue_vwf_glyph_cpu_phase.is_ready();
         let (owned_marker, legacy_marker, pending_effect2, input_effect2) =
             self.audio.modern.queue.push(current_vwf_glyph_completed);
-        let marker_debug = std::env::var("ZELDA3_DEBUG_VWF_MARKER_POLICY").ok();
+        let marker_debug = crate::debug_env::var("ZELDA3_DEBUG_VWF_MARKER_POLICY").ok();
         if marker_debug.is_some()
             && (owned_marker != legacy_marker
                 || marker_debug.as_deref() == Some("all") && (owned_marker || legacy_marker))
@@ -910,7 +910,7 @@ impl ZeldaState {
             self.audio.modern.queue.vwf_glyph_tone_crossed_vblank_input,
         );
         let sampled = peek.host_acknowledgements()[0];
-        let debug_song_poll = std::env::var("ZELDA3_DEBUG_SONG_POLL")
+        let debug_song_poll = crate::debug_env::var("ZELDA3_DEBUG_SONG_POLL")
             .ok()
             .is_some_and(|value| value == "all" || value.parse() == Ok(self.frame_ctr_dbg));
         if debug_song_poll {
@@ -1022,7 +1022,7 @@ impl ZeldaState {
             }
         }
         let frame = if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
-            let debug_spc_polls = std::env::var_os("ZELDA3_DEBUG_SPC_CLOCK_WITNESS").is_some();
+            let debug_spc_polls = crate::debug_env::var_os("ZELDA3_DEBUG_SPC_CLOCK_WITNESS").is_some();
             let frame_start_apu_cycle = clock.absolute_dsp_cycle() * 32;
             let window = clock.advance(
                 driver_commands,
@@ -1076,7 +1076,7 @@ impl ZeldaState {
                     native_samples,
                 )
         };
-        if std::env::var("ZELDA3_DEBUG_MUSIC_WINDOW_FRAME")
+        if crate::debug_env::var("ZELDA3_DEBUG_MUSIC_WINDOW_FRAME")
             .ok()
             .and_then(|frame| frame.parse::<u32>().ok())
             .is_some_and(|frame| frame == self.frame_ctr_dbg)

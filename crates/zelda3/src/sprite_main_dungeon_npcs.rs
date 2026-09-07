@@ -688,7 +688,7 @@ impl ZeldaState {
             self.crystal_maiden_draw(k);
         }
         self.activate_nmi_thread();
-        if std::env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+        if crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some() {
             eprintln!(
                 "[POLY] host={} maiden call: module={:02x}/{:02x} did_run_step={} e={:#x} ai={}",
                 self.frame_ctr_dbg,

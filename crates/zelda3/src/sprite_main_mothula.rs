@@ -1308,7 +1308,7 @@ impl ZeldaState {
         }
 
         let t = self.sprite_slot_view(k).delay_aux3();
-        let trace_stalfos_head = std::env::var_os("ZELDA3_TRACE_STALFOS_HEAD").is_some()
+        let trace_stalfos_head = crate::debug_env::var_os("ZELDA3_TRACE_STALFOS_HEAD").is_some()
             && self.sprite_slot_view(k).sprite_type() == 0xa7
             && k == 0
             && self.game_state.world.location.dungeon_room() == 0x00a8;
@@ -1348,7 +1348,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_zazak_after_graphics_boundary(&mut self, k: usize) {
-        let trace_stalfos_head = std::env::var_os("ZELDA3_TRACE_STALFOS_HEAD").is_some()
+        let trace_stalfos_head = crate::debug_env::var_os("ZELDA3_TRACE_STALFOS_HEAD").is_some()
             && self.sprite_slot_view(k).sprite_type() == 0xa7
             && k == 0
             && self.game_state.world.location.dungeon_room() == 0x00a8;
@@ -1357,7 +1357,7 @@ impl ZeldaState {
         } else {
             self.zazak_draw(k);
         }
-        if std::env::var_os("ZELDA3_TRACE_STALFOS_INACTIVE").is_some()
+        if crate::debug_env::var_os("ZELDA3_TRACE_STALFOS_INACTIVE").is_some()
             && self.sprite_slot_view(k).sprite_type() == 0xa7
             && self.game_state.world.location.dungeon_room() == 0x00a8
         {
@@ -1387,7 +1387,7 @@ impl ZeldaState {
         if self.sprite_return_if_recoiling(k) {
             return;
         }
-        let trace_stalfos = std::env::var_os("ZELDA3_TRACE_STALFOS").is_some()
+        let trace_stalfos = crate::debug_env::var_os("ZELDA3_TRACE_STALFOS").is_some()
             && self.sprite_slot_view(k).sprite_type() == 0xa7
             && self.game_state.world.location.dungeon_room() == 0x00a8;
         if trace_stalfos {
@@ -1446,7 +1446,7 @@ impl ZeldaState {
                         .set_x_velocity(FLUTE_BOY_ANIMAL_X_VELOCITIES[j] as u8);
                     self.sprite_slot_view_mut(k)
                         .set_y_velocity(ZAZAK_Y_VELOCITIES[j] as u8);
-                    if std::env::var_os("ZELDA3_TRACE_STALFOS_DELAY").is_some()
+                    if crate::debug_env::var_os("ZELDA3_TRACE_STALFOS_DELAY").is_some()
                         && self.sprite_slot_view(k).sprite_type() == 0xa7
                         && self.game_state.world.location.dungeon_room() == 0x00a8
                     {

@@ -6202,7 +6202,7 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
 
     #[track_caller]
     pub(crate) fn set_given_damage(&mut self, value: u8) {
-        if std::env::var_os("ZELDA3_DEBUG_LINK_DAMAGE").is_some() {
+        if crate::debug_env::var_os("ZELDA3_DEBUG_LINK_DAMAGE").is_some() {
             eprintln!(
                 "[LINKDMG] given_damage={value:#x} caller={} cur_sprite={:#x}",
                 std::panic::Location::caller(),

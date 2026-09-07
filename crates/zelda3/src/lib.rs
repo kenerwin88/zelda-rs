@@ -6,6 +6,7 @@
 
 #![allow(dead_code)]
 
+pub mod debug_env;
 pub mod chr_source;
 pub mod config;
 pub mod game_output;

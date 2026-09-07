@@ -37,7 +37,7 @@ impl ZeldaState {
         if (0x10..0x1c).contains(&attr) {
             attr |= ((map8 >> 14) & 1) as u8;
         }
-        if env::var("ZELDA3_REPLAY_TRACE_TILE").is_ok()
+        if crate::debug_env::var("ZELDA3_REPLAY_TRACE_TILE").is_ok()
             && self.replay_trace_filter_matches_current_frame()
         {
             let world = &self.game_state.world.scroll;
@@ -338,7 +338,7 @@ impl ZeldaState {
     pub(super) fn tile_detection_execute(&mut self, x: u16, y: u16, bits: u16) {
         let mut offset = 0usize;
         let is_indoors = self.game_state.world.location.is_indoors();
-        let trace = env::var("ZELDA3_REPLAY_TRACE_TILE").is_ok()
+        let trace = crate::debug_env::var("ZELDA3_REPLAY_TRACE_TILE").is_ok()
             && self.replay_trace_filter_matches_current_frame();
         let r14_before = self.game_state.player.tile_detection.collision_bits();
         let r12_before = self.game_state.player.tile_detection.slope_collision_bits();

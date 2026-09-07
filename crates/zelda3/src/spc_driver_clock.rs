@@ -537,7 +537,7 @@ impl AbsoluteDspEventClock {
             )
         };
         let host_port_targets = host_port_target_cycles(self.host_frame_index, host_writes);
-        let debug_transport = std::env::var("ZELDA3_DEBUG_SPC_TRANSPORT_FRAME")
+        let debug_transport = crate::debug_env::var("ZELDA3_DEBUG_SPC_TRANSPORT_FRAME")
             .ok()
             .and_then(|frame| frame.parse::<u64>().ok())
             == Some(self.host_frame_index);

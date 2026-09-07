@@ -131,10 +131,10 @@ fn vwf_interrupted_click_marks_boundary(
 }
 
 fn debug_vwf_budget_for_frame(host_frame: u32) -> bool {
-    if std::env::var_os("ZELDA3_DEBUG_VWF_BUDGET").is_some() {
+    if crate::debug_env::var_os("ZELDA3_DEBUG_VWF_BUDGET").is_some() {
         return true;
     }
-    std::env::var("ZELDA3_DEBUG_VWF_BUDGET_FRAME")
+    crate::debug_env::var("ZELDA3_DEBUG_VWF_BUDGET_FRAME")
         .ok()
         .and_then(|value| value.parse::<u32>().ok())
         == Some(host_frame)
@@ -624,7 +624,7 @@ impl ZeldaState {
                 earliest.caller_nmi_crossings(),
                 Some(earliest.following_main_nmi_uses_host_animated_bg_operands()),
             ));
-            if std::env::var_os("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some() {
+            if crate::debug_env::var_os("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some() {
                 eprintln!(
                     "dialogue_cpu_plan host={} module={:#04x} msg={:#06x} speed={} earliest={:?} latest={:?} prefix_crossings={} caller_crossings={} following_main_animated_bg={:?}",
                     self.frame_ctr_dbg,
@@ -5318,7 +5318,7 @@ impl ZeldaState {
                 TEXT_CMD_CHOOSE3 => self.RenderText_Draw_Choose3(),
                 TEXT_CMD_CHOOSE2 => self.RenderText_Draw_Choose1Or2(),
                 TEXT_CMD_WAITKEY | TEXT_CMD_END_MESSAGE => {
-                    if std::env::var_os("ZELDA3_DEBUG_VWF_WAIT").is_some() {
+                    if crate::debug_env::var_os("ZELDA3_DEBUG_VWF_WAIT").is_some() {
                         eprintln!(
                             "[VWF-WAIT] host={} cmd={} read_pos={read_pos} target={:?} countdown2={} filtered={:#04x}/{:#04x} state={}",
                             self.frame_ctr_dbg,
@@ -5819,7 +5819,7 @@ impl ZeldaState {
         // requires the measured return-only continuation.
         let completion_timing =
             DialogueScrollCompletionTiming::at_scroll_entry(cycles_before_vblank);
-        if std::env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some() {
+        if crate::debug_env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some() {
             eprintln!(
                 "scroll_schedule host={} headroom={} timing={completion_timing:?}",
                 self.frame_ctr_dbg, cycles_before_vblank,

@@ -6,6 +6,14 @@ rust-version.workspace = true
 license.workspace = true
 autobins = false
 
+[features]
+# Debug/trace environment switches (ZELDA3_DEBUG_*, ZELDA3_TRACE_*,
+# ZELDA3_REPLAY_*, ZELDA3_ASSERT_*, ZELDA3_WW_*, ...). On by default so the
+# parity profile and tests keep every tool; release packaging builds with
+# `--no-default-features` and compiles them out.
+default = ["parity-debug"]
+parity-debug = []
+
 [dependencies]
 bincode = "1"
 opus = "0.3.1"
