@@ -34,7 +34,6 @@ const EDL: usize = 0x7d;
 const FIR: usize = 0x0f;
 
 const VOLL: usize = 0x00;
-const VOLR: usize = 0x01;
 const PITCHL: usize = 0x02;
 const PITCHH: usize = 0x03;
 const SRCN: usize = 0x04;

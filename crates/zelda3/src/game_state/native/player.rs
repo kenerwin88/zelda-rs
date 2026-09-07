@@ -3,7 +3,6 @@ use crate::game_state::constants::*;
 use crate::types::{read_le_u16, write_le_u16};
 
 const PUSHED_BLOCK_BANK_LEN: usize = 4;
-const PUSHED_BLOCK_SLOT_COUNT: usize = 2;
 const SWIM_AXIS_COUNT: usize = 2;
 const FALL_HOLE_SCAN_INDEX_LOCAL: usize = 0x02c9;
 
@@ -163,51 +162,6 @@ impl PlayerState {
         self.pushed_block.write_to_ram(ram);
         self.bg1_movement_accumulator.write_to_ram(ram);
         self.tile_detection.write_to_ram(ram);
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct PlayerSnapshotState {
-    pub(crate) x: u16,
-    pub(crate) y: u16,
-    pub(crate) z: u16,
-    pub(crate) x_velocity: u8,
-    pub(crate) y_velocity: u8,
-    pub(crate) z_velocity: u8,
-    pub(crate) direction: u8,
-    pub(crate) last_direction: u8,
-    pub(crate) facing: u8,
-    pub(crate) handler_state: u8,
-    pub(crate) auxiliary_state: u8,
-    pub(crate) current_health: u8,
-    pub(crate) magic_power: u8,
-    pub(crate) equipped_item: u8,
-    pub(crate) item_in_hand: u8,
-    pub(crate) current_item_y: u8,
-    pub(crate) current_item_active: u8,
-}
-
-impl PlayerSnapshotState {
-    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
-        Self {
-            x: read_le_u16(ram, LINK_X_COORD),
-            y: read_le_u16(ram, LINK_Y_COORD),
-            z: read_le_u16(ram, LINK_Z_COORD),
-            x_velocity: ram_byte(ram, LINK_X_VELOCITY),
-            y_velocity: ram_byte(ram, LINK_Y_VELOCITY),
-            z_velocity: ram_byte(ram, LINK_Z_VELOCITY),
-            direction: ram_byte(ram, LINK_DIRECTION),
-            last_direction: ram_byte(ram, LINK_LAST_DIRECTION),
-            facing: ram_byte(ram, LINK_FACING),
-            handler_state: ram_byte(ram, LINK_HANDLER_STATE),
-            auxiliary_state: ram_byte(ram, LINK_AUXILIARY_STATE),
-            current_health: ram_byte(ram, LINK_CURRENT_HEALTH),
-            magic_power: ram_byte(ram, LINK_MAGIC_POWER),
-            equipped_item: ram_byte(ram, LINK_EQUIPPED_ITEM),
-            item_in_hand: ram_byte(ram, LINK_ITEM_IN_HAND),
-            current_item_y: ram_byte(ram, LINK_CURRENT_ITEM_Y),
-            current_item_active: ram_byte(ram, LINK_CURRENT_ITEM_ACTIVE),
-        }
     }
 }
 
@@ -871,10 +825,6 @@ impl FollowerLinkState {
         self.z_low_signed().is_negative()
     }
 
-    pub(crate) fn z_mirror(&self) -> u16 {
-        self.z_mirror
-    }
-
     pub(crate) fn z_mirror_low(&self) -> u8 {
         self.z_mirror as u8
     }
@@ -901,14 +851,6 @@ impl FollowerLinkState {
 
     pub(crate) fn has_disabled_oam_offsets(&self) -> bool {
         self.oam_y_offset == 0x80
-    }
-
-    pub(crate) fn x_subpixel(&self) -> u8 {
-        self.x_subpixel
-    }
-
-    pub(crate) fn y_subpixel(&self) -> u8 {
-        self.y_subpixel
     }
 
     pub(crate) fn is_grounded_or_z_sentinel(&self) -> bool {
@@ -1001,10 +943,6 @@ impl FollowerLinkState {
         self.y_page_movement_delta as i8
     }
 
-    pub(crate) fn recoil_timer(&self) -> u8 {
-        self.recoil_timer
-    }
-
     pub(crate) fn actual_x_velocity(&self) -> u8 {
         self.actual_x_velocity
     }
@@ -1095,13 +1033,6 @@ impl FollowerLinkState {
 
     pub(crate) fn quadrant_y(&self) -> u8 {
         self.quadrant_y
-    }
-
-    pub(crate) fn quadrant_visit_index(&self, fullsize_y: u8, fullsize_x: u8) -> usize {
-        ((fullsize_y as usize) << 2)
-            + ((fullsize_x as usize) << 1)
-            + self.quadrant_y as usize
-            + self.quadrant_x as usize
     }
 
     pub(crate) fn quadrant_x_mask(&self) -> u8 {
@@ -1631,20 +1562,12 @@ impl FollowerLinkState {
         self.tile_collision_flag
     }
 
-    pub(crate) fn sprite_oam_state_timer(&self) -> u8 {
-        self.sprite_oam_state_timer
-    }
-
     pub(crate) fn whirlpool_triggered(&self) -> bool {
         self.whirlpool_trigger != 0
     }
 
     pub(crate) fn is_prevented_from_moving(&self) -> bool {
         self.prevent_movement != 0
-    }
-
-    pub(crate) fn force_move_any_direction_lo(&self) -> u16 {
-        u16::from(self.force_move_any_direction as u8)
     }
 
     pub(crate) fn force_move_any_direction(&self) -> u16 {
@@ -1657,10 +1580,6 @@ impl FollowerLinkState {
 
     pub(crate) fn throw_oam_state_index(&self) -> u8 {
         self.throw_oam_state_index
-    }
-
-    pub(crate) fn item_action_debug_value_2(&self) -> u8 {
-        self.item_action_debug_value_2
     }
 
     pub(crate) fn item_debug_value_1(&self) -> u8 {
@@ -1739,10 +1658,6 @@ impl FollowerLinkState {
         self.cheat_walk_through_walls
     }
 
-    pub(crate) fn sword_delay_timer(&self) -> u8 {
-        self.sword_delay_timer
-    }
-
     pub(crate) fn spin_offsets(&self) -> u8 {
         self.spin_offsets
     }
@@ -1797,14 +1712,6 @@ impl FollowerLinkState {
 
     pub(crate) fn has_flippers(&self) -> bool {
         self.flippers != 0
-    }
-
-    pub(crate) fn flippers(&self) -> u8 {
-        self.flippers
-    }
-
-    pub(crate) fn moon_pearl(&self) -> u8 {
-        self.moon_pearl
     }
 
     pub(crate) fn has_moon_pearl(&self) -> bool {
@@ -2152,20 +2059,12 @@ impl FollowerLinkState {
         self.direction &= mask;
     }
 
-    fn clear_cardinal_direction(&mut self) {
-        self.direction &= !0x0f;
-    }
-
     fn add_direction_flags(&mut self, flags: u8) {
         self.direction |= flags;
     }
 
     fn clear_direction_flags(&mut self, flags: u8) {
         self.direction &= !flags;
-    }
-
-    fn set_direction_lock(&mut self, value: u8) {
-        self.direction_lock = value;
     }
 
     fn clear_direction_lock(&mut self) {
@@ -2283,13 +2182,6 @@ impl FollowerLinkState {
 
     fn set_x_page_movement_delta_from_high_position(&mut self, high: u8) {
         self.x_page_movement_delta = high.wrapping_sub(self.safe_return_x_high());
-    }
-
-    fn set_position_with_subpixels(&mut self, x: u16, y: u16, x_subpixel: u8, y_subpixel: u8) {
-        self.x = x;
-        self.y = y;
-        self.x_subpixel = x_subpixel;
-        self.y_subpixel = y_subpixel;
     }
 
     fn set_oam_x_offset(&mut self, value: u8) {
@@ -2625,16 +2517,8 @@ impl FollowerLinkState {
         self.y_button_action_flags |= bits;
     }
 
-    fn clear_y_button_action_flags(&mut self) {
-        self.y_button_action_flags = 0;
-    }
-
     fn set_y_button_action_step(&mut self, value: u8) {
         self.y_button_action_step = value;
-    }
-
-    fn clear_y_button_action_step(&mut self) {
-        self.y_button_action_step = 0;
     }
 
     fn set_y_button_action_timer(&mut self, value: u8) {
@@ -2682,10 +2566,6 @@ impl FollowerLinkState {
 
     fn set_tile_coll_flag(&mut self, value: u8) {
         self.tile_collision_flag = value;
-    }
-
-    fn clear_tile_coll_flag(&mut self) {
-        self.tile_collision_flag = 0;
     }
 
     fn set_force_move_any_direction(&mut self, value: u16) {
@@ -3148,10 +3028,6 @@ impl FollowerLinkState {
         self.index_of_dashing_sfx = self.index_of_dashing_sfx.wrapping_sub(1);
     }
 
-    fn set_deep_water_state(&mut self, value: u8) {
-        self.deep_water_state = value;
-    }
-
     fn enter_deep_water_state(&mut self) {
         self.deep_water_state = 1;
     }
@@ -3166,10 +3042,6 @@ impl FollowerLinkState {
 
     fn set_throw_oam_state_index(&mut self, value: u8) {
         self.throw_oam_state_index = value;
-    }
-
-    fn clear_throw_oam_state_index(&mut self) {
-        self.throw_oam_state_index = 0;
     }
 
     fn increment_item_action_step_var(&mut self) -> u8 {
@@ -3228,10 +3100,6 @@ impl FollowerLinkState {
 
     fn set_item_action_debug_value_2(&mut self, value: u8) {
         self.item_action_debug_value_2 = value;
-    }
-
-    fn clear_item_action_debug_value_2(&mut self) {
-        self.item_action_debug_value_2 = 0;
     }
 
     fn set_current_item_y(&mut self, value: u8) {
@@ -3380,11 +3248,6 @@ impl FollowerLinkState {
     fn begin_pit_check(&mut self) {
         self.clear_pit_data_index();
         self.set_near_pit_state(1);
-    }
-
-    fn clear_pit_state(&mut self) {
-        self.clear_pit_data_index();
-        self.clear_near_pit_state();
     }
 
     fn start_bunny_transform_poof(&mut self) {
@@ -4084,12 +3947,6 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn clear_flag_moving(&mut self) {
-        self.state.clear_flag_moving();
-        self.ram[LINK_FLAG_MOVING] = 0;
-        self.debug_assert_matches_ram();
-    }
-
     pub(crate) fn set_quadrants_from_packed_nibbles(&mut self, value: u8) {
         self.state.set_quadrants_from_packed_nibbles(value);
         self.ram[LINK_QUADRANT_X] = self.state.quadrant_x();
@@ -4207,12 +4064,6 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn clear_cardinal_direction(&mut self) {
-        self.state.clear_cardinal_direction();
-        self.ram[LINK_DIRECTION] = self.state.direction();
-        self.debug_assert_matches_ram();
-    }
-
     pub(crate) fn add_direction_flags(&mut self, flags: u8) {
         self.state.add_direction_flags(flags);
         self.ram[LINK_DIRECTION] = self.state.direction();
@@ -4222,12 +4073,6 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
     pub(crate) fn clear_direction_flags(&mut self, flags: u8) {
         self.state.clear_direction_flags(flags);
         self.ram[LINK_DIRECTION] = self.state.direction();
-        self.debug_assert_matches_ram();
-    }
-
-    pub(crate) fn set_direction_lock(&mut self, value: u8) {
-        self.state.set_direction_lock(value);
-        self.ram[LINK_CANT_CHANGE_DIRECTION] = value;
         self.debug_assert_matches_ram();
     }
 
@@ -4549,13 +4394,6 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
     pub(crate) fn set_oam_y_offset(&mut self, value: u8) {
         self.state.set_oam_y_offset(value);
         self.ram[PLAYER_OAM_Y_OFFSET] = value;
-        self.debug_assert_matches_ram();
-    }
-
-    pub(crate) fn set_oam_offset(&mut self, y: u8, x: u8) {
-        self.state.set_oam_offset(y, x);
-        self.ram[PLAYER_OAM_Y_OFFSET] = y;
-        self.ram[PLAYER_OAM_X_OFFSET] = x;
         self.debug_assert_matches_ram();
     }
 
@@ -5192,21 +5030,9 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn clear_y_button_action_flags(&mut self) {
-        self.state.clear_y_button_action_flags();
-        self.ram[Y_BUTTON_ACTION_FLAGS] = 0;
-        self.debug_assert_matches_ram();
-    }
-
     pub(crate) fn set_y_button_action_step(&mut self, value: u8) {
         self.state.set_y_button_action_step(value);
         self.ram[Y_BUTTON_ACTION_STEP] = value;
-        self.debug_assert_matches_ram();
-    }
-
-    pub(crate) fn clear_y_button_action_step(&mut self) {
-        self.state.clear_y_button_action_step();
-        self.ram[Y_BUTTON_ACTION_STEP] = 0;
         self.debug_assert_matches_ram();
     }
 
@@ -5277,12 +5103,6 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
     pub(crate) fn set_tile_coll_flag(&mut self, value: u8) {
         self.state.set_tile_coll_flag(value);
         self.ram[TILE_COLL_FLAG] = value;
-        self.debug_assert_matches_ram();
-    }
-
-    pub(crate) fn clear_tile_coll_flag(&mut self) {
-        self.state.clear_tile_coll_flag();
-        self.ram[TILE_COLL_FLAG] = 0;
         self.debug_assert_matches_ram();
     }
 
@@ -5880,12 +5700,6 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
     pub(crate) fn set_primary_water_grass_timer(&mut self, value: u8) {
         self.state.set_primary_water_grass_timer(value);
         self.ram[PRIMARY_WATER_GRASS_TIMER] = value;
-        self.debug_assert_matches_ram();
-    }
-
-    pub(crate) fn set_deep_water_state(&mut self, value: u8) {
-        self.state.set_deep_water_state(value);
-        self.ram[LINK_IS_IN_DEEP_WATER] = value;
         self.debug_assert_matches_ram();
     }
 
@@ -6550,13 +6364,6 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.state.begin_pit_check();
         self.ram[PLAYER_PIT_DATA_INDEX] = 0;
         self.ram[PLAYER_NEAR_PIT_STATE] = 1;
-        self.debug_assert_matches_ram();
-    }
-
-    pub(crate) fn clear_pit_state(&mut self) {
-        self.state.clear_pit_state();
-        self.ram[PLAYER_PIT_DATA_INDEX] = 0;
-        self.ram[PLAYER_NEAR_PIT_STATE] = 0;
         self.debug_assert_matches_ram();
     }
 
@@ -7373,14 +7180,6 @@ impl TileDetectionState {
         self.slope_collision_bits as u8 | self.collision_bits as u8
     }
 
-    pub(crate) fn has_collision_bits(&self, mask: u16) -> bool {
-        self.collision_bits & mask != 0
-    }
-
-    pub(crate) fn has_slope_collision_bits(&self, mask: u16) -> bool {
-        self.slope_collision_bits & mask != 0
-    }
-
     pub(crate) fn has_layer_collision(&self, mask: u8) -> bool {
         self.layer_collision_flags & mask == mask
     }
@@ -7563,22 +7362,12 @@ impl TileDetectionState {
         self.moving_floor_tiles = 0;
     }
 
-    pub(crate) fn or_moving_floor_tiles(&mut self, value: u16) -> u16 {
-        self.moving_floor_tiles |= value;
-        self.moving_floor_tiles
-    }
-
     pub(crate) fn set_icy_floor(&mut self, value: u16) {
         self.icy_floor = value;
     }
 
     pub(crate) fn clear_icy_floor(&mut self) {
         self.icy_floor = 0;
-    }
-
-    pub(crate) fn or_icy_floor(&mut self, value: u16) -> u16 {
-        self.icy_floor |= value;
-        self.icy_floor
     }
 
     pub(crate) fn set_water_staircase(&mut self, value: u16) {
@@ -7589,22 +7378,12 @@ impl TileDetectionState {
         self.water_staircase = 0;
     }
 
-    pub(crate) fn or_water_staircase(&mut self, value: u16) -> u16 {
-        self.water_staircase |= value;
-        self.water_staircase
-    }
-
     pub(crate) fn set_shallow_water(&mut self, value: u16) {
         self.shallow_water = value;
     }
 
     pub(crate) fn clear_shallow_water(&mut self) {
         self.shallow_water = 0;
-    }
-
-    pub(crate) fn or_shallow_water(&mut self, value: u16) -> u16 {
-        self.shallow_water |= value;
-        self.shallow_water
     }
 
     pub(crate) fn set_destruction_aftermath(&mut self, value: u16) {
@@ -7615,11 +7394,6 @@ impl TileDetectionState {
         self.destruction_aftermath = 0;
     }
 
-    pub(crate) fn or_destruction_aftermath(&mut self, value: u16) -> u16 {
-        self.destruction_aftermath |= value;
-        self.destruction_aftermath
-    }
-
     pub(crate) fn set_read_something(&mut self, value: u16) {
         self.read_something = value;
     }
@@ -7628,25 +7402,12 @@ impl TileDetectionState {
         self.read_something = 0;
     }
 
-    pub(crate) fn or_read_something(&mut self, value: u16) -> u16 {
-        self.read_something |= value;
-        self.read_something
-    }
-
-    pub(crate) fn set_ledges_down_leftright(&mut self, value: u8) {
-        self.ledges_down_leftright = value;
-    }
-
     pub(crate) fn clear_ledges_down_leftright(&mut self) {
         self.ledges_down_leftright = 0;
     }
 
     pub(crate) fn or_ledges_down_leftright(&mut self, value: u8) {
         self.ledges_down_leftright |= value;
-    }
-
-    pub(crate) fn set_diagonal_ledge_tiles(&mut self, value: u8) {
-        self.diagonal_ledge_tiles = value;
     }
 
     pub(crate) fn clear_diagonal_ledge_tiles(&mut self) {
@@ -7708,20 +7469,12 @@ impl TileDetectionState {
         self.tile_type &= 0xff00;
     }
 
-    pub(crate) fn set_spike_floor_and_triggers(&mut self, value: u8) {
-        self.spike_floor_and_triggers = value;
-    }
-
     pub(crate) fn clear_spike_floor_and_triggers(&mut self) {
         self.spike_floor_and_triggers = 0;
     }
 
     pub(crate) fn or_spike_floor_and_triggers(&mut self, value: u8) {
         self.spike_floor_and_triggers |= value;
-    }
-
-    pub(crate) fn set_dashable_tiles(&mut self, value: u8) {
-        self.dashable_tiles = value;
     }
 
     pub(crate) fn clear_dashable_tiles(&mut self) {
@@ -7890,17 +7643,6 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn or_diagonal_tile(&mut self, value: u16) -> u16 {
-        let next = self.state.or_diagonal_tile(value);
-        self.sync();
-        next
-    }
-
-    pub(crate) fn set_stair_tile(&mut self, value: u8) {
-        self.state.set_stair_tile(value);
-        self.sync();
-    }
-
     pub(crate) fn clear_stair_tile(&mut self) {
         self.state.clear_stair_tile();
         self.sync();
@@ -7919,12 +7661,6 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
     pub(crate) fn clear_block_flags(&mut self) {
         self.state.clear_block_flags();
         self.sync();
-    }
-
-    pub(crate) fn or_block_flags(&mut self, value: u16) -> u16 {
-        let next = self.state.or_block_flags(value);
-        self.sync();
-        next
     }
 
     pub(crate) fn set_door_direction_flags(&mut self, value: u16) {
@@ -7967,12 +7703,6 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn or_deepwater(&mut self, value: u16) -> u16 {
-        let next = self.state.or_deepwater(value);
-        self.sync();
-        next
-    }
-
     pub(crate) fn set_normal_tiles(&mut self, value: u16) {
         self.state.set_normal_tiles(value);
         self.sync();
@@ -7981,12 +7711,6 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
     pub(crate) fn clear_normal_tiles(&mut self) {
         self.state.clear_normal_tiles();
         self.sync();
-    }
-
-    pub(crate) fn or_normal_tiles(&mut self, value: u16) -> u16 {
-        let next = self.state.or_normal_tiles(value);
-        self.sync();
-        next
     }
 
     pub(crate) fn set_misc_tiles(&mut self, value: u16) {
@@ -7999,12 +7723,6 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn or_misc_tiles(&mut self, value: u16) -> u16 {
-        let next = self.state.or_misc_tiles(value);
-        self.sync();
-        next
-    }
-
     pub(crate) fn set_thick_grass(&mut self, value: u16) {
         self.state.set_thick_grass(value);
         self.sync();
@@ -8013,12 +7731,6 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
     pub(crate) fn clear_thick_grass(&mut self) {
         self.state.clear_thick_grass();
         self.sync();
-    }
-
-    pub(crate) fn or_thick_grass(&mut self, value: u16) -> u16 {
-        let next = self.state.or_thick_grass(value);
-        self.sync();
-        next
     }
 
     pub(crate) fn clear_vertical_ledge(&mut self) {
@@ -8051,12 +7763,6 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn or_moving_floor_tiles(&mut self, value: u16) -> u16 {
-        let next = self.state.or_moving_floor_tiles(value);
-        self.sync();
-        next
-    }
-
     pub(crate) fn set_icy_floor(&mut self, value: u16) {
         self.state.set_icy_floor(value);
         self.sync();
@@ -8065,12 +7771,6 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
     pub(crate) fn clear_icy_floor(&mut self) {
         self.state.clear_icy_floor();
         self.sync();
-    }
-
-    pub(crate) fn or_icy_floor(&mut self, value: u16) -> u16 {
-        let next = self.state.or_icy_floor(value);
-        self.sync();
-        next
     }
 
     pub(crate) fn set_water_staircase(&mut self, value: u16) {
@@ -8083,12 +7783,6 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn or_water_staircase(&mut self, value: u16) -> u16 {
-        let next = self.state.or_water_staircase(value);
-        self.sync();
-        next
-    }
-
     pub(crate) fn set_shallow_water(&mut self, value: u16) {
         self.state.set_shallow_water(value);
         self.sync();
@@ -8097,12 +7791,6 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
     pub(crate) fn clear_shallow_water(&mut self) {
         self.state.clear_shallow_water();
         self.sync();
-    }
-
-    pub(crate) fn or_shallow_water(&mut self, value: u16) -> u16 {
-        let next = self.state.or_shallow_water(value);
-        self.sync();
-        next
     }
 
     pub(crate) fn set_destruction_aftermath(&mut self, value: u16) {
@@ -8115,12 +7803,6 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn or_destruction_aftermath(&mut self, value: u16) -> u16 {
-        let next = self.state.or_destruction_aftermath(value);
-        self.sync();
-        next
-    }
-
     pub(crate) fn set_read_something(&mut self, value: u16) {
         self.state.set_read_something(value);
         self.sync();
@@ -8131,17 +7813,6 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn or_read_something(&mut self, value: u16) -> u16 {
-        let next = self.state.or_read_something(value);
-        self.sync();
-        next
-    }
-
-    pub(crate) fn set_ledges_down_leftright(&mut self, value: u8) {
-        self.state.set_ledges_down_leftright(value);
-        self.sync();
-    }
-
     pub(crate) fn clear_ledges_down_leftright(&mut self) {
         self.state.clear_ledges_down_leftright();
         self.sync();
@@ -8149,11 +7820,6 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
 
     pub(crate) fn or_ledges_down_leftright(&mut self, value: u8) {
         self.state.or_ledges_down_leftright(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_diagonal_ledge_tiles(&mut self, value: u8) {
-        self.state.set_diagonal_ledge_tiles(value);
         self.sync();
     }
 
@@ -8174,17 +7840,6 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
 
     pub(crate) fn clear_chest(&mut self) {
         self.state.clear_chest();
-        self.sync();
-    }
-
-    pub(crate) fn or_chest(&mut self, value: u16) -> u16 {
-        let next = self.state.or_chest(value);
-        self.sync();
-        next
-    }
-
-    pub(crate) fn set_key_lock_gravestones(&mut self, value: u8) {
-        self.state.set_key_lock_gravestones(value);
         self.sync();
     }
 
@@ -8232,11 +7887,6 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
         self.ram[TILEDETECT_TILE_TYPE] = 0;
     }
 
-    pub(crate) fn set_spike_floor_and_triggers(&mut self, value: u8) {
-        self.state.set_spike_floor_and_triggers(value);
-        self.sync();
-    }
-
     pub(crate) fn clear_spike_floor_and_triggers(&mut self) {
         self.state.clear_spike_floor_and_triggers();
         self.sync();
@@ -8244,11 +7894,6 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
 
     pub(crate) fn or_spike_floor_and_triggers(&mut self, value: u8) {
         self.state.or_spike_floor_and_triggers(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_dashable_tiles(&mut self, value: u8) {
-        self.state.set_dashable_tiles(value);
         self.sync();
     }
 

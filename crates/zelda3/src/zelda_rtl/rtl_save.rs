@@ -74,11 +74,6 @@ impl ZeldaState {
         self.world_transient_mut().save_exit_tm_copy();
     }
 
-    pub(crate) fn set_savegame_has_master_sword_flags(&mut self, value: u16) {
-        self.world_transient_mut()
-            .set_savegame_has_master_sword_flags(value);
-    }
-
     pub(crate) fn save_previous_screen_transition_direction_bits(&mut self) {
         self.overworld_transition_mut()
             .save_previous_direction_bits();
@@ -159,15 +154,6 @@ impl ZeldaState {
 
     pub(crate) fn clear_select_file_save_slot_flags(&mut self) {
         self.select_file_menu_mut().clear_save_slot_flags();
-    }
-
-    #[track_caller]
-    pub(crate) fn assert_native_select_file_menu_matches_ram(&self) {
-        debug_assert_eq!(
-            self.game_state.messaging.select_file_menu,
-            crate::game_state::SelectFileMenuState::load_from_ram(&self.ram),
-            "native select-file menu state diverged from compatibility RAM",
-        );
     }
 
     #[track_caller]

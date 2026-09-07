@@ -654,10 +654,6 @@ impl<'a> HudStateRead<'a> {
         self.runtime.flashing_circle_timer()
     }
 
-    pub(crate) fn equipment_menu_exit_state(&self) -> u8 {
-        self.runtime.equipment_menu_exit_state()
-    }
-
     pub(crate) fn bottle_menu_row(&self) -> u8 {
         self.runtime.bottle_menu_row()
     }
@@ -1242,10 +1238,6 @@ impl PaletteBufferState {
         self.copy_aux_range_from(0, PALETTE_VISIBLE_BYTES, palette)
     }
 
-    pub(crate) fn copy_aux_full_from(&mut self, palette: &[u8]) -> usize {
-        self.copy_aux_range_from(0, PALETTE_BANK_BYTES, palette)
-    }
-
     pub(crate) fn backup_overworld_palette_from(&mut self, palette: &[u8]) -> usize {
         let len = palette.len().min(PALETTE_BANK_BYTES);
         self.overworld_backup[..len].copy_from_slice(&palette[..len]);
@@ -1256,10 +1248,6 @@ impl PaletteBufferState {
         let len = len.min(src.len()).min(PALETTE_BANK_BYTES - start);
         self.main[start..start + len].copy_from_slice(&src[..len]);
         len
-    }
-
-    pub(crate) fn copy_main_full_from(&mut self, palette: &[u8]) -> usize {
-        self.copy_main_range_from(0, PALETTE_BANK_BYTES, palette)
     }
 
     pub(crate) fn copy_main_palette_bytes(&mut self, src: &[u8], len: usize) -> usize {
@@ -1548,13 +1536,6 @@ impl<'a> NativePaletteBufferBridgeMut<'a> {
             .transform_main_range(from_word, to_word, |main, aux| transform.apply(main, aux));
     }
 
-    pub(crate) fn set_overworld_aux_or_main_offset(&mut self, value: u16) {
-        self.display
-            .palette_buffer
-            .set_overworld_aux_or_main_offset(value);
-        write_le_u16(self.ram, OVERWORLD_PALETTE_AUX_OR_MAIN, value);
-    }
-
     pub(crate) fn clear_overworld_aux_or_main_offset(&mut self) {
         self.display
             .palette_buffer
@@ -1618,16 +1599,6 @@ impl<'a> NativePaletteBufferBridgeMut<'a> {
     }
 
     #[track_caller]
-    pub(crate) fn copy_aux_full_from(&mut self, palette: &[u8]) {
-        self.copy_aux_range_from_tagged(
-            0,
-            PALETTE_BANK_BYTES,
-            palette,
-            PaletteSliceSource::Unannotated,
-        );
-    }
-
-    #[track_caller]
     pub(crate) fn copy_aux_visible_from_tagged(
         &mut self,
         palette: &[u8],
@@ -1658,16 +1629,6 @@ impl<'a> NativePaletteBufferBridgeMut<'a> {
             .backup_overworld_palette_from(palette);
         self.ram[MAPBAK_PALETTE..MAPBAK_PALETTE + len].copy_from_slice(&palette[..len]);
         self.mirror_slice_write(zelda3_palette::Bank::Backup, 0, len, palette, source);
-    }
-
-    #[track_caller]
-    pub(crate) fn copy_main_full_from(&mut self, palette: &[u8]) {
-        self.copy_main_range_from_tagged(
-            0,
-            PALETTE_BANK_BYTES,
-            palette,
-            PaletteSliceSource::Unannotated,
-        );
     }
 
     #[track_caller]
@@ -2256,15 +2217,6 @@ impl PpuScrollCopyState {
         // fill(0)+copy would wipe a palette backup another subsystem just wrote (f335672).
     }
 
-    /// Coherence comparison that ignores `mapbak_palette` — it is written through, not
-    /// projected by `write_to_ram`, so RAM[MAPBAK_PALETTE] may legitimately differ from this
-    /// state's stale copy (another subsystem owns the buffer in its mode).
-    pub(crate) fn matches_ram_ignoring_mapbak(&self, ram: &[u8]) -> bool {
-        let mut live = Self::load_from_ram(ram);
-        live.mapbak_palette.clone_from(&self.mapbak_palette);
-        *self == live
-    }
-
     pub(crate) fn bg2_h_copy2_offset() -> usize {
         BG2_X_SCROLL
     }
@@ -2409,22 +2361,6 @@ impl PpuScrollCopyState {
         self.map_backup_bg2_v_copy2
     }
 
-    pub(crate) fn special_exit_bg2_h_copy2(&self) -> u16 {
-        self.special_exit_bg2_h_copy2
-    }
-
-    pub(crate) fn special_exit_bg2_v_copy2(&self) -> u16 {
-        self.special_exit_bg2_v_copy2
-    }
-
-    pub(crate) fn exit_bg2_h_copy2(&self) -> u16 {
-        self.exit_bg2_h_copy2
-    }
-
-    pub(crate) fn exit_bg2_v_copy2(&self) -> u16 {
-        self.exit_bg2_v_copy2
-    }
-
     pub(crate) fn mode7_center_x_high(&self) -> u8 {
         (self.mode7_center_x >> 8) as u8
     }
@@ -2475,10 +2411,6 @@ impl PpuScrollCopyState {
 
     pub(crate) fn mapbak_bg1_y_offset(&self) -> u16 {
         self.mapbak_bg1_y_offset
-    }
-
-    pub(crate) fn mapbak_cgwsel(&self) -> u8 {
-        self.mapbak_cgwsel as u8
     }
 
     pub(crate) fn mapbak_cgwsel_word(&self) -> u16 {
@@ -2546,22 +2478,6 @@ impl PpuScrollCopyState {
         self.bg2_v_copy = value;
     }
 
-    pub(crate) fn set_bg1_h_copy_low(&mut self, value: u8) {
-        Self::set_low_byte(&mut self.bg1_h_copy, value);
-    }
-
-    pub(crate) fn set_bg1_v_copy_low(&mut self, value: u8) {
-        Self::set_low_byte(&mut self.bg1_v_copy, value);
-    }
-
-    pub(crate) fn set_bg2_h_copy_low(&mut self, value: u8) {
-        Self::set_low_byte(&mut self.bg2_h_copy, value);
-    }
-
-    pub(crate) fn set_bg2_v_copy_low(&mut self, value: u8) {
-        Self::set_low_byte(&mut self.bg2_v_copy, value);
-    }
-
     pub(crate) fn set_bg1_h_copy2(&mut self, value: u16) {
         self.bg1_h_copy2 = value;
     }
@@ -2596,11 +2512,6 @@ impl PpuScrollCopyState {
 
     pub(crate) fn set_mode7_center_y(&mut self, value: u16) {
         self.mode7_center_y = value;
-    }
-
-    pub(crate) fn set_mode7_center(&mut self, x: u16, y: u16) {
-        self.set_mode7_center_x(x);
-        self.set_mode7_center_y(y);
     }
 
     pub(crate) fn set_bg1_h_live_and_copy(&mut self, value: u16) {
@@ -2644,14 +2555,6 @@ impl PpuScrollCopyState {
         self.set_bg2_v_live_and_copy(bg2_v);
         self.set_bg1_h_live_and_copy(bg1_h);
         self.set_bg1_v_live_and_copy(bg1_v);
-    }
-
-    pub(crate) fn set_bg2_h_copy2_cached(&mut self, value: u16) {
-        self.bg2_h_copy2_cached = value;
-    }
-
-    pub(crate) fn set_bg2_v_copy2_cached(&mut self, value: u16) {
-        self.bg2_v_copy2_cached = value;
     }
 
     pub(crate) fn cache_bg2_live_scroll(&mut self) {
@@ -2709,14 +2612,6 @@ impl PpuScrollCopyState {
         self.map_backup_bg2_h_copy2 = bg2_h;
         self.map_backup_bg1_v_copy2 = bg1_v;
         self.map_backup_bg2_v_copy2 = bg2_v;
-    }
-
-    pub(crate) fn clear_bg3_h_copy2(&mut self) {
-        self.set_bg3_h_copy2(0);
-    }
-
-    pub(crate) fn clear_bg3_v_copy2(&mut self) {
-        self.set_bg3_v_copy2(0);
     }
 
     pub(crate) fn add_bg1_h_copy_low(&mut self, value: u8) {
@@ -2868,10 +2763,6 @@ impl PpuScrollCopyState {
 
     pub(crate) fn copy_bg2_h_live_to_bg1_h_live(&mut self) {
         self.bg1_h_copy2 = self.bg2_h_copy2;
-    }
-
-    pub(crate) fn copy_bg2_v_live_to_bg1_v_live(&mut self) {
-        self.bg1_v_copy2 = self.bg2_v_copy2;
     }
 
     pub(crate) fn set_mapbak_main_tile_theme_index(&mut self, value: u8) {
@@ -3305,10 +3196,6 @@ impl DisplayState {
         self.screen_brightness
     }
 
-    pub(crate) fn set_nmi_update_latch(&mut self, value: u8) {
-        self.nmi_update_latch = value;
-    }
-
     pub(crate) fn latch_nmi_update(&mut self) {
         self.nmi_update_latch = 1;
     }
@@ -3336,12 +3223,6 @@ impl DisplayState {
 
     pub(crate) fn set_pending_nmi_subroutine(&mut self, value: u8) {
         self.pending_nmi_subroutine = value;
-    }
-
-    pub(crate) fn dialogue_copy_is_pending(&self) -> bool {
-        // NMI subroutine 2 is the message-buffer copy requested by the
-        // interruptible dialogue renderer.
-        self.pending_nmi_subroutine == 2
     }
 
     pub(crate) fn clear_pending_nmi_subroutine(&mut self) {
@@ -3430,10 +3311,6 @@ impl DisplayState {
         self.main_screen_window_layers = 0;
     }
 
-    pub(crate) fn clear_sub_screen_layers_word(&mut self) {
-        self.clear_sub_screen_layers_word_alias();
-    }
-
     pub(crate) fn set_bg12_window_selection(&mut self, value: u8) {
         self.bg12_window_selection = value;
     }
@@ -3498,10 +3375,6 @@ impl DisplayState {
         self.pending_polyhedral_update != 0
     }
 
-    pub(crate) fn set_pending_polyhedral_update(&mut self, value: u8) {
-        self.pending_polyhedral_update = value;
-    }
-
     pub(crate) fn request_polyhedral_nmi_update(&mut self) {
         self.pending_polyhedral_update = 0xff;
     }
@@ -3529,10 +3402,6 @@ impl DisplayState {
 
     pub(crate) fn nmi_thread_uses_poly_stack(&self) -> bool {
         self.nmi_thread_active && self.nmi_thread_stack_pointer != 0x1f31
-    }
-
-    pub(crate) fn set_nmi_thread_active(&mut self, active: bool) {
-        self.nmi_thread_active = active;
     }
 
     pub(crate) fn activate_nmi_thread(&mut self) {
@@ -3640,10 +3509,6 @@ impl DisplayState {
         self.mosaic_level = 0;
     }
 
-    pub(crate) fn clear_mosaic_level_word(&mut self) {
-        self.clear_mosaic_level_word_alias();
-    }
-
     pub(crate) fn increment_mosaic_level_by(&mut self, value: u8) -> u8 {
         self.mosaic_level = self.mosaic_level.wrapping_add(value);
         self.mosaic_level
@@ -3668,10 +3533,6 @@ impl DisplayState {
 
     pub(crate) fn clear_mosaic_target_level_word_alias(&mut self) {
         self.mosaic_target_level = 0;
-    }
-
-    pub(crate) fn clear_mosaic_target_level_word(&mut self) {
-        self.clear_mosaic_target_level_word_alias();
     }
 
     pub(crate) fn set_mosaic_direction(&mut self, value: u8) {
@@ -3871,61 +3732,6 @@ impl DisplayState {
 
     pub(crate) fn set_link_dma_source(&mut self, slot: LinkDmaSourceSlot, value: u16) {
         self.link_dma_sources.set_source(slot, value);
-    }
-
-    pub(crate) fn set_link_body_dma_sources(&mut self, top: u16, bottom: u16) {
-        self.set_link_dma_source(LinkDmaSourceSlot::BodyTop, top);
-        self.set_link_dma_source(LinkDmaSourceSlot::BodyBottom, bottom);
-    }
-
-    pub(crate) fn set_link_head_dma_sources(&mut self, top: u16, bottom: u16) {
-        self.set_link_dma_source(LinkDmaSourceSlot::HeadTop, top);
-        self.set_link_dma_source(LinkDmaSourceSlot::HeadBottom, bottom);
-    }
-
-    pub(crate) fn set_link_hand_dma_sources(&mut self, left: u16, right: u16) {
-        self.set_link_dma_source(LinkDmaSourceSlot::HandLeft, left);
-        self.set_link_dma_source(LinkDmaSourceSlot::HandRight, right);
-    }
-
-    pub(crate) fn set_link_sword_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.set_link_dma_source(LinkDmaSourceSlot::SwordUpper, upper);
-        self.set_link_dma_source(LinkDmaSourceSlot::SwordLower, lower);
-    }
-
-    pub(crate) fn set_link_shield_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.set_link_dma_source(LinkDmaSourceSlot::ShieldUpper, upper);
-        self.set_link_dma_source(LinkDmaSourceSlot::ShieldLower, lower);
-    }
-
-    pub(crate) fn set_link_aux_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.set_link_dma_source(LinkDmaSourceSlot::AuxUpper, upper);
-        self.set_link_dma_source(LinkDmaSourceSlot::AuxLower, lower);
-    }
-
-    pub(crate) fn set_link_push_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.set_link_dma_source(LinkDmaSourceSlot::PushUpper, upper);
-        self.set_link_dma_source(LinkDmaSourceSlot::PushLower, lower);
-    }
-
-    pub(crate) fn set_link_animated_tile_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.set_link_dma_source(LinkDmaSourceSlot::AnimatedTileUpper, upper);
-        self.set_link_dma_source(LinkDmaSourceSlot::AnimatedTileLower, lower);
-    }
-
-    pub(crate) fn set_link_head_pointer_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.set_link_dma_source(LinkDmaSourceSlot::HeadPointerUpper, upper);
-        self.set_link_dma_source(LinkDmaSourceSlot::HeadPointerLower, lower);
-    }
-
-    pub(crate) fn set_link_body_pointer_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.set_link_dma_source(LinkDmaSourceSlot::BodyPointerUpper, upper);
-        self.set_link_dma_source(LinkDmaSourceSlot::BodyPointerLower, lower);
-    }
-
-    pub(crate) fn set_travel_bird_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.set_link_dma_source(LinkDmaSourceSlot::TravelBirdUpper, upper);
-        self.set_link_dma_source(LinkDmaSourceSlot::TravelBirdLower, lower);
     }
 
     pub(crate) fn reset_bg_tile_animation_countdown(&mut self, value: u16) {
@@ -4572,11 +4378,6 @@ impl<'a> NativeWaterHdmaWindowBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn copy_watergate_spotlight_to_spotlight_upper(&mut self) {
-        let value = self.display.copy_watergate_spotlight_to_spotlight_upper();
-        write_le_u16(self.ram, SPOTLIGHT_Y_UPPER, value);
-    }
-
     pub(crate) fn advance_watergate_window_y_radius(&mut self) -> u8 {
         let value = self.display.advance_watergate_window_y_radius();
         write_le_u16(
@@ -4831,10 +4632,6 @@ impl<'a> NativeSpotlightHdmaBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn hdma_table_dynamic_entry(&self, index: usize) -> u16 {
-        self.state.hdma_table_dynamic_entry(index)
-    }
-
     pub(crate) fn set_hdma_table_dynamic_entry(&mut self, index: usize, value: u16) {
         self.state.set_hdma_table_dynamic_entry(index, value);
         self.sync();
@@ -4964,10 +4761,6 @@ impl<'a> NativePpuScrollCopyBridgeMut<'a> {
         fn set_bg1_v_copy(value: u16);
         fn set_bg2_h_copy(value: u16);
         fn set_bg2_v_copy(value: u16);
-        fn set_bg1_h_copy_low(value: u8);
-        fn set_bg1_v_copy_low(value: u8);
-        fn set_bg2_h_copy_low(value: u8);
-        fn set_bg2_v_copy_low(value: u8);
         fn set_bg1_h_copy2(value: u16);
         fn set_bg1_v_copy2(value: u16);
         fn set_bg2_h_copy2(value: u16);
@@ -4977,7 +4770,6 @@ impl<'a> NativePpuScrollCopyBridgeMut<'a> {
         fn set_bg3_v_copy2_low(value: u8);
         fn set_mode7_center_x(value: u16);
         fn set_mode7_center_y(value: u16);
-        fn set_mode7_center(x: u16, y: u16);
         fn set_bg1_h_live_and_copy(value: u16);
         fn set_bg1_v_live_and_copy(value: u16);
         fn set_bg2_h_live_and_copy(value: u16);
@@ -4985,19 +4777,13 @@ impl<'a> NativePpuScrollCopyBridgeMut<'a> {
         fn set_bg1_bg2_h_live_and_copy(value: u16);
         fn set_bg1_bg2_v_live_and_copy(value: u16);
         fn set_bg1_bg2_live_and_copy(bg2_h: u16, bg2_v: u16, bg1_h: u16, bg1_v: u16);
-        fn set_bg2_h_copy2_cached(value: u16);
-        fn set_bg2_v_copy2_cached(value: u16);
         fn cache_bg2_live_scroll();
         fn cache_bg2_live_scroll_from(bg2_h: u16, bg2_v: u16);
         fn save_special_exit_bg2_live_scroll();
         fn save_exit_bg2_live_scroll();
         fn restore_special_exit_bg2_scroll_to_all_layers();
         fn restore_exit_bg2_scroll_to_all_layers();
-        fn set_all_layer_h_scrolls(value: u16);
-        fn set_all_layer_v_scrolls(value: u16);
         fn set_map_backup_scrolls(bg1_h: u16, bg2_h: u16, bg1_v: u16, bg2_v: u16);
-        fn clear_bg3_h_copy2();
-        fn clear_bg3_v_copy2();
         fn add_bg1_h_copy_low(value: u8);
         fn add_bg1_v_copy_low(value: u8);
         fn add_bg2_v_copy_low(value: u8);
@@ -5020,17 +4806,14 @@ impl<'a> NativePpuScrollCopyBridgeMut<'a> {
         fn add_bg2_v_copy2(value: u16);
         fn add_bg2_copy2_for_axis_signed(vertical: bool, value: i16);
         fn copy_bg1_live_to_ppu_copy();
-        fn copy_bg2_live_to_ppu_copy();
         fn copy_live_to_ppu_copy();
         fn copy_bg2_live_to_bg1_live();
         fn copy_bg2_h_live_to_bg1_h_live();
-        fn copy_bg2_v_live_to_bg1_v_live();
         fn set_mapbak_main_tile_theme_index(value: u8);
         fn set_mapbak_sprite_graphics_index(value: u8);
         fn set_mapbak_aux_tile_theme_index(value: u8);
         fn set_mapbak_bg1_x_offset(value: u16);
         fn set_mapbak_bg1_y_offset(value: u16);
-        fn set_mapbak_cgwsel(value: u8);
         fn set_mapbak_cgwsel_word(value: u16);
         fn set_mapbak_hdmaen(value: u8);
     }
@@ -5301,14 +5084,6 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
     }
 
     #[track_caller]
-    pub(crate) fn set_nmi_update_latch(&mut self, value: u8) {
-        crate::types::ww_check(NMI_BOOLEAN, 1, "nmi-latch-set-value", value.into());
-        self.display.set_nmi_update_latch(value);
-        self.ram[NMI_BOOLEAN] = value;
-        self.debug_assert_nmi_update_latch_matches_ram();
-    }
-
-    #[track_caller]
     pub(crate) fn latch_nmi_update(&mut self) {
         crate::types::ww_check(NMI_BOOLEAN, 1, "nmi-latch-set", 1);
         self.display.latch_nmi_update();
@@ -5556,12 +5331,6 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         self.debug_assert_nmi_copy_packets_request_matches_ram();
     }
 
-    pub(crate) fn set_pending_polyhedral_update(&mut self, value: u8) {
-        self.display.set_pending_polyhedral_update(value);
-        self.ram[NMI_FLAG_UPDATE_POLYHEDRAL] = value;
-        self.debug_assert_pending_polyhedral_update_matches_ram();
-    }
-
     pub(crate) fn request_polyhedral_nmi_update(&mut self) {
         self.display.request_polyhedral_nmi_update();
         self.ram[NMI_FLAG_UPDATE_POLYHEDRAL] = 0xff;
@@ -5591,12 +5360,6 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         self.ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = value;
         self.debug_assert_chr_halfslot_request_matches_ram();
         value
-    }
-
-    pub(crate) fn set_nmi_thread_active(&mut self, active: bool) {
-        self.display.set_nmi_thread_active(active);
-        self.ram[NMI_THREAD_ACTIVE] = u8::from(active);
-        self.debug_assert_nmi_thread_control_matches_ram();
     }
 
     pub(crate) fn activate_nmi_thread(&mut self) {

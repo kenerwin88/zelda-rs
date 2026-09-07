@@ -523,13 +523,6 @@ impl ZeldaState {
         }
     }
 
-    #[rustfmt::skip]
-    pub(super) fn attract_draw_sprite_set2(&mut self, p: *const AttractOamInfo, n: i32) {
-        self.attract_draw_sprite_set2_slice(unsafe {
-            std::slice::from_raw_parts(p, n as usize)
-        });
-    }
-
     pub(super) fn attract_draw_sprite_set2_slice(&mut self, entries: &[AttractOamInfo]) {
         let start = self.game_state.ending.attract_scene.oam_index() as usize;
         self.attract_scene_mut()
@@ -837,51 +830,6 @@ impl ZeldaState {
             2,
         );
         self.attract_scene_mut().advance_oam_index_by(2);
-    }
-
-    #[rustfmt::skip]
-    pub(super) fn attract_draw_preloaded_sprite(&mut self, xp: *const u8, yp: *const u8, cp: *const u8, fp: *const u8, ep: *const u8, n: i32) {
-        let len = n as usize + 1;
-        self.attract_draw_preloaded_sprite_slice(
-            unsafe { std::slice::from_raw_parts(xp, len) },
-            unsafe { std::slice::from_raw_parts(yp, len) },
-            unsafe { std::slice::from_raw_parts(cp, len) },
-            unsafe { std::slice::from_raw_parts(fp, len) },
-            unsafe { std::slice::from_raw_parts(ep, len) },
-            n as usize,
-        );
-    }
-
-    pub(super) fn attract_draw_preloaded_sprite_slice(
-        &mut self,
-        xp: &[u8],
-        yp: &[u8],
-        cp: &[u8],
-        fp: &[u8],
-        ep: &[u8],
-        n: usize,
-    ) {
-        let start = self.game_state.ending.attract_scene.oam_index() as usize;
-        self.attract_scene_mut()
-            .advance_oam_index_by((n as u8).wrapping_add(1));
-        for i in (0..=n).rev() {
-            self.set_oam_plain(
-                64 + start + (n - i),
-                self.game_state
-                    .ending
-                    .attract_scene
-                    .x_base()
-                    .wrapping_add(xp[i]),
-                self.game_state
-                    .ending
-                    .attract_scene
-                    .y_base()
-                    .wrapping_add(yp[i]),
-                cp[i],
-                fp[i],
-                ep[i],
-            );
-        }
     }
 
     pub(super) fn attract_zelda_prison_draw_a(&mut self) {

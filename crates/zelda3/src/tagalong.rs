@@ -1,68 +1,9 @@
 // Methods ported from zelda3/src/tagalong.c and included inside ZeldaState.
 
 use super::*;
-use crate::types::{abs16, sign16, sign8, OamEnt, ProjectSpeedRet};
+use crate::types::{abs16, sign16, sign8, ProjectSpeedRet};
 
-const FILTERED_JOYPAD_L_TAGALONG: usize = 0xf6;
-const TAGALONG_MESSAGE_TIMER: usize = 0x2cd;
-const TAGALONG_JUMP_TIMER_TAGALONG: usize = 0x2d6;
-const TAGALONG_DRAW_ANIM_FRAME: usize = 0x2d7;
-const COUNTDOWN_FOR_BLINK_TAGALONG: usize = 0x31f;
-const OAM_PRIORITY_VALUE_TAGALONG: usize = 0x64;
-const OAM_CUR_PTR_TAGALONG: usize = 0x90;
-const OAM_EXT_CUR_PTR_TAGALONG: usize = 0x92;
-const TAGALONG_MIRROR_BGM_COMMAND: usize = 0x12c;
-const DIALOGUE_MESSAGE_INDEX_TAGALONG: usize = 0x1cf0;
-const TAGALONG_MESSAGE_RESET_FLAG: usize = 0x223;
-const MESSAGING_MODULE_TAGALONG: usize = 0x1cd8;
-const PALETTE_SWAP_FLAG_TAGALONG: usize = 0x0abd;
-const SUPER_BOMB_INDICATOR_TIMER_TAGALONG: usize = 0x4b4;
-const SUPER_BOMB_INDICATOR_COUNTER_TAGALONG: usize = 0x4b5;
-const DUNG_FLAG_TRAPDOORS_DOWN_TAGALONG: usize = 0x468;
-const DUNG_CUR_DOOR_POS_TAGALONG: usize = 0x68e;
-const DOOR_ANIMATION_STEP_INDICATOR_TAGALONG: usize = 0x690;
-const KIKI_ANIM_COUNTER_TAGALONG: usize = 0x0b69;
-const SPRITE_IGNORE_PROJECTILE_TAGALONG: usize = 0x0ba0;
-const SPRITE_STATE_TAGALONG: usize = 0x0dd0;
-const SPRITE_TYPE_TAGALONG: usize = 0x0e20;
-const SPRITE_Y_LO_TAGALONG: usize = 0x0d00;
-const SPRITE_X_LO_TAGALONG: usize = 0x0d10;
-const SPRITE_Y_HI_TAGALONG: usize = 0x0d20;
-const SPRITE_X_HI_TAGALONG: usize = 0x0d30;
-const SPRITE_Y_VEL_TAGALONG: usize = 0x0d40;
-const SPRITE_X_VEL_TAGALONG: usize = 0x0d50;
-const SPRITE_AI_STATE_TAGALONG: usize = 0x0d80;
-const SPRITE_HEAD_DIR_TAGALONG: usize = 0x0eb0;
-const SPRITE_D_TAGALONG: usize = 0x0de0;
-const SPRITE_DELAY_AUX2_TAGALONG: usize = 0x0e10;
-const SPRITE_GRAPHICS_TAGALONG: usize = 0x0dc0;
-const SPRITE_FLOOR_TAGALONG: usize = 0x0f20;
-const SPRITE_Z_TAGALONG: usize = 0x0f70;
-const SPRITE_Z_VEL_TAGALONG: usize = 0x0f80;
-const SPRITE_SUBTYPE2_TAGALONG: usize = 0x0e80;
-const SPRITE_N_TAGALONG: usize = 0x0bc0;
-const SPRITE_DIE_ACTION_TAGALONG: usize = 0x0cba;
-const SPRITE_SUBTYPE_TAGALONG: usize = 0x0e30;
-const ANCILLA_Y_LO_TAGALONG: usize = 0x0bfa;
-const ANCILLA_X_LO_TAGALONG: usize = 0x0c04;
-const ANCILLA_Y_HI_TAGALONG: usize = 0x0c0e;
-const ANCILLA_X_HI_TAGALONG: usize = 0x0c18;
-const ANCILLA_Y_VEL_TAGALONG: usize = 0x0c22;
-const ANCILLA_X_VEL_TAGALONG: usize = 0x0c2c;
-const ANCILLA_Y_SUBPIXEL_TAGALONG: usize = 0x0c36;
-const ANCILLA_X_SUBPIXEL_TAGALONG: usize = 0x0c40;
-const ANCILLA_STEP_TAGALONG: usize = 0x0c54;
-const ANCILLA_ITEM_TO_LINK_TAGALONG: usize = 0x0c5e;
-const ANCILLA_L_TAGALONG: usize = 0x385;
-const ANCILLA_R_TAGALONG: usize = 0x03ea;
 const OAM_BUF_TAGALONG: usize = 0x0800;
-const SAVE_DUNG_INFO_TAGALONG: usize = 0x0f000;
-const SAVED_TAGALONG_Y_TAGALONG: usize = 0x0f3cd;
-const SAVED_TAGALONG_X_TAGALONG: usize = 0x0f3cf;
-const SAVED_TAGALONG_INDOORS_TAGALONG: usize = 0x0f3d1;
-const SAVED_TAGALONG_FLOOR_TAGALONG: usize = 0x0f3d2;
-const ENHANCED_FEATURES0_TAGALONG: usize = 0x064c;
-
 const FEATURES0_MISC_BUG_FIXES_TAGALONG: u32 = 4096;
 const FEATURES0_TURN_WHILE_DASHING_TAGALONG: u32 = 4;
 
@@ -96,11 +37,6 @@ struct TagalongDmaFlags {
     dma6: u8,
     dma7: u8,
     flags: u8,
-}
-
-struct SpriteSpawnInfo {
-    r0_x: u16,
-    r2_y: u16,
 }
 
 const TAGALONG_INDOOR_INFOS: [TagalongMessageInfo; 12] = [
@@ -1367,19 +1303,6 @@ impl ZeldaState {
     }
 
     #[rustfmt::skip]
-    pub(super) fn set_oam_follower(&mut self, oam: &mut OamEnt, x: u16, y: u16, charnum: u8, flags: u8, mut big: u8) {
-        oam.x = x as u8;
-        let visible = x.wrapping_add(0x80) < 0x180 && {
-            big |= ((x >> 8) & 1) as u8;
-            y.wrapping_add(0x10) < 0x100
-        };
-        oam.y = if visible { y as u8 } else { 0xf0 };
-        oam.charnum = charnum;
-        oam.flags = flags;
-        let _ = big;
-    }
-
-    #[rustfmt::skip]
     fn set_oam_follower_at(&mut self, oam: usize, x: u16, y: u16, charnum: u8, flags: u8, mut big: u8) {
         let visible = x.wrapping_add(0x80) < 0x180 && {
             big |= ((x >> 8) & 1) as u8;
@@ -1596,7 +1519,7 @@ impl ZeldaState {
     }
 
     pub(super) fn kiki_spawn_handler_monke(&mut self, k: usize) -> Option<usize> {
-        let (j, _info) = self.Tagalong_Sprite_SpawnDynamically(k, 0xb6)?;
+        let j = self.Tagalong_Sprite_SpawnDynamically(k, 0xb6)?;
         let layer = self.tagalong_slot(k).direction();
         let mut monke = self.sprite_slot_view_mut(j);
         monke.set_head_direction(layer);
@@ -1636,14 +1559,6 @@ impl ZeldaState {
 
     fn tagalong_y(&self, k: usize) -> u16 {
         self.tagalong_slot(k).y()
-    }
-
-    fn set_tagalong_x(&mut self, k: usize, x: u16) {
-        self.tagalong_slot_mut(k).set_x(x);
-    }
-
-    fn set_tagalong_y(&mut self, k: usize, y: u16) {
-        self.tagalong_slot_mut(k).set_y(y);
     }
 
     fn Tagalong_Main_ShowTextMessage(&mut self) {
@@ -1779,11 +1694,7 @@ impl ZeldaState {
         self.sprite_workspace_mut().set_room_marker_word(k, value);
     }
 
-    fn Tagalong_Sprite_SpawnDynamically(
-        &mut self,
-        k: usize,
-        sprite: u8,
-    ) -> Option<(usize, SpriteSpawnInfo)> {
+    fn Tagalong_Sprite_SpawnDynamically(&mut self, k: usize, sprite: u8) -> Option<usize> {
         let j = (0..16)
             .rev()
             .find(|&j| self.sprite_slot_view(j).state() == 0)?;
@@ -1806,13 +1717,7 @@ impl ZeldaState {
         spawned.set_direction(direction);
         spawned.set_die_action(0);
         spawned.set_subtype(0);
-        Some((
-            j,
-            SpriteSpawnInfo {
-                r0_x: self.tagalong_x(k),
-                r2_y: self.tagalong_y(k),
-            },
-        ))
+        Some(j)
     }
 
     fn SpritePrep_LoadProperties(&mut self, k: usize) {
@@ -1820,7 +1725,7 @@ impl ZeldaState {
     }
 
     fn OldMan_RevertToSprite(&mut self, k: usize) {
-        if let Some((j, _info)) = self.Tagalong_Sprite_SpawnDynamically(k, 0xad) {
+        if let Some(j) = self.Tagalong_Sprite_SpawnDynamically(k, 0xad) {
             let layer = self.tagalong_slot(k).direction();
             let mut old_man = self.sprite_slot_view_mut(j);
             old_man.set_direction(layer);

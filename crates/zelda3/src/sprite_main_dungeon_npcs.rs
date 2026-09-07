@@ -24,23 +24,7 @@ const fn dmd(x: i8, y: i8, char_flags: u16, ext: u8) -> DrawMultipleData {
 
 // Local mirrors of sprite-RAM addresses that are not yet exposed through
 // `zelda_rtl.rs`. The C declarations live in `src/variables.h`.
-const SPRITE_DELAY_AUX2: usize = 0x0e10;
-const SPRITE_F: usize = 0x0ea0;
-const SPRITE_Y_RECOIL: usize = 0x0f30;
-const SPRITE_WALLCOLL: usize = 0x0e70;
-const SPRITE_FLAGS: usize = 0x0b6b;
 const SRAM_PROGRESS_INDICATOR_3: usize = 0x0f3c9;
-const SRAM_PROGRESS_INDICATOR_AUX: usize = 0x0f3c9; // alias used by Smithy_Homecoming
-const FLAG_OVERWORLD_AREA_DID_CHANGE: usize = 0xabf;
-const LINK_DISABLE_SPRITE_DAMAGE_DN: usize = 0x37b;
-const TRIGGER_SPECIAL_ENTRANCE: usize = 0x4c6;
-const TILE_INTERACTION_SHARED_FLAG: usize = 0x0223;
-const MESSAGING_MODULE: usize = 0x0e2;
-const GAME_OVER_CHECK_FLAG: usize = 0x10a;
-const TILE_ACTION_INDEX_DN: usize = 0x36c;
-const PLAYER_HANDLER_STATE_DN: usize = 0x5d;
-const FLAG_UPDATE_HUD_NEXT_FRAME: usize = 0xf2;
-const BYTE_7FFE01: usize = 0x1fe01;
 // Feature flag bit (features.h:40).
 const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
 // hud.h:8.
@@ -2929,18 +2913,6 @@ impl ZeldaState {
     }
 
     // void Smithy_SpawnDumbBarrierSprite(int k) {  // sprite_main.c:12877
-    pub(super) fn smithy_spawn_dumb_barrier_sprite(&mut self, k: usize) {
-        let Some(j) = self.sprite_spawn_dynamically_for_dn(k, 0x31) else {
-            return;
-        };
-        let (rx, ry) = self.spawn_info_for_dn();
-        self.sprite_set_x(j, rx);
-        self.sprite_set_y(j, ry);
-        self.sprite_slot_view_mut(j).set_subtype2(1);
-        self.sprite_slot_view_mut(j).set_flags4(0);
-        self.sprite_slot_view_mut(j).set_ignore_projectile(1);
-    }
-
     // ----- `_for_dn` shims -----------------------------------------------
     //
     // Each shim adapts a canonical helper for use by the split-module handlers

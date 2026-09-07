@@ -193,10 +193,6 @@ impl AttractSceneState {
         self.legend_flag
     }
 
-    pub(crate) fn next_legend_gfx(&self) -> u8 {
-        self.next_legend_gfx
-    }
-
     pub(crate) fn next_legend_image(&self) -> u8 {
         self.next_legend_gfx >> 1
     }
@@ -247,10 +243,6 @@ impl AttractSceneState {
 
     pub(crate) fn substep_delay_counter(&self) -> u8 {
         self.substep_delay_counter
-    }
-
-    pub(crate) fn maiden_warp_timer_a(&self) -> u8 {
-        self.maiden_warp_timer_a
     }
 
     pub(crate) fn maiden_warp_timer_b(&self) -> u8 {
@@ -798,10 +790,6 @@ impl<'a> NativeAttractSceneBridgeMut<'a> {
             INTRO_FRAME_CTR,
             self.attract_scene.intro_frame_counter.wrapping_add(1),
         )
-    }
-
-    pub(crate) fn set_intro_did_run_step(&mut self, value: u8) {
-        self.write_byte(INTRO_DID_RUN_STEP, value);
     }
 
     pub(crate) fn clear_intro_did_run_step(&mut self) {

@@ -188,10 +188,6 @@ impl PolyRuntimeState {
         self.base_y
     }
 
-    pub(crate) fn shape_depth_bias_low(&self) -> u8 {
-        self.shape_depth_bias as u8
-    }
-
     pub(crate) fn shape_depth_bias(&self) -> u16 {
         self.shape_depth_bias
     }
@@ -268,24 +264,8 @@ impl PolyRuntimeState {
         self.rotation_e3
     }
 
-    pub(crate) fn num_vertex_in_poly(&self) -> u8 {
-        self.num_vertex_in_poly
-    }
-
-    pub(crate) fn raster_color_config(&self) -> u8 {
-        self.raster_color_config
-    }
-
-    pub(crate) fn tmp0(&self) -> u8 {
-        self.tmp0 as u8
-    }
-
     pub(crate) fn tmp0_word(&self) -> u16 {
         self.tmp0
-    }
-
-    pub(crate) fn tmp1_word(&self) -> u16 {
-        self.tmp1
     }
 
     pub(crate) fn tmp2(&self) -> u8 {
@@ -308,16 +288,8 @@ impl PolyRuntimeState {
         self.x0_fraction
     }
 
-    pub(crate) fn x0_step(&self) -> u16 {
-        self.x0_step
-    }
-
     pub(crate) fn x1_fraction(&self) -> u16 {
         self.x1_fraction
-    }
-
-    pub(crate) fn x1_step(&self) -> u16 {
-        self.x1_step
     }
 }
 
@@ -829,10 +801,6 @@ impl PolyRasterEdgeState {
 
     pub(crate) fn total_num_steps(&self) -> u8 {
         self.total_num_steps
-    }
-
-    pub(crate) fn total_num_steps_signed(&self) -> i8 {
-        self.total_num_steps as i8
     }
 
     pub(crate) fn cur_vertex_idx0(&self) -> u8 {

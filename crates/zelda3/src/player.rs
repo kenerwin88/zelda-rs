@@ -7,9 +7,6 @@ use crate::types::Point16U;
 mod player_shared;
 use player_shared::*;
 
-const DOOR_ANIMATION_STEP_INDICATOR_PLAYER: usize = 0x0690;
-const PUSH_BLOCK_DIRECTION_PLAYER: usize = 0x0474;
-const SPRITE_C_PLAYER: usize = 0x0db0;
 const DASH_FOLLOWER_SLOWDOWN_INDICATORS: [u8; 15] =
     [0xff, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 const DASH_FOLLOWER_RELEASE_INDICATORS: [u8; 15] = [0xff, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -7430,13 +7427,6 @@ impl ZeldaState {
         Some(k)
     }
 
-    fn finish_hookshot_state(&mut self) {
-        self.finish_hookshot_state_without_button_clamp();
-        if self.game_state.player.follower_link.button_b_frames() >= 9 {
-            self.follower_link_state_mut().set_button_b_frames(9);
-        }
-    }
-
     fn finish_hookshot_state_after_missing_ancilla(&mut self) {
         self.follower_link_state_mut().clear_handler_state();
         self.follower_link_state_mut().clear_action_handler_timer();
@@ -10212,22 +10202,6 @@ impl ZeldaState {
             self.sprite_slot_view_mut(j).set_floor(0);
             self.sprite_sfx_queue_sfx3_with_pan(j, 0x30);
         }
-    }
-
-    fn sprite_spawn_small_splash_for_player(&mut self) -> Option<usize> {
-        self.sprite_spawn_dynamically_for_player(0, 0xec)
-    }
-
-    fn sprite_spawn_dynamically_for_player(&mut self, _k: u8, what: u8) -> Option<usize> {
-        let j = (0..16)
-            .rev()
-            .find(|&j| self.sprite_slot_view(j).state() == 0)?;
-        {
-            let mut sprite = self.sprite_slot_view_mut(j);
-            sprite.set_state(9);
-            sprite.set_sprite_type(what);
-        }
-        Some(j)
     }
 
     pub(super) fn handle_indoor_camera_and_doors(&mut self) {

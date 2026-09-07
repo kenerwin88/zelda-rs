@@ -19,33 +19,18 @@ use crate::types::sign8;
 // ---------------------------------------------------------------------------
 
 // variables.h:225, 727 — torch state owned by dungeon.c helpers.
-const DUNG_TORCH_TIMERS_GANON: usize = 0x04f0;
-const DUNG_TORCH_DATA_GANON: usize = 0x0fb40;
-const OVERLORD_FLOOR_GANON: usize = 0x0b40;
 // variables.h:666 — sprite_obj_prio.
-const SPRITE_OBJ_PRIO_GANON: usize = 0x0b89;
 // variables.h:752 — sprite_n.
 // variables.h:670 — sprite_ignore_projectile.
-const SPRITE_IGNORE_PROJECTILE_GANON: usize = 0x0ba0;
 // variables.h sprite_bump_damage at g_ram+0xCD2.
-const SPRITE_BUMP_DAMAGE_GANON: usize = 0x0cd2;
 // sprite_B / sprite_C live in pages 0xD90..0xDB0.
-const SPRITE_B_GANON: usize = 0x0da0;
-const SPRITE_C_GANON: usize = 0x0db0;
 // sprite_delay_aux1 .. aux4
-const SPRITE_DELAY_AUX1_GANON: usize = 0x0e00;
-const SPRITE_DELAY_AUX2_GANON: usize = 0x0e10;
 // sprite_health
-const SPRITE_HEALTH_GANON: usize = 0x0e50;
 // sprite_anim_clock
-const SPRITE_ANIM_CLOCK_GANON: usize = 0x0ec0;
 // sprite_G
-const SPRITE_G_GANON: usize = 0x0ed0;
 // sprite_hit_timer
-const SPRITE_HIT_TIMER_GANON: usize = 0x0ef0;
 // tmp_counter
 // garnish_countdown
-const GARNISH_COUNTDOWN_GANON: usize = 0x1f90e;
 // swamola_target_x_lo / y_lo
 const SWAMOLA_TARGET_X_LO_GANON: usize = 0x1fd5c;
 const SWAMOLA_TARGET_Y_LO_GANON: usize = 0x1fd68;

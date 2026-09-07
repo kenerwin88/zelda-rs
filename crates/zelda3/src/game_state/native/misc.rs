@@ -612,10 +612,6 @@ impl DungeonMapDisplayState {
         self.marker_y_offset = 0x0040;
     }
 
-    pub(crate) fn set_marker_x_offset(&mut self, value: u16) {
-        self.marker_x_offset = value;
-    }
-
     pub(crate) fn set_marker_y_offset(&mut self, value: u16) {
         self.marker_y_offset = value;
     }
@@ -658,16 +654,6 @@ impl DungeonMapDisplayState {
     pub(crate) fn decrement_dungmap_cur_floor_byte(&mut self) {
         self.current_floor =
             (self.current_floor & 0xff00) | u16::from((self.current_floor as u8).wrapping_sub(1));
-    }
-
-    pub(crate) fn increment_dungmap_cur_floor(&mut self) -> u16 {
-        self.current_floor = self.current_floor.wrapping_add(1);
-        self.current_floor
-    }
-
-    pub(crate) fn increment_dungmap_cur_floor_byte(&mut self) {
-        self.current_floor =
-            (self.current_floor & 0xff00) | u16::from((self.current_floor as u8).wrapping_add(1));
     }
 
     pub(crate) fn set_dungmap_floor_scroll_step(&mut self, value: u8) {
@@ -759,11 +745,6 @@ impl<'a> NativeDungeonMapDisplayBridgeMut<'a> {
         self.sync_marker_offsets();
     }
 
-    pub(crate) fn set_marker_x_offset(&mut self, value: u16) {
-        self.display.set_marker_x_offset(value);
-        self.sync_marker_offsets();
-    }
-
     pub(crate) fn set_marker_y_offset(&mut self, value: u16) {
         self.display.set_marker_y_offset(value);
         self.sync_marker_offsets();
@@ -778,16 +759,6 @@ impl<'a> NativeDungeonMapDisplayBridgeMut<'a> {
         let value = self.display.shift_marker_x_left();
         self.sync_marker_offsets();
         value
-    }
-
-    pub(crate) fn reset_marker_x_offset(&mut self) {
-        self.display.reset_marker_x_offset();
-        self.sync_marker_offsets();
-    }
-
-    pub(crate) fn shift_marker_y_low_up(&mut self) {
-        self.display.shift_marker_y_low_up();
-        self.sync_marker_offsets();
     }
 
     pub(crate) fn reset_marker_x_and_shift_marker_y_low_up(&mut self) {
@@ -819,17 +790,6 @@ impl<'a> NativeDungeonMapDisplayBridgeMut<'a> {
 
     pub(crate) fn decrement_dungmap_cur_floor_byte(&mut self) {
         self.display.decrement_dungmap_cur_floor_byte();
-        self.sync();
-    }
-
-    pub(crate) fn increment_dungmap_cur_floor(&mut self) -> u16 {
-        let value = self.display.increment_dungmap_cur_floor();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn increment_dungmap_cur_floor_byte(&mut self) {
-        self.display.increment_dungmap_cur_floor_byte();
         self.sync();
     }
 
@@ -1120,10 +1080,6 @@ impl IntroSwordState {
         self.animation_step = self.animation_step.wrapping_add(2);
     }
 
-    pub(crate) fn set_sparkle_y_offset(&mut self, value: u8) {
-        self.sparkle_y_offset = value;
-    }
-
     pub(crate) fn advance_sparkle_y_offset(&mut self) {
         self.sparkle_y_offset = self.sparkle_y_offset.wrapping_add(4);
     }
@@ -1199,11 +1155,6 @@ impl<'a> NativeIntroSwordBridgeMut<'a> {
 
     pub(crate) fn advance_anim_step(&mut self) {
         self.intro_sword.advance_anim_step();
-        self.sync();
-    }
-
-    pub(crate) fn set_sparkle_y_offset(&mut self, value: u8) {
-        self.intro_sword.set_sparkle_y_offset(value);
         self.sync();
     }
 

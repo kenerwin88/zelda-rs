@@ -411,10 +411,6 @@ impl SpotlightIteration {
         self.main_loop_sprite_preparation_before_second_nmi
     }
 
-    pub(crate) const fn is_opening(self) -> bool {
-        matches!(self.direction, SpotlightDirection::Opening)
-    }
-
     pub(crate) const fn in_flight_publication(self) -> DisplaySnapshotPublication {
         self.in_flight_publication
     }
@@ -555,17 +551,6 @@ impl LiveSpotlightScanout {
             hdma_tables: spotlight_hdma_tables_from_ram(&state.ram),
             authoritative_rom_hdma_receipt: false,
         }
-    }
-
-    pub(crate) fn with_controls_from(mut self, state: &ZeldaState) -> Self {
-        self.windowsel = u32::from(state.ram[crate::game_state::constants::W12SEL_COPY])
-            | (u32::from(state.ram[crate::game_state::constants::W34SEL_COPY]) << 8)
-            | (u32::from(state.ram[crate::game_state::constants::WOBJSEL_COPY]) << 16);
-        self.screen_windowed = [
-            state.ram[crate::game_state::constants::TMW_COPY],
-            state.ram[crate::game_state::constants::TSW_COPY],
-        ];
-        self
     }
 
     pub(crate) fn with_active_window_words(

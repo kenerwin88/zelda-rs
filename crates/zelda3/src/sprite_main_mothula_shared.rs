@@ -1,5 +1,4 @@
 use super::sprite::DrawMultipleData;
-pub(super) const ARMOS_KNIGHT_REMAINING_COUNT: usize = 0x0ff8;
 pub(super) const FEATURE_MISC_BUG_FIXES_MOTHULA: u32 = 4096;
 
 // kMothula_Dmd from sprite_main.c:13776 — packed as (x:i8, y:i8, char:u16, big:u8).

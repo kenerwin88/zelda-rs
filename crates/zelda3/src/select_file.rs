@@ -137,10 +137,6 @@ impl ZeldaState {
         self.sprite_system_mut().clear_live_table_pages();
     }
 
-    fn intro_check_cksum(s: *const u8) -> bool {
-        Self::intro_check_cksum_slice(unsafe { std::slice::from_raw_parts(s, 0x500) })
-    }
-
     fn intro_check_cksum_slice(bytes: &[u8]) -> bool {
         let mut sum = 0u16;
         for i in 0..0x280 {

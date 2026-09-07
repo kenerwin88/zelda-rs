@@ -9,70 +9,30 @@ use crate::types::sign8;
 // ---------------------------------------------------------------------------
 
 // variables.h:672 — sprite_ignore_projectile.
-pub(super) const SPRITE_IGNORE_PROJECTILE_DRAW: usize = 0x0ba0;
 // variables.h:721..722 — sprite_B / sprite_C live in pages 0xDA0..0xDC0.
-pub(super) const SPRITE_B_DRAW: usize = 0x0da0;
-pub(super) const SPRITE_C_DRAW: usize = 0x0db0;
 // variables.h:727..728 — sprite_delay_aux1 / aux2.
-pub(super) const SPRITE_DELAY_AUX1_DRAW: usize = 0x0e00;
-pub(super) const SPRITE_DELAY_AUX2_DRAW: usize = 0x0e10;
 // variables.h:737 — sprite_F.
-pub(super) const SPRITE_F_DRAW: usize = 0x0ea0;
 // variables.h:739..742 — sprite_anim_clock / sprite_G / sprite_delay_aux3 /
 // sprite_hit_timer.
-pub(super) const SPRITE_ANIM_CLOCK_DRAW: usize = 0x0ec0;
-pub(super) const SPRITE_G_DRAW: usize = 0x0ed0;
-pub(super) const SPRITE_DELAY_AUX3_DRAW: usize = 0x0ee0;
 // variables.h:743 — sprite_y_recoil.
-pub(super) const SPRITE_Y_RECOIL_DRAW: usize = 0x0f30;
 // variables.h:776 — light/dark world flag.
-pub(super) const IS_IN_DARK_WORLD_DRAW: usize = 0x0fff;
 // variables.h:758..761 — repulsespark_*.
-pub(super) const REPULSESPARK_TIMER_DRAW: usize = 0x0fac;
-pub(super) const REPULSESPARK_X_LO_DRAW: usize = 0x0fad;
-pub(super) const REPULSESPARK_Y_LO_DRAW: usize = 0x0fae;
 // variables.h:755 — sprite_tiletype.
-pub(super) const SPRITE_TILETYPE_DRAW: usize = 0x0fa5;
 // overlord.c stores the active overlord slot here before sprite code consumes it.
-pub(super) const ACTIVE_OVERLORD_INDEX_DRAW: usize = 0x0fde;
 // variables.h:766..768 — garnish_active / tmp_counter / shared draw scratch.
-pub(super) const GARNISH_ACTIVE_DRAW: usize = 0x0fb4;
-pub(super) const SPRITE_DRAW_WORK_Y_OR_FLAGS: usize = 0x0fb6;
 // variables.h:910 — sram_progress_indicator_3.
-pub(super) const SRAM_PROGRESS_INDICATOR_3_DRAW: usize = 0x0f3c9;
 // hud.c private table mirrored for bomb shop purchase gating.
 pub(super) const MAX_BOMBS_FOR_LEVEL_DRAW: [u8; 8] = [10, 15, 20, 25, 30, 35, 40, 50];
 // variables.h:1203..1217 — garnish_* tables (paged at 0x1F800+).
-pub(super) const GARNISH_TYPE_DRAW: usize = 0x1f800;
-pub(super) const GARNISH_Y_LO_DRAW: usize = 0x1f81e;
-pub(super) const GARNISH_X_LO_DRAW: usize = 0x1f83c;
-pub(super) const GARNISH_Y_HI_DRAW: usize = 0x1f85a;
-pub(super) const GARNISH_X_HI_DRAW: usize = 0x1f878;
-pub(super) const GARNISH_COUNTDOWN_DRAW: usize = 0x1f90e;
-pub(super) const GARNISH_SPRITE_DRAW: usize = 0x1f92c;
-pub(super) const GARNISH_FLOOR_DRAW: usize = 0x1f968;
-pub(super) const GARNISH_OAM_FLAGS_DRAW: usize = 0x1f9fe;
 // variables.h:690 — activate_bomb_trap_overlord.
-pub(super) const ACTIVATE_BOMB_TRAP_OVERLORD_DRAW: usize = 0x0cf4;
 // variables.h:1208 — sprite_I.
-pub(super) const SPRITE_I_DRAW: usize = 0x1f9c2;
 // variables.h:1241..1242 — chainchomp history buffer aliases the moldorm pages.
 // variables.h:679..683 — ancilla_*.
-pub(super) const ANCILLA_Y_LO_DRAW: usize = 0x0bfa;
-pub(super) const ANCILLA_X_LO_DRAW: usize = 0x0c04;
-pub(super) const ANCILLA_Y_HI_DRAW: usize = 0x0c0e;
-pub(super) const ANCILLA_X_HI_DRAW: usize = 0x0c18;
-pub(super) const ANCILLA_X_VEL_DRAW: usize = 0x0c2c;
-pub(super) const ANCILLA_Y_VEL_DRAW: usize = 0x0c22;
-pub(super) const ANCILLA_Z_DRAW: usize = 0x29e;
 // variables.h:179 — sound_effect_1.
 // variables.h:535 — minigame_credits.
-pub(super) const MINIGAME_CREDITS_DRAW: usize = 0x04c4;
 // variables.h:741 — flag_overworld_area_did_change.
-pub(super) const FLAG_OVERWORLD_AREA_DID_CHANGE_DRAW: usize = 0x0abf;
 // sprite_main.c local scratch words.
 // variables.h:488 — enhanced_features0.
-pub(super) const ENHANCED_FEATURES0_DRAW: usize = 0x064c;
 pub(super) const FEATURE_MISC_BUG_FIXES_DRAW: u32 = 4096;
 pub(super) const FEATURE_GAME_CHANGING_BUG_FIXES_DRAW: u32 = 16384;
 // hud.h:10 — kHudItem_BookMudora.
@@ -84,8 +44,6 @@ pub(super) const HUD_ITEM_MUSHROOM_DRAW: u8 = 5;
 // player.h:30 — kPlayerState_OpeningDesertPalace.
 pub(super) const PLAYER_STATE_OPENING_DESERT_PALACE_DRAW: u8 = 27;
 // variables.h:1071 — link_item_bombos_medallion.
-pub(super) const LINK_ITEM_BOMBOS_MEDALLION_DRAW: usize = 0x0f347;
-pub(super) const LINK_ITEM_QUAKE_MEDALLION_DRAW: usize = 0x0f349;
 // ---------------------------------------------------------------------------
 // kSinusLookupTable from sprite_main.c:338 — 256-entry sine half-wave used
 // by ChainBallSin / HelmasaurSin. Verbatim from the C source.

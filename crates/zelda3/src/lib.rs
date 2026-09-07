@@ -4,11 +4,13 @@
 //! HUD, etc.). Designed to run in lockstep with `snes::` so each frame's
 //! WRAM/SRAM/VRAM can be byte-compared against the original ROM.
 
-#![allow(dead_code)]
+// Test-only helpers and RAM accessors are exercised from the test build alone;
+// `cargo check --tests` is the dead-code detector, release builds stay quiet.
+#![cfg_attr(not(test), allow(dead_code))]
 
-pub mod debug_env;
 pub mod chr_source;
 pub mod config;
+pub mod debug_env;
 pub mod game_output;
 pub(crate) mod game_state;
 pub mod modern_audio;

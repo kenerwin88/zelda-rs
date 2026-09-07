@@ -110,18 +110,6 @@ impl ZeldaState {
         self.overworld_map_ui_mut().and_map_flags(value);
     }
 
-    pub(crate) fn or_overworld_map_flags(&mut self, value: u8) {
-        self.overworld_map_ui_mut().or_map_flags(value);
-    }
-
-    pub(crate) fn overworld_is_big_area_word(&self) -> u16 {
-        self.game_state
-            .world
-            .overworld
-            .screen_size
-            .is_big_area_word()
-    }
-
     pub(crate) fn overworld_is_big_area(&self) -> bool {
         self.game_state.world.overworld.screen_size.is_big_area()
     }
@@ -142,10 +130,6 @@ impl ZeldaState {
     pub(crate) fn set_overworld_right_bottom_bound_high(&mut self, value: u8) {
         self.overworld_screen_size_mut()
             .set_right_bottom_bound_high(value);
-    }
-
-    pub(crate) fn overworld_transition_countdown(&self) -> u8 {
-        self.game_state.world.overworld.transition.countdown()
     }
 
     pub(crate) fn set_overworld_transition_countdown(&mut self, value: u8) {
@@ -277,10 +261,6 @@ impl ZeldaState {
         OverworldMap16DecodeScratch::set_decode_tmp(&mut self.ram, value);
     }
 
-    pub(crate) fn bombos_fire_column(&self, slot: usize) -> BombosFireColumnState {
-        self.game_state.effects.bombos_spell.fire_column(slot)
-    }
-
     pub(crate) fn bombos_fire_column_mut(
         &mut self,
         slot: usize,
@@ -302,10 +282,6 @@ impl ZeldaState {
 
     pub(crate) fn set_weather_vane_source_slot(&mut self, value: u8) {
         self.weather_vane_bridge_mut().set_source_slot(value);
-    }
-
-    pub(crate) fn weather_vane_debris(&self, slot: usize) -> WeatherVaneDebrisSlotState {
-        self.game_state.effects.weather_vane_debris.debris(slot)
     }
 
     pub(crate) fn weather_vane_debris_mut(

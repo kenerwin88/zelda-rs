@@ -133,12 +133,6 @@ impl ZeldaState {
         }
     }
 
-    #[track_caller]
-    pub(crate) fn backup_overworld_palette_from(&mut self, palette: &[u8]) {
-        self.palette_buffer_mut()
-            .backup_overworld_palette_from(palette);
-    }
-
     pub(crate) fn backup_overworld_palette_from_tagged(
         &mut self,
         palette: &[u8],
@@ -965,13 +959,7 @@ impl ZeldaState {
                 .clone(),
             published_dialogue_msg_read_pos: self.published_dialogue_msg_read_pos,
             published_dialogue_message_id: self.published_dialogue_message_id,
-            intro_poly_upload_delay: self.intro_poly_upload_delay,
-            rom_reset_frame_delay: self.rom_reset_frame_delay,
-            intro_memory_darken_frame_delay: self.intro_memory_darken_frame_delay,
-            nmi_poly_upload_deferred: self.nmi_poly_upload_deferred,
-            obj_vram_latch_generation: self.obj_vram_latch_generation,
             room_82_sprite_conversion_deferred_nmi: false,
-            snes9x_poly_scheduler_counter: self.snes9x_poly_scheduler_counter,
         });
         if let Some(explicit_obj_cache_vram) = snapshot.explicit_obj_cache_vram.as_ref() {
             snapshot.ppu.obj_vram_latch = Some(explicit_obj_cache_vram.clone());

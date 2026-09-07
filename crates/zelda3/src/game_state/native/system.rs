@@ -673,11 +673,6 @@ impl<'a> NativeSystemSignalsBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_game_over_check_flag(&mut self, value: u8) {
-        self.system_signals.set_game_over_check_flag(value);
-        self.sync();
-    }
-
     pub(crate) fn increment_game_over_check_flag(&mut self) {
         self.system_signals.increment_game_over_check_flag();
         self.sync();

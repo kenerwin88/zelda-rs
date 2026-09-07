@@ -1104,10 +1104,6 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_y(y);
     }
 
-    fn Sprite_GetX(&self, k: usize) -> u16 {
-        self.sprite_slot_view(k).x()
-    }
-
     fn GarnishAlloc(&self) -> Option<usize> {
         (0..30)
             .rev()

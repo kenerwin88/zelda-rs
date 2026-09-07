@@ -12,9 +12,6 @@ const ROOM_BOUND_COUNT: usize = 4;
 const SCROLL_TARGET_COUNT: usize = 4;
 const SCROLL_COUNTER_COUNT: usize = 4;
 const DUNGEON_REPLACEMENT_TILE_WORDS: usize = 0x400;
-/// C's overworld map16 stripe buffer walks `d = (d + 1) & 0x1f` over
-/// dung_replacement_tile_state, so 32 words is the whole window this state owns.
-const OVERWORLD_MAP16_STRIPE_WORDS: usize = 0x20;
 pub(crate) const DOOR_ANIMATION_REPLACEMENT_TILE_INDEX: usize =
     (DOOR_ANIMATION_STEP_INDICATOR - DUNG_REPLACEMENT_TILE_STATE) / 2;
 
@@ -42,10 +39,6 @@ impl<'a> OverworldMap16Decode<'a> {
         Self { ram }
     }
 
-    pub(crate) fn source_byte(&self, index: usize) -> u8 {
-        ram_byte(self.ram, OVERWORLD_MAP16_DECODE_SRC + index)
-    }
-
     pub(crate) fn source_word(&self, index: usize) -> u16 {
         read_le_u16(self.ram, OVERWORLD_MAP16_DECODE_SRC + index)
     }
@@ -56,19 +49,6 @@ impl<'a> OverworldMap16Decode<'a> {
 
     pub(crate) fn decode_last(&self) -> u16 {
         read_le_u16(self.ram, MAP16_DECODE_LAST)
-    }
-
-    pub(crate) fn decode_quad(&self, idx: usize) -> (u16, u16, u16, u16) {
-        (
-            read_le_u16(self.ram, MAP16_DECODE_0 + idx),
-            read_le_u16(self.ram, MAP16_DECODE_1 + idx),
-            read_le_u16(self.ram, MAP16_DECODE_2 + idx),
-            read_le_u16(self.ram, MAP16_DECODE_3 + idx),
-        )
-    }
-
-    pub(crate) fn decode_block_byte(&self, base: usize, index: usize) -> u8 {
-        ram_byte(self.ram, base + index)
     }
 }
 
@@ -105,14 +85,6 @@ impl OverworldMap16DecodeScratch {
         ram[dst] = ram[dst_org + offset];
     }
 
-    pub(crate) fn decomp_scratch_byte_mut(ram: &mut [u8], index: usize) -> &mut u8 {
-        &mut ram[OVERWORLD_DECOMP_BUFFER + index]
-    }
-
-    pub(crate) fn decomp_scratch_slice_mut(ram: &mut [u8]) -> &mut [u8] {
-        &mut ram[OVERWORLD_DECOMP_BUFFER..]
-    }
-
     pub(crate) fn decode_block_fill(ram: &mut [u8], dst: usize, table: &[u8], x: usize) {
         ram[dst] = table[x];
         ram[dst + 2] = table[x + 1];
@@ -143,60 +115,6 @@ impl OverworldMap16DecodeScratch {
         write_le_u16(ram, dst + 128, v2);
         write_le_u16(ram, dst + 2, v1);
         write_le_u16(ram, dst + 130, v3);
-    }
-}
-
-pub(crate) struct NativeOverworldMap16DecodeBridgeMut<'a> {
-    ram: &'a mut [u8],
-}
-
-impl<'a> NativeOverworldMap16DecodeBridgeMut<'a> {
-    pub(crate) fn new(ram: &'a mut [u8]) -> Self {
-        Self { ram }
-    }
-
-    pub(crate) fn copy_source_from(&mut self, data: &[u8]) {
-        OverworldMap16DecodeScratch::copy_source_from(self.ram, data);
-    }
-
-    pub(crate) fn copy_scratch_to_source_words_high(&mut self, len: usize) {
-        OverworldMap16DecodeScratch::copy_scratch_to_source_words_high(self.ram, len);
-    }
-
-    pub(crate) fn copy_scratch_to_source_words_low(&mut self, len: usize) {
-        OverworldMap16DecodeScratch::copy_scratch_to_source_words_low(self.ram, len);
-    }
-
-    pub(crate) fn write_decompressed_byte(&mut self, dst: usize, value: u8) {
-        OverworldMap16DecodeScratch::write_decompressed_byte(self.ram, dst, value);
-    }
-
-    pub(crate) fn copy_decompressed_byte(&mut self, dst_org: usize, dst: usize, offset: usize) {
-        OverworldMap16DecodeScratch::copy_decompressed_byte(self.ram, dst_org, dst, offset);
-    }
-
-    pub(crate) fn decomp_scratch_byte_mut(&mut self, index: usize) -> &mut u8 {
-        OverworldMap16DecodeScratch::decomp_scratch_byte_mut(self.ram, index)
-    }
-
-    pub(crate) fn decomp_scratch_slice_mut(&mut self) -> &mut [u8] {
-        OverworldMap16DecodeScratch::decomp_scratch_slice_mut(self.ram)
-    }
-
-    pub(crate) fn decode_block_fill(&mut self, dst: usize, table: &[u8], x: usize) {
-        OverworldMap16DecodeScratch::decode_block_fill(self.ram, dst, table, x);
-    }
-
-    pub(crate) fn set_decode_last(&mut self, value: u16) {
-        OverworldMap16DecodeScratch::set_decode_last(self.ram, value);
-    }
-
-    pub(crate) fn set_decode_tmp(&mut self, value: u16) {
-        OverworldMap16DecodeScratch::set_decode_tmp(self.ram, value);
-    }
-
-    pub(crate) fn write_decoded_map32_to_bg2_tilemap(&mut self, dst: usize, idx: usize) {
-        OverworldMap16DecodeScratch::write_decoded_map32_to_bg2_tilemap(self.ram, dst, idx);
     }
 }
 
@@ -590,22 +508,6 @@ impl WorldCameraBoundariesState {
 
     pub(crate) fn camera_x_coord_scroll_hi(&self) -> u16 {
         self.camera_x_hi
-    }
-
-    pub(crate) fn camera_scroll_low_for_axis(&self, horizontal: bool) -> u16 {
-        if horizontal {
-            self.camera_x_low
-        } else {
-            self.camera_y_low
-        }
-    }
-
-    pub(crate) fn camera_scroll_hi_for_axis(&self, horizontal: bool) -> u16 {
-        if horizontal {
-            self.camera_x_hi
-        } else {
-            self.camera_y_hi
-        }
     }
 
     pub(crate) fn up_down_scroll_target(&self, index: usize) -> u16 {
@@ -2527,10 +2429,6 @@ impl WorldTransientState {
         self.savegame_master_sword_flags
     }
 
-    pub(crate) fn super_bomb_indicator_timer(&self) -> u8 {
-        self.super_bomb_indicator_timer
-    }
-
     pub(crate) fn is_standing_in_doorway_cached(&self) -> u8 {
         self.standing_in_doorway_cached
     }
@@ -2635,10 +2533,6 @@ impl WorldTransientState {
         self.standing_in_doorway_cached = value;
     }
 
-    pub(crate) fn set_flag_travel_bird(&mut self, value: u8) {
-        self.travel_bird_flag = value;
-    }
-
     pub(crate) fn clear_tile_interaction_shared_flag(&mut self) {
         self.tile_interaction_shared_flag = 0;
     }
@@ -2677,14 +2571,6 @@ impl WorldTransientState {
     pub(crate) fn set_fullsize_overworld_quadrants(&mut self) {
         self.quadrant_fullsize_x = 2;
         self.quadrant_fullsize_y = 2;
-    }
-
-    pub(crate) fn set_horizontal_room_fullsize_state(&mut self, value: u8) {
-        self.quadrant_fullsize_x = value;
-    }
-
-    pub(crate) fn set_vertical_room_fullsize_state(&mut self, value: u8) {
-        self.quadrant_fullsize_y = value;
     }
 
     pub(crate) fn apply_dungeon_layout_quadrant_fullsize(
@@ -2793,10 +2679,6 @@ impl WorldTransientState {
 
     pub(crate) fn set_big_key_door_message_triggered(&mut self, value: u16) {
         self.big_key_door_message_triggered = value;
-    }
-
-    pub(crate) fn set_savegame_has_master_sword_flags(&mut self, value: u16) {
-        self.savegame_master_sword_flags = value;
     }
 
     pub(crate) fn set_dung_replacement_tile_state(&mut self, index: usize, value: u16) {
@@ -3082,16 +2964,6 @@ impl<'a> NativeWorldScrollBridgeMut<'a> {
 
     pub(crate) fn set_bg1_y_offset(&mut self, value: u16) {
         self.state.set_bg1_y_offset(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_bg1_offsets(&mut self, x: u16, y: u16) {
-        self.state.set_bg1_offsets(x, y);
-        self.sync();
-    }
-
-    pub(crate) fn clear_bg1_offsets(&mut self) {
-        self.state.clear_bg1_offsets();
         self.sync();
     }
 
@@ -3448,10 +3320,6 @@ impl<'a> NativeWorldRegionBridgeMut<'a> {
         self.state.set_ow_entrance_value(value);
         self.sync();
     }
-
-    pub(crate) fn ow_entrance_value(&self) -> u16 {
-        self.state.overworld_entrance_value
-    }
 }
 
 pub(crate) struct NativeWorldTransientBridgeMut<'a> {
@@ -3537,11 +3405,6 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
         self.adopt_live_door_animation_step_then_sync();
     }
 
-    pub(crate) fn set_flag_travel_bird(&mut self, value: u8) {
-        self.state.set_flag_travel_bird(value);
-        self.adopt_live_door_animation_step_then_sync();
-    }
-
     pub(crate) fn clear_tile_interaction_shared_flag(&mut self) {
         self.state.clear_tile_interaction_shared_flag();
         self.adopt_live_door_animation_step_then_sync();
@@ -3557,11 +3420,6 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
         self.state.set_door_animation_step_word(value);
         self.write_door_animation_step_through();
         self.sync();
-    }
-
-    pub(crate) fn clear_hud_floor_changed_timer(&mut self) {
-        self.state.clear_hud_floor_changed_timer();
-        self.adopt_live_door_animation_step_then_sync();
     }
 
     pub(crate) fn cache_quadrant_fullsize_state(&mut self) {
@@ -3586,16 +3444,6 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
 
     pub(crate) fn set_fullsize_overworld_quadrants(&mut self) {
         self.state.set_fullsize_overworld_quadrants();
-        self.adopt_live_door_animation_step_then_sync();
-    }
-
-    pub(crate) fn set_horizontal_room_fullsize_state(&mut self, value: u8) {
-        self.state.set_horizontal_room_fullsize_state(value);
-        self.adopt_live_door_animation_step_then_sync();
-    }
-
-    pub(crate) fn set_vertical_room_fullsize_state(&mut self, value: u8) {
-        self.state.set_vertical_room_fullsize_state(value);
         self.adopt_live_door_animation_step_then_sync();
     }
 
@@ -3716,20 +3564,10 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
         self.adopt_live_door_animation_step_then_sync();
     }
 
-    pub(crate) fn set_savegame_has_master_sword_flags(&mut self, value: u16) {
-        self.state.set_savegame_has_master_sword_flags(value);
-        self.adopt_live_door_animation_step_then_sync();
-    }
-
     pub(crate) fn set_dung_replacement_tile_state(&mut self, index: usize, value: u16) {
         self.state.set_dung_replacement_tile_state(index, value);
         write_le_u16(self.ram, DUNG_REPLACEMENT_TILE_STATE + index * 2, value);
         self.debug_assert_matches_ram();
-    }
-
-    pub(crate) fn decrement_milestone_item_gfx_swap_countdown(&mut self) {
-        self.state.decrement_milestone_item_gfx_swap_countdown();
-        self.adopt_live_door_animation_step_then_sync();
     }
 }
 
@@ -3797,15 +3635,6 @@ impl<'a> NativeRoomBoundsBridgeMut<'a> {
     pub(crate) fn add_x_bounds_b(&mut self, value: u16) {
         self.state.add_x_bounds_b(value);
         self.sync();
-    }
-
-    pub(crate) fn copy_y_bounds_from(&mut self, src: usize, count: usize) {
-        self.sync();
-        for offset in 0..count {
-            self.ram[ROOM_BOUNDS + offset] = self.ram[src + offset];
-        }
-        *self.state = RoomBoundsState::load_from_ram(self.ram);
-        self.debug_assert_matches_ram();
     }
 }
 
@@ -4486,11 +4315,6 @@ impl<'a> NativeOverworldTransitionBridgeMut<'a> {
 
     pub(crate) fn set_edge_direction_bits(&mut self, value: u8) {
         self.transition.set_edge_direction_bits(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_edge_direction_bits_word(&mut self, value: u16) {
-        self.transition.set_edge_direction_bits_word(value);
         self.sync();
     }
 

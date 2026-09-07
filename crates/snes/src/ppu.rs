@@ -760,16 +760,6 @@ impl PpuState {
         self.scanout_brightness_override.unwrap_or(self.brightness)
     }
 
-    fn snes9x_gamma_component(component: usize) -> u8 {
-        let expanded = ((component << 3) | (component >> 2)) as u16;
-        let wide = (expanded << 8) | expanded;
-        if wide > 0x7fff {
-            return (wide >> 8) as u8;
-        }
-        let corrected = 32767.0 * ((wide as f64) / 32767.0).powf(1.5);
-        ((corrected as u16) >> 8) as u8
-    }
-
     pub fn begin_drawing(
         &mut self,
         pixel_buffer: &mut [u8],
@@ -822,22 +812,6 @@ impl PpuState {
 
     fn clear_backdrop(&mut self) {
         self.obj_buffer.data.fill(0x0500);
-    }
-
-    fn backdrop_rgb(&self) -> u32 {
-        let color = self.cgram[0] as usize;
-        let r = self.brightness_mult[color & 0x1f] as u32;
-        let g = self.brightness_mult[(color >> 5) & 0x1f] as u32;
-        let b = self.brightness_mult[(color >> 10) & 0x1f] as u32;
-        (r << 16) | (g << 8) | b
-    }
-
-    fn bgr555_to_rgb(&self, color: u16) -> u32 {
-        let color = color as usize;
-        let r = self.brightness_mult[color & 0x1f] as u32;
-        let g = self.brightness_mult[(color >> 5) & 0x1f] as u32;
-        let b = self.brightness_mult[(color >> 10) & 0x1f] as u32;
-        (r << 16) | (g << 8) | b
     }
 
     fn fill_render_line(&mut self, line: usize, color: u32) {

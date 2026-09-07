@@ -468,18 +468,6 @@ pub(super) fn decode_v5(payload: &[u8]) -> Result<(AudioState, bool), String> {
     )
 }
 
-pub(super) fn encode_v6(state: &AudioState) -> Result<(Vec<u8>, bool), String> {
-    let oracle_sidecar = capture_oracle_sidecar(state)?;
-    let has_oracle_sidecar = oracle_sidecar.is_some();
-    let payload = bincode::serialize(&AudioSnapshotV6 {
-        modern: CompactModernAudioStateSnapshotV7::capture(state),
-        oracle_sidecar,
-        sample_bank_id: state.modern.renderer.sample_bank_id(),
-    })
-    .map_err(|error| format!("audio snapshot v6 encode: {error}"))?;
-    Ok((payload, has_oracle_sidecar))
-}
-
 pub(super) fn decode_v6(payload: &[u8]) -> Result<(AudioState, bool), String> {
     let snapshot: AudioSnapshotV6 = bincode::deserialize(payload)
         .map_err(|error| format!("audio snapshot v6 decode: {error}"))?;

@@ -164,15 +164,6 @@ impl ZeldaState {
         );
     }
 
-    #[track_caller]
-    pub(crate) fn assert_native_messaging_render_buffer_matches_ram(&self) {
-        debug_assert_eq!(
-            self.game_state.messaging.render_buffer,
-            crate::game_state::MessagingRenderBufferState::load_from_ram(&self.ram),
-            "native messaging render buffer diverged from compatibility RAM",
-        );
-    }
-
     pub fn state_recorder_read_next_replay_state(&mut self, sr: &mut StateRecorder) -> u16 {
         assert!(sr.replay_mode);
         while sr.frames_since_last >= sr.replay_next_cmd_at {

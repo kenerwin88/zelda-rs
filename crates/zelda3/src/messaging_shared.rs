@@ -13,7 +13,6 @@ pub(super) const VWF_RENDER_CHARACTER_SET_MASKS: [u8; 8] = [0x80, 0x40, 0x20, 0x
 pub(super) const VWF_RENDER_CHARACTER_RENDER_POS: [u16; 3] = [0, 0x02a0, 0x0540];
 pub(super) const VWF_RENDER_CHARACTER_LINE_POSITIONS: [u16; 3] = [0, 0x0040, 0x0080];
 pub(super) const VWF_ROW_POSITIONS: [u16; 3] = [0, 2, 4];
-pub(super) const TEXT_COMMAND_START_US: u8 = 0x67;
 pub(super) const TEXT_DICT_BASE: u8 = 0x88;
 pub(super) const TEXT_CMD_NEXT_PIC: u8 = 0;
 pub(super) const TEXT_CMD_CHOOSE: u8 = 1;
@@ -37,12 +36,6 @@ pub(super) const TEXT_CMD_SPEED: u8 = 19;
 pub(super) const TEXT_CMD_WAITKEY: u8 = 23;
 pub(super) const TEXT_CMD_END_MESSAGE: u8 = 24;
 pub(super) const TEXT_CMD_IS_LETTER: u8 = 25;
-pub(super) const DIALOGUE_NUMBER: usize = 0x1cf2;
-
-pub(super) const TEXT_DECODE_COMMAND_LENGTHS_US: [u8; 25] = [
-    0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0,
-];
-
 pub(super) const PRAYING_SCENE_DELAYS: [u8; 5] = [22, 22, 22, 64, 1];
 pub(super) const PRAYING_IRIS_OPEN_RADIUS_LOOKUP: [u8; 129] = [
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0xfe, 0xfe, 0xfe,
@@ -153,24 +146,9 @@ pub(super) const OVERWORLD_MAP_PENDANT_BIT_MASKS: [u8; 3] = [4, 1, 2];
 pub(super) const OVERWORLD_MAP_CRYSTAL_BIT_MASKS: [u8; 7] = [2, 0x40, 8, 0x20, 1, 4, 0x10];
 
 pub(super) const SAVE_LOAD_MISC_BUG_FIXES_FLAG: u32 = 4096;
-pub(super) const TEXT_RENDER_COMMAND_LENGTHS_US: [u8; 25] = [
-    0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0,
-];
-pub(super) const TEXT_RENDER_SIMPLE_COMMANDS: [(u8, u8, bool); 8] = [
-    (0, TEXT_CMD_END_MESSAGE, false),
-    (0, TEXT_CMD_SCROLL, false),
-    (0, TEXT_CMD_WAITKEY, false),
-    (0, TEXT_CMD_1, false),
-    (0, TEXT_CMD_2, false),
-    (0, TEXT_CMD_3, false),
-    (0, TEXT_CMD_NAME, false),
-    (0, TEXT_CMD_NAME, false),
-];
-pub(super) const TEXT_RENDER_SOUND_COMMAND_PARAMS: [u8; 1] = [45];
 pub(super) const PLAYER_RESET_MISC_BUG_FIXES_FLAG: u32 = 4096;
 
 // NES_Ver2 MAPLEV/MAPSMK/MPLKPX/MPLKPY; call sites show scroll state and player marker position.
-pub(super) const DUNG_CUR_QUADRANT_UPLOAD: usize = 0x045c;
 pub(super) const FEATURE_EXTEND_SCREEN64_MAP: u32 = 1;
 pub(super) const FEATURE_CANCEL_BIRD_TRAVEL: u32 = 8192;
 pub(super) const LOCATION_MENU_START_POSITIONS: [u8; 3] = [0, 1, 6];

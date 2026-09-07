@@ -9,8 +9,6 @@ use super::sprite::{DrawMultipleData, SpriteSpawnInfo};
 use super::*;
 use crate::types::{sign16, sign8};
 
-const SRAM_PROGRESS_INDICATOR_3: usize = 0x0f3c9;
-
 // `kPlayerState_SpinAttacking = 3` and `kPlayerState_Hookshot = 19` from
 // `player.h`.
 const PLAYER_STATE_SPIN_ATTACKING: u8 = 3;
@@ -20,8 +18,6 @@ const PLAYER_STATE_HOOKSHOT: u8 = 19;
 const SOMARIA_PLATFORM_DRAG_X_OFFSETS: [i8; 8] = [0, 0, -1, 1, -1, 1, 1, -1];
 const SOMARIA_PLATFORM_DRAG_Y_OFFSETS: [i8; 8] = [-1, 1, 0, 0, -1, 1, -1, 1];
 const PIPE_EXIT_DIRECTION_BITS: [u8; 4] = [8, 4, 2, 1];
-const ALT_SPRITE_SPAWNED_FLAG_WORLD: usize = 0x1de0;
-
 // SomariaPlatform junction input tables (sprite_main.c:25561-25690).
 const SOMARIA_PLATFORM_TRANSIT_DIRECTION_KEYS: [u8; 4] = [4, 8, 1, 2];
 const SOMARIA_PLATFORM_T_JUNCTION_NO_UP_KEYS: [u8; 4] = [3, 7, 6, 5];

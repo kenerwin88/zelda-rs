@@ -20,10 +20,6 @@ impl ZeldaState {
         dma
     }
 
-    pub(crate) fn bg1_move_calc(&self) -> &Bg1MovementAccumulatorState {
-        &self.game_state.player.bg1_movement_accumulator
-    }
-
     // BG scroll copy2 (0xe0/0xe2/0xe6/0xe8) is owned solely by PpuScrollCopyState; these
     // legacy `set_bgN_{x,y}` names delegate to it so the ~80 callers stay unchanged.
     pub(crate) fn set_bg1_x(&mut self, value: u16) {
@@ -602,11 +598,6 @@ impl ZeldaState {
         }
 
         result
-    }
-
-    pub(super) fn set_mode7_perspective_correction(&mut self, low: u16, high: u16) {
-        self.ppu.mode7_perspective_low = if low != 0 { 1.0 / low as f32 } else { 0.0 };
-        self.ppu.mode7_perspective_high = if high != 0 { 1.0 / high as f32 } else { 0.0 };
     }
 
     pub(super) fn hdma_setup(

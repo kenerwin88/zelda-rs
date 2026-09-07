@@ -1440,11 +1440,6 @@ impl GameExecutionScheduler {
             .is_some_and(|work| work.scheduled_after_leading_nmi)
     }
 
-    pub(super) fn current_scheduled_work_is_at_entry_boundary(self) -> bool {
-        self.scheduled_work()
-            .is_some_and(|work| work.entry_display_boundary_pending)
-    }
-
     pub(super) fn current_work(self) -> Option<GameWorkContinuation> {
         self.scheduled_work()
             .map(|work| work.continuation)

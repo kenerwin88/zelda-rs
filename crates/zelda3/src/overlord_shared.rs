@@ -3,33 +3,6 @@
 // ---------------------------------------------------------------------------
 // File-level overlord RAM offsets and shared lookup tables.
 // ---------------------------------------------------------------------------
-pub(super) const OVERLORD_X_HI: usize = 0x0b10;
-pub(super) const OVERLORD_Y_LO: usize = 0x0b18;
-pub(super) const OVERLORD_Y_HI: usize = 0x0b20;
-pub(super) const OVERLORD_GEN1: usize = 0x0b28;
-pub(super) const OVERLORD_GEN2: usize = 0x0b30;
-pub(super) const OVERLORD_GEN3: usize = 0x0b38;
-pub(super) const OVERLORD_FLOOR: usize = 0x0b40;
-pub(super) const OVERLORD_OFFSET_SPRITE_POS: usize = 0x0b48;
-pub(super) const SPRITE_BUMP_DAMAGE: usize = 0x0cd2;
-pub(super) const ACTIVATE_BOMB_TRAP_OVERLORD: usize = 0x0cf4;
-pub(super) const SPRITE_AI_STATE: usize = 0x0d80;
-pub(super) const SPRITE_B: usize = 0x0da0;
-pub(super) const SPRITE_C: usize = 0x0db0;
-pub(super) const SPRITE_STATE: usize = 0x0dd0;
-pub(super) const SPRITE_DELAY_AUX1: usize = 0x0e00;
-pub(super) const SPRITE_DELAY_AUX2: usize = 0x0e10;
-pub(super) const SPRITE_HEALTH: usize = 0x0e50;
-pub(super) const GARNISH_ACTIVE: usize = 0x0fb4;
-pub(super) const SPRITE_TILETYPE: usize = 0x0fa5;
-pub(super) const SPRCOLL_Y_BASE: usize = 0x0fbe;
-pub(super) const ACTIVE_OVERLORD_INDEX: usize = 0x0fde;
-pub(super) const DUNG_FLOOR_MOVE_FLAGS: usize = 0x041a;
-pub(super) const GARNISH_Y_LO: usize = 0x1f81e;
-pub(super) const GARNISH_X_LO: usize = 0x1f83c;
-pub(super) const GARNISH_Y_HI: usize = 0x1f85a;
-pub(super) const GARNISH_X_HI: usize = 0x1f878;
-pub(super) const GARNISH_COUNTDOWN: usize = 0x1f90e;
 pub(super) const ARMOS_SINE_LOOKUP_TABLE: [u16; 256] = [
     0, 3, 6, 9, 12, 15, 18, 21, 25, 28, 31, 34, 37, 40, 40, 46, 49, 53, 56, 59, 62, 65, 68, 71, 74,
     77, 80, 83, 86, 89, 92, 95, 97, 100, 103, 106, 109, 112, 115, 117, 120, 123, 126, 128, 131,

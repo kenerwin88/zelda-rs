@@ -1222,22 +1222,6 @@ impl ZeldaState {
         self.clear_core_update_disable_flag();
     }
 
-    #[rustfmt::skip]
-    pub(super) fn nmi_handle_arbitrary_tile_map(&mut self, src: *const u8, mut i: i32, i_end: i32) {
-        let mut offset = 0usize;
-        loop {
-            let dst = self.arbitrary_tilemap_destination((i as usize) >> 1) as usize;
-            let chunk = unsafe { std::slice::from_raw_parts(src.add(offset), 0x80) };
-            self.copy_to_vram_slice(dst, chunk, 0x80);
-            offset += 0x80;
-            i += 2;
-            if i == i_end {
-                break;
-            }
-        }
-        self.clear_core_update_disable_flag();
-    }
-
     pub(super) fn nmi_update_bg1_wall(&mut self) {
         let target = self.game_state.display.nmi_load_target_address as usize;
         let top_buf = self.bg1_wall_top_tilemap_buffer().to_vec();
@@ -1615,12 +1599,6 @@ impl ZeldaState {
             .unwrap_or(0)
     }
 
-    #[rustfmt::skip]
-    pub(super) fn copy_to_vram(&mut self, dstv: usize, src: *const u8, len: usize) {
-        let src = unsafe { std::slice::from_raw_parts(src, len) };
-        self.copy_to_vram_slice(dstv, src, len);
-    }
-
     pub(super) fn copy_to_vram_vertical_slice(&mut self, mut dstv: usize, src: &[u8], len: usize) {
         assert_eq!(len & 1, 0);
         self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
@@ -1634,12 +1612,6 @@ impl ZeldaState {
         }
     }
 
-    #[rustfmt::skip]
-    pub(super) fn copy_to_vram_vertical(&mut self, dstv: usize, src: *const u8, len: usize) {
-        let src = unsafe { std::slice::from_raw_parts(src, len) };
-        self.copy_to_vram_vertical_slice(dstv, src, len);
-    }
-
     pub(super) fn copy_to_vram_low_slice(&mut self, src: &[u8], addr: usize, num: usize) {
         self.program_dma0_ppu_target(DMA_MODE_ONE_REGISTER, PPU_BBUS_VRAM_DATA_LOW);
         for i in 0..num {
@@ -1648,12 +1620,6 @@ impl ZeldaState {
                 self.ppu.vram[addr + i] = (self.ppu.vram[addr + i] & !0xff) | src[i] as u16;
             }
         }
-    }
-
-    #[rustfmt::skip]
-    pub(super) fn copy_to_vram_low(&mut self, src: *const u8, addr: usize, num: usize) {
-        let src = unsafe { std::slice::from_raw_parts(src, num) };
-        self.copy_to_vram_low_slice(src, addr, num);
     }
 
     pub(super) fn copy_asset_bytes_to_vram(
@@ -1921,12 +1887,6 @@ impl ZeldaState {
                 stripes = &stripes[words * 2..];
             }
         }
-    }
-
-    #[rustfmt::skip]
-    pub(super) fn handle_stripes14(&mut self, p: *const u8) {
-        let stripes = unsafe { std::slice::from_raw_parts(p, 0x4000) };
-        self.handle_stripes14_slice(stripes);
     }
 
     pub(super) fn write_ppu_registers(&mut self) {

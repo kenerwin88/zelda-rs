@@ -5,7 +5,9 @@
 //! the native re-implementation. We preserve that behavior so the Rust
 //! port can be validated module-by-module against the original game.
 
-#![allow(dead_code)]
+// Test-only helpers and RAM accessors are exercised from the test build alone;
+// `cargo check --tests` is the dead-code detector, release builds stay quiet.
+#![cfg_attr(not(test), allow(dead_code))]
 
 pub mod apu;
 pub mod cart;

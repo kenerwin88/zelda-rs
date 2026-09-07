@@ -7902,11 +7902,6 @@ impl ZeldaState {
     // void LaserEye_Draw(int k) {  // 9ea708
     //   Three tiles selected by direction and active beam blink state.
     // }
-    pub(super) fn laser_eye_draw(&mut self, k: usize) {
-        self.laser_eye_draw_prologue(k);
-        self.laser_eye_draw_multiple(k);
-    }
-
     /// `LaserEye_Draw` before its `Sprite_DrawMultiple`: the graphics and
     /// object-priority stores.
     pub(super) fn laser_eye_draw_prologue(&mut self, k: usize) {
@@ -13079,12 +13074,6 @@ impl ZeldaState {
 
     // -----------------------------------------------------------------------
     // void HelmasaurHardHatBeetleCommon(int k) {  // 86a46d
-    pub(super) fn helmasaur_hard_hat_beetle_common(&mut self, k: usize) {
-        if self.helmasaur_hard_hat_beetle_common_through_subtype2_increment(k) {
-            self.helmasaur_hard_hat_beetle_common_after_subtype2_increment(k);
-        }
-    }
-
     fn helmasaur_hard_hat_beetle_common_through_subtype2_increment(&mut self, k: usize) -> bool {
         if self.sprite_return_if_inactive(k) {
             return false;

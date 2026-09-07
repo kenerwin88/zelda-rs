@@ -1356,13 +1356,7 @@ pub(crate) struct DisplaySnapshot {
     pub(crate) published_bg3_vwf_glyph_run_dialogue_offsets: Vec<u16>,
     pub(crate) published_dialogue_msg_read_pos: u16,
     pub(crate) published_dialogue_message_id: u16,
-    pub(crate) intro_poly_upload_delay: u8,
-    pub(crate) rom_reset_frame_delay: u8,
-    pub(crate) intro_memory_darken_frame_delay: u8,
-    pub(crate) nmi_poly_upload_deferred: u8,
-    pub(crate) obj_vram_latch_generation: u64,
     pub(crate) room_82_sprite_conversion_deferred_nmi: bool,
-    pub(crate) snes9x_poly_scheduler_counter: u8,
 }
 
 impl DisplaySnapshot {

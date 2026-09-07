@@ -5042,32 +5042,6 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         self.sprite_slot_view_mut(k).move_y();
     }
 
-    pub(super) fn sprite_draw_shadow(&mut self, k: usize, x: u16) {
-        if self.sprite_slot_view(k).pause() != 0
-            || (self.sprite_slot_view(k).state() == 10
-                && self.sprite_slot_view(k).draw_work_byte_3() == 3)
-        {
-            return;
-        }
-        let y = self
-            .sprite_y(k)
-            .wrapping_add(10)
-            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
-        if y.wrapping_add(0x10) >= 0x100 {
-            return;
-        }
-        let oam = (self.game_state.oam.current_pointer_usize())
-            + usize::from(self.sprite_slot_view(k).flags2() & 0x1f) * 4;
-        let flags = (self.sprite_slot_view(k).oam_flags()
-            ^ self.sprite_slot_view(k).object_priority())
-            & 0x30;
-        if self.sprite_slot_view(k).flags3() & 0x20 != 0 {
-            self.set_oam_helper1_at(oam, x, y.wrapping_add(1) as u8, 0x38, flags | 8, 0);
-        } else {
-            self.set_oam_helper1_at(oam, x, y as u8, 0x6c, flags | 8, 2);
-        }
-    }
-
     // ----- Common sprite-AI helpers (round-3 agent) -----
     // Direct 1:1 ports of the small Sprite_* helpers that are widely shared by
     // sprite-AI handlers. Bodies preserved verbatim modulo Rust-isms.

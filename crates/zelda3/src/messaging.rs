@@ -564,11 +564,6 @@ mod fast_forward_cycle_tests {
 mod messaging_shared;
 use messaging_shared::*;
 
-fn text_decode_cmd(a: u8, src: *const u8) -> u32 {
-    let decoded = crate::dialogue_ir::decode_dialogue_byte(0, a, unsafe { src.as_ref().copied() });
-    ((decoded.param as u32) << 16) | ((decoded.command as u32) << 8)
-}
-
 impl ZeldaState {
     pub(super) fn Module0E_Interface(&mut self) {
         // A fast-forward message render slice: the ROM's NMI skips the core
@@ -758,12 +753,6 @@ impl ZeldaState {
         self.asset_memblk(98, idx)
             .and_then(|blk| blk.ptr.get(count).copied())
             .unwrap_or(0)
-    }
-
-    pub(super) fn GetLightOverworldTilemap(&self) -> Vec<u8> {
-        self.asset_raw(67)
-            .map(|tilemap| tilemap.to_vec())
-            .unwrap_or_default()
     }
 
     pub(super) fn Module0E_05_DesertPrayer(&mut self) {
@@ -1421,10 +1410,6 @@ impl ZeldaState {
             write_le_u16(&mut self.sram, offs + 0x4fe + 0xf00, checksum);
         }
         self.zelda_write_sram();
-    }
-
-    pub(super) fn TransferMode7Characters(&mut self) {
-        self.transfer_mode7_characters();
     }
 
     pub(super) fn Animate_GAMEOVER_Letters(&mut self) {
@@ -2810,14 +2795,6 @@ impl ZeldaState {
         self.set_ambient_sound_effect(music >> 4);
         self.set_sound_effect_2(0x10);
         self.set_music_control(0xf3);
-    }
-
-    pub(super) fn WorldMap_SetUpHDMA(&mut self) {
-        self.world_map_setup_hdma();
-    }
-
-    pub(super) fn WorldMap_FillTilemapWithEF(&mut self) {
-        self.world_map_fill_tilemap_with_ef();
     }
 
     pub(super) fn WorldMap_HandleSprites(&mut self) {
@@ -4426,11 +4403,6 @@ impl ZeldaState {
         self.set_vwf_line_render_offset(0);
     }
 
-    pub(super) fn Text_DecodeCmd(&self, a: u8, src: &[u8]) -> u32 {
-        let (param, cmd, multibyte) = self.text_decode_cmd(a, src.first().copied());
-        ((param as u32) << 6) | ((cmd as u32) << 1) | u32::from(multibyte)
-    }
-
     fn text_decode_cmd(&self, a: u8, next: Option<u8>) -> (u8, u8, bool) {
         let decoded = crate::dialogue_ir::decode_dialogue_byte(self.dialogue_flags, a, next);
         (decoded.param, decoded.command, decoded.multibyte)
@@ -4521,15 +4493,6 @@ impl ZeldaState {
         }
         self.messaging_text_mut().load_decoded_dialogue(&decoded);
         self.messaging_state_mut().clear_dialogue_msg_read_pos();
-    }
-
-    pub(super) fn Text_WritePlayerName(&mut self, dst: usize) -> usize {
-        let mut decoded = Vec::new();
-        self.text_write_player_name_vec(&mut decoded);
-        let len = self
-            .messaging_text_mut()
-            .write_decoded_text_at(dst, &decoded);
-        dst + len
     }
 
     /// Build the 6-char player name buffer from SRAM (all 6 entries, including trailing 0x59

@@ -1,10 +1,6 @@
 // Methods ported from zelda3/src/misc.c and included inside ZeldaState.
 
 use super::*;
-fn calculate_sfx_pan(x: u16) -> u8 {
-    ZeldaState::calculate_sfx_pan_with_scroll(x, 0)
-}
-
 // Runtime source pointers selected by the ROM's LoadSongBank entry points at
 // $80:8913, $80:8925, and $80:8931. The intro entry at $80:8901 also uploads
 // the resident driver and samples; it is not the runtime overworld bank.
@@ -876,34 +872,6 @@ impl ZeldaState {
         self.hud_search_for_equipped_item();
         self.hud_rebuild();
         self.hud_update_equipped_item();
-    }
-
-    pub(super) fn patch_new_game_entrance_state(&mut self) {
-        if self.game_state.inventory.save_progress.progress_indicator() != 0 {
-            return;
-        }
-
-        self.set_camera_y_coord_scroll_low(0x017f);
-        self.set_camera_y_coord_scroll_hi(0x0181);
-        self.dungeon_room_load_mut().set_quadrants_visited(2);
-        self.dungeon_doors_mut().set_current_door_index(2);
-        self.set_sp0l(0);
-        self.set_sp5l(3);
-        self.set_sp6l(1);
-        self.set_palette_main_indoors(4);
-        self.load_new_game_room_sprite();
-    }
-
-    fn load_new_game_room_sprite(&mut self) {
-        self.sprite_slot_view_mut(0).set_y_low(0x70);
-        self.sprite_slot_view_mut(0).set_x_low(0xa0);
-        self.sprite_slot_view_mut(0).set_y_high(0x21);
-        self.sprite_slot_view_mut(0).set_x_high(0x09);
-        self.sprite_slot_view_mut(0).set_state(0x08);
-        self.sprite_slot_view_mut(0).set_sprite_type(0x73);
-        self.sprite_workspace_mut().set_room_origin_x_high(0x08);
-        self.sprite_workspace_mut().set_room_origin_y_high(0x20);
-        self.sprite_workspace_mut().set_shared_scratch_a(0x1a);
     }
 
     pub(super) fn load_pre_dungeon_keys(&mut self) {

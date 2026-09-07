@@ -1,117 +1,19 @@
-pub(super) const DUNG_REPLACEMENT_TILE_SRC_POS_X2: usize = 0x47c;
-pub(super) const DUNG_NUM_STAIRS_1: usize = 0x49a;
-pub(super) const DUNG_NUM_STAIRS_2: usize = 0x49c;
-pub(super) const DUNG_NUM_STAIRS_WET: usize = 0x49e;
-pub(super) const DUNG_NUM_INTERPSEUDO_UPNORTH_STAIRS: usize = 0x440;
-pub(super) const DUNG_NUM_INROOM_UPNORTH_STAIRS_WATER: usize = 0x442;
-pub(super) const DUNG_NUM_ACTIVATED_WATER_LADDERS: usize = 0x444;
 // NES_Ver2: UDSCKP6, "water-side STEP (kirikae)".
-pub(super) const WATER_SIDE_STEP_SWITCH: usize = 0x448;
-pub(super) const KIND_OF_IN_ROOM_STAIRCASE_DUNGEON: usize = 0x44a;
-pub(super) const DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER: usize = 0x4ae;
-pub(super) const DUNG_NUM_STAR_SHAPED_SWITCHES: usize = 0x432;
-pub(super) const DUNG_NUM_INTER_ROOM_UPNORTH_STAIRS: usize = 0x438;
-pub(super) const DUNG_NUM_INROOM_UPNORTH_STAIRS: usize = 0x43c;
-pub(super) const DUNG_NUM_INROOM_SOUTHDOWN_STAIRS: usize = 0x43e;
-pub(super) const DUNG_NUM_WATER_LADDERS: usize = 0x446;
-pub(super) const DUNG_NUM_INTER_ROOM_DOWNNORTH_STRAIGHT_STAIRS: usize = 0x4a6;
-pub(super) const DUNG_NUM_INTER_ROOM_DOWNSOUTH_STRAIGHT_STAIRS: usize = 0x4a8;
-pub(super) const DUNG_STAIRS_TABLE_2: usize = 0x6ec;
-pub(super) const DUNG_STAIRS_TABLE_1: usize = 0x6b8;
-pub(super) const STAR_SHAPED_SWITCHES_TILE: usize = 0x6a0;
-pub(super) const DUNG_FLOOR_MOVE_FLAGS: usize = 0x41a;
 pub(super) const DUNG_FLOOR_Y_VEL_DUNGEON: usize = 0x310;
-pub(super) const DUNG_FLOOR_X_OFFS: usize = 0x422;
 // NES_Ver2: RSXYCKF, "reset x,y check flag".
 // NES_Ver2: B1CWPT/BG1MPT, moving-wall write point and dot pointer.
-pub(super) const MOVING_WALL_WRITE_POINT: usize = 0x42a;
-pub(super) const MOVING_WALL_DOT_POINTER: usize = 0x41e;
 pub(super) const ROOM_QUADRANT_UPLOAD_TABLE_MASK: usize = 0x0f;
-pub(super) const MOVING_WALL_ARR1: usize = 0xc880;
-pub(super) const INVISIBLE_DOOR_DIR_AND_INDEX_X2: usize = 0x436;
-pub(super) const TRANSITION_COUNTER: usize = 0x0126;
-pub(super) const DUNG_FLAG_TRAPDOORS_DOWN: usize = 0x468;
-pub(super) const DUNG_FLAG_STATECHANGE_WATERPUZZLE: usize = 0x642;
 // NES_Ver2: WGTPNT, water-gate pointer.
-pub(super) const WATERGATE_POINTER: usize = 0x0470;
-pub(super) const WATERGATE_POS: usize = 0x0472;
-pub(super) const WATERGATE_SPOTLIGHT_Y_UPPER: usize = 0x0678;
 // NES_Ver2 WRWP*/OYK*/WIN* water-window HDMA work RAM.
-pub(super) const WATER_HDMA_WINDOW_X_DUNGEON: usize = 0x0680;
-pub(super) const WATER_HDMA_WINDOW_Y_DUNGEON: usize = 0x0682;
-pub(super) const WATER_HDMA_WINDOW_Y_RADIUS_DUNGEON: usize = 0x0684;
-pub(super) const WATER_HDMA_WINDOW_X_RADIUS_DUNGEON: usize = 0x0686;
-pub(super) const WATER_HDMA_WINDOW_Y_TARGET_DUNGEON: usize = 0x0688;
-pub(super) const WATER_HDMA_WINDOW_Y_RADIUS_ALT_DUNGEON: usize = 0x068a;
-pub(super) const TURN_ON_OFF_WATER_CTR: usize = 0x0424;
-pub(super) const MINIGAME_CREDITS: usize = 0x04c4;
-pub(super) const DUNG_TRANSITION_LANDING_CLASS: usize = 0x004e;
-pub(super) const DUNG_CUR_DOOR_POS_DUNGEON: usize = 0x068e;
-pub(super) const DOOR_ANIMATION_STEP_INDICATOR_DUNGEON: usize = 0x0690;
-pub(super) const DUNG_WHICH_KEY_X2_DUNGEON: usize = 0x0694;
-pub(super) const DUNG_DOOR_SWITCH_TRIGGERED: usize = 0x0430;
-pub(super) const DUNG_CUR_QUADRANT_UPLOAD: usize = 0x045c;
 // NES_Ver2: CWLFLG/CWLPNT, crush-wall progress and doubled door index.
-pub(super) const CRUSH_WALL_PROGRESS_DUNGEON: usize = 0x0454;
-pub(super) const CRUSH_WALL_DOOR_INDEX_X2_DUNGEON: usize = 0x0456;
-pub(super) const DUNG_DOOR_BARRIER_OR_SWITCH_FLAG: usize = 0x045e;
-pub(super) const BLOCK_TRAP_CHECK_FLAG: usize = 0x0466;
-pub(super) const DUNG_REPLACEMENT_TILE_DST_POS_X2: usize = 0x04b6;
-pub(super) const MOVING_WALL_TORCH_BLINK_PHASE: usize = 0x04bc;
-pub(super) const MOVING_WALL_TORCH_UPDATE_FLAG: usize = 0x04c2;
-pub(super) const DUNG_FLAG_SOMARIA_BLOCK_SWITCH: usize = 0x0646;
-pub(super) const DUNG_INTER_STAIRCASES: usize = 0x06b0;
-pub(super) const STAIRCASE_TILEMAP_POS_X2: usize = 0x048c;
-pub(super) const DUNG_NUM_TOGGLE_FLOOR: usize = 0x44e;
-pub(super) const DUNG_NUM_TOGGLE_PALACE: usize = 0x450;
-pub(super) const DUNG_TOGGLE_FLOOR_POS: usize = 0x6c0;
-pub(super) const DUNG_TOGGLE_PALACE_POS: usize = 0x6d0;
-pub(super) const ADJACENT_DOORS_FLAGS: usize = 0x1100;
-pub(super) const ADJACENT_DOORS: usize = 0x1110;
 // NES_Ver2: WRDADR, width road address.
-pub(super) const DUNG_WIDTH_ROAD_ADDRESS: usize = 0x4b0;
 pub(super) const ROOM_BG1_TILEMAP_BASE: usize = 0x4000;
 pub(super) const ROOM_BG2_TILEMAP_BASE: usize = 0x2000;
-pub(super) const DUNG_INDEX_X3: usize = 0x110;
-pub(super) const PUSHEDBLOCKS_MAYBE_TIMEOUT: usize = 0x02c4;
-pub(super) const PUSHEDBLOCK_FACING: usize = 0x05f8;
-pub(super) const PUSH_BLOCK_DIRECTION_DUNGEON: usize = 0x0474;
-pub(super) const MOVABLE_BLOCK_DATAS: usize = 0x0f940;
-pub(super) const SPRITE_Y_RECOIL_DUNGEON: usize = 0x0f30;
-pub(super) const DUNG_HDR_BG2_PROPERTIES_BACKUP: usize = 0xc208;
-pub(super) const WHICH_STAIRCASE_INDEX: usize = 0x462;
 // NES_Ver2: SPMVCT, step/staircase move counter.
-pub(super) const STAIRCASE_MOVE_COUNTER: usize = 0x464;
-pub(super) const CUR_STAIRCASE_PLANE: usize = 0x48a;
-pub(super) const DUNG_HDR_STAIRCASE_PLANE: usize = 0x63d;
-pub(super) const STAIRCASE_LOWER_LEVEL_STATUS: usize = 0x492;
-pub(super) const COUNTDOWN_TIMER_FOR_STAIRCASES: usize = 0x378;
-pub(super) const DOOR_DEBRIS_DIRECTION_DUNGEON: usize = 0x03be;
-pub(super) const FLAG_WHICH_MUSIC_TYPE_DUNGEON: usize = 0x136;
 pub(super) const MESSAGING_BUF_DUNGEON: usize = 0x10000;
-pub(super) const DUNG_TORCH_TIMERS_DUNGEON: usize = 0x04f0;
-pub(super) const POTS_REVEALED_IN_ROOM_DUNGEON: usize = 0x0f580;
 pub(super) const UVRAM_DATA_DUNGEON: usize = 0x1100;
 pub(super) const FEATURE_MISC_BUG_FIXES_DUNGEON: u32 = 4096;
 pub(super) const FEATURE_BREAK_POTS_WITH_SWORD_DUNGEON: u32 = 32;
-pub(super) const BIG_KEY_DOOR_MESSAGE_TRIGGERED_DUNGEON: usize = 0x04b8;
-pub(super) const DUNG_LOAD_PTR: usize = 0x00b7;
-pub(super) const DUNG_LOAD_PTR_BANK: usize = 0x00b9;
-
-pub(super) fn parse_usize_env(value: &str) -> Option<usize> {
-    value
-        .strip_prefix("0x")
-        .or_else(|| value.strip_prefix("0X"))
-        .and_then(|hex| usize::from_str_radix(hex, 16).ok())
-        .or_else(|| value.parse::<usize>().ok())
-}
-
-pub(super) fn format_optional_hex(value: Option<u8>) -> String {
-    value
-        .map(|value| format!("0x{value:02x}"))
-        .unwrap_or_else(|| "OOB".to_string())
-}
-
 pub(super) struct EntranceAssetSet {
     pub(super) rooms: usize,
     pub(super) relative_coords: usize,

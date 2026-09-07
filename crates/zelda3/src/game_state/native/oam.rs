@@ -366,11 +366,6 @@ impl<'a> NativeOamStateBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn subtract_current_pointer(&mut self, value: u16) {
-        self.state.subtract_current_pointer(value);
-        self.sync();
-    }
-
     pub(crate) fn set_current_extended_pointer(&mut self, value: u16) {
         self.state.set_current_extended_pointer(value);
         self.sync();
@@ -408,11 +403,6 @@ impl<'a> NativeOamStateBridgeMut<'a> {
 
     pub(crate) fn add_current_extended_pointer(&mut self, value: u16) {
         self.state.add_current_extended_pointer(value);
-        self.sync();
-    }
-
-    pub(crate) fn subtract_current_extended_pointer(&mut self, value: u16) {
-        self.state.subtract_current_extended_pointer(value);
         self.sync();
     }
 

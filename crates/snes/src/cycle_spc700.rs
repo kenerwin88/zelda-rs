@@ -344,10 +344,6 @@ impl SmpCoroutineState {
         self.enabled
     }
 
-    pub(crate) fn opcode(self) -> Option<u8> {
-        self.opcode
-    }
-
     pub(crate) fn is_idle(self) -> bool {
         self.opcode.is_none()
     }
@@ -1150,18 +1146,6 @@ impl<'a> Smp<'a> {
                 pc: self.reg_pc,
             }),
         }
-    }
-
-    pub fn reset(&mut self) {
-        self.reg_pc = 0xffc0;
-        self.reg_a = 0;
-        self.reg_x = 0;
-        self.reg_y = 0;
-        self.reg_sp = 0xef;
-
-        self.set_psw(0x02);
-
-        self.is_stopped = false;
     }
 
     pub fn set_reg_ya(&mut self, value: u16) {

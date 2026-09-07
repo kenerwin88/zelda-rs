@@ -32,12 +32,9 @@ pub(super) struct PrepOamCoordsRet {
 }
 
 // `Sprite_DelayAux3` is shared scratch (variables.h:0xee0).
-const SPRITE_DELAY_AUX3_SB: usize = 0x0ee0;
 // Shared scratch used by small-boss draw/update routines.
 const SMALL_BOSS_SHARED_WORK_A: usize = 0x0fb6;
-const VITREOUS_EYEBALL_RELEASE_COUNT: usize = 0x0ff8;
 // `overlord_x_hi` (variables.h:0xb10).
-const OVERLORD_X_HI_SB: usize = 0x0b10;
 // kSprite_TrinexxD_Gfx3 / Gfx — angle-to-graphic tables (sprite_main.c:16035-16038).
 const TRINEXX_FINAL_PHASE_ANGLE_GRAPHICS: [u8; 8] = [6, 7, 0, 1, 2, 3, 4, 5];
 const TRINEXX_FINAL_PHASE_ALT_GRAPHICS: [u8; 8] = [7, 7, 1, 1, 3, 3, 5, 5];
@@ -2714,15 +2711,6 @@ impl ZeldaState {
             flags: info.flags,
         };
         self.sprite_draw_shadow_custom(k, &mut canonical, 10);
-    }
-
-    fn small_boss_garnish_alloc_overwrite_old(&mut self) -> Option<usize> {
-        let j = self.garnish_alloc_overwrite_old();
-        if j < 0 {
-            None
-        } else {
-            Some(j as usize)
-        }
     }
 
     fn set_oam_helper0_for_small_bosses(

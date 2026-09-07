@@ -1577,36 +1577,6 @@ impl SpriteHistoryScratchState {
         );
     }
 
-    pub(crate) fn write_swamola_history_to_ram(&self, ram: &mut [u8]) {
-        write_split_word_bank(
-            ram,
-            SWAMOLA_HISTORY_X_LO,
-            SWAMOLA_HISTORY_X_HI,
-            &self.swamola_history_x,
-        );
-        write_split_word_bank(
-            ram,
-            SWAMOLA_HISTORY_Y_LO,
-            SWAMOLA_HISTORY_Y_HI,
-            &self.swamola_history_y,
-        );
-    }
-
-    pub(crate) fn write_beamos_laser_history_to_ram(&self, ram: &mut [u8]) {
-        write_split_word_bank(
-            ram,
-            BEAMOS_LASER_HISTORY_X_LO,
-            BEAMOS_LASER_HISTORY_X_HI,
-            &self.beamos_laser_x,
-        );
-        write_split_word_bank(
-            ram,
-            BEAMOS_LASER_HISTORY_Y_LO,
-            BEAMOS_LASER_HISTORY_Y_HI,
-            &self.beamos_laser_y,
-        );
-    }
-
     pub(crate) fn write_lanmola_segment_motion_to_ram(&self, ram: &mut [u8]) {
         write_byte_bank(ram, BEAMOS_LASER_HISTORY_X_HI, &self.lanmola_z_offsets);
         write_byte_bank(ram, BEAMOS_LASER_HISTORY_Y_HI, &self.lanmola_directions);
@@ -2783,10 +2753,6 @@ impl SkullWoodsFireState {
 
     pub(crate) fn clear_entrance_opening_started(&mut self) {
         self.entrance_opening_started = 0;
-    }
-
-    pub(crate) fn set_entrance_opening_started(&mut self) {
-        self.entrance_opening_started = 1;
     }
 
     pub(crate) fn set_inner_position(&mut self, x: u16, y: u16) {

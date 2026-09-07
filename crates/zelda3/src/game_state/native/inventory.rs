@@ -101,10 +101,6 @@ impl InventoryItemsState {
         }
     }
 
-    pub(crate) fn has_inventory_item(&self, index: usize) -> bool {
-        self.inventory_item(index) != 0
-    }
-
     pub(crate) fn bow(&self) -> u8 {
         self.inventory_item(0)
     }
@@ -175,10 +171,6 @@ impl InventoryItemsState {
         self.inventory_item(16)
     }
 
-    pub(crate) fn cane_byrna(&self) -> u8 {
-        self.inventory_item(17)
-    }
-
     pub(crate) fn cape(&self) -> u8 {
         self.inventory_item(18)
     }
@@ -225,21 +217,6 @@ impl InventoryItemsState {
 
     pub(crate) fn bottle(&self, index: usize) -> u8 {
         self.bottles.get(index).copied().unwrap_or(0)
-    }
-
-    pub(crate) fn has_bottle(&self, index: usize) -> bool {
-        self.bottle(index) != 0
-    }
-
-    pub(crate) fn bottle_contents_or(&self) -> u8 {
-        self.bottles
-            .iter()
-            .copied()
-            .fold(0, |acc, bottle| acc | bottle)
-    }
-
-    pub(crate) fn has_bottle_at_least(&self, value: u8) -> bool {
-        self.bottles.iter().any(|bottle| *bottle >= value)
     }
 
     fn set_inventory_item(&mut self, index: usize, value: u8) {
@@ -304,11 +281,6 @@ impl<'a> NativeInventoryItemsBridgeMut<'a> {
         // caller already wrote RAM; nothing to absorb here.
     }
 
-    fn absorb_item_memory_word(&mut self, address: usize) {
-        self.absorb_item_memory_byte(address);
-        self.absorb_item_memory_byte(address + 1);
-    }
-
     pub(crate) fn set_inventory_item(&mut self, index: usize, value: u8) {
         self.items.set_inventory_item(index, value);
         self.items.write_to_ram(self.ram);
@@ -320,38 +292,11 @@ impl<'a> NativeInventoryItemsBridgeMut<'a> {
         self.absorb_item_memory_byte(item_memory_addr);
     }
 
-    pub(crate) fn or_item_memory_value(&mut self, item_memory_addr: usize, value: u8) -> u8 {
-        self.ram[item_memory_addr] |= value;
-        self.absorb_item_memory_byte(item_memory_addr);
-        self.ram[item_memory_addr]
-    }
-
     pub(crate) fn set_item_memory_value_if_empty(&mut self, item_memory_addr: usize, value: u8) {
         if self.ram[item_memory_addr] == 0 {
             self.ram[item_memory_addr] = value;
             self.absorb_item_memory_byte(item_memory_addr);
         }
-    }
-
-    pub(crate) fn or_item_memory_word(&mut self, item_memory_addr: usize, value: u16) {
-        let next = read_le_u16(self.ram, item_memory_addr) | value;
-        write_le_u16(self.ram, item_memory_addr, next);
-        self.absorb_item_memory_word(item_memory_addr);
-    }
-
-    pub(crate) fn add_item_memory_value_capped(
-        &mut self,
-        item_memory_addr: usize,
-        add: u8,
-        cap: u8,
-    ) {
-        self.ram[item_memory_addr] = self.ram[item_memory_addr].saturating_add(add).min(cap);
-        self.absorb_item_memory_byte(item_memory_addr);
-    }
-
-    pub(crate) fn increment_item_memory_value_mod4(&mut self, item_memory_addr: usize) {
-        self.ram[item_memory_addr] = self.ram[item_memory_addr].wrapping_add(1) & 3;
-        self.absorb_item_memory_byte(item_memory_addr);
     }
 
     pub(crate) fn set_mushroom(&mut self, value: u8) {
@@ -780,10 +725,6 @@ impl SaveProgressState {
         self.save_byte(SAVEGAME_IS_DARKWORLD)
     }
 
-    pub(crate) fn is_dark_world(&self) -> bool {
-        self.dark_world_state() != 0
-    }
-
     pub(crate) fn dark_world_bit6(&self) -> u8 {
         (self.dark_world_state() >> 6) & 1
     }
@@ -826,10 +767,6 @@ impl SaveProgressState {
 
     pub(crate) fn total_death_save_counter_is_uninitialized(&self) -> bool {
         self.total_death_save_counter() == 0xffff
-    }
-
-    pub(crate) fn dungeon_info_slice(&self) -> &[u8] {
-        &self.dungeon_info
     }
 
     pub(crate) fn which_starting_point(&self) -> u8 {
@@ -959,15 +896,6 @@ impl SaveProgressState {
 
     pub(crate) fn set_dungeon_info_checksum(&mut self, value: u16) {
         self.set_dungeon_info_word(0x27f, value);
-    }
-
-    pub(crate) fn compute_dungeon_info_checksum(&self) -> u16 {
-        let mut checksum = 0x5a5au16;
-        for i in (0..0x4fe).step_by(2) {
-            let word = u16::from(self.dungeon_info[i]) | (u16::from(self.dungeon_info[i + 1]) << 8);
-            checksum = checksum.wrapping_sub(word);
-        }
-        checksum
     }
 }
 
@@ -1170,10 +1098,6 @@ impl<'a> NativeSaveProgressBridgeMut<'a> {
     pub(crate) fn set_dungeon_info_checksum(&mut self, value: u16) {
         self.state.set_dungeon_info_checksum(value);
         self.sync_dungeon_info_word(0x27f);
-    }
-
-    pub(crate) fn compute_dungeon_info_checksum(&self) -> u16 {
-        self.state.compute_dungeon_info_checksum()
     }
 }
 

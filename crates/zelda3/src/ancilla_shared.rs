@@ -1,57 +1,5 @@
-pub(super) const ANCILLA_Z_SUBPIXEL_PLAYER: usize = 0x02a8;
-pub(super) const ANCILLA_TILE_ATTR_PLAYER: usize = 0x03e4;
-pub(super) const ANCILLA_ALLOC_ROTATE_PLAYER: usize = 0x03c4;
-pub(super) const ANCILLA_S_PLAYER: usize = 0x03a9;
-pub(super) const ANCILLA_T_PLAYER: usize = 0x03d5;
-pub(super) const ANCILLA_R_PLAYER: usize = 0x03ea;
-pub(super) const DUNG_FLAG_SOMARIA_BLOCK_SWITCH_PLAYER: usize = 0x0646;
-pub(super) const ANCILLA_INTERACTIVE_RESET_FLAG: usize = 0x02f3;
-pub(super) const SPRITE_TILETYPE_ANCILLA: usize = 0x0fa5;
-pub(super) const CURRENT_AREA_OF_PLAYER_ANCILLA: usize = 0x0700;
-pub(super) const BOOMERANG_TEMP_Y: usize = 0x0399;
-pub(super) const BOOMERANG_TEMP_X: usize = 0x039b;
 // Single-use coordinate scratch for arrow setup; NES_Ver2 aliases are broader shared work RAM.
-pub(super) const SCRATCH_0_ANCILLA: usize = 0x0072;
-pub(super) const SCRATCH_1_ANCILLA: usize = 0x0074;
-pub(super) const INDEX_OF_INTERACTING_TILE_ANCILLA: usize = 0x0076;
-pub(super) const SPRITE_IGNORE_PROJECTILE_ANCILLA: usize = 0x0ba0;
-pub(super) const REPULSESPARK_FLOOR_STATUS_ANCILLA: usize = 0x0b68;
-pub(super) const REPULSESPARK_TIMER_ANCILLA: usize = 0x0fac;
-pub(super) const REPULSESPARK_X_LO_ANCILLA: usize = 0x0fad;
-pub(super) const REPULSESPARK_Y_LO_ANCILLA: usize = 0x0fae;
-pub(super) const REPULSESPARK_ANIM_DELAY_ANCILLA: usize = 0x0faf;
-pub(super) const SPRITE_FLAGS_ANCILLA: usize = 0x0b6b;
-pub(super) const DAMAGE_TYPE_DETERMINER_ANCILLA: usize = 0x0cf2;
-pub(super) const SPRITE_B_ANCILLA: usize = 0x0da0;
-pub(super) const SPRITE_C_ANCILLA: usize = 0x0db0;
-pub(super) const SPRITE_BUMP_DAMAGE_ANCILLA: usize = 0x0cd2;
-pub(super) const SPRITE_HEALTH_ANCILLA: usize = 0x0e50;
-pub(super) const SPRITE_HEAD_DIR_ANCILLA: usize = 0x0eb0;
-pub(super) const SPRITE_F_ANCILLA: usize = 0x0ea0;
-pub(super) const SPRITE_G_ANCILLA: usize = 0x0ed0;
-pub(super) const SPRITE_DELAY_AUX2_ANCILLA: usize = 0x0e10;
-pub(super) const SPRITE_DELAY_AUX3_ANCILLA: usize = 0x0ee0;
-pub(super) const SPRITE_HIT_TIMER_ANCILLA: usize = 0x0ef0;
-pub(super) const SPRITE_Y_RECOIL_ANCILLA: usize = 0x0f30;
-pub(super) const SPRITE_OAM_FLAGS_ANCILLA: usize = 0x0f50;
-pub(super) const GARNISH_ACTIVE_ANCILLA: usize = 0x0fb4;
-pub(super) const GARNISH_Y_LO_ANCILLA: usize = 0x1f81e;
-pub(super) const GARNISH_X_LO_ANCILLA: usize = 0x1f83c;
-pub(super) const GARNISH_Y_HI_ANCILLA: usize = 0x1f85a;
-pub(super) const GARNISH_X_HI_ANCILLA: usize = 0x1f878;
-pub(super) const GARNISH_SPRITE_ANCILLA: usize = 0x1f8b4;
-pub(super) const GARNISH_COUNTDOWN_ANCILLA: usize = 0x1f90e;
-pub(super) const DOOR_DEBRIS_DIRECTION: usize = 0x03be;
-pub(super) const SWORDBEAM_TEMP_X: usize = 0x1580e;
-pub(super) const SWORDBEAM_TEMP_Y: usize = 0x15810;
-pub(super) const TAGALONG_Y_LO_ANCILLA: usize = 0x1a00;
-pub(super) const TAGALONG_Y_HI_ANCILLA: usize = 0x1a14;
-pub(super) const TAGALONG_X_LO_ANCILLA: usize = 0x1a28;
-pub(super) const TAGALONG_X_HI_ANCILLA: usize = 0x1a3c;
 pub(super) const MILESTONE_ITEM_GFX_SWAP_COUNTDOWN: usize = 0x04c2;
-pub(super) const TRIGGER_SPECIAL_ENTRANCE_ANCILLA: usize = 0x04c6;
-pub(super) const MAGIC_SPELL_PLAYER_LOCK_FLAG: usize = 0x0325;
-
 pub(super) const BOMBOS_PANNED_SFX_BITS: [u8; 8] = [0x80, 0x80, 0x80, 0, 0, 0x40, 0x40, 0x40];
 pub(super) const BOMBOS_BLAST_POSITION_TABLE: [u8; 72] = [
     0xb6, 0x5d, 0xa1, 0x30, 0x69, 0xb5, 0xa3, 0x24, 0x96, 0xac, 0x73, 0x5f, 0x92, 0x48, 0x52, 0x81,
@@ -1070,8 +1018,6 @@ pub(super) const ANCILLA_DRAW_BOMBOS_BLAST_BOMBOS_SPELL_DRAW_BLAST_CHAR: [u8; 32
 pub(super) const ANCILLA_DRAW_WEATHERVANE_EXPLOSION_WOOD_DEBRIS_WEATHERVANE_EXPLODE_CHAR: [u8; 2] =
     [0x4e, 0x4f];
 
-pub(super) const ANCILLA38_CUTSCENE_DUCK_TRAVEL_BIRD_INTRO_FLAGS_BY_DIRECTION: [u8; 2] = [0x40, 0];
-
 pub(super) const ANCILLA38_CUTSCENE_DUCK_TRAVEL_BIRD_INTRO_X_SPEED_LIMITS: [u8; 2] = [28, 60];
 
 pub(super) const ANCILLA38_CUTSCENE_DUCK_AFTER_STUFF_TRAVEL_BIRD_INTRO_FLAGS_BY_DIRECTION: [u8; 2] =
@@ -1481,14 +1427,6 @@ pub(super) const ANCILLA_DRAW_SHADOW_ANCILLA_DRAW_SHADOW_FLAGS: [u8; 14] = [
 pub(super) const ANCILLA_CHECK_DAMAGE_TO_SPRITE_AGGRESSIVE_ANCILLA_DAMAGE: [u8; 57] = [
     6, 1, 11, 0, 0, 0, 0, 8, 0, 6, 0, 12, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 14, 13, 0, 0, 15, 0,
     0, 7, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 11, 0, 1, 1, 1, 1, 1, 1, 1, 1,
-];
-
-pub(super) const SPRITE_APPLY_CALCULATED_DAMAGE_FOR_ANCILLA_ENEMY_DAMAGES: [u8; 128] = [
-    0, 1, 32, 255, 252, 251, 0, 0, 0, 2, 64, 4, 0, 0, 0, 0, 0, 4, 64, 2, 3, 0, 0, 0, 0, 8, 64, 4,
-    0, 0, 0, 0, 0, 16, 64, 8, 0, 0, 0, 0, 0, 16, 64, 8, 0, 0, 0, 0, 0, 4, 64, 16, 0, 0, 0, 0, 0,
-    255, 64, 255, 252, 251, 0, 0, 0, 4, 64, 255, 252, 251, 32, 0, 0, 100, 24, 100, 0, 0, 0, 0, 0,
-    249, 250, 255, 100, 0, 0, 0, 0, 8, 64, 253, 4, 16, 0, 0, 0, 8, 64, 254, 4, 0, 0, 0, 0, 16, 64,
-    253, 0, 0, 0, 0, 0, 254, 64, 16, 0, 0, 0, 0, 0, 32, 64, 255, 0, 0, 0, 250,
 ];
 
 pub(super) const ANCILLA_DRAW_EXPLOSION_BOMB_DRAW_EXPLOSION_OFFSET: [SignedOffset; 54] = signed_offsets![

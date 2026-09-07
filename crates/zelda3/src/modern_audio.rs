@@ -1373,11 +1373,13 @@ impl ModernAudioEngine {
     }
 
     fn rebuild_staged_output(&mut self) {
-        let left = ((i32::from(self.dsp_output_raw_main_left) * i32::from(self.master_volume_left)) >> 7)
-            + ((i32::from(self.dsp_output_filtered_left) * i32::from(self.echo_mix_left)) >> 7);
-        let right =
-            ((i32::from(self.dsp_output_raw_main_right) * i32::from(self.master_volume_right)) >> 7)
-                + ((i32::from(self.dsp_output_filtered_right) * i32::from(self.echo_mix_right)) >> 7);
+        let left =
+            ((i32::from(self.dsp_output_raw_main_left) * i32::from(self.master_volume_left)) >> 7)
+                + ((i32::from(self.dsp_output_filtered_left) * i32::from(self.echo_mix_left)) >> 7);
+        let right = ((i32::from(self.dsp_output_raw_main_right)
+            * i32::from(self.master_volume_right))
+            >> 7)
+            + ((i32::from(self.dsp_output_filtered_right) * i32::from(self.echo_mix_right)) >> 7);
         self.dsp_output_left = left.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
         self.dsp_output_right = right.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
     }
@@ -1787,15 +1789,6 @@ impl ModernAudioEngine {
             state.initialize_dsp_envelope();
             state.amplitude = 0;
         }
-    }
-
-    fn key_on_staged_voice(&mut self, voice: usize, sample_ram: Option<&[u8]>) {
-        let Some(state) = self.voices.get(voice) else {
-            return;
-        };
-        let source = state.instrument_timbre;
-        self.retrigger_voice(voice);
-        self.load_voice_sample(voice, source, 0, sample_ram);
     }
 
     fn schedule_dsp_key_on(
@@ -2208,9 +2201,11 @@ impl ModernAudioEngine {
             for tap in 0..8 {
                 let index = (history_index + tap + 1) & 7;
                 filtered_left += (i32::from(self.fir_history_left[index])
-                    * i32::from(self.fir_coefficients[tap])) >> 6;
+                    * i32::from(self.fir_coefficients[tap]))
+                    >> 6;
                 filtered_right += (i32::from(self.fir_history_right[index])
-                    * i32::from(self.fir_coefficients[tap])) >> 6;
+                    * i32::from(self.fir_coefficients[tap]))
+                    >> 6;
                 if tap == 6 {
                     filtered_left = i32::from(filtered_left as i16);
                     filtered_right = i32::from(filtered_right as i16);
@@ -2805,10 +2800,6 @@ impl ModernVoice {
             self.advance_dsp_envelope_at_optional_counter(envelope_counter);
         }
         sample
-    }
-
-    fn next_noise_sample(&mut self, noise_sample: i16) -> i32 {
-        self.next_noise_sample_at_counter(noise_sample, None)
     }
 
     fn next_noise_sample_at_counter(

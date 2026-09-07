@@ -1,20 +1,8 @@
 use crate::types::sign8;
 use crate::zelda_rtl::sprite::DrawMultipleData;
 
-pub(super) const IS_IN_DARK_WORLD_PREP: usize = 0x0fff;
-pub(super) const DUNG_FLOOR_MOVE_FLAGS_PREP: usize = 0x041a;
-pub(super) const ACTIVE_OVERLORD_INDEX_PREP: usize = 0x0fde;
-pub(super) const SPRITE_PREP_SHARED_COUNTER: usize = 0x0ff8;
-pub(super) const LINK_RUPEES_IN_POND_PREP: usize = 0x0f36a;
-pub(super) const ITEM_DROP_LUCK_PREP: usize = 0x0cf9;
-pub(super) const LUCK_KILL_COUNTER_PREP: usize = 0x0cfa;
 pub(super) const NUM_SPRITES_KILLED_PREP: usize = 0x0cfb;
-pub(super) const SPRITE_DELAY_AUX3_PREP: usize = 0x0ee0;
 pub(super) const MINIGAME_CREDITS_PREP: usize = 0x04c4;
-pub(super) const FLAG_OVERWORLD_AREA_DID_CHANGE_PREP: usize = 0x0abf;
-pub(super) const SRAM_PROGRESS_INDICATOR_3_PREP: usize = 0x0f3c9;
-pub(super) const SPRCOLL_X_BASE_PREP: usize = 0x0fbc;
-pub(super) const SPRCOLL_Y_BASE_PREP: usize = 0x0fbe;
 pub(super) const CHAINCHOMP_X_HIST_PREP: usize = 0x1fc00;
 pub(super) const CHAINCHOMP_Y_HIST_PREP: usize = 0x1fd00;
 pub(super) const FEATURE_MISC_BUG_FIXES_PREP: u32 = 4096;
@@ -28,12 +16,6 @@ pub(super) const ALT_SPRITE_X_HI_PREP: usize = 0x1d30;
 #[cfg(test)]
 pub(super) const ALT_SPRITE_Y_HI_PREP: usize = 0x1d50;
 #[cfg(test)]
-pub(super) const BEAMOS_X_LO_PREP: usize = 0x1fd80;
-#[cfg(test)]
-pub(super) const BEAMOS_Y_LO_PREP: usize = 0x1fe80;
-#[cfg(test)]
-pub(super) const BEAMOS_Y_HI_PREP: usize = 0x1ff00;
-#[cfg(test)]
 pub(super) const MOLDORM_X_LO_PREP: usize = 0x1fc00;
 #[cfg(test)]
 pub(super) const MOLDORM_X_HI_PREP: usize = 0x1fc80;
@@ -43,15 +25,9 @@ pub(super) const MOLDORM_Y_LO_PREP: usize = 0x1fd00;
 pub(super) const MOLDORM_Y_HI_PREP: usize = 0x1fd80;
 pub(super) const OVERLORD_X_HI_PREP: usize = 0x0b10;
 #[cfg(test)]
-pub(super) const OVERLORD_Y_LO_PREP: usize = 0x0b18;
-#[cfg(test)]
 pub(super) const OVERLORD_Y_HI_PREP: usize = 0x0b20;
 #[cfg(test)]
-pub(super) const OVERLORD_GEN1_PREP: usize = 0x0b28;
-#[cfg(test)]
 pub(super) const OVERLORD_GEN2_PREP: usize = 0x0b30;
-#[cfg(test)]
-pub(super) const OVERLORD_GEN3_PREP: usize = 0x0b38;
 #[cfg(test)]
 pub(super) const OVERLORD_FLOOR_PREP: usize = 0x0b40;
 #[cfg(test)]

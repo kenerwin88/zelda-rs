@@ -840,12 +840,6 @@ impl ZeldaState {
         self.increment_submodule();
     }
 
-    pub(super) fn GetMap8toTileAttr(&self) -> Vec<u8> {
-        self.asset_raw(163)
-            .expect("GetMap8toTileAttr missing kMap8DataToTileAttr asset")
-            .to_vec()
-    }
-
     pub(super) fn GetMap16toMap8Table(&self) -> Vec<u8> {
         self.asset_raw(70)
             .expect("GetMap16toMap8Table missing kMap16ToMap8 asset")
@@ -1966,30 +1960,6 @@ impl ZeldaState {
         xx
     }
 
-    pub(super) fn Overworld_GetSignText(&self, area: i32) -> u16 {
-        let signs = self
-            .asset_raw(110)
-            .expect("Overworld_GetSignText missing kOverworld_SignText asset");
-        read_word_from_slice(signs, area as usize * 2)
-    }
-
-    pub(super) fn GetOverworldSpritePtr(&self, area: i32) -> Vec<u8> {
-        let base = if self.game_state.inventory.save_progress.progress_indicator() == 3 {
-            2
-        } else if self.game_state.inventory.save_progress.progress_indicator() == 2 {
-            1
-        } else {
-            0
-        };
-        let offsets = self
-            .asset_raw(159)
-            .expect("GetOverworldSpritePtr missing kOverworldSpriteOffs asset");
-        let offset = read_word_from_slice(offsets, (area as usize + base * 144) * 2) as usize;
-        self.asset_raw(160)
-            .expect("GetOverworldSpritePtr missing kOverworldSprites asset")[offset..]
-            .to_vec()
-    }
-
     pub(super) fn GetOverworldHibytes(&self, i: i32) -> Vec<u8> {
         self.asset_memblk(105, i as usize)
             .unwrap_or_else(|| panic!("GetOverworldHibytes missing block {i}"))
@@ -2717,11 +2687,6 @@ impl ZeldaState {
         self.set_overworld_map16_y_unit(bak_y_unit);
         self.set_overworld_map16_dst_off(bak_dst_off);
         self.set_overworld_map16_src_off(bak_src_off);
-    }
-
-    pub(super) fn MirrorWarp_LoadSpritesAndColors(&mut self) {
-        self.follower_link_state_mut().set_blink_countdown(0x90);
-        self.mirror_warp_load_sprites_and_colors_after_blink();
     }
 
     /// `MirrorWarp_LoadSpritesAndColors` after its blink-countdown store: the
@@ -4945,10 +4910,6 @@ impl ZeldaState {
         ) != 0
     }
 
-    fn overworld_bg2_word(&self, word_index: usize) -> u16 {
-        self.game_state.dungeon.room_tilemaps.bg2_tile(word_index)
-    }
-
     fn overworld_map16_stripe_source_word(&self, source_offset: u16) -> u16 {
         // $82:F3DB/$82:F4A5 use `LDA [$00],Y` with a $7E:2000 base.
         // The 65816 therefore keeps reading contiguous WRAM when the 16-bit
@@ -4972,10 +4933,6 @@ impl ZeldaState {
 
     fn store_overworld_spexit_map16_src_off(&mut self, src_off: u16) {
         self.set_overworld_spexit_map16_src_off(src_off);
-    }
-
-    fn store_overworld_exit_map16_src_off(&mut self, src_off: u16) {
-        self.set_overworld_exit_map16_src_off(src_off);
     }
 
     fn store_small_overworld_map16_scroll_backup(
@@ -6601,17 +6558,6 @@ impl ZeldaState {
                 << 3)
     }
 
-    pub(super) fn Overworld_ReadTileAttribute(&self, x: u16, y: u16) -> u8 {
-        let t = self.overworld_bg2_byte_pos(x, y) as usize;
-        let tile = self
-            .game_state
-            .dungeon
-            .room_tilemaps
-            .bg2_tile_by_byte_pos(t as u16) as usize;
-        self.asset_raw(164)
-            .expect("Overworld_ReadTileAttribute missing kSomeTileAttr asset")[tile]
-    }
-
     pub(super) fn overworld_reveal_secret(&mut self, pos: u16) -> u16 {
         self.dungeon_secret_scratch_mut().clear_pending_kind();
 
@@ -7013,40 +6959,6 @@ impl ZeldaState {
         self.set_submodule(0);
     }
 
-    pub(super) fn OpenGargoylesDomain(&mut self) {
-        self.overworld_draw_map16_persist(0x0d3e, 0x0e1b);
-        self.overworld_draw_map16_persist(0x0d40, 0x0e1c);
-        self.overworld_draw_map16_persist(0x0dbe, 0x0e1d);
-        self.overworld_draw_map16_persist(0x0dc0, 0x0e1e);
-        self.overworld_draw_map16_persist(0x0e3e, 0x0e1f);
-        self.overworld_draw_map16_persist(0x0e40, 0x0e20);
-        self.set_overworld_event_bits(0x58, 0x20);
-        self.set_sound_effect_2(0x1b);
-        self.set_bg_vram_load_mode(1);
-    }
-
-    pub(super) fn CreatePyramidHole(&mut self) {
-        self.overworld_draw_map16_persist(0x03bc, 0x0e3f);
-        self.overworld_draw_map16_persist(0x03be, 0x0e40);
-        self.overworld_draw_map16_persist(0x03c0, 0x0e41);
-        self.overworld_draw_map16_persist(0x043c, 0x0e42);
-        self.overworld_draw_map16_persist(0x043e, 0x0e43);
-        self.overworld_draw_map16_persist(0x0440, 0x0e44);
-        self.overworld_draw_map16_persist(0x04bc, 0x0e45);
-        self.overworld_draw_map16_persist(0x04be, 0x0e46);
-        self.overworld_draw_map16_persist(0x04c0, 0x0e47);
-        self.set_ambient_sound_effect_word(0x3515);
-        self.set_overworld_event_bits(0x5b, 0x20);
-        self.set_sound_effect_2(3);
-        self.set_bg_vram_load_mode(1);
-    }
-
-    pub(super) fn Overworld_AlterTileHardcore(&mut self, pos: u16, value: u16) {
-        self.dungeon_room_tilemaps_mut()
-            .set_bg2_tile_by_byte_pos(pos, value);
-        self.overworld_draw_map16(pos, value);
-    }
-
     pub(super) fn Overworld_CheckSpecialSwitchArea(&mut self) {
         let map8 = self.Overworld_GetMap16OfLink_Mult8();
         let a = map8[0] & 0x01ff;
@@ -7125,20 +7037,6 @@ impl ZeldaState {
         xy.x = x;
         xy.y = y;
         pos
-    }
-
-    pub(super) fn overworld_smash_rock_pile(
-        &mut self,
-        down_one_tile: bool,
-        pt: &mut Point16U,
-    ) -> i32 {
-        if let Some((attr, x, y)) = self.overworld_smash_rock_pile_result(down_one_tile) {
-            pt.x = x;
-            pt.y = y;
-            attr as i32
-        } else {
-            -1
-        }
     }
 
     pub(super) fn overworld_lifting_small_obj(

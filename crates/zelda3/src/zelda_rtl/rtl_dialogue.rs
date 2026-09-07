@@ -138,15 +138,6 @@ impl ZeldaState {
             .set_tile_word_at_byte_offset(byte_offset, value);
     }
 
-    #[track_caller]
-    pub(crate) fn assert_native_vwf_render_matches_ram(&self) {
-        debug_assert_eq!(
-            self.game_state.messaging.vwf_render,
-            crate::game_state::VwfRenderState::load_from_ram(&self.ram),
-            "native VWF render state diverged from compatibility RAM",
-        );
-    }
-
     /// Build Module05's Message-interface publication from the exact source
     /// return at `$0f:fdc3`. This replaces the former decompression-count
     /// estimate: only the typed receipt may expose module 14/submodule 2 or

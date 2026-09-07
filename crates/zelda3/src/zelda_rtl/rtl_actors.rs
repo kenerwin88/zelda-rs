@@ -5,16 +5,8 @@
 use super::*;
 
 impl ZeldaState {
-    pub(crate) fn player_state(&self) -> RamPlayerStateView<'_> {
-        RamPlayerStateView::new(&self.ram)
-    }
-
     pub(crate) fn player_state_mut(&mut self) -> RamPlayerStateViewMut<'_> {
         RamPlayerStateViewMut::new(&mut self.ram)
-    }
-
-    pub(crate) fn follower_link_state(&self) -> &FollowerLinkState {
-        &self.game_state.player.follower_link
     }
 
     pub(crate) fn set_sound_effect_1_with_link_pan(&mut self, effect: u8) {
@@ -194,47 +186,6 @@ impl ZeldaState {
             &mut self.game_state.sprites.sprite_slots,
             &mut self.ram,
         )
-    }
-
-    pub(super) fn handle_link_from_1d(&mut self) {
-        self.follower_link_state_mut().clear_item_in_hand();
-        self.follower_link_state_mut().clear_position_mode();
-        self.follower_link_state_mut().clear_action_scratch_state();
-        self.follower_link_state_mut().set_y_button_action_step(0);
-        self.follower_link_state_mut().set_y_button_action_flags(0);
-        self.follower_link_state_mut()
-            .clear_button_mask_b_y_bits(0x40);
-        self.follower_link_state_mut()
-            .clear_state_item_and_grab_flags();
-        self.follower_link_state_mut().clear_defense_flags();
-        self.link_reset_swimming_state();
-        self.follower_link_state_mut().clear_direction_lock_bits(1);
-        self.follower_link_state_mut().clear_z_high();
-        if self.game_state.player.follower_link.electrocute_on_touch() != 0 {
-            if self.game_state.player.follower_link.is_cape_active() {
-                self.link_force_unequip_cape_quietly();
-            }
-            self.link_reset_sword_and_item_usage();
-            self.follower_link_state_mut()
-                .set_sprite_damage_disable_timer(1);
-            self.follower_link_state_mut().clear_action_handler_timer();
-            self.follower_link_state_mut()
-                .set_spin_attack_delay_timer(2);
-            self.follower_link_state_mut().clear_animation_step();
-            self.follower_link_state_mut().clear_cardinal_direction();
-            self.set_sound_effect_1_with_link_pan(43);
-            self.follower_link_state_mut().set_handler_state(7);
-            self.link_state_zapped();
-        } else {
-            self.follower_link_state_mut()
-                .clear_moving_against_diag_tile();
-            self.follower_link_state_mut().set_handler_state(6);
-            self.link_state_recoil();
-        }
-    }
-
-    pub(super) fn ancilla_add_tablet_spell(&mut self, ty: u8) {
-        self.ancilla_add_simple(ty, 0);
     }
 
     pub(super) fn link_state_pits_after_aux_state(&mut self) {
@@ -459,10 +410,6 @@ impl ZeldaState {
 
     pub(super) fn ancilla_y(&self, k: usize) -> u16 {
         self.ancilla_slot_view(k).y()
-    }
-
-    pub(super) fn sprite_y(&self, k: usize) -> u16 {
-        self.sprite_slot_view(k).y()
     }
 
     pub(super) fn has_player_layer_collision(&self, mask: u8) -> bool {

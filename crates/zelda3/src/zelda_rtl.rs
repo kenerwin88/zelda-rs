@@ -28,16 +28,13 @@ use crate::game_state::constants::{
     VWF_ARR,
 };
 use crate::game_state::{
-    lanmola_flat_trail_entry_from_ram, loaded_room_data_word, Bg1MovementAccumulatorState,
-    BirdTravelDestinationState, BlastWallExplosionSlotState, BlastWallFireballSlotState,
-    BlastWallFragmentSlotState, BombosBlastState, BombosFireColumnState, BossHomePositionRead,
-    CachedSpriteRead, CompatibilityBytesView, CompatibilityBytesViewMut, DungeonStairList,
-    FollowerLinkState, GameState, GraphicsDecompressionScratch, HappinessPondRupeeSlotState,
-    HappinessPondRupeeSnapshot, HistoryPositionState, HudStateRead, HudTilemapState,
-    IntroActorRead, LanmolaFlatTrailEntry, LanmolaSegmentMotionState, LinkDmaSourceSlot,
-    LinkDmaSources, MsuResumeInfoState, MsuResumeSlot, MultiselectChoiceRead,
-    NativeAncillaSlotBridgeMut, NativeAncillaSlotView, NativeArcheryGameBridgeMut,
-    NativeArmosKnightHomePositionBridgeMut, NativeArrghusPuffHomePositionBridgeMut,
+    lanmola_flat_trail_entry_from_ram, loaded_room_data_word, BirdTravelDestinationState,
+    BossHomePositionRead, CachedSpriteRead, CompatibilityBytesView, CompatibilityBytesViewMut,
+    DungeonStairList, FollowerLinkState, GameState, GraphicsDecompressionScratch,
+    HappinessPondRupeeSnapshot, HudStateRead, HudTilemapState, IntroActorRead,
+    LanmolaFlatTrailEntry, LinkDmaSourceSlot, LinkDmaSources, MsuResumeInfoState, MsuResumeSlot,
+    MultiselectChoiceRead, NativeAncillaSlotBridgeMut, NativeAncillaSlotView,
+    NativeArcheryGameBridgeMut, NativeArmosKnightHomePositionBridgeMut,
     NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
     NativeBeamosLaserHistoryBridgeMut, NativeBg1MovementAccumulatorBridgeMut,
     NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut,
@@ -98,10 +95,8 @@ use crate::game_state::{
     NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut,
     NativeWorldTransientBridgeMut, OverworldConfigTableRead, OverworldMap16Decode,
     OverworldMap16DecodeScratch, OverworldMap16LoadState, OverworldMap16SourcePage,
-    PpuScrollCopyState, QuakeBoltSlotState, RamPlayerStateView, RamPlayerStateViewMut,
-    SkullWoodsFireSlotState, SmallOverworldMap16ScrollBackupState, SpotlightHdmaState,
-    SpriteSlotsState, SystemSignalsState, SystemWorkArea, TagalongSlotRead, TowerSealOrbitState,
-    TowerSealSparkleState, WeatherVaneDebrisSlotState,
+    PpuScrollCopyState, RamPlayerStateViewMut, SmallOverworldMap16ScrollBackupState,
+    SpotlightHdmaState, SpriteSlotsState, SystemSignalsState, SystemWorkArea, TagalongSlotRead,
 };
 use crate::raster_timing::{
     attract_map_projection_current_word_is_visible,
@@ -311,9 +306,6 @@ const ROM_TEXT_DECODE_FIRST_SLICE_CURSOR: u16 = 94;
 const POLY_WORKER_TWO_FRAME_CYCLE_THRESHOLD: u32 = 28_250;
 const SNES9X_INTRO_POLY_BOOTSTRAP_STEPS: u8 = 0;
 const SNES9X_INTRO_THREAD_START_DELAY: u8 = 0;
-const SNES9X_POLY_UPLOAD_DEFER_UNTIL_FRAME_COUNTER: u8 = 0x42;
-const SNES9X_NMI_POLY_UPLOAD_DEFER_FRAMES: u8 = 3;
-
 const fn resolve_active_display_blanking_scanout(
     captured_retain_prior_surface: bool,
     live_suffix_start_scanline: Option<u8>,
@@ -6394,14 +6386,6 @@ fn spotlight_reset_prefix_scanlines(
     Some(prefix)
 }
 
-fn dungeon_module_7_cpu_advance_at(
-    state: &ZeldaState,
-    checkpoint: RomCpuCheckpoint,
-    entry: CpuRasterPosition,
-) -> DungeonModuleCpuAdvance {
-    dungeon_module_7_cpu_advance(state, checkpoint, Some(entry), false)
-}
-
 fn dungeon_module_7_cpu_advance_after_leading_nmi(
     state: &ZeldaState,
     checkpoint: RomCpuCheckpoint,
@@ -7672,38 +7656,6 @@ const UPPER_BITMASKS: [u16; 16] = [
     0x0008, 0x0004, 0x0002, 0x0001,
 ];
 
-const RTL_RECEIVE_ITEM_OAM_EXT_SIZES: [u8; 76] = [
-    0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 0, 2, 0, 2, 2, 0, 2, 2, 2, 2, 2, 2, 2,
-    2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-    2, 2, 0, 0, 2, 0, 2, 2, 2, 0, 2, 2,
-];
-const RTL_RECEIVE_ITEM_DRAW_Y_OFFSETS: [i8; 76] = [
-    -5, -5, -5, -5, -5, -4, -4, -5, -5, -4, -4, -4, -2, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4,
-    -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -5, -4, -4, -4, -4, -4, -4, -2, -4, -4, -4, -4, -4,
-    -4, -4, -4, -4, -2, -2, -2, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -2, -2, -4, -2, -4, -4,
-    -4, -5, -4, -4,
-];
-const RTL_RECEIVE_ITEM_PALETTE_BITS: [u8; 76] = [
-    4, 4, 4, 4, 4, 0, 0, 4, 4, 4, 4, 4, 5, 0, 0, 0, 0, 0, 0, 4, 0, 4, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 4, 4, 0, 4, 0, 0, 0, 4, 0, 0,
-];
-const GIVE_ITEM_MEMORY_LOCATIONS: [usize; 76] = [
-    0xf359, 0xf359, 0xf359, 0xf359, 0xf35a, 0xf35a, 0xf35a, 0xf345, 0xf346, 0xf34b, 0xf342, 0xf340,
-    0xf341, 0xf344, 0xf35c, 0xf347, 0xf348, 0xf349, 0xf34a, 0xf34c, 0xf34c, 0xf350, 0xf35c, 0xf36b,
-    0xf351, 0xf352, 0xf353, 0xf354, 0xf354, 0xf34e, 0xf356, 0xf357, 0xf37a, 0xf34d, 0xf35b, 0xf35b,
-    0xf36f, 0xf364, 0xf36c, 0xf375, 0xf375, 0xf344, 0xf341, 0xf35c, 0xf35c, 0xf35c, 0xf36d, 0xf36e,
-    0xf36e, 0xf375, 0xf366, 0xf368, 0xf360, 0xf360, 0xf360, 0xf374, 0xf374, 0xf374, 0xf340, 0xf340,
-    0xf35c, 0xf35c, 0xf36c, 0xf36c, 0xf360, 0xf360, 0xf372, 0xf376, 0xf376, 0xf373, 0xf360, 0xf360,
-    0xf35c, 0xf359, 0xf34c, 0xf355,
-];
-const GIVE_ITEM_VALUES: [u8; 76] = [
-    1, 2, 3, 4, 1, 2, 3, 1, 1, 1, 1, 1, 1, 2, 0xff, 1, 1, 1, 1, 1, 2, 1, 0xff, 0xff, 1, 1, 2, 1, 2,
-    1, 1, 1, 0xff, 1, 0xff, 2, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 2, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xfb, 0xec, 0xff, 0xff, 0xff, 1, 3, 0xff, 0xff, 0xff, 0xff, 0x9c,
-    0xce, 0xff, 1, 10, 0xff, 0xff, 0xff, 0xff, 1, 3, 1,
-];
-
 fn configured_rom_reset_frame_delay() -> u8 {
     env::var("ZELDA3_ROM_RESET_FRAME_DELAY")
         .ok()
@@ -7743,24 +7695,6 @@ pub(super) fn configured_intro_thread_start_delay() -> u8 {
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(SNES9X_INTRO_THREAD_START_DELAY)
-}
-
-fn configured_nmi_poly_upload_defer_frames() -> u8 {
-    env::var("ZELDA3_SNES9X_NMI_POLY_UPLOAD_DEFER_FRAMES")
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(SNES9X_NMI_POLY_UPLOAD_DEFER_FRAMES)
-}
-
-fn configured_poly_upload_defer_until_frame_counter() -> u8 {
-    env::var("ZELDA3_SNES9X_POLY_UPLOAD_DEFER_UNTIL_FRAME_COUNTER")
-        .ok()
-        .and_then(|value| {
-            u8::from_str_radix(value.trim_start_matches("0x"), 16)
-                .or_else(|_| value.parse())
-                .ok()
-        })
-        .unwrap_or(SNES9X_POLY_UPLOAD_DEFER_UNTIL_FRAME_COUNTER)
 }
 
 fn non_empty_path(value: Option<OsString>) -> Option<PathBuf> {
@@ -7919,89 +7853,50 @@ const LINK_Y_COORD: usize = 0x20;
 const LINK_X_COORD: usize = 0x22;
 const LINK_Z_COORD: usize = 0x24;
 const LINK_DIRECTION_LAST: usize = 0x26;
-const ATTRACT_NEXT_LEGEND_GFX: usize = 0x26;
 const NMI_LOAD_BG_FROM_VRAM: usize = 0x14;
 const NMI_COPY_PACKETS_FLAG: usize = 0x18;
 const FLAG_UPDATE_CGRAM_IN_NMI: usize = 0x15;
-const FLAG_UPDATE_HUD_IN_NMI: usize = 0x16;
 const HUD_TILEMAP_NMI_WORDS: usize = 165;
 const HUD_TILEMAP_VRAM_DESTINATION: usize = 0x6040;
 const FULL_TILEMAP_NMI_WORDS: usize = 0x400;
 // Shared zero-page scratch; NES_Ver2 aliases include BMWORK/CRTNL/CRTNR, but these slots
 // are reused by unrelated player, overworld, and tile-detection code paths.
-const SCRATCH_0: usize = 0x72;
-const SCRATCH_A: usize = 0x73;
-const SCRATCH_1: usize = 0x74;
 const LINK_SUBPIXEL_Y: usize = 0x2a;
 const LINK_SUBPIXEL_X: usize = 0x2b;
-const LINK_SUBPIXEL_Z: usize = 0x2c;
 // NES_Ver2: PYFLCH, player frame-change counter.
 const LINK_FRAME_CHANGE_COUNTER: usize = 0x2d;
-const LINK_ANIMATION_STEPS: usize = 0x2e;
 const LINK_Y_VEL: usize = 0x30;
 const LINK_X_VEL: usize = 0x31;
-const LINK_Y_COORD_ORIGINAL: usize = 0x32;
 const LINK_Y_COORD_SAFE_RETURN_LO: usize = 0x3e;
 const LINK_X_COORD_SAFE_RETURN_LO: usize = 0x3f;
 const LINK_Y_COORD_SAFE_RETURN_HI: usize = 0x40;
 const LINK_X_COORD_SAFE_RETURN_HI: usize = 0x41;
-const BUTTON_MASK_B_Y: usize = 0x3a;
 // NES_Ver2: KENKYL, "y key flag".
-const Y_BUTTON_ACTION_FLAGS: usize = 0x3b;
-const BUTTON_B_FRAMES: usize = 0x3c;
 const LINK_DELAY_TIMER_SPIN_ATTACK: usize = 0x3d;
-const LINK_DIRECTION_MASK_A: usize = 0x42;
-const LINK_DIRECTION_MASK_B: usize = 0x43;
-const SET_WHEN_DAMAGING_ENEMIES: usize = 0x47;
 // NES_Ver2: HANIFG1, "sword defense flag".
 const PLAYER_DEFENSE_FLAGS: usize = 0x48;
-const FORCE_MOVE_ANY_DIRECTION: usize = 0x49;
-const LINK_VISIBILITY_STATUS: usize = 0x4b;
 const CAPE_DECREMENT_COUNTER: usize = 0x4c;
-const INDEX_OF_DASHING_SFX: usize = 0x4f;
 const LINK_SPRITE_OAM_STATE_TIMER: usize = 0x5c;
 const LINK_CANT_CHANGE_DIRECTION: usize = 0x50;
-const TILEDETECT_WHICH_Y_POS: usize = 0x51;
 const LINK_CAPE_MODE: usize = 0x55;
 const LINK_IS_BUNNY: usize = 0x56;
-const LINK_SPEED_MODIFIER: usize = 0x57;
 // NES_Ver2: BKONFG/DRMKFG, tile-detect block and door direction flags.
-const GRAVESTONE_PUSH_TIMEOUT: usize = 0x61;
 const LINK_LAST_DIRECTION_MOVED_TOWARDS: usize = 0x66;
-const FLAG_IS_LINK_IMMOBILIZED: usize = 0x2e4;
-const LINK_Y_PAGE_MOVEMENT_DELTA: usize = 0x68;
-const LINK_X_PAGE_MOVEMENT_DELTA: usize = 0x69;
-const OVERWORLD_SCROLL_DELTA: usize = 0x69e;
-const LINK_NUM_ORTHOGONAL_DIRECTIONS: usize = 0x6a;
 const LINK_MOVING_AGAINST_DIAG_TILE: usize = 0x6b;
-const MOVING_AGAINST_DIAG_DEADLOCKED: usize = 0x6d;
 const LINK_DIRECTION: usize = 0x67;
-const INDEX_OF_INTERACTING_TILE: usize = 0x76;
-const ALLOW_SCROLL_Z: usize = 0x78;
 const LINK_SPIN_ATTACK_STEP_COUNTER: usize = 0x79;
 const BG1_X_OFFSET: usize = 0x11a;
 const BG1_Y_OFFSET: usize = 0x11c;
-const FLAG_CUSTOM_SPELL_ANIM_ACTIVE: usize = 0x112;
 const OAM_CUR_PTR: usize = 0x90;
-const OAM_EXT_CUR_PTR: usize = 0x92;
-const OVERLAY_INDEX: usize = 0x8c;
 const LAST_LIGHT_VS_DARK_WORLD: usize = 0x7b;
-const DUNG_DRAW_WIDTH_INDICATOR: usize = 0xb2;
-const DUNG_DRAW_HEIGHT_INDICATOR: usize = 0xb4;
 const DUNG_LINE_PTRS_ROW0: usize = 0xbf;
 const DUNG_LOAD_PTR_OFFS: usize = 0xba;
-const DUNG_CUR_FLOOR: usize = 0xa4;
 const QUADRANT_FULLSIZE_X: usize = 0xa6;
 const QUADRANT_FULLSIZE_Y: usize = 0xa7;
-const COMPOSITE_OF_LAYOUT_AND_QUADRANT: usize = 0xa8;
-const DUNG_HDR_TAG: usize = 0xae;
 const LINK_QUADRANT_X: usize = 0xa9;
 const LINK_QUADRANT_Y: usize = 0xaa;
 const IS_STANDING_IN_DOORWAY: usize = 0x6c;
-const TILEMAP_LOCATION_CALC_MASK: usize = 0xec;
-const ROOM_TRANSITIONING_FLAGS: usize = 0xef;
 const DUNG_HDR_COLLISION_2: usize = 0xad;
-const LINK_RECOIL_Z_VEL: usize = 0xc7;
 const KSRM_OFFS_GLOVES: usize = 0x354;
 const KSRM_OFFS_DIED_COUNTER: usize = 0x405;
 const KSRM_OFFS_HEALTH: usize = 0x36c;
@@ -8009,611 +7904,164 @@ const KSRM_OFFS_SWORD: usize = 0x359;
 const KSRM_OFFS_SHIELD: usize = 0x35a;
 const KSRM_OFFS_ARMOR: usize = 0x35b;
 const KSRM_OFFS_NAME: usize = 0x3d9;
-const INTRO_SWORD_YPOS: usize = 0xc8;
-const INTRO_SWORD_18: usize = 0xca;
-const INTRO_SWORD_19: usize = 0xcb;
-const INTRO_SWORD_20: usize = 0xcc;
-const INTRO_SWORD_21: usize = 0xcd;
-const INTRO_SWORD_24: usize = 0xd0;
 const LINK_DMA_GRAPHICS_INDEX: usize = 0x100;
-const LINK_DMA_LEFT_SPRITE_BANK_INDEX: usize = 0x102;
-const LINK_DMA_RIGHT_SPRITE_BANK_INDEX: usize = 0x104;
 // NES_Ver2: KENCPT/TATCPT, sword and shield graphics DMA indices.
-const LINK_DMA_SWORD_GRAPHICS_INDEX: usize = 0x107;
-const LINK_DMA_SHIELD_GRAPHICS_INDEX: usize = 0x108;
-const LINK_TILE_BELOW: usize = 0x114;
 const CHEAT_WALK_THROUGH_WALLS: usize = 0x37f;
-const JOYPAD1H_LAST: usize = 0xf0;
-const JOYPAD1L_LAST: usize = 0xf2;
-const FILTERED_JOYPAD_H: usize = 0xf4;
-const FILTERED_JOYPAD_L: usize = 0xf6;
-const JOYPAD1H_LAST2: usize = 0xf8;
-const JOYPAD1L_LAST2: usize = 0xfa;
-const WHICH_ENTRANCE: usize = 0x10e;
-const OVERWORLD_HOLE_SCAN_STEP: usize = 0x10f;
-const OAM_PRIORITY_VALUE: usize = 0x64;
 // NES_Ver2: GOVRCFG, game-over check flag.
-const GAME_OVER_CHECK_FLAG: usize = 0x10a;
-const MAPBAK_TM: usize = 0x0c211;
-const MAPBAK_TS: usize = 0x0c212;
-const LINK_Y_COORD_SPEXIT: usize = 0x0c108;
-const LINK_X_COORD_SPEXIT: usize = 0x0c10a;
-const MAPBAK_CGWSEL: usize = 0x0c225;
-const MAPBAK_HDMAEN: usize = 0x0c229;
 // NES_Ver2: BKMODE, "block mode flag".
-const PUSHED_BLOCK_MODE: usize = 0x2c3;
-const LINK_INCAPACITATED_CAMERA_TIMER: usize = 0x2c5;
 const SWIMMING_COUNTDOWN: usize = 0x2cb;
-const TAGALONG_DATA_INDEX: usize = 0x2cf;
 const TIMER_TAGALONG_REACQUIRE: usize = 0x2d2;
 const SHARED_MESSAGE_TIMER: usize = 0x2cd;
 const SWIM_STROKE_ANIM_STEP: usize = 0x2cc;
-const TAGALONG_SHARED_STATE_A: usize = 0x2d4;
-const TAGALONG_JUMP_TIMER: usize = 0x2d6;
-const TAGALONG_ANIM_FRAME_COUNTER: usize = 0x2d7;
 const TILE_INTERACTION_SHARED_FLAG: usize = 0x223;
 const LINK_POSE_FOR_ITEM: usize = 0x2da;
 const LINK_TRIGGERED_BY_WHIRLPOOL_SPRITE: usize = 0x2db;
-const LINK_X_COORD_COPY: usize = 0x2dc;
-const LINK_Y_COORD_COPY: usize = 0x2de;
 const LINK_IS_BUNNY_MIRROR: usize = 0x2e0;
-const LINK_IS_TRANSFORMING: usize = 0x2e1;
 const LINK_BUNNY_TRANSFORM_TIMER: usize = 0x2e2;
-const LINK_SWORD_DELAY_TIMER: usize = 0x2e3;
 // NES_Ver2: HLMKCT, pit/hole correction timer.
-const PIT_CORRECTION_TIMER: usize = 0x2ca;
-const FALL_HOLE_SCAN_INDEX: usize = 0x2c9;
 const ITEM_RECEIPT_METHOD: usize = 0x2e9;
-const TILEDETECT_INROOM_STAIRCASE: usize = 0x2c0;
 const LINK_RECEIVEITEM_INDEX: usize = 0x2d8;
 // NES_Ver2: ATMTTM, item holding timer.
 const LINK_ITEM_HOLDING_TIMER: usize = 0x2d9;
-const FLAG_IS_ANCILLA_TO_PICK_UP: usize = 0x2ec;
 const ITEM_PICKUP_IN_PROGRESS_FLAG: usize = 0x2ed;
-const FLAG_IS_SPRITE_TO_PICK_UP_CACHED: usize = 0x2f4;
-const TILEDETECT_MISC_TILES: usize = 0x2f6;
 const MESSAGE_OR_SPRITE_STATE_CACHE: usize = 0x2f0;
-const TAGALONG_EVENT_FLAGS: usize = 0x2f2;
 const LINK_WANT_MAKE_NOISE_WHEN_DASHED: usize = 0x2f8;
-const TAGALONG_APPEARANCE_NONE_FLAG: usize = 0x2f9;
 const LINK_IS_NEAR_MOVEABLE_STATUE: usize = 0x2fa;
 const PLAYER_HANDLER_TIMER: usize = 0x300;
-const OVERWORLD_MUSIC: usize = 0x15b00;
 // NES_Ver2: PKYNOT, player key-not flag; Rust call sites use it to gate pit correction.
 const PIT_CORRECTION_ACTIVE_FLAG: usize = 0x302;
-const CURRENT_ITEM_Y: usize = 0x303;
-const CURRENT_ITEM_ACTIVE: usize = 0x304;
 const EQ_SELECTED_ROD: usize = 0x307;
-const CACHED_TILE_ACTION_INDEX: usize = 0x306;
-const DUNG_FLOOR_Y_VEL: usize = 0x310;
 const DUNG_FLOOR_X_VEL: usize = 0x312;
-const OVERWORLD_SCREEN_TRANS_DIR_BITS: usize = 0x410;
-const OVERWORLD_SCREEN_TRANS_DIR_BITS2: usize = 0x416;
-const OVERWORLD_SCREEN_TRANSITION: usize = 0x418;
 const LINK_IS_ON_LOWER_LEVEL_MIRROR: usize = 0x476;
 // NES_Ver2: PYDMMD/PYDMFM, Y-button action mode and frame counter.
-const Y_BUTTON_ACTION_STEP: usize = 0x30a;
-const Y_BUTTON_ACTION_TIMER: usize = 0x30b;
-const STATE_FOR_SPIN_ATTACK: usize = 0x31c;
 const STEP_COUNTER_FOR_SPIN_ATTACK: usize = 0x31d;
 const SPIN_ATTACK_SOUND_LATCH: usize = 0x324;
-const LINK_SPIN_OFFSETS: usize = 0x31e;
 const COUNTDOWN_FOR_BLINK: usize = 0x31f;
-const RELATED_TO_MOVING_FLOOR_Y: usize = 0x318;
-const RELATED_TO_MOVING_FLOOR_X: usize = 0x31a;
-const LINK_DIRECTION_FACING_MIRROR: usize = 0x323;
 // NES_Ver2 swim RAM block: frame counter, mode, active flag, max speed, direction, acceleration.
 const SWIM_STROKE_FRAME_COUNTER: usize = 0x326;
 const LINK_MAYBE_SWIM_FASTER: usize = 0x32a;
-const DUNGEON_TORCH_ATTR: usize = 0x333;
-const TILEDETECT_DEEPWATER: usize = 0x341;
 const TILEDETECT_NORMAL_TILES: usize = 0x343;
 const LINK_IS_IN_DEEP_WATER: usize = 0x345;
-const LINK_PALETTE_BITS_OF_OAM: usize = 0x346;
 const LINK_FLAG_MOVING: usize = 0x34a;
-const FLAG_IS_SPRITE_TO_PICK_UP: usize = 0x314;
 const LINK_SWIM_HARD_STROKE: usize = 0x34f;
-const SORT_SPRITES_OFFSET_INTO_OAM_BUFFER: usize = 0x352;
-const VALUE_COMPUTED_FOR_PLAYER_OAM: usize = 0x354;
-const OAM_PRIORITY_VALUE_2: usize = 0x35d;
 const LINK_DEBUG_VALUE_2: usize = 0x350;
 const FLAG_FOR_BOOMERANG_IN_PLACE: usize = 0x35f;
 const LINK_ELECTROCUTE_ON_TOUCH: usize = 0x360;
 const LINK_ACTUAL_VEL_Z_MIRROR: usize = 0x362;
 const LINK_ACTUAL_VEL_Z_COPY_MIRROR: usize = 0x363;
 const LINK_Z_COORD_MIRROR: usize = 0x364;
-const LIFTABLE_TILE_ACTION_INDEX_SECONDARY: usize = 0x369;
-const TILEDETECT_THICK_GRASS: usize = 0x357;
 const LINK_ACTUAL_VEL_Z_COPY: usize = 0x2c7;
 const LINK_RECOILMODE_TIMER: usize = 0x2c6;
-const LIFTABLE_TILE_ACTION_INDEX_PRIMARY: usize = 0x368;
-const LINK_TIMER_PUSH_GET_TIRED: usize = 0x371;
 const LINK_TIMER_JUMP_LEDGE: usize = 0x375;
 const LINK_COUNTDOWN_FOR_DASH: usize = 0x374;
-const PLAYER_SLEEP_IN_BED_STATE: usize = 0x37c;
-const LINK_POSE_DURING_OPENING: usize = 0x37d;
 const LINK_DASH_CTR: usize = 0x2f1;
 const LINK_GIVE_DAMAGE: usize = 0x373;
 // NES_Ver2: HIKUFG, "pull set flag".
-const LINK_PULL_ACTION_STATE: usize = 0x377;
-const TILE_ACTION_INDEX: usize = 0x36c;
-const TILEDETECT_VERTICAL_LEDGE: usize = 0x36d;
-const LIFTABLE_TILE_DETECTED_INDEX_DOUBLED: usize = 0x36a;
-const DETECTION_OF_LEDGE_TILES_HORIZ_UPHORIZ: usize = 0x36e;
-const PLAYER_POSE_DRAW_COUNTER: usize = 0x379;
 const LINK_DISABLE_SPRITE_DAMAGE: usize = 0x37b;
-const ANCILLA_K: usize = 0x380;
-const ANCILLA_L: usize = 0x385;
-const ANCILLA_A: usize = 0x38a;
-const ANCILLA_B: usize = 0x38f;
-const ANCILLA_G: usize = 0x394;
-const LINK_SOMETHING_WITH_HOOKSHOT: usize = 0x3e9;
-const LINK_FORCE_HOLD_SWORD_UP: usize = 0x3ef;
 const FLUTE_COUNTDOWN: usize = 0x3f0;
 // NES_Ver2: BELFLG, moving-floor BG check flags.
-const MOVING_FLOOR_BG_CHECK_FLAGS: usize = 0x3f1;
 // NES_Ver2: BOGNTM, hookshot/bowgun BG check-off timer.
-const HOOKSHOT_BG_CHECK_OFF_TIMER: usize = 0x3f9;
 const LINK_ON_CONVEYOR_BELT: usize = 0x3f3;
-const SOMARIA_BLOCK_BG_CHECK_FLAG: usize = 0x3f4;
-const TILE_COLL_FLAG: usize = 0x315;
-const TILE_COLLISION_BITS_PRIMARY: usize = 0x316;
-const TILE_COLLISION_BITS_SECONDARY: usize = 0x317;
-const DUNG_HDR_COLLISION: usize = 0x46c;
 const LINK_TIMER_TEMPBUNNY: usize = 0x3f5;
 const LINK_NEED_FOR_POOF_FOR_TRANSFORM: usize = 0x3f7;
-const LINK_NEED_FOR_PULLFORRUPEES_SPRITE: usize = 0x3f8;
-const BIT9_OF_XCOORD: usize = 0x3fa;
-const IS_ARCHER_OR_SHOVEL_GAME: usize = 0x3fc;
-const PLAYER_SPECIAL_DRAW_FLAG: usize = 0x3fd;
-const DUNG_SAVEGAME_STATE_BITS: usize = 0x402;
 const DUNG_QUADRANTS_VISITED: usize = 0x408;
-const DUNG_LAYOUT_AND_STARTING_QUADRANT: usize = 0x40e;
 // NES_Ver2: BG1MBF, "BG.1 move calc. buffer".
-const BG1_MOVE_CALC_BUFFER: usize = 0x41c;
-const DUNG_CUR_DOOR_IDX: usize = 0x460;
-const DUNG_DOOR_OPENED: usize = 0x400;
-const INVISIBLE_DOOR_DIR_AND_INDEX_X2: usize = 0x436;
-const DUNG_FLOOR_X_OFFS: usize = 0x422;
-const DUNG_FLOOR_Y_OFFS: usize = 0x424;
-const DUNG_HDR_COLLISION_2_MIRROR: usize = 0x428;
-const DUNGEON_ROOM_INDEX2: usize = 0x48e;
-const OVERWORLD_HOLE_TILEMAP_POS: usize = 0x4b2;
-const GANON_TORCH_COUNT: usize = 0x4c5;
 const SUPER_BOMB_INDICATOR_TIMER: usize = 0x4b4;
 const SUPER_BOMB_INDICATOR_COUNTER: usize = 0x4b5;
-const CUR_PALACE_INDEX_X2: usize = 0x40c;
-const DUNG_HDR_BG2_PROPERTIES: usize = 0x414;
-const HDR_DUNGEON_DARK_WITH_LANTERN: usize = 0x458;
-const DUNG_MISC_OBJS_INDEX: usize = 0x42c;
-const DUNG_INDEX_OF_TORCHES: usize = 0x42e;
-const DUNG_NUM_INTER_ROOM_SOUTHDOWN_STAIRS: usize = 0x43a;
-const KIND_OF_IN_ROOM_STAIRCASE: usize = 0x44a;
-const DUNG_NUM_LIT_TORCHES: usize = 0x45a;
-const DUNG_CUR_QUADRANT_UPLOAD: usize = 0x45c;
 // NES_Ver2: CWLFLG, crush-wall check/progress flag.
-const CRUSH_WALL_PROGRESS: usize = 0x454;
-const DUNG_FLOOR_2_FILLER_TILES: usize = 0x46a;
-const DUNG_FLOOR_1_FILLER_TILES: usize = 0x490;
 const ABOUT_TO_JUMP_OFF_LEDGE: usize = 0x47a;
-const NUM_MEMORIZED_TILES: usize = 0x4ac;
 // NES_Ver2: RESTSFG, restart check flag.
 const RESTART_CHECK_FLAG: usize = 0x04aa;
 const HUD_FLOOR_CHANGED_TIMER: usize = 0x04a0;
-const FLAG_SKIP_CALL_TAG_ROUTINES: usize = 0x4c7;
-const LINK_LOWLIFE_COUNTDOWN_TIMER_BEEP: usize = 0x04ca;
-const DUNG_LOADE_BGOFFS_H_COPY: usize = 0x62c;
-const DUNG_LOADE_BGOFFS_V_COPY: usize = 0x62e;
 // NES_Ver2 WN* window/iris work RAM: X center, Y buffer, radius, and wipe state.
-const SPOTLIGHT_WINDOW_X_CENTER: usize = 0x670;
-const SPOTLIGHT_Y_LOWER: usize = 0x674;
-const SPOTLIGHT_Y_UPPER: usize = 0x676;
-const SPOTLIGHT_WINDOW_Y_BUFFER: usize = 0x67a;
 const SPOTLIGHT_WINDOW_RADIUS: usize = 0x67c;
-const SPOTLIGHT_WINDOW_STATE: usize = 0x67e;
-const OVERWORLD_OFFSET_BASE_Y: usize = 0x708;
-const OVERWORLD_OFFSET_MASK_Y: usize = 0x70a;
-const OVERWORLD_OFFSET_BASE_X: usize = 0x70c;
-const OVERWORLD_OFFSET_MASK_X: usize = 0x70e;
-const SPRITE_LIMIT_INSTANCE: usize = 0x0b6a;
-const SPRITE_STUNNED: usize = 0x0b58;
-const LINK_PREVENT_FROM_MOVING: usize = 0x0b7b;
 const DRAG_PLAYER_X: usize = 0x0b7c;
 const DRAG_PLAYER_Y: usize = 0x0b7e;
-const DUNGEON_ROOM_HISTORY: usize = 0x0b80;
 const ARCHERY_GAME_HIT_COUNTER: usize = 0x0b88;
 const ITEM_DROP_COUNTER: usize = 0x0b9b;
 const ENHANCED_FEATURES0: usize = 0x064c;
 const RAM_BUGS_FIXED: usize = 0x064a;
-const DUNG_FLAG_SOMARIA_BLOCK_SWITCH: usize = 0x646;
 const BUGFIX_POLY_RENDERER: u8 = 1;
 const BUGFIX_LATEST: u8 = 1;
 const FEATURES0_SKIP_INTRO_ON_KEYPRESS: u32 = 128;
-const SPRITE_ROOM_ORIGIN_X_HI: usize = 0x0fb0;
-const SPRITE_SHARED_WORK_A: usize = 0x0fb6;
-const FLAG_BLOCK_LINK_MENU: usize = 0x0ffc;
-const SPRCOLL_X_SIZE: usize = 0x0fb8;
-const SPRCOLL_Y_SIZE: usize = 0x0fba;
-const SPRITE_CHR_HALFSLOT_STATE: usize = 0x0fc6;
 const LINK_X_COORD_PREV: usize = 0x0fc2;
 const LINK_Y_COORD_PREV: usize = 0x0fc4;
-const SPRITE_ALERT_FLAG: usize = 0x0fdc;
-const HAUNTED_GROVE_FLUTE_EVENT_LATCH: usize = 0x0fdd;
-const OVERWORLD_BOULDER_TRAP_COUNT: usize = 0x0ffd;
-const OVERWORLD_BOULDER_TRAP_TIMER: usize = 0x0ffe;
 const ALT_SPRITES_FLAG: usize = 0x0ffa;
 const CUR_OBJECT_INDEX: usize = 0x0fa0;
-const ARCHERY_GAME_ARROWS_LEFT: usize = 0x0b99;
-const ARCHERY_GAME_OUT_OF_ARROWS: usize = 0x0b9a;
-const PUSHEDBLOCKS_X_HI: usize = 0x5e0;
-const PUSHEDBLOCKS_X_LO: usize = 0x5e4;
-const PUSHEDBLOCKS_TARGET: usize = 0x5e8;
-const PUSHEDBLOCKS_Y_HI: usize = 0x5ec;
-const PUSHEDBLOCKS_Y_LO: usize = 0x5f0;
-const PUSHEDBLOCKS_SUBPIXEL: usize = 0x5f4;
-const INDEX_OF_CHANGABLE_DUNGEON_OBJS: usize = 0x5fc;
-const OAM_ALLOC_ARR1: usize = 0x0fec;
-const ANCILLA_OBJPRIO: usize = 0x280;
-const ANCILLA_U: usize = 0x28a;
-const ANCILLA_Z_VEL: usize = 0x294;
-const ANCILLA_Z: usize = 0x29e;
 const ANCILLA_AUX_TIMER: usize = 0x3b1;
-const ANCILLA_H: usize = 0x3c5;
-const ANCILLA_FLOOR2: usize = 0x3ca;
 const ANCILLA_Y_LO: usize = 0x0bfa;
-const ANCILLA_X_LO: usize = 0x0c04;
 const ANCILLA_Y_HI: usize = 0x0c0e;
 const ANCILLA_X_HI: usize = 0x0c18;
-const ANCILLA_Y_VEL: usize = 0x0c22;
 const ANCILLA_X_VEL: usize = 0x0c2c;
-const ANCILLA_Y_SUBPIXEL: usize = 0x0c36;
-const ANCILLA_X_SUBPIXEL: usize = 0x0c40;
-const ANCILLA_STEP: usize = 0x0c54;
-const ANCILLA_ITEM_TO_LINK: usize = 0x0c5e;
-const ANCILLA_TIMER: usize = 0x0c68;
-const ANCILLA_DIR: usize = 0x0c72;
-const ANCILLA_FLOOR: usize = 0x0c7c;
-const ANCILLA_NUMSPR: usize = 0x0c90;
-const TAGALONG_Y_LO: usize = 0x1a00;
-const TAGALONG_Y_HI: usize = 0x1a14;
-const TAGALONG_X_LO: usize = 0x1a28;
-const TAGALONG_X_HI: usize = 0x1a3c;
-const TAGALONG_LAYERBITS: usize = 0x1a64;
-const SPRITE_WHERE_IN_ROOM: usize = 0x1df80;
 const OVERWORLD_SPRITE_WAS_LOADED: usize = 0x1ef80;
-const DUNG_INDEX_OF_TORCHES_START: usize = 0x478;
-const DUNG_NUM_WALL_UPNORTH_SPIRAL_STAIRS: usize = 0x47e;
-const DUNG_NUM_WALL_DOWNNORTH_SPIRAL_STAIRS: usize = 0x480;
-const DUNG_NUM_WALL_UPNORTH_SPIRAL_STAIRS_2: usize = 0x482;
-const DUNG_NUM_WALL_DOWNNORTH_SPIRAL_STAIRS_2: usize = 0x484;
-const DUNG_NUM_CHESTS_X2: usize = 0x496;
-const DUNG_NUM_BIGKEY_LOCKS_X2: usize = 0x498;
-const DUNG_OVERLAY_TO_LOAD: usize = 0x4ba;
-const DUNG_NUM_INTER_ROOM_UPNORTH_STRAIGHT_STAIRS: usize = 0x4a2;
-const DUNG_NUM_INTER_ROOM_UPSOUTH_STRAIGHT_STAIRS: usize = 0x4a4;
-const DUNG_NUM_INTER_ROOM_DOWNNORTH_STRAIGHT_STAIRS: usize = 0x4a6;
-const DUNG_NUM_INTER_ROOM_DOWNSOUTH_STRAIGHT_STAIRS: usize = 0x4a8;
-const DUNG_OBJECT_POS_IN_OBJDATA: usize = 0x520;
-const DUNG_OBJECT_TILEMAP_POS: usize = 0x540;
-const REPLACEMENT_TILEMAP_UL: usize = 0x560;
-const REPLACEMENT_TILEMAP_LL: usize = 0x580;
-const REPLACEMENT_TILEMAP_UR: usize = 0x5a0;
-const REPLACEMENT_TILEMAP_LR: usize = 0x5c0;
-const DUNG_INTER_STARCASES: usize = 0x6b0;
-const DUNG_STAIRS_TABLE_1: usize = 0x6b8;
-const DUNG_CHEST_LOCATIONS: usize = 0x6e0;
-const MAIN_TILE_THEME_INDEX: usize = 0x0aa1;
-const AUX_TILE_THEME_INDEX: usize = 0x0aa2;
-const SPRITE_GRAPHICS_INDEX: usize = 0x0aa3;
-const MISC_SPRITES_GRAPHICS_INDEX: usize = 0x0aa4;
-const HUD_CUR_ITEM: usize = 0x0202;
-const HUD_MODULE_TICK_COUNTER: usize = 0x0206;
-const TIMER_FOR_FLASHING_CIRCLE: usize = 0x0207;
-const ANIMATE_HEART_REFILL_COUNTDOWN: usize = 0x0208;
-const HUD_CUR_ITEM_X: usize = 0x0656;
-const HUD_CUR_ITEM_L: usize = 0x0657;
-const HUD_CUR_ITEM_R: usize = 0x0658;
-const HUD_TMP1: usize = 0x0bd;
-const BOTTLE_MENU_EXPAND_ROW: usize = 0x0205;
-const ANIMATE_HEART_REFILL_COUNTDOWN_SUBPOS: usize = 0x0209;
-const IS_DOING_HEART_ANIMATION: usize = 0x020a;
-const EQUIPMENT_MENU_EXIT_STATE: usize = 0x034b;
-const OVERWORLD_PALETTE_AUX1_BP2TO4_HI: usize = 0x0ab4;
-const PALETTE_MAIN_INDOORS_COPY: usize = 0x0ab7;
 const EXTENDED_OAM: usize = 0x0a00;
 const LINK_ITEM_BOW: usize = 0x0f340;
-const LINK_ITEM_BOOMERANG: usize = 0x0f341;
-const LINK_ITEM_HOOKSHOT: usize = 0x0f342;
 const LINK_ITEM_BOMBS: usize = 0x0f343;
-const LINK_ITEM_MUSHROOM: usize = 0x0f344;
-const LINK_ITEM_FIRE_ROD: usize = 0x0f345;
-const LINK_ITEM_ICE_ROD: usize = 0x0f346;
-const LINK_ITEM_BOMBOS: usize = 0x0f347;
-const LINK_ITEM_ETHER: usize = 0x0f348;
-const LINK_ITEM_QUAKE: usize = 0x0f349;
-const LINK_ITEM_TORCH: usize = 0x0f34a;
-const LINK_ITEM_HAMMER: usize = 0x0f34b;
-const LINK_ITEM_FLUTE: usize = 0x0f34c;
-const LINK_ITEM_BUG_NET: usize = 0x0f34d;
-const LINK_ITEM_BOOK: usize = 0x0f34e;
-const LINK_ITEM_BOTTLE_INDEX: usize = 0x0f34f;
-const LINK_ITEM_CANE_SOMARIA: usize = 0x0f350;
-const LINK_ITEM_CANE_BYRNA: usize = 0x0f351;
 const LINK_ITEM_BOTTLE_INFO: usize = 0x0f35c;
 const LINK_ITEM_FLIPPERS: usize = 0x0f356;
-const LINK_ITEM_GLOVES: usize = 0x0f354;
-const LINK_ITEM_BOOTS: usize = 0x0f355;
-const LINK_ITEM_CAPE: usize = 0x0f352;
-const LINK_ITEM_MIRROR: usize = 0x0f353;
 const LINK_ITEM_MOON_PEARL: usize = 0x0f357;
-const SRAM_PROGRESS_INDICATOR: usize = 0x0f3c5;
-const SRAM_PROGRESS_FLAGS: usize = 0x0f3c6;
-const WHICH_STARTING_POINT: usize = 0x0f3c8;
-const SAVEGAME_IS_DARKWORLD: usize = 0x0f3ca;
-const LINK_SWORD_TYPE: usize = 0x0f359;
-const LINK_SHIELD_TYPE: usize = 0x0f35a;
-const LINK_BOTTLE_INFO: usize = 0x0f35c;
 const LINK_RUPEES_GOAL: usize = 0x0f360;
-const LINK_RUPEES_ACTUAL: usize = 0x0f362;
-const LINK_HEART_PIECES: usize = 0x0f36b;
-const LINK_HEALTH_CAPACITY: usize = 0x0f36c;
-const LINK_HEALTH_CURRENT: usize = 0x0f36d;
 const LINK_MAGIC_POWER: usize = 0x0f36e;
 const LINK_NUM_KEYS: usize = 0x0f36f;
-const LINK_BOMB_UPGRADES: usize = 0x0f370;
-const LINK_ARROW_UPGRADES: usize = 0x0f371;
 const LINK_HEARTS_FILLER: usize = 0x0f372;
 const LINK_MAGIC_FILLER: usize = 0x0f373;
-const LINK_WHICH_PENDANTS: usize = 0x0f374;
 const LINK_BOMB_FILLER: usize = 0x0f375;
 const LINK_ARROW_REFILL_COUNTER: usize = 0x0f376;
 const LINK_NUM_ARROWS: usize = 0x0f377;
 const LINK_MAGIC_CONSUMPTION: usize = 0x0f37b;
-const LINK_HAS_CRYSTALS: usize = 0x0f37a;
 const NUMBER_OF_TIMES_HURT_BY_SPRITES: usize = 0x0cfc;
-const LINK_ARMOR: usize = 0x0f35b;
 const SAVE_DUNG_INFO: usize = 0x0f000;
-const LINK_KEYS_EARNED_PER_DUNGEON: usize = 0x0f37c;
-const LINK_COMPASS: usize = 0x0f364;
-const LINK_BIGKEY: usize = 0x0f366;
-const LINK_DUNGEON_MAP: usize = 0x0f368;
-const OVERWORLD_SPRITE_GFX: usize = 0x0fcc0;
-const OVERWORLD_SPRITE_PALETTES: usize = 0x0fd40;
-const ATTRIBUTES_FOR_TILE: usize = 0x0fe00;
-const ENEMY_DAMAGE_DATA: usize = 0x16000;
-const VWF_TILE_BUFFER: usize = 0x1300;
 const PEG_TILE_GFX_BUFFER: usize = 0xb340;
-const ATTRACT_LEGEND_FLAG: usize = 0x27;
-const ATTRACT_PRISON_ZELDA_Y_BASE: usize = 0x2b;
-const ATTRACT_VRAM_DST: usize = 0x30;
-const ATTRACT_ANIM_STEP_COUNTER: usize = 0x32;
-const ATTRACT_SOLDIER_ANIM_STEP: usize = 0x33;
 // Reuses NES_Ver2 SPYPS as the low byte of a prison soldier X sentinel.
-const ATTRACT_PRISON_SOLDIER_X_LO: usize = 0x34;
-const ATTRACT_SCENE_FRAME_COUNTER: usize = 0x50;
-const ATTRACT_SCENE_DONE_FLAG: usize = 0x5d;
-const ATTRACT_LEGEND_CTR: usize = 0x200;
-const ATTRACT_BG2_VOFS_BACKUP: usize = 0x20;
-const ATTRACT_THRONE_FADE_TIMER: usize = 0x2c;
-const ATTRACT_FADE_IN_COMPLETE_FLAG: usize = 0x52;
-const ATTRACT_FADE_IN_DONE_FLAG: usize = 0x5f;
-const ATTRACT_SUBSTEP_DELAY_COUNTER: usize = 0x61;
-const ATTRACT_MAIDEN_WARP_TIMER_A: usize = 0x62;
-const ATTRACT_MAIDEN_WARP_TIMER_B: usize = 0x63;
 const OVERWORLD_MAP_STATE: usize = 0x200;
-const LINK_DEBUG_VALUE_1: usize = 0x20b;
-const HUD_INVENTORY_ORDER: usize = 0x0225;
 // NES_Ver2: OPTHPT/OPTBPT, option head/body DMA pointers.
-const SPRITE_N: usize = 0x0bc0;
 const RAW_SFX_PAN_VALUE: usize = 0x0cf8;
-const RUPEE_SFX_SOUND_DELAY: usize = 0x0cfd;
-const OVERWORLD_TILE_THEME_INDEX: usize = 0x0aa0;
 const SPRITE_FLAGS5: usize = 0x0be0;
-const ANCILLA_OAM_IDX: usize = 0x0c86;
-const SPRITE_ROOM: usize = 0x0c9a;
 const SPRITE_DEFL_BITS: usize = 0x0caa;
-const SPRITE_DIE_ACTION: usize = 0x0cba;
-const SPRITE_Y_LO: usize = 0x0d00;
 const SPRITE_X_LO: usize = 0x0d10;
-const SPRITE_Y_HI: usize = 0x0d20;
-const SPRITE_X_HI: usize = 0x0d30;
 const SPRITE_Y_VEL: usize = 0x0d40;
 const SPRITE_X_VEL: usize = 0x0d50;
-const SPRITE_Y_SUBPIXEL: usize = 0x0d60;
-const SPRITE_X_SUBPIXEL: usize = 0x0d70;
 const SPRITE_AI_STATE: usize = 0x0d80;
 const SPRITE_A: usize = 0x0d90;
-const SPRITE_B: usize = 0x0da0;
-const SPRITE_C: usize = 0x0db0;
-const SPRITE_OBJ_PRIO: usize = 0x0b89;
-const SPRITE_GRAPHICS: usize = 0x0dc0;
 const SPRITE_STATE: usize = 0x0dd0;
-const SPRITE_D: usize = 0x0de0;
 const SPRITE_DELAY_MAIN: usize = 0x0df0;
-const SPRITE_DELAY_AUX1: usize = 0x0e00;
-const SPRITE_IGNORE_PROJECTILE: usize = 0x0ba0;
-const SPRITE_SUBTYPE: usize = 0x0e30;
 const SPRITE_TYPE: usize = 0x0e20;
-const SPRITE_FLAGS2: usize = 0x0e40;
-const SPRITE_FLAGS3: usize = 0x0e60;
-const SPRITE_SUBTYPE2: usize = 0x0e80;
 const SPRITE_E: usize = 0x0e90;
-const SPRITE_HEAD_DIR: usize = 0x0eb0;
 const SPRITE_PAUSE: usize = 0x0f00;
-const SPRITE_DELAY_AUX2: usize = 0x0e10;
-const SPRITE_DELAY_AUX4: usize = 0x0f10;
-const SPRITE_FLOOR: usize = 0x0f20;
-const SPRITE_X_RECOIL: usize = 0x0f40;
 const SPRITE_OAM_FLAGS: usize = 0x0f50;
-const SPRITE_FLAGS4: usize = 0x0f60;
-const SPRITE_Z: usize = 0x0f70;
-const SPRITE_Z_VEL: usize = 0x0f80;
-const SPRITE_Z_SUBPOS: usize = 0x0f90;
-const SPRITE_F: usize = 0x0ea0;
-const SPRITE_G: usize = 0x0ed0;
-const SPRITE_FLAGS: usize = 0x0b6b;
-const SPRITE_HEALTH: usize = 0x0e50;
-const SPRITE_WALLCOLL: usize = 0x0e70;
-const SPRITE_ANIM_CLOCK: usize = 0x0ec0;
-const SPRITE_HIT_TIMER: usize = 0x0ef0;
-const SPRITE_BUMP_DAMAGE: usize = 0x0cd2;
 const OVERLORD_GEN1: usize = 0x0b28;
 const OVERLORD_GEN2: usize = 0x0b30;
 const REPULSESPARK_TIMER: usize = 0x0fac;
-const REPULSESPARK_X_LO: usize = 0x0fad;
-const REPULSESPARK_Y_LO: usize = 0x0fae;
 const BLIND_HEAD_ANIM_COUNTER: usize = 0x0b69;
 // NES_Ver2: MEMSTT, bird-travel status.
-const BIRDTRAVEL_STATUS: usize = 0x1af0;
-const RNG_SEED: usize = 0x0fa1;
-const SPRITE_ROOM_ORIGIN_Y_HI: usize = 0x0fb1;
-const CUR_SPRITE_X: usize = 0x0fd8;
-const CUR_SPRITE_Y: usize = 0x0fda;
-const GARNISH_TYPE: usize = 0x1f800;
 const BEAMOS_X_HI: usize = 0x1fe00;
 const LINK_DMA_SOURCE_OFFSET: usize = 0x0c00f;
 const LINK_DMA_COUNTDOWN: usize = 0x0c013;
-const LINK_DMA_TILE_OFFSET: usize = 0x0c015;
-const OVERWORLD_FIXED_COLOR_PLUSMINUS: usize = 0x0c017;
 const DUNG_WANT_LIGHTS_OUT: usize = 0x0c005;
 const DUNG_WANT_LIGHTS_OUT_COPY: usize = 0x0c006;
 const AGAHNIM_PAL_SETTING: usize = 0x0c019;
-const TIMER_FOR_MODE7_ZOOM: usize = 0x637;
-const MODE7_ZOOM_STEP_COUNTER: usize = 0x635;
-const OVERWORLD_MAP_FLAGS: usize = 0x636;
 const DEBUG_ROOM_BOUNDS_TOP: usize = 0x600;
-const UP_DOWN_SCROLL_TARGET: usize = 0x610;
-const UP_DOWN_SCROLL_TARGET_END: usize = 0x612;
-const LEFT_RIGHT_SCROLL_TARGET: usize = 0x614;
-const LEFT_RIGHT_SCROLL_TARGET_END: usize = 0x616;
-const CAMERA_Y_COORD_SCROLL_LOW: usize = 0x618;
-const CAMERA_Y_COORD_SCROLL_HI: usize = 0x61a;
-const CAMERA_X_COORD_SCROLL_LOW: usize = 0x61c;
-const CAMERA_X_COORD_SCROLL_HI: usize = 0x61e;
-const DUNG_FLAG_MOVABLE_BLOCK_WAS_PUSHED: usize = 0x641;
-const DUNG_FLAG_STATECHANGE_WATERPUZZLE: usize = 0x642;
 const LINK_Y_COORD_CACHED: usize = 0x0c184;
 const LINK_X_COORD_CACHED: usize = 0x0c186;
-const CACHED_ROOM_BOUNDS_Y_START: usize = 0x0c188;
-const CACHED_ROOM_BOUNDS_Y_END: usize = 0x0c18a;
-const CACHED_ROOM_BOUNDS_X_START: usize = 0x0c18c;
-const CACHED_ROOM_BOUNDS_X_END: usize = 0x0c18e;
 const UP_DOWN_SCROLL_TARGET_CACHED: usize = 0x0c190;
-const UP_DOWN_SCROLL_TARGET_END_CACHED: usize = 0x0c192;
-const LEFT_RIGHT_SCROLL_TARGET_CACHED: usize = 0x0c194;
 const LEFT_RIGHT_SCROLL_TARGET_END_CACHED: usize = 0x0c196;
 const CAMERA_Y_COORD_SCROLL_LOW_CACHED: usize = 0x0c198;
-const CAMERA_X_COORD_SCROLL_LOW_CACHED: usize = 0x0c19a;
-const QUADRANT_FULLSIZE_X_CACHED: usize = 0x0c19c;
 const QUADRANT_FULLSIZE_Y_CACHED: usize = 0x0c19d;
-const LINK_QUADRANT_X_CACHED: usize = 0x0c19e;
 const LINK_QUADRANT_Y_CACHED: usize = 0x0c19f;
 const LINK_DIRECTION_FACING_CACHED: usize = 0x0c1a6;
 const LINK_IS_ON_LOWER_LEVEL_CACHED: usize = 0x0c1a7;
-const LINK_IS_ON_LOWER_LEVEL_MIRROR_CACHED: usize = 0x0c1a8;
 const IS_STANDING_IN_DOORWAY_CACHED: usize = 0x0c1a9;
 const DUNG_CUR_FLOOR_CACHED: usize = 0x0c1aa;
-const OVERWORLD_EXIT_TILE_THEME_INDEX: usize = 0x0c164;
-const OVERWORLD_PAL_MAIN_INDOORS_BACKUP: usize = 0x0c20a;
-const OVERWORLD_PAL_AUX3_BP7_BACKUP: usize = 0x0c20b;
-const OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP: usize = 0x0c20c;
-const OW_ENTRANCE_VALUE: usize = 0x696;
-const DOOR_OPEN_CLOSED_COUNTER: usize = 0x692;
-const BIG_ROCK_STARTING_ADDRESS: usize = 0x698;
-const DOOR_DEBRIS_X: usize = 0x3b6;
-const DOOR_DEBRIS_Y: usize = 0x3ba;
-const DUNG_HDR_HOLE_TELEPORTER_PLANE: usize = 0x63c;
-const DUNG_DOOR_OPENED_INCL_ADJACENT: usize = 0x68c;
-const DUNGEON_TRAP_TRIGGER_LATCH: usize = 0x0b9e;
-const ORANGE_BLUE_BARRIER_STATE: usize = 0x0c172;
 const AUX_BG_SUBSET_0: usize = 0x0c2f8;
-const AUX_BG_SUBSET_1: usize = 0x0c2f9;
-const AUX_BG_SUBSET_2: usize = 0x0c2fa;
-const AUX_BG_SUBSET_3: usize = 0x0c2fb;
-const SPRITE_GFX_SUBSET_0: usize = 0x0c2fc;
-const SPRITE_GFX_SUBSET_1: usize = 0x0c2fd;
-const SPRITE_GFX_SUBSET_2: usize = 0x0c2fe;
-const SPRITE_GFX_SUBSET_3: usize = 0x0c2ff;
 const AUX_PALETTE_BUFFER: usize = 0x0c300;
 const MAIN_PALETTE_BUFFER: usize = 0x0c500;
 const HUD_TILE_INDICES_BUFFER: usize = 0x0c700;
 const OAM_BUF: usize = 0x0800;
 const BYTEWISE_EXTENDED_OAM: usize = 0x0a20;
-const LINK_ABILITY_FLAGS: usize = 0xf379;
-const SAVEGAME_MAP_ICONS_INDICATOR: usize = 0x0f3c7;
 const SELECTED_SAVE_SLOT_X2: usize = 0x1ffe;
-const TEXT_DIALOGUE_POINTERS: usize = 0x171c0;
 const FOLLOWER_INDICATOR: usize = 0x0f3cc;
-const FOLLOWER_DROPPED: usize = 0x0f3d3;
-const DUNG_HDR_TRAVEL_DESTINATIONS: usize = 0x0c000;
-const INTRO_STEP_TIMER: usize = 0x1e01;
-const INTRO_SPRITE_ALLOC: usize = 0x1e08;
-const POLY_CONFIG_COLOR_MODE: usize = 0x1f01;
-const POLY_CONFIG1: usize = 0x1f02;
-const POLY_WHICH_MODEL: usize = 0x1f03;
-const POLY_A: usize = 0x1f04;
-const POLY_B: usize = 0x1f05;
-const POLY_BASE_X: usize = 0x1f06;
-const POLY_BASE_Y: usize = 0x1f07;
-const POLY_CONFIG_NUM_VERTEX: usize = 0x1f3f;
-const POLY_CONFIG_NUM_POLYS: usize = 0x1f40;
-const POLY_FROMLUT_PTR2: usize = 0x1f41;
-const POLY_FROMLUT_PTR4: usize = 0x1f43;
-const POLY_FROMLUT_Z: usize = 0x1f45;
-const POLY_FROMLUT_Y: usize = 0x1f46;
-const POLY_FROMLUT_X: usize = 0x1f47;
-const POLY_F0: usize = 0x1f48;
-const POLY_F1: usize = 0x1f4a;
-const POLY_F2: usize = 0x1f4c;
-const POLY_NUM_VERTEX_IN_POLY: usize = 0x1f4e;
-const POLY_RASTER_COLOR_CONFIG: usize = 0x1f4f;
-const POLY_SIN_A: usize = 0x1f50;
-const POLY_COS_A: usize = 0x1f52;
-const POLY_SIN_B: usize = 0x1f54;
-const POLY_COS_B: usize = 0x1f56;
-const POLY_E0: usize = 0x1f58;
-const POLY_E2: usize = 0x1f5a;
-const POLY_E3: usize = 0x1f5c;
-const POLY_E1: usize = 0x1f5e;
-const POLY_TMP0: usize = 0x1fb0;
-const POLY_TMP1: usize = 0x1fb2;
-const POLY_RASTER_COLOR0: usize = 0x1fb5;
-const POLY_RASTER_COLOR1: usize = 0x1fb7;
-const POLY_RASTER_DST_PTR: usize = 0x1fb9;
-const POLY_TMP2: usize = 0x1fbc;
-const POLY_XY_COORDS: usize = 0x1fc0;
-const POLY_TOTAL_NUM_STEPS: usize = 0x1fe0;
-const POLY_X0_CUR: usize = 0x1fe1;
-const POLY_Y0_CUR: usize = 0x1fe2;
-const POLY_X0_TARGET: usize = 0x1fe3;
-const POLY_Y0_TRIG: usize = 0x1fe4;
-const POLY_X0_FRAC: usize = 0x1fe5;
-const POLY_X0_STEP: usize = 0x1fe7;
-const POLY_CUR_VERTEX_IDX0: usize = 0x1fe9;
-const POLY_X1_CUR: usize = 0x1fea;
-const POLY_Y1_CUR: usize = 0x1feb;
-const POLY_X1_TARGET: usize = 0x1fec;
-const POLY_Y1_TRIG: usize = 0x1fed;
-const POLY_X1_FRAC: usize = 0x1fee;
-const POLY_X1_STEP: usize = 0x1ff0;
-const POLY_CUR_VERTEX_IDX1: usize = 0x1ff2;
-const POLY_RASTER_NUMFULL: usize = 0x1ffa;
 const POLYHEDRAL_BUFFER: usize = 0xe800;
 
-const COMP_SPRITE_PTRS: [u32; 108] = [
-    0x10f000, 0x10f600, 0x10fc00, 0x118200, 0x118800, 0x118e00, 0x119400, 0x119a00, 0x11a000,
-    0x11a600, 0x11ac00, 0x11b200, 0x14fffc, 0x1585d4, 0x158ab6, 0x158fbe, 0x1593f8, 0x1599a6,
-    0x159f32, 0x15a3d7, 0x15a8f1, 0x15aec6, 0x15b418, 0x15b947, 0x15bed0, 0x15c449, 0x15c975,
-    0x15ce7c, 0x15d394, 0x15d8ac, 0x15ddc0, 0x15e34c, 0x15e8e8, 0x15ee31, 0x15f3a6, 0x15f92d,
-    0x15feba, 0x1682ff, 0x1688e0, 0x168e41, 0x1692df, 0x169883, 0x169cd0, 0x16a26e, 0x16a275,
-    0x16a787, 0x16aa06, 0x16ae9d, 0x16b3ff, 0x16b87e, 0x16be6b, 0x16c13d, 0x16c619, 0x16cbbb,
-    0x16d0f1, 0x16d641, 0x16d95a, 0x16dd99, 0x16e278, 0x16e760, 0x16ed25, 0x16f20f, 0x16f6b7,
-    0x16fa5f, 0x16fd29, 0x1781cd, 0x17868d, 0x178b62, 0x178fd5, 0x179527, 0x17994b, 0x179ea7,
-    0x17a30e, 0x17a805, 0x17acf8, 0x17b2a2, 0x17b7f9, 0x17bc93, 0x17c237, 0x17c78e, 0x17cd55,
-    0x17d2bc, 0x17d82f, 0x17dcec, 0x17e1cc, 0x17e36b, 0x17e842, 0x17eb38, 0x17ed58, 0x17f06c,
-    0x17f4fd, 0x17fa39, 0x17ff86, 0x18845c, 0x1889a1, 0x188d64, 0x18919d, 0x189610, 0x189857,
-    0x189b24, 0x189dd2, 0x18a03f, 0x18a4ed, 0x18a7ba, 0x18aedf, 0x18af0d, 0x18b520, 0x18b953,
-];
 const GRAPHICS_HALF_SLOT_PACKS: [u8; 20] =
     [1, 1, 8, 8, 9, 9, 2, 2, 2, 2, 3, 3, 4, 4, 5, 5, 8, 8, 8, 8];
 
@@ -8636,14 +8084,7 @@ const DUNGEON_DRAW_OBJECT_OFFSETS_BG1: [u8; 33] = [
     0, 0x20, 0x7e, 2, 0x20, 0x7e, 4, 0x20, 0x7e, 6, 0x20, 0x7e, 0x80, 0x20, 0x7e, 0x82, 0x20, 0x7e,
     0x84, 0x20, 0x7e, 0x86, 0x20, 0x7e, 0, 0x21, 0x7e, 0x80, 0x21, 0x7e, 0, 0x22, 0x7e,
 ];
-const DUNGEON_DRAW_OBJECT_OFFSETS_BG2: [u8; 33] = [
-    0, 0x40, 0x7e, 2, 0x40, 0x7e, 4, 0x40, 0x7e, 6, 0x40, 0x7e, 0x80, 0x40, 0x7e, 0x82, 0x40, 0x7e,
-    0x84, 0x40, 0x7e, 0x86, 0x40, 0x7e, 0, 0x41, 0x7e, 0x80, 0x41, 0x7e, 0, 0x42, 0x7e,
-];
 const DUNGEON_QUADRANT_OFFSETS: [usize; 4] = [0x0000, 0x0040, 0x1000, 0x1040];
-const DOOR_TYPE_AND_SLOT: usize = 0x1980;
-const DUNG_DOOR_TILEMAP_ADDRESS: usize = 0x19a0;
-const DUNG_DOOR_DIRECTION: usize = 0x19c0;
 const DOOR_TYPE_REGULAR: u8 = 0;
 const DOOR_TYPE_EXIT_TO_OW: u8 = 18;
 const DOOR_TYPE_SHUTTERS_TWO_WAY: u8 = 24;
@@ -8651,9 +8092,6 @@ const DOOR_TYPE_THRONE_ROOM: u8 = 20;
 const DOOR_TYPE_SLASHABLE: u8 = 50;
 const DOOR_TYPE_36: u8 = 54;
 const DOOR_TYPE_38: u8 = 56;
-const DUNG_EXIT_DOOR_COUNT: usize = 0x19e0;
-const DUNG_EXIT_DOOR_ADDRESSES: usize = 0x19e2;
-const RESERVED_GFX_CONFIG_WORD: usize = 0x0aa6;
 const DOOR_POSITION_UP: [u16; 12] = [
     0x21c, 0x23c, 0x25c, 0x39c, 0x3bc, 0x3dc, 0x121c, 0x123c, 0x125c, 0x139c, 0x13bc, 0x13dc,
 ];
@@ -10323,7 +9761,6 @@ fn oam_entry_bytes(oam: &[u16], entry: usize) -> [u8; 4] {
     [first[0], first[1], second[0], second[1]]
 }
 
-const LINK_OAM_ENTRIES: [usize; 5] = [102, 103, 107, 110, 111];
 const HOST_BOUNDARY_LINK_OAM_ENTRIES: [usize; 7] = [102, 103, 107, 110, 111, 112, 113];
 
 fn compose_published_oam_entries<const N: usize>(
@@ -10441,10 +9878,6 @@ fn tolerate_unconsumed_song_end_poll_for_diagnostics() -> bool {
 }
 
 impl ZeldaState {
-    pub(crate) fn compatibility_state_len(&self) -> usize {
-        self.ram.len()
-    }
-
     zelda_bridge_accessors! {
         pub(crate) fn follower_link_state_mut() -> NativeFollowerLinkBridgeMut {
             game_state.player.follower_link
@@ -10758,16 +10191,6 @@ impl ZeldaState {
         self.system_signals_mut().clear_ambient_sound_effect();
     }
 
-    pub(crate) fn queue_sound_effect_1_if_empty(&mut self, value: u8) -> bool {
-        self.system_signals_mut()
-            .queue_sound_effect_1_if_empty(value)
-    }
-
-    pub(crate) fn queue_sound_effect_2_if_empty(&mut self, value: u8) -> bool {
-        self.system_signals_mut()
-            .queue_sound_effect_2_if_empty(value)
-    }
-
     pub(crate) fn increment_hud_update_flag(&mut self) -> u8 {
         self.system_signals_mut().increment_hud_update_flag()
     }
@@ -10792,10 +10215,6 @@ impl ZeldaState {
         self.system_signals_mut().set_restart_check_flag(value);
     }
 
-    pub(crate) fn set_game_over_check_flag(&mut self, value: u8) {
-        self.system_signals_mut().set_game_over_check_flag(value);
-    }
-
     pub(crate) fn increment_game_over_check_flag(&mut self) {
         self.system_signals_mut().increment_game_over_check_flag();
     }
@@ -10817,10 +10236,6 @@ impl ZeldaState {
         fn set_bg1_v_copy(value: u16);
         fn set_bg2_h_copy(value: u16);
         fn set_bg2_v_copy(value: u16);
-        fn set_bg1_h_copy_low(value: u8);
-        fn set_bg1_v_copy_low(value: u8);
-        fn set_bg2_h_copy_low(value: u8);
-        fn set_bg2_v_copy_low(value: u8);
         fn set_bg1_h_copy2(value: u16);
         fn set_bg1_v_copy2(value: u16);
         fn set_bg2_h_copy2(value: u16);
@@ -10830,7 +10245,6 @@ impl ZeldaState {
         fn set_bg3_v_copy2_low(value: u8);
         fn set_mode7_center_x(value: u16);
         fn set_mode7_center_y(value: u16);
-        fn set_mode7_center(x: u16, y: u16);
         fn set_bg1_h_live_and_copy(value: u16);
         fn set_bg1_v_live_and_copy(value: u16);
         fn set_bg2_h_live_and_copy(value: u16);
@@ -10838,19 +10252,12 @@ impl ZeldaState {
         fn set_bg1_bg2_h_live_and_copy(value: u16);
         fn set_bg1_bg2_v_live_and_copy(value: u16);
         fn set_bg1_bg2_live_and_copy(bg2_h: u16, bg2_v: u16, bg1_h: u16, bg1_v: u16);
-        fn set_bg2_h_copy2_cached(value: u16);
-        fn set_bg2_v_copy2_cached(value: u16);
-        fn cache_bg2_live_scroll();
         fn cache_bg2_live_scroll_from(bg2_h: u16, bg2_v: u16);
         fn save_special_exit_bg2_live_scroll();
         fn save_exit_bg2_live_scroll();
         fn restore_special_exit_bg2_scroll_to_all_layers();
         fn restore_exit_bg2_scroll_to_all_layers();
-        fn set_all_layer_h_scrolls(value: u16);
-        fn set_all_layer_v_scrolls(value: u16);
         fn set_map_backup_scrolls(bg1_h: u16, bg2_h: u16, bg1_v: u16, bg2_v: u16);
-        fn clear_bg3_h_copy2();
-        fn clear_bg3_v_copy2();
         fn add_bg1_h_copy_low(value: u8);
         fn add_bg1_v_copy_low(value: u8);
         fn add_bg2_v_copy_low(value: u8);
@@ -10873,17 +10280,14 @@ impl ZeldaState {
         fn add_bg2_v_copy2(value: u16);
         fn add_bg2_copy2_for_axis_signed(vertical: bool, value: i16);
         fn copy_bg1_live_to_ppu_copy();
-        fn copy_bg2_live_to_ppu_copy();
         fn copy_live_to_ppu_copy();
         fn copy_bg2_live_to_bg1_live();
         fn copy_bg2_h_live_to_bg1_h_live();
-        fn copy_bg2_v_live_to_bg1_v_live();
         fn set_mapbak_main_tile_theme_index(value: u8);
         fn set_mapbak_sprite_graphics_index(value: u8);
         fn set_mapbak_aux_tile_theme_index(value: u8);
         fn set_mapbak_bg1_x_offset(value: u16);
         fn set_mapbak_bg1_y_offset(value: u16);
-        fn set_mapbak_cgwsel(value: u8);
         fn set_mapbak_cgwsel_word(value: u16);
         fn set_mapbak_hdmaen(value: u8);
     }
@@ -11255,11 +10659,6 @@ impl ZeldaState {
         self.overworld_transition_mut().or_direction_bits(value);
     }
 
-    pub(crate) fn or_screen_transition_direction_bits_word(&mut self, value: u16) -> u16 {
-        self.overworld_transition_mut()
-            .or_direction_bits_word(value)
-    }
-
     pub(crate) fn transition_direction_enum(&self) -> u8 {
         self.game_state.world.overworld.transition.direction_enum()
     }
@@ -11274,14 +10673,6 @@ impl ZeldaState {
             .overworld
             .transition
             .screen_transition()
-    }
-
-    pub(crate) fn screen_transition_word(&self) -> u16 {
-        self.game_state
-            .world
-            .overworld
-            .transition
-            .screen_transition_word()
     }
 
     pub(crate) fn set_screen_transition(&mut self, value: u8) {
@@ -11645,11 +11036,6 @@ impl ZeldaState {
         self.palette_buffer_mut().clear_main_full();
     }
 
-    #[track_caller]
-    pub(crate) fn copy_aux_visible_from(&mut self, palette: &[u8]) {
-        self.palette_buffer_mut().copy_aux_visible_from(palette);
-    }
-
     pub(crate) fn copy_aux_visible_from_tagged(
         &mut self,
         palette: &[u8],
@@ -11659,11 +11045,6 @@ impl ZeldaState {
             .copy_aux_visible_from_tagged(palette, source);
     }
 
-    #[track_caller]
-    pub(crate) fn copy_aux_full_from(&mut self, palette: &[u8]) {
-        self.palette_buffer_mut().copy_aux_full_from(palette);
-    }
-
     pub(crate) fn copy_aux_full_from_tagged(
         &mut self,
         palette: &[u8],
@@ -11671,11 +11052,6 @@ impl ZeldaState {
     ) {
         self.palette_buffer_mut()
             .copy_aux_full_from_tagged(palette, source);
-    }
-
-    #[track_caller]
-    pub(crate) fn copy_main_full_from(&mut self, palette: &[u8]) {
-        self.palette_buffer_mut().copy_main_full_from(palette);
     }
 
     pub(crate) fn copy_main_full_from_tagged(
@@ -11773,11 +11149,6 @@ impl ZeldaState {
 
     pub(crate) fn subtract_fixed_color_blue(&mut self, value: u8) {
         self.palette_filter_mut().subtract_fixed_color_blue(value);
-    }
-
-    pub(crate) fn set_fixed_color_component(&mut self, index: usize, value: u8) {
-        self.palette_filter_mut()
-            .set_fixed_color_component(index, value);
     }
 
     pub(crate) fn or_fixed_color_component(&mut self, index: usize, value: u8) {
@@ -11901,11 +11272,6 @@ impl ZeldaState {
             .clear_palace_death_count_digit_step();
     }
 
-    pub(crate) fn set_ending_palace_death_count_digit_step(&mut self, value: u16) {
-        self.ending_credit_bridge_mut()
-            .set_palace_death_count_digit_step(value);
-    }
-
     pub(crate) fn advance_ending_palace_death_count_digit_step(&mut self) {
         self.ending_credit_bridge_mut()
             .advance_palace_death_count_digit_step();
@@ -11966,20 +11332,12 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn quake_bolt(&self, slot: usize) -> QuakeBoltSlotState {
-        self.game_state.effects.quake_bolts.slot(slot)
-    }
-
     pub(crate) fn quake_bolt_mut(&mut self, slot: usize) -> NativeQuakeBoltBridgeMut<'_> {
         NativeQuakeBoltBridgeMut::new(
             &mut self.game_state.effects.quake_bolts,
             &mut self.ram,
             slot,
         )
-    }
-
-    pub(crate) fn happiness_pond_rupee(&self, slot: usize) -> HappinessPondRupeeSlotState {
-        self.game_state.effects.happiness_pond_rupees.rupee(slot)
     }
 
     pub(crate) fn happiness_pond_rupee_mut(
@@ -12011,26 +11369,12 @@ impl ZeldaState {
             .clear_destination(slot);
     }
 
-    pub(crate) fn moldorm_history(&self, slot: usize) -> HistoryPositionState {
-        self.game_state
-            .effects
-            .sprite_histories
-            .moldorm_history(slot)
-    }
-
     pub(crate) fn moldorm_history_mut(&mut self, slot: usize) -> NativeMoldormHistoryBridgeMut<'_> {
         NativeMoldormHistoryBridgeMut::new(
             &mut self.game_state.effects.sprite_histories,
             &mut self.ram,
             slot,
         )
-    }
-
-    pub(crate) fn beamos_laser_history(&self, slot: usize) -> HistoryPositionState {
-        self.game_state
-            .effects
-            .sprite_histories
-            .beamos_laser_history(slot)
     }
 
     pub(crate) fn beamos_laser_history_mut(
@@ -12042,13 +11386,6 @@ impl ZeldaState {
             &mut self.ram,
             slot,
         )
-    }
-
-    pub(crate) fn lanmola_segment_motion(&self, slot: usize) -> LanmolaSegmentMotionState {
-        self.game_state
-            .effects
-            .sprite_histories
-            .lanmola_segment_motion(slot)
     }
 
     pub(crate) fn lanmola_segment_motion_mut(
@@ -12150,17 +11487,6 @@ impl ZeldaState {
             slot_view.y_high(),
             slot_view.gen2(),
             slot_view.floor(),
-        )
-    }
-
-    pub(crate) fn arrghus_puff_home_position_mut(
-        &mut self,
-        puff_slot: usize,
-    ) -> NativeArrghusPuffHomePositionBridgeMut<'_> {
-        NativeArrghusPuffHomePositionBridgeMut::new(
-            &mut self.game_state.sprites.boss_home_positions,
-            &mut self.ram,
-            puff_slot,
         )
     }
 
@@ -12911,10 +12237,6 @@ impl ZeldaState {
         self.zelda_ppu_write(adr + 1, (val >> 8) as u8);
     }
 
-    fn ram_bytes(&self, offset: usize, len: usize) -> Vec<u8> {
-        Self::ram_bytes_from(&self.ram, offset, len)
-    }
-
     fn ram_bytes_from(ram: &[u8], offset: usize, len: usize) -> Vec<u8> {
         ram.get(offset..offset + len)
             .map_or_else(Vec::new, |bytes| bytes.to_vec())
@@ -13517,8 +12839,6 @@ impl ZeldaState {
     fn startup_initialize_memory(&mut self) {
         const FIRST_BOOT_NMI_DMA_SOURCE_BYTE_0: usize = 0x0000;
         const FIRST_BOOT_NMI_DMA_SOURCE_BYTE_1: usize = 0x0001;
-        const FIRST_BOOT_NMI_DMA_SOURCE_BYTE_2: usize = 0x0002;
-
         SystemWorkArea::clear_startup_low_memory(&mut self.ram);
         // The reset code at ROM $008900 initially writes `00 80 19`, but the
         // Snes9x DMA trace proves that the first visible NMI reads `00 80 00`.
@@ -13755,15 +13075,6 @@ impl ZeldaState {
             .or_else(|| self.palette_asset_word_snes(addr))
     }
 
-    fn rom_bytes_snes(&self, mut addr: u32, len: usize) -> Option<Vec<u8>> {
-        let mut bytes = Vec::with_capacity(len);
-        for _ in 0..len {
-            bytes.push(self.rom_byte_snes(addr)?);
-            addr = next_snes_addr(addr);
-        }
-        Some(bytes)
-    }
-
     fn asset_memblk(&self, asset: usize, index: usize) -> Option<MemBlk<'_>> {
         let asset = self.assets.as_ref()?.asset(asset)?;
         Some(find_index_in_memblk(MemBlk { ptr: asset }, index))
@@ -13839,38 +13150,6 @@ fn read_le_u32(bytes: &[u8], offset: usize) -> Result<u32, String> {
     Ok(u32::from_le_bytes([word[0], word[1], word[2], word[3]]))
 }
 
-fn main_tileset(index: usize) -> [u8; 8] {
-    match index {
-        0 => [0, 1, 16, 6, 14, 31, 24, 15],
-        1 => [0, 1, 16, 8, 14, 34, 27, 15],
-        2 => [0, 1, 16, 6, 14, 31, 24, 15],
-        3 => [0, 1, 19, 7, 14, 35, 28, 15],
-        35 => [22, 57, 29, 23, 64, 65, 57, 30],
-        _ => [0; 8],
-    }
-}
-
-fn aux_tileset(index: usize) -> [u8; 4] {
-    match index {
-        0 => [6, 0, 31, 24],
-        1 => [8, 0, 34, 27],
-        2 => [6, 0, 31, 24],
-        3 => [7, 0, 35, 28],
-        81 => [23, 64, 65, 57],
-        _ => [0; 4],
-    }
-}
-
-fn sprite_tileset(index: usize) -> [u8; 4] {
-    match index {
-        77 => [81, 73, 19, 0],
-        125 => [50, 0, 0, 8],
-        126 => [93, 73, 0, 82],
-        127 => [85, 73, 66, 67],
-        _ => [0; 4],
-    }
-}
-
 fn push_block_target_is_blocked(tile_flag: u8) -> bool {
     !matches!(
         tile_flag,
@@ -13920,38 +13199,6 @@ fn read_word_from_slice(bytes: &[u8], offset: usize) -> u16 {
 
 fn upper_bitmask(index: usize) -> u16 {
     UPPER_BITMASKS[index & 0x0f]
-}
-
-fn receive_item_tab1(item: u8) -> u8 {
-    RTL_RECEIVE_ITEM_OAM_EXT_SIZES
-        .get(item as usize)
-        .copied()
-        .unwrap_or(0)
-}
-
-fn receive_item_tab2(item: u8) -> i8 {
-    RTL_RECEIVE_ITEM_DRAW_Y_OFFSETS
-        .get(item as usize)
-        .copied()
-        .unwrap_or(0)
-}
-
-fn receive_item_tab3(item: u8) -> u8 {
-    RTL_RECEIVE_ITEM_PALETTE_BITS
-        .get(item as usize)
-        .copied()
-        .unwrap_or(0)
-}
-
-fn memory_location_to_give_item_to(item: u8) -> usize {
-    GIVE_ITEM_MEMORY_LOCATIONS
-        .get(item as usize)
-        .copied()
-        .unwrap_or(0)
-}
-
-fn value_to_give_item_to(item: u8) -> u8 {
-    GIVE_ITEM_VALUES.get(item as usize).copied().unwrap_or(0xff)
 }
 
 fn decompress_asset(src: &[u8]) -> Vec<u8> {

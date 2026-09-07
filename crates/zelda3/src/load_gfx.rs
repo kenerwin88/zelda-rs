@@ -387,22 +387,6 @@ impl ZeldaState {
         }
     }
 
-    fn filter_majorly_whiten_color(&self, color: u16) -> u16 {
-        let amt = if self
-            .game_state
-            .enhanced_features
-            .has(LOAD_GFX_FEATURES0_DIM_FLASHES)
-        {
-            3
-        } else {
-            14
-        };
-        let r = ((color & 0x001f) + amt).min(0x001f);
-        let g = ((color & 0x03e0) + (amt << 5)).min(0x03e0);
-        let b = ((color & 0x7c00) + (amt << 10)).min(0x7c00);
-        r | g | b
-    }
-
     pub(super) fn palette_restore_bg_from_flash(&mut self) {
         for i in 32..128 {
             self.copy_color((Bank::Aux, i), (Bank::Main, i));
@@ -675,24 +659,6 @@ impl ZeldaState {
         let src = HUD_PALETTE_SNES_ADDR
             + self.game_state.display.palette_buffer.hud_palette() as u32 * 32 * 2;
         self.palette_load_multiple(src, 0, 15, 1);
-    }
-
-    pub(super) fn palette_load_multiple_arbitrary_from_asset(
-        &mut self,
-        asset: usize,
-        color_offset: usize,
-        dst: usize,
-        x_ents: usize,
-    ) {
-        let Some(palette) = self.asset_raw(asset).map(Vec::from) else {
-            return;
-        };
-        let dst_index = dst >> 1;
-        for i in 0..=x_ents {
-            let color = read_word_from_slice(&palette, (color_offset + i) * 2);
-            self.set_aux_color_asset(dst_index + i, color);
-            self.set_main_color_asset(dst_index + i, color);
-        }
     }
 
     pub(super) fn palette_load_multiple_arbitrary_snes(
@@ -1736,30 +1702,8 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn GetCompSpritePtr(&self, i: usize) -> u32 {
-        COMP_SPRITE_PTRS[i]
-    }
-
     pub(super) fn ApplyPaletteFilter_bounce(&mut self) {
         self.apply_palette_filter_bounce();
-    }
-
-    pub(super) fn PaletteFilter_Range(&mut self, from: usize, to: usize) {
-        self.palette_filter_range(from, to);
-    }
-
-    pub(super) fn PaletteFilter_IncrCountdown(&mut self) {
-        self.palette_filter_incr_countdown();
-    }
-
-    pub(super) fn LoadItemAnimationGfxOne(
-        &mut self,
-        dst: usize,
-        num: usize,
-        r12: usize,
-        from_temp: bool,
-    ) -> usize {
-        self.load_item_animation_gfx_one(dst, num, r12, from_temp)
     }
 
     pub(super) fn snes_divide(&self, dividend: u16, divisor: u8) -> u16 {
@@ -1772,10 +1716,6 @@ impl ZeldaState {
 
     pub(super) fn EraseTileMaps_normal(&mut self) {
         self.erase_tile_maps_normal();
-    }
-
-    pub(super) fn DecompAndUpload2bpp(&mut self, vram_ptr: usize, pack: usize) {
-        self.decompress_and_upload_2bpp(vram_ptr, pack);
     }
 
     pub(super) fn RecoverPegGFXFromMapping(&mut self) {
@@ -1792,20 +1732,8 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn LoadOverworldMapPalette(&mut self) {
-        self.load_overworld_map_palette();
-    }
-
-    pub(super) fn EraseTileMaps_triforce(&mut self) {
-        self.erase_tile_maps_triforce();
-    }
-
     pub(super) fn EraseTileMaps_dungeonmap(&mut self) {
         self.erase_tile_maps(0x007f, 0x0300);
-    }
-
-    pub(super) fn EraseTileMaps(&mut self, r2: u16, r0: u16) {
-        self.erase_tile_maps(r2, r0);
     }
 
     pub(super) fn EnableForceBlank(&mut self) {
@@ -1817,20 +1745,12 @@ impl ZeldaState {
         self.active_display_force_blank_event = Some(scanline);
     }
 
-    pub(super) fn LoadItemGFXIntoWRAM4BPPBuffer(&mut self) {
-        self.load_item_gfx_into_wram_4bpp_buffer();
-    }
-
     pub(super) fn DecompressSwordGraphics(&mut self) {
         self.decompress_sword_graphics();
     }
 
     pub(super) fn DecompressShieldGraphics(&mut self) {
         self.decompress_shield_graphics();
-    }
-
-    pub(super) fn DecompressAnimatedDungeonTiles(&mut self, a: u8) {
-        self.decompress_animated_dungeon_tiles(a as usize);
     }
 
     pub(super) fn DecompressAnimatedOverworldTiles(&mut self, a: u8) {
@@ -1853,10 +1773,6 @@ impl ZeldaState {
         // Remember the pack filling the animated-tile buffer so the per-frame
         // animated-tile DMA can tag its VRAM slots injectively (CHR_KIND_BG_ANIM).
         self.animated_tile_pack = a as u16;
-    }
-
-    pub(super) fn LoadItemGFX_Auxiliary(&mut self) {
-        self.load_item_gfx_auxiliary();
     }
 
     pub(super) fn LoadFollowerGraphics(&mut self) {
@@ -1886,13 +1802,6 @@ impl ZeldaState {
         );
         self.WriteTo4BPPBuffer_at_7F4000(a);
         self.replay_trace_ram_watch("loadgfx-after-decode-animated-sprite-tile");
-    }
-
-    pub(super) fn Expand3To4High(&mut self, dst: usize, src: &[u8], base: &[u8], num: usize) {
-        // The C port derives `base - src`; every caller hands the same slice for
-        // both, so the base offset is always zero.
-        debug_assert!(std::ptr::eq(src.as_ptr(), base.as_ptr()));
-        self.expand3_to_4_high_from_slice(dst, src, 0, 0, num);
     }
 
     pub(super) fn LoadTransAuxGFX(&mut self) {
@@ -2271,14 +2180,6 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn Do3To4High16Bit(&mut self, dst: usize, src: &[u8], num: usize) {
-        self.do3_to_4_high_16bit_from_slice(dst, src, 0, num);
-    }
-
-    pub(super) fn Do3To4Low16Bit(&mut self, dst: usize, src: &[u8], num: usize) {
-        self.do3_to_4_low_16bit_from_slice(dst, src, 0, num);
-    }
-
     pub(super) fn LoadNewSpriteGFXSet(&mut self) {
         let tmp = self.graphics_sprite_decompression_buffer_tail();
         self.do3_to_4_low_16bit_from_slice(LOAD_GFX_MESSAGING_BUF_LOAD_GFX, &tmp, 0, 0xc0);
@@ -2296,10 +2197,6 @@ impl ZeldaState {
         self.initialize_tilesets();
     }
 
-    pub(super) fn LoadDefaultGraphics(&mut self) {
-        self.load_default_graphics();
-    }
-
     pub(super) fn Attract_LoadBG3GFX(&mut self) {
         self.decompress_and_upload_2bpp(0x7800, 0x67);
     }
@@ -2310,62 +2207,6 @@ impl ZeldaState {
 
     pub(super) fn TransferFontToVRAM(&mut self) {
         self.transfer_font_to_vram();
-    }
-
-    pub(super) fn Do3To4High(&mut self, vram_ptr: usize, decompression_buffer_offset: &[u8]) {
-        self.do3_to_4_high_to_vram(
-            vram_ptr,
-            decompression_buffer_offset,
-            chr_source::CHR_KIND_NONE,
-            0,
-        );
-    }
-
-    pub(super) fn Do3To4Low(&mut self, vram_ptr: usize, decompression_buffer_offset: &[u8]) {
-        self.do3_to_4_low_to_vram(
-            vram_ptr,
-            decompression_buffer_offset,
-            chr_source::CHR_KIND_NONE,
-            0,
-        );
-    }
-
-    pub(super) fn LoadSpriteGraphics(
-        &mut self,
-        vram_ptr: usize,
-        gfx_pack: usize,
-        decompression_buffer_offset: usize,
-    ) {
-        self.load_sprite_graphics(vram_ptr, gfx_pack, decompression_buffer_offset);
-    }
-
-    pub(super) fn LoadBackgroundGraphics(
-        &mut self,
-        vram_ptr: usize,
-        gfx_pack: usize,
-        slot: usize,
-        decompression_buffer_offset: usize,
-    ) {
-        self.load_background_graphics(vram_ptr, gfx_pack, slot, decompression_buffer_offset);
-    }
-
-    pub(super) fn LoadCommonSprites(&mut self) {
-        self.load_common_sprites();
-    }
-
-    pub(super) fn Decomp_spr(&mut self, dst: usize, gfx: usize) -> usize {
-        self.decompress_sprite_graphics_to_buffer(dst, gfx)
-    }
-
-    pub(super) fn Decomp_bg(&mut self, dst: usize, gfx: usize) -> usize {
-        self.decompress_background_graphics_to_buffer(dst, gfx)
-    }
-
-    pub(super) fn Decompress(&self, dst: &mut [u8], src: &[u8]) -> usize {
-        let data = decompress_asset(src);
-        let len = dst.len().min(data.len());
-        dst[..len].copy_from_slice(&data[..len]);
-        len
     }
 
     pub(super) fn ResetHUDPalettes4and5(&mut self) {
@@ -2481,14 +2322,6 @@ impl ZeldaState {
         self.set_agahnim_palette_word(k, pal_countdown);
         self.set_agahnim_palette_word(k + 3, darkening_screen);
         self.increment_cgram_update_flag();
-    }
-
-    pub(super) fn Palette_FadeIntroOneStep(&mut self) {
-        self.palette_fade_intro_one_step();
-    }
-
-    pub(super) fn Palette_FadeIntro2(&mut self) {
-        self.palette_fade_intro2();
     }
 
     pub(super) fn PaletteFilter_RestoreAdditive(&mut self, from: usize, to: usize) {
@@ -2840,20 +2673,12 @@ impl ZeldaState {
         self.spotlight_open();
     }
 
-    pub(super) fn SpotlightInternal(&mut self) {
-        self.spotlight_internal(0, 2);
-    }
-
     pub(super) fn IrisSpotlight_ConfigureTable(&mut self) -> bool {
         self.iris_spotlight_configure_table()
     }
 
     pub(super) fn IrisSpotlight_ResetTable(&mut self) {
         self.iris_spotlight_reset_table();
-    }
-
-    pub(super) fn IrisSpotlight_CalculateCircleValue(&self, value: u16) -> u16 {
-        self.iris_spotlight_calculate_circle_value(value as u8)
     }
 
     pub(super) fn AdjustWaterHDMAWindow(&mut self) {
@@ -3129,10 +2954,6 @@ impl ZeldaState {
         self.increment_subsubmodule();
     }
 
-    pub(super) fn Overworld_LoadAllPalettes(&mut self) {
-        self.overworld_load_all_palettes();
-    }
-
     pub(super) fn Dungeon_LoadPalettes(&mut self) {
         self.dungeon_load_palettes();
     }
@@ -3243,19 +3064,11 @@ impl ZeldaState {
         self.palette_load_sp6l();
     }
 
-    pub(super) fn Palette_BgAndFixedColor_Black(&mut self) {
-        self.palette_bg_and_fixed_color_black();
-    }
-
     pub(super) fn Palette_SetBgAndFixedColor(&mut self, color: u16) {
         self.set_main_color_constant(0, color);
         self.set_main_color_constant(32, color);
         self.set_aux_color_constant(0, color);
         self.set_aux_color_constant(32, color);
-        self.set_backdrop_color_black();
-    }
-
-    pub(super) fn SetBackdropcolorBlack(&mut self) {
         self.set_backdrop_color_black();
     }
 
@@ -3302,42 +3115,8 @@ impl ZeldaState {
         self.load_actual_gear_palettes();
     }
 
-    pub(super) fn Palette_ElectroThemedGear(&mut self) {
-        self.palette_electro_themed_gear();
-    }
-
     pub(super) fn LoadGearPalettes_bunny(&mut self) {
         self.load_gear_palettes_bunny();
-    }
-
-    pub(super) fn LoadGearPalettes(&mut self, sword: u8, shield: u8, armor: u8) {
-        self.load_gear_palettes(sword, shield, armor);
-    }
-
-    pub(super) fn LoadGearPalette(
-        &mut self,
-        asset: usize,
-        color_offset: usize,
-        dst: usize,
-        x_ents: usize,
-    ) {
-        self.load_gear_palette_from_asset(asset, color_offset, dst, x_ents);
-    }
-
-    pub(super) fn Filter_Majorly_Whiten_Bg(&mut self) {
-        self.filter_majorly_whiten_bg();
-    }
-
-    pub(super) fn Filter_Majorly_Whiten_Color(&self, color: u16) -> u16 {
-        self.filter_majorly_whiten_color(color)
-    }
-
-    pub(super) fn Palette_Restore_BG_From_Flash(&mut self) {
-        self.palette_restore_bg_from_flash();
-    }
-
-    pub(super) fn Palette_Restore_Coldata(&mut self) {
-        self.palette_restore_coldata();
     }
 
     pub(super) fn Palette_Restore_BG_And_HUD(&mut self) {
@@ -3350,14 +3129,6 @@ impl ZeldaState {
 
     pub(super) fn Palette_Load_SpriteMain(&mut self) {
         self.palette_load_sprite_main();
-    }
-
-    pub(super) fn Palette_Load_Sp5L(&mut self) {
-        self.palette_load_sp5l();
-    }
-
-    pub(super) fn Palette_Load_Sp6L(&mut self) {
-        self.palette_load_sp6l();
     }
 
     pub(super) fn Palette_Load_Sword(&mut self) {
@@ -3374,10 +3145,6 @@ impl ZeldaState {
 
     pub(super) fn Palette_Load_SpriteEnvironment_Dungeon(&mut self) {
         self.palette_load_sprite_environment_dungeon();
-    }
-
-    pub(super) fn Palette_MiscSprite_Outdoors(&mut self) {
-        self.palette_misc_sprite_outdoors();
     }
 
     pub(super) fn Palette_Load_DungeonMapSprite(&mut self) {
@@ -3426,58 +3193,8 @@ impl ZeldaState {
         self.palette_load_hud();
     }
 
-    pub(super) fn Palette_Load_DungeonSet(&mut self) {
-        self.palette_load_dungeon_set();
-    }
-
-    pub(super) fn Palette_Load_OWBG3(&mut self) {
-        self.palette_load_ow_bg3();
-    }
-
     pub(super) fn Palette_Load_OWBGMain(&mut self) {
         self.palette_load_ow_bg_main();
-    }
-
-    pub(super) fn Palette_Load_OWBG1(&mut self) {
-        self.palette_load_ow_bg1();
-    }
-
-    pub(super) fn Palette_Load_OWBG2(&mut self) {
-        self.palette_load_ow_bg2();
-    }
-
-    pub(super) fn Palette_LoadSingle(&mut self, src: u32, dst: usize, x_ents: usize) {
-        self.palette_load_single(src, dst, x_ents);
-    }
-
-    pub(super) fn Palette_LoadMultiple(
-        &mut self,
-        src: u32,
-        dst: usize,
-        x_ents: usize,
-        y_pals: usize,
-    ) {
-        self.palette_load_multiple(src, dst, x_ents, y_pals);
-    }
-
-    pub(super) fn Palette_LoadMultiple_Arbitrary(&mut self, src: u32, dst: usize, x_ents: usize) {
-        self.palette_load_multiple_arbitrary_snes(src, dst, x_ents);
-    }
-
-    pub(super) fn Palette_LoadForFileSelect(&mut self) {
-        self.palette_load_for_file_select();
-    }
-
-    pub(super) fn Palette_LoadForFileSelect_Armor(&mut self, k: usize, armor: u8, gloves: u8) {
-        self.palette_load_for_file_select_armor(k, armor, gloves);
-    }
-
-    pub(super) fn Palette_LoadForFileSelect_Sword(&mut self, k: usize, sword: u8) {
-        self.palette_load_for_file_select_sword(k, sword);
-    }
-
-    pub(super) fn Palette_LoadForFileSelect_Shield(&mut self, k: usize, shield: u8) {
-        self.palette_load_for_file_select_shield(k, shield);
     }
 
     pub(super) fn Palette_LoadAgahnim(&mut self) {
@@ -3490,35 +3207,6 @@ impl ZeldaState {
             0x1c2,
             6,
         );
-        self.increment_cgram_update_flag();
-    }
-
-    pub(super) fn HandleScreenFlash(&mut self) {
-        let j = self
-            .game_state
-            .ending
-            .attract_scene
-            .intro_palette_flash_count();
-        if j == 0 || self.game_state.frame.submodule != 0 {
-            return;
-        }
-        self.attract_scene_mut()
-            .decrement_intro_palette_flash_count();
-        if self
-            .game_state
-            .ending
-            .attract_scene
-            .intro_palette_flash_count()
-            == 0
-        {
-            self.palette_restore_bg_and_hud();
-            return;
-        }
-        if j & 1 != 0 {
-            self.filter_majorly_whiten_bg();
-        } else {
-            self.palette_restore_bg_from_flash();
-        }
         self.increment_cgram_update_flag();
     }
 
@@ -4260,18 +3948,6 @@ impl ZeldaState {
         self.set_fixed_color_red(0x20);
         self.set_fixed_color_green(0x40);
         self.set_fixed_color_blue(0x80);
-    }
-
-    pub(super) fn palette_set_ow_bg_color(&mut self) {
-        let color = self.palette_get_ow_bg_color();
-        self.palette_set_bg_and_fixed_color(color);
-    }
-
-    pub(super) fn palette_special_ow(&mut self) {
-        let c = self.palette_get_ow_bg_color();
-        self.set_aux_color_constant(0, c);
-        self.set_aux_color_constant(32, c);
-        self.set_backdropcolor_black();
     }
 
     pub(super) fn palette_get_ow_bg_color(&self) -> u16 {

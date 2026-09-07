@@ -3505,28 +3505,6 @@ impl ZeldaState {
         }
     }
 
-    fn ancilla_add_super_bomb_explosion(&mut self, a: u8, y: u8) -> i32 {
-        let Some(k) = self.ancilla_add_ancilla(a, y) else {
-            return -1;
-        };
-        let value = 0;
-        self.ancilla_slot_view_mut(k).set_r(value);
-        let value = 0;
-        self.ancilla_slot_view_mut(k).set_l(value);
-        {
-            let mut explosion = self.ancilla_slot_view_mut(k);
-            explosion.set_step(0);
-            explosion.set_work_byte_25(0);
-            explosion.set_work_byte_3(BOMB_PHASE_TIMERS[1]);
-            explosion.set_item_to_link(1);
-        }
-        let j = self.game_state.sprites.follower_runtime.data_index() as usize;
-        let y = self.tagalong_slot(j).y();
-        let x = self.tagalong_slot(j).x();
-        self.ancilla_set_xy(k, x.wrapping_add(8), y.wrapping_add(16));
-        k as i32
-    }
-
     pub(super) fn ancilla_add_somaria_block(&mut self, ty: u8, y: u8) -> Option<usize> {
         let k = self.ancilla_add_add_ancilla_bank08(ty, y)?;
         for j in (0..=4).rev() {
@@ -10177,139 +10155,6 @@ impl ZeldaState {
         }
     }
 
-    fn sprite_func15_for_ancilla(&mut self, k: usize, a: u8) {
-        self.sprite_battle_mut().set_damage_type_determiner(a);
-        self.sprite_apply_calculated_damage_for_ancilla(k, if a == 8 { 0x35 } else { 0x20 });
-    }
-
-    fn sprite_apply_calculated_damage_for_ancilla(&mut self, k: usize, a: u8) {
-        if self.sprite_slot_view(k).flags3() & 0x40 != 0
-            || self.sprite_slot_view(k).sprite_type() >= 0xd8
-        {
-            return;
-        }
-        let damage_type = self.game_state.sprite_battle.damage_type_determiner() as usize;
-        let enemy_damage_index = self.sprite_slot_view(k).sprite_type() as usize * 16 + damage_type;
-        let dmg = SPRITE_APPLY_CALCULATED_DAMAGE_FOR_ANCILLA_ENEMY_DAMAGES[(damage_type * 8)
-            | self
-                .game_state
-                .sprites
-                .enemy_damage_subclasses
-                .entry(enemy_damage_index) as usize];
-        self.sprite_give_damage_for_ancilla(k, dmg, a);
-    }
-
-    fn sprite_give_damage_for_ancilla(&mut self, k: usize, dmg: u8, r0_hit_timer: u8) {
-        if dmg == 249 {
-            self.sprite_func18_for_ancilla(k, 0xe3);
-            return;
-        }
-        if dmg == 250 {
-            self.sprite_func18_for_ancilla(k, 0x8f);
-            let value = 2;
-            self.sprite_slot_view_mut(k).set_ai_state(value);
-            let value = 32;
-            self.sprite_slot_view_mut(k).set_z_velocity(value);
-            let value = 8;
-            self.sprite_slot_view_mut(k).set_oam_flags(value);
-            let value = 0;
-            self.sprite_slot_view_mut(k).set_f(value);
-            let value = 0;
-            self.sprite_slot_view_mut(k).set_hit_timer(value);
-            let value = 0;
-            self.sprite_slot_view_mut(k).set_health(value);
-            let value = 1;
-            self.sprite_slot_view_mut(k).set_bump_damage(value);
-            let value = 1;
-            self.sprite_slot_view_mut(k).set_flags5(value);
-            return;
-        }
-        if dmg >= self.sprite_slot_view(k).incoming_damage() {
-            self.sprite_slot_view_mut(k).set_incoming_damage(dmg);
-        }
-        if dmg == 0 {
-            if self.game_state.sprite_battle.damage_type_determiner() != 10 {
-                if self.sprite_slot_view(k).flags() & 4 != 0 {
-                    self.sprite_set_damage_stun_for_ancilla(k);
-                    return;
-                }
-                self.follower_link_state_mut().clear_sword_delay_timer();
-            }
-            let value = 0;
-            self.sprite_slot_view_mut(k).set_hit_timer(value);
-            let value = 0;
-            self.sprite_slot_view_mut(k).set_incoming_damage(value);
-            return;
-        }
-        if dmg >= 254 && self.sprite_slot_view(k).state() == 11 {
-            let value = 0;
-            self.sprite_slot_view_mut(k).set_hit_timer(value);
-            let value = 0;
-            self.sprite_slot_view_mut(k).set_incoming_damage(value);
-            return;
-        }
-        if self.sprite_slot_view(k).sprite_type() == 0x9a
-            && self.sprite_slot_view(k).incoming_damage() < 0xf0
-        {
-            let value = 9;
-            self.sprite_slot_view_mut(k).set_state(value);
-            let value = 4;
-            self.sprite_slot_view_mut(k).set_ai_state(value);
-            let value = 15;
-            self.sprite_slot_view_mut(k).set_delay_main(value);
-            self.sprite_sfx_queue_sfx2_with_pan(k, 0x28);
-            return;
-        }
-        if self.sprite_slot_view(k).sprite_type() == 0x1b {
-            self.sprite_sfx_queue_sfx2_with_pan(k, 5);
-            self.sprite_schedule_for_breakage_for_ancilla(k);
-            self.sprite_place_weapon_tink_for_ancilla(k);
-            return;
-        }
-        let value = r0_hit_timer;
-        self.sprite_slot_view_mut(k).set_hit_timer(value);
-        if self.sprite_slot_view(k).sprite_type() != 0x92 || self.sprite_slot_view(k).c() >= 3 {
-            let sfx = if self.sprite_slot_view(k).flags() & 2 != 0 {
-                0x21
-            } else if self.sprite_slot_view(k).flags5() & 0x10 != 0 {
-                0x1c
-            } else {
-                8
-            };
-            self.set_sound_effect_2_with_sprite_pan(k, sfx);
-        }
-        self.sprite_set_damage_stun_for_ancilla(k);
-    }
-
-    fn sprite_set_damage_stun_for_ancilla(&mut self, k: usize) {
-        let ty = self.sprite_slot_view(k).sprite_type();
-        let value = if self.game_state.sprite_battle.damage_type_determiner() >= 13 {
-            0
-        } else if ty == 9 {
-            20
-        } else if ty == 0x53 || ty == 0x18 {
-            11
-        } else {
-            15
-        };
-        self.sprite_slot_view_mut(k).set_f(value);
-    }
-
-    fn sprite_schedule_for_breakage_for_ancilla(&mut self, k: usize) {
-        let value = 31;
-        self.sprite_slot_view_mut(k).set_delay_main(value);
-        let value = 6;
-        self.sprite_slot_view_mut(k).set_state(value);
-        self.sprite_slot_view_mut(k).add_flags2(4);
-    }
-
-    fn sprite_func18_for_ancilla(&mut self, k: usize, new_type: u8) {
-        let value = new_type;
-        self.sprite_slot_view_mut(k).set_sprite_type(value);
-        self.sprite_prep_load_properties(k);
-        self.set_sound_effect_2(0);
-    }
-
     fn ancilla_check_sprite_collision(&mut self, k: usize) -> Option<usize> {
         (0..16).rev().find(|&j| {
             (self.ancilla_slot_view(k).ancilla_type() == 9
@@ -10926,12 +10771,6 @@ impl ZeldaState {
         self.set_raw_sfx_pan_value(sfx);
         let out = sfx | self.ancilla_calculate_sfx_pan(k);
         self.set_sound_effect_1(out);
-    }
-
-    pub(super) fn ancilla_sfx1_pan(&mut self, k: usize, sfx: u8) {
-        self.set_raw_sfx_pan_value(sfx);
-        let out = sfx | self.ancilla_calculate_sfx_pan(k);
-        self.set_ambient_sound_effect(out);
     }
 
     pub(super) fn ancilla_sfx3_pan(&mut self, k: usize, sfx: u8) {

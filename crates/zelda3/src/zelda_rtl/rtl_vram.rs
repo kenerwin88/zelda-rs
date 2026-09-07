@@ -10,11 +10,6 @@ impl ZeldaState {
             .set_overworld_hole_tilemap_pos(value);
     }
 
-    pub(crate) fn decrement_milestone_item_gfx_swap_countdown(&mut self) {
-        self.world_transient_mut()
-            .decrement_milestone_item_gfx_swap_countdown();
-    }
-
     pub(crate) fn attract_vram_destination_high_is_clear(&self) -> bool {
         self.game_state
             .display

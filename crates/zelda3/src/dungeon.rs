@@ -1541,10 +1541,6 @@ impl ZeldaState {
         self.dungeon_room_load_mut().set_load_ptr_offset(0x0120);
     }
 
-    pub(super) fn RoomDraw_DrawAllObjects(&mut self, level_data: &[u8]) {
-        self.RoomData_DrawObjects_from(level_data);
-    }
-
     pub(super) fn RoomData_DrawObjects_from(&mut self, layout: &[u8]) {
         loop {
             self.dungeon_room_load_mut()
@@ -3568,15 +3564,6 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn RoomData_DrawObject_Door_down_4x3(&mut self, src: usize, dsto: u16) {
-        for x in 0..4 {
-            for y in 0..3 {
-                let tile = self.tile_word(src, (x * 3 + y) as usize);
-                self.room_write_current(dsto + x + (y + 1) * 64, tile);
-            }
-        }
-    }
-
     pub(super) fn RoomData_DrawObject_Door_left_3x4(&mut self, src: usize, dsto: u16) {
         for x in 0..3 {
             for y in 0..4 {
@@ -4282,41 +4269,6 @@ impl ZeldaState {
         self.RoomDraw_Rightwards2x2(src, dsto);
     }
 
-    pub(super) fn Object_ChestPlatform_Helper(&mut self, src: usize, dsto: i32) {
-        let mut dsto = dsto as usize;
-        let t0 = self.tile_word(src, 0);
-        let t3 = self.tile_word(src, 3);
-        let t6 = self.tile_word(src, 6);
-        let t9 = self.tile_word(src, 9);
-        let t12 = self.tile_word(src, 12);
-        let t15 = self.tile_word(src, 15);
-        let t18 = self.tile_word(src, 18);
-
-        self.dungeon_room_tilemaps_mut().set_bg2_tile(dsto, t0);
-        for _ in 0..self.game_state.dungeon.room_load.draw_width_indicator() {
-            self.dungeon_room_tilemaps_mut().set_bg2_tile(dsto + 1, t3);
-            dsto += 1;
-        }
-
-        self.dungeon_room_tilemaps_mut().set_bg2_tile(dsto + 1, t6);
-        self.dungeon_room_tilemaps_mut().set_bg2_tile(dsto + 2, t9);
-        self.dungeon_room_tilemaps_mut().set_bg2_tile(dsto + 3, t9);
-        self.dungeon_room_tilemaps_mut().set_bg2_tile(dsto + 4, t9);
-        self.dungeon_room_tilemaps_mut().set_bg2_tile(dsto + 5, t9);
-
-        self.dungeon_room_tilemaps_mut().set_bg2_tile(dsto + 6, t12);
-        for _ in 0..self.game_state.dungeon.room_load.draw_width_indicator() {
-            self.dungeon_room_tilemaps_mut().set_bg2_tile(dsto + 7, t15);
-            dsto += 1;
-        }
-
-        self.dungeon_room_tilemaps_mut().set_bg2_tile(dsto + 7, t18);
-    }
-
-    pub(super) fn RoomDraw_GetObjectSize_1to16(&mut self) {
-        self.Object_SizeAtoAplus15(1);
-    }
-
     pub(super) fn Object_SizeAtoAplus15(&mut self, a: u8) {
         let draw_width = (self.game_state.dungeon.room_load.draw_width_indicator() << 2
             | self.game_state.dungeon.room_load.draw_height_indicator())
@@ -4324,20 +4276,6 @@ impl ZeldaState {
         self.dungeon_room_load_mut()
             .set_draw_width_indicator(draw_width);
         self.dungeon_room_load_mut().set_draw_height_indicator(0);
-    }
-
-    pub(super) fn RoomDraw_GetObjectSize_1to15or26(&mut self) {
-        let x = (self.game_state.dungeon.room_load.draw_width_indicator() << 2)
-            | self.game_state.dungeon.room_load.draw_height_indicator();
-        self.dungeon_room_load_mut()
-            .set_draw_width_indicator(if x != 0 { x } else { 26 });
-    }
-
-    pub(super) fn RoomDraw_GetObjectSize_1to15or32(&mut self) {
-        let x = (self.game_state.dungeon.room_load.draw_width_indicator() << 2)
-            | self.game_state.dungeon.room_load.draw_height_indicator();
-        self.dungeon_room_load_mut()
-            .set_draw_width_indicator(if x != 0 { x } else { 32 });
     }
 
     pub(super) fn DrawWaterThing(&mut self, dsto: u16, src: usize) {
@@ -4646,17 +4584,6 @@ impl ZeldaState {
             src
         };
         self.RoomDraw_Rightwards2x2(src, dsto);
-    }
-
-    pub(super) fn Object_Draw_4x2(&mut self, src: usize, dsto: u16) {
-        for y in 0..2 {
-            for x in 0..4 {
-                self.room_write_current(
-                    dsto + x + y * 64,
-                    self.tile_word(src, (y * 4 + x) as usize),
-                );
-            }
-        }
     }
 
     pub(super) fn Object_Draw_4x2_BothBgs(&mut self, src: usize, dsto: u16) {
@@ -5079,21 +5006,6 @@ impl ZeldaState {
             .dungeon
             .room_tilemaps
             .first_line_pointer_row0() as usize;
-        self.game_state
-            .dungeon
-            .room_tilemaps
-            .room_tilemap_word(base, dsto)
-    }
-
-    pub(super) fn DstoPtr(&self, d: u16) -> usize {
-        self.game_state
-            .dungeon
-            .room_tilemaps
-            .first_line_pointer_row0() as usize
-            + d as usize * 2
-    }
-
-    pub(super) fn room_read_bg(&self, base: usize, dsto: u16) -> u16 {
         self.game_state
             .dungeon
             .room_tilemaps
@@ -6076,35 +5988,6 @@ impl ZeldaState {
         self.advance_vram_upload_cursor_by(24);
     }
 
-    pub(super) fn Dungeon_DeleteRupeeTile(&mut self, x: u16, y: u16) {
-        let pos = ((y & 0x01f8) << 3) | ((x & 0x01f8) >> 3);
-        let dst = self.game_state.display.current_vram_upload_data_address();
-        let tile = 0x190f;
-
-        self.dungeon_room_tilemaps_mut()
-            .set_bg2_tile(pos as usize, tile);
-        self.dungeon_room_tilemaps_mut()
-            .set_bg2_tile((pos + 64) as usize, tile);
-
-        let attr = u16::from(self.dungeon_tile_attribute(tile as usize)) * 0x0101;
-        self.dungeon_bg2_attributes_mut()
-            .set_bg2_attr_word(pos as usize, attr);
-        self.dungeon_bg2_attributes_mut()
-            .set_bg2_attr_word((pos + 64) as usize, attr);
-
-        let vram_addr_0 = self.Dungeon_MapVramAddr(pos);
-        let vram_addr_1 = self.Dungeon_MapVramAddr(pos + 64);
-        self.write_vram_upload_single_tile_stripe_packet(dst, vram_addr_0, tile);
-        self.write_vram_upload_single_tile_stripe_packet(dst + 6, vram_addr_1, tile);
-        self.write_vram_upload_tile_stripe_sentinel(dst + 12);
-        self.advance_vram_upload_cursor_by(24);
-
-        let state = self.game_state.dungeon.savegame_state.savegame_state_bits() | 0x1000;
-        self.dungeon_savegame_state_mut()
-            .set_savegame_state_bits(state);
-        self.set_bg_vram_load_mode(1);
-    }
-
     pub(super) fn RoomDraw_16x16Single(&mut self, index: u8) {
         let index = (index >> 1) as usize;
         let pos = (self
@@ -6605,10 +6488,6 @@ impl ZeldaState {
         self.asset_u16(9, room)
     }
 
-    pub(super) fn GetDungPalInfo(&self, idx: usize) -> DungPalInfo {
-        DUNG_PAL_INFOS.get(idx).copied().unwrap_or_default()
-    }
-
     pub(super) fn Dungeon_IsPitThatHurtsPlayer(&self) -> bool {
         let room = self.game_state.world.location.dungeon_room();
         let Some(data) = self.asset_raw(10) else {
@@ -6675,14 +6554,6 @@ impl ZeldaState {
 
     pub(super) fn GetRoomHeaderPtr(&self, room: usize) -> Option<&[u8]> {
         self.dungeon_room_header(room)
-    }
-
-    pub(super) fn GetDefaultRoomLayout(&self, index: usize) -> Option<&[u8]> {
-        self.default_room_layout(index)
-    }
-
-    pub(super) fn GetDungeonRoomLayout(&self, room: usize) -> Option<&[u8]> {
-        self.dungeon_room_layout(room)
     }
 
     pub(super) fn Dung_TagRoutine_0x22_0x3B(&mut self, k: usize, j: u8) {
@@ -9969,15 +9840,6 @@ impl ZeldaState {
         None
     }
 
-    pub(super) fn OpenMiniGameChest(&mut self, chest_position: &mut u16) -> u8 {
-        if let Some((item, position)) = self.OpenMiniGameChestResult() {
-            *chest_position = position;
-            item
-        } else {
-            0xff
-        }
-    }
-
     pub(super) fn OpenMiniGameChestResult(&mut self) -> Option<(u8, u16)> {
         if self.game_state.minigame.credits() == 0 {
             self.dialogue_message_index_mut().set_value(0x0163);
@@ -10075,10 +9937,6 @@ impl ZeldaState {
         self.set_bg_vram_load_mode(1);
         self.set_sound_effect_2(14);
         Some((item, pos * 2))
-    }
-
-    pub(super) fn OpenBigChest(&mut self, loc: u16, chest_position: &mut u16) {
-        *chest_position = self.OpenBigChestResult(loc);
     }
 
     pub(super) fn OpenBigChestResult(&mut self, loc: u16) -> u16 {
@@ -12232,17 +12090,6 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn Ganon_ExtinguishTorch_adjust_translucency(&mut self) {
-        self.Palette_AssertTranslucencySwap();
-        self.dungeon_torch_mut().set_attr(0xc0);
-        self.Dungeon_ExtinguishTorch();
-    }
-
-    pub(super) fn Ganon_ExtinguishTorch(&mut self) {
-        self.dungeon_torch_mut().set_attr(193);
-        self.Dungeon_ExtinguishTorch();
-    }
-
     pub(super) fn Dungeon_ExtinguishTorch(&mut self) {
         let y = ((self.game_state.dungeon.torch.torch_attr() & 0x0f) as usize) * 2
             + self.game_state.dungeon.torch.torches_start_index() as usize;
@@ -13411,12 +13258,6 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn CrystalCutscene_Initialize(&mut self) {
-        self.crystal_cutscene_initialize_before_follower_graphics();
-        self.LoadFollowerGraphics();
-        self.crystal_cutscene_initialize_after_follower_graphics();
-    }
-
     fn crystal_cutscene_initialize_before_follower_graphics(&mut self) {
         self.set_color_math_control(0x33);
         self.set_countdown(0);
@@ -13431,12 +13272,6 @@ impl ZeldaState {
         }
         self.increment_cgram_update_flag();
         self.crystal_cutscene_spawn_maiden_before_follower_graphics();
-    }
-
-    pub(super) fn CrystalCutscene_SpawnMaiden(&mut self) {
-        self.crystal_cutscene_spawn_maiden_before_follower_graphics();
-        self.LoadFollowerGraphics();
-        self.crystal_cutscene_spawn_maiden_after_follower_graphics();
     }
 
     fn crystal_cutscene_spawn_maiden_before_follower_graphics(&mut self) {
@@ -15016,10 +14851,6 @@ impl ZeldaState {
 
     pub(super) fn reset_transition_props_and_advance_reset_interface(&mut self) {
         self.ResetTransitionPropsAndAdvance_ResetInterface();
-    }
-
-    pub(super) fn reset_transition_props_and_advance_submodule(&mut self) {
-        self.ResetTransitionPropsAndAdvanceSubmodule();
     }
 }
 

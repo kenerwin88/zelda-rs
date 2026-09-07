@@ -165,11 +165,6 @@ impl ZeldaState {
             .initialize_mirror_from_zeroed_buffers();
     }
 
-    #[track_caller]
-    pub(crate) fn copy_main_palette_bytes(&mut self, src: &[u8], len: usize) {
-        self.palette_buffer_mut().copy_main_palette_bytes(src, len);
-    }
-
     pub(crate) fn copy_main_palette_bytes_tagged(
         &mut self,
         src: &[u8],

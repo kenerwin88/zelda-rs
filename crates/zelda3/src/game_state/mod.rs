@@ -3,6 +3,7 @@
 pub(crate) mod constants;
 mod native;
 mod view;
+mod wram_map;
 
 pub(crate) use native::*;
 pub use native::{

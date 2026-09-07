@@ -68,35 +68,6 @@ impl ZeldaState {
         read_word_from_slice(data, index * 2)
     }
 
-    fn set_oam_helper0_addr(
-        &mut self,
-        oam: usize,
-        x: u16,
-        y: u16,
-        charnum: u8,
-        flags: u8,
-        big: u8,
-    ) {
-        let y = if y.wrapping_add(0x10) < 0x100 {
-            y as u8
-        } else {
-            0xf0
-        };
-        self.oam_state_mut()
-            .write_entry(oam, x as u8, y, charnum, flags);
-        let value = big | ((x >> 8) as u8 & 1);
-        self.oam_state_mut()
-            .set_extended_byte((oam - OAM_BUF) / 4, value);
-    }
-
-    pub(super) fn Intro_SetupScreen(&mut self) {
-        self.intro_setup_screen();
-    }
-
-    pub(super) fn Intro_LoadTextPointersAndPalettes(&mut self) {
-        self.intro_load_text_pointers_and_palettes();
-    }
-
     pub(super) fn credits_load_scene_overworld_prep_gfx(&mut self) {
         self.credits_load_scene_overworld_prep_gfx_prefix();
         self.credits_load_scene_overworld_prep_gfx_rest();
@@ -859,24 +830,12 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn Intro_InitializeBackgroundSettings(&mut self) {
-        self.intro_initialize_background_settings();
-    }
-
     pub(super) fn Polyhedral_InitializeThread(&mut self) {
         self.polyhedral_initialize_thread();
     }
 
     pub(super) fn Module00_Intro(&mut self) {
         self.module00_intro();
-    }
-
-    pub(super) fn Intro_Init(&mut self) {
-        self.intro_init();
-    }
-
-    pub(super) fn Intro_Init_Continue(&mut self) {
-        self.intro_init_continue();
     }
 
     pub(super) fn intro_clear1kb_blocks_of_wram(&mut self) {
@@ -886,74 +845,6 @@ impl ZeldaState {
         self.ending_scratch_mut().set_primary_word(i);
         self.ending_scratch_mut()
             .set_secondary_word(i.wrapping_sub(0x400));
-    }
-
-    pub(super) fn Intro_InitializeMemory_darken(&mut self) {
-        self.intro_initialize_memory_darken();
-    }
-
-    pub(super) fn IntroZeldaFadein(&mut self) {
-        self.intro_zelda_fadein();
-    }
-
-    pub(super) fn Intro_FadeInBg(&mut self) {
-        self.intro_fade_in_bg();
-    }
-
-    pub(super) fn Intro_SwordComingDown(&mut self) {
-        self.intro_sword_coming_down();
-    }
-
-    pub(super) fn Intro_WaitPlayer(&mut self) {
-        self.intro_wait_player();
-    }
-
-    pub(super) fn FadeMusicAndResetSRAMMirror(&mut self) {
-        self.fade_music_and_reset_sram_mirror();
-    }
-
-    pub(super) fn Intro_InitializeTriforcePolyThread(&mut self) {
-        self.intro_initialize_triforce_poly_thread();
-    }
-
-    pub(super) fn Intro_InitGfx_Helper(&mut self) {
-        self.intro_init_gfx_helper();
-    }
-
-    pub(super) fn LoadTriforceSpritePalette(&mut self) {
-        self.load_triforce_sprite_palette();
-    }
-
-    pub(super) fn Intro_HandleAllTriforceAnimations(&mut self) {
-        self.intro_handle_all_triforce_animations();
-    }
-
-    pub(super) fn Scene_AnimateEverySprite(&mut self) {
-        self.scene_animate_every_sprite();
-    }
-
-    pub(super) fn Intro_AnimateTriforce(&mut self) {
-        self.intro_animate_triforce();
-    }
-
-    pub(super) fn Intro_RunStep(&mut self) {
-        self.intro_run_step();
-    }
-
-    pub(super) fn Intro_AnimOneObj(&mut self, k: usize) {
-        self.intro_anim_one_obj(k);
-    }
-
-    pub(super) fn Intro_SpriteType_A_0(&mut self, k: usize) {
-        self.intro_sprite_type_a_0(k);
-    }
-
-    pub(super) fn Intro_SpriteType_B_0(&mut self, k: usize) {
-        self.intro_sprite_type_b_0(k);
-    }
-
-    pub(super) fn AnimateSceneSprite_DrawTriangle(&mut self, k: usize) {
-        self.animate_scene_sprite_draw_triangle(k);
     }
 
     pub(super) fn intro_copy_sprite_type4_to_oam(&mut self, k: usize) {
@@ -968,22 +859,6 @@ impl ZeldaState {
     }
 
     pub(super) fn exit_0_cca90(&mut self, _k: usize) {}
-
-    pub(super) fn InitializeSceneSprite_Copyright(&mut self, k: usize) {
-        self.initialize_scene_sprite_copyright(k);
-    }
-
-    pub(super) fn AnimateSceneSprite_Copyright(&mut self, k: usize) {
-        self.animate_scene_sprite_copyright(k);
-    }
-
-    pub(super) fn InitializeSceneSprite_Sparkle(&mut self, k: usize) {
-        self.initialize_scene_sprite_sparkle(k);
-    }
-
-    pub(super) fn AnimateSceneSprite_Sparkle(&mut self, k: usize) {
-        self.animate_scene_sprite_sparkle(k);
-    }
 
     #[rustfmt::skip]
     pub(super) fn animate_scene_sprite_add_objects_to_oam_buffer(&mut self, k: usize, entries: &[IntroSpriteEnt]) {
@@ -1001,10 +876,6 @@ impl ZeldaState {
             self.set_oam_helper0_at(oam, obj_x, obj_y, charnum, flags, ext);
             oam += 4;
         }
-    }
-
-    pub(super) fn AnimateSceneSprite_MoveTriangle(&mut self, k: usize) {
-        self.animate_scene_sprite_move_triangle(k);
     }
 
     pub(super) fn triforce_room_prep_gfx_slot_for_poly(&mut self) {
@@ -1243,18 +1114,6 @@ impl ZeldaState {
             self.intro_actor_mut(k)
                 .add_y_velocity(ANIMATE_SCENE_SPRITE_CREDITS_TRIANGLE_Y_ACCELERATION[k] as u8);
         }
-    }
-
-    pub(super) fn Intro_DisplayLogo(&mut self) {
-        self.intro_display_logo();
-    }
-
-    pub(super) fn Intro_SetupSwordAndIntroFlash(&mut self) {
-        self.intro_setup_sword_and_intro_flash();
-    }
-
-    pub(super) fn Intro_PeriodicSwordAndIntroFlash(&mut self) {
-        self.intro_periodic_sword_and_intro_flash();
     }
 
     pub(super) fn module1_a_credits(&mut self) {

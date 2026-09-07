@@ -72,16 +72,6 @@ impl ZeldaState {
             .set_door_animation_step_word(value);
     }
 
-    pub(crate) fn set_horizontal_room_fullsize_state(&mut self, value: u8) {
-        self.world_transient_mut()
-            .set_horizontal_room_fullsize_state(value);
-    }
-
-    pub(crate) fn set_vertical_room_fullsize_state(&mut self, value: u8) {
-        self.world_transient_mut()
-            .set_vertical_room_fullsize_state(value);
-    }
-
     pub(crate) fn apply_dungeon_layout_quadrant_fullsize(
         &mut self,
         layout_flags: u8,
@@ -200,10 +190,6 @@ impl ZeldaState {
         self.dungeon_map_mut().decrement_dungmap_cur_floor_byte();
     }
 
-    pub(crate) fn increment_dungeon_map_current_floor_byte(&mut self) {
-        self.dungeon_map_mut().increment_dungmap_cur_floor_byte();
-    }
-
     pub(crate) fn set_dungeon_map_idx(&mut self, value: u16) {
         self.dungeon_map_mut().set_dungmap_idx(value);
     }
@@ -267,20 +253,12 @@ impl ZeldaState {
         write_le_u16(&mut self.ram, DUNG_LINE_PTRS_ROW0 + index * 2, value);
     }
 
-    pub(crate) fn bombos_blast(&self, slot: usize) -> BombosBlastState {
-        self.game_state.effects.bombos_spell.blast(slot)
-    }
-
     pub(crate) fn bombos_blast_mut(&mut self, slot: usize) -> NativeBombosBlastBridgeMut<'_> {
         NativeBombosBlastBridgeMut::new(
             &mut self.game_state.effects.bombos_spell,
             &mut self.ram,
             slot,
         )
-    }
-
-    pub(crate) fn tower_seal_orbit(&self, slot: usize) -> TowerSealOrbitState {
-        self.game_state.effects.tower_seal.orbit(slot)
     }
 
     pub(crate) fn tower_seal_orbit_mut(
@@ -294,10 +272,6 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn tower_seal_sparkle(&self, slot: usize) -> TowerSealSparkleState {
-        self.game_state.effects.tower_seal.sparkle(slot)
-    }
-
     pub(crate) fn tower_seal_sparkle_mut(
         &mut self,
         slot: usize,
@@ -307,13 +281,6 @@ impl ZeldaState {
             &mut self.ram,
             slot,
         )
-    }
-
-    pub(crate) fn blast_wall_explosion(&self, slot: usize) -> BlastWallExplosionSlotState {
-        self.game_state
-            .effects
-            .entrance_effects
-            .blast_wall_explosion_slot(slot)
     }
 
     pub(crate) fn blast_wall_explosion_mut(
@@ -327,13 +294,6 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn blast_wall_fragment(&self, slot: usize) -> BlastWallFragmentSlotState {
-        self.game_state
-            .effects
-            .entrance_effects
-            .blast_wall_fragment_slot(slot)
-    }
-
     pub(crate) fn blast_wall_fragment_mut(
         &mut self,
         slot: usize,
@@ -343,13 +303,6 @@ impl ZeldaState {
             &mut self.ram,
             slot,
         )
-    }
-
-    pub(crate) fn blast_wall_fireball(&self, slot: usize) -> BlastWallFireballSlotState {
-        self.game_state
-            .effects
-            .entrance_effects
-            .blast_wall_fireball_slot(slot)
     }
 
     pub(crate) fn blast_wall_fireball_mut(
@@ -368,13 +321,6 @@ impl ZeldaState {
             .effects
             .entrance_effects
             .blast_wall_direction()
-    }
-
-    pub(crate) fn skull_woods_fire(&self, slot: usize) -> SkullWoodsFireSlotState {
-        self.game_state
-            .effects
-            .entrance_effects
-            .skull_woods_fire_slot(slot)
     }
 
     pub(crate) fn skull_woods_fire_mut(
@@ -402,26 +348,12 @@ impl ZeldaState {
             .skull_woods_fire_inner_x()
     }
 
-    pub(crate) fn swamola_target(&self, slot: usize) -> HistoryPositionState {
-        self.game_state
-            .effects
-            .sprite_histories
-            .swamola_target(slot)
-    }
-
     pub(crate) fn swamola_target_mut(&mut self, slot: usize) -> NativeSwamolaTargetBridgeMut<'_> {
         NativeSwamolaTargetBridgeMut::new(
             &mut self.game_state.effects.sprite_histories,
             &mut self.ram,
             slot,
         )
-    }
-
-    pub(crate) fn swamola_history(&self, slot: usize) -> HistoryPositionState {
-        self.game_state
-            .effects
-            .sprite_histories
-            .swamola_history(slot)
     }
 
     pub(crate) fn swamola_history_mut(&mut self, slot: usize) -> NativeSwamolaHistoryBridgeMut<'_> {

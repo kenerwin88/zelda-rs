@@ -14,9 +14,6 @@ mod messaging;
 mod misc;
 mod oam;
 mod player;
-pub(in crate::game_state) use player::{
-    move_link_axis_by_subpixel_delta, move_link_axis_by_velocity,
-};
 mod poly;
 mod sprites;
 mod system;
@@ -48,11 +45,9 @@ pub(crate) use dungeon::{
     NativeDungeonStairMovementBridgeMut, NativeDungeonTorchBridgeMut,
 };
 pub(crate) use effects::{
-    lanmola_flat_trail_entry_from_ram, BlastWallExplosionSlotState, BlastWallFireballSlotState,
-    BlastWallFragmentSlotState, BombosBlastState, BombosFireColumnState, EffectState,
-    HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot, HistoryPositionState,
-    LanmolaFlatTrailEntry, LanmolaSegmentMotionState, NativeBeamosLaserHistoryBridgeMut,
-    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    lanmola_flat_trail_entry_from_ram, EffectState, HappinessPondRupeeSnapshot,
+    LanmolaFlatTrailEntry, NativeBeamosLaserHistoryBridgeMut, NativeBlastWallBridgeMut,
+    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosBlastBridgeMut, NativeBombosFireColumnBridgeMut,
     NativeBombosSpellBridgeMut, NativeDiggingGamePrizeBridgeMut, NativeDoorDebrisBridgeMut,
     NativeEffectAngleScratchBridgeMut, NativeHappinessPondRupeeBridgeMut,
@@ -60,8 +55,7 @@ pub(crate) use effects::{
     NativeQuakeSpellBridgeMut, NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
     NativeSwamolaHistoryBridgeMut, NativeSwamolaTargetBridgeMut, NativeTowerSealBridgeMut,
     NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut,
-    NativeWeatherVaneDebrisBridgeMut, QuakeBoltSlotState, SkullWoodsFireSlotState,
-    TowerSealOrbitState, TowerSealSparkleState, WeatherVaneDebrisSlotState,
+    NativeWeatherVaneDebrisBridgeMut,
 };
 pub(crate) use ending::{
     AttractSceneState, EndingState, IntroActorRead, IntroActorState, NativeAttractSceneBridgeMut,
@@ -73,14 +67,14 @@ pub(crate) use inventory::{
     NativeMirrorWarpBridgeMut, NativePlayerResourcesBridgeMut, NativeSaveProgressBridgeMut,
     SaveProgressState,
 };
+#[cfg(test)]
+pub(crate) use messaging::{MessagingRenderBufferState, SelectFileMenuState, VwfRenderState};
 pub(crate) use messaging::{
-    MessagingRenderBufferState, MessagingState, MultiselectChoiceRead,
-    NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
-    NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
-    NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut,
-    NativeMultiselectChoiceBridgeMut, NativeSelectFileMenuBridgeMut,
-    NativeSharedMessageTimerBridgeMut, NativeVwfRenderBridgeMut, SelectFileMenuState,
-    VwfRenderState,
+    MessagingState, MultiselectChoiceRead, NativeDecodedMessageTextBridgeMut,
+    NativeDialogueMessageIndexBridgeMut, NativeDialogueNumberBridgeMut,
+    NativeDialogueSourceOffsetBridgeMut, NativeMessagingRenderBufferBridgeMut,
+    NativeMessagingRuntimeBridgeMut, NativeMultiselectChoiceBridgeMut,
+    NativeSelectFileMenuBridgeMut, NativeSharedMessageTimerBridgeMut, NativeVwfRenderBridgeMut,
 };
 pub(crate) use misc::{
     ArcheryGameState, DungeonMapDisplayState, DungeonSecretState, EnhancedFeaturesState,
@@ -91,9 +85,11 @@ pub(crate) use misc::{
     NativeSpriteBattleBridgeMut, SaveLoadTransferState, ScratchCounterState, SpriteBattleState,
 };
 pub(crate) use oam::{NativeOamStateBridgeMut, OamState};
+#[cfg(test)]
+pub(crate) use player::Bg1MovementAccumulatorState;
 pub(crate) use player::{
-    Bg1MovementAccumulatorState, FollowerLinkState, NativeBg1MovementAccumulatorBridgeMut,
-    NativeFollowerLinkBridgeMut, NativePushedBlockBridgeMut, NativeSpecialExitPositionBridgeMut,
+    FollowerLinkState, NativeBg1MovementAccumulatorBridgeMut, NativeFollowerLinkBridgeMut,
+    NativePushedBlockBridgeMut, NativeSpecialExitPositionBridgeMut,
     NativeSwimAccelerationBridgeMut, NativeTileDetectionBridgeMut, PlayerState,
 };
 pub(crate) use poly::{
@@ -101,20 +97,22 @@ pub(crate) use poly::{
     NativePolyRasterEdgeBridgeMut, NativePolyRuntimeBridgeMut, PolyState,
 };
 pub use sprites::CachedSpriteCacheField;
+#[cfg(test)]
+pub(crate) use sprites::NativeArrghusPuffHomePositionBridgeMut;
 pub(crate) use sprites::{
     BossHomePositionRead, CachedSpriteRead, NativeAncillaSlotBridgeMut, NativeAncillaSlotView,
-    NativeArmosKnightHomePositionBridgeMut, NativeArrghusPuffHomePositionBridgeMut,
-    NativeCachedSpriteBridgeMut, NativeChainChompHistoryBridgeMut,
-    NativeDualLayerTileCacheBridgeMut, NativeEnemyDamageSubclassTableBridgeMut,
-    NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut,
-    NativeFollowerRuntimeBridgeMut, NativeGarnishRuntimeBridgeMut, NativeGarnishSlotBridgeMut,
-    NativeGarnishSlotView, NativeMazeGameTimerBridgeMut, NativeOverlordSlotBridgeMut,
-    NativeOverlordSlotView, NativeOverworldSpriteLoadedBridgeMut,
-    NativeOverworldSpritePresenceBridgeMut, NativePrizeDropCycleBridgeMut,
-    NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
-    NativeSpriteSlotBridgeMut, NativeSpriteSlotView, NativeSpriteSystemBridgeMut,
-    NativeSpriteWorkspaceBridgeMut, NativeTagalongSlotBridgeMut, SpriteSlotsState, SpriteState,
-    TagalongSlotRead, ANCILLA_SLOT_COUNT, OVERWORLD_SPRITE_FLAG_COUNT,
+    NativeArmosKnightHomePositionBridgeMut, NativeCachedSpriteBridgeMut,
+    NativeChainChompHistoryBridgeMut, NativeDualLayerTileCacheBridgeMut,
+    NativeEnemyDamageSubclassTableBridgeMut, NativeEtherOrbitBridgeMut,
+    NativeFailedSpinSparkleSpawnBridgeMut, NativeFollowerRuntimeBridgeMut,
+    NativeGarnishRuntimeBridgeMut, NativeGarnishSlotBridgeMut, NativeGarnishSlotView,
+    NativeMazeGameTimerBridgeMut, NativeOverlordSlotBridgeMut, NativeOverlordSlotView,
+    NativeOverworldSpriteLoadedBridgeMut, NativeOverworldSpritePresenceBridgeMut,
+    NativePrizeDropCycleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
+    NativeSpriteHitboxWorkOffsetBridgeMut, NativeSpriteSlotBridgeMut, NativeSpriteSlotView,
+    NativeSpriteSystemBridgeMut, NativeSpriteWorkspaceBridgeMut, NativeTagalongSlotBridgeMut,
+    SpriteSlotsState, SpriteState, TagalongSlotRead, ANCILLA_SLOT_COUNT,
+    OVERWORLD_SPRITE_FLAG_COUNT,
 };
 pub(crate) use system::{
     MsuResumeInfoState, MsuResumeSlot, NativeSystemSignalsBridgeMut, SystemSignalsState,

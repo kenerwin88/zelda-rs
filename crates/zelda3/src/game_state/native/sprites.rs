@@ -1,4 +1,3 @@
-use super::ram_byte;
 use crate::game_state::constants::{
     ACTIVE_OVERLORD_INDEX, ALT_SPRITES_FLAG, ALT_SPRITE_GRAPHICS, ALT_SPRITE_SPAWNED_FLAG,
     ALT_SPRITE_STATE, ALT_SPRITE_TYPE, ALT_SPRITE_X_HI, ALT_SPRITE_X_LO, ALT_SPRITE_Y_HI,
@@ -55,7 +54,6 @@ use crate::types::{read_le_u16, write_le_u16};
 
 const SPRITE_SLOT_COUNT: usize = 16;
 pub(crate) const ANCILLA_SLOT_COUNT: usize = 10;
-const OVERLORD_SLOT_COUNT: usize = 16;
 const GARNISH_SLOT_COUNT: usize = 30;
 const TAGALONG_SLOT_COUNT: usize = 20;
 const CHAIN_CHOMP_HISTORY_LEN: usize = 0x80;
@@ -181,80 +179,6 @@ const SPRITE_ZERO_PAGE_WORK_COUNT: usize = 16;
 const SPRITE_WHERE_IN_ROOM_BYTES: usize = 0x1000;
 const CACHED_SPRITE_SLOT_COUNT: usize = 0x1b;
 const BOSS_HOME_POSITION_COUNT: usize = 0x1b;
-
-fn packed_ram_position(ram: &[u8], low_offset: usize, high_offset: usize) -> u16 {
-    u16::from(ram_byte(ram, low_offset)) | (u16::from(ram_byte(ram, high_offset)) << 8)
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct SpriteSlotSnapshot {
-    pub(crate) slot: u8,
-    pub(crate) sprite_type: u8,
-    pub(crate) state: u8,
-    pub(crate) x: u16,
-    pub(crate) y: u16,
-    pub(crate) x_velocity: u8,
-    pub(crate) y_velocity: u8,
-    pub(crate) ai_state: u8,
-    pub(crate) delay_main: u8,
-    pub(crate) health: u8,
-    pub(crate) hit_timer: u8,
-}
-
-impl SpriteSlotSnapshot {
-    pub(crate) fn load_from_ram(ram: &[u8], slot: usize) -> Self {
-        Self {
-            slot: slot as u8,
-            sprite_type: ram_byte(ram, SPRITE_TYPE + slot),
-            state: ram_byte(ram, SPRITE_STATE + slot),
-            x: packed_ram_position(ram, SPRITE_X_LO + slot, SPRITE_X_HI + slot),
-            y: packed_ram_position(ram, SPRITE_Y_LO + slot, SPRITE_Y_HI + slot),
-            x_velocity: ram_byte(ram, SPRITE_X_VELOCITY + slot),
-            y_velocity: ram_byte(ram, SPRITE_Y_VELOCITY + slot),
-            ai_state: ram_byte(ram, SPRITE_AI_STATE + slot),
-            delay_main: ram_byte(ram, SPRITE_DELAY_MAIN + slot),
-            health: ram_byte(ram, SPRITE_HEALTH + slot),
-            hit_timer: ram_byte(ram, SPRITE_HIT_TIMER + slot),
-        }
-    }
-
-    pub(crate) fn is_active(&self) -> bool {
-        self.sprite_type != 0 || self.state != 0
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct AncillaSlotSnapshot {
-    pub(crate) slot: u8,
-    pub(crate) ancilla_type: u8,
-    pub(crate) x: u16,
-    pub(crate) y: u16,
-    pub(crate) x_velocity: u8,
-    pub(crate) y_velocity: u8,
-    pub(crate) item_to_link: u8,
-    pub(crate) timer: u8,
-    pub(crate) direction: u8,
-}
-
-impl AncillaSlotSnapshot {
-    pub(crate) fn load_from_ram(ram: &[u8], slot: usize) -> Self {
-        Self {
-            slot: slot as u8,
-            ancilla_type: ram_byte(ram, ANCILLA_TYPE + slot),
-            x: packed_ram_position(ram, ANCILLA_X_LO + slot, ANCILLA_X_HI + slot),
-            y: packed_ram_position(ram, ANCILLA_Y_LO + slot, ANCILLA_Y_HI + slot),
-            x_velocity: ram_byte(ram, ANCILLA_X_VELOCITY + slot),
-            y_velocity: ram_byte(ram, ANCILLA_Y_VELOCITY + slot),
-            item_to_link: ram_byte(ram, ANCILLA_ITEM_TO_LINK + slot),
-            timer: ram_byte(ram, ANCILLA_TIMER + slot),
-            direction: ram_byte(ram, ANCILLA_DIRECTION + slot),
-        }
-    }
-
-    pub(crate) fn is_active(&self) -> bool {
-        self.ancilla_type != 0
-    }
-}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct SpriteState {
@@ -630,20 +554,12 @@ pub(crate) struct NativeSpriteSlotView<'a> {
 }
 
 impl<'a> NativeSpriteSlotView<'a> {
-    pub(crate) fn slot(&self) -> u8 {
-        self.slot as u8
-    }
-
     pub(crate) fn sprite_type(&self) -> u8 {
         self.state.byte(self.slot, SPRITE_TYPE)
     }
 
     pub(crate) fn state(&self) -> u8 {
         self.state.byte(self.slot, SPRITE_STATE)
-    }
-
-    pub(crate) fn is_active(&self) -> bool {
-        self.sprite_type() != 0 || self.state() != 0
     }
 
     pub(crate) fn x(&self) -> u16 {
@@ -1101,10 +1017,6 @@ impl<'a> NativeSpriteSlotBridgeMut<'a> {
 
     pub(crate) fn add_ai_state(&mut self, value: u8) {
         self.add_byte(SPRITE_AI_STATE, value);
-    }
-
-    pub(crate) fn subtract_ai_state(&mut self, value: u8) {
-        self.subtract_byte(SPRITE_AI_STATE, value);
     }
 
     pub(crate) fn set_delay_main(&mut self, value: u8) {
@@ -1733,10 +1645,6 @@ impl<'a> NativeSpriteSlotBridgeMut<'a> {
         self.xor_byte(SPRITE_C, value);
     }
 
-    pub(crate) fn add_anim_clock(&mut self, value: u8) {
-        self.add_byte(SPRITE_ANIM_CLOCK, value);
-    }
-
     pub(crate) fn and_x_velocity(&mut self, value: u8) {
         self.and_byte(SPRITE_X_VELOCITY, value);
     }
@@ -2046,10 +1954,6 @@ pub(crate) struct NativeAncillaSlotView<'a> {
 }
 
 impl<'a> NativeAncillaSlotView<'a> {
-    pub(crate) fn slot(&self) -> u8 {
-        self.slot as u8
-    }
-
     pub(crate) fn ancilla_type(&self) -> u8 {
         self.state.byte(self.slot, ANCILLA_TYPE)
     }
@@ -2487,10 +2391,6 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn add_direction(&mut self, value: u8) {
-        self.add_byte(ANCILLA_DIRECTION, value);
-    }
-
     pub(crate) fn set_tile_attribute(&mut self, value: u8) {
         self.set_byte(ANCILLA_TILE_ATTRIBUTE, value);
     }
@@ -2513,10 +2413,6 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
 
     pub(crate) fn set_aux_timer(&mut self, value: u8) {
         self.set_byte(ANCILLA_AUX_TIMER, value);
-    }
-
-    pub(crate) fn advance_aux_timer(&mut self) -> u8 {
-        self.add_byte(ANCILLA_AUX_TIMER, 1)
     }
 
     pub(crate) fn add_aux_timer(&mut self, value: u8) {
@@ -2635,10 +2531,6 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
         self.set_byte(ANCILLA_R, value);
     }
 
-    pub(crate) fn advance_r(&mut self) -> u8 {
-        self.add_byte(ANCILLA_R, 1)
-    }
-
     pub(crate) fn add_r(&mut self, value: u8) {
         self.add_byte(ANCILLA_R, value);
     }
@@ -2689,10 +2581,6 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
         self.set_byte(ANCILLA_WORK_BYTE_22, value);
     }
 
-    pub(crate) fn tick_work_byte_22(&mut self) -> u8 {
-        self.subtract_byte(ANCILLA_WORK_BYTE_22, 1)
-    }
-
     pub(crate) fn subtract_work_byte_22(&mut self, value: u8) {
         self.subtract_byte(ANCILLA_WORK_BYTE_22, value);
     }
@@ -2701,20 +2589,12 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
         self.set_byte(ANCILLA_WORK_BYTE_23, value);
     }
 
-    pub(crate) fn advance_work_byte_23(&mut self) -> u8 {
-        self.add_byte(ANCILLA_WORK_BYTE_23, 1)
-    }
-
     pub(crate) fn add_work_byte_23(&mut self, value: u8) {
         self.add_byte(ANCILLA_WORK_BYTE_23, value);
     }
 
     pub(crate) fn set_work_byte_24(&mut self, value: u8) {
         self.set_byte(ANCILLA_WORK_BYTE_24, value);
-    }
-
-    pub(crate) fn advance_work_byte_24(&mut self) -> u8 {
-        self.add_byte(ANCILLA_WORK_BYTE_24, 1)
     }
 
     pub(crate) fn add_work_byte_24(&mut self, value: u8) {
@@ -3005,18 +2885,8 @@ impl OverlordSlotsState {
         self.set_word_at(OVERLORD_GEN2 + slot, next);
     }
 
-    fn subtract_gen2(&mut self, slot: usize, value: u8) {
-        let value = self.gen2(slot).wrapping_sub(value);
-        self.set_gen2(slot, value);
-    }
-
     fn set_gen3(&mut self, slot: usize, value: u8) {
         self.set_byte_at(OVERLORD_GEN3 + slot, value);
-    }
-
-    fn add_gen3(&mut self, slot: usize, value: u8) {
-        let value = self.gen3(slot).wrapping_add(value);
-        self.set_gen3(slot, value);
     }
 
     fn set_floor(&mut self, slot: usize, value: u8) {
@@ -3068,10 +2938,6 @@ impl<'a> NativeOverlordSlotView<'a> {
 
     pub(crate) fn overlord_type(&self) -> u8 {
         self.state.overlord_type(self.slot)
-    }
-
-    pub(crate) fn is_active(&self) -> bool {
-        self.state.overlord_type(self.slot) != 0
     }
 
     pub(crate) fn gen1(&self) -> u8 {
@@ -3142,10 +3008,6 @@ impl<'a> NativeOverlordSlotBridgeMut<'a> {
         let updated = self.state.subtract_adjacent_x_low_word(self.slot, value);
         self.sync();
         updated
-    }
-
-    pub(crate) fn x_low(&self) -> u8 {
-        self.state.x_low(self.slot)
     }
 
     pub(crate) fn set_x_high(&mut self, value: u8) {
@@ -3238,18 +3100,8 @@ impl<'a> NativeOverlordSlotBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn subtract_gen2(&mut self, value: u8) {
-        self.state.subtract_gen2(self.slot, value);
-        self.sync();
-    }
-
     pub(crate) fn set_gen3(&mut self, value: u8) {
         self.state.set_gen3(self.slot, value);
-        self.sync();
-    }
-
-    pub(crate) fn add_gen3(&mut self, value: u8) {
-        self.state.add_gen3(self.slot, value);
         self.sync();
     }
 
@@ -3395,10 +3247,6 @@ impl GarnishSlotState {
         self.garnish_type = value;
     }
 
-    pub(crate) fn clear(&mut self) {
-        self.set_garnish_type(0);
-    }
-
     pub(crate) fn set_x(&mut self, value: u16) {
         self.x_low = value as u8;
         self.x_high = (value >> 8) as u8;
@@ -3421,14 +3269,6 @@ impl GarnishSlotState {
         self.y_low = value;
     }
 
-    pub(crate) fn add_y_low(&mut self, value: u8) {
-        self.y_low = self.y_low.wrapping_add(value);
-    }
-
-    pub(crate) fn subtract_y_low(&mut self, value: u8) {
-        self.y_low = self.y_low.wrapping_sub(value);
-    }
-
     pub(crate) fn set_y_high(&mut self, value: u8) {
         self.y_high = value;
     }
@@ -3441,10 +3281,6 @@ impl GarnishSlotState {
         self.y_velocity = value;
     }
 
-    pub(crate) fn add_y_velocity(&mut self, value: u8) {
-        self.y_velocity = self.y_velocity.wrapping_add(value);
-    }
-
     pub(crate) fn set_x_subpixel(&mut self, value: u8) {
         self.x_subpixel = value;
     }
@@ -3455,10 +3291,6 @@ impl GarnishSlotState {
 
     pub(crate) fn set_countdown(&mut self, value: u8) {
         self.countdown = value;
-    }
-
-    pub(crate) fn subtract_countdown(&mut self, value: u8) {
-        self.countdown = self.countdown.wrapping_sub(value);
     }
 
     pub(crate) fn set_sprite(&mut self, value: u8) {
@@ -3607,11 +3439,6 @@ impl<'a> NativeGarnishSlotBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn clear(&mut self) {
-        self.state.clear();
-        self.sync();
-    }
-
     pub(crate) fn set_x(&mut self, value: u16) {
         self.state.set_x(value);
         self.sync();
@@ -3637,16 +3464,6 @@ impl<'a> NativeGarnishSlotBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn add_y_low(&mut self, value: u8) {
-        self.state.add_y_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn subtract_y_low(&mut self, value: u8) {
-        self.state.subtract_y_low(value);
-        self.sync();
-    }
-
     pub(crate) fn set_y_high(&mut self, value: u8) {
         self.state.set_y_high(value);
         self.sync();
@@ -3662,11 +3479,6 @@ impl<'a> NativeGarnishSlotBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn add_y_velocity(&mut self, value: u8) {
-        self.state.add_y_velocity(value);
-        self.sync();
-    }
-
     pub(crate) fn set_x_subpixel(&mut self, value: u8) {
         self.state.set_x_subpixel(value);
         self.sync();
@@ -3679,11 +3491,6 @@ impl<'a> NativeGarnishSlotBridgeMut<'a> {
 
     pub(crate) fn set_countdown(&mut self, value: u8) {
         self.state.set_countdown(value);
-        self.sync();
-    }
-
-    pub(crate) fn subtract_countdown(&mut self, value: u8) {
-        self.state.subtract_countdown(value);
         self.sync();
     }
 
@@ -4286,14 +4093,6 @@ impl SpriteSystemState {
         self.graphics_index
     }
 
-    pub(crate) fn saved_special_exit_graphics_index(&self) -> u8 {
-        self.saved_special_exit_graphics_index
-    }
-
-    pub(crate) fn saved_exit_graphics_index(&self) -> u8 {
-        self.saved_exit_graphics_index
-    }
-
     pub(crate) fn alt_sprite_spawned_flag(&self) -> u8 {
         self.alt_sprite_spawned_flag
     }
@@ -4640,16 +4439,8 @@ impl SpriteWorkspaceState {
         self.reset_scratch_a
     }
 
-    pub(crate) fn reset_scratch_a(&self) -> u8 {
-        self.reset_scratch_a
-    }
-
     pub(crate) fn armos_knight_remaining_count(&self) -> u8 {
         self.reset_scratch_a
-    }
-
-    pub(crate) fn reset_scratch_b(&self) -> u8 {
-        self.reset_scratch_b
     }
 
     pub(crate) fn graphics_subset(&self, slot: usize) -> u8 {
@@ -4779,11 +4570,6 @@ impl SpriteWorkspaceState {
 
     fn subtract_current_sprite_y_low(&mut self, value: u8) {
         self.set_current_sprite_y_low(self.current_sprite_y_low().wrapping_sub(value));
-    }
-
-    fn set_current_sprite_position(&mut self, x: u16, y: u16) {
-        self.current_sprite_x = x;
-        self.current_sprite_y = y;
     }
 
     fn set_oam_prep_coords(&mut self, x: u16, y: u16) {
@@ -4993,11 +4779,6 @@ impl<'a> NativeSpriteWorkspaceBridgeMut<'a> {
 
     pub(crate) fn subtract_current_sprite_y_low(&mut self, value: u8) {
         self.state.subtract_current_sprite_y_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_current_sprite_position(&mut self, x: u16, y: u16) {
-        self.state.set_current_sprite_position(x, y);
         self.sync();
     }
 
@@ -5246,10 +5027,6 @@ impl FollowerRuntimeState {
         self.tail_write_index = self.tail_write_index.wrapping_add(1);
     }
 
-    pub(crate) fn set_hookshot_release_tail_index(&mut self, value: u8) {
-        self.hookshot_release_tail_index = value;
-    }
-
     pub(crate) fn set_reacquire_timer_low(&mut self, value: u8) {
         self.reacquire_timer_low = value;
     }
@@ -5406,11 +5183,6 @@ impl<'a> NativeFollowerRuntimeBridgeMut<'a> {
 
     pub(crate) fn increment_tail_write_index(&mut self) {
         self.state.increment_tail_write_index();
-        self.sync();
-    }
-
-    pub(crate) fn set_hookshot_release_tail_index(&mut self, value: u8) {
-        self.state.set_hookshot_release_tail_index(value);
         self.sync();
     }
 
@@ -6506,22 +6278,6 @@ impl<'a> NativeTagalongSlotBridgeMut<'a> {
         Self { state, ram, slot }
     }
 
-    pub(crate) fn set_x(&mut self, value: u16) {
-        if self.slot < TAGALONG_SLOT_COUNT {
-            self.state.x_low[self.slot] = value as u8;
-            self.state.x_high[self.slot] = (value >> 8) as u8;
-            self.sync();
-        }
-    }
-
-    pub(crate) fn set_y(&mut self, value: u16) {
-        if self.slot < TAGALONG_SLOT_COUNT {
-            self.state.y_low[self.slot] = value as u8;
-            self.state.y_high[self.slot] = (value >> 8) as u8;
-            self.sync();
-        }
-    }
-
     pub(crate) fn set_y_high(&mut self, value: u8) {
         if let Some(y_high) = self.state.y_high.get_mut(self.slot) {
             *y_high = value;
@@ -6726,10 +6482,6 @@ impl SpriteDrawHitboxWorkState {
         self.draw_flags_or_hitbox_x_offset = value;
     }
 
-    pub(crate) fn set_y_low_offset(&mut self, value: u8) {
-        self.hitbox_y_offset = value;
-    }
-
     pub(crate) fn set_offsets(&mut self, y_low: u8, x_high: u8) {
         self.hitbox_y_offset = y_low;
         self.draw_flags_or_hitbox_x_offset = x_high;
@@ -6796,11 +6548,6 @@ impl<'a> NativeSpriteHitboxWorkOffsetBridgeMut<'a> {
 
     pub(crate) fn set_x_high_offset(&mut self, value: u8) {
         self.state.set_x_high_offset(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_y_low_offset(&mut self, value: u8) {
-        self.state.set_y_low_offset(value);
         self.sync();
     }
 

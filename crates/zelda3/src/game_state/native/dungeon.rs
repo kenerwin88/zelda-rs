@@ -350,14 +350,6 @@ impl DungeonRoomTilemapState {
         }
     }
 
-    pub(crate) fn bg1_tilemap_base(&self) -> usize {
-        DUNG_BG1
-    }
-
-    pub(crate) fn bg2_tilemap_base(&self) -> usize {
-        DUNG_BG2
-    }
-
     pub(crate) fn bg1_tile(&self, index: usize) -> u16 {
         self.bg1_tiles.get(index).copied().unwrap_or(0)
     }
@@ -386,10 +378,6 @@ impl DungeonRoomTilemapState {
         } else {
             self.bg1_tile(index - DUNGEON_ROOM_TILEMAP_WORDS)
         }
-    }
-
-    pub(crate) fn bg1_tile_by_byte_pos(&self, pos: u16) -> u16 {
-        self.bg1_tile((pos >> 1) as usize)
     }
 
     pub(crate) fn bg2_tile_by_byte_pos(&self, pos: u16) -> u16 {
@@ -471,10 +459,6 @@ impl DungeonRoomTilemapState {
         }
     }
 
-    fn set_bg1_tile_by_byte_pos(&mut self, pos: u16, value: u16) {
-        self.set_bg1_tile((pos >> 1) as usize, value);
-    }
-
     fn set_bg2_tile_by_byte_pos(&mut self, pos: u16, value: u16) {
         self.set_bg2_tile((pos >> 1) as usize, value);
     }
@@ -490,14 +474,6 @@ impl DungeonRoomTilemapState {
         value: u16,
     ) {
         self.set_tile_at_abs(base + byte_offset, value);
-    }
-
-    fn set_line_pointer_row0(&mut self, index: usize, value: u16) {
-        let offset = index * 2;
-        if offset + 1 < self.line_pointer_bytes.len() {
-            self.line_pointer_bytes[offset] = value as u8;
-            self.line_pointer_bytes[offset + 1] = (value >> 8) as u8;
-        }
     }
 
     fn copy_line_pointer_bytes(&mut self, offsets: &[u8]) {
@@ -847,10 +823,6 @@ impl DungeonRoomLoadState {
         self.header_collision_2_mirror as u8
     }
 
-    pub(crate) fn header_collision_2_mirror_high(&self) -> u8 {
-        (self.header_collision_2_mirror >> 8) as u8
-    }
-
     pub(crate) fn bg2_properties(&self) -> u8 {
         self.bg2_properties
     }
@@ -885,10 +857,6 @@ impl DungeonRoomLoadState {
 
     pub(crate) fn overlay_to_load(&self) -> u8 {
         self.overlay_to_load
-    }
-
-    pub(crate) fn selected_key_door_x2(&self) -> u16 {
-        self.selected_key_door_x2
     }
 
     pub(crate) fn load_ptr_offset(&self) -> u16 {
@@ -991,11 +959,6 @@ impl DungeonRoomLoadState {
         self.draw_height_indicator = value;
     }
 
-    fn set_draw_dimensions(&mut self, width: u8, height: u8) {
-        self.set_draw_width_indicator(width);
-        self.set_draw_height_indicator(height);
-    }
-
     fn set_draw_dimensions_words(&mut self, width: u16, height: u16) {
         self.draw_width_indicator = width;
         self.draw_height_indicator = height;
@@ -1015,21 +978,12 @@ impl DungeonRoomLoadState {
         self.overlay_to_load = 0;
     }
 
-    fn set_selected_key_door_x2(&mut self, value: u16) {
-        self.selected_key_door_x2 = value;
-    }
-
     fn set_selected_key_door(&mut self, door: usize) {
         self.selected_key_door_x2 = (door * 2) as u16;
     }
 
     fn set_load_ptr_offset(&mut self, value: u16) {
         self.load_ptr_offset = value;
-    }
-
-    fn advance_load_ptr_offset_by(&mut self, value: u16) -> u16 {
-        self.load_ptr_offset = self.load_ptr_offset.wrapping_add(value);
-        self.load_ptr_offset
     }
 
     fn set_loading_bg_offsets(&mut self, horizontal: u16, vertical: u16) {
@@ -1108,10 +1062,6 @@ impl DungeonObjectTrackingState {
         self.misc_object_index
     }
 
-    pub(crate) fn misc_object_slot(&self) -> usize {
-        (self.misc_object_index >> 1) as usize
-    }
-
     pub(crate) fn replacement_tile_state(&self, index: usize) -> u16 {
         self.replacement_tile_states
             .get(index)
@@ -1149,11 +1099,6 @@ impl DungeonObjectTrackingState {
         self.misc_object_index &= 0xff00;
     }
 
-    fn advance_misc_object_index_by(&mut self, value: u16) -> u16 {
-        self.misc_object_index = self.misc_object_index.wrapping_add(value);
-        self.misc_object_index
-    }
-
     fn clear_replacement_tile_states(&mut self) {
         self.replacement_tile_states.fill(0);
     }
@@ -1166,14 +1111,6 @@ impl DungeonObjectTrackingState {
         if let Some(state) = self.replacement_tile_states.get_mut(index) {
             *state = value;
         }
-    }
-
-    fn increment_replacement_tile_state(&mut self, index: usize) -> u16 {
-        let Some(state) = self.replacement_tile_states.get_mut(index) else {
-            return 0;
-        };
-        *state = state.wrapping_add(1);
-        *state
     }
 
     fn clear_replacement_tile_state_low(&mut self, index: usize) {
@@ -1296,10 +1233,6 @@ impl DungeonDoorState {
         self.opened_doors_including_adjacent
     }
 
-    pub(crate) fn has_opened_door_mask(&self, mask: u16) -> bool {
-        self.opened_doors_including_adjacent & mask != 0
-    }
-
     pub(crate) fn door_tilemap_address(&self, door: usize) -> u16 {
         self.door_tilemap_addresses.get(door).copied().unwrap_or(0)
     }
@@ -1322,10 +1255,6 @@ impl DungeonDoorState {
 
     pub(crate) fn current_door_index(&self) -> u16 {
         self.current_door_index
-    }
-
-    pub(crate) fn current_door_slot(&self) -> usize {
-        (self.current_door_index >> 1) as usize
     }
 
     pub(crate) fn current_door_pos(&self) -> u16 {
@@ -1369,11 +1298,6 @@ impl DungeonDoorState {
         self.opened_doors_including_adjacent = value;
     }
 
-    fn mark_opened_door_mask(&mut self, mask: u16) -> u16 {
-        self.opened_doors_including_adjacent |= mask;
-        self.opened_doors_including_adjacent
-    }
-
     fn clear_door_tilemap_addresses(&mut self) {
         self.door_tilemap_addresses.fill(0);
     }
@@ -1412,21 +1336,12 @@ impl DungeonDoorState {
         }
     }
 
-    fn clear_door_direction(&mut self, door: usize) {
-        self.set_door_direction_word(door, 0);
-    }
-
     fn set_current_door_index(&mut self, value: u16) {
         self.current_door_index = value;
     }
 
     fn set_current_door_index_for_slot(&mut self, door: usize) {
         self.current_door_index = (door * 2) as u16;
-    }
-
-    fn advance_current_door_index_by(&mut self, value: u16) -> u16 {
-        self.current_door_index = self.current_door_index.wrapping_add(value);
-        self.current_door_index
     }
 
     fn set_current_door_pos(&mut self, value: u16) {
@@ -1455,11 +1370,6 @@ impl DungeonDoorState {
 
     fn set_door_animation_step_low(&mut self, value: u8) {
         self.animation_step = (self.animation_step & 0xff00) | u16::from(value);
-    }
-
-    fn increment_door_animation_step(&mut self) -> u16 {
-        self.animation_step = self.animation_step.wrapping_add(1);
-        self.animation_step
     }
 
     fn set_door_open_counter(&mut self, value: u16) {
@@ -1647,11 +1557,6 @@ impl DungeonMovingFloorState {
         self.x_velocity = value;
     }
 
-    fn clear_floor_velocity(&mut self) {
-        self.x_velocity = 0;
-        self.y_velocity = 0;
-    }
-
     fn set_floor_x_offset(&mut self, value: u16) {
         self.x_offset = value;
     }
@@ -1677,16 +1582,6 @@ impl DungeonMovingFloorState {
     fn sub_floor_x_offset(&mut self, delta: u16) -> u16 {
         self.x_offset = self.x_offset.wrapping_sub(delta);
         self.x_offset
-    }
-
-    fn add_floor_y_offset(&mut self, delta: u16) -> u16 {
-        self.y_offset = self.y_offset.wrapping_add(delta);
-        self.y_offset
-    }
-
-    fn sub_floor_y_offset(&mut self, delta: u16) -> u16 {
-        self.y_offset = self.y_offset.wrapping_sub(delta);
-        self.y_offset
     }
 
     fn clear_floor_offsets(&mut self) {
@@ -1757,10 +1652,6 @@ impl DungeonStairMovementState {
         self.current_floor_word
     }
 
-    pub(crate) fn cached_floor(&self) -> u8 {
-        self.cached_floor
-    }
-
     pub(crate) fn current_staircase_plane(&self) -> u8 {
         self.current_plane
     }
@@ -1773,14 +1664,6 @@ impl DungeonStairMovementState {
         self.staircase_index as u8
     }
 
-    pub(crate) fn staircase_index_slot(&self) -> usize {
-        usize::from(self.staircase_index() & 3)
-    }
-
-    pub(crate) fn staircase_index_has_vertical_bit(&self) -> bool {
-        self.staircase_index() & 4 != 0
-    }
-
     pub(crate) fn staircase_move_counter(&self) -> u8 {
         self.move_counter
     }
@@ -1791,10 +1674,6 @@ impl DungeonStairMovementState {
 
     pub(crate) fn staircase_tilemap_pos_x2(&self) -> u16 {
         self.tilemap_pos_x2
-    }
-
-    pub(crate) fn staircase_countdown(&self) -> u8 {
-        self.countdown
     }
 
     fn set_current_floor(&mut self, value: u8) {
@@ -1835,16 +1714,6 @@ impl DungeonStairMovementState {
 
     fn set_staircase_countdown(&mut self, value: u8) {
         self.countdown = value;
-    }
-
-    fn decrement_staircase_countdown_clamped(&mut self) -> u8 {
-        let value = self.countdown.wrapping_sub(1);
-        self.countdown = if (value as i8).is_negative() {
-            0
-        } else {
-            value
-        };
-        self.countdown
     }
 
     fn decrement_staircase_countdown_underflowed(&mut self) -> bool {
@@ -2759,10 +2628,6 @@ impl DungeonRoomItemState {
         self.replacement_tile_destination_x2
     }
 
-    pub(crate) fn replacement_tile_source_x2(&self) -> u16 {
-        self.replacement_tile_source_x2
-    }
-
     pub(crate) fn replacement_tile_source_pos(&self) -> u16 {
         self.replacement_tile_source_x2 >> 1
     }
@@ -3159,10 +3024,6 @@ impl DungeonBg2AttributeState {
             .unwrap_or(0)
     }
 
-    pub(crate) fn bg2_attr_address(&self, offset: usize) -> usize {
-        DUNGEON_BG2_ATTR_TABLE + offset
-    }
-
     pub(crate) fn bg2_attr_pair(&self, offset: usize) -> Option<(u8, u8)> {
         Some((
             *self.attrs.get(offset)?,
@@ -3220,10 +3081,6 @@ impl DungeonSavegameState {
 
     pub(crate) fn savegame_state_bits(&self) -> u16 {
         self.state_bits
-    }
-
-    pub(crate) fn has_savegame_state_bits(&self, mask: u16) -> bool {
-        self.state_bits & mask != 0
     }
 
     fn set_savegame_state_bits(&mut self, value: u16) {
@@ -3327,10 +3184,6 @@ impl DungeonTorchState {
         self.lights_out_request
     }
 
-    pub(crate) fn wants_lights_out_copy(&self) -> u8 {
-        self.lights_out_request_copy
-    }
-
     pub(crate) fn any_lights_out_request(&self) -> u8 {
         self.lights_out_request | self.lights_out_request_copy
     }
@@ -3387,10 +3240,6 @@ impl DungeonTorchState {
         self.lit_torches = 0;
     }
 
-    fn set_lit_torches(&mut self, value: u8) {
-        self.lit_torches = value;
-    }
-
     fn increment_lit_torches(&mut self) -> u8 {
         self.lit_torches = self.lit_torches.wrapping_add(1);
         self.lit_torches
@@ -3407,10 +3256,6 @@ impl DungeonTorchState {
 
     fn clear_lights_out_request(&mut self) {
         self.lights_out_request = 0;
-    }
-
-    fn set_lights_out_request_copy(&mut self, value: u8) {
-        self.lights_out_request_copy = value;
     }
 
     fn copy_lights_out_request(&mut self) {
@@ -3582,10 +3427,6 @@ impl DungeonHeaderState {
     fn clear_header_tag(&mut self, index: usize) {
         self.set_header_tag(index, 0);
     }
-
-    fn clear_header_tags(&mut self, count: usize) {
-        self.tags[..count].fill(0);
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -3643,10 +3484,6 @@ impl DungeonScratchWordState {
 
     pub(crate) fn set_word(&mut self, value: u16) {
         self.r16 = value;
-    }
-
-    pub(crate) fn clear_word(&mut self) {
-        self.set_word(0);
     }
 
     pub(crate) fn set_liftable_tile_probe_position(&mut self, y: u16, x: u16) {
@@ -3771,11 +3608,6 @@ impl<'a> NativeDungeonScratchWordBridgeMut<'a> {
 
     pub(crate) fn set_word(&mut self, value: u16) {
         self.scratch.set_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_word(&mut self) {
-        self.scratch.clear_word();
         self.sync();
     }
 
@@ -4056,11 +3888,6 @@ impl<'a> NativeDungeonMovingFloorBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn clear_floor_velocity(&mut self) {
-        self.state.clear_floor_velocity();
-        self.sync();
-    }
-
     pub(crate) fn set_floor_x_offset(&mut self, value: u16) {
         self.state.set_floor_x_offset(value);
         self.sync();
@@ -4089,18 +3916,6 @@ impl<'a> NativeDungeonMovingFloorBridgeMut<'a> {
 
     pub(crate) fn sub_floor_x_offset(&mut self, delta: u16) -> u16 {
         let value = self.state.sub_floor_x_offset(delta);
-        self.sync();
-        value
-    }
-
-    pub(crate) fn add_floor_y_offset(&mut self, delta: u16) -> u16 {
-        let value = self.state.add_floor_y_offset(delta);
-        self.sync();
-        value
-    }
-
-    pub(crate) fn sub_floor_y_offset(&mut self, delta: u16) -> u16 {
-        let value = self.state.sub_floor_y_offset(delta);
         self.sync();
         value
     }
@@ -4221,12 +4036,6 @@ impl<'a> NativeDungeonObjectTrackingBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn increment_replacement_tile_state(&mut self, index: usize) -> u16 {
-        let value = self.state.increment_replacement_tile_state(index);
-        self.sync();
-        value
-    }
-
     pub(crate) fn clear_replacement_tile_state_low(&mut self, index: usize) {
         self.state.clear_replacement_tile_state_low(index);
         self.sync();
@@ -4250,12 +4059,6 @@ impl<'a> NativeDungeonObjectTrackingBridgeMut<'a> {
     pub(crate) fn clear_misc_object_index(&mut self) {
         self.state.clear_misc_object_index();
         self.sync();
-    }
-
-    pub(crate) fn advance_misc_object_index_by(&mut self, value: u16) -> u16 {
-        let next = self.state.advance_misc_object_index_by(value);
-        self.sync();
-        next
     }
 
     pub(crate) fn set_changeable_object_index(&mut self, index: usize, value: u8) {
@@ -4315,12 +4118,6 @@ impl<'a> NativeDungeonDoorBridgeMut<'a> {
         self.sync_preserving_animation_step();
     }
 
-    pub(crate) fn mark_opened_door_mask(&mut self, mask: u16) -> u16 {
-        let opened = self.state.mark_opened_door_mask(mask);
-        self.sync_preserving_animation_step();
-        opened
-    }
-
     pub(crate) fn clear_door_tilemap_addresses(&mut self) {
         self.state.clear_door_tilemap_addresses();
         self.sync_preserving_animation_step();
@@ -4352,11 +4149,6 @@ impl<'a> NativeDungeonDoorBridgeMut<'a> {
         self.sync_preserving_animation_step();
     }
 
-    pub(crate) fn clear_door_direction(&mut self, door: usize) {
-        self.state.clear_door_direction(door);
-        self.sync_preserving_animation_step();
-    }
-
     pub(crate) fn set_current_door_index(&mut self, value: u16) {
         self.state.set_current_door_index(value);
         self.sync_preserving_animation_step();
@@ -4365,12 +4157,6 @@ impl<'a> NativeDungeonDoorBridgeMut<'a> {
     pub(crate) fn set_current_door_index_for_slot(&mut self, door: usize) {
         self.state.set_current_door_index_for_slot(door);
         self.sync_preserving_animation_step();
-    }
-
-    pub(crate) fn advance_current_door_index_by(&mut self, value: u16) -> u16 {
-        let next = self.state.advance_current_door_index_by(value);
-        self.sync_preserving_animation_step();
-        next
     }
 
     pub(crate) fn set_current_door_pos(&mut self, value: u16) {
@@ -4404,12 +4190,6 @@ impl<'a> NativeDungeonDoorBridgeMut<'a> {
     pub(crate) fn set_door_animation_step_low(&mut self, value: u8) {
         self.state.set_door_animation_step_low(value);
         self.sync();
-    }
-
-    pub(crate) fn increment_door_animation_step(&mut self) -> u16 {
-        let step = self.state.increment_door_animation_step();
-        self.sync();
-        step
     }
 
     pub(crate) fn set_door_open_counter(&mut self, value: u16) {
@@ -4519,11 +4299,6 @@ impl<'a> NativeDungeonRoomLoadBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_layout_quadrant_key(&mut self, value: u8) {
-        self.state.set_layout_quadrant_key(value);
-        self.sync();
-    }
-
     pub(crate) fn update_layout_quadrant_key(
         &mut self,
         layout: u8,
@@ -4579,11 +4354,6 @@ impl<'a> NativeDungeonRoomLoadBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_draw_dimensions(&mut self, width: u8, height: u8) {
-        self.state.set_draw_dimensions(width, height);
-        self.sync();
-    }
-
     pub(crate) fn set_draw_dimensions_words(&mut self, width: u16, height: u16) {
         self.state.set_draw_dimensions_words(width, height);
         self.sync();
@@ -4604,11 +4374,6 @@ impl<'a> NativeDungeonRoomLoadBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_selected_key_door_x2(&mut self, value: u16) {
-        self.state.set_selected_key_door_x2(value);
-        self.sync();
-    }
-
     pub(crate) fn set_selected_key_door(&mut self, door: usize) {
         self.state.set_selected_key_door(door);
         self.sync();
@@ -4617,12 +4382,6 @@ impl<'a> NativeDungeonRoomLoadBridgeMut<'a> {
     pub(crate) fn set_load_ptr_offset(&mut self, value: u16) {
         self.state.set_load_ptr_offset(value);
         self.sync();
-    }
-
-    pub(crate) fn advance_load_ptr_offset_by(&mut self, value: u16) -> u16 {
-        let offset = self.state.advance_load_ptr_offset_by(value);
-        self.sync();
-        offset
     }
 
     pub(crate) fn set_loading_bg_offsets(&mut self, horizontal: u16, vertical: u16) {
@@ -4843,11 +4602,6 @@ impl<'a> NativeDungeonRoomTilemapBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_bg1_tile_by_byte_pos(&mut self, pos: u16, value: u16) {
-        self.state.set_bg1_tile_by_byte_pos(pos, value);
-        self.sync();
-    }
-
     pub(crate) fn set_bg2_tile_by_byte_pos(&mut self, pos: u16, value: u16) {
         self.state.set_bg2_tile_by_byte_pos(pos, value);
         self.sync();
@@ -4883,11 +4637,6 @@ impl<'a> NativeDungeonRoomTilemapBridgeMut<'a> {
                 *self.state = DungeonRoomTilemapState::load_from_ram(self.ram);
             }
         }
-    }
-
-    pub(crate) fn set_line_pointer_row0(&mut self, index: usize, value: u16) {
-        self.state.set_line_pointer_row0(index, value);
-        self.sync_with_line_pointers();
     }
 
     pub(crate) fn copy_line_pointer_bytes(&mut self, offsets: &[u8]) {
@@ -5304,17 +5053,6 @@ impl<'a> NativeDungeonRoomDoorSetupBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn mark_adjacent_door_flag(&mut self, index: usize) -> u16 {
-        let flags = self.state.mark_adjacent_door_flag(index);
-        self.sync();
-        flags
-    }
-
-    pub(crate) fn set_adjacent_door(&mut self, index: usize, value: u16) {
-        self.state.set_adjacent_door(index, value);
-        self.sync();
-    }
-
     pub(crate) fn load_adjacent_doors_from_room_info(&mut self, door_info: &[u8]) {
         self.state.load_adjacent_doors_from_room_info(door_info);
         self.sync();
@@ -5481,12 +5219,6 @@ impl<'a> NativeDungeonStairMovementBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn decrement_staircase_countdown_clamped(&mut self) -> u8 {
-        let value = self.state.decrement_staircase_countdown_clamped();
-        self.sync();
-        value
-    }
-
     pub(crate) fn decrement_staircase_countdown_underflowed(&mut self) -> bool {
         let underflowed = self.state.decrement_staircase_countdown_underflowed();
         self.sync();
@@ -5588,12 +5320,6 @@ impl<'a> NativeDungeonTorchBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn set_lit_torches(&mut self, value: u8) {
-        self.torch.set_lit_torches(value);
-        self.ram[DUNG_NUM_LIT_TORCHES] = value;
-        self.debug_assert_matches_ram();
-    }
-
     pub(crate) fn increment_lit_torches(&mut self) -> u8 {
         let value = self.torch.increment_lit_torches();
         self.ram[DUNG_NUM_LIT_TORCHES] = value;
@@ -5617,12 +5343,6 @@ impl<'a> NativeDungeonTorchBridgeMut<'a> {
     pub(crate) fn clear_lights_out_request(&mut self) {
         self.torch.clear_lights_out_request();
         self.ram[DUNG_WANT_LIGHTS_OUT] = 0;
-        self.debug_assert_matches_ram();
-    }
-
-    pub(crate) fn set_lights_out_request_copy(&mut self, value: u8) {
-        self.torch.set_lights_out_request_copy(value);
-        self.ram[DUNG_WANT_LIGHTS_OUT_COPY] = value;
         self.debug_assert_matches_ram();
     }
 
@@ -5737,11 +5457,6 @@ impl<'a> NativeDungeonHeaderBridgeMut<'a> {
 
     pub(crate) fn clear_header_tag(&mut self, index: usize) {
         self.header.clear_header_tag(index);
-        self.sync();
-    }
-
-    pub(crate) fn clear_header_tags(&mut self, count: usize) {
-        self.header.clear_header_tags(count);
         self.sync();
     }
 }

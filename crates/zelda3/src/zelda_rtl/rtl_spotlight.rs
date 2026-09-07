@@ -105,11 +105,6 @@ impl ZeldaState {
             .backup_dynamic_table_to_saveload_buffer(224);
     }
 
-    pub(crate) fn project_spotlight_dynamic_hdma_table_to_reserved(&mut self, count: usize) {
-        self.spotlight_hdma_mut()
-            .project_dynamic_table_to_reserved_hdma_table(count);
-    }
-
     pub(crate) fn project_spotlight_dynamic_hdma_table_range_to_reserved(
         &mut self,
         start: usize,

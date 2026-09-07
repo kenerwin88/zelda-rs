@@ -277,10 +277,6 @@ impl SelectFileMenuState {
         true
     }
 
-    pub(crate) fn set_name_slot(&mut self, value: u8) {
-        self.name_slot = value;
-    }
-
     pub(crate) fn move_name_slot_left_wrapped(&mut self) -> u8 {
         let next = if self.name_slot == 0 {
             5
@@ -306,10 +302,6 @@ impl SelectFileMenuState {
     pub(crate) fn advance_name_scroll_x_step_by(&mut self, value: u8) -> u8 {
         self.name_scroll_x_step = self.name_scroll_x_step.wrapping_add(value);
         self.name_scroll_x_step
-    }
-
-    pub(crate) fn set_name_scroll_y_step(&mut self, value: u8) {
-        self.name_scroll_y_step = value;
     }
 
     pub(crate) fn clear_name_scroll_y_step(&mut self) {
@@ -808,10 +800,6 @@ impl SharedMessageTimerState {
         write_le_u16(ram, SHARED_MESSAGE_TIMER, self.timer);
     }
 
-    pub(crate) fn value(&self) -> u16 {
-        self.timer
-    }
-
     pub(crate) fn tick(&mut self) -> u16 {
         self.timer = self.timer.wrapping_sub(1);
         self.timer
@@ -1139,11 +1127,6 @@ impl<'a> NativeSelectFileMenuBridgeMut<'a> {
         value
     }
 
-    pub(crate) fn set_remembered_cursor(&mut self, value: u8) {
-        self.menu.set_remembered_cursor(value);
-        self.sync();
-    }
-
     pub(crate) fn clear_remembered_cursor(&mut self) {
         self.menu.clear_remembered_cursor();
         self.sync();
@@ -1161,11 +1144,6 @@ impl<'a> NativeSelectFileMenuBridgeMut<'a> {
 
     pub(crate) fn set_target_word(&mut self, value: u16) {
         self.menu.set_target_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_copy_source_slot_x2(&mut self, value: u16) {
-        self.menu.set_copy_source_slot_x2(value);
         self.sync();
     }
 
@@ -1200,11 +1178,6 @@ impl<'a> NativeSelectFileMenuBridgeMut<'a> {
         moved
     }
 
-    pub(crate) fn set_name_slot(&mut self, value: u8) {
-        self.menu.set_name_slot(value);
-        self.sync();
-    }
-
     pub(crate) fn move_name_slot_left_wrapped(&mut self) -> u8 {
         let value = self.menu.move_name_slot_left_wrapped();
         self.sync();
@@ -1228,11 +1201,6 @@ impl<'a> NativeSelectFileMenuBridgeMut<'a> {
         step
     }
 
-    pub(crate) fn set_name_scroll_y_step(&mut self, value: u8) {
-        self.menu.set_name_scroll_y_step(value);
-        self.sync();
-    }
-
     pub(crate) fn clear_name_scroll_y_step(&mut self) {
         self.menu.clear_name_scroll_y_step();
         self.sync();
@@ -1251,11 +1219,6 @@ impl<'a> NativeSelectFileMenuBridgeMut<'a> {
 
     pub(crate) fn set_name_scroll_x_direction(&mut self, value: u8) {
         self.menu.set_name_scroll_x_direction(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_save_slot_flag(&mut self, slot: usize, value: u16) {
-        self.menu.set_save_slot_flag(slot, value);
         self.sync();
     }
 
@@ -1294,10 +1257,6 @@ impl<'a> MultiselectChoiceRead<'a> {
 
     pub(crate) fn value_word(&self) -> u16 {
         u16::from(self.choice.value()) | (u16::from(self.runtime.text_wait_countdown2()) << 8)
-    }
-
-    pub(crate) fn backup(&self) -> u8 {
-        self.choice.backup()
     }
 }
 
@@ -1554,10 +1513,6 @@ impl<'a> NativeMessagingRuntimeBridgeMut<'a> {
     pub(crate) fn set_text_wait_countdown2(&mut self, value: u8) {
         self.messaging.runtime.text_wait_countdown2 = value;
         self.sync();
-    }
-
-    pub(crate) fn clear_text_wait_countdown2(&mut self) {
-        self.set_text_wait_countdown2(0);
     }
 
     pub(crate) fn decrement_text_wait_countdown2(&mut self) -> u8 {

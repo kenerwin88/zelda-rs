@@ -1535,10 +1535,6 @@ impl ZeldaState {
         Self::hud_item_box_gfx_ptr(item)
     }
 
-    pub(super) fn hud_get_item_box_ptr(&self, item: u8) -> &'static ItemBoxGfx {
-        &Self::hud_item_box_gfx_ptr(item)[0]
-    }
-
     pub(super) fn hud_handle_item_switch_inputs(&mut self) {
         if !self.game_state.enhanced_features.has(FEATURE_SWITCH_LR) {
             return;

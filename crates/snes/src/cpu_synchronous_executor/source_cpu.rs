@@ -746,7 +746,7 @@ impl Snes9xColdCpuExecutor {
             .as_mut()
             .expect("opcode fetch requires an active instruction trace")
             .memory_speed = Some(memory_speed);
-        
+
         self.machine
             .timeline
             .advance_synchronous_pcbase_opcode_fetch(memory_speed);

@@ -28,15 +28,6 @@ impl ZeldaState {
             .debug_assert_core_matches_ram(&self.ram);
     }
 
-    #[track_caller]
-    pub(crate) fn assert_native_dungeon_map_display_matches_ram(&self) {
-        debug_assert_eq!(
-            self.game_state.dungeon_map_display,
-            crate::game_state::DungeonMapDisplayState::load_from_ram(&self.ram),
-            "native dungeon-map display state diverged from compatibility RAM",
-        );
-    }
-
     pub(super) fn stage_dungeon_faded_filter_completion_scanout(&mut self) {
         // Completion reaches the wait loop before the next leading NMI. That
         // NMI performs a real OAM DMA from the completed host-boundary shadow;

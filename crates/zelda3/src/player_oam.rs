@@ -2027,11 +2027,6 @@ const kLinkSpriteBodys: [LinkSpriteBody; 303] = [
     },
 ];
 
-const OVERLAY_INDEX: usize = 0x8c;
-const TURTLE_ROCK_OAM_PRIORITY_FLAG: usize = 0x34e;
-const SECONDARY_WATER_GRASS_TIMER: usize = 0x355;
-const PRIMARY_WATER_GRASS_TIMER: usize = 0x356;
-const WHICH_STAIRCASE_INDEX: usize = 0x462;
 const FEATURES0_WIDESCREEN_VISUAL_FIXES: u32 = 1024;
 
 const PLAYER_HANDLER_STATE_SPIN_ATTACKING: u8 = 3;

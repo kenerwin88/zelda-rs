@@ -25,10 +25,6 @@ pub(super) const ENDING_SCENE_SCROLL_Y_VELOCITIES: [i8; 16] =
 pub(super) const ENDING_SCENE_SCROLL_X_VELOCITIES: [i8; 16] =
     [0, 0, -1, 0, 0, -1, 1, 0, -1, 0, 0, 0, 1, -1, 1, 0];
 pub(super) const BG2HOFS: usize = 0x210f;
-pub(super) const OVERWORLD_SCROLL_UP_COUNTER: usize = 0x624;
-pub(super) const OVERWORLD_SCROLL_DOWN_COUNTER: usize = 0x626;
-pub(super) const OVERWORLD_SCROLL_LEFT_COUNTER: usize = 0x628;
-pub(super) const OVERWORLD_SCROLL_RIGHT_COUNTER: usize = 0x62a;
 pub(super) type IntroSpriteEnt = (i8, i8, u8, u8, u8);
 
 pub(super) const ENDING_SPRITE_X_OFFSETS: [u16; 85] = [

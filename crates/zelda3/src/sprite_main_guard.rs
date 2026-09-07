@@ -13,33 +13,8 @@ use crate::types::{sign8, PointU8, SpriteHitBox};
 // --- Local copies of constant addresses needed here. These mirror what's
 // already declared in zelda_rtl.rs / ending.rs but are module-private over
 // there, so we duplicate them locally per the round-1 convention.
-const OVERWORLD_AREA_INDEX_GUARD: usize = 0x40a;
 const TUTORIAL_SPRITE_TYPE_BY_DIRECTION: [u8; 4] = [2, 1, 0, 3];
 const TUTORIAL_GUARD_DIRECTION_LOCK_SETTINGS: [u8; 4] = [3, 2, 0, 1];
-
-/// Mirror of the C-side `PrepOamCoordsRet` struct (sprite.c). Held by-value
-/// because the canonical `sprite::PrepOamCoordsRet` is module-private over
-/// in sprite.rs. Fields match the same name/order as the C struct.
-#[derive(Clone, Copy)]
-pub(super) struct PrepOamCoordsRet {
-    pub x: u16,
-    pub y: u16,
-    pub flags: u8,
-}
-
-impl PrepOamCoordsRet {
-    pub(super) fn from_tuple(t: (u16, u16, u8)) -> Self {
-        Self {
-            x: t.0,
-            y: t.1,
-            flags: t.2,
-        }
-    }
-
-    pub(super) fn as_tuple(&self) -> (u16, u16, u8) {
-        (self.x, self.y, self.flags)
-    }
-}
 
 // --- Tables shared by the Guard cluster. Verbatim from
 // zelda3/src/sprite_main.c lines 58..288.
@@ -104,8 +79,6 @@ const BOMB_TROOPER_BOMB_Y_OFFSETS: [i8; 4] = [-12, -12, -15, -13];
 const BOMB_TROOPER_BOMB_Z_VELOCITIES: [u8; 16] = [
     32, 40, 48, 56, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
 ];
-const BOMB_TROOPER_ARM_X_OFFSETS: [i8; 8] = [-1, 1, 2, 0, 9, 9, -8, -8];
-const BOMB_TROOPER_ARM_Y_OFFSETS: [i8; 8] = [-12, -12, -12, -12, -16, -14, -12, -14];
 const JAVELIN_PROJECTILE_X_OFFSETS: [i8; 8] = [16, -8, 3, 11, 12, -4, 12, -4];
 const JAVELIN_PROJECTILE_Y_OFFSETS: [i8; 8] = [2, 2, 16, -8, -2, -2, 2, -8];
 const JAVELIN_PROJECTILE_X_VELOCITIES: [i8; 8] = [48, -48, 0, 0, 32, -32, 0, 0];
@@ -118,10 +91,6 @@ const BUSH_SOLDIER_ALERT_GRAPHICS: [u8; 16] = [0, 1, 0, 1, 0, 1, 0, 1, 0, 2, 3, 
 const SOLDIER_THROWING_ATTACK_DIRECTION_FLAGS: [u8; 4] = [3, 3, 12, 12];
 const SOLDIER_THROWING_ATTACK_X_VELOCITIES: [i8; 8] = [-80, 80, 0, -8, -80, 80, -8, 8];
 const SOLDIER_THROWING_ATTACK_Y_VELOCITIES: [i8; 8] = [8, 8, -80, 80, 8, 8, -80, 80];
-const SPRITE_TILETYPE_GUARD: usize = 0x0fa5;
-const SPRITE_DELAY_AUX3_GUARD: usize = 0x0ee0;
-const SPRITE_Y_RECOIL_GUARD: usize = 0x0f30;
-
 impl ZeldaState {
     // void Sprite_TutorialGuardOrBarrier(int k) {  // 86bffe
     pub(super) fn sprite_tutorial_guard_or_barrier(&mut self, k: usize) {
@@ -595,21 +564,6 @@ impl ZeldaState {
     //                 info->x + kBombTrooper_DrawArm_X[j],
     //                 info->y + kBombTrooper_DrawArm_Y[j], 0x6e, info->flags & 0x30 | 0x8, 2);
     // }
-    pub(super) fn sprite_draw_bomb_guard_arm(&mut self, k: usize, info: &PrepOamCoordsRet) {
-        let sprite = self.sprite_slot_view(k);
-        let j = ((sprite.direction() as usize) * 2) | (sprite.subtype2() as usize);
-        let j = j & 7;
-        let oam_cur = self.game_state.oam.current_pointer_usize();
-        let x = info
-            .x
-            .wrapping_add(BOMB_TROOPER_ARM_X_OFFSETS[j] as i16 as u16);
-        let y = info
-            .y
-            .wrapping_add(BOMB_TROOPER_ARM_Y_OFFSETS[j] as i16 as u16);
-        let flags = (info.flags & 0x30) | 0x8;
-        self.set_oam_helper0_at(oam_cur, x, y, 0x6e, flags, 2);
-    }
-
     // ------------------------------------------------------------------
     // Guard_Main — sprite_main.c:4600
     // ------------------------------------------------------------------
@@ -1385,10 +1339,6 @@ impl ZeldaState {
 
     // ------------------------------------------------------------------
     // void Soldier_Func12(int k) {  // 85c500
-    pub(super) fn soldier_func12(&mut self, k: usize) {
-        self.soldier_func12_for_guard(k);
-    }
-
     fn soldier_throwing_agitated_step(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).increment_subtype2();
         if (self.sprite_slot_view(k).subtype2() & 0x0f) == 0 {

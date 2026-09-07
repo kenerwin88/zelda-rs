@@ -3,9 +3,7 @@ use crate::game_output::{
     AudioRouteState, AudioSfxBank, DspWriteEvent, EngineAudioCommandBatch, MusicControlState,
     VoiceParameterKind,
 };
-use crate::modern_music_catalog::{
-    decode_note, notes_starting_in, packed_track, ModernMusicNote, PACKED_NOTE_BYTES,
-};
+use crate::modern_music_catalog::{notes_starting_in, packed_track, ModernMusicNote};
 use crate::modern_music_globals::{
     events_in_cycle_range as music_global_events_in_cycle_range, output_sample_for_write,
 };
@@ -1657,26 +1655,6 @@ impl ModernAudioSequencer {
         }
     }
 
-    fn emit_music_notes_at_position(
-        &mut self,
-        track: u8,
-        music_frame_position: u16,
-        frame: &mut AudioEventFrame,
-        stats: &mut ModernAudioSequenceStats,
-    ) {
-        let Some(track_data) = packed_track(track) else {
-            return;
-        };
-        for note in track_data
-            .notes
-            .chunks_exact(PACKED_NOTE_BYTES)
-            .filter_map(decode_note)
-            .filter(|note| note.start_frame + track_data.lead_in_frames == music_frame_position)
-        {
-            self.emit_music_note(frame, track, note, stats);
-        }
-    }
-
     fn emit_music_note(
         &mut self,
         frame: &mut AudioEventFrame,
@@ -2743,25 +2721,6 @@ impl ModernAudioSequencer {
         if voice < 8 {
             self.music_voice_mask |= 1 << voice;
             self.active_voice_mask |= 1 << voice;
-        }
-    }
-
-    fn mark_voice_inactive(&mut self, voice: u8) {
-        if voice < 8 {
-            self.sfx_voice_mask &= !(1 << voice);
-            self.active_voice_mask &= !(1 << voice);
-            self.voice_frames_remaining[usize::from(voice)] = 0;
-            self.pending_voice_steps[usize::from(voice)].clear();
-            self.sfx_keyoff_samples_remaining[usize::from(voice)] = 0;
-            self.sfx_keyoff_starts_ownership_mask &= !(1 << voice);
-            self.sfx_ownership_samples_remaining[usize::from(voice)] = 0;
-            self.sfx_release_pending_mask &= !(1 << voice);
-            self.sfx_release_overflows_remaining[usize::from(voice)] = 0;
-            self.sfx_release_pending_mask &= !(1 << voice);
-            self.sfx_ownership_release_overflows[usize::from(voice)] = 0;
-            self.sfx_release_overflows_remaining[usize::from(voice)] = 0;
-            self.pending_sfx_pitch_changes[usize::from(voice)].clear();
-            self.pending_sfx_volume_changes[usize::from(voice)].clear();
         }
     }
 
