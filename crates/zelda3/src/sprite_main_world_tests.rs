@@ -55,7 +55,7 @@ fn somaria_platform_handle_junctions_b6_clears_ai_state_when_correct_key_pressed
     s.follower_link_state_mut().set_joypad1h_last(4);
     s.somaria_platform_handle_junctions(0);
     assert_eq!(s.sprite_slot_view(0).ai_state(), 0);
-    assert_eq!(s.sprite_slot_view(0).direction(), 0 ^ 1);
+    assert_eq!(s.sprite_slot_view(0).direction(), 1);
     assert_eq!(s.game_state.player.follower_link.on_somaria_platform(), 1);
 }
 

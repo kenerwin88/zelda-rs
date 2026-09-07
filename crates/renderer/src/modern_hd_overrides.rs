@@ -384,7 +384,7 @@ mod tests {
     fn sample_native_nearest_block_top_left() {
         // 16×16 HD cell (scale 2). Native (1,0) → HD (2,0).
         let mut rgba = vec![0u8; 16 * 16 * 4];
-        let idx = ((0 * 16 + 2) * 4) as usize;
+        let idx = (2 * 4) as usize;
         rgba[idx..idx + 4].copy_from_slice(&[9, 8, 7, 0xff]);
         let cell = HdCell {
             width: 16,

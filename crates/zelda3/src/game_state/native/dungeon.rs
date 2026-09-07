@@ -5131,36 +5131,6 @@ pub(crate) struct NativeDungeonRoomParserBridgeMut<'a> {
     ram: &'a mut [u8],
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use snes::WRAM_SIZE;
-
-    #[test]
-    fn room_effects_sync_ignores_reused_blast_wall_message_bytes_when_wall_closed() {
-        let mut ram = vec![0; WRAM_SIZE];
-        write_le_u16(&mut ram, MESSAGING_BUF_DUNGEON + 0x1a, 0x007f);
-        write_le_u16(&mut ram, MESSAGING_BUF_DUNGEON + 0x18, 0x003f);
-        write_le_u16(&mut ram, MESSAGING_BUF_DUNGEON + 0x1c, 0x007f);
-
-        let mut state = DungeonRoomEffectsState {
-            blast_wall_message_x: 0x00ff,
-            blast_wall_message_y: 0x00ff,
-            blast_wall_message_direction: 0x007f,
-            ..DungeonRoomEffectsState::default()
-        };
-
-        {
-            let mut bridge = NativeDungeonRoomEffectsBridgeMut::new(&mut state, &mut ram);
-            bridge.clear_trap_trigger_latch();
-        }
-
-        assert_eq!(read_le_u16(&ram, MESSAGING_BUF_DUNGEON + 0x1a), 0x007f);
-        assert_eq!(read_le_u16(&ram, MESSAGING_BUF_DUNGEON + 0x18), 0x003f);
-        assert_eq!(read_le_u16(&ram, MESSAGING_BUF_DUNGEON + 0x1c), 0x007f);
-    }
-}
-
 impl<'a> NativeDungeonRoomParserBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonRoomParserState, ram: &'a mut [u8]) -> Self {
         Self { state, ram }
@@ -5764,5 +5734,35 @@ impl<'a> NativeDungeonHeaderBridgeMut<'a> {
     pub(crate) fn clear_header_tags(&mut self, count: usize) {
         self.header.clear_header_tags(count);
         self.sync();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snes::WRAM_SIZE;
+
+    #[test]
+    fn room_effects_sync_ignores_reused_blast_wall_message_bytes_when_wall_closed() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, MESSAGING_BUF_DUNGEON + 0x1a, 0x007f);
+        write_le_u16(&mut ram, MESSAGING_BUF_DUNGEON + 0x18, 0x003f);
+        write_le_u16(&mut ram, MESSAGING_BUF_DUNGEON + 0x1c, 0x007f);
+
+        let mut state = DungeonRoomEffectsState {
+            blast_wall_message_x: 0x00ff,
+            blast_wall_message_y: 0x00ff,
+            blast_wall_message_direction: 0x007f,
+            ..DungeonRoomEffectsState::default()
+        };
+
+        {
+            let mut bridge = NativeDungeonRoomEffectsBridgeMut::new(&mut state, &mut ram);
+            bridge.clear_trap_trigger_latch();
+        }
+
+        assert_eq!(read_le_u16(&ram, MESSAGING_BUF_DUNGEON + 0x1a), 0x007f);
+        assert_eq!(read_le_u16(&ram, MESSAGING_BUF_DUNGEON + 0x18), 0x003f);
+        assert_eq!(read_le_u16(&ram, MESSAGING_BUF_DUNGEON + 0x1c), 0x007f);
     }
 }

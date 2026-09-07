@@ -492,7 +492,7 @@ impl PpuState {
     /// latches used by raster synchronization loops.
     pub fn read(&mut self, adr: u8) -> u8 {
         match adr {
-            0x34 | 0x35 | 0x36 => {
+            0x34..=0x36 => {
                 let result =
                     (self.m7_matrix[0] as i32).wrapping_mul((self.m7_matrix[1] >> 8) as i32);
                 ((result as u32) >> (8 * (adr - 0x34) as u32) & 0xff) as u8
@@ -564,7 +564,7 @@ impl PpuState {
                 self.mosaic_size = (val >> 4) + 1;
                 self.mosaic_enabled = if self.mosaic_size > 1 { val } else { 0 };
             }
-            0x07 | 0x08 | 0x09 | 0x0a => {
+            0x07..=0x0a => {
                 let i = (adr - 0x07) as usize;
                 self.bg_layer[i].tilemap_wider = val & 0x1 != 0;
                 self.bg_layer[i].tilemap_higher = val & 0x2 != 0;
@@ -634,7 +634,7 @@ impl PpuState {
                 self.m7_y_flip = val & 0x2 != 0;
                 self.m7_x_flip = val & 0x1 != 0;
             }
-            0x1b | 0x1c | 0x1d | 0x1e => {
+            0x1b..=0x1e => {
                 let i = (adr - 0x1b) as usize;
                 self.m7_matrix[i] = (((val as i32) << 8) | self.m7_prev as i32) as i16;
                 self.m7_prev = val;
@@ -1009,7 +1009,7 @@ impl PpuState {
 
     fn pixel_from_2bpp(bits: u16, col: u16, hflip: bool) -> u16 {
         let i = if hflip { col } else { 7 - col };
-        ((bits >> i) & 1 | (bits >> (7 + i)) & 2) as u16
+        (bits >> i) & 1 | (bits >> (7 + i)) & 2
     }
 
     fn mosaic_modulo_at(&self, x: i32) -> u8 {
@@ -1238,7 +1238,7 @@ impl PpuState {
     }
 
     fn expand_m7_13(value: i16) -> i32 {
-        ((value << 3) as i16 >> 3) as i32
+        ((value << 3) >> 3) as i32
     }
 
     fn clip_m7_offset(value: i32) -> i32 {
@@ -1332,9 +1332,9 @@ impl PpuState {
                         (self.vram[((ypos >> 11 & 0x7f) * 128 + (xpos >> 11 & 0x7f)) as usize]
                             & 0xff) as usize
                     };
-                    let pixel = (self.vram
+                    let pixel = self.vram
                         [tile * 64 + ((ypos >> 8 & 7) * 8 + (xpos >> 8 & 7)) as usize]
-                        >> 8) as u16;
+                        >> 8;
                     if pixel != 0 {
                         for i in 0..w {
                             let dst = (x + i + PPU_EXTRA_LEFT_RIGHT as i32) as usize;
@@ -1362,9 +1362,9 @@ impl PpuState {
                         (self.vram[((ypos >> 11 & 0x7f) * 128 + (xpos >> 11 & 0x7f)) as usize]
                             & 0xff) as usize
                     };
-                    let pixel = (self.vram
+                    let pixel = self.vram
                         [tile * 64 + ((ypos >> 8 & 7) * 8 + (xpos >> 8 & 7)) as usize]
-                        >> 8) as u16;
+                        >> 8;
                     if pixel != 0 {
                         let dst = (x + PPU_EXTRA_LEFT_RIGHT as i32) as usize;
                         if dst < self.bg_buffers[sub as usize].data.len() {
@@ -1861,7 +1861,7 @@ impl PpuState {
         let rx = if self.m7_x_flip { 255 - x } else { x };
         let mut x_pos = (self.m7_start_x + self.m7_matrix[0] as i32 * rx) >> 8;
         let mut y_pos = (self.m7_start_y + self.m7_matrix[2] as i32 * rx) >> 8;
-        let mut outside_map = x_pos < 0 || x_pos >= 1024 || y_pos < 0 || y_pos >= 1024;
+        let mut outside_map = !(0..1024).contains(&x_pos) || !(0..1024).contains(&y_pos);
         x_pos &= 0x3ff;
         y_pos &= 0x3ff;
         if !self.m7_large_field {
@@ -1876,7 +1876,7 @@ impl PpuState {
             0
         } else {
             self.vram[tile * 64 + ((y_pos & 7) * 8 + (x_pos & 7)) as usize] >> 8
-        } as u16;
+        };
         if layer == 1 {
             if ((pixel & 0x80) != 0) != (priority != 0) {
                 return 0;

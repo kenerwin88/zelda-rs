@@ -349,7 +349,7 @@ fn yellow_stalfos_animate_maps_d_to_gfx2() {
         );
         assert_eq!(s.sprite_slot_view(k).flags3() & 0x40, 0);
         // The non-0x40 bits should remain set.
-        assert_eq!(s.sprite_slot_view(k).flags3(), 0xff & !0x40);
+        assert_eq!(s.sprite_slot_view(k).flags3(), !0x40);
         // Restore for the next iteration.
         s.sprite_slot_view_mut(k).set_flags3(0xff);
     }

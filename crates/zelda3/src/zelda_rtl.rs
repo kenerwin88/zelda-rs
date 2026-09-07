@@ -14211,25 +14211,25 @@ mod original_timing_receipt_validation_tests {
                 OriginalTimingSemanticReceipt::MainLoopProgress(
                     crate::MainLoopProgress::IterationStarted,
                 ),
-                interruption.clone(),
+                interruption,
             ],
             vec![
                 OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
-                interruption.clone(),
+                interruption,
             ],
             vec![
                 OriginalTimingSemanticReceipt::MainLoopProgress(
                     crate::MainLoopProgress::CallStackContinued,
                 ),
                 OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
-                interruption.clone(),
+                interruption,
             ],
             vec![
                 OriginalTimingSemanticReceipt::MainLoopProgress(
                     crate::MainLoopProgress::IterationStarted,
                 ),
                 OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
-                interruption.clone(),
+                interruption,
             ],
         ] {
             assert_install_rejected_without_mutation(
@@ -14287,7 +14287,7 @@ mod original_timing_receipt_validation_tests {
                         crate::MainLoopProgress::IterationStarted,
                     ),
                     OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
-                    interruption.clone(),
+                    interruption,
                 ],
             )),
             Ok(()),

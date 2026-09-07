@@ -3883,6 +3883,56 @@ impl FrameRenderer {
     }
 }
 
+/// Render a Mode-7 `GpuFrame` with the modern CPU compositor. When
+/// `mode7_source_chars` is provided (the source-art route), the chars replace
+/// the CHR bytes (high byte of each of the first 0x4000 VRAM words) exactly as
+/// the retired GPU source-chars texture did; the tilemap low bytes stay live.
+pub fn modern_mode7_cpu_rgba(frame: &GpuFrame<'_>, mode7_source_chars: Option<&[u8]>) -> Vec<u8> {
+    match mode7_source_chars {
+        None => crate::modern_software::render_modern_mode7_frame(frame),
+        Some(chars) => {
+            if std::env::var_os("ZELDA3_DEBUG_MODE7_SOURCE_AUDIT").is_some() {
+                let mismatches = frame
+                    .vram
+                    .iter()
+                    .take(0x4000)
+                    .zip(chars.iter())
+                    .filter(|(word, source)| ((**word >> 8) as u8) != **source)
+                    .count();
+                if mismatches != 0 {
+                    use std::io::Write;
+                    if let Ok(mut trace) = std::fs::OpenOptions::new()
+                        .append(true)
+                        .create(true)
+                        .open("/tmp/zelda3-mode7-source-audit.trace")
+                    {
+                        let first = frame
+                            .vram
+                            .iter()
+                            .take(0x4000)
+                            .zip(chars.iter())
+                            .position(|(word, source)| ((word >> 8) as u8) != *source)
+                            .unwrap_or(0);
+                        let _ = writeln!(
+                            trace,
+                            "mismatches={mismatches} first={first:04x} live={:02x} source={:02x}",
+                            (frame.vram[first] >> 8) as u8,
+                            chars[first],
+                        );
+                    }
+                }
+            }
+            let mut vram = frame.vram.to_vec();
+            for (word, &ch) in vram.iter_mut().take(0x4000).zip(chars.iter()) {
+                *word = (*word & 0x00ff) | (u16::from(ch) << 8);
+            }
+            let mut patched: GpuFrame<'_> = frame.clone();
+            patched.vram = &vram;
+            crate::modern_software::render_modern_mode7_frame(&patched)
+        }
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -4739,7 +4789,7 @@ mod tests {
         let lines = menu_overlay_lines(&menu);
         assert_eq!(lines[0], "PLAY  VIDEO  CONTROLS  DEV MAP");
         assert_eq!(lines[1], "> RESUME QUEST");
-        assert!(lines.iter().any(|line| *line == "DEVELOPER MAP"));
+        assert!(lines.contains(&"DEVELOPER MAP"));
     }
 
     #[test]
@@ -5115,55 +5165,5 @@ mod tests {
             !recreated_again,
             "unchanged size must not recreate the texture"
         );
-    }
-}
-
-/// Render a Mode-7 `GpuFrame` with the modern CPU compositor. When
-/// `mode7_source_chars` is provided (the source-art route), the chars replace
-/// the CHR bytes (high byte of each of the first 0x4000 VRAM words) exactly as
-/// the retired GPU source-chars texture did; the tilemap low bytes stay live.
-pub fn modern_mode7_cpu_rgba(frame: &GpuFrame<'_>, mode7_source_chars: Option<&[u8]>) -> Vec<u8> {
-    match mode7_source_chars {
-        None => crate::modern_software::render_modern_mode7_frame(frame),
-        Some(chars) => {
-            if std::env::var_os("ZELDA3_DEBUG_MODE7_SOURCE_AUDIT").is_some() {
-                let mismatches = frame
-                    .vram
-                    .iter()
-                    .take(0x4000)
-                    .zip(chars.iter())
-                    .filter(|(word, source)| ((**word >> 8) as u8) != **source)
-                    .count();
-                if mismatches != 0 {
-                    use std::io::Write;
-                    if let Ok(mut trace) = std::fs::OpenOptions::new()
-                        .append(true)
-                        .create(true)
-                        .open("/tmp/zelda3-mode7-source-audit.trace")
-                    {
-                        let first = frame
-                            .vram
-                            .iter()
-                            .take(0x4000)
-                            .zip(chars.iter())
-                            .position(|(word, source)| ((word >> 8) as u8) != *source)
-                            .unwrap_or(0);
-                        let _ = writeln!(
-                            trace,
-                            "mismatches={mismatches} first={first:04x} live={:02x} source={:02x}",
-                            (frame.vram[first] >> 8) as u8,
-                            chars[first],
-                        );
-                    }
-                }
-            }
-            let mut vram = frame.vram.to_vec();
-            for (word, &ch) in vram.iter_mut().take(0x4000).zip(chars.iter()) {
-                *word = (*word & 0x00ff) | (u16::from(ch) << 8);
-            }
-            let mut patched: GpuFrame<'_> = frame.clone();
-            patched.vram = &vram;
-            crate::modern_software::render_modern_mode7_frame(&patched)
-        }
     }
 }

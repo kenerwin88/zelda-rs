@@ -746,11 +746,11 @@ impl Snes9xColdCpuExecutor {
             .as_mut()
             .expect("opcode fetch requires an active instruction trace")
             .memory_speed = Some(memory_speed);
-        let ended_at;
+        
         self.machine
             .timeline
             .advance_synchronous_pcbase_opcode_fetch(memory_speed);
-        ended_at = self.machine.timestamp();
+        let ended_at = self.machine.timestamp();
         self.machine.snes.cpu.pc = self.machine.snes.cpu.pc.wrapping_add(1);
         self.record_transaction(
             SourceCpuTransactionKind::FastPcBaseOpcodeFetchNonDraining,
@@ -3001,7 +3001,7 @@ mod tests {
         let target_before = serde_json::to_vec(target.machine.snes()).unwrap();
         let target_timestamp = target.machine.timestamp();
         let mut legacy_v4 =
-            serde_json::to_value(&source.capture_quiescent_checkpoint().unwrap()).unwrap();
+            serde_json::to_value(source.capture_quiescent_checkpoint().unwrap()).unwrap();
         legacy_v4["version"] = serde_json::json!(4);
         legacy_v4
             .as_object_mut()

@@ -173,7 +173,7 @@ impl NativeFrontend {
         // Pump the event loop until Resumed fires and creates the window + renderer.
         // Resumed is guaranteed to fire during the first active pump on all platforms.
         let deadline = Instant::now() + Duration::from_secs(10);
-        while !frontend.handler.window.is_some() && !frontend.handler.quit {
+        while frontend.handler.window.is_none() && !frontend.handler.quit {
             if Instant::now() > deadline {
                 return Err("timed out waiting for window creation".to_string());
             }
@@ -375,8 +375,8 @@ impl NativeFrontend {
                 resources: input.resources,
                 player_indoors: input.player_indoors,
             });
-        let report = input.stats.record_present_output(&present, input.resources);
-        report
+        
+        input.stats.record_present_output(&present, input.resources)
     }
 
     /// Render one live modern-asset frame into the production renderer's

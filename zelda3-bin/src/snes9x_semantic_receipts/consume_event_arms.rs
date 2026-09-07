@@ -539,28 +539,28 @@ impl Snes9xOracleSemanticTrace {
             }
             0x05_cbe0 | 0x06_d8e2 | 0x06_d8e5 => {
                 if let Some(execution) = self.sprite_main_execution.as_mut() {
-                    execution.observe_buzzblob_movement(&event)?;
-                    execution.observe_trinexx_head_draw(&event)?;
-                    execution.observe_trinexx_breath_tile_collision(&event)?;
-                    execution.observe_lanmola_draw_prefix(&event)?;
-                    execution.observe_laser_eye_draw_prologue(&event);
-                    execution.observe_sprite_handler_returned(&event)?;
-                    execution.observe_trinexx_final_phase_tile_collision(&event)?;
-                    execution.observe_helmasaur_hard_hat_tile_collision(&event)?;
-                    execution.observe_trinexx_final_phase_draw(&event)?;
-                    execution.observe_sidenexx_neck_target(&event)?;
-                    execution.observe_guard_animation_checkpoint(&event)?;
+                    execution.observe_buzzblob_movement(event)?;
+                    execution.observe_trinexx_head_draw(event)?;
+                    execution.observe_trinexx_breath_tile_collision(event)?;
+                    execution.observe_lanmola_draw_prefix(event)?;
+                    execution.observe_laser_eye_draw_prologue(event);
+                    execution.observe_sprite_handler_returned(event)?;
+                    execution.observe_trinexx_final_phase_tile_collision(event)?;
+                    execution.observe_helmasaur_hard_hat_tile_collision(event)?;
+                    execution.observe_trinexx_final_phase_draw(event)?;
+                    execution.observe_sidenexx_neck_target(event)?;
+                    execution.observe_guard_animation_checkpoint(event)?;
                 }
             }
             SPRITE_TIMERS_AND_OAM_RETURN_PC => {
                 if let Some(execution) = self.sprite_main_execution.as_mut() {
-                    execution.observe_bari_before_random(&event)?;
-                    execution.observe_timers_and_oam_return(&event)?;
+                    execution.observe_bari_before_random(event)?;
+                    execution.observe_timers_and_oam_return(event)?;
                 }
             }
             SPRITE_TIMER_DECREMENTS_TRACE_PC => {
                 if let Some(execution) = self.sprite_main_execution.as_mut() {
-                    execution.observe_timer_decrements(&event)?;
+                    execution.observe_timer_decrements(event)?;
                 }
             }
             SPRITE_SLOT_RETURN_PC => {
@@ -997,7 +997,7 @@ impl Snes9xOracleSemanticTrace {
                 },
             ));
         }
-        if let Some(progress) = dungeon_falling_entrance_progress(&event, pc, address)? {
+        if let Some(progress) = dungeon_falling_entrance_progress(event, pc, address)? {
             receipts.push(OriginalTimingSemanticReceipt::DungeonFallingEntranceProgress(progress));
         }
         if pc == 0x0c_c25b
@@ -1011,35 +1011,35 @@ impl Snes9xOracleSemanticTrace {
             receipts.push(OriginalTimingSemanticReceipt::SaveQuitIntroMemoryReturned);
         }
         if let Some(execution) = self.sprite_main_execution.as_mut() {
-            execution.observe_guard_prep_weapon_flags_pending(&event)?;
-            execution.observe_buzzblob_movement(&event)?;
-            execution.observe_trinexx_head_draw(&event)?;
-            execution.observe_trinexx_breath_tile_collision(&event)?;
-            execution.observe_lanmola_draw_prefix(&event)?;
-            execution.observe_laser_eye_draw_prologue(&event);
-            execution.observe_sprite_handler_returned(&event)?;
-            execution.observe_trinexx_final_phase_tile_collision(&event)?;
-            execution.observe_helmasaur_hard_hat_tile_collision(&event)?;
-            execution.observe_trinexx_final_phase_draw(&event)?;
-            execution.observe_sidenexx_neck_target(&event)?;
-            execution.observe_guard_animation_checkpoint(&event)?;
-            execution.observe_hog_spear_body_graphics_pending(&event)?;
-            execution.observe_absorbable_tile_lookup(&event)?;
-            execution.observe_swamola_segment_draw(&event)?;
-            execution.observe_vitreous_damage_pending(&event);
-            execution.observe_moblin_collision_geometry(&event);
-            execution.observe_dispatch_trampoline_return(&event)?;
-            execution.observe_pengator_slide_pending(&event)?;
-            execution.observe_antifairy_bounce_pending(&event)?;
-            execution.observe_kholdstare_damage_pending(&event)?;
-            execution.observe_fire_debirando_spawn_write(&event)?;
-            execution.observe_trinexx_death_spawn_write(&event)?;
-            execution.observe_agahnim_motion_blur_spawn_write(&event)?;
-            execution.observe_master_sword_light_beam_spawn_write(&event)?;
-            execution.observe_antfairy_subtype2_increment(&event)?;
-            execution.observe_lanmola_subtype2_increment(&event)?;
-            execution.observe_helmasaur_hard_hat_beetle_subtype2_increment(&event)?;
-            execution.observe_zazak_graphics(&event)?;
+            execution.observe_guard_prep_weapon_flags_pending(event)?;
+            execution.observe_buzzblob_movement(event)?;
+            execution.observe_trinexx_head_draw(event)?;
+            execution.observe_trinexx_breath_tile_collision(event)?;
+            execution.observe_lanmola_draw_prefix(event)?;
+            execution.observe_laser_eye_draw_prologue(event);
+            execution.observe_sprite_handler_returned(event)?;
+            execution.observe_trinexx_final_phase_tile_collision(event)?;
+            execution.observe_helmasaur_hard_hat_tile_collision(event)?;
+            execution.observe_trinexx_final_phase_draw(event)?;
+            execution.observe_sidenexx_neck_target(event)?;
+            execution.observe_guard_animation_checkpoint(event)?;
+            execution.observe_hog_spear_body_graphics_pending(event)?;
+            execution.observe_absorbable_tile_lookup(event)?;
+            execution.observe_swamola_segment_draw(event)?;
+            execution.observe_vitreous_damage_pending(event);
+            execution.observe_moblin_collision_geometry(event);
+            execution.observe_dispatch_trampoline_return(event)?;
+            execution.observe_pengator_slide_pending(event)?;
+            execution.observe_antifairy_bounce_pending(event)?;
+            execution.observe_kholdstare_damage_pending(event)?;
+            execution.observe_fire_debirando_spawn_write(event)?;
+            execution.observe_trinexx_death_spawn_write(event)?;
+            execution.observe_agahnim_motion_blur_spawn_write(event)?;
+            execution.observe_master_sword_light_beam_spawn_write(event)?;
+            execution.observe_antfairy_subtype2_increment(event)?;
+            execution.observe_lanmola_subtype2_increment(event)?;
+            execution.observe_helmasaur_hard_hat_beetle_subtype2_increment(event)?;
+            execution.observe_zazak_graphics(event)?;
             if pc == THROWABLE_SCENERY_STATE_CLEAR_PC {
                 let slot = execution
                     .current_slot
@@ -1380,7 +1380,7 @@ impl Snes9xOracleSemanticTrace {
             execution.initialize_reset_properties = None;
             execution.initialize_load_properties = None;
         }
-        self.observe_overworld_sprite_publication(&event, pc, address, receipts)?;
+        self.observe_overworld_sprite_publication(event, pc, address, receipts)?;
         let disable_progress = sprite_disable_progress(pc, address, event.value)?;
         // `SpritesDisabled` is a candidate for a host boundary at the
         // final Sprite_DisableAll write, not a durable description of
@@ -1565,15 +1565,15 @@ impl Snes9xOracleSemanticTrace {
         }
         // An NMI accepted inside Dungeon_PushBlock_Handler's loop names
         // the misc object the resumed handler continues from.
-        if let Some(next_index) = dungeon_push_blocks_in_progress(&event) {
+        if let Some(next_index) = dungeon_push_blocks_in_progress(event) {
             receipts
                 .push(OriginalTimingSemanticReceipt::DungeonPushBlocksInProgress { next_index });
         }
-        if dungeon_push_blocks_handled(&event) {
+        if dungeon_push_blocks_handled(event) {
             receipts.push(OriginalTimingSemanticReceipt::DungeonPushBlocksHandled);
         }
         if let Some(progress) =
-            credits_scene_load_boundary_progress(&event, OriginalTimingBoundary::NmiAccepted)?
+            credits_scene_load_boundary_progress(event, OriginalTimingBoundary::NmiAccepted)?
         {
             receipts.retain(|receipt| {
                 !matches!(
@@ -1586,7 +1586,7 @@ impl Snes9xOracleSemanticTrace {
             ));
         }
         if let Some(progress) =
-            credits_end_sequence_32_boundary_progress(&event, OriginalTimingBoundary::NmiAccepted)?
+            credits_end_sequence_32_boundary_progress(event, OriginalTimingBoundary::NmiAccepted)?
         {
             receipts.retain(|receipt| {
                 !matches!(
@@ -1599,7 +1599,7 @@ impl Snes9xOracleSemanticTrace {
             ));
         }
         if let Some(progress) =
-            triforce_room_case2_palette_progress(&event, OriginalTimingBoundary::NmiAccepted)?
+            triforce_room_case2_palette_progress(event, OriginalTimingBoundary::NmiAccepted)?
         {
             receipts.retain(|receipt| {
                 !matches!(
@@ -1611,7 +1611,7 @@ impl Snes9xOracleSemanticTrace {
                 .push(OriginalTimingSemanticReceipt::TriforceRoomCase2PaletteProgress(progress));
         }
         if let Some(progress) =
-            dungeon_peg_attribute_flip_progress(&event, OriginalTimingBoundary::NmiAccepted)?
+            dungeon_peg_attribute_flip_progress(event, OriginalTimingBoundary::NmiAccepted)?
         {
             receipts.retain(|receipt| {
                 !matches!(
@@ -1628,60 +1628,60 @@ impl Snes9xOracleSemanticTrace {
                     event.main, event.sub, event.subsub,
                 ));
             }
-            tracker.observe_boundary(&event)?;
+            tracker.observe_boundary(event)?;
         }
         if let Some(execution) = self.sprite_main_execution.as_mut() {
             if let Some((_, tracker)) = execution.follower_graphics.as_mut() {
-                tracker.observe_boundary(&event)?;
+                tracker.observe_boundary(event)?;
             }
         }
         if let Some(execution) = self.sprite_main_execution.as_mut() {
-            execution.observe_guard_prep_weapon_flags_pending(&event)?;
-            execution.observe_buzzblob_movement(&event)?;
-            execution.observe_trinexx_head_draw(&event)?;
-            execution.observe_trinexx_breath_tile_collision(&event)?;
-            execution.observe_lanmola_draw_prefix(&event)?;
-            execution.observe_laser_eye_draw_prologue(&event);
-            execution.observe_sprite_handler_returned(&event)?;
-            execution.observe_trinexx_final_phase_tile_collision(&event)?;
-            execution.observe_helmasaur_hard_hat_tile_collision(&event)?;
-            execution.observe_trinexx_final_phase_draw(&event)?;
-            execution.observe_sidenexx_neck_target(&event)?;
-            execution.observe_guard_animation_checkpoint(&event)?;
-            execution.observe_hog_spear_body_graphics_pending(&event)?;
-            execution.observe_absorbable_tile_lookup(&event)?;
-            execution.observe_swamola_segment_draw(&event)?;
-            execution.observe_vitreous_damage_pending(&event);
-            execution.observe_moblin_collision_geometry(&event);
-            execution.observe_dispatch_trampoline_return(&event)?;
-            execution.observe_pengator_slide_pending(&event)?;
-            execution.observe_antifairy_bounce_pending(&event)?;
-            execution.observe_kholdstare_damage_pending(&event)?;
-            execution.observe_fire_debirando_spawn_boundary(&event)?;
-            execution.observe_trinexx_death_spawn_boundary(&event)?;
-            execution.observe_agahnim_motion_blur_spawn_boundary(&event)?;
-            execution.observe_guard_prep_parry_hitbox(&event)?;
-            execution.observe_guard_prep_patrol_delay(&event)?;
-            execution.observe_guard_prep_tile_collision_return(&event)?;
-            execution.observe_bari_before_random(&event)?;
-            execution.observe_main_and_aux1_timer_decrements(&event)?;
-            execution.observe_main_timer_decrement(&event)?;
-            execution.observe_zero_hit_timer_clear(&event)?;
-            execution.observe_primary_timer_decrements(&event)?;
-            execution.observe_hit_timer(&event)?;
-            execution.observe_timer_decrements(&event)?;
-            execution.observe_single_small_draw_position(&event)?;
-            execution.observe_probe_after_oam_coordinates(&event)?;
-            execution.observe_initialize_reset_properties(&event)?;
-            execution.observe_initialize_load_properties(&event)?;
-            execution.observe_initialize_prep_pending(&event)?;
-            execution.observe_initialize_prep_move_y(&event)?;
-            execution.observe_fire_debirando_before_spawn(&event)?;
-            execution.observe_zazak_graphics(&event)?;
-            execution.observe_wallmaster_reset_prefix(&event)?;
+            execution.observe_guard_prep_weapon_flags_pending(event)?;
+            execution.observe_buzzblob_movement(event)?;
+            execution.observe_trinexx_head_draw(event)?;
+            execution.observe_trinexx_breath_tile_collision(event)?;
+            execution.observe_lanmola_draw_prefix(event)?;
+            execution.observe_laser_eye_draw_prologue(event);
+            execution.observe_sprite_handler_returned(event)?;
+            execution.observe_trinexx_final_phase_tile_collision(event)?;
+            execution.observe_helmasaur_hard_hat_tile_collision(event)?;
+            execution.observe_trinexx_final_phase_draw(event)?;
+            execution.observe_sidenexx_neck_target(event)?;
+            execution.observe_guard_animation_checkpoint(event)?;
+            execution.observe_hog_spear_body_graphics_pending(event)?;
+            execution.observe_absorbable_tile_lookup(event)?;
+            execution.observe_swamola_segment_draw(event)?;
+            execution.observe_vitreous_damage_pending(event);
+            execution.observe_moblin_collision_geometry(event);
+            execution.observe_dispatch_trampoline_return(event)?;
+            execution.observe_pengator_slide_pending(event)?;
+            execution.observe_antifairy_bounce_pending(event)?;
+            execution.observe_kholdstare_damage_pending(event)?;
+            execution.observe_fire_debirando_spawn_boundary(event)?;
+            execution.observe_trinexx_death_spawn_boundary(event)?;
+            execution.observe_agahnim_motion_blur_spawn_boundary(event)?;
+            execution.observe_guard_prep_parry_hitbox(event)?;
+            execution.observe_guard_prep_patrol_delay(event)?;
+            execution.observe_guard_prep_tile_collision_return(event)?;
+            execution.observe_bari_before_random(event)?;
+            execution.observe_main_and_aux1_timer_decrements(event)?;
+            execution.observe_main_timer_decrement(event)?;
+            execution.observe_zero_hit_timer_clear(event)?;
+            execution.observe_primary_timer_decrements(event)?;
+            execution.observe_hit_timer(event)?;
+            execution.observe_timer_decrements(event)?;
+            execution.observe_single_small_draw_position(event)?;
+            execution.observe_probe_after_oam_coordinates(event)?;
+            execution.observe_initialize_reset_properties(event)?;
+            execution.observe_initialize_load_properties(event)?;
+            execution.observe_initialize_prep_pending(event)?;
+            execution.observe_initialize_prep_move_y(event)?;
+            execution.observe_fire_debirando_before_spawn(event)?;
+            execution.observe_zazak_graphics(event)?;
+            execution.observe_wallmaster_reset_prefix(event)?;
         }
         let ppu_register_operands = event.nmi_ppu_register_operands()?;
-        let target = nmi_resume_target(&event)?;
+        let target = nmi_resume_target(event)?;
         let update_gate = match event
             .nmi_latch
             .ok_or("Snes9x NMI receipt omitted Zelda's software update latch")?
@@ -1691,7 +1691,7 @@ impl Snes9xOracleSemanticTrace {
         };
         // Validate the source-stage cursor before changing any
         // cross-host NMI ownership or publishing partial receipts.
-        let main_loop_interruption = main_loop_interruption_for_event(&event)?;
+        let main_loop_interruption = main_loop_interruption_for_event(event)?;
         if matches!(
             main_loop_interruption,
             Some(MainLoopInterruption::SpritePreparationExtendedOamPacking { .. })
@@ -1728,7 +1728,7 @@ impl Snes9xOracleSemanticTrace {
         self.host_nmi_ppu_register_operands
             .push(ppu_register_operands);
         if publish_pre_dungeon_sprite_reset_progress(
-            &event,
+            event,
             OriginalTimingBoundary::NmiAccepted,
             self.overworld_load_overlays_sprite_reload_active
                 && !self.overworld_sprite_reload_reset_published,
@@ -1743,11 +1743,11 @@ impl Snes9xOracleSemanticTrace {
             if self.overworld_load_overlays_sprite_reload_active {
                 self.overworld_sprite_reload_reset_published = true;
             }
-        } else if let Some(progress) = dungeon_reset_sprites_caller_progress(&event) {
+        } else if let Some(progress) = dungeon_reset_sprites_caller_progress(event) {
             self.pending_reset_progress = Some(progress);
         }
         let overworld_sprite_scan_suspended =
-            self.publish_overworld_presence_at_scan_boundary(&event, receipts);
+            self.publish_overworld_presence_at_scan_boundary(event, receipts);
         if overworld_sprite_scan_suspended {
             receipts.push(
                 OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
@@ -1771,7 +1771,7 @@ impl Snes9xOracleSemanticTrace {
                 .push(OriginalTimingSemanticReceipt::DungeonFallingFadeInPaletteDirectionToggled);
         }
         if let Some(progress) =
-            rescued_maiden_tilemap_clear_progress(&event, OriginalTimingBoundary::NmiAccepted)?
+            rescued_maiden_tilemap_clear_progress(event, OriginalTimingBoundary::NmiAccepted)?
         {
             receipts
                 .push(OriginalTimingSemanticReceipt::RescuedMaidenTilemapClearProgress(progress));
@@ -1796,7 +1796,7 @@ impl Snes9xOracleSemanticTrace {
                 interruption,
             ));
         }
-        let progress_requires_return_scratch = spotlight_receipt_domain(&event)
+        let progress_requires_return_scratch = spotlight_receipt_domain(event)
             && event.pc.map(|pc| pc & 0x00ff_ffff).is_some_and(|pc| {
                 pc == IRIS_SPOTLIGHT_ITERATION_VALUE_STORE_PC
                     || pc == IRIS_SPOTLIGHT_NEXT_ITERATION_PC
@@ -1818,7 +1818,7 @@ impl Snes9xOracleSemanticTrace {
                 receipts.iter().rposition(|receipt| {
                     matches!(receipt, OriginalTimingSemanticReceipt::NmiAccepted(_))
                 });
-        } else if let Some(progress) = spotlight_table_build_progress(&event, None, None)? {
+        } else if let Some(progress) = spotlight_table_build_progress(event, None, None)? {
             receipts.push(OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
                 SpotlightTableBuildProgressReceipt {
                     progress,

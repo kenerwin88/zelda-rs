@@ -4943,7 +4943,7 @@ mod tests {
         {
             let s = 17usize;
             let idx = s * 2;
-            oam2[s * 2] = (10u16 << 8) | 0;
+            oam2[s * 2] = 10u16 << 8 ;
             oam2[0x100 + idx / 16] |= 1 << (idx % 16);
         }
         let frame2 = test_gpu_frame(&vram, &cgram, &oam2, 15, false);
@@ -4975,7 +4975,7 @@ mod tests {
         // indirection (entry -> tile -> CHR texel) and resolves via CGRAM.
         let mut vram = vec![0u16; 0x8000];
         vram[0] = 0x0002; // tilemap entry (0,0): low byte = tile number 2
-        vram[2 * 64 + (1 * 8)] = 5u16 << 8; // tile 2, texel row1 col0: high byte = index 5
+        vram[2 * 64 + 8] = 5u16 << 8; // tile 2, texel row1 col0: high byte = index 5
         let mut cgram = vec![0u16; 0x100];
         cgram[5] = 0x7C1F; // BGR555: R=31, G=0, B=31 (magenta)
         let oam = vec![0u16; 0x110];

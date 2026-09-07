@@ -16,7 +16,7 @@ fn stride(bpp: u8) -> Result<usize, String> {
 /// Decode packed planar CHR bytes into 8x8 palette-index tiles.
 pub fn decode_planar_tile_indices(data: &[u8], bpp: u8) -> Result<Vec<[u8; 64]>, String> {
     let stride = stride(bpp)?;
-    if data.len() % stride != 0 {
+    if !data.len().is_multiple_of(stride) {
         return Err(format!(
             "{} bytes is not a multiple of {stride} for {bpp}bpp",
             data.len()

@@ -16,11 +16,11 @@ pub struct ModernDungeonIndexAtlas {
 /// Look up the index tile for a dungeon tilemap word + blockset theme,
 /// ignoring palette and priority bits.
 /// Returns `None` if the `(theme, graphics_key)` pair is not in the atlas.
-pub fn dungeon_index_cell<'a>(
-    atlas: &'a ModernDungeonIndexAtlas,
+pub fn dungeon_index_cell(
+    atlas: &ModernDungeonIndexAtlas,
     theme: u16,
     tilemap_entry: u16,
-) -> Option<&'a ModernIndexTile> {
+) -> Option<&ModernIndexTile> {
     let key = ((theme as u32) << 16) | ((tilemap_entry & 0xC3FF) as u32);
     atlas.key_to_cell.get(&key).map(|&idx| &atlas.cells[idx])
 }

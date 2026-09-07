@@ -19,7 +19,7 @@ fn source_read_bps(src: &[u8]) -> Vec<u8> {
     bps_encode_int(src.len() as u64, &mut bps);
     bps_encode_int(src.len() as u64, &mut bps);
     bps_encode_int(0, &mut bps);
-    bps_encode_int(((src.len() as u64 - 1) << 2) | 0, &mut bps);
+    bps_encode_int((((src.len() as u64 - 1) << 2)), &mut bps);
     bps.extend_from_slice(&crc32_impl(src).to_le_bytes());
     bps.extend_from_slice(&crc32_impl(src).to_le_bytes());
     let patch_crc = crc32_impl(&bps);

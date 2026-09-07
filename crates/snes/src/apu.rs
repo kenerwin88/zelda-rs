@@ -121,7 +121,7 @@ fn clip_i16_cast(value: i32) -> i32 {
 }
 
 fn clip_15(value: i32) -> i16 {
-    (((value & 0x7fff) << 1) as i16 >> 1) as i16
+    ((value & 0x7fff) << 1) as i16 >> 1
 }
 
 /// Apply the SNES DSP's four-tap Gaussian interpolation to four consecutive
@@ -137,11 +137,12 @@ pub fn dsp_gaussian_interpolate(oldest: i16, older: i16, old: i16, new: i16, off
 }
 
 fn dsp_exp_decrease_gain(gain: u16) -> u16 {
-    let step = (((gain as i32 - 1) >> 8) + 1) as i32;
+    let step = ((gain as i32 - 1) >> 8) + 1;
     (gain as i32 - step) as u16
 }
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(Default)]
 pub struct DspChannel {
     pub pitch: u16,
     pub pitch_counter: u16,
@@ -170,37 +171,6 @@ pub struct DspChannel {
     pub echo_enable: bool,
 }
 
-impl Default for DspChannel {
-    fn default() -> Self {
-        Self {
-            pitch: 0,
-            pitch_counter: 0,
-            pitch_modulation: false,
-            decode_buffer: [0; 19],
-            srcn: 0,
-            decode_offset: 0,
-            previous_flags: 0,
-            old: 0,
-            older: 0,
-            use_noise: false,
-            adsr_rates: [0; 4],
-            rate_counter: 0,
-            adsr_state: 0,
-            sustain_level: 0,
-            use_gain: false,
-            gain_mode: 0,
-            direct_gain: false,
-            gain_value: 0,
-            gain: 0,
-            key_on: false,
-            key_off: false,
-            sample_out: 0,
-            volume_l: 0,
-            volume_r: 0,
-            echo_enable: false,
-        }
-    }
-}
 
 impl DspChannel {
     fn save_c_saveload(&self, out: &mut [u8]) {
@@ -2382,7 +2352,7 @@ impl ApuState {
             }
             0x2a => {
                 let (adr, bit) = self.spc_adr_abs_bit();
-                self.spc.c |= !((self.cpu_read(adr) >> bit) & 1 != 0);
+                self.spc.c |= (self.cpu_read(adr) >> bit) & 1 == 0;
             }
             0x2b => {
                 let adr = self.spc_adr_dp();
@@ -2595,7 +2565,7 @@ impl ApuState {
             }
             0x6a => {
                 let (adr, bit) = self.spc_adr_abs_bit();
-                self.spc.c &= !((self.cpu_read(adr) >> bit) & 1 != 0);
+                self.spc.c &= (self.cpu_read(adr) >> bit) & 1 == 0;
             }
             0x6b => {
                 let adr = self.spc_adr_dp();

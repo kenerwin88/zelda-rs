@@ -679,7 +679,7 @@ fn bracket_glyph_tag_code(tag: &str) -> Option<u8> {
 }
 
 fn decode_us_dialogue_byte(byte: u8, next: Option<u8>) -> (u8, u8, bool) {
-    if byte < TEXT_COMMAND_START_US || byte >= 0x80 {
+    if !(TEXT_COMMAND_START_US..0x80).contains(&byte) {
         return (
             if byte >= 0x80 { 26 } else { byte },
             TEXT_CMD_IS_LETTER,

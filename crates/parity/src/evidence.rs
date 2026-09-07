@@ -274,7 +274,7 @@ pub fn build_trace_index(
                 pc: Some(decoded.pc),
                 address: decoded.address(),
             };
-            if fields.event.as_bytes().len() > EVENT_BYTES {
+            if fields.event.len() > EVENT_BYTES {
                 return Err(format!(
                     "trace event name is longer than {EVENT_BYTES} bytes at {}:{}",
                     trace_path.display(),

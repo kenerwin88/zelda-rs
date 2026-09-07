@@ -57,7 +57,7 @@ fn validate_preview_layer(layer: &Value, id: i64, room: usize, pack: &Pack) -> R
     }
     for field in ["repeatx", "repeaty"] {
         ensure(
-            layer.get(field).map_or(true, |v| v == false),
+            layer.get(field).is_none_or(|v| v == false),
             "preview images cannot repeat",
         )?;
     }
@@ -298,7 +298,7 @@ fn numeric_default(owner: &Value, field: &str, expected: i64) -> Result<()> {
     ensure(
         owner
             .get(field)
-            .map_or(true, |v| v.as_f64() == Some(expected as f64)),
+            .is_none_or(|v| v.as_f64() == Some(expected as f64)),
         format!("{field}: unsupported transform"),
     )
 }
@@ -468,7 +468,7 @@ pub fn compile_world(pack: &Pack, path: &Path) -> Result<(Vec<u8>, Value)> {
     ensure(
         world
             .get("patterns")
-            .map_or(true, |p| p.as_array().is_some_and(Vec::is_empty)),
+            .is_none_or(|p| p.as_array().is_some_and(Vec::is_empty)),
         "pattern-generated world maps are not supported",
     )?;
     let root = path

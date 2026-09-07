@@ -601,7 +601,8 @@ fn terminal_spotlight_caller_preflight_is_failure_atomic() {
         Some(closing),
     );
 
-    for (label, iteration) in [("opening work", SpotlightIteration::opening())] {
+    {
+        let (label, iteration) = ("opening work", SpotlightIteration::opening());
         let mut wrong_work = run4784_terminal_spotlight_state();
         wrong_work.game_execution_scheduler.finish_work();
         wrong_work.game_execution_scheduler.schedule_work(

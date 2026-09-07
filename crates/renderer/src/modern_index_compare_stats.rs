@@ -72,7 +72,7 @@ impl ModernIndexCompareRunConfig {
     }
 
     pub fn should_compare_frame(self, frame: u32) -> bool {
-        self.stride != 0 && frame % self.stride == 0
+        self.stride != 0 && frame.is_multiple_of(self.stride)
     }
 
     pub fn load_resources_from_env(
@@ -395,7 +395,7 @@ impl ModernIndexCompareStats {
     fn progress_line(&self, frame: u32) -> Option<String> {
         (self.summary_enabled
             && self.progress_interval != 0
-            && self.compare_count % self.progress_interval == 0)
+            && self.compare_count.is_multiple_of(self.progress_interval))
             .then(|| {
                 format!(
                     "modern_index_compare_progress compare_count={} frame={} bad_count={}",

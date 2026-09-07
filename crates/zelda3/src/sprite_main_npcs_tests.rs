@@ -37,7 +37,7 @@ fn bee_handle_z_sets_z_and_palette_when_head_dir() {
     state.bee_handle_z(k);
     let sprite = state.sprite_slot_view(k);
     assert_eq!(sprite.z(), 16);
-    assert_eq!(sprite.oam_flags(), (0xff & 0xf1) | 6);
+    assert_eq!(sprite.oam_flags(), 0xf1 | 6);
 }
 
 #[test]

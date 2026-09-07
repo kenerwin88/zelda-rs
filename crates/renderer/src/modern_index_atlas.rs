@@ -32,10 +32,10 @@ pub struct ModernIndexAtlas {
 
 /// Look up the index tile for a tilemap word, ignoring palette and priority bits.
 /// Returns `None` if the graphics key is not in the atlas.
-pub fn index_cell_for_tilemap_entry<'a>(
-    atlas: &'a ModernIndexAtlas,
+pub fn index_cell_for_tilemap_entry(
+    atlas: &ModernIndexAtlas,
     tilemap_entry: u16,
-) -> Option<&'a ModernIndexTile> {
+) -> Option<&ModernIndexTile> {
     let key = tilemap_entry & 0xC3FF;
     atlas.key_to_cell.get(&key).map(|&idx| &atlas.cells[idx])
 }

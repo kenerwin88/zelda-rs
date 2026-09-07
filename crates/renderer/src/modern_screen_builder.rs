@@ -946,7 +946,7 @@ mod tests {
         let r = &scratch.reserved_words;
         let cell = |cx: usize, cy: usize| {
             let h = SPRITE_BUCKET_TABLE_WORDS + (cy * SPRITE_BUCKET_GRID_W + cx) * 2;
-            r[h as usize + 0] as usize..(r[h] + r[h + 1]) as usize
+            r[h] as usize..(r[h] + r[h + 1]) as usize
         };
         assert!(cell(0, 0).start >= pool_after_bg);
         assert_eq!(&r[cell(0, 0)], &[0]);

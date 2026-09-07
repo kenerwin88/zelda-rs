@@ -17,7 +17,7 @@ fn initialize_seeds_overlord_registers_and_writes_x_table() {
     assert_eq!(s.ram[OVERLORD_GEN1 + 7], 0x30);
     assert_eq!(s.ram[OVERLORD_GEN1 + 5], 0x80);
     assert_eq!(s.ram[OVERLORD_GEN1 + 6], 0);
-    assert_eq!(s.ram[OVERLORD_GEN2 + 0], 0);
+    assert_eq!(s.ram[OVERLORD_GEN2], 0);
     assert_eq!(s.ram[OVERLORD_GEN2 + 1], 0);
     assert_eq!(s.ram[OVERLORD_GEN2 + 2], 0);
     assert_eq!(s.ram[OVERLORD_GEN2 + 3], 0);
@@ -71,7 +71,7 @@ fn maybe_fireball_returns_false_when_subtype_not_four() {
     let mut s = fresh_state();
     let k = 1;
     s.sprite_slot_view_mut(k).set_subtype(0);
-    assert_eq!(s.helmasaur_king_maybe_fireball(k), false);
+    assert!(!s.helmasaur_king_maybe_fireball(k));
     let sprite = s.sprite_slot_view(k);
     assert_eq!(sprite.subtype(), 1);
     assert_eq!(sprite.delay_aux1(), 0);

@@ -16,11 +16,11 @@ pub struct ModernSpriteIndexAtlas {
 
 /// Look up the index tile for a `(context, tile)` pair.
 /// Returns `None` if the pair is not in the atlas.
-pub fn sprite_index_cell<'a>(
-    atlas: &'a ModernSpriteIndexAtlas,
+pub fn sprite_index_cell(
+    atlas: &ModernSpriteIndexAtlas,
     context: u64,
     tile: u16,
-) -> Option<&'a ModernIndexTile> {
+) -> Option<&ModernIndexTile> {
     atlas
         .key_to_cell
         .get(&(context, tile))

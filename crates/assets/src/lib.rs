@@ -76,10 +76,10 @@ mod tests {
             data[88 + i * 4..92 + i * 4].copy_from_slice(&(*size as u32).to_le_bytes());
         }
         for size in sizes {
-            while data.len() % 4 != 0 {
+            while !data.len().is_multiple_of(4) {
                 data.push(0);
             }
-            data.extend(std::iter::repeat(0xaa).take(*size));
+            data.extend(std::iter::repeat_n(0xaa, *size));
         }
         data
     }

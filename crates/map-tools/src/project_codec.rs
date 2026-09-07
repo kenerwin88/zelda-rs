@@ -240,7 +240,7 @@ pub fn encode_secrets(records: &[Secret]) -> Result<Vec<u8>> {
     Ok(out)
 }
 pub fn words(data: &[u8]) -> Result<Vec<u16>> {
-    ensure(data.len() % 2 == 0, "word table has odd length")?;
+    ensure(data.len().is_multiple_of(2), "word table has odd length")?;
     (0..data.len()).step_by(2).map(|i| word(data, i)).collect()
 }
 pub fn word_bytes(words: impl IntoIterator<Item = u16>) -> Vec<u8> {

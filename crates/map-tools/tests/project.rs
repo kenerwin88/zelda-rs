@@ -110,7 +110,7 @@ fn fixture() -> Pack {
     }
     data.extend(key_data);
     for asset in assets {
-        while data.len() % 4 != 0 {
+        while !data.len().is_multiple_of(4) {
             data.push(0xa7);
         }
         data.extend(asset);

@@ -15,23 +15,6 @@ pub fn cgram_words_to_rgba256(cgram: &[u16]) -> [[u8; 4]; 256] {
     out
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn cgram_conversion_matches_classic_formula() {
-        assert_eq!(snes_cgram_to_rgba(0x0000), [0, 0, 0, 0xff]);
-        assert_eq!(snes_cgram_to_rgba(0x7fff), [248, 248, 248, 0xff]); // 31<<3 = 248
-        assert_eq!(snes_cgram_to_rgba(0x001f), [248, 0, 0, 0xff]); // R=31
-        assert_eq!(snes_cgram_to_rgba(0x7c00), [0, 0, 248, 0xff]); // B=31
-        assert_eq!(snes_cgram_to_rgba(0x03e0), [0, 248, 0, 0xff]); // G=31
-        let pal = cgram_words_to_rgba256(&[0x001f, 0x7c00]);
-        assert_eq!(pal[0], [248, 0, 0, 0xff]);
-        assert_eq!(pal[1], [0, 0, 248, 0xff]);
-        assert_eq!(pal[255], [0, 0, 0, 0xff]); // missing entries default to opaque black
-    }
-}
-
 fn decode_cgram_entry(entry: u16, dst: &mut [u8]) {
     // 5-bit channels shifted left 3 to fill the top 5 bits of an 8-bit value.
     // This matches the SNES hardware output range (0, 8, 16, ... 248).
@@ -53,4 +36,21 @@ pub fn expand_cgram_to_rgba8(cgram: &[u16]) -> Vec<u8> {
         decode_cgram_entry(entry, &mut out[i * 4..i * 4 + 4]);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn cgram_conversion_matches_classic_formula() {
+        assert_eq!(snes_cgram_to_rgba(0x0000), [0, 0, 0, 0xff]);
+        assert_eq!(snes_cgram_to_rgba(0x7fff), [248, 248, 248, 0xff]); // 31<<3 = 248
+        assert_eq!(snes_cgram_to_rgba(0x001f), [248, 0, 0, 0xff]); // R=31
+        assert_eq!(snes_cgram_to_rgba(0x7c00), [0, 0, 248, 0xff]); // B=31
+        assert_eq!(snes_cgram_to_rgba(0x03e0), [0, 248, 0, 0xff]); // G=31
+        let pal = cgram_words_to_rgba256(&[0x001f, 0x7c00]);
+        assert_eq!(pal[0], [248, 0, 0, 0xff]);
+        assert_eq!(pal[1], [0, 0, 248, 0xff]);
+        assert_eq!(pal[255], [0, 0, 0, 0xff]); // missing entries default to opaque black
+    }
 }

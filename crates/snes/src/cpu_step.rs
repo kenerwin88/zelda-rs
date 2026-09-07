@@ -375,7 +375,7 @@ impl Snes {
                 if result > 0x9 {
                     result = ((result + 0x6) & 0xf) + 0x10;
                 }
-                result = (a & 0xf0) + (value & 0xf0) + result;
+                result += (a & 0xf0) + (value & 0xf0);
             } else {
                 result = (a & 0xff) + value + self.cpu.c as i32;
             }
@@ -395,15 +395,15 @@ impl Snes {
                 if result > 0x9 {
                     result = ((result + 0x6) & 0xf) + 0x10;
                 }
-                result = (a & 0xf0) + (value & 0xf0) + result;
+                result += (a & 0xf0) + (value & 0xf0);
                 if result > 0x9f {
                     result = ((result + 0x60) & 0xff) + 0x100;
                 }
-                result = (a & 0xf00) + (value & 0xf00) + result;
+                result += (a & 0xf00) + (value & 0xf00);
                 if result > 0x9ff {
                     result = ((result + 0x600) & 0xfff) + 0x1000;
                 }
-                result = (a & 0xf000) + (value & 0xf000) + result;
+                result += (a & 0xf000) + (value & 0xf000);
             } else {
                 result = a + value + self.cpu.c as i32;
             }
@@ -429,7 +429,7 @@ impl Snes {
                     let mask = if pre < 0 { 0xf } else { 0x1f };
                     result = pre & mask;
                 }
-                result = (a & 0xf0) + (value & 0xf0) + result;
+                result += (a & 0xf0) + (value & 0xf0);
             } else {
                 result = (a & 0xff) + value + self.cpu.c as i32;
             }
@@ -451,19 +451,19 @@ impl Snes {
                     let mask = if pre < 0 { 0xf } else { 0x1f };
                     result = pre & mask;
                 }
-                result = (a & 0xf0) + (value & 0xf0) + result;
+                result += (a & 0xf0) + (value & 0xf0);
                 if result < 0x100 {
                     let pre = result - 0x60;
                     let mask = if pre < 0 { 0xff } else { 0x1ff };
                     result = pre & mask;
                 }
-                result = (a & 0xf00) + (value & 0xf00) + result;
+                result += (a & 0xf00) + (value & 0xf00);
                 if result < 0x1000 {
                     let pre = result - 0x600;
                     let mask = if pre < 0 { 0xfff } else { 0x1fff };
                     result = pre & mask;
                 }
-                result = (a & 0xf000) + (value & 0xf000) + result;
+                result += (a & 0xf000) + (value & 0xf000);
             } else {
                 result = a + value + self.cpu.c as i32;
             }
@@ -1959,9 +1959,7 @@ fn dispatch(snes: &mut Snes, mut opcode: u8) {
                 snes.cpu_set_zn(snes.cpu.x as u32, snes.cpu.xf);
             }
             0xfb => {
-                let temp = snes.cpu.c;
-                snes.cpu.c = snes.cpu.e;
-                snes.cpu.e = temp;
+                std::mem::swap(&mut snes.cpu.c, &mut snes.cpu.e);
                 let f = snes.cpu.pack_flags();
                 snes.cpu_set_flags(f);
             }

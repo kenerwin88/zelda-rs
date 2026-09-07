@@ -207,7 +207,7 @@ fn cucco_calm_seeds_velocity_when_delay_zero() {
     assert_eq!(s.sprite_slot_view(k).ai_state(), 1);
     // Delay should be re-armed in [0x10, 0x2f].
     let d = s.sprite_slot_view(k).delay_main();
-    assert!(d >= 0x10 && d <= 0x2f, "delay out of range: {d:#x}");
+    assert!((0x10..=0x2f).contains(&d), "delay out of range: {d:#x}");
 }
 
 #[test]

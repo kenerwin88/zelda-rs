@@ -243,7 +243,7 @@ impl ModernAssetLiveStats {
                     Some(format_live_full_gpu_failure_line(fallback))
                 } else if let Some(stats) = variant_stats {
                     self.record_variant_stats(*stats)
-                        .map(|fallback| format_live_full_gpu_failure_line(fallback))
+                        .map(format_live_full_gpu_failure_line)
                 } else {
                     self.record_non_variant_gpu_route(via);
                     None
@@ -287,7 +287,7 @@ impl ModernAssetLiveStats {
     }
 
     fn should_log_summary(&self) -> bool {
-        self.log_every_frames != 0 && self.frames % self.log_every_frames == 0
+        self.log_every_frames != 0 && self.frames.is_multiple_of(self.log_every_frames)
     }
 
     fn log_summary(&self) {

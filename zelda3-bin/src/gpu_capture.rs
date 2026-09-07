@@ -2118,6 +2118,58 @@ fn gpu_frame_capture_from_ppu<'a>(
     }
 }
 
+fn gpu_frame_register_snapshot_from_ppu<'a>(
+    ppu: &'a snes::ppu::PpuState,
+) -> renderer::GpuFrameRegisterSnapshot<'a> {
+    renderer::GpuFrameRegisterSnapshot {
+        vram: &ppu.vram,
+        oam: &ppu.oam,
+        mode: ppu.bg_mode(),
+        mode1_bg3_priority: ppu.mode1_bg3_priority(),
+        bg: std::array::from_fn(|layer| renderer::BgLayerRegs {
+            h_scroll: ppu.bg_layer[layer].h_scroll,
+            v_scroll: ppu.bg_layer[layer].v_scroll,
+            tilemap_wider: ppu.bg_layer[layer].tilemap_wider,
+            tilemap_higher: ppu.bg_layer[layer].tilemap_higher,
+            tilemap_adr: ppu.bg_layer[layer].tilemap_adr,
+            tile_adr: ppu.bg_layer[layer].tile_adr,
+        }),
+        obj: renderer::ObjRegs {
+            tile_adr1: ppu.obj_tile_adr1,
+            tile_adr2: ppu.obj_tile_adr2,
+            obj_size: ppu.obj_size,
+        },
+        mosaic_enabled: ppu.mosaic_enabled,
+        mosaic_size: ppu.mosaic_size,
+        extra_left_right: ppu.extra_left_right,
+        mode7: renderer::Mode7Regs {
+            matrix: ppu.m7_matrix,
+            large_field: ppu.m7_large_field,
+            char_fill: ppu.m7_char_fill,
+            x_flip: ppu.m7_x_flip,
+            y_flip: ppu.m7_y_flip,
+            ext_bg_always_zero: ppu.m7_ext_bg_always_zero,
+        },
+        screen_enabled: ppu.screen_enabled,
+        screen_windowed: ppu.screen_windowed,
+        brightness: ppu.brightness,
+        scanout_brightness_override: ppu.scanout_brightness_override,
+        scanout_top_crop: ppu.scanout_top_crop,
+        forced_blank: ppu.forced_blank,
+        retain_active_display_history: ppu.retain_active_display_history,
+        math_enabled: ppu.math_enabled,
+        subtract_color: ppu.subtract_color,
+        half_color: ppu.half_color,
+        fixed_color_r: ppu.fixed_color_r,
+        fixed_color_g: ppu.fixed_color_g,
+        fixed_color_b: ppu.fixed_color_b,
+        add_subscreen: ppu.add_subscreen,
+        clip_mode: ppu.clip_mode,
+        prevent_math_mode: ppu.prevent_math_mode,
+        windowsel: ppu.windowsel,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2728,57 +2780,5 @@ mod tests {
             && bx0 < ax0 + i32::from(aw)
             && ay0 < by0 + i32::from(bh)
             && by0 < ay0 + i32::from(ah)
-    }
-}
-
-fn gpu_frame_register_snapshot_from_ppu<'a>(
-    ppu: &'a snes::ppu::PpuState,
-) -> renderer::GpuFrameRegisterSnapshot<'a> {
-    renderer::GpuFrameRegisterSnapshot {
-        vram: &ppu.vram,
-        oam: &ppu.oam,
-        mode: ppu.bg_mode(),
-        mode1_bg3_priority: ppu.mode1_bg3_priority(),
-        bg: std::array::from_fn(|layer| renderer::BgLayerRegs {
-            h_scroll: ppu.bg_layer[layer].h_scroll,
-            v_scroll: ppu.bg_layer[layer].v_scroll,
-            tilemap_wider: ppu.bg_layer[layer].tilemap_wider,
-            tilemap_higher: ppu.bg_layer[layer].tilemap_higher,
-            tilemap_adr: ppu.bg_layer[layer].tilemap_adr,
-            tile_adr: ppu.bg_layer[layer].tile_adr,
-        }),
-        obj: renderer::ObjRegs {
-            tile_adr1: ppu.obj_tile_adr1,
-            tile_adr2: ppu.obj_tile_adr2,
-            obj_size: ppu.obj_size,
-        },
-        mosaic_enabled: ppu.mosaic_enabled,
-        mosaic_size: ppu.mosaic_size,
-        extra_left_right: ppu.extra_left_right,
-        mode7: renderer::Mode7Regs {
-            matrix: ppu.m7_matrix,
-            large_field: ppu.m7_large_field,
-            char_fill: ppu.m7_char_fill,
-            x_flip: ppu.m7_x_flip,
-            y_flip: ppu.m7_y_flip,
-            ext_bg_always_zero: ppu.m7_ext_bg_always_zero,
-        },
-        screen_enabled: ppu.screen_enabled,
-        screen_windowed: ppu.screen_windowed,
-        brightness: ppu.brightness,
-        scanout_brightness_override: ppu.scanout_brightness_override,
-        scanout_top_crop: ppu.scanout_top_crop,
-        forced_blank: ppu.forced_blank,
-        retain_active_display_history: ppu.retain_active_display_history,
-        math_enabled: ppu.math_enabled,
-        subtract_color: ppu.subtract_color,
-        half_color: ppu.half_color,
-        fixed_color_r: ppu.fixed_color_r,
-        fixed_color_g: ppu.fixed_color_g,
-        fixed_color_b: ppu.fixed_color_b,
-        add_subscreen: ppu.add_subscreen,
-        clip_mode: ppu.clip_mode,
-        prevent_math_mode: ppu.prevent_math_mode,
-        windowsel: ppu.windowsel,
     }
 }

@@ -55,12 +55,12 @@ pub struct ModernSourceAtlas {
 
 /// Resolve the cell for a logical CHR source `{kind, pack, tile_off}`.
 /// Returns `None` if no cell was recorded for that source (render path skips it).
-pub fn source_cell<'a>(
-    atlas: &'a ModernSourceAtlas,
+pub fn source_cell(
+    atlas: &ModernSourceAtlas,
     kind: u8,
     pack: u16,
     tile_off: u16,
-) -> Option<&'a ModernIndexTile> {
+) -> Option<&ModernIndexTile> {
     let key = modern_source_key(kind, pack, tile_off);
     atlas.key_to_cell.get(&key).map(|&idx| &atlas.cells[idx])
 }
@@ -129,7 +129,7 @@ pub fn load_modern_source_atlas(repo_root: &Path) -> Result<ModernSourceAtlas, S
     }
     let width = info.width as usize;
     let height = info.height as usize;
-    if width % 8 != 0 || height % 8 != 0 {
+    if !width.is_multiple_of(8) || !height.is_multiple_of(8) {
         return Err(format!(
             "{}: PNG size {}x{} is not aligned to 8x8 cells",
             png_path.display(),

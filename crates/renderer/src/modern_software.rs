@@ -2148,9 +2148,9 @@ fn mode7_bg_index(frame: &crate::gpu_frame::GpuFrame<'_>, sx: usize, sy: usize) 
     let y = sy as i32 + 1;
     let ry = if m7.y_flip { 255 - y } else { y };
     let start_x =
-        (m0 * clipped_h & -64) + (m1 * ry & -64) + (m1 * clipped_v & -64) + (x_center << 8);
+        ((m0 * clipped_h) & -64) + ((m1 * ry) & -64) + ((m1 * clipped_v) & -64) + (x_center << 8);
     let start_y =
-        (m2 * clipped_h & -64) + (m3 * ry & -64) + (m3 * clipped_v & -64) + (y_center << 8);
+        ((m2 * clipped_h) & -64) + ((m3 * ry) & -64) + ((m3 * clipped_v) & -64) + (y_center << 8);
     let rx = if m7.x_flip {
         255 - sx as i32
     } else {
@@ -2159,7 +2159,7 @@ fn mode7_bg_index(frame: &crate::gpu_frame::GpuFrame<'_>, sx: usize, sy: usize) 
 
     let mut x_pos = (start_x + m0 * rx) >> 8;
     let mut y_pos = (start_y + m2 * rx) >> 8;
-    let mut outside = x_pos < 0 || x_pos >= 1024 || y_pos < 0 || y_pos >= 1024;
+    let mut outside = !(0..1024).contains(&x_pos) || !(0..1024).contains(&y_pos);
     x_pos &= 0x3ff;
     y_pos &= 0x3ff;
     if !m7.large_field {
@@ -2262,13 +2262,13 @@ pub fn render_modern_mode7_frame(frame: &crate::gpu_frame::GpuFrame<'_>) -> Vec<
                 let clipped_h = clip_m7_offset(h_scroll - x_center);
                 let clipped_v = clip_m7_offset(v_scroll - y_center);
                 let ry = sy as i32 + 1;
-                let start_x = (m0 * clipped_h & -64)
-                    + (m1 * ry & -64)
-                    + (m1 * clipped_v & -64)
+                let start_x = ((m0 * clipped_h) & -64)
+                    + ((m1 * ry) & -64)
+                    + ((m1 * clipped_v) & -64)
                     + (x_center << 8);
-                let start_y = (m2 * clipped_h & -64)
-                    + (m3 * ry & -64)
-                    + (m3 * clipped_v & -64)
+                let start_y = ((m2 * clipped_h) & -64)
+                    + ((m3 * ry) & -64)
+                    + ((m3 * clipped_v) & -64)
                     + (y_center << 8);
                 let sample_x = ((start_x + m0 * sx as i32) >> 8) & 0x3ff;
                 let sample_y = ((start_y + m2 * sx as i32) >> 8) & 0x3ff;
@@ -2530,8 +2530,8 @@ mod tests {
 
         let out = render_modern_frame_full(&frame, &cells, &[]);
         // c5 20, brightness 15 → (20<<3)|(20>>2) = 165.
-        let row0 = (0 * 256 + 0) * 4;
-        let row1 = (1 * 256 + 0) * 4;
+        let row0 = 0 * 4;
+        let row1 = 256 * 4;
         assert_eq!(
             &out[row0..row0 + 3],
             &[0, 165, 0],
@@ -2580,7 +2580,7 @@ mod tests {
         });
 
         let out = render_modern_frame_full(&frame, &cells, &[]);
-        let left_wrapped = (0usize * 256 + 0) * 4;
+        let left_wrapped = 0 * 4;
 
         assert_eq!(
             &out[left_wrapped..left_wrapped + 3],
@@ -2692,7 +2692,7 @@ mod tests {
         let (sub_frame, _) = frame_with_single_bg_pixel(1, [10, 10, 10]);
         // Merge the sub layer's tile + palette into the frame.
         frame.bg_layers[1].index_tiles = sub_frame.bg_layers[1].index_tiles.clone();
-        frame.cgram_rgba[1 * 16 + 1] = sub_frame.cgram_rgba[1 * 16 + 1];
+        frame.cgram_rgba[16 + 1] = sub_frame.cgram_rgba[16 + 1];
 
         frame.screen_enabled_main = 0x01; // BG1 on main
         frame.screen_enabled_sub = 0x02; // BG2 on sub
@@ -2748,7 +2748,7 @@ mod tests {
             "backdrop main + sub room composited via color math"
         );
         // A pixel with NO sub room pixel stays pure backdrop: 4 → v8 = (4<<3)|(4>>2)=33.
-        let nb = (0 * 256 + 1) * 4;
+        let nb = 4;
         assert_eq!(
             &out[nb..nb + 4],
             &[33, 33, 33, 0xff],
@@ -2780,7 +2780,7 @@ mod tests {
         let (mut frame, cells) = frame_with_single_bg_pixel(0, [5, 11, 6]);
         let (sub_frame, _) = frame_with_single_bg_pixel(1, [14, 22, 30]);
         frame.bg_layers[1].index_tiles = sub_frame.bg_layers[1].index_tiles.clone();
-        frame.cgram_rgba[1 * 16 + 1] = sub_frame.cgram_rgba[1 * 16 + 1];
+        frame.cgram_rgba[16 + 1] = sub_frame.cgram_rgba[16 + 1];
 
         frame.screen_enabled_main = 0x01;
         frame.screen_enabled_sub = 0x02;
@@ -2886,7 +2886,7 @@ mod tests {
         );
         // A pixel inside the window (x=12,y=0) is backdrop here (no tile), but its
         // window membership is exercised via the clip path staying unclipped.
-        let inside = (0 * 256 + 12) * 4;
+        let inside = 12 * 4;
         assert_eq!(
             &out[inside..inside + 4],
             &[0, 0, 0, 0xff],
@@ -3086,13 +3086,13 @@ mod tests {
         let rgba = render_modern_frame_software_indexed(&frame, &cells);
 
         // pixel (0,0): index 1, palette 3 → cgram_rgba[3*16+1]
-        let px00 = (0 * 256 + 0) * 4;
+        let px00 = 0 * 4;
         assert_eq!(&rgba[px00..px00 + 4], &[10, 20, 30, 0xff], "pixel (0,0)");
         // pixel (1,0): index 2, palette 3 → cgram_rgba[3*16+2]
-        let px10 = (0 * 256 + 1) * 4;
+        let px10 = 4;
         assert_eq!(&rgba[px10..px10 + 4], &[40, 50, 60, 0xff], "pixel (1,0)");
         // pixel (2,0): index 0 → transparent → backdrop
-        let px20 = (0 * 256 + 2) * 4;
+        let px20 = 2 * 4;
         assert_eq!(
             &rgba[px20..px20 + 4],
             &[0, 0, 0, 0xff],
@@ -3301,7 +3301,7 @@ mod tests {
             HdCell {
                 width: 8,
                 height: 8,
-                rgba: vec![c[0], c[1], c[2], 0xff].repeat(64),
+                rgba: [c[0], c[1], c[2], 0xff].repeat(64),
             }
         };
         let mut by_key = HashMap::new();
@@ -3325,7 +3325,7 @@ mod tests {
             HdCell {
                 width: 8,
                 height: 8,
-                rgba: vec![c[0] / 2, c[1] / 2, c[2] / 2, 0xff].repeat(64),
+                rgba: [c[0] / 2, c[1] / 2, c[2] / 2, 0xff].repeat(64),
             }
         };
         let mut by_key2 = HashMap::new();

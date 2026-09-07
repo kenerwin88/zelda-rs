@@ -29,10 +29,10 @@ pub struct ModernTileAtlasEntry {
     pub tilemap_variants: Vec<u16>,
 }
 
-pub fn atlas_entry_for_tilemap_entry<'a>(
-    asset: &'a ModernTileAtlasAsset,
+pub fn atlas_entry_for_tilemap_entry(
+    asset: &ModernTileAtlasAsset,
     tilemap_entry: u16,
-) -> Option<&'a ModernTileAtlasEntry> {
+) -> Option<&ModernTileAtlasEntry> {
     asset.entries.iter().find(|entry| {
         entry.tilemap_entry == tilemap_entry || entry.tilemap_variants.contains(&tilemap_entry)
     })

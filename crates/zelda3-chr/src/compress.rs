@@ -52,7 +52,7 @@ pub fn decompress_asset(data: &[u8]) -> Result<Vec<u8>, String> {
         } else if cmd & 0x40 == 0 {
             let value = get(offset)?;
             offset += 1;
-            result.extend(std::iter::repeat(value).take(length));
+            result.extend(std::iter::repeat_n(value, length));
         } else if cmd & 0x20 == 0 {
             let first = get(offset)?;
             let second = get(offset + 1)?;

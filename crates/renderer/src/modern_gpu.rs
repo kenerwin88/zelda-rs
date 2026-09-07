@@ -2827,7 +2827,7 @@ impl ModernGpuVariantEffectRenderer {
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            queue.write_buffer(&buffer, 0, &instance_bytes);
+            queue.write_buffer(&buffer, 0, instance_bytes);
             Some(buffer)
         } else {
             None
@@ -3053,9 +3053,9 @@ fn sprite_packet_can_use_live_cgram(
     true
 }
 
-fn static_bg_effect_material_packet<'packet, 'frame>(
+fn static_bg_effect_material_packet<'frame>(
     atlas: &'frame crate::modern_variant_atlas::ModernVariantAtlas,
-    packet: &'packet crate::modern_variant_draw::VariantBgDrawPacket<'frame>,
+    packet: &crate::modern_variant_draw::VariantBgDrawPacket<'frame>,
 ) -> Option<EffectMaterialPacket> {
     let Some((entry, effect)) = packet.draw.material_effect() else {
         return None;
@@ -3265,10 +3265,10 @@ fn append_effect_instance_words(out: &mut Vec<u8>, packet: EffectInstancePacket)
     out.extend_from_slice(&packet.effect_row.to_le_bytes());
 }
 
-fn sprite_effect_material_packet<'packet, 'frame>(
+fn sprite_effect_material_packet<'frame>(
     atlas: &'frame crate::modern_variant_atlas::ModernVariantAtlas,
     frame: &ModernFrame,
-    packet: &'packet crate::modern_variant_draw::VariantSpriteDrawPacket<'frame>,
+    packet: &crate::modern_variant_draw::VariantSpriteDrawPacket<'frame>,
 ) -> Option<EffectMaterialPacket> {
     let Some((entry, effect)) = packet.draw.material_effect() else {
         if !matches!(
@@ -4475,6 +4475,12 @@ pub struct ModernGpuHeadless {
     target: wgpu::Texture,
 }
 
+impl Default for ModernGpuHeadless {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ModernGpuHeadless {
     pub fn new() -> Self {
         let instance = crate::create_wgpu_instance();
@@ -5132,7 +5138,7 @@ impl ModernGpuVariantHeadless {
                 frame,
                 live_index_base.bg_cells(),
                 live_index_base.sprite_cells(),
-                &prefinal_packets,
+                prefinal_packets,
                 &self.target,
             )
     }

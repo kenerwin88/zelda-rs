@@ -1760,7 +1760,7 @@ impl<'a> Smp<'a> {
 
     fn xcn(&mut self) {
         self.cycles(4);
-        self.reg_a = (self.reg_a >> 4) | (self.reg_a << 4);
+        self.reg_a = self.reg_a.rotate_left(4);
         let reg_a = self.reg_a;
         self.set_psw_n_z(reg_a as u32);
     }

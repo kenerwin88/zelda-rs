@@ -22,8 +22,7 @@ pub fn sha256_file(path: &Path) -> std::io::Result<String> {
     let s = String::from_utf8_lossy(&out.stdout);
     let hash = s.split_whitespace().next().unwrap_or("").to_string();
     if !out.status.success() || hash.is_empty() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
+        return Err(std::io::Error::other(
             format!("sha256 of {} failed", path.display()),
         ));
     }

@@ -341,7 +341,7 @@ pub fn encode_sprites(sprites: &Value) -> Result<Vec<u8>> {
         let xf = integer(&record["x_flags"], 0, 224, "sprite.x_flags")? as u8;
         let yf = integer(&record["y_flags"], 0, 224, "sprite.y_flags")? as u8;
         ensure(
-            xf % 32 == 0 && yf % 32 == 0,
+            xf.is_multiple_of(32) && yf.is_multiple_of(32),
             "sprite flags must occupy only the upper three bits",
         )?;
         let id = integer(&record["id"], 0, 255, "sprite.id")? as u8;
