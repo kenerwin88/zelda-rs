@@ -5264,7 +5264,8 @@ mod tests {
     fn headless_gpu_variant_draws_vwf_glyph_runs_from_source_png_entries() {
         // The hi-res VWF glyph overlay is an opt-in enhancement (off at 1x parity); this test
         // exercises the enhancement path, so it enables the overlay explicitly.
-        // TODO: Audit that the environment access only happens in single-threaded code.
+        // SAFETY: this test sets the switch before any renderer thread reads the
+        // environment; the test harness runs it on a single thread.
         unsafe { std::env::set_var("ZELDA3_VWF_HD_GLYPHS", "1") };
         use crate::modern_frame::ModernVwfGlyphRun;
         use crate::modern_variant_atlas::{
