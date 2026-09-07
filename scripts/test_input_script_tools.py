@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.input_script_tools import numeric_input_history, numeric_input_script, parse_buttons
+from input_script_tools import numeric_input_history, numeric_input_script, parse_buttons
 
 
 class InputScriptToolsTests(unittest.TestCase):

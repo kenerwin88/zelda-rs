@@ -21,8 +21,8 @@ class ValidateModernSfxAssetsTests(unittest.TestCase):
     def test_checked_in_assets_are_valid_and_complete(self) -> None:
         self.assertEqual(validator.validate(self.document), [])
         self.assertEqual(len(self.document["programs"]), 342)
-        self.assertEqual(len(self.document["exact_dsp_steps"]), 570)
-        self.assertEqual(len(self.document["pitch_events"]), 80)
+        self.assertEqual(len(self.document["exact_dsp_steps"]), 573)
+        self.assertEqual(len(self.document["pitch_events"]), 170)
 
     def test_rejects_unreviewed_duplicate_and_invalid_step(self) -> None:
         document = copy.deepcopy(self.document)

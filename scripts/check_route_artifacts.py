@@ -12,7 +12,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ROUTES = ROOT / "routes"
 MAX_VERSIONED_FILE_BYTES = 10 * 1024 * 1024
-MAX_VERSIONED_PROJECT_BYTES = 50 * 1024 * 1024
+# The full_run project carries 45 Snes9x boundary states (~51 MiB) plus the
+# promoted receipts and WRAM goldens; keep headroom without inviting bulk
+# artifacts (per-file limit above still applies).
+MAX_VERSIONED_PROJECT_BYTES = 64 * 1024 * 1024
 RECORDING_KIND = "zelda3_snes9x_route_recording_v1"
 BOUNDARY_FILES = {
     "state_path": "state_sha256",

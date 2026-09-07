@@ -288,7 +288,7 @@ the intro poly-step-hold cadence (`rom_intro_poly_thread_is_active` = mod0
 sub 3/4/5/7/9/11; fields `snes9x_hold_intro_step_this_frame`,
 `snes9x_intro_step_hold_alternate`, `poly_job_hold_frames` in zelda_rtl.rs) —
 the known-hard poly-intro sub-frame timing (see memory
-poly-intro-bsnes-residual). nmi_prepare_sprites (0xc00d decrement) is skipped on
+poly-intro residual). nmi_prepare_sprites (0xc00d decrement) is skipped on
 the frames the intro poly thread holds; rust's hold phase is 1 frame behind the
 oracle's.
 
@@ -324,7 +324,7 @@ before frame 108, not a cadence. Pinned it:
   bootgate `frame_ctr_dbg` is offset ~1 from the harness WRAM-dump index.
 
 **This is the known-hard poly-intro sub-frame thread-scheduling timing**
-([[poly-intro-bsnes-residual-is-irq-thread-timing]]): the main/poly thread
+(the poly-intro residual note (IRQ-thread timing)): the main/poly thread
 split at boot is driven by cycle-level IRQ timing (crystal_rotation_counter
 accumulates VIRQ; `advance_crystal_rotation_counter`), and rust's boot cadence
 runs one extra RUN_MAIN frame vs the oracle. A safe fix needs the boot thread
@@ -360,7 +360,7 @@ this is decided by whether the main thread finished its frame before vblank
 (cycle-level CPU-workload timing) / the poly-thread interleave. Rust's
 frame-granular model runs the full core-update one extra time at ~frame 97. A
 correct fix needs cycle-accurate boot NMI-thread cadence
-([[poly-intro-bsnes-residual-is-irq-thread-timing]]) — NOT a gate, NOT a
+(the poly-intro residual note (IRQ-thread timing)) — NOT a gate, NOT a
 targeted tweak. Confirmed via the ROM disassembly (no-guessing). The landed
 `!hold_core` gate (telepathy over-decrement) stays; it is correct but the
 remaining off-by-1 is this boot-cadence root, which blocks the 14661→37842 tail.
