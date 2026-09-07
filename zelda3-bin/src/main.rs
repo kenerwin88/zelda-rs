@@ -42,13 +42,9 @@ mod snes9x_record_commands;
 mod snes9x_route_recorder;
 mod snes9x_segment_matrix;
 mod snes9x_semantic_receipts;
-#[allow(unused_imports)]
 use libretro_core::*;
-#[allow(unused_imports)]
 use snes9x_apu_tools::*;
-#[allow(unused_imports)]
 use snes9x_compare::*;
-#[allow(unused_imports)]
 use snes9x_record_commands::*;
 
 use std::backtrace::Backtrace;

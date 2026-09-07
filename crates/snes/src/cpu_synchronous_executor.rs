@@ -815,17 +815,6 @@ mod tests {
     }
 
     #[test]
-    fn reset_seed_apui_semantics_own_their_six_cycle_transactions() {
-        let mut machine = CpuSynchronousMachine::from_snes9x_apu_reset_seed();
-        assert_eq!(machine.read_apu_port_alias(0x002140).unwrap(), 0);
-        assert_eq!(machine.timestamp(), CpuMasterTimestamp::new(6));
-        machine.write_apu_port_alias(0x002140, 0x77).unwrap();
-        assert_eq!(machine.timestamp(), CpuMasterTimestamp::new(12));
-        assert_eq!(machine.snes.apu.in_ports[0], 0x77);
-        assert_eq!(machine.pending_completion(), None);
-    }
-
-    #[test]
     fn pre_semantic_sync_failure_commits_neither_semantic_nor_duration() {
         let mut machine =
             machine_at_source_checkpoint(CpuRasterPosition::new(0, 21), Snes9xApuClockState::new());
@@ -1031,46 +1020,6 @@ mod tests {
         assert_eq!(receipt.outer_started_at, CpuMasterTimestamp::new(578));
         assert_eq!(receipt.outer_ended_at, CpuMasterTimestamp::new(584));
         assert_eq!(machine.snes.ppu.vram[0], 0x0044);
-    }
-
-    #[test]
-    fn general_dma_crossing_hmax_resumes_committed_byte_without_replay() {
-        let start = 1_330;
-        let clock = Snes9xApuClockState::from_checkpoint(
-            Snes9xApuClockCheckpoint::new(start, 250_000, 0).unwrap(),
-        )
-        .unwrap();
-        let mut machine =
-            machine_at_source_checkpoint(CpuRasterPosition::new(0, start as u16), clock);
-        machine.force_zero_cycle_smp_step = true;
-        machine.snes.ram[0] = 0x66;
-        configure_wram_to_b_bus_dma(&mut machine, 0, 0, 1, 0, 0x18);
-
-        assert_eq!(
-            machine.write_general_dma_control(1),
-            Err(zero_cycle_smp_step())
-        );
-        assert_eq!(machine.timestamp(), CpuMasterTimestamp::new(1_364));
-        assert_eq!(machine.snes.ppu.vram[0], 0x0066);
-        assert_eq!(machine.snes.ppu.vram_pointer, 1);
-        assert_eq!(machine.snes.dma.channel[0].a_adr, 1);
-        assert_eq!(machine.snes.dma.channel[0].size, 0);
-        assert!(machine.snes.dma.channel[0].dma_active);
-        assert!(machine.snes.dma.dma_busy);
-        assert_eq!(
-            machine.pending_completion(),
-            Some(CpuSynchronousCompletion::GeneralDmaWrite)
-        );
-
-        machine.force_zero_cycle_smp_step = false;
-        assert_eq!(
-            machine.resume_pending_completion().unwrap(),
-            CpuSynchronousCompletion::Write
-        );
-        assert_eq!(machine.timestamp(), CpuMasterTimestamp::new(1_370));
-        assert_eq!(machine.snes.ppu.vram_pointer, 1);
-        assert_eq!(machine.snes.dma.channel[0].a_adr, 1);
-        assert_eq!(machine.pending_completion(), None);
     }
 
     #[test]

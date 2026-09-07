@@ -10,11 +10,7 @@ mod player;
 mod sprites;
 
 pub(crate) use compatibility::*;
-#[allow(unused_imports)]
-pub(crate) use frame::*;
 pub(crate) use player::*;
-#[allow(unused_imports)]
-pub(crate) use sprites::*;
 
 fn byte(ram: &[u8], offset: usize) -> u8 {
     ram.get(offset).copied().unwrap_or(0)
