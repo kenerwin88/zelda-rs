@@ -62,6 +62,15 @@ It does not replace the pinned live Snes9x A/V authority.
   `ZELDA3_AUDIT_OAM_LAW=1` run (2026-09-07) shows the hardware-law lane disagreeing with the exact
   presented table on ~26% of frames. Do not treat the audit's `oam_law_delta` lines as a rule
   deletion worklist; the law lane matched only the first ~9.4k frames.
+- Dead code: the zelda3 and snes crates use `#![cfg_attr(not(test), allow(dead_code))]`, so
+  `cargo test -p zelda3 --lib --no-run` (the lib-test build, where tests are live) is the exact
+  dead-code detector; `cargo check` alone would also flag test-only helpers. Unused WRAM address
+  constants belong in `game_state/wram_map.rs` (scripts/ram_ref.py still names them), never deleted.
+  `clippy.toml` sets the too-many-arguments threshold to 12 because translated routines mirror C
+  signatures.
+- Mechanical refactors (lane/arm extraction, file splits) are validated per batch: unit suites +
+  a 200k-frame `./parity cached-av <cache> --frames 200000` smoke per change, one full run before
+  merging a batch branch to main. Promote FIRST (it copies the receipt), commit, then prune the run dir.
 - Debug/trace env switches live behind the `parity-debug` cargo feature (default on;
   `scripts/package_macos.sh` builds release with `--no-default-features`). Add new switches via
   `crate::debug_env::{var, var_os, is_set}`, never `std::env` directly.
