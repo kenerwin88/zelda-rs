@@ -276,6 +276,7 @@ def report(directory: Path) -> int:
             "oracle_after_vram.bin",
             "rust_after_vram.bin",
             "rust_visible_vram.bin",
+            "rust_visible_obj_vram.bin",
             "rust_before_ram.bin",
             "rust_after_ram.bin",
             "oracle_before_ram.bin",
@@ -292,9 +293,20 @@ def report(directory: Path) -> int:
 
     oracle_wrote = set(diff_words(files["oracle_before_vram.bin"], files["oracle_after_vram.bin"]))
     live = diff_words(files["rust_after_vram.bin"], files["oracle_after_vram.bin"])
+    # The scanout fetches OBJ tiles from the composed OBJ latch (receipt
+    # overlays) when one exists, not from the raw presented VRAM. Splice the
+    # OBJ name region ($4000-$5fff words, the game's OBSEL bases) from that
+    # view so a receipt-supplied Link tile is not reported as divergent.
+    presented_vram = files["rust_visible_vram.bin"]
+    if presented_vram is not None and files["rust_visible_obj_vram.bin"] is not None:
+        obj_view = files["rust_visible_obj_vram.bin"]
+        if len(obj_view) == len(presented_vram):
+            lo, hi = 0x4000 * 2, 0x6000 * 2
+            presented_vram = presented_vram[:lo] + obj_view[lo:hi] + presented_vram[hi:]
+            print("presented lane: OBJ region $4000-$5fff taken from the composed OBJ latch")
     presented = (
-        diff_words(files["rust_visible_vram.bin"], files["oracle_after_vram.bin"])
-        if files["rust_visible_vram.bin"] is not None
+        diff_words(presented_vram, files["oracle_after_vram.bin"])
+        if presented_vram is not None
         else []
     )
     print(f"oracle wrote {len(oracle_wrote)} VRAM word(s) during the frame")

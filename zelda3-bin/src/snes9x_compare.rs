@@ -11049,9 +11049,14 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
     // live post-frame PPU can already contain registers and memory authored for
     // the following frame, so it is not a reliable description of the failed
     // image by itself.
+    let mut visible_obj_vram: Option<Vec<u8>> = None;
     let (visible_ppu_summary, visible_vram, visible_oam, visible_cgram) =
         if let Some(rendered) = rendered_display {
             let ppu = rendered.presented_ppu();
+            visible_obj_vram = ppu
+                .obj_vram_latch
+                .as_deref()
+                .map(|latch| latch.iter().flat_map(|word| word.to_le_bytes()).collect::<Vec<_>>());
             let mut visible_game = post_game.clone();
             visible_game.ppu = ppu.clone();
             (
@@ -11072,6 +11077,16 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
         } else {
             let mut visible_game = post_game.clone();
             visible_game.with_display_snapshot(|display| {
+                // OBJ tile fetches read `obj_vram_latch` (the presented OBJ
+                // generation composed from receipts) when it is set; keep that
+                // view beside the raw VRAM so the attribution tool sees the
+                // tiles the scanout actually used (route frame 1155743 showed
+                // a phantom Link-tile "presented divergence" without it).
+                visible_obj_vram = display
+                    .ppu
+                    .obj_vram_latch
+                    .as_deref()
+                    .map(|latch| latch.iter().flat_map(|word| word.to_le_bytes()).collect::<Vec<_>>());
                 (
                     format_render_ppu_summary(display),
                     display
@@ -11096,6 +11111,9 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
             })
         };
     fs::write(dir.join("rust_visible_vram.bin"), &visible_vram)?;
+    if let Some(obj_vram) = visible_obj_vram.as_deref() {
+        fs::write(dir.join("rust_visible_obj_vram.bin"), obj_vram)?;
+    }
     fs::write(dir.join("rust_visible_oam.bin"), &visible_oam)?;
     if let Some(oracle_presented_oam) = oracle_presented_oam {
         fs::write(dir.join("oracle_presented_oam.bin"), oracle_presented_oam)?;
