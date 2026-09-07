@@ -13290,6 +13290,7 @@ mod rtl_dungeon;
 mod rtl_frame_lanes;
 mod rtl_nmi;
 mod rtl_oam_obj;
+mod rtl_oam_compose_lanes;
 mod rtl_original_timing;
 mod rtl_overworld;
 mod rtl_palette;
