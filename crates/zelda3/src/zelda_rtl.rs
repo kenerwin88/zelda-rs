@@ -7811,6 +7811,8 @@ mod poly;
 mod select_file;
 #[path = "sprite.rs"]
 mod sprite;
+#[path = "sprite_main_lanes.rs"]
+mod sprite_main_lanes;
 pub use crate::game_state::CachedSpriteCacheField;
 pub use sprite::{
     DungeonLoadSpritesCpuProgress, DungeonResetSpritesCpuProgress, DungeonSpriteDisableCpuProgress,
