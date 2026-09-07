@@ -14071,32 +14071,6 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_module07_dungeon_after_submodule(&mut self) {
-        let shared_message_timer = self.game_state.messaging.shared_message_timer.value();
-        if self.state_recorder.replay_mode
-            && std::env::var_os("ZELDA3_SMV_DUNGEON_TIMING_HACKS").is_some()
-            && self.game_state.world.location.is_indoors()
-            && self.game_state.world.location.dungeon_room() == 0x0104
-            && self.game_state.messaging.dialogue_message_index.value() == 0x007b
-            && self.game_state.messaging.runtime.text_render_state() == 4
-            && self.game_state.messaging.runtime.dialogue_msg_read_pos() == 0x0052
-            && self.game_state.player.follower_link.x() == 0x0937
-            && self.game_state.player.follower_link.y() == 0x21c0
-            && shared_message_timer == 0x014e
-            && (self.game_state.player.follower_link.joypad1h_last()
-                | self.game_state.player.follower_link.joypad1l_last())
-                == 0
-        {
-            if !self.replay_reopened_lamp_prompt {
-                self.main_show_text_message();
-                self.replay_reopened_lamp_prompt = true;
-            }
-        } else if self.game_state.messaging.runtime.dialogue_msg_read_pos() != 0x0052
-            || shared_message_timer != 0x014e
-            || self.game_state.player.follower_link.x() != 0x0937
-        {
-            self.replay_reopened_lamp_prompt = false;
-        }
-
         let runs_push_block_handler = !self
             .game_state
             .enhanced_features

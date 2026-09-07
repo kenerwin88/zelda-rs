@@ -53,7 +53,6 @@ const BLAST_WALL_FIREBALL_SLOTS: usize = 16;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct EffectState {
-    pub(crate) door_debris: DoorDebrisState,
     pub(crate) angle_scratch: EffectAngleScratchState,
     pub(crate) quake_spell: QuakeSpellState,
     pub(crate) quake_bolts: QuakeBoltState,
@@ -69,7 +68,6 @@ pub(crate) struct EffectState {
 impl EffectState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
-            door_debris: DoorDebrisState::load_from_ram(ram),
             angle_scratch: EffectAngleScratchState::load_from_ram(ram),
             quake_spell: QuakeSpellState::load_from_ram(ram),
             quake_bolts: QuakeBoltState::load_from_ram(ram),
@@ -84,7 +82,6 @@ impl EffectState {
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        self.door_debris.write_to_ram(ram);
         // NOTE: the $7F58xx ancilla scratch states (angle_scratch, quake_spell, quake_bolts,
         // bombos_spell, tower_seal, happiness_pond_rupees, weather_vane_debris, and
         // sprites.ether_orbit) are intentionally NOT bulk-projected here. C aliases that
@@ -3235,23 +3232,7 @@ impl<'a> NativeDiggingGamePrizeBridgeMut<'a> {
 /// Door debris (`door_debris_x/y/direction`) is RAM-resident: the ROM keeps
 /// it at $03B6/$03BA/$03BE inside the ancilla window, overlapping the ancilla
 /// aux timers and `ancilla_arr26`, so `AncillaSlotsState` owns those cells and
-/// the bridge below writes through. The three arrays here are retired dead
-/// bytes that keep the positional bincode checkpoint layout.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct DoorDebrisState {
-    retired_x_bytes: [u8; DOOR_DEBRIS_BANK_LEN],
-    retired_y_bytes: [u8; DOOR_DEBRIS_BANK_LEN],
-    retired_directions: [u8; DOOR_DEBRIS_BANK_LEN],
-}
-
-impl DoorDebrisState {
-    pub(crate) fn load_from_ram(_ram: &[u8]) -> Self {
-        Self::default()
-    }
-
-    pub(crate) fn write_to_ram(&self, _ram: &mut [u8]) {}
-}
-
+/// `NativeDoorDebrisBridgeMut` writes through.
 fn read_word_bank<const N: usize>(ram: &[u8], base: usize) -> [u16; N] {
     let mut bank = [0; N];
     for (slot, value) in bank.iter_mut().enumerate() {

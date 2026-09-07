@@ -4227,7 +4227,6 @@ pub(crate) struct SpriteSystemState {
     saved_exit_graphics_index: u8,
     alt_sprite_spawned_flag: u8,
     cur_object_index: u8,
-    retired_ancilla_alloc_rotate: u8,
     alt_sprites_flag: u8,
     ranged_based_toggler: u8,
 }
@@ -4247,10 +4246,6 @@ impl SpriteSystemState {
             saved_exit_graphics_index: ram.get(SPRITE_GRAPHICS_INDEX_EXIT).copied().unwrap_or(0),
             alt_sprite_spawned_flag: ram.get(ALT_SPRITE_SPAWNED_FLAG).copied().unwrap_or(0),
             cur_object_index: ram.get(CUR_OBJECT_INDEX).copied().unwrap_or(0),
-            // Retired dead byte (positional bincode layout): ancilla_alloc_rotate
-            // ($03C4) is ancilla_arr26[4] / ancilla_arr25[2] on the hardware and is
-            // owned by the ancilla slot bank; see `AncillaSlotsState::set_shared_byte`.
-            retired_ancilla_alloc_rotate: 0,
             alt_sprites_flag: ram.get(ALT_SPRITES_FLAG).copied().unwrap_or(0),
             ranged_based_toggler: ram.get(SPR_RANGED_BASED_TOGGLER).copied().unwrap_or(0),
         }

@@ -1,23 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-pub const HACK_KEYS: &[&str] = &[
-    "SELECT_FILE",
-    "LOADFILE",
-    "DUNGEON",
-    "OVERWORLD",
-    "MESSAGING",
-    "DEATH_INTRO",
-    "DEATH_RELOAD",
-];
-
-pub fn hack_env() -> Vec<(String, String)> {
-    HACK_KEYS
-        .iter()
-        .map(|k| (format!("ZELDA3_SMV_{k}_TIMING_HACKS"), "1".to_string()))
-        .collect()
-}
-
 pub fn sdl_dummy_env() -> Vec<(String, String)> {
     vec![
         ("SDL_VIDEODRIVER".into(), "dummy".into()),
@@ -124,9 +107,6 @@ pub fn rust_coverage_cmd_with_options(
     if options.stop_replay_after_load {
         c.arg("--stop-replay-after-load");
     }
-    for (k, v) in hack_env() {
-        c.env(k, v);
-    }
     c
 }
 
@@ -152,9 +132,6 @@ pub fn rust_direct_entrance_probe_cmd(
     }
     for screen in overworld_screens {
         c.args(["--overworld-screen", &screen.to_string()]);
-    }
-    for (k, v) in hack_env() {
-        c.env(k, v);
     }
     c
 }

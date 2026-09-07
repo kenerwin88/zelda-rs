@@ -662,17 +662,6 @@ impl OamScanoutSource {
     }
 }
 
-/// Positional bincode tombstone for checkpoints written before the effective
-/// resident-OAM DMA model replaced the dialogue publication predictor. Runtime
-/// code must not consult this value.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-enum LegacyDialogueOamPublicationPhase {
-    #[default]
-    Idle,
-    PublishedShadow,
-    Completed,
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum CgramScanoutGeneration {
     /// Prefer the pre-upload CGRAM latch when this boundary's NMI uploaded the
@@ -13986,8 +13975,6 @@ pub struct ZeldaState {
     /// snapshots whose old boolean field encoded snapshot/frozen ownership.
     #[serde(default, alias = "dialogue_scroll_stale_scanout")]
     pub(crate) dialogue_scanout_ownership: DialogueScanoutOwnership,
-    #[serde(default)]
-    _legacy_dialogue_oam_publication_phase: LegacyDialogueOamPublicationPhase,
     /// Dedicated one-frame override presenting the freshly completed coherent
     /// scanout on the group-completion frame (see the lag handler). Separate
     /// from the frozen state to avoid cascading into adjacent scroll groups.
@@ -14706,10 +14693,6 @@ pub struct ZeldaState {
     intro_zelda_fade_transition_pending: bool,
     #[serde(skip)]
     intro_poly_thread_teardown_pending: bool,
-    #[serde(skip)]
-    replay_reload_file_select_stall: u8,
-    #[serde(skip)]
-    replay_reopened_lamp_prompt: bool,
     ending_coords: sprite::PrepOamCoordsRet,
     #[serde(skip)]
     intro_poly_vram_history: Vec<(u8, Vec<u16>, Vec<u16>)>,
@@ -20827,7 +20810,6 @@ impl ZeldaState {
             dialogue_scroll_completion_scanout: None,
             dialogue_scroll_completion_staged: None,
             dialogue_scanout_ownership: DialogueScanoutOwnership::SNAPSHOT,
-            _legacy_dialogue_oam_publication_phase: LegacyDialogueOamPublicationPhase::Idle,
             dma: DmaState::new(),
             frame_ctr_dbg: 0,
             previous_host_controller_input: 0,
@@ -21021,8 +21003,6 @@ impl ZeldaState {
             intro_bg_fade_suffix_pending: false,
             intro_zelda_fade_transition_pending: false,
             intro_poly_thread_teardown_pending: false,
-            replay_reload_file_select_stall: 0,
-            replay_reopened_lamp_prompt: false,
             ending_coords: sprite::PrepOamCoordsRet::default(),
             intro_poly_vram_history: Vec::new(),
             audio: audio::AudioState::default(),

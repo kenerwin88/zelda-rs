@@ -97,7 +97,13 @@ use sheet_dump_commands::{run_dump_dungeon_sheet_png, run_dump_sprite_sheet_png}
 use snes::{consts::PPU_EXTRA_LEFT_RIGHT, cpu_run_opcode, load_rom, Snes};
 use zelda3::{config::parse_config_file_context, ZeldaState, RUN_MAIN, RUN_POLY};
 
-const PLAY_CRASH_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSPC01";
+/// Positional-bincode checkpoint layout version. Bump the trailing number
+/// whenever a serialized `ZeldaState` field is added, removed or reordered;
+/// older `rust.z3state` files are then rejected with a clear message instead
+/// of failing mid-decode. 02 (2026-09-06): dropped the retired dead fields
+/// (door debris, ancilla alloc-rotate, map-backup layers, legacy dialogue OAM
+/// publication phase).
+const PLAY_CRASH_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSPC02";
 const ACTION_TILE_X: [i16; 4] = [7, 7, -3, 16];
 const ACTION_TILE_Y: [i16; 4] = [6, 24, 12, 12];
 pub(crate) const TRACE_MAIN_MODULE_INDEX: usize = 0x10;

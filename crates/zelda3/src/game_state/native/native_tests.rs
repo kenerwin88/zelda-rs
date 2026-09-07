@@ -8,7 +8,7 @@ use super::dungeon::{
 };
 use super::effects;
 use super::effects::{
-    BlastWallState, BombosSpellState, DiggingGamePrizeState, DoorDebrisState,
+    BlastWallState, BombosSpellState, DiggingGamePrizeState,
     EffectAngleScratchState, EntranceEffectState, QuakeBoltState, QuakeSpellState,
     SkullWoodsFireState, TowerSealState,
 };

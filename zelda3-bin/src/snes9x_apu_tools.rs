@@ -1228,10 +1228,21 @@ pub(crate) fn load_play_crash_checkpoint(
     path: &Path,
 ) -> Result<PlayCrashCheckpoint, Box<dyn Error>> {
     let bytes = fs::read(path)?;
-    let checkpoint: PlayCrashCheckpoint = bincode::deserialize(&bytes)?;
-    if &checkpoint.magic != PLAY_CRASH_CHECKPOINT_MAGIC {
+    if bytes.len() < PLAY_CRASH_CHECKPOINT_MAGIC.len() + 8 {
         return Err("not a zelda3-rs playable crash checkpoint".into());
     }
+    // bincode 1 encodes `[u8; 8]` as eight raw bytes after the 8-byte length
+    // prefix, so the layout version is readable before the full decode.
+    let magic = &bytes[8..8 + PLAY_CRASH_CHECKPOINT_MAGIC.len()];
+    if magic != PLAY_CRASH_CHECKPOINT_MAGIC {
+        return Err(format!(
+            "checkpoint layout {:?} does not match this binary's {:?}; re-create it with the current binary",
+            String::from_utf8_lossy(magic),
+            String::from_utf8_lossy(PLAY_CRASH_CHECKPOINT_MAGIC)
+        )
+        .into());
+    }
+    let checkpoint: PlayCrashCheckpoint = bincode::deserialize(&bytes)?;
     Ok(checkpoint)
 }
 

@@ -830,18 +830,6 @@ fn native_digging_game_prize_bridge_composes_edits_onto_live_ram() {
 }
 
 #[test]
-fn door_debris_state_is_ram_resident_and_projects_nothing() {
-    let mut ram = vec![0; WRAM_SIZE];
-    write_le_u16(&mut ram, DOOR_DEBRIS_X + 4, 0x1234);
-    ram[DOOR_DEBRIS_DIRECTION + 1] = 3;
-    let debris = DoorDebrisState::load_from_ram(&ram);
-    assert_eq!(debris, DoorDebrisState::default());
-    let mut projected = vec![0; WRAM_SIZE];
-    debris.write_to_ram(&mut projected);
-    assert!(projected.iter().all(|byte| *byte == 0));
-}
-
-#[test]
 fn native_door_debris_bridge_writes_through_the_ancilla_bank_with_rom_aliasing() {
     use crate::game_state::constants::{ANCILLA_AUX_TIMER, ANCILLA_WORK_BYTE_26};
     let mut ram = vec![0; WRAM_SIZE];

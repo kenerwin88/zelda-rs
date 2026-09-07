@@ -139,9 +139,9 @@ source of truth.
 - This repo: `cargo build --profile parity -p zelda3-bin` (deterministic like release,
   faster). Binary: `target/parity/zelda3 --replay-save saves/zelda3.sfc <save> <frames>`.
 - The old combined-route replay save was removed with legacy parity cleanup. `--replay-save` still
-  works for ad-hoc `.sav` replays (legacy `ZELDA3_SMV_*_TIMING_HACKS=1` env applies to
-  such saves), but recorded parity routes live in `routes/` as Snes9x-native
-  boundary states + input takes.
+  works for ad-hoc `.sav` replays, but recorded parity routes live in `routes/` as Snes9x-native
+  boundary states + input takes. The `ZELDA3_SMV_*_TIMING_HACKS` replay hacks were deleted
+  (2026-09-06); nothing in the tree stalls or re-opens prompts for a replay any more.
 - Address semantics come from THIS repo's own const map: use `whoowns.py` (backed by
   `ram_ref.py`, which scans this repo's `const NAME: usize = 0xADDR;` definitions).
 - Regression baseline for refactors: run the route on the pre-change and post-change
@@ -155,12 +155,16 @@ Every per-frame probe below re-replays from frame 0. For a divergence at frame ~
 (`replay_pos`, `replay_next_cmd_at`), so you resume mid-replay exactly.
 
 ```bash
-HACKS=(ZELDA3_SMV_SELECT_FILE_TIMING_HACKS=1 ... all 7 ...)   # see below
 # Save once, a few thousand frames BEFORE the suspect frame:
-env "${HACKS[@]}" target/parity/zelda3 --replay-save saves/zelda3.sfc <replay.sav> 460000 --save-state /tmp/ck_new_460000.sav
+target/parity/zelda3 --replay-save saves/zelda3.sfc <replay.sav> 460000 --save-state /tmp/ck_new_460000.sav
 # Resume + dump/trace: pass the ABSOLUTE target frame and --load-state:
-env "${HACKS[@]}" ZELDA3_REPLAY_WRAM_DUMP=/tmp/n.bin target/parity/zelda3 --replay-save ... 460431 --load-state /tmp/ck_new_460000.sav
+ZELDA3_REPLAY_WRAM_DUMP=/tmp/n.bin target/parity/zelda3 --replay-save ... 460431 --load-state /tmp/ck_new_460000.sav
 ```
+For the recorded route prefer the cached-av lane: `./parity cached-av <cache>
+--paired-checkpoint-interval 20000` writes Rust-only checkpoints and
+`--resume-paired <dir> --compare-from-frame F` resumes them. Checkpoints are positional
+bincode stamped with `PLAY_CRASH_CHECKPOINT_MAGIC` (`Z3RSPC02`); bump the magic whenever a
+serialized `ZeldaState` field is added, removed or reordered, then re-create checkpoints.
 
 Gotchas: (a) trace gates are checkpoint-aware via `trace_frame_matches` (RAM-watch, coherence,
 step-dump match on `replay_frame_counter` too) — but `ZELDA3_WW_FRAME` still keys on
@@ -419,9 +423,11 @@ parity pass. A Rust regression therefore cannot truncate the reusable oracle.
 ## Gotchas
 
 - Never `git checkout <file>` — it nukes unstaged WIP. Surgically revert your own edits.
-- Removing or reordering a serialized `ZeldaState` field invalidates EVERY paired checkpoint
-  (`rust.z3state` is positional bincode: "unexpected end of file" on resume). Retire a native
-  field by keeping it as a dead byte (unprojected, unchecked) instead of deleting it.
+- Adding, removing or reordering a serialized `ZeldaState` field invalidates EVERY paired
+  checkpoint (`rust.z3state` is positional bincode). Bump `PLAY_CRASH_CHECKPOINT_MAGIC` in
+  `zelda3-bin/src/main.rs` with the change so stale checkpoints are rejected with a clear
+  message, and re-create checkpoints from a cold cached-av run. Do not keep dead tombstone
+  fields; a full cached-av run from frame 0 needs no checkpoint.
 - Live GPU video comparison is ~55 frames/s (immediate readback ~12 ms/frame, not vsync); the
   pipelined `./parity cached-av <cache>` runs ~600-770 frames/s (full route ~35-45 min).
   Capture the oracle once per route/core (`./parity oracle-av-capture <full-coverage
