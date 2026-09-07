@@ -33,9 +33,26 @@
       "run": "/Users/missingno/Documents/zelda3-rs/target/parity-cached-av/run-ed0121e1b093-20260906-191116"
     },
     "commit": "d1940e412fa754f020ec7b10d6e7883858741071",
+    "engine_state_commit": "e3616cca69c3382e9000914797a307f9b15fcd59",
+    "engine_state_receipts": [
+      {
+        "engine_state_from_frame": 174000,
+        "frames": 1581079,
+        "kind": "engine_state_calibration_session",
+        "manifest_sha256": "5524b510f5279f3983f6416151b446bc941abde51f68f2baa1817166a32cc0df",
+        "result_sha256": "928d6154b7ee6379e4de1091492d10b8d0ab78b2010e3eac1822bd47fb4bfe76",
+        "session": "/Users/missingno/Documents/zelda3-rs/routes/full_run/comparisons/precommit/run-1581079-rng-calibration-nzx495z3"
+      },
+      {
+        "frames": null,
+        "kind": "engine_state_prefix_cold_receipt",
+        "path": ".git/parity-cold-passes/1788447502277568000-174000-04e67cd02ee9.json",
+        "sha256": "307d6bedc2e9c2c0087fe919d423f52fc3f617de1afe7ff58a57a042760e4ec6"
+      }
+    ],
     "kind": "cached_av_pass",
     "last_exact_audio_frame": 1581078,
-    "last_exact_engine_state_frame": 14002,
+    "last_exact_engine_state_frame": 1581078,
     "last_exact_video_frame": 1581078,
     "route_signature": {
       "core_kind": "pinned Snes9x 1.63 instrumented trace build (oracle-av-capture)",
