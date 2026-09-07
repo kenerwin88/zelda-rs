@@ -1484,8 +1484,7 @@ impl ZeldaState {
         // bookkeeping; does not affect the VRAM bytes written below.
         let link_pack = captured_operands.map_or_else(
             || {
-                self
-                    .game_state
+                self.game_state
                     .player
                     .follower_link
                     .link_dma_graphics_index_word()
@@ -1787,8 +1786,14 @@ impl ZeldaState {
             self.nmi_poly_upload_from_deferred = false;
             self.clear_pending_polyhedral_update();
             if crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some() {
-                let sum: u64 = self.ppu.vram[0x5800..0x5c00].iter().map(|&w| u64::from(w)).sum();
-                eprintln!("[POLY-UPLOAD] host={} vram5800_sum={sum:08x}", self.frame_ctr_dbg);
+                let sum: u64 = self.ppu.vram[0x5800..0x5c00]
+                    .iter()
+                    .map(|&w| u64::from(w))
+                    .sum();
+                eprintln!(
+                    "[POLY-UPLOAD] host={} vram5800_sum={sum:08x}",
+                    self.frame_ctr_dbg
+                );
             }
         }
     }
@@ -1887,8 +1892,8 @@ impl ZeldaState {
                     if stripes.len() < len {
                         return;
                     }
-                    for i in 0..len {
-                        self.write_vram_byte(vmem_addr as usize * 2 + i, stripes[i]);
+                    for (i, byte) in stripes[..len].iter().enumerate() {
+                        self.write_vram_byte(vmem_addr as usize * 2 + i, *byte);
                     }
                     stripes = &stripes[len..];
                 }

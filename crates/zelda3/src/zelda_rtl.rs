@@ -6901,7 +6901,8 @@ fn dungeon_module_7_cpu_advance_across_envelope(
                     return module_cpu_phase_from_main_loop_interruption(interruption);
                 }
                 let sprite_main_returned = receipts
-                    .semantic().contains(&OriginalTimingSemanticReceipt::SpriteMainReturned);
+                    .semantic()
+                    .contains(&OriginalTimingSemanticReceipt::SpriteMainReturned);
                 let trailing_held = receipts.semantic().iter().any(|receipt| {
                     matches!(
                         receipt,
@@ -7779,13 +7780,13 @@ mod attract;
 mod audio;
 #[path = "dungeon.rs"]
 mod dungeon;
-#[cfg(feature = "map-preview")]
-#[path = "map_preview.rs"]
-pub mod map_preview;
 #[path = "ending.rs"]
 mod ending;
 #[path = "game_execution_scheduler.rs"]
 mod game_execution_scheduler;
+#[cfg(feature = "map-preview")]
+#[path = "map_preview.rs"]
+pub mod map_preview;
 use game_execution_scheduler::*;
 #[path = "hud.rs"]
 mod hud;
@@ -10439,7 +10440,6 @@ fn tolerate_unconsumed_song_end_poll_for_diagnostics() -> bool {
     *ENABLED.get_or_init(|| std::env::var_os("ZELDA3_DIAGNOSTIC_TOLERATE_SONG_END_POLL").is_some())
 }
 
-
 impl ZeldaState {
     pub(crate) fn compatibility_state_len(&self) -> usize {
         self.ram.len()
@@ -12959,8 +12959,8 @@ impl ZeldaState {
 
         let mut result = Box::new([(0u8, 0u8, 0u8); 224]);
         for entry in result.iter_mut() {
-            for i in 0..8 {
-                self.simple_hdma_do_line(&mut hdma[i]);
+            for channel in hdma.iter_mut() {
+                self.simple_hdma_do_line(channel);
             }
             *entry = (
                 self.ppu.fixed_color_r,
@@ -14033,26 +14033,26 @@ fn decompress_asset(src: &[u8]) -> Vec<u8> {
 }
 
 // Topical split of this module (see zelda_rtl/*.rs).
-mod rtl_scroll;
-mod rtl_diagnostics;
-mod rtl_checkpoint;
-mod rtl_palette;
-mod rtl_save;
-mod rtl_poly;
 mod rtl_actors;
 mod rtl_audio;
-mod rtl_dungeon;
-mod rtl_overworld;
-mod rtl_vram;
-mod rtl_dialogue;
-mod rtl_nmi;
+mod rtl_checkpoint;
 mod rtl_cpu_schedule;
-mod rtl_spotlight;
-mod rtl_oam_obj;
-mod rtl_publication;
-mod rtl_original_timing;
+mod rtl_diagnostics;
+mod rtl_dialogue;
+mod rtl_dungeon;
 mod rtl_frame_lanes;
+mod rtl_nmi;
+mod rtl_oam_obj;
+mod rtl_original_timing;
+mod rtl_overworld;
+mod rtl_palette;
+mod rtl_poly;
+mod rtl_publication;
+mod rtl_save;
+mod rtl_scroll;
+mod rtl_spotlight;
 mod rtl_types_display;
+mod rtl_vram;
 pub use rtl_types_display::*;
 mod rtl_types_cpu_plans;
 pub(crate) use rtl_types_cpu_plans::*;

@@ -1473,9 +1473,7 @@ impl ZeldaState {
     }
 
     fn prepare_trinexx_head_draw(&mut self, k: usize) -> Option<TrinexxHeadDrawContinuation> {
-        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
-            return None;
-        };
+        let (info_x, info_y, info_flags) = self.sprite_prep_oam_coord_or_double_ret(k)?;
         self.temp_counter_mut().set(0);
         self.sprite_workspace_mut().set_shared_scratch_a(0);
         Some(TrinexxHeadDrawContinuation {

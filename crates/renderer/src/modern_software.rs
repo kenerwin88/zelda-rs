@@ -1961,8 +1961,8 @@ fn finalize_pixel(
     // the same INIDISP generation. CGRAM may be deferred independently, but
     // brightness cannot be split between the color-math operands.
     let scanout_brightness = frame.scanout_brightness();
-    for ch in 0..3 {
-        c[ch] = scale_brightness5(c[ch], scanout_brightness);
+    for channel in c.iter_mut() {
+        *channel = scale_brightness5(*channel, scanout_brightness);
     }
     if do_math {
         let primary_green = c[1];

@@ -369,9 +369,7 @@ impl ZeldaState {
     pub(super) fn record_effective_presented_dma_for_active_scanout(
         &mut self,
     ) -> Option<DialogueTextDmaPublicationToken> {
-        let Some(writes) = self.active_effective_dma_writes.take() else {
-            return None;
-        };
+        let writes = self.active_effective_dma_writes.take()?;
         let active_snapshot_accepts_receipt = writes.active_snapshot_accepts_receipt;
         let dialogue_text_token = self.dialogue_text_dma_publication_token(&writes);
         let mut receipt = EffectivePresentedDma::from_write_set(writes, self);

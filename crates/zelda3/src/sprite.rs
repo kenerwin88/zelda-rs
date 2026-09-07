@@ -2292,9 +2292,7 @@ impl ZeldaState {
     }
 
     fn dungeon_load_sprites_prefix(&mut self) -> Option<(Vec<u8>, usize)> {
-        let Some((sprites, start)) = self.dungeon_sprite_records() else {
-            return None;
-        };
+        let (sprites, start) = self.dungeon_sprite_records()?;
         let room = self.game_state.dungeon.room_tracking.room_index2_word() as usize;
 
         self.sprite_workspace_mut()
@@ -9205,9 +9203,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         &mut self,
         k: usize,
     ) -> Option<SingleSmallDrawContinuation> {
-        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
-            return None;
-        };
+        let (x, y, flags) = self.sprite_prep_oam_coord_or_double_ret(k)?;
         let oam = self.game_state.oam.current_pointer_usize();
         self.oam_state_mut().set_entry_x(oam, x as u8);
         // The ROM publishes the extended-OAM size/X bit before its vertical

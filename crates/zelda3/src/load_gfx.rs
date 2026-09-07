@@ -1889,12 +1889,10 @@ impl ZeldaState {
     }
 
     pub(super) fn Expand3To4High(&mut self, dst: usize, src: &[u8], base: &[u8], num: usize) {
-        let base_off = if std::ptr::eq(src.as_ptr(), base.as_ptr()) {
-            0
-        } else {
-            0
-        };
-        self.expand3_to_4_high_from_slice(dst, src, 0, base_off, num);
+        // The C port derives `base - src`; every caller hands the same slice for
+        // both, so the base offset is always zero.
+        debug_assert!(std::ptr::eq(src.as_ptr(), base.as_ptr()));
+        self.expand3_to_4_high_from_slice(dst, src, 0, 0, num);
     }
 
     pub(super) fn LoadTransAuxGFX(&mut self) {

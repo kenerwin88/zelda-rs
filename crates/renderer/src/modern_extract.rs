@@ -217,7 +217,11 @@ fn compute_obj_drawn_tiles(frame: &GpuFrame<'_>) -> Vec<Vec<(u8, i16)>> {
             // HPos -256..-1, and HPos == -256 counts as HPos 0 for the range
             // and tile budget while DrawOBJS still positions it at X = 256, so
             // it consumes its whole width without drawing a pixel.
-            let hpos_raw = if object_x >= 256 { object_x - 512 } else { object_x };
+            let hpos_raw = if object_x >= 256 {
+                object_x - 512
+            } else {
+                object_x
+            };
             let hpos = if hpos_raw == -256 { 0 } else { hpos_raw };
             if !(hpos > -(sprite_size + extra) && hpos <= right_edge) {
                 continue;
@@ -2723,11 +2727,11 @@ fn unresolved_sources_for_modern_frame(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::test_gpu_frame;
     use crate::gpu_frame::GpuBg3VwfGlyphRun;
     use crate::modern_assets::{ModernTileAtlasAsset, ModernTileAtlasEntry};
     use crate::modern_index_atlas::ModernIndexTile;
     use crate::modern_palette::snes_cgram_to_rgba;
+    use crate::test_support::test_gpu_frame;
 
     #[test]
     fn mapped_source_table_view_reads_slots_without_tuple_copy() {
@@ -3114,7 +3118,11 @@ mod tests {
         assert_ne!(unflipped, flipped);
         let effective = |modern: &ModernFrame, cells: &[ModernIndexTile]| -> [u8; 64] {
             let tile = &modern.bg_layers[0].index_tiles[0];
-            flip_index_pattern(&cells[tile.cell_id as usize].indices, tile.hflip, tile.vflip)
+            flip_index_pattern(
+                &cells[tile.cell_id as usize].indices,
+                tile.hflip,
+                tile.vflip,
+            )
         };
         let cell = |id: u32, indices: [u8; 64]| ModernIndexTile {
             id,
@@ -3139,15 +3147,11 @@ mod tests {
         };
         // The atlas holds only a cell equal to the FLIPPED pattern (some other
         // authored tile happens to look like it): it must not be re-flipped.
-        let flipped_only = ModernSourceAtlas::from_keyed_cells_for_test(
-            vec![cell(0, flipped)],
-            &[(1, 7, 8, 0)],
-        );
+        let flipped_only =
+            ModernSourceAtlas::from_keyed_cells_for_test(vec![cell(0, flipped)], &[(1, 7, 8, 0)]);
         // The atlas holds the canonical unflipped cell: matched, then flipped.
-        let canonical = ModernSourceAtlas::from_keyed_cells_for_test(
-            vec![cell(0, unflipped)],
-            &[(1, 7, 9, 0)],
-        );
+        let canonical =
+            ModernSourceAtlas::from_keyed_cells_for_test(vec![cell(0, unflipped)], &[(1, 7, 9, 0)]);
         for (label, table) in [
             ("generic", &generic_table as &dyn SourceTableView),
             ("stream", &stream_table as &dyn SourceTableView),
@@ -4928,12 +4932,23 @@ mod tests {
         let drawn = compute_obj_drawn_tiles(&frame);
         let line = &drawn[10];
         let tiles_of = |sn: u8| line.iter().filter(|&&(s, _)| s == sn).count();
-        assert_eq!(tiles_of(0), 1, "the boundary sprite keeps only its first tile");
-        assert_eq!(line.iter().find(|&&(s, _)| s == 0).map(|&(_, x)| x), Some(0));
+        assert_eq!(
+            tiles_of(0),
+            1,
+            "the boundary sprite keeps only its first tile"
+        );
+        assert_eq!(
+            line.iter().find(|&&(s, _)| s == 0).map(|&(_, x)| x),
+            Some(0)
+        );
         for s in 1..17u8 {
             assert_eq!(tiles_of(s), 2, "sprite {s} draws both tiles");
         }
-        assert_eq!(tiles_of(17), 1, "the right-edge sprite draws its on-screen tile");
+        assert_eq!(
+            tiles_of(17),
+            1,
+            "the right-edge sprite draws its on-screen tile"
+        );
         assert_eq!(line.len(), 34);
 
         // An OAM x=256 sprite (HPos -256) counts as HPos 0 for the budget but
@@ -4943,14 +4958,20 @@ mod tests {
         {
             let s = 17usize;
             let idx = s * 2;
-            oam2[s * 2] = 10u16 << 8 ;
+            oam2[s * 2] = 10u16 << 8;
             oam2[0x100 + idx / 16] |= 1 << (idx % 16);
         }
         let frame2 = test_gpu_frame(&vram, &cgram, &oam2, 15, false);
         let drawn2 = compute_obj_drawn_tiles(&frame2);
         let line2 = &drawn2[10];
-        assert!(line2.iter().all(|&(s, _)| s != 0), "first sprite skipped whole");
-        assert!(line2.iter().all(|&(s, _)| s != 17), "x=256 sprite draws nothing");
+        assert!(
+            line2.iter().all(|&(s, _)| s != 0),
+            "first sprite skipped whole"
+        );
+        assert!(
+            line2.iter().all(|&(s, _)| s != 17),
+            "x=256 sprite draws nothing"
+        );
         assert_eq!(line2.len(), 32);
     }
 

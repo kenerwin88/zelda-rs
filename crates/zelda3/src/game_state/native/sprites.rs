@@ -2791,9 +2791,8 @@ impl OverlordSlotsState {
         for (index, value) in self.work.iter().copied().enumerate() {
             ram[OVERLORD_WORK_BASE + index] = value;
         }
-        for slot in 0..OVERLORD_SPAWNED_AREA_COUNT {
-            ram[OVERLORD_SPAWNED_AREA + slot] = self.spawned_area[slot];
-        }
+        ram[OVERLORD_SPAWNED_AREA..(OVERLORD_SPAWNED_AREA_COUNT + OVERLORD_SPAWNED_AREA)]
+            .copy_from_slice(&self.spawned_area[..OVERLORD_SPAWNED_AREA_COUNT]);
     }
 
     pub(crate) fn slot(&self, slot: usize) -> NativeOverlordSlotView<'_> {

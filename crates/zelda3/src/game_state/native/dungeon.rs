@@ -2215,12 +2215,21 @@ impl DungeonRoomParserState {
         let toggle_palace_count_x2 = read_le_u16(ram, DUNG_NUM_TOGGLE_PALACE);
         let mut toggle_floor_positions = [0; DUNGEON_ROOM_TOGGLE_SLOT_COUNT];
         let mut toggle_palace_positions = [0; DUNGEON_ROOM_TOGGLE_SLOT_COUNT];
-        for index in 0..usize::from(toggle_floor_count_x2 / 2).min(DUNGEON_ROOM_TOGGLE_SLOT_COUNT) {
-            toggle_floor_positions[index] = read_le_u16(ram, DUNG_TOGGLE_FLOOR_POS + index * 2);
-        }
-        for index in 0..usize::from(toggle_palace_count_x2 / 2).min(DUNGEON_ROOM_TOGGLE_SLOT_COUNT)
+        let toggle_floor_count = usize::from(toggle_floor_count_x2 / 2);
+        for (index, position) in toggle_floor_positions
+            .iter_mut()
+            .enumerate()
+            .take(toggle_floor_count)
         {
-            toggle_palace_positions[index] = read_le_u16(ram, DUNG_TOGGLE_PALACE_POS + index * 2);
+            *position = read_le_u16(ram, DUNG_TOGGLE_FLOOR_POS + index * 2);
+        }
+        let toggle_palace_count = usize::from(toggle_palace_count_x2 / 2);
+        for (index, position) in toggle_palace_positions
+            .iter_mut()
+            .enumerate()
+            .take(toggle_palace_count)
+        {
+            *position = read_le_u16(ram, DUNG_TOGGLE_PALACE_POS + index * 2);
         }
 
         let mut pot_reveal_masks = vec![0; DUNGEON_POT_REVEAL_ROOM_COUNT];
@@ -2686,8 +2695,8 @@ impl DungeonRoomItemState {
             *slot = read_le_u16(ram, DUNG_CHEST_LOCATIONS + index * 2);
         }
         let mut replacement_tilemap_quads = [[0; 4]; DUNGEON_ROOM_ITEM_SLOT_COUNT];
-        for index in 0..DUNGEON_ROOM_ITEM_SLOT_COUNT {
-            replacement_tilemap_quads[index] = [
+        for (index, quad) in replacement_tilemap_quads.iter_mut().enumerate() {
+            *quad = [
                 read_le_u16(ram, REPLACEMENT_TILEMAP_UL + index * 2),
                 read_le_u16(ram, REPLACEMENT_TILEMAP_LL + index * 2),
                 read_le_u16(ram, REPLACEMENT_TILEMAP_UR + index * 2),

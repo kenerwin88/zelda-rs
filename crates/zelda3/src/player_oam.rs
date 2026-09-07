@@ -2163,13 +2163,19 @@ impl ZeldaState {
         // backtrace per LinkOam_Main call, the fastest way to see which host
         // path ran it when a per-iteration side effect (the water/grass
         // timers) advanced more often than the oracle's.
-        if crate::zelda_rtl::nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_LINK_OAM_BT", self.frame_ctr_dbg) {
+        if crate::zelda_rtl::nmi::debug_frame_selection_env_matches(
+            "ZELDA3_DEBUG_LINK_OAM_BT",
+            self.frame_ctr_dbg,
+        ) {
             eprintln!(
                 "[LINK_OAM_BT] fc_dbg={} mod={:02x}/{:02x} timer={}\n{}",
                 self.frame_ctr_dbg,
                 self.game_state.frame.main_module,
                 self.game_state.frame.submodule,
-                self.game_state.player.follower_link.primary_water_grass_timer(),
+                self.game_state
+                    .player
+                    .follower_link
+                    .primary_water_grass_timer(),
                 std::backtrace::Backtrace::force_capture()
             );
         }

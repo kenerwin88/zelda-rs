@@ -141,8 +141,7 @@ fn dsp_exp_decrease_gain(gain: u16) -> u16 {
     (gain as i32 - step) as u16
 }
 
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, Default)]
 pub struct DspChannel {
     pub pitch: u16,
     pub pitch_counter: u16,
@@ -170,7 +169,6 @@ pub struct DspChannel {
     pub volume_r: i8,
     pub echo_enable: bool,
 }
-
 
 impl DspChannel {
     fn save_c_saveload(&self, out: &mut [u8]) {
@@ -4328,7 +4326,6 @@ mod tests {
         for _ in 0..6 {
             push(0);
         }
-        drop(push);
         snd[RAM_BYTES + 41 * 4 + 0x4c] = 0x80;
 
         let mut apu = ApuState::new();

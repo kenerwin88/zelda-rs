@@ -838,19 +838,18 @@ impl ZeldaState {
         &mut self,
         token: Option<DialogueTextDmaPublicationToken>,
     ) -> Option<DialogueTextDmaPublicationToken> {
-        if token.is_some()
-            && matches!(
-                self.dialogue_scroll_phase(),
-                DialogueScrollPhase::CompletionStagedAfterFrozenScanout
-                    | DialogueScrollPhase::CompletionStagedAfterSnapshot
-            )
-        {
-            assert!(self.complete_dialogue_scroll_after_text_dma_publication(
-                token.expect("staged dialogue publication lost its linear DMA evidence"),
-            ));
-            None
-        } else {
-            token
+        match token {
+            Some(token)
+                if matches!(
+                    self.dialogue_scroll_phase(),
+                    DialogueScrollPhase::CompletionStagedAfterFrozenScanout
+                        | DialogueScrollPhase::CompletionStagedAfterSnapshot
+                ) =>
+            {
+                assert!(self.complete_dialogue_scroll_after_text_dma_publication(token));
+                None
+            }
+            token => token,
         }
     }
 

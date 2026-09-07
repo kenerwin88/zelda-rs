@@ -295,21 +295,23 @@ impl ZeldaState {
                     self.state_recorder_save(&mut state_recorder, &mut file);
                     self.state_recorder = state_recorder;
                 }
-            } else { if let Ok(mut file) = fs::File::open(path) {
-                let action = if cmd == SaveLoadCommand::Load {
-                    "Loading"
-                } else {
-                    "Replaying"
-                };
-                println!("*** {action} slot {which}");
-                let mut state_recorder = std::mem::take(&mut self.state_recorder);
-                self.state_recorder_load(
-                    &mut state_recorder,
-                    &mut file,
-                    cmd == SaveLoadCommand::Replay,
-                );
-                self.state_recorder = state_recorder;
-            }}
+            } else {
+                if let Ok(mut file) = fs::File::open(path) {
+                    let action = if cmd == SaveLoadCommand::Load {
+                        "Loading"
+                    } else {
+                        "Replaying"
+                    };
+                    println!("*** {action} slot {which}");
+                    let mut state_recorder = std::mem::take(&mut self.state_recorder);
+                    self.state_recorder_load(
+                        &mut state_recorder,
+                        &mut file,
+                        cmd == SaveLoadCommand::Replay,
+                    );
+                    self.state_recorder = state_recorder;
+                }
+            }
         }
     }
 

@@ -3279,12 +3279,14 @@ impl ZeldaState {
 
     pub(super) fn intro_animate_triforce(&mut self) {
         self.activate_nmi_thread();
-        if self.rom_startup_timing() && self.intro_memory_darken_frame_delay == 0
-            && self.intro_poly_upload_delay != 0 {
-                self.intro_poly_upload_delay = self.intro_poly_upload_delay.saturating_sub(1);
-                self.attract_scene_mut().mark_intro_did_run_step();
-                return;
-            }
+        if self.rom_startup_timing()
+            && self.intro_memory_darken_frame_delay == 0
+            && self.intro_poly_upload_delay != 0
+        {
+            self.intro_poly_upload_delay = self.intro_poly_upload_delay.saturating_sub(1);
+            self.attract_scene_mut().mark_intro_did_run_step();
+            return;
+        }
         if self.game_state.ending.attract_scene.intro_did_run_step() == 0 {
             self.intro_run_step();
             self.attract_scene_mut().mark_intro_did_run_step();

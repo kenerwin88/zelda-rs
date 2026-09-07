@@ -1149,10 +1149,16 @@ pub(crate) struct EffectivePresentedDma {
 impl EffectivePresentedDma {
     pub(crate) fn animated_bg_only(decoded_only: bool, writes: Vec<(usize, u16)>) -> Self {
         Self {
-            vram_writes: (!decoded_only)
-                .then_some(writes.clone())
-                .unwrap_or_default(),
-            decoded_bg_vram_writes: if decoded_only { writes } else { Default::default() },
+            vram_writes: if !decoded_only {
+                writes.clone()
+            } else {
+                Default::default()
+            },
+            decoded_bg_vram_writes: if decoded_only {
+                writes
+            } else {
+                Default::default()
+            },
             completed_oam: None,
             completed_link_obj_dma: None,
             completed_cgram: None,

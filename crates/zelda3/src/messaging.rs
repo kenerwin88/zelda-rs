@@ -3263,13 +3263,14 @@ impl ZeldaState {
 
     pub(super) fn Module0E_03_01_03_DrawRooms(&mut self) {
         if self.rom_startup_timing()
-            && !self.take_original_timing_main_loop_iteration_returned_to_wait() {
-                self.game_execution_scheduler.schedule_work(
-                    GameWorkContinuation::FinishDungeonMapRoomDrawing,
-                    DUNGEON_MAP_ROOM_DRAWING_NMI_SLICES,
-                );
-                return;
-            }
+            && !self.take_original_timing_main_loop_iteration_returned_to_wait()
+        {
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishDungeonMapRoomDrawing,
+                DUNGEON_MAP_ROOM_DRAWING_NMI_SLICES,
+            );
+            return;
+        }
         self.complete_dungeon_map_room_drawing();
     }
 
@@ -4516,9 +4517,7 @@ impl ZeldaState {
         // text overwrites them. We reproduce that by appending the "orphaned" blanks now.
         for (_effective_end, full_end) in name_ranges {
             let leftover = full_end.saturating_sub(decoded.len());
-            for _ in 0..leftover {
-                decoded.push(0x59);
-            }
+            decoded.extend(std::iter::repeat_n(0x59, leftover));
         }
         self.messaging_text_mut().load_decoded_dialogue(&decoded);
         self.messaging_state_mut().clear_dialogue_msg_read_pos();
@@ -6125,8 +6124,8 @@ impl ZeldaState {
 
     pub(super) fn transfer_mode7_characters(&mut self) {
         if let Some(gfx) = self.asset_raw(66).map(Vec::from) {
-            for i in 0..0x4000.min(gfx.len()).min(self.ppu.vram.len()) {
-                self.ppu.vram[i] = (self.ppu.vram[i] & 0x00ff) | ((gfx[i] as u16) << 8);
+            for (word, gfx) in self.ppu.vram.iter_mut().zip(&gfx).take(0x4000) {
+                *word = (*word & 0x00ff) | ((*gfx as u16) << 8);
             }
         }
     }

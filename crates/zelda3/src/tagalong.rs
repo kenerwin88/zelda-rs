@@ -812,10 +812,11 @@ impl ZeldaState {
         }
         if self.game_state.sprites.follower_runtime.indicator() == 12 {
             if !self.game_state.player.follower_link.has_auxiliary_state()
-                && self.follower_can_drop() {
-                    self.follower_drop();
-                    return;
-                }
+                && self.follower_can_drop()
+            {
+                self.follower_drop();
+                return;
+            }
         } else if self.game_state.sprites.follower_runtime.indicator() == 13 {
             if self.game_state.player.follower_link.auxiliary_state() == 2
                 || self.game_state.player.follower_link.near_pit_state_is(2)
@@ -1595,9 +1596,7 @@ impl ZeldaState {
     }
 
     pub(super) fn kiki_spawn_handler_monke(&mut self, k: usize) -> Option<usize> {
-        let Some((j, _info)) = self.Tagalong_Sprite_SpawnDynamically(k, 0xb6) else {
-            return None;
-        };
+        let (j, _info) = self.Tagalong_Sprite_SpawnDynamically(k, 0xb6)?;
         let layer = self.tagalong_slot(k).direction();
         let mut monke = self.sprite_slot_view_mut(j);
         monke.set_head_direction(layer);

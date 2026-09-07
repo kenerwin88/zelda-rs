@@ -972,8 +972,7 @@ impl ZeldaState {
         if self
             .game_execution_scheduler
             .work_suspends_translated_call_stack()
-        {
-        }
+        {}
     }
 
     pub(super) fn complete_module09_sprite_and_hud_suffix(&mut self) {
@@ -5664,8 +5663,7 @@ impl ZeldaState {
         }
         self.Overworld_HandleOverlaysAndBombDoors();
         let screen_byte = self.game_state.world.location.overworld_screen_index() as usize;
-        if screen_byte < SECONDARY_OVERLAY_BY_OVERWORLD_SCREEN.len() {
-        }
+        if screen_byte < SECONDARY_OVERLAY_BY_OVERWORLD_SCREEN.len() {}
     }
 
     pub(super) fn MirrorBonk_RecoverChangedTiles(&mut self) {
@@ -6928,9 +6926,10 @@ impl ZeldaState {
             return;
         }
         if self.game_state.frame.submodule == 36
-            && self.publish_overworld_special_exit_mosaic_restore_prefix() {
-                self.DecodeAnimatedSpriteTile_variable(0x1e);
-            }
+            && self.publish_overworld_special_exit_mosaic_restore_prefix()
+        {
+            self.DecodeAnimatedSpriteTile_variable(0x1e);
+        }
         self.increment_submodule();
     }
 

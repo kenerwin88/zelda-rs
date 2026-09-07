@@ -1491,8 +1491,7 @@ impl ZeldaState {
             if self
                 .inventory_items_mut()
                 .replace_first_empty_bottle_with(j as u8 + 3)
-            {
-            }
+            {}
         }
     }
 
@@ -1691,7 +1690,7 @@ impl ZeldaState {
 
     pub(super) fn play_sfx_set_pan(&mut self, a: u8) -> u8 {
         self.set_raw_sfx_pan_value(a);
-        
+
         a | self.link_calculate_sfx_pan()
     }
 

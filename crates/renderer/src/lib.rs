@@ -41,10 +41,10 @@ pub mod modern_sprite_atlas;
 mod modern_sprite_renderer;
 pub mod modern_variant_atlas;
 pub mod modern_variant_draw;
-#[cfg(test)]
-pub(crate) mod test_support;
 mod modern_variant_render_plan;
 pub mod renderer_mode;
+#[cfg(test)]
+pub(crate) mod test_support;
 
 pub use frame_compare::{
     compare_gpu_render_frame_bgra_to_rgba, gpu_render_hash_frame_rgba,
@@ -1692,7 +1692,7 @@ fn upload_ppu_pixels(
     queue: &wgpu::Queue,
     texture: &wgpu::Texture,
     pixels: &[u32],
-    staging: &mut Vec<u8>,
+    staging: &mut [u8],
     width: u32,
     height: u32,
 ) {

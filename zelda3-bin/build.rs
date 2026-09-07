@@ -620,8 +620,8 @@ fn dialogue_repo_root() -> PathBuf {
 ///      the tracked authority),
 ///   2. the tracked `assets/dialogue/messages.toml` (the sole authority; it is
 ///      committed, so every clone has it — there is no generated fallback).
-/// `kDialogue` is always source-built (never the stale `.bin`), matching the runtime's
-/// required `kDialogueSourceSemantic` sidecar.
+///      `kDialogue` is always source-built (never the stale `.bin`), matching the runtime's
+///      required `kDialogueSourceSemantic` sidecar.
 fn read_dialogue_messages_document(
     _generated_dir: &Path,
 ) -> zelda3_dialogue::DialogueMessagesDocument {

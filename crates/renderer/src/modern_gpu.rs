@@ -1687,9 +1687,7 @@ fn overlay_mixed_variant_bg_packets_on_main_screen(
                 &bg_packet.packet,
                 &mut bg_overlay_ranks,
                 |index| {
-                    let Some((_, effect)) = bg_packet.packet.draw.material_effect() else {
-                        return None;
-                    };
+                    let (_, effect) = bg_packet.packet.draw.material_effect()?;
                     effect.index_to_rgba.get(usize::from(index)).copied()
                 },
             ),
@@ -1742,9 +1740,7 @@ fn bg_packet_prefinal_color_math_reason(
     frame: &ModernFrame,
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
 ) -> Option<MixedOverlayComplexRejectReason> {
-    let Some((entry, _)) = packet.draw.material_effect() else {
-        return None;
-    };
+    let (entry, _) = packet.draw.material_effect()?;
     let Ok(layer) = u8::try_from(packet.layer_index) else {
         return None;
     };
@@ -2098,9 +2094,7 @@ fn bg_packet_prefinal_overlap_reject_reason(
     plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
     index: &PlanPixelIndex,
 ) -> Option<MixedOverlayOverlapRejectReason> {
-    let Some(entry) = packet.draw.entry() else {
-        return None;
-    };
+    let entry = packet.draw.entry()?;
     for y in 0..8usize {
         for x in 0..8usize {
             if bg_effect_packet_index_at_local(packet, entry, x, y) == 0 {
@@ -3057,9 +3051,7 @@ fn static_bg_effect_material_packet<'frame>(
     atlas: &'frame crate::modern_variant_atlas::ModernVariantAtlas,
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'frame>,
 ) -> Option<EffectMaterialPacket> {
-    let Some((entry, effect)) = packet.draw.material_effect() else {
-        return None;
-    };
+    let (entry, effect) = packet.draw.material_effect()?;
     let effect_row = atlas.effect_row_for_effect(effect)?;
     Some(effect_material_packet(
         EffectSurface::Bg,

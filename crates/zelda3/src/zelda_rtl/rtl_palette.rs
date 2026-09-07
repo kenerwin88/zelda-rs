@@ -546,8 +546,8 @@ impl ZeldaState {
     /// by HDMA so the actual render call (`zelda_draw_ppu_frame`) is unaffected.
     pub fn cgram_after_first_hdma_line(&mut self) -> Vec<u16> {
         let mut channels = self.dma.channel;
-        for i in 0..8 {
-            channels[i].hdma_active = self.game_state.display.is_hdma_channel_enabled(i);
+        for (index, channel) in channels.iter_mut().enumerate() {
+            channel.hdma_active = self.game_state.display.is_hdma_channel_enabled(index);
         }
 
         let saved_cgram = self.ppu.cgram.clone();
@@ -572,8 +572,8 @@ impl ZeldaState {
         for i in 0..8 {
             self.simple_hdma_init(&mut hdma[i], &channels[i]);
         }
-        for i in 0..8 {
-            self.simple_hdma_do_line(&mut hdma[i]);
+        for channel in hdma.iter_mut() {
+            self.simple_hdma_do_line(channel);
         }
 
         let result = self.ppu.cgram.clone();
@@ -629,8 +629,8 @@ impl ZeldaState {
 
         let mut result = Vec::with_capacity(224);
         for _ in 0..224 {
-            for i in 0..8 {
-                self.simple_hdma_do_line(&mut hdma[i]);
+            for channel in hdma.iter_mut() {
+                self.simple_hdma_do_line(channel);
             }
             result.push(self.ppu.cgram.clone());
         }

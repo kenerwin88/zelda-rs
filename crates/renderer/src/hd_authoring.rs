@@ -138,7 +138,6 @@ pub fn slice_hd_cell(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::test_gpu_frame;
     use crate::modern_extract::{
         decode_snes_4bpp_tile_indices, extract_modern_frame_from_sources,
         extract_modern_sprites_from_sources,
@@ -147,6 +146,7 @@ mod tests {
     use crate::modern_hd_overrides::NO_SOURCE_KEY;
     use crate::modern_index_atlas::ModernIndexTile;
     use crate::modern_source_atlas::{modern_source_key, ModernSourceAtlas};
+    use crate::test_support::test_gpu_frame;
 
     fn cell(id: u32, source_key: u64) -> ModernIndexTile {
         ModernIndexTile {

@@ -563,10 +563,10 @@ impl BombosSpellState {
                 self.fire_column_y[slot],
             );
         }
-        for slot in 0..BOMBOS_BLAST_SLOTS {
-            ram[BOMBOS_BLAST_PHASE + slot] = self.blast_phases[slot];
-            ram[BOMBOS_BLAST_TIMER + slot] = self.blast_timers[slot];
-        }
+        ram[BOMBOS_BLAST_PHASE..(BOMBOS_BLAST_SLOTS + BOMBOS_BLAST_PHASE)]
+            .copy_from_slice(&self.blast_phases[..BOMBOS_BLAST_SLOTS]);
+        ram[BOMBOS_BLAST_TIMER..(BOMBOS_BLAST_SLOTS + BOMBOS_BLAST_TIMER)]
+            .copy_from_slice(&self.blast_timers[..BOMBOS_BLAST_SLOTS]);
         write_word_bank(ram, BOMBOS_FIRE_COLUMN_SEED_X, self.fire_column_seed_x);
         write_word_bank(ram, BOMBOS_FIRE_COLUMN_SEED_Y, self.fire_column_seed_y);
         write_word_bank(ram, BOMBOS_BLAST_X, self.blast_x);
@@ -1050,23 +1050,37 @@ impl HappinessPondRupeesState {
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        for slot in 0..HAPPINESS_POND_RUPEE_SLOTS {
-            ram[HAPPINESS_POND_ACTIVE + slot] = self.active[slot];
-            ram[HAPPINESS_POND_Y_LO + slot] = self.y_low[slot];
-            ram[HAPPINESS_POND_Y_HI + slot] = self.y_high[slot];
-            ram[HAPPINESS_POND_X_LO + slot] = self.x_low[slot];
-            ram[HAPPINESS_POND_X_HI + slot] = self.x_high[slot];
-            ram[HAPPINESS_POND_Z + slot] = self.z[slot];
-            ram[HAPPINESS_POND_Y_VEL + slot] = self.y_velocity[slot];
-            ram[HAPPINESS_POND_X_VEL + slot] = self.x_velocity[slot];
-            ram[HAPPINESS_POND_Z_VEL + slot] = self.z_velocity[slot];
-            ram[HAPPINESS_POND_Y_SUBPIXEL + slot] = self.y_subpixel[slot];
-            ram[HAPPINESS_POND_X_SUBPIXEL + slot] = self.x_subpixel[slot];
-            ram[HAPPINESS_POND_Z_SUBPIXEL + slot] = self.z_subpixel[slot];
-            ram[HAPPINESS_POND_ITEM_TO_LINK + slot] = self.item_to_link[slot];
-            ram[HAPPINESS_POND_TIMER + slot] = self.timer[slot];
-            ram[HAPPINESS_POND_STEP + slot] = self.step[slot];
-        }
+        ram[HAPPINESS_POND_ACTIVE..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_ACTIVE)]
+            .copy_from_slice(&self.active[..HAPPINESS_POND_RUPEE_SLOTS]);
+        ram[HAPPINESS_POND_Y_LO..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Y_LO)]
+            .copy_from_slice(&self.y_low[..HAPPINESS_POND_RUPEE_SLOTS]);
+        ram[HAPPINESS_POND_Y_HI..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Y_HI)]
+            .copy_from_slice(&self.y_high[..HAPPINESS_POND_RUPEE_SLOTS]);
+        ram[HAPPINESS_POND_X_LO..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_X_LO)]
+            .copy_from_slice(&self.x_low[..HAPPINESS_POND_RUPEE_SLOTS]);
+        ram[HAPPINESS_POND_X_HI..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_X_HI)]
+            .copy_from_slice(&self.x_high[..HAPPINESS_POND_RUPEE_SLOTS]);
+        ram[HAPPINESS_POND_Z..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Z)]
+            .copy_from_slice(&self.z[..HAPPINESS_POND_RUPEE_SLOTS]);
+        ram[HAPPINESS_POND_Y_VEL..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Y_VEL)]
+            .copy_from_slice(&self.y_velocity[..HAPPINESS_POND_RUPEE_SLOTS]);
+        ram[HAPPINESS_POND_X_VEL..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_X_VEL)]
+            .copy_from_slice(&self.x_velocity[..HAPPINESS_POND_RUPEE_SLOTS]);
+        ram[HAPPINESS_POND_Z_VEL..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Z_VEL)]
+            .copy_from_slice(&self.z_velocity[..HAPPINESS_POND_RUPEE_SLOTS]);
+        ram[HAPPINESS_POND_Y_SUBPIXEL..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Y_SUBPIXEL)]
+            .copy_from_slice(&self.y_subpixel[..HAPPINESS_POND_RUPEE_SLOTS]);
+        ram[HAPPINESS_POND_X_SUBPIXEL..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_X_SUBPIXEL)]
+            .copy_from_slice(&self.x_subpixel[..HAPPINESS_POND_RUPEE_SLOTS]);
+        ram[HAPPINESS_POND_Z_SUBPIXEL..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Z_SUBPIXEL)]
+            .copy_from_slice(&self.z_subpixel[..HAPPINESS_POND_RUPEE_SLOTS]);
+        ram[HAPPINESS_POND_ITEM_TO_LINK
+            ..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_ITEM_TO_LINK)]
+            .copy_from_slice(&self.item_to_link[..HAPPINESS_POND_RUPEE_SLOTS]);
+        ram[HAPPINESS_POND_TIMER..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_TIMER)]
+            .copy_from_slice(&self.timer[..HAPPINESS_POND_RUPEE_SLOTS]);
+        ram[HAPPINESS_POND_STEP..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_STEP)]
+            .copy_from_slice(&self.step[..HAPPINESS_POND_RUPEE_SLOTS]);
     }
 
     pub(crate) fn rupee(&self, slot: usize) -> HappinessPondRupeeSlotState {
@@ -2559,9 +2573,8 @@ impl EntranceEffectState {
         write_le_u16(ram, BLAST_WALL_CENTER_Y, self.center_y);
         write_le_u16(ram, BLAST_WALL_CENTER_X, self.center_x);
         ram[BLAST_WALL_DIRECTION] = self.direction;
-        for slot in 0..BLAST_WALL_FIREBALL_SLOTS {
-            ram[BLAST_WALL_FIREBALL_TIMER + slot] = self.fireball_timers[slot];
-        }
+        ram[BLAST_WALL_FIREBALL_TIMER..(BLAST_WALL_FIREBALL_SLOTS + BLAST_WALL_FIREBALL_TIMER)]
+            .copy_from_slice(&self.fireball_timers[..BLAST_WALL_FIREBALL_SLOTS]);
     }
 
     pub(crate) fn skull_woods_fire(&self) -> SkullWoodsFireState {

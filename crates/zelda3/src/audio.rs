@@ -1022,7 +1022,8 @@ impl ZeldaState {
             }
         }
         let frame = if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
-            let debug_spc_polls = crate::debug_env::var_os("ZELDA3_DEBUG_SPC_CLOCK_WITNESS").is_some();
+            let debug_spc_polls =
+                crate::debug_env::var_os("ZELDA3_DEBUG_SPC_CLOCK_WITNESS").is_some();
             let frame_start_apu_cycle = clock.absolute_dsp_cycle() * 32;
             let window = clock.advance(
                 driver_commands,

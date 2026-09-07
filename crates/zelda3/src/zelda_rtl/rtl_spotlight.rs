@@ -139,9 +139,7 @@ impl ZeldaState {
         else {
             return None;
         };
-        let Some(interruption) = self.original_timing_main_loop_interruption() else {
-            return None;
-        };
+        let interruption = self.original_timing_main_loop_interruption()?;
         match interruption {
             crate::MainLoopInterruption::LinkOam
             | crate::MainLoopInterruption::LinkActualVelocity { .. }

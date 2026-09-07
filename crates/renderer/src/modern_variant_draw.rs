@@ -796,7 +796,12 @@ fn main_visibility_trace(frame: &ModernFrame, layer: u8, sx: i16, sy: i16) -> (b
     (screen_enabled, scanline_enabled, window_masked)
 }
 
-pub(crate) fn main_layer_window_masks_pixel(frame: &ModernFrame, layer: u8, sx: u32, sy: usize) -> bool {
+pub(crate) fn main_layer_window_masks_pixel(
+    frame: &ModernFrame,
+    layer: u8,
+    sx: u32,
+    sy: usize,
+) -> bool {
     if frame.screen_windowed_main & (1u8 << layer) == 0 {
         return false;
     }

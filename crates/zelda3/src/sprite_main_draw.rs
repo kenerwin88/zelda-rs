@@ -1417,7 +1417,9 @@ impl ZeldaState {
         spr_offs: i32,
     ) {
         let mut oam = ((self.game_state.oam.current_pointer() as i32) + spr_offs * 4) as usize;
-        let r6 = self.sprite_slot_view(k).direction()
+        let r6 = self
+            .sprite_slot_view(k)
+            .direction()
             .wrapping_mul(4)
             .wrapping_add(((self.sprite_slot_view(k).a() ^ 1) << 1) & 2);
         let mut i: i32 = 1;
@@ -8079,8 +8081,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_B8_DialogueTester(int k) {  // 9eeae7
     pub(super) fn sprite_b8_dialogue_tester(&mut self, _k: usize) {
-        // C Sprite_B8_DialogueTester is an assert(0) sprite slot.
-        assert!(false);
+        unreachable!("C Sprite_B8_DialogueTester is an assert(0) sprite slot");
     }
 
     // -----------------------------------------------------------------------
@@ -12214,13 +12215,13 @@ impl ZeldaState {
             .draw_scratch_position_mut()
             .offset_low_position(0u8.wrapping_sub(0x20), 0u8.wrapping_sub(0x20));
         if self.sprite_slot_view(k).subtype2() == 0 {
-            for i in 0..16 {
+            for (i, char_flags) in DASH_TREE_TOP_GRID_CHAR_FLAGS.iter().enumerate() {
                 let entry_x = x0.wrapping_add(((i & 3) as u8) * 0x10);
                 let entry_y = y0.wrapping_add(((i >> 2) as u8) * 0x10);
                 self.oam_state_mut().set_entry_x(oam + i * 4, entry_x);
                 self.oam_state_mut().set_entry_y(oam + i * 4, entry_y);
                 self.oam_state_mut()
-                    .set_entry_char_flags(oam + i * 4, DASH_TREE_TOP_GRID_CHAR_FLAGS[i]);
+                    .set_entry_char_flags(oam + i * 4, *char_flags);
             }
         } else {
             let j = usize::from(self.sprite_slot_view(k).subtype2() - 1);
@@ -14367,8 +14368,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_2D_TelepathicTile(int k) {  // 86c0b2
     pub(super) fn sprite_2_d_telepathic_tile(&mut self, _k: usize) {
-        // C Sprite_2D_TelepathicTile is an assert(0) sprite slot.
-        assert!(false);
+        unreachable!("C Sprite_2D_TelepathicTile is an assert(0) sprite slot");
     }
 
     // -----------------------------------------------------------------------

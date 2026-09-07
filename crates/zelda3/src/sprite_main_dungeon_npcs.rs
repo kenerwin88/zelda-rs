@@ -1827,10 +1827,8 @@ impl ZeldaState {
             let pt = self.sprite_project_speed_towards_link(k, 32);
             self.follower_link_state_mut()
                 .set_actual_velocity_xy(pt.x, pt.y);
-            self.sprite_slot_view_mut(k)
-                .set_y_recoil(pt.y ^ 0xff);
-            self.sprite_slot_view_mut(k)
-                .set_x_recoil(pt.x ^ 0xff);
+            self.sprite_slot_view_mut(k).set_y_recoil(pt.y ^ 0xff);
+            self.sprite_slot_view_mut(k).set_x_recoil(pt.x ^ 0xff);
             self.follower_link_state_mut().set_incapacitated_timer(4);
             self.sprite_slot_view_mut(k).set_f(12);
             self.sprite_sfx_queue_sfx2_with_pan(k, 0xb);
@@ -2142,8 +2140,7 @@ impl ZeldaState {
                 let pt = self.sprite_project_speed_towards_location(k, 0xc45, 0x6fe, 9);
                 self.sprite_slot_view_mut(k).set_y_velocity(pt.y);
                 self.sprite_slot_view_mut(k).set_x_velocity(pt.x);
-                self.sprite_slot_view_mut(k)
-                    .set_direction((pt.x >> 7) ^ 3);
+                self.sprite_slot_view_mut(k).set_direction((pt.x >> 7) ^ 3);
                 self.sprite_slot_view_mut(k).set_delay_main(32);
             }
             3 => {

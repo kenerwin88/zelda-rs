@@ -1477,9 +1477,7 @@ impl ZeldaState {
         if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
             return None;
         }
-        let Some(receipts) = self.original_timing_semantic_receipts.as_mut() else {
-            return None;
-        };
+        let receipts = self.original_timing_semantic_receipts.as_mut()?;
         let matches = receipts
             .semantic
             .iter()
@@ -4784,9 +4782,7 @@ impl ZeldaState {
         if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
             return None;
         }
-        let Some(receipts) = self.original_timing_semantic_receipts.as_mut() else {
-            return None;
-        };
+        let receipts = self.original_timing_semantic_receipts.as_mut()?;
         let mut publication = None;
         receipts.semantic.retain(|receipt| {
             let current = match receipt {

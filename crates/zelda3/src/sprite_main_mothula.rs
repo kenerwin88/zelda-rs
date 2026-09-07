@@ -2690,9 +2690,10 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).or_object_priority(0x30);
         self.arrghus_draw(k);
         if (self.sprite_slot_view(k).state() != 9 || self.sprite_slot_view(k).z() < 96)
-            && self.sprite_return_if_inactive(k) {
-                return;
-            }
+            && self.sprite_return_if_inactive(k)
+        {
+            return;
+        }
 
         self.arrghus_handle_puffs(k);
         self.overlord_slot_view_mut(4).set_x_low(1);

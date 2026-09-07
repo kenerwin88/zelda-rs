@@ -5294,8 +5294,7 @@ impl ModernAudioSequencer {
                     .unwrap_or(0);
                 frame.events.retain(|event| {
                     let conflicting_note_on = event.sample_offset >= ownership_start
-                        && ((has_semantic_key_on && event.sample_offset == receipt_offset)
-                            || event.sample_offset != receipt_offset)
+                        && !(!has_semantic_key_on && event.sample_offset == receipt_offset)
                         && matches!(
                             event.kind,
                             AudioEventKind::NoteOn {

@@ -396,12 +396,12 @@ impl ModernIndexCompareStats {
         (self.summary_enabled
             && self.progress_interval != 0
             && self.compare_count.is_multiple_of(self.progress_interval))
-            .then(|| {
-                format!(
-                    "modern_index_compare_progress compare_count={} frame={} bad_count={}",
-                    self.compare_count, frame, self.bad_count
-                )
-            })
+        .then(|| {
+            format!(
+                "modern_index_compare_progress compare_count={} frame={} bad_count={}",
+                self.compare_count, frame, self.bad_count
+            )
+        })
     }
 
     fn dump_paths_for_frame(&self, frame: u32) -> Option<ModernIndexCompareDumpPaths> {

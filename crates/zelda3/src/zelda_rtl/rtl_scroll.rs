@@ -529,13 +529,13 @@ impl ZeldaState {
             for (line, (native, authority)) in
                 result.iter_mut().zip(authority.scanlines()).enumerate()
             {
-                for layer in 0..crate::PresentedBgScroll::LAYER_COUNT {
-                    if [native.5[layer], native.6[layer]] != authority[layer] {
+                for (layer, expected) in authority.iter().enumerate() {
+                    if [native.5[layer], native.6[layer]] != *expected {
                         mismatched_scanline_layers += 1;
                         first_mismatch.get_or_insert((line as u16, layer as u8));
                     }
-                    native.5[layer] = authority[layer][0];
-                    native.6[layer] = authority[layer][1];
+                    native.5[layer] = expected[0];
+                    native.6[layer] = expected[1];
                 }
             }
             self.original_timing_bg_scroll_shadow_result =
@@ -553,8 +553,8 @@ impl ZeldaState {
             for (line, (native, authority)) in
                 result.iter_mut().zip(authority.scanlines()).enumerate()
             {
-                for field in 0..crate::PresentedMode7Transform::FIELD_COUNT {
-                    if native.7[field] != authority[field] {
+                for (field, expected) in authority.iter().enumerate() {
+                    if native.7[field] != *expected {
                         mismatched_scanline_fields += 1;
                         first_mismatch.get_or_insert((line as u16, field as u8));
                     }

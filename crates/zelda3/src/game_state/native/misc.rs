@@ -114,11 +114,11 @@ impl MemorizedTileState {
         let active_slots = Self::active_slots(read_le_u16(ram, NUM_MEMORIZED_TILES));
         let mut addresses = vec![0; active_slots.max(MEMORIZED_TILE_ADDRESS_BASELINE_SLOTS)];
         let mut values = vec![0; active_slots.max(MEMORIZED_TILE_VALUE_BASELINE_SLOTS)];
-        for slot in 0..addresses.len() {
-            addresses[slot] = read_le_u16(ram, MEMORIZED_TILE_ADDR + slot * 2);
+        for (slot, address) in addresses.iter_mut().enumerate() {
+            *address = read_le_u16(ram, MEMORIZED_TILE_ADDR + slot * 2);
         }
-        for slot in 0..values.len() {
-            values[slot] = read_le_u16(ram, MEMORIZED_TILE_VALUE + slot * 2);
+        for (slot, value) in values.iter_mut().enumerate() {
+            *value = read_le_u16(ram, MEMORIZED_TILE_VALUE + slot * 2);
         }
         Self {
             count: read_le_u16(ram, NUM_MEMORIZED_TILES),

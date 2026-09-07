@@ -2074,23 +2074,19 @@ impl GameWorkContinuation {
                     )),
                 }
             }
-            Self::FinishDungeonSupertileTransition { work }
-                if matches!(
-                    work,
+            Self::FinishDungeonSupertileTransition {
+                work:
                     DungeonSupertileTransitionWork::State13CallerReturn
-                        | DungeonSupertileTransitionWork::FadedFilterPreCompletionCallerReturn
-                        | DungeonSupertileTransitionWork::FadedFilterCallerReturn
-                ) =>
-            {
-                GameWorkCompletionPublication {
-                    bg_scroll: Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi),
-                    obj: Some(ObjScanoutGenerations {
-                        oam: OamScanoutSource::RetainCapturedBeforeNmi,
-                        link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
-                        link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
-                    }),
-                }
-            }
+                    | DungeonSupertileTransitionWork::FadedFilterPreCompletionCallerReturn
+                    | DungeonSupertileTransitionWork::FadedFilterCallerReturn,
+            } => GameWorkCompletionPublication {
+                bg_scroll: Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi),
+                obj: Some(ObjScanoutGenerations {
+                    oam: OamScanoutSource::RetainCapturedBeforeNmi,
+                    link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                    link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                }),
+            },
             _ => GameWorkCompletionPublication {
                 bg_scroll: None,
                 obj: None,

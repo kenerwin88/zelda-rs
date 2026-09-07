@@ -10304,7 +10304,7 @@ impl ZeldaState {
         let state_12_cpu_advance =
             (self.rom_startup_timing() && entry_subsubmodule == 12).then(|| {
                 let captured = self.take_dungeon_landing_cpu_advance();
-                
+
                 captured.unwrap_or_else(|| begin_dungeon_supertile_state_12_cpu_advance(self))
             });
         let quadrant_cpu_advance = (self.rom_startup_timing()
@@ -10895,9 +10895,10 @@ impl ZeldaState {
             && self.begin_dungeon_supertile_transition_work_with_palette(
                 DungeonSupertileTransitionWork::FilteredQuadrantTilemapBuild,
                 palette_filter_loop_master_cycles,
-            ) {
-                return;
-            }
+            )
+        {
+            return;
+        }
         self.complete_dungeon_inter_room_transition_not_dark_room();
     }
 
@@ -13000,14 +13001,14 @@ impl ZeldaState {
             && self
                 .dungeon_stair_movement_mut()
                 .decrement_staircase_countdown_underflowed()
-            {
-                let facing = if self.game_state.dungeon.stair_movement.staircase_index() & 4 != 0 {
-                    4
-                } else {
-                    6
-                };
-                self.follower_link_state_mut().set_facing(facing);
-            }
+        {
+            let facing = if self.game_state.dungeon.stair_movement.staircase_index() & 4 != 0 {
+                4
+            } else {
+                6
+            };
+            self.follower_link_state_mut().set_facing(facing);
+        }
 
         let mut xd = (self.game_state.player.follower_link.x() as u8)
             .wrapping_sub(self.game_state.player.tile_detection.x_low()) as i8;

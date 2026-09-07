@@ -310,16 +310,17 @@ impl ZeldaState {
             }
             if self.game_state.display.has_animated_tile_data_source() {
                 if self.game_state.system_signals.bugs_fixed() < BUGFIX_LATEST
-                    && !self.rom_startup_timing {
-                        self.set_bugs_fixed(BUGFIX_LATEST);
-                        self.emu_sync_memory_region(RAM_BUGS_FIXED, 1);
-                        Self::state_recorder_record_patch_byte(
-                            &mut state_recorder,
-                            RAM_BUGS_FIXED as u32,
-                            &[BUGFIX_LATEST],
-                            1,
-                        );
-                    }
+                    && !self.rom_startup_timing
+                {
+                    self.set_bugs_fixed(BUGFIX_LATEST);
+                    self.emu_sync_memory_region(RAM_BUGS_FIXED, 1);
+                    Self::state_recorder_record_patch_byte(
+                        &mut state_recorder,
+                        RAM_BUGS_FIXED as u32,
+                        &[BUGFIX_LATEST],
+                        1,
+                    );
+                }
                 let enhanced_features0 = self.game_state.enhanced_features.bits();
                 let wanted_zelda_features = self.wanted_zelda_features;
                 if enhanced_features0 != wanted_zelda_features {

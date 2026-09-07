@@ -484,7 +484,7 @@ impl Snes {
         self.dma.hdma_timer = 0;
         let mut any = false;
         for i in 0..8 {
-            if !(self.dma.channel[i].hdma_active && !self.dma.channel[i].terminated) {
+            if !self.dma.channel[i].hdma_active || self.dma.channel[i].terminated {
                 continue;
             }
             any = true;

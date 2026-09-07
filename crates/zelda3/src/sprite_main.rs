@@ -539,9 +539,7 @@ impl ZeldaState {
                     [(guard_bak_direction as usize) & 3],
             );
         }
-        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
-            return None;
-        };
+        let (x, y, flags) = self.sprite_prep_oam_coord_or_double_ret(k)?;
         if self.sprite_slot_view(k).sprite_type() == 0x41 {
             if let Some(workload) = self.last_sprite_main_timing_workload.as_mut() {
                 workload.record_blue_guard_full_animation();
