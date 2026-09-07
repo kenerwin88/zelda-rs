@@ -6,7 +6,7 @@ use super::*;
 /// Locals retained while LinkOam_Main is selecting equipment. Its stair Y
 /// adjustment and initial sprite banks are live until the drawing suffix returns.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct LinkOamEquipmentContinuation {
+pub(crate) struct LinkOamEquipmentContinuation {
     y_coord_backup: u16,
     submodule: u8,
     xcoord: u8,

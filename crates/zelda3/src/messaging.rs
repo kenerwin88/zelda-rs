@@ -335,7 +335,7 @@ enum VwfCpuSliceOutcome {
 /// Deterministic native work needed to bring one already-suspended VWF caller
 /// to the decoder endpoint published by the temporary Live timing authority.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct SuspendedVwfEndpointTransition {
+pub(crate) struct SuspendedVwfEndpointTransition {
     start_read_position: u16,
     target_read_position: u16,
     slice_count: u32,
@@ -345,7 +345,7 @@ pub(super) struct SuspendedVwfEndpointTransition {
 /// Deterministic native work needed to finish one already-suspended VWF
 /// character handler after its last source-published decoder endpoint.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct SuspendedVwfCompletionTransition {
+pub(crate) struct SuspendedVwfCompletionTransition {
     start_read_position: u16,
     end_read_position: u16,
     slice_count: u32,

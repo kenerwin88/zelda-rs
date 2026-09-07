@@ -13,7 +13,7 @@ use snes::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum CpuWorkAdvance {
+pub(crate) enum CpuWorkAdvance {
     Complete,
     ReachedBoundary {
         boundary: CpuRasterBoundary,
@@ -50,7 +50,7 @@ impl CpuWorkAdvance {
 /// execution can target. VBlank publication is a display ownership boundary at
 /// H=0; an enabled NMI becomes eligible for CPU acceptance at H=12.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum CpuRasterBoundary {
+pub(crate) enum CpuRasterBoundary {
     VblankPublication,
     CpuNmiAcceptance,
 }
@@ -923,7 +923,7 @@ enum GameExecutionContinuation {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) struct GameExecutionScheduler {
+pub(crate) struct GameExecutionScheduler {
     continuation: Option<GameExecutionContinuation>,
     /// CPU work suspended by the same NMI already owned by
     /// `PreMainNmiResume`.  This composes two semantic receipts at one hardware
