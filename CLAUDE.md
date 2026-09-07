@@ -42,6 +42,26 @@ Snes9x oracle are the only references.
 `./parity trace-index`, `./parity trace-query`, and `./parity cache-verify`.
 It does not replace the pinned live Snes9x A/V authority.
 
+## Durable parity evidence (what to keep, where it lives)
+
+- `routes/full_run/parity-frontier.json` is the promoted ledger; `./parity promote --cached-av
+  <run> --binary <bin>` also copies the run manifest to `routes/full_run/receipts/` and records
+  `receipt_path`, so the receipt is committed with the ledger.
+- `routes/full_run/golden/wram/frame-<N>.bin` are the promoted binary's WRAM images at route
+  frames 60000/150470/500000/732000. `scripts/wram_golden_check.py <cached-av run dir>` compares a
+  run's `rust_wram_frame_<N>.bin` dumps (`ZELDA3_DEBUG_WRAM_FRAMES=60000,150470,...`) against them
+  byte for byte (Rust-vs-Rust, no Snes9x, milliseconds); `--bless` re-records after an intended
+  change. Run it on every cached-av validation run.
+- `scripts/export_parity_archive.py --binary <promoted binary>` writes a self-verifying bundle
+  (oracle cache, full git bundle, route project, pinned core, promoted binary, goldens,
+  SHA256SUMS + MANIFEST.json) under `~/zelda3-parity-archive/`; copy that directory off-machine.
+  `--verify <dir>` re-checks it. The ROM is never included (only its SHA-256).
+- The oracle cache `.git/parity-oracle-cache/<key>` (4.9 GB) is the only Snes9x ground truth;
+  it is not a git object. Never prune the key the ledger references.
+- Debug/trace env switches live behind the `parity-debug` cargo feature (default on;
+  `scripts/package_macos.sh` builds release with `--no-default-features`). Add new switches via
+  `crate::debug_env::{var, var_os, is_set}`, never `std::env` directly.
+
 ## Common bug classes (almost every root is one of these) + fix recipes
 
 The migration's dominant failure mode: **a native state projects bytes it doesn't exclusively
