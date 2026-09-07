@@ -58,6 +58,10 @@ It does not replace the pinned live Snes9x A/V authority.
   `--verify <dir>` re-checks it. The ROM is never included (only its SHA-256).
 - The oracle cache `.git/parity-oracle-cache/<key>` (4.9 GB) is the only Snes9x ground truth;
   it is not a git object. Never prune the key the ledger references.
+- The OAM scanout rules (`OamScanoutSource`, 15 variants) are load-bearing: a full-route
+  `ZELDA3_AUDIT_OAM_LAW=1` run (2026-09-07) shows the hardware-law lane disagreeing with the exact
+  presented table on ~26% of frames. Do not treat the audit's `oam_law_delta` lines as a rule
+  deletion worklist; the law lane matched only the first ~9.4k frames.
 - Debug/trace env switches live behind the `parity-debug` cargo feature (default on;
   `scripts/package_macos.sh` builds release with `--no-default-features`). Add new switches via
   `crate::debug_env::{var, var_os, is_set}`, never `std::env` directly.
