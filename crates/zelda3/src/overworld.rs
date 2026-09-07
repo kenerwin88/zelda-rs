@@ -1387,8 +1387,20 @@ impl ZeldaState {
         // the exception: the ROM reaches that weather tick before Snes9x
         // publishes the first submodule-6 scanout, so record it in this
         // provisional generation and do not advance it again on completion.
+        //
+        // LinkOam_Main and the HUD refill walk are the same kind of staging
+        // as the Sprite_Main walk above: the ROM runs them once, at the
+        // caller return, so their CPU-visible side effects (the water/grass
+        // ripple timers advanced twice per transition, route frame 442751;
+        // refill counters) must not leak. Keep only the staged OAM shadow.
+        let ram_before_provisional_suffix = self.ram.clone();
+        let game_state_before_provisional_suffix = self.game_state.clone();
         self.link_oam_main();
         self.hud_refill_logic();
+        let staged_oam = self.ram[crate::game_state::constants::OAM_BUF..][..0x220].to_vec();
+        self.ram.copy_from_slice(&ram_before_provisional_suffix);
+        self.game_state = game_state_before_provisional_suffix;
+        self.ram[crate::game_state::constants::OAM_BUF..][..0x220].copy_from_slice(&staged_oam);
         self.OverworldOverlay_HandleRain();
     }
 
