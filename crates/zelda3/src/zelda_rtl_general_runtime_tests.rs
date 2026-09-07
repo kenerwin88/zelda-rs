@@ -4,14 +4,15 @@ use crate::dialogue_ir::{
     TEXT_CMD_NUMBER, TEXT_CMD_WAIT, TEXT_COMMAND_START_US,
 };
 use crate::game_state::constants::{
-    ANCILLA_TYPE, ANCILLA_X_LO, ANCILLA_X_VELOCITY, ANIMATED_TILE_DATA_SRC, BG2_X_SCROLL,
-    BG_TILE_ANIMATION_COUNTDOWN, DIALOGUE_MESSAGE_INDEX, DMA_SOURCE_ADDR_0, DMA_SOURCE_ADDR_1,
-    DMA_SOURCE_ADDR_10, DMA_SOURCE_ADDR_11, DMA_SOURCE_ADDR_12, DMA_SOURCE_ADDR_13,
-    DMA_SOURCE_ADDR_14, DMA_SOURCE_ADDR_15, DMA_SOURCE_ADDR_16, DMA_SOURCE_ADDR_17,
-    DMA_SOURCE_ADDR_18, DMA_SOURCE_ADDR_19, DMA_SOURCE_ADDR_2, DMA_SOURCE_ADDR_20,
-    DMA_SOURCE_ADDR_21, DMA_SOURCE_ADDR_3, DMA_SOURCE_ADDR_4, DMA_SOURCE_ADDR_5, DMA_SOURCE_ADDR_6,
-    DMA_SOURCE_ADDR_7, DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_9, DUNG_BG1, DUNG_BG2, HDMAEN_COPY,
-    INIDISP_COPY, MOSAIC_TARGET_LEVEL, PALETTE_FILTER_COUNTDOWN, SUBSUBMODULE, TM_COPY, TS_COPY,
+    ANCILLA_ALLOC_ROTATE, ANCILLA_TYPE, ANCILLA_X_LO, ANCILLA_X_VELOCITY, ANIMATED_TILE_DATA_SRC,
+    BG2_X_SCROLL, BG_TILE_ANIMATION_COUNTDOWN, DIALOGUE_MESSAGE_INDEX, DMA_SOURCE_ADDR_0,
+    DMA_SOURCE_ADDR_1, DMA_SOURCE_ADDR_10, DMA_SOURCE_ADDR_11, DMA_SOURCE_ADDR_12,
+    DMA_SOURCE_ADDR_13, DMA_SOURCE_ADDR_14, DMA_SOURCE_ADDR_15, DMA_SOURCE_ADDR_16,
+    DMA_SOURCE_ADDR_17, DMA_SOURCE_ADDR_18, DMA_SOURCE_ADDR_19, DMA_SOURCE_ADDR_2,
+    DMA_SOURCE_ADDR_20, DMA_SOURCE_ADDR_21, DMA_SOURCE_ADDR_3, DMA_SOURCE_ADDR_4,
+    DMA_SOURCE_ADDR_5, DMA_SOURCE_ADDR_6, DMA_SOURCE_ADDR_7, DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_9,
+    DUNG_BG1, DUNG_BG2, HDMAEN_COPY, INIDISP_COPY, MOSAIC_TARGET_LEVEL, PALETTE_FILTER_COUNTDOWN,
+    SUBSUBMODULE, TM_COPY, TS_COPY,
 };
 use crate::game_state::constants::{FLAG_IS_ANCILLA_TO_PICK_UP, SPRITE_LIMIT_INSTANCE};
 use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
@@ -35482,4 +35483,45 @@ fn parked_dungeon_sprite_main_terminal_return_retires_the_pending_suffix_once() 
     bare.complete_parked_dungeon_sprite_main_suffix_by_wire(false);
     assert_eq!(read_le_u16(&bare.ram, LINK_DMA_COUNTDOWN), 8);
     assert_eq!(bare.game_state.display.bg_tile_animation_countdown, 6);
+}
+
+#[test]
+fn ancilla_allocation_rotation_follows_the_rom_past_the_five_slots() {
+    // On the hardware `ancilla_alloc_rotate` ($03C4) is also arr25[2]; the
+    // fairy revival leaves 9 in it. `Ancilla_AddAncilla` then walks
+    // `LDX $03C4 : DEX : LDA $0C4A,X` from index 8 down through raw RAM until
+    // it finds a sparkle/arrow slot (types $3c/$13/$0a). Route frame 150466.
+    let mut state = ZeldaState::new();
+    for slot in 0..5usize {
+        state.ancilla_slot_view_mut(slot).set_ancilla_type(0x20); // full, not reusable
+    }
+    state.set_ancilla_alloc_rotate(9);
+    state.ram[ANCILLA_TYPE + 8] = 0; // garbage RAM past the arrays: no match
+    state.ancilla_slot_view_mut(3).set_ancilla_type(0x3c);
+
+    let slot = state.ancilla_add_simple(0x05, 4);
+
+    assert_eq!(
+        slot,
+        Some(3),
+        "walks 8,7,6,5,4 through raw RAM, then reuses the sparkle in slot 3"
+    );
+    assert_eq!(state.ancilla_alloc_rotate(), 3);
+    assert_eq!(state.ram[ANCILLA_ALLOC_ROTATE], 3);
+    assert_eq!(
+        state.ancilla_slot_view(2).work_byte_25(),
+        3,
+        "the rotation byte is arr25[2] on the hardware"
+    );
+
+    // Control: the ordinary rotation (start 4) still reuses the highest-index
+    // reusable slot below the start, exactly as before the relocation.
+    let mut ordinary = ZeldaState::new();
+    for slot in 0..5usize {
+        ordinary.ancilla_slot_view_mut(slot).set_ancilla_type(0x20);
+    }
+    ordinary.ancilla_slot_view_mut(1).set_ancilla_type(0x13);
+    ordinary.set_ancilla_alloc_rotate(4);
+    assert_eq!(ordinary.ancilla_add_simple(0x05, 4), Some(1));
+    assert_eq!(ordinary.ancilla_alloc_rotate(), 1);
 }

@@ -1,5 +1,6 @@
 use super::*;
-use crate::game_state::native::sprites::SpriteWorkspaceState;
+use crate::game_state::constants::{ANCILLA_ALLOC_ROTATE, ANCILLA_H, ANCILLA_T_PLAYER};
+use crate::game_state::native::sprites::{AncillaSlotsState, SpriteWorkspaceState};
 
 #[test]
 fn native_sprite_slot_bridge_projects_position_and_packed_n_word() {
@@ -1288,4 +1289,35 @@ fn cached_sprite_nmi_split_restore_matches_the_rom_field_order() {
         );
         assert_eq!(backup[index], 0x80 | index as u8, "backup {index}");
     }
+}
+
+#[test]
+fn ancilla_work_arrays_alias_alloc_rotate_and_ancilla_h_like_the_rom() {
+    // Hardware layout: ancilla_arr26 at $03C0, ancilla_arr25 at $03C2,
+    // ancilla_alloc_rotate at $03C4, ancilla_H at $03C5, ancilla_arr22 at
+    // $03D2, ancilla_T at $03D5. The C port relocated arr26/arr25/arr22 to
+    // break the overlaps; the ROM's fairy revival stores arr25[2] = 9 straight
+    // into the allocation rotation, so the bank keeps every alias one cell.
+    let mut ram = vec![0; WRAM_SIZE];
+    let mut ancilla = AncillaSlotsState::load_from_ram(&ram);
+    ancilla.slot_mut(&mut ram, 2).set_work_byte_25(9);
+    assert_eq!(ram[ANCILLA_ALLOC_ROTATE], 9, "arr25[2] is $03C4");
+    assert_eq!(
+        ancilla.slot(4).work_byte_26(),
+        9,
+        "arr26[4] is the same byte"
+    );
+    ancilla.slot_mut(&mut ram, 1).set_work_byte_26(7);
+    assert_eq!(ram[0x3c1], 7, "arr26[1] is $03C1");
+    ancilla.slot_mut(&mut ram, 3).set_work_byte_25(0x55);
+    assert_eq!(ram[ANCILLA_H], 0x55, "arr25[3] is ancilla_H[0]");
+    assert_eq!(ancilla.slot(0).h(), 0x55);
+    ancilla.slot_mut(&mut ram, 4).set_work_byte_22(0x66);
+    assert_eq!(ram[ANCILLA_T_PLAYER + 1], 0x66, "arr22[4] is ancilla_T[1]");
+    ancilla.set_shared_byte(ANCILLA_ALLOC_ROTATE, 4);
+    assert_eq!(ancilla.slot(2).work_byte_25(), 4);
+    // Round trip through RAM keeps a single value for the shared cell.
+    ancilla.write_to_ram(&mut ram);
+    assert_eq!(ram[ANCILLA_ALLOC_ROTATE], 4);
+    assert_eq!(AncillaSlotsState::load_from_ram(&ram), ancilla);
 }

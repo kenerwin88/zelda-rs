@@ -2,26 +2,25 @@ use super::ram_byte;
 use crate::game_state::constants::{
     ACTIVE_OVERLORD_INDEX, ALT_SPRITES_FLAG, ALT_SPRITE_GRAPHICS, ALT_SPRITE_SPAWNED_FLAG,
     ALT_SPRITE_STATE, ALT_SPRITE_TYPE, ALT_SPRITE_X_HI, ALT_SPRITE_X_LO, ALT_SPRITE_Y_HI,
-    ALT_SPRITE_Y_LO, ANCILLA_A, ANCILLA_ALLOC_ROTATE, ANCILLA_AUX_TIMER, ANCILLA_B,
-    ANCILLA_DIRECTION, ANCILLA_FLOOR, ANCILLA_FLOOR2, ANCILLA_G, ANCILLA_H, ANCILLA_ITEM_TO_LINK,
-    ANCILLA_K, ANCILLA_L, ANCILLA_NUMSPR, ANCILLA_OAM_IDX, ANCILLA_OBJPRIO, ANCILLA_R,
-    ANCILLA_STEP, ANCILLA_S_PLAYER, ANCILLA_TILE_ATTRIBUTE, ANCILLA_TIMER, ANCILLA_TYPE,
-    ANCILLA_T_PLAYER, ANCILLA_U, ANCILLA_WORK_BYTE_1, ANCILLA_WORK_BYTE_22, ANCILLA_WORK_BYTE_23,
-    ANCILLA_WORK_BYTE_24, ANCILLA_WORK_BYTE_25, ANCILLA_WORK_BYTE_26, ANCILLA_WORK_BYTE_3,
-    ANCILLA_WORK_BYTE_4, ANCILLA_X_HI, ANCILLA_X_LO, ANCILLA_X_SUBPIXEL, ANCILLA_X_VELOCITY,
-    ANCILLA_Y_HI, ANCILLA_Y_LO, ANCILLA_Y_SUBPIXEL, ANCILLA_Y_VELOCITY, ANCILLA_Z,
-    ANCILLA_Z_SUBPIXEL_PLAYER, ANCILLA_Z_VELOCITY, BLIND_HEAD_ANIM_COUNTER,
-    CACHED_SPRITE_ALT_FIELDS, CACHED_SPRITE_LIVE_FIELDS, CHAIN_CHOMP_HISTORY_X,
-    CHAIN_CHOMP_HISTORY_Y, CUR_OBJECT_INDEX, CUR_SPRITE_X, CUR_SPRITE_Y, DRAW_WORK_FLAGS_HI,
-    DRAW_WORK_POSITION_X, DRAW_WORK_POSITION_Y, DUAL_LAYER_TILE_CACHE, ENEMY_DAMAGE_DATA,
-    ETHER_ANGLE, ETHER_BEAM_TOP_BUCKET, ETHER_BEAM_Y, ETHER_ORBIT_X, ETHER_ORBIT_Y, ETHER_ORB_X,
-    ETHER_ORB_Y, ETHER_RADIUS, ETHER_SPIN_COUNTDOWN, FOLLOWER_DROPPED,
-    FOLLOWER_HOOKSHOT_RELEASE_TAIL_INDEX, FOLLOWER_INDICATOR, FOLLOWER_JUMP_TIMER,
-    FOLLOWER_PALETTE_SWAP_FLAG, FOLLOWER_SAVED_FLOOR, FOLLOWER_SAVED_INDOORS, FOLLOWER_SAVED_X,
-    FOLLOWER_SAVED_Y, FOLLOWER_TAIL_WRITE_INDEX, GARNISH_ACTIVE, GARNISH_COUNTDOWN, GARNISH_FLOOR,
-    GARNISH_OAM_FLAGS, GARNISH_SPRITE, GARNISH_TYPE, GARNISH_X_HI, GARNISH_X_LO,
-    GARNISH_X_SUBPIXEL, GARNISH_X_VELOCITY, GARNISH_Y_HI, GARNISH_Y_LO, GARNISH_Y_SUBPIXEL,
-    GARNISH_Y_VELOCITY, HAUNTED_GROVE_FLUTE_EVENT_LATCH, HITBOX_WORK_X_OFFSET,
+    ALT_SPRITE_Y_LO, ANCILLA_A, ANCILLA_AUX_TIMER, ANCILLA_B, ANCILLA_DIRECTION, ANCILLA_FLOOR,
+    ANCILLA_FLOOR2, ANCILLA_G, ANCILLA_H, ANCILLA_ITEM_TO_LINK, ANCILLA_K, ANCILLA_L,
+    ANCILLA_NUMSPR, ANCILLA_OAM_IDX, ANCILLA_OBJPRIO, ANCILLA_R, ANCILLA_STEP, ANCILLA_S_PLAYER,
+    ANCILLA_TILE_ATTRIBUTE, ANCILLA_TIMER, ANCILLA_TYPE, ANCILLA_T_PLAYER, ANCILLA_U,
+    ANCILLA_WORK_BYTE_1, ANCILLA_WORK_BYTE_22, ANCILLA_WORK_BYTE_23, ANCILLA_WORK_BYTE_24,
+    ANCILLA_WORK_BYTE_25, ANCILLA_WORK_BYTE_26, ANCILLA_WORK_BYTE_3, ANCILLA_WORK_BYTE_4,
+    ANCILLA_X_HI, ANCILLA_X_LO, ANCILLA_X_SUBPIXEL, ANCILLA_X_VELOCITY, ANCILLA_Y_HI, ANCILLA_Y_LO,
+    ANCILLA_Y_SUBPIXEL, ANCILLA_Y_VELOCITY, ANCILLA_Z, ANCILLA_Z_SUBPIXEL_PLAYER,
+    ANCILLA_Z_VELOCITY, BLIND_HEAD_ANIM_COUNTER, CACHED_SPRITE_ALT_FIELDS,
+    CACHED_SPRITE_LIVE_FIELDS, CHAIN_CHOMP_HISTORY_X, CHAIN_CHOMP_HISTORY_Y, CUR_OBJECT_INDEX,
+    CUR_SPRITE_X, CUR_SPRITE_Y, DRAW_WORK_FLAGS_HI, DRAW_WORK_POSITION_X, DRAW_WORK_POSITION_Y,
+    DUAL_LAYER_TILE_CACHE, ENEMY_DAMAGE_DATA, ETHER_ANGLE, ETHER_BEAM_TOP_BUCKET, ETHER_BEAM_Y,
+    ETHER_ORBIT_X, ETHER_ORBIT_Y, ETHER_ORB_X, ETHER_ORB_Y, ETHER_RADIUS, ETHER_SPIN_COUNTDOWN,
+    FOLLOWER_DROPPED, FOLLOWER_HOOKSHOT_RELEASE_TAIL_INDEX, FOLLOWER_INDICATOR,
+    FOLLOWER_JUMP_TIMER, FOLLOWER_PALETTE_SWAP_FLAG, FOLLOWER_SAVED_FLOOR, FOLLOWER_SAVED_INDOORS,
+    FOLLOWER_SAVED_X, FOLLOWER_SAVED_Y, FOLLOWER_TAIL_WRITE_INDEX, GARNISH_ACTIVE,
+    GARNISH_COUNTDOWN, GARNISH_FLOOR, GARNISH_OAM_FLAGS, GARNISH_SPRITE, GARNISH_TYPE,
+    GARNISH_X_HI, GARNISH_X_LO, GARNISH_X_SUBPIXEL, GARNISH_X_VELOCITY, GARNISH_Y_HI, GARNISH_Y_LO,
+    GARNISH_Y_SUBPIXEL, GARNISH_Y_VELOCITY, HAUNTED_GROVE_FLUTE_EVENT_LATCH, HITBOX_WORK_X_OFFSET,
     HITBOX_WORK_Y_OFFSET, MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO, MAZE_GAME_TIMER_SNAPSHOT_HI,
     MAZE_GAME_TIMER_SNAPSHOT_LO, OVERLORD_FLOOR, OVERLORD_GEN1, OVERLORD_GEN2, OVERLORD_GEN3,
     OVERLORD_OFFSET_SPRITE_POS, OVERLORD_SPAWNED_AREA, OVERLORD_TYPE, OVERLORD_X_HI, OVERLORD_X_LO,
@@ -54,7 +53,7 @@ use crate::game_state::constants::{
 use crate::types::{read_le_u16, write_le_u16};
 
 const SPRITE_SLOT_COUNT: usize = 16;
-const ANCILLA_SLOT_COUNT: usize = 10;
+pub(crate) const ANCILLA_SLOT_COUNT: usize = 10;
 const OVERLORD_SLOT_COUNT: usize = 16;
 const GARNISH_SLOT_COUNT: usize = 30;
 const TAGALONG_SLOT_COUNT: usize = 20;
@@ -1946,6 +1945,15 @@ impl AncillaSlotsState {
 
     fn set_byte(&mut self, slot: usize, offset: usize, value: u8) {
         self.set_byte_at(offset + slot, value);
+    }
+
+    /// Write one bank byte that several hardware arrays share (currently
+    /// `ancilla_alloc_rotate` at $03C4 == arr26[4] == arr25[2]). The caller
+    /// writes the same byte through to RAM; the overlap is exact by
+    /// construction because every alias is the same bank cell.
+    pub(crate) fn set_shared_byte(&mut self, offset: usize, value: u8) {
+        debug_assert!((ANCILLA_WORK_BASE..ANCILLA_WORK_END).contains(&offset));
+        self.set_byte_at(offset, value);
     }
 
     fn word_at(&self, offset: usize) -> u16 {
@@ -4212,7 +4220,7 @@ pub(crate) struct SpriteSystemState {
     saved_exit_graphics_index: u8,
     alt_sprite_spawned_flag: u8,
     cur_object_index: u8,
-    ancilla_alloc_rotate: u8,
+    retired_ancilla_alloc_rotate: u8,
     alt_sprites_flag: u8,
     ranged_based_toggler: u8,
 }
@@ -4232,7 +4240,10 @@ impl SpriteSystemState {
             saved_exit_graphics_index: ram.get(SPRITE_GRAPHICS_INDEX_EXIT).copied().unwrap_or(0),
             alt_sprite_spawned_flag: ram.get(ALT_SPRITE_SPAWNED_FLAG).copied().unwrap_or(0),
             cur_object_index: ram.get(CUR_OBJECT_INDEX).copied().unwrap_or(0),
-            ancilla_alloc_rotate: ram.get(ANCILLA_ALLOC_ROTATE).copied().unwrap_or(0),
+            // Retired dead byte (positional bincode layout): ancilla_alloc_rotate
+            // ($03C4) is ancilla_arr26[4] / ancilla_arr25[2] on the hardware and is
+            // owned by the ancilla slot bank; see `AncillaSlotsState::set_shared_byte`.
+            retired_ancilla_alloc_rotate: 0,
             alt_sprites_flag: ram.get(ALT_SPRITES_FLAG).copied().unwrap_or(0),
             ranged_based_toggler: ram.get(SPR_RANGED_BASED_TOGGLER).copied().unwrap_or(0),
         }
@@ -4252,7 +4263,6 @@ impl SpriteSystemState {
         // it here would clobber the authoritative save.
         ram[ALT_SPRITE_SPAWNED_FLAG] = self.alt_sprite_spawned_flag;
         ram[CUR_OBJECT_INDEX] = self.cur_object_index;
-        ram[ANCILLA_ALLOC_ROTATE] = self.ancilla_alloc_rotate;
         ram[ALT_SPRITES_FLAG] = self.alt_sprites_flag;
         ram[SPR_RANGED_BASED_TOGGLER] = self.ranged_based_toggler;
     }
@@ -4297,10 +4307,6 @@ impl SpriteSystemState {
 
     pub(crate) fn cur_object_index(&self) -> u8 {
         self.cur_object_index
-    }
-
-    pub(crate) fn ancilla_alloc_rotate(&self) -> u8 {
-        self.ancilla_alloc_rotate
     }
 
     pub(crate) fn alt_sprites_flag(&self) -> u8 {
@@ -4368,19 +4374,6 @@ impl SpriteSystemState {
 
     fn set_cur_object_index(&mut self, value: u8) {
         self.cur_object_index = value;
-    }
-
-    fn set_ancilla_alloc_rotate(&mut self, value: u8) {
-        self.ancilla_alloc_rotate = value;
-    }
-
-    fn decrement_ancilla_alloc_rotate(&mut self) -> u8 {
-        self.ancilla_alloc_rotate = self.ancilla_alloc_rotate.wrapping_sub(1);
-        self.ancilla_alloc_rotate
-    }
-
-    fn clear_ancilla_alloc_rotate(&mut self) {
-        self.ancilla_alloc_rotate = 0;
     }
 
     fn set_alt_sprites_flag(&mut self, value: u8) {
@@ -4506,22 +4499,6 @@ impl<'a> NativeSpriteSystemBridgeMut<'a> {
 
     pub(crate) fn set_cur_object_index(&mut self, value: u8) {
         self.state.set_cur_object_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_ancilla_alloc_rotate(&mut self, value: u8) {
-        self.state.set_ancilla_alloc_rotate(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_ancilla_alloc_rotate(&mut self) -> u8 {
-        let value = self.state.decrement_ancilla_alloc_rotate();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn clear_ancilla_alloc_rotate(&mut self) {
-        self.state.clear_ancilla_alloc_rotate();
         self.sync();
     }
 

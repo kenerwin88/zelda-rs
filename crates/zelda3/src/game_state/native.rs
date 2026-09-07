@@ -111,7 +111,7 @@ pub(crate) use sprites::{
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
     NativeSpriteSlotBridgeMut, NativeSpriteSlotView, NativeSpriteSystemBridgeMut,
     NativeSpriteWorkspaceBridgeMut, NativeTagalongSlotBridgeMut, SpriteSlotsState, SpriteState,
-    TagalongSlotRead, OVERWORLD_SPRITE_FLAG_COUNT,
+    TagalongSlotRead, ANCILLA_SLOT_COUNT, OVERWORLD_SPRITE_FLAG_COUNT,
 };
 pub(crate) use system::{
     MsuResumeInfoState, MsuResumeSlot, NativeSystemSignalsBridgeMut, SystemSignalsState,

@@ -778,12 +778,16 @@ impl ZeldaState {
             }
         } else {
             loop {
-                let rotate = self.sprite_system_mut().decrement_ancilla_alloc_rotate();
+                let rotate = self.ancilla_alloc_rotate().wrapping_sub(1);
+                self.set_ancilla_alloc_rotate(rotate);
                 if sign8(rotate) {
-                    self.sprite_system_mut().set_ancilla_alloc_rotate(4);
+                    self.set_ancilla_alloc_rotate(4);
                 }
-                k = self.game_state.sprites.system.ancilla_alloc_rotate() as i32;
-                if self.ancilla_slot_view(k as usize).ancilla_type() == 10 {
+                k = i32::from(self.ancilla_alloc_rotate());
+                // `LDA $0C4A,X` with the rotation index: on the hardware the
+                // index can exceed the five slots (arr25[2] aliases $03C4), so
+                // read the raw byte like the ROM does.
+                if self.ram[crate::game_state::constants::ANCILLA_TYPE + k as usize] == 10 {
                     break;
                 }
             }
@@ -7962,22 +7966,36 @@ impl ZeldaState {
             }
         }
 
-        let mut k = self.game_state.sprites.system.ancilla_alloc_rotate() as i8;
+        // ancilla_alloc_rotate ($03C4) is also ancilla_arr25[2] / arr26[4] on
+        // the hardware, so the rotation index may be any byte (the fairy
+        // revival stores 9 there). Mirror the ROM: `LDX $03C4 : DEX` and read
+        // `$0C4A,X` raw for any X.
+        let mut k = i32::from(self.ancilla_alloc_rotate());
         loop {
             k -= 1;
             if k < 0 {
-                k = limit as i8;
+                k = i32::from(limit);
             }
-            let old_type = self.ancilla_slot_view(k as usize).ancilla_type();
+            let old_type = self.ram[crate::game_state::constants::ANCILLA_TYPE + k as usize];
             if old_type == 0x3c || old_type == 0x13 || old_type == 0x0a {
-                self.sprite_system_mut().set_ancilla_alloc_rotate(k as u8);
+                self.set_ancilla_alloc_rotate(k as u8);
+                if k as usize >= crate::game_state::ANCILLA_SLOT_COUNT {
+                    // The ROM would now build the ancilla in a slot past the
+                    // arrays (garbage RAM). No modeled slot exists for it;
+                    // treat it as allocation failure and record the event.
+                    eprintln!(
+                        "ancilla allocation rotation selected unmodeled slot {k} (host {})",
+                        self.frame_ctr_dbg
+                    );
+                    return None;
+                }
                 return Some(k as usize);
             }
             if k == 0 {
                 break;
             }
         }
-        self.sprite_system_mut().clear_ancilla_alloc_rotate();
+        self.set_ancilla_alloc_rotate(0);
         None
     }
 
@@ -11383,3 +11401,20 @@ impl ZeldaState {
 #[cfg(test)]
 #[path = "ancilla_tests.rs"]
 mod tests;
+
+impl ZeldaState {
+    /// `ancilla_alloc_rotate` ($03C4). On the hardware this byte is also
+    /// `ancilla_arr26[4]` and `ancilla_arr25[2]`; the ancilla slot bank owns
+    /// it, so read the RAM byte the bank projects.
+    pub(crate) fn ancilla_alloc_rotate(&self) -> u8 {
+        self.ram[crate::game_state::constants::ANCILLA_ALLOC_ROTATE]
+    }
+
+    pub(crate) fn set_ancilla_alloc_rotate(&mut self, value: u8) {
+        self.game_state
+            .sprites
+            .ancilla_slots
+            .set_shared_byte(crate::game_state::constants::ANCILLA_ALLOC_ROTATE, value);
+        self.ram[crate::game_state::constants::ANCILLA_ALLOC_ROTATE] = value;
+    }
+}

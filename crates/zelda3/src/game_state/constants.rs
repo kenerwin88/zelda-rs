@@ -1122,10 +1122,15 @@ pub(crate) const ANCILLA_S_PLAYER: usize = 0x03a9;
 pub(crate) const ANCILLA_L: usize = 0x0385;
 pub(crate) const ANCILLA_G: usize = 0x0394;
 pub(crate) const ANCILLA_WORK_BYTE_4: usize = 0x0bf0;
-pub(crate) const ANCILLA_WORK_BYTE_25: usize = 0x0746;
-pub(crate) const ANCILLA_WORK_BYTE_22: usize = 0x074b;
+/// ROM `$03C2,x` (the C port relocated this array to 0x746 to avoid the
+/// hardware overlap; it is kept at the ROM address here because slot 2 IS
+/// `ancilla_alloc_rotate` ($03C4) and slots 3-4 are `ancilla_H` 0-1).
+pub(crate) const ANCILLA_WORK_BYTE_25: usize = 0x03c2;
+/// ROM `$03D2,x` (C port relocation was 0x74b); slots 3-4 alias `ancilla_T` 0-1.
+pub(crate) const ANCILLA_WORK_BYTE_22: usize = 0x03d2;
 pub(crate) const ANCILLA_WORK_BYTE_24: usize = 0x03db;
-pub(crate) const ANCILLA_WORK_BYTE_26: usize = 0x0741;
+/// ROM `$03C0,x` (C port relocation was 0x741); slot 4 IS `ancilla_alloc_rotate`.
+pub(crate) const ANCILLA_WORK_BYTE_26: usize = 0x03c0;
 pub(crate) const ANCILLA_ALLOC_ROTATE: usize = 0x03c4;
 pub(crate) const BOOMERANG_TEMP_Y: usize = 0x0399;
 pub(crate) const BOOMERANG_TEMP_X: usize = 0x039b;
