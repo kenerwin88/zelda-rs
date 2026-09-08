@@ -13,6 +13,7 @@ macro_rules! forward_player_component {
 }
 
 mod compatibility;
+mod transitions;
 pub(crate) use compatibility::NativeFollowerLinkBridgeMut;
 
 mod input;
@@ -282,106 +283,6 @@ impl FollowerLinkState {
         self.actions.spin_attack_step_counter = 0;
         self.actions.action_state_bits = 0;
         self.actions.picking_throw_state = 0;
-    }
-
-    fn initialize_link_action_state(&mut self) {
-        self.movement.facing = 2;
-        self.movement.last_direction = 0;
-        self.actions.item_in_hand = 0;
-        self.movement.position_mode = 0;
-        self.actions.item_debug_value_1 = 0;
-        self.actions.item_action_debug_value_2 = 0;
-        self.actions.item_action_step = 0;
-        self.presentation.throw_oam_state_index = 0;
-        self.actions.y_button_action_step = 0;
-        self.actions.transforming = 0;
-        self.actions.y_button_action_flags = 0;
-        self.input.button_mask_b_y &= !0x40;
-        self.actions.action_state_bits = 0;
-        self.actions.picking_throw_state = 0;
-        self.movement.grabbing_wall = 0;
-    }
-
-    fn reset_properties_c_fields(&mut self) {
-        self.movement.tile_action_index = 0;
-        self.presentation.spin_animation_step_counter = 0;
-        self.actions.spin_attack_state = 0;
-        self.movement.tile_collision_flag = 0;
-        self.presentation.force_hold_sword_up = 0;
-        self.actions.sword_delay_timer = 0;
-        self.actions.item_in_hand = 0;
-        self.movement.position_mode = 0;
-        self.actions.item_debug_value_1 = 0;
-        self.actions.item_action_debug_value_2 = 0;
-        self.actions.item_action_step = 0;
-        self.presentation.throw_oam_state_index = 0;
-        self.actions.y_button_action_step = 0;
-        self.actions.y_button_action_flags = 0;
-        self.input.button_mask_b_y = 0;
-        self.input.clear_button_b_frames();
-        self.actions.action_state_bits = 0;
-        self.actions.picking_throw_state = 0;
-        self.movement.grabbing_wall = 0;
-        self.movement.direction_lock = 0;
-        self.actions.auxiliary_state = 0;
-        self.actions.incapacitated_timer = 0;
-        self.actions.action_handler_timer = 0;
-        self.actions.sprite_damage_disabled = 0;
-        self.presentation.item_hold_pose = 0;
-        self.actions.ancilla_pickup_flag = 0;
-        self.actions.sprite_pickup_flag = 0;
-        self.actions.clear_pull_for_rupees_sprite_need();
-        self.movement.clear_near_moveable_statue();
-        self.actions.spin_attack_step_counter = 0;
-    }
-
-    fn finish_link_action_state_initialization(&mut self) {
-        self.movement.direction_lock &= !1;
-        self.movement.z &= 0x00ff;
-        self.actions.auxiliary_state = 0;
-        self.actions.incapacitated_timer = 0;
-        self.presentation.blink_countdown = 0;
-        self.actions.electrocute_on_touch = 0;
-        self.presentation.item_hold_pose = 0;
-        self.actions.cape_mode = 0;
-        self.actions.sprite_damage_disabled = 0;
-        self.actions.action_handler_timer = 0;
-        self.movement.direction &= !0x0f;
-        self.movement.somaria_platform_state = 0;
-        self.actions.spin_attack_step_counter = 0;
-    }
-
-    fn reset_properties_a_fields(&mut self) {
-        self.movement.last_direction = 0;
-        self.movement.direction = 0;
-        self.movement.movement_flag = 0;
-        self.presentation.blink_countdown = 0;
-        self.actions.transforming = 0;
-        self.actions.bunny_state = 0;
-        self.actions.bunny_mirror = 0;
-        // C clears only the LOW byte here (ram[LINK_TIMER_TEMPBUNNY] = 0, a u8 store),
-        // leaving the high byte intact — so a 0x0100 temp-bunny timer stays 0x0100 and the
-        // curse continues. Zeroing the full u16 ended the bunny transformation a frame early.
-        self.actions.temp_bunny_timer &= 0xff00;
-        self.actions.transform_poof_needed = 0;
-        self.actions.clear_pull_for_rupees_sprite_need();
-        self.actions.hookshot_grave_latch = 0;
-        self.actions.given_damage = 0;
-        self.presentation.spin_offsets = 0;
-        self.presentation.dash_noise_requested = 0;
-        self.actions.item_receipt_method = 0;
-        self.movement.bit9_of_xcoord = 0;
-        self.movement.whirlpool_trigger = 0;
-    }
-
-    fn reset_properties_b_fields(&mut self) {
-        self.movement.somaria_platform_state = 0;
-        self.actions.spin_attack_step_counter = 0;
-        self.actions.defense_flags = 0;
-        self.actions.sprite_pickup_flag_cached = 0;
-        self.movement.clear_pit_correction();
-        self.movement.pit_data_index = 0;
-        self.movement.near_pit_state = 0;
     }
 
     fn interrupt_swimming_for_auxiliary_state(&mut self) {

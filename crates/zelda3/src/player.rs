@@ -65,10 +65,7 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .initialize_link_action_state();
         self.link_reset_swimming_state();
-        self.follower_link_state_mut()
-            .finish_link_action_state_initialization();
-        self.link_force_unequip_cape_quietly();
-        self.link_reset_sword_and_item_usage();
+        self.follower_link_state_mut().finish_initialization();
 
         if self
             .game_state
@@ -90,7 +87,8 @@ impl ZeldaState {
     }
 
     pub(super) fn link_reset_properties_a(&mut self) {
-        self.follower_link_state_mut().reset_properties_a_fields();
+        self.follower_link_state_mut()
+            .reset_movement_and_transformation_state();
         // C's Link_ResetProperties_A also zeroes is_archer_or_shovel_game,
         // tagalong_event_flags, and BYTE(tiledetect_tile_type); route those through
         // the native states that own them so no model goes stale.
@@ -102,7 +100,8 @@ impl ZeldaState {
     }
 
     pub(super) fn link_reset_properties_b(&mut self) {
-        self.follower_link_state_mut().reset_properties_b_fields();
+        self.follower_link_state_mut()
+            .reset_platform_and_pit_state();
         self.link_reset_properties_c();
     }
 
@@ -115,8 +114,7 @@ impl ZeldaState {
             self.clear_custom_spell_animation();
         }
 
-        self.follower_link_state_mut().reset_properties_c_fields();
-        self.link_reset_sword_and_item_usage();
+        self.follower_link_state_mut().reset_action_state();
     }
 
     pub(super) fn link_tuck_into_bed(&mut self) {
@@ -127,7 +125,7 @@ impl ZeldaState {
     }
 
     pub(super) fn link_reset_swimming_state(&mut self) {
-        self.follower_link_state_mut().reset_swimming_state_fields();
+        self.follower_link_state_mut().reset_swim_stroke_state();
         self.reset_all_acceleration();
     }
 
@@ -5043,20 +5041,14 @@ impl ZeldaState {
     }
 
     pub(super) fn reset_all_acceleration(&mut self) {
-        self.swim_acceleration_mut().clear_axis_motion(0);
-        self.swim_acceleration_mut().clear_axis_motion(2);
-        for offset in [0, 2] {
-            self.follower_link_state_mut()
-                .set_swim_stroke_frame_counter(offset, 0);
-        }
+        let mut acceleration = self.swim_acceleration_mut();
+        acceleration.clear_axis_motion(0);
+        acceleration.clear_axis_motion(2);
+        self.follower_link_state_mut().clear_swim_stroke_counters();
     }
 
     pub(super) fn link_force_unequip_cape_quietly(&mut self) {
-        self.follower_link_state_mut().set_cape_transform_timer(32);
-        self.follower_link_state_mut()
-            .clear_sprite_damage_disable_timer();
-        self.follower_link_state_mut().set_cape_mode(0);
-        self.follower_link_state_mut().clear_electrocute_on_touch();
+        self.follower_link_state_mut().unequip_cape_quietly();
     }
 
     pub(super) fn link_force_unequip_cape(&mut self) {
@@ -7460,14 +7452,7 @@ impl ZeldaState {
     }
 
     pub(super) fn link_reset_sword_and_item_usage(&mut self) {
-        self.follower_link_state_mut().set_speed_setting(0);
-        self.follower_link_state_mut().and_defense_flags(!9);
-        self.follower_link_state_mut()
-            .set_spin_attack_delay_timer(0);
-        self.follower_link_state_mut().set_button_b_frames(0);
-        self.follower_link_state_mut()
-            .clear_button_mask_b_y_bits(0x81);
-        self.follower_link_state_mut().clear_direction_lock_bits(1);
+        self.follower_link_state_mut().cancel_sword_and_item_usage();
     }
 }
 

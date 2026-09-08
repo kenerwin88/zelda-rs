@@ -2343,8 +2343,8 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn reset_swimming_state_fields(&mut self) {
-        self.state.movement.reset_swimming_state_fields();
+    pub(crate) fn reset_swim_stroke_state(&mut self) {
+        self.state.movement.reset_swim_stroke_state();
         self.ram[SWIMMING_COUNTDOWN] = 0;
         self.ram[LINK_SWIM_HARD_STROKE] = 0;
         self.ram[LINK_MAYBE_SWIM_FASTER] = 0;
@@ -3237,9 +3237,7 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
 
     pub(crate) fn clear_state_item_and_grab_flags(&mut self) {
         self.state.clear_state_item_and_grab_flags();
-        self.ram[LINK_STATE_BITS] = 0;
-        self.ram[LINK_PICKING_THROW_STATE] = 0;
-        self.ram[LINK_GRABBING_WALL] = 0;
+        self.publish_cleared_state_item_and_grab_flags();
         self.debug_assert_matches_ram();
     }
 
@@ -3273,10 +3271,7 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn initialize_link_action_state(&mut self) {
-        self.state.initialize_link_action_state();
-        self.ram[LINK_FACING] = 2;
-        self.ram[LINK_LAST_DIRECTION] = 0;
+    fn publish_cleared_item_action_sequence(&mut self) {
         self.ram[LINK_ITEM_IN_HAND] = 0;
         self.ram[LINK_POSITION_MODE] = 0;
         self.ram[LINK_DEBUG_VALUE_1] = 0;
@@ -3284,17 +3279,79 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.ram[LINK_ITEM_ACTION_STEP] = 0;
         self.ram[LINK_THROW_OAM_STATE_INDEX] = 0;
         self.ram[Y_BUTTON_ACTION_STEP] = 0;
-        self.ram[LINK_IS_TRANSFORMING] = 0;
-        self.ram[Y_BUTTON_ACTION_FLAGS] = 0;
-        self.ram[BUTTON_MASK_B_Y] &= !0x40;
+    }
+
+    fn publish_cleared_state_item_and_grab_flags(&mut self) {
         self.ram[LINK_STATE_BITS] = 0;
         self.ram[LINK_PICKING_THROW_STATE] = 0;
         self.ram[LINK_GRABBING_WALL] = 0;
+    }
+
+    fn publish_cancelled_sword_and_item_usage(&mut self) {
+        self.ram[LINK_SPEED_SETTING] = 0;
+        self.ram[PLAYER_DEFENSE_FLAGS] &= !9;
+        self.ram[LINK_DELAY_TIMER_SPIN_ATTACK] = 0;
+        self.ram[BUTTON_B_FRAMES] = 0;
+        self.ram[BUTTON_MASK_B_Y] &= !0x81;
+        self.ram[LINK_CANT_CHANGE_DIRECTION] = self.state.direction_lock();
+    }
+
+    pub(crate) fn cancel_sword_and_item_usage(&mut self) {
+        self.state.cancel_sword_and_item_usage();
+        self.publish_cancelled_sword_and_item_usage();
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn reset_properties_c_fields(&mut self) {
-        self.state.reset_properties_c_fields();
+    pub(crate) fn finish_recoil_landing(&mut self) {
+        self.state.finish_recoil_landing();
+        write_le_u16(self.ram, LINK_Z_COORD, 0);
+        self.ram[LINK_AUXILIARY_STATE] = 0;
+        self.ram[LINK_SPEED_SETTING] = 0;
+        self.ram[LINK_CANT_CHANGE_DIRECTION] = 0;
+        self.ram[LINK_ITEM_IN_HAND] = 0;
+        self.ram[LINK_POSITION_MODE] = 0;
+        self.ram[PLAYER_HANDLER_TIMER] = 0;
+        self.ram[LINK_DISABLE_SPRITE_DAMAGE] = 0;
+        self.ram[LINK_ELECTROCUTE_ON_TOUCH] = 0;
+        self.ram[LINK_ACTUAL_X_VELOCITY] = 0;
+        self.ram[LINK_ACTUAL_Y_VELOCITY] = 0;
+        self.debug_assert_matches_ram();
+    }
+
+    fn publish_quiet_cape_removal(&mut self) {
+        self.ram[LINK_BUNNY_TRANSFORM_TIMER] = 32;
+        self.ram[LINK_DISABLE_SPRITE_DAMAGE] = 0;
+        self.ram[LINK_CAPE_MODE] = 0;
+        self.ram[LINK_ELECTROCUTE_ON_TOUCH] = 0;
+    }
+
+    pub(crate) fn unequip_cape_quietly(&mut self) {
+        self.state.unequip_cape_quietly();
+        self.publish_quiet_cape_removal();
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_swim_stroke_counters(&mut self) {
+        self.state.clear_swim_stroke_counters();
+        write_le_u16(self.ram, SWIM_STROKE_FRAME_COUNTER, 0);
+        write_le_u16(self.ram, SWIM_STROKE_FRAME_COUNTER + 2, 0);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn initialize_link_action_state(&mut self) {
+        self.state.initialize_link_action_state();
+        self.ram[LINK_FACING] = 2;
+        self.ram[LINK_LAST_DIRECTION] = 0;
+        self.publish_cleared_item_action_sequence();
+        self.ram[LINK_IS_TRANSFORMING] = 0;
+        self.ram[Y_BUTTON_ACTION_FLAGS] = 0;
+        self.ram[BUTTON_MASK_B_Y] &= !0x40;
+        self.publish_cleared_state_item_and_grab_flags();
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn reset_action_state(&mut self) {
+        self.state.reset_action_state();
         self.ram[TILE_ACTION_INDEX] = 0;
         self.ram[STATE_FOR_SPIN_ATTACK] = 0;
         self.ram[STEP_COUNTER_FOR_SPIN_ATTACK] = 0;
@@ -3302,19 +3359,11 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.ram[LINK_FORCE_HOLD_SWORD_UP] = 0;
         self.ram[LINK_SWORD_DELAY_TIMER] = 0;
         write_le_u16(self.ram, TILEDETECT_MISC_TILES, 0);
-        self.ram[LINK_ITEM_IN_HAND] = 0;
-        self.ram[LINK_POSITION_MODE] = 0;
-        self.ram[LINK_DEBUG_VALUE_1] = 0;
-        self.ram[LINK_DEBUG_VALUE_2] = 0;
-        self.ram[LINK_ITEM_ACTION_STEP] = 0;
-        self.ram[LINK_THROW_OAM_STATE_INDEX] = 0;
-        self.ram[Y_BUTTON_ACTION_STEP] = 0;
+        self.publish_cleared_item_action_sequence();
         self.ram[Y_BUTTON_ACTION_FLAGS] = 0;
         self.ram[BUTTON_MASK_B_Y] = 0;
         self.ram[BUTTON_B_FRAMES] = 0;
-        self.ram[LINK_STATE_BITS] = 0;
-        self.ram[LINK_PICKING_THROW_STATE] = 0;
-        self.ram[LINK_GRABBING_WALL] = 0;
+        self.publish_cleared_state_item_and_grab_flags();
         self.ram[LINK_CANT_CHANGE_DIRECTION] = 0;
         self.ram[LINK_AUXILIARY_STATE] = 0;
         self.ram[LINK_INCAPACITATED_TIMER] = 0;
@@ -3329,11 +3378,12 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.ram[LINK_NEED_FOR_PULLFORRUPEES_SPRITE] = 0;
         self.ram[LINK_IS_NEAR_MOVEABLE_STATUE] = 0;
         self.ram[LINK_SPIN_ATTACK_STEP_COUNTER] = 0;
+        self.publish_cancelled_sword_and_item_usage();
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn finish_link_action_state_initialization(&mut self) {
-        self.state.finish_link_action_state_initialization();
+    pub(crate) fn finish_initialization(&mut self) {
+        self.state.finish_initialization();
         self.ram[LINK_CANT_CHANGE_DIRECTION] &= !1;
         self.ram[LINK_Z_COORD + 1] = 0;
         self.ram[LINK_AUXILIARY_STATE] = 0;
@@ -3347,11 +3397,13 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.ram[LINK_DIRECTION] &= !0x0f;
         self.ram[PLAYER_ON_SOMARIA_PLATFORM] = 0;
         self.ram[LINK_SPIN_ATTACK_STEP_COUNTER] = 0;
+        self.publish_quiet_cape_removal();
+        self.publish_cancelled_sword_and_item_usage();
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn reset_properties_a_fields(&mut self) {
-        self.state.reset_properties_a_fields();
+    pub(crate) fn reset_movement_and_transformation_state(&mut self) {
+        self.state.reset_movement_and_transformation_state();
         self.ram[LINK_LAST_DIRECTION] = 0;
         self.ram[LINK_DIRECTION] = 0;
         self.ram[LINK_FLAG_MOVING] = 0;
@@ -3361,7 +3413,7 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.ram[LINK_IS_BUNNY] = 0;
         self.ram[LINK_IS_BUNNY_MIRROR] = 0;
         // Single-byte store (low byte only), matching C — the high byte of the temp-bunny
-        // timer is preserved (see reset_properties_a_fields on the state).
+        // timer is preserved (see reset_movement_and_transformation_state on the state).
         self.ram[LINK_TIMER_TEMPBUNNY] = 0;
         self.ram[LINK_NEED_FOR_POOF_FOR_TRANSFORM] = 0;
         self.ram[LINK_NEED_FOR_PULLFORRUPEES_SPRITE] = 0;
@@ -3375,8 +3427,8 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn reset_properties_b_fields(&mut self) {
-        self.state.reset_properties_b_fields();
+    pub(crate) fn reset_platform_and_pit_state(&mut self) {
+        self.state.reset_platform_and_pit_state();
         self.ram[PLAYER_ON_SOMARIA_PLATFORM] = 0;
         self.ram[LINK_SPIN_ATTACK_STEP_COUNTER] = 0;
         self.ram[PIT_CORRECTION_ACTIVE_FLAG] = 0;

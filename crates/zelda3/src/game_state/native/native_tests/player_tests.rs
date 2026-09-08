@@ -148,7 +148,7 @@ fn native_follower_link_reset_properties_c_preserves_drag_state_bits() {
 
     {
         let mut bridge = NativeFollowerLinkBridgeMut::new(&mut link, &mut ram);
-        bridge.reset_properties_c_fields();
+        bridge.reset_action_state();
     }
 
     assert_eq!(link.defense_flags(), 2);
@@ -165,7 +165,7 @@ fn native_follower_link_finish_action_initialization_clears_item_hold_pose_in_st
 
     {
         let mut bridge = NativeFollowerLinkBridgeMut::new(&mut link, &mut ram);
-        bridge.finish_link_action_state_initialization();
+        bridge.finish_initialization();
     }
 
     assert_eq!(link.item_hold_pose(), 0);

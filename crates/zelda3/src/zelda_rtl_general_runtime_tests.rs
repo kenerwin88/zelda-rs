@@ -2062,6 +2062,8 @@ mod runtime_items;
 mod runtime_misc;
 #[path = "zelda_rtl_tests/runtime/runtime_overworld.rs"]
 mod runtime_overworld;
+#[path = "zelda_rtl_tests/runtime/runtime_player_transitions.rs"]
+mod runtime_player_transitions;
 #[path = "zelda_rtl_tests/runtime/runtime_spotlight.rs"]
 mod runtime_spotlight;
 #[path = "zelda_rtl_tests/runtime/runtime_sprites.rs"]

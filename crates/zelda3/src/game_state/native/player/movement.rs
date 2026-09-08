@@ -1330,7 +1330,7 @@ impl PlayerMovementState {
         self.swim_fast_state = 0;
     }
 
-    pub(super) fn reset_swimming_state_fields(&mut self) {
+    pub(super) fn reset_swim_stroke_state(&mut self) {
         self.swimming_countdown = 0;
         self.hard_swim_stroke = 0;
         self.swim_fast_state = 0;

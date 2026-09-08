@@ -12986,17 +12986,7 @@ impl ZeldaState {
         {
             self.dungeon_handle_layer_change();
         }
-        self.follower_link_state_mut().set_z(0);
-        self.follower_link_state_mut().clear_auxiliary_state();
-        self.follower_link_state_mut().set_speed_setting(0);
-        self.follower_link_state_mut().clear_direction_lock();
-        self.follower_link_state_mut().clear_item_in_hand();
-        self.follower_link_state_mut().clear_position_mode();
-        self.follower_link_state_mut().clear_action_handler_timer();
-        self.follower_link_state_mut()
-            .clear_sprite_damage_disable_timer();
-        self.follower_link_state_mut().clear_electrocute_on_touch();
-        self.follower_link_state_mut().clear_actual_velocity_xy();
+        self.follower_link_state_mut().finish_recoil_landing();
     }
 
     fn finish_ground_movement_tail(&mut self, clear_vel_after: bool) {
