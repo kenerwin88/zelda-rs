@@ -19,7 +19,7 @@
   },
   "project": "routes/full_run",
   "promoted": {
-    "binary_sha256": "f1e51fd7bd3b9c6d4ad94254f5324fbedc86f3c11e89e21189e4691f1d8ff46d",
+    "binary_sha256": "c6afe7a0c8c882c6983234b043a2343b3ab288cd8074c95cc4f17fb4213e9c3f",
     "cached_av_receipt": {
       "candidate_ledger_sha256": "3d52711c51a4f01031bd336aa582d4b6a316c71199710d3354ef015fcca1440c",
       "frames": 1581079,
@@ -27,13 +27,13 @@
         "video",
         "audio"
       ],
-      "manifest_sha256": "5017941d3c941548525d92554a41e04d29b713022710e4ee5e1d6b0256d4520a",
+      "manifest_sha256": "2b8a6e1b4a3a5caab0df85fa7be4bca4038627eaf2a741efa6cad2b3353c1198",
       "oracle_cache_key": "ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18",
       "oracle_cache_manifest_sha256": "4c7f88fbf327a4b3af7d3f8614d82ebb2318f11b607798d5dddb4a97b7fe2715",
-      "receipt_path": "receipts/full-av.manifest.json",
-      "run": "/Users/missingno/Documents/zelda3-rs/target/cleanup-multi-area/full-av"
+      "receipt_path": "receipts/garnish-full-av.manifest.json",
+      "run": "/Users/missingno/Documents/zelda3-rs/target/garnish-single-owner/garnish-full-av"
     },
-    "commit": "6d9cea5d51d3a715719bd8d09d42f7b5f61c9086",
+    "commit": "f83a059521d20e8046cd0b464d9097533375f4d9",
     "kind": "cached_av_pass",
     "last_exact_audio_frame": 1581078,
     "last_exact_engine_state_frame": 1581078,

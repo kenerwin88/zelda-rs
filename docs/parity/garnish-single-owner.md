@@ -55,3 +55,9 @@ neighbor preservation, raw-write visibility, stale-projection prevention,
 and clone/bincode isolation. A checkpoint-loader test rejects the old layouts
 before positional decoding. Full-route acceptance is recorded by the promoted
 receipt linked from `routes/full_run/parity-frontier.json`.
+
+Candidate `f83a0595` passed the full from-zero cached Snes9x route in
+2386.52 seconds: all 1,581,079 video/audio frames matched, with no paired
+resume or RNG drift. All four WRAM goldens and the complete final WRAM
+endpoint matched the preceding validated build. The promoted receipt binds
+binary SHA-256 `c6afe7a0c8c882c6983234b043a2343b3ab288cd8074c95cc4f17fb4213e9c3f`.
