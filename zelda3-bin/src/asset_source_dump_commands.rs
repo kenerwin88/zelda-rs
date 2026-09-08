@@ -1,3 +1,5 @@
+use crate::indexed_tile_sheet::IndexedTileSheet;
+
 use std::collections::HashMap;
 use std::fs;
 use std::panic::{self, AssertUnwindSafe};
@@ -302,53 +304,19 @@ fn load_existing_assets_by_source(
 
     let file = fs::File::open(png_path)
         .map_err(|e| format!("failed to open existing {}: {e}", png_path.display()))?;
-    let decoder = png::Decoder::new(std::io::BufReader::new(file));
-    let mut reader = decoder
-        .read_info()
-        .map_err(|e| format!("failed to read PNG header {}: {e}", png_path.display()))?;
-    let mut buf = vec![0u8; reader.output_buffer_size()];
-    let info = reader
-        .next_frame(&mut buf)
-        .map_err(|e| format!("failed to decode {}: {e}", png_path.display()))?;
-    if info.bit_depth != png::BitDepth::Eight || info.color_type != png::ColorType::Indexed {
-        return Err(format!(
-            "{}: expected 8-bit indexed PNG, got {:?}/{:?}",
-            png_path.display(),
-            info.color_type,
-            info.bit_depth
-        ));
-    }
-    let width = info.width as usize;
-    let height = info.height as usize;
-    if !width.is_multiple_of(8) || !height.is_multiple_of(8) {
-        return Err(format!(
-            "{}: PNG size {}x{} is not aligned to 8x8 cells",
-            png_path.display(),
-            info.width,
-            info.height
-        ));
-    }
-    let cols = width / 8;
-    let data = &buf[..info.buffer_size()];
+    let sheet = IndexedTileSheet::decode(std::io::BufReader::new(file), png_path)?;
     let mut cells = Vec::with_capacity(manifest.cells.len());
     for cell in manifest.cells {
         let id = cell.id as usize;
-        let cx = (id % cols) * 8;
-        let cy = (id / cols) * 8;
-        if cy + 8 > height || cx + 8 > width {
-            return Err(format!(
+        let pattern = sheet.cell(id).ok_or_else(|| {
+            format!(
                 "{}: manifest cell {} is outside PNG grid {}x{}",
                 json_path.display(),
                 id,
-                info.width,
-                info.height
-            ));
-        }
-        let mut pattern = [0u8; 64];
-        for row in 0..8usize {
-            let src = (cy + row) * width + cx;
-            pattern[row * 8..row * 8 + 8].copy_from_slice(&data[src..src + 8]);
-        }
+                sheet.width,
+                sheet.height
+            )
+        })?;
         cells.push((cell.key, pattern));
     }
     Ok(cells)
@@ -675,7 +643,7 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                             if entry_word == 0 {
                                 continue;
                             }
-                            let palette = (entry_word >> 10) & 7 ;
+                            let palette = (entry_word >> 10) & 7;
                             let pack = (tile_number as u16) | (palette << 10);
                             let key = modern_source_key(CHR_KIND_BG3, pack, 0);
                             let raw = decode_snes_2bpp_tile_indices(
@@ -916,7 +884,8 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                 }
                 startup_walked = startup_walked.wrapping_add(1);
                 collect_used_slots(&mut startup_game, startup_walked);
-                if options.progress_interval != 0 && startup_walked.is_multiple_of(options.progress_interval)
+                if options.progress_interval != 0
+                    && startup_walked.is_multiple_of(options.progress_interval)
                 {
                     eprintln!("[dump] startup progress frames={startup_walked}");
                 }
@@ -1007,7 +976,9 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                 }
                 frames = frames.wrapping_add(1);
                 collect_used_slots(&mut game, frames);
-                if options.progress_interval != 0 && frames.is_multiple_of(options.progress_interval) {
+                if options.progress_interval != 0
+                    && frames.is_multiple_of(options.progress_interval)
+                {
                     eprintln!("[dump] replay progress frames={frames} max_frames={max_frames}");
                 }
             }

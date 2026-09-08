@@ -1120,11 +1120,14 @@ impl ZeldaState {
         self.menu_set(hudxy(x + 2, 5), 0x246e);
         self.menu_set(hudxy(x + 3, 5), 0x246f);
 
-        for i in 0..HUD_ITEM_COUNT {
+        for (i, &vram_position) in HUD_ITEM_VRAM_POSITIONS_LEGACY[..HUD_ITEM_COUNT]
+            .iter()
+            .enumerate()
+        {
             let j = self.game_state.display.hud_inventory_order.item(i);
             let item = if j == 0 { i as u8 + 1 } else { j };
             let icon = self.hud_get_icon_for_item(item);
-            self.hud_draw_item(0x1000, HUD_ITEM_VRAM_POSITIONS_LEGACY[i], &icon);
+            self.hud_draw_item(0x1000, vram_position, &icon);
         }
     }
 

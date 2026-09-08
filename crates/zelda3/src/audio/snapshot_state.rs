@@ -285,16 +285,17 @@ impl CompactModernAudioStateSnapshotV7 {
     }
 
     fn into_audio_state(self) -> AudioState {
-        let mut state = AudioState::default();
-        state.modern = self.modern.into_current();
-        state.legacy_compatibility = self.legacy_compatibility;
-        state.volume_transition_step_float = self.volume_transition_step_float;
-        state.volume_transition_target_float = self.volume_transition_target_float;
-        state.config_audio_freq = self.config_audio_freq;
-        state.config_msuvolume = self.config_msuvolume;
-        state.config_resume_msu = self.config_resume_msu;
-        state.config_msu_path = self.config_msu_path;
-        state
+        AudioState {
+            modern: self.modern.into_current(),
+            legacy_compatibility: self.legacy_compatibility,
+            volume_transition_step_float: self.volume_transition_step_float,
+            volume_transition_target_float: self.volume_transition_target_float,
+            config_audio_freq: self.config_audio_freq,
+            config_msuvolume: self.config_msuvolume,
+            config_resume_msu: self.config_resume_msu,
+            config_msu_path: self.config_msu_path,
+            ..AudioState::default()
+        }
     }
 }
 
@@ -328,16 +329,17 @@ impl CompactModernAudioStateSnapshotV8 {
     }
 
     fn into_audio_state(self) -> AudioState {
-        let mut state = AudioState::default();
-        state.modern = self.modern;
-        state.legacy_compatibility = self.legacy_compatibility;
-        state.volume_transition_step_float = self.volume_transition_step_float;
-        state.volume_transition_target_float = self.volume_transition_target_float;
-        state.config_audio_freq = self.config_audio_freq;
-        state.config_msuvolume = self.config_msuvolume;
-        state.config_resume_msu = self.config_resume_msu;
-        state.config_msu_path = self.config_msu_path;
-        state
+        AudioState {
+            modern: self.modern,
+            legacy_compatibility: self.legacy_compatibility,
+            volume_transition_step_float: self.volume_transition_step_float,
+            volume_transition_target_float: self.volume_transition_target_float,
+            config_audio_freq: self.config_audio_freq,
+            config_msuvolume: self.config_msuvolume,
+            config_resume_msu: self.config_resume_msu,
+            config_msu_path: self.config_msu_path,
+            ..AudioState::default()
+        }
     }
 }
 

@@ -18,6 +18,7 @@ mod hd_authoring_commands;
 mod image_output;
 mod index_dump_commands;
 mod index_source_keys;
+mod indexed_tile_sheet;
 mod input_script;
 mod libretro_core;
 mod libretro_timeline;
@@ -771,7 +772,9 @@ fn run_replay_save(args: &[String]) {
                 );
                 process::exit(1);
             }
-            if asset_gpu_progress_interval != 0 && frames.is_multiple_of(asset_gpu_progress_interval) {
+            if asset_gpu_progress_interval != 0
+                && frames.is_multiple_of(asset_gpu_progress_interval)
+            {
                 print_asset_gpu_smoke_progress("replay-save", frames, &game, renderer);
             }
         }
@@ -790,7 +793,9 @@ fn run_replay_save(args: &[String]) {
         if let Some(coverage) = route_coverage.as_mut() {
             coverage.record(route_coverage_frame_from_game(frames, &game));
         }
-        if asset_gpu_checkpoint_interval != 0 && frames.is_multiple_of(asset_gpu_checkpoint_interval) {
+        if asset_gpu_checkpoint_interval != 0
+            && frames.is_multiple_of(asset_gpu_checkpoint_interval)
+        {
             if let Some(dir) = asset_gpu_checkpoint_dir.as_deref() {
                 write_asset_gpu_checkpoint_or_exit(&game, frames, dir);
             }

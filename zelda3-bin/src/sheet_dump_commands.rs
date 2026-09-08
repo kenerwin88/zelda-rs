@@ -14,17 +14,17 @@ use zelda3::ZeldaState;
 const TRACE_MAIN_MODULE_INDEX: usize = 0x10;
 
 #[derive(Debug, Serialize)]
-struct SpriteSheetPngManifest {
+struct SheetPngManifest {
     format: &'static str,
     tile_width_px: u8,
     tile_height_px: u8,
     cell_count: u32,
     columns: u32,
-    cells: Vec<SpriteSheetPngCell>,
+    cells: Vec<SheetPngCell>,
 }
 
 #[derive(Debug, Serialize)]
-struct SpriteSheetPngCell {
+struct SheetPngCell {
     id: u32,
     atlas_x_px: u32,
     atlas_y_px: u32,
@@ -188,83 +188,14 @@ pub(crate) fn run_dump_sprite_sheet_png(args: &[String]) {
         }
     };
 
-    let cell_count = cells.len();
-    let columns = 64usize;
-    let rows = if cell_count == 0 {
-        0
-    } else {
-        cell_count.div_ceil(columns)
-    };
-    let tile_px = 8usize;
-    let width = columns * tile_px;
-    let height = rows * tile_px;
-    let mut atlas = vec![0u8; width * height * 4]; // transparent background
-
-    let mut manifest_cells = Vec::with_capacity(cell_count);
-    for (id, rgba) in cells.iter().enumerate() {
-        let col = id % columns;
-        let row = id / columns;
-        let dst_x = col * tile_px;
-        let dst_y = row * tile_px;
-        for y in 0..tile_px {
-            for x in 0..tile_px {
-                let src = (y * tile_px + x) * 4;
-                let dst = ((dst_y + y) * width + dst_x + x) * 4;
-                atlas[dst..dst + 4].copy_from_slice(&rgba[src..src + 4]);
-            }
-        }
-        manifest_cells.push(SpriteSheetPngCell {
-            id: id as u32,
-            atlas_x_px: dst_x as u32,
-            atlas_y_px: dst_y as u32,
-        });
-    }
-
-    if let Err(e) = write_rgba_frame_png(Path::new(OUT_PNG), &atlas, width as u32, height as u32) {
-        eprintln!("failed to write sprite sheet png {OUT_PNG}: {e}");
-        process::exit(1);
-    }
-
-    let manifest = SpriteSheetPngManifest {
-        format: "zelda3_sprite_sheet_png_v1",
-        tile_width_px: 8,
-        tile_height_px: 8,
-        cell_count: cell_count as u32,
-        columns: columns as u32,
-        cells: manifest_cells,
-    };
-    let json = match serde_json::to_vec_pretty(&manifest) {
-        Ok(j) => j,
-        Err(e) => {
-            eprintln!("failed to serialize sprite sheet manifest: {e}");
-            process::exit(1);
-        }
-    };
-    if let Err(e) = fs::write(OUT_JSON, &json) {
-        eprintln!("failed to write sprite sheet manifest {OUT_JSON}: {e}");
-        process::exit(1);
-    }
-
-    println!(
-        "dumped sprite sheet cells={cell_count} frames={frames_walked} png={width}x{height} columns={columns}"
+    write_sheet_outputs(
+        "sprite",
+        "zelda3_sprite_sheet_png_v1",
+        OUT_PNG,
+        OUT_JSON,
+        &cells,
+        frames_walked,
     );
-}
-
-#[derive(Debug, Serialize)]
-struct DungeonSheetPngManifest {
-    format: &'static str,
-    tile_width_px: u8,
-    tile_height_px: u8,
-    cell_count: u32,
-    columns: u32,
-    cells: Vec<DungeonSheetPngCell>,
-}
-
-#[derive(Debug, Serialize)]
-struct DungeonSheetPngCell {
-    id: u32,
-    atlas_x_px: u32,
-    atlas_y_px: u32,
 }
 
 /// Walk the combined-route replay and extract a colored dungeon BG tile sheet.
@@ -427,13 +358,27 @@ pub(crate) fn run_dump_dungeon_sheet_png(args: &[String]) {
         }
     };
 
+    write_sheet_outputs(
+        "dungeon",
+        "zelda3_dungeon_sheet_v1",
+        OUT_PNG,
+        OUT_JSON,
+        &cells,
+        frames_walked,
+    );
+}
+
+fn write_sheet_outputs(
+    label: &str,
+    format: &'static str,
+    out_png: &str,
+    out_json: &str,
+    cells: &[Vec<u8>],
+    frames_walked: u32,
+) {
     let cell_count = cells.len();
     let columns = 64usize;
-    let rows = if cell_count == 0 {
-        0
-    } else {
-        cell_count.div_ceil(columns)
-    };
+    let rows = cell_count.div_ceil(columns);
     let tile_px = 8usize;
     let width = columns * tile_px;
     let height = rows * tile_px;
@@ -452,20 +397,20 @@ pub(crate) fn run_dump_dungeon_sheet_png(args: &[String]) {
                 atlas[dst..dst + 4].copy_from_slice(&rgba[src..src + 4]);
             }
         }
-        manifest_cells.push(DungeonSheetPngCell {
+        manifest_cells.push(SheetPngCell {
             id: id as u32,
             atlas_x_px: dst_x as u32,
             atlas_y_px: dst_y as u32,
         });
     }
 
-    if let Err(e) = write_rgba_frame_png(Path::new(OUT_PNG), &atlas, width as u32, height as u32) {
-        eprintln!("failed to write dungeon sheet png {OUT_PNG}: {e}");
+    if let Err(e) = write_rgba_frame_png(Path::new(out_png), &atlas, width as u32, height as u32) {
+        eprintln!("failed to write {label} sheet png {out_png}: {e}");
         process::exit(1);
     }
 
-    let manifest = DungeonSheetPngManifest {
-        format: "zelda3_dungeon_sheet_v1",
+    let manifest = SheetPngManifest {
+        format,
         tile_width_px: 8,
         tile_height_px: 8,
         cell_count: cell_count as u32,
@@ -475,16 +420,16 @@ pub(crate) fn run_dump_dungeon_sheet_png(args: &[String]) {
     let json = match serde_json::to_vec_pretty(&manifest) {
         Ok(j) => j,
         Err(e) => {
-            eprintln!("failed to serialize dungeon sheet manifest: {e}");
+            eprintln!("failed to serialize {label} sheet manifest: {e}");
             process::exit(1);
         }
     };
-    if let Err(e) = fs::write(OUT_JSON, &json) {
-        eprintln!("failed to write dungeon sheet manifest {OUT_JSON}: {e}");
+    if let Err(e) = fs::write(out_json, &json) {
+        eprintln!("failed to write {label} sheet manifest {out_json}: {e}");
         process::exit(1);
     }
 
     println!(
-        "dumped dungeon sheet cells={cell_count} frames={frames_walked} png={width}x{height} columns={columns}"
+        "dumped {label} sheet cells={cell_count} frames={frames_walked} png={width}x{height} columns={columns}"
     );
 }

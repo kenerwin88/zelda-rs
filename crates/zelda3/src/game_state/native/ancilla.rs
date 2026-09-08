@@ -1,6 +1,6 @@
 //! Ancilla slot storage, WRAM aliases, and write-through access.
 
-use super::sprites::SlotBankBytes;
+use super::sprites::{slot_byte_accessors, SlotBankBytes};
 use crate::game_state::constants::{
     ANCILLA_A, ANCILLA_AUX_TIMER, ANCILLA_B, ANCILLA_DIRECTION, ANCILLA_FLOOR, ANCILLA_FLOOR2,
     ANCILLA_G, ANCILLA_H, ANCILLA_ITEM_TO_LINK, ANCILLA_K, ANCILLA_L, ANCILLA_NUMSPR,
@@ -239,11 +239,51 @@ pub(crate) struct NativeAncillaSlotView<'a> {
     slot: usize,
 }
 
-impl<'a> NativeAncillaSlotView<'a> {
-    pub(crate) fn ancilla_type(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_TYPE)
-    }
+slot_byte_accessors! {
+    NativeAncillaSlotView, NativeAncillaSlotBridgeMut;
+    ancilla_type => set_ancilla_type: ANCILLA_TYPE,
+    x_low => set_x_low: ANCILLA_X_LO,
+    x_high => set_x_high: ANCILLA_X_HI,
+    y_low => set_y_low: ANCILLA_Y_LO,
+    y_high => set_y_high: ANCILLA_Y_HI,
+    x_velocity => set_x_velocity: ANCILLA_X_VELOCITY,
+    y_velocity => set_y_velocity: ANCILLA_Y_VELOCITY,
+    z_velocity => set_z_velocity: ANCILLA_Z_VELOCITY,
+    x_subpixel => set_x_subpixel: ANCILLA_X_SUBPIXEL,
+    y_subpixel => set_y_subpixel: ANCILLA_Y_SUBPIXEL,
+    z => set_z: ANCILLA_Z,
+    z_subpixel => set_z_subpixel: ANCILLA_Z_SUBPIXEL_PLAYER,
+    item_to_link => set_item_to_link: ANCILLA_ITEM_TO_LINK,
+    timer => set_timer: ANCILLA_TIMER,
+    floor => set_floor: ANCILLA_FLOOR,
+    floor2 => set_floor2: ANCILLA_FLOOR2,
+    object_priority => set_object_priority: ANCILLA_OBJPRIO,
+    u => set_u: ANCILLA_U,
+    num_sprites => set_num_sprites: ANCILLA_NUMSPR,
+    direction => set_direction: ANCILLA_DIRECTION,
+    tile_attribute => set_tile_attribute: ANCILLA_TILE_ATTRIBUTE,
+    step => set_step: ANCILLA_STEP,
+    aux_timer => set_aux_timer: ANCILLA_AUX_TIMER,
+    work_byte_3 => set_work_byte_3: ANCILLA_WORK_BYTE_3,
+    work_byte_1 => set_work_byte_1: ANCILLA_WORK_BYTE_1,
+    s_player => set_s_player: ANCILLA_S_PLAYER,
+    t_player => set_t_player: ANCILLA_T_PLAYER,
+    a => set_a: ANCILLA_A,
+    b => set_b: ANCILLA_B,
+    l => set_l: ANCILLA_L,
+    h => set_h: ANCILLA_H,
+    k => set_k: ANCILLA_K,
+    g => set_g: ANCILLA_G,
+    r => set_r: ANCILLA_R,
+    work_byte_22 => set_work_byte_22: ANCILLA_WORK_BYTE_22,
+    work_byte_23 => set_work_byte_23: ANCILLA_WORK_BYTE_23,
+    work_byte_24 => set_work_byte_24: ANCILLA_WORK_BYTE_24,
+    work_byte_4 => set_work_byte_4: ANCILLA_WORK_BYTE_4,
+    work_byte_25 => set_work_byte_25: ANCILLA_WORK_BYTE_25,
+    work_byte_26 => set_work_byte_26: ANCILLA_WORK_BYTE_26,
+}
 
+impl<'a> NativeAncillaSlotView<'a> {
     pub(crate) fn is_active(&self) -> bool {
         self.ancilla_type() != 0
     }
@@ -253,121 +293,9 @@ impl<'a> NativeAncillaSlotView<'a> {
             .packed_position(self.slot, ANCILLA_X_LO, ANCILLA_X_HI)
     }
 
-    pub(crate) fn x_low(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_X_LO)
-    }
-
-    pub(crate) fn x_high(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_X_HI)
-    }
-
     pub(crate) fn y(&self) -> u16 {
         self.state
             .packed_position(self.slot, ANCILLA_Y_LO, ANCILLA_Y_HI)
-    }
-
-    pub(crate) fn y_low(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_Y_LO)
-    }
-
-    pub(crate) fn y_high(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_Y_HI)
-    }
-
-    pub(crate) fn x_velocity(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_X_VELOCITY)
-    }
-
-    pub(crate) fn y_velocity(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_Y_VELOCITY)
-    }
-
-    pub(crate) fn z_velocity(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_Z_VELOCITY)
-    }
-
-    pub(crate) fn x_subpixel(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_X_SUBPIXEL)
-    }
-
-    pub(crate) fn y_subpixel(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_Y_SUBPIXEL)
-    }
-
-    pub(crate) fn z(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_Z)
-    }
-
-    pub(crate) fn z_subpixel(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_Z_SUBPIXEL_PLAYER)
-    }
-
-    pub(crate) fn item_to_link(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_ITEM_TO_LINK)
-    }
-
-    pub(crate) fn timer(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_TIMER)
-    }
-
-    pub(crate) fn floor(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_FLOOR)
-    }
-
-    pub(crate) fn floor2(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_FLOOR2)
-    }
-
-    pub(crate) fn object_priority(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_OBJPRIO)
-    }
-
-    pub(crate) fn u(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_U)
-    }
-
-    pub(crate) fn num_sprites(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_NUMSPR)
-    }
-
-    pub(crate) fn direction(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_DIRECTION)
-    }
-
-    pub(crate) fn tile_attribute(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_TILE_ATTRIBUTE)
-    }
-
-    pub(crate) fn step(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_STEP)
-    }
-
-    pub(crate) fn aux_timer(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_AUX_TIMER)
-    }
-
-    pub(crate) fn work_byte_3(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_WORK_BYTE_3)
-    }
-
-    pub(crate) fn work_byte_1(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_WORK_BYTE_1)
-    }
-
-    pub(crate) fn s_player(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_S_PLAYER)
-    }
-
-    pub(crate) fn t_player(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_T_PLAYER)
-    }
-
-    pub(crate) fn a(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_A)
-    }
-
-    pub(crate) fn b(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_B)
     }
 
     pub(crate) fn ab_word(&self) -> u16 {
@@ -376,50 +304,6 @@ impl<'a> NativeAncillaSlotView<'a> {
 
     pub(crate) fn a_word(&self) -> u16 {
         self.state.word_at(ANCILLA_A + self.slot)
-    }
-
-    pub(crate) fn l(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_L)
-    }
-
-    pub(crate) fn h(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_H)
-    }
-
-    pub(crate) fn k(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_K)
-    }
-
-    pub(crate) fn g(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_G)
-    }
-
-    pub(crate) fn r(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_R)
-    }
-
-    pub(crate) fn work_byte_22(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_WORK_BYTE_22)
-    }
-
-    pub(crate) fn work_byte_23(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_WORK_BYTE_23)
-    }
-
-    pub(crate) fn work_byte_24(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_WORK_BYTE_24)
-    }
-
-    pub(crate) fn work_byte_4(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_WORK_BYTE_4)
-    }
-
-    pub(crate) fn work_byte_25(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_WORK_BYTE_25)
-    }
-
-    pub(crate) fn work_byte_26(&self) -> u8 {
-        self.state.byte(self.slot, ANCILLA_WORK_BYTE_26)
     }
 }
 
@@ -470,10 +354,6 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
         next
     }
 
-    pub(crate) fn set_ancilla_type(&mut self, value: u8) {
-        self.set_byte(ANCILLA_TYPE, value);
-    }
-
     pub(crate) fn increment_ancilla_type(&mut self) -> u8 {
         self.add_byte(ANCILLA_TYPE, 1)
     }
@@ -488,42 +368,10 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_x_low(&mut self, value: u8) {
-        self.set_byte(ANCILLA_X_LO, value);
-    }
-
-    pub(crate) fn set_x_high(&mut self, value: u8) {
-        self.set_byte(ANCILLA_X_HI, value);
-    }
-
     pub(crate) fn set_y(&mut self, value: u16) {
         self.state
             .set_position(self.slot, ANCILLA_Y_LO, ANCILLA_Y_HI, value);
         self.sync();
-    }
-
-    pub(crate) fn set_y_low(&mut self, value: u8) {
-        self.set_byte(ANCILLA_Y_LO, value);
-    }
-
-    pub(crate) fn set_y_high(&mut self, value: u8) {
-        self.set_byte(ANCILLA_Y_HI, value);
-    }
-
-    pub(crate) fn set_x_subpixel(&mut self, value: u8) {
-        self.set_byte(ANCILLA_X_SUBPIXEL, value);
-    }
-
-    pub(crate) fn set_y_subpixel(&mut self, value: u8) {
-        self.set_byte(ANCILLA_Y_SUBPIXEL, value);
-    }
-
-    pub(crate) fn set_x_velocity(&mut self, value: u8) {
-        self.set_byte(ANCILLA_X_VELOCITY, value);
-    }
-
-    pub(crate) fn set_y_velocity(&mut self, value: u8) {
-        self.set_byte(ANCILLA_Y_VELOCITY, value);
     }
 
     pub(crate) fn x_velocity(&self) -> u8 {
@@ -556,24 +404,12 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_z_velocity(&mut self, value: u8) {
-        self.set_byte(ANCILLA_Z_VELOCITY, value);
-    }
-
     pub(crate) fn add_z_velocity(&mut self, value: u8) {
         self.add_byte(ANCILLA_Z_VELOCITY, value);
     }
 
     pub(crate) fn tick_z_velocity(&mut self) -> u8 {
         self.subtract_byte(ANCILLA_Z_VELOCITY, 1)
-    }
-
-    pub(crate) fn set_z(&mut self, value: u8) {
-        self.set_byte(ANCILLA_Z, value);
-    }
-
-    pub(crate) fn set_z_subpixel(&mut self, value: u8) {
-        self.set_byte(ANCILLA_Z_SUBPIXEL_PLAYER, value);
     }
 
     pub(crate) fn move_x(&mut self) {
@@ -608,10 +444,6 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_item_to_link(&mut self, value: u8) {
-        self.set_byte(ANCILLA_ITEM_TO_LINK, value);
-    }
-
     pub(crate) fn advance_item_to_link(&mut self) -> u8 {
         self.add_byte(ANCILLA_ITEM_TO_LINK, 1)
     }
@@ -630,41 +462,17 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
         next
     }
 
-    pub(crate) fn set_timer(&mut self, value: u8) {
-        self.set_byte(ANCILLA_TIMER, value);
-    }
-
     pub(crate) fn tick_timer(&mut self) -> u8 {
         self.subtract_byte(ANCILLA_TIMER, 1)
-    }
-
-    pub(crate) fn set_floor(&mut self, value: u8) {
-        self.set_byte(ANCILLA_FLOOR, value);
-    }
-
-    pub(crate) fn set_floor2(&mut self, value: u8) {
-        self.set_byte(ANCILLA_FLOOR2, value);
     }
 
     pub(crate) fn set_oam_index(&mut self, value: u8) {
         self.set_byte(ANCILLA_OAM_IDX, value);
     }
 
-    pub(crate) fn set_num_sprites(&mut self, value: u8) {
-        self.set_byte(ANCILLA_NUMSPR, value);
-    }
-
-    pub(crate) fn set_object_priority(&mut self, value: u8) {
-        self.set_byte(ANCILLA_OBJPRIO, value);
-    }
-
     pub(crate) fn xor_object_priority(&mut self, value: u8) {
         self.state.xor_byte(self.slot, ANCILLA_OBJPRIO, value);
         self.sync();
-    }
-
-    pub(crate) fn set_direction(&mut self, value: u8) {
-        self.set_byte(ANCILLA_DIRECTION, value);
     }
 
     pub(crate) fn or_direction(&mut self, value: u8) {
@@ -675,14 +483,6 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
     pub(crate) fn and_direction(&mut self, value: u8) {
         self.state.and_byte(self.slot, ANCILLA_DIRECTION, value);
         self.sync();
-    }
-
-    pub(crate) fn set_tile_attribute(&mut self, value: u8) {
-        self.set_byte(ANCILLA_TILE_ATTRIBUTE, value);
-    }
-
-    pub(crate) fn set_step(&mut self, value: u8) {
-        self.set_byte(ANCILLA_STEP, value);
     }
 
     pub(crate) fn advance_step(&mut self) -> u8 {
@@ -697,10 +497,6 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
         self.subtract_byte(ANCILLA_STEP, 1)
     }
 
-    pub(crate) fn set_aux_timer(&mut self, value: u8) {
-        self.set_byte(ANCILLA_AUX_TIMER, value);
-    }
-
     pub(crate) fn add_aux_timer(&mut self, value: u8) {
         self.add_byte(ANCILLA_AUX_TIMER, value);
     }
@@ -709,24 +505,12 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
         self.subtract_byte(ANCILLA_AUX_TIMER, 1)
     }
 
-    pub(crate) fn set_work_byte_3(&mut self, value: u8) {
-        self.set_byte(ANCILLA_WORK_BYTE_3, value);
-    }
-
     pub(crate) fn add_work_byte_3(&mut self, value: u8) {
         self.add_byte(ANCILLA_WORK_BYTE_3, value);
     }
 
-    pub(crate) fn set_work_byte_1(&mut self, value: u8) {
-        self.set_byte(ANCILLA_WORK_BYTE_1, value);
-    }
-
     pub(crate) fn subtract_work_byte_1(&mut self, value: u8) {
         self.subtract_byte(ANCILLA_WORK_BYTE_1, value);
-    }
-
-    pub(crate) fn set_a(&mut self, value: u8) {
-        self.set_byte(ANCILLA_A, value);
     }
 
     pub(crate) fn advance_a(&mut self) -> u8 {
@@ -743,14 +527,6 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn set_b(&mut self, value: u8) {
-        self.set_byte(ANCILLA_B, value);
-    }
-
-    pub(crate) fn set_l(&mut self, value: u8) {
-        self.set_byte(ANCILLA_L, value);
-    }
-
     pub(crate) fn advance_l(&mut self) -> u8 {
         self.add_byte(ANCILLA_L, 1)
     }
@@ -761,14 +537,6 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
 
     pub(crate) fn retreat_l(&mut self) -> u8 {
         self.subtract_byte(ANCILLA_L, 1)
-    }
-
-    pub(crate) fn set_h(&mut self, value: u8) {
-        self.set_byte(ANCILLA_H, value);
-    }
-
-    pub(crate) fn set_k(&mut self, value: u8) {
-        self.set_byte(ANCILLA_K, value);
     }
 
     pub(crate) fn toggle_k_bit0(&mut self) -> u8 {
@@ -793,10 +561,6 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
         self.subtract_byte(ANCILLA_K, 1)
     }
 
-    pub(crate) fn set_g(&mut self, value: u8) {
-        self.set_byte(ANCILLA_G, value);
-    }
-
     pub(crate) fn subtract_g(&mut self, value: u8) {
         self.subtract_byte(ANCILLA_G, value);
     }
@@ -805,28 +569,12 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
         self.subtract_byte(ANCILLA_G, 1)
     }
 
-    pub(crate) fn set_s_player(&mut self, value: u8) {
-        self.set_byte(ANCILLA_S_PLAYER, value);
-    }
-
-    pub(crate) fn set_t_player(&mut self, value: u8) {
-        self.set_byte(ANCILLA_T_PLAYER, value);
-    }
-
-    pub(crate) fn set_r(&mut self, value: u8) {
-        self.set_byte(ANCILLA_R, value);
-    }
-
     pub(crate) fn add_r(&mut self, value: u8) {
         self.add_byte(ANCILLA_R, value);
     }
 
     pub(crate) fn tick_s_player(&mut self) -> u8 {
         self.subtract_byte(ANCILLA_S_PLAYER, 1)
-    }
-
-    pub(crate) fn set_u(&mut self, value: u8) {
-        self.set_byte(ANCILLA_U, value);
     }
 
     pub(crate) fn subtract_u(&mut self, value: u8) {
@@ -855,44 +603,20 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
         self.add_byte(ANCILLA_WORK_BYTE_3, 1)
     }
 
-    pub(crate) fn set_work_byte_4(&mut self, value: u8) {
-        self.set_byte(ANCILLA_WORK_BYTE_4, value);
-    }
-
     pub(crate) fn subtract_work_byte_4(&mut self, value: u8) {
         self.subtract_byte(ANCILLA_WORK_BYTE_4, value);
-    }
-
-    pub(crate) fn set_work_byte_22(&mut self, value: u8) {
-        self.set_byte(ANCILLA_WORK_BYTE_22, value);
     }
 
     pub(crate) fn subtract_work_byte_22(&mut self, value: u8) {
         self.subtract_byte(ANCILLA_WORK_BYTE_22, value);
     }
 
-    pub(crate) fn set_work_byte_23(&mut self, value: u8) {
-        self.set_byte(ANCILLA_WORK_BYTE_23, value);
-    }
-
     pub(crate) fn add_work_byte_23(&mut self, value: u8) {
         self.add_byte(ANCILLA_WORK_BYTE_23, value);
     }
 
-    pub(crate) fn set_work_byte_24(&mut self, value: u8) {
-        self.set_byte(ANCILLA_WORK_BYTE_24, value);
-    }
-
     pub(crate) fn add_work_byte_24(&mut self, value: u8) {
         self.add_byte(ANCILLA_WORK_BYTE_24, value);
-    }
-
-    pub(crate) fn set_work_byte_25(&mut self, value: u8) {
-        self.set_byte(ANCILLA_WORK_BYTE_25, value);
-    }
-
-    pub(crate) fn set_work_byte_26(&mut self, value: u8) {
-        self.set_byte(ANCILLA_WORK_BYTE_26, value);
     }
 
     pub(crate) fn advance_work_byte_25(&mut self) -> u8 {

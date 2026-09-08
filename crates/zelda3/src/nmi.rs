@@ -958,7 +958,6 @@ impl ZeldaState {
         // sprite list, but its hardware-visible reset word is still a real
         // DMA source; suppressing this transfer was the reason a renderer-side
         // OAM/VRAM substitute had accumulated here.
-        let defer_intro_initialization_oam_dma = false;
         if self.rom_startup_timing() && frame.main_module == 0 && matches!(frame.submodule, 6 | 7) {
             if let Some(boundary_oam) = oam_dma_source {
                 // The title sword/sparkle writer runs after the OAM-DMA boundary in
@@ -969,9 +968,7 @@ impl ZeldaState {
                 oam_buf[0x214..0x217].copy_from_slice(&boundary_oam[0x214..0x217]);
             }
         }
-        if !defer_intro_initialization_oam_dma {
-            self.complete_oam_dma_from_source(&oam_buf);
-        }
+        self.complete_oam_dma_from_source(&oam_buf);
 
         if crate::debug_env::var_os("ZELDA3_DEBUG_ATTRACT_NMI_UPLOAD").is_some()
             && frame.main_module == 20

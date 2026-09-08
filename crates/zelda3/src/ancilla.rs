@@ -5552,8 +5552,7 @@ impl ZeldaState {
         let mut oam = self.game_state.oam.current_pointer_usize();
         let idx = QUAKE_INITIAL_BOLT_FRAME_RANGES[t] as usize;
         let end = QUAKE_INITIAL_BOLT_FRAME_RANGES[t + 1] as usize;
-        for item_idx in idx..end {
-            let sprite = QUAKE_INITIAL_BOLT_SPRITES[item_idx];
+        for sprite in &QUAKE_INITIAL_BOLT_SPRITES[idx..end] {
             let x = self
                 .game_state
                 .effects
@@ -5616,8 +5615,7 @@ impl ZeldaState {
         let idx = QUAKE_SPREAD_BOLT_FRAME_RANGES[t] as usize;
         let end = QUAKE_SPREAD_BOLT_FRAME_RANGES[t + 1] as usize;
         let mut oam = self.game_state.oam.current_pointer_usize();
-        for item_idx in idx..end {
-            let sprite = QUAKE_SPREAD_BOLT_SPRITES[item_idx];
+        for sprite in &QUAKE_SPREAD_BOLT_SPRITES[idx..end] {
             self.oam_state_mut().write_entry(
                 oam,
                 sprite.x as u8,

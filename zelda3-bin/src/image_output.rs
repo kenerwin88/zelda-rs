@@ -16,14 +16,7 @@ pub(crate) fn write_argb_frame_png(
         rgba.push(pixel[0]);
         rgba.push(0xff);
     }
-    let file = fs::File::create(path)?;
-    let writer = BufWriter::new(file);
-    let mut encoder = png::Encoder::new(writer, width, height);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    let mut png = encoder.write_header()?;
-    png.write_image_data(&rgba)?;
-    Ok(())
+    write_rgba_frame_png(path, &rgba, width, height)
 }
 
 /// Encode palette-slot indices as a viewable indexed PNG grid.

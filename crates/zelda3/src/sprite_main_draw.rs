@@ -1854,7 +1854,7 @@ impl ZeldaState {
         let g = self.overlord_slot_view(2).x_low() as usize;
         let ov7 = u16::from(self.overlord_slot_view(7).x_low())
             | (u16::from(self.overlord_slot_view(8).x_low()) << 8);
-        for i in 0..5 {
+        for (i, &chr) in TRINEXX_DRAW_CHARS.iter().enumerate() {
             let j = g * 5 + i;
             let jc = j.min(TRINEXX_DRAW_X_OFFSETS.len() - 1);
             let x = xb.wrapping_add(TRINEXX_DRAW_X_OFFSETS[jc] as u8);
@@ -1862,14 +1862,7 @@ impl ZeldaState {
                 .wrapping_sub(TRINEXX_DRAW_Y_OFFSETS[jc] as u16)
                 .wrapping_sub(0x20)
                 .wrapping_add(ov7);
-            self.set_oam_helper0_at_for_draw(
-                oam,
-                x as u16,
-                y,
-                TRINEXX_DRAW_CHARS[i],
-                info.flags,
-                2,
-            );
+            self.set_oam_helper0_at_for_draw(oam, x as u16, y, chr, info.flags, 2);
             oam += 4;
         }
         self.temp_counter_mut().set(0xff);
@@ -3632,7 +3625,7 @@ impl ZeldaState {
 
     // void KingHelmasaur_OperateTail(int k, PrepOamCoordsRet *info) {  // 9e8920
     pub(super) fn king_helmasaur_operate_tail(&mut self, k: usize, info: &mut PrepOamCoordsRet) {
-        for i in 0..16usize {
+        for (i, &radius_multiplier) in KING_HELMASAUR_OPERATE_TAIL_MULT_B.iter().enumerate() {
             let j = i + if self.sprite_slot_view(k).anim_clock() != 0 {
                 16
             } else {
@@ -3657,7 +3650,7 @@ impl ZeldaState {
                     u16::from(r6)
                 };
             let r15 = ((u16::from(self.overlord_slot_view(7).gen1())
-                * u16::from(KING_HELMASAUR_OPERATE_TAIL_MULT_B[i]))
+                * u16::from(radius_multiplier))
                 >> 8) as u8;
             let mut orbit = self.overlord_slot_view_mut(i + 5);
             orbit.set_x_low(helmasaur_sin(angle, r15) as u8);
@@ -11354,7 +11347,7 @@ impl ZeldaState {
         self.guard_animate_head(k, 0x10 / 4, &guard_info);
         self.sprite_draw_bnc_body(k, &info, 0x0c / 4);
         if self.sprite_slot_view(k).graphics() < 20 {
-            self.sprite_draw_guard_spear(k, &info, 4 / 4);
+            self.sprite_draw_guard_spear(k, &info, 1);
         }
         if self.sprite_slot_view(k).flags3() & 0x10 != 0 {
             let mut shadow_info = SpritePrepOamCoordsRet {
@@ -14621,7 +14614,7 @@ impl ZeldaState {
             return;
         }
         // C Sprite_6B_CannonTrooper asserts when this slot is not a cannonball.
-        assert!(false);
+        panic!("assertion failed: false");
     }
 
     // -----------------------------------------------------------------------

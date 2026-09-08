@@ -1,3 +1,5 @@
+use crate::indexed_tile_sheet::IndexedTileSheet;
+
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -27,50 +29,15 @@ impl IndexSourceKeyMap {
 
         let file = fs::File::open(&png_path)
             .map_err(|e| format!("failed to open {}: {e}", png_path.display()))?;
-        let decoder = png::Decoder::new(std::io::BufReader::new(file));
-        let mut reader = decoder
-            .read_info()
-            .map_err(|e| format!("failed to read PNG header {}: {e}", png_path.display()))?;
-        let mut buf = vec![0u8; reader.output_buffer_size()];
-        let info = reader
-            .next_frame(&mut buf)
-            .map_err(|e| format!("failed to decode {}: {e}", png_path.display()))?;
-        if info.bit_depth != png::BitDepth::Eight || info.color_type != png::ColorType::Indexed {
-            return Err(format!(
-                "{}: expected 8-bit indexed PNG, got {:?}/{:?}",
-                png_path.display(),
-                info.color_type,
-                info.bit_depth
-            ));
-        }
-        let width = info.width as usize;
-        let height = info.height as usize;
-        if !width.is_multiple_of(8) || !height.is_multiple_of(8) {
-            return Err(format!(
-                "{}: PNG size {}x{} is not aligned to 8x8 cells",
-                png_path.display(),
-                info.width,
-                info.height
-            ));
-        }
-        let cols = width / 8;
-        let data = &buf[..info.buffer_size()];
+        let sheet = IndexedTileSheet::decode(std::io::BufReader::new(file), &png_path)?;
         let mut by_pattern = HashMap::new();
         for cell in manifest.cells {
             if cell.kind != 6 {
                 continue;
             }
-            let id = cell.id as usize;
-            let cx = (id % cols) * 8;
-            let cy = (id / cols) * 8;
-            if cy + 8 > height {
+            let Some(pattern) = sheet.cell(cell.id as usize) else {
                 continue;
-            }
-            let mut pattern = [0u8; 64];
-            for row in 0..8usize {
-                let src = (cy + row) * width + cx;
-                pattern[row * 8..row * 8 + 8].copy_from_slice(&data[src..src + 8]);
-            }
+            };
             by_pattern.insert(
                 pattern,
                 IndexSourceKey {

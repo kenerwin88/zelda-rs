@@ -373,6 +373,29 @@ pub(crate) struct SpriteSlotsState {
     work: Vec<u8>,
 }
 
+/// Declare each slot byte's read and write names against one WRAM address.
+/// Setters use the bridge's existing byte writer, including its synchronization.
+macro_rules! slot_byte_accessors {
+    ($view:ident, $bridge:ident; $( $getter:ident => $setter:ident: $offset:path, )*) => {
+        impl<'a> $view<'a> {
+            $(
+                pub(crate) fn $getter(&self) -> u8 {
+                    self.state.byte(self.slot, $offset)
+                }
+            )*
+        }
+
+        impl<'a> $bridge<'a> {
+            $(
+                pub(crate) fn $setter(&mut self, value: u8) {
+                    self.set_byte($offset, value);
+                }
+            )*
+        }
+    };
+}
+pub(super) use slot_byte_accessors;
+
 /// Byte-addressed slot bank shared by the sprite and ancilla slot states: the
 /// 8.8 / 8.16 fixed-point axis moves the ROM performs with `ADC` chains.
 pub(super) trait SlotBankBytes {
@@ -535,26 +558,73 @@ pub(crate) struct NativeSpriteSlotView<'a> {
     slot: usize,
 }
 
+slot_byte_accessors! {
+    NativeSpriteSlotView, NativeSpriteSlotBridgeMut;
+    sprite_type => set_sprite_type: SPRITE_TYPE,
+    state => set_state: SPRITE_STATE,
+    x_low => set_x_low: SPRITE_X_LO,
+    x_high => set_x_high: SPRITE_X_HI,
+    y_low => set_y_low: SPRITE_Y_LO,
+    y_high => set_y_high: SPRITE_Y_HI,
+    x_velocity => set_x_velocity: SPRITE_X_VELOCITY,
+    y_velocity => set_y_velocity: SPRITE_Y_VELOCITY,
+    z_velocity => set_z_velocity: SPRITE_Z_VELOCITY,
+    x_recoil => set_x_recoil: SPRITE_X_RECOIL,
+    y_recoil => set_y_recoil: SPRITE_Y_RECOIL,
+    x_subpixel => set_x_subpixel: SPRITE_X_SUBPIXEL,
+    y_subpixel => set_y_subpixel: SPRITE_Y_SUBPIXEL,
+    z => set_z: SPRITE_Z,
+    z_subpixel => set_z_subpixel: SPRITE_Z_SUBPIXEL,
+    ai_state => set_ai_state: SPRITE_AI_STATE,
+    a => set_a: SPRITE_A,
+    c => set_c: SPRITE_C,
+    b => set_b: SPRITE_B,
+    e => set_e: SPRITE_E,
+    f => set_f: SPRITE_F,
+    g => set_g: SPRITE_G,
+    graphics => set_graphics: SPRITE_GRAPHICS,
+    direction => set_direction: SPRITE_D,
+    subtype => set_subtype: SPRITE_SUBTYPE,
+    delay_main => set_delay_main: SPRITE_DELAY_MAIN,
+    delay_aux1 => set_delay_aux1: SPRITE_DELAY_AUX1,
+    delay_aux4 => set_delay_aux4: SPRITE_DELAY_AUX4,
+    delay_aux2 => set_delay_aux2: SPRITE_DELAY_AUX2,
+    flags2 => set_flags2: SPRITE_FLAGS2,
+    flags => set_flags: SPRITE_FLAGS,
+    flags3 => set_flags3: SPRITE_FLAGS3,
+    wall_collision => set_wall_collision: SPRITE_WALL_COLLISION,
+    anim_clock => set_anim_clock: SPRITE_ANIM_CLOCK,
+    delay_aux3 => set_delay_aux3: SPRITE_DELAY_AUX3,
+    flags4 => set_flags4: SPRITE_FLAGS4,
+    flags5 => set_flags5: SPRITE_FLAGS5,
+    health => set_health: SPRITE_HEALTH,
+    hit_timer => set_hit_timer: SPRITE_HIT_TIMER,
+    pause => set_pause: SPRITE_PAUSE,
+    stunned => set_stunned: SPRITE_STUNNED,
+    ignore_projectile => set_ignore_projectile: SPRITE_IGNORE_PROJECTILE,
+    draw_work_byte_2 => set_draw_work_byte_2: SPRITE_DRAW_WORK_BYTE_2,
+    n => set_n: SPRITE_N,
+    deflection_bits => set_deflection_bits: SPRITE_DEFL_BITS,
+    bump_damage => set_bump_damage: SPRITE_BUMP_DAMAGE,
+    incoming_damage => set_incoming_damage: SPRITE_INCOMING_DAMAGE,
+    floor => set_floor: SPRITE_FLOOR,
+    room => set_room: SPRITE_ROOM,
+    die_action => set_die_action: SPRITE_DIE_ACTION,
+    draw_i => set_draw_i: SPRITE_DRAW_I,
+    draw_work_byte_3 => set_draw_work_byte_3: SPRITE_DRAW_WORK_BYTE_3,
+    draw_work_byte_4 => set_draw_work_byte_4: SPRITE_DRAW_WORK_BYTE_4,
+    draw_work_byte_5 => set_draw_work_byte_5: SPRITE_DRAW_WORK_BYTE_5,
+    draw_work_byte_1 => set_draw_work_byte_1: SPRITE_DRAW_WORK_BYTE_1,
+    head_direction => set_head_direction: SPRITE_HEAD_DIR,
+    oam_flags => set_oam_flags: SPRITE_OAM_FLAGS,
+    object_priority => set_object_priority: SPRITE_OBJ_PRIO,
+    subtype2 => set_subtype2: SPRITE_SUBTYPE2,
+}
+
 impl<'a> NativeSpriteSlotView<'a> {
-    pub(crate) fn sprite_type(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_TYPE)
-    }
-
-    pub(crate) fn state(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_STATE)
-    }
-
     pub(crate) fn x(&self) -> u16 {
         self.state
             .packed_position(self.slot, SPRITE_X_LO, SPRITE_X_HI)
-    }
-
-    pub(crate) fn x_low(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_X_LO)
-    }
-
-    pub(crate) fn x_high(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_X_HI)
     }
 
     pub(crate) fn y(&self) -> u16 {
@@ -562,228 +632,8 @@ impl<'a> NativeSpriteSlotView<'a> {
             .packed_position(self.slot, SPRITE_Y_LO, SPRITE_Y_HI)
     }
 
-    pub(crate) fn y_low(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_Y_LO)
-    }
-
-    pub(crate) fn y_high(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_Y_HI)
-    }
-
-    pub(crate) fn x_velocity(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_X_VELOCITY)
-    }
-
-    pub(crate) fn y_velocity(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_Y_VELOCITY)
-    }
-
-    pub(crate) fn z_velocity(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_Z_VELOCITY)
-    }
-
-    pub(crate) fn x_recoil(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_X_RECOIL)
-    }
-
-    pub(crate) fn y_recoil(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_Y_RECOIL)
-    }
-
-    pub(crate) fn x_subpixel(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_X_SUBPIXEL)
-    }
-
-    pub(crate) fn y_subpixel(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_Y_SUBPIXEL)
-    }
-
-    pub(crate) fn z(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_Z)
-    }
-
-    pub(crate) fn z_subpixel(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_Z_SUBPIXEL)
-    }
-
-    pub(crate) fn ai_state(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_AI_STATE)
-    }
-
-    pub(crate) fn a(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_A)
-    }
-
-    pub(crate) fn c(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_C)
-    }
-
-    pub(crate) fn b(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_B)
-    }
-
-    pub(crate) fn e(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_E)
-    }
-
-    pub(crate) fn f(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_F)
-    }
-
-    pub(crate) fn g(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_G)
-    }
-
-    pub(crate) fn graphics(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_GRAPHICS)
-    }
-
-    pub(crate) fn direction(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_D)
-    }
-
-    pub(crate) fn subtype(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_SUBTYPE)
-    }
-
-    pub(crate) fn delay_main(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_DELAY_MAIN)
-    }
-
-    pub(crate) fn delay_aux1(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_DELAY_AUX1)
-    }
-
-    pub(crate) fn delay_aux4(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_DELAY_AUX4)
-    }
-
-    pub(crate) fn delay_aux2(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_DELAY_AUX2)
-    }
-
-    pub(crate) fn flags2(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_FLAGS2)
-    }
-
-    pub(crate) fn flags(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_FLAGS)
-    }
-
-    pub(crate) fn flags3(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_FLAGS3)
-    }
-
-    pub(crate) fn wall_collision(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_WALL_COLLISION)
-    }
-
-    pub(crate) fn anim_clock(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_ANIM_CLOCK)
-    }
-
-    pub(crate) fn delay_aux3(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_DELAY_AUX3)
-    }
-
-    pub(crate) fn flags4(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_FLAGS4)
-    }
-
-    pub(crate) fn flags5(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_FLAGS5)
-    }
-
-    pub(crate) fn health(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_HEALTH)
-    }
-
-    pub(crate) fn hit_timer(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_HIT_TIMER)
-    }
-
-    pub(crate) fn pause(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_PAUSE)
-    }
-
-    pub(crate) fn stunned(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_STUNNED)
-    }
-
-    pub(crate) fn ignore_projectile(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_IGNORE_PROJECTILE)
-    }
-
-    pub(crate) fn draw_work_byte_2(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_DRAW_WORK_BYTE_2)
-    }
-
-    pub(crate) fn n(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_N)
-    }
-
     pub(crate) fn n_word(&self) -> u16 {
         self.state.word_at(SPRITE_N + self.slot * 2)
-    }
-
-    pub(crate) fn deflection_bits(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_DEFL_BITS)
-    }
-
-    pub(crate) fn bump_damage(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_BUMP_DAMAGE)
-    }
-
-    pub(crate) fn incoming_damage(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_INCOMING_DAMAGE)
-    }
-
-    pub(crate) fn floor(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_FLOOR)
-    }
-
-    pub(crate) fn room(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_ROOM)
-    }
-
-    pub(crate) fn die_action(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_DIE_ACTION)
-    }
-
-    pub(crate) fn draw_i(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_DRAW_I)
-    }
-
-    pub(crate) fn draw_work_byte_3(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_DRAW_WORK_BYTE_3)
-    }
-
-    pub(crate) fn draw_work_byte_4(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_DRAW_WORK_BYTE_4)
-    }
-
-    pub(crate) fn draw_work_byte_5(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_DRAW_WORK_BYTE_5)
-    }
-
-    pub(crate) fn draw_work_byte_1(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_DRAW_WORK_BYTE_1)
-    }
-
-    pub(crate) fn head_direction(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_HEAD_DIR)
-    }
-
-    pub(crate) fn oam_flags(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_OAM_FLAGS)
-    }
-
-    pub(crate) fn object_priority(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_OBJ_PRIO)
-    }
-
-    pub(crate) fn subtype2(&self) -> u8 {
-        self.state.byte(self.slot, SPRITE_SUBTYPE2)
     }
 }
 
@@ -925,32 +775,12 @@ impl<'a> NativeSpriteSlotBridgeMut<'a> {
         self.set_byte(base, next);
     }
 
-    pub(crate) fn set_sprite_type(&mut self, value: u8) {
-        self.set_byte(SPRITE_TYPE, value);
-    }
-
-    pub(crate) fn set_state(&mut self, value: u8) {
-        self.set_byte(SPRITE_STATE, value);
-    }
-
     pub(crate) fn increment_state(&mut self) {
         self.add_byte(SPRITE_STATE, 1);
     }
 
     pub(crate) fn clear(&mut self) {
         self.set_state(0);
-    }
-
-    pub(crate) fn set_x_velocity(&mut self, value: u8) {
-        self.set_byte(SPRITE_X_VELOCITY, value);
-    }
-
-    pub(crate) fn set_y_velocity(&mut self, value: u8) {
-        self.set_byte(SPRITE_Y_VELOCITY, value);
-    }
-
-    pub(crate) fn set_z_velocity(&mut self, value: u8) {
-        self.set_byte(SPRITE_Z_VELOCITY, value);
     }
 
     pub(crate) fn x_velocity(&self) -> u8 {
@@ -985,10 +815,6 @@ impl<'a> NativeSpriteSlotBridgeMut<'a> {
         self.xor_byte(SPRITE_Y_VELOCITY, value);
     }
 
-    pub(crate) fn set_ai_state(&mut self, value: u8) {
-        self.set_byte(SPRITE_AI_STATE, value);
-    }
-
     pub(crate) fn increment_ai_state(&mut self) {
         self.add_byte(SPRITE_AI_STATE, 1);
     }
@@ -1001,10 +827,6 @@ impl<'a> NativeSpriteSlotBridgeMut<'a> {
         self.add_byte(SPRITE_AI_STATE, value);
     }
 
-    pub(crate) fn set_delay_main(&mut self, value: u8) {
-        self.set_byte(SPRITE_DELAY_MAIN, value);
-    }
-
     pub(crate) fn increment_delay_main(&mut self) {
         self.add_byte(SPRITE_DELAY_MAIN, 1);
     }
@@ -1015,10 +837,6 @@ impl<'a> NativeSpriteSlotBridgeMut<'a> {
 
     pub(crate) fn subtract_delay_main(&mut self, value: u8) {
         self.subtract_byte(SPRITE_DELAY_MAIN, value);
-    }
-
-    pub(crate) fn set_graphics(&mut self, value: u8) {
-        self.set_byte(SPRITE_GRAPHICS, value);
     }
 
     pub(crate) fn increment_graphics(&mut self) {
@@ -1037,10 +855,6 @@ impl<'a> NativeSpriteSlotBridgeMut<'a> {
         self.xor_byte(SPRITE_GRAPHICS, value);
     }
 
-    pub(crate) fn set_direction(&mut self, value: u8) {
-        self.set_byte(SPRITE_D, value);
-    }
-
     pub(crate) fn add_direction(&mut self, value: u8) {
         self.add_byte(SPRITE_D, value);
     }
@@ -1057,10 +871,6 @@ impl<'a> NativeSpriteSlotBridgeMut<'a> {
         self.xor_byte(SPRITE_D, value);
     }
 
-    pub(crate) fn set_oam_flags(&mut self, value: u8) {
-        self.set_byte(SPRITE_OAM_FLAGS, value);
-    }
-
     pub(crate) fn and_oam_flags(&mut self, value: u8) {
         self.and_byte(SPRITE_OAM_FLAGS, value);
     }
@@ -1071,10 +881,6 @@ impl<'a> NativeSpriteSlotBridgeMut<'a> {
 
     pub(crate) fn or_oam_flags(&mut self, value: u8) {
         self.or_byte(SPRITE_OAM_FLAGS, value);
-    }
-
-    pub(crate) fn set_a(&mut self, value: u8) {
-        self.set_byte(SPRITE_A, value);
     }
 
     pub(crate) fn increment_a(&mut self) {
@@ -1097,10 +903,6 @@ impl<'a> NativeSpriteSlotBridgeMut<'a> {
         self.xor_byte(SPRITE_A, value);
     }
 
-    pub(crate) fn set_head_direction(&mut self, value: u8) {
-        self.set_byte(SPRITE_HEAD_DIR, value);
-    }
-
     pub(crate) fn increment_head_direction(&mut self) {
         self.add_byte(SPRITE_HEAD_DIR, 1);
     }
@@ -1118,48 +920,12 @@ impl<'a> NativeSpriteSlotBridgeMut<'a> {
         self.set_byte(SPRITE_HEAD_DIR, next);
     }
 
-    pub(crate) fn set_z(&mut self, value: u8) {
-        self.set_byte(SPRITE_Z, value);
-    }
-
-    pub(crate) fn set_ignore_projectile(&mut self, value: u8) {
-        self.set_byte(SPRITE_IGNORE_PROJECTILE, value);
-    }
-
-    pub(crate) fn set_subtype2(&mut self, value: u8) {
-        self.set_byte(SPRITE_SUBTYPE2, value);
-    }
-
-    pub(crate) fn set_flags2(&mut self, value: u8) {
-        self.set_byte(SPRITE_FLAGS2, value);
-    }
-
-    pub(crate) fn set_x_low(&mut self, value: u8) {
-        self.set_byte(SPRITE_X_LO, value);
-    }
-
     pub(crate) fn set_x(&mut self, value: u16) {
         self.set_position(SPRITE_X_LO, SPRITE_X_HI, value);
     }
 
-    pub(crate) fn set_c(&mut self, value: u8) {
-        self.set_byte(SPRITE_C, value);
-    }
-
-    pub(crate) fn set_b(&mut self, value: u8) {
-        self.set_byte(SPRITE_B, value);
-    }
-
-    pub(crate) fn set_y_low(&mut self, value: u8) {
-        self.set_byte(SPRITE_Y_LO, value);
-    }
-
     pub(crate) fn set_y(&mut self, value: u16) {
         self.set_position(SPRITE_Y_LO, SPRITE_Y_HI, value);
-    }
-
-    pub(crate) fn set_delay_aux1(&mut self, value: u8) {
-        self.set_byte(SPRITE_DELAY_AUX1, value);
     }
 
     pub(crate) fn add_subtype2(&mut self, value: u8) {
@@ -1174,80 +940,8 @@ impl<'a> NativeSpriteSlotBridgeMut<'a> {
         self.add_byte(SPRITE_IGNORE_PROJECTILE, 1);
     }
 
-    pub(crate) fn set_flags4(&mut self, value: u8) {
-        self.set_byte(SPRITE_FLAGS4, value);
-    }
-
-    pub(crate) fn set_g(&mut self, value: u8) {
-        self.set_byte(SPRITE_G, value);
-    }
-
     pub(crate) fn subtract_z_velocity(&mut self, value: u8) {
         self.subtract_byte(SPRITE_Z_VELOCITY, value);
-    }
-
-    pub(crate) fn set_hit_timer(&mut self, value: u8) {
-        self.set_byte(SPRITE_HIT_TIMER, value);
-    }
-
-    pub(crate) fn set_flags3(&mut self, value: u8) {
-        self.set_byte(SPRITE_FLAGS3, value);
-    }
-
-    pub(crate) fn set_x_high(&mut self, value: u8) {
-        self.set_byte(SPRITE_X_HI, value);
-    }
-
-    pub(crate) fn set_e(&mut self, value: u8) {
-        self.set_byte(SPRITE_E, value);
-    }
-
-    pub(crate) fn set_y_high(&mut self, value: u8) {
-        self.set_byte(SPRITE_Y_HI, value);
-    }
-
-    pub(crate) fn set_floor(&mut self, value: u8) {
-        self.set_byte(SPRITE_FLOOR, value);
-    }
-
-    pub(crate) fn set_deflection_bits(&mut self, value: u8) {
-        self.set_byte(SPRITE_DEFL_BITS, value);
-    }
-
-    pub(crate) fn set_delay_aux4(&mut self, value: u8) {
-        self.set_byte(SPRITE_DELAY_AUX4, value);
-    }
-
-    pub(crate) fn set_health(&mut self, value: u8) {
-        self.set_byte(SPRITE_HEALTH, value);
-    }
-
-    pub(crate) fn set_subtype(&mut self, value: u8) {
-        self.set_byte(SPRITE_SUBTYPE, value);
-    }
-
-    pub(crate) fn set_delay_aux2(&mut self, value: u8) {
-        self.set_byte(SPRITE_DELAY_AUX2, value);
-    }
-
-    pub(crate) fn set_f(&mut self, value: u8) {
-        self.set_byte(SPRITE_F, value);
-    }
-
-    pub(crate) fn set_anim_clock(&mut self, value: u8) {
-        self.set_byte(SPRITE_ANIM_CLOCK, value);
-    }
-
-    pub(crate) fn set_bump_damage(&mut self, value: u8) {
-        self.set_byte(SPRITE_BUMP_DAMAGE, value);
-    }
-
-    pub(crate) fn set_flags5(&mut self, value: u8) {
-        self.set_byte(SPRITE_FLAGS5, value);
-    }
-
-    pub(crate) fn set_object_priority(&mut self, value: u8) {
-        self.set_byte(SPRITE_OBJ_PRIO, value);
     }
 
     pub(crate) fn add_x_low(&mut self, value: u8) {
@@ -1262,24 +956,12 @@ impl<'a> NativeSpriteSlotBridgeMut<'a> {
         self.add_byte(SPRITE_B, value);
     }
 
-    pub(crate) fn set_stunned(&mut self, value: u8) {
-        self.set_byte(SPRITE_STUNNED, value);
-    }
-
     pub(crate) fn add_g(&mut self, value: u8) {
         self.add_byte(SPRITE_G, value);
     }
 
     pub(crate) fn and_flags3(&mut self, value: u8) {
         self.and_byte(SPRITE_FLAGS3, value);
-    }
-
-    pub(crate) fn set_incoming_damage(&mut self, value: u8) {
-        self.set_byte(SPRITE_INCOMING_DAMAGE, value);
-    }
-
-    pub(crate) fn set_n(&mut self, value: u8) {
-        self.set_byte(SPRITE_N, value);
     }
 
     pub(crate) fn set_n_word(&mut self, value: u16) {
@@ -1290,24 +972,12 @@ impl<'a> NativeSpriteSlotBridgeMut<'a> {
         self.or_byte(SPRITE_OBJ_PRIO, value);
     }
 
-    pub(crate) fn set_x_recoil(&mut self, value: u8) {
-        self.set_byte(SPRITE_X_RECOIL, value);
-    }
-
-    pub(crate) fn set_y_recoil(&mut self, value: u8) {
-        self.set_byte(SPRITE_Y_RECOIL, value);
-    }
-
     pub(crate) fn add_flags2(&mut self, value: u8) {
         self.add_byte(SPRITE_FLAGS2, value);
     }
 
     pub(crate) fn add_y_low(&mut self, value: u8) {
         self.add_byte(SPRITE_Y_LO, value);
-    }
-
-    pub(crate) fn set_die_action(&mut self, value: u8) {
-        self.set_byte(SPRITE_DIE_ACTION, value);
     }
 
     pub(crate) fn add_z_velocity(&mut self, value: u8) {
@@ -1322,32 +992,12 @@ impl<'a> NativeSpriteSlotBridgeMut<'a> {
         self.or_byte(SPRITE_DEFL_BITS, value);
     }
 
-    pub(crate) fn set_delay_aux3(&mut self, value: u8) {
-        self.set_byte(SPRITE_DELAY_AUX3, value);
-    }
-
     pub(crate) fn and_flags2(&mut self, value: u8) {
         self.and_byte(SPRITE_FLAGS2, value);
     }
 
     pub(crate) fn increment_g(&mut self) {
         self.add_byte(SPRITE_G, 1);
-    }
-
-    pub(crate) fn set_pause(&mut self, value: u8) {
-        self.set_byte(SPRITE_PAUSE, value);
-    }
-
-    pub(crate) fn set_room(&mut self, value: u8) {
-        self.set_byte(SPRITE_ROOM, value);
-    }
-
-    pub(crate) fn set_wall_collision(&mut self, value: u8) {
-        self.set_byte(SPRITE_WALL_COLLISION, value);
-    }
-
-    pub(crate) fn set_z_subpixel(&mut self, value: u8) {
-        self.set_byte(SPRITE_Z_SUBPIXEL, value);
     }
 
     pub(crate) fn subtract_y_low(&mut self, value: u8) {
@@ -1417,10 +1067,6 @@ impl<'a> NativeSpriteSlotBridgeMut<'a> {
         self.add_byte(SPRITE_FLAGS4, 1);
     }
 
-    pub(crate) fn set_flags(&mut self, value: u8) {
-        self.set_byte(SPRITE_FLAGS, value);
-    }
-
     pub(crate) fn and_deflection_bits(&mut self, value: u8) {
         self.and_byte(SPRITE_DEFL_BITS, value);
     }
@@ -1440,14 +1086,6 @@ impl<'a> NativeSpriteSlotBridgeMut<'a> {
 
     pub(crate) fn or_wall_collision(&mut self, value: u8) {
         self.or_byte(SPRITE_WALL_COLLISION, value);
-    }
-
-    pub(crate) fn set_draw_i(&mut self, value: u8) {
-        self.set_byte(SPRITE_DRAW_I, value);
-    }
-
-    pub(crate) fn set_draw_work_byte_3(&mut self, value: u8) {
-        self.set_byte(SPRITE_DRAW_WORK_BYTE_3, value);
     }
 
     pub(crate) fn subtract_b(&mut self, value: u8) {
@@ -1482,22 +1120,6 @@ impl<'a> NativeSpriteSlotBridgeMut<'a> {
 
     pub(crate) fn or_hit_timer(&mut self, value: u8) {
         self.or_byte(SPRITE_HIT_TIMER, value);
-    }
-
-    pub(crate) fn set_draw_work_byte_1(&mut self, value: u8) {
-        self.set_byte(SPRITE_DRAW_WORK_BYTE_1, value);
-    }
-
-    pub(crate) fn set_draw_work_byte_2(&mut self, value: u8) {
-        self.set_byte(SPRITE_DRAW_WORK_BYTE_2, value);
-    }
-
-    pub(crate) fn set_draw_work_byte_4(&mut self, value: u8) {
-        self.set_byte(SPRITE_DRAW_WORK_BYTE_4, value);
-    }
-
-    pub(crate) fn set_draw_work_byte_5(&mut self, value: u8) {
-        self.set_byte(SPRITE_DRAW_WORK_BYTE_5, value);
     }
 
     pub(crate) fn subtract_x_low(&mut self, value: u8) {
@@ -1597,14 +1219,6 @@ impl<'a> NativeSpriteSlotBridgeMut<'a> {
 
     pub(crate) fn or_flags4(&mut self, value: u8) {
         self.or_byte(SPRITE_FLAGS4, value);
-    }
-
-    pub(crate) fn set_x_subpixel(&mut self, value: u8) {
-        self.set_byte(SPRITE_X_SUBPIXEL, value);
-    }
-
-    pub(crate) fn set_y_subpixel(&mut self, value: u8) {
-        self.set_byte(SPRITE_Y_SUBPIXEL, value);
     }
 
     pub(crate) fn subtract_f(&mut self, value: u8) {

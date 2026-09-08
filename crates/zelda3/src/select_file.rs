@@ -9,6 +9,58 @@ use select_file_shared::*;
 pub(super) const SELECT_FILE_CHECKERBOARD_TILE_COUNT: usize = 1024;
 const FILE_SELECT_GRAPHICS_LOW_WRAM: std::ops::Range<usize> = 0x0d00..0x1000;
 
+struct FileSelectNameRow {
+    vram_word_address: u16,
+    leading_tiles: &'static [u16],
+}
+
+fn file_select_name_stripes() -> Vec<u8> {
+    const ROW_TILE_COUNT: usize = 19;
+    const FILL_TILE: u16 = 0x18a9;
+    const END_OF_STRIPES: u8 = 0xff;
+    // Two tile rows per save slot. Tile words include their palette attributes.
+    const ROWS: [FileSelectNameRow; 6] = [
+        FileSelectNameRow {
+            vram_word_address: 0x6129,
+            leading_tiles: &[0x18e7],
+        },
+        FileSelectNameRow {
+            vram_word_address: 0x6149,
+            leading_tiles: &[0x18f7, 0x1891],
+        },
+        FileSelectNameRow {
+            vram_word_address: 0x61a9,
+            leading_tiles: &[0x18e8],
+        },
+        FileSelectNameRow {
+            vram_word_address: 0x61c9,
+            leading_tiles: &[0x18f8, 0x1891],
+        },
+        FileSelectNameRow {
+            vram_word_address: 0x6229,
+            leading_tiles: &[0x18e9],
+        },
+        FileSelectNameRow {
+            vram_word_address: 0x6249,
+            leading_tiles: &[0x18f9, 0x1891],
+        },
+    ];
+
+    let mut data = Vec::with_capacity(ROWS.len() * (4 + ROW_TILE_COUNT * 2) + 1);
+    for row in ROWS {
+        // handle_stripes14_slice reads the destination and length-minus-one
+        // big-endian. With no control flags, this is a horizontal literal row.
+        data.extend_from_slice(&row.vram_word_address.to_be_bytes());
+        data.extend_from_slice(&(ROW_TILE_COUNT as u16 * 2 - 1).to_be_bytes());
+        for column in 0..ROW_TILE_COUNT {
+            let tile = row.leading_tiles.get(column).copied().unwrap_or(FILL_TILE);
+            data.extend_from_slice(&tile.to_le_bytes());
+        }
+    }
+    data.push(END_OF_STRIPES);
+    data
+}
+
 fn read_name_player_tab1_byte_word(tab: &[i16; 26], offs: usize) -> u16 {
     let lo = tab[offs / 2].to_le_bytes()[offs & 1] as u16;
     let hi = tab[offs.div_ceil(2)].to_le_bytes()[(offs + 1) & 1] as u16;
@@ -224,27 +276,7 @@ impl ZeldaState {
     }
 
     pub(super) fn file_select_trigger_name_stripes_and_advance(&mut self) {
-        let mut data = Vec::with_capacity(253);
-        for &(addr_hi, addr_lo, first, second) in &[
-            (0x61, 0x29, 0xe7, None),
-            (0x61, 0x49, 0xf7, Some(0x91)),
-            (0x61, 0xa9, 0xe8, None),
-            (0x61, 0xc9, 0xf8, Some(0x91)),
-            (0x62, 0x29, 0xe9, None),
-            (0x62, 0x49, 0xf9, Some(0x91)),
-        ] {
-            data.extend_from_slice(&[addr_hi, addr_lo, 0, 0x25, first, 0x18]);
-            let mut remaining = 18;
-            if let Some(second) = second {
-                data.extend_from_slice(&[second, 0x18]);
-                remaining -= 1;
-            }
-            for _ in 0..remaining {
-                data.extend_from_slice(&[0xa9, 0x18]);
-            }
-        }
-        data.push(0xff);
-        debug_assert_eq!(data.len(), 253);
+        let data = file_select_name_stripes();
         self.copy_vram_upload_buffer_bytes(0, &data);
         self.set_screen_brightness(0x0f);
         self.clear_core_update_disable_flag();
@@ -598,12 +630,15 @@ impl ZeldaState {
             &COPY_FILE_SELECTION_AND_BLINKER_COPY_SOURCE_SELECTION_STRIPE,
         );
 
-        for k in 0..3 {
+        for (k, &destination) in COPY_FILE_SELECTION_AND_BLINKER_DESTINATIONS
+            .iter()
+            .enumerate()
+        {
             if self.game_state.messaging.select_file_menu.save_slot_flag(k) & 1 != 0 {
                 let mut dst = self
                     .game_state
                     .display
-                    .vram_upload_buffer_address(COPY_FILE_SELECTION_AND_BLINKER_DESTINATIONS[k]);
+                    .vram_upload_buffer_address(destination);
                 for i in 0..6 {
                     let t = read_le_u16(&self.sram, k * 0x500 + KSRM_OFFS_NAME + i * 2)
                         .wrapping_add(0x1800);
@@ -710,7 +745,10 @@ impl ZeldaState {
             &COPY_FILE_TARGET_SELECTION_AND_BLINK_COPY_TARGET_SELECTION_STRIPE,
         );
         let mut j = 0usize;
-        for k in 0..3 {
+        for (k, &blank_tile) in COPY_FILE_TARGET_SELECTION_AND_BLINK_COPY_TARGET_SLOT_BLANK_TILES
+            .iter()
+            .enumerate()
+        {
             if k * 2
                 == self
                     .game_state
@@ -725,9 +763,8 @@ impl ZeldaState {
                 .display
                 .vram_upload_buffer_address(COPY_FILE_TARGET_SELECTION_AND_BLINK_DESTINATIONS[j]);
             j += 1;
-            let t = COPY_FILE_TARGET_SELECTION_AND_BLINK_COPY_TARGET_SLOT_BLANK_TILES[k];
-            self.write_vram_upload_absolute_word(dst, t);
-            self.write_vram_upload_absolute_word(dst + 20, t.wrapping_add(0x10));
+            self.write_vram_upload_absolute_word(dst, blank_tile);
+            self.write_vram_upload_absolute_word(dst + 20, blank_tile.wrapping_add(0x10));
             dst += 4;
             if self.game_state.messaging.select_file_menu.save_slot_flag(k) != 0 {
                 for i in 0..6 {

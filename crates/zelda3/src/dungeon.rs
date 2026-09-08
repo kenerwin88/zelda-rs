@@ -10690,15 +10690,6 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_InterRoomTrans_State10(&mut self) {
-        if self.rom_startup_timing() && self.game_state.world.location.dungeon_room_index() == 0x72
-        {
-            // The second quadrant build is interrupted after the main-loop
-            // prefix has latched updates but before the state-10 caller can
-            // publish Link's next OAM coordinates.
-            self.stage_dungeon_supertile_quadrant_upload_obj_scanout();
-            self.latch_nmi_update();
-            self.set_core_update_disable_flag(1);
-        }
         let palette_filter_active = self.game_state.dungeon.torch.any_lights_out_request() != 0;
         let palette_filter_loop_master_cycles = palette_filter_active
             .then(|| crate::zelda_rtl::palette_filter_bounce_loop_master_cycles(self));
@@ -10767,12 +10758,6 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_InterRoomTrans_State9(&mut self) {
-        if self.rom_startup_timing() && self.game_state.world.location.dungeon_room_index() == 0x72
-        {
-            self.stage_dungeon_supertile_quadrant_upload_obj_scanout();
-            self.latch_nmi_update();
-            self.set_core_update_disable_flag(1);
-        }
         let palette_filter_active = self.game_state.dungeon.torch.any_lights_out_request() != 0;
         let palette_filter_loop_master_cycles = palette_filter_active
             .then(|| crate::zelda_rtl::palette_filter_bounce_loop_master_cycles(self));
