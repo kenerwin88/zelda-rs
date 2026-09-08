@@ -30,8 +30,8 @@ calls the owning component directly.
 `player/compatibility.rs` contains the cartridge codec and player bridge.
 The original full projection order and partial mutation writes remain
 explicit. Native movement and action methods perform no RAM publication.
-The original player module falls from 8,279 to 2,182 lines; this is an
-ownership and organization change, not a claim of net code-size reduction.
+The original player module falls from 8,279 to 2,182 lines. Total lines
+increase with the component interfaces, audit support, and regression tests.
 
 ## Observation boundaries
 
@@ -73,8 +73,19 @@ not evidence of a runtime conflict. The moved native/bridge methods were also
 compared against the baseline after normalizing component paths and formatting;
 no unintended method-body changes were found.
 
-The final component candidate matched all 200,000 consecutive cached A/V
+The final component binary matched all 200,000 consecutive cached A/V
 frames in 296.74 seconds, both reached WRAM goldens, and the complete baseline
-WRAM endpoint. A subsequent visibility-only change restricts native magic
-mutations to the native-state module; gameplay continues through its publishing
-bridge. The full cold gate will validate the committed source and binary.
+WRAM endpoint. Native magic mutations are restricted to the native-state
+module; gameplay uses the publishing bridge.
+
+Source commit `27ee1e32` passed the full cold cached Snes9x gate in 2411.29
+seconds. All 1,581,079 consecutive audio/video frames matched from frame zero,
+with no checkpoint resume and no reported RNG drift. All four WRAM goldens
+and the entire final 131,072-byte WRAM image matched the preceding promoted
+native-save-progress build. The validated binary SHA-256 is
+`414a96d1c9b9d583c0fd8ff7687bfc4b3364ae6397b17608281e06e7858568a8`.
+
+The source commit's normal hook also passed the standalone 500-frame smoke
+and a fresh 180-frame live Snes9x comparison. The full-route evidence uses the
+immutable cached Snes9x oracle. The promoted receipt is
+`routes/full_run/receipts/native-player-full-av.manifest.json`.
