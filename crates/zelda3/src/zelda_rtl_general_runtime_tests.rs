@@ -2072,5 +2072,7 @@ mod runtime_spotlight;
 mod runtime_sprites;
 #[path = "zelda_rtl_tests/runtime/runtime_startup.rs"]
 mod runtime_startup;
+#[path = "zelda_rtl_tests/runtime/runtime_tile_behavior.rs"]
+mod runtime_tile_behavior;
 #[path = "zelda_rtl_tests/runtime/runtime_timing.rs"]
 mod runtime_timing;

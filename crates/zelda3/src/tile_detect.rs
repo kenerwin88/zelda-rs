@@ -4,6 +4,7 @@ use super::*;
 use crate::game_state::constants::MENU_PREV_JOYPAD_H;
 use crate::game_state::{
     CollisionAxis, CollisionDirection, MovementProbe, MovementProbeKind, PlayerFootprint,
+    TileBehavior, TileResult,
 };
 const HOOKSHOT_SINGLE_LAYER_CHECK_X_OFFSETS: [u8; 8] = [0, 15, 0, 15, 0, 0, 8, 8];
 const HOOKSHOT_SINGLE_LAYER_CHECK_Y_OFFSETS: [u8; 8] = [0, 0, 7, 7, 0, 15, 0, 15];
@@ -12,7 +13,6 @@ const DOOR_NUDGE_DETECT_X_OFFSETS: [i8; 4] = [8, 8, 0, 15];
 const SWORD_DOORWAY_DETECT_X_OFFSETS: [i8; 4] = [8, 8, -1, 16];
 const SWORD_DOORWAY_DETECT_Y_OFFSETS: [i8; 4] = [-1, 24, 16, 16];
 const TILE_DETECT_DIAG_STATES: [u16; 4] = [4, 0, 6, 2];
-const TILE_DETECT_READABLE_TILE50_DATA: [u8; 7] = [0x54, 0x52, 0x50, 0x51, 0x53, 0x55, 0x56];
 
 impl ZeldaState {
     pub fn overworld_get_tile_attribute_at_location(&self, x: u16, y: u16) -> u8 {
@@ -217,36 +217,7 @@ impl ZeldaState {
     }
 
     pub(super) fn tile_detect_reset_state(&mut self) {
-        self.tile_detect_position_mut().clear_slope_collision_bits();
-        self.tile_detect_position_mut().clear_collision_bits();
-        self.tile_detect_position_mut().clear_diagonal_tile();
-        self.tile_detect_position_mut().clear_stair_tile();
-        self.tile_detect_position_mut().clear_pit_tile();
-        self.tile_detect_position_mut().clear_inroom_staircase();
-        self.tile_detect_position_mut().clear_block_flags();
-        self.tile_detect_position_mut().clear_door_direction_flags();
-        self.tile_detect_position_mut().clear_moving_floor_tiles();
-        self.tile_detect_position_mut().clear_deepwater();
-        self.tile_detect_position_mut().clear_normal_tiles();
-        self.tile_detect_position_mut().clear_icy_floor();
-        self.tile_detect_position_mut().clear_water_staircase();
-        self.tile_detect_position_mut().clear_thick_grass();
-        self.tile_detect_position_mut().clear_shallow_water();
-        self.tile_detect_position_mut()
-            .clear_destruction_aftermath();
-        self.tile_detect_position_mut().clear_read_something();
-        self.tile_detect_position_mut().clear_vertical_ledge();
-        self.tile_detect_position_mut().clear_horizontal_ledge();
-        self.tile_detect_position_mut()
-            .clear_ledges_down_leftright();
-        self.tile_detect_position_mut().clear_diagonal_ledge_tiles();
-        self.tile_detect_position_mut().clear_chest();
-        self.tile_detect_position_mut().clear_key_lock_gravestones();
-        self.tile_detect_position_mut().clear_spike_cactus_tiles();
-        self.tile_detect_position_mut()
-            .clear_spike_floor_and_triggers();
-        self.tile_detect_position_mut().clear_dashable_tiles();
-        self.tile_detect_position_mut().clear_misc_tiles();
+        self.tile_detect_position_mut().reset_probe_results();
         self.dungeon_environment_mut()
             .clear_moving_floor_check_flags();
     }
@@ -286,344 +257,184 @@ impl ZeldaState {
         self.tile_detect_execute_inner(tile, offset as u16, bits, is_indoors);
     }
 
-    #[rustfmt::skip]
-    pub(super) fn tile_detect_execute_inner(&mut self, mut tile: u8, offs: u16, bits: u16, is_indoors: bool) {
-        if self.game_state.player.follower_link.cheat_walk_through_walls() != 0 {
+    pub(super) fn tile_detect_execute_inner(
+        &mut self,
+        mut tile: u8,
+        offs: u16,
+        bits: u16,
+        is_indoors: bool,
+    ) {
+        use TileBehavior as B;
+        use TileResult as R;
+        if self
+            .game_state
+            .player
+            .follower_link
+            .cheat_walk_through_walls()
+            != 0
+        {
             tile = 0;
         }
-        let offset = offs as usize;
-        match tile {
-            0x00
-            | 0x05
-            | 0x06
-            | 0x07
-            | 0x14
-            | 0x15
-            | 0x16
-            | 0x17
-            | 0x21
-            | 0x23
-            | 0x24
-            | 0x25
-            | 0x38
-            | 0x39
-            | 0x3a
-            | 0x3b
-            | 0x3c
-            | 0x41
-            | 0x45
-            | 0x47
-            | 0x49
-            | 0x5e
-            | 0x5f
-            | 0x61
-            | 0x62
-            | 0x64
-            | 0x65
-            | 0x66
-            | 0xa6
-            | 0xa7
-            | 0xbe
-            | 0xbf
-            | 0xd0..=0xef => {
-                if !is_indoors {
-                    let normal = self.game_state.player.tile_detection.normal_tiles() | bits;
-                    self.tile_detect_position_mut().set_normal_tiles(normal);
-                }
-            }
-            0x01 | 0x02 | 0x03 | 0x26 | 0x43 => {
-                self.tile_detect_position_mut().or_collision_bits(bits);
-            }
-            0x04 => {
-                if is_indoors {
-                self.tile_detect_position_mut().or_collision_bits(bits);
-                } else {
-                    let grass = self.game_state.player.tile_detection.thick_grass() | bits;
-                    self.tile_detect_position_mut().set_thick_grass(grass);
-                }
-            }
-            0x0b => {
-                if is_indoors {
-                self.tile_detect_position_mut().or_collision_bits(bits);
-                } else {
-                    self.tile_detect_position_mut().set_interacting_tile(tile as u16);
-                    let deepwater = self.game_state.player.tile_detection.deepwater() | (bits << 4);
-                    self.tile_detect_position_mut().set_deepwater(deepwater);
-                }
-            }
-            0x08 => {
-                let deepwater = self.game_state.player.tile_detection.deepwater() | bits;
-                self.tile_detect_position_mut().set_deepwater(deepwater);
-            }
-            0x09 => {
-                let shallow = self.game_state.player.tile_detection.shallow_water() | bits;
-                self.tile_detect_position_mut().set_shallow_water(shallow);
-            }
-            0x0a => {
-                let normal = self.game_state.player.tile_detection.normal_tiles() | bits;
-                self.tile_detect_position_mut().set_normal_tiles(normal);
-            }
-            0x0c => {
-                let moving_floor = self.game_state.player.tile_detection.moving_floor_tiles() | bits;
-                self.tile_detect_position_mut().set_moving_floor_tiles(moving_floor);
-            }
-            0x0d => {
-                if !self.game_state.player.follower_link.is_menu_blocked()
-                    && self.game_state.dungeon.savegame_state.savegame_state_bits() & 0x8000 == 0
-                {
-                    self.tile_detect_position_mut().or_spike_floor_and_triggers((bits << 4) as u8);
-                }
-            }
-            0x0e => {
-                let icy = self.game_state.player.tile_detection.icy_floor() | bits;
-                self.tile_detect_position_mut().set_icy_floor(icy);
-            }
-            0x0f => {
-                let icy = self.game_state.player.tile_detection.icy_floor() | (bits << 4);
-                self.tile_detect_position_mut().set_icy_floor(icy);
-            }
-            0x6c..=0x6f if is_indoors => {
-                self.tile_detect_position_mut().or_collision_bits(bits);
-            }
-            0x6c..=0x6f => {
-                let normal = self.game_state.player.tile_detection.normal_tiles() | bits;
-                self.tile_detect_position_mut().set_normal_tiles(normal);
-            }
-            0x10..=0x13 => {
-                self.tile_detect_position_mut().or_slope_collision_bits(bits);
+        match B::decode(tile, is_indoors) {
+            B::Ignore => {}
+            B::Surface { result, shift } => self.record_tile_result(result, bits << shift),
+            B::Solid => self.record_tile_result(R::Collision, bits),
+            B::DeepWaterEdge => {
                 self.tile_detect_position_mut()
-                    .set_diag_state(TILE_DETECT_DIAG_STATES[(tile & 3) as usize]);
+                    .set_interacting_tile(u16::from(tile));
+                self.record_tile_result(R::DeepWater, bits << 4);
             }
-            0x18..=0x1b => {
-                let diagonal = self.game_state.player.tile_detection.diagonal_tile() | bits;
-                self.tile_detect_position_mut().set_diagonal_tile(diagonal);
-                self.tile_detect_position_mut().or_slope_collision_bits(bits);
+            B::ConditionalFloorTrigger => {
+                if self.tile_hazards_enabled() {
+                    self.record_tile_result(R::SpikeTrigger, bits << 4);
+                }
+            }
+            B::Slope { diagonal, shape } => {
+                if diagonal {
+                    self.record_tile_result(R::Diagonal, bits);
+                }
+                self.record_tile_result(R::Slope, bits);
                 self.tile_detect_position_mut()
-                    .set_diag_state(TILE_DETECT_DIAG_STATES[(tile & 3) as usize]);
+                    .set_diag_state(TILE_DETECT_DIAG_STATES[shape]);
             }
-            0x1c => {
-                let water_stair = self.game_state.player.tile_detection.water_staircase() | bits;
-                self.tile_detect_position_mut().set_water_staircase(water_stair);
+            B::InRoomStaircase { shift } => {
+                self.tile_detect_position_mut()
+                    .set_interacting_tile(u16::from(tile));
+                self.record_tile_result(R::InRoomStaircase, bits << shift);
+                self.record_tile_result(R::Stair, bits);
             }
-            0x1d..=0x1f => {
-                self.tile_detect_position_mut().set_interacting_tile(tile as u16);
-                self.tile_detect_position_mut().or_inroom_staircase(bits);
-                self.tile_detect_position_mut().or_stair_tile(bits as u8);
-            }
-            0x20 | 0xb0..=0xbd => {
-                if !self.game_state.player.follower_link.has_somaria_platform_state() {
-                    self.tile_detect_position_mut().or_pit_tile(bits as u8);
+            B::Pit => {
+                if !self
+                    .game_state
+                    .player
+                    .follower_link
+                    .has_somaria_platform_state()
+                {
+                    self.record_tile_result(R::Pit, bits);
                 }
             }
-            0x22 | 0x30..=0x37 => {
-                self.tile_detect_position_mut().or_stair_tile(bits as u8);
+            B::SolidInteractable { misc_shift, cactus } => {
+                self.record_solid_tile_interaction(bits, misc_shift);
+                if cactus {
+                    self.record_tile_result(R::SpikeCactus, bits << 4);
+                }
             }
-            0x27 => {
-                let r14 = self.game_state.player.tile_detection.collision_bits() | bits;
-                let misc = self.game_state.player.tile_detection.misc_tiles() | bits;
-                self.tile_detect_position_mut().set_collision_bits(r14);
-                self.tile_detect_position_mut().set_misc_tiles(misc);
+            B::Ledge { result, shift } => {
+                self.tile_detect_position_mut()
+                    .set_interacting_tile(u16::from(tile));
+                self.record_tile_result(result, bits << shift);
             }
-            0x28 => {
-                self.tile_detect_position_mut().set_interacting_tile(tile as u16);
-                self.tile_detect_position_mut().or_vertical_ledge(bits as u8);
-            }
-            0x29 => {
-                self.tile_detect_position_mut().set_interacting_tile(tile as u16);
-                self.tile_detect_position_mut().or_vertical_ledge((bits << 4) as u8);
-            }
-            0x2a | 0x2b => {
-                self.tile_detect_position_mut().set_interacting_tile(tile as u16);
-                self.tile_detect_position_mut().or_horizontal_ledge(bits as u8);
-            }
-            0x2c | 0x2e => {
-                self.tile_detect_position_mut().set_interacting_tile(tile as u16);
-                self.tile_detect_position_mut().or_horizontal_ledge((bits << 4) as u8);
-            }
-            0x2d | 0x2f => {
-                self.tile_detect_position_mut().set_interacting_tile(tile as u16);
-                self.tile_detect_position_mut().or_ledges_down_leftright(bits as u8);
-            }
-            0x3d..=0x3f => {
-                self.tile_detect_position_mut().set_interacting_tile(tile as u16);
-                self.tile_detect_position_mut().or_inroom_staircase(bits << 4);
-                self.tile_detect_position_mut().or_stair_tile(bits as u8);
-            }
-            0x40 => {
-                let grass = self.game_state.player.tile_detection.thick_grass() | bits;
-                self.tile_detect_position_mut().set_thick_grass(grass);
-            }
-            0x44 => {
-                if !self.game_state.player.follower_link.is_menu_blocked()
-                    && self.game_state.dungeon.savegame_state.savegame_state_bits() & 0x8000 == 0
-                {
-                    self.tile_detect_position_mut().or_spike_cactus_tiles(bits as u8);
+            B::Cactus => {
+                let result = if self.tile_hazards_enabled() {
+                    R::SpikeCactus
                 } else {
-                self.tile_detect_position_mut().or_collision_bits(bits);
+                    R::Collision
+                };
+                self.record_tile_result(result, bits);
+            }
+            B::SpikedSolid => {
+                self.record_tile_result(R::SpikeTrigger, bits);
+                self.record_tile_result(R::Collision, bits);
+            }
+            B::Aftermath => {
+                self.record_tile_result(R::Aftermath, bits);
+                self.record_tile_result(R::Normal, bits);
+            }
+            B::Liftable { index, dashable } => {
+                if dashable {
+                    self.record_tile_result(R::Dashable, bits << 4);
                 }
+                self.record_tile_result(R::Readable, bits);
+                self.tile_detect_position_mut()
+                    .set_liftable_tile_index(index);
+                self.record_solid_tile_interaction(bits, 0);
             }
-            0x46 => {
-                self.tile_detect_position_mut().or_spike_floor_and_triggers(bits as u8);
-                self.tile_detect_position_mut().or_collision_bits(bits);
+            B::DashableSolid => {
+                self.record_tile_result(R::Collision, bits);
+                self.record_tile_result(R::Dashable, bits << 4);
             }
-            0x48 | 0x4a => {
-                let aftermath = self.game_state.player.tile_detection.destruction_aftermath() | bits;
-                let normal = self.game_state.player.tile_detection.normal_tiles() | bits;
-                self.tile_detect_position_mut().set_destruction_aftermath(aftermath);
-                self.tile_detect_position_mut().set_normal_tiles(normal);
-            }
-            0x4b => {
-                let grass = self.game_state.player.tile_detection.thick_grass() | (bits << 4);
-                self.tile_detect_position_mut().set_thick_grass(grass);
-            }
-            0x4c | 0x4d => {
-                if !is_indoors {
-                    self.tile_detect_position_mut().set_interacting_tile(tile as u16);
-                    self.tile_detect_position_mut().or_diagonal_ledge_tiles(bits as u8);
-                }
-            }
-            0x4e | 0x4f => {
-                if !is_indoors {
-                    self.tile_detect_position_mut().set_interacting_tile(tile as u16);
-                    self.tile_detect_position_mut().or_diagonal_ledge_tiles((bits << 4) as u8);
-                }
-            }
-            0x50..=0x56 => {
-                if let Some(i) = TILE_DETECT_READABLE_TILE50_DATA
-                    .iter()
-                    .rposition(|&value| value == tile)
-                {
-                    if tile == 0x50 || tile == 0x51 {
-                        self.tile_detect_position_mut().or_dashable_tiles((bits << 4) as u8);
-                    }
-                    let read_something = self.game_state.player.tile_detection.read_something() | bits;
-                    let r14 = self.game_state.player.tile_detection.collision_bits() | bits;
-                    let misc = self.game_state.player.tile_detection.misc_tiles() | bits;
-                    self.tile_detect_position_mut().set_read_something(read_something);
-                    self.tile_detect_position_mut().set_liftable_tile_index((i * 2) as u8);
-                    self.tile_detect_position_mut().set_collision_bits(r14);
-                    self.tile_detect_position_mut().set_misc_tiles(misc);
-                }
-            }
-            0x57 => {
-                self.tile_detect_position_mut().or_collision_bits(bits);
-                self.tile_detect_position_mut().or_dashable_tiles((bits << 4) as u8);
-            }
-            0x58..=0x5d | 0x63 => {
-                let r14 = self.game_state.player.tile_detection.collision_bits() | bits;
-                let misc = self.game_state.player.tile_detection.misc_tiles() | bits;
-                self.tile_detect_position_mut().set_misc_tiles(misc);
-                self.tile_detect_position_mut().set_interacting_tile(tile as u16);
-                if tile != 0x63
-                    && self.game_state.dungeon.room_items.chest_location((tile - 0x58) as usize)
-                        >= 0x8000
-                {
-                    self.tile_detect_position_mut().set_collision_bits(r14);
-                    self.tile_detect_position_mut().or_key_lock_gravestones((bits << 4) as u8);
+            B::Chest { index } => {
+                // Chest lookup remains after the first two publications. Unlike
+                // other solid interactions, chests publish Misc before Collision.
+                self.record_tile_result(R::Misc, bits);
+                self.tile_detect_position_mut()
+                    .set_interacting_tile(u16::from(tile));
+                if index.is_some_and(|index| {
+                    self.game_state.dungeon.room_items.chest_location(index) >= 0x8000
+                }) {
+                    self.record_tile_result(R::Collision, bits);
+                    self.record_tile_result(R::KeyLockGravestone, bits << 4);
                     if bits & 2 != 0 {
-                        self.tile_detect_position_mut().set_tile_type(tile as u16);
+                        self.tile_detect_position_mut()
+                            .set_tile_type(u16::from(tile));
                     }
                 } else {
-                    let chest = self.game_state.player.tile_detection.chest() | bits;
-                    self.tile_detect_position_mut().set_collision_bits(r14);
-                    self.tile_detect_position_mut().set_chest(chest);
+                    self.record_tile_result(R::Collision, bits);
+                    self.record_tile_result(R::Chest, bits);
                 }
             }
-            0x60 => {
-                if is_indoors {
-                    let misc_bits = if self.game_state.dungeon.bg2_attributes.bg2_attr(offset + 64) == 0x60 {
-                        bits << 8
-                    } else {
-                        bits << 12
-                    };
-                    let misc = self.game_state.player.tile_detection.misc_tiles() | misc_bits;
-                    self.tile_detect_position_mut().set_misc_tiles(misc);
+            B::NeighborDependent => {
+                let shift = if self
+                    .game_state
+                    .dungeon
+                    .bg2_attributes
+                    .bg2_attr(usize::from(offs) + 64)
+                    == tile
+                {
+                    8
                 } else {
-                    let normal = self.game_state.player.tile_detection.normal_tiles() | bits;
-                    self.tile_detect_position_mut().set_normal_tiles(normal);
-                }
+                    12
+                };
+                self.record_tile_result(R::Misc, bits << shift);
             }
-            0x67 => {
-                let r14 = self.game_state.player.tile_detection.collision_bits() | bits;
-                let misc = self.game_state.player.tile_detection.misc_tiles() | bits;
-                self.tile_detect_position_mut().set_collision_bits(r14);
-                self.tile_detect_position_mut().set_misc_tiles(misc);
-                self.tile_detect_position_mut().or_spike_cactus_tiles((bits << 4) as u8);
+            B::MovingFloorCheck { shift } => {
+                self.dungeon_environment_mut()
+                    .or_moving_floor_check_flags(bits << shift);
             }
-            0x68 => {
-                self.dungeon_environment_mut().or_moving_floor_check_flags(bits);
-            }
-            0x69 => {
-                self.dungeon_environment_mut().or_moving_floor_check_flags(bits << 4);
-            }
-            0x6a => {
-                self.dungeon_environment_mut().or_moving_floor_check_flags(bits << 8);
-            }
-            0x6b => {
-                self.dungeon_environment_mut().or_moving_floor_check_flags(bits << 12);
-            }
-            0x70..=0x7f => {
+            B::PushBlock { index } => {
                 if bits & 2 != 0 {
-                    let block_flags =
-                        self.game_state.player.tile_detection.block_flags() | (1 << (tile & 0x0f));
-                    self.tile_detect_position_mut().set_block_flags(block_flags);
+                    self.record_tile_result(R::Block, 1 << index);
                 }
-                let r14 = self.game_state.player.tile_detection.collision_bits() | bits;
-                let misc = self.game_state.player.tile_detection.misc_tiles() | bits;
-                self.tile_detect_position_mut().set_collision_bits(r14);
-                self.tile_detect_position_mut().set_misc_tiles(misc);
+                self.record_solid_tile_interaction(bits, 0);
             }
-            0x80..=0x8d => {
-                let r14 = self.game_state.player.tile_detection.collision_bits()
-                    | if tile == 0x82 || tile == 0x83 {
-                        (bits << 4) | (bits << 8)
-                    } else {
-                        bits << 4
-                    };
-                self.tile_detect_position_mut().set_collision_bits(r14);
-                self.tile_detect_position_mut().set_door_direction_flags(2 * (tile as u16 & 1));
-            }
-            0x8e | 0x8f => {
-                let r14 = self.game_state.player.tile_detection.collision_bits() | (bits << 4);
-                self.tile_detect_position_mut().set_collision_bits(r14);
-                self.tile_detect_position_mut().or_dashable_tiles(bits as u8);
-                self.tile_detect_position_mut().clear_door_direction_flags();
-            }
-            0x90..=0x9f | 0xa8..=0xaf => {
-                self.set_room_transitioning_flags(if tile < 0x98 { 1 } else { 3 });
-                let r14 = self.game_state.player.tile_detection.collision_bits() | (bits << 4) | (bits << 8);
-                self.tile_detect_position_mut().set_collision_bits(r14);
-                self.tile_detect_position_mut().set_door_direction_flags(2 * (tile as u16 & 1));
-            }
-            0xa0..=0xa5 => {
-                self.set_room_transitioning_flags(2);
-                let r14 = self.game_state.player.tile_detection.collision_bits()
-                    | if tile == 0xa2 || tile == 0xa3 {
-                        (bits << 4) | (bits << 8)
-                    } else {
-                        bits << 4
-                    };
-                self.tile_detect_position_mut().set_collision_bits(r14);
-                self.tile_detect_position_mut().set_door_direction_flags(2 * (tile as u16 & 1));
-            }
-            0xc0..=0xcf => {
-                let r14 = self.game_state.player.tile_detection.collision_bits() | bits;
-                let misc = self.game_state.player.tile_detection.misc_tiles() | bits;
-                self.tile_detect_position_mut().set_collision_bits(r14);
-                self.tile_detect_position_mut().set_misc_tiles(misc);
-            }
-            0xf0..=0xff => {
-                let r14 = self.game_state.player.tile_detection.collision_bits() | bits;
-                let misc = self.game_state.player.tile_detection.misc_tiles() | (bits << 4);
-                self.tile_detect_position_mut().set_collision_bits(r14);
-                self.tile_detect_position_mut().set_misc_tiles(misc);
-            }
-            0x42 => {
-                if !is_indoors {
-                    self.tile_detect_position_mut().or_key_lock_gravestones(bits as u8);
-                self.tile_detect_position_mut().or_collision_bits(bits);
+            B::Door {
+                direction,
+                forced_movement,
+                transition,
+                dashable,
+            } => {
+                if let Some(transition) = transition {
+                    self.set_room_transitioning_flags(transition);
                 }
+                let collision = (bits << 4) | if forced_movement { bits << 8 } else { 0 };
+                self.record_tile_result(R::Collision, collision);
+                if dashable {
+                    self.record_tile_result(R::Dashable, bits);
+                    self.tile_detect_position_mut().clear_door_direction_flags();
+                } else {
+                    self.tile_detect_position_mut()
+                        .set_door_direction_flags(direction);
+                }
+            }
+            B::Gravestone => {
+                self.record_tile_result(R::KeyLockGravestone, bits);
+                self.record_tile_result(R::Collision, bits);
             }
         }
+    }
+
+    fn record_tile_result(&mut self, result: TileResult, bits: u16) {
+        self.tile_detect_position_mut()
+            .accumulate_result(result, bits);
+    }
+
+    fn record_solid_tile_interaction(&mut self, bits: u16, misc_shift: u32) {
+        self.record_tile_result(TileResult::Collision, bits);
+        self.record_tile_result(TileResult::Misc, bits << misc_shift);
+    }
+
+    fn tile_hazards_enabled(&self) -> bool {
+        !self.game_state.player.follower_link.is_menu_blocked()
+            && self.game_state.dungeon.savegame_state.savegame_state_bits() & 0x8000 == 0
     }
 }

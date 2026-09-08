@@ -18,6 +18,8 @@ pub(crate) use collision::{
     PlayerFootprint,
 };
 mod compatibility;
+mod tile_behavior;
+pub(crate) use tile_behavior::{TileBehavior, TileResult};
 mod transitions;
 pub(crate) use compatibility::NativeFollowerLinkBridgeMut;
 
@@ -1024,10 +1026,6 @@ impl TileDetectionState {
         self.stair_tile |= value;
     }
 
-    pub(crate) fn set_block_flags(&mut self, value: u16) {
-        self.block_flags = value;
-    }
-
     pub(crate) fn clear_block_flags(&mut self) {
         self.block_flags = 0;
     }
@@ -1074,10 +1072,6 @@ impl TileDetectionState {
         self.deepwater
     }
 
-    pub(crate) fn set_normal_tiles(&mut self, value: u16) {
-        self.normal_tiles = value;
-    }
-
     pub(crate) fn clear_normal_tiles(&mut self) {
         self.normal_tiles = 0;
     }
@@ -1087,10 +1081,6 @@ impl TileDetectionState {
         self.normal_tiles
     }
 
-    pub(crate) fn set_misc_tiles(&mut self, value: u16) {
-        self.misc_tiles = value;
-    }
-
     pub(crate) fn clear_misc_tiles(&mut self) {
         self.misc_tiles = 0;
     }
@@ -1098,10 +1088,6 @@ impl TileDetectionState {
     pub(crate) fn or_misc_tiles(&mut self, value: u16) -> u16 {
         self.misc_tiles |= value;
         self.misc_tiles
-    }
-
-    pub(crate) fn set_thick_grass(&mut self, value: u16) {
-        self.thick_grass = value;
     }
 
     pub(crate) fn clear_thick_grass(&mut self) {
@@ -1129,48 +1115,24 @@ impl TileDetectionState {
         self.horizontal_ledge |= value;
     }
 
-    pub(crate) fn set_moving_floor_tiles(&mut self, value: u16) {
-        self.moving_floor_tiles = value;
-    }
-
     pub(crate) fn clear_moving_floor_tiles(&mut self) {
         self.moving_floor_tiles = 0;
-    }
-
-    pub(crate) fn set_icy_floor(&mut self, value: u16) {
-        self.icy_floor = value;
     }
 
     pub(crate) fn clear_icy_floor(&mut self) {
         self.icy_floor = 0;
     }
 
-    pub(crate) fn set_water_staircase(&mut self, value: u16) {
-        self.water_staircase = value;
-    }
-
     pub(crate) fn clear_water_staircase(&mut self) {
         self.water_staircase = 0;
-    }
-
-    pub(crate) fn set_shallow_water(&mut self, value: u16) {
-        self.shallow_water = value;
     }
 
     pub(crate) fn clear_shallow_water(&mut self) {
         self.shallow_water = 0;
     }
 
-    pub(crate) fn set_destruction_aftermath(&mut self, value: u16) {
-        self.destruction_aftermath = value;
-    }
-
     pub(crate) fn clear_destruction_aftermath(&mut self) {
         self.destruction_aftermath = 0;
-    }
-
-    pub(crate) fn set_read_something(&mut self, value: u16) {
-        self.read_something = value;
     }
 
     pub(crate) fn clear_read_something(&mut self) {
@@ -1181,20 +1143,8 @@ impl TileDetectionState {
         self.ledges_down_leftright = 0;
     }
 
-    pub(crate) fn or_ledges_down_leftright(&mut self, value: u8) {
-        self.ledges_down_leftright |= value;
-    }
-
     pub(crate) fn clear_diagonal_ledge_tiles(&mut self) {
         self.diagonal_ledge_tiles = 0;
-    }
-
-    pub(crate) fn or_diagonal_ledge_tiles(&mut self, value: u8) {
-        self.diagonal_ledge_tiles |= value;
-    }
-
-    pub(crate) fn set_chest(&mut self, value: u16) {
-        self.chest = value;
     }
 
     pub(crate) fn clear_chest(&mut self) {
@@ -1374,11 +1324,8 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
         fn set_fall_hole_scan_index(value: u8);
         fn set_interaction_scratch_y(value: u16);
         fn set_interaction_scratch_x(value: u16);
-        fn set_diagonal_tile(value: u16);
         fn clear_diagonal_tile();
         fn clear_stair_tile();
-        fn or_stair_tile(value: u8);
-        fn set_block_flags(value: u16);
         fn clear_block_flags();
         fn set_door_direction_flags(value: u16);
         fn clear_door_direction_flags();
@@ -1388,39 +1335,23 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
         fn or_pit_tile(value: u8);
         fn set_deepwater(value: u16);
         fn clear_deepwater();
-        fn set_normal_tiles(value: u16);
         fn clear_normal_tiles();
-        fn set_misc_tiles(value: u16);
         fn clear_misc_tiles();
-        fn set_thick_grass(value: u16);
         fn clear_thick_grass();
         fn clear_vertical_ledge();
-        fn or_vertical_ledge(value: u8);
         fn clear_horizontal_ledge();
-        fn or_horizontal_ledge(value: u8);
-        fn set_moving_floor_tiles(value: u16);
         fn clear_moving_floor_tiles();
-        fn set_icy_floor(value: u16);
         fn clear_icy_floor();
-        fn set_water_staircase(value: u16);
         fn clear_water_staircase();
-        fn set_shallow_water(value: u16);
         fn clear_shallow_water();
-        fn set_destruction_aftermath(value: u16);
         fn clear_destruction_aftermath();
-        fn set_read_something(value: u16);
         fn clear_read_something();
         fn clear_ledges_down_leftright();
-        fn or_ledges_down_leftright(value: u8);
         fn clear_diagonal_ledge_tiles();
-        fn or_diagonal_ledge_tiles(value: u8);
-        fn set_chest(value: u16);
         fn clear_chest();
         fn clear_key_lock_gravestones();
-        fn or_key_lock_gravestones(value: u8);
         fn set_spike_cactus_tiles(value: u8);
         fn clear_spike_cactus_tiles();
-        fn or_spike_cactus_tiles(value: u8);
         fn set_tile_type(value: u16);
         fn clear_tile_type();
     }
@@ -1437,13 +1368,10 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
     forward_synced! {
         state;
         fn clear_spike_floor_and_triggers();
-        fn or_spike_floor_and_triggers(value: u8);
         fn clear_dashable_tiles();
-        fn or_dashable_tiles(value: u8);
         fn set_staircase_cache(value: u8);
         fn set_slope_collision_bits(value: u16);
         fn clear_slope_collision_bits();
-        fn or_slope_collision_bits(value: u16) -> u16;
         fn set_collision_bits(value: u16);
         fn clear_collision_bits();
     }
@@ -1459,12 +1387,10 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
 
     forward_synced! {
         state;
-        fn or_collision_bits(value: u16) -> u16;
         fn set_layer_collision(mask: u8, enabled: bool);
         fn set_layer_collision_flags(value: u8);
         fn set_tile_probe_anchor(value: u16);
         fn clear_inroom_staircase();
-        fn or_inroom_staircase(bits: u16) -> u16;
         fn set_liftable_tile_index(value: u8);
         fn set_tile_collision_bits_primary(value: u8);
         fn set_liftable_action_index_primary(value: u8);
