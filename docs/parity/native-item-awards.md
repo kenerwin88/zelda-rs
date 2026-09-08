@@ -61,10 +61,21 @@ Additional contracts freeze equipment offsets independently, preserve all
 byte values tested (including high bits), verify single-byte award writes,
 foreign-byte preservation, resource-owner reads, conditional observation,
 clone/bincode isolation, and all chest-alternate IDs. Full-route acceptance
-is recorded after validation in the promoted receipt.
+is recorded in the promoted receipt.
 
 The final candidate passed all 1,741 library tests (two existing ignored
 tests), checkpoint rejection for layouts 01 through 04, and the RAM
 readability guard. The existing 34 overlapping-byte ownership findings are
 unchanged. Its from-zero 200,000-frame replay matched exact audio/video,
 both reached WRAM goldens, and the baseline's complete WRAM endpoint.
+
+Candidate `a00b115e` passed the full from-zero cached Snes9x route in
+2341.09 seconds: all 1,581,079 audio/video frames matched, with no paired
+resume and no reported RNG drift. All four WRAM goldens and the complete
+final 128 KiB WRAM endpoint matched the preceding validated build. The
+promoted receipt binds binary SHA-256
+`9a8b7dc380eb302e07e51750f0541656f9963e3063ef680602512338f797b41d`.
+
+The normal commit hook also passed the standalone smoke and a fresh
+180-frame live Snes9x comparison. The full-route gate uses the immutable
+cached oracle; it does not claim a fresh full-route core execution.
