@@ -52,7 +52,7 @@ fn native_inventory_items_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 }
 
 #[test]
-fn native_inventory_items_bridge_ignores_resource_owned_item_slots_in_coherence_check() {
+fn native_inventory_items_have_no_resource_copies_to_mask_in_coherence_check() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[LINK_ITEM_BOMBS] = 2;
     ram[LINK_ITEM_BOTTLE_INDEX] = 0;

@@ -231,13 +231,6 @@ pub(super) const LINK_ITEM_HAMMER_HAMMER_ANIM_DELAYS: [u8; 3] = [3, 3, 16];
 
 pub(super) const LINK_ITEM_BOW_BOW_DELAYS: [u8; 3] = [3, 3, 8];
 
-pub(super) const LINK_PERFORM_OPEN_CHEST_RECEIVE_ITEM_ALTERNATES: [u8; 76] = [
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 68, 255, 255, 255, 255, 255, 53,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 70, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-];
-
 pub(super) const LINK_A_PRESS_LIFT_CARRY_THROW_LIFT_THROW_ACTION_TIMERS: [u8; 10] =
     [8, 24, 8, 24, 8, 32, 6, 8, 13, 13];
 
@@ -360,16 +353,6 @@ pub(super) const SPRITE_DUNGEON_DRAW_SINGLE_PUSH_BLOCK_PUSH_BLOCK_CHAR_INDEX_BY_
 pub(super) const SPRITE_DUNGEON_DRAW_SINGLE_PUSH_BLOCK_CHARS: [u8; 4] = [0x0c, 0x0c, 0x0c, 0xff];
 
 pub(super) const PLAYER_HANDLER_00_GROUND_3_FEATURES0_MISC_BUG_FIXES: u32 = 4096;
-
-pub(super) const PLAYER_MEMORY_LOCATION_TO_GIVE_ITEM_TO_MEMORY_LOCATIONS: [usize; 76] = [
-    0xf359, 0xf359, 0xf359, 0xf359, 0xf35a, 0xf35a, 0xf35a, 0xf345, 0xf346, 0xf34b, 0xf342, 0xf340,
-    0xf341, 0xf344, 0xf35c, 0xf347, 0xf348, 0xf349, 0xf34a, 0xf34c, 0xf34c, 0xf350, 0xf35c, 0xf36b,
-    0xf351, 0xf352, 0xf353, 0xf354, 0xf354, 0xf34e, 0xf356, 0xf357, 0xf37a, 0xf34d, 0xf35b, 0xf35b,
-    0xf36f, 0xf364, 0xf36c, 0xf375, 0xf375, 0xf344, 0xf341, 0xf35c, 0xf35c, 0xf35c, 0xf36d, 0xf36e,
-    0xf36e, 0xf375, 0xf366, 0xf368, 0xf360, 0xf360, 0xf360, 0xf374, 0xf374, 0xf374, 0xf340, 0xf340,
-    0xf35c, 0xf35c, 0xf36c, 0xf36c, 0xf360, 0xf360, 0xf372, 0xf376, 0xf376, 0xf373, 0xf360, 0xf360,
-    0xf35c, 0xf359, 0xf34c, 0xf355,
-];
 
 pub(super) const LINK_PERFORM_THROW_LIFTABLE_TILE_ATTR_TO_TERRAIN_TYPE: [u8; 9] =
     [0x54, 0x52, 0x50, 0xff, 0x51, 0x53, 0x55, 0x56, 0x57];

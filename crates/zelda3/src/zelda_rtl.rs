@@ -10297,11 +10297,16 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn item_memory_value(&self, item_memory_addr: usize) -> u8 {
-        self.game_state
-            .inventory
-            .items
-            .item_memory_value(&self.ram, item_memory_addr)
+    pub(crate) fn inventory_item(&self, index: usize) -> u8 {
+        match index {
+            3 => self.game_state.inventory.player_resources.bombs(),
+            15 => self
+                .game_state
+                .inventory
+                .player_resources
+                .equipped_bottle_index(),
+            _ => self.game_state.inventory.items.inventory_item(index),
+        }
     }
 
     pub(crate) fn set_main_module(&mut self, value: u8) {

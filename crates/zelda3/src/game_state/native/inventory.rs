@@ -5,7 +5,6 @@ use crate::types::{read_le_u16, write_le_u16};
 const DUNGEON_KEY_SLOT_COUNT: usize = 16;
 const DEATH_COUNT_PALACE_SLOTS: usize = 14;
 const SAVE_DUNGEON_INFO_LEN: usize = 0x500;
-const INVENTORY_ITEM_SLOT_COUNT: usize = 28;
 const BOTTLE_SLOT_COUNT: usize = 4;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -37,72 +36,95 @@ impl InventoryState {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct InventoryItemsState {
-    item_slots: [u8; INVENTORY_ITEM_SLOT_COUNT],
-    bottles: [u8; BOTTLE_SLOT_COUNT],
+// Equipment has semantic fields. Only this compatibility map knows the old
+// inventory indices; bomb count and equipped-bottle index belong to resources.
+macro_rules! equipment_fields {
+    ($($kind:ident => $field:ident = $index:literal),+ $(,)?) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub(crate) enum EquipmentItem { $($kind),+ }
+
+        impl EquipmentItem {
+            pub(crate) fn from_inventory_index(index: usize) -> Option<Self> {
+                match index { $($index => Some(Self::$kind),)+ _ => None }
+            }
+            fn inventory_index(self) -> usize {
+                match self { $(Self::$kind => $index,)+ }
+            }
+        }
+
+        #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        pub(crate) struct InventoryItemsState {
+            $($field: u8,)+
+            bottles: [u8; BOTTLE_SLOT_COUNT],
+        }
+
+        impl InventoryItemsState {
+            pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
+                Self {
+                    $($field: ram_byte(ram, LINK_ITEM_BOW + $index),)+
+                    bottles: std::array::from_fn(|i| ram_byte(ram, LINK_BOTTLE_INFO + i)),
+                }
+            }
+            pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+                $(ram[LINK_ITEM_BOW + $index] = self.$field;)+
+                ram[LINK_BOTTLE_INFO..LINK_BOTTLE_INFO + BOTTLE_SLOT_COUNT]
+                    .copy_from_slice(&self.bottles);
+            }
+            pub(crate) fn equipment(&self, item: EquipmentItem) -> u8 {
+                match item { $(EquipmentItem::$kind => self.$field,)+ }
+            }
+            fn set_equipment(&mut self, item: EquipmentItem, value: u8) {
+                match item { $(EquipmentItem::$kind => self.$field = value,)+ }
+            }
+        }
+    };
+}
+
+equipment_fields! {
+    Bow => bow = 0,
+    Boomerang => boomerang = 1,
+    Hookshot => hookshot = 2,
+    Mushroom => mushroom = 4,
+    FireRod => fire_rod = 5,
+    IceRod => ice_rod = 6,
+    Bombos => bombos = 7,
+    Ether => ether = 8,
+    Quake => quake = 9,
+    Torch => torch = 10,
+    Hammer => hammer = 11,
+    Flute => flute = 12,
+    BugNet => bug_net = 13,
+    Book => book = 14,
+    CaneSomaria => cane_somaria = 16,
+    CaneByrna => cane_byrna = 17,
+    Cape => cape = 18,
+    Mirror => mirror = 19,
+    Gloves => gloves = 20,
+    Boots => boots = 21,
+    Flippers => flippers = 22,
+    MoonPearl => moon_pearl = 23,
+    Reserved => reserved_equipment = 24,
+    Sword => sword_type = 25,
+    Shield => shield_type = 26,
+    Armor => armor = 27,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum DungeonItem {
+    Compass,
+    BigKey,
+    Map,
 }
 
 impl InventoryItemsState {
-    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
-        let mut item_slots = [0; INVENTORY_ITEM_SLOT_COUNT];
-        for (index, item) in item_slots.iter_mut().enumerate() {
-            *item = ram_byte(ram, LINK_ITEM_BOW + index);
-        }
-
-        let mut bottles = [0; BOTTLE_SLOT_COUNT];
-        for (index, bottle) in bottles.iter_mut().enumerate() {
-            *bottle = ram_byte(ram, LINK_BOTTLE_INFO + index);
-        }
-
-        Self {
-            item_slots,
-            bottles,
-        }
-    }
-
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        // The inventory slot slice (LINK_ITEM_BOW..) overlaps two PlayerResourcesState-owned
-        // bytes: LINK_ITEM_BOMBS (0xf343, index 3) and LINK_ITEM_BOTTLE_INDEX (0xf34f, idx 15).
-        // bombs/bottle-index flow through PlayerResourcesState, so this slice carries a stale
-        // copy — projecting it would re-clobber the owner (e.g. a bomb_filler drain's
-        // increment_bombs was reverted every frame, bombs stuck @rf 147897). Skip those two
-        // indices; PlayerResourcesState is the sole projector. (We still LOAD them so the
-        // slice accessors read the owner's value, which is correct in RAM by then.)
-        const BOMBS_IDX: usize = LINK_ITEM_BOMBS - LINK_ITEM_BOW;
-        const BOTTLE_IDX: usize = LINK_ITEM_BOTTLE_INDEX - LINK_ITEM_BOW;
-        for (index, &value) in self.item_slots.iter().enumerate() {
-            if index == BOMBS_IDX || index == BOTTLE_IDX {
-                continue;
-            }
-            ram[LINK_ITEM_BOW + index] = value;
-        }
-        ram[LINK_BOTTLE_INFO..LINK_BOTTLE_INFO + BOTTLE_SLOT_COUNT].copy_from_slice(&self.bottles);
-        // HUD_CUR_ITEM/X/L/R (0x202, 0x656-0x658) are solely owned by SaveProgressState's
-        // hud_current_items — the menu navigation reads/writes that model. Projecting a second
-        // copy here re-stamped a stale value over it (the legacy bottle-menu 4->7 transition
-        // read the stale native field even though RAM matched).
-    }
-
+    /// Compatibility lookup for equipment only. The aggregate inventory reader
+    /// routes resource indices to PlayerResourcesState.
     pub(crate) fn inventory_item(&self, index: usize) -> u8 {
-        self.item_slots.get(index).copied().unwrap_or(0)
-    }
-
-    pub(crate) fn item_memory_value(&self, ram: &[u8], item_memory_addr: usize) -> u8 {
-        if (LINK_ITEM_BOW..LINK_ITEM_BOW + INVENTORY_ITEM_SLOT_COUNT).contains(&item_memory_addr) {
-            self.inventory_item(item_memory_addr - LINK_ITEM_BOW)
-        } else if (LINK_BOTTLE_INFO..LINK_BOTTLE_INFO + BOTTLE_SLOT_COUNT)
-            .contains(&item_memory_addr)
-        {
-            self.bottle(item_memory_addr - LINK_BOTTLE_INFO)
-        } else {
-            // HUD_CUR_ITEM/X/L/R are owned by SaveProgressState; read them straight from RAM.
-            ram.get(item_memory_addr).copied().unwrap_or(0)
-        }
+        EquipmentItem::from_inventory_index(index).map_or(0, |item| self.equipment(item))
     }
 
     pub(crate) fn bow(&self) -> u8 {
-        self.inventory_item(0)
+        self.bow
     }
 
     pub(crate) fn has_silver_arrows(&self) -> bool {
@@ -114,77 +136,75 @@ impl InventoryItemsState {
     }
 
     pub(crate) fn boomerang(&self) -> u8 {
-        self.inventory_item(1)
+        self.boomerang
     }
 
     pub(crate) fn hookshot(&self) -> u8 {
-        self.inventory_item(2)
+        self.hookshot
     }
 
     pub(crate) fn mushroom(&self) -> u8 {
-        self.inventory_item(4)
+        self.mushroom
     }
 
     pub(crate) fn fire_rod(&self) -> u8 {
-        self.inventory_item(5)
+        self.fire_rod
     }
 
     pub(crate) fn ice_rod(&self) -> u8 {
-        self.inventory_item(6)
+        self.ice_rod
     }
 
     pub(crate) fn bombos(&self) -> u8 {
-        self.inventory_item(7)
+        self.bombos
     }
 
     pub(crate) fn ether(&self) -> u8 {
-        self.inventory_item(8)
+        self.ether
     }
 
     pub(crate) fn quake(&self) -> u8 {
-        self.inventory_item(9)
+        self.quake
     }
 
     pub(crate) fn torch(&self) -> u8 {
-        self.inventory_item(10)
+        self.torch
     }
 
     pub(crate) fn hammer(&self) -> u8 {
-        self.inventory_item(11)
+        self.hammer
     }
 
     pub(crate) fn flute(&self) -> u8 {
-        self.inventory_item(12)
+        self.flute
     }
 
     pub(crate) fn bug_net(&self) -> u8 {
-        self.inventory_item(13)
+        self.bug_net
     }
 
     pub(crate) fn book(&self) -> u8 {
-        self.inventory_item(14)
+        self.book
     }
 
     pub(crate) fn cane_somaria(&self) -> u8 {
-        // LINK_ITEM_CANE_SOMARIA = LINK_ITEM_BOW + 16 (0xf350). Index 15 (0xf34f) is
-        // LINK_ITEM_BOTTLE_INDEX, not an item — cane_byrna/cape/... already use 17/18/...
-        self.inventory_item(16)
+        self.cane_somaria
     }
 
     pub(crate) fn cape(&self) -> u8 {
-        self.inventory_item(18)
+        self.cape
     }
 
     pub(crate) fn mirror(&self) -> u8 {
-        self.inventory_item(19)
+        self.mirror
     }
 
     pub(crate) fn gloves(&self) -> u8 {
-        self.inventory_item(20)
+        self.gloves
     }
 
     pub(crate) fn boots(&self) -> u8 {
-        self.inventory_item(21)
+        self.boots
     }
 
     pub(crate) fn has_boots(&self) -> bool {
@@ -192,11 +212,11 @@ impl InventoryItemsState {
     }
 
     pub(crate) fn flippers(&self) -> u8 {
-        self.inventory_item(22)
+        self.flippers
     }
 
     pub(crate) fn moon_pearl(&self) -> u8 {
-        self.inventory_item(23)
+        self.moon_pearl
     }
 
     pub(crate) fn has_moon_pearl(&self) -> bool {
@@ -204,15 +224,15 @@ impl InventoryItemsState {
     }
 
     pub(crate) fn sword_type(&self) -> u8 {
-        self.inventory_item(25)
+        self.sword_type
     }
 
     pub(crate) fn shield_type(&self) -> u8 {
-        self.inventory_item(26)
+        self.shield_type
     }
 
     pub(crate) fn armor(&self) -> u8 {
-        self.inventory_item(27)
+        self.armor
     }
 
     pub(crate) fn bottle(&self, index: usize) -> u8 {
@@ -220,8 +240,8 @@ impl InventoryItemsState {
     }
 
     fn set_inventory_item(&mut self, index: usize, value: u8) {
-        if let Some(item) = self.item_slots.get_mut(index) {
-            *item = value;
+        if let Some(item) = EquipmentItem::from_inventory_index(index) {
+            self.set_equipment(item, value);
         }
     }
 
@@ -261,42 +281,28 @@ impl<'a> NativeInventoryItemsBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
-        let mut ram_items = InventoryItemsState::load_from_ram(self.ram);
-        const BOMBS_IDX: usize = LINK_ITEM_BOMBS - LINK_ITEM_BOW;
-        const BOTTLE_IDX: usize = LINK_ITEM_BOTTLE_INDEX - LINK_ITEM_BOW;
-        ram_items.item_slots[BOMBS_IDX] = self.items.item_slots[BOMBS_IDX];
-        ram_items.item_slots[BOTTLE_IDX] = self.items.item_slots[BOTTLE_IDX];
-        debug_assert_eq!(*self.items, ram_items);
+        debug_assert_eq!(*self.items, InventoryItemsState::load_from_ram(self.ram));
     }
 
-    fn absorb_item_memory_byte(&mut self, address: usize) {
-        if (LINK_ITEM_BOW..LINK_ITEM_BOW + INVENTORY_ITEM_SLOT_COUNT).contains(&address) {
-            self.items
-                .set_inventory_item(address - LINK_ITEM_BOW, self.ram[address]);
-        } else if (LINK_BOTTLE_INFO..LINK_BOTTLE_INFO + BOTTLE_SLOT_COUNT).contains(&address) {
-            self.items
-                .set_bottle(address - LINK_BOTTLE_INFO, self.ram[address]);
+    /// Publish just the awarded equipment byte at the existing compatibility
+    /// boundary. Do not restamp unrelated inventory bytes during an award.
+    pub(crate) fn grant_equipment(&mut self, item: EquipmentItem, value: u8) {
+        self.items.set_equipment(item, value);
+        self.ram[LINK_ITEM_BOW + item.inventory_index()] = value;
+    }
+
+    pub(crate) fn grant_equipment_if_empty(&mut self, item: EquipmentItem, value: u8) {
+        // Preserve the legacy conditional's observation point while remaining
+        // raw-memory consumers are migrated.
+        if self.ram[LINK_ITEM_BOW + item.inventory_index()] == 0 {
+            self.grant_equipment(item, value);
         }
-        // HUD_CUR_ITEM/X/L/R are owned by SaveProgressState, not InventoryItemsState — the
-        // caller already wrote RAM; nothing to absorb here.
     }
 
     pub(crate) fn set_inventory_item(&mut self, index: usize, value: u8) {
         self.items.set_inventory_item(index, value);
         self.items.write_to_ram(self.ram);
         self.debug_assert_matches_ram();
-    }
-
-    pub(crate) fn set_item_memory_value(&mut self, item_memory_addr: usize, value: u8) {
-        self.ram[item_memory_addr] = value;
-        self.absorb_item_memory_byte(item_memory_addr);
-    }
-
-    pub(crate) fn set_item_memory_value_if_empty(&mut self, item_memory_addr: usize, value: u8) {
-        if self.ram[item_memory_addr] == 0 {
-            self.ram[item_memory_addr] = value;
-            self.absorb_item_memory_byte(item_memory_addr);
-        }
     }
 
     pub(crate) fn set_mushroom(&mut self, value: u8) {
@@ -1362,20 +1368,11 @@ impl<'a> NativePlayerResourcesBridgeMut<'a> {
         );
     }
 
-    /// OR a bit into one of the dungeon save-flag words (compass / big-key / dungeon-map)
-    /// that this state owns. Used by item receipt (compass 0x32 / map 0x33 / big-key
-    /// 0x25): updating the native field — not just RAM — is required or write_to_ram would
-    /// re-project the stale value and clobber the just-acquired flag.
-    pub(crate) fn or_resource_flag_word(&mut self, addr: usize, mask: u16) {
-        match addr {
-            LINK_COMPASS => self.resources.compass_flags |= mask,
-            LINK_BIGKEY => self.resources.big_key_flags |= mask,
-            LINK_DUNGEON_MAP => self.resources.dungeon_map_flags |= mask,
-            _ => {
-                let next = read_le_u16(self.ram, addr) | mask;
-                write_le_u16(self.ram, addr, next);
-                return;
-            }
+    pub(crate) fn grant_dungeon_item(&mut self, item: DungeonItem, mask: u16) {
+        match item {
+            DungeonItem::Compass => self.resources.compass_flags |= mask,
+            DungeonItem::BigKey => self.resources.big_key_flags |= mask,
+            DungeonItem::Map => self.resources.dungeon_map_flags |= mask,
         }
         self.sync();
     }

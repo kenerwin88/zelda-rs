@@ -29,7 +29,7 @@ fn wish_pond_graphics_boundary_keeps_the_spawn_prefix_and_call_locals() {
 
     assert_eq!(state.sprite_slot_view(slot).ai_state(), 3);
     assert_eq!(state.sprite_slot_view(slot).c(), 1);
-    assert_eq!(state.game_state.inventory.items.inventory_item(1), 0);
+    assert_eq!(state.inventory_item(1), 0);
     assert_eq!(state.sprite_slot_view(slot).delay_main(), 0);
     let continuation = match state.game_execution_scheduler.current_work() {
         Some(GameWorkContinuation::FinishSpriteMain {

@@ -70,9 +70,9 @@ pub(crate) use ending::{
 };
 pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
 pub(crate) use inventory::{
-    InventoryState, NativeDungeonKeySlotsBridgeMut, NativeInventoryItemsBridgeMut,
-    NativeMirrorWarpBridgeMut, NativePlayerResourcesBridgeMut, NativeSaveProgressBridgeMut,
-    SaveProgressState,
+    DungeonItem, EquipmentItem, InventoryState, NativeDungeonKeySlotsBridgeMut,
+    NativeInventoryItemsBridgeMut, NativeMirrorWarpBridgeMut, NativePlayerResourcesBridgeMut,
+    NativeSaveProgressBridgeMut, SaveProgressState,
 };
 #[cfg(test)]
 pub(crate) use messaging::{MessagingRenderBufferState, SelectFileMenuState, VwfRenderState};

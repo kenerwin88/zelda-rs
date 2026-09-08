@@ -587,7 +587,7 @@ impl ZeldaState {
     }
 
     fn hud_have_any_items(&self) -> bool {
-        (0..20).any(|i| self.game_state.inventory.items.inventory_item(i) != 0)
+        (0..20).any(|i| self.inventory_item(i) != 0)
     }
 
     pub(super) fn hud_init(&mut self) {
@@ -689,11 +689,7 @@ impl ZeldaState {
         if item as usize - 1 == LINK_ITEM_BOMBS - LINK_ITEM_BOW {
             return self.game_state.inventory.player_resources.bombs() != 0;
         }
-        self.game_state
-            .inventory
-            .items
-            .inventory_item((item - 1) as usize)
-            != 0
+        self.inventory_item((item - 1) as usize) != 0
     }
 
     fn hud_equip_prev_item(&self, item: &mut u8, is_hud_cur_item: bool) {
@@ -1078,11 +1074,7 @@ impl ZeldaState {
                 .bottle((i - HUD_ITEM_BOTTLE_FIRST) as usize)
                 as usize];
         }
-        let mut item_val = self
-            .game_state
-            .inventory
-            .items
-            .inventory_item((i - 1) as usize) as usize;
+        let mut item_val = self.inventory_item((i - 1) as usize) as usize;
         if i == 4 {
             item_val = usize::from(item_val != 0);
         } else if i == HUD_ITEM_BOTTLE_LEGACY && !USE_NEW_STYLE_INVENTORY {

@@ -1,6 +1,15 @@
 // Methods ported from zelda3/src/misc.c and included inside ZeldaState.
 
 use super::*;
+use crate::game_state::{DungeonItem, EquipmentItem};
+
+#[path = "item_awards.rs"]
+mod item_awards;
+pub(super) use item_awards::chest_item_alternate;
+
+#[cfg(test)]
+#[path = "item_award_tests.rs"]
+mod item_award_tests;
 // Runtime source pointers selected by the ROM's LoadSongBank entry points at
 // $80:8913, $80:8925, and $80:8931. The intro entry at $80:8901 also uploads
 // the resident driver and samples; it is not the runtime overworld bank.
@@ -54,21 +63,6 @@ const RECEIVE_ITEM_GRAPHICS: [u8; 76] = [
     0x0f, 0x16, 3, 0x13, 1, 0x1e, 0x10, 0, 0, 0, 0, 0, 0, 0x30, 0x22, 0x21, 0x24, 0x24, 0x24, 0x23,
     0x23, 0x23, 0x29, 0x2a, 0x2c, 0x2b, 3, 3, 0x34, 0x35, 0x31, 0x33, 2, 0x32, 0x36, 0x37, 0x2c, 6,
     0x0c, 0x38,
-];
-const RECEIVE_ITEM_TARGET_MEMORY_LOCATIONS: [usize; 76] = [
-    0xf359, 0xf359, 0xf359, 0xf359, 0xf35a, 0xf35a, 0xf35a, 0xf345, 0xf346, 0xf34b, 0xf342, 0xf340,
-    0xf341, 0xf344, 0xf35c, 0xf347, 0xf348, 0xf349, 0xf34a, 0xf34c, 0xf34c, 0xf350, 0xf35c, 0xf36b,
-    0xf351, 0xf352, 0xf353, 0xf354, 0xf354, 0xf34e, 0xf356, 0xf357, 0xf37a, 0xf34d, 0xf35b, 0xf35b,
-    0xf36f, 0xf364, 0xf36c, 0xf375, 0xf375, 0xf344, 0xf341, 0xf35c, 0xf35c, 0xf35c, 0xf36d, 0xf36e,
-    0xf36e, 0xf375, 0xf366, 0xf368, 0xf360, 0xf360, 0xf360, 0xf374, 0xf374, 0xf374, 0xf340, 0xf340,
-    0xf35c, 0xf35c, 0xf36c, 0xf36c, 0xf360, 0xf360, 0xf372, 0xf376, 0xf376, 0xf373, 0xf360, 0xf360,
-    0xf35c, 0xf359, 0xf34c, 0xf355,
-];
-const RECEIVE_ITEM_TARGET_VALUES: [u8; 76] = [
-    1, 2, 3, 4, 1, 2, 3, 1, 1, 1, 1, 1, 1, 2, 0xff, 1, 1, 1, 1, 1, 2, 1, 0xff, 0xff, 1, 1, 2, 1, 2,
-    1, 1, 1, 0xff, 1, 0xff, 2, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 2, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xfb, 0xec, 0xff, 0xff, 0xff, 1, 3, 0xff, 0xff, 0xff, 0xff, 0x9c,
-    0xce, 0xff, 1, 10, 0xff, 0xff, 0xff, 0xff, 1, 3, 1,
 ];
 const LIT_TORCH_COLOR_PLUS_BY_COUNT: [u8; 4] = [31, 8, 4, 0];
 const ITEM_RECEIPT_BOTTLED_ITEM_IDS: [u8; 7] = [0x16, 0x2b, 0x2c, 0x2d, 0x3d, 0x3c, 0x48];
@@ -191,20 +185,6 @@ fn receive_item_gfx_misc(item: u8) -> u8 {
         .get(item as usize)
         .copied()
         .unwrap_or(0)
-}
-
-fn memory_location_to_give_item_to_misc(item: u8) -> usize {
-    RECEIVE_ITEM_TARGET_MEMORY_LOCATIONS
-        .get(item as usize)
-        .copied()
-        .unwrap_or(0)
-}
-
-fn value_to_give_item_to_misc(item: u8) -> u8 {
-    RECEIVE_ITEM_TARGET_VALUES
-        .get(item as usize)
-        .copied()
-        .unwrap_or(0xff)
 }
 
 impl ZeldaState {
@@ -1194,27 +1174,7 @@ impl ZeldaState {
 
         self.follower_link_state_mut()
             .set_immobilized_flag(if item == 0x20 { 2 } else { 1 });
-        if item == 0 {
-            self.inventory_items_mut().set_item_memory_value(
-                memory_location_to_give_item_to_misc(4),
-                value_to_give_item_to_misc(0),
-            );
-        }
-
-        let value_addr = memory_location_to_give_item_to_misc(item);
-        let value = value_to_give_item_to_misc(item);
-        if (value as i8) >= 0 {
-            if value_addr == LINK_ARROW_REFILL_COUNTER {
-                // Arrows (item 0x43/0x44): LINK_ARROW_REFILL_COUNTER (0xf376) is owned by
-                // PlayerResourcesState.arrow_filler, not inventory_items — route through it
-                // (a raw inventory_items write is re-projected away at frame end; same
-                // class as the small-key/bomb/heart-piece fixes).
-                self.player_resources_mut().set_arrow_filler(value);
-            } else {
-                self.inventory_items_mut()
-                    .set_item_memory_value(value_addr, value);
-            }
-        }
+        self.grant_initial_item_award(item);
 
         if item == 0x1f {
             self.follower_link_state_mut().clear_bunny_body_state();
@@ -1231,9 +1191,6 @@ impl ZeldaState {
                 0x38 => 1,
                 _ => 2,
             };
-            // Pendant: value_addr is LINK_WHICH_PENDANTS (0xf374), owned by
-            // PlayerResourcesState — OR the bit through it (a raw inventory_items write
-            // is re-projected away at frame end; same class as the small-key/bomb fixes).
             let value = self.game_state.inventory.player_resources.pendant_flags() | bit;
             self.player_resources_mut().set_pendant_flags(value);
             if value & 7 == 7 {
@@ -1242,17 +1199,16 @@ impl ZeldaState {
             self.increment_overworld_map_state();
         } else if item == 0x22 {
             self.inventory_items_mut()
-                .set_item_memory_value_if_empty(value_addr, 1);
+                .grant_equipment_if_empty(EquipmentItem::Armor, 1);
         } else if matches!(item, 0x25 | 0x32 | 0x33) {
-            // compass (0x32) / dungeon map (0x33) / big key (0x25): set the current
-            // dungeon's bit. value_addr is LINK_COMPASS/LINK_DUNGEON_MAP/LINK_BIGKEY, all
-            // owned by PlayerResourcesState — route through it so the native field updates
-            // (inventory_items's absorb doesn't model these, so a raw OR would be
-            // re-projected away — the cause of the missing dungeon-map flag @frame 13250).
             let mask = 0x8000u16
                 >> ((self.game_state.inventory.save_progress.palace_index_x2() >> 1) as u16);
-            self.player_resources_mut()
-                .or_resource_flag_word(value_addr, mask);
+            let reward = match item {
+                0x25 => DungeonItem::Compass,
+                0x32 => DungeonItem::BigKey,
+                _ => DungeonItem::Map,
+            };
+            self.player_resources_mut().grant_dungeon_item(reward, mask);
         } else if item == 0x3e {
             if self
                 .game_state
@@ -1285,7 +1241,7 @@ impl ZeldaState {
         } else if item == 0x29 {
             if self.game_state.inventory.items.mushroom() != 2 {
                 self.inventory_items_mut()
-                    .set_item_memory_value(value_addr, 1);
+                    .grant_equipment(EquipmentItem::Mushroom, 1);
                 self.hud_refresh_icon();
             }
         } else if item == 0x24
@@ -1297,12 +1253,6 @@ impl ZeldaState {
                 0x31 => 10,
                 _ => 1,
             };
-            // All targets here are owned by PlayerResourcesState, not inventory_items —
-            // a raw inventory_items write to RAM is re-projected away by
-            // PlayerResourcesState at frame end (same class as the 0x25/0x32/0x33
-            // compass/map fix above). 0x24 -> LINK_NUM_KEYS (0xf36f); 0x27/0x28/0x31 ->
-            // LINK_BOMB_FILLER (0xf375). Route both through PlayerResourcesState so the
-            // native field updates (missing small-key @~31258 / missing bombs @~51000).
             if item == 0x24 {
                 let keys = self.game_state.inventory.player_resources.keys();
                 self.player_resources_mut()
@@ -1314,10 +1264,6 @@ impl ZeldaState {
             }
             self.hud_refresh_icon();
         } else if item == 0x17 {
-            // Piece of Heart: value_addr is LINK_HEART_PIECES (0xf36b), owned by
-            // PlayerResourcesState — route the mod-4 increment through it so the native
-            // heart_pieces field updates (a raw inventory_items write is re-projected
-            // away at frame end; same class as the small-key/bomb fixes).
             self.player_resources_mut().advance_heart_piece_count();
             let sfx = 0x2d | self.link_calculate_sfx_pan();
             self.set_sound_effect_2(sfx);

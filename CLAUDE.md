@@ -83,6 +83,11 @@ It does not replace the pinned live Snes9x A/V authority.
   views. Preserve the intentional cross-array boss indices and the separate
   eight-byte spawned-area boundary. Do not reintroduce a mirror or Arrghus
   reload; see `docs/parity/overlord-single-owner.md` for the alias contract.
+- Inventory equipment uses named Rust fields and `EquipmentItem`; bombs and
+  equipped-bottle index belong to `PlayerResourcesState`. Item awards use typed
+  grants, with WRAM encoding confined to compatibility methods. Do not restore
+  item-address tables or resource copies in equipment. Publication timing still
+  matters while legacy consumers remain; see `docs/parity/native-item-awards.md`.
 
 ## Common bug classes (almost every root is one of these) + fix recipes
 

@@ -1,5 +1,6 @@
 // Methods ported from zelda3/src/player.c and included inside ZeldaState.
 
+use super::misc::chest_item_alternate;
 use super::sprite::SpriteSpawnInfo;
 use super::*;
 use crate::types::Point16U;
@@ -10,13 +11,6 @@ use player_shared::*;
 const DASH_FOLLOWER_SLOWDOWN_INDICATORS: [u8; 15] =
     [0xff, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 const DASH_FOLLOWER_RELEASE_INDICATORS: [u8; 15] = [0xff, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-
-fn player_memory_location_to_give_item_to(item: u8) -> usize {
-    PLAYER_MEMORY_LOCATION_TO_GIVE_ITEM_TO_MEMORY_LOCATIONS
-        .get(item as usize)
-        .copied()
-        .unwrap_or(0)
-}
 
 impl ZeldaState {
     pub(super) fn bit_sum4(value: u8) -> u8 {
@@ -5726,13 +5720,9 @@ impl ZeldaState {
 
         self.follower_link_state_mut().set_item_receipt_method(1);
 
-        if let Some(&alternate) = LINK_PERFORM_OPEN_CHEST_RECEIVE_ITEM_ALTERNATES.get(item as usize)
-        {
-            if alternate != 0xff {
-                let ram_addr = player_memory_location_to_give_item_to(item);
-                if self.item_memory_value(ram_addr) != 0 {
-                    item = alternate;
-                }
+        if let Some((equipment, alternate)) = chest_item_alternate(item) {
+            if self.game_state.inventory.items.equipment(equipment) != 0 {
+                item = alternate;
             }
         }
 
