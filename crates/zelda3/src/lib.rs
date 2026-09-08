@@ -25,6 +25,7 @@ mod raster_timing;
 mod rom_cpu_timing;
 mod rom_random;
 mod spc_driver_clock;
+pub(crate) mod tile_definition;
 mod timing_receipts;
 pub mod types;
 pub mod util;

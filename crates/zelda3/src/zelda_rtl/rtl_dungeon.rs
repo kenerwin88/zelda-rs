@@ -163,11 +163,14 @@ impl ZeldaState {
         self.complete_module07_dungeon_after_submodule();
     }
 
-    pub(crate) fn dungeon_tile_attribute(&self, tile: usize) -> u8 {
+    pub(crate) fn dungeon_tile_definition(
+        &self,
+        tile: usize,
+    ) -> crate::tile_definition::NativeTile {
         self.game_state
             .dungeon
-            .bg2_attributes
-            .attr_for_tile(&self.ram, tile)
+            .room_parser
+            .tile_definition(&self.ram, tile)
     }
 
     pub(crate) fn increment_dungeon_map_init_state(&mut self) {

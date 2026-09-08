@@ -96,7 +96,7 @@ pub(crate) use misc::{
 pub(crate) use oam::{NativeOamStateBridgeMut, OamState};
 #[cfg(test)]
 pub(crate) use player::Bg1MovementAccumulatorState;
-pub(crate) use player::{TileBehavior, TileResult};
+pub(crate) use player::TileResult;
 pub(crate) use player::{
     CollisionAxis, CollisionDirection, CollisionOrder, FollowerLinkState, MovementProbe,
     MovementProbeKind, NativeBg1MovementAccumulatorBridgeMut, NativeFollowerLinkBridgeMut,

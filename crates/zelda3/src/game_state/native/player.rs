@@ -19,7 +19,7 @@ pub(crate) use collision::{
 };
 mod compatibility;
 mod tile_behavior;
-pub(crate) use tile_behavior::{TileBehavior, TileResult};
+pub(crate) use tile_behavior::TileResult;
 mod transitions;
 pub(crate) use compatibility::NativeFollowerLinkBridgeMut;
 

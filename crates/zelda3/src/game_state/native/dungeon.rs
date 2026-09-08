@@ -49,6 +49,7 @@ use crate::game_state::constants::{
 use crate::game_state::constants::{
     DUNGEON_ROOM_HISTORY, DUNGEON_ROOM_INDEX2, DUNGEON_ROOM_INDEX_PREV,
 };
+use crate::tile_definition::NativeTile;
 use crate::types::{read_le_u16, write_le_u16};
 
 const DUNGEON_HEADER_TRAVEL_DESTINATION_COUNT: usize = 5;
@@ -2043,7 +2044,7 @@ pub(crate) struct DungeonRoomParserState {
     floor_2_filler_tiles: u16,
     room_layout_and_starting_quadrant: u16,
     pot_reveal_masks: Vec<u16>,
-    tile_attributes: Vec<u8>,
+    tile_attributes: Vec<NativeTile>,
 }
 
 impl Default for DungeonRoomParserState {
@@ -2059,7 +2060,7 @@ impl Default for DungeonRoomParserState {
             floor_2_filler_tiles: 0,
             room_layout_and_starting_quadrant: 0,
             pot_reveal_masks: vec![0; DUNGEON_POT_REVEAL_ROOM_COUNT],
-            tile_attributes: vec![0; 0x200],
+            tile_attributes: vec![NativeTile::GROUND; 0x200],
         }
     }
 }
@@ -2105,11 +2106,13 @@ impl DungeonRoomParserState {
         // ATTRIBUTES_FOR_TILE owns exactly 0x200 bytes (0xfe00..0x10000). A 0x400 array
         // overran the load/projection into 0x10000-0x101ff (BG_CHAR_BUFFER), re-stamping a
         // stale copy over the star-tile graphics written by Dungeon_RestoreStarTileChr.
-        let mut tile_attributes = vec![0; 0x200];
+        let mut tile_attributes = vec![NativeTile::GROUND; 0x200];
         let available = ram.len().saturating_sub(ATTRIBUTES_FOR_TILE_PLAYER);
         let len = tile_attributes.len().min(available);
-        tile_attributes[..len]
-            .copy_from_slice(&ram[ATTRIBUTES_FOR_TILE_PLAYER..ATTRIBUTES_FOR_TILE_PLAYER + len]);
+        NativeTile::import_slice(
+            &mut tile_attributes[..len],
+            &ram[ATTRIBUTES_FOR_TILE_PLAYER..ATTRIBUTES_FOR_TILE_PLAYER + len],
+        );
 
         Self {
             star_switch_count_x2: read_le_u16(ram, DUNG_NUM_STAR_SHAPED_SWITCHES_LOCAL),
@@ -2172,8 +2175,10 @@ impl DungeonRoomParserState {
             .tile_attributes
             .len()
             .min(ram.len().saturating_sub(ATTRIBUTES_FOR_TILE_PLAYER));
-        ram[ATTRIBUTES_FOR_TILE_PLAYER..ATTRIBUTES_FOR_TILE_PLAYER + len]
-            .copy_from_slice(&self.tile_attributes[..len]);
+        NativeTile::export_slice(
+            &self.tile_attributes[..len],
+            &mut ram[ATTRIBUTES_FOR_TILE_PLAYER..ATTRIBUTES_FOR_TILE_PLAYER + len],
+        );
     }
 
     pub(crate) fn pots_revealed_in_room(&self, room: usize) -> u16 {
@@ -2257,16 +2262,28 @@ impl DungeonRoomParserState {
         index
     }
 
+    pub(crate) fn tile_definition(&self, ram: &[u8], tile: usize) -> NativeTile {
+        let index = tile & 0x03ff;
+        self.tile_attributes.get(index).copied().unwrap_or_else(|| {
+            // The upper half aliases live BG character memory, not this catalog.
+            NativeTile::from_cartridge(
+                ram.get(ATTRIBUTES_FOR_TILE_PLAYER + index)
+                    .copied()
+                    .unwrap_or(0),
+            )
+        })
+    }
+
     fn copy_custom_tile_attrs(&mut self, attrs: &[u8]) {
-        self.tile_attributes[0x140..0x1c0].copy_from_slice(attrs);
+        NativeTile::import_slice(&mut self.tile_attributes[0x140..0x1c0], attrs);
     }
 
     fn copy_default_tile_attrs_tail(&mut self, attrs: &[u8]) {
-        self.tile_attributes[0x1c0..0x200].copy_from_slice(attrs);
+        NativeTile::import_slice(&mut self.tile_attributes[0x1c0..0x200], attrs);
     }
 
     fn copy_default_tile_attrs_head(&mut self, data: &[u8]) {
-        self.tile_attributes[..0x140].copy_from_slice(&data[..0x140]);
+        NativeTile::import_slice(&mut self.tile_attributes[..0x140], &data[..0x140]);
     }
 
     fn set_floor_1_filler_high(&mut self, value: u8) {
@@ -2968,94 +2985,114 @@ fn stair_list_table(list: DungeonStairList) -> DungeonStairTilemapTable {
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DungeonBg2AttributeState {
-    attrs: Vec<u8>,
+    attrs: Vec<NativeTile>,
 }
 
 impl Default for DungeonBg2AttributeState {
     fn default() -> Self {
         Self {
-            attrs: vec![0; DUNGEON_BG2_ATTR_BUFFER_LEN],
+            attrs: vec![NativeTile::GROUND; DUNGEON_BG2_ATTR_BUFFER_LEN],
         }
     }
 }
 
 impl DungeonBg2AttributeState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
-        let mut attrs = vec![0; DUNGEON_BG2_ATTR_BUFFER_LEN];
+        let mut attrs = vec![NativeTile::GROUND; DUNGEON_BG2_ATTR_BUFFER_LEN];
         let available = ram.len().saturating_sub(DUNGEON_BG2_ATTR_TABLE);
         let len = attrs.len().min(available);
-        attrs[..len].copy_from_slice(&ram[DUNGEON_BG2_ATTR_TABLE..DUNGEON_BG2_ATTR_TABLE + len]);
+        NativeTile::import_slice(
+            &mut attrs[..len],
+            &ram[DUNGEON_BG2_ATTR_TABLE..DUNGEON_BG2_ATTR_TABLE + len],
+        );
         Self { attrs }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         let available = ram.len().saturating_sub(DUNGEON_BG2_ATTR_TABLE);
         let len = self.attrs.len().min(available);
-        ram[DUNGEON_BG2_ATTR_TABLE..DUNGEON_BG2_ATTR_TABLE + len]
-            .copy_from_slice(&self.attrs[..len]);
+        NativeTile::export_slice(
+            &self.attrs[..len],
+            &mut ram[DUNGEON_BG2_ATTR_TABLE..DUNGEON_BG2_ATTR_TABLE + len],
+        );
     }
 
     pub(crate) fn bg2_attr(&self, offset: usize) -> u8 {
-        self.attrs.get(offset).copied().unwrap_or(0)
+        self.bg2_tile(offset).cartridge_attribute()
+    }
+
+    pub(crate) fn bg2_tiles(&self, offset: usize) -> crate::tile_definition::TilePair {
+        crate::tile_definition::TilePair([self.bg2_tile(offset), self.bg2_tile(offset + 1)])
+    }
+
+    pub(crate) fn bg1_tiles(&self, offset: usize) -> crate::tile_definition::TilePair {
+        crate::tile_definition::TilePair([self.bg1_tile(offset), self.bg1_tile(offset + 1)])
     }
 
     pub(crate) fn bg2_attr_word(&self, offset: usize) -> u16 {
         u16::from(self.bg2_attr(offset)) | (u16::from(self.bg2_attr(offset + 1)) << 8)
     }
 
+    pub(crate) fn bg2_tile(&self, offset: usize) -> NativeTile {
+        self.attrs.get(offset).copied().unwrap_or_default()
+    }
+
+    pub(crate) fn bg1_tile(&self, offset: usize) -> NativeTile {
+        self.bg2_tile(DUNGEON_BG1_ATTR_BUFFER_OFFSET + offset)
+    }
+
     pub(crate) fn bg1_attr(&self, offset: usize) -> u8 {
-        self.attrs
-            .get(DUNGEON_BG1_ATTR_BUFFER_OFFSET + offset)
-            .copied()
-            .unwrap_or(0)
-    }
-
-    pub(crate) fn bg1_attr_word(&self, offset: usize) -> u16 {
-        u16::from(self.bg1_attr(offset)) | (u16::from(self.bg1_attr(offset + 1)) << 8)
-    }
-
-    pub(crate) fn attr_for_tile(&self, ram: &[u8], tile: usize) -> u8 {
-        ram.get(ATTRIBUTES_FOR_TILE_PLAYER + (tile & 0x03ff))
-            .copied()
-            .unwrap_or(0)
+        self.bg1_tile(offset).cartridge_attribute()
     }
 
     pub(crate) fn bg2_attr_pair(&self, offset: usize) -> Option<(u8, u8)> {
         Some((
-            *self.attrs.get(offset)?,
-            *self.attrs.get(offset.wrapping_add(1))?,
+            self.attrs.get(offset)?.cartridge_attribute(),
+            self.attrs
+                .get(offset.wrapping_add(1))?
+                .cartridge_attribute(),
         ))
     }
 
-    pub(crate) fn bg2_attr_slice(&self, start: usize, len: usize) -> &[u8] {
-        &self.attrs[start..start + len]
+    #[cfg(test)]
+    pub(crate) fn bg2_attr_slice(&self, start: usize, len: usize) -> Vec<u8> {
+        self.attrs[start..start + len]
+            .iter()
+            .map(|tile| tile.cartridge_attribute())
+            .collect()
     }
 
+    fn set_bg2_tile(&mut self, offset: usize, tile: NativeTile) {
+        self.attrs[offset] = tile;
+    }
+
+    fn set_bg2_tiles(&mut self, offset: usize, tiles: [NativeTile; 2]) {
+        self.attrs[offset..offset + 2].copy_from_slice(&tiles);
+    }
+
+    fn set_bg1_tiles(&mut self, offset: usize, tiles: [NativeTile; 2]) {
+        self.set_bg2_tiles(DUNGEON_BG1_ATTR_BUFFER_OFFSET + offset, tiles);
+    }
+
+    #[cfg(test)]
     fn set_bg2_attr(&mut self, offset: usize, value: u8) {
-        self.attrs[offset] = value;
+        self.set_bg2_tile(offset, NativeTile::from_cartridge(value));
     }
 
-    fn set_bg2_attr_word(&mut self, offset: usize, value: u16) {
-        self.attrs[offset] = value as u8;
-        self.attrs[offset + 1] = (value >> 8) as u8;
+    // Overworld transitions reuse this bank for packed map graphics. Preserve
+    // both byte identities without treating this as a gameplay tile edit.
+    fn import_aliased_map8_word(&mut self, offset: usize, value: u16) {
+        self.set_bg2_tiles(offset, NativeTile::import_pair(value));
     }
 
+    #[cfg(test)]
     fn set_bg1_attr_word(&mut self, offset: usize, value: u16) {
-        let offset = DUNGEON_BG1_ATTR_BUFFER_OFFSET + offset;
-        self.attrs[offset] = value as u8;
-        self.attrs[offset + 1] = (value >> 8) as u8;
+        self.set_bg1_tiles(offset, NativeTile::import_pair(value));
     }
 
-    fn xor_bg2_attr(&mut self, offset: usize, value: u8) {
-        self.attrs[offset] ^= value;
-    }
-
-    fn xor_bg1_attr(&mut self, offset: usize, value: u8) {
-        self.attrs[DUNGEON_BG1_ATTR_BUFFER_OFFSET + offset] ^= value;
-    }
-
+    #[cfg(test)]
     fn fill_bg2_attr_range(&mut self, start: usize, len: usize, value: u8) {
-        self.attrs[start..start + len].fill(value);
+        self.attrs[start..start + len].fill(NativeTile::from_cartridge(value));
     }
 }
 
@@ -3668,11 +3705,16 @@ impl<'a> NativeDungeonBg2AttributeBridgeMut<'a> {
 
     forward_synced! {
         state;
+        fn set_bg2_tile(offset: usize, tile: NativeTile);
+        fn set_bg2_tiles(offset: usize, tiles: [NativeTile; 2]);
+        fn set_bg1_tiles(offset: usize, tiles: [NativeTile; 2]);
+        fn import_aliased_map8_word(offset: usize, value: u16);
+    }
+    #[cfg(test)]
+    forward_synced! {
+        state;
         fn set_bg2_attr(offset: usize, value: u8);
-        fn set_bg2_attr_word(offset: usize, value: u16);
         fn set_bg1_attr_word(offset: usize, value: u16);
-        fn xor_bg2_attr(offset: usize, value: u8);
-        fn xor_bg1_attr(offset: usize, value: u8);
         fn fill_bg2_attr_range(start: usize, len: usize, value: u8);
     }
 }

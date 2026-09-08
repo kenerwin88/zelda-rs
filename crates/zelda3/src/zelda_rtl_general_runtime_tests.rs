@@ -2074,5 +2074,7 @@ mod runtime_sprites;
 mod runtime_startup;
 #[path = "zelda_rtl_tests/runtime/runtime_tile_behavior.rs"]
 mod runtime_tile_behavior;
+#[path = "zelda_rtl_tests/runtime/runtime_tile_definitions.rs"]
+mod runtime_tile_definitions;
 #[path = "zelda_rtl_tests/runtime/runtime_timing.rs"]
 mod runtime_timing;

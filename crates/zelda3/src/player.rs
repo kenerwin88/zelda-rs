@@ -1142,7 +1142,7 @@ impl ZeldaState {
 
     pub(super) fn tile_behavior_handle_item_and_execute(&mut self, x: u16, y: u16) {
         let tile = self.handle_item_tile_action_overworld(x, y);
-        self.tile_detect_execute_inner(tile, 0, 1, false);
+        self.tile_detect_execute_definition(tile, 0, 1, false);
     }
 
     pub(super) fn push_block_get_target_tile_flag(&self, x: u16, y: u16) -> u8 {
@@ -4193,13 +4193,13 @@ impl ZeldaState {
             .set_bg2_tile(pos as usize, 0x190f);
         self.dungeon_room_tilemaps_mut()
             .set_bg2_tile((pos + 64) as usize, 0x190f);
-        let attr = u16::from(self.dungeon_tile_attribute(0x190f)) * 0x0101;
+        let attr = [self.dungeon_tile_definition(0x190f); 2];
         let vram0 = self.Dungeon_MapVramAddr(pos);
         let vram1 = self.Dungeon_MapVramAddr(pos + 64);
         self.dungeon_bg2_attributes_mut()
-            .set_bg2_attr_word(pos as usize, attr);
+            .set_bg2_tiles(pos as usize, attr);
         self.dungeon_bg2_attributes_mut()
-            .set_bg2_attr_word((pos + 64) as usize, attr);
+            .set_bg2_tiles((pos + 64) as usize, attr);
         self.write_vram_upload_absolute_word(dst, vram0);
         self.write_vram_upload_absolute_word(dst + 6, vram1);
         self.write_vram_upload_absolute_word(dst + 2, 0x0100);

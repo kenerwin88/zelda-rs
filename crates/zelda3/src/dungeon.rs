@@ -1,3 +1,4 @@
+use crate::tile_definition::{NativeTile, TilePair};
 // Methods ported from zelda3/src/dungeon.c and included inside ZeldaState.
 
 use super::*;
@@ -5876,7 +5877,7 @@ impl ZeldaState {
         t1: u16,
         t2: u16,
         t3: u16,
-        attr: u8,
+        attr: NativeTile,
     ) {
         let tiles = [t0, t1, t2, t3];
         let positions = [pos, pos + 64, pos + 1, pos + 65];
@@ -5893,7 +5894,7 @@ impl ZeldaState {
                 tile,
             );
             self.dungeon_bg2_attributes_mut()
-                .set_bg2_attr(tile_pos as usize, attr);
+                .set_bg2_tile(tile_pos as usize, attr);
         }
 
         let dst = self.game_state.display.current_vram_upload_data_address();
@@ -5924,12 +5925,12 @@ impl ZeldaState {
             self.tile_word(src, 2),
             self.tile_word(src, 3),
         ];
-        let attr = self.dungeon_tile_attribute(tiles[3] as usize);
+        let attr = self.dungeon_tile_definition(tiles[3] as usize);
         let tile_positions = [pos, pos + 64, pos + 1, pos + 65];
 
         for &tile_pos in &tile_positions {
             self.dungeon_bg2_attributes_mut()
-                .set_bg2_attr(tile_pos as usize, attr);
+                .set_bg2_tile(tile_pos as usize, attr);
         }
 
         for (&tile_pos, &tile) in tile_positions.iter().zip(tiles.iter()) {
@@ -5961,7 +5962,7 @@ impl ZeldaState {
             .dungeon
             .room_items
             .replacement_tilemap_quad(index);
-        let attr = self.dungeon_tile_attribute(lr as usize);
+        let attr = self.dungeon_tile_definition(lr as usize);
         self.Dungeon_Store2x2(pos, ul, ll, ur, lr, attr);
     }
 
@@ -6238,7 +6239,7 @@ impl ZeldaState {
             self.dungeon_object_tracking_mut()
                 .set_replacement_tile_state(y, 0xffff);
         }
-        self.Dungeon_Store2x2(p, 0x0922, 0x0932, 0x0923, 0x0933, 0x27);
+        self.Dungeon_Store2x2(p, 0x0922, 0x0932, 0x0923, 0x0933, NativeTile::OPEN_CHEST);
     }
 
     pub(super) fn PushBlock_Slide(&mut self, j: u8) {
@@ -7253,7 +7254,7 @@ impl ZeldaState {
         self.clear_vram_upload_cursor();
         self.dungeon_room_items_mut().clear_chest_reveal_cursor();
 
-        let mut attr = 0x5858;
+        let mut attr = NativeTile::import_pair(0x5858);
         loop {
             let yy = self.game_state.dungeon.room_items.chest_reveal_cursor_x2();
             let pos = (self
@@ -7265,10 +7266,10 @@ impl ZeldaState {
                 & 0x1fff;
 
             self.dungeon_bg2_attributes_mut()
-                .set_bg2_attr_word(pos as usize, attr);
+                .set_bg2_tiles(pos as usize, attr);
             self.dungeon_bg2_attributes_mut()
-                .set_bg2_attr_word((pos + 64) as usize, attr);
-            attr = attr.wrapping_add(0x0101);
+                .set_bg2_tiles((pos + 64) as usize, attr);
+            attr = NativeTile::next_pair_identity(attr);
 
             let src = 0x149c;
             let tiles = [
@@ -7427,8 +7428,8 @@ impl ZeldaState {
                 .dungeon
                 .stair_lists
                 .stair_list_tilemap_pos(DungeonStairList::InRoomUpNorthWater, j);
-            self.write_attr2(dsto as usize + xy(1, 1), 0x1d1d);
-            self.write_attr2(dsto as usize + xy(1, 2), 0x1d1d);
+            self.write_attr2(dsto as usize + xy(1, 1), TilePair::from_cartridge(0x1d1d));
+            self.write_attr2(dsto as usize + xy(1, 2), TilePair::from_cartridge(0x1d1d));
             j += 2;
         }
 
@@ -7445,8 +7446,8 @@ impl ZeldaState {
                 .dungeon
                 .stair_lists
                 .stair_list_tilemap_pos(DungeonStairList::InRoomUpSouthWater, j);
-            self.write_attr2(dsto as usize + xy(1, 1), 0x1d1d);
-            self.write_attr2(dsto as usize + xy(1, 2), 0x1d1d);
+            self.write_attr2(dsto as usize + xy(1, 1), TilePair::from_cartridge(0x1d1d));
+            self.write_attr2(dsto as usize + xy(1, 2), TilePair::from_cartridge(0x1d1d));
             j += 2;
         }
 
@@ -7471,18 +7472,18 @@ impl ZeldaState {
                 .stair_lists
                 .stair_list_tilemap_pos(DungeonStairList::InterPseudoUpNorth, j)
                 as usize;
-            self.write_attr2(dsto, 0x0003);
-            self.write_attr2(dsto + 2, 0x0300);
-            self.write_attr1(dsto, 0x0a03);
-            self.write_attr1(dsto + 2, 0x030a);
-            self.write_attr2(dsto + xy(0, 1), 0x0808);
-            self.write_attr2(dsto + xy(2, 1), 0x0808);
-            self.write_attr1(dsto + xy(0, 1), 0x0808);
-            self.write_attr1(dsto + xy(2, 1), 0x0808);
-            self.write_attr1(dsto + xy(0, 2), 0x0808);
-            self.write_attr1(dsto + xy(2, 2), 0x0808);
-            self.write_attr1(dsto + xy(0, 3), 0x0808);
-            self.write_attr1(dsto + xy(2, 3), 0x0808);
+            self.write_attr2(dsto, TilePair::from_cartridge(0x0003));
+            self.write_attr2(dsto + 2, TilePair::from_cartridge(0x0300));
+            self.write_attr1(dsto, TilePair::from_cartridge(0x0a03));
+            self.write_attr1(dsto + 2, TilePair::from_cartridge(0x030a));
+            self.write_attr2(dsto + xy(0, 1), TilePair::repeated(NativeTile::DEEP_WATER));
+            self.write_attr2(dsto + xy(2, 1), TilePair::repeated(NativeTile::DEEP_WATER));
+            self.write_attr1(dsto + xy(0, 1), TilePair::repeated(NativeTile::DEEP_WATER));
+            self.write_attr1(dsto + xy(2, 1), TilePair::repeated(NativeTile::DEEP_WATER));
+            self.write_attr1(dsto + xy(0, 2), TilePair::repeated(NativeTile::DEEP_WATER));
+            self.write_attr1(dsto + xy(2, 2), TilePair::repeated(NativeTile::DEEP_WATER));
+            self.write_attr1(dsto + xy(0, 3), TilePair::repeated(NativeTile::DEEP_WATER));
+            self.write_attr1(dsto + xy(2, 3), TilePair::repeated(NativeTile::DEEP_WATER));
             j += 2;
         }
 
@@ -7500,18 +7501,18 @@ impl ZeldaState {
                 .stair_lists
                 .stair_list_tilemap_pos(DungeonStairList::WetStairs, j)
                 as usize;
-            self.write_attr2(dsto + xy(0, 3), 0x0003);
-            self.write_attr2(dsto + xy(2, 3), 0x0300);
-            self.write_attr1(dsto + xy(0, 3), 0x0a03);
-            self.write_attr1(dsto + xy(2, 3), 0x030a);
-            self.write_attr2(dsto + xy(0, 2), 0x0808);
-            self.write_attr2(dsto + xy(2, 2), 0x0808);
-            self.write_attr1(dsto, 0x0808);
-            self.write_attr1(dsto + 2, 0x0808);
-            self.write_attr1(dsto + xy(0, 1), 0x0808);
-            self.write_attr1(dsto + xy(2, 1), 0x0808);
-            self.write_attr1(dsto + xy(0, 2), 0x0808);
-            self.write_attr1(dsto + xy(2, 2), 0x0808);
+            self.write_attr2(dsto + xy(0, 3), TilePair::from_cartridge(0x0003));
+            self.write_attr2(dsto + xy(2, 3), TilePair::from_cartridge(0x0300));
+            self.write_attr1(dsto + xy(0, 3), TilePair::from_cartridge(0x0a03));
+            self.write_attr1(dsto + xy(2, 3), TilePair::from_cartridge(0x030a));
+            self.write_attr2(dsto + xy(0, 2), TilePair::repeated(NativeTile::DEEP_WATER));
+            self.write_attr2(dsto + xy(2, 2), TilePair::repeated(NativeTile::DEEP_WATER));
+            self.write_attr1(dsto, TilePair::repeated(NativeTile::DEEP_WATER));
+            self.write_attr1(dsto + 2, TilePair::repeated(NativeTile::DEEP_WATER));
+            self.write_attr1(dsto + xy(0, 1), TilePair::repeated(NativeTile::DEEP_WATER));
+            self.write_attr1(dsto + xy(2, 1), TilePair::repeated(NativeTile::DEEP_WATER));
+            self.write_attr1(dsto + xy(0, 2), TilePair::repeated(NativeTile::DEEP_WATER));
+            self.write_attr1(dsto + xy(2, 2), TilePair::repeated(NativeTile::DEEP_WATER));
             j += 2;
         }
 
@@ -7930,8 +7931,12 @@ impl ZeldaState {
         for _ in 0..4 {
             for i in 0..4 {
                 let t = self.game_state.dungeon.room_tilemaps.bg2_tile(p + i) & 0x03fe;
-                let attr = if t == 0x00ee || t == 0x00fe { 0 } else { 0x20 };
-                self.dungeon_bg2_attributes_mut().set_bg2_attr(p + i, attr);
+                let attr = if t == 0x00ee || t == 0x00fe {
+                    NativeTile::GROUND
+                } else {
+                    NativeTile::PIT
+                };
+                self.dungeon_bg2_attributes_mut().set_bg2_tile(p + i, attr);
             }
             p += 64;
         }
@@ -8130,7 +8135,7 @@ impl ZeldaState {
 
     pub(super) fn DrawCompletelyOpenDoor(&mut self) {
         let mut i = 0usize;
-        let mut attr = 0x3030u16;
+        let mut attr = TilePair::from_cartridge(0x3030);
         while i
             != self
                 .game_state
@@ -8139,7 +8144,7 @@ impl ZeldaState {
                 .stair_list_count(DungeonStairList::InterRoomUpNorth) as usize
         {
             i += 2;
-            attr = attr.wrapping_add(0x0101);
+            attr = attr.next_identity();
         }
         while i
             != self
@@ -8153,12 +8158,12 @@ impl ZeldaState {
                 .dungeon
                 .stair_lists
                 .inter_staircase_pos(i >> 1) as usize;
-            self.write_attr2(pos + xy(1, 0), 0x5e5e);
+            self.write_attr2(pos + xy(1, 0), TilePair::from_cartridge(0x5e5e));
             self.write_attr2(pos + xy(1, 1), attr);
-            self.write_attr2(pos + xy(1, 2), 0);
-            self.write_attr2(pos + xy(1, 3), 0);
+            self.write_attr2(pos + xy(1, 2), TilePair::repeated(NativeTile::GROUND));
+            self.write_attr2(pos + xy(1, 3), TilePair::repeated(NativeTile::GROUND));
             i += 2;
-            attr = attr.wrapping_add(0x0101);
+            attr = attr.next_identity();
         }
         while i
             != self
@@ -8172,12 +8177,12 @@ impl ZeldaState {
                 .dungeon
                 .stair_lists
                 .inter_staircase_pos(i >> 1) as usize;
-            self.write_attr2(pos + xy(1, 0), 0x5f5f);
+            self.write_attr2(pos + xy(1, 0), TilePair::from_cartridge(0x5f5f));
             self.write_attr2(pos + xy(1, 1), attr);
-            self.write_attr2(pos + xy(1, 2), 0);
-            self.write_attr2(pos + xy(1, 3), 0);
+            self.write_attr2(pos + xy(1, 2), TilePair::repeated(NativeTile::GROUND));
+            self.write_attr2(pos + xy(1, 3), TilePair::repeated(NativeTile::GROUND));
             i += 2;
-            attr = attr.wrapping_add(0x0101);
+            attr = attr.next_identity();
         }
         while i
             != self
@@ -8188,7 +8193,7 @@ impl ZeldaState {
                 as usize
         {
             i += 2;
-            attr = attr.wrapping_add(0x0101);
+            attr = attr.next_identity();
         }
         while i
             != self
@@ -8199,10 +8204,10 @@ impl ZeldaState {
                 as usize
         {
             i += 2;
-            attr = attr.wrapping_add(0x0101);
+            attr = attr.next_identity();
         }
 
-        attr = (attr & 0x0707) | 0x3434;
+        attr = attr.descending_stair_sequence();
 
         while i
             != self
@@ -8212,7 +8217,7 @@ impl ZeldaState {
                 .stair_list_count(DungeonStairList::InterRoomSouthDown) as usize
         {
             i += 2;
-            attr = attr.wrapping_add(0x0101);
+            attr = attr.next_identity();
         }
         while i
             != self
@@ -8226,12 +8231,12 @@ impl ZeldaState {
                 .dungeon
                 .stair_lists
                 .inter_staircase_pos(i >> 1) as usize;
-            self.write_attr2(pos + xy(1, 0), 0x5e5e);
+            self.write_attr2(pos + xy(1, 0), TilePair::from_cartridge(0x5e5e));
             self.write_attr2(pos + xy(1, 1), attr);
-            self.write_attr2(pos + xy(1, 2), 0);
-            self.write_attr2(pos + xy(1, 3), 0);
+            self.write_attr2(pos + xy(1, 2), TilePair::repeated(NativeTile::GROUND));
+            self.write_attr2(pos + xy(1, 3), TilePair::repeated(NativeTile::GROUND));
             i += 2;
-            attr = attr.wrapping_add(0x0101);
+            attr = attr.next_identity();
         }
         while i
             != self
@@ -8245,12 +8250,12 @@ impl ZeldaState {
                 .dungeon
                 .stair_lists
                 .inter_staircase_pos(i >> 1) as usize;
-            self.write_attr2(pos + xy(1, 0), 0x5f5f);
+            self.write_attr2(pos + xy(1, 0), TilePair::from_cartridge(0x5f5f));
             self.write_attr2(pos + xy(1, 1), attr);
-            self.write_attr2(pos + xy(1, 2), 0);
-            self.write_attr2(pos + xy(1, 3), 0);
+            self.write_attr2(pos + xy(1, 2), TilePair::repeated(NativeTile::GROUND));
+            self.write_attr2(pos + xy(1, 3), TilePair::repeated(NativeTile::GROUND));
             i += 2;
-            attr = attr.wrapping_add(0x0101);
+            attr = attr.next_identity();
         }
     }
 
@@ -8373,8 +8378,8 @@ impl ZeldaState {
                 .dungeon
                 .room_load
                 .draw_height_indicator_word() as usize;
-            self.dungeon_bg2_attributes_mut().set_bg2_attr(j, a0);
-            self.dungeon_bg2_attributes_mut().set_bg2_attr(j + 1, a1);
+            self.dungeon_bg2_attributes_mut().set_bg2_tile(j, a0);
+            self.dungeon_bg2_attributes_mut().set_bg2_tile(j + 1, a1);
             self.dungeon_room_load_mut()
                 .set_draw_height_indicator_word((j as u16).wrapping_add(2));
             let width = self
@@ -8397,12 +8402,9 @@ impl ZeldaState {
         }
     }
 
-    fn attribute_for_bg_tile(&self, tile: u16) -> u8 {
-        let mut attr = self.dungeon_tile_attribute(tile as usize);
-        if (0x10..0x1c).contains(&attr) {
-            attr |= (tile >> 14) as u8;
-        }
-        attr
+    fn attribute_for_bg_tile(&self, tile: u16) -> NativeTile {
+        self.dungeon_tile_definition(tile as usize)
+            .with_cartridge_orientation((tile >> 14) as u8)
     }
 
     fn Dungeon_LoadObjectAttribute(&mut self) {
@@ -8413,13 +8415,13 @@ impl ZeldaState {
                 .dungeon
                 .room_parser
                 .star_switch_tilemap_pos(i) as usize;
-            self.write_attr2(j + xy(0, 0), 0x3b3b);
-            self.write_attr2(j + xy(0, 1), 0x3b3b);
+            self.write_attr2(j + xy(0, 0), TilePair::from_cartridge(0x3b3b));
+            self.write_attr2(j + xy(0, 1), TilePair::from_cartridge(0x3b3b));
             i += 2;
         }
 
         i = 0;
-        let mut attr = 0x3030u16;
+        let mut attr = TilePair::from_cartridge(0x3030);
         while i
             != self
                 .game_state
@@ -8432,11 +8434,11 @@ impl ZeldaState {
                 .dungeon
                 .stair_lists
                 .inter_staircase_pos(i >> 1) as usize;
-            self.write_attr2(j + xy(1, 2), 0);
-            self.write_attr2(j + xy(1, 0), 0x2626);
+            self.write_attr2(j + xy(1, 2), TilePair::repeated(NativeTile::GROUND));
+            self.write_attr2(j + xy(1, 0), TilePair::from_cartridge(0x2626));
             self.write_attr2(j + xy(1, 1), attr);
             i += 2;
-            attr = attr.wrapping_add(0x0101);
+            attr = attr.next_identity();
         }
         while i
             != self
@@ -8450,12 +8452,12 @@ impl ZeldaState {
                 .dungeon
                 .stair_lists
                 .inter_staircase_pos(i >> 1) as usize;
-            self.write_attr2(j + xy(1, 0), 0x5e5e);
-            self.write_attr2(j + xy(1, 2), 0x5e5e);
-            self.write_attr2(j + xy(1, 3), 0x5e5e);
+            self.write_attr2(j + xy(1, 0), TilePair::from_cartridge(0x5e5e));
+            self.write_attr2(j + xy(1, 2), TilePair::from_cartridge(0x5e5e));
+            self.write_attr2(j + xy(1, 3), TilePair::from_cartridge(0x5e5e));
             self.write_attr2(j + xy(1, 1), attr);
             i += 2;
-            attr = attr.wrapping_add(0x0101);
+            attr = attr.next_identity();
         }
         while i
             != self
@@ -8469,12 +8471,12 @@ impl ZeldaState {
                 .dungeon
                 .stair_lists
                 .inter_staircase_pos(i >> 1) as usize;
-            self.write_attr2(j + xy(1, 0), 0x5f5f);
-            self.write_attr2(j + xy(1, 2), 0x5f5f);
-            self.write_attr2(j + xy(1, 3), 0x5f5f);
+            self.write_attr2(j + xy(1, 0), TilePair::from_cartridge(0x5f5f));
+            self.write_attr2(j + xy(1, 2), TilePair::from_cartridge(0x5f5f));
+            self.write_attr2(j + xy(1, 3), TilePair::from_cartridge(0x5f5f));
             self.write_attr2(j + xy(1, 1), attr);
             i += 2;
-            attr = attr.wrapping_add(0x0101);
+            attr = attr.next_identity();
         }
         while i
             != self
@@ -8489,12 +8491,12 @@ impl ZeldaState {
                 .dungeon
                 .stair_lists
                 .inter_staircase_pos(i >> 1) as usize;
-            self.write_attr2(j + xy(1, 0), 0x3838);
-            self.write_attr2(j + xy(1, 2), 0);
-            self.write_attr2(j + xy(1, 3), 0);
+            self.write_attr2(j + xy(1, 0), TilePair::from_cartridge(0x3838));
+            self.write_attr2(j + xy(1, 2), TilePair::repeated(NativeTile::GROUND));
+            self.write_attr2(j + xy(1, 3), TilePair::repeated(NativeTile::GROUND));
             self.write_attr2(j + xy(1, 1), attr);
             i += 2;
-            attr = attr.wrapping_add(0x0101);
+            attr = attr.next_identity();
         }
         while i
             != self
@@ -8509,14 +8511,14 @@ impl ZeldaState {
                 .dungeon
                 .stair_lists
                 .inter_staircase_pos(i >> 1) as usize;
-            self.write_attr2(j + xy(1, 0), 0);
-            self.write_attr2(j + xy(1, 1), 0);
+            self.write_attr2(j + xy(1, 0), TilePair::repeated(NativeTile::GROUND));
+            self.write_attr2(j + xy(1, 1), TilePair::repeated(NativeTile::GROUND));
             self.write_attr2(j + xy(1, 2), attr);
-            self.write_attr2(j + xy(1, 3), 0x3939);
+            self.write_attr2(j + xy(1, 3), TilePair::from_cartridge(0x3939));
             i += 2;
-            attr = attr.wrapping_add(0x0101);
+            attr = attr.next_identity();
         }
-        attr = (attr & 0x0707) | 0x3434;
+        attr = attr.descending_stair_sequence();
         while i
             != self
                 .game_state
@@ -8530,9 +8532,9 @@ impl ZeldaState {
                 .stair_lists
                 .inter_staircase_pos(i >> 1) as usize;
             self.write_attr2(j + xy(1, 2), attr);
-            self.write_attr2(j + xy(1, 3), 0x2626);
+            self.write_attr2(j + xy(1, 3), TilePair::from_cartridge(0x2626));
             i += 2;
-            attr = attr.wrapping_add(0x0101);
+            attr = attr.next_identity();
         }
         while i
             != self
@@ -8546,12 +8548,12 @@ impl ZeldaState {
                 .dungeon
                 .stair_lists
                 .inter_staircase_pos(i >> 1) as usize;
-            self.write_attr2(j + xy(1, 0), 0x5e5e);
+            self.write_attr2(j + xy(1, 0), TilePair::from_cartridge(0x5e5e));
             self.write_attr2(j + xy(1, 1), attr);
-            self.write_attr2(j + xy(1, 2), 0x5e5e);
-            self.write_attr2(j + xy(1, 3), 0x5e5e);
+            self.write_attr2(j + xy(1, 2), TilePair::from_cartridge(0x5e5e));
+            self.write_attr2(j + xy(1, 3), TilePair::from_cartridge(0x5e5e));
             i += 2;
-            attr = attr.wrapping_add(0x0101);
+            attr = attr.next_identity();
         }
         while i
             != self
@@ -8565,12 +8567,12 @@ impl ZeldaState {
                 .dungeon
                 .stair_lists
                 .inter_staircase_pos(i >> 1) as usize;
-            self.write_attr2(j + xy(1, 0), 0x5f5f);
+            self.write_attr2(j + xy(1, 0), TilePair::from_cartridge(0x5f5f));
             self.write_attr2(j + xy(1, 1), attr);
-            self.write_attr2(j + xy(1, 2), 0x5f5f);
-            self.write_attr2(j + xy(1, 3), 0x5f5f);
+            self.write_attr2(j + xy(1, 2), TilePair::from_cartridge(0x5f5f));
+            self.write_attr2(j + xy(1, 3), TilePair::from_cartridge(0x5f5f));
             i += 2;
-            attr = attr.wrapping_add(0x0101);
+            attr = attr.next_identity();
         }
         while i
             != self
@@ -8585,12 +8587,12 @@ impl ZeldaState {
                 .dungeon
                 .stair_lists
                 .inter_staircase_pos(i >> 1) as usize;
-            self.write_attr2(j + xy(1, 0), 0x3838);
+            self.write_attr2(j + xy(1, 0), TilePair::from_cartridge(0x3838));
             self.write_attr2(j + xy(1, 1), attr);
-            self.write_attr2(j + xy(1, 2), 0);
-            self.write_attr2(j + xy(1, 3), 0);
+            self.write_attr2(j + xy(1, 2), TilePair::repeated(NativeTile::GROUND));
+            self.write_attr2(j + xy(1, 3), TilePair::repeated(NativeTile::GROUND));
             i += 2;
-            attr = attr.wrapping_add(0x0101);
+            attr = attr.next_identity();
         }
         while i
             != self
@@ -8605,12 +8607,12 @@ impl ZeldaState {
                 .dungeon
                 .stair_lists
                 .inter_staircase_pos(i >> 1) as usize;
-            self.write_attr2(j + xy(1, 0), 0);
-            self.write_attr2(j + xy(1, 1), 0);
+            self.write_attr2(j + xy(1, 0), TilePair::repeated(NativeTile::GROUND));
+            self.write_attr2(j + xy(1, 1), TilePair::repeated(NativeTile::GROUND));
             self.write_attr2(j + xy(1, 2), attr);
-            self.write_attr2(j + xy(1, 3), 0x3939);
+            self.write_attr2(j + xy(1, 3), TilePair::from_cartridge(0x3939));
             i += 2;
-            attr = attr.wrapping_add(0x0101);
+            attr = attr.next_identity();
         }
 
         i = 0;
@@ -8620,10 +8622,10 @@ impl ZeldaState {
             .dungeon
             .stair_lists
             .stair_list_count(DungeonStairList::InRoomUpNorth) as usize;
-        attr = 0x1f1f;
+        attr = TilePair::from_cartridge(0x1f1f);
         if iend == 0 {
             stair_type = 1;
-            attr = 0x1e1e;
+            attr = TilePair::from_cartridge(0x1e1e);
             iend = self
                 .game_state
                 .dungeon
@@ -8631,7 +8633,7 @@ impl ZeldaState {
                 .stair_list_count(DungeonStairList::InRoomSouthDown) as usize;
             if iend == 0 {
                 stair_type = 2;
-                attr = 0x1d1d;
+                attr = TilePair::from_cartridge(0x1d1d);
                 iend = self
                     .game_state
                     .dungeon
@@ -8650,14 +8652,26 @@ impl ZeldaState {
                     .stair_lists
                     .stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, i as u16)
                     as usize;
-                self.write_attr2(j + xy(0, 0), 0x0002);
-                self.write_attr1(j + xy(0, 3), 0x0002);
-                self.write_attr2(j + xy(2, 0), 0x0200);
-                self.write_attr1(j + xy(2, 3), 0x0200);
-                self.write_attr2(j + xy(0, 1), 0x0001);
-                self.write_attr1(j + xy(0, 2), 0x0001);
-                self.write_attr2(j + xy(2, 1), 0x0100);
-                self.write_attr1(j + xy(2, 2), 0x0100);
+                self.write_attr2(
+                    j + xy(0, 0),
+                    TilePair([NativeTile::SOLID_WALL, NativeTile::GROUND]),
+                );
+                self.write_attr1(
+                    j + xy(0, 3),
+                    TilePair([NativeTile::SOLID_WALL, NativeTile::GROUND]),
+                );
+                self.write_attr2(
+                    j + xy(2, 0),
+                    TilePair([NativeTile::GROUND, NativeTile::SOLID_WALL]),
+                );
+                self.write_attr1(
+                    j + xy(2, 3),
+                    TilePair([NativeTile::GROUND, NativeTile::SOLID_WALL]),
+                );
+                self.write_attr2(j + xy(0, 1), TilePair::from_cartridge(0x0001));
+                self.write_attr1(j + xy(0, 2), TilePair::from_cartridge(0x0001));
+                self.write_attr2(j + xy(2, 1), TilePair::from_cartridge(0x0100));
+                self.write_attr1(j + xy(2, 2), TilePair::from_cartridge(0x0100));
                 self.write_attr2(j + xy(1, 1), attr);
                 self.write_attr1(j + xy(1, 1), attr);
                 self.write_attr2(j + xy(1, 2), attr);
@@ -8687,12 +8701,12 @@ impl ZeldaState {
                     .stair_lists
                     .stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, i as u16)
                     as usize;
-                self.write_attr2(j + xy(0, 0), 0x0a03);
-                self.write_attr1(j + xy(0, 0), 0x0a03);
-                self.write_attr2(j + xy(2, 0), 0x030a);
-                self.write_attr1(j + xy(2, 0), 0x030a);
-                self.write_attr2(j + xy(0, 1), 0x0803);
-                self.write_attr2(j + xy(2, 1), 0x0308);
+                self.write_attr2(j + xy(0, 0), TilePair::from_cartridge(0x0a03));
+                self.write_attr1(j + xy(0, 0), TilePair::from_cartridge(0x0a03));
+                self.write_attr2(j + xy(2, 0), TilePair::from_cartridge(0x030a));
+                self.write_attr1(j + xy(2, 0), TilePair::from_cartridge(0x030a));
+                self.write_attr2(j + xy(0, 1), TilePair::from_cartridge(0x0803));
+                self.write_attr2(j + xy(2, 1), TilePair::from_cartridge(0x0308));
                 i += 2;
             }
         }
@@ -8719,12 +8733,12 @@ impl ZeldaState {
                     .stair_lists
                     .stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, i as u16)
                     as usize;
-                self.write_attr2(j + xy(0, 0), 0x0003);
-                self.write_attr2(j + xy(2, 0), 0x0300);
-                self.write_attr1(j + xy(0, 0), 0x0a03);
-                self.write_attr1(j + xy(2, 0), 0x030a);
-                self.write_attr2(j + xy(0, 1), 0x0808);
-                self.write_attr2(j + xy(2, 1), 0x0808);
+                self.write_attr2(j + xy(0, 0), TilePair::from_cartridge(0x0003));
+                self.write_attr2(j + xy(2, 0), TilePair::from_cartridge(0x0300));
+                self.write_attr1(j + xy(0, 0), TilePair::from_cartridge(0x0a03));
+                self.write_attr1(j + xy(2, 0), TilePair::from_cartridge(0x030a));
+                self.write_attr2(j + xy(0, 1), TilePair::repeated(NativeTile::DEEP_WATER));
+                self.write_attr2(j + xy(2, 1), TilePair::repeated(NativeTile::DEEP_WATER));
                 i += 2;
             }
         }
@@ -8750,16 +8764,16 @@ impl ZeldaState {
                     .stair_lists
                     .stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, i as u16)
                     as usize;
-                self.write_attr2(j + xy(0, 0), 0x0003);
-                self.write_attr2(j + xy(2, 0), 0x0300);
-                self.write_attr1(j + xy(0, 0), 0x0a03);
-                self.write_attr1(j + xy(2, 0), 0x030a);
+                self.write_attr2(j + xy(0, 0), TilePair::from_cartridge(0x0003));
+                self.write_attr2(j + xy(2, 0), TilePair::from_cartridge(0x0300));
+                self.write_attr1(j + xy(0, 0), TilePair::from_cartridge(0x0a03));
+                self.write_attr1(j + xy(2, 0), TilePair::from_cartridge(0x030a));
                 i += 2;
             }
         }
 
         let mut i = 0usize;
-        let mut attr = 0x7070u16;
+        let mut attr = TilePair::from_cartridge(0x7070);
         let misc_end = self.game_state.dungeon.object_tracking.misc_object_index() as usize;
         while i != misc_end {
             let k = self
@@ -8779,11 +8793,11 @@ impl ZeldaState {
                 self.write_attr2(j as usize + xy(0, 1), attr);
             }
             i += 2;
-            attr = attr.wrapping_add(0x0101);
+            attr = attr.next_identity();
         }
 
         if i != self.game_state.dungeon.torch.torch_index() as usize {
-            attr = 0xc0c0;
+            attr = TilePair::from_cartridge(0xc0c0);
             while i != self.game_state.dungeon.torch.torch_index() as usize {
                 let j = (self
                     .game_state
@@ -8795,12 +8809,12 @@ impl ZeldaState {
                 self.write_attr2(j as usize + xy(0, 0), attr);
                 self.write_attr2(j as usize + xy(0, 1), attr);
                 i += 2;
-                attr = (attr & 0xefef).wrapping_add(0x0101);
+                attr = attr.next_torch();
             }
             self.dungeon_torch_mut().set_torch_index(0);
         }
 
-        let mut attr = 0x5858u16;
+        let mut attr = TilePair::from_cartridge(0x5858);
         let mut i = 0usize;
         let skip_big_key_locks = self.game_state.dungeon.room_items.num_chests_x2() != 0
             && self.hud_tags_suppress_big_key_locks();
@@ -8824,7 +8838,7 @@ impl ZeldaState {
                     }
                 }
                 i += 2;
-                attr = attr.wrapping_add(0x0101);
+                attr = attr.next_identity();
             }
         }
 
@@ -8841,7 +8855,7 @@ impl ZeldaState {
                 self.write_attr2(j as usize + xy(0, 0), attr);
                 self.write_attr2(j as usize + xy(0, 1), attr);
                 i += 2;
-                attr = attr.wrapping_add(0x0101);
+                attr = attr.next_identity();
             }
         }
 
@@ -8852,10 +8866,10 @@ impl ZeldaState {
             .dungeon
             .stair_lists
             .stair_list_count(DungeonStairList::Stairs1) as usize;
-        attr = 0x3f3f;
+        attr = TilePair::from_cartridge(0x3f3f);
         if iend == 0 {
             stair_type = 1;
-            attr = 0x3e3e;
+            attr = TilePair::from_cartridge(0x3e3e);
             iend = self
                 .game_state
                 .dungeon
@@ -8863,7 +8877,7 @@ impl ZeldaState {
                 .stair_list_count(DungeonStairList::Stairs2) as usize;
             if iend == 0 {
                 stair_type = 2;
-                attr = 0x3d3d;
+                attr = TilePair::from_cartridge(0x3d3d);
                 iend = self
                     .game_state
                     .dungeon
@@ -8881,14 +8895,26 @@ impl ZeldaState {
                     .stair_lists
                     .stair_list_tilemap_pos(DungeonStairList::Stairs1, i as u16)
                     as usize;
-                self.write_attr1(j + xy(0, 0), 0x0002);
-                self.write_attr2(j + xy(0, 3), 0x0002);
-                self.write_attr1(j + xy(0, 1), 0x0001);
-                self.write_attr2(j + xy(0, 2), 0x0001);
-                self.write_attr1(j + xy(2, 0), 0x0200);
-                self.write_attr2(j + xy(2, 3), 0x0200);
-                self.write_attr1(j + xy(2, 1), 0x0100);
-                self.write_attr2(j + xy(2, 2), 0x0100);
+                self.write_attr1(
+                    j + xy(0, 0),
+                    TilePair([NativeTile::SOLID_WALL, NativeTile::GROUND]),
+                );
+                self.write_attr2(
+                    j + xy(0, 3),
+                    TilePair([NativeTile::SOLID_WALL, NativeTile::GROUND]),
+                );
+                self.write_attr1(j + xy(0, 1), TilePair::from_cartridge(0x0001));
+                self.write_attr2(j + xy(0, 2), TilePair::from_cartridge(0x0001));
+                self.write_attr1(
+                    j + xy(2, 0),
+                    TilePair([NativeTile::GROUND, NativeTile::SOLID_WALL]),
+                );
+                self.write_attr2(
+                    j + xy(2, 3),
+                    TilePair([NativeTile::GROUND, NativeTile::SOLID_WALL]),
+                );
+                self.write_attr1(j + xy(2, 1), TilePair::from_cartridge(0x0100));
+                self.write_attr2(j + xy(2, 2), TilePair::from_cartridge(0x0100));
                 self.write_attr1(j + xy(1, 1), attr);
                 self.write_attr2(j + xy(1, 1), attr);
                 self.write_attr1(j + xy(1, 2), attr);
@@ -8921,12 +8947,12 @@ impl ZeldaState {
                     .stair_lists
                     .stair_list_tilemap_pos(DungeonStairList::Stairs1, i as u16)
                     as usize;
-                self.write_attr1(j + xy(0, 3), 0x0a03);
-                self.write_attr1(j + xy(2, 3), 0x030a);
-                self.write_attr2(j + xy(0, 3), 0x0003);
-                self.write_attr2(j + xy(2, 3), 0x0300);
-                self.write_attr2(j + xy(0, 2), 0x0808);
-                self.write_attr2(j + xy(2, 2), 0x0808);
+                self.write_attr1(j + xy(0, 3), TilePair::from_cartridge(0x0a03));
+                self.write_attr1(j + xy(2, 3), TilePair::from_cartridge(0x030a));
+                self.write_attr2(j + xy(0, 3), TilePair::from_cartridge(0x0003));
+                self.write_attr2(j + xy(2, 3), TilePair::from_cartridge(0x0300));
+                self.write_attr2(j + xy(0, 2), TilePair::repeated(NativeTile::DEEP_WATER));
+                self.write_attr2(j + xy(2, 2), TilePair::repeated(NativeTile::DEEP_WATER));
                 i += 2;
             }
         }
@@ -8986,7 +9012,7 @@ impl ZeldaState {
                         == 0
                 {
                     let j = self.game_state.dungeon.doors.door_tilemap_address(k) >> 1;
-                    let attr = (0xf0u16.wrapping_add(k as u16)).wrapping_mul(0x0101);
+                    let attr = TilePair::closed_door(k);
                     self.write_attr2(j as usize + xy(1, 1), attr);
                     self.write_attr2(j as usize + xy(1, 2), attr);
                     return;
@@ -9006,7 +9032,7 @@ impl ZeldaState {
                     == 0
                 {
                     let j = self.game_state.dungeon.doors.door_tilemap_address(k) >> 1;
-                    let attr = (0xf0u16.wrapping_add(k as u16)).wrapping_mul(0x0101);
+                    let attr = TilePair::closed_door(k);
                     self.write_attr2(j as usize + xy(1, 1), attr);
                     self.write_attr2(j as usize + xy(1, 2), attr);
                     return;
@@ -9020,7 +9046,7 @@ impl ZeldaState {
         let mut attr = DUNGEON_LOAD_SINGLE_DOOR_ATTRIBUTE_TILE_ATTRS_BY_DOOR
             .get(t as usize >> 1)
             .copied()
-            .unwrap_or(0x8080);
+            .unwrap_or(TilePair::from_cartridge(0x8080));
         let dir = self.game_state.dungeon.doors.door_direction(k) & 3;
         let address = self.game_state.dungeon.doors.door_tilemap_address(k);
         let beta = matches!(
@@ -9044,19 +9070,19 @@ impl ZeldaState {
         if !beta {
             if dir == 0 {
                 if self.door_address_is_exit(address) {
-                    attr = 0x8e8e;
+                    attr = TilePair::from_cartridge(0x8e8e);
                 }
                 let j = ((address >> 1) & !0x07c0) as usize;
                 for y in 0..=6 {
                     self.write_attr2(j + xy(1, y), attr);
                 }
-                self.write_attr2(j + xy(1, 7), 0);
+                self.write_attr2(j + xy(1, 7), TilePair::repeated(NativeTile::GROUND));
             } else if dir == 1 {
                 if t == DOOR_TYPE_ENTRANCE_LARGE
                     || t == DOOR_TYPE_ENTRANCE_CAVE
                     || self.door_address_is_exit(address)
                 {
-                    attr = 0x8e8e;
+                    attr = TilePair::from_cartridge(0x8e8e);
                 }
                 let j = (address >> 1) as usize;
                 for y in 1..=5 {
@@ -9064,20 +9090,20 @@ impl ZeldaState {
                 }
             } else if dir == 2 {
                 let j = ((address >> 1) & !0x001f) as usize;
-                self.write_attr2(j + xy(0, 1), attr.wrapping_add(0x0101));
-                self.write_attr2(j + xy(2, 1), attr.wrapping_add(0x0101));
-                self.write_attr2(j + xy(0, 2), attr.wrapping_add(0x0101));
-                self.write_attr2(j + xy(2, 2), attr.wrapping_add(0x0101));
-                self.write_attr2(j + xy(4, 1), attr.wrapping_add(0x0101) & 0x00ff);
-                self.write_attr2(j + xy(4, 2), attr.wrapping_add(0x0101) & 0x00ff);
+                self.write_attr2(j + xy(0, 1), attr.next_identity());
+                self.write_attr2(j + xy(2, 1), attr.next_identity());
+                self.write_attr2(j + xy(0, 2), attr.next_identity());
+                self.write_attr2(j + xy(2, 2), attr.next_identity());
+                self.write_attr2(j + xy(4, 1), attr.next_identity().with_ground_on_right());
+                self.write_attr2(j + xy(4, 2), attr.next_identity().with_ground_on_right());
             } else {
                 let j = (address >> 1) as usize;
-                self.write_attr2(j + xy(2, 1), attr.wrapping_add(0x0101));
-                self.write_attr2(j + xy(4, 1), attr.wrapping_add(0x0101));
-                self.write_attr2(j + xy(2, 2), attr.wrapping_add(0x0101));
-                self.write_attr2(j + xy(4, 2), attr.wrapping_add(0x0101));
-                self.write_attr2(j + xy(0, 1), attr.wrapping_add(0x0101) & 0xff00);
-                self.write_attr2(j + xy(0, 2), attr.wrapping_add(0x0101) & 0xff00);
+                self.write_attr2(j + xy(2, 1), attr.next_identity());
+                self.write_attr2(j + xy(4, 1), attr.next_identity());
+                self.write_attr2(j + xy(2, 2), attr.next_identity());
+                self.write_attr2(j + xy(4, 2), attr.next_identity());
+                self.write_attr2(j + xy(0, 1), attr.next_identity().with_ground_on_left());
+                self.write_attr2(j + xy(0, 2), attr.next_identity().with_ground_on_left());
             }
             return;
         }
@@ -9093,7 +9119,7 @@ impl ZeldaState {
                 || t == DOOR_TYPE_4
                 || self.door_address_is_exit(address & 0x1fff)
             {
-                attr = 0x8e8e;
+                attr = TilePair::from_cartridge(0x8e8e);
             }
             let j = (address >> 1) as usize;
             for y in 1..=8 {
@@ -9103,14 +9129,14 @@ impl ZeldaState {
             let j = ((address >> 1) & !0x001f) as usize;
             for y in 1..=2 {
                 for x in [0, 2, 4, 6] {
-                    self.write_attr2(j + xy(x, y), attr.wrapping_add(0x0101));
+                    self.write_attr2(j + xy(x, y), attr.next_identity());
                 }
             }
         } else {
             let j = (address >> 1).wrapping_add(1) as usize;
             for y in 1..=2 {
                 for x in [0, 2, 4, 6] {
-                    self.write_attr2(j + xy(x, y), attr.wrapping_add(0x0101));
+                    self.write_attr2(j + xy(x, y), attr.next_identity());
                 }
             }
         }
@@ -9127,21 +9153,21 @@ impl ZeldaState {
         let mut j = (self.game_state.dungeon.doors.door_tilemap_address(k) >> 1) as usize;
         if self.game_state.dungeon.doors.door_direction(k) & 2 == 0 {
             for _ in 0..12 {
-                self.write_attr2(j + xy(0, 0), 0x0102);
+                self.write_attr2(j + xy(0, 0), TilePair::from_cartridge(0x0102));
                 for i in (2..20).step_by(2) {
-                    self.write_attr2(j + xy(i, 0), 0);
+                    self.write_attr2(j + xy(i, 0), TilePair::repeated(NativeTile::GROUND));
                 }
-                self.write_attr2(j + xy(20, 0), 0x0201);
+                self.write_attr2(j + xy(20, 0), TilePair::from_cartridge(0x0201));
                 j += xy(0, 1);
             }
         } else {
             for _ in 0..5 {
-                self.write_attr2(j + xy(0, 0), 0x0101);
-                self.write_attr2(j + xy(0, 21), 0x0101);
-                self.write_attr2(j + xy(0, 1), 0x0202);
-                self.write_attr2(j + xy(0, 20), 0x0202);
+                self.write_attr2(j + xy(0, 0), TilePair::from_cartridge(0x0101));
+                self.write_attr2(j + xy(0, 21), TilePair::from_cartridge(0x0101));
+                self.write_attr2(j + xy(0, 1), TilePair::repeated(NativeTile::SOLID_WALL));
+                self.write_attr2(j + xy(0, 20), TilePair::repeated(NativeTile::SOLID_WALL));
                 for i in 2..20 {
-                    self.write_attr2(j + xy(0, i), 0);
+                    self.write_attr2(j + xy(0, i), TilePair::repeated(NativeTile::GROUND));
                 }
                 j += xy(2, 0);
             }
@@ -9161,15 +9187,16 @@ impl ZeldaState {
             _ => unreachable!("crystal-peg attribute bank exceeded the source loop"),
         };
         let value = if bg1 {
-            self.game_state.dungeon.bg2_attributes.bg1_attr(offset)
+            self.game_state.dungeon.bg2_attributes.bg1_tile(offset)
         } else {
-            self.game_state.dungeon.bg2_attributes.bg2_attr(offset)
+            self.game_state.dungeon.bg2_attributes.bg2_tile(offset)
         };
-        if value & !1 == 0x66 {
+        if let Some(tile) = value.toggled_crystal_peg() {
             if bg1 {
-                self.dungeon_bg2_attributes_mut().xor_bg1_attr(offset, 1);
+                self.dungeon_bg2_attributes_mut()
+                    .set_bg2_tile(0x1000 + offset, tile);
             } else {
-                self.dungeon_bg2_attributes_mut().xor_bg2_attr(offset, 1);
+                self.dungeon_bg2_attributes_mut().set_bg2_tile(offset, tile);
             }
         }
     }
@@ -9247,19 +9274,19 @@ impl ZeldaState {
         self.set_submodule(0);
     }
 
-    fn write_attr2(&mut self, j: usize, attr: u16) {
+    fn write_attr2(&mut self, j: usize, attr: TilePair) {
         let attr_view = &self.game_state.dungeon.bg2_attributes;
         if attr_view.bg2_attr_pair(j).is_none() {
             return;
         }
-        self.dungeon_bg2_attributes_mut().set_bg2_attr_word(j, attr);
+        self.dungeon_bg2_attributes_mut().set_bg2_tiles(j, attr.0);
     }
 
-    fn write_attr1(&mut self, j: usize, attr: u16) {
+    fn write_attr1(&mut self, j: usize, attr: TilePair) {
         if j + 1 >= 0x1000 {
             return;
         }
-        self.dungeon_bg2_attributes_mut().set_bg1_attr_word(j, attr);
+        self.dungeon_bg2_attributes_mut().set_bg1_tiles(j, attr.0);
     }
 
     fn Dungeon_LoadSingleDoorTileAttribute(&mut self) {
@@ -9267,13 +9294,13 @@ impl ZeldaState {
         while i != self.game_state.dungeon.room_parser.toggle_floor_count_x2() as usize {
             let j = self.game_state.dungeon.room_parser.toggle_floor_pos(i >> 1) as usize;
             if self.game_state.dungeon.bg2_attributes.bg2_attr(j) & 0xf0 == 0x80 {
-                let attr = self.game_state.dungeon.bg2_attributes.bg2_attr_word(j);
-                self.write_attr2(j + xy(0, 0), attr | 0x1010);
-                self.write_attr2(j + xy(0, 1), attr | 0x1010);
+                let attr = self.game_state.dungeon.bg2_attributes.bg2_tiles(j);
+                self.write_attr2(j + xy(0, 0), attr.with_floor_transition());
+                self.write_attr2(j + xy(0, 1), attr.with_floor_transition());
             } else {
-                let attr = self.game_state.dungeon.bg2_attributes.bg1_attr_word(j);
-                self.write_attr1(j + xy(0, 0), attr | 0x1010);
-                self.write_attr1(j + xy(0, 1), attr | 0x1010);
+                let attr = self.game_state.dungeon.bg2_attributes.bg1_tiles(j);
+                self.write_attr1(j + xy(0, 0), attr.with_floor_transition());
+                self.write_attr1(j + xy(0, 1), attr.with_floor_transition());
             }
             i += 2;
         }
@@ -9286,13 +9313,13 @@ impl ZeldaState {
                 .room_parser
                 .toggle_palace_pos(i >> 1) as usize;
             if self.game_state.dungeon.bg2_attributes.bg2_attr(j) & 0xf0 == 0x80 {
-                let attr = self.game_state.dungeon.bg2_attributes.bg2_attr_word(j);
-                self.write_attr2(j + xy(0, 0), attr | 0x2020);
-                self.write_attr2(j + xy(0, 1), attr | 0x2020);
+                let attr = self.game_state.dungeon.bg2_attributes.bg2_tiles(j);
+                self.write_attr2(j + xy(0, 0), attr.with_palace_transition());
+                self.write_attr2(j + xy(0, 1), attr.with_palace_transition());
             } else {
-                let attr = self.game_state.dungeon.bg2_attributes.bg1_attr_word(j);
-                self.write_attr1(j + xy(0, 0), attr | 0x2020);
-                self.write_attr1(j + xy(0, 1), attr | 0x2020);
+                let attr = self.game_state.dungeon.bg2_attributes.bg1_tiles(j);
+                self.write_attr1(j + xy(0, 0), attr.with_palace_transition());
+                self.write_attr1(j + xy(0, 1), attr.with_palace_transition());
             }
             i += 2;
         }
@@ -9828,9 +9855,9 @@ impl ZeldaState {
         }
 
         self.dungeon_bg2_attributes_mut()
-            .set_bg2_attr_word(pos as usize, 0x0202);
+            .set_bg2_tiles(pos as usize, [NativeTile::SOLID_WALL; 2]);
         self.dungeon_bg2_attributes_mut()
-            .set_bg2_attr_word(pos as usize + 64, 0x0202);
+            .set_bg2_tiles(pos as usize + 64, [NativeTile::SOLID_WALL; 2]);
 
         let src = self.read_predefined_tile_words(0x14a4, 4);
         let pos_wrong = pos as usize + 128;
@@ -9907,7 +9934,7 @@ impl ZeldaState {
         self.dungeon_prep_overlay_dma_next_prep(0, loc);
         for &tile_pos in &[pos, pos + 2, pos + 64, pos + 66, pos + 128, pos + 130] {
             self.dungeon_bg2_attributes_mut()
-                .set_bg2_attr_word(tile_pos as usize, 0x2727);
+                .set_bg2_tiles(tile_pos as usize, [NativeTile::OPEN_CHEST; 2]);
         }
         self.Dungeon_FlagRoomData_Quadrants();
         self.set_sound_effect_2(14);
@@ -11819,13 +11846,19 @@ impl ZeldaState {
 
         self.dungeon_prep_overlay_dma_watergate(0, 0x01d8, 0x0881, 8);
         if self.game_state.frame.subsubmodule == 16 {
-            self.write_attr2(xy(44, 5), 0x0202);
-            self.write_attr2(xy(44, 6), 0x0202);
-            self.write_attr2(xy(50, 5), 0x0200);
-            self.write_attr2(xy(50, 6), 0x0200);
+            self.write_attr2(xy(44, 5), TilePair::repeated(NativeTile::SOLID_WALL));
+            self.write_attr2(xy(44, 6), TilePair::repeated(NativeTile::SOLID_WALL));
+            self.write_attr2(
+                xy(50, 5),
+                TilePair([NativeTile::GROUND, NativeTile::SOLID_WALL]),
+            );
+            self.write_attr2(
+                xy(50, 6),
+                TilePair([NativeTile::GROUND, NativeTile::SOLID_WALL]),
+            );
             for i in (0..6).step_by(2) {
                 for y in 0..7 {
-                    self.write_attr2(xy(45 + i, y), 0);
+                    self.write_attr2(xy(45 + i, y), TilePair::repeated(NativeTile::GROUND));
                 }
             }
             self.room_bounds_mut().set_y_bound(0, (-64i16) as u16);
@@ -14652,8 +14685,8 @@ impl ZeldaState {
                 }
             }
             attr = self.game_state.dungeon.bg2_attributes.bg2_attr(pos);
-            self.write_attr2(pos + xy(0, 0), 0x0202);
-            self.write_attr2(pos + xy(0, 1), 0x0202);
+            self.write_attr2(pos + xy(0, 0), TilePair::repeated(NativeTile::SOLID_WALL));
+            self.write_attr2(pos + xy(0, 1), TilePair::repeated(NativeTile::SOLID_WALL));
             addr = ((pos - xy(1, 1)) * 2) as u16;
             self.RoomDraw_Object_Nx4_Bg2(
                 4,

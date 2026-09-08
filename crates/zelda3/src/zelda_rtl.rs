@@ -8314,11 +8314,15 @@ struct AssetPack {
     #[serde(default)]
     names: Vec<String>,
     #[serde(skip)]
+    tile_catalog: std::sync::OnceLock<Vec<[crate::tile_definition::NativeTile; 2]>>,
+    #[serde(skip)]
     dialogue_source_ir_table:
         std::sync::OnceLock<Option<Vec<Vec<crate::dialogue_ir::DialogueIrOp>>>>,
 }
 
 impl AssetPack {
+    const OVERWORLD_ATTRIBUTES_ASSET: usize = 163;
+
     fn parse(data: &[u8]) -> Result<Self, String> {
         if data.len() < 88 || &data[..16] != ASSET_SIGNATURE_PREFIX {
             return Err("invalid zelda3_assets.dat signature".to_string());
@@ -8369,10 +8373,12 @@ impl AssetPack {
             ));
         }
 
+        let tile_catalog = std::sync::OnceLock::from(Self::decode_tile_catalog(&data, &ranges));
         Ok(Self {
             data,
             ranges,
             names,
+            tile_catalog,
             dialogue_source_ir_table: std::sync::OnceLock::from(dialogue_source_ir_table),
         })
     }
@@ -8387,10 +8393,12 @@ impl AssetPack {
         names: Vec<String>,
     ) -> Self {
         let dialogue_source_ir_table = Self::parse_dialogue_source_ir_table(&data, &ranges, &names);
+        let tile_catalog = std::sync::OnceLock::from(Self::decode_tile_catalog(&data, &ranges));
         Self {
             data,
             ranges,
             names,
+            tile_catalog,
             dialogue_source_ir_table: std::sync::OnceLock::from(dialogue_source_ir_table),
         }
     }
@@ -8472,7 +8480,34 @@ impl AssetPack {
         table.get(usize::from(message_id)).cloned()
     }
 
+    fn decode_tile_catalog(
+        data: &[u8],
+        ranges: &[(usize, usize)],
+    ) -> Vec<[crate::tile_definition::NativeTile; 2]> {
+        use crate::tile_definition::NativeTile;
+        let bytes = ranges
+            .get(Self::OVERWORLD_ATTRIBUTES_ASSET)
+            .map(|&(start, end)| &data[start..end])
+            .unwrap_or(&[]);
+        (0..512)
+            .map(|index| {
+                let tile = NativeTile::from_cartridge(bytes.get(index).copied().unwrap_or(0));
+                [tile, tile.with_cartridge_orientation(1)]
+            })
+            .collect()
+    }
+
+    fn outdoor_tile_definition(&self, map8: u16) -> crate::tile_definition::NativeTile {
+        let catalog = self
+            .tile_catalog
+            .get_or_init(|| Self::decode_tile_catalog(&self.data, &self.ranges));
+        catalog[(map8 & 0x01ff) as usize][((map8 >> 14) & 1) as usize]
+    }
+
     fn asset_mut(&mut self, index: usize) -> Option<&mut [u8]> {
+        if index == Self::OVERWORLD_ATTRIBUTES_ASSET {
+            self.tile_catalog.take();
+        }
         let (start, end) = *self.ranges.get(index)?;
         Some(&mut self.data[start..end])
     }
@@ -13012,7 +13047,11 @@ impl ZeldaState {
     }
 
     fn apply_opened_chest_tiles(&mut self, pos: u16, loc: u16, src: &[u16]) -> u16 {
-        let attr = if loc < 0x8000 { 0x27 } else { 0x00 };
+        let attr = if loc < 0x8000 {
+            crate::tile_definition::NativeTile::OPEN_CHEST
+        } else {
+            crate::tile_definition::NativeTile::GROUND
+        };
         let positions = [pos, pos + 64, pos + 1, pos + 65];
         for (i, &tile_pos) in positions.iter().enumerate() {
             // C writes `dung_bg2[tile_pos]` flat; a chest at tile_pos >= 0x1000 spills into
@@ -13025,7 +13064,7 @@ impl ZeldaState {
                 src[i],
             );
             self.dungeon_bg2_attributes_mut()
-                .set_bg2_attr(tile_pos as usize, attr);
+                .set_bg2_tile(tile_pos as usize, attr);
         }
 
         let dst = self.game_state.display.current_vram_upload_data_address();

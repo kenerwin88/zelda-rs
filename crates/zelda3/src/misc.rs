@@ -1550,12 +1550,17 @@ impl ZeldaState {
             .set_keys_earned_slot(slot, keys);
     }
 
-    pub(super) fn handle_item_tile_action_overworld(&mut self, x: u16, y: u16) -> u8 {
-        if self.game_state.world.location.is_indoors() {
+    pub(super) fn handle_item_tile_action_overworld(
+        &mut self,
+        x: u16,
+        y: u16,
+    ) -> crate::tile_definition::NativeTile {
+        let attribute = if self.game_state.world.location.is_indoors() {
             self.HandleItemTileAction_Dungeon(x, y)
         } else {
             self.Overworld_ToolAndTileInteraction(x, y) as u8
-        }
+        };
+        crate::tile_definition::NativeTile::from_cartridge(attribute)
     }
 }
 

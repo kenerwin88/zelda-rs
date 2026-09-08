@@ -4,8 +4,9 @@ use super::*;
 use crate::game_state::constants::MENU_PREV_JOYPAD_H;
 use crate::game_state::{
     CollisionAxis, CollisionDirection, MovementProbe, MovementProbeKind, PlayerFootprint,
-    TileBehavior, TileResult,
+    TileResult,
 };
+use crate::tile_definition::{NativeTile, TileBehavior};
 const HOOKSHOT_SINGLE_LAYER_CHECK_X_OFFSETS: [u8; 8] = [0, 15, 0, 15, 0, 0, 8, 8];
 const HOOKSHOT_SINGLE_LAYER_CHECK_Y_OFFSETS: [u8; 8] = [0, 0, 7, 7, 0, 15, 0, 15];
 const DOOR_NUDGE_DETECT_Y_OFFSETS: [i8; 4] = [8, 23, 16, 16];
@@ -16,6 +17,11 @@ const TILE_DETECT_DIAG_STATES: [u16; 4] = [4, 0, 6, 2];
 
 impl ZeldaState {
     pub fn overworld_get_tile_attribute_at_location(&self, x: u16, y: u16) -> u8 {
+        self.overworld_tile_definition_at_location(x, y)
+            .cartridge_attribute()
+    }
+
+    pub(super) fn overworld_tile_definition_at_location(&self, x: u16, y: u16) -> NativeTile {
         let world = &self.game_state.world.scroll;
         let pos = ((y.wrapping_sub(world.overworld_offset_base_y())
             & world.overworld_offset_mask_y())
@@ -28,11 +34,10 @@ impl ZeldaState {
             .bg2_tile_by_byte_pos(pos);
         let map8_index = (map16 as usize) * 4 + (((y & 8) >> 2) | (x & 1)) as usize;
         let map8 = self.asset_u16(70, map8_index);
-        let mut attr = self.asset_u8(163, (map8 & 0x01ff) as usize);
-        if (0x10..0x1c).contains(&attr) {
-            attr |= ((map8 >> 14) & 1) as u8;
-        }
-        attr
+        self.assets
+            .as_ref()
+            .map(|assets| assets.outdoor_tile_definition(map8))
+            .unwrap_or_default()
     }
 
     pub(super) fn detect_player_movement(
@@ -239,7 +244,7 @@ impl ZeldaState {
             // d-pad gate reads that scratch byte (route host 1042435).
             self.ram[MENU_PREV_JOYPAD_H] = offset as u8;
             self.ram[MENU_PREV_JOYPAD_H + 1] = (offset >> 8) as u8;
-            let mut tile = self.game_state.dungeon.bg2_attributes.bg2_attr(offset);
+            let mut tile = self.game_state.dungeon.bg2_attributes.bg2_tile(offset);
             if self
                 .game_state
                 .player
@@ -247,19 +252,36 @@ impl ZeldaState {
                 .cheat_walk_through_walls()
                 != 0
             {
-                tile = 0;
+                tile = NativeTile::GROUND;
             }
-            self.follower_link_state_mut().set_tile_below(tile);
+            self.follower_link_state_mut()
+                .set_tile_below(tile.cartridge_attribute());
             tile
         } else {
-            self.overworld_get_tile_attribute_at_location(x, y)
+            self.overworld_tile_definition_at_location(x, y)
         };
-        self.tile_detect_execute_inner(tile, offset as u16, bits, is_indoors);
+        self.tile_detect_execute_definition(tile, offset as u16, bits, is_indoors);
     }
 
+    #[cfg(test)]
     pub(super) fn tile_detect_execute_inner(
         &mut self,
-        mut tile: u8,
+        tile: u8,
+        offs: u16,
+        bits: u16,
+        is_indoors: bool,
+    ) {
+        self.tile_detect_execute_definition(
+            NativeTile::from_cartridge(tile),
+            offs,
+            bits,
+            is_indoors,
+        );
+    }
+
+    pub(super) fn tile_detect_execute_definition(
+        &mut self,
+        mut tile: NativeTile,
         offs: u16,
         bits: u16,
         is_indoors: bool,
@@ -273,15 +295,15 @@ impl ZeldaState {
             .cheat_walk_through_walls()
             != 0
         {
-            tile = 0;
+            tile = NativeTile::GROUND;
         }
-        match B::decode(tile, is_indoors) {
+        match tile.behavior(is_indoors) {
             B::Ignore => {}
             B::Surface { result, shift } => self.record_tile_result(result, bits << shift),
             B::Solid => self.record_tile_result(R::Collision, bits),
             B::DeepWaterEdge => {
                 self.tile_detect_position_mut()
-                    .set_interacting_tile(u16::from(tile));
+                    .set_interacting_tile(u16::from(tile.cartridge_attribute()));
                 self.record_tile_result(R::DeepWater, bits << 4);
             }
             B::ConditionalFloorTrigger => {
@@ -299,7 +321,7 @@ impl ZeldaState {
             }
             B::InRoomStaircase { shift } => {
                 self.tile_detect_position_mut()
-                    .set_interacting_tile(u16::from(tile));
+                    .set_interacting_tile(u16::from(tile.cartridge_attribute()));
                 self.record_tile_result(R::InRoomStaircase, bits << shift);
                 self.record_tile_result(R::Stair, bits);
             }
@@ -321,7 +343,7 @@ impl ZeldaState {
             }
             B::Ledge { result, shift } => {
                 self.tile_detect_position_mut()
-                    .set_interacting_tile(u16::from(tile));
+                    .set_interacting_tile(u16::from(tile.cartridge_attribute()));
                 self.record_tile_result(result, bits << shift);
             }
             B::Cactus => {
@@ -358,7 +380,7 @@ impl ZeldaState {
                 // other solid interactions, chests publish Misc before Collision.
                 self.record_tile_result(R::Misc, bits);
                 self.tile_detect_position_mut()
-                    .set_interacting_tile(u16::from(tile));
+                    .set_interacting_tile(u16::from(tile.cartridge_attribute()));
                 if index.is_some_and(|index| {
                     self.game_state.dungeon.room_items.chest_location(index) >= 0x8000
                 }) {
@@ -366,7 +388,7 @@ impl ZeldaState {
                     self.record_tile_result(R::KeyLockGravestone, bits << 4);
                     if bits & 2 != 0 {
                         self.tile_detect_position_mut()
-                            .set_tile_type(u16::from(tile));
+                            .set_tile_type(u16::from(tile.cartridge_attribute()));
                     }
                 } else {
                     self.record_tile_result(R::Collision, bits);
@@ -378,7 +400,7 @@ impl ZeldaState {
                     .game_state
                     .dungeon
                     .bg2_attributes
-                    .bg2_attr(usize::from(offs) + 64)
+                    .bg2_tile(usize::from(offs) + 64)
                     == tile
                 {
                     8
