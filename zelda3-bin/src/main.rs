@@ -97,9 +97,9 @@ use zelda3::{config::parse_config_file_context, ZeldaState, RUN_MAIN, RUN_POLY};
 /// Positional-bincode checkpoint layout version. Bump the trailing number
 /// whenever a serialized `ZeldaState` field is added, removed or reordered;
 /// older `rust.z3state` files are then rejected with a clear message instead
-/// of failing mid-decode. 03 (2026-09-07): garnish slots now live only in
-/// WRAM; removed their duplicate native slot bank.
-const PLAY_CRASH_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSPC03";
+/// of failing mid-decode. 04 (2026-09-07): overlord slots and boss homes now
+/// share WRAM directly; removed their duplicate native banks.
+const PLAY_CRASH_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSPC04";
 const ACTION_TILE_X: [i16; 4] = [7, 7, -3, 16];
 const ACTION_TILE_Y: [i16; 4] = [6, 24, 12, 12];
 pub(crate) const TRACE_MAIN_MODULE_INDEX: usize = 0x10;

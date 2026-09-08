@@ -104,21 +104,19 @@ pub(crate) use poly::{
     NativePolyRasterEdgeBridgeMut, NativePolyRuntimeBridgeMut, PolyState,
 };
 pub use sprites::CachedSpriteCacheField;
-#[cfg(test)]
-pub(crate) use sprites::NativeArrghusPuffHomePositionBridgeMut;
 pub(crate) use sprites::{
-    BossHomePositionRead, CachedSpriteRead, GarnishSlotMut, GarnishSlotView,
-    NativeAncillaSlotBridgeMut, NativeAncillaSlotView, NativeArmosKnightHomePositionBridgeMut,
+    ArmosKnightHomePositionMut, BossHomePositionRead, CachedSpriteRead, GarnishSlotMut,
+    GarnishSlotView, NativeAncillaSlotBridgeMut, NativeAncillaSlotView,
     NativeCachedSpriteBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDualLayerTileCacheBridgeMut, NativeEnemyDamageSubclassTableBridgeMut,
     NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut,
     NativeFollowerRuntimeBridgeMut, NativeGarnishRuntimeBridgeMut, NativeMazeGameTimerBridgeMut,
-    NativeOverlordSlotBridgeMut, NativeOverlordSlotView, NativeOverworldSpriteLoadedBridgeMut,
-    NativeOverworldSpritePresenceBridgeMut, NativePrizeDropCycleBridgeMut,
-    NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
-    NativeSpriteSlotBridgeMut, NativeSpriteSlotView, NativeSpriteSystemBridgeMut,
-    NativeSpriteWorkspaceBridgeMut, NativeTagalongSlotBridgeMut, SpriteSlotsState, SpriteState,
-    TagalongSlotRead, ANCILLA_SLOT_COUNT, OVERWORLD_SPRITE_FLAG_COUNT,
+    NativeOverworldSpriteLoadedBridgeMut, NativeOverworldSpritePresenceBridgeMut,
+    NativePrizeDropCycleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
+    NativeSpriteHitboxWorkOffsetBridgeMut, NativeSpriteSlotBridgeMut, NativeSpriteSlotView,
+    NativeSpriteSystemBridgeMut, NativeSpriteWorkspaceBridgeMut, NativeTagalongSlotBridgeMut,
+    OverlordSlotMut, OverlordSlotView, SpriteSlotsState, SpriteState, TagalongSlotRead,
+    ANCILLA_SLOT_COUNT, OVERWORLD_SPRITE_FLAG_COUNT,
 };
 pub(crate) use system::{
     MsuResumeInfoState, MsuResumeSlot, NativeSystemSignalsBridgeMut, SystemSignalsState,

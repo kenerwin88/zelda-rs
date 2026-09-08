@@ -918,107 +918,82 @@ fn native_cached_sprite_bridge_projects_native_state_over_stale_ram() {
 }
 
 #[test]
-fn native_boss_home_positions_load_and_update_overlord_scratch() {
-    let mut ram = vec![0; WRAM_SIZE];
-    let puff_slot = 5;
-    let puff_overlord_slot = puff_slot + 7;
-    ram[OVERLORD_X_LO + puff_overlord_slot] = 0x34;
-    ram[OVERLORD_Y_LO + puff_overlord_slot] = 0x12;
-    ram[OVERLORD_GEN1 + puff_overlord_slot] = 0x78;
-    ram[OVERLORD_GEN3 + puff_overlord_slot] = 0x56;
+fn boss_home_reads_observe_shared_wram_without_reloading_native_state() {
+    let mut game = crate::zelda_rtl::ZeldaState::new();
+    // Frozen old Arrghus projection offsets, including its seven-slot bias.
+    // Puff slots 1..26 share Armos slots 0..25's physical coordinate bytes.
+    // The legacy Armos reader masks Y-high at slots 24+ beyond its work bank;
+    // Arrghus reads those same bytes directly from WRAM.
+    let bases = [0x0b0f, 0x0b1f, 0x0b2f, 0x0b3f];
+    for puff_slot in 0..27 {
+        let original = [0x34, 0x12, 0x78, 0x56];
+        for (base, byte) in bases.into_iter().zip(original) {
+            game.ram[base + puff_slot] = byte;
+        }
+        let captured = game.arrghus_puff_home_position(puff_slot);
+        assert_eq!((captured.x(), captured.y()), (0x1234, 0x5678));
 
-    let mut state = SpriteState::load_from_ram(&ram);
-    let puff_home = state
-        .boss_home_positions
-        .arrghus_puff_home_position(puff_slot);
-    assert_eq!(puff_home.x(), 0x1234);
-    assert_eq!(puff_home.y(), 0x5678);
-
-    {
-        let mut home = NativeArrghusPuffHomePositionBridgeMut::new(
-            &mut state.boss_home_positions,
-            &mut ram,
-            puff_slot,
-        );
-        home.set_position(0x1357, 0x2468);
+        for (base, byte) in bases.into_iter().zip([0xbc, 0x9a, 0xf0, 0xde]) {
+            game.ram[base + puff_slot] = byte;
+        }
+        let current = game.arrghus_puff_home_position(puff_slot);
+        assert_eq!((current.x(), current.y()), (0x9abc, 0xdef0));
+        assert_eq!((captured.x(), captured.y()), (0x1234, 0x5678));
+        if puff_slot != 0 {
+            let aliased = game.armos_knight_home_position(puff_slot - 1);
+            if puff_slot <= 24 {
+                assert_eq!((aliased.x(), aliased.y()), (current.x(), current.y()));
+            } else {
+                assert_eq!((aliased.x(), aliased.y()), (current.x(), current.y() & 0xff));
+            }
+        }
     }
-    let puff_home = state
-        .boss_home_positions
-        .arrghus_puff_home_position(puff_slot);
-    assert_eq!(puff_home.x(), 0x1357);
-    assert_eq!(puff_home.y(), 0x2468);
-    assert_eq!(ram[OVERLORD_X_LO + puff_overlord_slot], 0x57);
-    assert_eq!(ram[OVERLORD_Y_LO + puff_overlord_slot], 0x13);
-    assert_eq!(ram[OVERLORD_GEN1 + puff_overlord_slot], 0x68);
-    assert_eq!(ram[OVERLORD_GEN3 + puff_overlord_slot], 0x24);
-
-    {
-        let mut home = NativeArmosKnightHomePositionBridgeMut::new(
-            &mut state.boss_home_positions,
-            &mut ram,
-            3,
-        );
-        home.set_position(0x9abc, 0xdef0);
-    }
-    let armos_home = state.boss_home_positions.armos_knight_home_position(3);
-    assert_eq!(armos_home.x(), 0x9abc);
-    assert_eq!(armos_home.y(), 0xdef0);
-    assert_eq!(ram[OVERLORD_X_HI + 3], 0xbc);
-    assert_eq!(ram[OVERLORD_Y_HI + 3], 0x9a);
-    assert_eq!(ram[OVERLORD_GEN2 + 3], 0xf0);
-    assert_eq!(ram[OVERLORD_FLOOR + 3], 0xde);
 }
 
 #[test]
-fn native_boss_home_positions_project_native_state_over_stale_ram() {
-    let mut ram = vec![0xff; WRAM_SIZE];
-    let mut native_ram = vec![0; WRAM_SIZE];
-    let puff_slot = 5;
-    let puff_overlord_slot = puff_slot + 7;
-    native_ram[OVERLORD_X_LO + puff_overlord_slot] = 0x34;
-    native_ram[OVERLORD_Y_LO + puff_overlord_slot] = 0x12;
-    native_ram[OVERLORD_GEN1 + puff_overlord_slot] = 0x78;
-    native_ram[OVERLORD_GEN3 + puff_overlord_slot] = 0x56;
-    native_ram[OVERLORD_X_HI + 3] = 0xaa;
-    native_ram[OVERLORD_Y_HI + 3] = 0xbb;
-    native_ram[OVERLORD_GEN2 + 3] = 0xcc;
-    native_ram[OVERLORD_FLOOR + 3] = 0xdd;
-    let mut state = SpriteState::load_from_ram(&native_ram);
+fn armos_home_writes_only_four_shared_bytes_and_preserves_invalid_slot_noop() {
+    let mut game = crate::zelda_rtl::ZeldaState::new();
+    // Frozen old Armos projection addresses: X low/high, then Y low/high.
+    let bases = [0x0b10, 0x0b20, 0x0b30, 0x0b40];
+    let original: Vec<u8> = (0..WRAM_SIZE)
+        .map(|address| (address.wrapping_mul(37) + address / 251) as u8)
+        .collect();
+    for slot in 0..27 {
+        for (x, y) in [(0u16, 0xffffu16), (0x00ff, 0xff00), (0x1234, 0x5678)] {
+            game.ram.clone_from(&original);
+            let mut expected = original.clone();
+            for (base, byte) in
+                bases
+                    .into_iter()
+                    .zip([x as u8, (x >> 8) as u8, y as u8, (y >> 8) as u8])
+            {
+                expected[base + slot] = byte;
+            }
 
-    {
-        let mut home = NativeArrghusPuffHomePositionBridgeMut::new(
-            &mut state.boss_home_positions,
-            &mut ram,
-            puff_slot,
-        );
-        home.set_position(0x1357, 0x2468);
+            game.armos_knight_home_position_mut(slot).set_position(x, y);
+
+            assert!(
+                game.ram == expected,
+                "Armos slot {slot} changed unrelated WRAM"
+            );
+            // All 27 writers retain their raw Y-high store, including the
+            // bytes the bounded Armos reader does not expose at slots 24+.
+            assert_eq!(game.ram[0x0b40 + slot], (y >> 8) as u8);
+            let home = game.armos_knight_home_position(slot);
+            let read_y = if slot < 24 { y } else { y & 0xff };
+            assert_eq!((home.x(), home.y()), (x, read_y));
+            if slot < 24 {
+                let puff = game.arrghus_puff_home_position(slot + 1);
+                assert_eq!((puff.x(), puff.y()), (home.x(), home.y()));
+            }
+        }
     }
-
-    {
-        let mut home = NativeArmosKnightHomePositionBridgeMut::new(
-            &mut state.boss_home_positions,
-            &mut ram,
-            3,
-        );
-        home.set_position(0x9abc, 0xdef0);
+    for invalid_slot in [27, 28, usize::MAX] {
+        game.ram.clone_from(&original);
+        game.armos_knight_home_position_mut(invalid_slot)
+            .set_position(0, 0);
+        assert!(game.ram == original, "invalid Armos slot must be a no-op");
     }
-
-    let puff_home = state
-        .boss_home_positions
-        .arrghus_puff_home_position(puff_slot);
-    let armos_home = state.boss_home_positions.armos_knight_home_position(3);
-    assert_eq!(puff_home.x(), 0x1357);
-    assert_eq!(puff_home.y(), 0x2468);
-    assert_eq!(armos_home.x(), 0x9abc);
-    assert_eq!(armos_home.y(), 0xdef0);
-    assert_eq!(ram[OVERLORD_X_LO + puff_overlord_slot], 0x57);
-    assert_eq!(ram[OVERLORD_Y_LO + puff_overlord_slot], 0x13);
-    assert_eq!(ram[OVERLORD_GEN1 + puff_overlord_slot], 0x68);
-    assert_eq!(ram[OVERLORD_GEN3 + puff_overlord_slot], 0x24);
-    assert_eq!(ram[OVERLORD_X_HI + 3], 0xbc);
-    assert_eq!(ram[OVERLORD_Y_HI + 3], 0x9a);
-    assert_eq!(ram[OVERLORD_GEN2 + 3], 0xf0);
-    assert_eq!(ram[OVERLORD_FLOOR + 3], 0xde);
 }
 
 #[test]

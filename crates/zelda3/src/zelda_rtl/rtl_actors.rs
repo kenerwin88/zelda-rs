@@ -144,18 +144,12 @@ impl ZeldaState {
             .slot_mut(&mut self.ram, slot)
     }
 
-    pub(crate) fn overlord_slot_view(&self, slot: usize) -> NativeOverlordSlotView<'_> {
-        self.game_state.sprites.overlord_slots.slot(slot)
+    pub(crate) fn overlord_slot_view(&self, slot: usize) -> OverlordSlotView<'_> {
+        OverlordSlotView::new(&self.ram, slot)
     }
 
-    pub(crate) fn overlord_slot_view_mut(
-        &mut self,
-        slot: usize,
-    ) -> NativeOverlordSlotBridgeMut<'_> {
-        self.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut self.ram, slot)
+    pub(crate) fn overlord_slot_view_mut(&mut self, slot: usize) -> OverlordSlotMut<'_> {
+        OverlordSlotMut::new(&mut self.ram, slot)
     }
 
     pub(crate) fn ancilla_slot_view(&self, slot: usize) -> NativeAncillaSlotView<'_> {

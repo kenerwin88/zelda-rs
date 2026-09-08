@@ -3470,13 +3470,8 @@ impl ZeldaState {
             let y = info
                 .y
                 .wrapping_add(HELMASAUR_KING_EXPLOSION_Y_OFFSETS[i as usize] as i16 as u16)
-                .wrapping_add(
-                    self.game_state
-                        .sprites
-                        .overlord_slots
-                        .slot(i as usize)
-                        .x_low() as u16,
-                ) as u8;
+                .wrapping_add(self.overlord_slot_view(i as usize).x_low() as u16)
+                as u8;
             let f = HELMASAUR_KING_EXPLOSION_FLAGS[i as usize] ^ info.flags;
             self.set_oam_plain_at_for_draw(
                 oam,
@@ -3632,10 +3627,7 @@ impl ZeldaState {
                 0
             };
             let rs = self
-                .game_state
-                .sprites
-                .overlord_slots
-                .slot(5)
+                .overlord_slot_view(5)
                 .gen1_word()
                 .wrapping_add(self.overlord_slot_view(1).gen2_word());
             let f = ((rs >> 8) as u8).wrapping_sub(1);

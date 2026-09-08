@@ -402,14 +402,7 @@ fn dungeon_load_single_overlord_allocates_and_initializes_coords() {
     let mut trap = fresh_state();
     trap.sprite_workspace_mut().set_room_origin_x_high(0x10);
     trap.dungeon_load_single_overlord(&[0x00, 0xe0, 3]);
-    assert_eq!(
-        trap.game_state
-            .sprites
-            .overlord_slots
-            .slot(7)
-            .overlord_type(),
-        3
-    );
+    assert_eq!(trap.overlord_slot_view(7).overlord_type(), 3);
     assert_eq!(trap.ram[OVERLORD_GEN2 + 7], 255);
     assert_eq!(trap.overlord_slot_view(7).x_low(), 0xf8);
 }

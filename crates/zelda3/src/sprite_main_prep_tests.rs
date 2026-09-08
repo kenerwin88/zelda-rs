@@ -561,24 +561,8 @@ fn ganon_helmasaur_and_trinexx_prep_call_existing_initializers() {
     assert_eq!(trinexx_body.sprite_slot_view(k).g(), 2);
     assert_eq!(trinexx_body.sprite_get_x(k), 0x0128);
     assert_eq!(trinexx_body.sprite_get_y(k), 0x024c);
-    assert_eq!(
-        trinexx_body
-            .game_state
-            .sprites
-            .overlord_slots
-            .slot(2)
-            .x_low(),
-        0
-    );
-    assert_eq!(
-        trinexx_body
-            .game_state
-            .sprites
-            .overlord_slots
-            .slot(6)
-            .x_low(),
-        255
-    );
+    assert_eq!(trinexx_body.overlord_slot_view(2).x_low(), 0);
+    assert_eq!(trinexx_body.overlord_slot_view(6).x_low(), 255);
     assert_eq!(trinexx_body.ram[OVERLORD_X_HI_PREP], 0);
     assert_eq!(trinexx_body.ram[OVERLORD_Y_HI_PREP], 0x0c);
     assert_eq!(trinexx_body.ram[OVERLORD_GEN2_PREP], 0x97);

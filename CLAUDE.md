@@ -79,6 +79,10 @@ It does not replace the pinned live Snes9x A/V authority.
   projection. These views borrow the caller's WRAM, including when the caller
   is a cloned snapshot. See `docs/parity/garnish-single-owner.md` for ownership
   ranges and the checkpoint layout change; shared `GarnishRuntimeState` is separate.
+- Overlord slots and boss home positions also share WRAM directly through named
+  views. Preserve the intentional cross-array boss indices and the separate
+  eight-byte spawned-area boundary. Do not reintroduce a mirror or Arrghus
+  reload; see `docs/parity/overlord-single-owner.md` for the alias contract.
 
 ## Common bug classes (almost every root is one of these) + fix recipes
 

@@ -4791,10 +4791,7 @@ impl ZeldaState {
         // packed x_low|x_high). Use the adjacent-x-low-word accessor, exactly like
         // armos_coordinator_rotate, so we read/write the same bytes the C does.
         let base = self
-            .game_state
-            .sprites
-            .overlord_slots
-            .slot(0)
+            .overlord_slot_view(0)
             .adjacent_x_low_word()
             .wrapping_add(self.overlord_slot_view(4).x_low() as u16);
         self.overlord_slot_view_mut(0).set_adjacent_x_low_word(base);
@@ -4818,10 +4815,7 @@ impl ZeldaState {
             let r0 = base.wrapping_add(ARRGHUS_HANDLE_PUFFS_PUFF_ORBIT_BASE_ANGLES[i])
                 ^ ARRGHUS_HANDLE_PUFFS_PUFF_ORBIT_ANGLE_XOR_MASKS[i];
             let r14 = self
-                .game_state
-                .sprites
-                .overlord_slots
-                .slot(2)
+                .overlord_slot_view(2)
                 .x_low()
                 .wrapping_add(ARRGHUS_HANDLE_PUFFS_PUFF_ORBIT_PHASE_OFFSETS[i]);
             let sin_arg = r14.wrapping_add_signed(
@@ -4839,14 +4833,6 @@ impl ZeldaState {
             let ty = (sprite_y + cos_val - 0x10) as u16;
             self.armos_knight_home_position_mut(i).set_position(tx, ty);
         }
-        // The puff homes are written into the overlord slot array via the armos-knight
-        // home bridge (raw RAM), which leaves the overlord native model stale. A later
-        // overlord setter's sync() projects the WHOLE overlord block (write_to_ram) and
-        // would re-stamp the stale home bytes over the fresh ones. Resync the native from
-        // RAM now so it re-projects the homes we just wrote, not last frame's.
-        self.game_state
-            .sprites
-            .reload_overlord_slots_from_ram(&self.ram);
         self.temp_counter_mut().set(13);
     }
 

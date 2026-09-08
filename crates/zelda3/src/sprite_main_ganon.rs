@@ -1108,12 +1108,7 @@ impl ZeldaState {
         let sprite0_y = self.sprite_get_y(0);
 
         for i in 0..8usize {
-            let base = self
-                .game_state
-                .sprites
-                .overlord_slots
-                .slot(0)
-                .adjacent_x_low_word();
+            let base = self.overlord_slot_view(0).adjacent_x_low_word();
             let t: u16 = base.wrapping_add((i as u16).wrapping_mul(64)) & 0x1ff;
             if self.sprite_slot_view(i + 1).ai_state() != 2 {
                 let j = ((t >> 5).wrapping_sub(4) & 0xf) as usize;
@@ -1206,15 +1201,7 @@ impl ZeldaState {
         // The C loop keeps walking down past slot 0. The accessor layer keeps
         // the modernized port inside the real overlord slot range.
         let mut j_i32: i32 = 7;
-        while j_i32 >= 0
-            && self
-                .game_state
-                .sprites
-                .overlord_slots
-                .slot(j_i32 as usize)
-                .overlord_type()
-                != 0
-        {
+        while j_i32 >= 0 && self.overlord_slot_view(j_i32 as usize).overlord_type() != 0 {
             j_i32 -= 1;
         }
         if j_i32 < 0 {

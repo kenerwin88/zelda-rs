@@ -144,13 +144,6 @@ SINGLE_ARG_ACCESSORS: tuple[SingleArgAccessorMapping, ...] = (
         "slot_mut",
         mutable=True,
     ),
-    SingleArgAccessorMapping("overlord_slot", "game_state.sprites.overlord_slots", "slot"),
-    SingleArgAccessorMapping(
-        "overlord_slot_mut",
-        "game_state.sprites.overlord_slots",
-        "slot_mut",
-        mutable=True,
-    ),
 )
 
 
@@ -401,7 +394,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--include-single-arg-native-accessors",
         action="store_true",
-        help="also target native-backed single-argument accessors such as overlord_slot(k)",
+        help="also target native-backed single-argument accessors such as ancilla_slot(k)",
     )
     parser.add_argument(
         "--infer-direct-single-arg-game-state",

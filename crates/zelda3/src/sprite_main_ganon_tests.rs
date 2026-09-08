@@ -196,11 +196,7 @@ fn handle_fire_bat_circle_writes_eight_overlords_and_seeds_counter() {
 
     // overlord_x_lo word should have decremented by 4.
     assert_eq!(
-        s.game_state
-            .sprites
-            .overlord_slots
-            .slot(0)
-            .adjacent_x_low_word(),
+        s.overlord_slot_view(0).adjacent_x_low_word(),
         0x10u16.wrapping_sub(4)
     );
     // tmp_counter is set to 8.

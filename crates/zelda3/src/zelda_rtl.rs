@@ -28,17 +28,16 @@ use crate::game_state::constants::{
     VWF_ARR,
 };
 use crate::game_state::{
-    lanmola_flat_trail_entry_from_ram, loaded_room_data_word, BirdTravelDestinationState,
-    BossHomePositionRead, CachedSpriteRead, CompatibilityBytesView, CompatibilityBytesViewMut,
-    DungeonStairList, FollowerLinkState, GameState, GarnishSlotMut, GarnishSlotView,
-    GraphicsDecompressionScratch, HappinessPondRupeeSnapshot, HudStateRead, HudTilemapState,
-    IntroActorRead, LanmolaFlatTrailEntry, LinkDmaSourceSlot, LinkDmaSources, MsuResumeInfoState,
-    MsuResumeSlot, MultiselectChoiceRead, NativeAncillaSlotBridgeMut, NativeAncillaSlotView,
-    NativeArcheryGameBridgeMut, NativeArmosKnightHomePositionBridgeMut,
-    NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
-    NativeBeamosLaserHistoryBridgeMut, NativeBg1MovementAccumulatorBridgeMut,
-    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut,
-    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    lanmola_flat_trail_entry_from_ram, loaded_room_data_word, ArmosKnightHomePositionMut,
+    BirdTravelDestinationState, BossHomePositionRead, CachedSpriteRead, CompatibilityBytesView,
+    CompatibilityBytesViewMut, DungeonStairList, FollowerLinkState, GameState, GarnishSlotMut,
+    GarnishSlotView, GraphicsDecompressionScratch, HappinessPondRupeeSnapshot, HudStateRead,
+    HudTilemapState, IntroActorRead, LanmolaFlatTrailEntry, LinkDmaSourceSlot, LinkDmaSources,
+    MsuResumeInfoState, MsuResumeSlot, MultiselectChoiceRead, NativeAncillaSlotBridgeMut,
+    NativeAncillaSlotView, NativeArcheryGameBridgeMut, NativeAttractSceneBridgeMut,
+    NativeAttractVramDestinationBridgeMut, NativeBeamosLaserHistoryBridgeMut,
+    NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
+    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosBlastBridgeMut, NativeBombosFireColumnBridgeMut,
     NativeBombosSpellBridgeMut, NativeCachedSpriteBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
@@ -66,8 +65,7 @@ use crate::game_state::{
     NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut,
     NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut,
     NativeMirrorWarpBridgeMut, NativeMoldormHistoryBridgeMut, NativeMultiselectChoiceBridgeMut,
-    NativeOamStateBridgeMut, NativeOverlordSlotBridgeMut, NativeOverlordSlotView,
-    NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
+    NativeOamStateBridgeMut, NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
     NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
     NativeOverworldPaletteBackupBridgeMut, NativeOverworldScreenSizeBridgeMut,
@@ -92,10 +90,11 @@ use crate::game_state::{
     NativeWeatherVaneBridgeMut, NativeWeatherVaneDebrisBridgeMut,
     NativeWorldCameraBoundariesBridgeMut, NativeWorldLocationBridgeMut,
     NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut,
-    NativeWorldTransientBridgeMut, OverworldConfigTableRead, OverworldMap16Decode,
-    OverworldMap16DecodeScratch, OverworldMap16LoadState, OverworldMap16SourcePage,
-    PpuScrollCopyState, RamPlayerStateViewMut, SmallOverworldMap16ScrollBackupState,
-    SpotlightHdmaState, SpriteSlotsState, SystemSignalsState, SystemWorkArea, TagalongSlotRead,
+    NativeWorldTransientBridgeMut, OverlordSlotMut, OverlordSlotView, OverworldConfigTableRead,
+    OverworldMap16Decode, OverworldMap16DecodeScratch, OverworldMap16LoadState,
+    OverworldMap16SourcePage, PpuScrollCopyState, RamPlayerStateViewMut,
+    SmallOverworldMap16ScrollBackupState, SpotlightHdmaState, SpriteSlotsState, SystemSignalsState,
+    SystemWorkArea, TagalongSlotRead,
 };
 use crate::raster_timing::{
     attract_map_projection_current_word_is_visible,
@@ -11456,12 +11455,8 @@ impl ZeldaState {
     }
 
     pub(crate) fn arrghus_puff_home_position(&self, puff_slot: usize) -> BossHomePositionRead {
-        // arrghus_handle_puffs writes each puff's home into the overlord slot array
-        // (OVERLORD_X_LO+slot+7 .. by SNES byte reuse — the same bytes as the armos
-        // x_hi/y_hi/gen2/floor home array), and that is where C reads it from. Read it
-        // from RAM directly — NOT from the persisted `boss_home_positions` native, which
-        // production never repopulates mid-frame (only tests drive the `_mut` bridge), so
-        // it would return a stale value. Mirrors armos_knight_home_position.
+        // Puff homes reuse the overlord work bank, offset by seven slots.
+        // Read the current bytes; BossHomePositionRead keeps a value snapshot.
         use crate::game_state::constants::{
             OVERLORD_GEN1, OVERLORD_GEN3, OVERLORD_X_LO, OVERLORD_Y_LO,
         };
@@ -11475,11 +11470,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn armos_knight_home_position(&self, slot: usize) -> BossHomePositionRead {
-        // The armos coordinator overlord stores each knight's formation/home position in
-        // the OVERLORD slot array (0xb10+: x_high, y_high, gen2, floor) by SNES byte reuse,
-        // and that is where C reads it from. Read it from there — NOT from the persisted
-        // `boss_home_positions` native state, which nothing populates for armos (the
-        // coordinator writes the overlord slots), so it would return stale garbage.
+        // The coordinator and Arrghus puffs share the overlord work bytes.
         let slot_view = self.overlord_slot_view(slot);
         BossHomePositionRead::from_xy_bytes(
             slot_view.x_high(),
@@ -11492,12 +11483,8 @@ impl ZeldaState {
     pub(crate) fn armos_knight_home_position_mut(
         &mut self,
         slot: usize,
-    ) -> NativeArmosKnightHomePositionBridgeMut<'_> {
-        NativeArmosKnightHomePositionBridgeMut::new(
-            &mut self.game_state.sprites.boss_home_positions,
-            &mut self.ram,
-            slot,
-        )
+    ) -> ArmosKnightHomePositionMut<'_> {
+        ArmosKnightHomePositionMut::new(&mut self.ram, slot)
     }
 
     pub(crate) fn enemy_damage_subclass_table_mut(

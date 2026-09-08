@@ -812,19 +812,13 @@ impl ZeldaState {
                         self.sprite_slot_view_mut(k).set_c(value);
                     }
                     if self
-                        .game_state
-                        .sprites
-                        .overlord_slots
-                        .slot(0)
+                        .overlord_slot_view(0)
                         .x_low()
                         .wrapping_sub(self.sprite_slot_view(k).x_low())
                         .wrapping_add(2)
                         < 4
                         && self
-                            .game_state
-                            .sprites
-                            .overlord_slots
-                            .slot(1)
+                            .overlord_slot_view(1)
                             .x_low()
                             .wrapping_sub(self.sprite_slot_view(k).y_low())
                             .wrapping_add(2)

@@ -38,9 +38,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use zelda3::{game_output::DspWriteEvent, OriginalTimingSemanticReceipt, RomRandomSample};
 
 #[test]
-fn garnish_native_bank_checkpoints_are_rejected_before_positional_decode() {
+fn obsolete_native_bank_checkpoints_are_rejected_before_positional_decode() {
     let root = std::env::temp_dir().join(format!(
-        "zelda3-garnish-checkpoint-layout-{}-{}",
+        "zelda3-native-bank-checkpoint-layout-{}-{}",
         std::process::id(),
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -48,7 +48,7 @@ fn garnish_native_bank_checkpoints_are_rejected_before_positional_decode() {
             .as_nanos()
     ));
     fs::create_dir_all(&root).unwrap();
-    for old_magic in [b"Z3RSPC01", b"Z3RSPC02"] {
+    for old_magic in [b"Z3RSPC01", b"Z3RSPC02", b"Z3RSPC03"] {
         let path = root.join(String::from_utf8_lossy(old_magic).as_ref());
         // A header alone cannot deserialize as a checkpoint. The useful layout
         // error must be returned before attempting the obsolete positional body.

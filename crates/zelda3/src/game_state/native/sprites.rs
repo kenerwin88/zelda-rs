@@ -8,18 +8,18 @@ use crate::game_state::constants::{
     DUAL_LAYER_TILE_CACHE, ENEMY_DAMAGE_DATA, ETHER_ANGLE, ETHER_BEAM_TOP_BUCKET, ETHER_BEAM_Y,
     ETHER_ORBIT_X, ETHER_ORBIT_Y, ETHER_ORB_X, ETHER_ORB_Y, ETHER_RADIUS, ETHER_SPIN_COUNTDOWN,
     HITBOX_WORK_X_OFFSET, HITBOX_WORK_Y_OFFSET, MAZE_GAME_TIMER_HI, MAZE_GAME_TIMER_LO,
-    MAZE_GAME_TIMER_SNAPSHOT_HI, MAZE_GAME_TIMER_SNAPSHOT_LO, OVERLORD_FLOOR, OVERLORD_GEN1,
-    OVERLORD_GEN2, OVERLORD_GEN3, OVERLORD_X_HI, OVERLORD_X_LO, OVERLORD_Y_HI, OVERLORD_Y_LO,
-    OVERWORLD_SPRITE_PRESENCE, OVERWORLD_SPRITE_WAS_LOADED, PLAYER_IS_INDOORS, PRIZE_DROP_CYCLE,
-    SPRITE_A, SPRITE_AI_STATE, SPRITE_ALERT_FLAG, SPRITE_ANIM_CLOCK, SPRITE_B, SPRITE_BUMP_DAMAGE,
-    SPRITE_C, SPRITE_CHR_HALFSLOT_STATE, SPRITE_D, SPRITE_DEFL_BITS, SPRITE_DELAY_AUX1,
-    SPRITE_DELAY_AUX2, SPRITE_DELAY_AUX3, SPRITE_DELAY_AUX4, SPRITE_DELAY_MAIN, SPRITE_DIE_ACTION,
-    SPRITE_DRAW_I, SPRITE_DRAW_PRIORITY_OVERRIDE, SPRITE_DRAW_WORK_BYTE_1, SPRITE_DRAW_WORK_BYTE_2,
-    SPRITE_DRAW_WORK_BYTE_3, SPRITE_DRAW_WORK_BYTE_4, SPRITE_DRAW_WORK_BYTE_5, SPRITE_E, SPRITE_F,
-    SPRITE_FLAGS, SPRITE_FLAGS2, SPRITE_FLAGS3, SPRITE_FLAGS4, SPRITE_FLAGS5, SPRITE_FLOOR,
-    SPRITE_G, SPRITE_GFX_SUBSET_0, SPRITE_GRAPHICS, SPRITE_GRAPHICS_INDEX,
-    SPRITE_GRAPHICS_INDEX_EXIT, SPRITE_GRAPHICS_INDEX_SPEXIT, SPRITE_HEAD_DIR, SPRITE_HEALTH,
-    SPRITE_HIT_TIMER, SPRITE_IGNORE_PROJECTILE, SPRITE_INCOMING_DAMAGE, SPRITE_LAST_GARNISH_INDEX,
+    MAZE_GAME_TIMER_SNAPSHOT_HI, MAZE_GAME_TIMER_SNAPSHOT_LO, OVERLORD_FLOOR, OVERLORD_GEN2,
+    OVERLORD_X_HI, OVERLORD_Y_HI, OVERWORLD_SPRITE_PRESENCE, OVERWORLD_SPRITE_WAS_LOADED,
+    PLAYER_IS_INDOORS, PRIZE_DROP_CYCLE, SPRITE_A, SPRITE_AI_STATE, SPRITE_ALERT_FLAG,
+    SPRITE_ANIM_CLOCK, SPRITE_B, SPRITE_BUMP_DAMAGE, SPRITE_C, SPRITE_CHR_HALFSLOT_STATE, SPRITE_D,
+    SPRITE_DEFL_BITS, SPRITE_DELAY_AUX1, SPRITE_DELAY_AUX2, SPRITE_DELAY_AUX3, SPRITE_DELAY_AUX4,
+    SPRITE_DELAY_MAIN, SPRITE_DIE_ACTION, SPRITE_DRAW_I, SPRITE_DRAW_PRIORITY_OVERRIDE,
+    SPRITE_DRAW_WORK_BYTE_1, SPRITE_DRAW_WORK_BYTE_2, SPRITE_DRAW_WORK_BYTE_3,
+    SPRITE_DRAW_WORK_BYTE_4, SPRITE_DRAW_WORK_BYTE_5, SPRITE_E, SPRITE_F, SPRITE_FLAGS,
+    SPRITE_FLAGS2, SPRITE_FLAGS3, SPRITE_FLAGS4, SPRITE_FLAGS5, SPRITE_FLOOR, SPRITE_G,
+    SPRITE_GFX_SUBSET_0, SPRITE_GRAPHICS, SPRITE_GRAPHICS_INDEX, SPRITE_GRAPHICS_INDEX_EXIT,
+    SPRITE_GRAPHICS_INDEX_SPEXIT, SPRITE_HEAD_DIR, SPRITE_HEALTH, SPRITE_HIT_TIMER,
+    SPRITE_IGNORE_PROJECTILE, SPRITE_INCOMING_DAMAGE, SPRITE_LAST_GARNISH_INDEX,
     SPRITE_LIMIT_INSTANCE, SPRITE_LOAD_BLOCK_STATE, SPRITE_N, SPRITE_OAM_FLAGS, SPRITE_OAM_PREP_X,
     SPRITE_OAM_PREP_Y, SPRITE_OBJ_PRIO, SPRITE_PAUSE, SPRITE_PICKUP_SLOT_CACHE,
     SPRITE_RESET_WORK_A, SPRITE_RESET_WORK_B, SPRITE_ROOM, SPRITE_ROOM_ORIGIN_X_HI,
@@ -41,9 +41,7 @@ pub(crate) use super::follower::{
 pub(crate) use super::garnish::{
     GarnishRuntimeState, GarnishSlotMut, GarnishSlotView, NativeGarnishRuntimeBridgeMut,
 };
-pub(crate) use super::overlord::{
-    NativeOverlordSlotBridgeMut, NativeOverlordSlotView, OverlordSlotsState,
-};
+pub(crate) use super::overlord::{OverlordSlotMut, OverlordSlotView};
 
 const SPRITE_SLOT_COUNT: usize = 16;
 const CHAIN_CHOMP_HISTORY_LEN: usize = 0x80;
@@ -176,7 +174,6 @@ pub(crate) struct SpriteState {
     pub(crate) workspace: SpriteWorkspaceState,
     pub(crate) sprite_slots: SpriteSlotsState,
     pub(crate) ancilla_slots: AncillaSlotsState,
-    pub(crate) overlord_slots: OverlordSlotsState,
     pub(crate) maze_game_timer: MazeGameTimerState,
     pub(crate) prize_drop_cycle: PrizeDropCycleState,
     pub(crate) dual_layer_tile_cache: DualLayerTileCacheState,
@@ -191,7 +188,6 @@ pub(crate) struct SpriteState {
     pub(crate) garnish_runtime: GarnishRuntimeState,
     pub(crate) follower_runtime: FollowerRuntimeState,
     pub(crate) cached_sprites: CachedSpritesState,
-    pub(crate) boss_home_positions: BossHomePositionsState,
 }
 
 impl SpriteState {
@@ -204,17 +200,12 @@ impl SpriteState {
         self.ancilla_slots = AncillaSlotsState::load_from_ram(ram);
     }
 
-    pub(crate) fn reload_overlord_slots_from_ram(&mut self, ram: &[u8]) {
-        self.overlord_slots = OverlordSlotsState::load_from_ram(ram);
-    }
-
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             system: SpriteSystemState::load_from_ram(ram),
             workspace: SpriteWorkspaceState::load_from_ram(ram),
             sprite_slots: SpriteSlotsState::load_from_ram(ram),
             ancilla_slots: AncillaSlotsState::load_from_ram(ram),
-            overlord_slots: OverlordSlotsState::load_from_ram(ram),
             maze_game_timer: MazeGameTimerState::load_from_ram(ram),
             prize_drop_cycle: PrizeDropCycleState::load_from_ram(ram),
             dual_layer_tile_cache: DualLayerTileCacheState::load_from_ram(ram),
@@ -229,7 +220,6 @@ impl SpriteState {
             garnish_runtime: GarnishRuntimeState::load_from_ram(ram),
             follower_runtime: FollowerRuntimeState::load_from_ram(ram),
             cached_sprites: CachedSpritesState::load_from_ram(ram),
-            boss_home_positions: BossHomePositionsState::load_from_ram(ram),
         }
     }
 
@@ -238,7 +228,6 @@ impl SpriteState {
         self.workspace.write_to_ram(ram);
         self.sprite_slots.write_to_ram(ram);
         self.ancilla_slots.write_to_ram(ram);
-        self.overlord_slots.write_to_ram(ram);
         // The 0x1fe00 window is C's `beamos_x_hi[]` sprite-history bank, borrowed by
         // mutually-exclusive systems: word_7FFE00 (maze-race timer), byte_7FFE01 (Zelda
         // rescue cutscene state) and beamos_x_hi[0]/[1] (digging-game prize spawn and
@@ -278,7 +267,6 @@ impl SpriteState {
         check!(workspace);
         check!(sprite_slots);
         check!(ancilla_slots);
-        check!(overlord_slots);
         check!(maze_game_timer);
         check!(prize_drop_cycle);
         check!(dual_layer_tile_cache);
@@ -293,7 +281,6 @@ impl SpriteState {
         check!(garnish_runtime);
         check!(follower_runtime);
         check!(cached_sprites);
-        check!(boss_home_positions);
         out
     }
 }
@@ -1338,107 +1325,6 @@ impl BossHomePosition {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct BossHomePositionsState {
-    arrghus_puff_home_positions: [BossHomePosition; BOSS_HOME_POSITION_COUNT],
-    armos_knight_home_positions: [BossHomePosition; BOSS_HOME_POSITION_COUNT],
-}
-
-impl BossHomePositionsState {
-    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
-        let mut state = Self::default();
-        for slot in 0..BOSS_HOME_POSITION_COUNT {
-            let puff_overlord_slot = slot + 7;
-            state.arrghus_puff_home_positions[slot] = BossHomePosition {
-                x_low: ram
-                    .get(OVERLORD_X_LO + puff_overlord_slot)
-                    .copied()
-                    .unwrap_or(0),
-                x_high: ram
-                    .get(OVERLORD_Y_LO + puff_overlord_slot)
-                    .copied()
-                    .unwrap_or(0),
-                y_low: ram
-                    .get(OVERLORD_GEN1 + puff_overlord_slot)
-                    .copied()
-                    .unwrap_or(0),
-                y_high: ram
-                    .get(OVERLORD_GEN3 + puff_overlord_slot)
-                    .copied()
-                    .unwrap_or(0),
-            };
-            state.armos_knight_home_positions[slot] = BossHomePosition {
-                x_low: ram.get(OVERLORD_X_HI + slot).copied().unwrap_or(0),
-                x_high: ram.get(OVERLORD_Y_HI + slot).copied().unwrap_or(0),
-                y_low: ram.get(OVERLORD_GEN2 + slot).copied().unwrap_or(0),
-                y_high: ram.get(OVERLORD_FLOOR + slot).copied().unwrap_or(0),
-            };
-        }
-        state
-    }
-
-    pub(crate) fn arrghus_puff_home_position(&self, puff_slot: usize) -> BossHomePositionRead {
-        BossHomePositionRead {
-            position: self
-                .arrghus_puff_home_positions
-                .get(puff_slot)
-                .copied()
-                .unwrap_or_default(),
-        }
-    }
-
-    pub(crate) fn armos_knight_home_position(&self, slot: usize) -> BossHomePositionRead {
-        BossHomePositionRead {
-            position: self
-                .armos_knight_home_positions
-                .get(slot)
-                .copied()
-                .unwrap_or_default(),
-        }
-    }
-
-    fn project_arrghus_puff_home_position_to_wram(&self, ram: &mut [u8], puff_slot: usize) {
-        if let Some(position) = self.arrghus_puff_home_positions.get(puff_slot).copied() {
-            let overlord_slot = puff_slot + 7;
-            ram[OVERLORD_X_LO + overlord_slot] = position.x_low;
-            ram[OVERLORD_Y_LO + overlord_slot] = position.x_high;
-            ram[OVERLORD_GEN1 + overlord_slot] = position.y_low;
-            ram[OVERLORD_GEN3 + overlord_slot] = position.y_high;
-        }
-    }
-
-    fn project_armos_knight_home_position_to_wram(&self, ram: &mut [u8], slot: usize) {
-        if let Some(position) = self.armos_knight_home_positions.get(slot).copied() {
-            ram[OVERLORD_X_HI + slot] = position.x_low;
-            ram[OVERLORD_Y_HI + slot] = position.x_high;
-            ram[OVERLORD_GEN2 + slot] = position.y_low;
-            ram[OVERLORD_FLOOR + slot] = position.y_high;
-        }
-    }
-
-    fn set_armos_knight_home_position(&mut self, slot: usize, x: u16, y: u16) {
-        if let Some(position) = self.armos_knight_home_positions.get_mut(slot) {
-            *position = BossHomePosition {
-                x_low: x as u8,
-                x_high: (x >> 8) as u8,
-                y_low: y as u8,
-                y_high: (y >> 8) as u8,
-            };
-        }
-    }
-
-    fn set_arrghus_puff_home_position(&mut self, puff_slot: usize, x: u16, y: u16) {
-        if let Some(position) = self.arrghus_puff_home_positions.get_mut(puff_slot) {
-            *position = BossHomePosition {
-                x_low: x as u8,
-                x_high: (x >> 8) as u8,
-                y_low: y as u8,
-                y_high: (y >> 8) as u8,
-            };
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct BossHomePositionRead {
     position: BossHomePosition,
@@ -1485,61 +1371,26 @@ impl BossHomePositionRead {
     }
 }
 
-pub(crate) struct NativeArrghusPuffHomePositionBridgeMut<'a> {
-    state: &'a mut BossHomePositionsState,
-    ram: &'a mut [u8],
-    puff_slot: usize,
-}
-
-impl<'a> NativeArrghusPuffHomePositionBridgeMut<'a> {
-    pub(crate) fn new(
-        state: &'a mut BossHomePositionsState,
-        ram: &'a mut [u8],
-        puff_slot: usize,
-    ) -> Self {
-        Self {
-            state,
-            ram,
-            puff_slot,
-        }
-    }
-
-    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
-        self.state
-            .set_arrghus_puff_home_position(self.puff_slot, x, y);
-        self.state
-            .project_arrghus_puff_home_position_to_wram(self.ram, self.puff_slot);
-        debug_assert_eq!(
-            self.state.arrghus_puff_home_position(self.puff_slot),
-            BossHomePositionsState::load_from_ram(self.ram)
-                .arrghus_puff_home_position(self.puff_slot),
-        );
-    }
-}
-
-pub(crate) struct NativeArmosKnightHomePositionBridgeMut<'a> {
-    state: &'a mut BossHomePositionsState,
+/// A write-through view of the Armos formation coordinates in the shared
+/// overlord work bank. These bytes also hold Arrghus puff homes.
+pub(crate) struct ArmosKnightHomePositionMut<'a> {
     ram: &'a mut [u8],
     slot: usize,
 }
 
-impl<'a> NativeArmosKnightHomePositionBridgeMut<'a> {
-    pub(crate) fn new(
-        state: &'a mut BossHomePositionsState,
-        ram: &'a mut [u8],
-        slot: usize,
-    ) -> Self {
-        Self { state, ram, slot }
+impl<'a> ArmosKnightHomePositionMut<'a> {
+    pub(crate) fn new(ram: &'a mut [u8], slot: usize) -> Self {
+        Self { ram, slot }
     }
 
     pub(crate) fn set_position(&mut self, x: u16, y: u16) {
-        self.state.set_armos_knight_home_position(self.slot, x, y);
-        self.state
-            .project_armos_knight_home_position_to_wram(self.ram, self.slot);
-        debug_assert_eq!(
-            self.state.armos_knight_home_position(self.slot),
-            BossHomePositionsState::load_from_ram(self.ram).armos_knight_home_position(self.slot),
-        );
+        if self.slot >= BOSS_HOME_POSITION_COUNT {
+            return;
+        }
+        self.ram[OVERLORD_X_HI + self.slot] = x as u8;
+        self.ram[OVERLORD_Y_HI + self.slot] = (x >> 8) as u8;
+        self.ram[OVERLORD_GEN2 + self.slot] = y as u8;
+        self.ram[OVERLORD_FLOOR + self.slot] = (y >> 8) as u8;
     }
 }
 
