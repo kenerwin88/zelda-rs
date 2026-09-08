@@ -70,3 +70,17 @@ frames from frame zero in 302.31 seconds. Both reached WRAM goldens and the
 entire 131,072-byte final RAM image match the preceding player-motion build.
 Candidate binary SHA-256:
 `1a2abf0ad04d6b276c941d3d4426448626e28b2ee768c2ce960d9aa2f81f022c`.
+
+Source commit `bf88197c2d457712d76bcf5dd954d92b94ce7c01` passed the full cold
+cached Snes9x gate in 2442.50 seconds. All 1,581,079 consecutive frames matched
+exact audio and video from frame zero, without a frame limit or checkpoint
+resume and with no reported RNG drift. All four WRAM goldens and the entire
+final 131,072-byte image match the preceding promoted player-motion binary.
+Final WRAM SHA-256:
+`316193798ccb2f771546b25443df7d417bddac8a7cac65326fa189c1264fbdb6`.
+
+The validated binary is the candidate hash above. The source commit's normal
+hook also passed the standalone 500-frame smoke and a fresh 180-frame live
+Snes9x comparison. The full-route proof uses the immutable cached oracle;
+the promoted receipt is
+`routes/full_run/receipts/native-transitions-full-av.manifest.json`.

@@ -1,0 +1,27 @@
+{
+  "binary_sha256": "1a2abf0ad04d6b276c941d3d4426448626e28b2ee768c2ce960d9aa2f81f022c",
+  "candidate_ledger": "av_hashes.jsonl",
+  "compare_from_frame": 0,
+  "comparison_lanes": {
+    "audio": true,
+    "video": true
+  },
+  "first_rng_drift": null,
+  "frames_compared": 1581079,
+  "frames_completed": 1581079,
+  "kind": "zelda3-rust-only-cached-snes9x-av-replay",
+  "matched": true,
+  "oracle_cache": "/Users/missingno/Documents/zelda3-rs/.git/parity-oracle-cache/ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18",
+  "oracle_cache_key": "ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18",
+  "oracle_cache_manifest_sha256": "4c7f88fbf327a4b3af7d3f8614d82ebb2318f11b607798d5dddb4a97b7fe2715",
+  "paired_checkpoint_interval": 20000,
+  "paired_frontier": "paired-final",
+  "resume_paired": null,
+  "rom": {
+    "path": "/Users/missingno/Documents/zelda3-rs/saves/zelda3.sfc",
+    "sha256": "66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb"
+  },
+  "schema": 1,
+  "start_frame": 0,
+  "stop_before_frame": null
+}
