@@ -2832,7 +2832,7 @@ fn live_spotlight_entry_return_stops_at_its_exact_link_subpixel_boundary() {
         iteration,
         LinkMovePositionPartialReturn {
             partial: LinkMovePositionPartial {
-                pass,
+                axis: crate::game_state::PlayerAxis::from_rom_pass(pass),
                 pending_pixel_delta,
             },
             old_x,
@@ -2908,7 +2908,7 @@ fn live_spotlight_coordinate_low_boundary_preserves_pending_high_byte_carry() {
         LinkMovePositionAfterCoordinateLowReturn {
             old_x,
             old_y,
-            pass,
+            axis: crate::game_state::PlayerAxis::from_rom_pass(pass),
             pending_coordinate_high,
         },
         false,
@@ -2983,7 +2983,11 @@ fn live_spotlight_post_coordinate_boundary_resumes_only_later_axes() {
     };
     resumed.complete_dungeon_exit_spotlight_link_movement_after_coordinates(
         iteration,
-        LinkMovePositionAfterCoordinatesReturn { old_x, old_y, pass },
+        LinkMovePositionAfterCoordinatesReturn {
+            old_x,
+            old_y,
+            axis: crate::game_state::PlayerAxis::from_rom_pass(pass),
+        },
         false,
     );
 

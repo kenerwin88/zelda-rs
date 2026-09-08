@@ -3685,7 +3685,7 @@ impl ZeldaState {
             self.game_execution_scheduler.schedule_work(
                 GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
                     iteration,
-                    pass: position_return.partial.pass,
+                    pass: position_return.partial.axis.rom_pass(),
                     pending_pixel_delta: position_return.partial.pending_pixel_delta,
                     old_x: position_return.old_x,
                     old_y: position_return.old_y,
@@ -3705,7 +3705,7 @@ impl ZeldaState {
             self.game_execution_scheduler.schedule_work(
                 GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow {
                     iteration,
-                    pass: position_return.pass,
+                    pass: position_return.axis.rom_pass(),
                     pending_coordinate_high: position_return.pending_coordinate_high,
                     old_x: position_return.old_x,
                     old_y: position_return.old_y,
@@ -3725,7 +3725,7 @@ impl ZeldaState {
             self.game_execution_scheduler.schedule_work(
                 GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates {
                     iteration,
-                    pass: position_return.pass,
+                    pass: position_return.axis.rom_pass(),
                     old_x: position_return.old_x,
                     old_y: position_return.old_y,
                 },
@@ -3812,7 +3812,9 @@ impl ZeldaState {
                     .set_water_ripple_or_grass_state(1);
             }
             self.follower_link_state_mut().set_speed_setting(6);
-            return self.link_handle_velocity_until_position_partial(pass);
+            return self.link_handle_velocity_until_position_partial(
+                crate::game_state::PlayerAxis::from_rom_pass(pass),
+            );
         }
         None
     }
@@ -3856,7 +3858,9 @@ impl ZeldaState {
                     .set_water_ripple_or_grass_state(1);
             }
             self.follower_link_state_mut().set_speed_setting(6);
-            return self.link_handle_velocity_until_position_after_coordinate_low(pass);
+            return self.link_handle_velocity_until_position_after_coordinate_low(
+                crate::game_state::PlayerAxis::from_rom_pass(pass),
+            );
         }
         None
     }
@@ -3871,7 +3875,9 @@ impl ZeldaState {
                     .set_water_ripple_or_grass_state(1);
             }
             self.follower_link_state_mut().set_speed_setting(6);
-            return self.link_handle_velocity_until_position_after_coordinates(pass);
+            return self.link_handle_velocity_until_position_after_coordinates(
+                crate::game_state::PlayerAxis::from_rom_pass(pass),
+            );
         }
         None
     }
@@ -4148,7 +4154,7 @@ impl ZeldaState {
         self.game_execution_scheduler.schedule_work(
             GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
                 iteration,
-                pass: position_return.partial.pass,
+                pass: position_return.partial.axis.rom_pass(),
                 pending_pixel_delta: position_return.partial.pending_pixel_delta,
                 old_x: position_return.old_x,
                 old_y: position_return.old_y,
@@ -4193,7 +4199,7 @@ impl ZeldaState {
         self.game_execution_scheduler.schedule_work(
             GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow {
                 iteration,
-                pass: position_return.pass,
+                pass: position_return.axis.rom_pass(),
                 pending_coordinate_high: position_return.pending_coordinate_high,
                 old_x: position_return.old_x,
                 old_y: position_return.old_y,
@@ -4218,7 +4224,7 @@ impl ZeldaState {
         self.game_execution_scheduler.schedule_work(
             GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates {
                 iteration,
-                pass: position_return.pass,
+                pass: position_return.axis.rom_pass(),
                 old_x: position_return.old_x,
                 old_y: position_return.old_y,
             },
@@ -4304,7 +4310,7 @@ impl ZeldaState {
         self.game_execution_scheduler.schedule_work(
             GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
                 iteration,
-                pass: position_return.partial.pass,
+                pass: position_return.partial.axis.rom_pass(),
                 pending_pixel_delta: position_return.partial.pending_pixel_delta,
                 old_x: position_return.old_x,
                 old_y: position_return.old_y,
@@ -4367,7 +4373,7 @@ impl ZeldaState {
         self.game_execution_scheduler.schedule_work(
             GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow {
                 iteration,
-                pass: position_return.pass,
+                pass: position_return.axis.rom_pass(),
                 pending_coordinate_high: position_return.pending_coordinate_high,
                 old_x: position_return.old_x,
                 old_y: position_return.old_y,
@@ -4401,7 +4407,7 @@ impl ZeldaState {
         self.game_execution_scheduler.schedule_work(
             GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates {
                 iteration,
-                pass: position_return.pass,
+                pass: position_return.axis.rom_pass(),
                 old_x: position_return.old_x,
                 old_y: position_return.old_y,
             },

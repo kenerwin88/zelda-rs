@@ -19,6 +19,9 @@ mod input;
 use input::PlayerInputState;
 mod presentation;
 use presentation::PlayerPresentationState;
+mod motion;
+pub(crate) use motion::PlayerAxis;
+use motion::PlayerPosition;
 mod movement;
 use movement::PlayerMovementState;
 mod actions;
@@ -38,43 +41,6 @@ fn swim_axis_index(offset: usize) -> Option<usize> {
         2 => Some(1),
         _ => None,
     }
-}
-
-/// `Link_MovePosition` loop pass (X register) -> (subpixel, coordinate) WRAM
-/// offsets: 4 = z ($2C/$24), 2 = x ($2B/$22), 0 = y ($2A/$20).
-fn link_move_position_axis_offsets(pass: u8) -> (usize, usize) {
-    match pass {
-        4 => (LINK_Z_SUBPIXEL, LINK_Z_COORD),
-        2 => (LINK_X_SUBPIXEL, LINK_X_COORD),
-        _ => (LINK_Y_SUBPIXEL, LINK_Y_COORD),
-    }
-}
-
-pub(in crate::game_state) fn move_link_axis_by_velocity(
-    ram: &mut [u8],
-    subpixel_offset: usize,
-    coord_offset: usize,
-    velocity: u8,
-) -> u16 {
-    let pos = u32::from(ram[subpixel_offset]) | (u32::from(read_le_u16(ram, coord_offset)) << 8);
-    let delta = ((velocity as i8 as i32) << 4) as u32;
-    let moved = pos.wrapping_add(delta);
-    ram[subpixel_offset] = moved as u8;
-    write_le_u16(ram, coord_offset, (moved >> 8) as u16);
-    (moved >> 8) as u16
-}
-
-pub(in crate::game_state) fn move_link_axis_by_subpixel_delta(
-    ram: &mut [u8],
-    subpixel_offset: usize,
-    coord_offset: usize,
-    delta: u16,
-) -> u16 {
-    let pos = u32::from(ram[subpixel_offset]) | (u32::from(read_le_u16(ram, coord_offset)) << 8);
-    let moved = pos.wrapping_add(delta as i16 as i32 as u32);
-    ram[subpixel_offset] = moved as u8;
-    write_le_u16(ram, coord_offset, (moved >> 8) as u16);
-    (moved >> 8) as u16
 }
 
 // ATTRIBUTES_FOR_TILE (0xfe00) owns exactly 0x200 bytes and is solely owned by

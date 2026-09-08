@@ -1375,12 +1375,12 @@ pub(crate) struct LinkActualVelocityReturn {
     pub(crate) pending_actual_y: Option<u8>,
 }
 
-/// `Link_MovePosition` suspended inside its axis loop: the `pass` axis (the
-/// loop's X register: 4 = z, 2 = y, 0 = x) has its subpixel stored and still
+/// `Link_MovePosition` suspended inside its axis loop: the current axis (the
+/// loop runs Z when airborne, then X, then Y) has its subpixel stored and still
 /// owes `pending_pixel_delta` on its coordinate; later axes are untouched.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct LinkMovePositionPartial {
-    pub(crate) pass: u8,
+    pub(crate) axis: crate::game_state::PlayerAxis,
     pub(crate) pending_pixel_delta: u16,
 }
 
@@ -1398,18 +1398,18 @@ pub(crate) struct LinkMovePositionPartialReturn {
 pub(crate) struct LinkMovePositionAfterCoordinateLowReturn {
     pub(crate) old_x: u16,
     pub(crate) old_y: u16,
-    pub(crate) pass: u8,
+    pub(crate) axis: crate::game_state::PlayerAxis,
     pub(crate) pending_coordinate_high: u8,
 }
 
-/// `Link_MovePosition` suspended after both coordinate stores for `pass`.
-/// Earlier axes and `pass` are complete; later axes and the movement tail
+/// `Link_MovePosition` suspended after both coordinate stores for `axis`.
+/// Earlier axes and `axis` are complete; later axes and the movement tail
 /// remain pending.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct LinkMovePositionAfterCoordinatesReturn {
     pub(crate) old_x: u16,
     pub(crate) old_y: u16,
-    pub(crate) pass: u8,
+    pub(crate) axis: crate::game_state::PlayerAxis,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

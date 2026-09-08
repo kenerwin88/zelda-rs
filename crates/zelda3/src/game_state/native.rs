@@ -99,7 +99,7 @@ pub(crate) use player::Bg1MovementAccumulatorState;
 pub(crate) use player::{
     FollowerLinkState, NativeBg1MovementAccumulatorBridgeMut, NativeFollowerLinkBridgeMut,
     NativePushedBlockBridgeMut, NativeSpecialExitPositionBridgeMut,
-    NativeSwimAccelerationBridgeMut, NativeTileDetectionBridgeMut, PlayerState,
+    NativeSwimAccelerationBridgeMut, NativeTileDetectionBridgeMut, PlayerAxis, PlayerState,
 };
 pub(crate) use poly::{
     NativePolyFaceCoordsBridgeMut, NativePolyProjectedVerticesBridgeMut,

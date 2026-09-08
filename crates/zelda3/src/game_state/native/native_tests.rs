@@ -67,6 +67,8 @@ mod messaging_tests;
 mod misc_tests;
 #[path = "native_tests/oam_tests.rs"]
 mod oam_tests;
+#[path = "native_tests/player_motion_tests.rs"]
+mod player_motion_tests;
 #[path = "native_tests/player_tests.rs"]
 mod player_tests;
 #[path = "native_tests/poly_tests.rs"]

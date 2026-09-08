@@ -12297,7 +12297,7 @@ impl ZeldaState {
                             old_x,
                             old_y,
                             partial: LinkMovePositionPartial {
-                                pass,
+                                axis: crate::game_state::PlayerAxis::from_rom_pass(pass),
                                 pending_pixel_delta,
                             },
                         },
@@ -12324,7 +12324,7 @@ impl ZeldaState {
                         LinkMovePositionAfterCoordinateLowReturn {
                             old_x,
                             old_y,
-                            pass,
+                            axis: crate::game_state::PlayerAxis::from_rom_pass(pass),
                             pending_coordinate_high,
                         },
                         authoritative_scheduled_caller_return_timeline.is_some(),
@@ -12364,7 +12364,7 @@ impl ZeldaState {
                     )));
                     self.complete_dungeon_exit_spotlight_link_movement_after_coordinates(
                         iteration,
-                        LinkMovePositionAfterCoordinatesReturn { old_x, old_y, pass },
+                        LinkMovePositionAfterCoordinatesReturn { old_x, old_y, axis: crate::game_state::PlayerAxis::from_rom_pass(pass) },
                         authoritative_scheduled_caller_return_timeline.is_some(),
                     );
                     if authoritative_scheduled_caller_return_timeline.is_some() {

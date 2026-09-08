@@ -945,40 +945,54 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn move_x_by_velocity(&mut self, velocity: u8) -> u16 {
-        let x = move_link_axis_by_velocity(self.ram, LINK_X_SUBPIXEL, LINK_X_COORD, velocity);
-        self.state
-            .movement
-            .set_x_with_subpixel(x, self.ram[LINK_X_SUBPIXEL]);
+    fn axis_offsets(axis: PlayerAxis) -> (usize, usize) {
+        match axis {
+            PlayerAxis::X => (LINK_X_SUBPIXEL, LINK_X_COORD),
+            PlayerAxis::Y => (LINK_Y_SUBPIXEL, LINK_Y_COORD),
+            PlayerAxis::Z => (LINK_Z_SUBPIXEL, LINK_Z_COORD),
+        }
+    }
+
+    fn axis_position(&self, axis: PlayerAxis) -> PlayerPosition {
+        // $2c is also the attract throne-fade timer. Keep its shared storage;
+        // X/Y coordinates and fractions already belong to native movement.
+        let shared_z_subpixel = if axis == PlayerAxis::Z {
+            self.ram[LINK_Z_SUBPIXEL]
+        } else {
+            0
+        };
+        self.state.movement.position(axis, shared_z_subpixel)
+    }
+
+    fn move_axis_by_subpixel_delta(&mut self, axis: PlayerAxis, delta: i16) -> u16 {
+        let mut position = self.axis_position(axis);
+        position.advance(delta);
+        self.state.movement.set_axis_position(axis, position);
+        let (subpixel_offset, coord_offset) = Self::axis_offsets(axis);
+        self.ram[subpixel_offset] = position.subpixel;
+        write_le_u16(self.ram, coord_offset, position.coordinate);
         self.debug_assert_matches_ram();
-        x
+        position.coordinate
+    }
+
+    pub(crate) fn move_axis_by_velocity(&mut self, axis: PlayerAxis, velocity: u8) -> u16 {
+        self.move_axis_by_subpixel_delta(axis, PlayerPosition::velocity_delta(velocity))
+    }
+
+    pub(crate) fn move_x_by_velocity(&mut self, velocity: u8) -> u16 {
+        self.move_axis_by_velocity(PlayerAxis::X, velocity)
     }
 
     pub(crate) fn move_y_by_velocity(&mut self, velocity: u8) -> u16 {
-        let y = move_link_axis_by_velocity(self.ram, LINK_Y_SUBPIXEL, LINK_Y_COORD, velocity);
-        self.state
-            .movement
-            .set_y_with_subpixel(y, self.ram[LINK_Y_SUBPIXEL]);
-        self.debug_assert_matches_ram();
-        y
+        self.move_axis_by_velocity(PlayerAxis::Y, velocity)
     }
 
     pub(crate) fn move_x_by_subpixel_delta(&mut self, delta: u16) -> u16 {
-        let x = move_link_axis_by_subpixel_delta(self.ram, LINK_X_SUBPIXEL, LINK_X_COORD, delta);
-        self.state
-            .movement
-            .set_x_with_subpixel(x, self.ram[LINK_X_SUBPIXEL]);
-        self.debug_assert_matches_ram();
-        x
+        self.move_axis_by_subpixel_delta(PlayerAxis::X, delta as i16)
     }
 
     pub(crate) fn move_y_by_subpixel_delta(&mut self, delta: u16) -> u16 {
-        let y = move_link_axis_by_subpixel_delta(self.ram, LINK_Y_SUBPIXEL, LINK_Y_COORD, delta);
-        self.state
-            .movement
-            .set_y_with_subpixel(y, self.ram[LINK_Y_SUBPIXEL]);
-        self.debug_assert_matches_ram();
-        y
+        self.move_axis_by_subpixel_delta(PlayerAxis::Y, delta as i16)
     }
 
     pub(crate) fn store_overworld_exit_position_from_current(&mut self) {
@@ -1409,94 +1423,53 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    /// First half of one `Link_MovePosition` axis pass (the loop's X
-    /// register: 4 = z, 2 = x, 0 = y): publish the subpixel byte and return
-    /// the coordinate delta the second half still owes.
-    pub(crate) fn move_axis_subpixel_only_by_velocity(&mut self, pass: u8, velocity: u8) -> u16 {
-        let (subpixel_offset, coord_offset) = link_move_position_axis_offsets(pass);
-        let moved = u32::from(self.ram[subpixel_offset])
-            .wrapping_add(((velocity as i8 as i32) << 4) as u32);
-        self.ram[subpixel_offset] = moved as u8;
-        let coord = read_le_u16(self.ram, coord_offset);
-        match pass {
-            2 => self.state.movement.set_x_with_subpixel(coord, moved as u8),
-            0 => self.state.movement.set_y_with_subpixel(coord, moved as u8),
-            _ => {}
-        }
+    /// Publish the fraction only; the coordinate delta remains on the source stack.
+    pub(crate) fn move_axis_subpixel_only_by_velocity(
+        &mut self,
+        axis: PlayerAxis,
+        velocity: u8,
+    ) -> u16 {
+        let mut position = self.axis_position(axis);
+        let delta = position.advance_subpixel(PlayerPosition::velocity_delta(velocity));
+        self.state.movement.set_axis_position(axis, position);
+        self.ram[Self::axis_offsets(axis).0] = position.subpixel;
         self.debug_assert_matches_ram();
-        ((moved as i32) >> 8) as u16
+        delta
     }
 
-    /// Second half of one `Link_MovePosition` axis pass: add the pending
-    /// coordinate delta.
-    pub(crate) fn apply_axis_pixel_delta(&mut self, pass: u8, delta: u16) -> u16 {
-        let (subpixel_offset, coord_offset) = link_move_position_axis_offsets(pass);
-        let coord = read_le_u16(self.ram, coord_offset).wrapping_add(delta);
-        write_le_u16(self.ram, coord_offset, coord);
-        match pass {
-            2 => self
-                .state
-                .movement
-                .set_x_with_subpixel(coord, self.ram[subpixel_offset]),
-            0 => self
-                .state
-                .movement
-                .set_y_with_subpixel(coord, self.ram[subpixel_offset]),
-            _ => self.state.movement.set_z(coord),
-        }
+    /// Complete the pending coordinate addition without touching the fraction.
+    pub(crate) fn apply_axis_pixel_delta(&mut self, axis: PlayerAxis, delta: u16) -> u16 {
+        let mut position = self.axis_position(axis);
+        position.apply_pixel_delta(delta);
+        self.state.movement.set_axis_position(axis, position);
+        write_le_u16(self.ram, Self::axis_offsets(axis).1, position.coordinate);
         self.debug_assert_matches_ram();
-        coord
+        position.coordinate
     }
 
-    /// Publish only the low byte of the current axis' pending coordinate add,
-    /// matching the source interval between `STA $20,x` and `STA $21,x`.
-    /// Returns the still-unpublished high byte of the completed addition.
-    pub(crate) fn apply_axis_pixel_delta_low(&mut self, pass: u8, delta: u16) -> u8 {
-        let (subpixel_offset, coord_offset) = link_move_position_axis_offsets(pass);
-        let completed = read_le_u16(self.ram, coord_offset).wrapping_add(delta);
-        self.ram[coord_offset] = completed as u8;
-        let mixed = read_le_u16(self.ram, coord_offset);
-        match pass {
-            2 => self
-                .state
-                .movement
-                .set_x_with_subpixel(mixed, self.ram[subpixel_offset]),
-            0 => self
-                .state
-                .movement
-                .set_y_with_subpixel(mixed, self.ram[subpixel_offset]),
-            _ => self.state.movement.set_z(mixed),
-        }
+    /// Publish only the low coordinate byte, matching `STA $20,x` before
+    /// `STA $21,x`. Return the computed high byte for the suspended store.
+    pub(crate) fn apply_axis_pixel_delta_low(&mut self, axis: PlayerAxis, delta: u16) -> u8 {
+        let mut position = self.axis_position(axis);
+        let high = position.apply_pixel_delta_low(delta);
+        self.state.movement.set_axis_position(axis, position);
+        self.ram[Self::axis_offsets(axis).1] = position.coordinate as u8;
         self.debug_assert_matches_ram();
-        (completed >> 8) as u8
+        high
     }
 
-    /// Complete the high-byte store retained by
-    /// `apply_axis_pixel_delta_low` and return the final coordinate.
-    pub(crate) fn apply_axis_coordinate_high(&mut self, pass: u8, high: u8) -> u16 {
-        let (subpixel_offset, coord_offset) = link_move_position_axis_offsets(pass);
-        self.ram[coord_offset + 1] = high;
-        let coord = read_le_u16(self.ram, coord_offset);
-        match pass {
-            2 => self
-                .state
-                .movement
-                .set_x_with_subpixel(coord, self.ram[subpixel_offset]),
-            0 => self
-                .state
-                .movement
-                .set_y_with_subpixel(coord, self.ram[subpixel_offset]),
-            _ => self.state.movement.set_z(coord),
-        }
+    /// Publish the retained high byte, preserving the low byte observed on reentry.
+    pub(crate) fn apply_axis_coordinate_high(&mut self, axis: PlayerAxis, high: u8) -> u16 {
+        let mut position = self.axis_position(axis);
+        position.apply_coordinate_high(high);
+        self.state.movement.set_axis_position(axis, position);
+        self.ram[Self::axis_offsets(axis).1 + 1] = high;
         self.debug_assert_matches_ram();
-        coord
+        position.coordinate
     }
 
     pub(crate) fn move_z_by_velocity(&mut self, velocity: u8) -> u16 {
-        let z = move_link_axis_by_velocity(self.ram, LINK_Z_SUBPIXEL, LINK_Z_COORD, velocity);
-        self.state.movement.set_z(z);
-        self.debug_assert_matches_ram();
-        z
+        self.move_axis_by_velocity(PlayerAxis::Z, velocity)
     }
 
     pub(crate) fn set_actual_z_velocity(&mut self, value: u8) {
