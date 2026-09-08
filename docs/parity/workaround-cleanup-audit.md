@@ -25,7 +25,7 @@ captured source calls 23260–23285 and compared:
 | Evidence | Result |
 | --- | --- |
 | Complete WRAM images | All 26 byte-identical |
-| Ordered NMI entry/exit, OAM DMA and receipts, register publication, OBJ diagnostics | Identical |
+| Ordered NMI entry/exit, OAM DMA and receipts, register publication | Identical |
 | General-owner latch operations | Identical; three redundant room-specific latch sets removed |
 | Full OAM at intermediate sample and composition completion | Two bytes corrected to the source values at call 23272; no new source mismatches |
 | Final native OAM, after general DMA/law selection and before source override | All 26 × 544 bytes identical before/after and identical to source |
@@ -47,6 +47,11 @@ artifacts remain under `target/cleanup-multi-area/`: the two
 `room72-full-oam-comparison.json`. These ignored artifacts are supporting
 diagnostics; the committed full-route promotion receipt is the acceptance
 record, linked from `routes/full_run/parity-frontier.json`.
+
+Final acceptance: candidate `6d9cea5d` completed the full from-zero route in
+2376.22 seconds, matching all 1,581,079 video/audio frames with no paired
+resume and no RNG drift. All four WRAM goldens matched. The receipt binds
+binary SHA-256 `f1e51fd7bd3b9c6d4ad94254f5324fbedc86f3c11e89e21189e4691f1d8ff46d`.
 
 ## Removed: constant-false initial OAM deferral
 
