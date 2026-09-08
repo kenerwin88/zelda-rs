@@ -71,4 +71,16 @@ entire 131,072-byte final image match the preceding promoted build.
 Candidate binary SHA-256:
 `8c87791df7c00151d4d483097333070ff733092d20aa6248afe8995f0d43cc1b`.
 
-Full cold parity remains required before merging this source to main.
+Source commit `ef110e9514850aeaaa61089414a271bfd3c7992f` passed the full cold
+cached Snes9x gate in 2348.68 seconds. All 1,581,079 consecutive frames matched
+exact audio and video from frame zero, without a frame limit or checkpoint
+resume and with no reported RNG drift. All four WRAM goldens and the entire
+final 131,072-byte image match the preceding promoted player-transitions build.
+Final WRAM SHA-256:
+`316193798ccb2f771546b25443df7d417bddac8a7cac65326fa189c1264fbdb6`.
+
+The validated binary is the candidate hash above. The source commit's normal
+hook also passed the standalone 500-frame smoke and a fresh 180-frame live
+Snes9x comparison. The full-route proof uses the immutable cached oracle;
+the promoted receipt is
+`routes/full_run/receipts/collision-full-av.manifest.json`.
