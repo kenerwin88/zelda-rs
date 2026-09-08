@@ -72,9 +72,8 @@ aliases, captured values, invalid writes, and unrelated-byte preservation.
 The checkpoint loader rejects obsolete layout headers before deserialization.
 
 The ownership scan removes one reachable bulk writer (85 to 84); its existing
-34 overlapping-byte findings are unchanged. Replay evidence is recorded below
-after validation, with final acceptance bound to the promoted receipt in
-`routes/full_run/parity-frontier.json`.
+34 overlapping-byte findings are unchanged. Full-route acceptance is bound
+to the promoted receipt in `routes/full_run/parity-frontier.json`.
 
 Baseline `1f4936c8` replayed from zero for 200,000 frames with temporary
 assertions comparing the overlord mirror against WRAM before every overlord
@@ -88,3 +87,14 @@ goldens, and the baseline's full 128 KiB endpoint byte for byte. All 1,736
 library tests passed (two existing tests remain ignored), together with the
 checkpoint rejection test and RAM readability guard. Production Rust is
 715 lines smaller; the new contract tests are counted separately.
+
+Candidate `4a6b2b6e` passed the full from-zero cached Snes9x route in
+2486.55 seconds: all 1,581,079 video/audio frames matched, with no paired
+resume and no reported RNG drift. All four WRAM goldens and the complete
+final 128 KiB WRAM endpoint matched the preceding validated build. The
+promoted receipt binds binary SHA-256
+`f3cf96f94c546d7ec7fee06b29ec72e7800f58341a46461d95953558c84d7aa2`.
+
+The normal commit hook also passed its standalone smoke and a fresh
+180-frame live Snes9x comparison. The full-route evidence above comes from
+the immutable cached oracle; it does not claim a fresh full-route core run.
