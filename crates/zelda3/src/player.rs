@@ -3,7 +3,9 @@
 use super::misc::chest_item_alternate;
 use super::sprite::SpriteSpawnInfo;
 use super::*;
-use crate::game_state::PlayerAxis;
+use crate::game_state::{
+    CollisionAxis, CollisionDirection, CollisionOrder, MovementProbeKind, PlayerAxis,
+};
 use crate::types::Point16U;
 
 mod player_shared;
@@ -1164,49 +1166,17 @@ impl ZeldaState {
         );
     }
 
-    pub(super) fn run_slope_collision_checks_vertical_first(&mut self) {
-        if self
-            .game_state
-            .player
-            .follower_link
-            .moving_against_diag_tile()
-            & 0x20
-            == 0
-        {
-            self.start_movement_collision_checks_y();
-        }
-        if self
-            .game_state
-            .player
-            .follower_link
-            .moving_against_diag_tile()
-            & 0x10
-            == 0
-        {
-            self.start_movement_collision_checks_x();
-        }
-    }
-
-    pub(super) fn run_slope_collision_checks_horizontal_first(&mut self) {
-        if self
-            .game_state
-            .player
-            .follower_link
-            .moving_against_diag_tile()
-            & 0x10
-            == 0
-        {
-            self.start_movement_collision_checks_x();
-        }
-        if self
-            .game_state
-            .player
-            .follower_link
-            .moving_against_diag_tile()
-            & 0x20
-            == 0
-        {
-            self.start_movement_collision_checks_y();
+    pub(super) fn run_slope_collision_checks(&mut self, order: CollisionOrder) {
+        for axis in order.axes() {
+            // The first axis may change these flags: read again for the second.
+            if !axis.blocked_by_slope(
+                self.game_state
+                    .player
+                    .follower_link
+                    .moving_against_diag_tile(),
+            ) {
+                self.start_movement_collision_checks(axis);
+            }
         }
     }
 
@@ -1538,10 +1508,15 @@ impl ZeldaState {
         if direction & 0x0c != 0 {
             self.follower_link_state_mut()
                 .increment_orthogonal_direction_count();
-            let last_direction_moved_towards = if direction & 8 != 0 { 0 } else { 1 };
+            let probe_direction =
+                CollisionDirection::along(CollisionAxis::Vertical, direction & 8 != 0);
             self.follower_link_state_mut()
-                .set_last_direction_moved_towards(last_direction_moved_towards);
-            self.tile_detect_movement_vertical_slopes(last_direction_moved_towards as u16);
+                .set_last_direction_moved_towards(probe_direction.legacy_value());
+            self.detect_player_movement(
+                CollisionAxis::Vertical,
+                probe_direction,
+                MovementProbeKind::Slope,
+            );
 
             let r14 = self.game_state.player.tile_detection.collision_bits();
             if r14 & 0x30 != 0
@@ -1604,10 +1579,15 @@ impl ZeldaState {
         if direction & 0x0c != 0 && direction & 3 != 0 {
             self.follower_link_state_mut()
                 .increment_orthogonal_direction_count();
-            let last_direction_moved_towards = if direction & 2 != 0 { 2 } else { 3 };
+            let probe_direction =
+                CollisionDirection::along(CollisionAxis::Horizontal, direction & 2 != 0);
             self.follower_link_state_mut()
-                .set_last_direction_moved_towards(last_direction_moved_towards);
-            self.tile_detect_movement_horizontal_slopes(last_direction_moved_towards as u16);
+                .set_last_direction_moved_towards(probe_direction.legacy_value());
+            self.detect_player_movement(
+                CollisionAxis::Horizontal,
+                probe_direction,
+                MovementProbeKind::Slope,
+            );
 
             let r14 = self.game_state.player.tile_detection.collision_bits();
             if r14 & 0x30 != 0
@@ -2621,11 +2601,15 @@ impl ZeldaState {
         loop {
             let y = self.game_state.player.follower_link.y().wrapping_sub(16);
             self.follower_link_state_mut().set_y(y);
-            self.tile_detect_movement_y(
-                self.game_state
-                    .player
-                    .follower_link
-                    .last_direction_moved_towards() as u16,
+            self.detect_player_movement(
+                CollisionAxis::Vertical,
+                CollisionDirection::from_legacy(
+                    self.game_state
+                        .player
+                        .follower_link
+                        .last_direction_moved_towards(),
+                ),
+                MovementProbeKind::Cardinal,
             );
             let terrain = self.game_state.player.tile_detection.normal_tiles()
                 | self
@@ -2946,67 +2930,45 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn start_movement_collision_checks_y(&mut self) {
-        if self.game_state.player.follower_link.y_velocity() == 0 {
+    pub(super) fn start_movement_collision_checks(&mut self, axis: CollisionAxis) {
+        let player = &self.game_state.player.follower_link;
+        let (velocity, position_low, in_aligned_doorway) = match axis {
+            CollisionAxis::Vertical => (
+                player.y_velocity(),
+                player.y_low(),
+                player.doorway_state() == 1,
+            ),
+            CollisionAxis::Horizontal => (
+                player.x_velocity(),
+                player.x_low(),
+                player.doorway_state() == 2,
+            ),
+        };
+        if velocity == 0 {
             return;
         }
-        let last_direction_moved_towards =
-            if self.game_state.player.follower_link.doorway_state() == 1 {
-                if self.game_state.player.follower_link.y_low() < 0x80 {
-                    0
-                } else {
-                    1
-                }
-            } else if self
-                .game_state
-                .player
-                .follower_link
-                .y_velocity_signed()
-                .is_negative()
-            {
-                0
-            } else {
-                1
-            };
-        self.follower_link_state_mut()
-            .set_last_direction_moved_towards(last_direction_moved_towards);
-        self.tile_detect_movement_y(last_direction_moved_towards as u16);
-        if self.game_state.world.location.is_indoors() {
-            self.start_movement_collision_checks_y_handle_indoors();
+        let negative = if in_aligned_doorway {
+            position_low < 0x80
         } else {
-            self.start_movement_collision_checks_y_handle_outdoors();
-        }
-    }
-
-    pub(super) fn start_movement_collision_checks_x(&mut self) {
-        if self.game_state.player.follower_link.x_velocity() == 0 {
-            return;
-        }
-        let last_direction_moved_towards =
-            if self.game_state.player.follower_link.doorway_state() == 2 {
-                if self.game_state.player.follower_link.x_low() < 0x80 {
-                    2
-                } else {
-                    3
-                }
-            } else if self
-                .game_state
-                .player
-                .follower_link
-                .x_velocity_signed()
-                .is_negative()
-            {
-                2
-            } else {
-                3
-            };
+            (velocity as i8).is_negative()
+        };
+        let direction = CollisionDirection::along(axis, negative);
         self.follower_link_state_mut()
-            .set_last_direction_moved_towards(last_direction_moved_towards);
-        self.tile_detect_movement_x(last_direction_moved_towards as u16);
-        if self.game_state.world.location.is_indoors() {
-            self.start_movement_collision_checks_x_handle_indoors();
-        } else {
-            self.start_movement_collision_checks_x_handle_outdoors();
+            .set_last_direction_moved_towards(direction.legacy_value());
+        self.detect_player_movement(axis, direction, MovementProbeKind::Cardinal);
+        match (axis, self.game_state.world.location.is_indoors()) {
+            (CollisionAxis::Vertical, true) => {
+                self.start_movement_collision_checks_y_handle_indoors()
+            }
+            (CollisionAxis::Vertical, false) => {
+                self.start_movement_collision_checks_y_handle_outdoors()
+            }
+            (CollisionAxis::Horizontal, true) => {
+                self.start_movement_collision_checks_x_handle_indoors()
+            }
+            (CollisionAxis::Horizontal, false) => {
+                self.start_movement_collision_checks_x_handle_outdoors()
+            }
         }
     }
 
@@ -4591,18 +4553,17 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .cache_copied_position_from_current();
 
-        self.tile_detect_movement_x(
-            if self
-                .game_state
-                .player
-                .follower_link
-                .x_velocity_signed()
-                .is_negative()
-            {
-                2
-            } else {
-                3
-            },
+        self.detect_player_movement(
+            CollisionAxis::Horizontal,
+            CollisionDirection::along(
+                CollisionAxis::Horizontal,
+                self.game_state
+                    .player
+                    .follower_link
+                    .x_velocity_signed()
+                    .is_negative(),
+            ),
+            MovementProbeKind::Cardinal,
         );
         if self.game_state.player.tile_detection.slope_collision_bits() & 5 == 0 {
             self.follower_link_state_mut()
@@ -4637,18 +4598,17 @@ impl ZeldaState {
         self.follower_link_state_mut().set_x(copied_x);
         self.follower_link_state_mut().set_x_velocity(xd);
 
-        self.tile_detect_movement_y(
-            if self
-                .game_state
-                .player
-                .follower_link
-                .y_velocity_signed()
-                .is_negative()
-            {
-                0
-            } else {
-                1
-            },
+        self.detect_player_movement(
+            CollisionAxis::Vertical,
+            CollisionDirection::along(
+                CollisionAxis::Vertical,
+                self.game_state
+                    .player
+                    .follower_link
+                    .y_velocity_signed()
+                    .is_negative(),
+            ),
+            MovementProbeKind::Cardinal,
         );
         if self.game_state.player.tile_detection.slope_collision_bits() & 5 == 0 {
             self.follower_link_state_mut()
@@ -4722,6 +4682,40 @@ impl ZeldaState {
             .clear_moving_against_diag_tile();
     }
 
+    fn check_primary_collision_layer(&mut self) {
+        let mut order = CollisionOrder::VerticalFirst;
+        if self.game_state.dungeon.room_load.header_collision() >= 2
+            && self.game_state.dungeon.room_load.header_collision() != 3
+        {
+            self.follower_link_state_mut().set_tile_coll_flag(2);
+            self.player_tile_detect_nearby();
+            let collision_bits = self.game_state.player.tile_detection.collision_bits() as u8;
+            self.tile_detect_position_mut()
+                .set_tile_collision_bits_primary(collision_bits);
+            if self
+                .game_state
+                .player
+                .tile_detection
+                .tile_collision_bits_primary()
+                != 0
+            {
+                let floor_x_velocity =
+                    self.game_state.dungeon.moving_floor.floor_x_velocity_low() as u16;
+                let floor_y_velocity =
+                    self.game_state.dungeon.moving_floor.floor_y_velocity_low() as u16;
+                self.follower_link_state_mut()
+                    .add_movement_velocity_delta(floor_x_velocity, floor_y_velocity);
+                order = CollisionOrder::for_moving_floor(
+                    self.game_state.player.tile_detection.collision_bits() as u8,
+                    self.game_state.player.follower_link.x_velocity(),
+                    self.game_state.player.follower_link.y_velocity(),
+                    self.game_state.dungeon.moving_floor.floor_y_velocity_low() as i8,
+                );
+            }
+        }
+        self.run_slope_collision_checks(order);
+    }
+
     pub(super) fn link_handle_cardinal_collision(&mut self) {
         self.tile_detect_position_mut().clear_diag_state();
         self.tile_detect_position_mut().clear_diagonal_tile();
@@ -4745,53 +4739,7 @@ impl ZeldaState {
         };
 
         if can_double_layer && self.check_if_room_needs_double_layer_check() {
-            if self.game_state.dungeon.room_load.header_collision() >= 2
-                && self.game_state.dungeon.room_load.header_collision() != 3
-            {
-                self.follower_link_state_mut().set_tile_coll_flag(2);
-                self.player_tile_detect_nearby();
-                let collision_bits = self.game_state.player.tile_detection.collision_bits() as u8;
-                self.tile_detect_position_mut()
-                    .set_tile_collision_bits_primary(collision_bits);
-                if self
-                    .game_state
-                    .player
-                    .tile_detection
-                    .tile_collision_bits_primary()
-                    != 0
-                {
-                    let floor_x_velocity =
-                        self.game_state.dungeon.moving_floor.floor_x_velocity_low() as u16;
-                    let floor_y_velocity =
-                        self.game_state.dungeon.moving_floor.floor_y_velocity_low() as u16;
-                    self.follower_link_state_mut()
-                        .add_movement_velocity_delta(floor_x_velocity, floor_y_velocity);
-
-                    let a = self.game_state.player.tile_detection.collision_bits() as u8;
-                    let horizontal_first = if a == 12 || a == 3 {
-                        false
-                    } else if a == 10 || a == 5 {
-                        true
-                    } else if (a & 0x0c) == 0 && (a & 3) == 0 {
-                        false
-                    } else if self.game_state.player.follower_link.y_velocity() != 0 {
-                        true
-                    } else if self.game_state.player.follower_link.x_velocity() == 0 {
-                        false
-                    } else {
-                        (self.game_state.dungeon.moving_floor.floor_y_velocity_low() as i8) >= 0
-                    };
-                    if horizontal_first {
-                        self.run_slope_collision_checks_horizontal_first();
-                    } else {
-                        self.run_slope_collision_checks_vertical_first();
-                    }
-                } else {
-                    self.run_slope_collision_checks_vertical_first();
-                }
-            } else {
-                self.run_slope_collision_checks_vertical_first();
-            }
+            self.check_primary_collision_layer();
             self.create_velocity_from_moving_background();
         }
 
@@ -4826,13 +4774,13 @@ impl ZeldaState {
                 }
             }
             self.follower_link_state_mut().set_tile_coll_flag(1);
-            self.run_slope_collision_checks_vertical_first();
+            self.run_slope_collision_checks(CollisionOrder::VerticalFirst);
         } else if collision == 3 {
             self.follower_link_state_mut().set_tile_coll_flag(1);
-            self.run_slope_collision_checks_horizontal_first();
+            self.run_slope_collision_checks(CollisionOrder::HorizontalFirst);
         } else if collision == 4 || moved {
             self.follower_link_state_mut().set_tile_coll_flag(1);
-            self.run_slope_collision_checks_vertical_first();
+            self.run_slope_collision_checks(CollisionOrder::VerticalFirst);
         } else if !self
             .game_state
             .player
@@ -8325,12 +8273,15 @@ impl ZeldaState {
                 .y()
                 .wrapping_add(HOP_SOUTH_Y[dir] as i16 as u16);
             self.follower_link_state_mut().set_y(y);
-            self.tile_detect_movement_y(
-                self.game_state
-                    .player
-                    .follower_link
-                    .last_direction_moved_towards()
-                    .into(),
+            self.detect_player_movement(
+                CollisionAxis::Vertical,
+                CollisionDirection::from_legacy(
+                    self.game_state
+                        .player
+                        .follower_link
+                        .last_direction_moved_towards(),
+                ),
+                MovementProbeKind::Cardinal,
             );
             let terrain = self.game_state.player.tile_detection.normal_tiles()
                 | self.game_state.player.tile_detection.pit_tile_word()
@@ -8430,12 +8381,15 @@ impl ZeldaState {
             .y()
             .wrapping_add(HOP_SOUTH_Y[dir] as i16 as u16);
         self.follower_link_state_mut().set_y(y);
-        self.tile_detect_movement_y(
-            self.game_state
-                .player
-                .follower_link
-                .last_direction_moved_towards()
-                .into(),
+        self.detect_player_movement(
+            CollisionAxis::Vertical,
+            CollisionDirection::from_legacy(
+                self.game_state
+                    .player
+                    .follower_link
+                    .last_direction_moved_towards(),
+            ),
+            MovementProbeKind::Cardinal,
         );
 
         let terrain = self.game_state.player.tile_detection.normal_tiles()
@@ -8503,12 +8457,15 @@ impl ZeldaState {
                 .x()
                 .wrapping_add(HOP_HORIZ_X_STEP[table_idx] as i16 as u16);
             self.follower_link_state_mut().set_x(x);
-            self.tile_detect_movement_x(
-                self.game_state
-                    .player
-                    .follower_link
-                    .last_direction_moved_towards()
-                    .into(),
+            self.detect_player_movement(
+                CollisionAxis::Horizontal,
+                CollisionDirection::from_legacy(
+                    self.game_state
+                        .player
+                        .follower_link
+                        .last_direction_moved_towards(),
+                ),
+                MovementProbeKind::Cardinal,
             );
 
             let terrain = self.game_state.player.tile_detection.normal_tiles()
@@ -8678,12 +8635,15 @@ impl ZeldaState {
                 .y()
                 .wrapping_add(LEDGE_DIAG_DY[dir] as i16 as u16);
             self.follower_link_state_mut().set_y(y);
-            self.tile_detect_movement_y(
-                self.game_state
-                    .player
-                    .follower_link
-                    .last_direction_moved_towards()
-                    .into(),
+            self.detect_player_movement(
+                CollisionAxis::Vertical,
+                CollisionDirection::from_legacy(
+                    self.game_state
+                        .player
+                        .follower_link
+                        .last_direction_moved_towards(),
+                ),
+                MovementProbeKind::Cardinal,
             );
             let scratch = LEDGE_DIAG_BITS[o];
             let terrain = self.game_state.player.tile_detection.normal_tiles()

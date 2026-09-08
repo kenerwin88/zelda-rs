@@ -2,14 +2,9 @@
 
 use super::*;
 use crate::game_state::constants::MENU_PREV_JOYPAD_H;
-
-const TILE_DETECT_CARDINAL_AXIS_OFFSETS: [u8; 4] = [8, 24, 0, 15];
-const TILE_DETECT_CARDINAL_LOW_SIDE_OFFSETS: [u8; 4] = [0, 0, 8, 8];
-const TILE_DETECT_CARDINAL_CENTER_OFFSETS: [u8; 4] = [8, 8, 16, 16];
-const TILE_DETECT_CARDINAL_HIGH_SIDE_OFFSETS: [u8; 4] = [15, 15, 23, 23];
-const TILE_DETECT_SLOPE_AXIS_OFFSETS: [i8; 4] = [7, 24, -1, 16];
-const TILE_DETECT_SLOPE_LOW_SIDE_OFFSETS: [u8; 4] = [0, 0, 8, 8];
-const TILE_DETECT_SLOPE_HIGH_SIDE_OFFSETS: [u8; 4] = [15, 15, 23, 23];
+use crate::game_state::{
+    CollisionAxis, CollisionDirection, MovementProbe, MovementProbeKind, PlayerFootprint,
+};
 const HOOKSHOT_SINGLE_LAYER_CHECK_X_OFFSETS: [u8; 8] = [0, 15, 0, 15, 0, 0, 8, 8];
 const HOOKSHOT_SINGLE_LAYER_CHECK_Y_OFFSETS: [u8; 8] = [0, 0, 7, 7, 0, 15, 0, 15];
 const DOOR_NUDGE_DETECT_Y_OFFSETS: [i8; 4] = [8, 23, 16, 16];
@@ -40,106 +35,57 @@ impl ZeldaState {
         attr
     }
 
-    pub(super) fn tile_detect_movement_y(&mut self, direction: u16) {
-        assert!(direction < 4);
+    pub(super) fn detect_player_movement(
+        &mut self,
+        axis: CollisionAxis,
+        direction: CollisionDirection,
+        kind: MovementProbeKind,
+    ) {
         self.tile_detect_reset_state();
         self.tile_detect_position_mut().clear_pit_tile();
-        let direction = direction as usize;
         let mask = self.game_state.player.tile_detection.location_calc_mask();
-        let link_y = self.game_state.player.follower_link.y();
-        let link_x = self.game_state.player.follower_link.x();
-        let detect_y = link_y.wrapping_add(TILE_DETECT_CARDINAL_AXIS_OFFSETS[direction] as u16);
-        self.tile_detect_position_mut().set_y(detect_y);
-        let y = detect_y & mask;
-        let x0 = (link_x.wrapping_add(TILE_DETECT_CARDINAL_LOW_SIDE_OFFSETS[direction] as u16)
-            & mask)
-            >> 3;
-        let x1 = (link_x.wrapping_add(TILE_DETECT_CARDINAL_CENTER_OFFSETS[direction] as u16)
-            & mask)
-            >> 3;
-        let x2 = (link_x.wrapping_add(TILE_DETECT_CARDINAL_HIGH_SIDE_OFFSETS[direction] as u16)
-            & mask)
-            >> 3;
-        self.tile_detect_position_mut().set_tile_probe_anchor(x2);
-        self.tile_detection_execute(x0, y, 1);
-        self.tile_detection_execute(x1, y, 2);
-        self.tile_detection_execute(x2, y, 4);
-    }
+        let player = &self.game_state.player.follower_link;
+        let probe = MovementProbe::new(player.x(), player.y(), axis, direction, kind);
+        let points = probe.points();
 
-    pub(super) fn tile_detect_movement_x(&mut self, direction: u16) {
-        assert!(direction < 4);
-        self.tile_detect_reset_state();
-        self.tile_detect_position_mut().clear_pit_tile();
-        let direction = direction as usize;
-        let mask = self.game_state.player.tile_detection.location_calc_mask();
-        let link_y = self.game_state.player.follower_link.y();
-        let link_x = self.game_state.player.follower_link.x();
-        let x =
-            (link_x.wrapping_add(TILE_DETECT_CARDINAL_AXIS_OFFSETS[direction] as u16) & mask) >> 3;
-        let y0 =
-            link_y.wrapping_add(TILE_DETECT_CARDINAL_LOW_SIDE_OFFSETS[direction] as u16) & mask;
-        let y1_pos = link_y.wrapping_add(TILE_DETECT_CARDINAL_CENTER_OFFSETS[direction] as u16);
-        self.tile_detect_position_mut().set_y(y1_pos);
-        let y1 = y1_pos & mask;
-        let y2_pos = link_y.wrapping_add(TILE_DETECT_CARDINAL_HIGH_SIDE_OFFSETS[direction] as u16);
-        self.tile_detect_position_mut().set_x(y2_pos);
-        let y2 = y2_pos & mask;
-        self.tile_detection_execute(x, y0, 1);
-        self.tile_detection_execute(x, y1, 2);
-        self.tile_detection_execute(x, y2, 4);
-    }
-
-    pub(super) fn tile_detect_movement_vertical_slopes(&mut self, direction: u16) {
-        assert!(direction < 4);
-        self.tile_detect_reset_state();
-        self.tile_detect_position_mut().clear_pit_tile();
-        let direction = direction as usize;
-        let mask = self.game_state.player.tile_detection.location_calc_mask();
-        let link_y = self.game_state.player.follower_link.y();
-        let link_x = self.game_state.player.follower_link.x();
-        let y = link_y.wrapping_add(TILE_DETECT_SLOPE_AXIS_OFFSETS[direction] as i16 as u16) & mask;
-        let x0 =
-            (link_x.wrapping_add(TILE_DETECT_SLOPE_LOW_SIDE_OFFSETS[direction] as u16) & mask) >> 3;
-        let x1 = (link_x.wrapping_add(TILE_DETECT_SLOPE_HIGH_SIDE_OFFSETS[direction] as u16)
-            & mask)
-            >> 3;
-        self.tile_detection_execute(x0, y, 1);
-        self.tile_detection_execute(x1, y, 2);
-    }
-
-    pub(super) fn tile_detect_movement_horizontal_slopes(&mut self, direction: u16) {
-        assert!(direction < 4);
-        self.tile_detect_reset_state();
-        self.tile_detect_position_mut().clear_pit_tile();
-        let direction = direction as usize;
-        let mask = self.game_state.player.tile_detection.location_calc_mask();
-        let link_y = self.game_state.player.follower_link.y();
-        let link_x = self.game_state.player.follower_link.x();
-        let x = (link_x.wrapping_add(TILE_DETECT_SLOPE_AXIS_OFFSETS[direction] as i16 as u16)
-            & mask)
-            >> 3;
-        let y0 = link_y.wrapping_add(TILE_DETECT_SLOPE_LOW_SIDE_OFFSETS[direction] as u16) & mask;
-        let y1 = link_y.wrapping_add(TILE_DETECT_SLOPE_HIGH_SIDE_OFFSETS[direction] as u16) & mask;
-        self.tile_detection_execute(x, y0, 1);
-        self.tile_detection_execute(x, y1, 2);
+        // Preserve the original scratch stores before any tile is executed.
+        // Horizontal detection stores a Y position in probe_x; slope probes
+        // leave both position words and the anchor untouched.
+        if kind == MovementProbeKind::Cardinal {
+            match axis {
+                CollisionAxis::Vertical => {
+                    self.tile_detect_position_mut().set_y(points[0].y);
+                    self.tile_detect_position_mut()
+                        .set_tile_probe_anchor((points[2].x & mask) >> 3);
+                }
+                CollisionAxis::Horizontal => {
+                    self.tile_detect_position_mut().set_y(points[1].y);
+                    self.tile_detect_position_mut().set_x(points[2].y);
+                }
+            }
+        }
+        // Result bits follow execution order. The high-side slope sample is
+        // the second probe (bit 2), whereas a cardinal high side uses bit 4.
+        for (index, point) in points.iter().enumerate() {
+            self.tile_detection_execute((point.x & mask) >> 3, point.y & mask, 1 << index);
+        }
     }
 
     pub(super) fn player_tile_detect_nearby(&mut self) {
         self.tile_detect_reset_state();
         self.tile_detect_position_mut().clear_pit_tile();
+        self.detect_player_footprint(PlayerFootprint::Body);
+    }
+
+    fn detect_player_footprint(&mut self, footprint: PlayerFootprint) {
         let mask = self.game_state.player.tile_detection.location_calc_mask();
-        let link_y = self.game_state.player.follower_link.y();
-        let link_x = self.game_state.player.follower_link.x();
-        let x0 = (link_x.wrapping_add(TILE_DETECT_CARDINAL_LOW_SIDE_OFFSETS[0] as u16) & mask) >> 3;
-        let x1 =
-            (link_x.wrapping_add(TILE_DETECT_CARDINAL_HIGH_SIDE_OFFSETS[0] as u16) & mask) >> 3;
-        let y0 = link_y.wrapping_add(TILE_DETECT_CARDINAL_LOW_SIDE_OFFSETS[2] as u16) & mask;
-        let y1 = link_y.wrapping_add(TILE_DETECT_CARDINAL_HIGH_SIDE_OFFSETS[2] as u16) & mask;
-        self.tile_detect_position_mut().set_tile_probe_anchor(y0);
-        self.tile_detection_execute(x0, y0, 8);
-        self.tile_detection_execute(x0, y1, 2);
-        self.tile_detection_execute(x1, y0, 4);
-        self.tile_detection_execute(x1, y1, 1);
+        let player = &self.game_state.player.follower_link;
+        let corners = footprint.corners(player.x(), player.y());
+        self.tile_detect_position_mut()
+            .set_tile_probe_anchor(corners[0].1.y & mask);
+        for (corner, point) in corners {
+            self.tile_detection_execute((point.x & mask) >> 3, point.y & mask, corner.result_bit());
+        }
     }
 
     pub(super) fn hookshot_check_tile_collision(&mut self, k: i32) {
@@ -251,18 +197,7 @@ impl ZeldaState {
     pub(super) fn tile_check_for_mirror_bonk(&mut self) {
         self.tile_detect_position_mut().clear_pit_tile();
         self.tile_detect_reset_state();
-        let mask = self.game_state.player.tile_detection.location_calc_mask();
-        let link_y = self.game_state.player.follower_link.y();
-        let link_x = self.game_state.player.follower_link.x();
-        let x0 = (link_x.wrapping_add(2) & mask) >> 3;
-        let x1 = (link_x.wrapping_add(13) & mask) >> 3;
-        let y0 = link_y.wrapping_add(10) & mask;
-        let y1 = link_y.wrapping_add(21) & mask;
-        self.tile_detect_position_mut().set_tile_probe_anchor(y0);
-        self.tile_detection_execute(x0, y0, 8);
-        self.tile_detection_execute(x0, y1, 2);
-        self.tile_detection_execute(x1, y0, 4);
-        self.tile_detection_execute(x1, y1, 1);
+        self.detect_player_footprint(PlayerFootprint::MirrorClearance);
     }
 
     pub(super) fn tile_detect_sword_swing_deep_in_door(&mut self, dw: u8) {

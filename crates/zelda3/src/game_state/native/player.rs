@@ -12,6 +12,11 @@ macro_rules! forward_player_component {
     };
 }
 
+mod collision;
+pub(crate) use collision::{
+    CollisionAxis, CollisionDirection, CollisionOrder, MovementProbe, MovementProbeKind,
+    PlayerFootprint,
+};
 mod compatibility;
 mod transitions;
 pub(crate) use compatibility::NativeFollowerLinkBridgeMut;

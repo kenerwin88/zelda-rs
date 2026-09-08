@@ -97,9 +97,11 @@ pub(crate) use oam::{NativeOamStateBridgeMut, OamState};
 #[cfg(test)]
 pub(crate) use player::Bg1MovementAccumulatorState;
 pub(crate) use player::{
-    FollowerLinkState, NativeBg1MovementAccumulatorBridgeMut, NativeFollowerLinkBridgeMut,
+    CollisionAxis, CollisionDirection, CollisionOrder, FollowerLinkState, MovementProbe,
+    MovementProbeKind, NativeBg1MovementAccumulatorBridgeMut, NativeFollowerLinkBridgeMut,
     NativePushedBlockBridgeMut, NativeSpecialExitPositionBridgeMut,
-    NativeSwimAccelerationBridgeMut, NativeTileDetectionBridgeMut, PlayerAxis, PlayerState,
+    NativeSwimAccelerationBridgeMut, NativeTileDetectionBridgeMut, PlayerAxis, PlayerFootprint,
+    PlayerState,
 };
 pub(crate) use poly::{
     NativePolyFaceCoordsBridgeMut, NativePolyProjectedVerticesBridgeMut,
