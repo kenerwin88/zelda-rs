@@ -85,3 +85,16 @@ The completed candidate passed all 1,747 library tests (two existing ignored
 tests) and the RAM readability guard. Its from-zero 200,000-frame cached A/V
 run matched every audio/video frame in 300.81 seconds, both reached WRAM
 goldens, and all 131,072 bytes of the baseline's WRAM endpoint.
+
+Source commit `b49d1c55` passed the full from-zero cached Snes9x gate in
+2418.03 seconds: all 1,581,079 consecutive audio/video frames matched, with
+no checkpoint resume and no reported RNG drift. All four WRAM goldens and
+the complete final 128 KiB WRAM endpoint matched the preceding promoted
+native-item-awards build. Binary SHA-256:
+`836c301339977984043f0aa698f411152c3645d71fb618e719a2b861fae4d31e`.
+
+The source commit's normal hook passed the standalone smoke and a fresh
+180-frame live Snes9x comparison. The full-route proof uses the immutable
+cached Snes9x oracle; it does not claim a fresh full-route core execution.
+The promoted manifest is committed in
+`routes/full_run/receipts/native-save-full-av.manifest.json`.
