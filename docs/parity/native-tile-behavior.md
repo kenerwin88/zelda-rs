@@ -63,4 +63,16 @@ entire 131,072-byte final image match the preceding promoted collision build.
 Candidate binary SHA-256:
 `da8d26f66592110012c4959ecf5c7a790945f83c647388c200fe7213777195e4`.
 
-Full cold parity remains required before merging this source to main.
+Source commit `d979dddbd08b4365a96da63a08124be7d2e309e7` passed the full
+cold route: 1,581,079 consecutive exact audio/video frames in 2,361.95 seconds
+(39.4 minutes), from frame zero with no frame limit or checkpoint resume.
+The comparison used the immutable Snes9x oracle cache; it did not reload the
+live core. No RNG drift was reported. The normal source commit hook also
+passed its 500-frame standalone and fresh 180-frame live Snes9x checks.
+
+All four WRAM goldens (60,000, 150,470, 500,000, and 732,000) match. The full
+131,072-byte final WRAM image is identical to the preceding promoted collision
+build, SHA-256:
+`316193798ccb2f771546b25443df7d417bddac8a7cac65326fa189c1264fbdb6`.
+The promoted receipt is
+`routes/full_run/receipts/tile-behavior-full-av.manifest.json`.
