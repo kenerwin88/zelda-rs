@@ -629,14 +629,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_blind_maiden_before_follower_graphics(&mut self, k: usize) -> bool {
-        if self
-            .game_state
-            .inventory
-            .save_progress
-            .dungeon_info_word(0xac)
-            & 0x0800
-            == 0
-        {
+        if self.saved_room_flags(0xac) & 0x0800 == 0 {
             self.sprite_slot_view_mut(k).increment_ignore_projectile();
             if self.game_state.sprites.follower_runtime.indicator() != 6 {
                 self.follower_state_mut().set_indicator(6);
@@ -729,14 +722,7 @@ impl ZeldaState {
         {
             return;
         }
-        if self
-            .game_state
-            .inventory
-            .save_progress
-            .dungeon_info_word(0x109)
-            & 0x80
-            != 0
-        {
+        if self.saved_room_flags(0x109) & 0x80 != 0 {
             self.magic_shop_assistant_spawn_item(k, 1, -16, 0);
         }
     }

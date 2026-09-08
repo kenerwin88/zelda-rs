@@ -1360,55 +1360,32 @@ impl ZeldaState {
             "SaveGameFile checksum prefix exceeds the source save block",
         );
         let offs = self.selected_save_slot_offset();
-        // C copies the LIVE save block from WRAM (ram[SAVE_DUNG_INFO..+0x500]) and
-        // checksums it from WRAM. The SaveProgress native model keeps a `dungeon_info`
-        // shadow of this block, but that shadow goes stale for bytes owned by OTHER
-        // native states (e.g. LINK_HEALTH_CURRENT 0xf36d, owned by player_resources,
-        // whose set_current_health write-throughs ram but not this shadow). Reading the
-        // shadow saved a stale health to SRAM (and a checksum over the stale block),
-        // surfacing on the next LoadFile. Mirror C: copy + checksum from live ram.
-        let dung_info = self.ram[SAVE_DUNG_INFO..SAVE_DUNG_INFO + 0x500].to_vec();
-        if offs + 0x500 <= self.sram.len() {
-            self.sram[offs..offs + 0x500].copy_from_slice(&dung_info);
-        }
-        if offs + 0xf00 + 0x500 <= self.sram.len() {
-            self.sram[offs + 0xf00..offs + 0xf00 + 0x500].copy_from_slice(&dung_info);
-        }
-
-        let mut accumulated_word_sum = 0u16;
-        for word in 0..usize::from(completed_checksum_words) {
-            accumulated_word_sum = accumulated_word_sum
-                .wrapping_add(read_le_u16(&self.ram, SAVE_DUNG_INFO + word * 2));
-        }
-        accumulated_word_sum
+        // Observe the published image at this source boundary. It includes all
+        // owners and reserved bytes without maintaining a second native save bank.
+        let save = crate::game_state::save_format::LiveSave::from_wram(&self.ram);
+        save.copy_to_sram(&mut self.sram, offs);
+        save.sum_words(0..completed_checksum_words, 0)
     }
 
     /// Resume `SaveGameFile` after a source checksum-loop boundary.
     pub(super) fn save_game_file_finish_checksum(
         &mut self,
         completed_checksum_words: u16,
-        mut accumulated_word_sum: u16,
+        accumulated_word_sum: u16,
     ) {
         let total_checksum_words = 0x4fe / 2;
         assert!(
             completed_checksum_words <= total_checksum_words,
             "SaveGameFile checksum continuation exceeds the source save block",
         );
-        for word in usize::from(completed_checksum_words)..usize::from(total_checksum_words) {
-            accumulated_word_sum = accumulated_word_sum
-                .wrapping_add(read_le_u16(&self.ram, SAVE_DUNG_INFO + word * 2));
-        }
-        let checksum = 0x5a5au16.wrapping_sub(accumulated_word_sum);
+        let sum = crate::game_state::save_format::LiveSave::from_wram(&self.ram).sum_words(
+            completed_checksum_words..total_checksum_words,
+            accumulated_word_sum,
+        );
+        let checksum = crate::game_state::save_format::LiveSave::checksum(sum);
         let offs = self.selected_save_slot_offset();
-        // Keep the shadow + ram[SAVE_DUNG_INFO+0x4fe] coherent so the frame-end bulk
-        // projection of dungeon_info doesn't re-stamp a stale checksum over ram.
         self.save_progress_mut().set_dungeon_info_checksum(checksum);
-        if offs + 0x500 <= self.sram.len() {
-            write_le_u16(&mut self.sram, offs + 0x4fe, checksum);
-        }
-        if offs + 0xf00 + 0x500 <= self.sram.len() {
-            write_le_u16(&mut self.sram, offs + 0x4fe + 0xf00, checksum);
-        }
+        crate::game_state::save_format::write_sram_checksum(&mut self.sram, offs, checksum);
         self.zelda_write_sram();
     }
 
@@ -2229,7 +2206,7 @@ impl ZeldaState {
     /// Complete the source-ordered dungeon-info clear after its reset-state
     /// prefix has already been published.
     pub(super) fn death_func15_save_quit_finish_dungeon_info_clear(&mut self) {
-        self.save_progress_mut().clear_dungeon_info();
+        self.clear_live_save();
     }
 
     /// The overworld song-bank upload — the ROM's NMI-masked tail of the
@@ -2445,21 +2422,10 @@ impl ZeldaState {
     pub(super) fn FluteMenu_LoadSelectedScreenPrefix(&mut self) {
         self.clear_overworld_event_bits(0x3b, 0x20);
         self.clear_overworld_event_bits(0x7b, 0x20);
-        let dung_267 = self
-            .game_state
-            .inventory
-            .save_progress
-            .dungeon_info_word(267)
-            & !0x0080;
-        let dung_40 = self
-            .game_state
-            .inventory
-            .save_progress
-            .dungeon_info_word(40)
-            & !0x0100;
-        self.save_progress_mut()
-            .set_dungeon_info_word(267, dung_267);
-        self.save_progress_mut().set_dungeon_info_word(40, dung_40);
+        let dung_267 = self.saved_room_flags(267) & !0x0080;
+        let dung_40 = self.saved_room_flags(40) & !0x0100;
+        self.set_saved_room_flags(267, dung_267);
+        self.set_saved_room_flags(40, dung_40);
     }
 
     pub(super) fn FluteMenu_LoadSelectedScreenAfterTransport(&mut self) {
@@ -3384,12 +3350,7 @@ impl ZeldaState {
             let yv = if v == 0x0f {
                 0x51
             } else {
-                r14 = (self
-                    .game_state
-                    .inventory
-                    .save_progress
-                    .dungeon_info_word(usize::from(v))
-                    & 0x0f) as u8;
+                r14 = (self.saved_room_flags(usize::from(v)) & 0x0f) as u8;
                 let mut k = 0usize;
                 let mut count = 0usize;
                 while k < curp.len() && curp[k] != v {
@@ -3883,12 +3844,7 @@ impl ZeldaState {
     pub(super) fn DungeonMap_DrawBossIcon(&mut self, spr_pos: usize) -> usize {
         let dung = usize::from(self.game_state.inventory.save_progress.palace_index_x2() >> 1)
             .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
-        if (self
-            .game_state
-            .inventory
-            .save_progress
-            .dungeon_info_word(usize::from(DUNGEON_MAP_BOSS_ROOM_BY_DUNGEON[dung]))
-            & 0x0800)
+        if (self.saved_room_flags(usize::from(DUNGEON_MAP_BOSS_ROOM_BY_DUNGEON[dung])) & 0x0800)
             != 0
             || !self
                 .game_state
@@ -4211,7 +4167,7 @@ impl ZeldaState {
         let save_offset = self.game_state.save_load_transfer.source_offset_usize();
         if save_offset + 0x500 <= self.sram.len() {
             let save = self.sram[save_offset..save_offset + 0x500].to_vec();
-            self.save_progress_mut().copy_dungeon_info_from(&save);
+            self.replace_live_save(&save);
         }
 
         self.set_bg_tile_animation_countdown(7);

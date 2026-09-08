@@ -28,7 +28,7 @@ use crate::game_state::constants::{
     VWF_ARR,
 };
 use crate::game_state::{
-    lanmola_flat_trail_entry_from_ram, loaded_room_data_word, ArmosKnightHomePositionMut,
+    lanmola_flat_trail_entry_from_ram, ArmosKnightHomePositionMut,
     BirdTravelDestinationState, BossHomePositionRead, CachedSpriteRead, CompatibilityBytesView,
     CompatibilityBytesViewMut, DungeonStairList, FollowerLinkState, GameState, GarnishSlotMut,
     GarnishSlotView, GraphicsDecompressionScratch, HappinessPondRupeeSnapshot, HudStateRead,

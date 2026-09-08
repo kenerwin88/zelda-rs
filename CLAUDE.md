@@ -88,6 +88,11 @@ It does not replace the pinned live Snes9x A/V authority.
   grants, with WRAM encoding confined to compatibility methods. Do not restore
   item-address tables or resource copies in equipment. Publication timing still
   matters while legacy consumers remain; see `docs/parity/native-item-awards.md`.
+- Save progress owns 320 room records and named progress/death fields, not a
+  cache of the entire cartridge save block. Use the explicit live-save transfer
+  boundary for clear/import and `save_format::LiveSave` for cartridge copies
+  and checksum slices. Preserve checksum observation across NMI and the other
+  owners' import schedule; see `docs/parity/native-save-progress.md`.
 
 ## Common bug classes (almost every root is one of these) + fix recipes
 

@@ -538,8 +538,63 @@ pub(super) const END_SEQUENCE_32_HEALTH_AFTER_DEATH: [u8; 21] = [
     0x40, 0x48, 0x48, 0x48, 0x50,
 ];
 
-pub(super) const CREDITS_ADD_NEXT_ATTRIBUTION_ATTRIBUTION_PALACE_ORDER: [usize; 14] =
-    [1, 0, 2, 3, 10, 6, 5, 8, 11, 9, 7, 12, 13, 15];
+#[derive(Clone, Copy)]
+pub(super) enum CreditsDeathCountSource {
+    Palace(usize),
+    Total,
+}
+
+impl CreditsDeathCountSource {
+    pub(super) fn count(self, progress: &crate::game_state::SaveProgressState) -> u16 {
+        match self {
+            Self::Palace(palace) => progress.death_count_for_palace(palace),
+            Self::Total => progress.total_death_save_counter(),
+        }
+    }
+}
+
+pub(super) const CREDITS_DEATH_COUNT_ORDER: [CreditsDeathCountSource; 14] = {
+    use CreditsDeathCountSource::{Palace, Total};
+    [
+        Palace(1),
+        Palace(0),
+        Palace(2),
+        Palace(3),
+        Palace(10),
+        Palace(6),
+        Palace(5),
+        Palace(8),
+        Palace(11),
+        Palace(9),
+        Palace(7),
+        Palace(12),
+        Palace(13),
+        Total,
+    ]
+};
+
+#[cfg(test)]
+mod death_count_tests {
+    use super::*;
+
+    #[test]
+    fn credits_sources_preserve_the_original_table_including_the_total_alias() {
+        // Frozen pre-refactor indices. Index 15 is 0xf405 (total deaths),
+        // beyond the fourteen palace counters; it must not become zero.
+        let indices = [1, 0, 2, 3, 10, 6, 5, 8, 11, 9, 7, 12, 13, 15];
+        for seed in [0, 1, 127, 255] {
+            let ram: Vec<u8> = (0..0x20000).map(|i| (i * 37 + seed) as u8).collect();
+            let progress = crate::game_state::SaveProgressState::load_from_ram(&ram);
+            for (source, index) in CREDITS_DEATH_COUNT_ORDER.iter().zip(indices) {
+                let address = 0xf3e7 + index * 2;
+                assert_eq!(
+                    source.count(&progress),
+                    u16::from_le_bytes([ram[address], ram[address + 1]])
+                );
+            }
+        }
+    }
+}
 
 pub(super) const CREDITS_ADD_NEXT_ATTRIBUTION_DIGITS_SCROLL_Y: [u16; 14] = [
     0x290, 0x298, 0x2a0, 0x2a8, 0x2b0, 0x2ba, 0x2c2, 0x2ca, 0x2d2, 0x2da, 0x2e2, 0x2ea, 0x2f2,

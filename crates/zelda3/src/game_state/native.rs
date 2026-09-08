@@ -22,6 +22,7 @@ mod oam;
 mod overlord;
 mod player;
 mod poly;
+mod save_progress;
 mod sprites;
 mod system;
 mod world;
@@ -39,17 +40,17 @@ pub(crate) use display::{
     SpotlightHdmaState,
 };
 pub(crate) use dungeon::{
-    loaded_room_data_word, DungeonStairList, DungeonState, NativeDungeonBg2AttributeBridgeMut,
-    NativeDungeonDoorBridgeMut, NativeDungeonEntranceBackupBridgeMut,
-    NativeDungeonEnvironmentBridgeMut, NativeDungeonHeaderBridgeMut,
-    NativeDungeonMovableBlockBridgeMut, NativeDungeonMovingFloorBridgeMut,
-    NativeDungeonObjectTrackingBridgeMut, NativeDungeonRoomDoorSetupBridgeMut,
-    NativeDungeonRoomEffectsBridgeMut, NativeDungeonRoomItemBridgeMut,
-    NativeDungeonRoomLoadBridgeMut, NativeDungeonRoomParserBridgeMut,
-    NativeDungeonRoomRuntimeBridgeMut, NativeDungeonRoomTilemapBridgeMut,
-    NativeDungeonRoomTrackingBridgeMut, NativeDungeonSavegameBridgeMut,
-    NativeDungeonScratchWordBridgeMut, NativeDungeonStairListsBridgeMut,
-    NativeDungeonStairMovementBridgeMut, NativeDungeonTorchBridgeMut,
+    DungeonStairList, DungeonState, NativeDungeonBg2AttributeBridgeMut, NativeDungeonDoorBridgeMut,
+    NativeDungeonEntranceBackupBridgeMut, NativeDungeonEnvironmentBridgeMut,
+    NativeDungeonHeaderBridgeMut, NativeDungeonMovableBlockBridgeMut,
+    NativeDungeonMovingFloorBridgeMut, NativeDungeonObjectTrackingBridgeMut,
+    NativeDungeonRoomDoorSetupBridgeMut, NativeDungeonRoomEffectsBridgeMut,
+    NativeDungeonRoomItemBridgeMut, NativeDungeonRoomLoadBridgeMut,
+    NativeDungeonRoomParserBridgeMut, NativeDungeonRoomRuntimeBridgeMut,
+    NativeDungeonRoomTilemapBridgeMut, NativeDungeonRoomTrackingBridgeMut,
+    NativeDungeonSavegameBridgeMut, NativeDungeonScratchWordBridgeMut,
+    NativeDungeonStairListsBridgeMut, NativeDungeonStairMovementBridgeMut,
+    NativeDungeonTorchBridgeMut,
 };
 pub(crate) use effects::{
     lanmola_flat_trail_entry_from_ram, EffectState, HappinessPondRupeeSnapshot,
@@ -72,7 +73,6 @@ pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
 pub(crate) use inventory::{
     DungeonItem, EquipmentItem, InventoryState, NativeDungeonKeySlotsBridgeMut,
     NativeInventoryItemsBridgeMut, NativeMirrorWarpBridgeMut, NativePlayerResourcesBridgeMut,
-    NativeSaveProgressBridgeMut, SaveProgressState,
 };
 #[cfg(test)]
 pub(crate) use messaging::{MessagingRenderBufferState, SelectFileMenuState, VwfRenderState};
@@ -102,6 +102,9 @@ pub(crate) use player::{
 pub(crate) use poly::{
     NativePolyFaceCoordsBridgeMut, NativePolyProjectedVerticesBridgeMut,
     NativePolyRasterEdgeBridgeMut, NativePolyRuntimeBridgeMut, PolyState,
+};
+pub(crate) use save_progress::{
+    NativeSaveProgressBridgeMut, SaveProgressState, DUNGEON_ROOM_COUNT,
 };
 pub use sprites::CachedSpriteCacheField;
 pub(crate) use sprites::{

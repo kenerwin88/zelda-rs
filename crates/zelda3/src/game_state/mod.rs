@@ -2,6 +2,7 @@
 
 pub(crate) mod constants;
 mod native;
+pub(crate) mod save_format;
 mod view;
 mod wram_map;
 

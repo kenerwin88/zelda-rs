@@ -294,9 +294,7 @@ fn save_progress_state_loads_from_and_projects_to_ram() {
     progress.increment_pending_death_save_counter();
     progress.set_total_death_save_counter(0x0045);
     progress.write_to_ram(&mut ram);
-    // The 0xf000..0xf500 save block is write-through, not bulk-projected, so the
-    // block-backed fields flush through the explicit block writer rather than write_to_ram.
-    progress.write_dungeon_info_to_ram(&mut ram);
+    progress.encode_progress_to_ram(&mut ram);
 
     assert_eq!(ram[CUR_PALACE_INDEX_X2], 8);
     assert_eq!(ram[SRAM_PROGRESS_FLAGS], 0x41);
@@ -374,11 +372,9 @@ fn native_save_progress_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 }
 
 #[test]
-fn native_save_progress_bridge_composes_edits_onto_live_ram() {
-    // The 0xf000..0xf500 save block is owned and written live by the inventory / player /
-    // follower / overworld-event natives, exactly as C writes it straight into the SRAM
-    // mirror, so the bridge must compose its edits onto whatever is in RAM now — never
-    // re-stamp a stale frame-start snapshot over a live write.
+fn native_save_progress_bridge_composes_edits_after_explicit_import() {
+    // Loading the compatibility image is explicit. Ordinary mutations operate
+    // on the native owner without refreshing an overlapping save-block cache.
     let mut ram = vec![0; WRAM_SIZE];
     ram[CUR_PALACE_INDEX_X2] = 10;
     ram[SRAM_PROGRESS_FLAGS] = 0x10;
@@ -386,8 +382,7 @@ fn native_save_progress_bridge_composes_edits_onto_live_ram() {
     ram[HUD_CUR_ITEM] = 1;
     write_le_u16(&mut ram, SAVE_DUNG_INFO + 2, 0x0001);
 
-    // A deliberately stale native snapshot: every field disagrees with live RAM.
-    let mut progress = SaveProgressState::load_from_ram(&vec![0xa5; WRAM_SIZE]);
+    let mut progress = SaveProgressState::load_from_ram(&ram);
 
     {
         let mut bridge = NativeSaveProgressBridgeMut::new(&mut progress, &mut ram);
@@ -395,11 +390,11 @@ fn native_save_progress_bridge_composes_edits_onto_live_ram() {
         bridge.or_progress_flags(0x20);
         bridge.clear_progress_indicator_3_bits(0xf0);
         bridge.set_hud_current_item(2);
-        // 0x0001 is RAM's live value; the stale snapshot held 0xa5a5.
+        // The imported native room record starts at 0x0001.
         assert_eq!(bridge.or_dungeon_info_word(1, 0x0100), 0x0101);
     }
 
-    // Each edit landed on the live RAM value, and the stale snapshot was discarded.
+    // Each edit updates the imported native fields.
     assert_eq!(progress.palace_index_x2(), 8);
     assert_eq!(progress.progress_flags(), 0x30);
     assert_eq!(progress.progress_indicator_3(), 0x0f);

@@ -137,10 +137,6 @@ impl ZeldaState {
             .set_chest_reveal_cursor_x2(value);
     }
 
-    pub(crate) fn loaded_room_data_word(&self, offset: usize, index: usize) -> u16 {
-        loaded_room_data_word(&self.ram, offset, index)
-    }
-
     pub(super) fn complete_straight_interroom_sprite_reset_after_timing_boundary(
         &mut self,
         progress: DungeonResetSpritesCpuProgress,

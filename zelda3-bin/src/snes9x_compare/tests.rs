@@ -48,7 +48,7 @@ fn obsolete_native_bank_checkpoints_are_rejected_before_positional_decode() {
             .as_nanos()
     ));
     fs::create_dir_all(&root).unwrap();
-    for old_magic in [b"Z3RSPC01", b"Z3RSPC02", b"Z3RSPC03", b"Z3RSPC04"] {
+    for old_magic in [b"Z3RSPC01", b"Z3RSPC02", b"Z3RSPC03", b"Z3RSPC04", b"Z3RSPC05"] {
         let path = root.join(String::from_utf8_lossy(old_magic).as_ref());
         // A header alone cannot deserialize as a checkpoint. The useful layout
         // error must be returned before attempting the obsolete positional body.

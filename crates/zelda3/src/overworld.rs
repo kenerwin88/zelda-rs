@@ -549,21 +549,10 @@ impl ZeldaState {
         self.clear_overworld_event_bits(0x3b, 0x20);
         self.clear_overworld_event_bits(0x7b, 0x20);
 
-        let saved267 = self
-            .game_state
-            .inventory
-            .save_progress
-            .dungeon_info_word(267)
-            & !0x0080;
-        let saved40 = self
-            .game_state
-            .inventory
-            .save_progress
-            .dungeon_info_word(40)
-            & !0x0100;
-        self.save_progress_mut()
-            .set_dungeon_info_word(267, saved267);
-        self.save_progress_mut().set_dungeon_info_word(40, saved40);
+        let saved267 = self.saved_room_flags(267) & !0x0080;
+        let saved40 = self.saved_room_flags(40) & !0x0100;
+        self.set_saved_room_flags(267, saved267);
+        self.set_saved_room_flags(40, saved40);
     }
 
     pub(super) fn complete_module09_load_aux_gfx(&mut self) {

@@ -96,10 +96,6 @@ const DUNGEON_INTER_STAIRCASE_TABLE_WORDS: usize =
 const DUNGEON_STAIR_TABLE_1_WORDS: usize = (DUNG_CHEST_LOCATIONS - DUNG_STAIRS_TABLE_1) / 2;
 const DUNGEON_STAIR_TABLE_2_WORDS: usize = (DUNG_STAIRS_TABLE_2_END - DUNG_STAIRS_TABLE_2) / 2;
 
-pub(crate) fn loaded_room_data_word(ram: &[u8], offset: usize, index: usize) -> u16 {
-    read_le_u16(ram, offset + index * 2)
-}
-
 fn door_info_word(door_info: &[u8], offset: usize) -> u16 {
     u16::from(door_info.get(offset).copied().unwrap_or(0))
         | (u16::from(door_info.get(offset + 1).copied().unwrap_or(0)) << 8)

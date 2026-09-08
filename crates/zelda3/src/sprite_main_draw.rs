@@ -9082,14 +9082,7 @@ impl ZeldaState {
         match self.sprite_slot_view(k).ai_state() {
             0 => match self.game_state.inventory.items.mushroom() {
                 0 => {
-                    if self
-                        .game_state
-                        .inventory
-                        .save_progress
-                        .dungeon_info_word(0x109)
-                        & 0x80
-                        != 0
-                    {
+                    if self.saved_room_flags(0x109) & 0x80 != 0 {
                         self.sprite_show_solicited_message(k, 0x004b);
                     } else {
                         self.sprite_show_solicited_message(k, 0x004a);
@@ -9123,14 +9116,8 @@ impl ZeldaState {
     // void Witch_AcceptShroom(int k) {  // 85e4cf
     pub(super) fn witch_accept_shroom(&mut self, k: usize) {
         self.inventory_items_mut().set_mushroom(0);
-        let dung_info = self
-            .game_state
-            .inventory
-            .save_progress
-            .dungeon_info_word(0x109)
-            | 0x80;
-        self.save_progress_mut()
-            .set_dungeon_info_word(0x109, dung_info);
+        let dung_info = self.saved_room_flags(0x109) | 0x80;
+        self.set_saved_room_flags(0x109, dung_info);
         self.set_sound_effect_1(0);
         self.hud_refresh_icon();
         self.sprite_show_message_unconditional(0x004b);

@@ -4,7 +4,57 @@
 
 use super::*;
 
+#[cfg(test)]
+#[path = "../save_progress_tests.rs"]
+mod save_progress_tests;
+
 impl ZeldaState {
+    pub(crate) fn saved_room_flags(&self, room: usize) -> u16 {
+        if room < crate::game_state::DUNGEON_ROOM_COUNT {
+            self.game_state
+                .inventory
+                .save_progress
+                .dungeon_info_word(room)
+        } else {
+            crate::game_state::save_format::LiveSave::from_wram(&self.ram).indexed_word(room)
+        }
+    }
+
+    pub(crate) fn set_saved_room_flags(&mut self, room: usize, flags: u16) {
+        if room < crate::game_state::DUNGEON_ROOM_COUNT {
+            self.save_progress_mut().set_dungeon_info_word(room, flags);
+        } else {
+            // Extended indices are source aliases into other save domains.
+            // Preserve the single-word write and their existing import timing.
+            crate::game_state::save_format::write_indexed_word(&mut self.ram, room, flags);
+            // A word can also straddle named progress fields or counters.
+            // Import at this explicit cross-domain transfer boundary.
+            self.game_state.inventory.save_progress =
+                crate::game_state::SaveProgressState::load_from_ram(&self.ram);
+        }
+    }
+
+    pub(crate) fn add_saved_room_flags(&mut self, room: usize, flags: u16) -> u16 {
+        let value = self.saved_room_flags(room) | flags;
+        self.set_saved_room_flags(room, value);
+        value
+    }
+
+    // Whole-save transfers are explicit compatibility boundaries. Refresh the
+    // progress owner here; other owners retain their existing frame/import
+    // schedule, including the source-ordered writes following CopySaveToWRAM.
+    pub(crate) fn clear_live_save(&mut self) {
+        crate::game_state::save_format::clear_live_save(&mut self.ram);
+        self.game_state.inventory.save_progress =
+            crate::game_state::SaveProgressState::load_from_ram(&self.ram);
+    }
+
+    pub(crate) fn replace_live_save(&mut self, source: &[u8]) {
+        crate::game_state::save_format::replace_live_save(&mut self.ram, source);
+        self.game_state.inventory.save_progress =
+            crate::game_state::SaveProgressState::load_from_ram(&self.ram);
+    }
+
     pub(crate) fn selected_save_slot_x2(&self) -> u16 {
         read_le_u16(&self.sram, SELECTED_SAVE_SLOT_X2)
     }

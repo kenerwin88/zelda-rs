@@ -898,13 +898,7 @@ impl ZeldaState {
         }
         if self.game_state.sprites.follower_runtime.indicator() == 6
             && self.game_state.world.location.dungeon_room() == 0x0ac
-            && self
-                .game_state
-                .inventory
-                .save_progress
-                .dungeon_info_word(101)
-                & 0x100
-                != 0
+            && self.saved_room_flags(101) & 0x100 != 0
             && self.follower_check_blind_trigger()
         {
             let k = self.game_state.sprites.follower_runtime.data_index() as usize;

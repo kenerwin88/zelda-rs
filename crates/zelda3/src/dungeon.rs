@@ -1378,7 +1378,7 @@ impl ZeldaState {
         self.dungeon_room_runtime_mut()
             .set_room_index_x3((room as u16).wrapping_mul(3));
 
-        let saved = self.loaded_room_data_word(0xf000, room);
+        let saved = self.saved_room_flags(room);
         self.dungeon_doors_mut().set_opened_doors(saved & 0xf000);
         self.dungeon_doors_mut()
             .set_opened_doors_including_adjacent((saved & 0xf000) | 0x0f00);
@@ -1462,7 +1462,7 @@ impl ZeldaState {
     }
 
     fn load_adjacent_room_doors(&mut self, room: usize) {
-        let flags = (self.loaded_room_data_word(0xf000, room) & 0xf000) | 0x0f00;
+        let flags = (self.saved_room_flags(room) & 0xf000) | 0x0f00;
         self.dungeon_room_doors_mut().set_adjacent_door_flags(flags);
         let Some(doors) = self.GetRoomDoorInfo(room).map(Vec::from) else {
             self.dungeon_room_doors_mut().mark_no_adjacent_doors();
@@ -2434,14 +2434,7 @@ impl ZeldaState {
             0x00 => {
                 if self.game_state.dungeon.header.header_tag(1) == 27 {
                     let room = self.game_state.world.location.dungeon_room() as usize;
-                    if self
-                        .game_state
-                        .inventory
-                        .save_progress
-                        .dungeon_info_word(room)
-                        & 0x0100
-                        != 0
-                    {
+                    if self.saved_room_flags(room) & 0x0100 != 0 {
                         self.RoomDraw_WaterHoldingObject(5, 0x162c, dsto);
                         return;
                     }
@@ -2634,14 +2627,7 @@ impl ZeldaState {
             0x33 => {
                 if self.game_state.dungeon.header.header_tag(1) == 27 {
                     let room = self.game_state.world.location.dungeon_room() as usize;
-                    if self
-                        .game_state
-                        .inventory
-                        .save_progress
-                        .dungeon_info_word(room)
-                        & 0x0100
-                        == 0
-                    {
+                    if self.saved_room_flags(room) & 0x0100 == 0 {
                         self.dungeon_room_load_mut().clear_bg2_properties();
                         self.dungeon_stair_lists_mut()
                             .append_stair_table_position(DungeonStairList::WetStairs, dsto);
@@ -2722,14 +2708,7 @@ impl ZeldaState {
                 self.RoomDraw_4x4(0x2396, dsto + 6 * 64);
             }
             0x71 => {
-                if self
-                    .game_state
-                    .inventory
-                    .save_progress
-                    .dungeon_info_word(101)
-                    & 0x0100
-                    != 0
-                {
+                if self.saved_room_flags(101) & 0x0100 != 0 {
                     self.Object_Draw8x8(src, dsto);
                 }
             }
@@ -2866,13 +2845,7 @@ impl ZeldaState {
             0x33 => {
                 let room = self.game_state.world.location.dungeon_room() as usize;
                 if self.game_state.dungeon.header.header_tag(1) == 27
-                    && self
-                        .game_state
-                        .inventory
-                        .save_progress
-                        .dungeon_info_word(room)
-                        & 0x0100
-                        == 0
+                    && self.saved_room_flags(room) & 0x0100 == 0
                 {
                     self.dungeon_room_load_mut().clear_bg2_properties();
                     let next = self
@@ -2904,13 +2877,7 @@ impl ZeldaState {
             0x35 => {
                 let room = self.game_state.world.location.dungeon_room() as usize;
                 if self.game_state.dungeon.header.header_tag(1) == 27
-                    && self
-                        .game_state
-                        .inventory
-                        .save_progress
-                        .dungeon_info_word(room)
-                        & 0x0100
-                        == 0
+                    && self.saved_room_flags(room) & 0x0100 == 0
                 {
                     let next = self
                         .dungeon_stair_lists_mut()
@@ -5445,13 +5412,8 @@ impl ZeldaState {
         let visited = self.dungeon_room_load_mut().or_quadrants_visited(flag);
 
         let room = self.game_state.world.location.dungeon_room() as usize;
-        let saved = self
-            .game_state
-            .inventory
-            .save_progress
-            .dungeon_info_word(room)
-            | visited;
-        self.save_progress_mut().set_dungeon_info_word(room, saved);
+        let saved = self.saved_room_flags(room) | visited;
+        self.set_saved_room_flags(room, saved);
     }
 
     pub(super) fn Dungeon_PlayBlipAndCacheQuadrantVisits(&mut self) {
@@ -5600,18 +5562,14 @@ impl ZeldaState {
             | (self.game_state.dungeon.doors.opened_doors() & 0xf000)
             | self.game_state.dungeon.room_load.quadrants_visited();
         let room = self.game_state.world.location.dungeon_room() as usize;
-        self.save_progress_mut().set_dungeon_info_word(room, saved);
+        self.set_saved_room_flags(room, saved);
     }
 
     pub(super) fn SaveQuadrantsToSram(&mut self) {
         let room = self.game_state.world.location.dungeon_room() as usize;
-        let saved = self
-            .game_state
-            .inventory
-            .save_progress
-            .dungeon_info_word(room)
-            | self.game_state.dungeon.room_load.quadrants_visited();
-        self.save_progress_mut().set_dungeon_info_word(room, saved);
+        let saved =
+            self.saved_room_flags(room) | self.game_state.dungeon.room_load.quadrants_visited();
+        self.set_saved_room_flags(room, saved);
     }
 
     pub(super) fn Dung_HandleExitToOverworld(&mut self) {
@@ -6973,14 +6931,8 @@ impl ZeldaState {
         self.set_color_math_control(0x62);
         self.set_overworld_event_bits(0x3b, 0x20);
         self.set_overworld_event_bits(0x7b, 0x20);
-        let dung_info = self
-            .game_state
-            .inventory
-            .save_progress
-            .dungeon_info_word(0x28)
-            | 0x0100;
-        self.save_progress_mut()
-            .set_dungeon_info_word(0x28, dung_info);
+        let dung_info = self.saved_room_flags(0x28) | 0x0100;
+        self.set_saved_room_flags(0x28, dung_info);
 
         self.RoomTag_OperateWaterFlooring();
         let watergate_pos = self
@@ -10863,7 +10815,7 @@ impl ZeldaState {
         self.increment_subsubmodule();
         let room = self.game_state.world.location.dungeon_room() as usize;
         let visited = self.game_state.dungeon.room_load.quadrants_visited();
-        self.save_progress_mut().or_dungeon_info_word(room, visited);
+        self.add_saved_room_flags(room, visited);
     }
 
     pub(super) fn SubtileTransitionCalculateLanding(&mut self) {
