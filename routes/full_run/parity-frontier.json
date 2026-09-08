@@ -19,7 +19,7 @@
   },
   "project": "routes/full_run",
   "promoted": {
-    "binary_sha256": "414a96d1c9b9d583c0fd8ff7687bfc4b3364ae6397b17608281e06e7858568a8",
+    "binary_sha256": "d666972564c99f92ba2f73e6fd4bb6b787a7972bdf083e769be6261607d3f4c4",
     "cached_av_receipt": {
       "candidate_ledger_sha256": "3d52711c51a4f01031bd336aa582d4b6a316c71199710d3354ef015fcca1440c",
       "frames": 1581079,
@@ -27,13 +27,13 @@
         "video",
         "audio"
       ],
-      "manifest_sha256": "1d15a6837509af9792a26fa8b83332e39a61d3a0bf91e82046d9238b84de0e70",
+      "manifest_sha256": "d3b76e73e348599e0033f209a1e9a395b9f91b399b277f21b065c7ee79a8d30e",
       "oracle_cache_key": "ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18",
       "oracle_cache_manifest_sha256": "4c7f88fbf327a4b3af7d3f8614d82ebb2318f11b607798d5dddb4a97b7fe2715",
-      "receipt_path": "receipts/native-player-full-av.manifest.json",
-      "run": "/Users/missingno/Documents/zelda3-rs/target/native-player-components/native-player-full-av"
+      "receipt_path": "receipts/native-motion-full-av.manifest.json",
+      "run": "/Users/missingno/Documents/zelda3-rs/target/native-player-motion/native-motion-full-av"
     },
-    "commit": "27ee1e326f221c2f9c8d6cfdda88f26987556982",
+    "commit": "806fc24324561406ab854470c86db9880e2ad0d0",
     "kind": "cached_av_pass",
     "last_exact_audio_frame": 1581078,
     "last_exact_engine_state_frame": 1581078,
