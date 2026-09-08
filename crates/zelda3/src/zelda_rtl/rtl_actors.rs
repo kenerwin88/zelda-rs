@@ -201,7 +201,7 @@ impl ZeldaState {
             self.follower_link_state_mut().clear_near_pit_state();
             let handler_state = if !self.game_state.player.follower_link.is_bunny_mirror() {
                 0
-            } else if self.game_state.player.follower_link.has_moon_pearl() {
+            } else if self.game_state.inventory.items.has_moon_pearl() {
                 3
             } else {
                 23
@@ -223,7 +223,7 @@ impl ZeldaState {
             self.follower_link_state_mut().set_speed_setting(0);
             let handler_state = if !self.game_state.player.follower_link.is_bunny_mirror() {
                 0
-            } else if self.game_state.player.follower_link.has_moon_pearl() {
+            } else if self.game_state.inventory.items.has_moon_pearl() {
                 3
             } else {
                 23
@@ -281,7 +281,7 @@ impl ZeldaState {
         }
 
         if !self.game_state.player.follower_link.near_pit_state_is(2) {
-            if self.game_state.player.follower_link.has_moon_pearl() {
+            if self.game_state.inventory.items.has_moon_pearl() {
                 self.follower_link_state_mut()
                     .clear_bunny_transform_after_moon_pearl();
             }

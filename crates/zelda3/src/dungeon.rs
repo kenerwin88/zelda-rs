@@ -13186,7 +13186,7 @@ impl ZeldaState {
         if self.game_state.player.follower_link.handler_state() == 2 {
             let handler_state = if !self.game_state.player.follower_link.is_bunny_mirror() {
                 0
-            } else if self.game_state.player.follower_link.has_moon_pearl() {
+            } else if self.game_state.inventory.items.has_moon_pearl() {
                 28
             } else {
                 23

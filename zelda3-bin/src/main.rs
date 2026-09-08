@@ -99,7 +99,7 @@ use zelda3::{config::parse_config_file_context, ZeldaState, RUN_MAIN, RUN_POLY};
 /// older `rust.z3state` files are then rejected with a clear message instead
 /// of failing mid-decode. 06 (2026-09-08): save progress owns named fields
 /// and dungeon-room records instead of an overlapping 0x500-byte save bank.
-const PLAY_CRASH_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSPC06";
+const PLAY_CRASH_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSPC07";
 const ACTION_TILE_X: [i16; 4] = [7, 7, -3, 16];
 const ACTION_TILE_Y: [i16; 4] = [6, 24, 12, 12];
 pub(crate) const TRACE_MAIN_MODULE_INDEX: usize = 0x10;

@@ -477,7 +477,7 @@ fn player_resources_state_loads_from_and_projects_to_ram() {
     ram[LINK_LOWLIFE_COUNTDOWN_TIMER_BEEP] = 0x33;
 
     let resources = PlayerResourcesState::load_from_ram(&ram);
-    // magic_power is now owned by FollowerLinkState, not PlayerResourcesState.
+    assert_eq!(resources.magic.amount(), 64);
     assert_eq!(resources.magic_consumption_level(), 2);
     assert_eq!(resources.bombs(), 7);
     assert_eq!(resources.equipped_bottle_index(), 3);
@@ -604,4 +604,80 @@ fn native_bg1_movement_accumulator_bridge_dual_writes_changes_from_native_state(
     assert_eq!(accumulator.x_subpixel(), 0x03);
     assert_eq!(accumulator.y_subpixel(), 0x44);
     assert_eq!(read_le_u16(&ram, BG1_MOVE_CALC_BUFFER), 0x0344);
+}
+#[test]
+fn player_components_preserve_frozen_projection_and_mutations() {
+    use sha2::{Digest, Sha256};
+    let mut cases = String::new();
+    for seed in 0..32u32 {
+        let mut rng = seed + 1;
+        let mut ram = vec![0; WRAM_SIZE];
+        for byte in &mut ram {
+            rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+            *byte = (rng >> 24) as u8;
+        }
+        let mut player = FollowerLinkState::load_from_ram(&ram);
+        let inventory = InventoryState::load_from_ram(&ram);
+        let mut projected = vec![0xa5; WRAM_SIZE];
+        player.write_to_ram(&mut projected);
+        inventory.write_to_ram(&mut projected);
+        let mut digest = Sha256::new();
+        digest.update(&projected);
+        {
+            let mut bridge = NativeFollowerLinkBridgeMut::new(&mut player, &mut ram);
+            bridge.set_speed_setting(seed as u8);
+            bridge.set_ground_state();
+            bridge.clear_running();
+            bridge.immobilize();
+            bridge.enable_cutscene_immunity();
+            bridge.cache_previous_position_from_current_xy_order();
+            bridge.set_previous_position(seed as u16 * 257, !(seed as u16));
+            bridge.set_oam_x_offset(seed as u8);
+            bridge.set_hop_origin_coord(0x807f + seed as u16);
+            bridge.recache_bunny_state(inventory.items.has_moon_pearl());
+        }
+        digest.update(&ram);
+        player.write_to_ram(&mut projected);
+        inventory.write_to_ram(&mut projected);
+        digest.update(&projected);
+        cases.push_str(&format!("{seed}: {:x}\n", digest.finalize()));
+    }
+    assert_eq!(
+        cases,
+        include_str!("../../../../testdata/player-components-0d2e692f.txt")
+    );
+}
+
+#[test]
+fn player_projection_excludes_equipment_and_magic_ownership() {
+    let mut ram = vec![0; WRAM_SIZE];
+    let player = FollowerLinkState::load_from_ram(&ram);
+    ram[LINK_ITEM_FLIPPERS] = 3;
+    ram[LINK_ITEM_MOON_PEARL] = 7;
+    ram[LINK_MAGIC_POWER] = 65;
+    player.write_to_ram(&mut ram);
+    assert_eq!(ram[LINK_ITEM_FLIPPERS], 3);
+    assert_eq!(ram[LINK_ITEM_MOON_PEARL], 7);
+    assert_eq!(ram[LINK_MAGIC_POWER], 65);
+}
+
+#[test]
+fn player_input_action_word_preserves_borrow_and_snapshot_independence() {
+    let mut ram = vec![0; WRAM_SIZE];
+    for high in 0..=255u8 {
+        for low in [0, 1, 127, 255u8] {
+            let word = u16::from_le_bytes([low, high]);
+            write_le_u16(&mut ram, BUTTON_B_FRAMES, word);
+            let mut player = FollowerLinkState::load_from_ram(&ram);
+            let frozen = bincode::serialize(&player).unwrap();
+            let saved: FollowerLinkState = bincode::deserialize(&frozen).unwrap();
+            assert_eq!(saved, player);
+            let value = NativeFollowerLinkBridgeMut::new(&mut player, &mut ram)
+                .decrement_button_b_frames_word();
+            assert_eq!(value, word.wrapping_sub(1));
+            assert_eq!(player.button_b_frames_word(), value);
+            assert_eq!(read_le_u16(&ram, BUTTON_B_FRAMES), value);
+            assert_eq!(saved.button_b_frames_word(), word);
+        }
+    }
 }

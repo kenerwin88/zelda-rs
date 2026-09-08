@@ -2835,7 +2835,7 @@ fn lamp_powder_and_shovel_item_handlers_match_core_state() {
     let mut lamp = ZeldaState::new();
     lamp.follower_link_state_mut().set_filtered_joypad_h(0x40);
     lamp.inventory_items_mut().set_inventory_item(10, 1);
-    lamp.follower_link_state_mut().set_magic_power(32);
+    lamp.player_magic_mut().set_magic_power(32);
     set_link_test_byte(&mut lamp, LINK_CANT_CHANGE_DIRECTION, 1);
     lamp.follower_link_state_mut().set_button_b_frames(9);
     lamp.link_item_lamp();
@@ -2849,7 +2849,7 @@ fn lamp_powder_and_shovel_item_handlers_match_core_state() {
     let mut powder = ZeldaState::new();
     powder.follower_link_state_mut().set_filtered_joypad_h(0x40);
     powder.inventory_items_mut().set_mushroom(2);
-    powder.follower_link_state_mut().set_magic_power(16);
+    powder.player_magic_mut().set_magic_power(16);
     powder.link_item_powder();
     assert_eq!(link_test_byte(&powder, LINK_MAGIC_POWER), 8);
     assert_eq!(powder.game_state.player.follower_link.item_in_hand(), 0x40);
@@ -2888,7 +2888,7 @@ fn medallion_item_start_and_state_progression_match_core_state() {
     let mut ether = ZeldaState::new();
     ether.follower_link_state_mut().set_filtered_joypad_h(0x40);
     ether.inventory_items_mut().set_sword_type(1);
-    ether.follower_link_state_mut().set_magic_power(64);
+    ether.player_magic_mut().set_magic_power(64);
     ether.link_item_ether();
     assert_eq!(link_test_byte(&ether, LINK_MAGIC_POWER), 32);
     assert_eq!(ether.game_state.player.follower_link.handler_state(), 8);
@@ -2909,7 +2909,7 @@ fn medallion_item_start_and_state_progression_match_core_state() {
     let mut quake = ZeldaState::new();
     quake.follower_link_state_mut().set_filtered_joypad_h(0x40);
     quake.inventory_items_mut().set_sword_type(1);
-    quake.follower_link_state_mut().set_magic_power(64);
+    quake.player_magic_mut().set_magic_power(64);
     quake.link_item_quake();
     assert_eq!(quake.game_state.player.follower_link.handler_state(), 10);
     assert_eq!(link_test_byte(&quake, LINK_ACTUAL_VEL_Z_MIRROR), 40);
@@ -2920,7 +2920,7 @@ fn medallion_item_start_and_state_progression_match_core_state() {
     blocked
         .follower_link_state_mut()
         .set_filtered_joypad_h(0x40);
-    blocked.follower_link_state_mut().set_magic_power(64);
+    blocked.player_magic_mut().set_magic_power(64);
     blocked.link_item_bombos();
     assert_eq!(blocked.game_state.player.follower_link.handler_state(), 0);
     assert_eq!(

@@ -479,7 +479,7 @@ fn halt_link_when_using_items_stops_floor_and_platform_motion() {
 fn rod_hammer_and_bow_item_handlers_advance_c_timers() {
     let mut rod = ZeldaState::new();
     rod.follower_link_state_mut().set_filtered_joypad_h(0x40);
-    rod.follower_link_state_mut().set_magic_power(20);
+    rod.player_magic_mut().set_magic_power(20);
     rod.ram[EQ_SELECTED_ROD] = 1;
     rod.link_item_rod();
     assert_eq!(link_test_byte(&rod, LINK_MAGIC_POWER), 4);

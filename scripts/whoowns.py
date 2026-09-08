@@ -73,7 +73,7 @@ def main():
           + (", ".join(names_here) if names_here else "(none exact)"))
     if names_here:
         native = CRATE / "game_state" / "native"
-        files = sorted(native.glob("*.rs")) + [CRATE / "game_state" / "native.rs"]
+        files = sorted(native.rglob("*.rs")) + [CRATE / "game_state" / "native.rs"]
         for c in names_here:
             hits = grep(rf"\b{c}\b", files)
             owners = [h for h in hits if "read_le" in h or "ram[" in h or "write_le" in h

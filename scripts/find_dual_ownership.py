@@ -274,10 +274,59 @@ TYPE_IDENT_RE = re.compile(r"\b([A-Z][A-Za-z0-9_]*)")
 NON_STRUCT_TYPES = {"Vec", "Option", "Box", "Some", "None", "Self"}
 
 
+def native_state_files(root=None):
+    """Include component/codec submodules, excluding standalone test modules."""
+    root = NATIVE_DIR if root is None else root
+    return sorted(p for p in root.rglob("*.rs")
+                  if "native_tests" not in p.parts and not p.stem.endswith("_tests"))
+
+
+def projection_helper_expander(files):
+    """Follow RAM publication helpers without folding child write_to_ram owners.
+
+    Named components can keep their codecs in separate impl blocks or files.
+    Expanding only the non-projection helpers preserves the existing owner
+    boundary: a child's write_to_ram still gets its own ownership record.
+    """
+    methods = {}
+    fields = defaultdict(dict)
+    for path in files:
+        text = path.read_text(errors="replace")
+        for match in STRUCT_DECL_RE.finditer(text):
+            body = brace_body(text, text.index("{", match.end() - 1))
+            fields[match[1]].update((f[1], f[2]) for f in FIELD_DECL_RE.finditer(body))
+        for match in re.finditer(r"fn\s+(\w+)\s*\([^)]*\)\s*(?:->\s*[^{}]+)?\{", text):
+            methods[enclosing_struct(text, match.start()), match[1]] = brace_body(
+                text, text.index("{", match.start()))
+
+    call_re = re.compile(r"self((?:\s*\.\s*\w+)+)\s*\(\s*ram\s*[,)]")
+
+    def expand(owner, method, seen=frozenset()):
+        key = (owner, method)
+        if key in seen:
+            return ""
+        body = methods.get(key, "")
+        additions = []
+        for call in call_re.finditer(body):
+            parts = re.findall(r"\w+", call[1])
+            target = owner
+            for field in parts[:-1]:
+                ty = fields.get(target, {}).get(field, "")
+                candidates = [t for t in TYPE_IDENT_RE.findall(ty) if t not in NON_STRUCT_TYPES]
+                target = candidates[0] if len(candidates) == 1 else ""
+            helper = parts[-1]
+            if helper != "write_to_ram":
+                additions.append(expand(target, helper, seen | {key}))
+        return body + "\n" + "\n".join(additions)
+
+    return expand
+
+
 def collect_projection_reachable(files) -> set[str]:
     """Structs whose write_to_ram is actually reached from GameState::write_to_ram."""
     fields: dict[str, dict[str, str]] = defaultdict(dict)
     projects: dict[str, set[str]] = defaultdict(set)
+    expand = projection_helper_expander(files)
 
     for path in files:
         text = path.read_text(errors="replace")
@@ -287,7 +336,7 @@ def collect_projection_reachable(files) -> set[str]:
                 fields[m.group(1)][fm.group(1)] = fm.group(2)
         for fnm in re.finditer(r"fn\s+write_to_ram\s*\([^)]*\)\s*\{", text):
             struct = enclosing_struct(text, fnm.start())
-            body = brace_body(text, text.index("{", fnm.start()))
+            body = expand(struct, "write_to_ram")
             for cm in WTR_CALL_RE.finditer(body):
                 projects[struct].add(cm.group(1))
             for it in FOR_OVER_SELF_RE.finditer(body):
@@ -470,7 +519,7 @@ def collect_containment() -> dict[str, set]:
     cont: dict[str, set] = defaultdict(set)
     struct_re = re.compile(r"struct\s+([A-Za-z0-9_]+State)\s*\{([^}]*)\}")
     field_re = re.compile(r":\s*\[?\s*([A-Za-z0-9_]+State)\b")
-    for path in NATIVE_DIR.glob("*.rs"):
+    for path in native_state_files():
         text = path.read_text(errors="replace")
         for m in struct_re.finditer(text):
             for ft in field_re.findall(m.group(2)):
@@ -504,7 +553,7 @@ def report_bridge_foreign_writes(byte_owners, consts, arrays, reachable):
     seen = set()
     cont = collect_containment()
     lhs_array_re = re.compile(r"\bram\s*\[\s*([A-Z][A-Z0-9_]*)\s*\[[^=]*=")
-    for path in sorted(NATIVE_DIR.glob("*.rs")):
+    for path in native_state_files():
         text = path.read_text(errors="replace")
         bridges = {}
         for m in BRIDGE_STRUCT_RE.finditer(text):
@@ -605,13 +654,13 @@ def main():
     unresolved_all = []
     structs_with_write_to_ram: set[str] = set()
 
-    files = sorted(NATIVE_DIR.glob("*.rs")) + [CRATE_SRC / "game_state" / "native.rs"]
+    files = native_state_files() + [CRATE_SRC / "game_state" / "native.rs"]
+    expand = projection_helper_expander(files)
     for path in files:
         text = path.read_text(errors="replace")
         for fnm in re.finditer(r"fn\s+write_to_ram\s*\([^)]*\)\s*\{", text):
-            open_idx = text.index("{", fnm.start())
-            body = brace_body(text, open_idx)
             struct = enclosing_struct(text, fnm.start())
+            body = expand(struct, "write_to_ram")
             structs_with_write_to_ram.add(struct)
             unresolved = []
             for (s, e, label) in extract_writes(body, consts, unresolved):

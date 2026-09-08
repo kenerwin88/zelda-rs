@@ -1,3 +1,4 @@
+use super::player_magic::PlayerMagicState;
 use super::ram_byte;
 use super::save_progress::SaveProgressState;
 use crate::game_state::constants::*;
@@ -208,6 +209,17 @@ impl InventoryItemsState {
 
     pub(crate) fn has_boots(&self) -> bool {
         self.boots() != 0
+    }
+
+    pub(crate) fn has_flippers(&self) -> bool {
+        self.flippers != 0
+    }
+
+    /// Legacy player entry can follow a save transfer or overlapping save-word
+    /// write. Observe those two capabilities in their sole native owner.
+    pub(crate) fn import_player_capabilities(&mut self, ram: &[u8]) {
+        self.flippers = ram_byte(ram, LINK_ITEM_FLIPPERS);
+        self.moon_pearl = ram_byte(ram, LINK_ITEM_MOON_PEARL);
     }
 
     pub(crate) fn flippers(&self) -> u8 {
@@ -614,10 +626,7 @@ impl<'a> NativeDungeonKeySlotsBridgeMut<'a> {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PlayerResourcesState {
-    // link_magic_power (0xf36e) is owned solely by FollowerLinkState; PlayerResources-
-    // State must not mirror it (it projects after FollowerLinkState and would clobber
-    // item magic-consumption with a stale value). magic_filler stays here.
-    magic_consumption_level: u8,
+    pub(crate) magic: PlayerMagicState,
     bombs: u8,
     equipped_bottle_index: u8,
     rupees_goal: u16,
@@ -633,7 +642,6 @@ pub(crate) struct PlayerResourcesState {
     bomb_upgrade_level: u8,
     arrow_upgrade_level: u8,
     heart_filler: u8,
-    magic_filler: u8,
     pendant_flags: u8,
     bomb_filler: u8,
     arrow_filler: u8,
@@ -646,7 +654,7 @@ pub(crate) struct PlayerResourcesState {
 impl PlayerResourcesState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
-            magic_consumption_level: ram_byte(ram, LINK_MAGIC_CONSUMPTION),
+            magic: PlayerMagicState::load_from_ram(ram),
             bombs: ram_byte(ram, LINK_ITEM_BOMBS),
             equipped_bottle_index: ram_byte(ram, LINK_ITEM_BOTTLE_INDEX),
             rupees_goal: read_word(ram, LINK_RUPEES_GOAL),
@@ -662,7 +670,6 @@ impl PlayerResourcesState {
             bomb_upgrade_level: ram_byte(ram, LINK_BOMB_UPGRADES),
             arrow_upgrade_level: ram_byte(ram, LINK_ARROW_UPGRADES),
             heart_filler: ram_byte(ram, LINK_HEARTS_FILLER),
-            magic_filler: ram_byte(ram, LINK_MAGIC_FILLER),
             pendant_flags: ram_byte(ram, LINK_WHICH_PENDANTS),
             bomb_filler: ram_byte(ram, LINK_BOMB_FILLER),
             arrow_filler: ram_byte(ram, LINK_ARROW_REFILL_COUNTER),
@@ -674,7 +681,12 @@ impl PlayerResourcesState {
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[LINK_MAGIC_CONSUMPTION] = self.magic_consumption_level;
+        self.magic.publish_amount(ram);
+        self.publish_resource_fields(ram);
+    }
+
+    fn publish_resource_fields(&self, ram: &mut [u8]) {
+        self.magic.publish_resource_fields(ram);
         ram[LINK_ITEM_BOMBS] = self.bombs;
         ram[LINK_ITEM_BOTTLE_INDEX] = self.equipped_bottle_index;
         write_le_u16(ram, LINK_RUPEES_GOAL, self.rupees_goal);
@@ -690,7 +702,6 @@ impl PlayerResourcesState {
         ram[LINK_BOMB_UPGRADES] = self.bomb_upgrade_level;
         ram[LINK_ARROW_UPGRADES] = self.arrow_upgrade_level;
         ram[LINK_HEARTS_FILLER] = self.heart_filler;
-        ram[LINK_MAGIC_FILLER] = self.magic_filler;
         ram[LINK_WHICH_PENDANTS] = self.pendant_flags;
         ram[LINK_BOMB_FILLER] = self.bomb_filler;
         ram[LINK_ARROW_REFILL_COUNTER] = self.arrow_filler;
@@ -701,11 +712,11 @@ impl PlayerResourcesState {
     }
 
     pub(crate) fn magic_filler(&self) -> u8 {
-        self.magic_filler
+        self.magic.refill()
     }
 
     pub(crate) fn magic_consumption_level(&self) -> u8 {
-        self.magic_consumption_level
+        self.magic.consumption_level()
     }
 
     pub(crate) fn bomb_filler(&self) -> u8 {
@@ -848,10 +859,14 @@ impl<'a> NativePlayerResourcesBridgeMut<'a> {
     }
 
     fn sync(&mut self) {
-        self.resources.write_to_ram(self.ram);
+        self.resources.publish_resource_fields(self.ram);
+        let mut published = PlayerResourcesState::load_from_ram(self.ram);
+        published.magic = self.resources.magic;
+        debug_assert_eq!(*self.resources, published);
+        debug_assert_eq!(self.resources.magic.refill(), self.ram[LINK_MAGIC_FILLER]);
         debug_assert_eq!(
-            *self.resources,
-            PlayerResourcesState::load_from_ram(self.ram)
+            self.resources.magic.consumption_level(),
+            self.ram[LINK_MAGIC_CONSUMPTION]
         );
     }
 
@@ -865,22 +880,22 @@ impl<'a> NativePlayerResourcesBridgeMut<'a> {
     }
 
     pub(crate) fn set_magic_consumption_level(&mut self, value: u8) {
-        self.resources.magic_consumption_level = value;
+        self.resources.magic.set_consumption_level(value);
         self.sync();
     }
 
     pub(crate) fn set_magic_filler(&mut self, value: u8) {
-        self.resources.magic_filler = value;
+        self.resources.magic.set_refill(value);
         self.sync();
     }
 
     pub(crate) fn clear_magic_filler(&mut self) {
-        self.resources.magic_filler = 0;
+        self.resources.magic.set_refill(0);
         self.sync();
     }
 
     pub(crate) fn decrement_magic_filler(&mut self) {
-        self.resources.magic_filler = self.resources.magic_filler.wrapping_sub(1);
+        self.resources.magic.decrement_refill();
         self.sync();
     }
 
@@ -931,13 +946,13 @@ impl<'a> NativePlayerResourcesBridgeMut<'a> {
     pub(crate) fn increment_heart_filler_word_by(&mut self, value: u16) -> u16 {
         let hearts = self.resources.heart_filler_word().wrapping_add(value);
         self.resources.heart_filler = hearts as u8;
-        self.resources.magic_filler = (hearts >> 8) as u8;
+        self.resources.magic.set_refill((hearts >> 8) as u8);
         self.sync();
         hearts
     }
 
     pub(crate) fn increment_magic_filler_by(&mut self, value: u8) {
-        self.resources.magic_filler = self.resources.magic_filler.wrapping_add(value);
+        self.resources.magic.add_refill(value);
         self.sync();
     }
 
@@ -1117,7 +1132,7 @@ impl<'a> NativePlayerResourcesBridgeMut<'a> {
 
 impl PlayerResourcesState {
     fn heart_filler_word(&self) -> u16 {
-        u16::from(self.heart_filler) | (u16::from(self.magic_filler) << 8)
+        u16::from(self.heart_filler) | (u16::from(self.magic.refill()) << 8)
     }
 }
 

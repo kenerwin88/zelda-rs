@@ -9876,10 +9876,35 @@ fn tolerate_unconsumed_song_end_poll_for_diagnostics() -> bool {
 }
 
 impl ZeldaState {
+    /// Legacy player entry points observe compatibility writes before mutation.
+    /// Equipment is owned by inventory; magic imports only its amount here.
+    pub(crate) fn follower_link_state_mut(&mut self) -> NativeFollowerLinkBridgeMut<'_> {
+        self.game_state
+            .inventory
+            .items
+            .import_player_capabilities(&self.ram);
+        self.game_state
+            .inventory
+            .player_resources
+            .magic
+            .import_amount(&self.ram);
+        NativeFollowerLinkBridgeMut::new(&mut self.game_state.player.follower_link, &mut self.ram)
+    }
+
+    pub(crate) fn player_magic_mut(&mut self) -> crate::game_state::NativePlayerMagicBridgeMut<'_> {
+        // Preserve the former player entry observation while its raw writers remain.
+        self.game_state
+            .inventory
+            .items
+            .import_player_capabilities(&self.ram);
+        self.game_state.player.follower_link = FollowerLinkState::load_from_ram(&self.ram);
+        crate::game_state::NativePlayerMagicBridgeMut::new(
+            &mut self.game_state.inventory.player_resources.magic,
+            &mut self.ram,
+        )
+    }
+
     zelda_bridge_accessors! {
-        pub(crate) fn follower_link_state_mut() -> NativeFollowerLinkBridgeMut {
-            game_state.player.follower_link
-        }
         pub(crate) fn enhanced_features_mut() -> NativeEnhancedFeaturesBridgeMut {
             game_state.enhanced_features
         }
@@ -10125,15 +10150,11 @@ impl ZeldaState {
         }
     }
 
-    /// LINK_MAGIC_CONSUMPTION (0xf37b) read live from RAM, as C does at every consumer
-    /// (`kCapeDepletionTimers[link_magic_consumption]`,
-    /// `kLinkItem_MagicCosts[x * 3 + link_magic_consumption]`,
-    /// `kCaneSpark_Magic[link_magic_consumption]`). PlayerResourcesState is the sole
-    /// native owner -- it holds the only writer, the magic-shop 1/2-magic upgrade -- but
-    /// it is not resynced from RAM at handler entry the way follower_link is, so reading
-    /// the byte is both faithful to C and immune to that asymmetry.
-    pub(crate) fn magic_consumption_level_live(&self) -> u8 {
-        self.ram[crate::game_state::constants::LINK_MAGIC_CONSUMPTION]
+    /// Consume the save-layout observation at the original cost-check boundary.
+    pub(crate) fn magic_consumption_level(&mut self) -> u8 {
+        let magic = &mut self.game_state.inventory.player_resources.magic;
+        magic.import_consumption_level(&self.ram);
+        magic.consumption_level()
     }
 
     pub(crate) fn set_ambient_sound_effect(&mut self, value: u8) {

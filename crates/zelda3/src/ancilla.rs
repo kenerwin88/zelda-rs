@@ -1927,15 +1927,16 @@ impl ZeldaState {
             if self.ancilla_slot_view(k).aux_timer() == 0 {
                 let value = 1;
                 self.ancilla_slot_view_mut(k).set_aux_timer(value);
-                let magic_cost = ANCILLA31_BYRNA_SPARK_CANE_SPARK_MAGIC
-                    [self.magic_consumption_level_live() as usize];
+                let magic_cost =
+                    ANCILLA31_BYRNA_SPARK_CANE_SPARK_MAGIC[self.magic_consumption_level() as usize];
                 let r0 = self
                     .game_state
-                    .player
-                    .follower_link
-                    .magic_power()
+                    .inventory
+                    .player_resources
+                    .magic
+                    .amount()
                     .wrapping_sub(magic_cost);
-                if self.game_state.player.follower_link.magic_power() == 0 || r0 >= 0x80 {
+                if self.game_state.inventory.player_resources.magic.amount() == 0 || r0 >= 0x80 {
                     self.kill_byrna_spark(k);
                     return;
                 }
@@ -1944,7 +1945,7 @@ impl ZeldaState {
                 if sign8(self.ancilla_slot_view(k).g()) {
                     let value = 0x17;
                     self.ancilla_slot_view_mut(k).set_g(value);
-                    self.follower_link_state_mut().set_magic_power(r0);
+                    self.player_magic_mut().set_magic_power(r0);
                 }
                 if self.game_state.player.follower_link.filtered_joypad_h() & 0x40 != 0 {
                     self.kill_byrna_spark(k);

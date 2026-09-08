@@ -44,11 +44,11 @@ impl ZeldaState {
 
     pub(super) fn check_ability_to_swim(&mut self) {
         if !self.game_state.player.follower_link.is_bunny_mirror()
-            && self.game_state.player.follower_link.has_flippers()
+            && self.game_state.inventory.items.has_flippers()
         {
             return;
         }
-        if self.game_state.player.follower_link.has_moon_pearl() {
+        if self.game_state.inventory.items.has_moon_pearl() {
             self.follower_link_state_mut().clear_bunny_mirror();
         }
         self.follower_link_state_mut().set_visibility_status(0x0c);
@@ -79,7 +79,7 @@ impl ZeldaState {
             self.set_bg1_y_offset(0);
             self.set_bg1_x_offset(0);
 
-            if !self.game_state.player.follower_link.has_moon_pearl()
+            if !self.game_state.inventory.items.has_moon_pearl()
                 && self.game_state.inventory.save_progress.dark_world_state() != 0
             {
                 self.follower_link_state_mut().become_bunny_handler();
@@ -136,10 +136,16 @@ impl ZeldaState {
     }
 
     pub(super) fn link_state_bunny_recache(&mut self) {
-        self.follower_link_state_mut().recache_bunny_state();
+        self.game_state
+            .inventory
+            .items
+            .import_player_capabilities(&self.ram);
+        let has_moon_pearl = self.game_state.inventory.items.has_moon_pearl();
+        self.follower_link_state_mut()
+            .recache_bunny_state(has_moon_pearl);
         self.link_reset_swimming_state();
         self.follower_link_state_mut().set_handler_state(2);
-        if self.game_state.player.follower_link.has_moon_pearl() {
+        if self.game_state.inventory.items.has_moon_pearl() {
             self.follower_link_state_mut().clear_handler_state();
             self.load_actual_gear_palettes();
         }
@@ -274,7 +280,7 @@ impl ZeldaState {
         }
 
         self.follower_link_state_mut().clear_swimming_action_state();
-        if !self.game_state.player.follower_link.has_flippers() {
+        if !self.game_state.inventory.items.has_flippers() {
             return;
         }
 
@@ -2828,7 +2834,7 @@ impl ZeldaState {
                     && self.game_state.player.follower_link.is_in_deep_water()
                     && !self.game_state.player.follower_link.is_bunny_mirror()
                 {
-                    if self.game_state.player.follower_link.has_flippers() {
+                    if self.game_state.inventory.items.has_flippers() {
                         self.follower_link_state_mut().clear_deep_water_state();
                         self.follower_link_state_mut()
                             .set_last_direction_from_swim_flags();
@@ -2893,7 +2899,7 @@ impl ZeldaState {
             {
                 self.follower_link_state_mut()
                     .clear_transform_poof_need_and_temp_bunny_timer();
-                if self.game_state.player.follower_link.has_moon_pearl() {
+                if self.game_state.inventory.items.has_moon_pearl() {
                     self.follower_link_state_mut()
                         .clear_bunny_transform_after_moon_pearl();
                 }
@@ -3250,7 +3256,7 @@ impl ZeldaState {
                 == 1
                 && {
                     self.link_force_unequip_cape_quietly();
-                    self.game_state.player.follower_link.has_flippers()
+                    self.game_state.inventory.items.has_flippers()
                 }
             {
                 if !self.game_state.player.follower_link.is_bunny_mirror() {
@@ -3565,7 +3571,7 @@ impl ZeldaState {
                 == 1
                 && {
                     self.link_force_unequip_cape_quietly();
-                    self.game_state.player.follower_link.has_flippers()
+                    self.game_state.inventory.items.has_flippers()
                 }
             {
                 if !self.game_state.player.follower_link.is_bunny_mirror() {
@@ -5130,13 +5136,13 @@ impl ZeldaState {
                 return;
             }
             let cape_timer = PLAYER_CHECK_HANDLE_CAPE_STUFF_CAPE_DEPLETION_TIMERS
-                [self.magic_consumption_level_live() as usize];
+                [self.magic_consumption_level() as usize];
             self.follower_link_state_mut()
                 .set_cape_decrement_counter(cape_timer);
-            if self.game_state.player.follower_link.magic_power() == 0 {
+            if self.game_state.inventory.player_resources.magic.amount() == 0 {
                 return;
             }
-            if self.follower_link_state_mut().decrement_magic_power() != 0 {
+            if self.player_magic_mut().decrement_magic_power() != 0 {
                 return;
             }
         }
@@ -5156,9 +5162,9 @@ impl ZeldaState {
     }
 
     pub(super) fn link_check_magic_cost(&mut self, item: u8) -> bool {
-        let idx = item as usize * 3 + self.magic_consumption_level_live() as usize;
+        let idx = item as usize * 3 + self.magic_consumption_level() as usize;
         let cost = LINK_CHECK_MAGIC_COST_LINK_ITEM_MAGIC_COSTS[idx];
-        if self.follower_link_state_mut().spend_magic(cost) {
+        if self.player_magic_mut().spend_magic(cost) {
             return true;
         }
         if item != 3 {
@@ -5170,15 +5176,14 @@ impl ZeldaState {
     }
 
     pub(super) fn refund_magic(&mut self, item: u8) {
-        let idx = item as usize * 3 + self.magic_consumption_level_live() as usize;
+        let idx = item as usize * 3 + self.magic_consumption_level() as usize;
         let cost = REFUND_MAGIC_LINK_ITEM_MAGIC_COSTS[idx];
 
         let clamp_full = self
             .game_state
             .enhanced_features
             .has(REFUND_MAGIC_FEATURES0_MISC_BUG_FIXES);
-        self.follower_link_state_mut()
-            .refund_magic(cost, clamp_full);
+        self.player_magic_mut().refund_magic(cost, clamp_full);
     }
 
     pub(super) fn link_item_reset_from_overworld_things(&mut self) {
@@ -5205,7 +5210,7 @@ impl ZeldaState {
             }
             self.follower_link_state_mut()
                 .clear_button_mask_b_y_bits(0x40);
-            if self.game_state.player.follower_link.magic_power() == 0 {
+            if self.game_state.inventory.player_resources.magic.amount() == 0 {
                 self.ancilla_sfx2_near(60);
                 self.dialogue_message_index_mut().set_value(123);
                 self.main_show_text_message();
@@ -5215,7 +5220,7 @@ impl ZeldaState {
             self.follower_link_state_mut().clear_action_handler_timer();
             self.follower_link_state_mut().set_cape_mode(1);
             let cape_timer =
-                LINK_ITEM_CAPE_CAPE_DEPLETION_TIMERS[self.magic_consumption_level_live() as usize];
+                LINK_ITEM_CAPE_CAPE_DEPLETION_TIMERS[self.magic_consumption_level() as usize];
             self.follower_link_state_mut()
                 .set_cape_decrement_counter(cape_timer);
             self.follower_link_state_mut().set_cape_transform_timer(20);
@@ -5238,10 +5243,10 @@ impl ZeldaState {
             == 0
         {
             let cape_timer =
-                LINK_ITEM_CAPE_CAPE_DEPLETION_TIMERS[self.magic_consumption_level_live() as usize];
+                LINK_ITEM_CAPE_CAPE_DEPLETION_TIMERS[self.magic_consumption_level() as usize];
             self.follower_link_state_mut()
                 .set_cape_decrement_counter(cape_timer);
-            if self.game_state.player.follower_link.magic_power() == 0
+            if self.game_state.inventory.player_resources.magic.amount() == 0
                 && self
                     .game_state
                     .enhanced_features
@@ -5250,7 +5255,7 @@ impl ZeldaState {
                 self.link_force_unequip_cape();
                 return;
             }
-            if self.follower_link_state_mut().decrement_magic_power() == 0 {
+            if self.player_magic_mut().decrement_magic_power() == 0 {
                 self.link_force_unequip_cape();
                 return;
             }
@@ -6045,7 +6050,7 @@ impl ZeldaState {
             self.set_heart_refill_countdown(7);
             self.hud_rebuild();
         } else if bottle == 4 {
-            if self.game_state.player.follower_link.magic_power() == 128 {
+            if self.game_state.inventory.player_resources.magic.amount() == 128 {
                 self.ancilla_sfx2_near(60);
                 return;
             }
@@ -6061,7 +6066,7 @@ impl ZeldaState {
         } else if bottle == 5 {
             if self.game_state.inventory.player_resources.health_capacity()
                 == self.game_state.inventory.player_resources.current_health()
-                && self.game_state.player.follower_link.magic_power() == 128
+                && self.game_state.inventory.player_resources.magic.amount() == 128
             {
                 self.ancilla_sfx2_near(60);
                 return;
@@ -6790,7 +6795,7 @@ impl ZeldaState {
         }
 
         if Self::bit_sum4(self.game_state.player.tile_detection.deepwater() as u8) >= 2 {
-            if self.game_state.player.follower_link.has_flippers() {
+            if self.game_state.inventory.items.has_flippers() {
                 self.link_set_to_deep_water();
                 self.follower_link_state_mut().set_handler_state(4);
                 self.link_force_unequip_cape_quietly();
@@ -6819,7 +6824,7 @@ impl ZeldaState {
         if world_changed {
             self.memorized_tile_mut().set_count(0);
         }
-        let handler_state = if self.game_state.player.follower_link.has_moon_pearl()
+        let handler_state = if self.game_state.inventory.items.has_moon_pearl()
             || u16::from(self.game_state.world.location.overworld_screen_index()) & 0x40 == 0
         {
             0
@@ -6853,7 +6858,7 @@ impl ZeldaState {
             _ => {}
         }
 
-        if !self.game_state.player.follower_link.has_moon_pearl() {
+        if !self.game_state.inventory.items.has_moon_pearl() {
             self.ancilla_add_bunny_poof(0x23, 4);
             self.link_force_unequip_cape_quietly();
             self.follower_link_state_mut().clear_cape_transform_timer();
@@ -7729,7 +7734,7 @@ impl ZeldaState {
                 self.link_temp_bunny_func2();
                 return;
             }
-            if self.game_state.player.follower_link.has_moon_pearl() {
+            if self.game_state.inventory.items.has_moon_pearl() {
                 self.follower_link_state_mut().clear_bunny_mirror();
             }
         }
@@ -9429,7 +9434,7 @@ impl ZeldaState {
                                 self.link_force_unequip_cape_quietly();
                                 if self.game_state.world.location.is_indoors()
                                     && old_state != 2
-                                    && self.game_state.player.follower_link.has_flippers()
+                                    && self.game_state.inventory.items.has_flippers()
                                 {
                                     self.follower_link_state_mut().mark_lower_level();
                                 }

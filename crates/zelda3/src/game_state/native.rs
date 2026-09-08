@@ -21,6 +21,8 @@ mod misc;
 mod oam;
 mod overlord;
 mod player;
+mod player_magic;
+pub(crate) use player_magic::NativePlayerMagicBridgeMut;
 mod poly;
 mod save_progress;
 mod sprites;
