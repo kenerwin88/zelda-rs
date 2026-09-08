@@ -144,13 +144,6 @@ SINGLE_ARG_ACCESSORS: tuple[SingleArgAccessorMapping, ...] = (
         "slot_mut",
         mutable=True,
     ),
-    SingleArgAccessorMapping("garnish_slot", "game_state.sprites.garnish_slots", "slot"),
-    SingleArgAccessorMapping(
-        "garnish_slot_mut",
-        "game_state.sprites.garnish_slots",
-        "slot_mut",
-        mutable=True,
-    ),
     SingleArgAccessorMapping("overlord_slot", "game_state.sprites.overlord_slots", "slot"),
     SingleArgAccessorMapping(
         "overlord_slot_mut",

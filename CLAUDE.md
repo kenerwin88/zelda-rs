@@ -74,6 +74,11 @@ It does not replace the pinned live Snes9x A/V authority.
 - Debug/trace env switches live behind the `parity-debug` cargo feature (default on;
   `scripts/package_macos.sh` builds release with `--no-default-features`). Add new switches via
   `crate::debug_env::{var, var_os, is_set}`, never `std::env` directly.
+- Garnish slots have one live owner: `ZeldaState.ram`, exposed through
+  `GarnishSlotView`/`GarnishSlotMut`. Do not add a native slot mirror or bulk
+  projection. These views borrow the caller's WRAM, including when the caller
+  is a cloned snapshot. See `docs/parity/garnish-single-owner.md` for ownership
+  ranges and the checkpoint layout change; shared `GarnishRuntimeState` is separate.
 
 ## Common bug classes (almost every root is one of these) + fix recipes
 

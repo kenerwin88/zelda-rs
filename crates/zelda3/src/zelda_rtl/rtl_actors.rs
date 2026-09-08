@@ -169,15 +169,12 @@ impl ZeldaState {
             .slot_mut(&mut self.ram, slot)
     }
 
-    pub(crate) fn garnish_slot_view(&self, slot: usize) -> NativeGarnishSlotView<'_> {
-        self.game_state.sprites.garnish_slots.slot(slot)
+    pub(crate) fn garnish_slot_view(&self, slot: usize) -> GarnishSlotView<'_> {
+        GarnishSlotView::new(&self.ram, slot)
     }
 
-    pub(crate) fn garnish_slot_view_mut(&mut self, slot: usize) -> NativeGarnishSlotBridgeMut<'_> {
-        self.game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut self.ram, slot)
+    pub(crate) fn garnish_slot_view_mut(&mut self, slot: usize) -> GarnishSlotMut<'_> {
+        GarnishSlotMut::new(&mut self.ram, slot)
     }
 
     pub(crate) fn sprite_system_mut(&mut self) -> NativeSpriteSystemBridgeMut<'_> {

@@ -37,6 +37,35 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use zelda3::{game_output::DspWriteEvent, OriginalTimingSemanticReceipt, RomRandomSample};
 
+#[test]
+fn garnish_native_bank_checkpoints_are_rejected_before_positional_decode() {
+    let root = std::env::temp_dir().join(format!(
+        "zelda3-garnish-checkpoint-layout-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    for old_magic in [b"Z3RSPC01", b"Z3RSPC02"] {
+        let path = root.join(String::from_utf8_lossy(old_magic).as_ref());
+        // A header alone cannot deserialize as a checkpoint. The useful layout
+        // error must be returned before attempting the obsolete positional body.
+        fs::write(&path, old_magic).unwrap();
+        let error = crate::snes9x_apu_tools::load_play_crash_checkpoint(&path)
+            .err()
+            .expect("old checkpoint layout must be rejected")
+            .to_string();
+        assert!(error.contains("does not match this binary"), "{error}");
+        assert!(
+            error.contains("re-create it with the current binary"),
+            "{error}"
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
 fn write_paired_resume_test_generation(
     root: &Path,
     directory: &str,

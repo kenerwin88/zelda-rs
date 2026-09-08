@@ -39,8 +39,7 @@ pub(crate) use super::follower::{
     TagalongSlotRead, TagalongTrailState,
 };
 pub(crate) use super::garnish::{
-    GarnishRuntimeState, GarnishSlotsState, NativeGarnishRuntimeBridgeMut,
-    NativeGarnishSlotBridgeMut, NativeGarnishSlotView,
+    GarnishRuntimeState, GarnishSlotMut, GarnishSlotView, NativeGarnishRuntimeBridgeMut,
 };
 pub(crate) use super::overlord::{
     NativeOverlordSlotBridgeMut, NativeOverlordSlotView, OverlordSlotsState,
@@ -178,7 +177,6 @@ pub(crate) struct SpriteState {
     pub(crate) sprite_slots: SpriteSlotsState,
     pub(crate) ancilla_slots: AncillaSlotsState,
     pub(crate) overlord_slots: OverlordSlotsState,
-    pub(crate) garnish_slots: GarnishSlotsState,
     pub(crate) maze_game_timer: MazeGameTimerState,
     pub(crate) prize_drop_cycle: PrizeDropCycleState,
     pub(crate) dual_layer_tile_cache: DualLayerTileCacheState,
@@ -217,7 +215,6 @@ impl SpriteState {
             sprite_slots: SpriteSlotsState::load_from_ram(ram),
             ancilla_slots: AncillaSlotsState::load_from_ram(ram),
             overlord_slots: OverlordSlotsState::load_from_ram(ram),
-            garnish_slots: GarnishSlotsState::load_from_ram(ram),
             maze_game_timer: MazeGameTimerState::load_from_ram(ram),
             prize_drop_cycle: PrizeDropCycleState::load_from_ram(ram),
             dual_layer_tile_cache: DualLayerTileCacheState::load_from_ram(ram),
@@ -242,7 +239,6 @@ impl SpriteState {
         self.sprite_slots.write_to_ram(ram);
         self.ancilla_slots.write_to_ram(ram);
         self.overlord_slots.write_to_ram(ram);
-        self.garnish_slots.write_to_ram(ram);
         // The 0x1fe00 window is C's `beamos_x_hi[]` sprite-history bank, borrowed by
         // mutually-exclusive systems: word_7FFE00 (maze-race timer), byte_7FFE01 (Zelda
         // rescue cutscene state) and beamos_x_hi[0]/[1] (digging-game prize spawn and
@@ -283,7 +279,6 @@ impl SpriteState {
         check!(sprite_slots);
         check!(ancilla_slots);
         check!(overlord_slots);
-        check!(garnish_slots);
         check!(maze_game_timer);
         check!(prize_drop_cycle);
         check!(dual_layer_tile_cache);

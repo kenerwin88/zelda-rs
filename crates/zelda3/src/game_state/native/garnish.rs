@@ -12,338 +12,168 @@ use crate::types::{read_le_u16, write_le_u16};
 
 const GARNISH_SLOT_COUNT: usize = 30;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct GarnishSlotState {
-    garnish_type: u8,
-    x_low: u8,
-    x_high: u8,
-    y_low: u8,
-    y_high: u8,
-    x_velocity: u8,
-    y_velocity: u8,
-    x_subpixel: u8,
-    y_subpixel: u8,
-    countdown: u8,
-    sprite: u8,
-    floor: u8,
-    oam_flags: u8,
+/// A named view of the live garnish bytes in WRAM. There is no second slot
+/// bank to load, project, or reconcile; snapshots retain their own WRAM copy.
+pub(crate) struct GarnishSlotView<'a> {
+    ram: &'a [u8],
+    slot: usize,
 }
 
-impl GarnishSlotState {
-    fn load_from_ram(ram: &[u8], slot: usize) -> Self {
-        Self {
-            garnish_type: ram.get(GARNISH_TYPE + slot).copied().unwrap_or(0),
-            x_low: ram.get(GARNISH_X_LO + slot).copied().unwrap_or(0),
-            x_high: ram.get(GARNISH_X_HI + slot).copied().unwrap_or(0),
-            y_low: ram.get(GARNISH_Y_LO + slot).copied().unwrap_or(0),
-            y_high: ram.get(GARNISH_Y_HI + slot).copied().unwrap_or(0),
-            x_velocity: ram.get(GARNISH_X_VELOCITY + slot).copied().unwrap_or(0),
-            y_velocity: ram.get(GARNISH_Y_VELOCITY + slot).copied().unwrap_or(0),
-            x_subpixel: ram.get(GARNISH_X_SUBPIXEL + slot).copied().unwrap_or(0),
-            y_subpixel: ram.get(GARNISH_Y_SUBPIXEL + slot).copied().unwrap_or(0),
-            countdown: ram.get(GARNISH_COUNTDOWN + slot).copied().unwrap_or(0),
-            sprite: ram.get(GARNISH_SPRITE + slot).copied().unwrap_or(0),
-            floor: ram.get(GARNISH_FLOOR + slot).copied().unwrap_or(0),
-            oam_flags: ram.get(GARNISH_OAM_FLAGS + slot).copied().unwrap_or(0),
-        }
-    }
-
-    fn write_to_ram(&self, ram: &mut [u8], slot: usize) {
-        ram[GARNISH_TYPE + slot] = self.garnish_type;
-        ram[GARNISH_X_LO + slot] = self.x_low;
-        ram[GARNISH_X_HI + slot] = self.x_high;
-        ram[GARNISH_Y_LO + slot] = self.y_low;
-        ram[GARNISH_Y_HI + slot] = self.y_high;
-        ram[GARNISH_X_VELOCITY + slot] = self.x_velocity;
-        ram[GARNISH_Y_VELOCITY + slot] = self.y_velocity;
-        ram[GARNISH_X_SUBPIXEL + slot] = self.x_subpixel;
-        ram[GARNISH_Y_SUBPIXEL + slot] = self.y_subpixel;
-        ram[GARNISH_COUNTDOWN + slot] = self.countdown;
-        crate::types::ww_check(
-            GARNISH_SPRITE + slot,
-            1,
-            "GarnishSlotState::write_to_ram.sprite",
-            self.sprite as u32,
-        );
-        ram[GARNISH_SPRITE + slot] = self.sprite;
-        ram[GARNISH_FLOOR + slot] = self.floor;
-        ram[GARNISH_OAM_FLAGS + slot] = self.oam_flags;
+impl<'a> GarnishSlotView<'a> {
+    pub(crate) fn new(ram: &'a [u8], slot: usize) -> Self {
+        assert!(slot < GARNISH_SLOT_COUNT, "garnish slot out of bounds");
+        Self { ram, slot }
     }
 
     pub(crate) fn garnish_type(&self) -> u8 {
-        self.garnish_type
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.garnish_type == 0
-    }
-
-    pub(crate) fn x(&self) -> u16 {
-        u16::from(self.x_low) | (u16::from(self.x_high) << 8)
+        self.ram[GARNISH_TYPE + self.slot]
     }
 
     pub(crate) fn x_low(&self) -> u8 {
-        self.x_low
+        self.ram[GARNISH_X_LO + self.slot]
     }
 
     pub(crate) fn x_high(&self) -> u8 {
-        self.x_high
-    }
-
-    pub(crate) fn y(&self) -> u16 {
-        u16::from(self.y_low) | (u16::from(self.y_high) << 8)
+        self.ram[GARNISH_X_HI + self.slot]
     }
 
     pub(crate) fn y_low(&self) -> u8 {
-        self.y_low
+        self.ram[GARNISH_Y_LO + self.slot]
     }
 
     pub(crate) fn y_high(&self) -> u8 {
-        self.y_high
+        self.ram[GARNISH_Y_HI + self.slot]
     }
 
     pub(crate) fn x_velocity(&self) -> u8 {
-        self.x_velocity
+        self.ram[GARNISH_X_VELOCITY + self.slot]
     }
 
     pub(crate) fn y_velocity(&self) -> u8 {
-        self.y_velocity
+        self.ram[GARNISH_Y_VELOCITY + self.slot]
     }
 
     pub(crate) fn x_subpixel(&self) -> u8 {
-        self.x_subpixel
+        self.ram[GARNISH_X_SUBPIXEL + self.slot]
     }
 
     pub(crate) fn y_subpixel(&self) -> u8 {
-        self.y_subpixel
+        self.ram[GARNISH_Y_SUBPIXEL + self.slot]
     }
 
     pub(crate) fn countdown(&self) -> u8 {
-        self.countdown
+        self.ram[GARNISH_COUNTDOWN + self.slot]
     }
 
     pub(crate) fn sprite(&self) -> u8 {
-        self.sprite
+        self.ram[GARNISH_SPRITE + self.slot]
     }
 
     pub(crate) fn floor(&self) -> u8 {
-        self.floor
+        self.ram[GARNISH_FLOOR + self.slot]
     }
 
     pub(crate) fn oam_flags(&self) -> u8 {
-        self.oam_flags
-    }
-
-    pub(crate) fn set_garnish_type(&mut self, value: u8) {
-        self.garnish_type = value;
-    }
-
-    pub(crate) fn set_x(&mut self, value: u16) {
-        self.x_low = value as u8;
-        self.x_high = (value >> 8) as u8;
-    }
-
-    pub(crate) fn set_x_low(&mut self, value: u8) {
-        self.x_low = value;
-    }
-
-    pub(crate) fn set_x_high(&mut self, value: u8) {
-        self.x_high = value;
-    }
-
-    pub(crate) fn set_y(&mut self, value: u16) {
-        self.y_low = value as u8;
-        self.y_high = (value >> 8) as u8;
-    }
-
-    pub(crate) fn set_y_low(&mut self, value: u8) {
-        self.y_low = value;
-    }
-
-    pub(crate) fn set_y_high(&mut self, value: u8) {
-        self.y_high = value;
-    }
-
-    pub(crate) fn set_x_velocity(&mut self, value: u8) {
-        self.x_velocity = value;
-    }
-
-    pub(crate) fn set_y_velocity(&mut self, value: u8) {
-        self.y_velocity = value;
-    }
-
-    pub(crate) fn set_x_subpixel(&mut self, value: u8) {
-        self.x_subpixel = value;
-    }
-
-    pub(crate) fn set_y_subpixel(&mut self, value: u8) {
-        self.y_subpixel = value;
-    }
-
-    pub(crate) fn set_countdown(&mut self, value: u8) {
-        self.countdown = value;
-    }
-
-    pub(crate) fn set_sprite(&mut self, value: u8) {
-        self.sprite = value;
-    }
-
-    pub(crate) fn set_floor(&mut self, value: u8) {
-        self.floor = value;
-    }
-
-    pub(crate) fn set_oam_flags(&mut self, value: u8) {
-        self.oam_flags = value;
-    }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct GarnishSlotsState {
-    slots: [GarnishSlotState; GARNISH_SLOT_COUNT],
-}
-
-impl GarnishSlotsState {
-    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
-        let mut state = Self::default();
-        for slot in 0..GARNISH_SLOT_COUNT {
-            state.slots[slot] = GarnishSlotState::load_from_ram(ram, slot);
-        }
-        state
-    }
-
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        for slot in 0..GARNISH_SLOT_COUNT {
-            self.slots[slot].write_to_ram(ram, slot);
-        }
-    }
-
-    pub(crate) fn slot(&self, slot: usize) -> NativeGarnishSlotView<'_> {
-        NativeGarnishSlotView {
-            state: &self.slots[slot],
-        }
-    }
-
-    pub(crate) fn slot_mut<'a>(
-        &'a mut self,
-        ram: &'a mut [u8],
-        slot: usize,
-    ) -> NativeGarnishSlotBridgeMut<'a> {
-        NativeGarnishSlotBridgeMut {
-            state: &mut self.slots[slot],
-            ram,
-            slot,
-        }
-    }
-}
-
-pub(crate) struct NativeGarnishSlotView<'a> {
-    state: &'a GarnishSlotState,
-}
-
-impl<'a> NativeGarnishSlotView<'a> {
-    pub(crate) fn garnish_type(&self) -> u8 {
-        self.state.garnish_type()
+        self.ram[GARNISH_OAM_FLAGS + self.slot]
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        self.state.is_empty()
+        self.garnish_type() == 0
     }
 
     pub(crate) fn x(&self) -> u16 {
-        self.state.x()
-    }
-
-    pub(crate) fn x_low(&self) -> u8 {
-        self.state.x_low()
-    }
-
-    pub(crate) fn x_high(&self) -> u8 {
-        self.state.x_high()
+        u16::from_le_bytes([self.x_low(), self.x_high()])
     }
 
     pub(crate) fn y(&self) -> u16 {
-        self.state.y()
-    }
-
-    pub(crate) fn y_low(&self) -> u8 {
-        self.state.y_low()
-    }
-
-    pub(crate) fn y_high(&self) -> u8 {
-        self.state.y_high()
-    }
-
-    pub(crate) fn x_velocity(&self) -> u8 {
-        self.state.x_velocity()
-    }
-
-    pub(crate) fn y_velocity(&self) -> u8 {
-        self.state.y_velocity()
-    }
-
-    pub(crate) fn x_subpixel(&self) -> u8 {
-        self.state.x_subpixel()
-    }
-
-    pub(crate) fn y_subpixel(&self) -> u8 {
-        self.state.y_subpixel()
-    }
-
-    pub(crate) fn countdown(&self) -> u8 {
-        self.state.countdown()
-    }
-
-    pub(crate) fn sprite(&self) -> u8 {
-        self.state.sprite()
-    }
-
-    pub(crate) fn floor(&self) -> u8 {
-        self.state.floor()
-    }
-
-    pub(crate) fn oam_flags(&self) -> u8 {
-        self.state.oam_flags()
+        u16::from_le_bytes([self.y_low(), self.y_high()])
     }
 }
 
-pub(crate) struct NativeGarnishSlotBridgeMut<'a> {
-    state: &'a mut GarnishSlotState,
+/// Mutates only the selected garnish field's bytes in the authoritative WRAM.
+pub(crate) struct GarnishSlotMut<'a> {
     ram: &'a mut [u8],
     slot: usize,
 }
 
-impl<'a> NativeGarnishSlotBridgeMut<'a> {
-    fn sync(&mut self) {
-        self.state.write_to_ram(self.ram, self.slot);
-        self.debug_assert_matches_ram();
+impl<'a> GarnishSlotMut<'a> {
+    pub(crate) fn new(ram: &'a mut [u8], slot: usize) -> Self {
+        assert!(slot < GARNISH_SLOT_COUNT, "garnish slot out of bounds");
+        Self { ram, slot }
     }
 
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.state,
-            GarnishSlotState::load_from_ram(self.ram, self.slot)
+    pub(crate) fn set_garnish_type(&mut self, value: u8) {
+        self.ram[GARNISH_TYPE + self.slot] = value;
+    }
+
+    pub(crate) fn set_x_low(&mut self, value: u8) {
+        self.ram[GARNISH_X_LO + self.slot] = value;
+    }
+
+    pub(crate) fn set_x_high(&mut self, value: u8) {
+        self.ram[GARNISH_X_HI + self.slot] = value;
+    }
+
+    pub(crate) fn set_y_low(&mut self, value: u8) {
+        self.ram[GARNISH_Y_LO + self.slot] = value;
+    }
+
+    pub(crate) fn set_y_high(&mut self, value: u8) {
+        self.ram[GARNISH_Y_HI + self.slot] = value;
+    }
+
+    pub(crate) fn set_x_velocity(&mut self, value: u8) {
+        self.ram[GARNISH_X_VELOCITY + self.slot] = value;
+    }
+
+    pub(crate) fn set_y_velocity(&mut self, value: u8) {
+        self.ram[GARNISH_Y_VELOCITY + self.slot] = value;
+    }
+
+    pub(crate) fn set_x_subpixel(&mut self, value: u8) {
+        self.ram[GARNISH_X_SUBPIXEL + self.slot] = value;
+    }
+
+    pub(crate) fn set_y_subpixel(&mut self, value: u8) {
+        self.ram[GARNISH_Y_SUBPIXEL + self.slot] = value;
+    }
+
+    pub(crate) fn set_countdown(&mut self, value: u8) {
+        self.ram[GARNISH_COUNTDOWN + self.slot] = value;
+    }
+
+    pub(crate) fn set_sprite(&mut self, value: u8) {
+        crate::types::ww_check(
+            GARNISH_SPRITE + self.slot,
+            1,
+            "GarnishSlotMut::set_sprite",
+            value as u32,
         );
+        self.ram[GARNISH_SPRITE + self.slot] = value;
     }
 
-    forward_synced! {
-        state;
-        fn set_garnish_type(value: u8);
-        fn set_x(value: u16);
-        fn set_x_low(value: u8);
-        fn set_x_high(value: u8);
-        fn set_y(value: u16);
-        fn set_y_low(value: u8);
-        fn set_y_high(value: u8);
-        fn set_x_velocity(value: u8);
-        fn set_y_velocity(value: u8);
-        fn set_x_subpixel(value: u8);
-        fn set_y_subpixel(value: u8);
-        fn set_countdown(value: u8);
-        fn set_sprite(value: u8);
-        fn set_floor(value: u8);
-        fn set_oam_flags(value: u8);
+    pub(crate) fn set_floor(&mut self, value: u8) {
+        self.ram[GARNISH_FLOOR + self.slot] = value;
+    }
+
+    pub(crate) fn set_oam_flags(&mut self, value: u8) {
+        self.ram[GARNISH_OAM_FLAGS + self.slot] = value;
+    }
+
+    pub(crate) fn set_x(&mut self, value: u16) {
+        self.set_x_low(value as u8);
+        self.set_x_high((value >> 8) as u8);
+    }
+
+    pub(crate) fn set_y(&mut self, value: u16) {
+        self.set_y_low(value as u8);
+        self.set_y_high((value >> 8) as u8);
     }
 }
+
+#[cfg(test)]
+#[path = "garnish_tests.rs"]
+mod tests;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct GarnishRuntimeState {
