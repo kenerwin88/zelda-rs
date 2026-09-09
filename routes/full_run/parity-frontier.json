@@ -19,7 +19,7 @@
   },
   "project": "routes/full_run",
   "promoted": {
-    "binary_sha256": "ffcd8158ad72876e373034c19c4f1676aa40c63fad7f7251487e1add63d743ba",
+    "binary_sha256": "a1ba89c7910c8a0f738391ba6fecb1dc990f6b3a3948d1d08d2cd9132440f43e",
     "cached_av_receipt": {
       "candidate_ledger_sha256": "3d52711c51a4f01031bd336aa582d4b6a316c71199710d3354ef015fcca1440c",
       "frames": 1581079,
@@ -27,13 +27,13 @@
         "video",
         "audio"
       ],
-      "manifest_sha256": "bdcd71a21e4b1613d187ebdf4a412d5363ddb33ffba07a03bb0d0da109a007fa",
+      "manifest_sha256": "be24973d8261d1aed1e971d774fdf2ba3337a2732db54fd0b97f430cddbcad9a",
       "oracle_cache_key": "ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18",
       "oracle_cache_manifest_sha256": "4c7f88fbf327a4b3af7d3f8614d82ebb2318f11b607798d5dddb4a97b7fe2715",
-      "receipt_path": "receipts/entrance-full-av.manifest.json",
-      "run": "/Users/missingno/Documents/zelda3-rs/target/entrance-backup-owner/entrance-full-av"
+      "receipt_path": "receipts/owners-full-av.manifest.json",
+      "run": "/Users/missingno/Documents/zelda3-rs/target/world-transient-owners/owners-full-av"
     },
-    "commit": "6538f513974ae53da472d704ef2d29cf917c98b0",
+    "commit": "e403eca3e8f7c6881b621c37ef98673a31b1cce4",
     "kind": "cached_av_pass",
     "last_exact_audio_frame": 1581078,
     "last_exact_engine_state_frame": 1581078,
