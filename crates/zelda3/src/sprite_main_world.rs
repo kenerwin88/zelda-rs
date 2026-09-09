@@ -7,6 +7,7 @@
 
 use super::sprite::{DrawMultipleData, SpriteSpawnInfo};
 use super::*;
+use crate::tile_definition::{NativeTile, PipeJunction};
 use crate::types::{sign16, sign8};
 
 // `kPlayerState_SpinAttacking = 3` and `kPlayerState_Hookshot = 19` from
@@ -190,9 +191,9 @@ impl ZeldaState {
     // }
     pub(super) fn somaria_platform_locate_path(&mut self, k: usize) {
         loop {
-            let tiletype = self.somaria_platform_and_pipe_check_tile_for_world(k);
-            self.sprite_slot_view_mut(k).set_e(tiletype);
-            if (0xb0..0xbf).contains(&tiletype) {
+            let tile = self.somaria_platform_and_pipe_check_tile_for_world(k);
+            self.sprite_slot_view_mut(k).set_somaria_pipe(tile);
+            if tile.is_pipe_path() {
                 break;
             }
             let x = self.sprite_get_x(k).wrapping_add(8);
@@ -259,9 +260,9 @@ impl ZeldaState {
                         self.sprite_slot_view_mut(k).increment_a();
                         self.follower_link_state_mut().set_somaria_platform_state(2);
                         if (self.sprite_slot_view(k).a() & 7) == 0 {
-                            let a = self.somaria_platform_and_pipe_check_tile(k);
-                            if a != self.sprite_slot_view(k).e() {
-                                self.sprite_slot_view_mut(k).set_e(a);
+                            let tile = self.somaria_platform_and_pipe_check_tile(k);
+                            if tile != self.sprite_slot_view(k).somaria_pipe() {
+                                self.sprite_slot_view_mut(k).set_somaria_pipe(tile);
                                 let direction = self.sprite_slot_view(k).direction();
                                 self.sprite_slot_view_mut(k).set_head_direction(direction);
                                 self.somaria_platform_and_pipe_handle_movement(k);
@@ -318,17 +319,17 @@ impl ZeldaState {
     //   See sprite_main.c:25561..25690 for the full switch on sprite_E[k]
     //   covering 0xb2..0xbe.
     pub(super) fn somaria_platform_handle_junctions(&mut self, k: usize) {
-        match self.sprite_slot_view(k).e() {
-            0xb2 | 0xb5 => {
-                // ZigZagRisingSlope
+        let Some(junction) = self.sprite_slot_view(k).somaria_pipe().pipe_junction() else {
+            return;
+        };
+        match junction {
+            PipeJunction::ZigZagRising => {
                 self.sprite_slot_view_mut(k).xor_direction(3);
             }
-            0xb3 | 0xb4 => {
-                // ZigZagFallingSlope
+            PipeJunction::ZigZagFalling => {
                 self.sprite_slot_view_mut(k).xor_direction(2);
             }
-            0xb6 => {
-                // TransitTile
+            PipeJunction::Transit => {
                 self.sprite_slot_view_mut(k).set_ai_state(1);
                 let d = self.sprite_slot_view(k).direction() as usize;
                 if !self.game_state.player.follower_link.has_auxiliary_state()
@@ -344,8 +345,7 @@ impl ZeldaState {
                     self.follower_link_state_mut().set_somaria_platform_state(1);
                 }
             }
-            0xb7 => {
-                // Tjunc_NoUp
+            PipeJunction::TeeNoUp => {
                 let d = self.sprite_slot_view(k).direction() as usize;
                 let t = self.game_state.player.follower_link.joypad1h_last()
                     & SOMARIA_PLATFORM_T_JUNCTION_NO_UP_KEYS[d];
@@ -362,8 +362,7 @@ impl ZeldaState {
                 }
                 self.sprite_slot_view_mut(k).set_ai_state(0);
             }
-            0xb8 => {
-                // Tjunc_NoDown
+            PipeJunction::TeeNoDown => {
                 let d = self.sprite_slot_view(k).direction() as usize;
                 let t = self.game_state.player.follower_link.joypad1h_last()
                     & SOMARIA_PLATFORM_T_JUNCTION_NO_DOWN_KEYS[d];
@@ -380,8 +379,7 @@ impl ZeldaState {
                 }
                 self.sprite_slot_view_mut(k).set_ai_state(0);
             }
-            0xb9 => {
-                // Tjunc_NoLeft
+            PipeJunction::TeeNoLeft => {
                 let d = self.sprite_slot_view(k).direction() as usize;
                 let t = self.game_state.player.follower_link.joypad1h_last()
                     & SOMARIA_PLATFORM_T_JUNCTION_NO_LEFT_KEYS[d];
@@ -398,8 +396,7 @@ impl ZeldaState {
                 }
                 self.sprite_slot_view_mut(k).set_ai_state(0);
             }
-            0xba => {
-                // Tjunc_NoRight
+            PipeJunction::TeeNoRight => {
                 let d = self.sprite_slot_view(k).direction() as usize;
                 let t = self.game_state.player.follower_link.joypad1h_last()
                     & SOMARIA_PLATFORM_T_JUNCTION_NO_RIGHT_KEYS[d];
@@ -416,8 +413,7 @@ impl ZeldaState {
                 }
                 self.sprite_slot_view_mut(k).set_ai_state(0);
             }
-            0xbb => {
-                // TransitTileNoBack
+            PipeJunction::TransitNoBack => {
                 let d = self.sprite_slot_view(k).direction() as usize;
                 let t = self.game_state.player.follower_link.joypad1h_last()
                     & SOMARIA_PLATFORM_TRANSIT_NO_BACK_KEYS[d];
@@ -431,8 +427,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_direction(3);
                 }
             }
-            0xbc => {
-                // TransitTileQuestion
+            PipeJunction::TransitQuestion => {
                 self.sprite_slot_view_mut(k).set_ai_state(1);
                 let d = self.sprite_slot_view(k).direction() as usize;
                 let t = self.game_state.player.follower_link.joypad1h_last()
@@ -451,8 +446,7 @@ impl ZeldaState {
                 }
                 self.follower_link_state_mut().set_somaria_platform_state(1);
             }
-            0xbe => {
-                // endpoint
+            PipeJunction::Endpoint => {
                 self.sprite_slot_view_mut(k).set_ai_state(0);
                 self.sprite_slot_view_mut(k).xor_direction(1);
                 {
@@ -460,7 +454,7 @@ impl ZeldaState {
                     self.follower_link_state_mut().set_somaria_platform_state(1);
                 }
             }
-            _ => {}
+            PipeJunction::Straight | PipeJunction::Boundary => {}
         }
     }
 
@@ -558,14 +552,17 @@ impl ZeldaState {
                 self.somaria_platform_locate_path(k);
             }
             1 => {
-                let mut t = self.somaria_platform_and_pipe_check_tile(k);
-                if t == 0xbe {
+                let tile = self.somaria_platform_and_pipe_check_tile(k);
+                if tile.pipe_junction() == Some(PipeJunction::Endpoint) {
                     let graphics = self.sprite_slot_view(k).graphics().wrapping_add(1);
                     self.sprite_slot_view_mut(k).set_graphics(graphics);
                     self.sprite_slot_view_mut(k).xor_direction(1);
-                    t = self.sprite_slot_view(k).direction();
+                    // The original leaves the new direction in the pipe slot.
+                    let direction = self.sprite_slot_view(k).direction();
+                    self.sprite_slot_view_mut(k).set_e(direction);
+                } else {
+                    self.sprite_slot_view_mut(k).set_somaria_pipe(tile);
                 }
-                self.sprite_slot_view_mut(k).set_e(t);
                 let direction = self.sprite_slot_view(k).direction();
                 self.sprite_slot_view_mut(k).set_head_direction(direction);
                 self.somaria_platform_and_pipe_handle_movement(k);
@@ -611,13 +608,16 @@ impl ZeldaState {
                 loop {
                     self.sprite_slot_view_mut(k).increment_a();
                     if (self.sprite_slot_view(k).a() & 7) == 0 {
-                        let t = self.somaria_platform_and_pipe_check_tile(k);
-                        if (0xb2..0xb6).contains(&t) {
+                        let tile = self.somaria_platform_and_pipe_check_tile(k);
+                        if matches!(
+                            tile.pipe_junction(),
+                            Some(PipeJunction::ZigZagRising | PipeJunction::ZigZagFalling)
+                        ) {
                             self.sprite_sfx_queue_sfx2_with_pan(k, 0xb);
                         }
-                        if t != self.sprite_slot_view(k).e() {
-                            self.sprite_slot_view_mut(k).set_e(t);
-                            if t == 0xbe {
+                        if tile != self.sprite_slot_view(k).somaria_pipe() {
+                            self.sprite_slot_view_mut(k).set_somaria_pipe(tile);
+                            if tile.pipe_junction() == Some(PipeJunction::Endpoint) {
                                 let graphics = self.sprite_slot_view(k).graphics().wrapping_add(1);
                                 self.sprite_slot_view_mut(k).set_graphics(graphics);
                                 self.sprite_slot_view_mut(k).set_delay_aux1(24);
@@ -1656,14 +1656,13 @@ impl ZeldaState {
     //   uint16 x = Sprite_GetX(k), y = Sprite_GetY(k);
     //   return GetTileAttribute(0, &x, y);
     // }
-    pub(super) fn somaria_platform_and_pipe_check_tile(&mut self, k: usize) -> u8 {
+    pub(super) fn somaria_platform_and_pipe_check_tile(&mut self, k: usize) -> NativeTile {
         let mut x = self.sprite_get_x(k);
         let y = self.sprite_get_y(k);
-        // The pipe network keeps the encoded identity in the sprite's E slot.
-        self.probe_entity_tile(0, &mut x, y).cartridge_attribute()
+        self.probe_entity_tile(0, &mut x, y)
     }
 
-    fn somaria_platform_and_pipe_check_tile_for_world(&mut self, k: usize) -> u8 {
+    fn somaria_platform_and_pipe_check_tile_for_world(&mut self, k: usize) -> NativeTile {
         self.somaria_platform_and_pipe_check_tile(k)
     }
 

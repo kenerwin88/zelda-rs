@@ -4667,13 +4667,15 @@ impl ZeldaState {
 
             // Count closed sides (up, down, left) until the first open pipe.
             let is_pipe = |state: &Self, pos: usize| {
-                state
-                    .game_state
-                    .dungeon
-                    .bg2_attributes
-                    .bg2_tile(pos)
-                    .dungeon_role()
-                    == DungeonRole::SomariaPipe
+                matches!(
+                    state
+                        .game_state
+                        .dungeon
+                        .bg2_attributes
+                        .bg2_tile(pos)
+                        .dungeon_role(),
+                    DungeonRole::SomariaPipe { .. }
+                )
             };
             let mut t = 0usize;
             if !is_pipe(self, pos.wrapping_sub(0x40)) {

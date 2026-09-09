@@ -605,6 +605,21 @@ slot_byte_accessors! {
 }
 
 impl<'a> NativeSpriteSlotView<'a> {
+    /// The Somaria platform and pipe travellers keep their last pipe tile in
+    /// the E slot; after an endpoint the original parks a direction there,
+    /// which imports as a non-pipe identity and forces a fresh probe.
+    pub(crate) fn somaria_pipe(&self) -> NativeTile {
+        NativeTile::from_cartridge(self.e())
+    }
+}
+
+impl<'a> NativeSpriteSlotBridgeMut<'a> {
+    pub(crate) fn set_somaria_pipe(&mut self, tile: NativeTile) {
+        self.set_e(tile.cartridge_attribute());
+    }
+}
+
+impl<'a> NativeSpriteSlotView<'a> {
     pub(crate) fn x(&self) -> u16 {
         self.state
             .packed_position(self.slot, SPRITE_X_LO, SPRITE_X_HI)

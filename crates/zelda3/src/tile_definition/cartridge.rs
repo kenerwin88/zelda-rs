@@ -1,5 +1,5 @@
 //! Cartridge decoding, evaluated once for the native definition catalog.
-use super::{DungeonRole, EntityCollision, EntitySlope, TileBehavior, TileResult};
+use super::{DungeonRole, EntityCollision, EntitySlope, PipeJunction, TileBehavior, TileResult};
 
 impl super::TilePair {
     pub(crate) const fn import_table<const N: usize>(words: [u16; N]) -> [Self; N] {
@@ -383,7 +383,22 @@ impl DungeonRole {
                 slot: (attribute & 15) as usize,
             },
             0x80..=0x8f => Self::OpenDoor,
-            0xb0..=0xbf => Self::SomariaPipe,
+            0xb0..=0xbf => Self::SomariaPipe {
+                junction: match attribute {
+                    0xb2 | 0xb5 => PipeJunction::ZigZagRising,
+                    0xb3 | 0xb4 => PipeJunction::ZigZagFalling,
+                    0xb6 => PipeJunction::Transit,
+                    0xb7 => PipeJunction::TeeNoUp,
+                    0xb8 => PipeJunction::TeeNoDown,
+                    0xb9 => PipeJunction::TeeNoLeft,
+                    0xba => PipeJunction::TeeNoRight,
+                    0xbb => PipeJunction::TransitNoBack,
+                    0xbc => PipeJunction::TransitQuestion,
+                    0xbe => PipeJunction::Endpoint,
+                    0xbf => PipeJunction::Boundary,
+                    _ => PipeJunction::Straight,
+                },
+            },
             0xc0..=0xcf => Self::Torch {
                 slot: (attribute & 15) as usize,
             },

@@ -112,13 +112,34 @@ pub(crate) enum DungeonRole {
         slot: usize,
     },
     OpenDoor,
-    SomariaPipe,
+    SomariaPipe {
+        junction: PipeJunction,
+    },
     Torch {
         slot: usize,
     },
     ClosedDoor {
         slot: usize,
     },
+}
+
+/// How a Cane of Somaria platform or pipe traveller reacts on a pipe tile.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PipeJunction {
+    Straight,
+    ZigZagRising,
+    ZigZagFalling,
+    Transit,
+    TeeNoUp,
+    TeeNoDown,
+    TeeNoLeft,
+    TeeNoRight,
+    TransitNoBack,
+    TransitQuestion,
+    Endpoint,
+    /// The last pipe identity: the platform poof counts it as pipe, but the
+    /// path search never stops on it.
+    Boundary,
 }
 
 /// Fine-position profile of the four straight slopes as entities see them.
@@ -320,6 +341,21 @@ impl NativeTile {
 
     pub(crate) const fn dungeon_role(self) -> DungeonRole {
         self.0.dungeon_role
+    }
+
+    /// Whether a Somaria path search stops here.
+    pub(crate) const fn is_pipe_path(self) -> bool {
+        match self.0.dungeon_role {
+            DungeonRole::SomariaPipe { junction } => !matches!(junction, PipeJunction::Boundary),
+            _ => false,
+        }
+    }
+
+    pub(crate) const fn pipe_junction(self) -> Option<PipeJunction> {
+        match self.0.dungeon_role {
+            DungeonRole::SomariaPipe { junction } => Some(junction),
+            _ => None,
+        }
     }
 
     /// Landing class a room transition reads under the player; the original

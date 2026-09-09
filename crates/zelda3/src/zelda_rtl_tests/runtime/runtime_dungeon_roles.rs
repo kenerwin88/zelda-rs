@@ -1,6 +1,6 @@
 use super::*;
 use crate::game_state::constants::DUNGEON_TORCH_ATTR;
-use crate::tile_definition::{DungeonRole, NativeTile, TilePair};
+use crate::tile_definition::{DungeonRole, NativeTile, PipeJunction, TilePair};
 
 fn tile(attribute: u8) -> NativeTile {
     NativeTile::from_cartridge(attribute)
@@ -42,7 +42,23 @@ fn original_role(a: u8) -> DungeonRole {
     } else if (a & 0xf0) == 0x80 {
         DungeonRole::OpenDoor
     } else if (a & 0xf0) == 0xb0 {
-        DungeonRole::SomariaPipe
+        // SomariaPlatform_HandleJunctions' switch; 0xbf never ends a path search.
+        DungeonRole::SomariaPipe {
+            junction: match a {
+                0xb2 | 0xb5 => PipeJunction::ZigZagRising,
+                0xb3 | 0xb4 => PipeJunction::ZigZagFalling,
+                0xb6 => PipeJunction::Transit,
+                0xb7 => PipeJunction::TeeNoUp,
+                0xb8 => PipeJunction::TeeNoDown,
+                0xb9 => PipeJunction::TeeNoLeft,
+                0xba => PipeJunction::TeeNoRight,
+                0xbb => PipeJunction::TransitNoBack,
+                0xbc => PipeJunction::TransitQuestion,
+                0xbe => PipeJunction::Endpoint,
+                0xbf => PipeJunction::Boundary,
+                _ => PipeJunction::Straight,
+            },
+        }
     } else if (a & 0xf0) == 0xc0 {
         DungeonRole::Torch {
             slot: usize::from(a & 0x0f),
@@ -66,6 +82,7 @@ fn dungeon_roles_match_the_original_mask_arithmetic() {
     for a in 0..=u8::MAX {
         let t = tile(a);
         assert_eq!(t.dungeon_role(), original_role(a), "{a:#04x}");
+        assert_eq!(t.is_pipe_path(), (0xb0..0xbf).contains(&a), "{a:#04x}");
         assert_eq!(t.object_slot(), usize::from(a & 0x0f));
         // CalculateTransitionLanding.
         let landing = if a == 0 || a == 9 {
