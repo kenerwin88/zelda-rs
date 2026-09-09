@@ -9,7 +9,7 @@
 //! wrapped behind local `_for_helmasaur_king` shims until their canonical OAM
 //! paths are ported.
 
-use super::sprite_main_draw::PrepOamCoordsRet;
+use super::sprite::PrepOamCoordsRet;
 use super::*;
 use crate::types::{sign8, SpriteHitBox};
 

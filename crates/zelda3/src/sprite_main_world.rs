@@ -191,7 +191,7 @@ impl ZeldaState {
     // }
     pub(super) fn somaria_platform_locate_path(&mut self, k: usize) {
         loop {
-            let tile = self.somaria_platform_and_pipe_check_tile_for_world(k);
+            let tile = self.somaria_platform_and_pipe_check_tile(k);
             self.sprite_slot_view_mut(k).set_somaria_pipe(tile);
             if tile.is_pipe_path() {
                 break;
@@ -703,7 +703,7 @@ impl ZeldaState {
             0 => {
                 // waiting
                 if self.sprite_check_if_link_is_busy()
-                    || !self.sprite_check_damage_to_link_same_layer_for_world(k)
+                    || !self.sprite_check_damage_to_link_same_layer(k)
                     || self.game_state.player.follower_link.facing() != 2
                     || (self.game_state.player.follower_link.filtered_joypad_l() & 0x80) == 0
                     || (self.game_state.inventory.player_resources.pendant_flags() & 7) != 7
@@ -801,7 +801,7 @@ impl ZeldaState {
     //     MasterSword_SpawnLightBeam(k, sprite_A[k] >> 2 & 1, kMasterSword_NumLightBeams[j]);
     // }
     pub(super) fn sprite_master_sword_light_fountain(&mut self, k: usize) {
-        self.sprite_draw_light_fountain_for_world(k);
+        self.sprite_draw_light_fountain(k);
         let new_a = self.sprite_slot_view(k).a().wrapping_add(1);
         self.sprite_slot_view_mut(k).set_a(new_a);
         if new_a == 0 {
@@ -829,7 +829,7 @@ impl ZeldaState {
     //   sprite_graphics[k] = 0;
     // }
     pub(super) fn sprite_master_sword_light_well(&mut self, k: usize) {
-        self.sprite_draw_light_fountain_for_world(k);
+        self.sprite_draw_light_fountain(k);
         let new_a = self.sprite_slot_view(k).a().wrapping_add(1);
         self.sprite_slot_view_mut(k).set_a(new_a);
         if new_a == 0 {
@@ -884,7 +884,7 @@ impl ZeldaState {
     //   if (!--sprite_B[k]) sprite_state[k] = 0;
     // }
     pub(super) fn sprite_master_sword_light_beam(&mut self, k: usize) {
-        self.sprite_draw_single_large_for_world(k);
+        self.sprite_draw_single_large(k);
         if self.sprite_slot_view(k).a() != 0 {
             if let Some(SpriteMainCpuBoundary::MasterSwordLightBeamSpawn {
                 slot,
@@ -1202,7 +1202,7 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_master_sword_prop(&mut self, k: usize) {
         self.oam_allocate_from_region_b(4);
-        self.sprite_draw_single_large_for_world(k);
+        self.sprite_draw_single_large(k);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 self.sprite_move_xy(k);
@@ -1257,7 +1257,7 @@ impl ZeldaState {
             self.set_oam_helper0_at(oam, ex, ey, MASTER_SWORD_DRAW_CHARS[i], flags, 0);
             oam += 4;
         }
-        self.sprite_correct_oam_entries_for_world(k, 5, 0);
+        self.sprite_correct_oam_entries(k, 5, 0);
     }
 
     // ============================================================
@@ -1295,7 +1295,7 @@ impl ZeldaState {
     //   See sprite_main.c:9828..9879 for the full state machine.
     pub(super) fn flute_kid_human(&mut self, k: usize) {
         if self.sprite_slot_view(k).ai_state() != 3 {
-            let c = self.flute_boy_draw_for_world(k);
+            let c = self.flute_boy_draw(k);
             self.sprite_slot_view_mut(k).set_c(c);
         }
         if self.sprite_return_if_inactive(k) {
@@ -1338,14 +1338,14 @@ impl ZeldaState {
             }
             2 => {
                 if (self.game_state.frame.frame_counter & 15) == 0 {
-                    self.palette_filter_sp5f_for_world();
+                    self.PaletteFilter_SP5F();
                     if self.game_state.display.palette_filter.countdown() == 0 {
                         self.sprite_slot_view_mut(k).set_ai_state(3);
                     }
                 }
             }
             3 => {
-                self.palette_filter_restore_sp5f_for_world();
+                self.PaletteFilter_RestoreSP5F();
                 self.palette_revert_translucency_swap();
                 self.sprite_slot_view_mut(k).set_state(0);
                 self.follower_link_state_mut().clear_immobilized();
@@ -1357,7 +1357,7 @@ impl ZeldaState {
     // void Sprite_FluteKid_Stumpy(int k) {  // 86b040
     //   See sprite_main.c:9881..9954 for the conversation / shovel sequence.
     pub(super) fn sprite_flute_kid_stumpy(&mut self, k: usize) {
-        self.flute_aardvark_draw_for_world(k);
+        self.flute_aardvark_draw(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -1365,18 +1365,18 @@ impl ZeldaState {
             0 => match self.game_state.inventory.items.flute() & 3 {
                 0 => {
                     // supplicate
-                    if (self.sprite_show_solicited_message_for_world(k, 0xe5) & 0x100) != 0 {
+                    if (self.sprite_show_solicited_message(k, 0xe5) & 0x100) != 0 {
                         self.sprite_slot_view_mut(k).set_ai_state(1);
                     }
                 }
                 1 => {
                     // give me flute
-                    self.sprite_show_solicited_message_for_world(k, 0xe8);
+                    self.sprite_show_solicited_message(k, 0xe8);
                 }
                 2 => {
                     // thanks
                     self.sprite_slot_view_mut(k).set_graphics(1);
-                    if (self.sprite_show_solicited_message_for_world(k, 0xe9) & 0x100) != 0 {
+                    if (self.sprite_show_solicited_message(k, 0xe9) & 0x100) != 0 {
                         self.sprite_slot_view_mut(k).set_ai_state(3);
                     }
                 }
@@ -1463,7 +1463,7 @@ impl ZeldaState {
     //     sprite_x_vel[k] += (frame_counter >> 5 ^ cur_object_index) & 1 ? -1 : 1;
     // }
     pub(super) fn sprite_flute_kid_quaver(&mut self, k: usize) {
-        self.sprite_draw_single_small_for_world(k);
+        self.sprite_draw_single_small(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -1662,10 +1662,6 @@ impl ZeldaState {
         self.probe_entity_tile(0, &mut x, y)
     }
 
-    fn somaria_platform_and_pipe_check_tile_for_world(&mut self, k: usize) -> NativeTile {
-        self.somaria_platform_and_pipe_check_tile(k)
-    }
-
     // Rewired to canonical Sprite_SpawnDynamically port. The C variant
     // uses j_max=15; the prior `_for_world` shim historically used 13
     // (matching SpawnDynamicallyEx's 13-slot variant). The canonical
@@ -1691,54 +1687,6 @@ impl ZeldaState {
             ..Default::default()
         };
         self.sprite_set_spawned_coordinates(j, &info);
-    }
-
-    // Rewired to canonical single-tile draw ports.
-    fn sprite_draw_single_large_for_world(&mut self, k: usize) {
-        self.sprite_draw_single_large(k);
-    }
-    fn sprite_draw_single_small_for_world(&mut self, k: usize) {
-        self.sprite_draw_single_small(k);
-    }
-
-    // Rewired to canonical Sprite_CorrectOamEntries port.
-    fn sprite_correct_oam_entries_for_world(&mut self, k: usize, count: u8, mask: u8) {
-        self.sprite_correct_oam_entries(k, count as i32, mask);
-    }
-
-    // Rewired to canonical SpriteDraw_LightFountain port.
-    fn sprite_draw_light_fountain_for_world(&mut self, k: usize) {
-        self.sprite_draw_light_fountain(k);
-    }
-
-    // Rewired to canonical Sprite_CheckDamageToLink_same_layer port
-    // (sprite.c:2535).
-    fn sprite_check_damage_to_link_same_layer_for_world(&mut self, k: usize) -> bool {
-        self.sprite_check_damage_to_link_same_layer(k)
-    }
-
-    // Rewired to canonical FluteBoy_Draw port.
-    fn flute_boy_draw_for_world(&mut self, k: usize) -> u8 {
-        self.flute_boy_draw(k)
-    }
-
-    // Rewired to canonical FluteAardvark_Draw port.
-    fn flute_aardvark_draw_for_world(&mut self, k: usize) {
-        self.flute_aardvark_draw(k);
-    }
-
-    // Rewired to canonical Sprite_ShowSolicitedMessage port.
-    fn sprite_show_solicited_message_for_world(&mut self, k: usize, msg: u16) -> u16 {
-        self.sprite_show_solicited_message(k, msg)
-    }
-
-    // Rewired to canonical PaletteFilter_SP5F / PaletteFilter_RestoreSP5F ports.
-    fn palette_filter_sp5f_for_world(&mut self) {
-        self.PaletteFilter_SP5F();
-    }
-
-    fn palette_filter_restore_sp5f_for_world(&mut self) {
-        self.PaletteFilter_RestoreSP5F();
     }
 }
 

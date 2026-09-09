@@ -2964,7 +2964,7 @@ impl ZeldaState {
             return None;
         }
 
-        self.ancilla_terminate_sparkle_objects_for_ancilla();
+        self.ancilla_terminate_sparkle_objects();
 
         if self.ancilla_add_check_for_presence(0x43) {
             return None;
@@ -3014,23 +3014,6 @@ impl ZeldaState {
             self.game_state.player.follower_link.x(),
             self.game_state.player.follower_link.y().wrapping_sub(16),
         );
-    }
-
-    fn ancilla_terminate_sparkle_objects_for_ancilla(&mut self) {
-        for i in (0..=4).rev() {
-            let t = self.ancilla_slot_view(i).ancilla_type();
-            if t == 0x2a
-                || t == 0x2b
-                || t == 0x30
-                || t == 0x31
-                || t == 0x18
-                || t == 0x19
-                || t == 0x0c
-            {
-                let value = 0;
-                self.ancilla_slot_view_mut(i).set_ancilla_type(value);
-            }
-        }
     }
 
     pub(super) fn ancilla_add_blast_wall(&mut self) {
@@ -6604,37 +6587,8 @@ impl ZeldaState {
             }
             let value = 1;
             self.sprite_slot_view_mut(j).set_head_direction(value);
-            self.sprite_spawn_poof_garnish_for_ancilla(j);
+            self.sprite_spawn_poof_garnish(j);
         }
-    }
-
-    fn garnish_alloc_force_for_ancilla(&self) -> usize {
-        (0..30)
-            .rev()
-            .find(|&k| self.garnish_slot_view(k).is_empty())
-            .unwrap_or(0)
-    }
-
-    fn sprite_spawn_poof_garnish_for_ancilla(&mut self, j: usize) {
-        let k = self.garnish_alloc_force_for_ancilla();
-        let value = 10;
-        self.garnish_slot_view_mut(k).set_garnish_type(value);
-        self.garnish_state_mut().set_active_type(10);
-        let value = self.sprite_slot_view(j).x_low();
-        self.garnish_slot_view_mut(k).set_x_low(value);
-        let value = self.sprite_slot_view(j).x_high();
-        self.garnish_slot_view_mut(k).set_x_high(value);
-        let y = self.sprite_get_y(j).wrapping_add(16);
-        let value = y as u8;
-        self.garnish_slot_view_mut(k).set_y_low(value);
-        let value = (y >> 8) as u8;
-        self.garnish_slot_view_mut(k).set_y_high(value);
-        // C's Sprite_SpawnPoofGarnish writes sprite_floor[j] to garnish_sprite[k] (0x1f92c + k),
-        // which maps to the `sprite` field. Match that here.
-        let value = self.sprite_slot_view(j).floor();
-        self.garnish_slot_view_mut(k).set_sprite(value);
-        let value = 15;
-        self.garnish_slot_view_mut(k).set_countdown(value);
     }
 
     fn wish_pond_item_draw(&mut self, k: usize) {
@@ -10002,34 +9956,6 @@ impl ZeldaState {
         }
     }
 
-    fn sprite_place_rupulse_spark_2_for_ancilla(&mut self, k: usize) {
-        let x = self
-            .sprite_get_x(k)
-            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
-        let y = self
-            .sprite_get_y(k)
-            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
-        if x & !0xff != 0 || y & !0xff != 0 {
-            return;
-        }
-        let spark_x = self.sprite_slot_view(k).x_low();
-        let spark_y = self.sprite_slot_view(k).y_low();
-        let spark_floor = self.sprite_slot_view(k).floor();
-        self.garnish_state_mut().set_repulsespark_x_lo(spark_x);
-        self.garnish_state_mut().set_repulsespark_y_lo(spark_y);
-        self.garnish_state_mut().set_repulsespark_timer(5);
-        self.garnish_state_mut()
-            .set_repulsespark_floor_status(spark_floor);
-    }
-
-    fn sprite_place_weapon_tink_for_ancilla(&mut self, k: usize) {
-        if self.game_state.sprites.garnish_runtime.repulsespark_timer() != 0 {
-            return;
-        }
-        self.sprite_sfx_queue_sfx2_with_pan(k, 5);
-        self.sprite_place_rupulse_spark_2_for_ancilla(k);
-    }
-
     fn sprite_create_deflected_arrow(&mut self, k: usize) {
         let value = 0;
         self.ancilla_slot_view_mut(k).set_ancilla_type(value);
@@ -10052,7 +9978,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(j).set_y_velocity(value);
             let value = self.game_state.player.follower_link.lower_level_state();
             self.sprite_slot_view_mut(j).set_floor(value);
-            self.sprite_place_weapon_tink_for_ancilla(j);
+            self.sprite_place_weapon_tink(j);
         }
     }
 

@@ -2530,7 +2530,7 @@ impl ZeldaState {
     // Helper: void BawkBawk(int k) {  // sprite_main.c:9466
     //   SpriteSfx_QueueSfx2WithPan(k, 0x30);
     // }
-    fn bawk_bawk(&mut self, k: usize) {
+    pub(super) fn bawk_bawk(&mut self, k: usize) {
         self.sprite_sfx_queue_sfx2_with_pan(k, 0x30);
     }
 

@@ -704,7 +704,7 @@ impl ZeldaState {
         self.overlord_slot_view_mut(k).set_overlord_type(value);
         if sprite_type == 26 {
             self.sprite_slot_view_mut(j).set_sprite_type(74);
-            self.Sprite_TransmuteToBomb(j);
+            self.sprite_transmute_to_bomb(j);
             self.sprite_slot_view_mut(j).set_delay_aux1(112);
         }
     }
@@ -918,16 +918,6 @@ impl ZeldaState {
         (0..30)
             .rev()
             .find(|&j| self.garnish_slot_view(j).is_empty())
-    }
-
-    fn Sprite_TransmuteToBomb(&mut self, k: usize) {
-        let mut sprite = self.sprite_slot_view_mut(k);
-        sprite.set_sprite_type(0x4a);
-        sprite.set_c(1);
-        sprite.set_delay_aux1(255);
-        sprite.set_flags3(0x18);
-        sprite.set_oam_flags(8);
-        sprite.set_health(0);
     }
 }
 

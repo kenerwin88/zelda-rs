@@ -13293,7 +13293,7 @@ impl ZeldaState {
         };
         self.set_color_math_control(color_math_control);
         self.dungeon_room_effects_mut()
-            .set_fixed_color_plusminus(MODULE_PRE_DUNGEON_LIT_TORCHES_COLOR_PLUS[torch]);
+            .set_fixed_color_plusminus(DUNGEON_LIT_TORCH_COLOR_PLUS[torch]);
         self.Dungeon_ApproachFixedColor_variable(
             self.game_state.dungeon.room_effects.fixed_color_plusminus(),
         );

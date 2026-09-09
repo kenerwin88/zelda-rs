@@ -45,6 +45,17 @@ pub(super) struct PrepOamCoordsRet {
     pub flags: u8,
 }
 
+impl PrepOamCoordsRet {
+    pub(super) fn from_tuple(t: (u16, u16, u8)) -> Self {
+        Self {
+            x: t.0,
+            y: t.1,
+            r4: 0,
+            flags: t.2,
+        }
+    }
+}
+
 /// A C statement boundary inside `Dungeon_LoadSingleSprite` (`sprite.c:3649-3660`).
 ///
 /// The room loader can cross vblank between these writes.  Keeping the
@@ -385,24 +396,9 @@ impl ZeldaState {
             let value = 255;
             self.sprite_slot_view_mut(j).set_stunned(value);
             if self.sprite_slot_view(j).sprite_type() == 0xd8 {
-                self.sprite_transmute_to_bomb_for_sprite(j);
+                self.sprite_transmute_to_bomb(j);
             }
         }
-    }
-
-    fn sprite_transmute_to_bomb_for_sprite(&mut self, k: usize) {
-        let value = 0x4a;
-        self.sprite_slot_view_mut(k).set_sprite_type(value);
-        let value = 1;
-        self.sprite_slot_view_mut(k).set_c(value);
-        let value = 255;
-        self.sprite_slot_view_mut(k).set_delay_aux1(value);
-        let value = 0x18;
-        self.sprite_slot_view_mut(k).set_flags3(value);
-        let value = 8;
-        self.sprite_slot_view_mut(k).set_oam_flags(value);
-        let value = 0;
-        self.sprite_slot_view_mut(k).set_health(value);
     }
 
     pub(super) fn sprite_nullify_hookshot_drag(&mut self) {
@@ -4996,7 +4992,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         false
     }
 
-    fn set_oam_plain_at_for_sprite(
+    pub(super) fn set_oam_plain_at(
         &mut self,
         oam: usize,
         x: u8,
@@ -5034,7 +5030,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             | self.sprite_slot_view(j).object_priority())
             & 0xf0
             | 4;
-        self.set_oam_plain_at_for_sprite(
+        self.set_oam_plain_at(
             oam,
             pt.x as u8,
             pt.y as u8,
@@ -5061,7 +5057,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             return;
         }
         let oam = self.game_state.oam.current_pointer_usize();
-        self.set_oam_plain_at_for_sprite(
+        self.set_oam_plain_at(
             oam,
             pt.x as u8,
             pt.y as u8,
@@ -5105,7 +5101,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             return;
         }
         let oam = self.game_state.oam.current_pointer_usize();
-        self.set_oam_plain_at_for_sprite(
+        self.set_oam_plain_at(
             oam,
             pt.x as u8,
             pt.y as u8,
@@ -5130,7 +5126,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         }
         let oam = self.game_state.oam.current_pointer_usize();
         let j = usize::from(self.garnish_slot_view(k).sprite());
-        self.set_oam_plain_at_for_sprite(
+        self.set_oam_plain_at(
             oam,
             pt.x as u8,
             pt.y as u8,
@@ -5154,7 +5150,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         }
         let oam = self.game_state.oam.current_pointer_usize();
         let j = usize::from(self.garnish_slot_view(k).sprite());
-        self.set_oam_plain_at_for_sprite(
+        self.set_oam_plain_at(
             oam,
             pt.x as u8,
             pt.y as u8,
@@ -5172,7 +5168,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     pub(super) fn garnish02_mothula_beam_trail(&mut self, k: usize) {
         let oam = self.game_state.oam.current_pointer_usize();
         let j = usize::from(self.garnish_slot_view(k).sprite());
-        self.set_oam_plain_at_for_sprite(
+        self.set_oam_plain_at(
             oam,
             self.garnish_slot_view(k)
                 .x_low()
@@ -5270,7 +5266,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         let g = usize::from((self.garnish_slot_view(k).countdown() >> 1) & 6);
         for i in (0..=1).rev() {
             let j = i + g;
-            self.set_oam_plain_at_for_sprite(
+            self.set_oam_plain_at(
                 oam,
                 pt.x.wrapping_add(GARNISH15_ARRGHUS_SPLASH_ARRGHUS_SPLASH_X[j] as i16 as u16) as u8,
                 pt.y.wrapping_add(GARNISH15_ARRGHUS_SPLASH_ARRGHUS_SPLASH_Y[j] as i16 as u16) as u8,
@@ -5349,8 +5345,8 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             return;
         }
         let oam = self.game_state.oam.current_pointer_usize();
-        self.set_oam_plain_at_for_sprite(oam, pt.x as u8, pt.y as u8, 0xa4, 0x22, 0);
-        self.set_oam_plain_at_for_sprite(
+        self.set_oam_plain_at(oam, pt.x as u8, pt.y as u8, 0xa4, 0x22, 0);
+        self.set_oam_plain_at(
             oam + 4,
             pt.x.wrapping_add(8) as u8,
             pt.y as u8,
@@ -5376,7 +5372,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             GARNISH10_GANON_BAT_FLAME_GANON_BAT_FLAME_IDX
                 [usize::from(self.garnish_slot_view(k).countdown() >> 3)],
         );
-        self.set_oam_plain_at_for_sprite(
+        self.set_oam_plain_at(
             self.game_state.oam.current_pointer_usize(),
             pt.x as u8,
             pt.y as u8,
@@ -5399,7 +5395,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             return;
         }
         let j = usize::from(self.garnish_slot_view(k).sprite());
-        self.set_oam_plain_at_for_sprite(
+        self.set_oam_plain_at(
             self.game_state.oam.current_pointer_usize(),
             pt.x as u8,
             pt.y as u8,
@@ -5429,7 +5425,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        self.set_oam_plain_at_for_sprite(
+        self.set_oam_plain_at(
             self.game_state.oam.current_pointer_usize(),
             pt.x as u8,
             pt.y as u8,
@@ -5456,7 +5452,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         } else {
             0
         };
-        self.set_oam_plain_at_for_sprite(
+        self.set_oam_plain_at(
             self.game_state.oam.current_pointer_usize(),
             pt.x as u8,
             pt.y as u8,
@@ -5494,7 +5490,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             .wrapping_add(u16::from(GARNISH03_FALLING_TILE_CRUMBLE_TILE_XY[j]))
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         if x < 256 && y < 256 {
-            self.set_oam_plain_at_for_sprite(
+            self.set_oam_plain_at(
                 self.game_state.oam.current_pointer_usize(),
                 x as u8,
                 y.wrapping_sub(16) as u8,
@@ -5512,7 +5508,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             return;
         }
         let j = usize::from(self.garnish_slot_view(k).countdown() >> 3);
-        self.set_oam_plain_at_for_sprite(
+        self.set_oam_plain_at(
             self.game_state.oam.current_pointer_usize(),
             pt.x as u8,
             pt.y as u8,
@@ -5530,7 +5526,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         }
         let i = usize::from(self.garnish_slot_view(k).countdown() >> 2);
         let j = usize::from(self.garnish_slot_view(k).sprite());
-        self.set_oam_plain_at_for_sprite(
+        self.set_oam_plain_at(
             self.game_state.oam.current_pointer_usize(),
             pt.x.wrapping_add(GARNISH08_KHOLDSTARE_TRAIL_GARNISH_NEBULE_XY[i] as i16 as u16) as u8,
             pt.y.wrapping_add(GARNISH08_KHOLDSTARE_TRAIL_GARNISH_NEBULE_XY[i] as i16 as u16) as u8,
@@ -5548,7 +5544,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             return;
         }
         let j = usize::from(self.garnish_slot_view(k).sprite());
-        self.set_oam_plain_at_for_sprite(
+        self.set_oam_plain_at(
             self.game_state.oam.current_pointer_usize(),
             pt.x as u8,
             pt.y as u8,
@@ -5568,7 +5564,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             return;
         }
         let j = usize::from(self.garnish_slot_view(k).sprite());
-        self.set_oam_plain_at_for_sprite(
+        self.set_oam_plain_at(
             self.game_state.oam.current_pointer_usize(),
             pt.x as u8,
             pt.y as u8,
@@ -6708,7 +6704,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         let base_x = scratch_position.x_low();
         let base_y = scratch_position.y_low();
         for _ in 0..4 {
-            self.set_oam_plain_at_for_sprite(
+            self.set_oam_plain_at(
                 oam,
                 base_x.wrapping_add(SPRITE_MODULE_POOF_X_OFFSETS[j] as u8),
                 base_y.wrapping_add(SPRITE_MODULE_POOF_Y_OFFSETS[j] as u8),
@@ -9167,7 +9163,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         let n = if q < 12 && (q & 3) == 0 { 3 } else { 0 };
         for n_cur in (0..=n).rev() {
             let i = q * 4 + n_cur;
-            self.set_oam_plain_at_for_sprite(
+            self.set_oam_plain_at(
                 oam,
                 x.wrapping_add(SPRITE_DRAW_FALLING_HUMANOID_X_OFFSETS[i] as i16 as u16) as u8,
                 y.wrapping_add(SPRITE_DRAW_FALLING_HUMANOID_Y_OFFSETS[i] as i16 as u16) as u8,

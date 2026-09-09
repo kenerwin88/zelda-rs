@@ -306,7 +306,6 @@ const GANON_PHASE19_GRAPHICS: [u8; 2] = [5, 13];
 const PHANTOM_GANON_BAT_GRAPHICS: [u8; 4] = [0, 1, 2, 1];
 const PHANTOM_GANON_BAT_TARGET_X_VELOCITIES: [u8; 2] = [32, (-32i8) as u8];
 const PHANTOM_GANON_BAT_TARGET_Y_VELOCITIES: [u8; 2] = [16, (-16i8) as u8];
-const GANON_LIT_TORCH_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
 
 // ---------------------------------------------------------------------------
 // Inline helpers from sprite_main.c:1570..1580 — GanonMult / GanonSin.
@@ -370,7 +369,7 @@ impl ZeldaState {
 
     // void Sprite_GanonTrident(int k) {  // 9d8ab6
     pub(super) fn sprite_ganon_trident(&mut self, k: usize) {
-        self.trident_draw_for_ganon(k);
+        self.trident_draw(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -472,7 +471,7 @@ impl ZeldaState {
                         self.sprite_slot_view_mut(k).set_graphics((t >> 2) & 1);
                     }
                 } else if self.sprite_slot_view(k).delay_aux1() == 1 {
-                    self.sprite_apply_speed_towards_link_for_ganon(k, 48);
+                    self.sprite_apply_speed_towards_link(k, 48);
                     self.sprite_sfx_queue_sfx3_with_pan(k, 0x1e);
                     self.fire_bat_animate(k);
                     self.fire_bat_animate(k);
@@ -607,7 +606,7 @@ impl ZeldaState {
                             GANON_PHASE1_TRIDENT_SPAWN_Y_OFFSETS[i],
                         )),
                     );
-                    self.sprite_apply_speed_towards_link_for_ganon(k, 31);
+                    self.sprite_apply_speed_towards_link(k, 31);
                     let angle = Self::sprite_convert_velocity_to_angle(
                         self.sprite_slot_view(k).x_velocity(),
                         self.sprite_slot_view(k).y_velocity(),
@@ -1272,7 +1271,7 @@ impl ZeldaState {
             let d = self.sprite_slot_view(k).direction() as usize;
             let y = r2_y.wrapping_add(GANON_FUNC1_16X16_Y_OFFSETS[d] as i16 as u16);
             self.sprite_set_y(j, y);
-            self.sprite_apply_speed_towards_link_for_ganon(j, 32);
+            self.sprite_apply_speed_towards_link(j, 32);
             self.sprite_slot_view_mut(j).set_delay_main(16);
             let sprite0 = self.sprite_slot_view(0);
             let x_low = sprite0.x_low();
@@ -1388,7 +1387,7 @@ impl ZeldaState {
             return;
         }
 
-        self.trident_draw_for_ganon(k);
+        self.trident_draw(k);
 
         let Some(info) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
@@ -1397,7 +1396,7 @@ impl ZeldaState {
         self.ganon_draw_emit_body_oam_for_ganon(k, info);
         self.ganon_draw_patch_head_oam_for_ganon(k);
         if self.game_state.frame.submodule != 0 {
-            self.sprite_correct_oam_entries_for_ganon(k, 9, 0xff);
+            self.sprite_correct_oam_entries(k, 9, 0xff);
         }
 
         if self.sprite_slot_view(k).g() == 9 {
@@ -1418,7 +1417,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_object_priority(48);
         self.sprite_draw_large_shadow_for_ganon(k, frame as usize);
         self.sprite_slot_view_mut(k).set_oam_flags(bak);
-        self.sprite_get_16bit_coords_for_ganon(k);
+        self.sprite_get16_bit_coords(k);
     }
 
     // -----------------------------------------------------------------
@@ -1452,76 +1451,17 @@ impl ZeldaState {
         self.sprite_set_spawned_coordinates(j, &info);
     }
 
-    // Sprite_ApplySpeedTowardsLink — projects vel towards Link and writes
-    // sprite_x_vel/y_vel. The canonical helper is not ported yet; we use
-    // sprite_project_speed_towards_link (which IS ported) and copy the
-    // result. This matches the C body byte-for-byte.
-    fn sprite_apply_speed_towards_link_for_ganon(&mut self, j: usize, speed: u8) {
-        let pt = self.sprite_project_speed_towards_link(j, speed);
-        self.sprite_slot_view_mut(j).set_x_velocity(pt.x);
-        self.sprite_slot_view_mut(j).set_y_velocity(pt.y);
-    }
-
-    // Ganon_ExtinguishTorch_adjust_translucency / Ganon_ExtinguishTorch and
-    // Dungeon_ExtinguishTorch live in dungeon.c. Port them locally here because
-    // Sprite_D6_Ganon calls them from sprite_main.c.
+    // Ganon_ExtinguishTorch_adjust_translucency / Ganon_ExtinguishTorch:
+    // the original calls the dungeon's Dungeon_ExtinguishTorch.
     fn ganon_extinguish_torch_adjust_translucency_for_ganon(&mut self) {
         self.Palette_AssertTranslucencySwap();
         self.dungeon_torch_mut().set_target(NativeTile::torch(0));
-        self.dungeon_extinguish_torch_for_ganon();
+        self.Dungeon_ExtinguishTorch();
     }
 
     fn ganon_extinguish_torch_for_ganon(&mut self) {
         self.dungeon_torch_mut().set_target(NativeTile::torch(1));
-        self.dungeon_extinguish_torch_for_ganon();
-    }
-
-    fn dungeon_extinguish_torch_for_ganon(&mut self) {
-        let y = self.game_state.dungeon.torch.attr_index() * 2
-            + self.game_state.dungeon.torch.torches_start_index() as usize;
-        let idx = y >> 1;
-        let mut r8 = self
-            .game_state
-            .dungeon
-            .object_tracking
-            .object_tilemap_pos(idx)
-            & 0x7fff;
-        self.dungeon_object_tracking_mut()
-            .set_object_tilemap_pos(idx, r8);
-
-        let opos = (self
-            .game_state
-            .dungeon
-            .object_tracking
-            .object_pos_in_objdata(idx)
-            & 0xff)
-            >> 1;
-        self.dungeon_torch_mut()
-            .set_torch_data_word_index(opos as usize, r8);
-
-        r8 &= 0x3fff;
-        self.room_draw_adjust_torch_lighting_change(r8, 0x0ec2, r8);
-        self.request_nmi_copy_packets();
-
-        if self.game_state.dungeon.torch.wants_lights_out() != 0
-            && self.game_state.dungeon.torch.lit_torches() != 0
-        {
-            self.dungeon_torch_mut().decrement_lit_torches();
-            if self.game_state.dungeon.torch.lit_torches() < 3 {
-                if self.game_state.dungeon.torch.lit_torches() == 0 {
-                    self.set_sub_screen_layers(1);
-                }
-                let plus = GANON_LIT_TORCH_COLOR_PLUS
-                    [self.game_state.dungeon.torch.lit_torches() as usize];
-                self.set_overworld_fixed_color_adjustment(plus);
-                self.set_submodule(10);
-                self.set_subsubmodule(0);
-            }
-        }
-
-        let torch_timer = self.game_state.dungeon.torch.attr_index();
-        self.dungeon_torch_mut().clear_timer(torch_timer);
-        self.dungeon_torch_mut().clear_target();
+        self.Dungeon_ExtinguishTorch();
     }
 
     fn sprite_draw_multiple_for_ganon(
@@ -1545,11 +1485,6 @@ impl ZeldaState {
         self.sprite_draw_multiple(k, &entries, None);
     }
 
-    // Rewired to canonical Trident_Draw port.
-    fn trident_draw_for_ganon(&mut self, k: usize) {
-        self.trident_draw(k);
-    }
-
     fn ganon_draw_emit_body_oam_for_ganon(&mut self, k: usize, info: (u16, u16, u8)) {
         let (info_x, info_y, info_flags) = info;
         let mut oam = self.game_state.oam.current_pointer_usize() + 5 * 4;
@@ -1560,7 +1495,7 @@ impl ZeldaState {
             let flags = info_flags | (GANON_DRAW_FLAGS[j] & flags_mask);
             let x = info_x.wrapping_add_signed(i16::from(GANON_DRAW_X_OFFSETS[j])) as u8;
             let y = info_y.wrapping_add_signed(i16::from(GANON_DRAW_Y_OFFSETS[j])) as u8;
-            self.set_oam_plain_at_for_ganon(oam, x, y, GANON_DRAW_CHARS[j], flags, 2);
+            self.set_oam_plain_at(oam, x, y, GANON_DRAW_CHARS[j], flags, 2);
             oam += 4;
         }
     }
@@ -1588,11 +1523,6 @@ impl ZeldaState {
             .merge_entry_flags(oam + 4, 0x3f, GANON_DRAW_PATCH_FLAGS[j + 1]);
     }
 
-    // Rewired to canonical Sprite_CorrectOamEntries port.
-    fn sprite_correct_oam_entries_for_ganon(&mut self, k: usize, count: u8, mask: u8) {
-        self.sprite_correct_oam_entries(k, count as i32, mask);
-    }
-
     fn ganon_draw_emit_g9_overlay_for_ganon(&mut self, k: usize) {
         self.sprite_draw_multiple(k, &GANON_DRAW_FRAMES, None);
     }
@@ -1600,26 +1530,6 @@ impl ZeldaState {
     fn sprite_draw_large_shadow_for_ganon(&mut self, k: usize, frame: usize) {
         let base = frame * 3;
         self.sprite_draw_multiple(k, &GANON_LARGE_SHADOW_DRAW_FRAMES[base..base + 3], None);
-    }
-
-    fn set_oam_plain_at_for_ganon(
-        &mut self,
-        oam: usize,
-        x: u8,
-        y: u8,
-        charnum: u8,
-        flags: u8,
-        big: u8,
-    ) {
-        self.oam_state_mut().write_entry(oam, x, y, charnum, flags);
-        let ext_index = (oam - OAM_BUF) / 4;
-        let value = big;
-        self.oam_state_mut().set_extended_byte(ext_index, value);
-    }
-
-    // Rewired to canonical Sprite_Get16BitCoords port.
-    fn sprite_get_16bit_coords_for_ganon(&mut self, k: usize) {
-        self.sprite_get16_bit_coords(k);
     }
 }
 

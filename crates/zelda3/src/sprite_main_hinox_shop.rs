@@ -17,9 +17,7 @@ use crate::zelda_rtl::sprite::{DrawMultipleData, PrepOamCoordsRet};
 // follow the same convention).
 // ---------------------------------------------------------------------------
 
-// kMaxArrowsForLevel / kMaxBombsForLevel — duplicated from hud.rs (private).
-const MAX_BOMBS_BY_UPGRADE_LEVEL: [u8; 8] = [10, 15, 20, 25, 30, 35, 40, 50];
-const MAX_ARROWS_BY_UPGRADE_LEVEL: [u8; 8] = [30, 35, 40, 45, 50, 55, 60, 70];
+use super::hud::{MAX_ARROWS_BY_UPGRADE_LEVEL, MAX_BOMBS_BY_UPGRADE_LEVEL};
 
 // Hinox_Draw multi-OAM table (sprite_main.c:9053).
 const HINOX_DRAW_FRAMES: [DrawMultipleData; 46] = [

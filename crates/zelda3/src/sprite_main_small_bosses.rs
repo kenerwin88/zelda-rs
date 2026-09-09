@@ -14,7 +14,8 @@
 //! so the data-state side of the handlers stays exercisable while the rest
 //! of the C surface comes online.
 
-use super::sprite_main_draw::{trinexx_head_sin, PrepOamCoordsRet as DrawPrepOamCoordsRet};
+use super::sprite::PrepOamCoordsRet as DrawPrepOamCoordsRet;
+use super::sprite_main_draw::trinexx_head_sin;
 use super::*;
 use crate::types::sign8;
 use crate::zelda_rtl::sprite::DrawMultipleData;

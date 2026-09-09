@@ -34,8 +34,8 @@ const HUD_ITEM_BOTTLE_LAST: u8 = HUD_ITEM_BOTTLE_FIRST + 3;
 const HUD_ITEM_FLUTE: u8 = 13;
 const HUD_ITEM_SHOVEL: u8 = 16;
 
-const MAX_BOMBS_BY_UPGRADE_LEVEL: [u8; 8] = [10, 15, 20, 25, 30, 35, 40, 50];
-const MAX_ARROWS_BY_UPGRADE_LEVEL: [u8; 8] = [30, 35, 40, 45, 50, 55, 60, 70];
+pub(super) const MAX_BOMBS_BY_UPGRADE_LEVEL: [u8; 8] = [10, 15, 20, 25, 30, 35, 40, 50];
+pub(super) const MAX_ARROWS_BY_UPGRADE_LEVEL: [u8; 8] = [30, 35, 40, 45, 50, 55, 60, 70];
 const MAX_HEALTH_BY_CAPACITY_LEVEL: [u8; 21] = [
     9, 9, 9, 9, 9, 9, 9, 9, 17, 17, 17, 17, 17, 17, 17, 25, 25, 25, 25, 25, 25,
 ];

@@ -10,39 +10,13 @@
 //! `SpriteDraw_BombGuard_Arm` (sprite_main.c:4527) lives in
 //! `sprite_main_guard.rs` already; this file does NOT redefine it.
 
-use super::sprite::{PrepOamCoordsRet as SpritePrepOamCoordsRet, SpriteSpawnInfo};
+use super::sprite::{PrepOamCoordsRet, SpriteSpawnInfo};
 use super::*;
 use crate::rom_random::RomRandomResult;
 use crate::tile_definition::NativeTile;
 use crate::types::{sign8, PointU8, ProjectSpeedRet, SpriteHitBox};
 
 // ---------------------------------------------------------------------------
-// File-local PrepOamCoordsRet copy.
-// ---------------------------------------------------------------------------
-// Mirror of the C-side `PrepOamCoordsRet` (sprite.c). The canonical
-// `sprite::PrepOamCoordsRet` is module-private; keep a local copy so the
-// `SpriteDraw_*(int k, PrepOamCoordsRet *info)` signatures retain their
-// named-struct shape and stay convertible from the 3-tuple returned by
-// `sprite_prep_oam_coord_or_double_ret`.
-#[derive(Copy, Clone, Default)]
-pub(super) struct PrepOamCoordsRet {
-    pub x: u16,
-    pub y: u16,
-    pub r4: u8,
-    pub flags: u8,
-}
-
-impl PrepOamCoordsRet {
-    pub(super) fn from_tuple(t: (u16, u16, u8)) -> Self {
-        Self {
-            x: t.0,
-            y: t.1,
-            r4: 0,
-            flags: t.2,
-        }
-    }
-}
-
 mod sprite_main_draw_shared;
 use sprite_main_draw_shared::*;
 
@@ -315,7 +289,7 @@ impl ZeldaState {
     // void Sprite_Zora_Main(int k) {  // 859725
     pub(super) fn sprite_zora_main(&mut self, k: usize) {
         if self.sprite_slot_view(k).ai_state() == 0 {
-            let mut info = SpritePrepOamCoordsRet {
+            let mut info = PrepOamCoordsRet {
                 x: 0,
                 y: 0,
                 r4: 0,
@@ -974,7 +948,7 @@ impl ZeldaState {
 
         match self.sprite_slot_view(k).b() {
             0 => {
-                let mut info = SpritePrepOamCoordsRet {
+                let mut info = PrepOamCoordsRet {
                     x: 0,
                     y: 0,
                     r4: 0,
@@ -1144,7 +1118,7 @@ impl ZeldaState {
             2,
         );
         if self.sprite_slot_view(k).anim_clock() == 0 {
-            let mut info = SpritePrepOamCoordsRet { x, y, r4: 0, flags };
+            let mut info = PrepOamCoordsRet { x, y, r4: 0, flags };
             self.sprite_draw_shadow_custom(k, &mut info, 10);
         }
     }
@@ -1960,7 +1934,7 @@ impl ZeldaState {
             }
         }
         self.oam_allocate_from_region_a(8);
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -2272,7 +2246,7 @@ impl ZeldaState {
             oam += 4;
         }
         if g < 12 {
-            let mut shadow_info = SpritePrepOamCoordsRet {
+            let mut shadow_info = PrepOamCoordsRet {
                 x: info_x,
                 y: info_y,
                 r4: 0,
@@ -3439,7 +3413,7 @@ impl ZeldaState {
         k: usize,
         info: &mut PrepOamCoordsRet,
     ) {
-        let mut prepped = SpritePrepOamCoordsRet {
+        let mut prepped = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -3543,7 +3517,7 @@ impl ZeldaState {
             return;
         }
         let start = self.sprite_slot_view(k).c() as usize * 8;
-        let mut prepped = SpritePrepOamCoordsRet {
+        let mut prepped = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -3957,7 +3931,7 @@ impl ZeldaState {
     //   Replay the 32-sample beamos history buffer as small laser tiles.
     // }
     pub(super) fn beamos_laser_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -4089,7 +4063,7 @@ impl ZeldaState {
             );
             oam += 4;
         }
-        let mut info = SpritePrepOamCoordsRet { x, y, r4: 0, flags };
+        let mut info = PrepOamCoordsRet { x, y, r4: 0, flags };
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -4245,7 +4219,7 @@ impl ZeldaState {
     //   Four 8x8 body tiles selected by sprite_graphics.
     // }
     pub(super) fn red_bari_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -4261,7 +4235,7 @@ impl ZeldaState {
     //   Two large body tiles, with a shadow only for shadow-enabled sprites.
     // }
     pub(super) fn hard_hat_beetle_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -4379,7 +4353,7 @@ impl ZeldaState {
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut info = SpritePrepOamCoordsRet { x, y, r4: 0, flags };
+        let mut info = PrepOamCoordsRet { x, y, r4: 0, flags };
         if self.sprite_slot_view(k).direction() != 3 {
             let oam = self.game_state.oam.current_pointer_usize();
             let j = (self.sprite_slot_view(k).c() as usize) * 3
@@ -4410,7 +4384,7 @@ impl ZeldaState {
     // }
     pub(super) fn flute_boy_draw(&mut self, k: usize) -> u8 {
         self.oam_allocate_from_region_b(0x10);
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -4486,7 +4460,7 @@ impl ZeldaState {
     //   Two large stacked tiles plus a common shadow.
     // }
     pub(super) fn armos_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -4618,7 +4592,7 @@ impl ZeldaState {
     //   Three body tiles plus common shadow.
     // }
     pub(super) fn ropa_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -4635,7 +4609,7 @@ impl ZeldaState {
     //   Three body tiles, head-char patch, and common shadow.
     // }
     pub(super) fn zazak_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -4694,7 +4668,7 @@ impl ZeldaState {
     //   Two body tiles, optional foot tiles, then common shadow.
     // }
     pub(super) fn pengator_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -5021,7 +4995,7 @@ impl ZeldaState {
     // }
     pub(super) fn fish_draw(&mut self, k: usize) {
         if self.sprite_slot_view(k).graphics() == 0 {
-            let mut info = SpritePrepOamCoordsRet {
+            let mut info = PrepOamCoordsRet {
                 x: 0,
                 y: 0,
                 r4: 0,
@@ -5033,7 +5007,7 @@ impl ZeldaState {
         let cur_x = self.game_state.sprites.workspace.current_sprite_x();
         self.sprite_workspace_mut()
             .set_current_sprite_x(cur_x.wrapping_add(4));
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -5070,7 +5044,7 @@ impl ZeldaState {
     //   Two large wing/body tiles plus common shadow.
     // }
     pub(super) fn vulture_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -5781,7 +5755,7 @@ impl ZeldaState {
     //   Two body tiles selected by sprite_graphics plus common shadow.
     // }
     pub(super) fn bomber_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -6709,7 +6683,7 @@ impl ZeldaState {
             self.oam_allocate_from_region_b(8);
         }
         if self.sprite_slot_view(k).ai_state() == 0 {
-            let mut info = SpritePrepOamCoordsRet {
+            let mut info = PrepOamCoordsRet {
                 x: 0,
                 y: 0,
                 r4: 0,
@@ -6882,7 +6856,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Stalfos_Draw(int k) {  // 8dc21c
     pub(super) fn stalfos_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -6927,7 +6901,7 @@ impl ZeldaState {
         let ext = self.game_state.oam.current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_sub(1));
-        let mut shadow_info = SpritePrepOamCoordsRet {
+        let mut shadow_info = PrepOamCoordsRet {
             x: info.x,
             y: info.y,
             r4: info.r4,
@@ -6997,7 +6971,7 @@ impl ZeldaState {
             );
             oam += 4;
         }
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x,
             y,
             r4: 0,
@@ -7081,7 +7055,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Stal_Draw(int k) {  // 9d820c
     pub(super) fn stal_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -7182,7 +7156,7 @@ impl ZeldaState {
     // void Sprite_BunnyBeam(int k) {  // 9d85e0
     pub(super) fn sprite_bunny_beam(&mut self, k: usize) {
         if self.sprite_slot_view(k).ai_state() == 0 {
-            let mut info = SpritePrepOamCoordsRet {
+            let mut info = PrepOamCoordsRet {
                 x: 0,
                 y: 0,
                 r4: 0,
@@ -7917,7 +7891,7 @@ impl ZeldaState {
     //   if (!sprite_pause[k]) SpriteDraw_Shadow(k, &info);
     // }
     pub(super) fn gibdo_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -7969,7 +7943,7 @@ impl ZeldaState {
     //   Four-tile tile plus normal sprite shadow.
     // }
     pub(super) fn flying_tile_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -7987,7 +7961,7 @@ impl ZeldaState {
     //   SpriteDraw_Shadow(k, &info);
     // }
     pub(super) fn bully_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -8257,7 +8231,7 @@ impl ZeldaState {
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: info_x,
             y: info_y,
             r4: 0,
@@ -8291,7 +8265,7 @@ impl ZeldaState {
             let base = usize::from(g) * 2;
             self.sprite_draw_multiple(k, &BABUSU_DRAW_FRAMES[base..base + 2], None);
         } else {
-            let mut info = SpritePrepOamCoordsRet {
+            let mut info = PrepOamCoordsRet {
                 x: 0,
                 y: 0,
                 r4: 0,
@@ -8304,7 +8278,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Lady_Draw(int k) {  // 9af92c
     pub(super) fn lady_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -8323,7 +8297,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void YoungSnitchLady_Draw(int k) {  // 85e37f
     pub(super) fn young_snitch_lady_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -8512,7 +8486,7 @@ impl ZeldaState {
         let Some((info_x, mut y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: info_x,
             y,
             r4: 0,
@@ -8533,7 +8507,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void SnapDragon_Draw(int k) {  // 869e02
     pub(super) fn snap_dragon_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -8547,7 +8521,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Lynel_Draw(int k) {  // 9d8880
     pub(super) fn lynel_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -8573,7 +8547,7 @@ impl ZeldaState {
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(1));
         let g = usize::from(self.sprite_slot_view(k).graphics());
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -8919,7 +8893,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void RunningMan_Draw(int k) {  // 85ea4d
     pub(super) fn running_man_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -8939,7 +8913,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Elder_Draw(int k) {  // 85f23a
     pub(super) fn elder_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -8957,7 +8931,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Shopkeeper_Draw(int k) {  // 85f91b
     pub(super) fn shopkeeper_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -8975,7 +8949,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void FluteBoyFather_Draw(int k) {  // 8dc3e1
     pub(super) fn flute_boy_father_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -8993,7 +8967,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void FluteBoyOstrich_Draw(int k) {  // 9e9a4b
     pub(super) fn flute_boy_ostrich_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -9029,7 +9003,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void InnKeeper_Draw(int k) {  // 85e3dc
     pub(super) fn inn_keeper_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -9231,7 +9205,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void MiddleAgedMan_Draw(int k) {  // 86bdac
     pub(super) fn middle_aged_man_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -9244,7 +9218,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void BlindHideoutGuy_Draw(int k) {  // 8dc481
     pub(super) fn blind_hideout_guy_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -9351,7 +9325,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void SweepingLady_Draw(int k) {  // 8dc4eb
     pub(super) fn sweeping_lady_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -9766,7 +9740,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void MazeGameGuy_Draw(int k) {  // 8dcda7
     pub(super) fn maze_game_guy_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -9785,7 +9759,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void DrinkingGuy_Draw(int k) {  // 9af88c
     pub(super) fn drinking_guy_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -9966,7 +9940,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void DiggingGameGuy_Draw(int k) {  // 9dfe4b
     pub(super) fn digging_game_guy_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -9995,7 +9969,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void BombShopEntity_Draw(int k) {  // 9ee2c6
     pub(super) fn bomb_shop_entity_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -10014,7 +9988,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_B3_PedestalPlaque(int k) {  // 9ee044
     pub(super) fn sprite_b3_pedestal_plaque(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -10828,7 +10802,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void StoryTeller_1_Draw(int k) {  // 86af1a
     pub(super) fn story_teller_1_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -10847,7 +10821,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void SmithyFrog_Draw(int k) {  // 86b339
     pub(super) fn smithy_frog_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -10893,7 +10867,7 @@ impl ZeldaState {
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: info_x,
             y: info_y,
             r4: 0,
@@ -10924,7 +10898,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void QuarrelBros_Draw(int k) {  // 85e17f
     pub(super) fn quarrel_bros_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -10995,7 +10969,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void BigFaerie_Draw(int k) {  // 9dc5d0
     pub(super) fn big_faerie_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -11031,7 +11005,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_FairyCloud(int k) {  // 9dc41c
     pub(super) fn sprite_fairy_cloud(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -11258,7 +11232,7 @@ impl ZeldaState {
         self.sprite_draw_bnc_body(k, &info, 2);
         self.sprite_draw_guard_spear(k, &info, 0);
         if self.sprite_slot_view(k).flags3() & 0x10 != 0 {
-            let mut shadow_info = SpritePrepOamCoordsRet {
+            let mut shadow_info = PrepOamCoordsRet {
                 x: info.x,
                 y: info.y,
                 r4: info.r4,
@@ -11285,7 +11259,7 @@ impl ZeldaState {
             self.sprite_draw_guard_spear(k, &info, 0);
         }
         if self.sprite_slot_view(k).flags3() & 0x10 != 0 {
-            let mut shadow_info = SpritePrepOamCoordsRet {
+            let mut shadow_info = PrepOamCoordsRet {
                 x: info.x,
                 y: info.y,
                 r4: info.r4,
@@ -11322,7 +11296,7 @@ impl ZeldaState {
             return;
         };
         let info = PrepOamCoordsRet::from_tuple(tuple);
-        let guard_info = SpritePrepOamCoordsRet {
+        let guard_info = PrepOamCoordsRet {
             x: tuple.0,
             y: tuple.1,
             r4: 0,
@@ -11334,7 +11308,7 @@ impl ZeldaState {
             self.sprite_draw_guard_spear(k, &info, 1);
         }
         if self.sprite_slot_view(k).flags3() & 0x10 != 0 {
-            let mut shadow_info = SpritePrepOamCoordsRet {
+            let mut shadow_info = PrepOamCoordsRet {
                 x: info.x,
                 y: info.y,
                 r4: info.r4,
@@ -11356,7 +11330,7 @@ impl ZeldaState {
             return;
         };
         let info = PrepOamCoordsRet::from_tuple(tuple);
-        let guard_info = SpritePrepOamCoordsRet {
+        let guard_info = PrepOamCoordsRet {
             x: tuple.0,
             y: tuple.1,
             r4: 0,
@@ -11371,7 +11345,7 @@ impl ZeldaState {
             &info,
         );
         if self.sprite_slot_view(k).flags3() & 0x10 != 0 {
-            let mut shadow_info = SpritePrepOamCoordsRet {
+            let mut shadow_info = PrepOamCoordsRet {
                 x: info.x,
                 y: info.y,
                 r4: info.r4,
@@ -11546,7 +11520,7 @@ impl ZeldaState {
         };
         let info = PrepOamCoordsRet::from_tuple(tuple);
         if self.sprite_slot_view(k).flags3() & 0x10 != 0 {
-            let mut shadow_info = SpritePrepOamCoordsRet {
+            let mut shadow_info = PrepOamCoordsRet {
                 x: info.x,
                 y: info.y,
                 r4: info.r4,
@@ -12241,7 +12215,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void TroughBoy_Draw(int k) {  // 85ffdf
     pub(super) fn trough_boy_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -12304,7 +12278,7 @@ impl ZeldaState {
             self.oam_state_mut().set_current_extended_pointer(0xa60);
         }
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
-        let mut shadow_info = SpritePrepOamCoordsRet {
+        let mut shadow_info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -13370,7 +13344,7 @@ impl ZeldaState {
                 }
                 self.cucco_draw_panic(k);
                 if (self.game_state.frame.frame_counter & 0x0f) == 0 {
-                    self.bawk_bawk_for_draw(k);
+                    self.bawk_bawk(k);
                 }
                 helper_ordinal = 1;
             }
@@ -13442,7 +13416,7 @@ impl ZeldaState {
             CuccoSubtypeContinuation::State10 => {
                 self.cucco_draw_panic(k);
                 if (self.game_state.frame.frame_counter & 0x0f) == 0 {
-                    self.bawk_bawk_for_draw(k);
+                    self.bawk_bawk(k);
                 }
                 self.complete_cucco_after_state10_branch(k, 1);
             }
@@ -13508,7 +13482,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_f(value);
                 if self.sprite_slot_view(k).b() < 35 {
                     self.sprite_slot_view_mut(k).add_b(1);
-                    self.bawk_bawk_for_draw(k);
+                    self.bawk_bawk(k);
                 }
                 let value = 2;
                 self.sprite_slot_view_mut(k).set_ai_state(value);
@@ -13664,12 +13638,6 @@ impl ZeldaState {
 
     pub(super) fn chicken_finish_subtype2_for_draw(&mut self, k: usize) {
         self.sprite_return_if_lifted(k);
-    }
-
-    // Local duplicate of private dungeon NPC helper used by the original
-    // top-level Cucco actor.
-    fn bawk_bawk_for_draw(&mut self, k: usize) {
-        self.sprite_sfx_queue_sfx2_with_pan(k, 0x30);
     }
 
     // -----------------------------------------------------------------------
@@ -14258,7 +14226,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_33_RupeePull(int k) {  // 86c017
     pub(super) fn sprite_33_rupee_pull(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -14291,7 +14259,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_14_ThievesTownGrate(int k) {  // 86c01c
     pub(super) fn sprite_14_thieves_town_grate(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -14341,7 +14309,7 @@ impl ZeldaState {
     // void Sprite_38_EyeStatue(int k) {  // 86c03f
     pub(super) fn sprite_38_eye_statue(&mut self, k: usize) {
         if self.sprite_slot_view(k).b() == 0 {
-            let mut info = SpritePrepOamCoordsRet {
+            let mut info = PrepOamCoordsRet {
                 x: 0,
                 y: 0,
                 r4: 0,
@@ -14706,7 +14674,7 @@ impl ZeldaState {
     // void Sprite_BA_Whirlpool(int k) {  // 9eee5a
     pub(super) fn sprite_ba_whirlpool(&mut self, k: usize) {
         if self.game_state.world.location.overworld_screen_index() == 0x1b {
-            let mut info = SpritePrepOamCoordsRet {
+            let mut info = PrepOamCoordsRet {
                 x: 0,
                 y: 0,
                 r4: 0,
@@ -15295,7 +15263,7 @@ impl ZeldaState {
     // void Sprite_4C_Geldman(int k) {  // 85b8b3
     pub(super) fn sprite_4_c_geldman(&mut self, k: usize) {
         if self.sprite_slot_view(k).ai_state() < 2 {
-            let mut info = SpritePrepOamCoordsRet {
+            let mut info = PrepOamCoordsRet {
                 x: 0,
                 y: 0,
                 r4: 0,
@@ -15777,7 +15745,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).ai_state() != 0 {
             self.leever_draw(k);
         } else {
-            let mut info = SpritePrepOamCoordsRet {
+            let mut info = PrepOamCoordsRet {
                 x: 0,
                 y: 0,
                 r4: 0,
@@ -15877,7 +15845,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_1D_FluteQuest(int k) {  // 86c2e5
     pub(super) fn sprite_1_d_flute_quest(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -16098,7 +16066,7 @@ impl ZeldaState {
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: info_x,
             y: info_y,
             r4: 0,
@@ -16239,7 +16207,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_54_Lanmolas(int k) {  // 85a3a2
     pub(super) fn sprite_54_lanmolas(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -16460,7 +16428,7 @@ impl ZeldaState {
         &mut self,
         k: usize,
     ) -> LanmolaDrawContinuation {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -16544,7 +16512,7 @@ impl ZeldaState {
     /// `Lanmola_Draw`'s first `completed_stores` prologue stores.
     pub(super) fn begin_lanmola_draw_prefix_checkpoint(&mut self, k: usize, completed_stores: u8) {
         assert!(completed_stores <= LANMOLA_DRAW_PREFIX_STORES);
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -16703,7 +16671,7 @@ impl ZeldaState {
     }
 
     pub(super) fn eyegore_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -16739,7 +16707,7 @@ impl ZeldaState {
                 2,
             );
         }
-        let mut shadow_info = SpritePrepOamCoordsRet { x, y, r4: 0, flags };
+        let mut shadow_info = PrepOamCoordsRet { x, y, r4: 0, flags };
         self.sprite_draw_shadow_custom(k, &mut shadow_info, 10);
     }
 
@@ -16748,7 +16716,7 @@ impl ZeldaState {
             return;
         };
         let info = PrepOamCoordsRet { x, y, r4: 0, flags };
-        let mut shadow_info = SpritePrepOamCoordsRet { x, y, r4: 0, flags };
+        let mut shadow_info = PrepOamCoordsRet { x, y, r4: 0, flags };
         self.sprite_draw_pikit_tongue(k, &info);
         let oam = self.game_state.oam.current_pointer_usize();
         let oam_byte = self.game_state.oam.entry_x(oam);
@@ -16809,7 +16777,7 @@ impl ZeldaState {
     }
 
     pub(super) fn moblin_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -16871,7 +16839,7 @@ impl ZeldaState {
     }
 
     pub(super) fn tektite_draw(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
@@ -16937,7 +16905,7 @@ impl ZeldaState {
 
     pub(super) fn archery_game_guy_draw(&mut self, k: usize) {
         self.oam_allocate_defer_to_player(k);
-        let mut info = SpritePrepOamCoordsRet {
+        let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
