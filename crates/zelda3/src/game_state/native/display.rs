@@ -1752,21 +1752,6 @@ impl<'a> NativePaletteBufferBridgeMut<'a> {
         self.mirror_slice_write(zelda3_palette::Bank::Main, start, len, src, source);
     }
 
-    /// Update ONLY the provenance mirror's Backup bank from a tagged byte
-    /// slice, leaving shadow and RAM untouched. The MAPBAK_PALETTE (0x1dd80)
-    /// backup region is written to RAM by `PpuScrollCopyState`'s write-through
-    /// (`copy_mapbak_palette_from`), which does not touch the mirror; this
-    /// carries the provenance into the Backup bank so later reads of the mapbak
-    /// slice stay clean. `len` is the byte length actually written.
-    pub(crate) fn tag_backup_bank_from(
-        &mut self,
-        src: &[u8],
-        len: usize,
-        source: PaletteSliceSource,
-    ) {
-        self.mirror_slice_write(zelda3_palette::Bank::Backup, 0, len, src, source);
-    }
-
     /// Mirror a bulk byte-slice write into a shadow bank. `start`/`len` are
     /// byte offsets/lengths within the bank (as the shadow copies use).
     #[track_caller]
@@ -2065,10 +2050,7 @@ pub(crate) struct PpuScrollCopyState {
     mapbak_bg1_y_offset: u16,
     mapbak_cgwsel: u16,
     mapbak_hdmaen: u8,
-    mapbak_palette: Vec<u8>,
 }
-
-const MAPBAK_PALETTE_BYTES: usize = 0x200;
 
 impl Default for PpuScrollCopyState {
     fn default() -> Self {
@@ -2106,14 +2088,12 @@ impl Default for PpuScrollCopyState {
             mapbak_bg1_y_offset: 0,
             mapbak_cgwsel: 0,
             mapbak_hdmaen: 0,
-            mapbak_palette: vec![0; MAPBAK_PALETTE_BYTES],
         }
     }
 }
 
 impl PpuScrollCopyState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
-        let mapbak_palette = ram[MAPBAK_PALETTE..MAPBAK_PALETTE + MAPBAK_PALETTE_BYTES].to_vec();
         Self {
             bg1_h_copy: read_le_u16(ram, BG1_H_SCROLL_COPY),
             bg1_v_copy: read_le_u16(ram, BG1_V_SCROLL_COPY),
@@ -2148,7 +2128,6 @@ impl PpuScrollCopyState {
             mapbak_bg1_y_offset: read_le_u16(ram, MAPBAK_BG1_Y_OFFSET),
             mapbak_cgwsel: read_le_u16(ram, MAPBAK_CGWSEL),
             mapbak_hdmaen: ram_byte(ram, MAPBAK_HDMAEN),
-            mapbak_palette,
         }
     }
 
@@ -2210,11 +2189,8 @@ impl PpuScrollCopyState {
         write_le_u16(ram, MAPBAK_BG1_Y_OFFSET, self.mapbak_bg1_y_offset);
         write_le_u16(ram, MAPBAK_CGWSEL, self.mapbak_cgwsel);
         ram[MAPBAK_HDMAEN] = self.mapbak_hdmaen;
-        // MAPBAK_PALETTE (0x1dd80) is mode-reused scratch (the overworld/death palette
-        // backup), NOT scroll-copy state. It is written THROUGH by the bridge's
-        // copy_mapbak_palette_from (and the overworld backup_overworld_palette_from), never
-        // re-projected here: a scroll-register sync runs this write_to_ram constantly, and a
-        // fill(0)+copy would wipe a palette backup another subsystem just wrote (f335672).
+        // MAPBAK_PALETTE (0x1dd80), the overworld/death palette backup, belongs to
+        // PaletteBufferState; it is not scroll-copy state.
     }
 
     pub(crate) fn bg2_h_copy2_offset() -> usize {
@@ -2419,10 +2395,6 @@ impl PpuScrollCopyState {
 
     pub(crate) fn mapbak_hdmaen(&self) -> u8 {
         self.mapbak_hdmaen
-    }
-
-    pub(crate) fn mapbak_palette_slice(&self) -> &[u8] {
-        &self.mapbak_palette
     }
 
     fn set_low_byte(word: &mut u16, value: u8) {
@@ -2795,12 +2767,6 @@ impl PpuScrollCopyState {
 
     pub(crate) fn set_mapbak_hdmaen(&mut self, value: u8) {
         self.mapbak_hdmaen = value;
-    }
-
-    pub(crate) fn copy_mapbak_palette_from(&mut self, palette: &[u8]) {
-        let len = palette.len().min(MAPBAK_PALETTE_BYTES);
-        self.mapbak_palette.resize(MAPBAK_PALETTE_BYTES, 0);
-        self.mapbak_palette[..len].copy_from_slice(&palette[..len]);
     }
 }
 
@@ -4677,18 +4643,7 @@ impl<'a> NativePpuScrollCopyBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
-        // mapbak_palette is write-through (not projected by write_to_ram), so RAM may
-        // legitimately differ from this state's stale copy — ignore it in the check.
-        let mut live = PpuScrollCopyState::load_from_ram(self.ram);
-        live.mapbak_palette.clone_from(&self.state.mapbak_palette);
-        debug_assert_eq!(*self.state, live);
-    }
-
-    pub(crate) fn copy_mapbak_palette_from(&mut self, palette: &[u8]) {
-        self.state.copy_mapbak_palette_from(palette);
-        let bak = self.state.mapbak_palette_slice();
-        self.ram[MAPBAK_PALETTE..MAPBAK_PALETTE + bak.len()].copy_from_slice(bak);
-        self.debug_assert_matches_ram();
+        debug_assert_eq!(*self.state, PpuScrollCopyState::load_from_ram(self.ram));
     }
 
     ppu_scroll_bridge_methods! {

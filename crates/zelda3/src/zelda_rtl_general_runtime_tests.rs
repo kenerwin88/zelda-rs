@@ -2066,6 +2066,8 @@ mod runtime_items;
 mod runtime_misc;
 #[path = "zelda_rtl_tests/runtime/runtime_overworld.rs"]
 mod runtime_overworld;
+#[path = "zelda_rtl_tests/runtime/runtime_palette_backup.rs"]
+mod runtime_palette_backup;
 #[path = "zelda_rtl_tests/runtime/runtime_player_collision.rs"]
 mod runtime_player_collision;
 #[path = "zelda_rtl_tests/runtime/runtime_player_transitions.rs"]

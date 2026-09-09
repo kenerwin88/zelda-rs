@@ -113,25 +113,6 @@ impl ZeldaState {
         self.system_signals_mut().clear_cgram_update_flag();
     }
 
-    /// Write-through backup of the map/death palette into MAPBAK_PALETTE. This is NOT done
-    /// via the scroll-copy sync (PpuScrollCopyState::write_to_ram no longer projects
-    /// mapbak_palette): a scroll-register sync would otherwise re-run that projection every
-    /// frame and clobber a freshly-written overworld palette backup (f335672). Mirrors the
-    /// old projection's RAM effect (the native field is fill-padded to MAPBAK_PALETTE_BYTES).
-    pub(crate) fn copy_mapbak_palette_from(
-        &mut self,
-        palette: &[u8],
-        source: crate::game_state::PaletteSliceSource,
-    ) {
-        self.ppu_scroll_copy_mut().copy_mapbak_palette_from(palette);
-        // The write-through above updated RAM[MAPBAK_PALETTE] and the scroll-copy
-        // model but not the provenance mirror; carry the source provenance into
-        // the mirror's Backup bank so later mapbak reads resolve clean.
-        let len = palette.len().min(0x200);
-        self.palette_buffer_mut()
-            .tag_backup_bank_from(palette, len, source);
-    }
-
     pub(crate) fn copy_overworld_sprite_palette_range(
         &mut self,
         dst: usize,

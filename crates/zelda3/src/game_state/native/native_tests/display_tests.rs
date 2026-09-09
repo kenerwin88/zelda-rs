@@ -1896,21 +1896,17 @@ fn ppu_scroll_copy_state_loads_from_and_projects_to_ram() {
     assert_eq!(scroll.bg2_h_copy2(), 0x0100);
     assert_eq!(scroll.bg2_v_copy2(), 0x0200);
     assert_eq!(scroll.mapbak_cgwsel_word(), 0xabcd);
-    assert_eq!(&scroll.mapbak_palette_slice()[..4], &[1, 2, 3, 4]);
 
     scroll.add_bg2_h_copy2(0x10);
     scroll.add_bg2_copy2_for_axis_signed(true, -1);
     scroll.set_mapbak_cgwsel(0x55);
-    scroll.copy_mapbak_palette_from(&[9, 8, 7]);
     scroll.write_to_ram(&mut ram);
 
     assert_eq!(read_le_u16(&ram, BG2_X_SCROLL), 0x0110);
     assert_eq!(read_le_u16(&ram, BG2_Y_SCROLL), 0x01ff);
     assert_eq!(read_le_u16(&ram, MAPBAK_CGWSEL), 0xab55);
-    // copy_mapbak_palette_from updates the native field, but write_to_ram does NOT
-    // project mapbak_palette (it is write-through via the bridge to avoid scroll-sync
-    // clobbering a palette backup — f335672), so RAM[MAPBAK_PALETTE] is left untouched.
-    assert_eq!(&scroll.mapbak_palette_slice()[..4], &[9, 8, 7, 4]);
+    // The palette backup at MAPBAK_PALETTE belongs to PaletteBufferState; the
+    // scroll copy neither models nor projects it.
     assert_eq!(&ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 4], &[1, 2, 3, 4]);
 }
 
@@ -1936,9 +1932,7 @@ fn native_ppu_scroll_copy_bridge_syncs_seeded_ram_and_dual_writes_changes() {
     assert_eq!(read_le_u16(&ram, BG1_Y_SCROLL), 0x0070);
     assert_eq!(read_le_u16(&ram, BG2_H_SCROLL_COPY2_CACHED), 0x0060);
     assert_eq!(read_le_u16(&ram, BG2_V_SCROLL_COPY2_CACHED), 0x0070);
-    // mapbak_palette is no longer projected by the scroll-copy sync (write-through via
-    // the main bridge to avoid scroll-sync clobbering a palette backup — f335672), so a
-    // bridge scroll sync leaves RAM[MAPBAK_PALETTE] untouched.
+    // A scroll sync leaves the palette buffer's backup window untouched.
     assert_eq!(&ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 4], &[1, 2, 3, 4]);
 }
 

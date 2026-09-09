@@ -1710,7 +1710,7 @@ impl ZeldaState {
             .palette_buffer
             .aux_visible_slice()
             .to_vec();
-        self.copy_mapbak_palette_from(
+        self.backup_overworld_palette_from_tagged(
             &palette[..palette.len().min(256)],
             crate::game_state::PaletteSliceSource::MirrorBank(zelda3_palette::Bank::Aux),
         );
@@ -2243,8 +2243,8 @@ impl ZeldaState {
             let palette = self
                 .game_state
                 .display
-                .ppu_scroll_copy
-                .mapbak_palette_slice()[..256]
+                .palette_buffer
+                .overworld_palette_backup()[..256]
                 .to_vec();
             self.copy_aux_visible_from_tagged(
                 &palette,
@@ -3963,8 +3963,8 @@ impl ZeldaState {
         let mapbak_palette = self
             .game_state
             .display
-            .ppu_scroll_copy
-            .mapbak_palette_slice()
+            .palette_buffer
+            .overworld_palette_backup()
             .to_vec();
         self.copy_main_full_from_tagged(
             &mapbak_palette,
@@ -4050,7 +4050,7 @@ impl ZeldaState {
             .palette_buffer
             .main_full_slice()
             .to_vec();
-        self.copy_mapbak_palette_from(
+        self.backup_overworld_palette_from_tagged(
             &palette,
             crate::game_state::PaletteSliceSource::MirrorBank(zelda3_palette::Bank::Main),
         );
