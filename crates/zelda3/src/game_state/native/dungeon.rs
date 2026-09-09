@@ -989,6 +989,85 @@ impl DungeonRoomLoadState {
     }
 }
 
+/// One dungeon object's replacement record. The room draw registers the
+/// object's kind (a liftable kind, a segment of a big rock or bombable
+/// floor, a hammer peg); a push block instead counts through named phases.
+/// The word layout is the original's, so a record survives WRAM and
+/// checkpoints unchanged; the queries keep the original's masks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ObjectRecord(u16);
+
+impl ObjectRecord {
+    pub(crate) const IDLE_PUSH_BLOCK: Self = Self(0);
+    pub(crate) const PUSHED: Self = Self(1);
+    pub(crate) const SLIDING: Self = Self(2);
+    pub(crate) const ARRIVED: Self = Self(3);
+    pub(crate) const FALLING: Self = Self(4);
+    pub(crate) const RESTING_ON_PLATE: Self = Self(5);
+    /// A block that dropped through a hole; the handler's next advance wraps
+    /// it back to idle, as the original's increment did.
+    pub(crate) const VANISHED: Self = Self(0xffff);
+    pub(crate) const HAMMER_PEG: Self = Self(0x4040);
+    pub(crate) const POT: Self = Self::liftable(1);
+
+    pub(crate) const fn liftable(kind: usize) -> Self {
+        Self(0x1010 + (kind as u16 & 0x0f) * 0x0101)
+    }
+
+    pub(crate) const fn big_rock_segment(segment: usize) -> Self {
+        Self(0x2020 + (segment as u16 & 0x0f) * 0x0101)
+    }
+
+    pub(crate) const fn bombable_floor_segment(segment: usize) -> Self {
+        Self(0x3030 + (segment as u16 & 0x0f) * 0x0101)
+    }
+
+    pub(crate) const fn from_word(word: u16) -> Self {
+        Self(word)
+    }
+
+    pub(crate) const fn word(self) -> u16 {
+        self.0
+    }
+
+    pub(crate) fn liftable_kind(self) -> Option<usize> {
+        (self.0 & 0xf0f0 == 0x1010).then_some(self.kind_index())
+    }
+
+    pub(crate) fn big_rock_segment_index(self) -> Option<usize> {
+        (self.0 & 0xf0f0 == 0x2020).then_some(self.kind_index())
+    }
+
+    pub(crate) fn is_hammer_peg(self) -> bool {
+        self.0 & 0xf0f0 == 0x4040
+    }
+
+    /// The kind or segment nibble, read without a family check where the
+    /// original did not check one.
+    pub(crate) const fn kind_index(self) -> usize {
+        (self.0 & 0x0f) as usize
+    }
+
+    /// Room attribute loading skips bombable floor segments; the original
+    /// tests only the low byte here.
+    pub(crate) fn skips_room_attribute(self) -> bool {
+        self.0 & 0x00f0 == 0x0030
+    }
+
+    pub(crate) fn is_idle(self) -> bool {
+        self.0 == 0
+    }
+
+    pub(crate) fn advanced(self) -> Self {
+        Self(self.0.wrapping_add(1))
+    }
+
+    /// The falling animation's end clears only the low byte.
+    pub(crate) fn settled(self) -> Self {
+        Self(self.0 & 0xff00)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DungeonObjectTrackingState {
     misc_object_index: u16,
@@ -1059,11 +1138,13 @@ impl DungeonObjectTrackingState {
         self.misc_object_index
     }
 
-    pub(crate) fn replacement_tile_state(&self, index: usize) -> u16 {
-        self.replacement_tile_states
-            .get(index)
-            .copied()
-            .unwrap_or(0)
+    pub(crate) fn object_record(&self, index: usize) -> ObjectRecord {
+        ObjectRecord::from_word(
+            self.replacement_tile_states
+                .get(index)
+                .copied()
+                .unwrap_or(0),
+        )
     }
 
     pub(crate) fn object_pos_in_objdata(&self, index: usize) -> u16 {
@@ -1104,16 +1185,20 @@ impl DungeonObjectTrackingState {
         self.object_data_positions.fill(0);
     }
 
-    fn set_replacement_tile_state(&mut self, index: usize, value: u16) {
+    fn set_object_record(&mut self, index: usize, record: ObjectRecord) {
         if let Some(state) = self.replacement_tile_states.get_mut(index) {
-            *state = value;
+            *state = record.word();
         }
     }
 
-    fn clear_replacement_tile_state_low(&mut self, index: usize) {
-        if let Some(state) = self.replacement_tile_states.get_mut(index) {
-            *state &= 0xff00;
-        }
+    fn advance_object_record(&mut self, index: usize) {
+        let record = self.object_record(index).advanced();
+        self.set_object_record(index, record);
+    }
+
+    fn settle_object_record(&mut self, index: usize) {
+        let record = self.object_record(index).settled();
+        self.set_object_record(index, record);
     }
 
     fn set_object_data_pos(&mut self, index: usize, value: u16) {
@@ -3891,8 +3976,9 @@ impl<'a> NativeDungeonObjectTrackingBridgeMut<'a> {
         fn set_big_rock_starting_address(value: u16);
         fn clear_replacement_tile_states();
         fn clear_object_data_positions();
-        fn set_replacement_tile_state(index: usize, value: u16);
-        fn clear_replacement_tile_state_low(index: usize);
+        fn set_object_record(index: usize, record: ObjectRecord);
+        fn advance_object_record(index: usize);
+        fn settle_object_record(index: usize);
         fn set_object_data_pos(index: usize, value: u16);
         fn set_object_tilemap_pos(index: usize, value: u16);
         fn set_misc_object_index(value: u16);

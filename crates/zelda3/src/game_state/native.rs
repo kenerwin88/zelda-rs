@@ -52,7 +52,7 @@ pub(crate) use dungeon::{
     NativeDungeonRoomTilemapBridgeMut, NativeDungeonRoomTrackingBridgeMut,
     NativeDungeonSavegameBridgeMut, NativeDungeonScratchWordBridgeMut,
     NativeDungeonStairListsBridgeMut, NativeDungeonStairMovementBridgeMut,
-    NativeDungeonTorchBridgeMut,
+    NativeDungeonTorchBridgeMut, ObjectRecord,
 };
 pub(crate) use effects::{
     lanmola_flat_trail_entry_from_ram, EffectState, HappinessPondRupeeSnapshot,

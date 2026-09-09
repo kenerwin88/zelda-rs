@@ -1,3 +1,4 @@
+use crate::game_state::ObjectRecord;
 use crate::tile_definition::{DungeonRole, NativeTile, TilePair};
 // Methods ported from zelda3/src/dungeon.c and included inside ZeldaState.
 
@@ -2590,14 +2591,29 @@ impl ZeldaState {
             }
             0x2b => {
                 let mut dst = dsto;
-                self.DrawBigGraySegment(0x1010, src, &mut dst, dsto);
+                self.DrawBigGraySegment(ObjectRecord::liftable(0), src, &mut dst, dsto);
             }
             0x2c => {
                 let mut dst = dsto;
-                self.DrawBigGraySegment(0x2020, 0x0e62, &mut dst, dsto);
-                self.DrawBigGraySegment(0x2121, 0x0e6a, &mut dst, dsto + xy(2, 0) as u16);
-                self.DrawBigGraySegment(0x2222, 0x0e72, &mut dst, dsto + xy(0, 2) as u16);
-                self.DrawBigGraySegment(0x2323, 0x0e7a, &mut dst, dsto + xy(2, 2) as u16);
+                self.DrawBigGraySegment(ObjectRecord::big_rock_segment(0), 0x0e62, &mut dst, dsto);
+                self.DrawBigGraySegment(
+                    ObjectRecord::big_rock_segment(1),
+                    0x0e6a,
+                    &mut dst,
+                    dsto + xy(2, 0) as u16,
+                );
+                self.DrawBigGraySegment(
+                    ObjectRecord::big_rock_segment(2),
+                    0x0e72,
+                    &mut dst,
+                    dsto + xy(0, 2) as u16,
+                );
+                self.DrawBigGraySegment(
+                    ObjectRecord::big_rock_segment(3),
+                    0x0e7a,
+                    &mut dst,
+                    dsto + xy(2, 2) as u16,
+                );
             }
             0x2d => self.RoomDraw_AgahnimAltar(dsto),
             0x2e => self.RoomDraw_AgahnimsWindows(dsto),
@@ -2607,7 +2623,7 @@ impl ZeldaState {
             }
             0x30 => {
                 let mut dst = dsto;
-                self.DrawBigGraySegment(0x1212, src, &mut dst, dsto);
+                self.DrawBigGraySegment(ObjectRecord::liftable(2), src, &mut dst, dsto);
             }
             0x31 => {
                 let loc = (dsto * 2) | 0x8000 | self.room_plane_tilemap_bit();
@@ -4140,7 +4156,7 @@ impl ZeldaState {
 
     pub(super) fn Object_BombableFloorHelper(
         &mut self,
-        state: u16,
+        record: ObjectRecord,
         src: usize,
         src_below: usize,
         _dst: &mut u16,
@@ -4148,7 +4164,7 @@ impl ZeldaState {
     ) {
         let index = self.game_state.dungeon.object_tracking.misc_object_index() as usize >> 1;
         self.dungeon_object_tracking_mut()
-            .set_replacement_tile_state(index, state);
+            .set_object_record(index, record);
         let next = self
             .game_state
             .dungeon
@@ -4186,23 +4202,29 @@ impl ZeldaState {
 
         let src = 0x0220;
         let src_below = 0x05ba;
-        self.Object_BombableFloorHelper(0x3030, src, src_below, dst, dsto);
         self.Object_BombableFloorHelper(
-            0x3131,
+            ObjectRecord::bombable_floor_segment(0),
+            src,
+            src_below,
+            dst,
+            dsto,
+        );
+        self.Object_BombableFloorHelper(
+            ObjectRecord::bombable_floor_segment(1),
             src + 8,
             src_below + 8,
             dst,
             dsto + xy(2, 0) as u16,
         );
         self.Object_BombableFloorHelper(
-            0x3232,
+            ObjectRecord::bombable_floor_segment(2),
             src + 16,
             src_below + 16,
             dst,
             dsto + xy(0, 2) as u16,
         );
         self.Object_BombableFloorHelper(
-            0x3333,
+            ObjectRecord::bombable_floor_segment(3),
             src + 24,
             src_below + 24,
             dst,
@@ -4221,7 +4243,7 @@ impl ZeldaState {
         self.dungeon_object_tracking_mut()
             .set_misc_object_index(next);
         self.dungeon_object_tracking_mut()
-            .set_replacement_tile_state(index, 0x4040);
+            .set_object_record(index, ObjectRecord::HAMMER_PEG);
         let load_ptr = self.game_state.dungeon.room_load.load_ptr_offset();
         self.dungeon_object_tracking_mut()
             .set_object_data_pos(index, load_ptr);
@@ -4543,7 +4565,7 @@ impl ZeldaState {
         self.dungeon_object_tracking_mut()
             .set_misc_object_index(((index + 1) * 2) as u16);
         self.dungeon_object_tracking_mut()
-            .set_replacement_tile_state(index, 0x1111);
+            .set_object_record(index, ObjectRecord::POT);
         let load_ptr = self.game_state.dungeon.room_load.load_ptr_offset();
         self.dungeon_object_tracking_mut()
             .set_object_data_pos(index, load_ptr);
@@ -4829,10 +4851,16 @@ impl ZeldaState {
         self.room_write_current(dsto + 65, self.tile_word(src, 3));
     }
 
-    pub(super) fn DrawBigGraySegment(&mut self, a: u16, src: usize, _dst: &mut u16, dsto: u16) {
+    pub(super) fn DrawBigGraySegment(
+        &mut self,
+        record: ObjectRecord,
+        src: usize,
+        _dst: &mut u16,
+        dsto: u16,
+    ) {
         let index = self.game_state.dungeon.object_tracking.misc_object_index() as usize >> 1;
         self.dungeon_object_tracking_mut()
-            .set_replacement_tile_state(index, a);
+            .set_object_record(index, record);
         let next = self
             .game_state
             .dungeon
@@ -4877,7 +4905,7 @@ impl ZeldaState {
         self.dungeon_object_tracking_mut()
             .set_misc_object_index(next);
         self.dungeon_object_tracking_mut()
-            .set_replacement_tile_state(x, 0);
+            .set_object_record(x, ObjectRecord::IDLE_PUSH_BLOCK);
         self.dungeon_object_tracking_mut()
             .set_object_data_pos(x, slot);
         self.dungeon_object_tracking_mut()
@@ -6005,13 +6033,13 @@ impl ZeldaState {
             DungeonRole::TrackedObject { .. } | DungeonRole::ClosedDoor { .. }
         ));
         let attr = tile.object_slot() as u8;
-        let rt = self
+        let record = self
             .game_state
             .dungeon
             .object_tracking
-            .replacement_tile_state(attr as usize);
+            .object_record(attr as usize);
 
-        if rt & 0xf0f0 == 0x1010 {
+        if let Some(kind) = record.liftable_kind() {
             let misc = u16::from(attr) * 2;
             self.dungeon_object_tracking_mut()
                 .set_misc_object_index(misc);
@@ -6023,11 +6051,11 @@ impl ZeldaState {
             self.RevealPotItem(xy, tilemap);
             self.RoomDraw_16x16Single(misc as u8);
             self.ManipBlock_Something(pt);
-            LIFTABLE_TILE_REPLACEMENT_ITEM_CODES[(rt & 0x0f) as usize] as u8
-        } else if rt & 0xf0f0 == 0x2020 {
+            LIFTABLE_TILE_REPLACEMENT_ITEM_CODES[kind] as u8
+        } else if let Some(segment) = record.big_rock_segment_index() {
             self.ThievesAttic_DrawLightenedHole(
                 xy,
-                (u16::from(attr).wrapping_sub(rt & 0x0f)).wrapping_mul(2),
+                (u16::from(attr).wrapping_sub(segment as u16)).wrapping_mul(2),
                 pt,
             )
         } else {
@@ -6080,12 +6108,8 @@ impl ZeldaState {
             .bg2_attributes
             .bg2_tile(pos as usize);
         if let DungeonRole::TrackedObject { slot } = tile.dungeon_role() {
-            let tile2 = self
-                .game_state
-                .dungeon
-                .object_tracking
-                .replacement_tile_state(slot);
-            if tile2 & 0xf0f0 == 0x4040 {
+            let record = self.game_state.dungeon.object_tracking.object_record(slot);
+            if record.is_hammer_peg() {
                 if !self.game_state.player.follower_link.item_in_hand_has(2) {
                     return 0;
                 }
@@ -6095,7 +6119,7 @@ impl ZeldaState {
                     self.game_state.dungeon.object_tracking.misc_object_index() as u8,
                 );
                 self.set_sound_effect_1(0x11);
-            } else if tile2 & 0xf0f0 == 0x1010 {
+            } else if record.liftable_kind().is_some() {
                 self.dungeon_object_tracking_mut()
                     .set_misc_object_index(slot as u16 * 2);
                 let tilemap = self
@@ -6180,8 +6204,8 @@ impl ZeldaState {
                 self.game_state
                     .dungeon
                     .object_tracking
-                    .replacement_tile_state(j as usize)
-                    & 0x0f,
+                    .object_record(j as usize)
+                    .kind_index() as u16,
             )) as usize;
             self.dungeon_object_tracking_mut()
                 .set_misc_object_index((2 * k) as u16);
@@ -6242,10 +6266,10 @@ impl ZeldaState {
             self.dungeon_environment_mut()
                 .set_block_trap_related_tile(related);
             self.dungeon_object_tracking_mut()
-                .set_replacement_tile_state(y, 4);
+                .set_object_record(y, ObjectRecord::FALLING);
         } else {
             self.dungeon_object_tracking_mut()
-                .set_replacement_tile_state(y, 0xffff);
+                .set_object_record(y, ObjectRecord::VANISHED);
         }
         self.Dungeon_Store2x2(p, 0x0922, 0x0932, 0x0923, 0x0933, NativeTile::OPEN_CHEST);
     }
@@ -6279,8 +6303,7 @@ impl ZeldaState {
         }
         self.pushed_block_mut().reset_animation_timer();
         if self.pushed_block_mut().advance_animation_mode() == 4 {
-            self.dungeon_object_tracking_mut()
-                .clear_replacement_tile_state_low(y);
+            self.dungeon_object_tracking_mut().settle_object_record(y);
             self.pushed_block_mut().set_animation_mode(0);
             let i = usize::from(
                 i32::from(
@@ -6334,14 +6357,7 @@ impl ZeldaState {
                 .object_tracking
                 .changeable_object_index(i)
                 .wrapping_sub(1) as usize;
-            let state = self
-                .game_state
-                .dungeon
-                .object_tracking
-                .replacement_tile_state(j)
-                .wrapping_add(1);
-            self.dungeon_object_tracking_mut()
-                .set_replacement_tile_state(j, state);
+            self.dungeon_object_tracking_mut().advance_object_record(j);
             self.follower_link_state_mut()
                 .clear_direction_lock_bits(0x04);
             self.follower_link_state_mut().and_defense_flags(!0x04);
@@ -7098,8 +7114,8 @@ impl ZeldaState {
                 .game_state
                 .dungeon
                 .object_tracking
-                .replacement_tile_state(i >> 1)
-                == 5
+                .object_record(i >> 1)
+                == ObjectRecord::RESTING_ON_PLATE
             {
                 let value = self
                     .game_state
@@ -8907,12 +8923,12 @@ impl ZeldaState {
         let mut attr = TilePair::from_cartridge(0x7070);
         let misc_end = self.game_state.dungeon.object_tracking.misc_object_index() as usize;
         while i != misc_end {
-            let k = self
+            let record = self
                 .game_state
                 .dungeon
                 .object_tracking
-                .replacement_tile_state(i >> 1);
-            if (k & 0x00f0) != 0x0030 {
+                .object_record(i >> 1);
+            if !record.skips_room_attribute() {
                 let j = (self
                     .game_state
                     .dungeon
@@ -9878,18 +9894,14 @@ impl ZeldaState {
             return 0xffff;
         };
 
-        let replacement = self
-            .game_state
-            .dungeon
-            .object_tracking
-            .replacement_tile_state(slot);
-        if replacement == 0 {
+        let record = self.game_state.dungeon.object_tracking.object_record(slot);
+        if record.is_idle() {
             return 0xffff;
         }
-        if replacement & 0xf0f0 == 0x2020 {
+        if record.big_rock_segment_index().is_some() {
             return 0x55;
         }
-        LIFTABLE_TILE_REPLACEMENT_ITEM_CODES[(replacement & 0x0f) as usize]
+        LIFTABLE_TILE_REPLACEMENT_ITEM_CODES[record.kind_index()]
     }
 
     pub(super) fn OpenChestForItem(&mut self, tile: u8, chest_position: &mut u16) -> u8 {
@@ -14281,54 +14293,33 @@ impl ZeldaState {
         {
             let obj = self.game_state.dungeon.object_tracking.misc_object_index();
             let k = usize::from(obj >> 1);
-            match self
-                .game_state
-                .dungeon
-                .object_tracking
-                .replacement_tile_state(k)
-            {
-                1 => {
-                    self.RoomDraw_16x16Single(obj as u8);
-                    let dir = self.game_state.player.pushed_block.push_direction_index();
-                    let pos = self
-                        .game_state
-                        .dungeon
-                        .object_tracking
-                        .object_tilemap_pos(k)
-                        .wrapping_add_signed(
-                            DUNGEON_PUSH_BLOCK_HANDLER_PUSH_BLOCK_MOVE_DISTANCES[dir],
-                        );
-                    self.dungeon_object_tracking_mut()
-                        .set_object_tilemap_pos(k, pos);
-                    self.dungeon_object_tracking_mut()
-                        .set_replacement_tile_state(k, 2);
+            let record = self.game_state.dungeon.object_tracking.object_record(k);
+            if record == ObjectRecord::PUSHED {
+                self.RoomDraw_16x16Single(obj as u8);
+                let dir = self.game_state.player.pushed_block.push_direction_index();
+                let pos = self
+                    .game_state
+                    .dungeon
+                    .object_tracking
+                    .object_tilemap_pos(k)
+                    .wrapping_add_signed(DUNGEON_PUSH_BLOCK_HANDLER_PUSH_BLOCK_MOVE_DISTANCES[dir]);
+                self.dungeon_object_tracking_mut()
+                    .set_object_tilemap_pos(k, pos);
+                self.dungeon_object_tracking_mut()
+                    .set_object_record(k, ObjectRecord::SLIDING);
+            } else if record == ObjectRecord::SLIDING {
+                self.PushBlock_Slide(obj as u8);
+                let obj = self.game_state.dungeon.object_tracking.misc_object_index();
+                let k = usize::from(obj >> 1);
+                if self.game_state.dungeon.object_tracking.object_record(k) == ObjectRecord::ARRIVED
+                {
+                    // A landing on a plate or a hole rewrites the record
+                    // before this advance, so a vanished block wraps to idle.
+                    self.PushBlock_CheckForPit(obj as u8);
+                    self.dungeon_object_tracking_mut().advance_object_record(k);
                 }
-                2 => {
-                    self.PushBlock_Slide(obj as u8);
-                    let obj = self.game_state.dungeon.object_tracking.misc_object_index();
-                    let k = usize::from(obj >> 1);
-                    if self
-                        .game_state
-                        .dungeon
-                        .object_tracking
-                        .replacement_tile_state(k)
-                        == 3
-                    {
-                        self.PushBlock_CheckForPit(obj as u8);
-                        let state = self
-                            .game_state
-                            .dungeon
-                            .object_tracking
-                            .replacement_tile_state(k)
-                            .wrapping_add(1);
-                        self.dungeon_object_tracking_mut()
-                            .set_replacement_tile_state(k, state);
-                    }
-                }
-                4 => {
-                    self.PushBlock_HandleFalling(obj as u8);
-                }
-                _ => {}
+            } else if record == ObjectRecord::FALLING {
+                self.PushBlock_HandleFalling(obj as u8);
             }
             let next = self
                 .game_state

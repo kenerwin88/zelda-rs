@@ -2066,6 +2066,8 @@ mod runtime_entrance_backup;
 mod runtime_items;
 #[path = "zelda_rtl_tests/runtime/runtime_misc.rs"]
 mod runtime_misc;
+#[path = "zelda_rtl_tests/runtime/runtime_object_records.rs"]
+mod runtime_object_records;
 #[path = "zelda_rtl_tests/runtime/runtime_overworld.rs"]
 mod runtime_overworld;
 #[path = "zelda_rtl_tests/runtime/runtime_palette_backup.rs"]

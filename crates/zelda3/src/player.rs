@@ -9752,13 +9752,13 @@ impl ZeldaState {
                 .game_state
                 .dungeon
                 .object_tracking
-                .replacement_tile_state(idx_word)
-                == 0
+                .object_record(idx_word)
+                .is_idle()
             && !self.push_block_attempt_to_push_the_block(0, x, y)
         {
             self.ancilla_sfx2_near(0x22);
             self.dungeon_object_tracking_mut()
-                .set_replacement_tile_state(idx_word, 1);
+                .set_object_record(idx_word, crate::game_state::ObjectRecord::PUSHED);
             return false;
         }
 
