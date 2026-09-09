@@ -1659,7 +1659,8 @@ impl ZeldaState {
     pub(super) fn somaria_platform_and_pipe_check_tile(&mut self, k: usize) -> u8 {
         let mut x = self.sprite_get_x(k);
         let y = self.sprite_get_y(k);
-        self.GetTileAttribute(0, &mut x, y)
+        // The pipe network keeps the encoded identity in the sprite's E slot.
+        self.probe_entity_tile(0, &mut x, y).cartridge_attribute()
     }
 
     fn somaria_platform_and_pipe_check_tile_for_world(&mut self, k: usize) -> u8 {

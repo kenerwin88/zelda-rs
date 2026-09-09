@@ -29,6 +29,7 @@ use crate::game_state::constants::{
     SPRITE_Y_LO, SPRITE_Y_RECOIL, SPRITE_Y_SUBPIXEL, SPRITE_Y_VELOCITY, SPRITE_Z,
     SPRITE_Z_SUBPIXEL, SPRITE_Z_VELOCITY, SPR_RANGED_BASED_TOGGLER,
 };
+use crate::tile_definition::NativeTile;
 use crate::types::{read_le_u16, write_le_u16};
 
 pub(crate) use super::ancilla::{
@@ -1914,7 +1915,7 @@ pub(crate) struct SpriteWorkspaceState {
     room_origin_y_high: u8,
     pickup_slot_cache: u8,
     shared_scratch_a: u8,
-    tile_type: u8,
+    tile: NativeTile,
     reset_scratch_a: u8,
     reset_scratch_b: u8,
     graphics_subsets: [u8; SPRITE_GRAPHICS_SUBSET_COUNT],
@@ -1932,7 +1933,7 @@ impl Default for SpriteWorkspaceState {
             room_origin_y_high: 0,
             pickup_slot_cache: 0,
             shared_scratch_a: 0,
-            tile_type: 0,
+            tile: NativeTile::GROUND,
             reset_scratch_a: 0,
             reset_scratch_b: 0,
             graphics_subsets: [0; SPRITE_GRAPHICS_SUBSET_COUNT],
@@ -1962,7 +1963,7 @@ impl SpriteWorkspaceState {
             room_origin_y_high: ram.get(SPRITE_ROOM_ORIGIN_Y_HI).copied().unwrap_or(0),
             pickup_slot_cache: ram.get(SPRITE_PICKUP_SLOT_CACHE).copied().unwrap_or(0),
             shared_scratch_a: ram.get(SPRITE_SHARED_WORK_A).copied().unwrap_or(0),
-            tile_type: ram.get(SPRITE_TILETYPE).copied().unwrap_or(0),
+            tile: NativeTile::from_cartridge(ram.get(SPRITE_TILETYPE).copied().unwrap_or(0)),
             reset_scratch_a: ram.get(SPRITE_RESET_WORK_A).copied().unwrap_or(0),
             reset_scratch_b: ram.get(SPRITE_RESET_WORK_B).copied().unwrap_or(0),
             graphics_subsets,
@@ -1990,7 +1991,7 @@ impl SpriteWorkspaceState {
         ram[SPRITE_ROOM_ORIGIN_Y_HI] = self.room_origin_y_high;
         ram[SPRITE_PICKUP_SLOT_CACHE] = self.pickup_slot_cache;
         ram[SPRITE_SHARED_WORK_A] = self.shared_scratch_a;
-        ram[SPRITE_TILETYPE] = self.tile_type;
+        ram[SPRITE_TILETYPE] = self.tile.cartridge_attribute();
         ram[SPRITE_RESET_WORK_A] = self.reset_scratch_a;
         ram[SPRITE_RESET_WORK_B] = self.reset_scratch_b;
         ram[SPRITE_GFX_SUBSET_0..SPRITE_GFX_SUBSET_0 + SPRITE_GRAPHICS_SUBSET_COUNT]
@@ -2029,8 +2030,9 @@ impl SpriteWorkspaceState {
         self.shared_scratch_a
     }
 
-    pub(crate) fn tile_type(&self) -> u8 {
-        self.tile_type
+    /// The last tile probed by a sprite, ancilla, or overlord.
+    pub(crate) fn tile(&self) -> NativeTile {
+        self.tile
     }
 
     pub(crate) fn prep_shared_counter(&self) -> u8 {
@@ -2098,8 +2100,8 @@ impl SpriteWorkspaceState {
         self.shared_scratch_a = value;
     }
 
-    fn set_tile_type(&mut self, value: u8) {
-        self.tile_type = value;
+    fn set_tile(&mut self, value: NativeTile) {
+        self.tile = value;
     }
 
     fn set_prep_shared_counter(&mut self, value: u8) {
@@ -2247,7 +2249,7 @@ impl<'a> NativeSpriteWorkspaceBridgeMut<'a> {
 
     forward_synced! {
         state;
-        fn set_tile_type(value: u8);
+        fn set_tile(value: NativeTile);
         fn set_prep_shared_counter(value: u8);
         fn increment_prep_shared_counter() -> u8;
         fn decrement_prep_shared_counter() -> u8;
@@ -3093,33 +3095,36 @@ impl<'a> NativeSpriteHitboxWorkOffsetBridgeMut<'a> {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DualLayerTileCacheState {
-    tile_types: [u8; SPRITE_SLOT_COUNT],
+    tiles: [NativeTile; SPRITE_SLOT_COUNT],
 }
 
 impl DualLayerTileCacheState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
-        let mut tile_types = [0; SPRITE_SLOT_COUNT];
-        for (slot, tile_type) in tile_types.iter_mut().enumerate() {
-            *tile_type = ram.get(DUAL_LAYER_TILE_CACHE + slot).copied().unwrap_or(0);
+        let mut tiles = [NativeTile::GROUND; SPRITE_SLOT_COUNT];
+        for (slot, tile) in tiles.iter_mut().enumerate() {
+            *tile = NativeTile::from_cartridge(
+                ram.get(DUAL_LAYER_TILE_CACHE + slot).copied().unwrap_or(0),
+            );
         }
-        Self { tile_types }
+        Self { tiles }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        for (slot, tile_type) in self.tile_types.iter().copied().enumerate() {
-            ram[DUAL_LAYER_TILE_CACHE + slot] = tile_type;
+        for (slot, tile) in self.tiles.iter().copied().enumerate() {
+            ram[DUAL_LAYER_TILE_CACHE + slot] = tile.cartridge_attribute();
         }
     }
 
-    pub(crate) fn tile_type(&self, slot: usize) -> u8 {
-        self.tile_types.get(slot).copied().unwrap_or(0)
+    /// The lower-layer tile a dual-layer collision check left for the slot.
+    pub(crate) fn tile(&self, slot: usize) -> NativeTile {
+        self.tiles.get(slot).copied().unwrap_or_default()
     }
 
-    pub(crate) fn set_tile_type(&mut self, slot: usize, value: u8) -> bool {
-        let Some(tile_type) = self.tile_types.get_mut(slot) else {
+    pub(crate) fn set_tile(&mut self, slot: usize, value: NativeTile) -> bool {
+        let Some(tile) = self.tiles.get_mut(slot) else {
             return false;
         };
-        *tile_type = value;
+        *tile = value;
         true
     }
 }
@@ -3134,8 +3139,8 @@ impl<'a> NativeDualLayerTileCacheBridgeMut<'a> {
         Self { state, ram }
     }
 
-    pub(crate) fn set_tile_type(&mut self, slot: usize, value: u8) {
-        if self.state.set_tile_type(slot, value) {
+    pub(crate) fn set_tile(&mut self, slot: usize, value: NativeTile) {
+        if self.state.set_tile(slot, value) {
             self.sync();
         }
     }

@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::game_state::constants::DUNG_SAVEGAME_STATE_BITS;
+use crate::tile_definition::{EntityCollision, NativeTile};
 use crate::types::{
     abs16, abs8, project_speed_from_differences, sign16, sign8, AncillaRadialProjection, PairU8,
     Point16U, ProjectSpeedRet, SpriteHitBox,
@@ -8462,25 +8463,18 @@ impl ZeldaState {
             return false;
         }
 
-        let tile_attr = if self.game_state.world.location.is_outdoors() {
-            x >>= 3;
-            self.overworld_get_tile_attribute_at_location(x, y)
-        } else {
-            self.get_tile_attribute_for_ancilla(self.ancilla_slot_view(k).floor(), x, y)
-        };
-
-        let value = tile_attr;
-
-        self.ancilla_slot_view_mut(k).set_tile_attribute(value);
-        if tile_attr == 3 && self.ancilla_slot_view(k).floor2() != 0 {
+        let tile = self.ancilla_probe_tile(k, &mut x, y);
+        // Wall identity 3 never stops an ancilla travelling on the upper layer.
+        if tile == NativeTile::from_cartridge(3) && self.ancilla_slot_view(k).floor2() != 0 {
             return false;
         }
 
-        match ANCILLA_TILE_COLLISION_ATTRS[tile_attr as usize] {
-            0 => false,
-            2 => self.entity_check_sloped_tile_collision_for_ancilla(x, y),
-            3 => self.ancilla_slot_view(k).floor2() != 0,
-            4 => {
+        match tile.ancilla_collision() {
+            EntityCollision::Passable => false,
+            EntityCollision::Solid => true,
+            EntityCollision::Slope => self.ancilla_sloped_tile_collision(x, y),
+            EntityCollision::LayerBoundary => self.ancilla_slot_view(k).floor2() != 0,
+            EntityCollision::Ledge => {
                 if self.ancilla_slot_view(k).floor2() != 0 {
                     true
                 } else {
@@ -8489,7 +8483,6 @@ impl ZeldaState {
                     false
                 }
             }
-            _ => true,
         }
     }
 
@@ -8519,49 +8512,43 @@ impl ZeldaState {
         {
             return false;
         }
-        let tile_attr = if self.game_state.world.location.is_outdoors() {
-            x >>= 3;
-            self.overworld_get_tile_attribute_at_location(x, y)
-        } else {
-            self.get_tile_attribute_for_ancilla(self.ancilla_slot_view(k).floor(), x, y)
-        };
-
-        let value = tile_attr;
-
-        self.ancilla_slot_view_mut(k).set_tile_attribute(value);
-        if tile_attr == 3 && self.ancilla_slot_view(k).floor2() != 0 {
+        let tile = self.ancilla_probe_tile(k, &mut x, y);
+        // Wall identity 3 never stops an ancilla travelling on the upper layer.
+        if tile == NativeTile::from_cartridge(3) && self.ancilla_slot_view(k).floor2() != 0 {
             return false;
         }
 
-        let mut t = ANCILLA_TILE_COLLISION_ATTRS_LAYER0[tile_attr as usize];
-        if self.ancilla_slot_view(k).ancilla_type() == 2 && tile_attr & 0xf0 == 0xc0 {
-            t = 0;
+        let mut collision = tile.ancilla_ground_layer_collision();
+        // The boomerang passes the interactable range 0xc0..=0xcf.
+        if self.ancilla_slot_view(k).ancilla_type() == 2
+            && tile.cartridge_attribute() & 0xf0 == 0xc0
+        {
+            collision = EntityCollision::Passable;
         }
 
         if self.ancilla_slot_view(k).object_priority() == 0 {
-            if t == 0 {
-                return false;
-            }
-            if t == 1 {
-                self.sprite_system_mut().set_alert_flag(3);
-                return true;
-            }
-            if t == 2 {
-                return self.entity_check_sloped_tile_collision_for_ancilla(x, y);
-            }
-            if t == 3 {
-                if self.ancilla_slot_view(k).floor2() != 0 {
+            match collision {
+                EntityCollision::Passable => return false,
+                EntityCollision::Solid => {
                     self.sprite_system_mut().set_alert_flag(3);
                     return true;
                 }
-                return false;
+                EntityCollision::Slope => return self.ancilla_sloped_tile_collision(x, y),
+                EntityCollision::LayerBoundary => {
+                    if self.ancilla_slot_view(k).floor2() != 0 {
+                        self.sprite_system_mut().set_alert_flag(3);
+                        return true;
+                    }
+                    return false;
+                }
+                EntityCollision::Ledge => {}
             }
         }
         self.ancilla_slot_view_mut(k).subtract_u(1);
         if (self.ancilla_slot_view(k).u() as i8) < 0 {
             let value = 0;
             self.ancilla_slot_view_mut(k).set_u(value);
-            if t == 4 {
+            if collision == EntityCollision::Ledge {
                 let value = 6;
                 self.ancilla_slot_view_mut(k).set_u(value);
                 self.ancilla_slot_view_mut(k).xor_object_priority(1);
@@ -10615,37 +10602,23 @@ impl ZeldaState {
         )
     }
 
-    fn get_tile_attribute_for_ancilla(&mut self, floor: u8, mut x: u16, y: u16) -> u8 {
-        let tiletype = if self.game_state.world.location.is_indoors() {
-            let mut t = if floor >= 1 { 0x1000 } else { 0 };
-            t += ((x & 0x01f8) >> 3) as usize;
-            t += ((y & 0x01f8) << 3) as usize;
-            self.game_state.dungeon.bg2_attributes.bg2_attr(t)
+    /// Probe the tile ahead of an ancilla and record it on the slot. The
+    /// original published the sprite scratch tile only indoors, so the
+    /// outdoor slope test still reads whatever the scratch last held.
+    fn ancilla_probe_tile(&mut self, k: usize, x: &mut u16, y: u16) -> NativeTile {
+        let floor = self.ancilla_slot_view(k).floor();
+        let tile = if self.game_state.world.location.is_indoors() {
+            self.probe_entity_tile(floor, x, y)
         } else {
-            x >>= 3;
-            self.overworld_get_tile_attribute_at_location(x, y)
+            self.entity_tile_at(floor, x, y)
         };
-        self.sprite_workspace_mut().set_tile_type(tiletype);
-        tiletype
+        self.ancilla_slot_view_mut(k)
+            .set_tile_attribute(tile.cartridge_attribute());
+        tile
     }
 
-    fn entity_check_sloped_tile_collision_for_ancilla(&self, x: u16, y: u16) -> bool {
-        let a = (y & 7) as u8;
-        let r6 = self
-            .game_state
-            .sprites
-            .workspace
-            .tile_type()
-            .wrapping_sub(0x10);
-        if r6 >= 4 {
-            return true;
-        }
-        let b = SLOPED_TILE_HEIGHTS[(r6 as usize) * 8 + (x as usize & 7)];
-        if r6 < 2 {
-            b >= a
-        } else {
-            a >= b
-        }
+    fn ancilla_sloped_tile_collision(&self, x: u16, y: u16) -> bool {
+        self.entity_sloped_tile_collision(x, y).unwrap_or(true)
     }
 
     fn ancilla_set_oam(&mut self, oam: usize, x: u16, y: u16, charnum: u8, flags: u8, mut big: u8) {

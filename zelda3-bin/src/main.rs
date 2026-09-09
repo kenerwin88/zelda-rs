@@ -941,12 +941,12 @@ fn run_replay_save(args: &[String]) {
     let action_attr0 = if game.ram[0x1b] != 0 {
         0xff
     } else {
-        game.overworld_get_tile_attribute_at_location(action_x0, action_y0)
+        game.overworld_tile_attribute_at_location(action_x0, action_y0)
     };
     let action_attr1 = if game.ram[0x1b] != 0 {
         0xff
     } else {
-        game.overworld_get_tile_attribute_at_location(action_x1, action_y1)
+        game.overworld_tile_attribute_at_location(action_x1, action_y1)
     };
 
     // Stable byte-level WRAM dump for deterministic old-vs-new diffing (no

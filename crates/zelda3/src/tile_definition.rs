@@ -56,11 +56,39 @@ pub(crate) enum TileBehavior {
     Gravestone,
 }
 
+/// How a sprite, ancilla, or overlord probe treats a tile. The original
+/// kept four attribute tables for these consumers; two were identical.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EntityCollision {
+    Passable,
+    Solid,
+    /// Profiled by the entity slope of the probed scratch tile; the diagonal
+    /// slopes carry this class without a profile and stay solid.
+    Slope,
+    /// In-room staircases and their landing: solid only from the other layer.
+    LayerBoundary,
+    /// Ledges: sprites outdoors record a ledge state and ancillae swap
+    /// priority instead of colliding.
+    Ledge,
+}
+
+/// Fine-position profile of the four straight slopes as entities see them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct EntitySlope {
+    heights: [u8; 8],
+    blocked_up_to_height: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct TileDefinition {
     cartridge_attribute: u8,
     indoor: TileBehavior,
     outdoor: TileBehavior,
+    sprite_probe: EntityCollision,
+    blocks_sprites: bool,
+    ancilla: EntityCollision,
+    ancilla_ground_layer: EntityCollision,
+    entity_slope: Option<EntitySlope>,
 }
 
 const fn definitions() -> [TileDefinition; 256] {
@@ -68,13 +96,24 @@ const fn definitions() -> [TileDefinition; 256] {
         cartridge_attribute: 0,
         indoor: TileBehavior::Ignore,
         outdoor: TileBehavior::Ignore,
+        sprite_probe: EntityCollision::Passable,
+        blocks_sprites: false,
+        ancilla: EntityCollision::Passable,
+        ancilla_ground_layer: EntityCollision::Passable,
+        entity_slope: None,
     }; 256];
     let mut index = 0;
     while index < table.len() {
+        let attribute = index as u8;
         table[index] = TileDefinition {
-            cartridge_attribute: index as u8,
-            indoor: TileBehavior::decode(index as u8, true),
-            outdoor: TileBehavior::decode(index as u8, false),
+            cartridge_attribute: attribute,
+            indoor: TileBehavior::decode(attribute, true),
+            outdoor: TileBehavior::decode(attribute, false),
+            sprite_probe: EntityCollision::decode_sprite_probe(attribute),
+            blocks_sprites: EntityCollision::decode_blocks_sprites(attribute),
+            ancilla: EntityCollision::decode_ancilla(attribute),
+            ancilla_ground_layer: EntityCollision::decode_ancilla_ground_layer(attribute),
+            entity_slope: EntitySlope::decode(attribute),
         };
         index += 1;
     }
@@ -126,8 +165,13 @@ impl NativeTile {
     }
     pub(crate) const GROUND: Self = Self::from_cartridge(0);
     pub(crate) const DEEP_WATER: Self = Self::from_cartridge(8);
+    pub(crate) const SHALLOW_WATER: Self = Self::from_cartridge(9);
+    pub(crate) const MOVING_FLOOR: Self = Self::from_cartridge(0x0c);
+    pub(crate) const WATER_STAIRCASE: Self = Self::from_cartridge(0x1c);
     pub(crate) const PIT: Self = Self::from_cartridge(0x20);
     pub(crate) const OPEN_CHEST: Self = Self::from_cartridge(0x27);
+    pub(crate) const GRASS: Self = Self::from_cartridge(0x40);
+    pub(crate) const SPIKE_CACTUS: Self = Self::from_cartridge(0x44);
     pub(crate) const SOLID_WALL: Self = Self::from_cartridge(2);
 
     /// Import an identity by selecting its predecoded definition.
@@ -144,6 +188,51 @@ impl NativeTile {
             self.0.indoor
         } else {
             self.0.outdoor
+        }
+    }
+
+    /// Sprite probes and the guard's forward probe share one classification.
+    pub(crate) const fn sprite_probe(self) -> EntityCollision {
+        self.0.sprite_probe
+    }
+
+    /// Whether a sprite's directional tile property treats the tile as an obstacle.
+    pub(crate) const fn blocks_sprites(self) -> bool {
+        self.0.blocks_sprites
+    }
+
+    pub(crate) const fn ancilla_collision(self) -> EntityCollision {
+        self.0.ancilla
+    }
+
+    /// Ancillae in single-layer rooms use a separate classification.
+    pub(crate) const fn ancilla_ground_layer_collision(self) -> EntityCollision {
+        self.0.ancilla_ground_layer
+    }
+
+    /// Whether an entity at the fine position is inside the slope's solid
+    /// half; `None` for tiles without an entity slope profile.
+    pub(crate) fn entity_slope_blocks(self, x: u16, y: u16) -> Option<bool> {
+        let slope = self.0.entity_slope?;
+        let height = slope.heights[usize::from(x & 7)];
+        let fine_y = (y & 7) as u8;
+        Some(if slope.blocked_up_to_height {
+            height >= fine_y
+        } else {
+            fine_y >= height
+        })
+    }
+
+    /// The floor switch identities a pushed statue can settle on.
+    pub(crate) const fn is_floor_switch(self) -> bool {
+        matches!(self.cartridge_attribute(), 0x23..=0x25 | 0x3b)
+    }
+
+    /// Conveyor index of the four moving-floor directions.
+    pub(crate) const fn conveyor_direction(self) -> Option<usize> {
+        match self.0.indoor {
+            TileBehavior::MovingFloorCheck { shift } => Some((shift / 4) as usize),
+            _ => None,
         }
     }
 }

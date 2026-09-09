@@ -16,28 +16,62 @@ const SWORD_DOORWAY_DETECT_Y_OFFSETS: [i8; 4] = [-1, 24, 16, 16];
 const TILE_DETECT_DIAG_STATES: [u16; 4] = [4, 0, 6, 2];
 
 impl ZeldaState {
-    pub fn overworld_get_tile_attribute_at_location(&self, x: u16, y: u16) -> u8 {
+    /// Encoded export for the replay summary; gameplay reads the definition.
+    pub fn overworld_tile_attribute_at_location(&self, x: u16, y: u16) -> u8 {
         self.overworld_tile_definition_at_location(x, y)
             .cartridge_attribute()
     }
 
     pub(super) fn overworld_tile_definition_at_location(&self, x: u16, y: u16) -> NativeTile {
-        let world = &self.game_state.world.scroll;
-        let pos = ((y.wrapping_sub(world.overworld_offset_base_y())
-            & world.overworld_offset_mask_y())
-            << 3)
-            | (x.wrapping_sub(world.overworld_offset_base_x()) & world.overworld_offset_mask_x());
-        let map16 = self
-            .game_state
-            .dungeon
-            .room_tilemaps
-            .bg2_tile_by_byte_pos(pos);
+        let map16 = self.overworld_map16_at_location(x, y);
         let map8_index = (map16 as usize) * 4 + (((y & 8) >> 2) | (x & 1)) as usize;
         let map8 = self.asset_u16(70, map8_index);
         self.assets
             .as_ref()
             .map(|assets| assets.outdoor_tile_definition(map8))
             .unwrap_or_default()
+    }
+
+    /// The guard's forward probe reads the whole-map16 attribute table
+    /// (`Overworld_ReadTileAttribute`) instead of the map8 catalog.
+    pub(super) fn overworld_map16_tile_definition_at_location(&self, x: u16, y: u16) -> NativeTile {
+        let map16 = self.overworld_map16_at_location(x, y);
+        NativeTile::from_cartridge(self.asset_u8(164, usize::from(map16)))
+    }
+
+    fn overworld_map16_at_location(&self, x: u16, y: u16) -> u16 {
+        let world = &self.game_state.world.scroll;
+        let pos = ((y.wrapping_sub(world.overworld_offset_base_y())
+            & world.overworld_offset_mask_y())
+            << 3)
+            | (x.wrapping_sub(world.overworld_offset_base_x()) & world.overworld_offset_mask_x());
+        self.game_state
+            .dungeon
+            .room_tilemaps
+            .bg2_tile_by_byte_pos(pos)
+    }
+
+    /// Tile under an entity probe (the original `GetTileAttribute`). Indoors
+    /// the floor selects the attribute layer. Outdoors the x coordinate is
+    /// reduced to its map8 column, which the callers' slope test then reads.
+    /// Publishing the result to the sprite scratch is the caller's step.
+    pub(super) fn entity_tile_at(&self, floor: u8, x: &mut u16, y: u16) -> NativeTile {
+        if self.game_state.world.location.is_indoors() {
+            let offset = if floor >= 1 { 0x1000 } else { 0 }
+                + usize::from((*x & 0x01f8) >> 3)
+                + usize::from((y & 0x01f8) << 3);
+            self.game_state.dungeon.bg2_attributes.bg2_tile(offset)
+        } else {
+            *x >>= 3;
+            self.overworld_tile_definition_at_location(*x, y)
+        }
+    }
+
+    /// Probe a tile and publish it as the sprite scratch tile.
+    pub(super) fn probe_entity_tile(&mut self, floor: u8, x: &mut u16, y: u16) -> NativeTile {
+        let tile = self.entity_tile_at(floor, x, y);
+        self.sprite_workspace_mut().set_tile(tile);
+        tile
     }
 
     pub(super) fn detect_player_movement(

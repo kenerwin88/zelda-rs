@@ -1,6 +1,7 @@
 // Methods ported from zelda3/src/sprite.c and included inside ZeldaState.
 
 use super::*;
+use crate::tile_definition::{EntityCollision, NativeTile};
 use crate::types::{
     project_speed_from_differences, sign16, sign8, PairU8, Point16U, PointU8, ProjectSpeedRet,
     SpriteHitBox,
@@ -6947,7 +6948,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             return;
         }
         self.sprite_check_tile_property(k, 0x68);
-        if self.game_state.sprites.workspace.tile_type() != 0x20 {
+        if self.game_state.sprites.workspace.tile() != NativeTile::PIT {
             let value = 0;
             self.sprite_slot_view_mut(k).set_y_recoil(value);
             let value = 0;
@@ -7201,7 +7202,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             != 0
         {
             self.sprite_slot_view_mut(k).or_flags3(0x10);
-            if self.game_state.sprites.workspace.tile_type() == 32 {
+            if self.game_state.sprites.workspace.tile() == NativeTile::PIT {
                 self.sprite_slot_view_mut(k).and_flags3(!0x10);
             }
         }
@@ -7224,15 +7225,19 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             }
 
             self.throwable_scenery_transmute_if_valid(k);
-            let mut tile = self.game_state.sprites.workspace.tile_type();
-            if self.game_state.sprites.workspace.tile_type() == 32 {
-                tile = self.sprite_slot_view(k).flags() >> 1;
+            // Over a pit the landing surface comes from the sprite's own
+            // flags instead of the probed tile, then faces the same test.
+            let landing = self.game_state.sprites.workspace.tile();
+            let surface = if landing == NativeTile::PIT {
                 if self.sprite_slot_view(k).flags() & 1 == 0 {
                     self.sprite_func8(k);
                     return;
                 }
-            }
-            if tile == 9 {
+                NativeTile::from_cartridge(self.sprite_slot_view(k).flags() >> 1)
+            } else {
+                landing
+            };
+            if surface == NativeTile::SHALLOW_WATER {
                 let z_vel = self.sprite_slot_view(k).z_velocity();
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_z_velocity(value);
@@ -7245,7 +7250,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                         self.sprite_func22(j);
                     }
                 }
-            } else if tile == 8 {
+            } else if surface == NativeTile::DEEP_WATER {
                 if self.sprite_slot_view(k).sprite_type() == 0xd2
                     || (self.get_random_number() & 1) != 0
                 {
@@ -7917,8 +7922,8 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             }
             return true;
         }
-        let b = self.sprite_get_tile_attribute(k, &mut x, y);
-        self.sprite_classify_tile_property(k, x, y, b)
+        let tile = self.sprite_get_tile_attribute(k, &mut x, y);
+        self.sprite_classify_tile_property(k, x, y, tile)
     }
 
     fn sprite_tile_property_coordinates(&self, j: usize) -> (u16, u16, bool) {
@@ -7966,27 +7971,30 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         (x, y, in_bounds)
     }
 
-    fn sprite_classify_tile_property(&mut self, k: usize, x: u16, y: u16, b: u8) -> bool {
+    fn sprite_classify_tile_property(
+        &mut self,
+        k: usize,
+        x: u16,
+        y: u16,
+        tile: NativeTile,
+    ) -> bool {
         if self.sprite_slot_view(k).deflection_bits() & 8 != 0 {
-            let a = SPRITE_CHECK_TILE_PROPERTY_SIMPLIFIED_TILE_ATTR[usize::from(b)];
-            if a == 4 {
-                if self.game_state.world.location.is_outdoors() {
-                    let value = 4;
-                    self.sprite_slot_view_mut(k).set_e(value);
+            match tile.sprite_probe() {
+                EntityCollision::Ledge => {
+                    if self.game_state.world.location.is_outdoors() {
+                        let value = 4;
+                        self.sprite_slot_view_mut(k).set_e(value);
+                    }
                 }
-            } else if a >= 1 {
-                return if (0x10..0x14).contains(&self.game_state.sprites.workspace.tile_type()) {
-                    self.entity_check_sloped_tile_collision(x, y)
-                } else {
-                    true
-                };
+                EntityCollision::Passable => {}
+                _ => return self.entity_sloped_tile_collision(x, y).unwrap_or(true),
             }
             return false;
         }
 
         if self.sprite_slot_view(k).flags5() & 0x40 != 0 {
             let typ = self.sprite_slot_view(k).sprite_type();
-            if (typ == 0xd2 || typ == 0x8a) && b == 9 {
+            if (typ == 0xd2 || typ == 0x8a) && tile == NativeTile::SHALLOW_WATER {
                 return false;
             }
             if (typ == 0x94 && self.sprite_slot_view(k).e() == 0)
@@ -7995,17 +8003,17 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 || typ == 0x9a
                 || typ == 0x81
             {
-                return b != 8 && b != 9;
+                return tile != NativeTile::DEEP_WATER && tile != NativeTile::SHALLOW_WATER;
             }
         }
 
-        if SPRITE_CHECK_TILE_PROPERTY_SPRITE_TILE_ATTR_SIMPLIFIED[usize::from(b)] == 0 {
+        if !tile.blocks_sprites() {
             return false;
         }
-        if (0x10..0x14).contains(&self.game_state.sprites.workspace.tile_type()) {
-            return self.entity_check_sloped_tile_collision(x, y);
+        if let Some(blocked) = self.entity_sloped_tile_collision(x, y) {
+            return blocked;
         }
-        if self.game_state.sprites.workspace.tile_type() == 0x44 {
+        if self.game_state.sprites.workspace.tile() == NativeTile::SPIKE_CACTUS {
             if self.sprite_slot_view(k).f() != 0
                 && !sign8(self.sprite_slot_view(k).incoming_damage())
             {
@@ -8025,7 +8033,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                     self.sprite_slot_view_mut(k).set_f(value);
                 }
             }
-        } else if self.game_state.sprites.workspace.tile_type() == 0x20 {
+        } else if self.game_state.sprites.workspace.tile() == NativeTile::PIT {
             return self.sprite_slot_view(k).flags() & 1 == 0 || self.sprite_slot_view(k).f() == 0;
         }
         true
@@ -8058,8 +8066,8 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         if self.game_state.world.location.is_outdoors() {
             x >>= 3;
         }
-        let tile_type = self.game_state.sprites.workspace.tile_type();
-        if self.sprite_classify_tile_property(k, x, y, tile_type) {
+        let tile = self.game_state.sprites.workspace.tile();
+        if self.sprite_classify_tile_property(k, x, y, tile) {
             self.sprite_apply_vertical_tile_collision(k, direction as i32);
         }
     }
@@ -8125,21 +8133,15 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     // bool Entity_CheckSlopedTileCollision(uint16 x, uint16 y) {  // 86e8fe
     //   ...see sprite.c...
     // }
-    pub(super) fn entity_check_sloped_tile_collision(&mut self, x: u16, y: u16) -> bool {
-        let a = (y & 7) as u8;
-        let r6 = self
-            .game_state
+    /// Slope test against the sprite scratch tile, which an outdoor ancilla
+    /// probe leaves unpublished; a scratch tile without an entity slope
+    /// profile reports `None`.
+    pub(super) fn entity_sloped_tile_collision(&self, x: u16, y: u16) -> Option<bool> {
+        self.game_state
             .sprites
             .workspace
-            .tile_type()
-            .wrapping_sub(0x10);
-        let b = ENTITY_CHECK_SLOPED_TILE_COLLISION_SLOPED_TILE
-            [usize::from(r6) * 8 + usize::from(x & 7)];
-        if r6 < 2 {
-            b >= a
-        } else {
-            a >= b
-        }
+            .tile()
+            .entity_slope_blocks(x, y)
     }
 
     // void Sprite_DrawRippleIfInWater(int k) {  // 9eff8d
@@ -9807,8 +9809,8 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         self.sprite_check_tile_collision_single_layer(k);
         // byte_7FFABC[k] = sprite_tiletype — write-through to the
         // dual-layer cache so the next iteration sees the lower-layer tile.
-        let tt = self.game_state.sprites.workspace.tile_type();
-        self.dual_layer_tile_cache_mut().set_tile_type(k, tt);
+        let tile = self.game_state.sprites.workspace.tile();
+        self.dual_layer_tile_cache_mut().set_tile(k, tile);
     }
 
     // void Sprite_CheckTileCollisionSingleLayer(int k) {  // 86e4db
@@ -9862,87 +9864,59 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         }
 
         self.sprite_check_tile_property(k, 0x68);
-        let value = self.game_state.sprites.workspace.tile_type();
-        self.sprite_slot_view_mut(k).set_draw_i(value);
-        match self.game_state.sprites.workspace.tile_type() {
-            0x1c => {
-                if self.game_state.oam.has_sprite_sorting()
-                    && self.sprite_slot_view(k).state() == 11
-                {
-                    let value = 1;
-                    self.sprite_slot_view_mut(k).set_floor(value);
-                }
+        let tile = self.game_state.sprites.workspace.tile();
+        self.sprite_slot_view_mut(k)
+            .set_draw_i(tile.cartridge_attribute());
+        if tile == NativeTile::WATER_STAIRCASE {
+            if self.game_state.oam.has_sprite_sorting() && self.sprite_slot_view(k).state() == 11 {
+                let value = 1;
+                self.sprite_slot_view_mut(k).set_floor(value);
             }
-            0x20 => {
-                if self.sprite_slot_view(k).flags() & 1 != 0 {
-                    if self.game_state.world.location.is_outdoors() {
-                        self.sprite_func8(k);
+        } else if tile == NativeTile::PIT {
+            if self.sprite_slot_view(k).flags() & 1 != 0 {
+                if self.game_state.world.location.is_outdoors() {
+                    self.sprite_func8(k);
+                } else {
+                    let value = 5;
+                    self.sprite_slot_view_mut(k).set_state(value);
+                    if self.sprite_slot_view(k).sprite_type() == 0x13
+                        || self.sprite_slot_view(k).sprite_type() == 0x26
+                    {
+                        self.sprite_slot_view_mut(k).and_oam_flags(!1);
+                        let value = 63;
+                        self.sprite_slot_view_mut(k).set_delay_main(value);
                     } else {
-                        let value = 5;
-                        self.sprite_slot_view_mut(k).set_state(value);
-                        if self.sprite_slot_view(k).sprite_type() == 0x13
-                            || self.sprite_slot_view(k).sprite_type() == 0x26
-                        {
-                            self.sprite_slot_view_mut(k).and_oam_flags(!1);
-                            let value = 63;
-                            self.sprite_slot_view_mut(k).set_delay_main(value);
-                        } else {
-                            let value = 95;
-                            self.sprite_slot_view_mut(k).set_delay_main(value);
-                        }
+                        let value = 95;
+                        self.sprite_slot_view_mut(k).set_delay_main(value);
                     }
                 }
             }
-            0x0c => {
-                if self.game_state.sprites.dual_layer_tile_cache.tile_type(k) == 0x1c {
-                    self.sprite_fall_adjust_position(k);
-                    self.sprite_slot_view_mut(k).or_wall_collision(0x20);
-                }
+        } else if tile == NativeTile::MOVING_FLOOR {
+            if self.game_state.sprites.dual_layer_tile_cache.tile(k) == NativeTile::WATER_STAIRCASE
+            {
+                self.sprite_fall_adjust_position(k);
+                self.sprite_slot_view_mut(k).or_wall_collision(0x20);
             }
-            0x68..=0x6b => self
-                .sprite_apply_conveyor(k, i32::from(self.game_state.sprites.workspace.tile_type())),
-            8 => {
-                if self.game_state.dungeon.room_load.header_collision() == 4 {
-                    self.sprite_apply_conveyor(k, 0x6a);
-                }
-            }
-            _ => {}
+        } else if let Some(direction) = tile.conveyor_direction() {
+            self.sprite_apply_conveyor(k, direction);
+        } else if tile == NativeTile::DEEP_WATER
+            && self.game_state.dungeon.room_load.header_collision() == 4
+        {
+            // A water-current room carries sprites like the third conveyor.
+            self.sprite_apply_conveyor(k, 2);
         }
-    }
-
-    // uint8 GetTileAttribute(uint8 floor, uint16 *x, uint16 y) {  // 86e87b
-    //   uint8 tiletype;
-    //   if (player_is_indoors) {
-    //     int t = (floor >= 1) ? 0x1000 : 0;
-    //     t += (*x & 0x1f8) >> 3;
-    //     t += (y & 0x1f8) << 3;
-    //     tiletype = dung_bg2_attr_table[t];
-    //   } else {
-    //     tiletype = Overworld_GetTileAttributeAtLocation(*x >>= 3, y);
-    //   }
-    //   sprite_tiletype = tiletype;
-    //   return tiletype;
-    // }
-    #[allow(non_snake_case)]
-    pub(super) fn GetTileAttribute(&mut self, floor: u8, x: &mut u16, y: u16) -> u8 {
-        let tiletype = if self.game_state.world.location.is_indoors() {
-            let mut t = if floor >= 1 { 0x1000 } else { 0 };
-            t += ((*x & 0x01f8) >> 3) as usize;
-            t += ((y & 0x01f8) << 3) as usize;
-            self.game_state.dungeon.bg2_attributes.bg2_attr(t)
-        } else {
-            *x >>= 3;
-            self.overworld_get_tile_attribute_at_location(*x, y)
-        };
-        self.sprite_workspace_mut().set_tile_type(tiletype);
-        tiletype
     }
 
     // uint8 Sprite_GetTileAttribute(int k, uint16 *x, uint16 y) {  // 86e883
     //   return GetTileAttribute(sprite_floor[k], x, y);
     // }
-    pub(super) fn sprite_get_tile_attribute(&mut self, k: usize, x: &mut u16, y: u16) -> u8 {
-        self.GetTileAttribute(self.sprite_slot_view(k).floor(), x, y)
+    pub(super) fn sprite_get_tile_attribute(
+        &mut self,
+        k: usize,
+        x: &mut u16,
+        y: u16,
+    ) -> NativeTile {
+        self.probe_entity_tile(self.sprite_slot_view(k).floor(), x, y)
     }
 
     // int Sprite_ShowSolicitedMessage(int k, uint16 msg) {  // 85e1a7
@@ -10110,11 +10084,10 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   Sprite_SetX(k, Sprite_GetX(k) + kConveyorAdjustment_X[j - 0x68]);
     //   Sprite_SetY(k, Sprite_GetY(k) + kConveyorAdjustment_Y[j - 0x68]);
     // }
-    pub(super) fn sprite_apply_conveyor(&mut self, k: usize, j: i32) {
+    pub(super) fn sprite_apply_conveyor(&mut self, k: usize, idx: usize) {
         if (self.game_state.frame.frame_counter & 1) == 0 {
             return;
         }
-        let idx = (j - 0x68) as usize;
         self.sprite_set_x(
             k,
             self.sprite_get_x(k)

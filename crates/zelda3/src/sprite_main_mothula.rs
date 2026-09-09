@@ -14,6 +14,7 @@
 
 use super::sprite::{DrawMultipleData, PrepOamCoordsRet as SpritePrepOamCoordsRet};
 use super::*;
+use crate::tile_definition::NativeTile;
 use crate::types::{sign8, PointU8, SpriteHitBox};
 use crate::zelda_rtl::sprite::SpriteSpawnInfo;
 
@@ -2124,7 +2125,7 @@ impl ZeldaState {
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 self.sprite_check_tile_collision(k);
-                if self.game_state.sprites.workspace.tile_type() == 8 {
+                if self.game_state.sprites.workspace.tile() == NativeTile::DEEP_WATER {
                     self.sprite_slot_view_mut(k).set_state(0);
                 } else {
                     self.sprite_slot_view_mut(k).set_ai_state(1);
@@ -2137,9 +2138,9 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).subtract_z_velocity(2);
                 if sign8(self.sprite_slot_view(k).z()) {
                     self.sprite_slot_view_mut(k).set_z(0);
-                    if self.game_state.sprites.workspace.tile_type() == 9 {
+                    if self.game_state.sprites.workspace.tile() == NativeTile::SHALLOW_WATER {
                         self.sprite_spawn_small_splash(k);
-                    } else if self.game_state.sprites.workspace.tile_type() == 8 {
+                    } else if self.game_state.sprites.workspace.tile() == NativeTile::DEEP_WATER {
                         self.sprite_slot_view_mut(k).set_state(0);
                         self.sprite_spawn_small_splash(k);
                     }

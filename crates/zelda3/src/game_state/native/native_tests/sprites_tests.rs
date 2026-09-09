@@ -1,6 +1,7 @@
 use super::*;
 use crate::game_state::constants::{ANCILLA_ALLOC_ROTATE, ANCILLA_H, ANCILLA_T_PLAYER};
 use crate::game_state::native::sprites::{AncillaSlotsState, SpriteWorkspaceState};
+use crate::tile_definition::NativeTile;
 
 #[test]
 fn native_sprite_slot_bridge_projects_position_and_packed_n_word() {
@@ -151,14 +152,15 @@ fn dual_layer_tile_cache_state_loads_from_and_projects_to_ram() {
     ram[DUAL_LAYER_TILE_CACHE] = 0x1c;
     ram[DUAL_LAYER_TILE_CACHE + 15] = 0x2a;
 
+    let tile = |attribute| NativeTile::from_cartridge(attribute);
     let mut cache = DualLayerTileCacheState::load_from_ram(&ram);
-    assert_eq!(cache.tile_type(0), 0x1c);
-    assert_eq!(cache.tile_type(15), 0x2a);
-    assert_eq!(cache.tile_type(16), 0);
-    assert!(cache.set_tile_type(15, 0x3b));
-    assert!(!cache.set_tile_type(16, 0x4c));
-    assert_eq!(cache.tile_type(15), 0x3b);
-    assert_eq!(cache.tile_type(16), 0);
+    assert_eq!(cache.tile(0), tile(0x1c));
+    assert_eq!(cache.tile(15), tile(0x2a));
+    assert_eq!(cache.tile(16), tile(0));
+    assert!(cache.set_tile(15, tile(0x3b)));
+    assert!(!cache.set_tile(16, tile(0x4c)));
+    assert_eq!(cache.tile(15), tile(0x3b));
+    assert_eq!(cache.tile(16), tile(0));
 
     let mut projected = vec![0; WRAM_SIZE];
     cache.write_to_ram(&mut projected);
@@ -176,12 +178,12 @@ fn native_dual_layer_tile_cache_bridge_projects_native_state_over_stale_ram() {
     let mut ram = vec![0xff; WRAM_SIZE];
     {
         let mut bridge = NativeDualLayerTileCacheBridgeMut::new(&mut cache, &mut ram);
-        bridge.set_tile_type(4, 0x2a);
-        bridge.set_tile_type(18, 0x7f);
+        bridge.set_tile(4, NativeTile::from_cartridge(0x2a));
+        bridge.set_tile(18, NativeTile::from_cartridge(0x7f));
     }
 
-    assert_eq!(cache.tile_type(4), 0x2a);
-    assert_eq!(cache.tile_type(18), 0);
+    assert_eq!(cache.tile(4), NativeTile::from_cartridge(0x2a));
+    assert_eq!(cache.tile(18), NativeTile::GROUND);
     assert_eq!(ram[DUAL_LAYER_TILE_CACHE + 4], 0x2a);
 }
 
@@ -944,7 +946,10 @@ fn boss_home_reads_observe_shared_wram_without_reloading_native_state() {
             if puff_slot <= 24 {
                 assert_eq!((aliased.x(), aliased.y()), (current.x(), current.y()));
             } else {
-                assert_eq!((aliased.x(), aliased.y()), (current.x(), current.y() & 0xff));
+                assert_eq!(
+                    (aliased.x(), aliased.y()),
+                    (current.x(), current.y() & 0xff)
+                );
             }
         }
     }

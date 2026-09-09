@@ -13,6 +13,7 @@
 use super::sprite::{PrepOamCoordsRet as SpritePrepOamCoordsRet, SpriteSpawnInfo};
 use super::*;
 use crate::rom_random::RomRandomResult;
+use crate::tile_definition::NativeTile;
 use crate::types::{sign8, PointU8, ProjectSpeedRet, SpriteHitBox};
 
 // ---------------------------------------------------------------------------
@@ -137,7 +138,8 @@ impl ZeldaState {
     // void WalkingZora_AdjustShadow(int k) {  // 859edb
     pub(super) fn walking_zora_adjust_shadow(&mut self, k: usize) {
         let value = u8::from(
-            self.sprite_slot_view(k).z() == 0 && self.game_state.sprites.workspace.tile_type() == 9,
+            self.sprite_slot_view(k).z() == 0
+                && self.game_state.sprites.workspace.tile() == NativeTile::SHALLOW_WATER,
         );
         self.sprite_slot_view_mut(k).set_anim_clock(value);
     }
@@ -342,8 +344,9 @@ impl ZeldaState {
                     self.sprite_set_y(k, org_y.wrapping_add(SURFACE_XY[y_idx] as i16 as u16));
                     self.sprite_get16_bit_coords(k);
                     self.sprite_check_tile_collision(k);
-                    let spawn_anyway = self.game_state.sprites.workspace.tile_type() == 8
-                        || (self.game_state.sprites.workspace.tile_type() == 9
+                    let spawn_anyway = self.game_state.sprites.workspace.tile()
+                        == NativeTile::DEEP_WATER
+                        || (self.game_state.sprites.workspace.tile() == NativeTile::SHALLOW_WATER
                             && self.sprite_slot_view(k).delay_aux2() == 1
                             && self
                                 .game_state
@@ -1048,7 +1051,7 @@ impl ZeldaState {
                 self.sprite_check_tile_collision(k);
                 if sign8(self.sprite_slot_view(k).z().wrapping_sub(1)) {
                     self.walking_zora_adjust_shadow(k);
-                    if self.game_state.sprites.workspace.tile_type() == 8 {
+                    if self.game_state.sprites.workspace.tile() == NativeTile::DEEP_WATER {
                         self.sprite_kill_self(k);
                         self.sprite_sfx_queue_sfx2_with_pan(k, 0x28);
                         let value = 3;
@@ -4127,15 +4130,17 @@ impl ZeldaState {
                 self.sprite_check_tile_collision2(k);
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_subtype(value);
-                if self.game_state.sprites.workspace.tile_type() == 0 {
+                let tile = self.game_state.sprites.workspace.tile();
+                if tile == NativeTile::GROUND {
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_c(value);
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_ignore_projectile(value);
                     self.red_bari_set_electrocute_delay(k);
                 } else {
-                    let value = self.game_state.sprites.workspace.tile_type();
-                    self.sprite_slot_view_mut(k).set_ignore_projectile(value);
+                    // The original parks the probed identity in this slot byte.
+                    self.sprite_slot_view_mut(k)
+                        .set_ignore_projectile(tile.cartridge_attribute());
                 }
             }
             return;
@@ -4895,8 +4900,8 @@ impl ZeldaState {
             let y = self
                 .sprite_get_y(k)
                 .wrapping_add(u16::from(MOVABLE_STATUE_SWITCH_Y_OFFSETS[j]));
-            let t = self.GetTileAttribute(self.sprite_slot_view(k).floor(), &mut x, y);
-            if t != 0x23 && t != 0x24 && t != 0x25 && t != 0x3b {
+            let floor = self.sprite_slot_view(k).floor();
+            if !self.probe_entity_tile(floor, &mut x, y).is_floor_switch() {
                 return false;
             }
         }
@@ -15158,7 +15163,7 @@ impl ZeldaState {
     pub(super) fn toppo_verify_tile(&mut self, k: usize) {
         let mut x = self.sprite_get_x(k);
         let y = self.sprite_get_y(k);
-        if self.GetTileAttribute(0, &mut x, y) != 0x40 {
+        if self.probe_entity_tile(0, &mut x, y) != NativeTile::GRASS {
             let value = 5;
             self.sprite_slot_view_mut(k).set_ai_state(value);
         }

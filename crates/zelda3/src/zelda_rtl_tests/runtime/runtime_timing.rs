@@ -2,6 +2,7 @@
 //! Split mechanically from the hub file; bodies unchanged.
 
 use super::*;
+use crate::tile_definition::NativeTile;
 
 #[test]
 fn emu_callback_setup_syncs_whole_state_and_regions() {
@@ -3571,7 +3572,9 @@ fn absorbable_loaded_attribute_keeps_movement_and_defers_bounce_suffix() {
         sprite.set_x_velocity(24);
         sprite.set_y_velocity(0xf0);
     }
-    state.sprite_workspace_mut().set_tile_type(0x44);
+    state
+        .sprite_workspace_mut()
+        .set_tile(NativeTile::SPIKE_CACTUS);
     let mut atomic = state.clone();
     atomic.sprite_absorbable_main(0);
     state.sprite_main_cpu_boundary =
@@ -3581,7 +3584,10 @@ fn absorbable_loaded_attribute_keeps_movement_and_defers_bounce_suffix() {
     assert_eq!(state.sprite_slot_view(0).x_subpixel(), 0x80);
     assert_eq!(state.sprite_slot_view(0).y(), 0x7f);
     assert_eq!(state.sprite_slot_view(0).z_velocity(), 0);
-    assert_eq!(state.game_state.sprites.workspace.tile_type(), 0);
+    assert_eq!(
+        state.game_state.sprites.workspace.tile(),
+        NativeTile::GROUND
+    );
     state.sprite_main_cpu_boundary = None;
     state.sprite_absorbable_after_vertical_attribute_loaded(0);
     assert_eq!(state.game_state, atomic.game_state);

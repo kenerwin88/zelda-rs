@@ -8,6 +8,7 @@
 //! or hold guard-specific shims while the remaining shared helpers are filled in.
 
 use super::*;
+use crate::tile_definition::{EntityCollision, NativeTile};
 use crate::types::{sign8, PointU8, SpriteHitBox};
 
 // --- Local copies of constant addresses needed here. These mirror what's
@@ -48,16 +49,6 @@ fn soldier_random_patrol_delay(random: crate::rom_random::RomRandomResult) -> u8
     random.masked_adc(0x3f, 0x28)
 }
 const GUARD_PROBE_STAGGER_BY_DIRECTION: [u8; 4] = [0x10, 0x30, 0, 0x20];
-const GUARD_SIMPLIFIED_TILE_SOLIDITY_ATTRS: [u8; 256] = [
-    0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 3, 3, 3,
-    0, 0, 0, 0, 0, 0, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-];
 const GUARD_PROBE_X_VELOCITIES: [i8; 64] = [
     -16, -16, -16, -16, -16, -16, -16, -16, -16, -14, -12, -10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10,
     12, 14, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 14, 12, 10, 8, 6, 4, 2,
@@ -311,7 +302,7 @@ impl ZeldaState {
             x < 32 && y < 32
         } else {
             if (self.probe_check_tile_solidity(k)
-                && self.game_state.sprites.workspace.tile_type() != 9)
+                && self.game_state.sprites.workspace.tile() != NativeTile::SHALLOW_WATER)
                 || self.game_state.player.follower_link.is_cape_active()
             {
                 self.sprite_slot_view_mut(k).clear();
@@ -365,33 +356,15 @@ impl ZeldaState {
     //   ...same tile probe as C, caching sprite_tiletype...
     // }
     pub(super) fn probe_check_tile_solidity(&mut self, k: usize) -> bool {
-        let cur_x = self.game_state.sprites.workspace.current_sprite_x();
-        let cur_y = self.game_state.sprites.workspace.current_sprite_y();
-        let tiletype = if self.game_state.world.location.is_indoors() {
-            let mut t = if self.sprite_slot_view(k).floor() >= 1 {
-                0x1000
-            } else {
-                0
-            };
-            t += ((cur_x & 0x01f8) >> 3) as usize;
-            t += ((cur_y & 0x01f8) << 3) as usize;
-            self.game_state.dungeon.bg2_attributes.bg2_attr(t)
+        let mut x = self.game_state.sprites.workspace.current_sprite_x();
+        let y = self.game_state.sprites.workspace.current_sprite_y();
+        let tile = if self.game_state.world.location.is_indoors() {
+            self.entity_tile_at(self.sprite_slot_view(k).floor(), &mut x, y)
         } else {
-            let world = &self.game_state.world.scroll;
-            let t = ((cur_x >> 3).wrapping_sub(world.overworld_offset_base_x())
-                & world.overworld_offset_mask_x())
-                | ((cur_y.wrapping_sub(world.overworld_offset_base_y())
-                    & world.overworld_offset_mask_y())
-                    << 3);
-            let map16 = self
-                .game_state
-                .dungeon
-                .room_tilemaps
-                .bg2_tile_by_byte_pos(t);
-            self.asset_u8(164, map16 as usize)
+            self.overworld_map16_tile_definition_at_location(x >> 3, y)
         };
-        self.sprite_workspace_mut().set_tile_type(tiletype);
-        GUARD_SIMPLIFIED_TILE_SOLIDITY_ATTRS[tiletype as usize] >= 1
+        self.sprite_workspace_mut().set_tile(tile);
+        tile.sprite_probe() != EntityCollision::Passable
     }
 
     // void Guard_SetGlanceTo12(int k) {  // 85c32b

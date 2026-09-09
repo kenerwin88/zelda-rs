@@ -2,6 +2,7 @@
 //! Split mechanically from the hub file; bodies unchanged.
 
 use super::*;
+use crate::tile_definition::NativeTile;
 
 #[test]
 fn selected_game_entrance_scroll_suspends_before_display_mirrors() {
@@ -738,8 +739,8 @@ fn overworld_tile_attribute_uses_map16_and_map8_assets() {
     state.assets = Some(AssetPack::from_data_ranges(data, ranges));
 
     assert_eq!(
-        state.overworld_get_tile_attribute_at_location(4, 0x28),
-        0x11
+        state.overworld_tile_definition_at_location(4, 0x28),
+        NativeTile::from_cartridge(0x11)
     );
 }
 

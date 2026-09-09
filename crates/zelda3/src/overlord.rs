@@ -1,6 +1,7 @@
 // Methods ported from zelda3/src/overlord.c and included inside ZeldaState.
 
 use super::*;
+use crate::tile_definition::NativeTile;
 
 mod overlord_shared;
 use crate::types::sign8;
@@ -276,9 +277,11 @@ impl ZeldaState {
     pub(super) fn overlord16_zoro_spawner(&mut self, k: usize) {
         let value = self.overlord_slot_view(k).gen2().wrapping_sub(1);
         self.overlord_slot_view_mut(k).set_gen2(value);
-        let x = self.overlord_get_x(k).wrapping_add(8);
+        let mut x = self.overlord_get_x(k).wrapping_add(8);
         let y = self.overlord_get_y(k).wrapping_add(8);
-        if self.get_tile_attribute_for_overlord(self.overlord_slot_view(k).floor(), x, y) != 0x82 {
+        // The spawner only works from its nest, the original door identity 0x82.
+        let floor = self.overlord_slot_view(k).floor();
+        if self.probe_entity_tile(floor, &mut x, y) != NativeTile::from_cartridge(0x82) {
             return;
         }
         if self.overlord_slot_view(k).gen2() >= 0x18 || self.overlord_slot_view(k).gen2() & 3 != 0 {
@@ -925,19 +928,6 @@ impl ZeldaState {
         sprite.set_flags3(0x18);
         sprite.set_oam_flags(8);
         sprite.set_health(0);
-    }
-
-    fn get_tile_attribute_for_overlord(&mut self, floor: u8, x: u16, y: u16) -> u8 {
-        let tiletype = if self.game_state.world.location.is_indoors() {
-            let mut t = if floor >= 1 { 0x1000 } else { 0 };
-            t += ((x & 0x01f8) >> 3) as usize;
-            t += ((y & 0x01f8) << 3) as usize;
-            self.game_state.dungeon.bg2_attributes.bg2_attr(t)
-        } else {
-            self.overworld_get_tile_attribute_at_location(x >> 3, y)
-        };
-        self.sprite_workspace_mut().set_tile_type(tiletype);
-        tiletype
     }
 }
 

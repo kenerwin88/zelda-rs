@@ -1,5 +1,5 @@
 //! Cartridge decoding, evaluated once for the native definition catalog.
-use super::{TileBehavior, TileResult};
+use super::{EntityCollision, EntitySlope, TileBehavior, TileResult};
 
 impl super::TilePair {
     pub(crate) const fn import_table<const N: usize>(words: [u16; N]) -> [Self; N] {
@@ -238,5 +238,116 @@ impl super::NativeTile {
         let word = u16::from_le_bytes(pair.map(Self::cartridge_attribute));
         // Preserve the original word carry, even across a low-byte wrap.
         Self::import_pair(word.wrapping_add(0x0101))
+    }
+}
+
+impl EntityCollision {
+    /// `kSprite_SimplifiedTileAttr`, also the guard probe's solidity table.
+    pub(super) const fn decode_sprite_probe(attribute: u8) -> Self {
+        match attribute {
+            0x01
+            | 0x10..=0x13
+            | 0x18..=0x1b
+            | 0x26..=0x27
+            | 0x30..=0x39
+            | 0x3c..=0x3f
+            | 0x6c..=0x6f
+            | 0x80..=0xaf
+            | 0xf0..=0xff => Self::Solid,
+            0x0a | 0x1d..=0x1f => Self::LayerBoundary,
+            0x28..=0x2f | 0x4c..=0x4f => Self::Ledge,
+            _ => Self::Passable,
+        }
+    }
+
+    /// Nonzero entries of `kSprite_Func5_Tab3`; the original tested only that.
+    pub(super) const fn decode_blocks_sprites(attribute: u8) -> bool {
+        matches!(
+            attribute,
+            0x01..=0x04
+                | 0x09
+                | 0x0b
+                | 0x10..=0x1b
+                | 0x1d..=0x22
+                | 0x26..=0x39
+                | 0x3c..=0x3f
+                | 0x41..=0x45
+                | 0x47
+                | 0x49
+                | 0x4c..=0x5f
+                | 0x65
+                | 0x67
+                | 0x6c..=0xff
+        )
+    }
+
+    /// `kAncilla_TileColl_Attrs`.
+    pub(super) const fn decode_ancilla(attribute: u8) -> Self {
+        match attribute {
+            0x01
+            | 0x04
+            | 0x10..=0x13
+            | 0x26..=0x27
+            | 0x30..=0x37
+            | 0x43
+            | 0x6c..=0x6f
+            | 0x80..=0x8d
+            | 0x8f..=0xaf
+            | 0xf0..=0xff => Self::Solid,
+            0x18..=0x1b => Self::Slope,
+            0x0a | 0x1d..=0x1f | 0x3d..=0x3f => Self::LayerBoundary,
+            0x28..=0x2f | 0x4c..=0x4f => Self::Ledge,
+            _ => Self::Passable,
+        }
+    }
+
+    /// `kAncilla_TileColl0_Attrs`.
+    pub(super) const fn decode_ancilla_ground_layer(attribute: u8) -> Self {
+        match attribute {
+            0x01
+            | 0x10..=0x13
+            | 0x26..=0x27
+            | 0x30..=0x37
+            | 0x43
+            | 0x58..=0x5d
+            | 0x63
+            | 0x6c..=0x7f
+            | 0x88..=0x8d
+            | 0x8f
+            | 0xc0..=0xcf
+            | 0xf0..=0xff => Self::Solid,
+            0x18..=0x1b => Self::Slope,
+            0x03 | 0x0a | 0x1d..=0x1f | 0x3d..=0x3f => Self::LayerBoundary,
+            0x28..=0x2f | 0x4c..=0x4f => Self::Ledge,
+            _ => Self::Passable,
+        }
+    }
+}
+
+impl EntitySlope {
+    /// `kSlopedTile`: one height row per straight slope. The first two
+    /// slopes block up to the height, the other two from it downward.
+    pub(super) const fn decode(attribute: u8) -> Option<Self> {
+        const RISING: [u8; 8] = [0, 1, 2, 3, 4, 5, 6, 7];
+        const FALLING: [u8; 8] = [7, 6, 5, 4, 3, 2, 1, 0];
+        match attribute {
+            0x10 => Some(Self {
+                heights: FALLING,
+                blocked_up_to_height: true,
+            }),
+            0x11 => Some(Self {
+                heights: RISING,
+                blocked_up_to_height: true,
+            }),
+            0x12 => Some(Self {
+                heights: RISING,
+                blocked_up_to_height: false,
+            }),
+            0x13 => Some(Self {
+                heights: FALLING,
+                blocked_up_to_height: false,
+            }),
+            _ => None,
+        }
     }
 }

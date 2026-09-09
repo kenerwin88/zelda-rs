@@ -2056,6 +2056,8 @@ mod runtime_dialogue;
 mod runtime_display;
 #[path = "zelda_rtl_tests/runtime/runtime_dungeon.rs"]
 mod runtime_dungeon;
+#[path = "zelda_rtl_tests/runtime/runtime_entity_tiles.rs"]
+mod runtime_entity_tiles;
 #[path = "zelda_rtl_tests/runtime/runtime_items.rs"]
 mod runtime_items;
 #[path = "zelda_rtl_tests/runtime/runtime_misc.rs"]

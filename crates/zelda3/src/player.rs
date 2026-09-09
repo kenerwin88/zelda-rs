@@ -6,6 +6,7 @@ use super::*;
 use crate::game_state::{
     CollisionAxis, CollisionDirection, CollisionOrder, MovementProbeKind, PlayerAxis,
 };
+use crate::tile_definition::NativeTile;
 use crate::types::Point16U;
 
 mod player_shared;
@@ -10063,20 +10064,13 @@ impl ZeldaState {
             .follower_link
             .y()
             .wrapping_add(SPAWN_HAMMER_WATER_SPLASH_HAMMER_WATER_Y[i] as i16 as u16);
-        let tiletype = if self.game_state.world.location.is_indoors() {
-            let mut t = if self.game_state.player.follower_link.lower_level_state() >= 1 {
-                0x1000
-            } else {
-                0
-            };
-            t += ((x & 0x01f8) >> 3) as usize;
-            t += ((y & 0x01f8) << 3) as usize;
-            self.game_state.dungeon.bg2_attributes.bg2_attr(t)
-        } else {
-            self.overworld_get_tile_attribute_at_location(x >> 3, y)
-        };
+        // The splash probe neither publishes the sprite scratch tile nor
+        // keeps the reduced outdoor column; the splash spawns at the pixel.
+        let floor = self.game_state.player.follower_link.lower_level_state();
+        let mut probe_x = x;
+        let tile = self.entity_tile_at(floor, &mut probe_x, y);
 
-        if matches!(tiletype, 8 | 9) {
+        if tile == NativeTile::DEEP_WATER || tile == NativeTile::SHALLOW_WATER {
             let j = self.sprite_spawn_small_splash(0);
             if j >= 0 {
                 let j = j as usize;
