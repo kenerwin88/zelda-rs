@@ -601,8 +601,6 @@ fn world_transient_loads_from_and_projects_to_ram() {
     assert_eq!(transient.milestone_item_gfx_swap_countdown(), 0x03);
     assert_eq!(transient.big_key_door_message_triggered(), 0x0405);
     assert_eq!(transient.savegame_has_master_sword_flags(), 0x0607);
-    // super_bomb_indicator_timer (0x4b4) is no longer owned by world_transient — it
-    // belongs to display.hud_tilemap runtime (see overworld super-bomb indicator fix).
     assert_eq!(transient.is_standing_in_doorway_cached(), 0x09);
     assert_eq!(transient.overworld_peg_puzzle_progress(), 0x0e0f);
     assert_eq!(transient.overworld_hole_tilemap_pos(), 0x10);
@@ -651,7 +649,6 @@ fn world_transient_state_owns_transient_behavior() {
 
     transient.clear_custom_spell_animation();
     transient.clear_tile_interaction_shared_flag();
-    transient.clear_hud_floor_changed_timer();
     assert_eq!(transient.flag_custom_spell_anim_active(), 0);
 
     transient.set_fullsize_overworld_quadrants();

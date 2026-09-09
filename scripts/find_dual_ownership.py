@@ -183,7 +183,7 @@ def extract_writes(body: str, consts: dict[str, int], unresolved: list):
 
     # ram[NAME + idx] = ...  (indexed scalar/loop write) -> at least the base byte
     for m in re.finditer(
-        r"\w+\s*\[\s*([A-Z][A-Za-z0-9_]*)\s*\+\s*([A-Za-z0-9_]+)\s*\]\s*=", body
+        r"\w+\s*\[\s*([A-Z][A-Za-z0-9_]*)\s*\+\s*([A-Za-z0-9_]+)\s*\]\s*=(?!=)", body
     ):
         a = addr_of(m.group(1), consts)
         off = addr_of(m.group(2), consts)  # numeric/const offset if any
@@ -195,8 +195,8 @@ def extract_writes(body: str, consts: dict[str, int], unresolved: list):
             add(a, a + 1 if a is not None else None,
                 f"index {m.group(1)}+<var>")
 
-    # ram[NAME] = ...  (plain scalar byte)
-    for m in re.finditer(r"\w+\s*\[\s*([A-Z][A-Za-z0-9_]*)\s*\]\s*=", body):
+    # ram[NAME] = ...  (plain scalar byte; `==` is a read, e.g. a mode gate)
+    for m in re.finditer(r"\w+\s*\[\s*([A-Z][A-Za-z0-9_]*)\s*\]\s*=(?!=)", body):
         a = addr_of(m.group(1), consts)
         add(a, a + 1 if a is not None else None, f"byte {m.group(1)}")
 

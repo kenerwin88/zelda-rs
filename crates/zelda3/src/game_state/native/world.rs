@@ -2092,7 +2092,6 @@ pub(crate) struct WorldTransientState {
     pub(crate) milestone_item_graphics_countdown: u8,
     pub(crate) big_key_door_message_triggered: u16,
     pub(crate) savegame_master_sword_flags: u16,
-    pub(crate) super_bomb_indicator_timer: u8,
     pub(crate) standing_in_doorway_cached: u8,
     pub(crate) cached_room_bounds_y_start: u16,
     pub(crate) cached_room_bounds_y_end: u16,
@@ -2105,7 +2104,6 @@ pub(crate) struct WorldTransientState {
     pub(crate) door_animation_step: u16,
     pub(crate) room_transitioning_flags: u8,
     pub(crate) tile_interaction_shared_flag: u8,
-    pub(crate) hud_floor_changed_timer: u8,
     pub(crate) quadrant_fullsize_x: u8,
     pub(crate) quadrant_fullsize_y: u8,
     pub(crate) cached_quadrant_fullsize_x: u8,
@@ -2125,7 +2123,6 @@ impl Default for WorldTransientState {
             milestone_item_graphics_countdown: 0,
             big_key_door_message_triggered: 0,
             savegame_master_sword_flags: 0,
-            super_bomb_indicator_timer: 0,
             standing_in_doorway_cached: 0,
             cached_room_bounds_y_start: 0,
             cached_room_bounds_y_end: 0,
@@ -2138,7 +2135,6 @@ impl Default for WorldTransientState {
             door_animation_step: 0,
             room_transitioning_flags: 0,
             tile_interaction_shared_flag: 0,
-            hud_floor_changed_timer: 0,
             quadrant_fullsize_x: 0,
             quadrant_fullsize_y: 0,
             cached_quadrant_fullsize_x: 0,
@@ -2168,7 +2164,6 @@ impl WorldTransientState {
         check!(milestone_item_graphics_countdown);
         check!(big_key_door_message_triggered);
         check!(savegame_master_sword_flags);
-        check!(super_bomb_indicator_timer);
         check!(standing_in_doorway_cached);
         check!(cached_room_bounds_y_start);
         check!(cached_room_bounds_y_end);
@@ -2181,7 +2176,6 @@ impl WorldTransientState {
         check!(door_animation_step);
         check!(room_transitioning_flags);
         check!(tile_interaction_shared_flag);
-        check!(hud_floor_changed_timer);
         check!(quadrant_fullsize_x);
         check!(quadrant_fullsize_y);
         check!(cached_quadrant_fullsize_x);
@@ -2211,10 +2205,6 @@ impl WorldTransientState {
             milestone_item_graphics_countdown: ram_byte(ram, MILESTONE_ITEM_GFX_SWAP_COUNTDOWN),
             big_key_door_message_triggered: read_le_u16(ram, BIG_KEY_DOOR_MESSAGE_TRIGGERED),
             savegame_master_sword_flags: read_le_u16(ram, SAVEGAME_HAS_MASTER_SWORD_FLAGS),
-            // Not loaded: display.hud_tilemap runtime owns SUPER_BOMB_INDICATOR_TIMER (0x4b4),
-            // which hud_super_bomb_indicator reads/sets. Vestigial field kept 0 so the
-            // coherence checker doesn't flag world_transient against the live display value.
-            super_bomb_indicator_timer: 0,
             standing_in_doorway_cached: ram_byte(ram, IS_STANDING_IN_DOORWAY_CACHED),
             cached_room_bounds_y_start: read_le_u16(ram, CACHED_ROOM_BOUNDS_Y_START),
             cached_room_bounds_y_end: read_le_u16(ram, CACHED_ROOM_BOUNDS_Y_END),
@@ -2227,10 +2217,6 @@ impl WorldTransientState {
             door_animation_step: read_le_u16(ram, DOOR_ANIMATION_STEP_INDICATOR),
             room_transitioning_flags: ram_byte(ram, ROOM_TRANSITIONING_FLAGS),
             tile_interaction_shared_flag: ram_byte(ram, TILE_INTERACTION_SHARED_FLAG),
-            // Not loaded from RAM: display.hud_tilemap owns HUD_FLOOR_CHANGED_TIMER (0x4a0).
-            // This vestigial field is never projected or read; keep it a stable 0 so the
-            // native-coherence checker doesn't flag world_transient against the live value.
-            hud_floor_changed_timer: 0,
             quadrant_fullsize_x: ram_byte(ram, QUADRANT_FULLSIZE_X),
             quadrant_fullsize_y: ram_byte(ram, QUADRANT_FULLSIZE_Y),
             cached_quadrant_fullsize_x: ram_byte(ram, QUADRANT_FULLSIZE_X_CACHED),
@@ -2288,9 +2274,6 @@ impl WorldTransientState {
             SAVEGAME_HAS_MASTER_SWORD_FLAGS,
             self.savegame_master_sword_flags,
         );
-        // SUPER_BOMB_INDICATOR_TIMER (0x4b4) is owned by display.hud_tilemap runtime; do NOT
-        // project our stale copy here (it re-stamped 0 over the live value on every
-        // world_transient bridge sync, like the floor-changed timer did at 0x4a0).
         ram[IS_STANDING_IN_DOORWAY_CACHED] = self.standing_in_doorway_cached;
         write_le_u16(
             ram,
@@ -2336,11 +2319,6 @@ impl WorldTransientState {
         // setters below write RAM directly.
         ram[ROOM_TRANSITIONING_FLAGS] = self.room_transitioning_flags;
         ram[TILE_INTERACTION_SHARED_FLAG] = self.tile_interaction_shared_flag;
-        // HUD_FLOOR_CHANGED_TIMER (0x4a0) is owned by display.hud_tilemap, which both the
-        // floor-change blip (set_hud_floor_changed_timer) and hud_floor_indicator read/write.
-        // Projecting our stale copy here re-stamped 0 over the blip's 1 on every
-        // world_transient bridge sync, blanking the dungeon floor indicator. Do NOT project it
-        // — display.hud_tilemap is the sole owner; clear_hud_floor_changed_timer routes there.
         ram[QUADRANT_FULLSIZE_X] = self.quadrant_fullsize_x;
         ram[QUADRANT_FULLSIZE_Y] = self.quadrant_fullsize_y;
         ram[QUADRANT_FULLSIZE_X_CACHED] = self.cached_quadrant_fullsize_x;
@@ -2483,10 +2461,6 @@ impl WorldTransientState {
 
     pub(crate) fn set_door_animation_step_word(&mut self, value: u16) {
         self.door_animation_step = value;
-    }
-
-    pub(crate) fn clear_hud_floor_changed_timer(&mut self) {
-        self.hud_floor_changed_timer = 0;
     }
 
     pub(crate) fn cache_quadrant_fullsize_state(&mut self) {
