@@ -1,5 +1,5 @@
 //! Cartridge decoding, evaluated once for the native definition catalog.
-use super::{EntityCollision, EntitySlope, TileBehavior, TileResult};
+use super::{DungeonRole, EntityCollision, EntitySlope, TileBehavior, TileResult};
 
 impl super::TilePair {
     pub(crate) const fn import_table<const N: usize>(words: [u16; N]) -> [Self; N] {
@@ -349,5 +349,82 @@ impl EntitySlope {
             }),
             _ => None,
         }
+    }
+}
+
+impl DungeonRole {
+    pub(super) const fn decode(attribute: u8) -> Self {
+        match attribute {
+            0x1d..=0x1f => Self::InRoomStaircase {
+                kind: 0x1f - attribute,
+            },
+            0x23..=0x25 => Self::FloorSwitch {
+                variant: attribute - 0x23,
+            },
+            0x26 => Self::SpiralStairHead,
+            0x30..=0x37 => Self::StairLanding {
+                index: (attribute & 7) as usize,
+            },
+            0x38..=0x39 => Self::StraightStairHead {
+                descending: attribute == 0x39,
+            },
+            0x3a..=0x3b => Self::StarSwitch {
+                toggled: attribute == 0x3a,
+            },
+            0x5e..=0x5f => Self::WallSpiralStairHead {
+                second: attribute == 0x5f,
+            },
+            0x62 => Self::BombableFloor,
+            0x63 => Self::MinigameChest,
+            0x6c..=0x6f => Self::Curtain {
+                panel: (attribute & 3) as usize,
+            },
+            0x70..=0x7f => Self::TrackedObject {
+                slot: (attribute & 15) as usize,
+            },
+            0x80..=0x8f => Self::OpenDoor,
+            0xb0..=0xbf => Self::SomariaPipe,
+            0xc0..=0xcf => Self::Torch {
+                slot: (attribute & 15) as usize,
+            },
+            0xf0..=0xff => Self::ClosedDoor {
+                slot: (attribute & 15) as usize,
+            },
+            _ => Self::None,
+        }
+    }
+
+    /// `CalculateTransitionLanding`: ground and shallow water land as 0;
+    /// otherwise the door kind bits select the class, defaulting to 2.
+    pub(super) const fn decode_transition_landing(attribute: u8) -> u8 {
+        if attribute == 0 || attribute == 9 {
+            return 0;
+        }
+        match attribute & 0x8e {
+            0x80 => 1,
+            0x84 | 0x88 => 3,
+            0x86 => 4,
+            _ => 2,
+        }
+    }
+}
+
+impl DungeonRole {
+    /// `PushBlock_AttemptToPushTheBlock`'s accepted target identities.
+    pub(super) const fn decode_accepts_push_block(attribute: u8) -> bool {
+        matches!(
+            attribute,
+            0x00 | 0x05..=0x0a
+                | 0x0c..=0x0f
+                | 0x1c
+                | 0x20
+                | 0x23..=0x25
+                | 0x3a..=0x3b
+                | 0x40
+                | 0x48
+                | 0x4a
+                | 0x60..=0x62
+                | 0x64
+        )
     }
 }

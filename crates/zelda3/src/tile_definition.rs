@@ -72,6 +72,55 @@ pub(crate) enum EntityCollision {
     Ledge,
 }
 
+/// What a dungeon room's logic recognises a tile as, beyond collision:
+/// the objects it tracks, doors, switches, staircases, and torches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DungeonRole {
+    None,
+    /// The three in-room staircase families, numbered as the room loader's
+    /// `kind_of_in_room_staircase`.
+    InRoomStaircase {
+        kind: u8,
+    },
+    /// Pressure plates: the plain plate, then the two held variants.
+    FloorSwitch {
+        variant: u8,
+    },
+    /// Head tile of an inter-room spiral staircase.
+    SpiralStairHead,
+    /// Landing that selects the staircase index a transition uses.
+    StairLanding {
+        index: usize,
+    },
+    StraightStairHead {
+        descending: bool,
+    },
+    StarSwitch {
+        toggled: bool,
+    },
+    WallSpiralStairHead {
+        second: bool,
+    },
+    BombableFloor,
+    MinigameChest,
+    /// Sword-cuttable curtain panels.
+    Curtain {
+        panel: usize,
+    },
+    /// A liftable or pushable object tracked by the room's replacement table.
+    TrackedObject {
+        slot: usize,
+    },
+    OpenDoor,
+    SomariaPipe,
+    Torch {
+        slot: usize,
+    },
+    ClosedDoor {
+        slot: usize,
+    },
+}
+
 /// Fine-position profile of the four straight slopes as entities see them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct EntitySlope {
@@ -89,6 +138,9 @@ struct TileDefinition {
     ancilla: EntityCollision,
     ancilla_ground_layer: EntityCollision,
     entity_slope: Option<EntitySlope>,
+    dungeon_role: DungeonRole,
+    transition_landing: u8,
+    accepts_push_block: bool,
 }
 
 const fn definitions() -> [TileDefinition; 256] {
@@ -101,6 +153,9 @@ const fn definitions() -> [TileDefinition; 256] {
         ancilla: EntityCollision::Passable,
         ancilla_ground_layer: EntityCollision::Passable,
         entity_slope: None,
+        dungeon_role: DungeonRole::None,
+        transition_landing: 0,
+        accepts_push_block: false,
     }; 256];
     let mut index = 0;
     while index < table.len() {
@@ -114,6 +169,9 @@ const fn definitions() -> [TileDefinition; 256] {
             ancilla: EntityCollision::decode_ancilla(attribute),
             ancilla_ground_layer: EntityCollision::decode_ancilla_ground_layer(attribute),
             entity_slope: EntitySlope::decode(attribute),
+            dungeon_role: DungeonRole::decode(attribute),
+            transition_landing: DungeonRole::decode_transition_landing(attribute),
+            accepts_push_block: DungeonRole::decode_accepts_push_block(attribute),
         };
         index += 1;
     }
@@ -135,6 +193,14 @@ impl TilePair {
     }
     pub(crate) const fn with_ground_on_left(self) -> Self {
         Self([NativeTile::GROUND, self.0[1]])
+    }
+    /// The shared identity when both cells agree, as the room logic's
+    /// whole-word comparisons require.
+    pub(crate) fn uniform(self) -> Option<NativeTile> {
+        (self.0[0] == self.0[1]).then_some(self.0[0])
+    }
+    pub(crate) fn stair_landing(index: usize) -> Self {
+        Self::repeated(NativeTile::stair_landing(index))
     }
 }
 
@@ -173,6 +239,27 @@ impl NativeTile {
     pub(crate) const GRASS: Self = Self::from_cartridge(0x40);
     pub(crate) const SPIKE_CACTUS: Self = Self::from_cartridge(0x44);
     pub(crate) const SOLID_WALL: Self = Self::from_cartridge(2);
+    /// Wall that the upper layer passes; ancillae treat it as a layer boundary.
+    pub(crate) const LAYER_WALL: Self = Self::from_cartridge(3);
+    /// Floor between layers beside a wet staircase.
+    pub(crate) const LAYER_LANDING: Self = Self::from_cartridge(0x0a);
+    pub(crate) const IN_ROOM_STAIR_PSEUDO_UP_NORTH: Self = Self::from_cartridge(0x1d);
+    pub(crate) const PRESSURE_PLATE: Self = Self::from_cartridge(0x23);
+    pub(crate) const SPIRAL_STAIR_HEAD: Self = Self::from_cartridge(0x26);
+    pub(crate) const STRAIGHT_STAIR_UP_HEAD: Self = Self::from_cartridge(0x38);
+    pub(crate) const STRAIGHT_STAIR_DOWN_HEAD: Self = Self::from_cartridge(0x39);
+    pub(crate) const STAR_SWITCH: Self = Self::from_cartridge(0x3b);
+    pub(crate) const WALL_SPIRAL_STAIR_HEAD: Self = Self::from_cartridge(0x5e);
+    pub(crate) const WALL_SPIRAL_STAIR_HEAD_2: Self = Self::from_cartridge(0x5f);
+    pub(crate) const MINIGAME_CHEST: Self = Self::from_cartridge(0x63);
+
+    pub(crate) const fn stair_landing(index: usize) -> Self {
+        Self::from_cartridge(0x30 | (index as u8 & 7))
+    }
+
+    pub(crate) const fn torch(slot: usize) -> Self {
+        Self::from_cartridge(0xc0 | (slot as u8 & 15))
+    }
 
     /// Import an identity by selecting its predecoded definition.
     pub(crate) const fn from_cartridge(attribute: u8) -> Self {
@@ -223,9 +310,34 @@ impl NativeTile {
         })
     }
 
-    /// The floor switch identities a pushed statue can settle on.
+    /// The switch identities a pushed statue can settle on.
     pub(crate) const fn is_floor_switch(self) -> bool {
-        matches!(self.cartridge_attribute(), 0x23..=0x25 | 0x3b)
+        matches!(
+            self.dungeon_role(),
+            DungeonRole::FloorSwitch { .. } | DungeonRole::StarSwitch { toggled: false }
+        )
+    }
+
+    pub(crate) const fn dungeon_role(self) -> DungeonRole {
+        self.0.dungeon_role
+    }
+
+    /// Landing class a room transition reads under the player; the original
+    /// masked every identity, not only doors, so this covers all 256.
+    pub(crate) const fn transition_landing(self) -> u8 {
+        self.0.transition_landing
+    }
+
+    /// Whether a pushed block may slide onto this tile.
+    pub(crate) const fn accepts_push_block(self) -> bool {
+        self.0.accepts_push_block
+    }
+
+    /// The slot nibble shared by tracked objects, torches, and closed doors.
+    /// The original masked it without checking the family at some read
+    /// points, so this stays available for every identity.
+    pub(crate) const fn object_slot(self) -> usize {
+        (self.cartridge_attribute() & 0x0f) as usize
     }
 
     /// Conveyor index of the four moving-floor directions.

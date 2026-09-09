@@ -10,6 +10,7 @@
 
 use super::sprite::DrawMultipleData;
 use super::*;
+use crate::tile_definition::NativeTile;
 use crate::types::sign8;
 
 // ---------------------------------------------------------------------------
@@ -1466,12 +1467,12 @@ impl ZeldaState {
     // Sprite_D6_Ganon calls them from sprite_main.c.
     fn ganon_extinguish_torch_adjust_translucency_for_ganon(&mut self) {
         self.Palette_AssertTranslucencySwap();
-        self.dungeon_torch_mut().set_attr(0xc0);
+        self.dungeon_torch_mut().set_target(NativeTile::torch(0));
         self.dungeon_extinguish_torch_for_ganon();
     }
 
     fn ganon_extinguish_torch_for_ganon(&mut self) {
-        self.dungeon_torch_mut().set_attr(193);
+        self.dungeon_torch_mut().set_target(NativeTile::torch(1));
         self.dungeon_extinguish_torch_for_ganon();
     }
 
@@ -1520,7 +1521,7 @@ impl ZeldaState {
 
         let torch_timer = self.game_state.dungeon.torch.attr_index();
         self.dungeon_torch_mut().clear_timer(torch_timer);
-        self.dungeon_torch_mut().clear_attr();
+        self.dungeon_torch_mut().clear_target();
     }
 
     fn sprite_draw_multiple_for_ganon(

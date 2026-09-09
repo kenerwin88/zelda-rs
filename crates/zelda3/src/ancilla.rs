@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::game_state::constants::DUNG_SAVEGAME_STATE_BITS;
-use crate::tile_definition::{EntityCollision, NativeTile};
+use crate::tile_definition::{DungeonRole, EntityCollision, NativeTile};
 use crate::types::{
     abs16, abs8, project_speed_from_differences, sign16, sign8, AncillaRadialProjection, PairU8,
     Point16U, ProjectSpeedRet, SpriteHitBox,
@@ -2188,8 +2188,8 @@ impl ZeldaState {
                     .wrapping_add(ANCILLA_ADD_MAGIC_POWDER_MAGIC_POWER_Y[j] as i16 as u16),
             );
             self.ancilla_check_tile_collision(k);
-            let value = self.ancilla_slot_view(k).tile_attribute();
-            self.dungeon_torch_mut().set_attr(value);
+            let target = NativeTile::from_cartridge(self.ancilla_slot_view(k).tile_attribute());
+            self.dungeon_torch_mut().set_target(target);
             if self.game_state.player.follower_link.current_item_active() == 9 {
                 self.ancilla_slot_view_mut(k).clear();
                 return;
@@ -3793,14 +3793,15 @@ impl ZeldaState {
                 let value = self.ancilla_slot_view(k).item_to_link().wrapping_add(1);
                 self.ancilla_slot_view_mut(k).set_item_to_link(value);
                 self.ancilla_slot_view_mut(k).and_direction(!0x0c);
-                let value = self.ancilla_slot_view(k).l();
-                self.dungeon_torch_mut().set_attr(value);
-                if self.game_state.dungeon.torch.torch_attr() & 0xf0 == 0xc0 {
+                let target = NativeTile::from_cartridge(self.ancilla_slot_view(k).l());
+                self.dungeon_torch_mut().set_target(target);
+                if self.game_state.dungeon.torch.targets_torch() {
                     self.dungeon_light_torch();
                 } else {
-                    let value = self.ancilla_slot_view(k).tile_attribute();
-                    self.dungeon_torch_mut().set_attr(value);
-                    if self.game_state.dungeon.torch.torch_attr() & 0xf0 == 0xc0 {
+                    let target =
+                        NativeTile::from_cartridge(self.ancilla_slot_view(k).tile_attribute());
+                    self.dungeon_torch_mut().set_target(target);
+                    if self.game_state.dungeon.torch.targets_torch() {
                         self.dungeon_light_torch();
                     }
                 }
@@ -4664,26 +4665,22 @@ impl ZeldaState {
             let pos = (((x & 0x01f8) >> 3) + ((y & 0x01f8) << 3)) as usize
                 + if floor >= 1 { 0x1000 } else { 0 };
 
+            // Count closed sides (up, down, left) until the first open pipe.
+            let is_pipe = |state: &Self, pos: usize| {
+                state
+                    .game_state
+                    .dungeon
+                    .bg2_attributes
+                    .bg2_tile(pos)
+                    .dungeon_role()
+                    == DungeonRole::SomariaPipe
+            };
             let mut t = 0usize;
-            if self
-                .game_state
-                .dungeon
-                .bg2_attributes
-                .bg2_attr(pos.wrapping_sub(0x40))
-                & 0xf0
-                != 0xb0
-            {
+            if !is_pipe(self, pos.wrapping_sub(0x40)) {
                 t += 1;
-                if self.game_state.dungeon.bg2_attributes.bg2_attr(pos + 0x40) & 0xf0 != 0xb0 {
+                if !is_pipe(self, pos + 0x40) {
                     t += 1;
-                    if self
-                        .game_state
-                        .dungeon
-                        .bg2_attributes
-                        .bg2_attr(pos.wrapping_sub(1))
-                        & 0xf0
-                        != 0xb0
-                    {
+                    if !is_pipe(self, pos.wrapping_sub(1)) {
                         t += 1;
                     }
                 }
@@ -6550,7 +6547,7 @@ impl ZeldaState {
                 if self.ancilla_slot_view(k).item_to_link() == 9 {
                     let value = 0;
                     self.ancilla_slot_view_mut(k).set_ancilla_type(value);
-                    self.dungeon_torch_mut().clear_attr();
+                    self.dungeon_torch_mut().clear_target();
                     return;
                 }
                 let value = self.ancilla_slot_view(k).item_to_link().wrapping_add(1);

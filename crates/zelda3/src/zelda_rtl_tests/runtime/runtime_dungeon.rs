@@ -2,6 +2,7 @@
 //! Split mechanically from the hub file; bodies unchanged.
 
 use super::*;
+use crate::tile_definition::NativeTile;
 
 #[test]
 fn parity_probe_direct_entrance_loads_room_from_entrance_assets() {
@@ -587,7 +588,10 @@ fn push_block_target_flag_reads_dungeon_attr_table() {
         .dungeon_bg2_attributes_mut()
         .set_bg2_attr(0x1000 + 0x145, 0x72);
 
-    assert_eq!(state.push_block_get_target_tile_flag(5, 0x28), 0x72);
+    assert_eq!(
+        state.push_block_target_tile(5, 0x28),
+        NativeTile::from_cartridge(0x72)
+    );
 }
 
 #[test]

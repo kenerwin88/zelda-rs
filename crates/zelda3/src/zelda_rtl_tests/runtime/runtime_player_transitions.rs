@@ -26,4 +26,3 @@ fn action_reset_updates_native_fields_without_a_repairing_import() {
         "the transition must model every player byte it publishes"
     );
 }
-

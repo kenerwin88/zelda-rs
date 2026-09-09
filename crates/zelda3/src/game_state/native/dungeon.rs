@@ -49,7 +49,7 @@ use crate::game_state::constants::{
 use crate::game_state::constants::{
     DUNGEON_ROOM_HISTORY, DUNGEON_ROOM_INDEX2, DUNGEON_ROOM_INDEX_PREV,
 };
-use crate::tile_definition::NativeTile;
+use crate::tile_definition::{DungeonRole, NativeTile};
 use crate::types::{read_le_u16, write_le_u16};
 
 const DUNGEON_HEADER_TRAVEL_DESTINATION_COUNT: usize = 5;
@@ -3145,7 +3145,7 @@ impl DungeonSavegameState {
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DungeonTorchState {
     timers: [u8; DUNGEON_TORCH_TIMER_COUNT],
-    attr: u8,
+    target: NativeTile,
     lit_torches: u8,
     lights_out_request: u8,
     lights_out_request_copy: u8,
@@ -3170,7 +3170,7 @@ impl DungeonTorchState {
 
         Self {
             timers,
-            attr: ram.get(DUNGEON_TORCH_ATTR).copied().unwrap_or(0),
+            target: NativeTile::from_cartridge(ram.get(DUNGEON_TORCH_ATTR).copied().unwrap_or(0)),
             lit_torches: ram.get(DUNG_NUM_LIT_TORCHES).copied().unwrap_or(0),
             lights_out_request: ram.get(DUNG_WANT_LIGHTS_OUT).copied().unwrap_or(0),
             lights_out_request_copy: ram.get(DUNG_WANT_LIGHTS_OUT_COPY).copied().unwrap_or(0),
@@ -3184,7 +3184,7 @@ impl DungeonTorchState {
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         ram[TORCH_TIMERS..TORCH_TIMERS + DUNGEON_TORCH_TIMER_COUNT].copy_from_slice(&self.timers);
-        ram[DUNGEON_TORCH_ATTR] = self.attr;
+        ram[DUNGEON_TORCH_ATTR] = self.target.cartridge_attribute();
         ram[DUNG_NUM_LIT_TORCHES] = self.lit_torches;
         ram[DUNG_WANT_LIGHTS_OUT] = self.lights_out_request;
         ram[DUNG_WANT_LIGHTS_OUT_COPY] = self.lights_out_request_copy;
@@ -3201,12 +3201,19 @@ impl DungeonTorchState {
         self.timers.get(index).copied().unwrap_or(0)
     }
 
+    /// Slot nibble of the targeted identity, as the original masked it.
     pub(crate) fn attr_index(&self) -> usize {
-        usize::from(self.attr & 0x0f)
+        self.target.object_slot()
     }
 
-    pub(crate) fn torch_attr(&self) -> u8 {
-        self.attr
+    /// The tile the torch logic was last pointed at; only a torch identity
+    /// lights or extinguishes.
+    pub(crate) fn target(&self) -> NativeTile {
+        self.target
+    }
+
+    pub(crate) fn targets_torch(&self) -> bool {
+        matches!(self.target.dungeon_role(), DungeonRole::Torch { .. })
     }
 
     pub(crate) fn lit_torches(&self) -> u8 {
@@ -3326,12 +3333,12 @@ impl DungeonTorchState {
         }
     }
 
-    fn set_attr(&mut self, value: u8) {
-        self.attr = value;
+    fn set_target(&mut self, value: NativeTile) {
+        self.target = value;
     }
 
-    fn clear_attr(&mut self) {
-        self.attr = 0;
+    fn clear_target(&mut self) {
+        self.target = NativeTile::GROUND;
     }
 
     fn set_ganon_torch_count(&mut self, value: u8) {
@@ -4749,9 +4756,9 @@ impl<'a> NativeDungeonTorchBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn set_attr(&mut self, value: u8) {
-        self.torch.set_attr(value);
-        self.ram[DUNGEON_TORCH_ATTR] = value;
+    pub(crate) fn set_target(&mut self, value: NativeTile) {
+        self.torch.set_target(value);
+        self.ram[DUNGEON_TORCH_ATTR] = value.cartridge_attribute();
         self.debug_assert_matches_ram();
     }
 
@@ -4761,8 +4768,8 @@ impl<'a> NativeDungeonTorchBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn clear_attr(&mut self) {
-        self.torch.clear_attr();
+    pub(crate) fn clear_target(&mut self) {
+        self.torch.clear_target();
         self.ram[DUNGEON_TORCH_ATTR] = 0;
         self.debug_assert_matches_ram();
     }

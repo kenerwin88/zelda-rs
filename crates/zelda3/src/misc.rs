@@ -476,8 +476,8 @@ impl ZeldaState {
     }
 
     pub(super) fn dungeon_light_torch(&mut self) {
-        if self.game_state.dungeon.torch.torch_attr() & 0xf0 != 0xc0 {
-            self.dungeon_torch_mut().clear_attr();
+        if !self.game_state.dungeon.torch.targets_torch() {
+            self.dungeon_torch_mut().clear_target();
             return;
         }
 
@@ -533,7 +533,7 @@ impl ZeldaState {
 
         let torch_timer = self.game_state.dungeon.torch.attr_index();
         self.dungeon_torch_mut().set_timer(torch_timer, r8);
-        self.dungeon_torch_mut().clear_attr();
+        self.dungeon_torch_mut().clear_target();
     }
 
     pub(super) fn room_draw_adjust_torch_lighting_change(&mut self, x: u16, y: u16, r8: u16) {

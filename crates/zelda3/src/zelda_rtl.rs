@@ -28,16 +28,16 @@ use crate::game_state::constants::{
     VWF_ARR,
 };
 use crate::game_state::{
-    lanmola_flat_trail_entry_from_ram, ArmosKnightHomePositionMut,
-    BirdTravelDestinationState, BossHomePositionRead, CachedSpriteRead, CompatibilityBytesView,
-    CompatibilityBytesViewMut, DungeonStairList, FollowerLinkState, GameState, GarnishSlotMut,
-    GarnishSlotView, GraphicsDecompressionScratch, HappinessPondRupeeSnapshot, HudStateRead,
-    HudTilemapState, IntroActorRead, LanmolaFlatTrailEntry, LinkDmaSourceSlot, LinkDmaSources,
-    MsuResumeInfoState, MsuResumeSlot, MultiselectChoiceRead, NativeAncillaSlotBridgeMut,
-    NativeAncillaSlotView, NativeArcheryGameBridgeMut, NativeAttractSceneBridgeMut,
-    NativeAttractVramDestinationBridgeMut, NativeBeamosLaserHistoryBridgeMut,
-    NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
-    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    lanmola_flat_trail_entry_from_ram, ArmosKnightHomePositionMut, BirdTravelDestinationState,
+    BossHomePositionRead, CachedSpriteRead, CompatibilityBytesView, CompatibilityBytesViewMut,
+    DungeonStairList, FollowerLinkState, GameState, GarnishSlotMut, GarnishSlotView,
+    GraphicsDecompressionScratch, HappinessPondRupeeSnapshot, HudStateRead, HudTilemapState,
+    IntroActorRead, LanmolaFlatTrailEntry, LinkDmaSourceSlot, LinkDmaSources, MsuResumeInfoState,
+    MsuResumeSlot, MultiselectChoiceRead, NativeAncillaSlotBridgeMut, NativeAncillaSlotView,
+    NativeArcheryGameBridgeMut, NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
+    NativeBeamosLaserHistoryBridgeMut, NativeBg1MovementAccumulatorBridgeMut,
+    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut,
+    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosBlastBridgeMut, NativeBombosFireColumnBridgeMut,
     NativeBombosSpellBridgeMut, NativeCachedSpriteBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
@@ -13189,31 +13189,6 @@ fn read_le_u32(bytes: &[u8], offset: usize) -> Result<u32, String> {
         .get(offset..end)
         .ok_or_else(|| "asset header truncated".to_string())?;
     Ok(u32::from_le_bytes([word[0], word[1], word[2], word[3]]))
-}
-
-fn push_block_target_is_blocked(tile_flag: u8) -> bool {
-    !matches!(
-        tile_flag,
-        0 | 5
-            | 6
-            | 7
-            | 8
-            | 9
-            | 10
-            | 12..=15
-            | 28
-            | 32
-            | 35..=37
-            | 58
-            | 59
-            | 64
-            | 72
-            | 74
-            | 96
-            | 97
-            | 98
-            | 100
-    )
 }
 
 fn size_1to16(width: u8, height: u8) -> u16 {

@@ -1146,7 +1146,7 @@ impl ZeldaState {
         self.tile_detect_execute_definition(tile, 0, 1, false);
     }
 
-    pub(super) fn push_block_get_target_tile_flag(&self, x: u16, y: u16) -> u8 {
+    pub(super) fn push_block_target_tile(&self, x: u16, y: u16) -> NativeTile {
         let offset = ((y & !7) as usize) * 8
             + (x & 0x3f) as usize
             + if self.game_state.player.follower_link.is_on_lower_level() {
@@ -1154,7 +1154,7 @@ impl ZeldaState {
             } else {
                 0
             };
-        self.game_state.dungeon.bg2_attributes.bg2_attr(offset)
+        self.game_state.dungeon.bg2_attributes.bg2_tile(offset)
     }
 
     pub(super) fn link_handle_change_in_z_velocity(&mut self) {
@@ -2580,8 +2580,7 @@ impl ZeldaState {
         let y0 = y
             .wrapping_add(PUSH_BLOCK_ATTEMPT_TO_PUSH_THE_BLOCK_Y_OFFSETS_0[idx] as i16 as u16)
             & mask;
-        let xt = self.push_block_get_target_tile_flag(x0, y0);
-        if push_block_target_is_blocked(xt) {
+        if !self.push_block_target_tile(x0, y0).accepts_push_block() {
             return true;
         }
 
@@ -2592,7 +2591,7 @@ impl ZeldaState {
         let y1 = y
             .wrapping_add(PUSH_BLOCK_ATTEMPT_TO_PUSH_THE_BLOCK_Y_OFFSETS_1[idx] as i16 as u16)
             & mask;
-        push_block_target_is_blocked(self.push_block_get_target_tile_flag(x1, y1))
+        !self.push_block_target_tile(x1, y1).accepts_push_block()
     }
 
     pub(super) fn link_find_valid_landing_tile_north(&mut self) {
