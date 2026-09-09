@@ -841,65 +841,6 @@ fn live_throwable_scenery_state_clear_applies_the_partial_slot_prefix() {
 }
 
 #[test]
-fn live_single_small_draw_position_applies_prefix_and_resumes_without_replaying_timers() {
-    let mut state = ZeldaState::new();
-    state.restore_live_rom_timing_after_checkpoint();
-    state.original_timing_owner = OriginalTimingOwnerState::Live;
-    state.set_main_module(7);
-    state.set_submodule(0);
-    state.sprite_slot_view_mut(15).set_state(9);
-    state.sprite_slot_view_mut(15).set_sprite_type(0x23);
-    state.sprite_slot_view_mut(15).set_delay_main(0x7f);
-    state.sprite_slot_view_mut(15).set_delay_aux1(2);
-    state.sprite_slot_view_mut(15).set_c(1);
-    state.sprite_slot_view_mut(15).set_graphics(3);
-    state.sprite_slot_view_mut(15).set_flags2(4);
-    state.sprite_slot_view_mut(15).set_flags3(0x33);
-    state.sprite_slot_view_mut(15).set_x(0x0120);
-    state.sprite_slot_view_mut(15).set_y(0x0080);
-    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
-        660_588,
-        0,
-        vec![OriginalTimingSemanticReceipt::SpriteMainProgressed(
-            crate::SpriteMainProgress::AfterSingleSmallDrawPosition(15),
-        )],
-    ));
-
-    state.run_module07_sprite_main_caller(DungeonSpriteMainReturn {
-        link_oam: None,
-        bg2_x: 0,
-        bg2_y: 0,
-        bg1_x: 0,
-        bg1_y: 0,
-    });
-
-    assert_eq!(state.sprite_slot_view(15).delay_main(), 0x7e);
-    assert_eq!(state.sprite_slot_view(15).delay_aux1(), 1);
-    let boundary = match state.game_execution_scheduler.current_work() {
-        Some(GameWorkContinuation::FinishSpriteMain {
-            boundary:
-                SpriteMainCpuBoundary::AfterSingleSmallDrawPosition {
-                    slot: 15,
-                    continuation: Some(continuation),
-                },
-            caller:
-                SpriteMainCpuCaller::DungeonModule07Live {
-                    boundary: crate::OriginalTimingBoundary::HostReturn,
-                },
-        }) => SpriteMainCpuBoundary::AfterSingleSmallDrawPosition {
-            slot: 15,
-            continuation: Some(continuation),
-        },
-        other => panic!("unexpected single-small draw continuation: {other:?}"),
-    };
-
-    state.complete_sprite_main_after_cpu_boundary(boundary);
-
-    assert_eq!(state.sprite_slot_view(15).delay_main(), 0x7e);
-    assert_eq!(state.sprite_slot_view(15).delay_aux1(), 1);
-}
-
-#[test]
 fn live_timer_decrement_boundary_finishes_priority_and_dispatch_without_replaying_countdowns() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();

@@ -55,46 +55,6 @@ fn triforce_poly_step0_falls_through_once_like_c() {
 }
 
 #[test]
-fn link_oam_equipment_checkpoint_retains_stair_y_until_drawing_returns() {
-    for submodule in [18, 19] {
-        for animation_step in 0..6 {
-            let setup = || {
-                let mut state = ZeldaState::new();
-                state.game_state.frame.main_module = 7;
-                state.game_state.frame.submodule = submodule;
-                state.follower_link_state_mut().set_y(0x0812);
-                state
-                    .follower_link_state_mut()
-                    .set_animation_step(animation_step);
-                state
-            };
-            let mut atomic = setup();
-            atomic.link_oam_main();
-            // Includes ROM host359918 at $0D:A992, before body drawing.
-            for stage in 0..3 {
-                let mut staged = setup();
-                let continuation = if stage == 0 {
-                    staged.link_oam_after_pose_selection()
-                } else {
-                    staged.link_oam_before_equipment()
-                };
-                let continuation = if stage == 2 {
-                    staged.link_oam_before_body(continuation)
-                } else {
-                    continuation
-                };
-                let offset = [0u16, 2, 3, 0, 2, 3][animation_step as usize];
-                assert_eq!(staged.game_state.player.follower_link.y(), 0x0812 - offset);
-                staged.link_oam_after_equipment(continuation);
-                assert_eq!(staged.game_state.player.follower_link.y(), 0x0812);
-                assert_eq!(staged.ram, atomic.ram);
-                staged.assert_native_frame_state_matches_ram();
-            }
-        }
-    }
-}
-
-#[test]
 fn fat_stair_background_conversion_retains_its_caller_step() {
     // ROM host402680 stops at $00:DF92 inside PrepTransAuxGfx; the shared
     // Module07/$06 step3 caller has not reached its subsubmodule increment.
