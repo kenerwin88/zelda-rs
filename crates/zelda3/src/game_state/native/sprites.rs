@@ -17,7 +17,7 @@ use crate::game_state::constants::{
     SPRITE_DRAW_WORK_BYTE_1, SPRITE_DRAW_WORK_BYTE_2, SPRITE_DRAW_WORK_BYTE_3,
     SPRITE_DRAW_WORK_BYTE_4, SPRITE_DRAW_WORK_BYTE_5, SPRITE_E, SPRITE_F, SPRITE_FLAGS,
     SPRITE_FLAGS2, SPRITE_FLAGS3, SPRITE_FLAGS4, SPRITE_FLAGS5, SPRITE_FLOOR, SPRITE_G,
-    SPRITE_GFX_SUBSET_0, SPRITE_GRAPHICS, SPRITE_GRAPHICS_INDEX, SPRITE_GRAPHICS_INDEX_EXIT,
+    SPRITE_GFX_SUBSET_0, SPRITE_GRAPHICS, SPRITE_GRAPHICS_INDEX,
     SPRITE_GRAPHICS_INDEX_SPEXIT, SPRITE_HEAD_DIR, SPRITE_HEALTH, SPRITE_HIT_TIMER,
     SPRITE_IGNORE_PROJECTILE, SPRITE_INCOMING_DAMAGE, SPRITE_LAST_GARNISH_INDEX,
     SPRITE_LIMIT_INSTANCE, SPRITE_LOAD_BLOCK_STATE, SPRITE_N, SPRITE_OAM_FLAGS, SPRITE_OAM_PREP_X,
@@ -1699,7 +1699,6 @@ pub(crate) struct SpriteSystemState {
     alert_flag: u8,
     graphics_index: u8,
     saved_special_exit_graphics_index: u8,
-    saved_exit_graphics_index: u8,
     alt_sprite_spawned_flag: u8,
     cur_object_index: u8,
     alt_sprites_flag: u8,
@@ -1718,7 +1717,6 @@ impl SpriteSystemState {
                 .get(SPRITE_GRAPHICS_INDEX_SPEXIT)
                 .copied()
                 .unwrap_or(0),
-            saved_exit_graphics_index: ram.get(SPRITE_GRAPHICS_INDEX_EXIT).copied().unwrap_or(0),
             alt_sprite_spawned_flag: ram.get(ALT_SPRITE_SPAWNED_FLAG).copied().unwrap_or(0),
             cur_object_index: ram.get(CUR_OBJECT_INDEX).copied().unwrap_or(0),
             alt_sprites_flag: ram.get(ALT_SPRITES_FLAG).copied().unwrap_or(0),
@@ -1733,11 +1731,8 @@ impl SpriteSystemState {
         ram[SPRITE_ALERT_FLAG] = self.alert_flag;
         ram[SPRITE_GRAPHICS_INDEX] = self.graphics_index;
         ram[SPRITE_GRAPHICS_INDEX_SPEXIT] = self.saved_special_exit_graphics_index;
-        // NOTE: SPRITE_GRAPHICS_INDEX_EXIT (0xc167) is owned and projected by
-        // DungeonEntranceBackupState (the `Dungeon_LoadEntrance` save, C
-        // dungeon.c:8477). `saved_exit_graphics_index` is a load-only mirror read
-        // by the restore (`graphics_index = saved_exit_graphics_index`); projecting
-        // it here would clobber the authoritative save.
+        // SPRITE_GRAPHICS_INDEX_EXIT (0xc167) belongs to DungeonEntranceBackupState;
+        // the overworld restore reads it from there.
         ram[ALT_SPRITE_SPAWNED_FLAG] = self.alt_sprite_spawned_flag;
         ram[CUR_OBJECT_INDEX] = self.cur_object_index;
         ram[ALT_SPRITES_FLAG] = self.alt_sprites_flag;
@@ -1833,8 +1828,10 @@ impl SpriteSystemState {
         self.graphics_index = self.saved_special_exit_graphics_index;
     }
 
-    fn restore_exit_graphics_index(&mut self) {
-        self.graphics_index = self.saved_exit_graphics_index;
+    /// Restore the graphics index saved at the dungeon entrance; the caller
+    /// passes the entrance backup owner's value.
+    fn restore_exit_graphics_index(&mut self, value: u8) {
+        self.graphics_index = value;
     }
 
     fn set_alt_sprite_spawned_flag(&mut self, value: u8) {
@@ -1883,9 +1880,7 @@ impl<'a> NativeSpriteSystemBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
-        let mut fresh = SpriteSystemState::load_from_ram(self.ram);
-        fresh.saved_exit_graphics_index = self.state.saved_exit_graphics_index;
-        debug_assert_eq!(*self.state, fresh);
+        debug_assert_eq!(*self.state, SpriteSystemState::load_from_ram(self.ram));
     }
 
     forward_synced! {
@@ -1901,7 +1896,7 @@ impl<'a> NativeSpriteSystemBridgeMut<'a> {
         fn set_graphics_index(value: u8);
         fn save_special_exit_graphics_index();
         fn restore_special_exit_graphics_index();
-        fn restore_exit_graphics_index();
+        fn restore_exit_graphics_index(value: u8);
     }
 
     pub(crate) fn fill_live_states(&mut self, value: u8) {

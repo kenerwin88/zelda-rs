@@ -281,15 +281,10 @@ fn world_palette_theme_loads_from_and_projects_to_ram() {
 
     let mut projected = vec![0; WRAM_SIZE];
     theme.write_to_ram(&mut projected);
-    // The exit_* tile-theme indices (0xc164-0xc166) are owned and projected by
-    // DungeonEntranceBackupState (the Dungeon_LoadEntrance save). This struct
-    // loads them only to feed restore_exit_tile_themes, so they intentionally
-    // do NOT round-trip through WorldPaletteThemeState::write_to_ram.
-    let mut expected = theme;
-    expected.exit_overworld_tile_theme_index = 0;
-    expected.exit_main_tile_theme_index = 0;
-    expected.exit_aux_tile_theme_index = 0;
-    assert_eq!(WorldPaletteThemeState::load_from_ram(&projected), expected);
+    // The entrance backup (0xc164-0xc167) belongs to DungeonEntranceBackupState
+    // and is neither modelled nor projected here.
+    assert_eq!(projected[OVERWORLD_TILE_THEME_INDEX_EXIT], 0);
+    assert_eq!(WorldPaletteThemeState::load_from_ram(&projected), theme);
 }
 
 #[test]
@@ -378,15 +373,13 @@ fn native_world_palette_theme_bridge_projects_owned_state_over_stale_ram() {
 }
 
 #[test]
-fn native_world_palette_theme_bridge_ignores_dungeon_exit_backup_bytes_in_coherence_check() {
+fn native_world_palette_theme_bridge_leaves_the_entrance_backup_to_its_owner() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[OVERWORLD_TILE_THEME_INDEX_EXIT] = 0;
     ram[MAIN_TILE_THEME_INDEX_EXIT] = 35;
     ram[AUX_TILE_THEME_INDEX_EXIT] = 81;
 
     let mut theme = WorldPaletteThemeState::load_from_ram(&ram);
-    theme.exit_main_tile_theme_index = 0;
-    theme.exit_aux_tile_theme_index = 0;
 
     {
         let mut bridge = NativeWorldPaletteThemeBridgeMut::new(&mut theme, &mut ram);
@@ -422,7 +415,7 @@ fn sprite_system_projection_preserves_world_palette_theme_fields() {
 }
 
 #[test]
-fn native_sprite_system_bridge_ignores_dungeon_exit_graphics_backup_in_coherence_check() {
+fn native_sprite_system_bridge_leaves_the_entrance_backup_to_its_owner() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[SPRITE_GRAPHICS_INDEX_EXIT] = 0x7d;
 

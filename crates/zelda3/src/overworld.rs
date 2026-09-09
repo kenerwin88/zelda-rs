@@ -4761,8 +4761,17 @@ impl ZeldaState {
         );
         self.restore_exit_scroll_targets();
         self.restore_exit_scroll_counters();
-        self.world_palette_theme_mut().restore_exit_tile_themes();
-        self.sprite_system_mut().restore_exit_graphics_index();
+        let backup = &self.game_state.dungeon.entrance_backup;
+        let (overworld, main, aux, sprite_graphics) = (
+            backup.exit_tile_theme(0),
+            backup.exit_tile_theme(1),
+            backup.exit_tile_theme(2),
+            backup.exit_tile_theme(3),
+        );
+        self.world_palette_theme_mut()
+            .restore_exit_tile_themes(overworld, main, aux);
+        self.sprite_system_mut()
+            .restore_exit_graphics_index(sprite_graphics);
     }
 
     pub(super) fn LoadOverworldFromSpecialOverworld(&mut self) {

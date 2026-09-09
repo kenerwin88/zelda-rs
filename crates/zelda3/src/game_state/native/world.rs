@@ -803,9 +803,6 @@ pub(crate) struct WorldPaletteThemeState {
     pub(crate) special_exit_overworld_tile_theme_index: u8,
     pub(crate) special_exit_main_tile_theme_index: u8,
     pub(crate) special_exit_aux_tile_theme_index: u8,
-    pub(crate) exit_overworld_tile_theme_index: u8,
-    pub(crate) exit_main_tile_theme_index: u8,
-    pub(crate) exit_aux_tile_theme_index: u8,
 }
 
 impl WorldPaletteThemeState {
@@ -829,9 +826,6 @@ impl WorldPaletteThemeState {
             ),
             special_exit_main_tile_theme_index: ram_byte(ram, MAIN_TILE_THEME_INDEX_SPEXIT),
             special_exit_aux_tile_theme_index: ram_byte(ram, AUX_TILE_THEME_INDEX_SPEXIT),
-            exit_overworld_tile_theme_index: ram_byte(ram, OVERWORLD_TILE_THEME_INDEX_EXIT),
-            exit_main_tile_theme_index: ram_byte(ram, MAIN_TILE_THEME_INDEX_EXIT),
-            exit_aux_tile_theme_index: ram_byte(ram, AUX_TILE_THEME_INDEX_EXIT),
         }
     }
 
@@ -849,11 +843,8 @@ impl WorldPaletteThemeState {
         ram[OVERWORLD_SPECIAL_TILE_THEME_INDEX] = self.special_exit_overworld_tile_theme_index;
         ram[MAIN_TILE_THEME_INDEX_SPEXIT] = self.special_exit_main_tile_theme_index;
         ram[AUX_TILE_THEME_INDEX_SPEXIT] = self.special_exit_aux_tile_theme_index;
-        // NOTE: OVERWORLD/MAIN/AUX_TILE_THEME_INDEX_EXIT (0xc164-0xc166) are owned
-        // and projected by DungeonEntranceBackupState (the `Dungeon_LoadEntrance`
-        // save, matching C dungeon.c:8475). These fields are a load-only mirror
-        // read by `restore_exit_tile_themes`; projecting them here would clobber
-        // the authoritative save (and cascade into the sprite byte 0xc167).
+        // The dungeon entrance backup (0xc164-0xc167) belongs to
+        // DungeonEntranceBackupState; the overworld restore reads it from there.
     }
 
     pub(crate) fn aux_bg_subset(&self, index: usize) -> u8 {
@@ -914,10 +905,12 @@ impl WorldPaletteThemeState {
         self.misc_sprites_graphics_index = value;
     }
 
-    pub(crate) fn restore_exit_tile_themes(&mut self) {
-        self.overworld_tile_theme_index = self.exit_overworld_tile_theme_index;
-        self.main_tile_theme_index = self.exit_main_tile_theme_index;
-        self.aux_tile_theme_index = self.exit_aux_tile_theme_index;
+    /// Restore the themes saved at the dungeon entrance; the caller passes the
+    /// entrance backup owner's values.
+    pub(crate) fn restore_exit_tile_themes(&mut self, overworld: u8, main: u8, aux: u8) {
+        self.overworld_tile_theme_index = overworld;
+        self.main_tile_theme_index = main;
+        self.aux_tile_theme_index = aux;
     }
 
     pub(crate) fn save_special_exit_tile_themes(&mut self) {
@@ -2878,11 +2871,7 @@ impl<'a> NativeWorldPaletteThemeBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
-        let mut fresh = WorldPaletteThemeState::load_from_ram(self.ram);
-        fresh.exit_overworld_tile_theme_index = self.state.exit_overworld_tile_theme_index;
-        fresh.exit_main_tile_theme_index = self.state.exit_main_tile_theme_index;
-        fresh.exit_aux_tile_theme_index = self.state.exit_aux_tile_theme_index;
-        debug_assert_eq!(*self.state, fresh);
+        debug_assert_eq!(*self.state, WorldPaletteThemeState::load_from_ram(self.ram));
     }
 
     forward_synced! {
@@ -2894,7 +2883,7 @@ impl<'a> NativeWorldPaletteThemeBridgeMut<'a> {
         fn set_main_tile_theme_index(value: u8);
         fn set_aux_tile_theme_index(value: u8);
         fn set_misc_sprites_graphics_index(value: u8);
-        fn restore_exit_tile_themes();
+        fn restore_exit_tile_themes(overworld: u8, main: u8, aux: u8);
         fn save_special_exit_tile_themes();
         fn restore_special_exit_tile_themes();
     }

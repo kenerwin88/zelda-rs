@@ -2058,6 +2058,8 @@ mod runtime_display;
 mod runtime_dungeon;
 #[path = "zelda_rtl_tests/runtime/runtime_dungeon_roles.rs"]
 mod runtime_dungeon_roles;
+#[path = "zelda_rtl_tests/runtime/runtime_entrance_backup.rs"]
+mod runtime_entrance_backup;
 #[path = "zelda_rtl_tests/runtime/runtime_entity_tiles.rs"]
 mod runtime_entity_tiles;
 #[path = "zelda_rtl_tests/runtime/runtime_items.rs"]
