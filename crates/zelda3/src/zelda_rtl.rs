@@ -12372,19 +12372,11 @@ impl ZeldaState {
             } else {
                 let bg2x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
                 let bg2y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
-                extra_left = bg2x.wrapping_sub(self.game_state.world.scroll.scroll_x_start());
-                extra_right = self
-                    .game_state
-                    .world
-                    .scroll
-                    .scroll_x_end()
-                    .wrapping_sub(bg2x);
-                extra_bottom = self
-                    .game_state
-                    .world
-                    .scroll
-                    .scroll_y_end()
-                    .wrapping_sub(bg2y);
+                // The camera boundary words belong to the room bounds owner.
+                let bounds = &self.game_state.world.room_bounds;
+                extra_left = bg2x.wrapping_sub(bounds.packed_left());
+                extra_right = bounds.packed_right().wrapping_sub(bg2x);
+                extra_bottom = bounds.packed_bottom().wrapping_sub(bg2y);
             }
         } else if module == 7 {
             if !(self.game_state.dungeon.torch.dungeon_dark_with_lantern()

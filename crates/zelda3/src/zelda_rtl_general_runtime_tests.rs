@@ -2074,6 +2074,8 @@ mod runtime_palette_backup;
 mod runtime_player_collision;
 #[path = "zelda_rtl_tests/runtime/runtime_player_transitions.rs"]
 mod runtime_player_transitions;
+#[path = "zelda_rtl_tests/runtime/runtime_scroll_bounds.rs"]
+mod runtime_scroll_bounds;
 #[path = "zelda_rtl_tests/runtime/runtime_spotlight.rs"]
 mod runtime_spotlight;
 #[path = "zelda_rtl_tests/runtime/runtime_sprites.rs"]

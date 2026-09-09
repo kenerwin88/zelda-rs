@@ -757,9 +757,6 @@ fn world_scroll_loads_from_and_projects_to_ram() {
     write_le_u16(&mut ram, OVERWORLD_OFFSET_BASE_Y, 0x0a0a);
     write_le_u16(&mut ram, OVERWORLD_OFFSET_MASK_X, 0x0b0b);
     write_le_u16(&mut ram, OVERWORLD_OFFSET_MASK_Y, 0x0c0c);
-    write_le_u16(&mut ram, OVERWORLD_SCROLL_X_START, 0x0d0d);
-    write_le_u16(&mut ram, OVERWORLD_SCROLL_X_END, 0x0e0e);
-    write_le_u16(&mut ram, OVERWORLD_SCROLL_Y_END, 0x0f0f);
 
     let mut scroll = WorldScrollState::load_from_ram(&ram);
     assert_eq!(scroll.bg1_x_offset(), 0x0505);
@@ -768,9 +765,6 @@ fn world_scroll_loads_from_and_projects_to_ram() {
     assert_eq!(scroll.overworld_offset_base_y(), 0x0a0a);
     assert_eq!(scroll.overworld_offset_mask_x(), 0x0b0b);
     assert_eq!(scroll.overworld_offset_mask_y(), 0x0c0c);
-    assert_eq!(scroll.scroll_x_start(), 0x0d0d);
-    assert_eq!(scroll.scroll_x_end(), 0x0e0e);
-    assert_eq!(scroll.scroll_y_end(), 0x0f0f);
 
     scroll.set_bg1_x_offset(0x5555);
     scroll.set_bg1_y_offset(0x6666);
@@ -778,9 +772,6 @@ fn world_scroll_loads_from_and_projects_to_ram() {
     scroll.set_overworld_offset_base_y(0xaaaa);
     scroll.set_overworld_offset_mask_x(0xbbbb);
     scroll.set_overworld_offset_mask_y(0xcccc);
-    scroll.set_scroll_x_start(0xdddd);
-    scroll.set_scroll_x_end(0xeeee);
-    scroll.set_scroll_y_end(0xffff);
     scroll.write_to_ram(&mut ram);
 
     assert_eq!(read_le_u16(&ram, BG1_X_OFFSET), 0x5555);
@@ -789,13 +780,6 @@ fn world_scroll_loads_from_and_projects_to_ram() {
     assert_eq!(read_le_u16(&ram, OVERWORLD_OFFSET_BASE_Y), 0xaaaa);
     assert_eq!(read_le_u16(&ram, OVERWORLD_OFFSET_MASK_X), 0xbbbb);
     assert_eq!(read_le_u16(&ram, OVERWORLD_OFFSET_MASK_Y), 0xcccc);
-    // scroll_x_start/x_end/y_end (0x604/0x606/0x602) are C's ow_scroll_vars0, owned by
-    // RoomBoundsState. WorldScrollState only mirrors them on load; write_to_ram must NOT
-    // project them (doing so clobbered RoomBoundsState's camera boundary). They retain the
-    // seeded value.
-    assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_X_START), 0x0d0d);
-    assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_X_END), 0x0e0e);
-    assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_Y_END), 0x0f0f);
 }
 
 #[test]
@@ -809,9 +793,6 @@ fn world_scroll_state_owns_scroll_and_offset_behavior() {
     scroll.set_overworld_offset_base_y(0xaaaa);
     scroll.set_overworld_offset_mask_x(0xbbbb);
     scroll.set_overworld_offset_mask_y(0xcccc);
-    scroll.set_scroll_x_start(0xdddd);
-    scroll.set_scroll_x_end(0xeeee);
-    scroll.set_scroll_y_end(0xffff);
 
     assert_eq!(scroll.bg1_x_offset(), 0);
     assert_eq!(scroll.bg1_y_offset(), 0);
@@ -819,9 +800,6 @@ fn world_scroll_state_owns_scroll_and_offset_behavior() {
     assert_eq!(scroll.overworld_offset_base_y(), 0xaaaa);
     assert_eq!(scroll.overworld_offset_mask_x(), 0xbbbb);
     assert_eq!(scroll.overworld_offset_mask_y(), 0xcccc);
-    assert_eq!(scroll.scroll_x_start(), 0xdddd);
-    assert_eq!(scroll.scroll_x_end(), 0xeeee);
-    assert_eq!(scroll.scroll_y_end(), 0xffff);
 }
 
 #[test]
@@ -834,17 +812,8 @@ fn native_world_scroll_bridge_projects_native_state_over_stale_ram() {
         overworld_offset_base_y: 0x0a0a,
         overworld_offset_mask_x: 0x0b0b,
         overworld_offset_mask_y: 0x0c0c,
-        scroll_x_start: 0x0d0d,
-        scroll_x_end: 0x0e0e,
-        scroll_y_end: 0x0f0f,
     };
     scroll.write_to_ram(&mut ram);
-    // scroll_x_start/x_end/y_end are RoomBoundsState-owned (ow_scroll_vars0); WorldScrollState
-    // only mirrors them on load and no longer projects them, so seed them in RAM for the
-    // load round-trip below to stay consistent.
-    write_le_u16(&mut ram, OVERWORLD_SCROLL_X_START, 0x0d0d);
-    write_le_u16(&mut ram, OVERWORLD_SCROLL_X_END, 0x0e0e);
-    write_le_u16(&mut ram, OVERWORLD_SCROLL_Y_END, 0x0f0f);
 
     write_le_u16(&mut ram, OVERWORLD_OFFSET_BASE_X, 0xcccc);
     write_le_u16(&mut ram, BG1_X_OFFSET, 0xaaaa);
@@ -859,36 +828,6 @@ fn native_world_scroll_bridge_projects_native_state_over_stale_ram() {
     assert_eq!(WorldScrollState::load_from_ram(&ram), scroll);
     assert_eq!(read_le_u16(&ram, BG1_X_OFFSET), 0x1234);
     assert_eq!(read_le_u16(&ram, OVERWORLD_OFFSET_BASE_X), 0x0909);
-}
-
-#[test]
-fn native_world_scroll_bridge_ignores_room_bounds_owned_scroll_words_in_coherence_check() {
-    let mut ram = vec![0; WRAM_SIZE];
-    write_le_u16(&mut ram, OVERWORLD_SCROLL_X_START, 0x0000);
-    write_le_u16(&mut ram, OVERWORLD_SCROLL_X_END, 0x0300);
-    write_le_u16(&mut ram, OVERWORLD_SCROLL_Y_END, 0x091e);
-
-    let mut scroll = WorldScrollState {
-        bg1_x_offset: 0,
-        bg1_y_offset: 0,
-        overworld_offset_base_x: 0,
-        overworld_offset_base_y: 0x0600,
-        overworld_offset_mask_x: 0x007e,
-        overworld_offset_mask_y: 0x03f0,
-        scroll_x_start: 0x2410,
-        scroll_x_end: 0x2510,
-        scroll_y_end: 0x2400,
-    };
-
-    {
-        let mut bridge = NativeWorldScrollBridgeMut::new(&mut scroll, &mut ram);
-        bridge.set_bg1_x_offset(0x0012);
-    }
-
-    assert_eq!(read_le_u16(&ram, BG1_X_OFFSET), 0x0012);
-    assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_X_START), 0x0000);
-    assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_X_END), 0x0300);
-    assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_Y_END), 0x091e);
 }
 
 #[test]

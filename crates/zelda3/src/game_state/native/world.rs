@@ -214,9 +214,6 @@ pub(crate) struct WorldScrollState {
     pub(crate) overworld_offset_base_y: u16,
     pub(crate) overworld_offset_mask_x: u16,
     pub(crate) overworld_offset_mask_y: u16,
-    pub(crate) scroll_x_start: u16,
-    pub(crate) scroll_x_end: u16,
-    pub(crate) scroll_y_end: u16,
 }
 
 impl WorldScrollState {
@@ -228,9 +225,6 @@ impl WorldScrollState {
             overworld_offset_base_y: read_le_u16(ram, OVERWORLD_OFFSET_BASE_Y),
             overworld_offset_mask_x: read_le_u16(ram, OVERWORLD_OFFSET_MASK_X),
             overworld_offset_mask_y: read_le_u16(ram, OVERWORLD_OFFSET_MASK_Y),
-            scroll_x_start: read_le_u16(ram, OVERWORLD_SCROLL_X_START),
-            scroll_x_end: read_le_u16(ram, OVERWORLD_SCROLL_X_END),
-            scroll_y_end: read_le_u16(ram, OVERWORLD_SCROLL_Y_END),
         }
     }
 
@@ -241,13 +235,8 @@ impl WorldScrollState {
         write_le_u16(ram, OVERWORLD_OFFSET_BASE_Y, self.overworld_offset_base_y);
         write_le_u16(ram, OVERWORLD_OFFSET_MASK_X, self.overworld_offset_mask_x);
         write_le_u16(ram, OVERWORLD_OFFSET_MASK_Y, self.overworld_offset_mask_y);
-        // NOTE: OVERWORLD_SCROLL_X_START/X_END/Y_END (0x604/0x606/0x602) are intentionally NOT
-        // projected here. Those bytes are C's `ow_scroll_vars0` (yend/xstart/xend), owned by
-        // RoomBoundsState (y_bounds[1..4]), which writes the camera-boundary values computed by
-        // Overworld_SetCameraBoundaries. WorldScrollState only ever LOADS+READS these (the setters
-        // are test-only), so projecting its frame-start mirror here re-stamped a stale value over
-        // RoomBoundsState's fresh boundary mid-frame (clobbered 0x602 0x031e->0x0320 at frame
-        // 249648), cascading the whole post-249650 divergence. Last-writer-wins now matches C.
+        // The camera boundary words (0x602-0x606, C's `ow_scroll_vars0`) belong to
+        // RoomBoundsState; this state neither models nor projects them.
     }
 
     pub(crate) fn bg1_x_offset(&self) -> u16 {
@@ -276,18 +265,6 @@ impl WorldScrollState {
 
     pub(crate) fn overworld_offset_mask_y(&self) -> u16 {
         self.overworld_offset_mask_y
-    }
-
-    pub(crate) fn scroll_x_start(&self) -> u16 {
-        self.scroll_x_start
-    }
-
-    pub(crate) fn scroll_x_end(&self) -> u16 {
-        self.scroll_x_end
-    }
-
-    pub(crate) fn scroll_y_end(&self) -> u16 {
-        self.scroll_y_end
     }
 
     pub(crate) fn set_bg1_x_offset(&mut self, value: u16) {
@@ -321,18 +298,6 @@ impl WorldScrollState {
 
     pub(crate) fn set_overworld_offset_mask_x(&mut self, value: u16) {
         self.overworld_offset_mask_x = value;
-    }
-
-    pub(crate) fn set_scroll_x_start(&mut self, value: u16) {
-        self.scroll_x_start = value;
-    }
-
-    pub(crate) fn set_scroll_x_end(&mut self, value: u16) {
-        self.scroll_x_end = value;
-    }
-
-    pub(crate) fn set_scroll_y_end(&mut self, value: u16) {
-        self.scroll_y_end = value;
     }
 }
 
@@ -2882,11 +2847,7 @@ impl<'a> NativeWorldScrollBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
-        let mut ram_state = WorldScrollState::load_from_ram(self.ram);
-        ram_state.scroll_x_start = self.state.scroll_x_start;
-        ram_state.scroll_x_end = self.state.scroll_x_end;
-        ram_state.scroll_y_end = self.state.scroll_y_end;
-        debug_assert_eq!(*self.state, ram_state);
+        debug_assert_eq!(*self.state, WorldScrollState::load_from_ram(self.ram));
     }
 
     forward_synced! {

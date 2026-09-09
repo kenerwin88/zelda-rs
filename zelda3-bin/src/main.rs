@@ -105,8 +105,9 @@ use zelda3::{config::parse_config_file_context, ZeldaState, RUN_MAIN, RUN_POLY};
 /// 10 (2026-09-09): the palette theme and sprite system no longer mirror the
 /// dungeon entrance backup. 11 (2026-09-09): the world transient no longer
 /// duplicates the HUD item slot, the travel-bird byte, or the layer masks,
-/// and the entrance id is its original byte.
-const PLAY_CRASH_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSPC11";
+/// and the entrance id is its original byte. 12 (2026-09-09): the world
+/// scroll state no longer mirrors the room-bound words.
+const PLAY_CRASH_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSPC12";
 const ACTION_TILE_X: [i16; 4] = [7, 7, -3, 16];
 const ACTION_TILE_Y: [i16; 4] = [6, 24, 12, 12];
 pub(crate) const TRACE_MAIN_MODULE_INDEX: usize = 0x10;
