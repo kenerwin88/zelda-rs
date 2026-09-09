@@ -19,7 +19,7 @@
   },
   "project": "routes/full_run",
   "promoted": {
-    "binary_sha256": "842d219ed30d32a055aecd3237daadd31c9678fad7d084c4351f2dd7bbacd8e7",
+    "binary_sha256": "b436fc02abba91df657d2d41ea6871c057bd67fdc92d8f69692ea73d45e123df",
     "cached_av_receipt": {
       "candidate_ledger_sha256": "3d52711c51a4f01031bd336aa582d4b6a316c71199710d3354ef015fcca1440c",
       "frames": 1581079,
@@ -27,13 +27,13 @@
         "video",
         "audio"
       ],
-      "manifest_sha256": "75c0e3d370cc326e36637db603d5f4d54f16d8d81b9b10f4a39d31201c0aa187",
+      "manifest_sha256": "d62205a80a22a4acf14a2f0feb5e5160bf66407dee359cda4af730d3648a5bed",
       "oracle_cache_key": "ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18",
       "oracle_cache_manifest_sha256": "4c7f88fbf327a4b3af7d3f8614d82ebb2318f11b607798d5dddb4a97b7fe2715",
-      "receipt_path": "receipts/bounds-full-av.manifest.json",
-      "run": "/Users/missingno/Documents/zelda3-rs/target/scroll-bounds-owner/bounds-full-av"
+      "receipt_path": "receipts/debris-full-av.manifest.json",
+      "run": "/Users/missingno/Documents/zelda3-rs/target/scanner-and-transient-debris/debris-full-av"
     },
-    "commit": "ec8934edcb062f67cb109d576382a48b8b111d02",
+    "commit": "2f46e87e462bfa63a0de8452889e3c2c1da59a6f",
     "kind": "cached_av_pass",
     "last_exact_audio_frame": 1581078,
     "last_exact_engine_state_frame": 1581078,
