@@ -130,17 +130,19 @@ pub(crate) use system::{
     MsuResumeInfoState, MsuResumeSlot, NativeSystemSignalsBridgeMut, SystemSignalsState,
     SystemWorkArea,
 };
+#[cfg(test)]
+pub(crate) use world::BirdTravelDestinationState;
 pub(crate) use world::{
-    BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
-    NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
-    NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
-    NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
-    NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
-    NativeOverworldTransitionBridgeMut, NativeRoomBoundsBridgeMut, NativeWeatherVaneBridgeMut,
-    NativeWorldCameraBoundariesBridgeMut, NativeWorldLocationBridgeMut,
-    NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut,
-    NativeWorldTransientBridgeMut, OverworldConfigTableRead, OverworldMap16Decode,
-    OverworldMap16DecodeScratch, OverworldMap16SourcePage, WorldLocationState, WorldState,
+    NativeBirdTravelDestinationBridgeMut, NativeOverworldConfigTableBridgeMut,
+    NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
+    NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
+    NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
+    NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut,
+    NativeRoomBoundsBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldCameraBoundariesBridgeMut,
+    NativeWorldLocationBridgeMut, NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut,
+    NativeWorldScrollBridgeMut, NativeWorldTransientBridgeMut, OverworldConfigTableRead,
+    OverworldMap16Decode, OverworldMap16DecodeScratch, OverworldMap16SourcePage,
+    WorldLocationState, WorldState,
 };
 pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 

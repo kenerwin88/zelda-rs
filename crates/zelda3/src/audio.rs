@@ -529,6 +529,7 @@ impl ZeldaState {
         self.audio.modern.queue.emit(command);
     }
 
+    #[cfg(test)]
     pub(crate) fn zelda_mark_vwf_glyph_tone_crossed_vblank(&mut self) {
         self.audio.modern.queue.mark_vwf_glyph_tone_crossed_vblank();
     }

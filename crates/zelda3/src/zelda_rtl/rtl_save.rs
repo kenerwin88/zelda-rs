@@ -179,6 +179,7 @@ impl ZeldaState {
         self.select_file_menu_mut().set_name_column(value);
     }
 
+    #[cfg(test)]
     pub(crate) fn set_select_file_name_cursor_y(&mut self, value: u8) {
         self.select_file_menu_mut().set_name_cursor_y(value);
     }

@@ -137,6 +137,7 @@ impl FollowerRuntimeState {
         self.reacquire_timer_low
     }
 
+    #[cfg(test)]
     pub(crate) fn reacquire_timer(&self) -> u16 {
         u16::from(self.reacquire_timer_low) | (u16::from(self.tail_write_index) << 8)
     }

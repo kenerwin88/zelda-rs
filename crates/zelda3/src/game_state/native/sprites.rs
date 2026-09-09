@@ -2994,6 +2994,7 @@ impl SpriteDrawHitboxWorkState {
         self.draw_position_y
     }
 
+    #[cfg(test)]
     pub(crate) fn low_position_word(&self) -> u16 {
         u16::from(self.draw_position_x) | (u16::from(self.draw_position_y) << 8)
     }
@@ -3188,6 +3189,7 @@ impl PrizeDropCycleState {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn next_index_for_slot(&self, slot: usize) -> u8 {
         self.next_indices.get(slot).copied().unwrap_or(0)
     }

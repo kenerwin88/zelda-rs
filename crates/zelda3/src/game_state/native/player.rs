@@ -897,6 +897,7 @@ impl TileDetectionState {
         self.horizontal_ledge
     }
 
+    #[cfg(test)]
     pub(crate) fn ledge_mask(&self) -> u8 {
         self.vertical_ledge | self.horizontal_ledge
     }
@@ -1001,6 +1002,7 @@ impl TileDetectionState {
         self.interaction_scratch_x = value;
     }
 
+    #[cfg(test)]
     pub(crate) fn set_diagonal_tile(&mut self, value: u16) {
         self.diagonal_tile = value;
     }
@@ -1009,11 +1011,13 @@ impl TileDetectionState {
         self.diagonal_tile = 0;
     }
 
+    #[cfg(test)]
     pub(crate) fn or_diagonal_tile(&mut self, value: u16) -> u16 {
         self.diagonal_tile |= value;
         self.diagonal_tile
     }
 
+    #[cfg(test)]
     pub(crate) fn set_stair_tile(&mut self, value: u8) {
         self.stair_tile = value;
     }
@@ -1022,6 +1026,7 @@ impl TileDetectionState {
         self.stair_tile = 0;
     }
 
+    #[cfg(test)]
     pub(crate) fn or_stair_tile(&mut self, value: u8) {
         self.stair_tile |= value;
     }
@@ -1030,6 +1035,7 @@ impl TileDetectionState {
         self.block_flags = 0;
     }
 
+    #[cfg(test)]
     pub(crate) fn or_block_flags(&mut self, value: u16) -> u16 {
         self.block_flags |= value;
         self.block_flags
@@ -1067,6 +1073,7 @@ impl TileDetectionState {
         self.deepwater = 0;
     }
 
+    #[cfg(test)]
     pub(crate) fn or_deepwater(&mut self, value: u16) -> u16 {
         self.deepwater |= value;
         self.deepwater
@@ -1076,6 +1083,7 @@ impl TileDetectionState {
         self.normal_tiles = 0;
     }
 
+    #[cfg(test)]
     pub(crate) fn or_normal_tiles(&mut self, value: u16) -> u16 {
         self.normal_tiles |= value;
         self.normal_tiles
@@ -1085,6 +1093,7 @@ impl TileDetectionState {
         self.misc_tiles = 0;
     }
 
+    #[cfg(test)]
     pub(crate) fn or_misc_tiles(&mut self, value: u16) -> u16 {
         self.misc_tiles |= value;
         self.misc_tiles
@@ -1094,6 +1103,7 @@ impl TileDetectionState {
         self.thick_grass = 0;
     }
 
+    #[cfg(test)]
     pub(crate) fn or_thick_grass(&mut self, value: u16) -> u16 {
         self.thick_grass |= value;
         self.thick_grass
@@ -1103,6 +1113,7 @@ impl TileDetectionState {
         self.vertical_ledge = 0;
     }
 
+    #[cfg(test)]
     pub(crate) fn or_vertical_ledge(&mut self, value: u8) {
         self.vertical_ledge |= value;
     }
@@ -1111,6 +1122,7 @@ impl TileDetectionState {
         self.horizontal_ledge = 0;
     }
 
+    #[cfg(test)]
     pub(crate) fn or_horizontal_ledge(&mut self, value: u8) {
         self.horizontal_ledge |= value;
     }
@@ -1151,6 +1163,7 @@ impl TileDetectionState {
         self.chest = 0;
     }
 
+    #[cfg(test)]
     pub(crate) fn or_chest(&mut self, value: u16) -> u16 {
         self.chest |= value;
         self.chest
@@ -1198,6 +1211,7 @@ impl TileDetectionState {
         self.spike_floor_and_triggers = 0;
     }
 
+    #[cfg(test)]
     pub(crate) fn or_spike_floor_and_triggers(&mut self, value: u8) {
         self.spike_floor_and_triggers |= value;
     }
@@ -1206,6 +1220,7 @@ impl TileDetectionState {
         self.dashable_tiles = 0;
     }
 
+    #[cfg(test)]
     pub(crate) fn or_dashable_tiles(&mut self, value: u8) {
         self.dashable_tiles |= value;
     }
@@ -1222,6 +1237,7 @@ impl TileDetectionState {
         self.slope_collision_bits = 0;
     }
 
+    #[cfg(test)]
     pub(crate) fn or_slope_collision_bits(&mut self, value: u16) -> u16 {
         self.slope_collision_bits |= value;
         self.slope_collision_bits
@@ -1239,6 +1255,7 @@ impl TileDetectionState {
         self.collision_bits = (self.collision_bits & 0xff00) | u16::from(value);
     }
 
+    #[cfg(test)]
     pub(crate) fn or_collision_bits(&mut self, value: u16) -> u16 {
         self.collision_bits |= value;
         self.collision_bits
@@ -1264,6 +1281,7 @@ impl TileDetectionState {
         self.inroom_staircase = 0;
     }
 
+    #[cfg(test)]
     pub(crate) fn or_inroom_staircase(&mut self, bits: u16) -> u16 {
         self.inroom_staircase |= bits;
         self.inroom_staircase
@@ -1789,6 +1807,7 @@ impl SwimAccelerationState {
         axis_word(self.acceleration, offset)
     }
 
+    #[cfg(test)]
     pub(crate) fn has_any_acceleration(&self) -> bool {
         self.acceleration[0] | self.acceleration[1] != 0
     }

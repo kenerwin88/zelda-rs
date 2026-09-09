@@ -1478,6 +1478,7 @@ impl SpriteHistoryScratchState {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn write_moldorm_history_to_ram(&self, ram: &mut [u8]) {
         write_split_word_bank(
             ram,
@@ -1493,6 +1494,7 @@ impl SpriteHistoryScratchState {
         );
     }
 
+    #[cfg(test)]
     pub(crate) fn write_swamola_target_to_ram(&self, ram: &mut [u8]) {
         write_split_word_bank(
             ram,
@@ -1508,6 +1510,7 @@ impl SpriteHistoryScratchState {
         );
     }
 
+    #[cfg(test)]
     pub(crate) fn write_lanmola_segment_motion_to_ram(&self, ram: &mut [u8]) {
         write_byte_bank(ram, BEAMOS_LASER_HISTORY_X_HI, &self.lanmola_z_offsets);
         write_byte_bank(ram, BEAMOS_LASER_HISTORY_Y_HI, &self.lanmola_directions);
@@ -2465,6 +2468,7 @@ impl EntranceEffectState {
             .copy_from_slice(&self.fireball_timers[..BLAST_WALL_FIREBALL_SLOTS]);
     }
 
+    #[cfg(test)]
     pub(crate) fn skull_woods_fire(&self) -> SkullWoodsFireState {
         SkullWoodsFireState {
             entrance_opening_started: self.state,
@@ -2475,6 +2479,7 @@ impl EntranceEffectState {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn blast_wall(&self) -> BlastWallState {
         BlastWallState {
             entry_state: self.state,
@@ -2657,6 +2662,7 @@ impl SkullWoodsFireState {
         write_le_u16(ram, SKULL_WOODS_FIRE_OUTER_Y, self.outer_y);
     }
 
+    #[cfg(test)]
     pub(crate) fn has_started_entrance_opening(&self) -> bool {
         self.entrance_opening_started != 0
     }

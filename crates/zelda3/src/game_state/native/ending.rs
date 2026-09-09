@@ -149,6 +149,7 @@ impl AttractSceneState {
         self.x_base as u8
     }
 
+    #[cfg(test)]
     pub(crate) fn x_base_word(&self) -> u16 {
         self.x_base
     }
@@ -749,6 +750,7 @@ impl<'a> NativeAttractSceneBridgeMut<'a> {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn set_intro_step_index(&mut self, value: u8) {
         self.write_byte(INTRO_STEP_INDEX, value);
     }

@@ -181,6 +181,7 @@ impl ZeldaState {
         self.overworld_event_info_mut().set_event_bits(screen, mask);
     }
 
+    #[cfg(test)]
     pub(crate) fn set_overworld_event_info(&mut self, screen: usize, value: u8) {
         self.overworld_event_info_mut()
             .set_event_info(screen, value);

@@ -371,6 +371,7 @@ impl<'a> NativePolyRuntimeBridgeMut<'a> {
         next
     }
 
+    #[cfg(test)]
     pub(crate) fn add_angles(&mut self, angle_a: u8, angle_b: u8) {
         self.runtime.angle_a = self.runtime.angle_a.wrapping_add(angle_a);
         self.runtime.angle_b = self.runtime.angle_b.wrapping_add(angle_b);
@@ -387,6 +388,7 @@ impl<'a> NativePolyRuntimeBridgeMut<'a> {
         self.sync();
     }
 
+    #[cfg(test)]
     pub(crate) fn set_base_position(&mut self, x: u8, y: u8) {
         self.runtime.base_x = x;
         self.runtime.base_y = y;

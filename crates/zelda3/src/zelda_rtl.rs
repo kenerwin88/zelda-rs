@@ -28,12 +28,12 @@ use crate::game_state::constants::{
     VWF_ARR,
 };
 use crate::game_state::{
-    lanmola_flat_trail_entry_from_ram, ArmosKnightHomePositionMut, BirdTravelDestinationState,
-    BossHomePositionRead, CachedSpriteRead, CompatibilityBytesView, CompatibilityBytesViewMut,
-    DungeonStairList, FollowerLinkState, GameState, GarnishSlotMut, GarnishSlotView,
-    GraphicsDecompressionScratch, HappinessPondRupeeSnapshot, HudStateRead, HudTilemapState,
-    IntroActorRead, LanmolaFlatTrailEntry, LinkDmaSourceSlot, LinkDmaSources, MsuResumeInfoState,
-    MsuResumeSlot, MultiselectChoiceRead, NativeAncillaSlotBridgeMut, NativeAncillaSlotView,
+    lanmola_flat_trail_entry_from_ram, ArmosKnightHomePositionMut, BossHomePositionRead,
+    CachedSpriteRead, CompatibilityBytesView, CompatibilityBytesViewMut, DungeonStairList,
+    FollowerLinkState, GameState, GarnishSlotMut, GarnishSlotView, GraphicsDecompressionScratch,
+    HappinessPondRupeeSnapshot, HudStateRead, HudTilemapState, IntroActorRead,
+    LanmolaFlatTrailEntry, LinkDmaSourceSlot, LinkDmaSources, MsuResumeInfoState, MsuResumeSlot,
+    MultiselectChoiceRead, NativeAncillaSlotBridgeMut, NativeAncillaSlotView,
     NativeArcheryGameBridgeMut, NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
     NativeBeamosLaserHistoryBridgeMut, NativeBg1MovementAccumulatorBridgeMut,
     NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut,
@@ -11406,7 +11406,11 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn bird_travel_destination(&self, slot: usize) -> BirdTravelDestinationState {
+    #[cfg(test)]
+    pub(crate) fn bird_travel_destination(
+        &self,
+        slot: usize,
+    ) -> crate::game_state::BirdTravelDestinationState {
         self.game_state
             .world
             .overworld
@@ -11588,6 +11592,7 @@ impl ZeldaState {
         self.game_state.display.palette_provenance = palette_provenance;
     }
 
+    #[cfg(test)]
     pub(crate) fn project_native_game_state_to_ram(&mut self) {
         self.game_state.write_to_ram(&mut self.ram);
     }

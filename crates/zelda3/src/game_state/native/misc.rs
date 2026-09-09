@@ -32,6 +32,7 @@ impl ScratchCounterState {
         self.value
     }
 
+    #[cfg(test)]
     pub(crate) fn as_usize(&self) -> usize {
         usize::from(self.value())
     }
@@ -1175,6 +1176,7 @@ impl<'a> NativeSpriteBattleBridgeMut<'a> {
         self.sync();
     }
 
+    #[cfg(test)]
     pub(crate) fn set_sprites_killed(&mut self, value: u8) {
         self.sprite_battle.sprites_killed = value;
         self.sync();
@@ -1185,6 +1187,7 @@ impl<'a> NativeSpriteBattleBridgeMut<'a> {
         self.sync();
     }
 
+    #[cfg(test)]
     pub(crate) fn set_times_hurt_by_sprites(&mut self, value: u8) {
         self.sprite_battle.times_hurt_by_sprites = value;
         self.sync();
@@ -1211,6 +1214,7 @@ impl<'a> NativeSpriteBattleBridgeMut<'a> {
         self.sync();
     }
 
+    #[cfg(test)]
     pub(crate) fn set_item_drop_counter(&mut self, value: u8) {
         self.sprite_battle.item_drop_counter = value;
         self.sync();

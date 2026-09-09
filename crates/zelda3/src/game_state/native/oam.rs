@@ -191,6 +191,7 @@ impl OamState {
         self.current_pointer = self.current_pointer.wrapping_add(value);
     }
 
+    #[cfg(test)]
     pub(crate) fn subtract_current_pointer(&mut self, value: u16) {
         self.current_pointer = self.current_pointer.wrapping_sub(value);
     }
@@ -203,6 +204,7 @@ impl OamState {
         self.current_extended_pointer = self.current_extended_pointer.wrapping_add(value);
     }
 
+    #[cfg(test)]
     pub(crate) fn subtract_current_extended_pointer(&mut self, value: u16) {
         self.current_extended_pointer = self.current_extended_pointer.wrapping_sub(value);
     }

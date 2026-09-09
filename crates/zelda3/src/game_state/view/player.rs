@@ -9,6 +9,7 @@ impl<'a> RamPlayerStateViewMut<'a> {
         Self { ram }
     }
 
+    #[cfg(test)]
     pub(crate) fn set_direction_lock(&mut self, value: u8) {
         self.ram[LINK_CANT_CHANGE_DIRECTION] = value;
     }

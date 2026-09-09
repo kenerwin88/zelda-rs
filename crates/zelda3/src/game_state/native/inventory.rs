@@ -320,14 +320,17 @@ impl<'a> NativeInventoryItemsBridgeMut<'a> {
         self.set_inventory_item(4, value);
     }
 
+    #[cfg(test)]
     pub(crate) fn set_ice_rod(&mut self, value: u8) {
         self.set_inventory_item(6, value);
     }
 
+    #[cfg(test)]
     pub(crate) fn set_bombos(&mut self, value: u8) {
         self.set_inventory_item(7, value);
     }
 
+    #[cfg(test)]
     pub(crate) fn set_ether(&mut self, value: u8) {
         self.set_inventory_item(8, value);
     }
@@ -336,14 +339,17 @@ impl<'a> NativeInventoryItemsBridgeMut<'a> {
         self.set_inventory_item(12, value);
     }
 
+    #[cfg(test)]
     pub(crate) fn set_mirror(&mut self, value: u8) {
         self.set_inventory_item(19, value);
     }
 
+    #[cfg(test)]
     pub(crate) fn set_boots(&mut self, value: u8) {
         self.set_inventory_item(21, value);
     }
 
+    #[cfg(test)]
     pub(crate) fn set_moon_pearl(&mut self, value: u8) {
         self.set_inventory_item(23, value);
     }
@@ -966,6 +972,7 @@ impl<'a> NativePlayerResourcesBridgeMut<'a> {
         self.sync();
     }
 
+    #[cfg(test)]
     pub(crate) fn set_crystal_flags(&mut self, flags: u8) {
         self.resources.crystal_flags = flags;
         self.sync();
@@ -1065,6 +1072,7 @@ impl<'a> NativePlayerResourcesBridgeMut<'a> {
         self.sync();
     }
 
+    #[cfg(test)]
     pub(crate) fn add_rupees_goal(&mut self, value: u16) -> u16 {
         self.resources.rupees_goal = self.resources.rupees_goal.wrapping_add(value);
         let rupees = self.resources.rupees_goal;

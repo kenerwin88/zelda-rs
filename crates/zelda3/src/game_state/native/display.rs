@@ -253,6 +253,7 @@ impl PaletteFilterState {
         self.fixed_color_blue
     }
 
+    #[cfg(test)]
     pub(crate) fn fixed_color_component(&self, index: usize) -> u8 {
         match index {
             0 => self.fixed_color_red,
@@ -2757,6 +2758,7 @@ impl PpuScrollCopyState {
         self.mapbak_bg1_y_offset = value;
     }
 
+    #[cfg(test)]
     pub(crate) fn set_mapbak_cgwsel(&mut self, value: u8) {
         Self::set_low_byte(&mut self.mapbak_cgwsel, value);
     }
@@ -3451,6 +3453,7 @@ impl DisplayState {
         &ram[OAM_BUF..]
     }
 
+    #[cfg(test)]
     pub(crate) fn mosaic_target_level_word(&self) -> u16 {
         u16::from(self.mosaic_target_level)
     }
@@ -3557,6 +3560,7 @@ impl DisplayState {
             .unwrap_or(0)
     }
 
+    #[cfg(test)]
     pub(crate) fn link_dma_source(&self, slot: LinkDmaSourceSlot) -> u16 {
         self.link_dma_sources.source(slot)
     }
@@ -3745,6 +3749,7 @@ impl DisplayState {
         self.star_tile_restore_phase = 0;
     }
 
+    #[cfg(test)]
     pub(crate) fn star_tile_restore_source_offsets(&self) -> (usize, usize) {
         if self.star_tile_restore_phase != 0 {
             (32, 0)
@@ -4573,6 +4578,7 @@ impl<'a> NativeSpotlightHdmaBridgeMut<'a> {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn restore_dynamic_table_from_saveload_buffer(&mut self, count: usize) {
         self.sync_dynamic_table_words_from_ram(SAVELOAD_HDMA_TABLE, count);
     }
@@ -4595,6 +4601,7 @@ impl<'a> NativeSpotlightHdmaBridgeMut<'a> {
         self.sync_dynamic_table_words_from_ram(HDMA_TABLE_DYNAMIC, n / 2);
     }
 
+    #[cfg(test)]
     pub(crate) fn project_dynamic_table_to_reserved_hdma_table(&mut self, count: usize) {
         self.project_dynamic_table_words_to_ram(RESERVED_HDMA_TABLE, count);
     }

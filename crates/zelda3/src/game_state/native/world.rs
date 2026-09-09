@@ -247,6 +247,7 @@ impl WorldScrollState {
         self.bg1_y_offset
     }
 
+    #[cfg(test)]
     pub(crate) fn bg1_offset_mask(&self) -> u16 {
         self.bg1_x_offset | self.bg1_y_offset
     }
@@ -280,6 +281,7 @@ impl WorldScrollState {
         self.bg1_y_offset = y;
     }
 
+    #[cfg(test)]
     pub(crate) fn clear_bg1_offsets(&mut self) {
         self.set_bg1_offsets(0, 0);
     }
@@ -484,10 +486,12 @@ impl WorldCameraBoundariesState {
         self.scroll_counters[ya]
     }
 
+    #[cfg(test)]
     pub(crate) fn spexit_camera_y_scroll_low(&self) -> u16 {
         self.special_exit_camera_y_low
     }
 
+    #[cfg(test)]
     pub(crate) fn spexit_camera_x_scroll_low(&self) -> u16 {
         self.special_exit_camera_x_low
     }
@@ -1012,6 +1016,7 @@ impl OverworldEventInfoState {
         self.info.get(screen).copied().unwrap_or_default()
     }
 
+    #[cfg(test)]
     pub(crate) fn has_event_bits(&self, screen: usize, mask: u8) -> bool {
         self.event_info(screen) & mask != 0
     }
@@ -1448,6 +1453,7 @@ impl OverworldScrollDeltaState {
         u16::from(self.bytes[0]) | (u16::from(self.bytes[1]) << 8)
     }
 
+    #[cfg(test)]
     pub(crate) fn horizontal_delta_word(&self) -> u16 {
         u16::from(self.bytes[1]) | (u16::from(self.bytes[2]) << 8)
     }
@@ -1753,6 +1759,7 @@ impl OverworldTransitionState {
         self.screen_transition as u8
     }
 
+    #[cfg(test)]
     pub(crate) fn screen_transition_word(&self) -> u16 {
         self.screen_transition
     }
@@ -1976,6 +1983,7 @@ impl WorldRegionState {
         self.overworld_area_index
     }
 
+    #[cfg(test)]
     pub(crate) fn spexit_area_index(&self) -> u16 {
         self.special_exit_area_index
     }
@@ -2248,6 +2256,7 @@ impl WorldTransientState {
 
     /// Push the write-through stripe window. Only round-trip tests use this;
     /// production writes go straight to RAM in the bridge setter.
+    #[cfg(test)]
     pub(crate) fn write_overworld_map16_stripe_to_ram(&self, ram: &mut [u8]) {
         for (index, tile) in self.overworld_map16_stripe.iter().enumerate() {
             write_le_u16(ram, DUNG_REPLACEMENT_TILE_STATE + index * 2, *tile);
@@ -2256,6 +2265,7 @@ impl WorldTransientState {
 
     /// Push the write-through door-animation word (0x690). Only the owning setter and
     /// round-trip tests use this; it is deliberately absent from write_to_ram.
+    #[cfg(test)]
     pub(crate) fn write_door_animation_step_to_ram(&self, ram: &mut [u8]) {
         write_le_u16(ram, DOOR_ANIMATION_STEP_INDICATOR, self.door_animation_step);
     }
@@ -2339,6 +2349,7 @@ impl WorldTransientState {
         self.allow_scroll_z
     }
 
+    #[cfg(test)]
     pub(crate) fn milestone_item_gfx_swap_countdown(&self) -> u8 {
         self.milestone_item_graphics_countdown
     }
@@ -2596,6 +2607,7 @@ impl WorldTransientState {
         self.overworld_map16_stripe[index] = value;
     }
 
+    #[cfg(test)]
     pub(crate) fn decrement_milestone_item_gfx_swap_countdown(&mut self) {
         self.milestone_item_graphics_countdown =
             self.milestone_item_graphics_countdown.wrapping_sub(1);

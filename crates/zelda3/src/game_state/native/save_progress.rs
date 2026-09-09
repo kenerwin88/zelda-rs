@@ -123,6 +123,7 @@ impl SaveProgressState {
         u16::from(self.palace_index_x2)
     }
 
+    #[cfg(test)]
     pub(crate) fn palace_index(&self) -> usize {
         usize::from(self.palace_index_x2() >> 1)
     }
@@ -139,6 +140,7 @@ impl SaveProgressState {
         self.progress_flags
     }
 
+    #[cfg(test)]
     pub(crate) fn progress_flags_has(&self, mask: u8) -> bool {
         self.progress_flags() & mask != 0
     }
@@ -151,6 +153,7 @@ impl SaveProgressState {
         self.dark_world_state
     }
 
+    #[cfg(test)]
     pub(crate) fn dark_world_bit6(&self) -> u8 {
         (self.dark_world_state() >> 6) & 1
     }

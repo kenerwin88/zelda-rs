@@ -386,6 +386,7 @@ impl SystemSignalsState {
         self.raw_sfx_pan_value = value;
     }
 
+    #[cfg(test)]
     pub(crate) fn set_game_over_check_flag(&mut self, value: u8) {
         self.game_over_check_flag = value;
     }
