@@ -66,4 +66,17 @@ in 327.59 seconds. Both reached WRAM goldens match, and the complete endpoint
 is byte-identical to the preceding promoted tile-behavior build, SHA-256
 `dd45975cee5acdd270d1b0c74c5d38f1ba3ce3bd7e0af648264b8f77e95f244d`.
 
-Full cold route parity is required before merging this source to main.
+Source commit `d0e92488a26087257a71d52053e608c2b60b07e3` passed the full
+cold route: 1,581,079 consecutive exact audio/video frames in 2,551.67 seconds
+(42.5 minutes), starting at frame zero with no frame limit or checkpoint
+resume. The comparison used the immutable Snes9x oracle cache; it did not
+reload the live core. No RNG drift was reported. The normal source commit
+hook also passed its 500-frame standalone and fresh 180-frame live Snes9x
+checks.
+
+All four WRAM goldens (60,000, 150,470, 500,000, and 732,000) match. The full
+131,072-byte final WRAM image is identical to the preceding promoted build,
+SHA-256:
+`316193798ccb2f771546b25443df7d417bddac8a7cac65326fa189c1264fbdb6`.
+The promoted receipt is
+`routes/full_run/receipts/tile-definitions-full-av.manifest.json`.

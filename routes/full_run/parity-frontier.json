@@ -19,7 +19,7 @@
   },
   "project": "routes/full_run",
   "promoted": {
-    "binary_sha256": "da8d26f66592110012c4959ecf5c7a790945f83c647388c200fe7213777195e4",
+    "binary_sha256": "e1233c7c4e6d9204c4117a462a210bbfffc5a9e2a70327dd13c1a9cf41797117",
     "cached_av_receipt": {
       "candidate_ledger_sha256": "3d52711c51a4f01031bd336aa582d4b6a316c71199710d3354ef015fcca1440c",
       "frames": 1581079,
@@ -27,13 +27,13 @@
         "video",
         "audio"
       ],
-      "manifest_sha256": "b35911c6589ba2f52ca1ae2d1a7b141d6197219ba8976ef32163ee898bd88b39",
+      "manifest_sha256": "1f431de2e13584995fdfd99e7645bb824bfcd1e3362d145fe1d9ad64c4ed6600",
       "oracle_cache_key": "ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18",
       "oracle_cache_manifest_sha256": "4c7f88fbf327a4b3af7d3f8614d82ebb2318f11b607798d5dddb4a97b7fe2715",
-      "receipt_path": "receipts/tile-behavior-full-av.manifest.json",
-      "run": "/Users/missingno/Documents/zelda3-rs/target/native-tile-behavior/tile-behavior-full-av"
+      "receipt_path": "receipts/tile-definitions-full-av.manifest.json",
+      "run": "/Users/missingno/Documents/zelda3-rs/target/native-tile-definitions/tile-definitions-full-av"
     },
-    "commit": "d979dddbd08b4365a96da63a08124be7d2e309e7",
+    "commit": "d0e92488a26087257a71d52053e608c2b60b07e3",
     "kind": "cached_av_pass",
     "last_exact_audio_frame": 1581078,
     "last_exact_engine_state_frame": 1581078,
