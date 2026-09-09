@@ -23,7 +23,7 @@ pub(super) enum SelectedGameEntranceContinuation {
 
 impl ZeldaState {
     pub fn parity_probe_direct_entrance(&mut self, entrance_index: u16) -> u16 {
-        self.set_which_entrance(entrance_index);
+        self.set_which_entrance_word(entrance_index);
         self.Dungeon_LoadEntrance();
         self.game_state.dungeon.room_tracking.room_index2_word()
     }
@@ -109,7 +109,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_LoadAndDrawEntranceRoom(&mut self, room: u8) {
-        self.set_which_entrance_byte(room);
+        self.set_which_entrance(room);
         self.Dungeon_LoadEntrance();
         self.dungeon_torch_mut().clear_lit_torches();
         self.dungeon_torch_mut().clear_dungeon_dark_with_lantern();
@@ -187,7 +187,8 @@ impl ZeldaState {
                 .save_progress
                 .which_starting_point() as usize;
             let entrance = self.asset_u8(44, i);
-            self.set_which_entrance(entrance as u16);
+            // The original stores the starting-point entrance as a word.
+            self.set_which_entrance_word(u16::from(entrance));
             (i, true)
         } else {
             (

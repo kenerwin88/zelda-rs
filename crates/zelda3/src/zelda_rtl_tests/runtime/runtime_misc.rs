@@ -12,7 +12,7 @@ fn owns_oracle_compared_memory_regions() {
 }
 
 #[test]
-fn screen_layer_helpers_keep_world_transient_layer_copy_coherent() {
+fn screen_layer_helpers_write_the_display_owner_through() {
     let mut state = ZeldaState::new();
     state.ram[TM_COPY] = 0x15;
     state.ram[TS_COPY] = 0x00;
@@ -24,7 +24,6 @@ fn screen_layer_helpers_keep_world_transient_layer_copy_coherent() {
 
     assert_eq!(state.game_state.display.main_screen_layers, 0x16);
     assert_eq!(state.game_state.display.sub_screen_layers, 0x01);
-    assert_eq!(state.game_state.world.transient.tilemap_layer_copy, 0x0116);
     assert_eq!(state.ram[TM_COPY], 0x16);
     assert_eq!(state.ram[TS_COPY], 0x01);
     state.assert_native_display_state_matches_ram();

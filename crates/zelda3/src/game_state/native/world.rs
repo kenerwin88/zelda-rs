@@ -1948,7 +1948,7 @@ pub(crate) struct WorldRegionState {
     pub(crate) rng_seed: u8,
     pub(crate) dark_world_region_index: u8,
     pub(crate) area_changed_flag: u8,
-    pub(crate) entrance_id: u16,
+    pub(crate) entrance_id: u8,
     pub(crate) overworld_entrance_value: u16,
 }
 
@@ -1964,7 +1964,7 @@ impl WorldRegionState {
             rng_seed: ram_byte(ram, RNG_SEED),
             dark_world_region_index: ram_byte(ram, IS_IN_DARK_WORLD_FLAG),
             area_changed_flag: ram_byte(ram, FLAG_OVERWORLD_AREA_CHANGED),
-            entrance_id: read_le_u16(ram, WHICH_ENTRANCE),
+            entrance_id: ram_byte(ram, WHICH_ENTRANCE),
             overworld_entrance_value: read_le_u16(ram, OW_ENTRANCE_VALUE),
         }
     }
@@ -1983,7 +1983,7 @@ impl WorldRegionState {
         ram[RNG_SEED] = self.rng_seed;
         ram[IS_IN_DARK_WORLD_FLAG] = self.dark_world_region_index;
         ram[FLAG_OVERWORLD_AREA_CHANGED] = self.area_changed_flag;
-        write_le_u16(ram, WHICH_ENTRANCE, self.entrance_id);
+        ram[WHICH_ENTRANCE] = self.entrance_id;
         write_le_u16(ram, OW_ENTRANCE_VALUE, self.overworld_entrance_value);
     }
 
@@ -2043,7 +2043,7 @@ impl WorldRegionState {
         self.area_changed_flag != 0
     }
 
-    pub(crate) fn which_entrance(&self) -> u16 {
+    pub(crate) fn which_entrance(&self) -> u8 {
         self.entrance_id
     }
 
@@ -2059,12 +2059,8 @@ impl WorldRegionState {
         self.dark_world_region_index = value;
     }
 
-    pub(crate) fn set_which_entrance(&mut self, value: u16) {
+    pub(crate) fn set_which_entrance(&mut self, value: u8) {
         self.entrance_id = value;
-    }
-
-    pub(crate) fn set_which_entrance_byte(&mut self, value: u8) {
-        self.entrance_id = (self.entrance_id & 0xff00) | u16::from(value);
     }
 
     pub(crate) fn set_overworld_area_index(&mut self, value: u8) {
@@ -2141,17 +2137,14 @@ pub(crate) struct WorldTransientState {
     pub(crate) overworld_hole_tilemap_position: u16,
     pub(crate) overworld_bomb_tile_sweep_x: u16,
     pub(crate) overworld_bomb_tile_sweep_y_end: u16,
-    pub(crate) hud_current_item_x: u8,
     pub(crate) door_animation_step: u16,
     pub(crate) room_transitioning_flags: u8,
-    pub(crate) travel_bird_flag: u8,
     pub(crate) tile_interaction_shared_flag: u8,
     pub(crate) hud_floor_changed_timer: u8,
     pub(crate) quadrant_fullsize_x: u8,
     pub(crate) quadrant_fullsize_y: u8,
     pub(crate) cached_quadrant_fullsize_x: u8,
     pub(crate) cached_quadrant_fullsize_y: u8,
-    pub(crate) tilemap_layer_copy: u16,
     pub(crate) special_exit_tilemap_layer_copy: u16,
     pub(crate) exit_tilemap_layer_copy: u16,
     pub(crate) move_overlay_counter: u8,
@@ -2177,17 +2170,14 @@ impl Default for WorldTransientState {
             overworld_hole_tilemap_position: 0,
             overworld_bomb_tile_sweep_x: 0,
             overworld_bomb_tile_sweep_y_end: 0,
-            hud_current_item_x: 0,
             door_animation_step: 0,
             room_transitioning_flags: 0,
-            travel_bird_flag: 0,
             tile_interaction_shared_flag: 0,
             hud_floor_changed_timer: 0,
             quadrant_fullsize_x: 0,
             quadrant_fullsize_y: 0,
             cached_quadrant_fullsize_x: 0,
             cached_quadrant_fullsize_y: 0,
-            tilemap_layer_copy: 0,
             special_exit_tilemap_layer_copy: 0,
             exit_tilemap_layer_copy: 0,
             move_overlay_counter: 0,
@@ -2223,17 +2213,14 @@ impl WorldTransientState {
         check!(overworld_hole_tilemap_position);
         check!(overworld_bomb_tile_sweep_x);
         check!(overworld_bomb_tile_sweep_y_end);
-        check!(hud_current_item_x);
         check!(door_animation_step);
         check!(room_transitioning_flags);
-        check!(travel_bird_flag);
         check!(tile_interaction_shared_flag);
         check!(hud_floor_changed_timer);
         check!(quadrant_fullsize_x);
         check!(quadrant_fullsize_y);
         check!(cached_quadrant_fullsize_x);
         check!(cached_quadrant_fullsize_y);
-        check!(tilemap_layer_copy);
         check!(special_exit_tilemap_layer_copy);
         check!(exit_tilemap_layer_copy);
         check!(move_overlay_counter);
@@ -2272,10 +2259,8 @@ impl WorldTransientState {
             overworld_hole_tilemap_position: read_le_u16(ram, OVERWORLD_HOLE_TILEMAP_POS),
             overworld_bomb_tile_sweep_x: read_le_u16(ram, OVERWORLD_BOMB_TILE_SWEEP_X),
             overworld_bomb_tile_sweep_y_end: read_le_u16(ram, OVERWORLD_BOMB_TILE_SWEEP_Y_END),
-            hud_current_item_x: ram_byte(ram, HUD_CUR_ITEM_X),
             door_animation_step: read_le_u16(ram, DOOR_ANIMATION_STEP_INDICATOR),
             room_transitioning_flags: ram_byte(ram, ROOM_TRANSITIONING_FLAGS),
-            travel_bird_flag: ram_byte(ram, FLAG_TRAVEL_BIRD),
             tile_interaction_shared_flag: ram_byte(ram, TILE_INTERACTION_SHARED_FLAG),
             // Not loaded from RAM: display.hud_tilemap owns HUD_FLOOR_CHANGED_TIMER (0x4a0).
             // This vestigial field is never projected or read; keep it a stable 0 so the
@@ -2285,7 +2270,6 @@ impl WorldTransientState {
             quadrant_fullsize_y: ram_byte(ram, QUADRANT_FULLSIZE_Y),
             cached_quadrant_fullsize_x: ram_byte(ram, QUADRANT_FULLSIZE_X_CACHED),
             cached_quadrant_fullsize_y: ram_byte(ram, QUADRANT_FULLSIZE_X_CACHED + 1),
-            tilemap_layer_copy: read_le_u16(ram, TM_COPY),
             special_exit_tilemap_layer_copy: read_le_u16(ram, TM_COPY_SPEXIT),
             exit_tilemap_layer_copy: read_le_u16(ram, TM_COPY_EXIT),
             move_overlay_counter: ram_byte(ram, MOVE_OVERLAY_CTR),
@@ -2375,7 +2359,6 @@ impl WorldTransientState {
             OVERWORLD_BOMB_TILE_SWEEP_Y_END,
             self.overworld_bomb_tile_sweep_y_end,
         );
-        ram[HUD_CUR_ITEM_X] = self.hud_current_item_x;
         // DOOR_ANIMATION_STEP_INDICATOR (0x690) is C's single `door_animation_step_indicator`,
         // shared between the dungeon doors and the overworld entrance doors.
         // DungeonDoorState is the write-through owner (it holds ~25 of the call sites and is
@@ -2387,7 +2370,6 @@ impl WorldTransientState {
         // ZELDA3_ASSERT_SCRATCH_CONFLICTS caught at 0x690. Write-through only: the two door
         // setters below write RAM directly.
         ram[ROOM_TRANSITIONING_FLAGS] = self.room_transitioning_flags;
-        ram[FLAG_TRAVEL_BIRD] = self.travel_bird_flag;
         ram[TILE_INTERACTION_SHARED_FLAG] = self.tile_interaction_shared_flag;
         // HUD_FLOOR_CHANGED_TIMER (0x4a0) is owned by display.hud_tilemap, which both the
         // floor-change blip (set_hud_floor_changed_timer) and hud_floor_indicator read/write.
@@ -2398,7 +2380,8 @@ impl WorldTransientState {
         ram[QUADRANT_FULLSIZE_Y] = self.quadrant_fullsize_y;
         ram[QUADRANT_FULLSIZE_X_CACHED] = self.cached_quadrant_fullsize_x;
         ram[QUADRANT_FULLSIZE_X_CACHED + 1] = self.cached_quadrant_fullsize_y;
-        write_le_u16(ram, TM_COPY, self.tilemap_layer_copy);
+        // TM_COPY/TS_COPY (0x1c-0x1d) belong to DisplayState; only the exit
+        // backups of the layer masks live here.
         write_le_u16(ram, TM_COPY_SPEXIT, self.special_exit_tilemap_layer_copy);
         write_le_u16(ram, TM_COPY_EXIT, self.exit_tilemap_layer_copy);
         ram[MOVE_OVERLAY_CTR] = self.move_overlay_counter;
@@ -2455,10 +2438,6 @@ impl WorldTransientState {
 
     pub(crate) fn overworld_hole_tilemap_pos(&self) -> u16 {
         self.overworld_hole_tilemap_position
-    }
-
-    pub(crate) fn hud_cur_item_x(&self) -> u8 {
-        self.hud_current_item_x
     }
 
     pub(crate) fn door_animation_step(&self) -> u16 {
@@ -2627,24 +2606,22 @@ impl WorldTransientState {
         self.quadrant_fullsize_y = 2;
     }
 
-    pub(crate) fn set_tilemap_layer_copy(&mut self, value: u16) {
-        self.tilemap_layer_copy = value;
+    /// Save the display's live layer masks as the special-exit backup.
+    pub(crate) fn save_spexit_tm_copy(&mut self, layer_masks: u16) {
+        self.special_exit_tilemap_layer_copy = layer_masks;
     }
 
-    pub(crate) fn save_spexit_tm_copy(&mut self) {
-        self.special_exit_tilemap_layer_copy = self.tilemap_layer_copy;
+    pub(crate) fn special_exit_layer_masks(&self) -> u16 {
+        self.special_exit_tilemap_layer_copy
     }
 
-    pub(crate) fn restore_spexit_layer_masks(&mut self) {
-        self.tilemap_layer_copy = self.special_exit_tilemap_layer_copy;
+    /// Save the display's live layer masks as the dungeon-exit backup.
+    pub(crate) fn save_exit_tm_copy(&mut self, layer_masks: u16) {
+        self.exit_tilemap_layer_copy = layer_masks;
     }
 
-    pub(crate) fn save_exit_tm_copy(&mut self) {
-        self.exit_tilemap_layer_copy = self.tilemap_layer_copy;
-    }
-
-    pub(crate) fn restore_exit_layer_masks(&mut self) {
-        self.tilemap_layer_copy = self.exit_tilemap_layer_copy;
+    pub(crate) fn exit_layer_masks(&self) -> u16 {
+        self.exit_tilemap_layer_copy
     }
 
     pub(crate) fn increment_move_overlay_ctr(&mut self) -> u8 {
@@ -3045,8 +3022,7 @@ impl<'a> NativeWorldRegionBridgeMut<'a> {
         state;
         fn set_rng_seed(value: u8);
         fn set_dark_world_region_index(value: u8);
-        fn set_which_entrance(value: u16);
-        fn set_which_entrance_byte(value: u8);
+        fn set_which_entrance(value: u8);
         fn set_overworld_area_index(value: u8);
         fn set_overworld_area_index_word(value: u16);
         fn set_current_area_of_player_word(value: u16);
@@ -3250,23 +3226,13 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
         self.adopt_live_door_animation_step_then_sync();
     }
 
-    pub(crate) fn save_spexit_tm_copy(&mut self) {
-        self.state.save_spexit_tm_copy();
+    pub(crate) fn save_spexit_tm_copy(&mut self, layer_masks: u16) {
+        self.state.save_spexit_tm_copy(layer_masks);
         self.adopt_live_door_animation_step_then_sync();
     }
 
-    pub(crate) fn restore_spexit_layer_masks(&mut self) {
-        self.state.restore_spexit_layer_masks();
-        self.adopt_live_door_animation_step_then_sync();
-    }
-
-    pub(crate) fn save_exit_tm_copy(&mut self) {
-        self.state.save_exit_tm_copy();
-        self.adopt_live_door_animation_step_then_sync();
-    }
-
-    pub(crate) fn restore_exit_layer_masks(&mut self) {
-        self.state.restore_exit_layer_masks();
+    pub(crate) fn save_exit_tm_copy(&mut self, layer_masks: u16) {
+        self.state.save_exit_tm_copy(layer_masks);
         self.adopt_live_door_animation_step_then_sync();
     }
 

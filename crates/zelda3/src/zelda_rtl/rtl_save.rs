@@ -117,11 +117,13 @@ impl ZeldaState {
     }
 
     pub(crate) fn save_spexit_tm_copy(&mut self) {
-        self.world_transient_mut().save_spexit_tm_copy();
+        let layer_masks = self.game_state.display.layer_masks_word();
+        self.world_transient_mut().save_spexit_tm_copy(layer_masks);
     }
 
     pub(crate) fn save_exit_tm_copy(&mut self) {
-        self.world_transient_mut().save_exit_tm_copy();
+        let layer_masks = self.game_state.display.layer_masks_word();
+        self.world_transient_mut().save_exit_tm_copy(layer_masks);
     }
 
     pub(crate) fn save_previous_screen_transition_direction_bits(&mut self) {

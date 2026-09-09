@@ -2590,7 +2590,13 @@ impl ZeldaState {
     }
 
     pub(super) fn DidPressButtonForMap(&self) -> bool {
-        if self.game_state.world.transient.hud_cur_item_x() != 0 {
+        if self
+            .game_state
+            .inventory
+            .save_progress
+            .hud_current_item_slot(1)
+            != 0
+        {
             self.game_state.player.follower_link.filtered_joypad_h() & 0x20 != 0
         } else {
             self.game_state.player.follower_link.filtered_joypad_l() & 0x40 != 0
@@ -3497,7 +3503,13 @@ impl ZeldaState {
     }
 
     fn WantExitDungeonMap(&self) -> bool {
-        if self.game_state.world.transient.hud_cur_item_x() != 0 {
+        if self
+            .game_state
+            .inventory
+            .save_progress
+            .hud_current_item_slot(1)
+            != 0
+        {
             self.game_state.player.follower_link.filtered_joypad_h() & 0x20 != 0
         } else {
             self.game_state.player.follower_link.filtered_joypad_l() & 0x40 != 0
@@ -6050,7 +6062,13 @@ impl ZeldaState {
     }
 
     pub(super) fn did_press_button_for_map(&self) -> bool {
-        if self.game_state.world.transient.hud_cur_item_x() != 0 {
+        if self
+            .game_state
+            .inventory
+            .save_progress
+            .hud_current_item_slot(1)
+            != 0
+        {
             self.game_state.player.follower_link.filtered_joypad_h() & 0x20 != 0
         } else {
             self.game_state.player.follower_link.filtered_joypad_l() & 0x40 != 0

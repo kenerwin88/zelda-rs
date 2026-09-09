@@ -5,14 +5,6 @@
 use super::*;
 
 impl ZeldaState {
-    pub(super) fn mirror_display_layer_masks_to_world_transient(&mut self) {
-        let layer_masks = self.game_state.display.layer_masks_word();
-        self.game_state
-            .world
-            .transient
-            .set_tilemap_layer_copy(layer_masks);
-    }
-
     pub(crate) fn staged_bg_and_sprite_decompression_buffers(&self) -> Vec<u8> {
         GraphicsDecompressionScratch::staged_bg_and_sprite_buffers(&self.ram)
     }

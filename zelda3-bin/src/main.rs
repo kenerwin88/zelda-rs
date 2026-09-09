@@ -103,8 +103,10 @@ use zelda3::{config::parse_config_file_context, ZeldaState, RUN_MAIN, RUN_POLY};
 /// instead of a 0x400-word mirror of the dungeon replacement bank. 09
 /// (2026-09-09): the scroll copy no longer shadows the palette backup bank.
 /// 10 (2026-09-09): the palette theme and sprite system no longer mirror the
-/// dungeon entrance backup.
-const PLAY_CRASH_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSPC10";
+/// dungeon entrance backup. 11 (2026-09-09): the world transient no longer
+/// duplicates the HUD item slot, the travel-bird byte, or the layer masks,
+/// and the entrance id is its original byte.
+const PLAY_CRASH_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSPC11";
 const ACTION_TILE_X: [i16; 4] = [7, 7, -3, 16];
 const ACTION_TILE_Y: [i16; 4] = [6, 24, 12, 12];
 pub(crate) const TRACE_MAIN_MODULE_INDEX: usize = 0x10;

@@ -10470,12 +10470,16 @@ impl ZeldaState {
         self.world_region_mut().set_dark_world_region_index(value);
     }
 
-    pub(crate) fn set_which_entrance(&mut self, value: u16) {
+    pub(crate) fn set_which_entrance(&mut self, value: u8) {
         self.world_region_mut().set_which_entrance(value);
     }
 
-    pub(crate) fn set_which_entrance_byte(&mut self, value: u8) {
-        self.world_region_mut().set_which_entrance_byte(value);
+    /// The ending's scene table stores `which_entrance` as a word; the high
+    /// byte lands on the overworld hole-scan step, which has its own owner.
+    pub(crate) fn set_which_entrance_word(&mut self, value: u16) {
+        self.world_region_mut().set_which_entrance(value as u8);
+        self.world_transient_mut()
+            .set_overworld_hole_scan_step((value >> 8) as u8);
     }
 
     pub(crate) fn clear_overlay_index_word(&mut self) {
@@ -10813,42 +10817,34 @@ impl ZeldaState {
 
     pub(crate) fn set_main_screen_layers(&mut self, value: u8) {
         self.display_core_mut().set_main_screen_layers(value);
-        self.mirror_display_layer_masks_to_world_transient();
     }
 
     pub(crate) fn and_main_screen_layers(&mut self, value: u8) {
         self.display_core_mut().and_main_screen_layers(value);
-        self.mirror_display_layer_masks_to_world_transient();
     }
 
     pub(crate) fn or_main_screen_layers(&mut self, value: u8) {
         self.display_core_mut().or_main_screen_layers(value);
-        self.mirror_display_layer_masks_to_world_transient();
     }
 
     pub(crate) fn set_sub_screen_layers(&mut self, value: u8) {
         self.display_core_mut().set_sub_screen_layers(value);
-        self.mirror_display_layer_masks_to_world_transient();
     }
 
     pub(crate) fn clear_sub_screen_layers_word(&mut self) {
         self.display_core_mut().clear_sub_screen_layers_word();
-        self.mirror_display_layer_masks_to_world_transient();
     }
 
     pub(crate) fn and_sub_screen_layers(&mut self, value: u8) {
         self.display_core_mut().and_sub_screen_layers(value);
-        self.mirror_display_layer_masks_to_world_transient();
     }
 
     pub(crate) fn or_sub_screen_layers(&mut self, value: u8) {
         self.display_core_mut().or_sub_screen_layers(value);
-        self.mirror_display_layer_masks_to_world_transient();
     }
 
     pub(crate) fn set_layer_masks_word(&mut self, value: u16) {
         self.display_core_mut().set_layer_masks_word(value);
-        self.mirror_display_layer_masks_to_world_transient();
     }
 
     pub(crate) fn set_irq_control_flag(&mut self, value: u8) {

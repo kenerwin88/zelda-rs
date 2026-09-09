@@ -179,7 +179,7 @@ impl ZeldaState {
         self.enable_force_blank();
         self.erase_tile_maps_normal();
         let i = (self.game_state.frame.submodule >> 1) as usize;
-        self.set_which_entrance(ENDING_SCENE_ENTRANCES[i]);
+        self.set_which_entrance_word(ENDING_SCENE_ENTRANCES[i]);
         self.Dungeon_LoadEntrance();
         self.dungeon_torch_mut().clear_lit_torches();
         self.dungeon_torch_mut().clear_dungeon_dark_with_lantern();

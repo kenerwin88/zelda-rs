@@ -60,12 +60,16 @@ impl ZeldaState {
             .restore_quadrant_fullsize_from_cached();
     }
 
+    /// The layer masks belong to the display; the transient only keeps the
+    /// exit backups.
     pub(crate) fn restore_spexit_layer_masks(&mut self) {
-        self.world_transient_mut().restore_spexit_layer_masks();
+        let layer_masks = self.game_state.world.transient.special_exit_layer_masks();
+        self.set_layer_masks_word(layer_masks);
     }
 
     pub(crate) fn restore_exit_layer_masks(&mut self) {
-        self.world_transient_mut().restore_exit_layer_masks();
+        let layer_masks = self.game_state.world.transient.exit_layer_masks();
+        self.set_layer_masks_word(layer_masks);
     }
 
     pub(crate) fn backup_overworld_big_area_low(&mut self) {

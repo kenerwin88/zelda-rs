@@ -457,7 +457,7 @@ fn world_region_loads_from_and_projects_to_ram() {
     assert_eq!(region.dark_world_region_index(), 0x0e);
     assert!(region.is_in_dark_world());
     assert!(region.flag_overworld_area_changed());
-    assert_eq!(region.which_entrance(), 0x1011);
+    assert_eq!(region.which_entrance(), 0x11);
     assert_eq!(region.ow_entrance_value(), 0x1213);
 
     let mut projected = vec![0; WRAM_SIZE];
@@ -480,7 +480,7 @@ fn native_world_region_bridge_dual_writes_changes_from_native_state() {
         bridge.set_rng_seed(0x09);
         bridge.set_dark_world_region_index(0x0a);
         bridge.set_flag_overworld_area_changed(0x0b);
-        bridge.set_which_entrance(0x0c0d);
+        bridge.set_which_entrance(0x0d);
         bridge.set_ow_entrance_value(0x0e0f);
     }
 
@@ -492,7 +492,7 @@ fn native_world_region_bridge_dual_writes_changes_from_native_state() {
     assert_eq!(region.rng_seed(), 0x09);
     assert_eq!(region.dark_world_region_index(), 0x0a);
     assert!(region.flag_overworld_area_changed());
-    assert_eq!(region.which_entrance(), 0x0c0d);
+    assert_eq!(region.which_entrance(), 0x0d);
     assert_eq!(region.ow_entrance_value(), 0x0e0f);
     assert_eq!(WorldRegionState::load_from_ram(&ram), region);
 }
@@ -519,8 +519,7 @@ fn world_region_state_owns_area_and_entrance_behavior() {
     region.set_rng_seed(0x0a);
     region.set_dark_world_region_index(0x0b);
     region.set_flag_overworld_area_changed(1);
-    region.set_which_entrance(0x0c0d);
-    region.set_which_entrance_byte(0x0e);
+    region.set_which_entrance(0x0e);
     region.set_ow_entrance_value(0x0f10);
 
     assert_eq!(region.current_area_of_player_word(), 0x0102);
@@ -531,7 +530,7 @@ fn world_region_state_owns_area_and_entrance_behavior() {
     assert_eq!(region.rng_seed(), 0x0a);
     assert_eq!(region.dark_world_region_index(), 0x0b);
     assert!(region.flag_overworld_area_changed());
-    assert_eq!(region.which_entrance(), 0x0c0e);
+    assert_eq!(region.which_entrance(), 0x0e);
     assert_eq!(region.ow_entrance_value(), 0x0f10);
 
     region.clear_flag_overworld_area_changed();
@@ -550,14 +549,14 @@ fn native_world_region_bridge_projects_native_state_over_stale_ram() {
         bridge.set_overworld_area_index_word(0x0304);
         bridge.set_rng_seed(0x05);
         bridge.set_dark_world_region_index(0x06);
-        bridge.set_which_entrance(0x0708);
+        bridge.set_which_entrance(0x08);
     }
 
     write_le_u16(&mut ram, CURRENT_AREA_OF_PLAYER, 0xaaaa);
     write_le_u16(&mut ram, OVERWORLD_AREA_INDEX, 0xbbbb);
     ram[RNG_SEED] = 0xcc;
     ram[IS_IN_DARK_WORLD_FLAG] = 0xdd;
-    write_le_u16(&mut ram, WHICH_ENTRANCE, 0xeeee);
+    ram[WHICH_ENTRANCE] = 0xee;
 
     {
         let mut bridge = NativeWorldRegionBridgeMut::new(&mut region, &mut ram);
@@ -568,7 +567,7 @@ fn native_world_region_bridge_projects_native_state_over_stale_ram() {
     assert_eq!(region.overworld_area_index_word(), 0x0304);
     assert_eq!(region.rng_seed(), 0x05);
     assert_eq!(region.dark_world_region_index(), 0x06);
-    assert_eq!(region.which_entrance(), 0x0708);
+    assert_eq!(region.which_entrance(), 0x08);
     assert_eq!(region.ow_entrance_value(), 0x090a);
     assert_eq!(WorldRegionState::load_from_ram(&ram), region);
 }
@@ -607,7 +606,6 @@ fn world_transient_loads_from_and_projects_to_ram() {
     assert_eq!(transient.is_standing_in_doorway_cached(), 0x09);
     assert_eq!(transient.overworld_peg_puzzle_progress(), 0x0e0f);
     assert_eq!(transient.overworld_hole_tilemap_pos(), 0x10);
-    assert_eq!(transient.hud_cur_item_x(), 0x11);
     assert_eq!(transient.door_animation_step(), 0x1213);
     assert_eq!(transient.room_transitioning_flags(), 0x14);
     assert_eq!(transient.quadrant_fullsize_x(), 0x15);
@@ -668,16 +666,10 @@ fn world_transient_state_owns_transient_behavior() {
     assert_eq!(transient.quadrant_fullsize_x(), 0x33);
     assert_eq!(transient.quadrant_fullsize_y(), 0x44);
 
-    transient.set_tilemap_layer_copy(0x1234);
-    transient.save_spexit_tm_copy();
-    transient.set_tilemap_layer_copy(0);
-    transient.restore_spexit_layer_masks();
-    assert_eq!(transient.tilemap_layer_copy, 0x1234);
-
-    transient.save_exit_tm_copy();
-    transient.set_tilemap_layer_copy(0);
-    transient.restore_exit_layer_masks();
-    assert_eq!(transient.tilemap_layer_copy, 0x1234);
+    transient.save_spexit_tm_copy(0x1234);
+    assert_eq!(transient.special_exit_layer_masks(), 0x1234);
+    transient.save_exit_tm_copy(0x5678);
+    assert_eq!(transient.exit_layer_masks(), 0x5678);
 
     assert_eq!(transient.increment_move_overlay_ctr(), 1);
     transient.decrement_milestone_item_gfx_swap_countdown();
