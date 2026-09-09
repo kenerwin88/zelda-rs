@@ -19,7 +19,7 @@
   },
   "project": "routes/full_run",
   "promoted": {
-    "binary_sha256": "08dfc0397ef1bda5ab846708e39537c552e567fcc4fa0c551f618b44320ea887",
+    "binary_sha256": "7584c2c73fa0b2de9b08c8c6eec2036ba43f152635144db8c67527de1ceb736f",
     "cached_av_receipt": {
       "candidate_ledger_sha256": "3d52711c51a4f01031bd336aa582d4b6a316c71199710d3354ef015fcca1440c",
       "frames": 1581079,
@@ -27,13 +27,13 @@
         "video",
         "audio"
       ],
-      "manifest_sha256": "d2d9f12ffe08e4bd6d27a204b056025598fb15f43a7d58e8bb0600b0b4e726f7",
+      "manifest_sha256": "04f2355376dcebc9e2c494bd726de918572416469c2b658cc8457ee1eca7d8d4",
       "oracle_cache_key": "ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18",
       "oracle_cache_manifest_sha256": "4c7f88fbf327a4b3af7d3f8614d82ebb2318f11b607798d5dddb4a97b7fe2715",
-      "receipt_path": "receipts/pipes-full-av.manifest.json",
-      "run": "/Users/missingno/Documents/zelda3-rs/target/native-somaria-pipes/pipes-full-av"
+      "receipt_path": "receipts/stripe-full-av.manifest.json",
+      "run": "/Users/missingno/Documents/zelda3-rs/target/overworld-map16-stripe/stripe-full-av"
     },
-    "commit": "fa21ef90cd0f2d9f3e2dad14e990aa74d449dfb9",
+    "commit": "b9263a5dd0e0597831a234db4e616c7e8808ad23",
     "kind": "cached_av_pass",
     "last_exact_audio_frame": 1581078,
     "last_exact_engine_state_frame": 1581078,

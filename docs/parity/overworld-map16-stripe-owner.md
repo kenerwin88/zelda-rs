@@ -46,3 +46,17 @@ The 200,000-frame cached Snes9x audio/video comparison passed from frame zero
 in 301.18 seconds. Both reached WRAM goldens match, and the complete endpoint
 is byte-identical to the preceding promoted build, SHA-256
 `dd45975cee5acdd270d1b0c74c5d38f1ba3ce3bd7e0af648264b8f77e95f244d`.
+
+Source commit `b9263a5d` passed the full cold route: 1,581,079 consecutive
+exact audio/video frames in 2,566.82 seconds (42.8 minutes), starting at
+frame zero with no frame limit or checkpoint resume. The comparison used the
+immutable Snes9x oracle cache; it did not reload the live core. No RNG drift
+was reported. The source commit skipped the commit hook at the user's
+request; this full-route pass is the gate.
+
+All four WRAM goldens (60,000, 150,470, 500,000, and 732,000) match. The full
+131,072-byte final WRAM image is identical to the preceding promoted build,
+SHA-256:
+`316193798ccb2f771546b25443df7d417bddac8a7cac65326fa189c1264fbdb6`.
+The promoted receipt is
+`routes/full_run/receipts/stripe-full-av.manifest.json`.
