@@ -11,9 +11,10 @@ const OVERWORLD_SPRITE_GFX_SCREENS: usize =
 const ROOM_BOUND_COUNT: usize = 4;
 const SCROLL_TARGET_COUNT: usize = 4;
 const SCROLL_COUNTER_COUNT: usize = 4;
-const DUNGEON_REPLACEMENT_TILE_WORDS: usize = 0x400;
-pub(crate) const DOOR_ANIMATION_REPLACEMENT_TILE_INDEX: usize =
-    (DOOR_ANIMATION_STEP_INDICATOR - DUNG_REPLACEMENT_TILE_STATE) / 2;
+/// The overworld map16 stripe scratch. C walks it as `d = (d + 1) & 0x1f`
+/// over the dungeon replacement table's first 32 words, so this window is
+/// all the overworld owns of that bank.
+pub(crate) const OVERWORLD_MAP16_STRIPE_WORDS: usize = 0x20;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum OverworldMap16SourcePage {
@@ -2162,7 +2163,7 @@ pub(crate) struct WorldTransientState {
     pub(crate) exit_tilemap_layer_copy: u16,
     pub(crate) move_overlay_counter: u8,
     pub(crate) overworld_hole_scan_step: u8,
-    pub(crate) dungeon_replacement_tiles: Vec<u16>,
+    pub(crate) overworld_map16_stripe: [u16; OVERWORLD_MAP16_STRIPE_WORDS],
 }
 
 impl Default for WorldTransientState {
@@ -2198,7 +2199,7 @@ impl Default for WorldTransientState {
             exit_tilemap_layer_copy: 0,
             move_overlay_counter: 0,
             overworld_hole_scan_step: 0,
-            dungeon_replacement_tiles: vec![0; DUNGEON_REPLACEMENT_TILE_WORDS],
+            overworld_map16_stripe: [0; OVERWORLD_MAP16_STRIPE_WORDS],
         }
     }
 }
@@ -2244,17 +2245,19 @@ impl WorldTransientState {
         check!(exit_tilemap_layer_copy);
         check!(move_overlay_counter);
         check!(overworld_hole_scan_step);
+        // In the dungeon module the window is the object replacement table,
+        // owned by DungeonObjectTrackingState; the stripe copy is stale there.
         if ram_byte(ram, MAIN_MODULE) != 7
-            && self.dungeon_replacement_tiles != fresh.dungeon_replacement_tiles
+            && self.overworld_map16_stripe != fresh.overworld_map16_stripe
         {
-            out.push("world.transient.dungeon_replacement_tiles");
+            out.push("world.transient.overworld_map16_stripe");
         }
         out
     }
 
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
-        let mut dungeon_replacement_tiles = vec![0; DUNGEON_REPLACEMENT_TILE_WORDS];
-        for (index, tile) in dungeon_replacement_tiles.iter_mut().enumerate() {
+        let mut overworld_map16_stripe = [0; OVERWORLD_MAP16_STRIPE_WORDS];
+        for (index, tile) in overworld_map16_stripe.iter_mut().enumerate() {
             *tile = read_le_u16(ram, DUNG_REPLACEMENT_TILE_STATE + index * 2);
         }
         Self {
@@ -2294,7 +2297,7 @@ impl WorldTransientState {
             exit_tilemap_layer_copy: read_le_u16(ram, TM_COPY_EXIT),
             move_overlay_counter: ram_byte(ram, MOVE_OVERLAY_CTR),
             overworld_hole_scan_step: ram_byte(ram, OVERWORLD_HOLE_SCAN_STEP),
-            dungeon_replacement_tiles,
+            overworld_map16_stripe,
         }
     }
 
@@ -2315,10 +2318,10 @@ impl WorldTransientState {
         self.write_scalar_fields_to_ram(ram);
     }
 
-    /// Push the write-through replacement-tile window. Only round-trip tests use this;
+    /// Push the write-through stripe window. Only round-trip tests use this;
     /// production writes go straight to RAM in the bridge setter.
-    pub(crate) fn write_dungeon_replacement_tiles_to_ram(&self, ram: &mut [u8]) {
-        for (index, tile) in self.dungeon_replacement_tiles.iter().enumerate() {
+    pub(crate) fn write_overworld_map16_stripe_to_ram(&self, ram: &mut [u8]) {
+        for (index, tile) in self.overworld_map16_stripe.iter().enumerate() {
             write_le_u16(ram, DUNG_REPLACEMENT_TILE_STATE + index * 2, *tile);
         }
     }
@@ -2496,8 +2499,8 @@ impl WorldTransientState {
             + player_quadrant_x as usize
     }
 
-    pub(crate) fn dung_replacement_tile_state(&self, index: usize) -> u16 {
-        self.dungeon_replacement_tiles[index]
+    pub(crate) fn overworld_map16_stripe_word(&self, index: usize) -> u16 {
+        self.overworld_map16_stripe[index]
     }
 
     pub(crate) fn set_room_transitioning_flags(&mut self, value: u8) {
@@ -2543,7 +2546,6 @@ impl WorldTransientState {
 
     pub(crate) fn set_door_animation_step_word(&mut self, value: u16) {
         self.door_animation_step = value;
-        self.dungeon_replacement_tiles[DOOR_ANIMATION_REPLACEMENT_TILE_INDEX] = value;
     }
 
     pub(crate) fn clear_hud_floor_changed_timer(&mut self) {
@@ -2681,8 +2683,8 @@ impl WorldTransientState {
         self.big_key_door_message_triggered = value;
     }
 
-    pub(crate) fn set_dung_replacement_tile_state(&mut self, index: usize, value: u16) {
-        self.dungeon_replacement_tiles[index] = value;
+    pub(crate) fn set_overworld_map16_stripe_word(&mut self, index: usize, value: u16) {
+        self.overworld_map16_stripe[index] = value;
     }
 
     pub(crate) fn decrement_milestone_item_gfx_swap_countdown(&mut self) {
@@ -3110,7 +3112,7 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
 
     fn debug_assert_matches_ram(&self) {
         let mut loaded = WorldTransientState::load_from_ram(self.ram);
-        loaded.dungeon_replacement_tiles = self.state.dungeon_replacement_tiles.clone();
+        loaded.overworld_map16_stripe = self.state.overworld_map16_stripe;
         debug_assert_eq!(*self.state, loaded);
     }
 
@@ -3315,8 +3317,8 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
         self.adopt_live_door_animation_step_then_sync();
     }
 
-    pub(crate) fn set_dung_replacement_tile_state(&mut self, index: usize, value: u16) {
-        self.state.set_dung_replacement_tile_state(index, value);
+    pub(crate) fn set_overworld_map16_stripe_word(&mut self, index: usize, value: u16) {
+        self.state.set_overworld_map16_stripe_word(index, value);
         write_le_u16(self.ram, DUNG_REPLACEMENT_TILE_STATE + index * 2, value);
         self.debug_assert_matches_ram();
     }

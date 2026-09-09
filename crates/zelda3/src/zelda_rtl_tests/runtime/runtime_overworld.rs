@@ -113,7 +113,7 @@ fn overworld_map16_stripes_follow_rom_long_indexed_wram_reads_past_bg2_page() {
             .game_state
             .world
             .transient
-            .dung_replacement_tile_state(index)
+            .overworld_map16_stripe_word(index)
     });
     assert_eq!(captured, crossed_page_words);
 }

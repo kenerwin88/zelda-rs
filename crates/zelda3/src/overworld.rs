@@ -4974,7 +4974,7 @@ impl ZeldaState {
         let mut y_unit_index = self.overworld_map16_y_unit() as usize & 0x1f;
         for _ in 0..32 {
             let tile = self.overworld_map16_stripe_source_word(pos);
-            self.set_dung_replacement_tile_state(y_unit_index, tile);
+            self.set_overworld_map16_stripe_word(y_unit_index, tile);
             y_unit_index = (y_unit_index + 1) & 0x1f;
             pos = pos.wrapping_add(0x80);
         }
@@ -4998,7 +4998,7 @@ impl ZeldaState {
                     .game_state
                     .world
                     .transient
-                    .dung_replacement_tile_state(tmp);
+                    .overworld_map16_stripe_word(tmp);
                 tmp += 1;
                 let s0 = self.overworld_map16_to_map8_word(&map8, k, 0);
                 let s1 = self.overworld_map16_to_map8_word(&map8, k, 1);
@@ -5024,7 +5024,7 @@ impl ZeldaState {
         let mut dst_unit_index = self.overworld_map16_dst_off() as usize & 0x1f;
         for _ in 0..32 {
             let tile = self.overworld_map16_stripe_source_word(pos);
-            self.set_dung_replacement_tile_state(dst_unit_index, tile);
+            self.set_overworld_map16_stripe_word(dst_unit_index, tile);
             pos = pos.wrapping_add(2);
             dst_unit_index = (dst_unit_index + 1) & 0x1f;
         }
@@ -5047,7 +5047,7 @@ impl ZeldaState {
                     .game_state
                     .world
                     .transient
-                    .dung_replacement_tile_state(tmp);
+                    .overworld_map16_stripe_word(tmp);
                 tmp += 1;
                 let s0 = self.overworld_map16_to_map8_word(&map8, k, 0);
                 let s1 = self.overworld_map16_to_map8_word(&map8, k, 1);
@@ -5479,7 +5479,7 @@ impl ZeldaState {
             let value = self
                 .overworld_map16_decode()
                 .source_page_word(source_page, yr);
-            self.set_dung_replacement_tile_state(xr, value);
+            self.set_overworld_map16_stripe_word(xr, value);
             xr = (xr + 1) & 0x1f;
             yr = (yr + 2) & 0x1fff;
         }
@@ -5501,7 +5501,7 @@ impl ZeldaState {
                     .game_state
                     .world
                     .transient
-                    .dung_replacement_tile_state(tmp);
+                    .overworld_map16_stripe_word(tmp);
                 tmp += 1;
                 let m0 = self.overworld_map16_to_map8_word(&map8, k, 0);
                 let m1 = self.overworld_map16_to_map8_word(&map8, k, 1);

@@ -118,10 +118,6 @@ const FAINT_ANIMATION_ACTIVE: usize = 0x36b;
 
 const LAYER_COLLISION_FLAGS: usize = 0x322;
 
-/// C's overworld map16 stripe buffer walks `d = (d + 1) & 0x1f` over
-/// dung_replacement_tile_state, so 32 words is the whole window this state owns.
-const OVERWORLD_MAP16_STRIPE_WORDS: usize = 0x20;
-
 const FALL_HOLE_SCAN_INDEX_LOCAL: usize = 0x02c9;
 
 const FIRST_BOOT_NMI_DMA_SOURCE_BYTE_2: usize = 0x0002;

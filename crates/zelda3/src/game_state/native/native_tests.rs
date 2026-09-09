@@ -40,7 +40,6 @@ use super::world::{
     OverworldMapZoomState, OverworldScreenSizeState, OverworldScrollDeltaState,
     OverworldTransitionState, RoomBoundsState, WeatherVaneState, WorldCameraBoundariesState,
     WorldPaletteThemeState, WorldRegionState, WorldScrollState, WorldTransientState,
-    DOOR_ANIMATION_REPLACEMENT_TILE_INDEX,
 };
 use super::*;
 

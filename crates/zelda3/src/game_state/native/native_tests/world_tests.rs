@@ -619,13 +619,13 @@ fn world_transient_loads_from_and_projects_to_ram() {
     assert_eq!(transient.room_transitioning_flags(), 0x14);
     assert_eq!(transient.quadrant_fullsize_x(), 0x15);
     assert_eq!(transient.quadrant_fullsize_y(), 0x16);
-    assert_eq!(transient.dung_replacement_tile_state(2), 0x1a1b);
+    assert_eq!(transient.overworld_map16_stripe_word(2), 0x1a1b);
 
     let mut projected = vec![0; WRAM_SIZE];
     transient.write_to_ram(&mut projected);
     // 0x690 is write-through (shared with DungeonDoorState), so it flushes separately.
     transient.write_door_animation_step_to_ram(&mut projected);
-    transient.write_dungeon_replacement_tiles_to_ram(&mut projected);
+    transient.write_overworld_map16_stripe_to_ram(&mut projected);
     assert_eq!(WorldTransientState::load_from_ram(&projected), transient);
 }
 
@@ -646,21 +646,17 @@ fn world_transient_state_owns_transient_behavior() {
     transient.set_quadrant_fullsize_y(0x21);
     transient.restore_quadrant_fullsize_from_cached();
     transient.set_overworld_peg_puzzle_progress(0x1314);
-    transient.set_dung_replacement_tile_state(2, 0x1516);
+    transient.set_overworld_map16_stripe_word(2, 0x1516);
 
     assert_eq!(transient.flag_custom_spell_anim_active(), 1);
     assert_eq!(transient.allow_scroll_z(), 0x02);
     assert_eq!(transient.room_transitioning_flags(), 0x03);
     assert_eq!(transient.is_standing_in_doorway_cached(), 0x0c);
     assert_eq!(transient.door_animation_step(), 0x0d0e);
-    assert_eq!(
-        transient.dung_replacement_tile_state(DOOR_ANIMATION_REPLACEMENT_TILE_INDEX),
-        0x0d0e
-    );
     assert_eq!(transient.quadrant_fullsize_x(), 0x0f);
     assert_eq!(transient.quadrant_fullsize_y(), 0x10);
     assert_eq!(transient.overworld_peg_puzzle_progress(), 0x1314);
-    assert_eq!(transient.dung_replacement_tile_state(2), 0x1516);
+    assert_eq!(transient.overworld_map16_stripe_word(2), 0x1516);
 
     transient.clear_custom_spell_animation();
     transient.clear_tile_interaction_shared_flag();
@@ -711,7 +707,7 @@ fn native_world_transient_bridge_dual_writes_changes_from_native_state() {
         bridge.set_quadrant_fullsize_y(0x10);
         bridge.cache_quadrant_fullsize_state();
         bridge.set_overworld_peg_puzzle_progress(0x1314);
-        bridge.set_dung_replacement_tile_state(2, 0x1516);
+        bridge.set_overworld_map16_stripe_word(2, 0x1516);
     }
 
     assert_eq!(transient.flag_custom_spell_anim_active(), 1);
@@ -722,7 +718,7 @@ fn native_world_transient_bridge_dual_writes_changes_from_native_state() {
     assert_eq!(transient.quadrant_fullsize_x(), 0x0f);
     assert_eq!(transient.quadrant_fullsize_y(), 0x10);
     assert_eq!(transient.overworld_peg_puzzle_progress(), 0x1314);
-    assert_eq!(transient.dung_replacement_tile_state(2), 0x1516);
+    assert_eq!(transient.overworld_map16_stripe_word(2), 0x1516);
     assert_eq!(ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE], 1);
     assert_eq!(ram[ALLOW_SCROLL_Z], 0x02);
     assert_eq!(ram[ROOM_TRANSITIONING_FLAGS], 0x03);

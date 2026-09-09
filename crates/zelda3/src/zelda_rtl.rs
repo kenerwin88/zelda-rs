@@ -10554,9 +10554,9 @@ impl ZeldaState {
         self.world_transient_mut().increment_move_overlay_ctr()
     }
 
-    pub(crate) fn set_dung_replacement_tile_state(&mut self, index: usize, value: u16) {
+    pub(crate) fn set_overworld_map16_stripe_word(&mut self, index: usize, value: u16) {
         self.world_transient_mut()
-            .set_dung_replacement_tile_state(index, value);
+            .set_overworld_map16_stripe_word(index, value);
     }
 
     pub(crate) fn birdtravel_status(&self) -> u8 {
