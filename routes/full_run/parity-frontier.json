@@ -19,7 +19,7 @@
   },
   "project": "routes/full_run",
   "promoted": {
-    "binary_sha256": "6eeaeb415c70c4d1e1c9a722dedcc626f7dffbb9ba2955d8d82e737a7b439cea",
+    "binary_sha256": "14c05f01ec0c0c8131fb563631876f23e578f65fa76eadc3efc8d6a709d809bc",
     "cached_av_receipt": {
       "candidate_ledger_sha256": "3d52711c51a4f01031bd336aa582d4b6a316c71199710d3354ef015fcca1440c",
       "frames": 1581079,
@@ -27,13 +27,13 @@
         "video",
         "audio"
       ],
-      "manifest_sha256": "6faa6a9bd456d7177b265224d680a89f7d5489a3cdad2b4030a6fe41ff4c1078",
+      "manifest_sha256": "f67fdc10ec7240f137afa9b110bee36bb2b49f6af681e0999ae74cccd396027b",
       "oracle_cache_key": "ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18",
       "oracle_cache_manifest_sha256": "4c7f88fbf327a4b3af7d3f8614d82ebb2318f11b607798d5dddb4a97b7fe2715",
-      "receipt_path": "receipts/door-full-av.manifest.json",
-      "run": "/Users/missingno/Documents/zelda3-rs/target/door-step-owner/door-full-av"
+      "receipt_path": "receipts/blast-full-av.manifest.json",
+      "run": "/Users/missingno/Documents/zelda3-rs/target/blast-wall-owner/blast-full-av"
     },
-    "commit": "089711cbc5da0cb19832a515ecaded14b1769187",
+    "commit": "34268fe09f55ddb9449bfb22092e1fc1732028e8",
     "kind": "cached_av_pass",
     "last_exact_audio_frame": 1581078,
     "last_exact_engine_state_frame": 1581078,
