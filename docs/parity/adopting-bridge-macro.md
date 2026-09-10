@@ -31,3 +31,11 @@ known zero-page scratch pair, 10 bridge-published overlaps, 70 overlapping
 bytes. The library compiles with no warnings in the parity, dev, and
 lib-test builds; readability and projection discovery pass. All 1,722
 library tests pass under the dev profile.
+
+The main tree validated this batch on parity binary
+`5baabc80bf7a4b559eb2c2d5e8e82e9c6e849e33bb25f208dda97d4faeda2575`,
+which also carries the write-through OAM and BG2 attribute bridges: the
+200,000-frame cached comparison matched every video and audio hash in
+322.66 seconds, the frame 60000 and 150470 WRAM goldens match, the
+200,000-frame WRAM endpoint is the recorded `dd45975c…` image, and all
+1,722 library tests pass under the parity profile.
