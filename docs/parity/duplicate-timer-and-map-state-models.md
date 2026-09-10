@@ -40,3 +40,11 @@ before). The attract-mode overworld test seeds and reads the zoom timer
 through the map zoom accessors. The library compiles with no warnings in
 the parity, dev, and lib-test builds; readability and projection discovery
 pass. All 1,721 library tests pass under the dev profile.
+
+The main tree validated this batch stacked on the three batches before it,
+on parity binary
+`09c133511e0f81e314e5ac21f27989e03c18c339785dfdc29cc922e41a85c325`: the
+200,000-frame cached comparison matched every video and audio hash in
+319.91 seconds, the frame 60000 and 150470 WRAM goldens match, the
+200,000-frame WRAM endpoint is the recorded `dd45975c…` image, and all
+1,721 library tests pass under the parity profile.
