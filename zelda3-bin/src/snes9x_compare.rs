@@ -1425,6 +1425,14 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
                 let mut frames_completed = frames_completed;
                 let mut first_rng_drift = first_rng_drift;
                 let mut paired_checkpoint_due = paired_checkpoint_due;
+                // `ZELDA3_DEBUG_HOST_FEATURES=<csv>` writes one row per host: the
+                // engine's state at the host boundary and the timing the receipt carried,
+                // for rule discovery over the route (docs/parity/romless-exact-play.md).
+                let mut host_feature_writer = std::env::var_os("ZELDA3_DEBUG_HOST_FEATURES").map(|path| {
+                    let mut writer = BufWriter::new(fs::File::create(&path).expect("create the host feature trace"));
+                    write_host_feature_header(&mut writer);
+                    writer
+                });
                 let mut receipt_nanos = 0_u128;
                 let mut engine_nanos = 0_u128;
                 let mut audio_nanos = 0_u128;
@@ -1488,6 +1496,9 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
                 receipt_nanos += receipt_started.elapsed().as_nanos();
             }
             let engine_started = Instant::now();
+            if let Some(writer) = host_feature_writer.as_mut() {
+                write_host_feature_row(writer, &game, record.frame, &timing_receipts);
+            }
             game.install_original_timing_host_receipts(timing_receipts)
                 .unwrap_or_else(|error| {
                     eprintln!(
@@ -6678,3 +6689,93 @@ pub(crate) use video_compare::*;
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+const HOST_FEATURE_COLUMNS: &[&str] = &[
+    "frame",
+    "main_module",
+    "submodule",
+    "subsubmodule",
+    "indoors",
+    "link_state",
+    "dungeon_room",
+    "overworld_screen",
+    "frame_counter_odd",
+    "nmi_boolean",
+    "nmi_subroutine",
+    "inidisp",
+    "bg_from_vram",
+    "cgram_update",
+    "active_sprites",
+    "sprites_state9",
+    "sprites_state_low",
+    "ancilla_active",
+    "vram_upload_offset",
+    "prev_timing",
+    "host_timing",
+];
+
+fn write_host_feature_header(writer: &mut impl Write) {
+    writeln!(writer, "{}", HOST_FEATURE_COLUMNS.join(",")).expect("write the host feature header");
+}
+
+thread_local! {
+    static PREVIOUS_HOST_TIMING: std::cell::Cell<&'static str> = const { std::cell::Cell::new("open") };
+}
+
+/// One row: the engine state the host begins from and the timing class the
+/// oracle receipt carried for it (interrupted > continued > held > open).
+fn write_host_feature_row(
+    writer: &mut impl Write,
+    game: &ZeldaState,
+    frame: u32,
+    receipts: &zelda3::OriginalTimingHostReceipts,
+) {
+    use zelda3::OriginalTimingSemanticReceipt as R;
+    let ram = &game.ram;
+    let mut held = false;
+    let mut interrupted = false;
+    let mut continued = false;
+    for receipt in receipts.semantic() {
+        match receipt {
+            R::NmiAccepted(gate) => held |= format!("{gate:?}").contains("Held"),
+            R::MainLoopInterrupted(_) => interrupted = true,
+            R::MainLoopProgress(zelda3::MainLoopProgress::CallStackContinued) => continued = true,
+            _ => {}
+        }
+    }
+    let timing = if interrupted {
+        "interrupted"
+    } else if continued {
+        "continued"
+    } else if held {
+        "held"
+    } else {
+        "open"
+    };
+    let previous = PREVIOUS_HOST_TIMING.with(|cell| cell.replace(timing));
+    let sprite_states = &ram[0xdd0..0xde0];
+    let active_sprites = sprite_states.iter().filter(|&&state| state != 0).count();
+    let sprites_state9 = sprite_states.iter().filter(|&&state| state == 9).count();
+    let sprites_state_low = sprite_states.iter().filter(|&&state| (1..9).contains(&state)).count();
+    let ancilla_active = ram[0xc4a..0xc54].iter().filter(|&&kind| kind != 0).count();
+    let word = |address: usize| u16::from_le_bytes([ram[address], ram[address + 1]]);
+    writeln!(
+        writer,
+        "{frame},{},{},{},{},{},{},{},{},{},{},{},{},{},{active_sprites},{sprites_state9},{sprites_state_low},{ancilla_active},{},{previous},{timing}",
+        ram[0x10],
+        ram[0x11],
+        ram[0xb0],
+        ram[0x1b],
+        ram[0x5d],
+        word(0xa0),
+        word(0x8a),
+        ram[0x1a] & 1,
+        ram[0x12],
+        ram[0x17],
+        ram[0x13],
+        ram[0x14],
+        ram[0x15],
+        word(0x1000),
+    )
+    .expect("write a host feature row");
+}

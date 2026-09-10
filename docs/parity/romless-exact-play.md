@@ -139,3 +139,48 @@ goldens match, and the route endpoint is the recorded `31619379…` WRAM
 image; the run is promoted in `routes/full_run/parity-frontier.json` with
 its receipt. The ROM-timing live path (a ROM loaded, no receipts) walked
 the entire 1,581,079-frame input ledger on that binary without a panic.
+
+## Rule discovery over the route (LogicPearl experiment)
+
+`ZELDA3_DEBUG_HOST_FEATURES=<csv>` makes the cached comparison write one
+row per host: twenty engine-state features read at the host boundary
+(module triple, indoors, Link handler state, room and screen, frame
+counter parity, the NMI latch `$12`, NMI subroutine `$17`, INIDISP copy,
+the BG-from-VRAM and CGRAM-update flags, sprite state counts, active
+ancillae, the VRAM upload cursor, and the previous host's class) and the
+timing class the oracle receipt carried: `interrupted` (a main-loop
+interruption), `continued` (a continued call stack), `held` (an NMI
+accepted with the latch held) or `open`. The first 86,762 route hosts
+(a dev-binary run; see the finding below) hold 76,520 open, 8,023
+continued, 1,325 held and 894 interrupted hosts.
+
+LogicPearl 0.1.5 (`logicpearl build --action-column host_timing
+--default-action open`) learned five rules in 26 minutes (2 GB, one z3
+selection) with 97.5% training parity. Scored per class against the
+receipts:
+
+| class | rule found | recall | precision |
+|---|---|---|---|
+| continued | `$12` (NMI latch) set at host entry | 1.000 | 0.974 |
+| held | CGRAM-update flag, or VRAM cursor above 0xccad | 0.238 | 0.543 |
+| interrupted | module 0x10 with NMI subroutine 4 | 0.016 | 1.000 |
+
+The continued rule is the mechanism itself: a latch still set at the
+host boundary means the previous iteration has not returned, so the
+native owner can read that class from RAM today (the 218 misclassified
+hosts are interruptions that also leave the latch set). Held and
+interrupted hosts are the cycle-budget cases: nothing in the boundary
+state says how much work the frame will do, so no rule over these
+features separates them. That is the expected shape: discovery names
+the state-marker classes immediately and confirms which classes need a
+cost model, but it cannot invent the arithmetic. Its value for the
+program is the mismatch listing it produces for a candidate cost model,
+not a learned policy.
+
+Finding from the dump run: on a dev build (debug assertions on) the
+receipt-driven comparison stops at host 86,762 in
+`rtl_dungeon.rs:394`, a scheduler-shape `debug_assert!` that the
+cached-sprite room-load continuation is scheduled at the boundary just
+armed. The parity binary carries no debug assertions and the promoted
+route is exact there; the disagreement between that check and the
+receipts is open for a later batch.
