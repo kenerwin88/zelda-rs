@@ -295,7 +295,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_sprite_type(value);
         self.sprite_set_x(k, x);
         self.sprite_set_y(k, y);
-        self.sprite_prep_load_properties_for_helpers(k);
+        self.sprite_prep_load_properties(k);
         let value = self.game_state.player.follower_link.lower_level_state();
         self.sprite_slot_view_mut(k).set_floor(value);
         let value = what;
@@ -1143,9 +1143,8 @@ impl ZeldaState {
     // void Sprite_PrepOamCoord(int k, PrepOamCoordsRet *ret) {  // 86e416
     //   Sprite_PrepOamCoordOrDoubleRet(k, ret);
     // }
-    pub(super) fn sprite_prep_oam_coord(&mut self, k: usize, ret: &mut PrepOamCoordsRet) {
-        let (prepped, _) = self.sprite_prep_oam_coord_or_double_ret_raw(k);
-        *ret = prepped;
+    pub(super) fn sprite_prep_oam_coord(&mut self, k: usize) -> PrepOamCoordsRet {
+        self.sprite_prep_oam_coord_or_double_ret_raw(k).0
     }
 
     // bool Sprite_PrepOamCoordOrDoubleRet(int k, PrepOamCoordsRet *ret) {  // 86e41e
@@ -6045,7 +6044,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     pub(super) fn sprite_func18(&mut self, k: usize, new_type: u8) {
         let value = new_type;
         self.sprite_slot_view_mut(k).set_sprite_type(value);
-        self.sprite_prep_load_properties_for_helpers(k);
+        self.sprite_prep_load_properties(k);
         self.sprite_spawn_poof_garnish(k);
         self.set_sound_effect_2(0);
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x32);
@@ -6387,7 +6386,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 || type_ == 0x92
                 || (type_ == 0x4a && self.sprite_slot_view(k).c() >= 2)
             {
-                self.sprite_active_main_for_death(k);
+                self.sprite_active_main(k);
                 return;
             }
             if self.sprite_slot_view(k).delay_main() == 0 {
@@ -6396,7 +6395,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             }
         }
         if sign8(self.sprite_slot_view(k).flags3()) {
-            self.sprite_active_main_for_death(k);
+            self.sprite_active_main(k);
             return;
         }
         if ((self.game_state.frame.frame_counter & 3)
@@ -6425,13 +6424,9 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         let bak = self.sprite_slot_view(k).flags2();
         let value = self.sprite_slot_view(k).flags2().wrapping_sub(4);
         self.sprite_slot_view_mut(k).set_flags2(value);
-        self.sprite_active_main_for_death(k);
+        self.sprite_active_main(k);
         let value = bak;
         self.sprite_slot_view_mut(k).set_flags2(value);
-    }
-
-    fn sprite_active_main_for_death(&mut self, k: usize) {
-        self.sprite_active_main(k);
     }
 
     // void Sprite_DoTheDeath(int k) {  // 86f923
@@ -6547,7 +6542,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         let value = 9;
         self.sprite_slot_view_mut(k).set_state(value);
         let zbak = self.sprite_slot_view(k).z();
-        self.sprite_prep_load_properties_for_helpers(k);
+        self.sprite_prep_load_properties(k);
         let value = self.sprite_slot_view(k).ignore_projectile().wrapping_add(1);
         self.sprite_slot_view_mut(k).set_ignore_projectile(value);
 
@@ -6673,7 +6668,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             let bak = self.sprite_slot_view(k).flags2();
             let value = self.sprite_slot_view(k).flags2().wrapping_sub(2);
             self.sprite_slot_view_mut(k).set_flags2(value);
-            self.sprite_active_main_for_death(k);
+            self.sprite_active_main(k);
             let value = bak;
             self.sprite_slot_view_mut(k).set_flags2(value);
         }
@@ -6840,7 +6835,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             && (self.sprite_slot_view(k).delay_main() >= 0x70
                 || (self.sprite_slot_view(k).delay_main() & 1) == 0)
         {
-            self.sprite_active_main_for_death(k);
+            self.sprite_active_main(k);
         }
 
         let type_ = self.sprite_slot_view(k).sprite_type();
@@ -6907,7 +6902,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 {
                     self.sprite_sfx_queue_sfx3_with_pan(k, 0x31);
                 }
-                self.sprite_active_main_for_death(k);
+                self.sprite_active_main(k);
                 let Some((x, y, _flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
                     return;
                 };
@@ -7043,7 +7038,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         self.carried_sprite_check_for_throw(k);
         self.sprite_get16_bit_coords(k);
         if self.sprite_slot_view(k).draw_work_byte_4() != 11 {
-            self.sprite_active_main_for_death(k);
+            self.sprite_active_main(k);
             if self.sprite_slot_view(k).delay_aux4() == 1 {
                 let value = 9;
                 self.sprite_slot_view_mut(k).set_state(value);
@@ -7296,7 +7291,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   ...see sprite.c...
     // }
     pub(super) fn sprite_stunned_main_func1(&mut self, k: usize) {
-        self.sprite_active_main_for_death(k);
+        self.sprite_active_main(k);
         if self.sprite_slot_view(k).draw_work_byte_5() != 0 {
             if self.sprite_slot_view(k).delay_main() < 32 {
                 let value = (self.sprite_slot_view(k).oam_flags() & 0xf1) | 4;
@@ -9535,7 +9530,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 self.sprite_prep_load_properties_after_reset_prefix(j, completed_stores);
                 return;
             }
-            _ => self.sprite_prep_load_properties_for_helpers(j),
+            _ => self.sprite_prep_load_properties(j),
         }
         if self.game_state.world.location.is_outdoors() {
             self.sprite_slot_view_mut(j).set_n_word(0xffff);
@@ -9574,10 +9569,10 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         match progress {
             crate::SpriteDynamicSpawnProgress::TypePublished => {
                 self.sprite_slot_view_mut(j).set_state(9);
-                self.sprite_prep_load_properties_for_helpers(j);
+                self.sprite_prep_load_properties(j);
             }
             crate::SpriteDynamicSpawnProgress::StatePublished => {
-                self.sprite_prep_load_properties_for_helpers(j);
+                self.sprite_prep_load_properties(j);
             }
             crate::SpriteDynamicSpawnProgress::ResetProperties { completed_stores } => {
                 self.sprite_prep_reset_properties_from(j, completed_stores);
@@ -9956,8 +9951,8 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     // actually triggered. Mirrors the C `int` return.
     pub(super) fn sprite_show_solicited_message(&mut self, k: usize, msg: u16) -> u16 {
         self.dialogue_message_index_mut().set_value(msg);
-        if !self.sprite_check_damage_to_link_same_layer_for_helpers(k)
-            || self.sprite_check_if_link_is_busy_for_helpers()
+        if !self.sprite_check_damage_to_link_same_layer(k)
+            || self.sprite_check_if_link_is_busy()
             || (self.game_state.player.follower_link.filtered_joypad_l() & 0x80) == 0
             || self.sprite_slot_view(k).delay_aux4() != 0
             || self
@@ -9968,7 +9963,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         {
             return u16::from(self.sprite_slot_view(k).direction());
         }
-        let dir = self.sprite_direction_to_face_link_for_helpers(k);
+        let dir = self.sprite_direction_to_face_link(k);
         if self.game_state.player.follower_link.facing()
             != SPRITE_SHOW_SOLICITED_MESSAGE_MESSAGE_FACING_BY_DIRECTION[(dir & 3) as usize]
         {
@@ -10362,21 +10357,6 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     // `_for_helpers` adapters used by the canonical message helpers above.
     // -----------------------------------------------------------------
 
-    fn sprite_prep_load_properties_for_helpers(&mut self, k: usize) {
-        self.sprite_prep_load_properties(k);
-    }
-
-    fn sprite_check_damage_to_link_same_layer_for_helpers(&mut self, k: usize) -> bool {
-        self.sprite_check_damage_to_link_same_layer(k)
-    }
-
-    fn sprite_check_if_link_is_busy_for_helpers(&self) -> bool {
-        self.sprite_check_if_link_is_busy()
-    }
-
-    fn sprite_direction_to_face_link_for_helpers(&mut self, k: usize) -> u8 {
-        self.sprite_direction_to_face_link(k)
-    }
 }
 
 #[cfg(test)]

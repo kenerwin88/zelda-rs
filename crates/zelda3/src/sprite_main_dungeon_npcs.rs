@@ -1356,7 +1356,7 @@ impl ZeldaState {
                 }
             }
             3 => {
-                let head_direction = self.sprite_direction_to_face_link_for_dn(k) ^ 3;
+                let head_direction = self.sprite_direction_to_face_link(k) ^ 3;
                 self.sprite_slot_view_mut(k)
                     .set_head_direction(head_direction);
                 let j = self.sprite_show_solicited_message(k, 0x16);
@@ -1381,7 +1381,7 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn priest_chillin(&mut self, k: usize) {
-        let head_direction = self.sprite_direction_to_face_link_for_dn(k) ^ 3;
+        let head_direction = self.sprite_direction_to_face_link(k) ^ 3;
         self.sprite_slot_view_mut(k)
             .set_head_direction(head_direction);
         let m: u16 = if (self.game_state.inventory.player_resources.pendant_flags() & 7) == 7 {
@@ -1522,7 +1522,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_graphics(0);
                 j = 0;
             } else {
-                let v = self.sprite_direction_to_face_link_for_dn(k) ^ 3;
+                let v = self.sprite_direction_to_face_link(k) ^ 3;
                 self.sprite_slot_view_mut(k).set_direction(v);
                 self.sprite_slot_view_mut(k).set_head_direction(v);
                 if self.game_state.sprites.follower_runtime.indicator() == 1 {
@@ -1910,7 +1910,7 @@ impl ZeldaState {
     pub(super) fn nice_thief_animate(&mut self, k: usize) {
         if (self.game_state.frame.frame_counter & 3) == 0 {
             self.sprite_slot_view_mut(k).set_graphics(2);
-            let dir = self.sprite_direction_to_face_link_for_dn(k);
+            let dir = self.sprite_direction_to_face_link(k);
             self.sprite_slot_view_mut(k)
                 .set_head_direction(if dir == 3 { 2 } else { dir });
         }
@@ -1940,7 +1940,7 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn kiki_lying_inwait(&mut self, k: usize) {
-        self.sprite_prep_oam_coord_for_dn(k);
+        self.sprite_prep_oam_coord(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -2009,7 +2009,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_state(0);
         }
         self.sprite_slot_view_mut(k).subtract_z_velocity(2);
-        self.sprite_move_xyz_for_dn(k);
+        self.sprite_move_xyz(k);
         if (self.sprite_slot_view(k).z() as i8) < 0 {
             self.sprite_slot_view_mut(k).set_z(0);
             let z_velocity = (self.get_random_number() & 15) | 16;
@@ -2064,7 +2064,7 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.sprite_move_xyz_for_dn(k);
+        self.sprite_move_xyz(k);
         self.sprite_slot_view_mut(k).decrement_z_velocity();
         if (self.sprite_slot_view(k).z() as i8) < 0 {
             self.sprite_slot_view_mut(k).set_z_velocity(0);
@@ -2122,7 +2122,7 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.sprite_move_xyz_for_dn(k);
+        self.sprite_move_xyz(k);
         self.sprite_slot_view_mut(k).decrement_z_velocity();
         if (self.sprite_slot_view(k).z() as i8) < 0 {
             self.sprite_slot_view_mut(k).set_z_velocity(0);
@@ -2874,34 +2874,12 @@ impl ZeldaState {
         )
     }
 
-    fn sprite_direction_to_face_link_for_dn(&mut self, k: usize) -> u8 {
-        self.sprite_direction_to_face_link(k)
-    }
-
     fn thief_draw_apply_head_overrides_for_dn(&mut self, k: usize) {
         let oam = self.game_state.oam.current_pointer_usize();
         let j = self.sprite_slot_view(k).head_direction() as usize;
         self.oam_state_mut().set_entry_char(oam, THIEF_DRAW_CHAR[j]);
         self.oam_state_mut()
             .merge_entry_flags(oam, !0x40, THIEF_DRAW_FLAGS[j]);
-    }
-
-    fn sprite_prep_oam_coord_for_dn(&mut self, k: usize) {
-        let mut info = crate::zelda_rtl::sprite::PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_prep_oam_coord(k, &mut info);
-    }
-
-    fn sprite_move_xyz_for_dn(&mut self, k: usize) {
-        // Sprite_MoveXYZ = MoveZ + MoveX + MoveY. We rely on the canonical
-        // move helpers when they exist; sprite_move_xy already combines
-        // X + Y, so MoveXYZ is MoveZ + MoveXY.
-        self.sprite_move_z(k);
-        self.sprite_move_xy(k);
     }
 
 }

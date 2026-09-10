@@ -1,5 +1,4 @@
 //! Ported Blind-boss handlers from sprite_main.c.
-use super::sprite::PrepOamCoordsRet;
 use super::*;
 
 mod sprite_main_blind_shared;
@@ -26,13 +25,7 @@ impl ZeldaState {
             sprite.set_graphics(BLIND_LASER_GRAPHICS_BY_HEAD_DIR[j]);
             sprite.set_oam_flags(BLIND_LASER_OAM_FLAGS_BY_HEAD_DIR[j] | 3);
         }
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_prep_oam_coord(k, &mut info);
+        self.sprite_prep_oam_coord(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }

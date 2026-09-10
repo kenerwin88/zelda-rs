@@ -12,7 +12,6 @@
 //! `_for_mothula` adapter names so the data-state side of these handlers
 //! stays exercisable while the remaining canonical ports land.
 
-use super::sprite::PrepOamCoordsRet as SpritePrepOamCoordsRet;
 use super::*;
 use crate::tile_definition::NativeTile;
 use crate::types::{sign8, SpriteHitBox};
@@ -57,13 +56,7 @@ impl ZeldaState {
             || ((self.sprite_slot_view(k).ai_state() & 1) != 0
                 && (self.sprite_slot_view(k).delay_main() & 1) != 0)
         {
-            let mut info = SpritePrepOamCoordsRet {
-                x: 0,
-                y: 0,
-                r4: 0,
-                flags: 0,
-            };
-            self.sprite_prep_oam_coord(k, &mut info);
+            self.sprite_prep_oam_coord(k);
         } else {
             self.wizzrobe_draw(k);
         }
@@ -134,13 +127,7 @@ impl ZeldaState {
     // void Sprite_9A_Kyameron(int k) {  // 9e9e7b
     pub(super) fn sprite_9_a_kyameron(&mut self, k: usize) {
         if self.sprite_slot_view(k).ai_state() == 0 {
-            let mut info = SpritePrepOamCoordsRet {
-                x: 0,
-                y: 0,
-                r4: 0,
-                flags: 0,
-            };
-            self.sprite_prep_oam_coord(k, &mut info);
+            self.sprite_prep_oam_coord(k);
         } else {
             self.kyameron_draw(k);
         }
@@ -1176,13 +1163,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_y_velocity(0);
             self.sprite_slot_view_mut(k).set_x_velocity(0);
         }
-        let mut info = SpritePrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_prep_oam_coord(k, &mut info);
+        self.sprite_prep_oam_coord(k);
     }
 
     // void Stalfos_Skellington(int k) {  // 9e90b5
@@ -1737,13 +1718,7 @@ impl ZeldaState {
 
     // void Sprite_C5_Medusa(int k) {  // 9dc7eb
     pub(super) fn sprite_c5_medusa(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_prep_oam_coord(k, &mut info);
+        self.sprite_prep_oam_coord(k);
         if self.game_state.world.location.is_outdoors() {
             self.sprite_slot_view_mut(k).set_x_velocity(255);
             self.sprite_slot_view_mut(k).set_subtype(255);
@@ -1782,13 +1757,7 @@ impl ZeldaState {
 
     // void Sprite_C6_4WayShooter(int k) {  // 9dc869
     pub(super) fn sprite_c6_4_way_shooter(&mut self, k: usize) {
-        let mut info = SpritePrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_prep_oam_coord(k, &mut info);
+        self.sprite_prep_oam_coord(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }

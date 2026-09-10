@@ -290,13 +290,7 @@ impl ZeldaState {
     // void Sprite_Zora_Main(int k) {  // 859725
     pub(super) fn sprite_zora_main(&mut self, k: usize) {
         if self.sprite_slot_view(k).ai_state() == 0 {
-            let mut info = PrepOamCoordsRet {
-                x: 0,
-                y: 0,
-                r4: 0,
-                flags: 0,
-            };
-            self.sprite_prep_oam_coord(k, &mut info);
+            self.sprite_prep_oam_coord(k);
         } else {
             self.zora_draw(k);
         }
@@ -948,13 +942,7 @@ impl ZeldaState {
 
         match self.sprite_slot_view(k).b() {
             0 => {
-                let mut info = PrepOamCoordsRet {
-                    x: 0,
-                    y: 0,
-                    r4: 0,
-                    flags: 0,
-                };
-                self.sprite_prep_oam_coord(k, &mut info);
+                self.sprite_prep_oam_coord(k);
                 if self.sprite_return_if_inactive(k) {
                     return;
                 }
@@ -3904,13 +3892,7 @@ impl ZeldaState {
     //   Replay the 32-sample beamos history buffer as small laser tiles.
     // }
     pub(super) fn beamos_laser_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_prep_oam_coord(k, &mut info);
+        let info = self.sprite_prep_oam_coord(k);
         let mut oam = self.game_state.oam.current_pointer_usize();
         let g = self.sprite_slot_view(k).graphics() as usize;
         for i in (0..32).rev() {
@@ -4922,13 +4904,7 @@ impl ZeldaState {
     // }
     pub(super) fn fish_draw(&mut self, k: usize) {
         if self.sprite_slot_view(k).graphics() == 0 {
-            let mut info = PrepOamCoordsRet {
-                x: 0,
-                y: 0,
-                r4: 0,
-                flags: 0,
-            };
-            self.sprite_prep_oam_coord(k, &mut info);
+            self.sprite_prep_oam_coord(k);
             return;
         }
         let cur_x = self.game_state.sprites.workspace.current_sprite_x();
@@ -6591,13 +6567,7 @@ impl ZeldaState {
             self.oam_allocate_from_region_b(8);
         }
         if self.sprite_slot_view(k).ai_state() == 0 {
-            let mut info = PrepOamCoordsRet {
-                x: 0,
-                y: 0,
-                r4: 0,
-                flags: 0,
-            };
-            self.sprite_prep_oam_coord(k, &mut info);
+            self.sprite_prep_oam_coord(k);
             return;
         }
         let gfx = self.sprite_slot_view(k).graphics();
@@ -6764,18 +6734,12 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Stalfos_Draw(int k) {  // 8dc21c
     pub(super) fn stalfos_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         if self.sprite_slot_view(k).delay_aux2() != 0 {
-            self.sprite_prep_oam_coord(k, &mut info);
+            self.sprite_prep_oam_coord(k);
             return;
         }
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 3;
-        info = self.sprite_draw_multiple(k, &STALFOS_DRAW_FRAMES[base..base + 3]);
+        let mut info = self.sprite_draw_multiple(k, &STALFOS_DRAW_FRAMES[base..base + 3]);
         if self.sprite_slot_view(k).graphics() < 8 && self.sprite_slot_view(k).pause() == 0 {
             let oam = self.game_state.oam.current_pointer_usize();
             let i = usize::from(self.sprite_slot_view(k).head_direction());
@@ -7058,13 +7022,7 @@ impl ZeldaState {
     // void Sprite_BunnyBeam(int k) {  // 9d85e0
     pub(super) fn sprite_bunny_beam(&mut self, k: usize) {
         if self.sprite_slot_view(k).ai_state() == 0 {
-            let mut info = PrepOamCoordsRet {
-                x: 0,
-                y: 0,
-                r4: 0,
-                flags: 0,
-            };
-            self.sprite_prep_oam_coord(k, &mut info);
+            self.sprite_prep_oam_coord(k);
             if self.sprite_return_if_inactive(k) {
                 return;
             }
@@ -8148,13 +8106,7 @@ impl ZeldaState {
             let base = usize::from(g) * 2;
             self.sprite_draw_multiple(k, &BABUSU_DRAW_FRAMES[base..base + 2]);
         } else {
-            let mut info = PrepOamCoordsRet {
-                x: 0,
-                y: 0,
-                r4: 0,
-                flags: 0,
-            };
-            self.sprite_prep_oam_coord(k, &mut info);
+            self.sprite_prep_oam_coord(k);
         }
     }
 
@@ -9747,13 +9699,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_B3_PedestalPlaque(int k) {  // 9ee044
     pub(super) fn sprite_b3_pedestal_plaque(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_prep_oam_coord(k, &mut info);
+        self.sprite_prep_oam_coord(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -10737,13 +10683,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_FairyCloud(int k) {  // 9dc41c
     pub(super) fn sprite_fairy_cloud(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_prep_oam_coord(k, &mut info);
+        self.sprite_prep_oam_coord(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -13935,13 +13875,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_33_RupeePull(int k) {  // 86c017
     pub(super) fn sprite_33_rupee_pull(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_prep_oam_coord(k, &mut info);
+        self.sprite_prep_oam_coord(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -13968,13 +13902,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_14_ThievesTownGrate(int k) {  // 86c01c
     pub(super) fn sprite_14_thieves_town_grate(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_prep_oam_coord(k, &mut info);
+        self.sprite_prep_oam_coord(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -14018,13 +13946,7 @@ impl ZeldaState {
     // void Sprite_38_EyeStatue(int k) {  // 86c03f
     pub(super) fn sprite_38_eye_statue(&mut self, k: usize) {
         if self.sprite_slot_view(k).b() == 0 {
-            let mut info = PrepOamCoordsRet {
-                x: 0,
-                y: 0,
-                r4: 0,
-                flags: 0,
-            };
-            self.sprite_prep_oam_coord(k, &mut info);
+            self.sprite_prep_oam_coord(k);
             if self.sprite_return_if_inactive(k) {
                 return;
             }
@@ -14381,13 +14303,7 @@ impl ZeldaState {
     // void Sprite_BA_Whirlpool(int k) {  // 9eee5a
     pub(super) fn sprite_ba_whirlpool(&mut self, k: usize) {
         if self.game_state.world.location.overworld_screen_index() == 0x1b {
-            let mut info = PrepOamCoordsRet {
-                x: 0,
-                y: 0,
-                r4: 0,
-                flags: 0,
-            };
-            self.sprite_prep_oam_coord(k, &mut info);
+            self.sprite_prep_oam_coord(k);
             if self.sprite_return_if_inactive(k) {
                 return;
             }
@@ -14970,13 +14886,7 @@ impl ZeldaState {
     // void Sprite_4C_Geldman(int k) {  // 85b8b3
     pub(super) fn sprite_4_c_geldman(&mut self, k: usize) {
         if self.sprite_slot_view(k).ai_state() < 2 {
-            let mut info = PrepOamCoordsRet {
-                x: 0,
-                y: 0,
-                r4: 0,
-                flags: 0,
-            };
-            self.sprite_prep_oam_coord(k, &mut info);
+            self.sprite_prep_oam_coord(k);
         } else {
             self.gerudo_man_draw(k);
         }
@@ -15452,13 +15362,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).ai_state() != 0 {
             self.leever_draw(k);
         } else {
-            let mut info = PrepOamCoordsRet {
-                x: 0,
-                y: 0,
-                r4: 0,
-                flags: 0,
-            };
-            self.sprite_prep_oam_coord(k, &mut info);
+            self.sprite_prep_oam_coord(k);
         }
         if self.sprite_slot_view(k).pause() != 0 {
             let value = 8;
@@ -15552,13 +15456,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_1D_FluteQuest(int k) {  // 86c2e5
     pub(super) fn sprite_1_d_flute_quest(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_prep_oam_coord(k, &mut info);
+        self.sprite_prep_oam_coord(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -15914,13 +15812,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_54_Lanmolas(int k) {  // 85a3a2
     pub(super) fn sprite_54_lanmolas(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_prep_oam_coord(k, &mut info);
+        self.sprite_prep_oam_coord(k);
         self.lanmola_draw(k);
         self.sprite_54_lanmolas_after_draw(k);
     }
@@ -16135,13 +16027,7 @@ impl ZeldaState {
         &mut self,
         k: usize,
     ) -> LanmolaDrawContinuation {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_prep_oam_coord(k, &mut info);
+        self.sprite_prep_oam_coord(k);
         self.lanmola_draw_through_subtype2_increment(k)
     }
 
@@ -16219,13 +16105,7 @@ impl ZeldaState {
     /// `Lanmola_Draw`'s first `completed_stores` prologue stores.
     pub(super) fn begin_lanmola_draw_prefix_checkpoint(&mut self, k: usize, completed_stores: u8) {
         assert!(completed_stores <= LANMOLA_DRAW_PREFIX_STORES);
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_prep_oam_coord(k, &mut info);
+        self.sprite_prep_oam_coord(k);
         self.lanmola_draw_set_oam_pointers(k);
         self.lanmola_draw_prefix_stores(k, 0, completed_stores);
     }
@@ -16588,13 +16468,7 @@ impl ZeldaState {
 
     pub(super) fn archery_game_guy_draw(&mut self, k: usize) {
         self.oam_allocate_defer_to_player(k);
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_prep_oam_coord(k, &mut info);
+        let mut info = self.sprite_prep_oam_coord(k);
         let mut oam = self.game_state.oam.current_pointer_usize();
         let g = usize::from(self.sprite_slot_view(k).graphics());
         for i in (0..3).rev() {

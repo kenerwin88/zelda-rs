@@ -944,14 +944,7 @@ fn sprite_prep_oam_coord_fills_ret_and_out_of_bounds_side_effects() {
     visible.sprite_slot_view_mut(k).set_z(3);
     visible.sprite_slot_view_mut(k).set_oam_flags(0x0a);
     visible.sprite_slot_view_mut(k).set_object_priority(0x03);
-    let mut ret = PrepOamCoordsRet {
-        x: 0,
-        y: 0,
-        r4: 0xff,
-        flags: 0,
-    };
-
-    visible.sprite_prep_oam_coord(k, &mut ret);
+    let ret = visible.sprite_prep_oam_coord(k);
 
     assert_eq!(ret.x, 0x20);
     assert_eq!(ret.y, 0x2d);
@@ -972,14 +965,7 @@ fn sprite_prep_oam_coord_fills_ret_and_out_of_bounds_side_effects() {
     out.sprite_slot_view_mut(k).set_n_word(0x0012);
     out.ram[OVERWORLD_SPRITE_WAS_LOADED + 2] = 0xff;
     out.sprite_workspace_mut().set_current_sprite_x(0x0130);
-    let mut out_ret = PrepOamCoordsRet {
-        x: 0,
-        y: 0,
-        r4: 0xff,
-        flags: 0,
-    };
-
-    out.sprite_prep_oam_coord(k, &mut out_ret);
+    let out_ret = out.sprite_prep_oam_coord(k);
 
     assert_eq!(out_ret.x, 0x8212);
     assert_eq!(out_ret.y, 0x00ef);

@@ -327,7 +327,7 @@ impl ZeldaState {
     //   sprite_y_vel[k] <<= 1;
     // }
     pub(super) fn hinox_face_link(&mut self, k: usize) {
-        let dir = self.sprite_direction_to_face_link_for_hinox_shop(k);
+        let dir = self.sprite_direction_to_face_link(k);
         self.hinox_set_direction(k, dir);
         let mut sprite = self.sprite_slot_view_mut(k);
         sprite.shift_x_velocity_left(1);
@@ -800,10 +800,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
 
     // Rewired to canonical Sprite_DirectionToFaceLink port.
-    fn sprite_direction_to_face_link_for_hinox_shop(&mut self, k: usize) -> u8 {
-        self.sprite_direction_to_face_link(k)
-    }
-
 }
 
 #[cfg(test)]
