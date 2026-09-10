@@ -5725,6 +5725,13 @@ impl ZeldaState {
             self.triforce_room_scroll_this_iteration = true;
             return self.render_text_scroll_pixels(group.min(remaining_in_line));
         }
+        if !self.rom_startup_timing() {
+            // ROM-less play: the two-frame scroll lag's return-only and
+            // staged-completion slices are completed by the ROM timing
+            // presentation pipeline, so without it the line drains in one
+            // frame (see docs/parity/romless-play-restored.md).
+            return self.render_text_scroll_pixels(group.min(remaining_in_line));
+        }
         if group != 5 {
             // Only scroll speed 4 has oracle-verified lag timing; other
             // speeds keep the single-frame drain until ground truth is

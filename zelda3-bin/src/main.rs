@@ -536,18 +536,66 @@ fn run_headless(args: &[String]) {
 
 fn run_standalone_smoke(args: &[String]) {
     let frames: u32 = args.first().map(|s| s.parse().unwrap_or(2)).unwrap_or(2);
-    let mut game = load_embedded_play_state();
-    game.sram.fill(0);
+    // `ZELDA3_SMOKE_INPUT_PULSE=<mask>` presses the joypad mask for eight of
+    // every sixteen frames, enough to walk the ROM-less build from the title
+    // through the file select into the game.
+    let pulse: u16 = env::var("ZELDA3_SMOKE_INPUT_PULSE")
+        .ok()
+        .and_then(|v| u16::from_str_radix(v.trim_start_matches("0x"), 16).ok())
+        .unwrap_or(0);
+    // `ZELDA3_SMOKE_INPUT_LEDGER=<oracle-av-hashes.jsonl>` replays a cached
+    // route's per-frame inputs instead of the pulse, and
+    // `ZELDA3_SMOKE_SRAM=<initial.srm>` seeds the save the route started from,
+    // so the ROM-less build can be walked into the game's dialogue modules.
+    let ledger_inputs: Vec<u16> = env::var_os("ZELDA3_SMOKE_INPUT_LEDGER")
+        .map(|path| {
+            let text = fs::read_to_string(&path).unwrap_or_else(|e| {
+                eprintln!("failed to read {path:?}: {e}");
+                process::exit(2);
+            });
+            text.lines()
+                .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+                .filter_map(|record| {
+                    record.get("input")?.as_str().and_then(|input| {
+                        u16::from_str_radix(input.trim_start_matches("0x"), 16).ok()
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut game = load_romless_play_state();
+    // `ZELDA3_SMOKE_KEEP_SRAM=1` keeps the loaded save so the pulse can enter
+    // a saved game (the spawn-select dialogue) instead of the name entry.
+    if env::var_os("ZELDA3_SMOKE_KEEP_SRAM").is_none() {
+        game.sram.fill(0);
+    }
+    if let Some(path) = env::var_os("ZELDA3_SMOKE_SRAM") {
+        let sram = fs::read(&path).unwrap_or_else(|e| {
+            eprintln!("failed to read {path:?}: {e}");
+            process::exit(2);
+        });
+        let len = sram.len().min(game.sram.len());
+        game.sram[..len].copy_from_slice(&sram[..len]);
+    }
     let mut audio = vec![0i16; 735 * 2];
 
-    for _ in 0..frames {
-        game.zelda_run_frame(0);
+    for frame in 0..frames {
+        let input = match ledger_inputs.get(frame as usize) {
+            Some(&input) => input,
+            None if pulse != 0 && frame % 16 < 8 => pulse,
+            None => 0,
+        };
+        game.zelda_run_frame(i32::from(input));
+        if frame % 100 == 0 && env::var_os("ZELDA3_SMOKE_TRACE").is_some() {
+            eprintln!("smoke frame={frame} main={:#04x} sub={:#04x}", game.ram[0x10], game.ram[0x11]);
+        }
         game.zelda_render_audio(&mut audio, 735, 2);
         game.zelda_discard_unused_audio_frames();
     }
 
     println!(
-        "standalone smoke completed frames={frames} ram_fnv1a64={:016x} sram_fnv1a64={:016x}",
+        "standalone smoke completed frames={frames} main_module={:#04x} ram_fnv1a64={:016x} sram_fnv1a64={:016x}",
+        game.ram[0x10],
         fnv1a64(&game.ram),
         fnv1a64(&game.sram)
     );
@@ -1561,6 +1609,21 @@ pub(crate) fn load_play_state(rom_path: &str) -> ZeldaState {
 pub(crate) fn load_default_play_state() -> ZeldaState {
     let mut game = ZeldaState::new();
     game.set_rom_startup_timing(true);
+    apply_startup_audio_phase_override(&mut game);
+    if let Err(e) = game.set_assets(EMBEDDED_ASSETS) {
+        eprintln!("fatal: failed to load embedded extracted asset pack: {e}");
+        process::exit(1);
+    }
+    configure_game_runtime_defaults(&mut game);
+    game.zelda_read_sram();
+    game
+}
+
+/// ROM-less play: the embedded asset pack with ROM startup timing off. The
+/// cycle-exact timing plans execute the ROM, so without one the game runs on
+/// its unmeasured schedules; a loaded ROM (`zelda3 <rom>`) keeps them on.
+pub(crate) fn load_romless_play_state() -> ZeldaState {
+    let mut game = ZeldaState::new();
     apply_startup_audio_phase_override(&mut game);
     if let Err(e) = game.set_assets(EMBEDDED_ASSETS) {
         eprintln!("fatal: failed to load embedded extracted asset pack: {e}");

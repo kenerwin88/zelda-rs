@@ -256,7 +256,7 @@ pub(crate) fn run_play(rom_path: &str) {
 }
 
 pub(crate) fn run_standalone_play() {
-    run_play_with_state(load_default_play_state());
+    run_play_with_state(crate::load_romless_play_state());
 }
 
 fn run_play_with_state(mut game: ZeldaState) {

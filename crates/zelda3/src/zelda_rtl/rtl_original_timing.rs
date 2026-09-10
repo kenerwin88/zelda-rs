@@ -7712,7 +7712,7 @@ impl ZeldaState {
         receipt: ItemReceiptReturn,
         caller: ItemReceiptCaller,
     ) -> GameCallStatus {
-        if !self.rom_startup_timing() {
+        if !self.rom_startup_timing {
             return GameCallStatus::Returned;
         }
         let nmi_slices = rom_item_receipt_graphics_nmi_slices(gfx);

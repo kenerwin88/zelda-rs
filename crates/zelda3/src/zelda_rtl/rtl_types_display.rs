@@ -816,11 +816,12 @@ impl DialogueScrollMachineMut<'_> {
         &mut self,
         authoritative_completion_timing: Option<DialogueScrollCompletionTiming>,
     ) -> DialogueScrollCompletionTiming {
+        let phase = self.phase();
         let DialogueScrollPhase::CopyingRemainingPixels {
             completion_timing: planned_completion_timing,
-        } = self.phase()
+        } = phase
         else {
-            panic!("dialogue scroll copy completed outside its copy phase");
+            panic!("dialogue scroll copy completed outside its copy phase: {phase:?}");
         };
         let completion_timing =
             authoritative_completion_timing.unwrap_or(planned_completion_timing);
