@@ -1647,15 +1647,12 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_graphics(4);
 
         // SpriteSpawnInfo info; j = Sprite_SpawnDynamicallyEx(k, 4, &info, 13);
-        // The 13-slot variant of SpawnDynamically isn't ported yet — surface
-        // it via the local shim which returns the spawn-info x/y or None.
-        let info = self.sprite_spawn_dynamically_ex_for_small_bosses(k, 0x4, 13);
-
-        // for (j = 13; j != 0; j--) — the loop runs even if the spawn slot
-        // wasn't available; the per-slot writes still happen against slots
-        // 1..13 in the 16-slot active table. The C also reuses `info.r0_x`
-        // / `info.r2_y` for the per-slot Set X/Y even if `j < 0`.
-        let (r0_x, r2_y) = info;
+        // for (j = 13; j != 0; j--) — the loop runs even if no slot was free; the
+        // per-slot writes still happen against slots 1..13, and the original reuses
+        // the (then unfilled) record's x/y, which the port reads as zero.
+        let (r0_x, r2_y) = self
+            .spawn_sprite_dynamically_ex(k, 0x4, 13)
+            .map_or((0, 0), |(_, info)| (info.r0_x, info.r2_y));
 
         for j in (1usize..=13).rev() {
             self.sprite_slot_view_mut(j).set_state(9);
@@ -2491,8 +2488,8 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn yellow_stalfos_emancipate_head(&mut self, k: usize) {
-        if let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_small_bosses(k, 2) {
-            self.sprite_set_spawned_coordinates_for_small_bosses(j, r0_x, r2_y);
+        if let Some((j, info)) = self.spawn_sprite_dynamically(k, 2) {
+            self.sprite_set_spawned_coordinates(j, &info);
             self.sprite_slot_view_mut(j).set_z(13);
             self.sprite_apply_speed_towards_link(j, 16);
             self.sprite_slot_view_mut(j).set_delay_main(255);
@@ -2678,48 +2675,6 @@ impl ZeldaState {
         let ext_index = (oam - OAM_BUF) / 4;
         let value = big;
         self.oam_state_mut().set_extended_byte(ext_index, value);
-    }
-
-    fn sprite_spawn_dynamically_for_small_bosses(
-        &mut self,
-        k: usize,
-        what: u8,
-    ) -> Option<(usize, u16, u16)> {
-        // Rewired to canonical Sprite_SpawnDynamically port.
-        let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
-        let j = self.sprite_spawn_dynamically(k, what, &mut info);
-        if j < 0 {
-            None
-        } else {
-            Some((j as usize, info.r0_x, info.r2_y))
-        }
-    }
-
-    fn sprite_set_spawned_coordinates_for_small_bosses(&mut self, j: usize, r0_x: u16, r2_y: u16) {
-        // Rewired to canonical Sprite_SetSpawnedCoordinates port.
-        let info = crate::zelda_rtl::sprite::SpriteSpawnInfo {
-            r0_x,
-            r2_y,
-            ..Default::default()
-        };
-        self.sprite_set_spawned_coordinates(j, &info);
-    }
-
-    fn sprite_spawn_dynamically_ex_for_small_bosses(
-        &mut self,
-        k: usize,
-        what: u8,
-        slot_count: u8,
-    ) -> (u16, u16) {
-        // Rewired to canonical Sprite_SpawnDynamicallyEx port. The
-        // `slot_count` is the inclusive upper-bound `j` from the C
-        // signature (sprite.c:4244). Vitreous calls with slot_count=13,
-        // matching the canonical use-site.
-        let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
-        let _j = self.sprite_spawn_dynamically_ex(k, what, &mut info, slot_count as i32);
-        // The C body always feeds info.r0_x/r2_y to the subsequent per-slot
-        // writes regardless of whether `j` was negative; mirror that.
-        (info.r0_x, info.r2_y)
     }
 
 }

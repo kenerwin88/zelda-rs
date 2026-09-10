@@ -638,15 +638,15 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn helmasaur_king_spawn_mask_debris(&mut self, k: usize) {
-        if let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_helmasaur_king(k, 0x92) {
+        if let Some((j, info)) = self.spawn_sprite_dynamically(k, 0x92) {
             let i = self.game_state.scratch_counter.value() as usize;
             self.sprite_set_x(
                 j,
-                r0_x.wrapping_add(HELMASAUR_MASK_DEBRIS_X_OFFSETS[i] as i16 as u16),
+                info.r0_x.wrapping_add(HELMASAUR_MASK_DEBRIS_X_OFFSETS[i] as i16 as u16),
             );
             self.sprite_set_y(
                 j,
-                r2_y.wrapping_add(HELMASAUR_MASK_DEBRIS_Y_OFFSETS[i] as i16 as u16),
+                info.r2_y.wrapping_add(HELMASAUR_MASK_DEBRIS_Y_OFFSETS[i] as i16 as u16),
             );
             let tmp_counter = self.game_state.scratch_counter.value();
             let mut sprite = self.sprite_slot_view_mut(j);
@@ -669,15 +669,15 @@ impl ZeldaState {
     //   int j = Sprite_SpawnDynamically(k, 0x70, &info);
     //   if (j >= 0) {
     //     Sprite_SetSpawnedCoordinates(j, &info);
-    //     Sprite_SetY(j, info.r2_y + 28);
+    //     Sprite_SetY(j, info.info.r2_y + 28);
     //     sprite_delay_main[j] = 32;
     //     sprite_ignore_projectile[j] = 32;
     //   }
     // }
     pub(super) fn helmasaur_king_spit_fireball(&mut self, k: usize) {
-        if let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_helmasaur_king(k, 0x70) {
-            self.sprite_set_spawned_coordinates_for_helmasaur_king(j, r0_x, r2_y);
-            self.sprite_set_y(j, r2_y.wrapping_add(28));
+        if let Some((j, info)) = self.spawn_sprite_dynamically(k, 0x70) {
+            self.sprite_set_spawned_coordinates(j, &info);
+            self.sprite_set_y(j, info.r2_y.wrapping_add(28));
             let mut sprite = self.sprite_slot_view_mut(j);
             sprite.set_delay_main(32);
             sprite.set_ignore_projectile(32);
@@ -757,36 +757,6 @@ impl ZeldaState {
     // Local helper adapters that keep split-module call signatures while
     // routing through canonical helper implementations.
     // -----------------------------------------------------------------
-
-    fn sprite_spawn_dynamically_for_helmasaur_king(
-        &mut self,
-        k: usize,
-        what: u8,
-    ) -> Option<(usize, u16, u16)> {
-        // Rewired to canonical Sprite_SpawnDynamically port.
-        let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
-        let j = self.sprite_spawn_dynamically(k, what, &mut info);
-        if j < 0 {
-            None
-        } else {
-            Some((j as usize, info.r0_x, info.r2_y))
-        }
-    }
-
-    fn sprite_set_spawned_coordinates_for_helmasaur_king(
-        &mut self,
-        j: usize,
-        r0_x: u16,
-        r2_y: u16,
-    ) {
-        // Rewired to canonical Sprite_SetSpawnedCoordinates port.
-        let info = crate::zelda_rtl::sprite::SpriteSpawnInfo {
-            r0_x,
-            r2_y,
-            ..Default::default()
-        };
-        self.sprite_set_spawned_coordinates(j, &info);
-    }
 
     fn sprite_prep_oam_coord_or_double_ret_for_helmasaur_king(
         &mut self,

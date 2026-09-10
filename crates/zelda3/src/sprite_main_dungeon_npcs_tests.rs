@@ -188,7 +188,8 @@ fn dn_dynamic_spawn_ex_uses_c_inclusive_slot_bound() {
     s.sprite_slot_view_mut(7).set_state(0);
 
     let spawned = s
-        .sprite_spawn_dynamically_ex_for_dn(parent, 0xd9, 7)
+        .spawn_sprite_dynamically_ex(parent, 0xd9, 7)
+        .map(|(slot, _)| slot)
         .expect("slot 7 should be included in the C j_in search");
 
     assert_eq!(spawned, 7);

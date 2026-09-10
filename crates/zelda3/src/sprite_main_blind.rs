@@ -211,8 +211,8 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn blind_spawn_head(&mut self, k: usize) {
-        if let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_blind(k, 0xce) {
-            self.sprite_set_spawned_coordinates_for_blind(j, r0_x, r2_y);
+        if let Some((j, info)) = self.spawn_sprite_dynamically(k, 0xce) {
+            self.sprite_set_spawned_coordinates(j, &info);
             let mut sprite = self.sprite_slot_view_mut(j);
             sprite.set_flags3(0x5b);
             sprite.set_oam_flags(0x5b & 15);
@@ -222,9 +222,9 @@ impl ZeldaState {
             sprite.set_flags4(0);
             sprite.set_flags(0);
             sprite.set_z(23);
-            sprite.set_y_low(23u16.wrapping_add(r2_y) as u8);
-            sprite.set_g(((r0_x >> 7) & 1) as u8);
-            sprite.set_anim_clock(((r2_y >> 7) & 1) as u8);
+            sprite.set_y_low(23u16.wrapping_add(info.r2_y) as u8);
+            sprite.set_g(((info.r0_x >> 7) & 1) as u8);
+            sprite.set_anim_clock(((info.r2_y >> 7) & 1) as u8);
             sprite.set_delay_main(48);
         }
     }
@@ -747,14 +747,14 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn blind_spawn_laser(&mut self, k: usize) {
-        if let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_blind(k, 0xce) {
+        if let Some((j, info)) = self.spawn_sprite_dynamically(k, 0xce) {
             let sfx = self.sprite_calculate_sfx_pan(k) | 0x26;
             self.set_sound_effect_2(sfx);
-            self.sprite_set_spawned_coordinates_for_blind(j, r0_x, r2_y);
+            self.sprite_set_spawned_coordinates(j, &info);
             let i = self.sprite_slot_view(k).head_direction();
             let i_idx = i as usize;
             let mut laser = self.sprite_slot_view_mut(j);
-            laser.set_x_low(r0_x.wrapping_add(4) as u8);
+            laser.set_x_low(info.r0_x.wrapping_add(4) as u8);
             laser.set_head_direction(i);
             laser.set_x_velocity(BLIND_LASER_X_VELOCITIES_BY_HEAD_DIR[i_idx] as u8);
             laser.set_y_velocity(BLIND_LASER_Y_VELOCITIES_BY_HEAD_DIR[i_idx] as u8);
@@ -840,31 +840,6 @@ impl ZeldaState {
     fn sprite_check_damage_to_and_from_link_for_blind(&mut self, k: usize) {
         // Rewired to canonical Sprite_CheckDamageToAndFromLink port.
         self.sprite_check_damage_to_and_from_link(k);
-    }
-
-    fn sprite_spawn_dynamically_for_blind(
-        &mut self,
-        k: usize,
-        what: u8,
-    ) -> Option<(usize, u16, u16)> {
-        // Rewired to canonical Sprite_SpawnDynamically port.
-        let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
-        let j = self.sprite_spawn_dynamically(k, what, &mut info);
-        if j < 0 {
-            None
-        } else {
-            Some((j as usize, info.r0_x, info.r2_y))
-        }
-    }
-
-    fn sprite_set_spawned_coordinates_for_blind(&mut self, j: usize, r0_x: u16, r2_y: u16) {
-        // Rewired to canonical Sprite_SetSpawnedCoordinates port.
-        let info = crate::zelda_rtl::sprite::SpriteSpawnInfo {
-            r0_x,
-            r2_y,
-            ..Default::default()
-        };
-        self.sprite_set_spawned_coordinates(j, &info);
     }
 
     fn sprite_kill_friends_for_blind(&mut self) {

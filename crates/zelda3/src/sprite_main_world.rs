@@ -849,8 +849,8 @@ impl ZeldaState {
     //   sprite_flags2[j] = 0;
     // }
     pub(super) fn master_sword_spawn_light_well(&mut self, k: usize) {
-        if let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_world(k, 0x62) {
-            self.sprite_set_spawned_coordinates_for_world(j, r0_x, r2_y);
+        if let Some((j, info)) = self.spawn_sprite_dynamically(k, 0x62) {
+            self.sprite_set_spawned_coordinates(j, &info);
             self.sprite_slot_view_mut(j).set_subtype2(4);
             self.sprite_slot_view_mut(j).set_oam_flags(5);
             self.sprite_slot_view_mut(j).set_flags2(0);
@@ -866,8 +866,8 @@ impl ZeldaState {
     //   sprite_flags2[j] = 0;
     // }
     pub(super) fn master_sword_spawn_light_fountain(&mut self, k: usize) {
-        if let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_world(k, 0x62) {
-            self.sprite_set_spawned_coordinates_for_world(j, r0_x, r2_y);
+        if let Some((j, info)) = self.spawn_sprite_dynamically(k, 0x62) {
+            self.sprite_set_spawned_coordinates(j, &info);
             self.sprite_slot_view_mut(j).set_subtype2(1);
             self.sprite_slot_view_mut(j).set_oam_flags(5);
             self.sprite_slot_view_mut(j).set_flags2(0);
@@ -1025,10 +1025,10 @@ impl ZeldaState {
     //   sprite_flags2[j] = 0;
     // }
     pub(super) fn master_sword_spawn_replacement_light_beam(&mut self, k: usize) {
-        let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_world(k, 0x62) else {
+        let Some((j, info)) = self.spawn_sprite_dynamically(k, 0x62) else {
             return;
         };
-        self.master_sword_finish_replacement_light_beam_spawn(k, j, r0_x, r2_y);
+        self.master_sword_finish_replacement_light_beam_spawn(k, j, info.r0_x, info.r2_y);
     }
 
     pub(super) fn master_sword_finish_replacement_light_beam_spawn(
@@ -1056,11 +1056,11 @@ impl ZeldaState {
         let ai = ain as usize;
 
         // Spawn 1
-        let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_world(k, 0x62) else {
+        let Some((j, info)) = self.spawn_sprite_dynamically(k, 0x62) else {
             return;
         };
-        self.sprite_set_x(j, r0_x.wrapping_sub(4));
-        self.sprite_set_y(j, r2_y.wrapping_add(4));
+        self.sprite_set_x(j, info.r0_x.wrapping_sub(4));
+        self.sprite_set_y(j, info.r2_y.wrapping_add(4));
         self.sprite_slot_view_mut(j).set_subtype2(2);
         self.sprite_slot_view_mut(j).set_a(2);
         self.sprite_slot_view_mut(j).set_flags2(0);
@@ -1075,11 +1075,11 @@ impl ZeldaState {
         self.sprite_slot_view_mut(j).set_b(yin);
 
         // Spawn 2
-        let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_world(k, 0x62) else {
+        let Some((j, info)) = self.spawn_sprite_dynamically(k, 0x62) else {
             return;
         };
-        self.sprite_set_x(j, r0_x.wrapping_sub(4));
-        self.sprite_set_y(j, r2_y.wrapping_add(4));
+        self.sprite_set_x(j, info.r0_x.wrapping_sub(4));
+        self.sprite_set_y(j, info.r2_y.wrapping_add(4));
         self.sprite_slot_view_mut(j).set_subtype2(2);
         self.sprite_slot_view_mut(j).set_a(2);
         self.sprite_slot_view_mut(j).set_flags2(0);
@@ -1094,11 +1094,11 @@ impl ZeldaState {
         self.sprite_slot_view_mut(j).set_b(yin);
 
         // Spawn 3
-        let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_world(k, 0x62) else {
+        let Some((j, info)) = self.spawn_sprite_dynamically(k, 0x62) else {
             return;
         };
-        self.sprite_set_x(j, r0_x.wrapping_sub(4));
-        self.sprite_set_y(j, r2_y.wrapping_add(4));
+        self.sprite_set_x(j, info.r0_x.wrapping_sub(4));
+        self.sprite_set_y(j, info.r2_y.wrapping_add(4));
         self.sprite_slot_view_mut(j).set_subtype2(2);
         self.sprite_slot_view_mut(j).set_a(2);
         self.sprite_slot_view_mut(j).set_flags2(0);
@@ -1113,11 +1113,11 @@ impl ZeldaState {
         self.sprite_slot_view_mut(j).set_b(yin);
 
         // Spawn 4
-        let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_world(k, 0x62) else {
+        let Some((j, info)) = self.spawn_sprite_dynamically(k, 0x62) else {
             return;
         };
-        self.sprite_set_x(j, r0_x.wrapping_sub(4));
-        self.sprite_set_y(j, r2_y.wrapping_add(4));
+        self.sprite_set_x(j, info.r0_x.wrapping_sub(4));
+        self.sprite_set_y(j, info.r2_y.wrapping_add(4));
         self.sprite_slot_view_mut(j).set_subtype2(2);
         self.sprite_slot_view_mut(j).set_a(2);
         self.sprite_slot_view_mut(j).set_flags2(0);
@@ -1150,7 +1150,7 @@ impl ZeldaState {
     //   sprite_y_vel[j] = kMasterSword_Pendant_Yv[i];
     // }
     pub(super) fn master_sword_spawn_pendant_prop(&mut self, k: usize, ain: u8) {
-        let Some((j, _r0_x, _r2_y)) = self.sprite_spawn_dynamically_for_world(k, 0x62) else {
+        let Some((j, _info)) = self.spawn_sprite_dynamically(k, 0x62) else {
             return;
         };
         self.sprite_slot_view_mut(j).set_oam_flags(ain);
@@ -1493,9 +1493,9 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn flute_kid_spawn_quaver(&mut self, k: usize) {
-        if let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_world(k, 0x2e) {
-            self.sprite_set_x(j, r0_x.wrapping_add(4));
-            self.sprite_set_y(j, r2_y.wrapping_sub(4));
+        if let Some((j, info)) = self.spawn_sprite_dynamically(k, 0x2e) {
+            self.sprite_set_x(j, info.r0_x.wrapping_add(4));
+            self.sprite_set_y(j, info.r2_y.wrapping_sub(4));
             self.sprite_slot_view_mut(j).set_head_direction(1);
             self.sprite_slot_view_mut(j).set_z_velocity(8);
             self.sprite_slot_view_mut(j).set_delay_main(96);
@@ -1662,32 +1662,6 @@ impl ZeldaState {
         self.probe_entity_tile(0, &mut x, y)
     }
 
-    // Rewired to canonical Sprite_SpawnDynamically port. The C variant
-    // uses j_max=15; the prior `_for_world` shim historically used 13
-    // (matching SpawnDynamicallyEx's 13-slot variant). The canonical
-    // helper uses j_max=15 to match the sprite.c entry point.
-    fn sprite_spawn_dynamically_for_world(
-        &mut self,
-        k: usize,
-        what: u8,
-    ) -> Option<(usize, u16, u16)> {
-        let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
-        let j = self.sprite_spawn_dynamically(k, what, &mut info);
-        if j < 0 {
-            None
-        } else {
-            Some((j as usize, info.r0_x, info.r2_y))
-        }
-    }
-
-    fn sprite_set_spawned_coordinates_for_world(&mut self, j: usize, r0_x: u16, r2_y: u16) {
-        let info = crate::zelda_rtl::sprite::SpriteSpawnInfo {
-            r0_x,
-            r2_y,
-            ..Default::default()
-        };
-        self.sprite_set_spawned_coordinates(j, &info);
-    }
 }
 
 // hud.h:9 - kHudItem_Flute.

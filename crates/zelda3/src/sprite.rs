@@ -9445,6 +9445,29 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     // Canonical 1:1 port. The do/while loop walks j down from the caller's
     // starting bound (15 from `Sprite_SpawnDynamically`, or 13 / 14 for
     // narrower variants); the first slot with `sprite_state[j] == 0` wins.
+    /// `Sprite_SpawnDynamically` with the original's negative "no free slot" result
+    /// folded into `None`. The spawn record carries the parent's x, y, and z for
+    /// `sprite_set_spawned_coordinates`.
+    pub(super) fn spawn_sprite_dynamically(
+        &mut self,
+        k: usize,
+        what: u8,
+    ) -> Option<(usize, SpriteSpawnInfo)> {
+        self.spawn_sprite_dynamically_ex(k, what, 15)
+    }
+
+    /// `Sprite_SpawnDynamicallyEx`: the search for a free slot starts at `j_in`.
+    pub(super) fn spawn_sprite_dynamically_ex(
+        &mut self,
+        k: usize,
+        what: u8,
+        j_in: i32,
+    ) -> Option<(usize, SpriteSpawnInfo)> {
+        let mut info = SpriteSpawnInfo::default();
+        let j = self.sprite_spawn_dynamically_ex(k, what, &mut info, j_in);
+        (j >= 0).then_some((j as usize, info))
+    }
+
     pub(super) fn sprite_spawn_dynamically_ex(
         &mut self,
         k: usize,

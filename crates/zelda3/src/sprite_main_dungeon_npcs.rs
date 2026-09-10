@@ -1226,7 +1226,7 @@ impl ZeldaState {
     pub(super) fn priest_spawn_mantle(&mut self, k: usize) {
         let marker_state = self.sprite_slot_view(15).state().wrapping_add(1);
         self.sprite_slot_view_mut(15).set_state(marker_state);
-        let j = self.sprite_spawn_dynamically_for_dn(k, 0x73);
+        let j = self.spawn_sprite_dynamically(k, 0x73).map(|(j, _)| j);
         self.sprite_slot_view_mut(15).set_state(0);
         let j = j.expect("Priest_SpawnMantle expected Sprite_SpawnDynamically to succeed");
         self.sprite_slot_view_mut(j).masked_or_flags2(0xf0, 0x3);
@@ -1454,7 +1454,7 @@ impl ZeldaState {
     //   sprite_flags4[k] = 3;
     // }
     pub(super) fn priest_spawn_rescued_princess(&mut self) {
-        let Some(k) = self.sprite_spawn_dynamically_for_dn(0, 0x76) else {
+        let Some((k, _)) = self.spawn_sprite_dynamically(0, 0x76) else {
             return;
         };
         let tag_idx = self.game_state.sprites.follower_runtime.data_index() as usize;
@@ -1862,8 +1862,8 @@ impl ZeldaState {
             if count == 0 {
                 return;
             }
-            let Some(j) =
-                self.sprite_spawn_dynamically_ex_for_dn(k, THIEF_SPAWN_ITEMS[pick as usize], 7)
+            let Some((j, _)) =
+                self.spawn_sprite_dynamically_ex(k, THIEF_SPAWN_ITEMS[pick as usize], 7)
             else {
                 return;
             };
@@ -2510,7 +2510,7 @@ impl ZeldaState {
         if ((k ^ fc) & 0xf) as u8 | self.game_state.world.location.indoor_flag() != 0 {
             return;
         }
-        let Some(j) = self.sprite_spawn_dynamically_ex_for_dn(k, 0xB, 10) else {
+        let Some((j, _)) = self.spawn_sprite_dynamically_ex(k, 0xB, 10) else {
             return;
         };
         self.sprite_sfx_queue_sfx3_with_pan(j, 0x1e);
@@ -2791,7 +2791,7 @@ impl ZeldaState {
             }
             7..=9 => {}
             10 => {
-                if let Some(j) = self.sprite_spawn_dynamically_for_dn(k, 0x1a) {
+                if let Some((j, _)) = self.spawn_sprite_dynamically(k, 0x1a) {
                     let lx = self.game_state.player.follower_link.x();
                     let ly = self.game_state.player.follower_link.y();
                     self.sprite_set_x(j, lx);
@@ -2839,7 +2839,7 @@ impl ZeldaState {
 
     // int Smithy_SpawnDwarfPal(int k) {  // sprite_main.c:10216
     pub(super) fn smithy_spawn_dwarf_pal(&mut self, k: usize) -> i32 {
-        let Some(j) = self.sprite_spawn_dynamically_for_dn(k, 0x1a) else {
+        let Some((j, _)) = self.spawn_sprite_dynamically(k, 0x1a) else {
             return -1;
         };
         let (rx, ry) = self.spawn_info_for_dn();
@@ -2895,7 +2895,7 @@ impl ZeldaState {
 
     // void Smithy_SpawnSpark(int k) {  // sprite_main.c:10276
     pub(super) fn smithy_spawn_spark(&mut self, k: usize) {
-        if let Some(j) = self.sprite_spawn_dynamically_for_dn(k, 0x1a) {
+        if let Some((j, _)) = self.spawn_sprite_dynamically(k, 0x1a) {
             let (rx, ry) = self.spawn_info_for_dn();
             self.sprite_set_x(j, rx);
             self.sprite_set_y(j, ry);
@@ -2917,34 +2917,6 @@ impl ZeldaState {
     //
     // Each shim adapts a canonical helper for use by the split-module handlers
     // above while preserving the local call signatures.
-
-    fn sprite_spawn_dynamically_for_dn(&mut self, k: usize, what: u8) -> Option<usize> {
-        // Rewired to canonical Sprite_SpawnDynamically port.
-        let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
-        let j = self.sprite_spawn_dynamically(k, what, &mut info);
-        if j < 0 {
-            None
-        } else {
-            Some(j as usize)
-        }
-    }
-
-    fn sprite_spawn_dynamically_ex_for_dn(
-        &mut self,
-        k: usize,
-        what: u8,
-        j_in: u8,
-    ) -> Option<usize> {
-        // Rewired to canonical Sprite_SpawnDynamicallyEx port. C callers pass
-        // the inclusive upper slot bound (`j_in`) and the helper walks down to 0.
-        let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
-        let j = self.sprite_spawn_dynamically_ex(k, what, &mut info, i32::from(j_in));
-        if j < 0 {
-            None
-        } else {
-            Some(j as usize)
-        }
-    }
 
     fn spawn_info_for_dn(&self) -> (u16, u16) {
         (

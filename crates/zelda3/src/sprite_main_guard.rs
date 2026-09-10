@@ -453,13 +453,13 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn bomb_guard_create_bomb(&mut self, k: usize) {
-        let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_guard(k, 0x4a) else {
+        let Some((j, info)) = self.spawn_sprite_dynamically(k, 0x4a) else {
             return;
         };
         let i = self.sprite_slot_view(k).direction() as usize & 3;
-        let new_x = r0_x.wrapping_add(BOMB_TROOPER_BOMB_X_OFFSETS[i] as i16 as u16);
+        let new_x = info.r0_x.wrapping_add(BOMB_TROOPER_BOMB_X_OFFSETS[i] as i16 as u16);
         self.sprite_set_x(j, new_x);
-        let new_y = r2_y.wrapping_add(BOMB_TROOPER_BOMB_Y_OFFSETS[i] as i16 as u16);
+        let new_y = info.r2_y.wrapping_add(BOMB_TROOPER_BOMB_Y_OFFSETS[i] as i16 as u16);
         self.sprite_set_y(j, new_y);
         self.sprite_apply_speed_towards_link(j, 16);
         let (px, py) = self.sprite_direction_to_face_link_pt_for_guard(j);
@@ -1079,7 +1079,7 @@ impl ZeldaState {
     //     sprite_flags5[j] &= ~0x20;
     // }
     pub(super) fn guard_launch_projectile(&mut self, k: usize) {
-        let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_guard(k, 0x1b) else {
+        let Some((j, info)) = self.spawn_sprite_dynamically(k, 0x1b) else {
             return;
         };
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x5);
@@ -1087,9 +1087,9 @@ impl ZeldaState {
         let big = source.sprite_type() >= 0x48;
         let mut i = (source.direction() as usize) + if big { 4 } else { 0 };
         i &= 7;
-        let new_x = r0_x.wrapping_add(JAVELIN_PROJECTILE_X_OFFSETS[i] as i16 as u16);
+        let new_x = info.r0_x.wrapping_add(JAVELIN_PROJECTILE_X_OFFSETS[i] as i16 as u16);
         self.sprite_set_x(j, new_x);
-        let new_y = r2_y.wrapping_add(JAVELIN_PROJECTILE_Y_OFFSETS[i] as i16 as u16);
+        let new_y = info.r2_y.wrapping_add(JAVELIN_PROJECTILE_Y_OFFSETS[i] as i16 as u16);
         self.sprite_set_y(j, new_y);
         let i_low = i & 3;
         let a_val: u8 = if big { 1 } else { 0 };
@@ -1219,10 +1219,10 @@ impl ZeldaState {
     //   sprite_C[j] = 2;
     // }
     pub(super) fn bush_guard_spawn_foliage(&mut self, k: usize) {
-        let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_guard(k, 0xec) else {
+        let Some((j, info)) = self.spawn_sprite_dynamically(k, 0xec) else {
             return;
         };
-        self.sprite_set_spawned_coordinates_for_guard(j, r0_x, r2_y);
+        self.sprite_set_spawned_coordinates(j, &info);
         let mut foliage = self.sprite_slot_view_mut(j);
         foliage.set_state(6);
         foliage.set_delay_main(32);
@@ -1454,31 +1454,6 @@ impl ZeldaState {
             }
             _ => {}
         }
-    }
-
-    // Rewired to canonical Sprite_SpawnDynamically port.
-    fn sprite_spawn_dynamically_for_guard(
-        &mut self,
-        k: usize,
-        what: u8,
-    ) -> Option<(usize, u16, u16)> {
-        let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
-        let j = self.sprite_spawn_dynamically(k, what, &mut info);
-        if j < 0 {
-            None
-        } else {
-            Some((j as usize, info.r0_x, info.r2_y))
-        }
-    }
-
-    // Rewired to canonical Sprite_SetSpawnedCoordinates port.
-    fn sprite_set_spawned_coordinates_for_guard(&mut self, j: usize, r0_x: u16, r2_y: u16) {
-        let info = crate::zelda_rtl::sprite::SpriteSpawnInfo {
-            r0_x,
-            r2_y,
-            ..Default::default()
-        };
-        self.sprite_set_spawned_coordinates(j, &info);
     }
 
     // Sprite_SpawnProbeAlways — sprite_main.c:4790.

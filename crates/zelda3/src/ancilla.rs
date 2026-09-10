@@ -7,7 +7,6 @@ use crate::types::{
     abs16, abs8, project_speed_from_differences, sign16, sign8, AncillaRadialProjection, PairU8,
     Point16U, ProjectSpeedRet, SpriteHitBox,
 };
-use crate::zelda_rtl::sprite::SpriteSpawnInfo;
 
 #[macro_use]
 mod ancilla_shared;
@@ -4639,7 +4638,7 @@ impl ZeldaState {
         let x = self.ancilla_get_x(k) & !7 | 4;
         let y = self.ancilla_get_y(k) & !7 | 4;
         let floor = self.ancilla_slot_view(k).floor();
-        if let Some(j) = self.sprite_spawn_dynamically_for_ancilla(k, 0xed) {
+        if let Some((j, _)) = self.spawn_sprite_dynamically(k, 0xed) {
             self.follower_link_state_mut()
                 .clear_somaria_platform_state();
             self.sprite_set_x(j, x);
@@ -9943,20 +9942,10 @@ impl ZeldaState {
         }
     }
 
-    fn sprite_spawn_dynamically_for_ancilla(&mut self, k: usize, sprite: u8) -> Option<usize> {
-        let mut info = SpriteSpawnInfo::default();
-        let j = self.sprite_spawn_dynamically(k, sprite, &mut info);
-        if j >= 0 {
-            Some(j as usize)
-        } else {
-            None
-        }
-    }
-
     fn sprite_create_deflected_arrow(&mut self, k: usize) {
         let value = 0;
         self.ancilla_slot_view_mut(k).set_ancilla_type(value);
-        if let Some(j) = self.sprite_spawn_dynamically_for_ancilla(k, 0x1b) {
+        if let Some((j, _)) = self.spawn_sprite_dynamically(k, 0x1b) {
             let value = self.ancilla_slot_view(k).x_low();
             self.sprite_slot_view_mut(j).set_x_low(value);
             let value = self.ancilla_slot_view(k).x_high();

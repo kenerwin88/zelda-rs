@@ -1148,8 +1148,8 @@ impl ZeldaState {
     //   sprite_ignore_projectile[j] = 7;
     // }
     pub(super) fn ganon_spawn_spiral_bat(&mut self, k: usize) {
-        if let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_ex_for_ganon(k, 0xc9, 8) {
-            self.sprite_set_spawned_coordinates_for_ganon(j, r0_x, r2_y);
+        if let Some((j, info)) = self.spawn_sprite_dynamically_ex(k, 0xc9, 8) {
+            self.sprite_set_spawned_coordinates(j, &info);
             self.sprite_slot_view_mut(j).set_anim_clock(4);
             self.sprite_slot_view_mut(j).set_oam_flags(3);
             self.sprite_slot_view_mut(j).set_flags3(0x40);
@@ -1259,9 +1259,9 @@ impl ZeldaState {
     // }
     pub(super) fn ganon_func1(&mut self, k: usize, t: u8) {
         self.temp_counter_mut().set(t);
-        if let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_ex_for_ganon(k, 0xC9, 8) {
+        if let Some((j, info)) = self.spawn_sprite_dynamically_ex(k, 0xC9, 8) {
             self.sprite_sfx_queue_sfx2_with_pan(k, 0x2a);
-            self.sprite_set_spawned_coordinates_for_ganon(j, r0_x, r2_y);
+            self.sprite_set_spawned_coordinates(j, &info);
             self.sprite_slot_view_mut(j).set_ignore_projectile(t);
             self.sprite_slot_view_mut(j).set_anim_clock(t);
             self.sprite_slot_view_mut(j).set_oam_flags(3);
@@ -1269,7 +1269,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(j).set_flags2(0x21);
             self.sprite_slot_view_mut(j).set_deflection_bits(0x40);
             let d = self.sprite_slot_view(k).direction() as usize;
-            let y = r2_y.wrapping_add(GANON_FUNC1_16X16_Y_OFFSETS[d] as i16 as u16);
+            let y = info.r2_y.wrapping_add(GANON_FUNC1_16X16_Y_OFFSETS[d] as i16 as u16);
             self.sprite_set_y(j, y);
             self.sprite_apply_speed_towards_link(j, 32);
             self.sprite_slot_view_mut(j).set_delay_main(16);
@@ -1424,32 +1424,6 @@ impl ZeldaState {
     // Local helpers (each named with `_for_ganon` suffix to keep this split
     // module's adaptation points explicit).
     // -----------------------------------------------------------------
-
-    // Rewired to canonical Sprite_SpawnDynamicallyEx port.
-    fn sprite_spawn_dynamically_ex_for_ganon(
-        &mut self,
-        k: usize,
-        what: u8,
-        range: u8,
-    ) -> Option<(usize, u16, u16)> {
-        let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
-        let j = self.sprite_spawn_dynamically_ex(k, what, &mut info, range as i32);
-        if j < 0 {
-            None
-        } else {
-            Some((j as usize, info.r0_x, info.r2_y))
-        }
-    }
-
-    // Rewired to canonical Sprite_SetSpawnedCoordinates port.
-    fn sprite_set_spawned_coordinates_for_ganon(&mut self, j: usize, r0_x: u16, r2_y: u16) {
-        let info = crate::zelda_rtl::sprite::SpriteSpawnInfo {
-            r0_x,
-            r2_y,
-            ..Default::default()
-        };
-        self.sprite_set_spawned_coordinates(j, &info);
-    }
 
     // Ganon_ExtinguishTorch_adjust_translucency / Ganon_ExtinguishTorch:
     // the original calls the dungeon's Dungeon_ExtinguishTorch.

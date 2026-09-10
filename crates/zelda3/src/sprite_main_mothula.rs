@@ -4339,15 +4339,15 @@ impl ZeldaState {
     pub(super) fn mothula_spawn_beams(&mut self, k: usize) {
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x36);
         for i in (0..=2usize).rev() {
-            if let Some((j, r0_x, r2_y, r4_z)) = self.sprite_spawn_dynamically_for_mothula(k, 0x89)
+            if let Some((j, info)) = self.spawn_sprite_dynamically(k, 0x89)
             {
-                self.sprite_set_spawned_coordinates_for_mothula(j, r0_x, r2_y);
+                self.sprite_set_spawned_coordinates(j, &info);
                 self.sprite_slot_view_mut(j)
-                    .set_y_low((r2_y as u8).wrapping_sub(r4_z as u8).wrapping_add(3));
+                    .set_y_low((info.r2_y as u8).wrapping_sub(info.r4_z).wrapping_add(3));
                 self.sprite_slot_view_mut(j).set_delay_main(16);
                 self.sprite_slot_view_mut(j).set_ignore_projectile(16);
                 self.sprite_slot_view_mut(j)
-                    .set_x_low((r0_x as u8).wrapping_add(MOTHULA_BEAM_X_VELOCITIES[i] as u8));
+                    .set_x_low((info.r0_x as u8).wrapping_add(MOTHULA_BEAM_X_VELOCITIES[i] as u8));
                 self.sprite_slot_view_mut(j)
                     .set_x_velocity(MOTHULA_BEAM_X_VELOCITIES[i] as u8);
                 self.sprite_slot_view_mut(j)
@@ -4396,7 +4396,7 @@ impl ZeldaState {
         }
         let value = 0x40;
         self.sprite_slot_view_mut(k).set_head_direction(value);
-        let Some((j, _r0_x, _r2_y, _r4_z)) = self.sprite_spawn_dynamically_for_mothula(k, 0x8a)
+        let Some((j, _info)) = self.spawn_sprite_dynamically(k, 0x8a)
         else {
             return;
         };
@@ -4884,33 +4884,6 @@ impl ZeldaState {
     fn sprite_apply_speed_towards_link_for_mothula(&mut self, k: usize, speed: u8) {
         // Rewired to canonical Sprite_ApplySpeedTowardsLink port.
         self.sprite_apply_speed_towards_link(k, speed);
-    }
-
-    fn sprite_spawn_dynamically_for_mothula(
-        &mut self,
-        k: usize,
-        what: u8,
-    ) -> Option<(usize, u16, u16, u16)> {
-        // Rewired to canonical Sprite_SpawnDynamically port. The local
-        // 4-tuple keeps mothula's existing call sites' destructuring shape;
-        // the canonical helper populates r4_z directly from `sprite_z[k]`.
-        let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
-        let j = self.sprite_spawn_dynamically(k, what, &mut info);
-        if j < 0 {
-            None
-        } else {
-            Some((j as usize, info.r0_x, info.r2_y, info.r4_z as u16))
-        }
-    }
-
-    fn sprite_set_spawned_coordinates_for_mothula(&mut self, j: usize, r0_x: u16, r2_y: u16) {
-        // Rewired to canonical Sprite_SetSpawnedCoordinates port.
-        let info = crate::zelda_rtl::sprite::SpriteSpawnInfo {
-            r0_x,
-            r2_y,
-            ..Default::default()
-        };
-        self.sprite_set_spawned_coordinates(j, &info);
     }
 
     fn sprite_get_16bit_coords_for_mothula(&mut self, j: usize) {

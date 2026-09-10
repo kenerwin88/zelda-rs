@@ -74,6 +74,16 @@ write-through where the SNES reuse is real.
   fire and the tower seal use the same bytes for their own animations.
   (blast-wall-owner)
 
+## Passing data through the scratch registers
+
+- **A spawn hands its child the parent's coordinates through $00..$08.**
+  `Sprite_SpawnDynamically` leaves the parent's x, y, z, and overlord
+  position in the direct-page scratch words, and the caller's next routine
+  (`Sprite_SetSpawnedCoordinates`, or its own arithmetic) reads them from
+  there. The port names the record fields after those offsets (`r0_x`,
+  `r2_y`, `r4_z`, `r5`, `r7`). The child inherits the parent's height this
+  way; the port's per-module adapters had dropped it. (spawn-record-carry)
+
 ## Arrays that are deliberately indexed past their end
 
 The 65816 has no bounds; the original treats adjacent arrays as one
