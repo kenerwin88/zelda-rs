@@ -12252,6 +12252,7 @@ impl ZeldaState {
     /// skeletal. Future ports should land behind this entry point so the
     /// lockstep oracle starts validating them immediately.
     pub fn run_frame_internal(&mut self, input: u16, run_what: u8) {
+        crate::rom_cpu_timing::note_rom_cpu_profile_host(self.frame_ctr_dbg);
         let owns_original_timing_dispatch = self.begin_original_timing_host_dispatch(input);
         self.run_frame_internal_after_original_timing(input, run_what);
         self.finish_original_timing_host_dispatch(owns_original_timing_dispatch);

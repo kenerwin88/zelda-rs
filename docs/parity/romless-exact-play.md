@@ -184,3 +184,33 @@ cached-sprite room-load continuation is scheduled at the boundary just
 armed. The parity binary carries no debug assertions and the promoted
 route is exact there; the disagreement between that check and the
 receipts is open for a later batch.
+
+## ROM-CPU plan census (the measurement the native models replace)
+
+`ZELDA3_DEBUG_ROM_CPU_PROFILE=<dir>` makes every `RomCpuTimingRun` write a
+JSON profile when it is dropped: total master cycles, DMA cycles,
+instruction count, NMI entries, inclusive cycles per subroutine (JSR/JSL
+and interrupt entries tracked against RTS/RTL/RTI) and exclusive cycles
+and execution counts per instruction address.
+`scripts/rom_cpu_profile_summary.py <dir>` groups the profiles by plan
+and names the subroutines through the ROM symbol table. Over the first
+200,000 route hosts (2,699 shadow runs, the comparison itself still exact):
+
+| plan entry | runs / hosts | total master cycles | what dominates |
+|---|---|---|---|
+| `$00:8034` main-wait schedule (dungeon submodule, Module09) | 1,922 / 1,284 | 54k .. 6.78M, 1,202 distinct | supertile transitions, palette filters, iris tables, sprite GFX set loads, Sprite_Main |
+| `$00:8051` dungeon palette caller | 451 / 451 | 60k .. 298k, 136 distinct | ApplyPaletteFilter/FilterColors (60%) |
+| `$00:f800` Module0E dialogue initialization | 218 / 109 | 1,983,900 .. 1,984,204, 35 distinct | Attract_DecompressStoryGFX (78%, a fixed decompression), then the message-dependent Text_LoadCharacterBuffer and RenderText commands (70k .. 280k) |
+| `$02:8a26` supertile transition room load | 106 / 53 | 4.50M .. 5.90M, 55 distinct | LoadTransAuxGFX_sprite decompression (52%), Dungeon_LoadRoom object drawing (42%) |
+| `$02:8586` Module1B spawn select | 2 / 1 | 1.694M | the same fixed decompression |
+
+The dialogue plan is the first native model: its cost is a fixed
+decompression the ROM performs from fixed data, plus a message-dependent
+part small enough that the schedule key `(prefix crossings, caller
+crossings, following-NMI operands)` stayed `(4, 5, true)` on every route
+instance. Data-dependent constants (decompression of fixed graphics,
+per-message character-buffer costs) can be computed once from the ROM at
+asset extraction and shipped in the asset pack like the assets
+themselves; only control-flow costs need native cycle models. The room
+load plan is the hardest: its cost is the room's object list drawn
+through RoomDraw, and needs a per-object cycle model.

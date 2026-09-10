@@ -79,6 +79,121 @@ pub(crate) struct RomCpuCheckpoint {
 pub(crate) struct RomCpuTimingRun {
     shadow: Snes,
     stop_pc: u32,
+    profile: Option<RomCpuProfile>,
+}
+
+/// Per-subroutine cycle attribution of one shadow run, written as JSON when
+/// `ZELDA3_DEBUG_ROM_CPU_PROFILE=<dir>` is set. This is the measurement a
+/// native cycle model of the same routine is written against and checked
+/// with (docs/parity/romless-exact-play.md).
+#[derive(Debug, Clone, Default)]
+struct RomCpuProfile {
+    entry_pc: u32,
+    stop_pc: u32,
+    total_master: u64,
+    dma_master: u64,
+    instructions: u64,
+    nmi_entries: u64,
+    /// Open call frames: (subroutine entry pc, master cycles at entry).
+    stack: Vec<(u32, u64)>,
+    subroutines: std::collections::BTreeMap<u32, RomCpuSubroutineStats>,
+    /// Master cycles and execution count per instruction address (the
+    /// routine body's own cost, by basic block after aggregation).
+    exclusive_by_pc: std::collections::BTreeMap<u32, (u64, u64)>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct RomCpuSubroutineStats {
+    calls: u64,
+    inclusive_master: u64,
+}
+
+const NMI_HANDLER_ENTRY_PC: u32 = 0x00_80c9;
+
+thread_local! {
+    static ROM_CPU_PROFILE_HOST: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    static ROM_CPU_PROFILE_SEQUENCE: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// Record the host frame the following shadow runs belong to.
+pub(crate) fn note_rom_cpu_profile_host(host: u32) {
+    ROM_CPU_PROFILE_HOST.with(|cell| cell.set(host));
+}
+
+fn rom_cpu_profile_dir() -> Option<std::path::PathBuf> {
+    crate::debug_env::var_os("ZELDA3_DEBUG_ROM_CPU_PROFILE").map(std::path::PathBuf::from)
+}
+
+impl RomCpuProfile {
+    /// Bus time outside any instruction (a started DMA) belongs to the run
+    /// and to the open call frames, not to an instruction address.
+    fn attribute(&mut self, master: u64) {
+        self.total_master += master;
+    }
+
+    fn enter(&mut self, entry_pc: u32) {
+        self.stack.push((entry_pc, self.total_master));
+        self.subroutines.entry(entry_pc).or_default().calls += 1;
+    }
+
+    fn leave(&mut self) {
+        if let Some((entry_pc, started)) = self.stack.pop() {
+            self.subroutines.entry(entry_pc).or_default().inclusive_master +=
+                self.total_master - started;
+        }
+    }
+
+    fn write(&self, host: u32, sequence: u32, dir: &std::path::Path) {
+        let _ = std::fs::create_dir_all(dir);
+        let path = dir.join(format!(
+            "host-{host:08}-{:06x}-{sequence:04}.json",
+            self.entry_pc
+        ));
+        let mut subroutines: Vec<_> = self.subroutines.iter().collect();
+        subroutines.sort_by_key(|(_, stats)| std::cmp::Reverse(stats.inclusive_master));
+        let subroutine_json: Vec<String> = subroutines
+            .iter()
+            .map(|(pc, stats)| {
+                format!(
+                    "{{\"pc\":\"{pc:06x}\",\"calls\":{},\"inclusive_master\":{}}}",
+                    stats.calls, stats.inclusive_master
+                )
+            })
+            .collect();
+        let by_pc_json: Vec<String> = self
+            .exclusive_by_pc
+            .iter()
+            .map(|(pc, (master, count))| {
+                format!("{{\"pc\":\"{pc:06x}\",\"master\":{master},\"count\":{count}}}")
+            })
+            .collect();
+        let json = format!(
+            "{{\"host\":{host},\"entry_pc\":\"{:06x}\",\"stop_pc\":\"{:06x}\",\"total_master\":{},\"dma_master\":{},\"instructions\":{},\"nmi_entries\":{},\"subroutines\":[{}],\"instructions_by_pc\":[{}]}}\n",
+            self.entry_pc,
+            self.stop_pc,
+            self.total_master,
+            self.dma_master,
+            self.instructions,
+            self.nmi_entries,
+            subroutine_json.join(","),
+            by_pc_json.join(","),
+        );
+        let _ = std::fs::write(path, json);
+    }
+}
+
+impl Drop for RomCpuTimingRun {
+    fn drop(&mut self) {
+        if let (Some(profile), Some(dir)) = (self.profile.as_ref(), rom_cpu_profile_dir()) {
+            let host = ROM_CPU_PROFILE_HOST.with(|cell| cell.get());
+            let sequence = ROM_CPU_PROFILE_SEQUENCE.with(|cell| {
+                let next = cell.get();
+                cell.set(next.wrapping_add(1));
+                next
+            });
+            profile.write(host, sequence, &dir);
+        }
+    }
 }
 
 impl RomCpuTimingRun {
@@ -124,7 +239,19 @@ impl RomCpuTimingRun {
         Ok(Self {
             shadow,
             stop_pc: checkpoint.stop_pc,
+            profile: rom_cpu_profile_dir().map(|_| RomCpuProfile {
+                entry_pc: checkpoint.entry_pc,
+                stop_pc: checkpoint.stop_pc,
+                ..RomCpuProfile::default()
+            }),
         })
+    }
+
+    /// The opcode the next `step` executes when it does not take an interrupt.
+    fn peek_opcode(&self) -> Option<u8> {
+        let pc = self.pc();
+        let offset = lorom_offset(pc)?;
+        self.shadow.cart.rom.get(offset).copied()
     }
 
     /// Keep the shadow's `Interrupt_NMI` on the main thread while the ROM's
@@ -219,7 +346,12 @@ impl RomCpuTimingRun {
     }
 
     pub(crate) fn drain_started_dma_master_cycles(&mut self) -> u32 {
-        self.shadow.dma_run_to_completion_master_cycles()
+        let master = self.shadow.dma_run_to_completion_master_cycles();
+        if let Some(profile) = self.profile.as_mut() {
+            profile.dma_master += u64::from(master);
+            profile.attribute(u64::from(master));
+        }
+        master
     }
 
     /// Run the cloned HDMA initialization event and report the pinned Snes9x
@@ -263,7 +395,34 @@ impl RomCpuTimingRun {
         if let Some(trace) = self.shadow.debug_cpu_write_trace.as_mut() {
             trace.clear();
         }
-        snes::cpu_run_opcode_timed(&mut self.shadow)
+        if self.profile.is_none() {
+            return snes::cpu_run_opcode_timed(&mut self.shadow);
+        }
+        let pc_before = self.pc();
+        let takes_interrupt = self.shadow.cpu.nmi_wanted
+            || (!self.shadow.cpu.i && self.shadow.cpu.irq_wanted);
+        let opcode = if takes_interrupt { None } else { self.peek_opcode() };
+        let timing = snes::cpu_run_opcode_timed(&mut self.shadow);
+        let pc_after = self.pc();
+        let profile = self.profile.as_mut().expect("profile enabled");
+        profile.instructions += 1;
+        profile.total_master += u64::from(timing.master_cycles);
+        let per_pc = profile.exclusive_by_pc.entry(pc_before).or_default();
+        per_pc.0 += u64::from(timing.master_cycles);
+        per_pc.1 += 1;
+        if takes_interrupt && pc_after == NMI_HANDLER_ENTRY_PC {
+            profile.nmi_entries += 1;
+            profile.enter(pc_after);
+        } else {
+            match opcode {
+                // JSR abs, JSL long, JSR (abs,X)
+                Some(0x20 | 0x22 | 0xfc) => profile.enter(pc_after),
+                // RTS, RTL, RTI
+                Some(0x60 | 0x6b | 0x40) => profile.leave(),
+                _ => {}
+            }
+        }
+        timing
     }
 
     pub(crate) fn enable_cpu_write_trace(&mut self) {
