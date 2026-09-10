@@ -132,3 +132,10 @@ endpoint is the recorded `dd45975c…` image, and all 1,721 library tests
 pass under the parity profile in 14.66 seconds. The binary crate's
 tests show the same fifteen environmental failures as before (missing
 replay-bisect checkpoints).
+
+The full route on the same parity binary matched every one of the
+1,581,079 cached video and audio hashes in 1,551.38 seconds, all four WRAM
+goldens match, and the route endpoint is the recorded `31619379…` WRAM
+image; the run is promoted in `routes/full_run/parity-frontier.json` with
+its receipt. The ROM-timing live path (a ROM loaded, no receipts) walked
+the entire 1,581,079-frame input ledger on that binary without a panic.
