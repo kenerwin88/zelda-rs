@@ -999,7 +999,6 @@ impl<'a> NativeAttractSceneBridgeMut<'a> {
 }
 
 pub(crate) struct NativeIntroSceneBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     intro_scene: &'a mut IntroSceneState,
     ram: &'a mut [u8],
 }
@@ -1007,22 +1006,14 @@ pub(crate) struct NativeIntroSceneBridgeMut<'a> {
 impl<'a> NativeIntroSceneBridgeMut<'a> {
     pub(crate) fn new(intro_scene: &'a mut IntroSceneState, ram: &'a mut [u8]) -> Self {
         *intro_scene = IntroSceneState::load_from_ram(&*ram);
-        let before = crate::game_state::native::ram_target::capture(&*ram, |log| {
-            intro_scene.write_to_ram(log)
-        });
-        Self {
-            before,
-            intro_scene,
-            ram,
-        }
+        Self { intro_scene, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.intro_scene.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.intro_scene
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -1052,7 +1043,6 @@ impl<'a> NativeIntroSceneBridgeMut<'a> {
 }
 
 pub(crate) struct NativeIntroActorBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut IntroActorState,
     ram: &'a mut [u8],
     slot: usize,
@@ -1061,14 +1051,7 @@ pub(crate) struct NativeIntroActorBridgeMut<'a> {
 impl<'a> NativeIntroActorBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut IntroActorState, ram: &'a mut [u8], slot: usize) -> Self {
         *state = IntroActorState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
-        Self {
-            before,
-            state,
-            ram,
-            slot,
-        }
+        Self { state, ram, slot }
     }
 
     fn actor_mut(&mut self) -> Option<&mut IntroActorSlotState> {
@@ -1076,11 +1059,10 @@ impl<'a> NativeIntroActorBridgeMut<'a> {
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -1195,7 +1177,6 @@ impl<'a> NativeIntroActorBridgeMut<'a> {
 }
 
 pub(crate) struct NativeEndingCreditBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     credits: &'a mut EndingCreditState,
     ram: &'a mut [u8],
 }
@@ -1203,21 +1184,14 @@ pub(crate) struct NativeEndingCreditBridgeMut<'a> {
 impl<'a> NativeEndingCreditBridgeMut<'a> {
     pub(crate) fn new(credits: &'a mut EndingCreditState, ram: &'a mut [u8]) -> Self {
         *credits = EndingCreditState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| credits.write_to_ram(log));
-        Self {
-            before,
-            credits,
-            ram,
-        }
+        Self { credits, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.credits.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.credits
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 

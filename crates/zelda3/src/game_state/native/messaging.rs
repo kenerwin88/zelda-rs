@@ -1094,7 +1094,6 @@ impl MessagingState {
 }
 
 pub(crate) struct NativeSelectFileMenuBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     menu: &'a mut SelectFileMenuState,
     ram: &'a mut [u8],
 }
@@ -1102,17 +1101,14 @@ pub(crate) struct NativeSelectFileMenuBridgeMut<'a> {
 impl<'a> NativeSelectFileMenuBridgeMut<'a> {
     pub(crate) fn new(menu: &'a mut SelectFileMenuState, ram: &'a mut [u8]) -> Self {
         *menu = SelectFileMenuState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| menu.write_to_ram(log));
-        Self { before, menu, ram }
+        Self { menu, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.menu.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.menu
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -1175,7 +1171,6 @@ impl<'a> MultiselectChoiceRead<'a> {
 }
 
 pub(crate) struct NativeDialogueMessageIndexBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     message_index: &'a mut DialogueMessageIndexState,
     ram: &'a mut [u8],
 }
@@ -1183,22 +1178,13 @@ pub(crate) struct NativeDialogueMessageIndexBridgeMut<'a> {
 impl<'a> NativeDialogueMessageIndexBridgeMut<'a> {
     pub(crate) fn new(message_index: &'a mut DialogueMessageIndexState, ram: &'a mut [u8]) -> Self {
         *message_index = DialogueMessageIndexState::load_from_ram(&*ram);
-        let before = crate::game_state::native::ram_target::capture(&*ram, |log| {
-            message_index.write_to_ram(log)
-        });
-        Self {
-            before,
-            message_index,
-            ram,
-        }
+        Self { message_index, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.message_index.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.message_index.write_to_ram(
+            &mut crate::game_state::native::ram_target::DiffTarget::new(self.ram),
+        );
         self.debug_assert_matches_ram();
     }
 
@@ -1213,7 +1199,6 @@ impl<'a> NativeDialogueMessageIndexBridgeMut<'a> {
 }
 
 pub(crate) struct NativeMultiselectChoiceBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     choice: &'a mut MultiselectChoiceState,
     ram: &'a mut [u8],
 }
@@ -1221,21 +1206,14 @@ pub(crate) struct NativeMultiselectChoiceBridgeMut<'a> {
 impl<'a> NativeMultiselectChoiceBridgeMut<'a> {
     pub(crate) fn new(choice: &'a mut MultiselectChoiceState, ram: &'a mut [u8]) -> Self {
         *choice = MultiselectChoiceState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| choice.write_to_ram(log));
-        Self {
-            before,
-            choice,
-            ram,
-        }
+        Self { choice, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.choice.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.choice
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -1257,7 +1235,6 @@ impl<'a> NativeMultiselectChoiceBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDialogueNumberBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     number: &'a mut DialogueNumberState,
     ram: &'a mut [u8],
 }
@@ -1265,21 +1242,14 @@ pub(crate) struct NativeDialogueNumberBridgeMut<'a> {
 impl<'a> NativeDialogueNumberBridgeMut<'a> {
     pub(crate) fn new(number: &'a mut DialogueNumberState, ram: &'a mut [u8]) -> Self {
         *number = DialogueNumberState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| number.write_to_ram(log));
-        Self {
-            before,
-            number,
-            ram,
-        }
+        Self { number, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.number.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.number
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -1296,7 +1266,6 @@ impl<'a> NativeDialogueNumberBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDialogueSourceOffsetBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     source_offset: &'a mut DialogueSourceOffsetState,
     ram: &'a mut [u8],
 }
@@ -1304,22 +1273,13 @@ pub(crate) struct NativeDialogueSourceOffsetBridgeMut<'a> {
 impl<'a> NativeDialogueSourceOffsetBridgeMut<'a> {
     pub(crate) fn new(source_offset: &'a mut DialogueSourceOffsetState, ram: &'a mut [u8]) -> Self {
         *source_offset = DialogueSourceOffsetState::load_from_ram(&*ram);
-        let before = crate::game_state::native::ram_target::capture(&*ram, |log| {
-            source_offset.write_to_ram(log)
-        });
-        Self {
-            before,
-            source_offset,
-            ram,
-        }
+        Self { source_offset, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.source_offset.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.source_offset.write_to_ram(
+            &mut crate::game_state::native::ram_target::DiffTarget::new(self.ram),
+        );
         self.debug_assert_matches_ram();
     }
 
@@ -1334,7 +1294,6 @@ impl<'a> NativeDialogueSourceOffsetBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDecodedMessageTextBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     messaging: &'a mut MessagingState,
     ram: &'a mut [u8],
 }
@@ -1342,22 +1301,13 @@ pub(crate) struct NativeDecodedMessageTextBridgeMut<'a> {
 impl<'a> NativeDecodedMessageTextBridgeMut<'a> {
     pub(crate) fn new(messaging: &'a mut MessagingState, ram: &'a mut [u8]) -> Self {
         messaging.decoded_text = DecodedMessageTextState::load_from_ram(&*ram);
-        let before = crate::game_state::native::ram_target::capture(&*ram, |log| {
-            messaging.decoded_text.write_to_ram(log)
-        });
-        Self {
-            before,
-            messaging,
-            ram,
-        }
+        Self { messaging, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.messaging.decoded_text.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.messaging.decoded_text.write_to_ram(
+            &mut crate::game_state::native::ram_target::DiffTarget::new(self.ram),
+        );
         self.messaging.dialogue_pointers.write_to_ram(self.ram);
         self.debug_assert_matches_ram();
     }
@@ -1398,7 +1348,6 @@ impl<'a> NativeDecodedMessageTextBridgeMut<'a> {
 }
 
 pub(crate) struct NativeMessagingRuntimeBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     messaging: &'a mut MessagingState,
     ram: &'a mut [u8],
 }
@@ -1406,22 +1355,13 @@ pub(crate) struct NativeMessagingRuntimeBridgeMut<'a> {
 impl<'a> NativeMessagingRuntimeBridgeMut<'a> {
     pub(crate) fn new(messaging: &'a mut MessagingState, ram: &'a mut [u8]) -> Self {
         messaging.runtime = MessagingRuntimeState::load_from_ram(&*ram);
-        let before = crate::game_state::native::ram_target::capture(&*ram, |log| {
-            messaging.runtime.write_to_ram(log)
-        });
-        Self {
-            before,
-            messaging,
-            ram,
-        }
+        Self { messaging, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.messaging.runtime.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.messaging.runtime.write_to_ram(
+            &mut crate::game_state::native::ram_target::DiffTarget::new(self.ram),
+        );
         self.messaging.multiselect_choice.write_to_ram(self.ram);
         self.messaging.dialogue_source_offset.write_to_ram(self.ram);
         self.debug_assert_runtime_matches_ram();
@@ -1622,7 +1562,6 @@ impl<'a> NativeMessagingRuntimeBridgeMut<'a> {
 }
 
 pub(crate) struct NativeMessagingRenderBufferBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     render_buffer: &'a mut MessagingRenderBufferState,
     ram: &'a mut [u8],
 }
@@ -1633,22 +1572,13 @@ impl<'a> NativeMessagingRenderBufferBridgeMut<'a> {
         ram: &'a mut [u8],
     ) -> Self {
         *render_buffer = MessagingRenderBufferState::load_from_ram(&*ram);
-        let before = crate::game_state::native::ram_target::capture(&*ram, |log| {
-            render_buffer.write_to_ram(log)
-        });
-        Self {
-            before,
-            render_buffer,
-            ram,
-        }
+        Self { render_buffer, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.render_buffer.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.render_buffer.write_to_ram(
+            &mut crate::game_state::native::ram_target::DiffTarget::new(self.ram),
+        );
         self.debug_assert_matches_ram();
     }
 
@@ -1688,7 +1618,6 @@ impl<'a> NativeMessagingRenderBufferBridgeMut<'a> {
 }
 
 pub(crate) struct NativeVwfRenderBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     vwf_render: &'a mut VwfRenderState,
     ram: &'a mut [u8],
 }
@@ -1696,22 +1625,14 @@ pub(crate) struct NativeVwfRenderBridgeMut<'a> {
 impl<'a> NativeVwfRenderBridgeMut<'a> {
     pub(crate) fn new(vwf_render: &'a mut VwfRenderState, ram: &'a mut [u8]) -> Self {
         *vwf_render = VwfRenderState::load_from_ram(&*ram);
-        let before = crate::game_state::native::ram_target::capture(&*ram, |log| {
-            vwf_render.write_to_ram(log)
-        });
-        Self {
-            before,
-            vwf_render,
-            ram,
-        }
+        Self { vwf_render, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.vwf_render.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.vwf_render
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -1744,7 +1665,6 @@ impl<'a> NativeVwfRenderBridgeMut<'a> {
 }
 
 pub(crate) struct NativeSharedMessageTimerBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     timer: &'a mut SharedMessageTimerState,
     ram: &'a mut [u8],
 }
@@ -1752,17 +1672,14 @@ pub(crate) struct NativeSharedMessageTimerBridgeMut<'a> {
 impl<'a> NativeSharedMessageTimerBridgeMut<'a> {
     pub(crate) fn new(timer: &'a mut SharedMessageTimerState, ram: &'a mut [u8]) -> Self {
         *timer = SharedMessageTimerState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| timer.write_to_ram(log));
-        Self { before, timer, ram }
+        Self { timer, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.timer.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.timer
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 

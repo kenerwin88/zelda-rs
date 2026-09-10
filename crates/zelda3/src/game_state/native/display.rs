@@ -3911,7 +3911,6 @@ impl<'a> NativeAttractVramDestinationBridgeMut<'a> {
 }
 
 pub(crate) struct NativePaletteFilterBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     display: &'a mut DisplayState,
     ram: &'a mut [u8],
 }
@@ -3919,22 +3918,13 @@ pub(crate) struct NativePaletteFilterBridgeMut<'a> {
 impl<'a> NativePaletteFilterBridgeMut<'a> {
     pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
         display.palette_filter = PaletteFilterState::load_from_ram(&*ram);
-        let before = crate::game_state::native::ram_target::capture(&*ram, |log| {
-            display.palette_filter.write_to_ram(log)
-        });
-        Self {
-            before,
-            display,
-            ram,
-        }
+        Self { display, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.display.palette_filter.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.display.palette_filter.write_to_ram(
+            &mut crate::game_state::native::ram_target::DiffTarget::new(self.ram),
+        );
         self.debug_assert_matches_ram();
     }
 
@@ -4559,7 +4549,6 @@ impl<'a> NativeVramUploadBufferBridgeMut<'a> {
 }
 
 pub(crate) struct NativeOverworldPaletteBackupBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     backup: &'a mut OverworldPaletteBackupState,
     ram: &'a mut [u8],
 }
@@ -4567,21 +4556,14 @@ pub(crate) struct NativeOverworldPaletteBackupBridgeMut<'a> {
 impl<'a> NativeOverworldPaletteBackupBridgeMut<'a> {
     pub(crate) fn new(backup: &'a mut OverworldPaletteBackupState, ram: &'a mut [u8]) -> Self {
         *backup = OverworldPaletteBackupState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| backup.write_to_ram(log));
-        Self {
-            before,
-            backup,
-            ram,
-        }
+        Self { backup, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.backup.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.backup
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -4609,7 +4591,6 @@ impl<'a> NativeOverworldPaletteBackupBridgeMut<'a> {
 }
 
 pub(crate) struct NativeSpotlightHdmaBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut SpotlightHdmaState,
     ram: &'a mut [u8],
 }
@@ -4617,17 +4598,14 @@ pub(crate) struct NativeSpotlightHdmaBridgeMut<'a> {
 impl<'a> NativeSpotlightHdmaBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut SpotlightHdmaState, ram: &'a mut [u8]) -> Self {
         *state = SpotlightHdmaState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
-        Self { before, state, ram }
+        Self { state, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -4733,7 +4711,6 @@ macro_rules! ppu_scroll_bridge_methods {
 }
 
 pub(crate) struct NativePpuScrollCopyBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut PpuScrollCopyState,
     ram: &'a mut [u8],
 }
@@ -4741,17 +4718,14 @@ pub(crate) struct NativePpuScrollCopyBridgeMut<'a> {
 impl<'a> NativePpuScrollCopyBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut PpuScrollCopyState, ram: &'a mut [u8]) -> Self {
         *state = PpuScrollCopyState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
-        Self { before, state, ram }
+        Self { state, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 

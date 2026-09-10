@@ -373,7 +373,6 @@ impl GarnishRuntimeState {
 }
 
 pub(crate) struct NativeGarnishRuntimeBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut GarnishRuntimeState,
     ram: &'a mut [u8],
 }
@@ -381,17 +380,14 @@ pub(crate) struct NativeGarnishRuntimeBridgeMut<'a> {
 impl<'a> NativeGarnishRuntimeBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut GarnishRuntimeState, ram: &'a mut [u8]) -> Self {
         *state = GarnishRuntimeState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
-        Self { before, state, ram }
+        Self { state, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 

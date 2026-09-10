@@ -536,7 +536,6 @@ impl MirrorWarpState {
 }
 
 pub(crate) struct NativeMirrorWarpBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     mirror_warp: &'a mut MirrorWarpState,
     ram: &'a mut [u8],
 }
@@ -544,22 +543,14 @@ pub(crate) struct NativeMirrorWarpBridgeMut<'a> {
 impl<'a> NativeMirrorWarpBridgeMut<'a> {
     pub(crate) fn new(mirror_warp: &'a mut MirrorWarpState, ram: &'a mut [u8]) -> Self {
         *mirror_warp = MirrorWarpState::load_from_ram(&*ram);
-        let before = crate::game_state::native::ram_target::capture(&*ram, |log| {
-            mirror_warp.write_to_ram(log)
-        });
-        Self {
-            before,
-            mirror_warp,
-            ram,
-        }
+        Self { mirror_warp, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.mirror_warp.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.mirror_warp
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         debug_assert_eq!(*self.mirror_warp, MirrorWarpState::load_from_ram(self.ram));
     }
 
@@ -609,7 +600,6 @@ impl DungeonKeySlotsState {
 }
 
 pub(crate) struct NativeDungeonKeySlotsBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut DungeonKeySlotsState,
     ram: &'a mut [u8],
 }
@@ -617,17 +607,14 @@ pub(crate) struct NativeDungeonKeySlotsBridgeMut<'a> {
 impl<'a> NativeDungeonKeySlotsBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonKeySlotsState, ram: &'a mut [u8]) -> Self {
         *state = DungeonKeySlotsState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
-        Self { before, state, ram }
+        Self { state, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 

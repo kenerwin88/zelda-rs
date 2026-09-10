@@ -142,39 +142,43 @@ impl RamTarget for ProjectionLog<'_> {
     }
 }
 
-/// Project a state into a log and return the bytes it would write.
-pub(crate) fn capture(
-    live: &[u8],
-    project: impl FnOnce(&mut ProjectionLog<'_>),
-) -> Vec<(usize, u8)> {
-    let mut log = ProjectionLog::new(live);
-    project(&mut log);
-    log.into_writes()
+/// Live WRAM that accepts a projection but stores only the bytes whose value differs
+/// from what WRAM already holds. A bridge whose state was adopted from WRAM at
+/// construction therefore publishes exactly the bytes its mutation changed: a field
+/// the mutation left alone still equals WRAM and is never re-stamped.
+pub(crate) struct DiffTarget<'a> {
+    live: &'a mut [u8],
 }
 
-/// Publish the bytes of `now` whose value differs from the previous projection
-/// `before` (or that `before` did not write at all). A byte a mutation left
-/// unchanged is never re-stamped, so a stale copy cannot clobber another owner's
-/// live write. Both logs come from the same projection code, so their address
-/// sequences agree except where a mode gate opened or closed.
-pub(crate) fn publish_changes(before: &[(usize, u8)], now: &[(usize, u8)], ram: &mut [u8]) {
-    if before.len() == now.len() && before.iter().zip(now).all(|(a, b)| a.0 == b.0) {
-        for (&(addr, old), &(_, new)) in before.iter().zip(now) {
-            if old != new {
-                ram[addr] = new;
-            }
-        }
-        return;
+impl<'a> DiffTarget<'a> {
+    pub(crate) fn new(live: &'a mut [u8]) -> Self {
+        Self { live }
     }
-    let mut previous: std::collections::HashMap<usize, u8> =
-        std::collections::HashMap::with_capacity(before.len());
-    for &(addr, value) in before {
-        previous.insert(addr, value);
-    }
-    for &(addr, value) in now {
-        if previous.get(&addr) != Some(&value) {
-            ram[addr] = value;
+}
+
+impl RamTarget for DiffTarget<'_> {
+    fn write_byte(&mut self, addr: usize, value: u8) {
+        if self.live[addr] != value {
+            self.live[addr] = value;
         }
+    }
+
+    fn write_bytes(&mut self, addr: usize, bytes: &[u8]) {
+        for (i, &b) in bytes.iter().enumerate() {
+            self.write_byte(addr + i, b);
+        }
+    }
+
+    fn read_byte(&self, addr: usize) -> u8 {
+        self.live[addr]
+    }
+
+    fn get_byte(&self, addr: usize) -> Option<u8> {
+        self.live.get(addr).copied()
+    }
+
+    fn len(&self) -> usize {
+        self.live.len()
     }
 }
 

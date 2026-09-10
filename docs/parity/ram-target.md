@@ -10,10 +10,9 @@ by writing in place, byte for byte as before. A second implementation,
 `ProjectionLog`, records the bytes a projection would write while reading
 its gates from live WRAM.
 
-The log is the foundation for the next change: a bridge can project its
-state before and after a mutation into two logs and publish only the bytes
-whose value changed, instead of re-stamping the whole state on every
-setter. That re-stamp is the mechanism behind every stale-copy clobber
+The trait is the foundation for the next change: a bridge can project its
+state through a compare-on-write target and publish only the bytes whose
+value changed, instead of re-stamping the whole state on every setter. That re-stamp is the mechanism behind every stale-copy clobber
 found this week (the boss-prize countdown, the water HDMA window, the door
 animation step, the blast-wall trigger words), and 103 bridges still do it
 across 795 setters.
@@ -53,3 +52,6 @@ readability and projection discovery pass; the scanner reports one HIGH
 RISK overlap (the newly visible zero-page scratch pair), 10 bridge-sync
 overlaps, and 70 overlapping bytes. All 1,776 library tests pass under the
 dev profile.
+
+The projection rewrite was validated together with the bridge change that
+follows it; see `bridge-publish-changes.md` for the shared evidence.

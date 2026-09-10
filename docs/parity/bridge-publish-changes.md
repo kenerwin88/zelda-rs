@@ -8,23 +8,21 @@ was last imported, the stale copy won. That is the mechanism behind the
 stale-copy clobbers fixed this week, and it existed in 106 bridges across
 795 forwarded setters plus their hand-written ones.
 
-Each of those bridges now records its state's projection into a log when
-it is constructed (`capture`), and on every sync projects the state again
-and publishes only the bytes whose value differs from the recorded log,
-then keeps the new log as the baseline (`publish_changes`). A field the
-mutation did not touch is never written, so it cannot clobber another
-owner's live byte, and a bridge that finds its state already equal to WRAM
-writes nothing. When a mode gate opens or closes between the two
-projections the address sets differ; the publication then falls back to an
-address-keyed comparison so newly gated-in bytes are written and nothing
-else is.
+Each of those bridges now adopts its state from live WRAM when it is
+constructed and, on every sync, projects the state through a compare-on-write
+target (`DiffTarget`) that stores a byte only when its value differs from
+what WRAM already holds. Because the state equals WRAM at construction, a
+projected byte differs from WRAM exactly when the mutation changed it, so a
+sync publishes the mutation's bytes and nothing else: a field the mutation
+did not touch is never written and cannot clobber another owner's live byte.
+No log or allocation is involved; the sync costs one projection, as the bulk
+write did, plus the adoption read.
 
 Reads inside projections (the indoors gate and the length clamps) come from
 live WRAM at projection time, so both logs of one sync see the same gates.
 
-A bridge also adopts live WRAM for its state when it is constructed, the
-same reload-before-mutate several bridges already performed as individual
-fixes. WRAM is the only truth in the original, and the native state is
+The adoption is the same reload-before-mutate several bridges already
+performed as individual fixes. WRAM is the only truth in the original, and the native state is
 re-imported from it at every frame boundary anyway; adopting it at the
 bridge makes the state coherent before the mutation, so the coherence
 asserts hold by construction and a native reader after the bridge sees what
@@ -34,6 +32,10 @@ reused by another system in the current mode): the dungeon environment's
 water counter, the memorized tiles indoors, and the sprite workspace's room
 map outdoors. Production code never mutates a native field except through
 its bridge, so nothing is lost by adopting.
+
+`ProjectionLog`, which records the bytes a projection would write, stays
+in the trait module with its replay test; it is the tool for offline
+projection inspection and is not on any production path.
 
 The 56 unit tests named `*_projects_native_state_over_stale_ram` asserted
 the retired re-stamp (seed WRAM with one value, the state with another,
@@ -67,3 +69,16 @@ builds; readability and projection discovery pass; the scanner reports one
 HIGH RISK overlap (the zero-page scratch pair from the previous batch), 10
 bridge-published overlaps (informational now), and 70 overlapping bytes.
 All 1,722 library tests pass under the dev profile.
+
+All 1,722 library tests pass under both the parity and dev profiles, with two
+existing ignored tests and no compiler warnings.
+
+Candidate binary SHA-256:
+`b647afc7d09441ee1bd71e385deea8ab755e4e96fab057b6cafce6b05e43758d`.
+
+The 200,000-frame cached Snes9x audio/video comparison passed from frame zero
+in 341.15 seconds (the preceding batches ran it in 310 to 318 seconds; the
+difference is the adoption read at every bridge construction, a follow-up
+profiling target). Both reached WRAM goldens match, and the complete
+endpoint is byte-identical to the preceding promoted build, SHA-256
+`dd45975cee5acdd270d1b0c74c5d38f1ba3ce3bd7e0af648264b8f77e95f244d`.

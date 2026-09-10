@@ -322,7 +322,6 @@ impl OamState {
 }
 
 pub(crate) struct NativeOamStateBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut OamState,
     ram: &'a mut [u8],
 }
@@ -330,9 +329,7 @@ pub(crate) struct NativeOamStateBridgeMut<'a> {
 impl<'a> NativeOamStateBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut OamState, ram: &'a mut [u8]) -> Self {
         *state = OamState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
-        Self { before, state, ram }
+        Self { state, ram }
     }
 
     fn debug_assert_matches_ram(&self) {
@@ -347,11 +344,10 @@ impl<'a> NativeOamStateBridgeMut<'a> {
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 

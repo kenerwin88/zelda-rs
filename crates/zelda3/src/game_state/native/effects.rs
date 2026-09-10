@@ -168,7 +168,6 @@ impl EffectAngleScratchState {
 }
 
 pub(crate) struct NativeEffectAngleScratchBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut EffectAngleScratchState,
     ram: &'a mut [u8],
 }
@@ -176,21 +175,18 @@ pub(crate) struct NativeEffectAngleScratchBridgeMut<'a> {
 impl<'a> NativeEffectAngleScratchBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut EffectAngleScratchState, ram: &'a mut [u8]) -> Self {
         *state = EffectAngleScratchState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
         // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
         // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
         // mutating so a setter composes with whichever effect wrote the window last.
         *state = EffectAngleScratchState::load_from_ram(ram);
-        Self { before, state, ram }
+        Self { state, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -296,7 +292,6 @@ impl QuakeBoltSlotState {
 }
 
 pub(crate) struct NativeQuakeBoltBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut QuakeBoltState,
     ram: &'a mut [u8],
     slot: usize,
@@ -305,26 +300,18 @@ pub(crate) struct NativeQuakeBoltBridgeMut<'a> {
 impl<'a> NativeQuakeBoltBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut QuakeBoltState, ram: &'a mut [u8], slot: usize) -> Self {
         *state = QuakeBoltState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
         // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
         // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
         // mutating so a setter composes with whichever effect wrote the window last.
         *state = QuakeBoltState::load_from_ram(ram);
-        Self {
-            before,
-            state,
-            ram,
-            slot,
-        }
+        Self { state, ram, slot }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -428,7 +415,6 @@ impl QuakeSpellState {
 }
 
 pub(crate) struct NativeQuakeSpellBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut QuakeSpellState,
     ram: &'a mut [u8],
 }
@@ -436,21 +422,18 @@ pub(crate) struct NativeQuakeSpellBridgeMut<'a> {
 impl<'a> NativeQuakeSpellBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut QuakeSpellState, ram: &'a mut [u8]) -> Self {
         *state = QuakeSpellState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
         // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
         // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
         // mutating so a setter composes with whichever effect wrote the window last.
         *state = QuakeSpellState::load_from_ram(ram);
-        Self { before, state, ram }
+        Self { state, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -828,7 +811,6 @@ impl BombosBlastState {
 }
 
 pub(crate) struct NativeBombosSpellBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut BombosSpellState,
     ram: &'a mut [u8],
 }
@@ -836,21 +818,18 @@ pub(crate) struct NativeBombosSpellBridgeMut<'a> {
 impl<'a> NativeBombosSpellBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut BombosSpellState, ram: &'a mut [u8]) -> Self {
         *state = BombosSpellState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
         // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
         // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
         // mutating so a setter composes with whichever effect wrote the window last.
         *state = BombosSpellState::load_from_ram(ram);
-        Self { before, state, ram }
+        Self { state, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -872,7 +851,6 @@ impl<'a> NativeBombosSpellBridgeMut<'a> {
 }
 
 pub(crate) struct NativeBombosFireColumnBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut BombosSpellState,
     ram: &'a mut [u8],
     slot: usize,
@@ -881,26 +859,18 @@ pub(crate) struct NativeBombosFireColumnBridgeMut<'a> {
 impl<'a> NativeBombosFireColumnBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut BombosSpellState, ram: &'a mut [u8], slot: usize) -> Self {
         *state = BombosSpellState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
         // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
         // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
         // mutating so a setter composes with whichever effect wrote the window last.
         *state = BombosSpellState::load_from_ram(ram);
-        Self {
-            before,
-            state,
-            ram,
-            slot,
-        }
+        Self { state, ram, slot }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -948,7 +918,6 @@ impl<'a> NativeBombosFireColumnBridgeMut<'a> {
 }
 
 pub(crate) struct NativeBombosBlastBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut BombosSpellState,
     ram: &'a mut [u8],
     slot: usize,
@@ -957,26 +926,18 @@ pub(crate) struct NativeBombosBlastBridgeMut<'a> {
 impl<'a> NativeBombosBlastBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut BombosSpellState, ram: &'a mut [u8], slot: usize) -> Self {
         *state = BombosSpellState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
         // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
         // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
         // mutating so a setter composes with whichever effect wrote the window last.
         *state = BombosSpellState::load_from_ram(ram);
-        Self {
-            before,
-            state,
-            ram,
-            slot,
-        }
+        Self { state, ram, slot }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -1242,7 +1203,6 @@ pub(crate) struct HappinessPondRupeeSnapshot {
 }
 
 pub(crate) struct NativeHappinessPondRupeeBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut HappinessPondRupeesState,
     ram: &'a mut [u8],
     slot: usize,
@@ -1255,26 +1215,18 @@ impl<'a> NativeHappinessPondRupeeBridgeMut<'a> {
         slot: usize,
     ) -> Self {
         *state = HappinessPondRupeesState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
         // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
         // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
         // mutating so a setter composes with whichever effect wrote the window last.
         *state = HappinessPondRupeesState::load_from_ram(ram);
-        Self {
-            before,
-            state,
-            ram,
-            slot,
-        }
+        Self { state, ram, slot }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -1457,7 +1409,6 @@ pub(crate) struct WeatherVaneDebrisSnapshot {
 }
 
 pub(crate) struct NativeWeatherVaneDebrisBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut WeatherVaneDebrisState,
     ram: &'a mut [u8],
     slot: usize,
@@ -1470,26 +1421,18 @@ impl<'a> NativeWeatherVaneDebrisBridgeMut<'a> {
         slot: usize,
     ) -> Self {
         *state = WeatherVaneDebrisState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
         // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
         // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
         // mutating so a setter composes with whichever effect wrote the window last.
         *state = WeatherVaneDebrisState::load_from_ram(ram);
-        Self {
-            before,
-            state,
-            ram,
-            slot,
-        }
+        Self { state, ram, slot }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -2369,7 +2312,6 @@ impl TowerSealSparkleState {
 }
 
 pub(crate) struct NativeTowerSealBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut TowerSealState,
     ram: &'a mut [u8],
 }
@@ -2377,21 +2319,18 @@ pub(crate) struct NativeTowerSealBridgeMut<'a> {
 impl<'a> NativeTowerSealBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut TowerSealState, ram: &'a mut [u8]) -> Self {
         *state = TowerSealState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
         // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
         // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
         // mutating so a setter composes with whichever effect wrote the window last.
         *state = TowerSealState::load_from_ram(ram);
-        Self { before, state, ram }
+        Self { state, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -2830,7 +2769,6 @@ impl SkullWoodsFireSlotState {
 }
 
 pub(crate) struct NativeSkullWoodsFireBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut EntranceEffectState,
     ram: &'a mut [u8],
 }
@@ -2838,17 +2776,14 @@ pub(crate) struct NativeSkullWoodsFireBridgeMut<'a> {
 impl<'a> NativeSkullWoodsFireBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut EntranceEffectState, ram: &'a mut [u8]) -> Self {
         *state = EntranceEffectState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
-        Self { before, state, ram }
+        Self { state, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -2867,7 +2802,6 @@ impl<'a> NativeSkullWoodsFireBridgeMut<'a> {
 }
 
 pub(crate) struct NativeSkullWoodsFireSlotBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut EntranceEffectState,
     ram: &'a mut [u8],
     slot: usize,
@@ -2876,22 +2810,14 @@ pub(crate) struct NativeSkullWoodsFireSlotBridgeMut<'a> {
 impl<'a> NativeSkullWoodsFireSlotBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut EntranceEffectState, ram: &'a mut [u8], slot: usize) -> Self {
         *state = EntranceEffectState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
-        Self {
-            before,
-            state,
-            ram,
-            slot,
-        }
+        Self { state, ram, slot }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -3026,7 +2952,6 @@ impl BlastWallFireballSlotState {
 }
 
 pub(crate) struct NativeBlastWallBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut EntranceEffectState,
     ram: &'a mut [u8],
 }
@@ -3034,17 +2959,14 @@ pub(crate) struct NativeBlastWallBridgeMut<'a> {
 impl<'a> NativeBlastWallBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut EntranceEffectState, ram: &'a mut [u8]) -> Self {
         *state = EntranceEffectState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
-        Self { before, state, ram }
+        Self { state, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -3077,7 +2999,6 @@ impl<'a> NativeBlastWallBridgeMut<'a> {
 }
 
 pub(crate) struct NativeBlastWallExplosionBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut EntranceEffectState,
     ram: &'a mut [u8],
     slot: usize,
@@ -3086,22 +3007,14 @@ pub(crate) struct NativeBlastWallExplosionBridgeMut<'a> {
 impl<'a> NativeBlastWallExplosionBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut EntranceEffectState, ram: &'a mut [u8], slot: usize) -> Self {
         *state = EntranceEffectState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
-        Self {
-            before,
-            state,
-            ram,
-            slot,
-        }
+        Self { state, ram, slot }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -3133,7 +3046,6 @@ impl<'a> NativeBlastWallExplosionBridgeMut<'a> {
 }
 
 pub(crate) struct NativeBlastWallFragmentBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut EntranceEffectState,
     ram: &'a mut [u8],
     slot: usize,
@@ -3142,22 +3054,14 @@ pub(crate) struct NativeBlastWallFragmentBridgeMut<'a> {
 impl<'a> NativeBlastWallFragmentBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut EntranceEffectState, ram: &'a mut [u8], slot: usize) -> Self {
         *state = EntranceEffectState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
-        Self {
-            before,
-            state,
-            ram,
-            slot,
-        }
+        Self { state, ram, slot }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -3178,7 +3082,6 @@ impl<'a> NativeBlastWallFragmentBridgeMut<'a> {
 }
 
 pub(crate) struct NativeBlastWallFireballBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut EntranceEffectState,
     ram: &'a mut [u8],
     slot: usize,
@@ -3187,22 +3090,14 @@ pub(crate) struct NativeBlastWallFireballBridgeMut<'a> {
 impl<'a> NativeBlastWallFireballBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut EntranceEffectState, ram: &'a mut [u8], slot: usize) -> Self {
         *state = EntranceEffectState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
-        Self {
-            before,
-            state,
-            ram,
-            slot,
-        }
+        Self { state, ram, slot }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
@@ -3263,7 +3158,6 @@ impl DiggingGamePrizeState {
 }
 
 pub(crate) struct NativeDiggingGamePrizeBridgeMut<'a> {
-    before: Vec<(usize, u8)>,
     state: &'a mut DiggingGamePrizeState,
     ram: &'a mut [u8],
 }
@@ -3271,19 +3165,16 @@ pub(crate) struct NativeDiggingGamePrizeBridgeMut<'a> {
 impl<'a> NativeDiggingGamePrizeBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DiggingGamePrizeState, ram: &'a mut [u8]) -> Self {
         *state = DiggingGamePrizeState::load_from_ram(&*ram);
-        let before =
-            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
         // Shared 0x1fe00 window: re-read before mutating.
         *state = DiggingGamePrizeState::load_from_ram(ram);
-        Self { before, state, ram }
+        Self { state, ram }
     }
 
     fn sync(&mut self) {
-        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
-            self.state.write_to_ram(log)
-        });
-        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
-        self.before = now;
+        self.state
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
         self.debug_assert_matches_ram();
     }
 
