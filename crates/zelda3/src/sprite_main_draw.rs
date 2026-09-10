@@ -3431,7 +3431,11 @@ impl ZeldaState {
     // void SpriteDraw_KingHelmasaur_Legs(int k, PrepOamCoordsRet *info) {  // 9e8805
     //   sprite_main.c:19686.
     // -----------------------------------------------------------------------
-    pub(super) fn sprite_draw_king_helmasaur_legs(&mut self, k: usize, info: &PrepOamCoordsRet) {
+    pub(super) fn sprite_draw_king_helmasaur_legs(
+        &mut self,
+        k: usize,
+        info: &mut PrepOamCoordsRet,
+    ) {
         let cur = self.game_state.oam.current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(19 * 4));
@@ -3476,15 +3480,12 @@ impl ZeldaState {
         self.temp_counter_mut().set(0xff);
         if self.game_state.frame.submodule != 0 {
             self.sprite_correct_oam_entries(k, 7, 2);
-            // Sprite_PrepOamCoordOrDoubleRet(k, info) — refresh the out-ref.
+            // Sprite_PrepOamCoordOrDoubleRet(k, info) refreshes the caller's coordinates.
             if let Some(p) = self.sprite_prep_oam_coord_or_double_ret(k) {
-                let info_ptr = info as *const PrepOamCoordsRet as *mut PrepOamCoordsRet;
-                unsafe {
-                    (*info_ptr).x = p.0;
-                    (*info_ptr).y = p.1;
-                    (*info_ptr).flags = p.2;
-                    (*info_ptr).r4 = 0;
-                }
+                info.x = p.0;
+                info.y = p.1;
+                info.flags = p.2;
+                info.r4 = 0;
             }
         }
     }

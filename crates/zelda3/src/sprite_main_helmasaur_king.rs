@@ -707,7 +707,7 @@ impl ZeldaState {
         self.sprite_draw_king_helmasaur_eyes(k, &info);
         self.king_helmasaur_mask(k, &mut info);
         self.sprite_draw_king_helmasaur_body(k, &mut info);
-        self.sprite_draw_king_helmasaur_legs(k, &info);
+        self.sprite_draw_king_helmasaur_legs(k, &mut info);
         self.sprite_draw_king_helmasaur_mouth(k, &info);
     }
 

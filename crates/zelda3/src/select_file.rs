@@ -1220,7 +1220,7 @@ impl ZeldaState {
         sram_init_normal[57] = 0xf8;
         self.sram[slot_base + 0x340..slot_base + 0x340 + sram_init_normal.len()]
             .copy_from_slice(&sram_init_normal);
-        self.intro_fix_cksum_slot(slot_base);
+        self.intro_fix_cksum(slot_base);
         self.zelda_write_sram();
         self.return_to_file_select();
         self.set_irq_control_flag(0xff);
@@ -1290,8 +1290,8 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn intro_fix_cksum(&mut self, s: *mut u8) {
-        let bytes = unsafe { std::slice::from_raw_parts_mut(s, 0x500) };
+    pub(super) fn intro_fix_cksum(&mut self, slot_base: usize) {
+        let bytes = &mut self.sram[slot_base..slot_base + 0x500];
         let mut sum = 0u16;
         for i in 0..0x27f {
             sum = sum.wrapping_add(read_word_from_slice(bytes, i * 2));
@@ -1299,10 +1299,6 @@ impl ZeldaState {
         write_le_u16(bytes, 0x27f * 2, 0x5a5au16.wrapping_sub(sum));
     }
 
-    pub(super) fn intro_fix_cksum_slot(&mut self, slot_base: usize) {
-        let s = self.sram[slot_base..slot_base + 0x500].as_mut_ptr();
-        self.intro_fix_cksum(s);
-    }
 
     pub(super) fn return_to_file_select(&mut self) {
         self.set_main_module(1);

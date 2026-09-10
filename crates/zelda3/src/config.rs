@@ -2,7 +2,6 @@
 
 #![allow(non_snake_case)]
 
-use std::ffi::CStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -376,14 +375,6 @@ const DEFAULT_GAMEPAD_CMDS: [usize; 12] = [
     GAMEPAD_BUTTON_L1,
     GAMEPAD_BUTTON_R1,
 ];
-
-fn cstr_to_string(s: *const i8) -> String {
-    if s.is_null() {
-        String::new()
-    } else {
-        unsafe { CStr::from_ptr(s).to_string_lossy().into_owned() }
-    }
-}
 
 impl ConfigContext {
     fn key_map_hash_add(&mut self, key: u16, cmd: u16) -> bool {
@@ -899,19 +890,6 @@ fn get_ini_section_str(s: &str) -> i32 {
         5
     } else {
         -1
-    }
-}
-
-pub fn parse_bool(value: *const i8, result: *mut bool) -> bool {
-    let mut tmp = false;
-    if !parse_bool_str(&cstr_to_string(value), Some(&mut tmp)) {
-        return false;
-    }
-    if !result.is_null() {
-        unsafe { *result = tmp };
-        true
-    } else {
-        tmp
     }
 }
 
