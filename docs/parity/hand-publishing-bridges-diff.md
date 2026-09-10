@@ -33,3 +33,12 @@ The torch and water-window runtime tests (86 in the focused set) and all
 1,721 library tests pass under the dev profile. The ownership scanner is
 unchanged. The library compiles with no warnings in the parity, dev, and
 lib-test builds; readability and projection discovery pass.
+
+The main tree validated this batch stacked on the Link bridge batch, on
+parity binary
+`0a522bffe890a8c70b6bb346e6259d001a1c47780e1efc0f5ba6cc541d1c3075`: the
+200,000-frame cached comparison matched every video and audio hash in
+323.15 seconds on a loaded machine, the frame 60000 and 150470 WRAM
+goldens match, the 200,000-frame WRAM endpoint is the recorded
+`dd45975c…` image, and all 1,721 library tests pass under the parity
+profile.
