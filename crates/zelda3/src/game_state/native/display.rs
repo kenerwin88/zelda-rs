@@ -4202,6 +4202,7 @@ pub(crate) struct NativeTrinexxPaletteBridgeMut<'a> {
 
 impl<'a> NativeTrinexxPaletteBridgeMut<'a> {
     pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
+        display.trinexx_palette = TrinexxPaletteState::load_from_ram(&*ram);
         Self { display, ram }
     }
 
@@ -4212,53 +4213,53 @@ impl<'a> NativeTrinexxPaletteBridgeMut<'a> {
         );
     }
 
+    fn sync(&mut self) {
+        self.display.trinexx_palette
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn set_red_shell_delay(&mut self, value: u8) {
         self.display.trinexx_palette.set_red_shell_delay(value);
-        self.ram[TRINEXX_RED_SHELL_PALETTE_DELAY] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_blue_shell_delay(&mut self, value: u8) {
         self.display.trinexx_palette.set_blue_shell_delay(value);
-        self.ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_red_shell_step(&mut self, value: u8) {
         self.display.trinexx_palette.set_red_shell_step(value);
-        self.ram[TRINEXX_RED_SHELL_PALETTE_STEP] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_blue_shell_step(&mut self, value: u8) {
         self.display.trinexx_palette.set_blue_shell_step(value);
-        self.ram[TRINEXX_BLUE_SHELL_PALETTE_STEP] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn decrement_red_shell_delay(&mut self) {
         self.display.trinexx_palette.decrement_red_shell_delay();
-        self.ram[TRINEXX_RED_SHELL_PALETTE_DELAY] = self.display.trinexx_palette.red_shell_delay;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn decrement_blue_shell_delay(&mut self) {
         self.display.trinexx_palette.decrement_blue_shell_delay();
-        self.ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY] = self.display.trinexx_palette.blue_shell_delay;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn increment_red_shell_step(&mut self) -> u8 {
         let value = self.display.trinexx_palette.increment_red_shell_step();
-        self.ram[TRINEXX_RED_SHELL_PALETTE_STEP] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
         value
     }
 
     pub(crate) fn increment_blue_shell_step(&mut self) -> u8 {
         let value = self.display.trinexx_palette.increment_blue_shell_step();
-        self.ram[TRINEXX_BLUE_SHELL_PALETTE_STEP] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
         value
     }
 }
@@ -4270,6 +4271,7 @@ pub(crate) struct NativeWaterHdmaWindowBridgeMut<'a> {
 
 impl<'a> NativeWaterHdmaWindowBridgeMut<'a> {
     pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
+        display.water_hdma_window = WaterHdmaWindowState::load_from_ram(&*ram);
         Self { display, ram }
     }
 
@@ -4284,26 +4286,31 @@ impl<'a> NativeWaterHdmaWindowBridgeMut<'a> {
         );
     }
 
+    fn sync(&mut self) {
+        self.display.water_hdma_window
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn decrement_watergate_spotlight_y_upper(&mut self) -> u16 {
         let value = self
             .display
             .water_hdma_window
             .decrement_watergate_spotlight_y_upper();
-        write_le_u16(self.ram, WATERGATE_SPOTLIGHT_Y_UPPER, value);
-        self.debug_assert_matches_ram();
+        self.sync();
         value
     }
 
     pub(crate) fn set_watergate_pointer(&mut self, value: u8) {
         self.display.water_hdma_window.set_watergate_pointer(value);
-        self.ram[WATERGATE_POINTER] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn increment_watergate_pointer(&mut self) -> u8 {
         let value = self.display.water_hdma_window.increment_watergate_pointer();
-        self.ram[WATERGATE_POINTER] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
         value
     }
 
@@ -4311,38 +4318,33 @@ impl<'a> NativeWaterHdmaWindowBridgeMut<'a> {
         self.display
             .water_hdma_window
             .set_watergate_tilemap_pos_x2(value);
-        write_le_u16(self.ram, WATERGATE_POS, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_window_x(&mut self, value: u16) {
         self.display.water_hdma_window.set_window_x(value);
-        write_le_u16(self.ram, WATER_HDMA_WINDOW_X, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_window_y(&mut self, value: u16) {
         self.display.water_hdma_window.set_window_y(value);
-        write_le_u16(self.ram, WATER_HDMA_WINDOW_Y, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_window_x_radius(&mut self, value: u16) {
         self.display.water_hdma_window.set_window_x_radius(value);
-        write_le_u16(self.ram, WATER_HDMA_WINDOW_X_RADIUS, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_window_y_radius(&mut self, value: u16) {
         self.display.water_hdma_window.set_window_y_radius(value);
-        write_le_u16(self.ram, WATER_HDMA_WINDOW_Y_RADIUS, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_window_y_target(&mut self, value: u16) {
         self.display.water_hdma_window.set_window_y_target(value);
         write_le_u16(self.ram, WATER_HDMA_WINDOW_Y_TARGET, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_window_y_radius_alt(&mut self, value: u16) {
@@ -4350,24 +4352,21 @@ impl<'a> NativeWaterHdmaWindowBridgeMut<'a> {
             .water_hdma_window
             .set_window_y_radius_alt(value);
         write_le_u16(self.ram, WATER_HDMA_WINDOW_Y_RADIUS_ALT, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     /// The room draw positions the window center x then y, as the original stores them.
     pub(crate) fn set_window_position(&mut self, x: u16, y: u16) {
         self.display.water_hdma_window.set_window_x(x);
-        write_le_u16(self.ram, WATER_HDMA_WINDOW_X, x);
         self.display.water_hdma_window.set_window_y(y);
-        write_le_u16(self.ram, WATER_HDMA_WINDOW_Y, y);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_window_y_radius_byte(&mut self, value: u8) {
         self.display
             .water_hdma_window
             .set_window_y_radius_byte(value);
-        self.ram[WATER_HDMA_WINDOW_Y_RADIUS] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn increment_window_y_radius_byte(&mut self) -> u8 {
@@ -4375,8 +4374,7 @@ impl<'a> NativeWaterHdmaWindowBridgeMut<'a> {
             .display
             .water_hdma_window
             .increment_window_y_radius_byte();
-        self.ram[WATER_HDMA_WINDOW_Y_RADIUS] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
         value
     }
 
@@ -4384,8 +4382,7 @@ impl<'a> NativeWaterHdmaWindowBridgeMut<'a> {
         self.display
             .water_hdma_window
             .set_watergate_spotlight_y_upper(value);
-        write_le_u16(self.ram, WATERGATE_SPOTLIGHT_Y_UPPER, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn advance_watergate_window_y_radius(&mut self) -> u8 {
@@ -4396,8 +4393,7 @@ impl<'a> NativeWaterHdmaWindowBridgeMut<'a> {
             self.display.spotlight_hdma.y_upper(),
         );
         self.ram[SPOTLIGHT_WINDOW_Y_BUFFER] = self.display.spotlight_hdma.window_y_buffer_byte();
-        self.ram[WATER_HDMA_WINDOW_Y_RADIUS] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
         value
     }
 }

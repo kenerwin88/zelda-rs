@@ -4259,6 +4259,7 @@ pub(crate) struct NativeDungeonTorchBridgeMut<'a> {
 
 impl<'a> NativeDungeonTorchBridgeMut<'a> {
     pub(crate) fn new(torch: &'a mut DungeonTorchState, ram: &'a mut [u8]) -> Self {
+        *torch = DungeonTorchState::load_from_ram(&*ram);
         Self { torch, ram }
     }
 
@@ -4266,151 +4267,136 @@ impl<'a> NativeDungeonTorchBridgeMut<'a> {
         debug_assert_eq!(*self.torch, DungeonTorchState::load_from_ram(self.ram));
     }
 
+    fn sync(&mut self) {
+        self.torch
+            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
+                self.ram,
+            ));
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn copy_torch_init_to_movable_blocks(&mut self, torch_init: &[u8]) {
         self.ram[MOVABLE_BLOCK_DATAS + 99 * 4..MOVABLE_BLOCK_DATAS + 99 * 4 + 116]
             .copy_from_slice(&torch_init[..116]);
     }
 
+    /// Imports the cartridge torch table through WRAM: the copy lands in the
+    /// bytes the state scans and in the bytes past them alike, then the state
+    /// adopts the result.
     pub(crate) fn copy_torch_data_table(&mut self, torch_init: &[u8]) {
         self.ram[DUNGEON_TORCH_DATA..DUNGEON_TORCH_DATA + torch_init.len()]
             .copy_from_slice(torch_init);
         *self.torch = DungeonTorchState::load_from_ram(self.ram);
-        self.debug_assert_matches_ram();
     }
 
+    /// The bytes past the scanned torch table are not modelled; the copy
+    /// lands in WRAM and the state re-adopts.
     pub(crate) fn copy_torch_junk(&mut self, torch_junk: &[u8]) {
         self.ram[DUNGEON_TORCH_DATA + 144 * 2..DUNGEON_TORCH_DATA + 144 * 2 + torch_junk.len()]
             .copy_from_slice(torch_junk);
         *self.torch = DungeonTorchState::load_from_ram(self.ram);
-        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn clear_timer(&mut self, index: usize) {
         self.torch.clear_timer(index);
-        if index < DUNGEON_TORCH_TIMER_COUNT {
-            self.ram[TORCH_TIMERS + index] = 0;
-        }
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_timers(&mut self) {
         self.torch.clear_timers();
-        self.ram[TORCH_TIMERS..TORCH_TIMERS + DUNGEON_TORCH_TIMER_COUNT].fill(0);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_torch_indices(&mut self) {
         self.torch.clear_torch_indices();
-        write_le_u16(self.ram, DUNG_INDEX_OF_TORCHES_START, 0);
-        write_le_u16(self.ram, DUNG_INDEX_OF_TORCHES, 0);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_timer(&mut self, index: usize, value: u8) {
         self.torch.set_timer(index, value);
-        if index < DUNGEON_TORCH_TIMER_COUNT {
-            self.ram[TORCH_TIMERS + index] = value;
-        }
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_lit_torches(&mut self) {
         self.torch.clear_lit_torches();
-        self.ram[DUNG_NUM_LIT_TORCHES] = 0;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn increment_lit_torches(&mut self) -> u8 {
         let value = self.torch.increment_lit_torches();
-        self.ram[DUNG_NUM_LIT_TORCHES] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
         value
     }
 
     pub(crate) fn decrement_lit_torches(&mut self) -> u8 {
         let value = self.torch.decrement_lit_torches();
-        self.ram[DUNG_NUM_LIT_TORCHES] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
         value
     }
 
     pub(crate) fn set_lights_out_request(&mut self, value: u8) {
         self.torch.set_lights_out_request(value);
-        self.ram[DUNG_WANT_LIGHTS_OUT] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_lights_out_request(&mut self) {
         self.torch.clear_lights_out_request();
-        self.ram[DUNG_WANT_LIGHTS_OUT] = 0;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn copy_lights_out_request(&mut self) {
         self.torch.copy_lights_out_request();
-        self.ram[DUNG_WANT_LIGHTS_OUT_COPY] = self.ram[DUNG_WANT_LIGHTS_OUT];
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_lights_out_requests(&mut self) {
         self.torch.clear_lights_out_requests();
-        self.ram[DUNG_WANT_LIGHTS_OUT] = 0;
-        self.ram[DUNG_WANT_LIGHTS_OUT_COPY] = 0;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_dungeon_dark_with_lantern(&mut self) {
         self.torch.set_dungeon_dark_with_lantern();
-        self.ram[HDR_DUNGEON_DARK_WITH_LANTERN] = 1;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_dungeon_dark_with_lantern_raw(&mut self, value: u8) {
         self.torch.set_dungeon_dark_with_lantern_raw(value);
-        self.ram[HDR_DUNGEON_DARK_WITH_LANTERN] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_dungeon_dark_with_lantern(&mut self) {
         self.torch.clear_dungeon_dark_with_lantern();
-        self.ram[HDR_DUNGEON_DARK_WITH_LANTERN] = 0;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_torch_index_range_start(&mut self, value: u16) {
         self.torch.set_torch_index_range_start(value);
-        write_le_u16(self.ram, DUNG_INDEX_OF_TORCHES_START, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_torch_index(&mut self, value: u16) {
         self.torch.set_torch_index(value);
-        write_le_u16(self.ram, DUNG_INDEX_OF_TORCHES, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_torch_data_word_index(&mut self, index: usize, value: u16) {
         self.torch.set_torch_data_word_index(index, value);
-        write_le_u16(self.ram, DUNGEON_TORCH_DATA + index * 2, value);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_target(&mut self, value: NativeTile) {
         self.torch.set_target(value);
-        self.ram[DUNGEON_TORCH_ATTR] = value.cartridge_attribute();
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn set_ganon_torch_count(&mut self, value: u8) {
         self.torch.set_ganon_torch_count(value);
-        self.ram[GANON_TORCH_COUNT] = value;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_target(&mut self) {
         self.torch.clear_target();
-        self.ram[DUNGEON_TORCH_ATTR] = 0;
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     /// Reload the torch model from RAM after the room object parser has run
