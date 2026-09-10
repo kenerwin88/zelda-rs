@@ -54,7 +54,7 @@ fn player_collision_matches_frozen_runtime_effects() {
     }
     assert_eq!(
         cases,
-        include_str!("../../../testdata/player-collision-869fdb0c.txt")
+        include_str!("../../../testdata/player-collision-zero-page-scratch.txt")
     );
 }
 

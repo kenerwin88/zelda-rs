@@ -41,7 +41,7 @@ Compatibility constraints remain explicit:
 
 ## Verification
 
-The unchanged `tile-behavior-7ad23477.txt` fixture checks 131,072 attribute
+The then-unchanged `tile-behavior-7ad23477.txt` fixture checks 131,072 attribute
 executions and 32 resets against the pre-classification implementation's
 full WRAM and native projections. It passed after the storage migration.
 

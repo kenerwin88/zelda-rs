@@ -73,6 +73,10 @@ write-through where the SNES reuse is real.
   0x10000, free while no message is rendering. The Skull Woods entrance
   fire and the tower seal use the same bytes for their own animations.
   (blast-wall-owner)
+- **The sparkle garnish spawner parks its slot index in R15**, the high
+  byte of the sixteen-bit collision word tile detection had just filled.
+  Nothing reads it back; the byte simply stays visible in WRAM until the
+  next collision probe clears it. (zero-page-scratch-owner)
 
 ## Passing data through the scratch registers
 

@@ -628,6 +628,12 @@ pub(crate) struct TileDetectionState {
     fall_hole_scan_index: u8,
 }
 
+// R15 is the collision word's high byte; the sparkle garnish spawner writes it
+// as raw scratch, so the collision word is that byte's one owner.
+const _: () = assert!(
+    crate::game_state::constants::SPRITE_LAST_GARNISH_INDEX == TILEDETECT_COLLISION_BITS + 1
+);
+
 impl TileDetectionState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
@@ -1261,6 +1267,12 @@ impl TileDetectionState {
         self.collision_bits = (self.collision_bits & 0xff00) | u16::from(value);
     }
 
+    /// The sparkle garnish spawner records the slot it used in R15, which is
+    /// the high byte of the collision word; the low byte keeps its value.
+    pub(crate) fn set_last_garnish_index(&mut self, index: u8) {
+        self.collision_bits = (self.collision_bits & 0x00ff) | (u16::from(index) << 8);
+    }
+
     #[cfg(test)]
     pub(crate) fn or_collision_bits(&mut self, value: u16) -> u16 {
         self.collision_bits |= value;
@@ -1392,6 +1404,8 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
         self.state.set_collision_bits_low_byte(value);
         self.sync();
     }
+
+    forward_synced! { state; fn set_last_garnish_index(index: u8); }
 
     forward_synced! {
         state;

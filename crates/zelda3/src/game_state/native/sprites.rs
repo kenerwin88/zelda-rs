@@ -19,7 +19,7 @@ use crate::game_state::constants::{
     SPRITE_FLAGS2, SPRITE_FLAGS3, SPRITE_FLAGS4, SPRITE_FLAGS5, SPRITE_FLOOR, SPRITE_G,
     SPRITE_GFX_SUBSET_0, SPRITE_GRAPHICS, SPRITE_GRAPHICS_INDEX, SPRITE_GRAPHICS_INDEX_SPEXIT,
     SPRITE_HEAD_DIR, SPRITE_HEALTH, SPRITE_HIT_TIMER, SPRITE_IGNORE_PROJECTILE,
-    SPRITE_INCOMING_DAMAGE, SPRITE_LAST_GARNISH_INDEX, SPRITE_LIMIT_INSTANCE,
+    SPRITE_INCOMING_DAMAGE, SPRITE_LIMIT_INSTANCE,
     SPRITE_LOAD_BLOCK_STATE, SPRITE_N, SPRITE_OAM_FLAGS, SPRITE_OAM_PREP_X, SPRITE_OAM_PREP_Y,
     SPRITE_OBJ_PRIO, SPRITE_PAUSE, SPRITE_PICKUP_SLOT_CACHE, SPRITE_RESET_WORK_A,
     SPRITE_RESET_WORK_B, SPRITE_ROOM, SPRITE_ROOM_ORIGIN_X_HI, SPRITE_ROOM_ORIGIN_Y_HI,
@@ -165,7 +165,9 @@ impl CachedSpriteCacheField {
 // which is indexed by `blk >> 3`.
 pub(crate) const OVERWORLD_SPRITE_PRESENCE_COUNT: usize = 0x1000;
 const SPRITE_GRAPHICS_SUBSET_COUNT: usize = 4;
-const SPRITE_ZERO_PAGE_WORK_COUNT: usize = 16;
+/// The two zero-page scratch words (R0 and R1) the sprite system fills: the
+/// OAM-prep coordinates, or a killed sprite's load block and pointer.
+const SPRITE_ZERO_PAGE_WORK_COUNT: usize = 4;
 const SPRITE_WHERE_IN_ROOM_BYTES: usize = 0x1000;
 const CACHED_SPRITE_SLOT_COUNT: usize = 0x1b;
 const BOSS_HOME_POSITION_COUNT: usize = 0x1b;
@@ -1940,7 +1942,7 @@ pub(crate) struct SpriteWorkspaceState {
     draw_priority_override: u16,
     current_sprite_x: u16,
     current_sprite_y: u16,
-    low_scratch: [u8; SPRITE_ZERO_PAGE_WORK_COUNT],
+    zero_page_work: [u8; SPRITE_ZERO_PAGE_WORK_COUNT],
     where_in_room: Vec<u8>,
 }
 
@@ -1958,7 +1960,7 @@ impl Default for SpriteWorkspaceState {
             draw_priority_override: 0,
             current_sprite_x: 0,
             current_sprite_y: 0,
-            low_scratch: [0; SPRITE_ZERO_PAGE_WORK_COUNT],
+            zero_page_work: [0; SPRITE_ZERO_PAGE_WORK_COUNT],
             where_in_room: vec![0; SPRITE_WHERE_IN_ROOM_BYTES],
         }
     }
@@ -1971,8 +1973,8 @@ impl SpriteWorkspaceState {
             *value = ram.get(SPRITE_GFX_SUBSET_0 + slot).copied().unwrap_or(0);
         }
 
-        let mut low_scratch = [0; SPRITE_ZERO_PAGE_WORK_COUNT];
-        for (offset, value) in low_scratch.iter_mut().enumerate() {
+        let mut zero_page_work = [0; SPRITE_ZERO_PAGE_WORK_COUNT];
+        for (offset, value) in zero_page_work.iter_mut().enumerate() {
             *value = ram.get(offset).copied().unwrap_or(0);
         }
 
@@ -1988,7 +1990,7 @@ impl SpriteWorkspaceState {
             draw_priority_override: read_le_u16(ram, SPRITE_DRAW_PRIORITY_OVERRIDE),
             current_sprite_x: read_le_u16(ram, CUR_SPRITE_X),
             current_sprite_y: read_le_u16(ram, CUR_SPRITE_Y),
-            low_scratch,
+            zero_page_work,
             // SPRITE_WHERE_IN_ROOM (0x1df80) is the dungeon per-room sprite-kill
             // bitmask; in the OVERWORLD the same WRAM is `sprite_where_in_overworld`
             // (the proximity-spawn presence table, owned by OverworldSpritePresence-
@@ -2019,7 +2021,7 @@ impl SpriteWorkspaceState {
         ram.write_word(SPRITE_DRAW_PRIORITY_OVERRIDE, self.draw_priority_override);
         ram.write_word(CUR_SPRITE_X, self.current_sprite_x);
         ram.write_word(CUR_SPRITE_Y, self.current_sprite_y);
-        ram.write_range(0..SPRITE_ZERO_PAGE_WORK_COUNT, &self.low_scratch);
+        ram.write_range(0..SPRITE_ZERO_PAGE_WORK_COUNT, &self.zero_page_work);
         // Only project the dungeon per-room kill bitmask while indoors; in the
         // overworld this WRAM is the proximity-spawn presence table (see
         // load_from_ram), and projecting stale all-zero room data would wipe the
@@ -2086,13 +2088,13 @@ impl SpriteWorkspaceState {
     }
 
     pub(crate) fn oam_prep_x(&self) -> u16 {
-        u16::from(self.low_scratch[SPRITE_OAM_PREP_X])
-            | (u16::from(self.low_scratch[SPRITE_OAM_PREP_X + 1]) << 8)
+        u16::from(self.zero_page_work[SPRITE_OAM_PREP_X])
+            | (u16::from(self.zero_page_work[SPRITE_OAM_PREP_X + 1]) << 8)
     }
 
     pub(crate) fn oam_prep_y(&self) -> u16 {
-        u16::from(self.low_scratch[SPRITE_OAM_PREP_Y])
-            | (u16::from(self.low_scratch[SPRITE_OAM_PREP_Y + 1]) << 8)
+        u16::from(self.zero_page_work[SPRITE_OAM_PREP_Y])
+            | (u16::from(self.zero_page_work[SPRITE_OAM_PREP_Y + 1]) << 8)
     }
 
     pub(crate) fn where_in_room(&self, room: usize) -> u16 {
@@ -2191,21 +2193,17 @@ impl SpriteWorkspaceState {
     }
 
     fn set_oam_prep_coords(&mut self, x: u16, y: u16) {
-        self.low_scratch[SPRITE_OAM_PREP_X] = x as u8;
-        self.low_scratch[SPRITE_OAM_PREP_X + 1] = (x >> 8) as u8;
-        self.low_scratch[SPRITE_OAM_PREP_Y] = y as u8;
-        self.low_scratch[SPRITE_OAM_PREP_Y + 1] = (y >> 8) as u8;
+        self.zero_page_work[SPRITE_OAM_PREP_X] = x as u8;
+        self.zero_page_work[SPRITE_OAM_PREP_X + 1] = (x >> 8) as u8;
+        self.zero_page_work[SPRITE_OAM_PREP_Y] = y as u8;
+        self.zero_page_work[SPRITE_OAM_PREP_Y + 1] = (y >> 8) as u8;
     }
 
     fn set_killed_sprite_load_block(&mut self, block: u16) {
-        self.low_scratch[SPRITE_LOAD_BLOCK_STATE] = block as u8;
+        self.zero_page_work[SPRITE_LOAD_BLOCK_STATE] = block as u8;
         let pointer = (block >> 3).wrapping_add(0xef80);
-        self.low_scratch[SPRITE_LOAD_BLOCK_STATE + 1] = pointer as u8;
-        self.low_scratch[SPRITE_LOAD_BLOCK_STATE + 2] = (pointer >> 8) as u8;
-    }
-
-    fn set_last_garnish_index(&mut self, index: i32) {
-        self.low_scratch[SPRITE_LAST_GARNISH_INDEX] = index as u8;
+        self.zero_page_work[SPRITE_LOAD_BLOCK_STATE + 1] = pointer as u8;
+        self.zero_page_work[SPRITE_LOAD_BLOCK_STATE + 2] = (pointer >> 8) as u8;
     }
 
     fn set_where_in_room(&mut self, room: usize, value: u16) {
@@ -2343,7 +2341,6 @@ impl<'a> NativeSpriteWorkspaceBridgeMut<'a> {
         fn subtract_current_sprite_y_low(value: u8);
         fn set_oam_prep_coords(x: u16, y: u16);
         fn set_killed_sprite_load_block(block: u16);
-        fn set_last_garnish_index(index: i32);
         fn set_where_in_room(room: usize, value: u16);
     }
 }

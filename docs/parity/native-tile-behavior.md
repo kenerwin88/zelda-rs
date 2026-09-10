@@ -29,7 +29,9 @@ owner, serialization layout, or timing continuation is introduced.
 
 ## Regression evidence
 
-`tile-behavior-7ad23477.txt` was captured before runtime edits. It freezes full
+`tile-behavior-7ad23477.txt` was captured before runtime edits (re-frozen
+once as `tile-behavior-zero-page-scratch.txt`; see
+`zero-page-scratch-owner.md`). It freezes full
 WRAM and native-projection hashes for 131,072 attribute executions:
 
 - All 256 attribute values and both indoor/outdoor contexts.

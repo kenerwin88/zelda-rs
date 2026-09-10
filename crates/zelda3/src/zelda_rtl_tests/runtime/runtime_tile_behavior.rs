@@ -40,7 +40,7 @@ fn tile_attributes_match_frozen_runtime_effects() {
     }
     assert_eq!(
         cases,
-        include_str!("../../../testdata/tile-behavior-7ad23477.txt")
+        include_str!("../../../testdata/tile-behavior-zero-page-scratch.txt")
     );
 }
 

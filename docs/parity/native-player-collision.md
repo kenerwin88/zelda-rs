@@ -45,6 +45,10 @@ runtime entry points. It hashes all WRAM plus the resulting native projection.
 Probe cases start with nonzero randomized RAM; the cases cover all directions,
 coordinate wrapping, both layers, doorways, zero/positive/negative movement,
 slopes, and room collision modes. The test has no regeneration path.
+The fixture was re-frozen once, as `player-collision-zero-page-scratch.txt`,
+when the sprite workspace stopped projecting four zero-page bytes no state
+owns; every case's WRAM and every owned projected byte were shown equal
+before the re-freeze (see `zero-page-scratch-owner.md`).
 
 Native geometry is compared against the pre-refactor formulas for every
 16-bit coordinate value, both axes, all four directions, and both probe kinds.
