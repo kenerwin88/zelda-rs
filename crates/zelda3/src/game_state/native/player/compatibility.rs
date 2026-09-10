@@ -610,361 +610,6 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn set_speed_setting(&mut self, value: u8) {
-        self.state.movement.set_speed_setting(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_speed_setting(&mut self) -> u8 {
-        let value = self.state.movement.decrement_speed_setting();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn clear_speed_modifier(&mut self) {
-        self.state.movement.clear_speed_modifier();
-        self.sync();
-    }
-
-    pub(crate) fn set_speed_modifier(&mut self, value: u8) {
-        self.state.movement.set_speed_modifier(value);
-        self.sync();
-    }
-
-    pub(crate) fn mark_lower_level(&mut self) {
-        self.state.movement.mark_lower_level();
-        self.sync();
-    }
-
-    pub(crate) fn mark_lower_level_mirror(&mut self) {
-        self.state.movement.mark_lower_level_mirror();
-        self.sync();
-    }
-
-    pub(crate) fn set_lower_level_state(&mut self, value: u8) {
-        self.state.movement.set_lower_level_state(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_lower_level_mirror_state(&mut self, value: u8) {
-        self.state.movement.set_lower_level_mirror_state(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_lower_level_states(&mut self, state: u8, mirror: u8) {
-        self.state.movement.set_lower_level_states(state, mirror);
-        self.sync();
-    }
-
-    pub(crate) fn clear_lower_level(&mut self) {
-        self.state.movement.clear_lower_level();
-        self.sync();
-    }
-
-    pub(crate) fn clear_lower_level_states(&mut self) {
-        self.state.movement.clear_lower_level_states();
-        self.sync();
-    }
-
-    pub(crate) fn toggle_lower_level_state(&mut self) {
-        self.state.movement.toggle_lower_level_state();
-        self.sync();
-    }
-
-    pub(crate) fn toggle_lower_level_mirror_state(&mut self) {
-        self.state.movement.toggle_lower_level_mirror_state();
-        self.sync();
-    }
-
-    pub(crate) fn mirror_lower_level_state(&mut self) {
-        self.state.movement.mirror_lower_level_state();
-        self.sync();
-    }
-
-    pub(crate) fn cache_lower_level_states(&mut self) {
-        self.state.movement.cache_lower_level_states();
-        self.sync();
-    }
-
-    pub(crate) fn restore_lower_level_state_from_cached(&mut self) {
-        self.state.movement.restore_lower_level_state_from_cached();
-        self.sync();
-    }
-
-    pub(crate) fn arm_stair_speed_modifier(&mut self) {
-        self.state.movement.arm_stair_speed_modifier();
-        self.sync();
-    }
-
-    pub(crate) fn resolve_dash_speed_setting(&mut self) {
-        self.state.movement.resolve_dash_speed_setting();
-        self.sync();
-    }
-
-    pub(crate) fn promote_pending_speed_modifier(&mut self) {
-        self.state.movement.promote_pending_speed_modifier();
-        self.sync();
-    }
-
-    pub(crate) fn increase_near_pit_speed_modifier(&mut self) {
-        self.state.movement.increase_near_pit_speed_modifier();
-        self.sync();
-    }
-
-    pub(crate) fn advance_dash_deceleration(&mut self) {
-        self.state.movement.advance_dash_deceleration();
-        self.sync();
-    }
-
-    pub(crate) fn set_handler_state(&mut self, value: u8) {
-        self.state.actions.set_handler_state(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_handler_state(&mut self) {
-        self.state.actions.clear_handler_state();
-        self.sync();
-    }
-
-    pub(crate) fn set_facing(&mut self, value: u8) {
-        self.state.movement.set_facing(value);
-        self.sync();
-    }
-
-    pub(crate) fn restore_facing_from_cached(&mut self) {
-        self.state.movement.restore_facing_from_cached();
-        self.sync();
-    }
-
-    pub(crate) fn set_facing_mirror(&mut self, value: u8) {
-        self.state.movement.set_facing_mirror(value);
-        self.sync();
-    }
-
-    pub(crate) fn cache_facing_to_mirror(&mut self) {
-        self.state.movement.cache_facing_to_mirror();
-        self.sync();
-    }
-
-    pub(crate) fn cache_facing(&mut self) {
-        self.state.movement.cache_facing();
-        self.sync();
-    }
-
-    pub(crate) fn set_moving_against_diag_tile(&mut self, value: u8) {
-        self.state.movement.set_moving_against_diag_tile(value);
-        self.sync();
-    }
-
-    pub(crate) fn add_moving_against_diag_tile_flags(&mut self, value: u8) {
-        self.state
-            .movement
-            .add_moving_against_diag_tile_flags(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_moving_against_diag_tile(&mut self) {
-        self.state.movement.clear_moving_against_diag_tile();
-        self.sync();
-    }
-
-    pub(crate) fn set_flag_moving(&mut self, value: u8) {
-        self.state.movement.set_flag_moving(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_quadrants_from_packed_nibbles(&mut self, value: u8) {
-        self.state.movement.set_quadrants_from_packed_nibbles(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_quadrants(&mut self, x: u8, y: u8) {
-        self.state.movement.set_quadrants(x, y);
-        self.sync();
-    }
-
-    pub(crate) fn toggle_quadrant_x(&mut self) -> u8 {
-        let value = self.state.movement.toggle_quadrant_x();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn toggle_quadrant_y(&mut self) -> u8 {
-        let value = self.state.movement.toggle_quadrant_y();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn reset_direction_limits(&mut self) {
-        self.state.movement.reset_direction_limits();
-        self.sync();
-    }
-
-    pub(crate) fn reset_direction_masks(&mut self) {
-        self.state.movement.reset_direction_masks();
-        self.sync();
-    }
-
-    pub(crate) fn increment_orthogonal_direction_count(&mut self) {
-        self.state.movement.increment_orthogonal_direction_count();
-        self.sync();
-    }
-
-    pub(crate) fn clear_orthogonal_direction_count(&mut self) {
-        self.state.movement.clear_orthogonal_direction_count();
-        self.sync();
-    }
-
-    pub(crate) fn set_last_direction_moved_towards(&mut self, value: u8) {
-        self.state.movement.set_last_direction_moved_towards(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_last_direction_from_current_direction(&mut self) {
-        self.state
-            .movement
-            .set_last_direction_from_current_direction();
-        self.sync();
-    }
-
-    pub(crate) fn set_last_direction(&mut self, value: u8) {
-        self.state.movement.set_last_direction(value);
-        self.sync();
-    }
-
-    pub(crate) fn mask_last_direction(&mut self, mask: u8) {
-        self.state.movement.mask_last_direction(mask);
-        self.sync();
-    }
-
-    pub(crate) fn set_last_direction_from_swim_flags(&mut self) {
-        self.state.movement.set_last_direction_from_swim_flags();
-        self.sync();
-    }
-
-    pub(crate) fn set_swim_flags_from_last_direction(&mut self) {
-        self.state.movement.set_swim_flags_from_last_direction();
-        self.sync();
-    }
-
-    pub(crate) fn set_direction(&mut self, value: u8) {
-        self.state.movement.set_direction(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_direction_and_last_direction(&mut self, value: u8) {
-        self.state.movement.set_direction_and_last_direction(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_direction_and_swim_flags(&mut self, value: u8) {
-        self.state.movement.set_direction_and_swim_flags(value);
-        self.sync();
-    }
-
-    pub(crate) fn mask_direction(&mut self, mask: u8) {
-        self.state.movement.mask_direction(mask);
-        self.sync();
-    }
-
-    pub(crate) fn add_direction_flags(&mut self, flags: u8) {
-        self.state.movement.add_direction_flags(flags);
-        self.sync();
-    }
-
-    pub(crate) fn clear_direction_flags(&mut self, flags: u8) {
-        self.state.movement.clear_direction_flags(flags);
-        self.sync();
-    }
-
-    pub(crate) fn clear_direction_lock(&mut self) {
-        self.state.movement.clear_direction_lock();
-        self.sync();
-    }
-
-    pub(crate) fn set_direction_lock_bits(&mut self, mask: u8) {
-        self.state.movement.set_direction_lock_bits(mask);
-        self.sync();
-    }
-
-    pub(crate) fn clear_direction_lock_bits(&mut self, mask: u8) {
-        self.state.movement.clear_direction_lock_bits(mask);
-        self.sync();
-    }
-
-    pub(crate) fn set_direction_mask_a(&mut self, value: u8) {
-        self.state.movement.set_direction_mask_a(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_direction_mask_b(&mut self, value: u8) {
-        self.state.movement.set_direction_mask_b(value);
-        self.sync();
-    }
-
-    pub(crate) fn apply_direction_masks(&mut self) {
-        self.state.movement.apply_direction_masks();
-        self.sync();
-    }
-
-    pub(crate) fn force_direction_from_diag_tile_if_needed(&mut self) {
-        self.state
-            .movement
-            .force_direction_from_diag_tile_if_needed();
-        self.sync();
-    }
-
-    pub(crate) fn resolve_orthogonal_direction_count_from_facing(&mut self) {
-        self.state
-            .movement
-            .resolve_orthogonal_direction_count_from_facing();
-        self.sync();
-    }
-
-    pub(crate) fn mark_moving_floor_direction(&mut self, floor_y: u16, floor_x: u16) {
-        self.state
-            .movement
-            .mark_moving_floor_direction(floor_y, floor_x);
-        self.sync();
-    }
-
-    pub(crate) fn set_last_direction_moved_towards_from_facing(&mut self) {
-        self.state
-            .movement
-            .set_last_direction_moved_towards_from_facing();
-        self.sync();
-    }
-
-    pub(crate) fn set_swim_direction_flags(&mut self, direction: u8) {
-        self.state.movement.set_swim_direction_flags(direction);
-        self.sync();
-    }
-
-    pub(crate) fn set_y(&mut self, value: u16) {
-        self.state.movement.set_y(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_x(&mut self, value: u16) {
-        self.state.movement.set_x(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_position(&mut self, x: u16, y: u16) {
-        self.state.movement.set_position(x, y);
-        self.sync();
-    }
-
-    pub(crate) fn set_y_low(&mut self, value: u8) {
-        self.state.movement.set_y_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_x_low(&mut self, value: u8) {
-        self.state.movement.set_x_low(value);
-        self.sync();
-    }
-
     pub(crate) fn restore_position_from_cached(&mut self) {
         let x = self.state.movement.cached_x;
         let y = self.state.movement.cached_y;
@@ -997,18 +642,8 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn cache_previous_position_from_current(&mut self) {
-        self.state.movement.cache_previous_position_from_current();
-        self.sync();
-    }
-
     pub(crate) fn cache_previous_position_from_current_xy_order(&mut self) {
         self.state.movement.cache_previous_position_from_current();
-        self.sync();
-    }
-
-    pub(crate) fn set_previous_position(&mut self, x: u16, y: u16) {
-        self.state.movement.set_previous_position(x, y);
         self.sync();
     }
 
@@ -1093,64 +728,6 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn store_safe_return_position(&mut self, x: u16, y: u16) {
-        self.state.movement.store_safe_return_position(x, y);
-        self.sync();
-    }
-
-    pub(crate) fn store_safe_return_low_from_current(&mut self) {
-        self.state.movement.store_safe_return_low_from_current();
-        self.sync();
-    }
-
-    pub(crate) fn store_safe_return_y(&mut self, y: u16) {
-        self.state.movement.store_safe_return_y(y);
-        self.sync();
-    }
-
-    pub(crate) fn set_safe_return_y_low(&mut self, value: u8) {
-        self.state.movement.set_safe_return_y_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn cache_safe_return_position_from_current(&mut self) {
-        self.state
-            .movement
-            .cache_safe_return_position_from_current();
-        self.sync();
-    }
-
-    pub(crate) fn cache_safe_return_high_from_current(&mut self) {
-        self.state.movement.cache_safe_return_high_from_current();
-        self.sync();
-    }
-
-    pub(crate) fn clear_page_movement_deltas(&mut self) {
-        self.state.movement.clear_page_movement_deltas();
-        self.sync();
-    }
-
-    pub(crate) fn set_page_movement_deltas(&mut self, y_delta: u8, x_delta: u8) {
-        self.state
-            .movement
-            .set_page_movement_deltas(y_delta, x_delta);
-        self.sync();
-    }
-
-    pub(crate) fn set_y_page_movement_delta_from_high_position(&mut self, high: u8) {
-        self.state
-            .movement
-            .set_y_page_movement_delta_from_high_position(high);
-        self.sync();
-    }
-
-    pub(crate) fn set_x_page_movement_delta_from_high_position(&mut self, high: u8) {
-        self.state
-            .movement
-            .set_x_page_movement_delta_from_high_position(high);
-        self.sync();
-    }
-
     pub(crate) fn restore_y_from_hop_origin(&mut self) {
         let y = read_le_u16(self.ram, LINK_Y_COORD_ORIGINAL);
         self.state.movement.set_y(y);
@@ -1163,38 +740,6 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_oam_x_offset(&mut self, value: u8) {
-        self.state.presentation.set_oam_x_offset(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_oam_y_offset(&mut self, value: u8) {
-        self.state.presentation.set_oam_y_offset(value);
-        self.sync();
-    }
-
-    pub(crate) fn disable_oam_offsets(&mut self) {
-        self.state.presentation.disable_oam_offsets();
-        self.sync();
-    }
-
-    pub(crate) fn set_x_velocity(&mut self, value: u8) {
-        self.state.movement.set_x_velocity(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_y_velocity(&mut self, value: u8) {
-        self.state.movement.set_y_velocity(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_movement_velocity_from_delta(&mut self, x_delta: u16, y_delta: u16) {
-        self.state
-            .movement
-            .set_movement_velocity_from_delta(x_delta, y_delta);
-        self.sync();
-    }
-
     pub(crate) fn subtract_axis_velocity_delta(&mut self, horizontal: bool, delta: u8) {
         self.state
             .movement
@@ -1202,28 +747,6 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         if horizontal {
         } else {
         }
-        self.sync();
-    }
-
-    pub(crate) fn add_movement_velocity_delta(&mut self, x_delta: u16, y_delta: u16) {
-        self.state
-            .movement
-            .add_movement_velocity_delta(x_delta, y_delta);
-        self.sync();
-    }
-
-    pub(crate) fn add_y_velocity_delta(&mut self, y_delta: u8) {
-        self.state.movement.add_y_velocity_delta(y_delta);
-        self.sync();
-    }
-
-    pub(crate) fn clear_movement_velocity(&mut self) {
-        self.state.movement.clear_movement_velocity();
-        self.sync();
-    }
-
-    pub(crate) fn clear_movement_subpixels(&mut self) {
-        self.state.movement.clear_movement_subpixels();
         self.sync();
     }
 
@@ -1283,46 +806,6 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.update_horizontal_direction_from_movement_velocity();
     }
 
-    pub(crate) fn set_actual_x_velocity(&mut self, value: u8) {
-        self.state.movement.set_actual_x_velocity(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_actual_y_velocity(&mut self, value: u8) {
-        self.state.movement.set_actual_y_velocity(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_actual_x_velocity(&mut self) {
-        self.state.movement.clear_actual_x_velocity();
-        self.sync();
-    }
-
-    pub(crate) fn clear_actual_y_velocity(&mut self) {
-        self.state.movement.clear_actual_y_velocity();
-        self.sync();
-    }
-
-    pub(crate) fn set_actual_velocity_xy(&mut self, x: u8, y: u8) {
-        self.state.movement.set_actual_velocity_xy(x, y);
-        self.sync();
-    }
-
-    pub(crate) fn clear_actual_velocity_xy(&mut self) {
-        self.state.movement.clear_actual_velocity_xy();
-        self.sync();
-    }
-
-    pub(crate) fn invert_actual_velocity_xy(&mut self) {
-        self.state.movement.invert_actual_velocity_xy();
-        self.sync();
-    }
-
-    pub(crate) fn xor_actual_velocity_xy(&mut self, mask: u8) {
-        self.state.movement.xor_actual_velocity_xy(mask);
-        self.sync();
-    }
-
     pub(crate) fn derive_direction_from_actual_velocity(&mut self) {
         let mut direction = 0;
         if self.state.actual_y_velocity() != 0 {
@@ -1340,73 +823,6 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
             };
         }
         self.state.movement.set_direction(direction);
-        self.sync();
-    }
-
-    pub(crate) fn set_actual_velocity_from_direction(&mut self, direction: u8, velocity: u8) {
-        self.state
-            .movement
-            .set_actual_velocity_from_direction(direction, velocity);
-        self.sync();
-    }
-
-    pub(crate) fn set_z(&mut self, value: u16) {
-        self.state.movement.set_z(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_z_low(&mut self, value: u8) {
-        self.state.movement.set_z_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_z_high(&mut self) {
-        self.state.movement.clear_z_high();
-        self.sync();
-    }
-
-    pub(crate) fn restore_z_low_from_mirror(&mut self) {
-        self.state.movement.restore_z_low_from_mirror();
-        self.sync();
-    }
-
-    pub(crate) fn restore_z_from_mirror(&mut self) {
-        self.state.movement.restore_z_from_mirror();
-        self.sync();
-    }
-
-    pub(crate) fn cache_z_low_to_mirror(&mut self) {
-        self.state.movement.cache_z_low_to_mirror();
-        self.sync();
-    }
-
-    pub(crate) fn cache_z_to_mirror(&mut self) {
-        self.state.movement.cache_z_to_mirror();
-        self.sync();
-    }
-
-    pub(crate) fn set_z_mirror(&mut self, value: u16) {
-        self.state.movement.set_z_mirror(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_z_mirror_low(&mut self) {
-        self.state.movement.clear_z_mirror_low();
-        self.sync();
-    }
-
-    pub(crate) fn clear_z_mirror_word_low(&mut self) {
-        self.state.movement.clear_z_mirror_word_low();
-        self.sync();
-    }
-
-    pub(crate) fn force_z_mirror_low_ff(&mut self) {
-        self.state.movement.force_z_mirror_low_ff();
-        self.sync();
-    }
-
-    pub(crate) fn set_z_and_mirror(&mut self, value: u16) {
-        self.state.movement.set_z_and_mirror(value);
         self.sync();
     }
 
@@ -1459,142 +875,15 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.move_axis_by_velocity(PlayerAxis::Z, velocity)
     }
 
-    pub(crate) fn set_actual_z_velocity(&mut self, value: u8) {
-        self.state.movement.set_actual_z_velocity(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_actual_z_velocity_and_copy(&mut self, value: u8) {
-        self.state.movement.set_actual_z_velocity_and_copy(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_actual_z_velocity_mirror_and_copy(&mut self, value: u8) {
-        self.state
-            .movement
-            .set_actual_z_velocity_mirror_and_copy(value);
-        self.sync();
-    }
-
-    pub(crate) fn restore_actual_z_velocity_from_mirror(&mut self) {
-        self.state.movement.restore_actual_z_velocity_from_mirror();
-        self.sync();
-    }
-
-    pub(crate) fn cache_actual_z_velocity_to_mirror(&mut self) {
-        self.state.movement.cache_actual_z_velocity_to_mirror();
-        self.sync();
-    }
-
     pub(crate) fn prime_airborne_z_velocity(&mut self) {
         self.state.movement.prime_airborne_z_velocity();
         self.ram[LINK_Z_SUBPIXEL] = 0;
         self.sync();
     }
 
-    pub(crate) fn decrement_actual_z_velocity(&mut self, delta: u8) {
-        self.state.movement.decrement_actual_z_velocity(delta);
-        self.sync();
-    }
-
-    pub(crate) fn set_ground_state(&mut self) {
-        self.state.actions.set_ground_state();
-        self.sync();
-    }
-
-    pub(crate) fn clear_running(&mut self) {
-        self.state.movement.clear_running();
-        self.sync();
-    }
-
-    pub(crate) fn start_running(&mut self) {
-        self.state.movement.start_running();
-        self.sync();
-    }
-
-    pub(crate) fn set_running_state(&mut self, value: u8) {
-        self.state.movement.set_running_state(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_dash_countdown(&mut self, value: u8) {
-        self.state.movement.set_dash_countdown(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_dash_countdown(&mut self) -> u8 {
-        let value = self.state.movement.increment_dash_countdown();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn decrement_dash_countdown(&mut self) -> u8 {
-        let value = self.state.movement.decrement_dash_countdown();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_dash_counter(&mut self, value: u8) {
-        self.state.movement.set_dash_counter(value);
-        self.sync();
-    }
-
-    pub(crate) fn prime_dash_counter(&mut self) {
-        self.state.movement.prime_dash_counter();
-        self.sync();
-    }
-
-    pub(crate) fn decrement_dash_counter_clamped_to_minimum(&mut self, minimum: u8) {
-        self.state
-            .movement
-            .decrement_dash_counter_clamped_to_minimum(minimum);
-        self.sync();
-    }
-
-    pub(crate) fn cancel_dash_state(&mut self) {
-        self.state.movement.cancel_dash_state();
-        self.sync();
-    }
-
-    pub(crate) fn immobilize(&mut self) {
-        self.state.actions.immobilize();
-        self.sync();
-    }
-
-    pub(crate) fn clear_immobilized(&mut self) {
-        self.state.actions.clear_immobilized();
-        self.sync();
-    }
-
-    pub(crate) fn set_button_mask_b_y(&mut self, value: u8) {
-        self.state.input.set_button_mask_b_y(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_menu_block_flag(&mut self, value: u8) {
-        self.state.actions.set_menu_block_flag(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_menu_block(&mut self) {
-        self.state.actions.clear_menu_block();
-        self.sync();
-    }
-
-    pub(crate) fn increment_menu_block_flag(&mut self) -> u8 {
-        let value = self.state.actions.increment_menu_block_flag();
-        self.sync();
-        value
-    }
-
     pub(crate) fn add_button_mask_b_y_bits(&mut self, bits: u8) {
         self.state.input.add_button_mask_b_y_bits(bits);
         self.ram[BUTTON_MASK_B_Y] |= bits;
-        self.sync();
-    }
-
-    pub(crate) fn set_pull_action_state(&mut self, value: u8) {
-        self.state.actions.set_pull_action_state(value);
         self.sync();
     }
 
@@ -1604,113 +893,15 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_filtered_joypad_h(&mut self, value: u8) {
-        self.state.input.set_filtered_joypad_h(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_filtered_joypad_l(&mut self, value: u8) {
-        self.state.input.set_filtered_joypad_l(value);
-        self.sync();
-    }
-
     pub(crate) fn clear_filtered_joypad_l_bits(&mut self, bits: u8) {
         self.state.input.clear_filtered_joypad_l_bits(bits);
         self.ram[FILTERED_JOYPAD_L] &= !bits;
         self.sync();
     }
 
-    pub(crate) fn set_joypad1h_last(&mut self, value: u8) {
-        self.state.input.set_joypad1h_last(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_joypad1l_last(&mut self, value: u8) {
-        self.state.input.set_joypad1l_last(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_joypad1h_last2(&mut self, value: u8) {
-        self.state.input.set_joypad1h_last2(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_joypad1l_last2(&mut self, value: u8) {
-        self.state.input.set_joypad1l_last2(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_spin_attack_delay_timer(&mut self, value: u8) {
-        self.state.actions.set_spin_attack_delay_timer(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_spin_attack_delay_timer(&mut self) -> u8 {
-        let value = self.state.actions.decrement_spin_attack_delay_timer();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_incapacitated_timer(&mut self, value: u8) {
-        self.state.actions.set_incapacitated_timer(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_incapacitated_timer(&mut self) -> u8 {
-        let value = self.state.actions.decrement_incapacitated_timer();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn reset_elapsed_incapacitated_timer(&mut self) {
-        self.state.actions.reset_elapsed_incapacitated_timer();
-        self.sync();
-    }
-
-    pub(crate) fn set_visibility_status(&mut self, value: u8) {
-        self.state.presentation.set_visibility_status(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_y_button_action_flags(&mut self, value: u8) {
-        self.state.actions.set_y_button_action_flags(value);
-        self.sync();
-    }
-
     pub(crate) fn add_y_button_action_flag_bits(&mut self, bits: u8) {
         self.state.actions.add_y_button_action_flag_bits(bits);
         self.ram[Y_BUTTON_ACTION_FLAGS] |= bits;
-        self.sync();
-    }
-
-    pub(crate) fn set_y_button_action_step(&mut self, value: u8) {
-        self.state.actions.set_y_button_action_step(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_y_button_action_timer(&mut self, value: u8) {
-        self.state.actions.set_y_button_action_timer(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_y_button_action_timer(&mut self) -> u8 {
-        let value = self.state.actions.decrement_y_button_action_timer();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn clear_defense_flags(&mut self) {
-        self.state.actions.clear_defense_flags();
-        self.sync();
-    }
-
-    pub(crate) fn reset_swim_subpixel_and_defense_state(&mut self) {
-        self.state.reset_swim_subpixel_and_defense_state();
-        self.sync();
-    }
-
-    pub(crate) fn set_defense_flags(&mut self, value: u8) {
-        self.state.actions.set_defense_flags(value);
         self.sync();
     }
 
@@ -1726,383 +917,10 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_item_receipt_method(&mut self, value: u8) {
-        self.state.actions.set_item_receipt_method(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_tile_below(&mut self, value: u8) {
-        self.state.movement.set_tile_below(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_tile_action_index(&mut self, value: u8) {
-        self.state.movement.set_tile_action_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_tile_coll_flag(&mut self, value: u8) {
-        self.state.movement.set_tile_coll_flag(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_force_move_any_direction(&mut self, value: u16) {
-        self.state.movement.set_force_move_any_direction(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_recoil_timer(&mut self, value: u8) {
-        self.state.movement.set_recoil_timer(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_recoil_timer(&mut self) -> u8 {
-        let value = self.state.movement.increment_recoil_timer();
-        self.sync();
-        value
-    }
-
     pub(crate) fn tick_jump_ledge_timer_or_reset(&mut self) -> bool {
         let reset = self.state.movement.tick_jump_ledge_timer_or_reset();
         self.sync();
         reset
-    }
-
-    pub(crate) fn reset_jump_ledge_timer(&mut self) {
-        self.state.movement.reset_jump_ledge_timer();
-        self.sync();
-    }
-
-    pub(crate) fn clear_about_to_jump_off_ledge(&mut self) {
-        self.state.movement.clear_about_to_jump_off_ledge();
-        self.sync();
-    }
-
-    pub(crate) fn increment_about_to_jump_off_ledge(&mut self) {
-        self.state.movement.increment_about_to_jump_off_ledge();
-        self.sync();
-    }
-
-    pub(crate) fn decrement_push_fatigue_timer(&mut self) -> u8 {
-        let value = self.state.movement.decrement_push_fatigue_timer();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_push_fatigue_timer(&mut self, value: u8) {
-        self.state.movement.set_push_fatigue_timer(value);
-        self.sync();
-    }
-
-    pub(crate) fn reset_push_fatigue_timer(&mut self) {
-        self.state.movement.reset_push_fatigue_timer();
-        self.sync();
-    }
-
-    pub(crate) fn clear_near_moveable_statue(&mut self) {
-        self.state.movement.clear_near_moveable_statue();
-        self.sync();
-    }
-
-    pub(crate) fn mark_near_moveable_statue(&mut self) {
-        self.state.movement.mark_near_moveable_statue();
-        self.sync();
-    }
-
-    pub(crate) fn clear_pull_for_rupees_sprite_need(&mut self) {
-        self.state.actions.clear_pull_for_rupees_sprite_need();
-        self.sync();
-    }
-
-    pub(crate) fn set_pull_for_rupees_sprite_need(&mut self) {
-        self.state.actions.set_pull_for_rupees_sprite_need();
-        self.sync();
-    }
-
-    pub(crate) fn clear_pit_correction(&mut self) {
-        self.state.movement.clear_pit_correction();
-        self.sync();
-    }
-
-    pub(crate) fn set_pit_correction_active(&mut self) {
-        self.state.movement.set_pit_correction_active();
-        self.sync();
-    }
-
-    pub(crate) fn set_pit_correction_timer(&mut self, value: u8) {
-        self.state.movement.set_pit_correction_timer(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_pit_correction_timer(&mut self) {
-        self.state.movement.increment_pit_correction_timer();
-        self.sync();
-    }
-
-    pub(crate) fn set_moving_against_diag_deadlocked(&mut self, value: u8) {
-        self.state
-            .movement
-            .set_moving_against_diag_deadlocked(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_electrocute_on_touch(&mut self) {
-        self.state.actions.clear_electrocute_on_touch();
-        self.sync();
-    }
-
-    pub(crate) fn set_electrocute_on_touch(&mut self, value: u8) {
-        self.state.actions.set_electrocute_on_touch(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_faint_animation_active(&mut self) {
-        self.state.presentation.clear_faint_animation_active();
-        self.sync();
-    }
-
-    pub(crate) fn set_faint_animation_active(&mut self, value: u8) {
-        self.state.presentation.set_faint_animation_active(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_item_debug_value_1(&mut self) {
-        self.state.actions.clear_item_debug_value_1();
-        self.sync();
-    }
-
-    pub(crate) fn clear_hookshot_grave_latch(&mut self) {
-        self.state.actions.clear_hookshot_grave_latch();
-        self.sync();
-    }
-
-    pub(crate) fn set_hookshot_grave_latch(&mut self) {
-        self.state.actions.set_hookshot_grave_latch();
-        self.sync();
-    }
-
-    pub(crate) fn set_dash_noise_request(&mut self) {
-        self.state.presentation.set_dash_noise_request();
-        self.sync();
-    }
-
-    pub(crate) fn clear_dash_noise_request(&mut self) {
-        self.state.presentation.clear_dash_noise_request();
-        self.sync();
-    }
-
-    pub(crate) fn clear_cape_mode(&mut self) {
-        self.state.actions.clear_cape_mode();
-        self.sync();
-    }
-
-    pub(crate) fn set_cape_mode(&mut self, value: u8) {
-        self.state.actions.set_cape_mode(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_cape_decrement_counter(&mut self, value: u8) {
-        self.state.actions.set_cape_decrement_counter(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_cape_decrement_counter(&mut self) {
-        self.state.actions.decrement_cape_decrement_counter();
-        self.sync();
-    }
-
-    pub(crate) fn clear_transforming(&mut self) {
-        self.state.actions.clear_transforming();
-        self.sync();
-    }
-
-    pub(crate) fn set_transforming(&mut self) {
-        self.state.actions.set_transforming();
-        self.sync();
-    }
-
-    pub(crate) fn clear_sword_delay_timer(&mut self) {
-        self.state.actions.clear_sword_delay_timer();
-        self.sync();
-    }
-
-    pub(crate) fn set_sword_delay_timer(&mut self, value: u8) {
-        self.state.actions.set_sword_delay_timer(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_sword_delay_timer(&mut self) -> u8 {
-        let value = self.state.actions.decrement_sword_delay_timer();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_spin_offsets(&mut self, value: u8) {
-        self.state.presentation.set_spin_offsets(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_somaria_platform_state(&mut self) {
-        self.state.movement.clear_somaria_platform_state();
-        self.sync();
-    }
-
-    pub(crate) fn set_somaria_platform_state(&mut self, value: u8) {
-        self.state.movement.set_somaria_platform_state(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_spin_attack_step_counter(&mut self) {
-        self.state.actions.clear_spin_attack_step_counter();
-        self.sync();
-    }
-
-    pub(crate) fn increment_spin_attack_step_counter(&mut self) -> u8 {
-        let value = self.state.actions.increment_spin_attack_step_counter();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_spin_attack_sound_latch(&mut self, value: u8) {
-        self.state.actions.set_spin_attack_sound_latch(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_spin_attack_sound_latch(&mut self) {
-        self.state.actions.clear_spin_attack_sound_latch();
-        self.sync();
-    }
-
-    pub(crate) fn set_state_for_spin_attack(&mut self, value: u8) {
-        self.state.actions.set_state_for_spin_attack(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_state_for_spin_attack(&mut self) {
-        self.state.actions.clear_state_for_spin_attack();
-        self.sync();
-    }
-
-    pub(crate) fn increment_immobilized_flag(&mut self) -> u8 {
-        let value = self.state.actions.increment_immobilized_flag();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_immobilized_flag(&mut self, value: u8) {
-        self.state.actions.set_immobilized_flag(value);
-        self.sync();
-    }
-
-    pub(crate) fn reset_incapacitated_camera_timer_from_incapacitated(&mut self) {
-        self.state
-            .reset_incapacitated_camera_timer_from_incapacitated();
-        self.sync();
-    }
-
-    pub(crate) fn clear_action_handler_timer(&mut self) {
-        self.state.actions.clear_action_handler_timer();
-        self.sync();
-    }
-
-    pub(crate) fn set_action_handler_timer(&mut self, value: u8) {
-        self.state.actions.set_action_handler_timer(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_action_handler_timer(&mut self) -> u8 {
-        let value = self.state.actions.increment_action_handler_timer();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn clear_doorway_state(&mut self) {
-        self.state.movement.clear_doorway_state();
-        self.sync();
-    }
-
-    pub(crate) fn set_doorway_state(&mut self, value: u8) {
-        self.state.movement.set_doorway_state(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_blink_countdown(&mut self) {
-        self.state.presentation.clear_blink_countdown();
-        self.sync();
-    }
-
-    pub(crate) fn set_blink_countdown(&mut self, value: u8) {
-        self.state.presentation.set_blink_countdown(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_blink_countdown(&mut self) -> u8 {
-        let value = self.state.presentation.decrement_blink_countdown();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_spin_animation_step_counter(&mut self, value: u8) {
-        self.state
-            .presentation
-            .set_spin_animation_step_counter(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_spin_animation_step_counter(&mut self) -> u8 {
-        let value = self
-            .state
-            .presentation
-            .increment_spin_animation_step_counter();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn clear_spin_animation_step_counter(&mut self) {
-        self.state.presentation.clear_spin_animation_step_counter();
-        self.sync();
-    }
-
-    pub(crate) fn clear_button_b_frames(&mut self) {
-        self.state.input.clear_button_b_frames();
-        self.sync();
-    }
-
-    pub(crate) fn set_button_b_frames(&mut self, value: u8) {
-        self.state.input.set_button_b_frames(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_button_b_frames_word(&mut self, value: u16) {
-        self.state.set_button_b_frames_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_button_b_frames(&mut self) -> u8 {
-        let value = self.state.input.increment_button_b_frames();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn decrement_button_b_frames_word(&mut self) -> u16 {
-        let value = self.state.decrement_button_b_frames_word();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn clear_animation_step(&mut self) {
-        self.state.presentation.clear_animation_step();
-        self.sync();
-    }
-
-    pub(crate) fn set_animation_step(&mut self, value: u8) {
-        self.state.presentation.set_animation_step(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_opening_pose(&mut self) {
-        self.state.presentation.increment_opening_pose();
-        self.sync();
     }
 
     pub(crate) fn advance_animation_step(&mut self, wrap_at: u8, wrap_to: u8) {
@@ -2149,54 +967,6 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn clear_animation_step_if_at_least(&mut self, threshold: u8) {
-        self.state
-            .presentation
-            .clear_animation_step_if_at_least(threshold);
-        self.sync();
-    }
-
-    pub(crate) fn subtract_animation_step_if_at_least(&mut self, threshold: u8, delta: u8) {
-        self.state
-            .presentation
-            .subtract_animation_step_if_at_least(threshold, delta);
-        self.sync();
-    }
-
-    pub(crate) fn clear_water_ripple_or_grass_state(&mut self) {
-        self.state.presentation.clear_water_ripple_or_grass_state();
-        self.sync();
-    }
-
-    pub(crate) fn set_water_ripple_or_grass_state(&mut self, value: u8) {
-        self.state
-            .presentation
-            .set_water_ripple_or_grass_state(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_secondary_water_grass_timer(&mut self, value: u8) {
-        self.state
-            .presentation
-            .set_secondary_water_grass_timer(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_swim_fast_state(&mut self) {
-        self.state.movement.clear_swim_fast_state();
-        self.sync();
-    }
-
-    pub(crate) fn reset_swim_stroke_state(&mut self) {
-        self.state.movement.reset_swim_stroke_state();
-        self.sync();
-    }
-
-    pub(crate) fn start_hard_swim_stroke(&mut self, hard_stroke: u8) {
-        self.state.movement.start_hard_swim_stroke(hard_stroke);
-        self.sync();
-    }
-
     pub(crate) fn tick_hard_swim_stroke(&mut self) {
         let countdown = self.ram[SWIMMING_COUNTDOWN].wrapping_sub(1);
         if (countdown as i8).is_negative() {
@@ -2205,168 +975,10 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_item_pickup_in_progress(&mut self, value: u8) {
-        self.state.actions.set_item_pickup_in_progress(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_hookshot_bg_check_off_timer(&mut self, value: u8) {
-        self.state.actions.set_hookshot_bg_check_off_timer(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_hookshot_bg_check_off_timer(&mut self) {
-        self.state.actions.decrement_hookshot_bg_check_off_timer();
-        self.sync();
-    }
-
-    pub(crate) fn set_selected_rod(&mut self, value: u8) {
-        self.state.actions.set_selected_rod(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_flute_countdown(&mut self, value: u8) {
-        self.state.actions.set_flute_countdown(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_flute_countdown(&mut self) {
-        self.state.actions.decrement_flute_countdown();
-        self.sync();
-    }
-
-    pub(crate) fn clear_flute_countdown(&mut self) {
-        self.state.actions.clear_flute_countdown();
-        self.sync();
-    }
-
-    pub(crate) fn clear_index_of_dashing_sfx(&mut self) {
-        self.state.presentation.clear_index_of_dashing_sfx();
-        self.sync();
-    }
-
-    pub(crate) fn decrement_index_of_dashing_sfx(&mut self) {
-        self.state.presentation.decrement_index_of_dashing_sfx();
-        self.sync();
-    }
-
-    pub(crate) fn increment_water_ripple_or_grass_state(&mut self) -> u8 {
-        let value = self
-            .state
-            .presentation
-            .increment_water_ripple_or_grass_state();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_primary_water_grass_timer(&mut self, value: u8) {
-        self.state.presentation.set_primary_water_grass_timer(value);
-        self.sync();
-    }
-
-    pub(crate) fn enter_deep_water_state(&mut self) {
-        self.state.movement.enter_deep_water_state();
-        self.sync();
-    }
-
-    pub(crate) fn clear_deep_water_state(&mut self) {
-        self.state.movement.clear_deep_water_state();
-        self.sync();
-    }
-
-    pub(crate) fn clear_conveyor_belt_state(&mut self) {
-        self.state.movement.clear_conveyor_belt_state();
-        self.sync();
-    }
-
-    pub(crate) fn set_conveyor_belt_state(&mut self, value: u8) {
-        self.state.movement.set_conveyor_belt_state(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_misc_bugfix_movement_state(&mut self) {
-        self.state.movement.clear_misc_bugfix_movement_state();
-        self.sync();
-    }
-
-    pub(crate) fn clear_item_action_step_var(&mut self) {
-        self.state.actions.clear_item_action_step_var();
-        self.sync();
-    }
-
-    pub(crate) fn cache_current_quadrants(&mut self) {
-        self.state.movement.cache_current_quadrants();
-        self.sync();
-    }
-
-    pub(crate) fn restore_quadrants_from_cached(&mut self) {
-        self.state.movement.restore_quadrants_from_cached();
-        self.sync();
-    }
-
     pub(crate) fn advance_frame_change_counter(&mut self, delay: u8) -> bool {
         let advanced = self.state.presentation.advance_frame_change_counter(delay);
         self.sync();
         advanced
-    }
-
-    pub(crate) fn clear_frame_change_counter(&mut self) {
-        self.state.presentation.clear_frame_change_counter();
-        self.sync();
-    }
-
-    pub(crate) fn set_sprite_oam_state_timer(&mut self, value: u8) {
-        self.state.presentation.set_sprite_oam_state_timer(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_recoil_z_velocity_for_dungeon_reset(&mut self, value: u8) {
-        self.state
-            .movement
-            .set_recoil_z_velocity_for_dungeon_reset(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_recoil_z_velocity(&mut self, value: u8) {
-        self.state.movement.set_recoil_z_velocity(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_sprite_oam_state_timer(&mut self) -> u8 {
-        let value = self.state.presentation.decrement_sprite_oam_state_timer();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn mark_pit_landing_oam_state(&mut self) {
-        self.state.presentation.mark_pit_landing_oam_state();
-        self.sync();
-    }
-
-    pub(crate) fn set_whirlpool_trigger(&mut self) {
-        self.state.movement.set_whirlpool_trigger();
-        self.sync();
-    }
-
-    pub(crate) fn clear_whirlpool_trigger(&mut self) {
-        self.state.movement.clear_whirlpool_trigger();
-        self.sync();
-    }
-
-    pub(crate) fn prevent_movement(&mut self) {
-        self.state.movement.prevent_movement();
-        self.sync();
-    }
-
-    pub(crate) fn clear_prevent_movement(&mut self) {
-        self.state.movement.clear_prevent_movement();
-        self.sync();
-    }
-
-    pub(crate) fn set_hop_origin_delta_from_y(&mut self, y: u16) -> u16 {
-        let value = self.state.movement.set_hop_origin_delta_from_y(y);
-        self.sync();
-        value
     }
 
     pub(crate) fn set_movement_velocity_from_position_delta(
@@ -2402,126 +1014,6 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn clear_actual_velocity_and_page_movement_deltas(&mut self) {
-        self.state
-            .movement
-            .clear_actual_velocity_and_page_movement_deltas();
-        self.sync();
-    }
-
-    pub(crate) fn cache_moving_floor_position(&mut self, x: u16, y: u16) {
-        self.state.movement.cache_moving_floor_position(x, y);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_incapacitated_camera_timer(&mut self) -> u8 {
-        let value = self.state.movement.decrement_incapacitated_camera_timer();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn increment_pull_action_state(&mut self) {
-        self.state.actions.increment_pull_action_state();
-        self.sync();
-    }
-
-    pub(crate) fn set_item_holding_timer(&mut self, value: u8) {
-        self.state.actions.set_item_holding_timer(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_swim_movement_velocity(&mut self) {
-        self.state.movement.clear_swim_movement_velocity();
-        self.sync();
-    }
-
-    pub(crate) fn increment_sleep_in_bed_state(&mut self) {
-        self.state.presentation.increment_sleep_in_bed_state();
-        self.sync();
-    }
-
-    pub(crate) fn set_cached_tile_action_index(&mut self, value: u8) {
-        self.state.movement.set_cached_tile_action_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_swimming_countdown(&mut self) {
-        self.state.movement.clear_swimming_countdown();
-        self.sync();
-    }
-
-    pub(crate) fn clear_ancilla_interactive_reset_flag(&mut self) {
-        self.state.actions.clear_ancilla_interactive_reset_flag();
-        self.sync();
-    }
-
-    pub(crate) fn clear_force_move_high_byte(&mut self) {
-        self.state.movement.clear_force_move_high_byte();
-        self.sync();
-    }
-
-    pub(crate) fn set_sprite_pickup_flag_cached(&mut self, value: u8) {
-        self.state.actions.set_sprite_pickup_flag_cached(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_swim_stroke_frame_counter(&mut self, offset: usize, value: u16) {
-        self.state
-            .movement
-            .set_swim_stroke_frame_counter(offset, value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_magic_spell_player_lock(&mut self) {
-        self.state.actions.clear_magic_spell_player_lock();
-        self.sync();
-    }
-
-    pub(crate) fn clear_player_pose_draw_counter(&mut self) {
-        self.state.presentation.clear_player_pose_draw_counter();
-        self.sync();
-    }
-
-    pub(crate) fn increment_player_pose_draw_counter(&mut self) {
-        self.state.presentation.increment_player_pose_draw_counter();
-        self.sync();
-    }
-
-    pub(crate) fn clear_player_special_draw_flag(&mut self) {
-        self.state.presentation.clear_player_special_draw_flag();
-        self.sync();
-    }
-
-    pub(crate) fn set_player_special_draw_flag(&mut self, value: u8) {
-        self.state.presentation.set_player_special_draw_flag(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_bit9_of_xcoord_word(&mut self, value: u16) {
-        self.state.movement.set_bit9_of_xcoord_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_item_action_step_var(&mut self) -> u8 {
-        let value = self.state.actions.increment_item_action_step_var();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn advance_item_action_step_var_wrapping_7_to_1(&mut self) -> u8 {
-        let value = self
-            .state
-            .actions
-            .advance_item_action_step_var_wrapping_7_to_1();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn clear_given_damage(&mut self) {
-        self.state.actions.clear_given_damage();
-        self.sync();
-    }
-
     #[track_caller]
     pub(crate) fn set_given_damage(&mut self, value: u8) {
         if crate::debug_env::var_os("ZELDA3_DEBUG_LINK_DAMAGE").is_some() {
@@ -2535,29 +1027,9 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_item_in_hand(&mut self, value: u8) {
-        self.state.actions.set_item_in_hand(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_item_in_hand(&mut self) {
-        self.state.actions.clear_item_in_hand();
-        self.sync();
-    }
-
     pub(crate) fn clear_item_in_hand_bits(&mut self, mask: u8) {
         self.state.actions.clear_item_in_hand_bits(mask);
         self.ram[LINK_ITEM_IN_HAND] &= !mask;
-        self.sync();
-    }
-
-    pub(crate) fn clear_position_mode(&mut self) {
-        self.state.movement.clear_position_mode();
-        self.sync();
-    }
-
-    pub(crate) fn set_position_mode(&mut self, value: u8) {
-        self.state.movement.set_position_mode(value);
         self.sync();
     }
 
@@ -2573,88 +1045,12 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_item_action_step_var(&mut self, value: u8) {
-        self.state.actions.set_item_action_step_var(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_throw_oam_state_index(&mut self, value: u8) {
-        self.state.presentation.set_throw_oam_state_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_item_action_debug_value_2(&mut self, value: u8) {
-        self.state.actions.set_item_action_debug_value_2(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_current_item_y(&mut self, value: u8) {
-        self.state.actions.set_current_item_y(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_current_item_active(&mut self, value: u8) {
-        self.state.actions.set_current_item_active(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_receive_item_index(&mut self, value: u8) {
-        self.state.actions.set_receive_item_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_link_dma_graphics_index_word(&mut self, value: u16) {
-        self.state
-            .presentation
-            .set_link_dma_graphics_index_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_link_dma_left_sprite_bank_word(&mut self, value: u16) {
-        self.state
-            .presentation
-            .set_link_dma_left_sprite_bank_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_link_dma_right_sprite_bank_word(&mut self, value: u16) {
-        self.state
-            .presentation
-            .set_link_dma_right_sprite_bank_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_link_dma_sprite_banks(&mut self) {
-        self.state.presentation.clear_link_dma_sprite_banks();
-        self.sync();
-    }
-
-    pub(crate) fn set_palette_bits_of_oam_word(&mut self, value: u16) {
-        self.state.presentation.set_palette_bits_of_oam_word(value);
-        self.sync();
-    }
-
     pub(crate) fn reset_link_dma_animation_cycle(&mut self, countdown: u16) {
         // Write-through: the Link DMA animation words are RAM-resident (see the
         // note in FollowerLinkState::write_to_ram).
         write_le_u16(self.ram, LINK_DMA_COUNTDOWN, countdown);
         write_le_u16(self.ram, LINK_DMA_SOURCE_OFFSET, 0);
         write_le_u16(self.ram, LINK_DMA_TILE_OFFSET, 0);
-        self.sync();
-    }
-
-    pub(crate) fn set_sword_dma_graphics_index(&mut self, value: u8) {
-        self.state.presentation.set_sword_dma_graphics_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_shield_dma_graphics_index(&mut self, value: u8) {
-        self.state.presentation.set_shield_dma_graphics_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_link_dma_staging_index(&mut self, value: u8) {
-        self.state.presentation.set_link_dma_staging_index(value);
         self.sync();
     }
 
@@ -2665,231 +1061,9 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_hop_origin_coord(&mut self, value: u16) {
-        self.state.movement.set_hop_origin_coord(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_action_scratch_state(&mut self) {
-        self.state.clear_action_scratch_state();
-        self.sync();
-    }
-
-    pub(crate) fn clear_lift_throw_scratch_state(&mut self) {
-        self.state.clear_lift_throw_scratch_state();
-        self.sync();
-    }
-
-    pub(crate) fn clear_ancilla_pickup_flag(&mut self) {
-        self.state.actions.clear_ancilla_pickup_flag();
-        self.sync();
-    }
-
-    pub(crate) fn set_ancilla_pickup_flag(&mut self, value: u8) {
-        self.state.actions.set_ancilla_pickup_flag(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_sprite_pickup_flag(&mut self) {
-        self.state.actions.clear_sprite_pickup_flag();
-        self.sync();
-    }
-
-    pub(crate) fn set_sprite_pickup_flag(&mut self, value: u8) {
-        self.state.actions.set_sprite_pickup_flag(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_hookshot_interlock(&mut self, value: u8) {
-        self.state.actions.set_hookshot_interlock(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_hookshot_interlock(&mut self) {
-        self.state.actions.clear_hookshot_interlock();
-        self.sync();
-    }
-
     pub(crate) fn xor_hookshot_interlock(&mut self, mask: u8) {
         self.state.actions.xor_hookshot_interlock(mask);
         self.ram[RELATED_TO_HOOKSHOT] ^= mask;
-        self.sync();
-    }
-
-    pub(crate) fn clear_grabbing_wall(&mut self) {
-        self.state.movement.clear_grabbing_wall();
-        self.sync();
-    }
-
-    pub(crate) fn set_grabbing_wall(&mut self, value: u8) {
-        self.state.movement.set_grabbing_wall(value);
-        self.sync();
-    }
-
-    pub(crate) fn enable_cutscene_immunity(&mut self) {
-        self.state.actions.enable_cutscene_immunity();
-        self.sync();
-    }
-
-    pub(crate) fn set_sprite_damage_disable_timer(&mut self, value: u8) {
-        self.state.actions.set_sprite_damage_disable_timer(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_sprite_damage_disable_timer(&mut self) {
-        self.state.actions.clear_sprite_damage_disable_timer();
-        self.sync();
-    }
-
-    pub(crate) fn increment_sprite_damage_disable_timer(&mut self) {
-        self.state.actions.increment_sprite_damage_disable_timer();
-        self.sync();
-    }
-
-    pub(crate) fn set_item_hold_pose(&mut self, value: u8) {
-        self.state.presentation.set_item_hold_pose(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_item_hold_pose(&mut self) {
-        self.state.presentation.clear_item_hold_pose();
-        self.sync();
-    }
-
-    pub(crate) fn force_hold_sword_up(&mut self) {
-        self.state.presentation.force_hold_sword_up();
-        self.sync();
-    }
-
-    pub(crate) fn clear_force_hold_sword_up(&mut self) {
-        self.state.presentation.clear_force_hold_sword_up();
-        self.sync();
-    }
-
-    pub(crate) fn set_near_pit_state(&mut self, value: u8) {
-        self.state.movement.set_near_pit_state(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_near_pit_state(&mut self) {
-        self.state.movement.clear_near_pit_state();
-        self.sync();
-    }
-
-    pub(crate) fn set_pit_data_index(&mut self, value: u8) {
-        self.state.movement.set_pit_data_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_pit_data_index(&mut self) {
-        self.state.movement.clear_pit_data_index();
-        self.sync();
-    }
-
-    pub(crate) fn advance_pit_data_index(&mut self) -> u8 {
-        let value = self.state.movement.advance_pit_data_index();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn begin_pit_check(&mut self) {
-        self.state.movement.begin_pit_check();
-        self.sync();
-    }
-
-    pub(crate) fn set_cape_transform_timer(&mut self, value: u8) {
-        self.state.actions.set_cape_transform_timer(value);
-        self.sync();
-    }
-
-    pub(crate) fn tick_cape_transform_timer(&mut self) -> u8 {
-        let value = self.state.actions.tick_cape_transform_timer();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn clear_cape_transform_timer(&mut self) {
-        self.state.actions.clear_cape_transform_timer();
-        self.sync();
-    }
-
-    pub(crate) fn clear_bunny_mirror(&mut self) {
-        self.state.actions.clear_bunny_mirror();
-        self.sync();
-    }
-
-    pub(crate) fn clear_bunny_body_state(&mut self) {
-        self.state.actions.clear_bunny_body_state();
-        self.sync();
-    }
-
-    pub(crate) fn set_bunny_state(&mut self, value: u8) {
-        self.state.actions.set_bunny_state(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_bunny_transform_flags(&mut self) {
-        self.state.actions.clear_bunny_transform_flags();
-        self.sync();
-    }
-
-    pub(crate) fn clear_bunny_transform_after_moon_pearl(&mut self) {
-        self.state.actions.clear_bunny_transform_after_moon_pearl();
-        // C clears only the low byte here; preserve the high byte in both native
-        // state and RAM projection.
-        self.sync();
-    }
-
-    pub(crate) fn clear_transform_poof_need_and_temp_bunny_timer(&mut self) {
-        self.state
-            .actions
-            .clear_transform_poof_need_and_temp_bunny_timer();
-        self.sync();
-    }
-
-    pub(crate) fn clear_temp_bunny_timer(&mut self) {
-        self.state.actions.clear_temp_bunny_timer();
-        self.sync();
-    }
-
-    pub(crate) fn set_temp_bunny_timer(&mut self, value: u16) {
-        self.state.actions.set_temp_bunny_timer(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_temp_bunny_timer(&mut self) -> u16 {
-        let value = self.state.actions.decrement_temp_bunny_timer();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn start_bunny_transform_poof(&mut self) {
-        self.state.start_bunny_transform_poof();
-        self.sync();
-    }
-
-    pub(crate) fn finish_bunny_transform_poof(&mut self) {
-        self.state.finish_bunny_transform_poof();
-        self.sync();
-    }
-
-    pub(crate) fn set_auxiliary_state(&mut self, value: u8) {
-        self.state.actions.set_auxiliary_state(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_auxiliary_state(&mut self) {
-        self.state.actions.clear_auxiliary_state();
-        self.sync();
-    }
-
-    pub(crate) fn set_state_bits(&mut self, value: u8) {
-        self.state.actions.set_state_bits(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_state_bits(&mut self) {
-        self.state.actions.clear_state_bits();
         self.sync();
     }
 
@@ -2905,34 +1079,9 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn enter_item_hold_pose(&mut self) {
-        self.state.enter_item_hold_pose();
-        self.sync();
-    }
-
     pub(crate) fn clear_state_item_and_grab_flags(&mut self) {
         self.state.clear_state_item_and_grab_flags();
         self.publish_cleared_state_item_and_grab_flags();
-        self.sync();
-    }
-
-    pub(crate) fn clear_picking_throw_state(&mut self) {
-        self.state.actions.clear_picking_throw_state();
-        self.sync();
-    }
-
-    pub(crate) fn set_picking_throw_state(&mut self, value: u8) {
-        self.state.actions.set_picking_throw_state(value);
-        self.sync();
-    }
-
-    pub(crate) fn start_lift_throw_state(&mut self) {
-        self.state.actions.start_lift_throw_state();
-        self.sync();
-    }
-
-    pub(crate) fn clear_swimming_action_state(&mut self) {
-        self.state.clear_swimming_action_state();
         self.sync();
     }
 
@@ -2953,22 +1102,12 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn finish_recoil_landing(&mut self) {
-        self.state.finish_recoil_landing();
-        self.sync();
-    }
-
     fn publish_quiet_cape_removal(&mut self) {
     }
 
     pub(crate) fn unequip_cape_quietly(&mut self) {
         self.state.unequip_cape_quietly();
         self.publish_quiet_cape_removal();
-        self.sync();
-    }
-
-    pub(crate) fn clear_swim_stroke_counters(&mut self) {
-        self.state.clear_swim_stroke_counters();
         self.sync();
     }
 
@@ -3003,41 +1142,6 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.ram[PLAYER_RESET_ANCILLA_WORK_BYTE_24] = 0;
         // Single-byte store (low byte only), matching C — the high byte of the temp-bunny
         // timer is preserved (see reset_movement_and_transformation_state on the state).
-        self.sync();
-    }
-
-    pub(crate) fn reset_platform_and_pit_state(&mut self) {
-        self.state.reset_platform_and_pit_state();
-        self.sync();
-    }
-
-    pub(crate) fn set_drag_player_x(&mut self, value: u16) {
-        self.state.movement.set_drag_player_x(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_drag_player_y(&mut self, value: u16) {
-        self.state.movement.set_drag_player_y(value);
-        self.sync();
-    }
-
-    pub(crate) fn add_drag_player_x(&mut self, delta: u16) {
-        self.state.movement.add_drag_player_x(delta);
-        self.sync();
-    }
-
-    pub(crate) fn add_drag_player_y(&mut self, delta: u16) {
-        self.state.movement.add_drag_player_y(delta);
-        self.sync();
-    }
-
-    pub(crate) fn set_gravestone_push_timeout(&mut self, value: u8) {
-        self.state.movement.set_gravestone_push_timeout(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_gravestone_push_timeout(&mut self) {
-        self.state.movement.decrement_gravestone_push_timeout();
         self.sync();
     }
 
@@ -3079,16 +1183,6 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn become_bunny_handler(&mut self) {
-        self.state.actions.become_bunny_handler();
-        self.sync();
-    }
-
-    pub(crate) fn setup_bed_pose(&mut self) {
-        self.state.setup_bed_pose();
-        self.sync();
-    }
-
     pub(crate) fn reset_after_damaging_pit(&mut self) {
         let handler_state = if self.ram[LINK_IS_BUNNY] != 0 && self.ram[LINK_ITEM_MOON_PEARL] == 0 {
             23
@@ -3106,8 +1200,386 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn enter_deep_water(&mut self) {
-        self.state.movement.enter_deep_water();
-        self.sync();
+    forward_synced! {
+        state.movement;
+        fn set_speed_setting(value: u8);
+        fn decrement_speed_setting() -> u8;
+        fn clear_speed_modifier();
+        fn set_speed_modifier(value: u8);
+        fn mark_lower_level();
+        fn mark_lower_level_mirror();
+        fn set_lower_level_state(value: u8);
+        fn set_lower_level_mirror_state(value: u8);
+        fn set_lower_level_states(state: u8, mirror: u8);
+        fn clear_lower_level();
+        fn clear_lower_level_states();
+        fn toggle_lower_level_state();
+        fn toggle_lower_level_mirror_state();
+        fn mirror_lower_level_state();
+        fn cache_lower_level_states();
+        fn restore_lower_level_state_from_cached();
+        fn arm_stair_speed_modifier();
+        fn resolve_dash_speed_setting();
+        fn promote_pending_speed_modifier();
+        fn increase_near_pit_speed_modifier();
+        fn advance_dash_deceleration();
+        fn set_facing(value: u8);
+        fn restore_facing_from_cached();
+        fn set_facing_mirror(value: u8);
+        fn cache_facing_to_mirror();
+        fn cache_facing();
+        fn set_moving_against_diag_tile(value: u8);
+        fn add_moving_against_diag_tile_flags(value: u8);
+        fn clear_moving_against_diag_tile();
+        fn set_flag_moving(value: u8);
+        fn set_quadrants_from_packed_nibbles(value: u8);
+        fn set_quadrants(x: u8, y: u8);
+        fn toggle_quadrant_x() -> u8;
+        fn toggle_quadrant_y() -> u8;
+        fn reset_direction_limits();
+        fn reset_direction_masks();
+        fn increment_orthogonal_direction_count();
+        fn clear_orthogonal_direction_count();
+        fn set_last_direction_moved_towards(value: u8);
+        fn set_last_direction_from_current_direction();
+        fn set_last_direction(value: u8);
+        fn mask_last_direction(mask: u8);
+        fn set_last_direction_from_swim_flags();
+        fn set_swim_flags_from_last_direction();
+        fn set_direction(value: u8);
+        fn set_direction_and_last_direction(value: u8);
+        fn set_direction_and_swim_flags(value: u8);
+        fn mask_direction(mask: u8);
+        fn add_direction_flags(flags: u8);
+        fn clear_direction_flags(flags: u8);
+        fn clear_direction_lock();
+        fn set_direction_lock_bits(mask: u8);
+        fn clear_direction_lock_bits(mask: u8);
+        fn set_direction_mask_a(value: u8);
+        fn set_direction_mask_b(value: u8);
+        fn apply_direction_masks();
+        fn force_direction_from_diag_tile_if_needed();
+        fn resolve_orthogonal_direction_count_from_facing();
+        fn mark_moving_floor_direction(floor_y: u16, floor_x: u16);
+        fn set_last_direction_moved_towards_from_facing();
+        fn set_swim_direction_flags(direction: u8);
+        fn set_y(value: u16);
+        fn set_x(value: u16);
+        fn set_position(x: u16, y: u16);
+        fn set_y_low(value: u8);
+        fn set_x_low(value: u8);
+        fn cache_previous_position_from_current();
+        fn set_previous_position(x: u16, y: u16);
+        fn store_safe_return_position(x: u16, y: u16);
+        fn store_safe_return_low_from_current();
+        fn store_safe_return_y(y: u16);
+        fn set_safe_return_y_low(value: u8);
+        fn cache_safe_return_position_from_current();
+        fn cache_safe_return_high_from_current();
+        fn clear_page_movement_deltas();
+        fn set_page_movement_deltas(y_delta: u8, x_delta: u8);
+        fn set_y_page_movement_delta_from_high_position(high: u8);
+        fn set_x_page_movement_delta_from_high_position(high: u8);
+        fn set_x_velocity(value: u8);
+        fn set_y_velocity(value: u8);
+        fn set_movement_velocity_from_delta(x_delta: u16, y_delta: u16);
+        fn add_movement_velocity_delta(x_delta: u16, y_delta: u16);
+        fn add_y_velocity_delta(y_delta: u8);
+        fn clear_movement_velocity();
+        fn clear_movement_subpixels();
+        fn set_actual_x_velocity(value: u8);
+        fn set_actual_y_velocity(value: u8);
+        fn clear_actual_x_velocity();
+        fn clear_actual_y_velocity();
+        fn set_actual_velocity_xy(x: u8, y: u8);
+        fn clear_actual_velocity_xy();
+        fn invert_actual_velocity_xy();
+        fn xor_actual_velocity_xy(mask: u8);
+        fn set_actual_velocity_from_direction(direction: u8, velocity: u8);
+        fn set_z(value: u16);
+        fn set_z_low(value: u8);
+        fn clear_z_high();
+        fn restore_z_low_from_mirror();
+        fn restore_z_from_mirror();
+        fn cache_z_low_to_mirror();
+        fn cache_z_to_mirror();
+        fn set_z_mirror(value: u16);
+        fn clear_z_mirror_low();
+        fn clear_z_mirror_word_low();
+        fn force_z_mirror_low_ff();
+        fn set_z_and_mirror(value: u16);
+        fn set_actual_z_velocity(value: u8);
+        fn set_actual_z_velocity_and_copy(value: u8);
+        fn set_actual_z_velocity_mirror_and_copy(value: u8);
+        fn restore_actual_z_velocity_from_mirror();
+        fn cache_actual_z_velocity_to_mirror();
+        fn decrement_actual_z_velocity(delta: u8);
+        fn clear_running();
+        fn start_running();
+        fn set_running_state(value: u8);
+        fn set_dash_countdown(value: u8);
+        fn increment_dash_countdown() -> u8;
+        fn decrement_dash_countdown() -> u8;
+        fn set_dash_counter(value: u8);
+        fn prime_dash_counter();
+        fn decrement_dash_counter_clamped_to_minimum(minimum: u8);
+        fn cancel_dash_state();
+        fn set_tile_below(value: u8);
+        fn set_tile_action_index(value: u8);
+        fn set_tile_coll_flag(value: u8);
+        fn set_force_move_any_direction(value: u16);
+        fn set_recoil_timer(value: u8);
+        fn increment_recoil_timer() -> u8;
+        fn reset_jump_ledge_timer();
+        fn clear_about_to_jump_off_ledge();
+        fn increment_about_to_jump_off_ledge();
+        fn decrement_push_fatigue_timer() -> u8;
+        fn set_push_fatigue_timer(value: u8);
+        fn reset_push_fatigue_timer();
+        fn clear_near_moveable_statue();
+        fn mark_near_moveable_statue();
+        fn clear_pit_correction();
+        fn set_pit_correction_active();
+        fn set_pit_correction_timer(value: u8);
+        fn increment_pit_correction_timer();
+        fn set_moving_against_diag_deadlocked(value: u8);
+        fn clear_somaria_platform_state();
+        fn set_somaria_platform_state(value: u8);
+        fn clear_doorway_state();
+        fn set_doorway_state(value: u8);
+        fn clear_swim_fast_state();
+        fn reset_swim_stroke_state();
+        fn start_hard_swim_stroke(hard_stroke: u8);
+        fn enter_deep_water_state();
+        fn clear_deep_water_state();
+        fn clear_conveyor_belt_state();
+        fn set_conveyor_belt_state(value: u8);
+        fn clear_misc_bugfix_movement_state();
+        fn cache_current_quadrants();
+        fn restore_quadrants_from_cached();
+        fn set_recoil_z_velocity_for_dungeon_reset(value: u8);
+        fn set_recoil_z_velocity(value: u8);
+        fn set_whirlpool_trigger();
+        fn clear_whirlpool_trigger();
+        fn prevent_movement();
+        fn clear_prevent_movement();
+        fn set_hop_origin_delta_from_y(y: u16) -> u16;
+        fn clear_actual_velocity_and_page_movement_deltas();
+        fn cache_moving_floor_position(x: u16, y: u16);
+        fn decrement_incapacitated_camera_timer() -> u8;
+        fn clear_swim_movement_velocity();
+        fn set_cached_tile_action_index(value: u8);
+        fn clear_swimming_countdown();
+        fn clear_force_move_high_byte();
+        fn set_swim_stroke_frame_counter(offset: usize, value: u16);
+        fn set_bit9_of_xcoord_word(value: u16);
+        fn clear_position_mode();
+        fn set_position_mode(value: u8);
+        fn set_hop_origin_coord(value: u16);
+        fn clear_grabbing_wall();
+        fn set_grabbing_wall(value: u8);
+        fn set_near_pit_state(value: u8);
+        fn clear_near_pit_state();
+        fn set_pit_data_index(value: u8);
+        fn clear_pit_data_index();
+        fn advance_pit_data_index() -> u8;
+        fn begin_pit_check();
+        fn set_drag_player_x(value: u16);
+        fn set_drag_player_y(value: u16);
+        fn add_drag_player_x(delta: u16);
+        fn add_drag_player_y(delta: u16);
+        fn set_gravestone_push_timeout(value: u8);
+        fn decrement_gravestone_push_timeout();
+        fn enter_deep_water();
+    }
+
+    forward_synced! {
+        state.actions;
+        fn set_handler_state(value: u8);
+        fn clear_handler_state();
+        fn set_ground_state();
+        fn immobilize();
+        fn clear_immobilized();
+        fn set_menu_block_flag(value: u8);
+        fn clear_menu_block();
+        fn increment_menu_block_flag() -> u8;
+        fn set_pull_action_state(value: u8);
+        fn set_spin_attack_delay_timer(value: u8);
+        fn decrement_spin_attack_delay_timer() -> u8;
+        fn set_incapacitated_timer(value: u8);
+        fn decrement_incapacitated_timer() -> u8;
+        fn reset_elapsed_incapacitated_timer();
+        fn set_y_button_action_flags(value: u8);
+        fn set_y_button_action_step(value: u8);
+        fn set_y_button_action_timer(value: u8);
+        fn decrement_y_button_action_timer() -> u8;
+        fn clear_defense_flags();
+        fn set_defense_flags(value: u8);
+        fn set_item_receipt_method(value: u8);
+        fn clear_pull_for_rupees_sprite_need();
+        fn set_pull_for_rupees_sprite_need();
+        fn clear_electrocute_on_touch();
+        fn set_electrocute_on_touch(value: u8);
+        fn clear_item_debug_value_1();
+        fn clear_hookshot_grave_latch();
+        fn set_hookshot_grave_latch();
+        fn clear_cape_mode();
+        fn set_cape_mode(value: u8);
+        fn set_cape_decrement_counter(value: u8);
+        fn decrement_cape_decrement_counter();
+        fn clear_transforming();
+        fn set_transforming();
+        fn clear_sword_delay_timer();
+        fn set_sword_delay_timer(value: u8);
+        fn decrement_sword_delay_timer() -> u8;
+        fn clear_spin_attack_step_counter();
+        fn increment_spin_attack_step_counter() -> u8;
+        fn set_spin_attack_sound_latch(value: u8);
+        fn clear_spin_attack_sound_latch();
+        fn set_state_for_spin_attack(value: u8);
+        fn clear_state_for_spin_attack();
+        fn increment_immobilized_flag() -> u8;
+        fn set_immobilized_flag(value: u8);
+        fn clear_action_handler_timer();
+        fn set_action_handler_timer(value: u8);
+        fn increment_action_handler_timer() -> u8;
+        fn set_item_pickup_in_progress(value: u8);
+        fn set_hookshot_bg_check_off_timer(value: u8);
+        fn decrement_hookshot_bg_check_off_timer();
+        fn set_selected_rod(value: u8);
+        fn set_flute_countdown(value: u8);
+        fn decrement_flute_countdown();
+        fn clear_flute_countdown();
+        fn clear_item_action_step_var();
+        fn increment_pull_action_state();
+        fn set_item_holding_timer(value: u8);
+        fn clear_ancilla_interactive_reset_flag();
+        fn set_sprite_pickup_flag_cached(value: u8);
+        fn clear_magic_spell_player_lock();
+        fn increment_item_action_step_var() -> u8;
+        fn advance_item_action_step_var_wrapping_7_to_1() -> u8;
+        fn clear_given_damage();
+        fn set_item_in_hand(value: u8);
+        fn clear_item_in_hand();
+        fn set_item_action_step_var(value: u8);
+        fn set_item_action_debug_value_2(value: u8);
+        fn set_current_item_y(value: u8);
+        fn set_current_item_active(value: u8);
+        fn set_receive_item_index(value: u8);
+        fn clear_ancilla_pickup_flag();
+        fn set_ancilla_pickup_flag(value: u8);
+        fn clear_sprite_pickup_flag();
+        fn set_sprite_pickup_flag(value: u8);
+        fn set_hookshot_interlock(value: u8);
+        fn clear_hookshot_interlock();
+        fn enable_cutscene_immunity();
+        fn set_sprite_damage_disable_timer(value: u8);
+        fn clear_sprite_damage_disable_timer();
+        fn increment_sprite_damage_disable_timer();
+        fn set_cape_transform_timer(value: u8);
+        fn tick_cape_transform_timer() -> u8;
+        fn clear_cape_transform_timer();
+        fn clear_bunny_mirror();
+        fn clear_bunny_body_state();
+        fn set_bunny_state(value: u8);
+        fn clear_bunny_transform_flags();
+        fn clear_bunny_transform_after_moon_pearl();
+        fn clear_transform_poof_need_and_temp_bunny_timer();
+        fn clear_temp_bunny_timer();
+        fn set_temp_bunny_timer(value: u16);
+        fn decrement_temp_bunny_timer() -> u16;
+        fn set_auxiliary_state(value: u8);
+        fn clear_auxiliary_state();
+        fn set_state_bits(value: u8);
+        fn clear_state_bits();
+        fn clear_picking_throw_state();
+        fn set_picking_throw_state(value: u8);
+        fn start_lift_throw_state();
+        fn become_bunny_handler();
+    }
+
+    forward_synced! {
+        state.presentation;
+        fn set_oam_x_offset(value: u8);
+        fn set_oam_y_offset(value: u8);
+        fn disable_oam_offsets();
+        fn set_visibility_status(value: u8);
+        fn clear_faint_animation_active();
+        fn set_faint_animation_active(value: u8);
+        fn set_dash_noise_request();
+        fn clear_dash_noise_request();
+        fn set_spin_offsets(value: u8);
+        fn clear_blink_countdown();
+        fn set_blink_countdown(value: u8);
+        fn decrement_blink_countdown() -> u8;
+        fn set_spin_animation_step_counter(value: u8);
+        fn increment_spin_animation_step_counter() -> u8;
+        fn clear_spin_animation_step_counter();
+        fn clear_animation_step();
+        fn set_animation_step(value: u8);
+        fn increment_opening_pose();
+        fn clear_animation_step_if_at_least(threshold: u8);
+        fn subtract_animation_step_if_at_least(threshold: u8, delta: u8);
+        fn clear_water_ripple_or_grass_state();
+        fn set_water_ripple_or_grass_state(value: u8);
+        fn set_secondary_water_grass_timer(value: u8);
+        fn clear_index_of_dashing_sfx();
+        fn decrement_index_of_dashing_sfx();
+        fn increment_water_ripple_or_grass_state() -> u8;
+        fn set_primary_water_grass_timer(value: u8);
+        fn clear_frame_change_counter();
+        fn set_sprite_oam_state_timer(value: u8);
+        fn decrement_sprite_oam_state_timer() -> u8;
+        fn mark_pit_landing_oam_state();
+        fn increment_sleep_in_bed_state();
+        fn clear_player_pose_draw_counter();
+        fn increment_player_pose_draw_counter();
+        fn clear_player_special_draw_flag();
+        fn set_player_special_draw_flag(value: u8);
+        fn set_throw_oam_state_index(value: u8);
+        fn set_link_dma_graphics_index_word(value: u16);
+        fn set_link_dma_left_sprite_bank_word(value: u16);
+        fn set_link_dma_right_sprite_bank_word(value: u16);
+        fn clear_link_dma_sprite_banks();
+        fn set_palette_bits_of_oam_word(value: u16);
+        fn set_sword_dma_graphics_index(value: u8);
+        fn set_shield_dma_graphics_index(value: u8);
+        fn set_link_dma_staging_index(value: u8);
+        fn set_item_hold_pose(value: u8);
+        fn clear_item_hold_pose();
+        fn force_hold_sword_up();
+        fn clear_force_hold_sword_up();
+    }
+
+    forward_synced! {
+        state.input;
+        fn set_button_mask_b_y(value: u8);
+        fn set_filtered_joypad_h(value: u8);
+        fn set_filtered_joypad_l(value: u8);
+        fn set_joypad1h_last(value: u8);
+        fn set_joypad1l_last(value: u8);
+        fn set_joypad1h_last2(value: u8);
+        fn set_joypad1l_last2(value: u8);
+        fn clear_button_b_frames();
+        fn set_button_b_frames(value: u8);
+        fn increment_button_b_frames() -> u8;
+    }
+
+    forward_synced! {
+        state;
+        fn reset_swim_subpixel_and_defense_state();
+        fn reset_incapacitated_camera_timer_from_incapacitated();
+        fn set_button_b_frames_word(value: u16);
+        fn decrement_button_b_frames_word() -> u16;
+        fn clear_action_scratch_state();
+        fn clear_lift_throw_scratch_state();
+        fn start_bunny_transform_poof();
+        fn finish_bunny_transform_poof();
+        fn enter_item_hold_pose();
+        fn clear_swimming_action_state();
+        fn finish_recoil_landing();
+        fn clear_swim_stroke_counters();
+        fn reset_platform_and_pit_state();
+        fn setup_bed_pose();
     }
 }

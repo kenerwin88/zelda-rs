@@ -8,6 +8,9 @@ macro_rules! forward_synced {
     ($field:ident; $(fn $name:ident($($arg:ident: $arg_type:ty),* $(,)?) $(-> $ret:ty)?;)+) => {
         $(forward_synced!(@method $field; fn $name($($arg: $arg_type),*) $(-> $ret)?);)+
     };
+    ($base:ident.$sub:ident; $(fn $name:ident($($arg:ident: $arg_type:ty),* $(,)?) $(-> $ret:ty)?;)+) => {
+        $(forward_synced!(@method $base.$sub; fn $name($($arg: $arg_type),*) $(-> $ret)?);)+
+    };
     (@method $field:ident; fn $name:ident($($arg:ident: $arg_type:ty),*)) => {
         pub(crate) fn $name(&mut self, $($arg: $arg_type),*) {
             self.$field.$name($($arg),*);
@@ -17,6 +20,19 @@ macro_rules! forward_synced {
     (@method $field:ident; fn $name:ident($($arg:ident: $arg_type:ty),*) -> $ret:ty) => {
         pub(crate) fn $name(&mut self, $($arg: $arg_type),*) -> $ret {
             let result = self.$field.$name($($arg),*);
+            self.sync();
+            result
+        }
+    };
+    (@method $base:ident.$sub:ident; fn $name:ident($($arg:ident: $arg_type:ty),*)) => {
+        pub(crate) fn $name(&mut self, $($arg: $arg_type),*) {
+            self.$base.$sub.$name($($arg),*);
+            self.sync();
+        }
+    };
+    (@method $base:ident.$sub:ident; fn $name:ident($($arg:ident: $arg_type:ty),*) -> $ret:ty) => {
+        pub(crate) fn $name(&mut self, $($arg: $arg_type),*) -> $ret {
+            let result = self.$base.$sub.$name($($arg),*);
             self.sync();
             result
         }
