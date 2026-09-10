@@ -24,6 +24,7 @@ mod transitions;
 pub(crate) use compatibility::NativeFollowerLinkBridgeMut;
 
 mod input;
+use crate::game_state::native::ram_target::RamTarget;
 use input::PlayerInputState;
 mod presentation;
 use presentation::PlayerPresentationState;
@@ -81,9 +82,9 @@ impl SpecialExitPositionState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, LINK_X_COORD_SPEXIT, self.x);
-        write_le_u16(ram, LINK_Y_COORD_SPEXIT, self.y);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(LINK_X_COORD_SPEXIT, self.x);
+        ram.write_word(LINK_Y_COORD_SPEXIT, self.y);
     }
 
     pub(crate) fn x(&self) -> u16 {
@@ -155,7 +156,7 @@ impl PlayerState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         self.special_exit_position.write_to_ram(ram);
         self.follower_link.write_to_ram(ram);
         self.swim_acceleration.write_to_ram(ram);
@@ -678,65 +679,70 @@ impl TileDetectionState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, TILEDETECT_WHICH_Y_POS, self.probe_y);
-        write_le_u16(ram, TILEDETECT_WHICH_Y_POS + 2, self.probe_x);
-        ram[TILE_COLLISION_BITS_PRIMARY] = self.tile_collision_bits_primary;
-        ram[TILE_COLLISION_BITS_SECONDARY] = self.tile_collision_bits_secondary;
-        ram[LIFTABLE_TILE_DETECTED_INDEX_DOUBLED] = self.liftable_tile_index;
-        ram[LIFTABLE_TILE_ACTION_INDEX_PRIMARY] = self.liftable_action_index_primary;
-        ram[LIFTABLE_TILE_ACTION_INDEX_SECONDARY] = self.liftable_action_index_secondary;
-        write_le_u16(ram, SCRATCH_0, self.interaction_scratch_y);
-        write_le_u16(ram, SCRATCH_1, self.interaction_scratch_x);
-        write_le_u16(ram, TILEMAP_LOCATION_CALC_MASK, self.location_calc_mask);
-        write_le_u16(ram, INDEX_OF_INTERACTING_TILE, self.interacting_tile);
-        ram[TILEDETECT_PIT_TILE] = self.pit_tile as u8;
-        write_le_u16(ram, TILEDETECT_DEEPWATER, self.deepwater);
-        write_le_u16(ram, TILEDETECT_NORMAL_TILES, self.normal_tiles);
-        write_le_u16(ram, TILEDETECT_MISC_TILES, self.misc_tiles);
-        write_le_u16(ram, TILEDETECT_THICK_GRASS, self.thick_grass);
-        write_le_u16(ram, TILEDETECT_DIAGONAL_TILE, self.diagonal_tile);
-        ram[TILEDETECT_STAIR_TILE] = self.stair_tile;
-        write_le_u16(ram, TILEDETECT_BLOCK_FLAGS_LO, self.block_flags);
-        write_le_u16(
-            ram,
-            TILEDETECT_DOOR_DIRECTION_FLAGS,
-            self.door_direction_flags,
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(TILEDETECT_WHICH_Y_POS, self.probe_y);
+        ram.write_word(TILEDETECT_WHICH_Y_POS + 2, self.probe_x);
+        ram.write_byte(
+            TILE_COLLISION_BITS_PRIMARY,
+            self.tile_collision_bits_primary,
         );
-        write_le_u16(ram, TILEDETECT_DIAG_STATE, self.diag_state);
-        write_le_u16(ram, TILEDETECT_MOVING_FLOOR_TILES, self.moving_floor_tiles);
-        write_le_u16(ram, TILEDETECT_ICY_FLOOR, self.icy_floor);
-        write_le_u16(ram, TILEDETECT_WATER_STAIRCASE, self.water_staircase);
-        write_le_u16(ram, TILEDETECT_SHALLOW_WATER, self.shallow_water);
-        write_le_u16(
-            ram,
-            TILEDETECT_DESTRUCTION_AFTERMATH,
-            self.destruction_aftermath,
+        ram.write_byte(
+            TILE_COLLISION_BITS_SECONDARY,
+            self.tile_collision_bits_secondary,
         );
-        write_le_u16(ram, TILEDETECT_READ_SOMETHING, self.read_something);
-        ram[TILEDETECT_VERTICAL_LEDGE] = self.vertical_ledge;
-        ram[DETECTION_OF_LEDGE_TILES_HORIZ_UPHORIZ] = self.horizontal_ledge;
-        ram[TILEDETECT_LEDGES_DOWN_LEFTRIGHT] = self.ledges_down_leftright;
-        ram[TILEDETECT_DIAGONAL_LEDGE_TILES] = self.diagonal_ledge_tiles;
-        write_le_u16(ram, TILEDETECT_CHEST, self.chest);
-        write_le_u16(
-            ram,
-            TILEDETECT_KEY_LOCK_GRAVESTONES,
-            self.key_lock_gravestones,
+        ram.write_byte(
+            LIFTABLE_TILE_DETECTED_INDEX_DOUBLED,
+            self.liftable_tile_index,
         );
-        write_le_u16(ram, TILEDETECT_TILE_TYPE, self.tile_type);
-        ram[TILEDETECT_SPIKE_FLOOR_AND_TILE_TRIGGERS] = self.spike_floor_and_triggers;
-        ram[BITMASK_FOR_DASHABLE_TILES] = self.dashable_tiles;
-        ram[TILEDETECT_STAIRCASE_CACHE] = self.staircase_cache;
-        write_le_u16(
-            ram,
-            TILEDETECT_SLOPE_COLLISION_BITS,
-            self.slope_collision_bits,
+        ram.write_byte(
+            LIFTABLE_TILE_ACTION_INDEX_PRIMARY,
+            self.liftable_action_index_primary,
         );
-        write_le_u16(ram, TILEDETECT_COLLISION_BITS, self.collision_bits);
-        ram[PLAYER_LAYER_COLLISION_FLAGS] = self.layer_collision_flags;
-        write_le_u16(ram, TILEDETECT_INROOM_STAIRCASE, self.inroom_staircase);
-        ram[FALL_HOLE_SCAN_INDEX_LOCAL] = self.fall_hole_scan_index;
+        ram.write_byte(
+            LIFTABLE_TILE_ACTION_INDEX_SECONDARY,
+            self.liftable_action_index_secondary,
+        );
+        ram.write_word(SCRATCH_0, self.interaction_scratch_y);
+        ram.write_word(SCRATCH_1, self.interaction_scratch_x);
+        ram.write_word(TILEMAP_LOCATION_CALC_MASK, self.location_calc_mask);
+        ram.write_word(INDEX_OF_INTERACTING_TILE, self.interacting_tile);
+        ram.write_byte(TILEDETECT_PIT_TILE, self.pit_tile as u8);
+        ram.write_word(TILEDETECT_DEEPWATER, self.deepwater);
+        ram.write_word(TILEDETECT_NORMAL_TILES, self.normal_tiles);
+        ram.write_word(TILEDETECT_MISC_TILES, self.misc_tiles);
+        ram.write_word(TILEDETECT_THICK_GRASS, self.thick_grass);
+        ram.write_word(TILEDETECT_DIAGONAL_TILE, self.diagonal_tile);
+        ram.write_byte(TILEDETECT_STAIR_TILE, self.stair_tile);
+        ram.write_word(TILEDETECT_BLOCK_FLAGS_LO, self.block_flags);
+        ram.write_word(TILEDETECT_DOOR_DIRECTION_FLAGS, self.door_direction_flags);
+        ram.write_word(TILEDETECT_DIAG_STATE, self.diag_state);
+        ram.write_word(TILEDETECT_MOVING_FLOOR_TILES, self.moving_floor_tiles);
+        ram.write_word(TILEDETECT_ICY_FLOOR, self.icy_floor);
+        ram.write_word(TILEDETECT_WATER_STAIRCASE, self.water_staircase);
+        ram.write_word(TILEDETECT_SHALLOW_WATER, self.shallow_water);
+        ram.write_word(TILEDETECT_DESTRUCTION_AFTERMATH, self.destruction_aftermath);
+        ram.write_word(TILEDETECT_READ_SOMETHING, self.read_something);
+        ram.write_byte(TILEDETECT_VERTICAL_LEDGE, self.vertical_ledge);
+        ram.write_byte(
+            DETECTION_OF_LEDGE_TILES_HORIZ_UPHORIZ,
+            self.horizontal_ledge,
+        );
+        ram.write_byte(TILEDETECT_LEDGES_DOWN_LEFTRIGHT, self.ledges_down_leftright);
+        ram.write_byte(TILEDETECT_DIAGONAL_LEDGE_TILES, self.diagonal_ledge_tiles);
+        ram.write_word(TILEDETECT_CHEST, self.chest);
+        ram.write_word(TILEDETECT_KEY_LOCK_GRAVESTONES, self.key_lock_gravestones);
+        ram.write_word(TILEDETECT_TILE_TYPE, self.tile_type);
+        ram.write_byte(
+            TILEDETECT_SPIKE_FLOOR_AND_TILE_TRIGGERS,
+            self.spike_floor_and_triggers,
+        );
+        ram.write_byte(BITMASK_FOR_DASHABLE_TILES, self.dashable_tiles);
+        ram.write_byte(TILEDETECT_STAIRCASE_CACHE, self.staircase_cache);
+        ram.write_word(TILEDETECT_SLOPE_COLLISION_BITS, self.slope_collision_bits);
+        ram.write_word(TILEDETECT_COLLISION_BITS, self.collision_bits);
+        ram.write_byte(PLAYER_LAYER_COLLISION_FLAGS, self.layer_collision_flags);
+        ram.write_word(TILEDETECT_INROOM_STAIRCASE, self.inroom_staircase);
+        ram.write_byte(FALL_HOLE_SCAN_INDEX_LOCAL, self.fall_hole_scan_index);
     }
 
     pub(crate) fn y_low_at(&self, offset: usize) -> u8 {
@@ -1432,9 +1438,9 @@ impl Bg1MovementAccumulatorState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[BG1_MOVE_CALC_BUFFER] = self.y_subpixel;
-        ram[BG1_MOVE_CALC_BUFFER + 1] = self.x_subpixel;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(BG1_MOVE_CALC_BUFFER, self.y_subpixel);
+        ram.write_byte(BG1_MOVE_CALC_BUFFER + 1, self.x_subpixel);
     }
 
     pub(crate) fn x_subpixel(&self) -> u8 {
@@ -1495,7 +1501,7 @@ impl PushedBlockState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         write_pushed_block_bank(ram, PUSHEDBLOCKS_X_HI, self.x_high);
         write_pushed_block_bank(ram, PUSHEDBLOCKS_X_LO, self.x_low);
         write_pushed_block_bank(ram, PUSHEDBLOCKS_TARGET, self.target);
@@ -1503,9 +1509,9 @@ impl PushedBlockState {
         write_pushed_block_bank(ram, PUSHEDBLOCKS_Y_LO, self.y_low);
         write_pushed_block_bank(ram, PUSHEDBLOCKS_SUBPIXEL, self.subpixel);
         write_pushed_block_bank(ram, PUSHEDBLOCK_FACING_PLAYER, self.facing_player);
-        ram[PUSHED_BLOCK_MODE] = self.animation_mode;
-        ram[PUSHED_BLOCK_ANIMATION_TIMER] = self.animation_timer;
-        ram[PUSH_BLOCK_DIRECTION] = self.push_direction;
+        ram.write_byte(PUSHED_BLOCK_MODE, self.animation_mode);
+        ram.write_byte(PUSHED_BLOCK_ANIMATION_TIMER, self.animation_timer);
+        ram.write_byte(PUSH_BLOCK_DIRECTION, self.push_direction);
     }
 
     pub(crate) fn x(&self, slot: usize) -> u16 {
@@ -1652,9 +1658,13 @@ fn read_pushed_block_bank(ram: &[u8], base: usize) -> [u8; PUSHED_BLOCK_BANK_LEN
     bank
 }
 
-fn write_pushed_block_bank(ram: &mut [u8], base: usize, bank: [u8; PUSHED_BLOCK_BANK_LEN]) {
+fn write_pushed_block_bank<R: RamTarget + ?Sized>(
+    ram: &mut R,
+    base: usize,
+    bank: [u8; PUSHED_BLOCK_BANK_LEN],
+) {
     for (offset, value) in bank.iter().copied().enumerate() {
-        ram[base + offset] = value;
+        ram.write_byte(base + offset, value);
     }
 }
 
@@ -1771,7 +1781,7 @@ impl SwimAccelerationState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         write_axis_words(ram, SWIM_ACCELERATION_MODE, self.mode);
         write_axis_words(ram, SWIM_SPEED_ACTIVE_FLAG, self.speed_active_flag);
         write_axis_words(ram, SWIM_MAX_SPEED, self.max_speed);
@@ -1887,9 +1897,13 @@ fn read_axis_words(ram: &[u8], base: usize) -> [u16; SWIM_AXIS_COUNT] {
     ]
 }
 
-fn write_axis_words(ram: &mut [u8], base: usize, values: [u16; SWIM_AXIS_COUNT]) {
-    write_le_u16(ram, base, values[0]);
-    write_le_u16(ram, base + 2, values[1]);
+fn write_axis_words<R: RamTarget + ?Sized>(
+    ram: &mut R,
+    base: usize,
+    values: [u16; SWIM_AXIS_COUNT],
+) {
+    ram.write_word(base, values[0]);
+    ram.write_word(base + 2, values[1]);
 }
 
 fn axis_word(values: [u16; SWIM_AXIS_COUNT], offset: usize) -> u16 {

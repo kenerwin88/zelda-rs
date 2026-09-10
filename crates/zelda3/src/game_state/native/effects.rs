@@ -29,6 +29,7 @@ use crate::game_state::constants::{
     WEATHERVANE_X_LO, WEATHERVANE_X_VELOCITY, WEATHERVANE_Y_HI, WEATHERVANE_Y_LO,
     WEATHERVANE_Y_VELOCITY, WEATHERVANE_Z, WEATHERVANE_Z_VELOCITY,
 };
+use crate::game_state::native::ram_target::RamTarget;
 use crate::types::{read_le_u16, write_le_u16};
 
 const DOOR_DEBRIS_BANK_LEN: usize = 10;
@@ -81,7 +82,7 @@ impl EffectState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         // NOTE: the $7F58xx ancilla scratch states (angle_scratch, quake_spell, quake_bolts,
         // bombos_spell, tower_seal, happiness_pond_rupees, weather_vane_debris, and
         // sprites.ether_orbit) are intentionally NOT bulk-projected here. C aliases that
@@ -98,7 +99,6 @@ impl EffectState {
         self.entrance_effects.write_to_ram(ram);
         // digging_game_prize shares the 0x1fe00 window -- write-through, not projected.
     }
-
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -117,9 +117,11 @@ impl EffectAngleScratchState {
         Self { angles }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[EFFECT_ANGLE_WORK..EFFECT_ANGLE_WORK + EFFECT_ANGLE_WORK_LEN]
-            .copy_from_slice(&self.angles);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_range(
+            EFFECT_ANGLE_WORK..EFFECT_ANGLE_WORK + EFFECT_ANGLE_WORK_LEN,
+            &self.angles,
+        );
     }
 
     pub(crate) fn angle(&self, slot: usize) -> u8 {
@@ -218,9 +220,15 @@ impl QuakeBoltState {
         state
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[QUAKE_BOLT_TIMER..QUAKE_BOLT_TIMER + QUAKE_BOLT_SLOTS].copy_from_slice(&self.timers);
-        ram[QUAKE_BOLT_PHASE..QUAKE_BOLT_PHASE + QUAKE_BOLT_SLOTS].copy_from_slice(&self.phases);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_range(
+            QUAKE_BOLT_TIMER..QUAKE_BOLT_TIMER + QUAKE_BOLT_SLOTS,
+            &self.timers,
+        );
+        ram.write_range(
+            QUAKE_BOLT_PHASE..QUAKE_BOLT_PHASE + QUAKE_BOLT_SLOTS,
+            &self.phases,
+        );
     }
 
     pub(crate) fn slot(&self, slot: usize) -> QuakeBoltSlotState {
@@ -346,12 +354,12 @@ impl QuakeSpellState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[QUAKE_ACTIVE_BOLT_LIMIT] = self.active_bolt_limit;
-        ram[QUAKE_PENDING_STEP] = self.pending_step;
-        write_le_u16(ram, QUAKE_ORIGIN_X, self.origin_x);
-        write_le_u16(ram, QUAKE_ORIGIN_Y, self.origin_y);
-        write_le_u16(ram, QUAKE_SCREEN_SHAKE_Y, self.screen_shake_y);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(QUAKE_ACTIVE_BOLT_LIMIT, self.active_bolt_limit);
+        ram.write_byte(QUAKE_PENDING_STEP, self.pending_step);
+        ram.write_word(QUAKE_ORIGIN_X, self.origin_x);
+        ram.write_word(QUAKE_ORIGIN_Y, self.origin_y);
+        ram.write_word(QUAKE_SCREEN_SHAKE_Y, self.screen_shake_y);
     }
 
     pub(crate) fn active_bolt_limit(&self) -> u8 {
@@ -497,15 +505,24 @@ impl BombosSpellState {
         state
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[BOMBOS_MODE] = self.mode;
-        ram[BOMBOS_FIRE_COLUMN_RADIUS] = self.fire_column_radius;
-        ram[BOMBOS_BLAST_RELEASE_LOCKED] = self.blast_release_locked;
-        ram[BOMBOS_BLAST_RELEASE_COUNTDOWN] = self.blast_release_countdown;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(BOMBOS_MODE, self.mode);
+        ram.write_byte(BOMBOS_FIRE_COLUMN_RADIUS, self.fire_column_radius);
+        ram.write_byte(BOMBOS_BLAST_RELEASE_LOCKED, self.blast_release_locked);
+        ram.write_byte(BOMBOS_BLAST_RELEASE_COUNTDOWN, self.blast_release_countdown);
         for slot in 0..BOMBOS_FIRE_COLUMN_SLOTS {
-            ram[BOMBOS_FIRE_COLUMN_TIMER + slot] = self.fire_column_timers[slot];
-            ram[BOMBOS_FIRE_COLUMN_PHASE + slot] = self.fire_column_phases[slot];
-            ram[BOMBOS_FIRE_COLUMN_RADIAL_ANGLE + slot] = self.fire_column_radial_angles[slot];
+            ram.write_byte(
+                BOMBOS_FIRE_COLUMN_TIMER + slot,
+                self.fire_column_timers[slot],
+            );
+            ram.write_byte(
+                BOMBOS_FIRE_COLUMN_PHASE + slot,
+                self.fire_column_phases[slot],
+            );
+            ram.write_byte(
+                BOMBOS_FIRE_COLUMN_RADIAL_ANGLE + slot,
+                self.fire_column_radial_angles[slot],
+            );
             write_split_u16(
                 ram,
                 BOMBOS_FIRE_COLUMN_X_LO,
@@ -521,10 +538,14 @@ impl BombosSpellState {
                 self.fire_column_y[slot],
             );
         }
-        ram[BOMBOS_BLAST_PHASE..(BOMBOS_BLAST_SLOTS + BOMBOS_BLAST_PHASE)]
-            .copy_from_slice(&self.blast_phases[..BOMBOS_BLAST_SLOTS]);
-        ram[BOMBOS_BLAST_TIMER..(BOMBOS_BLAST_SLOTS + BOMBOS_BLAST_TIMER)]
-            .copy_from_slice(&self.blast_timers[..BOMBOS_BLAST_SLOTS]);
+        ram.write_range(
+            BOMBOS_BLAST_PHASE..(BOMBOS_BLAST_SLOTS + BOMBOS_BLAST_PHASE),
+            &self.blast_phases[..BOMBOS_BLAST_SLOTS],
+        );
+        ram.write_range(
+            BOMBOS_BLAST_TIMER..(BOMBOS_BLAST_SLOTS + BOMBOS_BLAST_TIMER),
+            &self.blast_timers[..BOMBOS_BLAST_SLOTS],
+        );
         write_word_bank(ram, BOMBOS_FIRE_COLUMN_SEED_X, self.fire_column_seed_x);
         write_word_bank(ram, BOMBOS_FIRE_COLUMN_SEED_Y, self.fire_column_seed_y);
         write_word_bank(ram, BOMBOS_BLAST_X, self.blast_x);
@@ -977,38 +998,67 @@ impl HappinessPondRupeesState {
         state
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[HAPPINESS_POND_ACTIVE..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_ACTIVE)]
-            .copy_from_slice(&self.active[..HAPPINESS_POND_RUPEE_SLOTS]);
-        ram[HAPPINESS_POND_Y_LO..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Y_LO)]
-            .copy_from_slice(&self.y_low[..HAPPINESS_POND_RUPEE_SLOTS]);
-        ram[HAPPINESS_POND_Y_HI..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Y_HI)]
-            .copy_from_slice(&self.y_high[..HAPPINESS_POND_RUPEE_SLOTS]);
-        ram[HAPPINESS_POND_X_LO..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_X_LO)]
-            .copy_from_slice(&self.x_low[..HAPPINESS_POND_RUPEE_SLOTS]);
-        ram[HAPPINESS_POND_X_HI..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_X_HI)]
-            .copy_from_slice(&self.x_high[..HAPPINESS_POND_RUPEE_SLOTS]);
-        ram[HAPPINESS_POND_Z..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Z)]
-            .copy_from_slice(&self.z[..HAPPINESS_POND_RUPEE_SLOTS]);
-        ram[HAPPINESS_POND_Y_VEL..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Y_VEL)]
-            .copy_from_slice(&self.y_velocity[..HAPPINESS_POND_RUPEE_SLOTS]);
-        ram[HAPPINESS_POND_X_VEL..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_X_VEL)]
-            .copy_from_slice(&self.x_velocity[..HAPPINESS_POND_RUPEE_SLOTS]);
-        ram[HAPPINESS_POND_Z_VEL..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Z_VEL)]
-            .copy_from_slice(&self.z_velocity[..HAPPINESS_POND_RUPEE_SLOTS]);
-        ram[HAPPINESS_POND_Y_SUBPIXEL..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Y_SUBPIXEL)]
-            .copy_from_slice(&self.y_subpixel[..HAPPINESS_POND_RUPEE_SLOTS]);
-        ram[HAPPINESS_POND_X_SUBPIXEL..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_X_SUBPIXEL)]
-            .copy_from_slice(&self.x_subpixel[..HAPPINESS_POND_RUPEE_SLOTS]);
-        ram[HAPPINESS_POND_Z_SUBPIXEL..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Z_SUBPIXEL)]
-            .copy_from_slice(&self.z_subpixel[..HAPPINESS_POND_RUPEE_SLOTS]);
-        ram[HAPPINESS_POND_ITEM_TO_LINK
-            ..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_ITEM_TO_LINK)]
-            .copy_from_slice(&self.item_to_link[..HAPPINESS_POND_RUPEE_SLOTS]);
-        ram[HAPPINESS_POND_TIMER..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_TIMER)]
-            .copy_from_slice(&self.timer[..HAPPINESS_POND_RUPEE_SLOTS]);
-        ram[HAPPINESS_POND_STEP..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_STEP)]
-            .copy_from_slice(&self.step[..HAPPINESS_POND_RUPEE_SLOTS]);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_range(
+            HAPPINESS_POND_ACTIVE..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_ACTIVE),
+            &self.active[..HAPPINESS_POND_RUPEE_SLOTS],
+        );
+        ram.write_range(
+            HAPPINESS_POND_Y_LO..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Y_LO),
+            &self.y_low[..HAPPINESS_POND_RUPEE_SLOTS],
+        );
+        ram.write_range(
+            HAPPINESS_POND_Y_HI..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Y_HI),
+            &self.y_high[..HAPPINESS_POND_RUPEE_SLOTS],
+        );
+        ram.write_range(
+            HAPPINESS_POND_X_LO..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_X_LO),
+            &self.x_low[..HAPPINESS_POND_RUPEE_SLOTS],
+        );
+        ram.write_range(
+            HAPPINESS_POND_X_HI..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_X_HI),
+            &self.x_high[..HAPPINESS_POND_RUPEE_SLOTS],
+        );
+        ram.write_range(
+            HAPPINESS_POND_Z..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Z),
+            &self.z[..HAPPINESS_POND_RUPEE_SLOTS],
+        );
+        ram.write_range(
+            HAPPINESS_POND_Y_VEL..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Y_VEL),
+            &self.y_velocity[..HAPPINESS_POND_RUPEE_SLOTS],
+        );
+        ram.write_range(
+            HAPPINESS_POND_X_VEL..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_X_VEL),
+            &self.x_velocity[..HAPPINESS_POND_RUPEE_SLOTS],
+        );
+        ram.write_range(
+            HAPPINESS_POND_Z_VEL..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Z_VEL),
+            &self.z_velocity[..HAPPINESS_POND_RUPEE_SLOTS],
+        );
+        ram.write_range(
+            HAPPINESS_POND_Y_SUBPIXEL..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Y_SUBPIXEL),
+            &self.y_subpixel[..HAPPINESS_POND_RUPEE_SLOTS],
+        );
+        ram.write_range(
+            HAPPINESS_POND_X_SUBPIXEL..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_X_SUBPIXEL),
+            &self.x_subpixel[..HAPPINESS_POND_RUPEE_SLOTS],
+        );
+        ram.write_range(
+            HAPPINESS_POND_Z_SUBPIXEL..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_Z_SUBPIXEL),
+            &self.z_subpixel[..HAPPINESS_POND_RUPEE_SLOTS],
+        );
+        ram.write_range(
+            HAPPINESS_POND_ITEM_TO_LINK..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_ITEM_TO_LINK),
+            &self.item_to_link[..HAPPINESS_POND_RUPEE_SLOTS],
+        );
+        ram.write_range(
+            HAPPINESS_POND_TIMER..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_TIMER),
+            &self.timer[..HAPPINESS_POND_RUPEE_SLOTS],
+        );
+        ram.write_range(
+            HAPPINESS_POND_STEP..(HAPPINESS_POND_RUPEE_SLOTS + HAPPINESS_POND_STEP),
+            &self.step[..HAPPINESS_POND_RUPEE_SLOTS],
+        );
     }
 
     pub(crate) fn rupee(&self, slot: usize) -> HappinessPondRupeeSlotState {
@@ -1212,16 +1262,16 @@ impl WeatherVaneDebrisState {
         state
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for slot in 0..WEATHER_VANE_DEBRIS_SLOTS {
             write_split_u16(ram, WEATHERVANE_Y_LO, WEATHERVANE_Y_HI, slot, self.y[slot]);
             write_split_u16(ram, WEATHERVANE_X_LO, WEATHERVANE_X_HI, slot, self.x[slot]);
-            ram[WEATHERVANE_Z + slot] = self.z[slot];
-            ram[WEATHERVANE_Y_VELOCITY + slot] = self.y_velocity[slot];
-            ram[WEATHERVANE_X_VELOCITY + slot] = self.x_velocity[slot];
-            ram[WEATHERVANE_Z_VELOCITY + slot] = self.z_velocity[slot];
-            ram[WEATHERVANE_ANIM_TIMER + slot] = self.animation_timer[slot];
-            ram[WEATHERVANE_DRAW_STATE + slot] = self.draw_state[slot];
+            ram.write_byte(WEATHERVANE_Z + slot, self.z[slot]);
+            ram.write_byte(WEATHERVANE_Y_VELOCITY + slot, self.y_velocity[slot]);
+            ram.write_byte(WEATHERVANE_X_VELOCITY + slot, self.x_velocity[slot]);
+            ram.write_byte(WEATHERVANE_Z_VELOCITY + slot, self.z_velocity[slot]);
+            ram.write_byte(WEATHERVANE_ANIM_TIMER + slot, self.animation_timer[slot]);
+            ram.write_byte(WEATHERVANE_DRAW_STATE + slot, self.draw_state[slot]);
         }
     }
 
@@ -1476,7 +1526,7 @@ impl SpriteHistoryScratchState {
     }
 
     #[cfg(test)]
-    pub(crate) fn write_moldorm_history_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_moldorm_history_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         write_split_word_bank(
             ram,
             MOLDORM_HISTORY_X_LO,
@@ -1492,7 +1542,7 @@ impl SpriteHistoryScratchState {
     }
 
     #[cfg(test)]
-    pub(crate) fn write_swamola_target_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_swamola_target_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         write_split_word_bank(
             ram,
             SWAMOLA_TARGET_X_LO,
@@ -1508,7 +1558,7 @@ impl SpriteHistoryScratchState {
     }
 
     #[cfg(test)]
-    pub(crate) fn write_lanmola_segment_motion_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_lanmola_segment_motion_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         write_byte_bank(ram, BEAMOS_LASER_HISTORY_X_HI, &self.lanmola_z_offsets);
         write_byte_bank(ram, BEAMOS_LASER_HISTORY_Y_HI, &self.lanmola_directions);
     }
@@ -2067,16 +2117,16 @@ impl TowerSealState {
         state
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[TOWER_SEAL_RING_RADIUS] = self.ring_radius;
-        write_le_u16(ram, TOWER_SEAL_CENTER_X, self.center_x);
-        write_le_u16(ram, TOWER_SEAL_CENTER_Y, self.center_y);
-        ram[TOWER_SEAL_WAIT_COUNTDOWN] = self.wait_countdown;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(TOWER_SEAL_RING_RADIUS, self.ring_radius);
+        ram.write_word(TOWER_SEAL_CENTER_X, self.center_x);
+        ram.write_word(TOWER_SEAL_CENTER_Y, self.center_y);
+        ram.write_byte(TOWER_SEAL_WAIT_COUNTDOWN, self.wait_countdown);
     }
 
-    fn write_transient_slots_to_ram(&self, ram: &mut [u8]) {
+    fn write_transient_slots_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for slot in 0..TOWER_SEAL_ORBIT_SLOTS {
-            ram[TOWER_SEAL_ORBIT_ANGLE + slot] = self.orbit_angles[slot];
+            ram.write_byte(TOWER_SEAL_ORBIT_ANGLE + slot, self.orbit_angles[slot]);
             write_split_u16(
                 ram,
                 TOWER_SEAL_BASE_SPARKLE_X_LO,
@@ -2093,8 +2143,8 @@ impl TowerSealState {
             );
         }
         for slot in 0..TOWER_SEAL_SPARKLE_SLOTS {
-            ram[TOWER_SEAL_SPARKLE_PHASE + slot] = self.sparkle_phases[slot];
-            ram[TOWER_SEAL_SPARKLE_TIMER + slot] = self.sparkle_timers[slot];
+            ram.write_byte(TOWER_SEAL_SPARKLE_PHASE + slot, self.sparkle_phases[slot]);
+            ram.write_byte(TOWER_SEAL_SPARKLE_TIMER + slot, self.sparkle_timers[slot]);
             write_split_u16(
                 ram,
                 TOWER_SEAL_SPARKLE_X_LO,
@@ -2441,28 +2491,22 @@ impl EntranceEffectState {
         state
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for slot in 0..ENTRANCE_EFFECT_PHASE_SLOTS {
-            ram[BLAST_WALL_EXPLOSION_PHASE + slot] = self.phases[slot];
-            ram[BLAST_WALL_EXPLOSION_TIMER + slot] = self.timers[slot];
-            write_le_u16(
-                ram,
-                BLAST_WALL_FRAGMENT_Y + slot * 2,
-                self.y_positions[slot],
-            );
-            write_le_u16(
-                ram,
-                BLAST_WALL_FRAGMENT_X + slot * 2,
-                self.x_positions[slot],
-            );
+            ram.write_byte(BLAST_WALL_EXPLOSION_PHASE + slot, self.phases[slot]);
+            ram.write_byte(BLAST_WALL_EXPLOSION_TIMER + slot, self.timers[slot]);
+            ram.write_word(BLAST_WALL_FRAGMENT_Y + slot * 2, self.y_positions[slot]);
+            ram.write_word(BLAST_WALL_FRAGMENT_X + slot * 2, self.x_positions[slot]);
         }
-        ram[BLAST_WALL_ENTRY_STATE] = self.state;
-        ram[BLAST_WALL_SECONDARY_STATE] = self.secondary_state;
-        write_le_u16(ram, BLAST_WALL_CENTER_Y, self.center_y);
-        write_le_u16(ram, BLAST_WALL_CENTER_X, self.center_x);
-        ram[BLAST_WALL_DIRECTION] = self.direction;
-        ram[BLAST_WALL_FIREBALL_TIMER..(BLAST_WALL_FIREBALL_SLOTS + BLAST_WALL_FIREBALL_TIMER)]
-            .copy_from_slice(&self.fireball_timers[..BLAST_WALL_FIREBALL_SLOTS]);
+        ram.write_byte(BLAST_WALL_ENTRY_STATE, self.state);
+        ram.write_byte(BLAST_WALL_SECONDARY_STATE, self.secondary_state);
+        ram.write_word(BLAST_WALL_CENTER_Y, self.center_y);
+        ram.write_word(BLAST_WALL_CENTER_X, self.center_x);
+        ram.write_byte(BLAST_WALL_DIRECTION, self.direction);
+        ram.write_range(
+            BLAST_WALL_FIREBALL_TIMER..(BLAST_WALL_FIREBALL_SLOTS + BLAST_WALL_FIREBALL_TIMER),
+            &self.fireball_timers[..BLAST_WALL_FIREBALL_SLOTS],
+        );
     }
 
     #[cfg(test)]
@@ -2660,12 +2704,12 @@ impl SkullWoodsFireState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[SKULL_WOODS_FIRE_STARTED] = self.entrance_opening_started;
-        write_le_u16(ram, SKULL_WOODS_FIRE_INNER_X, self.inner_x);
-        write_le_u16(ram, SKULL_WOODS_FIRE_INNER_Y, self.inner_y);
-        write_le_u16(ram, SKULL_WOODS_FIRE_OUTER_X, self.outer_x);
-        write_le_u16(ram, SKULL_WOODS_FIRE_OUTER_Y, self.outer_y);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(SKULL_WOODS_FIRE_STARTED, self.entrance_opening_started);
+        ram.write_word(SKULL_WOODS_FIRE_INNER_X, self.inner_x);
+        ram.write_word(SKULL_WOODS_FIRE_INNER_Y, self.inner_y);
+        ram.write_word(SKULL_WOODS_FIRE_OUTER_X, self.outer_x);
+        ram.write_word(SKULL_WOODS_FIRE_OUTER_Y, self.outer_y);
     }
 
     #[cfg(test)]
@@ -2823,12 +2867,12 @@ impl BlastWallState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[BLAST_WALL_ENTRY_STATE] = self.entry_state;
-        ram[BLAST_WALL_SECONDARY_STATE] = self.secondary_state;
-        ram[BLAST_WALL_DIRECTION] = self.direction;
-        write_le_u16(ram, BLAST_WALL_CENTER_X, self.center_x);
-        write_le_u16(ram, BLAST_WALL_CENTER_Y, self.center_y);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(BLAST_WALL_ENTRY_STATE, self.entry_state);
+        ram.write_byte(BLAST_WALL_SECONDARY_STATE, self.secondary_state);
+        ram.write_byte(BLAST_WALL_DIRECTION, self.direction);
+        ram.write_word(BLAST_WALL_CENTER_X, self.center_x);
+        ram.write_word(BLAST_WALL_CENTER_Y, self.center_y);
     }
 
     pub(crate) fn direction(&self) -> u8 {
@@ -3065,9 +3109,9 @@ impl DiggingGamePrizeState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[DIGGING_GAME_PRIZE_ATTEMPTS] = self.attempts;
-        ram[DIGGING_GAME_PRIZE_SPAWNED] = self.spawned_marker;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(DIGGING_GAME_PRIZE_ATTEMPTS, self.attempts);
+        ram.write_byte(DIGGING_GAME_PRIZE_SPAWNED, self.spawned_marker);
     }
 
     pub(crate) fn attempts(&self) -> u8 {
@@ -3132,9 +3176,13 @@ fn read_word_bank<const N: usize>(ram: &[u8], base: usize) -> [u16; N] {
     bank
 }
 
-fn write_word_bank<const N: usize>(ram: &mut [u8], base: usize, bank: [u16; N]) {
+fn write_word_bank<const N: usize, R: RamTarget + ?Sized>(
+    ram: &mut R,
+    base: usize,
+    bank: [u16; N],
+) {
     for (slot, value) in bank.iter().copied().enumerate() {
-        write_le_u16(ram, base + slot * 2, value);
+        ram.write_word(base + slot * 2, value);
     }
 }
 
@@ -3159,21 +3207,32 @@ fn read_byte_bank(ram: &[u8], base: usize, len: usize) -> Vec<u8> {
     bank
 }
 
-fn write_split_word_bank(ram: &mut [u8], low_base: usize, high_base: usize, values: &[u16]) {
+fn write_split_word_bank<R: RamTarget + ?Sized>(
+    ram: &mut R,
+    low_base: usize,
+    high_base: usize,
+    values: &[u16],
+) {
     for (slot, value) in values.iter().copied().enumerate() {
         write_split_u16(ram, low_base, high_base, slot, value);
     }
 }
 
-fn write_byte_bank(ram: &mut [u8], base: usize, values: &[u8]) {
+fn write_byte_bank<R: RamTarget + ?Sized>(ram: &mut R, base: usize, values: &[u8]) {
     for (slot, value) in values.iter().copied().enumerate() {
-        ram[base + slot] = value;
+        ram.write_byte(base + slot, value);
     }
 }
 
-fn write_split_u16(ram: &mut [u8], low_base: usize, high_base: usize, slot: usize, value: u16) {
-    ram[low_base + slot] = value as u8;
-    ram[high_base + slot] = (value >> 8) as u8;
+fn write_split_u16<R: RamTarget + ?Sized>(
+    ram: &mut R,
+    low_base: usize,
+    high_base: usize,
+    slot: usize,
+    value: u16,
+) {
+    ram.write_byte(low_base + slot, value as u8);
+    ram.write_byte(high_base + slot, (value >> 8) as u8);
 }
 
 pub(crate) struct NativeDoorDebrisBridgeMut<'a> {

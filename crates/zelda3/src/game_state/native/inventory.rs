@@ -2,7 +2,8 @@ use super::player_magic::PlayerMagicState;
 use super::ram_byte;
 use super::save_progress::SaveProgressState;
 use crate::game_state::constants::*;
-use crate::types::{read_le_u16, write_le_u16};
+use crate::game_state::native::ram_target::RamTarget;
+use crate::types::read_le_u16;
 
 const DUNGEON_KEY_SLOT_COUNT: usize = 16;
 const BOTTLE_SLOT_COUNT: usize = 4;
@@ -27,7 +28,7 @@ impl InventoryState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         self.dungeon_key_slots.write_to_ram(ram);
         self.player_resources.write_to_ram(ram);
         self.mirror_warp.write_to_ram(ram);
@@ -65,10 +66,9 @@ macro_rules! equipment_fields {
                     bottles: std::array::from_fn(|i| ram_byte(ram, LINK_BOTTLE_INFO + i)),
                 }
             }
-            pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-                $(ram[LINK_ITEM_BOW + $index] = self.$field;)+
-                ram[LINK_BOTTLE_INFO..LINK_BOTTLE_INFO + BOTTLE_SLOT_COUNT]
-                    .copy_from_slice(&self.bottles);
+            pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+                $(ram.write_byte(LINK_ITEM_BOW + $index, self.$field);)+
+                ram.write_range(LINK_BOTTLE_INFO..LINK_BOTTLE_INFO + BOTTLE_SLOT_COUNT, &self.bottles);
             }
             pub(crate) fn equipment(&self, item: EquipmentItem) -> u8 {
                 match item { $(EquipmentItem::$kind => self.$field,)+ }
@@ -427,25 +427,21 @@ impl MirrorWarpState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, MIRROR_WARP_TARGET_INDEX, self.target_index);
-        write_le_u16(ram, MIRROR_WARP_TARGET_OFFSETS, self.target_offsets[0]);
-        write_le_u16(ram, MIRROR_WARP_TARGET_OFFSETS + 2, self.target_offsets[1]);
-        write_le_u16(ram, MIRROR_WARP_VELOCITY_DELTAS, self.velocity_deltas[0]);
-        write_le_u16(
-            ram,
-            MIRROR_WARP_VELOCITY_DELTAS + 2,
-            self.velocity_deltas[1],
-        );
-        write_le_u16(ram, MIRROR_WARP_WAVE_OFFSET, self.wave_offset);
-        write_le_u16(ram, MIRROR_WARP_DISPLACEMENT, self.displacement);
-        write_le_u16(ram, MIRROR_WARP_SUBPIXEL, self.subpixel);
-        write_le_u16(ram, MIRROR_WARP_RESERVED, self.reserved);
-        write_le_u16(ram, MIRROR_WARP_WAVE_LENGTH, self.wave_length);
-        write_le_u16(ram, MIRROR_WARP_SPACING_A, self.spacing_a);
-        write_le_u16(ram, MIRROR_WARP_SPACING_B, self.spacing_b);
-        ram[MIRROR_WARP_LOAD_STEP_COUNTER] = self.load_step_counter;
-        ram[MIRROR_WARP_ANIMATION_COUNTER] = self.animation_counter;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(MIRROR_WARP_TARGET_INDEX, self.target_index);
+        ram.write_word(MIRROR_WARP_TARGET_OFFSETS, self.target_offsets[0]);
+        ram.write_word(MIRROR_WARP_TARGET_OFFSETS + 2, self.target_offsets[1]);
+        ram.write_word(MIRROR_WARP_VELOCITY_DELTAS, self.velocity_deltas[0]);
+        ram.write_word(MIRROR_WARP_VELOCITY_DELTAS + 2, self.velocity_deltas[1]);
+        ram.write_word(MIRROR_WARP_WAVE_OFFSET, self.wave_offset);
+        ram.write_word(MIRROR_WARP_DISPLACEMENT, self.displacement);
+        ram.write_word(MIRROR_WARP_SUBPIXEL, self.subpixel);
+        ram.write_word(MIRROR_WARP_RESERVED, self.reserved);
+        ram.write_word(MIRROR_WARP_WAVE_LENGTH, self.wave_length);
+        ram.write_word(MIRROR_WARP_SPACING_A, self.spacing_a);
+        ram.write_word(MIRROR_WARP_SPACING_B, self.spacing_b);
+        ram.write_byte(MIRROR_WARP_LOAD_STEP_COUNTER, self.load_step_counter);
+        ram.write_byte(MIRROR_WARP_ANIMATION_COUNTER, self.animation_counter);
     }
 
     pub(crate) fn target_index(&self) -> usize {
@@ -584,9 +580,9 @@ impl DungeonKeySlotsState {
         Self { keys_earned }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for (slot, keys) in self.keys_earned.iter().copied().enumerate() {
-            ram[LINK_KEYS_EARNED_PER_DUNGEON + slot] = keys;
+            ram.write_byte(LINK_KEYS_EARNED_PER_DUNGEON + slot, keys);
         }
     }
 
@@ -686,35 +682,38 @@ impl PlayerResourcesState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         self.magic.publish_amount(ram);
         self.publish_resource_fields(ram);
     }
 
-    fn publish_resource_fields(&self, ram: &mut [u8]) {
+    fn publish_resource_fields<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         self.magic.publish_resource_fields(ram);
-        ram[LINK_ITEM_BOMBS] = self.bombs;
-        ram[LINK_ITEM_BOTTLE_INDEX] = self.equipped_bottle_index;
-        write_le_u16(ram, LINK_RUPEES_GOAL, self.rupees_goal);
-        write_le_u16(ram, LINK_RUPEES_ACTUAL, self.rupees_actual);
-        write_le_u16(ram, LINK_COMPASS, self.compass_flags);
-        write_le_u16(ram, LINK_BIGKEY, self.big_key_flags);
-        write_le_u16(ram, LINK_DUNGEON_MAP, self.dungeon_map_flags);
-        ram[LINK_RUPEES_IN_POND] = self.rupees_in_pond;
-        ram[LINK_HEART_PIECES] = self.heart_pieces;
-        ram[LINK_HEALTH_CAPACITY] = self.health_capacity;
-        ram[LINK_CURRENT_HEALTH] = self.current_health;
-        ram[LINK_NUM_KEYS] = self.keys;
-        ram[LINK_BOMB_UPGRADES] = self.bomb_upgrade_level;
-        ram[LINK_ARROW_UPGRADES] = self.arrow_upgrade_level;
-        ram[LINK_HEARTS_FILLER] = self.heart_filler;
-        ram[LINK_WHICH_PENDANTS] = self.pendant_flags;
-        ram[LINK_BOMB_FILLER] = self.bomb_filler;
-        ram[LINK_ARROW_REFILL_COUNTER] = self.arrow_filler;
-        ram[LINK_NUM_ARROWS] = self.arrows;
-        ram[LINK_ABILITY_FLAGS] = self.ability_flags;
-        ram[LINK_HAS_CRYSTALS] = self.crystal_flags;
-        ram[LINK_LOWLIFE_COUNTDOWN_TIMER_BEEP] = self.low_health_beep_timer;
+        ram.write_byte(LINK_ITEM_BOMBS, self.bombs);
+        ram.write_byte(LINK_ITEM_BOTTLE_INDEX, self.equipped_bottle_index);
+        ram.write_word(LINK_RUPEES_GOAL, self.rupees_goal);
+        ram.write_word(LINK_RUPEES_ACTUAL, self.rupees_actual);
+        ram.write_word(LINK_COMPASS, self.compass_flags);
+        ram.write_word(LINK_BIGKEY, self.big_key_flags);
+        ram.write_word(LINK_DUNGEON_MAP, self.dungeon_map_flags);
+        ram.write_byte(LINK_RUPEES_IN_POND, self.rupees_in_pond);
+        ram.write_byte(LINK_HEART_PIECES, self.heart_pieces);
+        ram.write_byte(LINK_HEALTH_CAPACITY, self.health_capacity);
+        ram.write_byte(LINK_CURRENT_HEALTH, self.current_health);
+        ram.write_byte(LINK_NUM_KEYS, self.keys);
+        ram.write_byte(LINK_BOMB_UPGRADES, self.bomb_upgrade_level);
+        ram.write_byte(LINK_ARROW_UPGRADES, self.arrow_upgrade_level);
+        ram.write_byte(LINK_HEARTS_FILLER, self.heart_filler);
+        ram.write_byte(LINK_WHICH_PENDANTS, self.pendant_flags);
+        ram.write_byte(LINK_BOMB_FILLER, self.bomb_filler);
+        ram.write_byte(LINK_ARROW_REFILL_COUNTER, self.arrow_filler);
+        ram.write_byte(LINK_NUM_ARROWS, self.arrows);
+        ram.write_byte(LINK_ABILITY_FLAGS, self.ability_flags);
+        ram.write_byte(LINK_HAS_CRYSTALS, self.crystal_flags);
+        ram.write_byte(
+            LINK_LOWLIFE_COUNTDOWN_TIMER_BEEP,
+            self.low_health_beep_timer,
+        );
     }
 
     pub(crate) fn magic_filler(&self) -> u8 {

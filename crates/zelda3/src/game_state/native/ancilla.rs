@@ -12,6 +12,7 @@ use crate::game_state::constants::{
     ANCILLA_Y_SUBPIXEL, ANCILLA_Y_VELOCITY, ANCILLA_Z, ANCILLA_Z_SUBPIXEL_PLAYER,
     ANCILLA_Z_VELOCITY, DOOR_DEBRIS_DIRECTION, DOOR_DEBRIS_X, DOOR_DEBRIS_Y,
 };
+use crate::game_state::native::ram_target::RamTarget;
 
 pub(crate) const ANCILLA_SLOT_COUNT: usize = 10;
 
@@ -114,12 +115,12 @@ impl AncillaSlotsState {
         state
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for offset in Self::field_offsets() {
             if offset == ANCILLA_G_SLOT9_HOOKSHOT_EFFECT || is_ancilla_r_overflow(offset) {
                 continue;
             }
-            ram[offset] = self.byte_at(offset);
+            ram.write_byte(offset, self.byte_at(offset));
         }
     }
 

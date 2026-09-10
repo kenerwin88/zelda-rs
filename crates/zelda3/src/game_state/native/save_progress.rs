@@ -3,6 +3,7 @@
 
 use super::ram_byte;
 use crate::game_state::constants::*;
+use crate::game_state::native::ram_target::RamTarget;
 use crate::game_state::save_format::SAVE_CHECKSUM_OFFSET;
 use crate::types::{read_le_u16, write_le_u16};
 
@@ -79,15 +80,18 @@ impl SaveProgressState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         // Save fields publish at their mutation points. Keep the existing frame
         // projection limited to runtime/HUD fields while legacy consumers remain.
-        ram[CUR_PALACE_INDEX_X2] = self.palace_index_x2;
-        ram[HUD_CUR_ITEM] = self.hud_current_items[0];
-        ram[HUD_CUR_ITEM_X] = self.hud_current_items[1];
-        ram[HUD_CUR_ITEM_L] = self.hud_current_items[2];
-        ram[HUD_CUR_ITEM_R] = self.hud_current_items[3];
-        ram[HUD_POST_MESSAGE_REFRESH_FLAG] = self.post_message_refresh_flag;
+        ram.write_byte(CUR_PALACE_INDEX_X2, self.palace_index_x2);
+        ram.write_byte(HUD_CUR_ITEM, self.hud_current_items[0]);
+        ram.write_byte(HUD_CUR_ITEM_X, self.hud_current_items[1]);
+        ram.write_byte(HUD_CUR_ITEM_L, self.hud_current_items[2]);
+        ram.write_byte(HUD_CUR_ITEM_R, self.hud_current_items[3]);
+        ram.write_byte(
+            HUD_POST_MESSAGE_REFRESH_FLAG,
+            self.post_message_refresh_flag,
+        );
     }
 
     /// Encode only progress-owned fields; equipment, resources, overworld events,

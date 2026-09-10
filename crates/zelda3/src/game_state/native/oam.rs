@@ -1,5 +1,6 @@
 use super::ram_byte;
 use crate::game_state::constants::*;
+use crate::game_state::native::ram_target::RamTarget;
 use crate::types::{read_le_u16, write_le_u16, ww_check};
 
 const OAM_SHADOW_BYTES: usize = EXTENDED_OAM - OAM_BUF;
@@ -81,31 +82,43 @@ impl OamState {
         state
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         // OAM_PRIORITY_VALUE (0x64) is NOT bulk-projected here: it is mode-reused (gameplay OAM
         // priority vs an attract-scene flag in the credits/attract demo) and is written through by
         // the priority setters instead. Bulk-projecting it re-stamped the stale gameplay 0x2000
         // over the attract code's cleared flag on every unrelated OAM setter sync (f586119).
-        write_le_u16(ram, OAM_CUR_PTR, self.current_pointer);
-        write_le_u16(ram, OAM_EXT_CUR_PTR, self.current_extended_pointer);
-        ram[SORT_SPRITES_SETTING] = self.sprite_sorting_setting;
-        write_le_u16(ram, OAM_PRIORITY_VALUE_2, self.priority_value_2);
-        write_le_u16(
-            ram,
+        ram.write_word(OAM_CUR_PTR, self.current_pointer);
+        ram.write_word(OAM_EXT_CUR_PTR, self.current_extended_pointer);
+        ram.write_byte(SORT_SPRITES_SETTING, self.sprite_sorting_setting);
+        ram.write_word(OAM_PRIORITY_VALUE_2, self.priority_value_2);
+        ram.write_word(
             SORT_SPRITES_OFFSET_INTO_OAM_BUFFER,
             self.sort_sprites_offset,
         );
-        ram[VALUE_COMPUTED_FOR_PLAYER_OAM] = self.player_oam_computed_value;
-        ram[TURTLE_ROCK_OAM_PRIORITY_FLAG] = self.turtle_rock_priority_flag;
+        ram.write_byte(
+            VALUE_COMPUTED_FOR_PLAYER_OAM,
+            self.player_oam_computed_value,
+        );
+        ram.write_byte(
+            TURTLE_ROCK_OAM_PRIORITY_FLAG,
+            self.turtle_rock_priority_flag,
+        );
         // OAM_REGION_BASE/OAM_REGION_ALLOC (0xfe0/0xfec) are NOT bulk-projected: like
         // OAM_PRIORITY_VALUE they are mode-reused (sprite-OAM region table vs cleared in the
         // attract/credits/file-select scene) and written through by their setters. Bulk-projecting
         // them re-stamped the stale frame-start region table over the file-select clear (f586121).
-        ram[OAM_BUF..OAM_BUF + self.shadow_entries.len()].copy_from_slice(&self.shadow_entries);
-        ram[EXTENDED_OAM..EXTENDED_OAM + self.packed_extended.len()]
-            .copy_from_slice(&self.packed_extended);
-        ram[BYTEWISE_EXTENDED_OAM..BYTEWISE_EXTENDED_OAM + self.bytewise_extended.len()]
-            .copy_from_slice(&self.bytewise_extended);
+        ram.write_range(
+            OAM_BUF..OAM_BUF + self.shadow_entries.len(),
+            &self.shadow_entries,
+        );
+        ram.write_range(
+            EXTENDED_OAM..EXTENDED_OAM + self.packed_extended.len(),
+            &self.packed_extended,
+        );
+        ram.write_range(
+            BYTEWISE_EXTENDED_OAM..BYTEWISE_EXTENDED_OAM + self.bytewise_extended.len(),
+            &self.bytewise_extended,
+        );
     }
 
     pub(crate) fn priority_word(&self) -> u16 {

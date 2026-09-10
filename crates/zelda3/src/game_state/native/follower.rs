@@ -9,7 +9,8 @@ use crate::game_state::constants::{
     TAGALONG_X_LO, TAGALONG_Y_HI, TAGALONG_Y_LO, TAGALONG_Z, TIMER_TAGALONG_REACQUIRE,
     ZELDA_RESCUE_CUTSCENE_STATE,
 };
-use crate::types::{read_le_u16, write_le_u16};
+use crate::game_state::native::ram_target::RamTarget;
+use crate::types::read_le_u16;
 
 const TAGALONG_SLOT_COUNT: usize = 20;
 
@@ -62,29 +63,32 @@ impl FollowerRuntimeState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[FOLLOWER_INDICATOR] = self.indicator;
-        ram[TAGALONG_DATA_INDEX] = self.data_index;
-        ram[TAGALONG_APPEARANCE_NONE_FLAG] = self.appearance_none_flag;
-        ram[FOLLOWER_DROPPED] = self.dropped;
-        ram[TAGALONG_HOOKSHOT_INTERLOCK] = self.hookshot_interlock;
-        ram[FOLLOWER_HOOKSHOT_RELEASE_TAIL_INDEX] = self.hookshot_release_tail_index;
-        ram[FOLLOWER_TAIL_WRITE_INDEX] = self.tail_write_index;
-        ram[TAGALONG_EVENT_FLAGS] = self.event_flags;
-        ram[TIMER_TAGALONG_REACQUIRE] = self.reacquire_timer_low;
-        ram[TAGALONG_SHARED_STATE_A] = self.shared_state_a;
-        ram[TAGALONG_ANIM_FRAME_COUNTER] = self.draw_anim_frame;
-        ram[FOLLOWER_JUMP_TIMER] = self.jump_timer;
-        write_le_u16(ram, FOLLOWER_SAVED_Y, self.saved_y);
-        write_le_u16(ram, FOLLOWER_SAVED_X, self.saved_x);
-        ram[FOLLOWER_SAVED_INDOORS] = self.saved_indoor_flag;
-        ram[FOLLOWER_SAVED_FLOOR] = self.saved_floor;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(FOLLOWER_INDICATOR, self.indicator);
+        ram.write_byte(TAGALONG_DATA_INDEX, self.data_index);
+        ram.write_byte(TAGALONG_APPEARANCE_NONE_FLAG, self.appearance_none_flag);
+        ram.write_byte(FOLLOWER_DROPPED, self.dropped);
+        ram.write_byte(TAGALONG_HOOKSHOT_INTERLOCK, self.hookshot_interlock);
+        ram.write_byte(
+            FOLLOWER_HOOKSHOT_RELEASE_TAIL_INDEX,
+            self.hookshot_release_tail_index,
+        );
+        ram.write_byte(FOLLOWER_TAIL_WRITE_INDEX, self.tail_write_index);
+        ram.write_byte(TAGALONG_EVENT_FLAGS, self.event_flags);
+        ram.write_byte(TIMER_TAGALONG_REACQUIRE, self.reacquire_timer_low);
+        ram.write_byte(TAGALONG_SHARED_STATE_A, self.shared_state_a);
+        ram.write_byte(TAGALONG_ANIM_FRAME_COUNTER, self.draw_anim_frame);
+        ram.write_byte(FOLLOWER_JUMP_TIMER, self.jump_timer);
+        ram.write_word(FOLLOWER_SAVED_Y, self.saved_y);
+        ram.write_word(FOLLOWER_SAVED_X, self.saved_x);
+        ram.write_byte(FOLLOWER_SAVED_INDOORS, self.saved_indoor_flag);
+        ram.write_byte(FOLLOWER_SAVED_FLOOR, self.saved_floor);
         // FOLLOWER_KIKI_ANIM_COUNTER (0xb69) is solely owned by SpriteSystemState. C
         // reuses byte_7E0B69 across mutually-exclusive users -- Blind's head animation,
         // the tutorial guard's message index, and this Kiki clear -- and follower_runtime
         // projects AFTER system in SpriteState::write_to_ram, so a second copy here
         // re-stamped the live counter every frame.
-        ram[FOLLOWER_PALETTE_SWAP_FLAG] = self.palette_swap_flag;
+        ram.write_byte(FOLLOWER_PALETTE_SWAP_FLAG, self.palette_swap_flag);
         // ZELDA_RESCUE_CUTSCENE_STATE (0x1fe01) is write-through, not projected -- see the
         // note in SpriteState::write_to_ram.
     }
@@ -385,7 +389,7 @@ impl TagalongTrailState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         write_tagalong_bank(ram, TAGALONG_X_LO, self.x_low);
         write_tagalong_bank(ram, TAGALONG_X_HI, self.x_high);
         write_tagalong_bank(ram, TAGALONG_Y_LO, self.y_low);
@@ -419,9 +423,13 @@ fn read_tagalong_bank(ram: &[u8], base: usize) -> [u8; TAGALONG_SLOT_COUNT] {
     bank
 }
 
-fn write_tagalong_bank(ram: &mut [u8], base: usize, bank: [u8; TAGALONG_SLOT_COUNT]) {
+fn write_tagalong_bank<R: RamTarget + ?Sized>(
+    ram: &mut R,
+    base: usize,
+    bank: [u8; TAGALONG_SLOT_COUNT],
+) {
     for (slot, value) in bank.iter().copied().enumerate() {
-        ram[base + slot] = value;
+        ram.write_byte(base + slot, value);
     }
 }
 

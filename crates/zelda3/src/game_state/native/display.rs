@@ -3,6 +3,7 @@ use crate::game_state::constants::messaging::{
     MESSAGE_DMA_DST_ADDR, MESSAGE_DMA_TILE_BASE, MESSAGE_DMA_TILE_LIMIT, MESSAGE_DMA_TILE_SENTINEL,
 };
 use crate::game_state::constants::*;
+use crate::game_state::native::ram_target::RamTarget;
 use crate::types::{read_le_u16, write_le_u16};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -196,16 +197,22 @@ impl PaletteFilterState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[PALETTE_FILTER_COUNTDOWN] = self.countdown;
-        ram[PALETTE_FILTER_COUNTDOWN + 1] = self.countdown_high;
-        ram[DARKENING_OR_LIGHTENING_SCREEN] = self.darkening_or_lightening_screen;
-        ram[DARKENING_OR_LIGHTENING_SCREEN + 1] = self.darkening_or_lightening_screen_high;
-        ram[CGWSEL_COPY] = self.color_window_selection;
-        ram[CGADSUB_COPY] = self.color_math_control;
-        ram[COLDATA_COPY0] = self.fixed_color_red;
-        ram[COLDATA_COPY1] = self.fixed_color_green;
-        ram[COLDATA_COPY2] = self.fixed_color_blue;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(PALETTE_FILTER_COUNTDOWN, self.countdown);
+        ram.write_byte(PALETTE_FILTER_COUNTDOWN + 1, self.countdown_high);
+        ram.write_byte(
+            DARKENING_OR_LIGHTENING_SCREEN,
+            self.darkening_or_lightening_screen,
+        );
+        ram.write_byte(
+            DARKENING_OR_LIGHTENING_SCREEN + 1,
+            self.darkening_or_lightening_screen_high,
+        );
+        ram.write_byte(CGWSEL_COPY, self.color_window_selection);
+        ram.write_byte(CGADSUB_COPY, self.color_math_control);
+        ram.write_byte(COLDATA_COPY0, self.fixed_color_red);
+        ram.write_byte(COLDATA_COPY1, self.fixed_color_green);
+        ram.write_byte(COLDATA_COPY2, self.fixed_color_blue);
     }
 
     pub(crate) fn countdown(&self) -> u8 {
@@ -377,9 +384,9 @@ impl HudInventoryOrderState {
         Self { order }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for (index, value) in self.order.iter().copied().enumerate() {
-            ram[HUD_INVENTORY_ORDER + index] = value;
+            ram.write_byte(HUD_INVENTORY_ORDER + index, value);
         }
     }
 
@@ -434,20 +441,26 @@ impl HudRuntimeState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[SUPER_BOMB_INDICATOR_TIMER] = self.super_bomb_indicator_timer;
-        ram[SUPER_BOMB_INDICATOR_COUNTER] = self.super_bomb_indicator_counter;
-        ram[RUPEE_SFX_SOUND_DELAY] = self.rupee_sfx_sound_delay;
-        ram[IS_DOING_HEART_ANIMATION] = self.heart_animation_active;
-        ram[HEART_REFILL_COUNTDOWN] = self.heart_refill_countdown;
-        ram[HEART_REFILL_ANIM_SUBPOS] = self.heart_refill_animation_subpixel;
-        ram[FLASHING_CIRCLE_TIMER] = self.flashing_circle_timer;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(SUPER_BOMB_INDICATOR_TIMER, self.super_bomb_indicator_timer);
+        ram.write_byte(
+            SUPER_BOMB_INDICATOR_COUNTER,
+            self.super_bomb_indicator_counter,
+        );
+        ram.write_byte(RUPEE_SFX_SOUND_DELAY, self.rupee_sfx_sound_delay);
+        ram.write_byte(IS_DOING_HEART_ANIMATION, self.heart_animation_active);
+        ram.write_byte(HEART_REFILL_COUNTDOWN, self.heart_refill_countdown);
+        ram.write_byte(
+            HEART_REFILL_ANIM_SUBPOS,
+            self.heart_refill_animation_subpixel,
+        );
+        ram.write_byte(FLASHING_CIRCLE_TIMER, self.flashing_circle_timer);
         // MENU_PREV_JOYPAD_H ($BD) is a ROM scratch word shared with
         // TileDetection_Execute and the 3bpp->4bpp converters; the menu reads
         // and writes it through RAM (see `ZeldaState::hud_normal_menu`).
-        ram[EQUIPMENT_MENU_EXIT_STATE] = self.equipment_menu_exit_state;
-        ram[BOTTLE_MENU_ROW] = self.bottle_menu_row;
-        ram[HUD_MODULE_TICK_COUNTER] = self.module_tick_counter;
+        ram.write_byte(EQUIPMENT_MENU_EXIT_STATE, self.equipment_menu_exit_state);
+        ram.write_byte(BOTTLE_MENU_ROW, self.bottle_menu_row);
+        ram.write_byte(HUD_MODULE_TICK_COUNTER, self.module_tick_counter);
     }
 
     pub(crate) fn super_bomb_indicator_timer(&self) -> u8 {
@@ -574,10 +587,12 @@ impl HudTilemapState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, HUD_FLOOR_CHANGED_TIMER, self.floor_changed_timer);
-        ram[HUD_TILE_INDICES_BUFFER..HUD_TILE_INDICES_BUFFER + self.tile_indices.len()]
-            .copy_from_slice(&self.tile_indices);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(HUD_FLOOR_CHANGED_TIMER, self.floor_changed_timer);
+        ram.write_range(
+            HUD_TILE_INDICES_BUFFER..HUD_TILE_INDICES_BUFFER + self.tile_indices.len(),
+            &self.tile_indices,
+        );
     }
 
     pub(crate) fn floor_changed_timer_low(&self) -> u8 {
@@ -686,11 +701,11 @@ impl TrinexxPaletteState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[TRINEXX_RED_SHELL_PALETTE_DELAY] = self.red_shell_delay;
-        ram[TRINEXX_BLUE_SHELL_PALETTE_DELAY] = self.blue_shell_delay;
-        ram[TRINEXX_RED_SHELL_PALETTE_STEP] = self.red_shell_step;
-        ram[TRINEXX_BLUE_SHELL_PALETTE_STEP] = self.blue_shell_step;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(TRINEXX_RED_SHELL_PALETTE_DELAY, self.red_shell_delay);
+        ram.write_byte(TRINEXX_BLUE_SHELL_PALETTE_DELAY, self.blue_shell_delay);
+        ram.write_byte(TRINEXX_RED_SHELL_PALETTE_STEP, self.red_shell_step);
+        ram.write_byte(TRINEXX_BLUE_SHELL_PALETTE_STEP, self.blue_shell_step);
     }
 
     pub(crate) fn set_red_shell_delay(&mut self, value: u8) {
@@ -747,9 +762,9 @@ impl LinkDmaSources {
         Self { sources }
     }
 
-    fn write_to_ram(&self, ram: &mut [u8]) {
+    fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for slot in LINK_DMA_SOURCE_SLOTS {
-            write_le_u16(ram, slot.ram_address(), self.source(slot));
+            ram.write_word(slot.ram_address(), self.source(slot));
         }
     }
 
@@ -792,21 +807,20 @@ impl WaterHdmaWindowState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, WATER_HDMA_WINDOW_X, self.window_x);
-        write_le_u16(ram, WATER_HDMA_WINDOW_Y, self.window_y);
-        write_le_u16(ram, WATER_HDMA_WINDOW_Y_RADIUS, self.window_y_radius);
-        write_le_u16(ram, WATER_HDMA_WINDOW_X_RADIUS, self.window_x_radius);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(WATER_HDMA_WINDOW_X, self.window_x);
+        ram.write_word(WATER_HDMA_WINDOW_Y, self.window_y);
+        ram.write_word(WATER_HDMA_WINDOW_Y_RADIUS, self.window_y_radius);
+        ram.write_word(WATER_HDMA_WINDOW_X_RADIUS, self.window_x_radius);
         // The y target and alternate y radius were never part of the master projection
         // (the dungeon environment only wrote them through its bridge); their setters
         // write through, which keeps the projected byte set unchanged.
-        write_le_u16(
-            ram,
+        ram.write_word(
             WATERGATE_SPOTLIGHT_Y_UPPER,
             self.watergate_spotlight_y_upper,
         );
-        ram[WATERGATE_POINTER] = self.watergate_pointer;
-        write_le_u16(ram, WATERGATE_POS, self.watergate_tilemap_pos_x2);
+        ram.write_byte(WATERGATE_POINTER, self.watergate_pointer);
+        ram.write_word(WATERGATE_POS, self.watergate_tilemap_pos_x2);
     }
 
     pub(crate) fn window_x(&self) -> u16 {
@@ -918,10 +932,13 @@ impl OverworldPaletteBackupState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[OVERWORLD_PAL_MAIN_INDOORS_BACKUP] = self.main_indoors;
-        ram[OVERWORLD_PAL_AUX3_BP7_BACKUP] = self.aux3_bg_palette_7;
-        ram[OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP] = self.main_indoors_copy;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(OVERWORLD_PAL_MAIN_INDOORS_BACKUP, self.main_indoors);
+        ram.write_byte(OVERWORLD_PAL_AUX3_BP7_BACKUP, self.aux3_bg_palette_7);
+        ram.write_byte(
+            OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP,
+            self.main_indoors_copy,
+        );
     }
 
     pub(crate) fn main_indoors(&self) -> u8 {
@@ -1128,24 +1145,29 @@ impl PaletteBufferState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         write_palette_bank(ram, MAIN_PALETTE_BUFFER, &self.main);
         write_palette_bank(ram, AUX_PALETTE_BUFFER, &self.aux);
         write_palette_bank(ram, MAPBAK_PALETTE, &self.overworld_backup);
-        write_le_u16(
-            ram,
+        ram.write_word(
             OVERWORLD_PALETTE_AUX_OR_MAIN,
             self.overworld_aux_or_main_offset,
         );
-        ram[PALETTE_SP0L] = self.sprite_palette_0_left;
-        ram[PALETTE_SP5L] = self.sprite_palette_5_left;
-        ram[PALETTE_SP6L] = self.sprite_palette_6_left;
-        ram[PALETTE_MAIN_INDOORS] = self.main_palette_indoors;
-        ram[HUD_PALETTE] = self.hud_palette;
-        ram[PALETTE_SP6R_INDOORS] = self.sprite_palette_6_right_indoors;
-        ram[OVERWORLD_PALETTE_AUX2_BP5TO7_HI] = self.overworld_aux2_bg_palettes_5_to_7_high;
-        ram[OVERWORLD_PALETTE_AUX3_BP7_LO] = self.overworld_aux3_bg_palette_7_low;
-        ram[OVERWORLD_PALETTE_MODE] = self.overworld_palette_mode;
+        ram.write_byte(PALETTE_SP0L, self.sprite_palette_0_left);
+        ram.write_byte(PALETTE_SP5L, self.sprite_palette_5_left);
+        ram.write_byte(PALETTE_SP6L, self.sprite_palette_6_left);
+        ram.write_byte(PALETTE_MAIN_INDOORS, self.main_palette_indoors);
+        ram.write_byte(HUD_PALETTE, self.hud_palette);
+        ram.write_byte(PALETTE_SP6R_INDOORS, self.sprite_palette_6_right_indoors);
+        ram.write_byte(
+            OVERWORLD_PALETTE_AUX2_BP5TO7_HI,
+            self.overworld_aux2_bg_palettes_5_to_7_high,
+        );
+        ram.write_byte(
+            OVERWORLD_PALETTE_AUX3_BP7_LO,
+            self.overworld_aux3_bg_palette_7_low,
+        );
+        ram.write_byte(OVERWORLD_PALETTE_MODE, self.overworld_palette_mode);
     }
 
     pub(crate) fn main_color(&self, index: usize) -> u16 {
@@ -1328,9 +1350,9 @@ fn read_palette_bank(ram: &[u8], base: usize) -> Vec<u8> {
     bank
 }
 
-fn write_palette_bank(ram: &mut [u8], base: usize, bank: &[u8]) {
+fn write_palette_bank<R: RamTarget + ?Sized>(ram: &mut R, base: usize, bank: &[u8]) {
     let len = bank.len().min(PALETTE_BANK_BYTES);
-    ram[base..base + len].copy_from_slice(&bank[..len]);
+    ram.write_range(base..base + len, &bank[..len]);
 }
 
 fn read_palette_word(bank: &[u8], index: usize) -> u16 {
@@ -1875,17 +1897,17 @@ impl SpotlightHdmaState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, SPOTLIGHT_Y_LOWER, self.y_lower);
-        write_le_u16(ram, SPOTLIGHT_Y_UPPER, self.y_upper);
-        write_le_u16(ram, SPOTLIGHT_WINDOW_X_CENTER, self.window_x_center);
-        write_le_u16(ram, SPOTLIGHT_WINDOW_STATE, self.window_state);
-        write_le_u16(ram, SPOTLIGHT_WINDOW_RADIUS, self.window_radius);
-        write_le_u16(ram, SPOTLIGHT_WINDOW_Y_BUFFER, self.window_y_buffer);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(SPOTLIGHT_Y_LOWER, self.y_lower);
+        ram.write_word(SPOTLIGHT_Y_UPPER, self.y_upper);
+        ram.write_word(SPOTLIGHT_WINDOW_X_CENTER, self.window_x_center);
+        ram.write_word(SPOTLIGHT_WINDOW_STATE, self.window_state);
+        ram.write_word(SPOTLIGHT_WINDOW_RADIUS, self.window_radius);
+        ram.write_word(SPOTLIGHT_WINDOW_Y_BUFFER, self.window_y_buffer);
 
         for index in 0..SPOTLIGHT_HDMA_WORD_COUNT {
             let value = self.dynamic_table.get(index).copied().unwrap_or(0);
-            write_le_u16(ram, HDMA_TABLE_DYNAMIC + index * 2, value);
+            ram.write_word(HDMA_TABLE_DYNAMIC + index * 2, value);
         }
     }
 
@@ -2161,64 +2183,55 @@ impl PpuScrollCopyState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, BG1_H_SCROLL_COPY, self.bg1_h_copy);
-        write_le_u16(ram, BG1_V_SCROLL_COPY, self.bg1_v_copy);
-        write_le_u16(ram, BG2_H_SCROLL_COPY, self.bg2_h_copy);
-        write_le_u16(ram, BG2_V_SCROLL_COPY, self.bg2_v_copy);
-        write_le_u16(ram, BG1_X_SCROLL, self.bg1_h_copy2);
-        write_le_u16(ram, BG1_Y_SCROLL, self.bg1_v_copy2);
-        write_le_u16(ram, BG2_X_SCROLL, self.bg2_h_copy2);
-        write_le_u16(ram, BG2_Y_SCROLL, self.bg2_v_copy2);
-        write_le_u16(ram, BG3_H_SCROLL_COPY2, self.bg3_h_copy2);
-        write_le_u16(ram, BG3_V_SCROLL_COPY2, self.bg3_v_copy2);
-        write_le_u16(ram, BG2_H_SCROLL_COPY2_CACHED, self.bg2_h_copy2_cached);
-        write_le_u16(ram, BG2_V_SCROLL_COPY2_CACHED, self.bg2_v_copy2_cached);
-        write_le_u16(
-            ram,
-            MAP_BACKUP_BG1_H_SCROLL_COPY2,
-            self.map_backup_bg1_h_copy2,
-        );
-        write_le_u16(
-            ram,
-            MAP_BACKUP_BG2_H_SCROLL_COPY2,
-            self.map_backup_bg2_h_copy2,
-        );
-        write_le_u16(
-            ram,
-            MAP_BACKUP_BG1_V_SCROLL_COPY2,
-            self.map_backup_bg1_v_copy2,
-        );
-        write_le_u16(
-            ram,
-            MAP_BACKUP_BG2_V_SCROLL_COPY2,
-            self.map_backup_bg2_v_copy2,
-        );
-        write_le_u16(
-            ram,
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(BG1_H_SCROLL_COPY, self.bg1_h_copy);
+        ram.write_word(BG1_V_SCROLL_COPY, self.bg1_v_copy);
+        ram.write_word(BG2_H_SCROLL_COPY, self.bg2_h_copy);
+        ram.write_word(BG2_V_SCROLL_COPY, self.bg2_v_copy);
+        ram.write_word(BG1_X_SCROLL, self.bg1_h_copy2);
+        ram.write_word(BG1_Y_SCROLL, self.bg1_v_copy2);
+        ram.write_word(BG2_X_SCROLL, self.bg2_h_copy2);
+        ram.write_word(BG2_Y_SCROLL, self.bg2_v_copy2);
+        ram.write_word(BG3_H_SCROLL_COPY2, self.bg3_h_copy2);
+        ram.write_word(BG3_V_SCROLL_COPY2, self.bg3_v_copy2);
+        ram.write_word(BG2_H_SCROLL_COPY2_CACHED, self.bg2_h_copy2_cached);
+        ram.write_word(BG2_V_SCROLL_COPY2_CACHED, self.bg2_v_copy2_cached);
+        ram.write_word(MAP_BACKUP_BG1_H_SCROLL_COPY2, self.map_backup_bg1_h_copy2);
+        ram.write_word(MAP_BACKUP_BG2_H_SCROLL_COPY2, self.map_backup_bg2_h_copy2);
+        ram.write_word(MAP_BACKUP_BG1_V_SCROLL_COPY2, self.map_backup_bg1_v_copy2);
+        ram.write_word(MAP_BACKUP_BG2_V_SCROLL_COPY2, self.map_backup_bg2_v_copy2);
+        ram.write_word(
             BG2_H_SCROLL_COPY2_SPECIAL_EXIT,
             self.special_exit_bg2_h_copy2,
         );
-        write_le_u16(
-            ram,
+        ram.write_word(
             BG2_V_SCROLL_COPY2_SPECIAL_EXIT,
             self.special_exit_bg2_v_copy2,
         );
-        write_le_u16(ram, BG2_H_SCROLL_COPY2_EXIT, self.exit_bg2_h_copy2);
-        write_le_u16(ram, BG2_V_SCROLL_COPY2_EXIT, self.exit_bg2_v_copy2);
-        write_le_u16(ram, MODE7_CENTER_X_COPY, self.mode7_center_x);
-        write_le_u16(ram, MODE7_CENTER_Y_COPY, self.mode7_center_y);
-        write_le_u16(ram, BG1_H_SCROLL_SUBPIXEL, self.bg1_h_subpixel);
-        write_le_u16(ram, BG1_V_SCROLL_SUBPIXEL, self.bg1_v_subpixel);
-        write_le_u16(ram, MAPBAK_TM, self.mapbak_tm);
-        ram[MAPBAK_TS] = self.mapbak_ts;
-        ram[MAPBAK_MAIN_TILE_THEME_INDEX] = self.mapbak_main_tile_theme_index;
-        ram[MAPBAK_SPRITE_GRAPHICS_INDEX] = self.mapbak_sprite_graphics_index;
-        ram[MAPBAK_AUX_TILE_THEME_INDEX] = self.mapbak_aux_tile_theme_index;
-        write_le_u16(ram, MAPBAK_BG1_X_OFFSET, self.mapbak_bg1_x_offset);
-        write_le_u16(ram, MAPBAK_BG1_Y_OFFSET, self.mapbak_bg1_y_offset);
-        write_le_u16(ram, MAPBAK_CGWSEL, self.mapbak_cgwsel);
-        ram[MAPBAK_HDMAEN] = self.mapbak_hdmaen;
+        ram.write_word(BG2_H_SCROLL_COPY2_EXIT, self.exit_bg2_h_copy2);
+        ram.write_word(BG2_V_SCROLL_COPY2_EXIT, self.exit_bg2_v_copy2);
+        ram.write_word(MODE7_CENTER_X_COPY, self.mode7_center_x);
+        ram.write_word(MODE7_CENTER_Y_COPY, self.mode7_center_y);
+        ram.write_word(BG1_H_SCROLL_SUBPIXEL, self.bg1_h_subpixel);
+        ram.write_word(BG1_V_SCROLL_SUBPIXEL, self.bg1_v_subpixel);
+        ram.write_word(MAPBAK_TM, self.mapbak_tm);
+        ram.write_byte(MAPBAK_TS, self.mapbak_ts);
+        ram.write_byte(
+            MAPBAK_MAIN_TILE_THEME_INDEX,
+            self.mapbak_main_tile_theme_index,
+        );
+        ram.write_byte(
+            MAPBAK_SPRITE_GRAPHICS_INDEX,
+            self.mapbak_sprite_graphics_index,
+        );
+        ram.write_byte(
+            MAPBAK_AUX_TILE_THEME_INDEX,
+            self.mapbak_aux_tile_theme_index,
+        );
+        ram.write_word(MAPBAK_BG1_X_OFFSET, self.mapbak_bg1_x_offset);
+        ram.write_word(MAPBAK_BG1_Y_OFFSET, self.mapbak_bg1_y_offset);
+        ram.write_word(MAPBAK_CGWSEL, self.mapbak_cgwsel);
+        ram.write_byte(MAPBAK_HDMAEN, self.mapbak_hdmaen);
         // MAPBAK_PALETTE (0x1dd80), the overworld/death palette backup, belongs to
         // PaletteBufferState; it is not scroll-copy state.
     }
@@ -2924,89 +2937,83 @@ impl DisplayState {
     }
 
     #[track_caller]
-    pub(crate) fn write_core_to_ram(&self, ram: &mut [u8]) {
-        ram[INIDISP_COPY] = self.screen_brightness;
+    pub(crate) fn write_core_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(INIDISP_COPY, self.screen_brightness);
         crate::types::ww_check(
             NMI_BOOLEAN,
             1,
             "display-core-projection",
             self.nmi_update_latch.into(),
         );
-        ram[NMI_BOOLEAN] = self.nmi_update_latch;
-        ram[NMI_DISABLE_CORE_UPDATES] = self.core_update_disable_flag;
-        ram[NMI_SUBROUTINE_INDEX] = self.pending_nmi_subroutine;
-        ram[NMI_LOAD_BG_FROM_VRAM] = self.bg_vram_load_mode;
-        ram[NMI_UPDATE_TILEMAP_DST] = self.pending_tilemap_update_destination_page;
-        write_le_u16(
-            ram,
+        ram.write_byte(NMI_BOOLEAN, self.nmi_update_latch);
+        ram.write_byte(NMI_DISABLE_CORE_UPDATES, self.core_update_disable_flag);
+        ram.write_byte(NMI_SUBROUTINE_INDEX, self.pending_nmi_subroutine);
+        ram.write_byte(NMI_LOAD_BG_FROM_VRAM, self.bg_vram_load_mode);
+        ram.write_byte(
+            NMI_UPDATE_TILEMAP_DST,
+            self.pending_tilemap_update_destination_page,
+        );
+        ram.write_word(
             NMI_UPDATE_TILEMAP_SRC,
             self.pending_tilemap_update_source_offset,
         );
-        ram[BGMODE_COPY] = self.bg_mode;
-        ram[TM_COPY] = self.main_screen_layers;
-        ram[TS_COPY] = self.sub_screen_layers;
-        ram[W12SEL_COPY] = self.bg12_window_selection;
-        ram[W34SEL_COPY] = self.bg34_window_selection;
-        ram[WOBJSEL_COPY] = self.object_color_window_selection;
-        ram[TMW_COPY] = self.main_screen_window_layers;
-        ram[TSW_COPY] = self.sub_screen_window_layers;
-        ram[NMI_COPY_PACKETS_FLAG] = self.nmi_copy_packets_request;
-        ram[NMI_FLAG_UPDATE_POLYHEDRAL] = self.pending_polyhedral_update;
-        ram[LOAD_CHR_HALFSLOT_EVEN_ODD] = self.chr_halfslot_request;
-        ram[NMI_THREAD_ACTIVE] = u8::from(self.nmi_thread_active);
-        write_le_u16(ram, POLY_THREAD_STACK, self.nmi_thread_stack_pointer);
-        ram[IRQ_FLAG] = self.irq_control_flag;
-        ram[VIRQ_TRIGGER] = self.vertical_irq_trigger;
-        ram[CRYSTAL_ROTATION_COUNTER] = self.crystal_rotation_counter;
-        ram[DMA_HEAD_POINTER] = self.sprite_dma_head_pointer;
-        ram[DMA_BODY_POINTER] = self.sprite_dma_body_pointer;
-        ram[HDMAEN_COPY] = self.hdma_enable_mask;
-        ram[MOSAIC_COPY] = self.mosaic_copy;
-        ram[MOSAIC_LEVEL] = self.mosaic_level;
-        ram[MOSAIC_TARGET_LEVEL] = self.mosaic_target_level;
-        ram[MOSAIC_INC_OR_DEC] = self.mosaic_direction;
-        write_le_u16(ram, NMI_LOAD_TARGET_ADDR, self.nmi_load_target_address);
+        ram.write_byte(BGMODE_COPY, self.bg_mode);
+        ram.write_byte(TM_COPY, self.main_screen_layers);
+        ram.write_byte(TS_COPY, self.sub_screen_layers);
+        ram.write_byte(W12SEL_COPY, self.bg12_window_selection);
+        ram.write_byte(W34SEL_COPY, self.bg34_window_selection);
+        ram.write_byte(WOBJSEL_COPY, self.object_color_window_selection);
+        ram.write_byte(TMW_COPY, self.main_screen_window_layers);
+        ram.write_byte(TSW_COPY, self.sub_screen_window_layers);
+        ram.write_byte(NMI_COPY_PACKETS_FLAG, self.nmi_copy_packets_request);
+        ram.write_byte(NMI_FLAG_UPDATE_POLYHEDRAL, self.pending_polyhedral_update);
+        ram.write_byte(LOAD_CHR_HALFSLOT_EVEN_ODD, self.chr_halfslot_request);
+        ram.write_byte(NMI_THREAD_ACTIVE, u8::from(self.nmi_thread_active));
+        ram.write_word(POLY_THREAD_STACK, self.nmi_thread_stack_pointer);
+        ram.write_byte(IRQ_FLAG, self.irq_control_flag);
+        ram.write_byte(VIRQ_TRIGGER, self.vertical_irq_trigger);
+        ram.write_byte(CRYSTAL_ROTATION_COUNTER, self.crystal_rotation_counter);
+        ram.write_byte(DMA_HEAD_POINTER, self.sprite_dma_head_pointer);
+        ram.write_byte(DMA_BODY_POINTER, self.sprite_dma_body_pointer);
+        ram.write_byte(HDMAEN_COPY, self.hdma_enable_mask);
+        ram.write_byte(MOSAIC_COPY, self.mosaic_copy);
+        ram.write_byte(MOSAIC_LEVEL, self.mosaic_level);
+        ram.write_byte(MOSAIC_TARGET_LEVEL, self.mosaic_target_level);
+        ram.write_byte(MOSAIC_INC_OR_DEC, self.mosaic_direction);
+        ram.write_word(NMI_LOAD_TARGET_ADDR, self.nmi_load_target_address);
         // NOTE: VRAM_UPLOAD_OFFSET (0x1000) is intentionally NOT projected here.
         // The cursor field is kept RAM-coherent at every mutation (set_vram_upload_cursor /
-        // advance_vram_upload_cursor_by all write ram[0x1000] directly), so this bulk
+        // advance_vram_upload_cursor_by all write ram.read_byte(0x1000) directly), so this bulk
         // projection is redundant. It is also harmful: 0x1000 is mode-reused as word 0 of the
         // tilemap upload buffer during room draw (write_vram_upload_tilemap_word), and
         // re-stamping the stale cursor (0) here clobbered that data before upload_tilemap_now
         // read it — diverging VRAM word 0 of every tilemap quadrant vs the reference clone.
-        ram[INCREMENTAL_COUNTER_FOR_VRAM] = self.incremental_vram_upload_counter;
+        ram.write_byte(
+            INCREMENTAL_COUNTER_FOR_VRAM,
+            self.incremental_vram_upload_counter,
+        );
         self.link_dma_sources.write_to_ram(ram);
-        write_le_u16(
-            ram,
+        ram.write_word(
             BG_TILE_ANIMATION_COUNTDOWN,
             self.bg_tile_animation_countdown,
         );
-        write_le_u16(
-            ram,
-            MESSAGE_DMA_DST_ADDR,
-            self.message_dma_destination_address,
-        );
-        write_le_u16(ram, MESSAGE_DMA_TILE_BASE, self.message_dma_tile_base);
-        write_le_u16(ram, MESSAGE_DMA_TILE_LIMIT, self.message_dma_tile_limit);
-        write_le_u16(
-            ram,
-            MESSAGE_DMA_TILE_SENTINEL,
-            self.message_dma_tile_sentinel,
-        );
-        ram[FLAG_TRAVEL_BIRD] = self.travel_bird_tile_offset;
+        ram.write_word(MESSAGE_DMA_DST_ADDR, self.message_dma_destination_address);
+        ram.write_word(MESSAGE_DMA_TILE_BASE, self.message_dma_tile_base);
+        ram.write_word(MESSAGE_DMA_TILE_LIMIT, self.message_dma_tile_limit);
+        ram.write_word(MESSAGE_DMA_TILE_SENTINEL, self.message_dma_tile_sentinel);
+        ram.write_byte(FLAG_TRAVEL_BIRD, self.travel_bird_tile_offset);
         // 0x4bc is mode-reused: STAR_TILE_RESTORE_PHASE (overworld) here vs the dungeon
         // MOVING_WALL_TORCH_BLINK_PHASE (dungeon.room_effects). Only project it in the
         // overworld so a stale frame-start copy can't re-stamp over the dungeon owner's
         // mid-frame torch toggle (f314953).
-        if ram[PLAYER_IS_INDOORS] == 0 {
-            ram[STAR_TILE_RESTORE_PHASE] = self.star_tile_restore_phase;
+        if ram.read_byte(PLAYER_IS_INDOORS) == 0 {
+            ram.write_byte(STAR_TILE_RESTORE_PHASE, self.star_tile_restore_phase);
         }
-        write_le_u16(
-            ram,
+        ram.write_word(
             ANIMATED_TILE_DATA_SRC,
             self.animated_tile_data_source_address,
         );
-        write_le_u16(
-            ram,
+        ram.write_word(
             ANIMATED_TILE_VRAM_ADDR,
             self.animated_tile_vram_destination_address,
         );
@@ -3153,7 +3160,7 @@ impl DisplayState {
         );
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         self.write_core_to_ram(ram);
         self.palette_buffer.write_to_ram(ram);
         self.palette_filter.write_to_ram(ram);
@@ -4365,7 +4372,9 @@ impl<'a> NativeWaterHdmaWindowBridgeMut<'a> {
     }
 
     pub(crate) fn set_window_y_radius_alt(&mut self, value: u16) {
-        self.display.water_hdma_window.set_window_y_radius_alt(value);
+        self.display
+            .water_hdma_window
+            .set_window_y_radius_alt(value);
         write_le_u16(self.ram, WATER_HDMA_WINDOW_Y_RADIUS_ALT, value);
         self.debug_assert_matches_ram();
     }

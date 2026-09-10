@@ -1,4 +1,5 @@
 use crate::game_state::constants::*;
+use crate::game_state::native::ram_target::RamTarget;
 use crate::types::{read_le_u16, write_le_u16};
 
 const INTRO_ACTOR_COUNT: usize = INTRO_SPRITE_SUBTYPE - INTRO_SPRITE_IS_INITED;
@@ -87,42 +88,42 @@ impl AttractSceneState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, ATTRACT_STATE, self.state_word);
-        ram[ATTRACT_SEQUENCE] = self.sequence;
-        ram[ATTRACT_SCENE_TIMER] = self.scene_timer;
-        ram[ATTRACT_SCENE_SUBSTEP] = self.scene_substep;
-        write_le_u16(ram, ATTRACT_X_BASE, self.x_base);
-        ram[ATTRACT_Y_BASE] = self.y_base;
-        write_le_u16(ram, ATTRACT_STORY_TEXT_POINTER, self.story_text_pointer);
-        ram[ATTRACT_OAM_IDX] = self.oam_index;
-        ram[ATTRACT_MAIDEN_WARP_STEP] = self.maiden_warp_step;
-        ram[INTRO_STEP_INDEX] = self.intro_step_index;
-        ram[INTRO_STEP_TIMER] = self.intro_step_timer;
-        ram[INTRO_FRAME_CTR] = self.intro_frame_counter;
-        ram[INTRO_DID_RUN_STEP] = self.intro_did_run_step;
-        ram[INTRO_TIMES_PAL_FLASH] = self.intro_palette_flash_count;
-        ram[ATTRACT_LEGEND_FLAG] = self.legend_flag;
-        ram[ATTRACT_NEXT_LEGEND_GFX] = self.next_legend_gfx;
-        write_le_u16(ram, ATTRACT_BG2_VOFS_BACKUP, self.bg2_vofs_backup);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(ATTRACT_STATE, self.state_word);
+        ram.write_byte(ATTRACT_SEQUENCE, self.sequence);
+        ram.write_byte(ATTRACT_SCENE_TIMER, self.scene_timer);
+        ram.write_byte(ATTRACT_SCENE_SUBSTEP, self.scene_substep);
+        ram.write_word(ATTRACT_X_BASE, self.x_base);
+        ram.write_byte(ATTRACT_Y_BASE, self.y_base);
+        ram.write_word(ATTRACT_STORY_TEXT_POINTER, self.story_text_pointer);
+        ram.write_byte(ATTRACT_OAM_IDX, self.oam_index);
+        ram.write_byte(ATTRACT_MAIDEN_WARP_STEP, self.maiden_warp_step);
+        ram.write_byte(INTRO_STEP_INDEX, self.intro_step_index);
+        ram.write_byte(INTRO_STEP_TIMER, self.intro_step_timer);
+        ram.write_byte(INTRO_FRAME_CTR, self.intro_frame_counter);
+        ram.write_byte(INTRO_DID_RUN_STEP, self.intro_did_run_step);
+        ram.write_byte(INTRO_TIMES_PAL_FLASH, self.intro_palette_flash_count);
+        ram.write_byte(ATTRACT_LEGEND_FLAG, self.legend_flag);
+        ram.write_byte(ATTRACT_NEXT_LEGEND_GFX, self.next_legend_gfx);
+        ram.write_word(ATTRACT_BG2_VOFS_BACKUP, self.bg2_vofs_backup);
         // ATTRACT_THRONE_FADE_TIMER (0x2c) aliases link_subpixel_z, which gameplay
         // writes raw (prime_airborne_z_velocity, move_link_axis_by_velocity). The
         // attract bridge writes this byte through per-setter, so projecting the
         // (stale outside attract scenes) mirror here would re-stamp Link's live Z
         // subpixel. Write-through only.
-        ram[ATTRACT_PRISON_ZELDA_Y_BASE] = self.prison_zelda_y_base;
-        ram[ATTRACT_ANIM_STEP_COUNTER] = self.anim_step_counter;
-        ram[ATTRACT_SOLDIER_ANIM_STEP] = self.soldier_anim_step;
-        ram[ATTRACT_PRISON_SOLDIER_X_LO] = self.prison_soldier_x_lo;
-        ram[ATTRACT_SCENE_FRAME_COUNTER] = self.scene_frame_counter;
-        ram[ATTRACT_SCENE_DONE_FLAG] = self.scene_done_flag;
-        write_le_u16(ram, ATTRACT_LEGEND_CTR, self.legend_ctr);
-        ram[ATTRACT_FADE_IN_COMPLETE_FLAG] = self.fade_in_complete_flag;
-        ram[ATTRACT_FADE_IN_DONE_FLAG] = self.fade_in_done_flag;
-        ram[ATTRACT_SUBSTEP_DELAY_COUNTER] = self.substep_delay_counter;
-        ram[ATTRACT_MAIDEN_WARP_TIMER_A] = self.maiden_warp_timer_a;
-        ram[ATTRACT_MAIDEN_WARP_TIMER_B] = self.maiden_warp_timer_b;
-        ram[TIMER_FOR_MODE7_ZOOM] = self.mode7_zoom_timer;
+        ram.write_byte(ATTRACT_PRISON_ZELDA_Y_BASE, self.prison_zelda_y_base);
+        ram.write_byte(ATTRACT_ANIM_STEP_COUNTER, self.anim_step_counter);
+        ram.write_byte(ATTRACT_SOLDIER_ANIM_STEP, self.soldier_anim_step);
+        ram.write_byte(ATTRACT_PRISON_SOLDIER_X_LO, self.prison_soldier_x_lo);
+        ram.write_byte(ATTRACT_SCENE_FRAME_COUNTER, self.scene_frame_counter);
+        ram.write_byte(ATTRACT_SCENE_DONE_FLAG, self.scene_done_flag);
+        ram.write_word(ATTRACT_LEGEND_CTR, self.legend_ctr);
+        ram.write_byte(ATTRACT_FADE_IN_COMPLETE_FLAG, self.fade_in_complete_flag);
+        ram.write_byte(ATTRACT_FADE_IN_DONE_FLAG, self.fade_in_done_flag);
+        ram.write_byte(ATTRACT_SUBSTEP_DELAY_COUNTER, self.substep_delay_counter);
+        ram.write_byte(ATTRACT_MAIDEN_WARP_TIMER_A, self.maiden_warp_timer_a);
+        ram.write_byte(ATTRACT_MAIDEN_WARP_TIMER_B, self.maiden_warp_timer_b);
+        ram.write_byte(TIMER_FOR_MODE7_ZOOM, self.mode7_zoom_timer);
     }
 
     pub(crate) fn state(&self) -> u8 {
@@ -279,10 +280,10 @@ impl IntroSceneState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[INTRO_WANT_DOUBLE_RET] = self.triangle_motion_pause;
-        write_le_u16(ram, INTRO_SPRITE_ALLOC, self.sprite_oam_cursor);
-        write_le_u16(ram, TRIFORCE_CTR, self.triforce_countdown);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(INTRO_WANT_DOUBLE_RET, self.triangle_motion_pause);
+        ram.write_word(INTRO_SPRITE_ALLOC, self.sprite_oam_cursor);
+        ram.write_word(TRIFORCE_CTR, self.triforce_countdown);
     }
 
     pub(crate) fn triangle_motion_is_paused(&self) -> bool {
@@ -405,19 +406,19 @@ impl IntroActorState {
         state
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for (slot, actor) in self.slots.iter().copied().enumerate() {
-            ram[INTRO_SPRITE_IS_INITED + slot] = actor.init_phase;
-            ram[INTRO_SPRITE_SUBTYPE + slot] = actor.subtype;
-            ram[INTRO_SPRITE_STATE + slot] = actor.state;
-            ram[INTRO_X_SUBPIXEL + slot] = actor.x_subpixel;
-            ram[INTRO_X_LO + slot] = actor.x_low;
-            ram[INTRO_X_HI + slot] = actor.x_high;
-            ram[INTRO_Y_SUBPIXEL + slot] = actor.y_subpixel;
-            ram[INTRO_Y_LO + slot] = actor.y_low;
-            ram[INTRO_Y_HI + slot] = actor.y_high;
-            ram[INTRO_X_VEL + slot] = actor.x_velocity;
-            ram[INTRO_Y_VEL + slot] = actor.y_velocity;
+            ram.write_byte(INTRO_SPRITE_IS_INITED + slot, actor.init_phase);
+            ram.write_byte(INTRO_SPRITE_SUBTYPE + slot, actor.subtype);
+            ram.write_byte(INTRO_SPRITE_STATE + slot, actor.state);
+            ram.write_byte(INTRO_X_SUBPIXEL + slot, actor.x_subpixel);
+            ram.write_byte(INTRO_X_LO + slot, actor.x_low);
+            ram.write_byte(INTRO_X_HI + slot, actor.x_high);
+            ram.write_byte(INTRO_Y_SUBPIXEL + slot, actor.y_subpixel);
+            ram.write_byte(INTRO_Y_LO + slot, actor.y_low);
+            ram.write_byte(INTRO_Y_HI + slot, actor.y_high);
+            ram.write_byte(INTRO_X_VEL + slot, actor.x_velocity);
+            ram.write_byte(INTRO_Y_VEL + slot, actor.y_velocity);
         }
     }
 
@@ -499,13 +500,9 @@ impl EndingCreditState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, ENDING_WHICH_DUNG, self.palace_death_count_digit_step);
-        write_le_u16(
-            ram,
-            ENDING_CREDIT_DIGIT_CHAR,
-            self.death_count_digit_tile_base,
-        );
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(ENDING_WHICH_DUNG, self.palace_death_count_digit_step);
+        ram.write_word(ENDING_CREDIT_DIGIT_CHAR, self.death_count_digit_tile_base);
     }
 
     pub(crate) fn palace_death_count_index(&self) -> usize {
@@ -551,7 +548,7 @@ impl EndingState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         self.attract_scene.write_to_ram(ram);
         self.intro_scene.write_to_ram(ram);
         self.intro_actors.write_to_ram(ram);

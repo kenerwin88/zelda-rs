@@ -4,6 +4,7 @@
 //! here rather than hiding RAM publication inside native movement/action logic.
 
 use super::*;
+use crate::game_state::native::ram_target::RamTarget;
 
 impl FollowerLinkState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
@@ -202,196 +203,321 @@ impl FollowerLinkState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, LINK_X_COORD, self.movement.x);
-        write_le_u16(ram, LINK_Y_COORD, self.movement.y);
-        write_le_u16(ram, LINK_Z_COORD, self.movement.z);
-        write_le_u16(ram, LINK_Z_COORD_MIRROR, self.movement.z_mirror);
-        ram[PLAYER_OAM_X_OFFSET] = self.presentation.oam_x_offset;
-        ram[PLAYER_OAM_Y_OFFSET] = self.presentation.oam_y_offset;
-        ram[LINK_X_SUBPIXEL] = self.movement.x_subpixel;
-        ram[LINK_Y_SUBPIXEL] = self.movement.y_subpixel;
-        ram[LINK_X_VELOCITY] = self.movement.x_velocity;
-        ram[LINK_Y_VELOCITY] = self.movement.y_velocity;
-        ram[LINK_ACTUAL_X_VELOCITY] = self.movement.actual_x_velocity;
-        ram[LINK_ACTUAL_Y_VELOCITY] = self.movement.actual_y_velocity;
-        ram[LINK_Z_VELOCITY] = self.movement.z_velocity;
-        ram[LINK_Z_VELOCITY_COPY] = self.movement.z_velocity_copy;
-        ram[LINK_Z_VELOCITY_MIRROR] = self.movement.z_velocity_mirror;
-        ram[LINK_Z_VELOCITY_COPY_MIRROR] = self.movement.z_velocity_copy_mirror;
-        ram[LINK_RECOIL_Z_VELOCITY_DUNGEON] = self.movement.recoil_z_velocity_for_dungeon_reset;
-        ram[LINK_RECOIL_TIMER] = self.movement.recoil_timer;
-        ram[LINK_IS_ON_LOWER_LEVEL] = self.movement.floor;
-        ram[LINK_IS_ON_LOWER_LEVEL_MIRROR] = self.movement.lower_level_mirror_state;
-        ram[LINK_IS_ON_LOWER_LEVEL_CACHED] = self.movement.cached_lower_level_state;
-        ram[LINK_IS_ON_LOWER_LEVEL_MIRROR_CACHED] = self.movement.cached_lower_level_mirror_state;
-        ram[LINK_DIRECTION] = self.movement.direction;
-        ram[LINK_CANT_CHANGE_DIRECTION] = self.movement.direction_lock;
-        ram[LINK_DIRECTION_MASK_A] = self.movement.direction_mask_a;
-        ram[LINK_DIRECTION_MASK_B] = self.movement.direction_mask_b;
-        ram[LINK_LAST_DIRECTION] = self.movement.last_direction;
-        ram[LINK_LAST_DIRECTION_MOVED_TOWARDS] = self.movement.last_direction_moved_towards;
-        ram[LINK_MOVING_AGAINST_DIAG_TILE] = self.movement.moving_against_diag_tile;
-        ram[LINK_FLAG_MOVING] = self.movement.movement_flag;
-        ram[LINK_QUADRANT_X] = self.movement.quadrant_x;
-        ram[LINK_QUADRANT_Y] = self.movement.quadrant_y;
-        ram[LINK_QUADRANT_X_CACHED] = self.movement.cached_quadrant_x;
-        ram[LINK_QUADRANT_Y_CACHED] = self.movement.cached_quadrant_y;
-        ram[LINK_NUM_ORTHOGONAL_DIRECTIONS] = self.movement.num_orthogonal_directions;
-        ram[SWIM_PLAYER_DIRECTION_FLAGS] = self.movement.swim_direction_flags;
-        ram[LINK_FACING] = self.movement.facing;
-        ram[LINK_FACING_MIRROR] = self.movement.facing_mirror;
-        ram[LINK_FACING_CACHED] = self.movement.cached_facing;
-        ram[LINK_SPEED_SETTING] = self.movement.speed_setting;
-        ram[LINK_SPEED_MODIFIER] = self.movement.speed_modifier;
-        ram[LINK_DASH_COUNTER] = self.movement.dash_counter;
-        ram[LINK_COUNTDOWN_FOR_DASH] = self.movement.dash_countdown;
-        ram[LINK_TIMER_JUMP_LEDGE] = self.movement.jump_ledge_timer;
-        ram[ABOUT_TO_JUMP_OFF_LEDGE] = self.movement.about_to_jump_off_ledge;
-        ram[LINK_TIMER_PUSH_GET_TIRED] = self.movement.push_fatigue_timer;
-        ram[GRAVESTONE_PUSH_TIMEOUT] = self.movement.gravestone_push_timeout;
-        ram[FLAG_BLOCK_LINK_MENU] = self.actions.menu_block_flag;
-        ram[LINK_HANDLER_STATE] = self.actions.handler_state;
-        ram[FLAG_IS_LINK_IMMOBILIZED] = self.actions.immobilized;
-        ram[LINK_STATE_BITS] = self.actions.action_state_bits;
-        ram[LINK_AUXILIARY_STATE] = self.actions.auxiliary_state;
-        ram[LINK_IS_RUNNING] = self.movement.running;
-        ram[LINK_PICKING_THROW_STATE] = self.actions.picking_throw_state;
-        ram[BUTTON_MASK_B_Y] = self.input.button_mask_b_y;
-        ram[FILTERED_JOYPAD_H] = self.input.filtered_joypad_h;
-        ram[FILTERED_JOYPAD_L] = self.input.filtered_joypad_l;
-        ram[JOYPAD1H_LAST] = self.input.joypad1h_last;
-        ram[JOYPAD1L_LAST] = self.input.joypad1l_last;
-        ram[JOYPAD1H_LAST2] = self.input.joypad1h_last2;
-        ram[JOYPAD1L_LAST2] = self.input.joypad1l_last2;
-        ram[LINK_DELAY_TIMER_SPIN_ATTACK] = self.actions.spin_attack_delay_timer;
-        ram[LINK_SPIN_ATTACK_STEP_COUNTER] = self.actions.spin_attack_step_counter;
-        ram[STATE_FOR_SPIN_ATTACK] = self.actions.spin_attack_state;
-        ram[SPIN_ATTACK_SOUND_LATCH] = self.actions.spin_attack_sound_latch;
-        ram[LINK_INCAPACITATED_TIMER] = self.actions.incapacitated_timer;
-        ram[LINK_VISIBILITY_STATUS] = self.presentation.visibility_status;
-        ram[Y_BUTTON_ACTION_FLAGS] = self.actions.y_button_action_flags;
-        ram[Y_BUTTON_ACTION_STEP] = self.actions.y_button_action_step;
-        ram[Y_BUTTON_ACTION_TIMER] = self.actions.y_button_action_timer;
-        ram[PLAYER_DEFENSE_FLAGS] = self.actions.defense_flags;
-        ram[ITEM_RECEIPT_METHOD] = self.actions.item_receipt_method;
-        ram[PLAYER_HANDLER_TIMER] = self.actions.action_handler_timer;
-        ram[IS_STANDING_IN_DOORWAY] = self.movement.doorway_state;
-        ram[COUNTDOWN_FOR_BLINK] = self.presentation.blink_countdown;
-        ram[LINK_BUNNY_TRANSFORM_TIMER] = self.actions.bunny_transform_timer;
-        ram[LINK_IS_BUNNY] = self.actions.bunny_state;
-        ram[LINK_IS_BUNNY_MIRROR] = self.actions.bunny_mirror;
-        write_le_u16(ram, LINK_TIMER_TEMPBUNNY, self.actions.temp_bunny_timer);
-        ram[LINK_NEED_FOR_POOF_FOR_TRANSFORM] = self.actions.transform_poof_needed;
-        ram[STEP_COUNTER_FOR_SPIN_ATTACK] = self.presentation.spin_animation_step_counter;
-        ram[BUTTON_B_FRAMES] = self.input.button_b_frames;
-        ram[LINK_ANIMATION_STEPS] = self.presentation.animation_step;
-        ram[LINK_POSE_DURING_OPENING] = self.presentation.opening_pose;
-        ram[DRAW_WATER_RIPPLES_OR_GRASS] = self.presentation.water_ripple_or_grass_state;
-        ram[PRIMARY_WATER_GRASS_TIMER] = self.presentation.primary_water_grass_timer;
-        ram[SECONDARY_WATER_GRASS_TIMER] = self.presentation.secondary_water_grass_timer;
-        ram[LINK_IS_IN_DEEP_WATER] = self.movement.deep_water_state;
-        ram[LINK_MAYBE_SWIM_FASTER] = self.movement.swim_fast_state;
-        ram[LINK_SWIM_HARD_STROKE] = self.movement.hard_swim_stroke;
-        write_le_u16(
-            ram,
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(LINK_X_COORD, self.movement.x);
+        ram.write_word(LINK_Y_COORD, self.movement.y);
+        ram.write_word(LINK_Z_COORD, self.movement.z);
+        ram.write_word(LINK_Z_COORD_MIRROR, self.movement.z_mirror);
+        ram.write_byte(PLAYER_OAM_X_OFFSET, self.presentation.oam_x_offset);
+        ram.write_byte(PLAYER_OAM_Y_OFFSET, self.presentation.oam_y_offset);
+        ram.write_byte(LINK_X_SUBPIXEL, self.movement.x_subpixel);
+        ram.write_byte(LINK_Y_SUBPIXEL, self.movement.y_subpixel);
+        ram.write_byte(LINK_X_VELOCITY, self.movement.x_velocity);
+        ram.write_byte(LINK_Y_VELOCITY, self.movement.y_velocity);
+        ram.write_byte(LINK_ACTUAL_X_VELOCITY, self.movement.actual_x_velocity);
+        ram.write_byte(LINK_ACTUAL_Y_VELOCITY, self.movement.actual_y_velocity);
+        ram.write_byte(LINK_Z_VELOCITY, self.movement.z_velocity);
+        ram.write_byte(LINK_Z_VELOCITY_COPY, self.movement.z_velocity_copy);
+        ram.write_byte(LINK_Z_VELOCITY_MIRROR, self.movement.z_velocity_mirror);
+        ram.write_byte(
+            LINK_Z_VELOCITY_COPY_MIRROR,
+            self.movement.z_velocity_copy_mirror,
+        );
+        ram.write_byte(
+            LINK_RECOIL_Z_VELOCITY_DUNGEON,
+            self.movement.recoil_z_velocity_for_dungeon_reset,
+        );
+        ram.write_byte(LINK_RECOIL_TIMER, self.movement.recoil_timer);
+        ram.write_byte(LINK_IS_ON_LOWER_LEVEL, self.movement.floor);
+        ram.write_byte(
+            LINK_IS_ON_LOWER_LEVEL_MIRROR,
+            self.movement.lower_level_mirror_state,
+        );
+        ram.write_byte(
+            LINK_IS_ON_LOWER_LEVEL_CACHED,
+            self.movement.cached_lower_level_state,
+        );
+        ram.write_byte(
+            LINK_IS_ON_LOWER_LEVEL_MIRROR_CACHED,
+            self.movement.cached_lower_level_mirror_state,
+        );
+        ram.write_byte(LINK_DIRECTION, self.movement.direction);
+        ram.write_byte(LINK_CANT_CHANGE_DIRECTION, self.movement.direction_lock);
+        ram.write_byte(LINK_DIRECTION_MASK_A, self.movement.direction_mask_a);
+        ram.write_byte(LINK_DIRECTION_MASK_B, self.movement.direction_mask_b);
+        ram.write_byte(LINK_LAST_DIRECTION, self.movement.last_direction);
+        ram.write_byte(
+            LINK_LAST_DIRECTION_MOVED_TOWARDS,
+            self.movement.last_direction_moved_towards,
+        );
+        ram.write_byte(
+            LINK_MOVING_AGAINST_DIAG_TILE,
+            self.movement.moving_against_diag_tile,
+        );
+        ram.write_byte(LINK_FLAG_MOVING, self.movement.movement_flag);
+        ram.write_byte(LINK_QUADRANT_X, self.movement.quadrant_x);
+        ram.write_byte(LINK_QUADRANT_Y, self.movement.quadrant_y);
+        ram.write_byte(LINK_QUADRANT_X_CACHED, self.movement.cached_quadrant_x);
+        ram.write_byte(LINK_QUADRANT_Y_CACHED, self.movement.cached_quadrant_y);
+        ram.write_byte(
+            LINK_NUM_ORTHOGONAL_DIRECTIONS,
+            self.movement.num_orthogonal_directions,
+        );
+        ram.write_byte(
+            SWIM_PLAYER_DIRECTION_FLAGS,
+            self.movement.swim_direction_flags,
+        );
+        ram.write_byte(LINK_FACING, self.movement.facing);
+        ram.write_byte(LINK_FACING_MIRROR, self.movement.facing_mirror);
+        ram.write_byte(LINK_FACING_CACHED, self.movement.cached_facing);
+        ram.write_byte(LINK_SPEED_SETTING, self.movement.speed_setting);
+        ram.write_byte(LINK_SPEED_MODIFIER, self.movement.speed_modifier);
+        ram.write_byte(LINK_DASH_COUNTER, self.movement.dash_counter);
+        ram.write_byte(LINK_COUNTDOWN_FOR_DASH, self.movement.dash_countdown);
+        ram.write_byte(LINK_TIMER_JUMP_LEDGE, self.movement.jump_ledge_timer);
+        ram.write_byte(
+            ABOUT_TO_JUMP_OFF_LEDGE,
+            self.movement.about_to_jump_off_ledge,
+        );
+        ram.write_byte(LINK_TIMER_PUSH_GET_TIRED, self.movement.push_fatigue_timer);
+        ram.write_byte(
+            GRAVESTONE_PUSH_TIMEOUT,
+            self.movement.gravestone_push_timeout,
+        );
+        ram.write_byte(FLAG_BLOCK_LINK_MENU, self.actions.menu_block_flag);
+        ram.write_byte(LINK_HANDLER_STATE, self.actions.handler_state);
+        ram.write_byte(FLAG_IS_LINK_IMMOBILIZED, self.actions.immobilized);
+        ram.write_byte(LINK_STATE_BITS, self.actions.action_state_bits);
+        ram.write_byte(LINK_AUXILIARY_STATE, self.actions.auxiliary_state);
+        ram.write_byte(LINK_IS_RUNNING, self.movement.running);
+        ram.write_byte(LINK_PICKING_THROW_STATE, self.actions.picking_throw_state);
+        ram.write_byte(BUTTON_MASK_B_Y, self.input.button_mask_b_y);
+        ram.write_byte(FILTERED_JOYPAD_H, self.input.filtered_joypad_h);
+        ram.write_byte(FILTERED_JOYPAD_L, self.input.filtered_joypad_l);
+        ram.write_byte(JOYPAD1H_LAST, self.input.joypad1h_last);
+        ram.write_byte(JOYPAD1L_LAST, self.input.joypad1l_last);
+        ram.write_byte(JOYPAD1H_LAST2, self.input.joypad1h_last2);
+        ram.write_byte(JOYPAD1L_LAST2, self.input.joypad1l_last2);
+        ram.write_byte(
+            LINK_DELAY_TIMER_SPIN_ATTACK,
+            self.actions.spin_attack_delay_timer,
+        );
+        ram.write_byte(
+            LINK_SPIN_ATTACK_STEP_COUNTER,
+            self.actions.spin_attack_step_counter,
+        );
+        ram.write_byte(STATE_FOR_SPIN_ATTACK, self.actions.spin_attack_state);
+        ram.write_byte(
+            SPIN_ATTACK_SOUND_LATCH,
+            self.actions.spin_attack_sound_latch,
+        );
+        ram.write_byte(LINK_INCAPACITATED_TIMER, self.actions.incapacitated_timer);
+        ram.write_byte(LINK_VISIBILITY_STATUS, self.presentation.visibility_status);
+        ram.write_byte(Y_BUTTON_ACTION_FLAGS, self.actions.y_button_action_flags);
+        ram.write_byte(Y_BUTTON_ACTION_STEP, self.actions.y_button_action_step);
+        ram.write_byte(Y_BUTTON_ACTION_TIMER, self.actions.y_button_action_timer);
+        ram.write_byte(PLAYER_DEFENSE_FLAGS, self.actions.defense_flags);
+        ram.write_byte(ITEM_RECEIPT_METHOD, self.actions.item_receipt_method);
+        ram.write_byte(PLAYER_HANDLER_TIMER, self.actions.action_handler_timer);
+        ram.write_byte(IS_STANDING_IN_DOORWAY, self.movement.doorway_state);
+        ram.write_byte(COUNTDOWN_FOR_BLINK, self.presentation.blink_countdown);
+        ram.write_byte(
+            LINK_BUNNY_TRANSFORM_TIMER,
+            self.actions.bunny_transform_timer,
+        );
+        ram.write_byte(LINK_IS_BUNNY, self.actions.bunny_state);
+        ram.write_byte(LINK_IS_BUNNY_MIRROR, self.actions.bunny_mirror);
+        ram.write_word(LINK_TIMER_TEMPBUNNY, self.actions.temp_bunny_timer);
+        ram.write_byte(
+            LINK_NEED_FOR_POOF_FOR_TRANSFORM,
+            self.actions.transform_poof_needed,
+        );
+        ram.write_byte(
+            STEP_COUNTER_FOR_SPIN_ATTACK,
+            self.presentation.spin_animation_step_counter,
+        );
+        ram.write_byte(BUTTON_B_FRAMES, self.input.button_b_frames);
+        ram.write_byte(LINK_ANIMATION_STEPS, self.presentation.animation_step);
+        ram.write_byte(LINK_POSE_DURING_OPENING, self.presentation.opening_pose);
+        ram.write_byte(
+            DRAW_WATER_RIPPLES_OR_GRASS,
+            self.presentation.water_ripple_or_grass_state,
+        );
+        ram.write_byte(
+            PRIMARY_WATER_GRASS_TIMER,
+            self.presentation.primary_water_grass_timer,
+        );
+        ram.write_byte(
+            SECONDARY_WATER_GRASS_TIMER,
+            self.presentation.secondary_water_grass_timer,
+        );
+        ram.write_byte(LINK_IS_IN_DEEP_WATER, self.movement.deep_water_state);
+        ram.write_byte(LINK_MAYBE_SWIM_FASTER, self.movement.swim_fast_state);
+        ram.write_byte(LINK_SWIM_HARD_STROKE, self.movement.hard_swim_stroke);
+        ram.write_word(
             SWIM_STROKE_FRAME_COUNTER,
             self.movement.swim_stroke_frame_counters[0],
         );
-        write_le_u16(
-            ram,
+        ram.write_word(
             SWIM_STROKE_FRAME_COUNTER + 2,
             self.movement.swim_stroke_frame_counters[1],
         );
-        ram[SWIM_STROKE_ANIM_STEP] = self.movement.swim_stroke_anim_step;
-        ram[SWIMMING_COUNTDOWN] = self.movement.swimming_countdown;
-        ram[LINK_ON_CONVEYOR_BELT] = self.movement.conveyor_belt_state;
-        ram[LINK_TILE_BELOW] = self.movement.tile_below;
-        ram[TILE_ACTION_INDEX] = self.movement.tile_action_index;
-        ram[TILE_COLL_FLAG] = self.movement.tile_collision_flag;
-        ram[LINK_FRAME_CHANGE_COUNTER] = self.presentation.frame_change_counter;
-        ram[LINK_SPRITE_OAM_STATE_TIMER] = self.presentation.sprite_oam_state_timer;
-        ram[LINK_TRIGGERED_BY_WHIRLPOOL_SPRITE] = self.movement.whirlpool_trigger;
-        ram[LINK_PREVENT_FROM_MOVING] = self.movement.prevent_movement;
-        ram[MAGIC_SPELL_PLAYER_LOCK_FLAG] = self.actions.magic_spell_player_lock;
-        ram[LINK_ITEM_HOLDING_TIMER] = self.actions.item_holding_timer;
-        ram[CACHED_TILE_ACTION_INDEX] = self.movement.cached_tile_action_index;
-        ram[ANCILLA_INTERACTIVE_RESET_FLAG] = self.actions.ancilla_interactive_reset_flag;
-        write_le_u16(
-            ram,
+        ram.write_byte(SWIM_STROKE_ANIM_STEP, self.movement.swim_stroke_anim_step);
+        ram.write_byte(SWIMMING_COUNTDOWN, self.movement.swimming_countdown);
+        ram.write_byte(LINK_ON_CONVEYOR_BELT, self.movement.conveyor_belt_state);
+        ram.write_byte(LINK_TILE_BELOW, self.movement.tile_below);
+        ram.write_byte(TILE_ACTION_INDEX, self.movement.tile_action_index);
+        ram.write_byte(TILE_COLL_FLAG, self.movement.tile_collision_flag);
+        ram.write_byte(
+            LINK_FRAME_CHANGE_COUNTER,
+            self.presentation.frame_change_counter,
+        );
+        ram.write_byte(
+            LINK_SPRITE_OAM_STATE_TIMER,
+            self.presentation.sprite_oam_state_timer,
+        );
+        ram.write_byte(
+            LINK_TRIGGERED_BY_WHIRLPOOL_SPRITE,
+            self.movement.whirlpool_trigger,
+        );
+        ram.write_byte(LINK_PREVENT_FROM_MOVING, self.movement.prevent_movement);
+        ram.write_byte(
+            MAGIC_SPELL_PLAYER_LOCK_FLAG,
+            self.actions.magic_spell_player_lock,
+        );
+        ram.write_byte(LINK_ITEM_HOLDING_TIMER, self.actions.item_holding_timer);
+        ram.write_byte(
+            CACHED_TILE_ACTION_INDEX,
+            self.movement.cached_tile_action_index,
+        );
+        ram.write_byte(
+            ANCILLA_INTERACTIVE_RESET_FLAG,
+            self.actions.ancilla_interactive_reset_flag,
+        );
+        ram.write_word(
             FORCE_MOVE_ANY_DIRECTION,
             self.movement.force_move_any_direction,
         );
-        ram[LINK_ITEM_ACTION_STEP] = self.actions.item_action_step;
-        ram[LINK_THROW_OAM_STATE_INDEX] = self.presentation.throw_oam_state_index;
-        ram[LINK_DEBUG_VALUE_2] = self.actions.item_action_debug_value_2;
-        ram[LINK_DEBUG_VALUE_1] = self.actions.item_debug_value_1;
-        ram[LINK_GIVE_DAMAGE] = self.actions.given_damage;
-        ram[LINK_PULL_ACTION_STATE] = self.actions.pull_action_state;
-        ram[LINK_CURRENT_ITEM_Y] = self.actions.current_item_y;
-        ram[LINK_CURRENT_ITEM_ACTIVE] = self.actions.current_item_active;
-        ram[LINK_RECEIVE_ITEM_INDEX] = self.actions.receive_item_index;
-        ram[LINK_ITEM_IN_HAND] = self.actions.item_in_hand;
-        ram[ITEM_PICKUP_IN_PROGRESS_FLAG] = self.actions.item_pickup_in_progress;
-        ram[LINK_POSITION_MODE] = self.movement.position_mode;
-        ram[EQ_SELECTED_ROD] = self.actions.selected_rod;
+        ram.write_byte(LINK_ITEM_ACTION_STEP, self.actions.item_action_step);
+        ram.write_byte(
+            LINK_THROW_OAM_STATE_INDEX,
+            self.presentation.throw_oam_state_index,
+        );
+        ram.write_byte(LINK_DEBUG_VALUE_2, self.actions.item_action_debug_value_2);
+        ram.write_byte(LINK_DEBUG_VALUE_1, self.actions.item_debug_value_1);
+        ram.write_byte(LINK_GIVE_DAMAGE, self.actions.given_damage);
+        ram.write_byte(LINK_PULL_ACTION_STATE, self.actions.pull_action_state);
+        ram.write_byte(LINK_CURRENT_ITEM_Y, self.actions.current_item_y);
+        ram.write_byte(LINK_CURRENT_ITEM_ACTIVE, self.actions.current_item_active);
+        ram.write_byte(LINK_RECEIVE_ITEM_INDEX, self.actions.receive_item_index);
+        ram.write_byte(LINK_ITEM_IN_HAND, self.actions.item_in_hand);
+        ram.write_byte(
+            ITEM_PICKUP_IN_PROGRESS_FLAG,
+            self.actions.item_pickup_in_progress,
+        );
+        ram.write_byte(LINK_POSITION_MODE, self.movement.position_mode);
+        ram.write_byte(EQ_SELECTED_ROD, self.actions.selected_rod);
         // LINK_MAGIC_CONSUMPTION (0xf37b) is solely owned by PlayerResourcesState, which
         // holds its only writer (Sprite_MagicShopKeeper granting the 1/2-magic upgrade,
         // C sprite_main.c `link_magic_consumption = 1`). C reads one live byte from every
         // consumer; a second projected copy here re-stamped the frame-start value.
-        ram[FLAG_IS_ANCILLA_TO_PICK_UP] = self.actions.ancilla_pickup_flag;
-        ram[FLAG_IS_SPRITE_TO_PICK_UP] = self.actions.sprite_pickup_flag;
-        ram[FLAG_IS_SPRITE_TO_PICK_UP_CACHED] = self.actions.sprite_pickup_flag_cached;
-        ram[LINK_NEED_FOR_PULLFORRUPEES_SPRITE] = self.actions.pull_for_rupees_sprite_needed;
-        ram[LINK_IS_NEAR_MOVEABLE_STATUE] = self.movement.near_moveable_statue_flag;
-        ram[RELATED_TO_HOOKSHOT] = self.actions.hookshot_interlock;
-        ram[LINK_GRABBING_WALL] = self.movement.grabbing_wall;
-        ram[LINK_SOMETHING_WITH_HOOKSHOT] = self.actions.hookshot_grave_latch;
-        ram[LINK_ELECTROCUTE_ON_TOUCH] = self.actions.electrocute_on_touch;
-        ram[LINK_CAPE_MODE] = self.actions.cape_mode;
-        ram[CAPE_DECREMENT_COUNTER] = self.actions.cape_decrement_counter;
-        ram[LINK_POSE_FOR_ITEM] = self.presentation.item_hold_pose;
-        ram[LINK_FORCE_HOLD_SWORD_UP] = self.presentation.force_hold_sword_up;
-        ram[LINK_SWORD_DELAY_TIMER] = self.actions.sword_delay_timer;
-        ram[LINK_WANT_MAKE_NOISE_WHEN_DASHED] = self.presentation.dash_noise_requested;
-        ram[LINK_FAINT_ANIMATION_ACTIVE] = self.presentation.faint_animation_active;
-        ram[LINK_IS_TRANSFORMING] = self.actions.transforming;
-        ram[FLUTE_COUNTDOWN] = self.actions.flute_countdown;
-        ram[HOOKSHOT_BG_CHECK_OFF_TIMER] = self.actions.hookshot_bg_check_off_timer;
-        ram[INDEX_OF_DASHING_SFX] = self.presentation.index_of_dashing_sfx;
-        ram[LINK_SPIN_OFFSETS] = self.presentation.spin_offsets;
-        ram[PLAYER_ON_SOMARIA_PLATFORM] = self.movement.somaria_platform_state;
-        ram[PLAYER_NEAR_PIT_STATE] = self.movement.near_pit_state;
-        ram[PLAYER_PIT_DATA_INDEX] = self.movement.pit_data_index;
-        ram[PIT_CORRECTION_TIMER] = self.movement.pit_correction_timer;
-        ram[PIT_CORRECTION_ACTIVE_FLAG] = self.movement.pit_correction_active;
-        ram[MOVING_AGAINST_DIAG_DEADLOCKED] = self.movement.moving_against_diag_deadlocked;
-        ram[LINK_INCAPACITATED_CAMERA_TIMER] = self.movement.incapacitated_camera_timer;
-        ram[LINK_DISABLE_SPRITE_DAMAGE] = self.actions.sprite_damage_disabled;
-        write_le_u16(
-            ram,
+        ram.write_byte(FLAG_IS_ANCILLA_TO_PICK_UP, self.actions.ancilla_pickup_flag);
+        ram.write_byte(FLAG_IS_SPRITE_TO_PICK_UP, self.actions.sprite_pickup_flag);
+        ram.write_byte(
+            FLAG_IS_SPRITE_TO_PICK_UP_CACHED,
+            self.actions.sprite_pickup_flag_cached,
+        );
+        ram.write_byte(
+            LINK_NEED_FOR_PULLFORRUPEES_SPRITE,
+            self.actions.pull_for_rupees_sprite_needed,
+        );
+        ram.write_byte(
+            LINK_IS_NEAR_MOVEABLE_STATUE,
+            self.movement.near_moveable_statue_flag,
+        );
+        ram.write_byte(RELATED_TO_HOOKSHOT, self.actions.hookshot_interlock);
+        ram.write_byte(LINK_GRABBING_WALL, self.movement.grabbing_wall);
+        ram.write_byte(
+            LINK_SOMETHING_WITH_HOOKSHOT,
+            self.actions.hookshot_grave_latch,
+        );
+        ram.write_byte(LINK_ELECTROCUTE_ON_TOUCH, self.actions.electrocute_on_touch);
+        ram.write_byte(LINK_CAPE_MODE, self.actions.cape_mode);
+        ram.write_byte(CAPE_DECREMENT_COUNTER, self.actions.cape_decrement_counter);
+        ram.write_byte(LINK_POSE_FOR_ITEM, self.presentation.item_hold_pose);
+        ram.write_byte(
+            LINK_FORCE_HOLD_SWORD_UP,
+            self.presentation.force_hold_sword_up,
+        );
+        ram.write_byte(LINK_SWORD_DELAY_TIMER, self.actions.sword_delay_timer);
+        ram.write_byte(
+            LINK_WANT_MAKE_NOISE_WHEN_DASHED,
+            self.presentation.dash_noise_requested,
+        );
+        ram.write_byte(
+            LINK_FAINT_ANIMATION_ACTIVE,
+            self.presentation.faint_animation_active,
+        );
+        ram.write_byte(LINK_IS_TRANSFORMING, self.actions.transforming);
+        ram.write_byte(FLUTE_COUNTDOWN, self.actions.flute_countdown);
+        ram.write_byte(
+            HOOKSHOT_BG_CHECK_OFF_TIMER,
+            self.actions.hookshot_bg_check_off_timer,
+        );
+        ram.write_byte(INDEX_OF_DASHING_SFX, self.presentation.index_of_dashing_sfx);
+        ram.write_byte(LINK_SPIN_OFFSETS, self.presentation.spin_offsets);
+        ram.write_byte(
+            PLAYER_ON_SOMARIA_PLATFORM,
+            self.movement.somaria_platform_state,
+        );
+        ram.write_byte(PLAYER_NEAR_PIT_STATE, self.movement.near_pit_state);
+        ram.write_byte(PLAYER_PIT_DATA_INDEX, self.movement.pit_data_index);
+        ram.write_byte(PIT_CORRECTION_TIMER, self.movement.pit_correction_timer);
+        ram.write_byte(
+            PIT_CORRECTION_ACTIVE_FLAG,
+            self.movement.pit_correction_active,
+        );
+        ram.write_byte(
+            MOVING_AGAINST_DIAG_DEADLOCKED,
+            self.movement.moving_against_diag_deadlocked,
+        );
+        ram.write_byte(
+            LINK_INCAPACITATED_CAMERA_TIMER,
+            self.movement.incapacitated_camera_timer,
+        );
+        ram.write_byte(
+            LINK_DISABLE_SPRITE_DAMAGE,
+            self.actions.sprite_damage_disabled,
+        );
+        ram.write_word(
             LINK_DMA_GRAPHICS_INDEX,
             self.presentation.link_dma_graphics_index,
         );
-        write_le_u16(
-            ram,
+        ram.write_word(
             LINK_DMA_LEFT_SPRITE_BANK_INDEX,
             self.presentation.link_dma_left_sprite_bank,
         );
-        write_le_u16(
-            ram,
+        ram.write_word(
             LINK_DMA_RIGHT_SPRITE_BANK_INDEX,
             self.presentation.link_dma_right_sprite_bank,
         );
-        ram[LINK_DMA_SWORD_GRAPHICS_INDEX] = self.presentation.sword_dma_graphics_index;
-        ram[LINK_DMA_SHIELD_GRAPHICS_INDEX] = self.presentation.shield_dma_graphics_index;
-        ram[LINK_DMA_STAGING_INDEX] = self.presentation.link_dma_staging_index;
+        ram.write_byte(
+            LINK_DMA_SWORD_GRAPHICS_INDEX,
+            self.presentation.sword_dma_graphics_index,
+        );
+        ram.write_byte(
+            LINK_DMA_SHIELD_GRAPHICS_INDEX,
+            self.presentation.shield_dma_graphics_index,
+        );
+        ram.write_byte(
+            LINK_DMA_STAGING_INDEX,
+            self.presentation.link_dma_staging_index,
+        );
         // LINK_DMA_SOURCE_OFFSET/TILE_OFFSET/COUNTDOWN (0xc00f/0xc015/0xc013) are
         // deliberately NOT modeled: C's Graphics_IncrementalVRAMUpload reads and
         // advances them raw in WRAM, and other systems reuse them during the
         // attract/text sequence. The RAM player view owns the raw read-modify-write.
-        write_le_u16(
-            ram,
+        ram.write_word(
             LINK_PALETTE_BITS_OF_OAM,
             self.presentation.palette_bits_of_oam,
         );
@@ -401,28 +527,58 @@ impl FollowerLinkState {
         // here clobbered it 10866 times over the recorded route, on both bytes of the word.
         // Link's sprite-index scratch has no reader at all -- the setter writes RAM
         // directly, exactly as C's `scratch_1 = j` does.
-        write_le_u16(ram, LINK_Y_COORD_ORIGINAL, self.movement.hop_origin_coord);
-        write_le_u16(ram, LINK_X_COORD_CACHED, self.movement.cached_x);
-        write_le_u16(ram, LINK_Y_COORD_CACHED, self.movement.cached_y);
-        write_le_u16(ram, LINK_X_COORD_COPY, self.movement.copied_x);
-        write_le_u16(ram, LINK_Y_COORD_COPY, self.movement.copied_y);
-        write_le_u16(ram, LINK_X_COORD_PREV, self.movement.previous_x);
-        write_le_u16(ram, LINK_Y_COORD_PREV, self.movement.previous_y);
-        ram[LINK_X_COORD_SAFE_RETURN_LO] = self.movement.safe_return_x as u8;
-        ram[LINK_X_COORD_SAFE_RETURN_HI] = (self.movement.safe_return_x >> 8) as u8;
-        ram[LINK_Y_COORD_SAFE_RETURN_LO] = self.movement.safe_return_y as u8;
-        ram[LINK_Y_COORD_SAFE_RETURN_HI] = (self.movement.safe_return_y >> 8) as u8;
-        write_le_u16(ram, BIT9_OF_XCOORD, self.movement.bit9_of_xcoord);
-        ram[PLAYER_POSE_DRAW_COUNTER] = self.presentation.player_pose_draw_counter;
-        ram[PLAYER_SPECIAL_DRAW_FLAG] = self.presentation.player_special_draw_flag;
-        ram[PLAYER_SLEEP_IN_BED_STATE] = self.presentation.sleep_in_bed_state;
-        ram[CHEAT_WALK_THROUGH_WALLS] = self.movement.cheat_walk_through_walls;
-        ram[LINK_X_PAGE_MOVEMENT_DELTA] = self.movement.x_page_movement_delta;
-        ram[LINK_Y_PAGE_MOVEMENT_DELTA] = self.movement.y_page_movement_delta;
-        write_le_u16(ram, RELATED_TO_MOVING_FLOOR_X, self.movement.moving_floor_x);
-        write_le_u16(ram, RELATED_TO_MOVING_FLOOR_Y, self.movement.moving_floor_y);
-        write_le_u16(ram, DRAG_PLAYER_X, self.movement.drag_player_x);
-        write_le_u16(ram, DRAG_PLAYER_Y, self.movement.drag_player_y);
+        ram.write_word(LINK_Y_COORD_ORIGINAL, self.movement.hop_origin_coord);
+        ram.write_word(LINK_X_COORD_CACHED, self.movement.cached_x);
+        ram.write_word(LINK_Y_COORD_CACHED, self.movement.cached_y);
+        ram.write_word(LINK_X_COORD_COPY, self.movement.copied_x);
+        ram.write_word(LINK_Y_COORD_COPY, self.movement.copied_y);
+        ram.write_word(LINK_X_COORD_PREV, self.movement.previous_x);
+        ram.write_word(LINK_Y_COORD_PREV, self.movement.previous_y);
+        ram.write_byte(
+            LINK_X_COORD_SAFE_RETURN_LO,
+            self.movement.safe_return_x as u8,
+        );
+        ram.write_byte(
+            LINK_X_COORD_SAFE_RETURN_HI,
+            (self.movement.safe_return_x >> 8) as u8,
+        );
+        ram.write_byte(
+            LINK_Y_COORD_SAFE_RETURN_LO,
+            self.movement.safe_return_y as u8,
+        );
+        ram.write_byte(
+            LINK_Y_COORD_SAFE_RETURN_HI,
+            (self.movement.safe_return_y >> 8) as u8,
+        );
+        ram.write_word(BIT9_OF_XCOORD, self.movement.bit9_of_xcoord);
+        ram.write_byte(
+            PLAYER_POSE_DRAW_COUNTER,
+            self.presentation.player_pose_draw_counter,
+        );
+        ram.write_byte(
+            PLAYER_SPECIAL_DRAW_FLAG,
+            self.presentation.player_special_draw_flag,
+        );
+        ram.write_byte(
+            PLAYER_SLEEP_IN_BED_STATE,
+            self.presentation.sleep_in_bed_state,
+        );
+        ram.write_byte(
+            CHEAT_WALK_THROUGH_WALLS,
+            self.movement.cheat_walk_through_walls,
+        );
+        ram.write_byte(
+            LINK_X_PAGE_MOVEMENT_DELTA,
+            self.movement.x_page_movement_delta,
+        );
+        ram.write_byte(
+            LINK_Y_PAGE_MOVEMENT_DELTA,
+            self.movement.y_page_movement_delta,
+        );
+        ram.write_word(RELATED_TO_MOVING_FLOOR_X, self.movement.moving_floor_x);
+        ram.write_word(RELATED_TO_MOVING_FLOOR_Y, self.movement.moving_floor_y);
+        ram.write_word(DRAG_PLAYER_X, self.movement.drag_player_x);
+        ram.write_word(DRAG_PLAYER_Y, self.movement.drag_player_y);
     }
 }
 

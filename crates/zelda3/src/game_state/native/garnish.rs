@@ -8,7 +8,8 @@ use crate::game_state::constants::{
     REPULSESPARK_ANIM_DELAY, REPULSESPARK_FLOOR_STATUS, REPULSESPARK_TIMER, REPULSESPARK_X_LO,
     REPULSESPARK_Y_LO, SPRCOLL_X_BASE, SPRCOLL_X_SIZE, SPRCOLL_Y_BASE, SPRCOLL_Y_SIZE,
 };
-use crate::types::{read_le_u16, write_le_u16};
+use crate::game_state::native::ram_target::RamTarget;
+use crate::types::read_le_u16;
 
 const GARNISH_SLOT_COUNT: usize = 30;
 
@@ -216,21 +217,24 @@ impl GarnishRuntimeState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[GARNISH_ACTIVE] = self.active_type;
-        ram[OVERWORLD_BOULDER_TRAP_COUNT] = self.boulder_trap_count;
-        ram[OVERWORLD_BOULDER_TRAP_TIMER] = self.boulder_trap_timer;
-        write_le_u16(ram, SPRCOLL_X_SIZE, self.sprite_collision_x_size);
-        write_le_u16(ram, SPRCOLL_Y_SIZE, self.sprite_collision_y_size);
-        write_le_u16(ram, SPRCOLL_X_BASE, self.sprite_collision_x_base);
-        write_le_u16(ram, SPRCOLL_Y_BASE, self.sprite_collision_y_base);
-        ram[ACTIVE_OVERLORD_INDEX] = self.active_overlord_index;
-        ram[HAUNTED_GROVE_FLUTE_EVENT_LATCH] = self.haunted_grove_flute_event_latch;
-        ram[REPULSESPARK_TIMER] = self.repulsespark_timer;
-        ram[REPULSESPARK_ANIM_DELAY] = self.repulsespark_anim_delay;
-        ram[REPULSESPARK_FLOOR_STATUS] = self.repulsespark_floor_status;
-        ram[REPULSESPARK_X_LO] = self.repulsespark_x_low;
-        ram[REPULSESPARK_Y_LO] = self.repulsespark_y_low;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(GARNISH_ACTIVE, self.active_type);
+        ram.write_byte(OVERWORLD_BOULDER_TRAP_COUNT, self.boulder_trap_count);
+        ram.write_byte(OVERWORLD_BOULDER_TRAP_TIMER, self.boulder_trap_timer);
+        ram.write_word(SPRCOLL_X_SIZE, self.sprite_collision_x_size);
+        ram.write_word(SPRCOLL_Y_SIZE, self.sprite_collision_y_size);
+        ram.write_word(SPRCOLL_X_BASE, self.sprite_collision_x_base);
+        ram.write_word(SPRCOLL_Y_BASE, self.sprite_collision_y_base);
+        ram.write_byte(ACTIVE_OVERLORD_INDEX, self.active_overlord_index);
+        ram.write_byte(
+            HAUNTED_GROVE_FLUTE_EVENT_LATCH,
+            self.haunted_grove_flute_event_latch,
+        );
+        ram.write_byte(REPULSESPARK_TIMER, self.repulsespark_timer);
+        ram.write_byte(REPULSESPARK_ANIM_DELAY, self.repulsespark_anim_delay);
+        ram.write_byte(REPULSESPARK_FLOOR_STATUS, self.repulsespark_floor_status);
+        ram.write_byte(REPULSESPARK_X_LO, self.repulsespark_x_low);
+        ram.write_byte(REPULSESPARK_Y_LO, self.repulsespark_y_low);
     }
 
     pub(crate) fn active_type(&self) -> u8 {

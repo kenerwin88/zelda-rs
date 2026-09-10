@@ -1,5 +1,6 @@
 use crate::game_state::constants::messaging::DIALOGUE_TEXT_COLOR;
 use crate::game_state::constants::*;
+use crate::game_state::native::ram_target::RamTarget;
 use crate::types::{read_le_u16, write_le_u16};
 
 // The dungeon-map renderer fills 2048 words (`for i in 0..2048 { messaging_buf[i] = .. }`)
@@ -77,23 +78,28 @@ impl SelectFileMenuState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for (slot, flag) in self.save_slot_flags.iter().copied().enumerate() {
-            write_le_u16(ram, SELECTFILE_SAVE_SLOT_FLAGS + slot * 2, flag);
+            ram.write_word(SELECTFILE_SAVE_SLOT_FLAGS + slot * 2, flag);
         }
-        ram[SELECT_FILE_CURSOR_WORK] = self.cursor;
-        ram[SELECT_FILE_TRANSITION_WORK] = self.transition_scratch;
-        ram[SELECT_FILE_CHOICE_WORK..SELECT_FILE_CHOICE_WORK + SELECT_FILE_CHOICE_WORK_LEN]
-            .copy_from_slice(&self.choice_work);
-        ram[SELECT_FILE_REMEMBERED_CURSOR] = self.remembered_cursor;
-        write_le_u16(ram, SELECT_FILE_NAME_SCROLL_X, self.name_scroll_x);
-        ram[SELECT_FILE_NAME_COLUMN] = self.name_column;
-        ram[SELECT_FILE_NAME_CURSOR_Y] = self.name_cursor_y;
-        ram[SELECT_FILE_NAME_SLOT] = self.name_slot;
-        ram[SELECT_FILE_NAME_SCROLL_X_STEP] = self.name_scroll_x_step;
-        ram[SELECT_FILE_NAME_SCROLL_Y_STEP] = self.name_scroll_y_step;
-        ram[SELECT_FILE_NAME_ROW] = self.name_row;
-        ram[SELECT_FILE_NAME_SCROLL_X_DIRECTION] = self.name_scroll_x_direction;
+        ram.write_byte(SELECT_FILE_CURSOR_WORK, self.cursor);
+        ram.write_byte(SELECT_FILE_TRANSITION_WORK, self.transition_scratch);
+        ram.write_range(
+            SELECT_FILE_CHOICE_WORK..SELECT_FILE_CHOICE_WORK + SELECT_FILE_CHOICE_WORK_LEN,
+            &self.choice_work,
+        );
+        ram.write_byte(SELECT_FILE_REMEMBERED_CURSOR, self.remembered_cursor);
+        ram.write_word(SELECT_FILE_NAME_SCROLL_X, self.name_scroll_x);
+        ram.write_byte(SELECT_FILE_NAME_COLUMN, self.name_column);
+        ram.write_byte(SELECT_FILE_NAME_CURSOR_Y, self.name_cursor_y);
+        ram.write_byte(SELECT_FILE_NAME_SLOT, self.name_slot);
+        ram.write_byte(SELECT_FILE_NAME_SCROLL_X_STEP, self.name_scroll_x_step);
+        ram.write_byte(SELECT_FILE_NAME_SCROLL_Y_STEP, self.name_scroll_y_step);
+        ram.write_byte(SELECT_FILE_NAME_ROW, self.name_row);
+        ram.write_byte(
+            SELECT_FILE_NAME_SCROLL_X_DIRECTION,
+            self.name_scroll_x_direction,
+        );
     }
 
     pub(crate) fn choice(&self, index: usize) -> u8 {
@@ -352,8 +358,8 @@ impl DialogueMessageIndexState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, DIALOGUE_MESSAGE_INDEX, self.value);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(DIALOGUE_MESSAGE_INDEX, self.value);
     }
 
     pub(crate) fn value(&self) -> u16 {
@@ -379,9 +385,9 @@ impl MultiselectChoiceState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[MULTISELECT_CHOICE] = self.value;
-        ram[MULTISELECT_CHOICE_BACKUP] = self.backup;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(MULTISELECT_CHOICE, self.value);
+        ram.write_byte(MULTISELECT_CHOICE_BACKUP, self.backup);
     }
 
     pub(crate) fn value(&self) -> u8 {
@@ -427,9 +433,9 @@ impl DialogueNumberState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[DIALOGUE_NUMBER_LO] = self.low_pair;
-        ram[DIALOGUE_NUMBER_HI] = self.high_pair;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(DIALOGUE_NUMBER_LO, self.low_pair);
+        ram.write_byte(DIALOGUE_NUMBER_HI, self.high_pair);
     }
 
     pub(crate) fn packed_digits(&self, pair_index: usize) -> u8 {
@@ -466,8 +472,8 @@ impl DialogueSourceOffsetState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[DIALOGUE_MSG_SRC_OFFS + 2] = self.bank_offset_low_nibble;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(DIALOGUE_MSG_SRC_OFFS + 2, self.bank_offset_low_nibble);
     }
 
     pub(crate) fn bank_offset_low_nibble(&self) -> u8 {
@@ -506,9 +512,11 @@ impl DecodedMessageTextState {
         Self { bytes }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[MESSAGING_TEXT_BUFFER..MESSAGING_TEXT_BUFFER + self.bytes.len()]
-            .copy_from_slice(&self.bytes);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_range(
+            MESSAGING_TEXT_BUFFER..MESSAGING_TEXT_BUFFER + self.bytes.len(),
+            &self.bytes,
+        );
     }
 
     pub(crate) fn byte(&self, offset: usize) -> u8 {
@@ -569,12 +577,12 @@ impl DialoguePointerTableState {
         Self { pointers }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for (index, pointer) in self.pointers.iter().copied().enumerate() {
             let dst = TEXT_DIALOGUE_POINTERS + index * 3;
-            ram[dst] = pointer as u8;
-            ram[dst + 1] = (pointer >> 8) as u8;
-            ram[dst + 2] = (pointer >> 16) as u8;
+            ram.write_byte(dst, pointer as u8);
+            ram.write_byte(dst + 1, (pointer >> 8) as u8);
+            ram.write_byte(dst + 2, (pointer >> 16) as u8);
         }
     }
 
@@ -632,28 +640,31 @@ impl MessagingRuntimeState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[MESSAGING_MODULE] = self.module;
-        ram[TEXT_RENDER_STATE] = self.text_render_state;
-        ram[TEXT_WAIT_COUNTDOWN2] = self.text_wait_countdown2;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(MESSAGING_MODULE, self.module);
+        ram.write_byte(TEXT_RENDER_STATE, self.text_render_state);
+        ram.write_byte(TEXT_WAIT_COUNTDOWN2, self.text_wait_countdown2);
         // MENU_ANIMATION_TIMER (0xc8) is five-way mode-reused scratch (R16 / intro-sword /
         // menu-timer / overworld-entrance / select-file). Bulk-projecting our persisted copy
         // every frame re-stamped a stale value over whatever the active mode wrote (blanked
         // the dungeon R16 scratch during overworld loads). It is written through by
         // set_menu_animation_timer instead, so it reaches RAM exactly when menu code changes
         // it (matching C) without the stale re-stamp.
-        ram[GAME_OVER_LETTER_CURSOR] = self.game_over_letter_cursor;
-        ram[DIALOGUE_TEXT_COLOR] = self.dialogue_text_color;
-        ram[DIALOGUE_SCROLL_SPEED] = self.dialogue_scroll_speed;
-        ram[TEXT_INCREMENTAL_STATE] = self.text_incremental_state;
-        ram[VWF_LINE_SPEED_CUR] = self.vwf_line_speed_cur;
-        ram[VWF_LINE_SPEED] = self.vwf_line_speed;
-        write_le_u16(ram, TEXT_WAIT_COUNTDOWN, self.text_wait_countdown);
-        write_le_u16(ram, TEXT_MSGBOX_TOPLEFT, self.text_msgbox_topleft);
-        write_le_u16(ram, TEXT_MSGBOX_TOPLEFT_COPY, self.text_msgbox_topleft_copy);
-        write_le_u16(ram, TEXT_TILEMAP_CUR, self.text_tilemap_cur);
-        write_le_u16(ram, DIALOGUE_MSG_READ_POS, self.dialogue_msg_read_pos);
-        ram[MESSAGE_OR_SPRITE_STATE_CACHE] = self.message_or_sprite_state_cache;
+        ram.write_byte(GAME_OVER_LETTER_CURSOR, self.game_over_letter_cursor);
+        ram.write_byte(DIALOGUE_TEXT_COLOR, self.dialogue_text_color);
+        ram.write_byte(DIALOGUE_SCROLL_SPEED, self.dialogue_scroll_speed);
+        ram.write_byte(TEXT_INCREMENTAL_STATE, self.text_incremental_state);
+        ram.write_byte(VWF_LINE_SPEED_CUR, self.vwf_line_speed_cur);
+        ram.write_byte(VWF_LINE_SPEED, self.vwf_line_speed);
+        ram.write_word(TEXT_WAIT_COUNTDOWN, self.text_wait_countdown);
+        ram.write_word(TEXT_MSGBOX_TOPLEFT, self.text_msgbox_topleft);
+        ram.write_word(TEXT_MSGBOX_TOPLEFT_COPY, self.text_msgbox_topleft_copy);
+        ram.write_word(TEXT_TILEMAP_CUR, self.text_tilemap_cur);
+        ram.write_word(DIALOGUE_MSG_READ_POS, self.dialogue_msg_read_pos);
+        ram.write_byte(
+            MESSAGE_OR_SPRITE_STATE_CACHE,
+            self.message_or_sprite_state_cache,
+        );
     }
 
     pub(crate) fn module(&self) -> u8 {
@@ -796,8 +807,8 @@ impl SharedMessageTimerState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, SHARED_MESSAGE_TIMER, self.timer);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(SHARED_MESSAGE_TIMER, self.timer);
     }
 
     pub(crate) fn tick(&mut self) -> u16 {
@@ -832,9 +843,11 @@ impl MessagingRenderBufferState {
         Self { bytes }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[MESSAGING_RENDER_BUFFER..MESSAGING_RENDER_BUFFER + self.bytes.len()]
-            .copy_from_slice(&self.bytes);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_range(
+            MESSAGING_RENDER_BUFFER..MESSAGING_RENDER_BUFFER + self.bytes.len(),
+            &self.bytes,
+        );
     }
 
     pub(crate) fn word(&self, index: usize) -> u16 {
@@ -935,15 +948,19 @@ impl VwfRenderState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[VWF_ARR..VWF_ARR + self.glyph_advance_prefix_sums.len()]
-            .copy_from_slice(&self.glyph_advance_prefix_sums);
-        write_le_u16(ram, VWF_GLYPH_CURSOR, self.glyph_cursor);
-        write_le_u16(ram, VWF_FLAG_NEXT_LINE, self.next_line_requested);
-        write_le_u16(ram, VWF_CURLINE, self.current_line);
-        write_le_u16(ram, VWF_LINE_PTR, self.line_render_offset);
-        ram[VWF_TILE_BUFFER..VWF_TILE_BUFFER + self.tile_words.len()]
-            .copy_from_slice(&self.tile_words);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_range(
+            VWF_ARR..VWF_ARR + self.glyph_advance_prefix_sums.len(),
+            &self.glyph_advance_prefix_sums,
+        );
+        ram.write_word(VWF_GLYPH_CURSOR, self.glyph_cursor);
+        ram.write_word(VWF_FLAG_NEXT_LINE, self.next_line_requested);
+        ram.write_word(VWF_CURLINE, self.current_line);
+        ram.write_word(VWF_LINE_PTR, self.line_render_offset);
+        ram.write_range(
+            VWF_TILE_BUFFER..VWF_TILE_BUFFER + self.tile_words.len(),
+            &self.tile_words,
+        );
     }
 
     pub(crate) fn glyph_advance_prefix_sum(&self, index: usize) -> u8 {
@@ -1061,7 +1078,7 @@ impl MessagingState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         self.select_file_menu.write_to_ram(ram);
         self.dialogue_message_index.write_to_ram(ram);
         self.multiselect_choice.write_to_ram(ram);

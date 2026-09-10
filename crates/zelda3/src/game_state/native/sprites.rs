@@ -29,6 +29,7 @@ use crate::game_state::constants::{
     SPRITE_Y_RECOIL, SPRITE_Y_SUBPIXEL, SPRITE_Y_VELOCITY, SPRITE_Z, SPRITE_Z_SUBPIXEL,
     SPRITE_Z_VELOCITY, SPR_RANGED_BASED_TOGGLER,
 };
+use crate::game_state::native::ram_target::RamTarget;
 use crate::tile_definition::NativeTile;
 use crate::types::{read_le_u16, write_le_u16};
 
@@ -224,7 +225,7 @@ impl SpriteState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         self.system.write_to_ram(ram);
         self.workspace.write_to_ram(ram);
         self.sprite_slots.write_to_ram(ram);
@@ -446,9 +447,9 @@ impl SpriteSlotsState {
         state
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for offset in Self::field_offsets() {
-            ram[offset] = self.byte_at(offset);
+            ram.write_byte(offset, self.byte_at(offset));
         }
     }
 
@@ -1724,19 +1725,22 @@ impl SpriteSystemState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[SPRITE_LIMIT_INSTANCE] = self.limit_instance;
-        ram[BLIND_HEAD_ANIM_COUNTER] = self.blind_head_anim_counter;
-        ram[SPRITE_CHR_HALFSLOT_STATE] = self.chr_halfslot_state;
-        ram[SPRITE_ALERT_FLAG] = self.alert_flag;
-        ram[SPRITE_GRAPHICS_INDEX] = self.graphics_index;
-        ram[SPRITE_GRAPHICS_INDEX_SPEXIT] = self.saved_special_exit_graphics_index;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(SPRITE_LIMIT_INSTANCE, self.limit_instance);
+        ram.write_byte(BLIND_HEAD_ANIM_COUNTER, self.blind_head_anim_counter);
+        ram.write_byte(SPRITE_CHR_HALFSLOT_STATE, self.chr_halfslot_state);
+        ram.write_byte(SPRITE_ALERT_FLAG, self.alert_flag);
+        ram.write_byte(SPRITE_GRAPHICS_INDEX, self.graphics_index);
+        ram.write_byte(
+            SPRITE_GRAPHICS_INDEX_SPEXIT,
+            self.saved_special_exit_graphics_index,
+        );
         // SPRITE_GRAPHICS_INDEX_EXIT (0xc167) belongs to DungeonEntranceBackupState;
         // the overworld restore reads it from there.
-        ram[ALT_SPRITE_SPAWNED_FLAG] = self.alt_sprite_spawned_flag;
-        ram[CUR_OBJECT_INDEX] = self.cur_object_index;
-        ram[ALT_SPRITES_FLAG] = self.alt_sprites_flag;
-        ram[SPR_RANGED_BASED_TOGGLER] = self.ranged_based_toggler;
+        ram.write_byte(ALT_SPRITE_SPAWNED_FLAG, self.alt_sprite_spawned_flag);
+        ram.write_byte(CUR_OBJECT_INDEX, self.cur_object_index);
+        ram.write_byte(ALT_SPRITES_FLAG, self.alt_sprites_flag);
+        ram.write_byte(SPR_RANGED_BASED_TOGGLER, self.ranged_based_toggler);
     }
 
     /// Adopt the alt_sprite_spawned_flag byte (0x1de0) straight from RAM after the
@@ -1996,31 +2000,31 @@ impl SpriteWorkspaceState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[SPRITE_ROOM_ORIGIN_X_HI] = self.room_origin_x_high;
-        ram[SPRITE_ROOM_ORIGIN_Y_HI] = self.room_origin_y_high;
-        ram[SPRITE_PICKUP_SLOT_CACHE] = self.pickup_slot_cache;
-        ram[SPRITE_SHARED_WORK_A] = self.shared_scratch_a;
-        ram[SPRITE_TILETYPE] = self.tile.cartridge_attribute();
-        ram[SPRITE_RESET_WORK_A] = self.reset_scratch_a;
-        ram[SPRITE_RESET_WORK_B] = self.reset_scratch_b;
-        ram[SPRITE_GFX_SUBSET_0..SPRITE_GFX_SUBSET_0 + SPRITE_GRAPHICS_SUBSET_COUNT]
-            .copy_from_slice(&self.graphics_subsets);
-        write_le_u16(
-            ram,
-            SPRITE_DRAW_PRIORITY_OVERRIDE,
-            self.draw_priority_override,
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(SPRITE_ROOM_ORIGIN_X_HI, self.room_origin_x_high);
+        ram.write_byte(SPRITE_ROOM_ORIGIN_Y_HI, self.room_origin_y_high);
+        ram.write_byte(SPRITE_PICKUP_SLOT_CACHE, self.pickup_slot_cache);
+        ram.write_byte(SPRITE_SHARED_WORK_A, self.shared_scratch_a);
+        ram.write_byte(SPRITE_TILETYPE, self.tile.cartridge_attribute());
+        ram.write_byte(SPRITE_RESET_WORK_A, self.reset_scratch_a);
+        ram.write_byte(SPRITE_RESET_WORK_B, self.reset_scratch_b);
+        ram.write_range(
+            SPRITE_GFX_SUBSET_0..SPRITE_GFX_SUBSET_0 + SPRITE_GRAPHICS_SUBSET_COUNT,
+            &self.graphics_subsets,
         );
-        write_le_u16(ram, CUR_SPRITE_X, self.current_sprite_x);
-        write_le_u16(ram, CUR_SPRITE_Y, self.current_sprite_y);
-        ram[..SPRITE_ZERO_PAGE_WORK_COUNT].copy_from_slice(&self.low_scratch);
+        ram.write_word(SPRITE_DRAW_PRIORITY_OVERRIDE, self.draw_priority_override);
+        ram.write_word(CUR_SPRITE_X, self.current_sprite_x);
+        ram.write_word(CUR_SPRITE_Y, self.current_sprite_y);
+        ram.write_range(0..SPRITE_ZERO_PAGE_WORK_COUNT, &self.low_scratch);
         // Only project the dungeon per-room kill bitmask while indoors; in the
         // overworld this WRAM is the proximity-spawn presence table (see
         // load_from_ram), and projecting stale all-zero room data would wipe the
         // markers OverworldSpritePresenceState just filled.
-        if ram[PLAYER_IS_INDOORS] != 0 {
-            ram[SPRITE_WHERE_IN_ROOM..SPRITE_WHERE_IN_ROOM + self.where_in_room.len()]
-                .copy_from_slice(&self.where_in_room);
+        if ram.read_byte(PLAYER_IS_INDOORS) != 0 {
+            ram.write_range(
+                SPRITE_WHERE_IN_ROOM..SPRITE_WHERE_IN_ROOM + self.where_in_room.len(),
+                &self.where_in_room,
+            );
         }
     }
 
@@ -2356,15 +2360,15 @@ impl FailedSpinSparkleSpawnState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[ANCILLA_ITEM_TO_LINK - 1] = self.item_to_link;
-        ram[ANCILLA_STEP - 1] = self.step;
-        ram[ANCILLA_TIMER - 1] = self.timer;
-        ram[ANCILLA_AUX_TIMER - 1] = self.aux_timer;
-        ram[ANCILLA_X_LO - 1] = self.x as u8;
-        ram[ANCILLA_X_HI - 1] = (self.x >> 8) as u8;
-        ram[ANCILLA_Y_LO - 1] = self.y as u8;
-        ram[ANCILLA_Y_HI - 1] = (self.y >> 8) as u8;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(ANCILLA_ITEM_TO_LINK - 1, self.item_to_link);
+        ram.write_byte(ANCILLA_STEP - 1, self.step);
+        ram.write_byte(ANCILLA_TIMER - 1, self.timer);
+        ram.write_byte(ANCILLA_AUX_TIMER - 1, self.aux_timer);
+        ram.write_byte(ANCILLA_X_LO - 1, self.x as u8);
+        ram.write_byte(ANCILLA_X_HI - 1, (self.x >> 8) as u8);
+        ram.write_byte(ANCILLA_Y_LO - 1, self.y as u8);
+        ram.write_byte(ANCILLA_Y_HI - 1, (self.y >> 8) as u8);
     }
 
     pub(crate) fn write_failed_spin_sparkle(&mut self, step: u8, x: u16, y: u16) {
@@ -2443,20 +2447,24 @@ impl OverworldSpritePresenceState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         // sprite_where_in_overworld (0x1df80) shares WRAM with the dungeon
         // sprite_where_in_room bitmask (SpriteWorkspaceState.where_in_room). It is an
         // OVERWORLD-only table, so only project it outdoors; indoors where_in_room owns
         // the region (projecting these markers there would clobber the dungeon kill
         // bitmask).
-        if ram.get(PLAYER_IS_INDOORS).copied().unwrap_or(0) != 0 {
+        if ram.get_byte(PLAYER_IS_INDOORS).unwrap_or(0) != 0 {
             return;
         }
-        ram[OVERWORLD_SPRITE_PRESENCE..OVERWORLD_SPRITE_PRESENCE + OVERWORLD_SPRITE_PRESENCE_COUNT]
-            .fill(0);
+        ram.fill_bytes(
+            OVERWORLD_SPRITE_PRESENCE..OVERWORLD_SPRITE_PRESENCE + OVERWORLD_SPRITE_PRESENCE_COUNT,
+            0,
+        );
         let len = self.markers.len().min(OVERWORLD_SPRITE_PRESENCE_COUNT);
-        ram[OVERWORLD_SPRITE_PRESENCE..OVERWORLD_SPRITE_PRESENCE + len]
-            .copy_from_slice(&self.markers[..len]);
+        ram.write_range(
+            OVERWORLD_SPRITE_PRESENCE..OVERWORLD_SPRITE_PRESENCE + len,
+            &self.markers[..len],
+        );
     }
 
     pub(crate) fn marker(&self, index: usize) -> u8 {
@@ -2496,12 +2504,16 @@ impl OverworldSpriteLoadedState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[OVERWORLD_SPRITE_WAS_LOADED..OVERWORLD_SPRITE_WAS_LOADED + OVERWORLD_SPRITE_FLAG_COUNT]
-            .fill(0);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.fill_bytes(
+            OVERWORLD_SPRITE_WAS_LOADED..OVERWORLD_SPRITE_WAS_LOADED + OVERWORLD_SPRITE_FLAG_COUNT,
+            0,
+        );
         let len = self.flags.len().min(OVERWORLD_SPRITE_FLAG_COUNT);
-        ram[OVERWORLD_SPRITE_WAS_LOADED..OVERWORLD_SPRITE_WAS_LOADED + len]
-            .copy_from_slice(&self.flags[..len]);
+        ram.write_range(
+            OVERWORLD_SPRITE_WAS_LOADED..OVERWORLD_SPRITE_WAS_LOADED + len,
+            &self.flags[..len],
+        );
     }
 
     pub(crate) fn is_loaded(&self, block: u16, loaded_mask: u8) -> bool {
@@ -2615,16 +2627,16 @@ impl EtherOrbitState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[ETHER_ANGLE..ETHER_ANGLE + ETHER_ANGLE_COUNT].copy_from_slice(&self.angles);
-        ram[ETHER_RADIUS] = self.radius;
-        write_le_u16(ram, ETHER_BEAM_Y, self.beam_y);
-        write_le_u16(ram, ETHER_BEAM_TOP_BUCKET, self.beam_adjusted_y);
-        write_le_u16(ram, ETHER_ORBIT_X, self.orbit_x);
-        write_le_u16(ram, ETHER_ORBIT_Y, self.orbit_y);
-        ram[ETHER_SPIN_COUNTDOWN] = self.spin_countdown;
-        write_le_u16(ram, ETHER_ORB_Y, self.orb_y);
-        write_le_u16(ram, ETHER_ORB_X, self.orb_x);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_range(ETHER_ANGLE..ETHER_ANGLE + ETHER_ANGLE_COUNT, &self.angles);
+        ram.write_byte(ETHER_RADIUS, self.radius);
+        ram.write_word(ETHER_BEAM_Y, self.beam_y);
+        ram.write_word(ETHER_BEAM_TOP_BUCKET, self.beam_adjusted_y);
+        ram.write_word(ETHER_ORBIT_X, self.orbit_x);
+        ram.write_word(ETHER_ORBIT_Y, self.orbit_y);
+        ram.write_byte(ETHER_SPIN_COUNTDOWN, self.spin_countdown);
+        ram.write_word(ETHER_ORB_Y, self.orb_y);
+        ram.write_word(ETHER_ORB_X, self.orb_x);
     }
 
     pub(crate) fn angle(&self, slot: usize) -> u8 {
@@ -2801,15 +2813,13 @@ impl ChainChompHistoryState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for position in 0..CHAIN_CHOMP_HISTORY_LEN {
-            write_le_u16(
-                ram,
+            ram.write_word(
                 CHAIN_CHOMP_HISTORY_X + position * 2,
                 self.x_positions[position],
             );
-            write_le_u16(
-                ram,
+            ram.write_word(
                 CHAIN_CHOMP_HISTORY_Y + position * 2,
                 self.y_positions[position],
             );
@@ -2888,12 +2898,12 @@ impl EnemyDamageSubclassTableState {
         Self { subclasses }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for (index, subclass) in self.subclasses.iter().copied().enumerate() {
             if index >= ENEMY_DAMAGE_SUBCLASS_COUNT {
                 break;
             }
-            ram[ENEMY_DAMAGE_DATA + index] = subclass;
+            ram.write_byte(ENEMY_DAMAGE_DATA + index, subclass);
         }
     }
 
@@ -2978,12 +2988,12 @@ impl SpriteDrawHitboxWorkState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         debug_assert_eq!(DRAW_WORK_FLAGS_HI, HITBOX_WORK_X_OFFSET);
-        ram[DRAW_WORK_POSITION_X] = self.draw_position_x;
-        ram[DRAW_WORK_POSITION_Y] = self.draw_position_y;
-        ram[HITBOX_WORK_Y_OFFSET] = self.hitbox_y_offset;
-        ram[DRAW_WORK_FLAGS_HI] = self.draw_flags_or_hitbox_x_offset;
+        ram.write_byte(DRAW_WORK_POSITION_X, self.draw_position_x);
+        ram.write_byte(DRAW_WORK_POSITION_Y, self.draw_position_y);
+        ram.write_byte(HITBOX_WORK_Y_OFFSET, self.hitbox_y_offset);
+        ram.write_byte(DRAW_WORK_FLAGS_HI, self.draw_flags_or_hitbox_x_offset);
     }
 
     pub(crate) fn x_low(&self) -> u8 {
@@ -3120,9 +3130,9 @@ impl DualLayerTileCacheState {
         Self { tiles }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for (slot, tile) in self.tiles.iter().copied().enumerate() {
-            ram[DUAL_LAYER_TILE_CACHE + slot] = tile.cartridge_attribute();
+            ram.write_byte(DUAL_LAYER_TILE_CACHE + slot, tile.cartridge_attribute());
         }
     }
 
@@ -3183,9 +3193,9 @@ impl PrizeDropCycleState {
         Self { next_indices }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for (slot, index) in self.next_indices.iter().copied().enumerate() {
-            ram[PRIZE_DROP_CYCLE + slot] = index;
+            ram.write_byte(PRIZE_DROP_CYCLE + slot, index);
         }
     }
 
@@ -3244,11 +3254,11 @@ impl MazeGameTimerState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, MAZE_GAME_TIMER_LO, self.elapsed_low);
-        write_le_u16(ram, MAZE_GAME_TIMER_HI, self.elapsed_high);
-        write_le_u16(ram, MAZE_GAME_TIMER_SNAPSHOT_LO, self.snapshot_low);
-        write_le_u16(ram, MAZE_GAME_TIMER_SNAPSHOT_HI, self.snapshot_high);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(MAZE_GAME_TIMER_LO, self.elapsed_low);
+        ram.write_word(MAZE_GAME_TIMER_HI, self.elapsed_high);
+        ram.write_word(MAZE_GAME_TIMER_SNAPSHOT_LO, self.snapshot_low);
+        ram.write_word(MAZE_GAME_TIMER_SNAPSHOT_HI, self.snapshot_high);
     }
 
     pub(crate) fn elapsed_low(&self) -> u16 {

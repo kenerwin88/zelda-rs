@@ -1,5 +1,6 @@
 use super::ram_byte;
 use crate::game_state::constants::*;
+use crate::game_state::native::ram_target::RamTarget;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct FrameState {
@@ -23,13 +24,13 @@ impl FrameState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[MAIN_MODULE] = self.main_module;
-        ram[SUBMODULE] = self.submodule;
-        ram[SUBSUBMODULE] = self.subsubmodule;
-        ram[FRAME_COUNTER] = self.frame_counter;
-        ram[SAVED_MODULE_FOR_MENU] = self.saved_module_for_menu;
-        ram[MODAL_PAUSE_FLAG] = self.modal_pause_flag;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(MAIN_MODULE, self.main_module);
+        ram.write_byte(SUBMODULE, self.submodule);
+        ram.write_byte(SUBSUBMODULE, self.subsubmodule);
+        ram.write_byte(FRAME_COUNTER, self.frame_counter);
+        ram.write_byte(SAVED_MODULE_FOR_MENU, self.saved_module_for_menu);
+        ram.write_byte(MODAL_PAUSE_FLAG, self.modal_pause_flag);
     }
 
     pub(crate) fn main_module_word(&self) -> u16 {

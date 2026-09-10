@@ -1,4 +1,5 @@
 use crate::game_state::constants::*;
+use crate::game_state::native::ram_target::RamTarget;
 use crate::types::{read_le_u16, write_le_u16};
 
 const POLY_PROJECTED_VERTEX_COUNT: usize = 40;
@@ -22,7 +23,7 @@ impl PolyState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         self.runtime.write_to_ram(ram);
         self.projected_vertices.write_to_ram(ram);
         self.face_coords.write_to_ram(ram);
@@ -118,46 +119,46 @@ impl PolyRuntimeState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[POLY_CONFIG1] = self.config1;
-        ram[POLY_CONFIG_COLOR_MODE] = self.color_mode;
-        ram[POLY_WHICH_MODEL] = self.model;
-        ram[POLY_A] = self.angle_a;
-        ram[POLY_B] = self.angle_b;
-        ram[POLY_BASE_X] = self.base_x;
-        ram[POLY_BASE_Y] = self.base_y;
-        write_le_u16(ram, POLY_SHAPE_DEPTH_BIAS, self.shape_depth_bias);
-        ram[POLY_CONFIG_NUM_VERTEX] = self.num_vertices;
-        ram[POLY_CONFIG_NUM_POLYS] = self.num_polys;
-        ram[POLY_FROMLUT_X] = self.fromlut_x;
-        ram[POLY_FROMLUT_Y] = self.fromlut_y;
-        ram[POLY_FROMLUT_Z] = self.fromlut_z;
-        write_le_u16(ram, POLY_FROMLUT_PTR2, self.vertex_table_pointer);
-        write_le_u16(ram, POLY_FROMLUT_PTR4, self.face_table_pointer);
-        write_le_u16(ram, POLY_F0, self.f0);
-        write_le_u16(ram, POLY_F1, self.f1);
-        write_le_u16(ram, POLY_F2, self.f2);
-        write_le_u16(ram, POLY_SIN_A, self.rotation_sin_a as u16);
-        write_le_u16(ram, POLY_COS_A, self.rotation_cos_a as u16);
-        write_le_u16(ram, POLY_SIN_B, self.rotation_sin_b as u16);
-        write_le_u16(ram, POLY_COS_B, self.rotation_cos_b as u16);
-        write_le_u16(ram, POLY_E0, self.rotation_e0 as u16);
-        write_le_u16(ram, POLY_E1, self.rotation_e1 as u16);
-        write_le_u16(ram, POLY_E2, self.rotation_e2 as u16);
-        write_le_u16(ram, POLY_E3, self.rotation_e3 as u16);
-        ram[POLY_NUM_VERTEX_IN_POLY] = self.num_vertex_in_poly;
-        ram[POLY_RASTER_COLOR_CONFIG] = self.raster_color_config;
-        write_le_u16(ram, POLY_TMP0, self.tmp0);
-        write_le_u16(ram, POLY_TMP1, self.tmp1);
-        ram[POLY_TMP2] = self.tmp2;
-        write_le_u16(ram, POLY_RASTER_COLOR0, self.raster_color0);
-        write_le_u16(ram, POLY_RASTER_COLOR1, self.raster_color1);
-        write_le_u16(ram, POLY_RASTER_DST_PTR, self.raster_dst_ptr);
-        write_le_u16(ram, POLY_X0_FRAC, self.x0_fraction);
-        write_le_u16(ram, POLY_X0_STEP, self.x0_step);
-        write_le_u16(ram, POLY_X1_FRAC, self.x1_fraction);
-        write_le_u16(ram, POLY_X1_STEP, self.x1_step);
-        write_le_u16(ram, POLY_RASTER_NUMFULL, self.raster_full_word_count);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(POLY_CONFIG1, self.config1);
+        ram.write_byte(POLY_CONFIG_COLOR_MODE, self.color_mode);
+        ram.write_byte(POLY_WHICH_MODEL, self.model);
+        ram.write_byte(POLY_A, self.angle_a);
+        ram.write_byte(POLY_B, self.angle_b);
+        ram.write_byte(POLY_BASE_X, self.base_x);
+        ram.write_byte(POLY_BASE_Y, self.base_y);
+        ram.write_word(POLY_SHAPE_DEPTH_BIAS, self.shape_depth_bias);
+        ram.write_byte(POLY_CONFIG_NUM_VERTEX, self.num_vertices);
+        ram.write_byte(POLY_CONFIG_NUM_POLYS, self.num_polys);
+        ram.write_byte(POLY_FROMLUT_X, self.fromlut_x);
+        ram.write_byte(POLY_FROMLUT_Y, self.fromlut_y);
+        ram.write_byte(POLY_FROMLUT_Z, self.fromlut_z);
+        ram.write_word(POLY_FROMLUT_PTR2, self.vertex_table_pointer);
+        ram.write_word(POLY_FROMLUT_PTR4, self.face_table_pointer);
+        ram.write_word(POLY_F0, self.f0);
+        ram.write_word(POLY_F1, self.f1);
+        ram.write_word(POLY_F2, self.f2);
+        ram.write_word(POLY_SIN_A, self.rotation_sin_a as u16);
+        ram.write_word(POLY_COS_A, self.rotation_cos_a as u16);
+        ram.write_word(POLY_SIN_B, self.rotation_sin_b as u16);
+        ram.write_word(POLY_COS_B, self.rotation_cos_b as u16);
+        ram.write_word(POLY_E0, self.rotation_e0 as u16);
+        ram.write_word(POLY_E1, self.rotation_e1 as u16);
+        ram.write_word(POLY_E2, self.rotation_e2 as u16);
+        ram.write_word(POLY_E3, self.rotation_e3 as u16);
+        ram.write_byte(POLY_NUM_VERTEX_IN_POLY, self.num_vertex_in_poly);
+        ram.write_byte(POLY_RASTER_COLOR_CONFIG, self.raster_color_config);
+        ram.write_word(POLY_TMP0, self.tmp0);
+        ram.write_word(POLY_TMP1, self.tmp1);
+        ram.write_byte(POLY_TMP2, self.tmp2);
+        ram.write_word(POLY_RASTER_COLOR0, self.raster_color0);
+        ram.write_word(POLY_RASTER_COLOR1, self.raster_color1);
+        ram.write_word(POLY_RASTER_DST_PTR, self.raster_dst_ptr);
+        ram.write_word(POLY_X0_FRAC, self.x0_fraction);
+        ram.write_word(POLY_X0_STEP, self.x0_step);
+        ram.write_word(POLY_X1_FRAC, self.x1_fraction);
+        ram.write_word(POLY_X1_STEP, self.x1_step);
+        ram.write_word(POLY_RASTER_NUMFULL, self.raster_full_word_count);
     }
 
     pub(crate) fn config1(&self) -> u8 {
@@ -604,10 +605,16 @@ impl PolyProjectedVerticesState {
         state
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for vertex in 0..POLY_PROJECTED_VERTEX_COUNT {
-            ram[POLY_PROJECTED_X + vertex] = self.x.get(vertex).copied().unwrap_or(0);
-            ram[POLY_PROJECTED_Y + vertex] = self.y.get(vertex).copied().unwrap_or(0);
+            ram.write_byte(
+                POLY_PROJECTED_X + vertex,
+                self.x.get(vertex).copied().unwrap_or(0),
+            );
+            ram.write_byte(
+                POLY_PROJECTED_Y + vertex,
+                self.y.get(vertex).copied().unwrap_or(0),
+            );
         }
     }
 
@@ -670,9 +677,11 @@ impl PolyFaceCoordsState {
         Self { coords }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[POLY_FACE_COORDS..POLY_FACE_COORDS + POLY_FACE_COORD_COUNT]
-            .copy_from_slice(&self.coords);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_range(
+            POLY_FACE_COORDS..POLY_FACE_COORDS + POLY_FACE_COORD_COUNT,
+            &self.coords,
+        );
     }
 
     pub(crate) fn coord(&self, offset: usize) -> u8 {
@@ -748,18 +757,18 @@ impl PolyRasterEdgeState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[POLY_TOTAL_NUM_STEPS] = self.total_num_steps;
-        ram[POLY_X0_CUR] = self.x0_current;
-        ram[POLY_Y0_CUR] = self.y0_current;
-        ram[POLY_X0_TARGET] = self.x0_target;
-        ram[POLY_Y0_TRIG] = self.y0_trigger;
-        ram[POLY_X1_CUR] = self.x1_current;
-        ram[POLY_Y1_CUR] = self.y1_current;
-        ram[POLY_X1_TARGET] = self.x1_target;
-        ram[POLY_Y1_TRIG] = self.y1_trigger;
-        ram[POLY_CUR_VERTEX_IDX0] = self.current_vertex_index0;
-        ram[POLY_CUR_VERTEX_IDX1] = self.current_vertex_index1;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(POLY_TOTAL_NUM_STEPS, self.total_num_steps);
+        ram.write_byte(POLY_X0_CUR, self.x0_current);
+        ram.write_byte(POLY_Y0_CUR, self.y0_current);
+        ram.write_byte(POLY_X0_TARGET, self.x0_target);
+        ram.write_byte(POLY_Y0_TRIG, self.y0_trigger);
+        ram.write_byte(POLY_X1_CUR, self.x1_current);
+        ram.write_byte(POLY_Y1_CUR, self.y1_current);
+        ram.write_byte(POLY_X1_TARGET, self.x1_target);
+        ram.write_byte(POLY_Y1_TRIG, self.y1_trigger);
+        ram.write_byte(POLY_CUR_VERTEX_IDX0, self.current_vertex_index0);
+        ram.write_byte(POLY_CUR_VERTEX_IDX1, self.current_vertex_index1);
     }
 
     pub(crate) fn x0_cur(&self) -> u8 {

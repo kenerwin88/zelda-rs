@@ -1,6 +1,7 @@
 use super::ram_byte;
 use crate::game_state::constants::*;
-use crate::types::{read_le_u16, write_le_u16};
+use crate::game_state::native::ram_target::RamTarget;
+use crate::types::read_le_u16;
 
 // The address table has an explicit source-owned 0x100-byte clear in
 // Dungeon_LoadAndDrawRoom, so it owns at least 0x80 words. The value table is
@@ -24,8 +25,8 @@ impl ScratchCounterState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[TEMP_COUNTER] = self.value;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(TEMP_COUNTER, self.value);
     }
 
     pub(crate) fn value(&self) -> u8 {
@@ -123,15 +124,15 @@ impl MemorizedTileState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, NUM_MEMORIZED_TILES, self.count);
-        let outdoors = ram.get(PLAYER_IS_INDOORS).copied().unwrap_or(0) == 0;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(NUM_MEMORIZED_TILES, self.count);
+        let outdoors = ram.get_byte(PLAYER_IS_INDOORS).unwrap_or(0) == 0;
         for slot in 0..self.addresses.len() {
-            write_le_u16(ram, MEMORIZED_TILE_ADDR + slot * 2, self.addresses[slot]);
+            ram.write_word(MEMORIZED_TILE_ADDR + slot * 2, self.addresses[slot]);
         }
         if outdoors {
             for slot in 0..self.values.len() {
-                write_le_u16(ram, MEMORIZED_TILE_VALUE + slot * 2, self.values[slot]);
+                ram.write_word(MEMORIZED_TILE_VALUE + slot * 2, self.values[slot]);
             }
         }
     }
@@ -252,10 +253,13 @@ impl DungeonSecretState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[DUNGEON_SECRET_PENDING_KIND] = self.pending_kind;
-        ram[DUNGEON_SECRET_PENDING_KIND + 1] = self.pending_kind_high;
-        ram[OVERWORLD_SECRET_SUBST_CTR] = self.overworld_substitution_counter;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(DUNGEON_SECRET_PENDING_KIND, self.pending_kind);
+        ram.write_byte(DUNGEON_SECRET_PENDING_KIND + 1, self.pending_kind_high);
+        ram.write_byte(
+            OVERWORLD_SECRET_SUBST_CTR,
+            self.overworld_substitution_counter,
+        );
     }
 
     pub(crate) fn pending_kind(&self) -> u8 {
@@ -352,13 +356,13 @@ impl SaveLoadTransferState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         // 0x0000 is the save-transfer source offset in file-select code, but
         // module 7 reuses it for sprite/OAM scratch. The save-transfer model is
         // inactive there; projecting its stale offset would overwrite the live
         // dungeon scratch value after the sprite owner has published it.
-        if ram_byte(ram, MAIN_MODULE) != 7 {
-            write_le_u16(ram, SAVE_LOAD_SOURCE_OFFSET, self.source_offset);
+        if ram.read_byte(MAIN_MODULE) != 7 {
+            ram.write_word(SAVE_LOAD_SOURCE_OFFSET, self.source_offset);
         }
     }
 
@@ -461,26 +465,25 @@ impl DungeonMapDisplayState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, DUNGEON_MAP_SCROLL_DRAW_OFFSET, self.scroll_draw_offset);
-        write_le_u16(ram, DUNGEON_MAP_SCROLL_INPUT, self.scroll_input);
-        write_le_u16(
-            ram,
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(DUNGEON_MAP_SCROLL_DRAW_OFFSET, self.scroll_draw_offset);
+        ram.write_word(DUNGEON_MAP_SCROLL_INPUT, self.scroll_input);
+        ram.write_word(
             DUNGEON_MAP_LOCATION_MARKER_BASE_Y,
             self.location_marker_base_y,
         );
-        ram[DUNGMAP_INIT_STATE] = self.init_state;
-        write_le_u16(ram, DUNGMAP_CUR_FLOOR, self.current_floor);
-        ram[DUNGMAP_FLOOR_SCROLL_STEP] = self.floor_scroll_step;
-        write_le_u16(ram, DUNGMAP_IDX, self.idx);
-        write_le_u16(ram, DUNGMAP_SCROLL_TARGET_Y, self.scroll_target_y);
-        write_le_u16(ram, DUNGMAP_PLAYER_MARKER_X, self.player_marker_x);
-        write_le_u16(ram, DUNGMAP_PLAYER_MARKER_Y, self.player_marker_y);
+        ram.write_byte(DUNGMAP_INIT_STATE, self.init_state);
+        ram.write_word(DUNGMAP_CUR_FLOOR, self.current_floor);
+        ram.write_byte(DUNGMAP_FLOOR_SCROLL_STEP, self.floor_scroll_step);
+        ram.write_word(DUNGMAP_IDX, self.idx);
+        ram.write_word(DUNGMAP_SCROLL_TARGET_Y, self.scroll_target_y);
+        ram.write_word(DUNGMAP_PLAYER_MARKER_X, self.player_marker_x);
+        ram.write_word(DUNGMAP_PLAYER_MARKER_Y, self.player_marker_y);
     }
 
-    pub(crate) fn write_marker_offsets_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, DUNGEON_MAP_MARKER_X_OFFSET, self.marker_x_offset);
-        write_le_u16(ram, DUNGEON_MAP_MARKER_Y_OFFSET, self.marker_y_offset);
+    pub(crate) fn write_marker_offsets_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(DUNGEON_MAP_MARKER_X_OFFSET, self.marker_x_offset);
+        ram.write_word(DUNGEON_MAP_MARKER_Y_OFFSET, self.marker_y_offset);
     }
 
     pub(crate) fn scroll_draw_offset(&self) -> u16 {
@@ -753,12 +756,12 @@ impl MinigameState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[IS_ARCHER_OR_SHOVEL_GAME] = self.archery_or_digging_game_mode;
-        ram[MINIGAME_CREDITS] = self.credits;
-        ram[FLAG_FOR_BOOMERANG_IN_PLACE] = self.boomerang_in_place_flag;
-        write_le_u16(ram, BOOMERANG_TEMP_X, self.boomerang_temp_x);
-        write_le_u16(ram, BOOMERANG_TEMP_Y, self.boomerang_temp_y);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(IS_ARCHER_OR_SHOVEL_GAME, self.archery_or_digging_game_mode);
+        ram.write_byte(MINIGAME_CREDITS, self.credits);
+        ram.write_byte(FLAG_FOR_BOOMERANG_IN_PLACE, self.boomerang_in_place_flag);
+        ram.write_word(BOOMERANG_TEMP_X, self.boomerang_temp_x);
+        ram.write_word(BOOMERANG_TEMP_Y, self.boomerang_temp_y);
     }
 
     pub(crate) fn is_archer_or_shovel_game(&self) -> u8 {
@@ -871,14 +874,17 @@ impl IntroSwordState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, INTRO_SWORD_YPOS, self.y_position);
-        ram[INTRO_SWORD_SPARKLE_TIMER] = self.sparkle_timer;
-        ram[INTRO_SWORD_SPARKLE_STEP] = self.sparkle_step;
-        ram[INTRO_SWORD_ANIM_STEP] = self.animation_step;
-        ram[INTRO_SWORD_SPARKLE_Y_OFFSET] = self.sparkle_y_offset;
-        ram[INTRO_SWORD_FLASH_RGB_CHANNEL] = self.flash_rgb_channel;
-        ram[INTRO_SWORD_FLASH_RGB_CHANNEL + 1] = self.flash_rgb_channel_high;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(INTRO_SWORD_YPOS, self.y_position);
+        ram.write_byte(INTRO_SWORD_SPARKLE_TIMER, self.sparkle_timer);
+        ram.write_byte(INTRO_SWORD_SPARKLE_STEP, self.sparkle_step);
+        ram.write_byte(INTRO_SWORD_ANIM_STEP, self.animation_step);
+        ram.write_byte(INTRO_SWORD_SPARKLE_Y_OFFSET, self.sparkle_y_offset);
+        ram.write_byte(INTRO_SWORD_FLASH_RGB_CHANNEL, self.flash_rgb_channel);
+        ram.write_byte(
+            INTRO_SWORD_FLASH_RGB_CHANNEL + 1,
+            self.flash_rgb_channel_high,
+        );
     }
 
     pub(crate) fn ypos(&self) -> u16 {
@@ -1014,10 +1020,10 @@ impl ArcheryGameState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[ARCHERY_GAME_HIT_COUNTER] = self.hit_counter;
-        ram[ARCHERY_GAME_ARROWS_LEFT] = self.arrows_left;
-        ram[ARCHERY_GAME_OUT_OF_ARROWS] = self.out_of_arrows;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(ARCHERY_GAME_HIT_COUNTER, self.hit_counter);
+        ram.write_byte(ARCHERY_GAME_ARROWS_LEFT, self.arrows_left);
+        ram.write_byte(ARCHERY_GAME_OUT_OF_ARROWS, self.out_of_arrows);
     }
 
     pub(crate) fn hit_counter(&self) -> u8 {
@@ -1114,14 +1120,14 @@ impl SpriteBattleState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[NUM_SPRITES_KILLED] = self.sprites_killed;
-        ram[TIMES_HURT_BY_SPRITES] = self.times_hurt_by_sprites;
-        ram[ITEM_DROP_LUCK] = self.item_drop_luck;
-        ram[LUCK_KILL_COUNTER] = self.luck_kill_counter;
-        ram[ITEM_DROP_COUNTER] = self.item_drop_counter;
-        ram[DAMAGE_TYPE_DETERMINER] = self.damage_type_determiner;
-        ram[SET_WHEN_DAMAGING_ENEMIES] = self.damaging_enemies_timer;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(NUM_SPRITES_KILLED, self.sprites_killed);
+        ram.write_byte(TIMES_HURT_BY_SPRITES, self.times_hurt_by_sprites);
+        ram.write_byte(ITEM_DROP_LUCK, self.item_drop_luck);
+        ram.write_byte(LUCK_KILL_COUNTER, self.luck_kill_counter);
+        ram.write_byte(ITEM_DROP_COUNTER, self.item_drop_counter);
+        ram.write_byte(DAMAGE_TYPE_DETERMINER, self.damage_type_determiner);
+        ram.write_byte(SET_WHEN_DAMAGING_ENEMIES, self.damaging_enemies_timer);
     }
 
     pub(crate) fn sprites_killed(&self) -> u8 {
@@ -1278,9 +1284,9 @@ impl EnhancedFeaturesState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         let bytes = self.bits.to_le_bytes();
-        ram[ENHANCED_FEATURE_FLAGS..ENHANCED_FEATURE_FLAGS + 4].copy_from_slice(&bytes);
+        ram.write_range(ENHANCED_FEATURE_FLAGS..ENHANCED_FEATURE_FLAGS + 4, &bytes);
     }
 
     pub(crate) fn bits(&self) -> u32 {

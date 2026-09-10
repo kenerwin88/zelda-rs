@@ -30,14 +30,14 @@ use crate::game_state::constants::{
     DUNG_TRANSITION_LANDING_CLASS, DUNG_WANT_LIGHTS_OUT, DUNG_WANT_LIGHTS_OUT_COPY,
     DUNG_WHICH_KEY_X2_DUNGEON, DUNG_WIDTH_ROAD_ADDRESS, FLAG_SKIP_CALL_TAG_ROUTINES,
     FLOOR_1_FILLER_TILES, FLOOR_2_FILLER_TILES, GANON_TORCH_COUNT, HDR_DUNGEON_DARK_WITH_LANTERN,
-    INVISIBLE_DOOR_DIR_AND_INDEX_X2, MAIN_TILE_THEME_INDEX,
-    MOVABLE_BLOCK_DATAS, MOVING_FLOOR_BG_CHECK_FLAGS, MOVING_WALL_DOT_POINTER,
-    MOVING_WALL_REPLACEMENT_BUFFER, MOVING_WALL_TORCH_BLINK_PHASE,
-    MOVING_WALL_WRITE_POINT, ORANGE_BLUE_BARRIER_STATE, OVERWORLD_EXIT_TILE_THEME_INDEX,
-    OVERWORLD_FIXED_COLOR_PLUSMINUS, OVERWORLD_MAP_STATE, OVERWORLD_TILE_THEME_INDEX,
-    REPLACEMENT_TILEMAP_LL, REPLACEMENT_TILEMAP_LR, REPLACEMENT_TILEMAP_UL, REPLACEMENT_TILEMAP_UR,
-    RESERVED_GFX_CONFIG_WORD, RESET_XY_CHECK_FLAGS, SOMARIA_BLOCK_BG_CHECK_FLAG,
-    SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, TURN_ON_OFF_WATER_CTR, WATER_SIDE_STEP_SWITCH,
+    INVISIBLE_DOOR_DIR_AND_INDEX_X2, MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS,
+    MOVING_FLOOR_BG_CHECK_FLAGS, MOVING_WALL_DOT_POINTER, MOVING_WALL_REPLACEMENT_BUFFER,
+    MOVING_WALL_TORCH_BLINK_PHASE, MOVING_WALL_WRITE_POINT, ORANGE_BLUE_BARRIER_STATE,
+    OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_FIXED_COLOR_PLUSMINUS, OVERWORLD_MAP_STATE,
+    OVERWORLD_TILE_THEME_INDEX, REPLACEMENT_TILEMAP_LL, REPLACEMENT_TILEMAP_LR,
+    REPLACEMENT_TILEMAP_UL, REPLACEMENT_TILEMAP_UR, RESERVED_GFX_CONFIG_WORD, RESET_XY_CHECK_FLAGS,
+    SOMARIA_BLOCK_BG_CHECK_FLAG, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, TURN_ON_OFF_WATER_CTR,
+    WATER_SIDE_STEP_SWITCH,
 };
 use crate::game_state::constants::{
     COUNTDOWN_TIMER_FOR_STAIRCASES, CUR_STAIRCASE_PLANE, KIND_OF_IN_ROOM_STAIRCASE,
@@ -47,6 +47,7 @@ use crate::game_state::constants::{
 use crate::game_state::constants::{
     DUNGEON_ROOM_HISTORY, DUNGEON_ROOM_INDEX2, DUNGEON_ROOM_INDEX_PREV,
 };
+use crate::game_state::native::ram_target::RamTarget;
 use crate::tile_definition::{DungeonRole, NativeTile};
 use crate::types::{read_le_u16, write_le_u16};
 
@@ -245,7 +246,7 @@ impl DungeonState {
         out
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         self.header.write_to_ram(ram);
         // NOTE: scratch_word (R16/R18, 0xc8-0xcb) is intentionally NOT bulk-projected
         // here. Those bytes are written directly by code that shares them (the gfx
@@ -291,7 +292,7 @@ impl DungeonRoomTilemapState {
         state
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         self.write_tilemaps_to_ram(ram);
         self.write_line_pointers_to_ram(ram);
     }
@@ -301,12 +302,12 @@ impl DungeonRoomTilemapState {
     /// work registers R16/R18 (0xc8-0xcb) and the intro-sword bytes by SNES byte
     /// reuse, so it must NOT be re-stamped on every tile write — that would
     /// clobber the live scratch a lifted-tile/probe just set.
-    pub(crate) fn write_tilemaps_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_tilemaps_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for (index, tile) in self.bg1_tiles.iter().enumerate() {
-            write_le_u16(ram, DUNG_BG1 + index * 2, *tile);
+            ram.write_word(DUNG_BG1 + index * 2, *tile);
         }
         for (index, tile) in self.bg2_tiles.iter().enumerate() {
-            write_le_u16(ram, DUNG_BG2 + index * 2, *tile);
+            ram.write_word(DUNG_BG2 + index * 2, *tile);
         }
     }
 
@@ -314,9 +315,9 @@ impl DungeonRoomTilemapState {
     /// when room draw actually computes line pointers, so only the dedicated
     /// line-pointer setters call this — matching the C site that overwrites the
     /// overlapping work registers at exactly that moment.
-    pub(crate) fn write_line_pointers_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_line_pointers_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for (index, byte) in self.line_pointer_bytes.iter().enumerate() {
-            ram[DUNG_LINE_PTRS_ROW0 + index] = *byte;
+            ram.write_byte(DUNG_LINE_PTRS_ROW0 + index, *byte);
         }
     }
 
@@ -522,24 +523,32 @@ impl DungeonEnvironmentState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         // TURN_ON_OFF_WATER_CTR (0x424) is SNES byte-reused as DUNG_FLOOR_Y_OFFS (the moving
         // floor's 16-bit y offset, owned by DungeonMovingFloorState). Projecting the stale
         // water counter here re-stamped 0 over the accumulating floor offset in moving-floor
         // rooms. Write it through in the setters instead and keep it out of the bulk
         // projection (same write-through pattern as OamState's mode-reused fields).
-        ram[DUNG_FLAG_STATECHANGE_WATERPUZZLE] = self.water_puzzle_state_changed;
-        write_le_u16(ram, DUNG_FLAG_TRAPDOORS_DOWN, self.trapdoors_down);
-        ram[DUNG_FLAG_SOMARIA_BLOCK_SWITCH] = self.somaria_block_switch_counter;
-        ram[SOMARIA_BLOCK_BG_CHECK_FLAG] = self.somaria_block_bg_check_flag;
-        ram[ORANGE_BLUE_BARRIER_STATE] = self.orange_blue_barrier_state;
-        write_le_u16(
-            ram,
-            MOVING_FLOOR_BG_CHECK_FLAGS,
-            self.moving_floor_check_flags,
+        ram.write_byte(
+            DUNG_FLAG_STATECHANGE_WATERPUZZLE,
+            self.water_puzzle_state_changed,
         );
-        ram[DUNG_FLAG_MOVABLE_BLOCK_WAS_PUSHED] = self.movable_block_was_pushed;
-        write_le_u16(ram, BLOCK_TRAP_CHECK_FLAG, self.block_trap_related_tile);
+        ram.write_word(DUNG_FLAG_TRAPDOORS_DOWN, self.trapdoors_down);
+        ram.write_byte(
+            DUNG_FLAG_SOMARIA_BLOCK_SWITCH,
+            self.somaria_block_switch_counter,
+        );
+        ram.write_byte(
+            SOMARIA_BLOCK_BG_CHECK_FLAG,
+            self.somaria_block_bg_check_flag,
+        );
+        ram.write_byte(ORANGE_BLUE_BARRIER_STATE, self.orange_blue_barrier_state);
+        ram.write_word(MOVING_FLOOR_BG_CHECK_FLAGS, self.moving_floor_check_flags);
+        ram.write_byte(
+            DUNG_FLAG_MOVABLE_BLOCK_WAS_PUSHED,
+            self.movable_block_was_pushed,
+        );
+        ram.write_word(BLOCK_TRAP_CHECK_FLAG, self.block_trap_related_tile);
     }
 
     pub(crate) fn water_transition_counter(&self) -> u8 {
@@ -725,26 +734,25 @@ impl DungeonRoomLoadState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[DUNG_HDR_COLLISION] = self.header_collision;
-        ram[DUNG_HDR_COLLISION_2] = self.header_collision_2;
-        write_le_u16(
-            ram,
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(DUNG_HDR_COLLISION, self.header_collision);
+        ram.write_byte(DUNG_HDR_COLLISION_2, self.header_collision_2);
+        ram.write_word(
             DUNGEON_HEADER_COLLISION_2_MIRROR,
             self.header_collision_2_mirror,
         );
-        ram[DUNG_HDR_BG2_PROPERTIES] = self.bg2_properties;
-        ram[DUNG_HDR_BG2_PROPERTIES_BACKUP] = self.bg2_properties_backup;
-        ram[COMPOSITE_OF_LAYOUT_AND_QUADRANT] = self.layout_quadrant_key;
-        write_le_u16(ram, DUNG_QUADRANTS_VISITED, self.quadrants_visited);
-        ram[DUNG_CUR_QUADRANT_UPLOAD] = self.quadrant_upload_index;
-        write_le_u16(ram, DUNG_DRAW_WIDTH_INDICATOR, self.draw_width_indicator);
-        write_le_u16(ram, DUNG_DRAW_HEIGHT_INDICATOR, self.draw_height_indicator);
-        ram[DUNG_OVERLAY_TO_LOAD] = self.overlay_to_load;
-        write_le_u16(ram, DUNG_WHICH_KEY_X2_DUNGEON, self.selected_key_door_x2);
-        write_le_u16(ram, DUNG_LOAD_PTR_OFFS, self.load_ptr_offset);
-        write_le_u16(ram, DUNG_LOADE_BGOFFS_H_COPY, self.loading_bg_offset_h);
-        write_le_u16(ram, DUNG_LOADE_BGOFFS_V_COPY, self.loading_bg_offset_v);
+        ram.write_byte(DUNG_HDR_BG2_PROPERTIES, self.bg2_properties);
+        ram.write_byte(DUNG_HDR_BG2_PROPERTIES_BACKUP, self.bg2_properties_backup);
+        ram.write_byte(COMPOSITE_OF_LAYOUT_AND_QUADRANT, self.layout_quadrant_key);
+        ram.write_word(DUNG_QUADRANTS_VISITED, self.quadrants_visited);
+        ram.write_byte(DUNG_CUR_QUADRANT_UPLOAD, self.quadrant_upload_index);
+        ram.write_word(DUNG_DRAW_WIDTH_INDICATOR, self.draw_width_indicator);
+        ram.write_word(DUNG_DRAW_HEIGHT_INDICATOR, self.draw_height_indicator);
+        ram.write_byte(DUNG_OVERLAY_TO_LOAD, self.overlay_to_load);
+        ram.write_word(DUNG_WHICH_KEY_X2_DUNGEON, self.selected_key_door_x2);
+        ram.write_word(DUNG_LOAD_PTR_OFFS, self.load_ptr_offset);
+        ram.write_word(DUNG_LOADE_BGOFFS_H_COPY, self.loading_bg_offset_h);
+        ram.write_word(DUNG_LOADE_BGOFFS_V_COPY, self.loading_bg_offset_v);
     }
 
     pub(crate) fn header_collision(&self) -> u8 {
@@ -1052,25 +1060,21 @@ impl DungeonObjectTrackingState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, DUNG_MISC_OBJS_INDEX, self.misc_object_index);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(DUNG_MISC_OBJS_INDEX, self.misc_object_index);
         for (index, state) in self.replacement_tile_states.iter().enumerate() {
-            write_le_u16(ram, DUNGEON_REPLACEMENT_TILE_STATE + index * 2, *state);
+            ram.write_word(DUNGEON_REPLACEMENT_TILE_STATE + index * 2, *state);
         }
         for (index, position) in self.object_data_positions.iter().enumerate() {
-            write_le_u16(ram, DUNG_OBJECT_POS_IN_OBJDATA + index * 2, *position);
+            ram.write_word(DUNG_OBJECT_POS_IN_OBJDATA + index * 2, *position);
         }
         for (index, position) in self.object_tilemap_positions.iter().enumerate() {
-            write_le_u16(ram, DUNG_OBJECT_TILEMAP_POS + index * 2, *position);
+            ram.write_word(DUNG_OBJECT_TILEMAP_POS + index * 2, *position);
         }
         for (index, object_index) in self.changeable_object_indices.iter().enumerate() {
-            ram[CHANGEABLE_DUNGEON_OBJECT_INDEX + index] = *object_index;
+            ram.write_byte(CHANGEABLE_DUNGEON_OBJECT_INDEX + index, *object_index);
         }
-        write_le_u16(
-            ram,
-            BIG_ROCK_STARTING_ADDRESS,
-            self.big_rock_starting_address,
-        );
+        ram.write_word(BIG_ROCK_STARTING_ADDRESS, self.big_rock_starting_address);
     }
 
     pub(crate) fn misc_object_index(&self) -> u16 {
@@ -1214,33 +1218,27 @@ impl DungeonDoorState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, DUNG_DOOR_OPENED, self.opened_doors);
-        write_le_u16(
-            ram,
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(DUNG_DOOR_OPENED, self.opened_doors);
+        ram.write_word(
             DUNG_DOOR_OPENED_INCL_ADJACENT,
             self.opened_doors_including_adjacent,
         );
-        write_le_u16(ram, DUNG_CUR_DOOR_IDX, self.current_door_index);
-        write_le_u16(ram, DUNG_CUR_DOOR_POS_DUNGEON, self.current_door_pos);
-        write_le_u16(
-            ram,
-            DOOR_ANIMATION_STEP_INDICATOR_DUNGEON,
-            self.animation_step,
-        );
-        write_le_u16(ram, DOOR_OPEN_CLOSED_COUNTER, self.open_counter);
+        ram.write_word(DUNG_CUR_DOOR_IDX, self.current_door_index);
+        ram.write_word(DUNG_CUR_DOOR_POS_DUNGEON, self.current_door_pos);
+        ram.write_word(DOOR_ANIMATION_STEP_INDICATOR_DUNGEON, self.animation_step);
+        ram.write_word(DOOR_OPEN_CLOSED_COUNTER, self.open_counter);
         for (door, address) in self.door_tilemap_addresses.iter().enumerate() {
-            write_le_u16(ram, DUNG_DOOR_TILEMAP_ADDRESS + door * 2, *address);
+            ram.write_word(DUNG_DOOR_TILEMAP_ADDRESS + door * 2, *address);
         }
         for (door, door_type) in self.door_types.iter().enumerate() {
-            write_le_u16(ram, DOOR_TYPE_AND_SLOT + door * 2, *door_type);
+            ram.write_word(DOOR_TYPE_AND_SLOT + door * 2, *door_type);
         }
         for (door, direction) in self.door_directions.iter().enumerate() {
-            write_le_u16(ram, DUNGEON_DOOR_DIRECTION + door * 2, *direction);
+            ram.write_word(DUNGEON_DOOR_DIRECTION + door * 2, *direction);
         }
-        ram[DUNG_DOOR_SWITCH_TRIGGERED] = self.switch_triggered;
-        write_le_u16(
-            ram,
+        ram.write_byte(DUNG_DOOR_SWITCH_TRIGGERED, self.switch_triggered);
+        ram.write_word(
             DUNG_DOOR_BARRIER_OR_SWITCH_FLAG,
             self.barrier_or_switch_flag,
         );
@@ -1451,11 +1449,11 @@ impl DungeonRoomTrackingState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, DUNGEON_ROOM_INDEX2, self.room_index2);
-        write_le_u16(ram, DUNGEON_ROOM_INDEX_PREV, self.previous_room_index);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(DUNGEON_ROOM_INDEX2, self.room_index2);
+        ram.write_word(DUNGEON_ROOM_INDEX_PREV, self.previous_room_index);
         for (index, entry) in self.history.iter().enumerate() {
-            write_le_u16(ram, DUNGEON_ROOM_HISTORY + index * 2, *entry);
+            ram.write_word(DUNGEON_ROOM_HISTORY + index * 2, *entry);
         }
     }
 
@@ -1526,12 +1524,12 @@ impl DungeonMovingFloorState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, DUNGEON_FLOOR_Y_VELOCITY, self.y_velocity);
-        write_le_u16(ram, DUNGEON_FLOOR_X_VELOCITY, self.x_velocity);
-        write_le_u16(ram, DUNG_FLOOR_X_OFFS, self.x_offset);
-        write_le_u16(ram, DUNG_FLOOR_Y_OFFS, self.y_offset);
-        write_le_u16(ram, DUNG_FLOOR_MOVE_FLAGS, self.move_flags);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(DUNGEON_FLOOR_Y_VELOCITY, self.y_velocity);
+        ram.write_word(DUNGEON_FLOOR_X_VELOCITY, self.x_velocity);
+        ram.write_word(DUNG_FLOOR_X_OFFS, self.x_offset);
+        ram.write_word(DUNG_FLOOR_Y_OFFS, self.y_offset);
+        ram.write_word(DUNG_FLOOR_MOVE_FLAGS, self.move_flags);
     }
 
     pub(crate) fn floor_y_velocity(&self) -> u16 {
@@ -1649,16 +1647,16 @@ impl DungeonStairMovementState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, DUNG_CUR_FLOOR, self.current_floor_word);
-        ram[DUNG_CUR_FLOOR_CACHED] = self.cached_floor;
-        write_le_u16(ram, WHICH_STAIRCASE_INDEX, self.staircase_index);
-        ram[STAIRCASE_MOVE_COUNTER] = self.move_counter;
-        ram[CUR_STAIRCASE_PLANE] = self.current_plane;
-        ram[STAIRCASE_LOWER_LEVEL_STATUS] = self.lower_level_status;
-        write_le_u16(ram, STAIRCASE_TILEMAP_POS_X2, self.tilemap_pos_x2);
-        write_le_u16(ram, KIND_OF_IN_ROOM_STAIRCASE, self.in_room_kind);
-        ram[COUNTDOWN_TIMER_FOR_STAIRCASES] = self.countdown;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(DUNG_CUR_FLOOR, self.current_floor_word);
+        ram.write_byte(DUNG_CUR_FLOOR_CACHED, self.cached_floor);
+        ram.write_word(WHICH_STAIRCASE_INDEX, self.staircase_index);
+        ram.write_byte(STAIRCASE_MOVE_COUNTER, self.move_counter);
+        ram.write_byte(CUR_STAIRCASE_PLANE, self.current_plane);
+        ram.write_byte(STAIRCASE_LOWER_LEVEL_STATUS, self.lower_level_status);
+        ram.write_word(STAIRCASE_TILEMAP_POS_X2, self.tilemap_pos_x2);
+        ram.write_word(KIND_OF_IN_ROOM_STAIRCASE, self.in_room_kind);
+        ram.write_byte(COUNTDOWN_TIMER_FOR_STAIRCASES, self.countdown);
     }
 
     pub(crate) fn current_floor(&self) -> u8 {
@@ -1786,11 +1784,11 @@ impl DungeonMovableBlockState {
         Self { records }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for (index, record) in self.records.iter().enumerate() {
             let base = MOVABLE_BLOCK_DATAS + index * 4;
-            write_le_u16(ram, base, record[0]);
-            write_le_u16(ram, base + 2, record[1]);
+            ram.write_word(base, record[0]);
+            ram.write_word(base + 2, record[1]);
         }
     }
 
@@ -1844,11 +1842,11 @@ impl DungeonRoomRuntimeState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[FLAG_SKIP_CALL_TAG_ROUTINES] = self.room_tag_skip_count;
-        ram[DUNG_TRANSITION_LANDING_CLASS] = self.landing_class;
-        write_le_u16(ram, DUNG_INDEX_X3, self.room_index_x3);
-        write_le_u16(ram, RESERVED_GFX_CONFIG_WORD, self.reserved_gfx_config_word);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(FLAG_SKIP_CALL_TAG_ROUTINES, self.room_tag_skip_count);
+        ram.write_byte(DUNG_TRANSITION_LANDING_CLASS, self.landing_class);
+        ram.write_word(DUNG_INDEX_X3, self.room_index_x3);
+        ram.write_word(RESERVED_GFX_CONFIG_WORD, self.reserved_gfx_config_word);
     }
 
     pub(crate) fn landing_class(&self) -> u8 {
@@ -1928,24 +1926,20 @@ impl DungeonRoomDoorSetupState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, ADJACENT_DOORS_FLAGS, self.adjacent_door_flags);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(ADJACENT_DOORS_FLAGS, self.adjacent_door_flags);
         for (index, &door) in self.adjacent_doors.iter().enumerate() {
-            write_le_u16(ram, ADJACENT_DOORS + index * 2, door);
+            ram.write_word(ADJACENT_DOORS + index * 2, door);
         }
-        write_le_u16(ram, DUNG_EXIT_DOOR_COUNT, self.exit_door_count_x2);
+        ram.write_word(DUNG_EXIT_DOOR_COUNT, self.exit_door_count_x2);
         for (index, &address) in self.exit_door_addresses.iter().enumerate() {
-            write_le_u16(ram, DUNG_EXIT_DOOR_ADDRESSES + index * 2, address);
+            ram.write_word(DUNG_EXIT_DOOR_ADDRESSES + index * 2, address);
         }
-        write_le_u16(
-            ram,
-            INVISIBLE_DOOR_DIR_AND_INDEX_X2,
-            self.invisible_door_marker,
-        );
-        write_le_u16(ram, DUNG_LOAD_PTR, self.active_room_load_ptr);
-        ram[DUNG_LOAD_PTR_BANK] = self.active_room_load_ptr_bank;
-        write_le_u16(ram, DUNG_WIDTH_ROAD_ADDRESS, self.width_road_address);
-        write_le_u16(ram, RESET_XY_CHECK_FLAGS, self.reset_xy_check_flags);
+        ram.write_word(INVISIBLE_DOOR_DIR_AND_INDEX_X2, self.invisible_door_marker);
+        ram.write_word(DUNG_LOAD_PTR, self.active_room_load_ptr);
+        ram.write_byte(DUNG_LOAD_PTR_BANK, self.active_room_load_ptr_bank);
+        ram.write_word(DUNG_WIDTH_ROAD_ADDRESS, self.width_road_address);
+        ram.write_word(RESET_XY_CHECK_FLAGS, self.reset_xy_check_flags);
     }
 
     pub(crate) fn adjacent_door_flags(&self) -> u16 {
@@ -2149,25 +2143,23 @@ impl DungeonRoomParserState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(
-            ram,
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(
             DUNG_NUM_STAR_SHAPED_SWITCHES_LOCAL,
             self.star_switch_count_x2,
         );
         for (index, &pos) in self.star_switch_tilemap_positions.iter().enumerate() {
-            write_le_u16(ram, STAR_SHAPED_SWITCHES_TILE_LOCAL + index * 2, pos);
+            ram.write_word(STAR_SHAPED_SWITCHES_TILE_LOCAL + index * 2, pos);
         }
-        write_le_u16(ram, DUNG_NUM_TOGGLE_FLOOR, self.toggle_floor_count_x2);
-        write_le_u16(ram, DUNG_NUM_TOGGLE_PALACE, self.toggle_palace_count_x2);
+        ram.write_word(DUNG_NUM_TOGGLE_FLOOR, self.toggle_floor_count_x2);
+        ram.write_word(DUNG_NUM_TOGGLE_PALACE, self.toggle_palace_count_x2);
         // Project only the live toggle slots — the rest of 0x6c0/0x6d0 is the mode-reused stair
         // table owned by DungeonStairListsState; re-stamping stale toggle positions there clobbered
         // a fresh stair-table entry (f633081).
         for index in
             0..usize::from(self.toggle_floor_count_x2 / 2).min(DUNGEON_ROOM_TOGGLE_SLOT_COUNT)
         {
-            write_le_u16(
-                ram,
+            ram.write_word(
                 DUNG_TOGGLE_FLOOR_POS + index * 2,
                 self.toggle_floor_positions[index],
             );
@@ -2175,29 +2167,29 @@ impl DungeonRoomParserState {
         for index in
             0..usize::from(self.toggle_palace_count_x2 / 2).min(DUNGEON_ROOM_TOGGLE_SLOT_COUNT)
         {
-            write_le_u16(
-                ram,
+            ram.write_word(
                 DUNG_TOGGLE_PALACE_POS + index * 2,
                 self.toggle_palace_positions[index],
             );
         }
-        write_le_u16(ram, FLOOR_1_FILLER_TILES, self.floor_1_filler_tiles);
-        write_le_u16(ram, FLOOR_2_FILLER_TILES, self.floor_2_filler_tiles);
-        write_le_u16(
-            ram,
+        ram.write_word(FLOOR_1_FILLER_TILES, self.floor_1_filler_tiles);
+        ram.write_word(FLOOR_2_FILLER_TILES, self.floor_2_filler_tiles);
+        ram.write_word(
             DUNG_LAYOUT_AND_STARTING_QUADRANT,
             self.room_layout_and_starting_quadrant,
         );
         for (room, &mask) in self.pot_reveal_masks.iter().enumerate() {
-            write_le_u16(ram, POTS_REVEALED_IN_ROOM_DUNGEON_LOCAL + room * 2, mask);
+            ram.write_word(POTS_REVEALED_IN_ROOM_DUNGEON_LOCAL + room * 2, mask);
         }
         let len = self
             .tile_attributes
             .len()
             .min(ram.len().saturating_sub(ATTRIBUTES_FOR_TILE_PLAYER));
-        NativeTile::export_slice(
-            &self.tile_attributes[..len],
-            &mut ram[ATTRIBUTES_FOR_TILE_PLAYER..ATTRIBUTES_FOR_TILE_PLAYER + len],
+        let mut bytes = vec![0u8; len];
+        NativeTile::export_slice(&self.tile_attributes[..len], &mut bytes);
+        ram.write_range(
+            ATTRIBUTES_FOR_TILE_PLAYER..ATTRIBUTES_FOR_TILE_PLAYER + len,
+            &bytes,
         );
     }
 
@@ -2391,24 +2383,27 @@ impl DungeonRoomEffectsState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[DUNG_BLASTWALL_FLAG_X] = self.blast_wall_x_open;
-        ram[DUNG_BLASTWALL_FLAG_Y] = self.blast_wall_y_open;
-        write_le_u16(ram, CRUSH_WALL_PROGRESS, self.crush_wall_progress);
-        write_le_u16(ram, CRUSH_WALL_DOOR_INDEX_X2, self.blast_wall_door_index_x2);
-        ram[MOVING_WALL_DOT_POINTER] = self.moving_wall_dot_pointer;
-        write_le_u16(ram, MOVING_WALL_WRITE_POINT, self.moving_wall_write_point);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(DUNG_BLASTWALL_FLAG_X, self.blast_wall_x_open);
+        ram.write_byte(DUNG_BLASTWALL_FLAG_Y, self.blast_wall_y_open);
+        ram.write_word(CRUSH_WALL_PROGRESS, self.crush_wall_progress);
+        ram.write_word(CRUSH_WALL_DOOR_INDEX_X2, self.blast_wall_door_index_x2);
+        ram.write_byte(MOVING_WALL_DOT_POINTER, self.moving_wall_dot_pointer);
+        ram.write_word(MOVING_WALL_WRITE_POINT, self.moving_wall_write_point);
         // 0x4bc is mode-reused with the overworld STAR_TILE_RESTORE_PHASE (owned by
         // display); only project the dungeon torch phase indoors so a stale copy doesn't
         // clobber the overworld owner.
-        if ram[crate::game_state::constants::PLAYER_IS_INDOORS] != 0 {
-            ram[MOVING_WALL_TORCH_BLINK_PHASE] = self.moving_wall_torch_blink_phase;
+        if ram.read_byte(crate::game_state::constants::PLAYER_IS_INDOORS) != 0 {
+            ram.write_byte(
+                MOVING_WALL_TORCH_BLINK_PHASE,
+                self.moving_wall_torch_blink_phase,
+            );
         }
-        ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = self.fixed_color_plusminus;
-        ram[DUNGEON_TRAP_TRIGGER_LATCH] = self.trap_trigger_latch;
-        ram[ACTIVATE_BOMB_TRAP_OVERLORD] = self.bomb_trap_activation;
+        ram.write_byte(OVERWORLD_FIXED_COLOR_PLUSMINUS, self.fixed_color_plusminus);
+        ram.write_byte(DUNGEON_TRAP_TRIGGER_LATCH, self.trap_trigger_latch);
+        ram.write_byte(ACTIVATE_BOMB_TRAP_OVERLORD, self.bomb_trap_activation);
         for (index, &value) in self.moving_wall_replacement_buffer.iter().enumerate() {
-            write_le_u16(ram, MOVING_WALL_REPLACEMENT_BUFFER + index * 2, value);
+            ram.write_word(MOVING_WALL_REPLACEMENT_BUFFER + index * 2, value);
         }
     }
 
@@ -2565,28 +2560,26 @@ impl DungeonRoomItemState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, DUNG_NUM_CHESTS_X2, self.num_chests_x2);
-        write_le_u16(ram, DUNG_NUM_BIGKEY_LOCKS_X2, self.num_big_key_locks_x2);
-        write_le_u16(ram, OVERWORLD_MAP_STATE, self.chest_reveal_cursor_x2);
-        write_le_u16(
-            ram,
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(DUNG_NUM_CHESTS_X2, self.num_chests_x2);
+        ram.write_word(DUNG_NUM_BIGKEY_LOCKS_X2, self.num_big_key_locks_x2);
+        ram.write_word(OVERWORLD_MAP_STATE, self.chest_reveal_cursor_x2);
+        ram.write_word(
             DUNG_REPLACEMENT_TILE_DST_POS_X2,
             self.replacement_tile_destination_x2,
         );
-        write_le_u16(
-            ram,
+        ram.write_word(
             DUNG_REPLACEMENT_TILE_SRC_POS_X2,
             self.replacement_tile_source_x2,
         );
         for (index, &location) in self.chest_locations.iter().enumerate() {
-            write_le_u16(ram, DUNG_CHEST_LOCATIONS + index * 2, location);
+            ram.write_word(DUNG_CHEST_LOCATIONS + index * 2, location);
         }
         for (index, quad) in self.replacement_tilemap_quads.iter().enumerate() {
-            write_le_u16(ram, REPLACEMENT_TILEMAP_UL + index * 2, quad[0]);
-            write_le_u16(ram, REPLACEMENT_TILEMAP_LL + index * 2, quad[1]);
-            write_le_u16(ram, REPLACEMENT_TILEMAP_UR + index * 2, quad[2]);
-            write_le_u16(ram, REPLACEMENT_TILEMAP_LR + index * 2, quad[3]);
+            ram.write_word(REPLACEMENT_TILEMAP_UL + index * 2, quad[0]);
+            ram.write_word(REPLACEMENT_TILEMAP_LL + index * 2, quad[1]);
+            ram.write_word(REPLACEMENT_TILEMAP_UR + index * 2, quad[2]);
+            ram.write_word(REPLACEMENT_TILEMAP_LR + index * 2, quad[3]);
         }
     }
 
@@ -2740,25 +2733,24 @@ impl DungeonStairListsState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for list in ALL_DUNGEON_STAIR_LISTS {
-            write_le_u16(
-                ram,
+            ram.write_word(
                 stair_list_counter_address(list),
                 self.stair_list_count(list),
             );
         }
 
         for (index, position) in self.inter_staircases.iter().enumerate() {
-            write_le_u16(ram, DUNG_INTER_STAIRCASES + index * 2, *position);
+            ram.write_word(DUNG_INTER_STAIRCASES + index * 2, *position);
         }
 
         for (index, position) in self.stairs_table_1.iter().enumerate() {
-            write_le_u16(ram, DUNG_STAIRS_TABLE_1 + index * 2, *position);
+            ram.write_word(DUNG_STAIRS_TABLE_1 + index * 2, *position);
         }
 
         for (index, position) in self.stairs_table_2.iter().enumerate() {
-            write_le_u16(ram, DUNG_STAIRS_TABLE_2 + index * 2, *position);
+            ram.write_word(DUNG_STAIRS_TABLE_2 + index * 2, *position);
         }
     }
 
@@ -2977,13 +2969,12 @@ impl DungeonBg2AttributeState {
         Self { attrs }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         let available = ram.len().saturating_sub(DUNGEON_BG2_ATTR_TABLE);
         let len = self.attrs.len().min(available);
-        NativeTile::export_slice(
-            &self.attrs[..len],
-            &mut ram[DUNGEON_BG2_ATTR_TABLE..DUNGEON_BG2_ATTR_TABLE + len],
-        );
+        let mut bytes = vec![0u8; len];
+        NativeTile::export_slice(&self.attrs[..len], &mut bytes);
+        ram.write_range(DUNGEON_BG2_ATTR_TABLE..DUNGEON_BG2_ATTR_TABLE + len, &bytes);
     }
 
     pub(crate) fn bg2_attr(&self, offset: usize) -> u8 {
@@ -3077,8 +3068,8 @@ impl DungeonSavegameState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, DUNG_SAVEGAME_STATE_BITS, self.state_bits);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(DUNG_SAVEGAME_STATE_BITS, self.state_bits);
     }
 
     pub(crate) fn savegame_state_bits(&self) -> u16 {
@@ -3151,18 +3142,21 @@ impl DungeonTorchState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[TORCH_TIMERS..TORCH_TIMERS + DUNGEON_TORCH_TIMER_COUNT].copy_from_slice(&self.timers);
-        ram[DUNGEON_TORCH_ATTR] = self.target.cartridge_attribute();
-        ram[DUNG_NUM_LIT_TORCHES] = self.lit_torches;
-        ram[DUNG_WANT_LIGHTS_OUT] = self.lights_out_request;
-        ram[DUNG_WANT_LIGHTS_OUT_COPY] = self.lights_out_request_copy;
-        ram[HDR_DUNGEON_DARK_WITH_LANTERN] = self.dark_with_lantern;
-        ram[GANON_TORCH_COUNT] = self.ganon_torch_count;
-        write_le_u16(ram, DUNG_INDEX_OF_TORCHES_START, self.torches_start_index);
-        write_le_u16(ram, DUNG_INDEX_OF_TORCHES, self.torch_index);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_range(
+            TORCH_TIMERS..TORCH_TIMERS + DUNGEON_TORCH_TIMER_COUNT,
+            &self.timers,
+        );
+        ram.write_byte(DUNGEON_TORCH_ATTR, self.target.cartridge_attribute());
+        ram.write_byte(DUNG_NUM_LIT_TORCHES, self.lit_torches);
+        ram.write_byte(DUNG_WANT_LIGHTS_OUT, self.lights_out_request);
+        ram.write_byte(DUNG_WANT_LIGHTS_OUT_COPY, self.lights_out_request_copy);
+        ram.write_byte(HDR_DUNGEON_DARK_WITH_LANTERN, self.dark_with_lantern);
+        ram.write_byte(GANON_TORCH_COUNT, self.ganon_torch_count);
+        ram.write_word(DUNG_INDEX_OF_TORCHES_START, self.torches_start_index);
+        ram.write_word(DUNG_INDEX_OF_TORCHES, self.torch_index);
         for (index, word) in self.torch_data_words.iter().enumerate() {
-            write_le_u16(ram, DUNGEON_TORCH_DATA + index * 2, *word);
+            ram.write_word(DUNGEON_TORCH_DATA + index * 2, *word);
         }
     }
 
@@ -3332,9 +3326,11 @@ impl DungeonEntranceBackupState {
         Self { exit_tile_themes }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[OVERWORLD_EXIT_TILE_THEME_INDEX..OVERWORLD_EXIT_TILE_THEME_INDEX + 4]
-            .copy_from_slice(&self.exit_tile_themes);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_range(
+            OVERWORLD_EXIT_TILE_THEME_INDEX..OVERWORLD_EXIT_TILE_THEME_INDEX + 4,
+            &self.exit_tile_themes,
+        );
     }
 
     pub(crate) fn exit_tile_theme(&self, index: usize) -> u8 {
@@ -3383,15 +3379,21 @@ impl DungeonHeaderState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[DUNGEON_HEADER_TAG..DUNGEON_HEADER_TAG + DUNGEON_HEADER_TAG_COUNT]
-            .copy_from_slice(&self.tags);
-        ram[DUNGEON_HEADER_TRAVEL_DESTINATIONS
-            ..DUNGEON_HEADER_TRAVEL_DESTINATIONS + DUNGEON_HEADER_TRAVEL_DESTINATION_COUNT]
-            .copy_from_slice(&self.travel_destinations);
-        ram[DUNGEON_HEADER_HOLE_TELEPORTER_PLANE
-            ..DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + DUNGEON_HEADER_PLANE_SCRATCH_COUNT]
-            .copy_from_slice(&self.plane_scratch);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_range(
+            DUNGEON_HEADER_TAG..DUNGEON_HEADER_TAG + DUNGEON_HEADER_TAG_COUNT,
+            &self.tags,
+        );
+        ram.write_range(
+            DUNGEON_HEADER_TRAVEL_DESTINATIONS
+                ..DUNGEON_HEADER_TRAVEL_DESTINATIONS + DUNGEON_HEADER_TRAVEL_DESTINATION_COUNT,
+            &self.travel_destinations,
+        );
+        ram.write_range(
+            DUNGEON_HEADER_HOLE_TELEPORTER_PLANE
+                ..DUNGEON_HEADER_HOLE_TELEPORTER_PLANE + DUNGEON_HEADER_PLANE_SCRATCH_COUNT,
+            &self.plane_scratch,
+        );
     }
 
     pub(crate) fn header_tag(&self, index: usize) -> u8 {
@@ -3452,9 +3454,9 @@ impl DungeonScratchWordState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, DUNGEON_WORK_R16, self.r16);
-        write_le_u16(ram, DUNGEON_WORK_R18, self.r18);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(DUNGEON_WORK_R16, self.r16);
+        ram.write_word(DUNGEON_WORK_R18, self.r18);
     }
 
     pub(crate) fn high(&self) -> u8 {
@@ -4328,7 +4330,10 @@ impl<'a> NativeDungeonRoomEffectsBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, DungeonRoomEffectsState::load_from_ram(self.ram));
+        debug_assert_eq!(
+            *self.state,
+            DungeonRoomEffectsState::load_from_ram(self.ram)
+        );
     }
 
     forward_synced! {

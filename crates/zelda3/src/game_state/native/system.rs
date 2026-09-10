@@ -1,6 +1,7 @@
 use super::ram_byte;
 use crate::game_state::constants::*;
-use crate::types::{read_le_u16, write_le_u16};
+use crate::game_state::native::ram_target::RamTarget;
+use crate::types::read_le_u16;
 
 const ATTRACT_LOW_WORK_AREA_START: usize = 0x20;
 const ATTRACT_LOW_WORK_AREA_LEN: usize = 0x51;
@@ -60,19 +61,25 @@ impl MsuResumeInfoState {
         }
     }
 
-    fn write_to_ram_slot(self, ram: &mut [u8], slot: MsuResumeSlot) {
+    fn write_to_ram_slot<R: RamTarget + ?Sized>(self, ram: &mut R, slot: MsuResumeSlot) {
         let offset = slot.offset();
         if offset + 28 > ram.len() {
             return;
         }
-        write_le_u32(ram, offset, self.tag);
-        write_le_u32(ram, offset + 4, self.offset);
-        write_le_u32(ram, offset + 8, self.samples_until_repeat);
-        write_le_u16(ram, offset + 12, self.range_cur);
-        write_le_u16(ram, offset + 14, self.range_repeat);
-        write_le_u64(ram, offset + 16, self.initial_packet_bytes);
-        ram[offset + 24] = self.orig_track;
-        ram[offset + 25] = self.actual_track;
+        ram.write_range(offset..offset + 4, &(self.tag).to_le_bytes());
+        ram.write_range(offset + 4..offset + 4 + 4, &(self.offset).to_le_bytes());
+        ram.write_range(
+            offset + 8..offset + 8 + 4,
+            &(self.samples_until_repeat).to_le_bytes(),
+        );
+        ram.write_word(offset + 12, self.range_cur);
+        ram.write_word(offset + 14, self.range_repeat);
+        ram.write_range(
+            offset + 16..offset + 16 + 8,
+            &(self.initial_packet_bytes).to_le_bytes(),
+        );
+        ram.write_byte(offset + 24, self.orig_track);
+        ram.write_byte(offset + 25, self.actual_track);
     }
 }
 
@@ -131,26 +138,26 @@ impl SystemSignalsState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[MUSIC_CONTROL] = self.music_control;
-        ram[CURRENT_MUSIC_CONTROL] = self.current_music_control;
-        ram[LAST_MUSIC_CONTROL] = self.last_music_control;
-        ram[QUEUED_MUSIC_CONTROL] = self.queued_music_control;
-        ram[RESIDENT_SONG_BANK_KIND] = self.resident_song_bank_kind;
-        ram[SOUND_EFFECT_1] = self.sound_effect_1;
-        ram[SOUND_EFFECT_2] = self.sound_effect_2;
-        ram[SOUND_EFFECT_AMBIENT] = self.ambient_sound_effect;
-        ram[SOUND_EFFECT_AMBIENT_LAST] = self.last_ambient_sound_effect;
-        ram[MSU_VOLUME] = self.msu_volume;
-        ram[RAM_APUI00] = self.apui00;
-        ram[RAW_SFX_PAN_VALUE] = self.raw_sfx_pan_value;
-        ram[FLAG_UPDATE_CGRAM_IN_NMI] = self.update_cgram_flag;
-        ram[FLAG_UPDATE_HUD_IN_NMI] = self.update_hud_flag;
-        ram[GAME_OVER_CHECK_FLAG] = self.game_over_check_flag;
-        ram[RESTART_CHECK_FLAG] = self.restart_check_flag;
-        ram[RAM_BUGS_FIXED] = self.bugs_fixed;
-        ram[DEATH_BACKUP_CURRENT_MUSIC] = self.death_backup_current_music;
-        ram[DEATH_BACKUP_AMBIENT_SOUND] = self.death_backup_ambient_sound;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(MUSIC_CONTROL, self.music_control);
+        ram.write_byte(CURRENT_MUSIC_CONTROL, self.current_music_control);
+        ram.write_byte(LAST_MUSIC_CONTROL, self.last_music_control);
+        ram.write_byte(QUEUED_MUSIC_CONTROL, self.queued_music_control);
+        ram.write_byte(RESIDENT_SONG_BANK_KIND, self.resident_song_bank_kind);
+        ram.write_byte(SOUND_EFFECT_1, self.sound_effect_1);
+        ram.write_byte(SOUND_EFFECT_2, self.sound_effect_2);
+        ram.write_byte(SOUND_EFFECT_AMBIENT, self.ambient_sound_effect);
+        ram.write_byte(SOUND_EFFECT_AMBIENT_LAST, self.last_ambient_sound_effect);
+        ram.write_byte(MSU_VOLUME, self.msu_volume);
+        ram.write_byte(RAM_APUI00, self.apui00);
+        ram.write_byte(RAW_SFX_PAN_VALUE, self.raw_sfx_pan_value);
+        ram.write_byte(FLAG_UPDATE_CGRAM_IN_NMI, self.update_cgram_flag);
+        ram.write_byte(FLAG_UPDATE_HUD_IN_NMI, self.update_hud_flag);
+        ram.write_byte(GAME_OVER_CHECK_FLAG, self.game_over_check_flag);
+        ram.write_byte(RESTART_CHECK_FLAG, self.restart_check_flag);
+        ram.write_byte(RAM_BUGS_FIXED, self.bugs_fixed);
+        ram.write_byte(DEATH_BACKUP_CURRENT_MUSIC, self.death_backup_current_music);
+        ram.write_byte(DEATH_BACKUP_AMBIENT_SOUND, self.death_backup_ambient_sound);
         self.msu_resume_primary
             .write_to_ram_slot(ram, MsuResumeSlot::Primary);
         self.msu_resume_alternate
@@ -428,10 +435,12 @@ impl SystemWorkArea {
             .fill(0);
     }
 
-    pub(crate) fn write_poly_thread_bootstrap_bytes(ram: &mut [u8]) {
-        ram[POLY_THREAD_BOOTSTRAP_BYTES_OFFSET
-            ..POLY_THREAD_BOOTSTRAP_BYTES_OFFSET + POLY_THREAD_BOOTSTRAP_BYTES.len()]
-            .copy_from_slice(&POLY_THREAD_BOOTSTRAP_BYTES);
+    pub(crate) fn write_poly_thread_bootstrap_bytes<R: RamTarget + ?Sized>(ram: &mut R) {
+        ram.write_range(
+            POLY_THREAD_BOOTSTRAP_BYTES_OFFSET
+                ..POLY_THREAD_BOOTSTRAP_BYTES_OFFSET + POLY_THREAD_BOOTSTRAP_BYTES.len(),
+            &POLY_THREAD_BOOTSTRAP_BYTES,
+        );
     }
 
     pub(crate) fn clear_intro_wram_block_columns(
@@ -584,10 +593,4 @@ fn read_le_u64(bytes: &[u8], offset: usize) -> Option<u64> {
     ]))
 }
 
-fn write_le_u32(bytes: &mut [u8], offset: usize, value: u32) {
-    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
-}
 
-fn write_le_u64(bytes: &mut [u8], offset: usize, value: u64) {
-    bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-}

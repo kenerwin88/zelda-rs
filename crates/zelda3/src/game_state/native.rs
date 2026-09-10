@@ -6,6 +6,8 @@
 
 #[macro_use]
 mod bridge_methods;
+pub(crate) mod ram_target;
+pub(crate) use ram_target::RamTarget;
 
 mod ancilla;
 mod display;
@@ -460,7 +462,7 @@ impl GameState {
         out
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         self.frame.write_to_ram(ram);
         self.system_signals.write_to_ram(ram);
         self.enhanced_features.write_to_ram(ram);

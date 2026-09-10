@@ -148,7 +148,26 @@ def extract_writes(body: str, consts: dict[str, int], unresolved: list):
             return
         intervals.append((start, end, label))
 
-    # write_le_u16(ram, NAME, ...) and write_le_u32
+    # ram.write_word(NAME, ..) / ram.write_byte(NAME[+idx], ..) / ram.write_bytes(NAME, ..)
+    # (the RamTarget forms every native projection uses)
+    for m in re.finditer(r"\.write_word\s*\(\s*([A-Za-z0-9_]+)", body):
+        a = addr_of(m.group(1), consts)
+        add(a, a + 2 if a is not None else None, f"write_word {m.group(1)}")
+    for m in re.finditer(r"\.write_byte\s*\(\s*([A-Z][A-Za-z0-9_]*)\s*\+\s*([A-Za-z0-9_]+)\s*,", body):
+        a = addr_of(m.group(1), consts)
+        off = addr_of(m.group(2), consts)
+        if off is not None:
+            add(a, a + off + 1 if a is not None else None, f"index {m.group(1)}+{m.group(2)}")
+        else:
+            add(a, a + 1 if a is not None else None, f"index {m.group(1)}+<var>")
+    for m in re.finditer(r"\.write_byte\s*\(\s*([A-Z][A-Za-z0-9_]*)\s*,", body):
+        a = addr_of(m.group(1), consts)
+        add(a, a + 1 if a is not None else None, f"byte {m.group(1)}")
+    for m in re.finditer(r"\.write_bytes\s*\(\s*([A-Z][A-Za-z0-9_]*)\s*,", body):
+        a = addr_of(m.group(1), consts)
+        add(a, a + 1 if a is not None else None, f"bytes {m.group(1)}+<len>")
+
+    # write_le_u16(ram, NAME, ...) and write_le_u32 (bridge write-through helpers)
     for m in re.finditer(r"write_le_u16\s*\(\s*\w+\s*,\s*([A-Za-z0-9_]+)", body):
         a = addr_of(m.group(1), consts)
         add(a, a + 2 if a is not None else None, f"write_le_u16 {m.group(1)}")
@@ -167,7 +186,7 @@ def extract_writes(body: str, consts: dict[str, int], unresolved: list):
 
     # ram[A..B] = / .copy_from_slice  (slice ranges)
     for m in re.finditer(
-        r"\w+\s*\[\s*([A-Za-z0-9_]+)\s*\.\.\s*([A-Za-z0-9_]+)\s*([+\-]\s*[A-Za-z0-9_]+)?\s*\]",
+        r"\w+\s*[\[(]\s*([A-Za-z0-9_]+)\s*\.\.\s*([A-Za-z0-9_]+)\s*([+\-]\s*[A-Za-z0-9_]+)?\s*[\],]",
         body,
     ):
         a = addr_of(m.group(1), consts)
@@ -298,7 +317,7 @@ def projection_helper_expander(files):
         for match in STRUCT_DECL_RE.finditer(text):
             body = brace_body(text, text.index("{", match.end() - 1))
             fields[match[1]].update((f[1], f[2]) for f in FIELD_DECL_RE.finditer(body))
-        for match in re.finditer(r"fn\s+(\w+)\s*\([^)]*\)\s*(?:->\s*[^{}]+)?\{", text):
+        for match in re.finditer(r"fn\s+(\w+)(?:<[^>]*>)?\s*\([^)]*\)\s*(?:->\s*[^{}]+)?\{", text):
             methods[enclosing_struct(text, match.start()), match[1]] = brace_body(
                 text, text.index("{", match.start()))
 
@@ -363,7 +382,7 @@ def collect_projection_reachable(files) -> set[str]:
             body = brace_body(text, text.index("{", m.end() - 1))
             for fm in FIELD_DECL_RE.finditer(body):
                 fields[m.group(1)][fm.group(1)] = fm.group(2)
-        for fnm in re.finditer(r"fn\s+write_to_ram\s*\([^)]*\)\s*\{", text):
+        for fnm in re.finditer(r"fn\s+write_to_ram(?:<[^>]*>)?\s*\([^)]*\)\s*\{", text):
             struct = enclosing_struct(text, fnm.start())
             body = expand(struct, "write_to_ram")
             for cm in WTR_CALL_RE.finditer(body):
@@ -690,7 +709,7 @@ def main():
     expand = projection_helper_expander(files)
     for path in files:
         text = path.read_text(errors="replace")
-        for fnm in re.finditer(r"fn\s+write_to_ram\s*\([^)]*\)\s*\{", text):
+        for fnm in re.finditer(r"fn\s+write_to_ram(?:<[^>]*>)?\s*\([^)]*\)\s*\{", text):
             struct = enclosing_struct(text, fnm.start())
             body = expand(struct, "write_to_ram")
             structs_with_write_to_ram.add(struct)

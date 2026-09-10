@@ -1,5 +1,6 @@
 use super::ram_byte;
 use crate::game_state::constants::{LINK_MAGIC_CONSUMPTION, LINK_MAGIC_FILLER, LINK_MAGIC_POWER};
+use crate::game_state::native::ram_target::RamTarget;
 
 /// Native magic ownership. The cartridge layout is confined to the import and
 /// publication methods; arithmetic deliberately retains the original byte rules.
@@ -50,12 +51,12 @@ impl PlayerMagicState {
     pub(crate) fn import_consumption_level(&mut self, ram: &[u8]) {
         self.consumption_level = ram_byte(ram, LINK_MAGIC_CONSUMPTION);
     }
-    pub(super) fn publish_amount(&self, ram: &mut [u8]) {
-        ram[LINK_MAGIC_POWER] = self.amount;
+    pub(super) fn publish_amount<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(LINK_MAGIC_POWER, self.amount);
     }
-    pub(super) fn publish_resource_fields(&self, ram: &mut [u8]) {
-        ram[LINK_MAGIC_CONSUMPTION] = self.consumption_level;
-        ram[LINK_MAGIC_FILLER] = self.refill;
+    pub(super) fn publish_resource_fields<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(LINK_MAGIC_CONSUMPTION, self.consumption_level);
+        ram.write_byte(LINK_MAGIC_FILLER, self.refill);
     }
 
     fn spend(&mut self, cost: u8) -> bool {

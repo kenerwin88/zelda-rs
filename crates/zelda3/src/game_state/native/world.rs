@@ -1,5 +1,6 @@
 use super::ram_byte;
 use crate::game_state::constants::*;
+use crate::game_state::native::ram_target::RamTarget;
 use crate::types::{read_le_u16, write_le_u16};
 
 const BIRD_TRAVEL_DESTINATION_SLOTS: usize = 16;
@@ -73,8 +74,12 @@ impl OverworldMap16DecodeScratch {
         }
     }
 
-    pub(crate) fn write_decompressed_byte(ram: &mut [u8], dst: usize, value: u8) {
-        ram[dst] = value;
+    pub(crate) fn write_decompressed_byte<R: RamTarget + ?Sized>(
+        ram: &mut R,
+        dst: usize,
+        value: u8,
+    ) {
+        ram.write_byte(dst, value);
     }
 
     pub(crate) fn copy_decompressed_byte(
@@ -107,15 +112,19 @@ impl OverworldMap16DecodeScratch {
         write_le_u16(ram, MAP16_DECODE_WORK_WORD, value);
     }
 
-    pub(crate) fn write_decoded_map32_to_bg2_tilemap(ram: &mut [u8], dst: usize, idx: usize) {
-        let v0 = read_le_u16(ram, MAP16_DECODE_0 + idx);
-        let v1 = read_le_u16(ram, MAP16_DECODE_1 + idx);
-        let v2 = read_le_u16(ram, MAP16_DECODE_2 + idx);
-        let v3 = read_le_u16(ram, MAP16_DECODE_3 + idx);
-        write_le_u16(ram, dst, v0);
-        write_le_u16(ram, dst + 128, v2);
-        write_le_u16(ram, dst + 2, v1);
-        write_le_u16(ram, dst + 130, v3);
+    pub(crate) fn write_decoded_map32_to_bg2_tilemap<R: RamTarget + ?Sized>(
+        ram: &mut R,
+        dst: usize,
+        idx: usize,
+    ) {
+        let v0 = ram.read_word(MAP16_DECODE_0 + idx);
+        let v1 = ram.read_word(MAP16_DECODE_1 + idx);
+        let v2 = ram.read_word(MAP16_DECODE_2 + idx);
+        let v3 = ram.read_word(MAP16_DECODE_3 + idx);
+        ram.write_word(dst, v0);
+        ram.write_word(dst + 128, v2);
+        ram.write_word(dst + 2, v1);
+        ram.write_word(dst + 130, v3);
     }
 }
 
@@ -129,16 +138,16 @@ pub(crate) struct WorldLocationState {
 impl WorldLocationState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
-            dungeon_room: read_le_u16(ram, DUNGEON_ROOM),
-            overworld_screen: read_le_u16(ram, OVERWORLD_SCREEN_INDEX),
+            dungeon_room: ram.read_word(DUNGEON_ROOM),
+            overworld_screen: ram.read_word(OVERWORLD_SCREEN_INDEX),
             indoor_flag: ram_byte(ram, PLAYER_IS_INDOORS),
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, DUNGEON_ROOM, self.dungeon_room);
-        write_le_u16(ram, OVERWORLD_SCREEN_INDEX, self.overworld_screen);
-        ram[PLAYER_IS_INDOORS] = self.indoor_flag;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(DUNGEON_ROOM, self.dungeon_room);
+        ram.write_word(OVERWORLD_SCREEN_INDEX, self.overworld_screen);
+        ram.write_byte(PLAYER_IS_INDOORS, self.indoor_flag);
     }
 
     pub(crate) fn dungeon_room(&self) -> u16 {
@@ -219,22 +228,22 @@ pub(crate) struct WorldScrollState {
 impl WorldScrollState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
-            bg1_x_offset: read_le_u16(ram, BG1_X_OFFSET),
-            bg1_y_offset: read_le_u16(ram, BG1_Y_OFFSET),
-            overworld_offset_base_x: read_le_u16(ram, OVERWORLD_OFFSET_BASE_X),
-            overworld_offset_base_y: read_le_u16(ram, OVERWORLD_OFFSET_BASE_Y),
-            overworld_offset_mask_x: read_le_u16(ram, OVERWORLD_OFFSET_MASK_X),
-            overworld_offset_mask_y: read_le_u16(ram, OVERWORLD_OFFSET_MASK_Y),
+            bg1_x_offset: ram.read_word(BG1_X_OFFSET),
+            bg1_y_offset: ram.read_word(BG1_Y_OFFSET),
+            overworld_offset_base_x: ram.read_word(OVERWORLD_OFFSET_BASE_X),
+            overworld_offset_base_y: ram.read_word(OVERWORLD_OFFSET_BASE_Y),
+            overworld_offset_mask_x: ram.read_word(OVERWORLD_OFFSET_MASK_X),
+            overworld_offset_mask_y: ram.read_word(OVERWORLD_OFFSET_MASK_Y),
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, BG1_X_OFFSET, self.bg1_x_offset);
-        write_le_u16(ram, BG1_Y_OFFSET, self.bg1_y_offset);
-        write_le_u16(ram, OVERWORLD_OFFSET_BASE_X, self.overworld_offset_base_x);
-        write_le_u16(ram, OVERWORLD_OFFSET_BASE_Y, self.overworld_offset_base_y);
-        write_le_u16(ram, OVERWORLD_OFFSET_MASK_X, self.overworld_offset_mask_x);
-        write_le_u16(ram, OVERWORLD_OFFSET_MASK_Y, self.overworld_offset_mask_y);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(BG1_X_OFFSET, self.bg1_x_offset);
+        ram.write_word(BG1_Y_OFFSET, self.bg1_y_offset);
+        ram.write_word(OVERWORLD_OFFSET_BASE_X, self.overworld_offset_base_x);
+        ram.write_word(OVERWORLD_OFFSET_BASE_Y, self.overworld_offset_base_y);
+        ram.write_word(OVERWORLD_OFFSET_MASK_X, self.overworld_offset_mask_x);
+        ram.write_word(OVERWORLD_OFFSET_MASK_Y, self.overworld_offset_mask_y);
         // The camera boundary words (0x602-0x606, C's `ow_scroll_vars0`) belong to
         // RoomBoundsState; this state neither models nor projects them.
     }
@@ -335,16 +344,16 @@ pub(crate) struct WorldCameraBoundariesState {
 impl WorldCameraBoundariesState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
-            camera_y_low: read_le_u16(ram, CAMERA_Y_COORD_SCROLL_LOW),
-            camera_y_hi: read_le_u16(ram, CAMERA_Y_COORD_SCROLL_HI),
-            camera_x_low: read_le_u16(ram, CAMERA_X_COORD_SCROLL_LOW),
-            camera_x_hi: read_le_u16(ram, CAMERA_X_COORD_SCROLL_HI),
+            camera_y_low: ram.read_word(CAMERA_Y_COORD_SCROLL_LOW),
+            camera_y_hi: ram.read_word(CAMERA_Y_COORD_SCROLL_HI),
+            camera_x_low: ram.read_word(CAMERA_X_COORD_SCROLL_LOW),
+            camera_x_hi: ram.read_word(CAMERA_X_COORD_SCROLL_HI),
             scroll_targets: read_scroll_targets(ram, UP_DOWN_SCROLL_TARGET),
             cached_scroll_targets: [
-                read_le_u16(ram, UP_DOWN_SCROLL_TARGET_CACHED),
-                read_le_u16(ram, UP_DOWN_SCROLL_TARGET_END_CACHED),
-                read_le_u16(ram, LEFT_RIGHT_SCROLL_TARGET_CACHED),
-                read_le_u16(ram, LEFT_RIGHT_SCROLL_TARGET_END_CACHED),
+                ram.read_word(UP_DOWN_SCROLL_TARGET_CACHED),
+                ram.read_word(UP_DOWN_SCROLL_TARGET_END_CACHED),
+                ram.read_word(LEFT_RIGHT_SCROLL_TARGET_CACHED),
+                ram.read_word(LEFT_RIGHT_SCROLL_TARGET_END_CACHED),
             ],
             special_exit_scroll_targets: read_scroll_targets(ram, UP_DOWN_SCROLL_TARGET_SPEXIT),
             exit_scroll_targets: read_scroll_targets(ram, UP_DOWN_SCROLL_TARGET_EXIT),
@@ -354,46 +363,39 @@ impl WorldCameraBoundariesState {
                 OVERWORLD_SCROLL_UP_COUNTER_SPEXIT,
             ),
             exit_scroll_counters: read_scroll_counters(ram, OVERWORLD_SCROLL_UP_COUNTER_EXIT),
-            special_exit_camera_y_low: read_le_u16(ram, CAMERA_Y_COORD_SCROLL_LOW_SPEXIT),
-            special_exit_camera_x_low: read_le_u16(ram, CAMERA_X_COORD_SCROLL_LOW_SPEXIT),
-            exit_camera_y_low: read_le_u16(ram, CAMERA_Y_COORD_SCROLL_LOW_EXIT),
-            exit_camera_x_low: read_le_u16(ram, CAMERA_X_COORD_SCROLL_LOW_EXIT),
-            cached_camera_y_low: read_le_u16(ram, CAMERA_Y_COORD_SCROLL_LOW_CACHED),
-            cached_camera_x_low: read_le_u16(ram, CAMERA_X_COORD_SCROLL_LOW_CACHED),
-            exit_room_bounds_y_start: read_le_u16(ram, OW_SCROLL_VARS0_EXIT),
-            exit_room_bounds_y_end: read_le_u16(ram, OW_SCROLL_VARS0_EXIT + 2),
-            exit_room_bounds_x_start: read_le_u16(ram, OW_SCROLL_VARS0_EXIT + 4),
-            exit_room_bounds_x_end: read_le_u16(ram, OW_SCROLL_VARS0_EXIT + 6),
-            special_exit_room_bounds_y_start: read_le_u16(ram, SPECIAL_EXIT_ROOM_BOUNDS_Y_START),
-            special_exit_room_bounds_y_end: read_le_u16(ram, SPECIAL_EXIT_ROOM_BOUNDS_Y_END),
-            special_exit_room_bounds_x_start: read_le_u16(ram, SPECIAL_EXIT_ROOM_BOUNDS_X_START),
-            special_exit_room_bounds_x_end: read_le_u16(ram, SPECIAL_EXIT_ROOM_BOUNDS_X_END),
+            special_exit_camera_y_low: ram.read_word(CAMERA_Y_COORD_SCROLL_LOW_SPEXIT),
+            special_exit_camera_x_low: ram.read_word(CAMERA_X_COORD_SCROLL_LOW_SPEXIT),
+            exit_camera_y_low: ram.read_word(CAMERA_Y_COORD_SCROLL_LOW_EXIT),
+            exit_camera_x_low: ram.read_word(CAMERA_X_COORD_SCROLL_LOW_EXIT),
+            cached_camera_y_low: ram.read_word(CAMERA_Y_COORD_SCROLL_LOW_CACHED),
+            cached_camera_x_low: ram.read_word(CAMERA_X_COORD_SCROLL_LOW_CACHED),
+            exit_room_bounds_y_start: ram.read_word(OW_SCROLL_VARS0_EXIT),
+            exit_room_bounds_y_end: ram.read_word(OW_SCROLL_VARS0_EXIT + 2),
+            exit_room_bounds_x_start: ram.read_word(OW_SCROLL_VARS0_EXIT + 4),
+            exit_room_bounds_x_end: ram.read_word(OW_SCROLL_VARS0_EXIT + 6),
+            special_exit_room_bounds_y_start: ram.read_word(SPECIAL_EXIT_ROOM_BOUNDS_Y_START),
+            special_exit_room_bounds_y_end: ram.read_word(SPECIAL_EXIT_ROOM_BOUNDS_Y_END),
+            special_exit_room_bounds_x_start: ram.read_word(SPECIAL_EXIT_ROOM_BOUNDS_X_START),
+            special_exit_room_bounds_x_end: ram.read_word(SPECIAL_EXIT_ROOM_BOUNDS_X_END),
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, CAMERA_Y_COORD_SCROLL_LOW, self.camera_y_low);
-        write_le_u16(ram, CAMERA_Y_COORD_SCROLL_HI, self.camera_y_hi);
-        write_le_u16(ram, CAMERA_X_COORD_SCROLL_LOW, self.camera_x_low);
-        write_le_u16(ram, CAMERA_X_COORD_SCROLL_HI, self.camera_x_hi);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(CAMERA_Y_COORD_SCROLL_LOW, self.camera_y_low);
+        ram.write_word(CAMERA_Y_COORD_SCROLL_HI, self.camera_y_hi);
+        ram.write_word(CAMERA_X_COORD_SCROLL_LOW, self.camera_x_low);
+        ram.write_word(CAMERA_X_COORD_SCROLL_HI, self.camera_x_hi);
         write_scroll_targets(ram, UP_DOWN_SCROLL_TARGET, self.scroll_targets);
-        write_le_u16(
-            ram,
-            UP_DOWN_SCROLL_TARGET_CACHED,
-            self.cached_scroll_targets[0],
-        );
-        write_le_u16(
-            ram,
+        ram.write_word(UP_DOWN_SCROLL_TARGET_CACHED, self.cached_scroll_targets[0]);
+        ram.write_word(
             UP_DOWN_SCROLL_TARGET_END_CACHED,
             self.cached_scroll_targets[1],
         );
-        write_le_u16(
-            ram,
+        ram.write_word(
             LEFT_RIGHT_SCROLL_TARGET_CACHED,
             self.cached_scroll_targets[2],
         );
-        write_le_u16(
-            ram,
+        ram.write_word(
             LEFT_RIGHT_SCROLL_TARGET_END_CACHED,
             self.cached_scroll_targets[3],
         );
@@ -414,49 +416,35 @@ impl WorldCameraBoundariesState {
             OVERWORLD_SCROLL_UP_COUNTER_EXIT,
             self.exit_scroll_counters,
         );
-        write_le_u16(
-            ram,
+        ram.write_word(
             CAMERA_Y_COORD_SCROLL_LOW_SPEXIT,
             self.special_exit_camera_y_low,
         );
-        write_le_u16(
-            ram,
+        ram.write_word(
             CAMERA_X_COORD_SCROLL_LOW_SPEXIT,
             self.special_exit_camera_x_low,
         );
-        write_le_u16(ram, CAMERA_Y_COORD_SCROLL_LOW_EXIT, self.exit_camera_y_low);
-        write_le_u16(ram, CAMERA_X_COORD_SCROLL_LOW_EXIT, self.exit_camera_x_low);
-        write_le_u16(
-            ram,
-            CAMERA_Y_COORD_SCROLL_LOW_CACHED,
-            self.cached_camera_y_low,
-        );
-        write_le_u16(
-            ram,
-            CAMERA_X_COORD_SCROLL_LOW_CACHED,
-            self.cached_camera_x_low,
-        );
-        write_le_u16(ram, OW_SCROLL_VARS0_EXIT, self.exit_room_bounds_y_start);
-        write_le_u16(ram, OW_SCROLL_VARS0_EXIT + 2, self.exit_room_bounds_y_end);
-        write_le_u16(ram, OW_SCROLL_VARS0_EXIT + 4, self.exit_room_bounds_x_start);
-        write_le_u16(ram, OW_SCROLL_VARS0_EXIT + 6, self.exit_room_bounds_x_end);
-        write_le_u16(
-            ram,
+        ram.write_word(CAMERA_Y_COORD_SCROLL_LOW_EXIT, self.exit_camera_y_low);
+        ram.write_word(CAMERA_X_COORD_SCROLL_LOW_EXIT, self.exit_camera_x_low);
+        ram.write_word(CAMERA_Y_COORD_SCROLL_LOW_CACHED, self.cached_camera_y_low);
+        ram.write_word(CAMERA_X_COORD_SCROLL_LOW_CACHED, self.cached_camera_x_low);
+        ram.write_word(OW_SCROLL_VARS0_EXIT, self.exit_room_bounds_y_start);
+        ram.write_word(OW_SCROLL_VARS0_EXIT + 2, self.exit_room_bounds_y_end);
+        ram.write_word(OW_SCROLL_VARS0_EXIT + 4, self.exit_room_bounds_x_start);
+        ram.write_word(OW_SCROLL_VARS0_EXIT + 6, self.exit_room_bounds_x_end);
+        ram.write_word(
             SPECIAL_EXIT_ROOM_BOUNDS_Y_START,
             self.special_exit_room_bounds_y_start,
         );
-        write_le_u16(
-            ram,
+        ram.write_word(
             SPECIAL_EXIT_ROOM_BOUNDS_Y_END,
             self.special_exit_room_bounds_y_end,
         );
-        write_le_u16(
-            ram,
+        ram.write_word(
             SPECIAL_EXIT_ROOM_BOUNDS_X_START,
             self.special_exit_room_bounds_x_start,
         );
-        write_le_u16(
-            ram,
+        ram.write_word(
             SPECIAL_EXIT_ROOM_BOUNDS_X_END,
             self.special_exit_room_bounds_x_end,
         );
@@ -729,31 +717,39 @@ impl WorldCameraBoundariesState {
 
 fn read_scroll_targets(ram: &[u8], base: usize) -> [u16; SCROLL_TARGET_COUNT] {
     [
-        read_le_u16(ram, base),
-        read_le_u16(ram, base + 2),
-        read_le_u16(ram, base + 4),
-        read_le_u16(ram, base + 6),
+        ram.read_word(base),
+        ram.read_word(base + 2),
+        ram.read_word(base + 4),
+        ram.read_word(base + 6),
     ]
 }
 
-fn write_scroll_targets(ram: &mut [u8], base: usize, targets: [u16; SCROLL_TARGET_COUNT]) {
+fn write_scroll_targets<R: RamTarget + ?Sized>(
+    ram: &mut R,
+    base: usize,
+    targets: [u16; SCROLL_TARGET_COUNT],
+) {
     for (index, value) in targets.iter().enumerate() {
-        write_le_u16(ram, base + index * 2, *value);
+        ram.write_word(base + index * 2, *value);
     }
 }
 
 fn read_scroll_counters(ram: &[u8], base: usize) -> [u16; SCROLL_COUNTER_COUNT] {
     [
-        read_le_u16(ram, base),
-        read_le_u16(ram, base + 2),
-        read_le_u16(ram, base + 4),
-        read_le_u16(ram, base + 6),
+        ram.read_word(base),
+        ram.read_word(base + 2),
+        ram.read_word(base + 4),
+        ram.read_word(base + 6),
     ]
 }
 
-fn write_scroll_counters(ram: &mut [u8], base: usize, counters: [u16; SCROLL_COUNTER_COUNT]) {
+fn write_scroll_counters<R: RamTarget + ?Sized>(
+    ram: &mut R,
+    base: usize,
+    counters: [u16; SCROLL_COUNTER_COUNT],
+) {
     for (index, value) in counters.iter().enumerate() {
-        write_le_u16(ram, base + index * 2, *value);
+        ram.write_word(base + index * 2, *value);
     }
 }
 
@@ -798,20 +794,35 @@ impl WorldPaletteThemeState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[LAST_LIGHT_VS_DARK_WORLD] = self.last_light_vs_dark_world;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(LAST_LIGHT_VS_DARK_WORLD, self.last_light_vs_dark_world);
         for (index, subset) in self.aux_bg_subset.iter().enumerate() {
-            ram[AUX_BG_SUBSET_0 + index] = *subset;
+            ram.write_byte(AUX_BG_SUBSET_0 + index, *subset);
         }
-        ram[OVERWORLD_PALETTE_AUX1_BP2TO4_HI] = self.overworld_palette_aux1_hi;
-        ram[PALETTE_MAIN_INDOORS_COPY] = self.palette_main_indoors_copy;
-        ram[MISC_SPRITES_GRAPHICS_INDEX] = self.misc_sprites_graphics_index;
-        ram[OVERWORLD_TILE_THEME_INDEX] = self.overworld_tile_theme_index;
-        ram[MAIN_TILE_THEME_INDEX] = self.main_tile_theme_index;
-        ram[AUX_TILE_THEME_INDEX] = self.aux_tile_theme_index;
-        ram[OVERWORLD_SPECIAL_TILE_THEME_INDEX] = self.special_exit_overworld_tile_theme_index;
-        ram[MAIN_TILE_THEME_INDEX_SPEXIT] = self.special_exit_main_tile_theme_index;
-        ram[AUX_TILE_THEME_INDEX_SPEXIT] = self.special_exit_aux_tile_theme_index;
+        ram.write_byte(
+            OVERWORLD_PALETTE_AUX1_BP2TO4_HI,
+            self.overworld_palette_aux1_hi,
+        );
+        ram.write_byte(PALETTE_MAIN_INDOORS_COPY, self.palette_main_indoors_copy);
+        ram.write_byte(
+            MISC_SPRITES_GRAPHICS_INDEX,
+            self.misc_sprites_graphics_index,
+        );
+        ram.write_byte(OVERWORLD_TILE_THEME_INDEX, self.overworld_tile_theme_index);
+        ram.write_byte(MAIN_TILE_THEME_INDEX, self.main_tile_theme_index);
+        ram.write_byte(AUX_TILE_THEME_INDEX, self.aux_tile_theme_index);
+        ram.write_byte(
+            OVERWORLD_SPECIAL_TILE_THEME_INDEX,
+            self.special_exit_overworld_tile_theme_index,
+        );
+        ram.write_byte(
+            MAIN_TILE_THEME_INDEX_SPEXIT,
+            self.special_exit_main_tile_theme_index,
+        );
+        ram.write_byte(
+            AUX_TILE_THEME_INDEX_SPEXIT,
+            self.special_exit_aux_tile_theme_index,
+        );
         // The dungeon entrance backup (0xc164-0xc167) belongs to
         // DungeonEntranceBackupState; the overworld restore reads it from there.
     }
@@ -906,18 +917,18 @@ pub(crate) struct WeatherVaneState {
 impl WeatherVaneState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
-            countdown: read_le_u16(ram, WEATHERVANE_COUNTDOWN),
+            countdown: ram.read_word(WEATHERVANE_COUNTDOWN),
             music_latch: ram_byte(ram, WEATHERVANE_MUSIC_LATCH),
             source_slot: ram_byte(ram, WEATHERVANE_SOURCE_SLOT),
             oam_offset: ram_byte(ram, WEATHERVANE_OAM_OFFSET),
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, WEATHERVANE_COUNTDOWN, self.countdown);
-        ram[WEATHERVANE_MUSIC_LATCH] = self.music_latch;
-        ram[WEATHERVANE_SOURCE_SLOT] = self.source_slot;
-        ram[WEATHERVANE_OAM_OFFSET] = self.oam_offset;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(WEATHERVANE_COUNTDOWN, self.countdown);
+        ram.write_byte(WEATHERVANE_MUSIC_LATCH, self.music_latch);
+        ram.write_byte(WEATHERVANE_SOURCE_SLOT, self.source_slot);
+        ram.write_byte(WEATHERVANE_OAM_OFFSET, self.oam_offset);
     }
 
     pub(crate) fn tick_countdown(&mut self) -> u16 {
@@ -960,9 +971,9 @@ impl BirdTravelStatusesState {
         Self { slots }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for (slot, status) in self.slots.iter().enumerate() {
-            ram[BIRD_TRAVEL_STATUS + slot] = *status;
+            ram.write_byte(BIRD_TRAVEL_STATUS + slot, *status);
         }
     }
 
@@ -1006,9 +1017,9 @@ impl OverworldEventInfoState {
         Self { info }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for (screen, value) in self.info.iter().enumerate() {
-            ram[OVERWORLD_EVENT_INFO + screen] = *value;
+            ram.write_byte(OVERWORLD_EVENT_INFO + screen, *value);
         }
     }
 
@@ -1068,12 +1079,18 @@ impl OverworldConfigTableState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for screen in 0..OVERWORLD_CONFIG_SCREENS {
-            ram[OVERWORLD_MUSIC_TABLE + screen] = self.music(screen);
-            ram[OVERWORLD_SPRITE_PALETTE_TABLE + screen] = self.sprite_palette(screen);
+            ram.write_byte(OVERWORLD_MUSIC_TABLE + screen, self.music(screen));
+            ram.write_byte(
+                OVERWORLD_SPRITE_PALETTE_TABLE + screen,
+                self.sprite_palette(screen),
+            );
             if screen < OVERWORLD_SPRITE_GFX_SCREENS {
-                ram[OVERWORLD_SPRITE_GFX_TABLE + screen] = self.sprite_graphics(screen);
+                ram.write_byte(
+                    OVERWORLD_SPRITE_GFX_TABLE + screen,
+                    self.sprite_graphics(screen),
+                );
             }
         }
     }
@@ -1180,15 +1197,15 @@ pub(crate) struct OverworldMapUiState {
 impl OverworldMapUiState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
-            map_state: read_le_u16(ram, OVERWORLD_MAP_STATE),
+            map_state: ram.read_word(OVERWORLD_MAP_STATE),
             map_flags: ram_byte(ram, OVERWORLD_MAP_FLAGS),
             bird_travel_statuses: BirdTravelStatusesState::load_from_ram(ram),
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, OVERWORLD_MAP_STATE, self.map_state);
-        ram[OVERWORLD_MAP_FLAGS] = self.map_flags;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(OVERWORLD_MAP_STATE, self.map_state);
+        ram.write_byte(OVERWORLD_MAP_FLAGS, self.map_flags);
         self.bird_travel_statuses.write_to_ram(ram);
     }
 
@@ -1290,12 +1307,12 @@ impl BirdTravelDestinationsState {
         Self { slots }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for (slot, destination) in self.slots.iter().enumerate() {
-            ram[BIRD_TRAVEL_X_LO + slot] = destination.x as u8;
-            ram[BIRD_TRAVEL_X_HI + slot] = (destination.x >> 8) as u8;
-            ram[BIRD_TRAVEL_Y_LO + slot] = destination.y as u8;
-            ram[BIRD_TRAVEL_Y_HI + slot] = (destination.y >> 8) as u8;
+            ram.write_byte(BIRD_TRAVEL_X_LO + slot, destination.x as u8);
+            ram.write_byte(BIRD_TRAVEL_X_HI + slot, (destination.x >> 8) as u8);
+            ram.write_byte(BIRD_TRAVEL_Y_LO + slot, destination.y as u8);
+            ram.write_byte(BIRD_TRAVEL_Y_HI + slot, (destination.y >> 8) as u8);
         }
     }
 
@@ -1333,9 +1350,9 @@ impl OverworldMapZoomState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[MODE7_ZOOM_STEP_COUNTER] = self.step_counter;
-        ram[TIMER_FOR_MODE7_ZOOM] = self.timer;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(MODE7_ZOOM_STEP_COUNTER, self.step_counter);
+        ram.write_byte(TIMER_FOR_MODE7_ZOOM, self.timer);
     }
 
     pub(crate) fn set_step_counter(&mut self, value: u8) {
@@ -1362,17 +1379,16 @@ pub(crate) struct OverworldScreenSizeState {
 impl OverworldScreenSizeState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
-            big_area: read_le_u16(ram, OVERWORLD_AREA_IS_BIG),
+            big_area: ram.read_word(OVERWORLD_AREA_IS_BIG),
             big_area_backup: ram_byte(ram, OVERWORLD_AREA_IS_BIG_BACKUP),
-            right_bottom_scroll_bound: read_le_u16(ram, OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND),
+            right_bottom_scroll_bound: ram.read_word(OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND),
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, OVERWORLD_AREA_IS_BIG, self.big_area);
-        ram[OVERWORLD_AREA_IS_BIG_BACKUP] = self.big_area_backup;
-        write_le_u16(
-            ram,
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(OVERWORLD_AREA_IS_BIG, self.big_area);
+        ram.write_byte(OVERWORLD_AREA_IS_BIG_BACKUP, self.big_area_backup);
+        ram.write_word(
             OVERWORLD_RIGHT_BOTTOM_SCROLL_BOUND,
             self.right_bottom_scroll_bound,
         );
@@ -1429,7 +1445,7 @@ impl OverworldScrollDeltaState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         // Owns only the two scroll-delta bytes at 0x69e/0x69f. The horizontal delta's high
         // byte lands in 0x6a0 = MIRROR_VARS (mode-reused scratch); C writes it ONLY
         // transiently inside Overworld_ScrollMap (write_le_u16(OVERWORLD_SCROLL_DELTA + 1)),
@@ -1437,8 +1453,8 @@ impl OverworldScrollDeltaState {
         // mirror-warp target index (f296375). The horizontal-word setters write 0x6a0
         // through explicitly instead — same write-through pattern as the 0xc8 sequence
         // counter.
-        ram[OVERWORLD_SCROLL_DELTA] = self.bytes[0];
-        ram[OVERWORLD_SCROLL_DELTA + 1] = self.bytes[1];
+        ram.write_byte(OVERWORLD_SCROLL_DELTA, self.bytes[0]);
+        ram.write_byte(OVERWORLD_SCROLL_DELTA + 1, self.bytes[1]);
     }
 
     pub(crate) fn vertical_delta_low_byte(&self) -> u8 {
@@ -1491,16 +1507,22 @@ pub struct OverworldMap16LoadState {
 impl OverworldMap16LoadState {
     fn load_from_ram_at(ram: &[u8], src_off: usize, dst_off: usize, y_unit: usize) -> Self {
         Self {
-            src_off: read_le_u16(ram, src_off),
-            dst_off: read_le_u16(ram, dst_off),
-            y_unit: read_le_u16(ram, y_unit),
+            src_off: ram.read_word(src_off),
+            dst_off: ram.read_word(dst_off),
+            y_unit: ram.read_word(y_unit),
         }
     }
 
-    fn write_to_ram_at(&self, ram: &mut [u8], src_off: usize, dst_off: usize, y_unit: usize) {
-        write_le_u16(ram, src_off, self.src_off);
-        write_le_u16(ram, dst_off, self.dst_off);
-        write_le_u16(ram, y_unit, self.y_unit);
+    fn write_to_ram_at<R: RamTarget + ?Sized>(
+        &self,
+        ram: &mut R,
+        src_off: usize,
+        dst_off: usize,
+        y_unit: usize,
+    ) {
+        ram.write_word(src_off, self.src_off);
+        ram.write_word(dst_off, self.dst_off);
+        ram.write_word(y_unit, self.y_unit);
     }
 
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
@@ -1521,7 +1543,7 @@ impl OverworldMap16LoadState {
         )
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         self.write_to_ram_at(
             ram,
             MAP16_LOAD_SRC_OFF,
@@ -1530,7 +1552,7 @@ impl OverworldMap16LoadState {
         );
     }
 
-    pub(crate) fn write_previous_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_previous_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         self.write_to_ram_at(
             ram,
             MAP16_LOAD_SRC_OFF_PREV,
@@ -1555,16 +1577,16 @@ pub struct SmallOverworldMap16ScrollBackupState {
 impl SmallOverworldMap16ScrollBackupState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
-            src_off: read_le_u16(ram, ORANGE_BLUE_BARRIER_STATE),
-            dst_off: read_le_u16(ram, SMALL_OW_SCROLL_BACKUP_MAP16_DST_OFF),
-            y_unit: read_le_u16(ram, SMALL_OW_SCROLL_BACKUP_MAP16_Y_UNIT),
+            src_off: ram.read_word(ORANGE_BLUE_BARRIER_STATE),
+            dst_off: ram.read_word(SMALL_OW_SCROLL_BACKUP_MAP16_DST_OFF),
+            y_unit: ram.read_word(SMALL_OW_SCROLL_BACKUP_MAP16_Y_UNIT),
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, ORANGE_BLUE_BARRIER_STATE, self.src_off);
-        write_le_u16(ram, SMALL_OW_SCROLL_BACKUP_MAP16_DST_OFF, self.dst_off);
-        write_le_u16(ram, SMALL_OW_SCROLL_BACKUP_MAP16_Y_UNIT, self.y_unit);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(ORANGE_BLUE_BARRIER_STATE, self.src_off);
+        ram.write_word(SMALL_OW_SCROLL_BACKUP_MAP16_DST_OFF, self.dst_off);
+        ram.write_word(SMALL_OW_SCROLL_BACKUP_MAP16_Y_UNIT, self.y_unit);
     }
 }
 
@@ -1581,16 +1603,16 @@ impl OverworldMap16State {
         Self {
             active_load: OverworldMap16LoadState::load_from_ram(ram),
             previous_load: OverworldMap16LoadState::load_previous_from_ram(ram),
-            special_exit_src_off: read_le_u16(ram, MAP16_LOAD_SRC_OFF_SPEXIT),
-            exit_src_off: read_le_u16(ram, MAP16_LOAD_SRC_OFF_EXIT),
+            special_exit_src_off: ram.read_word(MAP16_LOAD_SRC_OFF_SPEXIT),
+            exit_src_off: ram.read_word(MAP16_LOAD_SRC_OFF_EXIT),
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         self.active_load.write_to_ram(ram);
         self.previous_load.write_previous_to_ram(ram);
-        write_le_u16(ram, MAP16_LOAD_SRC_OFF_SPEXIT, self.special_exit_src_off);
-        write_le_u16(ram, MAP16_LOAD_SRC_OFF_EXIT, self.exit_src_off);
+        ram.write_word(MAP16_LOAD_SRC_OFF_SPEXIT, self.special_exit_src_off);
+        ram.write_word(MAP16_LOAD_SRC_OFF_EXIT, self.exit_src_off);
         // small_scroll_backup (0xc172/0xc174/0xc176) is deliberately NOT part of
         // this model: 0xc172-73 doubles as the dungeon crystal-switch barrier
         // word. Stores write through and reads load from RAM, like C.
@@ -1611,8 +1633,8 @@ impl OverworldEntranceState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[TRIGGER_SPECIAL_ENTRANCE] = self.special_entrance_trigger;
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(TRIGGER_SPECIAL_ENTRANCE, self.special_entrance_trigger);
         // OVERWORLD_ENTRANCE_SEQUENCE_COUNTER (0xc8) is a five-way mode-reused scratch byte
         // (R16 / intro-sword / menu-timer / overworld-entrance / select-file cursor). Bulk-
         // projecting our persisted copy every frame re-stamped a stale value over whatever
@@ -1624,8 +1646,8 @@ impl OverworldEntranceState {
 
     /// Write the (reused) 0xc8 entrance-sequence byte. Called only from the entrance bridge's
     /// write-through sync, never from the bulk write_to_ram, so it lands exactly when C does.
-    pub(crate) fn write_sequence_counter_to_ram(&self, ram: &mut [u8]) {
-        ram[OVERWORLD_ENTRANCE_SEQUENCE_COUNTER] = self.sequence_counter;
+    pub(crate) fn write_sequence_counter_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(OVERWORLD_ENTRANCE_SEQUENCE_COUNTER, self.sequence_counter);
     }
 
     pub(crate) fn set_special_entrance_trigger(&mut self, value: u8) {
@@ -1664,14 +1686,14 @@ pub(crate) struct OverworldExitState {
 impl OverworldExitState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
-            exit_screen: read_le_u16(ram, OVERWORLD_SCREEN_INDEX_EXIT),
-            special_exit_screen: read_le_u16(ram, OVERWORLD_SCREEN_INDEX_SPEXIT),
+            exit_screen: ram.read_word(OVERWORLD_SCREEN_INDEX_EXIT),
+            special_exit_screen: ram.read_word(OVERWORLD_SCREEN_INDEX_SPEXIT),
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, OVERWORLD_SCREEN_INDEX_EXIT, self.exit_screen);
-        write_le_u16(ram, OVERWORLD_SCREEN_INDEX_SPEXIT, self.special_exit_screen);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(OVERWORLD_SCREEN_INDEX_EXIT, self.exit_screen);
+        ram.write_word(OVERWORLD_SCREEN_INDEX_SPEXIT, self.special_exit_screen);
     }
 
     pub(crate) fn set_exit_screen(&mut self, value: u16) {
@@ -1699,40 +1721,37 @@ pub(crate) struct OverworldTransitionState {
 impl OverworldTransitionState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
-            edge_direction_bits: read_le_u16(ram, OVERWORLD_SCREEN_TRANS_DIR_BITS),
-            direction_bits: read_le_u16(ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2),
+            edge_direction_bits: ram.read_word(OVERWORLD_SCREEN_TRANS_DIR_BITS),
+            direction_bits: ram.read_word(OVERWORLD_SCREEN_TRANS_DIR_BITS2),
             direction_enum: ram_byte(ram, OVERWORLD_TRANSITION_DIR),
-            screen_transition: read_le_u16(ram, OVERWORLD_SCREEN_TRANSITION),
+            screen_transition: ram.read_word(OVERWORLD_SCREEN_TRANSITION),
             transition_counter: ram_byte(ram, TRANSITION_COUNTER),
             countdown: ram_byte(ram, OW_COUNTDOWN_TRANSITION),
-            previous_direction_bits: read_le_u16(ram, OVERWORLD_SCREEN_TRANS_DIR_BITS_PREV),
-            previous_direction_bits2: read_le_u16(ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2_PREV),
+            previous_direction_bits: ram.read_word(OVERWORLD_SCREEN_TRANS_DIR_BITS_PREV),
+            previous_direction_bits2: ram.read_word(OVERWORLD_SCREEN_TRANS_DIR_BITS2_PREV),
             previous_screen_transition: ram_byte(ram, OVERWORLD_SCREEN_TRANSITION_PREV),
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(
-            ram,
-            OVERWORLD_SCREEN_TRANS_DIR_BITS,
-            self.edge_direction_bits,
-        );
-        write_le_u16(ram, OVERWORLD_SCREEN_TRANS_DIR_BITS2, self.direction_bits);
-        ram[OVERWORLD_TRANSITION_DIR] = self.direction_enum;
-        write_le_u16(ram, OVERWORLD_SCREEN_TRANSITION, self.screen_transition);
-        ram[TRANSITION_COUNTER] = self.transition_counter;
-        ram[OW_COUNTDOWN_TRANSITION] = self.countdown;
-        write_le_u16(
-            ram,
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(OVERWORLD_SCREEN_TRANS_DIR_BITS, self.edge_direction_bits);
+        ram.write_word(OVERWORLD_SCREEN_TRANS_DIR_BITS2, self.direction_bits);
+        ram.write_byte(OVERWORLD_TRANSITION_DIR, self.direction_enum);
+        ram.write_word(OVERWORLD_SCREEN_TRANSITION, self.screen_transition);
+        ram.write_byte(TRANSITION_COUNTER, self.transition_counter);
+        ram.write_byte(OW_COUNTDOWN_TRANSITION, self.countdown);
+        ram.write_word(
             OVERWORLD_SCREEN_TRANS_DIR_BITS_PREV,
             self.previous_direction_bits,
         );
-        write_le_u16(
-            ram,
+        ram.write_word(
             OVERWORLD_SCREEN_TRANS_DIR_BITS2_PREV,
             self.previous_direction_bits2,
         );
-        ram[OVERWORLD_SCREEN_TRANSITION_PREV] = self.previous_screen_transition;
+        ram.write_byte(
+            OVERWORLD_SCREEN_TRANSITION_PREV,
+            self.previous_screen_transition,
+        );
     }
 
     pub(crate) fn edge_direction_bits(&self) -> u8 {
@@ -1893,7 +1912,7 @@ impl OverworldState {
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         self.event_info.write_to_ram(ram);
         self.config_table.write_to_ram(ram);
         self.map_ui.write_to_ram(ram);
@@ -1927,36 +1946,32 @@ pub(crate) struct WorldRegionState {
 impl WorldRegionState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
-            current_area_of_player: read_le_u16(ram, CURRENT_AREA_OF_PLAYER),
-            overworld_area_index: read_le_u16(ram, OVERWORLD_AREA_INDEX),
-            special_exit_area_index: read_le_u16(ram, OVERWORLD_AREA_INDEX_SPEXIT),
-            exit_area_index: read_le_u16(ram, OVERWORLD_AREA_INDEX_EXIT),
-            previous_screen_index: read_le_u16(ram, OVERWORLD_SCREEN_INDEX_PREV),
-            overlay_index: read_le_u16(ram, OVERLAY_INDEX),
+            current_area_of_player: ram.read_word(CURRENT_AREA_OF_PLAYER),
+            overworld_area_index: ram.read_word(OVERWORLD_AREA_INDEX),
+            special_exit_area_index: ram.read_word(OVERWORLD_AREA_INDEX_SPEXIT),
+            exit_area_index: ram.read_word(OVERWORLD_AREA_INDEX_EXIT),
+            previous_screen_index: ram.read_word(OVERWORLD_SCREEN_INDEX_PREV),
+            overlay_index: ram.read_word(OVERLAY_INDEX),
             rng_seed: ram_byte(ram, RNG_SEED),
             dark_world_region_index: ram_byte(ram, IS_IN_DARK_WORLD_FLAG),
             area_changed_flag: ram_byte(ram, FLAG_OVERWORLD_AREA_CHANGED),
             entrance_id: ram_byte(ram, WHICH_ENTRANCE),
-            overworld_entrance_value: read_le_u16(ram, OW_ENTRANCE_VALUE),
+            overworld_entrance_value: ram.read_word(OW_ENTRANCE_VALUE),
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, CURRENT_AREA_OF_PLAYER, self.current_area_of_player);
-        write_le_u16(ram, OVERWORLD_AREA_INDEX, self.overworld_area_index);
-        write_le_u16(
-            ram,
-            OVERWORLD_AREA_INDEX_SPEXIT,
-            self.special_exit_area_index,
-        );
-        write_le_u16(ram, OVERWORLD_AREA_INDEX_EXIT, self.exit_area_index);
-        write_le_u16(ram, OVERWORLD_SCREEN_INDEX_PREV, self.previous_screen_index);
-        write_le_u16(ram, OVERLAY_INDEX, self.overlay_index);
-        ram[RNG_SEED] = self.rng_seed;
-        ram[IS_IN_DARK_WORLD_FLAG] = self.dark_world_region_index;
-        ram[FLAG_OVERWORLD_AREA_CHANGED] = self.area_changed_flag;
-        ram[WHICH_ENTRANCE] = self.entrance_id;
-        write_le_u16(ram, OW_ENTRANCE_VALUE, self.overworld_entrance_value);
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_word(CURRENT_AREA_OF_PLAYER, self.current_area_of_player);
+        ram.write_word(OVERWORLD_AREA_INDEX, self.overworld_area_index);
+        ram.write_word(OVERWORLD_AREA_INDEX_SPEXIT, self.special_exit_area_index);
+        ram.write_word(OVERWORLD_AREA_INDEX_EXIT, self.exit_area_index);
+        ram.write_word(OVERWORLD_SCREEN_INDEX_PREV, self.previous_screen_index);
+        ram.write_word(OVERLAY_INDEX, self.overlay_index);
+        ram.write_byte(RNG_SEED, self.rng_seed);
+        ram.write_byte(IS_IN_DARK_WORLD_FLAG, self.dark_world_region_index);
+        ram.write_byte(FLAG_OVERWORLD_AREA_CHANGED, self.area_changed_flag);
+        ram.write_byte(WHICH_ENTRANCE, self.entrance_id);
+        ram.write_word(OW_ENTRANCE_VALUE, self.overworld_entrance_value);
     }
 
     pub(crate) fn current_area_of_player(&self) -> u8 {
@@ -2205,38 +2220,38 @@ impl WorldTransientState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         let mut overworld_map16_stripe = [0; OVERWORLD_MAP16_STRIPE_WORDS];
         for (index, tile) in overworld_map16_stripe.iter_mut().enumerate() {
-            *tile = read_le_u16(ram, DUNG_REPLACEMENT_TILE_STATE + index * 2);
+            *tile = ram.read_word(DUNG_REPLACEMENT_TILE_STATE + index * 2);
         }
         Self {
             custom_spell_animation_flag: ram_byte(ram, FLAG_CUSTOM_SPELL_ANIM_ACTIVE),
             allow_scroll_z: ram_byte(ram, ALLOW_SCROLL_Z),
             boss_prize_graphics_countdown: ram_byte(ram, BOSS_PRIZE_GRAPHICS_COUNTDOWN),
-            big_key_door_message_triggered: read_le_u16(ram, BIG_KEY_DOOR_MESSAGE_TRIGGERED),
-            savegame_master_sword_flags: read_le_u16(ram, SAVEGAME_HAS_MASTER_SWORD_FLAGS),
+            big_key_door_message_triggered: ram.read_word(BIG_KEY_DOOR_MESSAGE_TRIGGERED),
+            savegame_master_sword_flags: ram.read_word(SAVEGAME_HAS_MASTER_SWORD_FLAGS),
             standing_in_doorway_cached: ram_byte(ram, IS_STANDING_IN_DOORWAY_CACHED),
-            cached_room_bounds_y_start: read_le_u16(ram, CACHED_ROOM_BOUNDS_Y_START),
-            cached_room_bounds_y_end: read_le_u16(ram, CACHED_ROOM_BOUNDS_Y_END),
-            cached_room_bounds_x_start: read_le_u16(ram, CACHED_ROOM_BOUNDS_X_START),
-            cached_room_bounds_x_end: read_le_u16(ram, CACHED_ROOM_BOUNDS_X_END),
-            overworld_peg_puzzle_progress: read_le_u16(ram, OVERWORLD_PEG_PUZZLE_PROGRESS),
-            overworld_hole_tilemap_position: read_le_u16(ram, OVERWORLD_HOLE_TILEMAP_POS),
-            overworld_bomb_tile_sweep_x: read_le_u16(ram, OVERWORLD_BOMB_TILE_SWEEP_X),
-            overworld_bomb_tile_sweep_y_end: read_le_u16(ram, OVERWORLD_BOMB_TILE_SWEEP_Y_END),
+            cached_room_bounds_y_start: ram.read_word(CACHED_ROOM_BOUNDS_Y_START),
+            cached_room_bounds_y_end: ram.read_word(CACHED_ROOM_BOUNDS_Y_END),
+            cached_room_bounds_x_start: ram.read_word(CACHED_ROOM_BOUNDS_X_START),
+            cached_room_bounds_x_end: ram.read_word(CACHED_ROOM_BOUNDS_X_END),
+            overworld_peg_puzzle_progress: ram.read_word(OVERWORLD_PEG_PUZZLE_PROGRESS),
+            overworld_hole_tilemap_position: ram.read_word(OVERWORLD_HOLE_TILEMAP_POS),
+            overworld_bomb_tile_sweep_x: ram.read_word(OVERWORLD_BOMB_TILE_SWEEP_X),
+            overworld_bomb_tile_sweep_y_end: ram.read_word(OVERWORLD_BOMB_TILE_SWEEP_Y_END),
             room_transitioning_flags: ram_byte(ram, ROOM_TRANSITIONING_FLAGS),
             tile_interaction_shared_flag: ram_byte(ram, TILE_INTERACTION_SHARED_FLAG),
             quadrant_fullsize_x: ram_byte(ram, QUADRANT_FULLSIZE_X),
             quadrant_fullsize_y: ram_byte(ram, QUADRANT_FULLSIZE_Y),
             cached_quadrant_fullsize_x: ram_byte(ram, QUADRANT_FULLSIZE_X_CACHED),
             cached_quadrant_fullsize_y: ram_byte(ram, QUADRANT_FULLSIZE_X_CACHED + 1),
-            special_exit_tilemap_layer_copy: read_le_u16(ram, TM_COPY_SPEXIT),
-            exit_tilemap_layer_copy: read_le_u16(ram, TM_COPY_EXIT),
+            special_exit_tilemap_layer_copy: ram.read_word(TM_COPY_SPEXIT),
+            exit_tilemap_layer_copy: ram.read_word(TM_COPY_EXIT),
             move_overlay_counter: ram_byte(ram, MOVE_OVERLAY_CTR),
             overworld_hole_scan_step: ram_byte(ram, OVERWORLD_HOLE_SCAN_STEP),
             overworld_map16_stripe,
         }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         // 0x0500 is the dungeon object's replacement-tile table in module 7 and
         // the overworld map16 scratch table elsewhere. DungeonObjectTrackingState
         // is the sole owner while the dungeon module is active; projecting the
@@ -2256,71 +2271,72 @@ impl WorldTransientState {
     /// Push the write-through stripe window. Only round-trip tests use this;
     /// production writes go straight to RAM in the bridge setter.
     #[cfg(test)]
-    pub(crate) fn write_overworld_map16_stripe_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_overworld_map16_stripe_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for (index, tile) in self.overworld_map16_stripe.iter().enumerate() {
-            write_le_u16(ram, DUNG_REPLACEMENT_TILE_STATE + index * 2, *tile);
+            ram.write_word(DUNG_REPLACEMENT_TILE_STATE + index * 2, *tile);
         }
     }
 
-    pub(crate) fn write_scalar_fields_to_ram(&self, ram: &mut [u8]) {
-        ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE] = self.custom_spell_animation_flag;
-        ram[ALLOW_SCROLL_Z] = self.allow_scroll_z;
-        ram[BOSS_PRIZE_GRAPHICS_COUNTDOWN] = self.boss_prize_graphics_countdown;
-        write_le_u16(
-            ram,
+    pub(crate) fn write_scalar_fields_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+        ram.write_byte(
+            FLAG_CUSTOM_SPELL_ANIM_ACTIVE,
+            self.custom_spell_animation_flag,
+        );
+        ram.write_byte(ALLOW_SCROLL_Z, self.allow_scroll_z);
+        ram.write_byte(
+            BOSS_PRIZE_GRAPHICS_COUNTDOWN,
+            self.boss_prize_graphics_countdown,
+        );
+        ram.write_word(
             BIG_KEY_DOOR_MESSAGE_TRIGGERED,
             self.big_key_door_message_triggered,
         );
-        write_le_u16(
-            ram,
+        ram.write_word(
             SAVEGAME_HAS_MASTER_SWORD_FLAGS,
             self.savegame_master_sword_flags,
         );
-        ram[IS_STANDING_IN_DOORWAY_CACHED] = self.standing_in_doorway_cached;
-        write_le_u16(
-            ram,
-            CACHED_ROOM_BOUNDS_Y_START,
-            self.cached_room_bounds_y_start,
+        ram.write_byte(
+            IS_STANDING_IN_DOORWAY_CACHED,
+            self.standing_in_doorway_cached,
         );
-        write_le_u16(ram, CACHED_ROOM_BOUNDS_Y_END, self.cached_room_bounds_y_end);
-        write_le_u16(
-            ram,
-            CACHED_ROOM_BOUNDS_X_START,
-            self.cached_room_bounds_x_start,
-        );
-        write_le_u16(ram, CACHED_ROOM_BOUNDS_X_END, self.cached_room_bounds_x_end);
-        write_le_u16(
-            ram,
+        ram.write_word(CACHED_ROOM_BOUNDS_Y_START, self.cached_room_bounds_y_start);
+        ram.write_word(CACHED_ROOM_BOUNDS_Y_END, self.cached_room_bounds_y_end);
+        ram.write_word(CACHED_ROOM_BOUNDS_X_START, self.cached_room_bounds_x_start);
+        ram.write_word(CACHED_ROOM_BOUNDS_X_END, self.cached_room_bounds_x_end);
+        ram.write_word(
             OVERWORLD_PEG_PUZZLE_PROGRESS,
             self.overworld_peg_puzzle_progress,
         );
-        write_le_u16(
-            ram,
+        ram.write_word(
             OVERWORLD_HOLE_TILEMAP_POS,
             self.overworld_hole_tilemap_position,
         );
-        write_le_u16(
-            ram,
+        ram.write_word(
             OVERWORLD_BOMB_TILE_SWEEP_X,
             self.overworld_bomb_tile_sweep_x,
         );
-        write_le_u16(
-            ram,
+        ram.write_word(
             OVERWORLD_BOMB_TILE_SWEEP_Y_END,
             self.overworld_bomb_tile_sweep_y_end,
         );
-        ram[ROOM_TRANSITIONING_FLAGS] = self.room_transitioning_flags;
-        ram[TILE_INTERACTION_SHARED_FLAG] = self.tile_interaction_shared_flag;
-        ram[QUADRANT_FULLSIZE_X] = self.quadrant_fullsize_x;
-        ram[QUADRANT_FULLSIZE_Y] = self.quadrant_fullsize_y;
-        ram[QUADRANT_FULLSIZE_X_CACHED] = self.cached_quadrant_fullsize_x;
-        ram[QUADRANT_FULLSIZE_X_CACHED + 1] = self.cached_quadrant_fullsize_y;
+        ram.write_byte(ROOM_TRANSITIONING_FLAGS, self.room_transitioning_flags);
+        ram.write_byte(
+            TILE_INTERACTION_SHARED_FLAG,
+            self.tile_interaction_shared_flag,
+        );
+        ram.write_byte(QUADRANT_FULLSIZE_X, self.quadrant_fullsize_x);
+        ram.write_byte(QUADRANT_FULLSIZE_Y, self.quadrant_fullsize_y);
+        ram.write_byte(QUADRANT_FULLSIZE_X_CACHED, self.cached_quadrant_fullsize_x);
+        ram.write_byte(
+            QUADRANT_FULLSIZE_X_CACHED + 1,
+            self.cached_quadrant_fullsize_y,
+        );
         // TM_COPY/TS_COPY (0x1c-0x1d) belong to DisplayState; only the exit
         // backups of the layer masks live here.
-        write_le_u16(ram, TM_COPY_SPEXIT, self.special_exit_tilemap_layer_copy);
-        write_le_u16(ram, TM_COPY_EXIT, self.exit_tilemap_layer_copy);
-        ram[MOVE_OVERLAY_CTR] = self.move_overlay_counter;
-        ram[OVERWORLD_HOLE_SCAN_STEP] = self.overworld_hole_scan_step;
+        ram.write_word(TM_COPY_SPEXIT, self.special_exit_tilemap_layer_copy);
+        ram.write_word(TM_COPY_EXIT, self.exit_tilemap_layer_copy);
+        ram.write_byte(MOVE_OVERLAY_CTR, self.move_overlay_counter);
+        ram.write_byte(OVERWORLD_HOLE_SCAN_STEP, self.overworld_hole_scan_step);
     }
 
     pub(crate) fn flag_custom_spell_anim_active(&self) -> u8 {
@@ -2598,16 +2614,16 @@ impl RoomBoundsState {
         let mut y_bounds = [0; ROOM_BOUND_COUNT];
         let mut x_bounds = [0; ROOM_BOUND_COUNT];
         for index in 0..ROOM_BOUND_COUNT {
-            y_bounds[index] = read_le_u16(ram, ROOM_BOUNDS + index * 2);
-            x_bounds[index] = read_le_u16(ram, ROOM_BOUNDS + 8 + index * 2);
+            y_bounds[index] = ram.read_word(ROOM_BOUNDS + index * 2);
+            x_bounds[index] = ram.read_word(ROOM_BOUNDS + 8 + index * 2);
         }
         Self { y_bounds, x_bounds }
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         for index in 0..ROOM_BOUND_COUNT {
-            write_le_u16(ram, ROOM_BOUNDS + index * 2, self.y_bounds[index]);
-            write_le_u16(ram, ROOM_BOUNDS + 8 + index * 2, self.x_bounds[index]);
+            ram.write_word(ROOM_BOUNDS + index * 2, self.y_bounds[index]);
+            ram.write_word(ROOM_BOUNDS + 8 + index * 2, self.x_bounds[index]);
         }
     }
 
@@ -2744,7 +2760,7 @@ impl WorldState {
         out
     }
 
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         self.location.write_to_ram(ram);
         self.scroll.write_to_ram(ram);
         self.camera_boundaries.write_to_ram(ram);
