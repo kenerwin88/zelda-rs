@@ -41,3 +41,9 @@ The timed 200,000-frame comparison matched every video and audio hash in
 193.3 seconds against 323.9 seconds for the same frames on the same
 machine before the change (40% less wall time), with the same per-stage
 CPU totals.
+
+The full cold route on the threaded binary matched all 1,581,079 frames of
+video and audio in 1,528 seconds (2,514 seconds for the previous route on
+this machine the same afternoon), with the four WRAM goldens and the
+full-route WRAM endpoint (`31619379…`) unchanged; the run is promoted in
+`routes/full_run/parity-frontier.json`.
