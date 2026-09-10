@@ -19,7 +19,7 @@
   },
   "project": "routes/full_run",
   "promoted": {
-    "binary_sha256": "c63d66d5434b87ff279ac9fb564aba227bd9c80704406b1afb54a771a19fbefa",
+    "binary_sha256": "3d7927db56fffb86612737a431dd2c96ccdeddf8c5c61b1072ea8e201ca40ebe",
     "cached_av_receipt": {
       "candidate_ledger_sha256": "3d52711c51a4f01031bd336aa582d4b6a316c71199710d3354ef015fcca1440c",
       "frames": 1581079,
@@ -27,13 +27,13 @@
         "video",
         "audio"
       ],
-      "manifest_sha256": "09df4bc288b7f27898b135296331292766eb1a4147e610ce9e23cc419d6f4f88",
+      "manifest_sha256": "2f201537c677db83a1bf072216b2fd8bcc13fb31aa7e6b48293cd03b7333b6cc",
       "oracle_cache_key": "ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18",
       "oracle_cache_manifest_sha256": "4c7f88fbf327a4b3af7d3f8614d82ebb2318f11b607798d5dddb4a97b7fe2715",
-      "receipt_path": "receipts/link-full-av.manifest.json",
-      "run": "/Users/missingno/Documents/zelda3-rs/target/link-main/link-full-av"
+      "receipt_path": "receipts/fwd-full-av.manifest.json",
+      "run": "/Users/missingno/Documents/zelda3-rs/target/fwd-main/fwd-full-av"
     },
-    "commit": "df1221e8d48420bc397b9ac000318653e6ec5938",
+    "commit": "3d4540d712286a25b37f34015ea5bc8ad0d22ace",
     "kind": "cached_av_pass",
     "last_exact_audio_frame": 1581078,
     "last_exact_engine_state_frame": 1581078,
