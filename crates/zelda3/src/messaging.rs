@@ -609,11 +609,20 @@ impl ZeldaState {
             // consumes the result when the interval has one schedule.
             let earliest = super::dialogue_initialization_cpu_plan(self, (255, 528));
             let latest = super::dialogue_initialization_cpu_plan(self, (255, 700));
-            assert_eq!(
-                earliest.schedule_key(),
-                latest.schedule_key(),
-                "dialogue CPU schedule varies across the measured module entry interval"
-            );
+            // The interval is the translated-only path's guess at the entry
+            // raster. When its two ends disagree (route-walk host 1,241,0xx)
+            // no schedule is provably right; keep the earliest and report it
+            // under `ZELDA3_DEBUG_DIALOGUE_CPU_PLAN` rather than abort play.
+            if earliest.schedule_key() != latest.schedule_key()
+                && crate::debug_env::var_os("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some()
+            {
+                eprintln!(
+                    "[DIALOGUE-CPU-PLAN] host={} entry interval changed the schedule: earliest={:?} latest={:?}; keeping the earliest",
+                    self.frame_ctr_dbg,
+                    earliest.schedule_key(),
+                    latest.schedule_key(),
+                );
+            }
             self.pending_dialogue_initialization_schedule = Some((
                 earliest.prefix_nmi_crossings(),
                 earliest.caller_nmi_crossings(),

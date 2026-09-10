@@ -281,7 +281,11 @@ impl ZeldaState {
 
     /// Run an active-scanout NMI for an owner which cannot immediately stage
     /// dialogue text. Reject a dialogue lifecycle conflict before the handler
-    /// mutates hardware or consumes its one-shot DMA evidence.
+    /// mutates hardware or consumes its one-shot DMA evidence. A completed
+    /// scroll whose text is already staged is not such a conflict: this
+    /// handler's BG3 DMA publishes it, exactly as the Open NMI which follows
+    /// the return-only slice does, and the token check below proves the
+    /// publication was claimed.
     pub(super) fn interrupt_nmi_for_active_scanout_without_dialogue_owner(
         &mut self,
         input: u16,
@@ -294,6 +298,8 @@ impl ZeldaState {
                 super::DialogueScrollPhase::Idle
                     | super::DialogueScrollPhase::CompletedScroll
                     | super::DialogueScrollPhase::RetiredTextDma
+                    | super::DialogueScrollPhase::CompletionStagedAfterFrozenScanout
+                    | super::DialogueScrollPhase::CompletionStagedAfterSnapshot
             ),
             "an active-scanout NMI without a dialogue owner overlaps an in-flight text publication",
         );

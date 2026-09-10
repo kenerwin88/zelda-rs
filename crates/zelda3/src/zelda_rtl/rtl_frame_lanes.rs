@@ -3146,7 +3146,15 @@ impl ZeldaState {
                 self.assert_native_display_state_matches_ram();
                 return true;
             }
+            // A message-line scroll copy still in flight keeps the ROM inside
+            // the previous main iteration: without a timing authority the
+            // lag frame runs through the ordinary game-loop path below, which
+            // copies the remaining passes around this frame's NMI. Neither
+            // leading-NMI lane below may claim an iteration return that has
+            // not happened.
+            let main_iteration_returned = self.dialogue_scroll_cpu_is_idle();
             if self.game_execution_scheduler.is_idle()
+                && main_iteration_returned
                 && straight_interroom_upload_pipeline_runs_after_leading_nmi(
                     frame,
                     self.game_execution_scheduler
@@ -3178,6 +3186,7 @@ impl ZeldaState {
                     && self.pending_main_loop_common_suffix.is_some();
             if self.game_execution_scheduler.is_idle()
                 && !live_suffix_pending
+                && main_iteration_returned
                 && (self
                     .game_execution_scheduler
                     .main_return_requires_leading_nmi()

@@ -563,7 +563,12 @@ fn run_standalone_smoke(args: &[String]) {
                 .collect()
         })
         .unwrap_or_default();
-    let mut game = load_romless_play_state();
+    // `ZELDA3_SMOKE_ROM=<rom>` loads the ROM from a file instead, to compare
+    // the two launches frame for frame.
+    let mut game = match env::var("ZELDA3_SMOKE_ROM") {
+        Ok(rom_path) => load_play_state(&rom_path),
+        Err(_) => load_romless_play_state(),
+    };
     // `ZELDA3_SMOKE_KEEP_SRAM=1` keeps the loaded save so the pulse can enter
     // a saved game (the spawn-select dialogue) instead of the name entry.
     if env::var_os("ZELDA3_SMOKE_KEEP_SRAM").is_none() {
@@ -587,10 +592,18 @@ fn run_standalone_smoke(args: &[String]) {
         };
         game.zelda_run_frame(i32::from(input));
         if frame % 100 == 0 && env::var_os("ZELDA3_SMOKE_TRACE").is_some() {
-            eprintln!("smoke frame={frame} main={:#04x} sub={:#04x}", game.ram[0x10], game.ram[0x11]);
+            eprintln!(
+                "smoke frame={frame} main={:#04x} sub={:#04x} ram_fnv1a64={:016x}",
+                game.ram[0x10],
+                game.ram[0x11],
+                fnv1a64(&game.ram)
+            );
         }
         game.zelda_render_audio(&mut audio, 735, 2);
         game.zelda_discard_unused_audio_frames();
+        // Present the frame the way the play loop does (without a GPU), so the
+        // display publication pipeline runs and the walk matches real play.
+        let _ = crate::gpu_capture::capture_gpu_frame_from_game(&mut game);
     }
 
     println!(

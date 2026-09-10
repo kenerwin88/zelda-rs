@@ -87,8 +87,20 @@ impl MemorizedTileState {
         // source buffer and count 0x4ac sits below movable_block_datas@0xf940, so
         // those addresses are always owned here.)
         let active_slots = Self::active_slots(read_le_u16(ram, NUM_MEMORIZED_TILES));
-        let mut addresses = vec![0; active_slots.max(MEMORIZED_TILE_ADDRESS_BASELINE_SLOTS)];
-        let mut values = vec![0; active_slots.max(MEMORIZED_TILE_VALUE_BASELINE_SLOTS)];
+        Self::load_from_ram_sized(
+            ram,
+            active_slots.max(MEMORIZED_TILE_ADDRESS_BASELINE_SLOTS),
+            active_slots.max(MEMORIZED_TILE_VALUE_BASELINE_SLOTS),
+        )
+    }
+
+    /// Load exactly `address_slots` addresses and `value_slots` values. The
+    /// setters grow the model past the counted slots when the game stores an
+    /// entry before it raises the count (the smash and 32x32 map-update
+    /// writers), so a coherence check reads back the model's own extent.
+    fn load_from_ram_sized(ram: &[u8], address_slots: usize, value_slots: usize) -> Self {
+        let mut addresses = vec![0; address_slots];
+        let mut values = vec![0; value_slots];
         for (slot, address) in addresses.iter_mut().enumerate() {
             *address = read_le_u16(ram, MEMORIZED_TILE_ADDR + slot * 2);
         }
@@ -204,7 +216,11 @@ impl<'a> NativeMemorizedTileBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
-        let mut fresh = MemorizedTileState::load_from_ram(self.ram);
+        let mut fresh = MemorizedTileState::load_from_ram_sized(
+            self.ram,
+            self.memorized_tiles.addresses.len(),
+            self.memorized_tiles.values.len(),
+        );
         if self.ram.get(PLAYER_IS_INDOORS).copied().unwrap_or(0) != 0 {
             fresh.values.clone_from(&self.memorized_tiles.values);
         }

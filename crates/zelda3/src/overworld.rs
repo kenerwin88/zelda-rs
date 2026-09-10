@@ -1275,6 +1275,9 @@ impl ZeldaState {
         self.ram.copy_from_slice(&ram_before_provisional_walk);
         self.game_state = game_state_before_provisional_walk;
         self.ram[crate::game_state::constants::OAM_BUF..][..0x220].copy_from_slice(&staged_oam);
+        // The restored native state predates the staged shadow; re-adopt the
+        // kept bytes so the OAM model stays coherent with RAM.
+        self.game_state.oam.reload_staged_shadow_from_ram(&self.ram);
         self.set_bg2_x(bg2x);
         self.set_bg2_y(bg2y);
         self.set_bg1_x(bg1x);
@@ -1300,6 +1303,7 @@ impl ZeldaState {
         self.ram.copy_from_slice(&ram_before_provisional_suffix);
         self.game_state = game_state_before_provisional_suffix;
         self.ram[crate::game_state::constants::OAM_BUF..][..0x220].copy_from_slice(&staged_oam);
+        self.game_state.oam.reload_staged_shadow_from_ram(&self.ram);
         self.OverworldOverlay_HandleRain();
     }
 

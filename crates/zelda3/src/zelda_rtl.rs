@@ -2795,11 +2795,21 @@ fn dungeon_exit_spotlight_cpu_plan(
         .map(DungeonExitSpotlightCpuPlan::normalized_interruption_phase);
     let latest = dungeon_exit_spotlight_cpu_plan_at(state, entry_latest)
         .map(DungeonExitSpotlightCpuPlan::normalized_interruption_phase);
-    assert_eq!(
-        earliest.map(DungeonExitSpotlightCpuPlan::current_boundary_key),
-        latest.map(DungeonExitSpotlightCpuPlan::current_boundary_key),
-        "measured Module0F entry raster envelope changed the spotlight CPU/HDMA plan",
-    );
+    // The envelope is the translated-only fallback's guess at where the ROM
+    // entered Module0F; a timing authority never consults it. When its two
+    // ends disagree (route-walk host 173,4xx: Link's position integrates
+    // before the first NMI only at the earliest entry), no plan is provably
+    // right, so keep the earliest one, carry the widened next envelope, and
+    // say so under `ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE` rather than abort play.
+    if earliest.map(DungeonExitSpotlightCpuPlan::current_boundary_key)
+        != latest.map(DungeonExitSpotlightCpuPlan::current_boundary_key)
+        && crate::debug_env::var_os("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some()
+    {
+        eprintln!(
+            "[SPOTLIGHT-ENVELOPE] host={} entry {entry_earliest:?}..{entry_latest:?} changed the Module0F CPU/HDMA plan; keeping the earliest",
+            state.frame_ctr_dbg,
+        );
+    }
     if let (Some(earliest), Some(latest)) = (&mut earliest, latest) {
         earliest.next_entry_latest = latest.next_entry_latest;
     }

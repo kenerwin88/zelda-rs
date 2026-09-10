@@ -252,6 +252,19 @@ observable to anything that reads mid-routine, including the NMI handler.
   correct per frame count and wobbles per radius within a frame; it is a
   property of the CPU, not of any discrete decision.
 
+- **A message line scrolls across three vblanks with the NMI held.** The
+  scroll command copies the text buffer up one pixel row per pass, five
+  passes per line, and the copy is slow enough that vblank interrupts it
+  twice: the Snes9x receipts for the intro dialogue show two passes in the
+  entry host, two in the next, and one plus the return in the third, with
+  each interrupting NMI accepted while the update latch is still held, so
+  the half-scrolled buffer is never uploaded. The last line of a message
+  is a cheap call that completes in its entry host. The modern scroll
+  machine models the lag as copy, return-only and staged-completion
+  slices retired by the next open NMI's BG3 upload; without a timing
+  authority it runs the same slices on its own cadence.
+  (romless-exact-play)
+
 ## Tables over code
 
 - **The four entity tile tables** (sprite, sprite blocking, ancilla,

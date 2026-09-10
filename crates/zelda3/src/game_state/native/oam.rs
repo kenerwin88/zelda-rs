@@ -121,6 +121,19 @@ impl OamState {
         );
     }
 
+    /// Re-adopt the OAM shadow and packed extended table from RAM after a
+    /// caller restored the rest of the native state around a staged OAM
+    /// build (the Module09 transition staging keeps only those bytes).
+    pub(crate) fn reload_staged_shadow_from_ram(&mut self, ram: &[u8]) {
+        copy_from_ram(ram, OAM_BUF, &mut self.shadow_entries, OAM_SHADOW_BYTES);
+        copy_from_ram(
+            ram,
+            EXTENDED_OAM,
+            &mut self.packed_extended,
+            PACKED_EXTENDED_OAM_BYTES,
+        );
+    }
+
     pub(crate) fn priority_word(&self) -> u16 {
         self.priority_value
     }

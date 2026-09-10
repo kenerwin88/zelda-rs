@@ -7,26 +7,42 @@ use sha2::{Digest, Sha256};
 
 #[test]
 fn tile_attributes_match_frozen_runtime_effects() {
+    // 131,072 tile executions, each digesting two WRAM images: the whole
+    // library suite's tail. Every (indoors, tile) digest is independent, so
+    // split the tiles across threads; the case text keeps its frozen order.
+    let workers = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let tile_case = |indoors: bool, tile: u8| -> String {
+        let mut digest = Sha256::new();
+        for context in 0..32u32 {
+            let mut state = tile_behavior_test_state(context);
+            let initial_ram = state.ram.clone();
+            let initial_native = state.game_state.clone();
+            for bits in [0, 1, 2, 4, 8, 0x0f, 0xf0, 0xffff] {
+                state.ram.copy_from_slice(&initial_ram);
+                state.game_state = initial_native.clone();
+                state.tile_detect_execute_inner(tile, 0x100, bits, indoors);
+                digest.update(&state.ram);
+                let mut projected = vec![0xa5; WRAM_SIZE];
+                state.game_state.write_to_ram(&mut projected);
+                digest.update(&projected);
+            }
+        }
+        format!("{indoors}/{tile:02x}: {:x}\n", digest.finalize())
+    };
     let mut cases = String::new();
     for indoors in [false, true] {
-        for tile in 0..=u8::MAX {
-            let mut digest = Sha256::new();
-            for context in 0..32u32 {
-                let mut state = tile_behavior_test_state(context);
-                let initial_ram = state.ram.clone();
-                let initial_native = state.game_state.clone();
-                for bits in [0, 1, 2, 4, 8, 0x0f, 0xf0, 0xffff] {
-                    state.ram.copy_from_slice(&initial_ram);
-                    state.game_state = initial_native.clone();
-                    state.tile_detect_execute_inner(tile, 0x100, bits, indoors);
-                    digest.update(&state.ram);
-                    let mut projected = vec![0xa5; WRAM_SIZE];
-                    state.game_state.write_to_ram(&mut projected);
-                    digest.update(&projected);
-                }
-            }
-            cases.push_str(&format!("{indoors}/{tile:02x}: {:x}\n", digest.finalize()));
-        }
+        let tiles: Vec<u8> = (0..=u8::MAX).collect();
+        let chunk = tiles.len().div_ceil(workers);
+        let chunks: Vec<String> = std::thread::scope(|scope| {
+            let handles: Vec<_> = tiles
+                .chunks(chunk)
+                .map(|tiles| {
+                    scope.spawn(move || tiles.iter().map(|&tile| tile_case(indoors, tile)).collect::<String>())
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().expect("tile case worker")).collect()
+        });
+        cases.extend(chunks);
     }
     for seed in 0..32 {
         let mut state = tile_behavior_test_state(seed);
