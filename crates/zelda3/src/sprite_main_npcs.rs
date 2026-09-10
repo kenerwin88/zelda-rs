@@ -16,8 +16,6 @@ use crate::zelda_rtl::sprite::{DrawMultipleData, PrepOamCoordsRet, SpriteSpawnIn
 
 // kSpriteDistress_X / kSpriteDistress_Y from sprite.c:435/436 — used by
 // Sprite_DrawDistress_custom, which Cucco_DrawPANIC calls.
-const SPRITE_DISTRESS_X_OFFSETS: [i8; 4] = [-3, 2, 7, 11];
-const SPRITE_DISTRESS_Y_OFFSETS: [i8; 4] = [-5, -7, -7, -5];
 const BEE_SPAWN_INITIAL_DELAYS: [u8; 4] = [64, 64, 255, 255];
 const BEE_SPAWN_INITIAL_VELOCITIES: [i8; 8] = [15, 5, -5, -15, 20, 10, -10, -20];
 const BEE_RELEASE_VELOCITY_CHOICES: [i8; 8] = [8, 2, -2, -8, 10, 5, -5, -10];
@@ -1005,37 +1003,7 @@ impl ZeldaState {
             return;
         };
         let time = self.game_state.frame.frame_counter;
-        self.sprite_draw_distress_custom_for_npcs(info.0, info.1, time);
-    }
-
-    // void Sprite_DrawDistress_custom(uint16 xin, uint16 yin, uint8 time) {
-    //   Oam_AllocateFromRegionA(0x10);
-    //   if (!(time & 0x18))
-    //     return;
-    //   int i = 3;
-    //   OamEnt *oam = GetOamCurPtr();
-    //   do {
-    //     SetOamHelper0(oam, xin + kSpriteDistress_X[i],
-    //                        yin + kSpriteDistress_Y[i], 0x83, 0x22, 0);
-    //   } while (oam++, --i >= 0);
-    // }
-    pub(super) fn sprite_draw_distress_custom_for_npcs(&mut self, xin: u16, yin: u16, time: u8) {
-        self.oam_allocate_from_region_a(0x10);
-        if time & 0x18 == 0 {
-            return;
-        }
-        let mut oam = self.game_state.oam.current_pointer_usize();
-        let mut i: i32 = 3;
-        loop {
-            let x = xin.wrapping_add(SPRITE_DISTRESS_X_OFFSETS[i as usize] as i16 as u16);
-            let y = yin.wrapping_add(SPRITE_DISTRESS_Y_OFFSETS[i as usize] as i16 as u16);
-            self.set_oam_helper0_at(oam, x, y, 0x83, 0x22, 0);
-            oam += 4;
-            i -= 1;
-            if i < 0 {
-                break;
-            }
-        }
+        self.sprite_draw_distress_custom(info.0, info.1, time);
     }
 
     // ----- Internal helpers ported to back the above handlers -----------

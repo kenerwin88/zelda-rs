@@ -3032,11 +3032,6 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn cache_standing_in_doorway(&mut self, doorway_state: u8) {
-        self.state.set_standing_in_doorway_cached(doorway_state);
-        self.sync();
-    }
-
     pub(crate) fn clear_tile_interaction_shared_flag(&mut self) {
         self.state.clear_tile_interaction_shared_flag();
         self.sync();

@@ -49,16 +49,6 @@ fn soldier_random_patrol_delay(random: crate::rom_random::RomRandomResult) -> u8
     random.masked_adc(0x3f, 0x28)
 }
 const GUARD_PROBE_STAGGER_BY_DIRECTION: [u8; 4] = [0x10, 0x30, 0, 0x20];
-const GUARD_PROBE_X_VELOCITIES: [i8; 64] = [
-    -16, -16, -16, -16, -16, -16, -16, -16, -16, -14, -12, -10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10,
-    12, 14, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 14, 12, 10, 8, 6, 4, 2,
-    0, -2, -4, -6, -8, -10, -12, -14, -16, -16, -16, -16, -16, -16, -16, -16, -16,
-];
-const GUARD_PROBE_Y_VELOCITIES: [i8; 64] = [
-    0, 2, 4, 6, 8, 10, 12, 14, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 14,
-    12, 10, 8, 6, 4, 2, 0, -2, -4, -6, -8, -10, -12, -14, -16, -16, -16, -16, -16, -16, -16, -16,
-    -16, -16, -16, -16, -16, -16, -16, -16, -16, -14, -12, -10, -8, -6, -4, -2, 0,
-];
 const JAVELIN_TROOPER_ARM_GFX_BY_FRAME: [u8; 64] = [
     25, 25, 24, 24, 23, 23, 23, 23, 19, 19, 18, 18, 17, 17, 17, 17, 16, 16, 15, 15, 14, 14, 14, 14,
     22, 22, 21, 21, 20, 20, 20, 20, 20, 20, 18, 18, 18, 16, 16, 16, 21, 21, 8, 8, 8, 6, 6, 6, 22,
@@ -1005,7 +995,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).increment_anim_clock();
         let dir = self.sprite_slot_view(k).direction() as usize & 3;
         let r15 = (a & 0x1f).wrapping_add(GUARD_PROBE_STAGGER_BY_DIRECTION[dir]) & 0x3f;
-        self.sprite_spawn_probe_always_for_guard(k, r15);
+        self.sprite_spawn_probe_always(k, r15);
     }
 
     // ------------------------------------------------------------------
@@ -1456,31 +1446,6 @@ impl ZeldaState {
         }
     }
 
-    // Sprite_SpawnProbeAlways — sprite_main.c:4790.
-    fn sprite_spawn_probe_always_for_guard(&mut self, k: usize, r15: u8) {
-        let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
-        let j = self.sprite_spawn_dynamically_ex(k, 0x41, &mut info, 10);
-        if j < 0 {
-            return;
-        }
-        let j = j as usize;
-        {
-            let mut sprite = self.sprite_slot_view_mut(j);
-            sprite.set_x(info.r0_x.wrapping_add(8));
-            sprite.set_y(info.r2_y.wrapping_add(4));
-        }
-        let idx = r15 as usize & 63;
-        let mut probe = self.sprite_slot_view_mut(j);
-        probe.set_direction(r15);
-        probe.set_x_velocity(GUARD_PROBE_X_VELOCITIES[idx] as u8);
-        probe.set_y_velocity(GUARD_PROBE_Y_VELOCITIES[idx] as u8);
-        probe.masked_or_flags2(0xf0, 0xa0);
-        probe.set_c((k as u8).wrapping_add(1));
-        probe.set_ignore_projectile((k as u8).wrapping_add(1));
-        probe.set_flags4(0x40);
-        probe.set_flags3(0x40);
-        probe.set_deflection_bits(2);
-    }
 }
 
 #[cfg(test)]

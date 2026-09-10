@@ -33,7 +33,7 @@ impl ZeldaState {
             flags: 0,
         };
         self.sprite_prep_oam_coord(k, &mut info);
-        if self.sprite_return_if_inactive_for_blind(k) {
+        if self.sprite_return_if_inactive(k) {
             return;
         }
         if self.sprite_slot_view(k).delay_main() != 0 {
@@ -133,17 +133,17 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_blind_head(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).or_object_priority_bits(48);
-        self.sprite_draw_single_large_for_blind(k);
+        self.sprite_draw_single_large(k);
         // OamEnt *oam = GetOamCurPtr(); oam->charnum = ...; oam->flags = ...;
         self.blind_head_apply_oam_for_blind(k);
 
-        if self.sprite_return_if_inactive_for_blind(k) {
+        if self.sprite_return_if_inactive(k) {
             return;
         }
         if self.sprite_slot_view(k).f() == 14 {
             self.sprite_slot_view_mut(k).set_f(8);
         }
-        if self.sprite_return_if_recoiling_for_blind(k) {
+        if self.sprite_return_if_recoiling(k) {
             return;
         }
         let new_sub = self.sprite_slot_view(k).subtype().wrapping_sub(1);
@@ -156,7 +156,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).delay_main() != 0 {
             return;
         }
-        self.sprite_check_damage_to_and_from_link_for_blind(k);
+        self.sprite_check_damage_to_and_from_link(k);
         self.sprite_slot_view_mut(k).increment_subtype2();
         let j_ret = self.blind_spit_fireball(k, 0x1f);
         if j_ret >= 0 {
@@ -240,7 +240,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).or_object_priority_bits(0x30);
         self.blind_draw(k);
         self.sprite_slot_view_mut(k).set_oam_flags(1);
-        if self.sprite_return_if_inactive_for_blind(k) {
+        if self.sprite_return_if_inactive(k) {
             return;
         }
         let a = self.sprite_slot_view(k).f();
@@ -277,7 +277,7 @@ impl ZeldaState {
                         .wrapping_add(1);
                     self.sprite_system_mut().set_limit_instance(new_limit);
                     if new_limit == 3 {
-                        self.sprite_kill_friends_for_blind();
+                        self.sprite_kill_friends();
                         {
                             let mut sprite = self.sprite_slot_view_mut(k);
                             sprite.set_state(4);
@@ -363,9 +363,9 @@ impl ZeldaState {
                     sprite.set_delay_aux2(96);
                 } else if self.sprite_slot_view(k).delay_aux2() == 80 {
                     self.dialogue_message_index_mut().set_value(0x123);
-                    self.sprite_show_message_minimal_for_blind();
+                    self.sprite_show_message_minimal_c();
                 } else if self.sprite_slot_view(k).delay_aux2() == 24 {
-                    self.spawn_boss_poof_for_blind(k);
+                    self.spawn_boss_poof(k);
                 }
             }
             1 => {
@@ -428,7 +428,7 @@ impl ZeldaState {
                     self.blind_fireball_flurry(k, wc);
                 } else if (self.sprite_slot_view(k).subtype2() & 7) == 0 {
                     let hd = self.sprite_slot_view(k).head_direction() << 2;
-                    self.sprite_spawn_probe_always_for_blind(k, hd);
+                    self.sprite_spawn_probe_always(k, hd);
                 }
             }
             3 => {
@@ -676,7 +676,7 @@ impl ZeldaState {
     pub(super) fn blind_check_bump_damage(&mut self, k: usize) {
         let sprite = self.sprite_slot_view(k);
         if (sprite.delay_aux4() | sprite.f()) == 0 {
-            self.sprite_check_damage_to_and_from_link_for_blind(k);
+            self.sprite_check_damage_to_and_from_link(k);
         }
         let link_x = self.game_state.player.follower_link.x();
         let cur_x = self.game_state.sprites.workspace.current_sprite_x();
@@ -813,11 +813,6 @@ impl ZeldaState {
     // is available, keeping only the draw/presentation shims local.
     // -----------------------------------------------------------------
 
-    fn sprite_draw_single_large_for_blind(&mut self, k: usize) {
-        // Rewired to canonical Sprite_DrawSingleLarge port.
-        self.sprite_draw_single_large(k);
-    }
-
     fn blind_head_apply_oam_for_blind(&mut self, k: usize) {
         let oam = self.game_state.oam.current_pointer_usize();
         let j = (self.sprite_slot_view(k).head_direction() & 15) as usize;
@@ -825,38 +820,6 @@ impl ZeldaState {
             .set_entry_char(oam, BLIND_HEAD_DRAW_CHARS[j]);
         self.oam_state_mut()
             .merge_entry_flags(oam, 0x3f, BLIND_HEAD_DRAW_FLAGS[j]);
-    }
-
-    fn sprite_return_if_inactive_for_blind(&mut self, k: usize) -> bool {
-        // Rewired to canonical Sprite_ReturnIfInactive port.
-        self.sprite_return_if_inactive(k)
-    }
-
-    fn sprite_return_if_recoiling_for_blind(&mut self, k: usize) -> bool {
-        // Rewired to canonical Sprite_ReturnIfRecoiling port.
-        self.sprite_return_if_recoiling(k)
-    }
-
-    fn sprite_check_damage_to_and_from_link_for_blind(&mut self, k: usize) {
-        // Rewired to canonical Sprite_CheckDamageToAndFromLink port.
-        self.sprite_check_damage_to_and_from_link(k);
-    }
-
-    fn sprite_kill_friends_for_blind(&mut self) {
-        // Rewired to canonical Sprite_KillFriends port.
-        self.sprite_kill_friends();
-    }
-
-    fn sprite_show_message_minimal_for_blind(&mut self) {
-        self.sprite_show_message_minimal_c();
-    }
-
-    fn spawn_boss_poof_for_blind(&mut self, k: usize) {
-        let _ = self.spawn_boss_poof(k);
-    }
-
-    fn sprite_spawn_probe_always_for_blind(&mut self, k: usize, dir: u8) {
-        self.sprite_spawn_probe_always(k, dir);
     }
 
     fn sprite_draw_multiple_for_blind(&mut self, k: usize, src: &[DrawMultipleData]) {

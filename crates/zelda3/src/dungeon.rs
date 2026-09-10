@@ -6793,6 +6793,34 @@ impl ZeldaState {
         self.ancilla_add_blast_wall();
     }
 
+    /// `Dungeon_DeleteRupeeTile` (dungeon.c): the rupee tile Link touched becomes floor.
+    pub(super) fn Dungeon_DeleteRupeeTile(&mut self, x: u16, y: u16) {
+        let pos = ((y & 0x01f8) * 8) | ((x & 0x01f8) >> 3);
+        let dst = self.game_state.display.current_vram_upload_data_address();
+        self.write_vram_upload_absolute_word(dst + 4, 0x190f);
+        self.write_vram_upload_absolute_word(dst + 10, 0x190f);
+        self.dungeon_room_tilemaps_mut()
+            .set_bg2_tile(pos as usize, 0x190f);
+        self.dungeon_room_tilemaps_mut()
+            .set_bg2_tile((pos + 64) as usize, 0x190f);
+        let attr = [self.dungeon_tile_definition(0x190f); 2];
+        let vram0 = self.Dungeon_MapVramAddr(pos);
+        let vram1 = self.Dungeon_MapVramAddr(pos + 64);
+        self.dungeon_bg2_attributes_mut()
+            .set_bg2_tiles(pos as usize, attr);
+        self.dungeon_bg2_attributes_mut()
+            .set_bg2_tiles((pos + 64) as usize, attr);
+        self.write_vram_upload_absolute_word(dst, vram0);
+        self.write_vram_upload_absolute_word(dst + 6, vram1);
+        self.write_vram_upload_absolute_word(dst + 2, 0x0100);
+        self.write_vram_upload_absolute_word(dst + 8, 0x0100);
+        self.write_vram_upload_absolute_word(dst + 12, 0xffff);
+        self.advance_vram_upload_cursor_by(24);
+        self.dungeon_savegame_state_mut()
+            .set_savegame_state_high_bits(0x10);
+        self.set_bg_vram_load_mode(1);
+    }
+
     pub(super) fn RoomTag_WaterOn(&mut self, _k: usize) {
         if self
             .game_state

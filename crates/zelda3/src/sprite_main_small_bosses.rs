@@ -14,23 +14,11 @@
 //! so the data-state side of the handlers stays exercisable while the rest
 //! of the C surface comes online.
 
-use super::sprite::PrepOamCoordsRet as DrawPrepOamCoordsRet;
+use super::sprite::PrepOamCoordsRet;
 use super::sprite_main_draw::trinexx_head_sin;
 use super::*;
 use crate::types::sign8;
 use crate::zelda_rtl::sprite::DrawMultipleData;
-
-/// Mirror of the C-side `PrepOamCoordsRet` (sprite.c). The canonical
-/// `sprite::PrepOamCoordsRet` is module-private; copy it here so the
-/// `YellowStalfos_DrawHead(int k, PrepOamCoordsRet *info)` signature
-/// keeps its named struct shape.
-#[derive(Copy, Clone, Default)]
-pub(super) struct PrepOamCoordsRet {
-    pub x: u16,
-    pub y: u16,
-    pub r4: u8,
-    pub flags: u8,
-}
 
 // `Sprite_DelayAux3` is shared scratch (variables.h:0xee0).
 // Shared scratch used by small-boss draw/update routines.
@@ -314,7 +302,7 @@ impl ZeldaState {
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 self.trinexx_final_phase_case0_until_tile_collision(k);
-                let hit = self.sprite_check_tile_collision_for_small_bosses(k);
+                let hit = self.sprite_check_tile_collision(k) != 0;
                 self.trinexx_final_phase_case0_after_tile_collision(k, hit);
             }
             1 => {
@@ -476,7 +464,7 @@ impl ZeldaState {
 
     fn trinexx_d_draw_prologue(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).or_object_priority_bits(0x30);
-        let mut info = DrawPrepOamCoordsRet::default();
+        let mut info = PrepOamCoordsRet::default();
         self.sprite_draw_trinexx_rock_head(k, &mut info);
     }
 
@@ -561,7 +549,7 @@ impl ZeldaState {
                     if TRINEXX_BODY_SEGMENT_GRAPHICS[i] != 3 {
                         self.sprite_draw_single_large(k);
                     } else {
-                        let mut info = DrawPrepOamCoordsRet::default();
+                        let mut info = PrepOamCoordsRet::default();
                         self.sprite_draw_trinexx_rock_head(k, &mut info);
                     }
                 }
@@ -672,7 +660,7 @@ impl ZeldaState {
             self.follower_link_state_mut().set_menu_block_flag(ai_state);
             if self.sprite_slot_view(k).delay_main() == 0 {
                 self.overlord_slot_view_mut(0).increment_x_high();
-                self.sprite_initialized_segmented_for_small_bosses(k);
+                self.sprite_initialized_segmented(k);
                 self.sprite_slot_view_mut(k).set_subtype2(0);
                 self.sprite_slot_view_mut(k).set_head_direction(0);
                 self.sprite_slot_view_mut(k).clear_flags3_bits(0x40);
@@ -1519,7 +1507,7 @@ impl ZeldaState {
                 let y = info_y.wrapping_add(u16::from(y_delta)) as u8;
                 self.sprite_workspace_mut().set_current_sprite_x_low(x);
                 self.sprite_workspace_mut().set_current_sprite_y_low(y);
-                self.set_oam_plain_for_small_bosses(oam, x, y, 8, info_flags, 2);
+                self.set_oam_plain_at(oam, x, y, 8, info_flags, 2);
                 oam += 4;
             }
         }
@@ -2604,22 +2592,8 @@ impl ZeldaState {
     // available; remaining OAM/collision gaps stay conservative.
     // -----------------------------------------------------------------
 
-    fn sprite_check_tile_collision_for_small_bosses(&mut self, k: usize) -> bool {
-        // Rewired to canonical Sprite_CheckTileCollision port. Boss callers
-        // key off "any wall hit" via a non-zero check.
-        self.sprite_check_tile_collision(k) != 0
-    }
-
     fn sprite_convert_velocity_to_angle_for_small_bosses(&mut self, xv: i8, yv: i8) -> u8 {
         Self::sprite_convert_velocity_to_angle(xv as u8, yv as u8)
-    }
-
-    fn sprite_initialized_segmented_for_small_bosses(&mut self, k: usize) {
-        let x = self.sprite_get_x(k);
-        let y = self.sprite_get_y(k);
-        for i in 0..128 {
-            self.moldorm_history_mut(i).set_position(x, y);
-        }
     }
 
     fn sprite_draw_multiple_for_small_bosses(
@@ -2652,29 +2626,10 @@ impl ZeldaState {
         }
     }
 
+    /// The shadow draw updates the record it is given; these callers keep theirs.
     fn sprite_draw_shadow_for_small_bosses(&mut self, k: usize, info: &PrepOamCoordsRet) {
-        let mut canonical = crate::zelda_rtl::sprite::PrepOamCoordsRet {
-            x: info.x,
-            y: info.y,
-            r4: info.r4,
-            flags: info.flags,
-        };
-        self.sprite_draw_shadow_custom(k, &mut canonical, 10);
-    }
-
-    fn set_oam_plain_for_small_bosses(
-        &mut self,
-        oam: usize,
-        x: u8,
-        y: u8,
-        charnum: u8,
-        flags: u8,
-        big: u8,
-    ) {
-        self.oam_state_mut().write_entry(oam, x, y, charnum, flags);
-        let ext_index = (oam - OAM_BUF) / 4;
-        let value = big;
-        self.oam_state_mut().set_extended_byte(ext_index, value);
+        let mut scratch = *info;
+        self.sprite_draw_shadow_custom(k, &mut scratch, 10);
     }
 
 }

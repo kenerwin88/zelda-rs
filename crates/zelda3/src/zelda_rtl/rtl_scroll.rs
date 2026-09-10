@@ -645,27 +645,6 @@ impl ZeldaState {
         self.handle_indoor_camera_and_doors();
     }
 
-    pub(super) fn cache_camera_properties_for_player(&mut self) {
-        let bg2_x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
-        let bg2_y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
-        self.cache_bg2_live_scroll_from(bg2_x, bg2_y);
-        self.follower_link_state_mut().cache_current_position();
-        let y_start = self.game_state.world.room_bounds.y_bound(0);
-        let y_end = self.game_state.world.room_bounds.y_bound(2);
-        let x_start = self.game_state.world.room_bounds.x_bound(0);
-        let x_end = self.game_state.world.room_bounds.x_bound(2);
-        self.set_cached_room_bounds(y_start, y_end, x_start, x_end);
-        self.cache_scroll_targets();
-        self.cache_camera_scroll();
-        self.cache_quadrant_fullsize_state();
-        self.follower_link_state_mut().cache_current_quadrants();
-        self.follower_link_state_mut().cache_facing();
-        self.follower_link_state_mut().cache_lower_level_states();
-        let doorway_state = self.game_state.player.follower_link.doorway_state();
-        self.cache_standing_in_doorway(doorway_state);
-        self.dungeon_stair_movement_mut().cache_current_floor();
-    }
-
     pub fn mode7_character_source(&self) -> Option<&[u8]> {
         self.asset_raw(66)
     }

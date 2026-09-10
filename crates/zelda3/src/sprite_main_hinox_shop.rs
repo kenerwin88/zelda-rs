@@ -409,7 +409,7 @@ impl ZeldaState {
         }
         self.sprite_behave_as_barrier(k);
         if self.shop_item_check_for_a_press(k) {
-            if self.sprite_find_empty_bottle_for_hinox_shop() < 0 {
+            if self.sprite_find_empty_bottle() < 0 {
                 self.sprite_show_message_unconditional(0x16d);
                 self.shop_item_play_beep(k);
             } else if self.shop_item_handle_cost(150) {
@@ -690,7 +690,7 @@ impl ZeldaState {
         }
         self.sprite_behave_as_barrier(k);
         if self.shop_item_check_for_a_press(k) {
-            if self.sprite_find_empty_bottle_for_hinox_shop() < 0 {
+            if self.sprite_find_empty_bottle() < 0 {
                 self.sprite_show_solicited_message(k, 0x16d);
                 self.shop_item_play_beep(k);
             } else if self.shop_item_handle_cost(10) {
@@ -810,16 +810,6 @@ impl ZeldaState {
         self.sprite_direction_to_face_link(k, None)
     }
 
-    // Sprite_Find_EmptyBottle — duplicated locally because the canonical port
-    // in sprite_main_npcs.rs is not registered in zelda_rtl.rs.
-    fn sprite_find_empty_bottle_for_hinox_shop(&self) -> i32 {
-        for i in 0..4 {
-            if self.game_state.inventory.items.bottle(i) == 2 {
-                return i as i32;
-            }
-        }
-        -1
-    }
 }
 
 #[cfg(test)]

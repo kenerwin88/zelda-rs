@@ -58,11 +58,6 @@ impl ZeldaState {
             .set_standing_in_doorway_cached(value);
     }
 
-    pub(crate) fn cache_standing_in_doorway(&mut self, doorway_state: u8) {
-        self.world_transient_mut()
-            .cache_standing_in_doorway(doorway_state);
-    }
-
     pub(crate) fn apply_dungeon_layout_quadrant_fullsize(
         &mut self,
         layout_flags: u8,

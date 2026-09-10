@@ -1274,7 +1274,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_direction(4);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
-                if (self.sprite_show_solicited_message_for_dn(k, 0x1b) & 0x100) != 0 {
+                if (self.sprite_show_solicited_message(k, 0x1b) & 0x100) != 0 {
                     self.sprite_slot_view_mut(k).increment_ai_state();
                     self.sprite_slot_view_mut(k).increment_graphics();
                     self.save_progress_mut().or_progress_flags(0x2);
@@ -1374,7 +1374,7 @@ impl ZeldaState {
                 let head_direction = self.sprite_direction_to_face_link_for_dn(k) ^ 3;
                 self.sprite_slot_view_mut(k)
                     .set_head_direction(head_direction);
-                let j = self.sprite_show_solicited_message_for_dn(k, 0x16);
+                let j = self.sprite_show_solicited_message(k, 0x16);
                 if (j & 0x100) != 0 {
                     let v = j as u8;
                     self.sprite_slot_view_mut(k).set_direction(v);
@@ -1412,7 +1412,7 @@ impl ZeldaState {
         } else {
             0x16
         };
-        let j = self.sprite_show_solicited_message_for_dn(k, m);
+        let j = self.sprite_show_solicited_message(k, m);
         if (j & 0x100) != 0 {
             let v = j as u8;
             self.sprite_slot_view_mut(k).set_direction(v);
@@ -1807,7 +1807,7 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn thief_check_collision_with_link(&mut self, k: usize) {
-        if self.sprite_check_damage_to_link_same_layer_for_dn(k) {
+        if self.sprite_check_damage_to_link_same_layer(k) {
             let pt = self.sprite_project_speed_towards_link(k, 32);
             self.follower_link_state_mut()
                 .set_actual_velocity_xy(pt.x, pt.y);
@@ -1986,7 +1986,7 @@ impl ZeldaState {
         if (self.game_state.world.overworld.event_info.event_info(scr) & 0x20) != 0 {
             return;
         }
-        if self.sprite_check_damage_to_link_same_layer_for_dn(k) {
+        if self.sprite_check_damage_to_link_same_layer(k) {
             let features = self.game_state.enhanced_features.bits();
             if features & FEATURES0_MISC_BUG_FIXES != 0 {
                 self.follower_state_mut().set_dropped(0);
@@ -2540,7 +2540,7 @@ impl ZeldaState {
     // }
     fn cucco_do_movement_xy(&mut self, k: usize) -> u8 {
         self.sprite_move_xy(k);
-        self.sprite_check_tile_collision_for_dn(k)
+        self.sprite_check_tile_collision(k)
     }
 
     // ----- Smithy cluster -----------------------------------------------
@@ -2587,8 +2587,8 @@ impl ZeldaState {
                 }
             }
             1 => {
-                self.sprite_behave_as_barrier_for_dn(k);
-                self.sprite_show_solicited_message_for_dn(k, 0xe3);
+                self.sprite_behave_as_barrier(k);
+                self.sprite_show_solicited_message(k, 0xe3);
                 self.follower_link_state_mut().clear_immobilized();
                 self.sprite_slot_view_mut(k).set_direction(1);
                 self.save_progress_mut().or_progress_indicator_3(32);
@@ -2599,11 +2599,11 @@ impl ZeldaState {
 
     // void Smithy_Frog(int k) {  // sprite_main.c:10025
     pub(super) fn smithy_frog(&mut self, k: usize) {
-        self.smithy_frog_draw_for_dn(k);
+        self.smithy_frog_draw(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.sprite_behave_as_barrier_for_dn(k);
+        self.sprite_behave_as_barrier(k);
         self.sprite_slot_view_mut(k).subtract_z_velocity(2);
         self.sprite_move_z(k);
         if (self.sprite_slot_view(k).z() as i8) < 0 {
@@ -2612,7 +2612,7 @@ impl ZeldaState {
         }
         if self.sprite_slot_view(k).ai_state() == 0 {
             self.sprite_slot_view_mut(k).set_direction(1);
-            if (self.sprite_show_solicited_message_for_dn(k, 0xe1) & 0x100) != 0 {
+            if (self.sprite_show_solicited_message(k, 0xe1) & 0x100) != 0 {
                 self.sprite_slot_view_mut(k).set_ai_state(1);
             }
         } else {
@@ -2700,12 +2700,12 @@ impl ZeldaState {
                         & 0x20)
                         != 0
                     {
-                        if (self.sprite_show_solicited_message_for_dn(k, 0xd8) & 0x100) != 0 {
+                        if (self.sprite_show_solicited_message(k, 0xd8) & 0x100) != 0 {
                             self.sprite_slot_view_mut(k).increment_ai_state();
                             self.sprite_slot_view_mut(k).increment_c();
                         }
                     } else {
-                        self.sprite_show_solicited_message_for_dn(k, 0xdf);
+                        self.sprite_show_solicited_message(k, 0xdf);
                     }
                 } else if (self.game_state.player.follower_link.y() as u8) < 0xc2 {
                     self.sprite_show_message_unconditional(0xe0);
@@ -2761,12 +2761,12 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_delay_aux1(96);
                     self.sprite_slot_view_mut(k).increment_c();
                 } else if self.game_state.world.region.flag_overworld_area_changed() {
-                    if (self.sprite_show_solicited_message_for_dn(k, 0xde) & 0x100) != 0 {
+                    if (self.sprite_show_solicited_message(k, 0xde) & 0x100) != 0 {
                         self.sprite_slot_view_mut(k).increment_ai_state();
                         self.sprite_slot_view_mut(k).set_graphics(4);
                     }
                 } else {
-                    self.sprite_show_solicited_message_for_dn(k, 0xe2);
+                    self.sprite_show_solicited_message(k, 0xe2);
                 }
             }
             6 => {
@@ -2804,7 +2804,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_graphics(4);
             }
             11 => {
-                self.sprite_show_solicited_message_for_dn(k, 0xe3);
+                self.sprite_show_solicited_message(k, 0xe3);
             }
             _ => {}
         }
@@ -2834,7 +2834,7 @@ impl ZeldaState {
         if self.game_state.player.follower_link.action_handler_timer() != 2 {
             return false;
         }
-        self.sprite_check_damage_to_link_same_layer_for_dn(k)
+        self.sprite_check_damage_to_link_same_layer(k)
     }
 
     // int Smithy_SpawnDwarfPal(int k) {  // sprite_main.c:10216
@@ -2873,7 +2873,7 @@ impl ZeldaState {
 
     // void Smithy_Spark(int k) {  // sprite_main.c:10258
     pub(super) fn smithy_spark(&mut self, k: usize) {
-        self.smithy_spark_draw_for_dn(k);
+        self.smithy_spark_draw(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -2925,21 +2925,8 @@ impl ZeldaState {
         )
     }
 
-    fn sprite_check_damage_to_link_same_layer_for_dn(&mut self, k: usize) -> bool {
-        self.sprite_check_damage_to_link_same_layer(k)
-    }
-
-    fn sprite_behave_as_barrier_for_dn(&mut self, k: usize) {
-        self.sprite_behave_as_barrier(k);
-    }
-
     fn sprite_direction_to_face_link_for_dn(&mut self, k: usize) -> u8 {
         self.sprite_direction_to_face_link(k, None)
-    }
-
-    fn sprite_show_solicited_message_for_dn(&mut self, k: usize, msg: u16) -> u16 {
-        // Rewired to canonical Sprite_ShowSolicitedMessage port.
-        self.sprite_show_solicited_message(k, msg)
     }
 
     fn thief_draw_apply_head_overrides_for_dn(&mut self, k: usize) {
@@ -2948,14 +2935,6 @@ impl ZeldaState {
         self.oam_state_mut().set_entry_char(oam, THIEF_DRAW_CHAR[j]);
         self.oam_state_mut()
             .merge_entry_flags(oam, !0x40, THIEF_DRAW_FLAGS[j]);
-    }
-
-    fn smithy_frog_draw_for_dn(&mut self, k: usize) {
-        self.smithy_frog_draw(k);
-    }
-
-    fn smithy_spark_draw_for_dn(&mut self, k: usize) {
-        self.smithy_spark_draw(k);
     }
 
     fn sprite_prep_oam_coord_for_dn(&mut self, k: usize) {
@@ -2976,10 +2955,6 @@ impl ZeldaState {
         self.sprite_move_xy(k);
     }
 
-    fn sprite_check_tile_collision_for_dn(&mut self, k: usize) -> u8 {
-        // Rewired to canonical Sprite_CheckTileCollision port.
-        self.sprite_check_tile_collision(k)
-    }
 }
 
 #[cfg(test)]

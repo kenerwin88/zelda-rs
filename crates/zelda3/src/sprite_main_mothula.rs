@@ -3985,7 +3985,7 @@ impl ZeldaState {
             }
             self.sprite_move_xy(k);
             if self.sprite_slot_view(k).delay_aux1() == 0 {
-                self.sprite_get_16bit_coords_for_mothula(k);
+                self.sprite_get16_bit_coords(k);
                 if self.sprite_check_tile_collision(k) != 0 {
                     self.sprite_slot_view_mut(k).set_ai_state(2);
                     self.sprite_slot_view_mut(k).set_delay_aux1(64);
@@ -4108,7 +4108,7 @@ impl ZeldaState {
             let oam = oam_base + (10 + step) * 4;
             let x = info_x.wrapping_add(MOTHULA_DRAW_X_OFFSETS[g * 9 + i] as i16 as u16);
             let y = info_y.wrapping_add(16);
-            self.set_oam_helper0_for_mothula(oam, x, y, 0x6c, 0x24, 2);
+            self.set_oam_helper0_at(oam, x, y, 0x6c, 0x24, 2);
         }
     }
 
@@ -4199,7 +4199,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).state() == 11 {
             self.sprite_slot_view_mut(k).set_ai_state(0);
         }
-        if self.sprite_return_if_inactive_for_mothula(k) {
+        if self.sprite_return_if_inactive(k) {
             return;
         }
         self.sprite_slot_view_mut(k).set_flags3(0);
@@ -4213,7 +4213,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_delay_main(0);
             self.sprite_slot_view_mut(k).set_g(64);
         }
-        if self.sprite_return_if_recoiling_for_mothula(k) {
+        if self.sprite_return_if_recoiling(k) {
             return;
         }
         match self.sprite_slot_view(k).ai_state() {
@@ -4224,7 +4224,7 @@ impl ZeldaState {
             }
             1 => {
                 self.sprite_slot_view_mut(k).set_z_velocity(8);
-                self.sprite_move_z_for_mothula(k);
+                self.sprite_move_z(k);
                 self.sprite_slot_view_mut(k).set_z_velocity(0);
                 if self.sprite_slot_view(k).z() >= 24 {
                     self.sprite_slot_view_mut(k).set_g(128);
@@ -4259,7 +4259,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).add_c(1);
                     if self.sprite_slot_view(k).c() == 7 {
                         self.sprite_slot_view_mut(k).set_c(0);
-                        self.sprite_apply_speed_towards_link_for_mothula(k, 32);
+                        self.sprite_apply_speed_towards_link(k, 32);
                         self.sprite_slot_view_mut(k).set_delay_main(128);
                     } else {
                         let j2 = (self.get_random_number() & 7) as usize;
@@ -4273,17 +4273,17 @@ impl ZeldaState {
                     }
                 }
                 if self.sprite_slot_view(k).wall_collision() == 0 {
-                    self.sprite_move_xy_for_mothula(k);
+                    self.sprite_move_xy(k);
                 }
-                self.sprite_move_z_for_mothula(k);
-                if self.sprite_check_tile_collision_for_mothula(k) {
+                self.sprite_move_z(k);
+                if self.sprite_check_tile_collision(k) != 0 {
                     self.sprite_slot_view_mut(k).set_delay_main(0);
                 }
-                self.sprite_check_damage_to_and_from_link_for_mothula(k);
+                self.sprite_check_damage_to_and_from_link(k);
                 self.sprite_slot_view_mut(k).add_subtype2(2);
             }
             3 => {
-                self.sprite_check_damage_to_and_from_link_for_mothula(k);
+                self.sprite_check_damage_to_and_from_link(k);
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     self.sprite_slot_view_mut(k).decrement_ai_state();
                     let value = (self.get_random_number() & 31) | 64;
@@ -4429,8 +4429,8 @@ impl ZeldaState {
             .wrapping_add(1);
         self.sprite_slot_view_mut(j).set_y_high(value);
         self.sprite_slot_view_mut(j).set_x_velocity(1);
-        self.sprite_get_16bit_coords_for_mothula(j);
-        self.sprite_check_tile_collision_for_mothula(j);
+        self.sprite_get16_bit_coords(j);
+        self.sprite_check_tile_collision(j);
         self.sprite_slot_view_mut(j).set_x_velocity(0);
         let value = self.sprite_slot_view(j).a();
         self.sprite_slot_view_mut(j).set_x_low(value);
@@ -4815,16 +4815,6 @@ impl ZeldaState {
     // canonical ports land.
     // -----------------------------------------------------------------
 
-    fn sprite_return_if_inactive_for_mothula(&mut self, k: usize) -> bool {
-        // Rewired to canonical Sprite_ReturnIfInactive port.
-        self.sprite_return_if_inactive(k)
-    }
-
-    fn sprite_return_if_recoiling_for_mothula(&mut self, k: usize) -> bool {
-        // Rewired to canonical Sprite_ReturnIfRecoiling port.
-        self.sprite_return_if_recoiling(k)
-    }
-
     fn sprite_draw_multiple_for_mothula(
         &mut self,
         k: usize,
@@ -4845,50 +4835,6 @@ impl ZeldaState {
             .collect();
         self.sprite_draw_multiple_with_info(k, &entries, prepped);
         (prepped.0, prepped.1)
-    }
-
-    fn set_oam_helper0_for_mothula(
-        &mut self,
-        oam: usize,
-        x: u16,
-        y: u16,
-        charnum: u8,
-        flags: u8,
-        big: u8,
-    ) {
-        self.set_oam_helper0_at(oam, x, y, charnum, flags, big);
-    }
-
-    fn sprite_move_z_for_mothula(&mut self, k: usize) {
-        // Rewired to canonical Sprite_MoveZ port.
-        self.sprite_move_z(k);
-    }
-
-    fn sprite_move_xy_for_mothula(&mut self, k: usize) {
-        // Rewired to canonical Sprite_MoveXY port.
-        self.sprite_move_xy(k);
-    }
-
-    fn sprite_check_tile_collision_for_mothula(&mut self, k: usize) -> bool {
-        // Rewired to canonical Sprite_CheckTileCollision port. The C helper
-        // returns the wallcoll byte; Mothula keys off "any collision" via
-        // a non-zero check.
-        self.sprite_check_tile_collision(k) != 0
-    }
-
-    fn sprite_check_damage_to_and_from_link_for_mothula(&mut self, k: usize) {
-        // Rewired to canonical Sprite_CheckDamageToAndFromLink port.
-        self.sprite_check_damage_to_and_from_link(k);
-    }
-
-    fn sprite_apply_speed_towards_link_for_mothula(&mut self, k: usize, speed: u8) {
-        // Rewired to canonical Sprite_ApplySpeedTowardsLink port.
-        self.sprite_apply_speed_towards_link(k, speed);
-    }
-
-    fn sprite_get_16bit_coords_for_mothula(&mut self, j: usize) {
-        // Rewired to canonical Sprite_Get16BitCoords port.
-        self.sprite_get16_bit_coords(j);
     }
 
     fn dungeon_update_tile_map_with_common_tile_for_mothula(&mut self, x: u16, y: u16, v: u8) {
