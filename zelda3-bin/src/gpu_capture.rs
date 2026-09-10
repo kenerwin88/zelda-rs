@@ -150,7 +150,7 @@ impl LiveGpuFrameCapture {
         Self::from_current_game_with_probe_frame(game, None)
     }
 
-    fn from_game_at_comparison_frame(game: &mut ZeldaState, comparison_frame: u32) -> Self {
+    pub(crate) fn from_game_at_comparison_frame(game: &mut ZeldaState, comparison_frame: u32) -> Self {
         game.with_display_snapshot(|game| {
             Self::from_current_game_with_probe_frame(game, Some(comparison_frame))
         })
@@ -803,14 +803,14 @@ impl NativeWindowOracleRenderer {
         )
     }
 
-    /// Render a cached-development frame offscreen and queue its transfer.
-    /// Keeping the renderer-owned pipeline depth in flight overlaps game
-    /// execution and GPU work;
-    /// no full-frame CPU allocation is made on the success path.
-    pub(crate) fn queue_game_video_digest(
+    /// Render a captured frame offscreen and queue its transfer. Keeping the
+    /// renderer-owned pipeline depth in flight overlaps game execution and GPU
+    /// work; no full-frame CPU allocation is made on the success path. The
+    /// capture is taken by the simulation thread, so this runs on the thread
+    /// that owns the native frontend.
+    pub(crate) fn queue_capture_video_digest(
         &mut self,
-        game: &mut ZeldaState,
-        comparison_frame: u32,
+        capture: LiveGpuFrameCapture,
     ) -> Result<QueuedGpuVideoDigest, String> {
         if std::env::var_os("ZELDA3_DEBUG_DISPLAY_VRAM_PIXEL").is_some() {
             return Err(
@@ -819,11 +819,6 @@ impl NativeWindowOracleRenderer {
             );
         }
         let timing_enabled = std::env::var_os("ZELDA3_SNES9X_TIMING").is_some();
-        let capture_started = Instant::now();
-        let capture = LiveGpuFrameCapture::from_game_at_comparison_frame(game, comparison_frame);
-        if timing_enabled {
-            self.capture_nanos += capture_started.elapsed().as_nanos();
-        }
         let render_started = Instant::now();
         let report = self
             .frontend
@@ -845,6 +840,11 @@ impl NativeWindowOracleRenderer {
             self.readback_submit_nanos += submit_started.elapsed().as_nanos();
         }
         Ok(QueuedGpuVideoDigest { ticket })
+    }
+
+    /// Account capture time spent on another thread in this renderer's timing.
+    pub(crate) fn add_capture_nanos(&mut self, nanos: u128) {
+        self.capture_nanos += nanos;
     }
 
     pub(crate) fn finish_game_video_digest(

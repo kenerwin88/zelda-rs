@@ -1273,25 +1273,22 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
             process::exit(1);
         }),
     );
-    let mut audio_buffer = Vec::<i16>::new();
-    let mut ledger_frames_seen = cache_start_frame;
-    let mut frames_completed = start_frame;
+    let audio_buffer = Vec::<i16>::new();
+    let ledger_frames_seen = cache_start_frame;
+    let frames_completed = start_frame;
     let mut frames_compared = 0_u32;
     let mut matched = true;
-    let mut first_rng_drift = None;
+    let first_rng_drift = None;
     let mut pending_frames = VecDeque::<PendingCachedAvFrame>::new();
     // A periodic paired checkpoint comes due at each interval multiple and is
     // taken at the first later frame boundary the resume machinery can
     // serialize (quiescent CPU, no unconsumed receipt or pending NMI
     // publication) instead of failing the replay on an unlucky boundary.
-    let mut paired_checkpoint_due = false;
+    let paired_checkpoint_due = false;
     let timing_enabled = env::var_os("ZELDA3_SNES9X_TIMING").is_some();
     let debug_wram_frames =
         debug_frame_selection_from_env("ZELDA3_DEBUG_WRAM_FRAMES", Some("ZELDA3_DEBUG_WRAM_FRAME"));
     let replay_started = Instant::now();
-    let mut receipt_nanos = 0_u128;
-    let mut engine_nanos = 0_u128;
-    let mut audio_nanos = 0_u128;
     let mut serialization_nanos = 0_u128;
     // Ledger + receipt parsing (JSON, ~10% of a cached-av frame) runs on a
     // producer thread; the pairing of one receipt line per ledger line and
@@ -1389,80 +1386,228 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
             eprintln!("failed to start the cached A/V parse thread: {error}");
             process::exit(2);
         });
-    for parsed in parsed_rx.iter() {
-        let receipt_started = Instant::now();
-        let ParsedCachedAvInput {
-            line_index,
-            record,
-            timing_receipts,
-        } = parsed.unwrap_or_else(|error| {
-            eprintln!("{error}");
-            process::exit(2);
-        });
-        if record.schema != 1 || record.frame != ledger_frames_seen {
-            eprintln!(
-                "cached A/V ledger must be schema 1 and contiguous from cache frame {cache_start_frame}; line {} has schema {} frame {}, expected {}",
-                line_index + 1,
-                record.schema,
-                record.frame,
-                ledger_frames_seen
-            );
-            process::exit(2);
-        }
-        ledger_frames_seen = ledger_frames_seen.saturating_add(1);
-        let cached_input = cached_ledger_input(&record.input).unwrap_or_else(|error| {
-            eprintln!("{error}");
-            process::exit(2);
-        });
-        let replay_input = input_script.input_for_frame(record.frame);
-        if cached_input != replay_input {
-            eprintln!(
-                "cached input provenance mismatch at frame {}: ledger={cached_input:04x} script={replay_input:04x}",
-                record.frame
-            );
-            process::exit(2);
-        }
-        if record.frame < start_frame {
-            continue;
-        }
-        let Some(timing_receipts) = timing_receipts else {
-            eprintln!(
-                "cached source receipt for frame {} was not decoded (parse thread expected it before the boundary {start_frame})",
-                record.frame
-            );
-            process::exit(2);
-        };
-        if !timing_receipts.matches_host_call(u64::from(record.frame), replay_input) {
-            eprintln!(
-                "cached source receipt provenance mismatch at frame {}: host_call={} canonical_input={:04x} raw_input={replay_input:04x}",
-                record.frame,
-                timing_receipts.host_call(),
-                timing_receipts.input_state()
-            );
-            process::exit(2);
-        }
-        if stop_before_frame.is_some_and(|end| record.frame >= end) {
-            break;
-        }
-        if timing_enabled {
-            receipt_nanos += receipt_started.elapsed().as_nanos();
-        }
-        let engine_started = Instant::now();
-        game.install_original_timing_host_receipts(timing_receipts)
-            .unwrap_or_else(|error| {
+    // The game runs on a simulation thread: receipts, the frame, the display
+    // capture, audio, WRAM dumps and checkpoint clones happen there, and each
+    // frame's outputs cross a bounded channel to this thread, which owns the
+    // native frontend (a winit event loop that must stay on the main thread)
+    // and does the GPU render, readback, hashing and comparison. Frames are
+    // compared in order; the digests do not depend on which thread computed
+    // them. A stopped comparison drops the receiver and the simulation thread
+    // ends at its next send.
+    struct SimulatedCachedAvFrame {
+        record: CachedOracleAvRecord,
+        replay_input: u16,
+        sample_frames: usize,
+        rust_audio: Option<serde_json::Value>,
+        capture: Option<gpu_capture::LiveGpuFrameCapture>,
+        paired_boundary: Option<(u32, Box<ZeldaState>)>,
+        compare: bool,
+    }
+    struct SimulationOutcome {
+        game: ZeldaState,
+        frames_completed: u32,
+        first_rng_drift: Option<serde_json::Value>,
+        receipt_nanos: u128,
+        engine_nanos: u128,
+        audio_nanos: u128,
+        capture_nanos: u128,
+    }
+    let input_script = &input_script;
+    let debug_wram_frames = &debug_wram_frames;
+    let outcome = std::thread::scope(|scope| {
+        let (sim_tx, sim_rx) = std::sync::mpsc::sync_channel::<SimulatedCachedAvFrame>(4);
+        let simulation = std::thread::Builder::new()
+            .name("cached-av-simulate".into())
+            .spawn_scoped(scope, move || {
+                let mut game = game;
+                let mut audio_buffer = audio_buffer;
+                let mut ledger_frames_seen = ledger_frames_seen;
+                let mut frames_completed = frames_completed;
+                let mut first_rng_drift = first_rng_drift;
+                let mut paired_checkpoint_due = paired_checkpoint_due;
+                let mut receipt_nanos = 0_u128;
+                let mut engine_nanos = 0_u128;
+                let mut audio_nanos = 0_u128;
+                let mut capture_nanos = 0_u128;
+        for parsed in parsed_rx.iter() {
+            let receipt_started = Instant::now();
+            let ParsedCachedAvInput {
+                line_index,
+                record,
+                timing_receipts,
+            } = parsed.unwrap_or_else(|error| {
+                eprintln!("{error}");
+                process::exit(2);
+            });
+            if record.schema != 1 || record.frame != ledger_frames_seen {
                 eprintln!(
-                    "failed to install cached source receipt at frame {}: {error:?}",
+                    "cached A/V ledger must be schema 1 and contiguous from cache frame {cache_start_frame}; line {} has schema {} frame {}, expected {}",
+                    line_index + 1,
+                    record.schema,
+                    record.frame,
+                    ledger_frames_seen
+                );
+                process::exit(2);
+            }
+            ledger_frames_seen = ledger_frames_seen.saturating_add(1);
+            let cached_input = cached_ledger_input(&record.input).unwrap_or_else(|error| {
+                eprintln!("{error}");
+                process::exit(2);
+            });
+            let replay_input = input_script.input_for_frame(record.frame);
+            if cached_input != replay_input {
+                eprintln!(
+                    "cached input provenance mismatch at frame {}: ledger={cached_input:04x} script={replay_input:04x}",
                     record.frame
                 );
-                process::exit(1);
+                process::exit(2);
+            }
+            if record.frame < start_frame {
+                continue;
+            }
+            let Some(timing_receipts) = timing_receipts else {
+                eprintln!(
+                    "cached source receipt for frame {} was not decoded (parse thread expected it before the boundary {start_frame})",
+                    record.frame
+                );
+                process::exit(2);
+            };
+            if !timing_receipts.matches_host_call(u64::from(record.frame), replay_input) {
+                eprintln!(
+                    "cached source receipt provenance mismatch at frame {}: host_call={} canonical_input={:04x} raw_input={replay_input:04x}",
+                    record.frame,
+                    timing_receipts.host_call(),
+                    timing_receipts.input_state()
+                );
+                process::exit(2);
+            }
+            if stop_before_frame.is_some_and(|end| record.frame >= end) {
+                break;
+            }
+            if timing_enabled {
+                receipt_nanos += receipt_started.elapsed().as_nanos();
+            }
+            let engine_started = Instant::now();
+            game.install_original_timing_host_receipts(timing_receipts)
+                .unwrap_or_else(|error| {
+                    eprintln!(
+                        "failed to install cached source receipt at frame {}: {error:?}",
+                        record.frame
+                    );
+                    process::exit(1);
+                });
+            game.zelda_run_frame(replay_input as i32);
+            if timing_enabled {
+                engine_nanos += engine_started.elapsed().as_nanos();
+            }
+            let capture_started = Instant::now();
+            let capture = compare_video.then(|| {
+                gpu_capture::LiveGpuFrameCapture::from_game_at_comparison_frame(
+                    &mut game,
+                    record.frame,
+                )
             });
-        game.zelda_run_frame(replay_input as i32);
-        if timing_enabled {
-            engine_nanos += engine_started.elapsed().as_nanos();
+            if timing_enabled {
+                capture_nanos += capture_started.elapsed().as_nanos();
+            }
+            let audio_started = Instant::now();
+            let sample_frames = record
+                .oracle_audio_sample_frames
+                .or_else(|| record.audio.as_ref().map(|audio| audio.sample_frames as usize))
+                .unwrap_or_else(|| {
+                    eprintln!(
+                        "cached A/V record {} has no oracle audio frame schedule; regenerate the cache with the current harness",
+                        record.frame
+                    );
+                    process::exit(2);
+                });
+            audio_buffer.resize(sample_frames.saturating_mul(2), 0);
+            game.zelda_render_audio(&mut audio_buffer, sample_frames as i32, 2);
+            game.zelda_discard_unused_audio_frames();
+            let rust_audio = compare_audio.then(|| canonical_audio_digest(&audio_buffer));
+            if timing_enabled {
+                audio_nanos += audio_started.elapsed().as_nanos();
+            }
+            frames_completed = frames_completed.saturating_add(1);
+            // `ZELDA3_DEBUG_WRAM_FRAMES=a,b,lo-hi`: Rust WRAM after each listed
+            // frame, written beside the run's ledgers, for phase comparisons
+            // against oracle WRAM captures from a seeded live probe.
+            if debug_wram_frames.contains(&record.frame) {
+                fs::write(
+                    output.join(format!("rust_wram_frame_{}.bin", record.frame)),
+                    &game.ram[..],
+                )
+                .unwrap_or_else(|error| {
+                    eprintln!("failed to write Rust WRAM capture: {error}");
+                    process::exit(1);
+                });
+            }
+            if first_rng_drift.is_none() {
+                if let Err(error) = game.finish_rom_random_replay_through(frames_completed) {
+                    eprintln!(
+                        "cached A/V diagnostic: first ROM random consumption drift at execution frame {}: {error}",
+                        record.frame
+                    );
+                    first_rng_drift = Some(serde_json::json!({
+                        "execution_frame": record.frame,
+                        "error": error,
+                    }));
+                }
+            }
+            paired_checkpoint_due |=
+                paired_checkpoint_interval.is_some_and(|interval| frames_completed % interval == 0);
+            let paired_boundary = (paired_checkpoint_due
+                && game.paired_resume_cpu_boundary_is_quiescent()
+                && game.capture_original_timing_resume_checkpoint().is_ok())
+            .then(|| {
+                paired_checkpoint_due = false;
+                (frames_completed, Box::new(game.clone()))
+            });
+            let simulated = SimulatedCachedAvFrame {
+                compare: record.frame >= compare_from_frame,
+                record,
+                replay_input,
+                sample_frames,
+                rust_audio,
+                capture,
+                paired_boundary,
+            };
+            if sim_tx.send(simulated).is_err() {
+                break;
+            }
         }
-        let rust_video = renderer.as_mut().map(|renderer| {
+        // Dropping the receiver ends the producer at its next send; a parse error
+        // it reported was already surfaced by the loop above.
+        drop(parsed_rx);
+        SimulationOutcome {
+            game,
+            frames_completed,
+            first_rng_drift,
+            receipt_nanos,
+            engine_nanos,
+            audio_nanos,
+            capture_nanos,
+        }
+    })
+    .unwrap_or_else(|error| {
+        eprintln!("failed to start the cached A/V simulation thread: {error}");
+        process::exit(2);
+    });
+    for simulated in sim_rx.iter() {
+        let SimulatedCachedAvFrame {
+            record,
+            replay_input,
+            sample_frames,
+            rust_audio,
+            capture,
+            paired_boundary,
+            compare,
+        } = simulated;
+        let rust_video = capture.map(|capture| {
             renderer
-                .queue_game_video_digest(&mut game, record.frame)
+                .as_mut()
+                .expect("video capture without a renderer")
+                .queue_capture_video_digest(capture)
                 .unwrap_or_else(|error| {
                     eprintln!(
                         "cached A/V video render submission failed at frame {}: {error}",
@@ -1471,61 +1616,8 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
                     process::exit(1);
                 })
         });
-        let audio_started = Instant::now();
-        let sample_frames = record
-            .oracle_audio_sample_frames
-            .or_else(|| record.audio.as_ref().map(|audio| audio.sample_frames as usize))
-            .unwrap_or_else(|| {
-                eprintln!(
-                    "cached A/V record {} has no oracle audio frame schedule; regenerate the cache with the current harness",
-                    record.frame
-                );
-                process::exit(2);
-            });
-        audio_buffer.resize(sample_frames.saturating_mul(2), 0);
-        game.zelda_render_audio(&mut audio_buffer, sample_frames as i32, 2);
-        game.zelda_discard_unused_audio_frames();
-        let rust_audio = compare_audio.then(|| canonical_audio_digest(&audio_buffer));
-        if timing_enabled {
-            audio_nanos += audio_started.elapsed().as_nanos();
-        }
-        frames_completed = frames_completed.saturating_add(1);
-        // `ZELDA3_DEBUG_WRAM_FRAMES=a,b,lo-hi`: Rust WRAM after each listed
-        // frame, written beside the run's ledgers, for phase comparisons
-        // against oracle WRAM captures from a seeded live probe.
-        if debug_wram_frames.contains(&record.frame) {
-            fs::write(
-                output.join(format!("rust_wram_frame_{}.bin", record.frame)),
-                &game.ram[..],
-            )
-            .unwrap_or_else(|error| {
-                eprintln!("failed to write Rust WRAM capture: {error}");
-                process::exit(1);
-            });
-        }
-        if first_rng_drift.is_none() {
-            if let Err(error) = game.finish_rom_random_replay_through(frames_completed) {
-                eprintln!(
-                    "cached A/V diagnostic: first ROM random consumption drift at execution frame {}: {error}",
-                    record.frame
-                );
-                first_rng_drift = Some(serde_json::json!({
-                    "execution_frame": record.frame,
-                    "error": error,
-                }));
-            }
-        }
-        paired_checkpoint_due |=
-            paired_checkpoint_interval.is_some_and(|interval| frames_completed % interval == 0);
-        let paired_boundary = (paired_checkpoint_due
-            && game.paired_resume_cpu_boundary_is_quiescent()
-            && game.capture_original_timing_resume_checkpoint().is_ok())
-        .then(|| {
-            paired_checkpoint_due = false;
-            (frames_completed, Box::new(game.clone()))
-        });
         pending_frames.push_back(PendingCachedAvFrame {
-            compare: record.frame >= compare_from_frame,
+            compare,
             record,
             replay_input,
             sample_frames,
@@ -1584,10 +1676,25 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
             }
         }
     }
-    // Dropping the receiver ends the producer at its next send; a parse error
-    // it reported was already surfaced by the loop above.
-    drop(parsed_rx);
+    drop(sim_rx);
+    simulation.join().unwrap_or_else(|_| {
+        eprintln!("cached A/V simulation thread panicked");
+        process::exit(1);
+    })
+    });
     let _ = parse_thread.join();
+    let SimulationOutcome {
+        game,
+        frames_completed,
+        first_rng_drift,
+        receipt_nanos,
+        engine_nanos,
+        audio_nanos,
+        capture_nanos,
+    } = outcome;
+    if let Some(renderer) = renderer.as_mut() {
+        renderer.add_capture_nanos(capture_nanos);
+    }
     while matched || std::env::var_os("ZELDA3_CACHED_AV_CONTINUE").is_some() {
         let Some(pending) = pending_frames.pop_front() else {
             break;
