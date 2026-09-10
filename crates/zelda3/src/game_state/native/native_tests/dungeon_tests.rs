@@ -21,9 +21,8 @@ fn fixed_color_write_through_updates_sole_owner_without_projecting_room_scratch(
 }
 
 #[test]
-fn native_dungeon_environment_bridge_ignores_write_through_water_counter_in_coherence_check() {
+fn native_dungeon_environment_bridge_publishes_trapdoors() {
     let mut ram = vec![0; WRAM_SIZE];
-    ram[TURN_ON_OFF_WATER_CTR] = 1;
 
     let mut environment = DungeonEnvironmentState::default();
 
@@ -32,9 +31,7 @@ fn native_dungeon_environment_bridge_ignores_write_through_water_counter_in_cohe
         bridge.set_trapdoors_down(0x30);
     }
 
-    assert_eq!(environment.water_transition_counter(), 0);
     assert_eq!(environment.trapdoors_down(), 0x30);
-    assert_eq!(ram[TURN_ON_OFF_WATER_CTR], 1);
     assert_eq!(read_le_u16(&ram, DUNG_FLAG_TRAPDOORS_DOWN), 0x30);
 }
 

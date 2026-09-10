@@ -36,7 +36,7 @@ use crate::game_state::constants::{
     OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_FIXED_COLOR_PLUSMINUS,
     OVERWORLD_TILE_THEME_INDEX, REPLACEMENT_TILEMAP_LL, REPLACEMENT_TILEMAP_LR,
     REPLACEMENT_TILEMAP_UL, REPLACEMENT_TILEMAP_UR, RESERVED_GFX_CONFIG_WORD, RESET_XY_CHECK_FLAGS,
-    SOMARIA_BLOCK_BG_CHECK_FLAG, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, TURN_ON_OFF_WATER_CTR,
+    SOMARIA_BLOCK_BG_CHECK_FLAG, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS,
     WATER_SIDE_STEP_SWITCH,
 };
 use crate::game_state::constants::{
@@ -488,7 +488,6 @@ impl DungeonRoomTilemapState {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DungeonEnvironmentState {
-    water_transition_counter: u8,
     water_puzzle_state_changed: u8,
     trapdoors_down: u16,
     somaria_block_switch_counter: u8,
@@ -502,7 +501,6 @@ pub(crate) struct DungeonEnvironmentState {
 impl DungeonEnvironmentState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
-            water_transition_counter: ram.get(TURN_ON_OFF_WATER_CTR).copied().unwrap_or(0),
             water_puzzle_state_changed: ram
                 .get(DUNG_FLAG_STATECHANGE_WATERPUZZLE)
                 .copied()
@@ -524,11 +522,6 @@ impl DungeonEnvironmentState {
     }
 
     pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
-        // TURN_ON_OFF_WATER_CTR (0x424) is SNES byte-reused as DUNG_FLOOR_Y_OFFS (the moving
-        // floor's 16-bit y offset, owned by DungeonMovingFloorState). Projecting the stale
-        // water counter here re-stamped 0 over the accumulating floor offset in moving-floor
-        // rooms. Write it through in the setters instead and keep it out of the bulk
-        // projection (same write-through pattern as OamState's mode-reused fields).
         ram.write_byte(
             DUNG_FLAG_STATECHANGE_WATERPUZZLE,
             self.water_puzzle_state_changed,
@@ -549,10 +542,6 @@ impl DungeonEnvironmentState {
             self.movable_block_was_pushed,
         );
         ram.write_word(BLOCK_TRAP_CHECK_FLAG, self.block_trap_related_tile);
-    }
-
-    pub(crate) fn water_transition_counter(&self) -> u8 {
-        self.water_transition_counter
     }
 
     pub(crate) fn water_puzzle_state_changed(&self) -> u8 {
@@ -593,20 +582,6 @@ impl DungeonEnvironmentState {
 
     pub(crate) fn block_trap_related_tile(&self) -> u16 {
         self.block_trap_related_tile
-    }
-
-    fn set_water_transition_counter(&mut self, value: u8) {
-        self.water_transition_counter = value;
-    }
-
-    fn increment_water_transition_counter(&mut self) -> u8 {
-        self.water_transition_counter = self.water_transition_counter.wrapping_add(1);
-        self.water_transition_counter
-    }
-
-    fn decrement_water_transition_counter(&mut self) -> u8 {
-        self.water_transition_counter = self.water_transition_counter.wrapping_sub(1);
-        self.water_transition_counter
     }
 
     fn clear_water_puzzle_state_changed(&mut self) {
@@ -1556,6 +1531,13 @@ impl DungeonMovingFloorState {
         self.y_offset
     }
 
+    /// `turn_on_off_water_ctr` in the original: the water-toggle rooms count
+    /// their transition in the low byte of the floor offset word, which no
+    /// moving floor uses in those rooms.
+    pub(crate) fn water_transition_counter(&self) -> u8 {
+        self.y_offset as u8
+    }
+
     pub(crate) fn floor_move_flags(&self) -> u16 {
         self.move_flags
     }
@@ -1582,6 +1564,22 @@ impl DungeonMovingFloorState {
 
     fn set_floor_y_offset_low(&mut self, value: u8) {
         self.y_offset = (self.y_offset & 0xff00) | u16::from(value);
+    }
+
+    fn set_water_transition_counter(&mut self, value: u8) {
+        self.set_floor_y_offset_low(value);
+    }
+
+    fn increment_water_transition_counter(&mut self) -> u8 {
+        let value = self.water_transition_counter().wrapping_add(1);
+        self.set_floor_y_offset_low(value);
+        value
+    }
+
+    fn decrement_water_transition_counter(&mut self) -> u8 {
+        let value = self.water_transition_counter().wrapping_sub(1);
+        self.set_floor_y_offset_low(value);
+        value
     }
 
     fn set_floor_offsets(&mut self, x: u16, y: u16) {
@@ -3714,7 +3712,9 @@ impl<'a> NativeDungeonMovingFloorBridgeMut<'a> {
         fn set_floor_x_velocity(value: u16);
         fn set_floor_x_offset(value: u16);
         fn set_floor_y_offset(value: u16);
-        fn set_floor_y_offset_low(value: u8);
+        fn set_water_transition_counter(value: u8);
+        fn increment_water_transition_counter() -> u8;
+        fn decrement_water_transition_counter() -> u8;
         fn set_floor_offsets(x: u16, y: u16);
         fn add_floor_x_offset(delta: u16) -> u16;
         fn sub_floor_x_offset(delta: u16) -> u16;
@@ -3937,55 +3937,9 @@ impl<'a> NativeDungeonRoomLoadBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeDungeonEnvironmentBridgeMut<'a> {
-    state: &'a mut DungeonEnvironmentState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDungeonEnvironmentBridgeMut, state: DungeonEnvironmentState);
 
 impl<'a> NativeDungeonEnvironmentBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut DungeonEnvironmentState, ram: &'a mut [u8]) -> Self {
-        let mut adopted = DungeonEnvironmentState::load_from_ram(&*ram);
-        adopted.water_transition_counter = state.water_transition_counter;
-        *state = adopted;
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        let mut ram_state = DungeonEnvironmentState::load_from_ram(self.ram);
-        ram_state.water_transition_counter = self.state.water_transition_counter;
-        debug_assert_eq!(*self.state, ram_state);
-    }
-
-    pub(crate) fn set_water_transition_counter(&mut self, value: u8) {
-        self.state.set_water_transition_counter(value);
-        self.sync();
-        // Write-through: TURN_ON_OFF_WATER_CTR (0x424) is excluded from write_to_ram
-        // because it aliases the moving floor's y-offset. Write the owned byte directly.
-        self.ram[TURN_ON_OFF_WATER_CTR] = value;
-    }
-
-    pub(crate) fn increment_water_transition_counter(&mut self) -> u8 {
-        let value = self.state.increment_water_transition_counter();
-        self.sync();
-        self.ram[TURN_ON_OFF_WATER_CTR] = value;
-        value
-    }
-
-    pub(crate) fn decrement_water_transition_counter(&mut self) -> u8 {
-        let value = self.state.decrement_water_transition_counter();
-        self.sync();
-        self.ram[TURN_ON_OFF_WATER_CTR] = value;
-        value
-    }
-
     forward_synced! {
         state;
         fn clear_water_puzzle_state_changed();

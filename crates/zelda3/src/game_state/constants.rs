@@ -406,7 +406,6 @@ pub(crate) const DUNG_NUM_ACTIVATED_WATER_LADDERS: usize = 0x0444;
 pub(crate) const WATER_SIDE_STEP_SWITCH: usize = 0x0448;
 pub(crate) const DUNG_NUM_TOGGLE_FLOOR: usize = 0x044e;
 pub(crate) const DUNG_NUM_TOGGLE_PALACE: usize = 0x0450;
-pub(crate) const TURN_ON_OFF_WATER_CTR: usize = 0x0424;
 pub(crate) const DUNG_MISC_OBJS_INDEX: usize = 0x042c;
 pub(crate) const DUNG_INDEX_OF_TORCHES: usize = 0x042e;
 pub(crate) const DUNG_DOOR_SWITCH_TRIGGERED: usize = 0x0430;

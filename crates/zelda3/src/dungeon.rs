@@ -499,7 +499,7 @@ impl ZeldaState {
                 if self
                     .game_state
                     .dungeon
-                    .environment
+                    .moving_floor
                     .water_transition_counter()
                     & 7
                     == 0
@@ -507,7 +507,7 @@ impl ZeldaState {
                     let k = ((self
                         .game_state
                         .dungeon
-                        .environment
+                        .moving_floor
                         .water_transition_counter()
                         >> 2)
                         & 3) as usize;
@@ -526,7 +526,7 @@ impl ZeldaState {
                     self.water_hdma_window_mut().set_window_y_radius(y_radius);
                     self.water_hdma_window_mut().set_window_x_radius(x_radius);
                 }
-                self.dungeon_environment_mut()
+                self.dungeon_moving_floor_mut()
                     .increment_water_transition_counter();
                 self.AdjustWaterHDMAWindow();
             }
@@ -548,11 +548,11 @@ impl ZeldaState {
             0..=3 => self.Dungeon_FloodSwampWater_PrepTileMap(),
             4..=8 => {
                 if self
-                    .dungeon_environment_mut()
+                    .dungeon_moving_floor_mut()
                     .decrement_water_transition_counter()
                     == 0
                 {
-                    self.dungeon_environment_mut()
+                    self.dungeon_moving_floor_mut()
                         .set_water_transition_counter(4);
                     self.increment_subsubmodule();
                     let depth = i32::from(self.game_state.frame.subsubmodule) - 4;
@@ -571,7 +571,7 @@ impl ZeldaState {
                 self.set_sub_screen_layers(1);
                 self.set_color_window_selection(2);
                 self.set_color_math_control(98);
-                self.dungeon_environment_mut()
+                self.dungeon_moving_floor_mut()
                     .set_water_transition_counter(0);
                 self.increment_subsubmodule();
                 self.Module07_0C_FloodSwampWater_raise_window(
@@ -587,7 +587,7 @@ impl ZeldaState {
                 if self
                     .game_state
                     .dungeon
-                    .environment
+                    .moving_floor
                     .water_transition_counter()
                     & 7
                     == 0
@@ -595,7 +595,7 @@ impl ZeldaState {
                     let k = ((self
                         .game_state
                         .dungeon
-                        .environment
+                        .moving_floor
                         .water_transition_counter()
                         >> 2)
                         & 3) as usize;
@@ -620,7 +620,7 @@ impl ZeldaState {
                         self.Dungeon_AdjustWaterVomit(if a == 0 { 0x16b4 } else { 0x168c }, 5);
                     }
                 }
-                self.dungeon_environment_mut()
+                self.dungeon_moving_floor_mut()
                     .increment_water_transition_counter();
                 self.AdjustWaterHDMAWindow();
             }
@@ -632,7 +632,7 @@ impl ZeldaState {
         let k = (self
             .game_state
             .dungeon
-            .environment
+            .moving_floor
             .water_transition_counter()
             & 3) as usize;
         let r0 = 0x0688u16
@@ -648,7 +648,7 @@ impl ZeldaState {
             self.dungeon_room_load_mut().set_bg2_properties(7);
             self.increment_subsubmodule();
         }
-        self.dungeon_environment_mut()
+        self.dungeon_moving_floor_mut()
             .increment_water_transition_counter();
         let lower = 0x0688u16
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())
@@ -1167,16 +1167,12 @@ impl ZeldaState {
         // at its prior value (0x10 = "upload complete") and re-project it, so the new
         // room's quadrant VRAM upload would never run (C: clears the byte at room load).
         self.dungeon_room_load_mut().clear_quadrant_upload_index();
-        // 0x41a/0x422/0x424 (DungeonMovingFloorState move_flags/x_offset/y_offset) and 0x424
-        // (DungeonEnvironmentState water_transition_counter) are zeroed by the
-        // clear_room_parser_words loop above, but that only touches RAM + the room parser —
-        // these native fields would keep last room's value and re-project it (a stale moving-
-        // floor offset / water-animation counter re-stamping the cleared byte; f473650, a
-        // dungeon water room kept TURN_ON_OFF_WATER_CTR=0x20). Reset them to match the clear.
+        // 0x41a/0x422/0x424 (the moving floor's move flags and offsets, the low
+        // byte of the latter doubling as the water transition counter) are zeroed
+        // by the clear_room_parser_words loop above; clear the native fields too so
+        // a native read before the next import sees the cleared room (f473650).
         self.dungeon_moving_floor_mut().clear_floor_move_flags();
         self.dungeon_moving_floor_mut().clear_floor_offsets();
-        self.dungeon_environment_mut()
-            .set_water_transition_counter(0);
         for i in 0..16 {
             self.dungeon_object_tracking_mut()
                 .set_object_tilemap_pos(i, 0);
@@ -6831,13 +6827,7 @@ impl ZeldaState {
             self.set_sound_effect_1(0x2f);
             self.set_submodule(12);
             self.set_subsubmodule(0);
-            self.dungeon_moving_floor_mut().set_floor_y_offset_low(1);
-            // 0x424 is mode-reused: DUNG_FLOOR_Y_OFFS (written just above) AND TURN_ON_OFF_WATER_CTR.
-            // In RoomTag_WaterOn the byte is the water transition counter (C writes the single byte
-            // =1). Keep the water-counter native coherent too, or its DungeonEnvironmentState
-            // projection re-stamps the stale frame-start 0 over the floor-offset write (f606590).
-            self.dungeon_environment_mut()
-                .set_water_transition_counter(1);
+            self.dungeon_moving_floor_mut().set_water_transition_counter(1);
             self.dungeon_header_mut().clear_header_tag(1);
             let save_bits = self.game_state.dungeon.savegame_state.savegame_state_bits() | 0x0800;
             self.dungeon_savegame_state_mut()
@@ -6860,7 +6850,7 @@ impl ZeldaState {
         }
 
         self.set_window_layer_masks(3, 0, 0, 22, 1);
-        self.dungeon_environment_mut()
+        self.dungeon_moving_floor_mut()
             .set_water_transition_counter(1);
         self.AdjustWaterHDMAWindow();
         self.set_submodule(11);

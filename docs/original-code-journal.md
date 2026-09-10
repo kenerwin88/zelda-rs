@@ -88,6 +88,10 @@ write-through where the SNES reuse is real.
   until it reaches the room's chest count; and the attract sequence zooms
   the world map with the map screen's own zoom timer.
   (duplicate-timer-and-map-state-models)
+- **The flooding rooms count in the moving floor's offset.** The water
+  toggle's transition counter is the low byte of the moving floor's Y
+  offset word; no room has both. The port kept two models of the byte with
+  a hand-written write-through. (water-counter-owner)
 
 ## Passing data through the scratch registers
 
