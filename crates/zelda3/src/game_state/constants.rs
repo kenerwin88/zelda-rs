@@ -434,7 +434,6 @@ pub(crate) const DUNG_NUM_STAIRS_WET: usize = 0x049e;
 pub(crate) const DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER: usize = 0x04ae;
 pub(crate) const DUNG_OVERLAY_TO_LOAD: usize = 0x04ba;
 pub(crate) const MOVING_WALL_TORCH_BLINK_PHASE: usize = 0x04bc;
-pub(crate) const MOVING_WALL_TORCH_UPDATE_FLAG: usize = 0x04c2;
 pub(crate) const CHANGEABLE_DUNGEON_OBJECT_INDEX: usize = 0x05fc;
 pub(crate) const DUNGEON_ROOM_INDEX2: usize = 0x048e;
 pub(crate) const DUNGEON_FLOOR_Y_VELOCITY: usize = 0x0310;
@@ -515,7 +514,8 @@ pub(crate) const COUNTDOWN_TIMER_FOR_STAIRCASES: usize = 0x0378;
 pub(crate) const DUNGEON_TORCH_DATA: usize = 0x0fb40;
 pub(crate) const DUNG_INDEX_OF_TORCHES_START: usize = 0x0478;
 pub(crate) const GANON_TORCH_COUNT: usize = 0x04c5;
-pub(crate) const MILESTONE_ITEM_GFX_SWAP_COUNTDOWN: usize = 0x04c2;
+/// Frames until the falling boss prize swaps in its item graphics (`byte_7E04C2`).
+pub(crate) const BOSS_PRIZE_GRAPHICS_COUNTDOWN: usize = 0x04c2;
 pub(crate) const TRIGGER_SPECIAL_ENTRANCE: usize = 0x04c6;
 pub(crate) const WHICH_STAIRCASE_INDEX: usize = 0x0462;
 pub(crate) const STAIRCASE_MOVE_COUNTER: usize = 0x0464;

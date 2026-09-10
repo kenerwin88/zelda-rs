@@ -32,7 +32,7 @@ use crate::game_state::constants::{
     FLOOR_1_FILLER_TILES, FLOOR_2_FILLER_TILES, GANON_TORCH_COUNT, HDR_DUNGEON_DARK_WITH_LANTERN,
     INVISIBLE_DOOR_DIR_AND_INDEX_X2, MAIN_TILE_THEME_INDEX, MESSAGING_BUF_DUNGEON,
     MOVABLE_BLOCK_DATAS, MOVING_FLOOR_BG_CHECK_FLAGS, MOVING_WALL_DOT_POINTER,
-    MOVING_WALL_REPLACEMENT_BUFFER, MOVING_WALL_TORCH_BLINK_PHASE, MOVING_WALL_TORCH_UPDATE_FLAG,
+    MOVING_WALL_REPLACEMENT_BUFFER, MOVING_WALL_TORCH_BLINK_PHASE,
     MOVING_WALL_WRITE_POINT, ORANGE_BLUE_BARRIER_STATE, OVERWORLD_EXIT_TILE_THEME_INDEX,
     OVERWORLD_FIXED_COLOR_PLUSMINUS, OVERWORLD_MAP_STATE, OVERWORLD_TILE_THEME_INDEX,
     REPLACEMENT_TILEMAP_LL, REPLACEMENT_TILEMAP_LR, REPLACEMENT_TILEMAP_UL, REPLACEMENT_TILEMAP_UR,
@@ -2405,7 +2405,6 @@ pub(crate) struct DungeonRoomEffectsState {
     moving_wall_dot_pointer: u8,
     moving_wall_write_point: u16,
     moving_wall_torch_blink_phase: u8,
-    moving_wall_torch_update_flag: u8,
     fixed_color_plusminus: u8,
     trap_trigger_latch: u8,
     bomb_trap_activation: u8,
@@ -2426,7 +2425,6 @@ impl Default for DungeonRoomEffectsState {
             moving_wall_dot_pointer: 0,
             moving_wall_write_point: 0,
             moving_wall_torch_blink_phase: 0,
-            moving_wall_torch_update_flag: 0,
             fixed_color_plusminus: 0,
             trap_trigger_latch: 0,
             bomb_trap_activation: 0,
@@ -2456,10 +2454,6 @@ impl DungeonRoomEffectsState {
                 .get(MOVING_WALL_TORCH_BLINK_PHASE)
                 .copied()
                 .unwrap_or(0),
-            moving_wall_torch_update_flag: ram
-                .get(MOVING_WALL_TORCH_UPDATE_FLAG)
-                .copied()
-                .unwrap_or(0),
             fixed_color_plusminus: ram
                 .get(OVERWORLD_FIXED_COLOR_PLUSMINUS)
                 .copied()
@@ -2487,7 +2481,6 @@ impl DungeonRoomEffectsState {
         if ram[crate::game_state::constants::PLAYER_IS_INDOORS] != 0 {
             ram[MOVING_WALL_TORCH_BLINK_PHASE] = self.moving_wall_torch_blink_phase;
         }
-        ram[MOVING_WALL_TORCH_UPDATE_FLAG] = self.moving_wall_torch_update_flag;
         ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = self.fixed_color_plusminus;
         ram[DUNGEON_TRAP_TRIGGER_LATCH] = self.trap_trigger_latch;
         ram[ACTIVATE_BOMB_TRAP_OVERLORD] = self.bomb_trap_activation;
@@ -2573,10 +2566,6 @@ impl DungeonRoomEffectsState {
 
     fn toggle_moving_wall_torch_blink_phase(&mut self) {
         self.moving_wall_torch_blink_phase ^= 1;
-    }
-
-    fn request_moving_wall_torch_update(&mut self) {
-        self.moving_wall_torch_update_flag = 0x80;
     }
 
     fn clear_moving_wall_torch_blink_phase(&mut self) {
@@ -4482,7 +4471,6 @@ impl<'a> NativeDungeonRoomEffectsBridgeMut<'a> {
     forward_synced! {
         state;
         fn toggle_moving_wall_torch_blink_phase();
-        fn request_moving_wall_torch_update();
         fn clear_moving_wall_torch_blink_phase();
         fn set_blast_wall_door_index(door: usize);
         fn clear_blast_wall_door_index();

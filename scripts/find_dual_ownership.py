@@ -322,6 +322,32 @@ def projection_helper_expander(files):
     return expand
 
 
+SYNC_BRIDGE_STRUCT_RE = re.compile(r"\bstruct\s+([A-Za-z0-9_]+BridgeMut)(?:<[^>\n]*>)?\s*\{")
+SYNC_BRIDGE_IMPL_RE = re.compile(r"\bimpl(?:<[^>\n]*>)?\s+([A-Za-z0-9_]+BridgeMut)\b[^{\n]*\{")
+
+
+def collect_bridge_synced_owners(files) -> set[str]:
+    """States whose bridge re-projects them: `impl XBridgeMut { fn sync { self.state.write_to_ram(self.ram) } }`."""
+    owners: set[str] = set()
+    bridge_fields: dict[str, dict[str, str]] = defaultdict(dict)
+    for path in files:
+        text = path.read_text(errors="replace")
+        for m in SYNC_BRIDGE_STRUCT_RE.finditer(text):
+            body = brace_body(text, text.index("{", m.end() - 1))
+            bridge_fields[m.group(1)].update(
+                (f[1], f[2]) for f in FIELD_DECL_RE.finditer(body))
+    for path in files:
+        text = path.read_text(errors="replace")
+        for m in SYNC_BRIDGE_IMPL_RE.finditer(text):
+            body = brace_body(text, text.index("{", m.end() - 1))
+            if not re.search(r"self\.(\w+)\.write_to_ram\s*\(\s*self\.ram", body):
+                continue
+            for field_m in re.finditer(r"self\.(\w+)\.write_to_ram\s*\(\s*self\.ram", body):
+                ty = bridge_fields.get(m.group(1), {}).get(field_m.group(1), "")
+                owners.update(t for t in TYPE_IDENT_RE.findall(ty) if t not in NON_STRUCT_TYPES)
+    return owners
+
+
 def collect_projection_reachable(files) -> set[str]:
     """Structs whose write_to_ram is actually reached from GameState::write_to_ram."""
     fields: dict[str, dict[str, str]] = defaultdict(dict)
@@ -343,6 +369,9 @@ def collect_projection_reachable(files) -> set[str]:
                 if ".write_to_ram(" in body[it.end():it.end() + 400]:
                     projects[struct].add(it.group(1))
 
+    # A `*BridgeMut` whose sync re-runs its state's write_to_ram is a live mid-frame
+    # writer even when the master projection never reaches that state (the
+    # room-effects state at 0x4c2 was written off as "never projected" this way).
     reachable: set[str] = set()
     stack = ["GameState"]
     while stack:
@@ -696,7 +725,9 @@ def main():
                 if struct not in byte_owners[addr]:
                     byte_owners[addr][struct] = (label, fname)
 
-    reachable = collect_projection_reachable(files)
+    master_reachable = collect_projection_reachable(files)
+    bridge_synced = collect_bridge_synced_owners(files) - master_reachable
+    reachable = master_reachable | bridge_synced
     c_names, c_lengths = c_ram_map()
 
     # An overlap can only clobber if 2+ of its owners are actually projected.
@@ -713,8 +744,9 @@ def main():
 
     print(f"resolved {len(consts)} constants; "
           f"{len(owner_intervals)} structs have write_to_ram "
-          f"({len(reachable & set(owner_intervals))} reachable from "
-          f"GameState::write_to_ram); {len(real_bytes)} overlapping bytes")
+          f"({len(master_reachable & set(owner_intervals))} reachable from "
+          f"GameState::write_to_ram, {len(bridge_synced & set(owner_intervals))} more "
+          f"re-projected only by a bridge sync); {len(real_bytes)} overlapping bytes")
     if suppressed_bytes:
         print(f"  ruled out: {len(suppressed_bytes)} byte(s) whose co-owners are never "
               f"projected ({', '.join(unreachable_owners)})")
@@ -737,14 +769,21 @@ def main():
             else:
                 groups.append(([addr], owners))
 
-        # Split into HIGH RISK (>=2 owners share the same mode) vs likely-reuse.
-        high, reuse = [], []
+        # Split into HIGH RISK (>=2 owners share the same mode, all master-projected),
+        # BRIDGE-SYNC (same mode, but at least one owner is only re-projected when its
+        # bridge setter fires) vs likely-reuse.
+        high, bridge, reuse = [], [], []
         for addrs, owners in groups:
             modes = defaultdict(list)
             for s in owners:
                 modes[mode_of(s)].append(s)
             same_mode = any(len(v) >= 2 for v in modes.values())
-            (high if same_mode else reuse).append((addrs, owners, modes))
+            if not same_mode:
+                reuse.append((addrs, owners, modes))
+            elif owners & bridge_synced:
+                bridge.append((addrs, owners, modes))
+            else:
+                high.append((addrs, owners, modes))
 
         def show(group_list):
             for addrs, owners, modes in group_list:
@@ -768,6 +807,12 @@ def main():
               f"################")
         print("(two states live in the same game mode both project this byte → clobber)\n")
         show(high)
+
+        print(f"################  BRIDGE-SYNC: {len(bridge)} same-mode overlap(s)  "
+              f"################")
+        print("(an owner the master projection never reaches still re-projects this byte "
+              "from every bridge setter → clobbers a co-owner's mid-frame write)\n")
+        show(bridge)
 
         print(f"################  LIKELY SNES MODE-REUSE: {len(reuse)} cross-mode "
               f"overlap(s)  ################")

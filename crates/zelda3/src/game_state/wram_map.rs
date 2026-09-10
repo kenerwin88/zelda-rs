@@ -1238,8 +1238,6 @@ const DUNG_INTER_STAIRCASES: usize = 0x06b0;
 // DUNG_FLAG_SOMARIA_BLOCK_SWITCH is also defined (with a different value) in another module.
 // const DUNG_FLAG_SOMARIA_BLOCK_SWITCH: usize = 0x0646;
 
-const MOVING_WALL_TORCH_UPDATE_FLAG: usize = 0x04c2;
-
 const MOVING_WALL_TORCH_BLINK_PHASE: usize = 0x04bc;
 
 const DUNG_REPLACEMENT_TILE_DST_POS_X2: usize = 0x04b6;

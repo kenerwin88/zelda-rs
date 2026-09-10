@@ -2093,11 +2093,14 @@ impl WorldRegionState {
     }
 }
 
+/// `RoomTag_GetHeartForPrize` stores 128 into `byte_7E04C2` when the prize starts falling.
+pub(crate) const BOSS_PRIZE_GRAPHICS_COUNTDOWN_FRAMES: u8 = 128;
+
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct WorldTransientState {
     pub(crate) custom_spell_animation_flag: u8,
     pub(crate) allow_scroll_z: u8,
-    pub(crate) milestone_item_graphics_countdown: u8,
+    pub(crate) boss_prize_graphics_countdown: u8,
     pub(crate) big_key_door_message_triggered: u16,
     pub(crate) savegame_master_sword_flags: u16,
     pub(crate) standing_in_doorway_cached: u8,
@@ -2128,7 +2131,7 @@ impl Default for WorldTransientState {
         Self {
             custom_spell_animation_flag: 0,
             allow_scroll_z: 0,
-            milestone_item_graphics_countdown: 0,
+            boss_prize_graphics_countdown: 0,
             big_key_door_message_triggered: 0,
             savegame_master_sword_flags: 0,
             standing_in_doorway_cached: 0,
@@ -2169,7 +2172,7 @@ impl WorldTransientState {
         }
         check!(custom_spell_animation_flag);
         check!(allow_scroll_z);
-        check!(milestone_item_graphics_countdown);
+        check!(boss_prize_graphics_countdown);
         check!(big_key_door_message_triggered);
         check!(savegame_master_sword_flags);
         check!(standing_in_doorway_cached);
@@ -2210,7 +2213,7 @@ impl WorldTransientState {
         Self {
             custom_spell_animation_flag: ram_byte(ram, FLAG_CUSTOM_SPELL_ANIM_ACTIVE),
             allow_scroll_z: ram_byte(ram, ALLOW_SCROLL_Z),
-            milestone_item_graphics_countdown: ram_byte(ram, MILESTONE_ITEM_GFX_SWAP_COUNTDOWN),
+            boss_prize_graphics_countdown: ram_byte(ram, BOSS_PRIZE_GRAPHICS_COUNTDOWN),
             big_key_door_message_triggered: read_le_u16(ram, BIG_KEY_DOOR_MESSAGE_TRIGGERED),
             savegame_master_sword_flags: read_le_u16(ram, SAVEGAME_HAS_MASTER_SWORD_FLAGS),
             standing_in_doorway_cached: ram_byte(ram, IS_STANDING_IN_DOORWAY_CACHED),
@@ -2273,7 +2276,7 @@ impl WorldTransientState {
     pub(crate) fn write_scalar_fields_to_ram(&self, ram: &mut [u8]) {
         ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE] = self.custom_spell_animation_flag;
         ram[ALLOW_SCROLL_Z] = self.allow_scroll_z;
-        ram[MILESTONE_ITEM_GFX_SWAP_COUNTDOWN] = self.milestone_item_graphics_countdown;
+        ram[BOSS_PRIZE_GRAPHICS_COUNTDOWN] = self.boss_prize_graphics_countdown;
         write_le_u16(
             ram,
             BIG_KEY_DOOR_MESSAGE_TRIGGERED,
@@ -2349,9 +2352,9 @@ impl WorldTransientState {
         self.allow_scroll_z
     }
 
-    #[cfg(test)]
-    pub(crate) fn milestone_item_gfx_swap_countdown(&self) -> u8 {
-        self.milestone_item_graphics_countdown
+    /// Frames left before the falling boss prize swaps in its item graphics.
+    pub(crate) fn boss_prize_graphics_countdown(&self) -> u8 {
+        self.boss_prize_graphics_countdown
     }
 
     pub(crate) fn big_key_door_message_triggered(&self) -> u16 {
@@ -2607,10 +2610,13 @@ impl WorldTransientState {
         self.overworld_map16_stripe[index] = value;
     }
 
-    #[cfg(test)]
-    pub(crate) fn decrement_milestone_item_gfx_swap_countdown(&mut self) {
-        self.milestone_item_graphics_countdown =
-            self.milestone_item_graphics_countdown.wrapping_sub(1);
+    /// The boss room tag starts the prize's graphics countdown at 128 frames.
+    pub(crate) fn begin_boss_prize_graphics_countdown(&mut self) {
+        self.boss_prize_graphics_countdown = BOSS_PRIZE_GRAPHICS_COUNTDOWN_FRAMES;
+    }
+
+    pub(crate) fn decrement_boss_prize_graphics_countdown(&mut self) {
+        self.boss_prize_graphics_countdown = self.boss_prize_graphics_countdown.wrapping_sub(1);
     }
 }
 
@@ -3026,6 +3032,20 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
         let mut loaded = WorldTransientState::load_from_ram(self.ram);
         loaded.overworld_map16_stripe = self.state.overworld_map16_stripe;
         debug_assert_eq!(*self.state, loaded);
+    }
+
+    /// The prize ancilla counts this byte down mid-frame, so both mutations write only
+    /// their own byte instead of re-projecting the rest of the transient.
+    pub(crate) fn begin_boss_prize_graphics_countdown(&mut self) {
+        self.state.begin_boss_prize_graphics_countdown();
+        self.ram[BOSS_PRIZE_GRAPHICS_COUNTDOWN] = self.state.boss_prize_graphics_countdown();
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn decrement_boss_prize_graphics_countdown(&mut self) {
+        self.state.decrement_boss_prize_graphics_countdown();
+        self.ram[BOSS_PRIZE_GRAPHICS_COUNTDOWN] = self.state.boss_prize_graphics_countdown();
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_room_transitioning_flags(&mut self, value: u8) {

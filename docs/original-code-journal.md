@@ -37,6 +37,7 @@ write-through where the SNES reuse is real.
   twice under two guessed names (a "milestone item graphics countdown" and
   a "moving wall torch update flag"), neither of which is what it is.
   Modern: one owner, one countdown, named for the prize.
+  (boss-prize-countdown-owner)
 - **The map8 attribute bank doubles as packed map graphics** during
   overworld transitions. The same words are tile attributes in one phase
   and compressed graphics in the next; the port imports the aliased word

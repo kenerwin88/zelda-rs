@@ -7047,8 +7047,8 @@ impl ZeldaState {
         };
         let palace = (self.game_state.inventory.save_progress.palace_index_x2() >> 1) as usize;
         if prizes & DUNGEON_CRYSTAL_PENDANT_BITS[palace] == 0 {
-            self.dungeon_room_effects_mut()
-                .request_moving_wall_torch_update();
+            self.world_transient_mut()
+                .begin_boss_prize_graphics_countdown();
             if self.ancilla_spawn_falling_prize(
                 ROOM_TAG_GET_HEART_FOR_PRIZE_BOSS_FINISHED_FALLING_ITEM[palace],
             ) < 0

@@ -2062,6 +2062,8 @@ mod runtime_dungeon_roles;
 mod runtime_entity_tiles;
 #[path = "zelda_rtl_tests/runtime/runtime_entrance_backup.rs"]
 mod runtime_entrance_backup;
+#[path = "zelda_rtl_tests/runtime/runtime_boss_prize_countdown.rs"]
+mod runtime_boss_prize_countdown;
 #[path = "zelda_rtl_tests/runtime/runtime_items.rs"]
 mod runtime_items;
 #[path = "zelda_rtl_tests/runtime/runtime_misc.rs"]

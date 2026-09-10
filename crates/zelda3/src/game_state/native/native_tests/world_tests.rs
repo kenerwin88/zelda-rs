@@ -577,7 +577,7 @@ fn world_transient_loads_from_and_projects_to_ram() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE] = 0x01;
     ram[ALLOW_SCROLL_Z] = 0x02;
-    ram[MILESTONE_ITEM_GFX_SWAP_COUNTDOWN] = 0x03;
+    ram[BOSS_PRIZE_GRAPHICS_COUNTDOWN] = 0x03;
     write_le_u16(&mut ram, BIG_KEY_DOOR_MESSAGE_TRIGGERED, 0x0405);
     write_le_u16(&mut ram, SAVEGAME_HAS_MASTER_SWORD_FLAGS, 0x0607);
     ram[IS_STANDING_IN_DOORWAY_CACHED] = 0x09;
@@ -598,7 +598,7 @@ fn world_transient_loads_from_and_projects_to_ram() {
     let transient = WorldTransientState::load_from_ram(&ram);
     assert_eq!(transient.flag_custom_spell_anim_active(), 0x01);
     assert_eq!(transient.allow_scroll_z(), 0x02);
-    assert_eq!(transient.milestone_item_gfx_swap_countdown(), 0x03);
+    assert_eq!(transient.boss_prize_graphics_countdown(), 0x03);
     assert_eq!(transient.big_key_door_message_triggered(), 0x0405);
     assert_eq!(transient.savegame_has_master_sword_flags(), 0x0607);
     assert_eq!(transient.is_standing_in_doorway_cached(), 0x09);
@@ -669,8 +669,8 @@ fn world_transient_state_owns_transient_behavior() {
     assert_eq!(transient.exit_layer_masks(), 0x5678);
 
     assert_eq!(transient.increment_move_overlay_ctr(), 1);
-    transient.decrement_milestone_item_gfx_swap_countdown();
-    assert_eq!(transient.milestone_item_gfx_swap_countdown(), 0xff);
+    transient.decrement_boss_prize_graphics_countdown();
+    assert_eq!(transient.boss_prize_graphics_countdown(), 0xff);
 }
 
 #[test]
