@@ -23,7 +23,7 @@ fn room_effects_setters_do_not_restamp_the_boss_prize_countdown() {
     // A room-effects mutation in the same frame re-projects that state's bytes.
     state
         .dungeon_room_effects_mut()
-        .toggle_moving_wall_torch_blink_phase();
+        .set_moving_wall_dot_pointer(1);
     assert_eq!(state.ram[BOSS_PRIZE_GRAPHICS_COUNTDOWN], 127);
 
     // The master projection publishes the owner's value, not a stale copy.
