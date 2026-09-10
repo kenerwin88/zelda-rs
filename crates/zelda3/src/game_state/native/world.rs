@@ -2112,7 +2112,6 @@ pub(crate) struct WorldTransientState {
     pub(crate) overworld_hole_tilemap_position: u16,
     pub(crate) overworld_bomb_tile_sweep_x: u16,
     pub(crate) overworld_bomb_tile_sweep_y_end: u16,
-    pub(crate) door_animation_step: u16,
     pub(crate) room_transitioning_flags: u8,
     pub(crate) tile_interaction_shared_flag: u8,
     pub(crate) quadrant_fullsize_x: u8,
@@ -2143,7 +2142,6 @@ impl Default for WorldTransientState {
             overworld_hole_tilemap_position: 0,
             overworld_bomb_tile_sweep_x: 0,
             overworld_bomb_tile_sweep_y_end: 0,
-            door_animation_step: 0,
             room_transitioning_flags: 0,
             tile_interaction_shared_flag: 0,
             quadrant_fullsize_x: 0,
@@ -2184,7 +2182,6 @@ impl WorldTransientState {
         check!(overworld_hole_tilemap_position);
         check!(overworld_bomb_tile_sweep_x);
         check!(overworld_bomb_tile_sweep_y_end);
-        check!(door_animation_step);
         check!(room_transitioning_flags);
         check!(tile_interaction_shared_flag);
         check!(quadrant_fullsize_x);
@@ -2225,7 +2222,6 @@ impl WorldTransientState {
             overworld_hole_tilemap_position: read_le_u16(ram, OVERWORLD_HOLE_TILEMAP_POS),
             overworld_bomb_tile_sweep_x: read_le_u16(ram, OVERWORLD_BOMB_TILE_SWEEP_X),
             overworld_bomb_tile_sweep_y_end: read_le_u16(ram, OVERWORLD_BOMB_TILE_SWEEP_Y_END),
-            door_animation_step: read_le_u16(ram, DOOR_ANIMATION_STEP_INDICATOR),
             room_transitioning_flags: ram_byte(ram, ROOM_TRANSITIONING_FLAGS),
             tile_interaction_shared_flag: ram_byte(ram, TILE_INTERACTION_SHARED_FLAG),
             quadrant_fullsize_x: ram_byte(ram, QUADRANT_FULLSIZE_X),
@@ -2264,13 +2260,6 @@ impl WorldTransientState {
         for (index, tile) in self.overworld_map16_stripe.iter().enumerate() {
             write_le_u16(ram, DUNG_REPLACEMENT_TILE_STATE + index * 2, *tile);
         }
-    }
-
-    /// Push the write-through door-animation word (0x690). Only the owning setter and
-    /// round-trip tests use this; it is deliberately absent from write_to_ram.
-    #[cfg(test)]
-    pub(crate) fn write_door_animation_step_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, DOOR_ANIMATION_STEP_INDICATOR, self.door_animation_step);
     }
 
     pub(crate) fn write_scalar_fields_to_ram(&self, ram: &mut [u8]) {
@@ -2320,16 +2309,6 @@ impl WorldTransientState {
             OVERWORLD_BOMB_TILE_SWEEP_Y_END,
             self.overworld_bomb_tile_sweep_y_end,
         );
-        // DOOR_ANIMATION_STEP_INDICATOR (0x690) is C's single `door_animation_step_indicator`,
-        // shared between the dungeon doors and the overworld entrance doors.
-        // DungeonDoorState is the write-through owner (it holds ~25 of the call sites and is
-        // deliberately absent from DungeonState::write_to_ram); this state is the overworld
-        // user. Every world_transient setter already re-reads the byte from RAM first (see
-        // adopt_live_door_animation_step_then_sync) precisely so its sync would not
-        // clobber the dungeon value -- but the FRAME-WIDE GameState::write_to_ram had no such
-        // preserve step and re-stamped a stale copy anyway, which is what
-        // ZELDA3_ASSERT_SCRATCH_CONFLICTS caught at 0x690. Write-through only: the two door
-        // setters below write RAM directly.
         ram[ROOM_TRANSITIONING_FLAGS] = self.room_transitioning_flags;
         ram[TILE_INTERACTION_SHARED_FLAG] = self.tile_interaction_shared_flag;
         ram[QUADRANT_FULLSIZE_X] = self.quadrant_fullsize_x;
@@ -2395,10 +2374,6 @@ impl WorldTransientState {
 
     pub(crate) fn overworld_hole_tilemap_pos(&self) -> u16 {
         self.overworld_hole_tilemap_position
-    }
-
-    pub(crate) fn door_animation_step(&self) -> u16 {
-        self.door_animation_step
     }
 
     pub(crate) fn quadrant_fullsize_x(&self) -> u8 {
@@ -2467,14 +2442,6 @@ impl WorldTransientState {
 
     pub(crate) fn clear_tile_interaction_shared_flag(&mut self) {
         self.tile_interaction_shared_flag = 0;
-    }
-
-    pub(crate) fn set_door_animation_step(&mut self, value: u8) {
-        self.set_door_animation_step_word((self.door_animation_step & 0xff00) | u16::from(value));
-    }
-
-    pub(crate) fn set_door_animation_step_word(&mut self, value: u16) {
-        self.door_animation_step = value;
     }
 
     pub(crate) fn cache_quadrant_fullsize_state(&mut self) {
@@ -3008,26 +2975,6 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    /// 0x690 is no longer bulk-projected, so the owning setter writes it itself.
-    fn write_door_animation_step_through(&mut self) {
-        write_le_u16(
-            self.ram,
-            DOOR_ANIMATION_STEP_INDICATOR,
-            self.state.door_animation_step(),
-        );
-    }
-
-    /// 0x690 is shared with DungeonDoorState and is write-through on both sides, so adopt
-    /// whatever is in RAM before syncing: it keeps this state's readers and its
-    /// debug_assert_matches_ram honest when the dungeon door wrote the byte. (It was named
-    /// sync_preserving_projected_door_animation_step back when this state bulk-projected the
-    /// byte and the preserve existed to stop its own sync clobbering the dungeon value.)
-    fn adopt_live_door_animation_step_then_sync(&mut self) {
-        self.state
-            .set_door_animation_step_word(read_le_u16(self.ram, DOOR_ANIMATION_STEP_INDICATOR));
-        self.sync();
-    }
-
     fn debug_assert_matches_ram(&self) {
         let mut loaded = WorldTransientState::load_from_ram(self.ram);
         loaded.overworld_map16_stripe = self.state.overworld_map16_stripe;
@@ -3050,22 +2997,22 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
 
     pub(crate) fn set_room_transitioning_flags(&mut self, value: u8) {
         self.state.set_room_transitioning_flags(value);
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn clear_custom_spell_animation(&mut self) {
         self.state.clear_custom_spell_animation();
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn set_custom_spell_animation_active(&mut self) {
         self.state.set_custom_spell_animation_active();
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn set_allow_scroll_z(&mut self, value: u8) {
         self.state.set_allow_scroll_z(value);
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn set_cached_room_bounds(
@@ -3077,59 +3024,47 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
     ) {
         self.state
             .set_cached_room_bounds(y_start, y_end, x_start, x_end);
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn set_standing_in_doorway_cached(&mut self, value: u8) {
         self.state.set_standing_in_doorway_cached(value);
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn cache_standing_in_doorway(&mut self, doorway_state: u8) {
         self.state.set_standing_in_doorway_cached(doorway_state);
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn clear_tile_interaction_shared_flag(&mut self) {
         self.state.clear_tile_interaction_shared_flag();
-        self.adopt_live_door_animation_step_then_sync();
-    }
-
-    pub(crate) fn set_door_animation_step(&mut self, value: u8) {
-        self.state.set_door_animation_step(value);
-        self.write_door_animation_step_through();
-        self.sync();
-    }
-
-    pub(crate) fn set_door_animation_step_word(&mut self, value: u16) {
-        self.state.set_door_animation_step_word(value);
-        self.write_door_animation_step_through();
         self.sync();
     }
 
     pub(crate) fn cache_quadrant_fullsize_state(&mut self) {
         self.state.cache_quadrant_fullsize_state();
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn restore_quadrant_fullsize_from_cached(&mut self) {
         self.state.restore_quadrant_fullsize_from_cached();
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn set_quadrant_fullsize_x(&mut self, value: u8) {
         self.state.set_quadrant_fullsize_x(value);
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn set_quadrant_fullsize_y(&mut self, value: u8) {
         self.state.set_quadrant_fullsize_y(value);
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn set_fullsize_overworld_quadrants(&mut self) {
         self.state.set_fullsize_overworld_quadrants();
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn apply_dungeon_layout_quadrant_fullsize(
@@ -3147,7 +3082,7 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
             blast_wall_x_open,
             blast_wall_y_open,
         );
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn apply_dungeon_layout_horizontal_fullsize(
@@ -3161,7 +3096,7 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
             horizontal_mask,
             blast_wall_x_open,
         );
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn apply_dungeon_layout_vertical_fullsize(
@@ -3175,68 +3110,68 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
             vertical_mask,
             blast_wall_y_open,
         );
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn apply_reset_xy_quadrant_overrides(&mut self, reset_xy_flags: u16) {
         self.state.apply_reset_xy_quadrant_overrides(reset_xy_flags);
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn force_horizontal_fullsize_for_blast_wall(&mut self) {
         self.state.force_horizontal_fullsize_for_blast_wall();
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn force_vertical_fullsize_for_blast_wall(&mut self) {
         self.state.force_vertical_fullsize_for_blast_wall();
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn save_spexit_tm_copy(&mut self, layer_masks: u16) {
         self.state.save_spexit_tm_copy(layer_masks);
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn save_exit_tm_copy(&mut self, layer_masks: u16) {
         self.state.save_exit_tm_copy(layer_masks);
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn increment_move_overlay_ctr(&mut self) -> u8 {
         let value = self.state.increment_move_overlay_ctr();
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
         value
     }
 
     pub(crate) fn set_overworld_hole_scan_step(&mut self, value: u8) {
         self.state.set_overworld_hole_scan_step(value);
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn set_overworld_peg_puzzle_progress(&mut self, value: u16) {
         self.state.set_overworld_peg_puzzle_progress(value);
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn set_overworld_hole_tilemap_pos(&mut self, value: u16) {
         self.state.set_overworld_hole_tilemap_pos(value);
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn set_overworld_bomb_tile_sweep_x(&mut self, value: u16) {
         self.state.set_overworld_bomb_tile_sweep_x(value);
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn set_overworld_bomb_tile_sweep_y_end(&mut self, value: u16) {
         self.state.set_overworld_bomb_tile_sweep_y_end(value);
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn set_big_key_door_message_triggered(&mut self, value: u16) {
         self.state.set_big_key_door_message_triggered(value);
-        self.adopt_live_door_animation_step_then_sync();
+        self.sync();
     }
 
     pub(crate) fn set_overworld_map16_stripe_word(&mut self, index: usize, value: u16) {

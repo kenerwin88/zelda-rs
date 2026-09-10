@@ -61,6 +61,12 @@ write-through where the SNES reuse is real.
   flood widens an alternate y radius. The port had split them into a
   "display" and a "dungeon environment" model and then patched the
   adjuster to read raw RAM. (water-hdma-window-owner)
+- **The overworld's big doors are dungeon doors.** The four-tile opening
+  of an overworld entrance (the Hyrule Castle gate, the pyramid) runs on
+  the dungeon's door animation step (0x690) and door open counter (0x692),
+  stepping a 56-entry tile table two tiles at a time. There is no overworld
+  door system; the overworld borrows the dungeon's.
+  (door-step-owner)
 
 ## Arrays that are deliberately indexed past their end
 

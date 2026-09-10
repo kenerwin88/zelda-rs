@@ -63,15 +63,6 @@ impl ZeldaState {
             .cache_standing_in_doorway(doorway_state);
     }
 
-    pub(crate) fn set_door_animation_step(&mut self, value: u8) {
-        self.world_transient_mut().set_door_animation_step(value);
-    }
-
-    pub(crate) fn set_door_animation_step_word(&mut self, value: u16) {
-        self.world_transient_mut()
-            .set_door_animation_step_word(value);
-    }
-
     pub(crate) fn apply_dungeon_layout_quadrant_fullsize(
         &mut self,
         layout_flags: u8,

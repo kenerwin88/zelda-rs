@@ -4388,7 +4388,7 @@ impl ZeldaState {
         self.dungeon_room_tilemaps_mut()
             .set_bg2_tile_by_byte_pos(pos, tile);
         self.overworld_memorize_map16_change_for_smash(pos, tile);
-        self.overworld_draw_map16_for_smash(pos, tile);
+        self.overworld_draw_map16(pos, tile);
         self.set_bg_vram_load_mode(1);
         self.map16_quadrant_attr(a, x, y)
     }
@@ -4422,7 +4422,7 @@ impl ZeldaState {
         let y = y.wrapping_add(
             (SMASH_ROCK_PILE_FROM_LIFT_IMPL_BIG_ROCK_QUADRANT_Y_OFFSETS[quadrant] * 2) as u16,
         );
-        self.overworld_do_map_update32x32_b_for_smash();
+        self.overworld_do_map_update32x32_b();
         self.map16_quadrant_attr(a, x, y)
     }
 
@@ -4434,88 +4434,6 @@ impl ZeldaState {
         self.memorized_tile_mut().set_entry_value(x, value);
         self.memorized_tile_mut().set_entry_addr(x, pos);
         self.memorized_tile_mut().set_count((x + 2) as u16);
-    }
-
-    pub(super) fn overworld_draw_map16_for_smash(&mut self, pos: u16, value: u16) {
-        let vram_pos = self.overworld_find_map16_vram_address_for_smash(pos);
-        let dst = self.game_state.display.current_vram_upload_data_address();
-        let src = value as usize * 4;
-        let map8 = self
-            .asset_raw(70)
-            .expect("overworld_draw_map16_for_smash missing kMap16ToMap8 asset");
-        let tile0 = u16::from(map8[src * 2]) | (u16::from(map8[src * 2 + 1]) << 8);
-        let tile1 = u16::from(map8[(src + 1) * 2]) | (u16::from(map8[(src + 1) * 2 + 1]) << 8);
-        let tile2 = u16::from(map8[(src + 2) * 2]) | (u16::from(map8[(src + 2) * 2 + 1]) << 8);
-        let tile3 = u16::from(map8[(src + 3) * 2]) | (u16::from(map8[(src + 3) * 2 + 1]) << 8);
-        self.write_vram_upload_map16_update_packet(dst, vram_pos, [tile0, tile1, tile2, tile3]);
-        self.advance_vram_upload_cursor_by(16);
-    }
-
-    fn overworld_find_map16_vram_address_for_smash(&self, addr: u16) -> u16 {
-        (if addr & 0x3f >= 0x20 { 0x0400 } else { 0 })
-            + (if addr & 0x0fff >= 0x0800 { 0x0800 } else { 0 })
-            + (addr & 0x001f)
-            + ((addr & 0x0780) >> 1)
-    }
-
-    fn overworld_do_map_update32x32_b_for_smash(&mut self) {
-        self.overworld_do_map_update32x32_for_smash();
-        self.dungeon_doors_mut().clear_door_open_counter_low();
-    }
-
-    fn overworld_do_map_update32x32_for_smash(&mut self) {
-        let i = self.game_state.memorized_tiles.count() as usize;
-        let j = (self.game_state.dungeon.doors.door_open_counter() >> 1) as usize;
-        let base = self
-            .game_state
-            .dungeon
-            .object_tracking
-            .big_rock_starting_address();
-        let entries = [
-            (
-                base,
-                OVERWORLD_DO_MAP_UPDATE32X32_FOR_SMASH_DOOR_ANIM_TILES[j],
-            ),
-            (
-                base.wrapping_add(2),
-                OVERWORLD_DO_MAP_UPDATE32X32_FOR_SMASH_DOOR_ANIM_TILES[j + 1],
-            ),
-            (
-                base.wrapping_add(0x80),
-                OVERWORLD_DO_MAP_UPDATE32X32_FOR_SMASH_DOOR_ANIM_TILES[j + 2],
-            ),
-            (
-                base.wrapping_add(0x82),
-                OVERWORLD_DO_MAP_UPDATE32X32_FOR_SMASH_DOOR_ANIM_TILES[j + 3],
-            ),
-        ];
-        for (n, (pos, tile)) in entries.into_iter().enumerate() {
-            self.memorized_tile_mut().set_entry_addr(i + n * 2, pos);
-            self.memorized_tile_mut().set_entry_value(i + n * 2, tile);
-            self.overworld_draw_map16_persist_for_smash(pos, tile);
-        }
-        let upload = self.game_state.display.vram_upload_cursor_usize();
-        self.write_vram_upload_buffer_word(upload, 0xffff);
-        self.memorized_tile_mut().set_count((i + 8) as u16);
-        let step = self
-            .game_state
-            .dungeon
-            .doors
-            .door_animation_step()
-            .wrapping_add(if self.game_state.dungeon.doors.door_open_counter() == 32 {
-                2
-            } else {
-                1
-            });
-        self.dungeon_doors_mut().set_door_animation_step(step);
-        self.set_bg_vram_load_mode(1);
-        self.dungeon_doors_mut().increment_door_open_counter_low();
-    }
-
-    fn overworld_draw_map16_persist_for_smash(&mut self, pos: u16, value: u16) {
-        self.dungeon_room_tilemaps_mut()
-            .set_bg2_tile_by_byte_pos(pos, value);
-        self.overworld_draw_map16_for_smash(pos, value);
     }
 
     fn map16_quadrant_attr(&self, map16: u16, x: u16, y: u16) -> u8 {
@@ -9489,7 +9407,7 @@ impl ZeldaState {
             _ => 0x40,
         };
         self.dungeon_doors_mut().set_door_open_counter(counter);
-        self.overworld_do_map_update32x32_b_for_smash();
+        self.overworld_do_map_update32x32_b();
     }
 
     pub(super) fn somaria_block_handle_player_interaction(&mut self, k: usize) {

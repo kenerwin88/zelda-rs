@@ -1385,10 +1385,6 @@ impl DungeonDoorState {
         self.animation_step = value;
     }
 
-    fn sync_door_animation_step_from_ram(&mut self, ram: &[u8]) {
-        self.animation_step = read_le_u16(ram, DOOR_ANIMATION_STEP_INDICATOR_DUNGEON);
-    }
-
     fn set_door_animation_step_low(&mut self, value: u8) {
         self.animation_step = (self.animation_step & 0xff00) | u16::from(value);
     }
@@ -3931,86 +3927,81 @@ impl<'a> NativeDungeonDoorBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    fn sync_preserving_animation_step(&mut self) {
-        self.state.sync_door_animation_step_from_ram(self.ram);
-        self.sync();
-    }
-
     fn debug_assert_matches_ram(&self) {
         debug_assert_eq!(*self.state, DungeonDoorState::load_from_ram(self.ram));
     }
 
     pub(crate) fn set_opened_doors(&mut self, value: u16) {
         self.state.set_opened_doors(value);
-        self.sync_preserving_animation_step();
+        self.sync();
     }
 
     pub(crate) fn or_opened_doors(&mut self, mask: u16) -> u16 {
         let opened = self.state.or_opened_doors(mask);
-        self.sync_preserving_animation_step();
+        self.sync();
         opened
     }
 
     pub(crate) fn mark_door_opened(&mut self, door: usize) -> u16 {
         let opened = self.state.mark_door_opened(door);
-        self.sync_preserving_animation_step();
+        self.sync();
         opened
     }
 
     pub(crate) fn set_opened_doors_including_adjacent(&mut self, value: u16) {
         self.state.set_opened_doors_including_adjacent(value);
-        self.sync_preserving_animation_step();
+        self.sync();
     }
 
     pub(crate) fn clear_door_tilemap_addresses(&mut self) {
         self.state.clear_door_tilemap_addresses();
-        self.sync_preserving_animation_step();
+        self.sync();
     }
 
     pub(crate) fn set_door_tilemap_address(&mut self, door: usize, value: u16) {
         self.state.set_door_tilemap_address(door, value);
-        self.sync_preserving_animation_step();
+        self.sync();
     }
 
     pub(crate) fn load_room_door_tilemap_addresses_from_info(&mut self, door_info: &[u8]) {
         self.state
             .load_room_door_tilemap_addresses_from_info(door_info);
-        self.sync_preserving_animation_step();
+        self.sync();
     }
 
     pub(crate) fn clear_door_tables(&mut self) {
         self.state.clear_door_tables();
-        self.sync_preserving_animation_step();
+        self.sync();
     }
 
     pub(crate) fn set_door_type_word(&mut self, door: usize, value: u16) {
         self.state.set_door_type_word(door, value);
-        self.sync_preserving_animation_step();
+        self.sync();
     }
 
     pub(crate) fn set_door_direction_word(&mut self, door: usize, value: u16) {
         self.state.set_door_direction_word(door, value);
-        self.sync_preserving_animation_step();
+        self.sync();
     }
 
     pub(crate) fn set_current_door_index(&mut self, value: u16) {
         self.state.set_current_door_index(value);
-        self.sync_preserving_animation_step();
+        self.sync();
     }
 
     pub(crate) fn set_current_door_index_for_slot(&mut self, door: usize) {
         self.state.set_current_door_index_for_slot(door);
-        self.sync_preserving_animation_step();
+        self.sync();
     }
 
     pub(crate) fn set_current_door_pos(&mut self, value: u16) {
         self.state.set_current_door_pos(value);
-        self.sync_preserving_animation_step();
+        self.sync();
     }
 
     pub(crate) fn clear_current_door_pos(&mut self) {
         self.state.clear_current_door_pos();
-        self.sync_preserving_animation_step();
+        self.sync();
     }
 
     /// Clears only the LOW byte of DUNG_CUR_DOOR_POS (0x68e), preserving the high byte (0x68f).
@@ -4018,7 +4009,7 @@ impl<'a> NativeDungeonDoorBridgeMut<'a> {
     /// the high byte (a stale leftover) intact; a full word-clear here diverges scratch (0x68f).
     pub(crate) fn clear_current_door_pos_low_byte(&mut self) {
         self.state.clear_current_door_pos_low_byte();
-        self.sync_preserving_animation_step();
+        self.sync();
     }
 
     forward_synced! {
@@ -4030,38 +4021,38 @@ impl<'a> NativeDungeonDoorBridgeMut<'a> {
 
     pub(crate) fn set_door_open_counter(&mut self, value: u16) {
         self.state.set_door_open_counter(value);
-        self.sync_preserving_animation_step();
+        self.sync();
     }
 
     pub(crate) fn set_door_open_counter_low(&mut self, value: u8) {
         self.state.set_door_open_counter_low(value);
-        self.sync_preserving_animation_step();
+        self.sync();
     }
 
     pub(crate) fn clear_door_open_counter_low(&mut self) {
         self.state.clear_door_open_counter_low();
-        self.sync_preserving_animation_step();
+        self.sync();
     }
 
     pub(crate) fn increment_door_open_counter_low(&mut self) -> u8 {
         let value = self.state.increment_door_open_counter_low();
-        self.sync_preserving_animation_step();
+        self.sync();
         value
     }
 
     pub(crate) fn mark_door_switch_triggered(&mut self) {
         self.state.mark_door_switch_triggered();
-        self.sync_preserving_animation_step();
+        self.sync();
     }
 
     pub(crate) fn clear_door_switch_triggered(&mut self) {
         self.state.clear_door_switch_triggered();
-        self.sync_preserving_animation_step();
+        self.sync();
     }
 
     pub(crate) fn clear_door_barrier_or_switch_flag(&mut self) {
         self.state.clear_door_barrier_or_switch_flag();
-        self.sync_preserving_animation_step();
+        self.sync();
     }
 }
 

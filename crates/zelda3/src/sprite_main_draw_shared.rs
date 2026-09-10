@@ -249,13 +249,6 @@ pub(super) const SCATTER_DEBRIS_Y_OFFSETS: [i16; 4] = [-8, -8, 8, 8];
 // Free helpers (module-local) ported from sprite_main.c inline statics.
 // ---------------------------------------------------------------------------
 
-pub(super) fn overworld_find_map16_vram_address_for_draw(addr: u16) -> u16 {
-    (if addr & 0x3f >= 0x20 { 0x0400 } else { 0 })
-        + (if addr & 0x0fff >= 0x0800 { 0x0800 } else { 0 })
-        + (addr & 0x001f)
-        + ((addr & 0x0780) >> 1)
-}
-
 /// `ChainBallMult` (sprite_main.c:1397) — saturating fixed-point multiply
 /// used by SpriteDraw_BNCFlail.
 pub(super) fn chain_ball_mult(a: u16, b: u8) -> u8 {

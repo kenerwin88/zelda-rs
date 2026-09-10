@@ -1428,7 +1428,7 @@ impl ZeldaState {
                             .set_big_rock_starting_address(pos.wrapping_sub(0x80));
                         self.set_sound_effect_2(21);
                         self.set_subsubmodule(0);
-                        self.set_door_animation_step(0);
+                        self.dungeon_doors_mut().set_door_animation_step_low(0);
                         self.set_submodule(12);
                         return;
                     }
@@ -1437,7 +1437,7 @@ impl ZeldaState {
                         .set_big_rock_starting_address(pos.wrapping_sub(0x80));
                     self.set_sound_effect_2(21);
                     self.set_subsubmodule(0);
-                    self.set_door_animation_step(0);
+                    self.dungeon_doors_mut().set_door_animation_step_low(0);
                     self.set_submodule(12);
                     return;
                 }
@@ -3143,7 +3143,7 @@ impl ZeldaState {
                     .set_door_open_counter_low(if big_rock & 0x8000 != 0 { 0x18 } else { 0 });
                 self.dungeon_object_tracking_mut()
                     .set_big_rock_starting_address(big_rock & 0x7fff);
-                self.set_door_animation_step(0);
+                self.dungeon_doors_mut().set_door_animation_step_low(0);
                 self.set_submodule(9);
                 self.set_subsubmodule(0);
                 self.set_sound_effect_2(21);
@@ -7126,13 +7126,43 @@ impl ZeldaState {
         self.set_bg_vram_load_mode(1);
     }
 
-    fn overworld_do_map_update32x32_b(&mut self) {
+    pub(super) fn overworld_do_map_update32x32_b(&mut self) {
         self.overworld_do_map_update32x32();
         self.dungeon_doors_mut().clear_door_open_counter_low();
     }
 
     pub(super) fn Overworld_DoMapUpdate32x32_B(&mut self) {
         self.overworld_do_map_update32x32_b();
+    }
+
+    /// `OpenGargoylesDomain` (overworld.c): the Thieves' Town grate opens the entrance.
+    pub(super) fn OpenGargoylesDomain(&mut self) {
+        self.overworld_draw_map16_persist(0x0d3e, 0x0e1b);
+        self.overworld_draw_map16_persist(0x0d40, 0x0e1c);
+        self.overworld_draw_map16_persist(0x0dbe, 0x0e1d);
+        self.overworld_draw_map16_persist(0x0dc0, 0x0e1e);
+        self.overworld_draw_map16_persist(0x0e3e, 0x0e1f);
+        self.overworld_draw_map16_persist(0x0e40, 0x0e20);
+        self.set_overworld_event_bits(0x58, 0x20);
+        self.set_sound_effect_2(0x1b);
+        self.set_bg_vram_load_mode(1);
+    }
+
+    /// `CreatePyramidHole` (overworld.c): the bat crash opens the pyramid's top.
+    pub(super) fn CreatePyramidHole(&mut self) {
+        self.overworld_draw_map16_persist(0x03bc, 0x0e3f);
+        self.overworld_draw_map16_persist(0x03be, 0x0e40);
+        self.overworld_draw_map16_persist(0x03c0, 0x0e41);
+        self.overworld_draw_map16_persist(0x043c, 0x0e42);
+        self.overworld_draw_map16_persist(0x043e, 0x0e43);
+        self.overworld_draw_map16_persist(0x0440, 0x0e44);
+        self.overworld_draw_map16_persist(0x04bc, 0x0e45);
+        self.overworld_draw_map16_persist(0x04be, 0x0e46);
+        self.overworld_draw_map16_persist(0x04c0, 0x0e47);
+        self.set_ambient_sound_effect_word(0x3515);
+        self.set_overworld_event_bits(0x5b, 0x20);
+        self.set_sound_effect_2(3);
+        self.set_bg_vram_load_mode(1);
     }
 
     pub(super) fn Overworld_DoMapUpdate32x32_conditional(&mut self) {
@@ -7144,7 +7174,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module09_09_OpenBigDoorFromExiting(&mut self) {
-        if self.game_state.world.transient.door_animation_step() != 3 {
+        if self.game_state.dungeon.doors.door_animation_step() != 3 {
             self.Overworld_DoMapUpdate32x32_conditional();
             return;
         }
@@ -7154,7 +7184,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module09_0C_OpenBigDoor(&mut self) {
-        if self.game_state.world.transient.door_animation_step() != 3 {
+        if self.game_state.dungeon.doors.door_animation_step() != 3 {
             self.Overworld_DoMapUpdate32x32_conditional();
             return;
         }
@@ -7214,26 +7244,26 @@ impl ZeldaState {
         self.memorized_tile_mut().set_count((i + 8) as u16);
         let step = self
             .game_state
-            .world
-            .transient
+            .dungeon
+            .doors
             .door_animation_step()
             .wrapping_add(if self.game_state.dungeon.doors.door_open_counter() == 32 {
                 2
             } else {
                 1
             });
-        self.set_door_animation_step_word(step);
+        self.dungeon_doors_mut().set_door_animation_step(step);
         self.set_bg_vram_load_mode(1);
         self.dungeon_doors_mut().increment_door_open_counter_low();
     }
 
-    fn overworld_draw_map16_persist(&mut self, pos: u16, value: u16) {
+    pub(super) fn overworld_draw_map16_persist(&mut self, pos: u16, value: u16) {
         self.dungeon_room_tilemaps_mut()
             .set_bg2_tile_by_byte_pos(pos, value);
         self.overworld_draw_map16(pos, value);
     }
 
-    fn overworld_draw_map16(&mut self, pos: u16, value: u16) {
+    pub(super) fn overworld_draw_map16(&mut self, pos: u16, value: u16) {
         let vram_pos = Self::overworld_find_map16_vram_address(pos);
         let dst = self.game_state.display.current_vram_upload_data_address();
         let src = value as usize * 4;
@@ -7297,7 +7327,7 @@ impl ZeldaState {
             self.dungeon_room_tilemaps_mut()
                 .set_bg2_tile_by_byte_pos(pos, a);
             self.overworld_memorize_map16_change_for_smash(pos, a);
-            self.overworld_draw_map16_for_smash(pos, a);
+            self.overworld_draw_map16(pos, a);
             self.sprite_spawn_immediately_smashed_terrain(k, x & !7, y & !7);
             self.set_bg_vram_load_mode(1);
             return;
@@ -7312,12 +7342,12 @@ impl ZeldaState {
             self.dungeon_room_tilemaps_mut()
                 .set_bg2_tile_by_byte_pos(pos, a);
             self.overworld_memorize_map16_change_for_smash(pos, a);
-            self.overworld_draw_map16_for_smash(pos, a);
+            self.overworld_draw_map16(pos, a);
 
             self.dungeon_room_tilemaps_mut()
                 .set_bg2_tile_by_byte_pos(pos.wrapping_add(2), 0x0db5);
             self.overworld_memorize_map16_change_for_smash(pos, 0x0db5);
-            self.overworld_draw_map16_for_smash(pos.wrapping_add(2), 0x0db5);
+            self.overworld_draw_map16(pos.wrapping_add(2), 0x0db5);
             self.set_bg_vram_load_mode(1);
             let screen = self.game_state.world.location.overworld_screen_index() as usize;
             self.set_overworld_event_bits(screen, 2);

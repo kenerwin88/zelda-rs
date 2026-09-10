@@ -6138,7 +6138,7 @@ impl ZeldaState {
                 }
                 if self.sprite_slot_view(k).delay_aux1() == 9 {
                     self.bat_crash_spawn_debris(k);
-                    self.create_pyramid_hole_for_draw();
+                    self.CreatePyramidHole();
                 }
             }
             3 => {
@@ -6184,8 +6184,8 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Overworld_DrawWoodenDoor(uint16 pos, bool unlocked) {  // 9bc952
     pub(super) fn overworld_draw_wooden_door(&mut self, pos: u16, unlocked: bool) {
-        self.overworld_draw_map16_persist_for_draw(pos, if unlocked { 0x0da5 } else { 0x0da4 });
-        self.overworld_draw_map16_persist_for_draw(
+        self.overworld_draw_map16_persist(pos, if unlocked { 0x0da5 } else { 0x0da4 });
+        self.overworld_draw_map16_persist(
             pos.wrapping_add(2),
             if unlocked { 0x0da7 } else { 0x0da6 },
         );
@@ -14287,7 +14287,7 @@ impl ZeldaState {
                 return;
             }
             self.sprite_sfx_queue_sfx2_with_pan(k, 0x1f);
-            self.open_gargoyles_domain_for_draw();
+            self.OpenGargoylesDomain();
             let j = self.sprite_spawn_dust_cloud(k);
             if j >= 0 {
                 let j = j as usize;
@@ -17066,65 +17066,6 @@ impl ZeldaState {
         self.sprite_correct_oam_entries(k, count as i32, mask);
     }
 
-    /// OpenGargoylesDomain (overworld.c:3527) — local bridge for
-    /// `Sprite_14_ThievesTownGrate`; keeps the canonical overworld function
-    /// name unclaimed until that module is ported.
-    fn open_gargoyles_domain_for_draw(&mut self) {
-        self.overworld_draw_map16_persist_for_draw(0x0d3e, 0x0e1b);
-        self.overworld_draw_map16_persist_for_draw(0x0d40, 0x0e1c);
-        self.overworld_draw_map16_persist_for_draw(0x0dbe, 0x0e1d);
-        self.overworld_draw_map16_persist_for_draw(0x0dc0, 0x0e1e);
-        self.overworld_draw_map16_persist_for_draw(0x0e3e, 0x0e1f);
-        self.overworld_draw_map16_persist_for_draw(0x0e40, 0x0e20);
-        self.set_overworld_event_bits(0x58, 0x20);
-        self.set_sound_effect_2(0x1b);
-        self.set_bg_vram_load_mode(1);
-    }
-
-    /// CreatePyramidHole (overworld.c:3539) — local bridge for
-    /// `Sprite_BatCrash`; keeps the canonical overworld function name
-    /// unclaimed until that module is ported.
-    fn create_pyramid_hole_for_draw(&mut self) {
-        self.overworld_draw_map16_persist_for_draw(0x03bc, 0x0e3f);
-        self.overworld_draw_map16_persist_for_draw(0x03be, 0x0e40);
-        self.overworld_draw_map16_persist_for_draw(0x03c0, 0x0e41);
-        self.overworld_draw_map16_persist_for_draw(0x043c, 0x0e42);
-        self.overworld_draw_map16_persist_for_draw(0x043e, 0x0e43);
-        self.overworld_draw_map16_persist_for_draw(0x0440, 0x0e44);
-        self.overworld_draw_map16_persist_for_draw(0x04bc, 0x0e45);
-        self.overworld_draw_map16_persist_for_draw(0x04be, 0x0e46);
-        self.overworld_draw_map16_persist_for_draw(0x04c0, 0x0e47);
-        self.set_ambient_sound_effect_word(0x3515);
-        self.set_overworld_event_bits(0x5b, 0x20);
-        self.set_sound_effect_2(3);
-        self.set_bg_vram_load_mode(1);
-    }
-
-    fn overworld_draw_map16_persist_for_draw(&mut self, pos: u16, value: u16) {
-        self.dungeon_room_tilemaps_mut()
-            .set_bg2_tile_by_byte_pos(pos, value);
-        self.overworld_draw_map16_for_draw(pos, value);
-    }
-
-    fn overworld_draw_map16_for_draw(&mut self, pos: u16, value: u16) {
-        let vram_pos = overworld_find_map16_vram_address_for_draw(pos);
-        let dst = self.game_state.display.current_vram_upload_data_address();
-        let src = value as usize * 4;
-        let tile0 = self.asset_u16(70, src);
-        let tile1 = self.asset_u16(70, src + 1);
-        let tile2 = self.asset_u16(70, src + 2);
-        let tile3 = self.asset_u16(70, src + 3);
-        self.write_vram_upload_absolute_word(dst, vram_pos.swap_bytes());
-        self.write_vram_upload_absolute_word(dst + 2, 0x0300);
-        self.write_vram_upload_absolute_word(dst + 4, tile0);
-        self.write_vram_upload_absolute_word(dst + 6, tile1);
-        self.write_vram_upload_absolute_word(dst + 8, vram_pos.wrapping_add(0x20).swap_bytes());
-        self.write_vram_upload_absolute_word(dst + 10, 0x0300);
-        self.write_vram_upload_absolute_word(dst + 12, tile2);
-        self.write_vram_upload_absolute_word(dst + 14, tile3);
-        self.write_vram_upload_absolute_word(dst + 16, 0xffff);
-        self.advance_vram_upload_cursor_by(16);
-    }
 }
 
 #[cfg(test)]
