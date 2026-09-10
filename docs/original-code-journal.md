@@ -226,7 +226,8 @@ observable to anything that reads mid-routine, including the NMI handler.
   In the original the tag disarms itself anyway, and the heart container
   never appears. The decompilation keeps the tag armed on a failed spawn so
   it retries next frame, and the port inherits that fix; the parity route
-  never reaches the failure branch.
+  never reaches the failure branch, so `runtime_boss_prize_retry.rs` pins
+  it.
 - **The iris spotlight's tick-versus-radius offset** is decided by the
   exact cycle cost of building the per-radius table racing vblank. It is
   correct per frame count and wobbles per radius within a frame; it is a

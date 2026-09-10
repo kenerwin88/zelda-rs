@@ -2072,6 +2072,8 @@ mod runtime_door_step_owner;
 mod runtime_blast_wall_owner;
 #[path = "zelda_rtl_tests/runtime/runtime_spawn_record_carry.rs"]
 mod runtime_spawn_record_carry;
+#[path = "zelda_rtl_tests/runtime/runtime_boss_prize_retry.rs"]
+mod runtime_boss_prize_retry;
 #[path = "zelda_rtl_tests/runtime/runtime_items.rs"]
 mod runtime_items;
 #[path = "zelda_rtl_tests/runtime/runtime_misc.rs"]
