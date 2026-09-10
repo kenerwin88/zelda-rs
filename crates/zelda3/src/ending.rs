@@ -53,14 +53,6 @@ impl ZeldaState {
         }
     }
 
-    fn sprite_get_16_bit_coords_ending(&mut self, k: usize) {
-        self.sprite_get16_bit_coords(k);
-    }
-
-    fn sprite_active_main_ending(&mut self, k: usize) {
-        self.sprite_active_main(k);
-    }
-
     fn ending_asset_u16(&self, asset: usize, index: usize) -> u16 {
         let data = self
             .asset_raw(asset)
@@ -1591,8 +1583,8 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k)
                         .set_graphics(CREDITS_HANDLE_SCENE_FADE_GRAPHICS[j]);
                     self.sprite_slot_view_mut(k).set_oam_flags(0x33);
-                    self.sprite_get_16_bit_coords_ending(k);
-                    self.sprite_active_main_ending(k);
+                    self.sprite_get16_bit_coords(k);
+                    self.sprite_active_main(k);
                 }
             }
             7 => {
@@ -1601,12 +1593,12 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_sprite_type(0xe9);
                 self.oam_allocate_from_region_a(0x0c);
                 self.sprite_slot_view_mut(k).set_oam_flags(0x37);
-                self.sprite_get_16_bit_coords_ending(k);
+                self.sprite_get16_bit_coords(k);
                 if self.game_state.frame.frame_counter & 15 == 0 {
                     let graphics = self.sprite_slot_view(k).graphics() ^ 1;
                     self.sprite_slot_view_mut(k).set_graphics(graphics);
                 }
-                self.sprite_active_main_ending(k);
+                self.sprite_active_main(k);
                 if r16 >= 0x180 {
                     self.sprite_slot_view_mut(k).set_y_velocity(4);
                     if self.sprite_slot_view(k).y_low() != 0x7c {
@@ -1617,7 +1609,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_sprite_type(0x36);
                 self.oam_allocate_from_region_a(0x18);
                 self.sprite_slot_view_mut(k).set_oam_flags(0x39);
-                self.sprite_get_16_bit_coords_ending(k);
+                self.sprite_get16_bit_coords(k);
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     self.sprite_slot_view_mut(k).set_delay_main(4);
                     let graphics = self.sprite_slot_view(k).graphics().wrapping_add(
@@ -1625,21 +1617,21 @@ impl ZeldaState {
                     ) & 7;
                     self.sprite_slot_view_mut(k).set_graphics(graphics);
                 }
-                self.sprite_active_main_ending(k);
+                self.sprite_active_main(k);
             }
             8 => {
                 let k = 0usize;
                 self.sprite_slot_view_mut(k).set_sprite_type(0x2c);
                 self.oam_allocate_from_region_a(0x2c);
                 self.sprite_slot_view_mut(k).set_oam_flags(0x3b);
-                self.sprite_get_16_bit_coords_ending(k);
+                self.sprite_get16_bit_coords(k);
                 let graphics = if r16 < 0x1c0 {
                     ((r16 >> 5) & 1) as u8
                 } else {
                     2
                 };
                 self.sprite_slot_view_mut(k).set_graphics(graphics);
-                self.sprite_active_main_ending(k);
+                self.sprite_active_main(k);
             }
             9 => {
                 let mut k = 0usize;
@@ -1709,7 +1701,7 @@ impl ZeldaState {
             }
             10 => {
                 let k = 5usize;
-                self.sprite_get_16_bit_coords_ending(k);
+                self.sprite_get16_bit_coords(k);
                 if self.sprite_slot_view(k).pause() == 0 {
                     let xb = CREDITS_HANDLE_SCENE_FADE_WISH_POND_X_OFFSETS
                         [(self.get_random_number() & 7) as usize]
@@ -2030,24 +2022,24 @@ impl ZeldaState {
     pub(super) fn credits_sprite_draw_activate_and_run_sprite(&mut self, k: usize, a: u8) {
         self.sprite_system_mut().set_cur_object_index(k as u8);
         self.oam_allocate_from_region_a(a);
-        self.sprite_get_16_bit_coords_ending(k);
+        self.sprite_get16_bit_coords(k);
         let bak0 = self.game_state.frame.submodule;
         self.set_submodule(0);
         self.sprite_slot_view_mut(k).set_state(9);
-        self.sprite_active_main_ending(k);
+        self.sprite_active_main(k);
         self.set_submodule(bak0);
     }
 
     pub(super) fn credits_sprite_draw_preexisting_sprite_draw(&mut self, k: usize, a: u8) {
         self.oam_allocate_from_region_a(a);
         self.sprite_system_mut().set_cur_object_index(k as u8);
-        self.sprite_get_16_bit_coords_ending(k);
-        self.sprite_active_main_ending(k);
+        self.sprite_get16_bit_coords(k);
+        self.sprite_active_main(k);
     }
 
     pub(super) fn credits_sprite_draw_single(&mut self, k: usize, a: u8, j: u8) {
         self.oam_allocate_from_region_a(a.wrapping_mul(4));
-        self.sprite_get_16_bit_coords_ending(k);
+        self.sprite_get16_bit_coords(k);
         let entries = END_SEQUENCE_DRAW_FRAME_SETS[(j >> 1) as usize];
         let start = a as usize * self.sprite_slot_view(k).graphics() as usize;
         let mut info = PrepOamCoordsRet::default();

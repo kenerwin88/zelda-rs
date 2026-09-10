@@ -2263,7 +2263,7 @@ impl ZeldaState {
                 self.sprite_show_solicited_message(k, 0x107);
                 let bak = self.sprite_slot_view(k).x_low();
                 self.sprite_slot_view_mut(k).subtract_x_low(16);
-                self.sprite_get_16bit_coords_for_prep(k);
+                self.sprite_get16_bit_coords(k);
                 self.sprite_slot_view_mut(k).set_x_velocity(1);
                 self.sprite_slot_view_mut(k).set_y_velocity(1);
                 if self.sprite_check_tile_collision(k) == 0 {
@@ -3032,13 +3032,6 @@ impl ZeldaState {
             &WISH_POND2_DRAW_WISH_POND_ITEM_DRAW_FRAMES[start..start + 4],
             None,
         );
-    }
-
-    fn sprite_get_16bit_coords_for_prep(&mut self, k: usize) {
-        let x = self.sprite_get_x(k);
-        let y = self.sprite_get_y(k);
-        self.sprite_workspace_mut().set_current_sprite_x(x);
-        self.sprite_workspace_mut().set_current_sprite_y(y);
     }
 
     pub(super) fn pink_ball_handle_deceleration(&mut self, k: usize) {

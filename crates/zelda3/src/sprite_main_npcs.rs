@@ -227,7 +227,7 @@ impl ZeldaState {
         self.bee_handle_z(k);
         self.sprite_draw_single_small(k);
         self.bee_handle_interactions(k);
-        if self.sprite_return_if_inactive_npcs(k) {
+        if self.sprite_return_if_inactive(k) {
             return;
         }
         if self.sprite_return_if_recoiling(k) {
@@ -490,7 +490,7 @@ impl ZeldaState {
                 self.bee_handle_z(k);
                 self.sprite_draw_single_small(k);
                 self.bee_handle_interactions(k);
-                if self.sprite_return_if_inactive_npcs(k) {
+                if self.sprite_return_if_inactive(k) {
                     return;
                 }
                 self.bee_bzzt(k);
@@ -614,7 +614,7 @@ impl ZeldaState {
     // }
     pub(super) fn bee_put_in_bottle(&mut self, k: usize) {
         self.bee_handle_interactions(k);
-        if self.sprite_return_if_inactive_npcs(k) {
+        if self.sprite_return_if_inactive(k) {
             return;
         }
         if self.multiselect_choice().value() == 0 {
@@ -713,7 +713,7 @@ impl ZeldaState {
     pub(super) fn sprite_bottle_vendor(&mut self, k: usize) {
         let draw_state = self.bottle_vendor_draw(k);
         self.sprite_slot_view_mut(k).set_a(draw_state);
-        if self.sprite_return_if_inactive_npcs(k) {
+        if self.sprite_return_if_inactive(k) {
             return;
         }
         self.bottle_merchant_detect_fish(k);
@@ -1007,11 +1007,6 @@ impl ZeldaState {
     }
 
     // ----- Internal helpers ported to back the above handlers -----------
-
-    // Rewired to canonical Sprite_ReturnIfInactive port (sprite.c:1493).
-    fn sprite_return_if_inactive_npcs(&mut self, k: usize) -> bool {
-        self.sprite_return_if_inactive(k)
-    }
 
     // ----- Skipped functions (helpers too complex / not yet ported) -----
     //

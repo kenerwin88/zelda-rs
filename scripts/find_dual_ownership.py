@@ -220,6 +220,9 @@ MODE_TAGS = [
     ("INTRO", ("IntroSword", "Intro")),
     ("MINIGAME", ("Minigame", "Archery", "DiggingGame")),
     ("MAP-SCREEN", ("DungeonMapDisplay", "OverworldMap", "MapZoom", "MapUi")),
+    # The mirror warp runs only on the overworld; its scratch words alias the dungeon
+    # parser's star-switch tile and the inter-room staircase list.
+    ("OVERWORLD-ONLY", ("MirrorWarp",)),
 ]
 
 
