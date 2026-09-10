@@ -19,7 +19,7 @@
   },
   "project": "routes/full_run",
   "promoted": {
-    "binary_sha256": "45880137bc21275fd3bc817e0f1de4fd4f3b422384e59786b87e2b69ee8ac834",
+    "binary_sha256": "637c2364f10181163bd41a9e99f89f42997d5eb04636b6c7badddb82fd957aac",
     "cached_av_receipt": {
       "candidate_ledger_sha256": "3d52711c51a4f01031bd336aa582d4b6a316c71199710d3354ef015fcca1440c",
       "frames": 1581079,
@@ -27,13 +27,13 @@
         "video",
         "audio"
       ],
-      "manifest_sha256": "de7dc304fa07aa956df05496794060047de1003cada4a31fbb81a6402073cc58",
+      "manifest_sha256": "ff7ed3c10b754aab2ef09cfd78204c750ce29ab7b405cade2675e641a5846f4f",
       "oracle_cache_key": "ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18",
       "oracle_cache_manifest_sha256": "4c7f88fbf327a4b3af7d3f8614d82ebb2318f11b607798d5dddb4a97b7fe2715",
-      "receipt_path": "receipts/dups-full-av.manifest.json",
-      "run": "/Users/missingno/Documents/zelda3-rs/target/port-time-duplicates/dups-full-av"
+      "receipt_path": "receipts/prize-full-av.manifest.json",
+      "run": "/Users/missingno/Documents/zelda3-rs/target/boss-prize-countdown/prize-full-av"
     },
-    "commit": "3ec4d195fbbaab185de879709efa6275eba92084",
+    "commit": "5fb83173475a97d5a5e72b28f1515d524392cd15",
     "kind": "cached_av_pass",
     "last_exact_audio_frame": 1581078,
     "last_exact_engine_state_frame": 1581078,
