@@ -979,7 +979,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).add_b(1);
                     let value = 48;
                     self.sprite_slot_view_mut(k).set_z_velocity(value);
-                    let dir = self.sprite_direction_to_face_link(k, None);
+                    let dir = self.sprite_direction_to_face_link(k);
                     let value = dir;
                     self.sprite_slot_view_mut(k).set_direction(value);
                     let value = dir;
@@ -1012,7 +1012,7 @@ impl ZeldaState {
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_z_velocity(value);
                     if (((k as u8) ^ self.game_state.frame.frame_counter) & 15) == 0 {
-                        let j = self.sprite_direction_to_face_link(k, None);
+                        let j = self.sprite_direction_to_face_link(k);
                         let value = j;
                         self.sprite_slot_view_mut(k).set_head_direction(value);
                         if (((k as u8) ^ self.game_state.frame.frame_counter) & 31) == 0 {
@@ -4790,7 +4790,7 @@ impl ZeldaState {
                 self.sprite_nullify_hookshot_drag();
                 return;
             }
-            let j = self.sprite_direction_to_face_link(k, None) as usize;
+            let j = self.sprite_direction_to_face_link(k) as usize;
             let value = MOVABLE_STATUE_X_VELOCITIES[j];
             self.sprite_slot_view_mut(k).set_x_velocity(value);
             let value = MOVABLE_STATUE_Y_VELOCITIES[j];
@@ -4807,7 +4807,7 @@ impl ZeldaState {
             if cur_x.wrapping_sub(link_x).wrapping_add(16) < 35
                 && cur_y.wrapping_sub(link_y).wrapping_add(12) < 36
             {
-                let j = self.sprite_direction_to_face_link(k, None) as usize;
+                let j = self.sprite_direction_to_face_link(k) as usize;
                 if self.game_state.player.follower_link.facing() == MOVABLE_STATUE_DIRECTIONS[j]
                     && !self.game_state.player.follower_link.is_running()
                 {
@@ -5409,7 +5409,7 @@ impl ZeldaState {
     // void BombosTablet(int k) {  // 85f355
     pub(super) fn bombos_tablet(&mut self, k: usize) {
         if self.game_state.player.follower_link.has_facing()
-            || self.sprite_direction_to_face_link(k, None) != 2
+            || self.sprite_direction_to_face_link(k) != 2
         {
             return;
         }
@@ -5430,7 +5430,7 @@ impl ZeldaState {
     // void EtherTablet(int k) {  // 85f3c4
     pub(super) fn ether_tablet(&mut self, k: usize) {
         if self.game_state.player.follower_link.has_facing()
-            || self.sprite_direction_to_face_link(k, None) != 2
+            || self.sprite_direction_to_face_link(k) != 2
         {
             return;
         }
@@ -7225,7 +7225,7 @@ impl ZeldaState {
         if self.sprite_return_if_recoiling(k) {
             return;
         }
-        let value = self.sprite_direction_to_face_link(k, None);
+        let value = self.sprite_direction_to_face_link(k);
         self.sprite_slot_view_mut(k).set_direction(value);
         self.sprite_check_damage_to_and_from_link(k);
 
@@ -8018,7 +8018,7 @@ impl ZeldaState {
             return false;
         }
         self.sprite_track_body_to_head(k);
-        let value = self.sprite_direction_to_face_link(k, None) ^ 3;
+        let value = self.sprite_direction_to_face_link(k) ^ 3;
         self.sprite_slot_view_mut(k).set_head_direction(value);
         if self.sprite_slot_view(k).ai_state() == 0 {
             if self.sprite_show_message_on_contact(k, 0x0122) & 0x100 != 0 {
@@ -8343,7 +8343,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).ai_state() < 3 {
             if self.game_state.world.location.is_indoors() {
                 self.sprite_track_body_to_head(k);
-                let value = self.sprite_direction_to_face_link(k, None) ^ 3;
+                let value = self.sprite_direction_to_face_link(k) ^ 3;
                 self.sprite_slot_view_mut(k).set_head_direction(value);
                 self.sprite_show_solicited_message(k, 0x00ad);
                 return;
@@ -8351,7 +8351,7 @@ impl ZeldaState {
             if self.sprite_slot_view(k).ai_state() == 0
                 && self.sprite_check_damage_to_link_same_layer(k)
             {
-                let value = self.sprite_direction_to_face_link(k, None) ^ 3;
+                let value = self.sprite_direction_to_face_link(k) ^ 3;
                 self.sprite_slot_view_mut(k).set_direction(value);
                 let value = 1;
                 self.sprite_slot_view_mut(k).set_delay_main(value);
@@ -8815,7 +8815,7 @@ impl ZeldaState {
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 self.sprite_track_body_to_head(k);
-                let j = self.sprite_direction_to_face_link(k, None);
+                let j = self.sprite_direction_to_face_link(k);
                 let value = j ^ 3;
                 self.sprite_slot_view_mut(k).set_head_direction(value);
                 if self.sprite_check_damage_to_link_same_layer(k) {
@@ -9273,7 +9273,7 @@ impl ZeldaState {
         if self.game_state.frame.frame_counter & 3 == 0 {
             let value = 2;
             self.sprite_slot_view_mut(k).set_graphics(value);
-            let dir = self.sprite_direction_to_face_link(k, None);
+            let dir = self.sprite_direction_to_face_link(k);
             let value = if dir == 3 { 2 } else { dir };
             self.sprite_slot_view_mut(k).set_head_direction(value);
         }
@@ -9585,7 +9585,7 @@ impl ZeldaState {
             return;
         }
         self.sprite_track_body_to_head(k);
-        let value = self.sprite_direction_to_face_link(k, None) ^ 3;
+        let value = self.sprite_direction_to_face_link(k) ^ 3;
         self.sprite_slot_view_mut(k).set_head_direction(value);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
@@ -10368,7 +10368,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void MiniChestGameGuy(int k) {  // 9ef078
     pub(super) fn mini_chest_game_guy(&mut self, k: usize) {
-        let value = self.sprite_direction_to_face_link(k, None) ^ 3;
+        let value = self.sprite_direction_to_face_link(k) ^ 3;
         self.sprite_slot_view_mut(k).set_direction(value);
         let value = 0;
         self.sprite_slot_view_mut(k).set_graphics(value);
@@ -10512,8 +10512,8 @@ impl ZeldaState {
         }
         let value = 0;
         self.sprite_slot_view_mut(k).set_graphics(value);
-        let mut pt = PointU8 { x: 0, y: 0 };
-        let dir = self.sprite_direction_to_face_link(k, Some(&mut pt)) as usize;
+        let (dir, pt) = self.sprite_direction_and_offset_to_face_link(k);
+        let dir = usize::from(dir);
         if self.sprite_slot_view(k).delay_main() != 0
             || (pt.y.wrapping_add(0x30) < 0x60 && pt.x.wrapping_add(0x20) < 0x40)
         {
@@ -11107,8 +11107,7 @@ impl ZeldaState {
                 self.faerie_cloud_draw(k);
                 let value = 1;
                 self.sprite_slot_view_mut(k).set_a(value);
-                let mut pt = PointU8 { x: 0, y: 0 };
-                self.sprite_direction_to_face_link(k, Some(&mut pt));
+                let (_, pt) = self.sprite_direction_and_offset_to_face_link(k);
                 if pt.x.wrapping_add(0x30) < 0x60 && pt.y.wrapping_add(0x30) < 0x60 {
                     self.link_cancel_dash();
                     let value = 1;
@@ -11387,7 +11386,7 @@ impl ZeldaState {
         self.sprite_check_tile_collision(k);
         self.sprite_check_damage_to_link(k);
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 15) == 0 {
-            let dir = self.sprite_direction_to_face_link(k, None);
+            let dir = self.sprite_direction_to_face_link(k);
             let value = dir;
             self.sprite_slot_view_mut(k).set_head_direction(value);
             let value = dir;
@@ -11418,7 +11417,7 @@ impl ZeldaState {
         self.sprite_check_tile_collision(k);
         self.sprite_check_damage_to_link(k);
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 15) == 0 {
-            let dir = self.sprite_direction_to_face_link(k, None);
+            let dir = self.sprite_direction_to_face_link(k);
             let value = dir;
             self.sprite_slot_view_mut(k).set_direction(value);
             let value = dir;
@@ -11539,8 +11538,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_63_DebirandoPit(int k) {  // 858531
     pub(super) fn sprite_63_debirando_pit(&mut self, k: usize) {
-        let mut pt = PointU8 { x: 0, y: 0 };
-        self.sprite_direction_to_face_link(k, Some(&mut pt));
+        let (_, pt) = self.sprite_direction_and_offset_to_face_link(k);
         if pt.y.wrapping_add(0x20) < 0x40 && pt.x.wrapping_add(0x20) < 0x40 {
             self.oam_allocate_from_region_b(16);
         }
@@ -11848,8 +11846,7 @@ impl ZeldaState {
         }
         let x_step = (self.sprite_slot_view(k).delay_main() >> 1) & 1;
         self.sprite_workspace_mut().add_current_sprite_x_low(x_step);
-        let mut pt = PointU8 { x: 0, y: 0 };
-        self.sprite_direction_to_face_link(k, Some(&mut pt));
+        let (_, pt) = self.sprite_direction_and_offset_to_face_link(k);
         if pt.x.wrapping_add(0x20) < 0x40 && pt.y.wrapping_add(0x20) < 0x40 {
             self.oam_allocate_from_region_b(16);
         }
@@ -12195,7 +12192,7 @@ impl ZeldaState {
         }
         self.sprite_behave_as_barrier(k);
         self.sprite_track_body_to_head(k);
-        let value = self.sprite_direction_to_face_link(k, None) ^ 3;
+        let value = self.sprite_direction_to_face_link(k) ^ 3;
         self.sprite_slot_view_mut(k).set_head_direction(value);
 
         if self
@@ -13755,7 +13752,7 @@ impl ZeldaState {
                     let dir = if self.sprite_slot_view(k).b().wrapping_add(1) == 4 {
                         let value = 0;
                         self.sprite_slot_view_mut(k).set_b(value);
-                        self.sprite_direction_to_face_link(k, None)
+                        self.sprite_direction_to_face_link(k)
                     } else {
                         self.sprite_slot_view_mut(k).add_b(1);
                         self.get_random_number() & 3
@@ -14316,7 +14313,7 @@ impl ZeldaState {
             if self.sprite_return_if_inactive(k) {
                 return;
             }
-            if self.sprite_direction_to_face_link(k, None) == 2
+            if self.sprite_direction_to_face_link(k) == 2
                 && self.sprite_slot_view(k).draw_work_byte_2() == 9
             {
                 self.dungeon_environment_mut()
@@ -14472,8 +14469,7 @@ impl ZeldaState {
                     let value = rope_random_run_delay(random);
                     self.sprite_slot_view_mut(k).set_delay_main(value);
 
-                    let mut pt = PointU8 { x: 0, y: 0 };
-                    let dir = self.sprite_direction_to_face_link(k, Some(&mut pt));
+                    let (dir, pt) = self.sprite_direction_and_offset_to_face_link(k);
                     if pt.y.wrapping_add(0x10) < 0x20 || pt.x.wrapping_add(0x18) < 0x20 {
                         let value = 4;
                         self.sprite_slot_view_mut(k).set_g(value);
@@ -14539,8 +14535,7 @@ impl ZeldaState {
                 return;
             }
 
-            let mut pt = PointU8 { x: 0, y: 0 };
-            let dir = self.sprite_direction_to_face_link(k, Some(&mut pt));
+            let (dir, pt) = self.sprite_direction_and_offset_to_face_link(k);
             if pt.y.wrapping_add(0x28) >= 0x50 || pt.x.wrapping_add(0x28) >= 0x50 {
                 return;
             }
@@ -14764,7 +14759,8 @@ impl ZeldaState {
 
         let mut pt = PointU8 { x: 0, y: 0 };
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 0x0f) == 0 {
-            let value = self.sprite_direction_to_face_link(k, Some(&mut pt));
+            let (value, offset) = self.sprite_direction_and_offset_to_face_link(k);
+            pt = offset;
             self.sprite_slot_view_mut(k).set_head_direction(value);
         }
 
@@ -15241,10 +15237,9 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).add_ai_state(1);
         let value = self.sprite_slot_view(k).head_direction();
         self.sprite_slot_view_mut(k).set_direction(value);
-        let mut pt = PointU8 { x: 0, y: 0 };
         let mut j = self.sprite_slot_view(k).direction();
-        if j == self.sprite_direction_to_face_link(k, Some(&mut pt))
-            && (pt.x.wrapping_add(0x10) < 0x20 || pt.y.wrapping_add(0x10) < 0x20)
+        let (face, pt) = self.sprite_direction_and_offset_to_face_link(k);
+        if j == face && (pt.x.wrapping_add(0x10) < 0x20 || pt.y.wrapping_add(0x10) < 0x20)
         {
             j = j.wrapping_add(4);
             let value = 128;
@@ -15707,7 +15702,7 @@ impl ZeldaState {
             return;
         }
         self.sprite_check_damage_to_and_from_link(k);
-        j = usize::from(self.sprite_direction_to_face_link(k, None) & 3);
+        j = usize::from(self.sprite_direction_to_face_link(k) & 3);
         if SPRITE_7_C_GREEN_STALFOS_DIRECTIONS[j] != self.game_state.player.follower_link.facing() {
             let value = 0;
             self.sprite_slot_view_mut(k).set_a(value);
@@ -15960,7 +15955,7 @@ impl ZeldaState {
                         return;
                     }
                     if self.sprite_slot_view(k).direction()
-                        == self.sprite_direction_to_face_link(k, None)
+                        == self.sprite_direction_to_face_link(k)
                     {
                         let value = self.sprite_slot_view(k).ai_state().wrapping_add(1);
                         self.sprite_slot_view_mut(k).set_ai_state(value);
@@ -15988,7 +15983,7 @@ impl ZeldaState {
                 if self.sprite_slot_view(k).c() == 4 {
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_c(value);
-                    let value = self.sprite_direction_to_face_link(k, None);
+                    let value = self.sprite_direction_to_face_link(k);
                     self.sprite_slot_view_mut(k).set_head_direction(value);
                 }
                 self.sprite_zero_velocity_xy(k);
@@ -17006,7 +17001,7 @@ impl ZeldaState {
             if self.check_if_hit_boxes_overlap(&hb) {
                 let old_y = self.sprite_get_y(k);
                 self.sprite_set_y(k, old_y.wrapping_add(19));
-                let new_dir = self.sprite_direction_to_face_link(k, None);
+                let new_dir = self.sprite_direction_to_face_link(k);
                 self.sprite_set_y(k, old_y);
                 if new_dir == 0 && self.game_state.player.follower_link.facing() == 4 {
                     self.sprite_slot_view_mut(k).add_c(1);

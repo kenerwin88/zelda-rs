@@ -791,7 +791,7 @@ impl ZeldaState {
     }
 
     pub(super) fn zelda_in_cell(&mut self, k: usize) {
-        let dir = self.sprite_direction_to_face_link(k, None) ^ 3;
+        let dir = self.sprite_direction_to_face_link(k) ^ 3;
         self.sprite_slot_view_mut(k).set_head_direction(dir);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
@@ -881,7 +881,7 @@ impl ZeldaState {
                 self.sprite_load_graphics_properties_light_world_only();
             }
             2 => {
-                let dir = self.sprite_direction_to_face_link(k, None) ^ 3;
+                let dir = self.sprite_direction_to_face_link(k) ^ 3;
                 self.sprite_slot_view_mut(k).set_head_direction(dir);
                 let j = self.sprite_show_solicited_message(k, 0x1e);
                 if j & 0x100 != 0 {
@@ -894,7 +894,7 @@ impl ZeldaState {
     }
 
     pub(super) fn zelda_at_sanctuary(&mut self, k: usize) {
-        let dir = self.sprite_direction_to_face_link(k, None) ^ 3;
+        let dir = self.sprite_direction_to_face_link(k) ^ 3;
         self.sprite_slot_view_mut(k).set_head_direction(dir);
         let msg = if self.game_state.inventory.player_resources.pendant_flags() & 7 == 7 {
             0x27
@@ -1136,7 +1136,7 @@ impl ZeldaState {
                 0 => {
                     let x = self.sprite_get_x(k);
                     self.sprite_set_x(k, x.wrapping_add(19));
-                    let dir = self.sprite_direction_to_face_link(k, None);
+                    let dir = self.sprite_direction_to_face_link(k);
                     self.sprite_set_x(k, x);
                     if dir == 1 || dir == 3 {
                         self.sprite_slot_view_mut(k).increment_a();
@@ -1419,7 +1419,7 @@ impl ZeldaState {
             return;
         }
         self.sprite_track_body_to_head(k);
-        let head_direction = self.sprite_direction_to_face_link(k, None) ^ 3;
+        let head_direction = self.sprite_direction_to_face_link(k) ^ 3;
         self.sprite_slot_view_mut(k)
             .set_head_direction(head_direction);
         if (self.game_state.world.location.dungeon_room_index() & 1) == 0 {
@@ -1600,7 +1600,7 @@ impl ZeldaState {
         }
         self.sprite_check_damage_from_link(k);
         if self.sprite_slot_view(k).ai_state() != 3 {
-            let j = self.sprite_direction_to_face_link(k, None);
+            let j = self.sprite_direction_to_face_link(k);
             self.sprite_slot_view_mut(k).set_head_direction(j);
             if (j ^ self.sprite_slot_view(k).direction()) == 1 {
                 self.sprite_slot_view_mut(k).set_direction(j);
@@ -1627,7 +1627,7 @@ impl ZeldaState {
             }
             1 => {
                 self.thief_check_collision_with_link(k);
-                let dir = self.sprite_direction_to_face_link(k, None);
+                let dir = self.sprite_direction_to_face_link(k);
                 self.sprite_slot_view_mut(k).set_direction(dir);
                 self.sprite_slot_view_mut(k).set_head_direction(dir);
                 if self.sprite_slot_view(k).delay_main() == 0 {
@@ -2917,7 +2917,7 @@ impl ZeldaState {
     }
 
     fn sprite_direction_to_face_link_for_dn(&mut self, k: usize) -> u8 {
-        self.sprite_direction_to_face_link(k, None)
+        self.sprite_direction_to_face_link(k)
     }
 
     fn thief_draw_apply_head_overrides_for_dn(&mut self, k: usize) {

@@ -2355,7 +2355,7 @@ impl ZeldaState {
             1 => {
                 self.sprite_slot_view_mut(k).set_ignore_projectile(0);
                 self.sprite_check_damage_to_and_from_link(k);
-                let dir = self.sprite_direction_to_face_link(k, None);
+                let dir = self.sprite_direction_to_face_link(k);
                 self.sprite_slot_view_mut(k).set_head_direction(dir);
                 self.sprite_slot_view_mut(k).set_direction(dir);
                 if self.sprite_slot_view(k).delay_main() == 0 {

@@ -304,7 +304,7 @@ impl ZeldaState {
         }
         self.sprite_slot_view_mut(k).set_ai_state(1);
         self.sprite_slot_view_mut(k).set_delay_main(112);
-        let dir = self.sprite_direction_to_face_link(k, None);
+        let dir = self.sprite_direction_to_face_link(k);
         self.sprite_slot_view_mut(k).set_direction(dir);
         self.sprite_slot_view_mut(k).set_head_direction(dir);
         true
@@ -2148,7 +2148,7 @@ impl ZeldaState {
             0 => match self.sprite_slot_view(k).ai_state() {
                 0 => {
                     self.sprite_track_body_to_head(k);
-                    let dir = self.sprite_direction_to_face_link(k, None) ^ 3;
+                    let dir = self.sprite_direction_to_face_link(k) ^ 3;
                     self.sprite_slot_view_mut(k).set_head_direction(dir);
                     let j = self.sprite_show_message_on_contact(k, 0x9c);
                     if j & 0x100 != 0 {
@@ -3660,7 +3660,7 @@ impl ZeldaState {
             0 => {
                 if self.sprite_slot_view(k).y_low().wrapping_add(7)
                     < self.game_state.player.follower_link.y() as u8
-                    && self.sprite_direction_to_face_link(k, None) == 2
+                    && self.sprite_direction_to_face_link(k) == 2
                 {
                     if self.game_state.sprites.follower_runtime.indicator() == 0 {
                         if self.sprite_show_solicited_message(k, 0x187) & 0x100 != 0 {
@@ -4963,7 +4963,7 @@ impl ZeldaState {
             return None;
         }
         self.sprite_slot_view_mut(k).increment_ignore_projectile();
-        let dir = self.sprite_direction_to_face_link(k, None) ^ 3;
+        let dir = self.sprite_direction_to_face_link(k) ^ 3;
         self.sprite_slot_view_mut(k).set_direction(dir);
         self.sprite_slot_view_mut(k).set_head_direction(dir);
 

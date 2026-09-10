@@ -9352,7 +9352,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             self.sprite_slot_view_mut(k).set_draw_work_byte_3(value);
             let value = 0;
             self.sprite_slot_view_mut(k).set_draw_i(value);
-            let dir = self.sprite_direction_to_face_link(k, None) as usize;
+            let dir = self.sprite_direction_to_face_link(k) as usize;
             self.follower_link_state_mut().set_facing(
                 SPRITE_RETURN_IF_LIFTED_PERMISSIVE_LIFTED_SPRITE_PLAYER_FACING_BY_DIRECTION
                     [dir & 3],
@@ -9378,11 +9378,14 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //     coords_out->x = right.b, coords_out->y = below.b;
     //   return (xm >= ym) ? right.a : below.a + 2;
     // }
-    pub(super) fn sprite_direction_to_face_link(
-        &mut self,
-        k: usize,
-        coords_out: Option<&mut PointU8>,
-    ) -> u8 {
+    pub(super) fn sprite_direction_to_face_link(&mut self, k: usize) -> u8 {
+        self.sprite_direction_and_offset_to_face_link(k).0
+    }
+
+    /// The direction the sprite must face to look at Link, and the sprite's
+    /// signed byte offset from Link (positive when the sprite is right of or
+    /// below Link).
+    pub(super) fn sprite_direction_and_offset_to_face_link(&mut self, k: usize) -> (u8, PointU8) {
         let below = self.sprite_is_below_link(k);
         let right = self.sprite_is_right_of_link(k);
         let ym = if sign8(below.b) {
@@ -9396,15 +9399,11 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         } else {
             right.b
         };
-        if let Some(coords) = coords_out {
-            coords.x = right.b;
-            coords.y = below.b;
-        }
-        if xm >= ym {
-            right.a
-        } else {
-            below.a + 2
-        }
+        let offset = PointU8 {
+            x: right.b,
+            y: below.b,
+        };
+        (if xm >= ym { right.a } else { below.a + 2 }, offset)
     }
 
     // int Sprite_SpawnDynamically(int k, uint8 what, SpriteSpawnInfo *info) { // 9df65d
@@ -10011,7 +10010,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         }
         let msg_index = self.game_state.messaging.dialogue_message_index.value();
         self.sprite_show_message_unconditional(msg_index);
-        u16::from(self.sprite_direction_to_face_link(k, None)) ^ 0x103
+        u16::from(self.sprite_direction_to_face_link(k)) ^ 0x103
     }
 
     // bool Sprite_TutorialGuard_ShowMessageOnContact(int k, uint16 msg) {  // 85fa59
@@ -10385,7 +10384,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     }
 
     fn sprite_direction_to_face_link_for_helpers(&mut self, k: usize) -> u8 {
-        self.sprite_direction_to_face_link(k, None)
+        self.sprite_direction_to_face_link(k)
     }
 }
 

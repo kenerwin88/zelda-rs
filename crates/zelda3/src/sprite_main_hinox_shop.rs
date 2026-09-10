@@ -807,7 +807,7 @@ impl ZeldaState {
 
     // Rewired to canonical Sprite_DirectionToFaceLink port.
     fn sprite_direction_to_face_link_for_hinox_shop(&mut self, k: usize) -> u8 {
-        self.sprite_direction_to_face_link(k, None)
+        self.sprite_direction_to_face_link(k)
     }
 
 }

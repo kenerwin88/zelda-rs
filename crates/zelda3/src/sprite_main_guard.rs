@@ -3,17 +3,11 @@
 //! Each method preserves a 1:1 mapping to the C source (sprite_main.c lines
 //! 4366..5239). The original C body is reproduced as a comment block
 //! immediately above each port so a reviewer can verify behavior line-by-line.
-//!
-//! Local `_for_guard` adapters at the bottom either route to canonical helpers
-//! or hold guard-specific shims while the remaining shared helpers are filled in.
 
 use super::*;
 use crate::tile_definition::{EntityCollision, NativeTile};
-use crate::types::{sign8, PointU8, SpriteHitBox};
+use crate::types::{sign8, SpriteHitBox};
 
-// --- Local copies of constant addresses needed here. These mirror what's
-// already declared in zelda_rtl.rs / ending.rs but are module-private over
-// there, so we duplicate them locally per the round-1 convention.
 const TUTORIAL_SPRITE_TYPE_BY_DIRECTION: [u8; 4] = [2, 1, 0, 3];
 const TUTORIAL_GUARD_DIRECTION_LOCK_SETTINGS: [u8; 4] = [3, 2, 0, 1];
 
@@ -119,7 +113,7 @@ impl ZeldaState {
         self.sprite_check_damage_to_and_from_link(k);
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 0x1f) == 0 {
             let jbak = self.sprite_slot_view(k).direction();
-            let direction = self.sprite_direction_to_face_link(k, None);
+            let direction = self.sprite_direction_to_face_link(k);
             self.sprite_slot_view_mut(k).set_direction(direction);
             if direction != jbak && ((direction ^ jbak) & 2) == 0 {
                 self.sprite_slot_view_mut(k).set_delay_aux1(12);
@@ -452,7 +446,8 @@ impl ZeldaState {
         let new_y = info.r2_y.wrapping_add(BOMB_TROOPER_BOMB_Y_OFFSETS[i] as i16 as u16);
         self.sprite_set_y(j, new_y);
         self.sprite_apply_speed_towards_link(j, 16);
-        let (px, py) = self.sprite_direction_to_face_link_pt_for_guard(j);
+        let (_, offset) = self.sprite_direction_and_offset_to_face_link(j);
+        let (px, py) = (offset.x, offset.y);
         let ax = if (px as i8) < 0 {
             (px as i8).wrapping_neg() as u8
         } else {
@@ -483,7 +478,7 @@ impl ZeldaState {
             return;
         }
         self.sprite_check_damage_to_and_from_link(k);
-        let dir = self.sprite_direction_to_face_link(k, None);
+        let dir = self.sprite_direction_to_face_link(k);
         {
             let mut sprite = self.sprite_slot_view_mut(k);
             sprite.set_head_direction(dir);
@@ -805,7 +800,7 @@ impl ZeldaState {
             }
             3 => {
                 self.sprite_zero_velocity_xy(k);
-                let direction = self.sprite_direction_to_face_link_for_guard(k);
+                let direction = self.sprite_direction_to_face_link(k);
                 self.sprite_slot_view_mut(k).set_head_direction(direction);
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     self.sprite_slot_view_mut(k).set_ai_state(4);
@@ -1149,7 +1144,7 @@ impl ZeldaState {
             1 => {
                 self.sprite_check_damage_from_link(k);
                 if self.sprite_slot_view(k).delay_main() == 0 {
-                    let face = self.sprite_direction_to_face_link_for_guard(k);
+                    let face = self.sprite_direction_to_face_link(k);
                     let mut sprite = self.sprite_slot_view_mut(k);
                     sprite.set_ai_state(2);
                     sprite.set_delay_main(48);
@@ -1220,24 +1215,6 @@ impl ZeldaState {
         foliage.set_c(2);
     }
 
-    // -----------------------------------------------------------------
-    // Internal helpers — named with `_for_guard` suffix to keep this
-    // translation unit close to the original C call sites.
-    // -----------------------------------------------------------------
-
-    // Rewired to canonical Sprite_DirectionToFaceLink port.
-    fn sprite_direction_to_face_link_for_guard(&mut self, k: usize) -> u8 {
-        self.sprite_direction_to_face_link(k, None)
-    }
-
-    // Returns the (x,y) byte pair from `Sprite_DirectionToFaceLink(j, &pt)`.
-    fn sprite_direction_to_face_link_pt_for_guard(&mut self, k: usize) -> (u8, u8) {
-        let mut pt = PointU8 { x: 0, y: 0 };
-        let _ = self.sprite_direction_to_face_link(k, Some(&mut pt));
-        (pt.x, pt.y)
-    }
-
-    // Soldier_Func12 — proxy. Calls speed-toward-link/animation step.
     fn soldier_func12_for_guard(&mut self, k: usize) {
         if ((k as u8) ^ self.game_state.frame.frame_counter) & 0x1f == 0 {
             if self.sprite_slot_view(k).g() == 0 {
@@ -1245,7 +1222,7 @@ impl ZeldaState {
                 self.sprite_sfx_queue_sfx3_with_pan(k, 4);
             }
             self.sprite_apply_speed_towards_link(k, 16);
-            let face = self.sprite_direction_to_face_link_for_guard(k);
+            let face = self.sprite_direction_to_face_link(k);
             let mut sprite = self.sprite_slot_view_mut(k);
             sprite.set_direction(face);
             sprite.set_head_direction(face);
@@ -1355,7 +1332,7 @@ impl ZeldaState {
             }
             3 => {
                 self.sprite_zero_velocity_xy(k);
-                let direction = self.sprite_direction_to_face_link(k, None);
+                let direction = self.sprite_direction_to_face_link(k);
                 self.sprite_slot_view_mut(k).set_head_direction(direction);
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     let mut sprite = self.sprite_slot_view_mut(k);
@@ -1377,7 +1354,7 @@ impl ZeldaState {
                     return;
                 }
                 if ((self.game_state.frame.frame_counter ^ (k as u8)) & 7) == 0 {
-                    let dir = self.sprite_direction_to_face_link(k, None);
+                    let dir = self.sprite_direction_to_face_link(k);
                     {
                         let mut sprite = self.sprite_slot_view_mut(k);
                         sprite.set_direction(dir);

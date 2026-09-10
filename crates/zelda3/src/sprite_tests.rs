@@ -782,16 +782,15 @@ fn sprite_direction_to_face_link_matches_c_axis_and_coords_output() {
     s.sprite_set_y(k, 0x0200);
     s.follower_link_state_mut().set_x(0x0120);
     s.follower_link_state_mut().set_y(0x0204);
-    let mut coords = PointU8 { x: 0, y: 0 };
-
-    assert_eq!(s.sprite_direction_to_face_link(k, Some(&mut coords)), 0);
+    let (direction, coords) = s.sprite_direction_and_offset_to_face_link(k);
+    assert_eq!(direction, 0);
     assert_eq!(coords, PointU8 { x: 0x20, y: 0x0c });
     assert_eq!(s.game_state.scratch_counter.value(), 0x0c);
 
     s.follower_link_state_mut().set_x(0x00f8);
     s.follower_link_state_mut().set_y(0x0240);
     s.sprite_slot_view_mut(k).set_z(0);
-    assert_eq!(s.sprite_direction_to_face_link(k, None), 2);
+    assert_eq!(s.sprite_direction_to_face_link(k), 2);
     assert_eq!(s.game_state.scratch_counter.value(), 0x48);
 }
 
