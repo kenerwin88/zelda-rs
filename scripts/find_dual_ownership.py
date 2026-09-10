@@ -362,7 +362,8 @@ def collect_bridge_synced_owners(files) -> set[str]:
         text = path.read_text(errors="replace")
         for m in SYNC_BRIDGE_IMPL_RE.finditer(text):
             body = brace_body(text, text.index("{", m.end() - 1))
-            sync_pat = r"self\.(\w+)\.write_to_ram\s*\(\s*(?:self\.ram|log)"
+            sync_pat = (r"self\.(\w+)\s*\.write_to_ram\s*\(\s*(?:self\.ram|log|&mut crate::game_state::native"
+                        r"::ram_target::DiffTarget::new\(\s*self\.ram)")
             if not re.search(sync_pat, body):
                 continue
             for field_m in re.finditer(sync_pat, body):
