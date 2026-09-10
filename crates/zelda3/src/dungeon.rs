@@ -1553,15 +1553,13 @@ impl ZeldaState {
                 self.LoadType1ObjectSubtype1(idx, width, height, dsto);
             } else {
                 let object = ((idx & 7) << 4) | (((raw >> 8) as u8 & 3) << 2) | (raw as u8 & 3);
-                let mut dst = 0;
-                self.LoadType1ObjectSubtype3(object, &mut dst, dsto);
+                self.LoadType1ObjectSubtype3(object, dsto);
             }
         } else {
             let x = ((raw & 3) << 4) | ((raw >> 12) & 0x0f);
             let y = (((raw >> 8) & 0x0f) << 2) | ((idx as u16) >> 6);
             let dsto = y * 64 + x;
-            let mut dst = 0;
-            self.LoadType1ObjectSubtype2(idx & 0x3f, &mut dst, dsto);
+            self.LoadType1ObjectSubtype2(idx & 0x3f, dsto);
         }
     }
 
@@ -1810,7 +1808,7 @@ impl ZeldaState {
                     self.RoomData_DrawObject_nx4(src + 8, dst, 2);
                     dst += 2;
                 }
-                self.RoomDraw_RightwardShelfEnd(src + 24, &mut dst);
+                self.RoomDraw_RightwardShelfEnd(src + 24, dst);
             }
             0x50 => {
                 let count = size_a_to_a_plus_15(width, height, 2);
@@ -2067,21 +2065,17 @@ impl ZeldaState {
             }
             0x95 => {
                 let count = size_1to16(width, height);
-                let mut dst = dsto;
                 let mut pos = dsto;
                 for _ in 0..count {
-                    self.RoomDraw_SinglePot(src, &mut dst, pos);
-                    dst = dst.wrapping_add(2 * 64);
+                    self.RoomDraw_SinglePot(src, pos);
                     pos = pos.wrapping_add(2 * 64);
                 }
             }
             0x96 => {
                 let count = size_1to16(width, height);
-                let mut dst = dsto;
                 let mut pos = dsto;
                 for _ in 0..count {
-                    self.RoomDraw_HammerPegSingle(src, &mut dst, pos);
-                    dst = dst.wrapping_add(2 * 64);
+                    self.RoomDraw_HammerPegSingle(src, pos);
                     pos = pos.wrapping_add(2 * 64);
                 }
             }
@@ -2131,21 +2125,17 @@ impl ZeldaState {
             }
             0xbc => {
                 let count = size_1to16(width, height);
-                let mut dst = dsto;
                 let mut pos = dsto;
                 for _ in 0..count {
-                    self.RoomDraw_SinglePot(src, &mut dst, pos);
-                    dst = dst.wrapping_add(2);
+                    self.RoomDraw_SinglePot(src, pos);
                     pos = pos.wrapping_add(2);
                 }
             }
             0xbd => {
                 let count = size_1to16(width, height);
-                let mut dst = dsto;
                 let mut pos = dsto;
                 for _ in 0..count {
-                    self.RoomDraw_HammerPegSingle(src, &mut dst, pos);
-                    dst = dst.wrapping_add(2);
+                    self.RoomDraw_HammerPegSingle(src, pos);
                     pos = pos.wrapping_add(2);
                 }
             }
@@ -2155,7 +2145,7 @@ impl ZeldaState {
                 for y in 0..count_y {
                     let mut dst = dsto + y * 4 * 64;
                     for _ in 0..count_x {
-                        self.RoomDraw_A_Many32x32Blocks(1, src, &mut dst);
+                        dst = self.RoomDraw_A_Many32x32Blocks(1, src, dst);
                     }
                 }
             }
@@ -2195,8 +2185,7 @@ impl ZeldaState {
                 } else {
                     let mut dst = dsto;
                     for _ in 0..count_y {
-                        let mut row = dst;
-                        self.RoomDraw_A_Many32x32Blocks(count_x as i32, 0x0110, &mut row);
+                        self.RoomDraw_A_Many32x32Blocks(count_x as i32, 0x0110, dst);
                         dst = dst.wrapping_add(4 * 64);
                     }
                 }
@@ -2250,8 +2239,7 @@ impl ZeldaState {
                     .room_parser
                     .floor_2_filler_tile_source();
                 for y in 0..count_y {
-                    let mut dst = dsto + y * 4 * 64;
-                    self.RoomDraw_A_Many32x32Blocks(count_x as i32, src, &mut dst);
+                    self.RoomDraw_A_Many32x32Blocks(count_x as i32, src, dsto + y * 4 * 64);
                 }
             }
             0xdb => {
@@ -2263,8 +2251,7 @@ impl ZeldaState {
                     .room_parser
                     .floor_1_filler_tile_source();
                 for y in 0..count_y {
-                    let mut dst = dsto + y * 4 * 64;
-                    self.RoomDraw_A_Many32x32Blocks(count_x as i32, src, &mut dst);
+                    self.RoomDraw_A_Many32x32Blocks(count_x as i32, src, dsto + y * 4 * 64);
                 }
             }
             0xc0 | 0xc2 => {
@@ -2382,7 +2369,7 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn LoadType1ObjectSubtype3(&mut self, idx: u8, _dst: &mut u16, dsto: u16) {
+    pub(super) fn LoadType1ObjectSubtype3(&mut self, idx: u8, dsto: u16) {
         let Some(src) = object_subtype3_param(idx) else {
             panic!("LoadType1ObjectSubtype3 invalid object id {idx:#04x}");
         };
@@ -2456,8 +2443,7 @@ impl ZeldaState {
                 }
             }
             0x16 => {
-                let mut dst = dsto;
-                self.RoomDraw_HammerPegSingle(src, &mut dst, dsto);
+                self.RoomDraw_HammerPegSingle(src, dsto);
             }
             0x18 => self.RoomDraw_CellLock(dsto),
             0x19 => self.RoomDraw_Chest(dsto),
@@ -2543,40 +2529,33 @@ impl ZeldaState {
                 self.RoomDraw_SingleLampCone(0x1554, 0x1a2a);
             }
             0x2b => {
-                let mut dst = dsto;
-                self.DrawBigGraySegment(ObjectRecord::liftable(0), src, &mut dst, dsto);
+                self.DrawBigGraySegment(ObjectRecord::liftable(0), src, dsto);
             }
             0x2c => {
-                let mut dst = dsto;
-                self.DrawBigGraySegment(ObjectRecord::big_rock_segment(0), 0x0e62, &mut dst, dsto);
+                self.DrawBigGraySegment(ObjectRecord::big_rock_segment(0), 0x0e62, dsto);
                 self.DrawBigGraySegment(
                     ObjectRecord::big_rock_segment(1),
                     0x0e6a,
-                    &mut dst,
                     dsto + xy(2, 0) as u16,
                 );
                 self.DrawBigGraySegment(
                     ObjectRecord::big_rock_segment(2),
                     0x0e72,
-                    &mut dst,
                     dsto + xy(0, 2) as u16,
                 );
                 self.DrawBigGraySegment(
                     ObjectRecord::big_rock_segment(3),
                     0x0e7a,
-                    &mut dst,
                     dsto + xy(2, 2) as u16,
                 );
             }
             0x2d => self.RoomDraw_AgahnimAltar(dsto),
             0x2e => self.RoomDraw_AgahnimsWindows(dsto),
             0x2f => {
-                let mut dst = 0;
-                self.RoomDraw_SinglePot(0x0e82, &mut dst, dsto);
+                self.RoomDraw_SinglePot(0x0e82, dsto);
             }
             0x30 => {
-                let mut dst = dsto;
-                self.DrawBigGraySegment(ObjectRecord::liftable(2), src, &mut dst, dsto);
+                self.DrawBigGraySegment(ObjectRecord::liftable(2), src, dsto);
             }
             0x31 => {
                 let loc = (dsto * 2) | 0x8000 | self.room_plane_tilemap_bit();
@@ -2622,8 +2601,7 @@ impl ZeldaState {
             }
             0x3c | 0x3d | 0x5c => self.RoomDraw_Object_Nx4(6, src, dsto),
             0x47 => {
-                let mut dst = dsto;
-                self.RoomDraw_BombableFloor(src, &mut dst, dsto);
+                self.RoomDraw_BombableFloor(dsto);
             }
             0x48 | 0x66 | 0x6b | 0x7a => self.RoomDraw_4x4(src, dsto),
             0x4b | 0x76 | 0x77 => self.RoomDraw_1x3_rightwards(src, dsto, 8),
@@ -2706,18 +2684,18 @@ impl ZeldaState {
             0x7b => {
                 let mut dst = dsto;
                 for _ in 0..5 {
-                    self.RoomDraw_A_Many32x32Blocks(1, src, &mut dst);
+                    dst = self.RoomDraw_A_Many32x32Blocks(1, src, dst);
                 }
                 let mut dst = dsto + 4 * 64;
                 for _ in 0..5 {
-                    self.RoomDraw_A_Many32x32Blocks(1, src, &mut dst);
+                    dst = self.RoomDraw_A_Many32x32Blocks(1, src, dst);
                 }
             }
             _ => panic!("LoadType1ObjectSubtype3 unhandled object id {idx:#04x}"),
         }
     }
 
-    pub(super) fn LoadType1ObjectSubtype2(&mut self, idx: u8, _dst: &mut u16, dsto: u16) {
+    pub(super) fn LoadType1ObjectSubtype2(&mut self, idx: u8, dsto: u16) {
         let Some(src) = object_subtype2_param(idx) else {
             panic!("LoadType1ObjectSubtype2 invalid object id {idx:#04x}");
         };
@@ -3829,16 +3807,10 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn RoomDraw_RightwardShelfEnd<'a>(
-        &mut self,
-        src: usize,
-        dst: &'a mut u16,
-    ) -> &'a mut u16 {
-        let dsto = *dst;
+    pub(super) fn RoomDraw_RightwardShelfEnd(&mut self, src: usize, dsto: u16) {
         for y in 0..4 {
             self.room_write_current(dsto + y * 64, self.tile_word(src, y as usize));
         }
-        dst
     }
 
     pub(super) fn RoomDraw_RightwardBarSegment(&mut self, src: usize, dsto: u16) -> u16 {
@@ -4112,7 +4084,6 @@ impl ZeldaState {
         record: ObjectRecord,
         src: usize,
         src_below: usize,
-        _dst: &mut u16,
         dsto: u16,
     ) {
         let index = self.game_state.dungeon.object_tracking.misc_object_index() as usize >> 1;
@@ -4143,13 +4114,13 @@ impl ZeldaState {
         self.RoomDraw_Rightwards2x2(src, dsto);
     }
 
-    pub(super) fn RoomDraw_BombableFloor(&mut self, _src: usize, dst: &mut u16, dsto: u16) {
+    pub(super) fn RoomDraw_BombableFloor(&mut self, dsto: u16) {
         if self.game_state.world.location.dungeon_room() == 101
             && self.game_state.dungeon.savegame_state.savegame_state_bits() & 0x1000 != 0
         {
             self.dungeon_room_load_mut().set_draw_width_indicator(0);
             self.dungeon_room_load_mut().set_draw_height_indicator(0);
-            self.Object_Hole(0x05aa, *dst, 0, 0);
+            self.Object_Hole(0x05aa, dsto, 0, 0);
             return;
         }
 
@@ -4159,33 +4130,29 @@ impl ZeldaState {
             ObjectRecord::bombable_floor_segment(0),
             src,
             src_below,
-            dst,
             dsto,
         );
         self.Object_BombableFloorHelper(
             ObjectRecord::bombable_floor_segment(1),
             src + 8,
             src_below + 8,
-            dst,
             dsto + xy(2, 0) as u16,
         );
         self.Object_BombableFloorHelper(
             ObjectRecord::bombable_floor_segment(2),
             src + 16,
             src_below + 16,
-            dst,
             dsto + xy(0, 2) as u16,
         );
         self.Object_BombableFloorHelper(
             ObjectRecord::bombable_floor_segment(3),
             src + 24,
             src_below + 24,
-            dst,
             dsto + xy(2, 2) as u16,
         );
     }
 
-    pub(super) fn RoomDraw_HammerPegSingle(&mut self, src: usize, _dst: &mut u16, dsto: u16) {
+    pub(super) fn RoomDraw_HammerPegSingle(&mut self, src: usize, dsto: u16) {
         let index = self.game_state.dungeon.object_tracking.misc_object_index() as usize >> 1;
         let next = self
             .game_state
@@ -4513,7 +4480,7 @@ impl ZeldaState {
         None
     }
 
-    pub(super) fn RoomDraw_SinglePot(&mut self, src: usize, _dst: &mut u16, dsto: u16) {
+    pub(super) fn RoomDraw_SinglePot(&mut self, src: usize, dsto: u16) {
         let index = self.game_state.dungeon.object_tracking.misc_object_index() as usize >> 1;
         self.dungeon_object_tracking_mut()
             .set_misc_object_index(((index + 1) * 2) as u16);
@@ -4739,18 +4706,18 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn RoomDraw_A_Many32x32Blocks(&mut self, mut n: i32, src: usize, dst: &mut u16) {
+    pub(super) fn RoomDraw_A_Many32x32Blocks(&mut self, mut n: i32, src: usize, mut dst: u16) -> u16 {
         loop {
             for _ in 0..2 {
                 for y in 0..2 {
                     for x in 0..4 {
                         let tile = self.tile_word(src, (y * 4 + x) as usize);
-                        self.room_write_current(*dst + xy(x as usize, y as usize) as u16, tile);
+                        self.room_write_current(dst + xy(x as usize, y as usize) as u16, tile);
                     }
                 }
-                *dst += xy(0, 2) as u16;
+                dst += xy(0, 2) as u16;
             }
-            *dst = dst
+            dst = dst
                 .wrapping_add(xy(4, 0) as u16)
                 .wrapping_sub(xy(0, 4) as u16);
             n -= 1;
@@ -4758,6 +4725,7 @@ impl ZeldaState {
                 break;
             }
         }
+        dst
     }
 
     pub(super) fn RoomData_DrawObject_nx4(&mut self, src: usize, dsto: u16, columns: u16) {
@@ -4808,7 +4776,6 @@ impl ZeldaState {
         &mut self,
         record: ObjectRecord,
         src: usize,
-        _dst: &mut u16,
         dsto: u16,
     ) {
         let index = self.game_state.dungeon.object_tracking.misc_object_index() as usize >> 1;
