@@ -5899,16 +5899,16 @@ impl ZeldaState {
         self.set_bg_vram_load_mode(1);
     }
 
-    pub(super) fn Dungeon_UpdateTileMapWithCommonTile(&mut self, x: i32, y: i32, v: u8) {
+    pub(super) fn Dungeon_UpdateTileMapWithCommonTile(&mut self, x: u16, y: u16, v: u8) {
         if v == 8 {
-            self.Dungeon_PrepSpriteInducedDma(x + 16, y, v + 2);
+            self.Dungeon_PrepSpriteInducedDma(x.wrapping_add(16), y, v + 2);
         }
         self.Dungeon_PrepSpriteInducedDma(x, y, v);
         self.set_bg_vram_load_mode(1);
     }
 
-    pub(super) fn Dungeon_PrepSpriteInducedDma(&mut self, x: i32, y: i32, v: u8) {
-        let pos = ((((y + 1) as u16) & 0x01f8) << 3) | (((x as u16) & 0x01f8) >> 3);
+    pub(super) fn Dungeon_PrepSpriteInducedDma(&mut self, x: u16, y: u16, v: u8) {
+        let pos = ((y.wrapping_add(1) & 0x01f8) << 3) | ((x & 0x01f8) >> 3);
         let src = DUNGEON_PREP_SPRITE_INDUCED_DMA_PREP_SPRITE_INDUCED_DMA_SRCS[(v >> 1) as usize];
         let tiles = [
             self.tile_word(src, 0),
@@ -7171,8 +7171,8 @@ impl ZeldaState {
                 .set_replacement_tile_destination_x2(pos);
         }
         self.Dungeon_UpdateTileMapWithCommonTile(
-            i32::from((pos & 0x003f) << 3),
-            i32::from((pos >> 3) & 0x01f8),
+            (pos & 0x003f) << 3,
+            (pos >> 3) & 0x01f8,
             0x10,
         );
     }
@@ -11780,8 +11780,8 @@ impl ZeldaState {
             .room_items
             .replacement_tile_destination_x2();
         self.Dungeon_UpdateTileMapWithCommonTile(
-            i32::from((pos & 0x003f) << 3),
-            i32::from((pos >> 3) & 0x01f8),
+            (pos & 0x003f) << 3,
+            (pos >> 3) & 0x01f8,
             0x0e,
         );
         let saved_module = self.game_state.frame.saved_module_for_menu;

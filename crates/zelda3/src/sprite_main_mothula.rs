@@ -637,7 +637,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_ai_state(2);
                     let x = self.sprite_get_x(k).wrapping_sub(5);
                     let y = self.sprite_get_y(k);
-                    self.dungeon_update_tile_map_with_common_tile_for_mothula(x, y, 8);
+                    self.Dungeon_UpdateTileMapWithCommonTile(x, y, 8);
                     self.sprite_slot_view_mut(k).set_delay_aux1(96);
                     self.sprite_slot_view_mut(k).set_direction(2);
                     self.sprite_slot_view_mut(k).set_delay_main(80);
@@ -3413,7 +3413,7 @@ impl ZeldaState {
             0 => {
                 let y = u16::from(self.sprite_slot_view(k).y_low().wrapping_add(8))
                     | (u16::from(self.sprite_slot_view(k).y_high()) << 8);
-                self.dungeon_update_tile_map_with_common_tile_for_mothula(
+                self.Dungeon_UpdateTileMapWithCommonTile(
                     self.sprite_get_x(k),
                     y,
                     6,
@@ -3939,7 +3939,7 @@ impl ZeldaState {
         }
         self.sprite_check_damage_to_and_from_link(k);
         if self.sprite_slot_view(k).ai_state() == 0 {
-            self.dungeon_update_tile_map_with_common_tile_for_mothula(
+            self.Dungeon_UpdateTileMapWithCommonTile(
                 self.sprite_get_x(k),
                 self.sprite_get_y(k),
                 0,
@@ -4002,7 +4002,7 @@ impl ZeldaState {
                 && self.sprite_slot_view(k).y_low() == self.sprite_slot_view(k).b()
             {
                 self.sprite_slot_view_mut(k).set_state(0);
-                self.dungeon_update_tile_map_with_common_tile_for_mothula(
+                self.Dungeon_UpdateTileMapWithCommonTile(
                     self.sprite_get_x(k),
                     self.sprite_get_y(k),
                     2,
@@ -4816,11 +4816,6 @@ impl ZeldaState {
     // for, but defer the heavy OAM/collision pipelines until those
     // canonical ports land.
     // -----------------------------------------------------------------
-
-    fn dungeon_update_tile_map_with_common_tile_for_mothula(&mut self, x: u16, y: u16, v: u8) {
-        // Rewired to canonical Dungeon_UpdateTileMapWithCommonTile port.
-        self.Dungeon_UpdateTileMapWithCommonTile(x as i32, y as i32, v);
-    }
 
     fn sprite_94_tile_animate(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).increment_subtype2();
