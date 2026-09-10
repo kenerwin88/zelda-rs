@@ -40,3 +40,11 @@ The 146 Link runtime tests in the focused set and all 1,721 library tests
 pass under the dev profile. The ownership scanner is unchanged. The library
 compiles with no warnings in the parity, dev, and lib-test builds;
 readability and projection discovery pass.
+
+The main tree validated this batch on parity binary
+`bc32ad49de8afd96b2a6211dd3fc4387a0ea36a8cecb776de2abb6211f39581d`: the
+200,000-frame cached comparison matched every video and audio hash in
+318.06 seconds (311 seconds for the batch before it on a quieter machine),
+the frame 60000 and 150470 WRAM goldens match, the 200,000-frame WRAM
+endpoint is the recorded `dd45975c…` image, and all 1,721 library tests
+pass under the parity profile.
