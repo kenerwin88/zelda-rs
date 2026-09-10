@@ -67,6 +67,12 @@ write-through where the SNES reuse is real.
   stepping a 56-entry tile table two tiles at a time. There is no overworld
   door system; the overworld borrows the dungeon's.
   (door-step-owner)
+- **The exploding wall lives in the text buffer.** The blast wall's
+  phases, timers, center, direction, and fragment positions
+  (`blastwall_var5..11`) are the first 64 bytes of the dialogue buffer at
+  0x10000, free while no message is rendering. The Skull Woods entrance
+  fire and the tower seal use the same bytes for their own animations.
+  (blast-wall-owner)
 
 ## Arrays that are deliberately indexed past their end
 

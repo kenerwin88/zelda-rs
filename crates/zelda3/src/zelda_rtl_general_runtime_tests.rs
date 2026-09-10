@@ -2068,6 +2068,8 @@ mod runtime_boss_prize_countdown;
 mod runtime_water_hdma_window;
 #[path = "zelda_rtl_tests/runtime/runtime_door_step_owner.rs"]
 mod runtime_door_step_owner;
+#[path = "zelda_rtl_tests/runtime/runtime_blast_wall_owner.rs"]
+mod runtime_blast_wall_owner;
 #[path = "zelda_rtl_tests/runtime/runtime_items.rs"]
 mod runtime_items;
 #[path = "zelda_rtl_tests/runtime/runtime_misc.rs"]

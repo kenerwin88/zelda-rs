@@ -10,7 +10,6 @@ pub(super) const ROOM_QUADRANT_UPLOAD_TABLE_MASK: usize = 0x0f;
 pub(super) const ROOM_BG1_TILEMAP_BASE: usize = 0x4000;
 pub(super) const ROOM_BG2_TILEMAP_BASE: usize = 0x2000;
 // NES_Ver2: SPMVCT, step/staircase move counter.
-pub(super) const MESSAGING_BUF_DUNGEON: usize = 0x10000;
 pub(super) const UVRAM_DATA_DUNGEON: usize = 0x1100;
 pub(super) const FEATURE_MISC_BUG_FIXES_DUNGEON: u32 = 4096;
 pub(super) const FEATURE_BREAK_POTS_WITH_SWORD_DUNGEON: u32 = 32;

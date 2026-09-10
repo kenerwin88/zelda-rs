@@ -99,9 +99,6 @@ impl EffectState {
         // digging_game_prize shares the 0x1fe00 window -- write-through, not projected.
     }
 
-    pub(crate) fn reload_entrance_effects_from_ram(&mut self, ram: &[u8]) {
-        self.entrance_effects = EntranceEffectState::load_from_ram(ram);
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -2623,6 +2620,15 @@ impl EntranceEffectState {
         self.state = 0;
     }
 
+    fn set_blast_wall_direction(&mut self, value: u8) {
+        self.direction = value;
+    }
+
+    fn set_blast_wall_center(&mut self, x: u16, y: u16) {
+        self.center_x = x;
+        self.center_y = y;
+    }
+
     fn clear_secondary_state(&mut self) {
         self.secondary_state = 0;
     }
@@ -2919,6 +2925,22 @@ impl<'a> NativeBlastWallBridgeMut<'a> {
         fn clear_entry_state();
         fn clear_secondary_state();
         fn offset_center(x_delta: i8, y_delta: i8) -> (u16, u16);
+    }
+
+    /// The blast-wall room tag stores the direction as a word of the dialogue buffer, so
+    /// the byte above it is cleared as the original's word store did.
+    pub(crate) fn set_direction(&mut self, value: u8) {
+        self.state.set_blast_wall_direction(value);
+        write_le_u16(self.ram, BLAST_WALL_DIRECTION, u16::from(value));
+        self.debug_assert_matches_ram();
+    }
+
+    /// The room tag stores the center x word, then the y word.
+    pub(crate) fn set_center(&mut self, x: u16, y: u16) {
+        self.state.set_blast_wall_center(x, y);
+        write_le_u16(self.ram, BLAST_WALL_CENTER_X, x);
+        write_le_u16(self.ram, BLAST_WALL_CENTER_Y, y);
+        self.debug_assert_matches_ram();
     }
 }
 

@@ -657,7 +657,6 @@ pub(crate) const DUNG_TRANSITION_LANDING_CLASS: usize = 0x004e;
 pub(crate) const DUNG_WIDTH_ROAD_ADDRESS: usize = 0x04b0;
 pub(crate) const DUNG_LOAD_PTR: usize = 0x00b7;
 pub(crate) const DUNG_LOAD_PTR_BANK: usize = 0x00b9;
-pub(crate) const MESSAGING_BUF_DUNGEON: usize = 0x10000;
 pub(crate) const SCRATCH_0: usize = 0x0072;
 pub(crate) const SCRATCH_1: usize = 0x0074;
 pub(crate) const LIFTABLE_TILE_DETECTED_INDEX_DOUBLED: usize = 0x036a;

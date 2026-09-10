@@ -30,7 +30,7 @@ use crate::game_state::constants::{
     DUNG_TRANSITION_LANDING_CLASS, DUNG_WANT_LIGHTS_OUT, DUNG_WANT_LIGHTS_OUT_COPY,
     DUNG_WHICH_KEY_X2_DUNGEON, DUNG_WIDTH_ROAD_ADDRESS, FLAG_SKIP_CALL_TAG_ROUTINES,
     FLOOR_1_FILLER_TILES, FLOOR_2_FILLER_TILES, GANON_TORCH_COUNT, HDR_DUNGEON_DARK_WITH_LANTERN,
-    INVISIBLE_DOOR_DIR_AND_INDEX_X2, MAIN_TILE_THEME_INDEX, MESSAGING_BUF_DUNGEON,
+    INVISIBLE_DOOR_DIR_AND_INDEX_X2, MAIN_TILE_THEME_INDEX,
     MOVABLE_BLOCK_DATAS, MOVING_FLOOR_BG_CHECK_FLAGS, MOVING_WALL_DOT_POINTER,
     MOVING_WALL_REPLACEMENT_BUFFER, MOVING_WALL_TORCH_BLINK_PHASE,
     MOVING_WALL_WRITE_POINT, ORANGE_BLUE_BARRIER_STATE, OVERWORLD_EXIT_TILE_THEME_INDEX,
@@ -2343,10 +2343,6 @@ pub(crate) struct DungeonRoomEffectsState {
     fixed_color_plusminus: u8,
     trap_trigger_latch: u8,
     bomb_trap_activation: u8,
-    blast_wall_message_state: u8,
-    blast_wall_message_x: u16,
-    blast_wall_message_y: u16,
-    blast_wall_message_direction: u16,
     moving_wall_replacement_buffer: Vec<u16>,
 }
 
@@ -2363,10 +2359,6 @@ impl Default for DungeonRoomEffectsState {
             fixed_color_plusminus: 0,
             trap_trigger_latch: 0,
             bomb_trap_activation: 0,
-            blast_wall_message_state: 0,
-            blast_wall_message_x: 0,
-            blast_wall_message_y: 0,
-            blast_wall_message_direction: 0,
             moving_wall_replacement_buffer: vec![0; MOVING_WALL_REPLACEMENT_WORDS],
         }
     }
@@ -2395,10 +2387,6 @@ impl DungeonRoomEffectsState {
                 .unwrap_or(0),
             trap_trigger_latch: ram.get(DUNGEON_TRAP_TRIGGER_LATCH).copied().unwrap_or(0),
             bomb_trap_activation: ram.get(ACTIVATE_BOMB_TRAP_OVERLORD).copied().unwrap_or(0),
-            blast_wall_message_state: ram.get(MESSAGING_BUF_DUNGEON).copied().unwrap_or(0),
-            blast_wall_message_x: read_le_u16(ram, MESSAGING_BUF_DUNGEON + 0x1a),
-            blast_wall_message_y: read_le_u16(ram, MESSAGING_BUF_DUNGEON + 0x18),
-            blast_wall_message_direction: read_le_u16(ram, MESSAGING_BUF_DUNGEON + 0x1c),
             moving_wall_replacement_buffer,
         }
     }
@@ -2419,21 +2407,6 @@ impl DungeonRoomEffectsState {
         ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = self.fixed_color_plusminus;
         ram[DUNGEON_TRAP_TRIGGER_LATCH] = self.trap_trigger_latch;
         ram[ACTIVATE_BOMB_TRAP_OVERLORD] = self.bomb_trap_activation;
-        // MESSAGING_BUF_DUNGEON (0x10000) is SNES byte-reused: it is the BG-char / message
-        // gfx-staging buffer normally, and only holds the blast-wall message (state/x/y/dir)
-        // while a blast wall is open. Projecting these fields unconditionally clobbered the
-        // regenerated gfx buffer with stale values (page 0x10000 transient). Only project them
-        // when a blast wall is actually open, matching C (which writes 0x10000 raw, only then).
-        if self.blast_wall_x_open != 0 || self.blast_wall_y_open != 0 {
-            ram[MESSAGING_BUF_DUNGEON] = self.blast_wall_message_state;
-            write_le_u16(ram, MESSAGING_BUF_DUNGEON + 0x1a, self.blast_wall_message_x);
-            write_le_u16(ram, MESSAGING_BUF_DUNGEON + 0x18, self.blast_wall_message_y);
-            write_le_u16(
-                ram,
-                MESSAGING_BUF_DUNGEON + 0x1c,
-                self.blast_wall_message_direction,
-            );
-        }
         for (index, &value) in self.moving_wall_replacement_buffer.iter().enumerate() {
             write_le_u16(ram, MOVING_WALL_REPLACEMENT_BUFFER + index * 2, value);
         }
@@ -2477,10 +2450,6 @@ impl DungeonRoomEffectsState {
 
     pub(crate) fn has_bomb_trap_activation(&self) -> bool {
         self.bomb_trap_activation != 0
-    }
-
-    pub(crate) fn blast_wall_message_state(&self) -> u8 {
-        self.blast_wall_message_state
     }
 
     fn fill_moving_wall_replacement_buffer(&mut self, value: u16) {
@@ -2552,15 +2521,6 @@ impl DungeonRoomEffectsState {
 
     fn clear_trap_trigger_latch(&mut self) {
         self.trap_trigger_latch = 0;
-    }
-
-    fn set_blast_wall_message_direction(&mut self, value: u16) {
-        self.blast_wall_message_direction = value;
-    }
-
-    fn set_blast_wall_message_position(&mut self, x: u16, y: u16) {
-        self.blast_wall_message_x = x;
-        self.blast_wall_message_y = y;
     }
 
     fn set_activate_bomb_trap_overlord(&mut self, value: u8) {
@@ -4368,14 +4328,7 @@ impl<'a> NativeDungeonRoomEffectsBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
-        let mut ram_state = DungeonRoomEffectsState::load_from_ram(self.ram);
-        if self.state.blast_wall_x_open == 0 && self.state.blast_wall_y_open == 0 {
-            ram_state.blast_wall_message_state = self.state.blast_wall_message_state;
-            ram_state.blast_wall_message_x = self.state.blast_wall_message_x;
-            ram_state.blast_wall_message_y = self.state.blast_wall_message_y;
-            ram_state.blast_wall_message_direction = self.state.blast_wall_message_direction;
-        }
-        debug_assert_eq!(*self.state, ram_state);
+        debug_assert_eq!(*self.state, DungeonRoomEffectsState::load_from_ram(self.ram));
     }
 
     forward_synced! {
@@ -4407,8 +4360,6 @@ impl<'a> NativeDungeonRoomEffectsBridgeMut<'a> {
         fn increment_trap_trigger_latch();
         fn mark_trap_trigger_latched();
         fn clear_trap_trigger_latch();
-        fn set_blast_wall_message_direction(value: u16);
-        fn set_blast_wall_message_position(x: u16, y: u16);
         fn set_activate_bomb_trap_overlord(value: u8);
     }
 }
@@ -4806,35 +4757,5 @@ impl<'a> NativeDungeonHeaderBridgeMut<'a> {
         fn set_header_tag(index: usize, value: u8);
         fn copy_travel_destinations_from_header(header: &[u8]);
         fn clear_header_tag(index: usize);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use snes::WRAM_SIZE;
-
-    #[test]
-    fn room_effects_sync_ignores_reused_blast_wall_message_bytes_when_wall_closed() {
-        let mut ram = vec![0; WRAM_SIZE];
-        write_le_u16(&mut ram, MESSAGING_BUF_DUNGEON + 0x1a, 0x007f);
-        write_le_u16(&mut ram, MESSAGING_BUF_DUNGEON + 0x18, 0x003f);
-        write_le_u16(&mut ram, MESSAGING_BUF_DUNGEON + 0x1c, 0x007f);
-
-        let mut state = DungeonRoomEffectsState {
-            blast_wall_message_x: 0x00ff,
-            blast_wall_message_y: 0x00ff,
-            blast_wall_message_direction: 0x007f,
-            ..DungeonRoomEffectsState::default()
-        };
-
-        {
-            let mut bridge = NativeDungeonRoomEffectsBridgeMut::new(&mut state, &mut ram);
-            bridge.clear_trap_trigger_latch();
-        }
-
-        assert_eq!(read_le_u16(&ram, MESSAGING_BUF_DUNGEON + 0x1a), 0x007f);
-        assert_eq!(read_le_u16(&ram, MESSAGING_BUF_DUNGEON + 0x18), 0x003f);
-        assert_eq!(read_le_u16(&ram, MESSAGING_BUF_DUNGEON + 0x1c), 0x007f);
     }
 }
