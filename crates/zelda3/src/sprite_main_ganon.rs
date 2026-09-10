@@ -959,7 +959,7 @@ impl ZeldaState {
         let frames = PHANTOM_GANON_DRAW_FRAMES
             .get(g * 8..g * 8 + 8)
             .unwrap_or(&[]);
-        self.sprite_draw_multiple(k, frames, None);
+        self.sprite_draw_multiple(k, frames);
     }
 
     // void Sprite_SpawnPhantomGanon(int k) {  // 9d88a1
@@ -1480,12 +1480,12 @@ impl ZeldaState {
     }
 
     fn ganon_draw_emit_g9_overlay_for_ganon(&mut self, k: usize) {
-        self.sprite_draw_multiple(k, &GANON_DRAW_FRAMES, None);
+        self.sprite_draw_multiple(k, &GANON_DRAW_FRAMES);
     }
 
     fn sprite_draw_large_shadow_for_ganon(&mut self, k: usize, frame: usize) {
         let base = frame * 3;
-        self.sprite_draw_multiple(k, &GANON_LARGE_SHADOW_DRAW_FRAMES[base..base + 3], None);
+        self.sprite_draw_multiple(k, &GANON_LARGE_SHADOW_DRAW_FRAMES[base..base + 3]);
     }
 }
 

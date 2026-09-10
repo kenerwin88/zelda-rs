@@ -6790,7 +6790,6 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             self.sprite_draw_multiple(
                 k,
                 &SPRITE_MODULE_DROWN_DROWN_DRAW_FRAMES[base..base + 2],
-                None,
             );
         }
     }
@@ -6814,7 +6813,6 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 self.sprite_draw_multiple(
                     k,
                     &SPRITE_MODULE_EXPLODE_SPRITE_EXPLODE_DRAW_FRAMES[base..base + 4],
-                    None,
                 );
             }
             return;
@@ -8767,50 +8765,45 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     // void Sprite_DrawMultiple(int k, const DrawMultipleData *src, int n,
     //                          PrepOamCoordsRet *info)
     //   See sprite.c:900.
-    // Mirrors C: if `info` is None we use a local buffer; otherwise the
-    // caller's out-pointer is populated.
-    //
-    // C always populates info->x / info->y before the out-of-bounds return,
-    // because Sprite_PrepOamCoordOrDoubleRet writes the coords then returns a
-    // bool.  We mirror that by calling the raw variant and always writing info
-    // before the early-return check.
+    /// Draw the entries relative to the sprite and return the prepared OAM
+    /// coordinates. The original always stores them, even when the sprite is
+    /// off screen and nothing is drawn, so callers can position extra parts.
     pub(super) fn sprite_draw_multiple(
         &mut self,
         k: usize,
         src: &[DrawMultipleData],
-        info: Option<&mut PrepOamCoordsRet>,
-    ) {
-        let Some(info) = self.sprite_prepare_draw_multiple(k, info) else {
-            return;
-        };
-        self.sprite_draw_multiple_words_with_info(
-            k,
-            src.iter().map(|entry| DrawMultipleWordData {
-                x: entry.x as i16 as u16,
-                y: entry.y as i16 as u16,
-                char_flags: entry.char_flags,
-                ext: entry.ext,
-            }),
-            info,
-        );
+    ) -> PrepOamCoordsRet {
+        let (prepared, drawable) = self.sprite_prepare_draw_multiple(k);
+        if let Some(info) = drawable {
+            self.sprite_draw_multiple_words_with_info(
+                k,
+                src.iter().map(|entry| DrawMultipleWordData {
+                    x: entry.x as i16 as u16,
+                    y: entry.y as i16 as u16,
+                    char_flags: entry.char_flags,
+                    ext: entry.ext,
+                }),
+                info,
+            );
+        }
+        prepared
     }
 
+    /// The prepared coordinates, and the draw triple when the sprite is on
+    /// screen.
     fn sprite_prepare_draw_multiple(
         &mut self,
         k: usize,
-        info: Option<&mut PrepOamCoordsRet>,
-    ) -> Option<(u16, u16, u8)> {
+    ) -> (PrepOamCoordsRet, Option<(u16, u16, u8)>) {
         let (prepped, out_of_bounds) = self.sprite_prep_oam_coord_or_double_ret_raw(k);
-        if let Some(out) = info {
-            out.x = prepped.x;
-            out.y = prepped.y;
-            out.r4 = 0;
-            out.flags = prepped.flags;
-        }
-        if out_of_bounds {
-            return None;
-        }
-        Some((prepped.x, prepped.y, prepped.flags))
+        let prepared = PrepOamCoordsRet {
+            x: prepped.x,
+            y: prepped.y,
+            r4: 0,
+            flags: prepped.flags,
+        };
+        let drawable = (!out_of_bounds).then_some((prepped.x, prepped.y, prepped.flags));
+        (prepared, drawable)
     }
 
     /// Decode native eight-byte records, retaining word coordinates which
@@ -8819,21 +8812,21 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         &mut self,
         k: usize,
         records: &[[u8; 8]],
-        info: Option<&mut PrepOamCoordsRet>,
-    ) {
-        let Some(info) = self.sprite_prepare_draw_multiple(k, info) else {
-            return;
-        };
-        self.sprite_draw_multiple_words_with_info(
-            k,
-            records.iter().map(|bytes| DrawMultipleWordData {
-                x: u16::from_le_bytes([bytes[0], bytes[1]]),
-                y: u16::from_le_bytes([bytes[2], bytes[3]]),
-                char_flags: u16::from_le_bytes([bytes[4], bytes[5]]),
-                ext: bytes[7],
-            }),
-            info,
-        );
+    ) -> PrepOamCoordsRet {
+        let (prepared, drawable) = self.sprite_prepare_draw_multiple(k);
+        if let Some(info) = drawable {
+            self.sprite_draw_multiple_words_with_info(
+                k,
+                records.iter().map(|bytes| DrawMultipleWordData {
+                    x: u16::from_le_bytes([bytes[0], bytes[1]]),
+                    y: u16::from_le_bytes([bytes[2], bytes[3]]),
+                    char_flags: u16::from_le_bytes([bytes[4], bytes[5]]),
+                    ext: bytes[7],
+                }),
+                info,
+            );
+        }
+        prepared
     }
 
     /// Draw the ROM's native eight-byte `DrawMultipleData` records after a
@@ -8842,8 +8835,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         &mut self,
         k: usize,
         source: u16,
-        info: Option<&mut PrepOamCoordsRet>,
-    ) {
+    ) -> PrepOamCoordsRet {
         let mut cursor = source;
         let entries: [DrawMultipleWordData; N] = std::array::from_fn(|_| {
             let word = |address: u16| {
@@ -8859,10 +8851,11 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             cursor = cursor.wrapping_add(8);
             entry
         });
-        let Some(info) = self.sprite_prepare_draw_multiple(k, info) else {
-            return;
-        };
-        self.sprite_draw_multiple_words_with_info(k, entries, info);
+        let (prepared, drawable) = self.sprite_prepare_draw_multiple(k);
+        if let Some(info) = drawable {
+            self.sprite_draw_multiple_words_with_info(k, entries, info);
+        }
+        prepared
     }
 
     // Variant that takes a precomputed PrepOamCoord triple (x, y, flags). The
@@ -8927,10 +8920,9 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         &mut self,
         k: usize,
         src: &[DrawMultipleData],
-        info: Option<&mut PrepOamCoordsRet>,
-    ) {
+    ) -> PrepOamCoordsRet {
         self.oam_allocate_defer_to_player(k);
-        self.sprite_draw_multiple(k, src, info);
+        self.sprite_draw_multiple(k, src)
     }
 
     fn sprite_single_draw_char(&self, k: usize) -> u8 {
@@ -9154,7 +9146,6 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         self.sprite_draw_multiple(
             k,
             &SPRITE_DRAW_FALLING_HELMA_BEETLE_FALL0[base..base + 1],
-            None,
         );
     }
 

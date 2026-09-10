@@ -10,7 +10,7 @@
 //! local `_for_dn` adapters kept only where the split module needs a narrow
 //! signature bridge.
 
-use super::sprite::{dmd, DrawMultipleData, PrepOamCoordsRet};
+use super::sprite::{dmd, DrawMultipleData};
 use super::*;
 
 // Local mirrors of sprite-RAM addresses that are not yet exposed through
@@ -1072,12 +1072,6 @@ impl ZeldaState {
         self.oam_allocate_from_region_b(0x18);
         let direction = self.sprite_slot_view(k).direction();
         let graphics = self.sprite_slot_view(k).graphics();
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
 
         let Some(plan) = uncle_draw_plan(direction, graphics) else {
             return;
@@ -1086,17 +1080,17 @@ impl ZeldaState {
             .set_sword_dma_graphics_index(plan.equipment.sword);
         self.follower_link_state_mut()
             .set_shield_dma_graphics_index(plan.equipment.shield);
-        match plan.source {
+        let mut info = match plan.source {
             UncleDrawSource::PortedTable { start } => {
-                self.sprite_draw_multiple(k, &UNCLE_DRAW_FRAMES[start..start + 6], Some(&mut info));
+                self.sprite_draw_multiple(k, &UNCLE_DRAW_FRAMES[start..start + 6])
             }
             UncleDrawSource::WrappedWram { address } => {
                 // The final departure step gives the ROM direction 0xbd. Its
                 // 16-bit table calculation wraps from $0d:d203 to low WRAM at
                 // $18e3, so the generic routine consumes six live WRAM records.
-                self.sprite_draw_multiple_from_wram_records::<6>(k, address, Some(&mut info));
+                self.sprite_draw_multiple_from_wram_records::<6>(k, address)
             }
-        }
+        };
         if direction != 0 && direction != 3 {
             self.sprite_draw_shadow_custom(k, &mut info, 10);
         }
@@ -1573,16 +1567,9 @@ impl ZeldaState {
         let j = (self.sprite_slot_view(k).direction() as usize) * 2
             + self.sprite_slot_view(k).graphics() as usize;
         let base = j * 2;
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_draw_multiple_player_deferred(
+        let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &PRIEST_DRAW_FRAMES[base..base + 2],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
@@ -1904,13 +1891,7 @@ impl ZeldaState {
     // }
     pub(super) fn thief_draw(&mut self, k: usize) {
         let gfx = self.sprite_slot_view(k).graphics() as usize;
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_draw_multiple(k, &THIEF_DRAW_FRAMES[gfx * 2..gfx * 2 + 2], Some(&mut info));
+        let mut info = self.sprite_draw_multiple(k, &THIEF_DRAW_FRAMES[gfx * 2..gfx * 2 + 2]);
         if self.sprite_slot_view(k).pause() == 0 {
             self.thief_draw_apply_head_overrides_for_dn(k);
             self.sprite_draw_shadow_custom(k, &mut info, 10);
@@ -2261,27 +2242,18 @@ impl ZeldaState {
 
     // bool Kiki_Draw(int k) {  // sprite_main.c:24543
     pub(super) fn kiki_draw(&mut self, k: usize) -> bool {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        if self.sprite_slot_view(k).direction() < 8 {
+        let mut info = if self.sprite_slot_view(k).direction() < 8 {
             let j = (self.sprite_slot_view(k).direction() as usize) * 2
                 + self.sprite_slot_view(k).graphics() as usize;
             self.set_sprite_dma_head_pointer(KIKI_DMA[j * 2]);
             self.set_sprite_dma_body_pointer(KIKI_DMA[j * 2 + 1]);
-            self.sprite_draw_multiple(k, &KIKI_DRAW_FRAMES1[j * 2..j * 2 + 2], Some(&mut info));
-            if self.sprite_slot_view(k).pause() == 0 {
-                self.sprite_draw_shadow_custom(k, &mut info, 10);
-            }
+            self.sprite_draw_multiple(k, &KIKI_DRAW_FRAMES1[j * 2..j * 2 + 2])
         } else {
             let gfx = self.sprite_slot_view(k).graphics() as usize;
-            self.sprite_draw_multiple(k, &KIKI_DRAW_FRAMES2[gfx * 6..gfx * 6 + 6], Some(&mut info));
-            if self.sprite_slot_view(k).pause() == 0 {
-                self.sprite_draw_shadow_custom(k, &mut info, 10);
-            }
+            self.sprite_draw_multiple(k, &KIKI_DRAW_FRAMES2[gfx * 6..gfx * 6 + 6])
+        };
+        if self.sprite_slot_view(k).pause() == 0 {
+            self.sprite_draw_shadow_custom(k, &mut info, 10);
         }
         ((info.x | info.y) & 0xff00) != 0
     }
@@ -2618,17 +2590,10 @@ impl ZeldaState {
     pub(super) fn returning_smithy_draw(&mut self, k: usize) {
         let j = (self.sprite_slot_view(k).direction() as usize) * 2
             + self.sprite_slot_view(k).graphics() as usize;
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         self.set_sprite_dma_body_pointer(RETURNING_SMITHY_DMA[j]);
-        self.sprite_draw_multiple_player_deferred(
+        let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &RETURNING_SMITHY_DRAW_FRAMES[j..j + 1],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
@@ -2848,16 +2813,9 @@ impl ZeldaState {
     pub(super) fn smithy_draw(&mut self, k: usize) {
         let idx = self.sprite_slot_view(k).graphics() as usize * 4
             + self.sprite_slot_view(k).direction() as usize * 2;
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_draw_multiple_player_deferred(
+        let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &SMITHY_DRAW_FRAMES[idx..idx + 2],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }

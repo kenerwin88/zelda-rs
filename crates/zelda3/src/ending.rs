@@ -1,6 +1,5 @@
 // Methods ported from zelda3/src/ending.c and included inside ZeldaState.
 
-use super::sprite::PrepOamCoordsRet;
 
 /// Slice estimates for `Module19_TriforceRoom`'s blocking cases; the live
 /// wire's iteration return decides the actual host (route hosts 1557656-1557677,
@@ -2042,8 +2041,7 @@ impl ZeldaState {
         self.sprite_get16_bit_coords(k);
         let entries = END_SEQUENCE_DRAW_FRAME_SETS[(j >> 1) as usize];
         let start = a as usize * self.sprite_slot_view(k).graphics() as usize;
-        let mut info = PrepOamCoordsRet::default();
-        self.sprite_draw_multiple(k, &entries[start..start + a as usize], Some(&mut info));
+        let info = self.sprite_draw_multiple(k, &entries[start..start + a as usize]);
         self.ending_coords = info;
     }
 

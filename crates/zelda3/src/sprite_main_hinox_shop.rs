@@ -9,7 +9,7 @@
 //! shared helper already exists.
 
 use super::*;
-use crate::zelda_rtl::sprite::{DrawMultipleData, PrepOamCoordsRet};
+use crate::zelda_rtl::sprite::{DrawMultipleData};
 
 // ---------------------------------------------------------------------------
 // File-local RAM offsets. Mirror variables.h, kept local because the matching
@@ -370,13 +370,7 @@ impl ZeldaState {
         let j = self.sprite_slot_view(k).graphics() as usize;
         let start = HINOX_DRAW_FRAME_STARTS[j] as usize;
         let count = HINOX_DRAW_FRAME_COUNTS[j] as usize;
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_draw_multiple(k, &HINOX_DRAW_FRAMES[start..start + count], Some(&mut info));
+        let mut info = self.sprite_draw_multiple(k, &HINOX_DRAW_FRAMES[start..start + count]);
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 

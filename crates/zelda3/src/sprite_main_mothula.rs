@@ -2676,7 +2676,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         self.sprite_slot_view_mut(k).and_object_priority(!0x0f);
         self.oam_allocate_from_region_c(self.sprite_slot_view(k).object_priority());
-        self.sprite_draw_multiple(k, &LARGE_WATER_TURBULENCE_DRAW_DATA, None);
+        self.sprite_draw_multiple(k, &LARGE_WATER_TURBULENCE_DRAW_DATA);
         self.sprite_slot_view_mut(k).set_oam_flags(bak);
     }
 
@@ -2865,7 +2865,7 @@ impl ZeldaState {
 
     // void Arrghus_Draw(int k) {  // 9eb840
     pub(super) fn arrghus_draw(&mut self, k: usize) {
-        self.sprite_draw_multiple(k, &ARRGHUS_DRAW_DATA, None);
+        self.sprite_draw_multiple(k, &ARRGHUS_DRAW_DATA);
         let oam = self.game_state.oam.current_pointer_usize();
         let chr = self.sprite_slot_view(k).graphics().wrapping_mul(2);
         for i in 0..4 {
@@ -4087,8 +4087,7 @@ impl ZeldaState {
         self.oam_state_mut().set_current_pointer(0x920);
         self.oam_state_mut().set_current_extended_pointer(0xa68);
         let g = self.sprite_slot_view(k).graphics() as usize;
-        let mut info = SpritePrepOamCoordsRet::default();
-        self.sprite_draw_multiple(k, &MOTHULA_DRAW_FRAMES[g * 8..g * 8 + 8], Some(&mut info));
+        let info = self.sprite_draw_multiple(k, &MOTHULA_DRAW_FRAMES[g * 8..g * 8 + 8]);
         let (info_x, info_y) = (info.x, info.y);
         if self.sprite_slot_view(k).pause() != 0 {
             return;

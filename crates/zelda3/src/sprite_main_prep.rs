@@ -3030,7 +3030,6 @@ impl ZeldaState {
         self.sprite_draw_multiple(
             k,
             &WISH_POND2_DRAW_WISH_POND_ITEM_DRAW_FRAMES[start..start + 4],
-            None,
         );
     }
 

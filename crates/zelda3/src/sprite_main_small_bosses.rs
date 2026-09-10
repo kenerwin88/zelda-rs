@@ -1747,7 +1747,7 @@ impl ZeldaState {
         }
         let g = self.sprite_slot_view(k).graphics() as usize;
         let frames = VITREOUS_DRAW_FRAMES.get(g * 4..g * 4 + 4).unwrap_or(&[]);
-        self.sprite_draw_multiple(k, frames, None);
+        self.sprite_draw_multiple(k, frames);
         if self.sprite_slot_view(k).ai_state() == 2 {
             self.sprite_slot_view_mut(k)
                 .clear_object_priority_bits(0x0e);
@@ -2507,8 +2507,7 @@ impl ZeldaState {
         let frames = YELLOW_STALFOS_DRAW_FRAMES
             .get(g * 2..g * 2 + 2)
             .unwrap_or(&[]);
-        let mut info = PrepOamCoordsRet::default();
-        self.sprite_draw_multiple(k, frames, Some(&mut info));
+        let info = self.sprite_draw_multiple(k, frames);
         self.oam_state_mut().set_current_pointer(old_oam);
         self.oam_state_mut().set_current_extended_pointer(old_ext);
         if self.sprite_slot_view(k).pause() == 0 {

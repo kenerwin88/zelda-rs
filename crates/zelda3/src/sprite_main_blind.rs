@@ -776,11 +776,11 @@ impl ZeldaState {
             let start = BLIND_POOF_DRAW_FRAME_STARTS[j] as usize;
             let count =
                 (BLIND_POOF_DRAW_FRAME_STARTS[j + 1] - BLIND_POOF_DRAW_FRAME_STARTS[j]) as usize;
-            self.sprite_draw_multiple(k, &BLIND_POOF_DRAW_FRAMES[start..start + count], None);
+            self.sprite_draw_multiple(k, &BLIND_POOF_DRAW_FRAMES[start..start + count]);
             return;
         }
         let gfx = self.sprite_slot_view(k).graphics() as usize;
-        self.sprite_draw_multiple(k, &BLIND_DRAW_FRAMES[gfx * 7..gfx * 7 + 7], None);
+        self.sprite_draw_multiple(k, &BLIND_DRAW_FRAMES[gfx * 7..gfx * 7 + 7]);
 
         if self.sprite_slot_view(k).wall_collision() == 0 {
             if self.sprite_slot_view(k).c() == 6 {

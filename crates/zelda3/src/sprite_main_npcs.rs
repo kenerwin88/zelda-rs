@@ -12,7 +12,7 @@
 
 use super::*;
 use crate::types::{Point16U, SpriteHitBox};
-use crate::zelda_rtl::sprite::{DrawMultipleData, PrepOamCoordsRet, SpriteSpawnInfo};
+use crate::zelda_rtl::sprite::{DrawMultipleData, SpriteSpawnInfo};
 
 // kSpriteDistress_X / kSpriteDistress_Y from sprite.c:435/436 — used by
 // Sprite_DrawDistress_custom, which Cucco_DrawPANIC calls.
@@ -827,17 +827,10 @@ impl ZeldaState {
     //   return (info.x | info.y) >> 8;
     // }
     pub(super) fn bottle_vendor_draw(&mut self, k: usize) -> u8 {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = (self.sprite_slot_view(k).graphics() as usize) * 2;
-        self.sprite_draw_multiple_player_deferred(
+        let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &BOTTLE_VENDOR_DRAW_FRAMES[base..base + 2],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
         ((info.x | info.y) >> 8) as u8

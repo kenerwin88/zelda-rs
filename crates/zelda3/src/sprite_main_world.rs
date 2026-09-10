@@ -312,7 +312,7 @@ impl ZeldaState {
         self.oam_allocate_from_region_b(0x10);
         let start = (self.sprite_slot_view(k).delay_aux4() & 12) as usize;
         let end = start + 4;
-        self.sprite_draw_multiple(k, &SOMARIA_PLATFORM_DRAW_FRAMES[start..end], None);
+        self.sprite_draw_multiple(k, &SOMARIA_PLATFORM_DRAW_FRAMES[start..end]);
     }
 
     // void SomariaPlatform_HandleJunctions(int k) {  // 9ef87d

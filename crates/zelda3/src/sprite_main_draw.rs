@@ -52,7 +52,7 @@ impl ZeldaState {
         self.oam_allocate_from_region_c(4);
         let idx = (self.sprite_slot_view(k).graphics() as usize) * 4
             + (self.sprite_slot_view(k).direction() as usize);
-        self.sprite_draw_multiple(k, &MASTER_SWORD_LIGHT_BALL_DRAW_FRAMES[idx..idx + 1], None);
+        self.sprite_draw_multiple(k, &MASTER_SWORD_LIGHT_BALL_DRAW_FRAMES[idx..idx + 1]);
     }
 
     // -----------------------------------------------------------------------
@@ -927,7 +927,6 @@ impl ZeldaState {
         self.sprite_draw_multiple(
             k,
             &SPRITE_CATFISH_SPLASH_OF_WATER_DRAW_FRAMES[base..base + 2],
-            None,
         );
     }
 
@@ -1149,7 +1148,7 @@ impl ZeldaState {
     pub(super) fn sprite_draw_water_ripple(&mut self, k: usize) {
         let frame = self.game_state.frame.frame_counter;
         let base = (WATER_RIPPLE_FRAME_INDICES[((frame >> 2) & 3) as usize] as usize) * 2;
-        self.sprite_draw_multiple(k, &WATER_RIPPLE_DRAW_FRAMES[base..base + 2], None);
+        self.sprite_draw_multiple(k, &WATER_RIPPLE_DRAW_FRAMES[base..base + 2]);
         let oam = self.game_state.oam.current_pointer_usize();
         let t = (self.game_state.oam.entry_flags(oam) & 0x30) | 0x4;
         self.oam_state_mut().set_entry_flags(oam, t);
@@ -1645,7 +1644,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_state(value);
         }
         let base = ((self.sprite_slot_view(k).delay_main() >> 2) as usize) * 3;
-        self.sprite_draw_multiple(k, &BOMBER_PELLET_DRAW_FRAMES[base..base + 3], None);
+        self.sprite_draw_multiple(k, &BOMBER_PELLET_DRAW_FRAMES[base..base + 3]);
     }
 
     // -----------------------------------------------------------------------
@@ -1870,7 +1869,7 @@ impl ZeldaState {
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(4));
         let base = (anim as usize) * 3;
-        self.sprite_draw_multiple(k, &LARGE_SHADOW_DRAW_FRAMES[base..base + 3], None);
+        self.sprite_draw_multiple(k, &LARGE_SHADOW_DRAW_FRAMES[base..base + 3]);
         self.sprite_get16_bit_coords(k);
     }
 
@@ -1919,7 +1918,7 @@ impl ZeldaState {
         self.oam_allocate_from_region_a(8);
         let base = ((self.sprite_slot_view(k).delay_main() >> 2) as usize) * 2;
         let base = base.min(ALTAR_ZELDA_WARP_DRAW_FRAMES.len() - 2);
-        self.sprite_draw_multiple(k, &ALTAR_ZELDA_WARP_DRAW_FRAMES[base..base + 2], None);
+        self.sprite_draw_multiple(k, &ALTAR_ZELDA_WARP_DRAW_FRAMES[base..base + 2]);
     }
 
     pub(super) fn sprite_cutscene_agahnim_zelda(&mut self, k: usize) {
@@ -1935,15 +1934,9 @@ impl ZeldaState {
             }
         }
         self.oam_allocate_from_region_a(8);
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
         let base = base.min(ALTAR_ZELDA_DRAW_FRAMES.len() - 2);
-        self.sprite_draw_multiple(k, &ALTAR_ZELDA_DRAW_FRAMES[base..base + 2], Some(&mut info));
+        let info = self.sprite_draw_multiple(k, &ALTAR_ZELDA_DRAW_FRAMES[base..base + 2]);
         let local_info = PrepOamCoordsRet {
             x: info.x,
             y: info.y,
@@ -3172,7 +3165,7 @@ impl ZeldaState {
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(4));
         let base = usize::from((self.sprite_slot_view(k).subtype2() >> 1) & 1) * 4;
-        self.sprite_draw_multiple(k, &GIANT_MOLDORM_SEG_A_DRAW_FRAMES[base..base + 4], None);
+        self.sprite_draw_multiple(k, &GIANT_MOLDORM_SEG_A_DRAW_FRAMES[base..base + 4]);
     }
 
     pub(super) fn giant_moldorm_draw_segment_c_or_tail(&mut self, k: usize, lookback: i32) {
@@ -3206,7 +3199,7 @@ impl ZeldaState {
             + (self.sprite_slot_view(k).delay_aux1() & 2);
         let base = (t as usize) * 4;
         let base = base.min(GIANT_MOLDORM_HEAD_DRAW_FRAMES.len() - 4);
-        self.sprite_draw_multiple(k, &GIANT_MOLDORM_HEAD_DRAW_FRAMES[base..base + 4], None);
+        self.sprite_draw_multiple(k, &GIANT_MOLDORM_HEAD_DRAW_FRAMES[base..base + 4]);
     }
 
     // -----------------------------------------------------------------------
@@ -3330,7 +3323,7 @@ impl ZeldaState {
             }
         }
         let base = (self.sprite_slot_view(k).graphics() as usize) * 5;
-        self.sprite_draw_multiple(k, &DRAW_FOUR_AROUND_ONE_DRAW_FRAMES[base..base + 5], None);
+        self.sprite_draw_multiple(k, &DRAW_FOUR_AROUND_ONE_DRAW_FRAMES[base..base + 5]);
     }
 
     pub(super) fn complete_antfairy_after_subtype2_increment(
@@ -3414,17 +3407,7 @@ impl ZeldaState {
         k: usize,
         info: &mut PrepOamCoordsRet,
     ) {
-        let mut prepped = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_draw_multiple(k, &HELMASAUR_KING_DRAW_D_DRAW_FRAMES, Some(&mut prepped));
-        info.x = prepped.x;
-        info.y = prepped.y;
-        info.r4 = prepped.r4;
-        info.flags = prepped.flags;
+        *info = self.sprite_draw_multiple(k, &HELMASAUR_KING_DRAW_D_DRAW_FRAMES);
     }
 
     // -----------------------------------------------------------------------
@@ -3519,21 +3502,10 @@ impl ZeldaState {
             return;
         }
         let start = self.sprite_slot_view(k).c() as usize * 8;
-        let mut prepped = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_draw_multiple(
+        *info = self.sprite_draw_multiple(
             k,
             &HELMASAUR_MASK_DRAW_FRAMES[start..start + 8],
-            Some(&mut prepped),
         );
-        info.x = prepped.x;
-        info.y = prepped.y;
-        info.r4 = prepped.r4;
-        info.flags = prepped.flags;
         let cur = self.game_state.oam.current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(0x20));
@@ -3704,7 +3676,6 @@ impl ZeldaState {
         self.sprite_draw_multiple_player_deferred(
             k,
             &SHOP_KEEPER_ITEM_WITH_PRICE_DRAW_FRAMES[base..base + 5],
-            None,
         );
     }
 
@@ -4221,14 +4192,8 @@ impl ZeldaState {
     //   Four 8x8 body tiles selected by sprite_graphics.
     // }
     pub(super) fn red_bari_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = (self.sprite_slot_view(k).graphics() as usize).min(1) * 4;
-        self.sprite_draw_multiple(k, &RED_BARI_DRAW_FRAMES[base..base + 4], Some(&mut info));
+        let mut info = self.sprite_draw_multiple(k, &RED_BARI_DRAW_FRAMES[base..base + 4]);
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -4237,17 +4202,10 @@ impl ZeldaState {
     //   Two large body tiles, with a shadow only for shadow-enabled sprites.
     // }
     pub(super) fn hard_hat_beetle_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = (self.sprite_slot_view(k).graphics() as usize).min(1) * 2;
-        self.sprite_draw_multiple(
+        let mut info = self.sprite_draw_multiple(
             k,
             &HARD_HAT_BEETLE_DRAW_FRAMES[base..base + 2],
-            Some(&mut info),
         );
         if self.sprite_slot_view(k).flags3() & 0x10 != 0 {
             self.sprite_draw_shadow_custom(k, &mut info, 10);
@@ -4386,15 +4344,9 @@ impl ZeldaState {
     // }
     pub(super) fn flute_boy_draw(&mut self, k: usize) -> u8 {
         self.oam_allocate_from_region_b(0x10);
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = (self.sprite_slot_view(k).direction() as usize) * 8
             + (self.sprite_slot_view(k).graphics() as usize) * 4;
-        self.sprite_draw_multiple(k, &FLUTE_BOY_DRAW_FRAMES[base..base + 4], Some(&mut info));
+        let info = self.sprite_draw_multiple(k, &FLUTE_BOY_DRAW_FRAMES[base..base + 4]);
         ((info.x | info.y) >> 8) as u8
     }
 
@@ -4407,7 +4359,6 @@ impl ZeldaState {
         self.sprite_draw_multiple_player_deferred(
             k,
             &FLUTE_AARDVARK_DRAW_FRAMES[base..base + 2],
-            None,
         );
     }
 
@@ -4419,7 +4370,7 @@ impl ZeldaState {
         let value = 0x14;
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         let base = (self.sprite_slot_view(k).graphics() as usize) * 4;
-        self.sprite_draw_multiple(k, &DUST_CLOUD_DRAW_FRAMES[base..base + 4], None);
+        self.sprite_draw_multiple(k, &DUST_CLOUD_DRAW_FRAMES[base..base + 4]);
     }
 
     // -----------------------------------------------------------------------
@@ -4454,7 +4405,7 @@ impl ZeldaState {
         if self.game_state.sprites.system.chr_halfslot_state() >= 3 {
             return;
         }
-        self.sprite_draw_multiple(k, &LANDMINE_DRAW_FRAMES, None);
+        self.sprite_draw_multiple(k, &LANDMINE_DRAW_FRAMES);
     }
 
     // -----------------------------------------------------------------------
@@ -4462,13 +4413,7 @@ impl ZeldaState {
     //   Two large stacked tiles plus a common shadow.
     // }
     pub(super) fn armos_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_draw_multiple(k, &ARMOS_DRAW_FRAMES, Some(&mut info));
+        let mut info = self.sprite_draw_multiple(k, &ARMOS_DRAW_FRAMES);
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -4536,7 +4481,7 @@ impl ZeldaState {
     // }
     pub(super) fn boulder_draw(&mut self, k: usize) {
         let base = (((self.sprite_slot_view(k).subtype2() >> 3) & 3) as usize) * 4;
-        self.sprite_draw_multiple(k, &BOULDER_DRAW_FRAMES[base..base + 4], None);
+        self.sprite_draw_multiple(k, &BOULDER_DRAW_FRAMES[base..base + 4]);
         self.sprite_draw_large_shadow2(k);
     }
 
@@ -4555,7 +4500,7 @@ impl ZeldaState {
     // }
     pub(super) fn flame_draw(&mut self, k: usize) {
         let base = (self.sprite_slot_view(k).graphics() as usize) * 2;
-        self.sprite_draw_multiple(k, &FLAME_DRAW_FRAMES[base..base + 2], None);
+        self.sprite_draw_multiple(k, &FLAME_DRAW_FRAMES[base..base + 2]);
     }
 
     // -----------------------------------------------------------------------
@@ -4564,7 +4509,7 @@ impl ZeldaState {
     // }
     pub(super) fn seeker_energy_ball_draw(&mut self, k: usize) {
         let base = (((self.sprite_slot_view(k).subtype2() >> 2) & 1) as usize) * 4;
-        self.sprite_draw_multiple(k, &ENERGY_BALL_DRAW_FRAMES[base..base + 4], None);
+        self.sprite_draw_multiple(k, &ENERGY_BALL_DRAW_FRAMES[base..base + 4]);
     }
 
     // -----------------------------------------------------------------------
@@ -4573,7 +4518,7 @@ impl ZeldaState {
     // }
     pub(super) fn wizzbeam_draw(&mut self, k: usize) {
         let base = (self.sprite_slot_view(k).direction() as usize) * 2;
-        self.sprite_draw_multiple(k, &WIZZBEAM_DRAW_FRAMES[base..base + 2], None);
+        self.sprite_draw_multiple(k, &WIZZBEAM_DRAW_FRAMES[base..base + 2]);
     }
 
     // -----------------------------------------------------------------------
@@ -4583,9 +4528,9 @@ impl ZeldaState {
     pub(super) fn freezor_draw(&mut self, k: usize) {
         if self.sprite_slot_view(k).graphics() != 7 {
             let base = (self.sprite_slot_view(k).graphics() as usize) * 4;
-            self.sprite_draw_multiple(k, &FREEZOR_DRAW_FRAMES0[base..base + 4], None);
+            self.sprite_draw_multiple(k, &FREEZOR_DRAW_FRAMES0[base..base + 4]);
         } else {
-            self.sprite_draw_multiple(k, &FREEZOR_DRAW_FRAMES1, None);
+            self.sprite_draw_multiple(k, &FREEZOR_DRAW_FRAMES1);
         }
     }
 
@@ -4594,15 +4539,9 @@ impl ZeldaState {
     //   Three body tiles plus common shadow.
     // }
     pub(super) fn ropa_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base =
             ((self.sprite_slot_view(k).graphics() as usize) * 3).min(ROPA_DRAW_FRAMES.len() - 3);
-        self.sprite_draw_multiple(k, &ROPA_DRAW_FRAMES[base..base + 3], Some(&mut info));
+        let mut info = self.sprite_draw_multiple(k, &ROPA_DRAW_FRAMES[base..base + 3]);
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -4611,14 +4550,8 @@ impl ZeldaState {
     //   Three body tiles, head-char patch, and common shadow.
     // }
     pub(super) fn zazak_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = (self.sprite_slot_view(k).graphics() as usize) * 3;
-        self.sprite_draw_multiple(k, &ZAZAK_DRAW_FRAMES[base..base + 3], Some(&mut info));
+        let mut info = self.sprite_draw_multiple(k, &ZAZAK_DRAW_FRAMES[base..base + 3]);
         if self.sprite_slot_view(k).pause() != 0 {
             return;
         }
@@ -4670,15 +4603,9 @@ impl ZeldaState {
     //   Two body tiles, optional foot tiles, then common shadow.
     // }
     pub(super) fn pengator_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let gfx = self.sprite_slot_view(k).graphics() as usize;
         let base = (gfx * 2).min(PENGATOR_DRAW_FRAMES0.len() - 2);
-        self.sprite_draw_multiple(k, &PENGATOR_DRAW_FRAMES0[base..base + 2], Some(&mut info));
+        let mut info = self.sprite_draw_multiple(k, &PENGATOR_DRAW_FRAMES0[base..base + 2]);
         let extra = if gfx == 14 {
             Some(0usize)
         } else if gfx == 19 {
@@ -4693,10 +4620,9 @@ impl ZeldaState {
             let ext = self.game_state.oam.current_extended_pointer();
             self.oam_state_mut()
                 .set_current_extended_pointer(ext.wrapping_add(2));
-            self.sprite_draw_multiple(
+            info = self.sprite_draw_multiple(
                 k,
                 &PENGATOR_DRAW_FRAMES1[extra_base..extra_base + 2],
-                Some(&mut info),
             );
         }
         self.sprite_draw_shadow_custom(k, &mut info, 10);
@@ -4747,7 +4673,6 @@ impl ZeldaState {
         self.sprite_draw_multiple_player_deferred(
             k,
             &MEDALLION_TABLET_DRAW_FRAMES[base..base + 4],
-            None,
         );
     }
 
@@ -4889,7 +4814,7 @@ impl ZeldaState {
     //   Three deferred statue tiles.
     // }
     pub(super) fn movable_statue_draw(&mut self, k: usize) {
-        self.sprite_draw_multiple_player_deferred(k, &MOVABLE_STATUE_DRAW_FRAMES, None);
+        self.sprite_draw_multiple_player_deferred(k, &MOVABLE_STATUE_DRAW_FRAMES);
     }
 
     // void Statue_BlockSprites(int k) {  // 86c277
@@ -5009,14 +4934,8 @@ impl ZeldaState {
         let cur_x = self.game_state.sprites.workspace.current_sprite_x();
         self.sprite_workspace_mut()
             .set_current_sprite_x(cur_x.wrapping_add(4));
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics().wrapping_sub(1)) * 2;
-        self.sprite_draw_multiple(k, &FISH_DRAW_FRAMES[base..base + 2], Some(&mut info));
+        self.sprite_draw_multiple(k, &FISH_DRAW_FRAMES[base..base + 2]);
         let cur_y = self.game_state.sprites.workspace.current_sprite_y();
         let z = self.sprite_slot_view(k).z();
         self.sprite_workspace_mut()
@@ -5028,7 +4947,7 @@ impl ZeldaState {
         let ext = self.game_state.oam.current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(2));
-        self.sprite_draw_multiple(k, &FISH_DRAW_FRAMES2[j * 3..j * 3 + 3], Some(&mut info));
+        self.sprite_draw_multiple(k, &FISH_DRAW_FRAMES2[j * 3..j * 3 + 3]);
         self.sprite_get16_bit_coords(k);
     }
 
@@ -5038,7 +4957,7 @@ impl ZeldaState {
     // }
     pub(super) fn chimney_smoke_draw(&mut self, k: usize) {
         let base = ((self.sprite_slot_view(k).graphics() & 1) as usize) * 4;
-        self.sprite_draw_multiple(k, &CHIMNEY_SMOKE_DRAW_FRAMES[base..base + 4], None);
+        self.sprite_draw_multiple(k, &CHIMNEY_SMOKE_DRAW_FRAMES[base..base + 4]);
     }
 
     // -----------------------------------------------------------------------
@@ -5046,14 +4965,8 @@ impl ZeldaState {
     //   Two large wing/body tiles plus common shadow.
     // }
     pub(super) fn vulture_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple(k, &VULTURE_DRAW_FRAMES[base..base + 2], Some(&mut info));
+        let mut info = self.sprite_draw_multiple(k, &VULTURE_DRAW_FRAMES[base..base + 2]);
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -5154,7 +5067,7 @@ impl ZeldaState {
     //   Two deferred large tiles.
     // }
     pub(super) fn magic_powder_item_draw(&mut self, k: usize) {
-        self.sprite_draw_multiple_player_deferred(k, &MAGIC_POWDER_DRAW_FRAMES, None);
+        self.sprite_draw_multiple_player_deferred(k, &MAGIC_POWDER_DRAW_FRAMES);
     }
 
     // -----------------------------------------------------------------------
@@ -5162,7 +5075,7 @@ impl ZeldaState {
     //   Bottle body and green price/label tiles.
     // }
     pub(super) fn green_potion_item_draw(&mut self, k: usize) {
-        self.sprite_draw_multiple_player_deferred(k, &GREEN_POTION_ITEM_DRAW_FRAMES, None);
+        self.sprite_draw_multiple_player_deferred(k, &GREEN_POTION_ITEM_DRAW_FRAMES);
     }
 
     // -----------------------------------------------------------------------
@@ -5170,7 +5083,7 @@ impl ZeldaState {
     //   Bottle body and blue price/label tiles.
     // }
     pub(super) fn blue_potion_item_draw(&mut self, k: usize) {
-        self.sprite_draw_multiple_player_deferred(k, &BLUE_POTION_ITEM_DRAW_FRAMES, None);
+        self.sprite_draw_multiple_player_deferred(k, &BLUE_POTION_ITEM_DRAW_FRAMES);
     }
 
     // -----------------------------------------------------------------------
@@ -5178,7 +5091,7 @@ impl ZeldaState {
     //   Bottle body and red price/label tiles.
     // }
     pub(super) fn red_potion_item_draw(&mut self, k: usize) {
-        self.sprite_draw_multiple_player_deferred(k, &RED_POTION_ITEM_DRAW_FRAMES, None);
+        self.sprite_draw_multiple_player_deferred(k, &RED_POTION_ITEM_DRAW_FRAMES);
     }
 
     // -----------------------------------------------------------------------
@@ -5748,7 +5661,6 @@ impl ZeldaState {
         self.sprite_draw_multiple_player_deferred(
             k,
             &BUG_NET_KID_DRAW_FRAMES[base..base + 6],
-            None,
         );
     }
 
@@ -5757,14 +5669,8 @@ impl ZeldaState {
     //   Two body tiles selected by sprite_graphics plus common shadow.
     // }
     pub(super) fn bomber_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = (self.sprite_slot_view(k).graphics() as usize) * 2;
-        self.sprite_draw_multiple(k, &BOMBER_DRAW_FRAMES[base..base + 2], Some(&mut info));
+        let mut info = self.sprite_draw_multiple(k, &BOMBER_DRAW_FRAMES[base..base + 2]);
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -5849,7 +5755,7 @@ impl ZeldaState {
     // }
     pub(super) fn bumper_draw(&mut self, k: usize) {
         let base = (((self.sprite_slot_view(k).delay_main() >> 1) & 1) as usize) * 4;
-        self.sprite_draw_multiple(k, &BUMPER_DRAW_FRAMES[base..base + 4], None);
+        self.sprite_draw_multiple(k, &BUMPER_DRAW_FRAMES[base..base + 4]);
     }
 
     // -----------------------------------------------------------------------
@@ -5857,7 +5763,7 @@ impl ZeldaState {
     //   Sprite_DrawMultiplePlayerDeferred(k, kFakeSword_Dmd, 2, NULL);
     // }
     pub(super) fn fake_sword_draw(&mut self, k: usize) {
-        self.sprite_draw_multiple_player_deferred(k, &FAKE_SWORD_DRAW_FRAMES, None);
+        self.sprite_draw_multiple_player_deferred(k, &FAKE_SWORD_DRAW_FRAMES);
     }
 
     // -----------------------------------------------------------------------
@@ -6533,7 +6439,7 @@ impl ZeldaState {
     pub(super) fn swamola_ripples_draw(&mut self, k: usize) {
         self.oam_allocate_from_region_b(8);
         let base = usize::from((self.sprite_slot_view(k).delay_main() >> 2) & 3) * 2;
-        self.sprite_draw_multiple(k, &SWAMOLA_RIPPLES_DRAW_FRAMES[base..base + 2], None);
+        self.sprite_draw_multiple(k, &SWAMOLA_RIPPLES_DRAW_FRAMES[base..base + 2]);
     }
 
     // -----------------------------------------------------------------------
@@ -6669,7 +6575,7 @@ impl ZeldaState {
     // void WallMaster_Draw(int k) {  // 9eafe4
     pub(super) fn wall_master_draw(&mut self, k: usize) {
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
-        self.sprite_draw_multiple(k, &WALL_MASTER_DRAW_FRAMES[base..base + 4], None);
+        self.sprite_draw_multiple(k, &WALL_MASTER_DRAW_FRAMES[base..base + 4]);
         self.sprite_draw_large_shadow2(k);
     }
 
@@ -6708,7 +6614,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_oam_flags(value);
         } else {
             let base = usize::from(gfx.wrapping_sub(4)) * 2;
-            self.sprite_draw_multiple(k, &ZOL_DRAW_FRAMES[base..base + 2], None);
+            self.sprite_draw_multiple(k, &ZOL_DRAW_FRAMES[base..base + 2]);
         }
     }
 
@@ -6764,7 +6670,7 @@ impl ZeldaState {
     // void Wizzrobe_Draw(int k) {  // 8dbe06
     pub(super) fn wizzrobe_draw(&mut self, k: usize) {
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 3;
-        self.sprite_draw_multiple(k, &WIZZROBE_DRAW_FRAMES[base..base + 3], None);
+        self.sprite_draw_multiple(k, &WIZZROBE_DRAW_FRAMES[base..base + 3]);
     }
 
     // -----------------------------------------------------------------------
@@ -6822,7 +6728,7 @@ impl ZeldaState {
     // void StalfosBone_Draw(int k) {  // 9e9040
     pub(super) fn stalfos_bone_draw(&mut self, k: usize) {
         let base = usize::from((self.sprite_slot_view(k).subtype2() >> 2) & 3) * 2;
-        self.sprite_draw_multiple(k, &STALFOS_BONE_DRAW_FRAMES[base..base + 2], None);
+        self.sprite_draw_multiple(k, &STALFOS_BONE_DRAW_FRAMES[base..base + 2]);
     }
 
     // -----------------------------------------------------------------------
@@ -6869,7 +6775,7 @@ impl ZeldaState {
             return;
         }
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 3;
-        self.sprite_draw_multiple(k, &STALFOS_DRAW_FRAMES[base..base + 3], Some(&mut info));
+        info = self.sprite_draw_multiple(k, &STALFOS_DRAW_FRAMES[base..base + 3]);
         if self.sprite_slot_view(k).graphics() < 8 && self.sprite_slot_view(k).pause() == 0 {
             let oam = self.game_state.oam.current_pointer_usize();
             let i = usize::from(self.sprite_slot_view(k).head_direction());
@@ -6943,7 +6849,7 @@ impl ZeldaState {
         let bak = self.sprite_slot_view(k).object_priority();
         self.sprite_slot_view_mut(k).and_object_priority(!0x0f);
         let base = usize::from(g.wrapping_sub(1)) * 5;
-        self.sprite_draw_multiple(k, &TRIDENT_DRAW_FRAMES[base..base + 5], None);
+        self.sprite_draw_multiple(k, &TRIDENT_DRAW_FRAMES[base..base + 5]);
         let value = bak;
         self.sprite_slot_view_mut(k).set_object_priority(value);
         self.sprite_get16_bit_coords(k);
@@ -7057,19 +6963,13 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Stal_Draw(int k) {  // 9d820c
     pub(super) fn stal_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let n = if self.sprite_slot_view(k).ai_state() != 0 {
             2
         } else {
             1
         };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple(k, &STAL_DRAW_FRAMES[base..base + n], Some(&mut info));
+        let mut info = self.sprite_draw_multiple(k, &STAL_DRAW_FRAMES[base..base + n]);
         if self.sprite_slot_view(k).ai_state() != 0 {
             self.sprite_draw_shadow_custom(k, &mut info, 10);
         }
@@ -7861,7 +7761,7 @@ impl ZeldaState {
         let base = (usize::from(self.sprite_slot_view(k).subtype2())
             + usize::from(self.sprite_slot_view(k).direction()))
             * 4;
-        self.sprite_draw_multiple(k, &GIBO_DRAW_FRAMES[base..base + 4], None);
+        self.sprite_draw_multiple(k, &GIBO_DRAW_FRAMES[base..base + 4]);
     }
 
     // -----------------------------------------------------------------------
@@ -7884,7 +7784,7 @@ impl ZeldaState {
         let base = (usize::from(self.sprite_slot_view(k).graphics())
             + usize::from(self.sprite_slot_view(k).direction()) * 2)
             * 3;
-        self.sprite_draw_multiple(k, &LASER_EYE_DRAW_FRAMES[base..base + 3], None);
+        self.sprite_draw_multiple(k, &LASER_EYE_DRAW_FRAMES[base..base + 3]);
     }
 
     // -----------------------------------------------------------------------
@@ -7893,14 +7793,8 @@ impl ZeldaState {
     //   if (!sprite_pause[k]) SpriteDraw_Shadow(k, &info);
     // }
     pub(super) fn gibdo_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple(k, &GIBDO_DRAW_FRAMES[base..base + 2], Some(&mut info));
+        let mut info = self.sprite_draw_multiple(k, &GIBDO_DRAW_FRAMES[base..base + 2]);
         if self.sprite_slot_view(k).pause() == 0 {
             self.sprite_draw_shadow_custom(k, &mut info, 10);
         }
@@ -7937,7 +7831,7 @@ impl ZeldaState {
     pub(super) fn fire_phlegm_draw(&mut self, k: usize) {
         let base = usize::from(self.sprite_slot_view(k).direction()) * 4
             + usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple(k, &FIRE_PHLEGM_DRAW_FRAMES[base..base + 2], None);
+        self.sprite_draw_multiple(k, &FIRE_PHLEGM_DRAW_FRAMES[base..base + 2]);
     }
 
     // -----------------------------------------------------------------------
@@ -7945,14 +7839,8 @@ impl ZeldaState {
     //   Four-tile tile plus normal sprite shadow.
     // }
     pub(super) fn flying_tile_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
-        self.sprite_draw_multiple(k, &FLYING_TILE_DRAW_FRAMES[base..base + 4], Some(&mut info));
+        let mut info = self.sprite_draw_multiple(k, &FLYING_TILE_DRAW_FRAMES[base..base + 4]);
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -7963,18 +7851,11 @@ impl ZeldaState {
     //   SpriteDraw_Shadow(k, &info);
     // }
     pub(super) fn bully_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).direction()) * 4
             + usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple_player_deferred(
+        let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &BULLY_DRAW_FRAMES[base..base + 2],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
@@ -8265,7 +8146,7 @@ impl ZeldaState {
         let g = self.sprite_slot_view(k).graphics();
         if g != 0xff {
             let base = usize::from(g) * 2;
-            self.sprite_draw_multiple(k, &BABUSU_DRAW_FRAMES[base..base + 2], None);
+            self.sprite_draw_multiple(k, &BABUSU_DRAW_FRAMES[base..base + 2]);
         } else {
             let mut info = PrepOamCoordsRet {
                 x: 0,
@@ -8280,18 +8161,11 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Lady_Draw(int k) {  // 9af92c
     pub(super) fn lady_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2
             + usize::from(self.sprite_slot_view(k).direction()) * 4;
-        self.sprite_draw_multiple_player_deferred(
+        let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &LADY_DRAW_FRAMES[base..base + 2],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
@@ -8299,18 +8173,11 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void YoungSnitchLady_Draw(int k) {  // 85e37f
     pub(super) fn young_snitch_lady_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2
             + usize::from(self.sprite_slot_view(k).direction()) * 4;
-        self.sprite_draw_multiple_player_deferred(
+        let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &YOUNG_SNITCH_LADY_DRAW_FRAMES[base..base + 2],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
@@ -8479,7 +8346,7 @@ impl ZeldaState {
     // void Cukeman_Draw(int k) {  // 9afb0e
     pub(super) fn cukeman_draw(&mut self, k: usize) {
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 3;
-        self.sprite_draw_multiple(k, &CUKEMAN_DRAW_FRAMES[base..base + 3], None);
+        self.sprite_draw_multiple(k, &CUKEMAN_DRAW_FRAMES[base..base + 3]);
     }
 
     // -----------------------------------------------------------------------
@@ -8509,28 +8376,16 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void SnapDragon_Draw(int k) {  // 869e02
     pub(super) fn snap_dragon_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
-        self.sprite_draw_multiple(k, &SNAP_DRAGON_DRAW_FRAMES[base..base + 4], Some(&mut info));
+        let mut info = self.sprite_draw_multiple(k, &SNAP_DRAGON_DRAW_FRAMES[base..base + 4]);
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
     // void Lynel_Draw(int k) {  // 9d8880
     pub(super) fn lynel_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 3;
-        self.sprite_draw_multiple(k, &LYNEL_DRAW_FRAMES[base..base + 3], Some(&mut info));
+        let mut info = self.sprite_draw_multiple(k, &LYNEL_DRAW_FRAMES[base..base + 3]);
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -8539,7 +8394,7 @@ impl ZeldaState {
     pub(super) fn goriya_draw(&mut self, k: usize) {
         if self.sprite_slot_view(k).delay_aux1() != 0 && self.sprite_slot_view(k).direction() != 3 {
             let d = usize::from(self.sprite_slot_view(k).direction());
-            self.sprite_draw_multiple(k, &GORIYA_DRAW_FRAMES_2[d..d + 1], None);
+            self.sprite_draw_multiple(k, &GORIYA_DRAW_FRAMES_2[d..d + 1]);
         }
 
         let cur = self.game_state.oam.current_pointer();
@@ -8549,16 +8404,9 @@ impl ZeldaState {
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(1));
         let g = usize::from(self.sprite_slot_view(k).graphics());
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_draw_multiple(
+        let mut info = self.sprite_draw_multiple(
             k,
             &GORIYA_DRAW_FRAMES[GORIYA_DRAW_OFFSETS[g]..GORIYA_DRAW_OFFSETS[g + 1]],
-            Some(&mut info),
         );
         self.sprite_slot_view_mut(k).subtract_flags2(1);
         self.sprite_draw_shadow_custom(k, &mut info, 10);
@@ -8579,7 +8427,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_oam_flags(value);
         } else {
             let base = (usize::from(j) - 12) * 4;
-            self.sprite_draw_multiple(k, &KYAMERON_DRAW_FRAMES[base..base + 4], None);
+            self.sprite_draw_multiple(k, &KYAMERON_DRAW_FRAMES[base..base + 4]);
         }
     }
 
@@ -8616,7 +8464,7 @@ impl ZeldaState {
     // void Hobo_Draw(int k) {  // 84ea60
     pub(super) fn hobo_draw(&mut self, k: usize) {
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
-        self.sprite_draw_multiple_player_deferred(k, &HOBO_DRAW_FRAMES[base..base + 4], None);
+        self.sprite_draw_multiple_player_deferred(k, &HOBO_DRAW_FRAMES[base..base + 4]);
     }
 
     // -----------------------------------------------------------------------
@@ -8895,19 +8743,12 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void RunningMan_Draw(int k) {  // 85ea4d
     pub(super) fn running_man_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = (usize::from(self.sprite_slot_view(k).direction()) * 4
             + usize::from(self.sprite_slot_view(k).graphics()) * 2)
             & 0xf;
-        self.sprite_draw_multiple_player_deferred(
+        let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &RUNNING_MAN_DRAW_FRAMES[base..base + 2],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
@@ -8915,17 +8756,10 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Elder_Draw(int k) {  // 85f23a
     pub(super) fn elder_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple_player_deferred(
+        let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &ELDER_DRAW_FRAMES[base..base + 2],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
@@ -8933,17 +8767,10 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Shopkeeper_Draw(int k) {  // 85f91b
     pub(super) fn shopkeeper_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple_player_deferred(
+        let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &SHOPKEEPER_DRAW_FRAMES[base..base + 2],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
@@ -8951,17 +8778,10 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void FluteBoyFather_Draw(int k) {  // 8dc3e1
     pub(super) fn flute_boy_father_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple_player_deferred(
+        let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &FLUTE_BOY_FATHER_DRAW_FRAMES[base..base + 2],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
@@ -8969,17 +8789,10 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void FluteBoyOstrich_Draw(int k) {  // 9e9a4b
     pub(super) fn flute_boy_ostrich_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
-        self.sprite_draw_multiple(
+        let mut info = self.sprite_draw_multiple(
             k,
             &FLUTE_BOY_OSTRICH_DRAW_FRAMES[base..base + 4],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 18);
     }
@@ -8995,23 +8808,16 @@ impl ZeldaState {
             self.sprite_draw_multiple_player_deferred(
                 k,
                 &OLD_MOUNTAIN_MAN_DRAW_FRAMES_1[j..j + 2],
-                None,
             );
         } else {
-            self.sprite_draw_multiple_player_deferred(k, &OLD_MOUNTAIN_MAN_DRAW_FRAMES_0, None);
+            self.sprite_draw_multiple_player_deferred(k, &OLD_MOUNTAIN_MAN_DRAW_FRAMES_0);
         }
     }
 
     // -----------------------------------------------------------------------
     // void InnKeeper_Draw(int k) {  // 85e3dc
     pub(super) fn inn_keeper_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_draw_multiple_player_deferred(k, &INN_KEEPER_DRAW_FRAMES, Some(&mut info));
+        let mut info = self.sprite_draw_multiple_player_deferred(k, &INN_KEEPER_DRAW_FRAMES);
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -9157,7 +8963,7 @@ impl ZeldaState {
     // void ElderWife_Draw(int k) {  // 85f505
     pub(super) fn elder_wife_draw(&mut self, k: usize) {
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple_player_deferred(k, &ELDER_WIFE_DRAW_FRAMES[base..base + 2], None);
+        self.sprite_draw_multiple_player_deferred(k, &ELDER_WIFE_DRAW_FRAMES[base..base + 2]);
     }
 
     // -----------------------------------------------------------------------
@@ -9207,31 +9013,18 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void MiddleAgedMan_Draw(int k) {  // 86bdac
     pub(super) fn middle_aged_man_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_draw_multiple_player_deferred(k, &MIDDLE_AGED_MAN_DRAW_FRAMES, Some(&mut info));
+        let mut info = self.sprite_draw_multiple_player_deferred(k, &MIDDLE_AGED_MAN_DRAW_FRAMES);
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
     // void BlindHideoutGuy_Draw(int k) {  // 8dc481
     pub(super) fn blind_hideout_guy_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2
             + usize::from(self.sprite_slot_view(k).direction()) * 4;
-        self.sprite_draw_multiple_player_deferred(
+        let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &BLIND_HIDEOUT_GUY_DRAW_FRAMES[base..base + 2],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
@@ -9327,17 +9120,10 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void SweepingLady_Draw(int k) {  // 8dc4eb
     pub(super) fn sweeping_lady_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple_player_deferred(
+        let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &SWEEPING_LADY_DRAW_FRAMES[base..base + 2],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
@@ -9575,7 +9361,7 @@ impl ZeldaState {
         let j = usize::from((self.game_state.inventory.save_progress.dark_world_state() >> 6) & 1)
             * 2
             + usize::from(self.sprite_slot_view(k).graphics());
-        self.sprite_draw_multiple(k, &FORTUNE_TELLER_DRAW_FRAMES[j * 3..j * 3 + 3], None);
+        self.sprite_draw_multiple(k, &FORTUNE_TELLER_DRAW_FRAMES[j * 3..j * 3 + 3]);
     }
 
     // -----------------------------------------------------------------------
@@ -9742,18 +9528,11 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void MazeGameGuy_Draw(int k) {  // 8dcda7
     pub(super) fn maze_game_guy_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2
             + usize::from(self.sprite_slot_view(k).direction()) * 4;
-        self.sprite_draw_multiple_player_deferred(
+        let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &MAZE_GAME_GUY_DRAW_FRAMES[base..base + 2],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
@@ -9761,17 +9540,10 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void DrinkingGuy_Draw(int k) {  // 9af88c
     pub(super) fn drinking_guy_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 3;
-        self.sprite_draw_multiple_player_deferred(
+        let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &DRINKING_GUY_DRAW_FRAMES[base..base + 3],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
@@ -9893,7 +9665,6 @@ impl ZeldaState {
         self.sprite_draw_multiple_player_deferred(
             k,
             &TALKING_TREE_DRAW_FRAMES[base..base + 4],
-            None,
         );
     }
 
@@ -9942,17 +9713,10 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void DiggingGameGuy_Draw(int k) {  // 9dfe4b
     pub(super) fn digging_game_guy_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 3;
-        self.sprite_draw_multiple_player_deferred(
+        let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &DIGGING_GAME_GUY_DRAW_FRAMES[base..base + 3],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
@@ -9971,18 +9735,11 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void BombShopEntity_Draw(int k) {  // 9ee2c6
     pub(super) fn bomb_shop_entity_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).subtype2()) * 2
             + usize::from(self.sprite_slot_view(k).graphics());
-        self.sprite_draw_multiple_player_deferred(
+        let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &BOMB_SHOP_ENTITY_DRAW_FRAMES[base..base + 1],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
@@ -10804,18 +10561,11 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void StoryTeller_1_Draw(int k) {  // 86af1a
     pub(super) fn story_teller_1_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).subtype2()) * 2
             + usize::from(self.sprite_slot_view(k).graphics());
-        self.sprite_draw_multiple_player_deferred(
+        let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &STORY_TELLER_1_DRAW_FRAMES[base..base + 1],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
@@ -10823,13 +10573,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void SmithyFrog_Draw(int k) {  // 86b339
     pub(super) fn smithy_frog_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_draw_multiple_player_deferred(k, &SMITHY_FROG_DRAW_FRAMES, Some(&mut info));
+        let mut info = self.sprite_draw_multiple_player_deferred(k, &SMITHY_FROG_DRAW_FRAMES);
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -10838,7 +10582,7 @@ impl ZeldaState {
     pub(super) fn smithy_spark_draw(&mut self, k: usize) {
         self.oam_allocate_from_region_b(8);
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple(k, &SMITHY_SPARK_DRAW_FRAMES[base..base + 2], None);
+        self.sprite_draw_multiple(k, &SMITHY_SPARK_DRAW_FRAMES[base..base + 2]);
     }
 
     // -----------------------------------------------------------------------
@@ -10900,18 +10644,11 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void QuarrelBros_Draw(int k) {  // 85e17f
     pub(super) fn quarrel_bros_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2
             + usize::from(self.sprite_slot_view(k).direction()) * 4;
-        self.sprite_draw_multiple_player_deferred(
+        let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &QUARREL_BROS_DRAW_FRAMES[base..base + 2],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
@@ -10920,7 +10657,7 @@ impl ZeldaState {
     // void Lumberjacks_Draw(int k) {  // 8dc6ba
     pub(super) fn lumberjacks_draw(&mut self, k: usize) {
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 11;
-        self.sprite_draw_multiple(k, &LUMBERJACKS_DRAW_FRAMES[base..base + 11], None);
+        self.sprite_draw_multiple(k, &LUMBERJACKS_DRAW_FRAMES[base..base + 11]);
     }
 
     // -----------------------------------------------------------------------
@@ -10959,26 +10696,19 @@ impl ZeldaState {
                 self.sprite_draw_multiple_from_encoded_records(
                     k,
                     &GREAT_CATFISH_SPLASH_CARRY_DRAW,
-                    None,
                 );
                 return;
             }
             let base = usize::from(g - 1) * 4;
-            self.sprite_draw_multiple(k, &GREAT_CATFISH_DRAW_FRAMES[base..base + 4], None);
+            self.sprite_draw_multiple(k, &GREAT_CATFISH_DRAW_FRAMES[base..base + 4]);
         }
     }
 
     // -----------------------------------------------------------------------
     // void BigFaerie_Draw(int k) {  // 9dc5d0
     pub(super) fn big_faerie_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
-        self.sprite_draw_multiple(k, &BIG_FAERIE_DRAW_FRAMES[base..base + 4], Some(&mut info));
+        let mut info = self.sprite_draw_multiple(k, &BIG_FAERIE_DRAW_FRAMES[base..base + 4]);
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -11502,7 +11232,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void SpikeTrap_Draw(int k) {  // 9ecfff
     pub(super) fn spike_trap_draw(&mut self, k: usize) {
-        self.sprite_draw_multiple(k, &SPIKE_TRAP_DRAW_FRAMES, None);
+        self.sprite_draw_multiple(k, &SPIKE_TRAP_DRAW_FRAMES);
     }
 
     // -----------------------------------------------------------------------
@@ -11851,7 +11581,7 @@ impl ZeldaState {
         if pt.x.wrapping_add(0x20) < 0x40 && pt.y.wrapping_add(0x20) < 0x40 {
             self.oam_allocate_from_region_b(16);
         }
-        self.sprite_draw_multiple(k, &DESERT_BARRIER_DRAW_FRAMES, None);
+        self.sprite_draw_multiple(k, &DESERT_BARRIER_DRAW_FRAMES);
     }
 
     // -----------------------------------------------------------------------
@@ -11860,7 +11590,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).c() == 0 {
             self.oam_allocate_from_region_b(0x10);
         }
-        self.sprite_draw_multiple(k, &SAGE_MANTLE_DRAW_FRAMES, None);
+        self.sprite_draw_multiple(k, &SAGE_MANTLE_DRAW_FRAMES);
     }
 
     // -----------------------------------------------------------------------
@@ -12214,17 +11944,10 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void TroughBoy_Draw(int k) {  // 85ffdf
     pub(super) fn trough_boy_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).direction()) * 2;
-        self.sprite_draw_multiple_player_deferred(
+        let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &TROUGH_BOY_DRAW_FRAMES[base..base + 2],
-            Some(&mut info),
         );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
@@ -12240,7 +11963,6 @@ impl ZeldaState {
             k,
             &RETREAT_BAT_DRAW_FRAMES[RETREAT_BAT_DRAW_OFFSETS[j]
                 ..RETREAT_BAT_DRAW_OFFSETS[j] + RETREAT_BAT_DRAW_COUNT[j]],
-            None,
         );
     }
 
@@ -12248,7 +11970,7 @@ impl ZeldaState {
     // void GanonBat_Draw(int k) {  // 9d89eb
     pub(super) fn ganon_bat_draw(&mut self, k: usize) {
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple(k, &GANON_BAT_DRAW_FRAMES[base..base + 2], None);
+        self.sprite_draw_multiple(k, &GANON_BAT_DRAW_FRAMES[base..base + 2]);
     }
 
     // -----------------------------------------------------------------------
@@ -12262,7 +11984,7 @@ impl ZeldaState {
             .wrapping_add(8);
         self.sprite_workspace_mut().set_current_sprite_y(y);
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 9;
-        self.sprite_draw_multiple(k, &EVIL_BARRIER_DRAW_FRAMES[base..base + 9], None);
+        self.sprite_draw_multiple(k, &EVIL_BARRIER_DRAW_FRAMES[base..base + 9]);
         self.sprite_get16_bit_coords(k);
     }
 
@@ -12277,16 +11999,9 @@ impl ZeldaState {
             self.oam_state_mut().set_current_extended_pointer(0xa60);
         }
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
-        let mut shadow_info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
-        self.sprite_draw_multiple(
+        let mut shadow_info = self.sprite_draw_multiple(
             k,
             &CHATTY_AGAHNIM_DRAW_FRAMES[base..base + 4],
-            Some(&mut shadow_info),
         );
         self.sprite_draw_shadow_custom(k, &mut shadow_info, 18);
         info.x = shadow_info.x;
@@ -12320,7 +12035,7 @@ impl ZeldaState {
             self.sprite_correct_oam_entries(k, 11, 0xff);
         } else {
             let base = usize::from(self.sprite_slot_view(k).graphics()) * 10;
-            self.sprite_draw_multiple(k, &FAERIE_QUEEN_DRAW_FRAMES[base..base + 10], None);
+            self.sprite_draw_multiple(k, &FAERIE_QUEEN_DRAW_FRAMES[base..base + 10]);
         }
     }
 
@@ -12334,7 +12049,6 @@ impl ZeldaState {
         self.sprite_draw_multiple_player_deferred(
             k,
             &CRYSTAL_MAIDEN_DRAW_FRAMES[j * 2..j * 2 + 2],
-            None,
         );
     }
 
@@ -16664,14 +16378,8 @@ impl ZeldaState {
     }
 
     pub(super) fn eyegore_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
-        self.sprite_draw_multiple(k, &EYEGORE_DRAW_FRAMES[base..base + 4], Some(&mut info));
+        let mut info = self.sprite_draw_multiple(k, &EYEGORE_DRAW_FRAMES[base..base + 4]);
         if self.sprite_slot_view(k).pause() == 0 {
             self.sprite_draw_shadow_custom(k, &mut info, 14);
         }
@@ -16709,7 +16417,6 @@ impl ZeldaState {
             return;
         };
         let info = PrepOamCoordsRet { x, y, r4: 0, flags };
-        let mut shadow_info = PrepOamCoordsRet { x, y, r4: 0, flags };
         self.sprite_draw_pikit_tongue(k, &info);
         let oam = self.game_state.oam.current_pointer_usize();
         let oam_byte = self.game_state.oam.entry_x(oam);
@@ -16723,11 +16430,7 @@ impl ZeldaState {
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(6));
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple(
-            k,
-            &PIKIT_DRAW_FRAMES[base..base + 2],
-            Some(&mut shadow_info),
-        );
+        let mut shadow_info = self.sprite_draw_multiple(k, &PIKIT_DRAW_FRAMES[base..base + 2]);
         let bak = self.sprite_slot_view(k).flags2();
         self.sprite_slot_view_mut(k).subtract_flags2(6);
         self.sprite_draw_shadow_custom(k, &mut shadow_info, 10);
@@ -16770,17 +16473,10 @@ impl ZeldaState {
     }
 
     pub(super) fn moblin_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let gfx = usize::from(self.sprite_slot_view(k).graphics());
-        self.sprite_draw_multiple(
+        let mut info = self.sprite_draw_multiple(
             k,
             &MOBLIN_DRAW_FRAMES[gfx * 4..gfx * 4 + 4],
-            Some(&mut info),
         );
         if self.sprite_slot_view(k).pause() != 0 {
             return;
@@ -16832,14 +16528,8 @@ impl ZeldaState {
     }
 
     pub(super) fn tektite_draw(&mut self, k: usize) {
-        let mut info = PrepOamCoordsRet {
-            x: 0,
-            y: 0,
-            r4: 0,
-            flags: 0,
-        };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple(k, &TEKTITE_DRAW_FRAMES[base..base + 2], Some(&mut info));
+        let mut info = self.sprite_draw_multiple(k, &TEKTITE_DRAW_FRAMES[base..base + 2]);
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
