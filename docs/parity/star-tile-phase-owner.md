@@ -36,3 +36,11 @@ zero HIGH RISK overlaps, 9 bridge-published overlaps (10 before) and 61
 overlapping bytes (62 before). The library compiles with no warnings in
 the parity, dev, and lib-test builds; readability and projection discovery
 pass. All 1,721 library tests pass under the dev profile.
+
+The main tree validated this batch stacked with the batches before and after
+it, on parity binary
+`310051682ebdaac62dee0198567287fae7005d8d8b8db68f296983bcd9d71a56`: the
+200,000-frame cached comparison matched every video and audio hash in
+319.56 seconds, the frame 60000 and 150470 WRAM goldens match, the
+200,000-frame WRAM endpoint is the recorded `dd45975c…` image, and all
+1,721 library tests pass under the parity profile.
