@@ -48,7 +48,6 @@ pub(crate) struct AttractSceneState {
     pub(crate) substep_delay_counter: u8,
     pub(crate) maiden_warp_timer_a: u8,
     pub(crate) maiden_warp_timer_b: u8,
-    pub(crate) mode7_zoom_timer: u8,
 }
 
 impl AttractSceneState {
@@ -84,7 +83,6 @@ impl AttractSceneState {
             substep_delay_counter: read_byte(ram, ATTRACT_SUBSTEP_DELAY_COUNTER),
             maiden_warp_timer_a: read_byte(ram, ATTRACT_MAIDEN_WARP_TIMER_A),
             maiden_warp_timer_b: read_byte(ram, ATTRACT_MAIDEN_WARP_TIMER_B),
-            mode7_zoom_timer: read_byte(ram, TIMER_FOR_MODE7_ZOOM),
         }
     }
 
@@ -123,7 +121,6 @@ impl AttractSceneState {
         ram.write_byte(ATTRACT_SUBSTEP_DELAY_COUNTER, self.substep_delay_counter);
         ram.write_byte(ATTRACT_MAIDEN_WARP_TIMER_A, self.maiden_warp_timer_a);
         ram.write_byte(ATTRACT_MAIDEN_WARP_TIMER_B, self.maiden_warp_timer_b);
-        ram.write_byte(TIMER_FOR_MODE7_ZOOM, self.mode7_zoom_timer);
     }
 
     pub(crate) fn state(&self) -> u8 {
@@ -251,9 +248,6 @@ impl AttractSceneState {
         self.maiden_warp_timer_b
     }
 
-    pub(crate) fn mode7_zoom_timer(&self) -> u8 {
-        self.mode7_zoom_timer
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -609,7 +603,6 @@ impl<'a> NativeAttractSceneBridgeMut<'a> {
             ATTRACT_SUBSTEP_DELAY_COUNTER => self.attract_scene.substep_delay_counter = value,
             ATTRACT_MAIDEN_WARP_TIMER_A => self.attract_scene.maiden_warp_timer_a = value,
             ATTRACT_MAIDEN_WARP_TIMER_B => self.attract_scene.maiden_warp_timer_b = value,
-            TIMER_FOR_MODE7_ZOOM => self.attract_scene.mode7_zoom_timer = value,
             _ => {}
         }
     }
@@ -986,16 +979,6 @@ impl<'a> NativeAttractSceneBridgeMut<'a> {
         )
     }
 
-    pub(crate) fn set_mode7_zoom_timer(&mut self, value: u8) {
-        self.write_byte(TIMER_FOR_MODE7_ZOOM, value);
-    }
-
-    pub(crate) fn decrement_mode7_zoom_timer(&mut self) {
-        self.write_byte(
-            TIMER_FOR_MODE7_ZOOM,
-            self.attract_scene.mode7_zoom_timer.wrapping_sub(1),
-        );
-    }
 }
 
 adopting_bridge!(NativeIntroSceneBridgeMut, intro_scene: IntroSceneState);

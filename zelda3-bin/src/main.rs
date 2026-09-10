@@ -109,8 +109,10 @@ use zelda3::{config::parse_config_file_context, ZeldaState, RUN_MAIN, RUN_POLY};
 /// scroll state no longer mirrors the room-bound words. 13 (2026-09-09): the
 /// world transient dropped its two dead HUD timer fields. 18 (2026-09-10):
 /// the sprite workspace holds two zero-page words, not sixteen bytes. 19
-/// (2026-09-10): the display state no longer mirrors the star-tile phase.
-const PLAY_CRASH_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSPC19";
+/// (2026-09-10): the display state no longer mirrors the star-tile phase. 20
+/// (2026-09-10): the attract scene no longer mirrors the mode-7 zoom timer and
+/// the dungeon room items no longer mirror the map-state word.
+const PLAY_CRASH_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSPC20";
 const ACTION_TILE_X: [i16; 4] = [7, 7, -3, 16];
 const ACTION_TILE_Y: [i16; 4] = [6, 24, 12, 12];
 pub(crate) const TRACE_MAIN_MODULE_INDEX: usize = 0x10;

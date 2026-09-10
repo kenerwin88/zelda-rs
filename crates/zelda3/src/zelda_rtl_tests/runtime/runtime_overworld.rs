@@ -936,7 +936,7 @@ fn world_map_fade_completion_runs_the_first_mode7_tick_immediately() {
     state.set_rom_startup_timing(true);
     state.attract_scene_mut().set_sequence(1);
     state.attract_scene_mut().set_state(4);
-    state.attract_scene_mut().set_mode7_zoom_timer(0xff);
+    state.set_mode7_zoom_timer(0xff);
     state.attract_scene_mut().set_scene_timer(1);
     state.set_screen_brightness(15);
 
@@ -944,10 +944,7 @@ fn world_map_fade_completion_runs_the_first_mode7_tick_immediately() {
 
     assert_eq!(state.game_state.ending.attract_scene.state(), 5);
     assert_eq!(state.attract_first_story_render_delay, 0);
-    assert_eq!(
-        state.game_state.ending.attract_scene.mode7_zoom_timer(),
-        0xfe
-    );
+    assert_eq!(state.mode7_zoom_timer(), 0xfe);
     assert_eq!(state.spotlight_hdma_table_dynamic_entry(0), 0x0174);
 }
 

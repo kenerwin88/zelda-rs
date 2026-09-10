@@ -130,7 +130,7 @@ impl ZeldaState {
         self.set_mode7_center_x(0x0100);
         self.set_bg1_h_copy(0x0080);
         self.set_bg1_v_copy(0x00c0);
-        self.attract_scene_mut().set_mode7_zoom_timer(0xff);
+        self.set_mode7_zoom_timer(0xff);
         self.attract_control_map_zoom();
         self.attract_scene_mut().set_scene_timer(1);
         self.attract_scene_mut().increment_state();
@@ -353,7 +353,7 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_control_map_zoom(&mut self) {
-        let zoom = self.game_state.ending.attract_scene.mode7_zoom_timer() as u16;
+        let zoom = u16::from(self.mode7_zoom_timer());
         if self.rom_startup_timing() {
             self.attract_map_hdma_projection_before = Some(self.hdma_dynamic_table_bytes());
         }
@@ -419,14 +419,14 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_dramatize_world_map(&mut self) {
-        if self.game_state.ending.attract_scene.mode7_zoom_timer() != 0 {
-            if self.game_state.ending.attract_scene.mode7_zoom_timer() < 15 {
+        if self.mode7_zoom_timer() != 0 {
+            if self.mode7_zoom_timer() < 15 {
                 self.decrement_screen_brightness();
             }
             self.attract_scene_mut().decrement_scene_timer();
             if self.game_state.ending.attract_scene.scene_timer() == 0 {
                 self.attract_scene_mut().set_scene_timer(1);
-                self.attract_scene_mut().decrement_mode7_zoom_timer();
+                self.overworld_map_zoom_mut().decrement_timer();
                 self.attract_control_map_zoom();
             }
         } else {

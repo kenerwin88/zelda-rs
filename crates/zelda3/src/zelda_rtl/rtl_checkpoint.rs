@@ -535,7 +535,7 @@ impl ZeldaState {
                 self.frame_ctr_dbg,
                 self.game_state.ending.attract_scene.state(),
                 self.game_state.ending.attract_scene.sequence(),
-                self.game_state.ending.attract_scene.mode7_zoom_timer(),
+                self.mode7_zoom_timer(),
                 self.game_state.ending.attract_scene.scene_timer(),
                 self.game_state.display.screen_brightness,
                 self.ppu.cgram[0],

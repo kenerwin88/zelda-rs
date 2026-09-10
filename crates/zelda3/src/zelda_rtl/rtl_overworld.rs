@@ -85,17 +85,14 @@ impl ZeldaState {
 
     pub(crate) fn set_overworld_map_state(&mut self, value: u8) {
         self.overworld_map_ui_mut().set_map_state(value);
-        self.sync_dungeon_chest_cursor_with_map_state();
     }
 
     pub(crate) fn set_overworld_map_state_word(&mut self, value: u16) {
         self.overworld_map_ui_mut().set_map_state_word(value);
-        self.sync_dungeon_chest_cursor_with_map_state();
     }
 
     pub(crate) fn increment_overworld_map_state(&mut self) {
         self.overworld_map_ui_mut().increment_map_state();
-        self.sync_dungeon_chest_cursor_with_map_state();
     }
 
     pub(crate) fn overworld_map_flags(&self) -> u8 {

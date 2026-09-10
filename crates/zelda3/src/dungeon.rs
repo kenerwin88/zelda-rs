@@ -7228,11 +7228,11 @@ impl ZeldaState {
     pub(super) fn RoomTag_OperateChestReveal(&mut self, k: usize) {
         self.dungeon_header_mut().clear_header_tag(k);
         self.clear_vram_upload_cursor();
-        self.dungeon_room_items_mut().clear_chest_reveal_cursor();
+        self.set_chest_reveal_cursor_x2(0);
 
         let mut attr = NativeTile::import_pair(0x5858);
         loop {
-            let yy = self.game_state.dungeon.room_items.chest_reveal_cursor_x2();
+            let yy = self.chest_reveal_cursor_x2();
             let pos = (self
                 .game_state
                 .dungeon
@@ -7270,8 +7270,7 @@ impl ZeldaState {
             self.advance_vram_upload_cursor_by(24);
 
             let next = yy.wrapping_add(2);
-            self.dungeon_room_items_mut()
-                .set_chest_reveal_cursor_x2(next);
+            self.set_chest_reveal_cursor_x2(next);
             if self
                 .game_state
                 .dungeon
@@ -7282,7 +7281,7 @@ impl ZeldaState {
             }
         }
 
-        self.dungeon_room_items_mut().clear_chest_reveal_cursor();
+        self.set_chest_reveal_cursor_x2(0);
         self.set_sound_effect_2(26);
         self.set_bg_vram_load_mode(1);
     }

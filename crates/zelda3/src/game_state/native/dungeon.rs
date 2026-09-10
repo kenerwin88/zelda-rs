@@ -33,7 +33,7 @@ use crate::game_state::constants::{
     INVISIBLE_DOOR_DIR_AND_INDEX_X2, MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS,
     MOVING_FLOOR_BG_CHECK_FLAGS, MOVING_WALL_DOT_POINTER, MOVING_WALL_REPLACEMENT_BUFFER,
     MOVING_WALL_WRITE_POINT, ORANGE_BLUE_BARRIER_STATE, STAR_TILE_PHASE,
-    OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_FIXED_COLOR_PLUSMINUS, OVERWORLD_MAP_STATE,
+    OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_FIXED_COLOR_PLUSMINUS,
     OVERWORLD_TILE_THEME_INDEX, REPLACEMENT_TILEMAP_LL, REPLACEMENT_TILEMAP_LR,
     REPLACEMENT_TILEMAP_UL, REPLACEMENT_TILEMAP_UR, RESERVED_GFX_CONFIG_WORD, RESET_XY_CHECK_FLAGS,
     SOMARIA_BLOCK_BG_CHECK_FLAG, SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, TURN_ON_OFF_WATER_CTR,
@@ -2522,7 +2522,6 @@ impl DungeonRoomEffectsState {
 pub(crate) struct DungeonRoomItemState {
     num_chests_x2: u16,
     num_big_key_locks_x2: u16,
-    chest_reveal_cursor_x2: u16,
     replacement_tile_destination_x2: u16,
     replacement_tile_source_x2: u16,
     chest_locations: [u16; DUNGEON_CHEST_LOCATION_COUNT],
@@ -2547,7 +2546,6 @@ impl DungeonRoomItemState {
         Self {
             num_chests_x2: read_le_u16(ram, DUNG_NUM_CHESTS_X2),
             num_big_key_locks_x2: read_le_u16(ram, DUNG_NUM_BIGKEY_LOCKS_X2),
-            chest_reveal_cursor_x2: read_le_u16(ram, OVERWORLD_MAP_STATE),
             replacement_tile_destination_x2: read_le_u16(ram, DUNG_REPLACEMENT_TILE_DST_POS_X2),
             replacement_tile_source_x2: read_le_u16(ram, DUNG_REPLACEMENT_TILE_SRC_POS_X2),
             chest_locations,
@@ -2558,7 +2556,6 @@ impl DungeonRoomItemState {
     pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         ram.write_word(DUNG_NUM_CHESTS_X2, self.num_chests_x2);
         ram.write_word(DUNG_NUM_BIGKEY_LOCKS_X2, self.num_big_key_locks_x2);
-        ram.write_word(OVERWORLD_MAP_STATE, self.chest_reveal_cursor_x2);
         ram.write_word(
             DUNG_REPLACEMENT_TILE_DST_POS_X2,
             self.replacement_tile_destination_x2,
@@ -2584,10 +2581,6 @@ impl DungeonRoomItemState {
 
     pub(crate) fn num_big_key_locks_x2(&self) -> u16 {
         self.num_big_key_locks_x2
-    }
-
-    pub(crate) fn chest_reveal_cursor_x2(&self) -> u16 {
-        self.chest_reveal_cursor_x2
     }
 
     pub(crate) fn chest_reveal_cursor_reached_end(&self, cursor_x2: u16) -> bool {
@@ -2657,14 +2650,6 @@ impl DungeonRoomItemState {
 
     fn set_chest_location_for_offset_x2(&mut self, offset_x2: usize, value: u16) {
         self.set_chest_location(offset_x2 >> 1, value);
-    }
-
-    fn set_chest_reveal_cursor_x2(&mut self, value: u16) {
-        self.chest_reveal_cursor_x2 = value;
-    }
-
-    fn clear_chest_reveal_cursor(&mut self) {
-        self.set_chest_reveal_cursor_x2(0);
     }
 
     fn set_replacement_tile_destination_x2(&mut self, value: u16) {
@@ -4162,8 +4147,6 @@ impl<'a> NativeDungeonRoomItemBridgeMut<'a> {
 
     forward_synced! {
         state;
-        fn set_chest_reveal_cursor_x2(value: u16);
-        fn clear_chest_reveal_cursor();
         fn set_replacement_tile_destination_x2(value: u16);
         fn set_replacement_tile_source_x2(value: u16);
         fn clear_replacement_tile_destination();

@@ -82,6 +82,12 @@ write-through where the SNES reuse is real.
   star graphics to copy back. The port had split it into an "overworld
   restore phase" and a "torch blink phase", each gated on the indoors
   flag. (star-tile-phase-owner)
+- **The chest reveal uses the overworld map-state word as its cursor.**
+  The room tag that uncovers hidden chests walks `overworld_map_state`,
+  a HUD counter that is idle inside a dungeon room, two bytes at a time
+  until it reaches the room's chest count; and the attract sequence zooms
+  the world map with the map screen's own zoom timer.
+  (duplicate-timer-and-map-state-models)
 
 ## Passing data through the scratch registers
 
