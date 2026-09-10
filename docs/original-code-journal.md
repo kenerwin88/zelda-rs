@@ -210,11 +210,12 @@ observable to anything that reads mid-routine, including the NMI handler.
   class 5 in CLAUDE.md)
 - **The Zelda bug the decompilation fixed.** After a boss dies, the room
   tag `RoomTag_GetHeartForPrize` drops the heart container as an ancilla and
-  then disarms itself. In the original it disarms itself even when the
-  ancilla table (ten slots) was full and the spawn failed, so a boss killed
-  while bombs, beams, and sparkles filled every slot never yielded its heart
-  container. The decompilation keeps the tag armed on a failed spawn so it
-  retries next frame, and the port inherits that fix; the parity route
+  then disarms itself. The prize allocator uses only ancilla slots 0..4 and
+  may evict only sparkles and arrows stuck in walls, so five live bombs,
+  flying arrows, or magic effects at the killing blow make the spawn fail.
+  In the original the tag disarms itself anyway, and the heart container
+  never appears. The decompilation keeps the tag armed on a failed spawn so
+  it retries next frame, and the port inherits that fix; the parity route
   never reaches the failure branch.
 - **The iris spotlight's tick-versus-radius offset** is decided by the
   exact cycle cost of building the per-radius table racing vblank. It is
