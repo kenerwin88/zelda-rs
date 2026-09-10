@@ -301,14 +301,6 @@ impl PlayerMovementState {
         self.lower_level_mirror_state
     }
 
-    pub(crate) fn cached_lower_level_state(&self) -> u8 {
-        self.cached_lower_level_state
-    }
-
-    pub(crate) fn cached_lower_level_mirror_state(&self) -> u8 {
-        self.cached_lower_level_mirror_state
-    }
-
     pub(crate) fn floor_layer_bits(&self) -> u8 {
         FOLLOWER_LAYER_BITS_BY_FLOOR[self.floor as usize] >> 2
     }
@@ -423,10 +415,6 @@ impl PlayerMovementState {
 
     pub(crate) fn dash_countdown(&self) -> u8 {
         self.dash_countdown
-    }
-
-    pub(crate) fn jump_ledge_timer(&self) -> u8 {
-        self.jump_ledge_timer
     }
 
     pub(crate) fn about_to_jump_off_ledge(&self) -> u8 {

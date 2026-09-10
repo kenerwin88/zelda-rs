@@ -430,8 +430,6 @@ impl FollowerLinkState {
         pub(crate) fn has_lower_level_state_or_mirror(&self) -> bool;
         pub(crate) fn lower_level_state(&self) -> u8;
         pub(crate) fn lower_level_mirror_state(&self) -> u8;
-        pub(crate) fn cached_lower_level_state(&self) -> u8;
-        pub(crate) fn cached_lower_level_mirror_state(&self) -> u8;
         pub(crate) fn floor_layer_bits(&self) -> u8;
         pub(crate) fn oam_priority_for_floor(&self) -> u8;
         pub(crate) fn direction(&self) -> u8;
@@ -459,7 +457,6 @@ impl FollowerLinkState {
         pub(crate) fn speed_modifier(&self) -> u8;
         pub(crate) fn dash_counter(&self) -> u8;
         pub(crate) fn dash_countdown(&self) -> u8;
-        pub(crate) fn jump_ledge_timer(&self) -> u8;
         pub(crate) fn about_to_jump_off_ledge(&self) -> u8;
         pub(crate) fn push_fatigue_timer(&self) -> u8;
         pub(crate) fn gravestone_push_timeout(&self) -> u8;
