@@ -54,3 +54,14 @@ preceding commit it reads the transient's stale zero and takes the animation
 branch instead. Readability and projection discovery pass; the scanner
 reports zero HIGH RISK overlaps, 13 bridge-sync overlaps, and 61 overlapping
 bytes, unchanged.
+
+All 1,774 library tests pass under both the parity and dev profiles, with two
+existing ignored tests and no compiler warnings.
+
+Candidate binary SHA-256:
+`6eeaeb415c70c4d1e1c9a722dedcc626f7dffbb9ba2955d8d82e737a7b439cea`.
+
+The 200,000-frame cached Snes9x audio/video comparison passed from frame zero
+in 312.33 seconds. Both reached WRAM goldens match, and the complete endpoint
+is byte-identical to the preceding promoted build, SHA-256
+`dd45975cee5acdd270d1b0c74c5d38f1ba3ce3bd7e0af648264b8f77e95f244d`.
