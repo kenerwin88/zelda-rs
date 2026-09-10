@@ -38,3 +38,11 @@ mutated coordinate, with the same tiles and columns. The ownership scanner
 is unchanged. The library compiles with no warnings in the parity, dev, and
 lib-test builds; readability and projection discovery pass. All 1,721
 library tests pass under the dev profile.
+
+The main tree validated this batch stacked on the four batches before it,
+on parity binary
+`d01b46a20d3007e098902cc9bd90119a59904a09347731732d516aa5dfbb7acc`: the
+200,000-frame cached comparison matched every video and audio hash in
+320.06 seconds, the frame 60000 and 150470 WRAM goldens match, the
+200,000-frame WRAM endpoint is the recorded `dd45975c…` image, and all
+1,721 library tests pass under the parity profile.
