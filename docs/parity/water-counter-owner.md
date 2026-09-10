@@ -35,3 +35,11 @@ exclusion now checks only the trapdoor word it publishes. The ownership
 scanner is unchanged. The library compiles with no warnings in the parity,
 dev, and lib-test builds; readability and projection discovery pass. All
 1,721 library tests pass under the dev profile.
+
+The main tree validated this batch stacked with the three batches that follow
+it, on parity binary
+`780f0036f42b0911911012627006783dabf7c730e8637f4dc27e32ba4d5aa813`: the
+200,000-frame cached comparison matched every video and audio hash in
+319.96 seconds, the frame 60000 and 150470 WRAM goldens match, the
+200,000-frame WRAM endpoint is the recorded `dd45975c…` image, and all
+1,721 library tests pass under the parity profile.
