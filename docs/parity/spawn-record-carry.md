@@ -40,3 +40,15 @@ builds; readability and projection discovery pass; the scanner output is
 unchanged (zero HIGH RISK overlaps, 12 bridge-sync overlaps, 60 overlapping
 bytes). All 1,775 library tests pass under the dev profile, including the
 new proof, which fails on the preceding commit with a child z of zero.
+
+All 1,775 library tests pass under both the parity and dev profiles, with two
+existing ignored tests and no compiler warnings.
+
+Candidate binary SHA-256:
+`0417eaa673fe5e33cd4d9f36d7ca0575da8409e34278cce3bd1471e3ddf6dde8`.
+
+The 200,000-frame cached Snes9x audio/video comparison passed from frame zero
+in 309.75 seconds. Both reached WRAM goldens match, and the complete endpoint
+is byte-identical to the preceding promoted build, SHA-256
+`dd45975cee5acdd270d1b0c74c5d38f1ba3ce3bd7e0af648264b8f77e95f244d`,
+which confirms that no covered spawn had an airborne parent.
