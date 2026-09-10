@@ -1464,36 +1464,24 @@ impl<'a> NativeMessagingRenderBufferBridgeMut<'a> {
         fn set_word(index: usize, value: u16);
     }
 
-    pub(crate) fn set_word_at_byte_offset(&mut self, byte_offset: usize, value: u16) {
-        self.render_buffer
-            .set_word_at_byte_offset(byte_offset, value);
-        self.sync();
-    }
-
     forward_synced! { render_buffer; fn clear_range(byte_count: usize); }
-
-    pub(crate) fn fill_word_range(&mut self, start_index: usize, count: usize, value: u16) {
-        self.render_buffer
-            .fill_word_range(start_index, count, value);
-        self.sync();
-    }
 
     pub(crate) fn copy_rows_from_ram(&mut self, dst: usize, src0: usize, src1: usize, len: usize) {
         self.render_buffer
             .copy_rows_from_ram(self.ram, dst, src0, src1, len);
         self.sync();
     }
+
+    forward_synced! {
+        render_buffer;
+        fn set_word_at_byte_offset(byte_offset: usize, value: u16);
+        fn fill_word_range(start_index: usize, count: usize, value: u16);
+    }
 }
 
 adopting_bridge!(NativeVwfRenderBridgeMut, vwf_render: VwfRenderState);
 
 impl<'a> NativeVwfRenderBridgeMut<'a> {
-    pub(crate) fn set_next_glyph_advance_prefix_sum(&mut self, index: usize, value: u8) {
-        self.vwf_render
-            .set_next_glyph_advance_prefix_sum(index, value);
-        self.sync();
-    }
-
     forward_synced! {
         vwf_render;
         fn set_glyph_cursor(value: u16);
@@ -1505,10 +1493,10 @@ impl<'a> NativeVwfRenderBridgeMut<'a> {
         fn set_line_render_offset(value: u16);
     }
 
-    pub(crate) fn set_tile_word_at_byte_offset(&mut self, byte_offset: usize, value: u16) {
-        self.vwf_render
-            .set_tile_word_at_byte_offset(byte_offset, value);
-        self.sync();
+    forward_synced! {
+        vwf_render;
+        fn set_next_glyph_advance_prefix_sum(index: usize, value: u8);
+        fn set_tile_word_at_byte_offset(byte_offset: usize, value: u16);
     }
 }
 

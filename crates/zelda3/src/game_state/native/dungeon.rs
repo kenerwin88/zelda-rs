@@ -3762,11 +3762,6 @@ impl<'a> NativeDungeonObjectTrackingBridgeMut<'a> {
 adopting_bridge!(NativeDungeonDoorBridgeMut, state: DungeonDoorState);
 
 impl<'a> NativeDungeonDoorBridgeMut<'a> {
-    pub(crate) fn set_opened_doors(&mut self, value: u16) {
-        self.state.set_opened_doors(value);
-        self.sync();
-    }
-
     pub(crate) fn or_opened_doors(&mut self, mask: u16) -> u16 {
         let opened = self.state.or_opened_doors(mask);
         self.sync();
@@ -3777,62 +3772,6 @@ impl<'a> NativeDungeonDoorBridgeMut<'a> {
         let opened = self.state.mark_door_opened(door);
         self.sync();
         opened
-    }
-
-    pub(crate) fn set_opened_doors_including_adjacent(&mut self, value: u16) {
-        self.state.set_opened_doors_including_adjacent(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_door_tilemap_addresses(&mut self) {
-        self.state.clear_door_tilemap_addresses();
-        self.sync();
-    }
-
-    pub(crate) fn set_door_tilemap_address(&mut self, door: usize, value: u16) {
-        self.state.set_door_tilemap_address(door, value);
-        self.sync();
-    }
-
-    pub(crate) fn load_room_door_tilemap_addresses_from_info(&mut self, door_info: &[u8]) {
-        self.state
-            .load_room_door_tilemap_addresses_from_info(door_info);
-        self.sync();
-    }
-
-    pub(crate) fn clear_door_tables(&mut self) {
-        self.state.clear_door_tables();
-        self.sync();
-    }
-
-    pub(crate) fn set_door_type_word(&mut self, door: usize, value: u16) {
-        self.state.set_door_type_word(door, value);
-        self.sync();
-    }
-
-    pub(crate) fn set_door_direction_word(&mut self, door: usize, value: u16) {
-        self.state.set_door_direction_word(door, value);
-        self.sync();
-    }
-
-    pub(crate) fn set_current_door_index(&mut self, value: u16) {
-        self.state.set_current_door_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_current_door_index_for_slot(&mut self, door: usize) {
-        self.state.set_current_door_index_for_slot(door);
-        self.sync();
-    }
-
-    pub(crate) fn set_current_door_pos(&mut self, value: u16) {
-        self.state.set_current_door_pos(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_current_door_pos(&mut self) {
-        self.state.clear_current_door_pos();
-        self.sync();
     }
 
     /// Clears only the LOW byte of DUNG_CUR_DOOR_POS (0x68e), preserving the high byte (0x68f).
@@ -3850,40 +3789,27 @@ impl<'a> NativeDungeonDoorBridgeMut<'a> {
         fn set_door_animation_step_low(value: u8);
     }
 
-    pub(crate) fn set_door_open_counter(&mut self, value: u16) {
-        self.state.set_door_open_counter(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_door_open_counter_low(&mut self, value: u8) {
-        self.state.set_door_open_counter_low(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_door_open_counter_low(&mut self) {
-        self.state.clear_door_open_counter_low();
-        self.sync();
-    }
-
-    pub(crate) fn increment_door_open_counter_low(&mut self) -> u8 {
-        let value = self.state.increment_door_open_counter_low();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn mark_door_switch_triggered(&mut self) {
-        self.state.mark_door_switch_triggered();
-        self.sync();
-    }
-
-    pub(crate) fn clear_door_switch_triggered(&mut self) {
-        self.state.clear_door_switch_triggered();
-        self.sync();
-    }
-
-    pub(crate) fn clear_door_barrier_or_switch_flag(&mut self) {
-        self.state.clear_door_barrier_or_switch_flag();
-        self.sync();
+    forward_synced! {
+        state;
+        fn set_opened_doors(value: u16);
+        fn set_opened_doors_including_adjacent(value: u16);
+        fn clear_door_tilemap_addresses();
+        fn set_door_tilemap_address(door: usize, value: u16);
+        fn load_room_door_tilemap_addresses_from_info(door_info: &[u8]);
+        fn clear_door_tables();
+        fn set_door_type_word(door: usize, value: u16);
+        fn set_door_direction_word(door: usize, value: u16);
+        fn set_current_door_index(value: u16);
+        fn set_current_door_index_for_slot(door: usize);
+        fn set_current_door_pos(value: u16);
+        fn clear_current_door_pos();
+        fn set_door_open_counter(value: u16);
+        fn set_door_open_counter_low(value: u8);
+        fn clear_door_open_counter_low();
+        fn increment_door_open_counter_low() -> u8;
+        fn mark_door_switch_triggered();
+        fn clear_door_switch_triggered();
+        fn clear_door_barrier_or_switch_flag();
     }
 }
 
@@ -4093,12 +4019,6 @@ impl<'a> NativeDungeonRoomItemBridgeMut<'a> {
         fn set_chest_location(index: usize, value: u16);
     }
 
-    pub(crate) fn set_chest_location_for_offset_x2(&mut self, offset_x2: usize, value: u16) {
-        self.state
-            .set_chest_location_for_offset_x2(offset_x2, value);
-        self.sync();
-    }
-
     forward_synced! {
         state;
         fn set_replacement_tile_destination_x2(value: u16);
@@ -4106,6 +4026,11 @@ impl<'a> NativeDungeonRoomItemBridgeMut<'a> {
         fn clear_replacement_tile_destination();
         fn clear_chest_location(index: usize);
         fn set_replacement_tilemap_quad(index: usize, quad: [u16; 4]);
+    }
+
+    forward_synced! {
+        state;
+        fn set_chest_location_for_offset_x2(offset_x2: usize, value: u16);
     }
 }
 
@@ -4297,113 +4222,35 @@ impl<'a> NativeDungeonTorchBridgeMut<'a> {
         *self.torch = DungeonTorchState::load_from_ram(self.ram);
     }
 
-    pub(crate) fn clear_timer(&mut self, index: usize) {
-        self.torch.clear_timer(index);
-        self.sync();
-    }
-
-    pub(crate) fn clear_timers(&mut self) {
-        self.torch.clear_timers();
-        self.sync();
-    }
-
-    pub(crate) fn clear_torch_indices(&mut self) {
-        self.torch.clear_torch_indices();
-        self.sync();
-    }
-
-    pub(crate) fn set_timer(&mut self, index: usize, value: u8) {
-        self.torch.set_timer(index, value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_lit_torches(&mut self) {
-        self.torch.clear_lit_torches();
-        self.sync();
-    }
-
-    pub(crate) fn increment_lit_torches(&mut self) -> u8 {
-        let value = self.torch.increment_lit_torches();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn decrement_lit_torches(&mut self) -> u8 {
-        let value = self.torch.decrement_lit_torches();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_lights_out_request(&mut self, value: u8) {
-        self.torch.set_lights_out_request(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_lights_out_request(&mut self) {
-        self.torch.clear_lights_out_request();
-        self.sync();
-    }
-
-    pub(crate) fn copy_lights_out_request(&mut self) {
-        self.torch.copy_lights_out_request();
-        self.sync();
-    }
-
-    pub(crate) fn clear_lights_out_requests(&mut self) {
-        self.torch.clear_lights_out_requests();
-        self.sync();
-    }
-
-    pub(crate) fn set_dungeon_dark_with_lantern(&mut self) {
-        self.torch.set_dungeon_dark_with_lantern();
-        self.sync();
-    }
-
-    pub(crate) fn set_dungeon_dark_with_lantern_raw(&mut self, value: u8) {
-        self.torch.set_dungeon_dark_with_lantern_raw(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_dungeon_dark_with_lantern(&mut self) {
-        self.torch.clear_dungeon_dark_with_lantern();
-        self.sync();
-    }
-
-    pub(crate) fn set_torch_index_range_start(&mut self, value: u16) {
-        self.torch.set_torch_index_range_start(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_torch_index(&mut self, value: u16) {
-        self.torch.set_torch_index(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_torch_data_word_index(&mut self, index: usize, value: u16) {
-        self.torch.set_torch_data_word_index(index, value);
-        self.sync();
-    }
-
-    pub(crate) fn set_target(&mut self, value: NativeTile) {
-        self.torch.set_target(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_ganon_torch_count(&mut self, value: u8) {
-        self.torch.set_ganon_torch_count(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_target(&mut self) {
-        self.torch.clear_target();
-        self.sync();
-    }
-
     /// Reload the torch model from RAM after the room object parser has run
     /// (`RoomDraw_DrawAllObjectsCurrentRoom` writes torch-owned bytes directly,
     /// outside this bridge, so the native model must be resynced).
     pub(crate) fn resync_from_ram(&mut self) {
         *self.torch = DungeonTorchState::load_from_ram(self.ram);
+    }
+
+    forward_synced! {
+        torch;
+        fn clear_timer(index: usize);
+        fn clear_timers();
+        fn clear_torch_indices();
+        fn set_timer(index: usize, value: u8);
+        fn clear_lit_torches();
+        fn increment_lit_torches() -> u8;
+        fn decrement_lit_torches() -> u8;
+        fn set_lights_out_request(value: u8);
+        fn clear_lights_out_request();
+        fn copy_lights_out_request();
+        fn clear_lights_out_requests();
+        fn set_dungeon_dark_with_lantern();
+        fn set_dungeon_dark_with_lantern_raw(value: u8);
+        fn clear_dungeon_dark_with_lantern();
+        fn set_torch_index_range_start(value: u16);
+        fn set_torch_index(value: u16);
+        fn set_torch_data_word_index(index: usize, value: u16);
+        fn set_target(value: NativeTile);
+        fn set_ganon_torch_count(value: u8);
+        fn clear_target();
     }
 }
 

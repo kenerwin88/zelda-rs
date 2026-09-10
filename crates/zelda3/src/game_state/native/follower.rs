@@ -341,12 +341,6 @@ impl<'a> NativeFollowerRuntimeBridgeMut<'a> {
         fn and_event_flags(value: u8);
     }
 
-    pub(crate) fn set_hookshot_release_tail_index_from_tail_write_index(&mut self) {
-        self.state
-            .set_hookshot_release_tail_index_from_tail_write_index();
-        self.sync();
-    }
-
     forward_synced! {
         state;
         fn set_tail_write_index(value: u8);
@@ -368,6 +362,11 @@ impl<'a> NativeFollowerRuntimeBridgeMut<'a> {
         self.state.set_zelda_rescue_cutscene_state(value);
         self.ram[ZELDA_RESCUE_CUTSCENE_STATE] = value;
         self.sync();
+    }
+
+    forward_synced! {
+        state;
+        fn set_hookshot_release_tail_index_from_tail_write_index();
     }
 }
 

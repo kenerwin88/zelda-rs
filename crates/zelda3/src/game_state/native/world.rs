@@ -2816,12 +2816,6 @@ impl<'a> NativeWorldCameraBoundariesBridgeMut<'a> {
         fn add_camera_scroll_for_axis(horizontal: bool, delta: i16) -> u16;
     }
 
-    pub(crate) fn set_camera_scroll_from_link_for_axis(&mut self, horizontal: bool, value: u16) {
-        self.state
-            .set_camera_scroll_from_link_for_axis(horizontal, value);
-        self.sync();
-    }
-
     forward_synced! {
         state;
         fn set_up_down_scroll_target(value: u16);
@@ -2881,6 +2875,11 @@ impl<'a> NativeWorldCameraBoundariesBridgeMut<'a> {
         fn restore_camera_y_from_cached_indoor();
         fn restore_camera_x_from_cached_indoor();
         fn update_camera_hi_outdoor();
+    }
+
+    forward_synced! {
+        state;
+        fn set_camera_scroll_from_link_for_axis(horizontal: bool, value: u16);
     }
 }
 
@@ -2944,26 +2943,6 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn set_room_transitioning_flags(&mut self, value: u8) {
-        self.state.set_room_transitioning_flags(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_custom_spell_animation(&mut self) {
-        self.state.clear_custom_spell_animation();
-        self.sync();
-    }
-
-    pub(crate) fn set_custom_spell_animation_active(&mut self) {
-        self.state.set_custom_spell_animation_active();
-        self.sync();
-    }
-
-    pub(crate) fn set_allow_scroll_z(&mut self, value: u8) {
-        self.state.set_allow_scroll_z(value);
-        self.sync();
-    }
-
     pub(crate) fn set_cached_room_bounds(
         &mut self,
         y_start: u16,
@@ -2973,41 +2952,6 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
     ) {
         self.state
             .set_cached_room_bounds(y_start, y_end, x_start, x_end);
-        self.sync();
-    }
-
-    pub(crate) fn set_standing_in_doorway_cached(&mut self, value: u8) {
-        self.state.set_standing_in_doorway_cached(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_tile_interaction_shared_flag(&mut self) {
-        self.state.clear_tile_interaction_shared_flag();
-        self.sync();
-    }
-
-    pub(crate) fn cache_quadrant_fullsize_state(&mut self) {
-        self.state.cache_quadrant_fullsize_state();
-        self.sync();
-    }
-
-    pub(crate) fn restore_quadrant_fullsize_from_cached(&mut self) {
-        self.state.restore_quadrant_fullsize_from_cached();
-        self.sync();
-    }
-
-    pub(crate) fn set_quadrant_fullsize_x(&mut self, value: u8) {
-        self.state.set_quadrant_fullsize_x(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_quadrant_fullsize_y(&mut self, value: u8) {
-        self.state.set_quadrant_fullsize_y(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_fullsize_overworld_quadrants(&mut self) {
-        self.state.set_fullsize_overworld_quadrants();
         self.sync();
     }
 
@@ -3057,71 +3001,37 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn apply_reset_xy_quadrant_overrides(&mut self, reset_xy_flags: u16) {
-        self.state.apply_reset_xy_quadrant_overrides(reset_xy_flags);
-        self.sync();
-    }
-
-    pub(crate) fn force_horizontal_fullsize_for_blast_wall(&mut self) {
-        self.state.force_horizontal_fullsize_for_blast_wall();
-        self.sync();
-    }
-
-    pub(crate) fn force_vertical_fullsize_for_blast_wall(&mut self) {
-        self.state.force_vertical_fullsize_for_blast_wall();
-        self.sync();
-    }
-
-    pub(crate) fn save_spexit_tm_copy(&mut self, layer_masks: u16) {
-        self.state.save_spexit_tm_copy(layer_masks);
-        self.sync();
-    }
-
-    pub(crate) fn save_exit_tm_copy(&mut self, layer_masks: u16) {
-        self.state.save_exit_tm_copy(layer_masks);
-        self.sync();
-    }
-
-    pub(crate) fn increment_move_overlay_ctr(&mut self) -> u8 {
-        let value = self.state.increment_move_overlay_ctr();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_overworld_hole_scan_step(&mut self, value: u8) {
-        self.state.set_overworld_hole_scan_step(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_overworld_peg_puzzle_progress(&mut self, value: u16) {
-        self.state.set_overworld_peg_puzzle_progress(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_overworld_hole_tilemap_pos(&mut self, value: u16) {
-        self.state.set_overworld_hole_tilemap_pos(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_overworld_bomb_tile_sweep_x(&mut self, value: u16) {
-        self.state.set_overworld_bomb_tile_sweep_x(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_overworld_bomb_tile_sweep_y_end(&mut self, value: u16) {
-        self.state.set_overworld_bomb_tile_sweep_y_end(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_big_key_door_message_triggered(&mut self, value: u16) {
-        self.state.set_big_key_door_message_triggered(value);
-        self.sync();
-    }
-
     pub(crate) fn set_overworld_map16_stripe_word(&mut self, index: usize, value: u16) {
         self.state.set_overworld_map16_stripe_word(index, value);
         write_le_u16(self.ram, DUNG_REPLACEMENT_TILE_STATE + index * 2, value);
         self.debug_assert_matches_ram();
+    }
+
+    forward_synced! {
+        state;
+        fn set_room_transitioning_flags(value: u8);
+        fn clear_custom_spell_animation();
+        fn set_custom_spell_animation_active();
+        fn set_allow_scroll_z(value: u8);
+        fn set_standing_in_doorway_cached(value: u8);
+        fn clear_tile_interaction_shared_flag();
+        fn cache_quadrant_fullsize_state();
+        fn restore_quadrant_fullsize_from_cached();
+        fn set_quadrant_fullsize_x(value: u8);
+        fn set_quadrant_fullsize_y(value: u8);
+        fn set_fullsize_overworld_quadrants();
+        fn apply_reset_xy_quadrant_overrides(reset_xy_flags: u16);
+        fn force_horizontal_fullsize_for_blast_wall();
+        fn force_vertical_fullsize_for_blast_wall();
+        fn save_spexit_tm_copy(layer_masks: u16);
+        fn save_exit_tm_copy(layer_masks: u16);
+        fn increment_move_overlay_ctr() -> u8;
+        fn set_overworld_hole_scan_step(value: u8);
+        fn set_overworld_peg_puzzle_progress(value: u16);
+        fn set_overworld_hole_tilemap_pos(value: u16);
+        fn set_overworld_bomb_tile_sweep_x(value: u16);
+        fn set_overworld_bomb_tile_sweep_y_end(value: u16);
+        fn set_big_key_door_message_triggered(value: u16);
     }
 }
 

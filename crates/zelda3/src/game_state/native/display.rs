@@ -3906,113 +3906,6 @@ impl<'a> NativePaletteFilterBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn set_countdown(&mut self, value: u8) {
-        self.display.palette_filter.set_countdown(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_countdown(&mut self) {
-        self.display.palette_filter.increment_countdown();
-        self.sync();
-    }
-
-    pub(crate) fn decrement_countdown(&mut self) {
-        self.display.palette_filter.decrement_countdown();
-        self.sync();
-    }
-
-    pub(crate) fn set_countdown_word(&mut self, value: u16) {
-        self.display.palette_filter.set_countdown_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_darkening_or_lightening_screen(&mut self, value: u8) {
-        self.display
-            .palette_filter
-            .set_darkening_or_lightening_screen(value);
-        self.sync();
-    }
-
-    pub(crate) fn xor_darkening_or_lightening_screen(&mut self, value: u8) {
-        self.display
-            .palette_filter
-            .xor_darkening_or_lightening_screen(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_darkening_or_lightening_screen_word(&mut self, value: u16) {
-        self.display
-            .palette_filter
-            .set_darkening_or_lightening_screen_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_color_window_selection(&mut self, value: u8) {
-        self.display
-            .palette_filter
-            .set_color_window_selection(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_color_window_and_math_word(&mut self, value: u16) {
-        self.display
-            .palette_filter
-            .set_color_window_and_math_word(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_color_math_control(&mut self, value: u8) {
-        self.display.palette_filter.set_color_math_control(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_fixed_color_red(&mut self, value: u8) {
-        self.display.palette_filter.set_fixed_color_red(value);
-        self.sync();
-    }
-
-    pub(crate) fn or_fixed_color_red(&mut self, value: u8) {
-        self.display.palette_filter.or_fixed_color_red(value);
-        self.sync();
-    }
-
-    pub(crate) fn subtract_fixed_color_red(&mut self, value: u8) {
-        self.display.palette_filter.subtract_fixed_color_red(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_fixed_color_green(&mut self, value: u8) {
-        self.display.palette_filter.set_fixed_color_green(value);
-        self.sync();
-    }
-
-    pub(crate) fn or_fixed_color_green(&mut self, value: u8) {
-        self.display.palette_filter.or_fixed_color_green(value);
-        self.sync();
-    }
-
-    pub(crate) fn subtract_fixed_color_green(&mut self, value: u8) {
-        self.display
-            .palette_filter
-            .subtract_fixed_color_green(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_fixed_color_blue(&mut self, value: u8) {
-        self.display.palette_filter.set_fixed_color_blue(value);
-        self.sync();
-    }
-
-    pub(crate) fn or_fixed_color_blue(&mut self, value: u8) {
-        self.display.palette_filter.or_fixed_color_blue(value);
-        self.sync();
-    }
-
-    pub(crate) fn subtract_fixed_color_blue(&mut self, value: u8) {
-        self.display.palette_filter.subtract_fixed_color_blue(value);
-        self.sync();
-    }
-
     pub(crate) fn set_fixed_color_component(&mut self, index: usize, value: u8) {
         if self
             .display
@@ -4031,6 +3924,29 @@ impl<'a> NativePaletteFilterBridgeMut<'a> {
         {
             self.sync();
         }
+    }
+
+    forward_synced! {
+        display.palette_filter;
+        fn set_countdown(value: u8);
+        fn increment_countdown();
+        fn decrement_countdown();
+        fn set_countdown_word(value: u16);
+        fn set_darkening_or_lightening_screen(value: u8);
+        fn xor_darkening_or_lightening_screen(value: u8);
+        fn set_darkening_or_lightening_screen_word(value: u16);
+        fn set_color_window_selection(value: u8);
+        fn set_color_window_and_math_word(value: u16);
+        fn set_color_math_control(value: u8);
+        fn set_fixed_color_red(value: u8);
+        fn or_fixed_color_red(value: u8);
+        fn subtract_fixed_color_red(value: u8);
+        fn set_fixed_color_green(value: u8);
+        fn or_fixed_color_green(value: u8);
+        fn subtract_fixed_color_green(value: u8);
+        fn set_fixed_color_blue(value: u8);
+        fn or_fixed_color_blue(value: u8);
+        fn subtract_fixed_color_blue(value: u8);
     }
 }
 
@@ -4221,46 +4137,16 @@ impl<'a> NativeTrinexxPaletteBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn set_red_shell_delay(&mut self, value: u8) {
-        self.display.trinexx_palette.set_red_shell_delay(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_blue_shell_delay(&mut self, value: u8) {
-        self.display.trinexx_palette.set_blue_shell_delay(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_red_shell_step(&mut self, value: u8) {
-        self.display.trinexx_palette.set_red_shell_step(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_blue_shell_step(&mut self, value: u8) {
-        self.display.trinexx_palette.set_blue_shell_step(value);
-        self.sync();
-    }
-
-    pub(crate) fn decrement_red_shell_delay(&mut self) {
-        self.display.trinexx_palette.decrement_red_shell_delay();
-        self.sync();
-    }
-
-    pub(crate) fn decrement_blue_shell_delay(&mut self) {
-        self.display.trinexx_palette.decrement_blue_shell_delay();
-        self.sync();
-    }
-
-    pub(crate) fn increment_red_shell_step(&mut self) -> u8 {
-        let value = self.display.trinexx_palette.increment_red_shell_step();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn increment_blue_shell_step(&mut self) -> u8 {
-        let value = self.display.trinexx_palette.increment_blue_shell_step();
-        self.sync();
-        value
+    forward_synced! {
+        display.trinexx_palette;
+        fn set_red_shell_delay(value: u8);
+        fn set_blue_shell_delay(value: u8);
+        fn set_red_shell_step(value: u8);
+        fn set_blue_shell_step(value: u8);
+        fn decrement_red_shell_delay();
+        fn decrement_blue_shell_delay();
+        fn increment_red_shell_step() -> u8;
+        fn increment_blue_shell_step() -> u8;
     }
 }
 
@@ -4294,53 +4180,6 @@ impl<'a> NativeWaterHdmaWindowBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn decrement_watergate_spotlight_y_upper(&mut self) -> u16 {
-        let value = self
-            .display
-            .water_hdma_window
-            .decrement_watergate_spotlight_y_upper();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_watergate_pointer(&mut self, value: u8) {
-        self.display.water_hdma_window.set_watergate_pointer(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_watergate_pointer(&mut self) -> u8 {
-        let value = self.display.water_hdma_window.increment_watergate_pointer();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_watergate_tilemap_pos_x2(&mut self, value: u16) {
-        self.display
-            .water_hdma_window
-            .set_watergate_tilemap_pos_x2(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_window_x(&mut self, value: u16) {
-        self.display.water_hdma_window.set_window_x(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_window_y(&mut self, value: u16) {
-        self.display.water_hdma_window.set_window_y(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_window_x_radius(&mut self, value: u16) {
-        self.display.water_hdma_window.set_window_x_radius(value);
-        self.sync();
-    }
-
-    pub(crate) fn set_window_y_radius(&mut self, value: u16) {
-        self.display.water_hdma_window.set_window_y_radius(value);
-        self.sync();
-    }
-
     pub(crate) fn set_window_y_target(&mut self, value: u16) {
         self.display.water_hdma_window.set_window_y_target(value);
         write_le_u16(self.ram, WATER_HDMA_WINDOW_Y_TARGET, value);
@@ -4362,29 +4201,6 @@ impl<'a> NativeWaterHdmaWindowBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_window_y_radius_byte(&mut self, value: u8) {
-        self.display
-            .water_hdma_window
-            .set_window_y_radius_byte(value);
-        self.sync();
-    }
-
-    pub(crate) fn increment_window_y_radius_byte(&mut self) -> u8 {
-        let value = self
-            .display
-            .water_hdma_window
-            .increment_window_y_radius_byte();
-        self.sync();
-        value
-    }
-
-    pub(crate) fn set_watergate_spotlight_y_upper(&mut self, value: u16) {
-        self.display
-            .water_hdma_window
-            .set_watergate_spotlight_y_upper(value);
-        self.sync();
-    }
-
     pub(crate) fn advance_watergate_window_y_radius(&mut self) -> u8 {
         let value = self.display.advance_watergate_window_y_radius();
         write_le_u16(
@@ -4395,6 +4211,21 @@ impl<'a> NativeWaterHdmaWindowBridgeMut<'a> {
         self.ram[SPOTLIGHT_WINDOW_Y_BUFFER] = self.display.spotlight_hdma.window_y_buffer_byte();
         self.sync();
         value
+    }
+
+    forward_synced! {
+        display.water_hdma_window;
+        fn decrement_watergate_spotlight_y_upper() -> u16;
+        fn set_watergate_pointer(value: u8);
+        fn increment_watergate_pointer() -> u8;
+        fn set_watergate_tilemap_pos_x2(value: u16);
+        fn set_window_x(value: u16);
+        fn set_window_y(value: u16);
+        fn set_window_x_radius(value: u16);
+        fn set_window_y_radius(value: u16);
+        fn set_window_y_radius_byte(value: u8);
+        fn increment_window_y_radius_byte() -> u8;
+        fn set_watergate_spotlight_y_upper(value: u16);
     }
 }
 
