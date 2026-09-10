@@ -154,29 +154,3 @@ fn native_oam_bridge_dual_writes_changes_from_native_state() {
     assert_eq!(oam.region_alloc_counter(1), 0x0008);
     assert_eq!(OamState::load_from_ram(&ram), oam);
 }
-
-#[test]
-fn native_oam_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    let mut oam = OamState::default();
-    {
-        let mut bridge = NativeOamStateBridgeMut::new(&mut oam, &mut ram);
-        bridge.set_priority_word(0x2100);
-        bridge.write_entry(OAM_BUF + 4, 1, 2, 3, 4);
-        bridge.set_extended_byte(1, 5);
-    }
-
-    write_le_u16(&mut ram, OAM_PRIORITY_VALUE, 0xaaaa);
-    ram[OAM_BUF + 4] = 0xbb;
-    ram[BYTEWISE_EXTENDED_OAM + 1] = 0xcc;
-
-    {
-        let mut bridge = NativeOamStateBridgeMut::new(&mut oam, &mut ram);
-        bridge.set_priority_high(0x22);
-    }
-
-    assert_eq!(oam.priority_word(), 0x2200);
-    assert_eq!(oam.entry_x(OAM_BUF + 4), 1);
-    assert_eq!(oam.extended_byte(1), 5);
-    assert_eq!(OamState::load_from_ram(&ram), oam);
-}

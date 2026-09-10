@@ -38,23 +38,6 @@ fn native_enhanced_features_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 }
 
 #[test]
-fn native_enhanced_features_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    write_le_u16(&mut ram, ENHANCED_FEATURE_FLAGS, 0x1000);
-    let mut native_ram = vec![0; WRAM_SIZE];
-    native_ram[ENHANCED_FEATURE_FLAGS] = 0x04;
-    let mut features = EnhancedFeaturesState::load_from_ram(&native_ram);
-
-    {
-        let mut bridge = NativeEnhancedFeaturesBridgeMut::new(&mut features, &mut ram);
-        bridge.set_bits(0x0000_0008);
-    }
-
-    assert_eq!(features.bits(), 0x0000_0008);
-    assert_eq!(read_le_u16(&ram, ENHANCED_FEATURE_FLAGS), 0x0008);
-}
-
-#[test]
 fn scratch_counter_state_loads_from_and_projects_to_ram() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[TEMP_COUNTER] = 0x80;
@@ -84,22 +67,6 @@ fn native_scratch_counter_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 
     assert_eq!(counter.value(), 7);
     assert_eq!(ram[TEMP_COUNTER], 7);
-}
-
-#[test]
-fn native_scratch_counter_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    ram[TEMP_COUNTER] = 0x80;
-    let mut counter = ScratchCounterState::default();
-    counter.set(3);
-
-    {
-        let mut bridge = NativeScratchCounterBridgeMut::new(&mut counter, &mut ram);
-        assert_eq!(bridge.decrement(), 2);
-    }
-
-    assert_eq!(counter.value(), 2);
-    assert_eq!(ram[TEMP_COUNTER], 2);
 }
 
 #[test]
@@ -202,32 +169,6 @@ fn memorized_tile_address_clear_matches_the_source_0x100_byte_memset() {
 }
 
 #[test]
-fn native_memorized_tile_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    write_le_u16(&mut ram, NUM_MEMORIZED_TILES, 2);
-    write_le_u16(&mut ram, MEMORIZED_TILE_ADDR, 0x1111);
-    write_le_u16(&mut ram, MEMORIZED_TILE_VALUE, 0x2222);
-    let mut memorized_tiles = MemorizedTileState::default();
-    memorized_tiles.set_count(2);
-    memorized_tiles.set_entry_addr(0, 0x3333);
-    memorized_tiles.set_entry_value(0, 0x4444);
-
-    {
-        let mut bridge = NativeMemorizedTileBridgeMut::new(&mut memorized_tiles, &mut ram);
-        bridge.append_entry(0x5555, 0x6666);
-    }
-
-    assert_eq!(memorized_tiles.count(), 4);
-    assert_eq!(memorized_tiles.entry_addr(0), 0x3333);
-    assert_eq!(memorized_tiles.entry_value(0), 0x4444);
-    assert_eq!(read_le_u16(&ram, NUM_MEMORIZED_TILES), 4);
-    assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_ADDR), 0x3333);
-    assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_VALUE), 0x4444);
-    assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_ADDR + 2), 0x5555);
-    assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_VALUE + 2), 0x6666);
-}
-
-#[test]
 fn native_memorized_tile_bridge_ignores_indoor_value_table_reuse_in_coherence_check() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[PLAYER_IS_INDOORS] = 1;
@@ -310,31 +251,6 @@ fn native_minigame_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 }
 
 #[test]
-fn native_minigame_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    ram[MINIGAME_CREDITS] = 0xff;
-    write_le_u16(&mut ram, BOOMERANG_TEMP_X, 0x1111);
-    let mut native_ram = vec![0; WRAM_SIZE];
-    native_ram[IS_ARCHER_OR_SHOVEL_GAME] = 2;
-    native_ram[MINIGAME_CREDITS] = 3;
-    write_le_u16(&mut native_ram, BOOMERANG_TEMP_X, 0x2222);
-    write_le_u16(&mut native_ram, BOOMERANG_TEMP_Y, 0x3333);
-    let mut minigame = MinigameState::load_from_ram(&native_ram);
-
-    {
-        let mut bridge = NativeMinigameBridgeMut::new(&mut minigame, &mut ram);
-        assert_eq!(bridge.decrement_credits(), 2);
-    }
-
-    assert_eq!(minigame.is_archer_or_shovel_game(), 2);
-    assert_eq!(minigame.credits(), 2);
-    assert_eq!(minigame.boomerang_temp_x(), 0x2222);
-    assert_eq!(read_le_u16(&ram, BOOMERANG_TEMP_X), 0x2222);
-    assert_eq!(read_le_u16(&ram, BOOMERANG_TEMP_Y), 0x3333);
-    assert_eq!(ram[MINIGAME_CREDITS], 2);
-}
-
-#[test]
 fn intro_sword_state_loads_from_and_projects_to_ram() {
     let mut ram = vec![0; WRAM_SIZE];
     write_le_u16(&mut ram, INTRO_SWORD_YPOS, 0x1234);
@@ -404,28 +320,6 @@ fn native_intro_sword_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 }
 
 #[test]
-fn native_intro_sword_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    write_le_u16(&mut ram, INTRO_SWORD_YPOS, 0x9999);
-    let mut native_ram = vec![0; WRAM_SIZE];
-    write_le_u16(&mut native_ram, INTRO_SWORD_YPOS, 0x1234);
-    native_ram[INTRO_SWORD_SPARKLE_TIMER] = 5;
-    write_le_u16(&mut native_ram, INTRO_SWORD_FLASH_RGB_CHANNEL, 0xab02);
-    let mut intro_sword = IntroSwordState::load_from_ram(&native_ram);
-
-    {
-        let mut bridge = NativeIntroSwordBridgeMut::new(&mut intro_sword, &mut ram);
-        bridge.advance_ypos();
-    }
-
-    assert_eq!(intro_sword.ypos(), 0x1244);
-    assert_eq!(intro_sword.sparkle_timer(), 5);
-    assert_eq!(read_le_u16(&ram, INTRO_SWORD_YPOS), 0x1244);
-    assert_eq!(ram[INTRO_SWORD_SPARKLE_TIMER], 5);
-    assert_eq!(read_le_u16(&ram, INTRO_SWORD_FLASH_RGB_CHANNEL), 0xab02);
-}
-
-#[test]
 fn archery_game_state_loads_from_and_projects_to_ram() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[ARCHERY_GAME_HIT_COUNTER] = 8;
@@ -471,30 +365,6 @@ fn native_archery_game_bridge_syncs_seeded_ram_and_dual_writes_changes() {
     assert_eq!(ram[ARCHERY_GAME_HIT_COUNTER], 0);
     assert_eq!(ram[ARCHERY_GAME_ARROWS_LEFT], 4);
     assert_eq!(ram[ARCHERY_GAME_OUT_OF_ARROWS], 0);
-}
-
-#[test]
-fn native_archery_game_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    ram[ARCHERY_GAME_HIT_COUNTER] = 0xff;
-    ram[ARCHERY_GAME_ARROWS_LEFT] = 0;
-    let mut native_ram = vec![0; WRAM_SIZE];
-    native_ram[ARCHERY_GAME_HIT_COUNTER] = 3;
-    native_ram[ARCHERY_GAME_ARROWS_LEFT] = 5;
-    native_ram[ARCHERY_GAME_OUT_OF_ARROWS] = 1;
-    let mut archery = ArcheryGameState::load_from_ram(&native_ram);
-
-    {
-        let mut bridge = NativeArcheryGameBridgeMut::new(&mut archery, &mut ram);
-        bridge.decrement_arrows_left();
-    }
-
-    assert_eq!(archery.hit_counter(), 3);
-    assert_eq!(archery.arrows_left(), 4);
-    assert_eq!(archery.out_of_arrows(), 1);
-    assert_eq!(ram[ARCHERY_GAME_HIT_COUNTER], 3);
-    assert_eq!(ram[ARCHERY_GAME_ARROWS_LEFT], 4);
-    assert_eq!(ram[ARCHERY_GAME_OUT_OF_ARROWS], 1);
 }
 
 #[test]
@@ -563,30 +433,6 @@ fn native_sprite_battle_bridge_syncs_seeded_ram_and_dual_writes_changes() {
     assert_eq!(ram[ITEM_DROP_COUNTER], 1);
     assert_eq!(ram[DAMAGE_TYPE_DETERMINER], 10);
     assert_eq!(ram[SET_WHEN_DAMAGING_ENEMIES], 0);
-}
-
-#[test]
-fn native_sprite_battle_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    ram[NUM_SPRITES_KILLED] = 0xff;
-    ram[TIMES_HURT_BY_SPRITES] = 0xff;
-    let mut native_ram = vec![0; WRAM_SIZE];
-    native_ram[NUM_SPRITES_KILLED] = 2;
-    native_ram[TIMES_HURT_BY_SPRITES] = 3;
-    native_ram[ITEM_DROP_LUCK] = 4;
-    let mut battle = SpriteBattleState::load_from_ram(&native_ram);
-
-    {
-        let mut bridge = NativeSpriteBattleBridgeMut::new(&mut battle, &mut ram);
-        bridge.increment_sprites_killed();
-    }
-
-    assert_eq!(battle.sprites_killed(), 3);
-    assert_eq!(battle.times_hurt_by_sprites(), 3);
-    assert_eq!(battle.item_drop_luck(), 4);
-    assert_eq!(ram[NUM_SPRITES_KILLED], 3);
-    assert_eq!(ram[TIMES_HURT_BY_SPRITES], 3);
-    assert_eq!(ram[ITEM_DROP_LUCK], 4);
 }
 
 #[test]

@@ -113,26 +113,6 @@ fn native_dungeon_key_slots_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 }
 
 #[test]
-fn native_dungeon_key_slots_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0xff; WRAM_SIZE];
-    let mut native_ram = vec![0; WRAM_SIZE];
-    native_ram[LINK_KEYS_EARNED_PER_DUNGEON + 2] = 3;
-    native_ram[LINK_KEYS_EARNED_PER_DUNGEON + 5] = 6;
-    let mut slots = DungeonKeySlotsState::load_from_ram(&native_ram);
-
-    {
-        let mut bridge = NativeDungeonKeySlotsBridgeMut::new(&mut slots, &mut ram);
-        bridge.set_keys_earned_slot(5, 9);
-    }
-
-    assert_eq!(slots.keys_earned_slot(2), 3);
-    assert_eq!(slots.keys_earned_slot(5), 9);
-    assert_eq!(ram[LINK_KEYS_EARNED_PER_DUNGEON + 2], 3);
-    assert_eq!(ram[LINK_KEYS_EARNED_PER_DUNGEON + 5], 9);
-    assert_eq!(ram[LINK_KEYS_EARNED_PER_DUNGEON + 15], 0);
-}
-
-#[test]
 fn mirror_warp_state_loads_from_and_projects_to_ram() {
     let mut ram = vec![0; WRAM_SIZE];
     write_le_u16(&mut ram, MIRROR_WARP_TARGET_INDEX, 2);
@@ -212,40 +192,6 @@ fn native_mirror_warp_bridge_syncs_seeded_ram_and_dual_writes_changes() {
     assert_eq!(read_le_u16(&ram, MIRROR_WARP_SUBPIXEL), 0x0066);
     assert_eq!(ram[MIRROR_WARP_LOAD_STEP_COUNTER], 0);
     assert_eq!(ram[MIRROR_WARP_ANIMATION_COUNTER], 1);
-}
-
-#[test]
-fn native_mirror_warp_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0xff; WRAM_SIZE];
-    let mut native_ram = vec![0; WRAM_SIZE];
-    write_le_u16(&mut native_ram, MIRROR_WARP_TARGET_INDEX, 2);
-    write_le_u16(&mut native_ram, MIRROR_WARP_WAVE_OFFSET, 0x0012);
-    write_le_u16(&mut native_ram, MIRROR_WARP_DISPLACEMENT, 0x0034);
-    write_le_u16(&mut native_ram, MIRROR_WARP_SUBPIXEL, 0x0056);
-    native_ram[MIRROR_WARP_LOAD_STEP_COUNTER] = 7;
-    native_ram[MIRROR_WARP_ANIMATION_COUNTER] = 8;
-    let mut mirror = MirrorWarpState::load_from_ram(&native_ram);
-
-    {
-        let mut bridge = NativeMirrorWarpBridgeMut::new(&mut mirror, &mut ram);
-        bridge.toggle_target_index();
-        bridge.set_wave_offset(0x009a);
-        bridge.set_displacement(0x00bc);
-        assert_eq!(bridge.increment_load_step_counter(), 8);
-        assert_eq!(bridge.decrement_animation_counter(), 7);
-    }
-
-    assert_eq!(mirror.target_index(), 0);
-    assert_eq!(mirror.wave_offset(), 0x009a);
-    assert_eq!(mirror.displacement(), 0x00bc);
-    assert_eq!(mirror.subpixel(), 0x0056);
-    assert_eq!(mirror.animation_counter(), 7);
-    assert_eq!(read_le_u16(&ram, MIRROR_WARP_TARGET_INDEX), 0);
-    assert_eq!(read_le_u16(&ram, MIRROR_WARP_WAVE_OFFSET), 0x009a);
-    assert_eq!(read_le_u16(&ram, MIRROR_WARP_DISPLACEMENT), 0x00bc);
-    assert_eq!(read_le_u16(&ram, MIRROR_WARP_SUBPIXEL), 0x0056);
-    assert_eq!(ram[MIRROR_WARP_LOAD_STEP_COUNTER], 8);
-    assert_eq!(ram[MIRROR_WARP_ANIMATION_COUNTER], 7);
 }
 
 #[test]

@@ -499,20 +499,30 @@ impl<'a> NativeSystemWorkAreaBridgeMut<'a> {
 }
 
 pub(crate) struct NativeSystemSignalsBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     system_signals: &'a mut SystemSignalsState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeSystemSignalsBridgeMut<'a> {
     pub(crate) fn new(system_signals: &'a mut SystemSignalsState, ram: &'a mut [u8]) -> Self {
+        *system_signals = SystemSignalsState::load_from_ram(&*ram);
+        let before = crate::game_state::native::ram_target::capture(&*ram, |log| {
+            system_signals.write_to_ram(log)
+        });
         Self {
+            before,
             system_signals,
             ram,
         }
     }
 
     fn sync(&mut self) {
-        self.system_signals.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.system_signals.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -592,5 +602,3 @@ fn read_le_u64(bytes: &[u8], offset: usize) -> Option<u64> {
         slice[0], slice[1], slice[2], slice[3], slice[4], slice[5], slice[6], slice[7],
     ]))
 }
-
-

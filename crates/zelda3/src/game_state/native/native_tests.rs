@@ -28,10 +28,9 @@ use super::poly::{
 };
 use super::sprites::{
     ChainChompHistoryState, DualLayerTileCacheState, EnemyDamageSubclassTableState,
-    EtherOrbitState, FailedSpinSparkleSpawnState, FollowerRuntimeState, GarnishRuntimeState,
-    MazeGameTimerState, OverworldSpriteLoadedState, OverworldSpritePresenceState,
-    PrizeDropCycleState, SpriteDrawHitboxWorkState, SpriteSlotsState, SpriteSystemState,
-    TagalongTrailState,
+    EtherOrbitState, FollowerRuntimeState, MazeGameTimerState,
+    OverworldSpritePresenceState, PrizeDropCycleState, SpriteDrawHitboxWorkState, SpriteSlotsState,
+    SpriteSystemState, TagalongTrailState,
 };
 use super::system::NativeSystemWorkAreaBridgeMut;
 use super::world::{

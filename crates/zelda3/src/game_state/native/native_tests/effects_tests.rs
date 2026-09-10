@@ -668,37 +668,6 @@ fn native_blast_wall_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 }
 
 #[test]
-fn native_blast_wall_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    ram[BLAST_WALL_ENTRY_STATE] = 0xff;
-    write_le_u16(&mut ram, BLAST_WALL_CENTER_X, 0xffff);
-    write_le_u16(&mut ram, BLAST_WALL_CENTER_Y, 0xeeee);
-
-    let mut native_ram = vec![0; WRAM_SIZE];
-    native_ram[BLAST_WALL_ENTRY_STATE] = 1;
-    native_ram[BLAST_WALL_SECONDARY_STATE] = 1;
-    native_ram[BLAST_WALL_DIRECTION] = 2;
-    write_le_u16(&mut native_ram, BLAST_WALL_CENTER_X, 0x0100);
-    write_le_u16(&mut native_ram, BLAST_WALL_CENTER_Y, 0x0200);
-    let mut effects = EntranceEffectState::load_from_ram(&native_ram);
-
-    {
-        let mut bridge = NativeBlastWallBridgeMut::new(&mut effects, &mut ram);
-        bridge.clear_entry_state();
-    }
-
-    let wall = effects.blast_wall();
-    assert_eq!(wall.direction(), 2);
-    assert_eq!(wall.center_x(), 0x0100);
-    assert_eq!(wall.center_y(), 0x0200);
-    assert_eq!(ram[BLAST_WALL_ENTRY_STATE], 0);
-    assert_eq!(ram[BLAST_WALL_SECONDARY_STATE], 1);
-    assert_eq!(ram[BLAST_WALL_DIRECTION], 2);
-    assert_eq!(read_le_u16(&ram, BLAST_WALL_CENTER_X), 0x0100);
-    assert_eq!(read_le_u16(&ram, BLAST_WALL_CENTER_Y), 0x0200);
-}
-
-#[test]
 fn entrance_effect_bank_syncs_shared_blast_wall_and_skull_woods_slots() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[BLAST_WALL_EXPLOSION_PHASE] = 2;
@@ -725,46 +694,6 @@ fn entrance_effect_bank_syncs_shared_blast_wall_and_skull_woods_slots() {
     assert_eq!(ram[SKULL_WOODS_FIRE_TIMER + 2], 5);
     assert_eq!(read_le_u16(&ram, SKULL_WOODS_FIRE_X + 4), 0x0300);
     assert_eq!(read_le_u16(&ram, SKULL_WOODS_FIRE_Y + 4), 0x0400);
-    assert_eq!(ram[BLAST_WALL_FIREBALL_TIMER + 7], 8);
-}
-
-#[test]
-fn native_entrance_effect_slot_bridges_project_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    ram[BLAST_WALL_EXPLOSION_PHASE + 2] = 0xff;
-    ram[BLAST_WALL_EXPLOSION_TIMER + 2] = 0xee;
-    ram[BLAST_WALL_FIREBALL_TIMER + 7] = 0xdd;
-
-    let mut native_ram = vec![0; WRAM_SIZE];
-    native_ram[BLAST_WALL_EXPLOSION_PHASE + 2] = 3;
-    native_ram[BLAST_WALL_EXPLOSION_TIMER + 2] = 4;
-    write_le_u16(&mut native_ram, BLAST_WALL_FRAGMENT_X + 4, 0x0100);
-    write_le_u16(&mut native_ram, BLAST_WALL_FRAGMENT_Y + 4, 0x0200);
-    native_ram[BLAST_WALL_FIREBALL_TIMER + 7] = 9;
-    let mut effects = EntranceEffectState::load_from_ram(&native_ram);
-
-    {
-        let mut bridge = NativeBlastWallExplosionBridgeMut::new(&mut effects, &mut ram, 2);
-        assert_eq!(bridge.advance_phase(), 4);
-    }
-    {
-        let mut bridge = NativeBlastWallFragmentBridgeMut::new(&mut effects, &mut ram, 2);
-        assert_eq!(bridge.offset(0x10, -0x20), (0x0110, 0x01e0));
-    }
-    {
-        let mut bridge = NativeBlastWallFireballBridgeMut::new(&mut effects, &mut ram, 7);
-        assert_eq!(bridge.tick_timer(), 8);
-    }
-
-    assert_eq!(effects.blast_wall_explosion_slot(2).phase(), 4);
-    assert_eq!(effects.blast_wall_explosion_slot(2).timer(), 4);
-    assert_eq!(effects.blast_wall_fragment_slot(2).x(), 0x0110);
-    assert_eq!(effects.blast_wall_fragment_slot(2).y(), 0x01e0);
-    assert_eq!(effects.blast_wall_fireball_slot(7).timer(), 8);
-    assert_eq!(ram[BLAST_WALL_EXPLOSION_PHASE + 2], 4);
-    assert_eq!(ram[BLAST_WALL_EXPLOSION_TIMER + 2], 4);
-    assert_eq!(read_le_u16(&ram, BLAST_WALL_FRAGMENT_X + 4), 0x0110);
-    assert_eq!(read_le_u16(&ram, BLAST_WALL_FRAGMENT_Y + 4), 0x01e0);
     assert_eq!(ram[BLAST_WALL_FIREBALL_TIMER + 7], 8);
 }
 

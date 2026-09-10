@@ -362,9 +362,10 @@ def collect_bridge_synced_owners(files) -> set[str]:
         text = path.read_text(errors="replace")
         for m in SYNC_BRIDGE_IMPL_RE.finditer(text):
             body = brace_body(text, text.index("{", m.end() - 1))
-            if not re.search(r"self\.(\w+)\.write_to_ram\s*\(\s*self\.ram", body):
+            sync_pat = r"self\.(\w+)\.write_to_ram\s*\(\s*(?:self\.ram|log)"
+            if not re.search(sync_pat, body):
                 continue
-            for field_m in re.finditer(r"self\.(\w+)\.write_to_ram\s*\(\s*self\.ram", body):
+            for field_m in re.finditer(sync_pat, body):
                 ty = bridge_fields.get(m.group(1), {}).get(field_m.group(1), "")
                 owners.update(t for t in TYPE_IDENT_RE.findall(ty) if t not in NON_STRUCT_TYPES)
     return owners
@@ -830,10 +831,10 @@ def main():
         print("(two states live in the same game mode both project this byte → clobber)\n")
         show(high)
 
-        print(f"################  BRIDGE-SYNC: {len(bridge)} same-mode overlap(s)  "
+        print(f"################  BRIDGE-PUBLISHED: {len(bridge)} same-mode overlap(s)  "
               f"################")
-        print("(an owner the master projection never reaches still re-projects this byte "
-              "from every bridge setter → clobbers a co-owner's mid-frame write)\n")
+        print("(an owner the master projection never reaches publishes this byte from its "
+              "bridge; bridges publish only changed bytes, so this is informational)\n")
         show(bridge)
 
         print(f"################  LIKELY SNES MODE-REUSE: {len(reuse)} cross-mode "

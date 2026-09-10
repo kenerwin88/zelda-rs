@@ -409,25 +409,6 @@ fn display_state_owns_attract_vram_destination_behavior() {
 }
 
 #[test]
-fn native_attract_vram_destination_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    write_le_u16(&mut ram, ATTRACT_VRAM_DST, 0x01aa);
-    let mut display = DisplayState {
-        attract_vram_destination_address: 0x0200,
-        ..DisplayState::default()
-    };
-
-    {
-        let mut bridge = NativeAttractVramDestinationBridgeMut::new(&mut display, &mut ram);
-        bridge.set_page_offset(0x34);
-        assert_eq!(bridge.decrement_address(), 0x0233);
-    }
-
-    assert_eq!(display.attract_vram_destination_address, 0x0233);
-    assert_eq!(read_le_u16(&ram, ATTRACT_VRAM_DST), 0x0233);
-}
-
-#[test]
 fn water_hdma_window_state_loads_from_and_projects_to_ram() {
     let mut ram = vec![0; WRAM_SIZE];
     write_le_u16(&mut ram, WATER_HDMA_WINDOW_X, 0x0120);
@@ -555,31 +536,11 @@ fn native_spotlight_hdma_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 }
 
 #[test]
-fn native_spotlight_hdma_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    write_le_u16(&mut ram, SPOTLIGHT_Y_LOWER, 0x0010);
-    write_le_u16(&mut ram, SPOTLIGHT_WINDOW_RADIUS, 0x0020);
-    let mut spotlight = SpotlightHdmaState::default();
-    spotlight.set_y_lower(0x1200);
-    spotlight.set_window_radius(0x3456);
-
-    {
-        let mut bridge = NativeSpotlightHdmaBridgeMut::new(&mut spotlight, &mut ram);
-        bridge.add_window_radius_byte(0x01);
-    }
-
-    assert_eq!(spotlight.y_lower(), 0x1200);
-    assert_eq!(spotlight.window_radius(), 0x3457);
-    assert_eq!(read_le_u16(&ram, SPOTLIGHT_Y_LOWER), 0x1200);
-    assert_eq!(read_le_u16(&ram, SPOTLIGHT_WINDOW_RADIUS), 0x3457);
-}
-
-#[test]
 fn native_spotlight_hdma_bridge_projects_dynamic_table_to_reserved_hdma_table() {
     let mut ram = vec![0; WRAM_SIZE];
     let mut spotlight = SpotlightHdmaState::default();
-    spotlight.set_hdma_table_dynamic_entry(0, 0x1111);
-    spotlight.set_hdma_table_dynamic_entry(1, 0x2222);
+    write_le_u16(&mut ram, HDMA_TABLE_DYNAMIC, 0x1111);
+    write_le_u16(&mut ram, HDMA_TABLE_DYNAMIC + 2, 0x2222);
     write_le_u16(&mut ram, RESERVED_HDMA_TABLE, 0xaaaa);
     write_le_u16(&mut ram, RESERVED_HDMA_TABLE + 2, 0xbbbb);
 
@@ -608,8 +569,8 @@ fn native_spotlight_hdma_bridge_restores_and_backs_up_saveload_table() {
     assert_eq!(read_le_u16(&ram, HDMA_TABLE_DYNAMIC), 0x3333);
     assert_eq!(read_le_u16(&ram, HDMA_TABLE_DYNAMIC + 2), 0x4444);
 
-    spotlight.set_hdma_table_dynamic_entry(0, 0x5555);
-    spotlight.set_hdma_table_dynamic_entry(1, 0x6666);
+    write_le_u16(&mut ram, HDMA_TABLE_DYNAMIC, 0x5555);
+    write_le_u16(&mut ram, HDMA_TABLE_DYNAMIC + 2, 0x6666);
     {
         let mut bridge = NativeSpotlightHdmaBridgeMut::new(&mut spotlight, &mut ram);
         bridge.backup_dynamic_table_to_saveload_buffer(2);
@@ -1229,25 +1190,6 @@ fn native_vram_upload_buffer_bridge_syncs_seeded_ram_and_dual_writes_changes() {
     assert_eq!(read_le_u16(&ram, 0x2122), 0x0100);
     assert_eq!(read_le_u16(&ram, 0x2124), 0x2000);
     assert_eq!(read_le_u16(&ram, 0x2130), 0xffff);
-}
-
-#[test]
-fn native_vram_upload_buffer_bridge_projects_native_cursor_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x0010);
-    let mut display = DisplayState {
-        vram_upload_cursor: 0x1200,
-        ..DisplayState::default()
-    };
-
-    {
-        let mut bridge = NativeVramUploadBufferBridgeMut::new(&mut display, &mut ram);
-        assert_eq!(bridge.advance_offset_by(0x30), 0x1230);
-        bridge.clear_offset();
-    }
-
-    assert_eq!(display.vram_upload_cursor, 0);
-    assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0);
 }
 
 #[test]
@@ -1934,26 +1876,6 @@ fn native_ppu_scroll_copy_bridge_syncs_seeded_ram_and_dual_writes_changes() {
     assert_eq!(read_le_u16(&ram, BG2_V_SCROLL_COPY2_CACHED), 0x0070);
     // A scroll sync leaves the palette buffer's backup window untouched.
     assert_eq!(&ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 4], &[1, 2, 3, 4]);
-}
-
-#[test]
-fn native_ppu_scroll_copy_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    write_le_u16(&mut ram, BG2_X_SCROLL, 0x0060);
-    write_le_u16(&mut ram, MAPBAK_CGWSEL, 0x1234);
-    let mut scroll = PpuScrollCopyState::default();
-    scroll.set_bg2_h_copy2(0x2200);
-    scroll.set_mapbak_cgwsel_word(0x5678);
-
-    {
-        let mut bridge = NativePpuScrollCopyBridgeMut::new(&mut scroll, &mut ram);
-        bridge.add_bg2_h_copy2(0x10);
-    }
-
-    assert_eq!(scroll.bg2_h_copy2(), 0x2210);
-    assert_eq!(scroll.mapbak_cgwsel_word(), 0x5678);
-    assert_eq!(read_le_u16(&ram, BG2_X_SCROLL), 0x2210);
-    assert_eq!(read_le_u16(&ram, MAPBAK_CGWSEL), 0x5678);
 }
 
 #[test]

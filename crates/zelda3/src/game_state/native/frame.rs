@@ -109,17 +109,25 @@ impl FrameState {
 }
 
 pub(crate) struct NativeFrameStateBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     frame: &'a mut FrameState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeFrameStateBridgeMut<'a> {
     pub(crate) fn new(frame: &'a mut FrameState, ram: &'a mut [u8]) -> Self {
-        Self { frame, ram }
+        *frame = FrameState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| frame.write_to_ram(log));
+        Self { before, frame, ram }
     }
 
     fn sync(&mut self) {
-        self.frame.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.frame.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 

@@ -171,24 +171,6 @@ fn native_dungeon_secret_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 }
 
 #[test]
-fn native_dungeon_secret_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    ram[DUNGEON_SECRET_PENDING_KIND] = 0xff;
-    ram[OVERWORLD_SECRET_SUBST_CTR] = 0xff;
-    let mut secret = DungeonSecretState::default();
-    secret.set_pending_kind(2);
-
-    {
-        let mut bridge = NativeDungeonSecretBridgeMut::new(&mut secret, &mut ram);
-        bridge.or_pending_kind(4);
-    }
-
-    assert_eq!(secret.pending_kind(), 6);
-    assert_eq!(ram[DUNGEON_SECRET_PENDING_KIND], 6);
-    assert_eq!(ram[OVERWORLD_SECRET_SUBST_CTR], 0);
-}
-
-#[test]
 fn native_game_state_bulk_projection_preserves_dungeon_secret_scratch() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[DUNGEON_SECRET_PENDING_KIND] = 0x0b;
@@ -233,22 +215,6 @@ fn native_save_load_transfer_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 
     assert_eq!(transfer.source_offset(), 0x4567);
     assert_eq!(read_le_u16(&ram, SAVE_LOAD_SOURCE_OFFSET), 0x4567);
-}
-
-#[test]
-fn native_save_load_transfer_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    write_le_u16(&mut ram, SAVE_LOAD_SOURCE_OFFSET, 0x1234);
-    let mut transfer = SaveLoadTransferState::default();
-    transfer.set_source_offset(0x2000);
-
-    {
-        let mut bridge = NativeSaveLoadTransferBridgeMut::new(&mut transfer, &mut ram);
-        bridge.set_source_offset(0x2100);
-    }
-
-    assert_eq!(transfer.source_offset(), 0x2100);
-    assert_eq!(read_le_u16(&ram, SAVE_LOAD_SOURCE_OFFSET), 0x2100);
 }
 
 #[test]
@@ -329,31 +295,6 @@ fn native_dungeon_map_display_bridge_syncs_seeded_ram_and_dual_writes_changes() 
         read_le_u16(&ram, DUNGEON_MAP_LOCATION_MARKER_BASE_Y),
         0x0077
     );
-}
-
-#[test]
-fn native_dungeon_map_display_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    write_le_u16(&mut ram, DUNGEON_MAP_MARKER_X_OFFSET, 0x0100);
-    write_le_u16(&mut ram, DUNGMAP_CUR_FLOOR, 0x1234);
-    let mut native_ram = vec![0; WRAM_SIZE];
-    write_le_u16(&mut native_ram, DUNGEON_MAP_MARKER_X_OFFSET, 0x0020);
-    write_le_u16(&mut native_ram, DUNGEON_MAP_MARKER_Y_OFFSET, 0x0030);
-    write_le_u16(&mut native_ram, DUNGMAP_CUR_FLOOR, 0x5678);
-    let mut display = DungeonMapDisplayState::load_from_ram(&native_ram);
-
-    {
-        let mut bridge = NativeDungeonMapDisplayBridgeMut::new(&mut display, &mut ram);
-        bridge.shift_marker_x_left();
-        bridge.clear_current_floor_high();
-    }
-
-    assert_eq!(display.marker_x_offset(), 0x0010);
-    assert_eq!(display.marker_y_offset(), 0x0030);
-    assert_eq!(display.current_floor(), 0x0078);
-    assert_eq!(read_le_u16(&ram, DUNGEON_MAP_MARKER_X_OFFSET), 0x0010);
-    assert_eq!(read_le_u16(&ram, DUNGEON_MAP_MARKER_Y_OFFSET), 0x0030);
-    assert_eq!(read_le_u16(&ram, DUNGMAP_CUR_FLOOR), 0x0078);
 }
 
 #[test]

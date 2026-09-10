@@ -236,7 +236,7 @@ fn live_dialogue_close_uses_the_native_saved_module_transition() {
     let mut state = ZeldaState::new();
     state.set_main_module(14);
     state.set_submodule(2);
-    state.game_state.frame.set_saved_module_for_menu(9);
+    state.frame_state_mut().set_saved_module_for_menu(9);
     state.messaging_state_mut().set_module(1);
     state.messaging_state_mut().set_text_render_state(3);
     state.original_timing_owner = OriginalTimingOwnerState::Live;

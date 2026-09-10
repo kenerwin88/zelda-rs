@@ -553,43 +553,6 @@ fn native_player_resources_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 }
 
 #[test]
-fn native_player_resources_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0xff; WRAM_SIZE];
-    let mut native_ram = vec![0; WRAM_SIZE];
-    native_ram[LINK_ITEM_BOMBS] = 1;
-    native_ram[LINK_NUM_ARROWS] = 2;
-    native_ram[LINK_HEARTS_FILLER] = 0xff;
-    native_ram[LINK_MAGIC_FILLER] = 0;
-    write_le_u16(&mut native_ram, LINK_RUPEES_GOAL, 10);
-    native_ram[LINK_NUM_KEYS] = 0xff;
-    let mut resources = PlayerResourcesState::load_from_ram(&native_ram);
-
-    {
-        let mut bridge = NativePlayerResourcesBridgeMut::new(&mut resources, &mut ram);
-        bridge.decrement_bombs();
-        bridge.increment_arrows_by(5);
-        bridge.increment_heart_filler_word_by(2);
-        bridge.add_rupees_goal(90);
-        bridge.increment_keys();
-        bridge.add_ability_flags(0x04);
-    }
-
-    assert_eq!(resources.bombs(), 0);
-    assert_eq!(resources.arrows(), 7);
-    assert_eq!(resources.heart_filler(), 1);
-    assert_eq!(resources.magic_filler(), 1);
-    assert_eq!(resources.rupees_goal(), 100);
-    assert_eq!(resources.keys(), 0);
-    assert_eq!(resources.ability_flags(), 0x04);
-    assert_eq!(ram[LINK_ITEM_BOMBS], 0);
-    assert_eq!(ram[LINK_NUM_ARROWS], 7);
-    assert_eq!(read_le_u16(&ram, LINK_HEARTS_FILLER), 0x0101);
-    assert_eq!(read_le_u16(&ram, LINK_RUPEES_GOAL), 100);
-    assert_eq!(ram[LINK_NUM_KEYS], 0);
-    assert_eq!(ram[LINK_ABILITY_FLAGS], 0x04);
-}
-
-#[test]
 fn native_bg1_movement_accumulator_bridge_dual_writes_changes_from_native_state() {
     let mut ram = vec![0; WRAM_SIZE];
     write_le_u16(&mut ram, BG1_MOVE_CALC_BUFFER, 0x1203);

@@ -3550,17 +3550,25 @@ impl DungeonScratchWordState {
 }
 
 pub(crate) struct NativeDungeonEntranceBackupBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut DungeonEntranceBackupState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeDungeonEntranceBackupBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonEntranceBackupState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = DungeonEntranceBackupState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -3583,12 +3591,16 @@ impl<'a> NativeDungeonEntranceBackupBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDungeonScratchWordBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     scratch: &'a mut DungeonScratchWordState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeDungeonScratchWordBridgeMut<'a> {
     pub(crate) fn new(scratch: &'a mut DungeonScratchWordState, ram: &'a mut [u8]) -> Self {
+        *scratch = DungeonScratchWordState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| scratch.write_to_ram(log));
         // R16/R18 (0xc8-0xcb) are shared SNES bytes that other code writes directly —
         // notably the 3bpp->4bpp gfx converter, whose DUNG_LINE_PTRS_ROW0 (0xbf) scratch
         // buffer overlaps them, and the select-file R17 clear. This native is NOT
@@ -3596,11 +3608,19 @@ impl<'a> NativeDungeonScratchWordBridgeMut<'a> {
         // RAM before any mutation: byte/half-word setters then preserve the live RAM half
         // (like C's `ram[R16]=v` byte store) instead of re-stamping a stale frame-start word.
         *scratch = DungeonScratchWordState::load_from_ram(ram);
-        Self { scratch, ram }
+        Self {
+            before,
+            scratch,
+            ram,
+        }
     }
 
     fn sync(&mut self) {
-        self.scratch.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.scratch.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -3630,17 +3650,25 @@ impl<'a> NativeDungeonScratchWordBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDungeonSavegameBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut DungeonSavegameState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeDungeonSavegameBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonSavegameState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = DungeonSavegameState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -3660,17 +3688,25 @@ impl<'a> NativeDungeonSavegameBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDungeonBg2AttributeBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut DungeonBg2AttributeState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeDungeonBg2AttributeBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonBg2AttributeState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = DungeonBg2AttributeState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -3698,17 +3734,25 @@ impl<'a> NativeDungeonBg2AttributeBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDungeonStairListsBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut DungeonStairListsState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeDungeonStairListsBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonStairListsState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = DungeonStairListsState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -3763,17 +3807,25 @@ impl<'a> NativeDungeonStairListsBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDungeonMovingFloorBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut DungeonMovingFloorState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeDungeonMovingFloorBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonMovingFloorState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = DungeonMovingFloorState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -3803,17 +3855,25 @@ impl<'a> NativeDungeonMovingFloorBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDungeonRoomTrackingBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut DungeonRoomTrackingState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeDungeonRoomTrackingBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonRoomTrackingState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = DungeonRoomTrackingState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -3836,17 +3896,25 @@ impl<'a> NativeDungeonRoomTrackingBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDungeonObjectTrackingBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut DungeonObjectTrackingState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeDungeonObjectTrackingBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonObjectTrackingState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = DungeonObjectTrackingState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -3875,17 +3943,25 @@ impl<'a> NativeDungeonObjectTrackingBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDungeonDoorBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut DungeonDoorState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeDungeonDoorBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonDoorState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = DungeonDoorState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -4019,17 +4095,25 @@ impl<'a> NativeDungeonDoorBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDungeonRoomLoadBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut DungeonRoomLoadState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeDungeonRoomLoadBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonRoomLoadState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = DungeonRoomLoadState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -4085,17 +4169,27 @@ impl<'a> NativeDungeonRoomLoadBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDungeonEnvironmentBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut DungeonEnvironmentState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeDungeonEnvironmentBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonEnvironmentState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        let mut adopted = DungeonEnvironmentState::load_from_ram(&*ram);
+        adopted.water_transition_counter = state.water_transition_counter;
+        *state = adopted;
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -4254,17 +4348,25 @@ impl<'a> NativeDungeonRoomTilemapBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDungeonRoomItemBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut DungeonRoomItemState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeDungeonRoomItemBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonRoomItemState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = DungeonRoomItemState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -4315,17 +4417,25 @@ impl<'a> NativeDungeonRoomItemBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDungeonRoomEffectsBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut DungeonRoomEffectsState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeDungeonRoomEffectsBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonRoomEffectsState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = DungeonRoomEffectsState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -4370,17 +4480,25 @@ impl<'a> NativeDungeonRoomEffectsBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDungeonRoomParserBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut DungeonRoomParserState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeDungeonRoomParserBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonRoomParserState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = DungeonRoomParserState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -4416,17 +4534,25 @@ impl<'a> NativeDungeonRoomParserBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDungeonRoomDoorSetupBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut DungeonRoomDoorSetupState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeDungeonRoomDoorSetupBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonRoomDoorSetupState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = DungeonRoomDoorSetupState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -4465,17 +4591,25 @@ impl<'a> NativeDungeonRoomDoorSetupBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDungeonRoomRuntimeBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut DungeonRoomRuntimeState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeDungeonRoomRuntimeBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonRoomRuntimeState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = DungeonRoomRuntimeState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -4498,17 +4632,25 @@ impl<'a> NativeDungeonRoomRuntimeBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDungeonMovableBlockBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut DungeonMovableBlockState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeDungeonMovableBlockBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonMovableBlockState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = DungeonMovableBlockState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -4527,17 +4669,25 @@ impl<'a> NativeDungeonMovableBlockBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDungeonStairMovementBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut DungeonStairMovementState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeDungeonStairMovementBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonStairMovementState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = DungeonStairMovementState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -4738,17 +4888,29 @@ impl<'a> NativeDungeonTorchBridgeMut<'a> {
 }
 
 pub(crate) struct NativeDungeonHeaderBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     header: &'a mut DungeonHeaderState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeDungeonHeaderBridgeMut<'a> {
     pub(crate) fn new(header: &'a mut DungeonHeaderState, ram: &'a mut [u8]) -> Self {
-        Self { header, ram }
+        *header = DungeonHeaderState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| header.write_to_ram(log));
+        Self {
+            before,
+            header,
+            ram,
+        }
     }
 
     fn sync(&mut self) {
-        self.header.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.header.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 

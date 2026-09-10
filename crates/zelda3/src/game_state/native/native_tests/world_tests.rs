@@ -49,34 +49,6 @@ fn native_world_location_bridge_dual_writes_changes_from_native_state() {
 }
 
 #[test]
-fn native_world_location_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    let mut world = WorldLocationState {
-        dungeon_room: 0x0124,
-        overworld_screen: 0x0040,
-        indoor_flag: 1,
-    };
-    world.write_to_ram(&mut ram);
-
-    write_le_u16(&mut ram, DUNGEON_ROOM, 0x00aa);
-    write_le_u16(&mut ram, OVERWORLD_SCREEN_INDEX, 0x00bb);
-    ram[PLAYER_IS_INDOORS] = 0xcc;
-
-    {
-        let mut bridge = NativeWorldLocationBridgeMut::new(&mut world, &mut ram);
-        bridge.set_overworld_screen(0x5b);
-    }
-
-    assert_eq!(world.dungeon_room, 0x0124);
-    assert_eq!(world.overworld_screen, 0x005b);
-    assert_eq!(world.indoor_flag, 1);
-    assert_eq!(WorldLocationState::load_from_ram(&ram), world);
-    assert_eq!(read_le_u16(&ram, DUNGEON_ROOM), 0x0124);
-    assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX), 0x005b);
-    assert_eq!(ram[PLAYER_IS_INDOORS], 1);
-}
-
-#[test]
 fn world_camera_boundaries_loads_from_and_projects_to_ram() {
     let mut ram = vec![0; WRAM_SIZE];
     write_le_u16(&mut ram, CAMERA_Y_COORD_SCROLL_LOW, 0x0101);
@@ -216,39 +188,6 @@ fn world_camera_boundaries_state_owns_camera_target_and_cache_behavior() {
 }
 
 #[test]
-fn native_world_camera_boundaries_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    let mut boundaries = WorldCameraBoundariesState::default();
-    {
-        let mut bridge = NativeWorldCameraBoundariesBridgeMut::new(&mut boundaries, &mut ram);
-        bridge.set_camera_y_coord_scroll_low(0x0101);
-        bridge.set_camera_y_coord_scroll_hi(0x0202);
-        bridge.set_camera_x_coord_scroll_low(0x0303);
-        bridge.set_up_down_scroll_target(0x0404);
-        bridge.set_overworld_scroll_up_counter(0x0505);
-    }
-
-    write_le_u16(&mut ram, CAMERA_Y_COORD_SCROLL_LOW, 0xaaaa);
-    write_le_u16(&mut ram, CAMERA_Y_COORD_SCROLL_HI, 0xbbbb);
-    write_le_u16(&mut ram, CAMERA_X_COORD_SCROLL_LOW, 0xcccc);
-    write_le_u16(&mut ram, UP_DOWN_SCROLL_TARGET, 0xdddd);
-    write_le_u16(&mut ram, OVERWORLD_SCROLL_UP_COUNTER, 0xeeee);
-
-    {
-        let mut bridge = NativeWorldCameraBoundariesBridgeMut::new(&mut boundaries, &mut ram);
-        bridge.set_camera_x_coord_scroll_hi(0x0606);
-    }
-
-    assert_eq!(boundaries.camera_y_coord_scroll_low(), 0x0101);
-    assert_eq!(boundaries.camera_y_coord_scroll_hi(), 0x0202);
-    assert_eq!(boundaries.camera_x_coord_scroll_low(), 0x0303);
-    assert_eq!(boundaries.camera_x_coord_scroll_hi(), 0x0606);
-    assert_eq!(boundaries.up_down_scroll_target(0), 0x0404);
-    assert_eq!(boundaries.overworld_scroll_counter_for_axis(0), 0x0505);
-    assert_eq!(WorldCameraBoundariesState::load_from_ram(&ram), boundaries);
-}
-
-#[test]
 fn world_palette_theme_loads_from_and_projects_to_ram() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[LAST_LIGHT_VS_DARK_WORLD] = 0x01;
@@ -341,35 +280,6 @@ fn world_palette_theme_state_owns_theme_save_restore_behavior() {
     assert_eq!(theme.main_tile_theme_index(), 0x66);
     assert_eq!(theme.aux_tile_theme_index(), 0x77);
     assert_eq!(theme.misc_sprites_graphics_index(), 0x88);
-}
-
-#[test]
-fn native_world_palette_theme_bridge_projects_owned_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    let mut theme = WorldPaletteThemeState::default();
-    {
-        let mut bridge = NativeWorldPaletteThemeBridgeMut::new(&mut theme, &mut ram);
-        bridge.set_last_light_vs_dark_world(0x40);
-        bridge.set_aux_bg_subset(1, 0x12);
-        bridge.set_overworld_palette_aux1_hi(0x34);
-        bridge.set_overworld_tile_theme_index(0x78);
-    }
-
-    ram[LAST_LIGHT_VS_DARK_WORLD] = 0xaa;
-    ram[AUX_BG_SUBSET_0 + 1] = 0xbb;
-    ram[OVERWORLD_PALETTE_AUX1_BP2TO4_HI] = 0xcc;
-    ram[OVERWORLD_TILE_THEME_INDEX] = 0xee;
-
-    {
-        let mut bridge = NativeWorldPaletteThemeBridgeMut::new(&mut theme, &mut ram);
-        bridge.set_main_tile_theme_index(0x9a);
-    }
-
-    assert_eq!(theme.last_light_vs_dark_world(), 0x40);
-    assert_eq!(theme.aux_bg_subset(1), 0x12);
-    assert_eq!(theme.overworld_palette_aux1_hi(), 0x34);
-    assert_eq!(theme.main_tile_theme_index(), 0x9a);
-    assert_eq!(WorldPaletteThemeState::load_from_ram(&ram), theme);
 }
 
 #[test]
@@ -540,39 +450,6 @@ fn world_region_state_owns_area_and_entrance_behavior() {
 }
 
 #[test]
-fn native_world_region_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    let mut region = WorldRegionState::default();
-    {
-        let mut bridge = NativeWorldRegionBridgeMut::new(&mut region, &mut ram);
-        bridge.set_current_area_of_player_word(0x0102);
-        bridge.set_overworld_area_index_word(0x0304);
-        bridge.set_rng_seed(0x05);
-        bridge.set_dark_world_region_index(0x06);
-        bridge.set_which_entrance(0x08);
-    }
-
-    write_le_u16(&mut ram, CURRENT_AREA_OF_PLAYER, 0xaaaa);
-    write_le_u16(&mut ram, OVERWORLD_AREA_INDEX, 0xbbbb);
-    ram[RNG_SEED] = 0xcc;
-    ram[IS_IN_DARK_WORLD_FLAG] = 0xdd;
-    ram[WHICH_ENTRANCE] = 0xee;
-
-    {
-        let mut bridge = NativeWorldRegionBridgeMut::new(&mut region, &mut ram);
-        bridge.set_ow_entrance_value(0x090a);
-    }
-
-    assert_eq!(region.current_area_of_player_word(), 0x0102);
-    assert_eq!(region.overworld_area_index_word(), 0x0304);
-    assert_eq!(region.rng_seed(), 0x05);
-    assert_eq!(region.dark_world_region_index(), 0x06);
-    assert_eq!(region.which_entrance(), 0x08);
-    assert_eq!(region.ow_entrance_value(), 0x090a);
-    assert_eq!(WorldRegionState::load_from_ram(&ram), region);
-}
-
-#[test]
 fn world_transient_loads_from_and_projects_to_ram() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE] = 0x01;
@@ -704,34 +581,6 @@ fn native_world_transient_bridge_dual_writes_changes_from_native_state() {
 }
 
 #[test]
-fn native_world_transient_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    let mut transient = WorldTransientState::default();
-    {
-        let mut bridge = NativeWorldTransientBridgeMut::new(&mut transient, &mut ram);
-        bridge.set_custom_spell_animation_active();
-        bridge.set_allow_scroll_z(0x02);
-        bridge.set_room_transitioning_flags(0x03);
-    }
-
-    ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE] = 0xaa;
-    ram[ALLOW_SCROLL_Z] = 0xbb;
-    ram[ROOM_TRANSITIONING_FLAGS] = 0xcc;
-
-    {
-        let mut bridge = NativeWorldTransientBridgeMut::new(&mut transient, &mut ram);
-        bridge.clear_custom_spell_animation();
-    }
-
-    assert_eq!(transient.flag_custom_spell_anim_active(), 0);
-    assert_eq!(transient.allow_scroll_z(), 0x02);
-    assert_eq!(transient.room_transitioning_flags(), 0x03);
-    assert_eq!(ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE], 0);
-    assert_eq!(ram[ALLOW_SCROLL_Z], 0x02);
-    assert_eq!(ram[ROOM_TRANSITIONING_FLAGS], 0x03);
-}
-
-#[test]
 fn world_scroll_loads_from_and_projects_to_ram() {
     let mut ram = vec![0; WRAM_SIZE];
     // BG scroll copy2 (0xe0-0xe9) moved to PpuScrollCopyState; tested there.
@@ -784,34 +633,6 @@ fn world_scroll_state_owns_scroll_and_offset_behavior() {
     assert_eq!(scroll.overworld_offset_base_y(), 0xaaaa);
     assert_eq!(scroll.overworld_offset_mask_x(), 0xbbbb);
     assert_eq!(scroll.overworld_offset_mask_y(), 0xcccc);
-}
-
-#[test]
-fn native_world_scroll_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    let mut scroll = WorldScrollState {
-        bg1_x_offset: 0x0505,
-        bg1_y_offset: 0x0606,
-        overworld_offset_base_x: 0x0909,
-        overworld_offset_base_y: 0x0a0a,
-        overworld_offset_mask_x: 0x0b0b,
-        overworld_offset_mask_y: 0x0c0c,
-    };
-    scroll.write_to_ram(&mut ram);
-
-    write_le_u16(&mut ram, OVERWORLD_OFFSET_BASE_X, 0xcccc);
-    write_le_u16(&mut ram, BG1_X_OFFSET, 0xaaaa);
-
-    {
-        let mut bridge = NativeWorldScrollBridgeMut::new(&mut scroll, &mut ram);
-        bridge.set_bg1_x_offset(0x1234);
-    }
-
-    assert_eq!(scroll.bg1_x_offset(), 0x1234);
-    assert_eq!(scroll.overworld_offset_base_x(), 0x0909);
-    assert_eq!(WorldScrollState::load_from_ram(&ram), scroll);
-    assert_eq!(read_le_u16(&ram, BG1_X_OFFSET), 0x1234);
-    assert_eq!(read_le_u16(&ram, OVERWORLD_OFFSET_BASE_X), 0x0909);
 }
 
 #[test]
@@ -1320,39 +1141,6 @@ fn native_weather_vane_bridge_dual_writes_changes_from_native_state() {
 }
 
 #[test]
-fn native_weather_vane_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    let mut weather_vane = WeatherVaneState {
-        countdown: 0x0102,
-        music_latch: 3,
-        source_slot: 4,
-        oam_offset: 5,
-    };
-    weather_vane.write_to_ram(&mut ram);
-
-    write_le_u16(&mut ram, WEATHERVANE_COUNTDOWN, 0xaaaa);
-    ram[WEATHERVANE_MUSIC_LATCH] = 0xbb;
-    ram[WEATHERVANE_SOURCE_SLOT] = 0xcc;
-    ram[WEATHERVANE_OAM_OFFSET] = 0xdd;
-
-    {
-        let mut bridge = NativeWeatherVaneBridgeMut::new(&mut weather_vane, &mut ram);
-        bridge.set_music_latch(7);
-    }
-
-    assert_eq!(
-        weather_vane,
-        WeatherVaneState {
-            countdown: 0x0102,
-            music_latch: 7,
-            source_slot: 4,
-            oam_offset: 5,
-        }
-    );
-    assert_eq!(WeatherVaneState::load_from_ram(&ram), weather_vane);
-}
-
-#[test]
 fn bird_travel_destinations_load_from_and_project_to_ram() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[BIRD_TRAVEL_X_LO + 2] = 0x34;
@@ -1414,36 +1202,6 @@ fn native_bird_travel_destination_bridge_dual_writes_changes_from_native_state()
 }
 
 #[test]
-fn native_bird_travel_destination_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    let mut destinations = BirdTravelDestinationsState::default();
-    destinations.set_destination(15, 0x1234, 0x5678);
-    destinations.write_to_ram(&mut ram);
-
-    ram[BIRD_TRAVEL_X_LO + 15] = 0xaa;
-    ram[BIRD_TRAVEL_X_HI + 15] = 0xbb;
-    ram[BIRD_TRAVEL_Y_LO + 15] = 0xcc;
-    ram[BIRD_TRAVEL_Y_HI + 15] = 0xdd;
-
-    {
-        let mut bridge = NativeBirdTravelDestinationBridgeMut::new(&mut destinations, &mut ram);
-        bridge.clear_destination(2);
-    }
-
-    assert_eq!(
-        destinations.destination(15),
-        BirdTravelDestinationState {
-            x: 0x1234,
-            y: 0x5678,
-        }
-    );
-    assert_eq!(
-        BirdTravelDestinationsState::load_from_ram(&ram),
-        destinations
-    );
-}
-
-#[test]
 fn overworld_map_zoom_loads_from_and_projects_to_ram() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[MODE7_ZOOM_STEP_COUNTER] = 4;
@@ -1476,33 +1234,6 @@ fn native_overworld_map_zoom_bridge_dual_writes_changes_from_native_state() {
     assert_eq!(zoom.timer, 12);
     assert_eq!(ram[MODE7_ZOOM_STEP_COUNTER], 4);
     assert_eq!(ram[TIMER_FOR_MODE7_ZOOM], 12);
-}
-
-#[test]
-fn native_overworld_map_zoom_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    let mut zoom = OverworldMapZoomState {
-        step_counter: 2,
-        timer: 8,
-    };
-    zoom.write_to_ram(&mut ram);
-
-    ram[MODE7_ZOOM_STEP_COUNTER] = 0xaa;
-    ram[TIMER_FOR_MODE7_ZOOM] = 0xbb;
-
-    {
-        let mut bridge = NativeOverworldMapZoomBridgeMut::new(&mut zoom, &mut ram);
-        bridge.decrement_timer();
-    }
-
-    assert_eq!(
-        zoom,
-        OverworldMapZoomState {
-            step_counter: 2,
-            timer: 7,
-        }
-    );
-    assert_eq!(OverworldMapZoomState::load_from_ram(&ram), zoom);
 }
 
 #[test]
@@ -2034,30 +1765,6 @@ fn native_overworld_palette_backup_bridge_syncs_seeded_ram_and_dual_writes_chang
 }
 
 #[test]
-fn native_overworld_palette_backup_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    ram[OVERWORLD_PAL_MAIN_INDOORS_BACKUP] = 0x12;
-    ram[OVERWORLD_PAL_AUX3_BP7_BACKUP] = 0x34;
-    ram[OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP] = 0x56;
-    let mut backup = OverworldPaletteBackupState::default();
-    backup.set_main_indoors(0x80);
-    backup.set_aux3_bg_palette_7(0x81);
-    backup.set_main_indoors_copy(0x82);
-
-    {
-        let mut bridge = NativeOverworldPaletteBackupBridgeMut::new(&mut backup, &mut ram);
-        bridge.set_main_indoors_backup(0x90);
-    }
-
-    assert_eq!(backup.main_indoors(), 0x90);
-    assert_eq!(backup.aux3_bg_palette_7(), 0x81);
-    assert_eq!(backup.main_indoors_copy(), 0x82);
-    assert_eq!(ram[OVERWORLD_PAL_MAIN_INDOORS_BACKUP], 0x90);
-    assert_eq!(ram[OVERWORLD_PAL_AUX3_BP7_BACKUP], 0x81);
-    assert_eq!(ram[OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP], 0x82);
-}
-
-#[test]
 fn room_bounds_loads_from_and_projects_to_ram() {
     let mut ram = vec![0; WRAM_SIZE];
     write_le_u16(&mut ram, ROOM_BOUNDS, 0x0010);
@@ -2114,32 +1821,4 @@ fn native_room_bounds_bridge_dual_writes_changes_from_native_state() {
     assert_eq!(read_le_u16(&ram, ROOM_BOUNDS + 6), 0x4000);
     assert_eq!(read_le_u16(&ram, ROOM_BOUNDS + 8), 0x0bbb);
     assert_eq!(read_le_u16(&ram, ROOM_BOUNDS + 10), 0x0047);
-}
-
-#[test]
-fn native_room_bounds_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    let mut bounds = RoomBoundsState::default();
-    bounds.set_y_bound(0, 0x0010);
-    bounds.set_y_bound(1, 0x0020);
-    bounds.set_y_bound(2, 0x0030);
-    bounds.set_y_bound(3, 0x0040);
-    bounds.set_x_bound(0, 0x0050);
-    bounds.set_x_bound(1, 0x0060);
-    bounds.set_x_bound(2, 0x0070);
-    bounds.set_x_bound(3, 0x0080);
-    bounds.write_to_ram(&mut ram);
-
-    write_le_u16(&mut ram, ROOM_BOUNDS, 0xaaaa);
-    write_le_u16(&mut ram, ROOM_BOUNDS + 8, 0xbbbb);
-
-    {
-        let mut bridge = NativeRoomBoundsBridgeMut::new(&mut bounds, &mut ram);
-        bridge.set_y_bound(1, 0x1234);
-    }
-
-    assert_eq!(bounds.y_bound(0), 0x0010);
-    assert_eq!(bounds.y_bound(1), 0x1234);
-    assert_eq!(bounds.x_bound(0), 0x0050);
-    assert_eq!(RoomBoundsState::load_from_ram(&ram), bounds);
 }

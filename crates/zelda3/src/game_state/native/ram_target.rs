@@ -142,6 +142,42 @@ impl RamTarget for ProjectionLog<'_> {
     }
 }
 
+/// Project a state into a log and return the bytes it would write.
+pub(crate) fn capture(
+    live: &[u8],
+    project: impl FnOnce(&mut ProjectionLog<'_>),
+) -> Vec<(usize, u8)> {
+    let mut log = ProjectionLog::new(live);
+    project(&mut log);
+    log.into_writes()
+}
+
+/// Publish the bytes of `now` whose value differs from the previous projection
+/// `before` (or that `before` did not write at all). A byte a mutation left
+/// unchanged is never re-stamped, so a stale copy cannot clobber another owner's
+/// live write. Both logs come from the same projection code, so their address
+/// sequences agree except where a mode gate opened or closed.
+pub(crate) fn publish_changes(before: &[(usize, u8)], now: &[(usize, u8)], ram: &mut [u8]) {
+    if before.len() == now.len() && before.iter().zip(now).all(|(a, b)| a.0 == b.0) {
+        for (&(addr, old), &(_, new)) in before.iter().zip(now) {
+            if old != new {
+                ram[addr] = new;
+            }
+        }
+        return;
+    }
+    let mut previous: std::collections::HashMap<usize, u8> =
+        std::collections::HashMap::with_capacity(before.len());
+    for &(addr, value) in before {
+        previous.insert(addr, value);
+    }
+    for &(addr, value) in now {
+        if previous.get(&addr) != Some(&value) {
+            ram[addr] = value;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,5 +202,36 @@ mod tests {
             replayed[addr] = value;
         }
         assert_eq!(direct, replayed);
+    }
+}
+
+#[cfg(test)]
+mod bridge_contract_tests {
+    use crate::game_state::constants::{BG2_X_SCROLL, MAPBAK_CGWSEL};
+    use crate::game_state::native::display::{NativePpuScrollCopyBridgeMut, PpuScrollCopyState};
+    use crate::types::{read_le_u16, write_le_u16};
+    use snes::WRAM_SIZE;
+
+    /// A bridge adopts live WRAM for its state when constructed and publishes only the
+    /// bytes its mutation changed; a byte another owner wrote stays as written.
+    #[test]
+    fn a_bridge_adopts_live_ram_and_publishes_only_changed_bytes() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, BG2_X_SCROLL, 0x0060);
+        write_le_u16(&mut ram, MAPBAK_CGWSEL, 0x1234);
+        let mut scroll = PpuScrollCopyState::default();
+        scroll.set_bg2_h_copy2(0x2200);
+        scroll.set_mapbak_cgwsel_word(0x5678);
+
+        {
+            let mut bridge = NativePpuScrollCopyBridgeMut::new(&mut scroll, &mut ram);
+            bridge.add_bg2_h_copy2(0x10);
+        }
+
+        assert_eq!(scroll.bg2_h_copy2(), 0x0070);
+        assert_eq!(read_le_u16(&ram, BG2_X_SCROLL), 0x0070);
+        assert_eq!(scroll.mapbak_cgwsel_word(), 0x1234);
+        assert_eq!(read_le_u16(&ram, MAPBAK_CGWSEL), 0x1234);
+        assert_eq!(scroll, PpuScrollCopyState::load_from_ram(&ram));
     }
 }

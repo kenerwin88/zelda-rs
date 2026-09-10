@@ -295,17 +295,29 @@ impl PolyRuntimeState {
 }
 
 pub(crate) struct NativePolyRuntimeBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     runtime: &'a mut PolyRuntimeState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativePolyRuntimeBridgeMut<'a> {
     pub(crate) fn new(runtime: &'a mut PolyRuntimeState, ram: &'a mut [u8]) -> Self {
-        Self { runtime, ram }
+        *runtime = PolyRuntimeState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| runtime.write_to_ram(log));
+        Self {
+            before,
+            runtime,
+            ram,
+        }
     }
 
     fn sync(&mut self) {
-        self.runtime.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.runtime.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         debug_assert_eq!(*self.runtime, PolyRuntimeState::load_from_ram(self.ram));
     }
 
@@ -635,17 +647,25 @@ impl PolyProjectedVerticesState {
 }
 
 pub(crate) struct NativePolyProjectedVerticesBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut PolyProjectedVerticesState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativePolyProjectedVerticesBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut PolyProjectedVerticesState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = PolyProjectedVerticesState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         debug_assert_eq!(
             *self.state,
             PolyProjectedVerticesState::load_from_ram(self.ram)
@@ -704,17 +724,25 @@ impl PolyFaceCoordsState {
 }
 
 pub(crate) struct NativePolyFaceCoordsBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut PolyFaceCoordsState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativePolyFaceCoordsBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut PolyFaceCoordsState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = PolyFaceCoordsState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         debug_assert_eq!(*self.state, PolyFaceCoordsState::load_from_ram(self.ram));
     }
 
@@ -875,17 +903,25 @@ impl PolyRasterEdgeState {
 }
 
 pub(crate) struct NativePolyRasterEdgeBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut PolyRasterEdgeState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativePolyRasterEdgeBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut PolyRasterEdgeState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = PolyRasterEdgeState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         debug_assert_eq!(*self.state, PolyRasterEdgeState::load_from_ram(self.ram));
     }
 

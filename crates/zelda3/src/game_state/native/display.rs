@@ -3911,17 +3911,30 @@ impl<'a> NativeAttractVramDestinationBridgeMut<'a> {
 }
 
 pub(crate) struct NativePaletteFilterBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     display: &'a mut DisplayState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativePaletteFilterBridgeMut<'a> {
     pub(crate) fn new(display: &'a mut DisplayState, ram: &'a mut [u8]) -> Self {
-        Self { display, ram }
+        display.palette_filter = PaletteFilterState::load_from_ram(&*ram);
+        let before = crate::game_state::native::ram_target::capture(&*ram, |log| {
+            display.palette_filter.write_to_ram(log)
+        });
+        Self {
+            before,
+            display,
+            ram,
+        }
     }
 
     fn sync(&mut self) {
-        self.display.palette_filter.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.display.palette_filter.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -4546,17 +4559,29 @@ impl<'a> NativeVramUploadBufferBridgeMut<'a> {
 }
 
 pub(crate) struct NativeOverworldPaletteBackupBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     backup: &'a mut OverworldPaletteBackupState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeOverworldPaletteBackupBridgeMut<'a> {
     pub(crate) fn new(backup: &'a mut OverworldPaletteBackupState, ram: &'a mut [u8]) -> Self {
-        Self { backup, ram }
+        *backup = OverworldPaletteBackupState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| backup.write_to_ram(log));
+        Self {
+            before,
+            backup,
+            ram,
+        }
     }
 
     fn sync(&mut self) {
-        self.backup.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.backup.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -4584,17 +4609,25 @@ impl<'a> NativeOverworldPaletteBackupBridgeMut<'a> {
 }
 
 pub(crate) struct NativeSpotlightHdmaBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut SpotlightHdmaState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeSpotlightHdmaBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut SpotlightHdmaState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = SpotlightHdmaState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
@@ -4700,17 +4733,25 @@ macro_rules! ppu_scroll_bridge_methods {
 }
 
 pub(crate) struct NativePpuScrollCopyBridgeMut<'a> {
+    before: Vec<(usize, u8)>,
     state: &'a mut PpuScrollCopyState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativePpuScrollCopyBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut PpuScrollCopyState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+        *state = PpuScrollCopyState::load_from_ram(&*ram);
+        let before =
+            crate::game_state::native::ram_target::capture(&*ram, |log| state.write_to_ram(log));
+        Self { before, state, ram }
     }
 
     fn sync(&mut self) {
-        self.state.write_to_ram(self.ram);
+        let now = crate::game_state::native::ram_target::capture(&*self.ram, |log| {
+            self.state.write_to_ram(log)
+        });
+        crate::game_state::native::ram_target::publish_changes(&self.before, &now, self.ram);
+        self.before = now;
         self.debug_assert_matches_ram();
     }
 
