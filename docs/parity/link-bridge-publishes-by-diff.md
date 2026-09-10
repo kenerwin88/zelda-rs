@@ -48,3 +48,8 @@ The main tree validated this batch on parity binary
 the frame 60000 and 150470 WRAM goldens match, the 200,000-frame WRAM
 endpoint is the recorded `dd45975c…` image, and all 1,721 library tests
 pass under the parity profile.
+
+The full cold route on the same binary matched all 1,581,079 frames of video
+and audio in 2,542 seconds, with the four WRAM goldens and the full-route
+WRAM endpoint (`31619379…`) unchanged; the run is promoted in
+`routes/full_run/parity-frontier.json`.
