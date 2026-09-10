@@ -1657,9 +1657,9 @@ impl ZeldaState {
     //   return GetTileAttribute(0, &x, y);
     // }
     pub(super) fn somaria_platform_and_pipe_check_tile(&mut self, k: usize) -> NativeTile {
-        let mut x = self.sprite_get_x(k);
+        let x = self.sprite_get_x(k);
         let y = self.sprite_get_y(k);
-        self.probe_entity_tile(0, &mut x, y)
+        self.probe_entity_tile(0, x, y).0
     }
 
 }

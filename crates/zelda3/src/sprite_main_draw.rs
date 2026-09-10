@@ -4777,14 +4777,14 @@ impl ZeldaState {
     // }
     pub(super) fn statue_check_for_switch(&mut self, k: usize) -> bool {
         for j in (0..4).rev() {
-            let mut x = self
+            let x = self
                 .sprite_get_x(k)
                 .wrapping_add(u16::from(MOVABLE_STATUE_SWITCH_X_OFFSETS[j]));
             let y = self
                 .sprite_get_y(k)
                 .wrapping_add(u16::from(MOVABLE_STATUE_SWITCH_Y_OFFSETS[j]));
             let floor = self.sprite_slot_view(k).floor();
-            if !self.probe_entity_tile(floor, &mut x, y).is_floor_switch() {
+            if !self.probe_entity_tile(floor, x, y).0.is_floor_switch() {
                 return false;
             }
         }
@@ -14753,9 +14753,9 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Toppo_VerifyTile(int k) {  // 85bb72
     pub(super) fn toppo_verify_tile(&mut self, k: usize) {
-        let mut x = self.sprite_get_x(k);
+        let x = self.sprite_get_x(k);
         let y = self.sprite_get_y(k);
-        if self.probe_entity_tile(0, &mut x, y) != NativeTile::GRASS {
+        if self.probe_entity_tile(0, x, y).0 != NativeTile::GRASS {
             let value = 5;
             self.sprite_slot_view_mut(k).set_ai_state(value);
         }

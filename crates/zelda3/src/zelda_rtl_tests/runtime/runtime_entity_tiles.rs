@@ -174,7 +174,7 @@ fn outdoor_state(map16_attribute: u8, map8_attribute: u8) -> ZeldaState {
 fn entity_tile_lookup_selects_the_floor_layer_and_only_the_probe_publishes() {
     let mut state = ZeldaState::new();
     state.set_indoor_flag(1);
-    let mut x = 0x0128u16;
+    let x = 0x0128u16;
     let y = 0x0030u16;
     let offset = usize::from((x & 0x01f8) >> 3) + usize::from((y & 0x01f8) << 3);
     state
@@ -187,32 +187,30 @@ fn entity_tile_lookup_selects_the_floor_layer_and_only_the_probe_publishes() {
         .sprite_workspace_mut()
         .set_tile(NativeTile::SPIKE_CACTUS);
 
-    assert_eq!(state.entity_tile_at(0, &mut x, y), NativeTile::OPEN_CHEST);
-    assert_eq!(state.entity_tile_at(1, &mut x, y), tile(0x72));
-    assert_eq!(state.entity_tile_at(2, &mut x, y), tile(0x72));
-    assert_eq!(x, 0x0128, "indoor lookups keep the pixel coordinate");
+    // Indoor lookups keep the pixel coordinate.
+    assert_eq!(state.entity_tile_at(0, x, y), (NativeTile::OPEN_CHEST, 0x0128));
+    assert_eq!(state.entity_tile_at(1, x, y), (tile(0x72), 0x0128));
+    assert_eq!(state.entity_tile_at(2, x, y), (tile(0x72), 0x0128));
     assert_eq!(
         state.game_state.sprites.workspace.tile(),
         NativeTile::SPIKE_CACTUS
     );
     assert_eq!(state.ram[SPRITE_TILETYPE], 0x44);
 
-    assert_eq!(state.probe_entity_tile(1, &mut x, y), tile(0x72));
+    assert_eq!(state.probe_entity_tile(1, x, y), (tile(0x72), 0x0128));
     assert_eq!(state.game_state.sprites.workspace.tile(), tile(0x72));
     assert_eq!(state.ram[SPRITE_TILETYPE], 0x72);
 
     // Outdoors the map8 catalog answers, with the slope orientation bit,
-    // and the caller's x becomes the map8 column.
+    // and the returned x is the map8 column.
     let mut state = outdoor_state(0x01, 0x10);
-    let mut x = 4 << 3;
-    assert_eq!(state.entity_tile_at(1, &mut x, 0x28), tile(0x11));
-    assert_eq!(x, 4);
+    let x = 4 << 3;
+    assert_eq!(state.entity_tile_at(1, x, 0x28), (tile(0x11), 4));
     assert_eq!(
         state.game_state.sprites.workspace.tile(),
         NativeTile::GROUND
     );
-    let mut x = 4 << 3;
-    assert_eq!(state.probe_entity_tile(0, &mut x, 0x28), tile(0x11));
+    assert_eq!(state.probe_entity_tile(0, x, 0x28), (tile(0x11), 4));
     assert_eq!(state.game_state.sprites.workspace.tile(), tile(0x11));
     assert_eq!(state.ram[SPRITE_TILETYPE], 0x11);
 }

@@ -55,23 +55,25 @@ impl ZeldaState {
     /// the floor selects the attribute layer. Outdoors the x coordinate is
     /// reduced to its map8 column, which the callers' slope test then reads.
     /// Publishing the result to the sprite scratch is the caller's step.
-    pub(super) fn entity_tile_at(&self, floor: u8, x: &mut u16, y: u16) -> NativeTile {
+    /// Returns the tile and the x the caller's collision continues with: the
+    /// pixel indoors, the map8 column outdoors.
+    pub(super) fn entity_tile_at(&self, floor: u8, x: u16, y: u16) -> (NativeTile, u16) {
         if self.game_state.world.location.is_indoors() {
             let offset = if floor >= 1 { 0x1000 } else { 0 }
-                + usize::from((*x & 0x01f8) >> 3)
+                + usize::from((x & 0x01f8) >> 3)
                 + usize::from((y & 0x01f8) << 3);
-            self.game_state.dungeon.bg2_attributes.bg2_tile(offset)
+            (self.game_state.dungeon.bg2_attributes.bg2_tile(offset), x)
         } else {
-            *x >>= 3;
-            self.overworld_tile_definition_at_location(*x, y)
+            let column = x >> 3;
+            (self.overworld_tile_definition_at_location(column, y), column)
         }
     }
 
     /// Probe a tile and publish it as the sprite scratch tile.
-    pub(super) fn probe_entity_tile(&mut self, floor: u8, x: &mut u16, y: u16) -> NativeTile {
-        let tile = self.entity_tile_at(floor, x, y);
+    pub(super) fn probe_entity_tile(&mut self, floor: u8, x: u16, y: u16) -> (NativeTile, u16) {
+        let (tile, x) = self.entity_tile_at(floor, x, y);
         self.sprite_workspace_mut().set_tile(tile);
-        tile
+        (tile, x)
     }
 
     pub(super) fn detect_player_movement(

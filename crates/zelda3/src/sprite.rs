@@ -7909,7 +7909,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     pub(super) fn sprite_check_tile_property(&mut self, k: usize, j: i32) -> bool {
         let j = (j >> 1) as usize;
 
-        let (mut x, y, in_bounds) = self.sprite_tile_property_coordinates(j);
+        let (x, y, in_bounds) = self.sprite_tile_property_coordinates(j);
         if !in_bounds {
             if self.sprite_slot_view(k).flags2() & 0x40 != 0 {
                 let value = 0;
@@ -7918,7 +7918,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             }
             return true;
         }
-        let tile = self.sprite_get_tile_attribute(k, &mut x, y);
+        let (tile, x) = self.sprite_get_tile_attribute(k, x, y);
         self.sprite_classify_tile_property(k, x, y, tile)
     }
 
@@ -8042,12 +8042,12 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             1
         };
         let j = usize::from((self.sprite_slot_view(k).flags() & 0xf0) >> 2) + direction;
-        let (mut x, y, in_bounds) = self.sprite_tile_property_coordinates(j);
+        let (x, y, in_bounds) = self.sprite_tile_property_coordinates(j);
         assert!(
             in_bounds,
             "source tile attribute publication requires an in-bounds lookup"
         );
-        self.sprite_get_tile_attribute(k, &mut x, y);
+        self.sprite_get_tile_attribute(k, x, y);
     }
 
     pub(super) fn sprite_vertical_collision_after_attribute_loaded(&mut self, k: usize) {
@@ -9921,12 +9921,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     // uint8 Sprite_GetTileAttribute(int k, uint16 *x, uint16 y) {  // 86e883
     //   return GetTileAttribute(sprite_floor[k], x, y);
     // }
-    pub(super) fn sprite_get_tile_attribute(
-        &mut self,
-        k: usize,
-        x: &mut u16,
-        y: u16,
-    ) -> NativeTile {
+    pub(super) fn sprite_get_tile_attribute(&mut self, k: usize, x: u16, y: u16) -> (NativeTile, u16) {
         self.probe_entity_tile(self.sprite_slot_view(k).floor(), x, y)
     }
 

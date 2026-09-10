@@ -3602,7 +3602,9 @@ impl ZeldaState {
 
     pub(super) fn ancilla_terminate_select_interactives(&mut self, mut y: u8) -> u8 {
         for i in (0..=5).rev() {
-            self.ancilla_interactive_cleanup_slot_prefix(i, &mut y);
+            if let Some(slot) = self.ancilla_interactive_cleanup_slot_prefix(i) {
+                y = slot;
+            }
             self.ancilla_interactive_cleanup_slot_finish(i);
         }
         self.ancilla_interactive_cleanup_finish();
@@ -3611,9 +3613,8 @@ impl ZeldaState {
 
     pub(super) fn ancilla_interactive_cleanup_before_pickup(&mut self, slot: u8) {
         assert!(slot < 6);
-        let mut ignored_y = 0;
         for i in (usize::from(slot)..=5).rev() {
-            self.ancilla_interactive_cleanup_slot_prefix(i, &mut ignored_y);
+            self.ancilla_interactive_cleanup_slot_prefix(i);
             if i != usize::from(slot) {
                 self.ancilla_interactive_cleanup_slot_finish(i);
             }
@@ -3639,17 +3640,17 @@ impl ZeldaState {
     }
 
     fn ancilla_interactive_cleanup_after_current_slot(&mut self, slot: u8) {
-        let mut ignored_y = 0;
         for i in (0..usize::from(slot)).rev() {
-            self.ancilla_interactive_cleanup_slot_prefix(i, &mut ignored_y);
+            self.ancilla_interactive_cleanup_slot_prefix(i);
             self.ancilla_interactive_cleanup_slot_finish(i);
         }
         self.ancilla_interactive_cleanup_finish();
     }
 
-    fn ancilla_interactive_cleanup_slot_prefix(&mut self, i: usize, y: &mut u8) {
+    /// Returns the slot when it holds the interactive that the caller keeps.
+    fn ancilla_interactive_cleanup_slot_prefix(&mut self, i: usize) -> Option<u8> {
         if self.ancilla_slot_view(i).ancilla_type() == 0x3e {
-            *y = i as u8;
+            return Some(i as u8);
         } else if self.ancilla_slot_view(i).ancilla_type() == 0x2c {
             self.dungeon_environment_mut()
                 .clear_somaria_block_switch_counter();
@@ -3658,6 +3659,7 @@ impl ZeldaState {
                 self.follower_link_state_mut().set_speed_setting(0);
             }
         }
+        None
     }
 
     fn ancilla_interactive_cleanup_slot_finish(&mut self, i: usize) {
@@ -8399,7 +8401,7 @@ impl ZeldaState {
 
     fn ancilla_check_tile_collision_class2_inner(&mut self, k: usize) -> bool {
         let dir = self.ancilla_slot_view(k).direction() as usize;
-        let mut x = self
+        let x = self
             .ancilla_x(k)
             .wrapping_add(ANCILLA_CHECK_TILE_COLLISION_CLASS2_INNER_X_OFFSETS[dir] as i16 as u16);
         let y = self
@@ -8412,7 +8414,7 @@ impl ZeldaState {
             return false;
         }
 
-        let tile = self.ancilla_probe_tile(k, &mut x, y);
+        let (tile, x) = self.ancilla_probe_tile(k, x, y);
         // Wall identity 3 never stops an ancilla travelling on the upper layer.
         if tile == NativeTile::from_cartridge(3) && self.ancilla_slot_view(k).floor2() != 0 {
             return false;
@@ -8455,13 +8457,13 @@ impl ZeldaState {
         false
     }
 
-    fn ancilla_check_tile_collision_targeted(&mut self, k: usize, mut x: u16, y: u16) -> bool {
+    fn ancilla_check_tile_collision_targeted(&mut self, k: usize, x: u16, y: u16) -> bool {
         if y.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2()) >= 224
             || x.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2()) >= 256
         {
             return false;
         }
-        let tile = self.ancilla_probe_tile(k, &mut x, y);
+        let (tile, x) = self.ancilla_probe_tile(k, x, y);
         // Wall identity 3 never stops an ancilla travelling on the upper layer.
         if tile == NativeTile::from_cartridge(3) && self.ancilla_slot_view(k).floor2() != 0 {
             return false;
@@ -10516,16 +10518,16 @@ impl ZeldaState {
     /// Probe the tile ahead of an ancilla and record it on the slot. The
     /// original published the sprite scratch tile only indoors, so the
     /// outdoor slope test still reads whatever the scratch last held.
-    fn ancilla_probe_tile(&mut self, k: usize, x: &mut u16, y: u16) -> NativeTile {
+    fn ancilla_probe_tile(&mut self, k: usize, x: u16, y: u16) -> (NativeTile, u16) {
         let floor = self.ancilla_slot_view(k).floor();
-        let tile = if self.game_state.world.location.is_indoors() {
+        let (tile, x) = if self.game_state.world.location.is_indoors() {
             self.probe_entity_tile(floor, x, y)
         } else {
             self.entity_tile_at(floor, x, y)
         };
         self.ancilla_slot_view_mut(k)
             .set_tile_attribute(tile.cartridge_attribute());
-        tile
+        (tile, x)
     }
 
     fn ancilla_sloped_tile_collision(&self, x: u16, y: u16) -> bool {

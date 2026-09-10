@@ -340,10 +340,10 @@ impl ZeldaState {
     //   ...same tile probe as C, caching sprite_tiletype...
     // }
     pub(super) fn probe_check_tile_solidity(&mut self, k: usize) -> bool {
-        let mut x = self.game_state.sprites.workspace.current_sprite_x();
+        let x = self.game_state.sprites.workspace.current_sprite_x();
         let y = self.game_state.sprites.workspace.current_sprite_y();
         let tile = if self.game_state.world.location.is_indoors() {
-            self.entity_tile_at(self.sprite_slot_view(k).floor(), &mut x, y)
+            self.entity_tile_at(self.sprite_slot_view(k).floor(), x, y).0
         } else {
             self.overworld_map16_tile_definition_at_location(x >> 3, y)
         };

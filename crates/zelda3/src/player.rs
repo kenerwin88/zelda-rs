@@ -9954,11 +9954,10 @@ impl ZeldaState {
             .follower_link
             .y()
             .wrapping_add(SPAWN_HAMMER_WATER_SPLASH_HAMMER_WATER_Y[i] as i16 as u16);
-        // The splash probe neither publishes the sprite scratch tile nor
-        // keeps the reduced outdoor column; the splash spawns at the pixel.
+        // The splash probe does not publish the sprite scratch tile; the
+        // splash spawns at the pixel.
         let floor = self.game_state.player.follower_link.lower_level_state();
-        let mut probe_x = x;
-        let tile = self.entity_tile_at(floor, &mut probe_x, y);
+        let (tile, _) = self.entity_tile_at(floor, x, y);
 
         if tile == NativeTile::DEEP_WATER || tile == NativeTile::SHALLOW_WATER {
             let j = self.sprite_spawn_small_splash(0);

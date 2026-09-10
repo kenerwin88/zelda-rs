@@ -579,29 +579,24 @@ fn sprite_get_tile_attribute_reads_indoor_floor_table_and_caches_type() {
     let k = 5;
     s.set_indoor_flag(1);
     s.sprite_slot_view_mut(k).set_floor(1);
-    let mut x = 0x0128;
+    let x = 0x0128;
     let y = 0x0030;
     let offset = 0x1000 + (((x & 0x01f8) >> 3) as usize) + (((y & 0x01f8) << 3) as usize);
     s.dungeon_bg2_attributes_mut().set_bg2_attr(offset, 0x72);
 
     let tile = |attribute| NativeTile::from_cartridge(attribute);
-    assert_eq!(s.sprite_get_tile_attribute(k, &mut x, y), tile(0x72));
-
-    assert_eq!(x, 0x0128);
+    assert_eq!(s.sprite_get_tile_attribute(k, x, y), (tile(0x72), 0x0128));
     assert_eq!(s.game_state.sprites.workspace.tile(), tile(0x72));
 
-    let mut floor0_x = 0x0008;
     s.dungeon_bg2_attributes_mut().set_bg2_attr(1, 0x34);
-    assert_eq!(s.probe_entity_tile(0, &mut floor0_x, 0), tile(0x34));
-    assert_eq!(floor0_x, 0x0008);
+    assert_eq!(s.probe_entity_tile(0, 0x0008, 0), (tile(0x34), 0x0008));
     assert_eq!(s.game_state.sprites.workspace.tile(), tile(0x34));
 
     s.set_indoor_flag(0);
-    let mut outdoor_x = 0x0128;
+    let outdoor_x = 0x0128;
     let outdoor_y = 0x0040;
     let expected = s.overworld_tile_definition_at_location(outdoor_x >> 3, outdoor_y);
-    assert_eq!(s.probe_entity_tile(0, &mut outdoor_x, outdoor_y), expected);
-    assert_eq!(outdoor_x, 0x0025);
+    assert_eq!(s.probe_entity_tile(0, outdoor_x, outdoor_y), (expected, 0x0025));
     assert_eq!(s.game_state.sprites.workspace.tile(), expected);
 }
 
