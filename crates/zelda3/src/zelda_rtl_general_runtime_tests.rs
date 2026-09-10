@@ -2064,6 +2064,8 @@ mod runtime_entity_tiles;
 mod runtime_entrance_backup;
 #[path = "zelda_rtl_tests/runtime/runtime_boss_prize_countdown.rs"]
 mod runtime_boss_prize_countdown;
+#[path = "zelda_rtl_tests/runtime/runtime_water_hdma_window.rs"]
+mod runtime_water_hdma_window;
 #[path = "zelda_rtl_tests/runtime/runtime_items.rs"]
 mod runtime_items;
 #[path = "zelda_rtl_tests/runtime/runtime_misc.rs"]

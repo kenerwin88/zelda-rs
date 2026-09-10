@@ -55,6 +55,12 @@ write-through where the SNES reuse is real.
   over screen's letter cursor at 0x39d. Mode-reuse, not a bug.
 - **The palette swap flag 0xabd** belongs to the world in one phase and
   the follower system in another.
+- **One HDMA window serves two floods.** The swamp palace drain and the
+  dam flood animate the same six window words (`water_hdma_var0..5`) with
+  different formulas: the drain steps both radii toward a target, the
+  flood widens an alternate y radius. The port had split them into a
+  "display" and a "dungeon environment" model and then patched the
+  adjuster to read raw RAM. (water-hdma-window-owner)
 
 ## Arrays that are deliberately indexed past their end
 

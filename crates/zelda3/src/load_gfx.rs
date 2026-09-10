@@ -2688,14 +2688,7 @@ impl ZeldaState {
             .water_hdma_window
             .window_y()
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
-        // WATER_HDMA_WINDOW_Y_RADIUS (0x684) is dual-modeled (DisplayState.water_hdma_window vs
-        // DungeonEnvironmentState.water_hdma_y_radius written by the swamp/flood scene); the
-        // DisplayState model is stale during the swamp scene, leaving the spotlight a scanline off
-        // (f606748). Read the live RAM byte both scenes write, like the old clone.
-        let y_radius = crate::types::read_le_u16(
-            &self.ram,
-            crate::game_state::constants::WATER_HDMA_WINDOW_Y_RADIUS,
-        );
+        let y_radius = self.game_state.display.water_hdma_window.window_y_radius();
         self.set_spotlight_y_lower(r10.wrapping_sub(y_radius));
         self.set_spotlight_y_upper(r10.wrapping_add(y_radius));
         self.AdjustWaterHDMAWindow_X(r10);
@@ -2709,15 +2702,7 @@ impl ZeldaState {
             .window_x()
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
         self.set_spotlight_window_x_center(window_x_center);
-        // WATER_HDMA_WINDOW_X_RADIUS (0x686) is dual-modeled: DisplayState.water_hdma_window
-        // (watergate scene) AND DungeonEnvironmentState.water_hdma_x_radius (swamp/flood water,
-        // written by Module07_0C). This reader only consulted the DisplayState model, which is
-        // stale during the swamp scene, so the HDMA window was a pixel off (f606612). Read the live
-        // RAM byte both scenes write, like the old clone.
-        let r12 = crate::types::read_le_u16(
-            &self.ram,
-            crate::game_state::constants::WATER_HDMA_WINDOW_X_RADIUS,
-        )
+        let r12 = self.game_state.display.water_hdma_window.window_x_radius()
         .saturating_sub(1);
         let r2 = window_x_center.wrapping_add(r12).min(255);
         let r0 = window_x_center.wrapping_sub(r12).min(255);

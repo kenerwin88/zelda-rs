@@ -37,9 +37,7 @@ use crate::game_state::constants::{
     OVERWORLD_FIXED_COLOR_PLUSMINUS, OVERWORLD_MAP_STATE, OVERWORLD_TILE_THEME_INDEX,
     REPLACEMENT_TILEMAP_LL, REPLACEMENT_TILEMAP_LR, REPLACEMENT_TILEMAP_UL, REPLACEMENT_TILEMAP_UR,
     RESERVED_GFX_CONFIG_WORD, RESET_XY_CHECK_FLAGS, SOMARIA_BLOCK_BG_CHECK_FLAG,
-    SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, TURN_ON_OFF_WATER_CTR, WATER_HDMA_WINDOW_X,
-    WATER_HDMA_WINDOW_X_RADIUS, WATER_HDMA_WINDOW_Y, WATER_HDMA_WINDOW_Y_RADIUS,
-    WATER_HDMA_WINDOW_Y_RADIUS_ALT, WATER_HDMA_WINDOW_Y_TARGET, WATER_SIDE_STEP_SWITCH,
+    SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, TURN_ON_OFF_WATER_CTR, WATER_SIDE_STEP_SWITCH,
 };
 use crate::game_state::constants::{
     COUNTDOWN_TIMER_FOR_STAIRCASES, CUR_STAIRCASE_PLANE, KIND_OF_IN_ROOM_STAIRCASE,
@@ -490,12 +488,6 @@ impl DungeonRoomTilemapState {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DungeonEnvironmentState {
     water_transition_counter: u8,
-    water_hdma_y_radius: u16,
-    water_hdma_x_radius: u16,
-    water_hdma_y_target: u16,
-    water_hdma_y_radius_alt: u16,
-    water_window_x: u16,
-    water_window_y: u16,
     water_puzzle_state_changed: u8,
     trapdoors_down: u16,
     somaria_block_switch_counter: u8,
@@ -510,12 +502,6 @@ impl DungeonEnvironmentState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             water_transition_counter: ram.get(TURN_ON_OFF_WATER_CTR).copied().unwrap_or(0),
-            water_hdma_y_radius: read_le_u16(ram, WATER_HDMA_WINDOW_Y_RADIUS),
-            water_hdma_x_radius: read_le_u16(ram, WATER_HDMA_WINDOW_X_RADIUS),
-            water_hdma_y_target: read_le_u16(ram, WATER_HDMA_WINDOW_Y_TARGET),
-            water_hdma_y_radius_alt: read_le_u16(ram, WATER_HDMA_WINDOW_Y_RADIUS_ALT),
-            water_window_x: read_le_u16(ram, WATER_HDMA_WINDOW_X),
-            water_window_y: read_le_u16(ram, WATER_HDMA_WINDOW_Y),
             water_puzzle_state_changed: ram
                 .get(DUNG_FLAG_STATECHANGE_WATERPUZZLE)
                 .copied()
@@ -542,16 +528,6 @@ impl DungeonEnvironmentState {
         // water counter here re-stamped 0 over the accumulating floor offset in moving-floor
         // rooms. Write it through in the setters instead and keep it out of the bulk
         // projection (same write-through pattern as OamState's mode-reused fields).
-        write_le_u16(ram, WATER_HDMA_WINDOW_Y_RADIUS, self.water_hdma_y_radius);
-        write_le_u16(ram, WATER_HDMA_WINDOW_X_RADIUS, self.water_hdma_x_radius);
-        write_le_u16(ram, WATER_HDMA_WINDOW_Y_TARGET, self.water_hdma_y_target);
-        write_le_u16(
-            ram,
-            WATER_HDMA_WINDOW_Y_RADIUS_ALT,
-            self.water_hdma_y_radius_alt,
-        );
-        write_le_u16(ram, WATER_HDMA_WINDOW_X, self.water_window_x);
-        write_le_u16(ram, WATER_HDMA_WINDOW_Y, self.water_window_y);
         ram[DUNG_FLAG_STATECHANGE_WATERPUZZLE] = self.water_puzzle_state_changed;
         write_le_u16(ram, DUNG_FLAG_TRAPDOORS_DOWN, self.trapdoors_down);
         ram[DUNG_FLAG_SOMARIA_BLOCK_SWITCH] = self.somaria_block_switch_counter;
@@ -568,22 +544,6 @@ impl DungeonEnvironmentState {
 
     pub(crate) fn water_transition_counter(&self) -> u8 {
         self.water_transition_counter
-    }
-
-    pub(crate) fn water_hdma_y_radius(&self) -> u16 {
-        self.water_hdma_y_radius
-    }
-
-    pub(crate) fn water_hdma_x_radius(&self) -> u16 {
-        self.water_hdma_x_radius
-    }
-
-    pub(crate) fn water_hdma_y_target(&self) -> u16 {
-        self.water_hdma_y_target
-    }
-
-    pub(crate) fn water_hdma_y_radius_alt(&self) -> u16 {
-        self.water_hdma_y_radius_alt
     }
 
     pub(crate) fn water_puzzle_state_changed(&self) -> u8 {
@@ -638,27 +598,6 @@ impl DungeonEnvironmentState {
     fn decrement_water_transition_counter(&mut self) -> u8 {
         self.water_transition_counter = self.water_transition_counter.wrapping_sub(1);
         self.water_transition_counter
-    }
-
-    fn set_water_hdma_y_radius(&mut self, value: u16) {
-        self.water_hdma_y_radius = value;
-    }
-
-    fn set_water_hdma_x_radius(&mut self, value: u16) {
-        self.water_hdma_x_radius = value;
-    }
-
-    fn set_water_hdma_y_target(&mut self, value: u16) {
-        self.water_hdma_y_target = value;
-    }
-
-    fn set_water_hdma_y_radius_alt(&mut self, value: u16) {
-        self.water_hdma_y_radius_alt = value;
-    }
-
-    fn set_water_window_position(&mut self, x: u16, y: u16) {
-        self.water_window_x = x;
-        self.water_window_y = y;
     }
 
     fn clear_water_puzzle_state_changed(&mut self) {
@@ -4237,11 +4176,6 @@ impl<'a> NativeDungeonEnvironmentBridgeMut<'a> {
 
     forward_synced! {
         state;
-        fn set_water_hdma_y_radius(value: u16);
-        fn set_water_hdma_x_radius(value: u16);
-        fn set_water_hdma_y_target(value: u16);
-        fn set_water_hdma_y_radius_alt(value: u16);
-        fn set_water_window_position(x: u16, y: u16);
         fn clear_water_puzzle_state_changed();
         fn set_water_puzzle_state_changed(value: u8);
         fn increment_water_puzzle_state_changed() -> u8;

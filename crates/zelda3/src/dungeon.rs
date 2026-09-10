@@ -512,30 +512,20 @@ impl ZeldaState {
                         .water_transition_counter()
                         >> 2)
                         & 3) as usize;
-                    if self.game_state.dungeon.environment.water_hdma_y_radius()
-                        == self.game_state.dungeon.environment.water_hdma_y_target()
+                    if self.game_state.display.water_hdma_window.window_y_radius()
+                        == self.game_state.display.water_hdma_window.window_y_target()
                     {
                         self.Dungeon_SetAttrForActivatedWaterOff();
                         return;
                     }
                     let delta = MODULE07_0_B_DRAIN_SWAMP_POOL_SWAMP_DRAIN_WINDOW_RADIUS_DELTAS[k]
                         as i16 as u16;
-                    let y_radius = self
-                        .game_state
-                        .dungeon
-                        .environment
-                        .water_hdma_y_radius()
+                    let y_radius = self.game_state.display.water_hdma_window.window_y_radius()
                         .wrapping_add(delta);
-                    let x_radius = self
-                        .game_state
-                        .dungeon
-                        .environment
-                        .water_hdma_x_radius()
+                    let x_radius = self.game_state.display.water_hdma_window.window_x_radius()
                         .wrapping_add(delta);
-                    self.dungeon_environment_mut()
-                        .set_water_hdma_y_radius(y_radius);
-                    self.dungeon_environment_mut()
-                        .set_water_hdma_x_radius(x_radius);
+                    self.water_hdma_window_mut().set_window_y_radius(y_radius);
+                    self.water_hdma_window_mut().set_window_x_radius(x_radius);
                 }
                 self.dungeon_environment_mut()
                     .increment_water_transition_counter();
@@ -567,10 +557,9 @@ impl ZeldaState {
                         .set_water_transition_counter(4);
                     self.increment_subsubmodule();
                     let depth = i32::from(self.game_state.frame.subsubmodule) - 4;
-                    self.dungeon_environment_mut().set_water_hdma_x_radius(8);
-                    self.dungeon_environment_mut()
-                        .set_water_hdma_y_radius_alt(0);
-                    self.dungeon_environment_mut().set_water_hdma_y_radius(0x30);
+                    self.water_hdma_window_mut().set_window_x_radius(8);
+                    self.water_hdma_window_mut().set_window_y_radius_alt(0);
+                    self.water_hdma_window_mut().set_window_y_radius(0x30);
                     self.Dungeon_AdjustWaterVomit(0x1654 + 0x10, depth);
                 }
             }
@@ -611,36 +600,22 @@ impl ZeldaState {
                         .water_transition_counter()
                         >> 2)
                         & 3) as usize;
-                    if self.game_state.dungeon.environment.water_hdma_y_radius()
-                        == self.game_state.dungeon.environment.water_hdma_y_target()
+                    if self.game_state.display.water_hdma_window.window_y_radius()
+                        == self.game_state.display.water_hdma_window.window_y_target()
                     {
                         self.Dungeon_SetAttrForActivatedWater();
                         return;
                     }
                     let delta = MODULE07_0_C_FLOOD_SWAMP_WATER_SWAMP_FILL_FINAL_RADIUS_DELTAS[k]
                         as i16 as u16;
-                    let y_radius = self
-                        .game_state
-                        .dungeon
-                        .environment
-                        .water_hdma_y_radius()
+                    let y_radius = self.game_state.display.water_hdma_window.window_y_radius()
                         .wrapping_add(delta);
-                    let x_radius = self
-                        .game_state
-                        .dungeon
-                        .environment
-                        .water_hdma_x_radius()
+                    let x_radius = self.game_state.display.water_hdma_window.window_x_radius()
                         .wrapping_add(delta);
-                    self.dungeon_environment_mut()
-                        .set_water_hdma_y_radius(y_radius);
-                    self.dungeon_environment_mut()
-                        .set_water_hdma_x_radius(x_radius);
+                    self.water_hdma_window_mut().set_window_y_radius(y_radius);
+                    self.water_hdma_window_mut().set_window_x_radius(x_radius);
 
-                    let a = self
-                        .game_state
-                        .dungeon
-                        .environment
-                        .water_hdma_y_target()
+                    let a = self.game_state.display.water_hdma_window.window_y_target()
                         .wrapping_sub(y_radius);
                     if a == 0 || a == 8 {
                         self.Dungeon_AdjustWaterVomit(if a == 0 { 0x16b4 } else { 0x168c }, 5);
@@ -664,22 +639,12 @@ impl ZeldaState {
         let r0 = 0x0688u16
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())
             .wrapping_sub(0x24);
-        let x_radius = self
-            .game_state
-            .dungeon
-            .environment
-            .water_hdma_x_radius()
+        let x_radius = self.game_state.display.water_hdma_window.window_x_radius()
             .wrapping_add(tab0[k] as i16 as u16);
-        let y_span = self
-            .game_state
-            .dungeon
-            .environment
-            .water_hdma_y_radius_alt()
+        let y_span = self.game_state.display.water_hdma_window.window_y_radius_alt()
             .wrapping_add(tab1[k] as i16 as u16);
-        self.dungeon_environment_mut()
-            .set_water_hdma_x_radius(x_radius);
-        self.dungeon_environment_mut()
-            .set_water_hdma_y_radius_alt(y_span);
+        self.water_hdma_window_mut().set_window_x_radius(x_radius);
+        self.water_hdma_window_mut().set_window_y_radius_alt(y_span);
         if y_span >= r0 {
             self.dungeon_room_load_mut().set_bg2_properties(7);
             self.increment_subsubmodule();
@@ -688,7 +653,7 @@ impl ZeldaState {
             .increment_water_transition_counter();
         let lower = 0x0688u16
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())
-            .wrapping_sub(self.game_state.dungeon.environment.water_hdma_y_radius());
+            .wrapping_sub(self.game_state.display.water_hdma_window.window_y_radius());
         self.set_spotlight_y_lower(lower);
         let upper = lower.wrapping_add(y_span);
         self.set_spotlight_y_upper(upper);
@@ -2212,20 +2177,17 @@ impl ZeldaState {
             0xd8 => {
                 let count_x = width as u16 + 2;
                 let count_y = height as u16 + 2;
-                self.dungeon_environment_mut()
-                    .set_water_hdma_x_radius(count_x << 4);
-                self.dungeon_environment_mut()
-                    .set_water_hdma_y_radius(count_y << 4);
-                self.dungeon_environment_mut()
-                    .set_water_hdma_y_target((count_y << 4).wrapping_sub(24));
+                self.water_hdma_window_mut().set_window_x_radius(count_x << 4);
+                self.water_hdma_window_mut().set_window_y_radius(count_y << 4);
+                self.water_hdma_window_mut().set_window_y_target((count_y << 4).wrapping_sub(24));
                 let hdma0 = ((dsto & 0x003f) << 3)
                     .wrapping_add(count_x << 4)
                     .wrapping_add(self.game_state.dungeon.room_load.loading_bg_offset_h());
                 let hdma1 = ((dsto & 0x0fc0) >> 3)
                     .wrapping_add(count_y << 4)
                     .wrapping_add(self.game_state.dungeon.room_load.loading_bg_offset_v());
-                self.dungeon_environment_mut()
-                    .set_water_window_position(hdma0, hdma1);
+                self.water_hdma_window_mut()
+                    .set_window_position(hdma0, hdma1);
                 if self.game_state.dungeon.savegame_state.savegame_state_bits() & 0x0800 != 0 {
                     self.dungeon_header_mut().clear_header_tag(1);
                     self.dungeon_room_load_mut().clear_bg2_properties();
@@ -2247,14 +2209,10 @@ impl ZeldaState {
             0xda => {
                 let count_x = width as u16 + 2;
                 let count_y = height as u16 + 2;
-                self.dungeon_environment_mut()
-                    .set_water_hdma_x_radius((count_x << 4).wrapping_sub(24));
-                self.dungeon_environment_mut()
-                    .set_water_hdma_y_target((count_y << 4).wrapping_sub(8));
-                self.dungeon_environment_mut()
-                    .set_water_hdma_y_radius((count_y << 4).wrapping_sub(32));
-                self.dungeon_environment_mut()
-                    .set_water_hdma_y_radius_alt(0);
+                self.water_hdma_window_mut().set_window_x_radius((count_x << 4).wrapping_sub(24));
+                self.water_hdma_window_mut().set_window_y_target((count_y << 4).wrapping_sub(8));
+                self.water_hdma_window_mut().set_window_y_radius((count_y << 4).wrapping_sub(32));
+                self.water_hdma_window_mut().set_window_y_radius_alt(0);
                 let hdma0 = ((dsto & 0x003f) << 3)
                     .wrapping_add(count_x << 4)
                     .wrapping_add(self.game_state.dungeon.room_load.loading_bg_offset_h());
@@ -2262,8 +2220,8 @@ impl ZeldaState {
                     .wrapping_add(count_y << 4)
                     .wrapping_add(self.game_state.dungeon.room_load.loading_bg_offset_v())
                     .wrapping_sub(8);
-                self.dungeon_environment_mut()
-                    .set_water_window_position(hdma0, hdma1);
+                self.water_hdma_window_mut()
+                    .set_window_position(hdma0, hdma1);
                 if self.game_state.dungeon.savegame_state.savegame_state_bits() & 0x0800 != 0 {
                     self.dungeon_header_mut().clear_header_tag(1);
                 } else {

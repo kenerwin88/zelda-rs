@@ -768,6 +768,10 @@ pub(crate) struct WaterHdmaWindowState {
     window_y: u16,
     window_y_radius: u16,
     window_x_radius: u16,
+    /// The y radius the swamp drain steps toward (`water_hdma_var4`).
+    window_y_target: u16,
+    /// The flood's alternate y radius (`water_hdma_var5`).
+    window_y_radius_alt: u16,
     watergate_spotlight_y_upper: u16,
     watergate_pointer: u8,
     watergate_tilemap_pos_x2: u16,
@@ -780,6 +784,8 @@ impl WaterHdmaWindowState {
             window_y: read_le_u16(ram, WATER_HDMA_WINDOW_Y),
             window_y_radius: read_le_u16(ram, WATER_HDMA_WINDOW_Y_RADIUS),
             window_x_radius: read_le_u16(ram, WATER_HDMA_WINDOW_X_RADIUS),
+            window_y_target: read_le_u16(ram, WATER_HDMA_WINDOW_Y_TARGET),
+            window_y_radius_alt: read_le_u16(ram, WATER_HDMA_WINDOW_Y_RADIUS_ALT),
             watergate_spotlight_y_upper: read_le_u16(ram, WATERGATE_SPOTLIGHT_Y_UPPER),
             watergate_pointer: ram_byte(ram, WATERGATE_POINTER),
             watergate_tilemap_pos_x2: read_le_u16(ram, WATERGATE_POS),
@@ -791,6 +797,9 @@ impl WaterHdmaWindowState {
         write_le_u16(ram, WATER_HDMA_WINDOW_Y, self.window_y);
         write_le_u16(ram, WATER_HDMA_WINDOW_Y_RADIUS, self.window_y_radius);
         write_le_u16(ram, WATER_HDMA_WINDOW_X_RADIUS, self.window_x_radius);
+        // The y target and alternate y radius were never part of the master projection
+        // (the dungeon environment only wrote them through its bridge); their setters
+        // write through, which keeps the projected byte set unchanged.
         write_le_u16(
             ram,
             WATERGATE_SPOTLIGHT_Y_UPPER,
@@ -814,6 +823,14 @@ impl WaterHdmaWindowState {
 
     pub(crate) fn window_x_radius(&self) -> u16 {
         self.window_x_radius
+    }
+
+    pub(crate) fn window_y_target(&self) -> u16 {
+        self.window_y_target
+    }
+
+    pub(crate) fn window_y_radius_alt(&self) -> u16 {
+        self.window_y_radius_alt
     }
 
     pub(crate) fn watergate_spotlight_y_upper(&self) -> u16 {
@@ -856,6 +873,18 @@ impl WaterHdmaWindowState {
 
     pub(crate) fn set_window_x_radius(&mut self, value: u16) {
         self.window_x_radius = value;
+    }
+
+    pub(crate) fn set_window_y_radius(&mut self, value: u16) {
+        self.window_y_radius = value;
+    }
+
+    pub(crate) fn set_window_y_target(&mut self, value: u16) {
+        self.window_y_target = value;
+    }
+
+    pub(crate) fn set_window_y_radius_alt(&mut self, value: u16) {
+        self.window_y_radius_alt = value;
     }
 
     pub(crate) fn set_window_y_radius_byte(&mut self, value: u8) {
@@ -4320,6 +4349,33 @@ impl<'a> NativeWaterHdmaWindowBridgeMut<'a> {
     pub(crate) fn set_window_x_radius(&mut self, value: u16) {
         self.display.water_hdma_window.set_window_x_radius(value);
         write_le_u16(self.ram, WATER_HDMA_WINDOW_X_RADIUS, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_window_y_radius(&mut self, value: u16) {
+        self.display.water_hdma_window.set_window_y_radius(value);
+        write_le_u16(self.ram, WATER_HDMA_WINDOW_Y_RADIUS, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_window_y_target(&mut self, value: u16) {
+        self.display.water_hdma_window.set_window_y_target(value);
+        write_le_u16(self.ram, WATER_HDMA_WINDOW_Y_TARGET, value);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_window_y_radius_alt(&mut self, value: u16) {
+        self.display.water_hdma_window.set_window_y_radius_alt(value);
+        write_le_u16(self.ram, WATER_HDMA_WINDOW_Y_RADIUS_ALT, value);
+        self.debug_assert_matches_ram();
+    }
+
+    /// The room draw positions the window center x then y, as the original stores them.
+    pub(crate) fn set_window_position(&mut self, x: u16, y: u16) {
+        self.display.water_hdma_window.set_window_x(x);
+        write_le_u16(self.ram, WATER_HDMA_WINDOW_X, x);
+        self.display.water_hdma_window.set_window_y(y);
+        write_le_u16(self.ram, WATER_HDMA_WINDOW_Y, y);
         self.debug_assert_matches_ram();
     }
 
