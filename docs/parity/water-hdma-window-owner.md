@@ -42,3 +42,21 @@ Compatibility constraints remain explicit:
   the frozen player-collision and tile-behavior fixtures confirm.
 
 ## Verification
+
+`runtime_water_hdma_window.rs` sets a radius through the owner, fires an
+unrelated environment setter, runs the master projection, and checks the
+radius at each step; the same scenario fails on the preceding commit, where
+the environment's bridge re-stamps zero. Readability and projection
+discovery pass; the scanner reports zero HIGH RISK overlaps, 13 bridge-sync
+overlaps (down from 14), and 61 overlapping bytes (down from 69).
+
+All 1,773 library tests pass under both the parity and dev profiles, with two
+existing ignored tests and no compiler warnings.
+
+Candidate binary SHA-256:
+`b6230379904fa447d2b2e9f25a789d34ab8a74aed0e708e2c5f2f10b8c1616df`.
+
+The 200,000-frame cached Snes9x audio/video comparison passed from frame zero
+in 310.95 seconds. Both reached WRAM goldens match, and the complete endpoint
+is byte-identical to the preceding promoted build, SHA-256
+`dd45975cee5acdd270d1b0c74c5d38f1ba3ce3bd7e0af648264b8f77e95f244d`.
