@@ -47,3 +47,14 @@ setter; the same stores through the old room-effects setters leave RAM at
 zero on the preceding commit. Readability and projection discovery pass; the
 scanner reports zero HIGH RISK overlaps, 12 bridge-sync overlaps (down from
 13, the 0x10000 pair), and 60 overlapping bytes (down from 61).
+
+All 1,774 library tests pass under both the parity and dev profiles, with two
+existing ignored tests and no compiler warnings.
+
+Candidate binary SHA-256:
+`14c05f01ec0c0c8131fb563631876f23e578f65fa76eadc3efc8d6a709d809bc`.
+
+The 200,000-frame cached Snes9x audio/video comparison passed from frame zero
+in 315.02 seconds. Both reached WRAM goldens match, and the complete endpoint
+is byte-identical to the preceding promoted build, SHA-256
+`dd45975cee5acdd270d1b0c74c5d38f1ba3ce3bd7e0af648264b8f77e95f244d`.
