@@ -7,7 +7,7 @@ const ROM_DIALOGUE_FIRST_SEGMENT: u32 = 0x1c_8000;
 const ROM_DIALOGUE_SECOND_SEGMENT: u32 = 0x0e_df40;
 const ROM_DIALOGUE_TERMINATOR: u8 = 0x7f;
 
-fn lorom_offset(address: u32) -> Option<usize> {
+pub(crate) fn lorom_offset(address: u32) -> Option<usize> {
     let address_in_bank = address as u16;
     if address_in_bank < 0x8000 {
         return None;

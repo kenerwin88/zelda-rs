@@ -214,3 +214,38 @@ asset extraction and shipped in the asset pack like the assets
 themselves; only control-flow costs need native cycle models. The room
 load plan is the hardest: its cost is the room's object list drawn
 through RoomDraw, and needs a per-object cycle model.
+
+## First native cycle model: the graphics decompressor
+
+`crates/zelda3/src/cycle_models/decompress.rs` prices the ROM's
+`Decompress` routine (`$00:E79E`, entered through `Decomp_spr` or
+`Decomp_bg`) instruction by instruction from its disassembly: slow-ROM
+fetches at 8 master cycles per byte, WRAM accesses at 8, internal cycles
+at 6, branches at 22 taken and 16 not taken, and every command path
+(direct copy, byte fill, word fill, increasing fill, back reference,
+extended headers, the source bank wrap inside `GetNextByte`). Output and
+back-reference accesses are priced by address with the pinned core's bus
+rule, because a stream that runs past `$7F:FFFF` wraps into bank `$80`
+where the register window costs 6. The model takes only what the routine
+consumes: the compressed bytes, the sheet index (for the page-crossing
+table loads) and the destination address.
+
+Its test builds a shadow-CPU checkpoint at each entry point and runs
+every sheet the cartridge's pointer tables name (108 sprite, 114
+background: 222 streams, from 45 bytes to 1,705 bytes, including the
+twelve raw sprite sheets the game never decodes) and demands equality:
+222 of 222 match. The test skips when no ROM is present, so it is the
+kind of check that runs in the validation chain, not in a ROM-free
+build. This is the shape every plan component takes: a pure function of
+the routine's inputs, verified exhaustively against the shadow CPU where
+the cartridge enumerates the inputs, and against the route's profiles
+where it does not.
+
+In the dialogue plan the decompressor is 77% of the cost (the story
+font: two sheets). Remaining components for a native dialogue schedule:
+`Text_LoadCharacterBuffer` with `Text_DictionarySequence` (per message,
+priced over the original dictionary-compressed bytes),
+`RenderText_Draw_EmptyBuffer`, the `Text_Initialize` prefix, the NMI
+handler bodies that interrupt the call, and the module's Sprite_Main,
+LinkOam and HUD suffix before the return, which is the general
+main-loop cost model the timing owner needs.

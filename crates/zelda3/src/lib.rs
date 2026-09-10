@@ -10,6 +10,7 @@
 
 pub mod chr_source;
 pub mod config;
+pub(crate) mod cycle_models;
 pub mod debug_env;
 pub mod game_output;
 pub(crate) mod game_state;
