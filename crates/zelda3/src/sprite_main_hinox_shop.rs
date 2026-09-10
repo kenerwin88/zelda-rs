@@ -403,11 +403,11 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn shop_item_red_potion150(&mut self, k: usize) {
-        self.sprite_draw_shop_item_for_hinox_shop(k);
+        self.sprite_draw_shop_item(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.sprite_behave_as_barrier_for_hinox_shop(k);
+        self.sprite_behave_as_barrier(k);
         if self.shop_item_check_for_a_press(k) {
             if self.sprite_find_empty_bottle_for_hinox_shop() < 0 {
                 self.sprite_show_message_unconditional(0x16d);
@@ -445,11 +445,11 @@ impl ZeldaState {
     //   sprite_flags4[k] = 0x1c;
     // }
     pub(super) fn shop_item_fighter_shield(&mut self, k: usize) {
-        self.sprite_draw_shop_item_for_hinox_shop(k);
+        self.sprite_draw_shop_item(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.sprite_behave_as_barrier_for_hinox_shop(k);
+        self.sprite_behave_as_barrier(k);
         self.shop_item_make_shields_deflect(k);
         if self.shop_item_check_for_a_press(k) {
             if self.game_state.inventory.items.shield_type() != 0 {
@@ -493,11 +493,11 @@ impl ZeldaState {
     //   sprite_flags4[k] = 0x1c;
     // }
     pub(super) fn shop_item_fire_shield(&mut self, k: usize) {
-        self.sprite_draw_shop_item_for_hinox_shop(k);
+        self.sprite_draw_shop_item(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.sprite_behave_as_barrier_for_hinox_shop(k);
+        self.sprite_behave_as_barrier(k);
         self.shop_item_make_shields_deflect(k);
         if self.shop_item_check_for_a_press(k) {
             if self.game_state.inventory.items.shield_type() >= 2 {
@@ -534,7 +534,7 @@ impl ZeldaState {
             sprite.set_deflection_bits(4);
             sprite.set_flags4(0x1c);
         }
-        self.sprite_check_damage_from_link_for_hinox_shop(k);
+        self.sprite_check_damage_from_link(k);
         self.sprite_slot_view_mut(k).set_flags4(0xa);
     }
 
@@ -556,11 +556,11 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn shop_item_heart(&mut self, k: usize) {
-        self.sprite_draw_shop_item_for_hinox_shop(k);
+        self.sprite_draw_shop_item(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.sprite_behave_as_barrier_for_hinox_shop(k);
+        self.sprite_behave_as_barrier(k);
         if self.shop_item_check_for_a_press(k) {
             if self.game_state.inventory.player_resources.current_health()
                 == self.game_state.inventory.player_resources.health_capacity()
@@ -595,11 +595,11 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn shop_item_arrows(&mut self, k: usize) {
-        self.sprite_draw_shop_item_for_hinox_shop(k);
+        self.sprite_draw_shop_item(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.sprite_behave_as_barrier_for_hinox_shop(k);
+        self.sprite_behave_as_barrier(k);
         if self.shop_item_check_for_a_press(k) {
             let upg = self
                 .game_state
@@ -609,7 +609,7 @@ impl ZeldaState {
             if self.game_state.inventory.player_resources.arrows()
                 == MAX_ARROWS_BY_UPGRADE_LEVEL[upg]
             {
-                self.sprite_show_solicited_message_for_hinox_shop(k, 0x16e);
+                self.sprite_show_solicited_message(k, 0x16e);
                 self.shop_item_play_beep(k);
             } else if self.shop_item_handle_cost(30) {
                 self.sprite_slot_view_mut(k).clear();
@@ -640,11 +640,11 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn shop_item_bombs(&mut self, k: usize) {
-        self.sprite_draw_shop_item_for_hinox_shop(k);
+        self.sprite_draw_shop_item(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.sprite_behave_as_barrier_for_hinox_shop(k);
+        self.sprite_behave_as_barrier(k);
         if self.shop_item_check_for_a_press(k) {
             let upg = self
                 .game_state
@@ -653,7 +653,7 @@ impl ZeldaState {
                 .bomb_upgrade_level() as usize;
             if self.game_state.inventory.player_resources.bombs() == MAX_BOMBS_BY_UPGRADE_LEVEL[upg]
             {
-                self.sprite_show_solicited_message_for_hinox_shop(k, 0x16e);
+                self.sprite_show_solicited_message(k, 0x16e);
                 self.shop_item_play_beep(k);
             } else if self.shop_item_handle_cost(50) {
                 self.sprite_slot_view_mut(k).clear();
@@ -684,14 +684,14 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn shop_item_bee(&mut self, k: usize) {
-        self.sprite_draw_shop_item_for_hinox_shop(k);
+        self.sprite_draw_shop_item(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.sprite_behave_as_barrier_for_hinox_shop(k);
+        self.sprite_behave_as_barrier(k);
         if self.shop_item_check_for_a_press(k) {
             if self.sprite_find_empty_bottle_for_hinox_shop() < 0 {
-                self.sprite_show_solicited_message_for_hinox_shop(k, 0x16d);
+                self.sprite_show_solicited_message(k, 0x16d);
                 self.shop_item_play_beep(k);
             } else if self.shop_item_handle_cost(10) {
                 self.sprite_slot_view_mut(k).clear();
@@ -750,7 +750,7 @@ impl ZeldaState {
         if j >= 7 {
             let msg = SHOP_KEEPER_GIVE_ITEM_MESSAGES[j - 7];
             self.sprite_show_message_unconditional(msg);
-            self.shop_keeper_rapid_terminate_receive_item_for_hinox_shop();
+            self.shop_keeper_rapid_terminate_receive_item();
         }
         if flags4 {
             self.sprite_slot_view_mut(k).set_flags4(0x1c);
@@ -777,7 +777,7 @@ impl ZeldaState {
         if (self.game_state.player.follower_link.filtered_joypad_l() & 0x80) == 0 {
             return false;
         }
-        self.sprite_check_damage_to_link_same_layer_for_hinox_shop(k)
+        self.sprite_check_damage_to_link_same_layer(k)
     }
 
     // bool ShopItem_HandleCost(int amt) {  // 9ef39e
@@ -808,38 +808,6 @@ impl ZeldaState {
     // Rewired to canonical Sprite_DirectionToFaceLink port.
     fn sprite_direction_to_face_link_for_hinox_shop(&mut self, k: usize) -> u8 {
         self.sprite_direction_to_face_link(k, None)
-    }
-
-    // Rewired to canonical Sprite_BehaveAsBarrier port.
-    fn sprite_behave_as_barrier_for_hinox_shop(&mut self, k: usize) {
-        self.sprite_behave_as_barrier(k);
-    }
-
-    // Rewired to canonical Sprite_CheckDamageFromLink entry point.
-    fn sprite_check_damage_from_link_for_hinox_shop(&mut self, k: usize) {
-        let _ = self.sprite_check_damage_from_link(k);
-    }
-
-    // Rewired to canonical Sprite_CheckDamageToLink_same_layer port.
-    fn sprite_check_damage_to_link_same_layer_for_hinox_shop(&mut self, k: usize) -> bool {
-        self.sprite_check_damage_to_link_same_layer(k)
-    }
-
-    // Rewired to canonical Sprite_ShowSolicitedMessage port. Hinox-shop
-    // callers ignore the return value (they only care about the dialogue
-    // side effect).
-    fn sprite_show_solicited_message_for_hinox_shop(&mut self, k: usize, msg: u16) {
-        let _ = self.sprite_show_solicited_message(k, msg);
-    }
-
-    // Rewired to canonical ShopKeeper_RapidTerminateReceiveItem port.
-    fn shop_keeper_rapid_terminate_receive_item_for_hinox_shop(&mut self) {
-        self.shop_keeper_rapid_terminate_receive_item();
-    }
-
-    // Rewired to canonical SpriteDraw_ShopItem port.
-    fn sprite_draw_shop_item_for_hinox_shop(&mut self, k: usize) {
-        self.sprite_draw_shop_item(k);
     }
 
     // Sprite_Find_EmptyBottle — duplicated locally because the canonical port

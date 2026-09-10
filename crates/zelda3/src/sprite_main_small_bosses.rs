@@ -248,7 +248,7 @@ impl ZeldaState {
     /// on the inactive and dying returns.
     fn trinexx_final_phase_prefix(&mut self, k: usize) -> bool {
         self.trinexx_final_phase_graphics(k);
-        self.sprite_trinexxd_draw_for_small_bosses(k);
+        self.sprite_trinexx_d_draw(k);
         self.trinexx_final_phase_after_draw(k)
     }
 
@@ -271,7 +271,7 @@ impl ZeldaState {
     /// `Sprite_Trinexx_FinalPhase` after `Sprite_TrinexxD_Draw` up to its
     /// AI-state switch. Returns `false` on the inactive and dying returns.
     fn trinexx_final_phase_after_draw(&mut self, k: usize) -> bool {
-        if self.sprite_return_if_inactive_for_small_bosses(k) {
+        if self.sprite_return_if_inactive(k) {
             return false;
         }
         if (self.sprite_slot_view(k).ai_state() as i8).is_negative() {
@@ -281,10 +281,10 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_delay_main(12);
                 if self.sprite_slot_view(k).anim_clock() == 0 {
                     self.sprite_slot_view_mut(k).set_hit_timer(255);
-                    self.sprite_schedule_boss_for_death_for_small_bosses(k);
+                    self.sprite_schedule_boss_for_death(k);
                 } else {
                     self.sprite_slot_view_mut(k).decrement_anim_clock();
-                    self.sprite_make_boss_explosion_for_small_bosses(k);
+                    self.sprite_make_boss_explosion(k);
                 }
             }
             return false;
@@ -305,8 +305,8 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_ai_state(2);
             }
         }
-        self.sprite_move_xy_for_small_bosses(k);
-        self.sprite_check_damage_to_and_from_link_for_small_bosses(k);
+        self.sprite_move_xy(k);
+        self.sprite_check_damage_to_and_from_link(k);
         true
     }
 
@@ -320,7 +320,7 @@ impl ZeldaState {
             1 => {
                 if (self.game_state.frame.frame_counter & 1) == 0 {
                     let pt = self.sprite_project_speed_towards_link(k, 31);
-                    self.sprite_approach_target_speed_for_small_bosses(k, pt.x, pt.y);
+                    self.sprite_approach_target_speed(k, pt.x, pt.y);
                 }
             }
             _ => {}
@@ -333,7 +333,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_ai_state(1);
             self.sprite_slot_view_mut(k).set_delay_main(192);
         }
-        self.sprite_get_16bit_coords_for_small_bosses(k);
+        self.sprite_get16_bit_coords(k);
     }
 
     fn trinexx_final_phase_case0_after_tile_collision(&mut self, k: usize, hit: bool) {
@@ -443,7 +443,9 @@ impl ZeldaState {
                 }
                 5 => self.sprite_slot_view_mut(k).set_deflection_bits(0x80),
                 6 => self.sprite_slot_view_mut(k).set_flags3(0),
-                7 => self.sprite_check_damage_from_link_for_small_bosses(k),
+                7 => {
+                    self.sprite_check_damage_from_link(k);
+                }
                 8 => self.sprite_slot_view_mut(k).set_deflection_bits(0x84),
                 9 => self.sprite_slot_view_mut(k).set_flags3(0x40),
                 10 => self
@@ -661,8 +663,8 @@ impl ZeldaState {
         }
         self.set_main_screen_layers(0x17);
         self.set_sub_screen_layers(0);
-        self.sprite_draw_trinexx_rock_head_and_body_for_small_bosses(k);
-        if self.sprite_return_if_inactive_for_small_bosses(k) {
+        self.sprite_draw_trinexx_rock_head_and_body(k);
+        if self.sprite_return_if_inactive(k) {
             return;
         }
         let ai_state = self.sprite_slot_view(k).ai_state();
@@ -720,7 +722,7 @@ impl ZeldaState {
         }
         self.trinexx_wag_tail(k);
         self.trinexx_handle_shell_collision(k);
-        self.sprite_check_damage_to_and_from_link_for_small_bosses(k);
+        self.sprite_check_damage_to_and_from_link(k);
         if (self.game_state.frame.frame_counter & 63) == 0 {
             let pair = self.sprite_is_right_of_link(k);
             let graphics = if pair.b.wrapping_add(24) < 48 {
@@ -977,7 +979,7 @@ impl ZeldaState {
     /// Everything after TrinexxHead_Draw up to the AI-state switch. Returns
     /// `false` on the inactive and explode returns.
     fn sidenexx_after_head_draw_prefix(&mut self, k: usize) -> bool {
-        if self.sprite_return_if_inactive_for_small_bosses(k) {
+        if self.sprite_return_if_inactive(k) {
             return false;
         }
         if (self.sprite_slot_view(k).ai_state() as i8).is_negative() {
@@ -999,7 +1001,7 @@ impl ZeldaState {
             }
             self.sprite_slot_view_mut(k).set_oam_flags(3);
         }
-        self.sprite_check_damage_to_and_from_link_for_small_bosses(k);
+        self.sprite_check_damage_to_and_from_link(k);
         self.sprite_slot_view_mut(k).or_deflection_bits(4);
         true
     }
@@ -1134,9 +1136,9 @@ impl ZeldaState {
         assert_eq!(self.overlord_slot_view(0).x_high(), 0);
         self.set_main_screen_layers(0x17);
         self.set_sub_screen_layers(0);
-        self.sprite_draw_trinexx_rock_head_and_body_for_small_bosses(k);
+        self.sprite_draw_trinexx_rock_head_and_body(k);
         assert!(
-            !self.sprite_return_if_inactive_for_small_bosses(k),
+            !self.sprite_return_if_inactive(k),
             "Trinexx death explosion checkpoint requires an active body"
         );
         let ai_state = self.sprite_slot_view(k).ai_state();
@@ -1658,7 +1660,7 @@ impl ZeldaState {
         for j in (1usize..=13).rev() {
             self.sprite_slot_view_mut(j).set_state(9);
             self.sprite_slot_view_mut(j).set_sprite_type(0xbe);
-            self.sprite_prep_load_properties_for_small_bosses(j);
+            self.sprite_prep_load_properties(j);
             self.sprite_slot_view_mut(j).set_floor(0);
             self.sprite_set_x(
                 j,
@@ -1708,7 +1710,7 @@ impl ZeldaState {
     // }
     pub(super) fn vitreous_animate(&mut self, k: usize, a: u8) {
         if a == 0x40 || a == 0x41 || a == 0x42 {
-            self.sprite_spawn_lightning_for_small_bosses(k);
+            self.sprite_spawn_lightning(k);
         }
         self.sprite_slot_view_mut(k).set_graphics(0);
         let pair = self.sprite_is_right_of_link(k);
@@ -1764,7 +1766,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).ai_state() == 2 {
             self.sprite_slot_view_mut(k)
                 .clear_object_priority_bits(0x0e);
-            self.sprite_draw_large_shadow2_for_small_bosses(k);
+            self.sprite_draw_large_shadow2(k);
         }
     }
 
@@ -2300,7 +2302,7 @@ impl ZeldaState {
             let bg2_y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2_low();
             self.sprite_workspace_mut().add_current_sprite_x_low(bg2_x);
             self.sprite_workspace_mut().add_current_sprite_y_low(bg2_y);
-            self.sprite_make_boss_explosion_for_small_bosses(k);
+            self.sprite_make_boss_explosion(k);
         }
     }
 
@@ -2550,7 +2552,7 @@ impl ZeldaState {
         let charnum = YELLOW_STALFOS_HEAD_CHARS[j];
         let flags = YELLOW_STALFOS_HEAD_FLAGS[j] | info.flags;
         let oam = self.game_state.oam.current_pointer_usize();
-        self.set_oam_helper0_for_small_bosses(oam, x, y, charnum, flags, 2);
+        self.set_oam_helper0_at(oam, x, y, charnum, flags, 2);
     }
 
     // void Sprite_EvilBarrier(int k) {  // 9df06b
@@ -2605,47 +2607,14 @@ impl ZeldaState {
     // available; remaining OAM/collision gaps stay conservative.
     // -----------------------------------------------------------------
 
-    fn sprite_return_if_inactive_for_small_bosses(&mut self, k: usize) -> bool {
-        self.sprite_return_if_inactive(k)
-    }
-
-    fn sprite_move_xy_for_small_bosses(&mut self, k: usize) {
-        self.sprite_move_xy(k);
-    }
-
-    fn sprite_check_damage_to_and_from_link_for_small_bosses(&mut self, k: usize) {
-        // Rewired to canonical Sprite_CheckDamageToAndFromLink port.
-        self.sprite_check_damage_to_and_from_link(k);
-    }
-
-    fn sprite_check_damage_from_link_for_small_bosses(&mut self, k: usize) {
-        let _ = self.sprite_check_damage_from_link(k);
-    }
-
-    fn sprite_get_16bit_coords_for_small_bosses(&mut self, k: usize) {
-        self.sprite_get16_bit_coords(k);
-    }
-
     fn sprite_check_tile_collision_for_small_bosses(&mut self, k: usize) -> bool {
         // Rewired to canonical Sprite_CheckTileCollision port. Boss callers
         // key off "any wall hit" via a non-zero check.
         self.sprite_check_tile_collision(k) != 0
     }
 
-    fn sprite_approach_target_speed_for_small_bosses(&mut self, k: usize, tx: u8, ty: u8) {
-        self.sprite_approach_target_speed(k, tx, ty);
-    }
-
     fn sprite_convert_velocity_to_angle_for_small_bosses(&mut self, xv: i8, yv: i8) -> u8 {
         Self::sprite_convert_velocity_to_angle(xv as u8, yv as u8)
-    }
-
-    fn sprite_trinexxd_draw_for_small_bosses(&mut self, k: usize) {
-        self.sprite_trinexx_d_draw(k);
-    }
-
-    fn sprite_draw_trinexx_rock_head_and_body_for_small_bosses(&mut self, k: usize) {
-        self.sprite_draw_trinexx_rock_head_and_body(k);
     }
 
     fn sprite_initialized_segmented_for_small_bosses(&mut self, k: usize) {
@@ -2654,14 +2623,6 @@ impl ZeldaState {
         for i in 0..128 {
             self.moldorm_history_mut(i).set_position(x, y);
         }
-    }
-
-    fn sprite_schedule_boss_for_death_for_small_bosses(&mut self, k: usize) {
-        self.sprite_schedule_boss_for_death(k);
-    }
-
-    fn sprite_make_boss_explosion_for_small_bosses(&mut self, k: usize) {
-        self.sprite_make_boss_explosion(k);
     }
 
     fn sprite_draw_multiple_for_small_bosses(
@@ -2694,10 +2655,6 @@ impl ZeldaState {
         }
     }
 
-    fn sprite_draw_large_shadow2_for_small_bosses(&mut self, k: usize) {
-        self.sprite_draw_large_shadow2(k);
-    }
-
     fn sprite_draw_shadow_for_small_bosses(&mut self, k: usize, info: &PrepOamCoordsRet) {
         let mut canonical = crate::zelda_rtl::sprite::PrepOamCoordsRet {
             x: info.x,
@@ -2706,18 +2663,6 @@ impl ZeldaState {
             flags: info.flags,
         };
         self.sprite_draw_shadow_custom(k, &mut canonical, 10);
-    }
-
-    fn set_oam_helper0_for_small_bosses(
-        &mut self,
-        oam: usize,
-        x: u16,
-        y: u16,
-        charnum: u8,
-        flags: u8,
-        big: u8,
-    ) {
-        self.set_oam_helper0_at(oam, x, y, charnum, flags, big);
     }
 
     fn set_oam_plain_for_small_bosses(
@@ -2777,14 +2722,6 @@ impl ZeldaState {
         (info.r0_x, info.r2_y)
     }
 
-    fn sprite_prep_load_properties_for_small_bosses(&mut self, k: usize) {
-        // Direct adapter for the canonical SpritePrep_LoadProperties port.
-        self.sprite_prep_load_properties(k);
-    }
-
-    fn sprite_spawn_lightning_for_small_bosses(&mut self, k: usize) {
-        self.sprite_spawn_lightning(k);
-    }
 }
 
 #[cfg(test)]

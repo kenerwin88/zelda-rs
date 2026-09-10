@@ -959,7 +959,7 @@ impl ZeldaState {
         let mut oam = self.game_state.oam.current_pointer_usize();
         while i >= 0 {
             let idx = i as usize;
-            self.set_oam_plain_at_for_prep(
+            self.set_oam_plain_at(
                 oam,
                 info_x
                     .wrapping_sub(20)
@@ -1061,21 +1061,6 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_g(0);
             }
         }
-    }
-
-    fn set_oam_plain_at_for_prep(
-        &mut self,
-        oam: usize,
-        x: u8,
-        y: u8,
-        charnum: u8,
-        flags: u8,
-        big: u8,
-    ) {
-        self.oam_state_mut().write_entry(oam, x, y, charnum, flags);
-        let value = big;
-        self.oam_state_mut()
-            .set_extended_byte((oam - OAM_BUF) / 4, value);
     }
 
     pub(super) fn sprite_prep_bully_and_victim(&mut self, k: usize) {

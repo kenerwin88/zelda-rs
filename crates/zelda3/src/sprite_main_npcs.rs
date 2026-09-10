@@ -227,7 +227,7 @@ impl ZeldaState {
     // }
     pub(super) fn bee_main(&mut self, k: usize) {
         self.bee_handle_z(k);
-        self.sprite_draw_single_small_for_npcs(k);
+        self.sprite_draw_single_small(k);
         self.bee_handle_interactions(k);
         if self.sprite_return_if_inactive_npcs(k) {
             return;
@@ -236,15 +236,15 @@ impl ZeldaState {
             return;
         }
         if self.sprite_slot_view(k).head_direction() != 0 {
-            self.sprite_spawn_sparkle_garnish_for_npcs(k);
+            self.sprite_spawn_sparkle_garnish(k);
         }
         self.bee_bzzt(k);
         self.sprite_move_xy(k);
         let graphics = (((k as u8) ^ self.game_state.frame.frame_counter) >> 1) & 1;
         self.sprite_slot_view_mut(k).set_graphics(graphics);
         if self.sprite_slot_view(k).delay_aux4() == 0 {
-            self.sprite_check_damage_to_link_for_npcs(k);
-            if (self.sprite_check_damage_from_link_for_npcs(k) & DAMAGE_FROM_PLAYER_NONZERO_MASK)
+            self.sprite_check_damage_to_link(k);
+            if (self.sprite_check_damage_from_link(k) & DAMAGE_FROM_PLAYER_NONZERO_MASK)
                 != 0
             {
                 self.sprite_show_message_unconditional(0xc8);
@@ -490,7 +490,7 @@ impl ZeldaState {
             1 => {
                 self.sprite_slot_view_mut(k).set_ignore_projectile(1);
                 self.bee_handle_z(k);
-                self.sprite_draw_single_small_for_npcs(k);
+                self.sprite_draw_single_small(k);
                 self.bee_handle_interactions(k);
                 if self.sprite_return_if_inactive_npcs(k) {
                     return;
@@ -500,7 +500,7 @@ impl ZeldaState {
                 let graphics = (((k as u8) ^ self.game_state.frame.frame_counter) >> 1) & 1;
                 self.sprite_slot_view_mut(k).set_graphics(graphics);
                 if self.sprite_slot_view(k).head_direction() != 0 {
-                    self.sprite_spawn_sparkle_garnish_for_npcs(k);
+                    self.sprite_spawn_sparkle_garnish(k);
                 }
                 let sprite = self.sprite_slot_view(k);
                 let head = (sprite.head_direction() & 1) as usize;
@@ -511,7 +511,7 @@ impl ZeldaState {
                 if self.sprite_slot_view(k).delay_aux4() != 0 {
                     return;
                 }
-                if (self.sprite_check_damage_from_link_for_npcs(k)
+                if (self.sprite_check_damage_from_link(k)
                     & DAMAGE_FROM_PLAYER_NONZERO_MASK)
                     != 0
                 {
@@ -719,8 +719,8 @@ impl ZeldaState {
             return;
         }
         self.bottle_merchant_detect_fish(k);
-        self.sprite_behave_as_barrier_for_npcs(k);
-        if self.sprite_check_if_link_is_busy_for_npcs() {
+        self.sprite_behave_as_barrier(k);
+        if self.sprite_check_if_link_is_busy() {
             return;
         }
         if self.get_random_number() == 0 {
@@ -1043,35 +1043,6 @@ impl ZeldaState {
     // Rewired to canonical Sprite_ReturnIfInactive port (sprite.c:1493).
     fn sprite_return_if_inactive_npcs(&mut self, k: usize) -> bool {
         self.sprite_return_if_inactive(k)
-    }
-
-    // Rewired to canonical SpriteDraw_SingleSmall port.
-    fn sprite_draw_single_small_for_npcs(&mut self, k: usize) {
-        self.sprite_draw_single_small(k);
-    }
-
-    // Rewired to canonical Sprite_SpawnSparkleGarnish port.
-    fn sprite_spawn_sparkle_garnish_for_npcs(&mut self, k: usize) {
-        self.sprite_spawn_sparkle_garnish(k);
-    }
-
-    // Rewired to canonical Sprite_CheckDamageToLink port (sprite.c:2523).
-    fn sprite_check_damage_to_link_for_npcs(&mut self, k: usize) {
-        let _ = self.sprite_check_damage_to_link(k);
-    }
-
-    // Rewired to canonical Sprite_CheckDamageFromLink port (sprite.c:2639).
-    fn sprite_check_damage_from_link_for_npcs(&mut self, k: usize) -> u8 {
-        self.sprite_check_damage_from_link(k)
-    }
-
-    // Rewired to canonical Sprite_BehaveAsBarrier port (sprite.c:4288).
-    fn sprite_behave_as_barrier_for_npcs(&mut self, k: usize) {
-        self.sprite_behave_as_barrier(k);
-    }
-
-    fn sprite_check_if_link_is_busy_for_npcs(&self) -> bool {
-        self.sprite_check_if_link_is_busy()
     }
 
     // ----- Skipped functions (helpers too complex / not yet ported) -----

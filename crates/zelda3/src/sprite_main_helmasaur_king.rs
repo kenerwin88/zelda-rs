@@ -530,7 +530,7 @@ impl ZeldaState {
             r6_spr_xsize: 0,
             r7_spr_ysize: 0,
         };
-        self.player_setup_action_hit_box_for_helmasaur_king(&mut hb);
+        self.player_setup_action_hit_box(&mut hb);
         let bak = self.sprite_slot_view(k).y_low();
         self.sprite_slot_view_mut(k).add_y_low(8);
         self.sprite_setup_hit_box(k, &mut hb);
@@ -569,7 +569,7 @@ impl ZeldaState {
         if link_x.wrapping_sub(cur_x).wrapping_add(36) < 72
             && link_y.wrapping_sub(cur_y).wrapping_add(40) < 64
         {
-            self.sprite_attempt_damage_to_link_plus_recoil_for_helmasaur_king(k);
+            self.sprite_attempt_damage_to_link_plus_recoil(k);
         }
     }
 
@@ -703,12 +703,12 @@ impl ZeldaState {
         let Some(mut info) = self.sprite_prep_oam_coord_or_double_ret_for_helmasaur_king(k) else {
             return;
         };
-        self.king_helmasaur_operate_tail_for_helmasaur_king(k, &mut info);
-        self.sprite_draw_king_helmasaur_eyes_for_helmasaur_king(k, &info);
-        self.king_helmasaur_mask_for_helmasaur_king(k, &mut info);
-        self.sprite_draw_king_helmasaur_body_for_helmasaur_king(k, &mut info);
-        self.sprite_draw_king_helmasaur_legs_for_helmasaur_king(k, &info);
-        self.sprite_draw_king_helmasaur_mouth_for_helmasaur_king(k, &info);
+        self.king_helmasaur_operate_tail(k, &mut info);
+        self.sprite_draw_king_helmasaur_eyes(k, &info);
+        self.king_helmasaur_mask(k, &mut info);
+        self.sprite_draw_king_helmasaur_body(k, &mut info);
+        self.sprite_draw_king_helmasaur_legs(k, &info);
+        self.sprite_draw_king_helmasaur_mouth(k, &info);
     }
 
     // void Sprite_ScheduleBossForDeath(int k) {  // sprite_main.c:18047
@@ -758,15 +758,6 @@ impl ZeldaState {
     // routing through canonical helper implementations.
     // -----------------------------------------------------------------
 
-    fn player_setup_action_hit_box_for_helmasaur_king(&mut self, hb: &mut SpriteHitBox) {
-        self.player_setup_action_hit_box(hb);
-    }
-
-    fn sprite_attempt_damage_to_link_plus_recoil_for_helmasaur_king(&mut self, k: usize) {
-        // Rewired to canonical Sprite_AttemptDamageToLinkPlusRecoil port.
-        self.sprite_attempt_damage_to_link_plus_recoil(k);
-    }
-
     fn sprite_spawn_dynamically_for_helmasaur_king(
         &mut self,
         k: usize,
@@ -805,49 +796,6 @@ impl ZeldaState {
             .map(PrepOamCoordsRet::from_tuple)
     }
 
-    fn king_helmasaur_operate_tail_for_helmasaur_king(
-        &mut self,
-        k: usize,
-        info: &mut PrepOamCoordsRet,
-    ) {
-        self.king_helmasaur_operate_tail(k, info);
-    }
-
-    fn sprite_draw_king_helmasaur_eyes_for_helmasaur_king(
-        &mut self,
-        k: usize,
-        info: &PrepOamCoordsRet,
-    ) {
-        self.sprite_draw_king_helmasaur_eyes(k, info);
-    }
-
-    fn king_helmasaur_mask_for_helmasaur_king(&mut self, k: usize, info: &mut PrepOamCoordsRet) {
-        self.king_helmasaur_mask(k, info);
-    }
-
-    fn sprite_draw_king_helmasaur_body_for_helmasaur_king(
-        &mut self,
-        k: usize,
-        info: &mut PrepOamCoordsRet,
-    ) {
-        self.sprite_draw_king_helmasaur_body(k, info);
-    }
-
-    fn sprite_draw_king_helmasaur_legs_for_helmasaur_king(
-        &mut self,
-        k: usize,
-        info: &PrepOamCoordsRet,
-    ) {
-        self.sprite_draw_king_helmasaur_legs(k, info);
-    }
-
-    fn sprite_draw_king_helmasaur_mouth_for_helmasaur_king(
-        &mut self,
-        k: usize,
-        info: &PrepOamCoordsRet,
-    ) {
-        self.sprite_draw_king_helmasaur_mouth(k, info);
-    }
 }
 
 #[cfg(test)]

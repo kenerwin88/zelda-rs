@@ -407,7 +407,7 @@ impl ZeldaState {
         };
         if do_main {
             self.sprite_slot_view_mut(k).set_delay_main(t);
-            self.sprite_zero_velocity_xy_for_guard(k);
+            self.sprite_zero_velocity_xy(k);
             let rnd = self.get_random_number() & 1;
             let idx = ((self.sprite_slot_view(k).direction() as usize) * 2) | (rnd as usize);
             let mut sprite = self.sprite_slot_view_mut(k);
@@ -461,7 +461,7 @@ impl ZeldaState {
         self.sprite_set_x(j, new_x);
         let new_y = r2_y.wrapping_add(BOMB_TROOPER_BOMB_Y_OFFSETS[i] as i16 as u16);
         self.sprite_set_y(j, new_y);
-        self.sprite_apply_speed_towards_link_for_guard(j, 16);
+        self.sprite_apply_speed_towards_link(j, 16);
         let (px, py) = self.sprite_direction_to_face_link_pt_for_guard(j);
         let ax = if (px as i8) < 0 {
             (px as i8).wrapping_neg() as u8
@@ -617,7 +617,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_graphics(graphics);
         self.sprite_slot_view_mut(k).set_direction(direction);
         assert_ne!(self.sprite_slot_view(k).state(), 5);
-        assert!(!self.sprite_return_if_inactive_for_guard(k));
+        assert!(!self.sprite_return_if_inactive(k));
         assert_eq!(
             self.game_state.player.follower_link.lower_level_state(),
             self.sprite_slot_view(k).floor()
@@ -683,10 +683,10 @@ impl ZeldaState {
             }
             return;
         }
-        if self.sprite_return_if_inactive_for_guard(k) {
+        if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.guard_parry_sword_attacks_for_guard(k);
+        self.guard_parry_sword_attacks(k);
         self.guard_main_after_parry(k);
     }
 
@@ -705,7 +705,7 @@ impl ZeldaState {
     }
 
     fn guard_main_after_parry_through_collision(&mut self, k: usize) -> bool {
-        let dmg_link = self.sprite_check_damage_to_link_for_guard(k);
+        let dmg_link = self.sprite_check_damage_to_link(k);
         let alert = self.game_state.sprites.system.alert_flag() != 0;
         if (dmg_link || alert) && self.sprite_slot_view(k).ai_state() < 3 {
             self.sprite_slot_view_mut(k).set_ai_state(3);
@@ -714,14 +714,14 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_ai_state(4);
             self.guard_set_timer_and_assert_tile_hit_box(k, 0x80);
         }
-        if self.sprite_return_if_recoiling_for_guard(k) {
+        if self.sprite_return_if_recoiling(k) {
             return false;
         }
         if (self.sprite_slot_view(k).subtype() & 7) < 5 {
             if self.sprite_slot_view(k).wall_collision() == 0 {
                 self.sprite_move_xy(k);
             }
-            self.sprite_check_tile_collision_for_guard(k);
+            self.sprite_check_tile_collision(k);
         } else {
             self.sprite_move_xy(k);
         }
@@ -739,8 +739,8 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_graphics(graphics);
         self.sprite_slot_view_mut(k).set_direction(direction);
         assert_ne!(self.sprite_slot_view(k).state(), 5);
-        assert!(!self.sprite_return_if_inactive_for_guard(k));
-        self.guard_parry_sword_attacks_for_guard(k);
+        assert!(!self.sprite_return_if_inactive(k));
+        self.guard_parry_sword_attacks(k);
         assert!((self.sprite_slot_view(k).subtype() & 7) < 5);
         assert!(self.guard_main_after_parry_through_collision(k));
     }
@@ -755,8 +755,8 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_graphics(graphics);
         self.sprite_slot_view_mut(k).set_direction(direction);
         assert_ne!(self.sprite_slot_view(k).state(), 5);
-        assert!(!self.sprite_return_if_inactive_for_guard(k));
-        self.guard_parry_sword_attacks_for_guard(k);
+        assert!(!self.sprite_return_if_inactive(k));
+        self.guard_parry_sword_attacks(k);
         assert!(self.guard_main_after_parry_until_ai(k));
         assert_eq!(self.sprite_slot_view(k).ai_state(), 1);
         self.sprite_guard_send_out_probe(k);
@@ -766,7 +766,7 @@ impl ZeldaState {
     fn guard_main_ai(&mut self, k: usize) {
         match self.sprite_slot_view(k).ai_state() {
             0 => {
-                self.sprite_zero_velocity_xy_for_guard(k);
+                self.sprite_zero_velocity_xy(k);
                 if self.sprite_slot_view(k).delay_main() != 0 {
                     return;
                 }
@@ -799,7 +799,7 @@ impl ZeldaState {
                 self.guard_patrol_after_delay_load(k);
             }
             2 => {
-                self.sprite_zero_velocity_xy_for_guard(k);
+                self.sprite_zero_velocity_xy(k);
                 self.sprite_guard_send_out_probe(k);
                 let delay_main = self.sprite_slot_view(k).delay_main();
                 if delay_main == 0 {
@@ -814,7 +814,7 @@ impl ZeldaState {
                 }
             }
             3 => {
-                self.sprite_zero_velocity_xy_for_guard(k);
+                self.sprite_zero_velocity_xy(k);
                 let direction = self.sprite_direction_to_face_link_for_guard(k);
                 self.sprite_slot_view_mut(k).set_head_direction(direction);
                 if self.sprite_slot_view(k).delay_main() == 0 {
@@ -829,7 +829,7 @@ impl ZeldaState {
                     let dir = self.sprite_slot_view(k).direction() as usize & 3;
                     self.sprite_slot_view_mut(k)
                         .set_anim_clock(SOLDIER_REACQUIRE_ANIM_CLOCK_BY_DIRECTION[dir]);
-                    self.sprite_zero_velocity_xy_for_guard(k);
+                    self.sprite_zero_velocity_xy(k);
                     let mut sprite = self.sprite_slot_view_mut(k);
                     sprite.set_ai_state(2);
                     sprite.set_delay_main(160);
@@ -842,7 +842,7 @@ impl ZeldaState {
     pub(super) fn guard_patrol_after_delay_load(&mut self, k: usize) {
         assert_eq!(self.sprite_slot_view(k).ai_state(), 1);
         if self.sprite_slot_view(k).delay_main() == 0 {
-            self.sprite_zero_velocity_xy_for_guard(k);
+            self.sprite_zero_velocity_xy(k);
             let mut sprite = self.sprite_slot_view_mut(k);
             sprite.set_ai_state(2);
             sprite.set_delay_main(160);
@@ -891,7 +891,7 @@ impl ZeldaState {
             sprite.set_x_velocity(SOLDIER_PATROL_X_VELOCITIES[i] as u8);
             sprite.set_y_velocity(SOLDIER_PATROL_Y_VELOCITIES[i] as u8);
         }
-        self.sprite_check_tile_collision_for_guard(k);
+        self.sprite_check_tile_collision(k);
         if self.sprite_slot_view(k).delay_aux2() != 0 {
             if self.sprite_slot_view(k).delay_aux2() == 44 {
                 let n = SOLDIER_PRIMARY_COLLISION_NEXT_STEPS[i];
@@ -1128,14 +1128,14 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_bush_guard_main(&mut self, k: usize) {
-        if self.sprite_return_if_inactive_for_guard(k) {
+        if self.sprite_return_if_inactive(k) {
             return;
         }
         self.sprite_slot_view_mut(k).set_ignore_projectile(1);
 
         // case 3 / case_3 fallthrough handler
         let do_case_3 = |state: &mut ZeldaState, k: usize| {
-            state.sprite_check_damage_to_and_from_link_for_guard(k);
+            state.sprite_check_damage_to_and_from_link(k);
             if state.sprite_slot_view(k).delay_main() == 0 {
                 let mut sprite = state.sprite_slot_view_mut(k);
                 sprite.set_ai_state(0);
@@ -1157,7 +1157,7 @@ impl ZeldaState {
                 }
             }
             1 => {
-                self.sprite_check_damage_from_link_for_guard(k);
+                self.sprite_check_damage_from_link(k);
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     let face = self.sprite_direction_to_face_link_for_guard(k);
                     let mut sprite = self.sprite_slot_view_mut(k);
@@ -1176,7 +1176,7 @@ impl ZeldaState {
             }
             2 => {
                 self.sprite_slot_view_mut(k).set_ignore_projectile(0);
-                self.sprite_check_damage_to_and_from_link_for_guard(k);
+                self.sprite_check_damage_to_and_from_link(k);
                 let j = self.sprite_slot_view(k).delay_main();
                 if j == 0 {
                     let mut sprite = self.sprite_slot_view_mut(k);
@@ -1235,46 +1235,6 @@ impl ZeldaState {
     // translation unit close to the original C call sites.
     // -----------------------------------------------------------------
 
-    // Rewired to canonical Sprite_ZeroVelocity_XY port.
-    fn sprite_zero_velocity_xy_for_guard(&mut self, k: usize) {
-        self.sprite_zero_velocity_xy(k);
-    }
-
-    // Rewired to canonical Sprite_ReturnIfInactive port.
-    fn sprite_return_if_inactive_for_guard(&mut self, k: usize) -> bool {
-        self.sprite_return_if_inactive(k)
-    }
-
-    // Rewired to canonical Sprite_ReturnIfRecoiling port.
-    fn sprite_return_if_recoiling_for_guard(&mut self, k: usize) -> bool {
-        self.sprite_return_if_recoiling(k)
-    }
-
-    // Rewired to canonical Sprite_CheckDamageToLink port.
-    fn sprite_check_damage_to_link_for_guard(&mut self, k: usize) -> bool {
-        self.sprite_check_damage_to_link(k)
-    }
-
-    // Rewired to canonical Sprite_CheckDamageFromLink entry point.
-    fn sprite_check_damage_from_link_for_guard(&mut self, k: usize) {
-        let _ = self.sprite_check_damage_from_link(k);
-    }
-
-    // Rewired to canonical Sprite_CheckDamageToAndFromLink port.
-    fn sprite_check_damage_to_and_from_link_for_guard(&mut self, k: usize) {
-        self.sprite_check_damage_to_and_from_link(k);
-    }
-
-    // Rewired to canonical Sprite_CheckTileCollision port.
-    fn sprite_check_tile_collision_for_guard(&mut self, k: usize) {
-        let _ = self.sprite_check_tile_collision(k);
-    }
-
-    // Rewired to canonical Guard_ParrySwordAttacks port.
-    fn guard_parry_sword_attacks_for_guard(&mut self, k: usize) {
-        self.guard_parry_sword_attacks(k);
-    }
-
     // Rewired to canonical Sprite_DirectionToFaceLink port.
     fn sprite_direction_to_face_link_for_guard(&mut self, k: usize) -> u8 {
         self.sprite_direction_to_face_link(k, None)
@@ -1287,11 +1247,6 @@ impl ZeldaState {
         (pt.x, pt.y)
     }
 
-    // Rewired to canonical Sprite_ApplySpeedTowardsLink port.
-    fn sprite_apply_speed_towards_link_for_guard(&mut self, k: usize, speed: u8) {
-        self.sprite_apply_speed_towards_link(k, speed);
-    }
-
     // Soldier_Func12 — proxy. Calls speed-toward-link/animation step.
     fn soldier_func12_for_guard(&mut self, k: usize) {
         if ((k as u8) ^ self.game_state.frame.frame_counter) & 0x1f == 0 {
@@ -1299,7 +1254,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_g(1);
                 self.sprite_sfx_queue_sfx3_with_pan(k, 4);
             }
-            self.sprite_apply_speed_towards_link_for_guard(k, 16);
+            self.sprite_apply_speed_towards_link(k, 16);
             let face = self.sprite_direction_to_face_link_for_guard(k);
             let mut sprite = self.sprite_slot_view_mut(k);
             sprite.set_direction(face);
