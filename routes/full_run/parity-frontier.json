@@ -19,7 +19,7 @@
   },
   "project": "routes/full_run",
   "promoted": {
-    "binary_sha256": "5baabc80bf7a4b559eb2c2d5e8e82e9c6e849e33bb25f208dda97d4faeda2575",
+    "binary_sha256": "09c133511e0f81e314e5ac21f27989e03c18c339785dfdc29cc922e41a85c325",
     "cached_av_receipt": {
       "candidate_ledger_sha256": "3d52711c51a4f01031bd336aa582d4b6a316c71199710d3354ef015fcca1440c",
       "frames": 1581079,
@@ -27,13 +27,13 @@
         "video",
         "audio"
       ],
-      "manifest_sha256": "62ac555dabd14318b08d9df16ae4249a2ae370c53d85b979221ec96c06dea4d1",
+      "manifest_sha256": "d5bbf463ff0565ede805eb5b6089c673c737ea30dc3284d27fcd0b0710aefe4c",
       "oracle_cache_key": "ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18",
       "oracle_cache_manifest_sha256": "4c7f88fbf327a4b3af7d3f8614d82ebb2318f11b607798d5dddb4a97b7fe2715",
-      "receipt_path": "receipts/macro-full-av.manifest.json",
-      "run": "/Users/missingno/Documents/zelda3-rs/target/adopting-bridge-macro/macro-full-av"
+      "receipt_path": "receipts/stack-full-av.manifest.json",
+      "run": "/Users/missingno/Documents/zelda3-rs/target/stack-main/stack-full-av"
     },
-    "commit": "8b5cb734b717221852811a1784e595436d35759c",
+    "commit": "b84a35e9d032bd96a81fcd9d157164f1a4d42f52",
     "kind": "cached_av_pass",
     "last_exact_audio_frame": 1581078,
     "last_exact_engine_state_frame": 1581078,
