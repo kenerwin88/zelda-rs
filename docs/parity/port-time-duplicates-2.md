@@ -29,3 +29,14 @@ The library compiles with no warnings in the parity, dev, and lib-test
 builds; readability and projection discovery pass; the scanner output is
 unchanged (zero HIGH RISK overlaps, 12 bridge-sync overlaps, 60 overlapping
 bytes). All 1,774 library tests pass under the dev profile.
+
+All 1,774 library tests pass under both the parity and dev profiles, with two
+existing ignored tests and no compiler warnings.
+
+Candidate binary SHA-256:
+`e3354f239541f969157bcfb703bcec8eecf40b32656d10f74e77fd8b8af8428d`.
+
+The 200,000-frame cached Snes9x audio/video comparison passed from frame zero
+in 318.03 seconds. Both reached WRAM goldens match, and the complete endpoint
+is byte-identical to the preceding promoted build, SHA-256
+`dd45975cee5acdd270d1b0c74c5d38f1ba3ce3bd7e0af648264b8f77e95f244d`.
