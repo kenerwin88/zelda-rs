@@ -22,3 +22,11 @@ The bridge tests in the focused set (673) and all 1,721 library tests
 pass under the dev profile. The ownership scanner is unchanged. The library
 compiles with no warnings in the parity, dev, and lib-test builds;
 readability and projection discovery pass.
+
+The main tree validated this batch on parity binary
+`3d7927db56fffb86612737a431dd2c96ccdeddf8c5c61b1072ea8e201ca40ebe`: the
+200,000-frame cached comparison matched every video and audio hash in
+332.96 seconds on a loaded machine, the frame 60000 and 150470 WRAM
+goldens match, the 200,000-frame WRAM endpoint is the recorded
+`dd45975c…` image, and all 1,721 library tests pass under the parity
+profile.
