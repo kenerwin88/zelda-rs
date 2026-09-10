@@ -3678,15 +3678,21 @@ pub(crate) struct NativeDungeonBg2AttributeBridgeMut<'a> {
 
 impl<'a> NativeDungeonBg2AttributeBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DungeonBg2AttributeState, ram: &'a mut [u8]) -> Self {
-        *state = DungeonBg2AttributeState::load_from_ram(&*ram);
         Self { state, ram }
     }
 
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
+    /// Encode the tiles at `offset..offset + count` and write exactly those bytes; this
+    /// bridge is on the per-tile room draw path, so it neither adopts nor re-projects
+    /// the whole table.
+    fn publish(&mut self, offset: usize, count: usize) {
+        let end = (offset + count).min(self.state.attrs.len());
+        if offset >= end {
+            return;
+        }
+        let mut bytes = vec![0u8; end - offset];
+        NativeTile::export_slice(&self.state.attrs[offset..end], &mut bytes);
+        self.ram[DUNGEON_BG2_ATTR_TABLE + offset..DUNGEON_BG2_ATTR_TABLE + end]
+            .copy_from_slice(&bytes);
         self.debug_assert_matches_ram();
     }
 
@@ -3697,19 +3703,42 @@ impl<'a> NativeDungeonBg2AttributeBridgeMut<'a> {
         );
     }
 
-    forward_synced! {
-        state;
-        fn set_bg2_tile(offset: usize, tile: NativeTile);
-        fn set_bg2_tiles(offset: usize, tiles: [NativeTile; 2]);
-        fn set_bg1_tiles(offset: usize, tiles: [NativeTile; 2]);
-        fn import_aliased_map8_word(offset: usize, value: u16);
+    pub(crate) fn set_bg2_tile(&mut self, offset: usize, tile: NativeTile) {
+        self.state.set_bg2_tile(offset, tile);
+        self.publish(offset, 1);
     }
+
+    pub(crate) fn set_bg2_tiles(&mut self, offset: usize, tiles: [NativeTile; 2]) {
+        self.state.set_bg2_tiles(offset, tiles);
+        self.publish(offset, 2);
+    }
+
+    pub(crate) fn set_bg1_tiles(&mut self, offset: usize, tiles: [NativeTile; 2]) {
+        self.state.set_bg1_tiles(offset, tiles);
+        self.publish(DUNGEON_BG1_ATTR_BUFFER_OFFSET + offset, 2);
+    }
+
+    pub(crate) fn import_aliased_map8_word(&mut self, offset: usize, value: u16) {
+        self.state.import_aliased_map8_word(offset, value);
+        self.publish(offset, 2);
+    }
+
     #[cfg(test)]
-    forward_synced! {
-        state;
-        fn set_bg2_attr(offset: usize, value: u8);
-        fn set_bg1_attr_word(offset: usize, value: u16);
-        fn fill_bg2_attr_range(start: usize, len: usize, value: u8);
+    pub(crate) fn set_bg2_attr(&mut self, offset: usize, value: u8) {
+        self.state.set_bg2_attr(offset, value);
+        self.publish(offset, 1);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_bg1_attr_word(&mut self, offset: usize, value: u16) {
+        self.state.set_bg1_attr_word(offset, value);
+        self.publish(DUNGEON_BG1_ATTR_BUFFER_OFFSET + offset, 2);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fill_bg2_attr_range(&mut self, start: usize, len: usize, value: u8) {
+        self.state.fill_bg2_attr_range(start, len, value);
+        self.publish(start, len);
     }
 }
 

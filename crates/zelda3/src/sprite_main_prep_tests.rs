@@ -1,5 +1,5 @@
 use super::*;
-use crate::types::{read_le_u16, write_le_u16};
+use crate::types::{read_le_u16};
 
 fn fresh_state() -> Box<ZeldaState> {
     Box::new(ZeldaState::new())
@@ -1964,7 +1964,7 @@ fn bully_hobo_and_talking_tree_prep_spawn_helper_sprites() {
     pink.pink_ball_handle_deceleration(k);
     assert_eq!(pink.sprite_slot_view(k).x_velocity(), 8);
     assert_eq!(pink.sprite_slot_view(k).y_velocity(), (-8i8) as u8);
-    write_le_u16(&mut pink.ram, OAM_CUR_PTR, 0x0800);
+    pink.oam_state_mut().set_current_pointer(0x0800);
     pink.sprite_set_x(k, 0x0100);
     pink.sprite_set_y(k, 0x0120);
     pink.set_frame_counter(0x18);

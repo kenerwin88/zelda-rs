@@ -328,7 +328,6 @@ pub(crate) struct NativeOamStateBridgeMut<'a> {
 
 impl<'a> NativeOamStateBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut OamState, ram: &'a mut [u8]) -> Self {
-        *state = OamState::load_from_ram(&*ram);
         Self { state, ram }
     }
 
@@ -343,14 +342,6 @@ impl<'a> NativeOamStateBridgeMut<'a> {
         debug_assert_eq!(*self.state, from_ram);
     }
 
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
     /// Write the mode-reused OAM_PRIORITY_VALUE through to RAM (it is excluded from the bulk
     /// projection, so the setters own its RAM byte directly).
     fn write_priority_through(&mut self) {
@@ -360,44 +351,115 @@ impl<'a> NativeOamStateBridgeMut<'a> {
     pub(crate) fn set_priority_word(&mut self, value: u16) {
         self.state.set_priority_word(value);
         self.write_priority_through();
-        self.sync();
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn subtract_priority_word(&mut self, value: u16) {
         self.state.subtract_priority_word(value);
         self.write_priority_through();
-        self.sync();
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_priority_high(&mut self, value: u8) {
         self.state.set_priority_high(value);
         self.write_priority_through();
-        self.sync();
+        self.debug_assert_matches_ram();
     }
 
-    forward_synced! {
-        state;
-        fn set_current_pointer(value: u16);
-        fn add_current_pointer(value: u16);
-        fn set_current_extended_pointer(value: u16);
-        fn set_sprite_sorting_setting(value: u8);
-        fn set_priority_value_2(value: u16);
-        fn set_sort_sprites_offset(value: u16);
-        fn clear_sort_sprites_offset();
-        fn set_player_oam_computed_value(value: u8);
-        fn clear_sprite_sorting_setting();
-        fn add_current_extended_pointer(value: u16);
+    // Every setter below writes exactly the byte or word it owns; this bridge is on the
+    // per-entry OAM path, so it neither adopts nor re-projects the whole state.
+    pub(crate) fn set_current_pointer(&mut self, value: u16) {
+        self.state.set_current_pointer(value);
+        self.publish_current_pointer();
+    }
+
+    pub(crate) fn add_current_pointer(&mut self, value: u16) {
+        self.state.add_current_pointer(value);
+        self.publish_current_pointer();
+    }
+
+    fn publish_current_pointer(&mut self) {
+        write_le_u16(self.ram, OAM_CUR_PTR, self.state.current_pointer());
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_current_extended_pointer(&mut self, value: u16) {
+        self.state.set_current_extended_pointer(value);
+        self.publish_current_extended_pointer();
+    }
+
+    pub(crate) fn add_current_extended_pointer(&mut self, value: u16) {
+        self.state.add_current_extended_pointer(value);
+        self.publish_current_extended_pointer();
+    }
+
+    fn publish_current_extended_pointer(&mut self) {
+        write_le_u16(
+            self.ram,
+            OAM_EXT_CUR_PTR,
+            self.state.current_extended_pointer(),
+        );
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_sprite_sorting_setting(&mut self, value: u8) {
+        self.state.set_sprite_sorting_setting(value);
+        self.ram[SORT_SPRITES_SETTING] = self.state.sprite_sorting_setting();
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_sprite_sorting_setting(&mut self) {
+        self.state.clear_sprite_sorting_setting();
+        self.ram[SORT_SPRITES_SETTING] = self.state.sprite_sorting_setting();
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_priority_value_2(&mut self, value: u16) {
+        self.state.set_priority_value_2(value);
+        write_le_u16(
+            self.ram,
+            OAM_PRIORITY_VALUE_2,
+            self.state.priority_value_2(),
+        );
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_sort_sprites_offset(&mut self, value: u16) {
+        self.state.set_sort_sprites_offset(value);
+        self.publish_sort_sprites_offset();
+    }
+
+    pub(crate) fn clear_sort_sprites_offset(&mut self) {
+        self.state.clear_sort_sprites_offset();
+        self.publish_sort_sprites_offset();
+    }
+
+    fn publish_sort_sprites_offset(&mut self) {
+        write_le_u16(
+            self.ram,
+            SORT_SPRITES_OFFSET_INTO_OAM_BUFFER,
+            self.state.sort_sprites_offset(),
+        );
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn set_player_oam_computed_value(&mut self, value: u8) {
+        self.state.set_player_oam_computed_value(value);
+        self.ram[VALUE_COMPUTED_FOR_PLAYER_OAM] = self.state.player_oam_computed_value();
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_extended_byte(&mut self, index: usize, value: u8) {
         if self.state.set_extended_byte(index, value) {
-            self.sync();
+            self.ram[BYTEWISE_EXTENDED_OAM + index] = value;
+            self.debug_assert_matches_ram();
         }
     }
 
     pub(crate) fn set_extended_byte_at(&mut self, addr: usize, value: u8) {
         if self.state.set_bytewise_extended_byte(addr, value) {
-            self.sync();
+            self.ram[addr] = value;
+            self.debug_assert_matches_ram();
         }
     }
 
@@ -408,7 +470,8 @@ impl<'a> NativeOamStateBridgeMut<'a> {
 
     pub(crate) fn set_packed_extended_oam_byte(&mut self, index: usize, value: u8) {
         if self.state.set_packed_extended_byte(index, value) {
-            self.sync();
+            self.ram[EXTENDED_OAM + index] = value;
+            self.debug_assert_matches_ram();
         }
     }
 
@@ -431,7 +494,8 @@ impl<'a> NativeOamStateBridgeMut<'a> {
         self.state.set_shadow_byte(addr + 1, y);
         self.state.set_shadow_byte(addr + 2, charnum);
         self.state.set_shadow_byte(addr + 3, flags);
-        self.sync();
+        self.ram[addr..addr + 4].copy_from_slice(&[x, y, charnum, flags]);
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn write_entry_with_extended(
@@ -507,7 +571,8 @@ impl<'a> NativeOamStateBridgeMut<'a> {
     pub(crate) fn set_entry_x(&mut self, addr: usize, x: u8) {
         if self.state.set_shadow_byte(addr, x) {
             ww_check(addr, 1, "OamState::set_entry_x", u32::from(x));
-            self.sync();
+            self.ram[addr] = x;
+            self.debug_assert_matches_ram();
         }
     }
 
@@ -515,7 +580,8 @@ impl<'a> NativeOamStateBridgeMut<'a> {
     pub(crate) fn set_entry_y(&mut self, addr: usize, y: u8) {
         if self.state.set_shadow_byte(addr + 1, y) {
             ww_check(addr + 1, 1, "OamState::set_entry_y", u32::from(y));
-            self.sync();
+            self.ram[addr + 1] = y;
+            self.debug_assert_matches_ram();
         }
     }
 
@@ -537,7 +603,8 @@ impl<'a> NativeOamStateBridgeMut<'a> {
         );
         self.state.set_shadow_byte(addr + 2, value as u8);
         self.state.set_shadow_byte(addr + 3, (value >> 8) as u8);
-        self.sync();
+        write_le_u16(self.ram, addr + 2, value);
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn hide_entry(&mut self, addr: usize) {
@@ -548,7 +615,8 @@ impl<'a> NativeOamStateBridgeMut<'a> {
     pub(crate) fn set_entry_char(&mut self, addr: usize, charnum: u8) {
         if self.state.set_shadow_byte(addr + 2, charnum) {
             ww_check(addr + 2, 1, "OamState::set_entry_char", u32::from(charnum));
-            self.sync();
+            self.ram[addr + 2] = charnum;
+            self.debug_assert_matches_ram();
         }
     }
 
@@ -556,7 +624,8 @@ impl<'a> NativeOamStateBridgeMut<'a> {
     pub(crate) fn set_entry_flags(&mut self, addr: usize, flags: u8) {
         if self.state.set_shadow_byte(addr + 3, flags) {
             ww_check(addr + 3, 1, "OamState::set_entry_flags", u32::from(flags));
-            self.sync();
+            self.ram[addr + 3] = flags;
+            self.debug_assert_matches_ram();
         }
     }
 
@@ -588,7 +657,7 @@ impl<'a> NativeOamStateBridgeMut<'a> {
         };
         *entry = value;
         write_le_u16(self.ram, OAM_REGION_BASE + region * 2, value);
-        self.sync();
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_region_alloc_counter(&mut self, region: usize, value: u16) {
@@ -597,7 +666,7 @@ impl<'a> NativeOamStateBridgeMut<'a> {
         };
         *entry = value;
         write_le_u16(self.ram, OAM_REGION_ALLOC + region * 2, value);
-        self.sync();
+        self.debug_assert_matches_ram();
     }
 }
 

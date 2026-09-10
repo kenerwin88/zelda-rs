@@ -7885,7 +7885,6 @@ const LINK_DIRECTION: usize = 0x67;
 const LINK_SPIN_ATTACK_STEP_COUNTER: usize = 0x79;
 const BG1_X_OFFSET: usize = 0x11a;
 const BG1_Y_OFFSET: usize = 0x11c;
-const OAM_CUR_PTR: usize = 0x90;
 const LAST_LIGHT_VS_DARK_WORLD: usize = 0x7b;
 const DUNG_LINE_PTRS_ROW0: usize = 0xbf;
 const DUNG_LOAD_PTR_OFFS: usize = 0xba;
