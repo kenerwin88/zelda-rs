@@ -55,3 +55,9 @@ The main tree validated this fix on parity binary
 tree), the frame 60000 and 150470 WRAM goldens match, the 200,000-frame
 WRAM endpoint is the recorded `dd45975c…` image, and all 1,721 library
 tests pass under the parity profile.
+
+The full route on the same parity binary matched every one of the
+1,581,079 cached video and audio hashes in 1,531.76 seconds, all four WRAM
+goldens (60000, 150470, 500000, 732000) match, and the route endpoint is
+the recorded `31619379…` WRAM image. The run is promoted in
+`routes/full_run/parity-frontier.json` with its receipt.
