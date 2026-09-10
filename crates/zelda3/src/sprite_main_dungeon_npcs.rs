@@ -10,17 +10,8 @@
 //! local `_for_dn` adapters kept only where the split module needs a narrow
 //! signature bridge.
 
-use super::sprite::{DrawMultipleData, PrepOamCoordsRet};
+use super::sprite::{dmd, DrawMultipleData, PrepOamCoordsRet};
 use super::*;
-
-const fn dmd(x: i8, y: i8, char_flags: u16, ext: u8) -> DrawMultipleData {
-    DrawMultipleData {
-        x,
-        y,
-        char_flags,
-        ext,
-    }
-}
 
 // Local mirrors of sprite-RAM addresses that are not yet exposed through
 // `zelda_rtl.rs`. The C declarations live in `src/variables.h`.

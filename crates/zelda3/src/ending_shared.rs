@@ -1,3 +1,5 @@
+use super::sprite::{dmd, DrawMultipleData};
+
 pub(super) const POLYHEDRAL_PALETTE: [u16; 8] =
     [0, 0x14d, 0x1b0, 0x1f3, 0x256, 0x279, 0x2fd, 0x35f];
 pub(super) const FEATURE_DIM_ENDING_FLASHES: u32 = 65536;
@@ -48,308 +50,307 @@ pub(super) const ENDING_SCENE_SPRITE_RANGES: [usize; 17] = [
     0, 12, 14, 21, 28, 31, 35, 38, 40, 41, 52, 58, 64, 71, 72, 79, 85,
 ];
 
-pub(super) type DrawMultipleDataEnding = (i8, i8, u16, u8);
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES0: [DrawMultipleDataEnding; 12] = [
-    (0, -8, 0x072a, 2),
-    (0, -8, 0x072a, 2),
-    (0, 0, 0x4fca, 2),
-    (0, -8, 0x072a, 2),
-    (0, -8, 0x072a, 2),
-    (0, 0, 0x0fca, 2),
-    (-2, 0, 0x0f77, 0),
-    (0, -8, 0x072a, 2),
-    (0, 0, 0x4fca, 2),
-    (-3, 0, 0x0f66, 0),
-    (0, -8, 0x072a, 2),
-    (0, 0, 0x4fca, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES0: [DrawMultipleData; 12] = [
+    dmd(0, -8, 0x072a, 2),
+    dmd(0, -8, 0x072a, 2),
+    dmd(0, 0, 0x4fca, 2),
+    dmd(0, -8, 0x072a, 2),
+    dmd(0, -8, 0x072a, 2),
+    dmd(0, 0, 0x0fca, 2),
+    dmd(-2, 0, 0x0f77, 0),
+    dmd(0, -8, 0x072a, 2),
+    dmd(0, 0, 0x4fca, 2),
+    dmd(-3, 0, 0x0f66, 0),
+    dmd(0, -8, 0x072a, 2),
+    dmd(0, 0, 0x4fca, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES1: [DrawMultipleDataEnding; 6] = [
-    (14, -7, 0x0d48, 2),
-    (0, -6, 0x0944, 2),
-    (0, 0, 0x094e, 2),
-    (13, -14, 0x0d48, 2),
-    (0, -8, 0x0944, 2),
-    (0, 0, 0x0946, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES1: [DrawMultipleData; 6] = [
+    dmd(14, -7, 0x0d48, 2),
+    dmd(0, -6, 0x0944, 2),
+    dmd(0, 0, 0x094e, 2),
+    dmd(13, -14, 0x0d48, 2),
+    dmd(0, -8, 0x0944, 2),
+    dmd(0, 0, 0x0946, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES2: [DrawMultipleDataEnding; 16] = [
-    (-2, -16, 0x3d78, 0),
-    (0, -24, 0x3d24, 2),
-    (0, -16, 0x3dc2, 2),
-    (61, -16, 0x3777, 0),
-    (64, -24, 0x37c4, 2),
-    (64, -16, 0x77ca, 2),
-    (0, -6, 0x326c, 2),
-    (64, -6, 0x326c, 2),
-    (-2, -16, 0x3d68, 0),
-    (0, -24, 0x3d24, 2),
-    (0, -16, 0x3dc2, 2),
-    (61, -16, 0x3766, 0),
-    (64, -24, 0x37c4, 2),
-    (64, -16, 0x77ca, 2),
-    (0, -6, 0x326c, 2),
-    (64, -6, 0x326c, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES2: [DrawMultipleData; 16] = [
+    dmd(-2, -16, 0x3d78, 0),
+    dmd(0, -24, 0x3d24, 2),
+    dmd(0, -16, 0x3dc2, 2),
+    dmd(61, -16, 0x3777, 0),
+    dmd(64, -24, 0x37c4, 2),
+    dmd(64, -16, 0x77ca, 2),
+    dmd(0, -6, 0x326c, 2),
+    dmd(64, -6, 0x326c, 2),
+    dmd(-2, -16, 0x3d68, 0),
+    dmd(0, -24, 0x3d24, 2),
+    dmd(0, -16, 0x3dc2, 2),
+    dmd(61, -16, 0x3766, 0),
+    dmd(64, -24, 0x37c4, 2),
+    dmd(64, -16, 0x77ca, 2),
+    dmd(0, -6, 0x326c, 2),
+    dmd(64, -6, 0x326c, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES3: [DrawMultipleDataEnding; 12] = [
-    (0, 0, 0x0022, 2),
-    (48, 0, 0x0064, 2),
-    (0, 10, 0x016c, 2),
-    (48, 10, 0x016c, 2),
-    (0, 0, 0x0064, 2),
-    (48, 0, 0x0022, 2),
-    (0, 10, 0x016c, 2),
-    (48, 10, 0x016c, 2),
-    (0, 0, 0x0064, 2),
-    (48, 0, 0x0064, 2),
-    (0, 10, 0x016c, 2),
-    (48, 10, 0x016c, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES3: [DrawMultipleData; 12] = [
+    dmd(0, 0, 0x0022, 2),
+    dmd(48, 0, 0x0064, 2),
+    dmd(0, 10, 0x016c, 2),
+    dmd(48, 10, 0x016c, 2),
+    dmd(0, 0, 0x0064, 2),
+    dmd(48, 0, 0x0022, 2),
+    dmd(0, 10, 0x016c, 2),
+    dmd(48, 10, 0x016c, 2),
+    dmd(0, 0, 0x0064, 2),
+    dmd(48, 0, 0x0064, 2),
+    dmd(0, 10, 0x016c, 2),
+    dmd(48, 10, 0x016c, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES4: [DrawMultipleDataEnding; 8] = [
-    (10, 8, 0x8a32, 0),
-    (10, 16, 0x8a22, 0),
-    (0, -10, 0x0800, 2),
-    (0, 0, 0x082c, 2),
-    (10, -14, 0x0a22, 0),
-    (10, -6, 0x0a32, 0),
-    (0, -10, 0x082a, 2),
-    (0, 0, 0x0828, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES4: [DrawMultipleData; 8] = [
+    dmd(10, 8, 0x8a32, 0),
+    dmd(10, 16, 0x8a22, 0),
+    dmd(0, -10, 0x0800, 2),
+    dmd(0, 0, 0x082c, 2),
+    dmd(10, -14, 0x0a22, 0),
+    dmd(10, -6, 0x0a32, 0),
+    dmd(0, -10, 0x082a, 2),
+    dmd(0, 0, 0x0828, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES5: [DrawMultipleDataEnding; 10] = [
-    (10, 16, 0x8a05, 0),
-    (10, 8, 0x8a15, 0),
-    (-4, 2, 0x0a07, 2),
-    (0, -7, 0x0e00, 2),
-    (0, 1, 0x0e02, 2),
-    (10, -20, 0x0a05, 0),
-    (10, -12, 0x0a15, 0),
-    (-7, 1, 0x4a07, 2),
-    (0, -7, 0x0e00, 2),
-    (0, 1, 0x0e02, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES5: [DrawMultipleData; 10] = [
+    dmd(10, 16, 0x8a05, 0),
+    dmd(10, 8, 0x8a15, 0),
+    dmd(-4, 2, 0x0a07, 2),
+    dmd(0, -7, 0x0e00, 2),
+    dmd(0, 1, 0x0e02, 2),
+    dmd(10, -20, 0x0a05, 0),
+    dmd(10, -12, 0x0a15, 0),
+    dmd(-7, 1, 0x4a07, 2),
+    dmd(0, -7, 0x0e00, 2),
+    dmd(0, 1, 0x0e02, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES6: [DrawMultipleDataEnding; 3] =
-    [(-6, -2, 0x0706, 2), (0, -9, 0x090e, 2), (0, -1, 0x0908, 2)];
+pub(super) const END_SEQUENCE_DRAW_FRAMES6: [DrawMultipleData; 3] =
+    [dmd(-6, -2, 0x0706, 2), dmd(0, -9, 0x090e, 2), dmd(0, -1, 0x0908, 2)];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES7: [DrawMultipleDataEnding; 10] = [
-    (0, -10, 0x082a, 2),
-    (0, 0, 0x0828, 2),
-    (10, 16, 0x8a05, 0),
-    (10, 8, 0x8a15, 0),
-    (-4, 2, 0x0a07, 2),
-    (0, -7, 0x0e00, 2),
-    (0, 1, 0x0e02, 2),
-    (10, -20, 0x0a05, 0),
-    (10, -12, 0x0a15, 0),
-    (-7, 1, 0x4a07, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES7: [DrawMultipleData; 10] = [
+    dmd(0, -10, 0x082a, 2),
+    dmd(0, 0, 0x0828, 2),
+    dmd(10, 16, 0x8a05, 0),
+    dmd(10, 8, 0x8a15, 0),
+    dmd(-4, 2, 0x0a07, 2),
+    dmd(0, -7, 0x0e00, 2),
+    dmd(0, 1, 0x0e02, 2),
+    dmd(10, -20, 0x0a05, 0),
+    dmd(10, -12, 0x0a15, 0),
+    dmd(-7, 1, 0x4a07, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES8: [DrawMultipleDataEnding; 1] = [(0, -19, 0x39af, 0)];
+pub(super) const END_SEQUENCE_DRAW_FRAMES8: [DrawMultipleData; 1] = [dmd(0, -19, 0x39af, 0)];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES9: [DrawMultipleDataEnding; 4] = [
-    (-16, -24, 0x3704, 2),
-    (-16, -16, 0x3764, 2),
-    (-16, -24, 0x3762, 2),
-    (-16, -16, 0x3764, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES9: [DrawMultipleData; 4] = [
+    dmd(-16, -24, 0x3704, 2),
+    dmd(-16, -16, 0x3764, 2),
+    dmd(-16, -24, 0x3762, 2),
+    dmd(-16, -16, 0x3764, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES10: [DrawMultipleDataEnding; 4] = [
-    (0, 0, 0x0c0c, 2),
-    (0, 0, 0x0c0a, 2),
-    (0, 0, 0x0cc5, 2),
-    (0, 0, 0x0ce1, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES10: [DrawMultipleData; 4] = [
+    dmd(0, 0, 0x0c0c, 2),
+    dmd(0, 0, 0x0c0a, 2),
+    dmd(0, 0, 0x0cc5, 2),
+    dmd(0, 0, 0x0ce1, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES11: [DrawMultipleDataEnding; 6] = [
-    (1, 4, 0x002a, 0),
-    (1, 12, 0x003a, 0),
-    (4, 0, 0x0026, 2),
-    (0, 9, 0x0024, 2),
-    (8, 9, 0x4024, 2),
-    (4, 20, 0x016c, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES11: [DrawMultipleData; 6] = [
+    dmd(1, 4, 0x002a, 0),
+    dmd(1, 12, 0x003a, 0),
+    dmd(4, 0, 0x0026, 2),
+    dmd(0, 9, 0x0024, 2),
+    dmd(8, 9, 0x4024, 2),
+    dmd(4, 20, 0x016c, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES12: [DrawMultipleDataEnding; 21] = [
-    (0, -7, 0x0d00, 2),
-    (0, -7, 0x0d00, 2),
-    (0, 0, 0x0d06, 2),
-    (0, -7, 0x0d00, 2),
-    (0, -7, 0x0d00, 2),
-    (0, 0, 0x4d06, 2),
-    (0, -8, 0x0d00, 2),
-    (0, -8, 0x0d00, 2),
-    (0, 0, 0x0d20, 2),
-    (0, -8, 0x0d02, 2),
-    (0, -8, 0x0d02, 2),
-    (0, 0, 0x0d2c, 2),
-    (-3, 0, 0x0d2f, 0),
-    (0, -7, 0x0d02, 2),
-    (0, 0, 0x0d2c, 2),
-    (-5, 2, 0x0d2f, 0),
-    (0, -8, 0x0d02, 2),
-    (0, 0, 0x0d2c, 2),
-    (-5, 2, 0x0d3f, 0),
-    (0, -8, 0x0d02, 2),
-    (0, 0, 0x0d2c, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES12: [DrawMultipleData; 21] = [
+    dmd(0, -7, 0x0d00, 2),
+    dmd(0, -7, 0x0d00, 2),
+    dmd(0, 0, 0x0d06, 2),
+    dmd(0, -7, 0x0d00, 2),
+    dmd(0, -7, 0x0d00, 2),
+    dmd(0, 0, 0x4d06, 2),
+    dmd(0, -8, 0x0d00, 2),
+    dmd(0, -8, 0x0d00, 2),
+    dmd(0, 0, 0x0d20, 2),
+    dmd(0, -8, 0x0d02, 2),
+    dmd(0, -8, 0x0d02, 2),
+    dmd(0, 0, 0x0d2c, 2),
+    dmd(-3, 0, 0x0d2f, 0),
+    dmd(0, -7, 0x0d02, 2),
+    dmd(0, 0, 0x0d2c, 2),
+    dmd(-5, 2, 0x0d2f, 0),
+    dmd(0, -8, 0x0d02, 2),
+    dmd(0, 0, 0x0d2c, 2),
+    dmd(-5, 2, 0x0d3f, 0),
+    dmd(0, -8, 0x0d02, 2),
+    dmd(0, 0, 0x0d2c, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES13: [DrawMultipleDataEnding; 16] = [
-    (0, -7, 0x0e00, 2),
-    (0, 1, 0x4e02, 2),
-    (0, -8, 0x0e00, 2),
-    (0, 1, 0x0e02, 2),
-    (0, -9, 0x0e00, 2),
-    (0, 1, 0x0e02, 2),
-    (0, -7, 0x0e00, 2),
-    (0, 1, 0x0e02, 2),
-    (0, -7, 0x0e00, 2),
-    (0, 1, 0x4e02, 2),
-    (0, -8, 0x0e00, 2),
-    (0, 1, 0x4e02, 2),
-    (0, -9, 0x0e00, 2),
-    (0, 1, 0x4e02, 2),
-    (0, -7, 0x0e00, 2),
-    (0, 1, 0x4e02, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES13: [DrawMultipleData; 16] = [
+    dmd(0, -7, 0x0e00, 2),
+    dmd(0, 1, 0x4e02, 2),
+    dmd(0, -8, 0x0e00, 2),
+    dmd(0, 1, 0x0e02, 2),
+    dmd(0, -9, 0x0e00, 2),
+    dmd(0, 1, 0x0e02, 2),
+    dmd(0, -7, 0x0e00, 2),
+    dmd(0, 1, 0x0e02, 2),
+    dmd(0, -7, 0x0e00, 2),
+    dmd(0, 1, 0x4e02, 2),
+    dmd(0, -8, 0x0e00, 2),
+    dmd(0, 1, 0x4e02, 2),
+    dmd(0, -9, 0x0e00, 2),
+    dmd(0, 1, 0x4e02, 2),
+    dmd(0, -7, 0x0e00, 2),
+    dmd(0, 1, 0x4e02, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES14: [DrawMultipleDataEnding; 6] = [
-    (0, 0, 0, 0),
-    (0, 0, 0x34c7, 0),
-    (0, 0, 0x3480, 0),
-    (0, 0, 0x34b6, 0),
-    (0, 0, 0x34b7, 0),
-    (0, 0, 0x34a6, 0),
+pub(super) const END_SEQUENCE_DRAW_FRAMES14: [DrawMultipleData; 6] = [
+    dmd(0, 0, 0, 0),
+    dmd(0, 0, 0x34c7, 0),
+    dmd(0, 0, 0x3480, 0),
+    dmd(0, 0, 0x34b6, 0),
+    dmd(0, 0, 0x34b7, 0),
+    dmd(0, 0, 0x34a6, 0),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES15: [DrawMultipleDataEnding; 6] = [
-    (-3, 17, 0x002b, 0),
-    (-3, 25, 0x003b, 0),
-    (0, 0, 0x000e, 2),
-    (16, 0, 0x400e, 2),
-    (0, 16, 0x002e, 2),
-    (16, 16, 0x402e, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES15: [DrawMultipleData; 6] = [
+    dmd(-3, 17, 0x002b, 0),
+    dmd(-3, 25, 0x003b, 0),
+    dmd(0, 0, 0x000e, 2),
+    dmd(16, 0, 0x400e, 2),
+    dmd(0, 16, 0x002e, 2),
+    dmd(16, 16, 0x402e, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES16: [DrawMultipleDataEnding; 3] =
-    [(8, 5, 0x0a04, 2), (0, 16, 0x0806, 2), (16, 16, 0x4806, 2)];
+pub(super) const END_SEQUENCE_DRAW_FRAMES16: [DrawMultipleData; 3] =
+    [dmd(8, 5, 0x0a04, 2), dmd(0, 16, 0x0806, 2), dmd(16, 16, 0x4806, 2)];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES17: [DrawMultipleDataEnding; 2] =
-    [(0, 0, 0x0000, 2), (0, 11, 0x0002, 2)];
+pub(super) const END_SEQUENCE_DRAW_FRAMES17: [DrawMultipleData; 2] =
+    [dmd(0, 0, 0x0000, 2), dmd(0, 11, 0x0002, 2)];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES18: [DrawMultipleDataEnding; 2] =
-    [(0, 0, 0x000e, 2), (0, 64, 0x006c, 2)];
+pub(super) const END_SEQUENCE_DRAW_FRAMES18: [DrawMultipleData; 2] =
+    [dmd(0, 0, 0x000e, 2), dmd(0, 64, 0x006c, 2)];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES19: [DrawMultipleDataEnding; 8] = [
-    (0, 0, 0x0882, 2),
-    (0, 7, 0x0a4e, 2),
-    (0, 0, 0x4880, 2),
-    (0, 7, 0x0a4e, 2),
-    (0, 0, 0x0882, 2),
-    (0, 7, 0x0a4e, 2),
-    (0, 0, 0x0880, 2),
-    (0, 7, 0x0a4e, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES19: [DrawMultipleData; 8] = [
+    dmd(0, 0, 0x0882, 2),
+    dmd(0, 7, 0x0a4e, 2),
+    dmd(0, 0, 0x4880, 2),
+    dmd(0, 7, 0x0a4e, 2),
+    dmd(0, 0, 0x0882, 2),
+    dmd(0, 7, 0x0a4e, 2),
+    dmd(0, 0, 0x0880, 2),
+    dmd(0, 7, 0x0a4e, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES20: [DrawMultipleDataEnding; 6] = [
-    (-4, 1, 0x0c68, 0),
-    (0, -8, 0x0c40, 2),
-    (0, 1, 0x0c42, 2),
-    (-4, 1, 0x0c78, 0),
-    (0, -8, 0x0c40, 2),
-    (0, 1, 0x0c42, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES20: [DrawMultipleData; 6] = [
+    dmd(-4, 1, 0x0c68, 0),
+    dmd(0, -8, 0x0c40, 2),
+    dmd(0, 1, 0x0c42, 2),
+    dmd(-4, 1, 0x0c78, 0),
+    dmd(0, -8, 0x0c40, 2),
+    dmd(0, 1, 0x0c42, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES21: [DrawMultipleDataEnding; 6] = [
-    (8, 5, 0x0679, 0),
-    (0, -10, 0x088e, 2),
-    (0, 0, 0x066e, 2),
-    (0, -10, 0x088e, 2),
-    (0, -10, 0x088e, 2),
-    (0, 0, 0x066e, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES21: [DrawMultipleData; 6] = [
+    dmd(8, 5, 0x0679, 0),
+    dmd(0, -10, 0x088e, 2),
+    dmd(0, 0, 0x066e, 2),
+    dmd(0, -10, 0x088e, 2),
+    dmd(0, -10, 0x088e, 2),
+    dmd(0, 0, 0x066e, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES22: [DrawMultipleDataEnding; 6] = [
-    (11, -3, 0x0869, 0),
-    (0, -12, 0x0804, 2),
-    (0, 0, 0x0860, 2),
-    (10, -3, 0x0867, 0),
-    (0, -12, 0x0804, 2),
-    (0, 0, 0x0860, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES22: [DrawMultipleData; 6] = [
+    dmd(11, -3, 0x0869, 0),
+    dmd(0, -12, 0x0804, 2),
+    dmd(0, 0, 0x0860, 2),
+    dmd(10, -3, 0x0867, 0),
+    dmd(0, -12, 0x0804, 2),
+    dmd(0, 0, 0x0860, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES23: [DrawMultipleDataEnding; 6] = [
-    (-2, 1, 0x0868, 0),
-    (0, -8, 0x08c0, 2),
-    (0, 0, 0x08c2, 2),
-    (-3, 1, 0x0878, 0),
-    (0, -8, 0x08c0, 2),
-    (0, 0, 0x08c2, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES23: [DrawMultipleData; 6] = [
+    dmd(-2, 1, 0x0868, 0),
+    dmd(0, -8, 0x08c0, 2),
+    dmd(0, 0, 0x08c2, 2),
+    dmd(-3, 1, 0x0878, 0),
+    dmd(0, -8, 0x08c0, 2),
+    dmd(0, 0, 0x08c2, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES24: [DrawMultipleDataEnding; 4] = [
-    (0, -10, 0x084c, 2),
-    (0, 0, 0x0a6c, 2),
-    (0, -9, 0x084c, 2),
-    (0, 0, 0x0aa8, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES24: [DrawMultipleData; 4] = [
+    dmd(0, -10, 0x084c, 2),
+    dmd(0, 0, 0x0a6c, 2),
+    dmd(0, -9, 0x084c, 2),
+    dmd(0, 0, 0x0aa8, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES25: [DrawMultipleDataEnding; 4] = [
-    (0, -7, 0x084a, 2),
-    (0, 0, 0x0c6a, 2),
-    (0, -7, 0x084a, 2),
-    (0, 0, 0x0ca6, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES25: [DrawMultipleData; 4] = [
+    dmd(0, -7, 0x084a, 2),
+    dmd(0, 0, 0x0c6a, 2),
+    dmd(0, -7, 0x084a, 2),
+    dmd(0, 0, 0x0ca6, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES26: [DrawMultipleDataEnding; 12] = [
-    (-18, -24, 0x39a4, 2),
-    (-16, -16, 0x39a8, 2),
-    (-18, -24, 0x39a4, 2),
-    (-18, -24, 0x39a4, 2),
-    (-16, -16, 0x39a6, 2),
-    (-18, -24, 0x39a4, 2),
-    (-6, -17, 0x392d, 0),
-    (-16, -24, 0x39a0, 2),
-    (-16, -16, 0x39aa, 2),
-    (-5, -17, 0x392c, 0),
-    (-16, -24, 0x39a0, 2),
-    (-16, -16, 0x39aa, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES26: [DrawMultipleData; 12] = [
+    dmd(-18, -24, 0x39a4, 2),
+    dmd(-16, -16, 0x39a8, 2),
+    dmd(-18, -24, 0x39a4, 2),
+    dmd(-18, -24, 0x39a4, 2),
+    dmd(-16, -16, 0x39a6, 2),
+    dmd(-18, -24, 0x39a4, 2),
+    dmd(-6, -17, 0x392d, 0),
+    dmd(-16, -24, 0x39a0, 2),
+    dmd(-16, -16, 0x39aa, 2),
+    dmd(-5, -17, 0x392c, 0),
+    dmd(-16, -24, 0x39a0, 2),
+    dmd(-16, -16, 0x39aa, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES27: [DrawMultipleDataEnding; 6] = [
-    (0, -4, 0x30aa, 2),
-    (0, -4, 0x30aa, 2),
-    (-4, -8, 0x3090, 0),
-    (12, -8, 0x7090, 0),
-    (-6, -10, 0x3091, 0),
-    (14, -10, 0x7091, 0),
+pub(super) const END_SEQUENCE_DRAW_FRAMES27: [DrawMultipleData; 6] = [
+    dmd(0, -4, 0x30aa, 2),
+    dmd(0, -4, 0x30aa, 2),
+    dmd(-4, -8, 0x3090, 0),
+    dmd(12, -8, 0x7090, 0),
+    dmd(-6, -10, 0x3091, 0),
+    dmd(14, -10, 0x7091, 0),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES28: [DrawMultipleDataEnding; 8] = [
-    (0, 0, 0x0722, 2),
-    (0, -8, 0x09c2, 2),
-    (0, 0, 0x4722, 2),
-    (0, -8, 0x09c2, 2),
-    (0, -9, 0x09c4, 2),
-    (0, 0, 0x0722, 2),
-    (0, -9, 0x0924, 2),
-    (0, 0, 0x0722, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES28: [DrawMultipleData; 8] = [
+    dmd(0, 0, 0x0722, 2),
+    dmd(0, -8, 0x09c2, 2),
+    dmd(0, 0, 0x4722, 2),
+    dmd(0, -8, 0x09c2, 2),
+    dmd(0, -9, 0x09c4, 2),
+    dmd(0, 0, 0x0722, 2),
+    dmd(0, -9, 0x0924, 2),
+    dmd(0, 0, 0x0722, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES29: [DrawMultipleDataEnding; 3] = [
-    (-16, -12, 0x3f08, 2),
-    (0, -12, 0x3f20, 2),
-    (16, -12, 0x3f20, 2),
+pub(super) const END_SEQUENCE_DRAW_FRAMES29: [DrawMultipleData; 3] = [
+    dmd(-16, -12, 0x3f08, 2),
+    dmd(0, -12, 0x3f20, 2),
+    dmd(16, -12, 0x3f20, 2),
 ];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES30: [DrawMultipleDataEnding; 1] = [(0, 0, 0x0086, 2)];
+pub(super) const END_SEQUENCE_DRAW_FRAMES30: [DrawMultipleData; 1] = [dmd(0, 0, 0x0086, 2)];
 
-pub(super) const END_SEQUENCE_DRAW_FRAMES31: [DrawMultipleDataEnding; 1] = [(0, 0, 0x8060, 2)];
+pub(super) const END_SEQUENCE_DRAW_FRAMES31: [DrawMultipleData; 1] = [dmd(0, 0, 0x8060, 2)];
 
-pub(super) const END_SEQUENCE_DRAW_FRAME_SETS: [&[DrawMultipleDataEnding]; 32] = [
+pub(super) const END_SEQUENCE_DRAW_FRAME_SETS: [&[DrawMultipleData]; 32] = [
     &END_SEQUENCE_DRAW_FRAMES0,
     &END_SEQUENCE_DRAW_FRAMES1,
     &END_SEQUENCE_DRAW_FRAMES2,

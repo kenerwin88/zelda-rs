@@ -19,6 +19,17 @@ pub(super) struct DrawMultipleData {
     pub ext: u8,
 }
 
+/// A compact draw-table entry: signed pixel offsets, the OAM character and flags word,
+/// and the size/extended byte.
+pub(super) const fn dmd(x: i8, y: i8, char_flags: u16, ext: u8) -> DrawMultipleData {
+    DrawMultipleData {
+        x,
+        y,
+        char_flags,
+        ext,
+    }
+}
+
 #[derive(Copy, Clone)]
 struct DrawMultipleWordData {
     x: u16,

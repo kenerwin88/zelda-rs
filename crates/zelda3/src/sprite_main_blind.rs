@@ -1,5 +1,5 @@
 //! Ported Blind-boss handlers from sprite_main.c.
-use super::sprite::{DrawMultipleData, PrepOamCoordsRet};
+use super::sprite::PrepOamCoordsRet;
 use super::*;
 
 mod sprite_main_blind_shared;
@@ -776,11 +776,11 @@ impl ZeldaState {
             let start = BLIND_POOF_DRAW_FRAME_STARTS[j] as usize;
             let count =
                 (BLIND_POOF_DRAW_FRAME_STARTS[j + 1] - BLIND_POOF_DRAW_FRAME_STARTS[j]) as usize;
-            self.sprite_draw_multiple_for_blind(k, &BLIND_POOF_DRAW_FRAMES[start..start + count]);
+            self.sprite_draw_multiple(k, &BLIND_POOF_DRAW_FRAMES[start..start + count], None);
             return;
         }
         let gfx = self.sprite_slot_view(k).graphics() as usize;
-        self.sprite_draw_multiple_for_blind(k, &BLIND_DRAW_FRAMES[gfx * 7..gfx * 7 + 7]);
+        self.sprite_draw_multiple(k, &BLIND_DRAW_FRAMES[gfx * 7..gfx * 7 + 7], None);
 
         if self.sprite_slot_view(k).wall_collision() == 0 {
             if self.sprite_slot_view(k).c() == 6 {
@@ -820,10 +820,6 @@ impl ZeldaState {
             .set_entry_char(oam, BLIND_HEAD_DRAW_CHARS[j]);
         self.oam_state_mut()
             .merge_entry_flags(oam, 0x3f, BLIND_HEAD_DRAW_FLAGS[j]);
-    }
-
-    fn sprite_draw_multiple_for_blind(&mut self, k: usize, src: &[DrawMultipleData]) {
-        self.sprite_draw_multiple(k, src, None);
     }
 
     fn blind_draw_patch_oam_y_for_blind(&mut self, _k: usize, oam_idx: usize, y: u8) {

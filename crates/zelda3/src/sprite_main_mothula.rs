@@ -12,7 +12,7 @@
 //! `_for_mothula` adapter names so the data-state side of these handlers
 //! stays exercisable while the remaining canonical ports land.
 
-use super::sprite::{DrawMultipleData, PrepOamCoordsRet as SpritePrepOamCoordsRet};
+use super::sprite::PrepOamCoordsRet as SpritePrepOamCoordsRet;
 use super::*;
 use crate::tile_definition::NativeTile;
 use crate::types::{sign8, PointU8, SpriteHitBox};
@@ -4093,7 +4093,9 @@ impl ZeldaState {
         self.oam_state_mut().set_current_pointer(0x920);
         self.oam_state_mut().set_current_extended_pointer(0xa68);
         let g = self.sprite_slot_view(k).graphics() as usize;
-        let (info_x, info_y) = self.sprite_draw_multiple_for_mothula(k, g * 8, 8);
+        let mut info = SpritePrepOamCoordsRet::default();
+        self.sprite_draw_multiple(k, &MOTHULA_DRAW_FRAMES[g * 8..g * 8 + 8], Some(&mut info));
+        let (info_x, info_y) = (info.x, info.y);
         if self.sprite_slot_view(k).pause() != 0 {
             return;
         }
@@ -4814,28 +4816,6 @@ impl ZeldaState {
     // for, but defer the heavy OAM/collision pipelines until those
     // canonical ports land.
     // -----------------------------------------------------------------
-
-    fn sprite_draw_multiple_for_mothula(
-        &mut self,
-        k: usize,
-        start: usize,
-        count: usize,
-    ) -> (u16, u16) {
-        let Some(prepped) = self.sprite_prep_oam_coord_or_double_ret(k) else {
-            return (0, 0);
-        };
-        let entries: Vec<DrawMultipleData> = MOTHULA_DRAW_FRAMES[start..start + count]
-            .iter()
-            .map(|&(x, y, char_flags, ext)| DrawMultipleData {
-                x,
-                y,
-                char_flags,
-                ext,
-            })
-            .collect();
-        self.sprite_draw_multiple_with_info(k, &entries, prepped);
-        (prepped.0, prepped.1)
-    }
 
     fn dungeon_update_tile_map_with_common_tile_for_mothula(&mut self, x: u16, y: u16, v: u8) {
         // Rewired to canonical Dungeon_UpdateTileMapWithCommonTile port.

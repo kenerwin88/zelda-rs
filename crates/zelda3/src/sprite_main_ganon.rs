@@ -8,7 +8,7 @@
 //! split module needs an explicit adapter to a shared canonical port or a
 //! local table/OAM emitter.
 
-use super::sprite::DrawMultipleData;
+use super::sprite::{dmd, DrawMultipleData};
 use super::*;
 use crate::tile_definition::NativeTile;
 use crate::types::sign8;
@@ -62,23 +62,23 @@ const GANON_SINE_LOOKUP_TABLE: [u16; 256] = [
 
 // PhantomGanon_Draw table (sprite_main.c:14393).
 // Packed as (x:i8, y:i8, char:u16, big:u8).
-const PHANTOM_GANON_DRAW_FRAMES: [(i8, i8, u16, u8); 16] = [
-    (-16, -8, 0x0d46, 2),
-    (-8, -8, 0x0d47, 2),
-    (8, -8, 0x4d47, 2),
-    (16, -8, 0x4d46, 2),
-    (-16, 8, 0x0d69, 2),
-    (-8, 8, 0x0d6a, 2),
-    (8, 8, 0x4d6a, 2),
-    (16, 8, 0x4d69, 2),
-    (-16, -8, 0x0d46, 2),
-    (-8, -8, 0x0d47, 2),
-    (8, -8, 0x4d47, 2),
-    (16, -8, 0x4d46, 2),
-    (-16, 8, 0x0d66, 2),
-    (-8, 8, 0x0d67, 2),
-    (8, 8, 0x4d67, 2),
-    (16, 8, 0x4d66, 2),
+const PHANTOM_GANON_DRAW_FRAMES: [DrawMultipleData; 16] = [
+    dmd(-16, -8, 0x0d46, 2),
+    dmd(-8, -8, 0x0d47, 2),
+    dmd(8, -8, 0x4d47, 2),
+    dmd(16, -8, 0x4d46, 2),
+    dmd(-16, 8, 0x0d69, 2),
+    dmd(-8, 8, 0x0d6a, 2),
+    dmd(8, 8, 0x4d6a, 2),
+    dmd(16, 8, 0x4d69, 2),
+    dmd(-16, -8, 0x0d46, 2),
+    dmd(-8, -8, 0x0d47, 2),
+    dmd(8, -8, 0x4d47, 2),
+    dmd(16, -8, 0x4d46, 2),
+    dmd(-16, 8, 0x0d66, 2),
+    dmd(-8, 8, 0x0d67, 2),
+    dmd(8, 8, 0x4d67, 2),
+    dmd(16, 8, 0x4d66, 2),
 ];
 
 // Ganon_HandleFireBatCircle (sprite_main.c:14559..14560).
@@ -956,7 +956,10 @@ impl ZeldaState {
         self.oam_state_mut().set_current_extended_pointer(0xa74);
         let g = self.sprite_slot_view(k).graphics() as usize;
         // Sprite_DrawMultiple emits 8 OAM entries starting at index g*8.
-        self.sprite_draw_multiple_for_ganon(k, &PHANTOM_GANON_DRAW_FRAMES, g * 8, 8);
+        let frames = PHANTOM_GANON_DRAW_FRAMES
+            .get(g * 8..g * 8 + 8)
+            .unwrap_or(&[]);
+        self.sprite_draw_multiple(k, frames, None);
     }
 
     // void Sprite_SpawnPhantomGanon(int k) {  // 9d88a1
@@ -1436,27 +1439,6 @@ impl ZeldaState {
     fn ganon_extinguish_torch_for_ganon(&mut self) {
         self.dungeon_torch_mut().set_target(NativeTile::torch(1));
         self.Dungeon_ExtinguishTorch();
-    }
-
-    fn sprite_draw_multiple_for_ganon(
-        &mut self,
-        k: usize,
-        dmd: &[(i8, i8, u16, u8)],
-        start: usize,
-        count: usize,
-    ) {
-        let entries: Vec<DrawMultipleData> = dmd
-            .get(start..start.saturating_add(count))
-            .unwrap_or(&[])
-            .iter()
-            .map(|&(x, y, char_flags, ext)| DrawMultipleData {
-                x,
-                y,
-                char_flags,
-                ext,
-            })
-            .collect();
-        self.sprite_draw_multiple(k, &entries, None);
     }
 
     fn ganon_draw_emit_body_oam_for_ganon(&mut self, k: usize, info: (u16, u16, u8)) {

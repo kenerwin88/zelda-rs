@@ -18,7 +18,7 @@ use super::sprite::PrepOamCoordsRet;
 use super::sprite_main_draw::trinexx_head_sin;
 use super::*;
 use crate::types::sign8;
-use crate::zelda_rtl::sprite::DrawMultipleData;
+use crate::zelda_rtl::sprite::{dmd, DrawMultipleData};
 
 // `Sprite_DelayAux3` is shared scratch (variables.h:0xee0).
 // Shared scratch used by small-boss draw/update routines.
@@ -88,32 +88,31 @@ const VITREOUS_SMALL_EYE_GRAPHICS: [u8; 13] = [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 
 
 // kVitreous_Dmd (sprite_main.c:18572) — 24 entries used by Vitreous_Draw.
 // Stored as (dx:i8, dy:i8, char_flags:u16, ext:u8).
-type SmallBossDrawFrame = (i8, i8, u16, u8);
-const VITREOUS_DRAW_FRAMES: [SmallBossDrawFrame; 24] = [
-    (-8, -8, 0x01c0, 2),
-    (8, -8, 0x41c0, 2),
-    (-8, 8, 0x01e0, 2),
-    (8, 8, 0x41e0, 2),
-    (-8, -8, 0x01c8, 2),
-    (8, -8, 0x01ca, 2),
-    (-8, 8, 0x01e8, 2),
-    (8, 8, 0x01ea, 2),
-    (-8, -8, 0x41ca, 2),
-    (8, -8, 0x41c8, 2),
-    (-8, 8, 0x41ea, 2),
-    (8, 8, 0x41e8, 2),
-    (-8, -8, 0x01c2, 2),
-    (8, -8, 0x41c2, 2),
-    (-8, 8, 0x01e2, 2),
-    (8, 8, 0x41e2, 2),
-    (-8, -8, 0x01c4, 2),
-    (8, -8, 0x41c4, 2),
-    (-8, 8, 0x01e4, 2),
-    (8, 8, 0x41e4, 2),
-    (-7, -7, 0x01c4, 2),
-    (7, -7, 0x41c4, 2),
-    (-7, 7, 0x01e4, 2),
-    (7, 7, 0x41e4, 2),
+const VITREOUS_DRAW_FRAMES: [DrawMultipleData; 24] = [
+    dmd(-8, -8, 0x01c0, 2),
+    dmd(8, -8, 0x41c0, 2),
+    dmd(-8, 8, 0x01e0, 2),
+    dmd(8, 8, 0x41e0, 2),
+    dmd(-8, -8, 0x01c8, 2),
+    dmd(8, -8, 0x01ca, 2),
+    dmd(-8, 8, 0x01e8, 2),
+    dmd(8, 8, 0x01ea, 2),
+    dmd(-8, -8, 0x41ca, 2),
+    dmd(8, -8, 0x41c8, 2),
+    dmd(-8, 8, 0x41ea, 2),
+    dmd(8, 8, 0x41e8, 2),
+    dmd(-8, -8, 0x01c2, 2),
+    dmd(8, -8, 0x41c2, 2),
+    dmd(-8, 8, 0x01e2, 2),
+    dmd(8, 8, 0x41e2, 2),
+    dmd(-8, -8, 0x01c4, 2),
+    dmd(8, -8, 0x41c4, 2),
+    dmd(-8, 8, 0x01e4, 2),
+    dmd(8, 8, 0x41e4, 2),
+    dmd(-7, -7, 0x01c4, 2),
+    dmd(7, -7, 0x41c4, 2),
+    dmd(-7, 7, 0x01e4, 2),
+    dmd(7, 7, 0x41e4, 2),
 ];
 const LIGHTNING_GRAPHICS_BY_PHASE: [u8; 8] = [0, 1, 2, 3, 0, 1, 2, 3];
 const LIGHTNING_OAM_FLAGS_BY_PHASE: [u8; 8] = [0, 0, 0, 0, 0x40, 0x40, 0x40, 0x40];
@@ -144,29 +143,29 @@ const YELLOW_STALFOS_NEUTRALIZED_HEAD_Y_OFFSETS: [u8; 16] =
     [10, 10, 10, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7];
 const YELLOW_STALFOS_HEAD_CHARS: [u8; 4] = [2, 2, 0, 4];
 const YELLOW_STALFOS_HEAD_FLAGS: [u8; 4] = [0x40, 0, 0, 0];
-const YELLOW_STALFOS_DRAW_FRAMES: [SmallBossDrawFrame; 22] = [
-    (0, 0, 0x000a, 2),
-    (0, 0, 0x000a, 2),
-    (0, 0, 0x000c, 2),
-    (0, 0, 0x000c, 2),
-    (0, 0, 0x002c, 2),
-    (0, 0, 0x002c, 2),
-    (5, 5, 0x002e, 0),
-    (0, 0, 0x0024, 2),
-    (4, 1, 0x003e, 0),
-    (0, 0, 0x0024, 2),
-    (0, 0, 0x000e, 2),
-    (0, 0, 0x000e, 2),
-    (3, 5, 0x402e, 0),
-    (0, 0, 0x4024, 2),
-    (4, 1, 0x403e, 0),
-    (0, 0, 0x4024, 2),
-    (0, 0, 0x400e, 2),
-    (0, 0, 0x400e, 2),
-    (0, 0, 0x002a, 2),
-    (0, 0, 0x002a, 2),
-    (0, 0, 0x002a, 2),
-    (0, 0, 0x002a, 2),
+const YELLOW_STALFOS_DRAW_FRAMES: [DrawMultipleData; 22] = [
+    dmd(0, 0, 0x000a, 2),
+    dmd(0, 0, 0x000a, 2),
+    dmd(0, 0, 0x000c, 2),
+    dmd(0, 0, 0x000c, 2),
+    dmd(0, 0, 0x002c, 2),
+    dmd(0, 0, 0x002c, 2),
+    dmd(5, 5, 0x002e, 0),
+    dmd(0, 0, 0x0024, 2),
+    dmd(4, 1, 0x003e, 0),
+    dmd(0, 0, 0x0024, 2),
+    dmd(0, 0, 0x000e, 2),
+    dmd(0, 0, 0x000e, 2),
+    dmd(3, 5, 0x402e, 0),
+    dmd(0, 0, 0x4024, 2),
+    dmd(4, 1, 0x403e, 0),
+    dmd(0, 0, 0x4024, 2),
+    dmd(0, 0, 0x400e, 2),
+    dmd(0, 0, 0x400e, 2),
+    dmd(0, 0, 0x002a, 2),
+    dmd(0, 0, 0x002a, 2),
+    dmd(0, 0, 0x002a, 2),
+    dmd(0, 0, 0x002a, 2),
 ];
 
 const TRINEXX_DEATH_EXPLOSION_X_OFFSETS: [i8; 8] = [0, 8, 16, 24, -24, -16, -8, 0];
@@ -1747,7 +1746,8 @@ impl ZeldaState {
             self.oam_state_mut().set_current_extended_pointer(0xa20);
         }
         let g = self.sprite_slot_view(k).graphics() as usize;
-        self.sprite_draw_multiple_for_small_bosses(k, &VITREOUS_DRAW_FRAMES, g * 4, 4);
+        let frames = VITREOUS_DRAW_FRAMES.get(g * 4..g * 4 + 4).unwrap_or(&[]);
+        self.sprite_draw_multiple(k, frames, None);
         if self.sprite_slot_view(k).ai_state() == 2 {
             self.sprite_slot_view_mut(k)
                 .clear_object_priority_bits(0x0e);
@@ -2504,8 +2504,11 @@ impl ZeldaState {
         self.oam_state_mut()
             .set_current_extended_pointer(old_ext.wrapping_add(1));
         let g = self.sprite_slot_view(k).graphics() as usize;
-        let info =
-            self.sprite_draw_multiple_for_small_bosses(k, &YELLOW_STALFOS_DRAW_FRAMES, g * 2, 2);
+        let frames = YELLOW_STALFOS_DRAW_FRAMES
+            .get(g * 2..g * 2 + 2)
+            .unwrap_or(&[]);
+        let mut info = PrepOamCoordsRet::default();
+        self.sprite_draw_multiple(k, frames, Some(&mut info));
         self.oam_state_mut().set_current_pointer(old_oam);
         self.oam_state_mut().set_current_extended_pointer(old_ext);
         if self.sprite_slot_view(k).pause() == 0 {
@@ -2594,36 +2597,6 @@ impl ZeldaState {
 
     fn sprite_convert_velocity_to_angle_for_small_bosses(&mut self, xv: i8, yv: i8) -> u8 {
         Self::sprite_convert_velocity_to_angle(xv as u8, yv as u8)
-    }
-
-    fn sprite_draw_multiple_for_small_bosses(
-        &mut self,
-        k: usize,
-        src: &[SmallBossDrawFrame],
-        start: usize,
-        count: usize,
-    ) -> PrepOamCoordsRet {
-        let Some(prepped) = self.sprite_prep_oam_coord_or_double_ret(k) else {
-            return PrepOamCoordsRet::default();
-        };
-        let entries: Vec<DrawMultipleData> = src
-            .get(start..start.saturating_add(count))
-            .unwrap_or(&[])
-            .iter()
-            .map(|&(x, y, char_flags, ext)| DrawMultipleData {
-                x,
-                y,
-                char_flags,
-                ext,
-            })
-            .collect();
-        self.sprite_draw_multiple_with_info(k, &entries, prepped);
-        PrepOamCoordsRet {
-            x: prepped.0,
-            y: prepped.1,
-            r4: 0,
-            flags: prepped.2,
-        }
     }
 
     /// The shadow draw updates the record it is given; these callers keep theirs.

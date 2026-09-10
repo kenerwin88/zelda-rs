@@ -1,33 +1,32 @@
-use super::sprite::DrawMultipleData;
+use super::sprite::{dmd, DrawMultipleData};
 pub(super) const FEATURE_MISC_BUG_FIXES_MOTHULA: u32 = 4096;
 
 // kMothula_Dmd from sprite_main.c:13776 — packed as (x:i8, y:i8, char:u16, big:u8).
-pub(super) type MothulaDrawFrame = (i8, i8, u16, u8);
-pub(super) const MOTHULA_DRAW_FRAMES: [MothulaDrawFrame; 24] = [
-    (-24, -8, 0x0080, 2),
-    (-8, -8, 0x0082, 2),
-    (8, -8, 0x4082, 2),
-    (24, -8, 0x4080, 2),
-    (-24, 8, 0x00a0, 2),
-    (-8, 8, 0x00a2, 2),
-    (8, 8, 0x40a2, 2),
-    (24, 8, 0x40a0, 2),
-    (-24, -8, 0x0084, 2),
-    (-8, -8, 0x0086, 2),
-    (8, -8, 0x4086, 2),
-    (24, -8, 0x4084, 2),
-    (-24, 8, 0x00a4, 2),
-    (-8, 8, 0x00a6, 2),
-    (8, 8, 0x40a6, 2),
-    (24, 8, 0x40a4, 2),
-    (-8, -8, 0x0088, 2),
-    (-8, -8, 0x0088, 2),
-    (8, -8, 0x4088, 2),
-    (8, -8, 0x4088, 2),
-    (-8, 8, 0x00a8, 2),
-    (-8, 8, 0x00a8, 2),
-    (8, 8, 0x40a8, 2),
-    (8, 8, 0x40a8, 2),
+pub(super) const MOTHULA_DRAW_FRAMES: [DrawMultipleData; 24] = [
+    dmd(-24, -8, 0x0080, 2),
+    dmd(-8, -8, 0x0082, 2),
+    dmd(8, -8, 0x4082, 2),
+    dmd(24, -8, 0x4080, 2),
+    dmd(-24, 8, 0x00a0, 2),
+    dmd(-8, 8, 0x00a2, 2),
+    dmd(8, 8, 0x40a2, 2),
+    dmd(24, 8, 0x40a0, 2),
+    dmd(-24, -8, 0x0084, 2),
+    dmd(-8, -8, 0x0086, 2),
+    dmd(8, -8, 0x4086, 2),
+    dmd(24, -8, 0x4084, 2),
+    dmd(-24, 8, 0x00a4, 2),
+    dmd(-8, 8, 0x00a6, 2),
+    dmd(8, 8, 0x40a6, 2),
+    dmd(24, 8, 0x40a4, 2),
+    dmd(-8, -8, 0x0088, 2),
+    dmd(-8, -8, 0x0088, 2),
+    dmd(8, -8, 0x4088, 2),
+    dmd(8, -8, 0x4088, 2),
+    dmd(-8, 8, 0x00a8, 2),
+    dmd(-8, 8, 0x00a8, 2),
+    dmd(8, 8, 0x40a8, 2),
+    dmd(8, 8, 0x40a8, 2),
 ];
 
 // kMothula_Draw_X from sprite_main.c:13809.
