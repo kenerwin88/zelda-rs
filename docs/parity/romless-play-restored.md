@@ -47,3 +47,11 @@ dialogue tests included); the ownership scanner, readability and
 projection discovery are unchanged. The fifteen binary tests that fail
 need replay-bisect checkpoints that are not present on this machine and
 fail identically without this change.
+
+The main tree validated this fix on parity binary
+`57677d4dd34db86ec1b22c315cd1e5d8a1921bc7b4de9ebeb219192fccb52971`: the
+200,000-frame cached comparison matched every video and audio hash in
+187.62 seconds (the first 200k on the threaded comparison in the main
+tree), the frame 60000 and 150470 WRAM goldens match, the 200,000-frame
+WRAM endpoint is the recorded `dd45975c…` image, and all 1,721 library
+tests pass under the parity profile.
