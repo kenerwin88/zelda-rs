@@ -433,7 +433,8 @@ pub(crate) const DUNG_NUM_STAIRS_2: usize = 0x049c;
 pub(crate) const DUNG_NUM_STAIRS_WET: usize = 0x049e;
 pub(crate) const DUNG_NUM_INROOM_UPSOUTH_STAIRS_WATER: usize = 0x04ae;
 pub(crate) const DUNG_OVERLAY_TO_LOAD: usize = 0x04ba;
-pub(crate) const MOVING_WALL_TORCH_BLINK_PHASE: usize = 0x04bc;
+/// `SWYKPT`: the star-switch floor phase.
+pub(crate) const STAR_TILE_PHASE: usize = 0x04bc;
 pub(crate) const CHANGEABLE_DUNGEON_OBJECT_INDEX: usize = 0x05fc;
 pub(crate) const DUNGEON_ROOM_INDEX2: usize = 0x048e;
 pub(crate) const DUNGEON_FLOOR_Y_VELOCITY: usize = 0x0310;
@@ -925,7 +926,6 @@ pub(crate) const OVERWORLD_PAL_MAIN_INDOORS_BACKUP: usize = 0x0c20a;
 pub(crate) const OVERWORLD_PAL_AUX3_BP7_BACKUP: usize = 0x0c20b;
 pub(crate) const OVERWORLD_PAL_MAIN_INDOORS_COPY_BACKUP: usize = 0x0c20c;
 pub(crate) const INCREMENTAL_COUNTER_FOR_VRAM: usize = 0x412;
-pub(crate) const STAR_TILE_RESTORE_PHASE: usize = 0x4bc;
 pub(crate) const TRINEXX_RED_SHELL_PALETTE_DELAY: usize = 0x4be;
 pub(crate) const TRINEXX_BLUE_SHELL_PALETTE_DELAY: usize = 0x4bf;
 pub(crate) const TRINEXX_RED_SHELL_PALETTE_STEP: usize = 0x4c0;

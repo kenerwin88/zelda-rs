@@ -2856,7 +2856,6 @@ pub(crate) struct DisplayState {
     pub(crate) message_dma_tile_limit: u16,
     pub(crate) message_dma_tile_sentinel: u16,
     pub(crate) travel_bird_tile_offset: u8,
-    pub(crate) star_tile_restore_phase: u8,
     pub(crate) animated_tile_data_source_address: u16,
     pub(crate) animated_tile_vram_destination_address: u16,
     pub(crate) attract_vram_destination_address: u16,
@@ -2917,7 +2916,6 @@ impl DisplayState {
             message_dma_tile_limit: read_le_u16(ram, MESSAGE_DMA_TILE_LIMIT),
             message_dma_tile_sentinel: read_le_u16(ram, MESSAGE_DMA_TILE_SENTINEL),
             travel_bird_tile_offset: ram_byte(ram, FLAG_TRAVEL_BIRD),
-            star_tile_restore_phase: ram_byte(ram, STAR_TILE_RESTORE_PHASE),
             animated_tile_data_source_address: read_le_u16(ram, ANIMATED_TILE_DATA_SRC),
             animated_tile_vram_destination_address: read_le_u16(ram, ANIMATED_TILE_VRAM_ADDR),
             attract_vram_destination_address: read_le_u16(ram, ATTRACT_VRAM_DST),
@@ -3002,13 +3000,6 @@ impl DisplayState {
         ram.write_word(MESSAGE_DMA_TILE_LIMIT, self.message_dma_tile_limit);
         ram.write_word(MESSAGE_DMA_TILE_SENTINEL, self.message_dma_tile_sentinel);
         ram.write_byte(FLAG_TRAVEL_BIRD, self.travel_bird_tile_offset);
-        // 0x4bc is mode-reused: STAR_TILE_RESTORE_PHASE (overworld) here vs the dungeon
-        // MOVING_WALL_TORCH_BLINK_PHASE (dungeon.room_effects). Only project it in the
-        // overworld so a stale frame-start copy can't re-stamp over the dungeon owner's
-        // mid-frame torch toggle (f314953).
-        if ram.read_byte(PLAYER_IS_INDOORS) == 0 {
-            ram.write_byte(STAR_TILE_RESTORE_PHASE, self.star_tile_restore_phase);
-        }
         ram.write_word(
             ANIMATED_TILE_DATA_SRC,
             self.animated_tile_data_source_address,
@@ -3032,9 +3023,6 @@ impl DisplayState {
         // Targeted bridge methods keep these exact when display owns a mutation; this
         // normalization applies only to the broad frame-entry/frame-exit core check.
         ram_state.vram_upload_cursor = self.vram_upload_cursor;
-        if ram.get(PLAYER_IS_INDOORS).copied().unwrap_or(0) != 0 {
-            ram_state.star_tile_restore_phase = self.star_tile_restore_phase;
-        }
         ram_state.attract_vram_destination_address = self.attract_vram_destination_address;
 
         ram_state
@@ -3141,10 +3129,6 @@ impl DisplayState {
         debug_assert_eq!(
             self.travel_bird_tile_offset,
             ram_state.travel_bird_tile_offset
-        );
-        debug_assert_eq!(
-            self.star_tile_restore_phase,
-            ram_state.star_tile_restore_phase
         );
         debug_assert_eq!(
             self.animated_tile_data_source_address,
@@ -3779,19 +3763,6 @@ impl DisplayState {
 
     pub(crate) fn set_travel_bird_tile_offset(&mut self, value: u8) {
         self.travel_bird_tile_offset = value;
-    }
-
-    pub(crate) fn clear_star_tile_restore_phase(&mut self) {
-        self.star_tile_restore_phase = 0;
-    }
-
-    #[cfg(test)]
-    pub(crate) fn star_tile_restore_source_offsets(&self) -> (usize, usize) {
-        if self.star_tile_restore_phase != 0 {
-            (32, 0)
-        } else {
-            (0, 32)
-        }
     }
 
     pub(crate) fn animated_tile_data_source_usize(&self) -> usize {
@@ -4963,13 +4934,6 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         );
     }
 
-    fn debug_assert_star_tile_restore_phase_matches_ram(&self) {
-        debug_assert_eq!(
-            self.display.star_tile_restore_phase,
-            ram_byte(self.ram, STAR_TILE_RESTORE_PHASE)
-        );
-    }
-
     fn debug_assert_animated_tile_upload_metadata_matches_ram(&self) {
         debug_assert_eq!(
             self.display.animated_tile_data_source_address,
@@ -5554,12 +5518,6 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         self.display.set_travel_bird_tile_offset(value);
         self.ram[FLAG_TRAVEL_BIRD] = value;
         self.debug_assert_travel_bird_tile_offset_matches_ram();
-    }
-
-    pub(crate) fn clear_star_tile_restore_phase(&mut self) {
-        self.display.clear_star_tile_restore_phase();
-        self.ram[STAR_TILE_RESTORE_PHASE] = 0;
-        self.debug_assert_star_tile_restore_phase_matches_ram();
     }
 
     pub(crate) fn set_animated_tile_data_source_address(&mut self, value: u16) {

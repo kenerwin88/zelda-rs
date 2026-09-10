@@ -121,16 +121,8 @@ impl ZeldaState {
         );
     }
 
-    pub(crate) fn clear_star_tile_restore_phase(&mut self) {
-        self.display_core_mut().clear_star_tile_restore_phase();
-    }
-
     pub(crate) fn dungeon_star_tile_restore_source_offsets(&self) -> (usize, usize) {
-        // 0x4bc is mode-reused: DisplayState owns the overworld star-tile restore
-        // phase, while dungeon room effects own the dungeon interpretation. Match
-        // C's live byte read here so a stale overworld projection cannot choose
-        // the wrong dungeon graphics source half.
-        if self.ram[crate::game_state::constants::STAR_TILE_RESTORE_PHASE] != 0 {
+        if self.game_state.dungeon.room_effects.star_tile_phase() != 0 {
             (32, 0)
         } else {
             (0, 32)

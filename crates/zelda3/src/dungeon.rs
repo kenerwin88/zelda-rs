@@ -249,8 +249,7 @@ impl ZeldaState {
             self.follower_link_state_mut().set_actual_z_velocity(0xff);
         }
 
-        self.dungeon_room_effects_mut()
-            .clear_moving_wall_torch_blink_phase();
+        self.dungeon_room_effects_mut().clear_star_tile_phase();
         self.dungeon_environment_mut()
             .clear_orange_blue_barrier_state();
         let movable_init = self
@@ -6611,8 +6610,7 @@ impl ZeldaState {
                 self.set_subsubmodule(0);
                 self.set_sound_effect_2(27);
                 self.set_submodule(3);
-                self.dungeon_room_effects_mut()
-                    .toggle_moving_wall_torch_blink_phase();
+                self.dungeon_room_effects_mut().toggle_star_tile_phase();
                 self.Dungeon_RestoreStarTileChr();
             }
         }

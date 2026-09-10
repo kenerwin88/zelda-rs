@@ -77,6 +77,11 @@ write-through where the SNES reuse is real.
   byte of the sixteen-bit collision word tile detection had just filled.
   Nothing reads it back; the byte simply stays visible in WRAM until the
   next collision probe clears it. (zero-page-scratch-owner)
+- **The star-switch floor phase is one byte, `SWYKPT`.** A pressed star
+  tile toggles it and the CHR restore reads it to choose which half of the
+  star graphics to copy back. The port had split it into an "overworld
+  restore phase" and a "torch blink phase", each gated on the indoors
+  flag. (star-tile-phase-owner)
 
 ## Passing data through the scratch registers
 

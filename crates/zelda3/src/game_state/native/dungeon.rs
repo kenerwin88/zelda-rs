@@ -32,7 +32,7 @@ use crate::game_state::constants::{
     FLOOR_1_FILLER_TILES, FLOOR_2_FILLER_TILES, GANON_TORCH_COUNT, HDR_DUNGEON_DARK_WITH_LANTERN,
     INVISIBLE_DOOR_DIR_AND_INDEX_X2, MAIN_TILE_THEME_INDEX, MOVABLE_BLOCK_DATAS,
     MOVING_FLOOR_BG_CHECK_FLAGS, MOVING_WALL_DOT_POINTER, MOVING_WALL_REPLACEMENT_BUFFER,
-    MOVING_WALL_TORCH_BLINK_PHASE, MOVING_WALL_WRITE_POINT, ORANGE_BLUE_BARRIER_STATE,
+    MOVING_WALL_WRITE_POINT, ORANGE_BLUE_BARRIER_STATE, STAR_TILE_PHASE,
     OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_FIXED_COLOR_PLUSMINUS, OVERWORLD_MAP_STATE,
     OVERWORLD_TILE_THEME_INDEX, REPLACEMENT_TILEMAP_LL, REPLACEMENT_TILEMAP_LR,
     REPLACEMENT_TILEMAP_UL, REPLACEMENT_TILEMAP_UR, RESERVED_GFX_CONFIG_WORD, RESET_XY_CHECK_FLAGS,
@@ -2331,7 +2331,9 @@ pub(crate) struct DungeonRoomEffectsState {
     blast_wall_door_index_x2: u16,
     moving_wall_dot_pointer: u8,
     moving_wall_write_point: u16,
-    moving_wall_torch_blink_phase: u8,
+    /// `SWYKPT` in the original: the star-switch floor phase, toggled by a
+    /// pressed star tile and read to pick which half of the star CHR to restore.
+    star_tile_phase: u8,
     fixed_color_plusminus: u8,
     trap_trigger_latch: u8,
     bomb_trap_activation: u8,
@@ -2347,7 +2349,7 @@ impl Default for DungeonRoomEffectsState {
             blast_wall_door_index_x2: 0,
             moving_wall_dot_pointer: 0,
             moving_wall_write_point: 0,
-            moving_wall_torch_blink_phase: 0,
+            star_tile_phase: 0,
             fixed_color_plusminus: 0,
             trap_trigger_latch: 0,
             bomb_trap_activation: 0,
@@ -2369,10 +2371,7 @@ impl DungeonRoomEffectsState {
             blast_wall_door_index_x2: read_le_u16(ram, CRUSH_WALL_DOOR_INDEX_X2),
             moving_wall_dot_pointer: ram.get(MOVING_WALL_DOT_POINTER).copied().unwrap_or(0),
             moving_wall_write_point: read_le_u16(ram, MOVING_WALL_WRITE_POINT),
-            moving_wall_torch_blink_phase: ram
-                .get(MOVING_WALL_TORCH_BLINK_PHASE)
-                .copied()
-                .unwrap_or(0),
+            star_tile_phase: ram.get(STAR_TILE_PHASE).copied().unwrap_or(0),
             fixed_color_plusminus: ram
                 .get(OVERWORLD_FIXED_COLOR_PLUSMINUS)
                 .copied()
@@ -2390,15 +2389,7 @@ impl DungeonRoomEffectsState {
         ram.write_word(CRUSH_WALL_DOOR_INDEX_X2, self.blast_wall_door_index_x2);
         ram.write_byte(MOVING_WALL_DOT_POINTER, self.moving_wall_dot_pointer);
         ram.write_word(MOVING_WALL_WRITE_POINT, self.moving_wall_write_point);
-        // 0x4bc is mode-reused with the overworld STAR_TILE_RESTORE_PHASE (owned by
-        // display); only project the dungeon torch phase indoors so a stale copy doesn't
-        // clobber the overworld owner.
-        if ram.read_byte(crate::game_state::constants::PLAYER_IS_INDOORS) != 0 {
-            ram.write_byte(
-                MOVING_WALL_TORCH_BLINK_PHASE,
-                self.moving_wall_torch_blink_phase,
-            );
-        }
+        ram.write_byte(STAR_TILE_PHASE, self.star_tile_phase);
         ram.write_byte(OVERWORLD_FIXED_COLOR_PLUSMINUS, self.fixed_color_plusminus);
         ram.write_byte(DUNGEON_TRAP_TRIGGER_LATCH, self.trap_trigger_latch);
         ram.write_byte(ACTIVATE_BOMB_TRAP_OVERLORD, self.bomb_trap_activation);
@@ -2463,12 +2454,16 @@ impl DungeonRoomEffectsState {
         self.fixed_color_plusminus = value;
     }
 
-    fn toggle_moving_wall_torch_blink_phase(&mut self) {
-        self.moving_wall_torch_blink_phase ^= 1;
+    pub(crate) fn star_tile_phase(&self) -> u8 {
+        self.star_tile_phase
     }
 
-    fn clear_moving_wall_torch_blink_phase(&mut self) {
-        self.moving_wall_torch_blink_phase = 0;
+    fn toggle_star_tile_phase(&mut self) {
+        self.star_tile_phase ^= 1;
+    }
+
+    fn clear_star_tile_phase(&mut self) {
+        self.star_tile_phase = 0;
     }
 
     fn set_blast_wall_door_index_x2(&mut self, value: u16) {
@@ -4197,8 +4192,8 @@ impl<'a> NativeDungeonRoomEffectsBridgeMut<'a> {
 
     forward_synced! {
         state;
-        fn toggle_moving_wall_torch_blink_phase();
-        fn clear_moving_wall_torch_blink_phase();
+        fn toggle_star_tile_phase();
+        fn clear_star_tile_phase();
         fn set_blast_wall_door_index(door: usize);
         fn clear_blast_wall_door_index();
         fn mark_blast_wall_x_open();
