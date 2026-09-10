@@ -19,7 +19,7 @@
   },
   "project": "routes/full_run",
   "promoted": {
-    "binary_sha256": "b6230379904fa447d2b2e9f25a789d34ab8a74aed0e708e2c5f2f10b8c1616df",
+    "binary_sha256": "6eeaeb415c70c4d1e1c9a722dedcc626f7dffbb9ba2955d8d82e737a7b439cea",
     "cached_av_receipt": {
       "candidate_ledger_sha256": "3d52711c51a4f01031bd336aa582d4b6a316c71199710d3354ef015fcca1440c",
       "frames": 1581079,
@@ -27,13 +27,13 @@
         "video",
         "audio"
       ],
-      "manifest_sha256": "a58ce896ac65960b94ab70c38737ae055477dc271ade351c7795bc9d1aa1199d",
+      "manifest_sha256": "6faa6a9bd456d7177b265224d680a89f7d5489a3cdad2b4030a6fe41ff4c1078",
       "oracle_cache_key": "ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18",
       "oracle_cache_manifest_sha256": "4c7f88fbf327a4b3af7d3f8614d82ebb2318f11b607798d5dddb4a97b7fe2715",
-      "receipt_path": "receipts/water-full-av.manifest.json",
-      "run": "/Users/missingno/Documents/zelda3-rs/target/water-hdma-window/water-full-av"
+      "receipt_path": "receipts/door-full-av.manifest.json",
+      "run": "/Users/missingno/Documents/zelda3-rs/target/door-step-owner/door-full-av"
     },
-    "commit": "3d1455c80fe94ed0dbce68df19b9cc01a50c5579",
+    "commit": "089711cbc5da0cb19832a515ecaded14b1769187",
     "kind": "cached_av_pass",
     "last_exact_audio_frame": 1581078,
     "last_exact_engine_state_frame": 1581078,
