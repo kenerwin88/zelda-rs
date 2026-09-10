@@ -208,9 +208,14 @@ observable to anything that reads mid-routine, including the NMI handler.
   setup, not at the end of the operation; audio commands cross the NMI
   boundary depending on where the routine is when vblank arrives. (bug
   class 5 in CLAUDE.md)
-- **The Zelda bug the decompilation fixed.** The boss prize does not spawn
-  if all ancilla slots are occupied; the original returns without clearing
-  the room tag, and the decompilation marks that as a bugfix.
+- **The Zelda bug the decompilation fixed.** After a boss dies, the room
+  tag `RoomTag_GetHeartForPrize` drops the heart container as an ancilla and
+  then disarms itself. In the original it disarms itself even when the
+  ancilla table (ten slots) was full and the spawn failed, so a boss killed
+  while bombs, beams, and sparkles filled every slot never yielded its heart
+  container. The decompilation keeps the tag armed on a failed spawn so it
+  retries next frame, and the port inherits that fix; the parity route
+  never reaches the failure branch.
 - **The iris spotlight's tick-versus-radius offset** is decided by the
   exact cycle cost of building the per-radius table racing vblank. It is
   correct per frame count and wobbles per radius within a frame; it is a
