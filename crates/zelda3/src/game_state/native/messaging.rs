@@ -1093,29 +1093,9 @@ impl MessagingState {
     }
 }
 
-pub(crate) struct NativeSelectFileMenuBridgeMut<'a> {
-    menu: &'a mut SelectFileMenuState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeSelectFileMenuBridgeMut, menu: SelectFileMenuState);
 
 impl<'a> NativeSelectFileMenuBridgeMut<'a> {
-    pub(crate) fn new(menu: &'a mut SelectFileMenuState, ram: &'a mut [u8]) -> Self {
-        *menu = SelectFileMenuState::load_from_ram(&*ram);
-        Self { menu, ram }
-    }
-
-    fn sync(&mut self) {
-        self.menu
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.menu, SelectFileMenuState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         menu;
         fn set_choice(index: usize, value: u8);
@@ -1170,60 +1150,15 @@ impl<'a> MultiselectChoiceRead<'a> {
     }
 }
 
-pub(crate) struct NativeDialogueMessageIndexBridgeMut<'a> {
-    message_index: &'a mut DialogueMessageIndexState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDialogueMessageIndexBridgeMut, message_index: DialogueMessageIndexState);
 
 impl<'a> NativeDialogueMessageIndexBridgeMut<'a> {
-    pub(crate) fn new(message_index: &'a mut DialogueMessageIndexState, ram: &'a mut [u8]) -> Self {
-        *message_index = DialogueMessageIndexState::load_from_ram(&*ram);
-        Self { message_index, ram }
-    }
-
-    fn sync(&mut self) {
-        self.message_index.write_to_ram(
-            &mut crate::game_state::native::ram_target::DiffTarget::new(self.ram),
-        );
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.message_index,
-            DialogueMessageIndexState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! { message_index; fn set_value(value: u16); }
 }
 
-pub(crate) struct NativeMultiselectChoiceBridgeMut<'a> {
-    choice: &'a mut MultiselectChoiceState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeMultiselectChoiceBridgeMut, choice: MultiselectChoiceState);
 
 impl<'a> NativeMultiselectChoiceBridgeMut<'a> {
-    pub(crate) fn new(choice: &'a mut MultiselectChoiceState, ram: &'a mut [u8]) -> Self {
-        *choice = MultiselectChoiceState::load_from_ram(&*ram);
-        Self { choice, ram }
-    }
-
-    fn sync(&mut self) {
-        self.choice
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.choice,
-            MultiselectChoiceState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! {
         choice;
         fn set_value(value: u8);
@@ -1234,29 +1169,9 @@ impl<'a> NativeMultiselectChoiceBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeDialogueNumberBridgeMut<'a> {
-    number: &'a mut DialogueNumberState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDialogueNumberBridgeMut, number: DialogueNumberState);
 
 impl<'a> NativeDialogueNumberBridgeMut<'a> {
-    pub(crate) fn new(number: &'a mut DialogueNumberState, ram: &'a mut [u8]) -> Self {
-        *number = DialogueNumberState::load_from_ram(&*ram);
-        Self { number, ram }
-    }
-
-    fn sync(&mut self) {
-        self.number
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.number, DialogueNumberState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         number;
         fn set_packed_digits(low_pair: u8, high_pair: u8);
@@ -1265,31 +1180,9 @@ impl<'a> NativeDialogueNumberBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeDialogueSourceOffsetBridgeMut<'a> {
-    source_offset: &'a mut DialogueSourceOffsetState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDialogueSourceOffsetBridgeMut, source_offset: DialogueSourceOffsetState);
 
 impl<'a> NativeDialogueSourceOffsetBridgeMut<'a> {
-    pub(crate) fn new(source_offset: &'a mut DialogueSourceOffsetState, ram: &'a mut [u8]) -> Self {
-        *source_offset = DialogueSourceOffsetState::load_from_ram(&*ram);
-        Self { source_offset, ram }
-    }
-
-    fn sync(&mut self) {
-        self.source_offset.write_to_ram(
-            &mut crate::game_state::native::ram_target::DiffTarget::new(self.ram),
-        );
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.source_offset,
-            DialogueSourceOffsetState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! { source_offset; fn increment_bank_offset_low_nibble() -> u8; }
 }
 
@@ -1561,34 +1454,9 @@ impl<'a> NativeMessagingRuntimeBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeMessagingRenderBufferBridgeMut<'a> {
-    render_buffer: &'a mut MessagingRenderBufferState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeMessagingRenderBufferBridgeMut, render_buffer: MessagingRenderBufferState);
 
 impl<'a> NativeMessagingRenderBufferBridgeMut<'a> {
-    pub(crate) fn new(
-        render_buffer: &'a mut MessagingRenderBufferState,
-        ram: &'a mut [u8],
-    ) -> Self {
-        *render_buffer = MessagingRenderBufferState::load_from_ram(&*ram);
-        Self { render_buffer, ram }
-    }
-
-    fn sync(&mut self) {
-        self.render_buffer.write_to_ram(
-            &mut crate::game_state::native::ram_target::DiffTarget::new(self.ram),
-        );
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.render_buffer,
-            MessagingRenderBufferState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! {
         render_buffer;
         fn xor_mask(offset: usize, mask: u8);
@@ -1617,29 +1485,9 @@ impl<'a> NativeMessagingRenderBufferBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeVwfRenderBridgeMut<'a> {
-    vwf_render: &'a mut VwfRenderState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeVwfRenderBridgeMut, vwf_render: VwfRenderState);
 
 impl<'a> NativeVwfRenderBridgeMut<'a> {
-    pub(crate) fn new(vwf_render: &'a mut VwfRenderState, ram: &'a mut [u8]) -> Self {
-        *vwf_render = VwfRenderState::load_from_ram(&*ram);
-        Self { vwf_render, ram }
-    }
-
-    fn sync(&mut self) {
-        self.vwf_render
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.vwf_render, VwfRenderState::load_from_ram(self.ram));
-    }
-
     pub(crate) fn set_next_glyph_advance_prefix_sum(&mut self, index: usize, value: u8) {
         self.vwf_render
             .set_next_glyph_advance_prefix_sum(index, value);
@@ -1664,32 +1512,9 @@ impl<'a> NativeVwfRenderBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeSharedMessageTimerBridgeMut<'a> {
-    timer: &'a mut SharedMessageTimerState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeSharedMessageTimerBridgeMut, timer: SharedMessageTimerState);
 
 impl<'a> NativeSharedMessageTimerBridgeMut<'a> {
-    pub(crate) fn new(timer: &'a mut SharedMessageTimerState, ram: &'a mut [u8]) -> Self {
-        *timer = SharedMessageTimerState::load_from_ram(&*ram);
-        Self { timer, ram }
-    }
-
-    fn sync(&mut self) {
-        self.timer
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.timer,
-            SharedMessageTimerState::load_from_ram(self.ram)
-        );
-    }
-
     pub(crate) fn start(&mut self, value: u16) {
         self.timer.timer = value;
         self.sync();

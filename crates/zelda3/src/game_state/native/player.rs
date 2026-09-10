@@ -1318,29 +1318,9 @@ impl TileDetectionState {
     }
 }
 
-pub(crate) struct NativeTileDetectionBridgeMut<'a> {
-    state: &'a mut TileDetectionState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeTileDetectionBridgeMut, state: TileDetectionState);
 
 impl<'a> NativeTileDetectionBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut TileDetectionState, ram: &'a mut [u8]) -> Self {
-        *state = TileDetectionState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, TileDetectionState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         state;
         fn set_y_high(value: u8);
@@ -1680,32 +1660,9 @@ fn write_pushed_block_bank_word(bank: &mut [u8; PUSHED_BLOCK_BANK_LEN], slot: us
     }
 }
 
-pub(crate) struct NativeBg1MovementAccumulatorBridgeMut<'a> {
-    state: &'a mut Bg1MovementAccumulatorState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeBg1MovementAccumulatorBridgeMut, state: Bg1MovementAccumulatorState);
 
 impl<'a> NativeBg1MovementAccumulatorBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut Bg1MovementAccumulatorState, ram: &'a mut [u8]) -> Self {
-        *state = Bg1MovementAccumulatorState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.state,
-            Bg1MovementAccumulatorState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! {
         state;
         fn set_buffer(value: u16);
@@ -1715,17 +1672,9 @@ impl<'a> NativeBg1MovementAccumulatorBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativePushedBlockBridgeMut<'a> {
-    state: &'a mut PushedBlockState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativePushedBlockBridgeMut, state: PushedBlockState);
 
 impl<'a> NativePushedBlockBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut PushedBlockState, ram: &'a mut [u8]) -> Self {
-        *state = PushedBlockState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
     pub(crate) fn set_facing_player(&mut self, slot: usize, value: u8) {
         if self.state.set_facing_player(slot, value) {
             self.sync();
@@ -1758,18 +1707,6 @@ impl<'a> NativePushedBlockBridgeMut<'a> {
         if self.state.set_y_fixed24(slot, value) {
             self.sync();
         }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, PushedBlockState::load_from_ram(self.ram));
     }
 }
 
@@ -1924,29 +1861,9 @@ fn axis_word(values: [u16; SWIM_AXIS_COUNT], offset: usize) -> u16 {
         .unwrap_or(0)
 }
 
-pub(crate) struct NativeSwimAccelerationBridgeMut<'a> {
-    state: &'a mut SwimAccelerationState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeSwimAccelerationBridgeMut, state: SwimAccelerationState);
 
 impl<'a> NativeSwimAccelerationBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut SwimAccelerationState, ram: &'a mut [u8]) -> Self {
-        *state = SwimAccelerationState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, SwimAccelerationState::load_from_ram(self.ram));
-    }
-
     pub(crate) fn set_mode(&mut self, offset: usize, value: u16) {
         if self.state.set_mode(offset, value) {
             self.sync();
@@ -1988,32 +1905,9 @@ impl<'a> NativeSwimAccelerationBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeSpecialExitPositionBridgeMut<'a> {
-    state: &'a mut SpecialExitPositionState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeSpecialExitPositionBridgeMut, state: SpecialExitPositionState);
 
 impl<'a> NativeSpecialExitPositionBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut SpecialExitPositionState, ram: &'a mut [u8]) -> Self {
-        *state = SpecialExitPositionState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.state,
-            SpecialExitPositionState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! {
         state;
         fn set_x(value: u16);

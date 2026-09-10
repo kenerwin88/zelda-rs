@@ -3549,32 +3549,9 @@ impl DungeonScratchWordState {
     }
 }
 
-pub(crate) struct NativeDungeonEntranceBackupBridgeMut<'a> {
-    state: &'a mut DungeonEntranceBackupState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDungeonEntranceBackupBridgeMut, state: DungeonEntranceBackupState);
 
 impl<'a> NativeDungeonEntranceBackupBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut DungeonEntranceBackupState, ram: &'a mut [u8]) -> Self {
-        *state = DungeonEntranceBackupState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.state,
-            DungeonEntranceBackupState::load_from_ram(self.ram)
-        );
-    }
-
     pub(crate) fn cache_exit_tile_themes(&mut self) {
         self.state.cache_exit_tile_themes(
             self.ram[OVERWORLD_TILE_THEME_INDEX],
@@ -3586,39 +3563,15 @@ impl<'a> NativeDungeonEntranceBackupBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeDungeonScratchWordBridgeMut<'a> {
-    scratch: &'a mut DungeonScratchWordState,
-    ram: &'a mut [u8],
-}
+// R16/R18 (0xc8-0xcb) are shared SNES bytes that other code writes directly —
+// notably the 3bpp->4bpp gfx converter, whose DUNG_LINE_PTRS_ROW0 (0xbf) scratch
+// buffer overlaps them, and the select-file R17 clear. This native is NOT
+// bulk-projected every frame (see DungeonState::write_to_ram), so re-read it from
+// RAM before any mutation: byte/half-word setters then preserve the live RAM half
+// (like C's `ram[R16]=v` byte store) instead of re-stamping a stale frame-start word.
+adopting_bridge!(NativeDungeonScratchWordBridgeMut, scratch: DungeonScratchWordState);
 
 impl<'a> NativeDungeonScratchWordBridgeMut<'a> {
-    pub(crate) fn new(scratch: &'a mut DungeonScratchWordState, ram: &'a mut [u8]) -> Self {
-        *scratch = DungeonScratchWordState::load_from_ram(&*ram);
-        // R16/R18 (0xc8-0xcb) are shared SNES bytes that other code writes directly —
-        // notably the 3bpp->4bpp gfx converter, whose DUNG_LINE_PTRS_ROW0 (0xbf) scratch
-        // buffer overlaps them, and the select-file R17 clear. This native is NOT
-        // bulk-projected every frame (see DungeonState::write_to_ram), so re-read it from
-        // RAM before any mutation: byte/half-word setters then preserve the live RAM half
-        // (like C's `ram[R16]=v` byte store) instead of re-stamping a stale frame-start word.
-        *scratch = DungeonScratchWordState::load_from_ram(ram);
-        Self { scratch, ram }
-    }
-
-    fn sync(&mut self) {
-        self.scratch
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.scratch,
-            DungeonScratchWordState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! {
         scratch;
         fn decrement_high() -> u8;
@@ -3637,29 +3590,9 @@ impl<'a> NativeDungeonScratchWordBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeDungeonSavegameBridgeMut<'a> {
-    state: &'a mut DungeonSavegameState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDungeonSavegameBridgeMut, state: DungeonSavegameState);
 
 impl<'a> NativeDungeonSavegameBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut DungeonSavegameState, ram: &'a mut [u8]) -> Self {
-        *state = DungeonSavegameState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, DungeonSavegameState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         state;
         fn set_savegame_state_bits(value: u16);
@@ -3742,29 +3675,9 @@ impl<'a> NativeDungeonBg2AttributeBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeDungeonStairListsBridgeMut<'a> {
-    state: &'a mut DungeonStairListsState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDungeonStairListsBridgeMut, state: DungeonStairListsState);
 
 impl<'a> NativeDungeonStairListsBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut DungeonStairListsState, ram: &'a mut [u8]) -> Self {
-        *state = DungeonStairListsState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, DungeonStairListsState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         state;
         fn set_stair_list_count(list: DungeonStairList, value: u16);
@@ -3811,32 +3724,9 @@ impl<'a> NativeDungeonStairListsBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeDungeonMovingFloorBridgeMut<'a> {
-    state: &'a mut DungeonMovingFloorState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDungeonMovingFloorBridgeMut, state: DungeonMovingFloorState);
 
 impl<'a> NativeDungeonMovingFloorBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut DungeonMovingFloorState, ram: &'a mut [u8]) -> Self {
-        *state = DungeonMovingFloorState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.state,
-            DungeonMovingFloorState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! {
         state;
         fn set_floor_y_velocity_high(value: u8);
@@ -3855,32 +3745,9 @@ impl<'a> NativeDungeonMovingFloorBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeDungeonRoomTrackingBridgeMut<'a> {
-    state: &'a mut DungeonRoomTrackingState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDungeonRoomTrackingBridgeMut, state: DungeonRoomTrackingState);
 
 impl<'a> NativeDungeonRoomTrackingBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut DungeonRoomTrackingState, ram: &'a mut [u8]) -> Self {
-        *state = DungeonRoomTrackingState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.state,
-            DungeonRoomTrackingState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! {
         state;
         fn set_room_index2(value: u8);
@@ -3892,32 +3759,9 @@ impl<'a> NativeDungeonRoomTrackingBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeDungeonObjectTrackingBridgeMut<'a> {
-    state: &'a mut DungeonObjectTrackingState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDungeonObjectTrackingBridgeMut, state: DungeonObjectTrackingState);
 
 impl<'a> NativeDungeonObjectTrackingBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut DungeonObjectTrackingState, ram: &'a mut [u8]) -> Self {
-        *state = DungeonObjectTrackingState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.state,
-            DungeonObjectTrackingState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! {
         state;
         fn set_big_rock_starting_address(value: u16);
@@ -3935,29 +3779,9 @@ impl<'a> NativeDungeonObjectTrackingBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeDungeonDoorBridgeMut<'a> {
-    state: &'a mut DungeonDoorState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDungeonDoorBridgeMut, state: DungeonDoorState);
 
 impl<'a> NativeDungeonDoorBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut DungeonDoorState, ram: &'a mut [u8]) -> Self {
-        *state = DungeonDoorState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, DungeonDoorState::load_from_ram(self.ram));
-    }
-
     pub(crate) fn set_opened_doors(&mut self, value: u16) {
         self.state.set_opened_doors(value);
         self.sync();
@@ -4083,29 +3907,9 @@ impl<'a> NativeDungeonDoorBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeDungeonRoomLoadBridgeMut<'a> {
-    state: &'a mut DungeonRoomLoadState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDungeonRoomLoadBridgeMut, state: DungeonRoomLoadState);
 
 impl<'a> NativeDungeonRoomLoadBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut DungeonRoomLoadState, ram: &'a mut [u8]) -> Self {
-        *state = DungeonRoomLoadState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, DungeonRoomLoadState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         state;
         fn set_header_collision(value: u8);
@@ -4328,29 +4132,9 @@ impl<'a> NativeDungeonRoomTilemapBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeDungeonRoomItemBridgeMut<'a> {
-    state: &'a mut DungeonRoomItemState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDungeonRoomItemBridgeMut, state: DungeonRoomItemState);
 
 impl<'a> NativeDungeonRoomItemBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut DungeonRoomItemState, ram: &'a mut [u8]) -> Self {
-        *state = DungeonRoomItemState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, DungeonRoomItemState::load_from_ram(self.ram));
-    }
-
     /// Reset the chest / big-key-lock counters at room load (C: dung_num_chests_x2
     /// = dung_num_bigkey_locks_x2 = 0). The clear_room_parser_words loop only
     /// zeroes RAM; these native fields would otherwise stay stale and miscount.
@@ -4393,32 +4177,9 @@ impl<'a> NativeDungeonRoomItemBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeDungeonRoomEffectsBridgeMut<'a> {
-    state: &'a mut DungeonRoomEffectsState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDungeonRoomEffectsBridgeMut, state: DungeonRoomEffectsState);
 
 impl<'a> NativeDungeonRoomEffectsBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut DungeonRoomEffectsState, ram: &'a mut [u8]) -> Self {
-        *state = DungeonRoomEffectsState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.state,
-            DungeonRoomEffectsState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! {
         state;
         fn fill_moving_wall_replacement_buffer(value: u16);
@@ -4452,29 +4213,9 @@ impl<'a> NativeDungeonRoomEffectsBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeDungeonRoomParserBridgeMut<'a> {
-    state: &'a mut DungeonRoomParserState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDungeonRoomParserBridgeMut, state: DungeonRoomParserState);
 
 impl<'a> NativeDungeonRoomParserBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut DungeonRoomParserState, ram: &'a mut [u8]) -> Self {
-        *state = DungeonRoomParserState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, DungeonRoomParserState::load_from_ram(self.ram));
-    }
-
     forward_synced! { state; fn append_star_switch_tile(tilemap_pos: u16) -> usize; }
 
     pub(crate) fn clear_room_parser_words(&mut self, offsets: &[usize]) {
@@ -4502,32 +4243,9 @@ impl<'a> NativeDungeonRoomParserBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeDungeonRoomDoorSetupBridgeMut<'a> {
-    state: &'a mut DungeonRoomDoorSetupState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDungeonRoomDoorSetupBridgeMut, state: DungeonRoomDoorSetupState);
 
 impl<'a> NativeDungeonRoomDoorSetupBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut DungeonRoomDoorSetupState, ram: &'a mut [u8]) -> Self {
-        *state = DungeonRoomDoorSetupState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.state,
-            DungeonRoomDoorSetupState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! {
         state;
         fn clear_invisible_door_marker();
@@ -4555,32 +4273,9 @@ impl<'a> NativeDungeonRoomDoorSetupBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeDungeonRoomRuntimeBridgeMut<'a> {
-    state: &'a mut DungeonRoomRuntimeState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDungeonRoomRuntimeBridgeMut, state: DungeonRoomRuntimeState);
 
 impl<'a> NativeDungeonRoomRuntimeBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut DungeonRoomRuntimeState, ram: &'a mut [u8]) -> Self {
-        *state = DungeonRoomRuntimeState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.state,
-            DungeonRoomRuntimeState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! {
         state;
         fn set_room_index_x3(value: u16);
@@ -4592,32 +4287,9 @@ impl<'a> NativeDungeonRoomRuntimeBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeDungeonMovableBlockBridgeMut<'a> {
-    state: &'a mut DungeonMovableBlockState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDungeonMovableBlockBridgeMut, state: DungeonMovableBlockState);
 
 impl<'a> NativeDungeonMovableBlockBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut DungeonMovableBlockState, ram: &'a mut [u8]) -> Self {
-        *state = DungeonMovableBlockState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.state,
-            DungeonMovableBlockState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! {
         state;
         fn set_movable_block_record(index: usize, room: u16, tilemap: u16);
@@ -4625,32 +4297,9 @@ impl<'a> NativeDungeonMovableBlockBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeDungeonStairMovementBridgeMut<'a> {
-    state: &'a mut DungeonStairMovementState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDungeonStairMovementBridgeMut, state: DungeonStairMovementState);
 
 impl<'a> NativeDungeonStairMovementBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut DungeonStairMovementState, ram: &'a mut [u8]) -> Self {
-        *state = DungeonStairMovementState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.state,
-            DungeonStairMovementState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! {
         state;
         fn set_current_floor(value: u8);
@@ -4840,29 +4489,9 @@ impl<'a> NativeDungeonTorchBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeDungeonHeaderBridgeMut<'a> {
-    header: &'a mut DungeonHeaderState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDungeonHeaderBridgeMut, header: DungeonHeaderState);
 
 impl<'a> NativeDungeonHeaderBridgeMut<'a> {
-    pub(crate) fn new(header: &'a mut DungeonHeaderState, ram: &'a mut [u8]) -> Self {
-        *header = DungeonHeaderState::load_from_ram(&*ram);
-        Self { header, ram }
-    }
-
-    fn sync(&mut self) {
-        self.header
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.header, DungeonHeaderState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         header;
         fn set_hole_teleporter_planes(packed: u8, extra: u8);

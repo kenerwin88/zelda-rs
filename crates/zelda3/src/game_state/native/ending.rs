@@ -998,29 +998,9 @@ impl<'a> NativeAttractSceneBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeIntroSceneBridgeMut<'a> {
-    intro_scene: &'a mut IntroSceneState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeIntroSceneBridgeMut, intro_scene: IntroSceneState);
 
 impl<'a> NativeIntroSceneBridgeMut<'a> {
-    pub(crate) fn new(intro_scene: &'a mut IntroSceneState, ram: &'a mut [u8]) -> Self {
-        *intro_scene = IntroSceneState::load_from_ram(&*ram);
-        Self { intro_scene, ram }
-    }
-
-    fn sync(&mut self) {
-        self.intro_scene
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.intro_scene, IntroSceneState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         intro_scene;
         fn pause_triangle_motion();
@@ -1176,29 +1156,9 @@ impl<'a> NativeIntroActorBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeEndingCreditBridgeMut<'a> {
-    credits: &'a mut EndingCreditState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeEndingCreditBridgeMut, credits: EndingCreditState);
 
 impl<'a> NativeEndingCreditBridgeMut<'a> {
-    pub(crate) fn new(credits: &'a mut EndingCreditState, ram: &'a mut [u8]) -> Self {
-        *credits = EndingCreditState::load_from_ram(&*ram);
-        Self { credits, ram }
-    }
-
-    fn sync(&mut self) {
-        self.credits
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.credits, EndingCreditState::load_from_ram(self.ram));
-    }
-
     forward_synced! { credits; fn clear_palace_death_count_digit_step(); }
 
     pub(crate) fn set_palace_death_count_digit_step(&mut self, value: u16) {

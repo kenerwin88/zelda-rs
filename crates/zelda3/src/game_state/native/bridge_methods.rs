@@ -82,3 +82,34 @@ mod tests {
         assert_eq!(bridge.state.value, 0);
     }
 }
+
+/// A bridge over one native state: it adopts the state from live WRAM when it is
+/// constructed, and every synced setter projects the state through a compare-on-write
+/// target so only the bytes the mutation changed are stored. The bridge's own setters
+/// live in a separate `impl` block next to the invocation.
+macro_rules! adopting_bridge {
+    ($bridge:ident, $field:ident: $state:ty) => {
+        pub(crate) struct $bridge<'a> {
+            $field: &'a mut $state,
+            ram: &'a mut [u8],
+        }
+
+        impl<'a> $bridge<'a> {
+            pub(crate) fn new($field: &'a mut $state, ram: &'a mut [u8]) -> Self {
+                *$field = <$state>::load_from_ram(&*ram);
+                Self { $field, ram }
+            }
+
+            fn sync(&mut self) {
+                self.$field.write_to_ram(
+                    &mut crate::game_state::native::ram_target::DiffTarget::new(self.ram),
+                );
+                self.debug_assert_matches_ram();
+            }
+
+            fn debug_assert_matches_ram(&self) {
+                debug_assert_eq!(*self.$field, <$state>::load_from_ram(self.ram));
+            }
+        }
+    };
+}

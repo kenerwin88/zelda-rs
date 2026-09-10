@@ -294,25 +294,9 @@ impl PolyRuntimeState {
     }
 }
 
-pub(crate) struct NativePolyRuntimeBridgeMut<'a> {
-    runtime: &'a mut PolyRuntimeState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativePolyRuntimeBridgeMut, runtime: PolyRuntimeState);
 
 impl<'a> NativePolyRuntimeBridgeMut<'a> {
-    pub(crate) fn new(runtime: &'a mut PolyRuntimeState, ram: &'a mut [u8]) -> Self {
-        *runtime = PolyRuntimeState::load_from_ram(&*ram);
-        Self { runtime, ram }
-    }
-
-    fn sync(&mut self) {
-        self.runtime
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        debug_assert_eq!(*self.runtime, PolyRuntimeState::load_from_ram(self.ram));
-    }
-
     pub(crate) fn set_config1(&mut self, value: u8) {
         self.runtime.config1 = value;
         self.sync();
@@ -638,28 +622,9 @@ impl PolyProjectedVerticesState {
     }
 }
 
-pub(crate) struct NativePolyProjectedVerticesBridgeMut<'a> {
-    state: &'a mut PolyProjectedVerticesState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativePolyProjectedVerticesBridgeMut, state: PolyProjectedVerticesState);
 
 impl<'a> NativePolyProjectedVerticesBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut PolyProjectedVerticesState, ram: &'a mut [u8]) -> Self {
-        *state = PolyProjectedVerticesState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        debug_assert_eq!(
-            *self.state,
-            PolyProjectedVerticesState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! { state; fn set_position(vertex: usize, x: u8, y: u8); }
 }
 
@@ -711,25 +676,9 @@ impl PolyFaceCoordsState {
     }
 }
 
-pub(crate) struct NativePolyFaceCoordsBridgeMut<'a> {
-    state: &'a mut PolyFaceCoordsState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativePolyFaceCoordsBridgeMut, state: PolyFaceCoordsState);
 
 impl<'a> NativePolyFaceCoordsBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut PolyFaceCoordsState, ram: &'a mut [u8]) -> Self {
-        *state = PolyFaceCoordsState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        debug_assert_eq!(*self.state, PolyFaceCoordsState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         state;
         fn set_coord(offset: usize, value: u8);
@@ -886,25 +835,9 @@ impl PolyRasterEdgeState {
     }
 }
 
-pub(crate) struct NativePolyRasterEdgeBridgeMut<'a> {
-    state: &'a mut PolyRasterEdgeState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativePolyRasterEdgeBridgeMut, state: PolyRasterEdgeState);
 
 impl<'a> NativePolyRasterEdgeBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut PolyRasterEdgeState, ram: &'a mut [u8]) -> Self {
-        *state = PolyRasterEdgeState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        debug_assert_eq!(*self.state, PolyRasterEdgeState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         state;
         fn set_left_current(x: u8, y: u8);

@@ -498,34 +498,9 @@ impl<'a> NativeSystemWorkAreaBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeSystemSignalsBridgeMut<'a> {
-    system_signals: &'a mut SystemSignalsState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeSystemSignalsBridgeMut, system_signals: SystemSignalsState);
 
 impl<'a> NativeSystemSignalsBridgeMut<'a> {
-    pub(crate) fn new(system_signals: &'a mut SystemSignalsState, ram: &'a mut [u8]) -> Self {
-        *system_signals = SystemSignalsState::load_from_ram(&*ram);
-        Self {
-            system_signals,
-            ram,
-        }
-    }
-
-    fn sync(&mut self) {
-        self.system_signals.write_to_ram(
-            &mut crate::game_state::native::ram_target::DiffTarget::new(self.ram),
-        );
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.system_signals,
-            SystemSignalsState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! {
         system_signals;
         fn set_music_control(value: u8);

@@ -372,29 +372,9 @@ impl GarnishRuntimeState {
     }
 }
 
-pub(crate) struct NativeGarnishRuntimeBridgeMut<'a> {
-    state: &'a mut GarnishRuntimeState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeGarnishRuntimeBridgeMut, state: GarnishRuntimeState);
 
 impl<'a> NativeGarnishRuntimeBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut GarnishRuntimeState, ram: &'a mut [u8]) -> Self {
-        *state = GarnishRuntimeState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, GarnishRuntimeState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         state;
         fn set_active_type(value: u8);

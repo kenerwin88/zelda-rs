@@ -167,36 +167,12 @@ impl EffectAngleScratchState {
     }
 }
 
-pub(crate) struct NativeEffectAngleScratchBridgeMut<'a> {
-    state: &'a mut EffectAngleScratchState,
-    ram: &'a mut [u8],
-}
+// The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
+// no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
+// mutating so a setter composes with whichever effect wrote the window last.
+adopting_bridge!(NativeEffectAngleScratchBridgeMut, state: EffectAngleScratchState);
 
 impl<'a> NativeEffectAngleScratchBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut EffectAngleScratchState, ram: &'a mut [u8]) -> Self {
-        *state = EffectAngleScratchState::load_from_ram(&*ram);
-        // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
-        // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
-        // mutating so a setter composes with whichever effect wrote the window last.
-        *state = EffectAngleScratchState::load_from_ram(ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.state,
-            EffectAngleScratchState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! {
         state;
         fn set_angle(slot: usize, value: u8);
@@ -414,33 +390,12 @@ impl QuakeSpellState {
     }
 }
 
-pub(crate) struct NativeQuakeSpellBridgeMut<'a> {
-    state: &'a mut QuakeSpellState,
-    ram: &'a mut [u8],
-}
+// The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
+// no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
+// mutating so a setter composes with whichever effect wrote the window last.
+adopting_bridge!(NativeQuakeSpellBridgeMut, state: QuakeSpellState);
 
 impl<'a> NativeQuakeSpellBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut QuakeSpellState, ram: &'a mut [u8]) -> Self {
-        *state = QuakeSpellState::load_from_ram(&*ram);
-        // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
-        // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
-        // mutating so a setter composes with whichever effect wrote the window last.
-        *state = QuakeSpellState::load_from_ram(ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, QuakeSpellState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         state;
         fn set_active_bolt_limit(value: u8);
@@ -810,33 +765,12 @@ impl BombosBlastState {
     }
 }
 
-pub(crate) struct NativeBombosSpellBridgeMut<'a> {
-    state: &'a mut BombosSpellState,
-    ram: &'a mut [u8],
-}
+// The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
+// no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
+// mutating so a setter composes with whichever effect wrote the window last.
+adopting_bridge!(NativeBombosSpellBridgeMut, state: BombosSpellState);
 
 impl<'a> NativeBombosSpellBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut BombosSpellState, ram: &'a mut [u8]) -> Self {
-        *state = BombosSpellState::load_from_ram(&*ram);
-        // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
-        // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
-        // mutating so a setter composes with whichever effect wrote the window last.
-        *state = BombosSpellState::load_from_ram(ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, BombosSpellState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         state;
         fn set_mode(value: u8);
@@ -2311,33 +2245,12 @@ impl TowerSealSparkleState {
     }
 }
 
-pub(crate) struct NativeTowerSealBridgeMut<'a> {
-    state: &'a mut TowerSealState,
-    ram: &'a mut [u8],
-}
+// The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
+// no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
+// mutating so a setter composes with whichever effect wrote the window last.
+adopting_bridge!(NativeTowerSealBridgeMut, state: TowerSealState);
 
 impl<'a> NativeTowerSealBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut TowerSealState, ram: &'a mut [u8]) -> Self {
-        *state = TowerSealState::load_from_ram(&*ram);
-        // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
-        // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
-        // mutating so a setter composes with whichever effect wrote the window last.
-        *state = TowerSealState::load_from_ram(ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, TowerSealState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         state;
         fn set_ring_radius(value: u8);
@@ -2768,29 +2681,9 @@ impl SkullWoodsFireSlotState {
     }
 }
 
-pub(crate) struct NativeSkullWoodsFireBridgeMut<'a> {
-    state: &'a mut EntranceEffectState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeSkullWoodsFireBridgeMut, state: EntranceEffectState);
 
 impl<'a> NativeSkullWoodsFireBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut EntranceEffectState, ram: &'a mut [u8]) -> Self {
-        *state = EntranceEffectState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, EntranceEffectState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         state;
         fn clear_entrance_opening_started();
@@ -2951,29 +2844,9 @@ impl BlastWallFireballSlotState {
     }
 }
 
-pub(crate) struct NativeBlastWallBridgeMut<'a> {
-    state: &'a mut EntranceEffectState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeBlastWallBridgeMut, state: EntranceEffectState);
 
 impl<'a> NativeBlastWallBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut EntranceEffectState, ram: &'a mut [u8]) -> Self {
-        *state = EntranceEffectState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, EntranceEffectState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         state;
         fn clear_entry_state();
@@ -3157,31 +3030,10 @@ impl DiggingGamePrizeState {
     }
 }
 
-pub(crate) struct NativeDiggingGamePrizeBridgeMut<'a> {
-    state: &'a mut DiggingGamePrizeState,
-    ram: &'a mut [u8],
-}
+// Shared 0x1fe00 window: re-read before mutating.
+adopting_bridge!(NativeDiggingGamePrizeBridgeMut, state: DiggingGamePrizeState);
 
 impl<'a> NativeDiggingGamePrizeBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut DiggingGamePrizeState, ram: &'a mut [u8]) -> Self {
-        *state = DiggingGamePrizeState::load_from_ram(&*ram);
-        // Shared 0x1fe00 window: re-read before mutating.
-        *state = DiggingGamePrizeState::load_from_ram(ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, DiggingGamePrizeState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         state;
         fn increment_attempts();

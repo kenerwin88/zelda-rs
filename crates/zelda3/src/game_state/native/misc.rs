@@ -52,34 +52,9 @@ impl ScratchCounterState {
     }
 }
 
-pub(crate) struct NativeScratchCounterBridgeMut<'a> {
-    scratch_counter: &'a mut ScratchCounterState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeScratchCounterBridgeMut, scratch_counter: ScratchCounterState);
 
 impl<'a> NativeScratchCounterBridgeMut<'a> {
-    pub(crate) fn new(scratch_counter: &'a mut ScratchCounterState, ram: &'a mut [u8]) -> Self {
-        *scratch_counter = ScratchCounterState::load_from_ram(&*ram);
-        Self {
-            scratch_counter,
-            ram,
-        }
-    }
-
-    fn sync(&mut self) {
-        self.scratch_counter.write_to_ram(
-            &mut crate::game_state::native::ram_target::DiffTarget::new(self.ram),
-        );
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.scratch_counter,
-            ScratchCounterState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! {
         scratch_counter;
         fn set(value: u8);
@@ -322,30 +297,9 @@ impl DungeonSecretState {
     }
 }
 
-pub(crate) struct NativeDungeonSecretBridgeMut<'a> {
-    dungeon_secret: &'a mut DungeonSecretState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDungeonSecretBridgeMut, dungeon_secret: DungeonSecretState);
 
 impl<'a> NativeDungeonSecretBridgeMut<'a> {
-    pub(crate) fn new(dungeon_secret: &'a mut DungeonSecretState, ram: &'a mut [u8]) -> Self {
-        *dungeon_secret = DungeonSecretState::load_from_ram(&*ram);
-        Self {
-            dungeon_secret,
-            ram,
-        }
-    }
-
-    fn sync(&mut self) {
-        self.dungeon_secret.write_to_ram(
-            &mut crate::game_state::native::ram_target::DiffTarget::new(self.ram),
-        );
-        debug_assert_eq!(
-            *self.dungeon_secret,
-            DungeonSecretState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! {
         dungeon_secret;
         fn clear_pending_kind();
@@ -392,32 +346,9 @@ impl SaveLoadTransferState {
     }
 }
 
-pub(crate) struct NativeSaveLoadTransferBridgeMut<'a> {
-    transfer: &'a mut SaveLoadTransferState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeSaveLoadTransferBridgeMut, transfer: SaveLoadTransferState);
 
 impl<'a> NativeSaveLoadTransferBridgeMut<'a> {
-    pub(crate) fn new(transfer: &'a mut SaveLoadTransferState, ram: &'a mut [u8]) -> Self {
-        *transfer = SaveLoadTransferState::load_from_ram(&*ram);
-        Self { transfer, ram }
-    }
-
-    fn sync(&mut self) {
-        self.transfer
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.transfer,
-            SaveLoadTransferState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! { transfer; fn set_source_offset(value: u16); }
 }
 
@@ -666,32 +597,9 @@ impl DungeonMapDisplayState {
     }
 }
 
-pub(crate) struct NativeDungeonMapDisplayBridgeMut<'a> {
-    display: &'a mut DungeonMapDisplayState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDungeonMapDisplayBridgeMut, display: DungeonMapDisplayState);
 
 impl<'a> NativeDungeonMapDisplayBridgeMut<'a> {
-    pub(crate) fn new(display: &'a mut DungeonMapDisplayState, ram: &'a mut [u8]) -> Self {
-        *display = DungeonMapDisplayState::load_from_ram(&*ram);
-        Self { display, ram }
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.display,
-            DungeonMapDisplayState::load_from_ram(self.ram)
-        );
-    }
-
-    fn sync(&mut self) {
-        self.display
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
     fn sync_marker_offsets(&mut self) {
         // 0x0fa8/0x0faa are dungeon-map marker offsets outside module 7, but
         // dungeon hitbox work bytes while the dungeon module is active.
@@ -839,29 +747,9 @@ impl MinigameState {
     }
 }
 
-pub(crate) struct NativeMinigameBridgeMut<'a> {
-    minigame: &'a mut MinigameState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeMinigameBridgeMut, minigame: MinigameState);
 
 impl<'a> NativeMinigameBridgeMut<'a> {
-    pub(crate) fn new(minigame: &'a mut MinigameState, ram: &'a mut [u8]) -> Self {
-        *minigame = MinigameState::load_from_ram(&*ram);
-        Self { minigame, ram }
-    }
-
-    fn sync(&mut self) {
-        self.minigame
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.minigame, MinigameState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         minigame;
         fn set_is_archer_or_shovel_game(value: u8);
@@ -994,29 +882,9 @@ impl IntroSwordState {
     }
 }
 
-pub(crate) struct NativeIntroSwordBridgeMut<'a> {
-    intro_sword: &'a mut IntroSwordState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeIntroSwordBridgeMut, intro_sword: IntroSwordState);
 
 impl<'a> NativeIntroSwordBridgeMut<'a> {
-    pub(crate) fn new(intro_sword: &'a mut IntroSwordState, ram: &'a mut [u8]) -> Self {
-        *intro_sword = IntroSwordState::load_from_ram(&*ram);
-        Self { intro_sword, ram }
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.intro_sword, IntroSwordState::load_from_ram(self.ram));
-    }
-
-    fn sync(&mut self) {
-        self.intro_sword
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
     forward_synced! {
         intro_sword;
         fn reset_sword_state();
@@ -1092,31 +960,9 @@ impl ArcheryGameState {
     }
 }
 
-pub(crate) struct NativeArcheryGameBridgeMut<'a> {
-    archery_game: &'a mut ArcheryGameState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeArcheryGameBridgeMut, archery_game: ArcheryGameState);
 
 impl<'a> NativeArcheryGameBridgeMut<'a> {
-    pub(crate) fn new(archery_game: &'a mut ArcheryGameState, ram: &'a mut [u8]) -> Self {
-        *archery_game = ArcheryGameState::load_from_ram(&*ram);
-        Self { archery_game, ram }
-    }
-
-    fn sync(&mut self) {
-        self.archery_game.write_to_ram(
-            &mut crate::game_state::native::ram_target::DiffTarget::new(self.ram),
-        );
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.archery_game,
-            ArcheryGameState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! {
         archery_game;
         fn clear_hit_counter();
@@ -1191,27 +1037,9 @@ impl SpriteBattleState {
     }
 }
 
-pub(crate) struct NativeSpriteBattleBridgeMut<'a> {
-    sprite_battle: &'a mut SpriteBattleState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeSpriteBattleBridgeMut, sprite_battle: SpriteBattleState);
 
 impl<'a> NativeSpriteBattleBridgeMut<'a> {
-    pub(crate) fn new(sprite_battle: &'a mut SpriteBattleState, ram: &'a mut [u8]) -> Self {
-        *sprite_battle = SpriteBattleState::load_from_ram(&*ram);
-        Self { sprite_battle, ram }
-    }
-
-    fn sync(&mut self) {
-        self.sprite_battle.write_to_ram(
-            &mut crate::game_state::native::ram_target::DiffTarget::new(self.ram),
-        );
-        debug_assert_eq!(
-            *self.sprite_battle,
-            SpriteBattleState::load_from_ram(self.ram)
-        );
-    }
-
     pub(crate) fn clear_sprites_killed(&mut self) {
         self.sprite_battle.sprites_killed = 0;
         self.sync();

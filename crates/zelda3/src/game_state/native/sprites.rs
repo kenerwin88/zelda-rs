@@ -2531,61 +2531,15 @@ impl OverworldSpriteLoadedState {
     }
 }
 
-pub(crate) struct NativeOverworldSpritePresenceBridgeMut<'a> {
-    state: &'a mut OverworldSpritePresenceState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeOverworldSpritePresenceBridgeMut, state: OverworldSpritePresenceState);
 
 impl<'a> NativeOverworldSpritePresenceBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut OverworldSpritePresenceState, ram: &'a mut [u8]) -> Self {
-        *state = OverworldSpritePresenceState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.state,
-            OverworldSpritePresenceState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! { state; fn set_marker(index: usize, value: u8); }
 }
 
-pub(crate) struct NativeOverworldSpriteLoadedBridgeMut<'a> {
-    state: &'a mut OverworldSpriteLoadedState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeOverworldSpriteLoadedBridgeMut, state: OverworldSpriteLoadedState);
 
 impl<'a> NativeOverworldSpriteLoadedBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut OverworldSpriteLoadedState, ram: &'a mut [u8]) -> Self {
-        *state = OverworldSpriteLoadedState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.state,
-            OverworldSpriteLoadedState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! {
         state;
         fn clear_loaded_mask(block: u16, loaded_mask: u8);
@@ -2731,33 +2685,12 @@ impl EtherOrbitState {
     }
 }
 
-pub(crate) struct NativeEtherOrbitBridgeMut<'a> {
-    orbit: &'a mut EtherOrbitState,
-    ram: &'a mut [u8],
-}
+// The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
+// no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
+// mutating so a setter composes with whichever effect wrote the window last.
+adopting_bridge!(NativeEtherOrbitBridgeMut, orbit: EtherOrbitState);
 
 impl<'a> NativeEtherOrbitBridgeMut<'a> {
-    pub(crate) fn new(orbit: &'a mut EtherOrbitState, ram: &'a mut [u8]) -> Self {
-        *orbit = EtherOrbitState::load_from_ram(&*ram);
-        // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
-        // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
-        // mutating so a setter composes with whichever effect wrote the window last.
-        *orbit = EtherOrbitState::load_from_ram(ram);
-        Self { orbit, ram }
-    }
-
-    fn sync(&mut self) {
-        self.orbit
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.orbit, EtherOrbitState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         orbit;
         fn set_angle(slot: usize, value: u8);
@@ -2851,32 +2784,9 @@ impl ChainChompHistoryState {
     }
 }
 
-pub(crate) struct NativeChainChompHistoryBridgeMut<'a> {
-    history: &'a mut ChainChompHistoryState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeChainChompHistoryBridgeMut, history: ChainChompHistoryState);
 
 impl<'a> NativeChainChompHistoryBridgeMut<'a> {
-    pub(crate) fn new(history: &'a mut ChainChompHistoryState, ram: &'a mut [u8]) -> Self {
-        *history = ChainChompHistoryState::load_from_ram(&*ram);
-        Self { history, ram }
-    }
-
-    fn sync(&mut self) {
-        self.history
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.history,
-            ChainChompHistoryState::load_from_ram(self.ram)
-        );
-    }
-
     forward_synced! {
         history;
         fn set_x(position: usize, value: u16);
@@ -3054,17 +2964,9 @@ impl SpriteDrawHitboxWorkState {
     }
 }
 
-pub(crate) struct NativeSpriteDrawWorkPositionBridgeMut<'a> {
-    state: &'a mut SpriteDrawHitboxWorkState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeSpriteDrawWorkPositionBridgeMut, state: SpriteDrawHitboxWorkState);
 
 impl<'a> NativeSpriteDrawWorkPositionBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut SpriteDrawHitboxWorkState, ram: &'a mut [u8]) -> Self {
-        *state = SpriteDrawHitboxWorkState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
     forward_synced! {
         state;
         fn set_low_position(x: u8, y: u8);
@@ -3079,53 +2981,15 @@ impl<'a> NativeSpriteDrawWorkPositionBridgeMut<'a> {
         fn offset_low_position(dx: u8, dy: u8) -> (u8, u8);
         fn set_flags_high(value: u8);
     }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.state,
-            SpriteDrawHitboxWorkState::load_from_ram(self.ram)
-        );
-    }
 }
 
-pub(crate) struct NativeSpriteHitboxWorkOffsetBridgeMut<'a> {
-    state: &'a mut SpriteDrawHitboxWorkState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeSpriteHitboxWorkOffsetBridgeMut, state: SpriteDrawHitboxWorkState);
 
 impl<'a> NativeSpriteHitboxWorkOffsetBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut SpriteDrawHitboxWorkState, ram: &'a mut [u8]) -> Self {
-        *state = SpriteDrawHitboxWorkState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
     forward_synced! {
         state;
         fn set_x_high_offset(value: u8);
         fn set_offsets(y_low: u8, x_high: u8);
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.state,
-            SpriteDrawHitboxWorkState::load_from_ram(self.ram)
-        );
     }
 }
 
@@ -3165,36 +3029,13 @@ impl DualLayerTileCacheState {
     }
 }
 
-pub(crate) struct NativeDualLayerTileCacheBridgeMut<'a> {
-    state: &'a mut DualLayerTileCacheState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDualLayerTileCacheBridgeMut, state: DualLayerTileCacheState);
 
 impl<'a> NativeDualLayerTileCacheBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut DualLayerTileCacheState, ram: &'a mut [u8]) -> Self {
-        *state = DualLayerTileCacheState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
     pub(crate) fn set_tile(&mut self, slot: usize, value: NativeTile) {
         if self.state.set_tile(slot, value) {
             self.sync();
         }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.state,
-            DualLayerTileCacheState::load_from_ram(self.ram)
-        );
     }
 }
 
@@ -3233,30 +3074,10 @@ impl PrizeDropCycleState {
     }
 }
 
-pub(crate) struct NativePrizeDropCycleBridgeMut<'a> {
-    state: &'a mut PrizeDropCycleState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativePrizeDropCycleBridgeMut, state: PrizeDropCycleState);
 
 impl<'a> NativePrizeDropCycleBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut PrizeDropCycleState, ram: &'a mut [u8]) -> Self {
-        *state = PrizeDropCycleState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
     forward_synced! { state; fn take_next_index(slot: usize) -> u8; }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, PrizeDropCycleState::load_from_ram(self.ram));
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -3321,37 +3142,16 @@ impl MazeGameTimerState {
     }
 }
 
-pub(crate) struct NativeMazeGameTimerBridgeMut<'a> {
-    state: &'a mut MazeGameTimerState,
-    ram: &'a mut [u8],
-}
+// Shared 0x1fe00 window (see SpriteState::write_to_ram): re-read before mutating
+// so a setter composes with whichever system wrote it last.
+adopting_bridge!(NativeMazeGameTimerBridgeMut, state: MazeGameTimerState);
 
 impl<'a> NativeMazeGameTimerBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut MazeGameTimerState, ram: &'a mut [u8]) -> Self {
-        *state = MazeGameTimerState::load_from_ram(&*ram);
-        // Shared 0x1fe00 window (see SpriteState::write_to_ram): re-read before mutating
-        // so a setter composes with whichever system wrote it last.
-        *state = MazeGameTimerState::load_from_ram(ram);
-        Self { state, ram }
-    }
-
     forward_synced! {
         state;
         fn clear_elapsed();
         fn increment_elapsed_low() -> u16;
         fn increment_elapsed_high() -> u16;
         fn capture_snapshot();
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, MazeGameTimerState::load_from_ram(self.ram));
     }
 }

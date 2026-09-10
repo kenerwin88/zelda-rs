@@ -4548,32 +4548,9 @@ impl<'a> NativeVramUploadBufferBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeOverworldPaletteBackupBridgeMut<'a> {
-    backup: &'a mut OverworldPaletteBackupState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeOverworldPaletteBackupBridgeMut, backup: OverworldPaletteBackupState);
 
 impl<'a> NativeOverworldPaletteBackupBridgeMut<'a> {
-    pub(crate) fn new(backup: &'a mut OverworldPaletteBackupState, ram: &'a mut [u8]) -> Self {
-        *backup = OverworldPaletteBackupState::load_from_ram(&*ram);
-        Self { backup, ram }
-    }
-
-    fn sync(&mut self) {
-        self.backup
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.backup,
-            OverworldPaletteBackupState::load_from_ram(self.ram)
-        );
-    }
-
     pub(crate) fn set_main_indoors_backup(&mut self, value: u8) {
         self.backup.set_main_indoors(value);
         self.sync();
@@ -4590,29 +4567,9 @@ impl<'a> NativeOverworldPaletteBackupBridgeMut<'a> {
     }
 }
 
-pub(crate) struct NativeSpotlightHdmaBridgeMut<'a> {
-    state: &'a mut SpotlightHdmaState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeSpotlightHdmaBridgeMut, state: SpotlightHdmaState);
 
 impl<'a> NativeSpotlightHdmaBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut SpotlightHdmaState, ram: &'a mut [u8]) -> Self {
-        *state = SpotlightHdmaState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, SpotlightHdmaState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         state;
         fn set_y_lower(value: u16);
@@ -4710,29 +4667,9 @@ macro_rules! ppu_scroll_bridge_methods {
     };
 }
 
-pub(crate) struct NativePpuScrollCopyBridgeMut<'a> {
-    state: &'a mut PpuScrollCopyState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativePpuScrollCopyBridgeMut, state: PpuScrollCopyState);
 
 impl<'a> NativePpuScrollCopyBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut PpuScrollCopyState, ram: &'a mut [u8]) -> Self {
-        *state = PpuScrollCopyState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, PpuScrollCopyState::load_from_ram(self.ram));
-    }
-
     ppu_scroll_bridge_methods! {
         fn set_mapbak_tm(value: u8);
         fn set_mapbak_ts(value: u8);

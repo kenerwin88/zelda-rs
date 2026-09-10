@@ -535,25 +535,9 @@ impl MirrorWarpState {
     }
 }
 
-pub(crate) struct NativeMirrorWarpBridgeMut<'a> {
-    mirror_warp: &'a mut MirrorWarpState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeMirrorWarpBridgeMut, mirror_warp: MirrorWarpState);
 
 impl<'a> NativeMirrorWarpBridgeMut<'a> {
-    pub(crate) fn new(mirror_warp: &'a mut MirrorWarpState, ram: &'a mut [u8]) -> Self {
-        *mirror_warp = MirrorWarpState::load_from_ram(&*ram);
-        Self { mirror_warp, ram }
-    }
-
-    fn sync(&mut self) {
-        self.mirror_warp
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        debug_assert_eq!(*self.mirror_warp, MirrorWarpState::load_from_ram(self.ram));
-    }
-
     forward_synced! {
         mirror_warp;
         fn initialize_hdma_wave_state();
@@ -599,29 +583,9 @@ impl DungeonKeySlotsState {
     }
 }
 
-pub(crate) struct NativeDungeonKeySlotsBridgeMut<'a> {
-    state: &'a mut DungeonKeySlotsState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeDungeonKeySlotsBridgeMut, state: DungeonKeySlotsState);
 
 impl<'a> NativeDungeonKeySlotsBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut DungeonKeySlotsState, ram: &'a mut [u8]) -> Self {
-        *state = DungeonKeySlotsState::load_from_ram(&*ram);
-        Self { state, ram }
-    }
-
-    fn sync(&mut self) {
-        self.state
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, DungeonKeySlotsState::load_from_ram(self.ram));
-    }
-
     pub(crate) fn set_keys_earned(&mut self, palace_index_x2: u8, keys: u8) {
         self.set_keys_earned_slot(usize::from(palace_index_x2 >> 1), keys);
     }

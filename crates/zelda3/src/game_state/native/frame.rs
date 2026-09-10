@@ -108,29 +108,9 @@ impl FrameState {
     }
 }
 
-pub(crate) struct NativeFrameStateBridgeMut<'a> {
-    frame: &'a mut FrameState,
-    ram: &'a mut [u8],
-}
+adopting_bridge!(NativeFrameStateBridgeMut, frame: FrameState);
 
 impl<'a> NativeFrameStateBridgeMut<'a> {
-    pub(crate) fn new(frame: &'a mut FrameState, ram: &'a mut [u8]) -> Self {
-        *frame = FrameState::load_from_ram(&*ram);
-        Self { frame, ram }
-    }
-
-    fn sync(&mut self) {
-        self.frame
-            .write_to_ram(&mut crate::game_state::native::ram_target::DiffTarget::new(
-                self.ram,
-            ));
-        self.debug_assert_matches_ram();
-    }
-
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.frame, FrameState::load_from_ram(self.ram));
-    }
-
     pub(crate) fn set_main_module(&mut self, value: u8) {
         crate::types::ww_check(0x10, 1, "set_main_module", u32::from(value));
         self.frame.set_main_module(value);

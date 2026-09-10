@@ -352,6 +352,10 @@ def collect_bridge_synced_owners(files) -> set[str]:
     """States whose bridge re-projects them: `impl XBridgeMut { fn sync { self.state.write_to_ram(self.ram) } }`."""
     owners: set[str] = set()
     bridge_fields: dict[str, dict[str, str]] = defaultdict(dict)
+    # `adopting_bridge!(Bridge, field: State);` expands to a bridge whose sync projects State.
+    for path in files:
+        for m in re.finditer(r"adopting_bridge!\(\s*\w+,\s*\w+:\s*(\w+)\s*\)", path.read_text(errors="replace")):
+            owners.add(m.group(1))
     for path in files:
         text = path.read_text(errors="replace")
         for m in SYNC_BRIDGE_STRUCT_RE.finditer(text):
