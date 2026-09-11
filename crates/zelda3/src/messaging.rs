@@ -681,7 +681,7 @@ mod fast_forward_cycle_tests {
         assert_ne!(exact, VwfGlyphCosts::estimated(vwf_render_glyph_drawing_master_cycles(width, 3)));
         assert_eq!(
             u64::from(state.vwf_glyph_transition_master_cycles()),
-            vwf::RENDER_SINGLE_EPILOGUE_MASTER_CYCLES + 228 + vwf::HANDLER_EXIT_MASTER_CYCLES
+            vwf::RENDER_SINGLE_EPILOGUE_MASTER_CYCLES + 228
         );
         assert_eq!(
             state.vwf_click_retention_costs(exact, VwfGlyphCpuPhase::Ready),
@@ -714,6 +714,19 @@ mod fast_forward_cycle_tests {
         let budget = state.vwf_exact_loop_budget().unwrap();
         eprintln!("first-line budget: {budget:?}");
         assert!(budget.master_cycles > 240_000 && budget.master_cycles < 250_000, "budget {budget:?}");
+        // A traced later-line entry span (260,598 before the NMI, about 191
+        // scanlines) converts to CPU work by losing that span's refresh
+        // stalls (40 per scanline) and, with HDMA off here, nothing else.
+        let fresh = state.vwf_exact_fresh_entry_budget(VWF_LATER_LINE_ENTRY_MASTER_CYCLES).unwrap();
+        eprintln!("later-line fresh entry: {fresh:?}");
+        assert!(
+            fresh.master_cycles > 260_598 - 192 * 40 - 100 && fresh.master_cycles < 260_598 - 190 * 40 + 100,
+            "fresh {fresh:?}"
+        );
+        assert_eq!(fresh.stall_master_cycles, 260_598 - fresh.master_cycles);
+        let first = state.vwf_exact_fresh_entry_budget(VWF_FIRST_LINE_ENTRY_MASTER_CYCLES).unwrap();
+        assert!(first.master_cycles < fresh.master_cycles);
+        assert!(state.vwf_exact_fresh_entry_budget(VWF_RESUMED_FRAME_MASTER_CYCLES).is_none());
 
         state.original_timing_owner = crate::zelda_rtl::OriginalTimingOwnerState::Live;
         assert!(!state.vwf_uses_exact_costs());
@@ -726,6 +739,7 @@ mod fast_forward_cycle_tests {
             VwfClickRetentionCosts::estimated()
         );
         assert_eq!(state.vwf_exact_loop_budget(), None);
+        assert_eq!(state.vwf_exact_fresh_entry_budget(VWF_LATER_LINE_ENTRY_MASTER_CYCLES), None);
     }
 
     #[test]
@@ -5450,22 +5464,37 @@ impl ZeldaState {
         } else {
             std::mem::take(&mut self.dialogue_vwf_handler_entry_phase)
         };
-        let mut cycles_left = vwf_render_loop_cycle_budget(resuming, current_line, entry_phase);
+        let traced_budget = vwf_render_loop_cycle_budget(resuming, current_line, entry_phase);
+        let mut cycles_left = traced_budget;
         // The raster-derived budget is exact only where the ledger charges
         // every instruction since the NMI. A resumed host's prefix is just
         // the held NMI handler, which is fully charged; a fresh iteration's
         // prefix still has unannotated work (the module's sprite handlers,
         // the lamp cone), so its entry keeps the traced constants until the
-        // prefix is charged completely.
+        // prefix is charged completely. Those constants are Snes9x timestamp
+        // spans before the NMI, so on the exact budget (CPU work, like the
+        // glyph costs) they are placed on the raster and the refresh and HDMA
+        // stalls of the span are taken out.
         let exact_budget = if resuming {
             self.vwf_exact_loop_budget()
         } else {
-            None
+            self.vwf_exact_fresh_entry_budget(traced_budget)
         };
         if let Some(budget) = exact_budget {
             cycles_left = budget.master_cycles;
         }
         let loop_budget = cycles_left;
+        // The scroll scheduler's completion threshold was calibrated on the
+        // traced wall-clock span; a converted fresh entry hands it the same
+        // reading it had before the conversion.
+        let scroll_entry_master_cycles_offset = if resuming {
+            0
+        } else {
+            traced_budget.saturating_sub(loop_budget)
+        };
+        if !resuming {
+            self.dialogue_vwf_deferred_handler_exits = 0;
+        }
         let mut frame_advance: u16 = 0;
         let mut midline_yield = false;
         let mut authority_boundary_reached = false;
@@ -5607,6 +5636,9 @@ impl ZeldaState {
                         if fast_forward {
                             cycles_left = cycles_left
                                 .saturating_sub(self.vwf_glyph_transition_master_cycles());
+                            if exact_costs {
+                                self.dialogue_vwf_deferred_handler_exits += 1;
+                            }
                             restart_if_zero_speed = true;
                         }
                     }
@@ -5643,7 +5675,9 @@ impl ZeldaState {
                         self.game_state.messaging.dialogue_source_offset.bank_offset_low_nibble(),
                     )
                     .master;
-                    command_done = self.RenderText_Draw_Scroll(cycles_left);
+                    command_done = self.RenderText_Draw_Scroll(
+                        cycles_left.saturating_add(scroll_entry_master_cycles_offset),
+                    );
                 }
                 TEXT_CMD_1 | TEXT_CMD_2 | TEXT_CMD_3 => {
                     let idx = (cmd - TEXT_CMD_1) as usize;
@@ -5795,7 +5829,7 @@ impl ZeldaState {
             let cursor = self.game_state.messaging.vwf_render.glyph_cursor_usize();
             let arrval = self.vwf_glyph_advance_prefix_sum(cursor);
             eprintln!(
-                "vwf_cycles host={} read_pos={:#x} frame_advance={} glyph_cursor={} line_x={} budget={loop_budget} nmi_cost={nmi_cost:?} since_nmi={since_nmi:?} stalls={stalls:?} hdma_stall={hdma_stall} exact={exact_costs} cycles_left={} cycle_debt={} glyph_phase={:?} midline_yield={} resumed={} entry_phase={entry_phase:?} suffix_threshold={} suffix_crosses_vblank={}",
+                "vwf_cycles host={} read_pos={:#x} frame_advance={} glyph_cursor={} line_x={} budget={loop_budget} traced={traced_budget} nmi_cost={nmi_cost:?} since_nmi={since_nmi:?} stalls={stalls:?} hdma_stall={hdma_stall} deferred_exits={deferred_exits} exact={exact_costs} cycles_left={} cycle_debt={} glyph_phase={:?} midline_yield={} resumed={} entry_phase={entry_phase:?} suffix_threshold={} suffix_crosses_vblank={}",
                 self.frame_ctr_dbg,
                 self.game_state.messaging.runtime.dialogue_msg_read_pos(),
                 frame_advance,
@@ -5812,6 +5846,7 @@ impl ZeldaState {
                 since_nmi = exact_budget.map(|budget| budget.since_nmi_master_cycles),
                 stalls = exact_budget.map(|budget| budget.stall_master_cycles),
                 hdma_stall = self.native_hdma_scanline_stall_master_cycles(),
+                deferred_exits = self.dialogue_vwf_deferred_handler_exits,
             );
         }
         if midline_yield {
@@ -5821,6 +5856,15 @@ impl ZeldaState {
         } else if authority_boundary_reached {
             VwfCpuSliceOutcome::AuthorityBoundaryReached
         } else {
+            if exact_costs {
+                // The call returns: its RTS chain runs the $0E:C9F5 exit
+                // block once more for every restart it made.
+                let deferred = std::mem::take(&mut self.dialogue_vwf_deferred_handler_exits);
+                cycles_left = cycles_left.saturating_sub(
+                    deferred
+                        .saturating_mul(crate::cycle_models::vwf::HANDLER_EXIT_MASTER_CYCLES as u32),
+                );
+            }
             VwfCpuSliceOutcome::HandlerComplete {
                 master_cycles_before_vblank: cycles_left,
                 caller_suffix_master_cycles,
@@ -5996,9 +6040,10 @@ impl ZeldaState {
     }
 
     /// Cycles between a completed speed-0 glyph and the next dispatch:
-    /// `VWF_RenderSingle`'s epilogue, `RenderText_Draw_RenderCharacter_All`'s
-    /// continuation and the handler-exit block the restart defers to the
-    /// handler's final return (`cycle_models::vwf::HANDLER_EXIT_MASTER_CYCLES`).
+    /// `VWF_RenderSingle`'s epilogue and `RenderText_Draw_RenderCharacter_All`'s
+    /// continuation. The handler-exit block each restart defers
+    /// (`cycle_models::vwf::HANDLER_EXIT_MASTER_CYCLES`) is counted in
+    /// `dialogue_vwf_deferred_handler_exits` and paid when the call returns.
     fn vwf_glyph_transition_master_cycles(&self) -> u32 {
         use crate::cycle_models::vwf;
         if !self.vwf_uses_exact_costs() {
@@ -6006,8 +6051,46 @@ impl ZeldaState {
         }
         let (continuation, _restarted) =
             vwf::render_all_continuation_master_cycles(self.dialogue_vwf_dispatch_cursor);
-        (vwf::RENDER_SINGLE_EPILOGUE_MASTER_CYCLES + continuation + vwf::HANDLER_EXIT_MASTER_CYCLES)
-            as u32
+        (vwf::RENDER_SINGLE_EPILOGUE_MASTER_CYCLES + continuation) as u32
+    }
+
+    /// A traced fresh-entry constant (`vwf_render_loop_cycle_budget`) is the
+    /// Snes9x timestamp span from the handler entry to the NMI, stalls
+    /// included. On the exact budget the loop consumes CPU work, so the
+    /// entry is placed that many master cycles before the CPU's NMI
+    /// acceptance and the budget is the work that fits from there, with
+    /// WRAM refresh and the live HDMA stall taken out. `None` under receipts.
+    fn vwf_exact_fresh_entry_budget(&self, span_before_nmi: u32) -> Option<VwfExactLoopBudget> {
+        use crate::zelda_rtl::game_execution_scheduler::{CpuCycleBudget, CpuWorkAdvance};
+        if !self.vwf_uses_exact_costs() {
+            return None;
+        }
+        let acceptance = snes::NMI_SCANLINE * snes::MASTER_CYCLES_PER_SCANLINE
+            + snes::SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES as u32;
+        // The traced entries all lie inside the acceptance's own field.
+        let entry = acceptance.checked_sub(span_before_nmi)?;
+        let entry = snes::CpuRasterPosition::new(
+            (entry / snes::MASTER_CYCLES_PER_SCANLINE) as u16,
+            (entry % snes::MASTER_CYCLES_PER_SCANLINE) as u16,
+        );
+        let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
+            entry,
+            snes::CpuBusWorkload::with_hdma_stall(self.native_hdma_scanline_stall_master_cycles()),
+            snes::CpuFieldTiming::non_interlace(self.frame_ctr_dbg & 1 == 0),
+        );
+        const PROBE: u32 = 4 * SNES_NTSC_MASTER_CYCLES_PER_FRAME;
+        let master_cycles = match budget.advance_interruptible(PROBE) {
+            CpuWorkAdvance::ReachedBoundary {
+                remaining_work_master_cycles,
+                ..
+            } => PROBE - remaining_work_master_cycles,
+            CpuWorkAdvance::Complete => PROBE,
+        };
+        Some(VwfExactLoopBudget {
+            master_cycles,
+            since_nmi_master_cycles: u64::from(SNES_NTSC_MASTER_CYCLES_PER_FRAME - span_before_nmi),
+            stall_master_cycles: span_before_nmi.saturating_sub(master_cycles),
+        })
     }
 
     fn dialogue_glyph_width(&self, c: u8) -> u8 {
