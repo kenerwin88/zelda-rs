@@ -639,6 +639,8 @@ impl DisplayPublicationPlan {
             } else {
                 snapshot.oam_scanout_source
             };
+        // An explicit interrupted-entry scanout outranks the coarse module
+        // transition: completed DMA can belong to the following field.
         let oam_scanout_source = if matches!(
             signals.dungeon_state_13_phase,
             DungeonState13PublicationPhase::RecurringMain
@@ -650,7 +652,9 @@ impl DisplayPublicationPlan {
             OamScanoutSource::RetainCapturedBeforeNmi
         } else if signals.overworld_sprite_reload_completion_retains_presented {
             OamScanoutSource::RetainResidentPpuOam
-        } else if signals.dungeon_exit_crosses_nmi_boundary {
+        } else if signals.dungeon_exit_crosses_nmi_boundary
+            && snapshot.oam_scanout_source != OamScanoutSource::RetainPreviousPresented
+        {
             // The suspended spotlight caller completed its shadow before the
             // NMI. Use the exact completed DMA receipt; the snapshot's staged
             // host generation describes the pre-interrupt entry only.

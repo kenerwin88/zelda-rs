@@ -4,6 +4,61 @@
 use super::*;
 
 #[test]
+fn interrupted_spotlight_entry_keeps_oam_from_before_the_held_nmi() {
+    // Original run 11444 is interrupted at $F38F, V=225/C=16 with $12=1.
+    // $805D returns at V=29/C=370 in the following field; only the NMI
+    // ending that field can upload its new shadow. The original OAM keeps
+    // entry 13 at (64,135) and entry 102 at (116,93), matching the preceding
+    // scanout, rather than the following DMA's (63,135) and (116,92).
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.set_main_module(0x0f);
+    state.set_submodule(0);
+    state.follower_link_state_mut().set_position(2040, 1784);
+    state.set_bg2_v_copy2(1690);
+    state.set_bg2_h_copy2(1924);
+    state.set_spotlight_window_state(0);
+    state.set_spotlight_window_radius(126);
+    let table = state.begin_iris_spotlight_configure_table(113);
+    state.complete_dungeon_exit_spotlight_entry_returned(
+        table,
+        SpotlightIteration::closing(SpotlightIterationPhase::CloseEntryBeforeTablePublication),
+    );
+    let mut resident = state.ppu.oam.clone();
+    resident[13 * 2] = 0x8740;
+    resident[102 * 2] = 0x5d74;
+    let mut following_dma = resident.clone();
+    following_dma[13 * 2] = 0x873f;
+    following_dma[102 * 2] = 0x5c74;
+    state.last_presented_oam = Some(resident.clone());
+    state.ppu.oam.clone_from(&following_dma);
+    state.capture_display_snapshot_with_override(Some(
+        DisplaySnapshotPublication::PublishCaptured,
+    ));
+    let snapshot = state.display_snapshot.as_ref().unwrap().clone();
+    let plan = DisplayPublicationPlan::resolve(
+        &snapshot,
+        DisplayPublicationSignals {
+            dungeon_exit_crosses_nmi_boundary: true,
+            ..DisplayPublicationSignals::default()
+        },
+    );
+    assert_eq!(
+        plan.oam_scanout_source,
+        OamScanoutSource::RetainPreviousPresented,
+    );
+    let cpu_ram = state.ram.clone();
+    state.compose_display_oam(&snapshot, &plan);
+    assert_eq!(state.ppu.oam, resident);
+    assert_eq!(state.ram, cpu_ram, "scanout must not rewind CPU work");
+    assert_eq!(snapshot.ppu.oam, following_dma, "the next DMA remains intact");
+    assert!(
+        state.next_display_obj_scanout_generation.is_none(),
+        "publication is consumed once",
+    );
+}
+
+#[test]
 fn unfinished_spotlight_rows_do_not_replace_the_published_hardware_table() {
     // Original runs 4784-4786 display the completed radius-126 table while
     // the next radius-119 table is being built. $F383/$F392 only author the

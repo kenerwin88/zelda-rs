@@ -4164,6 +4164,16 @@ impl ZeldaState {
             vertical_center,
         );
         self.complete_iris_spotlight_configure_table(table_build);
+        // The entry resumes after a held NMI. Its Link/sprite shadow is
+        // uploaded only by the NMI ending this field, so that DMA cannot
+        // replace OAM already scanned out. Original run 11444 keeps the
+        // preceding OAM while $805D returns at V=29 in the following field.
+        // Window rows and OBJ tile operands retain their separate owners.
+        self.set_next_display_obj_scanout(Some(ObjScanoutGenerations {
+            oam: OamScanoutSource::RetainPreviousPresented,
+            link_obj: GraphicsDmaGeneration::LiveAfterMain,
+            link_obj_sources: GraphicsDmaGeneration::LiveAfterMain,
+        }));
         let iteration = if let Some(following) = iteration.rom_following_field_receipt() {
             // The isolated ROM run follows channel 7 from this second NMI to
             // the third. Stage those exact rows when the resumed C table
