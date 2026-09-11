@@ -45,6 +45,15 @@ History of the frontier: 8889 → 4660 → 2507 → 8716 → 7330 → 2507 → 8
 It moves backwards whenever a newly exact cost exposes a wrong one
 downstream; that is normal and not a regression of the acceptance gate.
 
+The user explicitly reaffirmed this on 2026-09-11: an earlier native display
+failure is acceptable when the change improves fidelity to the original.
+Keep source-proven corrections with regression coverage even if they expose
+an earlier native A/V frontier. Report CPU-model fidelity and native A/V
+coverage separately. Receipt-driven acceptance must still pass; do not revert
+a demonstrated timing correction solely to preserve the old native frame
+number. This supersedes the overly conservative rejection in the spotlight
+investigation below.
+
 ## Where it stands
 
 | | |
@@ -145,7 +154,9 @@ The user requested batching on 2026-09-11 because a full-route check takes
 about 25 minutes. Aim for 3–5 tractable, independently explained frontier
 fixes per batch, with one root cause per commit. Run the expensive acceptance
 and promotion sequence once for the completed batch, rather than once per
-fix. End a batch sooner if a regression cannot be isolated confidently.
+fix. End a batch sooner if an acceptance regression cannot be isolated
+confidently. An explained backward move of the native frontier is not itself
+a reason to reject a source-proven correction or end the batch.
 
 For each fix, add reference-backed regression coverage, run the relevant
 tests, and measure the native frontier again. Run a focused receipt-driven

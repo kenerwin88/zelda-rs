@@ -2598,23 +2598,30 @@ fn advance_rom_cpu_through_nmi(run: &mut RomCpuTimingRun, budget: &mut CpuCycleB
     panic!("ROM NMI handler did not return to {return_pc:06x}");
 }
 
-fn dungeon_exit_spotlight_cpu_plan_at(
-    state: &ZeldaState,
-    entry: CpuRasterPosition,
-) -> Option<DungeonExitSpotlightCpuPlan> {
+fn spotlight_cpu_timing_ram(state: &ZeldaState, checkpoint: RomCpuCheckpoint) -> Vec<u8> {
     // The C port relocates its 240-word working table to $1dba0. The original
-    // routine at $00:f37d authors $7f:7000 and the copy loop at $00:f3b7
+    // stores at $00:f383/$00:f392 author $7f:7000; the loop at $00:f3b7
     // publishes it to the hardware table at $7e:1b00. Seed both original-ROM
     // buffers from the translated live owner before running the isolated CPU.
     let table_bytes = SPOTLIGHT_VISIBLE_SCANLINES * 2;
     let mut rom_ram = state.ram.clone();
-    // The translated caller has just executed this increment. Rewind only the
-    // cloned timing image so the ROM owns the full ZeldaRunGameLoop prefix;
-    // ClearOamBuffer is idempotent and is intentionally executed by the ROM.
-    rom_ram[FRAME_COUNTER] = rom_ram[FRAME_COUNTER].wrapping_sub(1);
+    // Only the overworld checkpoint re-executes INC $1A at $00:8051.
+    // Module0F starts at $02:9982 after that instruction: the cold source
+    // entry has counter 168, not 167, at V=255/C=480 (run 11443).
+    if checkpoint.entry_pc == OVERWORLD_SPOTLIGHT_CPU_CHECKPOINT.entry_pc {
+        rom_ram[FRAME_COUNTER] = rom_ram[FRAME_COUNTER].wrapping_sub(1);
+    }
     let live_table = state.ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + table_bytes].to_vec();
     rom_ram[0x1b00..0x1b00 + table_bytes].copy_from_slice(&live_table);
     rom_ram[RESERVED_HDMA_TABLE..RESERVED_HDMA_TABLE + table_bytes].copy_from_slice(&live_table);
+    rom_ram
+}
+
+fn dungeon_exit_spotlight_cpu_plan_at(
+    state: &ZeldaState,
+    entry: CpuRasterPosition,
+) -> Option<DungeonExitSpotlightCpuPlan> {
+    let rom_ram = spotlight_cpu_timing_ram(state, DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT);
 
     let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(
@@ -2820,15 +2827,7 @@ fn overworld_spotlight_cpu_plan_at(
     state: &ZeldaState,
     entry: CpuRasterPosition,
 ) -> Option<OverworldSpotlightCpuPlan> {
-    let table_bytes = SPOTLIGHT_VISIBLE_SCANLINES * 2;
-    let mut rom_ram = state.ram.clone();
-    // The translated frame entry has already performed ZeldaRunGameLoop's
-    // increment. This isolated run begins at that instruction so it also owns
-    // ClearOamBuffer and the full C caller; rewind only the cloned timing RAM.
-    rom_ram[FRAME_COUNTER] = rom_ram[FRAME_COUNTER].wrapping_sub(1);
-    let live_table = state.ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + table_bytes].to_vec();
-    rom_ram[0x1b00..0x1b00 + table_bytes].copy_from_slice(&live_table);
-    rom_ram[RESERVED_HDMA_TABLE..RESERVED_HDMA_TABLE + table_bytes].copy_from_slice(&live_table);
+    let rom_ram = spotlight_cpu_timing_ram(state, OVERWORLD_SPOTLIGHT_CPU_CHECKPOINT);
 
     let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(

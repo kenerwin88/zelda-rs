@@ -4,6 +4,38 @@
 use super::*;
 
 #[test]
+fn spotlight_cpu_checkpoints_preserve_the_source_frame_counter_phase() {
+    // Cold Snes9x runs 4782 and 11443 enter $02:9982 with $1A=176 and
+    // 168 respectively, after INC $1A at $00:8051. Module10's checkpoint
+    // starts at that INC instead. Include wraparound to distinguish replay
+    // of the instruction from a saturating adjustment of the host counter.
+    let mut state = ZeldaState::new();
+    for counter in [176, 168, 0] {
+        state.set_frame_counter(counter);
+        let original = state.ram.clone();
+        for (checkpoint, expected_counter) in [
+            (DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT, counter),
+            (OVERWORLD_SPOTLIGHT_CPU_CHECKPOINT, counter.wrapping_sub(1)),
+        ] {
+            let seeded = spotlight_cpu_timing_ram(&state, checkpoint);
+            assert_eq!(seeded[0x1a], expected_counter);
+            assert_eq!(state.ram, original, "shadow seeding must not mutate gameplay");
+            // The source buffers are 224 visible words at $7E:1B00 and
+            // $7F:7000. No other caller state belongs to the relocation.
+            for address in 0..original.len() {
+                if address == 0x1a
+                    || (0x1b00..0x1cc0).contains(&address)
+                    || (0x17000..0x171c0).contains(&address)
+                {
+                    continue;
+                }
+                assert_eq!(seeded[address], original[address], "unowned ${address:05x}");
+            }
+        }
+    }
+}
+
+#[test]
 fn desert_prayer_iris_checkpoint_preserves_primary_write_and_resumes_full_loop() {
     fn configure(state: &mut ZeldaState) {
         state.set_main_module(0x0e);
