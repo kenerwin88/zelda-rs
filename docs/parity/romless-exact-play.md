@@ -338,3 +338,17 @@ per routine: sprite handlers reached by RTS dispatch (costed inside
 Sprite_ExecuteSingle, unannotated), OAM allocation and coordinate
 helpers reached through unscoped Rust paths, the NMI handler's joypad
 wait and the $17 dispatch targets, and the room object drawers.
+
+## Evidence for the annotation batch
+
+Parity binary
+`f8dd796af34f70a7e6b95df766525bd3de0575fe539380f359c31e6c5089b744`
+(61 annotated routines, the cycle ledger and its tooling, the VWF cycle
+model): the 200,000-frame cached comparison matched every video and
+audio hash, the frame 60000 and 150470 goldens match, the 200,000-frame
+WRAM endpoint is the recorded `dd45975c…` image, all 1,732 library tests
+pass under the parity profile in 12.56 seconds, and the full route
+matched every one of the 1,581,079 cached video and audio hashes with
+all four goldens and the recorded `31619379…` endpoint (4,024.97 s: the
+ledger's per-charge bookkeeping slows the comparison, to be tightened).
+The run is promoted in `routes/full_run/parity-frontier.json`.

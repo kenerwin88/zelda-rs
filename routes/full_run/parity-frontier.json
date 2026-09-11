@@ -19,7 +19,7 @@
   },
   "project": "routes/full_run",
   "promoted": {
-    "binary_sha256": "ce3b59a2420c900868bb4968f96746143ab6dbee5f697a63a334739ecb532438",
+    "binary_sha256": "f8dd796af34f70a7e6b95df766525bd3de0575fe539380f359c31e6c5089b744",
     "cached_av_receipt": {
       "candidate_ledger_sha256": "3d52711c51a4f01031bd336aa582d4b6a316c71199710d3354ef015fcca1440c",
       "frames": 1581079,
@@ -27,13 +27,13 @@
         "video",
         "audio"
       ],
-      "manifest_sha256": "e0ccc7b5777946a1e3cb2d5ed4cf03d2d2c58c1a10a88deb820a7ba4bce45cf3",
+      "manifest_sha256": "fcd80085bc911ec5bafd84a3d91e499f4df2fb70352148bd4130ff5839830607",
       "oracle_cache_key": "ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18",
       "oracle_cache_manifest_sha256": "4c7f88fbf327a4b3af7d3f8614d82ebb2318f11b607798d5dddb4a97b7fe2715",
-      "receipt_path": "receipts/exact-full-av.manifest.json",
-      "run": "/Users/missingno/Documents/zelda3-rs/target/romless-exact/exact-full-av"
+      "receipt_path": "receipts/exact-full-av-2.manifest.json",
+      "run": "/Users/missingno/Documents/zelda3-rs/target/romless-exact/exact-full-av-2"
     },
-    "commit": "c047638b0567c1c28856e6c557cffacbd0900a6d",
+    "commit": "7798159126e1b582e8f8bfdf9965fec10175fc56",
     "kind": "cached_av_pass",
     "last_exact_audio_frame": 1581078,
     "last_exact_engine_state_frame": 1581078,
