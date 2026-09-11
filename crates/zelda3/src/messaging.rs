@@ -5451,7 +5451,17 @@ impl ZeldaState {
             std::mem::take(&mut self.dialogue_vwf_handler_entry_phase)
         };
         let mut cycles_left = vwf_render_loop_cycle_budget(resuming, current_line, entry_phase);
-        let exact_budget = self.vwf_exact_loop_budget();
+        // The raster-derived budget is exact only where the ledger charges
+        // every instruction since the NMI. A resumed host's prefix is just
+        // the held NMI handler, which is fully charged; a fresh iteration's
+        // prefix still has unannotated work (the module's sprite handlers,
+        // the lamp cone), so its entry keeps the traced constants until the
+        // prefix is charged completely.
+        let exact_budget = if resuming {
+            self.vwf_exact_loop_budget()
+        } else {
+            None
+        };
         if let Some(budget) = exact_budget {
             cycles_left = budget.master_cycles;
         }
