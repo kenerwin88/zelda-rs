@@ -4520,7 +4520,7 @@ impl ZeldaState {
                 return;
             }
         }
-        self.oam_get_buffer_position(0x10, 4);
+        self.oam_allocate_from_region_c(0x10);
         let (x, y) = self.ancilla_prep_oam_coord(k);
         let mut oam = self.game_state.oam.current_pointer_usize();
 

@@ -511,7 +511,7 @@ impl ZeldaState {
 
     // void HauntedGroveBird_Blink(int k) {  // 9e9b9c
     pub(super) fn haunted_grove_bird_blink(&mut self, k: usize) {
-        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1eDoubleRet) else {
             return;
         };
         let oam = self.game_state.oam.current_pointer_usize();
@@ -3600,7 +3600,7 @@ impl ZeldaState {
     // void Sprite_91_StalfosKnight(int k) {  // 9eaaa7
     pub(super) fn sprite_91_stalfos_knight(&mut self, k: usize) {
         if self.sprite_slot_view(k).ai_state() == 0 {
-            let _ = self.sprite_prep_oam_coord_or_double_ret(k);
+            let _ = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Long);
         } else {
             self.stalfos_knight_draw(k);
         }

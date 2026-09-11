@@ -122,7 +122,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Zora_Draw(int k) {  // 8598f5
     pub(super) fn zora_draw(&mut self, k: usize) {
-        let Some((x, y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((x, y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let mut oam = self.game_state.oam.current_pointer_usize();
@@ -625,7 +625,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void ZoraKing_Draw(int k) {  // 859cab
     pub(super) fn zora_king_draw(&mut self, k: usize) {
-        let Some((mut x, mut y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((mut x, mut y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
 
@@ -645,7 +645,7 @@ impl ZeldaState {
                 oam += 4;
             }
             self.sprite_correct_oam_entries(k, 3, 2);
-            let Some(poc) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            let Some(poc) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
                 return;
             };
             x = poc.0;
@@ -1080,7 +1080,7 @@ impl ZeldaState {
     // void WalkingZora_Draw(int k) {  // 859f08
     pub(super) fn walking_zora_draw(&mut self, k: usize) {
         self.walking_zora_draw_water_ripples(k);
-        let Some((x, mut y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((x, mut y, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let oam = self.game_state.oam.current_pointer_usize();
@@ -1304,7 +1304,7 @@ impl ZeldaState {
     //   Sprite_PrepOamCoordOrDoubleRet, then four large-tile OAM entries.
     // -----------------------------------------------------------------------
     pub(super) fn sprite_draw_big_cannonball(&mut self, k: usize) {
-        let info = match self.sprite_prep_oam_coord_or_double_ret(k) {
+        let info = match self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) {
             Some(p) => PrepOamCoordsRet::from_tuple(p),
             None => return,
         };
@@ -1341,7 +1341,7 @@ impl ZeldaState {
     // void SpriteDraw_SpriteBombExplosion(int k) {  // 85c113 — sprite_main.c:4537
     // -----------------------------------------------------------------------
     pub(super) fn sprite_draw_sprite_bomb_explosion(&mut self, k: usize) {
-        let info = match self.sprite_prep_oam_coord_or_double_ret(k) {
+        let info = match self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) {
             Some(p) => PrepOamCoordsRet::from_tuple(p),
             None => return,
         };
@@ -1724,7 +1724,7 @@ impl ZeldaState {
         // Sprite_DrawMultiple(... info) writes the out-pointer before returning
         // early for offscreen sprites. Trinexx body drawing still consumes those
         // flags, so preserve the populated tuple even when no head OAM is drawn.
-        let (prepped, out_of_bounds) = self.sprite_prep_oam_coord_or_double_ret_with_out_flag(k);
+        let (prepped, out_of_bounds) = self.sprite_prep_oam_coord_or_double_ret_with_out_flag_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet);
         *info = PrepOamCoordsRet::from_tuple(prepped);
         if out_of_bounds {
             return;
@@ -2210,7 +2210,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Agahnim_Draw(int k) {  // 9ed978
     pub(super) fn agahnim_draw(&mut self, k: usize) {
-        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1eDoubleRet) else {
             return;
         };
         let mut oam = self.game_state.oam.current_pointer_usize();
@@ -2240,7 +2240,7 @@ impl ZeldaState {
             self.sprite_correct_oam_entries(k, 3, 0xff);
         }
 
-        let Some((info_x, info_y, _info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k)
+        let Some((info_x, info_y, _info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1eDoubleRet)
         else {
             return;
         };
@@ -2576,39 +2576,42 @@ impl ZeldaState {
 
     // void SpriteActive_Main(int k) {  // 869271
     pub(super) fn sprite_active_main(&mut self, k: usize) {
-        // Cycle ledger: SpriteActive_Main $06:9271 (entry m8 x8) is an RTS
-        // dispatch: LDA $e20,x REP #$30 AND #$00ff ASL TAY LDA $9283,y DEC PHA
-        // SEP #$30 RTS (260). Its scope closes before the handler runs, as
-        // the RTS does. Types $41-$70 dispatch to the bank-6 bounce
+        // Cycle ledger: SpriteActive_Main $06:9271 (entry m8 x8) as reached
+        // by Sprite_ExecuteSingle's JMP: an RTS dispatch (LDA $e20,x REP #$30
+        // AND #$00ff ASL TAY LDA $9283,y DEC PHA SEP #$30 RTS, 260) that runs
+        // inside the frame that jumped, so it charges into the open scope
+        // (no scope of its own; `sprite_active_main_jsr` is the JSR form).
+        // Types $41-$70 dispatch to the bank-6 bounce
         // SpriteModule_Active_bounce $06:BFEA (JSL $05:B5C3 62 ... RTS 42)
         // into SpriteModule_Active $05:B5C3 (PHB PHK PLB JSR $05:B5D3 PLB
         // RTL, 190), whose SpriteActive2_Main $05:B5D3 is a second RTS
         // dispatch (LDA $e20,x SEC SBC #$41 REP #$30 AND ASL TAY LDA $b5e8,y
-        // DEC PHA SEP RTS, 290) closed before the handler; the bounce and the
-        // bank-5 wrapper enclose the handler. The other trampolines at
-        // $06:BFEF/BFF4/BFFE/C003/C008/D04A are not charged here.
-        {
-            let _dispatch = crate::cycle_ledger::routine(0x06_9271);
-            crate::cycle_ledger::charge(260);
-        }
-        let sprite_type = self.sprite_slot_view(k).sprite_type();
-        let bank5_bounce = (0x41..=0x70).contains(&sprite_type);
-        let mut bounce_scope = None;
-        let mut module_active_scope = None;
-        if bank5_bounce {
-            bounce_scope = Some(crate::cycle_ledger::routine(0x06_bfea));
-            crate::cycle_ledger::charge(62);
-            module_active_scope = Some(crate::cycle_ledger::routine(0x05_b5c3));
-            crate::cycle_ledger::charge(190);
-            let _dispatch = crate::cycle_ledger::routine(0x05_b5d3);
-            crate::cycle_ledger::charge(290);
+        // DEC PHA SEP RTS, 290); all of it charges into the open scope. The
+        // other trampolines at $06:BFEF/BFF4/BFFE/C003/C008/D04A are not
+        // charged here.
+        crate::cycle_ledger::charge(260);
+        if (0x41..=0x70).contains(&self.sprite_slot_view(k).sprite_type()) {
+            crate::cycle_ledger::charge(62 + 190 + 290 + 42);
         }
         self.sprite_active_main_dispatch(k);
-        if bank5_bounce {
-            drop(module_active_scope.take());
-            crate::cycle_ledger::charge(42);
-            drop(bounce_scope.take());
-        }
+    }
+
+    /// `SpriteActive_Main` reached by `JSR $06:9271` (SpriteDeath_MainEx,
+    /// SpriteModule_Carried/Fall2, SpriteStunned_Main_Func1,
+    /// SpritePrep_TrooperAndArcherSoldier and the $06:8526 wrapper): a JSR
+    /// target, so the scope encloses the dispatch and the handler.
+    pub(super) fn sprite_active_main_jsr(&mut self, k: usize) {
+        let _scope = crate::cycle_ledger::routine(0x06_9271);
+        self.sprite_active_main(k);
+    }
+
+    /// `SpriteActive_Main_` $06:8526, the long-call wrapper (PHB PHK PLB JSR
+    /// $06:9271 PLB RTL, 190) used from other banks (SpriteModule_Burn's
+    /// bounce, SpriteExplode_SpawnEA, the credits sprite draws).
+    pub(super) fn sprite_active_main_long(&mut self, k: usize) {
+        let _scope = crate::cycle_ledger::routine(0x06_8526);
+        crate::cycle_ledger::charge(190);
+        self.sprite_active_main_jsr(k);
     }
 
     fn sprite_active_main_dispatch(&mut self, k: usize) {
@@ -3124,7 +3127,7 @@ impl ZeldaState {
     }
 
     pub(super) fn giant_moldorm_draw(&mut self, k: usize) {
-        let Some(prepped) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some(prepped) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1dDoubleRet) else {
             return;
         };
         let info = PrepOamCoordsRet::from_tuple(prepped);
@@ -3488,7 +3491,7 @@ impl ZeldaState {
         if self.game_state.frame.submodule != 0 {
             self.sprite_correct_oam_entries(k, 7, 2);
             // Sprite_PrepOamCoordOrDoubleRet(k, info) refreshes the caller's coordinates.
-            if let Some(p) = self.sprite_prep_oam_coord_or_double_ret(k) {
+            if let Some(p) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1eDoubleRet) {
                 info.x = p.0;
                 info.y = p.1;
                 info.flags = p.2;
@@ -3659,7 +3662,7 @@ impl ZeldaState {
             self.sprite_attempt_damage_to_link_plus_recoil(k);
         }
         self.sprite_correct_oam_entries(k, 16, 2);
-        if let Some(prepped) = self.sprite_prep_oam_coord_or_double_ret(k) {
+        if let Some(prepped) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1eDoubleRet) {
             info.x = prepped.0;
             info.y = prepped.1;
             info.r4 = 0;
@@ -3897,7 +3900,7 @@ impl ZeldaState {
     //   Draw the two 16x16 body tiles, then overlay the rotating eyeball.
     // }
     pub(super) fn beamos_draw(&mut self, k: usize) {
-        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let info = PrepOamCoordsRet { x, y, r4: 0, flags };
@@ -3928,7 +3931,7 @@ impl ZeldaState {
     //   Replay the 32-sample beamos history buffer as small laser tiles.
     // }
     pub(super) fn beamos_laser_draw(&mut self, k: usize) {
-        let info = self.sprite_prep_oam_coord(k);
+        let info = self.sprite_prep_oam_coord_from(k, super::sprite::PrepOamCoordEntry::Bank5Safe);
         let mut oam = self.game_state.oam.current_pointer_usize();
         let g = self.sprite_slot_view(k).graphics() as usize;
         for i in (0..32).rev() {
@@ -4015,7 +4018,7 @@ impl ZeldaState {
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
         }
-        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let mut oam = self.game_state.oam.current_pointer_usize();
@@ -4037,7 +4040,7 @@ impl ZeldaState {
     //   Two mirrored 16x16 body tiles plus the common shadow.
     // }
     pub(super) fn crab_draw(&mut self, k: usize) {
-        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let mut oam = self.game_state.oam.current_pointer_usize();
@@ -4440,7 +4443,7 @@ impl ZeldaState {
     //   Four body tiles, plus the ground shadow when standing.
     // }
     pub(super) fn armos_knight_draw(&mut self, k: usize) {
-        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         if self.sprite_slot_view(k).a() == 0 && self.game_state.frame.submodule != 7 {
@@ -4651,7 +4654,7 @@ impl ZeldaState {
     //   Four or eight repeated roller tiles selected by sprite_graphics.
     // }
     pub(super) fn spike_roller_draw(&mut self, k: usize) {
-        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let mut oam = self.game_state.oam.current_pointer_usize();
@@ -4871,7 +4874,7 @@ impl ZeldaState {
     // }
     pub(super) fn movable_mantle_draw(&mut self, k: usize) {
         self.oam_allocate_from_region_b(0x20);
-        let Some((x, y, _flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((x, y, _flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Long) else {
             return;
         };
         let mut oam = self.game_state.oam.current_pointer_usize();
@@ -5588,7 +5591,7 @@ impl ZeldaState {
     //   Five OAM entries, including the animated center pull segment.
     // }
     pub(super) fn bad_pull_down_switch_draw(&mut self, k: usize) {
-        let Some((x, y, _flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((x, y, _flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         self.oam_allocate_defer_to_player(k);
@@ -5618,7 +5621,7 @@ impl ZeldaState {
     //   Two large switch tiles with animated top offset.
     // }
     pub(super) fn bad_pull_up_switch_draw(&mut self, k: usize) {
-        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         self.oam_allocate_defer_to_player(k);
@@ -5645,7 +5648,7 @@ impl ZeldaState {
     //   Two large switch tiles whose spacing follows sprite_graphics.
     // }
     pub(super) fn good_pull_switch_draw(&mut self, k: usize) {
-        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         self.oam_allocate_defer_to_player(k);
@@ -6790,7 +6793,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void StalfosKnight_Draw(int k) {  // 9eae04
     pub(super) fn stalfos_knight_draw(&mut self, k: usize) {
-        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1eDoubleRet) else {
             return;
         };
         let info = PrepOamCoordsRet::from_tuple(tuple);
@@ -6858,7 +6861,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void TutorialSoldier_Draw(int k) {  // 85d64b
     pub(super) fn tutorial_soldier_draw(&mut self, k: usize) {
-        let Some((x, y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((x, y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let mut oam = self.game_state.oam.current_pointer_usize();
@@ -7799,7 +7802,7 @@ impl ZeldaState {
     //   Two large tiles sharing one animation char with per-frame flips.
     // }
     pub(super) fn fire_bat_draw(&mut self, k: usize) {
-        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1dDoubleRet) else {
             return;
         };
         let mut oam = self.game_state.oam.current_pointer_usize();
@@ -8340,7 +8343,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Hokbok_Draw(int k) {  // 9dc77d
     pub(super) fn hokbok_draw(&mut self, k: usize) {
-        let Some((info_x, mut y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((info_x, mut y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1dDoubleRet) else {
             return;
         };
         let mut info = PrepOamCoordsRet {
@@ -8903,7 +8906,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Witch_Draw(int k) {  // 85e55d
     pub(super) fn witch_draw(&mut self, k: usize) {
-        let Some((_, _, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((_, _, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         self.oam_allocate_defer_to_player(k);
@@ -10570,7 +10573,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void GerudoMan_Draw(int k) {  // 85ba24
     pub(super) fn gerudo_man_draw(&mut self, k: usize) {
-        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let mut oam = self.game_state.oam.current_pointer_usize();
@@ -10592,7 +10595,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Recruit_Draw(int k) {  // 85bd7e
     pub(super) fn recruit_draw(&mut self, k: usize) {
-        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let mut info = PrepOamCoordsRet {
@@ -10931,7 +10934,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void PsychoTrooper_Draw(int k) {  // 85ccd5
     pub(super) fn psycho_trooper_draw(&mut self, k: usize) {
-        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let info = PrepOamCoordsRet::from_tuple(tuple);
@@ -10956,7 +10959,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void JavelinTrooper_Draw(int k) {  // 85d192
     pub(super) fn javelin_trooper_draw(&mut self, k: usize) {
-        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let info = PrepOamCoordsRet::from_tuple(tuple);
@@ -10999,7 +11002,7 @@ impl ZeldaState {
         let value = bak0;
         self.sprite_slot_view_mut(k).set_graphics(value);
 
-        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let info = PrepOamCoordsRet::from_tuple(tuple);
@@ -11033,7 +11036,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void ArcherSoldier_Draw(int k) {  // 85d38c
     pub(super) fn archer_soldier_draw(&mut self, k: usize) {
-        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let info = PrepOamCoordsRet::from_tuple(tuple);
@@ -11214,7 +11217,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void ChainBallTrooper_Draw(int k) {  // sprite_main.c:1403
     pub(super) fn chain_ball_trooper_draw(&mut self, k: usize) {
-        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let info = PrepOamCoordsRet::from_tuple(tuple);
@@ -11222,7 +11225,7 @@ impl ZeldaState {
         self.sprite_draw_bnc_body(k, &info, 0x14 / 4);
         self.sprite_draw_bnc_flail(k, &info);
 
-        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let info = PrepOamCoordsRet::from_tuple(tuple);
@@ -11414,7 +11417,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void DebirandoPit_Draw(int k) {  // 8586e4
     pub(super) fn debirando_pit_draw(&mut self, k: usize) {
-        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let g = usize::from(self.sprite_slot_view(k).graphics());
@@ -11444,7 +11447,7 @@ impl ZeldaState {
             return;
         }
 
-        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let mut oam = self.game_state.oam.current_pointer_usize();
@@ -11858,7 +11861,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void DashTreeTop_Draw(int k) {  // 85fe6f
     pub(super) fn dash_tree_top_draw(&mut self, k: usize) {
-        if self.sprite_prep_oam_coord_or_double_ret(k).is_none() {
+        if self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet).is_none() {
             return;
         }
         let mut oam = self.game_state.oam.current_pointer_usize();
@@ -12933,7 +12936,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Firebar_Main(int k) {  // 9ed049
     pub(super) fn firebar_main(&mut self, k: usize) {
-        let Some((x, y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((x, y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1eDoubleRet) else {
             return;
         };
         let mut oam = self.game_state.oam.current_pointer_usize();
@@ -14800,7 +14803,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Toppo_Draw(int k) {  // 85bbff
     pub(super) fn toppo_draw(&mut self, k: usize) {
-        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let mut oam = self.game_state.oam.current_pointer_usize();
@@ -15398,7 +15401,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).ai_state() != 0 {
             self.leever_draw(k);
         } else {
-            self.sprite_prep_oam_coord(k);
+            self.sprite_prep_oam_coord_from(k, super::sprite::PrepOamCoordEntry::Safe);
         }
         if self.sprite_slot_view(k).pause() != 0 {
             let value = 8;
@@ -15492,7 +15495,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_1D_FluteQuest(int k) {  // 86c2e5
     pub(super) fn sprite_1_d_flute_quest(&mut self, k: usize) {
-        self.sprite_prep_oam_coord(k);
+        self.sprite_prep_oam_coord_from(k, super::sprite::PrepOamCoordEntry::Safe);
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -15732,7 +15735,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Kholdstare_Draw(int k) {  // 8dd98f
     pub(super) fn kholdstare_draw(&mut self, k: usize) {
-        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Long) else {
             return;
         };
         let oam = self.game_state.oam.current_pointer_usize();
@@ -15787,7 +15790,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Moldorm_Draw(int k) {  // 9df822
     pub(super) fn moldorm_draw(&mut self, k: usize) {
-        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Long) else {
             return;
         };
         let mut oam = self.game_state.oam.current_pointer_usize();
@@ -16302,7 +16305,7 @@ impl ZeldaState {
     }
 
     pub(super) fn bomb_trooper_draw(&mut self, k: usize) {
-        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let info = PrepOamCoordsRet { x, y, r4: 0, flags };
@@ -16329,7 +16332,7 @@ impl ZeldaState {
     }
 
     pub(super) fn pikit_draw(&mut self, k: usize) {
-        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let info = PrepOamCoordsRet { x, y, r4: 0, flags };
@@ -16450,7 +16453,7 @@ impl ZeldaState {
     }
 
     pub(super) fn archery_game_draw_prize(&mut self, k: usize) {
-        let Some((info_x, info_y, _info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k)
+        let Some((info_x, info_y, _info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet)
         else {
             return;
         };
@@ -16479,7 +16482,7 @@ impl ZeldaState {
     }
 
     pub(super) fn bush_soldier_common_draw(&mut self, k: usize) {
-        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let mut oam = self.game_state.oam.current_pointer_usize();

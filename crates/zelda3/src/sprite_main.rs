@@ -11,7 +11,7 @@ use crate::zelda_rtl::sprite::PrepOamCoordsRet;
 
 impl ZeldaState {
     pub(super) fn guard_handle_all_animation(&mut self, k: usize) {
-        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         if self.sprite_slot_view(k).sprite_type() == 0x41 {
@@ -133,7 +133,7 @@ impl ZeldaState {
                 self.sprite_active_main(k);
             }
             let (x, y, flags) = self
-                .sprite_prep_oam_coord_or_double_ret(k)
+                .sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet)
                 .expect("source Hog Spear body return requires visible OAM");
             let poc = PrepOamCoordsRet { x, y, r4: 0, flags };
             self.guard_animate_head(k, 0, &poc);
@@ -256,7 +256,7 @@ impl ZeldaState {
     ) -> GuardAnimationContinuation {
         let (graphics, direction) = self.guard_main_prepare_animation_pose(k);
         let (x, y, flags) = self
-            .sprite_prep_oam_coord_or_double_ret(k)
+            .sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet)
             .expect("source guard head draw requires visible OAM coordinates");
         if self.sprite_slot_view(k).sprite_type() == 0x41 {
             if let Some(workload) = self.last_sprite_main_timing_workload.as_mut() {
@@ -433,7 +433,7 @@ impl ZeldaState {
         assert!(entry <= 1);
         let (graphics, direction) = self.guard_main_prepare_animation_pose(k);
         let (x, y, flags) = self
-            .sprite_prep_oam_coord_or_double_ret(k)
+            .sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet)
             .expect("source guard weapon draw requires visible OAM coordinates");
         if self.sprite_slot_view(k).sprite_type() == 0x41 {
             if let Some(workload) = self.last_sprite_main_timing_workload.as_mut() {
@@ -539,7 +539,7 @@ impl ZeldaState {
                     [(guard_bak_direction as usize) & 3],
             );
         }
-        let (x, y, flags) = self.sprite_prep_oam_coord_or_double_ret(k)?;
+        let (x, y, flags) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet)?;
         if self.sprite_slot_view(k).sprite_type() == 0x41 {
             if let Some(workload) = self.last_sprite_main_timing_workload.as_mut() {
                 workload.record_blue_guard_full_animation();

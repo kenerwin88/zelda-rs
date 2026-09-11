@@ -31,6 +31,9 @@ impl ZeldaState {
                     8,
                     "source sprite-init reset boundary requires state 8",
                 );
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 if phase == crate::SpriteInitializeResetPropertiesPhase::FireDebirandoTypeConversion
                 {
@@ -69,6 +72,9 @@ impl ZeldaState {
                     .take()
                     .expect("sprite property-load boundary was checked above");
                 assert_eq!(self.sprite_slot_view(k).state(), 8);
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 match phase {
                     crate::SpriteInitializeResetPropertiesPhase::InitialPropertyLoad => {
@@ -109,6 +115,9 @@ impl ZeldaState {
                     .expect("Mini Moldorm history boundary was checked above");
                 assert_eq!(self.sprite_slot_view(k).state(), 8);
                 assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x18);
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 self.sprite_module_initialize_properties(k);
                 self.sprite_prep_mini_moldorm_bounce_prefix(k, completed_stores);
@@ -145,6 +154,9 @@ impl ZeldaState {
                 0x64,
                 "Fire Debirando source boundary requires type $64 at slot entry",
             );
+            // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+            // directly; open its scope for the timers and the handler part.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, true);
             self.sprite_timers_and_oam(k);
             self.sprite_module_initialize_properties(k);
             self.sprite_slot_view_mut(k).set_sprite_type(0x63);
@@ -173,6 +185,9 @@ impl ZeldaState {
                 self.sprite_main_cpu_boundary = None;
                 assert_eq!(self.sprite_slot_view(k).state(), 9);
                 assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xcb);
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 let continuation =
                     self.begin_trinexx_final_phase_draw_checkpoint(k, segment, stage);
@@ -210,6 +225,9 @@ impl ZeldaState {
                 self.sprite_main_cpu_boundary = None;
                 assert_eq!(self.sprite_slot_view(k).state(), 9);
                 assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xcb);
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 self.begin_trinexx_final_phase_tile_collision_checkpoint(k, probes_completed);
                 let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
@@ -257,6 +275,9 @@ impl ZeldaState {
                         "source dynamic-spawn receipt skipped a higher free slot {candidate}",
                     );
                 }
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 self.begin_trinexx_death_explosion_spawn_checkpoint(k, spawned, progress);
                 let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
@@ -297,6 +318,9 @@ impl ZeldaState {
                         "source dynamic-spawn receipt skipped a higher free slot {candidate}",
                     );
                 }
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 self.sprite_module_initialize_properties(k);
                 self.sprite_slot_view_mut(k).set_sprite_type(0x63);
@@ -340,6 +364,9 @@ impl ZeldaState {
                 0x41,
                 "source standard-guard checkpoint requires a blue guard",
             );
+            // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+            // directly; open its scope for the timers and the handler part.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, true);
             self.sprite_timers_and_oam(k);
             self.sprite_module_initialize_properties(k);
             let continuation = self
@@ -374,6 +401,9 @@ impl ZeldaState {
                 self.sprite_main_cpu_boundary = None;
                 assert_eq!(self.sprite_slot_view(k).state(), 8);
                 assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x41);
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 self.sprite_module_initialize_properties(k);
                 let continuation =
@@ -409,6 +439,9 @@ impl ZeldaState {
                 self.sprite_main_cpu_boundary = None;
                 assert_eq!(self.sprite_slot_view(k).state(), 8);
                 assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x41);
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 self.sprite_module_initialize_properties(k);
                 let saved_submodule =
@@ -447,6 +480,9 @@ impl ZeldaState {
                 self.sprite_main_cpu_boundary = None;
                 assert_eq!(self.sprite_slot_view(k).state(), 8);
                 assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x41);
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 self.sprite_module_initialize_properties(k);
                 let saved_submodule =
@@ -493,6 +529,9 @@ impl ZeldaState {
                 } else {
                     assert!((0x41..=0x44).contains(&self.sprite_slot_view(k).sprite_type()));
                 }
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 if initializer {
                     self.sprite_module_initialize_properties(k);
@@ -533,6 +572,9 @@ impl ZeldaState {
                 state, 0,
                 "source timer/OAM return requires an active sprite slot",
             );
+            // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+            // directly; open its scope for the timers and the handler part.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, false);
             self.sprite_timers_and_oam(k);
             let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
             self.schedule_sprite_main_cpu_continuation(
@@ -568,6 +610,9 @@ impl ZeldaState {
             assert_eq!(self.sprite_slot_view(k).state(), 9);
             assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x72);
             assert_eq!(self.sprite_slot_view(k).ai_state(), 3);
+            // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+            // directly; open its scope for the timers and the handler part.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, true);
             self.sprite_timers_and_oam(k);
             assert!(
                 self.sprite_happiness_pond_before_rupee_graphics(k),
@@ -608,6 +653,9 @@ impl ZeldaState {
                 9,
                 "source Antfairy subtype boundary requires an active sprite",
             );
+            // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+            // directly; open its scope for the timers and the handler part.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, true);
             self.sprite_timers_and_oam(k);
             let continuation = self.antfairy_draw_continuation(k);
             self.sprite_slot_view_mut(k).add_subtype2(1);
@@ -651,6 +699,9 @@ impl ZeldaState {
                 0x54,
                 "source Lanmola subtype boundary requires a Lanmola",
             );
+            // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+            // directly; open its scope for the timers and the handler part.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, true);
             self.sprite_timers_and_oam(k);
             let continuation = self.lanmola_prep_and_draw_through_subtype2_increment(k);
             let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
@@ -694,6 +745,9 @@ impl ZeldaState {
                 9,
                 "source Helmasaur/Hardhat subtype boundary requires an active sprite",
             );
+            // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+            // directly; open its scope for the timers and the handler part.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, true);
             self.sprite_timers_and_oam(k);
             let reached_increment = match self.sprite_slot_view(k).sprite_type() {
                 0x13 => self.sprite_13_mini_helmasaur_through_subtype2_increment(k),
@@ -736,6 +790,9 @@ impl ZeldaState {
                     0xbd
                 };
             assert_eq!(self.sprite_slot_view(k).sprite_type(), expected_type);
+            // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+            // directly; open its scope for the timers and the handler part.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, true);
             self.sprite_timers_and_oam(k);
             self.sprite_active_main(k);
             self.sprite_main_cpu_boundary = None;
@@ -759,6 +816,9 @@ impl ZeldaState {
                 assert_eq!(self.sprite_slot_view(k).state(), 9);
                 let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
                 assert_ne!(nmi_slices, 0);
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 self.sprite_main_cpu_boundary = None;
                 let draw = self.begin_sidenexx_head_draw_checkpoint(k, segment);
@@ -791,6 +851,9 @@ impl ZeldaState {
                 assert_eq!(self.sprite_slot_view(k).state(), 9);
                 let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
                 assert_ne!(nmi_slices, 0);
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 self.sprite_main_cpu_boundary = None;
                 let continuation = self.begin_sidenexx_neck_target_checkpoint(k, step);
@@ -823,6 +886,9 @@ impl ZeldaState {
                 assert_eq!(self.sprite_slot_view(k).state(), 9);
                 let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
                 assert_ne!(nmi_slices, 0);
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 self.sprite_main_cpu_boundary = None;
                 let draw = self.begin_sidenexx_front_part_checkpoint(k, completed_stores);
@@ -857,6 +923,9 @@ impl ZeldaState {
                 self.sprite_slot_view(k).sprite_type(),
                 0x23 | 0x24
             ));
+            // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+            // directly; open its scope for the timers and the handler part.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, true);
             self.sprite_timers_and_oam(k);
             self.sprite_module_initialize_properties(k);
             self.sprite_prep_bari_before_random(k);
@@ -895,6 +964,10 @@ impl ZeldaState {
                 state, 0,
                 "source main/aux1 timer decrement boundary requires an active sprite slot",
             );
+            // Cycle ledger: this lane suspends inside Sprite_TimersAndOam under
+            // Sprite_ExecuteSingle (its dispatch has not run yet); open both scopes.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, false);
+            let _timers = self.sprite_timers_and_oam_lane_scope();
             self.sprite_timers_and_oam_through_main_and_aux1_timer_decrements(k);
             let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
             self.schedule_sprite_main_cpu_continuation(
@@ -931,6 +1004,10 @@ impl ZeldaState {
                 state, 0,
                 "source main timer decrement boundary requires an active sprite slot",
             );
+            // Cycle ledger: this lane suspends inside Sprite_TimersAndOam under
+            // Sprite_ExecuteSingle (its dispatch has not run yet); open both scopes.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, false);
+            let _timers = self.sprite_timers_and_oam_lane_scope();
             self.sprite_timers_and_oam_through_main_timer_decrement(k);
             let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
             self.schedule_sprite_main_cpu_continuation(
@@ -967,6 +1044,10 @@ impl ZeldaState {
                 state, 0,
                 "source main timer decrement boundary requires an active sprite slot",
             );
+            // Cycle ledger: this lane suspends inside Sprite_TimersAndOam under
+            // Sprite_ExecuteSingle (its dispatch has not run yet); open both scopes.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, false);
+            let _timers = self.sprite_timers_and_oam_lane_scope();
             self.sprite_timers_and_oam_through_zero_hit_timer_clear(k);
             let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
             self.schedule_sprite_main_cpu_continuation(
@@ -1001,6 +1082,10 @@ impl ZeldaState {
                 state, 0,
                 "source primary timer decrement boundary requires an active sprite slot",
             );
+            // Cycle ledger: this lane suspends inside Sprite_TimersAndOam under
+            // Sprite_ExecuteSingle (its dispatch has not run yet); open both scopes.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, false);
+            let _timers = self.sprite_timers_and_oam_lane_scope();
             self.sprite_timers_and_oam_through_primary_timer_decrements(k);
             let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
             self.schedule_sprite_main_cpu_continuation(
@@ -1035,6 +1120,10 @@ impl ZeldaState {
                 state, 0,
                 "source hit timer decrement boundary requires an active sprite slot",
             );
+            // Cycle ledger: this lane suspends inside Sprite_TimersAndOam under
+            // Sprite_ExecuteSingle (its dispatch has not run yet); open both scopes.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, false);
+            let _timers = self.sprite_timers_and_oam_lane_scope();
             self.sprite_timers_and_oam_through_primary_timer_decrements(k);
             self.sprite_timers_and_oam_after_primary_through_hit_timer(k);
             let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
@@ -1070,6 +1159,10 @@ impl ZeldaState {
                 state, 0,
                 "source timer decrement boundary requires an active sprite slot",
             );
+            // Cycle ledger: this lane suspends inside Sprite_TimersAndOam under
+            // Sprite_ExecuteSingle (its dispatch has not run yet); open both scopes.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, false);
+            let _timers = self.sprite_timers_and_oam_lane_scope();
             self.sprite_timers_and_oam_through_timer_decrements(k);
             let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
             self.schedule_sprite_main_cpu_continuation(
@@ -1103,6 +1196,9 @@ impl ZeldaState {
                 .expect("Wallmaster reset boundary was checked above");
             assert_eq!(self.sprite_slot_view(k).state(), 9);
             assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x90);
+            // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+            // directly; open its scope for the timers and the handler part.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, true);
             self.sprite_timers_and_oam(k);
             assert_eq!(
                 self.sprite_90_wallmaster_through_send_decision(k),
@@ -1153,6 +1249,9 @@ impl ZeldaState {
                 sign8(self.sprite_slot_view(k).c()) || self.sprite_slot_view(k).c() < 6,
                 "throwable-scenery state-clear boundary requires the small-debris branch",
             );
+            // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+            // directly; open its scope for the timers and the handler part.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, true);
             self.sprite_timers_and_oam(k);
             self.sprite_slot_view_mut(k).set_state(0);
             let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
@@ -1176,6 +1275,9 @@ impl ZeldaState {
             self.sprite_main_cpu_boundary = None;
             assert_eq!(self.sprite_slot_view(k).state(), 8);
             assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x76);
+            // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+            // directly; open its scope for the timers and the handler part.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, true);
             self.sprite_timers_and_oam(k);
             self.sprite_module_initialize_properties(k);
             let saved_follower_indicator = self
@@ -1211,6 +1313,9 @@ impl ZeldaState {
                 self.sprite_slot_view(k).sprite_type(),
                 0xa5..=0xa7
             ));
+            // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+            // directly; open its scope for the timers and the handler part.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, true);
             self.sprite_timers_and_oam(k);
             assert!(
                 self.sprite_zazak_before_graphics_boundary(k),
@@ -1249,6 +1354,9 @@ impl ZeldaState {
                     crate::SpriteFollowerGraphicsCaller::BlindMaiden => {
                         assert_eq!(self.sprite_slot_view(k).state(), 8);
                         assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xb7);
+                        // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                        // directly; open its scope for the timers and the handler part.
+                        let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                         self.sprite_timers_and_oam(k);
                         self.sprite_module_initialize_properties(k);
                         assert!(
@@ -1260,6 +1368,9 @@ impl ZeldaState {
                     crate::SpriteFollowerGraphicsCaller::Zelda => {
                         assert_eq!(self.sprite_slot_view(k).state(), 8);
                         assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x76);
+                        // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                        // directly; open its scope for the timers and the handler part.
+                        let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                         self.sprite_timers_and_oam(k);
                         self.sprite_module_initialize_properties(k);
                         Some(self.sprite_prep_zelda_before_follower_graphics(k).expect(
@@ -1269,6 +1380,9 @@ impl ZeldaState {
                     crate::SpriteFollowerGraphicsCaller::BlindMaidenBody => {
                         assert_eq!(self.sprite_slot_view(k).state(), 9);
                         assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xb7);
+                        // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                        // directly; open its scope for the timers and the handler part.
+                        let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                         self.sprite_timers_and_oam(k);
                         assert!(
                             self.sprite_b7_blind_maiden_before_follower_graphics(k),
@@ -1279,6 +1393,9 @@ impl ZeldaState {
                     crate::SpriteFollowerGraphicsCaller::OldMan => {
                         assert_eq!(self.sprite_slot_view(k).state(), 8);
                         assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xad);
+                        // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                        // directly; open its scope for the timers and the handler part.
+                        let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                         self.sprite_timers_and_oam(k);
                         self.sprite_module_initialize_properties(k);
                         let reset_follower_after_graphics = self
@@ -1291,6 +1408,9 @@ impl ZeldaState {
                     crate::SpriteFollowerGraphicsCaller::PurpleChest => {
                         assert_eq!(self.sprite_slot_view(k).state(), 9);
                         assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xb4);
+                        // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                        // directly; open its scope for the timers and the handler part.
+                        let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                         self.sprite_timers_and_oam(k);
                         assert!(self.sprite_b4_purple_chest_before_follower_graphics(k),
                             "source follower-graphics progress requires the chest's follower transition");
@@ -1300,6 +1420,9 @@ impl ZeldaState {
                         assert_eq!(self.sprite_slot_view(k).state(), 9);
                         assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xb5);
                         assert_eq!(self.sprite_slot_view(k).subtype2(), 2);
+                        // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                        // directly; open its scope for the timers and the handler part.
+                        let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                         self.sprite_timers_and_oam(k);
                         assert!(
                             self.sprite_bomb_shop_super_bomb_before_follower_graphics(k),
@@ -1347,6 +1470,9 @@ impl ZeldaState {
             assert_eq!(self.sprite_slot_view(k).state(), 9);
             assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x52);
             assert_eq!(self.sprite_slot_view(k).ai_state(), 3);
+            // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+            // directly; open its scope for the timers and the handler part.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, true);
             self.sprite_timers_and_oam(k);
             assert!(
                 self.sprite_52_king_zora_before_flippers_graphics(k),
@@ -1389,6 +1515,9 @@ impl ZeldaState {
                 self.sprite_slot_view(k).c() != 0 && !sign8(self.sprite_slot_view(k).c()),
                 "source single-small draw boundary requires Red Bari's positive-C draw path",
             );
+            // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+            // directly; open its scope for the timers and the handler part.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, true);
             self.sprite_timers_and_oam(k);
             let continuation = self
                 .sprite_draw_single_small_position_prefix(k)
@@ -1434,6 +1563,9 @@ impl ZeldaState {
                 0,
                 "source guard-probe boundary requires Probe rather than Guard_Main",
             );
+            // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+            // directly; open its scope for the timers and the handler part.
+            let _execute_single = self.sprite_execute_single_lane_scope(k, true);
             self.sprite_timers_and_oam(k);
             let oam_position = self
                 .probe_until_after_oam_coordinates(k)

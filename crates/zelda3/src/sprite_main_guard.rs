@@ -325,7 +325,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).clear();
             None
         } else {
-            self.sprite_prep_oam_coord_or_double_ret(k)
+            self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet)
                 .map(|(x, y, _flags)| (x, y))
         }
     }
