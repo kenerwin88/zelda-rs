@@ -1231,7 +1231,12 @@ impl ZeldaState {
     ///   bank-local double-return wrappers $05:FA50 / $1D:E9AD / $1E:FF84 =
     ///   JSL $06:E416 (62), BCC (16, taken +6 when in bounds), else PLA PLA
     ///   (56), RTS (42) — the RTS runs on both paths (out of bounds it
-    ///   returns to the caller's caller).
+    ///   returns to the caller's caller). The profiler closes a frame as
+    ///   soon as the stack rises above its entry depth, so out of bounds
+    ///   the first PLA (28) is the wrapper's last own instruction and the
+    ///   second PLA and the RTS (70) are measured in the caller's frame;
+    ///   the ledger splits them the same way (200k profiles: $05:FA50 self
+    ///   126 in bounds / 106 out, the caller +70).
     /// - `Bank5Safe`: Sprite_PrepOamCoord_wrapper $05:9257 = JSR $05:FA50
     ///   (46) : RTS (42, skipped when the double return pops it).
     fn sprite_prep_oam_coord_or_double_ret_raw_from(
@@ -1267,11 +1272,19 @@ impl ZeldaState {
                     PrepOamCoordEntry::Bank1dDoubleRet => 0x1d_e9ad,
                     _ => 0x1e_ff84,
                 };
-                let _wrapper = crate::cycle_ledger::routine(address);
-                crate::cycle_ledger::charge(62 + 16);
-                let result =
-                    self.sprite_prep_oam_coord_or_double_ret_raw_from(k, PrepOamCoordEntry::Long);
-                crate::cycle_ledger::charge(if result.1 { 56 + 42 } else { 6 + 42 });
+                let result = {
+                    let _wrapper = crate::cycle_ledger::routine(address);
+                    crate::cycle_ledger::charge(62 + 16);
+                    let result = self
+                        .sprite_prep_oam_coord_or_double_ret_raw_from(k, PrepOamCoordEntry::Long);
+                    crate::cycle_ledger::charge(if result.1 { 28 } else { 6 + 42 });
+                    result
+                };
+                if result.1 {
+                    // The second PLA and the RTS of the double return run
+                    // after the wrapper's frame has closed: the caller's cost.
+                    crate::cycle_ledger::charge(28 + 42);
+                }
                 result
             }
             PrepOamCoordEntry::Bank5Safe => {

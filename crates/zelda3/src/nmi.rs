@@ -504,6 +504,15 @@ impl ZeldaState {
                 .max(blanking.prefix_scanlines);
             self.latch_nmi_update();
             self.nmi_do_updates_from(oam_dma_source, defer_bg_vram_upload, animated_bg_operands);
+            // NMI_ReadJoypads $00:83D1 (JSR target, m8 x8, data bank $00),
+            // one straight block $00:83D1-83F8: STZ $4016, the $4218/$4219
+            // reads, the edge filters and RTS. 502: the $4218/$4219 reads are
+            // fast register-window accesses (30 each) but $4016 is a slow
+            // 12-cycle port (STZ $4016 measures 36), profile-confirmed. The
+            // ROM reads here every NMI; when the engine sampled the joypad
+            // before main on this host the read's cost still belongs to this
+            // handler, like the audio-port blocks above.
+            crate::cycle_ledger::charge_routine(0x00_83d1, 502);
             if !joypad_already_sampled {
                 self.nmi_read_joypads(input);
             }
@@ -2373,14 +2382,9 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_read_joypads(&mut self, joypad_input: u16) {
-        // Cycle ledger: NMI_ReadJoypads $00:83D1 (JSR target from the main
-        // loop at $00:8141, m8 x8, data bank $00), one straight block
-        // $00:83D1-83F8: STZ $4016, the $4218/$4219 reads, the edge filters
-        // and RTS (502 in the listing; the three register-window operands
-        // cost 2 less each with the system data bank, 496). No wait loop:
-        // the auto-joypad read is complete by the time the main loop calls
-        // it.
-        crate::cycle_ledger::charge_routine(0x00_83d1, 496);
+        // Cycle ledger: charged at the NMI handler's call site ($00:8141),
+        // whether the engine performs the read there or before main (see
+        // `interrupt_nmi`).
         let mut both = joypad_input;
         let mut reversed = 0u16;
         for _ in 0..16 {
