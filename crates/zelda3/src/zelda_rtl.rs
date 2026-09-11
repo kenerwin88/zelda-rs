@@ -9374,6 +9374,19 @@ pub struct ZeldaState {
     /// resumed host the frame minus this cost. Never read by game logic.
     #[serde(skip)]
     pub(crate) last_nmi_handler_master_cycles: Option<u32>,
+    /// `cycle_ledger::master()` when the last NMI handler was entered, i.e.
+    /// the ledger at the CPU's NMI acceptance; the native dialogue budget
+    /// measures the work since then to place the loop entry on the raster.
+    #[serde(skip)]
+    pub(crate) ledger_master_at_nmi_acceptance: Option<u64>,
+    /// DMA bus time of the last NMI handler run (not ledger work, but
+    /// raster time the CPU spent stalled).
+    #[serde(skip)]
+    pub(crate) last_nmi_dma_master_cycles: u64,
+    /// Ledger charge of the last complete `NMI_PrepareSprites` call, for the
+    /// dialogue caller-suffix threshold. Never read by game logic.
+    #[serde(skip)]
+    pub(crate) last_nmi_prepare_sprites_master_cycles: Option<u32>,
     /// Ambient APUI01 state sampled by a real C NMI after the ordinary host
     /// audio batch was published. The following audio callbacks retain that
     /// port read until the SPC exposes the matching acknowledgement.
@@ -11793,6 +11806,9 @@ impl ZeldaState {
             ledger_nmi_audio_parts_cycles: 0,
             nmi_dma_accounting: None,
             last_nmi_handler_master_cycles: None,
+            ledger_master_at_nmi_acceptance: None,
+            last_nmi_dma_master_cycles: 0,
+            last_nmi_prepare_sprites_master_cycles: None,
             audio_after_publication_ambient_nmi: None,
             dungeon_exit_spotlight_cpu_entry_envelope: None,
             overworld_spotlight_cpu_entry_envelope: None,
@@ -11967,6 +11983,9 @@ impl ZeldaState {
         self.ledger_nmi_audio_parts_cycles = 0;
         self.nmi_dma_accounting = None;
         self.last_nmi_handler_master_cycles = None;
+        self.ledger_master_at_nmi_acceptance = None;
+        self.last_nmi_dma_master_cycles = 0;
+        self.last_nmi_prepare_sprites_master_cycles = None;
         self.audio_after_publication_ambient_nmi = None;
         self.main_loop_sprite_preparation_completed = false;
         self.pending_main_loop_common_suffix = None;
@@ -12076,6 +12095,9 @@ impl ZeldaState {
             self.ledger_nmi_audio_parts_cycles = 0;
         self.nmi_dma_accounting = None;
         self.last_nmi_handler_master_cycles = None;
+        self.ledger_master_at_nmi_acceptance = None;
+        self.last_nmi_dma_master_cycles = 0;
+        self.last_nmi_prepare_sprites_master_cycles = None;
             self.audio_after_publication_ambient_nmi = None;
             self.pending_main_loop_common_suffix = None;
             self.dungeon_landing_goal_transition_pending = false;

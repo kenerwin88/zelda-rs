@@ -355,6 +355,8 @@ impl ZeldaState {
         );
         let dma = self.nmi_dma_accounting.take().unwrap_or_default();
         let cpu = crate::cycle_ledger::master() - ledger_before;
+        self.ledger_master_at_nmi_acceptance = Some(ledger_before);
+        self.last_nmi_dma_master_cycles = dma.master_cycles();
         self.last_nmi_handler_master_cycles =
             Some(u32::try_from(cpu + dma.master_cycles()).unwrap_or(u32::MAX));
     }
