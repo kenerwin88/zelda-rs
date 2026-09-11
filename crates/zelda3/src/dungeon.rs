@@ -1447,21 +1447,38 @@ impl ZeldaState {
     }
 
     pub(super) fn RoomDraw_DrawFloors(&mut self, level_data: &[u8]) {
+        // Cycle ledger: RoomDraw_DrawFloors $01:89DC, entered with M=16 X=16.
+        let _scope = crate::cycle_ledger::routine(0x01_89dc);
         let offs = self.game_state.dungeon.room_load.load_ptr_offset() as usize;
         let floor_types = level_data.get(offs).copied().unwrap_or(0);
+        // $0189DC LDX #$1E (24), then $0189DF-$0189EE: the eleven-pass copy of
+        // the BG2 line pointers (X = $1E, $1B, ..., 0; 230 per pass, BPL taken
+        // ten times): 24 + 11 * 230 + 10 * 6.
+        crate::cycle_ledger::charge(2_614);
         self.dungeon_room_tilemaps_mut()
             .copy_bg2_draw_line_offsets();
         self.dungeon_room_parser_mut()
             .set_floor_1_filler_low(floor_types & 0xf0);
         self.dungeon_room_parser_mut().set_floor_1_filler_high(0);
+        // $0189F0-$018A03: read the floor byte, INC $BA, store filler 1, the
+        // JSR RoomDraw_FloorChunks (46, the callee charges itself) and the
+        // LDX #$1E that follows its return.
+        crate::cycle_ledger::charge(352);
         self.RoomDraw_FloorChunks(0x4000, (floor_types & 0xf0) as usize);
 
+        // $018A06-$018A0F: the eleven-pass copy of the BG1 line pointers
+        // (144 per pass, BPL taken ten times): 11 * 144 + 10 * 6.
+        crate::cycle_ledger::charge(1_644);
         self.dungeon_room_tilemaps_mut()
             .copy_bg1_draw_line_offsets();
         self.dungeon_room_parser_mut()
             .set_floor_2_filler_low((floor_types & 0x0f) << 4);
         self.dungeon_room_parser_mut().set_floor_2_filler_high(0);
-        self.RoomDraw_FloorChunks(0x2000, ((floor_types & 0x0f) << 4) as usize);
+        // $018A11-$018A1E: filler 2 = (byte & $0F) << 4, then the code falls
+        // through into RoomDraw_FloorChunks at $018A1F (no JSR): that second
+        // pass runs under this routine's frame, so it uses the unscoped body.
+        crate::cycle_ledger::charge(202);
+        self.room_draw_floor_chunks_body(0x2000, ((floor_types & 0x0f) << 4) as usize);
         self.dungeon_room_load_mut().set_load_ptr_offset(1);
     }
 
@@ -1506,7 +1523,11 @@ impl ZeldaState {
     }
 
     pub(super) fn RoomData_DrawObjects_from(&mut self, layout: &[u8]) {
+        // Cycle ledger: RoomDraw_DrawAllObjects $01:88E4, entered with M=16 X=16.
+        let _scope = crate::cycle_ledger::routine(0x01_88e4);
         loop {
+            // $0188E4-$0188EF: STZ $B2 / STZ $B4, read the object word, CMP #$FFFF.
+            crate::cycle_ledger::charge(192);
             self.dungeon_room_load_mut()
                 .set_draw_width_indicator_word(0);
             self.dungeon_room_load_mut()
@@ -1514,17 +1535,31 @@ impl ZeldaState {
             let pos = self.game_state.dungeon.room_load.load_ptr_offset() as usize;
             let raw = read_word_from_slice(layout, pos);
             if raw == 0xffff {
+                // BEQ $0188FD taken (+6) and the RTS at $0188FD (42).
+                crate::cycle_ledger::charge(48);
                 return;
             }
+            // $0188F1-$0188F6: STA $00, CMP #$FFF0.
+            crate::cycle_ledger::charge(72);
             if raw == 0xfff0 {
+                // BEQ $0188FE taken (+6), then $0188FE-$018900 INC $BA twice (108).
+                crate::cycle_ledger::charge(114);
                 break;
             }
+            // $0188F8-$0188FB: JSR RoomData_DrawObject (46, the callee charges
+            // itself; the object drawer's RTS returns here) and the BRA back to
+            // $0188E4 (22, already priced taken).
+            crate::cycle_ledger::charge(68);
             let idx = layout[pos + 2];
             self.dungeon_room_load_mut()
                 .set_load_ptr_offset(pos.wrapping_add(3) as u16);
             self.RoomData_DrawObject(raw, idx);
         }
         loop {
+            // $018902-$018909: read the door word, CMP #$FFFF. The INC $BA pair
+            // before each read is charged with the previous block ($0188FE for
+            // the first door, $018910 for the rest).
+            crate::cycle_ledger::charge(128);
             let pos = self
                 .game_state
                 .dungeon
@@ -1534,14 +1569,30 @@ impl ZeldaState {
             self.dungeon_room_load_mut().set_load_ptr_offset(pos as u16);
             let raw = read_word_from_slice(layout, pos);
             if raw == 0xffff {
+                // BEQ $0188FD taken (+6) and the RTS at $0188FD (42).
+                crate::cycle_ledger::charge(48);
                 return;
             }
+            // $01890B-$018914: STA $00, JSR RoomData_DrawObject_Door (46, the
+            // callee charges itself), INC $BA twice, BRA $018902 (priced taken).
+            crate::cycle_ledger::charge(208);
             self.RoomData_DrawObject_Door(raw);
         }
     }
 
     pub(super) fn RoomData_DrawObject(&mut self, raw: u16, idx: u8) {
+        // Cycle ledger: RoomData_DrawObject $01:893C, entered with M=16 X=16
+        // (SEP #$20 first). Each arm ends in a `JMP ($0E)` (40, priced inside
+        // the block) into the object drawer, whose own RTS returns to
+        // RoomDraw_DrawAllObjects; the drawers charge themselves, so this
+        // routine's scope covers exactly the decode plus the dispatch.
+        let _scope = crate::cycle_ledger::routine(0x01_893c);
         if raw & 0xfc != 0xfc {
+            // $01893C-$018942: SEP #$20, AND #$FC, CMP #$FC, BEQ not taken (70),
+            // then $018944-$018970: width/height, the third byte, $BA += 3,
+            // the position word, REP #$20, ASL, CMP #$01F0 with BCS priced not
+            // taken (582).
+            crate::cycle_ledger::charge(652);
             let width = (raw & 3) as u8;
             let height = ((raw >> 8) & 3) as u8;
             self.dungeon_room_load_mut()
@@ -1550,12 +1601,21 @@ impl ZeldaState {
             let y = raw >> 10;
             let dsto = y * 64 + x;
             if idx < 0xf8 {
+                // $018972-$018980: subtype-1 table lookup and JMP ($0E).
+                crate::cycle_ledger::charge(228);
                 self.LoadType1ObjectSubtype1(idx, width, height, dsto);
             } else {
+                // BCS $0189B8 taken (+6), then $0189B8-$0189D9: the subtype-3
+                // index from bits 1-3, width and height, table lookup, JMP ($0E).
+                crate::cycle_ledger::charge(524);
                 let object = ((idx & 7) << 4) | (((raw >> 8) as u8 & 3) << 2) | (raw as u8 & 3);
                 self.LoadType1ObjectSubtype3(object, dsto);
             }
         } else {
+            // $01893C-$018942 with BEQ $018983 taken (70 + 6), then
+            // $018983-$0189B5: the subtype-2 position from both words, $BA += 3,
+            // table lookup and JMP ($0E) (766).
+            crate::cycle_ledger::charge(842);
             let x = ((raw & 3) << 4) | ((raw >> 12) & 0x0f);
             let y = (((raw >> 8) & 0x0f) << 2) | ((idx as u16) >> 6);
             let dsto = y * 64 + x;
@@ -1577,7 +1637,7 @@ impl ZeldaState {
             0x01 | 0x02 | 0xb6 | 0xb7 => {
                 let count = size_1to15_or(width, height, 26);
                 for i in 0..count {
-                    self.RoomData_DrawObject_nx4(src, dsto + i * 2, 2);
+                    self.RoomDraw_Object_Nx4(2, src, dsto + i * 2);
                 }
             }
             0x03 | 0x04 => {
@@ -1589,7 +1649,7 @@ impl ZeldaState {
             0x05 | 0x06 => {
                 let count = size_1to16(width, height);
                 for i in 0..count {
-                    self.RoomData_DrawObject_nx4(src, dsto + i * 6, 2);
+                    self.RoomDraw_Object_Nx4(2, src, dsto + i * 6);
                 }
             }
             0x07 | 0x08 | 0x53 => {
@@ -1742,7 +1802,7 @@ impl ZeldaState {
             0x39 | 0x3d => {
                 let count = size_1to16(width, height);
                 for i in 0..count {
-                    self.RoomData_DrawObject_nx4(src, dsto + i * 6, 2);
+                    self.RoomDraw_Object_Nx4(2, src, dsto + i * 6);
                 }
             }
             0x3a | 0x3b => {
@@ -1802,10 +1862,10 @@ impl ZeldaState {
             0x4d..=0x4f => {
                 let count = size_1to16(width, height);
                 let mut dst = dsto;
-                self.RoomData_DrawObject_nx4(src, dst, 1);
+                self.RoomDraw_Object_Nx4(1, src, dst);
                 dst += 1;
                 for _ in 0..count {
-                    self.RoomData_DrawObject_nx4(src + 8, dst, 2);
+                    self.RoomDraw_Object_Nx4(2, src + 8, dst);
                     dst += 2;
                 }
                 self.RoomDraw_RightwardShelfEnd(src + 24, dst);
@@ -1894,13 +1954,13 @@ impl ZeldaState {
             0x7f | 0x80 => {
                 let count = size_1to16(width, height);
                 for i in 0..count {
-                    self.RoomData_DrawObject_nx4(src, dsto + i * 12 * 64, 2);
+                    self.RoomDraw_Object_Nx4(2, src, dsto + i * 12 * 64);
                 }
             }
             0x81..=0x84 => {
                 let count = size_1to16(width, height);
                 for i in 0..count {
-                    self.RoomData_DrawObject_nx4(src, dsto + i * 6 * 64, 3);
+                    self.RoomDraw_Object_Nx4(3, src, dsto + i * 6 * 64);
                 }
             }
             0x85 | 0x86 => {
@@ -1999,13 +2059,13 @@ impl ZeldaState {
             0x75 | 0x87 => {
                 let count = size_1to16(width, height);
                 for i in 0..count {
-                    self.RoomData_DrawObject_nx4(src, dsto + i * 6 * 64, 2);
+                    self.RoomDraw_Object_Nx4(2, src, dsto + i * 6 * 64);
                 }
             }
             0x76 | 0x77 => {
                 let count = size_1to16(width, height);
                 for i in 0..count {
-                    self.RoomData_DrawObject_nx4(src, dsto + i * 8 * 64, 3);
+                    self.RoomDraw_Object_Nx4(3, src, dsto + i * 8 * 64);
                 }
             }
             0x78 | 0x7b => {
@@ -2120,7 +2180,7 @@ impl ZeldaState {
             0xb5 => {
                 let count = size_1to16(width, height);
                 for i in 0..count {
-                    self.RoomData_DrawObject_nx4(0x0b16, dsto + i * 2, 2);
+                    self.RoomDraw_Object_Nx4(2, 0x0b16, dsto + i * 2);
                 }
             }
             0xbc => {
@@ -2701,7 +2761,7 @@ impl ZeldaState {
         };
         match idx {
             0x00..=0x07 | 0x1c | 0x24 | 0x25 | 0x29 => {
-                self.RoomData_DrawObject_nx4(src, dsto, 4);
+                self.RoomDraw_Object_Nx4(4, src, dsto);
             }
             0x10..=0x13 => self.RoomData_DrawObject_nx4_both_bgs(src, dsto, 3),
             0x14..=0x17 => self.Object_DrawNx3_BothBgs(4, src, dsto),
@@ -4534,6 +4594,10 @@ impl ZeldaState {
     }
 
     pub(super) fn RoomDraw_4x4(&mut self, src: usize, dsto: u16) {
+        // Cycle ledger: RoomDraw_4x4 $01:97ED is `LDA #$0004` (24) falling
+        // into RoomDraw_Object_Nx4 at $0197F0, so the body runs under this scope.
+        let _scope = crate::cycle_ledger::routine(0x01_97ed);
+        crate::cycle_ledger::charge(24);
         self.RoomData_DrawObject_nx4(src, dsto, 4);
     }
 
@@ -4707,8 +4771,21 @@ impl ZeldaState {
     }
 
     pub(super) fn RoomDraw_A_Many32x32Blocks(&mut self, mut n: i32, src: usize, mut dst: u16) -> u16 {
+        // Cycle ledger: RoomDraw_A_Many32x32Blocks $01:8A44, entered with M=16 X=16.
+        let _scope = crate::cycle_ledger::routine(0x01_8a44);
+        // $018A44: STA $0A (the block count).
+        crate::cycle_ledger::charge(32);
         loop {
-            for _ in 0..2 {
+            // $018A46-$018A49: LDA #$0002 / STA $04 (the two 4x2 passes).
+            crate::cycle_ledger::charge(56);
+            for pass in 0..2 {
+                // $018A4B-$018A7B: eight tile stores through the line pointers,
+                // Y += $100, DEC $04, BNE (priced not taken).
+                crate::cycle_ledger::charge(952);
+                if pass == 0 {
+                    // BNE $018A4B taken after the first pass.
+                    crate::cycle_ledger::charge(6);
+                }
                 for y in 0..2 {
                     for x in 0..4 {
                         let tile = self.tile_word(src, (y * 4 + x) as usize);
@@ -4717,6 +4794,8 @@ impl ZeldaState {
                 }
                 dst += xy(0, 2) as u16;
             }
+            // $018A7D-$018A85: Y -= $1F8, DEC $0A, BNE (priced not taken).
+            crate::cycle_ledger::charge(136);
             dst = dst
                 .wrapping_add(xy(4, 0) as u16)
                 .wrapping_sub(xy(0, 4) as u16);
@@ -4724,12 +4803,28 @@ impl ZeldaState {
             if n == 0 {
                 break;
             }
+            // BNE $018A46 taken for every block but the last.
+            crate::cycle_ledger::charge(6);
         }
+        // $018A87-$018A88: CLC / RTS.
+        crate::cycle_ledger::charge(56);
         dst
     }
 
+    /// The shared body of RoomDraw_Object_Nx4 ($01:97F0), unscoped: every
+    /// caller enters through `RoomDraw_Object_Nx4` (the JSR $0197F0 entry) or
+    /// `RoomDraw_4x4` (the $0197ED fall-through entry), which open the scope.
     pub(super) fn RoomData_DrawObject_nx4(&mut self, src: usize, dsto: u16, columns: u16) {
+        // $0197F0: STA $0E (the column count).
+        crate::cycle_ledger::charge(32);
         for x in 0..columns {
+            // $0197F2-$019810: four tile stores through the line pointers,
+            // X += 8, INY twice, DEC $0E, BNE (priced not taken).
+            crate::cycle_ledger::charge(572);
+            if x + 1 < columns {
+                // BNE $0197F2 taken for every column but the last.
+                crate::cycle_ledger::charge(6);
+            }
             for y in 0..4 {
                 self.room_write_current(
                     dsto + x + y * 64,
@@ -4737,9 +4832,13 @@ impl ZeldaState {
                 );
             }
         }
+        // $019812: RTS.
+        crate::cycle_ledger::charge(42);
     }
 
     pub(super) fn RoomDraw_Object_Nx4(&mut self, n: u16, src: usize, dsto: u16) {
+        // Cycle ledger: RoomDraw_Object_Nx4 $01:97F0, entered with M=16 X=16.
+        let _scope = crate::cycle_ledger::routine(0x01_97f0);
         self.RoomData_DrawObject_nx4(src, dsto, n);
     }
 
@@ -4973,16 +5072,43 @@ impl ZeldaState {
     }
 
     pub(super) fn RoomDraw_FloorChunks(&mut self, base: usize, src_offset: usize) {
+        // Cycle ledger: RoomDraw_FloorChunks $01:8A1F, entered with M=16 X=16
+        // (the JSR from RoomDraw_DrawFloors; its second pass falls through
+        // into the body without a JSR and is scoped by the caller).
+        let _scope = crate::cycle_ledger::routine(0x01_8a1f);
+        self.room_draw_floor_chunks_body(base, src_offset);
+    }
+
+    pub(super) fn room_draw_floor_chunks_body(&mut self, base: usize, src_offset: usize) {
         let Some(tile_data) = self.asset_raw(69).map(Vec::from) else {
             return;
         };
-        for &quadrant in &DUNGEON_QUADRANT_OFFSETS {
+        for (quadrant_index, &quadrant) in DUNGEON_QUADRANT_OFFSETS.iter().enumerate() {
+            // $018A1F-$018A28: quadrant offset from the table at $9B02, the
+            // eight-row count into $0E.
+            crate::cycle_ledger::charge(148);
             let mut dst = quadrant;
-            for _ in 0..8 {
+            for row in 0..8 {
+                // $018A2A-$018A36: LDA #$0008, JSR RoomDraw_A_Many32x32Blocks
+                // (46, the callee charges itself), Y += $1C0, DEC $0E, BNE
+                // (priced not taken).
+                crate::cycle_ledger::charge(178);
+                if row < 7 {
+                    // BNE $018A2A taken for every row but the last.
+                    crate::cycle_ledger::charge(6);
+                }
                 self.room_draw_many_32x32_blocks(base, src_offset, &tile_data, dst);
                 dst += xy(0, 4) * 2;
             }
+            // $018A38-$018A41: $0C += 2, CMP #$0008, BNE (priced not taken).
+            crate::cycle_ledger::charge(180);
+            if quadrant_index < 3 {
+                // BNE $018A1F taken for every quadrant but the last.
+                crate::cycle_ledger::charge(6);
+            }
         }
+        // $018A43: RTS.
+        crate::cycle_ledger::charge(42);
     }
 
     pub(super) fn room_draw_many_32x32_blocks(
@@ -4992,6 +5118,13 @@ impl ZeldaState {
         tile_data: &[u8],
         dst: usize,
     ) {
+        // Cycle ledger: this is RoomDraw_A_Many32x32Blocks $01:8A44 with a
+        // fixed n = 8 (the floor-chunk row), so its cost is a constant:
+        // STA $0A (32) + 8 blocks of [$018A46 (56) + two 4x2 passes ($018A4B,
+        // 952 each, BNE taken once: +6) + $018A7D (136)] = 8 * 2,102, + 7
+        // taken BNE $018A46 (42) + CLC / RTS (56) = 16,946. Same blocks as the
+        // general translation above.
+        crate::cycle_ledger::charge_routine(0x01_8a44, 16_946);
         let mut cursor = dst;
         for _ in 0..8 {
             for _ in 0..2 {
@@ -8298,19 +8431,37 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_LoadAttribute_Selectable(&mut self) {
+        // Cycle ledger: Dungeon_LoadAttribute_Selectable $01:B8B4, entered
+        // with M=8 X=8. $01B8B4-$01B8BE: LDA $0200, ASL, TAX, JSR ($B8A8,X)
+        // (62, priced in the block), SEP #$30, RTL: 188 for every state.
+        let _scope = crate::cycle_ledger::routine(0x01_b8b4);
+        crate::cycle_ledger::charge(188);
         match self.overworld_map_state() {
             0 => {
+                // Table entry 0 is Dungeon_LoadBasicAttribute $01:B8E3:
+                // $01B8E3-$01B8EA REP #$20, INC $0200, STZ $B2, STZ $B4 (148),
+                // then it falls through into Dungeon_LoadBasicAttr_partial at
+                // $01B8EC (188) and the shared body, all under this frame.
+                let _entry = crate::cycle_ledger::routine(0x01_b8e3);
+                crate::cycle_ledger::charge(148 + 188);
                 self.set_overworld_map_state(1);
                 self.dungeon_room_load_mut()
                     .set_draw_width_indicator_word(0);
                 self.dungeon_room_load_mut()
                     .set_draw_height_indicator_word(0);
-                self.Dungeon_LoadBasicAttribute_full(0x40);
+                self.dungeon_load_basic_attribute_body(0x40);
             }
+            // Table entry 1 is Dungeon_LoadBasicAttr_partial $01:B8EC, which
+            // scopes itself.
             1 => self.Dungeon_LoadBasicAttribute_full(0x40),
             2 => self.Dungeon_LoadObjectAttribute(),
             3 => self.Dungeon_LoadDoorAttribute(),
             4 => {
+                // Table entry 4 is Dungeon_InitializePegAttribute $01:C21C:
+                // INC $0200, LDA $7EC172, BEQ (102); JSL the flip (62, the
+                // callee charges itself) or BEQ taken (+6); RTS (42).
+                let _entry = crate::cycle_ledger::routine(0x01_c21c);
+                crate::cycle_ledger::charge(102);
                 self.set_overworld_map_state(5);
                 if self
                     .game_state
@@ -8319,10 +8470,15 @@ impl ZeldaState {
                     .orange_blue_barrier_state()
                     != 0
                 {
+                    crate::cycle_ledger::charge(62);
                     self.Dungeon_FlipCrystalPegAttribute();
+                } else {
+                    crate::cycle_ledger::charge(6);
                 }
+                crate::cycle_ledger::charge(42);
             }
-            5 => {}
+            // Table entry 5 is the bare RTS at $01:B966.
+            5 => crate::cycle_ledger::charge_routine(0x01_b966, 42),
             // C Dungeon_LoadAttribute_Selectable asserts outside states 0..=5.
             _ => panic!(
                 "Dungeon_LoadAttribute_Selectable overworld_map_state {}",
@@ -8332,7 +8488,28 @@ impl ZeldaState {
     }
 
     fn Dungeon_LoadBasicAttribute_full(&mut self, loops: usize) {
-        for _ in 0..loops {
+        // Cycle ledger: the 0x40-loop form is Dungeon_LoadBasicAttr_partial
+        // $01:B8EC (M=8 X=8 at entry): REP #$20, LDA #$0040, STA $00 (78) and
+        // then the shared entry at $01:B8F3 (Dungeon_LoadBasicAttribute_full,
+        // reached by JSR from Dungeon_LoadAttributeTable with $00 already set):
+        // PHB, LDX #$7E, PHX, PLB, REP #$10 (110).
+        let (address, entry) = if loops == 0x40 {
+            (0x01_b8ec, 188)
+        } else {
+            (0x01_b8f3, 110)
+        };
+        let _scope = crate::cycle_ledger::routine(address);
+        crate::cycle_ledger::charge(entry);
+        self.dungeon_load_basic_attribute_body(loops);
+    }
+
+    /// The loop of Dungeon_LoadBasicAttribute_full from $01:B8FA, unscoped so
+    /// that the three entries ($01B8E3, $01B8EC, $01B8F3) can each own it.
+    fn dungeon_load_basic_attribute_body(&mut self, loops: usize) {
+        for loop_index in 0..loops {
+            // $01B8FA-$01B918: both tile words, the two attribute lookups,
+            // SEP #$20, CMP #$10 with BCC priced not taken.
+            crate::cycle_ledger::charge(374);
             let i = self
                 .game_state
                 .dungeon
@@ -8345,6 +8522,47 @@ impl ZeldaState {
                 .dungeon
                 .room_tilemaps
                 .attr_source_tile(i + 1);
+            // The flip-merge branches on the raw attribute bytes: the ROM tests
+            // tile0's attribute at $01B916/$01B91A and tile1's at $01B92E/$01B932.
+            let attr0 = self.dungeon_tile_definition(tile0 as usize).cartridge_attribute();
+            let attr1 = self.dungeon_tile_definition(tile1 as usize).cartridge_attribute();
+            if attr0 < 0x10 {
+                // BCC $01B92A taken.
+                crate::cycle_ledger::charge(6);
+            } else {
+                // $01B91A-$01B91C: CMP #$1C, BCS priced not taken.
+                crate::cycle_ledger::charge(32);
+                if attr0 >= 0x1c {
+                    // BCS $01B92A taken.
+                    crate::cycle_ledger::charge(6);
+                } else {
+                    // $01B91E-$01B927: merge tile0's flip bits into the attribute.
+                    crate::cycle_ledger::charge(136);
+                }
+            }
+            // $01B92A-$01B930: STA $02, LDA $04, CMP #$10, BCC priced not taken.
+            crate::cycle_ledger::charge(80);
+            if attr1 < 0x10 {
+                // BCC $01B941 taken.
+                crate::cycle_ledger::charge(6);
+            } else {
+                // $01B932-$01B934: CMP #$1C, BCS priced not taken.
+                crate::cycle_ledger::charge(32);
+                if attr1 >= 0x1c {
+                    // BCS $01B941 taken.
+                    crate::cycle_ledger::charge(6);
+                } else {
+                    // $01B936-$01B93F: merge tile1's flip bits into the attribute.
+                    crate::cycle_ledger::charge(122);
+                }
+            }
+            // $01B941-$01B959: pack both attributes, store the word at
+            // $7F2000+$B4, $B4 += 2, $B2 += 4, DEC $00, BNE (priced not taken).
+            crate::cycle_ledger::charge(364);
+            if loop_index + 1 < loops {
+                // BNE $01B8FA taken for every loop but the last.
+                crate::cycle_ledger::charge(6);
+            }
             let a0 = self.attribute_for_bg_tile(tile0);
             let a1 = self.attribute_for_bg_tile(tile1);
             let j = self
@@ -8365,6 +8583,8 @@ impl ZeldaState {
             self.dungeon_room_load_mut()
                 .set_draw_width_indicator_word(width);
         }
+        // $01B95B-$01B960: LDA $B4, CMP #$2000, BNE priced not taken.
+        crate::cycle_ledger::charge(72);
         if self
             .game_state
             .dungeon
@@ -8372,8 +8592,15 @@ impl ZeldaState {
             .draw_height_indicator_word()
             == 0x2000
         {
+            // $01B962: INC $0200.
+            crate::cycle_ledger::charge(62);
             self.increment_overworld_map_state();
+        } else {
+            // BNE $01B965 taken.
+            crate::cycle_ledger::charge(6);
         }
+        // $01B965-$01B966: PLB / RTS.
+        crate::cycle_ledger::charge(70);
     }
 
     fn attribute_for_bg_tile(&self, tile: u16) -> NativeTile {
