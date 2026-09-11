@@ -85,14 +85,29 @@ visible mismatch is 11444; the CPU-state clue is one frame earlier:
 - At 11444, WRAM is back to only `$12/$16/$1F00`, but video differs.
   Audio remains exact.
 
-That points to the table-build/publication boundary, but its root cause is
-not yet proven. Start with `Module0F_SpotlightClose`,
-`dungeon_exit_spotlight_cpu_plan`, and `begin_dungeon_exit_spotlight_entry`.
-The native entry still uses the raster envelope
-`DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_EARLIEST/LATEST` (V=255, cycles 480..598),
-while source receipts bypass that guessed entry. Compare the original's
-actual entry and first interrupted table-build position before changing
-this envelope or any publication rule. Do not add a frame/room exception.
+The 2026-09-11 investigation confirmed the original Module0F entry at
+V=255/cycle 480: **do not retune the envelope**. Two shadow-model errors
+were isolated: the dungeon checkpoint incorrectly rewinds the frame counter,
+and both spotlight models count loops at `$F39B`, an operand byte, instead
+of the `$F396` loop test. Correcting both reproduces the original table entry
+and first NMI exactly, but does **not** repair the visible mismatch and
+exposes an earlier native video mismatch at 4785. All experiments were
+reverted; none is an accepted fix.
+
+Continue at the CPU-table-to-display publication boundary. Compare the
+shadow's first copy and consumed channel-7 rows with the original, then trace
+`LiveSpotlightScanout` through `begin_dungeon_exit_spotlight_entry`,
+`complete_dungeon_exit_spotlight_entry_before_link`, and the following-field
+publication slots. At experimental frame 4785 the CPU WRAM matches the
+receipt lane except `$1F00`, while video differs. Establish which presented
+generation is wrong before changing a publication rule. The counter and
+loop-count corrections need to be revisited together with that mechanism;
+neither is independently sufficient. Do not add a frame/room exception.
+
+See "Spotlight investigation: exact CPU entry still leaves a display mismatch"
+in `romless-exact-play.md` for timestamps, rejected experiments and artifacts.
+The `target/alt` binary is an **experimental** build after this investigation;
+rebuild it from the current source before measuring a new baseline.
 
 Local evidence retained for resumption:
 `target/romless-8890-native-final` (native frontier and WRAM at 11443/11444),

@@ -596,3 +596,81 @@ The full-route check on clean commit `cbd3e99a` subsequently matched all
 goldens, and endpoint
 `316193798ccb2f771546b25443df7d417bddac8a7cac65326fa189c1264fbdb6`.
 The run and its receipt are promoted in `routes/full_run/parity-frontier.json`.
+
+## Spotlight investigation: exact CPU entry still leaves a display mismatch
+
+2026-09-11: no runtime fix was accepted. The native frontier remains 11444,
+and the fully validated main binary remains `75aaed11…`. All counter,
+loop-count and temporary logging edits described below were reverted.
+
+A cold original-ROM trace establishes these boundaries (source run is engine
+host minus one):
+
+| Source run | PC/event | V / master cycles | Frame counter / meaning |
+| --- | --- | --- | --- |
+| 4782 | `$02:9982` | 255 / 598 | 176, first dungeon-exit entry |
+| 4782 | `$00:F312` | 9 / 590 | first table entry |
+| 4782 | NMI at `$00:F4E2` | 225 / 16 | circle calculation, `$067A = 22` |
+| 4783 | `$00:F3B7` | 192 / 242 | first table-copy iteration |
+| 4784 | `$00:805D` | 243 / 474 | common suffix returns |
+| 11443 | `$02:9982` | 255 / 480 | 168, later dungeon-exit entry |
+| 11443 | `$00:F312` | 40 / 588 | later table entry |
+| 11444 | NMI at `$00:F38F` | 225 / 16 | lower table write pending, `$067A = 12` |
+| 11444 | NMI resume at `$00:F38F` | 227 / 480 | held handler returned |
+| 11444 | `$00:F3B7` | 235 / 1024 | first table-copy iteration |
+| 11444 | `$00:805D` | 29 / 370 | common suffix in the following field |
+
+The existing entry envelope is therefore supported by the original; moving
+it would hide a different error. The captured Module0F register/stack image
+also matches the checkpoint: A=`$B702`, X=`$00E0`, Y=`$000F`, S=`$01FC`,
+P=`$30`, carry clear.
+
+Two concrete inconsistencies were tested:
+
+- `dungeon_exit_spotlight_cpu_plan_at` rewinds `$1A` even though its checkpoint
+  begins at Module0F, after the caller increment. With that rewind, the later
+  table starts at V=42/cycle 158 and NMI reaches `$F387` at V=225/cycle 44,
+  with counter 167 and `$067A = 13`. Removing it reproduces the original
+  table entry and NMI exactly at the earliest envelope endpoint.
+- Both spotlight plans count visits to `$F39B`. The executable instruction
+  sequence is `$F396: LDA $0E`, `$F398: CMP $04`, `$F39A: BEQ $F3A3`;
+  `$F39B` is the branch operand and is never an instruction-entry PC.
+  Counting `$F396` produces 113 completed row pairs before the later NMI.
+  The source has also started the next pair, so the existing whole-iteration
+  continuation still leaves `$067A = 13` versus source 12. It does not encode
+  the exact pending lower-write statement.
+
+Neither finding alone is a sufficient parity fix. Removing only the counter
+rewind leaves the same 11444 video hash mismatch. Correcting the loop count,
+with or without the counter correction, exposes video mismatch 4785. The
+combined candidate's WRAM at 4783 and 4785 matches the receipt lane except
+the known `$1F00` scratch byte; at 4782 and 11443 it differs only at `$067A`
+(one pending decrement) and `$1F00`. Nevertheless, a focused comparison from
+11440 still gives the unchanged video mismatch at 11444. Exact entry/NMI
+timing and improved CPU WRAM do not establish exact display publication.
+
+The combined candidate passed receipt-driven video/audio for all 11,450
+frames, and an audio-only native diagnostic also passed that window. Those
+are diagnostic checks, not full-route acceptance or a native A/V advance.
+Its binary SHA-256 is
+`859d3f882bb38632a17f94bf180d463ffe606cfaba9400a8771f19ddf869acc1`;
+`target/alt/parity/zelda3` must be rebuilt before further development.
+
+Retained evidence: `target/romless-11444-original-timestamps` contains the
+binary original trace and `spotlight-boundaries.jsonl`;
+`target/romless-11444-combined-audio-probe` and
+`target/romless-11444-combined-receipt` contain paired WRAM dumps;
+`target/romless-11444-combined-native` and
+`target/romless-11444-combined-window` record the two video failures.
+Build/probe logs are copied into `target/romless-11444-investigation`.
+The original trace's final host 11446 lacks its return record because of
+the trace bound; use the complete earlier hosts above as timestamp evidence,
+not that diagnostic run as an acceptance pass.
+
+For another trace, use the direct harness recipe above with PC filters
+`02:9982,00:f312,00:f396,00:f3b7,00:805d`, keeping the trace bound beyond
+the final requested host. `$F37D`, used in the initial probe, is also an
+operand byte and should not be used as a loop checkpoint. For a cached
+diagnostic that must continue beyond the first mismatch, the existing
+`ZELDA3_CACHED_AV_CONTINUE=1` enables continued replay; `--max-differing-frames`
+only controls the report and does not prevent the replay from stopping.
