@@ -1683,6 +1683,11 @@ impl ZeldaState {
                 eprintln!("{}", std::backtrace::Backtrace::force_capture());
             }
         }
+        // Cycle ledger: NMI_PrepareSprites ($00:85FC), entered m8 x8 from the
+        // main loop. $00:85FC `LDY #$1C` is 16; the packing loop and the
+        // source-table suffix charge themselves below.
+        let _scope = crate::cycle_ledger::routine(0x00_85fc);
+        crate::cycle_ledger::charge(16);
         for group_start in [28usize, 24, 20, 16, 12, 8, 4, 0] {
             self.nmi_prepare_sprites_pack_extended_oam_group(group_start);
         }
@@ -1691,6 +1696,11 @@ impl ZeldaState {
 
     fn nmi_prepare_sprites_pack_extended_oam_group(&mut self, group_start: usize) {
         debug_assert!(group_start <= 28 && group_start & 3 == 0);
+        // $00:85FE-$00:865A, one pass of the extended-OAM packing loop: 1128
+        // (X = Y*4 never carries `LDA $0A23,X` past the $0A page). The closing
+        // `BPL $0085FE` is taken (+6) after every group except the last
+        // (Y = 0 - 4 sets N).
+        crate::cycle_ledger::charge(if group_start != 0 { 1128 + 6 } else { 1128 });
         for i in group_start..group_start + 4 {
             let value = self.game_state.oam.packed_extended_oam_byte(i);
             self.oam_state_mut().set_packed_extended_oam_byte(i, value);
@@ -1704,6 +1714,11 @@ impl ZeldaState {
         next_group_start: u8,
     ) {
         assert!(next_group_start <= 28 && next_group_start & 3 == 0);
+        // Cycle ledger: the prefix of NMI_PrepareSprites ($00:85FC) up to the
+        // interrupted packing group; the resume below records the remainder
+        // under the same address, so a sliced call appears as two entries.
+        let _scope = crate::cycle_ledger::routine(0x00_85fc);
+        crate::cycle_ledger::charge(16);
         for group_start in [28usize, 24, 20, 16, 12, 8, 4, 0] {
             if group_start == usize::from(next_group_start) {
                 break;
@@ -1719,6 +1734,10 @@ impl ZeldaState {
         next_group_start: u8,
     ) {
         assert!(next_group_start <= 28 && next_group_start & 3 == 0);
+        // Cycle ledger: the remainder of a sliced NMI_PrepareSprites
+        // ($00:85FC); the prefix was recorded by
+        // `nmi_prepare_sprites_through_extended_oam_packing`.
+        let _scope = crate::cycle_ledger::routine(0x00_85fc);
         for group_start in [28usize, 24, 20, 16, 12, 8, 4, 0]
             .into_iter()
             .skip_while(|&group_start| group_start > usize::from(next_group_start))
@@ -1780,6 +1799,38 @@ impl ZeldaState {
             .player
             .follower_link
             .link_dma_staging_group() as usize;
+
+        // $00:865C-$00:86E8 (1768): every DMA source-word computation down to
+        // `LDA $7EC00D; DEC; STA; BNE $008719`. Three reads index 8-bit into
+        // tables in the $84xx page and cost 6 more when the index carries past
+        // it: `LDA $849C,X` (X = $107, the sword bank) from X >= $64, `LDA
+        // $84AC,X` (X = $108, the shield bank; the $8B "no shield" index reads
+        // $8537) from X >= $54, and `LDA $84B2,X` (X = $109 << 1, low byte)
+        // from X >= $4E. The other indexed reads stay inside their pages.
+        // The final BNE (+6 when the countdown stays nonzero) is charged in
+        // `nmi_prepare_animated_bg`.
+        crate::cycle_ledger::charge({
+            let sword_index = self
+                .game_state
+                .player
+                .follower_link
+                .sword_dma_graphics_index();
+            let shield_index = self
+                .game_state
+                .player
+                .follower_link
+                .shield_dma_graphics_index();
+            let aux_index = (self
+                .game_state
+                .player
+                .follower_link
+                .link_dma_staging_index()
+                .wrapping_mul(2))
+                & 0xff;
+            1768 + if sword_index >= 0x64 { 6 } else { 0 }
+                + if shield_index >= 0x54 { 6 } else { 0 }
+                + if aux_index >= 0x4e { 6 } else { 0 }
+        });
 
         let source3 = link_dma_table_value(
             &LINK_BODY_DMA_BASE_SOURCES,
@@ -1850,13 +1901,26 @@ impl ZeldaState {
         self.nmi_prepare_animated_bg();
         if self.player_state_mut().decrement_link_dma_countdown() == 0 {
             let t = self.player_state_mut().advance_link_dma_tile_offset();
+            // $00:8719-$00:8722 (126) with the countdown reaching zero, then
+            // $00:8724-$00:872D (122): the `BNE $008731` is taken (+6) unless
+            // the offset wrapped from 12 to 0, which runs `LDX #$00` (16)
+            // instead; then $00:8731-$00:874B (346, the two `abs,X` reads
+            // never cross a page for X <= 10).
+            crate::cycle_ledger::charge(126 + if t == 0 { 122 + 16 } else { 128 } + 346);
 
             let index = (t >> 1) as usize;
             self.player_state_mut()
                 .set_link_dma_countdown(LINK_ANIMATED_TILE_DMA_COUNTDOWNS[index]);
             let source9 = LINK_ANIMATED_TILE_DMA_SOURCE_OFFSETS[index].wrapping_add(0xb280);
             self.set_link_animated_tile_dma_sources(source9, source9.wrapping_add(0x60));
+        } else {
+            // $00:8719-$00:8722 with the countdown still nonzero: 126 + 6 for
+            // the taken `BNE $00874E`.
+            crate::cycle_ledger::charge(132);
         }
+        // $00:874E-$00:8780 (610): the head/body pointer and travel-bird
+        // sources, `SEP #$20`, RTS.
+        crate::cycle_ledger::charge(610);
         let source16 = 0xb940u16
             .wrapping_add((self.game_state.display.sprite_dma_head_pointer as u16).wrapping_mul(2));
         self.set_link_head_pointer_dma_sources(source16, source16.wrapping_add(0x200));
@@ -1885,7 +1949,28 @@ impl ZeldaState {
             // decomp's `Graphics_IncrementalVRAMUpload` reads them directly;
             // do the same rather than advancing the cached Link projection.
             let source_offset = self.player_state_mut().advance_link_dma_source_offset();
+            // NMI_PrepareSprites countdown expiry (the `BNE $008719` at
+            // $00:86E8 falls through): $00:86EA-$00:86F1 (80) tests overlay
+            // $B5 (taken BEQ +6, then `LDA #$0017` at $00:86F7, 24); otherwise
+            // $00:86F3-$00:86F5 (32) tests $BC (falls into $00:86F7 for 24,
+            // else the BNE is taken +6). $00:86FA-$00:8709 (174): the source
+            // offset advance; wrapping from $800 runs `LDA #$0000` (24)
+            // instead of the taken BNE (+6). $00:870E-$00:8716 is 126.
+            crate::cycle_ledger::charge(
+                if overlay == 0xb5 {
+                    86 + 24
+                } else if overlay == 0xbc {
+                    80 + 32 + 24
+                } else {
+                    80 + 38
+                } + if source_offset == 0 { 174 + 24 } else { 180 }
+                    + 126,
+            );
             self.set_animated_tile_data_source_address(0xa680u16.wrapping_add(source_offset));
+        } else {
+            // The `BNE $008719` at $00:86E8 is taken while the countdown
+            // stays nonzero (+6 on the 1768 block charged by the caller).
+            crate::cycle_ledger::charge(6);
         }
     }
 

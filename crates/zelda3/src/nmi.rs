@@ -317,6 +317,15 @@ impl ZeldaState {
         defer_bg_vram_upload: bool,
         animated_bg_operands: Option<GraphicsDmaGeneration>,
     ) {
+        // Cycle ledger: Interrupt_NMI ($00:80C9). The data bank is the
+        // system bank throughout, so register-window operands are priced
+        // 2 less per access than the default listing (profile-confirmed:
+        // `LDA $4210` measures 30). Only CPU instructions are charged; DMA
+        // transfer time is not.
+        let _scope = crate::cycle_ledger::routine(0x00_80c9);
+        // The hardware interrupt entry sequence (vector fetch, PC/P pushes)
+        // is 60 master cycles; the profiler attributes it to this frame.
+        crate::cycle_ledger::charge(60);
         self.validate_next_original_timing_nmi_update_gate();
         // Ordinary NMI writes cannot re-enter the active field, but an
         // AdvanceStaged publication may already have materialized the next
@@ -369,7 +378,22 @@ impl ZeldaState {
         if !audio_already_processed {
             self.interrupt_nmi_audio_parts();
         }
+        // The audio-port blocks ($00:80C9-$00:811B) belong to this NMI even
+        // when the engine ran `interrupt_nmi_audio_parts` before main on this
+        // host; that call priced them into the stash, which is charged here.
+        crate::cycle_ledger::charge(std::mem::take(&mut self.ledger_nmi_audio_parts_cycles));
 
+        // $00:811E-$00:813A: sound-effect ports, forced blank, HDMA off,
+        // `LDA $12; BNE`: 304 not taken; the latched case takes the branch
+        // (+6). $00:813C-$00:8141 (`INC $12`, `JSR NMI_DoUpdates`,
+        // `JSR NMI_ReadJoypads`): 130, JSR costs only; both callees charge
+        // themselves when annotated. The joypad JSR is charged here even when
+        // the engine sampled the joypad before main (the ROM reads it here).
+        crate::cycle_ledger::charge(if self.game_state.display.nmi_update_is_latched() {
+            310
+        } else {
+            304 + 130
+        });
         if !self.game_state.display.nmi_update_is_latched() {
             let bg_vram_load_mode = self.game_state.display.bg_vram_load_mode;
             let stripe_work = match bg_vram_load_mode {
@@ -474,6 +498,25 @@ impl ZeldaState {
                     .color_window_selection(),
             );
         }
+        // Register-write tail. The ROM always executes it; the engine's
+        // `thread_holds_registers` hold only withholds publication, so the
+        // charge does not depend on it.
+        // Thread active: $00:8144-$00:8147 (48) + `JMP NMI_SwitchThread` (24)
+        //   + $00:822D-$00:82D7 (2012 with the system-bank discount; includes
+        //   `JSR NMI_UpdateIRQGFX` at 46 and the stack swap + RTI).
+        // Thread inactive: $00:8144 taken (54) + $00:814C-$00:81DA (1516; the
+        //   `BNE $008200` on the BG mode is taken (+6) unless mode 7, which
+        //   instead runs $00:81DC-$00:81FD (368)) + $00:8200 (48 + $00:8205-
+        //   $00:8218 (212) when $128 is set, else 54) + $00:821B-$00:822C (354).
+        crate::cycle_ledger::charge(if self.game_state.display.nmi_thread_active {
+            48 + 24 + 2012
+        } else {
+            let bg_mode_7 = self.game_state.display.bg_mode & 7 == 7;
+            let irq = self.game_state.display.has_irq_control_flag();
+            54 + if bg_mode_7 { 1516 + 368 } else { 1522 }
+                + if irq { 48 + 212 } else { 54 }
+                + 354
+        });
         if !thread_holds_registers {
             self.write_ppu_registers();
         }
@@ -533,6 +576,37 @@ impl ZeldaState {
             );
         }
         let music_control = self.game_state.system_signals.music_control();
+        // Cycle ledger, Interrupt_NMI music port ($00:80C9-$00:8100):
+        // $00:80C9-$00:80DF is 366 (system-bank `LDA $4210`); `BNE $0080EE`
+        // is taken (+6) when $12C is nonzero.
+        // $12C == 0: $00:80E1-$00:80E7 (78) reads the APU echo port $2140 and
+        //   compares it with $133; equal runs $00:80E9-$00:80EC (52, `STZ
+        //   $2140` + BRA), else the BNE is taken (84). The C port dropped this
+        //   echo handshake, so the engine has no port-0 echo state. The
+        //   shadow profiles show the equal case exactly while $133 is 0 (the
+        //   driver's output port rests at 0), and never on ordinary frames, so
+        //   it is priced on `last_music_control == 0`. The single echo frame
+        //   after each fresh command (port == $133 once, before the ROM's STZ
+        //   is echoed back) is not modeled: 52 under on that frame.
+        // $12C != 0: $00:80EE-$00:80F1 (48): equal to $133 takes the BEQ (54)
+        //   and leaves $12C set (the vanilla "already playing" skip); else
+        //   $00:80F3-$00:80FB (94; `BCS` taken +6 for $F2 and above) then
+        //   $00:80FD (32, only below $F2) and $00:8100 (32).
+        // The cost is stashed rather than charged so the NMI handler scope
+        // receives it even when this runs before main.
+        let ledger_music_cycles: u64 = if music_control == 0 {
+            366 + if self.game_state.system_signals.last_music_control() == 0 {
+                78 + 52
+            } else {
+                84
+            }
+        } else if music_control == self.game_state.system_signals.last_music_control() {
+            372 + 54
+        } else if music_control < 0xf2 {
+            372 + 48 + 94 + 32 + 32
+        } else {
+            372 + 48 + 100 + 32
+        };
         if music_control != 0 && !self.zelda_is_playing_music_track_with_bug(music_control) {
             self.set_last_music_control(music_control);
             self.zelda_play_msu_audio_track(music_control);
@@ -543,6 +617,22 @@ impl ZeldaState {
         }
 
         let ambient_sound_effect = self.game_state.system_signals.ambient_sound_effect();
+        // Ambient port ($00:8103-$00:811B): `LDA $12D; BNE` is 48 (54 taken).
+        // $12D != 0: $00:8115-$00:811B (94). $12D == 0: $00:8108-$00:810E
+        // (78) compares the $2141 echo with $131; equal (the engine's
+        // acknowledged-command predicate below) runs $00:8110-$00:8113 (52),
+        // else the BNE is taken (84).
+        let ledger_ambient_cycles: u64 = if ambient_sound_effect != 0 {
+            54 + 94
+        } else if self.zelda_audio_command_acknowledged(EngineAudioCommand::from_sfx_port_value(
+            AudioSfxBank::Ambient,
+            self.game_state.system_signals.last_ambient_sound_effect(),
+        )) {
+            48 + 78 + 52
+        } else {
+            48 + 84
+        };
+        self.ledger_nmi_audio_parts_cycles = ledger_music_cycles + ledger_ambient_cycles;
         if ambient_sound_effect != 0 {
             self.save_ambient_sound_effect_as_last();
             self.zelda_emit_audio_command(EngineAudioCommand::from_sfx_port_value(
@@ -716,6 +806,28 @@ impl ZeldaState {
         defer_bg_vram_upload: bool,
         animated_bg_operands: Option<GraphicsDmaGeneration>,
     ) {
+        // Cycle ledger: NMI_DoUpdates ($00:89E0), entered m8 x8 from the NMI
+        // handler with the system data bank (register operands priced 2 or 4
+        // less per access; the profile measures `STX $4300` at 36 and `STA
+        // $420B` at 30). CPU instructions only, no DMA transfer time.
+        let _scope = crate::cycle_ledger::routine(0x00_89e0);
+        // $00:89E0-$00:89EA (116): with $710 set the BEQ falls through to
+        // `JMP $008B67` (24), skipping straight to the HUD test. Otherwise the
+        // taken BEQ (122) runs the Link/animated-tile DMA programming
+        // $00:89EF-$00:8B28 (3580), the travel-bird channels $00:8B2A-$00:8B4D
+        // (420, else the BEQ is taken +6) and the animated-tile channel
+        // $00:8B50-$00:8B64 (258).
+        crate::cycle_ledger::charge(if self.game_state.display.core_updates_are_disabled() {
+            116 + 24
+        } else {
+            122 + 3580
+                + if self.game_state.display.has_travel_bird_tile_upload() {
+                    420
+                } else {
+                    6
+                }
+                + 258
+        });
         if !self.game_state.display.core_updates_are_disabled() {
             if let Some(uses_host_operands) = self
                 .next_core_nmi_active_scanout_uses_host_animated_bg_operands
@@ -878,6 +990,13 @@ impl ZeldaState {
                 read_word_from_slice(self.message_dma_tile_indices(), 131 * 2),
             );
         }
+        // $00:8B67-$00:8B69 `LDA $16; BEQ` (40, taken 46); the HUD DMA
+        // programming $00:8B6B-$00:8B84 is 288.
+        crate::cycle_ledger::charge(if self.game_state.system_signals.should_update_hud() {
+            40 + 288
+        } else {
+            46
+        });
         if self.game_state.system_signals.should_update_hud() {
             let dst = self
                 .game_state
@@ -886,6 +1005,17 @@ impl ZeldaState {
             let hud_buf = self.message_dma_tile_indices().to_vec();
             self.complete_hud_dma_from_persistent_channel0(&hud_buf, dst);
         }
+        // $00:8B87-$00:8B89 `LDA $15; BEQ` (40, taken 46); the CGRAM DMA
+        // programming $00:8B8B-$00:8BA7 is 302. Priced on the engine's actual
+        // upload decision: an intro deferral models the ROM's $15 still being
+        // clear at this vblank, so the deferred vblank charges the skip.
+        crate::cycle_ledger::charge(
+            if self.game_state.system_signals.should_update_cgram() && !defer_intro_cgram {
+                40 + 302
+            } else {
+                46
+            },
+        );
         if debug_display_vram {
             eprintln!(
                 "nmi_hud_selected host={} vram_60c3={:04x}",
@@ -975,6 +1105,27 @@ impl ZeldaState {
             }
         }
         self.complete_oam_dma_from_source(&oam_buf);
+        // $00:8BAA-$00:8BD1 (436): `STZ $15`, the OAM DMA programming and
+        // `LDY $14; BEQ`; the BEQ is taken (+6) when no BG stripe load is
+        // pending. A pending load runs $00:8BD3-$00:8BE9 (270, including
+        // `JSR HandleStripes14` at 46 with its three `LDA abs,Y` reads never
+        // crossing a page for modes 1-9), then `STZ $1000/$1001` (64) for
+        // mode 1 only (the `BNE $008BF1` is taken +6 otherwise) and `STZ $14`
+        // (24). Priced on the engine's actual upload: a deferred upload
+        // models the ROM's $14 still being clear at this vblank.
+        crate::cycle_ledger::charge(
+            if self.game_state.display.has_bg_vram_load() && !defer_bg_vram_upload {
+                436 + 270
+                    + if self.game_state.display.bg_vram_load_mode == 1 {
+                        64
+                    } else {
+                        6
+                    }
+                    + 24
+            } else {
+                442
+            },
+        );
 
         if crate::debug_env::var_os("ZELDA3_DEBUG_ATTRACT_NMI_UPLOAD").is_some()
             && frame.main_module == 20
@@ -1035,6 +1186,13 @@ impl ZeldaState {
             self.clear_bg_vram_load_mode();
         }
 
+        // $00:8BF3-$00:8BF5 `LDA $19; BEQ` (40, taken 46); the tilemap DMA
+        // programming $00:8BF7-$00:8C20 is 446.
+        crate::cycle_ledger::charge(if self.game_state.display.has_pending_tilemap_update() {
+            40 + 446
+        } else {
+            46
+        });
         if self.game_state.display.has_pending_tilemap_update() {
             let dst = self
                 .game_state
@@ -1047,11 +1205,23 @@ impl ZeldaState {
             self.clear_pending_tilemap_update_destination();
         }
 
+        // $00:8C22-$00:8C24 `LDX $18; BEQ` (40, taken 46). With packets
+        // pending: $00:8C26-$00:8C36 (204), the per-packet loop charged in
+        // `NMI_CopyPackets`, and $00:8C6E-$00:8C72 (78).
+        crate::cycle_ledger::charge(if self.game_state.display.has_nmi_copy_packets_request() {
+            40 + 204
+        } else {
+            46
+        });
         if self.game_state.display.has_nmi_copy_packets_request() {
             self.NMI_CopyPackets();
+            crate::cycle_ledger::charge(78);
             self.clear_nmi_copy_packets_request();
             self.clear_core_update_disable_flag();
         }
+        // $00:8C75-$00:8C7B (122): `LDA $17; ASL; TAX; STZ $17; JMP (abs,X)`.
+        // The target runs to its own RTS; it charges itself when annotated.
+        crate::cycle_ledger::charge(122);
 
         // A scheduling experiment may defer the dispatch while retaining the
         // rest of the NMI's normal OAM/PPU maintenance. This is intentionally
@@ -1138,6 +1308,17 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_upload_tilemap(&mut self) {
+        // NMI_UploadTilemap ($00:8CB0-$00:8CE3), reached by the `JMP (abs,X)`
+        // dispatch and costed inside the NMI_DoUpdates scope: 568 with the
+        // system-bank discount; `LDA $9888,X` (X = $116, 8-bit) crosses a page
+        // from X >= $78.
+        crate::cycle_ledger::charge(
+            568 + if self.game_state.display.nmi_load_target_page() >= 0x78 {
+                6
+            } else {
+                0
+            },
+        );
         let Some((target, word_count)) =
             full_tilemap_nmi_vram_region(self.game_state.display.nmi_load_target_page())
         else {
@@ -1155,11 +1336,20 @@ impl ZeldaState {
         self.clear_core_update_disable_flag();
     }
 
-    pub(super) fn nmi_upload_tilemap_do_nothing(&mut self) {}
+    pub(super) fn nmi_upload_tilemap_do_nothing(&mut self) {
+        // NMI_UploadTilemap_doNothing ($00:8CE3): the shared `RTS` (42).
+        crate::cycle_ledger::charge(42);
+    }
 
     pub(super) fn nmi_update_ow_scroll(&mut self) {
         let data = self.nmi_vram_packet_buffer().to_vec();
+        // NMI_UpdateOWScroll ($00:8D13): $00:8D13-$00:8D37 (418), then one
+        // pass of $00:8D3A-$00:8D5A (396) per packet with the `BPL $008D3A`
+        // taken (+6) while the next packet's flag byte stays clear, and
+        // $00:8D5C-$00:8D61 (96). The ROM always runs one pass.
+        crate::cycle_ledger::charge(418);
         if data.len() < 2 {
+            crate::cycle_ledger::charge(396 + 96);
             return;
         }
         self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
@@ -1182,24 +1372,36 @@ impl ZeldaState {
                 dst += step;
             }
             pos += len;
+            crate::cycle_ledger::charge(396);
             if pos + 1 >= data.len() || data[pos + 1] & 0x80 != 0 {
                 break;
             }
+            crate::cycle_ledger::charge(6);
         }
+        crate::cycle_ledger::charge(96);
         self.clear_core_update_disable_flag();
     }
 
     pub(super) fn nmi_update_subscreen_overlay(&mut self) {
+        // NMI_UpdateSubscreenOverlay ($00:8D62-$00:8D7A, 244 with the BRA)
+        // into NMI_HandleArbitraryTileMap's setup ($00:8DAE-$00:8DBB, 172).
+        crate::cycle_ledger::charge(244 + 172);
         let data = self.dungeon_bg2_attribute_table().to_vec();
         self.nmi_handle_arbitrary_tile_map_addr_data(&data, 0, 0x80);
     }
 
     pub(super) fn nmi_upload_subscreen_overlay_former(&mut self) {
+        // NMI_UploadSubscreenOverlay_firstHalf ($00:8D7C-$00:8D94, 244 with
+        // the BRA) into the $00:8DAE setup (172).
+        crate::cycle_ledger::charge(244 + 172);
         let data = self.dungeon_bg2_attribute_table().to_vec();
         self.nmi_handle_arbitrary_tile_map_addr_data(&data, 0, 0x40);
     }
 
     pub(super) fn nmi_upload_subscreen_overlay_latter(&mut self) {
+        // NMI_UploadSubscreenOverlay_secondHalf ($00:8D96-$00:8DBB, 394) runs
+        // its own setup and falls into the transfer loop.
+        crate::cycle_ledger::charge(394);
         let data = self.dungeon_bg1_attribute_table().to_vec();
         self.nmi_handle_arbitrary_tile_map_addr_data(&data, 0x40, 0x80);
     }
@@ -1210,6 +1412,14 @@ impl ZeldaState {
         mut i: usize,
         i_end: usize,
     ) {
+        // NMI_HandleArbitraryTileMap loop $00:8DBE-$00:8E01: one pass (852
+        // with the system-bank discount) programs four transfers, so the ROM
+        // steps X by 8 where this loop steps `i` by 2; the `BNE $008DBE` is
+        // taken (+6) between passes. $00:8E03-$00:8E08 is 96.
+        {
+            let passes = ((i_end - i) / 8).max(1) as u64;
+            crate::cycle_ledger::charge(passes * 852 + (passes - 1) * 6 + 96);
+        }
         let mut offset = 0usize;
         loop {
             let dst = self.arbitrary_tilemap_destination(i >> 1) as usize;
@@ -1226,6 +1436,8 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_update_bg1_wall(&mut self) {
+        // NMI_UpdateBG1Wall ($00:8E09-$00:8E4A): 720, straight line.
+        crate::cycle_ledger::charge(720);
         let target = self.game_state.display.nmi_load_target_address as usize;
         let top_buf = self.bg1_wall_top_tilemap_buffer().to_vec();
         let bottom_buf = self.bg1_wall_bottom_tilemap_buffer().to_vec();
@@ -1233,9 +1445,14 @@ impl ZeldaState {
         self.copy_to_vram_vertical_slice(target + 0x800, &bottom_buf, 0x40);
     }
 
-    pub(super) fn nmi_tile_map_nothing(&mut self) {}
+    pub(super) fn nmi_tile_map_nothing(&mut self) {
+        // NMI_TileMapNothing ($00:8E4B): `RTS` (42).
+        crate::cycle_ledger::charge(42);
+    }
 
     pub(super) fn nmi_update_bg2_left(&mut self) {
+        // NMI_UpdateBG2Left ($00:8EA9-$00:8EE6): 650, straight line.
+        crate::cycle_ledger::charge(650);
         let buf = self.background_character_buffer().to_vec();
         let buf1 = self.background_character_secondary_buffer().to_vec();
         self.copy_to_vram_slice(0, &buf, 0x800);
@@ -1243,6 +1460,8 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_update_bg_char3and4(&mut self) {
+        // NMI_UpdateBGChar3and4 ($00:8EE7-$00:8F15): 496, straight line.
+        crate::cycle_ledger::charge(496);
         let buf = self.background_character_buffer().to_vec();
         self.copy_to_vram_slice(0x2c00, &buf, 0x1000);
         // Animation-modeled asset renderer: this NMI DMA re-streams room-specific
@@ -1276,6 +1495,8 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_update_bg_char5and6(&mut self) {
+        // NMI_UpdateBGChar5and6 ($00:8F16-$00:8F44): 496, straight line.
+        crate::cycle_ledger::charge(496);
         let buf = self.background_character_half_buffer().to_vec();
         self.copy_to_vram_slice(0x3400, &buf, 0x1000);
         // Animation-modeled asset renderer (M1/approach A): VRAM 0x3400 is the OW
@@ -1320,18 +1541,27 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_update_bg_char0(&mut self) {
+        // NMI_UpdateBGChar0 ($00:8F72-$00:8F77): `REP #$20; LDA #$2000; BRA
+        // NMI_RunTileMapUpdateDMA` (68), which charges itself.
+        crate::cycle_ledger::charge(68);
         self.nmi_run_tile_map_update_dma(0x2000);
     }
 
     pub(super) fn nmi_update_bg_char1(&mut self) {
+        // NMI_UpdateBGChar1 ($00:8F79-$00:8F7E): 68 into the shared DMA.
+        crate::cycle_ledger::charge(68);
         self.nmi_run_tile_map_update_dma(0x2800);
     }
 
     pub(super) fn nmi_update_bg_char2(&mut self) {
+        // NMI_UpdateBGChar2 ($00:8F80-$00:8F85): 68 into the shared DMA.
+        crate::cycle_ledger::charge(68);
         self.nmi_run_tile_map_update_dma(0x3000);
     }
 
     pub(super) fn nmi_update_bg_char3(&mut self) {
+        // NMI_UpdateBGChar3 ($00:8F87-$00:8F8C): 68 into the shared DMA.
+        crate::cycle_ledger::charge(68);
         self.nmi_run_tile_map_update_dma(0x3800);
     }
 
@@ -1380,6 +1610,8 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_update_obj_char0(&mut self) {
+        // NMI_UpdateObjChar0 ($00:8F8E-$00:8FBC): 496, straight line.
+        crate::cycle_ledger::charge(496);
         let buf = self.background_character_buffer().to_vec();
         self.copy_to_vram_slice(0x4400, &buf, 0x800);
         // OBJ CHR (common sprites / items at 0x4400) is streamed per-frame and
@@ -1391,14 +1623,21 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_update_obj_char2(&mut self) {
+        // NMI_UpdateObjChar2 ($00:8FBD-$00:8FC2): 68 into the shared DMA.
+        crate::cycle_ledger::charge(68);
         self.nmi_run_tile_map_update_dma(0x5000);
     }
 
     pub(super) fn nmi_update_obj_char3(&mut self) {
+        // NMI_UpdateObjChar3 ($00:8FC4-$00:8FC8): `REP #$20; LDA #$5800` (46)
+        // falls straight into NMI_RunTileMapUpdateDMA.
+        crate::cycle_ledger::charge(46);
         self.nmi_run_tile_map_update_dma(0x5800);
     }
 
     pub(super) fn nmi_run_tile_map_update_dma(&mut self, dst: usize) {
+        // NMI_RunTileMapUpdateDMA ($00:8FC9-$00:8FF2): 450, straight line.
+        crate::cycle_ledger::charge(450);
         let buf = self.background_character_buffer().to_vec();
         self.copy_to_vram_slice(dst, &buf, 0x1000);
         // 0x1000 BYTES = 0x800 words = 0x80 tiles. OBJ destinations (>=0x4000:
@@ -1417,6 +1656,10 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_upload_dark_world_map(&mut self) {
+        // NMI_UploadDarkWorldMap ($00:8FF3-$00:9037): $00:8FF3-$00:900D (302),
+        // 32 passes of $00:900F-$00:9033 (482) with the `BNE` taken 31 times,
+        // $00:9035-$00:9037 (64): 302 + 32*482 + 31*6 + 64 = 15976.
+        crate::cycle_ledger::charge(15_976);
         let data = self.tilemap_upload_stripe_buffer().to_vec();
         let mut src = 0usize;
         let mut dst = 0x810usize;
@@ -1428,6 +1671,8 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_upload_game_over_text(&mut self) {
+        // NMI_UploadGameOverText ($00:9038-$00:908A): 842, straight line.
+        crate::cycle_ledger::charge(842);
         let buf = self.game_over_text_tile_buffer().to_vec();
         let tail_buf = self.game_over_text_tail_tile_buffer().to_vec();
         self.copy_to_vram_slice(0x7800, &buf, 0x800);
@@ -1435,18 +1680,28 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_update_peg_tiles(&mut self) {
+        // NMI_UpdatePegTiles ($00:908B-$00:90B6): 464, straight line.
+        crate::cycle_ledger::charge(464);
         let buf = self.background_character_buffer().to_vec();
         self.copy_to_vram_slice(0x3d00, &buf, 0x100);
     }
 
     pub(super) fn nmi_update_star_tiles(&mut self) {
+        // NMI_UpdateStarTiles ($00:90B7-$00:90E2): 464, straight line.
+        crate::cycle_ledger::charge(464);
         let buf = self.background_character_buffer().to_vec();
         self.copy_to_vram_slice(0x3ed0, &buf, 0x40);
     }
 
     pub(super) fn NMI_CopyPackets(&mut self) {
         let data = self.nmi_vram_packet_buffer().to_vec();
+        // NMI_DoUpdates packet loop $00:8C39-$00:8C6C: 604 per packet with
+        // the system-bank discount, plus the taken `BNE $008C39` (+6) after
+        // every packet but the last. The ROM's `do { } while` always runs the
+        // body once, so an empty list still costs one iteration.
+        let mut packets: u64 = 0;
         for packet in nmi_vram_copy_packets(&data) {
+            packets += 1;
             match packet.direction {
                 NmiVramCopyDirection::Horizontal => {
                     self.copy_to_vram_slice(packet.destination, packet.data, packet.data.len());
@@ -1460,6 +1715,8 @@ impl ZeldaState {
                 }
             }
         }
+        let packets = packets.max(1);
+        crate::cycle_ledger::charge(packets * 604 + (packets - 1) * 6);
     }
 
     pub(super) fn nmi_core_link_graphics_update(
@@ -1768,6 +2025,8 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_update_bg_char_half(&mut self) {
+        // NMI_UpdateBGCharHalf ($00:8F45-$00:8F71): 480, straight line.
+        crate::cycle_ledger::charge(480);
         let dst = self.game_state.display.nmi_load_target_page() as usize * 256;
         let buf = self.background_character_half_buffer().to_vec();
         self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
@@ -1797,6 +2056,8 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_upload_bg3_text(&mut self) {
+        // NMI_UploadBG3Text ($00:8CE4-$00:8D12): 496, straight line.
+        crate::cycle_ledger::charge(496);
         let buf = self.background_character_buffer().to_vec();
         self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
         self.mark_effective_dma_vram_range(0x7c00..0x7ff0);
@@ -1813,6 +2074,13 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_update_load_light_world_map(&mut self) {
+        // NMI_UpdateLoadLightWorldMap ($00:8E54-$00:8EA8): $00:8E54-$00:8E6A
+        // (254); four quadrants of $00:8E6C-$00:8E74 (128, `LDA $8E4C,X`
+        // stays in its page), 32 rows of $00:8E76-$00:8E9A (482, `BNE`
+        // taken 31 times) and $00:8E9C-$00:8EA4 (164, `BNE` taken 3 times);
+        // $00:8EA6-$00:8EA8 (64): 254 + 4*(128 + 32*482 + 31*6 + 164) + 3*6
+        // + 64 = 63944.
+        crate::cycle_ledger::charge(63_944);
         const LIGHT_WORLD_TILEMAP_DSTS: [usize; 4] = [0, 0x20, 0x1000, 0x1020];
         if let Some(tilemap) = self.asset_raw(67).map(Vec::from) {
             self.program_dma0_ppu_target(DMA_MODE_ONE_REGISTER, PPU_BBUS_VRAM_DATA_LOW);
