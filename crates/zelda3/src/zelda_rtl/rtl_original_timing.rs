@@ -7900,6 +7900,17 @@ impl ZeldaState {
             GameWorkContinuation::FinishItemReceiptGraphics { continuation },
             nmi_slices,
         );
+        if call_status.is_suspended() {
+            // The leading NMI already installed this field's scroll. The
+            // synchronous graphics call suspends before a later NMI publishes
+            // the caller's newer software copies (Big Key pickup run 20257:
+            // hardware X=236, software X=237). Keep the active register
+            // generation just as the Big Key drop graphics path does.
+            self.next_display_bg_scroll_generation =
+                DisplayBgScrollGeneration::RetainCpuSliceEntry(
+                    BgScrollRegisterScanout::capture(&self.ppu),
+                );
+        }
         call_status
     }
 

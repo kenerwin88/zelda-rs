@@ -4,6 +4,75 @@
 use super::*;
 
 #[test]
+fn suspended_item_graphics_keep_the_active_ppu_scroll_generation() {
+    // Original Big Key pickup host 20257: WritePpuRegisters has installed
+    // BG1/BG2 X=236,Y=4112; Module07's software camera copies are already
+    // X=237 when slot 2 suspends in DecodeAnimatedSpriteTile_variable.
+    // Host 20258 displays X=237, so the newer NMI must not replace 20257.
+    for suspended in [true, false] {
+        let mut state = ZeldaState::new();
+        state.set_rom_startup_timing(true);
+        state.set_main_module(7);
+        state.set_submodule(0);
+        state.set_bg1_bg2_live_and_copy(237, 4112, 237, 4112);
+        for bg in &mut state.ppu.bg_layer[..2] {
+            bg.h_scroll = 236;
+            bg.v_scroll = 4112;
+        }
+        let active_scroll = BgScrollRegisterScanout::capture(&state.ppu);
+        state.active_dungeon_sprite_main_return = Some(DungeonSpriteMainReturn {
+            bg2_x: 237,
+            bg2_y: 4112,
+            bg1_x: 237,
+            bg1_y: 4112,
+            link_oam: None,
+        });
+        let status = state.begin_item_receipt_graphics_work(
+            0x22,
+            ItemReceiptReturn { ancilla_slot: 4, item: 0x32, chest_position: 0 },
+            if suspended {
+                ItemReceiptCaller::SpriteMainDirect {
+                    sprite_slot: 2,
+                    suffix: SpriteMainItemReceiptSuffix::BigKeyAbsorption,
+                }
+            } else {
+                ItemReceiptCaller::AtomicCaller
+            },
+        );
+        assert_eq!(status.is_suspended(), suspended);
+        if !suspended {
+            assert_eq!(
+                state.next_display_bg_scroll_generation,
+                DisplayBgScrollGeneration::RetainCapturedBeforeNmi,
+            );
+            continue;
+        }
+        for bg in &mut state.ppu.bg_layer[..2] {
+            bg.h_scroll = 237;
+        }
+        state.capture_display_snapshot();
+        let mut snapshot = state.display_snapshot.as_ref().unwrap().clone();
+        snapshot.effective_presented_dma = Some(EffectivePresentedDma {
+            vram_writes: Vec::new(),
+            decoded_bg_vram_writes: Vec::new(),
+            completed_oam: None,
+            completed_link_obj_dma: None,
+            completed_cgram: None,
+            completed_ppu_registers: Some(NmiPpuRegisterScanout::capture(&state.ppu)),
+            completed_dialogue_metadata: None,
+        });
+        let plan = DisplayPublicationPlan::resolve(&snapshot, DisplayPublicationSignals::default());
+        let cpu_ram = state.ram.clone();
+        state.compose_display_registers(&snapshot, &plan);
+        state.compose_effective_presented_ppu_registers(&snapshot, plan.bg_scroll_source);
+        assert_eq!(BgScrollRegisterScanout::capture(&state.ppu), active_scroll);
+        assert_eq!(state.ram, cpu_ram, "presentation cannot rewind the software camera");
+        assert_eq!(snapshot.ppu.bg_layer[0].h_scroll, 237);
+        assert_eq!(state.next_display_bg_scroll_generation, DisplayBgScrollGeneration::default());
+    }
+}
+
+#[test]
 fn emu_runframe_callback_consumes_one_external_oracle_receipt() {
     let mut state = ZeldaState::new();
     state.set_rom(&exact_timing_test_rom(0x18));
