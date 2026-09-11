@@ -6661,6 +6661,44 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             && self.sprite_slot_view(k).pause() != 0
     }
 
+    /// `Sprite_ReturnIfInactive_` $05:F94E, the bank-5 double-return wrapper
+    /// (cycle ledger only; the result is `sprite_return_if_inactive`'s).
+    /// $05:F94E LDA $DD0,x : CMP #$09 : BNE (64; a non-active state takes it
+    /// +6 into the double return), $05:F955 LDA $0FC1 : BNE (48; +6 when
+    /// modal-paused), $05:F95A LDA $11 : BNE (40; +6 in a submodule),
+    /// $05:F95E LDA $CAA,x : BMI (48; +6 into the plain RTS for a
+    /// pause-immune sprite), $05:F963 LDA $F00,x : BEQ (48; +6 into the plain
+    /// RTS when not paused). The plain return is $05:F96A RTS (42). The
+    /// double return is $05:F968 PLA : PLA : RTS: the profiler closes the
+    /// wrapper's frame after the first PLA (28), so the second PLA and the
+    /// RTS (70) are measured in the caller's frame and charged there, as
+    /// with the coordinate-prep wrappers (host 2297: wrapper self 186 in a
+    /// dialogue submodule, the caller +70).
+    pub(super) fn sprite_return_if_inactive_bank5(&self, k: usize) -> bool {
+        let inactive = self.sprite_return_if_inactive(k);
+        {
+            let _wrapper = crate::cycle_ledger::routine(0x05_f94e);
+            let slot = self.sprite_slot_view(k);
+            crate::cycle_ledger::charge(if slot.state() != 9 {
+                64 + 6 + 28
+            } else if self.game_state.frame.modal_pause_flag != 0 {
+                64 + 48 + 6 + 28
+            } else if self.game_state.frame.submodule != 0 {
+                64 + 48 + 40 + 6 + 28
+            } else if slot.deflection_bits() & 0x80 != 0 {
+                64 + 48 + 40 + 48 + 6 + 42
+            } else if slot.pause() == 0 {
+                64 + 48 + 40 + 48 + 48 + 6 + 42
+            } else {
+                64 + 48 + 40 + 48 + 48 + 28
+            });
+        }
+        if inactive {
+            crate::cycle_ledger::charge(28 + 42);
+        }
+        inactive
+    }
+
     // bool Sprite_ReturnIfPaused(int k) {  // 86d9f3
     //   return (modal_pause_flag || submodule_index || !(sprite_defl_bits[k] & 0x80) && sprite_pause[k]);
     // }

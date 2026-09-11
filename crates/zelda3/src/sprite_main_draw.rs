@@ -14329,7 +14329,7 @@ impl ZeldaState {
             // JSL Sprite_CheckIfLinkIsBusy : BCS (278; taken +6 into the
             // $05:B018 RTS, 42, when busy).
             crate::cycle_ledger::charge(46);
-            if self.sprite_return_if_inactive(k) {
+            if self.sprite_return_if_inactive_bank5(k) {
                 return;
             }
             crate::cycle_ledger::charge(278);
@@ -14967,11 +14967,15 @@ impl ZeldaState {
         // $05:BCB5 JSR Sprite_ReturnIfInactive_ (46), $05:BCB8 JSR
         // Sprite_ReturnIfRecoiling_ (46): each double-returns when it fires.
         crate::cycle_ledger::charge(46);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive_bank5(k) {
             return;
         }
         crate::cycle_ledger::charge(46);
         if self.sprite_return_if_recoiling(k) {
+            // Sprite_ReturnIfRecoiling_ $05:F971 is unannotated, but its
+            // double return's second PLA and RTS (70) are measured in this
+            // frame, as for every bank-5 double-return wrapper.
+            crate::cycle_ledger::charge(28 + 42);
             return;
         }
         // $05:BCBB-BCC7 JSR Sprite_CheckDamageToAndFromLink, JSR Sprite_Move_,

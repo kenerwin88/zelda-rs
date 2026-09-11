@@ -962,7 +962,7 @@ impl ZeldaState {
         crate::cycle_ledger::charge(62);
         self.uncle_draw(k);
         crate::cycle_ledger::charge(46);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive_bank5(k) {
             return;
         }
         // $05:DE33 LDA $E80,x (32), JSL JumpTableLocal (62 + 414) into the
@@ -1222,7 +1222,7 @@ impl ZeldaState {
         crate::cycle_ledger::charge(46);
         self.sage_mantle_draw(k);
         crate::cycle_ledger::charge(46);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive_bank5(k) {
             return;
         }
 
@@ -1365,7 +1365,7 @@ impl ZeldaState {
         }
         // $05:DCEF JSR Sprite_ReturnIfInactive_ (46).
         crate::cycle_ledger::charge(46);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive_bank5(k) {
             return;
         }
         // $05:DCF2 JSL Sprite_BehaveAsBarrier (62), $05:DCF6 JSL
