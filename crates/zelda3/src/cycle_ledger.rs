@@ -17,6 +17,9 @@ use std::io::Write;
 #[derive(Debug, Default)]
 struct Ledger {
     master: u64,
+    /// Depth of `muted` regions: work the engine runs on a probe clone (a
+    /// CPU-timing preview) is not work the original CPU did.
+    muted: u32,
     /// Charges recorded by nested scopes that have closed, per open scope
     /// depth, so a routine's record excludes its annotated callees (a self
     /// cost, comparable with the profiler's own-instruction totals).
@@ -37,7 +40,22 @@ pub fn master() -> u64 {
 /// Charge master cycles to the routine being executed.
 #[inline]
 pub fn charge(master: u64) {
-    LEDGER.with(|ledger| ledger.borrow_mut().master += master);
+    LEDGER.with(|ledger| {
+        let mut ledger = ledger.borrow_mut();
+        if ledger.muted == 0 {
+            ledger.master += master;
+        }
+    });
+}
+
+/// Run `probe` with the ledger muted: charges are dropped and scopes record
+/// nothing. For translated work executed on a clone to preview a CPU
+/// schedule, which the original CPU never executed.
+pub fn muted<R>(probe: impl FnOnce() -> R) -> R {
+    LEDGER.with(|ledger| ledger.borrow_mut().muted += 1);
+    let result = probe();
+    LEDGER.with(|ledger| ledger.borrow_mut().muted -= 1);
+    result
 }
 
 /// A routine scope: created at the routine's entry with its ROM address,
@@ -46,22 +64,30 @@ pub fn charge(master: u64) {
 pub struct RoutineScope {
     address: u32,
     started: u64,
+    muted: bool,
 }
 
 /// Enter an annotated routine at its ROM address.
 pub fn routine(address: u32) -> RoutineScope {
     LEDGER.with(|ledger| {
         let mut ledger = ledger.borrow_mut();
-        ledger.nested.push(0);
+        let muted = ledger.muted > 0;
+        if !muted {
+            ledger.nested.push(0);
+        }
         RoutineScope {
             address,
             started: ledger.master,
+            muted,
         }
     })
 }
 
 impl Drop for RoutineScope {
     fn drop(&mut self) {
+        if self.muted {
+            return;
+        }
         LEDGER.with(|ledger| {
             let mut ledger = ledger.borrow_mut();
             let inclusive = ledger.master - self.started;

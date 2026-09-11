@@ -256,7 +256,7 @@ impl ZeldaState {
             if table_build.source_progress != Some(claim.progress) {
                 rebuild_progress = Some(claim.progress);
                 table_build =
-                    cpu_probe.begin_iris_spotlight_configure_table_at_progress(claim.progress);
+                    crate::cycle_ledger::muted(|| cpu_probe.begin_iris_spotlight_configure_table_at_progress(claim.progress));
             }
             let last_acceptance = semantic[..checkpoint_index]
                 .iter()
@@ -410,59 +410,59 @@ impl ZeldaState {
             crate::MainLoopInterruption::LinkActualVelocity {
                 horizontal_resolved,
             } => {
-                cpu_probe.complete_dungeon_exit_spotlight_build_until_link_actual_velocity(
+                crate::cycle_ledger::muted(|| cpu_probe.complete_dungeon_exit_spotlight_build_until_link_actual_velocity(
                     table_build,
                     projection_completed,
                     iteration,
                     horizontal_resolved,
-                );
+                ));
                 assert!(matches!(
                     cpu_probe.game_execution_scheduler.current_work(),
                     Some(GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity { .. })
                 ));
             }
             crate::MainLoopInterruption::DungeonExitSpotlightTableCompleted => {
-                cpu_probe.complete_dungeon_exit_spotlight_build_until_control(
+                crate::cycle_ledger::muted(|| cpu_probe.complete_dungeon_exit_spotlight_build_until_control(
                     table_build,
                     projection_completed,
                     iteration,
-                );
+                ));
                 assert!(matches!(
                     cpu_probe.game_execution_scheduler.current_work(),
                     Some(GameWorkContinuation::FinishDungeonExitSpotlightControl { .. })
                 ));
             }
             crate::MainLoopInterruption::LinkActualVelocityCompleted => {
-                cpu_probe.complete_dungeon_exit_spotlight_build_until_link_actual_velocity(
+                crate::cycle_ledger::muted(|| cpu_probe.complete_dungeon_exit_spotlight_build_until_link_actual_velocity(
                     table_build,
                     projection_completed,
                     iteration,
                     LinkActualVelocityCheckpoint::AfterBoth,
-                );
+                ));
                 assert!(matches!(
                     cpu_probe.game_execution_scheduler.current_work(),
                     Some(GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity { .. })
                 ));
             }
             crate::MainLoopInterruption::LinkVelocityClearProgress { completed } => {
-                cpu_probe.complete_dungeon_exit_spotlight_build_until_link_actual_velocity(
+                crate::cycle_ledger::muted(|| cpu_probe.complete_dungeon_exit_spotlight_build_until_link_actual_velocity(
                     table_build,
                     projection_completed,
                     iteration,
                     LinkActualVelocityCheckpoint::Clearing { completed },
-                );
+                ));
                 assert!(matches!(
                     cpu_probe.game_execution_scheduler.current_work(),
                     Some(GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity { .. })
                 ));
             }
             crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass } => {
-                cpu_probe.complete_dungeon_exit_spotlight_build_until_link_position_partial(
+                crate::cycle_ledger::muted(|| cpu_probe.complete_dungeon_exit_spotlight_build_until_link_position_partial(
                     table_build,
                     projection_completed,
                     iteration,
                     pass,
-                );
+                ));
                 assert!(matches!(
                     cpu_probe.game_execution_scheduler.current_work(),
                     Some(
@@ -499,13 +499,13 @@ impl ZeldaState {
                 ));
             }
             crate::MainLoopInterruption::LinkOam => {
-                cpu_probe.complete_dungeon_exit_spotlight_build(
+                crate::cycle_ledger::muted(|| cpu_probe.complete_dungeon_exit_spotlight_build(
                     table_build,
                     projection_completed,
                     iteration,
                     false,
                     true,
-                );
+                ));
                 assert_eq!(
                     cpu_probe.game_execution_scheduler.current_work(),
                     Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }),
@@ -993,10 +993,10 @@ impl ZeldaState {
             if let Some(claim) = spotlight_claim {
                 if table_build.source_progress != Some(claim.progress) {
                     table_build =
-                        cpu_probe.begin_iris_spotlight_configure_table_at_progress(claim.progress);
+                        crate::cycle_ledger::muted(|| cpu_probe.begin_iris_spotlight_configure_table_at_progress(claim.progress));
                 }
             }
-            cpu_probe.complete_dungeon_exit_spotlight_build_cpu(table_build, projection_completed);
+            crate::cycle_ledger::muted(|| cpu_probe.complete_dungeon_exit_spotlight_build_cpu(table_build, projection_completed));
             assert!(
                 cpu_probe.game_execution_scheduler.is_idle(),
                 "the terminal spotlight Build CPU callback scheduled successor work",

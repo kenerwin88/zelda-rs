@@ -26,6 +26,13 @@ DEFAULT_SYMBOLS = Path(
 )
 
 
+# Raster wait loops inside annotated routines: the annotation charges one
+# pass (the timing owner will own the wait); the profile's extra passes are
+# subtracted before comparing. routine -> (spin instruction pc, cycles per pass).
+SPIN_LOOPS = {
+    0x00f312: (0x00f3b2, 178),  # IrisSpotlight_ConfigureTable waits for scanline 192
+}
+
 # Annotated regions the profile cannot isolate: the main-loop iteration (the
 # plans start inside it and its wait spin is not work) and tail-jump
 # dispatchers whose frame stays open through the code they jump to.
@@ -88,9 +95,16 @@ def main():
             continue
         seen_plans.add((host, run["entry_pc"]))
         profiled_total[host] += run["total_master"]
+        spin_counts = {}
+        for row in run.get("instructions_by_pc", []):
+            spin_counts[int(row["pc"], 16)] = row["count"]
         for sub in run["subroutines"]:
             address = int(sub["pc"], 16)
             profile[host][address] += sub["inclusive_master"] - sub.get("callee_master", 0)
+            if address in SPIN_LOOPS:
+                spin_pc, per_pass = SPIN_LOOPS[address]
+                passes = spin_counts.get(spin_pc, 0)
+                profile[host][address] -= max(passes - sub["calls"], 0) * per_pass
             profile_calls[host][address] += sub["calls"]
             if sub.get("partial_calls", 0):
                 partial[host].add(address)
@@ -122,6 +136,20 @@ def main():
                 matched_ledger.add((host, address))
                 exact += 1
                 continue
+            # A main-wait plan run can span several main-loop iterations
+            # (it stops at an NMI acceptance): its frame count is then a
+            # multiple of the per-host count, and its total is the sum of the
+            # ledger's consecutive hosts.
+            pcalls = profile_calls[host][address]
+            lcalls = ledger_calls[host].get(address, 0)
+            if lcalls and pcalls > lcalls and pcalls % lcalls == 0:
+                span = pcalls // lcalls
+                summed = sum(ledger.get(host + k, {}).get(address, 0) for k in range(span))
+                if summed == measured and all((host + k, address) not in matched_ledger for k in range(span)):
+                    for k in range(span):
+                        matched_ledger.add((host + k, address))
+                    exact += 1
+                    continue
             found = None
             for near in range(host - args.window, host + args.window + 1):
                 if near != host and (near, address) not in matched_ledger and ledger.get(near, {}).get(address) == measured:
