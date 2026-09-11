@@ -8,3 +8,4 @@
 
 pub(crate) mod decompress;
 pub(crate) mod text_buffer;
+pub(crate) mod vwf;

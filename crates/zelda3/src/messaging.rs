@@ -17,12 +17,27 @@ const VWF_AFTER_CALLER_SUFFIX_ENTRY_MASTER_CYCLES: u32 = 271_344;
 const VWF_RESUMED_FRAME_MASTER_CYCLES: u32 = SNES_NTSC_MASTER_CYCLES_PER_FRAME;
 // Successive glyph-loop entries were 488-530 master cycles apart in the
 // oracle trace. Use their midpoint as the fixed handler-loop overhead.
+// TODO(cycle-ledger): replace with the exact restart from the ROM listing:
+// `cycle_models::vwf::RENDER_SINGLE_EPILOGUE_MASTER_CYCLES` (106, $0E:CAD8) +
+// `cycle_models::vwf::render_all_continuation_master_cycles` (228 when the
+// loop restarts, $0E:CA9C..$0E:CAB4); each restart also owes one more
+// `HANDLER_EXIT_MASTER_CYCLES` (114) at the handler's final return.
 const VWF_GLYPH_TRANSITION_MASTER_CYCLES: u32 = 510;
 // Fixed work from the message-loop dispatch through VWF_RenderSingle's entry
 // effects and drawing setup. The dialogue-click store is much earlier within
 // that work: Snes9x PC traces place $0E:CACC 1,952-2,036 master cycles after
 // the $0E:C984 message-loop restart. Keeping the post-click setup separate is
 // observable when vblank lands after the click but before drawing begins.
+// TODO(cycle-ledger): the exact costs are in `cycle_models::vwf`:
+// `glyph_click_master_cycles(cursor, c, speed_cur)` replaces
+// VWF_GLYPH_CLICK_MASTER_CYCLES ($0E:C984 through the click store, up to
+// $0E:CACC; 1,920-2,000 depending on the ROM's `$1CDD` line cursor, -64 for
+// glyph $59, -46 at speed 1); `glyph_post_click_setup_master_cycles(c,
+// next_line_pending)` replaces VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES
+// ($0E:CACC up to the first row at $0E:CBD1; 1,302, +248 with a pending line
+// transition, +6 for glyph codes >= $21). The per-row fixed work this 18,000
+// estimate folded in (about 13,790 for sixteen rows) belongs to
+// `glyph_drawing_master_cycles`; `glyph_entry_master_cycles` is the sum.
 const VWF_GLYPH_ENTRY_MASTER_CYCLES: u32 = 18_000;
 const VWF_GLYPH_CLICK_MASTER_CYCLES: u32 = 2_000;
 const VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES: u32 =
@@ -40,6 +55,12 @@ const VWF_GLYPH_CLICK_VBLANK_MARGIN_MASTER_CYCLES: u32 = 6 * SNES_MASTER_CYCLES_
 // copies and NMI_PrepareSprites. Oracle PC traces measure about 16,300 master
 // cycles for this caller suffix; a completion with less headroom is resumed
 // after the intervening vblank instead of being folded into the same callback.
+// TODO(cycle-ledger): the fixed part is exact in
+// `cycle_models::vwf::caller_suffix_master_cycles()` (764: $0E:C9F5 exit,
+// RenderText's PLB/RTL, Module0E_Interface's scroll copies to the RTL at
+// $00:F875) plus `MAIN_LOOP_PREPARE_SPRITES_CALL_MASTER_CYCLES` (46) and
+// `MAIN_LOOP_TAIL_MASTER_CYCLES` (46); the remainder of this estimate is
+// NMI_PrepareSprites' own body, which its ledger annotation prices.
 const VWF_CALLER_SUFFIX_MASTER_CYCLES: u32 = 16_500;
 // A big-key receipt slice resumed while VWF_RenderSingle was still preparing
 // its drawing loops, completed its final handler stores at V=223, reached
@@ -48,6 +69,10 @@ const VWF_CALLER_SUFFIX_MASTER_CYCLES: u32 = 16_500;
 // trace. A map-receipt slice that resumed from the Drawing phase instead
 // returned before NMI, so this calibration belongs to the suspended PC phase,
 // not to every resumed glyph slice.
+// TODO(cycle-ledger): a PreparingDrawing resume still owes the rows of
+// `cycle_models::vwf::glyph_drawing_master_cycles` before the same
+// `caller_suffix_master_cycles()`; price the remaining phase exactly instead
+// of a longer suffix.
 const VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES: u32 = 28_000;
 // A 262,662-cycle entry still returns after vblank in the Snes9x PC trace,
 // while the 283,400-cycle entry returns before it. Six scanlines is the
@@ -94,11 +119,19 @@ fn vwf_render_glyph_master_cycles(width: u8, x: u8) -> u32 {
     // tile boundary; any remaining font bits are stored as the next tile's
     // seed word. The exact traced cost therefore follows this inner-loop
     // iteration count rather than raw glyph width.
+    // TODO(cycle-ledger): replace with `cycle_models::vwf::glyph_entry_master_cycles`
+    // + `glyph_drawing_master_cycles(width, x, glyph_font_rows(font, c))`;
+    // the exact per-column cost is 470 (both planes clear) to 502 (both set)
+    // per row, data dependent on the font bits, and the last column of a row
+    // leaves through `DEC $03 : BEQ` (-54) or the tile boundary (-6).
     let columns = u32::from(width.min(8 - (x & 7)));
     VWF_GLYPH_ENTRY_MASTER_CYCLES + columns * 8_000
 }
 
 fn vwf_render_glyph_drawing_master_cycles(width: u8, x: u8) -> u32 {
+    // TODO(cycle-ledger): `cycle_models::vwf::glyph_drawing_master_cycles`
+    // ($0E:CBD1..$0E:CCF7, sixteen rows with their fixed prologues, the
+    // column loops, the seed stores and the RTS).
     vwf_render_glyph_master_cycles(width, x) - VWF_GLYPH_ENTRY_MASTER_CYCLES
 }
 
