@@ -429,3 +429,31 @@ constant never described them. The missing ≈17k master cycles are
 active slot's dispatch. Those went to the sprite and dialogue-sprite
 annotation batches with the spans above as their targets; the derived
 fresh-entry gate itself stands.
+
+## Evidence for the charged prefix
+
+Parity binary
+`bf7f22f44e4281151a7e0a22b4c40700e82746ea45631eaf8e2a5481dc36adca`
+(the `Ancilla_Main` subtree, the follower, garnish and overlord stubs, the
+HUD heart, heart-draw and decimal helpers, and the `JumpTableLocal` frame
+split at every annotated dispatch): the 200,000-frame cached comparison
+matched every video and audio hash in 198.00 seconds, the goldens and the
+`dd45975c…` endpoint match, all 1,735 library tests pass under the parity
+profile in 13.35 seconds, and the full route matched every one of the
+1,581,079 cached video and audio hashes in 1,579.44 seconds with all four
+goldens and the recorded `31619379…` endpoint. Promoted in
+`routes/full_run/parity-frontier.json` for `e3837c65`.
+
+On the receipt-less path this state moves the native frontier from 2507 to
+**8889**, past the previous best of 7330. Host 2338's charged prefix rose
+from 70,892 to 86,206 master cycles since the NMI acceptance, against a ROM
+span of about 87,500, and the ledger now reproduces the shadow profile
+exactly, per call, for every routine in the `Module0E_Interface` prefix on
+the Link's-house dialogue hosts.
+
+The remaining divergence at 8889 is a resumed slice, not a budget size.
+The ROM enters `RenderText_Draw_MessageCharacters` once on that host, one
+scanline after the NMI, advances the message read position from 231 to 232
+and renders no glyph at all; the engine renders the byte as a six-pixel
+glyph. The line was already 153 pixels wide, so the candidate mechanisms
+are the line-width test, a deferred glyph, and the click-and-wait path.

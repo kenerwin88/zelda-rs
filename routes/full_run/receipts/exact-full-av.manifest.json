@@ -1,5 +1,5 @@
 {
-  "binary_sha256": "ce3b59a2420c900868bb4968f96746143ab6dbee5f697a63a334739ecb532438",
+  "binary_sha256": "bf7f22f44e4281151a7e0a22b4c40700e82746ea45631eaf8e2a5481dc36adca",
   "candidate_ledger": "av_hashes.jsonl",
   "compare_from_frame": 0,
   "comparison_lanes": {
