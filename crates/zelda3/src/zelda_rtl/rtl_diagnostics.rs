@@ -5,6 +5,42 @@
 use super::*;
 
 impl ZeldaState {
+    /// Dump the composed display, after DMA/scanout receipts, independently
+    /// of live CPU RAM. Engine host N corresponds to comparison frame N-1.
+    pub(super) fn debug_dump_presented_state(&self, plan: &DisplayPublicationPlan) {
+        if !nmi::debug_frame_selection_env_matches(
+            "ZELDA3_DEBUG_PRESENTED_FRAMES",
+            self.frame_ctr_dbg,
+        ) {
+            return;
+        }
+        let root = std::path::PathBuf::from(
+            crate::debug_env::var("ZELDA3_DEBUG_PRESENTED_DIR")
+                .expect("selected presented frames require ZELDA3_DEBUG_PRESENTED_DIR"),
+        );
+        std::fs::create_dir_all(&root).expect("create presented-state directory");
+        let write_words = |name: &str, words: &[u16]| {
+            let bytes: Vec<u8> = words.iter().flat_map(|word| word.to_le_bytes()).collect();
+            std::fs::write(root.join(format!("{}-{name}.bin", self.frame_ctr_dbg)), bytes)
+                .expect("write presented-state words");
+        };
+        write_words("vram", &self.ppu.vram);
+        write_words("obj-vram", self.ppu.obj_vram_latch.as_deref().unwrap_or(&self.ppu.vram));
+        write_words("cgram", &self.ppu.cgram);
+        write_words("oam", &self.ppu.oam);
+        std::fs::write(root.join(format!("{}-ram.bin", self.frame_ctr_dbg)), &self.ram)
+            .expect("write presented-state RAM");
+        let scroll: Vec<_> = self.ppu.bg_layer.iter().map(|bg| (bg.h_scroll, bg.v_scroll)).collect();
+        let registers = format!(
+            "host={} brightness={} blank={}/{}/{:?} crop={} scroll={scroll:?} bg_override={:?}\nplan={plan:?}\n",
+            self.frame_ctr_dbg, self.ppu.brightness, self.ppu.forced_blank,
+            self.ppu.forced_blank_scanlines, self.ppu.forced_blank_from_scanline,
+            self.ppu.scanout_top_crop, self.active_presented_bg_scroll,
+        );
+        std::fs::write(root.join(format!("{}-registers.txt", self.frame_ctr_dbg)), registers)
+            .expect("write presented-state registers");
+    }
+
     /// Native↔RAM coherence guard. With `ZELDA3_ASSERT_NATIVE_COHERENT` set, report (or
     /// `=panic` to abort on) any native sub-state that has drifted out of sync with RAM
     /// at this labeled step — the signature of a stale-native-field or RAM-written-

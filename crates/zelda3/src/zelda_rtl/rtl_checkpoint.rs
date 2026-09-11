@@ -1806,6 +1806,7 @@ impl ZeldaState {
                 self.ppu.forced_blank_from_scanline,
             );
         }
+        self.debug_dump_presented_state(&publication_plan);
         self.sync_native_game_state_from_ram();
         // The RAM-derived rebuild reconstitutes the palette mirror from the
         // snapshot's WRAM shadow, which already holds THIS frame's palette

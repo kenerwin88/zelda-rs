@@ -403,6 +403,14 @@ parity pass. A Rust regression therefore cannot truncate the reusable oracle.
   The core-update/prep cadence drives BG_TILE_ANIMATION_COUNTDOWN and
   link-DMA phase; use this to compare rust's prep schedule against the
   oracle's countdown trajectory when an animation phase drifts by one.
+- `ZELDA3_DEBUG_PRESENTED_FRAMES=<comma-separated engine hosts>` with
+  `ZELDA3_DEBUG_PRESENTED_DIR=<directory>` — dump the final composed display
+  after DMA and scanout overrides: little-endian VRAM, decoded OBJ VRAM,
+  CGRAM and OAM words, snapshot RAM bytes, and scroll/blanking/publication
+  metadata. Engine host N corresponds to comparison frame N-1. Run native
+  and receipt modes into separate directories to distinguish live CPU
+  differences from display-generation differences. Disabled unless frames
+  are selected; selected dumps fail explicitly on output errors.
 - `ZELDA3_DEBUG_OBJ_PIPE=<frames>` — end-to-end tracer for the presented OBJ
   CHR pipeline: each stage (NMI entry/exit bracket, snapshot capture with its
   publication mode and slot occupancy, post-dispatch published snapshot,
