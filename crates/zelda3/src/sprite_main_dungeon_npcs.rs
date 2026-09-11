@@ -935,9 +935,13 @@ impl ZeldaState {
             {
                 // Sprite_UncleAndSage $05:DB8E (JSR target): LDA $E90,x (32),
                 // JSL JumpTableLocal (62 + 414) into the three-entry table at
-                // $05:DB95; the state handlers are its jump targets.
+                // $05:DB95; the state handlers are its jump targets. Every
+                // JumpTableLocal dispatch here follows the messaging.rs
+                // convention: $00:8781's 52 cycles up to its PLY are its own
+                // frame (charge_routine), the remaining 362 are the caller's.
                 let _scope = crate::cycle_ledger::routine(0x05_db8e);
-                crate::cycle_ledger::charge(32 + 62 + 414);
+                crate::cycle_ledger::charge_routine(0x00_8781, 52);
+                crate::cycle_ledger::charge(32 + 62 + 414 - 52);
                 match self.sprite_slot_view(k).e() {
                     0 => self.sprite_uncle(k),
                     1 => self.sprite_priest(k),
@@ -963,7 +967,8 @@ impl ZeldaState {
         }
         // $05:DE33 LDA $E80,x (32), JSL JumpTableLocal (62 + 414) into the
         // two-entry table at $05:DE3A.
-        crate::cycle_ledger::charge(32 + 62 + 414);
+        crate::cycle_ledger::charge_routine(0x00_8781, 52);
+        crate::cycle_ledger::charge(32 + 62 + 414 - 52);
         if self.sprite_slot_view(k).subtype2() == 0 {
             self.uncle_at_house(k);
         } else {
@@ -978,7 +983,8 @@ impl ZeldaState {
         // five-entry table at $05:DE48.
         crate::cycle_ledger::charge(46);
         self.sprite_move_xy(k);
-        crate::cycle_ledger::charge(32 + 62 + 414);
+        crate::cycle_ledger::charge_routine(0x00_8781, 52);
+        crate::cycle_ledger::charge(32 + 62 + 414 - 52);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 // Uncle_TriggerTelepathy $05:DE52-DE71 (380; the JSL
@@ -1100,7 +1106,8 @@ impl ZeldaState {
     pub(super) fn uncle_in_passage(&mut self, k: usize) {
         // Cycle ledger (a jump target): $05:DF19 LDA $D80,x (32), JSL
         // JumpTableLocal (62 + 414) into the two-entry table at $05:DF20.
-        crate::cycle_ledger::charge(32 + 62 + 414);
+        crate::cycle_ledger::charge_routine(0x00_8781, 52);
+        crate::cycle_ledger::charge(32 + 62 + 414 - 52);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 // $05:DF26 JSL Sprite_CheckDamageToPlayerSameLayer_ : BCC
@@ -1225,7 +1232,8 @@ impl ZeldaState {
             // SageMantle_SlidingRight $05:DBE3-DBEE LDA #$40, STA $D90,x, LDA
             // $D80,x, JSL JumpTableLocal (148 + 414) into the state table at
             // $05:DBEF.
-            crate::cycle_ledger::charge(48 + 6 + 148 + 414);
+            crate::cycle_ledger::charge_routine(0x00_8781, 52);
+            crate::cycle_ledger::charge(48 + 6 + 148 + 414 - 52);
             self.sprite_slot_view_mut(k).set_a(0x40);
             collision = true;
         } else if self.sprite_check_damage_to_link_same_layer(k) {
@@ -1234,7 +1242,8 @@ impl ZeldaState {
             // delay store), then the shared $05:DBBB-DBCC block (212: STZ
             // $E80,x, the $48/$5E stores, LDA $D80,x, JSL JumpTableLocal)
             // and JumpTableLocal (414) into the state table at $05:DBCD.
-            crate::cycle_ledger::charge(48 + 78 + 202 + 212 + 414);
+            crate::cycle_ledger::charge_routine(0x00_8781, 52);
+            crate::cycle_ledger::charge(48 + 78 + 202 + 212 + 414 - 52);
             self.sprite_nullify_hookshot_drag();
             self.follower_link_state_mut().set_speed_setting(0);
             self.sprite_repel_dash();
@@ -1244,7 +1253,8 @@ impl ZeldaState {
             // BCC taken (+6) into SageMantle_NoPlayerCollision $05:DBD3 LDA
             // $E00,x : BNE (48, taken +6) back into the shared $05:DBBB
             // block (212) and JumpTableLocal (414).
-            crate::cycle_ledger::charge(48 + 78 + 6 + 48 + 6 + 212 + 414);
+            crate::cycle_ledger::charge_routine(0x00_8781, 52);
+            crate::cycle_ledger::charge(48 + 78 + 6 + 48 + 6 + 212 + 414 - 52);
             self.sprite_slot_view_mut(k).set_subtype2(0);
             self.follower_link_state_mut().set_defense_flags(0x81);
             self.follower_link_state_mut().set_speed_setting(8);
@@ -1253,7 +1263,8 @@ impl ZeldaState {
             // No collision and no delay: $05:DBD8 LDA $E80,x, JSL
             // JumpTableLocal (94 + 414) into the two-entry table at
             // $05:DBDF.
-            crate::cycle_ledger::charge(48 + 78 + 6 + 48 + 94 + 414);
+            crate::cycle_ledger::charge_routine(0x00_8781, 52);
+            crate::cycle_ledger::charge(48 + 78 + 6 + 48 + 94 + 414 - 52);
         }
 
         if collision {
@@ -1368,7 +1379,8 @@ impl ZeldaState {
         if self.sprite_track_body_to_head(k) {
             self.sprite_move_xy(k);
         }
-        crate::cycle_ledger::charge(32 + 62 + 414);
+        crate::cycle_ledger::charge_routine(0x00_8781, 52);
+        crate::cycle_ledger::charge(32 + 62 + 414 - 52);
         match self.sprite_slot_view(k).subtype2() {
             0 => self.priest_dying(k),
             1 => self.priest_run_rescue_cutscene(k),
@@ -1442,7 +1454,8 @@ impl ZeldaState {
         // Cycle ledger (a jump target of Sprite_Priest): $05:DD0A-DD0F LDA
         // #$04, STA $EB0,x, STA $DE0,x (92), $05:DD12 LDA $D80,x, JSL
         // JumpTableLocal (94 + 414) into the three-entry table at $05:DD19.
-        crate::cycle_ledger::charge(92 + 94 + 414);
+        crate::cycle_ledger::charge_routine(0x00_8781, 52);
+        crate::cycle_ledger::charge(92 + 94 + 414 - 52);
         self.sprite_slot_view_mut(k).set_head_direction(4);
         self.sprite_slot_view_mut(k).set_direction(4);
         match self.sprite_slot_view(k).ai_state() {
@@ -1535,7 +1548,8 @@ impl ZeldaState {
         // Cycle ledger (a jump target of Sprite_Priest): $05:DD63 LDA $D80,x,
         // JSL JumpTableLocal (94 + 414) into the four-entry table at
         // $05:DD6A.
-        crate::cycle_ledger::charge(94 + 414);
+        crate::cycle_ledger::charge_routine(0x00_8781, 52);
+        crate::cycle_ledger::charge(94 + 414 - 52);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 // $05:DD72-DD7D LDA #0, STA $EB0,x, STA $DE0,x, LDA $DF0,x,

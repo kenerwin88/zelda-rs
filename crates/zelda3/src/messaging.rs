@@ -4931,20 +4931,23 @@ impl ZeldaState {
         }
         match a {
             0 => {
-                crate::cycle_ledger::charge(88 + 6 + 62 + 414 + 294);
+                crate::cycle_ledger::charge_routine(0x00_8781, 52);
+                crate::cycle_ledger::charge(88 + 6 + 62 + 414 - 52 + 294);
                 self.RenderText_DrawBorderInitialize();
                 self.RenderText_DrawBorderRow(d, 0);
                 self.messaging_state_mut()
                     .increment_text_incremental_state();
             }
             1 => {
-                crate::cycle_ledger::charge(88 + 38 + 16 + 62 + 414 + 296);
+                crate::cycle_ledger::charge_routine(0x00_8781, 52);
+                crate::cycle_ledger::charge(88 + 38 + 16 + 62 + 414 - 52 + 296);
                 self.RenderText_DrawBorderRow(d, 6);
                 self.messaging_state_mut()
                     .increment_text_incremental_state();
             }
             2 => {
-                crate::cycle_ledger::charge(88 + 70 + 62 + 414 + 344);
+                crate::cycle_ledger::charge_routine(0x00_8781, 52);
+                crate::cycle_ledger::charge(88 + 70 + 62 + 414 - 52 + 344);
                 self.messaging_state_mut().set_text_render_state(2);
                 self.RenderText_DrawBorderRow(d, 12);
                 self.messaging_state_mut()
