@@ -334,10 +334,16 @@ comparison run with `ZELDA3_DEBUG_CYCLE_LEDGER` and
 Six batches of annotations were written in parallel worktrees (palette
 filter, iris spotlight, sprite core, NMI/HUD/Link OAM, room draw,
 graphics loads), verified, corrected and merged: 61 annotated routines.
-Over the first 200,000 route hosts the check compares 30,903
-host/routine pairs, 25,436 exact (82%), 841 skipped where the shadow
+Over the first 200,000 route hosts the check compares 37,039
+host/routine pairs, 30,094 exact (81%), 843 skipped where the shadow
 plan stopped inside the routine; every run stayed video- and
-audio-exact, since annotations only add charges. The profiler needed five rules to make the
+audio-exact, since annotations only add charges. An eighth batch added
+the sprite handlers active on the route's dialogue hosts (uncle and
+priest, green knife guard, mirror portal, the Sprite_DrawMultiple
+family) and the Module0E prefix routines (lamp cone, rain, push block,
+joypad read, stripes, incremental border), so that a fresh dialogue
+line's entry budget can be derived from a fully charged prefix instead
+of a traced constant. The profiler needed five rules to make the
 comparison honest: frames live by stack depth (a jump-entered routine is
 costed in the frame that jumped, and the ledger follows the same rule),
 the interrupt entry sequence belongs to the handler frame, DMA bus time
