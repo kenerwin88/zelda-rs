@@ -3328,6 +3328,12 @@ impl ZeldaState {
     }
 
     pub(super) fn spotlight_open(&mut self) {
+        // Cycle ledger: Spotlight_open ($00:F295). Only $F295-$F29A (REP #$10,
+        // LDY #$0002, LDX #$0000 = 22 + 24 + 24) belongs to the entry; the
+        // shared SpotlightInternal body from $F29D is charged by
+        // `spotlight_internal_before_table` / `spotlight_internal_after_table`.
+        let _scope = crate::cycle_ledger::routine(0x00_f295);
+        crate::cycle_ledger::charge(70);
         self.spotlight_internal(0, 2);
     }
 
@@ -3341,6 +3347,13 @@ impl ZeldaState {
     /// table builder. These display controls are already live when a long
     /// `IrisSpotlight_ConfigureTable` is interrupted by vblank.
     pub(super) fn spotlight_internal_before_table(&mut self, x: u8, y: u8) {
+        // Cycle ledger: SpotlightInternal $F29D-$F2DE (STY $67E, STX $67C,
+        // STZ $420C, the four channel-7 HDMA register pairs, W12SEL/W34SEL/
+        // WOBJSEL copies, TMW/TSW copies, LDA $1B, BNE not taken): 806 for
+        // the whole $F295-$F2DE block, less 26 for the nine register writes
+        // made with the system data bank, less the 70 of Spotlight_open's
+        // own entry = 710.
+        crate::cycle_ledger::charge(710);
         self.set_spotlight_window_radius(x as u16);
         self.set_spotlight_window_state(y as u16);
         self.hdma_setup(0x00f2fb, 0x00f2fb, 0x41, 0x26, 0x26, 0);
@@ -3352,15 +3365,25 @@ impl ZeldaState {
         let sub_screen = self.game_state.display.sub_screen_layers;
         self.set_sub_screen_window_layers(sub_screen);
         if self.game_state.world.location.is_outdoors() {
+            // $F2E0-$F2EA: the three fixed-colour writes.
+            crate::cycle_ledger::charge(120);
             self.set_fixed_color_red(0x20);
             self.set_fixed_color_green(0x40);
             self.set_fixed_color_blue(0x80);
+        } else {
+            // BNE $F2EC taken.
+            crate::cycle_ledger::charge(6);
         }
+        // $F2EC-$F2EE: SEP #$10 + JSL IrisSpotlight_ConfigureTable (22 + 62);
+        // the callee charges its own body.
+        crate::cycle_ledger::charge(84);
     }
 
     /// Synchronous suffix of the ROM's `SpotlightInternal`, reached only after
     /// `IrisSpotlight_ConfigureTable` returns.
     pub(super) fn spotlight_internal_after_table(&mut self) {
+        // $F2F2-$F2FA: LDA #$80, STA $9B, LDA #$0F, STA $13, RTL.
+        crate::cycle_ledger::charge(124);
         self.set_hdma_enable_mask(0x80);
         self.set_screen_brightness(0x0f);
         self.stage_spotlight_scanout_for_next_display();
@@ -3371,6 +3394,8 @@ impl ZeldaState {
     /// HDMA channel initialization for that field has already happened; the
     /// authored program therefore begins with the following field.
     pub(super) fn spotlight_internal_after_table_during_active_field(&mut self) {
+        // $F2F2-$F2FA: LDA #$80, STA $9B, LDA #$0F, STA $13, RTL.
+        crate::cycle_ledger::charge(124);
         self.set_hdma_enable_mask(0x80);
         self.set_screen_brightness(0x0f);
         self.stage_spotlight_scanout_after_active_field();
@@ -3382,12 +3407,22 @@ impl ZeldaState {
         &mut self,
         words: &[u16; SPOTLIGHT_VISIBLE_SCANLINES],
     ) {
+        // $F2F2-$F2FA: LDA #$80, STA $9B, LDA #$0F, STA $13, RTL.
+        crate::cycle_ledger::charge(124);
         self.set_hdma_enable_mask(0x80);
         self.set_screen_brightness(0x0f);
         self.stage_rom_spotlight_scanout_after_active_field(words);
     }
 
     pub(super) fn iris_spotlight_configure_table(&mut self) -> bool {
+        // Cycle ledger: IrisSpotlight_ConfigureTable ($00:F312). The blocks
+        // are charged where the split translation runs them (`begin_`,
+        // `advance_`, `complete_..._table_projection`, `..._after_projection`,
+        // `..._goal_transition`); this synchronous path is the one ROM call
+        // the scope attributes. Interrupted builds resumed through
+        // `begin_iris_spotlight_configure_table_at_progress` charge the same
+        // blocks without a scope (the ROM call spans two hosts).
+        let _scope = crate::cycle_ledger::routine(0x00_f312);
         let build = self.begin_iris_spotlight_configure_table(usize::MAX);
         self.complete_iris_spotlight_configure_table(build)
     }
@@ -3396,6 +3431,10 @@ impl ZeldaState {
         &mut self,
         max_iterations: usize,
     ) -> SpotlightTableBuildContinuation {
+        // $F312-$F34C: PHB/PHK/PLB, REP #$30, the vertical centre, y_lower/
+        // y_upper, x centre, spotlight_var4 = var1, r6 = r14 * 2, CMP #$00E0,
+        // BCS not taken.
+        crate::cycle_ledger::charge(816);
         let r14 = spotlight_vertical_center(
             self.game_state.player.follower_link.y(),
             self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
@@ -3415,8 +3454,15 @@ impl ZeldaState {
 
         let mut r6 = r14.wrapping_mul(2);
         if r6 < 224 {
+            // $F34E-$F351: LDA #$00E0, STA $06.
+            crate::cycle_ledger::charge(56);
             r6 = 224;
+        } else {
+            // BCS $F353 taken.
+            crate::cycle_ledger::charge(6);
         }
+        // $F353-$F35F: r4 = r14 - (r6 - r14).
+        crate::cycle_ledger::charge(220);
         let r4 = r14.wrapping_mul(2).wrapping_sub(r6);
         let mut build = SpotlightTableBuildContinuation {
             vertical_center: r14,
@@ -3536,9 +3582,15 @@ impl ZeldaState {
                         circle_value,
                     );
                 }
+                // The ROM resumes at $F387 (LDA $06, ASL, CMP #$01C0, BCS):
+                // the work above replays the interrupted iteration's earlier
+                // instructions and is not charged again here.
+                crate::cycle_ledger::charge(86);
                 if build.lower_cursor < 224 {
                     build.pending_lower_value = Some(circle_value);
                 } else {
+                    // BCS $F396 taken; `advance_` charges the loop test.
+                    crate::cycle_ledger::charge(6);
                     build.pending_loop_completion_test = true;
                 }
             }
@@ -3652,61 +3704,120 @@ impl ZeldaState {
         build: &mut SpotlightTableBuildContinuation,
         max_iterations: usize,
     ) {
+        // Cycle ledger: the $F361-$F3A0 scanline loop, one iteration per
+        // pass. The pending_* resumptions charge only the instructions from
+        // the interrupted iteration's resume point onward.
         for _ in 0..max_iterations {
             if build.completed {
                 return;
             }
             if build.pending_lower_cursor_decrement {
+                // Resume at $F39E: DEC $06, JMP $F361.
+                crate::cycle_ledger::charge(78);
                 build.pending_lower_cursor_decrement = false;
                 build.lower_cursor = build.lower_cursor.wrapping_sub(1);
                 continue;
             }
             if build.pending_loop_completion_test {
+                // Resume at $F396: LDA $0E, CMP $04, BEQ.
+                crate::cycle_ledger::charge(80);
                 build.pending_loop_completion_test = false;
                 if build.upper_cursor == build.vertical_center {
+                    // BEQ $F3A3 taken.
+                    crate::cycle_ledger::charge(6);
                     build.completed = true;
                     return;
                 }
+                // $F39C-$F3A0: INC $04, DEC $06, JMP $F361.
+                crate::cycle_ledger::charge(132);
                 build.upper_cursor = build.upper_cursor.wrapping_add(1);
                 build.lower_cursor = build.lower_cursor.wrapping_sub(1);
                 continue;
             }
             if let Some(r8) = build.pending_lower_value.take() {
+                // Resume at $F38F after the lower-cursor test passed: TAX,
+                // LDA $08, STA $7F7000,X. (Both producers of this pending
+                // value have already established lower_cursor < 224.)
                 if build.lower_cursor < 224 {
+                    crate::cycle_ledger::charge(94);
                     self.set_spotlight_hdma_table_dynamic_entry(build.lower_cursor as usize, r8);
                 }
+                // $F396-$F39A: LDA $0E, CMP $04, BEQ.
+                crate::cycle_ledger::charge(80);
                 if build.upper_cursor == build.vertical_center {
+                    // BEQ $F3A3 taken.
+                    crate::cycle_ledger::charge(6);
                     build.completed = true;
                     return;
                 }
+                // $F39C-$F3A0: INC $04, DEC $06, JMP $F361.
+                crate::cycle_ledger::charge(132);
                 build.upper_cursor = build.upper_cursor.wrapping_add(1);
                 build.lower_cursor = build.lower_cursor.wrapping_sub(1);
                 continue;
             }
             let mut r8 = 0x00ff;
             if let Some(t) = build.pending_circle_input.take() {
+                // Resume at $F375: JSR IrisSpotlight_CalculateCircleValue
+                // (the callee charges itself).
+                crate::cycle_ledger::charge(46);
                 r8 = self.iris_spotlight_calculate_circle_value(t);
             } else if build.lower_cursor < self.game_state.display.spotlight_hdma.y_upper() {
+                // $F361-$F36B: LDA #$00FF, STA $08, LDA $06, CMP $676, BCS not
+                // taken; $F36D-$F370: LDA $67A, BEQ.
+                crate::cycle_ledger::charge(144 + 56);
                 let t = self
                     .game_state
                     .display
                     .spotlight_hdma
                     .window_y_buffer_byte();
                 if self.game_state.display.spotlight_hdma.window_y_buffer() != 0 {
+                    // $F372: DEC $67A.
+                    crate::cycle_ledger::charge(62);
                     self.decrement_spotlight_window_y_buffer();
+                } else {
+                    // BEQ $F375 taken.
+                    crate::cycle_ledger::charge(6);
                 }
+                // $F375: JSR IrisSpotlight_CalculateCircleValue (the callee
+                // charges itself).
+                crate::cycle_ledger::charge(46);
                 r8 = self.iris_spotlight_calculate_circle_value(t);
+            } else {
+                // $F361-$F36B with BCS $F378 taken: the scanline is outside
+                // the iris, r8 stays $00FF.
+                crate::cycle_ledger::charge(144 + 6);
             }
+            // $F378-$F37E: LDA $04, ASL, CMP #$01C0, BCS.
+            crate::cycle_ledger::charge(86);
             if build.upper_cursor < 224 {
+                // $F380-$F383: TAX, LDA $08, STA $7F7000,X.
+                crate::cycle_ledger::charge(94);
                 self.set_spotlight_hdma_table_dynamic_entry(build.upper_cursor as usize, r8);
+            } else {
+                // BCS $F387 taken.
+                crate::cycle_ledger::charge(6);
             }
+            // $F387-$F38D: LDA $06, ASL, CMP #$01C0, BCS.
+            crate::cycle_ledger::charge(86);
             if build.lower_cursor < 224 {
+                // $F38F-$F392: TAX, LDA $08, STA $7F7000,X.
+                crate::cycle_ledger::charge(94);
                 self.set_spotlight_hdma_table_dynamic_entry(build.lower_cursor as usize, r8);
+            } else {
+                // BCS $F396 taken.
+                crate::cycle_ledger::charge(6);
             }
+            // $F396-$F39A: LDA $0E, CMP $04, BEQ.
+            crate::cycle_ledger::charge(80);
             if build.upper_cursor == build.vertical_center {
+                // BEQ $F3A3 taken.
+                crate::cycle_ledger::charge(6);
                 build.completed = true;
                 return;
             }
+            // $F39C-$F3A0: INC $04, DEC $06, JMP $F361.
+            crate::cycle_ledger::charge(132);
             build.upper_cursor = build.upper_cursor.wrapping_add(1);
             build.lower_cursor = build.lower_cursor.wrapping_sub(1);
         }
@@ -3731,6 +3842,16 @@ impl ZeldaState {
         debug_assert!(build.completed);
 
         if !build.projection_tail_cleared {
+            // $F3A3-$F3B2: the V-counter wait (LDA $2137, LDA $213F, LDA
+            // $213D, AND #$00FF, CMP #$00C0, BCC) is 172 per pass with the
+            // system data bank, 178 when BCC loops. The ROM spins here until
+            // scanline 192; that count depends on the raster phase at entry
+            // (1 to ~950 passes in the shadow profiles), which the ledger
+            // cannot see, so only the final pass is charged: the remaining
+            // 178 per extra pass is the routine's raster-dependent residual.
+            // $F3B4: LDX #$0000.
+            crate::cycle_ledger::charge(172 + 24);
+            // The C-only clear of words 224..240 has no ROM counterpart.
             self.clear_spotlight_hdma_table_dynamic_range(224, 16);
         }
         let copied_words = usize::from(build.projection_words_copied);
@@ -3738,6 +3859,14 @@ impl ZeldaState {
             copied_words <= 224,
             "a saved ProjectionCopy continuation cannot exceed the 224-word C memcpy",
         );
+        // $F3B7-$F3C3: the 224-word copy to $1B00, 162 per word (LDA
+        // $7F7000,X; STA $1B00,X; INX; INX; CPX #$01C0; BCC) plus 6 for each
+        // taken BCC (all but the last word). A ProjectionCopy resume charges
+        // only the words still to copy.
+        let remaining_words = (224 - copied_words) as u64;
+        if remaining_words != 0 {
+            crate::cycle_ledger::charge(remaining_words * 162 + (remaining_words - 1) * 6);
+        }
         self.project_spotlight_dynamic_hdma_table_range_to_reserved(
             copied_words,
             224 - copied_words,
@@ -3757,6 +3886,9 @@ impl ZeldaState {
         &mut self,
         defer_goal_transition: bool,
     ) -> bool {
+        // $F3C5-$F3D5: LDX $67E, LDA $67C, CLC, ADC $F302,X, STA $67C, CMP
+        // $F30A,X, BNE.
+        crate::cycle_ledger::charge(242);
         let idx = (self.game_state.display.spotlight_hdma.window_state() >> 1) as usize;
         let delta = SPOTLIGHT_DELTA_SIZE[idx] as i16 as u16;
         let next = self
@@ -3767,6 +3899,8 @@ impl ZeldaState {
             .wrapping_add(delta);
         self.set_spotlight_window_radius(next);
         if next != SPOTLIGHT_GOAL[idx] {
+            // BNE $F423 taken, then $F423-$F426: SEP #$30, PLB, RTL.
+            crate::cycle_ledger::charge(6 + 94);
             return false;
         }
         if defer_goal_transition {
@@ -3786,9 +3920,17 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_iris_spotlight_goal_transition(&mut self) {
+        // $F3D7-$F3DC: SEP #$20, LDA $67E, BNE.
+        crate::cycle_ledger::charge(70);
         if self.game_state.display.spotlight_hdma.window_state() == 0 {
+            // $F3DE-$F3E5: LDA #$80, STA $13, STA $2100 (system data bank,
+            // 30), BRA $F3EB taken (28).
+            crate::cycle_ledger::charge(98);
             self.set_screen_brightness(0x80);
         } else {
+            // BNE $F3E7 taken, then JSL IrisSpotlight_ResetTable (the callee
+            // charges itself when annotated).
+            crate::cycle_ledger::charge(6 + 62);
             self.iris_spotlight_reset_table();
         }
         self.complete_iris_spotlight_goal_transition_after_reset();
@@ -3796,27 +3938,72 @@ impl ZeldaState {
 
     /// The goal transition's tail after the force-blank/table-reset branch.
     pub(super) fn complete_iris_spotlight_goal_transition_after_reset(&mut self) {
+        // $F3EB-$F3F5: SEP #$30, STZ $B0, STZ $11, LDA $10, CMP #$07, BEQ.
+        crate::cycle_ledger::charge(126);
         self.set_subsubmodule(0);
         self.set_submodule(0);
         let main_module = self.game_state.frame.main_module;
+        // The ROM tests module 7 (BEQ $F3FB taken) before module $10
+        // ($F3F7-$F3F9: CMP #$10, BNE $F416); charge the outcome the single
+        // Rust condition merges.
+        if main_module == 7 {
+            crate::cycle_ledger::charge(6);
+        } else if main_module == 16 {
+            crate::cycle_ledger::charge(32);
+        } else {
+            crate::cycle_ledger::charge(32 + 6);
+        }
         if main_module == 7 || main_module == 16 {
+            // $F3FB-$F3FD: LDA $1B, BNE.
+            crate::cycle_ledger::charge(40);
             if self.game_state.world.location.is_outdoors() {
+                // $F3FF-$F409: LDX $8A, LDA $7F5B00,X, four LSRs, STA $12D.
+                crate::cycle_ledger::charge(152);
                 let ambient = self.overworld_config_table().current_music() >> 4;
                 self.set_ambient_sound_effect(ambient);
+            } else {
+                // BNE $F40C taken.
+                crate::cycle_ledger::charge(6);
             }
+            // $F40C-$F411: LDA $132, CMP #$FF, BEQ.
+            crate::cycle_ledger::charge(64);
             if self.game_state.system_signals.queued_music_control() != 0xff {
+                // $F413: STA $12C.
+                crate::cycle_ledger::charge(32);
                 let music = self.game_state.system_signals.queued_music_control();
                 self.set_music_control(music);
+            } else {
+                // BEQ $F416 taken.
+                crate::cycle_ledger::charge(6);
             }
         }
+        // $F416-$F41D: LDA $10C, STA $10, CMP #$06, BNE.
+        crate::cycle_ledger::charge(88);
         let saved_module = self.game_state.frame.saved_module_for_menu;
         self.set_main_module(saved_module);
         if self.game_state.frame.main_module == 6 {
+            // $F41F: JSL Sprite_ResetAll (the callee charges itself when
+            // annotated).
+            crate::cycle_ledger::charge(62);
             self.sprite_reset_all();
+        } else {
+            // BNE $F423 taken.
+            crate::cycle_ledger::charge(6);
         }
+        // $F423-$F426: SEP #$30, PLB, RTL.
+        crate::cycle_ledger::charge(94);
     }
 
     pub(super) fn iris_spotlight_calculate_circle_value(&self, a: u8) -> u16 {
+        // Cycle ledger: IrisSpotlight_CalculateCircleValue ($00:F4CC), entered
+        // with m16/x16 and the system data bank ($00), so the seven $42xx
+        // divider/multiplier accesses cost 2 less per byte.
+        let _scope = crate::cycle_ledger::routine(0x00_f4cc);
+        // $F4CC-$F508: SEP #$30, the $4204-$4206 divide, six NOPs, REP #$20,
+        // LDA $4214, LSR, SEP #$20, TAX, LDY $F44B,X, the $4202/$4203
+        // multiply, two NOPs, STZ $01, STZ $0B, LDA $4217, STA $00, REP #$30,
+        // ASL $00, LDA $0A, BEQ: 754 - 16 = 738.
+        crate::cycle_ledger::charge(738);
         let radius = self.game_state.display.spotlight_hdma.window_radius() as u8;
         let div = if radius == 0 {
             0xffff
@@ -3824,23 +4011,56 @@ impl ZeldaState {
             ((a as u16) << 8) / radius as u16
         };
         let t = (div >> 1) as usize;
+        // LDY $F44B,X with an 8-bit X costs 6 more when $F44B + X crosses
+        // into page $F5 (X >= $B5); X is the low byte of the quotient / 2.
+        if (t & 0xff) + 0x4b > 0xff {
+            crate::cycle_ledger::charge(6);
+        }
         let r10 = SPOTLIGHT_CIRCLE_X_RADIUS_CURVE[t];
         let p = 2 * ((((r10 as u16) * (radius as u16)) >> 8) as u8 as u16);
         if r10 == 0 {
+            // BEQ $F53D taken, then RTS.
+            crate::cycle_ledger::charge(6 + 42);
             return 0x00ff;
         }
+        // $F50A-$F51A: r2 = x_center + p, r0 = x_center - p, STZ $00, BMI.
+        crate::cycle_ledger::charge(252);
         let x_center = self.game_state.display.spotlight_hdma.window_x_center();
         let r2 = x_center.wrapping_add(p).min(255);
         let r0_raw = x_center.wrapping_sub(p);
         let r0 = if (r0_raw as i16) < 0 {
+            // BMI $F526 taken: r0 stays the zero just stored.
+            crate::cycle_ledger::charge(6);
             0
         } else {
+            // $F51C-$F51F: BIT #$FF00, BEQ; a high byte of zero takes the
+            // branch to STA $00, otherwise $F521 loads #$00FF first.
+            if r0_raw < 256 {
+                crate::cycle_ledger::charge(40 + 6);
+            } else {
+                crate::cycle_ledger::charge(40 + 24);
+            }
+            // $F524: STA $00.
+            crate::cycle_ledger::charge(32);
             r0_raw.min(255)
         };
+        // $F526-$F52B: LDA $02, BIT #$FF00, BEQ.
+        if x_center.wrapping_add(p) < 256 {
+            crate::cycle_ledger::charge(72 + 6);
+        } else {
+            // $F52D: LDA #$00FF.
+            crate::cycle_ledger::charge(72 + 24);
+        }
         let result = r0 | (r2 << 8);
+        // $F530-$F536: XBA, ORA $00, CMP #$FFFF, BNE.
+        crate::cycle_ledger::charge(92);
         if result == 0xffff {
+            // $F538: LDA #$00FF; $F53B: STA $08; $F53D: RTS.
+            crate::cycle_ledger::charge(24 + 32 + 42);
             0x00ff
         } else {
+            // BNE $F53B taken; STA $08; RTS.
+            crate::cycle_ledger::charge(6 + 32 + 42);
             result
         }
     }
