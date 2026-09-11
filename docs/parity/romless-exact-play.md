@@ -314,8 +314,17 @@ comparison run with `ZELDA3_DEBUG_CYCLE_LEDGER` and
 
 Six batches of annotations were written in parallel worktrees (palette
 filter, iris spotlight, sprite core, NMI/HUD/Link OAM, room draw,
-graphics loads) and merged; over the first 200,000 route hosts the check
-compares 7,454 host/routine pairs, 5,409 exact, with the remaining
-classes named per routine (unscoped split builds, the spotlight's raster
-wait spin, jump-dispatched drawers that charge into their caller, a few
-call-count mismatches) and handed back to their batches.
+graphics loads), verified, corrected and merged: 61 annotated routines.
+Over the first 200,000 route hosts the check compares 31,592
+host/routine pairs, 21,327 exact, 851 skipped where the shadow plan
+stopped inside the routine. The profiler needed five rules to make the
+comparison honest: frames live by stack depth (a jump-entered routine is
+costed in the frame that jumped, and the ledger follows the same rule),
+the interrupt entry sequence belongs to the handler frame, DMA bus time
+is subtracted, a plan run spanning two main-loop iterations is summed
+over two ledger hosts, and a raster wait spin is charged once with the
+remaining passes subtracted. The remaining mismatch classes are named
+per routine: sprite handlers reached by RTS dispatch (costed inside
+Sprite_ExecuteSingle, unannotated), OAM allocation and coordinate
+helpers reached through unscoped Rust paths, the NMI handler's joypad
+wait and the $17 dispatch targets, and the room object drawers.
