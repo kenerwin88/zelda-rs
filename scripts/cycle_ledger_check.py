@@ -53,7 +53,7 @@ def main():
     parser.add_argument("profile_dir", type=Path)
     parser.add_argument("--symbols", type=Path, default=DEFAULT_SYMBOLS)
     parser.add_argument("--show", type=int, default=20)
-    parser.add_argument("--window", type=int, default=6, help="hosts of slack for deferred calls")
+    parser.add_argument("--window", type=int, default=12, help="hosts of slack for deferred calls (CPU-timed continuations complete up to ~7 hosts after the plan host)")
     args = parser.parse_args()
     symbols = load_symbols(args.symbols)
     name = lambda address: f"{address:06x} {symbols.get(address, '')}".strip()

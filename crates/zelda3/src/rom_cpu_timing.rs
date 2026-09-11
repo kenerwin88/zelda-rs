@@ -473,18 +473,26 @@ impl RomCpuTimingRun {
         let opcode = if takes_interrupt { None } else { self.peek_opcode() };
         let timing = snes::cpu_run_opcode_timed(&mut self.shadow);
         let pc_after = self.pc();
+        let stack_pointer = self.shadow.cpu.sp;
         let profile = self.profile.as_mut().expect("profile enabled");
         profile.instructions += 1;
+        if takes_interrupt && pc_after == NMI_HANDLER_ENTRY_PC {
+            // The interrupt entry sequence (vector fetch, four pushes) is
+            // the handler's cost, not the interrupted routine's: open the
+            // handler frame before attributing this step.
+            profile.nmi_entries += 1;
+            profile.enter(pc_after, stack_pointer);
+            profile.attribute(u64::from(timing.master_cycles));
+            let per_pc = profile.exclusive_by_pc.entry(pc_after).or_default();
+            per_pc.0 += u64::from(timing.master_cycles);
+            return timing;
+        }
         profile.attribute(u64::from(timing.master_cycles));
         let per_pc = profile.exclusive_by_pc.entry(pc_before).or_default();
         per_pc.0 += u64::from(timing.master_cycles);
         per_pc.1 += 1;
-        let stack_pointer = self.shadow.cpu.sp;
         profile.unwind_to(stack_pointer);
-        if takes_interrupt && pc_after == NMI_HANDLER_ENTRY_PC {
-            profile.nmi_entries += 1;
-            profile.enter(pc_after, stack_pointer);
-        } else if matches!(opcode, Some(0x20 | 0x22 | 0xfc)) {
+        if matches!(opcode, Some(0x20 | 0x22 | 0xfc)) {
             // JSR abs, JSL long, JSR (abs,X)
             profile.enter(pc_after, stack_pointer);
         }
