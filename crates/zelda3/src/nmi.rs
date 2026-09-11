@@ -53,6 +53,28 @@ pub(super) struct NmiVramCopyPacket<'a> {
 /// Keeping packet interpretation in one place is important for display
 /// publication: the active scanout may retain the pre-NMI words at these exact
 /// destinations while live emulation advances through the DMA.
+/// DMA transfers performed by one NMI handler run, for the bus time the
+/// CPU spends stalled: the pinned core (`dma_run_to_completion_master_cycles`
+/// in `crates/snes/src/dma.rs`) charges 18 master cycles per DMA run, 8 per
+/// byte and 8 per completed channel; every transfer here is a single-channel
+/// run, so one transfer costs 26 + 8 x bytes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct NmiDmaAccounting {
+    pub(crate) transfers: u32,
+    pub(crate) bytes: u64,
+}
+
+impl NmiDmaAccounting {
+    pub(crate) const RUN_MASTER_CYCLES: u64 = 18;
+    pub(crate) const CHANNEL_COMPLETION_MASTER_CYCLES: u64 = 8;
+    pub(crate) const BYTE_MASTER_CYCLES: u64 = 8;
+
+    pub(crate) fn master_cycles(self) -> u64 {
+        u64::from(self.transfers) * (Self::RUN_MASTER_CYCLES + Self::CHANNEL_COMPLETION_MASTER_CYCLES)
+            + self.bytes * Self::BYTE_MASTER_CYCLES
+    }
+}
+
 pub(super) fn nmi_vram_copy_packets(data: &[u8]) -> Vec<NmiVramCopyPacket<'_>> {
     let mut packets = Vec::new();
     let mut pos = 0usize;
@@ -153,6 +175,7 @@ impl ZeldaState {
 
         let channel = self.dma.channel[0];
         let mode = usize::from(channel.mode & 7);
+        self.account_nmi_dma_transfer(len);
         let mut touched_oam = false;
         let mut touched_cgram = false;
         for (index, &value) in source[..len].iter().enumerate() {
@@ -311,6 +334,41 @@ impl ZeldaState {
     }
 
     pub(super) fn interrupt_nmi_with_animated_bg_operands(
+        &mut self,
+        input: u16,
+        oam_dma_source: Option<&[u8]>,
+        defer_bg_vram_upload: bool,
+        animated_bg_operands: Option<GraphicsDmaGeneration>,
+    ) {
+        // The host's NMI cost: the handler's ledger charge (its own
+        // instructions, NMI_DoUpdates and every annotated callee, the
+        // interrupt entry and the RTI) plus the bus time of the DMA
+        // transfers it ran, during which the CPU is stalled. The native
+        // dialogue budget subtracts it from the frame a resumed host owns.
+        let ledger_before = crate::cycle_ledger::master();
+        self.nmi_dma_accounting = Some(NmiDmaAccounting::default());
+        self.interrupt_nmi_with_animated_bg_operands_body(
+            input,
+            oam_dma_source,
+            defer_bg_vram_upload,
+            animated_bg_operands,
+        );
+        let dma = self.nmi_dma_accounting.take().unwrap_or_default();
+        let cpu = crate::cycle_ledger::master() - ledger_before;
+        self.last_nmi_handler_master_cycles =
+            Some(u32::try_from(cpu + dma.master_cycles()).unwrap_or(u32::MAX));
+    }
+
+    /// Count one DMA transfer the NMI handler performs (`bytes` on the
+    /// A-bus); a no-op outside the handler.
+    pub(super) fn account_nmi_dma_transfer(&mut self, bytes: usize) {
+        if let Some(accounting) = self.nmi_dma_accounting.as_mut() {
+            accounting.transfers += 1;
+            accounting.bytes += bytes as u64;
+        }
+    }
+
+    fn interrupt_nmi_with_animated_bg_operands_body(
         &mut self,
         input: u16,
         oam_dma_source: Option<&[u8]>,
@@ -759,6 +817,7 @@ impl ZeldaState {
                 &data[..data.len().min(16)],
             );
         }
+        self.account_nmi_dma_transfer(0x400);
         for i in 0..0x200 {
             self.ppu.vram[dst + i] = read_word_from_slice(&data, i * 2);
         }
@@ -1044,6 +1103,8 @@ impl ZeldaState {
                 self.ppu.cgram[i] = read_le_u16(&self.ram, MAIN_PALETTE_BUFFER + i * 2);
             }
             self.commit_palette_provenance_cgram();
+            // C: memcpy(cgram, main_palette_buffer, 0x200): one 512-byte DMA.
+            self.account_nmi_dma_transfer(0x200);
             self.record_completed_cgram_dma_for_display_boundary();
         }
 
@@ -1274,6 +1335,7 @@ impl ZeldaState {
             "OAM DMA source is shorter than the hardware OAM payload"
         );
         self.program_dma0_ppu_target(DMA_MODE_ONE_REGISTER, PPU_BBUS_OAM_DATA);
+        self.account_nmi_dma_transfer(self.ppu.oam.len() * 2);
         for i in 0..self.ppu.oam.len() {
             self.ppu.oam[i] = read_word_from_slice(source, i * 2);
         }
@@ -1327,6 +1389,7 @@ impl ZeldaState {
         if target + word_count <= self.ppu.vram.len() {
             self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
             let buf = self.tilemap_upload_stripe_buffer().to_vec();
+            self.account_nmi_dma_transfer(word_count * 2);
             self.mark_effective_dma_vram_range(target..target + word_count);
             for i in 0..word_count {
                 self.ppu.vram[target + i] = read_word_from_slice(&buf, i * 2);
@@ -1364,6 +1427,7 @@ impl ZeldaState {
             }
             let mut dst = read_word_from_slice(&data, pos) as usize;
             pos += 2;
+            self.account_nmi_dma_transfer(len);
             for i in 0..words {
                 if dst < self.ppu.vram.len() {
                     self.mark_effective_dma_vram_word(dst);
@@ -1862,6 +1926,7 @@ impl ZeldaState {
     pub(super) fn copy_to_vram_vertical_slice(&mut self, mut dstv: usize, src: &[u8], len: usize) {
         assert_eq!(len & 1, 0);
         self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
+        self.account_nmi_dma_transfer(len);
         let words = len >> 1;
         for i in 0..words {
             if dstv < self.ppu.vram.len() && i * 2 + 1 < src.len() {
@@ -1874,6 +1939,7 @@ impl ZeldaState {
 
     pub(super) fn copy_to_vram_low_slice(&mut self, src: &[u8], addr: usize, num: usize) {
         self.program_dma0_ppu_target(DMA_MODE_ONE_REGISTER, PPU_BBUS_VRAM_DATA_LOW);
+        self.account_nmi_dma_transfer(num);
         for i in 0..num {
             if addr + i < self.ppu.vram.len() && i < src.len() {
                 self.mark_effective_dma_vram_word(addr + i);
@@ -1952,6 +2018,7 @@ impl ZeldaState {
             return;
         }
         self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
+        self.account_nmi_dma_transfer(len);
         self.mark_effective_dma_vram_range(dst_word..dst_word + len.div_ceil(2));
         for i in 0..len {
             let word_idx = dst_word + i / 2;
@@ -1981,6 +2048,7 @@ impl ZeldaState {
                 None => self.polyhedral_tile_buffer().to_vec(),
             };
             let mut display_vram = None;
+            self.account_nmi_dma_transfer(0x800);
             self.mark_effective_dma_vram_range(0x5800..0x5c00);
             for i in 0..0x400 {
                 let dst = 0x5800 + i;
@@ -2030,6 +2098,7 @@ impl ZeldaState {
         let dst = self.game_state.display.nmi_load_target_page() as usize * 256;
         let buf = self.background_character_half_buffer().to_vec();
         self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
+        self.account_nmi_dma_transfer(0x400);
         self.mark_effective_dma_vram_range(dst..dst + 0x200);
         for i in 0..0x200 {
             self.ppu.vram[dst + i] = read_word_from_slice(&buf, i * 2);
@@ -2060,6 +2129,7 @@ impl ZeldaState {
         crate::cycle_ledger::charge(496);
         let buf = self.background_character_buffer().to_vec();
         self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
+        self.account_nmi_dma_transfer(0x7e0);
         self.mark_effective_dma_vram_range(0x7c00..0x7ff0);
         for i in 0..0x3f0 {
             self.ppu.vram[0x7c00 + i] = read_word_from_slice(&buf, i * 2);
@@ -2088,6 +2158,7 @@ impl ZeldaState {
             for dst_base in LIGHT_WORLD_TILEMAP_DSTS {
                 let mut dst = dst_base;
                 for _ in 0..0x20 {
+                    self.account_nmi_dma_transfer(0x20);
                     for i in 0..0x20 {
                         if src + i < tilemap.len() {
                             self.mark_effective_dma_vram_word(dst + i);
@@ -2113,6 +2184,7 @@ impl ZeldaState {
             let len = ((((stripes[2] as u16) << 8) | stripes[3] as u16) & 0x3fff) as usize + 1;
             stripes = &stripes[4..];
             self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
+            self.account_nmi_dma_transfer(len);
 
             if !vertical {
                 if is_memset {
@@ -2303,3 +2375,17 @@ impl ZeldaState {
 #[cfg(test)]
 #[path = "nmi_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod nmi_dma_accounting_tests {
+    use super::NmiDmaAccounting;
+
+    #[test]
+    fn dma_bus_time_follows_the_pinned_core_per_run_and_per_byte_costs() {
+        assert_eq!(NmiDmaAccounting::default().master_cycles(), 0);
+        // One OAM transfer of 544 bytes: 18 + 8 + 544 x 8.
+        assert_eq!(NmiDmaAccounting { transfers: 1, bytes: 544 }.master_cycles(), 26 + 4_352);
+        // Three transfers: each run and channel completion is paid once.
+        assert_eq!(NmiDmaAccounting { transfers: 3, bytes: 0x7e0 + 0x200 + 0x40 }.master_cycles(), 3 * 26 + (0x7e0 + 0x200 + 0x40) * 8);
+    }
+}

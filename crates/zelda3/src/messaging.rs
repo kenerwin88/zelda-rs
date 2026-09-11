@@ -123,6 +123,11 @@ impl VwfGlyphCosts {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct VwfClickRetentionCosts {
     click: u32,
+    /// Cycles kept before vblank beyond the click itself: the six-scanline
+    /// oracle bracket for the estimates, none for the exact budget (its zero
+    /// is the NMI at V=225, so the click is retained exactly when the exact
+    /// remaining cycles do not cover it).
+    vblank_margin: u32,
     entering_shift: u32,
     preparing_drawing_shift: u32,
 }
@@ -131,6 +136,7 @@ impl VwfClickRetentionCosts {
     const fn estimated() -> Self {
         Self {
             click: VWF_GLYPH_CLICK_MASTER_CYCLES,
+            vblank_margin: VWF_GLYPH_CLICK_VBLANK_MARGIN_MASTER_CYCLES,
             entering_shift: VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES,
             preparing_drawing_shift: VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES
                 - VWF_CALLER_SUFFIX_MASTER_CYCLES,
@@ -212,7 +218,7 @@ const fn vwf_new_glyph_click_requires_boundary_retention(
         VwfGlyphCpuPhase::PreparingDrawing { .. } => costs.preparing_drawing_shift,
         VwfGlyphCpuPhase::Ready | VwfGlyphCpuPhase::Drawing { .. } => 0,
     };
-    cycles_left < costs.click + VWF_GLYPH_CLICK_VBLANK_MARGIN_MASTER_CYCLES + resume_phase_shift
+    cycles_left < costs.click + costs.vblank_margin + resume_phase_shift
 }
 
 fn vwf_interrupted_click_marks_boundary(
@@ -629,6 +635,7 @@ mod fast_forward_cycle_tests {
         assert_eq!(VwfGlyphCosts::estimated(24_000).total(), VWF_GLYPH_ENTRY_MASTER_CYCLES + 24_000);
         let estimated = VwfClickRetentionCosts::estimated();
         assert_eq!(estimated.click, VWF_GLYPH_CLICK_MASTER_CYCLES);
+        assert_eq!(estimated.vblank_margin, 6 * 341 * 4);
         assert_eq!(estimated.entering_shift, VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES);
         assert_eq!(estimated.preparing_drawing_shift, 11_500);
     }
@@ -661,6 +668,13 @@ mod fast_forward_cycle_tests {
             u64::from(state.vwf_glyph_transition_master_cycles()),
             vwf::RENDER_SINGLE_EPILOGUE_MASTER_CYCLES + 228 + vwf::HANDLER_EXIT_MASTER_CYCLES
         );
+        assert_eq!(
+            state.vwf_click_retention_costs(exact, VwfGlyphCpuPhase::Ready),
+            VwfClickRetentionCosts { click: exact.click, vblank_margin: 0, entering_shift: 0, preparing_drawing_shift: 0 }
+        );
+        assert_eq!(state.vwf_exact_resumed_host_budget(), None);
+        state.last_nmi_handler_master_cycles = Some(40_000);
+        assert_eq!(state.vwf_exact_resumed_host_budget(), Some(357_368 - 40_000));
 
         state.original_timing_owner = crate::zelda_rtl::OriginalTimingOwnerState::Live;
         assert!(!state.vwf_uses_exact_costs());
@@ -672,6 +686,7 @@ mod fast_forward_cycle_tests {
             state.vwf_click_retention_costs(estimated, VwfGlyphCpuPhase::Ready),
             VwfClickRetentionCosts::estimated()
         );
+        assert_eq!(state.vwf_exact_resumed_host_budget(), None);
     }
 
     #[test]
@@ -5283,6 +5298,12 @@ impl ZeldaState {
             std::mem::take(&mut self.dialogue_vwf_handler_entry_phase)
         };
         let mut cycles_left = vwf_render_loop_cycle_budget(resuming, current_line, entry_phase);
+        if resuming {
+            if let Some(budget) = self.vwf_exact_resumed_host_budget() {
+                cycles_left = budget;
+            }
+        }
+        let loop_budget = cycles_left;
         let mut frame_advance: u16 = 0;
         let mut midline_yield = false;
         let mut authority_boundary_reached = false;
@@ -5612,7 +5633,7 @@ impl ZeldaState {
             let cursor = self.game_state.messaging.vwf_render.glyph_cursor_usize();
             let arrval = self.vwf_glyph_advance_prefix_sum(cursor);
             eprintln!(
-                "vwf_cycles host={} read_pos={:#x} frame_advance={} glyph_cursor={} line_x={} cycles_left={} cycle_debt={} glyph_phase={:?} midline_yield={} resumed={} entry_phase={entry_phase:?} suffix_threshold={} suffix_crosses_vblank={}",
+                "vwf_cycles host={} read_pos={:#x} frame_advance={} glyph_cursor={} line_x={} budget={loop_budget} nmi_cost={nmi_cost:?} exact={exact_costs} cycles_left={} cycle_debt={} glyph_phase={:?} midline_yield={} resumed={} entry_phase={entry_phase:?} suffix_threshold={} suffix_crosses_vblank={}",
                 self.frame_ctr_dbg,
                 self.game_state.messaging.runtime.dialogue_msg_read_pos(),
                 frame_advance,
@@ -5625,6 +5646,7 @@ impl ZeldaState {
                 resuming,
                 caller_suffix_master_cycles,
                 !midline_yield && cycles_left < caller_suffix_master_cycles,
+                nmi_cost = self.last_nmi_handler_master_cycles,
             );
         }
         if midline_yield {
@@ -5714,30 +5736,39 @@ impl ZeldaState {
         )
     }
 
-    /// Inputs of the click-retention bracket for a new glyph: with exact
-    /// costs, the glyph's own click and, for a handler entered while a glyph
-    /// was still `Entering`, the post-click setup that glyph still owes; a
-    /// `PreparingDrawing` resume needs no shift because its remaining setup
-    /// and rows are consumed exactly.
+    /// Inputs of the click-retention bracket for a new glyph. With exact
+    /// costs the budget's remaining cycles are the exact distance to the
+    /// NMI at V=225 and every suspended phase has already been consumed
+    /// exactly, so the bracket is the glyph's own click with no margin and
+    /// no resume-phase shift: a click that fits the budget lands before
+    /// vblank, one that does not is left `Entering`.
     fn vwf_click_retention_costs(
         &self,
         glyph_costs: VwfGlyphCosts,
-        handler_entry_glyph_phase: VwfGlyphCpuPhase,
+        _handler_entry_glyph_phase: VwfGlyphCpuPhase,
     ) -> VwfClickRetentionCosts {
         if !self.vwf_uses_exact_costs() {
             return VwfClickRetentionCosts::estimated();
         }
         VwfClickRetentionCosts {
             click: glyph_costs.click,
-            entering_shift: match handler_entry_glyph_phase {
-                VwfGlyphCpuPhase::Entering {
-                    post_click_master_cycles,
-                    ..
-                } => post_click_master_cycles,
-                _ => 0,
-            },
+            vblank_margin: 0,
+            entering_shift: 0,
             preparing_drawing_shift: 0,
         }
+    }
+
+    /// The master cycles a resumed host's main work owns on the exact
+    /// budget: the frame minus the cost of the NMI handler that ran before
+    /// it (its ledger charge plus DMA bus time, recorded by
+    /// `interrupt_nmi_with_animated_bg_operands`). `None` under receipts or
+    /// before any NMI has been priced.
+    fn vwf_exact_resumed_host_budget(&self) -> Option<u32> {
+        if !self.vwf_uses_exact_costs() {
+            return None;
+        }
+        self.last_nmi_handler_master_cycles
+            .map(|nmi| SNES_NTSC_MASTER_CYCLES_PER_FRAME.saturating_sub(nmi))
     }
 
     /// Cycles between a completed speed-0 glyph and the next dispatch:
