@@ -1936,9 +1936,36 @@ impl ZeldaState {
     }
 
     fn hud_update_hearts_inner(&mut self, dst: usize, src: &[u16; 3], mut n: i32) {
+        // Cycle ledger: Hud_UpdateHearts $0D:FDAB (JSR target, m16 x16).
+        // $0D:FDAB LDX #0 (24); per pass $0D:FDAE-FDB3 LDA $00 : CMP #$0008 :
+        // BCC (72). A full heart runs $0D:FDB5-FDC2 (176: SBC, STA, LDY #4,
+        // JSR Hud_UpdateHearts_DrawHeart, INX, INX, BRA) and loops. Below
+        // eight the BCC is taken (+6) into $0D:FDC4 CMP #$0005 : BCC (40):
+        // a half heart runs $0D:FDC9 LDY #4 : BRA (46), else the BCC is taken
+        // (+6) into $0D:FDCE CMP #$0001 : BCC (40): a quarter runs $0D:FDD3
+        // LDY #2 : BRA (46), else it is taken (+6) into the $0D:FDD8 RTS
+        // (42). The BRAs land in Hud_UpdateHearts_DrawHeart $0D:FDD9 as a
+        // jump target (charged here): CPX #$0014 : BCC (40; taken +6 below
+        // the tenth heart, else $0D:FDDE-FDE7 starts the next row, 126),
+        // then $0D:FDE9-FDEE LDA [$0A],y, TXY, STA [$07],y, RTS (168). The
+        // JSR form opens its own scope with the same blocks.
+        let _scope = crate::cycle_ledger::routine(0x0d_fdab);
+        crate::cycle_ledger::charge(24);
         let mut x = 0usize;
         let mut row = 0usize;
+        let mut ended_in_remainder = false;
         while n > 0 {
+            let row_wrap = if x >= 10 { 126 } else { 6 };
+            if n >= 8 {
+                crate::cycle_ledger::charge(72 + 176);
+                let _draw = crate::cycle_ledger::routine(0x0d_fdd9);
+                crate::cycle_ledger::charge(40 + row_wrap + 168);
+            } else {
+                crate::cycle_ledger::charge(
+                    72 + 6 + 40 + if n >= 5 { 46 } else { 6 + 40 + 46 } + 40 + row_wrap + 168,
+                );
+                ended_in_remainder = true;
+            }
             if x >= 10 {
                 row += 1;
                 x = 0;
@@ -1946,6 +1973,11 @@ impl ZeldaState {
             self.hud_buffer_set(dst + hudxy(x, row), src[usize::from(n >= 5) + 1]);
             x += 1;
             n -= 8;
+        }
+        if !ended_in_remainder {
+            // Nothing left: the three compares with their BCCs taken and
+            // the RTS (72 + 6 + 40 + 6 + 40 + 6 + 42).
+            crate::cycle_ledger::charge(212);
         }
     }
 
@@ -2125,6 +2157,19 @@ pub(super) const fn pv(a: [u16; 8]) -> u16 {
 }
 
 fn hud_int_to_decimal(number: u32) -> [u8; 4] {
+    // Cycle ledger: Hud_IntToDecimal $0D:F0F7 (JSR target, m16 x16), the
+    // ROM's three-digit form (hundreds and tens by repeated subtraction of
+    // the $0D:F9F9 weights, the ones digit as the remainder; the port's
+    // thousands digit costs nothing). $0D:F0F7-F0FF (110); per weight the
+    // $0D:F102 CMP abs,y : BCC test (62) runs once per subtraction plus a
+    // final taken pass (+6), each subtraction being $0D:F107-F10D (142);
+    // $0D:F10F-F112 INX, DEY, DEY, BPL (58; taken +6 after the first
+    // weight); $0D:F114-F118 STA $05, SEP #$30, LDX #$02 (70); three digit
+    // passes of $0D:F11A-F11E (62; the $7F blank never occurs here), ORA
+    // #$90 (16) and $0D:F122-F125 (60; BPL taken +6 twice); $0D:F127 RTS
+    // (42). 906 for a value below ten, plus 204 per subtraction.
+    let _scope = crate::cycle_ledger::routine(0x0d_f0f7);
+    crate::cycle_ledger::charge(906 + 204 * u64::from(number / 100 + (number % 100) / 10));
     [
         (number / 1000) as u8 + 0x90,
         ((number % 1000) / 100) as u8 + 0x90,
