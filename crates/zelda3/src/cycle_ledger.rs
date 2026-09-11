@@ -11,15 +11,11 @@
 //! compares against the shadow-CPU profiles of the same hosts
 //! (`ZELDA3_DEBUG_ROM_CPU_PROFILE`). See docs/parity/romless-exact-play.md.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::io::Write;
 
 #[derive(Debug, Default)]
 struct Ledger {
-    master: u64,
-    /// Depth of `muted` regions: work the engine runs on a probe clone (a
-    /// CPU-timing preview) is not work the original CPU did.
-    muted: u32,
     /// Charges recorded by nested scopes that have closed, per open scope
     /// depth, so a routine's record excludes its annotated callees (a self
     /// cost, comparable with the profiler's own-instruction totals).
@@ -29,32 +25,36 @@ struct Ledger {
 }
 
 thread_local! {
+    /// The running total, a plain cell so a charge is one add on the hot
+    /// path (annotated routines charge many times per frame).
+    static MASTER: Cell<u64> = const { Cell::new(0) };
+    /// Depth of `muted` regions: work the engine runs on a probe clone (a
+    /// CPU-timing preview) is not work the original CPU did.
+    static MUTED: Cell<u32> = const { Cell::new(0) };
     static LEDGER: RefCell<Ledger> = RefCell::new(Ledger::default());
 }
 
 /// Master cycles charged so far on this thread.
+#[inline]
 pub fn master() -> u64 {
-    LEDGER.with(|ledger| ledger.borrow().master)
+    MASTER.with(Cell::get)
 }
 
 /// Charge master cycles to the routine being executed.
 #[inline]
 pub fn charge(master: u64) {
-    LEDGER.with(|ledger| {
-        let mut ledger = ledger.borrow_mut();
-        if ledger.muted == 0 {
-            ledger.master += master;
-        }
-    });
+    if MUTED.with(Cell::get) == 0 {
+        MASTER.with(|total| total.set(total.get() + master));
+    }
 }
 
 /// Run `probe` with the ledger muted: charges are dropped and scopes record
 /// nothing. For translated work executed on a clone to preview a CPU
 /// schedule, which the original CPU never executed.
 pub fn muted<R>(probe: impl FnOnce() -> R) -> R {
-    LEDGER.with(|ledger| ledger.borrow_mut().muted += 1);
+    MUTED.with(|depth| depth.set(depth.get() + 1));
     let result = probe();
-    LEDGER.with(|ledger| ledger.borrow_mut().muted -= 1);
+    MUTED.with(|depth| depth.set(depth.get() - 1));
     result
 }
 
@@ -69,18 +69,15 @@ pub struct RoutineScope {
 
 /// Enter an annotated routine at its ROM address.
 pub fn routine(address: u32) -> RoutineScope {
-    LEDGER.with(|ledger| {
-        let mut ledger = ledger.borrow_mut();
-        let muted = ledger.muted > 0;
-        if !muted {
-            ledger.nested.push(0);
-        }
-        RoutineScope {
-            address,
-            started: ledger.master,
-            muted,
-        }
-    })
+    let muted = MUTED.with(Cell::get) > 0;
+    if !muted {
+        LEDGER.with(|ledger| ledger.borrow_mut().nested.push(0));
+    }
+    RoutineScope {
+        address,
+        started: master(),
+        muted,
+    }
 }
 
 impl Drop for RoutineScope {
@@ -88,9 +85,9 @@ impl Drop for RoutineScope {
         if self.muted {
             return;
         }
+        let inclusive = master() - self.started;
         LEDGER.with(|ledger| {
             let mut ledger = ledger.borrow_mut();
-            let inclusive = ledger.master - self.started;
             let nested = ledger.nested.pop().unwrap_or(0);
             if let Some(parent) = ledger.nested.last_mut() {
                 *parent += inclusive;
