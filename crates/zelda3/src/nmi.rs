@@ -317,6 +317,12 @@ impl ZeldaState {
         defer_bg_vram_upload: bool,
         animated_bg_operands: Option<GraphicsDmaGeneration>,
     ) {
+        // Cycle ledger: Interrupt_NMI ($00:80C9). The data bank is the
+        // system bank throughout, so register-window operands are priced
+        // 2 less per access than the default listing (profile-confirmed:
+        // `LDA $4210` measures 30). Only CPU instructions are charged; DMA
+        // transfer time is not.
+        let _scope = crate::cycle_ledger::routine(0x00_80c9);
         self.validate_next_original_timing_nmi_update_gate();
         // Ordinary NMI writes cannot re-enter the active field, but an
         // AdvanceStaged publication may already have materialized the next
@@ -370,6 +376,17 @@ impl ZeldaState {
             self.interrupt_nmi_audio_parts();
         }
 
+        // $00:811E-$00:813A: sound-effect ports, forced blank, HDMA off,
+        // `LDA $12; BNE`: 304 not taken; the latched case takes the branch
+        // (+6). $00:813C-$00:8141 (`INC $12`, `JSR NMI_DoUpdates`,
+        // `JSR NMI_ReadJoypads`): 130, JSR costs only; both callees charge
+        // themselves when annotated. The joypad JSR is charged here even when
+        // the engine sampled the joypad before main (the ROM reads it here).
+        crate::cycle_ledger::charge(if self.game_state.display.nmi_update_is_latched() {
+            310
+        } else {
+            304 + 130
+        });
         if !self.game_state.display.nmi_update_is_latched() {
             let bg_vram_load_mode = self.game_state.display.bg_vram_load_mode;
             let stripe_work = match bg_vram_load_mode {
@@ -474,6 +491,25 @@ impl ZeldaState {
                     .color_window_selection(),
             );
         }
+        // Register-write tail. The ROM always executes it; the engine's
+        // `thread_holds_registers` hold only withholds publication, so the
+        // charge does not depend on it.
+        // Thread active: $00:8144-$00:8147 (48) + `JMP NMI_SwitchThread` (24)
+        //   + $00:822D-$00:82D7 (2012 with the system-bank discount; includes
+        //   `JSR NMI_UpdateIRQGFX` at 46 and the stack swap + RTI).
+        // Thread inactive: $00:8144 taken (54) + $00:814C-$00:81DA (1516; the
+        //   `BNE $008200` on the BG mode is taken (+6) unless mode 7, which
+        //   instead runs $00:81DC-$00:81FD (368)) + $00:8200 (48 + $00:8205-
+        //   $00:8218 (212) when $128 is set, else 54) + $00:821B-$00:822C (354).
+        crate::cycle_ledger::charge(if self.game_state.display.nmi_thread_active {
+            48 + 24 + 2012
+        } else {
+            let bg_mode_7 = self.game_state.display.bg_mode & 7 == 7;
+            let irq = self.game_state.display.has_irq_control_flag();
+            54 + if bg_mode_7 { 1516 + 368 } else { 1522 }
+                + if irq { 48 + 212 } else { 54 }
+                + 354
+        });
         if !thread_holds_registers {
             self.write_ppu_registers();
         }
@@ -533,6 +569,35 @@ impl ZeldaState {
             );
         }
         let music_control = self.game_state.system_signals.music_control();
+        // Cycle ledger, Interrupt_NMI music port ($00:80C9-$00:8100):
+        // $00:80C9-$00:80DF is 366 (system-bank `LDA $4210`); `BNE $0080EE`
+        // is taken (+6) when $12C is nonzero.
+        // $12C == 0: $00:80E1-$00:80E7 (78) reads the APU echo port $2140 and
+        //   compares it with $133; equal runs $00:80E9-$00:80EC (52, `STZ
+        //   $2140` + BRA), else the BNE is taken (84). The C port dropped this
+        //   echo handshake, so the engine has no port-0 echo state. The
+        //   shadow profiles show the equal case exactly while $133 is 0 (the
+        //   driver's output port rests at 0), and never on ordinary frames, so
+        //   it is priced on `last_music_control == 0`. The single echo frame
+        //   after each fresh command (port == $133 once, before the ROM's STZ
+        //   is echoed back) is not modeled: 52 under on that frame.
+        // $12C != 0: $00:80EE-$00:80F1 (48): equal to $133 takes the BEQ (54)
+        //   and leaves $12C set (the vanilla "already playing" skip); else
+        //   $00:80F3-$00:80FB (94; `BCS` taken +6 for $F2 and above) then
+        //   $00:80FD (32, only below $F2) and $00:8100 (32).
+        crate::cycle_ledger::charge(if music_control == 0 {
+            366 + if self.game_state.system_signals.last_music_control() == 0 {
+                78 + 52
+            } else {
+                84
+            }
+        } else if music_control == self.game_state.system_signals.last_music_control() {
+            372 + 54
+        } else if music_control < 0xf2 {
+            372 + 48 + 94 + 32 + 32
+        } else {
+            372 + 48 + 100 + 32
+        });
         if music_control != 0 && !self.zelda_is_playing_music_track_with_bug(music_control) {
             self.set_last_music_control(music_control);
             self.zelda_play_msu_audio_track(music_control);
@@ -543,6 +608,21 @@ impl ZeldaState {
         }
 
         let ambient_sound_effect = self.game_state.system_signals.ambient_sound_effect();
+        // Ambient port ($00:8103-$00:811B): `LDA $12D; BNE` is 48 (54 taken).
+        // $12D != 0: $00:8115-$00:811B (94). $12D == 0: $00:8108-$00:810E
+        // (78) compares the $2141 echo with $131; equal (the engine's
+        // acknowledged-command predicate below) runs $00:8110-$00:8113 (52),
+        // else the BNE is taken (84).
+        crate::cycle_ledger::charge(if ambient_sound_effect != 0 {
+            54 + 94
+        } else if self.zelda_audio_command_acknowledged(EngineAudioCommand::from_sfx_port_value(
+            AudioSfxBank::Ambient,
+            self.game_state.system_signals.last_ambient_sound_effect(),
+        )) {
+            48 + 78 + 52
+        } else {
+            48 + 84
+        });
         if ambient_sound_effect != 0 {
             self.save_ambient_sound_effect_as_last();
             self.zelda_emit_audio_command(EngineAudioCommand::from_sfx_port_value(
@@ -716,6 +796,28 @@ impl ZeldaState {
         defer_bg_vram_upload: bool,
         animated_bg_operands: Option<GraphicsDmaGeneration>,
     ) {
+        // Cycle ledger: NMI_DoUpdates ($00:89E0), entered m8 x8 from the NMI
+        // handler with the system data bank (register operands priced 2 or 4
+        // less per access; the profile measures `STX $4300` at 36 and `STA
+        // $420B` at 30). CPU instructions only, no DMA transfer time.
+        let _scope = crate::cycle_ledger::routine(0x00_89e0);
+        // $00:89E0-$00:89EA (116): with $710 set the BEQ falls through to
+        // `JMP $008B67` (24), skipping straight to the HUD test. Otherwise the
+        // taken BEQ (122) runs the Link/animated-tile DMA programming
+        // $00:89EF-$00:8B28 (3580), the travel-bird channels $00:8B2A-$00:8B4D
+        // (420, else the BEQ is taken +6) and the animated-tile channel
+        // $00:8B50-$00:8B64 (258).
+        crate::cycle_ledger::charge(if self.game_state.display.core_updates_are_disabled() {
+            116 + 24
+        } else {
+            122 + 3580
+                + if self.game_state.display.has_travel_bird_tile_upload() {
+                    420
+                } else {
+                    6
+                }
+                + 258
+        });
         if !self.game_state.display.core_updates_are_disabled() {
             if let Some(uses_host_operands) = self
                 .next_core_nmi_active_scanout_uses_host_animated_bg_operands
@@ -878,6 +980,13 @@ impl ZeldaState {
                 read_word_from_slice(self.message_dma_tile_indices(), 131 * 2),
             );
         }
+        // $00:8B67-$00:8B69 `LDA $16; BEQ` (40, taken 46); the HUD DMA
+        // programming $00:8B6B-$00:8B84 is 288.
+        crate::cycle_ledger::charge(if self.game_state.system_signals.should_update_hud() {
+            40 + 288
+        } else {
+            46
+        });
         if self.game_state.system_signals.should_update_hud() {
             let dst = self
                 .game_state
@@ -886,6 +995,17 @@ impl ZeldaState {
             let hud_buf = self.message_dma_tile_indices().to_vec();
             self.complete_hud_dma_from_persistent_channel0(&hud_buf, dst);
         }
+        // $00:8B87-$00:8B89 `LDA $15; BEQ` (40, taken 46); the CGRAM DMA
+        // programming $00:8B8B-$00:8BA7 is 302. Priced on the engine's actual
+        // upload decision: an intro deferral models the ROM's $15 still being
+        // clear at this vblank, so the deferred vblank charges the skip.
+        crate::cycle_ledger::charge(
+            if self.game_state.system_signals.should_update_cgram() && !defer_intro_cgram {
+                40 + 302
+            } else {
+                46
+            },
+        );
         if debug_display_vram {
             eprintln!(
                 "nmi_hud_selected host={} vram_60c3={:04x}",
@@ -975,6 +1095,27 @@ impl ZeldaState {
             }
         }
         self.complete_oam_dma_from_source(&oam_buf);
+        // $00:8BAA-$00:8BD1 (436): `STZ $15`, the OAM DMA programming and
+        // `LDY $14; BEQ`; the BEQ is taken (+6) when no BG stripe load is
+        // pending. A pending load runs $00:8BD3-$00:8BE9 (270, including
+        // `JSR HandleStripes14` at 46 with its three `LDA abs,Y` reads never
+        // crossing a page for modes 1-9), then `STZ $1000/$1001` (64) for
+        // mode 1 only (the `BNE $008BF1` is taken +6 otherwise) and `STZ $14`
+        // (24). Priced on the engine's actual upload: a deferred upload
+        // models the ROM's $14 still being clear at this vblank.
+        crate::cycle_ledger::charge(
+            if self.game_state.display.has_bg_vram_load() && !defer_bg_vram_upload {
+                436 + 270
+                    + if self.game_state.display.bg_vram_load_mode == 1 {
+                        64
+                    } else {
+                        6
+                    }
+                    + 24
+            } else {
+                442
+            },
+        );
 
         if crate::debug_env::var_os("ZELDA3_DEBUG_ATTRACT_NMI_UPLOAD").is_some()
             && frame.main_module == 20
@@ -1035,6 +1176,13 @@ impl ZeldaState {
             self.clear_bg_vram_load_mode();
         }
 
+        // $00:8BF3-$00:8BF5 `LDA $19; BEQ` (40, taken 46); the tilemap DMA
+        // programming $00:8BF7-$00:8C20 is 446.
+        crate::cycle_ledger::charge(if self.game_state.display.has_pending_tilemap_update() {
+            40 + 446
+        } else {
+            46
+        });
         if self.game_state.display.has_pending_tilemap_update() {
             let dst = self
                 .game_state
@@ -1047,11 +1195,23 @@ impl ZeldaState {
             self.clear_pending_tilemap_update_destination();
         }
 
+        // $00:8C22-$00:8C24 `LDX $18; BEQ` (40, taken 46). With packets
+        // pending: $00:8C26-$00:8C36 (204), the per-packet loop charged in
+        // `NMI_CopyPackets`, and $00:8C6E-$00:8C72 (78).
+        crate::cycle_ledger::charge(if self.game_state.display.has_nmi_copy_packets_request() {
+            40 + 204
+        } else {
+            46
+        });
         if self.game_state.display.has_nmi_copy_packets_request() {
             self.NMI_CopyPackets();
+            crate::cycle_ledger::charge(78);
             self.clear_nmi_copy_packets_request();
             self.clear_core_update_disable_flag();
         }
+        // $00:8C75-$00:8C7B (122): `LDA $17; ASL; TAX; STZ $17; JMP (abs,X)`.
+        // The target runs to its own RTS; it charges itself when annotated.
+        crate::cycle_ledger::charge(122);
 
         // A scheduling experiment may defer the dispatch while retaining the
         // rest of the NMI's normal OAM/PPU maintenance. This is intentionally
@@ -1446,7 +1606,13 @@ impl ZeldaState {
 
     pub(super) fn NMI_CopyPackets(&mut self) {
         let data = self.nmi_vram_packet_buffer().to_vec();
+        // NMI_DoUpdates packet loop $00:8C39-$00:8C6C: 604 per packet with
+        // the system-bank discount, plus the taken `BNE $008C39` (+6) after
+        // every packet but the last. The ROM's `do { } while` always runs the
+        // body once, so an empty list still costs one iteration.
+        let mut packets: u64 = 0;
         for packet in nmi_vram_copy_packets(&data) {
+            packets += 1;
             match packet.direction {
                 NmiVramCopyDirection::Horizontal => {
                     self.copy_to_vram_slice(packet.destination, packet.data, packet.data.len());
@@ -1460,6 +1626,8 @@ impl ZeldaState {
                 }
             }
         }
+        let packets = packets.max(1);
+        crate::cycle_ledger::charge(packets * 604 + (packets - 1) * 6);
     }
 
     pub(super) fn nmi_core_link_graphics_update(

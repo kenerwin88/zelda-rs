@@ -404,9 +404,37 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_refill_logic(&mut self) {
+        // Cycle ledger: Hud_RefillLogic_Far ($0D:DB75), the JSL target every
+        // caller uses; it branches into Hud_RefillLogic ($0D:DB92), which is
+        // never called on its own. Entered m8 x8; data bank $0D.
+        let _scope = crate::cycle_ledger::routine(0x0d_db75);
         if self.overworld_map_state() != 0 {
+            // $0D:DB75-$0D:DB7B (120) then $0D:DB7D-$0D:DB7E `PLB; RTL` (72).
+            crate::cycle_ledger::charge(120 + 72);
             return;
         }
+        // $0D:DB75-$0D:DB7B with the `BEQ Hud_RefillLogic` taken: 126.
+        crate::cycle_ledger::charge(126);
+        // $0D:DB92-$0D:DB96 `LDA $7EF373; BEQ` (56, taken 62).
+        // Filler set: $0D:DB98-$0D:DB9E (72; `BCC` taken +6 below 128).
+        //   At or above 128: $0D:DBA0-$0D:DBAC (134, BRA included).
+        //   Below: $0D:DBAE-$0D:DBC4 (244; the `BNE` on `$1A & 3` is taken
+        //   +6 off the tick), then $0D:DBC6-$0D:DBC9 (48, taken 54 when a
+        //   sound effect is pending) and $0D:DBCB-$0D:DBCD (48).
+        crate::cycle_ledger::charge({
+            let filler = self.game_state.inventory.player_resources.magic_filler();
+            if filler == 0 {
+                62
+            } else if self.game_state.inventory.player_resources.magic.amount() >= 128 {
+                56 + 72 + 134
+            } else if self.game_state.frame.frame_counter & 3 != 0 {
+                56 + 78 + 250
+            } else if self.game_state.system_signals.has_sound_effect_1() {
+                56 + 78 + 244 + 54
+            } else {
+                56 + 78 + 244 + 48 + 48
+            }
+        });
         if self.game_state.inventory.player_resources.magic_filler() != 0 {
             // link_magic_power (0xf36e) is owned solely by FollowerLinkState; only
             // magic_filler stays in PlayerResourcesState.
@@ -426,15 +454,29 @@ impl ZeldaState {
 
         let mut a = self.game_state.inventory.player_resources.rupees_actual();
         let goal = self.game_state.inventory.player_resources.rupees_goal();
+        // $0D:DBD0-$0D:DBDA `REP #$30; LDA $7EF362; CMP $7EF360; BEQ` (134,
+        // taken 140 into $0D:DC13-$0D:DC15 `SEP #$30; STZ $0CFD` (54)).
         if a != goal {
+            crate::cycle_ledger::charge(134);
             if a >= goal {
+                // $0D:DBDC `BMI` not taken (16); $0D:DBDE-$0D:DBDF `DEC; BPL
+                // $0DDBF7` (30, taken 36 while the result stays non-negative);
+                // a negative result runs $0D:DBE1-$0D:DBE8 (94, BRA included).
                 a = a.wrapping_sub(1);
                 if (a as i16) < 0 {
+                    crate::cycle_ledger::charge(16 + 30 + 94);
                     a = 0;
                     self.player_resources_mut().set_rupees_goal(0);
+                } else {
+                    crate::cycle_ledger::charge(16 + 36);
                 }
             } else {
+                // $0D:DBDC `BMI` taken (22); $0D:DBEA-$0D:DBEE `INC; CMP
+                // #$03E8; BCC $0DDBF7` (54, taken 60 below 1000); at 1000 the
+                // clamp $0D:DBF0-$0D:DBF3 (72) runs. The ROM compares against
+                // 1000 whatever the enhanced rupee cap is.
                 a = a.wrapping_add(1);
+                crate::cycle_ledger::charge(if a < 0x3e8 { 22 + 60 } else { 22 + 54 + 72 });
                 let m = self.max_rupees();
                 if a > m {
                     a = m;
@@ -442,19 +484,33 @@ impl ZeldaState {
                 }
             }
             self.player_resources_mut().set_rupees_actual(a);
+            // $0D:DBF7-$0D:DC00 (118): store, `SEP #$30`, `LDA $012E; BNE`
+            // (taken 124 into $0D:DC13 (54) when a sound effect is pending).
+            // Otherwise $0D:DC02-$0D:DC0A (110): `LDA $0CFD; INC $0CFD; AND
+            // #$07; BNE $0DDC18` (taken +6 off the beat); on the beat
+            // $0D:DC0C-$0D:DC11 (70, BRA included) sets the sound.
             if !self.game_state.system_signals.has_sound_effect_1() {
                 let delay = self.hud_state().rupee_sfx_sound_delay();
                 self.set_rupee_sfx_sound_delay(delay.wrapping_add(1));
                 if delay & 7 == 0 {
+                    crate::cycle_ledger::charge(118 + 110 + 70);
                     self.set_sound_effect_1(41);
+                } else {
+                    crate::cycle_ledger::charge(118 + 116);
                 }
             } else {
+                crate::cycle_ledger::charge(124 + 54);
                 self.set_rupee_sfx_sound_delay(0);
             }
         } else {
+            crate::cycle_ledger::charge(140 + 54);
             self.set_rupee_sfx_sound_delay(0);
         }
 
+        // $0D:DC18-$0D:DC1C `LDA $7EF375; BEQ` (56, taken 62). Filler set:
+        // $0D:DC1E-$0D:DC33 (236; `CMP $DB48,Y` never crosses a page for the
+        // upgrade levels) with the `BEQ` taken (+6) at the maximum, else
+        // $0D:DC35-$0D:DC36 (54).
         if self.game_state.inventory.player_resources.bomb_filler() != 0 {
             self.player_resources_mut().decrement_bomb_filler();
             let max = MAX_BOMBS_BY_UPGRADE_LEVEL[self
@@ -463,9 +519,20 @@ impl ZeldaState {
                 .player_resources
                 .bomb_upgrade_level() as usize];
             if self.game_state.inventory.player_resources.bombs() != max {
+                crate::cycle_ledger::charge(56 + 236 + 54);
                 self.player_resources_mut().increment_bombs();
+            } else {
+                crate::cycle_ledger::charge(56 + 242);
             }
+        } else {
+            crate::cycle_ledger::charge(62);
         }
+        // $0D:DC3A-$0D:DC3E `LDA $7EF376; BEQ` (56, taken 62). Filler set:
+        // $0D:DC40-$0D:DC55 (236, `BEQ` taken +6 at the maximum) else
+        // $0D:DC57-$0D:DC58 (54); then $0D:DC5C-$0D:DC60 `LDA $7EF340; BEQ`
+        // (56, taken 62 without a bow), $0D:DC62-$0D:DC66 (48, `BNE` taken
+        // +6 when bit 0 is clear) and the upgrade $0D:DC68-$0D:DC71 (156,
+        // `JSL Hud_RefreshIcon` at 62 included).
         if self.game_state.inventory.player_resources.arrow_filler() != 0 {
             self.player_resources_mut().decrement_arrow_filler();
             let max = MAX_ARROWS_BY_UPGRADE_LEVEL[self
@@ -474,17 +541,48 @@ impl ZeldaState {
                 .player_resources
                 .arrow_upgrade_level() as usize];
             if self.game_state.inventory.player_resources.arrows() != max {
+                crate::cycle_ledger::charge(56 + 236 + 54);
                 self.player_resources_mut().increment_arrows();
+            } else {
+                crate::cycle_ledger::charge(56 + 242);
             }
             let bow = self.game_state.inventory.items.bow();
             if bow != 0 && bow & 1 == 1 {
+                crate::cycle_ledger::charge(56 + 48 + 156);
                 self.inventory_items_mut()
                     .set_inventory_item(0, bow.wrapping_add(1));
                 self.hud_refresh_icon();
+            } else {
+                crate::cycle_ledger::charge(if bow == 0 { 62 } else { 56 + 54 });
             }
+        } else {
+            crate::cycle_ledger::charge(62);
         }
 
         let cap_idx = (self.game_state.inventory.player_resources.health_capacity() >> 3) as usize;
+        // $0D:DC75-$0D:DC78 `LDA $02E4; BNE` (48, taken 54 while immobilized);
+        // $0D:DC7A-$0D:DC7E `LDA $7EF372; BNE` (56, taken 62 while refilling);
+        // $0D:DC80-$0D:DC8F (184, `CMP $DB60,X` stays in its page; `BCS`
+        // taken +6 at full health); $0D:DC91-$0D:DC94 `LDA $04CA; BNE` (48,
+        // taken 54 into `DEC $04CA` (46)); $0D:DC96-$0D:DC99 `LDA $012E; BNE`
+        // (48, taken 54); $0D:DC9B-$0D:DCA2 (96). The ROM always writes the
+        // beep sound here; the low-health-beep feature only mutes the engine.
+        crate::cycle_ledger::charge({
+            let resources = &self.game_state.inventory.player_resources;
+            if self.game_state.player.follower_link.is_immobilized() {
+                54
+            } else if resources.heart_filler() != 0 {
+                48 + 62
+            } else if resources.current_health() >= MAX_HEALTH_BY_CAPACITY_LEVEL[cap_idx] {
+                48 + 56 + 190
+            } else if resources.low_health_beep_timer() != 0 {
+                48 + 56 + 184 + 54 + 46
+            } else if self.game_state.system_signals.has_sound_effect_1() {
+                48 + 56 + 184 + 48 + 54
+            } else {
+                48 + 56 + 184 + 48 + 48 + 96
+            }
+        });
         if !self.game_state.player.follower_link.is_immobilized()
             && self.game_state.inventory.player_resources.heart_filler() == 0
             && self.game_state.inventory.player_resources.current_health()
@@ -511,26 +609,52 @@ impl ZeldaState {
             }
         }
 
+        // $0D:DCA8-$0D:DCAB `LDA $020A; BNE` (48, taken 54 into the
+        // animation exit $0D:DD07-$0D:DD19 (302: `JSR Hud_Update_IgnoreHealth`
+        // and `JSR Hud_AnimateHeartRefill` at 46 each, `INC $16`, `PLB`,
+        // `RTL`)).
         if self.hud_state().is_doing_heart_animation() {
-            self.hud_update_magic();
-            self.hud_update_inventory();
+            crate::cycle_ledger::charge(54 + 302);
+            {
+                // Hud_Update_IgnoreHealth ($0D:FC09) is the magic + inventory
+                // pair; the body blocks charge themselves.
+                let _scope = crate::cycle_ledger::routine(0x0d_fc09);
+                self.hud_update_magic();
+                self.hud_update_inventory();
+            }
             self.hud_animate_heart_refill();
             self.increment_hud_update_flag();
             return;
         }
+        // $0D:DCAD-$0D:DCB1 `LDA $7EF372; BEQ` (56, taken 62 into the plain
+        // exit $0D:DD1A-$0D:DD29 (256: `JSR Hud_Update_IgnoreItemBox` at 46,
+        // `INC $16`, `PLB`, `RTL`)).
         if self.game_state.inventory.player_resources.heart_filler() != 0 {
             if self.game_state.inventory.player_resources.current_health()
                 < self.game_state.inventory.player_resources.health_capacity()
             {
+                // $0D:DCB3-$0D:DCBB (96) with the `BCC` taken (+6);
+                // $0D:DCCD-$0D:DCDB (158; `BNE` taken +6 when a sound effect
+                // 2 is pending, else $0D:DCDD-$0D:DCDF (48)); $0D:DCE2-
+                // $0D:DCEA (96; `BCC` taken +6 below capacity, else the clamp
+                // $0D:DCEC-$0D:DCF0 (80)); $0D:DCF4-$0D:DD04 (204); then the
+                // animation exit (302).
+                crate::cycle_ledger::charge(48 + 56 + 102);
                 self.player_resources_mut().increment_current_health_by(8);
                 if self.game_state.inventory.player_resources.current_health()
                     >= self.game_state.inventory.player_resources.health_capacity()
                 {
                     let capacity = self.game_state.inventory.player_resources.health_capacity();
                     self.player_resources_mut().set_current_health(capacity);
+                    crate::cycle_ledger::charge(96 + 80);
+                } else {
+                    crate::cycle_ledger::charge(102);
                 }
                 if !self.game_state.system_signals.has_sound_effect_2() {
+                    crate::cycle_ledger::charge(158 + 48);
                     self.set_sound_effect_2(13);
+                } else {
+                    crate::cycle_ledger::charge(164);
                 }
                 self.player_resources_mut().decrement_heart_filler_by(8);
                 let h = self
@@ -539,20 +663,35 @@ impl ZeldaState {
                     .wrapping_add(1);
                 self.set_is_doing_heart_animation(h);
                 self.set_heart_refill_countdown(7);
-                self.hud_update_magic();
-                self.hud_update_inventory();
+                crate::cycle_ledger::charge(204 + 302);
+                {
+                    let _scope = crate::cycle_ledger::routine(0x0d_fc09);
+                    self.hud_update_magic();
+                    self.hud_update_inventory();
+                }
                 self.hud_animate_heart_refill();
                 self.increment_hud_update_flag();
                 return;
             }
+            // $0D:DCB3-$0D:DCBB (96) falling through into the clamp
+            // $0D:DCBD-$0D:DCCB (158, BRA included), then the plain exit.
+            crate::cycle_ledger::charge(48 + 56 + 96 + 158 + 256);
             let capacity = self.game_state.inventory.player_resources.health_capacity();
             let mut resources = self.player_resources_mut();
             resources.set_current_health(capacity);
             resources.set_heart_filler(0);
+        } else {
+            crate::cycle_ledger::charge(48 + 62 + 256);
         }
-        self.hud_update_hearts();
-        self.hud_update_magic();
-        self.hud_update_inventory();
+        {
+            // Hud_Update_IgnoreItemBox ($0D:FB94): the hearts block falls
+            // through into the magic + inventory code and returns at
+            // $0D:FCF9, so one scope covers all three.
+            let _scope = crate::cycle_ledger::routine(0x0d_fb94);
+            self.hud_update_hearts();
+            self.hud_update_magic();
+            self.hud_update_inventory();
+        }
         self.increment_hud_update_flag();
     }
 
@@ -1619,6 +1758,26 @@ impl ZeldaState {
     }
 
     fn hud_update_hearts(&mut self) {
+        // Cycle ledger, Hud_Update_IgnoreItemBox ($0D:FB94) hearts block.
+        // $0D:FB94-$0D:FBE2 (856): pointer setup, `JSR Hud_UpdateHearts` (46,
+        // the first inner call), the second setup and `LDA $7EF36C; CMP
+        // $7EF36D; BEQ $0DFBED` (taken +6 at full health). Otherwise
+        // $0D:FBE4-$0D:FBEB `SEC; SBC #$04; CMP $7EF36D; BCS` (86, taken +6
+        // when capacity - 4 is still at or above the current health).
+        // $0D:FBED-$0D:FC06 (330) rounds the health and makes the second
+        // `JSR Hud_UpdateHearts` (46 included), then falls into $0D:FC09.
+        crate::cycle_ledger::charge({
+            let capacity = self.game_state.inventory.player_resources.health_capacity();
+            let current = self.game_state.inventory.player_resources.current_health();
+            if capacity == current {
+                862
+            } else if capacity.wrapping_sub(4) >= current {
+                856 + 92
+            } else {
+                856 + 86
+            }
+        });
+        crate::cycle_ledger::charge(330);
         self.hud_update_hearts_inner(
             hudxy(20, 1),
             &HUD_FULL_HEART_TILES,
@@ -1632,6 +1791,24 @@ impl ZeldaState {
     }
 
     fn hud_update_magic(&mut self) {
+        // Cycle ledger, Hud_Update_IgnoreHealth ($0D:FC09) magic block.
+        // $0D:FC09-$0D:FC15 `REP #$30; LDA $7EF37B; AND; CMP #$0001; BCC`
+        // (134, taken 140 without a magic upgrade); the upgrade label
+        // $0D:FC17-$0D:FC28 is 216. $0D:FC2C-$0D:FC53 (524) selects and
+        // writes the four meter rows.
+        crate::cycle_ledger::charge(
+            if self
+                .game_state
+                .inventory
+                .player_resources
+                .magic_consumption_level()
+                >= 1
+            {
+                134 + 216
+            } else {
+                140
+            } + 524,
+        );
         let dst = hudxy(2, 0);
         if self
             .game_state
@@ -1734,6 +1911,25 @@ impl ZeldaState {
         }
         let key = 0x2400 | d[3] as u16;
         self.hud_buffer_set(dst + hudxy(10, 1), key);
+        // Cycle ledger, Hud_Update_IgnoreHealth ($0D:FC09) inventory block.
+        // $0D:FC57-$0D:FCDB (1460): rupees, bombs and arrows through three
+        // `JSR Hud_IntToDecimal` (46 each) and their digit stores, `LDA
+        // #$007F; STA $05`, then `LDA $7EF36F; AND; CMP #$00FF; BEQ` (taken
+        // +6 without keys, else the fourth `JSR Hud_IntToDecimal` at
+        // $0D:FCDD, 46). $0D:FCE0-$0D:FCF1 (190) stores the key digit and
+        // tests it against $247F (`BNE` taken +6 unless blank; a blank runs
+        // $0D:FCF3, 48). $0D:FCF7-$0D:FCF9 `SEP #$30; RTS` (64).
+        // The port's background-tile refresh, bow-icon update and yellow
+        // maximum tiles are not in this ROM routine and cost nothing here.
+        crate::cycle_ledger::charge(
+            1460 + if self.game_state.inventory.player_resources.keys() != 0xff {
+                46
+            } else {
+                6
+            } + 190
+                + if key == 0x247f { 48 } else { 6 }
+                + 64,
+        );
         if key == 0x247f {
             self.hud_buffer_set(dst + hudxy(10, 0), 0x247f);
         }
