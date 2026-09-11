@@ -299,6 +299,16 @@ stop needing ROM code (a native replacement for each of the eleven
 plans, built from the cycle models and the ledger), not by improving the
 timing-off path.
 
+Frontier history for the ROM-loaded native path: 8889 (video, the
+glyph estimates) → 4660 (audio: exact glyph costs against a whole-frame
+resumed budget) → 2507 (video: entry budgets derived from a prefix the
+ledger does not fully charge yet, which flipped the first scroll's
+completion timing) → 8716 (audio) with the hybrid: traced entry
+constants for a line's first host, the raster-derived budget (held NMI,
+refresh and HDMA stalls) for resumed hosts. The engine's frame number is
+the receipt host plus one. The remaining miss is one glyph too many on
+the first resumed host after some line starts.
+
 Each mechanism at the frontier gets a native rule, checked against the
 cached receipts (hosts per operation, and read positions per host for
 the dialogue renderer), and the frontier is measured again. The routines
