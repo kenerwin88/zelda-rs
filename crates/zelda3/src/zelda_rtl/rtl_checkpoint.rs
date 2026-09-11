@@ -2872,18 +2872,9 @@ impl ZeldaState {
             // until DungeonSupertileCallerReturnNmi resumes the caller suffix.
             self.latch_nmi_update();
         }
-        if resumed_dungeon_spiral_state_7_publishes_audio_after_main(
-            resume,
-            self.game_state.world.location.dungeon_room_index(),
-            resumed_main_entry,
-            self.game_state.frame,
-        ) {
-            // The leading NMI above owns display publication, but the original
-            // CPU reaches the audio-port sampling site after this resumed
-            // caller suffix. Publish only the audio domain here: a second full
-            // NMI would incorrectly advance OAM, VRAM, and register generations.
-            self.publish_resumed_spiral_audio_after_main();
-        }
+        // The leading NMI already sampled the audio ports. Commands authored
+        // by this fresh iteration remain queued until the following NMI;
+        // original host 23932 completes the handler before spiral state 7.
 
         if resume.continues_after_main(self.game_state.frame)
             && self.game_execution_scheduler.is_idle()
@@ -2921,18 +2912,6 @@ impl ZeldaState {
         self.assert_native_world_location_state_matches_ram();
         self.assert_native_display_state_matches_ram();
         true
-    }
-
-    pub(super) fn publish_resumed_spiral_audio_after_main(&mut self) {
-        let ambient = self.game_state.system_signals.ambient_sound_effect();
-        self.interrupt_nmi_audio_parts();
-        if ambient != 0 {
-            // The suspended ROM caller republishes the room ambience before the
-            // following NMI. Its one-shot effect does not repeat, but letting
-            // the coarse continuation consume the ambient latch here creates a
-            // spurious 3 -> 0 -> 3 host-port edge and retriggers the SPC channel.
-            self.set_ambient_sound_effect(ambient);
-        }
     }
 
     /// Finish the source caller below an interrupted Module09 `Sprite_Main`.

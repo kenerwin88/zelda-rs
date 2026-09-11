@@ -1184,27 +1184,6 @@ const fn rom_dungeon_spiral_state_8_publishes_live_hud_tilemap(
         && frame.subsubmodule == 8
 }
 
-fn resumed_dungeon_spiral_state_7_publishes_audio_after_main(
-    resume: PreMainNmiResume,
-    dungeon_room: u8,
-    entry: crate::game_state::FrameState,
-    exit: crate::game_state::FrameState,
-) -> bool {
-    // The suspended spiral-graphics caller returns into state 7 behind a
-    // leading display NMI. That resumed slice changes floors and authors the
-    // stair blip before the same host boundary samples the audio ports. Keep
-    // this exception tied to the measured continuation and phase transition;
-    // ordinary state-7 iterations still use the pre-main audio boundary.
-    matches!(resume, PreMainNmiResume::DungeonSupertileQuadrantUploads)
-        && dungeon_room == 1
-        && entry.main_module == 7
-        && entry.submodule == 0x0e
-        && entry.subsubmodule == 7
-        && exit.main_module == 7
-        && exit.submodule == 0x0e
-        && exit.subsubmodule == 8
-}
-
 const fn dungeon_subtile_landing_enters_shutter(
     entry: crate::game_state::FrameState,
     exit: crate::game_state::FrameState,

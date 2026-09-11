@@ -3153,70 +3153,35 @@ fn room_01_spiral_state_8_marks_the_pending_hud_dma_live() {
 }
 
 #[test]
-fn resumed_spiral_state_7_publishes_only_its_new_audio_ports_after_main() {
-    let state_7 = crate::game_state::FrameState {
-        main_module: 7,
-        submodule: 0x0e,
-        subsubmodule: 7,
-        ..Default::default()
-    };
-    let state_8 = crate::game_state::FrameState {
-        subsubmodule: 8,
-        ..state_7
-    };
-    assert!(resumed_dungeon_spiral_state_7_publishes_audio_after_main(
+fn resumed_spiral_state_7_keeps_its_sound_queued_until_the_next_nmi() {
+    // Source host 23932: Open NMI, handler completion, fresh main, suffix.
+    // The floor-change blip ($24) is authored after that audio sample.
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.rom_reset_frame_delay = 0;
+    state.initialized = true;
+    state.set_animated_tile_data_source_address(0xa680);
+    state.set_indoor_flag(1);
+    state.set_main_module(7);
+    state.set_submodule(0x0e);
+    state.set_subsubmodule(7);
+    state.dungeon_stair_movement_mut().set_staircase_index(4);
+    state.game_state.write_to_ram(&mut state.ram);
+    state.ram[0xa0] = 1;
+    state.sync_native_game_state_from_ram();
+    // The source completes this short state in one host. Isolate command
+    // publication from the development-only ROM CPU schedule measurement.
+    state.dungeon_submodule_cpu_schedule = Some(DungeonSubmoduleCpuSchedule::default());
+    state.game_execution_scheduler.schedule_pre_main_nmi_resume(
         PreMainNmiResume::DungeonSupertileQuadrantUploads,
-        1,
-        state_7,
-        state_8,
-    ));
-    assert!(!resumed_dungeon_spiral_state_7_publishes_audio_after_main(
-        PreMainNmiResume::DungeonSupertileCallerReturnNmi,
-        1,
-        state_7,
-        state_8,
-    ));
-    assert!(!resumed_dungeon_spiral_state_7_publishes_audio_after_main(
-        PreMainNmiResume::DungeonSupertileQuadrantUploads,
-        2,
-        state_7,
-        state_8,
-    ));
-    assert!(!resumed_dungeon_spiral_state_7_publishes_audio_after_main(
-        PreMainNmiResume::DungeonSupertileQuadrantUploads,
-        1,
-        crate::game_state::FrameState {
-            subsubmodule: 6,
-            ..state_7
-        },
-        state_8,
-    ));
-    assert!(!resumed_dungeon_spiral_state_7_publishes_audio_after_main(
-        PreMainNmiResume::DungeonSupertileQuadrantUploads,
-        1,
-        state_7,
-        crate::game_state::FrameState {
-            subsubmodule: 9,
-            ..state_7
-        },
-    ));
-    assert!(!resumed_dungeon_spiral_state_7_publishes_audio_after_main(
-        PreMainNmiResume::DungeonSupertileQuadrantUploads,
-        1,
-        state_7,
-        crate::game_state::FrameState {
-            submodule: 0x02,
-            ..state_8
-        },
-    ));
-
-    let mut runtime = ZeldaState::new();
-    runtime.set_ambient_sound_effect(3);
-    runtime.set_sound_effect_2(36);
-    runtime.publish_resumed_spiral_audio_after_main();
-    assert_eq!(runtime.zelda_audio_route_state().queue.write, [0, 3, 0, 36]);
-    assert_eq!(runtime.game_state.system_signals.ambient_sound_effect(), 3);
-    assert_eq!(runtime.game_state.system_signals.sound_effect_2(), 0);
+    );
+    assert!(state.resume_after_pre_main_nmi(0, None));
+    assert_eq!(state.game_state.frame.subsubmodule, 8);
+    assert_eq!(state.game_state.system_signals.sound_effect_2(), 0x24);
+    assert_eq!(state.zelda_audio_route_state().queue.write[3], 0);
+    state.interrupt_nmi_audio_parts();
+    assert_eq!(state.game_state.system_signals.sound_effect_2(), 0);
+    assert_eq!(state.zelda_audio_route_state().queue.write[3], 0x24);
 }
 
 #[test]
