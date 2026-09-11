@@ -346,6 +346,7 @@ impl ZeldaState {
         // transfers it ran, during which the CPU is stalled. The native
         // dialogue budget subtracts it from the frame a resumed host owns.
         let ledger_before = crate::cycle_ledger::master();
+        self.silent_ledger_calls_at_nmi_acceptance = crate::cycle_ledger::silent_calls();
         self.nmi_dma_accounting = Some(NmiDmaAccounting::default());
         self.interrupt_nmi_with_animated_bg_operands_body(
             input,

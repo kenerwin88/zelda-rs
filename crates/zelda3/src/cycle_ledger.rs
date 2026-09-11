@@ -31,6 +31,11 @@ thread_local! {
     /// Depth of `muted` regions: work the engine runs on a probe clone (a
     /// CPU-timing preview) is not work the original CPU did.
     static MUTED: Cell<u32> = const { Cell::new(0) };
+    /// Routine scopes opened so far on this thread (an annotation census).
+    static SCOPES_OPENED: Cell<u64> = const { Cell::new(0) };
+    /// Probed calls that charged nothing and opened no scope: translated
+    /// routines the ledger does not price yet (see `probe_annotation`).
+    static SILENT_CALLS: Cell<u64> = const { Cell::new(0) };
     static LEDGER: RefCell<Ledger> = RefCell::new(Ledger::default());
 }
 
@@ -72,6 +77,7 @@ pub fn routine(address: u32) -> RoutineScope {
     let muted = MUTED.with(Cell::get) > 0;
     if !muted {
         LEDGER.with(|ledger| ledger.borrow_mut().nested.push(0));
+        SCOPES_OPENED.with(|count| count.set(count.get() + 1));
     }
     RoutineScope {
         address,
@@ -94,6 +100,45 @@ impl Drop for RoutineScope {
             }
             ledger.completed.push((self.address, inclusive - nested));
         });
+    }
+}
+
+/// Probed calls so far that charged nothing and opened no scope.
+pub fn silent_calls() -> u64 {
+    SILENT_CALLS.with(Cell::get)
+}
+
+/// Guard placed at the entry of a translated routine (or around a dispatch
+/// to one) whose annotation may be missing: when it drops without any
+/// charge or scope having happened since it was taken, the call is counted
+/// in `silent_calls`. A budget derived from the ledger is complete only
+/// while no probed call was silent since its reference point. The
+/// heuristic accepts a routine that charges anything at all (an unannotated
+/// body calling an annotated helper passes), so it detects missing
+/// annotations, not partial ones. Muted regions are not probed.
+#[must_use = "bind the probe to a local so it observes the whole call"]
+pub struct AnnotationProbe {
+    scopes: u64,
+    master: u64,
+    muted: bool,
+}
+
+pub fn probe_annotation() -> AnnotationProbe {
+    AnnotationProbe {
+        scopes: SCOPES_OPENED.with(Cell::get),
+        master: master(),
+        muted: MUTED.with(Cell::get) > 0,
+    }
+}
+
+impl Drop for AnnotationProbe {
+    fn drop(&mut self) {
+        if self.muted {
+            return;
+        }
+        if SCOPES_OPENED.with(Cell::get) == self.scopes && master() == self.master {
+            SILENT_CALLS.with(|count| count.set(count.get() + 1));
+        }
     }
 }
 
@@ -127,4 +172,32 @@ pub fn flush_host(host: u32) {
         }
         ledger.completed.clear();
     });
+}
+
+#[cfg(test)]
+mod annotation_probe_tests {
+    use super::*;
+
+    #[test]
+    fn a_probed_call_is_silent_only_when_it_neither_charges_nor_opens_a_scope() {
+        let before = silent_calls();
+        {
+            let _probe = probe_annotation();
+        }
+        assert_eq!(silent_calls(), before + 1);
+        {
+            let _probe = probe_annotation();
+            charge(16);
+        }
+        assert_eq!(silent_calls(), before + 1);
+        {
+            let _probe = probe_annotation();
+            let _scope = routine(0x00_841e);
+        }
+        assert_eq!(silent_calls(), before + 1);
+        muted(|| {
+            let _probe = probe_annotation();
+        });
+        assert_eq!(silent_calls(), before + 1);
+    }
 }
