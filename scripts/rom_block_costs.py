@@ -206,6 +206,9 @@ class Instruction:
         elif kind == "CTL":
             if mode == "rel":
                 bus = 2
+                if name == "BRA":
+                    # Always taken: the table's 3 cycles already include it.
+                    return (cycles - bus) * 6 + bus * 8, 0, ""
                 return (cycles - bus) * 6 + bus * 8, 6, "taken +6"
             if mode == "rel16":
                 bus = 3

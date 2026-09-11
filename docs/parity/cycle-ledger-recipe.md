@@ -29,8 +29,9 @@ prices itself.
    so early returns need nothing.
 2. Charge each basic block where the translation executes it:
    `crate::cycle_ledger::charge(N)`, with N the block total from the listing.
-   A taken branch costs 6 more than a not-taken one: charge the branch's
-   taken cost on the path that takes it.
+   A conditional branch costs 6 more when taken: charge the taken cost on
+   the path that takes it. `BRA`/`BRL` are always taken and the listing's
+   22/28 already include it; never add 6 to them.
 3. Loops charge per iteration inside the loop body; data-dependent branches
    charge inside the matching `if`/`else`. The translation usually has the
    same branches; when it computes the same result a different way, charge
