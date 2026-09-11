@@ -12270,29 +12270,60 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_0F_00_InitSpotlight(&mut self) {
+        // Cycle ledger: Module07_0F_00_InitSpotlight ($02:932D).
+        let _scope = crate::cycle_ledger::routine(0x02_932d);
+        // $932D: JSL Spotlight_open (the callee charges itself).
+        crate::cycle_ledger::charge(62);
         self.Spotlight_open();
+        // $9331-$9333: INC $B0, RTS.
+        crate::cycle_ledger::charge(80);
         self.increment_subsubmodule();
     }
 
     pub(super) fn Module07_0F_01_OperateSpotlight(&mut self) {
+        // Cycle ledger: Module07_0F_01_OperateSpotlight ($02:9334). The
+        // suffix is charged by `complete_module07_0f_operate_spotlight_suffix`,
+        // which a deferred goal transition also runs on a later host.
+        let _scope = crate::cycle_ledger::routine(0x02_9334);
+        // $9334: JSL Sprite_Main (the callee charges itself when annotated).
+        crate::cycle_ledger::charge(62);
         self.sprite_main();
+        // $9338: JSL IrisSpotlight_ConfigureTable (the callee charges itself).
+        crate::cycle_ledger::charge(62);
         self.IrisSpotlight_ConfigureTable();
         self.complete_module07_0f_operate_spotlight_suffix();
     }
 
     pub(super) fn complete_module07_0f_operate_spotlight_suffix(&mut self) {
+        // $933C-$933E: LDA $11, BNE.
+        crate::cycle_ledger::charge(40);
         if self.game_state.frame.submodule == 0 {
+            // $9340-$9351: STZ $96/$97/$98/$1E/$1F/$B0, LDA $0132, CMP #$FF,
+            // BEQ.
+            crate::cycle_ledger::charge(208);
             self.clear_window_layer_masks();
             self.clear_window_main_sub_masks();
             self.set_subsubmodule(0);
             let queued_music_control = self.game_state.system_signals.queued_music_control();
             if queued_music_control != 0xff {
+                // $9353: STA $012C.
+                crate::cycle_ledger::charge(32);
                 self.set_music_control(queued_music_control);
+            } else {
+                // BEQ $9356 taken.
+                crate::cycle_ledger::charge(6);
             }
+        } else {
+            // BNE $9356 taken.
+            crate::cycle_ledger::charge(6);
         }
+        // $9356: RTS.
+        crate::cycle_ledger::charge(42);
     }
 
     pub(super) fn Module07_0F_LandingWipe(&mut self) {
+        // Cycle ledger: Module07_0F_LandingWipe ($02:931D).
+        let _scope = crate::cycle_ledger::routine(0x02_931d);
         let cpu_advance = self.take_dungeon_landing_cpu_advance();
         let authoritative_link_oam_suspension =
             self.take_original_timing_main_loop_interruption(crate::MainLoopInterruption::LinkOam);
@@ -12302,13 +12333,23 @@ impl ZeldaState {
                 .current_main_iteration_follows_leading_nmi();
             self.begin_dungeon_landing_spotlight_publication(entry_started_after_leading_nmi);
         }
+        // $931D-$9321: LDA $B0, ASL, TAX, JSR (kDungeon_Submodule_F,X); the
+        // submodule charges itself.
+        crate::cycle_ledger::charge(114);
         match self.game_state.frame.subsubmodule {
             0 => self.Module07_0F_00_InitSpotlight(),
             1 => self.Module07_0F_01_OperateSpotlight(),
             other => panic!("invalid Module07_0F_LandingWipe subsubmodule_index {other}"),
         }
+        // $9324: JSL Link_HandleMovingAnimation_FullLongEntry; $9328: JSL
+        // LinkOam_Main (the callees charge themselves when annotated);
+        // $932C: RTS. When the host return interrupts LinkOam_Main the ROM
+        // reaches the RTS on the following host; it is charged here.
+        crate::cycle_ledger::charge(62);
         self.link_handle_moving_animation_full_long_entry();
+        crate::cycle_ledger::charge(62);
         self.link_oam_main();
+        crate::cycle_ledger::charge(42);
         if authoritative_link_oam_suspension {
             // The temporary Live authority observed the host return while the
             // source was still inside this landing submodule's LinkOam_Main
