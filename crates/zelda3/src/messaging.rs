@@ -78,10 +78,10 @@ const VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES: u32 = 28_000;
 /// The exact caller suffix of a completed handler (`cycle_models::vwf`):
 /// the fixed chain from `$0E:C9F5` to the main loop's `JSR
 /// NMI_PrepareSprites`, the call and the loop tail, plus
-/// `NMI_PrepareSprites`' body. That body has no annotation yet, so it keeps
-/// the remainder of the measured estimate; the total therefore still equals
-/// `VWF_CALLER_SUFFIX_MASTER_CYCLES` until that routine is priced.
-fn vwf_exact_caller_suffix_master_cycles() -> u32 {
+/// `NMI_PrepareSprites`' body as its annotation last charged it
+/// (`last_nmi_prepare_sprites_master_cycles`); before any call has been
+/// priced the body keeps the remainder of the measured estimate.
+fn vwf_exact_caller_suffix_master_cycles(nmi_prepare_sprites_master_cycles: Option<u32>) -> u32 {
     use crate::cycle_models::vwf::{
         caller_suffix_master_cycles, MAIN_LOOP_PREPARE_SPRITES_CALL_MASTER_CYCLES,
         MAIN_LOOP_TAIL_MASTER_CYCLES,
@@ -89,8 +89,22 @@ fn vwf_exact_caller_suffix_master_cycles() -> u32 {
     let fixed_chain = (caller_suffix_master_cycles()
         + MAIN_LOOP_PREPARE_SPRITES_CALL_MASTER_CYCLES
         + MAIN_LOOP_TAIL_MASTER_CYCLES) as u32;
-    let nmi_prepare_sprites_body_estimate = VWF_CALLER_SUFFIX_MASTER_CYCLES - fixed_chain;
-    fixed_chain + nmi_prepare_sprites_body_estimate
+    let nmi_prepare_sprites_body = nmi_prepare_sprites_master_cycles
+        .unwrap_or(VWF_CALLER_SUFFIX_MASTER_CYCLES - fixed_chain);
+    fixed_chain + nmi_prepare_sprites_body
+}
+
+/// The native dialogue budget of one handler call without timing receipts:
+/// the CPU cycles from the loop entry to the next NMI acceptance on the
+/// raster, and the pieces it was derived from (for the debug trace).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct VwfExactLoopBudget {
+    master_cycles: u32,
+    /// Ledger work since the NMI acceptance (handler, main-loop prefix,
+    /// module and entry chain) plus the NMI's DMA bus time.
+    since_nmi_master_cycles: u64,
+    /// Refresh and HDMA stalls between the loop entry and the deadline.
+    stall_master_cycles: u32,
 }
 
 /// The three phase costs of one glyph as the CPU phase machine consumes
@@ -631,7 +645,8 @@ mod fast_forward_cycle_tests {
         // NMI_PrepareSprites has no annotation, so the exact suffix still
         // sums to the measured estimate; the estimated glyph costs are the
         // old entry + drawing split.
-        assert_eq!(vwf_exact_caller_suffix_master_cycles(), VWF_CALLER_SUFFIX_MASTER_CYCLES);
+        assert_eq!(vwf_exact_caller_suffix_master_cycles(None), VWF_CALLER_SUFFIX_MASTER_CYCLES);
+        assert_eq!(vwf_exact_caller_suffix_master_cycles(Some(11_600)), 764 + 46 + 11_600 + 46);
         assert_eq!(VwfGlyphCosts::estimated(24_000).total(), VWF_GLYPH_ENTRY_MASTER_CYCLES + 24_000);
         let estimated = VwfClickRetentionCosts::estimated();
         assert_eq!(estimated.click, VWF_GLYPH_CLICK_MASTER_CYCLES);
@@ -672,9 +687,33 @@ mod fast_forward_cycle_tests {
             state.vwf_click_retention_costs(exact, VwfGlyphCpuPhase::Ready),
             VwfClickRetentionCosts { click: exact.click, vblank_margin: 0, entering_shift: 0, preparing_drawing_shift: 0 }
         );
-        assert_eq!(state.vwf_exact_resumed_host_budget(), None);
-        state.last_nmi_handler_master_cycles = Some(40_000);
-        assert_eq!(state.vwf_exact_resumed_host_budget(), Some(357_368 - 40_000));
+        assert_eq!(state.vwf_exact_loop_budget(), None);
+        // A held NMI (2,982) with no HDMA: the loop owns the frame minus the
+        // handler and the WRAM refresh stalls (40 per scanline) up to the
+        // next acceptance.
+        state.ledger_master_at_nmi_acceptance = Some(crate::cycle_ledger::master());
+        crate::cycle_ledger::charge(2_982);
+        state.last_nmi_dma_master_cycles = 0;
+        let budget = state.vwf_exact_loop_budget().expect("a priced NMI derives the budget");
+        eprintln!("held-NMI resumed budget: {budget:?}");
+        assert_eq!(budget.since_nmi_master_cycles, 2_982);
+        assert!(
+            budget.master_cycles > 357_368 - 2_982 - 262 * 40 - 200
+                && budget.master_cycles < 357_368 - 2_982 - 261 * 40 + 200,
+            "budget {budget:?}"
+        );
+        assert_eq!(
+            budget.stall_master_cycles,
+            357_368 - 2_982 - budget.master_cycles
+        );
+        // The same entry with the NMI's DMA bus time and a first-line prefix
+        // (a DoUpdates NMI of 36,742 and 7,000 of prefix work) lands near the
+        // old calibrated first-line constant once EmptyBuffer is charged too.
+        state.ledger_master_at_nmi_acceptance = Some(crate::cycle_ledger::master());
+        crate::cycle_ledger::charge(36_742 + 7_000 + 56_060);
+        let budget = state.vwf_exact_loop_budget().unwrap();
+        eprintln!("first-line budget: {budget:?}");
+        assert!(budget.master_cycles > 240_000 && budget.master_cycles < 250_000, "budget {budget:?}");
 
         state.original_timing_owner = crate::zelda_rtl::OriginalTimingOwnerState::Live;
         assert!(!state.vwf_uses_exact_costs());
@@ -686,7 +725,7 @@ mod fast_forward_cycle_tests {
             state.vwf_click_retention_costs(estimated, VwfGlyphCpuPhase::Ready),
             VwfClickRetentionCosts::estimated()
         );
-        assert_eq!(state.vwf_exact_resumed_host_budget(), None);
+        assert_eq!(state.vwf_exact_loop_budget(), None);
     }
 
     #[test]
@@ -739,13 +778,50 @@ impl ZeldaState {
         // A fast-forward message render slice: the ROM's NMI skips the core
         // game update (sprites/Link) while the main thread finishes the render.
         let mut skip_run = self.dialogue_fast_forward_hold_active;
+        // Cycle ledger: Module0E_Interface ($00:F800) is a fresh call frame
+        // only when this host starts a main-loop iteration; a resumed
+        // dialogue slice re-enters the translation to reach the suspended
+        // handler, which the ROM resumes directly after its RTI.
+        let fresh_iteration = !self.dialogue_fast_forward_hold_active;
+        let _scope = fresh_iteration.then(|| crate::cycle_ledger::routine(0x00_f800));
+        let charge = |master: u64| {
+            if fresh_iteration {
+                crate::cycle_ledger::charge(master);
+            }
+        };
+        let submodule = self.game_state.frame.submodule;
         if self.game_state.world.location.is_indoors() {
-            if self.game_state.frame.submodule == 3 {
+            // $00:F800: LDA $1B : BEQ (not taken) ; $00:F804: LDA $11 : CMP #$03 : BNE
+            charge(40 + 56);
+            if submodule == 3 {
+                let map_state = self.overworld_map_state();
+                // $00:F80A: LDA $0200 : BEQ $F82A ; $00:F80F: CMP #$07 : BEQ $F82A ; BRA $F848
+                charge(if map_state == 0 {
+                    48 + 6
+                } else if map_state == 7 {
+                    48 + 32 + 6
+                } else {
+                    48 + 32 + 22
+                });
                 skip_run = self.overworld_map_state() != 0 && self.overworld_map_state() != 7;
             } else {
+                // BNE taken ; $00:F815: JSL Dungeon_PushBlock_Handler : BRA $F82A
+                charge(6 + 62 + 22);
                 self.dungeon_push_block_handler();
             }
         } else {
+            // $00:F800: LDA $1B : BEQ (taken) ; $00:F81B: LDA $11 : CMP #$07 : BEQ $F825
+            charge(40 + 6 + 56);
+            if submodule == 7 {
+                charge(6);
+            } else {
+                // $00:F821: CMP #$0A : BNE $F82A
+                charge(32 + if submodule == 10 { 0 } else { 6 });
+            }
+            if submodule == 7 || submodule == 10 {
+                // $00:F825: LDA $0200 : BNE $F848
+                charge(48 + if self.overworld_map_state() != 0 { 6 } else { 0 });
+            }
             skip_run |= (self.game_state.frame.submodule == 7
                 || self.game_state.frame.submodule == 10)
                 && self.overworld_map_state() != 0;
@@ -820,8 +896,18 @@ impl ZeldaState {
     /// this method preserves the exact remaining C statement order without
     /// replaying Sprite_Main or publishing the caller suffix early.
     pub(super) fn complete_module0e_after_sprite_main(&mut self) {
+        // $00:F82A: JSL Sprite_Main : JSL LinkOam_Main : LDA $1B : BNE $F83A
+        // (164, +6 indoors); $00:F836: JSL OverworldOverlay_HandleRain (62)
+        // outdoors; $00:F83A: JSL Hud_RefillLogic_Far : LDA $11 : CMP #$02
+        // : BEQ $F848 (118, +6 in submodule 2); $00:F844: JSL
+        // OrientLampLightCone (62). The callees charge themselves.
+        let outdoors = self.game_state.world.location.is_outdoors();
+        let submodule_2 = self.game_state.frame.submodule == 2;
+        crate::cycle_ledger::charge(
+            164 + if outdoors { 62 } else { 6 } + 118 + if submodule_2 { 6 } else { 62 },
+        );
         self.link_oam_main();
-        if self.game_state.world.location.is_outdoors() {
+        if outdoors {
             self.OverworldOverlay_HandleRain();
         }
         self.hud_refill_logic();
@@ -832,6 +918,12 @@ impl ZeldaState {
     }
 
     fn complete_module0e_run_interface(&mut self) {
+        if !self.dialogue_fast_forward_hold_active {
+            // $00:F848: SEP #$30 : JSL RunInterface (84); RunInterface
+            // ($00:F89A, 264: three long table loads and `JML [$00]`).
+            crate::cycle_ledger::charge(84);
+            crate::cycle_ledger::charge_routine(0x00_f89a, 264);
+        }
         self.replay_trace_ram_watch("module0e-before-run-interface");
         self.RunInterface();
         self.replay_trace_ram_watch("module0e-after-run-interface");
@@ -853,6 +945,8 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_module0e_interface_after_run(&mut self) {
+        // $00:F84E-$00:F875: the scroll-register copies and RTL (578).
+        crate::cycle_ledger::charge(578);
         let bg1_x_offset = self.game_state.world.scroll.bg1_x_offset();
         let bg1_y_offset = self.game_state.world.scroll.bg1_y_offset();
         let bg2x = self
@@ -4385,11 +4479,30 @@ impl ZeldaState {
     }
 
     pub(super) fn RenderText(&mut self) {
-        match self.game_state.messaging.runtime.module() {
-            0 => self.Text_Initialize(),
-            1 => self.Text_Render(),
-            2 => self.RenderText_PostDeathSaveOptions(),
-            _ => {}
+        // Cycle ledger: RenderText ($0E:C440: PHB : PHK : PLB : JSR, 118;
+        // PLB : RTL, 72 after the handler) and Messaging_Text_Near
+        // ($0E:C448: LDA $1CD8 : JSL JumpTableLocal, 508), whose JSR frame
+        // stays open through the JumpTableLocal jumps until the handler's
+        // RTS. A resumed dialogue slice re-enters the translation without
+        // the ROM running any of it.
+        let fresh_iteration = !self.dialogue_fast_forward_hold_active;
+        let _scope = fresh_iteration.then(|| crate::cycle_ledger::routine(0x0e_c440));
+        {
+            let _near = fresh_iteration.then(|| {
+                crate::cycle_ledger::charge(118);
+                let near = crate::cycle_ledger::routine(0x0e_c448);
+                crate::cycle_ledger::charge(508);
+                near
+            });
+            match self.game_state.messaging.runtime.module() {
+                0 => self.Text_Initialize(),
+                1 => self.Text_Render(),
+                2 => self.RenderText_PostDeathSaveOptions(),
+                _ => {}
+            }
+        }
+        if fresh_iteration {
+            crate::cycle_ledger::charge(72);
         }
     }
 
@@ -4465,7 +4578,14 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_text_initialization_prefix(&mut self) {
-        if self.game_state.frame.main_module == 20 {
+        // Text_Initialize ($0E:C483): LDA $10 : CMP #$14 : BNE (56, +6 taken
+        // outside module $14), JSL ResetHUDPalettes4and5 (62) in module $14,
+        // $0E:C48D: JSL Attract_DecompressStoryGFX : LDX #$00 (78); falls
+        // into Text_Initialize_initModuleStateLoop.
+        let _scope = crate::cycle_ledger::routine(0x0e_c483);
+        let module_20 = self.game_state.frame.main_module == 20;
+        crate::cycle_ledger::charge(if module_20 { 56 + 62 } else { 56 + 6 } + 78);
+        if module_20 {
             self.ResetHUDPalettes4and5();
         }
         self.Attract_DecompressStoryGFX();
@@ -4490,6 +4610,12 @@ impl ZeldaState {
         // subset, leaving unmodeled bytes (notably DIALOGUE_MSG_SRC_OFFS 0x1cdd-0x1cde, a dead
         // message-DMA-pointer scratch) stale. Mirror C's raw copy so those bytes match too;
         // the native fields re-project their (identical) values afterward.
+        // $0E:C493-$0E:C49C: 32 passes of the init-data copy (116, `BCC`
+        // taken 31 times; `LDA $D35A,X` stays in its page), then $0E:C49E:
+        // JSR Text_InitVwfState : JSR RenderText_SetDefaultWindowPosition
+        // : REP #$30 : LDA #$387F : AND #$FF00 : ORA #$0180 : STA $1CE2
+        // : SEP #$30 (248; the callees charge themselves).
+        crate::cycle_ledger::charge(32 * 116 + 31 * 6 + 248);
         self.ram[crate::game_state::constants::TEXT_MSGBOX_TOPLEFT_COPY
             ..crate::game_state::constants::TEXT_MSGBOX_TOPLEFT_COPY
                 + TEXT_INITIALIZATION_DATA.len()]
@@ -4530,6 +4656,19 @@ impl ZeldaState {
     }
 
     fn finish_text_initialization_after_character_buffer(&mut self) {
+        // $0E:C4B4: JSR Text_LoadCharacterBuffer : JSR RenderText_Draw_EmptyBuffer
+        // (92; the character-buffer load is priced by cycle_models::text_buffer
+        // from the ROM's message bytes and is not charged here), then
+        // $0E:C4BA: REP #$30 : STZ $1CD9 : SEP #$30 : LDA #$02 : STA $17
+        // : STA $0710 : RTS (198).
+        crate::cycle_ledger::charge(92 + 198);
+        // RenderText_Draw_EmptyBuffer ($0E:D1F9-$0E:D22F): PHB : LDA #$7F
+        // : PHA : PLB : REP #$30 : LDA #$07D0 : TAX (148), 126 passes of the
+        // eight `STZ $xx,X` clears (436, `BPL` taken 125 times), PLB : STZ
+        // $1CDD : INC $1CD9 : SEP #$30 : STZ $1CE6 : RTS (226): 56,060.
+        crate::cycle_ledger::charge_routine(0x0e_d1f9, 148 + 126 * 436 + 125 * 6 + 226);
+        // The same routine zeroes the dispatch cursor the loader had set.
+        self.dialogue_vwf_dispatch_cursor = crate::cycle_models::vwf::DispatchCursor::default();
         self.clear_messaging_render_buffer_range(0x7e0);
         self.set_pending_nmi_subroutine(2);
         self.set_core_update_disable_flag(2);
@@ -4546,6 +4685,8 @@ impl ZeldaState {
     }
 
     pub(super) fn Text_InitVwfState(&mut self) {
+        // $0E:C4C9-$0E:C4E1: eight STZ abs and RTS.
+        crate::cycle_ledger::charge_routine(0x0e_c4c9, 298);
         self.set_vwf_current_line(0);
         self.clear_vwf_next_line_request();
         self.clear_vwf_glyph_cursor();
@@ -4713,6 +4854,12 @@ impl ZeldaState {
     }
 
     pub(super) fn Text_Render(&mut self) {
+        // Text_Render ($0E:C8D9: LDA $1CD4 : JSL JumpTableLocal, 508), a
+        // jump target of Messaging_Text_Near (or a JSR frame from the
+        // post-death options loop); the state handlers are its jump targets.
+        if !self.dialogue_fast_forward_hold_active {
+            crate::cycle_ledger::charge(508);
+        }
         match self.game_state.messaging.runtime.text_render_state() {
             0 => self.RenderText_Draw_Border(),
             1 => self.RenderText_Draw_BorderIncremental(),
@@ -4724,6 +4871,10 @@ impl ZeldaState {
     }
 
     pub(super) fn RenderText_Draw_Border(&mut self) {
+        // $0E:C8EA-$0E:C8F6 (170), six passes of $0E:C8F7-$0E:C8FF (140,
+        // `BNE` taken 5 times), $0E:C901-$0E:C918 (292); a jump target of
+        // Text_Render, so it charges into the open scope.
+        crate::cycle_ledger::charge(170 + 6 * 140 + 5 * 6 + 292);
         self.RenderText_DrawBorderInitialize();
         let mut d = self.RenderText_DrawBorderRow(0x1002, 0);
         for _ in 0..6 {
@@ -4764,6 +4915,8 @@ impl ZeldaState {
     }
 
     pub(super) fn RenderText_Draw_CharacterTilemap(&mut self) {
+        // $0E:C97D: JSR Text_BuildCharacterTilemap : INC $1CD4 : RTS (134).
+        crate::cycle_ledger::charge(134);
         self.Text_BuildCharacterTilemap();
     }
 
@@ -5280,7 +5433,7 @@ impl ZeldaState {
         let caller_suffix_master_cycles = if exact_costs {
             // The remaining phases of a resumed glyph are priced exactly by
             // the phase machine; the suffix itself does not lengthen.
-            vwf_exact_caller_suffix_master_cycles()
+            vwf_exact_caller_suffix_master_cycles(self.last_nmi_prepare_sprites_master_cycles)
         } else if resuming
             && matches!(
                 self.dialogue_vwf_glyph_cpu_phase,
@@ -5298,10 +5451,9 @@ impl ZeldaState {
             std::mem::take(&mut self.dialogue_vwf_handler_entry_phase)
         };
         let mut cycles_left = vwf_render_loop_cycle_budget(resuming, current_line, entry_phase);
-        if resuming {
-            if let Some(budget) = self.vwf_exact_resumed_host_budget() {
-                cycles_left = budget;
-            }
+        let exact_budget = self.vwf_exact_loop_budget();
+        if let Some(budget) = exact_budget {
+            cycles_left = budget.master_cycles;
         }
         let loop_budget = cycles_left;
         let mut frame_advance: u16 = 0;
@@ -5633,7 +5785,7 @@ impl ZeldaState {
             let cursor = self.game_state.messaging.vwf_render.glyph_cursor_usize();
             let arrval = self.vwf_glyph_advance_prefix_sum(cursor);
             eprintln!(
-                "vwf_cycles host={} read_pos={:#x} frame_advance={} glyph_cursor={} line_x={} budget={loop_budget} nmi_cost={nmi_cost:?} exact={exact_costs} cycles_left={} cycle_debt={} glyph_phase={:?} midline_yield={} resumed={} entry_phase={entry_phase:?} suffix_threshold={} suffix_crosses_vblank={}",
+                "vwf_cycles host={} read_pos={:#x} frame_advance={} glyph_cursor={} line_x={} budget={loop_budget} nmi_cost={nmi_cost:?} since_nmi={since_nmi:?} stalls={stalls:?} hdma_stall={hdma_stall} exact={exact_costs} cycles_left={} cycle_debt={} glyph_phase={:?} midline_yield={} resumed={} entry_phase={entry_phase:?} suffix_threshold={} suffix_crosses_vblank={}",
                 self.frame_ctr_dbg,
                 self.game_state.messaging.runtime.dialogue_msg_read_pos(),
                 frame_advance,
@@ -5647,6 +5799,9 @@ impl ZeldaState {
                 caller_suffix_master_cycles,
                 !midline_yield && cycles_left < caller_suffix_master_cycles,
                 nmi_cost = self.last_nmi_handler_master_cycles,
+                since_nmi = exact_budget.map(|budget| budget.since_nmi_master_cycles),
+                stalls = exact_budget.map(|budget| budget.stall_master_cycles),
+                hdma_stall = self.native_hdma_scanline_stall_master_cycles(),
             );
         }
         if midline_yield {
@@ -5758,17 +5913,76 @@ impl ZeldaState {
         }
     }
 
-    /// The master cycles a resumed host's main work owns on the exact
-    /// budget: the frame minus the cost of the NMI handler that ran before
-    /// it (its ledger charge plus DMA bus time, recorded by
-    /// `interrupt_nmi_with_animated_bg_operands`). `None` under receipts or
+    /// Per-scanline HDMA bus stall of the live channel programming, priced
+    /// as the pinned core charges one `dma_do_hdma`: 8 per active channel
+    /// plus 8 per transferred byte of its mode, 16 once when any channel is
+    /// active, plus the 2-cycle sync adjustment. Every active channel is
+    /// assumed to transfer on every scanline (a repeat-mode table), the
+    /// dialogue's usual case; indirect descriptor reloads are not modeled.
+    pub(crate) fn native_hdma_scanline_stall_master_cycles(&self) -> u16 {
+        const TRANSFER_LENGTH: [u16; 8] = [1, 2, 2, 4, 4, 4, 2, 4];
+        let mut stall = 0u16;
+        let mut any = false;
+        for (index, channel) in self.dma.channel.iter().enumerate() {
+            if !self.game_state.display.is_hdma_channel_enabled(index) {
+                continue;
+            }
+            any = true;
+            stall += 8 + 8 * TRANSFER_LENGTH[usize::from(channel.mode & 7)];
+        }
+        if any {
+            stall + 16 + 2
+        } else {
+            0
+        }
+    }
+
+    /// The master cycles this host's dialogue loop owns on the exact budget:
+    /// the CPU work that fits between the loop entry and the next NMI
+    /// acceptance on the raster, with WRAM refresh and the live HDMA stalls.
+    /// The entry is the last NMI acceptance advanced by everything charged
+    /// since (the handler with its DMA bus time, and on a fresh iteration the
+    /// main-loop prefix, `Module0E_Interface` and the RenderText entry chain;
+    /// on a resumed slice only the held handler). `None` under receipts or
     /// before any NMI has been priced.
-    fn vwf_exact_resumed_host_budget(&self) -> Option<u32> {
+    fn vwf_exact_loop_budget(&self) -> Option<VwfExactLoopBudget> {
+        use crate::zelda_rtl::game_execution_scheduler::{CpuCycleBudget, CpuWorkAdvance};
         if !self.vwf_uses_exact_costs() {
             return None;
         }
-        self.last_nmi_handler_master_cycles
-            .map(|nmi| SNES_NTSC_MASTER_CYCLES_PER_FRAME.saturating_sub(nmi))
+        let nmi_acceptance = self.ledger_master_at_nmi_acceptance?;
+        let since_nmi_master_cycles = crate::cycle_ledger::master()
+            .saturating_sub(nmi_acceptance)
+            + self.last_nmi_dma_master_cycles;
+        let mut budget = CpuCycleBudget::at_nmi_acceptance(
+            snes::CpuBusWorkload::with_hdma_stall(self.native_hdma_scanline_stall_master_cycles()),
+            snes::CpuFieldTiming::non_interlace(self.frame_ctr_dbg & 1 == 0),
+        );
+        budget.begin_nmi_handler();
+        let since_nmi = u32::try_from(since_nmi_master_cycles).unwrap_or(u32::MAX);
+        if let CpuWorkAdvance::ReachedBoundary { .. } = budget.advance_interruptible(since_nmi) {
+            return Some(VwfExactLoopBudget {
+                master_cycles: 0,
+                since_nmi_master_cycles,
+                stall_master_cycles: 0,
+            });
+        }
+        // Everything that still fits before the deadline is the budget.
+        const PROBE: u32 = 4 * SNES_NTSC_MASTER_CYCLES_PER_FRAME;
+        let master_cycles = match budget.advance_interruptible(PROBE) {
+            CpuWorkAdvance::ReachedBoundary {
+                remaining_work_master_cycles,
+                ..
+            } => PROBE - remaining_work_master_cycles,
+            CpuWorkAdvance::Complete => PROBE,
+        };
+        Some(VwfExactLoopBudget {
+            master_cycles,
+            since_nmi_master_cycles,
+            stall_master_cycles: SNES_NTSC_MASTER_CYCLES_PER_FRAME
+                .saturating_sub(since_nmi)
+                .saturating_sub(master_cycles),
+        })
     }
 
     /// Cycles between a completed speed-0 glyph and the next dispatch:
@@ -6251,6 +6465,8 @@ impl ZeldaState {
     }
 
     pub(super) fn RenderText_SetDefaultWindowPosition(&mut self) {
+        // $0E:D280-$0E:D29B: straight line, `LDA $D391,X` with a 16-bit index.
+        crate::cycle_ledger::charge_routine(0x0e_d280, 364);
         let y = self
             .game_state
             .player
@@ -6263,12 +6479,17 @@ impl ZeldaState {
     }
 
     pub(super) fn RenderText_DrawBorderInitialize(&mut self) {
+        // $0E:D29C-$0E:D2AA: straight line.
+        crate::cycle_ledger::charge_routine(0x0e_d29c, 204);
         let top_left = self.game_state.messaging.runtime.text_msgbox_topleft();
         self.messaging_state_mut()
             .set_text_msgbox_topleft_copy(top_left);
     }
 
     pub(super) fn RenderText_DrawBorderRow(&mut self, mut d: usize, y: usize) -> usize {
+        // $0E:D2AB-$0E:D2D7 (602), 22 passes of $0E:D2D8-$0E:D2DF (144,
+        // `BNE` taken 21 times), $0E:D2E1-$0E:D2EB (190).
+        crate::cycle_ledger::charge_routine(0x0e_d2ab, 602 + 22 * 144 + 21 * 6 + 190);
         let y = y >> 1;
         let top_left = self.game_state.messaging.runtime.text_msgbox_topleft_copy();
         self.write_vram_upload_absolute_word(d, top_left.swap_bytes());
@@ -6290,6 +6511,10 @@ impl ZeldaState {
     }
 
     pub(super) fn Text_BuildCharacterTilemap(&mut self) {
+        // $0E:D2EC-$0E:D2F0 (46), 126 passes of $0E:D2F1-$0E:D2FF (216,
+        // `BCC` taken 125 times), $0E:D301: JSR RenderText_Refresh : SEP
+        // #$30 : RTS (110; the callee charges itself).
+        crate::cycle_ledger::charge_routine(0x0e_d2ec, 46 + 126 * 216 + 125 * 6 + 110);
         let mut tile = self.game_state.messaging.runtime.text_tilemap_cur();
         for i in 0..126 {
             self.set_vwf_tile_word_at_byte_offset(i * 2, tile);
@@ -6301,6 +6526,14 @@ impl ZeldaState {
     }
 
     pub(super) fn RenderText_Refresh(&mut self) {
+        // $0E:D307-$0E:D31C (264, JSR priced as the call), six rows of
+        // $0E:D31D-$0E:D33A (386) with 21 passes of $0E:D33B-$0E:D348 (218,
+        // `BNE` taken 20 times) and $0E:D349-$0E:D34C (70, `BNE` taken 5
+        // times), $0E:D34D-$0E:D359 (174).
+        crate::cycle_ledger::charge_routine(
+            0x0e_d307,
+            264 + 6 * (386 + 21 * 218 + 20 * 6 + 70) + 5 * 6 + 174,
+        );
         self.RenderText_DrawBorderInitialize();
         let top_left = self
             .game_state

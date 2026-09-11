@@ -1686,12 +1686,20 @@ impl ZeldaState {
         // Cycle ledger: NMI_PrepareSprites ($00:85FC), entered m8 x8 from the
         // main loop. $00:85FC `LDY #$1C` is 16; the packing loop and the
         // source-table suffix charge themselves below.
-        let _scope = crate::cycle_ledger::routine(0x00_85fc);
-        crate::cycle_ledger::charge(16);
-        for group_start in [28usize, 24, 20, 16, 12, 8, 4, 0] {
-            self.nmi_prepare_sprites_pack_extended_oam_group(group_start);
+        let ledger_before = crate::cycle_ledger::master();
+        {
+            let _scope = crate::cycle_ledger::routine(0x00_85fc);
+            crate::cycle_ledger::charge(16);
+            for group_start in [28usize, 24, 20, 16, 12, 8, 4, 0] {
+                self.nmi_prepare_sprites_pack_extended_oam_group(group_start);
+            }
+            self.nmi_prepare_sprites_after_extended_oam();
         }
-        self.nmi_prepare_sprites_after_extended_oam();
+        // The dialogue caller-suffix threshold prices the next
+        // NMI_PrepareSprites by this complete call's charge.
+        self.last_nmi_prepare_sprites_master_cycles = Some(
+            u32::try_from(crate::cycle_ledger::master() - ledger_before).unwrap_or(u32::MAX),
+        );
     }
 
     fn nmi_prepare_sprites_pack_extended_oam_group(&mut self, group_start: usize) {
@@ -1978,7 +1986,12 @@ impl ZeldaState {
         // `Module_MainRouting` (`$00:80B5`): `LDY $10`, three `LDA $80xx,Y
         // : STA $0x` table loads of the module's long pointer (Y is at most
         // 27, no page crossing) and `JML [$03]`: 24 + 3 x (32 + 24) + 48.
-        crate::cycle_ledger::charge_routine(0x00_80b5, 240);
+        // A host that resumes a suspended dialogue call stack re-enters the
+        // translated module through here, but the ROM's RTI returns straight
+        // into the suspended routine: no routing runs.
+        if !self.dialogue_fast_forward_hold_active {
+            crate::cycle_ledger::charge_routine(0x00_80b5, 240);
+        }
         match self.game_state.frame.main_module {
             0 => self.Module00_Intro(),
             1 => self.module01_file_select(),
