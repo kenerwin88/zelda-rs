@@ -1886,7 +1886,7 @@ fn live_scroll_preserves_the_caller_through_two_two_one_source_copies() {
         );
     };
     install(&mut state, true, 2, false);
-    assert!(!state.RenderText_Draw_Scroll(0));
+    assert!(!state.RenderText_Draw_Scroll(0, u64::MAX));
     assert!(!state.dialogue_scroll_cpu_is_idle());
     install(&mut state, false, 2, false);
     state.zelda_run_game_loop_body_with_dialogue_text_dma(

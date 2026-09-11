@@ -2318,18 +2318,25 @@ fn dialogue_scroll_freezes_the_published_hardware_generation() {
 
 #[test]
 fn dialogue_scroll_completion_timing_follows_measured_vblank_headroom() {
+    // A call the host's remaining CPU work cannot cover returns after the
+    // boundary; one it can cover returns before the next vblank.
+    let one_pass = crate::cycle_models::vwf::SCROLL_PASS_MASTER_CYCLES;
     assert_eq!(
-        DialogueScrollCompletionTiming::at_scroll_entry(255_000),
+        DialogueScrollCompletionTiming::at_scroll_entry(255_000, 5 * one_pass),
         DialogueScrollCompletionTiming::AfterReturnBoundary,
     );
     assert_eq!(
-        DialogueScrollCompletionTiming::at_scroll_entry(262_662),
+        DialogueScrollCompletionTiming::at_scroll_entry(283_400, 5 * one_pass),
         DialogueScrollCompletionTiming::AfterReturnBoundary,
     );
     assert_eq!(
-        DialogueScrollCompletionTiming::at_scroll_entry(283_400),
+        DialogueScrollCompletionTiming::at_scroll_entry(283_400, 2 * one_pass),
         DialogueScrollCompletionTiming::BeforeNextVblank,
     );
+    // Every call that reaches this decision copies a full five-pass group,
+    // which no frame of CPU work can cover.
+    // 262 scanlines of 341 dots at four master cycles per dot.
+    assert!(5 * one_pass > 262 * 341 * 4);
 
     let mut state = ZeldaState::new();
     state.begin_dialogue_scroll(

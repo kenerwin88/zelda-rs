@@ -735,7 +735,7 @@ pub(crate) fn terminate_master_cycles(countdown2: u8, any_pressed: bool) -> u64 
 /// 16-word shift loop at `$0E:CFFD` (910 per iteration, `BCC` taken 125
 /// times), the 21 `STZ` column clears, and `SEP #$30 : LDA $1CDF : CLC :
 /// ADC #$01 : STA $1CDF : AND #$0F` up to the `BNE`.
-const SCROLL_PASS_MASTER_CYCLES: u64 =
+pub(crate) const SCROLL_PASS_MASTER_CYCLES: u64 =
     22 + 32 + 126 * 910 + 125 * 6 + 21 * 40 + 22 + 40 + 14 + 16 + 40 + 16;
 
 /// What a `RenderText_Draw_Scroll` call did.

@@ -157,16 +157,24 @@ impl VwfClickRetentionCosts {
         }
     }
 }
-// A 262,662-cycle entry still returns after vblank in the Snes9x PC trace,
-// while the 283,400-cycle entry returns before it. Six scanlines is the
-// smallest whole-scanline return cost consistent with both measurements.
-const VWF_SCROLL_RETURN_VBLANK_MARGIN_MASTER_CYCLES: u32 = 6 * SNES_MASTER_CYCLES_PER_SCANLINE;
-const VWF_SCROLL_COMPLETES_BEFORE_NEXT_VBLANK_MASTER_CYCLES: u32 =
-    VWF_LATER_LINE_ENTRY_MASTER_CYCLES + VWF_SCROLL_RETURN_VBLANK_MARGIN_MASTER_CYCLES;
-
 impl DialogueScrollCompletionTiming {
-    pub(crate) const fn at_scroll_entry(cycles_before_vblank: u32) -> Self {
-        if cycles_before_vblank >= VWF_SCROLL_COMPLETES_BEFORE_NEXT_VBLANK_MASTER_CYCLES {
+    /// Whether the source call returns before the next vblank is a
+    /// comparison between the CPU work the host has left and the work the
+    /// call itself costs, both in master cycles of CPU work. An earlier
+    /// threshold constant compared the headroom against the traced
+    /// later-line entry span instead; that mixed two scales and, once the
+    /// ledger charged the main-loop prefix properly, scheduled the
+    /// resumed-entry scroll at route host 8889 a frame early.
+    ///
+    /// Only a full `scroll_speed + 1` group of copy passes reaches this
+    /// decision -- the completing call, the non-speed-4 speeds and the
+    /// endpoint catch-up all return earlier -- and one pass alone is
+    /// [`crate::cycle_models::vwf::SCROLL_PASS_MASTER_CYCLES`], so in
+    /// practice the five-pass call cannot fit inside a frame. The
+    /// comparison is kept rather than folded away because it is the rule,
+    /// not the outcome.
+    pub(crate) const fn at_scroll_entry(cycles_before_vblank: u32, call_master_cycles: u64) -> Self {
+        if cycles_before_vblank as u64 >= call_master_cycles {
             Self::BeforeNextVblank
         } else {
             Self::AfterReturnBoundary
@@ -5718,6 +5726,7 @@ impl ZeldaState {
                     .master;
                     command_done = self.RenderText_Draw_Scroll(
                         cycles_left.saturating_add(scroll_entry_master_cycles_offset),
+                        exact_command_master_cycles,
                     );
                 }
                 TEXT_CMD_1 | TEXT_CMD_2 | TEXT_CMD_3 => {
@@ -6441,13 +6450,17 @@ impl ZeldaState {
         assert!(self.dialogue_scroll_cpu_is_idle());
         assert!(self.dialogue_live_message_read_position_target.is_none());
         assert!(
-            !self.RenderText_Draw_Scroll(0),
+            !self.RenderText_Draw_Scroll(0, u64::MAX),
             "a suspended source scroll entry cannot complete the text line"
         );
         assert!(!self.dialogue_scroll_cpu_is_idle());
     }
 
-    pub(super) fn RenderText_Draw_Scroll(&mut self, cycles_before_vblank: u32) -> bool {
+    pub(super) fn RenderText_Draw_Scroll(
+        &mut self,
+        cycles_before_vblank: u32,
+        call_master_cycles: u64,
+    ) -> bool {
         // One source call drains at most `scroll_speed + 1` pixel passes.
         // Live timing publishes the actual copy boundaries: ordinary entry
         // can span 2+2+1 passes, while entry after a VWF glyph can span 2+3.
@@ -6523,11 +6536,13 @@ impl ZeldaState {
         // Copy slices retain the published display. CPU/vblank headroom only
         // decides whether the caller finishes before the next boundary or
         // requires the measured return-only continuation.
-        let completion_timing =
-            DialogueScrollCompletionTiming::at_scroll_entry(cycles_before_vblank);
+        let completion_timing = DialogueScrollCompletionTiming::at_scroll_entry(
+            cycles_before_vblank,
+            call_master_cycles,
+        );
         if crate::debug_env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some() {
             eprintln!(
-                "scroll_schedule host={} headroom={} timing={completion_timing:?}",
+                "scroll_schedule host={} headroom={} call={call_master_cycles} timing={completion_timing:?}",
                 self.frame_ctr_dbg, cycles_before_vblank,
             );
         }
