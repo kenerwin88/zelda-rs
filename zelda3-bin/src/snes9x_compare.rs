@@ -1433,6 +1433,9 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
                     write_host_feature_header(&mut writer);
                     writer
                 });
+                // `ZELDA3_CACHED_AV_NATIVE_TIMING=1`: do not install the cache's timing
+                // receipts; measure how far the engine's own timing stays exact.
+                let native_timing = std::env::var_os("ZELDA3_CACHED_AV_NATIVE_TIMING").is_some();
                 let mut receipt_nanos = 0_u128;
                 let mut engine_nanos = 0_u128;
                 let mut audio_nanos = 0_u128;
@@ -1499,14 +1502,23 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
             if let Some(writer) = host_feature_writer.as_mut() {
                 write_host_feature_row(writer, &game, record.frame, &timing_receipts);
             }
-            game.install_original_timing_host_receipts(timing_receipts)
-                .unwrap_or_else(|error| {
-                    eprintln!(
-                        "failed to install cached source receipt at frame {}: {error:?}",
-                        record.frame
-                    );
-                    process::exit(1);
-                });
+            if native_timing {
+                // The native frontier: the engine runs the route's inputs on
+                // its own timing (the path live play takes) and the first
+                // video or audio hash that differs from the cache is how
+                // far native play is exact. The receipts stay parsed for
+                // provenance and are not installed.
+                drop(timing_receipts);
+            } else {
+                game.install_original_timing_host_receipts(timing_receipts)
+                    .unwrap_or_else(|error| {
+                        eprintln!(
+                            "failed to install cached source receipt at frame {}: {error:?}",
+                            record.frame
+                        );
+                        process::exit(1);
+                    });
+            }
             game.zelda_run_frame(replay_input as i32);
             if timing_enabled {
                 engine_nanos += engine_started.elapsed().as_nanos();
