@@ -49,7 +49,7 @@ downstream; that is normal and not a regression of the acceptance gate.
 
 | | |
 |---|---|
-| branch | `fix/romless-exact`, `main` at the same commit |
+| branch | completed batch merged into `main`; use a working branch for the next batch |
 | promoted ledger | full route exact, four goldens, recorded endpoint |
 | library suite | 1,736 passing under the parity profile, ~13 s |
 | native frontier | frame 11444, audio exact throughout |
@@ -124,7 +124,29 @@ use binary SHA-256 `75aaed1128771423b6a47fbb51e468a1adca4dbfeb0346e904f4f5ddb4d9
 
 Engine host N corresponds to Snes9x run N−1.
 
-## Validating and promoting a change
+## Batch fixes before full-route validation
+
+The user requested batching on 2026-09-11 because a full-route check takes
+about 25 minutes. Aim for 3–5 tractable, independently explained frontier
+fixes per batch, with one root cause per commit. Run the expensive acceptance
+and promotion sequence once for the completed batch, rather than once per
+fix. End a batch sooner if a regression cannot be isolated confidently.
+
+For each fix, add reference-backed regression coverage, run the relevant
+tests, and measure the native frontier again. Run a focused receipt-driven
+cached A/V comparison through the affected window as well; a native frontier
+improvement alone does not prove acceptance was preserved. Keep each fix
+independently revertible, and do not commit unresolved experiments. When
+committing these intermediate fixes, `ZELDA3_PRECOMMIT_SKIP_SNES9X=1` avoids
+the legacy long gate; the hook's build and standalone smoke still run, and
+the complete acceptance sequence below remains mandatory before merging.
+
+Keep `main` at the last fully validated batch while work continues on the
+working branch. Freeze the completed batch's binary and commit for its full
+run; do not rebuild that binary during comparison. Preserve serial GPU runs
+and use `target/alt` for independent development builds.
+
+## Validating and promoting a completed batch
 
 1. `cargo check -p zelda3`, then `cargo test -p zelda3 --lib --no-run`
    with zero warnings. That build is the dead-code detector.
