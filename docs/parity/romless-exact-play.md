@@ -362,3 +362,17 @@ matched every one of the 1,581,079 cached video and audio hashes with
 all four goldens and the recorded `31619379…` endpoint (4,024.97 s: the
 ledger's per-charge bookkeeping slows the comparison, to be tightened).
 The run is promoted in `routes/full_run/parity-frontier.json`.
+
+## Evidence for the VWF integration
+
+Parity binary
+`c4c073d1dc6450c6614ff8fd46a00bfec56c34ff098217637740e6e486044a32`
+(exact VWF costs and raster-derived resumed budgets on the receipt-less
+path, the receipt path bit-identical by gate, the ledger's plain-cell hot
+path): the 200,000-frame cached comparison matched every video and audio
+hash, the goldens and the `dd45975c…` endpoint match, all 1,734 library
+tests pass under the parity profile in 13.11 seconds, and the full route
+matched every one of the 1,581,079 cached video and audio hashes in
+1,469.57 seconds (the ledger overhead is gone) with all four goldens and
+the recorded `31619379…` endpoint. Promoted in
+`routes/full_run/parity-frontier.json`.
