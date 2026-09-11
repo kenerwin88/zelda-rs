@@ -249,3 +249,26 @@ priced over the original dictionary-compressed bytes),
 handler bodies that interrupt the call, and the module's Sprite_Main,
 LinkOam and HUD suffix before the return, which is the general
 main-loop cost model the timing owner needs.
+
+## Second native cycle model: the dialogue character-buffer loader
+
+`crates/zelda3/src/cycle_models/text_buffer.rs` prices
+`Text_LoadCharacterBuffer` (`$0E:C4E2`): the prologue that resolves the
+message pointer, the per-byte loop (plain characters, the `$7F`
+terminator, dictionary references expanded by `Text_DictionarySequence`
+with the ROM's modulo-128 index wrap and do-while copy, and the commands
+`$67-$7E` dispatched through `JumpTableLocal` to their seven handlers:
+copy, copy with parameter, player name, window type, number digit,
+position, color). The player-name handler is priced over the six packed
+save-file words, including the glyph-mapping branches and the
+trailing-space trim. Inputs: the message's original ROM bytes, the 128
+dictionary word lengths, and the name.
+
+Its test builds a shadow checkpoint at the routine, restores the
+original message pointer table, and runs all 398 cartridge messages
+(plus three names on the 59 messages that print the name): 516 of 516
+match. With the decompressor this covers about 80% of the dialogue
+plan's cycles from routine models; the message bytes and dictionary
+lengths are what the asset extraction reads from the ROM, so a ROM-free
+build can carry per-message costs or the original bytes in the asset
+pack.

@@ -7,3 +7,4 @@
 //! See docs/parity/romless-exact-play.md.
 
 pub(crate) mod decompress;
+pub(crate) mod text_buffer;

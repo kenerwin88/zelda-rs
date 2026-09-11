@@ -15,7 +15,7 @@ pub(crate) fn lorom_offset(address: u32) -> Option<usize> {
     Some(((address as usize >> 16) & 0x7f) * 0x8000 + usize::from(address_in_bank - 0x8000))
 }
 
-const fn next_lorom_address(mut address: u32) -> u32 {
+pub(crate) const fn next_lorom_address(mut address: u32) -> u32 {
     address += 1;
     if (address as u16) < 0x8000 {
         address += 0x8000;
@@ -23,7 +23,7 @@ const fn next_lorom_address(mut address: u32) -> u32 {
     address
 }
 
-fn rom_dialogue_message_pointers(rom: &[u8]) -> Result<[u32; ROM_DIALOGUE_MESSAGE_COUNT], String> {
+pub(crate) fn rom_dialogue_message_pointers(rom: &[u8]) -> Result<[u32; ROM_DIALOGUE_MESSAGE_COUNT], String> {
     let mut pointers = [0; ROM_DIALOGUE_MESSAGE_COUNT];
     let mut address = ROM_DIALOGUE_FIRST_SEGMENT;
     for (index, pointer) in pointers.iter_mut().enumerate() {
