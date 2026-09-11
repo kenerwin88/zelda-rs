@@ -799,3 +799,77 @@ The full gate protects shared scheduler and presentation behavior in the
 receipt-driven path; it does not prove native timing beyond 11444. Continue
 using focused native/receipt comparisons for individual changes and one
 full-route promotion for a completed batch.
+
+## Completed spotlight-entry and item-pickup batch
+
+Three independent publication fixes advance native video parity from frame
+11444 through frame 23202 (first mismatch 23203), with audio still exact.
+
+`abc11f36` fixes the held spotlight-entry NMI. At original run 11444 the
+OAM DMA completing at the ending NMI belongs to the following field; all
+544 bytes of the active OAM match the preceding native display. The typed
+entry completion stages `RetainPreviousPresented`, and the coarse
+`dungeon_exit_crosses_nmi_boundary` rule now respects that explicit owner.
+Live CPU RAM and future DMA remain unchanged. The regression
+`interrupted_spotlight_entry_keeps_oam_from_before_the_held_nmi` exercises
+the actual completion and publication path. This moves the frontier to 20257.
+
+`3d96ecb8` fixes scroll publication during suspended item graphics. At
+original run 20257, the leading NMI has installed BG1/BG2 X=236,Y=4112 while
+the newer software camera copies hold X=237. A suspended synchronous
+`DecodeAnimatedSpriteTile_variable` call must retain those active hardware
+registers until the next field. `begin_item_receipt_graphics_work` captures
+them through the existing `RetainCpuSliceEntry` policy, matching the Big Key
+drop graphics path. The regression
+`suspended_item_graphics_keep_the_active_ppu_scroll_generation` checks that
+a later register receipt cannot overwrite the active scroll, that CPU RAM
+is unchanged, and that atomic callers do not acquire this policy. The
+frontier moves to 20262.
+
+`1b362fb9` fixes the returned item graphics' Link tile generation. The
+existing $14/$22 completion policy applied only to already-completed
+callers; a typed resumed Big Key caller selected stale tiles even after the
+same $22 upload completed. The policy now derives the graphics ID from the
+canonical item table for all typed returns. Caller-specific OAM ownership
+is preserved. Original run 20262 has VRAM words $4001=$000f,$4002=$0f1f;
+the stale generation has $0001,$0006. The regression
+`resumed_big_key_graphics_return_publishes_completed_link_tiles` asserts
+those source-observed words and keeps BG memory and CPU RAM unchanged.
+The frontier moves to 23203. No temporary probes, new persistent owners,
+frame/room exceptions, or schema changes are introduced by this batch.
+
+Frozen runtime commit: `1b362fb9f12c6edbce564a7b950cc68f60931fd1`.
+Binary SHA-256: `788aca964b44bc25cec7d0edccd2b563ad2c624debae8c47ab514f4295aba1e0`.
+Library tests: 1,741 passed, three ignored. `cargo check` and the dev
+library-test build pass without warnings. Ownership audit: zero high-risk
+same-mode overlaps; existing informational bridge overlaps remain.
+Cold live-Snes9x A/V matches 23,400 video frames and 12,474,979 stereo sample
+frames exactly. The short cold run disables the engine-state lane; it is
+A/V evidence, not per-frame WRAM proof. The 200k receipt gate passes exact
+A/V in 208.67 seconds, both WRAM goldens match, and its endpoint matches
+`dd45975cee5acdd270d1b0c74c5d38f1ba3ce3bd7e0af648264b8f77e95f244d`.
+
+The full receipt-driven route matched all **1,581,079 video/audio frames**
+in **1607.31 seconds**. All four WRAM goldens and the final WRAM endpoint
+matched (`316193798ccb2f771546b25443df7d417bddac8a7cac65326fa189c1264fbdb6`).
+The runtime commit and frozen binary are promoted in
+`routes/full_run/parity-frontier.json`, with receipt
+`routes/full_run/receipts/item-batch-full.manifest.json`.
+
+The three-fix batch is locally merged to `main`; nothing is pushed. Compact
+manifests, logs, WRAM goldens and endpoints are retained in
+`target/item-batch-validation`. Native frontier evidence is in
+`target/item-batch-native-final`; live-Snes9x evidence is in
+`target/item-batch-cold-av`. Large 200k/full acceptance runs are pruned only
+after their promoted receipt and compact evidence have been verified.
+
+The next native frontier is **23203**, with audio exact. At frame 23202 both
+modes are in module/submodule/subsubmodule 07/02/05 and have nine WRAM byte
+differences. At 23203 native advances to 07/02/06 while receipt remains
+07/02/05; the frame counter is $FC versus $FB, and 1,965 WRAM bytes differ.
+Original host 23202 accepts a held NMI during SpritePreparation; 23203
+finishes the NMI, resumes the stack and completes the common suffix, with
+no fresh IterationStarted. Investigate CPU/NMI retirement before applying
+another display policy. This is a starting diagnosis, not a proven cause.
+See `target/item-batch-validation/next-frontier.md`, native and receipt WRAM
+dumps there, and original excerpts in `target/item-batch-next-source`.
