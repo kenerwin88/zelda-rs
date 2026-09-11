@@ -8888,6 +8888,12 @@ pub struct ZeldaState {
     /// exact native dialogue budget carries it (`cycle_models::vwf`).
     #[serde(skip)]
     pub(crate) dialogue_vwf_dispatch_cursor: crate::cycle_models::vwf::DispatchCursor,
+    /// Speed-0 glyph restarts of the current `RenderText_Draw_MessageCharacters`
+    /// call whose `$0E:C9F5` exit block the ROM still owes: each `JMP $C984`
+    /// leaves the `JSR HandleNext` return on the stack, and the final `RTS`
+    /// chain pays 114 per restart when the call returns (exact budget only).
+    #[serde(skip)]
+    pub(crate) dialogue_vwf_deferred_handler_exits: u32,
     /// Semantic VWF metadata follows the same NMI publication boundary as the
     /// hardware text VRAM. CPU-authored glyphs stay private until subroutine 2
     /// uploads the completed buffer.
@@ -11680,6 +11686,7 @@ impl ZeldaState {
             dialogue_vwf_handler_entry_phase: messaging::VwfHandlerEntryPhase::default(),
             dialogue_vwf_glyph_cpu_phase: messaging::VwfGlyphCpuPhase::Ready,
             dialogue_vwf_dispatch_cursor: crate::cycle_models::vwf::DispatchCursor::default(),
+            dialogue_vwf_deferred_handler_exits: 0,
             published_bg3_vwf_glyph_runs: Vec::new(),
             published_bg3_vwf_glyph_run_dialogue_offsets: Vec::new(),
             published_dialogue_msg_read_pos: 0,
