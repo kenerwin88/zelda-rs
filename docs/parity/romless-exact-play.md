@@ -490,3 +490,15 @@ receipt-less lane does not currently produce, and without it the next
 Module0E iteration starts a scroll while the previous completion is still
 staged. The fix belongs in the frame-lane scheduling of that post-return
 vblank wait, not in the scroll machine.
+
+## Evidence for the scroll completion-timing scale
+
+Parity binary
+`f9de4dacb5082c02884c3d4fb8200c52b24634b048f6337f4d6cc02869ea2c1c`:
+the 200,000-frame cached comparison matched every video and audio hash in
+193.22 seconds, the goldens and the `dd45975c…` endpoint match, all 1,735
+library tests pass under the parity profile in 12.40 seconds, and the full
+route matched every one of the 1,581,079 cached video and audio hashes in
+1,497.36 seconds with all four goldens and the recorded `31619379…`
+endpoint. Promoted in `routes/full_run/parity-frontier.json` for
+`9b990d22`. The receipt-less native frontier is 8890.
