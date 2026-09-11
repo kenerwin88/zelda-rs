@@ -324,9 +324,10 @@ comparison run with `ZELDA3_DEBUG_CYCLE_LEDGER` and
 Six batches of annotations were written in parallel worktrees (palette
 filter, iris spotlight, sprite core, NMI/HUD/Link OAM, room draw,
 graphics loads), verified, corrected and merged: 61 annotated routines.
-Over the first 200,000 route hosts the check compares 31,592
-host/routine pairs, 21,327 exact, 851 skipped where the shadow plan
-stopped inside the routine. The profiler needed five rules to make the
+Over the first 200,000 route hosts the check compares 30,903
+host/routine pairs, 25,436 exact (82%), 841 skipped where the shadow
+plan stopped inside the routine; every run stayed video- and
+audio-exact, since annotations only add charges. The profiler needed five rules to make the
 comparison honest: frames live by stack depth (a jump-entered routine is
 costed in the frame that jumped, and the ledger follows the same rule),
 the interrupt entry sequence belongs to the handler frame, DMA bus time
