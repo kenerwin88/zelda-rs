@@ -346,6 +346,7 @@ impl ZeldaState {
         // transfers it ran, during which the CPU is stalled. The native
         // dialogue budget subtracts it from the frame a resumed host owns.
         let ledger_before = crate::cycle_ledger::master();
+        self.silent_ledger_calls_at_nmi_acceptance = crate::cycle_ledger::silent_calls();
         self.nmi_dma_accounting = Some(NmiDmaAccounting::default());
         self.interrupt_nmi_with_animated_bg_operands_body(
             input,
@@ -2176,6 +2177,8 @@ impl ZeldaState {
     }
 
     pub(super) fn handle_stripes14_slice(&mut self, mut stripes: &[u8]) {
+        // Not annotated yet: counted as a silent call for the ledger prefix.
+        let _probe = crate::cycle_ledger::probe_annotation();
         while stripes.first().copied().unwrap_or(0x80) & 0x80 == 0 {
             if stripes.len() < 4 {
                 return;
@@ -2349,6 +2352,8 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_read_joypads(&mut self, joypad_input: u16) {
+        // Not annotated yet: counted as a silent call for the ledger prefix.
+        let _probe = crate::cycle_ledger::probe_annotation();
         let mut both = joypad_input;
         let mut reversed = 0u16;
         for _ in 0..16 {

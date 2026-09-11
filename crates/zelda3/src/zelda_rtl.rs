@@ -8894,6 +8894,16 @@ pub struct ZeldaState {
     /// chain pays 114 per restart when the call returns (exact budget only).
     #[serde(skip)]
     pub(crate) dialogue_vwf_deferred_handler_exits: u32,
+    /// `cycle_ledger::silent_calls()` at the last NMI acceptance: probed
+    /// routines that ran unpriced since then make the ledger delta, and so
+    /// the derived fresh-entry budget, incomplete.
+    #[serde(skip)]
+    pub(crate) silent_ledger_calls_at_nmi_acceptance: u64,
+    /// Every probed routine that ran since the NMI acceptance of the current
+    /// iteration was annotated, so the fresh VWF entry may use the budget
+    /// derived from the ledger prefix (set at each fresh entry).
+    #[serde(skip)]
+    pub(crate) vwf_prefix_fully_charged: bool,
     /// Semantic VWF metadata follows the same NMI publication boundary as the
     /// hardware text VRAM. CPU-authored glyphs stay private until subroutine 2
     /// uploads the completed buffer.
@@ -11687,6 +11697,8 @@ impl ZeldaState {
             dialogue_vwf_glyph_cpu_phase: messaging::VwfGlyphCpuPhase::Ready,
             dialogue_vwf_dispatch_cursor: crate::cycle_models::vwf::DispatchCursor::default(),
             dialogue_vwf_deferred_handler_exits: 0,
+            silent_ledger_calls_at_nmi_acceptance: 0,
+            vwf_prefix_fully_charged: false,
             published_bg3_vwf_glyph_runs: Vec::new(),
             published_bg3_vwf_glyph_run_dialogue_offsets: Vec::new(),
             published_dialogue_msg_read_pos: 0,

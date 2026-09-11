@@ -4900,6 +4900,8 @@ impl ZeldaState {
     }
 
     pub(super) fn RenderText_Draw_BorderIncremental(&mut self) {
+        // Not annotated yet: counted as a silent call for the ledger prefix.
+        let _probe = crate::cycle_ledger::probe_annotation();
         self.set_bg_vram_load_mode(1);
         let mut a = self.game_state.messaging.runtime.text_incremental_state();
         let d = 0x1002;
@@ -5475,22 +5477,34 @@ impl ZeldaState {
         // spans before the NMI, so on the exact budget (CPU work, like the
         // glyph costs) they are placed on the raster and the refresh and HDMA
         // stalls of the span are taken out.
+        let mut fresh_converted_budget = None;
+        let mut fresh_derived_budget = None;
         let exact_budget = if resuming {
             self.vwf_exact_loop_budget()
         } else {
-            self.vwf_exact_fresh_entry_budget(traced_budget)
+            // A fresh entry takes the budget derived from the ledger prefix
+            // once every probed routine that ran since the NMI acceptance
+            // was annotated; until then the converted traced constant.
+            self.vwf_prefix_fully_charged = crate::cycle_ledger::silent_calls()
+                == self.silent_ledger_calls_at_nmi_acceptance;
+            fresh_converted_budget = self.vwf_exact_fresh_entry_budget(traced_budget);
+            fresh_derived_budget = self.vwf_exact_loop_budget();
+            if self.vwf_prefix_fully_charged {
+                fresh_derived_budget.or(fresh_converted_budget)
+            } else {
+                fresh_converted_budget
+            }
         };
         if let Some(budget) = exact_budget {
             cycles_left = budget.master_cycles;
         }
         let loop_budget = cycles_left;
         // The scroll scheduler's completion threshold was calibrated on the
-        // traced wall-clock span; a converted fresh entry hands it the same
-        // reading it had before the conversion.
-        let scroll_entry_master_cycles_offset = if resuming {
-            0
-        } else {
-            traced_budget.saturating_sub(loop_budget)
+        // traced wall-clock span; an exact fresh entry hands it the reading
+        // the traced constant would have given.
+        let scroll_entry_master_cycles_offset = match fresh_converted_budget {
+            Some(converted) if !resuming => traced_budget.saturating_sub(converted.master_cycles),
+            _ => 0,
         };
         if !resuming {
             self.dialogue_vwf_deferred_handler_exits = 0;
@@ -5829,7 +5843,7 @@ impl ZeldaState {
             let cursor = self.game_state.messaging.vwf_render.glyph_cursor_usize();
             let arrval = self.vwf_glyph_advance_prefix_sum(cursor);
             eprintln!(
-                "vwf_cycles host={} read_pos={:#x} frame_advance={} glyph_cursor={} line_x={} budget={loop_budget} traced={traced_budget} nmi_cost={nmi_cost:?} since_nmi={since_nmi:?} stalls={stalls:?} hdma_stall={hdma_stall} deferred_exits={deferred_exits} exact={exact_costs} cycles_left={} cycle_debt={} glyph_phase={:?} midline_yield={} resumed={} entry_phase={entry_phase:?} suffix_threshold={} suffix_crosses_vblank={}",
+                "vwf_cycles host={} read_pos={:#x} frame_advance={} glyph_cursor={} line_x={} budget={loop_budget} traced={traced_budget} fresh_derived={fresh_derived:?} fresh_converted={fresh_converted:?} prefix_charged={prefix_charged} silent_calls={silent_calls} nmi_cost={nmi_cost:?} since_nmi={since_nmi:?} stalls={stalls:?} hdma_stall={hdma_stall} deferred_exits={deferred_exits} exact={exact_costs} cycles_left={} cycle_debt={} glyph_phase={:?} midline_yield={} resumed={} entry_phase={entry_phase:?} suffix_threshold={} suffix_crosses_vblank={}",
                 self.frame_ctr_dbg,
                 self.game_state.messaging.runtime.dialogue_msg_read_pos(),
                 frame_advance,
@@ -5847,6 +5861,11 @@ impl ZeldaState {
                 stalls = exact_budget.map(|budget| budget.stall_master_cycles),
                 hdma_stall = self.native_hdma_scanline_stall_master_cycles(),
                 deferred_exits = self.dialogue_vwf_deferred_handler_exits,
+                fresh_derived = fresh_derived_budget.map(|budget| budget.master_cycles),
+                fresh_converted = fresh_converted_budget.map(|budget| budget.master_cycles),
+                prefix_charged = self.vwf_prefix_fully_charged,
+                silent_calls = crate::cycle_ledger::silent_calls()
+                    .saturating_sub(self.silent_ledger_calls_at_nmi_acceptance),
             );
         }
         if midline_yield {

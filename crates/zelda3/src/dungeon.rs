@@ -14537,6 +14537,8 @@ impl ZeldaState {
     }
 
     pub(super) fn dungeon_push_block_handler(&mut self) {
+        // Not annotated yet: counted as a silent call for the ledger prefix.
+        let _probe = crate::cycle_ledger::probe_annotation();
         self.dungeon_push_block_handler_until(u16::MAX);
     }
 
@@ -15241,6 +15243,8 @@ impl ZeldaState {
     }
 
     pub(super) fn orient_lamp_light_cone(&mut self) {
+        // Not annotated yet: counted as a silent call for the ledger prefix.
+        let _probe = crate::cycle_ledger::probe_annotation();
         self.OrientLampLightCone();
     }
 

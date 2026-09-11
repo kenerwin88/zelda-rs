@@ -2615,6 +2615,9 @@ impl ZeldaState {
     }
 
     fn sprite_active_main_dispatch(&mut self, k: usize) {
+        // A handler that charges nothing is not annotated yet: the ledger
+        // prefix it ran in is incomplete (see `cycle_ledger::probe_annotation`).
+        let _probe = crate::cycle_ledger::probe_annotation();
         match self.sprite_slot_view(k).sprite_type() {
             0x00 => self.sprite_raven(k),
             0x01 => self.sprite_01_vulture_bounce(k),

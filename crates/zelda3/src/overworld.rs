@@ -2347,6 +2347,8 @@ impl ZeldaState {
     }
 
     pub(super) fn OverworldOverlay_HandleRain(&mut self) {
+        // Not annotated yet: counted as a silent call for the ledger prefix.
+        let _probe = crate::cycle_ledger::probe_annotation();
         if (self.game_state.world.location.overworld_screen_index() != 0x70
             && self.game_state.inventory.save_progress.progress_indicator() >= 2)
             || (self.game_state.world.overworld.event_info.event_info(0x70) & 0x20) != 0
