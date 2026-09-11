@@ -1645,7 +1645,14 @@ impl ZeldaState {
         }
     }
 
+    /// `ClearOamBuffer` (`$00:841E`): `LDX #$60`, then four passes (X = $60,
+    /// $40, $20, $00) of `LDA #$F0` and 32 `STA $0801,X`-style stores over
+    /// the OAM Y bytes, closed by `TXA : SEC : SBC #$20 : TAX : BPL`.
+    /// 16 + 4 x (16 + 32 x 38 + 14 + 14 + 16 + 14) + 3 x 22 + 16 + 42 = 5,300.
+    const CLEAR_OAM_BUFFER_MASTER_CYCLES: u64 = 5_300;
+
     pub(super) fn clear_oam_buffer(&mut self) {
+        crate::cycle_ledger::charge_routine(0x00_841e, Self::CLEAR_OAM_BUFFER_MASTER_CYCLES);
         for i in 0..128 {
             self.oam_state_mut().hide_sprite_row(i);
         }

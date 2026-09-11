@@ -12256,6 +12256,7 @@ impl ZeldaState {
         let owns_original_timing_dispatch = self.begin_original_timing_host_dispatch(input);
         self.run_frame_internal_after_original_timing(input, run_what);
         self.finish_original_timing_host_dispatch(owns_original_timing_dispatch);
+        crate::cycle_ledger::flush_host(self.frame_ctr_dbg);
     }
 
     pub fn zelda_run_frame_internal(&mut self, input: u16, run_what: u8) {

@@ -94,8 +94,13 @@ struct RomCpuProfile {
     dma_master: u64,
     instructions: u64,
     nmi_entries: u64,
-    /// Open call frames: (subroutine entry pc, master cycles at entry).
-    stack: Vec<(u32, u64)>,
+    /// Open call frames: (subroutine entry pc, master cycles at entry,
+    /// interrupt cycles at entry).
+    stack: Vec<(u32, u64, u64)>,
+    /// Master cycles spent with an interrupt handler frame open.
+    interrupt_total: u64,
+    /// Open interrupt handler frames.
+    interrupt_depth: usize,
     subroutines: std::collections::BTreeMap<u32, RomCpuSubroutineStats>,
     /// Master cycles and execution count per instruction address (the
     /// routine body's own cost, by basic block after aggregation).
@@ -106,6 +111,10 @@ struct RomCpuProfile {
 struct RomCpuSubroutineStats {
     calls: u64,
     inclusive_master: u64,
+    /// Master cycles spent inside interrupt handlers while this subroutine
+    /// was on the stack: `inclusive_master - interrupt_master` is the cost
+    /// of the routine's own code, what a cycle ledger annotation charges.
+    interrupt_master: u64,
 }
 
 const NMI_HANDLER_ENTRY_PC: u32 = 0x00_80c9;
@@ -129,17 +138,28 @@ impl RomCpuProfile {
     /// and to the open call frames, not to an instruction address.
     fn attribute(&mut self, master: u64) {
         self.total_master += master;
+        if self.interrupt_depth > 0 {
+            self.interrupt_total += master;
+        }
     }
 
     fn enter(&mut self, entry_pc: u32) {
-        self.stack.push((entry_pc, self.total_master));
+        self.stack
+            .push((entry_pc, self.total_master, self.interrupt_total));
+        if entry_pc == NMI_HANDLER_ENTRY_PC {
+            self.interrupt_depth += 1;
+        }
         self.subroutines.entry(entry_pc).or_default().calls += 1;
     }
 
     fn leave(&mut self) {
-        if let Some((entry_pc, started)) = self.stack.pop() {
-            self.subroutines.entry(entry_pc).or_default().inclusive_master +=
-                self.total_master - started;
+        if let Some((entry_pc, started, interrupt_started)) = self.stack.pop() {
+            if entry_pc == NMI_HANDLER_ENTRY_PC {
+                self.interrupt_depth = self.interrupt_depth.saturating_sub(1);
+            }
+            let stats = self.subroutines.entry(entry_pc).or_default();
+            stats.inclusive_master += self.total_master - started;
+            stats.interrupt_master += self.interrupt_total - interrupt_started;
         }
     }
 
@@ -155,8 +175,8 @@ impl RomCpuProfile {
             .iter()
             .map(|(pc, stats)| {
                 format!(
-                    "{{\"pc\":\"{pc:06x}\",\"calls\":{},\"inclusive_master\":{}}}",
-                    stats.calls, stats.inclusive_master
+                    "{{\"pc\":\"{pc:06x}\",\"calls\":{},\"inclusive_master\":{},\"interrupt_master\":{}}}",
+                    stats.calls, stats.inclusive_master, stats.interrupt_master
                 )
             })
             .collect();
@@ -406,7 +426,7 @@ impl RomCpuTimingRun {
         let pc_after = self.pc();
         let profile = self.profile.as_mut().expect("profile enabled");
         profile.instructions += 1;
-        profile.total_master += u64::from(timing.master_cycles);
+        profile.attribute(u64::from(timing.master_cycles));
         let per_pc = profile.exclusive_by_pc.entry(pc_before).or_default();
         per_pc.0 += u64::from(timing.master_cycles);
         per_pc.1 += 1;
