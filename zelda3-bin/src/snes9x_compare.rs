@@ -1190,9 +1190,16 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
                 process::exit(2);
             });
         (game, checkpoint.host_frame)
+    } else if std::env::var_os("ZELDA3_CACHED_AV_ROM_TIMING_OFF").is_some() {
+        // The ROM-free frontier: the no-argument launch's engine (ROM
+        // startup timing off, no ROM code available to any plan). Pair with
+        // ZELDA3_CACHED_AV_NATIVE_TIMING=1; receipts cannot install without
+        // the timing flag.
+        (crate::load_romless_play_state(), 0)
     } else {
         (load_default_play_state(), 0)
     };
+    let rom_timing_off = std::env::var_os("ZELDA3_CACHED_AV_ROM_TIMING_OFF").is_some();
     let cache_end_frame = identity
         .get("frames_requested")
         .and_then(serde_json::Value::as_u64)
@@ -1212,7 +1219,9 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
             })
             .min(cache_end_frame)
     });
-    game.set_rom(&rom_bytes);
+    if !rom_timing_off {
+        game.set_rom(&rom_bytes);
+    }
     if start_frame == 0 {
         apply_sram_to_game_or_exit(&mut game, &sram_path, &sram);
     }

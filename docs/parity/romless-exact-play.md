@@ -290,6 +290,15 @@ first visible difference is a mechanism, not a state drift: at hosts
 than the ROM (its per-glyph costs are calibrated estimates), so the
 line completes and publishes one host late.
 
+There are two frontiers. With the ROM loaded and no receipts (the
+`zelda3 <rom>` live path) it is frame 8889. With ROM startup timing off
+(`ZELDA3_CACHED_AV_ROM_TIMING_OFF=1`, the no-argument launch's engine)
+it is frame 1: the timing-off path boots differently from the first
+frame, so ROM-free exactness is reached by making the timing-on path
+stop needing ROM code (a native replacement for each of the eleven
+plans, built from the cycle models and the ledger), not by improving the
+timing-off path.
+
 Each mechanism at the frontier gets a native rule, checked against the
 cached receipts (hosts per operation, and read positions per host for
 the dialogue renderer), and the frontier is measured again. The routines
