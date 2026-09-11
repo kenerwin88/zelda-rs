@@ -932,14 +932,20 @@ impl ZeldaState {
     }
 
     fn complete_module0e_run_interface(&mut self) {
-        if !self.dialogue_fast_forward_hold_active {
-            // $00:F848: SEP #$30 : JSL RunInterface (84); RunInterface
-            // ($00:F89A, 264: three long table loads and `JML [$00]`).
-            crate::cycle_ledger::charge(84);
-            crate::cycle_ledger::charge_routine(0x00_f89a, 264);
-        }
         self.replay_trace_ram_watch("module0e-before-run-interface");
-        self.RunInterface();
+        if self.dialogue_fast_forward_hold_active {
+            self.RunInterface();
+        } else {
+            // $00:F848: SEP #$30 : JSL RunInterface (84) in this frame;
+            // RunInterface ($00:F89A, 264: three long table loads and
+            // `JML [$00]`) is a JSL frame that stays open through the jump
+            // to the submodule routine until that routine's RTL, so the
+            // jump targets (RenderText's own blocks) charge into it.
+            crate::cycle_ledger::charge(84);
+            let _run_interface = crate::cycle_ledger::routine(0x00_f89a);
+            crate::cycle_ledger::charge(264);
+            self.RunInterface();
+        }
         self.replay_trace_ram_watch("module0e-after-run-interface");
         if self.rom_startup_timing()
             && (self.game_execution_scheduler.work_is_pending()
@@ -4494,18 +4500,22 @@ impl ZeldaState {
 
     pub(super) fn RenderText(&mut self) {
         // Cycle ledger: RenderText ($0E:C440: PHB : PHK : PLB : JSR, 118;
-        // PLB : RTL, 72 after the handler) and Messaging_Text_Near
-        // ($0E:C448: LDA $1CD8 : JSL JumpTableLocal, 508), whose JSR frame
-        // stays open through the JumpTableLocal jumps until the handler's
-        // RTS. A resumed dialogue slice re-enters the translation without
-        // the ROM running any of it.
+        // PLB : RTL, 72 after the handler) is RunInterface's jump target and
+        // charges into that frame. Messaging_Text_Near ($0E:C448: LDA $1CD8
+        // : JSL JumpTableLocal, 32 + 62 + 414) is a JSR frame that stays
+        // open through the JumpTableLocal jumps until the handler's RTS, so
+        // Text_Render, Text_Initialize and the handlers' own blocks charge
+        // into it; JumpTableLocal's frame ($00:8781) owns only `STY $03 :
+        // PLY` (52) before it pulls the return address. A resumed dialogue
+        // slice re-enters the translation without the ROM running any of it.
         let fresh_iteration = !self.dialogue_fast_forward_hold_active;
-        let _scope = fresh_iteration.then(|| crate::cycle_ledger::routine(0x0e_c440));
         {
             let _near = fresh_iteration.then(|| {
                 crate::cycle_ledger::charge(118);
                 let near = crate::cycle_ledger::routine(0x0e_c448);
-                crate::cycle_ledger::charge(508);
+                crate::cycle_ledger::charge(32 + 62);
+                crate::cycle_ledger::charge_routine(0x00_8781, 52);
+                crate::cycle_ledger::charge(414 - 52);
                 near
             });
             match self.game_state.messaging.runtime.module() {
@@ -4595,8 +4605,8 @@ impl ZeldaState {
         // Text_Initialize ($0E:C483): LDA $10 : CMP #$14 : BNE (56, +6 taken
         // outside module $14), JSL ResetHUDPalettes4and5 (62) in module $14,
         // $0E:C48D: JSL Attract_DecompressStoryGFX : LDX #$00 (78); falls
-        // into Text_Initialize_initModuleStateLoop.
-        let _scope = crate::cycle_ledger::routine(0x0e_c483);
+        // into Text_Initialize_initModuleStateLoop. A jump target of
+        // Messaging_Text_Near: it charges into that frame, no scope of its own.
         let module_20 = self.game_state.frame.main_module == 20;
         crate::cycle_ledger::charge(if module_20 { 56 + 62 } else { 56 + 6 } + 78);
         if module_20 {
@@ -4868,11 +4878,14 @@ impl ZeldaState {
     }
 
     pub(super) fn Text_Render(&mut self) {
-        // Text_Render ($0E:C8D9: LDA $1CD4 : JSL JumpTableLocal, 508), a
-        // jump target of Messaging_Text_Near (or a JSR frame from the
+        // Text_Render ($0E:C8D9: LDA $1CD4 : JSL JumpTableLocal, 32 + 62 +
+        // 414), a jump target of Messaging_Text_Near (or a JSR frame from the
         // post-death options loop); the state handlers are its jump targets.
+        // JumpTableLocal's own frame is its 52 before the pulls.
         if !self.dialogue_fast_forward_hold_active {
-            crate::cycle_ledger::charge(508);
+            crate::cycle_ledger::charge(32 + 62);
+            crate::cycle_ledger::charge_routine(0x00_8781, 52);
+            crate::cycle_ledger::charge(414 - 52);
         }
         match self.game_state.messaging.runtime.text_render_state() {
             0 => self.RenderText_Draw_Border(),
