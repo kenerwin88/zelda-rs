@@ -4,6 +4,9 @@ use super::*;
 use crate::game_state::constants::MENU_PREV_JOYPAD_H;
 
 use crate::chr_source;
+use crate::cycle_models::decompress::{
+    decompress_master_cycles, stream_source_offset, DecompressEntry,
+};
 use crate::game_state::{PaletteSliceSource, PaletteTransform};
 use zelda3_palette::{Bank, ChannelReference};
 
@@ -1423,11 +1426,18 @@ impl ZeldaState {
         );
     }
 
+    /// `Decomp_spr` (`$00:E772`). The ROM decompresses sheet `gfx` as
+    /// given; the clamp below is the port's guard against the junk sheets
+    /// 0..11, whose original streams the asset pack still carries (as the
+    /// first 0x600 bytes at their pointers), so the cost is charged over the
+    /// sheet the ROM would have read.
     pub(super) fn decompress_sprite_graphics_to_buffer(
         &mut self,
         dst: usize,
         mut gfx: usize,
     ) -> usize {
+        let _scope = crate::cycle_ledger::routine(0x00_e772);
+        self.charge_sheet_decompression(DecompressEntry::Sprite, 64, gfx, dst);
         if gfx < 12 {
             gfx = 12;
         }
@@ -1437,15 +1447,47 @@ impl ZeldaState {
         self.copy_decompressed_graphics_to(dst, &data)
     }
 
+    /// `Decomp_bg` (`$00:E78F`): the table loads and the decompressor, the
+    /// destination set by the caller.
+    // TODO(cycle-ledger): DecompressAnimatedDungeonTiles ($00:D33A/$00:D34E),
+    // DecompressAnimatedOverworldTiles ($00:D398/$00:D3AC) and
+    // LoadItemGFX_Auxiliary ($00:D3C8/$00:D3F0) call `Decomp_bg_to_7f4000`
+    // ($00:E783: STZ $00 : LDA #$40 : STA $01 : LDA #$7F : STA $02 : STA $05,
+    // 128 more cycles, `DecompressEntry::Background`) instead; give them
+    // their own entry when they are annotated.
     pub(super) fn decompress_background_graphics_to_buffer(
         &mut self,
         dst: usize,
         gfx: usize,
     ) -> usize {
+        let _scope = crate::cycle_ledger::routine(0x00_e78f);
+        self.charge_sheet_decompression(DecompressEntry::BackgroundTables, 65, gfx, dst);
         let Some(data) = self.decompressed_background_graphics_data(gfx) else {
             return 0;
         };
         self.copy_decompressed_graphics_to(dst, &data)
+    }
+
+    /// Charge the ROM's decompression of `sheet` from `asset` (64 = sprite
+    /// sheets, 65 = background sheets) to the WRAM offset `dst`. The asset
+    /// pack holds every sheet as the cartridge's verbatim compressed stream
+    /// (sheets 0..11 of asset 64 as their first 0x600 bytes; sprite sheet 7's
+    /// junk stream is longer than that window, so its cost stops short),
+    /// which `cycle_models::decompress` prices instruction by instruction.
+    fn charge_sheet_decompression(&self, entry: DecompressEntry, asset: usize, sheet: usize, dst: usize) {
+        let Ok(sheet) = u8::try_from(sheet) else {
+            return;
+        };
+        let Some(stream) = self.asset_bytes(asset, usize::from(sheet)) else {
+            return;
+        };
+        crate::cycle_ledger::charge(decompress_master_cycles(
+            entry,
+            sheet,
+            stream,
+            stream_source_offset(entry, sheet),
+            0x7e_0000 + dst as u32,
+        ));
     }
 
     pub(super) fn decompressed_sprite_graphics_data(&self, gfx: usize) -> Option<Vec<u8>> {
@@ -1494,6 +1536,12 @@ impl ZeldaState {
         }
     }
 
+    /// `Do3To4High16Bit` (`$00:DF4F`, m16 x16). Per tile the ROM runs
+    /// `$DF51-$DF5A` (126), the two-row block `$DF5C-$DFA9` four times
+    /// (`LDY #$0003`; 1,370 each, `BPL` taken three times) and
+    /// `$DFAB-$DFB5` (168): 126 + 4 x 1,370 + 3 x 6 + 168 = 5,792, plus the
+    /// taken `BNE` back to `$DF51` for every tile but the last. The ROM's
+    /// `DEC $0C : BNE` loop assumes `num >= 1`, as every caller passes.
     #[track_caller]
     pub(super) fn do3_to_4_high_16bit_from_slice(
         &mut self,
@@ -1502,7 +1550,16 @@ impl ZeldaState {
         mut src: usize,
         num: usize,
     ) {
-        for _ in 0..num {
+        let _scope = crate::cycle_ledger::routine(0x00_df4f);
+        // $DF4F: STY $0C.
+        crate::cycle_ledger::charge(32);
+        for tile in 0..num {
+            // $DF51-$DFB5 for one tile (see above).
+            crate::cycle_ledger::charge(5_792);
+            if tile + 1 < num {
+                // $DFB5: BNE $DF51 taken.
+                crate::cycle_ledger::charge(6);
+            }
             let src2 = src + 0x10;
             for i in 0..8 {
                 let lo = data.get(src + i * 2).copied().unwrap_or(0);
@@ -1514,8 +1571,16 @@ impl ZeldaState {
             dst += 16;
             src = src2 + 8;
         }
+        // $DFB7: RTS.
+        crate::cycle_ledger::charge(42);
     }
 
+    /// `Do3To4Low16Bit` (`$00:DFB8`, m16 x16). Per tile the ROM runs
+    /// `$DFBA-$DFC4` (126), the four-row block `$DFC5-$E022` twice
+    /// (`LDY #$0001`; 1,718 each, `BPL` taken once) and `$E024-$E02E` (168):
+    /// 126 + 2 x 1,718 + 6 + 168 = 3,736, plus the taken `BNE` back to
+    /// `$DFBA` for every tile but the last. The ROM's `DEC $0C : BNE` loop
+    /// assumes `num >= 1`, as every caller passes.
     pub(super) fn do3_to_4_low_16bit_from_slice(
         &mut self,
         mut dst: usize,
@@ -1523,7 +1588,16 @@ impl ZeldaState {
         mut src: usize,
         num: usize,
     ) {
-        for _ in 0..num {
+        let _scope = crate::cycle_ledger::routine(0x00_dfb8);
+        // $DFB8: STY $0C.
+        crate::cycle_ledger::charge(32);
+        for tile in 0..num {
+            // $DFBA-$E02E for one tile (see above).
+            crate::cycle_ledger::charge(3_736);
+            if tile + 1 < num {
+                // $E02E: BNE $DFBA taken.
+                crate::cycle_ledger::charge(6);
+            }
             let src2 = src + 0x10;
             for i in 0..8 {
                 self.write_expanded_graphics_tile_row(
@@ -1538,6 +1612,8 @@ impl ZeldaState {
             dst += 16;
             src = src2 + 8;
         }
+        // $E030: RTS.
+        crate::cycle_ledger::charge(42);
     }
 
     pub(super) fn do3_to_4_high_to_vram(
@@ -1804,12 +1880,23 @@ impl ZeldaState {
         self.replay_trace_ram_watch("loadgfx-after-decode-animated-sprite-tile");
     }
 
+    /// `LoadTransAuxGFX` (`$00:D66E`, entered m8; `REP #$30` at `$D67B`).
     pub(super) fn LoadTransAuxGFX(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x00_d66e);
         let p = load_gfx_aux_tileset(
             self.game_state.world.palette_theme.aux_tile_theme_index() as usize
         );
         for (i, pack) in p.iter().copied().enumerate() {
+            // i = 0: $D66E-$D68E (PHB : PHK : PLB, destination $7E:6000 in
+            // $00-$02, theme index x4 in $0E, LDA kAuxTilesets,X : BEQ).
+            // i = 1..3: $D69A-$D6AA / $D6B6-$D6C6 / $D6D2-$D6E2 (SEP #$10,
+            // $01 += 6, REP #$10, next kAuxTilesets byte : BEQ).
+            crate::cycle_ledger::charge(if i == 0 { 430 } else { 208 });
             if pack != 0 {
+                // $D690-$D697 / $D6AC-$D6B3 / $D6C8-$D6CF / $D6E4-$D6EB:
+                // STA long aux_bg_subset_i : SEP #$10 : TAY : JSR Decomp_bg
+                // (the JSR only; Decomp_bg charges itself).
+                crate::cycle_ledger::charge(122);
                 self.set_aux_bg_subset_pack(i, pack);
                 assert_eq!(
                     self.decompress_background_graphics_to_buffer(
@@ -1818,8 +1905,13 @@ impl ZeldaState {
                     ),
                     0x600
                 );
+            } else {
+                // BEQ taken past the sheet.
+                crate::cycle_ledger::charge(6);
             }
         }
+        // $D6EE-$D6F7: SEP #$10, $01 += 6, BRA Gfx_LoadSpritesInner.
+        crate::cycle_ledger::charge(122);
         self.Gfx_LoadSpritesInner(0x7800);
     }
 
@@ -1832,15 +1924,36 @@ impl ZeldaState {
         }
     }
 
+    /// `LoadTransAuxGFX_sprite` (`$00:D6F9`, entered m8): the prologue,
+    /// then it runs straight into `Gfx_LoadSpritesInner`.
     pub(super) fn LoadTransAuxGFX_sprite(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x00_d6f9);
+        // $D6F9-$D705: PHB : PHK : PLB, destination $7E:7800 in $00-$02.
+        crate::cycle_ledger::charge(176);
         self.Gfx_LoadSpritesInner(0x7800);
     }
 
+    /// `Gfx_LoadSpritesInner` (`$00:D706`) is the shared tail of
+    /// `LoadTransAuxGFX` and `LoadTransAuxGFX_sprite` (reached by `BRA` and
+    /// by falling through, never called), so it has no routine scope of its
+    /// own: its blocks charge to the caller's.
     pub(super) fn Gfx_LoadSpritesInner(&mut self, dst: usize) {
         let p = load_gfx_sprite_tileset(self.game_state.sprites.system.graphics_index() as usize);
         for (i, pack) in p.iter().copied().enumerate() {
+            // i = 0: $D706-$D719 (REP #$30, graphics index x4 in $0E,
+            // LDA kSpriteTilesets,X : BEQ).
+            // i = 1..3: $D71F-$D737 / $D73D-$D755 / $D75B-$D773 (SEP #$10,
+            // LDA long sprite_gfx_subset_{i-1} : TAY : JSR Decomp_spr (the
+            // JSR only; Decomp_spr charges itself), $01 += 6, REP #$10, next
+            // kSpriteTilesets byte : BEQ).
+            crate::cycle_ledger::charge(if i == 0 { 254 } else { 308 });
             if pack != 0 {
+                // $D71B / $D739 / $D757 / $D775: STA long sprite_gfx_subset_i.
+                crate::cycle_ledger::charge(40);
                 self.set_sprite_gfx_subset(i, pack);
+            } else {
+                // BEQ taken past the store.
+                crate::cycle_ledger::charge(6);
             }
             assert_eq!(
                 self.decompress_sprite_graphics_to_buffer(
@@ -1850,6 +1963,9 @@ impl ZeldaState {
                 0x600
             );
         }
+        // $D779-$D787: SEP #$10, LDA long sprite_gfx_subset_3 : TAY :
+        // JSR Decomp_spr (JSR only), STZ $0412, PLB, RTL.
+        crate::cycle_ledger::charge(226);
         self.reset_incremental_vram_upload_counter();
     }
 
@@ -1889,12 +2005,24 @@ impl ZeldaState {
         self.reset_incremental_vram_upload_counter();
     }
 
+    /// `Attract_DecompressStoryGFX` (`$00:D80E`, entered m8).
     pub(super) fn Attract_DecompressStoryGFX(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x00_d80e);
+        // $D80E-$D81F: PHB : PHK : PLB, destination $7F:4000 in $00-$02/$05,
+        // sheet $67 in $0E.
+        crate::cycle_ledger::charge(240);
+        // $D821-$D833, first pass: LDY $0E : JSR Decomp_spr (JSR only;
+        // Decomp_spr charges itself), $01 += 8, INC $0E, CMP #$69 : BNE taken.
+        crate::cycle_ledger::charge(248);
         self.decompress_sprite_graphics_to_buffer(
             GraphicsDecompressionScratch::primary_buffer_offset(),
             0x67,
         );
+        // $D821-$D833, second pass: BNE not taken.
+        crate::cycle_ledger::charge(242);
         self.decompress_sprite_graphics_to_buffer(0x14800, 0x68);
+        // $D835-$D836: PLB : RTL.
+        crate::cycle_ledger::charge(72);
     }
 
     pub(super) fn AnimateMirrorWarp(&mut self) {
@@ -2180,15 +2308,39 @@ impl ZeldaState {
         }
     }
 
+    /// `LoadNewSpriteGFXSet` (`$00:E031`, entered m8; `REP #$31` at `$E037`).
     pub(super) fn LoadNewSpriteGFXSet(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x00_e031);
         let tmp = self.graphics_sprite_decompression_buffer_tail();
+        // $E031-$E052: bank $7E in $02/$05, X = 0, A = $7800, Y = $C0,
+        // JSR Do3To4Low16Bit (JSR only; the callee charges itself), Y = $40,
+        // LDA long sprite_gfx_subset_3 : AND #$00FF : CMP #$0052 : BEQ not
+        // taken.
+        crate::cycle_ledger::charge(340);
         self.do3_to_4_low_16bit_from_slice(LOAD_GFX_MESSAGING_BUF_LOAD_GFX, &tmp, 0, 0xc0);
+        // The compare chain $E052-$E061: each CMP : Bcc pair costs 40 when it
+        // falls through and 6 more when its branch is taken.
+        crate::cycle_ledger::charge(
+            match self.game_state.sprites.workspace.graphics_subset(3) {
+                0x52 => 6,            // $E052 BEQ taken
+                0x53 => 40 + 6,       // $E054-$E057, BEQ taken
+                0x5a => 80 + 6,       // ..$E05C, BEQ taken
+                0x5b => 120,          // ..$E061, BNE not taken
+                _ => 120 + 6,         // ..$E061, BNE taken to $E06B
+            },
+        );
         if matches!(
             self.game_state.sprites.workspace.graphics_subset(3),
             0x52 | 0x53 | 0x5a | 0x5b
         ) {
+            // $E063-$E06A: LDA $03 : JSR Do3To4High16Bit (JSR only) :
+            // SEP #$30 : RTL.
+            crate::cycle_ledger::charge(144);
             self.do3_to_4_high_16bit_from_slice(0x11800, &tmp, 0x1200, 0x40);
         } else {
+            // $E06B-$E072: LDA $03 : JSR Do3To4Low16Bit (JSR only) :
+            // SEP #$30 : RTL.
+            crate::cycle_ledger::charge(144);
             self.do3_to_4_low_16bit_from_slice(0x11800, &tmp, 0x1200, 0x40);
         }
     }

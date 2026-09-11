@@ -1,5 +1,6 @@
 //! Cycle model of the ROM's graphics decompressor (`Decompress`, `$00:E79E`,
-//! entered through `Decomp_spr` `$00:E772` or `Decomp_bg` `$00:E783`).
+//! entered through `Decomp_spr` `$00:E772`, `Decomp_bg_to_7f4000` `$00:E783`
+//! or `Decomp_bg` `$00:E78F`).
 //!
 //! The 65816 runs from slow ROM (8 master cycles per fetched byte), reads and
 //! writes WRAM at 8 cycles, and spends 6 cycles per internal cycle. Every
@@ -15,9 +16,32 @@
 pub(crate) enum DecompressEntry {
     /// `Decomp_spr` (`$00:E772`): three `LDA $CFF3,Y`-style table loads.
     Sprite,
-    /// `Decomp_bg` (`$00:E783`): destination `$7F:4000` set up, then the
-    /// background tables.
+    /// `Decomp_bg_to_7f4000` (`$00:E783`): destination `$7F:4000` set up,
+    /// then the background tables.
     Background,
+    /// `Decomp_bg` (`$00:E78F`): the background tables only; the caller
+    /// set the destination.
+    BackgroundTables,
+}
+
+/// The bank offset (`$C8`) at which the ROM's compressed stream for
+/// `sheet` begins, for the sheets whose stream runs past `$FFFF` (they are
+/// the only ones where the offset changes the cost: `GetNextByte` charges
+/// its bank-increment path once). Every other stream is priced from
+/// `$8000`, which never wraps. Derived from the pointer tables at
+/// `$00:CFF3`/`$00:D0D2`/`$00:D1B1` (sprite) and `$00:CF80`/`$00:D05F`/
+/// `$00:D13E` (background); the test below checks it against the ROM.
+pub(crate) fn stream_source_offset(entry: DecompressEntry, sheet: u8) -> u16 {
+    match (entry, sheet) {
+        (DecompressEntry::Sprite, 0x0c) => 0xfffc,
+        (DecompressEntry::Sprite, 0x24) => 0xfeba,
+        (DecompressEntry::Sprite, 0x40) => 0xfd29,
+        (DecompressEntry::Sprite, 0x5c) => 0xff86,
+        (DecompressEntry::Background | DecompressEntry::BackgroundTables, 0x10) => 0xfff2,
+        (DecompressEntry::Background | DecompressEntry::BackgroundTables, 0x2a) => 0xfc71,
+        (DecompressEntry::Background | DecompressEntry::BackgroundTables, 0x44) => 0xfc30,
+        _ => 0x8000,
+    }
 }
 
 // Instruction pricing (master cycles).
@@ -110,6 +134,11 @@ pub(crate) fn decompress_master_cycles(
         DecompressEntry::Background => {
             STZ_DP + IMM_8 + LDA_STA_DP_8 + IMM_8 + LDA_STA_DP_8 + LDA_STA_DP_8
                 + table_load(0x80) + LDA_STA_DP_8 + table_load(0x5f) + LDA_STA_DP_8
+                + table_load(0x3e) + LDA_STA_DP_8
+        }
+        // LDA $CF80,Y : STA $CA : LDA $D05F,Y : STA $C9 : LDA $D13E,Y : STA $C8
+        DecompressEntry::BackgroundTables => {
+            table_load(0x80) + LDA_STA_DP_8 + table_load(0x5f) + LDA_STA_DP_8
                 + table_load(0x3e) + LDA_STA_DP_8
         }
     };
@@ -262,7 +291,9 @@ mod tests {
         // to $C9 (high) and the third to $C8 (low).
         let (bank, high, low) = match entry {
             DecompressEntry::Sprite => (0x00_cff3, 0x00_d0d2, 0x00_d1b1),
-            DecompressEntry::Background => (0x00_cf80, 0x00_d05f, 0x00_d13e),
+            DecompressEntry::Background | DecompressEntry::BackgroundTables => {
+                (0x00_cf80, 0x00_d05f, 0x00_d13e)
+            }
         };
         let byte = |table: u32| rom[lorom_offset(table).unwrap() + usize::from(sheet)];
         let address = u32::from(byte(bank)) << 16 | u32::from(byte(high)) << 8 | u32::from(byte(low));
@@ -280,6 +311,7 @@ mod tests {
             entry_pc: match entry {
                 DecompressEntry::Sprite => 0x00_e772,
                 DecompressEntry::Background => 0x00_e783,
+                DecompressEntry::BackgroundTables => 0x00_e78f,
             },
             stop_pc: 0x00_8036,
             a: 0,
@@ -330,7 +362,11 @@ mod tests {
         let mut outside = 0;
         let mut unfinished = 0;
         let mut mismatches = Vec::new();
-        for (entry, count) in [(DecompressEntry::Sprite, 0x6cu8), (DecompressEntry::Background, 0x72u8)] {
+        for (entry, count) in [
+            (DecompressEntry::Sprite, 0x6cu8),
+            (DecompressEntry::Background, 0x72u8),
+            (DecompressEntry::BackgroundTables, 0x72u8),
+        ] {
             for sheet in 0..count {
                 let Some((address, stream)) = sheet_stream(&rom, entry, sheet) else {
                     outside += 1;
@@ -358,5 +394,29 @@ mod tests {
             mismatches.len(),
             &mismatches[..mismatches.len().min(8)]
         );
+    }
+
+    #[test]
+    fn stream_source_offset_prices_every_cartridge_sheet_like_its_rom_address() {
+        let Some(rom) = test_rom() else {
+            eprintln!("no ROM available; skipping the stream source offset check");
+            return;
+        };
+        let mut wrapped = 0;
+        for (entry, count) in [(DecompressEntry::Sprite, 0x6cu8), (DecompressEntry::BackgroundTables, 0x72u8)] {
+            for sheet in 0..count {
+                let Some((address, stream)) = sheet_stream(&rom, entry, sheet) else {
+                    continue;
+                };
+                let from_rom = decompress_master_cycles(entry, sheet, stream, address as u16, 0x7f_4000);
+                let from_table =
+                    decompress_master_cycles(entry, sheet, stream, stream_source_offset(entry, sheet), 0x7f_4000);
+                assert_eq!(from_table, from_rom, "{entry:?} sheet {sheet:#04x} at {address:06x}");
+                if decompress_master_cycles(entry, sheet, stream, 0x8000, 0x7f_4000) != from_rom {
+                    wrapped += 1;
+                }
+            }
+        }
+        assert_eq!(wrapped, 7, "the table names every bank-crossing stream");
     }
 }
