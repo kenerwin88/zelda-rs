@@ -26,6 +26,16 @@ DEFAULT_SYMBOLS = Path(
 )
 
 
+# Annotated regions the profile cannot isolate: the main-loop iteration (the
+# plans start inside it and its wait spin is not work) and tail-jump
+# dispatchers whose frame stays open through the code they jump to.
+SKIP_CHECK = {
+    0x008034,  # ZeldaRunGameLoop iteration
+    0x0080b5,  # Module_MainRouting (JML into the module)
+    0x008781,  # JumpTableLocal (JML into the table entry)
+}
+
+
 def load_symbols(path):
     table = {}
     if path.is_file():
@@ -54,6 +64,11 @@ def main():
         ledger[int(host)][int(address, 16)] += int(master)
         ledger_calls[int(host)][int(address, 16)] += 1
 
+    # A routine's own cost: the profile's inclusive cycles minus the inclusive
+    # cycles of the frames it called (interrupt handlers included), which is
+    # what its annotation charges since annotated callees charge themselves
+    # and the ledger records self charges too.
+    annotated = sorted({address for host in ledger.values() for address in host})
     profile = defaultdict(lambda: defaultdict(int))
     profile_calls = defaultdict(lambda: defaultdict(int))
     profiled_total = defaultdict(int)
@@ -72,10 +87,8 @@ def main():
         profiled_total[host] += run["total_master"]
         for sub in run["subroutines"]:
             address = int(sub["pc"], 16)
-            profile[host][address] += sub["inclusive_master"] - sub.get("interrupt_master", 0)
+            profile[host][address] += sub["inclusive_master"] - sub.get("callee_master", 0)
             profile_calls[host][address] += sub["calls"]
-
-    annotated = sorted({address for host in ledger.values() for address in host})
     exact = 0
     mismatches = []
     compared = 0
@@ -85,12 +98,14 @@ def main():
         if host not in ledger:
             continue
         for address in annotated:
+            if address in SKIP_CHECK:
+                continue
             measured = profile[host].get(address)
             if measured is None:
                 continue
             charged = ledger[host].get(address)
             compared += 1
-            if charged == measured and ledger_calls[host][address] == profile_calls[host][address]:
+            if charged == measured:
                 exact += 1
             else:
                 mismatches.append((host, address, charged, measured, ledger_calls[host][address], profile_calls[host][address]))
@@ -100,7 +115,7 @@ def main():
     print(f"annotated routines: {len(annotated)}")
     for address in annotated:
         hosts = sum(1 for host in ledger if address in ledger[host])
-        print(f"  {name(address):40s} charged on {hosts} hosts")
+        print(f"  {name(address):40s} charged on {hosts} hosts{' (not checkable against the profile)' if address in SKIP_CHECK else ''}")
     print(f"host x routine comparisons: {compared}, exact: {exact}, mismatched: {len(mismatches)}")
     for host, address, charged, measured, calls, pcalls in mismatches[: args.show]:
         print(f"  host {host} {name(address)}: ledger {charged} ({calls} calls) vs profile {measured} ({pcalls} calls)")

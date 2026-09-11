@@ -17,7 +17,11 @@ use std::io::Write;
 #[derive(Debug, Default)]
 struct Ledger {
     master: u64,
-    /// Completed routine charges this host frame: (ROM address, master).
+    /// Charges recorded by nested scopes that have closed, per open scope
+    /// depth, so a routine's record excludes its annotated callees (a self
+    /// cost, comparable with the profiler's own-instruction totals).
+    nested: Vec<u64>,
+    /// Completed routine self charges this host frame: (ROM address, master).
     completed: Vec<(u32, u64)>,
 }
 
@@ -46,18 +50,26 @@ pub struct RoutineScope {
 
 /// Enter an annotated routine at its ROM address.
 pub fn routine(address: u32) -> RoutineScope {
-    RoutineScope {
-        address,
-        started: master(),
-    }
+    LEDGER.with(|ledger| {
+        let mut ledger = ledger.borrow_mut();
+        ledger.nested.push(0);
+        RoutineScope {
+            address,
+            started: ledger.master,
+        }
+    })
 }
 
 impl Drop for RoutineScope {
     fn drop(&mut self) {
         LEDGER.with(|ledger| {
             let mut ledger = ledger.borrow_mut();
-            let charged = ledger.master - self.started;
-            ledger.completed.push((self.address, charged));
+            let inclusive = ledger.master - self.started;
+            let nested = ledger.nested.pop().unwrap_or(0);
+            if let Some(parent) = ledger.nested.last_mut() {
+                *parent += inclusive;
+            }
+            ledger.completed.push((self.address, inclusive - nested));
         });
     }
 }

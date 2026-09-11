@@ -2122,12 +2122,12 @@ impl ZeldaState {
             // pass already ran before suspension.
             self.main_loop_sprite_preparation_completed = false;
             // ZeldaRunGameLoop's own instructions for one iteration
-            // (`$00:8034`): the wake from the `$12` wait (`LDA $12 : BEQ`
-            // falling through, `CLI : BRA`) = 24 + 16 + 14 + 28, then
-            // `INC $1A : JSR ClearOamBuffer : JSL Module_MainRouting
+            // (`$00:8034`), after the `LDA $12 : BEQ` wait spin (waiting is
+            // not work and is owned by the timing owner): `CLI : BRA` = 14
+            // + 28, then `INC $1A : JSR ClearOamBuffer : JSL Module_MainRouting
             // : JSR NMI_PrepareSprites : STZ $12 : BRA` = 38 + 46 + 62 + 46
             // + 24 + 28 (callee bodies charge themselves).
-            crate::cycle_ledger::charge_routine(0x00_8034, 82 + 244);
+            crate::cycle_ledger::charge_routine(0x00_8034, 42 + 244);
             self.increment_frame_counter();
             self.dungeon_palette_cpu_advance_pending =
                 if self.rom_startup_timing() && self.game_state.frame.main_module == 7 {

@@ -99,6 +99,8 @@ struct RomCpuProfile {
     stack: Vec<(u32, u64, u64)>,
     /// Master cycles spent with an interrupt handler frame open.
     interrupt_total: u64,
+    /// Inclusive cycles of the frames called directly from the entry routine.
+    entry_callee_master: u64,
     /// Open interrupt handler frames.
     interrupt_depth: usize,
     subroutines: std::collections::BTreeMap<u32, RomCpuSubroutineStats>,
@@ -112,9 +114,13 @@ struct RomCpuSubroutineStats {
     calls: u64,
     inclusive_master: u64,
     /// Master cycles spent inside interrupt handlers while this subroutine
-    /// was on the stack: `inclusive_master - interrupt_master` is the cost
-    /// of the routine's own code, what a cycle ledger annotation charges.
+    /// was on the stack.
     interrupt_master: u64,
+    /// Inclusive master cycles of the frames this subroutine called
+    /// directly (interrupt handlers included): `inclusive_master -
+    /// callee_master` is the cost of the routine's own instructions, what a
+    /// cycle ledger annotation charges.
+    callee_master: u64,
 }
 
 const NMI_HANDLER_ENTRY_PC: u32 = 0x00_80c9;
@@ -157,9 +163,15 @@ impl RomCpuProfile {
             if entry_pc == NMI_HANDLER_ENTRY_PC {
                 self.interrupt_depth = self.interrupt_depth.saturating_sub(1);
             }
+            let inclusive = self.total_master - started;
             let stats = self.subroutines.entry(entry_pc).or_default();
-            stats.inclusive_master += self.total_master - started;
+            stats.inclusive_master += inclusive;
             stats.interrupt_master += self.interrupt_total - interrupt_started;
+            if let Some((parent_pc, _, _)) = self.stack.last() {
+                self.subroutines.entry(*parent_pc).or_default().callee_master += inclusive;
+            } else {
+                self.entry_callee_master += inclusive;
+            }
         }
     }
 
@@ -175,8 +187,8 @@ impl RomCpuProfile {
             .iter()
             .map(|(pc, stats)| {
                 format!(
-                    "{{\"pc\":\"{pc:06x}\",\"calls\":{},\"inclusive_master\":{},\"interrupt_master\":{}}}",
-                    stats.calls, stats.inclusive_master, stats.interrupt_master
+                    "{{\"pc\":\"{pc:06x}\",\"calls\":{},\"inclusive_master\":{},\"interrupt_master\":{},\"callee_master\":{}}}",
+                    stats.calls, stats.inclusive_master, stats.interrupt_master, stats.callee_master
                 )
             })
             .collect();
@@ -188,10 +200,11 @@ impl RomCpuProfile {
             })
             .collect();
         let json = format!(
-            "{{\"host\":{host},\"entry_pc\":\"{:06x}\",\"stop_pc\":\"{:06x}\",\"total_master\":{},\"dma_master\":{},\"instructions\":{},\"nmi_entries\":{},\"subroutines\":[{}],\"instructions_by_pc\":[{}]}}\n",
+            "{{\"host\":{host},\"entry_pc\":\"{:06x}\",\"stop_pc\":\"{:06x}\",\"total_master\":{},\"entry_callee_master\":{},\"dma_master\":{},\"instructions\":{},\"nmi_entries\":{},\"subroutines\":[{}],\"instructions_by_pc\":[{}]}}\n",
             self.entry_pc,
             self.stop_pc,
             self.total_master,
+            self.entry_callee_master,
             self.dma_master,
             self.instructions,
             self.nmi_entries,

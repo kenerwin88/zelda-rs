@@ -59,6 +59,16 @@ loop block 1,306 not taken; the branch is taken three of four times:
 16 + 4 x 1,306 + 3 x 6 + 42 = 5,300, a constant, so the translation charges
 `charge_routine(0x00_841e, 5_300)`.
 
+## What a scope records
+
+A routine scope records the routine's self cost: the charges made while
+it was open minus the charges of annotated scopes nested inside it. The
+profiler reports the same quantity for the shadow CPU (a subroutine's
+inclusive cycles minus the inclusive cycles of the frames it called,
+interrupt handlers included), so an annotated caller and an annotated
+callee are checked independently, and an unannotated callee costs nothing
+on either side until it is annotated.
+
 ## Checking
 
 The comparison against the shadow CPU is central (it needs the GPU
