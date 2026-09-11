@@ -4900,6 +4900,16 @@ impl ZeldaState {
     }
 
     pub(super) fn RenderText_Draw_BorderIncremental(&mut self) {
+        // Cycle ledger (a jump target of Text_Render, charging into the open
+        // scope; m8 x8): $0E:C919-C920 LDA #$01, STA $14, LDA $1CD7, BEQ
+        // (88). State 0 takes the BEQ (+6); states 1-6 run $0E:C922 CMP
+        // #$07 : BCC taken (38) and $0E:C92A LDA #$01 (16); later states run
+        // the CMP, LDA #$02 and BRA (70). $0E:C92C JSL JumpTableLocal (62 +
+        // 414) into the table at $0E:C930: $0E:C936-C949 (294: REP, JSR
+        // RenderText_DrawBorderInitialize, JSR RenderText_DrawBorderRow, the
+        // $1002,x terminator, SEP, INC $1CD7, RTS), $0E:C94A-C960 (296) and
+        // $0E:C961-C97C (344, which also stores text_render_state 2). The
+        // border callees charge themselves.
         self.set_bg_vram_load_mode(1);
         let mut a = self.game_state.messaging.runtime.text_incremental_state();
         let d = 0x1002;
@@ -4908,17 +4918,20 @@ impl ZeldaState {
         }
         match a {
             0 => {
+                crate::cycle_ledger::charge(88 + 6 + 62 + 414 + 294);
                 self.RenderText_DrawBorderInitialize();
                 self.RenderText_DrawBorderRow(d, 0);
                 self.messaging_state_mut()
                     .increment_text_incremental_state();
             }
             1 => {
+                crate::cycle_ledger::charge(88 + 38 + 16 + 62 + 414 + 296);
                 self.RenderText_DrawBorderRow(d, 6);
                 self.messaging_state_mut()
                     .increment_text_incremental_state();
             }
             2 => {
+                crate::cycle_ledger::charge(88 + 70 + 62 + 414 + 344);
                 self.messaging_state_mut().set_text_render_state(2);
                 self.RenderText_DrawBorderRow(d, 12);
                 self.messaging_state_mut()

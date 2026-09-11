@@ -921,20 +921,49 @@ impl ZeldaState {
 
     // void Sprite_73_UncleAndPriest(int k) {  // 86bfe0
     pub(super) fn sprite_73_uncle_and_priest(&mut self, k: usize) {
-        match self.sprite_slot_view(k).e() {
-            0 => self.sprite_uncle(k),
-            1 => self.sprite_priest(k),
-            2 => self.sprite_sanctuary_mantle(k),
-            _ => {}
+        // Cycle ledger: SpriteActive_Main's type-$73 table entry is the
+        // bank-6 bounce Sprite_73_UncleAndPriest_bounce $06:BFE0 (JSL
+        // $05:DB86, 62 ... RTS, 42), an RTS-dispatch target that charges into
+        // the open Sprite_ExecuteSingle scope.
+        crate::cycle_ledger::charge(62);
+        {
+            // Sprite_73_UncleAndPriest $05:DB86 (JSL target, m8 x8):
+            // $05:DB86-DB89 PHB, PHK, PLB, JSR Sprite_UncleAndSage (118) ...
+            // $05:DB8C PLB : RTL (72).
+            let _long = crate::cycle_ledger::routine(0x05_db86);
+            crate::cycle_ledger::charge(118);
+            {
+                // Sprite_UncleAndSage $05:DB8E (JSR target): LDA $E90,x (32),
+                // JSL JumpTableLocal (62 + 414) into the three-entry table at
+                // $05:DB95; the state handlers are its jump targets.
+                let _scope = crate::cycle_ledger::routine(0x05_db8e);
+                crate::cycle_ledger::charge(32 + 62 + 414);
+                match self.sprite_slot_view(k).e() {
+                    0 => self.sprite_uncle(k),
+                    1 => self.sprite_priest(k),
+                    2 => self.sprite_sanctuary_mantle(k),
+                    _ => {}
+                }
+            }
+            crate::cycle_ledger::charge(72);
         }
+        crate::cycle_ledger::charge(42);
     }
 
     // void Sprite_Uncle(int k) {  // 85de2c
     pub(super) fn sprite_uncle(&mut self, k: usize) {
+        // Cycle ledger (a jump target of Sprite_UncleAndSage): $05:DE2C JSL
+        // Uncle_Draw (62), $05:DE30 JSR Sprite_ReturnIfInactive_ (46; an
+        // inactive sprite double-returns through it).
+        crate::cycle_ledger::charge(62);
         self.uncle_draw(k);
+        crate::cycle_ledger::charge(46);
         if self.sprite_return_if_inactive(k) {
             return;
         }
+        // $05:DE33 LDA $E80,x (32), JSL JumpTableLocal (62 + 414) into the
+        // two-entry table at $05:DE3A.
+        crate::cycle_ledger::charge(32 + 62 + 414);
         if self.sprite_slot_view(k).subtype2() == 0 {
             self.uncle_at_house(k);
         } else {
@@ -944,23 +973,39 @@ impl ZeldaState {
 
     // void Uncle_AtHouse(int k) {  // 85de3e
     pub(super) fn uncle_at_house(&mut self, k: usize) {
+        // Cycle ledger (a jump target): $05:DE3E JSR Sprite_Move_ (46),
+        // $05:DE41 LDA $D80,x (32), JSL JumpTableLocal (62 + 414) into the
+        // five-entry table at $05:DE48.
+        crate::cycle_ledger::charge(46);
         self.sprite_move_xy(k);
+        crate::cycle_ledger::charge(32 + 62 + 414);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
+                // Uncle_TriggerTelepathy $05:DE52-DE71 (380; the JSL
+                // Sprite_ShowMessageUnconditional callee charges itself).
+                crate::cycle_ledger::charge(380);
                 self.follower_link_state_mut()
                     .set_previous_position(0x0940, 0x215a);
                 self.sprite_show_message_unconditional(0x1f);
                 self.sprite_slot_view_mut(k).increment_ai_state();
             }
             1 => {
+                // Uncle_AwakenLink $05:DE72-DE76 LDA $1A : AND #$03 : BNE
+                // (56; taken +6 into the $05:DE82 RTS, 42).
                 if (self.game_state.frame.frame_counter & 3) != 0 {
+                    crate::cycle_ledger::charge(56 + 6 + 42);
                     return;
                 }
+                // $05:DE78-DE7C LDA $9C : CMP #$20 : BEQ (56); not equal
+                // runs $05:DE7E DEC $9C : DEC $9D (76) and the RTS (42).
                 if self.game_state.display.palette_filter.fixed_color_red() != 32 {
+                    crate::cycle_ledger::charge(56 + 56 + 76 + 42);
                     self.subtract_fixed_color_red(1);
                     self.subtract_fixed_color_green(1);
                     return;
                 }
+                // BEQ taken (+6) into $05:DE83-DE99 (314, RTS included).
+                crate::cycle_ledger::charge(56 + 56 + 6 + 314);
                 self.follower_link_state_mut().increment_opening_pose();
                 self.follower_link_state_mut()
                     .increment_sleep_in_bed_state();
@@ -969,6 +1014,8 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).increment_ai_state();
             }
             2 => {
+                // Uncle_DeclareCurfew $05:DE9A-DEAF (290).
+                crate::cycle_ledger::charge(290);
                 self.sprite_show_message_unconditional(0x0d);
                 self.set_music_control(3);
                 self.sprite_slot_view_mut(k).set_graphics(1);
@@ -976,6 +1023,16 @@ impl ZeldaState {
             }
             3 => {
                 let graphics = (self.game_state.frame.frame_counter >> 3) & 1;
+                // Uncle_Embark $05:DEB4 LDA $DF0,x : BNE (48; taken +6 into
+                // $05:DEED while the delay runs). The step block below is
+                // charged where the translation runs it; $05:DEED-DEF7
+                // (162, RTS included) closes every path. The ROM stores the
+                // graphics index last; the translation stores it first.
+                if self.sprite_slot_view(k).delay_main() == 0 {
+                    crate::cycle_ledger::charge(48);
+                } else {
+                    crate::cycle_ledger::charge(48 + 6);
+                }
                 self.sprite_slot_view_mut(k).set_graphics(graphics);
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     // ROM Uncle_AtHouse ($85dec7..$85deed, Snes9x trace-verified):
@@ -990,6 +1047,14 @@ impl ZeldaState {
                     // keeps the retired slot's WRAM residue byte-identical with
                     // the oracle; room 0x0104 re-reads it at ~frame 14661.
                     let j = usize::from(self.sprite_slot_view(k).a());
+                    // $05:DEB9 LDY $D90,x : BNE (48; taken +6 past the
+                    // $05:DEBE-DEC4 y-step, 100, when the step index is
+                    // nonzero), then $05:DEC7-DEE8 (410; the closing BNE is
+                    // taken +6 unless the incremented index reached 3, which
+                    // runs $05:DEEA INC $D80,x, 52).
+                    crate::cycle_ledger::charge(
+                        48 + if j == 0 { 100 } else { 6 } + 410 + if j == 2 { 52 } else { 6 },
+                    );
                     self.sprite_slot_view_mut(k).increment_a();
                     if j == 0 {
                         let y_low = self.sprite_slot_view(k).y_low().wrapping_sub(2);
@@ -1015,8 +1080,12 @@ impl ZeldaState {
                         self.sprite_slot_view_mut(k).increment_ai_state();
                     }
                 }
+                // $05:DEED-DEF7 (162): the graphics store and the RTS.
+                crate::cycle_ledger::charge(162);
             }
             4 => {
+                // Uncle_ApplyTelepathyFollower $05:DEF8-DF18 (360).
+                crate::cycle_ledger::charge(360);
                 self.follower_state_mut().set_indicator(5);
                 self.start_shared_message_timer(0x0df3);
                 self.save_progress_mut().or_progress_flags(0x10);
@@ -1029,17 +1098,38 @@ impl ZeldaState {
 
     // void Uncle_InPassage(int k) {  // 85df19
     pub(super) fn uncle_in_passage(&mut self, k: usize) {
+        // Cycle ledger (a jump target): $05:DF19 LDA $D80,x (32), JSL
+        // JumpTableLocal (62 + 414) into the two-entry table at $05:DF20.
+        crate::cycle_ledger::charge(32 + 62 + 414);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
+                // $05:DF26 JSL Sprite_CheckDamageToPlayerSameLayer_ : BCC
+                // (78); a touch runs $05:DF2C JSL Player_HaltDashAttack_
+                // (62), else the BCC is taken (+6).
                 if self.sprite_check_damage_to_link_same_layer(k) {
+                    crate::cycle_ledger::charge(78 + 62);
                     self.link_cancel_dash();
+                } else {
+                    crate::cycle_ledger::charge(78 + 6);
                 }
+                // $05:DF30-DF38 LDA #$0E, LDY #0, JSL Sprite_ShowMessageOnContact,
+                // BCC (110); a shown message runs $05:DF3A-DF42 (108), else the
+                // BCC is taken (+6); $05:DF43 RTS (42).
+                crate::cycle_ledger::charge(110);
                 if (self.sprite_show_message_on_contact(k, 0x0e) & 0x100) != 0 {
+                    crate::cycle_ledger::charge(108 + 42);
                     self.follower_state_mut().set_indicator(0);
                     self.sprite_slot_view_mut(k).increment_ai_state();
+                } else {
+                    crate::cycle_ledger::charge(6 + 42);
                 }
             }
             1 => {
+                // Uncle_GrantEquipment $05:DF44-DF49 LDY #0, STZ $02E9, JSL
+                // Link_ReceiveItem (110); the remainder is charged by
+                // `complete_uncle_passage_item_receipt`, which also runs
+                // when the receipt resumes after a suspension.
+                crate::cycle_ledger::charge(110);
                 self.follower_link_state_mut().set_item_receipt_method(0);
                 if self
                     .link_receive_item_from(
@@ -1060,6 +1150,8 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_uncle_passage_item_receipt(&mut self, k: usize) {
+        // $05:DF4D-DF6B (356, RTS included): the Uncle_GrantEquipment tail.
+        crate::cycle_ledger::charge(356);
         self.sprite_slot_view_mut(k).increment_ai_state();
         self.sprite_slot_view_mut(k).set_graphics(1);
         self.save_progress_mut().set_which_starting_point(3);
@@ -1069,6 +1161,15 @@ impl ZeldaState {
 
     // void Uncle_Draw(int k) {  // 8dd391
     pub(super) fn uncle_draw(&mut self, k: usize) {
+        // Cycle ledger: Uncle_Draw $0D:D391 (JSL target, m8 x8; X <= 15 so
+        // no abs,x page crossing). $0D:D391-D3DF: PHB PHK PLB, LDA #$18, JSL
+        // Oam_AllocateFromRegionB, the table-address and DMA-index setup,
+        // JSL Sprite_DrawMultiple_R6, LDA $DE0,x, BEQ (1008; the callees
+        // charge themselves). Direction 0 takes the BEQ (+6) to $0D:D3E9;
+        // else $0D:D3E1 CMP #$03 : BEQ (32), taken (+6) for direction 3,
+        // else $0D:D3E5 JSL Sprite_DrawShadow_ (62). $0D:D3E9 PLB : RTL (72).
+        let _scope = crate::cycle_ledger::routine(0x0d_d391);
+        crate::cycle_ledger::charge(1008);
         self.oam_allocate_from_region_b(0x18);
         let direction = self.sprite_slot_view(k).direction();
         let graphics = self.sprite_slot_view(k).graphics();
@@ -1081,43 +1182,78 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .set_shield_dma_graphics_index(plan.equipment.shield);
         let mut info = match plan.source {
-            UncleDrawSource::PortedTable { start } => {
-                self.sprite_draw_multiple(k, &UNCLE_DRAW_FRAMES[start..start + 6])
-            }
+            UncleDrawSource::PortedTable { start } => self.sprite_draw_multiple_from(
+                k,
+                &UNCLE_DRAW_FRAMES[start..start + 6],
+                super::sprite::DrawMultipleEntry::R6,
+            ),
             UncleDrawSource::WrappedWram { address } => {
                 // The final departure step gives the ROM direction 0xbd. Its
                 // 16-bit table calculation wraps from $0d:d203 to low WRAM at
                 // $18e3, so the generic routine consumes six live WRAM records.
-                self.sprite_draw_multiple_from_wram_records::<6>(k, address)
+                self.sprite_draw_multiple_from_wram_records::<6>(
+                    k,
+                    address,
+                    super::sprite::DrawMultipleEntry::R6,
+                )
             }
         };
         if direction != 0 && direction != 3 {
+            crate::cycle_ledger::charge(32 + 62 + 72);
             self.sprite_draw_shadow_custom(k, &mut info, 10);
+        } else if direction == 0 {
+            crate::cycle_ledger::charge(6 + 72);
+        } else {
+            crate::cycle_ledger::charge(32 + 6 + 72);
         }
     }
 
     // void Sprite_SanctuaryMantle(int k) {  // 85db9b
     pub(super) fn sprite_sanctuary_mantle(&mut self, k: usize) {
+        // Cycle ledger (a jump target of Sprite_UncleAndSage): $05:DB9B JSR
+        // SageMantle_Draw (46), $05:DB9E JSR Sprite_ReturnIfInactive_ (46).
+        crate::cycle_ledger::charge(46);
         self.sage_mantle_draw(k);
+        crate::cycle_ledger::charge(46);
         if self.sprite_return_if_inactive(k) {
             return;
         }
 
         let mut collision = false;
         if self.sprite_slot_view(k).c() != 0 {
+            // $05:DBA1 LDA $DB0,x : BNE (48, taken +6) into
+            // SageMantle_SlidingRight $05:DBE3-DBEE LDA #$40, STA $D90,x, LDA
+            // $D80,x, JSL JumpTableLocal (148 + 414) into the state table at
+            // $05:DBEF.
+            crate::cycle_ledger::charge(48 + 6 + 148 + 414);
             self.sprite_slot_view_mut(k).set_a(0x40);
             collision = true;
         } else if self.sprite_check_damage_to_link_same_layer(k) {
+            // $05:DBA6 JSL Sprite_CheckDamageToPlayerSameLayer_ : BCC (78),
+            // $05:DBAC-DBB8 (202: the hookshot/dash callees and the
+            // delay store), then the shared $05:DBBB-DBCC block (212: STZ
+            // $E80,x, the $48/$5E stores, LDA $D80,x, JSL JumpTableLocal)
+            // and JumpTableLocal (414) into the state table at $05:DBCD.
+            crate::cycle_ledger::charge(48 + 78 + 202 + 212 + 414);
             self.sprite_nullify_hookshot_drag();
             self.follower_link_state_mut().set_speed_setting(0);
             self.sprite_repel_dash();
             self.sprite_slot_view_mut(k).set_delay_aux1(7);
             collision = true;
         } else if self.sprite_slot_view(k).delay_aux1() != 0 {
+            // BCC taken (+6) into SageMantle_NoPlayerCollision $05:DBD3 LDA
+            // $E00,x : BNE (48, taken +6) back into the shared $05:DBBB
+            // block (212) and JumpTableLocal (414).
+            crate::cycle_ledger::charge(48 + 78 + 6 + 48 + 6 + 212 + 414);
             self.sprite_slot_view_mut(k).set_subtype2(0);
             self.follower_link_state_mut().set_defense_flags(0x81);
             self.follower_link_state_mut().set_speed_setting(8);
             collision = true;
+        } else {
+            // No collision and no delay: $05:DBD8 LDA $E80,x, JSL
+            // JumpTableLocal (94 + 414) into the two-entry table at
+            // $05:DBDF.
+            crate::cycle_ledger::charge(48 + 78 + 6 + 48 + 94 + 414);
         }
 
         if collision {
@@ -1128,19 +1264,39 @@ impl ZeldaState {
             }
             match self.sprite_slot_view(k).ai_state() {
                 0 => {
+                    // Sprite_SanctuaryMantle_AttemptCutscene $05:DC00-DC20
+                    // (440, the JSR Sprite_DirectionToFacePlayer__ included;
+                    // ends CPY #$03 : BEQ, taken +6 for direction 3, else
+                    // $05:DC22 CPY #$01 : BNE, 32, taken +6 unless direction
+                    // 1). Facing runs $05:DC26-DC2E (116; a count of 64 runs
+                    // $05:DC30-DC37, 100, else the BCC is taken +6).
+                    // $05:DC38 RTS (42).
+                    crate::cycle_ledger::charge(440);
                     let x = self.sprite_get_x(k);
                     self.sprite_set_x(k, x.wrapping_add(19));
                     let dir = self.sprite_direction_to_face_link(k);
                     self.sprite_set_x(k, x);
+                    crate::cycle_ledger::charge(match dir {
+                        3 => 6,
+                        1 => 32,
+                        _ => 32 + 6,
+                    });
                     if dir == 1 || dir == 3 {
                         self.sprite_slot_view_mut(k).increment_a();
                         if self.sprite_slot_view(k).a() >= 64 {
+                            crate::cycle_ledger::charge(116 + 100);
                             self.sprite_slot_view_mut(k).increment_ai_state();
                             self.follower_link_state_mut().immobilize();
+                        } else {
+                            crate::cycle_ledger::charge(116 + 6);
                         }
                     }
+                    crate::cycle_ledger::charge(42);
                 }
                 1 => {
+                    // Sprite_SanctuaryMantle_InitializeSlide $05:DC39-DC51
+                    // (334).
+                    crate::cycle_ledger::charge(334);
                     self.sprite_sfx_queue_sfx3_with_pan(k, 24);
                     self.sprite_slot_view_mut(k).increment_ai_state();
                     self.sprite_slot_view_mut(k).set_delay_main(168);
@@ -1148,12 +1304,19 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_delay_aux1(2);
                 }
                 2 => {
+                    // Sprite_SanctuaryMantle_SlideToTheRight $05:DC52-DC58
+                    // JSR Sprite_Move_, LDA $DF0,x, BNE (94); an expired
+                    // delay runs $05:DC5A-DC63 (150), else the BNE is taken
+                    // (+6) into $05:DC64-DC69 (96).
+                    crate::cycle_ledger::charge(94);
                     self.sprite_move_xy(k);
                     if self.sprite_slot_view(k).delay_main() == 0 {
+                        crate::cycle_ledger::charge(150);
                         self.follower_link_state_mut().clear_immobilized();
                         self.sprite_slot_view_mut(k).set_x_velocity(0);
                         self.sprite_slot_view_mut(k).set_c(0);
                     } else {
+                        crate::cycle_ledger::charge(6 + 96);
                         self.sprite_slot_view_mut(k).set_delay_aux1(2);
                     }
                 }
@@ -1162,12 +1325,17 @@ impl ZeldaState {
         } else {
             match self.sprite_slot_view(k).subtype2() {
                 0 => {
+                    // $05:DBF5-DBFF (180, RTS included).
+                    crate::cycle_ledger::charge(180);
                     self.sprite_slot_view_mut(k).set_a(0);
                     self.follower_link_state_mut().clear_defense_flags();
                     self.follower_link_state_mut().set_speed_setting(0);
                     self.sprite_slot_view_mut(k).increment_subtype2();
                 }
-                1 => {}
+                1 => {
+                    // $05:DBFF RTS (42).
+                    crate::cycle_ledger::charge(42);
+                }
                 _ => {}
             }
         }
@@ -1175,16 +1343,32 @@ impl ZeldaState {
 
     // void Sprite_Priest(int k) {  // 85dce6
     pub(super) fn sprite_priest(&mut self, k: usize) {
+        // Cycle ledger (a jump target of Sprite_UncleAndSage): $05:DCE6 LDA
+        // $D90,x : BNE (48); a zero runs $05:DCEB JSL Priest_Draw (62), else
+        // the BNE is taken (+6).
         if self.sprite_slot_view(k).a() == 0 {
+            crate::cycle_ledger::charge(48 + 62);
             self.priest_draw(k);
+        } else {
+            crate::cycle_ledger::charge(48 + 6);
         }
+        // $05:DCEF JSR Sprite_ReturnIfInactive_ (46).
+        crate::cycle_ledger::charge(46);
         if self.sprite_return_if_inactive(k) {
             return;
         }
+        // $05:DCF2 JSL Sprite_BehaveAsBarrier (62), $05:DCF6 JSL
+        // Sprite_TrackBodyToHead (62), $05:DCFA JSR Sprite_Move_ (46; the ROM
+        // always calls it — the translation's guard is the C port's),
+        // $05:DCFD LDA $E80,x (32), JSL JumpTableLocal (62 + 414) into the
+        // three-entry table at $05:DD04.
+        crate::cycle_ledger::charge(62);
         self.sprite_behave_as_barrier(k);
+        crate::cycle_ledger::charge(62 + 46);
         if self.sprite_track_body_to_head(k) {
             self.sprite_move_xy(k);
         }
+        crate::cycle_ledger::charge(32 + 62 + 414);
         match self.sprite_slot_view(k).subtype2() {
             0 => self.priest_dying(k),
             1 => self.priest_run_rescue_cutscene(k),
@@ -1255,29 +1439,55 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn priest_dying(&mut self, k: usize) {
+        // Cycle ledger (a jump target of Sprite_Priest): $05:DD0A-DD0F LDA
+        // #$04, STA $EB0,x, STA $DE0,x (92), $05:DD12 LDA $D80,x, JSL
+        // JumpTableLocal (94 + 414) into the three-entry table at $05:DD19.
+        crate::cycle_ledger::charge(92 + 94 + 414);
         self.sprite_slot_view_mut(k).set_head_direction(4);
         self.sprite_slot_view_mut(k).set_direction(4);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
+                // Priest_LyingOnGround $05:DD1F-DD27 LDA #$1B, LDY #0, JSL
+                // Sprite_ShowSolicitedMessage, BCC (110); a shown message
+                // runs $05:DD29-DD3D (254), else the BCC is taken (+6);
+                // $05:DD3E RTS (42).
+                crate::cycle_ledger::charge(110);
                 if (self.sprite_show_solicited_message(k, 0x1b) & 0x100) != 0 {
+                    crate::cycle_ledger::charge(254 + 42);
                     self.sprite_slot_view_mut(k).increment_ai_state();
                     self.sprite_slot_view_mut(k).increment_graphics();
                     self.save_progress_mut().or_progress_flags(0x2);
                     self.sprite_slot_view_mut(k).set_delay_aux2(128);
+                } else {
+                    crate::cycle_ledger::charge(6 + 42);
                 }
             }
             1 => {
+                // Priest_FinalWords $05:DD3F-DD45 STZ $DC0,x, LDA $E10,x, BNE
+                // (86); an expired timer runs $05:DD47 INC $D80,x (52), else
+                // the BNE is taken (+6). $05:DD4A-DD56 (142) ends BNE $DD5E:
+                // every eighth tick runs $05:DD58 LDA #$33, JSL
+                // SpriteSfx_QueueSfx2WithPan (78), else it is taken (+6).
+                // $05:DD5E RTS (42).
                 self.sprite_slot_view_mut(k).set_graphics(0);
                 if self.sprite_slot_view(k).delay_aux2() == 0 {
+                    crate::cycle_ledger::charge(86 + 52);
                     self.sprite_slot_view_mut(k).increment_ai_state();
+                } else {
+                    crate::cycle_ledger::charge(86 + 6);
                 }
                 let a = self.game_state.frame.frame_counter & 2;
                 self.sprite_slot_view_mut(k).set_a(a);
                 if (self.sprite_slot_view(k).delay_aux2() & 7) == 0 {
+                    crate::cycle_ledger::charge(142 + 78 + 42);
                     self.sprite_sfx_queue_sfx2_with_pan(k, 0x33);
+                } else {
+                    crate::cycle_ledger::charge(142 + 6 + 42);
                 }
             }
             2 => {
+                // Priest_Die $05:DD5F-DD62 STZ $DD0,x : RTS (80).
+                crate::cycle_ledger::charge(80);
                 self.sprite_slot_view_mut(k).set_state(0);
             }
             _ => {}
@@ -1322,20 +1532,34 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn priest_run_rescue_cutscene(&mut self, k: usize) {
+        // Cycle ledger (a jump target of Sprite_Priest): $05:DD63 LDA $D80,x,
+        // JSL JumpTableLocal (94 + 414) into the four-entry table at
+        // $05:DD6A.
+        crate::cycle_ledger::charge(94 + 414);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
+                // $05:DD72-DD7D LDA #0, STA $EB0,x, STA $DE0,x, LDA $DF0,x,
+                // BNE (140; taken +6 while the delay runs); an expired delay
+                // runs $05:DD7F-DD9D (352, the JSL/JSR callees charge
+                // themselves). $05:DD9E RTS (42).
                 self.sprite_slot_view_mut(k).set_head_direction(0);
                 self.sprite_slot_view_mut(k).set_direction(0);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    crate::cycle_ledger::charge(140 + 352 + 42);
                     self.sprite_show_message_unconditional(0x17);
                     self.sprite_slot_view_mut(k).increment_ai_state();
                     self.follower_state_mut().set_zelda_rescue_cutscene_state(1);
                     self.priest_spawn_rescued_princess();
                     self.follower_link_state_mut().immobilize();
                     self.save_progress_mut().set_map_icons_indicator(1);
+                } else {
+                    crate::cycle_ledger::charge(140 + 6 + 42);
                 }
             }
             1 => {
+                // $05:DD9F-DDA5 LDA $7FFE01, CMP #$02, BNE (72); state 2 runs
+                // $05:DDA7-DDB1 (146), else the BNE is taken (+6). $05:DDB2
+                // RTS (42).
                 if self
                     .game_state
                     .sprites
@@ -1343,27 +1567,44 @@ impl ZeldaState {
                     .zelda_rescue_cutscene_state()
                     == 2
                 {
+                    crate::cycle_ledger::charge(72 + 146 + 42);
                     self.sprite_show_message_unconditional(0x18);
                     self.sprite_slot_view_mut(k).increment_ai_state();
+                } else {
+                    crate::cycle_ledger::charge(72 + 6 + 42);
                 }
             }
             2 => {
+                // $05:DDB3 LDA $1CE8 : BNE (48); choice 0 runs $05:DDB8-DDBE
+                // (126, RTS included), else the BNE is taken (+6) into
+                // $05:DDBF-DDC4 (96, RTS included).
                 if self.multiselect_choice().value_word() == 0 {
+                    crate::cycle_ledger::charge(48 + 126);
                     self.sprite_slot_view_mut(k).increment_ai_state();
                     self.follower_link_state_mut().clear_immobilized();
                 } else {
+                    crate::cycle_ledger::charge(48 + 6 + 96);
                     self.sprite_slot_view_mut(k).set_ai_state(1);
                 }
             }
             3 => {
+                // $05:DDC5-DDD6 JSR Sprite_DirectionToFacePlayer__, TYA, EOR
+                // #$03, STA $EB0,x, LDA #$16, LDY #0, JSL
+                // Sprite_ShowSolicitedMessage, BCC (224); a shown message
+                // runs $05:DDD8-DDDD (76), else the BCC is taken (+6);
+                // $05:DDDE RTS (42).
+                crate::cycle_ledger::charge(224);
                 let head_direction = self.sprite_direction_to_face_link(k) ^ 3;
                 self.sprite_slot_view_mut(k)
                     .set_head_direction(head_direction);
                 let j = self.sprite_show_solicited_message(k, 0x16);
                 if (j & 0x100) != 0 {
+                    crate::cycle_ledger::charge(76 + 42);
                     let v = j as u8;
                     self.sprite_slot_view_mut(k).set_direction(v);
                     self.sprite_slot_view_mut(k).set_head_direction(v);
+                } else {
+                    crate::cycle_ledger::charge(6 + 42);
                 }
             }
             _ => {}
@@ -1381,10 +1622,21 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn priest_chillin(&mut self, k: usize) {
+        // Cycle ledger (a jump target of Sprite_Priest): Priest_Chillin
+        // $05:DDE5-DDF8 JSR Sprite_DirectionToFacePlayer__, TYA, EOR #$03,
+        // STA $EB0,x, LDY #0, LDA $7EF374, AND #$07, CMP #$07, BNE (218).
+        // All pendants: $05:DDFA LDY #$02 : BRA (38); else the BNE is taken
+        // (+6) into $05:DDFE LDA $7EF3C7, CMP #$03, BCC (72; three map icons
+        // run $05:DE06 LDY #$01, 16, else the BCC is taken +6). $05:DE08-DE15
+        // (196) loads the message and JSLs Sprite_ShowSolicitedMessage; a
+        // shown message runs $05:DE17-DE22 (132), else the BCC is taken (+6);
+        // $05:DE23 RTS (42).
+        crate::cycle_ledger::charge(218);
         let head_direction = self.sprite_direction_to_face_link(k) ^ 3;
         self.sprite_slot_view_mut(k)
             .set_head_direction(head_direction);
         let m: u16 = if (self.game_state.inventory.player_resources.pendant_flags() & 7) == 7 {
+            crate::cycle_ledger::charge(38);
             0x1a
         } else if self
             .game_state
@@ -1393,16 +1645,22 @@ impl ZeldaState {
             .map_icons_indicator()
             >= 3
         {
+            crate::cycle_ledger::charge(6 + 72 + 16);
             0x19
         } else {
+            crate::cycle_ledger::charge(6 + 72 + 6);
             0x16
         };
+        crate::cycle_ledger::charge(196);
         let j = self.sprite_show_solicited_message(k, m);
         if (j & 0x100) != 0 {
+            crate::cycle_ledger::charge(132 + 42);
             let v = j as u8;
             self.sprite_slot_view_mut(k).set_direction(v);
             self.sprite_slot_view_mut(k).set_head_direction(v);
             self.player_resources_mut().set_heart_filler(0xa0);
+        } else {
+            crate::cycle_ledger::charge(6 + 42);
         }
     }
 
@@ -1564,6 +1822,13 @@ impl ZeldaState {
     //   SpriteDraw_Shadow(k, &info);
     // }
     pub(super) fn priest_draw(&mut self, k: usize) {
+        // Cycle ledger: Priest_Draw $0D:CF31 (JSL target, m8 x8; X <= 15 so
+        // no abs,x page crossing), one straight block $0D:CF31-CF58: PHB PHK
+        // PLB, the table-address setup, JSL Sprite_DrawMultiplePlayerDeferred,
+        // JSL Sprite_DrawShadow_, PLB, RTL (562; the callees charge
+        // themselves).
+        let _scope = crate::cycle_ledger::routine(0x0d_cf31);
+        crate::cycle_ledger::charge(562);
         let j = (self.sprite_slot_view(k).direction() as usize) * 2
             + self.sprite_slot_view(k).graphics() as usize;
         let base = j * 2;
