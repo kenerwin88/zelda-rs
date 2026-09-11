@@ -100,7 +100,9 @@ def main():
             spin_counts[int(row["pc"], 16)] = row["count"]
         for sub in run["subroutines"]:
             address = int(sub["pc"], 16)
-            profile[host][address] += sub["inclusive_master"] - sub.get("callee_master", 0)
+            # Own instructions only: minus called frames, minus DMA bus time
+            # started by this routine (an annotation charges instructions).
+            profile[host][address] += sub["inclusive_master"] - sub.get("callee_master", 0) - sub.get("dma_master", 0)
             if address in SPIN_LOOPS:
                 spin_pc, per_pass = SPIN_LOOPS[address]
                 passes = spin_counts.get(spin_pc, 0)

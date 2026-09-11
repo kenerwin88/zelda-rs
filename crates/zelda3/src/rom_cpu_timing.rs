@@ -130,6 +130,10 @@ struct RomCpuSubroutineStats {
     /// ends inside the routine); their cost is cut short and the translated
     /// routine finishes on a later host, so the check skips them.
     partial_calls: u64,
+    /// DMA bus time started while this subroutine's own code ran (the NMI
+    /// handler's uploads): not CPU instructions, so not charged by a ledger
+    /// annotation; the check subtracts it.
+    dma_master: u64,
 }
 
 const NMI_HANDLER_ENTRY_PC: u32 = 0x00_80c9;
@@ -211,8 +215,8 @@ impl RomCpuProfile {
             .iter()
             .map(|(pc, stats)| {
                 format!(
-                    "{{\"pc\":\"{pc:06x}\",\"calls\":{},\"inclusive_master\":{},\"interrupt_master\":{},\"callee_master\":{},\"partial_calls\":{}}}",
-                    stats.calls, stats.inclusive_master, stats.interrupt_master, stats.callee_master, stats.partial_calls
+                    "{{\"pc\":\"{pc:06x}\",\"calls\":{},\"inclusive_master\":{},\"interrupt_master\":{},\"callee_master\":{},\"partial_calls\":{},\"dma_master\":{}}}",
+                    stats.calls, stats.inclusive_master, stats.interrupt_master, stats.callee_master, stats.partial_calls, stats.dma_master
                 )
             })
             .collect();
@@ -419,6 +423,9 @@ impl RomCpuTimingRun {
         if let Some(profile) = self.profile.as_mut() {
             profile.dma_master += u64::from(master);
             profile.attribute(u64::from(master));
+            if let Some((pc, _, _, _)) = profile.stack.last() {
+                profile.subroutines.entry(*pc).or_default().dma_master += u64::from(master);
+            }
         }
         master
     }
