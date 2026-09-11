@@ -95,8 +95,13 @@ struct RomCpuProfile {
     instructions: u64,
     nmi_entries: u64,
     /// Open call frames: (subroutine entry pc, master cycles at entry,
-    /// interrupt cycles at entry).
-    stack: Vec<(u32, u64, u64)>,
+    /// interrupt cycles at entry, stack pointer after the call's pushes). A
+    /// frame lives while the CPU stack still holds its return address: it
+    /// leaves when the stack pointer rises above that level, whether by
+    /// RTS/RTL/RTI or by a routine that pulls the return address and jumps
+    /// (JumpTableLocal). Code reached by a plain jump stays in the frame
+    /// that jumped, so a routine entered by `JMP` is costed to its caller.
+    stack: Vec<(u32, u64, u64, u16)>,
     /// Master cycles spent with an interrupt handler frame open.
     interrupt_total: u64,
     /// Inclusive cycles of the frames called directly from the entry routine.
@@ -149,17 +154,32 @@ impl RomCpuProfile {
         }
     }
 
-    fn enter(&mut self, entry_pc: u32) {
-        self.stack
-            .push((entry_pc, self.total_master, self.interrupt_total));
+    fn enter(&mut self, entry_pc: u32, stack_pointer: u16) {
+        self.stack.push((
+            entry_pc,
+            self.total_master,
+            self.interrupt_total,
+            stack_pointer,
+        ));
         if entry_pc == NMI_HANDLER_ENTRY_PC {
             self.interrupt_depth += 1;
         }
         self.subroutines.entry(entry_pc).or_default().calls += 1;
     }
 
+    /// Close every frame whose return address the stack no longer holds.
+    fn unwind_to(&mut self, stack_pointer: u16) {
+        while self
+            .stack
+            .last()
+            .is_some_and(|(_, _, _, entry_sp)| stack_pointer > *entry_sp)
+        {
+            self.leave();
+        }
+    }
+
     fn leave(&mut self) {
-        if let Some((entry_pc, started, interrupt_started)) = self.stack.pop() {
+        if let Some((entry_pc, started, interrupt_started, _)) = self.stack.pop() {
             if entry_pc == NMI_HANDLER_ENTRY_PC {
                 self.interrupt_depth = self.interrupt_depth.saturating_sub(1);
             }
@@ -167,7 +187,7 @@ impl RomCpuProfile {
             let stats = self.subroutines.entry(entry_pc).or_default();
             stats.inclusive_master += inclusive;
             stats.interrupt_master += self.interrupt_total - interrupt_started;
-            if let Some((parent_pc, _, _)) = self.stack.last() {
+            if let Some((parent_pc, _, _, _)) = self.stack.last() {
                 self.subroutines.entry(*parent_pc).or_default().callee_master += inclusive;
             } else {
                 self.entry_callee_master += inclusive;
@@ -443,17 +463,14 @@ impl RomCpuTimingRun {
         let per_pc = profile.exclusive_by_pc.entry(pc_before).or_default();
         per_pc.0 += u64::from(timing.master_cycles);
         per_pc.1 += 1;
+        let stack_pointer = self.shadow.cpu.sp;
+        profile.unwind_to(stack_pointer);
         if takes_interrupt && pc_after == NMI_HANDLER_ENTRY_PC {
             profile.nmi_entries += 1;
-            profile.enter(pc_after);
-        } else {
-            match opcode {
-                // JSR abs, JSL long, JSR (abs,X)
-                Some(0x20 | 0x22 | 0xfc) => profile.enter(pc_after),
-                // RTS, RTL, RTI
-                Some(0x60 | 0x6b | 0x40) => profile.leave(),
-                _ => {}
-            }
+            profile.enter(pc_after, stack_pointer);
+        } else if matches!(opcode, Some(0x20 | 0x22 | 0xfc)) {
+            // JSR abs, JSL long, JSR (abs,X)
+            profile.enter(pc_after, stack_pointer);
         }
         timing
     }

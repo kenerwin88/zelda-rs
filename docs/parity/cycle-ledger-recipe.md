@@ -45,9 +45,15 @@ prices itself.
    is a system bank (register writes in the NMI handler); the listing notes
    it. `abs,X`/`abs,Y` reads with 8-bit index registers cost 6 more when the
    index crosses a page; charge it when the data makes it so.
-7. Never change behavior. Annotations only add `charge` calls and comments.
+7. A routine the ROM enters only by a jump (`JMP`/`JML`, a jump-table
+   dispatch, a fall-through) is not a call frame: it opens no scope and
+   charges into the scope of the routine that jumped, which stays open
+   until the return address that routine's caller pushed is consumed. Only
+   `JSR`/`JSL` targets (and the NMI handler) open scopes. The profiler
+   tracks frames by stack depth for the same reason.
+8. Never change behavior. Annotations only add `charge` calls and comments.
    Do not reorder, merge or skip any existing statement.
-8. Comment every charge with the block's address range so a reviewer can
+9. Comment every charge with the block's address range so a reviewer can
    check it against the listing.
 
 ## Worked example

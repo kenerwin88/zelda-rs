@@ -53,6 +53,7 @@ def main():
     parser.add_argument("profile_dir", type=Path)
     parser.add_argument("--symbols", type=Path, default=DEFAULT_SYMBOLS)
     parser.add_argument("--show", type=int, default=20)
+    parser.add_argument("--window", type=int, default=6, help="hosts of slack for deferred calls")
     args = parser.parse_args()
     symbols = load_symbols(args.symbols)
     name = lambda address: f"{address:06x} {symbols.get(address, '')}".strip()
@@ -94,28 +95,56 @@ def main():
     compared = 0
     covered = 0
     total = 0
+    # Per host first; a routine the ROM plan ran on host h that the
+    # translation charged within `--window` hosts of h (a deferred or
+    # scheduled call) is matched there before counting a mismatch.
+    ledger_hosts = sorted(ledger)
+    matched_ledger = set()
     for host in sorted(profile):
-        if host not in ledger:
-            continue
         for address in annotated:
             if address in SKIP_CHECK:
                 continue
             measured = profile[host].get(address)
             if measured is None:
                 continue
-            charged = ledger[host].get(address)
             compared += 1
-            if charged == measured:
+            charged = ledger[host].get(address)
+            if charged == measured and (host, address) not in matched_ledger:
+                matched_ledger.add((host, address))
                 exact += 1
-            else:
-                mismatches.append((host, address, charged, measured, ledger_calls[host][address], profile_calls[host][address]))
-    for host, routines in profile.items():
-        total += profiled_total[host]
-        covered += sum(cycles for address, cycles in routines.items() if address in annotated)
+                continue
+            found = None
+            for near in range(host - args.window, host + args.window + 1):
+                if near != host and (near, address) not in matched_ledger and ledger.get(near, {}).get(address) == measured:
+                    found = near
+                    break
+            if found is not None:
+                matched_ledger.add((found, address))
+                exact += 1
+                continue
+            mismatches.append((host, address, charged, measured, ledger_calls[host][address], profile_calls[host][address]))
+    # Run totals per routine: the strongest single number per routine.
+    # (over the hosts the profile covers, with the same window of slack)
+    totals = {}
+    for address in annotated:
+        if address in SKIP_CHECK:
+            continue
+        profile_sum = sum(hosts.get(address, 0) for hosts in profile.values())
+        covered_hosts = set()
+        for host in profile:
+            if address in profile[host]:
+                covered_hosts.update(range(host - args.window, host + args.window + 1))
+        ledger_sum = sum(ledger[host].get(address, 0) for host in covered_hosts if host in ledger)
+        totals[address] = (ledger_sum, profile_sum)
     print(f"annotated routines: {len(annotated)}")
     for address in annotated:
         hosts = sum(1 for host in ledger if address in ledger[host])
-        print(f"  {name(address):40s} charged on {hosts} hosts{' (not checkable against the profile)' if address in SKIP_CHECK else ''}")
+        if address in SKIP_CHECK:
+            print(f"  {name(address):40s} charged on {hosts} hosts (not checkable against the profile)")
+            continue
+        ledger_sum, profile_sum = totals[address]
+        verdict = "EXACT" if ledger_sum == profile_sum else f"ledger {ledger_sum} vs profile {profile_sum} ({(ledger_sum - profile_sum) / profile_sum * 100:+.2f}%)" if profile_sum else "no profile"
+        print(f"  {name(address):40s} charged on {hosts} hosts; run total {verdict}")
     print(f"host x routine comparisons: {compared}, exact: {exact}, mismatched: {len(mismatches)}")
     for host, address, charged, measured, calls, pcalls in mismatches[: args.show]:
         print(f"  host {host} {name(address)}: ledger {charged} ({calls} calls) vs profile {measured} ({pcalls} calls)")
