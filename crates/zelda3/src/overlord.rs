@@ -38,6 +38,21 @@ impl ZeldaState {
     }
 
     pub(super) fn overlord_spawn_boulder(&mut self) {
+        // Cycle ledger: Overlord_SpawnBoulder $09:B714 (m8 x8, JSR target).
+        // The ROM tests the exits in order: $09:B714-B716 LDA $1b : BNE (40),
+        // $09:B718-B71B LDA $0ffd : BEQ (48), $09:B71D-B722 LDA $11 ORA
+        // $0fc1 BNE (72); a taken branch (+6) lands on $09:B772 RTS (42).
+        let _scope = crate::cycle_ledger::routine(0x09_b714);
+        crate::cycle_ledger::charge(if self.game_state.world.location.is_indoors() {
+            40 + 6 + 42
+        } else if self.game_state.sprites.garnish_runtime.boulder_trap_count() == 0 {
+            40 + 48 + 6 + 42
+        } else if (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) != 0
+        {
+            40 + 48 + 72 + 6 + 42
+        } else {
+            40 + 48 + 72
+        });
         if self.game_state.world.location.is_indoors()
             || self.game_state.sprites.garnish_runtime.boulder_trap_count() == 0
             || (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) != 0
@@ -45,15 +60,27 @@ impl ZeldaState {
             return;
         }
         let timer = self.garnish_state_mut().increment_boulder_trap_timer();
+        // $09:B724-B72C INC $0ffe LDA AND #$3f BNE (110), taken (+6) to the
+        // RTS (42) unless the counter wrapped.
         if timer & 63 != 0 {
+            crate::cycle_ledger::charge(110 + 6 + 42);
             return;
         }
+        crate::cycle_ledger::charge(110);
         let camera_y_hi = (self.game_state.display.ppu_scroll_copy.bg2_v_copy2() >> 8) as u8;
         let coll_y_hi = self.game_state.sprites.garnish_runtime.sprcoll_y_hi();
+        // $09:B72E-B736 LDA $e9 SEC SBC $0fbf CMP #$02 BMI (102), taken (+6)
+        // to the RTS (42) when the camera is above the collision base.
         if sign8(camera_y_hi.wrapping_sub(coll_y_hi).wrapping_sub(2)) {
+            crate::cycle_ledger::charge(102 + 6 + 42);
             return;
         }
+        // $09:B738-B740 LDA #$c2 LDY #$0d JSL Sprite_SpawnDynamically BMI
+        // (110): no slot takes the BMI (+6) to the RTS; a slot runs
+        // $09:B742-B76F (562, the JSL GetRandomNumber included) then the RTS.
+        crate::cycle_ledger::charge(102 + 110);
         if let Some((j, _info)) = self.Sprite_SpawnDynamically(0, 0xc2) {
+            crate::cycle_ledger::charge(562 + 42);
             let x = self
                 .game_state
                 .display
@@ -73,26 +100,56 @@ impl ZeldaState {
             sprite.set_floor(0);
             sprite.set_direction(0);
             sprite.set_z(0);
+        } else {
+            // BMI taken (+6) to $09:B772 RTS (42).
+            crate::cycle_ledger::charge(6 + 42);
         }
     }
 
     pub(super) fn overlord_main(&mut self) {
+        // Cycle ledger: Overlord_Main $09:B773 (m8 x8, JSL target): PHB PHK
+        // PLB JSR Overlord_ExecuteAll JSR Overlord_SpawnBoulder PLB RTL (236;
+        // the callees charge their own bodies).
+        let _scope = crate::cycle_ledger::routine(0x09_b773);
+        crate::cycle_ledger::charge(236);
         self.overlord_execute_all();
         self.overlord_spawn_boulder();
     }
 
     pub(super) fn overlord_execute_all(&mut self) {
+        // Cycle ledger: Overlord_ExecuteAll $09:B77E (m8 x8, JSR target).
+        // $09:B77E-B783 LDA $11 ORA $0fc1 BNE (72): taken (+6) to $09:B792
+        // RTS (42) while a submodule or the pause flag is active.
+        let _scope = crate::cycle_ledger::routine(0x09_b77e);
         if (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) != 0 {
+            crate::cycle_ledger::charge(72 + 6 + 42);
             return;
         }
+        // $09:B785 LDX #$07 (16); per slot $09:B787-B78A LDA $b00,x : BEQ
+        // (48) then $09:B78C JSR Overlord_ExecuteSingle (46) or the taken BEQ
+        // (+6), and $09:B78F-B790 DEX : BPL (30, +6 taken for slots 7..1).
+        crate::cycle_ledger::charge(72 + 16);
         for i in (0..=7).rev() {
             if self.overlord_slot_view(i).overlord_type() != 0 {
+                crate::cycle_ledger::charge(48 + 46);
                 self.overlord_execute_single(i);
+            } else {
+                crate::cycle_ledger::charge(48 + 6);
             }
+            crate::cycle_ledger::charge(if i > 0 { 30 + 6 } else { 30 });
         }
+        // $09:B792 RTS (42).
+        crate::cycle_ledger::charge(42);
     }
 
     pub(super) fn overlord_execute_single(&mut self, k: usize) {
+        // Cycle ledger: Overlord_ExecuteSingle $09:B793 (JSR target): PHA,
+        // JSR Overlord_CheckIfActive, PLA DEC REP #$30 AND ASL TAY LDA
+        // $b7a8,y DEC PHA SEP #$30 RTS (338, an RTS dispatch, so the handler
+        // runs inside this scope; Overlord_CheckIfActive charges itself when
+        // annotated).
+        let _scope = crate::cycle_ledger::routine(0x09_b793);
+        crate::cycle_ledger::charge(338);
         let j = self.overlord_slot_view(k).overlord_type();
         self.overlord_check_if_active(k);
         match j {

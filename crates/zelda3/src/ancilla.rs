@@ -25,21 +25,41 @@ const ANCILLA_SPRITE_COLLISION_RECOIL_Y: [u8; 4] = [0xc0, 0x40, 0, 0];
 
 impl ZeldaState {
     pub(super) fn ancilla_main(&mut self) {
+        // Cycle ledger: Ancilla_Main $08:8242 (m8 x8, JSL target): PHB PHK PLB
+        // JSR Ancilla_WeaponTink JSR Ancilla_ExecuteAll PLB RTL (236; the
+        // callees charge their own bodies).
+        let _scope = crate::cycle_ledger::routine(0x08_8242);
+        crate::cycle_ledger::charge(236);
         self.ancilla_weapon_tink();
         self.ancilla_execute_all();
     }
 
     fn ancilla_weapon_tink(&mut self) {
+        // Cycle ledger: Ancilla_WeaponTink $08:8F89 (m8 x8, JSR target).
+        let _scope = crate::cycle_ledger::routine(0x08_8f89);
+        // $08:8F89-8F8C LDA $0fac : BEQ (48), taken (+6) to $08:8F81 RTS (42).
         if self.game_state.sprites.garnish_runtime.repulsespark_timer() == 0 {
+            crate::cycle_ledger::charge(48 + 6 + 42);
             return;
         }
+        crate::cycle_ledger::charge(48);
         self.sprite_system_mut().set_alert_flag(2);
         let anim_delay = self.garnish_state_mut().decrement_repulsespark_anim_delay();
+        // $08:8F8E-8F96 LDA #$02 STA $0fdc DEC $0faf BPL (110): a negative
+        // delay falls into $08:8F98-8F9D DEC $0fac LDA #$01 STA $0faf (94),
+        // else the BPL is taken (+6).
         if sign8(anim_delay) {
+            crate::cycle_ledger::charge(110 + 94);
             self.garnish_state_mut().decrement_repulsespark_timer();
             self.garnish_state_mut().set_repulsespark_anim_delay(1);
+        } else {
+            crate::cycle_ledger::charge(110 + 6);
         }
 
+        // $08:8FA0-8FA5 LDA #$10 LDY $0fb3 BEQ (64): sorting off takes the
+        // BEQ (+6) into $08:8FB8 JSL RegionA (62); sorting on runs
+        // $08:8FA7-8FAA LDY $0b68 : BNE (48) then $08:8FAC JSL RegionD : BRA
+        // (84) or the taken BNE (+6) into $08:8FB2 JSL RegionF : BRA (84).
         if self.game_state.oam.has_sprite_sorting() {
             if self
                 .game_state
@@ -48,11 +68,14 @@ impl ZeldaState {
                 .repulsespark_floor_status()
                 != 0
             {
+                crate::cycle_ledger::charge(64 + 48 + 6 + 84);
                 self.oam_allocate_from_region_f(0x10);
             } else {
+                crate::cycle_ledger::charge(64 + 48 + 84);
                 self.oam_allocate_from_region_d(0x10);
             }
         } else {
+            crate::cycle_ledger::charge(64 + 6 + 62);
             self.oam_allocate_from_region_a(0x10);
         }
 
@@ -68,6 +91,16 @@ impl ZeldaState {
             .garnish_runtime
             .repulsespark_y_lo()
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2_low());
+        // $08:8FBC-8FC5 LDA $0fad SEC SBC $00e2 CMP #$f8 BCS (110), then
+        // $08:8FC7-8FD2 STA $00 LDA $0fae SEC SBC $00e8 CMP #$f0 BCS (134);
+        // either taken BCS (+6) lands on $08:9009 STZ $0fac : RTS (74).
+        if x >= 0xf8 {
+            crate::cycle_ledger::charge(110 + 6 + 74);
+        } else if y >= 0xf0 {
+            crate::cycle_ledger::charge(110 + 134 + 6 + 74);
+        } else {
+            crate::cycle_ledger::charge(110 + 134);
+        }
         if x >= 0xf8 || y >= 0xf0 {
             self.garnish_state_mut().clear_repulsespark_timer();
             return;
@@ -82,7 +115,21 @@ impl ZeldaState {
             .garnish_runtime
             .repulsespark_floor_status()
             as usize];
+        // $08:8FD4-8FDB STA $01 LDA $0fac CMP #$03 BCC (88): a timer of 3 or
+        // more runs $08:8FDD-8FEF (250; its CPX #$09 BCS is taken, +6, for
+        // 9 and up, else $08:8FF1 LDA #$92, 16) and $08:8FF3-9008 (352, RTS
+        // included); below 3 the BCC is taken (+6) into the four-sprite
+        // block $08:900D-907F (1,644, RTS included).
         if self.game_state.sprites.garnish_runtime.repulsespark_timer() >= 3 {
+            crate::cycle_ledger::charge(
+                88 + 250
+                    + if self.game_state.sprites.garnish_runtime.repulsespark_timer() < 9 {
+                        16
+                    } else {
+                        6
+                    }
+                    + 352,
+            );
             self.set_oam_plain(
                 oam_idx,
                 x,
@@ -98,6 +145,7 @@ impl ZeldaState {
             return;
         }
 
+        crate::cycle_ledger::charge(88 + 6 + 1_644);
         let c = ANCILLA_WEAPON_TINK_REPULSE_SPARK_CHAR
             [self.game_state.sprites.garnish_runtime.repulsespark_timer() as usize];
         self.set_oam_plain(oam_idx, x.wrapping_sub(4), y.wrapping_sub(4), c, flags, 0);
@@ -140,6 +188,10 @@ impl ZeldaState {
     }
 
     fn ancilla_execute_all(&mut self) {
+        // Cycle ledger: Ancilla_ExecuteAll $08:832B (m8 x8, JSR target):
+        // $08:832B LDX #$09 (16), then the slot loop below.
+        let _scope = crate::cycle_ledger::routine(0x08_832b);
+        crate::cycle_ledger::charge(16);
         self.ancilla_execute_slots_below(10);
     }
 
@@ -148,6 +200,12 @@ impl ZeldaState {
     /// (the falling milestone item, route host 1142850); the receipt's
     /// completion resumes the remaining slots through this same helper.
     pub(super) fn ancilla_execute_slots_below(&mut self, from: usize) {
+        // Cycle ledger (Ancilla_ExecuteAll's loop, charged into the caller's
+        // scope): per slot $08:832D-8333 STX $0fa0 LDA $c4a,x BEQ (80), then
+        // $08:8335 JSR Ancilla_ExecuteOne (46) or the taken BEQ (+6), and
+        // $08:8338-8339 DEX : BPL (30, +6 taken for slots 9..1); $08:833B
+        // RTS (42) once the loop ran to slot 0. A resumed call charges the
+        // remaining slots and the RTS.
         for i in (0..from).rev() {
             if self
                 .game_execution_scheduler
@@ -157,6 +215,8 @@ impl ZeldaState {
             }
             self.sprite_system_mut().set_cur_object_index(i as u8);
             let ty = self.ancilla_slot_view(i).ancilla_type();
+            crate::cycle_ledger::charge(if ty != 0 { 80 + 46 } else { 80 + 6 });
+            crate::cycle_ledger::charge(if i > 0 { 30 + 6 } else { 30 });
             if ty != 0 {
                 let ancilla = self.ancilla_slot_view(i);
                 self.replay_trace_ram_watch(&format!(
@@ -181,19 +241,62 @@ impl ZeldaState {
                 ));
             }
         }
+        // $08:833B RTS (42).
+        crate::cycle_ledger::charge(42);
     }
 
     fn ancilla_execute_one(&mut self, ty: u8, k: usize) {
+        // Cycle ledger: Ancilla_ExecuteOne $08:833C (m8 x8, JSR target; the
+        // handler is entered by JMP (abs) and runs inside this scope).
+        // $08:833C-833F PHA CPX #$06 BCS (54): slots 6+ take the BCS (+6);
+        // below that the ROM inlines the OAM allocation: $08:8341-8347 LDA
+        // $c90,x LDY $0fb3 BEQ (80), sorting off taking the BEQ (+6) into
+        // $08:835A JSL RegionA (62), sorting on running $08:8349-834C LDY
+        // $c7c,x : BNE (48) then $08:834E JSL RegionD : BRA (84) or the taken
+        // BNE (+6) into $08:8354 JSL RegionF : BRA (84); then $08:835E-835F
+        // TYA STA $c86,x (52).
+        let _scope = crate::cycle_ledger::routine(0x08_833c);
         if k < 6 {
+            crate::cycle_ledger::charge(54);
+            crate::cycle_ledger::charge(if self.game_state.oam.has_sprite_sorting() {
+                if self.ancilla_slot_view(k).floor() != 0 {
+                    80 + 48 + 6 + 84
+                } else {
+                    80 + 48 + 84
+                }
+            } else {
+                80 + 6 + 62
+            });
+            crate::cycle_ledger::charge(52);
             let num_sprites = self.ancilla_slot_view(k).num_sprites();
             let idx = self.ancilla_allocate_oam_from_region_a_or_d_or_f(k, num_sprites);
             self.ancilla_slot_view_mut(k).set_oam_index(idx as u8);
+        } else {
+            crate::cycle_ledger::charge(54 + 6);
         }
 
+        // $08:8362-8364 LDY $11 : BNE (40), taken (+6) outside submodule 0;
+        // else $08:8366-8369 LDY $c68,x : BEQ (48) and $08:836B DEC $c68,x
+        // (52) or the taken BEQ (+6).
+        if self.game_state.frame.submodule != 0 {
+            crate::cycle_ledger::charge(40 + 6);
+        } else if self.ancilla_slot_view(k).timer() != 0 {
+            crate::cycle_ledger::charge(40 + 48 + 52);
+        } else {
+            crate::cycle_ledger::charge(40 + 48 + 6);
+        }
         if self.game_state.frame.submodule == 0 && self.ancilla_slot_view(k).timer() != 0 {
             self.ancilla_slot_view_mut(k).tick_timer();
         }
 
+        // $08:836E-837C PLA DEC ASL TAY LDA $837f,y STA $00 LDA $8380,y STA
+        // $01 JMP ($00) (222); the two abs,y reads cross a page (+6 each)
+        // from type $42 on, the second one already at type $41.
+        crate::cycle_ledger::charge(match ty {
+            0x42.. => 222 + 12,
+            0x41 => 222 + 6,
+            _ => 222,
+        });
         match ty {
             0x01 => self.ancilla01_somaria_bullet(k),
             0x02 => self.ancilla02_fire_rod_shot(k),
@@ -3722,6 +3825,10 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla_prep_oam_coord(&mut self, k: usize) -> (u16, u16) {
+        // Cycle ledger: Ancilla_PrepOamCoord $08:F671 (m8 x8, JSR target):
+        // layer bits, four abs,x coordinate loads, two 16-bit scroll
+        // subtractions, RTS: 674, input independent (X <= 9, no crossing).
+        crate::cycle_ledger::charge_routine(0x08_f671, 674);
         let floor = self.ancilla_slot_view(k).floor() as usize;
         self.oam_state_mut()
             .set_priority_word((ANCILLA_PREP_OAM_COORD_TAGALONG_LAYER_BITS[floor] as u16) << 8);
@@ -4178,11 +4285,21 @@ impl ZeldaState {
     }
 
     fn ancilla20_blanket(&mut self, k: usize) {
+        // Cycle ledger: Ancilla20_Blanket $08:C013 (m8 x8), entered by
+        // Ancilla_ExecuteOne's JMP (abs), so it charges into that scope.
+        // $08:C013-C028 JSR Ancilla_PrepOamCoord, REP LDA STA LDA STA STA SEP
+        // PHX, LDA $037d : BNE (320); pose 0 runs $08:C02A LDA #$10 JSL
+        // RegionB BRA (100), else the BNE is taken (+6) into $08:C032 LDA
+        // #$10 JSL RegionA (78). Then $08:C038-C03B LDA $037d : BEQ (48),
+        // taken (+6) for pose 0, else $08:C03D LDA #$04 (16); $08:C03F-C044
+        // TAX LDA #$03 STA $0a LDY #$00 (70).
         let (mut x, mut y) = self.ancilla_prep_oam_coord(k);
 
         if self.game_state.player.follower_link.opening_pose() == 0 {
+            crate::cycle_ledger::charge(320 + 100 + 48 + 6 + 70);
             self.oam_allocate_from_region_b(0x10);
         } else {
+            crate::cycle_ledger::charge(320 + 6 + 78 + 48 + 16 + 70);
             self.oam_allocate_from_region_a(0x10);
         }
 
@@ -4193,6 +4310,26 @@ impl ZeldaState {
             0
         };
         for i in (0..=3).rev() {
+            // $08:C046-C075 per sprite (682, JSR Ancilla_SetOam_XY included)
+            // plus Ancilla_SetOam_XY $08:F6E1 itself (a JSR target the C
+            // inlined into Ancilla_SetOam): PHX LDX #$f0 LDA $01 BNE (78);
+            // a high Y byte takes the BNE (+6) straight to $08:F6F7-F6FD INY
+            // TXA STA INY PLX RTS (158); else LDA $03 BNE (40) does the same
+            // for a high X byte; else $08:F6EC-F6F4 LDA STA LDA CMP #$f0 BCS
+            // (126), taken (+6) for Y >= $f0, else $08:F6F6 TAX (14).
+            crate::cycle_ledger::charge(682);
+            {
+                let _set_oam_xy = crate::cycle_ledger::routine(0x08_f6e1);
+                crate::cycle_ledger::charge(if y >= 256 {
+                    78 + 6 + 158
+                } else if x >= 256 {
+                    78 + 40 + 6 + 158
+                } else if y >= 0xf0 {
+                    78 + 40 + 126 + 6 + 158
+                } else {
+                    78 + 40 + 126 + 14 + 158
+                });
+            }
             self.ancilla_set_oam(
                 oam,
                 x,
@@ -4201,6 +4338,15 @@ impl ZeldaState {
                 ANCILLA20_BLANKET_BEDSPREAD_FLAGS[j] | 0x0d | self.game_state.oam.priority_high(),
                 2,
             );
+            // After DEC $0a : BMI (in the 682): counts 2 and 0 take the
+            // $08:C077-C07B LDA CMP #$01 BNE (56 + 6) back to the loop, count
+            // 1 falls into $08:C07D-C08D (232, BRA included), and the final
+            // negative count takes the BMI (+6) into $08:C08F PLX : RTS (70).
+            crate::cycle_ledger::charge(match i {
+                3 | 1 => 56 + 6,
+                2 => 56 + 232,
+                _ => 6 + 70,
+            });
             x = x.wrapping_add(16);
             if i == 2 {
                 x = x.wrapping_sub(32);
