@@ -1543,7 +1543,9 @@ impl ZeldaState {
                 let value = if lower_cursor < y_upper {
                     let operand = radial_operand as u8;
                     radial_operand = radial_operand.saturating_sub(1);
-                    self.iris_spotlight_calculate_circle_value(operand)
+                    // A display-side derivation of the tail: the ROM builder
+                    // already charged these calculations.
+                    self.iris_spotlight_calculate_circle_value_priced(operand, false)
                 } else {
                     0x00ff
                 };

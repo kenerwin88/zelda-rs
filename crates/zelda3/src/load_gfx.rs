@@ -51,6 +51,11 @@ const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
 pub(super) const SPOTLIGHT_RADIUS_STEP: u16 = 7;
 const SPOTLIGHT_DELTA_SIZE: [i8; 4] = [-(SPOTLIGHT_RADIUS_STEP as i8), 7, 7, 7];
 const SPOTLIGHT_GOAL: [u16; 4] = [0, 126, 35, 126];
+/// Cycle ledger: what `IrisSpotlight_ConfigureTable` charges for its
+/// `$00:F3A3-$F3B2` V-counter wait loop, the single exiting pass (BCC not
+/// taken). Every extra pass the ROM spins before scanline 192 costs 178 more
+/// and is not charged: it depends on the raster phase at entry.
+const SPOTLIGHT_VCOUNTER_WAIT_FINAL_PASS_MASTER_CYCLES: u64 = 172;
 const SPOTLIGHT_CIRCLE_X_RADIUS_CURVE: [u8; 129] = [
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0xfe, 0xfe, 0xfe,
     0xfd, 0xfd, 0xfd, 0xfd, 0xfc, 0xfc, 0xfc, 0xfb, 0xfb, 0xfb, 0xfa, 0xfa, 0xf9, 0xf9, 0xf8, 0xf8,
@@ -3736,14 +3741,14 @@ impl ZeldaState {
     }
 
     pub(super) fn iris_spotlight_configure_table(&mut self) -> bool {
-        // Cycle ledger: IrisSpotlight_ConfigureTable ($00:F312). The blocks
-        // are charged where the split translation runs them (`begin_`,
-        // `advance_`, `complete_..._table_projection`, `..._after_projection`,
-        // `..._goal_transition`); this synchronous path is the one ROM call
-        // the scope attributes. Interrupted builds resumed through
-        // `begin_iris_spotlight_configure_table_at_progress` charge the same
-        // blocks without a scope (the ROM call spans two hosts).
-        let _scope = crate::cycle_ledger::routine(0x00_f312);
+        // Cycle ledger: IrisSpotlight_ConfigureTable ($00:F312) is charged by
+        // its pieces, each under its own 0x00_f312 scope, so an interrupted
+        // build split across hosts records what each host ran: `begin_`
+        // (prologue and row loop), `complete_..._table_projection` (rest of
+        // the loop, V-counter wait, table copy), `..._after_projection`
+        // (radius step, goal test, inline goal transition) and the deferred
+        // goal-transition wrappers. A resumed build's replayed prefix is not
+        // priced (`price == false`).
         let build = self.begin_iris_spotlight_configure_table(usize::MAX);
         self.complete_iris_spotlight_configure_table(build)
     }
@@ -3752,10 +3757,27 @@ impl ZeldaState {
         &mut self,
         max_iterations: usize,
     ) -> SpotlightTableBuildContinuation {
+        let _scope = crate::cycle_ledger::routine(0x00_f312);
+        self.begin_iris_spotlight_configure_table_inner(max_iterations, true)
+    }
+
+    /// The C prologue and up to `max_iterations` row-loop iterations. With
+    /// `price == false` the work is a replay of instructions the ROM executed
+    /// before an interruption and charges nothing.
+    fn begin_iris_spotlight_configure_table_inner(
+        &mut self,
+        max_iterations: usize,
+        price: bool,
+    ) -> SpotlightTableBuildContinuation {
+        let charge = |master: u64| {
+            if price {
+                crate::cycle_ledger::charge(master);
+            }
+        };
         // $F312-$F34C: PHB/PHK/PLB, REP #$30, the vertical centre, y_lower/
         // y_upper, x centre, spotlight_var4 = var1, r6 = r14 * 2, CMP #$00E0,
         // BCS not taken.
-        crate::cycle_ledger::charge(816);
+        charge(816);
         let r14 = spotlight_vertical_center(
             self.game_state.player.follower_link.y(),
             self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
@@ -3776,14 +3798,14 @@ impl ZeldaState {
         let mut r6 = r14.wrapping_mul(2);
         if r6 < 224 {
             // $F34E-$F351: LDA #$00E0, STA $06.
-            crate::cycle_ledger::charge(56);
+            charge(56);
             r6 = 224;
         } else {
             // BCS $F353 taken.
-            crate::cycle_ledger::charge(6);
+            charge(6);
         }
         // $F353-$F35F: r4 = r14 - (r6 - r14).
-        crate::cycle_ledger::charge(220);
+        charge(220);
         let r4 = r14.wrapping_mul(2).wrapping_sub(r6);
         let mut build = SpotlightTableBuildContinuation {
             vertical_center: r14,
@@ -3798,7 +3820,7 @@ impl ZeldaState {
             projection_words_copied: 0,
             source_progress: None,
         };
-        self.advance_iris_spotlight_configure_table(&mut build, max_iterations);
+        self.advance_iris_spotlight_configure_table_priced(&mut build, max_iterations, price);
         build
     }
 
@@ -3810,8 +3832,16 @@ impl ZeldaState {
         &mut self,
         progress: crate::SpotlightTableBuildProgress,
     ) -> SpotlightTableBuildContinuation {
-        let mut build =
-            self.begin_iris_spotlight_configure_table(usize::from(progress.completed_iterations));
+        // Cycle ledger: the ROM resumes IrisSpotlight_ConfigureTable at the
+        // receipt's checkpoint on this host. The prefix rebuilt below (and
+        // each arm's recomputation of the interrupted iteration) replays
+        // instructions the ROM ran before the interruption, so it is not
+        // priced; only the instructions from the resume point onward are.
+        let _scope = crate::cycle_ledger::routine(0x00_f312);
+        let mut build = self.begin_iris_spotlight_configure_table_inner(
+            usize::from(progress.completed_iterations),
+            false,
+        );
         match progress.checkpoint {
             crate::SpotlightTableBuildCheckpoint::BeforeIterationInitialization => {
                 assert!(
@@ -3864,7 +3894,7 @@ impl ZeldaState {
                     self.decrement_spotlight_window_y_buffer();
                 }
                 assert_eq!(
-                    self.iris_spotlight_calculate_circle_value(pending_circle_input),
+                    self.iris_spotlight_calculate_circle_value_priced(pending_circle_input, false),
                     circle_value,
                     "spotlight lower-write receipt disagrees with the native circle value",
                 );
@@ -3895,7 +3925,7 @@ impl ZeldaState {
                     if pending_circle_input != 0 {
                         self.decrement_spotlight_window_y_buffer();
                     }
-                    circle_value = self.iris_spotlight_calculate_circle_value(pending_circle_input);
+                    circle_value = self.iris_spotlight_calculate_circle_value_priced(pending_circle_input, false);
                 }
                 if build.upper_cursor < 224 {
                     self.set_spotlight_hdma_table_dynamic_entry(
@@ -3955,7 +3985,7 @@ impl ZeldaState {
                     if pending_circle_input != 0 {
                         self.decrement_spotlight_window_y_buffer();
                     }
-                    circle_value = self.iris_spotlight_calculate_circle_value(pending_circle_input);
+                    circle_value = self.iris_spotlight_calculate_circle_value_priced(pending_circle_input, false);
                 }
                 if build.upper_cursor < 224 {
                     self.set_spotlight_hdma_table_dynamic_entry(
@@ -3998,7 +4028,7 @@ impl ZeldaState {
                     if pending_circle_input != 0 {
                         self.decrement_spotlight_window_y_buffer();
                     }
-                    circle_value = self.iris_spotlight_calculate_circle_value(pending_circle_input);
+                    circle_value = self.iris_spotlight_calculate_circle_value_priced(pending_circle_input, false);
                 }
                 if build.upper_cursor < 224 {
                     self.set_spotlight_hdma_table_dynamic_entry(
@@ -4025,32 +4055,47 @@ impl ZeldaState {
         build: &mut SpotlightTableBuildContinuation,
         max_iterations: usize,
     ) {
+        self.advance_iris_spotlight_configure_table_priced(build, max_iterations, true);
+    }
+
+    fn advance_iris_spotlight_configure_table_priced(
+        &mut self,
+        build: &mut SpotlightTableBuildContinuation,
+        max_iterations: usize,
+        price: bool,
+    ) {
         // Cycle ledger: the $F361-$F3A0 scanline loop, one iteration per
         // pass. The pending_* resumptions charge only the instructions from
-        // the interrupted iteration's resume point onward.
+        // the interrupted iteration's resume point onward. `price == false`
+        // replays iterations the ROM completed before an interruption.
+        let charge = |master: u64| {
+            if price {
+                crate::cycle_ledger::charge(master);
+            }
+        };
         for _ in 0..max_iterations {
             if build.completed {
                 return;
             }
             if build.pending_lower_cursor_decrement {
                 // Resume at $F39E: DEC $06, JMP $F361.
-                crate::cycle_ledger::charge(78);
+                charge(78);
                 build.pending_lower_cursor_decrement = false;
                 build.lower_cursor = build.lower_cursor.wrapping_sub(1);
                 continue;
             }
             if build.pending_loop_completion_test {
                 // Resume at $F396: LDA $0E, CMP $04, BEQ.
-                crate::cycle_ledger::charge(80);
+                charge(80);
                 build.pending_loop_completion_test = false;
                 if build.upper_cursor == build.vertical_center {
                     // BEQ $F3A3 taken.
-                    crate::cycle_ledger::charge(6);
+                    charge(6);
                     build.completed = true;
                     return;
                 }
                 // $F39C-$F3A0: INC $04, DEC $06, JMP $F361.
-                crate::cycle_ledger::charge(132);
+                charge(132);
                 build.upper_cursor = build.upper_cursor.wrapping_add(1);
                 build.lower_cursor = build.lower_cursor.wrapping_sub(1);
                 continue;
@@ -4060,19 +4105,19 @@ impl ZeldaState {
                 // LDA $08, STA $7F7000,X. (Both producers of this pending
                 // value have already established lower_cursor < 224.)
                 if build.lower_cursor < 224 {
-                    crate::cycle_ledger::charge(94);
+                    charge(94);
                     self.set_spotlight_hdma_table_dynamic_entry(build.lower_cursor as usize, r8);
                 }
                 // $F396-$F39A: LDA $0E, CMP $04, BEQ.
-                crate::cycle_ledger::charge(80);
+                charge(80);
                 if build.upper_cursor == build.vertical_center {
                     // BEQ $F3A3 taken.
-                    crate::cycle_ledger::charge(6);
+                    charge(6);
                     build.completed = true;
                     return;
                 }
                 // $F39C-$F3A0: INC $04, DEC $06, JMP $F361.
-                crate::cycle_ledger::charge(132);
+                charge(132);
                 build.upper_cursor = build.upper_cursor.wrapping_add(1);
                 build.lower_cursor = build.lower_cursor.wrapping_sub(1);
                 continue;
@@ -4081,12 +4126,12 @@ impl ZeldaState {
             if let Some(t) = build.pending_circle_input.take() {
                 // Resume at $F375: JSR IrisSpotlight_CalculateCircleValue
                 // (the callee charges itself).
-                crate::cycle_ledger::charge(46);
-                r8 = self.iris_spotlight_calculate_circle_value(t);
+                charge(46);
+                r8 = self.iris_spotlight_calculate_circle_value_priced(t, price);
             } else if build.lower_cursor < self.game_state.display.spotlight_hdma.y_upper() {
                 // $F361-$F36B: LDA #$00FF, STA $08, LDA $06, CMP $676, BCS not
                 // taken; $F36D-$F370: LDA $67A, BEQ.
-                crate::cycle_ledger::charge(144 + 56);
+                charge(144 + 56);
                 let t = self
                     .game_state
                     .display
@@ -4094,51 +4139,51 @@ impl ZeldaState {
                     .window_y_buffer_byte();
                 if self.game_state.display.spotlight_hdma.window_y_buffer() != 0 {
                     // $F372: DEC $67A.
-                    crate::cycle_ledger::charge(62);
+                    charge(62);
                     self.decrement_spotlight_window_y_buffer();
                 } else {
                     // BEQ $F375 taken.
-                    crate::cycle_ledger::charge(6);
+                    charge(6);
                 }
                 // $F375: JSR IrisSpotlight_CalculateCircleValue (the callee
                 // charges itself).
-                crate::cycle_ledger::charge(46);
-                r8 = self.iris_spotlight_calculate_circle_value(t);
+                charge(46);
+                r8 = self.iris_spotlight_calculate_circle_value_priced(t, price);
             } else {
                 // $F361-$F36B with BCS $F378 taken: the scanline is outside
                 // the iris, r8 stays $00FF.
-                crate::cycle_ledger::charge(144 + 6);
+                charge(144 + 6);
             }
             // $F378-$F37E: LDA $04, ASL, CMP #$01C0, BCS.
-            crate::cycle_ledger::charge(86);
+            charge(86);
             if build.upper_cursor < 224 {
                 // $F380-$F383: TAX, LDA $08, STA $7F7000,X.
-                crate::cycle_ledger::charge(94);
+                charge(94);
                 self.set_spotlight_hdma_table_dynamic_entry(build.upper_cursor as usize, r8);
             } else {
                 // BCS $F387 taken.
-                crate::cycle_ledger::charge(6);
+                charge(6);
             }
             // $F387-$F38D: LDA $06, ASL, CMP #$01C0, BCS.
-            crate::cycle_ledger::charge(86);
+            charge(86);
             if build.lower_cursor < 224 {
                 // $F38F-$F392: TAX, LDA $08, STA $7F7000,X.
-                crate::cycle_ledger::charge(94);
+                charge(94);
                 self.set_spotlight_hdma_table_dynamic_entry(build.lower_cursor as usize, r8);
             } else {
                 // BCS $F396 taken.
-                crate::cycle_ledger::charge(6);
+                charge(6);
             }
             // $F396-$F39A: LDA $0E, CMP $04, BEQ.
-            crate::cycle_ledger::charge(80);
+            charge(80);
             if build.upper_cursor == build.vertical_center {
                 // BEQ $F3A3 taken.
-                crate::cycle_ledger::charge(6);
+                charge(6);
                 build.completed = true;
                 return;
             }
             // $F39C-$F3A0: INC $04, DEC $06, JMP $F361.
-            crate::cycle_ledger::charge(132);
+            charge(132);
             build.upper_cursor = build.upper_cursor.wrapping_add(1);
             build.lower_cursor = build.lower_cursor.wrapping_sub(1);
         }
@@ -4159,6 +4204,7 @@ impl ZeldaState {
         &mut self,
         mut build: SpotlightTableBuildContinuation,
     ) {
+        let _scope = crate::cycle_ledger::routine(0x00_f312);
         self.advance_iris_spotlight_configure_table(&mut build, usize::MAX);
         debug_assert!(build.completed);
 
@@ -4168,10 +4214,13 @@ impl ZeldaState {
             // system data bank, 178 when BCC loops. The ROM spins here until
             // scanline 192; that count depends on the raster phase at entry
             // (1 to ~950 passes in the shadow profiles), which the ledger
-            // cannot see, so only the final pass is charged: the remaining
-            // 178 per extra pass is the routine's raster-dependent residual.
+            // cannot see, so only the final pass is charged
+            // (`SPOTLIGHT_VCOUNTER_WAIT_FINAL_PASS_MASTER_CYCLES`): the
+            // remaining 178 per extra pass is the raster-dependent residual a
+            // timing owner has to supply.
+            crate::cycle_ledger::charge(SPOTLIGHT_VCOUNTER_WAIT_FINAL_PASS_MASTER_CYCLES);
             // $F3B4: LDX #$0000.
-            crate::cycle_ledger::charge(172 + 24);
+            crate::cycle_ledger::charge(24);
             // The C-only clear of words 224..240 has no ROM counterpart.
             self.clear_spotlight_hdma_table_dynamic_range(224, 16);
         }
@@ -4207,6 +4256,7 @@ impl ZeldaState {
         &mut self,
         defer_goal_transition: bool,
     ) -> bool {
+        let _scope = crate::cycle_ledger::routine(0x00_f312);
         // $F3C5-$F3D5: LDX $67E, LDA $67C, CLC, ADC $F302,X, STA $67C, CMP
         // $F30A,X, BNE.
         crate::cycle_ledger::charge(242);
@@ -4238,6 +4288,22 @@ impl ZeldaState {
             self.complete_iris_spotlight_goal_transition();
         }
         true
+    }
+
+    /// A goal transition the caller deferred past the C return: the ROM is
+    /// still inside IrisSpotlight_ConfigureTable, so it runs under its own
+    /// 0x00_f312 scope (the inline path is covered by the after-projection
+    /// scope).
+    pub(super) fn complete_deferred_iris_spotlight_goal_transition(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x00_f312);
+        self.complete_iris_spotlight_goal_transition();
+    }
+
+    /// The goal transition's tail resumed after vblank interrupted
+    /// IrisSpotlight_ResetTable, under its own 0x00_f312 scope.
+    pub(super) fn complete_deferred_iris_spotlight_goal_transition_after_reset(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x00_f312);
+        self.complete_iris_spotlight_goal_transition_after_reset();
     }
 
     pub(super) fn complete_iris_spotlight_goal_transition(&mut self) {
@@ -4315,16 +4381,24 @@ impl ZeldaState {
         crate::cycle_ledger::charge(94);
     }
 
-    pub(super) fn iris_spotlight_calculate_circle_value(&self, a: u8) -> u16 {
+    /// `IrisSpotlight_CalculateCircleValue`; with `price == false` the call
+    /// is a replay or a display derivation the ROM does not execute, and
+    /// nothing is charged.
+    pub(super) fn iris_spotlight_calculate_circle_value_priced(&self, a: u8, price: bool) -> u16 {
         // Cycle ledger: IrisSpotlight_CalculateCircleValue ($00:F4CC), entered
         // with m16/x16 and the system data bank ($00), so the seven $42xx
         // divider/multiplier accesses cost 2 less per byte.
-        let _scope = crate::cycle_ledger::routine(0x00_f4cc);
+        let _scope = price.then(|| crate::cycle_ledger::routine(0x00_f4cc));
+        let charge = |master: u64| {
+            if price {
+                crate::cycle_ledger::charge(master);
+            }
+        };
         // $F4CC-$F508: SEP #$30, the $4204-$4206 divide, six NOPs, REP #$20,
         // LDA $4214, LSR, SEP #$20, TAX, LDY $F44B,X, the $4202/$4203
         // multiply, two NOPs, STZ $01, STZ $0B, LDA $4217, STA $00, REP #$30,
         // ASL $00, LDA $0A, BEQ: 754 - 16 = 738.
-        crate::cycle_ledger::charge(738);
+        charge(738);
         let radius = self.game_state.display.spotlight_hdma.window_radius() as u8;
         let div = if radius == 0 {
             0xffff
@@ -4335,53 +4409,53 @@ impl ZeldaState {
         // LDY $F44B,X with an 8-bit X costs 6 more when $F44B + X crosses
         // into page $F5 (X >= $B5); X is the low byte of the quotient / 2.
         if (t & 0xff) + 0x4b > 0xff {
-            crate::cycle_ledger::charge(6);
+            charge(6);
         }
         let r10 = SPOTLIGHT_CIRCLE_X_RADIUS_CURVE[t];
         let p = 2 * ((((r10 as u16) * (radius as u16)) >> 8) as u8 as u16);
         if r10 == 0 {
             // BEQ $F53D taken, then RTS.
-            crate::cycle_ledger::charge(6 + 42);
+            charge(6 + 42);
             return 0x00ff;
         }
         // $F50A-$F51A: r2 = x_center + p, r0 = x_center - p, STZ $00, BMI.
-        crate::cycle_ledger::charge(252);
+        charge(252);
         let x_center = self.game_state.display.spotlight_hdma.window_x_center();
         let r2 = x_center.wrapping_add(p).min(255);
         let r0_raw = x_center.wrapping_sub(p);
         let r0 = if (r0_raw as i16) < 0 {
             // BMI $F526 taken: r0 stays the zero just stored.
-            crate::cycle_ledger::charge(6);
+            charge(6);
             0
         } else {
             // $F51C-$F51F: BIT #$FF00, BEQ; a high byte of zero takes the
             // branch to STA $00, otherwise $F521 loads #$00FF first.
             if r0_raw < 256 {
-                crate::cycle_ledger::charge(40 + 6);
+                charge(40 + 6);
             } else {
-                crate::cycle_ledger::charge(40 + 24);
+                charge(40 + 24);
             }
             // $F524: STA $00.
-            crate::cycle_ledger::charge(32);
+            charge(32);
             r0_raw.min(255)
         };
         // $F526-$F52B: LDA $02, BIT #$FF00, BEQ.
         if x_center.wrapping_add(p) < 256 {
-            crate::cycle_ledger::charge(72 + 6);
+            charge(72 + 6);
         } else {
             // $F52D: LDA #$00FF.
-            crate::cycle_ledger::charge(72 + 24);
+            charge(72 + 24);
         }
         let result = r0 | (r2 << 8);
         // $F530-$F536: XBA, ORA $00, CMP #$FFFF, BNE.
-        crate::cycle_ledger::charge(92);
+        charge(92);
         if result == 0xffff {
             // $F538: LDA #$00FF; $F53B: STA $08; $F53D: RTS.
-            crate::cycle_ledger::charge(24 + 32 + 42);
+            charge(24 + 32 + 42);
             0x00ff
         } else {
             // BNE $F53B taken; STA $08; RTS.
-            crate::cycle_ledger::charge(6 + 32 + 42);
+            charge(6 + 32 + 42);
             result
         }
     }

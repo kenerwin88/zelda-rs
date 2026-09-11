@@ -3400,7 +3400,7 @@ impl ZeldaState {
         );
         self.iris_spotlight_reset_table_stores(usize::from(completed_stores), 224);
         self.complete_iris_spotlight_reset_table_tail();
-        self.complete_iris_spotlight_goal_transition_after_reset();
+        self.complete_deferred_iris_spotlight_goal_transition_after_reset();
         let caller_interrupted = self
             .complete_spotlight_configure_table_and_control_after_table(entry_main_module, false);
         debug_assert!(!caller_interrupted);

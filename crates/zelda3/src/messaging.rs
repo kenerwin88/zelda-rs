@@ -1626,7 +1626,7 @@ impl ZeldaState {
             self.complete_iris_spotlight_configure_table_after_projection_deferring_goal(true),
             "the game-over palette interruption requires the closing iris to reach radius zero",
         );
-        self.complete_iris_spotlight_goal_transition();
+        self.complete_deferred_iris_spotlight_goal_transition();
         self.set_main_module(0x12);
         self.game_over_iris_goal_palette_stores(0, usize::from(completed_stores));
         self.game_execution_scheduler.schedule_work(

@@ -817,9 +817,9 @@ impl ZeldaState {
             let reset_prefix = (0..reset_prefix_scanlines)
                 .map(|index| self.spotlight_hdma_table_dynamic_entry(index))
                 .collect();
-            self.complete_iris_spotlight_goal_transition();
+            self.complete_deferred_iris_spotlight_goal_transition();
             self.complete_dungeon_landing_goal_active_scanout(reset_prefix);
-            self.complete_module07_0f_operate_spotlight_suffix();
+            self.complete_deferred_module07_0f_operate_spotlight_suffix();
         }
         self.complete_module07_dungeon_after_submodule();
     }
