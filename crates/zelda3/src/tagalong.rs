@@ -708,10 +708,19 @@ impl ZeldaState {
     }
 
     pub(super) fn follower_main(&mut self) {
+        // Cycle ledger: Follower_Main $09:9FC4 (m8 x8, JSR target of the
+        // Tagalong_Main_ wrapper). $09:9FC4-9FC8 LDA long $7ef3cc : BNE
+        // (56): no follower falls into $09:9FCA RTS (42).
+        let _scope = crate::cycle_ledger::routine(0x09_9fc4);
         if self.game_state.sprites.follower_runtime.indicator() == 0 {
+            crate::cycle_ledger::charge(56 + 42);
             return;
         }
+        // BNE taken (+6), $09:9FCB-9FCD CMP #$0e : BNE (32): the trigger
+        // follower falls into $09:9FCF BRL Follower_HandleTrigger (30; the
+        // handler is a branch target and is not priced here).
         if self.game_state.sprites.follower_runtime.indicator() == 0x0e {
+            crate::cycle_ledger::charge(56 + 6 + 32 + 30);
             self.follower_handle_trigger();
             return;
         }
@@ -720,21 +729,64 @@ impl ZeldaState {
             .position(|&v| v == self.game_state.sprites.follower_runtime.indicator())
             .map(|v| v as i32)
             .unwrap_or(-1);
+        // $09:9FD2 LDY #$02 (16), then the table search from Y = 2 down:
+        // $09:9FD4-9FDB LDA long CMP $9fb5,y BEQ (88, +6 on the match) and
+        // $09:9FDD-9FDE DEY : BPL (30, +6 taken) per miss; three misses end
+        // with $09:9FE0 BRL Follower_NoTimedMessage (30).
+        crate::cycle_ledger::charge(56 + 6 + 32 + 6 + 16);
+        crate::cycle_ledger::charge(if j >= 0 {
+            (2 - j as u64) * (88 + 30 + 6) + 88 + 6
+        } else {
+            3 * 88 + 3 * 30 + 2 * 6 + 30
+        });
+        if j >= 0 {
+            // $09:9FE3-9FE5 LDA $11 : BNE Tagalong_5_14 (40, +6 taken); then
+            // $09:9FE7-9FE9 CPY #$02 : BNE (32, +6 taken for j != 2) and for
+            // j == 2 $09:9FEB-9FEF LDA $8a AND #$40 BNE Tagalong_5_14 (56,
+            // +6 taken).
+            if self.game_state.frame.submodule != 0 {
+                crate::cycle_ledger::charge(40 + 6);
+            } else if j == 2 {
+                crate::cycle_ledger::charge(40 + 32 + 56);
+                if self.game_state.world.location.overworld_screen_index() & 0x40 != 0 {
+                    crate::cycle_ledger::charge(6);
+                }
+            } else {
+                crate::cycle_ledger::charge(40 + 32 + 6);
+            }
+        }
         if j >= 0
             && self.game_state.frame.submodule == 0
             && !(j == 2 && self.game_state.world.location.overworld_screen_index() & 0x40 != 0)
         {
             let timer = self.tick_shared_message_timer();
+            // $09:9FF1-9FF6 REP #$20 DEC $02cd BPL Tagalong_5_14 (100, +6
+            // taken while non-negative); a negative timer runs $09:9FF8-9FFE
+            // SEP JSL Follower_ValidateMessageFreedom BCS (100): blocked
+            // falls into $09:A000-A006 STZ STZ BRA (86), free takes the BCS
+            // (+6) into $09:A008-A023 (382, JSL Main_ShowTextMessage
+            // included).
             if sign16(timer) {
+                crate::cycle_ledger::charge(100 + 100);
                 if !self.follower_validate_message_freedom() {
+                    crate::cycle_ledger::charge(86);
                     self.clear_shared_message_timer();
                 } else {
+                    crate::cycle_ledger::charge(6 + 382);
                     let j = j as usize;
                     self.start_shared_message_timer(TAGALONG_MESSAGE_TIMERS[j]);
                     self.dialogue_message_index_mut().set_value(TAGALONG_MSG[j]);
                     self.Tagalong_Main_ShowTextMessage();
                 }
+            } else {
+                crate::cycle_ledger::charge(100 + 6);
             }
+        }
+        if j >= 0 {
+            // Tagalong_5_14 $09:A024-A028 SEP CPY #$00 BNE (54): j == 0 falls
+            // into $09:A02A RTS (42), else the BNE is taken (+6) into
+            // Follower_NoTimedMessage.
+            crate::cycle_ledger::charge(if j != 0 { 54 + 6 } else { 54 + 42 });
         }
         if j != 0 {
             self.follower_no_timed_message();
@@ -742,11 +794,28 @@ impl ZeldaState {
     }
 
     pub(super) fn follower_no_timed_message(&mut self) {
+        // Cycle ledger: Follower_NoTimedMessage $09:A02B is a branch target
+        // (charges into Follower_Main's scope). $09:A02B-A031 SEP LDA long
+        // dropped BEQ (78): a dropped follower runs $09:A033 BRL and
+        // $09:A0DE BRL Follower_NotFollowing (60; NotFollowing itself is not
+        // priced here).
         if self.game_state.sprites.follower_runtime.dropped() != 0 {
+            crate::cycle_ledger::charge(78 + 30 + 30);
             self.follower_not_following();
             return;
         }
+        // BEQ taken (+6), $09:A036-A03C LDA long CMP #$0c BNE (72).
+        crate::cycle_ledger::charge(78 + 6 + 72);
         if self.game_state.sprites.follower_runtime.indicator() == 12 {
+            // $09:A03E-A040 LDA $4d : BNE (40): an auxiliary state takes the
+            // BNE (+6) into $09:A04C BRL Follower_CheckGameMode (30); else
+            // $09:A042 BRA (22) into the drop-condition chain, which is not
+            // priced (the translation evaluates it in a different order).
+            if self.game_state.player.follower_link.has_auxiliary_state() {
+                crate::cycle_ledger::charge(40 + 6 + 30);
+            } else {
+                crate::cycle_ledger::charge(40 + 22);
+            }
             if !self.game_state.player.follower_link.has_auxiliary_state()
                 && self.follower_can_drop()
             {
@@ -754,6 +823,18 @@ impl ZeldaState {
                 return;
             }
         } else if self.game_state.sprites.follower_runtime.indicator() == 13 {
+            // BNE taken (+6), $09:A044-A04A LDA long CMP #$0d BEQ taken (72
+            // + 6), $09:A04F-A053 LDA $4d CMP #$02 BEQ (56, +6 taken) and
+            // $09:A055-A059 LDA $5b CMP #$02 BEQ (56, +6 taken) into the
+            // drop; otherwise the drop-condition chain (not priced).
+            crate::cycle_ledger::charge(6 + 72 + 6);
+            if self.game_state.player.follower_link.auxiliary_state() == 2 {
+                crate::cycle_ledger::charge(56 + 6);
+            } else if self.game_state.player.follower_link.near_pit_state_is(2) {
+                crate::cycle_ledger::charge(56 + 56 + 6);
+            } else {
+                crate::cycle_ledger::charge(56 + 56);
+            }
             if self.game_state.player.follower_link.auxiliary_state() == 2
                 || self.game_state.player.follower_link.near_pit_state_is(2)
             {
@@ -764,6 +845,10 @@ impl ZeldaState {
                 self.follower_drop();
                 return;
             }
+        } else {
+            // BNE taken (+6), $09:A044-A04A not taken (72), $09:A04C BRL
+            // Follower_CheckGameMode (30).
+            crate::cycle_ledger::charge(6 + 72 + 30);
         }
         self.follower_check_game_mode();
     }
@@ -790,6 +875,29 @@ impl ZeldaState {
     }
 
     fn follower_drop(&mut self) {
+        // Cycle ledger ($09:A084 onward, inside Follower_Main's scope):
+        // $09:A084-A08A LDA long CMP #$0d BNE (72, +6 taken for other
+        // followers); the super bomb runs $09:A08C-A08E LDA $1b : BNE (40,
+        // +6 taken indoors) and outdoors $09:A090-A094 CMP #$08 BEQ (56),
+        // $09:A096 CMP #$09 BEQ (32), $09:A09A CMP #$0a BEQ (32) with the
+        // matching medallion state taking its branch (+6) to
+        // Follower_CheckGameMode, else $09:A09E-A0A5 (96). Then
+        // $09:A0A8-A0DA (552) and $09:A0DE BRL Follower_NotFollowing (30).
+        if self.game_state.sprites.follower_runtime.indicator() == 13 {
+            if self.game_state.world.location.indoor_flag() != 0 {
+                crate::cycle_ledger::charge(72 + 40 + 6);
+            } else {
+                let handler = self.game_state.player.follower_link.handler_state();
+                crate::cycle_ledger::charge(match handler {
+                    0x08 => 72 + 40 + 56 + 6,
+                    0x09 => 72 + 40 + 56 + 32 + 6,
+                    0x0a => 72 + 40 + 56 + 32 + 32 + 6,
+                    _ => 72 + 40 + 56 + 32 + 32 + 96,
+                });
+            }
+        } else {
+            crate::cycle_ledger::charge(72 + 6);
+        }
         if self.game_state.sprites.follower_runtime.indicator() == 13
             && self.game_state.world.location.indoor_flag() == 0
         {
@@ -800,6 +908,7 @@ impl ZeldaState {
             self.set_super_bomb_indicator_timer(3);
             self.set_super_bomb_indicator_counter(0xbb);
         }
+        crate::cycle_ledger::charge(552 + 30);
         self.follower_state_mut().set_dropped(128);
         self.follower_state_mut().set_reacquire_timer_low(64);
         let k = self.game_state.sprites.follower_runtime.data_index() as usize;
@@ -815,6 +924,43 @@ impl ZeldaState {
     }
 
     pub(super) fn follower_check_game_mode(&mut self) {
+        // Cycle ledger: Follower_CheckGameMode $09:A0E1 is a branch target
+        // (charges into Follower_Main's scope). Tagalong_IsFollowing is the
+        // test chain $09:A0E1-A102: SEP LDA $02e4 BNE (70), LDX $10 LDY $11
+        // CPY #$0a BEQ (80), CPX #$09 BNE (32) [CPY #$23 BEQ (32)], CPX #$0e
+        // BNE (32) [CPY #$01 BEQ (32), CPY #$02 BNE (32)]; a taken exit (+6)
+        // lands on $09:A104 BRL $09:A18C (30). Then $09:A107-A10B LDA $30 ORA
+        // $31 BEQ (64, +6 taken when Link is still).
+        {
+            let main = self.game_state.frame.main_module;
+            let sub = self.game_state.frame.submodule;
+            let link = self.game_state.player.follower_link;
+            let cost = if link.is_immobilized() {
+                70 + 6 + 30
+            } else if sub == 10 {
+                70 + 80 + 6 + 30
+            } else if main == 9 {
+                if sub == 0x23 {
+                    70 + 80 + 32 + 32 + 6 + 30
+                } else {
+                    70 + 80 + 32 + 32 + 32 + 6
+                }
+            } else if main == 14 {
+                if sub == 1 {
+                    70 + 80 + 32 + 6 + 32 + 32 + 6 + 30
+                } else if sub == 2 {
+                    70 + 80 + 32 + 6 + 32 + 32 + 32 + 30
+                } else {
+                    70 + 80 + 32 + 6 + 32 + 32 + 32 + 6
+                }
+            } else {
+                70 + 80 + 32 + 6 + 32 + 6
+            };
+            crate::cycle_ledger::charge(cost);
+            if self.tagalong_is_following() {
+                crate::cycle_ledger::charge(if link.is_moving() { 64 } else { 64 + 6 });
+            }
+        }
         if self.tagalong_is_following() && self.game_state.player.follower_link.is_moving() {
             let mut k = self
                 .game_state
@@ -822,6 +968,19 @@ impl ZeldaState {
                 .follower_runtime
                 .tail_write_index()
                 .wrapping_add(1);
+            // $09:A10D-A113 LDX $02d3 INX CPX #$14 BNE (78, +6 taken below
+            // 20, else $09:A115 LDX #$00 16); $09:A117-A11E STX LDA $24 CMP
+            // #$f0 BCC (88, +6 taken below $f0, else $09:A120 LDA #$00 16);
+            // $09:A122-A161 (798, its final BNE taken +6 unless swimming).
+            crate::cycle_ledger::charge(if k == 20 { 78 + 16 } else { 78 + 6 });
+            crate::cycle_ledger::charge(
+                if self.game_state.player.follower_link.z_low() >= 0xf0 {
+                    88 + 16
+                } else {
+                    88 + 6
+                },
+            );
+            crate::cycle_ledger::charge(798);
             if k == 20 {
                 k = 0;
             }
@@ -832,9 +991,27 @@ impl ZeldaState {
             let y = link.y().wrapping_sub(z as u16);
             let x = link.x();
             let mut layerbits = link.facing_layer_bits() | link.floor_layer_bits();
+            // Swimming: $09:A163 LDY #$20 : BRA (38) into $09:A185 (84).
+            // Else $09:A167-A169 CMP #$13 BNE (32, +6 taken unless the
+            // hookshot), hookshot: $09:A16B-A16E LDA $037e BEQ (48, +6 taken
+            // when clear) else $09:A170 (86); then $09:A178-A17D LDY #$80 LDA
+            // $0351 BEQ (64, +6 taken with no surface effect), else CMP #$01
+            // BEQ (32, +6 taken for ripples) or $09:A183 LDY #$40 (16), then
+            // $09:A185-A189 TYA ORA STA (84).
             if link.is_swimming() {
+                crate::cycle_ledger::charge(38 + 84);
                 layerbits |= 0x20;
             } else {
+                crate::cycle_ledger::charge(6 + 32);
+                if link.is_hookshot() {
+                    crate::cycle_ledger::charge(if link.has_hookshot_interlock() {
+                        48 + 86
+                    } else {
+                        48 + 6
+                    });
+                } else {
+                    crate::cycle_ledger::charge(6);
+                }
                 if link.is_hookshot()
                     && self
                         .game_state
@@ -849,6 +1026,11 @@ impl ZeldaState {
                     .player
                     .follower_link
                     .water_ripple_or_grass_state();
+                crate::cycle_ledger::charge(match surface_effect {
+                    0 => 64 + 6,
+                    1 => 64 + 32 + 6 + 84,
+                    _ => 64 + 32 + 16 + 84,
+                });
                 if surface_effect != 0 {
                     layerbits |= if surface_effect == 1 { 0x80 } else { 0x40 };
                 }
@@ -858,6 +1040,9 @@ impl ZeldaState {
             follower.set_position(x, y);
             follower.set_layer_bits(layerbits);
         }
+        // $09:A18C-A193 LDA long DEC ASL TAX JMP (abs,x) (128): the
+        // per-follower handler runs inside Follower_Main's scope (unpriced).
+        crate::cycle_ledger::charge(128);
         match self.game_state.sprites.follower_runtime.indicator() {
             2 | 4 => self.follower_old_man(),
             3 | 11 => self.follower_old_man_unused(),

@@ -3369,14 +3369,27 @@ impl ZeldaState {
 
 impl ZeldaState {
     pub(super) fn handle_screen_flash(&mut self) {
+        // Cycle ledger: HandleScreenFlash $1D:E9B6 (m8 x8, JSL target).
+        let _scope = crate::cycle_ledger::routine(0x1d_e9b6);
         let flash = self
             .game_state
             .ending
             .attract_scene
             .intro_palette_flash_count();
+        // $1D:E9B6-E9B9 LDA $0ff9 : BEQ (48), then $1D:E9BB-E9BD LDY $11 :
+        // BNE (40); either taken branch (+6) lands on $1D:E9D9 RTL (44).
+        if flash == 0 {
+            crate::cycle_ledger::charge(48 + 6 + 44);
+        } else if self.game_state.frame.submodule != 0 {
+            crate::cycle_ledger::charge(48 + 40 + 6 + 44);
+        } else {
+            crate::cycle_ledger::charge(48 + 40);
+        }
         if flash == 0 || self.game_state.frame.submodule != 0 {
             return;
         }
+        // $1D:E9BF-E9C2 DEC $0ff9 : BNE (62): a zero result falls into
+        // $1D:E9C4 JSL Palette_Restore_BG_And_HUD : RTL (106).
         self.attract_scene_mut()
             .set_intro_palette_flash_count(flash.wrapping_sub(1));
         if self
@@ -3386,12 +3399,20 @@ impl ZeldaState {
             .intro_palette_flash_count()
             == 0
         {
+            crate::cycle_ledger::charge(62 + 106);
             self.palette_restore_bg_and_hud();
             return;
         }
+        // BNE taken (+6) into $1D:E9C9-E9CB AND #$01 : BEQ (32) on the
+        // pre-decrement count: odd runs $1D:E9CD JSL Filter_Majorly_Whiten_Bg
+        // : BRA (84), even takes the BEQ (+6) into $1D:E9D3 JSL
+        // Palette_Restore_BG_From_Flash (62); then $1D:E9D7 INC $15 (38) and
+        // the RTL (44). The callees charge their own bodies.
         if flash & 1 != 0 {
+            crate::cycle_ledger::charge(62 + 6 + 32 + 84 + 38 + 44);
             self.filter_majorly_whiten_bg();
         } else {
+            crate::cycle_ledger::charge(62 + 6 + 32 + 6 + 62 + 38 + 44);
             self.palette_restore_bg_from_flash();
         }
         self.increment_cgram_update_flag();

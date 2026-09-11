@@ -2762,7 +2762,13 @@ impl ZeldaState {
         self.replay_trace_ram_watch("sprite-after-oam-reset");
         self.garnish_execute_upper_slots();
         self.replay_trace_ram_watch("sprite-after-garnish-upper");
-        self.follower_main();
+        {
+            // Tagalong_Main_ $09:9F91, the JSL target wrapping Follower_Main:
+            // PHB PHK PLB JSR $09:9FC4 PLB RTL (190).
+            let _tagalong = crate::cycle_ledger::routine(0x09_9f91);
+            crate::cycle_ledger::charge(190);
+            self.follower_main();
+        }
         self.replay_trace_ram_watch("sprite-after-follower");
         let pickup_slot_cache = self.game_state.player.follower_link.sprite_pickup_flag();
         self.sprite_workspace_mut()
@@ -6280,13 +6286,30 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   }
     // }
     pub(super) fn garnish_execute_upper_slots(&mut self) {
+        // Cycle ledger: this is Garnish_ExecuteUpperSlots_ $09:B06E (m8 x8,
+        // the JSL target Sprite_Main calls): JSL HandleScreenFlash, LDA $0fb4,
+        // BEQ (110); an active garnish table runs $09:B077-B07D PHB PHK PLB
+        // JSR Garnish_ExecuteUpperSlots PLB (146) around the JSR target
+        // $09:B08C (LDX #$1d 16, fifteen passes of JSR Garnish_ExecuteSingle
+        // DEX CPX #$0e BNE 92 with the BNE taken fourteen times, RTS 42:
+        // 1,522), else the BEQ is taken (+6); then $09:B07E RTL (44).
+        let _scope = crate::cycle_ledger::routine(0x09_b06e);
+        crate::cycle_ledger::charge(110);
         self.handle_screen_flash();
 
         if self.game_state.sprites.garnish_runtime.active_type() != 0 {
+            crate::cycle_ledger::charge(146);
+            let _slots = crate::cycle_ledger::routine(0x09_b08c);
+            crate::cycle_ledger::charge(16);
             for i in (15..=29).rev() {
+                crate::cycle_ledger::charge(if i > 15 { 92 + 6 } else { 92 });
                 self.garnish_execute_single(i);
             }
+            crate::cycle_ledger::charge(42);
+        } else {
+            crate::cycle_ledger::charge(6);
         }
+        crate::cycle_ledger::charge(44);
     }
 
     // void Garnish_ExecuteLowerSlots() {  // 89b097
@@ -6296,26 +6319,71 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   }
     // }
     pub(super) fn garnish_execute_lower_slots(&mut self) {
+        // Cycle ledger: Garnish_ExecuteLowerSlots_ $09:B07F (m8 x8, the JSL
+        // target): LDA $0fb4 : BEQ (48); an active table runs $09:B084-B08A
+        // PHB PHK PLB JSR Garnish_ExecuteLowerSlots PLB (146) around the JSR
+        // target $09:B097 (LDX #$0e 16, fifteen passes of JSR
+        // Garnish_ExecuteSingle DEX BPL 76 with the BPL taken fourteen times,
+        // RTS 42: 1,282), else the BEQ is taken (+6); then $09:B08B RTL (44).
+        let _scope = crate::cycle_ledger::routine(0x09_b07f);
+        crate::cycle_ledger::charge(48);
         if self.game_state.sprites.garnish_runtime.active_type() != 0 {
+            crate::cycle_ledger::charge(146);
+            let _slots = crate::cycle_ledger::routine(0x09_b097);
+            crate::cycle_ledger::charge(16);
             for i in (0..=14).rev() {
+                crate::cycle_ledger::charge(if i > 0 { 76 + 6 } else { 76 });
                 self.garnish_execute_single(i);
             }
+            crate::cycle_ledger::charge(42);
+        } else {
+            crate::cycle_ledger::charge(6);
         }
+        crate::cycle_ledger::charge(44);
     }
 
     // void Garnish_ExecuteSingle(int k) {  // 89b0b6
     //   ...see sprite.c...
     // }
     pub(super) fn garnish_execute_single(&mut self, k: usize) {
+        // Cycle ledger: Garnish_ExecuteSingle $09:B0B6 (m8 x8, JSR target;
+        // its RTS dispatch runs the handler inside this scope).
+        let _scope = crate::cycle_ledger::routine(0x09_b0b6);
         self.sprite_system_mut().set_cur_object_index(k as u8);
         let type_ = self.garnish_slot_view(k).garnish_type();
+        // $09:B0B6-B0BD STX $0fa0 LDA long $7ff800,x BEQ (88): an empty slot
+        // takes the BEQ (+6) to $09:B123 RTS (42).
         if type_ == 0 {
+            crate::cycle_ledger::charge(88 + 6 + 42);
             return;
         }
-        if (type_ == 5
-            || (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0)
-            && self.garnish_slot_view(k).countdown() != 0
-        {
+        crate::cycle_ledger::charge(88);
+        // $09:B0BF-B0C1 CMP #$05 : BEQ (32): type 5 takes it (+6) to the
+        // countdown test; else $09:B0C3-B0C8 LDA $11 ORA $0fc1 BNE (72),
+        // taken (+6) past the countdown when a submodule or pause is active.
+        let counts_down = type_ == 5
+            || (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0;
+        crate::cycle_ledger::charge(if type_ == 5 {
+            32 + 6
+        } else if counts_down {
+            32 + 72
+        } else {
+            32 + 72 + 6
+        });
+        if counts_down {
+            // $09:B0CA-B0CE LDA long $7ff90e,x : BEQ (56), taken (+6) for a
+            // zero countdown; else $09:B0D0-B0D5 DEC STA long BNE (70),
+            // taken (+6) while nonzero, else $09:B0D7-B0DB STA long : BRA
+            // (62) into the RTS (42).
+            crate::cycle_ledger::charge(if self.garnish_slot_view(k).countdown() == 0 {
+                56 + 6
+            } else if self.garnish_slot_view(k).countdown() == 1 {
+                56 + 70 + 62 + 42
+            } else {
+                56 + 70 + 6
+            });
+        }
+        if counts_down && self.garnish_slot_view(k).countdown() != 0 {
             let value = self.garnish_slot_view(k).countdown().wrapping_sub(1);
             self.garnish_slot_view_mut(k).set_countdown(value);
             if self.garnish_slot_view(k).countdown() == 0 {
@@ -6326,15 +6394,24 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         }
 
         let sprsize = GARNISH_EXECUTE_SINGLE_GARNISH_OAM_MEM_SIZE[usize::from(type_)];
+        // $09:B0DD-B0E0 LDY $0fb3 : BEQ (48): sorting off takes it (+6) into
+        // $09:B104-B10C LDA TAY LDA $b09f,y JSL RegionA (148); sorting on
+        // runs $09:B0E2-B0E6 LDA long floor : BEQ (56) then $09:B0E8 (170,
+        // RegionF + BRA) or the taken BEQ (+6) into $09:B0F6 (170, RegionD +
+        // BRA). Then the dispatch $09:B110-B121 (240) and its RTS (42).
         if self.game_state.oam.has_sprite_sorting() {
             if self.garnish_slot_view(k).floor() != 0 {
+                crate::cycle_ledger::charge(48 + 56 + 170);
                 self.oam_allocate_from_region_f(sprsize);
             } else {
+                crate::cycle_ledger::charge(48 + 56 + 6 + 170);
                 self.oam_allocate_from_region_d(sprsize);
             }
         } else {
+            crate::cycle_ledger::charge(48 + 6 + 148);
             self.oam_allocate_from_region_a(sprsize);
         }
+        crate::cycle_ledger::charge(240 + 42);
 
         match type_ {
             1 => self.garnish01_fire_snake_tail(k),
