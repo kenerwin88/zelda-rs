@@ -10595,6 +10595,15 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Recruit_Draw(int k) {  // 85bd7e
     pub(super) fn recruit_draw(&mut self, k: usize) {
+        // Cycle ledger: Recruit_Draw $05:BD7E (JSR target, m8 x8): JSR
+        // Sprite_PrepOamCoordOrDoubleRet__ (46; off screen it double-returns
+        // past this routine). On screen: $05:BD81-BDA6 the head entry (504;
+        // the closing BCC is taken +6 when head y + $10 < $100, else
+        // $05:BDA8 stores $F0, 78), $05:BDAD-BDE4 the body entry (794; same
+        // test on the body y, else $05:BDE6, 78), $05:BDEB-BE09 the
+        // extension bytes, JSL Sprite_DrawShadow_, RTS (492).
+        let _scope = crate::cycle_ledger::routine(0x05_bd7e);
+        crate::cycle_ledger::charge(46);
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
@@ -10606,15 +10615,18 @@ impl ZeldaState {
         };
         let oam = self.game_state.oam.current_pointer_usize();
         let hd = usize::from(self.sprite_slot_view(k).head_direction() & 3);
+        let head_y = info_y.wrapping_sub(11);
+        crate::cycle_ledger::charge(504 + if head_y.wrapping_add(0x10) < 0x100 { 6 } else { 78 });
         self.set_oam_helper0_at(
             oam,
             info_x,
-            info_y.wrapping_sub(11),
+            head_y,
             RECRUIT_DRAW_SOLDIER_CH[hd],
             RECRUIT_DRAW_SOLDIER_FL[hd] | info_flags,
             2,
         );
         let r6 = usize::from(self.sprite_slot_view(k).graphics());
+        crate::cycle_ledger::charge(794 + if info_y.wrapping_add(0x10) < 0x100 { 6 } else { 78 });
         self.set_oam_helper0_at(
             oam + 4,
             info_x.wrapping_add(RECRUIT_DRAW_X_OFFSETS[r6] as u16),
@@ -10623,6 +10635,7 @@ impl ZeldaState {
             RECRUIT_DRAW_FL[r6] | info_flags,
             2,
         );
+        crate::cycle_ledger::charge(492);
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -11566,10 +11579,22 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void SageMantle_Draw(int k) {  // 85dc8a
     pub(super) fn sage_mantle_draw(&mut self, k: usize) {
+        // Cycle ledger: SageMantle_Draw $05:DC8A (JSR target, m8 x8):
+        // $05:DC8A-DC95 the table pointer stores, LDA $DB0,x, BNE (128); a
+        // zero runs $05:DC97 LDA #$10, JSL Oam_AllocateFromRegionB (78), else
+        // the BNE is taken (+6). $05:DC9D LDA #$04 : JMP Sprite_DrawMultiple_
+        // (40) into $05:8AB1 JSL Sprite_DrawMultiple (62) ... RTS (42), a jump
+        // target that charges into this scope.
+        let _scope = crate::cycle_ledger::routine(0x05_dc8a);
         if self.sprite_slot_view(k).c() == 0 {
+            crate::cycle_ledger::charge(128 + 78);
             self.oam_allocate_from_region_b(0x10);
+        } else {
+            crate::cycle_ledger::charge(128 + 6);
         }
+        crate::cycle_ledger::charge(40 + 62);
         self.sprite_draw_multiple(k, &SAGE_MANTLE_DRAW_FRAMES);
+        crate::cycle_ledger::charge(42);
     }
 
     // -----------------------------------------------------------------------
@@ -14263,39 +14288,81 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_6C_MirrorPortal(int k) {  // 85af75
     pub(super) fn sprite_6_c_mirror_portal(&mut self, k: usize) {
+        // Cycle ledger (an RTS-dispatch target of SpriteActive2_Main, m8 x8,
+        // charging into the open Sprite_ExecuteSingle scope). $05:AF75 LDA
+        // $7EF3CA : BNE (56); the dark world takes it (+6) into $05:AFDF STZ
+        // $DD0,x : BRA $AFF1 (60).
         if self.game_state.inventory.save_progress.dark_world_state() != 0 {
+            crate::cycle_ledger::charge(56 + 6 + 60);
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
         } else {
+            // $05:AF7B LDA $8A : CMP #$80 : BCC (56); a special area runs
+            // the $05:AF81 RTS (42), else the BCC is taken (+6).
             if self.game_state.world.location.overworld_screen_index() >= 0x80 {
+                crate::cycle_ledger::charge(56 + 56 + 42);
                 return;
             }
+            crate::cycle_ledger::charge(56 + 56 + 6);
 
+            // $05:AF82 LDA $11 : CMP #$23 : BEQ (56; taken +6 in the mirror
+            // submodule), $05:AF88 LDA $0FC6 : CMP #$03 : BCS (64; taken +6
+            // with the sheets pending), else $05:AF8F JSL
+            // Sprite_PrepAndDrawSingleLarge_ (62).
+            if self.game_state.frame.submodule == 0x23 {
+                crate::cycle_ledger::charge(56 + 6);
+            } else if self.game_state.sprites.system.chr_halfslot_state() >= 3 {
+                crate::cycle_ledger::charge(56 + 64 + 6);
+            } else {
+                crate::cycle_ledger::charge(56 + 64 + 62);
+            }
             if self.game_state.frame.submodule != 0x23
                 && self.game_state.sprites.system.chr_halfslot_state() < 3
             {
                 self.sprite_draw_single_large(k);
             }
+            // $05:AF93 JSR Sprite_ReturnIfInactive_ (46; a double return
+            // when inactive), then $05:AF96-AFAC the OAM-flag rotation and
+            // JSL Sprite_CheckIfLinkIsBusy : BCS (278; taken +6 into the
+            // $05:B018 RTS, 42, when busy).
+            crate::cycle_ledger::charge(46);
             if self.sprite_return_if_inactive(k) {
                 return;
             }
+            crate::cycle_ledger::charge(278);
             let j = usize::from((self.game_state.frame.frame_counter >> 2) & 3);
             let value = (self.sprite_slot_view(k).oam_flags() & 0x3f) | WARP_VORTEX_FLAGS[j];
             self.sprite_slot_view_mut(k).set_oam_flags(value);
             if self.sprite_check_if_link_is_busy() {
+                crate::cycle_ledger::charge(6 + 42);
                 return;
             }
+            // $05:AFAE JSL Sprite_CheckDamageToPlayerSameLayer_ : BCC (78);
+            // no touch takes it (+6) into $05:AFE4-AFEE (140). A touch runs
+            // $05:AFB4 LDA $D90,x : BEQ (48; taken +6 to $05:AFF1), $05:AFB9
+            // LDA $037B : ORA $031F : BNE (80; taken +6), $05:AFC1 LDA $02E4
+            // : BNE (48; taken +6), then $05:AFC6-AFDD the mirror-warp setup
+            // (264) and $05:AFDF STZ $DD0,x : BRA (60).
             if self.sprite_check_damage_to_link_same_layer(k) {
-                if self.sprite_slot_view(k).a() != 0
-                    && (self
-                        .game_state
-                        .player
-                        .follower_link
-                        .sprite_damage_disable_timer()
-                        | self.game_state.player.follower_link.blink_countdown())
-                        == 0
-                    && !self.game_state.player.follower_link.is_immobilized()
-                {
+                let armed = self.sprite_slot_view(k).a() != 0;
+                let vulnerable = (self
+                    .game_state
+                    .player
+                    .follower_link
+                    .sprite_damage_disable_timer()
+                    | self.game_state.player.follower_link.blink_countdown())
+                    == 0;
+                let mobile = !self.game_state.player.follower_link.is_immobilized();
+                crate::cycle_ledger::charge(if !armed {
+                    78 + 48 + 6
+                } else if !vulnerable {
+                    78 + 48 + 80 + 6
+                } else if !mobile {
+                    78 + 48 + 80 + 48 + 6
+                } else {
+                    78 + 48 + 80 + 48 + 264 + 60
+                });
+                if armed && vulnerable && mobile {
                     self.set_submodule(0x23);
                     self.follower_link_state_mut().set_whirlpool_trigger();
                     self.set_subsubmodule(0);
@@ -14309,15 +14376,23 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_state(value);
                 }
             } else {
+                crate::cycle_ledger::charge(78 + 6 + 140);
                 let value = 1;
                 self.sprite_slot_view_mut(k).set_a(value);
             }
         }
+        // $05:AFF1 INC $DA0,x : BNE (68; taken +6 unless the counter wrapped,
+        // which runs $05:AFF6 LDA #$01 : STA $D90,x, 54), then $05:AFFB-B015
+        // the bird-travel position copy (326) and $05:B018 RTS (42).
         self.sprite_slot_view_mut(k).add_b(1);
         if self.sprite_slot_view(k).b() == 0 {
+            crate::cycle_ledger::charge(68 + 54);
             let value = 1;
             self.sprite_slot_view_mut(k).set_a(value);
+        } else {
+            crate::cycle_ledger::charge(68 + 6);
         }
+        crate::cycle_ledger::charge(326 + 42);
         let bird = self
             .game_state
             .world
@@ -14875,6 +14950,10 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_4B_GreenKnifeGuard(int k) {  // 85bca2
     pub(super) fn sprite_4_b_green_knife_guard(&mut self, k: usize) {
+        // Cycle ledger (an RTS-dispatch target of SpriteActive2_Main, m8 x8,
+        // charging into the open Sprite_ExecuteSingle scope): $05:BCA2-BCAF
+        // the graphics-index setup (178), $05:BCB2 JSR Recruit_Draw (46).
+        crate::cycle_ledger::charge(178 + 46);
         let value = RECRUIT_GRAPHICS[usize::from(
             self.sprite_slot_view(k)
                 .direction()
@@ -14882,22 +14961,36 @@ impl ZeldaState {
         )];
         self.sprite_slot_view_mut(k).set_graphics(value);
         self.recruit_draw(k);
+        // $05:BCB5 JSR Sprite_ReturnIfInactive_ (46), $05:BCB8 JSR
+        // Sprite_ReturnIfRecoiling_ (46): each double-returns when it fires.
+        crate::cycle_ledger::charge(46);
         if self.sprite_return_if_inactive(k) {
             return;
         }
+        crate::cycle_ledger::charge(46);
         if self.sprite_return_if_recoiling(k) {
             return;
         }
+        // $05:BCBB-BCC7 JSR Sprite_CheckDamageToAndFromLink, JSR Sprite_Move_,
+        // JSR Sprite_CheckTileCollision, LDA $D80,x, BNE (186; taken +6 into
+        // GreenKnifeGuard_Moving).
         self.sprite_check_damage_to_and_from_link(k);
         self.sprite_move_xy(k);
         let _ = self.sprite_check_tile_collision(k);
         if self.sprite_slot_view(k).ai_state() != 0 {
+            crate::cycle_ledger::charge(186 + 6);
             self.green_knife_guard_moving(k);
             return;
         }
+        // $05:BCC9 LDA $DF0,x : BNE (48; taken +6 into the $05:BD15 RTS, 42).
         if self.sprite_slot_view(k).delay_main() != 0 {
+            crate::cycle_ledger::charge(186 + 48 + 6 + 42);
             return;
         }
+        // $05:BCCE-BCEC (394: JSL GetRandomNumber, the delay/state/direction
+        // stores, JSR Sprite_DirectionToFacePlayer__, TYA, LDY $DE0,x, CMP
+        // $DE0,x, BNE).
+        crate::cycle_ledger::charge(186 + 48 + 394);
 
         // ROM $05:bccd calls the RNG, then executes `AND #$3f; ADC #$30`
         // without clearing carry between them.
@@ -14909,12 +15002,31 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_direction(value);
         let mut j = self.sprite_slot_view(k).direction();
         let (face, pt) = self.sprite_direction_and_offset_to_face_link(k);
-        if j == face && (pt.x.wrapping_add(0x10) < 0x20 || pt.y.wrapping_add(0x10) < 0x20)
-        {
+        // Facing runs $05:BCEE LDA $0E, CLC, ADC #$10, CMP #$20, BCC (86;
+        // taken +6 into $05:BD00 when x is near), else $05:BCF7 the same
+        // test on $0F (86; taken +6 to $05:BD09 when y is far, else
+        // $05:BD00-BD06 INY x4, LDA #$80, STA $DF0,x, 110). Not facing takes
+        // the $05:BCEC BNE (+6). $05:BD09-BD12 (140) stores the velocities
+        // and $05:BD15 RTS (42).
+        let x_near = pt.x.wrapping_add(0x10) < 0x20;
+        let y_near = pt.y.wrapping_add(0x10) < 0x20;
+        crate::cycle_ledger::charge(if j == face {
+            if x_near {
+                86 + 6 + 110
+            } else if y_near {
+                86 + 86 + 110
+            } else {
+                86 + 86 + 6
+            }
+        } else {
+            6
+        });
+        if j == face && (x_near || y_near) {
             j = j.wrapping_add(4);
             let value = 128;
             self.sprite_slot_view_mut(k).set_delay_main(value);
         }
+        crate::cycle_ledger::charge(140 + 42);
         let value = RECRUIT_X_VELOCITIES[usize::from(j)];
         self.sprite_slot_view_mut(k).set_x_velocity(value);
         let value = RECRUIT_Y_VELOCITIES[usize::from(j)];

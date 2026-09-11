@@ -2176,14 +2176,35 @@ impl ZeldaState {
     }
 
     pub(super) fn handle_stripes14_slice(&mut self, mut stripes: &[u8]) {
+        // Cycle ledger: HandleStripes14 $00:92A1 (JSR target from the NMI
+        // update stubs at $00:8BE2 and $00:90FD, m8 x8, data bank $00 so the
+        // register-window operands cost 2 less per 8-bit and 4 less per
+        // 16-bit access than the listing). $00:92A1-92AD REP #$10, STA
+        // $4314, STZ $06, LDY #0, the first header read, BPL (166 - 2 =
+        // 164); an immediate terminator runs $00:92AF SEP #$30 : RTS (64).
+        // Only CPU instructions are charged; the DMA bus time is accounted
+        // separately.
+        let _scope = crate::cycle_ledger::routine(0x00_92a1);
+        crate::cycle_ledger::charge(164);
+        let mut first_record = true;
         while stripes.first().copied().unwrap_or(0x80) & 0x80 == 0 {
             if stripes.len() < 4 {
                 return;
             }
+            // The first record enters $00:92B2 through the taken BPL (+6),
+            // later ones through $00:9341 JMP $92B2 (24). $00:92B2-92F2: the
+            // header decode, the DMA register setup and LDA $05 : BEQ (904
+            // - 16 = 888; a copy takes the BEQ +6, a fill runs $00:92F4-9325
+            // the second DMA pass, 626 - 24 = 602). $00:9328-933F the source
+            // advance, VMAIN, the DMA trigger and the next header's BMI (312
+            // - 4 = 308).
+            crate::cycle_ledger::charge(if first_record { 6 } else { 24 });
+            first_record = false;
             let vmem_addr = ((stripes[0] as u16) << 8) | stripes[1] as u16;
             let vertical = stripes[2] & 0x80 != 0;
             let is_memset = stripes[2] & 0x40 != 0;
             let len = ((((stripes[2] as u16) << 8) | stripes[3] as u16) & 0x3fff) as usize + 1;
+            crate::cycle_ledger::charge(888 + if is_memset { 602 } else { 6 } + 308);
             stripes = &stripes[4..];
             self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
             self.account_nmi_dma_transfer(len);
@@ -2232,6 +2253,9 @@ impl ZeldaState {
                 stripes = &stripes[words * 2..];
             }
         }
+        // The terminator: $00:92AF SEP #$30 : RTS (64) from the entry test,
+        // or the $00:933F BMI taken (+6) into $00:9344 SEP #$30 : RTS (64).
+        crate::cycle_ledger::charge(if first_record { 64 } else { 6 + 64 });
     }
 
     pub(super) fn write_ppu_registers(&mut self) {
@@ -2349,6 +2373,14 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_read_joypads(&mut self, joypad_input: u16) {
+        // Cycle ledger: NMI_ReadJoypads $00:83D1 (JSR target from the main
+        // loop at $00:8141, m8 x8, data bank $00), one straight block
+        // $00:83D1-83F8: STZ $4016, the $4218/$4219 reads, the edge filters
+        // and RTS (502 in the listing; the three register-window operands
+        // cost 2 less each with the system data bank, 496). No wait loop:
+        // the auto-joypad read is complete by the time the main loop calls
+        // it.
+        crate::cycle_ledger::charge_routine(0x00_83d1, 496);
         let mut both = joypad_input;
         let mut reversed = 0u16;
         for _ in 0..16 {

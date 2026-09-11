@@ -377,19 +377,30 @@ impl ZeldaState {
     //   sprite_subtype2[k] += (sprite_delay_aux1[k] != 0) ? 2 : 1;
     // }
     pub(super) fn green_knife_guard_moving(&mut self, k: usize) {
+        // Cycle ledger (a branch target inside Sprite_4B_GreenKnifeGuard,
+        // charging into the open scope): $05:BD1E LDA #$10, LDY $E70,x, BNE
+        // (64; a wall collision takes it +6 to $05:BD2C); else $05:BD25 LDA
+        // $DF0,x : BNE (48; a running delay takes it +6 to $05:BD4A), else
+        // $05:BD2A LDA #$30 (16). $05:BD2C-BD47 the delay store, JSR
+        // Sprite_ZeroVelocity_, JSL GetRandomNumber, the head-direction
+        // pick and STZ $D80,x (378).
         let mut t: u8 = 0x10;
         let sprite = self.sprite_slot_view(k);
         let do_main = if sprite.wall_collision() == 0 {
             if sprite.delay_main() != 0 {
+                crate::cycle_ledger::charge(64 + 48 + 6);
                 false
             } else {
+                crate::cycle_ledger::charge(64 + 48 + 16);
                 t = 0x30;
                 true
             }
         } else {
+            crate::cycle_ledger::charge(64 + 6);
             true
         };
         if do_main {
+            crate::cycle_ledger::charge(378);
             self.sprite_slot_view_mut(k).set_delay_main(t);
             self.sprite_zero_velocity_xy(k);
             let rnd = self.get_random_number() & 1;
@@ -398,9 +409,14 @@ impl ZeldaState {
             sprite.set_head_direction(RECRUIT_MOVING_HEAD_DIRECTIONS[idx & 7]);
             sprite.set_ai_state(0);
         }
+        // $05:BD4A LDA $E00,x : BEQ (48; taken +6 with no aux delay, else
+        // $05:BD4F INC $E80,x, 52), then ZoraAndGuardAdvanceAnimation
+        // $05:BD52 INC $E80,x : RTS (94).
         let inc: u8 = if self.sprite_slot_view(k).delay_aux1() != 0 {
+            crate::cycle_ledger::charge(48 + 52 + 94);
             2
         } else {
+            crate::cycle_ledger::charge(48 + 6 + 94);
             1
         };
         for _ in 0..inc {
