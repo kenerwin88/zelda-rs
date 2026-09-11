@@ -457,3 +457,36 @@ scanline after the NMI, advances the message read position from 231 to 232
 and renders no glyph at all; the engine renders the byte as a six-pixel
 glyph. The line was already 153 pixels wide, so the candidate mechanisms
 are the line-width test, a deferred glyph, and the click-and-wait path.
+
+## The scroll's completion timing, and what 8890 still needs
+
+The frontier at 8889 was not the glyph pipeline: the receipt path and the
+native path render exactly the same glyphs, cursors and read positions
+across 8885-8891. It was the message-line scroll. Whether
+`RenderText_Draw_Scroll` returns before the next vblank was decided by a
+constant threshold pinned to the traced later-line entry span, so it
+compared a CPU-work headroom against a wall-clock constant. Once the
+ledger charged the prefix properly the two scales diverged and the resumed
+entry at host 8889 was scheduled `BeforeNextVblank` on 285,948 cycles of
+headroom, staging the completed text a boundary early.
+
+The decision is now the headroom against the call's own cost from the
+scroll cycle model. One copy pass is 116,452 master cycles and only full
+five-pass calls reach the decision, so none of them fits in a frame; the
+comparison is kept rather than folded away because it is the physical
+rule, and a cheaper call at a future call site would still be answered
+correctly. The receipt path never reaches it: a live timing owner returns
+earlier, on its source copy/return receipt.
+
+What remains at 8890 is the shape of the continuation, not a budget. The
+source finishes the copy passes and returns through RenderText and
+Module0E inside one host, near V=196, then waits for the vblank whose NMI
+opens the next host and publishes the staged text; the next scroll begins
+after that publication. The translation instead spends a whole host on the
+copies, a second return-only host, and stages one boundary later. Making
+the continuation host return the call in place is not enough on its own:
+the following host must then begin with a leading NMI, which the
+receipt-less lane does not currently produce, and without it the next
+Module0E iteration starts a scroll while the previous completion is still
+staged. The fix belongs in the frame-lane scheduling of that post-return
+vblank wait, not in the scroll machine.
