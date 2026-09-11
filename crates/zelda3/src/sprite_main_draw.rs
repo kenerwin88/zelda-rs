@@ -2576,6 +2576,42 @@ impl ZeldaState {
 
     // void SpriteActive_Main(int k) {  // 869271
     pub(super) fn sprite_active_main(&mut self, k: usize) {
+        // Cycle ledger: SpriteActive_Main $06:9271 (entry m8 x8) is an RTS
+        // dispatch: LDA $e20,x REP #$30 AND #$00ff ASL TAY LDA $9283,y DEC PHA
+        // SEP #$30 RTS (260). Its scope closes before the handler runs, as
+        // the RTS does. Types $41-$70 dispatch to the bank-6 bounce
+        // SpriteModule_Active_bounce $06:BFEA (JSL $05:B5C3 62 ... RTS 42)
+        // into SpriteModule_Active $05:B5C3 (PHB PHK PLB JSR $05:B5D3 PLB
+        // RTL, 190), whose SpriteActive2_Main $05:B5D3 is a second RTS
+        // dispatch (LDA $e20,x SEC SBC #$41 REP #$30 AND ASL TAY LDA $b5e8,y
+        // DEC PHA SEP RTS, 290) closed before the handler; the bounce and the
+        // bank-5 wrapper enclose the handler. The other trampolines at
+        // $06:BFEF/BFF4/BFFE/C003/C008/D04A are not charged here.
+        {
+            let _dispatch = crate::cycle_ledger::routine(0x06_9271);
+            crate::cycle_ledger::charge(260);
+        }
+        let sprite_type = self.sprite_slot_view(k).sprite_type();
+        let bank5_bounce = (0x41..=0x70).contains(&sprite_type);
+        let mut bounce_scope = None;
+        let mut module_active_scope = None;
+        if bank5_bounce {
+            bounce_scope = Some(crate::cycle_ledger::routine(0x06_bfea));
+            crate::cycle_ledger::charge(62);
+            module_active_scope = Some(crate::cycle_ledger::routine(0x05_b5c3));
+            crate::cycle_ledger::charge(190);
+            let _dispatch = crate::cycle_ledger::routine(0x05_b5d3);
+            crate::cycle_ledger::charge(290);
+        }
+        self.sprite_active_main_dispatch(k);
+        if bank5_bounce {
+            drop(module_active_scope.take());
+            crate::cycle_ledger::charge(42);
+            drop(bounce_scope.take());
+        }
+    }
+
+    fn sprite_active_main_dispatch(&mut self, k: usize) {
         match self.sprite_slot_view(k).sprite_type() {
             0x00 => self.sprite_raven(k),
             0x01 => self.sprite_01_vulture_bounce(k),
