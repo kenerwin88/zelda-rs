@@ -166,9 +166,9 @@ class Instruction:
         wide_a = not self.m8
         wide_x = not self.x8
         if mode == "#" or mode == "#8":
+            # A 16-bit immediate is one more fetch; `length` already counts it.
             if mode == "#" and ((kind in ("A",) and wide_a) or (kind == "X" and wide_x)):
                 cycles += 1
-                bus += 1
         elif mode in ("dp", "dp,x", "dp,y", "(dp,x)", "(dp),y", "(dp)", "[dp]", "[dp],y") and dp_low_nonzero:
             cycles += 1
         if kind in ("A", "W", "X", "XW", "RMW") and mode not in ("#", "#8", "acc", "imp"):
