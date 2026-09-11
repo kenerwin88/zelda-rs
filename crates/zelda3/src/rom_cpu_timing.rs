@@ -126,6 +126,10 @@ struct RomCpuSubroutineStats {
     /// callee_master` is the cost of the routine's own instructions, what a
     /// cycle ledger annotation charges.
     callee_master: u64,
+    /// Frames of this subroutine still open when the run stopped (the plan
+    /// ends inside the routine); their cost is cut short and the translated
+    /// routine finishes on a later host, so the check skips them.
+    partial_calls: u64,
 }
 
 const NMI_HANDLER_ENTRY_PC: u32 = 0x00_80c9;
@@ -207,8 +211,8 @@ impl RomCpuProfile {
             .iter()
             .map(|(pc, stats)| {
                 format!(
-                    "{{\"pc\":\"{pc:06x}\",\"calls\":{},\"inclusive_master\":{},\"interrupt_master\":{},\"callee_master\":{}}}",
-                    stats.calls, stats.inclusive_master, stats.interrupt_master, stats.callee_master
+                    "{{\"pc\":\"{pc:06x}\",\"calls\":{},\"inclusive_master\":{},\"interrupt_master\":{},\"callee_master\":{},\"partial_calls\":{}}}",
+                    stats.calls, stats.inclusive_master, stats.interrupt_master, stats.callee_master, stats.partial_calls
                 )
             })
             .collect();
@@ -237,6 +241,18 @@ impl RomCpuProfile {
 
 impl Drop for RomCpuTimingRun {
     fn drop(&mut self) {
+        if let Some(profile) = self.profile.as_mut() {
+            // A plan may stop inside a routine (at an NMI acceptance or a
+            // measured boundary); close its open frames so their cost up to
+            // the stop is recorded.
+            let open: Vec<u32> = profile.stack.iter().map(|(pc, _, _, _)| *pc).collect();
+            for pc in open {
+                profile.subroutines.entry(pc).or_default().partial_calls += 1;
+            }
+            while !profile.stack.is_empty() {
+                profile.leave();
+            }
+        }
         if let (Some(profile), Some(dir)) = (self.profile.as_ref(), rom_cpu_profile_dir()) {
             let host = ROM_CPU_PROFILE_HOST.with(|cell| cell.get());
             let sequence = ROM_CPU_PROFILE_SEQUENCE.with(|cell| {

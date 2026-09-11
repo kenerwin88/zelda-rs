@@ -73,6 +73,8 @@ def main():
     profile = defaultdict(lambda: defaultdict(int))
     profile_calls = defaultdict(lambda: defaultdict(int))
     profiled_total = defaultdict(int)
+    partial = defaultdict(set)
+    skipped_partial = 0
     # A plan may run twice on one host (both ends of an entry envelope);
     # count each (host, plan) once.
     seen_plans = set()
@@ -90,6 +92,8 @@ def main():
             address = int(sub["pc"], 16)
             profile[host][address] += sub["inclusive_master"] - sub.get("callee_master", 0)
             profile_calls[host][address] += sub["calls"]
+            if sub.get("partial_calls", 0):
+                partial[host].add(address)
     exact = 0
     mismatches = []
     compared = 0
@@ -106,6 +110,11 @@ def main():
                 continue
             measured = profile[host].get(address)
             if measured is None:
+                continue
+            if address in partial[host]:
+                # The plan stopped inside this routine: its profile frame is
+                # cut short and cannot be compared with the finished charge.
+                skipped_partial += 1
                 continue
             compared += 1
             charged = ledger[host].get(address)
@@ -129,12 +138,11 @@ def main():
     for address in annotated:
         if address in SKIP_CHECK:
             continue
-        profile_sum = sum(hosts.get(address, 0) for hosts in profile.values())
-        covered_hosts = set()
-        for host in profile:
-            if address in profile[host]:
-                covered_hosts.update(range(host - args.window, host + args.window + 1))
-        ledger_sum = sum(ledger[host].get(address, 0) for host in covered_hosts if host in ledger)
+        # Same-host sums: the per-host matching above already credits
+        # deferred calls; a per-frame routine would be over-counted by slack.
+        hosts_with_both = [host for host in profile if address in profile[host] and host in ledger and address not in partial[host]]
+        profile_sum = sum(profile[host][address] for host in hosts_with_both)
+        ledger_sum = sum(ledger[host].get(address, 0) for host in hosts_with_both)
         totals[address] = (ledger_sum, profile_sum)
     print(f"annotated routines: {len(annotated)}")
     for address in annotated:
@@ -145,9 +153,16 @@ def main():
         ledger_sum, profile_sum = totals[address]
         verdict = "EXACT" if ledger_sum == profile_sum else f"ledger {ledger_sum} vs profile {profile_sum} ({(ledger_sum - profile_sum) / profile_sum * 100:+.2f}%)" if profile_sum else "no profile"
         print(f"  {name(address):40s} charged on {hosts} hosts; run total {verdict}")
-    print(f"host x routine comparisons: {compared}, exact: {exact}, mismatched: {len(mismatches)}")
-    for host, address, charged, measured, calls, pcalls in mismatches[: args.show]:
-        print(f"  host {host} {name(address)}: ledger {charged} ({calls} calls) vs profile {measured} ({pcalls} calls)")
+    print(f"host x routine comparisons: {compared}, exact: {exact}, mismatched: {len(mismatches)}, skipped (plan stopped inside the routine): {skipped_partial}")
+    by_routine = defaultdict(list)
+    for row in mismatches:
+        by_routine[row[1]].append(row)
+    for address, rows in sorted(by_routine.items(), key=lambda item: -len(item[1])):
+        deltas = [((r[2] or 0) - r[3]) for r in rows]
+        missing = sum(1 for r in rows if r[2] is None)
+        print(f"  {name(address):40s} {len(rows):5d} mismatching hosts ({missing} with no ledger charge); delta min {min(deltas)} max {max(deltas)}")
+        for host, _, charged, measured, calls, pcalls in rows[: args.show]:
+            print(f"      host {host}: ledger {charged} ({calls} calls) vs profile {measured} ({pcalls} calls)")
     if total:
         print(f"profiled cycles covered by annotated routines: {covered / total * 100:.2f}% of {total}")
     return 0 if not mismatches else 1
