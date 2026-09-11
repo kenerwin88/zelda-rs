@@ -8882,6 +8882,12 @@ pub struct ZeldaState {
     /// effects and owns only pixel-loop work.
     #[serde(skip)]
     pub(crate) dialogue_vwf_glyph_cpu_phase: messaging::VwfGlyphCpuPhase,
+    /// The ROM's fixed-width text cursor (`$1CDD`/`$1CE6`), dead for the
+    /// port's rendering but clamped by every `RenderText_Draw_MessageCharacters`
+    /// dispatch; it selects which comparisons the dispatch takes, so the
+    /// exact native dialogue budget carries it (`cycle_models::vwf`).
+    #[serde(skip)]
+    pub(crate) dialogue_vwf_dispatch_cursor: crate::cycle_models::vwf::DispatchCursor,
     /// Semantic VWF metadata follows the same NMI publication boundary as the
     /// hardware text VRAM. CPU-authored glyphs stay private until subroutine 2
     /// uploads the completed buffer.
@@ -11645,6 +11651,7 @@ impl ZeldaState {
             rom_damage_check_y_register: None,
             dialogue_vwf_handler_entry_phase: messaging::VwfHandlerEntryPhase::default(),
             dialogue_vwf_glyph_cpu_phase: messaging::VwfGlyphCpuPhase::Ready,
+            dialogue_vwf_dispatch_cursor: crate::cycle_models::vwf::DispatchCursor::default(),
             published_bg3_vwf_glyph_runs: Vec::new(),
             published_bg3_vwf_glyph_run_dialogue_offsets: Vec::new(),
             published_dialogue_msg_read_pos: 0,

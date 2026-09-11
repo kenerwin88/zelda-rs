@@ -34,7 +34,7 @@ const VWF_GLYPH_TRANSITION_MASTER_CYCLES: u32 = 510;
 // $0E:CACC; 1,920-2,000 depending on the ROM's `$1CDD` line cursor, -64 for
 // glyph $59, -46 at speed 1); `glyph_post_click_setup_master_cycles(c,
 // next_line_pending)` replaces VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES
-// ($0E:CACC up to the first row at $0E:CBD1; 1,302, +248 with a pending line
+// ($0E:CACC up to the first row at $0E:CBD1; 1,302, +226 with a pending line
 // transition, +6 for glyph codes >= $21). The per-row fixed work this 18,000
 // estimate folded in (about 13,790 for sixteen rows) belongs to
 // `glyph_drawing_master_cycles`; `glyph_entry_master_cycles` is the sum.
@@ -74,6 +74,69 @@ const VWF_CALLER_SUFFIX_MASTER_CYCLES: u32 = 16_500;
 // `caller_suffix_master_cycles()`; price the remaining phase exactly instead
 // of a longer suffix.
 const VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES: u32 = 28_000;
+
+/// The exact caller suffix of a completed handler (`cycle_models::vwf`):
+/// the fixed chain from `$0E:C9F5` to the main loop's `JSR
+/// NMI_PrepareSprites`, the call and the loop tail, plus
+/// `NMI_PrepareSprites`' body. That body has no annotation yet, so it keeps
+/// the remainder of the measured estimate; the total therefore still equals
+/// `VWF_CALLER_SUFFIX_MASTER_CYCLES` until that routine is priced.
+fn vwf_exact_caller_suffix_master_cycles() -> u32 {
+    use crate::cycle_models::vwf::{
+        caller_suffix_master_cycles, MAIN_LOOP_PREPARE_SPRITES_CALL_MASTER_CYCLES,
+        MAIN_LOOP_TAIL_MASTER_CYCLES,
+    };
+    let fixed_chain = (caller_suffix_master_cycles()
+        + MAIN_LOOP_PREPARE_SPRITES_CALL_MASTER_CYCLES
+        + MAIN_LOOP_TAIL_MASTER_CYCLES) as u32;
+    let nmi_prepare_sprites_body_estimate = VWF_CALLER_SUFFIX_MASTER_CYCLES - fixed_chain;
+    fixed_chain + nmi_prepare_sprites_body_estimate
+}
+
+/// The three phase costs of one glyph as the CPU phase machine consumes
+/// them: through the click store (`Entering`), the post-click setup
+/// (`PreparingDrawing`) and the pixel rows (`Drawing`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct VwfGlyphCosts {
+    click: u32,
+    post_click: u32,
+    drawing: u32,
+}
+
+impl VwfGlyphCosts {
+    /// The calibrated estimates the receipt-driven route runs on.
+    const fn estimated(drawing: u32) -> Self {
+        Self {
+            click: VWF_GLYPH_CLICK_MASTER_CYCLES,
+            post_click: VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES,
+            drawing,
+        }
+    }
+
+    const fn total(self) -> u32 {
+        self.click + self.post_click + self.drawing
+    }
+}
+
+/// Inputs of `vwf_new_glyph_click_requires_boundary_retention`: the click
+/// cost of the new glyph and the resume-phase shifts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct VwfClickRetentionCosts {
+    click: u32,
+    entering_shift: u32,
+    preparing_drawing_shift: u32,
+}
+
+impl VwfClickRetentionCosts {
+    const fn estimated() -> Self {
+        Self {
+            click: VWF_GLYPH_CLICK_MASTER_CYCLES,
+            entering_shift: VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES,
+            preparing_drawing_shift: VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES
+                - VWF_CALLER_SUFFIX_MASTER_CYCLES,
+        }
+    }
+}
 // A 262,662-cycle entry still returns after vblank in the Snes9x PC trace,
 // while the 283,400-cycle entry returns before it. Six scanlines is the
 // smallest whole-scanline return cost consistent with both measurements.
@@ -138,22 +201,18 @@ fn vwf_render_glyph_drawing_master_cycles(width: u8, x: u8) -> u32 {
 const fn vwf_new_glyph_click_requires_boundary_retention(
     cycles_left: u32,
     handler_entry_glyph_phase: VwfGlyphCpuPhase,
+    costs: VwfClickRetentionCosts,
 ) -> bool {
     // The suspended entry work shifts which side of Snes9x's next NMI the
     // final click lands on. Entering still owes the complete post-click setup;
     // PreparingDrawing uses the independently measured longer caller-return
     // boundary. A Drawing resume has no entry-phase shift.
     let resume_phase_shift = match handler_entry_glyph_phase {
-        VwfGlyphCpuPhase::Entering { .. } => VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES,
-        VwfGlyphCpuPhase::PreparingDrawing { .. } => {
-            VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES - VWF_CALLER_SUFFIX_MASTER_CYCLES
-        }
+        VwfGlyphCpuPhase::Entering { .. } => costs.entering_shift,
+        VwfGlyphCpuPhase::PreparingDrawing { .. } => costs.preparing_drawing_shift,
         VwfGlyphCpuPhase::Ready | VwfGlyphCpuPhase::Drawing { .. } => 0,
     };
-    cycles_left
-        < VWF_GLYPH_CLICK_MASTER_CYCLES
-            + VWF_GLYPH_CLICK_VBLANK_MARGIN_MASTER_CYCLES
-            + resume_phase_shift
+    cycles_left < costs.click + VWF_GLYPH_CLICK_VBLANK_MARGIN_MASTER_CYCLES + resume_phase_shift
 }
 
 fn vwf_interrupted_click_marks_boundary(
@@ -220,12 +279,14 @@ impl VwfGlyphCpuPhase {
         matches!(self, Self::PreparingDrawing { .. })
     }
 
-    fn advance(self, available: u32, drawing_master_cycles: u32) -> VwfGlyphCpuAdvance {
+    /// Consume up to `available` cycles of this glyph; `costs` prices a glyph
+    /// started from `Ready` (a suspended phase keeps its own remaining costs).
+    fn advance(self, available: u32, costs: VwfGlyphCosts) -> VwfGlyphCpuAdvance {
         match self {
             Self::Ready => Self::advance_click(
-                VWF_GLYPH_CLICK_MASTER_CYCLES,
-                VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES,
-                drawing_master_cycles,
+                costs.click,
+                costs.post_click,
+                costs.drawing,
                 available,
             ),
             Self::Entering {
@@ -431,9 +492,11 @@ impl VwfCpuSliceOutcome {
 mod fast_forward_cycle_tests {
     use super::{
         vwf_glyph_cursor_after_pending_line_transition, vwf_interrupted_click_marks_boundary,
-        vwf_new_glyph_click_requires_boundary_retention, vwf_render_glyph_drawing_master_cycles,
-        vwf_render_glyph_master_cycles, vwf_render_loop_cycle_budget, VwfCpuSliceOutcome,
-        VwfGlyphCpuPhase, VwfHandlerEntryPhase, VWF_AFTER_CALLER_SUFFIX_ENTRY_MASTER_CYCLES,
+        vwf_exact_caller_suffix_master_cycles, vwf_new_glyph_click_requires_boundary_retention,
+        vwf_render_glyph_drawing_master_cycles, vwf_render_glyph_master_cycles,
+        vwf_render_loop_cycle_budget, VwfClickRetentionCosts, VwfCpuSliceOutcome,
+        VwfGlyphCosts, VwfGlyphCpuPhase, VwfHandlerEntryPhase,
+        VWF_AFTER_CALLER_SUFFIX_ENTRY_MASTER_CYCLES,
         VWF_CALLER_SUFFIX_MASTER_CYCLES, VWF_FIRST_LINE_ENTRY_MASTER_CYCLES,
         VWF_GLYPH_CLICK_MASTER_CYCLES, VWF_GLYPH_ENTRY_MASTER_CYCLES,
         VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES, VWF_LATER_LINE_ENTRY_MASTER_CYCLES,
@@ -470,8 +533,8 @@ mod fast_forward_cycle_tests {
     #[test]
     fn glyph_click_precedes_remaining_entry_work_at_vblank() {
         let drawing = vwf_render_glyph_drawing_master_cycles(6, 1);
-        let before_click =
-            VwfGlyphCpuPhase::Ready.advance(VWF_GLYPH_CLICK_MASTER_CYCLES - 1, drawing);
+        let costs = VwfGlyphCosts::estimated(drawing);
+        let before_click = VwfGlyphCpuPhase::Ready.advance(VWF_GLYPH_CLICK_MASTER_CYCLES - 1, costs);
         assert!(!before_click.entered_function);
         assert!(!before_click.completed);
         assert!(matches!(
@@ -483,7 +546,7 @@ mod fast_forward_cycle_tests {
             .vblank_follows_click_before_drawing());
         assert!(!before_click.next_phase.is_ready());
 
-        let at_click = before_click.next_phase.advance(1, drawing);
+        let at_click = before_click.next_phase.advance(1, costs);
         assert!(at_click.entered_function);
         assert!(!at_click.completed);
         assert!(matches!(
@@ -494,7 +557,7 @@ mod fast_forward_cycle_tests {
 
         let after_entry = at_click
             .next_phase
-            .advance(VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES, drawing);
+            .advance(VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES, costs);
         assert!(!after_entry.entered_function, "the click must not repeat");
         assert!(!after_entry.completed);
         assert!(matches!(
@@ -513,15 +576,18 @@ mod fast_forward_cycle_tests {
 
     #[test]
     fn glyph_click_boundary_uses_the_oracle_bracket_not_the_semantic_phase_alone() {
+        let costs = VwfClickRetentionCosts::estimated();
         assert!(vwf_new_glyph_click_requires_boundary_retention(
             3_798,
             VwfGlyphCpuPhase::Ready,
+            costs,
         ));
         assert!(!vwf_new_glyph_click_requires_boundary_retention(
             13_844,
             VwfGlyphCpuPhase::Drawing {
                 remaining_master_cycles: 5_444,
             },
+            costs,
         ));
         assert!(vwf_new_glyph_click_requires_boundary_retention(
             19_334,
@@ -529,6 +595,7 @@ mod fast_forward_cycle_tests {
                 remaining_master_cycles: 7_954,
                 drawing_master_cycles: 24_000,
             },
+            costs,
         ));
         assert!(vwf_new_glyph_click_requires_boundary_retention(
             19_798,
@@ -537,6 +604,7 @@ mod fast_forward_cycle_tests {
                 post_click_master_cycles: 16_000,
                 drawing_master_cycles: 48_000,
             },
+            costs,
         ));
         assert!(vwf_interrupted_click_marks_boundary(
             VwfGlyphCpuPhase::Drawing {
@@ -550,6 +618,60 @@ mod fast_forward_cycle_tests {
             },
             false,
         ));
+    }
+
+    #[test]
+    fn exact_costs_keep_the_estimated_totals_where_nothing_is_annotated_yet() {
+        // NMI_PrepareSprites has no annotation, so the exact suffix still
+        // sums to the measured estimate; the estimated glyph costs are the
+        // old entry + drawing split.
+        assert_eq!(vwf_exact_caller_suffix_master_cycles(), VWF_CALLER_SUFFIX_MASTER_CYCLES);
+        assert_eq!(VwfGlyphCosts::estimated(24_000).total(), VWF_GLYPH_ENTRY_MASTER_CYCLES + 24_000);
+        let estimated = VwfClickRetentionCosts::estimated();
+        assert_eq!(estimated.click, VWF_GLYPH_CLICK_MASTER_CYCLES);
+        assert_eq!(estimated.entering_shift, VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES);
+        assert_eq!(estimated.preparing_drawing_shift, 11_500);
+    }
+
+    #[test]
+    fn exact_costs_drive_the_budget_only_without_timing_receipts() {
+        use crate::cycle_models::vwf;
+        let asset_path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../zelda3_assets.dat");
+        let Ok(assets) = std::fs::read(asset_path) else {
+            eprintln!("no asset pack available; skipping the exact-cost wiring check");
+            return;
+        };
+        let mut state = crate::zelda_rtl::ZeldaState::new();
+        state.assets = Some(crate::zelda_rtl::AssetPack::parse(&assets).unwrap());
+        assert!(state.vwf_uses_exact_costs());
+        let width = state.dialogue_glyph_width(0x21);
+        assert_eq!(width, 6);
+        let (exact, cursor) = state.vwf_glyph_costs(0x21, width, 3, true);
+        assert_eq!(cursor, vwf::DispatchCursor::default());
+        assert_eq!(
+            u64::from(exact.click),
+            vwf::glyph_click_master_cycles(vwf::DispatchCursor::default(), 0x21, 0).0
+        );
+        assert_eq!(exact.post_click, 1_302 + 226 + 6);
+        let rows = state.dialogue_glyph_font_rows(0x21).unwrap();
+        assert_eq!(u64::from(exact.drawing), vwf::glyph_drawing_master_cycles(width, 3, rows));
+        assert_ne!(exact, VwfGlyphCosts::estimated(vwf_render_glyph_drawing_master_cycles(width, 3)));
+        assert_eq!(
+            u64::from(state.vwf_glyph_transition_master_cycles()),
+            vwf::RENDER_SINGLE_EPILOGUE_MASTER_CYCLES + 228 + vwf::HANDLER_EXIT_MASTER_CYCLES
+        );
+
+        state.original_timing_owner = crate::zelda_rtl::OriginalTimingOwnerState::Live;
+        assert!(!state.vwf_uses_exact_costs());
+        let (estimated, cursor) = state.vwf_glyph_costs(0x21, width, 3, true);
+        assert_eq!(cursor, vwf::DispatchCursor::default());
+        assert_eq!(estimated, VwfGlyphCosts::estimated(vwf_render_glyph_drawing_master_cycles(width, 3)));
+        assert_eq!(state.vwf_glyph_transition_master_cycles(), super::VWF_GLYPH_TRANSITION_MASTER_CYCLES);
+        assert_eq!(
+            state.vwf_click_retention_costs(estimated, VwfGlyphCpuPhase::Ready),
+            VwfClickRetentionCosts::estimated()
+        );
     }
 
     #[test]
@@ -4359,6 +4481,8 @@ impl ZeldaState {
             .copy_from_slice(&TEXT_INITIALIZATION_DATA);
         self.messaging_state_mut()
             .init_msgbox_state_from(&TEXT_INITIALIZATION_DATA);
+        // The same copy zeroes $1CDD/$1CE6.
+        self.dialogue_vwf_dispatch_cursor = crate::cycle_models::vwf::DispatchCursor::default();
         self.clear_bg3_vwf_glyph_runs();
         self.Text_InitVwfState();
         // A fresh message's render machine cannot inherit the previous
@@ -4503,6 +4627,10 @@ impl ZeldaState {
         }
         self.messaging_text_mut().load_decoded_dialogue(&decoded);
         self.messaging_state_mut().clear_dialogue_msg_read_pos();
+        // The ROM's loader leaves its source index in $1CDD (dead here, but
+        // it selects the render dispatch's comparison path).
+        self.dialogue_vwf_dispatch_cursor =
+            self.dialogue_vwf_dispatch_cursor.after_character_buffer_load(text_index);
     }
 
     /// Build the 6-char player name buffer from SRAM (all 6 entries, including trailing 0x59
@@ -4931,9 +5059,14 @@ impl ZeldaState {
             self.game_state.messaging.vwf_render.next_line_requested() != 0,
         );
         let x = self.vwf_glyph_advance_prefix_sum(glyph_cursor);
-        let drawing_master_cycles = vwf_render_glyph_drawing_master_cycles(width, x);
+        let next_line_pending =
+            self.game_state.messaging.vwf_render.next_line_requested() != 0;
+        let (glyph_costs, dispatch_cursor) =
+            self.vwf_glyph_costs(param, width, x, next_line_pending);
+        let drawing_master_cycles = glyph_costs.drawing;
         match self.dialogue_vwf_glyph_cpu_phase {
             VwfGlyphCpuPhase::Ready => {
+                self.dialogue_vwf_dispatch_cursor = dispatch_cursor;
                 self.begin_vwf_glyph(param);
                 self.dialogue_vwf_glyph_cpu_phase = VwfGlyphCpuPhase::Drawing {
                     remaining_master_cycles: drawing_master_cycles,
@@ -5128,11 +5261,17 @@ impl ZeldaState {
             self.dialogue_vwf_handler_completed_at_endpoint = false;
         }
         let handler_entry_glyph_phase = self.dialogue_vwf_glyph_cpu_phase;
-        let caller_suffix_master_cycles = if resuming
+        let exact_costs = self.vwf_uses_exact_costs();
+        let caller_suffix_master_cycles = if exact_costs {
+            // The remaining phases of a resumed glyph are priced exactly by
+            // the phase machine; the suffix itself does not lengthen.
+            vwf_exact_caller_suffix_master_cycles()
+        } else if resuming
             && matches!(
                 self.dialogue_vwf_glyph_cpu_phase,
                 VwfGlyphCpuPhase::PreparingDrawing { .. }
-            ) {
+            )
+        {
             VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES
         } else {
             VWF_CALLER_SUFFIX_MASTER_CYCLES
@@ -5163,11 +5302,29 @@ impl ZeldaState {
                 // host 20765).
                 break;
             }
+            // The ROM's dispatch ($0E:C984) clamps its dead text cursor on
+            // every iteration and prices by the clamped value; a letter pays
+            // the dispatch inside its click phase, a command here.
+            let is_letter = cmd == TEXT_CMD_IS_LETTER;
+            let (dispatch_master_cycles, dispatched_cursor) =
+                crate::cycle_models::vwf::dispatch_master_cycles(
+                    self.dialogue_vwf_dispatch_cursor,
+                    c,
+                );
+            if !is_letter {
+                self.dialogue_vwf_dispatch_cursor = dispatched_cursor;
+            }
+            // Exact master cycles of this iteration's handler when the native
+            // budget runs without timing receipts (zero for the estimates).
+            let mut exact_command_master_cycles = 0u64;
             let mut command_done = false;
             let mut restart_if_zero_speed = false;
             match cmd {
                 TEXT_CMD_IS_LETTER => {
                     if self.game_state.messaging.runtime.vwf_line_speed_cur() >= 2 {
+                        self.dialogue_vwf_dispatch_cursor = dispatched_cursor;
+                        exact_command_master_cycles = dispatch_master_cycles
+                            + crate::cycle_models::vwf::reduce_speed_master_cycles();
                         self.messaging_state_mut().decrement_vwf_line_speed_cur();
                     } else {
                         let width = self.dialogue_glyph_width(param);
@@ -5183,8 +5340,15 @@ impl ZeldaState {
                                 self.game_state.messaging.vwf_render.next_line_requested() != 0,
                             );
                             let x = self.vwf_glyph_advance_prefix_sum(glyph_cursor);
-                            let drawing_master_cycles =
-                                vwf_render_glyph_drawing_master_cycles(width, x);
+                            let next_line_pending = self
+                                .game_state
+                                .messaging
+                                .vwf_render
+                                .next_line_requested()
+                                != 0;
+                            let (glyph_costs, glyph_dispatch_cursor) =
+                                self.vwf_glyph_costs(param, width, x, next_line_pending);
+                            let drawing_master_cycles = glyph_costs.drawing;
                             if debug_vwf_budget {
                                 eprintln!(
                                     "vwf_glyph host={} read_pos={:#x} code={:#x} width={} cursor={} line_x={} cycles_left={} phase={:?} drawing_cycles={}",
@@ -5200,9 +5364,16 @@ impl ZeldaState {
                                 );
                             }
                             let cycles_before_advance = cycles_left;
+                            if self.dialogue_vwf_glyph_cpu_phase.is_ready() {
+                                self.dialogue_vwf_dispatch_cursor = glyph_dispatch_cursor;
+                            }
+                            let retention_costs = self.vwf_click_retention_costs(
+                                glyph_costs,
+                                handler_entry_glyph_phase,
+                            );
                             let advance = self
                                 .dialogue_vwf_glyph_cpu_phase
-                                .advance(cycles_left, drawing_master_cycles);
+                                .advance(cycles_left, glyph_costs);
                             self.dialogue_vwf_glyph_cpu_phase = advance.next_phase;
                             cycles_left -= advance.consumed_master_cycles;
                             if advance.entered_function {
@@ -5216,6 +5387,7 @@ impl ZeldaState {
                                     vwf_new_glyph_click_requires_boundary_retention(
                                         cycles_before_advance,
                                         handler_entry_glyph_phase,
+                                        retention_costs,
                                     );
                                 self.begin_vwf_glyph(param);
                             }
@@ -5224,14 +5396,34 @@ impl ZeldaState {
                                 break;
                             }
                         } else {
+                            // One paced glyph per call: the whole handler runs
+                            // here, so the exact budget charges dispatch, entry,
+                            // rows and VWF_RenderSingle's epilogue at once.
+                            let glyph_cursor = vwf_glyph_cursor_after_pending_line_transition(
+                                self.game_state.messaging.vwf_render.glyph_cursor_usize(),
+                                self.game_state.messaging.vwf_render.current_line(),
+                                self.game_state.messaging.vwf_render.next_line_requested() != 0,
+                            );
+                            let x = self.vwf_glyph_advance_prefix_sum(glyph_cursor);
+                            let next_line_pending = self
+                                .game_state
+                                .messaging
+                                .vwf_render
+                                .next_line_requested()
+                                != 0;
+                            let (glyph_costs, glyph_dispatch_cursor) =
+                                self.vwf_glyph_costs(param, width, x, next_line_pending);
+                            self.dialogue_vwf_dispatch_cursor = glyph_dispatch_cursor;
+                            exact_command_master_cycles = u64::from(glyph_costs.total())
+                                + crate::cycle_models::vwf::RENDER_SINGLE_EPILOGUE_MASTER_CYCLES;
                             self.begin_vwf_glyph(param);
                         }
                         frame_advance = frame_advance.saturating_add(u16::from(width));
                         self.complete_vwf_glyph(param, read_pos as u16);
                         command_done = true;
                         if fast_forward {
-                            cycles_left =
-                                cycles_left.saturating_sub(VWF_GLYPH_TRANSITION_MASTER_CYCLES);
+                            cycles_left = cycles_left
+                                .saturating_sub(self.vwf_glyph_transition_master_cycles());
                             restart_if_zero_speed = true;
                         }
                     }
@@ -5240,23 +5432,52 @@ impl ZeldaState {
                     if self.game_state.frame.main_module == 20 {
                         self.PaletteFilterHistory();
                         command_done = self.game_state.display.palette_filter.countdown() == 0;
+                        // PaletteFilterHistory's body is priced by its own annotation.
+                        exact_command_master_cycles =
+                            crate::cycle_models::vwf::next_image_module_14_master_cycles(
+                                !command_done,
+                            );
                     } else {
                         command_done = true;
+                        exact_command_master_cycles =
+                            crate::cycle_models::vwf::NEXT_IMAGE_MASTER_CYCLES;
                     }
                 }
                 TEXT_CMD_SCROLL_SPD => {
                     self.messaging_state_mut().set_dialogue_scroll_speed(param);
                     command_done = true;
+                    exact_command_master_cycles =
+                        crate::cycle_models::vwf::SCROLL_SPEED_MASTER_CYCLES;
                 }
-                TEXT_CMD_SCROLL => command_done = self.RenderText_Draw_Scroll(cycles_left),
+                TEXT_CMD_SCROLL => {
+                    // The ROM call runs its copy passes to completion or to the
+                    // scroll speed's limit; the translated scroll may stage the
+                    // same passes across hosts, but the call's cost is fixed
+                    // by the state at entry.
+                    exact_command_master_cycles = crate::cycle_models::vwf::scroll_master_cycles(
+                        self.game_state.player.follower_link.joypad1l_last() & 0x80 != 0,
+                        self.game_state.messaging.runtime.dialogue_scroll_speed(),
+                        self.game_state.messaging.dialogue_source_offset.bank_offset_low_nibble(),
+                    )
+                    .master;
+                    command_done = self.RenderText_Draw_Scroll(cycles_left);
+                }
                 TEXT_CMD_1 | TEXT_CMD_2 | TEXT_CMD_3 => {
                     let idx = (cmd - TEXT_CMD_1) as usize;
                     self.set_vwf_current_line(VWF_ROW_POSITIONS[idx]);
                     self.request_vwf_next_line(1);
                     command_done = true;
+                    self.dialogue_vwf_dispatch_cursor =
+                        crate::cycle_models::vwf::DispatchCursor::after_set_line(c);
+                    exact_command_master_cycles = crate::cycle_models::vwf::SET_LINE_MASTER_CYCLES;
                 }
                 TEXT_CMD_WAIT => {
-                    let wait = if self.game_state.player.follower_link.joypad1l_last() & 0x80 != 0 {
+                    let b_held = self.game_state.player.follower_link.joypad1l_last() & 0x80 != 0;
+                    exact_command_master_cycles = crate::cycle_models::vwf::wait_master_cycles(
+                        b_held,
+                        self.game_state.messaging.runtime.text_wait_countdown(),
+                    );
+                    let wait = if b_held {
                         1
                     } else {
                         self.game_state.messaging.runtime.text_wait_countdown()
@@ -5277,11 +5498,13 @@ impl ZeldaState {
                 TEXT_CMD_SOUND => {
                     self.set_sound_effect_2(param);
                     command_done = true;
+                    exact_command_master_cycles = crate::cycle_models::vwf::PLAY_SFX_MASTER_CYCLES;
                 }
                 TEXT_CMD_SPEED => {
                     self.messaging_state_mut().set_vwf_line_speed(param);
                     self.messaging_state_mut().set_vwf_line_speed_cur(param);
                     command_done = true;
+                    exact_command_master_cycles = crate::cycle_models::vwf::SET_SPEED_MASTER_CYCLES;
                 }
                 TEXT_CMD_CHOOSE => self.RenderText_Draw_Choose2LowOr3(),
                 TEXT_CMD_ITEM => self.RenderText_Draw_ChooseItem(),
@@ -5289,6 +5512,22 @@ impl ZeldaState {
                 TEXT_CMD_CHOOSE3 => self.RenderText_Draw_Choose3(),
                 TEXT_CMD_CHOOSE2 => self.RenderText_Draw_Choose1Or2(),
                 TEXT_CMD_WAITKEY | TEXT_CMD_END_MESSAGE => {
+                    {
+                        let countdown2 = self.game_state.messaging.runtime.text_wait_countdown2();
+                        let pressed = self.game_state.player.follower_link.filtered_joypad_h()
+                            | self.game_state.player.follower_link.filtered_joypad_l();
+                        exact_command_master_cycles = if cmd == TEXT_CMD_WAITKEY {
+                            crate::cycle_models::vwf::pause_for_input_master_cycles(
+                                countdown2,
+                                pressed & 0xc0 != 0,
+                            )
+                        } else {
+                            crate::cycle_models::vwf::terminate_master_cycles(
+                                countdown2,
+                                pressed != 0,
+                            )
+                        };
+                    }
                     if crate::debug_env::var_os("ZELDA3_DEBUG_VWF_WAIT").is_some() {
                         eprintln!(
                             "[VWF-WAIT] host={} cmd={} read_pos={read_pos} target={:?} countdown2={} filtered={:#04x}/{:#04x} state={}",
@@ -5338,6 +5577,13 @@ impl ZeldaState {
                 _ => {
                     panic!("RenderText_Draw_MessageCharacters unsupported cmd {cmd} param {param}")
                 }
+            }
+            if exact_costs {
+                // A letter's dispatch is inside its click cost; the choice
+                // menus ($68/$69/$6F/$71/$72) are not priced yet.
+                let charge = exact_command_master_cycles
+                    + if is_letter { 0 } else { dispatch_master_cycles };
+                cycles_left = cycles_left.saturating_sub(u32::try_from(charge).unwrap_or(u32::MAX));
             }
             if command_done {
                 self.messaging_state_mut().set_dialogue_msg_read_pos(
@@ -5411,6 +5657,104 @@ impl ZeldaState {
 
     /// Width in pixels of dialogue glyph `c` (VWF proportional-font advance),
     /// from font memblk 95 index 1 — the same table `VWF_RenderSingle` uses.
+    /// The native dialogue budget prices the ROM's glyph renderer exactly
+    /// (`cycle_models::vwf`) whenever no per-host timing receipts drive it;
+    /// the receipt-driven route keeps its calibrated estimates unchanged.
+    pub(crate) fn vwf_uses_exact_costs(&self) -> bool {
+        !matches!(
+            self.original_timing_owner,
+            crate::zelda_rtl::OriginalTimingOwnerState::Live
+        )
+    }
+
+    /// Font row words of glyph `c` from the same font bytes the translated
+    /// `VWF_RenderCharacter` draws with (memblk 95 index 0, the `$0E:8000`
+    /// layout).
+    fn dialogue_glyph_font_rows(&self, c: u8) -> Option<[u16; 16]> {
+        self.asset_memblk(95, self.dialogue_font_blk_index)
+            .map(|font| crate::cycle_models::vwf::glyph_font_rows(find_index_in_memblk(font, 0).ptr, c))
+    }
+
+    /// The phase costs of glyph `c` (`width` pixels at advance `x`, with a
+    /// pending line transition or not) and the dispatch cursor the ROM
+    /// stores when it dispatches the glyph. Exact from the ROM listing
+    /// without receipts, the calibrated estimates with them (and without
+    /// the dialogue font, whose pixels the exact rows are priced from).
+    fn vwf_glyph_costs(
+        &self,
+        c: u8,
+        width: u8,
+        x: u8,
+        next_line_pending: bool,
+    ) -> (VwfGlyphCosts, crate::cycle_models::vwf::DispatchCursor) {
+        use crate::cycle_models::vwf;
+        let speed_cur = self.game_state.messaging.runtime.vwf_line_speed_cur().min(1);
+        let (click, cursor) =
+            vwf::glyph_click_master_cycles(self.dialogue_vwf_dispatch_cursor, c, speed_cur);
+        let font_rows = if self.vwf_uses_exact_costs() {
+            self.dialogue_glyph_font_rows(c)
+        } else {
+            None
+        };
+        let Some(font_rows) = font_rows else {
+            return (
+                VwfGlyphCosts::estimated(vwf_render_glyph_drawing_master_cycles(width, x)),
+                cursor,
+            );
+        };
+        let post_click = vwf::glyph_post_click_setup_master_cycles(c, next_line_pending);
+        let drawing = vwf::glyph_drawing_master_cycles(width, x, font_rows);
+        (
+            VwfGlyphCosts {
+                click: click as u32,
+                post_click: post_click as u32,
+                drawing: drawing as u32,
+            },
+            cursor,
+        )
+    }
+
+    /// Inputs of the click-retention bracket for a new glyph: with exact
+    /// costs, the glyph's own click and, for a handler entered while a glyph
+    /// was still `Entering`, the post-click setup that glyph still owes; a
+    /// `PreparingDrawing` resume needs no shift because its remaining setup
+    /// and rows are consumed exactly.
+    fn vwf_click_retention_costs(
+        &self,
+        glyph_costs: VwfGlyphCosts,
+        handler_entry_glyph_phase: VwfGlyphCpuPhase,
+    ) -> VwfClickRetentionCosts {
+        if !self.vwf_uses_exact_costs() {
+            return VwfClickRetentionCosts::estimated();
+        }
+        VwfClickRetentionCosts {
+            click: glyph_costs.click,
+            entering_shift: match handler_entry_glyph_phase {
+                VwfGlyphCpuPhase::Entering {
+                    post_click_master_cycles,
+                    ..
+                } => post_click_master_cycles,
+                _ => 0,
+            },
+            preparing_drawing_shift: 0,
+        }
+    }
+
+    /// Cycles between a completed speed-0 glyph and the next dispatch:
+    /// `VWF_RenderSingle`'s epilogue, `RenderText_Draw_RenderCharacter_All`'s
+    /// continuation and the handler-exit block the restart defers to the
+    /// handler's final return (`cycle_models::vwf::HANDLER_EXIT_MASTER_CYCLES`).
+    fn vwf_glyph_transition_master_cycles(&self) -> u32 {
+        use crate::cycle_models::vwf;
+        if !self.vwf_uses_exact_costs() {
+            return VWF_GLYPH_TRANSITION_MASTER_CYCLES;
+        }
+        let (continuation, _restarted) =
+            vwf::render_all_continuation_master_cycles(self.dialogue_vwf_dispatch_cursor);
+        (vwf::RENDER_SINGLE_EPILOGUE_MASTER_CYCLES + continuation + vwf::HANDLER_EXIT_MASTER_CYCLES)
+            as u32
+    }
+
     fn dialogue_glyph_width(&self, c: u8) -> u8 {
         self.asset_memblk(95, self.dialogue_font_blk_index)
             .map(|font| {
@@ -5867,6 +6211,8 @@ impl ZeldaState {
             if source_bank_offset & 0x0f == 0 {
                 self.set_vwf_current_line(4);
                 self.request_vwf_next_line(1);
+                self.dialogue_vwf_dispatch_cursor =
+                    crate::cycle_models::vwf::DispatchCursor::after_scroll_completion();
                 return true;
             }
         }
