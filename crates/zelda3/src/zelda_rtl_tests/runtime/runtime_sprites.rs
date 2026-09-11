@@ -2017,6 +2017,55 @@ fn sprite_conversion_cached_return_retires_before_the_next_quadrant_nmi() {
 }
 
 #[test]
+fn dungeon_sprite_preparation_return_leaves_uploads_for_the_following_nmi() {
+    // Original host 23203 completes the held NMI and shared suffix at
+    // counter $FB, substep 5. $12 clears but $17/$710 remain set until
+    // host 23204's Open NMI; there is no trailing acceptance on 23203.
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.initialized = true;
+    state.set_animated_tile_data_source_address(0xa680);
+    state.set_indoor_flag(1);
+    state.set_main_module(7);
+    state.set_submodule(2);
+    state.set_subsubmodule(5);
+    state.set_frame_counter(0xfb);
+    state.latch_nmi_update();
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn {
+            caller: NmiPrepareSpritesCpuCaller::DungeonModule07,
+        },
+        1,
+    );
+    // Isolate caller retirement from calculation of the next CPU budget.
+    let next = DungeonModuleCpuAdvance {
+        phase: ModuleCpuPhase::InterruptedInNmiPrepareSprites,
+        resumed_phase: None,
+        submodule_nmi_slices: 0,
+        subsubmodule: 6,
+        palette_countdown: 0,
+        sprite_main_boundary: None,
+        cached_sprite_interruption: None,
+    };
+    state.dungeon_landing_cpu_advance_pending = Some(next);
+    state.game_state.write_to_ram(&mut state.ram);
+    state.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX] = 1;
+    state.ram[crate::game_state::constants::NMI_DISABLE_CORE_UPDATES] = 1;
+    state.sync_native_game_state_from_ram();
+    state.run_frame_internal_after_original_timing(0, crate::RUN_MAIN);
+    assert_eq!(state.game_state.frame.subsubmodule, 5);
+    assert_eq!(state.game_state.frame.frame_counter, 0xfb);
+    assert!(!state.game_state.display.nmi_update_is_latched());
+    assert_eq!(state.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX], 1);
+    assert_eq!(state.ram[crate::game_state::constants::NMI_DISABLE_CORE_UPDATES], 1);
+    assert!(state.next_display_obj_memory_generation.is_none());
+    assert_eq!(state.dungeon_landing_cpu_advance_pending, Some(next));
+    assert!(state.game_execution_scheduler.is_idle());
+    state.game_execution_scheduler.begin_host_frame();
+    assert!(state.game_execution_scheduler.main_return_requires_leading_nmi());
+}
+
+#[test]
 fn scroll_return_precedes_a_suspended_extended_oam_suffix() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);

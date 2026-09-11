@@ -727,11 +727,19 @@ impl ZeldaState {
                             begin_dungeon_cached_sprite_cpu_advance_after_leading_nmi(self);
                     }
                 }
-                if typed_main_loop_return {
-                    // The wire proves this host ends at main wait with no
-                    // trailing acceptance; the following host's own leading
-                    // NMI publishes the completed operands.
+                let native_dungeon_main_wait = caller == NmiPrepareSpritesCpuCaller::DungeonModule07
+                    && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live);
+                if typed_main_loop_return || native_dungeon_main_wait {
+                    // The interrupted dungeon caller retires after its held
+                    // NMI. Original quadrant hosts 23203/23205 clear $12 and
+                    // wait; their next hosts accept the publishing Open NMI.
+                    // Preserve that boundary instead of consuming the upload
+                    // with a synthetic trailing NMI in this return host.
                     self.next_display_obj_cache_vram = Some(interrupted_obj_cache_vram);
+                    if native_dungeon_main_wait {
+                        self.game_execution_scheduler
+                            .finish_call_stack_at_main_wait_before_nmi();
+                    }
                     return;
                 }
                 let next_oam_dma_source = self.sprite_oam_shadow_buffer().to_vec();
