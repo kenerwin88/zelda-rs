@@ -272,3 +272,50 @@ plan's cycles from routine models; the message bytes and dictionary
 lengths are what the asset extraction reads from the ROM, so a ROM-free
 build can carry per-message costs or the original bytes in the asset
 pack.
+
+## The second gate: the native frontier
+
+Acceptance stays the cached route's per-frame video and audio hashes.
+The development gate is how far the engine's *own* timing reproduces
+them: `ZELDA3_CACHED_AV_NATIVE_TIMING=1 ./parity cached-av <cache>` runs
+the route's inputs without installing the cache's timing receipts (the
+path live play takes) and stops at the first video or audio hash that
+differs. That frame is the native frontier. With the ROM loaded it is
+frame 8889 today (audio exact until then); WRAM dumps every 250 frames
+show the receipt-less engine's state identical to the receipt-driven
+engine's except the NMI latch and flags, the poly-thread scratch byte
+`$1F00`, and briefly the BG animation countdown during the intro. The
+first visible difference is a mechanism, not a state drift: at hosts
+8885-8888 the dialogue renderer draws one glyph group per host fewer
+than the ROM (its per-glyph costs are calibrated estimates), so the
+line completes and publishes one host late.
+
+Each mechanism at the frontier gets a native rule, checked against the
+cached receipts (hosts per operation, and read positions per host for
+the dialogue renderer), and the frontier is measured again. The routines
+a mechanism's frame count depends on get their exact costs from the
+cycle ledger annotations, which is how the estimates are replaced.
+
+## The cycle ledger program (status)
+
+`crates/zelda3/src/cycle_ledger.rs` accumulates the master cycles the
+original CPU spends in the code the translated engine runs: annotated
+routines charge their assembly's block costs as they execute (see
+`docs/parity/cycle-ledger-recipe.md`). `scripts/rom_block_costs.py`
+prices a ROM routine's basic blocks statically with the shadow CPU's
+rules (4,956 of 5,142 profiled instruction addresses exact, the rest
+branch or page mixes), `scripts/rom_function_map.py` maps 2,651 of the
+2,709 C-port routine addresses to their Rust translations, and
+`scripts/cycle_ledger_check.py` compares each routine's ledger charge
+with the shadow profiler's own-instruction cycles (inclusive minus
+callee frames, frames tracked by stack depth) per host over a cached
+comparison run with `ZELDA3_DEBUG_CYCLE_LEDGER` and
+`ZELDA3_DEBUG_ROM_CPU_PROFILE` set.
+
+Six batches of annotations were written in parallel worktrees (palette
+filter, iris spotlight, sprite core, NMI/HUD/Link OAM, room draw,
+graphics loads) and merged; over the first 200,000 route hosts the check
+compares 7,454 host/routine pairs, 5,409 exact, with the remaining
+classes named per routine (unscoped split builds, the spotlight's raster
+wait spin, jump-dispatched drawers that charge into their caller, a few
+call-count mismatches) and handed back to their batches.
