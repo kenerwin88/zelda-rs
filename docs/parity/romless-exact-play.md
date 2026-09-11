@@ -674,3 +674,55 @@ operand byte and should not be used as a loop checkpoint. For a cached
 diagnostic that must continue beyond the first mismatch, the existing
 `ZELDA3_CACHED_AV_CONTINUE=1` enables continued replay; `--max-differing-frames`
 only controls the report and does not prevent the replay from stopping.
+
+## Retaining source-backed checkpoint corrections
+
+The user clarified that an earlier native display failure is acceptable when
+it reflects improved fidelity to the original. The initial decision above to
+revert both corrections was too conservative. The corrections are now retained
+on `fix/romless-spotlight-batch` as two independently reversible commits:
+
+- `66e59bee`: the shared spotlight timing-RAM seed rewinds `$1A` only for the
+  checkpoint that executes `$00:8051`. Module0F's `$02:9982` checkpoint keeps
+  the incremented counter. `spotlight_cpu_checkpoints_preserve_the_source_frame_counter_phase`
+  covers the source-observed counters 176 and 168, wraparound, unchanged live
+  gameplay RAM, and the absence of writes outside the relocated source tables
+  and the checkpoint-owned counter.
+- `90d68e8f`: both spotlight CPU plans count row pairs at executable `$F396`
+  and freeze the count at the first NMI. The opt-in regression
+  `spotlight_cpu_row_checkpoint_counts_original_rom_pairs` executes the local
+  original ROM from `$F312` to its V-counter wait at `$F3A3`. With center 106
+  and radius 126, it verifies all 119 inclusive row pairs, both terminal
+  cursors, and `$067A = 7`. Using the old operand-byte checkpoint yields no
+  counted pairs and fails this test. No ROM bytes were embedded in runtime.
+
+The parity library suite passes 1,737 tests (three opt-in tests ignored), and
+the new original-ROM test passes when run explicitly with `--ignored`.
+The ownership audit reports zero high-risk same-mode overlaps. Both commits
+passed the normal build and 500-frame standalone smoke hook; the legacy long
+gate was skipped under the user-approved batch policy.
+
+The counter-only build preserved native frontier 11444 and matched 11,500
+receipt-driven A/V frames. The combined binary is
+`a42dbb58bf8f8551475cf5cc8e03cfb2c31a86c4153c82d49bb486627f31970c`.
+It matches all 11,500 receipt-driven video/audio frames and has native
+frontier **4785**, with audio exact through that frontier. At 4782 native
+WRAM differs from the receipt lane only at `$067A` (23 versus 22) and `$1F00`;
+at 4783 and 4785 only `$1F00` differs. The pending within-row decrement and
+display-publication mechanism remain unfinished. This is improved CPU-model
+fidelity, not a native A/V coverage increase or fully ROM-free execution.
+
+The same binary also passed a cold live-RNG Snes9x comparison through 11,500
+frames: video exact and 6,130,827 stereo sample frames of exact continuous
+audio, with zero differing samples. This exercises the live receipt-driven
+path; it does not turn the native development mismatch into a passing run.
+The session is `target/spotlight-checkpoints-cold-av`, and test/build/probe logs
+are retained in `target/spotlight-checkpoints-validation`.
+
+Evidence is retained in `target/spotlight-counter-native-kept`,
+`target/spotlight-counter-receipt-kept`,
+`target/spotlight-checkpoints-native-kept`, and
+`target/spotlight-checkpoints-receipt-kept`. Full-route acceptance and promotion
+remain due at the end of the working batch; `main` remains at the preceding
+fully validated runtime. Continue from the new frontier without reverting
+the checkpoint corrections solely to recover a larger frame number.
