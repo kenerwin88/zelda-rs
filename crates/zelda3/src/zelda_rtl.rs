@@ -9353,6 +9353,12 @@ pub struct ZeldaState {
     joypad_sampled_before_main: bool,
     #[serde(skip)]
     audio_nmi_processed_before_main: bool,
+    /// Cycle ledger only: the master cycles of the NMI's audio-port blocks
+    /// priced by the last `interrupt_nmi_audio_parts`, charged into the NMI
+    /// handler scope by the following NMI (which may run after a pre-main
+    /// audio pass). Never read by game logic.
+    #[serde(skip)]
+    ledger_nmi_audio_parts_cycles: u64,
     /// Ambient APUI01 state sampled by a real C NMI after the ordinary host
     /// audio batch was published. The following audio callbacks retain that
     /// port read until the SPC exposes the matching acknowledgement.
@@ -11768,6 +11774,7 @@ impl ZeldaState {
             next_overworld_sprite_reload_entry_phase: None,
             joypad_sampled_before_main: false,
             audio_nmi_processed_before_main: false,
+            ledger_nmi_audio_parts_cycles: 0,
             audio_after_publication_ambient_nmi: None,
             dungeon_exit_spotlight_cpu_entry_envelope: None,
             overworld_spotlight_cpu_entry_envelope: None,
@@ -11939,6 +11946,7 @@ impl ZeldaState {
         self.dungeon_quadrant_cpu_continuation_active = false;
         self.joypad_sampled_before_main = false;
         self.audio_nmi_processed_before_main = false;
+        self.ledger_nmi_audio_parts_cycles = 0;
         self.audio_after_publication_ambient_nmi = None;
         self.main_loop_sprite_preparation_completed = false;
         self.pending_main_loop_common_suffix = None;
@@ -12045,6 +12053,7 @@ impl ZeldaState {
             self.dungeon_room_load_module_suffix_nmi_slices = 0;
             self.joypad_sampled_before_main = false;
             self.audio_nmi_processed_before_main = false;
+            self.ledger_nmi_audio_parts_cycles = 0;
             self.audio_after_publication_ambient_nmi = None;
             self.pending_main_loop_common_suffix = None;
             self.dungeon_landing_goal_transition_pending = false;
