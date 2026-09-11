@@ -36,6 +36,52 @@ fn spotlight_cpu_checkpoints_preserve_the_source_frame_counter_phase() {
 }
 
 #[test]
+#[ignore = "executes the local pinned Zelda ROM to verify the spotlight loop checkpoint"]
+fn spotlight_cpu_row_checkpoint_counts_original_rom_pairs() {
+    let mut state = ZeldaState::new();
+    let rom_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../saves/zelda3.sfc");
+    state.set_rom(&std::fs::read(rom_path).expect("read the local pinned Zelda ROM"));
+    state.follower_link_state_mut().set_y(94);
+    state.set_bg2_v_copy2(0);
+    state.set_spotlight_window_radius(126);
+    let checkpoint = RomCpuCheckpoint {
+        entry_pc: 0x00_f312,
+        stop_pc: 0x00_f3a3,
+        ..DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT
+    };
+    let mut run = RomCpuTimingRun::new(
+        &state.rom,
+        &state.ram,
+        &state.sram,
+        &state.ppu,
+        &state.dma,
+        state.zelda_audio_apu_output_ports(),
+        checkpoint,
+    )
+    .expect("start original IrisSpotlight_ConfigureTable");
+    let mut row_pairs = 0;
+    for _ in 0..100_000 {
+        if run.is_complete() {
+            break;
+        }
+        if run.pc() == IRIS_SPOTLIGHT_ROW_PAIR_COMPLETED_PC {
+            row_pairs += 1;
+        }
+        run.step();
+    }
+    // Source $F312-$F3A0: center=94+12=106; lower=max(212,224)=224,
+    // upper=212-224=-12. The inclusive loop visits -12..106: 119 pairs.
+    // Every lower cursor is inside center+radius=232, decrementing $067A
+    // from 126 to 7. Stop before the hardware V-counter wait and copy.
+    assert!(run.is_complete(), "original table loop must reach its V-counter wait");
+    assert_eq!(row_pairs, 119, "count executable row-pair boundaries, not operands");
+    assert_eq!((run.ram_byte(0x04), run.ram_byte(0x05)), (106, 0));
+    assert_eq!((run.ram_byte(0x06), run.ram_byte(0x07)), (106, 0));
+    assert_eq!((run.ram_byte(0x067a), run.ram_byte(0x067b)), (7, 0));
+}
+
+#[test]
 fn desert_prayer_iris_checkpoint_preserves_primary_write_and_resumes_full_loop() {
     fn configure(state: &mut ZeldaState) {
         state.set_main_module(0x0e);

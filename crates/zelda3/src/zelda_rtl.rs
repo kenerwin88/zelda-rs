@@ -2263,6 +2263,10 @@ const DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_LATEST: CpuRasterPosition = CpuRasterPosi
 
 const SPOTLIGHT_VISIBLE_SCANLINES: usize = 224;
 
+// LDA $0E begins the loop-completion test after both row stores. $F39B
+// is the operand of BEQ at $F39A, not an executable checkpoint.
+const IRIS_SPOTLIGHT_ROW_PAIR_COMPLETED_PC: u32 = 0x00_f396;
+
 const MODULE0E_DIALOGUE_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
     // Entry to Module0E_Interface through the common module router. The
     // translated caller invokes the timing shadow at this same semantic
@@ -2714,9 +2718,11 @@ fn dungeon_exit_spotlight_cpu_plan_at(
             return None;
         }
 
-        if completed_active_window_words.is_none() && run.pc() == 0x00_f39b {
-            // $f39b compares the just-authored upper cursor with the vertical
-            // center, so each visit is one complete C loop iteration.
+        if iterations_before_nmi.is_none()
+            && run.pc() == IRIS_SPOTLIGHT_ROW_PAIR_COMPLETED_PC
+        {
+            // Both row stores precede the loop-completion test. Freeze the
+            // count at the first NMI, before the interrupted pair resumes.
             iterations += 1;
         }
 
@@ -2895,7 +2901,7 @@ fn overworld_spotlight_cpu_plan_at(
                 });
             }
         }
-        if run.pc() == 0x00_f39b && iterations_before_nmi.is_none() {
+        if run.pc() == IRIS_SPOTLIGHT_ROW_PAIR_COMPLETED_PC && iterations_before_nmi.is_none() {
             iterations += 1;
         }
         let (scanline, master_cycle) = budget.raster_position().coordinates();
