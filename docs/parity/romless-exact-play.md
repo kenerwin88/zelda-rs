@@ -1,5 +1,10 @@
 # Toward exact ROM-less play
 
+> Handing this to someone new? Read
+> [`romless-exact-handoff.md`](romless-exact-handoff.md) first: it carries
+> the current state, the rules, the next task and the diagnosis recipe.
+> This document is the program's history and its evidence.
+
 ## Direction
 
 The no-argument launch (`zelda3` with no ROM) must reach the same
