@@ -382,3 +382,50 @@ matched every one of the 1,581,079 cached video and audio hashes in
 1,469.57 seconds (the ledger overhead is gone) with all four goldens and
 the recorded `31619379…` endpoint. Promoted in
 `routes/full_run/parity-frontier.json`.
+
+## Ground truth for the fresh-entry prefix (instrumented core)
+
+Once fresh VWF entries took the ledger-derived budget (the `ledger/vwf`
+gate on `silent_calls`, merged as `26965378`) the native frontier fell
+from 7330 to 2507: the derived budget on hosts 2337-2376 was 266,542
+against a converted traced span of 224,608. The silent-call probe cannot
+see the cause, because the missing work sits in routines that charge
+something. The instrumented Snes9x core names it in one renderless run
+(`ZELDA3_SNES9X_TRACE_EVENTS=frame,nmi,pc`, `ZELDA3_SNES9X_TRACE_FRAMES=
+0-2340`, `ZELDA3_SNES9X_TRACE_PCS=<entry and return PCs>`, the
+`--compare-snes9x-oracle` harness with the trace core, `--live-oracle-rng
+--ignore-video --ignore-audio`; events carry `v` and `cycles`, so a
+position is `v*1364+cycles` of a 357,368-cycle frame). Two rules for that
+run: the trace core keeps at most 64 PC filters and the semantic adapter
+appends about fifty of its own, so pass at most ten; and the frame filter
+must start at 0 or the adapter misses its frame-0 receipts.
+
+Route host 2337 (engine `frame_ctr_dbg` 2338, module 0E/02 in Link's
+house, one active sprite), raster master cycles between PC events (about
+82 per scanline crossed is refresh plus the live HDMA stall):
+
+| span | ROM | ledger |
+| --- | ---: | ---: |
+| NMI accepted → handler return | 29,358 | 28,472 |
+| handler return → `JSL Sprite_Main` | 6,292 | 7,152 |
+| `Sprite_Main` entry → `Follower_Main` entry | 1,908 | ≈1,400 |
+| `Follower_Main` → `Ancilla_Main` entry | 612 | 0 |
+| `Ancilla_Main` → `Overlord_Main` entry | 10,418 | 0 |
+| `Overlord_Main` → first `Sprite_ExecuteSingle` | 570 | 0 |
+| 16 slots (15 inactive, slot 0 active) to `SpriteActive_Main` | 7,046 | ≈5,000 |
+| `SpriteActive_Main` → `ExecuteCachedSprites` | 13,704 | ≈12,300 |
+| `ExecuteCachedSprites` → return into Module0E | 2,428 | 2,166 |
+| `LinkOam_Main` | 7,518 | 7,006 |
+| return → `Hud_RefillLogic` entry | 234 | – |
+| `Hud_RefillLogic` → `Hud_Update_IgnoreItemBox` entry | 990 | 1,166 |
+| `Hud_Update_IgnoreItemBox` → return into Module0E | 10,334 | 3,624 |
+| `JSL RunInterface` → `RenderText` → `Messaging_Text_Near` → VWF entry | 348 + 158 + 1,058 | exact |
+
+The VWF handler enters at v=31 on every one of these hosts, 264,270
+raster cycles before the next NMI acceptance; the `239,000` first-line
+constant never described them. The missing ≈17k master cycles are
+`Ancilla_Main` (no scope at all, ≈9.8k of work), `Hud_Update_IgnoreItemBox`
+(≈6.1k short), and small residues in the Sprite_Main prologue and the
+active slot's dispatch. Those went to the sprite and dialogue-sprite
+annotation batches with the spans above as their targets; the derived
+fresh-entry gate itself stands.
