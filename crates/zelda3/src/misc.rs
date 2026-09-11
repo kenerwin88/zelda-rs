@@ -180,7 +180,7 @@ fn receive_item_tab3_misc(item: u8) -> u8 {
         .unwrap_or(0)
 }
 
-fn receive_item_gfx_misc(item: u8) -> u8 {
+pub(super) fn receive_item_gfx_misc(item: u8) -> u8 {
     RECEIVE_ITEM_GRAPHICS
         .get(item as usize)
         .copied()

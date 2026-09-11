@@ -3020,6 +3020,50 @@ fn atomic_item_return_marks_the_retained_and_following_link_generations() {
 }
 
 #[test]
+fn resumed_big_key_graphics_return_publishes_completed_link_tiles() {
+    // Original run 20262 has completed the $22 OBJ upload: VRAM word
+    // $4001=$000f and $4002=$0f1f. The preceding native generation had
+    // $0001/$0006. Only Link tiles differ; BG memory remains retained.
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.ppu.vram[0x4001] = 0x0001;
+    state.ppu.vram[0x4002] = 0x0006;
+    state.ppu.vram[0x2000] = 0x1234;
+    state.capture_display_snapshot();
+    state.stage_atomic_item_graphics_return_obj_scanout(
+        ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt {
+            receipt: ItemReceiptReturn {
+                ancilla_slot: 4,
+                item: 0x32,
+                chest_position: 0,
+            },
+            sprite_slot: 2,
+            suffix: SpriteMainItemReceiptSuffix::BigKeyAbsorption,
+            caller: SpriteMainItemReceiptCallerReturn::Module07(DungeonSpriteMainReturn {
+                bg2_x: 237,
+                bg2_y: 4112,
+                bg1_x: 237,
+                bg1_y: 4112,
+                link_oam: None,
+            }),
+        },
+    );
+    let mut following = state.display_snapshot.as_ref().unwrap().clone();
+    following.ppu.vram[0x4001] = 0x000f;
+    following.ppu.vram[0x4002] = 0x0f1f;
+    following.ppu.vram[0x2000] = 0x5678;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+    let cpu_ram = state.ram.clone();
+    state.compose_display_vram(&following, &plan, None);
+    assert_eq!(state.ppu.vram[0x4001..0x4003], [0x000f, 0x0f1f]);
+    assert_eq!(state.ppu.vram[0x2000], 0x1234, "OBJ completion does not advance BG memory");
+    assert_eq!(state.ram, cpu_ram);
+    assert_eq!(plan.oam_scanout_source, OamScanoutSource::ComposeLiveAfterNmi);
+    assert_eq!(state.next_display_obj_scanout_generation.unwrap().link_obj,
+        GraphicsDmaGeneration::LiveAfterMain);
+}
+
+#[test]
 fn room_71_item_graphics_return_crosses_completed_nmi_boundary() {
     let return_frame = crate::game_state::FrameState {
         main_module: 7,

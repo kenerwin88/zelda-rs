@@ -581,19 +581,25 @@ const fn straight_interroom_fadeout_following_obj_scanout() -> ObjScanoutGenerat
     }
 }
 
-const fn atomic_item_graphics_return_obj_scanout(
+fn atomic_item_graphics_return_obj_scanout(
     continuation: ItemReceiptGraphicsContinuation,
 ) -> ObjScanoutGenerations {
     // The decompressor's final interrupt retains Link OBJ CHR. Its caller then
     // prepares the next OAM shadow before the following display boundary, so
     // that boundary legitimately combines live OAM with resident Link tiles.
-    let link_obj = match continuation {
+    let gfx = match continuation {
+        ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx, .. } => gfx,
+        ItemReceiptGraphicsContinuation::ResumeUnclePassage { receipt, .. }
+        | ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt { receipt, .. }
+        | ItemReceiptGraphicsContinuation::ResumeAncillaItemReceipt { receipt, .. } => {
+            misc::receive_item_gfx_misc(receipt.item)
+        }
+    };
+    let link_obj = match gfx {
         // The enemy-drop pickup's $22 sheet has completed its last OBJ upload at
         // this boundary. Unlike ordinary equipment receipts, there is no
         // resident Link-sheet tail to retain after that upload returns.
-        ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
-            gfx: 0x14 | 0x22, ..
-        } => GraphicsDmaGeneration::LiveAfterMain,
+        0x14 | 0x22 => GraphicsDmaGeneration::LiveAfterMain,
         _ => GraphicsDmaGeneration::HostBoundaryBeforeMain,
     };
     let oam = match continuation {
