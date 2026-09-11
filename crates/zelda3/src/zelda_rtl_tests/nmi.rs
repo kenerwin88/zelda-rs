@@ -202,6 +202,34 @@ fn c_full_tilemap_nmi_without_the_hud_dma_finishes_before_visible_scanout() {
 }
 
 #[test]
+fn nmi_handler_records_its_ledger_and_dma_cost_for_the_resumed_host_budget() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(14);
+    state.set_submodule(1);
+    state.ppu.forced_blank = false;
+    state.capture_display_snapshot();
+    assert_eq!(state.last_nmi_handler_master_cycles, None);
+
+    // A full-tilemap upload (subroutine 1, page $22) plus the OAM transfer:
+    // the recorded cost carries the handler's ledger charge and at least the
+    // DMA bus time of those transfers (0x1000 + 544 bytes at 8 each, plus 26
+    // per transfer), and stays well inside one frame.
+    state.set_pending_nmi_subroutine(1);
+    state.set_nmi_load_target_page(0x22);
+    state.interrupt_nmi_for_active_scanout(0, None, false);
+    let cost = state
+        .last_nmi_handler_master_cycles
+        .expect("the NMI handler records its cost");
+    assert!(cost > (0x1000 + 544) * 8 + 2 * 26, "nmi cost {cost}");
+    assert!(cost < 357_368, "nmi cost {cost}");
+    assert!(state.nmi_dma_accounting.is_none());
+
+    // Outside the handler the accounting hook is inert.
+    state.account_nmi_dma_transfer(0x200);
+    assert_eq!(state.last_nmi_handler_master_cycles, Some(cost));
+}
+
+#[test]
 fn active_display_force_blank_edge_is_not_replayed_in_the_following_field() {
     let mut state = ZeldaState::new();
     state.ppu.forced_blank = true;

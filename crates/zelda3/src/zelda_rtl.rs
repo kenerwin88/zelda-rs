@@ -9365,6 +9365,15 @@ pub struct ZeldaState {
     /// audio pass). Never read by game logic.
     #[serde(skip)]
     ledger_nmi_audio_parts_cycles: u64,
+    /// DMA transfers counted while the NMI handler runs (`Some` only inside
+    /// `interrupt_nmi_with_animated_bg_operands`). Never read by game logic.
+    #[serde(skip)]
+    nmi_dma_accounting: Option<nmi::NmiDmaAccounting>,
+    /// Master cycles of the last NMI handler run: its ledger charge plus the
+    /// DMA bus time of its transfers. The native dialogue budget gives a
+    /// resumed host the frame minus this cost. Never read by game logic.
+    #[serde(skip)]
+    pub(crate) last_nmi_handler_master_cycles: Option<u32>,
     /// Ambient APUI01 state sampled by a real C NMI after the ordinary host
     /// audio batch was published. The following audio callbacks retain that
     /// port read until the SPC exposes the matching acknowledgement.
@@ -11782,6 +11791,8 @@ impl ZeldaState {
             joypad_sampled_before_main: false,
             audio_nmi_processed_before_main: false,
             ledger_nmi_audio_parts_cycles: 0,
+            nmi_dma_accounting: None,
+            last_nmi_handler_master_cycles: None,
             audio_after_publication_ambient_nmi: None,
             dungeon_exit_spotlight_cpu_entry_envelope: None,
             overworld_spotlight_cpu_entry_envelope: None,
@@ -11954,6 +11965,8 @@ impl ZeldaState {
         self.joypad_sampled_before_main = false;
         self.audio_nmi_processed_before_main = false;
         self.ledger_nmi_audio_parts_cycles = 0;
+        self.nmi_dma_accounting = None;
+        self.last_nmi_handler_master_cycles = None;
         self.audio_after_publication_ambient_nmi = None;
         self.main_loop_sprite_preparation_completed = false;
         self.pending_main_loop_common_suffix = None;
@@ -12061,6 +12074,8 @@ impl ZeldaState {
             self.joypad_sampled_before_main = false;
             self.audio_nmi_processed_before_main = false;
             self.ledger_nmi_audio_parts_cycles = 0;
+        self.nmi_dma_accounting = None;
+        self.last_nmi_handler_master_cycles = None;
             self.audio_after_publication_ambient_nmi = None;
             self.pending_main_loop_common_suffix = None;
             self.dungeon_landing_goal_transition_pending = false;
