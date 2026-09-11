@@ -41,7 +41,7 @@ ZELDA3_CACHED_AV_NATIVE_TIMING=1 ./parity cached-av <cache> \
 Build that binary with `CARGO_TARGET_DIR=target/alt` so a frontier run can
 never rebuild the binary a comparison is using.
 
-History of the frontier: 8889 → 4660 → 2507 → 8716 → 7330 → 2507 → 8890 → 11444 → **4785** (working batch).
+History of the frontier: 8889 → 4660 → 2507 → 8716 → 7330 → 2507 → 8890 → 11444 → 4785 → **11444** (completed spotlight batch).
 It moves backwards whenever a newly exact cost exposes a wrong one
 downstream; that is normal and not a regression of the acceptance gate.
 
@@ -58,13 +58,15 @@ investigation below.
 
 | | |
 |---|---|
-| branch | `fix/romless-spotlight-batch`, two retained checkpoint corrections |
-| promoted ledger | previous `main` batch: full route exact, four goldens, recorded endpoint |
-| library suite | 1,737 passing, 3 ignored; new local-ROM test also passed explicitly |
-| native frontier | working branch: frame 4785, audio exact through that frontier |
+| branch | locally merged to `main`; three source-backed spotlight fixes |
+| promoted ledger | full route exact, four WRAM goldens and endpoint matched |
+| library suite | 1,738 passing, 3 ignored; local-ROM row test also passed explicitly |
+| native frontier | frame 11444, audio exact through that frontier |
 
-The working batch has focused acceptance evidence, not full-route promotion.
-Keep `main` at the preceding fully validated batch until the batch-end gate.
+Validated runtime commit: `1ad47d722fd844cedfbdc1e383e04a7655cbbbcb`.
+Binary SHA-256: `4be88538777fd29181872a6e75f87b63889925fce5372cceb534b77312426f5d`.
+The full-route receipt is
+`routes/full_run/receipts/spotlight-batch-full.manifest.json`.
 
 The scroll-return milestone is complete. The native lane carries the scroll's
 remaining CPU work, finishes a fitting return after the held NMI, and marks
@@ -86,46 +88,47 @@ test, exact validation and the remaining coarse pixel-copy limitation.
   and verify against the recorded shadow profiles; the lead measures.
 - Never `git checkout <file>`; revert your own edits surgically.
 
-## The immediate next task: frame 4785
+## The immediate next task: frame 11444
 
-Keep the source-backed CPU corrections now committed on the working branch:
-`66e59bee` preserves the already-incremented frame counter at Module0F;
-`90d68e8f` counts spotlight row pairs at executable `$F396`, rather than the
-operand byte `$F39B`. The original traces support the existing Module0F
-entry envelope: **do not retune it**. The initial rejection of these changes
-was too conservative; the user explicitly accepted an earlier native display
-failure when it reflects improved fidelity to the original.
+The completed batch retains three independently explained fixes:
 
-The earlier frontier is the first dungeon-exit spotlight sequence. Current
-same-binary native/receipt WRAM comparisons show:
+- `66e59bee` preserves the already-incremented frame counter at Module0F.
+- `90d68e8f` counts spotlight row pairs at executable `$F396`, rather than
+  operand byte `$F39B`.
+- `1ad47d72` keeps the last copied spotlight table on screen while the next
+  build is unfinished. `$F383/$F392` modify working rows; the hardware table
+  changes only at the later `$F3B7` copy. Exact scanline receipts retain
+  priority, and live CPU working RAM is unchanged.
 
-- At 4782, only `$067A` (23 versus 22) and `$1F00` differ. The native
-  continuation still omits the current circle iteration's pending decrement.
-- At 4783 and 4785, only `$1F00` differs.
-- At 4784, `$12/$16/$1F00` differ; at 4785 video differs but audio matches.
+At the repaired frame 4785, native and receipt presentation already agreed
+on VRAM, CGRAM, OAM and window controls. The native dynamic working table
+had 25 wrong scanout rows, while all 224 reserved-table rows matched the
+original. Publishing that completed table restores native frontier 11444
+without undoing either CPU correction. This is improved source fidelity at
+the same native A/V frontier, not fully receipt-free execution.
 
-Continue at the CPU-table-to-display publication boundary. Compare the
-shadow's first copy and consumed channel-7 rows with the original, then trace
-`LiveSpotlightScanout` through `begin_dungeon_exit_spotlight_entry`,
-`complete_dungeon_exit_spotlight_entry_before_link`, and the following-field
-publication slots. Establish which presented generation is wrong before
-changing a publication rule. The CPU corrections are retained improvements,
-not a claim that spotlight display publication is solved. Do not add a
-frame/room exception.
+Next compare the final presented state at 11444. Both final native WRAM
+tables (`$1DBA0` and `$17000`) match all 224 original window bounds there;
+that does not establish which generation or window controls were displayed.
+Original window layers are `[22, 1]`, with predicates `[3, 3, 3, 0, 3, 3]`.
+Inspect the final snapshot and first-entry/copy publication boundaries before
+changing a rule. The source supports the existing Module0F entry envelope:
+**do not retune it**. A pending within-row decrement remains a separate CPU
+continuation limitation. Do not add a frame/room exception.
 
-See "Spotlight investigation: exact CPU entry still leaves a display mismatch"
-in `romless-exact-play.md` for timestamps and the initial experiments, followed
-by "Retaining source-backed checkpoint corrections" for the accepted working
-batch. Rebuild `target/alt` from this branch before further development.
+See "Completed spotlight batch: publish the last copied table" in
+`romless-exact-play.md` for the root cause, regression and acceptance evidence.
+Rebuild `target/alt` from `main` before further runtime development.
 
 Local evidence retained for resumption:
-`target/spotlight-checkpoints-native-kept` and
-`target/spotlight-checkpoints-receipt-kept` contain the new frontier and paired
-WRAM dumps. The receipt run matches all 11,500 video/audio frames on binary
-`a42dbb58bf8f8551475cf5cc8e03cfb2c31a86c4153c82d49bb486627f31970c`.
-The same binary passed cold live-Snes9x video and exact audio through 11,500
-frames in `target/spotlight-checkpoints-cold-av`. Full-route validation remains
-pending for this working batch.
+`target/spotlight-batch-native-final` contains the frontier and WRAM dumps;
+`target/spotlight-batch-cold-av` contains the exact 11,500-frame live-Snes9x
+A/V check (6,130,827 stereo sample frames, zero differences).
+`target/spotlight-batch-validation` retains compact manifests, logs and
+200k/full endpoint dumps after the large acceptance runs are pruned.
+`target/spotlight-display-native`, `target/spotlight-display-receipt` and
+`target/spotlight-display-source` retain the repaired display-generation
+proof; `target/spotlight-next-source` retains original windows around 11444.
 `target/romless-11444-original-timestamps` retains original source boundaries.
 
 ## How to diagnose a frontier frame
@@ -134,9 +137,10 @@ pending for this working batch.
    `ZELDA3_CACHED_AV_NATIVE_TIMING=1`, dumping `ZELDA3_DEBUG_WRAM_FRAMES`
    at the frontier and a few frames before, and compare the dumps. The
    receipt path is the ground truth. At the repaired 8889/8890 boundary only
-   the known scratch byte remains. At current frame 4785, matching CPU tables
-   narrow the remaining investigation to display publication. `$1f00` differs
-   benignly; so can `$12`.
+   the known scratch byte remains. At repaired frame 4785, matching CPU tables
+   narrowed the mismatch to display publication. At current frame 11444,
+   compare the actual presented generation and controls as well as live WRAM.
+   `$1f00` differs benignly; so can `$12`.
 2. **Then the subsystem's own trace.** For dialogue:
    `ZELDA3_DEBUG_SCROLL_STAGE=1 ZELDA3_DEBUG_SCROLL_RETAIN=1` in both
    modes gives the scroll phase machine's decisions side by side;

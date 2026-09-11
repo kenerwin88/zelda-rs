@@ -19,7 +19,7 @@
   },
   "project": "routes/full_run",
   "promoted": {
-    "binary_sha256": "75aaed1128771423b6a47fbb51e468a1adca4dbfeb0346e904f4f5ddb4d9042b",
+    "binary_sha256": "4be88538777fd29181872a6e75f87b63889925fce5372cceb534b77312426f5d",
     "cached_av_receipt": {
       "candidate_ledger_sha256": "3d52711c51a4f01031bd336aa582d4b6a316c71199710d3354ef015fcca1440c",
       "frames": 1581079,
@@ -27,13 +27,13 @@
         "video",
         "audio"
       ],
-      "manifest_sha256": "eb5e54f3aa5f6f86ac83d0a526bca418aa8fd87a0ba93b089eeb02c241c7f3d6",
+      "manifest_sha256": "ba3e486a7a0b4fb311013b904ec71c2ddadcb809bc56ea5d2cb69a4e5b639999",
       "oracle_cache_key": "ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18",
       "oracle_cache_manifest_sha256": "4c7f88fbf327a4b3af7d3f8614d82ebb2318f11b607798d5dddb4a97b7fe2715",
-      "receipt_path": "receipts/romless-8890-acceptance-full.manifest.json",
-      "run": "/Users/missingno/Documents/zelda3-rs/target/romless-8890-acceptance-full"
+      "receipt_path": "receipts/spotlight-batch-full.manifest.json",
+      "run": "/Users/missingno/Documents/zelda3-rs/target/spotlight-batch-full"
     },
-    "commit": "cbd3e99a30cd9f976e4fd5b0bf27df1617d391c4",
+    "commit": "1ad47d722fd844cedfbdc1e383e04a7655cbbbcb",
     "kind": "cached_av_pass",
     "last_exact_audio_frame": 1581078,
     "last_exact_engine_state_frame": 1581078,

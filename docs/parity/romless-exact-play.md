@@ -726,3 +726,76 @@ Evidence is retained in `target/spotlight-counter-native-kept`,
 remain due at the end of the working batch; `main` remains at the preceding
 fully validated runtime. Continue from the new frontier without reverting
 the checkpoint corrections solely to recover a larger frame number.
+
+## Completed spotlight batch: publish the last copied table
+
+The third fix, `1ad47d72`, retains the two source-backed CPU corrections and
+repairs the earlier native display failure at 4785. During a recurring
+interrupted spotlight build, the display snapshot had selected partially
+rewritten dynamic rows. Original instructions `$F383/$F392` write the work
+buffer; hardware continues consuming the preceding completed table until
+the copy at `$F3B7-$F3C3`. The C translation preserves that copied table in
+`hdma_table_unused`, mapped to Rust's `RESERVED_HDMA_TABLE`.
+
+A temporary final-display probe isolated the mismatch at engine host 4786
+(comparison frame 4785): native and receipt presentation had identical VRAM,
+CGRAM, OAM and window controls, but 25 native dynamic-table rows differed
+from the original scanout. All 224 reserved-table rows matched. Original
+source frames 4784 through 4786 retain the radius-126 table: the first
+nonempty rows are 114 `[84, 172]`, 115 `[74, 182]` and 116 `[66, 190]`.
+The radius-119 table first appears at source frame 4787. No probe remains in
+runtime code.
+
+When the typed dungeon-exit build continuation has not completed projection,
+`capture_display_snapshot_with_override` now publishes the last copied
+224-row table through the existing display helper. It preserves live CPU
+working RAM and gives authoritative per-scanline receipts priority. There
+are no frame or room exceptions, new persistent owners, or schema changes.
+The regression
+`unfinished_spotlight_rows_do_not_replace_the_published_hardware_table`
+checks source-observed rows, partial working-table writes, retained display
+publication, exact-receipt precedence and unchanged live buffers.
+
+The final native frontier is again **11444**, video only, now with both CPU
+corrections retained. This is a stronger model at the same A/V frontier;
+fully receipt-free execution remains unfinished. Both final native WRAM
+tables match the original's 224 window bounds at 11444. That does not prove
+the displayed snapshot matches: next inspect its captured table generation
+and window registers. The one pending within-row decrement remains a
+separate CPU-state limitation. Keep the source-supported Module0F entry
+envelope unchanged.
+
+Validation uses clean source commit
+`1ad47d722fd844cedfbdc1e383e04a7655cbbbcb` and binary SHA-256
+`4be88538777fd29181872a6e75f87b63889925fce5372cceb534b77312426f5d`.
+`cargo check` and the dev library-test build pass without warnings; the
+parity library suite passes 1,738 tests with three ignored, and the local-ROM
+row-count test passes explicitly. The cold live-Snes9x check matches 11,500
+video frames and 6,130,827 stereo sample frames exactly. Its short-run
+engine-state lane is disabled; it is exact A/V evidence, not per-frame WRAM
+proof. The 200,000-frame cached A/V check passes in 192.54 seconds, both
+available WRAM goldens match, and its endpoint matches
+`dd45975cee5acdd270d1b0c74c5d38f1ba3ce3bd7e0af648264b8f77e95f244d`.
+
+The full receipt-driven route subsequently matched all **1,581,079**
+video/audio frames in **1,553.49 seconds**. All four WRAM goldens matched,
+as did final WRAM SHA-256
+`316193798ccb2f771546b25443df7d417bddac8a7cac65326fa189c1264fbdb6`.
+The clean runtime commit and frozen binary are promoted in
+`routes/full_run/parity-frontier.json`, with receipt
+`routes/full_run/receipts/spotlight-batch-full.manifest.json`.
+
+The three-fix batch is locally merged to `main`; nothing is pushed. Large
+200k/full replay directories are pruned after promotion. Compact manifests,
+logs, validation metadata and endpoint dumps are retained in
+`target/spotlight-batch-validation`; native and cold evidence remain in
+`target/spotlight-batch-native-final` and `target/spotlight-batch-cold-av`.
+Display diagnostic dumps remain in `target/spotlight-display-native` and
+`target/spotlight-display-receipt`, original windows in
+`target/spotlight-display-source` and `target/spotlight-next-source`, and the
+original CPU trace in `target/romless-11444-original-timestamps`.
+
+The full gate protects shared scheduler and presentation behavior in the
+receipt-driven path; it does not prove native timing beyond 11444. Continue
+using focused native/receipt comparisons for individual changes and one
+full-route promotion for a completed batch.
