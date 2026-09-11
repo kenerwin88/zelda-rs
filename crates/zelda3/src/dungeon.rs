@@ -2203,10 +2203,10 @@ impl ZeldaState {
                 let count_x = width as u16 + 1;
                 let count_y = height as u16 + 1;
                 for y in 0..count_y {
-                    let mut dst = dsto + y * 4 * 64;
-                    for _ in 0..count_x {
-                        dst = self.RoomDraw_A_Many32x32Blocks(1, src, dst);
-                    }
+                    // Object_Draw4x4_Size1to4 $018FA9: one JSR RoomDraw_A_Many32x32Blocks
+                    // per row with A = the block count (the chained n = 1 calls wrote
+                    // the same blocks in the same order).
+                    self.RoomDraw_A_Many32x32Blocks(count_x as i32, src, dsto + y * 4 * 64);
                 }
             }
             0xc3 | 0xd7 => {
@@ -2520,7 +2520,8 @@ impl ZeldaState {
             0x1d => {
                 self.dungeon_stair_lists_mut()
                     .append_stair_table_position(DungeonStairList::WetStairs, dsto);
-                self.RoomDraw_4x4(src, dsto);
+                // RoomDraw_AutoStairs_South_MultiLayer_C $01A37D: JMP RoomDraw_4x4.
+                self.room_draw_4x4_by_jump(src, dsto);
             }
             0x1e => {
                 let next = self
@@ -2538,7 +2539,7 @@ impl ZeldaState {
                     ],
                     next,
                 );
-                self.RoomDraw_Object_Nx4(4, src, dsto);
+                self.room_draw_object_nx4_tiles(src, dsto, 4); // the ROM inlines its own 4-column loop at $01A634 (no Nx4 entry)
             }
             0x1f => {
                 let next = self
@@ -2551,7 +2552,7 @@ impl ZeldaState {
                     ],
                     next,
                 );
-                self.RoomDraw_Object_Nx4(4, src, dsto);
+                self.room_draw_object_nx4_tiles(src, dsto, 4); // the ROM inlines its own 4-column loop at $01A634 (no Nx4 entry)
             }
             0x20 => {
                 let next = self
@@ -2568,7 +2569,7 @@ impl ZeldaState {
                     ],
                     next,
                 );
-                self.RoomDraw_Object_Nx4(4, src, dsto);
+                self.room_draw_object_nx4_tiles(src, dsto, 4); // the ROM inlines its own 4-column loop at $01A634 (no Nx4 entry)
             }
             0x21 => {
                 let next = self
@@ -2576,7 +2577,7 @@ impl ZeldaState {
                     .append_interroom_staircase(DungeonStairList::InterRoomDownSouthStraight, dsto);
                 self.dungeon_stair_lists_mut()
                     .set_stair_list_count(DungeonStairList::InterRoomDownSouthStraight, next);
-                self.RoomDraw_Object_Nx4(4, src, dsto);
+                self.room_draw_object_nx4_tiles(src, dsto, 4); // the ROM inlines its own 4-column loop at $01A634 (no Nx4 entry)
             }
             0x26 => self.RoomDraw_LowerDoorStairsUp(src, dsto, true),
             0x27 => self.RoomDraw_LowerDoorStairsUp(src, dsto, false),
@@ -2653,17 +2654,22 @@ impl ZeldaState {
                     self.dungeon_stair_lists_mut()
                         .append_stair_table_position(DungeonStairList::InRoomUpSouthWater, dsto);
                 }
-                self.RoomDraw_4x4(src, dsto);
+                // RoomDraw_AutoStairs_South_MergedLayer $01A3AB: JMP RoomDraw_4x4.
+                self.room_draw_4x4_by_jump(src, dsto);
             }
             0x3a | 0x3b => {
                 self.RoomDraw_1x3_rightwards(src, dsto, 4);
                 self.RoomDraw_1x3_rightwards(src + 24, dsto + 3 * 64, 4);
             }
-            0x3c | 0x3d | 0x5c => self.RoomDraw_Object_Nx4(6, src, dsto),
+            // RoomDraw_HorizontalTurtleRockPipe $019AA6: LDA #6, JMP RoomDraw_Object_Nx4
+            // (the body charges into this frame; no Nx4 scope).
+            0x3c | 0x3d | 0x5c => self.RoomData_DrawObject_nx4(src, dsto, 6),
             0x47 => {
                 self.RoomDraw_BombableFloor(dsto);
             }
-            0x48 | 0x66 | 0x6b | 0x7a => self.RoomDraw_4x4(src, dsto),
+            // The subtype-3 table points straight at RoomDraw_4x4 $0197ED, so the
+            // `JMP ($0E)` dispatch enters it without a JSR.
+            0x48 | 0x66 | 0x6b | 0x7a => self.room_draw_4x4_by_jump(src, dsto),
             0x4b | 0x76 | 0x77 => self.RoomDraw_1x3_rightwards(src, dsto, 8),
             0x4c => self.RoomDraw_SomeBigDecors(6, 0x1f92, dsto),
             0x4d | 0x5d => self.RoomDraw_1x3_rightwards(src, dsto, 6),
@@ -2710,11 +2716,13 @@ impl ZeldaState {
                     dst += 1;
                 }
             }
-            0x69 | 0x6a | 0x6e | 0x6f => self.RoomDraw_Object_Nx4(3, src, dsto),
+            // RoomDraw_SolidWallDecor3x4 $0199EF: LDA #3, JMP RoomDraw_Object_Nx4.
+            0x69 | 0x6a | 0x6e | 0x6f => self.RoomData_DrawObject_nx4(src, dsto, 3),
             0x70 => {
                 self.RoomDraw_4x4(src, dsto);
                 self.RoomDraw_4x4(0x2376, dsto + 2 * 64);
-                self.RoomDraw_4x4(0x2396, dsto + 6 * 64);
+                // RoomDraw_LightBeamOnFloor $01A7D0: the third 4x4 is a JMP.
+                self.room_draw_4x4_by_jump(0x2396, dsto + 6 * 64);
             }
             0x71 => {
                 if self.saved_room_flags(101) & 0x0100 != 0 {
@@ -2726,7 +2734,8 @@ impl ZeldaState {
                     self.RoomDraw_SomeBigDecors(10, src, dsto);
                 }
             }
-            0x73 => self.RoomDraw_FloorChunks(
+            // RoomDraw_BG2MaskFull $01A25A: JMP RoomDraw_FloorChunks (no scope).
+            0x73 => self.room_draw_floor_chunks_body(
                 self.game_state
                     .dungeon
                     .room_tilemaps
@@ -2739,17 +2748,15 @@ impl ZeldaState {
             0x78 => {
                 self.RoomDraw_4x4(src, dsto);
                 self.RoomDraw_4x4(src + 32, dsto.wrapping_sub(2).wrapping_add(4 * 64));
-                self.RoomDraw_4x4(src + 32, dsto + 2 + 4 * 64);
+                // RoomDraw_GanonTriforceFloorDecor $01A806: the third 4x4 is a JMP.
+                self.room_draw_4x4_by_jump(src + 32, dsto + 2 + 4 * 64);
             }
             0x7b => {
-                let mut dst = dsto;
-                for _ in 0..5 {
-                    dst = self.RoomDraw_A_Many32x32Blocks(1, src, dst);
-                }
-                let mut dst = dsto + 4 * 64;
-                for _ in 0..5 {
-                    dst = self.RoomDraw_A_Many32x32Blocks(1, src, dst);
-                }
+                // RoomDraw_VitreousGooDamage $01A809: LDA #5, JSR
+                // RoomDraw_A_Many32x32Blocks (one scoped call of five blocks),
+                // then LDA #5, JMP RoomDraw_A_Many32x32Blocks (the body only).
+                self.RoomDraw_A_Many32x32Blocks(5, src, dsto);
+                self.room_draw_a_many_32x32_blocks_body(5, src, dsto + 4 * 64);
             }
             _ => panic!("LoadType1ObjectSubtype3 unhandled object id {idx:#04x}"),
         }
@@ -2761,7 +2768,9 @@ impl ZeldaState {
         };
         match idx {
             0x00..=0x07 | 0x1c | 0x24 | 0x25 | 0x29 => {
-                self.RoomDraw_Object_Nx4(4, src, dsto);
+                // The subtype-2 table points straight at RoomDraw_4x4 $0197ED, so
+                // the `JMP ($0E)` dispatch enters it without a JSR.
+                self.room_draw_4x4_by_jump(src, dsto);
             }
             0x10..=0x13 => self.RoomData_DrawObject_nx4_both_bgs(src, dsto, 3),
             0x14..=0x17 => self.Object_DrawNx3_BothBgs(4, src, dsto),
@@ -2805,7 +2814,8 @@ impl ZeldaState {
                     ],
                     next,
                 );
-                self.RoomDraw_4x4(0x1088, dsto);
+                // RoomDraw_InterRoomFatStairsUp $01A455: JMP RoomDraw_4x4.
+                self.room_draw_4x4_by_jump(0x1088, dsto);
             }
             0x2e | 0x2f => {
                 let plane = self.room_plane_offset();
@@ -2822,7 +2832,8 @@ impl ZeldaState {
                     ],
                     next,
                 );
-                self.RoomDraw_4x4(0x10a8, dsto);
+                // RoomDraw_InterRoomFatStairsDown_A/_B $01A483/$01A4B1: JMP RoomDraw_4x4.
+                self.room_draw_4x4_by_jump(0x10a8, dsto);
             }
             0x08..=0x0f => self.RoomData_DrawObject_nx4_both_bgs(src, dsto, 4),
             0x31 => {
@@ -2849,7 +2860,7 @@ impl ZeldaState {
                     ],
                     next,
                 );
-                self.RoomDraw_4x4(src, dsto);
+                self.room_draw_4x4_by_jump(src, dsto); // RoomDraw_AutoStairs_North_MergedLayer_A $01A2DC: JMP RoomDraw_4x4
             }
             0x33 => {
                 let room = self.game_state.world.location.dungeon_room() as usize;
@@ -2870,7 +2881,8 @@ impl ZeldaState {
                         ],
                         next,
                     );
-                    self.RoomDraw_4x4(0x10c8, dsto);
+                    // RoomDraw_AutoStairs_North_MergedLayer_B $01A309: JMP RoomDraw_4x4.
+                    self.room_draw_4x4_by_jump(0x10c8, dsto);
                 } else {
                     let next = self
                         .dungeon_stair_lists_mut()
@@ -2880,7 +2892,8 @@ impl ZeldaState {
                         );
                     self.dungeon_stair_lists_mut()
                         .set_stair_list_count(DungeonStairList::ActivatedWaterLadders, next);
-                    self.RoomDraw_4x4(0x10c8, dsto);
+                    // RoomDraw_AutoStairs_North_MergedLayer_B $01A309: JMP RoomDraw_4x4.
+                    self.room_draw_4x4_by_jump(0x10c8, dsto);
                 }
             }
             0x35 => {
@@ -3144,13 +3157,15 @@ impl ZeldaState {
                     self.RoomDraw_MakeDoorPartsHighPriority_Y(dsto + xy(0, 4) as u16);
                 }
                 self.RoomDraw_FlagDoorsAndGetFinalType(1, door_type, dsto);
-                self.RoomDraw_4x4(0x26f6, dsto);
+                // RoomDraw_Door_South $01AA48: JMP RoomDraw_4x4 (shared tail).
+                self.room_draw_4x4_by_jump(0x26f6, dsto);
             }
             DOOR_TYPE_4 => {
                 let high_dsto = dsto | 0x1000;
                 self.RoomDraw_MakeDoorPartsHighPriority_Y(high_dsto + xy(0, 4) as u16);
                 self.RoomDraw_FlagDoorsAndGetFinalType(1, door_type, high_dsto);
-                self.RoomDraw_4x4(0x26f6, high_dsto);
+                // RoomDraw_Door_South $01AA48: JMP RoomDraw_4x4 (shared tail).
+                self.room_draw_4x4_by_jump(0x26f6, high_dsto);
                 for i in 0..4 {
                     let pos = dsto + i + xy(0, 3) as u16;
                     let tile = self.room_read_bg1(pos) | 0x2000;
@@ -3580,15 +3595,17 @@ impl ZeldaState {
 
     pub(super) fn RoomDraw_NorthCurtainDoor(&mut self, dsto: u16) {
         let rv = self.RoomDraw_FlagDoorsAndGetFinalType(0, DOOR_TYPE_SLASHABLE, dsto);
-        let src = if rv & 0x100 != 0 {
-            0x078a
+        if rv & 0x100 != 0 {
+            // $01AC4D-$01AC52: LDX #$078A, JMP RoomDraw_4x4 (no scope).
+            self.room_draw_4x4_by_jump(0x078a, dsto);
         } else {
-            DOOR_TYPE_SRC_UP
+            let src = DOOR_TYPE_SRC_UP
                 .get(rv as usize >> 1)
                 .copied()
-                .unwrap_or(0x078a) as usize
-        };
-        self.RoomDraw_4x4(src, dsto);
+                .unwrap_or(0x078a) as usize;
+            // $01AC57: JSR RoomDraw_4x4.
+            self.RoomDraw_4x4(src, dsto);
+        }
     }
 
     pub(super) fn RoomDraw_HighRangeDoor_North(
@@ -4770,9 +4787,21 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn RoomDraw_A_Many32x32Blocks(&mut self, mut n: i32, src: usize, mut dst: u16) -> u16 {
-        // Cycle ledger: RoomDraw_A_Many32x32Blocks $01:8A44, entered with M=16 X=16.
+    pub(super) fn RoomDraw_A_Many32x32Blocks(&mut self, n: i32, src: usize, dst: u16) -> u16 {
+        // Cycle ledger: RoomDraw_A_Many32x32Blocks $01:8A44, entered with M=16 X=16
+        // by JSR. RoomDraw_VitreousGooDamage also reaches it by JMP, which uses
+        // the body below so the cost lands in the jumping frame.
         let _scope = crate::cycle_ledger::routine(0x01_8a44);
+        self.room_draw_a_many_32x32_blocks_body(n, src, dst)
+    }
+
+    /// The body of RoomDraw_A_Many32x32Blocks from $018A44, unscoped.
+    pub(super) fn room_draw_a_many_32x32_blocks_body(
+        &mut self,
+        mut n: i32,
+        src: usize,
+        mut dst: u16,
+    ) -> u16 {
         // $018A44: STA $0A (the block count).
         crate::cycle_ledger::charge(32);
         loop {
@@ -4811,9 +4840,12 @@ impl ZeldaState {
         dst
     }
 
-    /// The shared body of RoomDraw_Object_Nx4 ($01:97F0), unscoped: every
-    /// caller enters through `RoomDraw_Object_Nx4` (the JSR $0197F0 entry) or
-    /// `RoomDraw_4x4` (the $0197ED fall-through entry), which open the scope.
+    /// The shared body of RoomDraw_Object_Nx4 ($01:97F0), unscoped. JSR
+    /// callers enter through `RoomDraw_Object_Nx4` (scope $0197F0) or
+    /// `RoomDraw_4x4` (scope $0197ED); the ROM's `JMP` entries
+    /// (RoomDraw_SolidWallDecor3x4, RoomDraw_HorizontalTurtleRockPipe) and
+    /// `room_draw_4x4_by_jump` call this directly so the cost lands in the
+    /// frame that jumped.
     pub(super) fn RoomData_DrawObject_nx4(&mut self, src: usize, dsto: u16, columns: u16) {
         // $0197F0: STA $0E (the column count).
         crate::cycle_ledger::charge(32);
@@ -4825,6 +4857,18 @@ impl ZeldaState {
                 // BNE $0197F2 taken for every column but the last.
                 crate::cycle_ledger::charge(6);
             }
+        }
+        // $019812: RTS.
+        crate::cycle_ledger::charge(42);
+        self.room_draw_object_nx4_tiles(src, dsto, columns);
+    }
+
+    /// The Nx4 tile writes with no cycle charge: the straight inter-room
+    /// staircase drawers ($01A634-$01A661) inline their own 4-column loop and
+    /// never enter RoomDraw_Object_Nx4, so their translation writes the tiles
+    /// here and stays uncharged until those drawers are annotated.
+    pub(super) fn room_draw_object_nx4_tiles(&mut self, src: usize, dsto: u16, columns: u16) {
+        for x in 0..columns {
             for y in 0..4 {
                 self.room_write_current(
                     dsto + x + y * 64,
@@ -4832,8 +4876,17 @@ impl ZeldaState {
                 );
             }
         }
-        // $019812: RTS.
-        crate::cycle_ledger::charge(42);
+    }
+
+    /// RoomDraw_4x4 $01:97ED reached by `JMP` (the stairs drawers, Door_South,
+    /// NorthCurtainDoor, the third 4x4 of LightBeamOnFloor and
+    /// GanonTriforceFloorDecor) or straight from the `JMP ($0E)` dispatch
+    /// (the subtype-2/3 table entries that are RoomDraw_4x4 itself): the
+    /// `LDA #$0004` (24) and the Nx4 body charge into the jumping frame, no
+    /// scope of their own.
+    pub(super) fn room_draw_4x4_by_jump(&mut self, src: usize, dsto: u16) {
+        crate::cycle_ledger::charge(24);
+        self.RoomData_DrawObject_nx4(src, dsto, 4);
     }
 
     pub(super) fn RoomDraw_Object_Nx4(&mut self, n: u16, src: usize, dsto: u16) {
