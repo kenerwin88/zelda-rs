@@ -2347,15 +2347,46 @@ impl ZeldaState {
     }
 
     pub(super) fn OverworldOverlay_HandleRain(&mut self) {
-        // Not annotated yet: counted as a silent call for the ledger prefix.
-        let _probe = crate::cycle_ledger::probe_annotation();
-        if (self.game_state.world.location.overworld_screen_index() != 0x70
-            && self.game_state.inventory.save_progress.progress_indicator() >= 2)
-            || (self.game_state.world.overworld.event_info.event_info(0x70) & 0x20) != 0
-        {
+        // Cycle ledger: OverworldOverlay_HandleRain $02:A4CD (JSL target, m8
+        // x8). $02:A4CD LDA $8A : CMP #$70 : BEQ (56; taken +6 on screen
+        // $70), else $02:A4D3 LDA $7EF3C5 : CMP #$02 : BCS (72; taken +6
+        // into the $02:A52C RTL, 44, once the story has advanced).
+        // $02:A4DB LDA $7EF2F0 : AND #$20 : BNE (72; taken +6 into the RTL
+        // once the flag is set).
+        let _scope = crate::cycle_ledger::routine(0x02_a4cd);
+        let off_rain_screen = self.game_state.world.location.overworld_screen_index() != 0x70;
+        let story_advanced = self.game_state.inventory.save_progress.progress_indicator() >= 2;
+        crate::cycle_ledger::charge(if !off_rain_screen {
+            56 + 6
+        } else if story_advanced {
+            56 + 72 + 6 + 44
+        } else {
+            56 + 72
+        });
+        if off_rain_screen && story_advanced {
+            return;
+        }
+        let flagged = (self.game_state.world.overworld.event_info.event_info(0x70) & 0x20) != 0;
+        crate::cycle_ledger::charge(if flagged { 72 + 6 + 44 } else { 72 });
+        if flagged {
             return;
         }
 
+        // The frame-counter compare chain $02:A4E3-A4FB (LDA $1A, then CMP
+        // : BEQ pairs of 56 then 32 each; a hit takes its branch +6):
+        // 3 and 88 load #$32 at $02:A506 (16), 5/44/90 load #$72 at $02:A4FD
+        // and BRA (38), 36 stores the thunder sound at $02:A501 (48) before
+        // #$32 (16); every hit stores at $02:A508 (24). A miss takes the
+        // final BNE (+6) to $02:A50A.
+        crate::cycle_ledger::charge(match self.game_state.frame.frame_counter {
+            3 => 56 + 6 + 16 + 24,
+            5 => 56 + 32 + 6 + 38 + 24,
+            36 => 56 + 32 * 2 + 6 + 48 + 16 + 24,
+            44 => 56 + 32 * 3 + 6 + 38 + 24,
+            88 => 56 + 32 * 4 + 6 + 16 + 24,
+            90 => 56 + 32 * 5 + 38 + 24,
+            _ => 56 + 32 * 5 + 6,
+        });
         match self.game_state.frame.frame_counter {
             3 | 88 => self.set_color_math_control(0x32),
             5 | 44 | 90 => self.set_color_math_control(0x72),
@@ -2365,9 +2396,14 @@ impl ZeldaState {
             }
             _ => {}
         }
+        // $02:A50A LDA $1A : AND #$03 : BNE (56; taken +6 into the RTL, 44,
+        // on three frames of four), else $02:A510-A52A the overlay scroll
+        // step (312) and the RTL (44).
         if self.game_state.frame.frame_counter & 3 != 0 {
+            crate::cycle_ledger::charge(56 + 6 + 44);
             return;
         }
+        crate::cycle_ledger::charge(56 + 312 + 44);
         let i = self.increment_move_overlay_ctr();
         let bg1x = self
             .game_state

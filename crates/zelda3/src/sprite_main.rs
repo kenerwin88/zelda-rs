@@ -11,6 +11,16 @@ use crate::zelda_rtl::sprite::PrepOamCoordsRet;
 
 impl ZeldaState {
     pub(super) fn guard_handle_all_animation(&mut self, k: usize) {
+        // Cycle ledger: Guard_HandleAllAnimation $05:C680 (JSR target, m8
+        // x8): JSR Sprite_PrepOamCoordOrDoubleRet__ (46; off screen it
+        // double-returns past this routine). On screen: $05:C683-C691 JSR
+        // Guard_AnimateHead, JSR Guard_AnimateBody, JSR Guard_AnimateWeapon,
+        // LDA $E60,x, AND #$10, BEQ (202; the callees charge themselves); a
+        // shadow runs $05:C693-C699 LDY $DE0,x, LDA $C69E,y, JSL
+        // SpriteDraw_Shadow_custom (126), else the BEQ is taken (+6);
+        // $05:C69D RTS (42).
+        let _scope = crate::cycle_ledger::routine(0x05_c680);
+        crate::cycle_ledger::charge(46);
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
@@ -19,6 +29,7 @@ impl ZeldaState {
                 workload.record_blue_guard_full_animation();
             }
         }
+        crate::cycle_ledger::charge(202);
         let poc = PrepOamCoordsRet { x, y, r4: 0, flags };
         self.guard_animate_head(k, 0, &poc);
         let sprite = self.sprite_slot_view(k);
@@ -27,11 +38,14 @@ impl ZeldaState {
         self.guard_animate_body(k, SOLDIER_DRAW2_OAM_IDX[direction] >> 2, &poc);
         self.guard_animate_weapon(k, &poc);
         if flags3 & 0x10 != 0 {
+            crate::cycle_ledger::charge(126 + 42);
             self.sprite_draw_shadow_custom_attract(
                 k,
                 (poc.x, poc.y, poc.flags),
                 SOLDIER_DRAW_SHADOW[direction],
             );
+        } else {
+            crate::cycle_ledger::charge(6 + 42);
         }
     }
 

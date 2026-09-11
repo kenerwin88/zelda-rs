@@ -81,6 +81,21 @@ pub(crate) enum PrepOamCoordEntry {
     Bank5Safe,
 }
 
+/// The ROM entry a caller of `Sprite_DrawMultiple` ($05:DF6C) uses. Cycle
+/// ledger only: every entry draws the same table, but each is its own
+/// JSL/JSR target with its own scope and entry cost (see
+/// `sprite_draw_multiple_from`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DrawMultipleEntry {
+    /// `JSL $05:DF6C` with the entry count in A (STA $06 : STZ $07 first).
+    Direct,
+    /// `JSL $05:DF70` Sprite_DrawMultiple_R6 with the count already in $06
+    /// (Uncle_Draw).
+    R6,
+    /// `JSR $1D:8549` Sprite_DrawMultiple__ (bank $1D): JSL $05:DF6C : RTS.
+    Bank1d,
+}
+
 impl PrepOamCoordsRet {
     pub(super) fn from_tuple(t: (u16, u16, u8)) -> Self {
         Self {
@@ -1216,7 +1231,12 @@ impl ZeldaState {
     ///   bank-local double-return wrappers $05:FA50 / $1D:E9AD / $1E:FF84 =
     ///   JSL $06:E416 (62), BCC (16, taken +6 when in bounds), else PLA PLA
     ///   (56), RTS (42) — the RTS runs on both paths (out of bounds it
-    ///   returns to the caller's caller).
+    ///   returns to the caller's caller). The profiler closes a frame as
+    ///   soon as the stack rises above its entry depth, so out of bounds
+    ///   the first PLA (28) is the wrapper's last own instruction and the
+    ///   second PLA and the RTS (70) are measured in the caller's frame;
+    ///   the ledger splits them the same way (200k profiles: $05:FA50 self
+    ///   126 in bounds / 106 out, the caller +70).
     /// - `Bank5Safe`: Sprite_PrepOamCoord_wrapper $05:9257 = JSR $05:FA50
     ///   (46) : RTS (42, skipped when the double return pops it).
     fn sprite_prep_oam_coord_or_double_ret_raw_from(
@@ -1252,11 +1272,19 @@ impl ZeldaState {
                     PrepOamCoordEntry::Bank1dDoubleRet => 0x1d_e9ad,
                     _ => 0x1e_ff84,
                 };
-                let _wrapper = crate::cycle_ledger::routine(address);
-                crate::cycle_ledger::charge(62 + 16);
-                let result =
-                    self.sprite_prep_oam_coord_or_double_ret_raw_from(k, PrepOamCoordEntry::Long);
-                crate::cycle_ledger::charge(if result.1 { 56 + 42 } else { 6 + 42 });
+                let result = {
+                    let _wrapper = crate::cycle_ledger::routine(address);
+                    crate::cycle_ledger::charge(62 + 16);
+                    let result = self
+                        .sprite_prep_oam_coord_or_double_ret_raw_from(k, PrepOamCoordEntry::Long);
+                    crate::cycle_ledger::charge(if result.1 { 28 } else { 6 + 42 });
+                    result
+                };
+                if result.1 {
+                    // The second PLA and the RTS of the double return run
+                    // after the wrapper's frame has closed: the caller's cost.
+                    crate::cycle_ledger::charge(28 + 42);
+                }
                 result
             }
             PrepOamCoordEntry::Bank5Safe => {
@@ -9467,20 +9495,87 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         k: usize,
         src: &[DrawMultipleData],
     ) -> PrepOamCoordsRet {
-        let (prepared, drawable) = self.sprite_prepare_draw_multiple(k);
-        if let Some(info) = drawable {
-            self.sprite_draw_multiple_words_with_info(
+        self.sprite_draw_multiple_from(k, src, DrawMultipleEntry::Direct)
+    }
+
+    /// `Sprite_DrawMultiple` reached through the ROM entry the caller uses
+    /// (cycle ledger only; the drawing is identical for every entry).
+    pub(super) fn sprite_draw_multiple_from(
+        &mut self,
+        k: usize,
+        src: &[DrawMultipleData],
+        entry: DrawMultipleEntry,
+    ) -> PrepOamCoordsRet {
+        let wrapper = (entry == DrawMultipleEntry::Bank1d).then(|| {
+            // Sprite_DrawMultiple__ $1D:8549 (JSR target): JSL $05:DF6C (62)
+            // ... RTS (42).
+            let scope = crate::cycle_ledger::routine(0x1d_8549);
+            crate::cycle_ledger::charge(62);
+            scope
+        });
+        let prepared = {
+            let _scope = self.sprite_draw_multiple_entry_scope(entry);
+            let (prepared, drawable) = self.sprite_prepare_draw_multiple(k);
+            self.sprite_draw_multiple_body(
                 k,
-                src.iter().map(|entry| DrawMultipleWordData {
-                    x: entry.x as i16 as u16,
-                    y: entry.y as i16 as u16,
-                    char_flags: entry.char_flags,
-                    ext: entry.ext,
+                src.iter().map(|record| DrawMultipleWordData {
+                    x: record.x as i16 as u16,
+                    y: record.y as i16 as u16,
+                    char_flags: record.char_flags,
+                    ext: record.ext,
                 }),
-                info,
+                drawable,
             );
+            prepared
+        };
+        if wrapper.is_some() {
+            crate::cycle_ledger::charge(42);
         }
+        drop(wrapper);
         prepared
+    }
+
+    /// Cycle ledger: the Sprite_DrawMultiple scope `entry` opens, with its
+    /// entry blocks charged. `Direct` (and the bank-$1D wrapper) enter at
+    /// $05:DF6C STA $06 : STZ $07 (48); every entry then runs $05:DF70 JSR
+    /// Sprite_DrawMultiple_prep_oam : BRA $DF78 (46 + 22) — off screen the
+    /// prologue's double return lands on that BRA too.
+    #[must_use = "bind the scope to a local so it lives until the draw returns"]
+    fn sprite_draw_multiple_entry_scope(
+        &self,
+        entry: DrawMultipleEntry,
+    ) -> crate::cycle_ledger::RoutineScope {
+        match entry {
+            DrawMultipleEntry::Direct | DrawMultipleEntry::Bank1d => {
+                let scope = crate::cycle_ledger::routine(0x05_df6c);
+                crate::cycle_ledger::charge(48 + 46 + 22);
+                scope
+            }
+            DrawMultipleEntry::R6 => {
+                let scope = crate::cycle_ledger::routine(0x05_df70);
+                crate::cycle_ledger::charge(46 + 22);
+                scope
+            }
+        }
+    }
+
+    /// The tail of Sprite_DrawMultiple after its prologue returned: $05:DF78
+    /// BCS (16; taken +6 into the $05:DFE4 RTL, 44, when the sprite is off
+    /// screen), else $05:DF7A-DF80 PHX, REP #$30, LDY #0, LDX $0090 (108), the
+    /// per-entry loop, $05:DFE1 SEP #$30 : PLX (50) and the RTL (44).
+    fn sprite_draw_multiple_body(
+        &mut self,
+        k: usize,
+        src: impl IntoIterator<Item = DrawMultipleWordData>,
+        drawable: Option<(u16, u16, u8)>,
+    ) {
+        let Some(info) = drawable else {
+            crate::cycle_ledger::charge(16 + 6 + 44);
+            return;
+        };
+        crate::cycle_ledger::charge(16 + 108);
+        self.sprite_draw_multiple_words_with_info_charged(k, src, info, true);
+        crate::cycle_ledger::charge(50 + 44);
     }
 
     /// The prepared coordinates, and the draw triple when the sprite is on
@@ -9489,7 +9584,44 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         &mut self,
         k: usize,
     ) -> (PrepOamCoordsRet, Option<(u16, u16, u8)>) {
+        self.sprite_prepare_draw_multiple_from(k, false)
+    }
+
+    /// Sprite_DrawMultiple_prep_oam $05:DFE9 (a JSR target, m8 x8); with
+    /// `deferred` the entry is Sprite_DrawMultiple_prep_oam_deferred
+    /// $05:DFE5, which first JSLs OAM_AllocateDeferToPlayer_ (62; the callee
+    /// charges its own body) and falls through. JSR $05:FA50 (46) preps the
+    /// coordinates; off screen its double return leaves the prologue
+    /// through the wrapper. On screen: $05:DFEC-DFF8 PHP, STZ $0CFE, STZ
+    /// $0CFF, LDA $DD0,x, CMP #$0A, BNE (150; state 10 loads $7FFA2C,x, 40,
+    /// else the BNE is taken +6), $05:DFFE CMP #$0B : BNE (32; state 11
+    /// stores $7FFA3C,x into $0CFE, 72, else +6), $05:E009 PLP : RTS (70).
+    fn sprite_prepare_draw_multiple_from(
+        &mut self,
+        k: usize,
+        deferred: bool,
+    ) -> (PrepOamCoordsRet, Option<(u16, u16, u8)>) {
+        let _scope = crate::cycle_ledger::routine(if deferred { 0x05_dfe5 } else { 0x05_dfe9 });
+        if deferred {
+            crate::cycle_ledger::charge(62);
+            self.oam_allocate_defer_to_player(k);
+        }
+        crate::cycle_ledger::charge(46);
         let (prepped, out_of_bounds) = self.sprite_prep_oam_coord_or_double_ret_raw_from(k, PrepOamCoordEntry::Bank5DoubleRet);
+        if !out_of_bounds {
+            let state = self.sprite_slot_view(k).state();
+            let priority_state = if state == 10 {
+                self.sprite_slot_view(k).draw_work_byte_4()
+            } else {
+                state
+            };
+            crate::cycle_ledger::charge(
+                150 + if state == 10 { 40 } else { 6 }
+                    + 32
+                    + if priority_state == 11 { 72 } else { 6 }
+                    + 70,
+            );
+        }
         let prepared = PrepOamCoordsRet {
             x: prepped.x,
             y: prepped.y,
@@ -9507,28 +9639,30 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         k: usize,
         records: &[[u8; 8]],
     ) -> PrepOamCoordsRet {
+        // Cycle ledger: the `Direct` entry (JSL $05:DF6C).
+        let _scope = self.sprite_draw_multiple_entry_scope(DrawMultipleEntry::Direct);
         let (prepared, drawable) = self.sprite_prepare_draw_multiple(k);
-        if let Some(info) = drawable {
-            self.sprite_draw_multiple_words_with_info(
-                k,
-                records.iter().map(|bytes| DrawMultipleWordData {
-                    x: u16::from_le_bytes([bytes[0], bytes[1]]),
-                    y: u16::from_le_bytes([bytes[2], bytes[3]]),
-                    char_flags: u16::from_le_bytes([bytes[4], bytes[5]]),
-                    ext: bytes[7],
-                }),
-                info,
-            );
-        }
+        self.sprite_draw_multiple_body(
+            k,
+            records.iter().map(|bytes| DrawMultipleWordData {
+                x: u16::from_le_bytes([bytes[0], bytes[1]]),
+                y: u16::from_le_bytes([bytes[2], bytes[3]]),
+                char_flags: u16::from_le_bytes([bytes[4], bytes[5]]),
+                ext: bytes[7],
+            }),
+            drawable,
+        );
         prepared
     }
 
     /// Draw the ROM's native eight-byte `DrawMultipleData` records after a
-    /// 16-bit table-address calculation has wrapped into low WRAM.
+    /// 16-bit table-address calculation has wrapped into low WRAM, entering
+    /// Sprite_DrawMultiple at `entry` (cycle ledger only).
     pub(super) fn sprite_draw_multiple_from_wram_records<const N: usize>(
         &mut self,
         k: usize,
         source: u16,
+        entry: DrawMultipleEntry,
     ) -> PrepOamCoordsRet {
         let mut cursor = source;
         let entries: [DrawMultipleWordData; N] = std::array::from_fn(|_| {
@@ -9545,10 +9679,22 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             cursor = cursor.wrapping_add(8);
             entry
         });
-        let (prepared, drawable) = self.sprite_prepare_draw_multiple(k);
-        if let Some(info) = drawable {
-            self.sprite_draw_multiple_words_with_info(k, entries, info);
+        let wrapper = (entry == DrawMultipleEntry::Bank1d).then(|| {
+            // Sprite_DrawMultiple__ $1D:8549: JSL $05:DF6C (62) ... RTS (42).
+            let scope = crate::cycle_ledger::routine(0x1d_8549);
+            crate::cycle_ledger::charge(62);
+            scope
+        });
+        let prepared = {
+            let _scope = self.sprite_draw_multiple_entry_scope(entry);
+            let (prepared, drawable) = self.sprite_prepare_draw_multiple(k);
+            self.sprite_draw_multiple_body(k, entries, drawable);
+            prepared
+        };
+        if wrapper.is_some() {
+            crate::cycle_ledger::charge(42);
         }
+        drop(wrapper);
         prepared
     }
 
@@ -9561,7 +9707,9 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         src: &[DrawMultipleData],
         info: (u16, u16, u8),
     ) {
-        self.sprite_draw_multiple_words_with_info(
+        // Not charged: the callers own a different ROM entry (they prepped
+        // the coordinates themselves).
+        self.sprite_draw_multiple_words_with_info_charged(
             k,
             src.iter().map(|entry| DrawMultipleWordData {
                 x: entry.x as i16 as u16,
@@ -9570,14 +9718,22 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 ext: entry.ext,
             }),
             info,
+            false,
         );
     }
 
-    fn sprite_draw_multiple_words_with_info(
+    /// The Sprite_DrawMultiple entry loop. With `ledger`, each entry charges
+    /// $05:DF83-DFA1 (454; the BCC is taken +6 when y + $10 < $100, else
+    /// $05:DFA3 LDA #$F0 : STA $1,x, 70), $05:DFA9-DFB5 (194; BCC taken +6
+    /// when the priority override is 0, else $05:DFB7-DFBA, 48) and
+    /// $05:DFBD-DFDF (540; the closing BNE is taken +6 before every entry
+    /// but the first).
+    fn sprite_draw_multiple_words_with_info_charged(
         &mut self,
         k: usize,
         src: impl IntoIterator<Item = DrawMultipleWordData>,
         info: (u16, u16, u8),
+        ledger: bool,
     ) {
         let (info_x, info_y, info_flags) = info;
         // r4 is always 0 in C's Sprite_PrepOamCoordOrDoubleRet (sprite.c:1843).
@@ -9594,13 +9750,27 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         }
         let mut oam = self.game_state.oam.current_pointer_usize();
         let combined_flags = (u16::from(info_flags) << 8) | u16::from(info_r4);
+        let mut first = true;
         for entry in src {
             let mut d = entry.char_flags ^ combined_flags;
-            if self.game_state.sprites.workspace.draw_priority_override() >= 1 {
+            let override_active =
+                self.game_state.sprites.workspace.draw_priority_override() >= 1;
+            if override_active {
                 d = (d & !0x0e00) | 0x0400;
             }
             let x = info_x.wrapping_add(entry.x);
             let y = info_y.wrapping_add(entry.y);
+            if ledger {
+                crate::cycle_ledger::charge(
+                    if first { 0 } else { 6 }
+                        + 454
+                        + if y.wrapping_add(0x10) < 0x100 { 6 } else { 70 }
+                        + 194
+                        + if override_active { 48 } else { 6 }
+                        + 540,
+                );
+            }
+            first = false;
             self.set_oam_helper0_at(oam, x, y, d as u8, (d >> 8) as u8, entry.ext);
             oam += 4;
         }
@@ -9615,8 +9785,24 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         k: usize,
         src: &[DrawMultipleData],
     ) -> PrepOamCoordsRet {
-        self.oam_allocate_defer_to_player(k);
-        self.sprite_draw_multiple(k, src)
+        // Cycle ledger: Sprite_DrawMultiplePlayerDeferred $05:DF75 (JSL
+        // target): JSR Sprite_DrawMultiple_prep_oam_deferred (46), whose
+        // prologue allocates the deferred OAM region before the shared
+        // coordinate prep, then the shared $05:DF78 tail.
+        let _scope = crate::cycle_ledger::routine(0x05_df75);
+        crate::cycle_ledger::charge(46);
+        let (prepared, drawable) = self.sprite_prepare_draw_multiple_from(k, true);
+        self.sprite_draw_multiple_body(
+            k,
+            src.iter().map(|record| DrawMultipleWordData {
+                x: record.x as i16 as u16,
+                y: record.y as i16 as u16,
+                char_flags: record.char_flags,
+                ext: record.ext,
+            }),
+            drawable,
+        );
+        prepared
     }
 
     fn sprite_single_draw_char(&self, k: usize) -> u8 {

@@ -5414,38 +5414,87 @@ impl ZeldaState {
     }
 
     pub(super) fn OrientLampLightCone(&mut self) {
-        if !self.game_state.dungeon.torch.dungeon_dark_with_lantern()
-            || self.game_state.frame.submodule == 20
-        {
+        // Cycle ledger: OrientLampLightCone $00:F567 (JSL target, m8 x8).
+        // $00:F567 LDA $0458 : BEQ (48; taken +6 into the $00:F566 RTL, 44,
+        // without the lantern), $00:F56C LDA $11 : CMP #$14 : BEQ (56; taken
+        // +6 into the same RTL in submodule $14).
+        let _scope = crate::cycle_ledger::routine(0x00_f567);
+        let dark_with_lantern = self.game_state.dungeon.torch.dungeon_dark_with_lantern();
+        let lamp_submodule = self.game_state.frame.submodule == 20;
+        crate::cycle_ledger::charge(if !dark_with_lantern {
+            48 + 6 + 44
+        } else if lamp_submodule {
+            48 + 56 + 6 + 44
+        } else {
+            48 + 56
+        });
+        if !dark_with_lantern || lamp_submodule {
             return;
         }
 
+        // $00:F572-F581 REP #$30, the facing load into $00 and X, LDA $6C,
+        // AND #$00FF, BEQ (196; taken +6 with no doorway).
+        crate::cycle_ledger::charge(196);
         let a = self.game_state.player.follower_link.facing() >> 1;
         let mut idx = a;
         if self.game_state.player.follower_link.doorway_state() != 0 {
             idx = self.game_state.player.follower_link.doorway_state() & 0xfe;
+            // $00:F583 AND #$00FE : ASL : TAX : BEQ (68; taken +6 for a
+            // zero doorway index).
             if idx != 0 {
+                // $00:F58A LDA $00 : CMP #$0004 : BCS (72); facing up/down
+                // runs $00:F591-F59A the x + 8 low byte and BRA (116) into
+                // $00:F5AB CMP #$0080 : BCC (40; taken +6 below $80, else
+                // $00:F5B0 INX : INX, 28). Facing left/right takes the BCS
+                // (+6) into $00:F59C TAX : BRA (36).
                 if a < 2 {
-                    idx = idx.wrapping_add(u8::from(
-                        self.game_state.player.follower_link.x().wrapping_add(8) as u8 >= 0x80,
-                    ));
+                    let far = self.game_state.player.follower_link.x().wrapping_add(8) as u8 >= 0x80;
+                    crate::cycle_ledger::charge(68 + 72 + 116 + 40 + if far { 28 } else { 6 });
+                    idx = idx.wrapping_add(u8::from(far));
                 } else {
+                    crate::cycle_ledger::charge(68 + 72 + 6 + 36);
                     idx = a;
                 }
             } else if a >= 2 {
-                idx = idx.wrapping_add(u8::from(
-                    self.game_state.player.follower_link.y() as u8 >= 0x80,
-                ));
+                // BEQ taken (+6) into $00:F59F LDA $00 : CMP #$0004 : BCC
+                // (72); facing left/right runs $00:F5A6 LDA $20 : AND #$00FF
+                // (56) into the $00:F5AB test (40; +6 below $80, else 28).
+                let far = self.game_state.player.follower_link.y() as u8 >= 0x80;
+                crate::cycle_ledger::charge(68 + 6 + 72 + 56 + 40 + if far { 28 } else { 6 });
+                idx = idx.wrapping_add(u8::from(far));
             } else {
+                // The $00:F5A4 BCC taken (+6) into $00:F59C TAX : BRA (36).
+                crate::cycle_ledger::charge(68 + 6 + 72 + 6 + 36);
                 idx = a;
             }
+        } else {
+            crate::cycle_ledger::charge(6);
         }
 
         let idx = idx as usize;
+        // $00:F5B2 CPX #$0004 : BCS (40; taken +6 into $00:F600 for a
+        // left/right cone).
+        crate::cycle_ledger::charge(40);
         if idx >= 4 {
             return;
         }
 
+        // Either cone: the scroll arithmetic ending BPL (656; a negative
+        // total runs LDA #$0000, 24, else the BPL is taken +6), CMP the
+        // clamp : BCC (64; below the clamp takes it +6, else the clamp is
+        // loaded, 48), then the baseline subtraction, the store, SEP #$30
+        // and RTL (160): $00:F5B7-F5FF for the up/down cone, $00:F600-F648
+        // for the left/right cone.
+        let charge_clamp = |t: u16, clamp: u16| {
+            let negative = (t as i16) < 0;
+            let clamped_low = if negative { 0 } else { t };
+            crate::cycle_ledger::charge(
+                656 + if negative { 24 } else { 6 }
+                    + 64
+                    + if clamped_low < clamp { 6 } else { 48 }
+                    + 160,
+            );
+        };
         if idx < 2 {
             let h = self
                 .game_state
@@ -5465,11 +5514,13 @@ impl ZeldaState {
                 .wrapping_add(ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_BG1_Y_BASE_OFFSETS[idx])
                 .wrapping_add(ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_SCROLL_ADJUSTMENTS[idx] as u16)
                 .wrapping_add(ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_SCROLL_BASELINES[idx] as u16);
+            charge_clamp(t, ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_SCROLL_CLAMPS[idx]);
             let t = clamp_c_int16_to_u16(t, ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_SCROLL_CLAMPS[idx]);
             self.set_bg1_v_copy2(
                 t.wrapping_sub(ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_SCROLL_BASELINES[idx] as u16),
             );
         } else {
+            crate::cycle_ledger::charge(6);
             let v = self
                 .game_state
                 .display
@@ -5488,6 +5539,7 @@ impl ZeldaState {
                 .wrapping_add(ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_BG1_X_BASE_OFFSETS[idx])
                 .wrapping_add(ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_SCROLL_ADJUSTMENTS[idx] as u16)
                 .wrapping_add(ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_SCROLL_BASELINES[idx] as u16);
+            charge_clamp(t, ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_SCROLL_CLAMPS[idx]);
             let t = clamp_c_int16_to_u16(t, ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_SCROLL_CLAMPS[idx]);
             self.set_bg1_h_copy2(
                 t.wrapping_sub(ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_SCROLL_BASELINES[idx] as u16),
@@ -14537,8 +14589,11 @@ impl ZeldaState {
     }
 
     pub(super) fn dungeon_push_block_handler(&mut self) {
-        // Not annotated yet: counted as a silent call for the ledger prefix.
-        let _probe = crate::cycle_ledger::probe_annotation();
+        // Cycle ledger: Dungeon_PushBlock_Handler $01:D81B (JSL target, m8
+        // x8 entry). The loop and its exit are charged by the body below; a
+        // resumed lane (`dungeon_push_block_handler_until`) charges into
+        // its own open scope.
+        let _scope = crate::cycle_ledger::routine(0x01_d81b);
         self.dungeon_push_block_handler_until(u16::MAX);
     }
 
@@ -14549,10 +14604,17 @@ impl ZeldaState {
             != self.game_state.dungeon.torch.torches_start_index()
             && self.game_state.dungeon.object_tracking.misc_object_index() < limit
         {
+            // $01:D81B REP #$30, LDY $042C, CPY $0478, BNE (118; taken +6
+            // into PushBlock_Main $01:D7C8 LDA $0500,y : BEQ, 62).
+            crate::cycle_ledger::charge(118 + 6 + 62);
             let obj = self.game_state.dungeon.object_tracking.misc_object_index();
             let k = usize::from(obj >> 1);
             let record = self.game_state.dungeon.object_tracking.object_record(k);
             if record == ObjectRecord::PUSHED {
+                // $01:D7CD CMP #$0001 : BNE (40), $01:D7D2-D7E3 JSR
+                // RoomDraw_16x16Single, the tilemap-position advance, BRA
+                // (262), $01:D80F LDX $042C : INC $0500,x (108).
+                crate::cycle_ledger::charge(40 + 262 + 108);
                 self.RoomDraw_16x16Single(obj as u8);
                 let dir = self.game_state.player.pushed_block.push_direction_index();
                 let pos = self
@@ -14566,19 +14628,40 @@ impl ZeldaState {
                 self.dungeon_object_tracking_mut()
                     .set_object_record(k, ObjectRecord::SLIDING);
             } else if record == ObjectRecord::SLIDING {
+                // $01:D7CD BNE taken (+6), $01:D7E5 CMP #$0002 : BNE (40),
+                // $01:D7EA-D7FB SEP, JSL PushBlock_Slide, REP, the record
+                // reload, CMP #$0003, BNE (232); an arrival runs $01:D7FD JSR
+                // PushBlock_CheckForPit : BRA (68) and $01:D80F (108), else
+                // the BNE is taken (+6).
+                crate::cycle_ledger::charge(40 + 6 + 40 + 232);
                 self.PushBlock_Slide(obj as u8);
                 let obj = self.game_state.dungeon.object_tracking.misc_object_index();
                 let k = usize::from(obj >> 1);
                 if self.game_state.dungeon.object_tracking.object_record(k) == ObjectRecord::ARRIVED
                 {
+                    crate::cycle_ledger::charge(68 + 108);
                     // A landing on a plate or a hole rewrites the record
                     // before this advance, so a vanished block wraps to idle.
                     self.PushBlock_CheckForPit(obj as u8);
                     self.dungeon_object_tracking_mut().advance_object_record(k);
+                } else {
+                    crate::cycle_ledger::charge(6);
                 }
             } else if record == ObjectRecord::FALLING {
+                // Two taken BNEs (+6 each), $01:D802 CMP #$0004 : BNE (40),
+                // $01:D807 SEP, JSL PushBlock_HandleFalling, BRA (106).
+                crate::cycle_ledger::charge(40 + 6 + 40 + 6 + 40 + 106);
                 self.PushBlock_HandleFalling(obj as u8);
+            } else if record == ObjectRecord::IDLE_PUSH_BLOCK {
+                // The $01:D7CB BEQ taken (+6) straight to $01:D815.
+                crate::cycle_ledger::charge(6);
+            } else {
+                // Every other record falls through the three compares with
+                // their BNEs taken.
+                crate::cycle_ledger::charge(40 + 6 + 40 + 6 + 40 + 6);
             }
+            // $01:D815 INC $042C : INC $042C (124), back to the loop head.
+            crate::cycle_ledger::charge(124);
             let next = self
                 .game_state
                 .dungeon
@@ -14587,6 +14670,13 @@ impl ZeldaState {
                 .wrapping_add(2);
             self.dungeon_object_tracking_mut()
                 .set_misc_object_index(next);
+        }
+        if self.game_state.dungeon.object_tracking.misc_object_index()
+            == self.game_state.dungeon.torch.torches_start_index()
+        {
+            // The loop head with the BNE not taken (118) and $01:D825 SEP
+            // #$30 : RTL (66).
+            crate::cycle_ledger::charge(118 + 66);
         }
     }
 
