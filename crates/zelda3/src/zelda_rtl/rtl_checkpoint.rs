@@ -432,6 +432,25 @@ impl ZeldaState {
                     && !spotlight_projection_waits_for_staged_publication
             })
             .map(|_| self.hdma_dynamic_table_bytes());
+        let spotlight_table_before_copy = matches!(
+            self.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishDungeonExitSpotlightBuild {
+                projection_completed: false,
+                ..
+            })
+        )
+        .then(|| {
+            // $F383/$F392 write the working table, not the hardware table.
+            // Until $F3B7 copies it, HDMA consumes the preceding completed
+            // table. The C translation retains that copy in the reserved
+            // buffer; its dynamic buffer may already hold partial new rows.
+            let mut table = self.hdma_dynamic_table_bytes();
+            let visible_bytes = SPOTLIGHT_VISIBLE_SCANLINES * 2;
+            table[..visible_bytes].copy_from_slice(
+                &self.ram[RESERVED_HDMA_TABLE..RESERVED_HDMA_TABLE + visible_bytes],
+            );
+            table
+        });
         let mixed_spotlight_after_projection = spotlight_iteration
             .filter(|iteration| iteration.phase == SpotlightIterationPhase::MixedTailAfterReturn)
             .map(|_| spotlight_hdma_tables_from_ram(&self.ram));
@@ -467,7 +486,7 @@ impl ZeldaState {
         })
         .flatten();
         self.capture_display_snapshot_with_publication(publication);
-        if let Some(active_table) = hdma_table_published_ahead {
+        if let Some(active_table) = spotlight_table_before_copy.or(hdma_table_published_ahead) {
             self.publish_completed_spotlight_hdma_table_to_active_scanout(active_table);
         }
         if let (Some(after_projection), Some(display)) = (

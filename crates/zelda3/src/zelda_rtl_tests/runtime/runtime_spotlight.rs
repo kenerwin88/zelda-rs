@@ -4,6 +4,60 @@
 use super::*;
 
 #[test]
+fn unfinished_spotlight_rows_do_not_replace_the_published_hardware_table() {
+    // Original runs 4784-4786 display the completed radius-126 table while
+    // the next radius-119 table is being built. $F383/$F392 only author the
+    // work buffer; $F3B7-$F3C3 is the later hardware-table copy.
+    for authoritative_scanout in [false, true] {
+        let mut state = ZeldaState::new();
+        state.set_rom_startup_timing(true);
+        state.set_main_module(0x0f);
+        state.set_submodule(1);
+        state.follower_link_state_mut().set_y(226);
+        state.follower_link_state_mut().set_x(120);
+        state.set_bg2_v_copy2(0);
+        state.set_bg2_h_copy2(0);
+        state.IrisSpotlight_close();
+        let published = state.hdma_dynamic_table_bytes();
+        // Source window-1 rows at center (128,238), captured from Snes9x.
+        assert_eq!(&published[226..232], &[255, 0, 84, 172, 74, 182]);
+        let table_build = state.begin_iris_spotlight_configure_table(218);
+        let working = state.hdma_dynamic_table_bytes();
+        assert_ne!(working, published);
+        state.game_execution_scheduler.schedule_work(
+            GameWorkContinuation::FinishDungeonExitSpotlightBuild {
+                table_build,
+                projection_completed: false,
+                iteration: SpotlightIteration::closing(SpotlightIterationPhase::WholeTable),
+            },
+            1,
+        );
+        // An instruction-timed scanout, when present, must retain priority
+        // over the whole-table fallback even during an unfinished build.
+        let exact_words = [0xa040; SPOTLIGHT_VISIBLE_SCANLINES];
+        if authoritative_scanout {
+            state.next_display_spotlight_scanout = Some(
+                LiveSpotlightScanout::capture(&state)
+                    .with_authoritative_rom_hdma_words(&exact_words),
+            );
+        }
+        state.capture_display_snapshot_with_override(Some(DisplaySnapshotPublication::PublishCaptured));
+        let displayed = state.display_snapshot.as_ref().unwrap().effective_spotlight_hdma_tables();
+        let expected = if authoritative_scanout {
+            exact_words.iter().flat_map(|word| word.to_le_bytes()).collect::<Vec<_>>()
+        } else {
+            published[..448].to_vec()
+        };
+        assert_eq!(&displayed[0][..448], &expected);
+        assert_eq!(state.hdma_dynamic_table_bytes(), working, "presentation must not undo CPU work");
+        assert_eq!(
+            &state.ram[RESERVED_HDMA_TABLE..RESERVED_HDMA_TABLE + 448],
+            &published[..448],
+        );
+    }
+}
+
+#[test]
 fn spotlight_cpu_checkpoints_preserve_the_source_frame_counter_phase() {
     // Cold Snes9x runs 4782 and 11443 enter $02:9982 with $1A=176 and
     // 168 respectively, after INC $1A at $00:8051. Module10's checkpoint
