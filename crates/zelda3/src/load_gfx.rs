@@ -3222,15 +3222,109 @@ impl ZeldaState {
         self.increment_cgram_update_flag();
     }
 
+    /// `ApplyPaletteFilter` (`$00:E914`) cycle ledger, entry through the
+    /// `JSR FilterColors`: `$e914-$e920` (134; `BCC $e924` taken +6 while
+    /// the countdown is below `$10`, else `$e922-$e923` `INX INX` 28 selects
+    /// the second filtering-bits row) and `$e924-$e94a` (600: pointer, mask
+    /// and delta setup, `LDX #$0040`, `JSR $e9e4`; the first 600 cycles of
+    /// the listing's 896-cycle block, whose remaining 296 are color 0 after
+    /// the call, see `charge_apply_palette_filter_color0`).
+    fn charge_apply_palette_filter_entry(&self) {
+        let countdown = self.game_state.display.palette_filter.countdown_word();
+        if countdown < 0x10 {
+            crate::cycle_ledger::charge(134 + 6);
+        } else {
+            crate::cycle_ledger::charge(134 + 28);
+        }
+        crate::cycle_ledger::charge(600);
+    }
+
+    /// `ApplyPaletteFilter` cycle ledger for color 0, which the ROM filters
+    /// inline after `FilterColors` returns (no zero-aux shortcut):
+    /// `$e94d-$e961` (296, the tail of the listing's 896-cycle block: load
+    /// color 0, red lookup, `BNE $e969`), then per channel either the add
+    /// block or the taken branch that skips it (red `$e963-$e967` 96; green
+    /// lookup `$e969-$e978` 230 and add `$e97a-$e97e` 96; blue lookup
+    /// `$e980-$e98c` 188 and add `$e98e-$e993` 110). Priced from the same
+    /// table lookups `PaletteTransform::FilterRangeStep` applies.
+    fn charge_apply_palette_filter_color0(&self) {
+        let countdown = self.game_state.display.palette_filter.countdown_word();
+        let aux = self.game_state.display.palette_buffer.aux_color(0);
+        let work = zelda3_palette::filter_range_step_work(aux, countdown);
+        crate::cycle_ledger::charge(296 + if work.red_steps { 96 } else { 6 });
+        crate::cycle_ledger::charge(230 + if work.green_steps { 96 } else { 6 });
+        crate::cycle_ledger::charge(188 + if work.blue_steps { 110 } else { 6 });
+    }
+
+    /// `FilterColors` (`$00:E9E4`) cycle ledger for colors `from..to` of the
+    /// ROM loop (`X` = index * 2 from `$40` to `$1B0`, then `$1C0` to `$1E0`),
+    /// priced per color from the data the ROM branches on (the aux word and
+    /// the filter countdown) through the same table lookups
+    /// `PaletteTransform::FilterRangeStep` applies. The caller owns the
+    /// `$00:E9E4` routine scope; `from..to` must lie inside the loop's two
+    /// index ranges.
+    fn charge_filter_colors_range(&self, from: usize, to: usize) {
+        let countdown = self.game_state.display.palette_filter.countdown_word();
+        for index in from..to {
+            let aux = self.game_state.display.palette_buffer.aux_color(index);
+            let work = zelda3_palette::filter_range_step_work(aux, countdown);
+            if work.aux_nonzero {
+                // $e9e4-$e9ee: load main and aux, `BEQ $ea34` not taken.
+                crate::cycle_ledger::charge(144);
+                // $e9f0-$e9fa red lookup (168); `BNE $ea02` taken (+6) skips
+                // the $e9fc-$ea00 add (96).
+                crate::cycle_ledger::charge(168 + if work.red_steps { 96 } else { 6 });
+                // $ea02-$ea11 green lookup (230); $ea13-$ea17 add (96).
+                crate::cycle_ledger::charge(230 + if work.green_steps { 96 } else { 6 });
+                // $ea19-$ea25 blue lookup (188); $ea27-$ea2c add (110).
+                crate::cycle_ledger::charge(188 + if work.blue_steps { 110 } else { 6 });
+                // $ea2e-$ea30: store the color.
+                crate::cycle_ledger::charge(80);
+            } else {
+                // $e9e4-$e9ee with `BEQ $ea34` taken: a zero aux word is skipped.
+                crate::cycle_ledger::charge(144 + 6);
+            }
+            // $ea34-$ea39: INX INX, CPX #$01b0, BCC (68).
+            match index {
+                // `BCC $e9e4` taken back to the loop while X < $1b0.
+                0x20..=0xd6 => crate::cycle_ledger::charge(68 + 6),
+                // X == $1b0: `BNE $ea43` not taken (16), $ea3d-$ea42 steps X
+                // to $1c0 (66), $ea43-$ea46 CPX #$01e0 with BNE taken (40 + 6).
+                0xd7 => crate::cycle_ledger::charge(68 + 16 + 66 + 40 + 6),
+                // X > $1b0: `BNE $ea43` taken (16 + 6), $ea43-$ea46 CPX #$01e0
+                // with BNE taken (40 + 6).
+                0xe0..=0xee => crate::cycle_ledger::charge(68 + 22 + 46),
+                // X == $1e0: `BNE $ea43` taken (22), CPX #$01e0 with BNE not
+                // taken (40), `RTS` (42).
+                0xef => crate::cycle_ledger::charge(68 + 22 + 40 + 42),
+                _ => unreachable!("FilterColors filters colors $20-$D7 and $E0-$EF"),
+            }
+        }
+    }
+
     pub(super) fn apply_palette_filter_bounce(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x00_e914);
+        self.charge_apply_palette_filter_entry();
         self.palette_filter_range(0, 1);
+        // `JSR $e9e4 FilterColors` covers colors $20-$D7 and $E0-$EF.
+        let filter_colors = crate::cycle_ledger::routine(0x00_e9e4);
+        self.charge_filter_colors_range(0x20, 0xd8);
         self.palette_filter_range(0x20, 0xd8);
+        self.charge_filter_colors_range(0xe0, 0xf0);
         self.palette_filter_range(0xe0, 0xf0);
+        drop(filter_colors);
+        // $e94d-$e993: color 0, filtered after `FilterColors` returns.
+        self.charge_apply_palette_filter_color0();
         self.complete_apply_palette_filter_bounce_after_ranges();
     }
 
     pub(super) fn apply_palette_filter_bounce_through_direction_toggle(&mut self) {
-        self.apply_palette_filter_bounce_prefix(0xf0);
+        // One `ApplyPaletteFilter` entry: the prefix body runs inside this
+        // scope so the host records a single call.
+        let _scope = crate::cycle_ledger::routine(0x00_e914);
+        self.apply_palette_filter_bounce_prefix_slices(0xf0);
+        // $e94d-$e993: color 0, filtered after `FilterColors` returns.
+        self.charge_apply_palette_filter_color0();
         let countdown = self.game_state.display.palette_filter.countdown_word();
         let direction = self
             .game_state
@@ -3239,6 +3333,9 @@ impl ZeldaState {
             .darkening_or_lightening_screen_word();
         let target = u16::from(self.game_state.display.mosaic_target_level);
         if direction == 0 {
+            // $e995-$e9a0 (172, `BNE $e9cc` not taken) and $e9a2-$e9af (174,
+            // `BNE $e9c7` not taken: the countdown reaches its target).
+            crate::cycle_ledger::charge(172 + 174);
             let next = countdown.wrapping_add(1);
             assert_eq!(
                 next, target,
@@ -3246,15 +3343,25 @@ impl ZeldaState {
             );
             self.set_countdown_word(next);
         } else {
+            // $e995-$e9a0 with `BNE $e9cc` taken (172 + 6) and $e9cc-$e9d4 with
+            // `BEQ $e9b1` taken (112 + 6).
+            crate::cycle_ledger::charge(172 + 6 + 112 + 6);
             assert_eq!(
                 countdown, target,
                 "source palette direction toggle requires its terminal countdown"
             );
         }
+        // $e9b1-$e9b8: direction toggle load, EOR, store (120). The NMI
+        // interrupts before the countdown reset, which the completion charges.
+        crate::cycle_ledger::charge(120);
         self.set_darkening_or_lightening_screen_word(direction ^ 2);
     }
 
     pub(super) fn complete_apply_palette_filter_bounce_after_direction_toggle(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x00_e914);
+        // $e9bc-$e9c5: LDA #0, countdown store, SEP #$20, INC $b0 (132) and
+        // $e9c7-$e9cb: SEP #$30, INC $15, RTL (104).
+        crate::cycle_ledger::charge(132 + 104);
         self.set_countdown_word(0);
         self.increment_subsubmodule();
         self.increment_cgram_update_flag();
@@ -3267,29 +3374,57 @@ impl ZeldaState {
     }
 
     pub(super) fn apply_palette_filter_bounce_prefix(&mut self, next_color: u8) {
+        let _scope = crate::cycle_ledger::routine(0x00_e914);
+        self.apply_palette_filter_bounce_prefix_slices(next_color);
+    }
+
+    /// The prefix body without its `ApplyPaletteFilter` ledger scope, for the
+    /// caller that continues the same source call in this host
+    /// (`apply_palette_filter_bounce_through_direction_toggle`).
+    fn apply_palette_filter_bounce_prefix_slices(&mut self, next_color: u8) {
         assert!(Self::valid_apply_palette_filter_next_color(next_color));
+        self.charge_apply_palette_filter_entry();
+        // The ROM filters color 0 after `FilterColors` returns, so its
+        // $e94d-$e993 cost belongs to the completion, whichever slice
+        // computes the color here.
         if next_color > 0 {
             self.palette_filter_range(0, 1);
         }
+        // `JSR $e9e4 FilterColors` is entered once the prefix reaches color $20.
+        let _filter_colors =
+            (next_color > 0x20).then(|| crate::cycle_ledger::routine(0x00_e9e4));
         if next_color > 0x20 {
+            self.charge_filter_colors_range(0x20, usize::from(next_color.min(0xd8)));
             self.palette_filter_range(0x20, usize::from(next_color.min(0xd8)));
         }
         if next_color > 0xe0 {
+            self.charge_filter_colors_range(0xe0, usize::from(next_color.min(0xf0)));
             self.palette_filter_range(0xe0, usize::from(next_color.min(0xf0)));
         }
     }
 
     pub(super) fn complete_apply_palette_filter_bounce_from(&mut self, next_color: u8) {
         assert!(Self::valid_apply_palette_filter_next_color(next_color));
+        // The resumed `ApplyPaletteFilter` call; the profile counts the
+        // resumed tail as its own call on this host.
+        let _scope = crate::cycle_ledger::routine(0x00_e914);
         if next_color == 0 {
             self.palette_filter_range(0, 1);
         }
+        // The resumed `FilterColors` loop, when colors below $F0 remain.
+        let filter_colors =
+            (next_color < 0xf0).then(|| crate::cycle_ledger::routine(0x00_e9e4));
         if next_color <= 0xd8 {
+            self.charge_filter_colors_range(usize::from(next_color.max(0x20)), 0xd8);
             self.palette_filter_range(usize::from(next_color.max(0x20)), 0xd8);
         }
         if next_color <= 0xf0 {
+            self.charge_filter_colors_range(usize::from(next_color.max(0xe0)), 0xf0);
             self.palette_filter_range(usize::from(next_color.max(0xe0)), 0xf0);
         }
+        drop(filter_colors);
+        // $e94d-$e993: color 0, filtered after `FilterColors` returns.
+        self.charge_apply_palette_filter_color0();
         self.complete_apply_palette_filter_bounce_after_ranges();
     }
 
@@ -3305,17 +3440,33 @@ impl ZeldaState {
             .darkening_or_lightening_screen_word()
             == 0
         {
+            // $e995-$e9a0: store color 0, PLB, direction test with `BNE $e9cc`
+            // not taken (172); $e9a2-$e9af: increment the countdown and
+            // compare it with the target (174).
+            crate::cycle_ledger::charge(172 + 174);
             let next = countdown.wrapping_add(1);
             self.set_countdown_word(next);
             if next != target {
+                // `BNE $e9c7` taken (+6); $e9c7-$e9cb: SEP #$30, INC $15, RTL (104).
+                crate::cycle_ledger::charge(6 + 104);
                 return;
             }
         } else {
+            // $e995-$e9a0 with `BNE $e9cc` taken (172 + 6); $e9cc-$e9d4:
+            // compare the countdown with the target (112).
+            crate::cycle_ledger::charge(172 + 6 + 112);
             self.set_countdown_word(countdown.wrapping_sub(1));
             if countdown != target {
+                // $e9d6-$e9e3: decrement the countdown, SEP #$30, INC $15, RTL (214).
+                crate::cycle_ledger::charge(214);
                 return;
             }
+            // `BEQ $e9b1` taken (+6).
+            crate::cycle_ledger::charge(6);
         }
+        // $e9b1-$e9c5: direction toggle, countdown reset, SEP #$20, INC $b0
+        // (252); $e9c7-$e9cb: SEP #$30, INC $15, RTL (104).
+        crate::cycle_ledger::charge(252 + 104);
         let mode = self
             .game_state
             .display
