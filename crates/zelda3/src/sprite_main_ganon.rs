@@ -1386,13 +1386,13 @@ impl ZeldaState {
                 && self.sprite_slot_view(k).delay_aux4() == 0
                 && self.game_state.dungeon.torch.ganon_torch_count() == 0)
         {
-            let _ = self.sprite_prep_oam_coord_or_double_ret(k);
+            let _ = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1dDoubleRet);
             return;
         }
 
         self.trident_draw(k);
 
-        let Some(info) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some(info) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1dDoubleRet) else {
             return;
         };
 

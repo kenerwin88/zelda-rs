@@ -762,7 +762,7 @@ impl ZeldaState {
         &mut self,
         k: usize,
     ) -> Option<PrepOamCoordsRet> {
-        self.sprite_prep_oam_coord_or_double_ret(k)
+        self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1eDoubleRet)
             .map(PrepOamCoordsRet::from_tuple)
     }
 

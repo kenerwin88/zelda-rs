@@ -56,6 +56,31 @@ pub(super) struct PrepOamCoordsRet {
     pub flags: u8,
 }
 
+/// The ROM entry a translated caller uses to reach
+/// `Sprite_PrepOamCoordOrDoubleRet` ($06:E41E). Cycle ledger only: every
+/// entry computes the same result, but each wrapper is its own JSR/JSL
+/// target with its own cost (see `sprite_prep_oam_coord_or_double_ret_raw_from`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PrepOamCoordEntry {
+    /// `JSR $06:E41E` from bank 6 (the double return skips the caller's
+    /// own return).
+    Direct,
+    /// `JSR $06:E41A` Sprite_PrepOamCoordSafeWrapper from bank 6.
+    Safe,
+    /// `JSL $06:E416` Sprite_PrepOamCoord from another bank.
+    Long,
+    /// `JSR $05:FA50` Sprite_PrepOamCoordOrDoubleRet__ (bank 5, and every
+    /// caller of Sprite_DrawMultiple $05:DF6C, whose prologue uses it).
+    Bank5DoubleRet,
+    /// `JSR $1D:E9AD` Sprite_PrepOamCoordOrDoubleRet___ (bank $1D).
+    Bank1dDoubleRet,
+    /// `JSR $1E:FF84` Sprite_PrepOamCoordOrDoubleRet____ (bank $1E).
+    Bank1eDoubleRet,
+    /// `JSR $05:9257` Sprite_PrepOamCoord_wrapper (bank 5), the void form
+    /// of `Bank5DoubleRet`.
+    Bank5Safe,
+}
+
 impl PrepOamCoordsRet {
     pub(super) fn from_tuple(t: (u16, u16, u8)) -> Self {
         Self {
@@ -1129,7 +1154,18 @@ impl ZeldaState {
         &mut self,
         k: usize,
     ) -> Option<(u16, u16, u8)> {
-        let (ret, out) = self.sprite_prep_oam_coord_or_double_ret_raw(k);
+        self.sprite_prep_oam_coord_or_double_ret_from(k, PrepOamCoordEntry::Direct)
+    }
+
+    /// `Sprite_PrepOamCoordOrDoubleRet` reached through the ROM entry a
+    /// caller in another bank actually uses (cycle ledger only; the result
+    /// is identical for every entry).
+    pub(super) fn sprite_prep_oam_coord_or_double_ret_from(
+        &mut self,
+        k: usize,
+        entry: PrepOamCoordEntry,
+    ) -> Option<(u16, u16, u8)> {
+        let (ret, out) = self.sprite_prep_oam_coord_or_double_ret_raw_from(k, entry);
         if out {
             None
         } else {
@@ -1137,11 +1173,12 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn sprite_prep_oam_coord_or_double_ret_with_out_flag(
+    pub(super) fn sprite_prep_oam_coord_or_double_ret_with_out_flag_from(
         &mut self,
         k: usize,
+        entry: PrepOamCoordEntry,
     ) -> ((u16, u16, u8), bool) {
-        let (ret, out) = self.sprite_prep_oam_coord_or_double_ret_raw(k);
+        let (ret, out) = self.sprite_prep_oam_coord_or_double_ret_raw_from(k, entry);
         ((ret.x, ret.y, ret.flags), out)
     }
 
@@ -1149,25 +1186,92 @@ impl ZeldaState {
     //   Sprite_PrepOamCoordOrDoubleRet(k, ret);
     // }
     pub(super) fn sprite_prep_oam_coord(&mut self, k: usize) -> PrepOamCoordsRet {
-        // Cycle ledger: Sprite_PrepOamCoord $06:E416 is JSR $06:E41A (46) :
-        // RTL (44) around Sprite_PrepOamCoordSafeWrapper $06:E41A, which is
-        // JSR $06:E41E (46) : RTS (42). The double return pops the wrapper's
-        // return address, so the wrapper's RTS runs only for an in-bounds
-        // sprite; the outer RTL always runs. The one expression is split
-        // into a binding so the out-of-bounds flag can price the wrapper.
-        let _scope = crate::cycle_ledger::routine(0x06_e416);
-        crate::cycle_ledger::charge(46);
-        let ret = {
-            let _wrapper = crate::cycle_ledger::routine(0x06_e41a);
-            crate::cycle_ledger::charge(46);
-            let (ret, out_of_bounds) = self.sprite_prep_oam_coord_or_double_ret_raw(k);
-            if !out_of_bounds {
-                crate::cycle_ledger::charge(42);
+        self.sprite_prep_oam_coord_from(k, PrepOamCoordEntry::Long)
+    }
+
+    /// `Sprite_PrepOamCoord` reached through the ROM entry the caller uses
+    /// (cycle ledger only).
+    pub(super) fn sprite_prep_oam_coord_from(
+        &mut self,
+        k: usize,
+        entry: PrepOamCoordEntry,
+    ) -> PrepOamCoordsRet {
+        self.sprite_prep_oam_coord_or_double_ret_raw_from(k, entry).0
+    }
+
+    fn sprite_prep_oam_coord_or_double_ret_raw(&mut self, k: usize) -> (PrepOamCoordsRet, bool) {
+        self.sprite_prep_oam_coord_or_double_ret_raw_from(k, PrepOamCoordEntry::Direct)
+    }
+
+    /// Cycle ledger: the JSR/JSL entry chain into
+    /// Sprite_PrepOamCoordOrDoubleRet $06:E41E. Every wrapper is a JSR/JSL
+    /// target, so each opens its own scope around the next one.
+    ///
+    /// - `Safe`: Sprite_PrepOamCoordSafeWrapper $06:E41A = JSR $06:E41E (46)
+    ///   : RTS (42). The double return pops this wrapper's return address,
+    ///   so its RTS runs only for an in-bounds sprite.
+    /// - `Long`: Sprite_PrepOamCoord $06:E416 = JSR $06:E41A (46) : RTL (44)
+    ///   around `Safe`.
+    /// - `Bank5DoubleRet` / `Bank1dDoubleRet` / `Bank1eDoubleRet`: the
+    ///   bank-local double-return wrappers $05:FA50 / $1D:E9AD / $1E:FF84 =
+    ///   JSL $06:E416 (62), BCC (16, taken +6 when in bounds), else PLA PLA
+    ///   (56), RTS (42) — the RTS runs on both paths (out of bounds it
+    ///   returns to the caller's caller).
+    /// - `Bank5Safe`: Sprite_PrepOamCoord_wrapper $05:9257 = JSR $05:FA50
+    ///   (46) : RTS (42, skipped when the double return pops it).
+    fn sprite_prep_oam_coord_or_double_ret_raw_from(
+        &mut self,
+        k: usize,
+        entry: PrepOamCoordEntry,
+    ) -> (PrepOamCoordsRet, bool) {
+        match entry {
+            PrepOamCoordEntry::Direct => self.sprite_prep_oam_coord_or_double_ret_body(k),
+            PrepOamCoordEntry::Safe => {
+                let _wrapper = crate::cycle_ledger::routine(0x06_e41a);
+                crate::cycle_ledger::charge(46);
+                let result =
+                    self.sprite_prep_oam_coord_or_double_ret_raw_from(k, PrepOamCoordEntry::Direct);
+                if !result.1 {
+                    crate::cycle_ledger::charge(42);
+                }
+                result
             }
-            ret
-        };
-        crate::cycle_ledger::charge(44);
-        ret
+            PrepOamCoordEntry::Long => {
+                let _long = crate::cycle_ledger::routine(0x06_e416);
+                crate::cycle_ledger::charge(46);
+                let result =
+                    self.sprite_prep_oam_coord_or_double_ret_raw_from(k, PrepOamCoordEntry::Safe);
+                crate::cycle_ledger::charge(44);
+                result
+            }
+            PrepOamCoordEntry::Bank5DoubleRet
+            | PrepOamCoordEntry::Bank1dDoubleRet
+            | PrepOamCoordEntry::Bank1eDoubleRet => {
+                let address = match entry {
+                    PrepOamCoordEntry::Bank5DoubleRet => 0x05_fa50,
+                    PrepOamCoordEntry::Bank1dDoubleRet => 0x1d_e9ad,
+                    _ => 0x1e_ff84,
+                };
+                let _wrapper = crate::cycle_ledger::routine(address);
+                crate::cycle_ledger::charge(62 + 16);
+                let result =
+                    self.sprite_prep_oam_coord_or_double_ret_raw_from(k, PrepOamCoordEntry::Long);
+                crate::cycle_ledger::charge(if result.1 { 56 + 42 } else { 6 + 42 });
+                result
+            }
+            PrepOamCoordEntry::Bank5Safe => {
+                let _wrapper = crate::cycle_ledger::routine(0x05_9257);
+                crate::cycle_ledger::charge(46);
+                let result = self.sprite_prep_oam_coord_or_double_ret_raw_from(
+                    k,
+                    PrepOamCoordEntry::Bank5DoubleRet,
+                );
+                if !result.1 {
+                    crate::cycle_ledger::charge(42);
+                }
+                result
+            }
+        }
     }
 
     // bool Sprite_PrepOamCoordOrDoubleRet(int k, PrepOamCoordsRet *ret) {  // 86e41e
@@ -1192,7 +1296,7 @@ impl ZeldaState {
     //   HIBYTE(dungmap_var7) = ret->y;
     //   return out_of_bounds;
     // }
-    fn sprite_prep_oam_coord_or_double_ret_raw(&mut self, k: usize) -> (PrepOamCoordsRet, bool) {
+    fn sprite_prep_oam_coord_or_double_ret_body(&mut self, k: usize) -> (PrepOamCoordsRet, bool) {
         // Cycle ledger: Sprite_PrepOamCoordOrDoubleRet $06:E41E (entry m8 x8,
         // X <= 15 so no abs,x page crossing). The blocks are charged where
         // the bounds test resolves, below.
@@ -1248,7 +1352,8 @@ impl ZeldaState {
             // $06:E485-E48B INC $f00,x LDA $caa,x BMI (100): a deflecting
             // sprite takes the BMI (+6), else $06:E48D JSL Sprite_KillSelf
             // (62; the callee charges its own body). Then $06:E491-E494 PLA
-            // PLA SEC BRA taken (92 + 6) into the shared exit.
+            // PLA SEC BRA (92; BRA's 22 already includes the taken cycles)
+            // into the shared exit.
             crate::cycle_ledger::charge(100);
             let value = self.sprite_slot_view(k).pause().wrapping_add(1);
             self.sprite_slot_view_mut(k).set_pause(value);
@@ -1258,7 +1363,7 @@ impl ZeldaState {
             } else {
                 crate::cycle_ledger::charge(6);
             }
-            crate::cycle_ledger::charge(92 + 6);
+            crate::cycle_ledger::charge(92);
         }
         // $06:E45F-E475 LDA $f50,x EOR $b89,x STA $05 STZ $04 LDA $00 STA
         // $0fa8 LDA $02 STA $0fa9 LDY #0 RTS (282), both paths.
@@ -2636,11 +2741,12 @@ impl ZeldaState {
             .set_pickup_slot_cache(pickup_slot_cache);
         self.follower_link_state_mut().clear_sprite_pickup_flag();
         self.hitbox_scratch_offset_mut().set_x_high_offset(0x80);
-        // $06:837D-8380 DEC $47 : BRA taken (60 + 6) when the masked timer is
-        // nonzero, else BEQ taken (+6) into $06:8381 STZ $47 (24).
+        // $06:837D-8380 DEC $47 : BRA (60; BRA's 22 already includes the
+        // taken cycles) when the masked timer is nonzero, else BEQ taken (+6)
+        // into $06:8381 STZ $47 (24).
         let damaging_enemies_timer = self.game_state.sprite_battle.damaging_enemies_timer();
         crate::cycle_ledger::charge(if damaging_enemies_timer & 0x7f != 0 {
-            60 + 6
+            60
         } else {
             6 + 24
         });
@@ -2850,6 +2956,9 @@ impl ZeldaState {
                     assert_ne!(nmi_slices, 0);
                     self.sprite_main_cpu_boundary = None;
                     assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x54);
+                    // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                    // directly; open its scope for the timers and the handler part.
+                    let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                     self.sprite_timers_and_oam(k);
                     self.begin_lanmola_draw_prefix_checkpoint(k, completed_stores);
                     let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
@@ -2876,6 +2985,9 @@ impl ZeldaState {
                         self.sprite_slot_view(k).sprite_type(),
                         0x13 | 0x26
                     ));
+                    // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                    // directly; open its scope for the timers and the handler part.
+                    let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                     self.sprite_timers_and_oam(k);
                     self.begin_helmasaur_hard_hat_tile_collision_checkpoint(k, stage);
                     let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
@@ -2925,6 +3037,9 @@ impl ZeldaState {
                 let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
                 assert_ne!(nmi_slices, 0);
                 self.sprite_main_cpu_boundary = None;
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 self.catfish_before_medallion_graphics(k);
                 let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
@@ -2941,6 +3056,9 @@ impl ZeldaState {
                 let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
                 assert_ne!(nmi_slices, 0);
                 self.sprite_main_cpu_boundary = None;
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 self.sidenexx_head_draw_setup(k);
                 let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
@@ -2959,6 +3077,9 @@ impl ZeldaState {
                 let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
                 assert_ne!(nmi_slices, 0);
                 self.sprite_main_cpu_boundary = None;
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 self.waterfall_before_gt_cutscene_graphics(k);
                 let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
@@ -2977,6 +3098,9 @@ impl ZeldaState {
                 let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
                 assert_ne!(nmi_slices, 0);
                 self.sprite_main_cpu_boundary = None;
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 assert!(
                     self.trinexx_breath_until_tile_collision(k),
@@ -2996,6 +3120,9 @@ impl ZeldaState {
                 let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
                 assert_ne!(nmi_slices, 0);
                 self.sprite_main_cpu_boundary = None;
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 assert!(
                     self.sprite_95_laser_eye_until_draw_prologue(k),
@@ -3025,6 +3152,9 @@ impl ZeldaState {
                 assert_ne!(nmi_slices, 0);
                 let boundary = self.sprite_main_cpu_boundary.take().unwrap();
                 assert_eq!(self.sprite_slot_view(k).state(), 8);
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 self.sprite_module_initialize_properties(k);
                 let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
@@ -3041,6 +3171,9 @@ impl ZeldaState {
                     let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
                     assert_ne!(nmi_slices, 0);
                     assert_eq!(self.sprite_slot_view(k).state(), 8);
+                    // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                    // directly; open its scope for the timers and the handler part.
+                    let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                     self.sprite_timers_and_oam(k);
                     self.sprite_module_initialize_properties(k);
                     let continuation = self.sprite_prep_move_y_through_checkpoint(k, checkpoint);
@@ -3063,6 +3196,9 @@ impl ZeldaState {
                 let boundary = self.sprite_main_cpu_boundary.take().unwrap();
                 assert_eq!(self.sprite_slot_view(k).state(), 9);
                 assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x45);
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 assert!(
                     self.hog_spear_man_through_body_increments(k),
@@ -3086,6 +3222,9 @@ impl ZeldaState {
                     assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xcf);
                     let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
                     assert_ne!(nmi_slices, 0);
+                    // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                    // directly; open its scope for the timers and the handler part.
+                    let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                     self.sprite_timers_and_oam(k);
                     self.sprite_active_main(k);
                     self.sprite_main_cpu_boundary = None;
@@ -3111,6 +3250,9 @@ impl ZeldaState {
                 let boundary = self.sprite_main_cpu_boundary.unwrap();
                 assert_eq!(self.sprite_slot_view(k).state(), 9);
                 assert!((0xd8..=0xe6).contains(&self.sprite_slot_view(k).sprite_type()));
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 self.sprite_active_main(k);
                 self.sprite_main_cpu_boundary = None;
@@ -3126,6 +3268,9 @@ impl ZeldaState {
                 let boundary = self.sprite_main_cpu_boundary.take().unwrap();
                 assert_eq!(self.sprite_slot_view(k).state(), 9);
                 assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x99);
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 assert!(
                     self.pengator_before_ai(k),
@@ -3144,6 +3289,9 @@ impl ZeldaState {
                 let boundary = self.sprite_main_cpu_boundary.take().unwrap();
                 assert_eq!(self.sprite_slot_view(k).state(), 9);
                 assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x15);
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 assert!(
                     self.antifairy_before_bounce(k),
@@ -3161,6 +3309,9 @@ impl ZeldaState {
                 let boundary = self.sprite_main_cpu_boundary.take().unwrap();
                 assert_eq!(self.sprite_slot_view(k).state(), 9);
                 assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xa2);
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 assert!(
                     self.kholdstare_before_ai(k),
@@ -3185,6 +3336,9 @@ impl ZeldaState {
                     .expect("bonk-item graphics boundary was checked above");
                 assert_eq!(self.sprite_slot_view(k).state(), 8);
                 assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x3b);
+                // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
+                // directly; open its scope for the timers and the handler part.
+                let _execute_single = self.sprite_execute_single_lane_scope(k, true);
                 self.sprite_timers_and_oam(k);
                 self.sprite_module_initialize_properties(k);
                 self.sprite_slot_view_mut(k).set_floor(2);
@@ -3522,7 +3676,12 @@ impl ZeldaState {
             } => {
                 let interrupted_slot = usize::from(slot);
                 self.sprite_system_mut().set_cur_object_index(slot);
-                self.sprite_execute_single_after_timers(interrupted_slot, state);
+                {
+                    // Cycle ledger: the ROM resumes inside Sprite_ExecuteSingle
+                    // $06:84E2 after its timer call returned.
+                    let _execute_single = crate::cycle_ledger::routine(0x06_84e2);
+                    self.sprite_execute_single_after_timers(interrupted_slot, state);
+                }
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
             }
             SpriteMainCpuBoundary::AfterTimersAndOam { state: None, .. } => unreachable!(
@@ -3939,8 +4098,16 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             } => {
                 let interrupted_slot = usize::from(slot);
                 self.sprite_system_mut().set_cur_object_index(slot);
-                self.sprite_timers_and_oam_after_timer_decrements(interrupted_slot);
-                self.sprite_execute_single_after_timers(interrupted_slot, state);
+                {
+                    // Cycle ledger: the ROM resumes inside Sprite_TimersAndOam
+                    // under Sprite_ExecuteSingle; both scopes reopen here.
+                    let _execute_single = crate::cycle_ledger::routine(0x06_84e2);
+                    {
+                        let _timers = self.sprite_timers_and_oam_lane_scope();
+                        self.sprite_timers_and_oam_after_timer_decrements(interrupted_slot);
+                    }
+                    self.sprite_execute_single_after_timers(interrupted_slot, state);
+                }
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
             }
             SpriteMainCpuBoundary::AfterTimerDecrements { state: None, .. } => unreachable!(
@@ -3952,9 +4119,19 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             } => {
                 let interrupted_slot = usize::from(slot);
                 self.sprite_system_mut().set_cur_object_index(slot);
-                self.sprite_timers_and_oam_after_primary_through_timer_decrements(interrupted_slot);
-                self.sprite_timers_and_oam_after_timer_decrements(interrupted_slot);
-                self.sprite_execute_single_after_timers(interrupted_slot, state);
+                {
+                    // Cycle ledger: resumed inside Sprite_TimersAndOam under
+                    // Sprite_ExecuteSingle; both scopes reopen here.
+                    let _execute_single = crate::cycle_ledger::routine(0x06_84e2);
+                    {
+                        let _timers = self.sprite_timers_and_oam_lane_scope();
+                        self.sprite_timers_and_oam_after_primary_through_timer_decrements(
+                            interrupted_slot,
+                        );
+                        self.sprite_timers_and_oam_after_timer_decrements(interrupted_slot);
+                    }
+                    self.sprite_execute_single_after_timers(interrupted_slot, state);
+                }
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
             }
             SpriteMainCpuBoundary::AfterPrimaryTimerDecrements { state: None, .. } => unreachable!(
@@ -3966,9 +4143,19 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             } => {
                 let interrupted_slot = usize::from(slot);
                 self.sprite_system_mut().set_cur_object_index(slot);
-                self.sprite_timers_and_oam_after_hit_through_timer_decrements(interrupted_slot);
-                self.sprite_timers_and_oam_after_timer_decrements(interrupted_slot);
-                self.sprite_execute_single_after_timers(interrupted_slot, state);
+                {
+                    // Cycle ledger: resumed inside Sprite_TimersAndOam under
+                    // Sprite_ExecuteSingle; both scopes reopen here.
+                    let _execute_single = crate::cycle_ledger::routine(0x06_84e2);
+                    {
+                        let _timers = self.sprite_timers_and_oam_lane_scope();
+                        self.sprite_timers_and_oam_after_hit_through_timer_decrements(
+                            interrupted_slot,
+                        );
+                        self.sprite_timers_and_oam_after_timer_decrements(interrupted_slot);
+                    }
+                    self.sprite_execute_single_after_timers(interrupted_slot, state);
+                }
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
             }
             SpriteMainCpuBoundary::AfterHitTimer { state: None, .. } => unreachable!(
@@ -3980,12 +4167,22 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             } => {
                 let interrupted_slot = usize::from(slot);
                 self.sprite_system_mut().set_cur_object_index(slot);
-                self.sprite_timers_and_oam_after_main_and_aux1_through_primary_timer_decrements(
-                    interrupted_slot,
-                );
-                self.sprite_timers_and_oam_after_primary_through_timer_decrements(interrupted_slot);
-                self.sprite_timers_and_oam_after_timer_decrements(interrupted_slot);
-                self.sprite_execute_single_after_timers(interrupted_slot, state);
+                {
+                    // Cycle ledger: resumed inside Sprite_TimersAndOam under
+                    // Sprite_ExecuteSingle; both scopes reopen here.
+                    let _execute_single = crate::cycle_ledger::routine(0x06_84e2);
+                    {
+                        let _timers = self.sprite_timers_and_oam_lane_scope();
+                        self.sprite_timers_and_oam_after_main_and_aux1_through_primary_timer_decrements(
+                            interrupted_slot,
+                        );
+                        self.sprite_timers_and_oam_after_primary_through_timer_decrements(
+                            interrupted_slot,
+                        );
+                        self.sprite_timers_and_oam_after_timer_decrements(interrupted_slot);
+                    }
+                    self.sprite_execute_single_after_timers(interrupted_slot, state);
+                }
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
             }
             SpriteMainCpuBoundary::AfterMainAndAux1TimerDecrements { state: None, .. } => {
@@ -3999,13 +4196,23 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             } => {
                 let interrupted_slot = usize::from(slot);
                 self.sprite_system_mut().set_cur_object_index(slot);
-                self.sprite_timers_and_oam_aux1_timer_decrement(interrupted_slot);
-                self.sprite_timers_and_oam_after_main_and_aux1_through_primary_timer_decrements(
-                    interrupted_slot,
-                );
-                self.sprite_timers_and_oam_after_primary_through_timer_decrements(interrupted_slot);
-                self.sprite_timers_and_oam_after_timer_decrements(interrupted_slot);
-                self.sprite_execute_single_after_timers(interrupted_slot, state);
+                {
+                    // Cycle ledger: resumed inside Sprite_TimersAndOam under
+                    // Sprite_ExecuteSingle; both scopes reopen here.
+                    let _execute_single = crate::cycle_ledger::routine(0x06_84e2);
+                    {
+                        let _timers = self.sprite_timers_and_oam_lane_scope();
+                        self.sprite_timers_and_oam_aux1_timer_decrement(interrupted_slot);
+                        self.sprite_timers_and_oam_after_main_and_aux1_through_primary_timer_decrements(
+                            interrupted_slot,
+                        );
+                        self.sprite_timers_and_oam_after_primary_through_timer_decrements(
+                            interrupted_slot,
+                        );
+                        self.sprite_timers_and_oam_after_timer_decrements(interrupted_slot);
+                    }
+                    self.sprite_execute_single_after_timers(interrupted_slot, state);
+                }
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
             }
             SpriteMainCpuBoundary::AfterMainTimerDecrement { state: None, .. } => {
@@ -4019,10 +4226,23 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             } => {
                 let interrupted_slot = usize::from(slot);
                 self.sprite_system_mut().set_cur_object_index(slot);
-                self.sprite_slot_view_mut(interrupted_slot).set_object_priority(0);
-                self.sprite_timers_and_oam_after_hit_through_timer_decrements(interrupted_slot);
-                self.sprite_timers_and_oam_after_timer_decrements(interrupted_slot);
-                self.sprite_execute_single_after_timers(interrupted_slot, state);
+                {
+                    // Cycle ledger: resumed inside Sprite_TimersAndOam under
+                    // Sprite_ExecuteSingle; both scopes reopen here. The
+                    // second store of $06:8496 (STZ $b89,x, 38) completes the
+                    // zero-hit-timer block begun before the boundary.
+                    let _execute_single = crate::cycle_ledger::routine(0x06_84e2);
+                    {
+                        let _timers = self.sprite_timers_and_oam_lane_scope();
+                        crate::cycle_ledger::charge(38);
+                        self.sprite_slot_view_mut(interrupted_slot).set_object_priority(0);
+                        self.sprite_timers_and_oam_after_hit_through_timer_decrements(
+                            interrupted_slot,
+                        );
+                        self.sprite_timers_and_oam_after_timer_decrements(interrupted_slot);
+                    }
+                    self.sprite_execute_single_after_timers(interrupted_slot, state);
+                }
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
             }
             SpriteMainCpuBoundary::AfterZeroHitTimerClear { state: None, .. } => {
@@ -4508,6 +4728,41 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         }
     }
 
+    /// Cycle ledger for a CPU-boundary lane that enters a slot's
+    /// Sprite_ExecuteSingle $06:84E2 body outside `sprite_execute_single`:
+    /// opens the routine scope (bind it to a local that lives across the
+    /// lane's timer and handler calls) and charges the entry blocks the ROM
+    /// ran before the timers ($06:84E2-84EE, 48 + 128; the slot is active).
+    /// With `dispatched`, the dispatch after the timers is charged too
+    /// (state 9: BEQ taken + JMP SpriteActive_Main, 6 + 24; any other state:
+    /// JSL JumpTableLocal + its body, 62 + 414). The handler dispatch blocks
+    /// that a lane bypasses (SpriteActive_Main's 260 and the bank-5 bounce)
+    /// are charged only by `sprite_active_main` itself.
+    #[must_use = "bind the scope to a local so it lives until the lane returns"]
+    pub(super) fn sprite_execute_single_lane_scope(
+        &self,
+        k: usize,
+        dispatched: bool,
+    ) -> crate::cycle_ledger::RoutineScope {
+        let scope = crate::cycle_ledger::routine(0x06_84e2);
+        crate::cycle_ledger::charge(48 + 128);
+        if dispatched {
+            crate::cycle_ledger::charge(if self.sprite_slot_view(k).state() == 9 {
+                6 + 24
+            } else {
+                62 + 414
+            });
+        }
+        scope
+    }
+
+    /// Cycle ledger for a lane resuming inside Sprite_TimersAndOam $06:83F2:
+    /// the routine scope only; the pieces charge their own blocks.
+    #[must_use = "bind the scope to a local so it lives across the timer pieces"]
+    pub(super) fn sprite_timers_and_oam_lane_scope(&self) -> crate::cycle_ledger::RoutineScope {
+        crate::cycle_ledger::routine(0x06_83f2)
+    }
+
     // void ExecuteCachedSprites() {  // 9de9da
     //   ...see sprite.c...
     // }
@@ -4584,6 +4839,16 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                                 9,
                                 "cached Antfairy body checkpoint requires an active sprite",
                             );
+                            // The ROM is inside UncacheAndExecuteSprite $1D:EA00
+                            // (its $1D:EA00-EB01 load block ran, 3,160), the
+                            // Sprite_ExecuteSingle_ $06:84DA wrapper (190) and
+                            // Sprite_ExecuteSingle when the NMI lands; the
+                            // restore half runs in the continuation.
+                            let _uncache = crate::cycle_ledger::routine(0x1d_ea00);
+                            crate::cycle_ledger::charge(3_160);
+                            let _wrapper = crate::cycle_ledger::routine(0x06_84da);
+                            crate::cycle_ledger::charge(190);
+                            let _execute_single = self.sprite_execute_single_lane_scope(i, true);
                             self.sprite_timers_and_oam(i);
                             let continuation = self.antfairy_draw_continuation(i);
                             self.sprite_slot_view_mut(i).add_subtype2(1);
@@ -4689,10 +4954,26 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 continuation: Some(continuation),
                 ..
             } => {
-                self.complete_antfairy_after_subtype2_increment(interrupted_slot, continuation);
-                if self.sprite_slot_view(interrupted_slot).pause() != 0 {
-                    self.cached_sprite_slot_mut(interrupted_slot).clear_state();
+                // The ROM resumes inside Sprite_ExecuteSingle under the
+                // Sprite_ExecuteSingle_ $06:84DA wrapper and
+                // UncacheAndExecuteSprite $1D:EA00 (the load block and the
+                // entry blocks were charged when the lane suspended).
+                let _uncache = crate::cycle_ledger::routine(0x1d_ea00);
+                {
+                    let _wrapper = crate::cycle_ledger::routine(0x06_84da);
+                    let _execute_single = crate::cycle_ledger::routine(0x06_84e2);
+                    self.complete_antfairy_after_subtype2_increment(interrupted_slot, continuation);
                 }
+                if self.sprite_slot_view(interrupted_slot).pause() != 0 {
+                    // $1D:EB03 STZ $1d00,x (38).
+                    crate::cycle_ledger::charge(38);
+                    self.cached_sprite_slot_mut(interrupted_slot).clear_state();
+                } else {
+                    // BEQ taken.
+                    crate::cycle_ledger::charge(6);
+                }
+                // $1D:EB06-EB67: 24 PLA/STA restores + RTS (1,628).
+                crate::cycle_ledger::charge(1_628);
                 self.cached_sprite_slot_mut(interrupted_slot)
                     .restore_live_from_backup(&live_slot_backup);
             }
@@ -4846,11 +5127,12 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     }
 
     // Cycle ledger: Oam_AllocateFromRegionA..F ($0D:BA80/84/88/8C/90/94, m8
-    // x8) are six two-instruction entries (LDY #region : BRA taken, 38 + 6)
-    // into the shared body at $0D:BA96 (PHB PHK PLB JSR Oam_GetBufferPosition
-    // PLB RTL, 190); region F sits directly above the body, so its entry is
-    // LDY alone (16). Oam_GetBufferPosition charges its own body.
-    const OAM_ALLOCATE_FROM_REGION_ENTRY_MASTER_CYCLES: u64 = 38 + 6 + 190;
+    // x8) are six two-instruction entries (LDY #region : BRA, 38; BRA's 22
+    // already includes the taken cycles) into the shared body at $0D:BA96
+    // (PHB PHK PLB JSR Oam_GetBufferPosition PLB RTL, 190); region F sits
+    // directly above the body, so its entry is LDY alone (16).
+    // Oam_GetBufferPosition charges its own body.
+    const OAM_ALLOCATE_FROM_REGION_ENTRY_MASTER_CYCLES: u64 = 38 + 190;
     const OAM_ALLOCATE_FROM_REGION_F_MASTER_CYCLES: u64 = 16 + 190;
 
     pub(super) fn oam_allocate_from_region_a(&mut self, num: u8) -> u16 {
@@ -4945,14 +5227,14 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         let num = ((self.sprite_slot_view(k).flags2() & 0x1f).wrapping_add(1)).wrapping_mul(4);
         if self.game_state.oam.has_sprite_sorting() {
             // $06:8402-8405 LDY $f20,x : BEQ (48), then either $06:8407 JSL
-            // RegionF : BRA taken (84 + 6) or BEQ taken (+6) into $06:840D
-            // JSL RegionD : BRA taken (84 + 6). The allocators charge their
-            // own bodies.
+            // RegionF : BRA (84) or BEQ taken (+6) into $06:840D JSL RegionD
+            // : BRA (84); BRA's 22 already includes the taken cycles. The
+            // allocators charge their own bodies.
             if self.sprite_slot_view(k).floor() != 0 {
-                crate::cycle_ledger::charge(48 + 84 + 6);
+                crate::cycle_ledger::charge(48 + 84);
                 self.oam_allocate_from_region_f(num);
             } else {
-                crate::cycle_ledger::charge(48 + 6 + 84 + 6);
+                crate::cycle_ledger::charge(48 + 6 + 84);
                 self.oam_allocate_from_region_d(num);
             }
         } else {
@@ -5072,8 +5354,9 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 } else {
                     crate::cycle_ledger::charge(64 + 6);
                 }
-                // $06:8491-8494 DEC $ef0,x : BRA taken (74 + 6).
-                crate::cycle_ledger::charge(74 + 6);
+                // $06:8491-8494 DEC $ef0,x : BRA (74; BRA's 22 already
+                // includes the taken cycles).
+                crate::cycle_ledger::charge(74);
                 let value = self.sprite_slot_view(k).hit_timer().wrapping_sub(1);
                 self.sprite_slot_view_mut(k).set_hit_timer(value);
             } else {
@@ -6057,6 +6340,9 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   cur_sprite_y = sprite_y_lo[k] | sprite_y_hi[k] << 8;
     // }
     pub(super) fn sprite_get16_bit_coords(&mut self, k: usize) {
+        // Cycle ledger: Sprite_Get16BitCoords $06:84C1 (m8 x8, JSR target):
+        // four LDA abs,x / STA abs pairs + RTS, 298, input independent.
+        crate::cycle_ledger::charge_routine(0x06_84c1, 298);
         let x = self.sprite_get_x(k);
         let y = self.sprite_get_y(k);
         self.sprite_workspace_mut().set_current_sprite_x(x);
@@ -6290,7 +6576,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         } else if a >= 0x28 || (a & 1) != 0 {
             return false;
         }
-        let _ = self.sprite_prep_oam_coord_or_double_ret(k);
+        let _ = self.sprite_prep_oam_coord_or_double_ret_from(k, PrepOamCoordEntry::Safe);
         true
     }
 
@@ -6799,7 +7085,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 || type_ == 0x92
                 || (type_ == 0x4a && self.sprite_slot_view(k).c() >= 2)
             {
-                self.sprite_active_main(k);
+                self.sprite_active_main_jsr(k);
                 return;
             }
             if self.sprite_slot_view(k).delay_main() == 0 {
@@ -6808,7 +7094,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             }
         }
         if sign8(self.sprite_slot_view(k).flags3()) {
-            self.sprite_active_main(k);
+            self.sprite_active_main_jsr(k);
             return;
         }
         if ((self.game_state.frame.frame_counter & 3)
@@ -6837,7 +7123,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         let bak = self.sprite_slot_view(k).flags2();
         let value = self.sprite_slot_view(k).flags2().wrapping_sub(4);
         self.sprite_slot_view_mut(k).set_flags2(value);
-        self.sprite_active_main(k);
+        self.sprite_active_main_jsr(k);
         let value = bak;
         self.sprite_slot_view_mut(k).set_flags2(value);
     }
@@ -7081,7 +7367,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             let bak = self.sprite_slot_view(k).flags2();
             let value = self.sprite_slot_view(k).flags2().wrapping_sub(2);
             self.sprite_slot_view_mut(k).set_flags2(value);
-            self.sprite_active_main(k);
+            self.sprite_active_main_long(k);
             let value = bak;
             self.sprite_slot_view_mut(k).set_flags2(value);
         }
@@ -7248,7 +7534,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             && (self.sprite_slot_view(k).delay_main() >= 0x70
                 || (self.sprite_slot_view(k).delay_main() & 1) == 0)
         {
-            self.sprite_active_main(k);
+            self.sprite_active_main_long(k);
         }
 
         let type_ = self.sprite_slot_view(k).sprite_type();
@@ -7315,7 +7601,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 {
                     self.sprite_sfx_queue_sfx3_with_pan(k, 0x31);
                 }
-                self.sprite_active_main(k);
+                self.sprite_active_main_jsr(k);
                 let Some((x, y, _flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
                     return;
                 };
@@ -7451,7 +7737,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         self.carried_sprite_check_for_throw(k);
         self.sprite_get16_bit_coords(k);
         if self.sprite_slot_view(k).draw_work_byte_4() != 11 {
-            self.sprite_active_main(k);
+            self.sprite_active_main_jsr(k);
             if self.sprite_slot_view(k).delay_aux4() == 1 {
                 let value = 9;
                 self.sprite_slot_view_mut(k).set_state(value);
@@ -7704,7 +7990,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   ...see sprite.c...
     // }
     pub(super) fn sprite_stunned_main_func1(&mut self, k: usize) {
-        self.sprite_active_main(k);
+        self.sprite_active_main_jsr(k);
         if self.sprite_slot_view(k).draw_work_byte_5() != 0 {
             if self.sprite_slot_view(k).delay_main() < 32 {
                 let value = (self.sprite_slot_view(k).oam_flags() & 0xf1) | 4;
@@ -9203,7 +9489,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         &mut self,
         k: usize,
     ) -> (PrepOamCoordsRet, Option<(u16, u16, u8)>) {
-        let (prepped, out_of_bounds) = self.sprite_prep_oam_coord_or_double_ret_raw(k);
+        let (prepped, out_of_bounds) = self.sprite_prep_oam_coord_or_double_ret_raw_from(k, PrepOamCoordEntry::Bank5DoubleRet);
         let prepared = PrepOamCoordsRet {
             x: prepped.x,
             y: prepped.y,

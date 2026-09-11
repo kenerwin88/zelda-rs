@@ -1583,7 +1583,7 @@ impl ZeldaState {
                         .set_graphics(CREDITS_HANDLE_SCENE_FADE_GRAPHICS[j]);
                     self.sprite_slot_view_mut(k).set_oam_flags(0x33);
                     self.sprite_get16_bit_coords(k);
-                    self.sprite_active_main(k);
+                    self.sprite_active_main_long(k);
                 }
             }
             7 => {
@@ -1597,7 +1597,7 @@ impl ZeldaState {
                     let graphics = self.sprite_slot_view(k).graphics() ^ 1;
                     self.sprite_slot_view_mut(k).set_graphics(graphics);
                 }
-                self.sprite_active_main(k);
+                self.sprite_active_main_long(k);
                 if r16 >= 0x180 {
                     self.sprite_slot_view_mut(k).set_y_velocity(4);
                     if self.sprite_slot_view(k).y_low() != 0x7c {
@@ -1616,7 +1616,7 @@ impl ZeldaState {
                     ) & 7;
                     self.sprite_slot_view_mut(k).set_graphics(graphics);
                 }
-                self.sprite_active_main(k);
+                self.sprite_active_main_long(k);
             }
             8 => {
                 let k = 0usize;
@@ -1630,7 +1630,7 @@ impl ZeldaState {
                     2
                 };
                 self.sprite_slot_view_mut(k).set_graphics(graphics);
-                self.sprite_active_main(k);
+                self.sprite_active_main_long(k);
             }
             9 => {
                 let mut k = 0usize;
@@ -2025,7 +2025,7 @@ impl ZeldaState {
         let bak0 = self.game_state.frame.submodule;
         self.set_submodule(0);
         self.sprite_slot_view_mut(k).set_state(9);
-        self.sprite_active_main(k);
+        self.sprite_active_main_long(k);
         self.set_submodule(bak0);
     }
 
@@ -2033,7 +2033,7 @@ impl ZeldaState {
         self.oam_allocate_from_region_a(a);
         self.sprite_system_mut().set_cur_object_index(k as u8);
         self.sprite_get16_bit_coords(k);
-        self.sprite_active_main(k);
+        self.sprite_active_main_long(k);
     }
 
     pub(super) fn credits_sprite_draw_single(&mut self, k: usize, a: u8, j: u8) {

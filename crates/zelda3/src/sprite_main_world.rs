@@ -1244,7 +1244,7 @@ impl ZeldaState {
     //   See sprite_main.c:2353..2368 — writes 6 OAM entries by hand and then
     //   calls Sprite_CorrectOamEntries(k, 5, 0).
     pub(super) fn master_sword_draw(&mut self, k: usize) {
-        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         // Write six OAM entries (i = 5 down to 0). Each entry is 4 bytes at

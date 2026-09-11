@@ -1454,7 +1454,7 @@ impl ZeldaState {
     }
 
     fn prepare_trinexx_head_draw(&mut self, k: usize) -> Option<TrinexxHeadDrawContinuation> {
-        let (info_x, info_y, info_flags) = self.sprite_prep_oam_coord_or_double_ret(k)?;
+        let (info_x, info_y, info_flags) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1dDoubleRet)?;
         self.temp_counter_mut().set(0);
         self.sprite_workspace_mut().set_shared_scratch_a(0);
         Some(TrinexxHeadDrawContinuation {
@@ -1561,7 +1561,7 @@ impl ZeldaState {
         let sprite_type = self.sprite_slot_view(k).sprite_type();
         assert!(matches!(sprite_type, 0xcc | 0xcd));
         assert_ne!(self.sprite_slot_view(k).e(), 0);
-        let _ = self.sprite_prep_oam_coord_or_double_ret(k);
+        let _ = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Long);
         if self.sprite_return_if_inactive(k) {
             return false;
         }

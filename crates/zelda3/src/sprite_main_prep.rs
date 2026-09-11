@@ -313,8 +313,8 @@ impl ZeldaState {
     // void SpritePrep_TrooperAndArcherSoldier(int k) {  // 869001
     pub(super) fn sprite_prep_trooper_and_archer_soldier(&mut self, k: usize) {
         let bak0 = self.sprite_prep_trooper_and_archer_soldier_prefix(k);
-        self.sprite_active_main(k);
-        self.sprite_active_main(k);
+        self.sprite_active_main_jsr(k);
+        self.sprite_active_main_jsr(k);
         self.sprite_prep_trooper_and_archer_soldier_suffix(k, bak0);
     }
 
@@ -354,7 +354,7 @@ impl ZeldaState {
         assert!(self.sprite_prep_standard_guard_before_trooper(k));
         let saved_submodule = self.sprite_prep_trooper_and_archer_soldier_prefix(k);
         for _ in 1..active_call {
-            self.sprite_active_main(k);
+            self.sprite_active_main_jsr(k);
         }
         let (hitbox, disabled_oam_offsets) = self.guard_main_until_parry_hitbox(k);
         GuardPrepParryContinuation {
@@ -373,7 +373,7 @@ impl ZeldaState {
         assert!(self.sprite_prep_standard_guard_before_trooper(k));
         let saved_submodule = self.sprite_prep_trooper_and_archer_soldier_prefix(k);
         for _ in 1..active_call {
-            self.sprite_active_main(k);
+            self.sprite_active_main_jsr(k);
         }
         self.guard_main_until_patrol_delay(k);
         saved_submodule
@@ -387,7 +387,7 @@ impl ZeldaState {
     ) {
         self.guard_patrol_after_delay_load(k);
         for _ in active_call..2 {
-            self.sprite_active_main(k);
+            self.sprite_active_main_jsr(k);
         }
         self.sprite_prep_trooper_and_archer_soldier_suffix(k, saved_submodule);
     }
@@ -401,7 +401,7 @@ impl ZeldaState {
         assert!(self.sprite_prep_standard_guard_before_trooper(k));
         let saved_submodule = self.sprite_prep_trooper_and_archer_soldier_prefix(k);
         for _ in 1..active_call {
-            self.sprite_active_main(k);
+            self.sprite_active_main_jsr(k);
         }
         self.guard_main_until_tile_collision_return(k);
         saved_submodule
@@ -415,7 +415,7 @@ impl ZeldaState {
     ) {
         self.guard_main_after_tile_collision_return(k);
         for _ in active_call..2 {
-            self.sprite_active_main(k);
+            self.sprite_active_main_jsr(k);
         }
         self.sprite_prep_trooper_and_archer_soldier_suffix(k, saved_submodule);
     }
@@ -432,7 +432,7 @@ impl ZeldaState {
             continuation.disabled_oam_offsets,
         );
         for _ in active_call..2 {
-            self.sprite_active_main(k);
+            self.sprite_active_main_jsr(k);
         }
         self.sprite_prep_trooper_and_archer_soldier_suffix(k, continuation.saved_submodule);
     }
@@ -443,7 +443,7 @@ impl ZeldaState {
         continuation: GuardPrepWeaponDrawContinuation,
     ) {
         self.complete_guard_prep_first_animation_after_weapon_flags(k, continuation);
-        self.sprite_active_main(k);
+        self.sprite_active_main_jsr(k);
         self.sprite_prep_trooper_and_archer_soldier_suffix(k, continuation.saved_submodule);
     }
 
@@ -946,7 +946,7 @@ impl ZeldaState {
         }
 
         self.oam_allocate_from_region_a(0x34);
-        let Some((info_x, info_y, _flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((info_x, info_y, _flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let count = if self.sprite_slot_view(k).delay_aux1() != 0 {
@@ -2466,7 +2466,7 @@ impl ZeldaState {
             }
             return;
         }
-        let _ = self.sprite_prep_oam_coord_or_double_ret(k);
+        let _ = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Safe);
         self.sprite_wish_pond2(k);
     }
 
@@ -2765,7 +2765,7 @@ impl ZeldaState {
         assert_eq!(self.sprite_slot_view(k).a(), 0);
         assert_eq!(self.sprite_slot_view(k).b(), 0);
         assert_eq!(self.sprite_slot_view(k).ai_state(), 3);
-        let _ = self.sprite_prep_oam_coord_or_double_ret(k);
+        let _ = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet);
         self.wish_pond2_draw(k);
         assert!(!self.sprite_return_if_inactive(k));
         self.happiness_pond_pay_rupees(k);
@@ -3055,7 +3055,7 @@ impl ZeldaState {
     }
 
     pub(super) fn pink_ball_distress(&mut self, k: usize) {
-        let Some((x, y, _flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some((x, y, _flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1eDoubleRet) else {
             return;
         };
         self.sprite_draw_distress_custom(x, y, self.game_state.frame.frame_counter);
