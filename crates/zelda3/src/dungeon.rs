@@ -12294,31 +12294,49 @@ impl ZeldaState {
         self.complete_module07_0f_operate_spotlight_suffix();
     }
 
+    /// The Module07_0F_01 suffix run after a deferred landing goal
+    /// transition: the ROM is returning from IrisSpotlight_ConfigureTable
+    /// into Module07_0F_01_OperateSpotlight, so it runs under that scope.
+    pub(super) fn complete_deferred_module07_0f_operate_spotlight_suffix(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x02_9334);
+        self.complete_module07_0f_operate_spotlight_suffix();
+    }
+
     pub(super) fn complete_module07_0f_operate_spotlight_suffix(&mut self) {
+        // Cycle ledger: while the landing goal transition is deferred the ROM
+        // has not returned from IrisSpotlight_ConfigureTable yet, so this
+        // inline pass (a no-op with submodule still $0F) charges nothing; the
+        // deferred wrapper charges the suffix once when it really runs.
+        let price = !self.dungeon_landing_goal_transition_pending;
+        let charge = |master: u64| {
+            if price {
+                crate::cycle_ledger::charge(master);
+            }
+        };
         // $933C-$933E: LDA $11, BNE.
-        crate::cycle_ledger::charge(40);
+        charge(40);
         if self.game_state.frame.submodule == 0 {
             // $9340-$9351: STZ $96/$97/$98/$1E/$1F/$B0, LDA $0132, CMP #$FF,
             // BEQ.
-            crate::cycle_ledger::charge(208);
+            charge(208);
             self.clear_window_layer_masks();
             self.clear_window_main_sub_masks();
             self.set_subsubmodule(0);
             let queued_music_control = self.game_state.system_signals.queued_music_control();
             if queued_music_control != 0xff {
                 // $9353: STA $012C.
-                crate::cycle_ledger::charge(32);
+                charge(32);
                 self.set_music_control(queued_music_control);
             } else {
                 // BEQ $9356 taken.
-                crate::cycle_ledger::charge(6);
+                charge(6);
             }
         } else {
             // BNE $9356 taken.
-            crate::cycle_ledger::charge(6);
+            charge(6);
         }
         // $9356: RTS.
-        crate::cycle_ledger::charge(42);
+        charge(42);
     }
 
     pub(super) fn Module07_0F_LandingWipe(&mut self) {
