@@ -12788,6 +12788,8 @@ impl ZeldaState {
                 // scanout and carry an exact shadow of the next leading-NMI
                 // iteration instead.
                 self.dungeon_quadrant_cpu_continuation_active = false;
+                self.game_execution_scheduler
+                    .finish_call_stack_at_main_wait_before_nmi();
                 self.prepare_dungeon_cpu_advance_after_returned_main_wait();
                 self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();

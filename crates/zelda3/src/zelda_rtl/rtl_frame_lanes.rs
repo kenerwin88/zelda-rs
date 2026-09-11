@@ -4011,6 +4011,13 @@ impl ZeldaState {
                             "cached-sprite conversion continuation was already armed",
                         );
                         self.dungeon_cached_sprite_cpu_interruption_boundary = authority_boundary;
+                        // Sprite conversion returns into the quadrant-upload
+                        // chain. Its cached-sprite caller must retire at main
+                        // wait and prepare the next leading-NMI CPU advance,
+                        // just like a cached interruption inside that chain.
+                        // Otherwise the generic return appends an extra NMI
+                        // and the next quadrant runs without its CPU phase.
+                        self.dungeon_quadrant_cpu_continuation_active = true;
                     } else {
                         let boundary = schedule
                             .sprite_main_boundary

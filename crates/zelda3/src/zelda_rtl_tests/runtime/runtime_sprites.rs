@@ -1945,6 +1945,78 @@ fn completed_cached_sprite_caller_carries_the_following_source_nmi_at_main_wait(
 }
 
 #[test]
+fn sprite_conversion_cached_return_retires_before_the_next_quadrant_nmi() {
+    // Original hosts 12135-12137: cached slot 8 is interrupted after 24
+    // copied fields; the resumed caller clears $12 at counter $D5, then
+    // the NEXT host's open NMI consumes the pending quadrant upload.
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.rom_reset_frame_delay = 0;
+    state.initialized = true;
+    state.set_animated_tile_data_source_address(0xa680);
+    state.set_indoor_flag(1);
+    state.set_main_module(7);
+    state.set_submodule(2);
+    state.set_subsubmodule(3);
+    state.set_frame_counter(0xd5);
+    state.latch_nmi_update();
+    {
+        let mut slot = state.sprite_slot_view_mut(8);
+        slot.set_state(8);
+        slot.set_sprite_type(0x6d);
+        slot.set_x(0x04ab);
+        slot.set_y(0x0543);
+    }
+    state.dungeon_cache_trans_sprites();
+    state.dungeon_submodule_cpu_schedule = Some(DungeonSubmoduleCpuSchedule {
+        submodule_nmis: 3,
+        caller_nmis: 1,
+        caller_sprite_main_nmis: 1,
+        caller_first_nmi_phase: Some(ModuleCpuPhase::InterruptedInSpriteMain),
+        sprite_main_boundary: Some(SpriteMainCpuBoundary::AfterSlot(0)),
+        cached_sprite_interruption: Some(CachedSpriteCpuInterruption::Loading {
+            slot: 8, copied_fields: 24,
+        }),
+        ..Default::default()
+    });
+    state.lane_finish_dungeon_supertile_transition(
+        0, DungeonSupertileTransitionWork::SpriteConversion,
+        None, None, None, false, None,
+    );
+    assert!(matches!(state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishDungeonCachedSpriteMain { .. })));
+    assert!(state.dungeon_quadrant_cpu_continuation_active);
+
+    // Supply the source-observed next iteration's already-computed phase.
+    // This test covers retirement/ownership, not ROM instruction timing.
+    let next = DungeonModuleCpuAdvance {
+        phase: ModuleCpuPhase::CompleteBeforeNmi,
+        resumed_phase: None,
+        submodule_nmi_slices: 0,
+        subsubmodule: 5,
+        palette_countdown: 0,
+        sprite_main_boundary: None,
+        cached_sprite_interruption: None,
+    };
+    state.dungeon_landing_cpu_advance_pending = Some(next);
+    state.game_state.write_to_ram(&mut state.ram);
+    state.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX] = 1;
+    state.ram[crate::game_state::constants::NMI_DISABLE_CORE_UPDATES] = 1;
+    state.sync_native_game_state_from_ram();
+    state.run_frame_internal_after_original_timing(0, crate::RUN_MAIN);
+    assert!(state.game_execution_scheduler.is_idle());
+    assert!(!state.dungeon_quadrant_cpu_continuation_active);
+    assert_eq!(state.game_state.frame.subsubmodule, 4);
+    assert_eq!(state.game_state.frame.frame_counter, 0xd5);
+    assert!(!state.game_state.display.nmi_update_is_latched());
+    assert_eq!(state.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX], 1);
+    assert_eq!(state.ram[crate::game_state::constants::NMI_DISABLE_CORE_UPDATES], 1);
+    assert_eq!(state.dungeon_landing_cpu_advance_pending, Some(next));
+    state.game_execution_scheduler.begin_host_frame();
+    assert!(state.game_execution_scheduler.main_return_requires_leading_nmi());
+}
+
+#[test]
 fn scroll_return_precedes_a_suspended_extended_oam_suffix() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
