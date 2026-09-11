@@ -41,7 +41,7 @@ ZELDA3_CACHED_AV_NATIVE_TIMING=1 ./parity cached-av <cache> \
 Build that binary with `CARGO_TARGET_DIR=target/alt` so a frontier run can
 never rebuild the binary a comparison is using.
 
-History of the frontier: 8889 → 4660 → 2507 → 8716 → 7330 → 2507 → **8890**.
+History of the frontier: 8889 → 4660 → 2507 → 8716 → 7330 → 2507 → 8890 → **11444**.
 It moves backwards whenever a newly exact cost exposes a wrong one
 downstream; that is normal and not a regression of the acceptance gate.
 
@@ -51,13 +51,16 @@ downstream; that is normal and not a regression of the acceptance gate.
 |---|---|
 | branch | `fix/romless-exact`, `main` at the same commit |
 | promoted ledger | full route exact, four goldens, recorded endpoint |
-| library suite | 1,735 passing under the parity profile, ~13 s |
-| native frontier | frame 8890, audio exact throughout |
+| library suite | 1,736 passing under the parity profile, ~13 s |
+| native frontier | frame 11444, audio exact throughout |
 
-The cycle ledger now reproduces the shadow CPU profile call for call, for
-every routine in the `Module0E_Interface` dialogue prefix, on the
-Link's-house hosts. That was the blocker: budgets derived from the ledger
-were roughly seventeen thousand master cycles short per host.
+The scroll-return milestone is complete. The native lane carries the scroll's
+remaining CPU work, finishes a fitting return after the held NMI, and marks
+the existing scheduler's main-wait phase so the next leading NMI publishes
+text before another scroll starts. The caller's obsolete addition of
+refresh/HDMA stall time to CPU headroom was also removed. See the final
+section of `romless-exact-play.md` for the original timestamps, regression
+test, exact validation and the remaining coarse pixel-copy limitation.
 
 ## Rules that are not negotiable
 
@@ -71,36 +74,41 @@ were roughly seventeen thousand master cycles short per host.
   and verify against the recorded shadow profiles; the lead measures.
 - Never `git checkout <file>`; revert your own edits surgically.
 
-## The immediate next task: frame 8890
+## The immediate next task: frame 11444
 
-The mechanism is diagnosed. The original finishes the message-line
-scroll's copy passes and returns through `RenderText` and
-`Module0E_Interface` inside a single host, near V=196, then waits for the
-vblank whose interrupt opens the next host and publishes the staged text;
-the next scroll begins after that publication. The translation instead
-spends one host on the copies, a second host doing only the return, and
-stages a boundary later.
+This is Module0F spotlight close, after Module09, in room `$55`. The first
+visible mismatch is 11444; the CPU-state clue is one frame earlier:
 
-Returning the call in place is not sufficient on its own. It was tried and
-reverted this session: gating
-`complete_module0e_dialogue_scroll_before_common_suffix` on a residual
-cycle test stages correctly at 8890, then panics at 8891 with "dialogue
-scroll began from invalid phase CompletionStagedAfterSnapshot", because
-the receipt-less lane does not give the following host a leading
-interrupt, so the next `Module0E` iteration starts a scroll before the
-interrupt publishes the staged completion. `take_terminal_dialogue_scroll_pixel_passes`
-already returns 3 for a non-live owner, so that helper is usable as is.
+- At 11440–11442, receipt/native WRAM differs only at `$12/$16/$1F00`.
+- At 11443, the receipt lane's `SPOTLIGHT_WINDOW_Y_BUFFER` (`$067A`) is
+  `$000C` versus native `$007E`, and 44 HDMA-table bytes differ.
+- At 11444, WRAM is back to only `$12/$16/$1F00`, but video differs.
+  Audio remains exact.
 
-The work belongs in the frame-lane scheduling of the post-return vblank
-wait, not in the scroll machine.
+That points to the table-build/publication boundary, but its root cause is
+not yet proven. Start with `Module0F_SpotlightClose`,
+`dungeon_exit_spotlight_cpu_plan`, and `begin_dungeon_exit_spotlight_entry`.
+The native entry still uses the raster envelope
+`DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_EARLIEST/LATEST` (V=255, cycles 480..598),
+while source receipts bypass that guessed entry. Compare the original's
+actual entry and first interrupted table-build position before changing
+this envelope or any publication rule. Do not add a frame/room exception.
+
+Local evidence retained for resumption:
+`target/romless-8890-native-final` (native frontier and WRAM at 11443/11444),
+`target/romless-11444-receipt-final` (same-binary receipt WRAM at 11440–11444), and
+`target/romless-8890-original-timestamps` (cold original scroll trace and
+compact `scroll-boundaries.jsonl`). The native and receipt final comparisons
+use binary SHA-256 `75aaed1128771423b6a47fbb51e468a1adca4dbfeb0346e904f4f5ddb4d9042b`.
 
 ## How to diagnose a frontier frame
 
 1. **Rust against Rust first.** Run the same binary with and without
    `ZELDA3_CACHED_AV_NATIVE_TIMING=1`, dumping `ZELDA3_DEBUG_WRAM_FRAMES`
    at the frontier and a few frames before, and compare the dumps. The
-   receipt path is the ground truth. At 8889 this named the three
-   differing bytes in seconds. `$1f00` differs benignly; so can `$12`.
+   receipt path is the ground truth. At the repaired 8889/8890 boundary only
+   the known scratch byte remains; at 11443 this isolates the spotlight work
+   buffer and table. `$1f00` differs benignly; so can `$12`.
 2. **Then the subsystem's own trace.** For dialogue:
    `ZELDA3_DEBUG_SCROLL_STAGE=1 ZELDA3_DEBUG_SCROLL_RETAIN=1` in both
    modes gives the scroll phase machine's decisions side by side;
@@ -130,7 +138,7 @@ Engine host N corresponds to Snes9x run N−1.
    `routes/full_run/parity-frontier.json` and the receipt manifest back.
 5. Commit the evidence, move `main`, prune the run directories.
 
-## The backlog after 8890
+## The backlog after 11444
 
 - March the frontier. Each divergence is now a single named mechanism.
 - Finish the ledger census. The remaining classes are hosts where the

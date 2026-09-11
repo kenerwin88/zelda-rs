@@ -510,6 +510,11 @@ endpoint. Promoted in `routes/full_run/parity-frontier.json` for
 
 ## Native scroll return and the following main wait
 
+This is a collapsed timed side-effect phase: `ZeldaState` finished the copy
+without carrying its caller's return through `GameExecutionScheduler` to
+the `$12` main-wait boundary. Copy completion, caller return and publication
+therefore occupied the wrong host intervals.
+
 The scroll now carries its remaining CPU work from entry to the continuation
 host. That host first runs the held NMI, then compares the remaining copy
 work, deferred handler exits and caller suffix with the raster-derived CPU
@@ -585,3 +590,9 @@ through 9,000 frames matches video and exact audio, and all 1,736 library
 tests pass (two ignored). `cargo check` and the dev library-test build
 have no warnings. The native frontier was reproduced at 11444 on this
 same binary. Full-route promotion is recorded separately in the ledger.
+
+The full-route check on clean commit `cbd3e99a` subsequently matched all
+1,581,079 per-frame video/audio hashes in 1,509.50 seconds, all four WRAM
+goldens, and endpoint
+`316193798ccb2f771546b25443df7d417bddac8a7cac65326fa189c1264fbdb6`.
+The run and its receipt are promoted in `routes/full_run/parity-frontier.json`.
