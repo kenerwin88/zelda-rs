@@ -5534,13 +5534,6 @@ impl ZeldaState {
             cycles_left = budget.master_cycles;
         }
         let loop_budget = cycles_left;
-        // The scroll scheduler's completion threshold was calibrated on the
-        // traced wall-clock span; an exact fresh entry hands it the reading
-        // the traced constant would have given.
-        let scroll_entry_master_cycles_offset = match fresh_converted_budget {
-            Some(converted) if !resuming => traced_budget.saturating_sub(converted.master_cycles),
-            _ => 0,
-        };
         if !resuming {
             self.dialogue_vwf_deferred_handler_exits = 0;
         }
@@ -5724,8 +5717,15 @@ impl ZeldaState {
                         self.game_state.messaging.dialogue_source_offset.bank_offset_low_nibble(),
                     )
                     .master;
+                    // Both the call and this headroom count CPU work. The
+                    // dispatch runs before entry; refresh/HDMA stall time
+                    // must not be added back to the raster-derived budget.
                     command_done = self.RenderText_Draw_Scroll(
-                        cycles_left.saturating_add(scroll_entry_master_cycles_offset),
+                        cycles_left.saturating_sub(if exact_costs {
+                            dispatch_master_cycles as u32
+                        } else {
+                            0
+                        }),
                         exact_command_master_cycles,
                     );
                 }
@@ -6091,6 +6091,18 @@ impl ZeldaState {
             stall_master_cycles: SNES_NTSC_MASTER_CYCLES_PER_FRAME
                 .saturating_sub(since_nmi)
                 .saturating_sub(master_cycles),
+        })
+    }
+
+    /// A continued scroll may reach main wait in this host only if both its
+    /// remaining copy work and the shared caller suffix fit after the held NMI.
+    pub(crate) fn native_dialogue_scroll_can_return_after_nmi(&self, remaining: u64) -> bool {
+        self.vwf_exact_loop_budget().is_some_and(|budget| {
+            remaining
+                + u64::from(vwf_exact_caller_suffix_master_cycles(
+                    self.last_nmi_prepare_sprites_master_cycles,
+                ))
+                <= u64::from(budget.master_cycles)
         })
     }
 
@@ -6547,6 +6559,11 @@ impl ZeldaState {
             );
         }
         self.begin_dialogue_scroll(DialogueTextGeneration::PublishedDisplay, completion_timing);
+        self.dialogue_scroll_remaining_master_cycles = Some(
+            call_master_cycles.saturating_sub(u64::from(cycles_before_vblank))
+                + u64::from(self.dialogue_vwf_deferred_handler_exits)
+                    * crate::cycle_models::vwf::HANDLER_EXIT_MASTER_CYCLES,
+        );
         let command_done = self.render_text_scroll_pixels(2);
         debug_assert!(!command_done);
         // Phase 2 is the remaining three copy passes. Phase 1 is the

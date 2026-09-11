@@ -3049,8 +3049,46 @@ impl ZeldaState {
         false
     }
 
-    /// Lane of `run_frame_internal_after_original_timing_body` (mechanically extracted; the body is unchanged).
-    /// Returns `true` when the lane completed the host frame.
+    /// Resume a native scroll's copy/return work after its held NMI, preserving
+    /// the subsequent main-wait boundary. Source receipts own their own lane.
+    pub(super) fn lane_native_dialogue_scroll_continuation(
+        &mut self,
+        input: u16,
+        oam_dma_source: Option<&[u8]>,
+    ) -> bool {
+        if !self.rom_startup_timing()
+            || matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            || self.game_state.frame.main_module != 0x0e
+            || !self.dialogue_scroll_is_copying_remaining_pixels()
+        {
+            return false;
+        }
+        let Some(remaining) = self.dialogue_scroll_remaining_master_cycles.take() else {
+            return false;
+        };
+        // Resume the held NMI before pricing the CPU interval it leaves.
+        // Snes9x run 8889 returns from $0E:D0C2 at V=196, clears $12
+        // at $00:805D at V=209, then waits for the Open NMI at V=225.
+        // The outgoing scanout still owns the frozen text generation.
+        self.interrupt_nmi(input, oam_dma_source, false);
+        self.capture_display_snapshot();
+        if self.native_dialogue_scroll_can_return_after_nmi(remaining) {
+            self.complete_module0e_dialogue_scroll_before_common_suffix();
+            self.nmi_prepare_sprites_for_main_loop();
+            self.clear_nmi_update_latch();
+            // The following host must publish the staged text at its leading
+            // NMI before Module0E can enter another scroll call.
+            self.game_execution_scheduler
+                .finish_call_stack_at_main_wait_before_nmi();
+        } else {
+            // The later V=32 entry (run 2506) crosses a second held NMI;
+            // keep the existing copy/return-only split for that call.
+            self.zelda_run_game_loop_body_with_dialogue_text_dma(None, &mut None, None, None);
+        }
+        true
+    }
+
+    /// Run a fresh native iteration after any leading NMI it owns.
     pub(super) fn lane_rom_startup_run_main(
         &mut self,
         input: u16,

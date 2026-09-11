@@ -8894,6 +8894,9 @@ pub struct ZeldaState {
     /// chain pays 114 per restart when the call returns (exact budget only).
     #[serde(skip)]
     pub(crate) dialogue_vwf_deferred_handler_exits: u32,
+    /// Native CPU work left in the suspended scroll call after its entry
+    /// host's vblank budget was exhausted (no source timing receipts).
+    pub(crate) dialogue_scroll_remaining_master_cycles: Option<u64>,
     /// `cycle_ledger::silent_calls()` at the last NMI acceptance: probed
     /// routines that ran unpriced since then make the ledger delta, and so
     /// the derived fresh-entry budget, incomplete.
@@ -11697,6 +11700,7 @@ impl ZeldaState {
             dialogue_vwf_glyph_cpu_phase: messaging::VwfGlyphCpuPhase::Ready,
             dialogue_vwf_dispatch_cursor: crate::cycle_models::vwf::DispatchCursor::default(),
             dialogue_vwf_deferred_handler_exits: 0,
+            dialogue_scroll_remaining_master_cycles: None,
             silent_ledger_calls_at_nmi_acceptance: 0,
             vwf_prefix_fully_charged: false,
             published_bg3_vwf_glyph_runs: Vec::new(),

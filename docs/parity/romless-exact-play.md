@@ -507,3 +507,81 @@ route matched every one of the 1,581,079 cached video and audio hashes in
 1,497.36 seconds with all four goldens and the recorded `31619379…`
 endpoint. Promoted in `routes/full_run/parity-frontier.json` for
 `9b990d22`. The receipt-less native frontier is 8890.
+
+## Native scroll return and the following main wait
+
+The scroll now carries its remaining CPU work from entry to the continuation
+host. That host first runs the held NMI, then compares the remaining copy
+work, deferred handler exits and caller suffix with the raster-derived CPU
+budget. A fitting return finishes RenderText, Module0E and the common suffix,
+stages text behind the outgoing snapshot, and marks the existing scheduler's
+`ReturnedToMainLoopBeforeNmi` phase. The next host consequently consumes a
+leading NMI and publishes the staged text before another scroll can start.
+The scroll publication machine and receipt-driven execution are unchanged.
+
+The entry budget needed one additional correction: the caller still added
+refresh/HDMA stall time back into the scroll headroom for the retired
+wall-clock threshold. Those cycles cannot pay for copy instructions. Removing
+that offset and charging the command dispatch before call entry preserves the
+longer first-line case; otherwise the new return lane fails at frame 2508.
+
+Cold instrumented Snes9x 1.63, pinned full-run cache inputs and initial SRAM:
+
+| Source run | PC | V / master cycles | Meaning |
+| --- | --- | --- | --- |
+| 2506 | `$0E:CFE2` | 32 / 270 | first-line scroll entry |
+| 2507 | NMI | 225 / 50, then 225 / 24 in the next field | two held acceptances |
+| 2508 | `$0E:D0C2` | 228 / 460 | scroll returns after the second held boundary |
+| 8888 | `$0E:CFE2` | 2 / 864 | scroll entry after resumed glyphs |
+| 8889 | `$0E:D0C2` | 196 / 702 | copy returns |
+| 8889 | `$00:F875` | 199 / 810 | Module0E returns |
+| 8889 | `$00:805D` | 209 / 530 | common suffix reaches the latch clear |
+| 8889 | NMI | 225 / 18 | open acceptance after main wait |
+| 8890 | `$0E:CFE2` | 34 / 1214 | next scroll after publication |
+
+The source copy receipts are `2+2+1` for runs 2506–2508 and `2+3` for
+8888–8889. `native_scroll_return_preserves_the_original_post_return_nmi_wait`
+tests both return decisions, the untouched frame counter, latch ownership,
+leading-NMI carry, publication and safe adjacent scroll entry. The serialized
+remaining-work field changes positional checkpoints, so the play checkpoint
+magic is now `Z3RSPC22`.
+
+To reproduce the timestamps:
+
+```sh
+scroll_cache=.git/parity-oracle-cache/ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18
+ZELDA3_SNES9X_TRACE_EVENTS=frame,nmi,pc \
+ZELDA3_SNES9X_TRACE_FRAMES=0-8900 \
+ZELDA3_SNES9X_TRACE_PCS=0e:cfe2,0e:d0c2,00:f875,00:805d \
+target/alt/parity/zelda3 --compare-snes9x-oracle \
+  external/snes9x-libretro/local/snes9x_libretro_trace.dylib saves/zelda3.sfc 8900 \
+  --input-script "$scroll_cache/input.txt" --load-sram "$scroll_cache/initial.srm" \
+  --live-oracle-rng --compare-engine-state-from-frame 184000 \
+  --ignore-video --ignore-audio --session-dir target/romless-scroll-source
+```
+
+With live oracle RNG, the harness overrides `ZELDA3_SNES9X_TRACE`: the binary trace is written
+to the session's **`oracle-rom-random.jsonl`**, despite its filename. Decode
+it with `scripts/snes9x_trace_format.py decode <path> --run-range 8888-8890`.
+Use `--compare-engine-state-from-frame 184000` for this short renderless
+probe, as reset WRAM differs before game initialization.
+
+The native development comparison now first differs at **11444**, video
+only. Receipt/native WRAM at 8889 and 8890 differs only at the known `$1F00`
+scratch byte. The later frontier is Module0F spotlight close: at 11443,
+`SPOTLIGHT_WINDOW_Y_BUFFER` (`$067A`) is `$000C` with receipts versus `$007E`
+natively, and 44 HDMA-table bytes differ; at 11444 only the standing
+`$12/$16/$1F00` differences remain while the presented image differs.
+This identifies the next timing/publication investigation, not a proven
+root cause. Partial pixel-copy WRAM within longer scrolls still uses the
+existing coarse split; advancing A/V does not establish all native WRAM
+or completely ROM-free execution as exact.
+
+Validation for binary
+`75aaed1128771423b6a47fbb51e468a1adca4dbfeb0346e904f4f5ddb4d9042b`:
+the 200,000-frame cached A/V comparison is exact (200.45 s), both WRAM
+goldens and the `dd45975c…` endpoint match, the cold live-Snes9x comparison
+through 9,000 frames matches video and exact audio, and all 1,736 library
+tests pass (two ignored). `cargo check` and the dev library-test build
+have no warnings. The native frontier was reproduced at 11444 on this
+same binary. Full-route promotion is recorded separately in the ledger.

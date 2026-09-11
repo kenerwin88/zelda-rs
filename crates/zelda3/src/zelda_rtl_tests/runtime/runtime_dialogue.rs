@@ -2359,6 +2359,57 @@ fn dialogue_scroll_completion_timing_follows_measured_vblank_headroom() {
 }
 
 #[test]
+fn native_scroll_return_preserves_the_original_post_return_nmi_wait() {
+    // Pinned Snes9x 1.63, cold full_run inputs: run 2506 enters $0E:CFE2
+    // at V=32/C=270 and returns at V=228 on run 2508 (2+2+1 copies).
+    // Run 8888 enters at V=2/C=864 and returns at V=196 on run 8889
+    // (2+3 copies); $00:805D clears the latch at V=209, then the V=225
+    // Open NMI publishes text before run 8890 enters the next scroll.
+    // CPU entry budgets below exclude refresh/HDMA, as the copy cost does.
+    for (entry_budget, returns_in_this_host) in [(247_158, false), (284_762, true)] {
+        let mut state = ZeldaState::new();
+        state.set_rom_startup_timing(true);
+        state.set_main_module(0x0e);
+        state.set_submodule(2);
+        state.latch_nmi_update();
+        state.begin_dialogue_scroll(
+            DialogueTextGeneration::PublishedDisplay,
+            DialogueScrollCompletionTiming::AfterReturnBoundary,
+        );
+        state.render_text_scroll_pixels(2);
+        state.dialogue_scroll_remaining_master_cycles = Some(583_026 - entry_budget);
+
+        assert!(state.lane_native_dialogue_scroll_continuation(0, None));
+        assert!(state.dialogue_scroll_remaining_master_cycles.is_none());
+        assert_eq!(state.game_state.frame.frame_counter, 0);
+        assert_eq!(
+            state.dialogue_scroll_phase(),
+            if returns_in_this_host {
+                DialogueScrollPhase::CompletionStagedAfterSnapshot
+            } else {
+                DialogueScrollPhase::ReturnOnly
+            },
+        );
+        assert_eq!(state.game_state.display.nmi_update_is_latched(), !returns_in_this_host);
+        state.game_execution_scheduler.begin_host_frame();
+        assert_eq!(
+            state.game_execution_scheduler.main_return_requires_leading_nmi(),
+            returns_in_this_host,
+        );
+        if returns_in_this_host {
+            state.capture_display_snapshot();
+            state.interrupt_nmi_for_active_scanout_without_dialogue_owner(0, None, false);
+            assert!(state.dialogue_scroll_cpu_is_idle());
+            assert_ne!(state.dialogue_scroll_phase(), DialogueScrollPhase::CompletionStagedAfterSnapshot);
+            state.begin_dialogue_scroll(
+                DialogueTextGeneration::PublishedDisplay,
+                DialogueScrollCompletionTiming::AfterReturnBoundary,
+            );
+        }
+    }
+}
+
+#[test]
 fn dialogue_scroll_completion_uses_live_main_loop_receipt_over_entry_estimate() {
     let mut source_completed_before_vblank = ZeldaState::new();
     source_completed_before_vblank.begin_dialogue_scroll(

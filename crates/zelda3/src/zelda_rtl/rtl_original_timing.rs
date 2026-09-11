@@ -9002,6 +9002,9 @@ impl ZeldaState {
             debug_host_path_early_return(self.frame_ctr_dbg, line!());
             return;
         }
+        if self.lane_native_dialogue_scroll_continuation(input, oam_dma_source.as_deref()) {
+            return;
+        }
         if self.rom_startup_timing() && self.dialogue_scroll_is_return_only() {
             assert!(
                 !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live),
