@@ -2174,8 +2174,100 @@ impl ZeldaState {
                 std::backtrace::Backtrace::force_capture()
             );
         }
+        // Cycle ledger: LinkOam_Main ($0D:A18E), entered m8 x8 by JSL; data
+        // bank $0D. The blocks charge themselves in the phase functions
+        // below, so a stair-sliced call (the continuation entry points used
+        // from the dungeon stair lanes) still charges its blocks but records
+        // no routine entry of its own.
+        let _scope = crate::cycle_ledger::routine(0x0d_a18e);
         let continuation = self.link_oam_before_equipment();
         self.link_oam_after_equipment(continuation);
+    }
+
+    /// Cycle ledger: the tail of the `LDA $25; BMI` z clamp LinkOam_Main
+    /// repeats before each sprite ($0D:A4E3, $0D:A570, $0D:A645, $0D:A7A4).
+    /// Non-negative z: `LDA $24; BRA` (46). Negative: the BMI is taken (+6)
+    /// into `LDA $24; CMP #$F0; BCC` (56, taken 62 below $F0), and a low byte
+    /// at or above $F0 runs `LDA #$00` (16).
+    fn link_oam_z_clamp_tail_cycles(z: u16) -> u64 {
+        if (z as i16) >= 0 {
+            46
+        } else if (z & 0xff) < 0xf0 {
+            6 + 62
+        } else {
+            6 + 56 + 16
+        }
+    }
+
+    /// Cycle ledger: the PlayerOam_WantInvokeSword predicate inlined at
+    /// $0D:A5DB-$0D:A633, priced for the current data. Returns the cost up to
+    /// (not including) the `JSR LinkOam_SetWeaponVRAMOffsets` at $0D:A635 and
+    /// whether the ROM reaches that JSR; the "no sword" exits include the
+    /// `BRL $0DA780` at $0D:A63A (30).
+    fn link_oam_sword_gate_cycles(&self) -> (u64, bool) {
+        let link = &self.game_state.player.follower_link;
+        let state = link.handler_state();
+        let mut cost: u64 = 0;
+        // $0D:A5DB-$0D:A5F7: five `CMP; BEQ $0DA62B` tests (96 for the first,
+        // 40 each after; a hit takes the branch, +6).
+        'gate: {
+            if state == PLAYER_HANDLER_STATE_ETHER {
+                cost += 102;
+                break 'gate;
+            }
+            cost += 96;
+            for other in [
+                PLAYER_HANDLER_STATE_BOMBOS,
+                PLAYER_HANDLER_STATE_QUAKE,
+                PLAYER_HANDLER_STATE_SPIN_ATTACKING,
+                PLAYER_HANDLER_STATE_SPIN_ATTACK_MOTION,
+            ] {
+                if state == other {
+                    cost += 46;
+                    break 'gate;
+                }
+                cost += 40;
+            }
+            // $0D:A5F9-$0D:A5FF `LDA $0308; AND; BNE` (80, taken 86).
+            if link.has_action_state() {
+                cost += 86;
+                break 'gate;
+            }
+            cost += 80;
+            // $0D:A601-$0D:A60A `LDA $03EF; ORA $0360; AND; BNE` (120, taken 126).
+            if link.force_hold_sword_up_state() != 0 || link.electrocute_on_touch() != 0 {
+                cost += 126;
+                break 'gate;
+            }
+            cost += 120;
+            // $0D:A60C-$0D:A612 `LDA $0301; AND #$0040; BNE $0DA63A` (80, taken 86).
+            if link.item_in_hand_has(0x40) {
+                return (cost + 86 + 30, false);
+            }
+            cost += 80;
+            // $0D:A614-$0D:A61A `LDA $037A; AND #$003D; BNE $0DA635` (80, taken 86).
+            if link.position_mode_has(0x3d) {
+                return (cost + 86, true);
+            }
+            cost += 80;
+            // $0D:A61C-$0D:A622 `LDA $0301; AND #$0093; BNE $0DA635` (80, taken 86).
+            if link.item_in_hand_has(0x93) {
+                return (cost + 86, true);
+            }
+            cost += 80;
+            // $0D:A624-$0D:A629 `LDA $3A; AND #$0080; BEQ $0DA63A` (72, taken 78).
+            if link.button_mask_b_y() & 0x80 == 0 {
+                return (cost + 78 + 30, false);
+            }
+            cost += 72;
+        }
+        // $0D:A62B-$0D:A633 `LDA $7EF359; INC; AND #$00FE; BEQ $0DA63A`
+        // (102, taken 108 without a usable sword).
+        if (self.game_state.inventory.items.sword_type().wrapping_add(1)) & 0xfe == 0 {
+            (cost + 108 + 30, false)
+        } else {
+            (cost + 102, true)
+        }
     }
 
     pub(super) fn link_oam_before_equipment(&mut self) -> LinkOamEquipmentContinuation {
@@ -2187,8 +2279,32 @@ impl ZeldaState {
         let y_coord_backup = self.game_state.player.follower_link.y();
         let submodule = self.game_state.frame.submodule;
 
+        // $0D:A18E-$0D:A197 (144): `PHB; PHK; PLB; LDY #$00; LDA $11; CMP
+        // #$12; BEQ` (taken +6 on submodule $12); otherwise $0D:A199-$0D:A19D
+        // `LDY #$18; CMP #$13; BNE $0DA1D1` (48, taken 54 for other modules).
+        crate::cycle_ledger::charge(match submodule {
+            18 => 150,
+            19 => 144 + 48,
+            _ => 144 + 54,
+        });
         if submodule == 18 || submodule == 19 {
             let mut t = if submodule == 18 { 0 } else { 12 };
+            // $0D:A19F-$0D:A1AE (196): saves the y coordinate and tests the
+            // staircase bit (`BEQ` taken +6 when clear, else `LDY #$0C` (16)).
+            // $0D:A1B2-$0D:A1BC (132): `LDA $2E; CMP #$06; BCC` (taken +6
+            // below 6, else `LDA #$00` (16)). $0D:A1C0-$0D:A1CF (228) adds the
+            // table offset (Y <= 46 keeps `LDA $A15E,Y` in its page).
+            crate::cycle_ledger::charge(
+                if self.game_state.dungeon.stair_movement.staircase_index() & 4 != 0 {
+                    196 + 16
+                } else {
+                    202
+                } + if self.game_state.player.follower_link.animation_step() < 6 {
+                    138
+                } else {
+                    132 + 16
+                } + 228,
+            );
             if self.game_state.dungeon.stair_movement.staircase_index() & 4 != 0 {
                 t += 6;
             }
@@ -2220,6 +2336,10 @@ impl ZeldaState {
             .follower_link
             .water_ripple_or_grass_state()
             != 0;
+        // $0D:A1D1-$0D:A1EA (300): screen-relative coordinates, the $80 OAM
+        // offsets and `LDA $0351; BEQ` (taken +6 without ripples, else
+        // `LDX #$01` (16)).
+        crate::cycle_ledger::charge(if scratch_0_var { 300 + 16 } else { 306 });
         let mut oam_priority_value = kPlayerOam_FloorOamPrio
             [self.game_state.player.follower_link.lower_level_state() as usize];
         self.oam_state_mut().set_priority_word(oam_priority_value);
@@ -2232,6 +2352,33 @@ impl ZeldaState {
         let mut rt: u8;
         let handler_state = self.game_state.player.follower_link.handler_state();
 
+        // $0D:A1EE-$0D:A213 (480): priority and sort-offset lookups (both
+        // 8-bit indexes stay inside their pages) and `LDA $5D; CMP #$16; BNE
+        // $0DA223` (taken +6 unless asleep). Asleep: $0D:A215-$0D:A21C (80)
+        // tests the opening pose; pose 2 takes the BEQ (+6) to $0D:A223,
+        // else $0D:A21E-$0D:A220 `STA $02; BRL $0DA435` (54).
+        // $0D:A223-$0D:A226 `LDA $03EF; BEQ` (48, taken 54): forced sword-up
+        // runs $0D:A228-$0D:A231 (126, BRL included). $0D:A234-$0D:A237
+        // `LDA $02E0; BEQ` (48, taken 54): bunny runs $0D:A239-$0D:A246 (166).
+        crate::cycle_ledger::charge({
+            let link = &self.game_state.player.follower_link;
+            if handler_state == PLAYER_HANDLER_STATE_ASLEEP_IN_BED && link.opening_pose() != 2 {
+                480 + 80 + 54
+            } else {
+                let to_sword_test = if handler_state == PLAYER_HANDLER_STATE_ASLEEP_IN_BED {
+                    480 + 86
+                } else {
+                    486
+                };
+                if link.force_hold_sword_up_state() != 0 {
+                    to_sword_test + 48 + 126
+                } else if link.is_bunny_mirror() {
+                    to_sword_test + 54 + 48 + 166
+                } else {
+                    to_sword_test + 54 + 54
+                }
+            }
+        });
         if handler_state == PLAYER_HANDLER_STATE_ASLEEP_IN_BED
             && self.game_state.player.follower_link.opening_pose() != 2
         {
@@ -2263,14 +2410,49 @@ impl ZeldaState {
             } else {
                 0
             };
+            // $0D:A249-$0D:A24E `LDY #$00; LDA $0351; BEQ` (64, taken 70;
+            // ripples run `LDY #$0A` (16)).
+            // Walking test: $0D:A252-$0D:A256 `LDA $11; CMP #$0E; BNE` (56,
+            // taken 62 off submodule 14); $0D:A258-$0D:A25C `LDA $10; CMP
+            // #$12; BEQ` (56, taken 62 in module 18); $0D:A25E-$0D:A262 `LDY
+            // #$0A; LDA $28; BEQ` (56, taken 62 when not moving).
+            crate::cycle_ledger::charge({
+                let link = &self.game_state.player.follower_link;
+                (if scratch_0_var { 64 + 16 } else { 70 })
+                    + if submodule != 14 {
+                        62
+                    } else if self.game_state.frame.main_module == 18 {
+                        56 + 62
+                    } else if link.actual_x_velocity() == 0 {
+                        56 + 56 + 62
+                    } else {
+                        56 + 56 + 56
+                    }
+            });
 
             if submodule == 14 && self.game_state.frame.main_module != 18 && {
                 yt = 10;
                 self.game_state.player.follower_link.actual_x_velocity() != 0
             } {
+                // $0D:A264-$0D:A268 `LDX $2F; CPX #$04; BEQ $0DA2A2` (56, taken
+                // 62); $0D:A26A-$0D:A26C `CPX #$06; BEQ` (32, taken 38). Facing
+                // 4 or 6 falls to $0D:A2A2-$0D:A2A4 `LDA $2E; STA $02` (48).
+                // Otherwise $0D:A26E-$0D:A27C (160; `LDA $A131,X` stays in its
+                // page) with the staircase `BEQ $0DA2A6` taken (+6) when the
+                // bit is clear, else $0D:A27E-$0D:A280 `LDY #$1A; BRA` (38).
                 if self.game_state.player.follower_link.facing() != 4
                     && self.game_state.player.follower_link.facing() != 6
                 {
+                    crate::cycle_ledger::charge(
+                        56 + 32
+                            + if self.game_state.dungeon.stair_movement.staircase_index() & 4
+                                != 0
+                            {
+                                160 + 38
+                            } else {
+                                166
+                            },
+                    );
                     rt = kPlayerOam_Tab1
                         [self.game_state.player.follower_link.animation_step_index()]
                         as u8;
@@ -2280,12 +2462,34 @@ impl ZeldaState {
                         0x19
                     };
                 } else {
+                    crate::cycle_ledger::charge(
+                        if self.game_state.player.follower_link.facing() == 4 {
+                            62
+                        } else {
+                            56 + 38
+                        } + 48,
+                    );
                     rt = self.game_state.player.follower_link.animation_step();
                 }
             } else if self.game_state.player.follower_link.grabbing_wall_has(3) {
+                // $0D:A282-$0D:A287 `LDA $0376; AND #$03; BEQ` (64) then
+                // $0D:A289-$0D:A290 (94, BRA included).
+                crate::cycle_ledger::charge(64 + 94);
                 yt = 0x18;
                 rt = self.game_state.player.follower_link.y_button_action_step();
             } else {
+                // $0D:A282 with the BEQ taken (70); $0D:A292-$0D:A296 `LDA $48;
+                // AND #$0D; BEQ $0DA2A2` (56, taken 62); $0D:A298-$0D:A29E `LDY
+                // #$16; LDA $2E; CMP #$05; BCC $0DA2A2` (72, taken 78 below 5,
+                // else `STZ $2E` (24)); then $0D:A2A2-$0D:A2A4 (48).
+                crate::cycle_ledger::charge({
+                    let link = &self.game_state.player.follower_link;
+                    70 + if link.defense_flags() & 0x0d != 0 {
+                        56 + if link.animation_step() >= 5 { 72 + 24 } else { 78 }
+                    } else {
+                        62
+                    } + 48
+                });
                 if self.game_state.player.follower_link.defense_flags() & 0x0d != 0 {
                     yt = 0x16;
                     self.follower_link_state_mut()
@@ -2294,11 +2498,55 @@ impl ZeldaState {
                 rt = self.game_state.player.follower_link.animation_step();
             }
             self.follower_link_state_mut().cache_facing_to_mirror();
+            // $0D:A2A6-$0D:A2AE (104): mirror the facing, `LDA $0345; BEQ`
+            // (taken +6 out of deep water, else $0D:A2B0-$0D:A2B4 (64)).
+            crate::cycle_ledger::charge(
+                if self.game_state.player.follower_link.deep_water_state() != 0 {
+                    104 + 64
+                } else {
+                    110
+                },
+            );
             if self.game_state.player.follower_link.deep_water_state() != 0 {
                 oam_priority_value = 0x2000;
                 self.oam_state_mut().set_priority_word(oam_priority_value);
             }
 
+            // $0D:A2B6-$0D:A2BA `LDA $5D; CMP #$04; BNE $0DA2F0` (56, taken 62).
+            // Swimming: $0D:A2BC-$0D:A2C6 (120; `LDA $11; BNE $0DA2CE` taken +6
+            //   off submodule 0); $0D:A2C8-$0D:A2CC `LDA $F0; AND #$0F; BNE
+            //   $0DA2DC` (56, taken 62); $0D:A2CE-$0D:A2DA ORs the four swim
+            //   words (144, `BEQ $0DA2E3` taken +6 when all zero);
+            //   $0D:A2DC-$0D:A2E1 (72); $0D:A2E3-$0D:A2E6 `LDA $032A; BEQ`
+            //   (48, taken 54; fast swimming runs $0D:A2E8-$0D:A2EB (54));
+            //   $0D:A2ED `BRL $0DA435` (30).
+            // Item pose: $0D:A2F0-$0D:A2F3 `LDA $02DA; BEQ` (48, taken 54);
+            //   $0D:A2F5-$0D:A2FB (72; `BEQ $0DA2FF` taken +6 for pose 2, else
+            //   `LDY #$1D` (16)); $0D:A2FF `BRA $0DA2ED` (22); $0D:A2ED (30).
+            // Fainting: $0D:A301-$0D:A306 `LDA $036B; AND #$01; BEQ` (64,
+            //   taken 70) then $0D:A308-$0D:A30F (94) and $0D:A2ED (30).
+            crate::cycle_ledger::charge({
+                let link = &self.game_state.player.follower_link;
+                if handler_state == PLAYER_HANDLER_STATE_SWIMMING {
+                    let swim_words_zero = (self.game_state.player.swim_acceleration.acceleration(0)
+                        | self.game_state.player.swim_acceleration.acceleration(2))
+                        == 0;
+                    56 + if submodule != 0 {
+                        126 + if swim_words_zero { 150 } else { 144 + 72 }
+                    } else if link.joypad1h_last() & 0x0f != 0 {
+                        120 + 62 + 72
+                    } else {
+                        120 + 56 + if swim_words_zero { 150 } else { 144 + 72 }
+                    } + if link.swim_fast_state() != 0 { 48 + 54 } else { 54 }
+                        + 30
+                } else if link.item_hold_pose() != 0 {
+                    62 + 48 + if link.item_hold_pose() != 2 { 72 + 16 + 22 } else { 78 + 22 } + 30
+                } else if link.faint_animation_active() & 1 != 0 {
+                    62 + 54 + 64 + 94 + 30
+                } else {
+                    62 + 54 + 70
+                }
+            });
             if handler_state == PLAYER_HANDLER_STATE_SWIMMING {
                 yt = 0x11;
                 rt &= 1;
@@ -2341,6 +2589,51 @@ impl ZeldaState {
                 let mut continue_after_set = false;
                 let mut link_state_is_empty = false;
 
+                // $0D:A311-$0D:A313 `LDA $4D; BEQ $0DA361` (40, taken 46);
+                // $0D:A315-$0D:A317 `CMP #$01; BEQ $0DA330` (32, taken 38);
+                // $0D:A319-$0D:A31B `CMP #$04; BNE $0DA361` (32, taken 38);
+                // state 4 runs $0D:A31D-$0D:A32D (206, BRL included).
+                // State 1: $0D:A330-$0D:A334 `LDA $5D; CMP #$05; BNE` (56,
+                //   taken 62). Turtle Rock: $0D:A336-$0D:A339 `LDA $034E; BNE`
+                //   (48, taken 54), `LDA #$30; STA $65; STZ $64` (64) when
+                //   clear, then `BRL $0DA3C6` (30). Otherwise $0D:A344-
+                //   $0D:A348 `CMP #$13; BEQ $0DA361` (56, taken 62 for the
+                //   hookshot); $0D:A34A-$0D:A34C `LDA $55; BNE $0DA361` (40,
+                //   taken 46 with the cape); $0D:A34E-$0D:A353 `LDY #$05; LDA
+                //   $0360; BEQ` (64, taken 70), the shock pose $0D:A355-
+                //   $0D:A35A (64), and $0D:A35C-$0D:A35E (54, BRL included).
+                crate::cycle_ledger::charge({
+                    let link = &self.game_state.player.follower_link;
+                    let aux = link.auxiliary_state();
+                    if aux == 4 {
+                        40 + 32 + 32 + 206
+                    } else if aux == 1 {
+                        40 + 38
+                            + if handler_state == PLAYER_HANDLER_STATE_TURTLE_ROCK {
+                                56 + if self.game_state.oam.turtle_rock_priority_flag() == 0 {
+                                    48 + 64 + 30
+                                } else {
+                                    54 + 30
+                                }
+                            } else if handler_state == PLAYER_HANDLER_STATE_HOOKSHOT {
+                                62 + 62
+                            } else if link.is_cape_active() {
+                                62 + 56 + 46
+                            } else {
+                                62 + 56
+                                    + 40
+                                    + if link.electrocute_on_touch() != 0 {
+                                        64 + 64 + 54
+                                    } else {
+                                        70 + 54
+                                    }
+                            }
+                    } else if aux == 0 {
+                        46
+                    } else {
+                        40 + 32 + 38
+                    }
+                });
                 if self
                     .game_state
                     .player
@@ -2388,6 +2681,24 @@ impl ZeldaState {
                             }
                             yt = 4;
                             rt = self.game_state.player.follower_link.pit_data_index();
+                            // $0D:A361-$0D:A363 `LDA $5B; BEQ` (40); $0D:A365-
+                            // $0D:A367 `CMP #$01; BEQ` (32); $0D:A369-$0D:A36B
+                            // `CMP #$03; BNE $0DA379` (32, taken 38; state 3 runs
+                            // the sort-offset clear $0D:A36D-$0D:A376 (128));
+                            // $0D:A379-$0D:A37F (80; `BCC $0DA387` taken +6 below
+                            // 6, else the priority OR $0D:A381-$0D:A385 (64));
+                            // $0D:A387-$0D:A389 `LDY #$04; BRL` (46).
+                            crate::cycle_ledger::charge(
+                                40 + 32
+                                    + if self.game_state.player.follower_link.near_pit_state_is(3)
+                                    {
+                                        32 + 128
+                                    } else {
+                                        38
+                                    }
+                                    + if rt >= 6 { 80 + 64 } else { 86 }
+                                    + 46,
+                            );
                             if rt >= 6 {
                                 oam_priority_value |= 0x3000;
                                 self.oam_state_mut().set_priority_word(oam_priority_value);
@@ -2425,11 +2736,117 @@ impl ZeldaState {
                             if !keep_selected_rt {
                                 rt = self.game_state.player.follower_link.y_button_action_step();
                             }
+                            // Reaching $0D:A38C past the pit test: 46 (`BEQ` taken
+                            // on state 0) or 40 + 38 (state 1). $0D:A38C-$0D:A38F
+                            // `LDA $0308; BEQ` (48); $0D:A391-$0D:A396 (78 with
+                            // `JSR FindMostSignificantBit` at 46; `BCS $0DA39D`
+                            // taken +6 from bit 6, else the mirror store
+                            // $0D:A398-$0D:A39A (48)); $0D:A39D-$0D:A3A2 `LDY
+                            // $A148,X; CPY #$0D; BCC $0DA3C1` (64, taken 70).
+                            // Poses from $0D: $0D:A3A4-$0D:A3A9 (64; `BEQ` taken +6
+                            // unless bit 1, which runs `INY` (14)); $0D:A3AC-
+                            // $0D:A3B1 (64; bit 0 runs `LDY #$10; BRA` (38), else
+                            // the `BEQ` is taken +6 into $0D:A3B7-$0D:A3BC (64;
+                            // bit 7 runs `BRL $0DA435` (30) keeping $02, else the
+                            // `BEQ` is taken +6)). $0D:A3C1-$0D:A3C4 `LDA $030A;
+                            // BRA` (54) and $0D:A3EB-$0D:A3ED `STA $02; BRA` (46).
+                            crate::cycle_ledger::charge({
+                                let link = &self.game_state.player.follower_link;
+                                let pit_skip: u64 =
+                                    if link.near_pit_state() == 0 { 46 } else { 40 + 38 };
+                                let table_pose = kPlayerOam_Tab4[bit] as u8;
+                                pit_skip
+                                    + 48
+                                    + if bit < 6 { 78 + 48 } else { 84 }
+                                    + if table_pose < 0x0d {
+                                        70 + 54 + 46
+                                    } else {
+                                        64 + if link.picking_throw_state_has(2) {
+                                            64 + 14
+                                        } else {
+                                            70
+                                        } + if link.is_lift_throw_primed() {
+                                            64 + 38 + 54 + 46
+                                        } else if link.is_lifting_or_carrying() {
+                                            70 + 64 + 30
+                                        } else {
+                                            70 + 70 + 54 + 46
+                                        }
+                                    }
+                            });
                             continue_after_set = true;
                         }
                     }
 
                     if !continue_after_set {
+                        // Reaching $0D:A3C6: the empty-state BRL from Turtle Rock
+                        // was charged above; otherwise the pit skip (46 or 78) and
+                        // `LDA $0308; BEQ $0DA3C6` taken (54).
+                        // $0D:A3C6-$0D:A3C9 `LDA $0377; BEQ` (48, taken 54);
+                        //   master sword: $0D:A3CB-$0D:A3CE (52) + $0D:A3EB (46).
+                        // $0D:A3D0-$0D:A3D3 `LDA $0301; BEQ` (48, taken 54); item:
+                        //   $0D:A3D5-$0D:A3DB (100, JSR at 46) + $0D:A3E8 (32) +
+                        //   $0D:A3EB (46).
+                        // $0D:A3DD-$0D:A3E0 `LDA $037A; BEQ $0DA3EF` (48, taken 54);
+                        //   position mode: $0D:A3E2-$0D:A3E5 (78) + 32 + 46.
+                        // $0D:A3EF-$0D:A3F3 `LDA $5D; CMP #$0A; BEQ` (56, taken
+                        //   62); $0D:A3F5 `CMP #$08; BEQ` (32/38); $0D:A3F9 `CMP
+                        //   #$09; BNE $0DA401` (32/38); $0D:A3FD `LDY #$15; BRA`
+                        //   (38); $0D:A401 `CMP #$1E; BEQ` (32/38); $0D:A405 `CMP
+                        //   #$03; BNE $0DA412` (32/38); $0D:A409 `LDY #$0F` (16);
+                        //   $0D:A40B-$0D:A410 (78, BRA included).
+                        // $0D:A412-$0D:A416 `LDA $3A; AND #$80; BEQ $0DA435` (56,
+                        //   taken 62); $0D:A418-$0D:A41C `LDA $3C; CMP #$09; BNE`
+                        //   (56, taken 62); nine frames: $0D:A41E-$0D:A420 (38);
+                        //   else $0D:A422-$0D:A42A (96; `BCC $0DA435` taken +6
+                        //   below 9, else $0D:A42C-$0D:A433 (94)).
+                        crate::cycle_ledger::charge({
+                            let link = &self.game_state.player.follower_link;
+                            let reach_3c6: u64 = if link_state_is_empty {
+                                0
+                            } else {
+                                (if link.near_pit_state() == 0 { 46 } else { 40 + 38 }) + 54
+                            };
+                            reach_3c6
+                                + if link.pull_action_state() != 0 {
+                                    48 + 52 + 46
+                                } else if link.has_item_in_hand() {
+                                    54 + 48 + 100 + 32 + 46
+                                } else if link.has_position_mode() {
+                                    54 + 54 + 48 + 78 + 32 + 46
+                                } else {
+                                    54 + 54
+                                        + 54
+                                        + match handler_state {
+                                            PLAYER_HANDLER_STATE_QUAKE => 62 + 38 + 78,
+                                            PLAYER_HANDLER_STATE_ETHER => 56 + 38 + 38 + 78,
+                                            PLAYER_HANDLER_STATE_BOMBOS => {
+                                                56 + 32 + 32 + 38 + 78
+                                            }
+                                            PLAYER_HANDLER_STATE_SPIN_ATTACK_MOTION => {
+                                                56 + 32 + 38 + 38 + 16 + 78
+                                            }
+                                            PLAYER_HANDLER_STATE_SPIN_ATTACKING => {
+                                                56 + 32 + 38 + 32 + 32 + 16 + 78
+                                            }
+                                            _ => {
+                                                56 + 32
+                                                    + 38
+                                                    + 32
+                                                    + 38
+                                                    + if link.button_mask_b_y() & 0x80 == 0 {
+                                                        62
+                                                    } else if link.button_b_frames() == 9 {
+                                                        56 + 56 + 38
+                                                    } else if link.button_b_frames() < 9 {
+                                                        56 + 62 + 102
+                                                    } else {
+                                                        56 + 62 + 96 + 94
+                                                    }
+                                            }
+                                        }
+                                }
+                        });
                         let pull_action_state =
                             self.game_state.player.follower_link.pull_action_state();
                         if pull_action_state != 0 {
@@ -2474,6 +2891,13 @@ impl ZeldaState {
             }
         }
 
+        // $0D:A435-$0D:A43A `STY $0354; CPY #$05; BEQ` (64, taken 70); poses
+        // other than 5 copy the priority word, $0D:A43C-$0D:A443 (112).
+        // $0D:A446-$0D:A47B (736): the OAM table lookups for this pose and
+        // direction and the `LDA #$0E00; STA $0346` palette default; the
+        // palette-swap test that closes the block is charged with the sprite
+        // banks.
+        crate::cycle_ledger::charge(if yt != 5 { 64 + 112 } else { 70 } + 736);
         self.oam_state_mut().set_player_oam_computed_value(yt);
         if yt != 5 {
             self.oam_state_mut()
@@ -2536,13 +2960,41 @@ impl ZeldaState {
             .set_palette_bits_of_oam_word(link_palette_bits_of_oam);
         self.follower_link_state_mut().clear_link_dma_sprite_banks();
 
+        // $0D:A47E-$0D:A481 `LDA $0ABD; BEQ` (56, taken 62; a palette swap
+        // runs `STZ $0346` (40)). $0D:A486-$0D:A48C (104). The pose search
+        // $0D:A48F-$0D:A49C walks the seven-entry table from the top: each
+        // miss costs 126 + `DEX; DEX; BPL` taken (50), the hit 126 + the
+        // taken `BEQ $0DA4A1` (6). No entry: seven misses, the last `BPL`
+        // falls through (44) into `BRL $0DA5CE` (30). The table has no
+        // duplicates, so the first Rust match is the ROM's match.
+        crate::cycle_ledger::charge(
+            if link_palette_bits_of_oam == 0 { 56 + 40 } else { 62 }
+                + 104
+                + match kPlayerOam_Tab5.iter().position(|&v| v == yt) {
+                    Some(xt) => (6 - xt as u64) * (126 + 50) + 126 + 6,
+                    None => 7 * 126 + 6 * 50 + 44 + 30,
+                },
+        );
         if let Some(xt) = kPlayerOam_Tab5.iter().position(|&v| v == yt) {
             let j = kPlayerOam_Tab6[xt + dir * 7] as usize + rt as usize;
             self.follower_link_state_mut()
                 .set_link_sprite_index_scratch(j as u16);
             let bank1 = kPlayerOam_Spr1Bank[j];
+            // $0D:A4A1-$0D:A4BF (388): the bank-1 lookup; $FF takes `BNE`
+            // untaken into `BRL $0DA541` (30), else the branch is taken (+6).
+            crate::cycle_ledger::charge(if bank1 >= 0 { 394 } else { 388 + 30 });
             if bank1 >= 0 {
                 let bank1u = bank1 as usize;
+                // $0D:A4C4-$0D:A4E1 (436) with the z clamp tail, $0D:A4EF-
+                // $0D:A51D (598; an odd bank shifts the priority word,
+                // $0D:A51F-$0D:A524 (84), else `BEQ` taken +6) and
+                // $0D:A525-$0D:A53E (352).
+                crate::cycle_ledger::charge(
+                    436 + Self::link_oam_z_clamp_tail_cycles(
+                        self.game_state.player.follower_link.z(),
+                    ) + if bank1u & 1 != 0 { 598 + 84 } else { 604 }
+                        + 352,
+                );
                 self.follower_link_state_mut()
                     .set_link_dma_left_sprite_bank_word((bank1u as u16) * 2);
                 let oam_pos = ((if scratch_0_var {
@@ -2572,8 +3024,20 @@ impl ZeldaState {
             }
 
             let bank2 = kPlayerOam_Spr2Bank[j];
+            // $0D:A541-$0D:A54C (142): the bank-2 lookup; $FF falls into
+            // `BRL $0DA5CE` (30), else the `BNE` is taken (+6).
+            crate::cycle_ledger::charge(if bank2 >= 0 { 148 } else { 142 + 30 });
             if bank2 >= 0 {
                 let bank2u = bank2 as usize;
+                // $0D:A551-$0D:A56E (436) with the z clamp tail, $0D:A57C-
+                // $0D:A5AA (598; odd bank shifts, $0D:A5AC-$0D:A5B1 (84), else
+                // `BEQ` taken +6) and $0D:A5B2-$0D:A5CB (352).
+                crate::cycle_ledger::charge(
+                    436 + Self::link_oam_z_clamp_tail_cycles(
+                        self.game_state.player.follower_link.z(),
+                    ) + if bank2u & 1 != 0 { 598 + 84 } else { 604 }
+                        + 352,
+                );
                 self.follower_link_state_mut()
                     .set_link_dma_right_sprite_bank_word((bank2u as u16) * 2);
                 let oam_pos = ((if scratch_0_var {
@@ -2646,19 +3110,65 @@ impl ZeldaState {
             ..
         } = continuation;
         let mut sr = SwordResult { r6: 0, r12: 0 };
+        // $0D:A5CE-$0D:A5D4 `LDA $0309; AND #$0004; BEQ $0DA5DB` (80, taken
+        // 86). Bit 2: `JSR LinkOam_UnusedWeaponSettings; BRA $0DA63A` (68) and
+        // the `BRL $0DA780` (30). Otherwise the inlined want-sword predicate
+        // ($0D:A5DB-$0D:A633, priced by `link_oam_sword_gate_cycles`), then
+        // `JSR LinkOam_SetWeaponVRAMOffsets` (46) and `BCC $0DA63D` (taken
+        // +6 on success; a failure falls through 16 into the BRL, 30).
+        let (sword_gate_cycles, sword_gate_reaches_jsr) = self.link_oam_sword_gate_cycles();
         if self
             .game_state
             .player
             .follower_link
             .picking_throw_state_has(4)
         {
+            crate::cycle_ledger::charge(80 + 68 + 30);
             self.link_oam_unused_weapon_settings(r4loc, xcoord, ycoord);
         } else if self.player_oam_want_invoke_sword()
             && !self.link_oam_set_weapon_vram_offsets(r2, &mut sr)
         {
+            crate::cycle_ledger::charge(86 + sword_gate_cycles + 46 + 22);
             let zcoord = self.game_state.player.follower_link.z_for_oam();
             let mut oam_y = add_i8(ycoord, kDrawSword_y[r2]).wrapping_sub(zcoord);
             let mut oam_x = add_i8(xcoord, kDrawSword_x[r2]);
+            // $0D:A63D-$0D:A643 (94) with the z clamp tail; $0D:A651-$0D:A66D
+            // (350): the sword position, `LDA $0301; AND #$02; BEQ $0DA67E`
+            // (taken +6 without bit 1). Bit 1: $0D:A66F-$0D:A674 `LDA $0300;
+            // CMP #$02; BNE $0DA68F` (64, taken 70), $0D:A676-$0D:A67A `LDA
+            // $3D; CMP #$0F; BNE` (56, taken 62), `BRA $0DA685` (22). No bit
+            // 1: $0D:A67E-$0D:A683 `LDA $0301; AND #$05; BNE` (64, taken 70).
+            // $0D:A685-$0D:A68D (124) stores the OAM offsets. $0D:A68F-
+            // $0D:A698 (112; `BEQ $0DA6A3` taken +6 without bits 0/2, else
+            // the rod palette $0D:A69A-$0D:A6A1 (116)). $0D:A6A3-$0D:A6A8
+            // `LDA $037A; AND #$08; BEQ` (64, taken 70); $0D:A6AA-$0D:A6AF
+            // `LDA $0303; CMP #$0D; BNE` (64, taken 70); byrna $0D:A6B1-
+            // $0D:A6B3 (40). $0D:A6B5-$0D:A6E1 (742, `JSR
+            // LinkOam_CalculateSwordSparklePosition` at 46 included).
+            crate::cycle_ledger::charge({
+                let link = &self.game_state.player.follower_link;
+                let hand_bit1 = link.item_in_hand_has(2);
+                let hand_rod = link.item_in_hand_has(5);
+                94 + Self::link_oam_z_clamp_tail_cycles(link.z())
+                    + if hand_bit1 {
+                        350 + if link.action_handler_timer() != 2 {
+                            70
+                        } else if link.spin_attack_delay_timer() != 15 {
+                            64 + 62
+                        } else {
+                            64 + 56 + 22 + 124
+                        }
+                    } else {
+                        356 + if hand_rod { 70 } else { 64 + 124 }
+                    }
+                    + if hand_rod { 112 + 116 } else { 118 }
+                    + if link.position_mode_has(8) {
+                        64 + if link.current_item_y() == 13 { 64 + 40 } else { 70 }
+                    } else {
+                        70
+                    }
+                    + 742
+            });
             if if self.game_state.player.follower_link.item_in_hand_has(2) {
                 self.game_state.player.follower_link.action_handler_timer() == 2
                     && self
@@ -2716,20 +3226,77 @@ impl ZeldaState {
                     let xt = (xcoord as i16 - oam_x as i16).unsigned_abs();
                     let value = sr.r12 | u8::from(xt >= 0x80);
                     self.oam_state_mut().set_extended_byte(oam_pos, value);
+                    // Sword tile loop $0D:A6E3-$0D:A755, a visible tile:
+                    // $0D:A6E3-$0D:A6EB (108); $0D:A6ED-$0D:A6FB (166; `BEQ
+                    // $0DA70E` taken +6 when the tile already uses palette 1);
+                    // $0D:A6FD-$0D:A700 `LDA $0346; BNE` (56, taken 62), the
+                    // palette rewrite $0D:A702-$0D:A70B (140); $0D:A70E-$0D:A710
+                    // `LDA $0E; BEQ` (48, taken 54; a rod/byrna palette runs
+                    // $0D:A712-$0D:A71A (148)); $0D:A71D-$0D:A72F (252; `BPL`
+                    // taken +6 when Link is not left of the tile, else the negate
+                    // $0D:A731-$0D:A734 (38)); $0D:A735-$0D:A738 `CMP #$0080; BCC`
+                    // (40, taken 46; wide offsets set the size bit, $0D:A73A-
+                    // $0D:A73D (78)); $0D:A73F-$0D:A755 (368).
+                    crate::cycle_ledger::charge(
+                        108 + 166
+                            + if (kSwordTiledata[j] & 0x0e00) == 0x0200 {
+                                6
+                            } else if link_palette_bits_of_oam != 0 {
+                                56 + 6
+                            } else {
+                                56 + 140
+                            }
+                            + if oam_pal != 0 { 48 + 148 } else { 54 }
+                            + if xcoord < oam_x { 252 + 38 } else { 258 }
+                            + if xt < 0x80 { 46 } else { 40 + 78 }
+                            + 368,
+                    );
+                } else {
+                    // $0D:A6E3-$0D:A6EB with the `BEQ $0DA756` taken on $FFFF.
+                    crate::cycle_ledger::charge(114);
                 }
                 oam_x = oam_x.wrapping_add(8);
                 if i == 1 {
                     oam_x = oam_x.wrapping_sub(16);
                     oam_y = oam_y.wrapping_add(8);
                 }
+                // $0D:A756-$0D:A768 (222): advance x, the tile index and the
+                // counter; the `BNE $0DA775` is taken (+6) on odd counts, an even
+                // count runs the row step $0D:A76A-$0D:A773 (126). $0D:A775-
+                // $0D:A779 `LDA $06; CMP #$03; BEQ` (56; taken 62 after the
+                // third tile into `SEP #$10` (22), else `BRL $0DA6E3` (30)).
+                crate::cycle_ledger::charge(
+                    if i == 1 { 222 + 126 } else { 228 } + if i == 2 { 62 + 22 } else { 56 + 30 },
+                );
                 j += 1;
             }
+        } else {
+            crate::cycle_ledger::charge(
+                86 + sword_gate_cycles + if sword_gate_reaches_jsr { 46 + 16 + 30 } else { 0 },
+            );
         }
 
+        // $0D:A780-$0D:A789 `REP #$30; LDA $7EF35A; AND; BEQ $0DA799` (110,
+        // taken 116 without a shield, into `BRL $0DA857` (30)); $0D:A78B-
+        // $0D:A792 `LDA $7EF3C5; AND; BEQ` (88, taken 94 before the game
+        // starts); `JSR LinkOam_SetEquipmentVRAMOffsets` (46) and `BCC
+        // $0DA79C` (taken +6 on success; a failure falls 16 into the BRL).
+        crate::cycle_ledger::charge({
+            let shield = self.game_state.inventory.items.shield_type() != 0;
+            let started = self.game_state.inventory.save_progress.progress_indicator() != 0;
+            if !shield {
+                116 + 30
+            } else if !started {
+                110 + 94 + 30
+            } else {
+                110 + 88 + 46
+            }
+        });
         if self.game_state.inventory.items.shield_type() != 0
             && self.game_state.inventory.save_progress.progress_indicator() != 0
             && !self.link_oam_set_equipment_vram_offsets(r2, &mut sr)
         {
+            crate::cycle_ledger::charge(22);
             let zcoord = self.game_state.player.follower_link.z_for_oam();
             let mut oam_y = add_i8(ycoord, kShieldStuff_y[r2])
                 .wrapping_sub(1)
@@ -2741,6 +3308,20 @@ impl ZeldaState {
             } else {
                 0x0600
             };
+            // $0D:A79C-$0D:A7A2 (94) with the z clamp tail; $0D:A7B0-$0D:A7D7
+            // (496, `JSR LinkOam_CalculateXOffsetRelativeLink` at 46
+            // included; `LDA $0347; BNE $0DA7DD` taken +6 with the palette
+            // high byte set, else `LDA #$06; STA $0F` (40)); $0D:A7DD-
+            // $0D:A801 (566).
+            crate::cycle_ledger::charge(
+                94 + Self::link_oam_z_clamp_tail_cycles(self.game_state.player.follower_link.z())
+                    + if link_palette_bits_of_oam >> 8 != 0 {
+                        502
+                    } else {
+                        496 + 40
+                    }
+                    + 566,
+            );
             let oam_pos = ((if scratch_0_var {
                 kShieldStuff_oam_index_ptrs_1[r4loc]
             } else {
@@ -2751,6 +3332,19 @@ impl ZeldaState {
             let mut j = sr.r6 * 3;
             for i in 0..3 {
                 let mut td = kShieldStuff_OamData[j];
+                // Shield tile loop $0D:A802-$0D:A853: $0D:A802-$0D:A80C (140;
+                // `BEQ $0DA831` taken +6 on $FFFF, else the tile store
+                // $0D:A80E-$0D:A830 (506)); $0D:A831-$0D:A842 (222; the ROM
+                // advances x on every tile, `BNE $0DA84F` taken +6 on odd
+                // counts, an even count runs $0D:A844-$0D:A84D (126));
+                // $0D:A84F-$0D:A853 `LDA $06; CMP #$03; BNE $0DA802` (56,
+                // taken 62 before the third tile; the third falls into
+                // `SEP #$10` (22)).
+                crate::cycle_ledger::charge(
+                    if td != 0xffff { 140 + 506 } else { 146 }
+                        + if i == 1 { 222 + 126 } else { 228 }
+                        + if i == 2 { 56 + 22 } else { 62 },
+                );
                 if td != 0xffff {
                     td = (td & 0xc1ff) | oam_pal | oam_priority_value;
                     self.set_oam_charnum(oam_pos, td);
@@ -2765,6 +3359,12 @@ impl ZeldaState {
                 }
                 j += 1;
             }
+        } else if self.game_state.inventory.items.shield_type() != 0
+            && self.game_state.inventory.save_progress.progress_indicator() != 0
+        {
+            // `LinkOam_SetEquipmentVRAMOffsets` returned carry set: the `BCC`
+            // falls through (16) into `BRL $0DA857` (30).
+            crate::cycle_ledger::charge(16 + 30);
         }
 
         LinkOamEquipmentContinuation {
@@ -2789,9 +3389,44 @@ impl ZeldaState {
             link_palette_bits_of_oam,
             ..
         } = continuation;
+        // $0D:A857-$0D:A85D `SEP #$30; LDA $4B; CMP #$0C; BNE $0DA862` (78;
+        // invisible falls into `BRL $0DA94B` (30), else taken +6);
+        // $0D:A862-$0D:A866 `LDA $5D; CMP #$16; BEQ $0DA898` (56, taken 62
+        // when asleep, into `BRL $0DA94B` (30)).
+        crate::cycle_ledger::charge(
+            if self.game_state.player.follower_link.visibility_status() == 12 {
+                78 + 30
+            } else if handler_state == PLAYER_HANDLER_STATE_ASLEEP_IN_BED {
+                84 + 62 + 30
+            } else {
+                84 + 56
+            },
+        );
         if self.game_state.player.follower_link.visibility_status() != 12
             && handler_state != PLAYER_HANDLER_STATE_ASLEEP_IN_BED
         {
+            // $0D:A868-$0D:A86D `LDA $0354; CMP #$05; BEQ $0DA879` (64, taken
+            // 70); $0D:A86F-$0D:A872 `LDA $0351; BEQ` (48, taken 54); ripples
+            // run `JSR LinkOam_DrawFootObject; BRA $0DA898` (68) and the BRL
+            // (30). $0D:A879-$0D:A87D `LDA $4D; CMP #$04; BEQ $0DA898` (56,
+            // taken 62 + BRL 30); $0D:A87F-$0D:A883 `LDA $5D; CMP #$04; BEQ`
+            // (56, taken 62 + 30 when swimming).
+            crate::cycle_ledger::charge({
+                let link = &self.game_state.player.follower_link;
+                let computed_pose = self.game_state.oam.player_oam_computed_value();
+                if computed_pose != 5 && link.water_ripple_or_grass_state() != 0 {
+                    64 + 48 + 68 + 30
+                } else {
+                    let reach_879: u64 = if computed_pose == 5 { 70 } else { 64 + 54 };
+                    if link.is_in_auxiliary_state(4) {
+                        reach_879 + 62 + 30
+                    } else if handler_state == PLAYER_HANDLER_STATE_SWIMMING {
+                        reach_879 + 56 + 62 + 30
+                    } else {
+                        reach_879 + 56 + 56
+                    }
+                }
+            });
             if self.game_state.oam.player_oam_computed_value() != 5
                 && self
                     .game_state
@@ -2811,11 +3446,55 @@ impl ZeldaState {
                 if self.game_state.player.follower_link.is_near_pit()
                     && !self.game_state.player.follower_link.near_pit_state_is(1)
                 {
+                    // $0D:A885-$0D:A889 `LDY #$00; LDA $5B; BEQ` (56);
+                    // $0D:A88B-$0D:A88D `CMP #$01; BEQ` (32); $0D:A88F-
+                    // $0D:A893 `LDA $5A; CMP #$06; BCC $0DA898` (56, taken 62
+                    // below 6); `JSR LinkOam_DrawDungeonFallShadow` (46);
+                    // `BRL $0DA94B` (30).
+                    crate::cycle_ledger::charge(
+                        56 + 32
+                            + if self.game_state.player.follower_link.pit_data_index() >= 6 {
+                                56 + 46 + 30
+                            } else {
+                                62 + 30
+                            },
+                    );
                     if self.game_state.player.follower_link.pit_data_index() >= 6 {
                         self.link_oam_draw_dungeon_fall_shadow(r4loc, xcoord);
                         r4loc = 2;
                     }
                 } else {
+                    // $0D:A885 `BEQ $0DA89B` taken on pit state 0 (62), or 56 +
+                    // the taken `BEQ` at $0D:A88B (38) on state 1. $0D:A89B-
+                    // $0D:A89D `LDA $4D; BEQ $0DA8A9` (40, taken 46);
+                    // $0D:A89F-$0D:A8A1 `CMP #$01; BNE $0DA8A7` (32, taken 38
+                    // into `LDY #$01` (16)); $0D:A8A3-$0D:A8A5 `LDA $55; BNE`
+                    // (40, taken 46 with the cape, else `LDY #$01` (16)).
+                    // $0D:A8A9-$0D:A8C4 (344): the shadow y offset (`LDA
+                    // $98DB,Y` stays in its page); `CMP #$0080; BCC` is taken
+                    // (+6) for a non-negative offset, else the sign extension
+                    // `ORA #$FF00` (24).
+                    crate::cycle_ledger::charge({
+                        let link = &self.game_state.player.follower_link;
+                        let aux = link.auxiliary_state();
+                        (if link.near_pit_state() == 0 { 62 } else { 56 + 38 })
+                            + if aux == 0 {
+                                46
+                            } else if aux != 1 {
+                                40 + 38 + 16
+                            } else if link.is_cape_active() {
+                                40 + 32 + 46
+                            } else {
+                                40 + 32 + 40 + 16
+                            }
+                            + if (kOffsToShadowGivenDir_Y[link.facing_mirror_index()] as u8)
+                                < 0x80
+                            {
+                                350
+                            } else {
+                                344 + 24
+                            }
+                    });
                     let shadow_idx = usize::from(
                         self.game_state.player.follower_link.has_auxiliary_state()
                             && (!self
@@ -2836,6 +3515,21 @@ impl ZeldaState {
                                 [self.game_state.player.follower_link.facing_mirror_index()]
                                 as i16 as u16,
                         );
+                    // $0D:A8C9-$0D:A8D2 (140): add the offset, `LDA $07; BNE
+                    // $0DA898` (taken +6 off screen, into the BRL (30)).
+                    // On screen: $0D:A8D4-$0D:A928 (1118) writes both shadow
+                    // entries; `LDA $0346; BNE $0DA942` is taken (+6) with the
+                    // palette bits set, else the palette rewrite $0D:A92A-
+                    // $0D:A93F (280); $0D:A942-$0D:A949 (124).
+                    crate::cycle_ledger::charge(if oam_y < 256 {
+                        140 + if link_palette_bits_of_oam == 0 {
+                            1118 + 280
+                        } else {
+                            1124
+                        } + 124
+                    } else {
+                        146 + 30
+                    });
                     if oam_y < 256 {
                         let oam_x = add_i8(
                             xcoord,
@@ -2867,6 +3561,10 @@ impl ZeldaState {
             }
         }
 
+        // $0D:A94B-$0D:A96A (502): the body OAM slot lookup and the Link
+        // graphics index (`STA $0100`); the rest of that block belongs to
+        // the body phase.
+        crate::cycle_ledger::charge(502);
         let j = kLinkDmaGraphicsIndices[r2] as usize;
         self.follower_link_state_mut()
             .set_link_dma_graphics_index_word((j as u16) * 2);
@@ -2896,6 +3594,16 @@ impl ZeldaState {
             link_palette_bits_of_oam,
             ..
         } = continuation;
+        // $0D:A96D-$0D:A977 (138): the body pointer and `LDA $4B; CMP #$0C;
+        // BNE $0DA97C` (taken +6 when visible; invisible falls into `BRL
+        // $0DAA18` (30)).
+        crate::cycle_ledger::charge(
+            if self.game_state.player.follower_link.visibility_status() != 12 {
+                144
+            } else {
+                138 + 30
+            },
+        );
         let oam_pos = ((if scratch_0_var {
             kLinkBody_oam_index_1[r4loc]
         } else {
@@ -2910,6 +3618,26 @@ impl ZeldaState {
             let oam_y = add_i8(ycoord, sp.y).wrapping_sub(zcoord);
             let oam_x = add_i8(xcoord, sp.x);
             let td = (sp.tile as u16) << 8;
+            // $0D:A97C-$0D:A97E `LDA $25; BMI` (40) with the z clamp tail;
+            // $0D:A98C-$0D:A9B1 (470; `BEQ $0DA9E3` taken +6 when the upper
+            // tile is blank); $0D:A9B3-$0D:A9C8 (292; `BCC $0DA9CF` taken +6
+            // left of x $F8, else the wide flag $0D:A9CA-$0D:A9CD (56));
+            // $0D:A9CF-$0D:A9E2 (294). $0D:A9E3-$0D:A9EB (96; `BEQ $0DAA18`
+            // taken +6 when the lower tile is blank, else $0D:A9ED-$0D:AA15
+            // (556)).
+            crate::cycle_ledger::charge(
+                40 + Self::link_oam_z_clamp_tail_cycles(self.game_state.player.follower_link.z())
+                    + if (td & 0xf000) != 0xf000 {
+                        470 + if oam_x < 0xf8 { 298 } else { 292 + 56 } + 294
+                    } else {
+                        476
+                    }
+                    + if ((td << 4) & 0xf000) != 0xf000 {
+                        96 + 556
+                    } else {
+                        102
+                    },
+            );
             if (td & 0xf000) != 0xf000 {
                 self.set_oam_charnum(
                     oam_pos,
@@ -2934,6 +3662,9 @@ impl ZeldaState {
             }
         }
 
+        // Cycle ledger only: the blink countdown before the `hide` test below
+        // decrements it, so the ROM's `DEC; CMP #$04` path can be priced.
+        let ledger_blink_before = self.game_state.player.follower_link.blink_countdown();
         let mut hide_shadow = true;
         let door_x = self
             .game_state
@@ -2959,7 +3690,87 @@ impl ZeldaState {
             }
             || self.game_state.player.follower_link.visibility_status() == 12
             || self.game_state.player.follower_link.is_cape_active();
+        // $0D:AA18-$0D:AA20 `SEP #$30; LDA #$01; STA $0E; LDA $6C; BEQ
+        // $0DAA44` (102, taken 108). In a doorway: $0D:AA22-$0D:AA2C (140;
+        // `BCC $0DAA65` taken +6 below x 4); $0D:AA2E-$0D:AA31 `CMP #$00FC;
+        // BCS` (40, taken 46); $0D:AA33-$0D:AA3B (118; `BCC` taken +6 below
+        // y 4); $0D:AA3D-$0D:AA40 `CMP #$00E0; BCS` (40, taken 46); `SEP #$20`
+        // (22). $0D:AA44-$0D:AA48 `STZ $0E; LDA $11; BNE $0DAA5B` (64, taken
+        // 70); $0D:AA4A-$0D:AA4D `LDA $031F; BEQ` (48, taken 54); $0D:AA4F-
+        // $0D:AA55 `DEC; STA; CMP #$04; BCC $0DAA5B` (78, taken 84);
+        // $0D:AA57-$0D:AA59 `AND #$01; BEQ $0DAA65` (32, taken 38).
+        // $0D:AA5B-$0D:AA5F `LDA $4B; CMP #$0C; BEQ $0DAA65` (56, taken 62);
+        // $0D:AA61-$0D:AA63 `LDA $55; BEQ $0DAAB1` (40, taken 46 without the
+        // cape). The hide block itself is charged inside `if hide`.
+        crate::cycle_ledger::charge({
+            let link = &self.game_state.player.follower_link;
+            let mut cost: u64 = 0;
+            let mut hidden = false;
+            if link.doorway_state() != 0 {
+                cost += 102;
+                if door_x < 4 {
+                    cost += 146;
+                    hidden = true;
+                } else if door_x >= 252 {
+                    cost += 140 + 46;
+                    hidden = true;
+                } else if door_y < 4 {
+                    cost += 140 + 40 + 124;
+                    hidden = true;
+                } else if door_y >= 224 {
+                    cost += 140 + 40 + 118 + 46;
+                    hidden = true;
+                } else {
+                    cost += 140 + 40 + 118 + 40 + 22;
+                }
+            } else {
+                cost += 108;
+            }
+            if !hidden {
+                if submodule != 0 {
+                    cost += 70;
+                } else if ledger_blink_before == 0 {
+                    cost += 64 + 54;
+                } else {
+                    let after = ledger_blink_before.wrapping_sub(1);
+                    if after < 4 {
+                        cost += 64 + 48 + 84;
+                    } else if after & 1 == 0 {
+                        cost += 64 + 48 + 78 + 38;
+                        hidden = true;
+                    } else {
+                        cost += 64 + 48 + 78 + 32;
+                    }
+                }
+            }
+            if !hidden {
+                if link.visibility_status() == 12 {
+                    cost += 62;
+                } else if link.is_cape_active() {
+                    cost += 56 + 40;
+                } else {
+                    cost += 56 + 46;
+                }
+            }
+            cost
+        });
         if hide {
+            // $0D:AA65-$0D:AA8A (500): six `STA $0A20,X` size-bit words and
+            // `LDA $4B; AND; CMP #$000C; BEQ $0DAAAF` (taken +6 when
+            // invisible); $0D:AA8C-$0D:AA91 `LDA $0E; AND; BNE` (72, taken 78
+            // when the shadow stays hidden, else the shadow re-enable
+            // $0D:AA93-$0D:AAAC (400)); $0D:AAAF `SEP #$30` (22). The ROM
+            // always uses this path; the widescreen feature only changes the
+            // engine's hiding method.
+            crate::cycle_ledger::charge(
+                if self.game_state.player.follower_link.visibility_status() == 12 {
+                    506
+                } else if hide_shadow {
+                    500 + 78
+                } else {
+                    500 + 72 + 400
+                } + 22,
+            );
             let shadow_oam_pos =
                 if !hide_shadow && self.game_state.player.follower_link.visibility_status() != 12 {
                     (if scratch_0_var {
@@ -2993,6 +3804,17 @@ impl ZeldaState {
             }
         }
 
+        // $0D:AAB1-$0D:AAB5 `LDA $11; CMP #$12; BEQ $0DAABB` (56, taken 62);
+        // $0D:AAB7-$0D:AAB9 `CMP #$13; BNE $0DAAC1` (32, taken 38); the stair
+        // modules restore the y coordinate, $0D:AABB-$0D:AABF (104);
+        // $0D:AAC1-$0D:AAC2 `PLB; RTL` (72).
+        crate::cycle_ledger::charge(
+            match submodule {
+                18 => 62 + 104,
+                19 => 56 + 32 + 104,
+                _ => 56 + 38,
+            } + 72,
+        );
         if submodule == 18 || submodule == 19 {
             self.follower_link_state_mut().set_y(y_coord_backup);
         }
