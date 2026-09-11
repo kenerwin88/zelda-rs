@@ -4737,13 +4737,19 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     fn sprite_execute_single_after_timers(&mut self, k: usize, st: u8) {
         // The dispatch after the timers: state 9 takes the $06:84EE BEQ (+6)
         // to $06:850C JMP SpriteActive_Main (24); every other nonzero state
-        // goes through $06:84F0 JSL JumpTableLocal (62) plus JumpTableLocal
-        // itself ($00:8781, 414) into the twelve-entry table at $06:84F4.
+        // goes through $06:84F0 JSL JumpTableLocal (62) into the
+        // twelve-entry table at $06:84F4: JumpTableLocal $00:8781 is a JSL
+        // target whose own frame closes when it pulls the return address
+        // (52), and the rest of its body (414 - 52) runs in this scope.
         // State 0 was dispatched by the BEQ charged at the entry.
         match st {
             0 => {}
             9 => crate::cycle_ledger::charge(6 + 24),
-            _ => crate::cycle_ledger::charge(62 + 414),
+            _ => {
+                crate::cycle_ledger::charge(62);
+                crate::cycle_ledger::charge_routine(0x00_8781, 52);
+                crate::cycle_ledger::charge(414 - 52);
+            }
         }
         match st {
             0 => self.sprite_inactive_sprite(k),
@@ -4769,9 +4775,10 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     /// ran before the timers ($06:84E2-84EE, 48 + 128; the slot is active).
     /// With `dispatched`, the dispatch after the timers is charged too
     /// (state 9: BEQ taken + JMP SpriteActive_Main, 6 + 24; any other state:
-    /// JSL JumpTableLocal + its body, 62 + 414). The handler dispatch blocks
-    /// that a lane bypasses (SpriteActive_Main's 260 and the bank-5 bounce)
-    /// are charged only by `sprite_active_main` itself.
+    /// JSL JumpTableLocal 62, its own frame 52, the rest of its body 362 in
+    /// this scope). The handler dispatch blocks that a lane bypasses
+    /// (SpriteActive_Main's 260 and the bank-5 bounce) are charged only by
+    /// `sprite_active_main` itself.
     #[must_use = "bind the scope to a local so it lives until the lane returns"]
     pub(super) fn sprite_execute_single_lane_scope(
         &self,
@@ -4781,11 +4788,13 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         let scope = crate::cycle_ledger::routine(0x06_84e2);
         crate::cycle_ledger::charge(48 + 128);
         if dispatched {
-            crate::cycle_ledger::charge(if self.sprite_slot_view(k).state() == 9 {
-                6 + 24
+            if self.sprite_slot_view(k).state() == 9 {
+                crate::cycle_ledger::charge(6 + 24);
             } else {
-                62 + 414
-            });
+                crate::cycle_ledger::charge(62);
+                crate::cycle_ledger::charge_routine(0x00_8781, 52);
+                crate::cycle_ledger::charge(414 - 52);
+            }
         }
         scope
     }
@@ -5434,9 +5443,21 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     }
 
     pub(super) fn oam_get_buffer_position(&mut self, num: u8, y: u8) -> u16 {
+        // Cycle ledger: Oam_GetBufferPosition $0D:BB0A (entry m8 x8, JSR
+        // target; Y <= 10 and the fallback index stays below 96, so no abs,y
+        // page crossing). $0D:BB0A-BB1C STA STZ REP LDA $fe0,y STA CLC ADC
+        // CMP $ba9e,y BCC (252): a fitting request takes the BCC (+6) into
+        // $0D:BB41 STA $fe0,y (46); an overflow runs $0D:BB1E-BB3F (520, BRA
+        // included). Then $0D:BB44-BB5A (354, RTS included).
+        let _scope = crate::cycle_ledger::routine(0x0d_bb0a);
         let region = (y >> 1) as usize;
         let mut pstart = self.game_state.oam.region_base_word(region);
         let p = pstart.wrapping_add(num as u16);
+        crate::cycle_ledger::charge(if p >= OAM_GET_BUFFER_POSITION_LIMITS[region] {
+            252 + 520 + 354
+        } else {
+            252 + 6 + 46 + 354
+        });
         if p >= OAM_GET_BUFFER_POSITION_LIMITS[region] {
             let alloc = self.game_state.oam.region_alloc_counter(region);
             let j = alloc & 7;
