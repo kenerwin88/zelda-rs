@@ -104,6 +104,27 @@ fn get_next_byte(source_offset: &mut u16) -> u64 {
     LONG_INDIRECT + LDX_STX_DP_16 + IMPLIED + wrap_cost + LDX_STX_DP_16 + RTS
 }
 
+/// The cost of one decompression, split between the entry routine's own
+/// instructions and its `Decompression_GetNextByte` (`$00:E843`) callee,
+/// which the profiler frames as a subroutine of its own.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct DecompressCost {
+    /// Master cycles from the entry point to its final `RTS`, callee
+    /// included.
+    pub(crate) master: u64,
+    /// Master cycles spent inside `GetNextByte` (from its first instruction
+    /// through its `RTS`; the `JSR` belongs to the caller).
+    pub(crate) get_next_byte_master: u64,
+    /// `GetNextByte` calls: one per compressed byte, the `$FF` end marker
+    /// included.
+    pub(crate) get_next_byte_calls: u64,
+}
+
+/// One `GetNextByte` call that does not cross a bank end: `LDA [$C8] : LDX
+/// $C8 : INX : BNE taken : STX $C8 : RTS`. The one call that wraps costs
+/// 56 more (`BNE` not taken, `LDX #$8000 : INC $CA`).
+pub(crate) const GET_NEXT_BYTE_MASTER: u64 = LONG_INDIRECT + LDX_STX_DP_16 + IMPLIED + BRANCH_TAKEN + LDX_STX_DP_16 + RTS;
+
 /// Master cycles from the entry point to its final `RTS`, for a compressed
 /// stream that begins at `source` (bank offset `source_offset`, used only
 /// for the rare bank-boundary wrap inside `GetNextByte`). `sheet` selects
@@ -113,9 +134,20 @@ pub(crate) fn decompress_master_cycles(
     entry: DecompressEntry,
     sheet: u8,
     source: &[u8],
-    mut source_offset: u16,
+    source_offset: u16,
     destination: u32,
 ) -> u64 {
+    decompress_cost(entry, sheet, source, source_offset, destination).master
+}
+
+/// `decompress_master_cycles` with the `GetNextByte` share broken out.
+pub(crate) fn decompress_cost(
+    entry: DecompressEntry,
+    sheet: u8,
+    source: &[u8],
+    mut source_offset: u16,
+    destination: u32,
+) -> DecompressCost {
     // `[$00],Y` accesses: the 24-bit destination plus the 16-bit output
     // cursor, priced by the bus rule at that address.
     let write_cost = |cursor: u16| LONG_INDIRECT_WITHOUT_ACCESS + data_access_cost(destination.wrapping_add(u32::from(cursor)));
@@ -123,7 +155,8 @@ pub(crate) fn decompress_master_cycles(
     let table_load = |table_low_byte: u8| -> u64 {
         ABS_Y_8 + if u16::from(table_low_byte) + u16::from(sheet) > 0xff { PAGE_CROSS } else { 0 }
     };
-    let mut master = match entry {
+    let mut cost = DecompressCost::default();
+    cost.master = match entry {
         // LDA $CFF3,Y : STA $CA : LDA $D0D2,Y : STA $C9 : LDA $D1B1,Y : STA $C8 : BRA Decompress
         DecompressEntry::Sprite => {
             table_load(0xf3) + LDA_STA_DP_8 + table_load(0xd2) + LDA_STA_DP_8
@@ -143,127 +176,130 @@ pub(crate) fn decompress_master_cycles(
         }
     };
     // Decompress: REP #$10 : LDY #$0000
-    master += REP_SEP + LDY_IMM_16;
+    cost.master += REP_SEP + LDY_IMM_16;
     let mut read = 0usize;
-    let mut next = |master: &mut u64, read: &mut usize| -> u8 {
+    let mut next = |cost: &mut DecompressCost, read: &mut usize| -> u8 {
         let byte = source.get(*read).copied().unwrap_or(0xff);
         *read += 1;
-        *master += JSR_ABS + get_next_byte(&mut source_offset);
+        let callee = get_next_byte(&mut source_offset);
+        cost.master += JSR_ABS + callee;
+        cost.get_next_byte_master += callee;
+        cost.get_next_byte_calls += 1;
         byte
     };
     loop {
         // .loop JSR GetNextByte : CMP #$FF : BNE .command
-        let header = next(&mut master, &mut read);
-        master += IMM_8;
+        let header = next(&mut cost, &mut read);
+        cost.master += IMM_8;
         if header == 0xff {
             // SEP #$10 : RTS
-            master += BRANCH_NOT_TAKEN + REP_SEP + RTS;
-            return master;
+            cost.master += BRANCH_NOT_TAKEN + REP_SEP + RTS;
+            return cost;
         }
-        master += BRANCH_TAKEN;
+        cost.master += BRANCH_TAKEN;
         // STA $CD : AND #$E0 : CMP #$E0 : BEQ .extended
-        master += LDA_STA_DP_8 + IMM_8 + IMM_8;
+        cost.master += LDA_STA_DP_8 + IMM_8 + IMM_8;
         let (command, length) = if header & 0xe0 != 0xe0 {
             // PHA : LDA $CD : REP #$20 : AND #$001F : BRA .length
-            master += BRANCH_NOT_TAKEN + PHA_8 + LDA_STA_DP_8 + REP_SEP + IMM_16 + BRANCH_TAKEN;
+            cost.master += BRANCH_NOT_TAKEN + PHA_8 + LDA_STA_DP_8 + REP_SEP + IMM_16 + BRANCH_TAKEN;
             (header & 0xe0, u16::from(header & 0x1f))
         } else {
             // LDA $CD : ASL : ASL : ASL : AND #$E0 : PHA : LDA $CD : AND #$03
             // : XBA : JSR GetNextByte : REP #$20
-            master += BRANCH_TAKEN + LDA_STA_DP_8 + 3 * IMPLIED + IMM_8 + PHA_8
+            cost.master += BRANCH_TAKEN + LDA_STA_DP_8 + 3 * IMPLIED + IMM_8 + PHA_8
                 + LDA_STA_DP_8 + IMM_8 + XBA;
-            let low = next(&mut master, &mut read);
-            master += REP_SEP;
+            let low = next(&mut cost, &mut read);
+            cost.master += REP_SEP;
             ((header << 3) & 0xe0, (u16::from(header & 3) << 8) | u16::from(low))
         };
         // .length INC A : STA $CB : SEP #$20 : PLA
-        master += IMPLIED + LDX_STX_DP_16 + REP_SEP + PLA_8;
+        cost.master += IMPLIED + LDX_STX_DP_16 + REP_SEP + PLA_8;
         let length = length + 1;
         // BEQ .copy : BMI .backReference : ASL : BPL .fill : ASL : BPL .wordFill
         match command >> 5 {
             0 => {
-                master += BRANCH_TAKEN;
+                cost.master += BRANCH_TAKEN;
                 // .copy JSR GetNextByte : STA [$00],Y : INY : LDX $CB : DEX : STX $CB : BNE .copy : BRA .loop
                 for remaining in (1..=length).rev() {
-                    next(&mut master, &mut read);
-                    master += write_cost(cursor) + IMPLIED + LDX_STX_DP_16 + IMPLIED + LDX_STX_DP_16;
+                    next(&mut cost, &mut read);
+                    cost.master += write_cost(cursor) + IMPLIED + LDX_STX_DP_16 + IMPLIED + LDX_STX_DP_16;
                     cursor = cursor.wrapping_add(1);
-                    master += if remaining > 1 { BRANCH_TAKEN } else { BRANCH_NOT_TAKEN };
+                    cost.master += if remaining > 1 { BRANCH_TAKEN } else { BRANCH_NOT_TAKEN };
                 }
-                master += BRANCH_TAKEN;
+                cost.master += BRANCH_TAKEN;
             }
             1 => {
-                master += BRANCH_NOT_TAKEN + BRANCH_NOT_TAKEN + IMPLIED + BRANCH_TAKEN;
+                cost.master += BRANCH_NOT_TAKEN + BRANCH_NOT_TAKEN + IMPLIED + BRANCH_TAKEN;
                 // .fill JSR GetNextByte : LDX $CB : - STA [$00],Y : INY : DEX : BNE - : BRA .loop
-                next(&mut master, &mut read);
-                master += LDX_STX_DP_16;
+                next(&mut cost, &mut read);
+                cost.master += LDX_STX_DP_16;
                 for remaining in (1..=length).rev() {
-                    master += write_cost(cursor) + IMPLIED + IMPLIED;
+                    cost.master += write_cost(cursor) + IMPLIED + IMPLIED;
                     cursor = cursor.wrapping_add(1);
-                    master += if remaining > 1 { BRANCH_TAKEN } else { BRANCH_NOT_TAKEN };
+                    cost.master += if remaining > 1 { BRANCH_TAKEN } else { BRANCH_NOT_TAKEN };
                 }
-                master += BRANCH_TAKEN;
+                cost.master += BRANCH_TAKEN;
             }
             2 => {
-                master += BRANCH_NOT_TAKEN + BRANCH_NOT_TAKEN + IMPLIED + BRANCH_NOT_TAKEN
+                cost.master += BRANCH_NOT_TAKEN + BRANCH_NOT_TAKEN + IMPLIED + BRANCH_NOT_TAKEN
                     + IMPLIED + BRANCH_TAKEN;
                 // .wordFill JSR : XBA : JSR : LDX $CB
-                next(&mut master, &mut read);
-                master += XBA;
-                next(&mut master, &mut read);
-                master += LDX_STX_DP_16;
+                next(&mut cost, &mut read);
+                cost.master += XBA;
+                next(&mut cost, &mut read);
+                cost.master += LDX_STX_DP_16;
                 // - XBA : STA [$00],Y : INY : DEX : BEQ .done : XBA : STA [$00],Y : INY : DEX : BNE - : .done JMP .loop
                 let mut remaining = length;
                 loop {
-                    master += XBA + write_cost(cursor) + IMPLIED + IMPLIED;
+                    cost.master += XBA + write_cost(cursor) + IMPLIED + IMPLIED;
                     cursor = cursor.wrapping_add(1);
                     remaining -= 1;
                     if remaining == 0 {
-                        master += BRANCH_TAKEN;
+                        cost.master += BRANCH_TAKEN;
                         break;
                     }
-                    master += BRANCH_NOT_TAKEN + XBA + write_cost(cursor) + IMPLIED + IMPLIED;
+                    cost.master += BRANCH_NOT_TAKEN + XBA + write_cost(cursor) + IMPLIED + IMPLIED;
                     cursor = cursor.wrapping_add(1);
                     remaining -= 1;
                     if remaining == 0 {
-                        master += BRANCH_NOT_TAKEN;
+                        cost.master += BRANCH_NOT_TAKEN;
                         break;
                     }
-                    master += BRANCH_TAKEN;
+                    cost.master += BRANCH_TAKEN;
                 }
-                master += JMP_ABS;
+                cost.master += JMP_ABS;
             }
             3 => {
-                master += BRANCH_NOT_TAKEN + BRANCH_NOT_TAKEN + IMPLIED + BRANCH_NOT_TAKEN
+                cost.master += BRANCH_NOT_TAKEN + BRANCH_NOT_TAKEN + IMPLIED + BRANCH_NOT_TAKEN
                     + IMPLIED + BRANCH_NOT_TAKEN;
                 // .increasing JSR GetNextByte : LDX $CB : - STA [$00],Y : INC A : INY : DEX : BNE - : BRA .loop
-                next(&mut master, &mut read);
-                master += LDX_STX_DP_16;
+                next(&mut cost, &mut read);
+                cost.master += LDX_STX_DP_16;
                 for remaining in (1..=length).rev() {
-                    master += write_cost(cursor) + IMPLIED + IMPLIED + IMPLIED;
+                    cost.master += write_cost(cursor) + IMPLIED + IMPLIED + IMPLIED;
                     cursor = cursor.wrapping_add(1);
-                    master += if remaining > 1 { BRANCH_TAKEN } else { BRANCH_NOT_TAKEN };
+                    cost.master += if remaining > 1 { BRANCH_TAKEN } else { BRANCH_NOT_TAKEN };
                 }
-                master += BRANCH_TAKEN;
+                cost.master += BRANCH_TAKEN;
             }
             _ => {
-                master += BRANCH_NOT_TAKEN + BRANCH_TAKEN;
+                cost.master += BRANCH_NOT_TAKEN + BRANCH_TAKEN;
                 // .backReference JSR : XBA : JSR : XBA : TAX
-                let low = next(&mut master, &mut read);
-                master += XBA;
-                let high = next(&mut master, &mut read);
-                master += XBA + IMPLIED;
+                let low = next(&mut cost, &mut read);
+                cost.master += XBA;
+                let high = next(&mut cost, &mut read);
+                cost.master += XBA + IMPLIED;
                 let mut source_cursor = u16::from(high) << 8 | u16::from(low);
                 // - PHY : TXY : LDA [$00],Y : TYX : PLY : STA [$00],Y : INY : INX
                 // : REP #$20 : DEC $CB : SEP #$20 : BNE - : JMP .loop
                 for remaining in (1..=length).rev() {
-                    master += PHY_16 + IMPLIED + write_cost(source_cursor) + IMPLIED + PLY_16
+                    cost.master += PHY_16 + IMPLIED + write_cost(source_cursor) + IMPLIED + PLY_16
                         + write_cost(cursor) + IMPLIED + IMPLIED + REP_SEP + DEC_DP_16 + REP_SEP;
                     cursor = cursor.wrapping_add(1);
                     source_cursor = source_cursor.wrapping_add(1);
-                    master += if remaining > 1 { BRANCH_TAKEN } else { BRANCH_NOT_TAKEN };
+                    cost.master += if remaining > 1 { BRANCH_TAKEN } else { BRANCH_NOT_TAKEN };
                 }
-                master += JMP_ABS;
+                cost.master += JMP_ABS;
             }
         }
     }
@@ -376,7 +412,16 @@ mod tests {
                     unfinished += 1;
                     continue;
                 };
-                let modeled = decompress_master_cycles(entry, sheet, stream, address as u16, 0x7f_4000);
+                let cost = decompress_cost(entry, sheet, stream, address as u16, 0x7f_4000);
+                let modeled = cost.master;
+                assert!(cost.get_next_byte_calls >= 1 && cost.get_next_byte_master <= cost.master);
+                assert!(
+                    cost.get_next_byte_master == cost.get_next_byte_calls * GET_NEXT_BYTE_MASTER
+                        || cost.get_next_byte_master == cost.get_next_byte_calls * GET_NEXT_BYTE_MASTER + 56,
+                    "{entry:?} sheet {sheet:#04x}: GetNextByte {} over {} calls",
+                    cost.get_next_byte_master,
+                    cost.get_next_byte_calls
+                );
                 checked += 1;
                 if modeled != measured {
                     mismatches.push((entry, sheet, modeled, measured));

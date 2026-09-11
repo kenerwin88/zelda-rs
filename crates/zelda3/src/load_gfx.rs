@@ -5,7 +5,7 @@ use crate::game_state::constants::MENU_PREV_JOYPAD_H;
 
 use crate::chr_source;
 use crate::cycle_models::decompress::{
-    decompress_master_cycles, stream_source_offset, DecompressEntry,
+    decompress_cost, stream_source_offset, DecompressEntry, GET_NEXT_BYTE_MASTER,
 };
 use crate::game_state::{PaletteSliceSource, PaletteTransform};
 use zelda3_palette::{Bank, ChannelReference};
@@ -1474,6 +1474,10 @@ impl ZeldaState {
     /// (sheets 0..11 of asset 64 as their first 0x600 bytes; sprite sheet 7's
     /// junk stream is longer than that window, so its cost stops short),
     /// which `cycle_models::decompress` prices instruction by instruction.
+    /// The entry routine's scope (open in the caller) takes its own
+    /// instructions; every `Decompression_GetNextByte` call is recorded as
+    /// its own `$00:E843` routine nested inside it, as the profiler frames
+    /// it (one call per compressed byte, `$FF` included).
     fn charge_sheet_decompression(&self, entry: DecompressEntry, asset: usize, sheet: usize, dst: usize) {
         let Ok(sheet) = u8::try_from(sheet) else {
             return;
@@ -1481,13 +1485,27 @@ impl ZeldaState {
         let Some(stream) = self.asset_bytes(asset, usize::from(sheet)) else {
             return;
         };
-        crate::cycle_ledger::charge(decompress_master_cycles(
+        let cost = decompress_cost(
             entry,
             sheet,
             stream,
             stream_source_offset(entry, sheet),
             0x7e_0000 + dst as u32,
-        ));
+        );
+        crate::cycle_ledger::charge(cost.master - cost.get_next_byte_master);
+        let Some(last_call) = cost.get_next_byte_calls.checked_sub(1) else {
+            return;
+        };
+        // Every call but one costs GET_NEXT_BYTE_MASTER; the one that crosses
+        // a bank end (if any) costs 56 more, booked on the last record here
+        // since only the per-host total is compared.
+        for _ in 0..last_call {
+            crate::cycle_ledger::charge_routine(0x00_e843, GET_NEXT_BYTE_MASTER);
+        }
+        crate::cycle_ledger::charge_routine(
+            0x00_e843,
+            cost.get_next_byte_master - last_call * GET_NEXT_BYTE_MASTER,
+        );
     }
 
     pub(super) fn decompressed_sprite_graphics_data(&self, gfx: usize) -> Option<Vec<u8>> {
