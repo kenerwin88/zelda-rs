@@ -96,7 +96,7 @@ Work remains on `fix/romless-spiral-palette-return`; `main` remains the accepted
 baseline above. No push. Short receipt comparisons protect the shared path
 while native timing advances; they are not native acceptance evidence.
 
-Current native frontier: **36022, audio-only**. This batch has corrected:
+Current native frontier: **37590, video-only**. This batch has corrected:
 
 - `510da835`: grayscale caller finishes its held NMI before authoring the next
   palette; retires at main wait. Exposed earlier native frontier 14076.
@@ -212,6 +212,35 @@ Current native frontier: **36022, audio-only**. This batch has corrected:
   Native is one glyph behind at36014 and clears SFX2 at36018 while the
   receipt retains12. Investigate the dialogue CPU budget and NMI boundary;
   this is diagnosis, not a proven cost correction.
+
+- Dialogue drawing/equipment cost batch: price Zelda's banked caller and
+  crystal-maiden drawing wrapper, deferred OAM allocation and its positional
+  checks, and Link's equipment-VRAM and signed-X-offset helpers. The source
+  trace places the last click at $0E:CAC9 across NMI at36018; native had
+  already begun drawing that glyph. Missing caller work let it write the
+  sound queue too early. The combined corrections move native36022 →37590.
+  All112 Zelda drawing/clipping/allocation ROM cases and every equipment
+  table entry/signed byte offset pass; all1764 library tests pass (3 ignored).
+  Evidence: `target/equipment-batch-native`, `target/native-36022-cpu`,
+  `target/native-36022-ledger`, `target/native-36022-profiles`, and
+  `/tmp/equipment-batch-lib-tests.log`. Drawing-only and drawing/allocation
+  probes retained36022; the combined batch is the advancing candidate.
+  The receipt check `target/equipment-batch-receipt` passes37,620 exact
+  frames; full-route acceptance remains deferred until native100k.
+  Next source window: `target/native-37590-source`. The source is completing
+  dungeon-exit spotlight work and interrupting LinkOam; diagnose publication
+  and the interrupted caller before changing costs or receipt capabilities.
+  `target/native-37590` has comparison WRAM37584–37598 and composed display
+  hosts37589–37594, matching the receipt batch's diagnostic window. At37590,
+  live WRAM agrees except scratch; displayed VRAM, BG VRAM, CGRAM and OAM
+  agree, but the OBJ cache differs. Several caller-return hosts also leave
+  native $12 latched while the receipt clears it. Compare cache publication
+  against actual source OBJ tiles before treating the cache difference alone
+  as proof of its owner.
+  Follow-up source comparison rules out those OBJ-cache differences: all105
+  visible source tiles (6,720 pixels) match both decoded caches. The captured
+  spotlight HDMA table differs at $170f2–$17127 while live WRAM agrees.
+  Investigate which table generation owns this field's window scanout.
 
 The audio mismatch at 25054 came from missing drawing work before the text
 renderer. The original enters VWF at v=50 on host 25048; the old ledger left

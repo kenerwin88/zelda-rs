@@ -428,3 +428,62 @@ fn mantle_and_oam_correction_cycles_match_rom_for_clipping() {
         }
     }
 }
+
+#[test]
+fn zelda_dialogue_drawing_cycles_match_rom() {
+    use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+    let rom_path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"));
+    let Ok(mut rom) = std::fs::read(rom_path) else { return; };
+    if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+    for entry in [0x0d_ce5f, 0x06_c067] {
+        for direction in 0..4 {
+            for graphics in 0..2 {
+                for (x, y, floor) in [(40u16, 50u16, 1), (255, 223, 1), (511, 0xfff0, 1),
+                    (40, 50, 0), (0, 0, 0), (0, 20, 0), (511, 0xfff0, 0)] {
+                    let mut state = ZeldaState::new();
+                    state.clear_oam_buffer();
+                    state.oam_state_mut().set_current_pointer(0x0800);
+                    state.oam_state_mut().set_current_extended_pointer(0x0a20);
+                    state.sprite_slot_view_mut(4).set_floor(floor);
+                    state.oam_reset_region_bases();
+                    state.sprite_set_x(4, x);
+                    state.sprite_set_y(4, y);
+                    state.set_bg2_x(0x10);
+                    state.set_bg2_y(0x20);
+                    state.sprite_slot_view_mut(4).set_state(9);
+                    state.sprite_slot_view_mut(4).set_sprite_type(0x76);
+                    state.sprite_slot_view_mut(4).set_direction(direction);
+                    state.sprite_slot_view_mut(4).set_graphics(graphics);
+                    state.set_submodule(2);
+                    state.game_state.write_to_ram(&mut state.ram);
+                    let bank = (entry >> 16) as u8;
+                    let long = entry == 0x0d_ce5f;
+                    let checkpoint = RomCpuCheckpoint {
+                        entry_pc: entry, stop_pc: (u32::from(bank) << 16) | 0x8000,
+                        a: 0, x: 4, y: 0, sp: if long { 0x01fc } else { 0x01fd },
+                        dp: 0, db: bank, carry: false, zero: false,
+                        overflow: false, negative: false, interrupt_disable: true,
+                        decimal: false, accumulator_is_8_bit: true, index_is_8_bit: true,
+                        emulation: false, waiting: false,
+                        stack_address: if long { 0x01fd } else { 0x01fe },
+                        stack_bytes: if long { &[0xff, 0x7f, 0x0d] } else { &[0xff, 0x7f] },
+                    };
+                    let mut cpu = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                        &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+                    let mut expected = 0u64;
+                    for _ in 0..100_000 {
+                        if cpu.is_complete() { break; }
+                        expected += u64::from(cpu.step().master_cycles);
+                    }
+                    assert!(cpu.is_complete(), "entry={entry:06x} direction={direction} graphics={graphics} x={x} y={y} pc={:06x}", cpu.pc());
+                    let before = crate::cycle_ledger::master();
+                    if long { state.crystal_maiden_draw(4); }
+                    else { state.sprite_76_zelda(4); }
+                    assert_eq!(crate::cycle_ledger::master() - before, expected,
+                        "entry={entry:06x} direction={direction} graphics={graphics} x={x} y={y}");
+                }
+            }
+        }
+    }
+}

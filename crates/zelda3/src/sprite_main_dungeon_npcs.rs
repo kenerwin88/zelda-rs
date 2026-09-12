@@ -774,14 +774,38 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_76_zelda(&mut self, k: usize) {
+        // $06:C067 JSL Sprite_Zelda_ / RTS, then the bank wrapper at
+        // $05:EC96 (PHB/PHK/PLB/JSR ... PLB/RTL).
+        crate::cycle_ledger::charge(62);
+        {
+            let _scope = crate::cycle_ledger::routine(0x05_ec96);
+            crate::cycle_ledger::charge(118);
+            self.sprite_76_zelda_main(k);
+            crate::cycle_ledger::charge(72);
+        }
+        crate::cycle_ledger::charge(42);
+    }
+
+    fn sprite_76_zelda_main(&mut self, k: usize) {
+        let _scope = crate::cycle_ledger::routine(0x05_ec9e);
+        // $05:EC9E JSL CrystalMaiden_Draw, JSR ReturnIfInactive_.
+        crate::cycle_ledger::charge(62);
         self.crystal_maiden_draw(k);
-        if self.sprite_return_if_inactive(k) {
+        crate::cycle_ledger::charge(46);
+        if self.sprite_return_if_inactive_bank5(k) {
             return;
         }
+        crate::cycle_ledger::charge(62 + 62 + 16);
         self.sprite_behave_as_barrier(k);
         if self.sprite_track_body_to_head(k) {
+            crate::cycle_ledger::charge(46);
             self.sprite_move_xy(k);
+        } else {
+            crate::cycle_ledger::charge(6);
         }
+        // LDA subtype2, JSL JumpTableLocal; its PLY frame owns52 cycles.
+        crate::cycle_ledger::charge_routine(0x00_8781, 52);
+        crate::cycle_ledger::charge(32 + 62 + 414 - 52);
         match self.sprite_slot_view(k).subtype2() {
             0 => self.zelda_in_cell(k),
             1 => self.zelda_entering_sanctuary(k),

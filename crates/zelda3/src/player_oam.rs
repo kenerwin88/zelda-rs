@@ -3855,25 +3855,37 @@ impl ZeldaState {
     }
 
     fn link_oam_set_equipment_vram_offsets(&mut self, r2: usize, sr: &mut SwordResult) -> bool {
+        let _scope = crate::cycle_ledger::routine(0x0d_abe6);
+        // $0D:ABE6..AC44, m16 table selection after REP #$30.
+        crate::cycle_ledger::charge(196);
         let j = kPlayerOam_ShieldStuff_array1[r2];
         if j < 0 {
+            crate::cycle_ledger::charge(6 + 56);
             sr.r6 = 0xff;
             return true;
         }
+        crate::cycle_ledger::charge(132);
         let j = j as usize;
         sr.r6 = j;
         let mut y = kPlayerOam_ShieldStuff_array2[j];
         if j >= 8 {
+            crate::cycle_ledger::charge(80);
             if self.game_state.player.follower_link.item_in_hand_has(5) {
+                crate::cycle_ledger::charge(112);
                 y = kPlayerOam_ShieldStuff_array3[j - 8];
+            } else {
+                crate::cycle_ledger::charge(6);
             }
+            crate::cycle_ledger::charge(246 + if y & 7 != 0 { 22 } else { 6 + 56 });
             self.follower_link_state_mut().set_link_dma_staging_index(y);
             sr.r12 = if y & 7 != 0 { 0 } else { 2 };
         } else {
+            crate::cycle_ledger::charge(6 + 206 + 56);
             self.follower_link_state_mut()
                 .set_shield_dma_graphics_index(y);
             sr.r12 = 2;
         }
+        crate::cycle_ledger::charge(56);
         false
     }
 
@@ -4089,10 +4101,63 @@ impl ZeldaState {
     }
 
     fn link_oam_calculate_x_offset_relative_link(&mut self, x: u8) {
+        // $0D:AFC0..AFDC: signed byte extension, Link/scroll subtraction,
+        // and bit-9 store. Positive offsets take BCC; negative offsets OR.
+        crate::cycle_ledger::charge_routine(0x0d_afc0, if x & 0x80 == 0 { 332 } else { 350 });
         let x = x as i8 as i32;
         let value = self.game_state.player.follower_link.x() as i32 + x
             - self.game_state.display.ppu_scroll_copy.bg2_h_copy2() as i32;
         self.follower_link_state_mut()
             .set_bit9_of_xcoord_word(((value >> 8) & 1) as u16);
+    }
+}
+
+#[cfg(test)]
+mod equipment_cycle_tests {
+    use super::*;
+    use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+
+    #[test]
+    fn equipment_helpers_match_rom_cycles_for_every_table_entry_and_offset() {
+        let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"));
+        let Ok(mut rom) = std::fs::read(path) else { return; };
+        if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+        for entry in [0x0d_abe6, 0x0d_afc0] {
+            let count = if entry == 0x0d_abe6 { kPlayerOam_ShieldStuff_array1.len() } else { 256 };
+            for value in 0..count {
+                for hand in [0, 1, 4, 5] {
+                    let mut state = ZeldaState::new();
+                    state.game_state.write_to_ram(&mut state.ram);
+                    write_le_u16(&mut state.ram, 2, value as u16);
+                    state.ram[0x301] = hand;
+                    state.sync_native_game_state_from_ram();
+                    let checkpoint = RomCpuCheckpoint {
+                        entry_pc: entry, stop_pc: 0x0d_8000, a: value as u16, x: 0, y: 0,
+                        sp: 0x01fd, dp: 0, db: 0x0d, carry: false, zero: false,
+                        overflow: false, negative: false, interrupt_disable: true,
+                        decimal: false, accumulator_is_8_bit: true, index_is_8_bit: true,
+                        emulation: false, waiting: false, stack_address: 0x01fe,
+                        stack_bytes: &[0xff, 0x7f],
+                    };
+                    let mut cpu = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                        &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+                    let mut expected = 0u64;
+                    for _ in 0..1000 {
+                        if cpu.is_complete() { break; }
+                        expected += u64::from(cpu.step().master_cycles);
+                    }
+                    assert!(cpu.is_complete());
+                    let before = crate::cycle_ledger::master();
+                    if entry == 0x0d_abe6 {
+                        state.link_oam_set_equipment_vram_offsets(value, &mut SwordResult { r6: 0, r12: 0 });
+                    } else {
+                        state.link_oam_calculate_x_offset_relative_link(value as u8);
+                    }
+                    assert_eq!(crate::cycle_ledger::master() - before, expected,
+                        "entry={entry:06x} value={value} hand={hand}");
+                }
+            }
+        }
     }
 }

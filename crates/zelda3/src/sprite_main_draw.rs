@@ -12080,6 +12080,10 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void CrystalMaiden_Draw(int k) {  // 8dce5f
     pub(super) fn crystal_maiden_draw(&mut self, k: usize) {
+        // $0D:CE5F..CE90: bank/table/DMA setup, JSL deferred drawing,
+        // and PLB/RTL. The called draw routine owns its own instructions.
+        let _scope = crate::cycle_ledger::routine(0x0d_ce5f);
+        crate::cycle_ledger::charge(656);
         let j = usize::from(self.sprite_slot_view(k).direction()) * 2
             + usize::from(self.sprite_slot_view(k).graphics());
         self.set_sprite_dma_head_pointer(CRYSTAL_MAIDEN_DRAW_DMA[j * 2]);

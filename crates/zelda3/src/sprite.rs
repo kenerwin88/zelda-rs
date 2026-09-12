@@ -9796,6 +9796,8 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         let _scope = crate::cycle_ledger::routine(if deferred { 0x05_dfe5 } else { 0x05_dfe9 });
         if deferred {
             crate::cycle_ledger::charge(62);
+            // This entry JSLs the bank wrapper, not the bank-6 RTS body.
+            crate::cycle_ledger::charge_routine(0x06_f864, 190);
             self.oam_allocate_defer_to_player(k);
         }
         crate::cycle_ledger::charge(46);
@@ -10317,23 +10319,35 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
 
     // void Oam_AllocateDeferToPlayer(int k) — sprite.c:2920
     pub(super) fn oam_allocate_defer_to_player(&mut self, k: usize) {
+        let _scope = crate::cycle_ledger::routine(0x06_f86c);
+        crate::cycle_ledger::charge(72);
         if self.sprite_slot_view(k).floor()
             != self.game_state.player.follower_link.lower_level_state()
         {
+            crate::cycle_ledger::charge(6 + 42);
             return;
         }
+        crate::cycle_ledger::charge(132);
         let right = self.sprite_is_right_of_link(k);
+        crate::cycle_ledger::charge_routine(0x06_ead1, if right.a != 0 { 238 } else { 230 });
         if right.b.wrapping_add(0x10) >= 0x20 {
+            crate::cycle_ledger::charge(6 + 42);
             return;
         }
+        crate::cycle_ledger::charge(132);
         let below = self.sprite_is_below_link(k);
+        crate::cycle_ledger::charge_routine(0x06_eae8, if below.a != 0 { 446 } else { 438 });
         if below.b.wrapping_add(0x20) >= 0x48 {
+            crate::cycle_ledger::charge(6 + 42);
             return;
         }
+        crate::cycle_ledger::charge(122);
         let nslots = ((self.sprite_slot_view(k).flags2() & 0x1f) + 1) << 2;
         if below.a != 0 {
+            crate::cycle_ledger::charge(62 + 22 + 42);
             self.oam_allocate_from_region_c(nslots);
         } else {
+            crate::cycle_ledger::charge(6 + 62 + 42);
             self.oam_allocate_from_region_b(nslots);
         }
     }
