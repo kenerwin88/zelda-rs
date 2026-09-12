@@ -76,8 +76,15 @@ It does not replace the pinned live Snes9x A/V authority.
   `crate::debug_env::{var, var_os, is_set}`, never `std::env` directly.
 - `ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE=1` includes pre-dungeon loader
   entry raster, measured NMI crossings and Sprite_ResetAll return raster.
+  It also reports measured pre-overworld overlay and screen-build crossings
+  through the main-loop return.
   Count source acceptance events, not host callbacks: a callback can contain
   zero or two acceptances.
+- `ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE=1` reports closing-wipe CPU plans and
+  completion captures: entry/next raster, interruption PC, measured suffix
+  completion, first non-closed HDMA row, and queued publication ownership.
+  Use actual WRAM counters alongside these rows to distinguish late CPU
+  scheduling from late display publication.
 - `ZELDA3_DEBUG_SONG_UPLOAD=1` reports native upload command and caller-return
   positions without dumping the stream or changing the live audio clock.
 - `ZELDA3_DEBUG_OVERWORLD_CPU_PACKING=1` reports the native overworld

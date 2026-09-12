@@ -31,6 +31,15 @@ impl ZeldaState {
         let frame = self.game_state.frame;
         if self.rom_startup_timing()
             && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && frame.main_module == 8 && frame.submodule == 2
+            && !self.game_state.display.nmi_update_is_latched()
+            && self.game_execution_scheduler.is_idle()
+            && self.pre_overworld_screen_build_cpu_nmis.is_none()
+        {
+            self.pre_overworld_screen_build_cpu_nmis = Some(pre_overworld_load_cpu_nmis(self, None));
+        }
+        if self.rom_startup_timing()
+            && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
             && frame.main_module == 0x0f && frame.submodule == 0
             && !self.game_state.display.nmi_update_is_latched()
             && self.game_execution_scheduler.is_idle()
@@ -406,6 +415,16 @@ impl ZeldaState {
     pub(super) fn begin_pre_overworld_screen_build_work(&mut self) -> bool {
         if !self.rom_startup_timing() || self.game_state.frame.main_module != 8 {
             return false;
+        }
+        if let Some(nmis) = self.pre_overworld_screen_build_cpu_nmis.take() {
+            assert_ne!(nmis, 0, "screen build must cross its measured NMI");
+            // The measurement excludes the leading handler and counts every
+            // held acceptance up to the caller return. Its final handler is
+            // consumed by the completion lane, not prepaid on module entry.
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishPreOverworldScreenBuild, nmis,
+            );
+            return true;
         }
         let timing =
             overworld_map_and_sprite_graphics_timing(self.overworld_map_graphics_workload());

@@ -12904,6 +12904,13 @@ impl ZeldaState {
             ) = work_slice
             {
                 if let Some(following) = iteration.rom_following_field_receipt() {
+                    if crate::debug_env::var_os("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some() {
+                        eprintln!("[SPOTLIGHT-CAPTURE] host={} publication={publication_override:?} following={:?} first={:?} queued={} active={:?}",
+                            self.frame_ctr_dbg, following.publication,
+                            following.words.iter().position(|&word| word != 0x00ff),
+                            self.next_display_spotlight_scanout.is_some(),
+                            self.display_snapshot.as_ref().map(|snapshot| std::mem::discriminant(&snapshot.spotlight_scanout_generation)));
+                    }
                     let receipt = LiveSpotlightScanout::capture(self)
                         .with_authoritative_rom_hdma_words(&following.words);
                     match following.publication {

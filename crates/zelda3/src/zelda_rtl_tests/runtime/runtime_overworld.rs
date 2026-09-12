@@ -1225,7 +1225,7 @@ fn pre_overworld_overlay_cpu_schedule_counts_source_caller_crossings() {
 }
 
 #[test]
-fn pre_overworld_load_models_measured_snes9x_nmi_boundaries() {
+fn pre_overworld_unmeasured_load_retains_legacy_estimates() {
     let screen_build_workload = OverworldMapGraphicsWorkload {
         map32_definition_changes: 796,
     };
@@ -1268,8 +1268,9 @@ fn pre_overworld_load_models_measured_snes9x_nmi_boundaries() {
     let continuation = GameWorkContinuation::FinishPreOverworldScreenBuild;
     let mut work =
         ScheduledGameWork::schedule_before_trailing_nmi(continuation, screen_build_nmi_slices);
-    // Module08_02 starts before the entry frame's trailing NMI, so only the
-    // subsequent 16 boundaries are consumed by future host calls.
+    // The legacy unmeasured estimate prepays a trailing boundary. Native
+    // CPU measurements instead preserve every observed held acceptance;
+    // that separate contract is checked below.
     for _ in 1..screen_build_nmi_slices - 1 {
         assert_eq!(work.advance_one_nmi_slice(), GameWorkStep::Waiting);
     }
@@ -1277,6 +1278,27 @@ fn pre_overworld_load_models_measured_snes9x_nmi_boundaries() {
         work.advance_one_nmi_slice(),
         GameWorkStep::Complete(continuation)
     );
+}
+
+#[test]
+fn measured_screen_build_preserves_its_last_held_nmi() {
+    // Snes9x enters Module08_02 on comparison 41059, crosses 16 held
+    // NMIs, and returns on 41075. Prepaying one of those measured crossings
+    // on entry starts Module10 a host early and exposes its next circle.
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.set_main_module(8);
+    state.set_submodule(2);
+    state.pre_overworld_screen_build_cpu_nmis = Some(16);
+    assert!(state.begin_pre_overworld_screen_build_work());
+    assert_eq!(state.pre_overworld_screen_build_cpu_nmis, None);
+    for _ in 0..15 {
+        assert_eq!(state.game_execution_scheduler.advance_work_one_nmi_slice(), Some(GameWorkStep::Waiting));
+        assert_eq!(state.game_state.frame.main_module, 8);
+        assert_eq!(state.game_state.frame.submodule, 2);
+    }
+    assert_eq!(state.game_execution_scheduler.advance_work_one_nmi_slice(),
+        Some(GameWorkStep::Complete(GameWorkContinuation::FinishPreOverworldScreenBuild)));
 }
 
 #[test]

@@ -4,7 +4,67 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 40,980
+## Current native frontier — 41,244
+
+Two independent timing errors are fixed in this batch:
+
+1. The closing entry's measured CPU plan proves that its shared sprite
+   preparation suffix returns before the second NMI. The old geometry
+   fallback nevertheless scheduled another `FinishSpotlightIteration` for
+   long tables. `complete_dungeon_exit_spotlight_entry` now honors the
+   measured completion instead. Source comparison 40,978 reaches `$00:85fc`
+   at V37/C162 and returns at `$00:8036`; comparison 40,979 begins the next
+   iteration. Native counters and radius now match throughout that interval.
+   This advances native A/V from 40,980 to 41,078.
+2. The pre-overworld screen build completed one host early: native switched
+   to Module10 at comparison 41,074, while the source was still in Module8/2
+   and returned at 41,075. The native path now measures the complete call
+   from its leading NMI through the main-loop return and preserves every
+   measured held crossing in `schedule_work`. The initial wait-loop visit
+   to `$00:8036` must not terminate measurement before `$00:8051` is reached.
+   Existing unmeasured/receipt execution keeps its prior path.
+
+The earlier screen load measures 17 held NMIs (entry 4,868, return 4,885);
+the latest measures 16 (entry 41,059, return 41,075), matching source
+acceptance counts. Properties and overlays were already aligned at the
+latest load; do not add a delay to either. The corrected screen return
+also aligns Module10's counters/radius through 41,079. Its first source
+entry is V31/C354 after the large NMI upload; that fact alone did not
+justify changing the separate opening-entry estimate.
+
+Final binary `cee84478d18a043c8f7539da19ed21c1b5b6ec0b4559f07bdbfd5ba23db4f9b0`:
+
+- Native video/audio exact through 41,243; first video mismatch 41,244,
+  audio still exact (`target/native-pre-overworld-entry-guard-native`, 51.21s).
+- Engine suite: 1,778 passed, 3 ignored
+  (`/tmp/native-close-screen-batch-lib-tests.log`, 24.19s).
+- Receipt-driven cached A/V: all 50,000 frames exact on the same binary
+  (`target/native-close-screen-batch-receipt`, 58.67s).
+
+Source evidence: `target/native-40980-source` and
+`target/native-41078-source`, both resumed from the 38,001 pair with enabled
+video comparison passing (audio disabled). Raw run numbers need +38,001.
+`target/native-pre-overworld-stage-diagnostic` captures actual WRAM across
+the previously early loader; `target/native-pre-overworld-entry-guard-native`
+captures its corrected state. Closing plan/publication summaries are under
+`ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE`; load counts/return rasters are under
+`ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE`. Counts and semantic boundaries have
+source proof; do not claim independently exact CPU return rasters.
+
+The full 1,581,079-frame receipt proof still belongs to runtime `d7d92a85`.
+These are development ROM CPU measurements, not completed ROM-less timing.
+Continue batching native fixes toward 100,000 before another full-route run.
+
+Next: another closing-entry return at comparison 41,244. The new source
+capture `target/native-41244-source` passes enabled video through 41,270
+(audio disabled); its presented dumps are in
+`target/native-41244-source-presented`. Source 41,242 changes Module9/0 to
+Module15/0, 41,243 begins the close (counter 167), and 41,244 returns at
+`$00:8034`, V225/C8, with radius `$77` and latch clear. Native presented
+dumps from this batch stop at engine host 41,200, so capture the new
+native boundary before inferring its display or CPU cause.
+
+## Previous native frontier — 40,980
 
 Opening landing wipes now derive their displayed table generation from
 the actual `$00:f3bb` (`STA $1B00,X`) copy stores and each row's HDMA read.

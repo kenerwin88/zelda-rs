@@ -2982,6 +2982,17 @@ fn dungeon_exit_spotlight_cpu_plan(
         earliest.next_entry_latest = latest.next_entry_latest;
         earliest.successor_entry_latest = latest.successor_entry_latest;
     }
+    if crate::debug_env::var_os("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some() {
+        if let Some(plan) = earliest {
+            eprintln!("[SPOTLIGHT-PLAN] host={} radius={} entry={entry_earliest:?} pc={:06x} wait={} prep={} active_first={:?} following_first={:?} next={:?}",
+                state.frame_ctr_dbg, state.game_state.display.spotlight_hdma.window_radius(),
+                plan.interrupted_pc, plan.returned_to_main_wait_before_first_nmi,
+                plan.main_loop_sprite_preparation_completed_before_second_nmi,
+                plan.active_window_words.iter().position(|&word| word != 0x00ff),
+                plan.following_window_words.iter().position(|&word| word != 0x00ff),
+                plan.next_entry_earliest);
+        }
+    }
     earliest
 }
 
@@ -3958,6 +3969,10 @@ fn pre_overworld_song_upload_command(state: &ZeldaState, nmi_is_trailing: bool) 
 /// Count the complete overlay caller, including the main-loop suffix, from
 /// its leading NMI. Map decompression varies with the selected overlay.
 fn pre_overworld_overlays_cpu_nmis(state: &ZeldaState) -> u8 {
+    pre_overworld_load_cpu_nmis(state, Some(0x02_af19))
+}
+
+fn pre_overworld_load_cpu_nmis(state: &ZeldaState, entry_pc: Option<u32>) -> u8 {
     let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(
         &state.rom, &state.ram, &state.sram, &state.ppu, &timing_dma,
@@ -3969,10 +3984,16 @@ fn pre_overworld_overlays_cpu_nmis(state: &ZeldaState) -> u8 {
     );
     advance_rom_cpu_through_nmi(&mut run, &mut budget);
     let mut nmis = 0u8;
+    // $8036 is also visited while leaving the initial wait loop. Do not
+    // mistake that pre-dispatch visit for the completed caller's return.
     let mut entered = false;
     for _ in 0..5_000_000 {
-        entered |= run.pc() == 0x02_af19;
+        entered |= run.pc() == entry_pc.unwrap_or(0x00_8051);
         if entered && run.is_complete() {
+            if crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
+                eprintln!("pre_overworld_load_cpu host={} submodule={} nmis={nmis} return={:?}",
+                    state.frame_ctr_dbg, state.game_state.frame.submodule, budget.raster_position());
+            }
             return nmis;
         }
         let (scanline, master_cycle) = budget.raster_position().coordinates();
@@ -9693,6 +9714,8 @@ pub struct ZeldaState {
     #[serde(skip)]
     pre_overworld_overlays_cpu_nmis: Option<u8>,
     #[serde(skip)]
+    pre_overworld_screen_build_cpu_nmis: Option<u8>,
+    #[serde(skip)]
     native_overworld_song_upload: Option<NativeOverworldSongUpload>,
     #[serde(skip)]
     sprite_main_cpu_boundary: Option<SpriteMainCpuBoundary>,
@@ -12269,6 +12292,7 @@ impl ZeldaState {
             dungeon_submodule_cpu_schedule: None,
             module09_cpu_schedule: None,
             pre_overworld_overlays_cpu_nmis: None,
+            pre_overworld_screen_build_cpu_nmis: None,
             native_overworld_song_upload: None,
             sprite_main_cpu_boundary: None,
             sprite_main_cpu_nmi_slices: 0,
@@ -12606,6 +12630,7 @@ impl ZeldaState {
             self.dungeon_submodule_cpu_schedule = None;
             self.module09_cpu_schedule = None;
             self.pre_overworld_overlays_cpu_nmis = None;
+            self.pre_overworld_screen_build_cpu_nmis = None;
             self.native_overworld_song_upload = None;
             self.native_overworld_packing_progress = None;
         self.pre_dungeon_cpu_entry_envelope = None;
