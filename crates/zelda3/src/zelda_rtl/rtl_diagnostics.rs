@@ -7,7 +7,7 @@ use super::*;
 impl ZeldaState {
     /// Dump the composed display, after DMA/scanout receipts, independently
     /// of live CPU RAM. Engine host N corresponds to comparison frame N-1.
-    pub(super) fn debug_dump_presented_state(&self, plan: &DisplayPublicationPlan) {
+    pub(super) fn debug_dump_presented_state(&self, plan: &DisplayPublicationPlan, display: &DisplaySnapshot) {
         if !nmi::debug_frame_selection_env_matches(
             "ZELDA3_DEBUG_PRESENTED_FRAMES",
             self.frame_ctr_dbg,
@@ -19,6 +19,11 @@ impl ZeldaState {
                 .expect("selected presented frames require ZELDA3_DEBUG_PRESENTED_DIR"),
         );
         std::fs::create_dir_all(&root).expect("create presented-state directory");
+        std::fs::write(
+            root.join(format!("{}-spotlight.txt", self.frame_ctr_dbg)),
+            format!("snapshot_host={}\nscanout={:?}\nhdma={:?}\n", display.publication_host_frame,
+                display.spotlight_scanout_generation, display.hdma_table_generation),
+        ).expect("write spotlight generation");
         let write_words = |name: &str, words: &[u16]| {
             let bytes: Vec<u8> = words.iter().flat_map(|word| word.to_le_bytes()).collect();
             std::fs::write(root.join(format!("{}-{name}.bin", self.frame_ctr_dbg)), bytes)
@@ -44,11 +49,18 @@ impl ZeldaState {
         std::fs::write(root.join(format!("{}-ram.bin", self.frame_ctr_dbg)), &self.ram)
             .expect("write presented-state RAM");
         let scroll: Vec<_> = self.ppu.bg_layer.iter().map(|bg| (bg.h_scroll, bg.v_scroll)).collect();
+        let mut scanout = self.clone();
+        scanout.sync_native_game_state_from_ram();
+        std::fs::write(
+            root.join(format!("{}-scanlines.txt", self.frame_ctr_dbg)),
+            format!("{:?}\n", scanout.ppu_scanline_windows()),
+        ).expect("write presented scanline windows");
         let registers = format!(
-            "host={} brightness={} blank={}/{}/{:?} crop={} scroll={scroll:?} bg_override={:?}\nplan={plan:?}\n",
+            "host={} brightness={} blank={}/{}/{:?} crop={} scroll={scroll:?} bg_override={:?}\nwindowsel={:06x} screen_enabled={:?} screen_windowed={:?}\nplan={plan:?}\n",
             self.frame_ctr_dbg, self.ppu.brightness, self.ppu.forced_blank,
             self.ppu.forced_blank_scanlines, self.ppu.forced_blank_from_scanline,
             self.ppu.scanout_top_crop, self.active_presented_bg_scroll,
+            self.ppu.windowsel, self.ppu.screen_enabled, self.ppu.screen_windowed,
         );
         std::fs::write(root.join(format!("{}-registers.txt", self.frame_ctr_dbg)), registers)
             .expect("write presented-state registers");

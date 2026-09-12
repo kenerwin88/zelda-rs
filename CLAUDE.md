@@ -75,7 +75,8 @@ It does not replace the pinned live Snes9x A/V authority.
   `scripts/package_macos.sh` builds release with `--no-default-features`). Add new switches via
   `crate::debug_env::{var, var_os, is_set}`, never `std::env` directly.
 - `ZELDA3_DEBUG_PRESENTED_FRAMES` with `ZELDA3_DEBUG_PRESENTED_DIR` dumps composed
-  VRAM, OAM, palette, registers and CHR identities. Each entry in `chr-sources.bin`
+  VRAM, OAM, palette, registers, CHR identities, composed scanline windows and
+  spotlight publication ownership. Each entry in `chr-sources.bin`
   and `chr-preview-sources.bin` is five bytes: kind, little-endian pack, then
   little-endian tile offset. Use these alongside raw tile bytes when investigating
   graphics-generation differences; engine host N is comparison frame N-1.

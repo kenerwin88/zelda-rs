@@ -113,6 +113,51 @@ fn unfinished_spotlight_rows_do_not_replace_the_published_hardware_table() {
 }
 
 #[test]
+fn retained_spotlight_snapshot_consumes_the_current_field_hdma_receipt() {
+    // Original run 37590 retains the earlier OAM/VRAM generation, but its
+    // channel-7 reads still belong to that field: the circle begins at row
+    // 121, not the following field's row 128. Retaining the snapshot used to
+    // discard these measured reads and project the completed next table.
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.ppu.oam[0] = 0x1234;
+    state.ppu.vram[0] = 0x5678;
+    state.capture_display_snapshot_with_override(Some(DisplaySnapshotPublication::PublishCaptured));
+    state.display_snapshot.as_mut().unwrap().hdma_table_generation =
+        DisplayHdmaTableGeneration::SpotlightPublishedAheadOfSnapshot {
+            active_table: vec![0; ZeldaState::HDMA_DYNAMIC_TABLE_LEN],
+        };
+    state.ppu.oam[0] = 0xabcd;
+    state.ppu.vram[0] = 0xef01;
+    let mut active_words = [0x00ff; SPOTLIGHT_VISIBLE_SCANLINES];
+    active_words[121] = 0xa858;
+    let mut following_words = [0x00ff; SPOTLIGHT_VISIBLE_SCANLINES];
+    following_words[128] = 0xa65a;
+    state.next_display_spotlight_scanout = Some(
+        LiveSpotlightScanout::capture(&state).with_authoritative_rom_hdma_words(&active_words),
+    );
+    state.spotlight_scanout_after_active_field = Some(
+        LiveSpotlightScanout::capture(&state).with_authoritative_rom_hdma_words(&following_words),
+    );
+    let cpu_ram = state.ram.clone();
+    state.capture_display_snapshot_with_override(Some(DisplaySnapshotPublication::RetainPublished));
+    let snapshot = state.display_snapshot.as_ref().unwrap();
+    assert_eq!(snapshot.ppu.oam[0], 0x1234);
+    assert_eq!(snapshot.ppu.vram[0], 0x5678);
+    let active_bytes: Vec<_> = active_words.iter().flat_map(|word| word.to_le_bytes()).collect();
+    assert_eq!(&snapshot.effective_spotlight_hdma_tables()[0][..448], active_bytes);
+    assert_eq!(state.ram, cpu_ram);
+    assert!(!snapshot.accepts_nmi_dma_receipts);
+    state.capture_display_snapshot_with_override(Some(DisplaySnapshotPublication::PublishCaptured));
+    let following_bytes: Vec<_> = following_words.iter().flat_map(|word| word.to_le_bytes()).collect();
+    assert_eq!(
+        &state.display_snapshot.as_ref().unwrap().effective_spotlight_hdma_tables()[0][..448],
+        following_bytes,
+    );
+    assert!(state.next_display_spotlight_scanout.is_none());
+}
+
+#[test]
 fn spotlight_cpu_checkpoints_preserve_the_source_frame_counter_phase() {
     // Cold Snes9x runs 4782 and 11443 enter $02:9982 with $1A=176 and
     // 168 respectively, after INC $1A at $00:8051. Module10's checkpoint

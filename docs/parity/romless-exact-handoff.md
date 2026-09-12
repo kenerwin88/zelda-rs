@@ -96,7 +96,7 @@ Work remains on `fix/romless-spiral-palette-return`; `main` remains the accepted
 baseline above. No push. Short receipt comparisons protect the shared path
 while native timing advances; they are not native acceptance evidence.
 
-Current native frontier: **37590, video-only**. This batch has corrected:
+Current native frontier: **37690, video-only**. This batch has corrected:
 
 - `510da835`: grayscale caller finishes its held NMI before authoring the next
   palette; retires at main wait. Exposed earlier native frontier 14076.
@@ -239,8 +239,56 @@ Current native frontier: **37590, video-only**. This batch has corrected:
   as proof of its owner.
   Follow-up source comparison rules out those OBJ-cache differences: all105
   visible source tiles (6,720 pixels) match both decoded caches. The captured
-  spotlight HDMA table differs at $170f2–$17127 while live WRAM agrees.
-  Investigate which table generation owns this field's window scanout.
+  reserved table differs at $170f2–$17127 while live WRAM agrees. The port
+  hardware-facing dynamic table is at $1dba0, not $17000 or raw $1b00.
+- Retained spotlight HDMA ownership: `RetainPublished` discarded the measured
+  active-field window receipt while keeping OAM/VRAM. A whole-table fallback
+  then exposed the following circle (row128) instead of the source field
+  (row121). Transfer that independent measured receipt to the retained
+  snapshot and retire its obsolete table fallback; keep the following receipt
+  queued. Native37590 →37690, audio exact. The regression checks retained
+  OAM/VRAM, current window, following window, and unchanged CPU RAM.
+  Evidence: `target/spotlight-retained-native`,
+  `target/spotlight-retained-receipt` (37,710 exact),
+  `/tmp/spotlight-retained-lib-tests.log` (1,765 passed,3 ignored),
+  `target/native-37590-owner`, `/tmp/native-37590-boundaries.log`.
+  Presented-state diagnostics now include composed scanline windows and
+  spotlight ownership. Next frontier: `target/native-37690-source` and
+  `target/native-37690`; source is force-blank in pre-overworld overlays.
+  The next mismatch is a caller-timing gap, not remaining spotlight pixels:
+  native completes properties on enginehost37663 and enters overlays on37664,
+  then finishes the screen build on37687. Source properties return at
+  comparison37662, followed by NMI-masked continued-call hosts37663–37685;
+  the common suffix and Open NMI arrive at37686, overlays start37687 and
+  return37691. Native incorrectly unblanks while source is still loading.
+  `complete_pre_overworld_load_properties_after_sprite_reset_with_presence`
+  ends in `LoadOWMusicIfNeeded` ($02:854c → $00:8913 → $00:8888). The audio
+  owner already performs a non-atomic `SongBankHostTransfer`, but the native
+  `FinishPreOverworldProperties` arm prepares sprites, clears $12 and marks
+  main-wait immediately; only its Live-owner branch keeps the common suffix
+  pending. Investigate coupling that native caller to the existing upload
+  completion and NMI mask, including the exact return-host phase. Do not add
+  another calibrated 24-frame hold: the byte/ack protocol already owns time.
+  The native properties stage and source marker agree after converting
+  enginehost37663 to comparison37662. The native overlays duration is also
+  still a fixed seven slices versus five source hosts here; price that caller
+  independently after restoring the missing upload wait. Audio advances after
+  gameplay for each host, so merely checking whether the preceding audio host
+  finished uploading risks retiring the caller one host late. Preserve the
+  completion timestamp within the field, not just a transfer-busy boolean.
+  Source proof: `target/native-37690-return-cpu/upload-window.bin` and
+  `/tmp/pre-overworld-upload-source.jsonl`. On comparison37662, $02:854c
+  starts at V31/C638 and $00:8913 at V31/C900. $02:8552/$8555 clear
+  $4200/$420c before the APUI0 $ff request. The upload returns to $00:8923
+  on37686 at V251/C676; restoring $4200 accepts Held NMI at V251/C822,
+  resumes at V253/C1128, reaches the $00:805d latch-clear boundary at
+  V0/C906, then accepts Open NMI at V225/C12. Source $13 remains zero;
+  that software byte is not the hardware NMI mask. The diagnostic trace
+  contains complete evidence through37692; its final37693 return was cut
+  off by the trace frame filter, so this is diagnostic evidence, not a pass.
+  Future trace filters should end one host beyond the requested frame count.
+  Never filter $00:8034 for this investigation: it is a hot busy-wait loop;
+  the abandoned trace was stopped and its 4.6GB file removed.
 
 The audio mismatch at 25054 came from missing drawing work before the text
 renderer. The original enters VWF at v=50 on host 25048; the old ledger left

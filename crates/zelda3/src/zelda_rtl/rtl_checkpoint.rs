@@ -1046,6 +1046,19 @@ impl ZeldaState {
                     self.display_snapshot =
                         self.deferred_display_snapshot.clone().or(Some(snapshot));
                 } else if let Some(published) = self.display_snapshot.as_mut() {
+                    // Retaining OAM/VRAM does not retain the preceding
+                    // field's HDMA reads. A measured active-field receipt
+                    // belongs to this boundary even when the caller has not
+                    // yet published its next complete display snapshot.
+                    if matches!(
+                        &snapshot.spotlight_scanout_generation,
+                        SpotlightScanoutGeneration::ComposeLiveAfterNmi(scanout)
+                            if scanout.authoritative_rom_hdma_receipt
+                    ) {
+                        published.spotlight_scanout_generation =
+                            snapshot.spotlight_scanout_generation;
+                        published.hdma_table_generation = DisplayHdmaTableGeneration::Captured;
+                    }
                     // The entry snapshot owns one scanout with the pre-pickup
                     // camera. Item graphics then retain that same OAM/VRAM
                     // generation across subsequent vblanks, but BG2 scroll is
@@ -1808,7 +1821,7 @@ impl ZeldaState {
                 self.ppu.forced_blank_from_scanline,
             );
         }
-        self.debug_dump_presented_state(&publication_plan);
+        self.debug_dump_presented_state(&publication_plan, &display);
         self.sync_native_game_state_from_ram();
         // The RAM-derived rebuild reconstitutes the palette mirror from the
         // snapshot's WRAM shadow, which already holds THIS frame's palette
