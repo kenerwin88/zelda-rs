@@ -9582,6 +9582,7 @@ impl ZeldaState {
                             );
                         }
                         self.dungeon_landing_spotlight_reset_prefix_scanlines = None;
+                        self.dungeon_landing_spotlight_copy_visible_rows = None;
                         self.dungeon_landing_cpu_advance_pending = Some(advance);
                     }
                     true

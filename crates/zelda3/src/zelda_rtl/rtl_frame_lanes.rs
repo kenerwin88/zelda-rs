@@ -2530,9 +2530,11 @@ impl ZeldaState {
                 self.game_state.player.follower_link.y(),
                 self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
             );
-            let projects_live_tail = spotlight_opening_projects_live_tail_before_hdma(
-                self.game_state.display.spotlight_hdma.window_radius(),
-                spotlight_vertical_center,
+            let measured_rows = self.active_dungeon_landing_spotlight_copy_visible_rows.take();
+            let projects_live_tail = measured_rows.map_or_else(
+                || spotlight_opening_projects_live_tail_before_hdma(
+                    self.game_state.display.spotlight_hdma.window_radius(), spotlight_vertical_center),
+                |rows| rows.iter().any(|&visible| visible),
             );
             let before_projection = self
                 .last_completed_interrupted_dungeon_spotlight_scanout
@@ -2584,15 +2586,17 @@ impl ZeldaState {
                     .mark_audio_nmi_after_host_publication();
             }
             if projects_live_tail && !scheduled_work_started_after_leading_nmi {
-                let live_tail_start = spotlight_mixed_scanout_live_tail_start(
+                let live_tail_start = measured_rows.map_or_else(|| spotlight_mixed_scanout_live_tail_start(
                     spotlight_vertical_center,
                     self.game_state.display.spotlight_hdma.window_radius(),
-                );
+                ), |_| 0);
                 if let (Some(before_projection), Some(after_projection), Some(display)) = (
                     before_projection,
                     after_projection,
                     self.display_snapshot.as_mut(),
                 ) {
+                    let after_projection = measured_rows.map_or(after_projection.clone(), |copied|
+                        spotlight_copy_scanout_tables(&before_projection, &after_projection, &copied));
                     display.hdma_table_generation =
                         DisplayHdmaTableGeneration::SpotlightProjectionDuringScanout {
                             before_projection,

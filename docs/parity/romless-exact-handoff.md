@@ -4,7 +4,57 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 39,742
+## Current native frontier — 40,980
+
+Opening landing wipes now derive their displayed table generation from
+the actual `$00:f3bb` (`STA $1B00,X`) copy stores and each row's HDMA read.
+The native Module 7 CPU plan carries a per-row mask through its pending
+and active iteration; both interrupted publication and caller-return
+publication consume that result. Receipt-driven execution keeps its
+existing authority. A single tail boundary is insufficient: a copy can
+straddle the start of visible display and produce a different row pattern.
+
+Pinned Snes9x store-completion checkpoints at `$00:f3be` prove the old
+39,742 boundary: rows 219–223 complete at V220/C1286, V221/C90,
+V221/C258, V221/C426, and V221/C634. Only rows 221–223 beat their reads.
+At comparison 39,744 those stores complete at V224/C400, C608, C776,
+C944, and C1154; none beat their reads. The source-backed regression is
+`landing_copy_stores_race_their_own_hdma_rows`, with trace evidence in
+`target/native-landing-copy-stores-source` (raw runs +38,001).
+
+Final binary `ec5c742b3474952f1e7b02c6f9e6fe2ea7c9fab8590398a20fe56d8e3e5930cb`:
+
+- Native video/audio exact through 40,979; first video mismatch 40,980,
+  audio still exact (`target/native-landing-copy-final-native`, 54.76s).
+- Engine suite: 1,776 passed, 3 ignored
+  (`/tmp/native-landing-copy-final-lib-tests.log`, 24.25s).
+- Receipt-driven cached A/V: all 50,000 frames exact on the same binary
+  (`target/native-landing-copy-final-receipt`, 58.80s).
+
+The previous 39,742 window mismatch is fixed. The previously recorded
+463/386 VRAM byte differences at engine hosts 39,743/39,744 remain but
+do not affect the exact compared image; do not claim those memory domains
+are equal. This remains development ROM CPU measurement, not a completed
+ROM-less timing implementation. The full 1,581,079-frame receipt proof
+still belongs to runtime `d7d92a85`.
+
+Next: closing Module0F spotlight publication at comparison 40,980.
+`target/native-40980-source` resumes the 38,001 source pair and passes
+enabled video through 41,000 (audio disabled). Compare its
+`target/native-40980-source-presented` dumps with
+`target/native-landing-copy-final-presented`; both have nearby actual
+WRAM captures in their session directories.
+
+At engine host 40,981, VRAM, OAM, CGRAM, and scroll match; 25 window rows
+differ. Source windows match native host 40,982. At engine host 40,983,
+27 window rows differ and source matches native host 40,984. Source
+comparison 40,980 returns at `$00:8034`, V225/C0, radius `$70`, latch
+clear, without accepting an NMI in that host. The preceding host accepts
+two NMIs and returns inside `$00:f536` with radius `$77`, latch held.
+Investigate the completed-field versus NMI-acceptance publication owner;
+do not add a frame/room exception or offset the CPU clock.
+
+## Previous native frontier — 39,742
 
 Pre-dungeon loading now measures its room-dependent CPU workload instead
 of always waiting 58 NMIs. The preceding Module0F CPU plan retains the

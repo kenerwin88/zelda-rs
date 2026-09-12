@@ -13,7 +13,9 @@ impl ZeldaState {
         self.last_completed_interrupted_dungeon_spotlight_scanout = None;
         self.dungeon_landing_entry_started_after_leading_nmi = entry_started_after_leading_nmi;
         self.dungeon_landing_spotlight_reset_prefix_scanlines = None;
+        self.dungeon_landing_spotlight_copy_visible_rows = None;
         self.active_dungeon_landing_spotlight_reset_prefix_scanlines = None;
+        self.active_dungeon_landing_spotlight_copy_visible_rows = None;
     }
 
     pub(crate) fn set_spotlight_y_lower(&mut self, value: u16) {

@@ -6799,6 +6799,25 @@ fn spotlight_reset_prefix_scanlines(
     Some(prefix)
 }
 
+fn spotlight_copy_store_precedes_hdma(row: usize, position: CpuRasterPosition) -> bool {
+    let (line, cycle) = position.coordinates();
+    line >= 225 || line < row as u16 || (line == row as u16 && cycle < 1_106)
+}
+
+fn spotlight_copy_scanout_tables(
+    before: &[Vec<u8>; 2], after: &[Vec<u8>; 2], copied: &[bool; SPOTLIGHT_VISIBLE_SCANLINES],
+) -> [Vec<u8>; 2] {
+    let mut tables = before.clone();
+    for (table, authored) in tables.iter_mut().zip(after) {
+        for (row, &visible) in copied.iter().enumerate() {
+            if visible {
+                table[row * 2..row * 2 + 2].copy_from_slice(&authored[row * 2..row * 2 + 2]);
+            }
+        }
+    }
+    tables
+}
+
 fn dungeon_module_7_cpu_advance_after_leading_nmi(
     state: &ZeldaState,
     checkpoint: RomCpuCheckpoint,
@@ -6896,6 +6915,11 @@ fn dungeon_module_7_cpu_timing(
     let mut first_interruption: Option<DungeonModuleCpuAdvance> = None;
     let mut cached_sprite_copy: Option<CachedSpriteCpuProgress> = None;
     let mut spotlight_reset_rows_before_hdma = [None; SPOTLIGHT_VISIBLE_SCANLINES];
+    let mut spotlight_copy_rows_before_hdma = [false; SPOTLIGHT_VISIBLE_SCANLINES];
+    let measures_spotlight_copy = !matches!(state.original_timing_owner, OriginalTimingOwnerState::Live)
+        && state.game_state.frame.main_module == 7
+        && state.game_state.frame.submodule == 0x0f
+        && state.game_state.frame.subsubmodule == 1;
     let debug_cpu_phases = crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_PHASES").is_some();
     let mut spotlight_instruction_steps = None;
 
@@ -6923,11 +6947,13 @@ fn dungeon_module_7_cpu_timing(
             };
             let timing = DungeonModuleCpuTiming {
                 advance: completed,
+                spotlight_copy_visible_rows: measures_spotlight_copy.then_some(spotlight_copy_rows_before_hdma),
                 spotlight_reset_prefix_scanlines: None,
             };
             if let Some(mut first) = first_interruption {
                 first.resumed_phase = Some(completed.phase);
                 return DungeonModuleCpuTiming {
+                    spotlight_copy_visible_rows: timing.spotlight_copy_visible_rows,
                     spotlight_reset_prefix_scanlines: spotlight_reset_prefix_scanlines(
                         &spotlight_reset_rows_before_hdma,
                         first.submodule_nmi_slices,
@@ -7017,6 +7043,18 @@ fn dungeon_module_7_cpu_timing(
         let executing_pc = run.pc();
         let advance = advance_rom_cpu_step(&mut run, &mut budget);
         let cpu_writes = run.take_cpu_wram_writes();
+        // $F3BB: STA $1B00,X in the reserved-table copy. Only stores in
+        // the first field can change that field's last HDMA consumers.
+        // Later stores belong to the resumed caller's next publication.
+        if measures_spotlight_copy && first_interruption.is_none() && executing_pc == 0x00_f3bb {
+            for &(address, _) in &cpu_writes {
+                if (0x1b00..0x1b00 + SPOTLIGHT_VISIBLE_SCANLINES * 2).contains(&address) {
+                    let row = (address - 0x1b00) / 2;
+                    spotlight_copy_rows_before_hdma[row] =
+                        spotlight_copy_store_precedes_hdma(row, budget.raster_position());
+                }
+            }
+        }
         if let Some(copy) = cached_sprite_copy.as_mut() {
             for &(address, _) in &cpu_writes {
                 copy.observe_wram_write(address);
@@ -7136,6 +7174,7 @@ fn dungeon_module_7_cpu_timing(
                 }
                 first.resumed_phase = Some(interrupted.phase);
                 return DungeonModuleCpuTiming {
+                    spotlight_copy_visible_rows: measures_spotlight_copy.then_some(spotlight_copy_rows_before_hdma),
                     spotlight_reset_prefix_scanlines: spotlight_reset_prefix_scanlines(
                         &spotlight_reset_rows_before_hdma,
                         first.submodule_nmi_slices.saturating_add(1),
@@ -7149,6 +7188,7 @@ fn dungeon_module_7_cpu_timing(
                 continue;
             }
             return DungeonModuleCpuTiming {
+                spotlight_copy_visible_rows: measures_spotlight_copy.then_some(spotlight_copy_rows_before_hdma),
                 spotlight_reset_prefix_scanlines: spotlight_reset_prefix_scanlines(
                     &spotlight_reset_rows_before_hdma,
                     1,
@@ -7247,12 +7287,14 @@ fn dungeon_module_7_cpu_advance_across_envelope(
         earliest_advance.resumed_phase,
         earliest_advance.submodule_nmi_slices,
         earliest.spotlight_reset_prefix_scanlines,
+        earliest.spotlight_copy_visible_rows,
     );
     let latest_key = (
         latest_advance.phase,
         latest_advance.resumed_phase,
         latest_advance.submodule_nmi_slices,
         latest.spotlight_reset_prefix_scanlines,
+        latest.spotlight_copy_visible_rows,
     );
     if earliest_key != latest_key {
         // The calibrated entry envelope straddles a raster boundary for this
@@ -7419,6 +7461,7 @@ fn dungeon_module_7_cpu_advance_across_envelope(
             ..earliest_advance
         },
         spotlight_reset_prefix_scanlines: earliest.spotlight_reset_prefix_scanlines,
+        spotlight_copy_visible_rows: earliest.spotlight_copy_visible_rows,
     }
 }
 
@@ -9607,6 +9650,10 @@ pub struct ZeldaState {
     /// before the translated state 13/14 prefix mutates WRAM.
     #[serde(skip)]
     dungeon_landing_cpu_advance_pending: Option<DungeonModuleCpuAdvance>,
+    #[serde(skip)]
+    dungeon_landing_spotlight_copy_visible_rows: Option<[bool; SPOTLIGHT_VISIBLE_SCANLINES]>,
+    #[serde(skip)]
+    active_dungeon_landing_spotlight_copy_visible_rows: Option<[bool; SPOTLIGHT_VISIBLE_SCANLINES]>,
     /// ROM-timed part of the one-NMI landing reset field that remains owned
     /// by the corresponding caller-return publication.
     #[serde(skip)]
@@ -12211,6 +12258,8 @@ impl ZeldaState {
             dungeon_peg_attribute_flip_pending: None,
             dungeon_state_12_caller_suffix_nmi_pending: false,
             dungeon_landing_cpu_advance_pending: None,
+            dungeon_landing_spotlight_copy_visible_rows: None,
+            active_dungeon_landing_spotlight_copy_visible_rows: None,
             dungeon_landing_spotlight_reset_prefix_scanlines: None,
             active_dungeon_landing_spotlight_reset_prefix_scanlines: None,
             dungeon_post_sprite_main_return_pending: false,
@@ -12461,7 +12510,9 @@ impl ZeldaState {
         self.native_overworld_song_upload = None;
         self.dungeon_landing_goal_transition_pending = false;
         self.dungeon_landing_spotlight_reset_prefix_scanlines = None;
+        self.dungeon_landing_spotlight_copy_visible_rows = None;
         self.active_dungeon_landing_spotlight_reset_prefix_scanlines = None;
+        self.active_dungeon_landing_spotlight_copy_visible_rows = None;
         self.normal_dialogue_following_main_nmi_uses_host_animated_bg_operands = None;
         self.next_core_nmi_active_scanout_uses_host_animated_bg_operands = None;
         self.pending_dialogue_initialization_schedule = None;
@@ -12577,7 +12628,9 @@ impl ZeldaState {
             self.pending_main_loop_common_suffix = None;
             self.dungeon_landing_goal_transition_pending = false;
             self.dungeon_landing_spotlight_reset_prefix_scanlines = None;
+            self.dungeon_landing_spotlight_copy_visible_rows = None;
             self.active_dungeon_landing_spotlight_reset_prefix_scanlines = None;
+            self.active_dungeon_landing_spotlight_copy_visible_rows = None;
             self.normal_dialogue_following_main_nmi_uses_host_animated_bg_operands = None;
             self.next_core_nmi_active_scanout_uses_host_animated_bg_operands = None;
             self.pending_dialogue_initialization_schedule = None;

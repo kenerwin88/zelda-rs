@@ -1064,6 +1064,9 @@ pub(crate) struct DungeonModuleCpuAdvance {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct DungeonModuleCpuTiming {
     pub(crate) advance: DungeonModuleCpuAdvance,
+    /// Rows whose reserved-table copy precedes their HDMA read in the
+    /// interrupted field. The copy may straddle the visible field's start.
+    pub(crate) spotlight_copy_visible_rows: Option<[bool; SPOTLIGHT_VISIBLE_SCANLINES]>,
     /// Leading rows whose HDMA read beat `IrisSpotlight_ResetTable`, but only
     /// when the reset field remains owned by this caller-return publication.
     pub(crate) spotlight_reset_prefix_scanlines: Option<usize>,

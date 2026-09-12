@@ -2085,6 +2085,7 @@ impl ZeldaState {
         {
             if self.dungeon_landing_cpu_advance_pending.is_none() {
                 let timing = begin_dungeon_landing_cpu_advance(self);
+                self.dungeon_landing_spotlight_copy_visible_rows = timing.spotlight_copy_visible_rows;
                 self.dungeon_landing_spotlight_reset_prefix_scanlines =
                     timing.spotlight_reset_prefix_scanlines;
                 self.dungeon_landing_cpu_advance_pending = Some(timing.advance);
@@ -2096,6 +2097,7 @@ impl ZeldaState {
         {
             self.dungeon_landing_cpu_advance_pending = None;
             self.dungeon_landing_spotlight_reset_prefix_scanlines = None;
+            self.dungeon_landing_spotlight_copy_visible_rows = None;
         }
         if let (Some(interruption), Some(advance)) = (
             self.original_timing_main_loop_interruption(),

@@ -4763,6 +4763,32 @@ fn spotlight_reset_prefix_expires_with_its_cpu_advance() {
 }
 
 #[test]
+fn landing_copy_stores_race_their_own_hdma_rows() {
+    // Pinned Snes9x $00:F3BE checkpoints, immediately after STA $1B00,X.
+    // Comparison 39742 ($3f->$46) presents new rows 221..223; comparison
+    // 39744 ($46->$4d) presents none. A radius cutoff cannot express this
+    // source contract. Earlier row stores lose their HDMA race in both runs.
+    for (stores, expected_tail) in [
+        ([(220, 1286), (221, 90), (221, 258), (221, 426), (221, 634)], 221),
+        ([(224, 400), (224, 608), (224, 776), (224, 944), (224, 1154)], 224),
+    ] {
+        let mut copied = [false; SPOTLIGHT_VISIBLE_SCANLINES];
+        for (row, (line, cycle)) in (219..224).zip(stores) {
+            copied[row] = spotlight_copy_store_precedes_hdma(row, CpuRasterPosition::new(line, cycle));
+        }
+        let before = [vec![0x11; 480], vec![0x22; 480]];
+        let after = [vec![0xaa; 480], vec![0xbb; 480]];
+        let composed = spotlight_copy_scanout_tables(&before, &after, &copied);
+        for row in 0..SPOTLIGHT_VISIBLE_SCANLINES {
+            for table in 0..2 {
+                assert_eq!(composed[table][row * 2],
+                    if row >= expected_tail { after[table][row * 2] } else { before[table][row * 2] });
+            }
+        }
+    }
+}
+
+#[test]
 fn interrupted_dungeon_exit_spotlight_publishes_the_rom_prefix_before_waiting() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);

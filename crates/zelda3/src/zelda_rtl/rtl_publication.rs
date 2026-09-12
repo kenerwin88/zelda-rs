@@ -95,11 +95,13 @@ impl ZeldaState {
             self.game_state.player.follower_link.y(),
             self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
         );
-        let spotlight_tail_after_projection = (!retires_pre_spotlight_scanout
-            && spotlight_opening_projects_live_tail_before_hdma(
-                self.game_state.display.spotlight_hdma.window_radius(),
-                spotlight_vertical_center,
-            ))
+        let measured_rows = self.active_dungeon_landing_spotlight_copy_visible_rows;
+        let projects_live_tail = measured_rows.map_or_else(
+            || spotlight_opening_projects_live_tail_before_hdma(
+                self.game_state.display.spotlight_hdma.window_radius(), spotlight_vertical_center),
+            |rows| rows.iter().any(|&visible| visible),
+        );
+        let spotlight_tail_after_projection = (!retires_pre_spotlight_scanout && projects_live_tail)
         .then(|| {
             authored_spotlight
                 .as_ref()
@@ -107,16 +109,19 @@ impl ZeldaState {
                 .hdma_tables
                 .clone()
         });
-        if let Some(after_projection) = spotlight_tail_after_projection {
-            let live_tail_start = spotlight_mixed_scanout_live_tail_start(
+        if let Some(mut after_projection) = spotlight_tail_after_projection {
+            let live_tail_start = measured_rows.map_or_else(|| spotlight_mixed_scanout_live_tail_start(
                 spotlight_vertical_center,
                 self.game_state.display.spotlight_hdma.window_radius(),
-            );
+            ), |_| 0);
             let active = self
                 .display_snapshot
                 .as_mut()
                 .expect("interrupted iris copy requires an active display snapshot");
             let before_projection = active.effective_spotlight_hdma_tables();
+            if let Some(copied) = measured_rows {
+                after_projection = spotlight_copy_scanout_tables(&before_projection, &after_projection, &copied);
+            }
             active.hdma_table_generation =
                 DisplayHdmaTableGeneration::SpotlightProjectionDuringScanout {
                     before_projection,

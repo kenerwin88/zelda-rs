@@ -7,6 +7,8 @@ use super::*;
 impl ZeldaState {
     pub(super) fn take_dungeon_landing_cpu_advance(&mut self) -> Option<DungeonModuleCpuAdvance> {
         let advance = self.dungeon_landing_cpu_advance_pending.take();
+        self.active_dungeon_landing_spotlight_copy_visible_rows =
+            self.dungeon_landing_spotlight_copy_visible_rows.take();
         self.active_dungeon_landing_spotlight_reset_prefix_scanlines =
             self.dungeon_landing_spotlight_reset_prefix_scanlines.take();
         advance
@@ -80,6 +82,7 @@ impl ZeldaState {
             // subsequent game-loop entry would replay NMI from its already
             // mutated latch/DMA state and omit the real upload workload.
             let timing = rom_dungeon_landing_cpu_advance(self);
+            self.dungeon_landing_spotlight_copy_visible_rows = timing.spotlight_copy_visible_rows;
             self.dungeon_landing_spotlight_reset_prefix_scanlines =
                 timing.spotlight_reset_prefix_scanlines;
             self.dungeon_landing_cpu_advance_pending = Some(timing.advance);
@@ -164,6 +167,7 @@ impl ZeldaState {
         {
             let advance = begin_dungeon_supertile_state_12_cpu_advance(self);
             self.dungeon_landing_spotlight_reset_prefix_scanlines = None;
+            self.dungeon_landing_spotlight_copy_visible_rows = None;
             self.dungeon_landing_cpu_advance_pending = Some(advance);
         }
         if self.rom_startup_timing()
@@ -978,6 +982,7 @@ impl ZeldaState {
             return;
         }
         if let Some(timing) = begin_dungeon_module_cpu_timing_after_leading_nmi(self) {
+            self.dungeon_landing_spotlight_copy_visible_rows = timing.spotlight_copy_visible_rows;
             self.dungeon_landing_spotlight_reset_prefix_scanlines =
                 timing.spotlight_reset_prefix_scanlines;
             self.dungeon_landing_cpu_advance_pending = Some(timing.advance);

@@ -2775,6 +2775,7 @@ impl ZeldaState {
                     if let Some(advance) = quadrant_module_cpu_advance {
                         debug_assert!(state.dungeon_landing_cpu_advance_pending.is_none());
                         state.dungeon_landing_spotlight_reset_prefix_scanlines = None;
+                        state.dungeon_landing_spotlight_copy_visible_rows = None;
                         state.dungeon_landing_cpu_advance_pending = Some(advance);
                     }
                     state.zelda_run_game_loop_after_leading_nmi();
@@ -2925,6 +2926,7 @@ impl ZeldaState {
         if let Some(advance) = quadrant_module_cpu_advance {
             debug_assert!(self.dungeon_landing_cpu_advance_pending.is_none());
             self.dungeon_landing_spotlight_reset_prefix_scanlines = None;
+            self.dungeon_landing_spotlight_copy_visible_rows = None;
             self.dungeon_landing_cpu_advance_pending = Some(advance);
         }
         self.replay_trace_ram_watch("before-game-loop");
