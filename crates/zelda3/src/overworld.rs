@@ -4138,7 +4138,12 @@ impl ZeldaState {
             self.begin_module0f_spotlight_close_link_and_oam(None, iteration);
         if phase == SpotlightIterationPhase::CloseEntryBeforeTablePublication
             && !link_movement_suspended
+            && !iteration.prepares_main_loop_sprites_before_second_nmi()
         {
+            // Geometry is only a fallback for an unmeasured caller. The ROM
+            // plan can prove that NMI_PrepareSprites already returned in this
+            // resumed field; another suffix slice would hold the next main
+            // iteration despite the source having reached its wait loop.
             self.schedule_spotlight_iteration_return(iteration);
         }
         if iteration.prepares_main_loop_sprites_before_second_nmi() {

@@ -3291,6 +3291,35 @@ fn completed_spotlight_entry_does_not_schedule_a_second_return() {
 }
 
 #[test]
+fn measured_close_entry_suffix_retires_without_a_geometry_wait() {
+    // Snes9x comparison 40978: the 239-row entry resumes its table build,
+    // reaches $00:85FC at V37/C162, then returns at $00:8036 with counter
+    // 253, radius $77, and latch clear. Comparison 40979 starts the next
+    // main iteration; the geometry fallback must not add another wait.
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.set_main_module(0x0f);
+    state.set_submodule(0);
+    state.set_frame_counter(253);
+    state.follower_link_state_mut().set_position(1400, 8180);
+    state.set_bg2_v_copy2(7954);
+    state.set_spotlight_window_state(0);
+    state.set_spotlight_window_radius(126);
+    state.latch_nmi_update();
+    let table = state.begin_iris_spotlight_configure_table(0);
+    let iteration = SpotlightIteration::closing(
+        SpotlightIterationPhase::CloseEntryBeforeTablePublication,
+    ).with_main_loop_sprite_preparation_before_second_nmi();
+    state.complete_dungeon_exit_spotlight_entry(table, iteration);
+    assert!(state.game_execution_scheduler.is_idle());
+    assert_eq!(state.game_state.frame.frame_counter, 253);
+    assert_eq!(state.game_state.frame.submodule, 1);
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 119);
+    assert!(state.main_loop_sprite_preparation_completed);
+    assert!(!state.game_state.display.nmi_update_is_latched());
+}
+
+#[test]
 fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     // 189-row calibration center (dungeon landing): $70 publishes in-slice.
     assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(0x7e, 36));
