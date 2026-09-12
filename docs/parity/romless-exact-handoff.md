@@ -133,20 +133,45 @@ The investigation also found a general timing defect in
 `crates/snes/src/cpu_step.rs`: Snes9x `S9xOpcode_NMI/IRQ` prices its initial
 opcode-fetch cycle with `CPU.MemSpeed`, not a fixed6. The candidate's timed
 executor now charges62 for slow-ROM interrupts and60 for fast ROM; WAI wake
-remains separate. All400 SNES tests pass,5 ignored. This removes82 clocks of
+remains separate. All401 SNES tests pass,5 ignored. This removes82 clocks of
 the104-clock command-prefix error across the leading plus40 Held NMIs.
 The upload-specific main-wait seed now uses the source's `$8036`/zero-flag
-busy-loop phase instead of synthetic WAI. Latest command: V31/C832 versus
-source C838; latest restore: V251/C680 versus source C780. Do not add an
-unexplained compensating delay. Native still differs in audio at37749.
-Latest short receipt A/V:37,760 exact, `target/song-upload-handoff-receipt`.
+busy-loop phase instead of synthetic WAI. Fresh source APUI bus traces correct
+the earlier mixed-coordinate comparison: command bus V31/C832 precedes the
+following instruction at C838. Source final port clears occur at
+V251/C470,500,530,600; the caller restores $4200 at bus C774, before the
+following instruction at C780. The candidate now matches command832 and
+restore774. Its first ready-poll low read is364 master clocks after the
+command, matching source1196, high1202 and failed-pair next low1254.
+Timed uploads service host polls at SPC pseudo-op boundaries, preventing a
+poll from seeing a later store in the same instruction. Receipt-era untimed
+uploads retain their existing behavior. Four source-backed upload tests and
+all1770 engine library tests pass,3 ignored; logs
+`/tmp/song-upload-bus-tests.log`, `/tmp/song-upload-latest-lib-tests.log` and
+`/tmp/song-upload-micro-snes-all.log`. Native remains audio-only at37749:
+`target/song-upload-first-read-native`. Latest short receipt A/V:37,760 exact,
+`target/song-upload-events-receipt`.
 Source: `/tmp/pre-overworld-upload-source.jsonl`; per-crossing native trace:
 `/tmp/song-upload-native5.log` (before the interrupt-cost correction),
 `/tmp/song-upload-native6.log` (after), and `native7` (busy-loop seed).
-The host37686 SPC transport diagnostic shows no NMI port writes in either
-lane; native execution is two APU cycles ahead of receipt execution there.
-Next inspect the later DSP/command handoff at37749 and the remaining source
-return phase. Keep the candidate isolated until those boundaries are proved.
+At37749, native and receipt produce the same66 DSP register/value writes,
+but every native timestamp is two APU cycles later. Fresh source evidence in
+`target/song-upload-source-ports` uses the exact pinned cache core binary;
+its37749 audio hash matches the cache. Do not compensate DSP timestamps.
+
+The first persistent receipt/source clock drift is now localized to34636,
+well before this upload. `target/song-upload-clock-shift` contains two
+instruction traces:34635 aligns4202 instructions with phase0;34636 aligns
+1745 at phase0, then2486 at phase126. SPC `$08e8 MOV A,$00f4+X`, X=3,
+reads0 in Rust and12 in Snes9x; their different branches reconverge at
+$08a4 two cycles apart. Source NMI writes APUI03=12 at V225/C862.
+`target/song-upload-click-transport` proves the receipt clock instead writes0
+with `vwf_boundary_policy=0`, despite the preceding physical latch being12.
+This run still has34,638 exact A/V frames, so internal clock fidelity and
+rendered parity are distinct. Next trace VWF click candidate/queued-NMI
+ownership around34636; do not add a frame exception or infer that the later
+upload needs a two-cycle delay. The source traces are diagnostic runs with
+A/V comparisons disabled, not acceptance gates. Keep the candidate isolated.
 
 - `510da835`: grayscale caller finishes its held NMI before authoring the next
   palette; retires at main wait. Exposed earlier native frontier 14076.
