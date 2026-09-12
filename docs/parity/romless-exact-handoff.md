@@ -47,7 +47,24 @@ V248/C1140 and copies224 words from V192/C200 through V221/C486.
 Next boundary: `target/native-50755-source[-presented]`, resumed from paired
 pre-frame48,481; decode `/tmp/native-50755-source.jsonl`. Source is finishing
 a Module7/sub0f opening goal, reaching radius126 at50,755 and returning to
-Module7/sub0 at50,756. Classify its display domains before changing timing.
+Module7/sub0 at50,756. Native diagnostic:
+`target/native-50755-diagnostic[-presented]`,
+`/tmp/native-50755-diagnostic.log` (61.70s). At presented host50,756, all
+window rows and CGRAM agree. VRAM differs in116 bytes of Link's page and
+OAM in just bytes0x199/0x1ad. Main/submodule, counter, and latch agree at
+comparison50,755; the goal state is not a whole iteration early or late.
+
+The key provenance finding is a one-field **reversion**: both engines present
+the new Link/OAM generation at host50,755, but native goes back to its older
+host50,754 generation at host50,756, then recovers at50,757. Source keeps the
+new generation across all three fields. Source OAM bytes are c6/ca while the
+reverted native bytes are c7/cb. Link-page hash prefix changes from
+`ae3444d3aa` to `abd0567c97`; native alone switches back for the goal hold.
+Native50,756 selects `RetainImmutableCapturedPpu`,
+`RetainCapturedBeforeNmi`, and Link `HostBoundaryBeforeMain`. Investigate
+that old capture's selection across the held goal NMI; do not change window
+timing or delay graphics which were already correctly presented.
+
 No full or repeated receipt gate has been run for this native-only batch;
 the100k native target remains pending.
 
