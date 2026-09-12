@@ -35,6 +35,54 @@ a held NMI and the caller/common suffix without another NMI acceptance.
 39,728 then accepts the next open NMI. Capture native/source display and
 CPU return progress across that boundary before changing costs or owners.
 
+## Pre-dungeon investigation after the 39,727 frontier
+
+The next visible mismatch is the opening dungeon landing wipe (`07/0f`),
+not the preceding Module0F close. At engine host 39,728, composed VRAM,
+OAM, CGRAM and scroll agree; native keeps the window closed on rows
+207..217 while source shows the first small opening. Native CPU state is
+already one host late when Module_PreDungeon returns: comparison 39,723
+still has native module 6, whereas the source has returned to `07/0f`.
+Native returns on 39,724. Evidence is `target/native-link-return-diagnostic`
+and `target/native-link-return-source` (resumed at 38,001, video enabled),
+with their corresponding `*-presented` directories.
+
+A blanket switch from `schedule_work(58)` to the scheduler's
+`schedule_cpu_timed_work_from_current_main_iteration(58)` was tested and
+removed. It exposed audio mismatch 11,538 and published native module 7
+on comparison 11,537, before the original returned on 11,538. The
+experimental artifacts are `target/native-pre-dungeon-crossing-native`
+and `target/native-pre-dungeon-audio-diagnostic`; they are not the accepted
+runtime. Main remains the 39,727-frontier runtime.
+
+Both source loads cross 58 held NMIs, but their final handler spans differ:
+
+- First load starts 11,480. Its last held acceptance is `$09:c47f` at
+  11,537 V225/C32. That host returns in the vector at V225/C94; the next
+  host resumes at V227/C368 and enters the song-bank transfer. Module 7
+  must not publish before 11,538.
+- Later load starts 39,666. Host 39,722 returns at `$09:c47f`, V225/C4,
+  before acceptance. Host 39,723 accepts at `$09:c480`, V225/C18,
+  finishes the handler and caller, and reaches main wait at V225/C6.
+
+Model the actual final NMI/host-return phase; neither a universal decrement
+nor a room/bank exception is justified. The initial host also differs:
+11,480 begins with an already accepted handler, whereas 39,666 begins
+before the open NMI. Preserve the caller's CPU raster rather than inventing
+an entry offset. The Module0F CPU plan already follows its final caller
+through main wait but discards the successor-module entry phase; carrying
+that phase into the pre-dungeon measurement is a promising next step,
+not yet an implemented or verified fix.
+
+The first-load source is `target/native-pre-dungeon-first-source`: cold,
+video enabled through 11,542. It saved matched diagnostic Rust/oracle
+states for 11,535..11,542, so future source audio probes can use explicit
+`--resume-rust-state` / `--resume-oracle-state` with
+`ZELDA3_LIVE_RNG_DIAGNOSTIC_RESUME=1` instead of another cold replay.
+These are source/receipt states, not native SPC checkpoints. Decode source
+traces from the resumed 38,001 run using relative run numbers; add 38,001
+for route coordinates. The first-load cold trace uses route run numbers.
+
 ## Latest local merge — 2026-09-12
 
 The user explicitly requested merging the accumulated native timing batch
