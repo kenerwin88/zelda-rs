@@ -2408,6 +2408,14 @@ impl ZeldaState {
                         graphics.entry_frame.frame_counter == self.game_state.frame.frame_counter
                     });
                 self.finish_pre_main_caller_continuation(continuation);
+                let native_return =
+                    !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live);
+                if native_return {
+                    // The carried held handler completes before the second
+                    // palette walk. The caller's queued uploads belong to the
+                    // next Open NMI, after it has returned to the main wait.
+                    self.interrupt_nmi(input, oam_dma_source, false);
+                }
                 self.complete_spiral_stairs_second_palette_filter();
                 // Resume the ordinary game-loop suffix without repeating its
                 // frame-counter/OAM-clear prefix or the Link movement that ran
@@ -2452,6 +2460,11 @@ impl ZeldaState {
                     self.publish_completed_palette_filter_cgram_scanout();
                 } else {
                     self.retain_completed_palette_filter_cgram_scanout();
+                }
+                if native_return {
+                    self.game_execution_scheduler
+                        .finish_call_stack_at_main_wait_before_nmi();
+                    return true;
                 }
                 self.interrupt_nmi_with_animated_bg_operands(
                     input,

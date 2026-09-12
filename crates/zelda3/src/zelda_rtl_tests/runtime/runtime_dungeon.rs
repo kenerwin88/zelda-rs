@@ -4647,34 +4647,38 @@ fn spiral_stair_grayscale_return_releases_core_dma_after_retaining_its_scanout()
 }
 
 #[test]
-fn grayscale_caller_finishes_held_nmi_before_authoring_the_next_palette() {
+fn spiral_palette_callers_finish_held_nmi_before_authoring_the_next_palette() {
     // Original host 23945 completes a held handler, runs the second palette
     // walk and suffix, and only accepts the following Open NMI at return.
-    let mut state = ZeldaState::new();
-    state.restore_live_rom_timing_after_checkpoint();
-    state.set_animated_tile_data_source_address(0xa680);
-    state.set_indoor_flag(1);
-    state.set_main_module(7);
-    state.set_submodule(0x0e);
-    state.set_subsubmodule(15);
-    state.set_frame_counter(0xb2);
-    state.set_countdown_word(1);
-    state.ppu.cgram.fill(0x1234);
-    state.latch_nmi_update();
-    state.schedule_pre_main_caller_continuation(
-        PreMainCallerContinuation::SpiralStairsSecondGrayscalePaletteFilter,
-    );
-    assert!(state.resume_pre_main_caller_continuation(0, None));
-    assert_eq!(state.game_state.frame.frame_counter, 0xb2);
-    assert_eq!(state.game_state.display.palette_filter.countdown(), 2);
-    assert_eq!(state.ppu.cgram[0x20], 0x1234);
-    assert!(state.game_state.system_signals.should_update_cgram());
-    assert!(!state.game_state.display.nmi_update_is_latched());
-    state.game_execution_scheduler.begin_host_frame();
-    assert!(state.game_execution_scheduler.main_return_requires_leading_nmi());
-    state.interrupt_nmi(0, None, false);
-    assert_eq!(state.ppu.cgram[0x20], read_le_u16(&state.ram, MAIN_PALETTE_BUFFER + 0x40));
-    assert!(!state.game_state.system_signals.should_update_cgram());
+    // The ordinary second walk has the same ordering (source host 33894).
+    for (subsubmodule, continuation) in [
+        (2, PreMainCallerContinuation::SpiralStairsSecondPaletteFilter),
+        (15, PreMainCallerContinuation::SpiralStairsSecondGrayscalePaletteFilter),
+    ] {
+        let mut state = ZeldaState::new();
+        state.restore_live_rom_timing_after_checkpoint();
+        state.set_animated_tile_data_source_address(0xa680);
+        state.set_indoor_flag(1);
+        state.set_main_module(7);
+        state.set_submodule(0x0e);
+        state.set_subsubmodule(subsubmodule);
+        state.set_frame_counter(0xb2);
+        state.set_countdown_word(1);
+        state.ppu.cgram.fill(0x1234);
+        state.latch_nmi_update();
+        state.schedule_pre_main_caller_continuation(continuation);
+        assert!(state.resume_pre_main_caller_continuation(0, None));
+        assert_eq!(state.game_state.frame.frame_counter, 0xb2);
+        assert_eq!(state.game_state.display.palette_filter.countdown(), 2);
+        assert_eq!(state.ppu.cgram[0x20], 0x1234);
+        assert!(state.game_state.system_signals.should_update_cgram());
+        assert!(!state.game_state.display.nmi_update_is_latched());
+        state.game_execution_scheduler.begin_host_frame();
+        assert!(state.game_execution_scheduler.main_return_requires_leading_nmi());
+        state.interrupt_nmi(0, None, false);
+        assert_eq!(state.ppu.cgram[0x20], read_le_u16(&state.ram, MAIN_PALETTE_BUFFER + 0x40));
+        assert!(!state.game_state.system_signals.should_update_cgram());
+    }
 }
 
 #[test]

@@ -96,7 +96,7 @@ Work remains on `fix/romless-spiral-palette-return`; `main` remains the accepted
 baseline above. No push. Short receipt comparisons protect the shared path
 while native timing advances; they are not native acceptance evidence.
 
-Current native frontier: **33895, video-only**. This batch has corrected:
+Current native frontier: **36022, audio-only**. This batch has corrected:
 
 - `510da835`: grayscale caller finishes its held NMI before authoring the next
   palette; retires at main wait. Exposed earlier native frontier 14076.
@@ -196,6 +196,22 @@ Current native frontier: **33895, video-only**. This batch has corrected:
   remains deferred.
   Reusable composed-display dumps now include five-byte logical/preview CHR
   identities, documented in CLAUDE.md.
+
+- Ordinary spiral second-palette caller: complete the carried Held NMI
+  before the second walk and common suffix, then retire at main wait. The
+  previous synthetic trailing Open NMI consumed queued uploads too early.
+  At33895, native animated tiles differed from the source by791 pixels;
+  the receipt tiles matched. Native33895 →36022; WRAM33888–33902 now
+  matches except scratch $1f00. Both palette-return regression variants
+  pass, as do all1762 library tests (3 ignored). Evidence:
+  `target/spiral-held-native`, `target/spiral-held-receipt` (36,040 exact),
+  `target/native-33895`, `target/native-33895-source`, and
+  `/tmp/spiral-held-lib-tests.log`.
+  Next audio window: `target/native-36022` versus
+  `target/spiral-held-receipt`, source `target/native-36022-source`.
+  Native is one glyph behind at36014 and clears SFX2 at36018 while the
+  receipt retains12. Investigate the dialogue CPU budget and NMI boundary;
+  this is diagnosis, not a proven cost correction.
 
 The audio mismatch at 25054 came from missing drawing work before the text
 renderer. The original enters VWF at v=50 on host 25048; the old ledger left
