@@ -3476,6 +3476,15 @@ fn straight_interroom_reset_cpu_progress(
         if advance.reached_boundary().is_some() {
             let pc = run.pc();
             let progress = match pc {
+                // The two single stores follow the completed live-sprite and
+                // ancilla loops. Their existing semantic tokens keep the
+                // remaining counters, overlords and garnish unmodified.
+                0x09_c252 => DungeonResetSpritesCpuProgress::Disable(
+                    DungeonSpriteDisableCpuProgress::AncillaPickupFlagCleared,
+                ),
+                0x09_c255 => DungeonResetSpritesCpuProgress::Disable(
+                    DungeonSpriteDisableCpuProgress::SpriteLimitInstanceCleared,
+                ),
                 0x09_c124..=0x09_c129 | 0x09_c28f => {
                     DungeonResetSpritesCpuProgress::SpritesDisabled
                 }

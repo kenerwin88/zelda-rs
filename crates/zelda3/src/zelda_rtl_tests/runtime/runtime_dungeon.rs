@@ -1279,6 +1279,12 @@ fn straight_bg_conversion_return_leaves_uploads_for_the_next_open_nmi() {
 fn native_straight_reset_preserves_the_measured_prefix_until_resume() {
     for room in [0x51, 0x22] {
         for progress in [
+            DungeonResetSpritesCpuProgress::Disable(
+                DungeonSpriteDisableCpuProgress::AncillaPickupFlagCleared,
+            ),
+            DungeonResetSpritesCpuProgress::Disable(
+                DungeonSpriteDisableCpuProgress::SpriteLimitInstanceCleared,
+            ),
             DungeonResetSpritesCpuProgress::GarnishTypesThrough { slot: 10 },
             DungeonResetSpritesCpuProgress::SpritesDisabled,
             DungeonResetSpritesCpuProgress::CollisionXSizeSet,
@@ -1293,6 +1299,8 @@ fn native_straight_reset_preserves_the_measured_prefix_until_resume() {
             state.set_indoor_flag(1);
             state.sprite_slot_view_mut(0).set_state(9);
             state.sprite_slot_view_mut(0).set_sprite_type(0x6e);
+            state.sprite_system_mut().set_limit_instance(6);
+            state.sprite_battle_mut().set_item_drop_counter(5);
             state.garnish_state_mut().set_sprcoll_x_size(0x1234);
             state.garnish_state_mut().set_sprcoll_y_size(0x5678);
             for k in 0..30 {
@@ -1309,6 +1317,11 @@ fn native_straight_reset_preserves_the_measured_prefix_until_resume() {
             assert!(state.dungeon_submodule_cpu_schedule.is_none());
             assert_eq!(state.sprite_slot_view(0).state(), 0);
             assert_eq!(state.sprite_slot_view(0).sprite_type(), 0x6e);
+            if let DungeonResetSpritesCpuProgress::Disable(disable) = progress {
+                assert_eq!(state.ram[0x0b9b], 5, "later reset counters are still pending");
+                assert_eq!(state.ram[0x0b6a], if disable == DungeonSpriteDisableCpuProgress::AncillaPickupFlagCleared { 6 } else { 0 });
+                assert!((0..30).all(|k| state.garnish_slot_view(k).garnish_type() == 7));
+            }
             if let DungeonResetSpritesCpuProgress::GarnishTypesThrough { slot } = progress {
                 for k in 0..30 {
                     assert_eq!(state.garnish_slot_view(k).garnish_type(), if k < usize::from(slot) { 7 } else { 0 });

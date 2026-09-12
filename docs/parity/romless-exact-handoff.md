@@ -96,8 +96,7 @@ Work remains on `fix/romless-spiral-palette-return`; `main` remains the accepted
 baseline above. No push. Short receipt comparisons protect the shared path
 while native timing advances; they are not native acceptance evidence.
 
-Current native coverage: **29,540 frames exact A/V**; the100k probe stops at
-an unmodelled reset checkpoint at engine host29550.. This batch has corrected:
+Current native frontier: **31363, video-only**.. This batch has corrected:
 
 - `510da835`: grayscale caller finishes its held NMI before authoring the next
   palette; retires at main wait. Exposed earlier native frontier 14076.
@@ -152,7 +151,7 @@ an unmodelled reset checkpoint at engine host29550.. This batch has corrected:
   the accepted candidate includes that suffix. Native evidence:
   `target/map-room-native2`, `target/map-room-receipt`; source: `target/map-room-source`.
 
-- Animated BG scanout follows the main-entry phase: changing the dispatcher
+- `504a9f4a`: animated BG scanout follows the main-entry phase: changing the dispatcher
   cannot undo a completed leading-NMI upload. The old cross-phase selector
   restored stale tiles on the28836 gameplay-to-spiral transition. All23
   animated regressions and29,580 receipt frames pass. The100k native probe
@@ -161,6 +160,13 @@ an unmodelled reset checkpoint at engine host29550.. This batch has corrected:
   progress token. Do not add an atomic reset or a frame exception. Bounded
   native29,540 passes: `target/animated-entry-native-prefix`; receipt:
   `target/animated-entry-receipt`; source: `target/native-29550-source`.
+
+- Straight-stair reset measurement recognizes the existing Disable tokens at
+  $09:c252 and$c255. No new runtime capability: the source29550 confirms
+  SpriteLimitInstanceCleared. The expanded prefix regression preserves seeded
+  counters/garnish until resume; native29547–29552 WRAM matches apart from
+  scratch. Native reaches31363; receipt31,400 passes. Evidence:
+  `target/reset-disable-native`, `target/reset-disable-receipt`.
 
 The audio mismatch at 25054 came from missing drawing work before the text
 renderer. The original enters VWF at v=50 on host 25048; the old ledger left
@@ -188,7 +194,9 @@ The room51 dialogue audio mismatch is repaired. Source receipts:
 **Repaired:27888**, dungeon-map forced-blank write.
 **Repaired:27926**, dungeon-map drawing caller interruption count.
 **Repaired:28836**, main-entry animated-BG ownership.
-**Next:29550**, straight-stair reset Disable progress (above). Earlier source:
+**Repaired:29550**, straight-stair reset Disable progress (above).
+**Next:31363**, continued caller return; source `target/native-31363-source`,
+probe `target/native-31363`, receipt `target/reset-disable-receipt`. Earlier source:
 `target/native-28836-source`; native/receipt probes below.
 Source: `target/native-27926-source`; native probe: `target/native-27926`;
 receipt probe: `target/map-blank-receipt`. Source receipts: `target/native-27888-source`; native
