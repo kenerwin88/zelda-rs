@@ -4,7 +4,61 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 47,333
+## Current native frontier — 47,975
+
+Two native caller fixes extend exact A/V through 47,974:
+
+1. WorldMap_FadeOut now consumes the measured CPU write boundary already
+   used for DungMap_Backup. The shared `map_fade_cpu_blank_scanline` starts
+   before the leading NMI with current input and runs through `$00:8942`;
+   its one-shot field is `pending_map_force_blank_output_scanline`.
+   Native measures V46/C280, output row 45, versus source V46/C308: the
+   render-event bucket is exact, but do not claim exact CPU master cycles.
+   Native presented host 47,334 now retains brightness 1 above row 45.
+   This moves the video frontier from 47,333 to 47,621.
+2. Save-menu initialization was absent from the native text-initialization
+   scheduling eligibility (only dialogue submodule 2 was armed). Native
+   Module0E/11 now uses the existing measured Text_Initialize plan, preserving
+   its sprite caller while decompression is suspended. The save-menu flags
+   and selection suffix have been split into
+   `complete_save_menu_after_render_text`; the initializer's return executes
+   that suffix before Module0E's scroll-register/common suffix. The ordinary
+   save-menu call returns immediately while translated work is pending.
+   Live initialization still uses its existing semantic progress authority.
+
+The save-menu plan measures 4 prefix crossings and 1 caller crossing at
+host 47,620. Native/source counters stay 14 through comparisons
+47,619-47,624, then advance together. HUD flag/core-update state also match
+through that interval and the following iterations. At comparison 47,618,
+prior to initialization, the native latch/HUD flag still differ from source;
+that is not claimed fixed by this batch. Enabled native A/V remains exact.
+
+Evidence: `target/native-map-fade-native` (67.38s, first video 47,621),
+`target/native-map-fade-presented`, `target/native-47621-diagnostic[-presented]`,
+`target/native-47621-source[-presented]` (source video passes through 47,640,
+audio disabled, resumed pre-frame 47,200), and
+`target/native-save-init-native` (64.69s, first video 47,975, audio exact).
+The latter includes corrected actual WRAM around the initialization.
+CPU plan logs: `/tmp/native-map-fade-native.log`,
+`/tmp/native-save-init-native.log`.
+
+Accepted batch SHA-256:
+`6cd76ad5ef07748423013e2ffdd4485b270fb438e465895b7545834320a966ee`.
+Engine suite: 1,780 passed, 3 ignored (24.01s),
+`/tmp/native-map-save-batch-final-lib-tests.log`.
+The first suite run exposed a missing host-frame setup in the new test
+fixture; the fixture now enters the host/main-loop phases before invoking
+the scheduled save-menu call. Runtime code was unchanged by that correction.
+Receipt-driven cached A/V: all 50,000 frames exact on this binary
+(`target/native-map-save-batch-receipt`, 64.14s).
+The full 1,581,079 receipt proof remains runtime `d7d92a85`; these are
+native development CPU measurements, not finished ROM-less timing.
+Continue batching toward 100,000 native before a full-route gate.
+
+Next: investigate comparison 47,975 from source/native captures; do not
+carry the prior HUD or save-menu diagnosis forward without new evidence.
+
+## Previous native frontier — 47,333
 
 `HandleStripes14` now programs DMA channel 1, leaving channel 0's PPU
 register target intact. The bulk stripe implementation previously called

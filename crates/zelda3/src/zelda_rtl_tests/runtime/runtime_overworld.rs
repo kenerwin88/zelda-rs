@@ -1377,20 +1377,21 @@ fn world_map_fade_publishes_the_previous_scanout_snapshot() {
 }
 
 #[test]
-fn dungeon_map_fade_consumes_its_measured_blank_write_once() {
-    for scanline in [0, 13, 48, 91] {
+fn map_fade_consumes_its_measured_blank_write_once() {
+    for (submodule, scanline) in [3, 7].into_iter().flat_map(|submodule|
+        [0, 13, 45, 48, 91].into_iter().map(move |scanline| (submodule, scanline))) {
         let mut state = ZeldaState::new();
         state.set_main_module(14);
-        state.set_submodule(3);
+        state.set_submodule(submodule);
         state.set_overworld_map_state(0);
         state.set_screen_brightness(1);
-        state.pending_dungeon_map_force_blank_output_scanline = Some(scanline);
+        state.pending_map_force_blank_output_scanline = Some(scanline);
         // No classified Sprite_Main workload is available: the measurement
         // itself must own the active prefix, including a valid row-zero write.
         assert!(state.last_sprite_main_timing_workload.is_none());
-        state.DungMap_Backup();
+        if submodule == 3 { state.DungMap_Backup(); } else { state.WorldMap_FadeOut(); }
         assert_eq!(state.active_display_force_blank_event, Some(scanline));
-        assert_eq!(state.pending_dungeon_map_force_blank_output_scanline, None);
+        assert_eq!(state.pending_map_force_blank_output_scanline, None);
         assert_eq!(state.game_state.display.screen_brightness, 0x80);
         assert_eq!(state.overworld_map_state(), 1);
     }

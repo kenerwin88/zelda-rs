@@ -318,6 +318,14 @@ impl ZeldaState {
             }
             GameWorkContinuation::FinishDialogueInitializationCallerReturn => {
                 self.complete_text_initialization_carry_suffix();
+                if self.game_state.frame.main_module == 14
+                    && self.game_state.frame.submodule == 11
+                {
+                    // Save-menu RenderText is the suspended callee. Its
+                    // flags and selection-state suffix follow the completed
+                    // initialization, before Module0E's scroll-register tail.
+                    self.complete_save_menu_after_render_text();
+                }
                 self.complete_module0e_interface_after_run();
                 if self.pending_main_loop_common_suffix.is_some() {
                     // The source-proven caller return already carries the

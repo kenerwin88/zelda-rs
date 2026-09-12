@@ -923,6 +923,29 @@ fn paired_resume_rejects_suspended_intro_memory_darken_caller() {
 }
 
 #[test]
+fn native_save_menu_keeps_its_suffix_behind_text_initialization() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.set_main_module(14);
+    state.set_submodule(11);
+    state.set_subsubmodule(0);
+    state.increment_hud_update_flag();
+    state.set_pending_nmi_subroutine(2);
+    state.pending_dialogue_initialization_schedule = Some((3, 2, None));
+    state.game_execution_scheduler.begin_host_frame();
+    state.game_execution_scheduler.begin_main_loop_iteration();
+
+    state.Module0E_0B_SaveMenu();
+
+    assert!(matches!(state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishDialogueInitializationPrefix { .. })));
+    assert_eq!(state.game_state.frame.subsubmodule, 0);
+    assert!(state.game_state.system_signals.should_update_hud());
+    assert_eq!(state.game_state.messaging.runtime.module(), 0);
+    assert!(state.pending_dialogue_initialization_schedule.is_none());
+}
+
+#[test]
 fn live_save_menu_initialization_holds_then_executes_the_c_endpoint_once() {
     let mut held = ZeldaState::new();
     held.restore_live_rom_timing_after_checkpoint();

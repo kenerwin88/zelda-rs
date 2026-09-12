@@ -868,7 +868,10 @@ impl ZeldaState {
     /// translated `Text_Initialize` consumes.
     fn arm_dialogue_initialization_schedule_if_needed(&mut self) {
         if self.rom_startup_timing()
-            && self.game_state.frame.submodule == 2
+            && (self.game_state.frame.submodule == 2
+                || (self.game_state.frame.submodule == 11
+                    && !matches!(self.original_timing_owner(),
+                        crate::zelda_rtl::OriginalTimingOwner::Live)))
             && self.game_state.messaging.runtime.module() == 0
             && self.pending_dialogue_initialization_schedule.is_none()
         {
@@ -1237,6 +1240,13 @@ impl ZeldaState {
             self.Overworld_DwDeathMountainPaletteAnimation();
         }
         self.RenderText();
+        if self.game_execution_scheduler.work_suspends_translated_call_stack() {
+            return;
+        }
+        self.complete_save_menu_after_render_text();
+    }
+
+    pub(super) fn complete_save_menu_after_render_text(&mut self) {
         self.clear_hud_update_flag();
         self.clear_core_update_disable_flag();
         if self.game_state.frame.subsubmodule < 3 {
@@ -2809,9 +2819,10 @@ impl ZeldaState {
         self.set_mapbak_hdmaen(hdmaen);
         // Module0E runs Sprite_Main before this write. Its variable CPU work
         // decides how much of the active field has already scanned out.
-        if let Some(scanline) = self
+        let measured_scanline = self.pending_map_force_blank_output_scanline.take();
+        if let Some(scanline) = measured_scanline.or_else(|| self
             .last_sprite_main_timing_workload
-            .and_then(SpriteMainTimingWorkload::world_map_fade_force_blank_output_scanline)
+            .and_then(SpriteMainTimingWorkload::world_map_fade_force_blank_output_scanline))
         {
             self.enable_force_blank_during_active_scanout(scanline);
         } else {
@@ -4353,7 +4364,7 @@ impl ZeldaState {
         self.set_mosaic_copy(3);
         let hdmaen = self.game_state.display.hdma_enable_mask;
         self.set_mapbak_hdmaen(hdmaen);
-        let measured_scanline = self.pending_dungeon_map_force_blank_output_scanline.take();
+        let measured_scanline = self.pending_map_force_blank_output_scanline.take();
         if let Some(scanline) = measured_scanline.or_else(|| self
             .last_sprite_main_timing_workload
             .and_then(SpriteMainTimingWorkload::dungeon_map_backup_force_blank_output_scanline))

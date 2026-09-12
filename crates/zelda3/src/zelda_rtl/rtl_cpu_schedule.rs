@@ -111,15 +111,15 @@ impl ZeldaState {
         }
         if self.rom_startup_timing()
             && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
-            && frame.main_module == 14 && frame.submodule == 3
+            && frame.main_module == 14 && matches!(frame.submodule, 3 | 7)
             && self.overworld_map_state() == 0
             && self.game_state.display.screen_brightness == 1
             && !self.game_state.display.nmi_update_is_latched()
             && self.game_execution_scheduler.is_idle()
-            && self.pending_dungeon_map_force_blank_output_scanline.is_none()
+            && self.pending_map_force_blank_output_scanline.is_none()
         {
-            self.pending_dungeon_map_force_blank_output_scanline =
-                Some(dungeon_map_backup_cpu_blank_scanline(self));
+            self.pending_map_force_blank_output_scanline =
+                Some(map_fade_cpu_blank_scanline(self, input));
         }
         if self.rom_startup_timing()
             && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
