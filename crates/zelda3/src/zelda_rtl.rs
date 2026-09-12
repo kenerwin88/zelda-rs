@@ -2631,6 +2631,7 @@ fn overworld_main_loop_packing_interruption(state: &ZeldaState, input: u16) -> O
     let mut group = 32u8;
     let mut progress = None;
     let mut pointer_tail_cycles = None;
+    let mut source_progress = None;
     for _ in 0..200_000 {
         if run.is_complete() {
             if crate::debug_env::var_os("ZELDA3_DEBUG_OVERWORLD_CPU_PACKING").is_some()
@@ -2641,6 +2642,12 @@ fn overworld_main_loop_packing_interruption(state: &ZeldaState, input: u16) -> O
             return None;
         }
         let pc = run.pc();
+        if pc == 0x00_865c {
+            source_progress = Some(SpritePreparationSourceProgress {
+                completed_words: 0, master_cycles: 0,
+            });
+        }
+        if pc == 0x00_86df { source_progress = None; }
         if pc == 0x00_874e { pointer_tail_cycles = Some(0u16); }
         if pc == 0x00_85fc { packing_entry = Some(budget.raster_position()); }
         if packing_entry.is_some() && pc == 0x00_85fe {
@@ -2651,6 +2658,14 @@ fn overworld_main_loop_packing_interruption(state: &ZeldaState, input: u16) -> O
         run.set_raster_position(v, h);
         let (advance, cpu_cycles) = advance_rom_cpu_step_measured(&mut run, &mut budget);
         let writes = run.take_cpu_wram_writes();
+        if let Some(progress) = source_progress.as_mut() {
+            progress.master_cycles += u16::try_from(cpu_cycles).unwrap();
+            let bytes = writes.iter().filter(|(address, _)|
+                (0x0ac0..0x0adc).contains(address)).count();
+            assert_eq!(bytes % 2, 0, "source-word STA must complete before NMI");
+            progress.completed_words += u8::try_from(bytes / 2).unwrap();
+            assert!(progress.completed_words <= 14);
+        }
         if let Some(cycles) = pointer_tail_cycles.as_mut() {
             *cycles += u16::try_from(cpu_cycles).unwrap();
         }
@@ -2665,12 +2680,13 @@ fn overworld_main_loop_packing_interruption(state: &ZeldaState, input: u16) -> O
         }
         if advance.reached_boundary().is_some() {
             if crate::debug_env::var_os("ZELDA3_DEBUG_OVERWORLD_CPU_PACKING").is_some() {
-                eprintln!("overworld_cpu_packing host={} entry={packing_entry:?} pc={:06x} boundary={:?} progress={progress:?} pointer_tail_cycles={pointer_tail_cycles:?}",
+                eprintln!("overworld_cpu_packing host={} entry={packing_entry:?} pc={:06x} boundary={:?} progress={progress:?} source_progress={source_progress:?} pointer_tail_cycles={pointer_tail_cycles:?}",
                     state.frame_ctr_dbg, run.pc(), budget.raster_position());
             }
             if let Some(progress) = progress { progress.validate(); }
             return pointer_tail_cycles.map(|master_cycles|
                 SpritePreparationProgress::PointerTail(SpritePreparationPointerProgress { master_cycles }))
+                .or_else(|| source_progress.map(SpritePreparationProgress::SourceWords))
                 .or_else(|| progress.map(SpritePreparationProgress::ExtendedOam));
         }
     }

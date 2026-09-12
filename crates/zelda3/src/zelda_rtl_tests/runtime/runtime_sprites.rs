@@ -2413,6 +2413,50 @@ fn game_loop_clears_oam_y_slots_and_keeps_nmi_update_latched() {
 }
 
 #[test]
+fn sprite_preparation_source_interruption_defers_countdowns_and_preserves_stores() {
+    let mut base = ZeldaState::new();
+    base.reset_bg_tile_animation_countdown(1);
+    for word in 0..14 {
+        base.display_core_mut().set_sprite_preparation_source_word(word, 0x5555);
+    }
+    let addresses = [DMA_SOURCE_ADDR_3, DMA_SOURCE_ADDR_0, DMA_SOURCE_ADDR_4,
+        DMA_SOURCE_ADDR_1, DMA_SOURCE_ADDR_5, DMA_SOURCE_ADDR_2,
+        DMA_SOURCE_ADDR_6, DMA_SOURCE_ADDR_11, DMA_SOURCE_ADDR_7,
+        DMA_SOURCE_ADDR_12, DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_13,
+        DMA_SOURCE_ADDR_10, DMA_SOURCE_ADDR_15];
+    let mut atomic = base.clone();
+    let before = crate::cycle_ledger::master();
+    atomic.nmi_prepare_sprites();
+    let atomic_cost = crate::cycle_ledger::master() - before;
+    // Source accepts at $8673 after the body pair and head upper word.
+    // The isolated instruction probe measures 298 clocks from $865c.
+    let progress = SpritePreparationProgress::SourceWords(
+        SpritePreparationSourceProgress { completed_words: 3, master_cycles: 298 });
+    let mut split = base.clone();
+    let before = crate::cycle_ledger::master();
+    split.nmi_prepare_sprites_through_progress(progress);
+    let prefix_cost = crate::cycle_ledger::master() - before;
+    for (word, &address) in addresses.iter().enumerate() {
+        assert_eq!(read_le_u16(&split.ram, address), if word < 3 {
+            read_le_u16(&atomic.ram, address)
+        } else { 0x5555 });
+    }
+    assert_eq!(split.game_state.display.bg_tile_animation_countdown, 1);
+    let mut changed = split.clone();
+    for word in 0..3 {
+        changed.display_core_mut().set_sprite_preparation_source_word(word, 0xa55a);
+    }
+    changed.nmi_prepare_sprites_resume_after_progress(progress);
+    for &address in addresses.iter().take(3) {
+        assert_eq!(read_le_u16(&changed.ram, address), 0xa55a);
+    }
+    let before = crate::cycle_ledger::master();
+    split.nmi_prepare_sprites_resume_after_progress(progress);
+    assert_eq!(prefix_cost + crate::cycle_ledger::master() - before, atomic_cost);
+    assert_eq!(bincode::serialize(&split).unwrap(), bincode::serialize(&atomic).unwrap());
+}
+
+#[test]
 fn sprite_preparation_pointer_interruption_preserves_stores_and_countdowns() {
     let mut base = ZeldaState::new();
     base.set_sprite_dma_head_pointer(0x10);

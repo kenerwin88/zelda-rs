@@ -1786,6 +1786,16 @@ impl ZeldaState {
         match progress {
             SpritePreparationProgress::ExtendedOam(progress) =>
                 self.nmi_prepare_sprites_through_packing_progress(progress),
+            SpritePreparationProgress::SourceWords(progress) => {
+                let _scope = crate::cycle_ledger::routine(0x00_85fc);
+                crate::cycle_ledger::charge(16);
+                for group in [28, 24, 20, 16, 12, 8, 4, 0] {
+                    self.nmi_prepare_sprites_pack_extended_oam_group(group);
+                }
+                assert!(progress.completed_words <= 14);
+                crate::cycle_ledger::charge(u64::from(progress.master_cycles));
+                self.nmi_prepare_sprites_publish_source_words(0, usize::from(progress.completed_words));
+            }
             SpritePreparationProgress::PointerTail(progress) => {
                 let _scope = crate::cycle_ledger::routine(0x00_85fc);
                 crate::cycle_ledger::charge(16);
@@ -1803,6 +1813,12 @@ impl ZeldaState {
         match progress {
             SpritePreparationProgress::ExtendedOam(progress) =>
                 self.nmi_prepare_sprites_resume_after_packing_progress(progress),
+            SpritePreparationProgress::SourceWords(progress) => {
+                let _scope = crate::cycle_ledger::routine(0x00_85fc);
+                self.nmi_prepare_sprites_before_pointer_tail_from_source_progress(progress);
+                crate::cycle_ledger::charge(610);
+                self.nmi_prepare_sprites_publish_pointer_words(0, 6);
+            }
             SpritePreparationProgress::PointerTail(progress) => {
                 let _scope = crate::cycle_ledger::routine(0x00_85fc);
                 let completed = progress.completed_words();
@@ -1823,6 +1839,11 @@ impl ZeldaState {
     }
 
     fn nmi_prepare_sprites_before_pointer_tail(&mut self) {
+        self.nmi_prepare_sprites_before_pointer_tail_from_source_progress(
+            SpritePreparationSourceProgress { completed_words: 0, master_cycles: 0 });
+    }
+
+    fn nmi_prepare_sprites_source_words(&self) -> [u16; 14] {
         fn link_dma_table_value(table: &[u16], index: usize, table_name: &str) -> u16 {
             // C indexes these static DMA tables directly; this keeps an invalid
             // translated index from becoming a silent wrong DMA source.
@@ -1875,51 +1896,17 @@ impl ZeldaState {
             .follower_link
             .link_dma_staging_group() as usize;
 
-        // $00:865C-$00:86E8 (1768): every DMA source-word computation down to
-        // `LDA $7EC00D; DEC; STA; BNE $008719`. Three reads index 8-bit into
-        // tables in the $84xx page and cost 6 more when the index carries past
-        // it: `LDA $849C,X` (X = $107, the sword bank) from X >= $64, `LDA
-        // $84AC,X` (X = $108, the shield bank; the $8B "no shield" index reads
-        // $8537) from X >= $54, and `LDA $84B2,X` (X = $109 << 1, low byte)
-        // from X >= $4E. The other indexed reads stay inside their pages.
-        // The final BNE (+6 when the countdown stays nonzero) is charged in
-        // `nmi_prepare_animated_bg`.
-        crate::cycle_ledger::charge({
-            let sword_index = self
-                .game_state
-                .player
-                .follower_link
-                .sword_dma_graphics_index();
-            let shield_index = self
-                .game_state
-                .player
-                .follower_link
-                .shield_dma_graphics_index();
-            let aux_index = (self
-                .game_state
-                .player
-                .follower_link
-                .link_dma_staging_index()
-                .wrapping_mul(2))
-                & 0xff;
-            1768 + if sword_index >= 0x64 { 6 } else { 0 }
-                + if shield_index >= 0x54 { 6 } else { 0 }
-                + if aux_index >= 0x4e { 6 } else { 0 }
-        });
-
         let source3 = link_dma_table_value(
             &LINK_BODY_DMA_BASE_SOURCES,
             link_dma_graphics_index,
             "LINK_BODY_DMA_BASE_SOURCES",
         );
-        self.set_link_body_dma_sources(source3, source3.wrapping_add(0x200));
 
         let source4 = link_dma_table_value(
             &LINK_HEAD_DMA_BASE_SOURCES,
             link_dma_graphics_index,
             "LINK_HEAD_DMA_BASE_SOURCES",
         );
-        self.set_link_head_dma_sources(source4, source4.wrapping_add(0x200));
 
         let left_hand_source = link_dma_table_value(
             &LINK_HAND_DMA_BASE_SOURCES,
@@ -1931,14 +1918,12 @@ impl ZeldaState {
             link_dma_right_sprite_bank,
             "LINK_HAND_DMA_BASE_SOURCES/right_sprite_bank",
         );
-        self.set_link_hand_dma_sources(left_hand_source, right_hand_source);
 
         let source6 = link_dma_table_value(
             &LINK_SWORD_DMA_BASE_SOURCES,
             link_dma_sword_sprite_bank,
             "LINK_SWORD_DMA_BASE_SOURCES",
         );
-        self.set_link_sword_dma_sources(source6, source6.wrapping_add(0x180));
 
         let source7 = if self
             .game_state
@@ -1955,7 +1940,6 @@ impl ZeldaState {
                 "LINK_SHIELD_DMA_BASE_SOURCES",
             )
         };
-        self.set_link_shield_dma_sources(source7, source7.wrapping_add(0x00c0));
 
         let source8 = link_dma_table_value(
             &LINK_AUX_DMA_BASE_SOURCES,
@@ -1967,11 +1951,39 @@ impl ZeldaState {
             link_dma_staging_group,
             "LINK_AUX_DMA_GROUP_OFFSETS",
         ));
-        self.set_link_aux_dma_sources(source8, aux_source_lower);
 
         let source10 = LINK_PUSH_BLOCK_DMA_BASE_SOURCES
             [(self.game_state.player.pushed_block.animation_mode() & 3) as usize];
-        self.set_link_push_dma_sources(source10, source10.wrapping_add(0x100));
+        [source3, source3.wrapping_add(0x200), source4, source4.wrapping_add(0x200),
+            left_hand_source, right_hand_source, source6, source6.wrapping_add(0x180),
+            source7, source7.wrapping_add(0xc0), source8, aux_source_lower,
+            source10, source10.wrapping_add(0x100)]
+    }
+
+    fn nmi_prepare_sprites_publish_source_words(&mut self, first: usize, end: usize) {
+        let words = self.nmi_prepare_sprites_source_words();
+        for index in first..end {
+            self.display_core_mut().set_sprite_preparation_source_word(index, words[index]);
+        }
+    }
+
+    fn nmi_prepare_sprites_before_pointer_tail_from_source_progress(
+        &mut self, progress: SpritePreparationSourceProgress,
+    ) {
+        assert!(progress.completed_words <= 14);
+        // $865C-$86E8 includes the source stores and first animation decrement.
+        // Preserve the existing complete charge, retiring only the measured
+        // instruction prefix on the interrupted field. Indexed page crossings
+        // in the sword, shield, and auxiliary tables add six cycles each.
+        let link = &self.game_state.player.follower_link;
+        let aux_index = link.link_dma_staging_index().wrapping_mul(2) & 0xff;
+        let master_cycles = 1768
+            + if link.sword_dma_graphics_index() >= 0x64 { 6 } else { 0 }
+            + if link.shield_dma_graphics_index() >= 0x54 { 6 } else { 0 }
+            + if aux_index >= 0x4e { 6 } else { 0 };
+        assert!(u64::from(progress.master_cycles) <= master_cycles);
+        crate::cycle_ledger::charge(master_cycles - u64::from(progress.master_cycles));
+        self.nmi_prepare_sprites_publish_source_words(usize::from(progress.completed_words), 14);
 
         self.nmi_prepare_animated_bg();
         if self.player_state_mut().decrement_link_dma_countdown() == 0 {

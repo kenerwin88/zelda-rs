@@ -89,7 +89,16 @@ pub(crate) enum MainLoopCommonSuffixContinuation {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SpritePreparationProgress {
     ExtendedOam(ExtendedOamPackingProgress),
+    SourceWords(SpritePreparationSourceProgress),
     PointerTail(SpritePreparationPointerProgress),
+}
+
+/// Completed instruction-boundary stores in the fourteen source words at
+/// $865c-$86de. Animation countdowns and the later pointer tail remain pending.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SpritePreparationSourceProgress {
+    pub(crate) completed_words: u8,
+    pub(crate) master_cycles: u16,
 }
 
 /// Instruction-boundary progress through $874e-$8780. Each STA commits a

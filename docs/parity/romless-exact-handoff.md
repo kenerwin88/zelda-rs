@@ -4,7 +4,40 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 47,975
+## Current native frontier — 48,111 (audio)
+
+Sprite preparation now retains instruction-boundary progress through the
+fourteen graphics source words at `$865c-$86de`. The existing native
+overworld CPU probe detected the NMI but discarded this interval between
+extended-OAM packing and the pointer tail. Source comparison 47,974 stops
+at `$8673` after writing body top/bottom and head top; native previously
+finished the iteration, advancing the next field early.
+
+`SpritePreparationProgress::SourceWords` carries the measured elapsed
+cycles and completed word count. Native publishes only that prefix before
+NMI, then the remaining source words, animation updates, and pointer tail
+on return. Completed stores are not replayed; countdowns run once. The
+typed display bridge publishes each word without bypassing native state.
+The probe measures three words / 298 clocks and accepts at `$8673`,
+V225/C46, versus source V225/C36; this is not a claim of exact CPU clocks.
+
+Native cached A/V is exact through 48,110; comparison 48,111 has matching
+video and differing audio. Evidence: `target/native-source-words-native`,
+`/tmp/native-source-words-native.log` (61.21s). Binary SHA-256:
+`496eb907478e67208a315fccd854c76f3065765a249bff03cd3b23dce30d6c62`.
+Engine suite: 1,781 passed, 3 ignored (24.08s), including a regression
+for deferred countdowns, retained stores, and total-cycle/state equivalence:
+`/tmp/native-source-words-lib-tests.log`.
+
+The full receipt proof remains the older `d7d92a85` binary below; no full
+gate was repeated for this merge, per user instruction. Continue batching
+native fixes toward 100,000. Next source capture `target/native-48111-source`
+passes enabled video through 48,115 (audio disabled), resumed from the
+genuine paired pre-frame 47,200 checkpoint. Its decode
+`/tmp/native-48111-source.jsonl` uses raw run +47,200. The next audio
+failure occurs during dialogue rendering; investigate fresh timing evidence.
+
+## Previous native frontier — 47,975
 
 Two native caller fixes extend exact A/V through 47,974:
 
