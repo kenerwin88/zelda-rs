@@ -117,6 +117,37 @@ The next upload candidate is isolated in `target/native-song-upload-worktree`
 on `fix/native-song-upload`, with its own `target/song-upload-build` binary.
 That uncommitted candidate is not covered by this full pass.
 
+**Unmerged upload investigation (2026-09-12).** In the separate checkout,
+native reaches **37749, audio-only** (`target/song-upload-native7`), versus
+main's37688 video frontier. The existing SPC byte/ack owner now determines the
+native caller's masked wait and same-host return, using a forecast of the
+receiver rather than a fixed host count. Source return host37686 corresponds
+to enginehost37687. The measured command plan must distinguish trailing from
+leading NMI entry; pass that fact before `begin_trailing_nmi_receipts` opens a
+write scope. Inspecting that scope afterward misclassifies trailing entry.
+Native temporary timing fields are skipped by serialization to preserve the
+existing receipt audio payload layout; native interrupted-call checkpointing
+is not newly claimed.
+
+The investigation also found a general timing defect in
+`crates/snes/src/cpu_step.rs`: Snes9x `S9xOpcode_NMI/IRQ` prices its initial
+opcode-fetch cycle with `CPU.MemSpeed`, not a fixed6. The candidate's timed
+executor now charges62 for slow-ROM interrupts and60 for fast ROM; WAI wake
+remains separate. All400 SNES tests pass,5 ignored. This removes82 clocks of
+the104-clock command-prefix error across the leading plus40 Held NMIs.
+The upload-specific main-wait seed now uses the source's `$8036`/zero-flag
+busy-loop phase instead of synthetic WAI. Latest command: V31/C832 versus
+source C838; latest restore: V251/C680 versus source C780. Do not add an
+unexplained compensating delay. Native still differs in audio at37749.
+Latest short receipt A/V:37,760 exact, `target/song-upload-handoff-receipt`.
+Source: `/tmp/pre-overworld-upload-source.jsonl`; per-crossing native trace:
+`/tmp/song-upload-native5.log` (before the interrupt-cost correction),
+`/tmp/song-upload-native6.log` (after), and `native7` (busy-loop seed).
+The host37686 SPC transport diagnostic shows no NMI port writes in either
+lane; native execution is two APU cycles ahead of receipt execution there.
+Next inspect the later DSP/command handoff at37749 and the remaining source
+return phase. Keep the candidate isolated until those boundaries are proved.
+
 - `510da835`: grayscale caller finishes its held NMI before authoring the next
   palette; retires at main wait. Exposed earlier native frontier 14076.
 - `2368fe51`: ground-item decoder return preserves the following Open NMI;
