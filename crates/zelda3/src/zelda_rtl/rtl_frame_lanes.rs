@@ -4684,6 +4684,26 @@ impl ZeldaState {
         )>,
         oam_dma_source: Option<Vec<u8>>,
     ) -> bool {
+        let native_ground_return =
+            !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                && matches!(continuation, ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
+                    ground_apress_tail: Some(_), ..
+                });
+        if native_ground_return {
+            // The final Held handler interrupts the synchronous decoder,
+            // before the ground-item tail authors HUD/chest uploads. Original
+            // hosts 4586 and 14076 finish the caller only after that handler.
+            if self.item_receipt_graphics_return_uses_ordinary_module_epilogue(continuation) {
+                self.capture_display_snapshot();
+            } else {
+                let plan = rom_graphics_dma_plan(
+                    self.game_state.frame.main_module, self.game_state.frame.submodule,
+                );
+                self.nmi_core_animated_bg_update(plan);
+                self.capture_display_snapshot_with_publication(DisplaySnapshotPublication::RetainPublished);
+            }
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+        }
         if let ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
             ground_apress_tail: Some(receipt),
             ..
@@ -4720,7 +4740,7 @@ impl ZeldaState {
         // the lower sprite entry has already advanced.
         let ordinary_gfx_21_return =
             self.item_receipt_graphics_return_uses_ordinary_module_epilogue(continuation);
-        if !ordinary_gfx_21_return && authoritative_scheduled_caller_accepts_nmi_at_return.is_none()
+        if !native_ground_return && !ordinary_gfx_21_return && authoritative_scheduled_caller_accepts_nmi_at_return.is_none()
         {
             // The final measured slice is the vblank that interrupts
             // the decompressor itself. The software NMI latch is still
@@ -4951,6 +4971,13 @@ impl ZeldaState {
             // caller suffix above owns it.
             let _ = self.take_original_timing_sprite_main_returned();
             self.retire_or_defer_main_loop_common_suffix_by_wire();
+        }
+        if native_ground_return {
+            if !ordinary_gfx_21_return {
+                self.complete_atomic_item_graphics_return_postlude(continuation);
+            }
+            self.game_execution_scheduler.finish_call_stack_at_main_wait_before_nmi();
+            return true;
         }
         if !ordinary_gfx_21_return && authoritative_scheduled_caller_accepts_nmi_at_return.is_none()
         {

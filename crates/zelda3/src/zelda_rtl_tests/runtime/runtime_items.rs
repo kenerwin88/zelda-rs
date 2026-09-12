@@ -1666,6 +1666,39 @@ fn run4586_terminal_ground_item_receipt_completes_one_handler_sprite_return_and_
 }
 
 #[test]
+fn native_ground_item_return_leaves_its_uploads_for_the_next_open_nmi() {
+    // Hosts 4586 and 14076: Held handler, Sprite_Main return, continued
+    // caller and common suffix; no second handler after that suffix.
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_animated_tile_data_source_address(0xa680);
+    state.set_main_module(7);
+    state.set_submodule(0);
+    state.set_frame_counter(6);
+    state.latch_nmi_update();
+    state.pending_main_loop_common_suffix =
+        Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch);
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishItemReceiptGraphics {
+            continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
+                gfx: 0x21,
+                ground_apress_tail: Some(ItemReceiptReturn {
+                    ancilla_slot: 4, item: 0x33, chest_position: 0x093c,
+                }),
+            },
+        }, 1,
+    );
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert!(state.game_execution_scheduler.is_idle());
+    assert!(state.pending_main_loop_common_suffix.is_none());
+    assert_eq!(state.game_state.frame.frame_counter, 6);
+    assert!(!state.game_state.display.nmi_update_is_latched());
+    assert_eq!(state.ancilla_slot_view(4).item_to_link(), 0x33);
+    state.game_execution_scheduler.begin_host_frame();
+    assert!(state.game_execution_scheduler.main_return_requires_leading_nmi());
+}
+
+#[test]
 fn terminal_ground_item_receipt_owner_is_not_tied_to_route_gfx14() {
     let mut state = live_terminal_ground_item_receipt_state_with_gfx(0x06);
 
