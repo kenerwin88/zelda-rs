@@ -118,7 +118,7 @@ on `fix/native-song-upload`, with its own `target/song-upload-build` binary.
 That uncommitted candidate is not covered by this full pass.
 
 **Unmerged upload investigation (2026-09-12).** In the separate checkout,
-native reaches **37749, audio-only** (`target/song-upload-native7`), versus
+native reaches **38732, video-only** (`target/song-upload-return-nmi-native`), versus
 main's37688 video frontier. The existing SPC byte/ack owner now determines the
 native caller's masked wait and same-host return, using a forecast of the
 receiver rather than a fixed host count. Source return host37686 corresponds
@@ -146,16 +146,15 @@ command, matching source1196, high1202 and failed-pair next low1254.
 Timed uploads service host polls at SPC pseudo-op boundaries, preventing a
 poll from seeing a later store in the same instruction. Receipt-era untimed
 uploads retain their existing behavior. Four source-backed upload tests and
-all1770 engine library tests pass,3 ignored; logs
-`/tmp/song-upload-bus-tests.log`, `/tmp/song-upload-latest-lib-tests.log` and
-`/tmp/song-upload-micro-snes-all.log`. Native remains audio-only at37749:
-`target/song-upload-first-read-native`. Latest short receipt A/V:37,760 exact,
-`target/song-upload-events-receipt`.
+all1771 engine library tests pass,3 ignored; logs
+`/tmp/song-upload-return-nmi-tests.log`, `/tmp/song-upload-return-nmi-lib-tests.log` and
+`/tmp/song-upload-micro-snes-all.log`. The upload suite now has five tests.
+Latest short receipt A/V:40,000 exact, `target/song-upload-return-nmi-receipt`.
 Source: `/tmp/pre-overworld-upload-source.jsonl`; per-crossing native trace:
 `/tmp/song-upload-native5.log` (before the interrupt-cost correction),
 `/tmp/song-upload-native6.log` (after), and `native7` (busy-loop seed).
-At37749, native and receipt produce the same66 DSP register/value writes,
-but every native timestamp is two APU cycles later. Fresh source evidence in
+The earlier37749 candidate and receipt produced the same66 DSP register/value
+writes, but every native timestamp was two APU cycles later. Source evidence in
 `target/song-upload-source-ports` uses the exact pinned cache core binary;
 its37749 audio hash matches the cache. Do not compensate DSP timestamps.
 
@@ -168,10 +167,48 @@ $08a4 two cycles apart. Source NMI writes APUI03=12 at V225/C862.
 `target/song-upload-click-transport` proves the receipt clock instead writes0
 with `vwf_boundary_policy=0`, despite the preceding physical latch being12.
 This run still has34,638 exact A/V frames, so internal clock fidelity and
-rendered parity are distinct. Next trace VWF click candidate/queued-NMI
-ownership around34636; do not add a frame exception or infer that the later
-upload needs a two-cycle delay. The source traces are diagnostic runs with
-A/V comparisons disabled, not acceptance gates. Keep the candidate isolated.
+rendered parity are distinct. **Native already publishes12 here**:
+`target/song-upload-click-native` and the cached instruction capture in
+`target/song-upload-native-source-alignment` match4241 source instructions
+with phase0 and no timer-divider drift. Do not change native VWF ownership
+to fix a receipt-only internal difference.
+
+The actual native audio defect was the held NMI after upload return37686.
+The transfer suppressed NMI audio for its entire host window, losing the
+source's APUI01=5 publication at V252/C80 after its four port clears.
+The candidate now queues that NMI at its real return: restore bus774,
+remaining STA6 + RTS42, hardware NMI62, vector entry884. Its handler's
+CPU work reaches APUI01/02/03 at V252/C80,174,236, with refresh priced
+from the actual entry rather than the normal V225 entry. Command latches
+are captured before `interrupt_nmi_audio_parts` consumes them; the delayed
+audio queue is not the source of this immediate held-NMI publication.
+`target/song-upload-return-nmi-native` then aligns4301 instructions at37686
+and4205 at37749 with phase0 and no timer-divider drift. Audio remains exact
+at the new video frontier38732. All fields remain native-only and skipped
+by serialization; this candidate still needs its eventual full acceptance.
+
+The next source receipt interrupts ordinary overworld sprite preparation:
+38731 ends with `MainLoopInterrupted(SpritePreparation)`;38732 accepts a
+Held NMI, continues the caller and finishes the common suffix. Native needs
+the corresponding measured caller boundary rather than an early latch clear.
+Cold diagnostic `target/native-overworld-prep-source2` proves entry to
+`$0085fc` at38731 V219/C478; the host returns at V225/C4, PC `$00861f`,
+X16/Y4, latch1. The next NMI accepts at `$008620`, V225/C18; the caller
+finally reaches `$00805d` at V230/C840. This is inside the extended-OAM
+packing group's second byte, after its first store to `$0a04`; existing
+group-granularity helpers alone do not describe every committed byte.
+Decoded trace: `/tmp/native-overworld-prep-source2.jsonl`. The source's
+resumable paired checkpoint is
+`target/native-overworld-rolling/frame-00038001`; a fixed capture at38000
+was rejected inside a translated continuation, so use rolling captures.
+`target/native-overworld-resume-check` successfully resumes that pair through
+38735 with `ZELDA3_LIVE_RNG_DIAGNOSTIC_RESUME=1` (diagnostic only).
+The repeated native run `target/native-overworld-prep-native` confirms the
+same38732 frontier and dumps WRAM at38730..38732. It did not produce a
+native paired checkpoint; do not substitute the receipt-driven source pair
+when measuring native SPC state.
+The source traces are diagnostic runs with A/V comparisons disabled, not
+acceptance gates. Keep the candidate isolated while batching further fixes.
 
 - `510da835`: grayscale caller finishes its held NMI before authoring the next
   palette; retires at main wait. Exposed earlier native frontier 14076.
