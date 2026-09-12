@@ -296,3 +296,67 @@ fn guard_body_packs_skipped_oam_and_hides_type_46_blank_tiles() {
     }
     assert_eq!(s.ram[OAM_BUF + expected.len() * 4 + 2], 0xee);
 }
+
+#[test]
+fn guard_drawing_cycle_charges_match_rom_for_poses_and_clipping() {
+    use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+    use crate::zelda_rtl::sprite::PrepOamCoordsRet;
+    let rom_path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"));
+    let Ok(mut rom) = std::fs::read(rom_path) else {
+        eprintln!("guard cycle reference skipped: no development ROM");
+        return;
+    };
+    if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+    for (entry, poses) in [(0x05_c6de, SOLDIER_DRAW1_YD.len()),
+        (0x05_ca09, SOLDIER_DRAW2_CHAR.len() / 4),
+        (0x05_cb64, SOLDIER_DRAW3_CHAR.len() / 2)] {
+        for sprite_type in [0x41, 0x42, 0x43, 0x46, 0x47] {
+            for graphics in 0..poses {
+                for direction in 0..4 {
+                    for (x, y) in [(40u16, 50u16), (255, 250), (511, 0xfff0)] {
+                        let mut state = ZeldaState::new();
+                        state.oam_state_mut().set_current_pointer(0x0800);
+                        state.oam_state_mut().set_current_extended_pointer(0x0a20);
+                        {
+                            let mut slot = state.sprite_slot_view_mut(0);
+                            slot.set_sprite_type(sprite_type);
+                            slot.set_graphics(graphics as u8);
+                            slot.set_direction(direction);
+                            slot.set_head_direction(direction);
+                        }
+                        state.game_state.write_to_ram(&mut state.ram);
+                        state.ram[0..2].copy_from_slice(&x.to_le_bytes());
+                        state.ram[2..4].copy_from_slice(&y.to_le_bytes());
+                        state.ram[5] = 0x20;
+                        let checkpoint = RomCpuCheckpoint {
+                            entry_pc: entry, stop_pc: 0x05_8000, a: 0, x: 0, y: 0,
+                            sp: 0x01fd, dp: 0, db: 5, carry: false, zero: false,
+                            overflow: false, negative: false, interrupt_disable: true,
+                            decimal: false, accumulator_is_8_bit: true, index_is_8_bit: true,
+                            emulation: false, waiting: false, stack_address: 0x01fe,
+                            stack_bytes: &[0xff, 0x7f],
+                        };
+                        let mut cpu = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                            &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+                        let mut expected = 0u64;
+                        for _ in 0..10_000 {
+                            if cpu.is_complete() { break; }
+                            expected += u64::from(cpu.step().master_cycles);
+                        }
+                        assert!(cpu.is_complete());
+                        let before = crate::cycle_ledger::master();
+                        let poc = PrepOamCoordsRet { x, y, r4: 0, flags: 0x20 };
+                        match entry {
+                            0x05_c6de => state.guard_animate_head(0, 0, &poc),
+                            0x05_ca09 => state.guard_animate_body(0, SOLDIER_DRAW2_OAM_IDX[direction as usize] >> 2, &poc),
+                            _ => state.guard_animate_weapon(0, &poc),
+                        }
+                        assert_eq!(crate::cycle_ledger::master() - before, expected,
+                            "entry={entry:06x} type={sprite_type:02x} graphics={graphics} direction={direction} x={x} y={y}");
+                    }
+                }
+            }
+        }
+    }
+}

@@ -50,9 +50,14 @@ impl ZeldaState {
     }
 
     pub(super) fn guard_animate_head(&mut self, k: usize, oam_offs: u8, poc: &PrepOamCoordsRet) {
+        let _scope = crate::cycle_ledger::routine(0x05_c6de);
         let sprite = self.sprite_slot_view(k);
         let dir = sprite.head_direction() as usize;
         let graphics = sprite.graphics() as usize;
+        // $05:C6DE-C70A (624), clipping at C70C-C70F (78) or
+        // the taken BCC (6), then C711-C72C (442).
+        let y = poc.y.wrapping_sub(SOLDIER_DRAW1_YD[graphics] as i16 as u16);
+        crate::cycle_ledger::charge(624 + if y.wrapping_add(16) < 256 { 6 } else { 78 } + 442);
         self.set_sprite_main_guard_oam(
             oam_offs as usize,
             poc.x,
@@ -64,12 +69,17 @@ impl ZeldaState {
     }
 
     pub(super) fn guard_animate_body(&mut self, k: usize, oam_idx: u8, poc: &PrepOamCoordsRet) {
+        let _scope = crate::cycle_ledger::routine(0x05_ca09);
+        // $05:CA09-CA1D: set up the four-entry loop.
+        crate::cycle_ledger::charge(256);
         let mut oam_offset = oam_idx as usize;
         for i in (0..=3).rev() {
             if self.guard_animate_body_entry(k, oam_offset, poc, i) {
                 oam_offset += 1;
             }
         }
+        // $05:CAB6-CAB7: restore the sprite slot and return.
+        crate::cycle_ledger::charge(70);
     }
 
     fn guard_animate_body_entry(
@@ -84,16 +94,47 @@ impl ZeldaState {
         let sprite_type = sprite.sprite_type();
         let oam_base = (self.game_state.oam.current_pointer_usize() - OAM_BUF) / 4;
         let j = i + g;
+        let page = |base: usize, index: usize| if (base & 0xff) + index >= 256 { 6 } else { 0 };
+        // $05:CA1F-CA2B and CA AF-CAB3: each entry's index setup
+        // and loop tail, including entries rejected before drawing.
+        crate::cycle_ledger::charge(168 + 58 + if i == 0 { 6 } else { 24 });
+        if sprite_type < 0x46 {
+            crate::cycle_ledger::charge(6); // CA2B taken.
+        } else {
+            crate::cycle_ledger::charge(48 + page(0xc99d, j)); // CA2D-CA30.
+            if SOLDIER_DRAW2_BIG[j] == 0 {
+                crate::cycle_ledger::charge(6);
+            } else {
+                crate::cycle_ledger::charge(114 + page(0xc8cd, j)); // CA32-CA39.
+                crate::cycle_ledger::charge(if i != 3 { 6 } else {
+                    32 + if SOLDIER_DRAW2_CHAR[j] == 0x20 { 6 } else { 0 }
+                }); // CA3B-CA3D, when slot 3.
+            }
+        }
         if sprite_type >= 0x46
             && (SOLDIER_DRAW2_BIG[j] == 0 || i == 3 && SOLDIER_DRAW2_CHAR[j] == 0x20)
         {
             return false;
         }
+        let y = poc.y.wrapping_add(SOLDIER_DRAW2_YD[j] as i16 as u16);
+        // CA3F-CA62 position (502); CA64-CA67 clips, else BCC.
+        // CA69-CA79 character (210); CA93-CA98 flags (72), and
+        // CA9E-CAAE OAM/size publication (282).
+        crate::cycle_ledger::charge(502 + page(0xc72d, 2 * j) + page(0xc7fd, 2 * j)
+            + if y.wrapping_add(16) < 256 { 6 } else { 78 }
+            + 210 + page(0xc8cd, j) + 72 + page(0xc935, j)
+            + 282 + page(0xc99d, j));
         let mut flags = SOLDIER_DRAW2_FLAGS[j] | poc.flags;
         if SOLDIER_DRAW2_CHAR[j] == 0x20 {
+            // CA7B-CA84, CA86-CA8C only for type $46; CA9A-CA9C.
+            crate::cycle_ledger::charge(110 + if sprite_type == 0x46 { 112 } else { 6 } + 40);
             flags = flags & 0xf1 | 2;
         } else if SOLDIER_DRAW2_BIG[j] == 0 {
+            // CA79 taken, CA8E-CA91, CA9A-CA9C.
+            crate::cycle_ledger::charge(6 + 48 + page(0xc99d, j) + 40);
             flags = flags & 0xf1 | 8;
+        } else {
+            crate::cycle_ledger::charge(6 + 48 + page(0xc99d, j) + 6);
         }
         self.set_sprite_main_guard_oam(
             oam_offset,
@@ -110,9 +151,12 @@ impl ZeldaState {
     }
 
     pub(super) fn guard_animate_weapon(&mut self, k: usize, poc: &PrepOamCoordsRet) {
+        let _scope = crate::cycle_ledger::routine(0x05_cb64);
+        crate::cycle_ledger::charge(272); // CB64-CB7A loop setup.
         for i in (0..=1).rev() {
             self.guard_animate_weapon_entry(k, poc, i);
         }
+        crate::cycle_ledger::charge(70); // CBDE-CBDF return.
     }
 
     fn guard_animate_weapon_entry(&mut self, k: usize, poc: &PrepOamCoordsRet, i: usize) {
@@ -121,6 +165,16 @@ impl ZeldaState {
         let g = sprite.graphics() as usize * 2;
         let sprite_type = sprite.sprite_type();
         let j = i + g;
+        let page = |base: usize, index: usize| if (base & 0xff) + index >= 256 { 6 } else { 0 };
+        let y = poc.y.wrapping_add(SOLDIER_DRAW3_YD[j] as i16 as u16);
+        // CB7C-CBA3 position (574); CBA5-CBA8 clipping (78) or
+        // BCC (6); CBAA-CBC0 character setup (266); CBC2 (16) or
+        // BCS (6); CBC4-CBDC publication/loop tail (424, BPL +6).
+        // Coordinate tables are read twice with X = 2*j.
+        crate::cycle_ledger::charge(574 + 2 * page(0xcab8, 2 * j) + 2 * page(0xcaf0, 2 * j)
+            + if y.wrapping_add(16) < 256 { 6 } else { 78 }
+            + 266 + page(0xcb28, j) + if sprite_type < 0x43 { 16 } else { 6 }
+            + 424 + page(0xcb44, j) + if i != 0 { 6 } else { 0 });
         self.hitbox_scratch_offset_mut()
             .set_offsets(SOLDIER_DRAW3_YD[j] as u8, SOLDIER_DRAW3_XD[j] as u8);
         self.set_sprite_main_guard_oam(

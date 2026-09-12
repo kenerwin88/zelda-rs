@@ -1052,7 +1052,33 @@ impl ZeldaState {
     }
 
     pub(super) fn follower_basic_mover(&mut self) {
+        // A197-A1B6 repeats the game-mode gate before movement; a held
+        // follower branches through A1B8 and A2AE to the draw tail.
+        let main = self.game_state.frame.main_module;
+        let sub = self.game_state.frame.submodule;
+        let mut gate_cost = 48;
+        if self.game_state.player.follower_link.is_immobilized() { gate_cost += 6; }
+        else {
+            gate_cost += 80;
+            if sub == 10 { gate_cost += 6; }
+            else {
+                gate_cost += 32;
+                if main != 9 { gate_cost += 6; }
+                else { gate_cost += 32 + if sub == 0x23 { 6 } else { 0 }; }
+                if main != 9 || sub != 0x23 {
+                    gate_cost += 32;
+                    if main != 14 { gate_cost += 6; }
+                    else {
+                        gate_cost += 32;
+                        if sub == 1 { gate_cost += 6; }
+                        else { gate_cost += 32 + if sub != 2 { 6 } else { 0 }; }
+                    }
+                }
+            }
+        }
+        crate::cycle_ledger::charge(gate_cost);
         if !self.tagalong_is_following() {
+            crate::cycle_ledger::charge(60); // A1B8/A2AE BRL pair.
             self.tagalong_draw();
             return;
         }
@@ -1446,6 +1472,9 @@ impl ZeldaState {
     }
 
     pub(super) fn tagalong_draw(&mut self) {
+        // $09:A907 is reached by a jump from Follower_Main: retain that
+        // scope. A907-A90A tests visibility; A90C is the hidden return.
+        crate::cycle_ledger::charge(48);
         if self
             .game_state
             .sprites
@@ -1453,10 +1482,18 @@ impl ZeldaState {
             .appearance_none_flag()
             != 0
         {
+            crate::cycle_ledger::charge(42);
             return;
         }
+        crate::cycle_ledger::charge(6 + 124); // A90D-A915 after BEQ.
         let current_follower =
             self.tagalong_slot(self.game_state.sprites.follower_runtime.data_index() as usize);
+        crate::cycle_ledger::charge(if current_follower.z() == 0 { 6 } else {
+            40 + if self.game_state.world.location.is_indoors() { 6 } else { 38 }
+        }); // A917-A91D, or A915 taken.
+        if current_follower.z() == 0 || self.game_state.world.location.is_indoors() {
+            crate::cycle_ledger::charge(56 + if self.game_state.frame.submodule == 14 { 78 } else { 6 + 76 });
+        } // A91F-A932 priority selection.
         let priority = if current_follower.z() != 0 && !self.game_state.world.location.is_indoors()
         {
             0x20
@@ -1475,6 +1512,9 @@ impl ZeldaState {
         } else {
             self.game_state.sprites.follower_runtime.data_index() as usize
         };
+        // A933-A955 publishes priority, selects the ring-buffer slot,
+        // loads its coordinates and branches into animation.
+        crate::cycle_ledger::charge(96 + if sign8(self.game_state.sprites.follower_runtime.data_index()) { 16 } else { 6 } + 278);
         let x = self.tagalong_x(k);
         let y = self.tagalong_y(k);
         let a = self.tagalong_slot(k).layer_bits();
@@ -1483,6 +1523,12 @@ impl ZeldaState {
 
     #[rustfmt::skip]
     fn set_oam_follower_at(&mut self, oam: usize, x: u16, y: u16, charnum: u8, flags: u8, mut big: u8) {
+        // The coordinate part is JSR FollowerDraw_CalculateOamCoords:
+        // ABF9-AC07 (200), AC09-AC1B (252) only when X fits,
+        // AC1D-AC20 clipping (78), then AC22-AC25 (78).
+        crate::cycle_ledger::charge_routine(0x09_abf9, 200 + if x.wrapping_add(0x80) >= 0x180 {
+            6 + 78
+        } else { 252 + if y.wrapping_add(0x10) < 0x100 { 6 } else { 78 } } + 78);
         let visible = x.wrapping_add(0x80) < 0x180 && {
             big |= ((x >> 8) & 1) as u8;
             y.wrapping_add(0x10) < 0x100
@@ -1494,6 +1540,66 @@ impl ZeldaState {
     }
 
     pub(super) fn follower_animate_movement_preserved(&mut self, ain: u8, xin: u16, yin: u16) {
+        let indicator = self.game_state.sprites.follower_runtime.indicator();
+        let submodule = self.game_state.frame.submodule;
+        let main_module = self.game_state.frame.main_module;
+        // A959-A96A then the A96C-A9FF animation selector. Price the
+        // original short-circuit order, which the translation combines.
+        let mut pose_cost = 202;
+        let swimming = ain & 0x20 != 0 && matches!(indicator, 1 | 6);
+        if ain & 0x20 == 0 { pose_cost += 6; }
+        else { pose_cost += 88 + if indicator == 6 { 6 } else { 32 + if indicator != 1 { 6 } else { 0 } }; }
+        if swimming {
+            let accelerating = (0..4).any(|i| self.game_state.player.swim_acceleration.acceleration(i) != 0);
+            pose_cost += 160 + if accelerating { 76 } else { 6 + 90 };
+        } else {
+            pose_cost += if submodule == 14 { 56 + 6 } else if submodule == 8 { 56 + 32 + 6 } else { 56 + 32 + 32 + if submodule == 16 { 6 } else { 0 } };
+            if matches!(submodule, 8 | 14 | 16) {
+                pose_cost += 48 + if self.game_state.player.follower_link.is_running() { 62 } else { 6 + 54 };
+            } else {
+                pose_cost += 72;
+                if indicator == 11 { pose_cost += 6 + 54; }
+                else {
+                    pose_cost += 32 + if indicator == 13 { 6 } else { 32 + if indicator != 12 { 6 } else { 0 } };
+                    let mut stationary = false;
+                    if matches!(indicator, 12 | 13) {
+                        pose_cost += 56;
+                        if self.game_state.sprites.follower_runtime.dropped() != 0 { pose_cost += 6; stationary = true; }
+                    }
+                    if !stationary {
+                        pose_cost += 48;
+                        if self.game_state.player.follower_link.is_immobilized() { pose_cost += 6; stationary = true; }
+                    }
+                    if !stationary {
+                        pose_cost += 56;
+                        if submodule == 10 { pose_cost += 6; stationary = true; }
+                    }
+                    if !stationary {
+                        pose_cost += 56;
+                        if main_module != 9 { pose_cost += 6; }
+                        else { pose_cost += 56; if submodule == 0x23 { pose_cost += 6; stationary = true; } }
+                    }
+                    if !stationary {
+                        pose_cost += 56;
+                        if main_module != 14 { pose_cost += 6; }
+                        else {
+                            pose_cost += 56;
+                            if submodule == 1 { pose_cost += 6; stationary = true; }
+                            else { pose_cost += 32; if submodule == 2 { pose_cost += 6; stationary = true; } }
+                        }
+                    }
+                    if !stationary {
+                        pose_cost += 64;
+                        if self.game_state.player.follower_link.is_moving() { pose_cost += 6; }
+                        else { stationary = true; }
+                    }
+                    pose_cost += if stationary { 62 } else {
+                        48 + if self.game_state.player.follower_link.is_running() { 62 } else { 6 + 54 }
+                    };
+                }
+            }
+        }
+        crate::cycle_ledger::charge(pose_cost);
         let mut yt = 0;
         let av;
         let mut sc = 0;
@@ -1539,6 +1645,10 @@ impl ZeldaState {
         }
         let frame = (ain & 3).wrapping_add(av).wrapping_add(yt) as usize;
         let link_y = self.game_state.player.follower_link.y();
+        // AA00-AA2B: animation index and Y-sorted OAM allocation.
+        crate::cycle_ledger::charge(332 + if link_y == yin {
+            6 + 72 + if ain & 3 == 0 { 62 } else { 6 + 40 }
+        } else if link_y > yin { 16 + 6 + 40 } else { 16 + 22 + 62 });
         let spr_offs = if (link_y == yin && (ain & 3) == 0) || link_y < yin {
             TAGALONG_DRAW_SPR_OFFS0[self.game_state.oam.sprite_sorting_offset_index()] >> 2
         } else {
@@ -1553,13 +1663,24 @@ impl ZeldaState {
         let scrollx = xin.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
         let mut skip_first_sprites = false;
         let mut sk_index = 0usize;
+        // AA2E-AA64 coordinate projection and optional splash dispatch.
+        crate::cycle_ledger::charge(580 + if indicator == 1 { 6 } else {
+            32 + if indicator == 6 { 6 } else { 56 + if ain & 0x20 == 0 { 6 } else { 22 } }
+        });
+        let tick_cost = 56 + if self.game_state.frame.frame_counter & 7 != 0 { 6 } else {
+            78 + if self.game_state.sprites.follower_runtime.draw_anim_frame().wrapping_add(1) == 3 { 16 } else { 6 } + 32
+        }; // AA7F-AA8F animation tick.
         if self.game_state.sprites.follower_runtime.indicator() == 1
             || self.game_state.sprites.follower_runtime.indicator() == 6
             || (ain & 0x20) == 0
         {
+            crate::cycle_ledger::charge(56); // AA66-AA6A.
             if ain & 0xc0 == 0 {
+                crate::cycle_ledger::charge(30); // AA6C BRL.
                 skip_first_sprites = true;
             } else if (ain & 0x80) == 0 {
+                crate::cycle_ledger::charge(6 + 56 + 56); // AA6F-AA79.
+                crate::cycle_ledger::charge(if sc != 0 { 38 + 32 } else { 6 + tick_cost });
                 sk_index += 12;
                 if sc != 0 {
                     self.follower_state_mut().clear_draw_anim_frame();
@@ -1567,15 +1688,20 @@ impl ZeldaState {
                     self.follower_state_mut()
                         .increment_and_cycle_draw_anim_frame();
                 }
-            } else if self.game_state.frame.frame_counter & 7 == 0 {
-                self.follower_state_mut()
-                    .increment_and_cycle_draw_anim_frame();
+            } else {
+                crate::cycle_ledger::charge(6 + 56 + 6 + tick_cost);
+                if self.game_state.frame.frame_counter & 7 == 0 {
+                    self.follower_state_mut().increment_and_cycle_draw_anim_frame();
+                }
             }
-        } else if self.game_state.frame.frame_counter & 7 == 0 {
-            self.follower_state_mut()
-                .increment_and_cycle_draw_anim_frame();
+        } else {
+            crate::cycle_ledger::charge(tick_cost);
+            if self.game_state.frame.frame_counter & 7 == 0 {
+                self.follower_state_mut().increment_and_cycle_draw_anim_frame();
+            }
         }
         if !skip_first_sprites {
+            crate::cycle_ledger::charge(1474); // AA92-AAF9; coordinate callees below.
             sk_index += self.game_state.sprites.follower_runtime.draw_anim_frame() as usize * 4;
             self.set_oam_follower_at(
                 oam,
@@ -1597,10 +1723,14 @@ impl ZeldaState {
         }
         let mut pal =
             TAGALONG_DRAW_PALS[self.game_state.sprites.follower_runtime.indicator() as usize];
+        // AAFA-AB0E palette selector, including its 8-bit table page crossing.
+        crate::cycle_ledger::charge(118 + if indicator >= 7 { 6 } else { 0 }
+            + if pal != 7 { 6 } else { 62 + if self.game_state.sprites.follower_runtime.palette_swap_flag() == 0 { 6 } else { 16 } + 14 });
         if pal == 7 && self.game_state.sprites.follower_runtime.palette_swap_flag() != 0 {
             pal = 0;
         }
         if self.game_state.sprites.follower_runtime.indicator() == 13 {
+            crate::cycle_ledger::charge(110 + 64 + if self.hud_state().super_bomb_indicator_timer() == 1 { 78 } else { 6 }); // AB0F-AB26.
             let colorful = if self
                 .game_state
                 .enhanced_features
@@ -1613,14 +1743,18 @@ impl ZeldaState {
             if colorful {
                 pal = self.game_state.frame.frame_counter & 7;
             }
+        } else {
+            crate::cycle_ledger::charge(110 + 6);
         }
         let sprd = TAGALONG_DRAW_SPR_XY[frame
             + (TAGALONG_DRAW_OFFS[self.game_state.sprites.follower_runtime.indicator() as usize]
                 >> 3) as usize];
         let sprf = TAGALONG_DMA_AND_FLAGS[frame];
+        crate::cycle_ledger::charge(72 + if indicator == 13 { 6 } else { 32 + if indicator == 12 { 6 } else { 0 } }); // AB28-AB32.
         if self.game_state.sprites.follower_runtime.indicator() != 12
             && self.game_state.sprites.follower_runtime.indicator() != 13
         {
+            crate::cycle_ledger::charge(1312); // AB34-AB91; 16-bit table reads include index cycle.
             self.set_oam_follower_at(
                 oam,
                 scrollx.wrapping_add(sprd.x1 as i16 as u16),
@@ -1632,6 +1766,7 @@ impl ZeldaState {
             oam += 4;
             self.set_sprite_dma_head_pointer(sprf.dma6);
         }
+        crate::cycle_ledger::charge(1454); // AB92-ABF8, body and saved-register return.
         self.set_oam_follower_at(
             oam,
             scrollx.wrapping_add(sprd.x2 as i16 as u16),
@@ -1925,5 +2060,65 @@ impl ZeldaState {
     fn OldMan_EnableCutscene(&mut self) {
         self.follower_link_state_mut().immobilize();
         self.follower_link_state_mut().enable_cutscene_immunity();
+    }
+}
+
+#[cfg(test)]
+mod drawing_cycle_tests {
+    use super::*;
+    use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+
+    #[test]
+    fn follower_drawing_cycle_charges_match_rom() {
+        let rom_path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"));
+        let Ok(mut rom) = std::fs::read(rom_path) else {
+            eprintln!("follower cycle reference skipped: no development ROM");
+            return;
+        };
+        if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+        for indicator in [1, 3, 6, 12, 13] {
+            for layer in [0, 1, 2, 3, 0x20, 0x40, 0x80] {
+                for submodule in [0, 1, 2, 8, 10, 14, 16, 0x23] {
+                for main in [7, 9, 14] {
+                for variant in 0..10 {
+                    for (x, y) in [(40u16, 50u16), (255, 250), (511, 0xfff0)] {
+                        let mut state = ZeldaState::new();
+                        state.set_main_module(main);
+                        state.set_submodule(submodule);
+                        state.follower_state_mut().set_indicator(indicator);
+                        state.follower_state_mut().set_data_index(0);
+                        state.tagalong_slot_mut(0).set_position(x, y);
+                        state.tagalong_slot_mut(0).set_layer_bits(layer);
+                        state.game_state.write_to_ram(&mut state.ram);
+                        let (address, value) = [(0x1a, 0), (0x30, 1), (0x372, 1), (0x2e4, 1), (0xf3d3, 1), (0x33c, 1), (0x1a50, 4), (0x2f9, 1), (0xabd, 1), (0x1a, 7)][variant];
+                        state.ram[address] = value;
+                        state.sync_native_game_state_from_ram();
+                        let checkpoint = RomCpuCheckpoint {
+                            entry_pc: 0x09_a907, stop_pc: 0x09_8000, a: 0, x: 0, y: 0,
+                            sp: 0x01fd, dp: 0, db: 9, carry: false, zero: false,
+                            overflow: false, negative: false, interrupt_disable: true,
+                            decimal: false, accumulator_is_8_bit: true, index_is_8_bit: true,
+                            emulation: false, waiting: false, stack_address: 0x01fe,
+                            stack_bytes: &[0xff, 0x7f],
+                        };
+                        let mut cpu = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                            &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+                        let mut expected = 0u64;
+                        for _ in 0..10_000 {
+                            if cpu.is_complete() { break; }
+                            expected += u64::from(cpu.step().master_cycles);
+                        }
+                        assert!(cpu.is_complete());
+                        let before = crate::cycle_ledger::master();
+                        state.tagalong_draw();
+                        assert_eq!(crate::cycle_ledger::master() - before, expected,
+                            "indicator={indicator} layer={layer:02x} main={main} submodule={submodule} variant={variant} x={x} y={y}");
+                    }
+                }
+                }
+                }
+            }
+        }
     }
 }

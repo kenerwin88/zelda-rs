@@ -240,6 +240,9 @@ impl ZeldaState {
     //   if (sprite_C[k]) Probe(k); else Guard_Main(k);
     // }
     pub(super) fn sprite_41_blue_guard(&mut self, k: usize) {
+        // C155-C15A: RTS-dispatch target; the probe branch and Guard_Main
+        // jump stay in Sprite_ExecuteSingle's scope.
+        crate::cycle_ledger::charge(48 + if self.sprite_slot_view(k).c() != 0 { 6 } else { 24 });
         if self.sprite_slot_view(k).c() != 0 {
             self.probe(k);
         } else {
@@ -600,6 +603,9 @@ impl ZeldaState {
     }
 
     pub(super) fn guard_main_prepare_animation_pose(&mut self, k: usize) -> (u8, u8) {
+        // C227-C232 saves the pose (156), C234-C23D overrides it (140)
+        // or BEQ is taken (6), and C240 calls the animation (46).
+        crate::cycle_ledger::charge(156 + if self.sprite_slot_view(k).delay_aux1() != 0 { 140 } else { 6 } + 46);
         let bak1 = self.sprite_slot_view(k).graphics();
         let bak2 = self.sprite_slot_view(k).direction();
 
@@ -669,6 +675,7 @@ impl ZeldaState {
     }
 
     pub(super) fn guard_main_after_animation(&mut self, k: usize, bak1: u8, bak2: u8) {
+        crate::cycle_ledger::charge(196); // C243-C250 restores pose and tests state.
         {
             let mut sprite = self.sprite_slot_view_mut(k);
             sprite.set_direction(bak2);
@@ -676,6 +683,7 @@ impl ZeldaState {
         }
 
         if self.sprite_slot_view(k).state() == 5 {
+            crate::cycle_ledger::charge(40 + if self.game_state.frame.submodule == 0 { 70 } else { 6 + 42 }); // C252-C259 or C226 return.
             if self.game_state.frame.submodule == 0 {
                 self.sprite_slot_view_mut(k).increment_subtype2();
                 self.guard_tick_and_update_body(k);
@@ -684,7 +692,8 @@ impl ZeldaState {
             }
             return;
         }
-        if self.sprite_return_if_inactive(k) {
+        crate::cycle_ledger::charge(6 + 46); // C250 taken and C25C JSR.
+        if self.sprite_return_if_inactive_bank5(k) {
             return;
         }
         self.guard_parry_sword_attacks(k);

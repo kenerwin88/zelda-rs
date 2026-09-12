@@ -54,7 +54,7 @@ a demonstrated timing correction solely to preserve the old native frame
 number. This supersedes the overly conservative rejection in the spotlight
 investigation recorded in `romless-exact-play.md`.
 
-## Where it stands
+## Last accepted main baseline
 
 | | |
 |---|---|
@@ -88,7 +88,50 @@ test, exact validation and the remaining coarse pixel-copy limitation.
   and verify against the recorded shadow profiles; the lead measures.
 - Never `git checkout <file>`; revert your own edits surgically.
 
-## The immediate next task: frame 23945
+## Current working batch: native 100k
+
+The user requested a larger batch on 2026-09-11: **do not run the full-route
+acceptance gate again until native exact A/V reaches at least 100,000 frames**.
+Work remains on `fix/romless-spiral-palette-return`; `main` remains the accepted
+baseline above. No push. Short receipt comparisons protect the shared path
+while native timing advances; they are not native acceptance evidence.
+
+Current native frontier: **25868, video-only**. This batch has corrected:
+
+- `510da835`: grayscale caller finishes its held NMI before authoring the next
+  palette; retires at main wait. Exposed earlier native frontier 14076.
+- `2368fe51`: ground-item decoder return preserves the following Open NMI;
+  native 14076 → 20202.
+- `ed8f7863`: Big Key entry after a leading NMI attaches entry scroll to the
+  current display capture; native 20202 → 23984 (audio).
+- `bc212dec`: removed the room-specific live-SFX override in the SPC renderer;
+  stair sounds use the NMI-sampled queue. Native 23984 → 24943 (video).
+- `96e5f3e1`: supertile Sprite_Main return consumes its held NMI before the
+  caller/suffix and prepares the next quadrant CPU slice at main wait.
+  Native 24943 → 25054 (audio). This is scoped to the supertile chain;
+  spiral callers retain their independent dispatcher-reentry schedule.
+- Guard head/body/weapon and follower drawing cycle annotations, plus their
+  caller prefixes: native 25054 → 25868. ROM reference tests cover poses,
+  clipping, follower movement/menu states and visibility. Route host 25031
+  charges match the ROM profile exactly for all three guard draw routines,
+  Follower_Main (7328), follower coordinate calls (1072), and the bank-5
+  inactive wrapper (558). Short receipt comparison passes 25,900 frames.
+
+The audio mismatch at 25054 came from missing drawing work before the text
+renderer. The original enters VWF at v=50 on host 25048; the old ledger left
+native about one glyph ahead by host 25050, moving the final click before
+its held NMI. The drawing annotations correct this without an audio override.
+
+**Next: frame 25868.** Source is Module7/submodule12/state1, room51. Host25866
+interrupts NMI_PrepareSprites;25867 completes the held handler and suffix;
+25868 begins the next iteration. Compare the native and receipt WRAM/display
+probes before changing the straight-interroom scheduler. Source receipts:
+`target/native-25868-source`; probes `target/native-25868` and
+`target/drawing-batch-receipt`. Prefix evidence: `target/vwf-25054-source`,
+`target/drawing-batch-ledger`, `target/drawing-batch-profiles`; chronological
+working notes: `target/native-100k-batch/progress.md`.
+
+## Previous starting point: frame 23945
 
 The completed batch fixes cached sprite-conversion retirement (`6704a050`),
 dungeon NMI_PrepareSprites main-wait retirement (`63443ece`), and an obsolete
