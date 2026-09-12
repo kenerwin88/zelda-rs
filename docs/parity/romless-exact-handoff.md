@@ -100,6 +100,21 @@ while native timing advances; they are not native acceptance evidence.
 
 Current native frontier: **37688, video-only**. This batch has corrected:
 
+**Full receipt acceptance refreshed 2026-09-12.** Commit
+`d7d92a8514455839b1c5fcd9adf8dcdafcbb5aa1` passes all **1,581,079**
+frames from frame zero against the pinned cache, with exact video and audio,
+contiguous coverage through1581078, and no RNG drift. Binary SHA-256:
+`2fe6d9061b58cc048ca12ff2aed222337099c49e49314968b2b10082476cdb6e`.
+Evidence: `target/native-batch-full-d7d92a85/manifest.json`, its full
+`av_hashes.jsonl`, paired checkpoints every20,000 frames and `paired-final`;
+log `/tmp/native-batch-full-d7d92a85.log`. The executable and clean source
+revision stayed unchanged throughout the26.7-minute comparison. This proves
+the accumulated native batch preserves receipt-driven full-route A/V;
+it does not claim native100k, a new live-core run, or refreshed WRAM goldens.
+The next upload candidate is isolated in `target/native-song-upload-worktree`
+on `fix/native-song-upload`, with its own `target/song-upload-build` binary.
+That uncommitted candidate is not covered by this full pass.
+
 - `510da835`: grayscale caller finishes its held NMI before authoring the next
   palette; retires at main wait. Exposed earlier native frontier 14076.
 - `2368fe51`: ground-item decoder return preserves the following Open NMI;
