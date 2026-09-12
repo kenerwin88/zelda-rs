@@ -1553,6 +1553,7 @@ fn injected_dungeon_cpu_schedule(
     caller_nmis: u8,
 ) -> DungeonSubmoduleCpuSchedule {
     DungeonSubmoduleCpuSchedule {
+        reset_progress: None,
         submodule_nmis,
         caller_nmis,
         caller_sprite_main_nmis: 0,

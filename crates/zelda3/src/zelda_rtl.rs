@@ -3370,6 +3370,82 @@ fn dungeon_submodule_cpu_schedule(state: &ZeldaState) -> DungeonSubmoduleCpuSche
     }
 }
 
+/// Measure the reset's first interruption from the preceding main wait,
+/// including the leading NMI and the palette caller. Only source checkpoints
+/// with a translated resumable prefix may be returned.
+fn straight_interroom_reset_cpu_progress(
+    state: &ZeldaState,
+) -> Option<DungeonResetSpritesCpuProgress> {
+    let timing_dma = state.dma_with_native_hdma_enable();
+    let mut run = RomCpuTimingRun::new(
+        &state.rom,
+        &state.ram,
+        &state.sram,
+        &state.ppu,
+        &timing_dma,
+        state.zelda_audio_apu_output_ports(),
+        DUNGEON_MAIN_WAIT_CPU_CHECKPOINT,
+    )
+    .expect("straight stair CPU timing requires the loaded Zelda ROM");
+    let mut budget = CpuCycleBudget::at_nmi_acceptance(
+        CpuBusWorkload::with_dynamic_hdma(),
+        CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0),
+    );
+    advance_rom_cpu_through_nmi(&mut run, &mut budget);
+    // $8036 is also visited while exiting the initial wait loop. Only treat
+    // it as a return after the dispatcher has started the new iteration.
+    while run.pc() != DUNGEON_PALETTE_CALLER_CPU_CHECKPOINT.entry_pc {
+        let (scanline, master_cycle) = budget.raster_position().coordinates();
+        run.set_raster_position(scanline, master_cycle);
+        assert_eq!(
+            advance_rom_cpu_step(&mut run, &mut budget),
+            CpuWorkAdvance::Complete,
+            "straight stair main wait-loop exit crossed another NMI",
+        );
+    }
+    run.enable_cpu_write_trace();
+    let mut last_write = None;
+    for _ in 0..5_000_000 {
+        let (scanline, master_cycle) = budget.raster_position().coordinates();
+        run.set_raster_position(scanline, master_cycle);
+        let advance = advance_rom_cpu_step(&mut run, &mut budget);
+        for (address, value) in run.take_cpu_wram_writes() {
+            last_write = Some((address, value));
+        }
+        if advance.reached_boundary().is_some() {
+            let pc = run.pc();
+            let progress = match pc {
+                0x09_c124..=0x09_c129 | 0x09_c28f => {
+                    DungeonResetSpritesCpuProgress::SpritesDisabled
+                }
+                // STA $7ff800,X has published but DEX/BPL still belongs to
+                // the descending clear. Preserve the exact written slot.
+                0x09_c286 | 0x09_c288 | 0x09_c28c | 0x09_c28d
+                    if last_write.is_some_and(|(address, value)| {
+                        (0x1f800..0x1f81e).contains(&address) && value == 0
+                    }) => {
+                    DungeonResetSpritesCpuProgress::GarnishTypesThrough {
+                        slot: (last_write.unwrap().0 - 0x1f800) as u8,
+                    }
+                }
+                0x09_c12c => DungeonResetSpritesCpuProgress::CollisionXSizeSet,
+                0x09_c12f..=0x09_c147 => {
+                    DungeonResetSpritesCpuProgress::RoomHistorySearchStarted
+                }
+                _ => panic!(
+                    "unmodelled straight stair reset interruption at {pc:06x}, host {}, last write {last_write:?}",
+                    state.frame_ctr_dbg,
+                ),
+            };
+            return Some(progress);
+        }
+        if run.is_complete() {
+            return None;
+        }
+    }
+    panic!("straight stair reset CPU timing did not return");
+}
+
 fn dungeon_submodule_cpu_schedule_plan(
     state: &ZeldaState,
     dispatcher_entry: Option<CpuRasterPosition>,
@@ -3465,6 +3541,7 @@ fn dungeon_submodule_cpu_schedule_plan(
                 }
             }
             return DungeonSubmoduleCpuSchedule {
+                reset_progress: None,
                 submodule_nmis,
                 caller_nmis: nmis.saturating_sub(submodule_nmis),
                 caller_sprite_main_nmis: sprite_main_return_nmis.saturating_sub(submodule_nmis),

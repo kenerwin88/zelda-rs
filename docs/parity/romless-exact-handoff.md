@@ -96,7 +96,7 @@ Work remains on `fix/romless-spiral-palette-return`; `main` remains the accepted
 baseline above. No push. Short receipt comparisons protect the shared path
 while native timing advances; they are not native acceptance evidence.
 
-Current native frontier: **25868, video-only**. This batch has corrected:
+Current native frontier: **25925, video-only**. This batch has corrected:
 
 - `510da835`: grayscale caller finishes its held NMI before authoring the next
   palette; retires at main wait. Exposed earlier native frontier 14076.
@@ -110,24 +110,43 @@ Current native frontier: **25868, video-only**. This batch has corrected:
   caller/suffix and prepares the next quadrant CPU slice at main wait.
   Native 24943 → 25054 (audio). This is scoped to the supertile chain;
   spiral callers retain their independent dispatcher-reentry schedule.
-- Guard head/body/weapon and follower drawing cycle annotations, plus their
+- `7b5db084`: guard head/body/weapon and follower drawing cycle annotations, plus their
   caller prefixes: native 25054 → 25868. ROM reference tests cover poses,
   clipping, follower movement/menu states and visibility. Route host 25031
   charges match the ROM profile exactly for all three guard draw routines,
   Follower_Main (7328), follower coordinate calls (1072), and the bank-5
   inactive wrapper (558). Short receipt comparison passes 25,900 frames.
+- `4b7a9b16`: straight-stair fadeout uses the continuous measured Module7
+  caller phase instead of the native room/countdown pause list. The source
+  interruption is in NMI_PrepareSprites after Sprite_Main and LinkOam return.
+  Native 25868 → 25922; 13 focused stair tests and 25,950 receipt frames pass.
+  Across 25865–25869, native/receipt WRAM differ only at scratch $1f00.
+- Straight-stair BG34 conversion and sprite-reset returns now consume their
+  Held NMIs before the resumed callers. The reset uses a measured partial
+  garnish-clear checkpoint. Native 25922 → 25925; 15 focused stair tests and
+  26,000 receipt frames pass. WRAM25920–25923 agree apart from scratch.
 
 The audio mismatch at 25054 came from missing drawing work before the text
 renderer. The original enters VWF at v=50 on host 25048; the old ledger left
 native about one glyph ahead by host 25050, moving the final click before
 its held NMI. The drawing annotations correct this without an audio override.
 
-**Next: frame 25868.** Source is Module7/submodule12/state1, room51. Host25866
-interrupts NMI_PrepareSprites;25867 completes the held handler and suffix;
-25868 begins the next iteration. Compare the native and receipt WRAM/display
-probes before changing the straight-interroom scheduler. Source receipts:
-`target/native-25868-source`; probes `target/native-25868` and
-`target/drawing-batch-receipt`. Prefix evidence: `target/vwf-25054-source`,
+**Repaired reset at25922.** The cached receipt says `SpritesDisabled`, but a fresh
+CPU trace proves host25921 actually returns at $09:c28c with X=10, and25922
+accepts its Held NMI at $09:c28d with X=9. Ten garnish slots remain to clear.
+Do not copy the coarse receipt into the native schedule. The new native
+candidate measures the written garnish slot and carries that partial clear.
+The preceding BG34 conversion return also consumed its Held NMI too late;
+the candidate now matches25920 WRAM apart from scratch. Source receipts:
+`target/native-25922-source`; live CPU trace `target/reset-phase-source/window.jsonl`;
+native probe `target/native-25922`, receipt probe `target/stair-phase-receipt`.
+The working-batch proof is `target/reset-phase-native6` and
+`target/reset-phase-receipt`; full-route acceptance remains deferred. The short
+live trace ended at its configured trace cutoff with a missing final return;
+its25920–25923 CPU evidence is complete, but it is not an acceptance run.
+**Next:25925**, the straight-stair quadrant upload chain (states5–8).
+Source receipts: `target/native-25925-source`.
+Prefix evidence: `target/vwf-25054-source`,
 `target/drawing-batch-ledger`, `target/drawing-batch-profiles`; chronological
 working notes: `target/native-100k-batch/progress.md`.
 

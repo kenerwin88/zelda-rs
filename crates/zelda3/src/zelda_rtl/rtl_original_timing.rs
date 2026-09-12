@@ -482,6 +482,7 @@ impl ZeldaState {
         if receipts.semantic.iter().any(|receipt| match receipt {
             OriginalTimingSemanticReceipt::DungeonResetSpritesProgress(receipt) => {
                 match receipt.progress {
+                    DungeonResetSpritesCpuProgress::GarnishTypesThrough { slot } => slot >= 30,
                     DungeonResetSpritesCpuProgress::Cache { slot, .. } => slot >= 16,
                     DungeonResetSpritesCpuProgress::Disable(
                         DungeonSpriteDisableCpuProgress::SpriteStatesThrough { slot },
@@ -12215,6 +12216,13 @@ impl ZeldaState {
                 GameWorkStep::Complete(
                     GameWorkContinuation::FinishStraightInterroomSpriteReset { progress },
                 ) => {
+                    let native_reset_return = !matches!(
+                        self.original_timing_owner, OriginalTimingOwnerState::Live
+                    );
+                    if native_reset_return {
+                        self.capture_display_snapshot();
+                        self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    }
                     if let Some((_, _, sprite_main_return_claims)) =
                         authoritative_scheduled_caller_return_timeline.as_ref()
                     {
@@ -12223,6 +12231,10 @@ impl ZeldaState {
                         );
                     }
                     self.complete_straight_interroom_sprite_reset_after_timing_boundary(progress);
+                    if native_reset_return {
+                        self.game_execution_scheduler.finish_call_stack_at_main_wait_before_nmi();
+                        return;
+                    }
                     if authoritative_scheduled_caller_return_timeline.is_some() {
                         self.finish_original_timing_sprite_main_return_claim_scope();
                     }

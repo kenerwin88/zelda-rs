@@ -31,6 +31,20 @@ impl ZeldaState {
             && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
             && frame.main_module == 7
             && matches!(frame.submodule, 0x11 | 0x12)
+            && frame.subsubmodule == 4
+            && !self.game_state.display.nmi_update_is_latched()
+            && self.game_execution_scheduler.is_idle()
+            && self.dungeon_submodule_cpu_schedule.is_none()
+        {
+            self.dungeon_submodule_cpu_schedule = Some(DungeonSubmoduleCpuSchedule {
+                reset_progress: straight_interroom_reset_cpu_progress(self),
+                ..Default::default()
+            });
+        }
+        if self.rom_startup_timing()
+            && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && frame.main_module == 7
+            && matches!(frame.submodule, 0x11 | 0x12)
             && frame.subsubmodule == 1
             && !self.game_state.display.nmi_update_is_latched()
             && self.game_execution_scheduler.is_idle()
@@ -202,21 +216,30 @@ impl ZeldaState {
         if !self.rom_startup_timing() {
             return false;
         }
-        let Some(receipt) = self.take_original_timing_dungeon_reset_sprites_progress() else {
-            return false;
+        let (progress, boundary) = if matches!(
+            self.original_timing_owner, OriginalTimingOwnerState::Live
+        ) {
+            let Some(receipt) = self.take_original_timing_dungeon_reset_sprites_progress() else {
+                return false;
+            };
+            (receipt.progress, receipt.boundary)
+        } else {
+            let Some(progress) = self.dungeon_submodule_cpu_schedule.take()
+                .and_then(|plan| plan.reset_progress) else {
+                return false;
+            };
+            (progress, OriginalTimingBoundary::HostReturn)
         };
-        let progress = receipt.progress;
 
-        // The replaceable authority reports the source statement reached when
-        // this host interval returned.  Apply that prefix exactly and carry
-        // the typed token into the continuation; no room, staircase, raster,
-        // or emulator-program-counter selector belongs in translated code.
+        // Both timing owners identify a source statement. Apply that prefix
+        // and carry its typed token into the existing continuation; room and
+        // staircase identities do not select the native interruption.
         let dungeon_room_index = self.game_state.world.location.dungeon_room_index();
         self.dungeon_room_tracking_mut()
             .set_room_index2(dungeon_room_index);
         self.dungeon_reset_sprites_through_cpu_progress(progress);
         let continuation = GameWorkContinuation::FinishStraightInterroomSpriteReset { progress };
-        match receipt.boundary {
+        match boundary {
             OriginalTimingBoundary::HostReturn => {
                 self.game_execution_scheduler.schedule_work(continuation, 1);
             }

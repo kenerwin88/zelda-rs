@@ -249,6 +249,7 @@ pub(crate) struct DungeonRoomLoadCpuPlan {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct DungeonSubmoduleCpuSchedule {
+    pub(crate) reset_progress: Option<DungeonResetSpritesCpuProgress>,
     pub(crate) submodule_nmis: u8,
     pub(crate) caller_nmis: u8,
     pub(crate) caller_sprite_main_nmis: u8,

@@ -176,6 +176,9 @@ pub enum DungeonResetSpritesCpuProgress {
     /// describes Zelda statements rather than the backend PC that observed
     /// them, so a native timing owner can later publish the same receipt.
     Disable(DungeonSpriteDisableCpuProgress),
+    /// Descending garnish-type clear: this slot and all higher slots have
+    /// published; lower slots still belong to the interrupted reset body.
+    GarnishTypesThrough { slot: u8 },
     /// `Sprite_DisableAll` has completed, including its final garnish-slot
     /// clear, but the remaining room-history bookkeeping and new room sprite
     /// load have not yet published.
@@ -2051,6 +2054,21 @@ impl ZeldaState {
             DungeonResetSpritesCpuProgress::SpritesDisabled => {
                 self.dungeon_reset_sprites_through_sprite_disable_all();
             }
+            DungeonResetSpritesCpuProgress::GarnishTypesThrough { slot } => {
+                assert!(slot < 30);
+                if self.game_state.world.location.is_indoors() {
+                    self.dungeon_cache_trans_sprites();
+                }
+                self.follower_link_state_mut().clear_picking_throw_state();
+                self.follower_link_state_mut().clear_state_bits();
+                self.apply_sprite_disable_actions_through(
+                    None, DungeonSpriteDisableCpuProgress::SpriteLimitInstanceCleared,
+                );
+                self.sprite_disable_all_before_garnish_clear();
+                for k in (usize::from(slot)..30).rev() {
+                    self.garnish_slot_view_mut(k).set_garnish_type(0);
+                }
+            }
             DungeonResetSpritesCpuProgress::CollisionXSizeSet => {
                 self.dungeon_reset_sprites_through_sprite_disable_all();
                 self.garnish_state_mut().set_sprcoll_x_size(0xffff);
@@ -2095,6 +2113,12 @@ impl ZeldaState {
                 self.dungeon_load_sprites();
             }
             DungeonResetSpritesCpuProgress::SpritesDisabled => {
+                self.dungeon_reset_sprites_after_sprite_disable_before_room_load();
+                self.dungeon_load_sprites();
+            }
+            DungeonResetSpritesCpuProgress::GarnishTypesThrough { slot } => {
+                assert!(slot < 30);
+                self.complete_sprite_disable_garnish_clear(slot);
                 self.dungeon_reset_sprites_after_sprite_disable_before_room_load();
                 self.dungeon_load_sprites();
             }

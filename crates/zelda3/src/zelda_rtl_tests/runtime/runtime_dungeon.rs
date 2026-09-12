@@ -1212,6 +1212,86 @@ fn straight_interroom_sprite_graphics_cross_four_nmi_slices() {
 }
 
 #[test]
+fn straight_bg_conversion_return_leaves_uploads_for_the_next_open_nmi() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_animated_tile_data_source_address(0xa680);
+    state.set_indoor_flag(1);
+    state.set_main_module(7);
+    state.set_submodule(0x12);
+    state.set_subsubmodule(3);
+    state.set_frame_counter(0xa5);
+    state.set_pending_nmi_subroutine(9);
+    state.set_core_update_disable_flag(9);
+    state.latch_nmi_update();
+    state.pending_main_loop_common_suffix =
+        Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch);
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishDungeonSupertileTransition {
+            work: DungeonSupertileTransitionWork::StraightInterroomBgCharacters34,
+        }, 1,
+    );
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert_eq!(state.game_state.frame.subsubmodule, 4);
+    assert_eq!(state.game_state.frame.frame_counter, 0xa5);
+    assert!(!state.game_state.display.nmi_update_is_latched());
+    assert_eq!(state.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX], 9);
+    assert_eq!(state.ram[crate::game_state::constants::NMI_DISABLE_CORE_UPDATES], 9);
+    state.game_execution_scheduler.begin_host_frame();
+    assert!(state.game_execution_scheduler.main_return_requires_leading_nmi());
+}
+
+#[test]
+fn native_straight_reset_preserves_the_measured_prefix_until_resume() {
+    for room in [0x51, 0x22] {
+        for progress in [
+            DungeonResetSpritesCpuProgress::GarnishTypesThrough { slot: 10 },
+            DungeonResetSpritesCpuProgress::SpritesDisabled,
+            DungeonResetSpritesCpuProgress::CollisionXSizeSet,
+            DungeonResetSpritesCpuProgress::RoomHistorySearchStarted,
+        ] {
+            let mut state = ZeldaState::new();
+            state.restore_live_rom_timing_after_checkpoint();
+            state.set_main_module(7);
+            state.set_submodule(0x12);
+            state.set_subsubmodule(5);
+            state.set_dungeon_room_index(room);
+            state.set_indoor_flag(1);
+            state.sprite_slot_view_mut(0).set_state(9);
+            state.sprite_slot_view_mut(0).set_sprite_type(0x6e);
+            state.garnish_state_mut().set_sprcoll_x_size(0x1234);
+            state.garnish_state_mut().set_sprcoll_y_size(0x5678);
+            for k in 0..30 {
+                state.garnish_slot_view_mut(k).set_garnish_type(7);
+            }
+            let mut atomic = state.clone();
+            atomic.complete_straight_interroom_sprite_reset();
+            state.dungeon_submodule_cpu_schedule = Some(DungeonSubmoduleCpuSchedule {
+                reset_progress: Some(progress),
+                ..Default::default()
+            });
+
+            assert!(state.suspend_straight_interroom_sprite_reset_before_room_load());
+            assert!(state.dungeon_submodule_cpu_schedule.is_none());
+            assert_eq!(state.sprite_slot_view(0).state(), 0);
+            assert_eq!(state.sprite_slot_view(0).sprite_type(), 0x6e);
+            if let DungeonResetSpritesCpuProgress::GarnishTypesThrough { slot } = progress {
+                for k in 0..30 {
+                    assert_eq!(state.garnish_slot_view(k).garnish_type(), if k < usize::from(slot) { 7 } else { 0 });
+                }
+            }
+            assert_eq!(
+                state.game_execution_scheduler.advance_work_one_nmi_slice(),
+                Some(GameWorkStep::Complete(GameWorkContinuation::FinishStraightInterroomSpriteReset { progress })),
+            );
+            state.dungeon_resume_reset_sprites_after_cpu_progress(progress);
+            assert_eq!(state.ram, atomic.ram);
+            assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
+        }
+    }
+}
+
+#[test]
 fn straight_interroom_sprite_reset_uses_the_live_semantic_progress_token() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
