@@ -4,7 +4,51 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 47,237
+## Current native frontier — 47,333
+
+`HandleStripes14` now programs DMA channel 1, leaving channel 0's PPU
+register target intact. The bulk stripe implementation previously called
+`program_dma0_ppu_target`, despite the ROM writing `$4310/$4311` and
+triggering `$420b=2`. The next HUD DMA inherits channel 0's target, so
+clobbering it silently manufactured a VRAM upload when source channel 0
+still targeted OAM. This is shared hardware behavior, not a HUD-value or
+frame exception. Copy stripes leave channel 1 in mode 1 at `$2118`;
+fill stripes finish in fixed-source mode 0 at `$2119`, matching
+`$00:92c2-$00:933d`. Channel 0 callers retain their existing wrapper.
+
+Source comparison 47,233 ends its core updates with channel-0 OAM DMA,
+then performs six channel-1 stripe copies at `$00:933d`. There are no
+intervening source DMAs before comparison 47,237: `$00:8b87` consumes
+HUD WRAM `$7e:c700` using channel 0, mode 0, B-bus `$04`. The ordinary
+OAM DMA overwrites those temporary OAM bytes, then `$00:8d0d` uploads
+text using channel 0 in VRAM mode. Thus source retains displayed rupee
+1 while HUD WRAM already contains zero. Native previously used mode 1,
+B-bus `$18`, prematurely publishing zero.
+
+Evidence: source checkpoint `target/native-dialogue-source-pair-47200`;
+fast source replays `target/native-47237-source-channel` and
+`target/native-47237-source-dma`, both pass enabled video through 47,245
+(audio disabled). Decodes `/tmp/native-47237-source-channel.jsonl` and
+`/tmp/native-47237-source-dma.jsonl` use raw run +47,200.
+Native pre-fix NMI diagnostic: `/tmp/native-47237-hud-pipe.log`.
+Regression `stripe_channel_one_preserves_the_next_hud_dma_target` tests
+both copy and fill followed by an inherited-target HUD transfer.
+
+Accepted candidate SHA-256:
+`aaaf44206425a9e3c0bfa4e1f78cf50412b9b06e5ad3d1867741a5a0c7b6113d`.
+Native exact video/audio through 47,332; first video mismatch 47,333,
+audio exact there (`target/native-stripe-channel-native`, 57.14s).
+Engine suite: 1,779 passed, 3 ignored (24.53s),
+`/tmp/native-stripe-channel-lib-tests.log`.
+Receipt-driven cached video/audio: all 50,000 frames exact (58.52s),
+`target/native-stripe-channel-receipt`, on the same binary.
+The full 1,581,079-frame receipt proof still belongs to `d7d92a85`.
+
+Next: comparison 47,333 is an ordinary main-loop return, immediately
+before held work begins at 47,334. Capture actual native/source WRAM and
+display domains; do not assume it is another HUD or dialogue failure.
+
+## Previous native frontier — 47,237
 
 The sprite item-receipt caller now retires at the main wait before NMI.
 Its final held handler interrupts decompression; the resumed sprite and

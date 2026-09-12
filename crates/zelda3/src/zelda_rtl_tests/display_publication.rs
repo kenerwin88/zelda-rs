@@ -2765,6 +2765,27 @@ fn hud_dma_inherits_the_persistent_oam_target_without_touching_vram() {
 }
 
 #[test]
+fn stripe_channel_one_preserves_the_next_hud_dma_target() {
+    for (flags, fixed, mode, target) in [(0, false, 1, 0x18), (0x40, true, 0, 0x19)] {
+        let mut state = ZeldaState::new();
+        state.program_dma0_ppu_target(0, 0x04);
+        state.ppu.vram[0x606a] = 0x2491;
+        // Source $933d triggers channel 1 after the preceding OAM transfer.
+        // Include both stripe copy and fill, whose final DMAP1/BBAD1 differ.
+        state.handle_stripes14_slice(&[0x60, 0x00, flags, 0x01, 0x12, 0x34, 0x80]);
+        assert_eq!(state.ppu.vram[0x6000], 0x3412);
+        assert_eq!((state.dma.channel[1].mode, state.dma.channel[1].b_adr,
+            state.dma.channel[1].fixed), (mode, target, fixed));
+        state.ppu.oam_adr = 0;
+        state.ppu.oam_second_write = false;
+        let source = vec![0x5a; HUD_TILEMAP_NMI_WORDS * 2];
+        state.complete_hud_dma_from_persistent_channel0(&source, 0x6040);
+        assert_eq!(state.ppu.vram[0x606a], 0x2491);
+        assert_eq!(state.ppu.oam[0], 0x5a5a);
+    }
+}
+
+#[test]
 fn programmed_vram_dma_target_is_reused_by_the_following_hud_upload() {
     let mut state = ZeldaState::new();
     let destination = 0x6040;

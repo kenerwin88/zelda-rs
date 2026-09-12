@@ -134,10 +134,14 @@ impl ZeldaState {
     /// the PPU B-bus. The semantic NMI implementation performs transfers in
     /// bulk, but these registers remain hardware state between transfers.
     pub(super) fn program_dma0_ppu_target(&mut self, mode: u8, b_adr: u8) {
-        let channel = &mut self.dma.channel[0];
+        self.program_dma_ppu_target(0, mode, b_adr);
+    }
+
+    fn program_dma_ppu_target(&mut self, index: usize, mode: u8, b_adr: u8) {
+        let channel = &mut self.dma.channel[index];
         channel.mode = mode & 7;
         channel.b_adr = b_adr;
-        channel.fixed = false;
+        channel.fixed = mode & 8 != 0;
         channel.decrement = false;
         channel.indirect = false;
         channel.from_b = false;
@@ -2216,7 +2220,15 @@ impl ZeldaState {
             let len = ((((stripes[2] as u16) << 8) | stripes[3] as u16) & 0x3fff) as usize + 1;
             crate::cycle_ledger::charge(888 + if is_memset { 602 } else { 6 } + 308);
             stripes = &stripes[4..];
-            self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
+            // HandleStripes14 programs $4310/$4311 and triggers $420B=2.
+            // Channel 0 keeps the preceding OAM/CGRAM target for the next
+            // HUD upload. A fill ends with fixed-source mode 0 to $2119;
+            // a copy ends with incrementing mode 1 to $2118/$2119.
+            self.program_dma_ppu_target(
+                1,
+                if is_memset { 8 } else { DMA_MODE_TWO_REGISTERS },
+                PPU_BBUS_VRAM_DATA_LOW + u8::from(is_memset),
+            );
             self.account_nmi_dma_transfer(len);
 
             if !vertical {
