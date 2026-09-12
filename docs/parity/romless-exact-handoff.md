@@ -4,7 +4,35 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 52,448 (video)
+## Current native frontier — 53,745 (random-call timing)
+
+Interrupted native overworld sprite preparation now retains the scroll
+registers installed by its leading NMI for the current field. The main
+slice's new software mirrors and the trailing handler's writes belong to
+the following field. Existing typed scroll provenance handles both an
+already captured display and an imminent capture; Live receipts are excluded.
+
+`target/native-prep-field-scroll` / `/tmp/native-prep-field-scroll.log`
+passes the previous52,448 video failure, then stops when sword-charge
+sparkle creation requests random during53,745 rather than source53,746
+(`ancilla.rs:657`). The panic leaves partial final ledger lines. Comparing
+all complete candidate records directly against the pinned full oracle
+proves exact video and audio for53,742 contiguous frames,0..53,741:
+`target/native-prep-field-scroll/completed-prefix-validation.json`.
+Do not claim rendered parity through the later panic frame.
+Binary SHA:
+`7487e9b7f1d260bf458dae92d3287870075facde1a5d2d0f6e0a2dc62fb4f6c5`.
+The cold run took72.68s while library tests compiled. All1,783 library
+tests pass,3 ignored (24.50s):
+`/tmp/native-prep-field-scroll-lib-tests.log`. The new regression verifies
+that the interrupt retains its scroll for one capture and leaves live
+registers and the following capture independent.
+
+The next source checkpoint remains `target/native-source-pair-52000`.
+Trace the earliest main-iteration or sword-charge progress difference before
+changing random-call timing. No full receipt gate was repeated.
+
+## Previous native frontier — 52,448 (video)
 
 Recurring native dungeon-iris holds now capture resident OAM and Link VRAM
 at the interrupt boundary and carry that memory into the pending display
@@ -46,8 +74,20 @@ ahead: source hosts52,447..52,450 are `faef33481f00`, `faef33481f00`,
 `e15840dba043`, `fb7640d25089`; native has `faef33481f00`, `e15840dba043`,
 `fb7640d25089`, `fb7640d25089`. The earlier raw difference is not itself a
 video failure because decoded-cache provenance can retain another generation.
-Inspect the native pointer-tail probe and decoded Link cache at this held
-NMI; the current diagnostic did not enable the CPU-packing trace.
+The native CPU-packing probe (`target/native-52448-packing`,
+`/tmp/native-52448-packing.log`) reaches the same `$00:8768` instruction at
+V225/C50, with300 pointer-tail cycles and three completed pointer words.
+The raw Link VRAM discrepancy was misleading: both decoded Link caches
+already have `fb7640d25089` at presented host52,449. Retaining resident cache
+in `target/native-prep-field-cache` leaves the exact same video mismatch;
+that experiment was removed.
+
+The rendered BG scroll differs: source host52,449 has
+`[(427,2155),(164,2239)]`, native has `[(427,2154),(165,2238)]`.
+The latter belongs to source host52,450. Window rows agree, but scroll rows
+do not. The next candidate retains the leading handler's scroll registers
+for the interrupted preparation field, before the trailing handler writes
+the following field's registers.
 
 No full or repeated receipt gate was run for this native-only increment.
 The100k native target remains pending.

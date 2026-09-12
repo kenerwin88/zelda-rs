@@ -1995,6 +1995,31 @@ fn held_landing_publication_keeps_obj_memory_from_the_interrupt() {
 }
 
 #[test]
+fn interrupted_overworld_preparation_retains_scroll_for_one_field() {
+    let mut state = ZeldaState::new();
+    state.rom_startup_timing = true;
+    state.set_main_module(9);
+    state.ppu.bg_layer[0].v_scroll = 100;
+    state.schedule_live_interrupted_nmi_prepare_sprites_caller_return(
+        NmiPrepareSpritesCpuCaller::OverworldModule09,
+    );
+    state.ppu.bg_layer[0].v_scroll = 101;
+    state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::PublishCaptured);
+    let DisplayBgScrollGeneration::RetainCpuSliceEntry(scroll) =
+        state.display_snapshot.as_ref().unwrap().bg_scroll_generation
+    else {
+        panic!("interrupted preparation must retain its leading-NMI scroll");
+    };
+    assert_eq!(scroll.offsets[0][1], 100);
+    assert_eq!(state.ppu.bg_layer[0].v_scroll, 101);
+    state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::PublishCaptured);
+    assert_eq!(
+        state.display_snapshot.as_ref().unwrap().bg_scroll_generation,
+        DisplayBgScrollGeneration::RetainCapturedBeforeNmi,
+    );
+}
+
+#[test]
 fn trailing_animated_bg_dma_refines_only_an_already_staged_following_scanout() {
     const DESTINATION: usize = 0x3c00;
     let mut state = ZeldaState::new();

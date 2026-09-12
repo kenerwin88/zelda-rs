@@ -1036,6 +1036,23 @@ impl ZeldaState {
         &mut self,
         caller: NmiPrepareSpritesCpuCaller,
     ) {
+        if caller == NmiPrepareSpritesCpuCaller::OverworldModule09
+            && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+        {
+            // The leading handler installed this field's scroll registers.
+            // The interrupted main has authored the next software mirrors,
+            // but the trailing handler's register writes belong to the next field.
+            let scroll = DisplayBgScrollGeneration::RetainCpuSliceEntry(
+                BgScrollRegisterScanout::capture(&self.ppu),
+            );
+            if self.game_execution_scheduler.current_main_iteration_follows_leading_nmi() {
+                self.display_snapshot.as_mut()
+                    .expect("leading-NMI preparation requires its active display")
+                    .bg_scroll_generation = scroll;
+            } else {
+                self.next_display_bg_scroll_generation = scroll;
+            }
+        }
         if self.pending_main_loop_common_suffix.is_none() {
             self.pending_main_loop_common_suffix =
                 Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch);
