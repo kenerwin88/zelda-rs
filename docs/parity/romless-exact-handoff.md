@@ -54,6 +54,25 @@ Comparisons 48,539/48,541/48,543 end held inside LinkOam at `$0d:a49b`,
 Compare current native state and presented windows/graphics before carrying
 forward the earlier opening-wipe diagnosis.
 
+Current capture `target/native-48541-diagnostic[-presented]` shows the
+earlier cause: native completes Module6 at comparison 48,537 (07/0f,
+latch clear, counter63), source does so at 48,538. Native begins the
+spotlight at 48,538/counter64 versus source 48,539. The resulting
+held/completed fields remain one field apart. At presented host48,542,
+VRAM/OAM/CGRAM match despite differing video, but this is downstream of
+the CPU phase error; do not patch windows first.
+
+Source loader-entry decode `/tmp/native-48541-source-loader-entry.jsonl`:
+48,478 changes to Module6/counter62 but remains held; 48,479 is inside
+`$09:c48a`, 48,480 reaches main wait/counter62, and 48,481 starts the
+next Module6 iteration/counter63. Native closing-plan diagnostics are in
+`/tmp/native-48541-diagnostic.log`; final radius7 plan is host48,479.
+Next capture should enable `ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE=1` and
+WRAM48,475-48,485 as well as the loader return. Compare the measured
+pre-dungeon entry/crossing count with source before changing either.
+`pre_dungeon_load_nmi_slices_at` stops at `$02:834c`, after Sprite_ResetAll
+and before the separately owned song-bank transfer.
+
 ## Previous native frontier — 48,111 (audio)
 
 Sprite preparation now retains instruction-boundary progress through the
