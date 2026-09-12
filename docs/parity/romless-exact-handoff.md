@@ -35,11 +35,45 @@ C1178. Do not use an unexplained offset to reconcile them or claim that
 the measured return rasters have independent source proof. This remains
 a development ROM CPU measurement, not a completed ROM-less model.
 
-The next frontier is later in the opening landing wipe. Capture around
-comparison 39,742 using this binary and the existing 38,001 source pair;
-current presented dumps stop at engine host 39,735. Batch subsequent fixes
-before another full-route run. The old full 1,581,079-frame receipt proof
-still belongs to runtime `d7d92a85`, not this batch.
+The opening landing-wipe frontier now has a matching source capture:
+`target/native-landing-wipe-source` resumes the 38,001 source pair and
+passes enabled video comparison through 39,750 (audio disabled). Its
+presented dumps are in `target/native-landing-wipe-source-presented`;
+native baseline dumps are in `target/native-landing-wipe-presented`.
+Raw trace run numbers need **+38,001**; presented engine hosts need **-1**
+to obtain comparison frames.
+
+At engine host 39,743 (comparison 39,742), OAM, CGRAM, and scroll match.
+Only window rows 221–223 differ: native pairs are `(18,238)`, `(20,236)`,
+`(20,236)`; source pairs are `(4,252)`, `(4,252)`, `(6,250)`.
+VRAM also differs in 463 bytes: 233 at `$7600..$77ff`, 153 at
+`$7800..$7fff`, and 77 above `$8000`. Each source range matches preceding
+native hosts 39,739–39,742. At host 39,744 only the first two ranges still
+differ; host 39,745 matches again. Do not conflate the window publication
+and resident DMA discrepancies or assume fixing one resolves both.
+
+The source copy-loop PC `$00:f3b7` on comparison 39,742 spans
+V192/C214 through V221/C500 (last iteration, X446). The radius advances
+`$3f->$46`, and the held NMI interrupts the landing's LinkOam at
+`$0d:a416`, V225/C12. The next host reaches `$00:85fc` at V15/C340.
+`spotlight_opening_projects_live_tail_before_hdma` currently cuts off at
+post-build radius `$3f`, rejecting the source-visible tail of this copy.
+Replace that radius heuristic with measured CPU-store/HDMA-read ownership;
+do not just raise the cutoff or retune a raster constant. The next copy
+(comparison 39,744) finishes its last loop iteration at V224/C1018, so
+the same publication assumption does not apply to every larger radius.
+
+Two disposable experiments were removed: measuring landing dispatcher
+entry from the actual leading NMI, and additionally capturing its input
+before NMI mutations. Both reproduced the identical first video mismatch
+and hash at 39,742 with exact audio (`target/native-landing-measured-native`,
+48.21s; `target/native-landing-pre-nmi-native`, 47.65s). They are not fixes.
+Their builds overwrite `target/song-upload-build/parity/zelda3`; rebuild
+the clean accepted source before using that path for further evidence.
+
+Batch subsequent fixes before another full-route run. The old full
+1,581,079-frame receipt proof still belongs to runtime `d7d92a85`, not
+this batch.
 
 ## Previous native frontier — 39,727
 
