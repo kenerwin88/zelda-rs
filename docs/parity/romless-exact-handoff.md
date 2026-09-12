@@ -4,7 +4,39 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 48,541 (video)
+## Current native frontier — 49,036 (video)
+
+The pre-dungeon CPU measurement now stops at `$02:8350`, after both
+Sprite_ResetAll and Dungeon_ResetSprites. It previously stopped at
+`$02:834c`, omitting the second reset's NMI crossings before module7 was
+published. The conditional song-bank transfer remains independently owned.
+
+Source and native enter the load together at comparison48,481. Both reach
+`$02:834c` after56 crossings, source V213/C410 versus native V213/C406.
+Dungeon_ResetSprites then crosses another NMI: source reaches `$02:8350`
+at comparison48,538 V242/C390, native V242/C382 after57 crossings.
+Main/submodule, latch, brightness, and counter now match48,536-48,542.
+Earlier measured loads retain their prior58/57/57 crossing counts.
+This is a source-backed measurement extension, not a one-frame offset.
+
+Evidence: `target/native-48541-loader` and
+`target/native-48541-source-loader`; reusable paired pre-frame checkpoint
+`target/native-loader-source-pair-48481`. The short source reset-return
+trace is `target/native-48541-source-reset-return` with decode
+`/tmp/native-48541-source-reset-return.jsonl` (raw run +48,481).
+
+Native cached A/V now matches through49,035; video differs at49,036,
+audio exact: `target/native-pre-dungeon-reset-native` (59.34s),
+`/tmp/native-pre-dungeon-reset-native.log`. Binary SHA-256:
+`5a9bdc1d8d863d76926a49802a30c3bbcdb8e86b2f7acbacb23d5aa7e95b036f`.
+Build and native comparison validate this native-only probe change; the
+prior50,000 receipt and1,781-test evidence below belongs to the preceding
+binary. No repeated receipt/full gate was run for this measurement change.
+
+Next source capture: `target/native-49036-source[-presented]`, resumed
+from pre-frame48,481. Use its fresh evidence to classify the next boundary.
+
+## Previous native frontier — 48,541 (video)
 
 Fresh Module0E dialogue rendering now uses a measured message-loop entry.
 Before the leading NMI, the existing isolated CPU probe runs from main wait

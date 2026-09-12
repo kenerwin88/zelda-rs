@@ -2918,10 +2918,11 @@ fn pre_dungeon_load_nmi_slices_at(state: &ZeldaState, entry: CpuRasterPosition) 
     // Resume the successor's main prefix at INC $1a. The translated caller
     // has already incremented its counter, but has not run Module_PreDungeon.
     let checkpoint = RomCpuCheckpoint {
-        // Sprite_ResetAll's return is before the conditional song-bank
-        // transfer, which retains its independent CPU/SPC continuation.
-        // JSL at $02:8348 saves $834b; RTL resumes at $834c.
-        stop_pc: 0x02_834c,
+        // Both Sprite_ResetAll and the following Dungeon_ResetSprites can
+        // cross NMI. Stop after the second return, before publishing module7
+        // and before the independently owned conditional song-bank transfer.
+        // JSL at $02:834c saves $834f; RTL resumes at $8350.
+        stop_pc: 0x02_8350,
         ..OVERWORLD_SPOTLIGHT_CPU_CHECKPOINT
     };
     let ram = spotlight_cpu_timing_ram(state, checkpoint);
@@ -2948,7 +2949,7 @@ fn pre_dungeon_load_nmi_slices_at(state: &ZeldaState, entry: CpuRasterPosition) 
             advance_rom_cpu_through_nmi(&mut run, &mut budget);
         }
     }
-    panic!("pre-dungeon timing did not reach Sprite_ResetAll's caller return");
+    panic!("pre-dungeon timing did not reach Dungeon_ResetSprites' caller return");
 }
 
 pub(crate) fn pre_dungeon_load_nmi_slices(state: &ZeldaState, entry: (CpuRasterPosition, CpuRasterPosition)) -> u8 {
