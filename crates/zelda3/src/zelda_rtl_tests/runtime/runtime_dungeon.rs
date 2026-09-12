@@ -617,6 +617,40 @@ fn push_block_attempt_checks_both_target_tiles() {
 }
 
 #[test]
+fn native_dungeon_map_drawing_consumes_its_measured_interruptions() {
+    for room in [0x41, 0x72] {
+        for nmi_slices in [0, 1, 2] {
+            let mut state = ZeldaState::new();
+            state.restore_live_rom_timing_after_checkpoint();
+            state.set_dungeon_room_index(room);
+            state.pending_dungeon_map_room_drawing_nmi_slices = Some(nmi_slices);
+
+            state.Module0E_03_01_03_DrawRooms();
+
+            assert_eq!(state.pending_dungeon_map_room_drawing_nmi_slices, None);
+            if nmi_slices == 0 {
+                let mut expected = ZeldaState::new();
+                expected.set_dungeon_room_index(room);
+                expected.complete_dungeon_map_room_drawing();
+                assert!(state.game_execution_scheduler.is_idle());
+                assert_eq!(state.ram.as_slice(), expected.ram.as_slice());
+            } else {
+                for _ in 1..nmi_slices {
+                    assert_ne!(
+                        state.game_execution_scheduler.advance_work_one_nmi_slice(),
+                        Some(GameWorkStep::Complete(GameWorkContinuation::FinishDungeonMapRoomDrawing)),
+                    );
+                }
+                assert_eq!(
+                    state.game_execution_scheduler.advance_work_one_nmi_slice(),
+                    Some(GameWorkStep::Complete(GameWorkContinuation::FinishDungeonMapRoomDrawing)),
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn dungeon_map_room_drawing_without_a_source_return_remains_suspended_for_every_room() {
     for room in [0x41, 0x72] {
         let mut state = ZeldaState::new();

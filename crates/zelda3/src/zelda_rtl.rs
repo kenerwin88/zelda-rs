@@ -3411,6 +3411,43 @@ fn force_blank_output_row(scanline: u16, master_cycle: u16) -> u8 {
     (scanline - 1 + u16::from(master_cycle >= 512)) as u8
 }
 
+/// Count interruptions of this map's room-plane drawing and its caller,
+/// including the leading NMI, Sprite_Main prefix and sprite-preparation suffix.
+/// The existing continuation retires that whole call stack at main wait.
+fn dungeon_map_room_drawing_cpu_nmi_slices(state: &ZeldaState) -> u8 {
+    let timing_dma = state.dma_with_native_hdma_enable();
+    let mut run = RomCpuTimingRun::new(
+        &state.rom, &state.ram, &state.sram, &state.ppu, &timing_dma,
+        state.zelda_audio_apu_output_ports(),
+        DUNGEON_MAIN_WAIT_CPU_CHECKPOINT,
+    ).expect("dungeon-map drawing CPU timing requires the development ROM");
+    let mut budget = CpuCycleBudget::at_nmi_acceptance(
+        CpuBusWorkload::with_dynamic_hdma(),
+        CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0),
+    );
+    advance_rom_cpu_through_nmi(&mut run, &mut budget);
+    // The initial wait exit also visits the stop PC. Enter the dispatcher
+    // before recognizing the next return to main wait.
+    while run.pc() != DUNGEON_PALETTE_CALLER_CPU_CHECKPOINT.entry_pc {
+        let (scanline, master_cycle) = budget.raster_position().coordinates();
+        run.set_raster_position(scanline, master_cycle);
+        assert_eq!(advance_rom_cpu_step(&mut run, &mut budget), CpuWorkAdvance::Complete);
+    }
+    let mut nmis = 0u8;
+    for _ in 0..5_000_000 {
+        if run.is_complete() {
+            return nmis;
+        }
+        let (scanline, master_cycle) = budget.raster_position().coordinates();
+        run.set_raster_position(scanline, master_cycle);
+        if advance_rom_cpu_step(&mut run, &mut budget) != CpuWorkAdvance::Complete {
+            nmis = nmis.checked_add(1).expect("dungeon-map drawing NMI count overflow");
+            advance_rom_cpu_through_nmi(&mut run, &mut budget);
+        }
+    }
+    panic!("dungeon-map drawing did not return");
+}
+
 /// Measure the reset's first interruption from the preceding main wait,
 /// including the leading NMI and the palette caller. Only source checkpoints
 /// with a translated resumable prefix may be returned.
@@ -9652,6 +9689,8 @@ pub struct ZeldaState {
     /// Measured next DungMap_Backup write, carried from its preceding NMI.
     #[serde(skip)]
     pending_dungeon_map_force_blank_output_scanline: Option<u8>,
+    #[serde(skip)]
+    pending_dungeon_map_room_drawing_nmi_slices: Option<u8>,
     /// Work performed by the most recent `Sprite_Main` call in this host
     /// frame. Consumers use it only through measured raster timing models.
     #[serde(skip)]
@@ -11982,6 +12021,7 @@ impl ZeldaState {
             active_display_force_blank_event: None,
             pending_file_select_force_blank_output_scanline: None,
             pending_dungeon_map_force_blank_output_scanline: None,
+            pending_dungeon_map_room_drawing_nmi_slices: None,
             last_sprite_main_timing_workload: None,
             nmi_poly_upload_deferred: 0,
             nmi_poly_upload_started: false,
@@ -12111,6 +12151,7 @@ impl ZeldaState {
         self.game_execution_scheduler.reset();
         self.dungeon_submodule_cpu_schedule = None;
         self.pending_dungeon_map_force_blank_output_scanline = None;
+        self.pending_dungeon_map_room_drawing_nmi_slices = None;
         self.dungeon_post_sprite_main_return_pending = false;
         self.dungeon_nmi_prepare_sprites_return_pending = false;
         self.dungeon_quadrant_cpu_continuation_active = false;

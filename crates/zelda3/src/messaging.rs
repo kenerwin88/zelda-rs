@@ -3512,6 +3512,17 @@ impl ZeldaState {
     }
 
     pub(super) fn Module0E_03_01_03_DrawRooms(&mut self) {
+        if let Some(nmi_slices) = self.pending_dungeon_map_room_drawing_nmi_slices.take() {
+            if nmi_slices == 0 {
+                self.complete_dungeon_map_room_drawing();
+            } else {
+                self.game_execution_scheduler.schedule_work(
+                    GameWorkContinuation::FinishDungeonMapRoomDrawing,
+                    nmi_slices,
+                );
+            }
+            return;
+        }
         if self.rom_startup_timing()
             && !self.take_original_timing_main_loop_iteration_returned_to_wait()
         {

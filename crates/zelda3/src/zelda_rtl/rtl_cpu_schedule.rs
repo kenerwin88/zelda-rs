@@ -29,6 +29,19 @@ impl ZeldaState {
         let frame = self.game_state.frame;
         if self.rom_startup_timing()
             && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && frame.main_module == 14
+            && frame.submodule == 3
+            && self.overworld_map_state() == 1
+            && self.game_state.dungeon_map_display.dungmap_init_state() == 3
+            && !self.game_state.display.nmi_update_is_latched()
+            && self.game_execution_scheduler.is_idle()
+            && self.pending_dungeon_map_room_drawing_nmi_slices.is_none()
+        {
+            self.pending_dungeon_map_room_drawing_nmi_slices =
+                Some(dungeon_map_room_drawing_cpu_nmi_slices(self));
+        }
+        if self.rom_startup_timing()
+            && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
             && frame.main_module == 14 && frame.submodule == 3
             && self.overworld_map_state() == 0
             && self.game_state.display.screen_brightness == 1

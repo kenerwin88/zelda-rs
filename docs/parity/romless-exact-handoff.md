@@ -96,7 +96,7 @@ Work remains on `fix/romless-spiral-palette-return`; `main` remains the accepted
 baseline above. No push. Short receipt comparisons protect the shared path
 while native timing advances; they are not native acceptance evidence.
 
-Current native frontier: **27926, video-only**. This batch has corrected:
+Current native frontier: **28836, video-only**. This batch has corrected:
 
 - `510da835`: grayscale caller finishes its held NMI before authoring the next
   palette; retires at main wait. Exposed earlier native frontier 14076.
@@ -137,12 +137,19 @@ Current native frontier: **27926, video-only**. This batch has corrected:
   apart from scratch. Evidence: `target/mantle-cycle-native` and
   `target/mantle-cycle-receipt`.
 
-- Dungeon-map terminal fade measures the direct INIDISP write from the leading
+- `fc3abbe9`: dungeon-map terminal fade measures the direct INIDISP write from the leading
   NMI through Sprite_Main. The output row accounts for the Snes9x render event
   at master cycle512. Native27888 →27926, including the earlier14286 map
   entry. Both focused regressions and27,950 receipt frames pass. Evidence:
   `target/map-blank-native2`, `target/map-blank-receipt`. The CPU plan still
   requires the development ROM; it is not a completed ROM-less timing model.
+
+- Dungeon-map room drawing measures its complete caller through main wait
+  instead of always adding the one-NMI pause from the first map visit. Native
+  27926 →28836; all12 map tests and28,900 receipt frames pass. The first candidate stopped at the
+  drawer RTL and missed the caller/sprite-preparation interruption at14321;
+  the accepted candidate includes that suffix. Native evidence:
+  `target/map-room-native2`, `target/map-room-receipt`; source: `target/map-room-source`.
 
 The audio mismatch at 25054 came from missing drawing work before the text
 renderer. The original enters VWF at v=50 on host 25048; the old ledger left
@@ -168,7 +175,9 @@ The room51 dialogue audio mismatch is repaired. Source receipts:
 `target/native-26516-source`; original WRAM/VWF/cycle-ledger probe:
 `target/native-26516`, `target/native-26516-ledger`, `target/native-26516-profiles`.
 **Repaired:27888**, dungeon-map forced-blank write.
-**Next:27926**, video at dungeon-map initialization/fade-in return.
+**Repaired:27926**, dungeon-map drawing caller interruption count.
+**Next:28836**, video during ordinary gameplay. Source:
+`target/native-28836-source`; native/receipt probes below.
 Source: `target/native-27926-source`; native probe: `target/native-27926`;
 receipt probe: `target/map-blank-receipt`. Source receipts: `target/native-27888-source`; native
 probe `target/native-27888`; receipt probe `target/mantle-cycle-receipt`.
