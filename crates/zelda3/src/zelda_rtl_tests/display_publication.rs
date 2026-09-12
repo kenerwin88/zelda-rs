@@ -8,17 +8,45 @@ fn staged_display_promotes_current_hdma_without_promoting_future_vram() {
     state.ppu.vram[0] = 0x1234;
     state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::AdvanceStaged);
     state.ppu.vram[0] = 0xabcd;
+    // Source host 39631: $00:f3b7's suspended copy returns before the
+    // trailing open NMI. HDMA rows are current, but the animated $3c00
+    // page still matches hosts 39630/39632, not that trailing upload.
+    state.pre_nmi_animated_bg_scanout = Some(AnimatedBgScanout {
+        destination_address: 0x3c00,
+        vram: vec![0x5678; 0x200],
+        logical_sources: state.vram_chr_source.clone(),
+        preview_sources: state.vram_chr_preview_source.clone(),
+    });
+    state.ppu.vram[0x3c00] = 0x9abc;
     state.next_display_spotlight_scanout = Some(LiveSpotlightScanout::capture(&state)
         .with_authoritative_rom_hdma_words(&[0x3412; SPOTLIGHT_VISIBLE_SCANLINES]));
     state.capture_display_snapshot_with_current_spotlight(Some(DisplaySnapshotPublication::AdvanceStaged));
     let presented = state.display_snapshot.as_ref().unwrap();
     assert_eq!(presented.ppu.vram[0], 0x1234);
+    assert_eq!(presented.vram_generation, DisplayVramGeneration::RetainCapturedBeforeNmi);
+    assert_eq!(presented.link_obj_scanout_generation, GraphicsDmaGeneration::HostBoundaryBeforeMain);
+    assert_eq!(presented.link_obj_source_generation, GraphicsDmaGeneration::HostBoundaryBeforeMain);
+    assert_eq!(presented.animated_bg_scanout_generation,
+        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi);
+    let animated = presented.host_boundary_animated_bg_scanout.as_ref().unwrap();
+    assert_eq!(animated.destination_address, 0x3c00);
+    assert_eq!(animated.vram, vec![0x5678; 0x200]);
+    let mut interrupted = presented.clone();
+    interrupted.oam_scanout_source = OamScanoutSource::RetainPreviousPresented;
+    let signals = DisplayPublicationSignals {
+        dungeon_exit_crosses_nmi_boundary: true,
+        ..DisplayPublicationSignals::default()
+    };
+    let plan = DisplayPublicationPlan::resolve(&interrupted, signals);
+    assert_eq!(plan.link_obj_scanout_generation, GraphicsDmaGeneration::HostBoundaryBeforeMain);
+    assert_eq!(plan.link_obj_source_generation, GraphicsDmaGeneration::HostBoundaryBeforeMain);
     let SpotlightScanoutGeneration::ComposeLiveAfterNmi(scanout) =
         &presented.spotlight_scanout_generation else { panic!("current HDMA rows were deferred"); };
     assert!(scanout.authoritative_rom_hdma_receipt);
     assert_eq!(&scanout.hdma_tables[0][..2], &[0x12, 0x34]);
     let deferred = state.deferred_display_snapshot.as_ref().unwrap();
     assert_eq!(deferred.ppu.vram[0], 0xabcd);
+    assert_eq!(deferred.ppu.vram[0x3c00], 0x9abc);
     assert!(matches!(deferred.spotlight_scanout_generation,
         SpotlightScanoutGeneration::CapturedBeforeNmi));
 }

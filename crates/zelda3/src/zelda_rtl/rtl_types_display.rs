@@ -641,6 +641,8 @@ impl DisplayPublicationPlan {
             };
         // An explicit interrupted-entry scanout outranks the coarse module
         // transition: completed DMA can belong to the following field.
+        let dungeon_exit_dma_owns_scanout = signals.dungeon_exit_crosses_nmi_boundary
+            && snapshot.oam_scanout_source != OamScanoutSource::RetainPreviousPresented;
         let oam_scanout_source = if matches!(
             signals.dungeon_state_13_phase,
             DungeonState13PublicationPhase::RecurringMain
@@ -652,9 +654,7 @@ impl DisplayPublicationPlan {
             OamScanoutSource::RetainCapturedBeforeNmi
         } else if signals.overworld_sprite_reload_completion_retains_presented {
             OamScanoutSource::RetainResidentPpuOam
-        } else if signals.dungeon_exit_crosses_nmi_boundary
-            && snapshot.oam_scanout_source != OamScanoutSource::RetainPreviousPresented
-        {
+        } else if dungeon_exit_dma_owns_scanout {
             // The suspended spotlight caller completed its shadow before the
             // NMI. Use the exact completed DMA receipt; the snapshot's staged
             // host generation describes the pre-interrupt entry only.
@@ -683,7 +683,7 @@ impl DisplayPublicationPlan {
         } else {
             snapshot
                 .link_obj_scanout_generation
-                .resolve_live_override(signals.dungeon_exit_crosses_nmi_boundary)
+                .resolve_live_override(dungeon_exit_dma_owns_scanout)
         };
         let link_obj_source_generation = if matches!(
             signals.dungeon_state_13_phase,
@@ -698,7 +698,7 @@ impl DisplayPublicationPlan {
         } else {
             snapshot
                 .link_obj_source_generation
-                .resolve_live_override(signals.dungeon_exit_crosses_nmi_boundary)
+                .resolve_live_override(dungeon_exit_dma_owns_scanout)
         };
         let atomic_item_graphics_return_publishes_live_vram = matches!(
             snapshot.link_obj_scanout_generation,

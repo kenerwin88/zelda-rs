@@ -537,6 +537,16 @@ impl ZeldaState {
         let display = self.display_snapshot.as_mut().expect("captured current display");
         display.spotlight_scanout_generation = SpotlightScanoutGeneration::ComposeLiveAfterNmi(scanout);
         display.hdma_table_generation = DisplayHdmaTableGeneration::Captured;
+        // The entry caller returns after the held handler, then accepts the
+        // next open NMI. Its animated-page and Link uploads belong to the
+        // following field, even though HDMA consumed this field's rows.
+        // Snes9x's $00:f3b7 entry return retains resident VRAM, including
+        // the animated page at word address $3c00 and Link's $4000 page.
+        display.animated_bg_scanout_generation = AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi;
+        display.host_boundary_animated_bg_scanout = self.pre_nmi_animated_bg_scanout.clone();
+        display.vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
+        display.link_obj_scanout_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+        display.link_obj_source_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
     }
 
     pub(super) fn capture_display_snapshot_with_publication(

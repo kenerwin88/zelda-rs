@@ -4,6 +4,37 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
+## Current native frontier — 39,727
+
+After the requested local merge, the next source-backed fix separates
+interrupted spotlight entry HDMA from the trailing NMI's graphics DMA.
+The source entry return at `$00:f3b7` retains resident VRAM while channel 7
+has already consumed the current field's rows. The former publication
+selected 419 bytes of a future animated page at VRAM byte `$7800` and
+77 bytes of future Link tiles at `$8040..$8278`. All 224 window bounds,
+scroll rows, OAM, and CGRAM already agreed. The coarse dungeon-exit signal
+also overrode explicit retained Link generations; it now follows the same
+interrupted-entry ownership rule as OAM.
+
+Binary `67f31d2df16e26d238ee5e7a1b5084336bd06e97074f6431eaab446d882843ec`
+is native exact through frame 39,726. First video mismatch is 39,727;
+audio remains exact there (`target/native-dma-owner-native`, 55.87 seconds).
+The engine suite passes 1,774 tests with 3 ignored
+(`/tmp/native-dma-owner-lib-tests.log`, 24.43 seconds).
+Receipt-driven cached A/V matches all 40,000 frames on the same binary
+(`target/native-dma-owner-receipt`, 47.76 seconds). The full-route proof
+remains the older runtime proof described below; this is a focused regression.
+
+Source evidence: `target/native-spotlight-source`, with video enabled,
+and its presented dumps; domain comparison:
+`target/native-entry-hdma-diagnostic/domain-comparison.json`.
+The six-clock Module0F entry residue was not adjusted to obtain this fix.
+
+Next boundary: receipts at 39,726 interrupt in LinkOam; 39,727 completes
+a held NMI and the caller/common suffix without another NMI acceptance.
+39,728 then accepts the next open NMI. Capture native/source display and
+CPU return progress across that boundary before changing costs or owners.
+
 ## Latest local merge — 2026-09-12
 
 The user explicitly requested merging the accumulated native timing batch
