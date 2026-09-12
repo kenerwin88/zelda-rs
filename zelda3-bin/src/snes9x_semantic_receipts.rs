@@ -340,8 +340,9 @@ const DUNGEON_LOAD_SINGLE_SPRITE_SUBTYPE_FINAL_PC: u32 = 0x09c3df;
 const DUNGEON_LOAD_SINGLE_SPRITE_SPAWN_INDEX_PC: u32 = 0x09c3e4;
 const DUNGEON_LOAD_SINGLE_SPRITE_COMPLETE_PC: u32 = 0x09c3e7;
 const DUNGEON_LOAD_SINGLE_SPRITE_END_PC: u32 = 0x09c3e8;
-// `Module_PreDungeon` calls `Sprite_ResetAll` at $02:8347; the return address
-// exposed by the pinned trace is $02:834b. The shared reset routine itself is
+// `Module_PreDungeon` calls `Sprite_ResetAll` at $02:8348; the stacked return
+// address exposed by the pinned trace is $02:834b (RTL resumes at $02:834c).
+// The shared reset routine itself is
 // adapter-private provenance; gameplay receives only its semantic checkpoint.
 const MODULE_PRE_DUNGEON_AFTER_SPRITE_RESET_PC: u32 = 0x02_834b;
 // `Overworld_LoadBirdTravelPos` performs an initial `Sprite_ResetAll`, then

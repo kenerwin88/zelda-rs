@@ -3480,6 +3480,10 @@ impl ZeldaState {
             let plan = dungeon_exit_spotlight_cpu_plan(self, entry_earliest, entry_latest);
             self.dungeon_exit_spotlight_cpu_entry_envelope =
                 plan.and_then(|plan| plan.next_entry_earliest.zip(plan.next_entry_latest));
+            if let Some(entry) = plan.and_then(|plan|
+                plan.successor_entry_earliest.zip(plan.successor_entry_latest)) {
+                self.pre_dungeon_cpu_entry_envelope = Some(entry);
+            }
             plan
         } else {
             // The continuous authority supplies the completed scanout and

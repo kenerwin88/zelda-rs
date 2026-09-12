@@ -2972,6 +2972,29 @@ fn live_fresh_dungeon_iteration_retires_only_the_pre_main_nmi_timing_shadow() {
 }
 
 #[test]
+fn measured_pre_dungeon_loads_preserve_the_final_interrupt_slice() {
+    // Count acceptance events, not host calls: pinned source loads starting
+    // at 11480 and 39666 contain 58 and 57 held NMIs respectively. The last
+    // slice still owns the Sprite_ResetAll continuation; consuming another
+    // crossing on entry made the first loader publish its song bank early.
+    for crossings in [58, 57] {
+        let mut state = ZeldaState::new();
+        state.set_rom_startup_timing(true);
+        state.set_main_module(6);
+        assert!(state.begin_pre_dungeon_entrance_load_work(Some(crossings)));
+        for _ in 1..crossings {
+            assert_eq!(state.game_execution_scheduler.advance_work_one_nmi_slice(),
+                Some(GameWorkStep::Waiting));
+            assert_eq!(state.game_state.frame.main_module, 6);
+        }
+        assert_eq!(state.game_execution_scheduler.advance_work_one_nmi_slice(),
+            Some(GameWorkStep::Complete(GameWorkContinuation::FinishPreDungeonEntranceLoad {
+                sprite_reset: PreDungeonSpriteResetContinuation::Pending,
+            })));
+    }
+}
+
+#[test]
 fn pre_dungeon_work_resumes_at_room_and_song_bank_transfer_boundaries() {
     assert_eq!(PRE_DUNGEON_ENTRANCE_LOAD_NMI_SLICES, 58);
     let stages = [
@@ -3247,6 +3270,8 @@ fn interrupted_dungeon_exit_build_retains_the_c_suffix() {
             following_window_words: [0x00ff; SPOTLIGHT_VISIBLE_SCANLINES],
             next_entry_earliest: Some(DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_EARLIEST),
             next_entry_latest: Some(DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_LATEST),
+            successor_entry_earliest: None,
+            successor_entry_latest: None,
         }),
         None,
         iteration,
@@ -3316,6 +3341,8 @@ fn interrupted_dungeon_exit_table_build_defers_the_radius_write_until_return() {
             following_window_words: [0x00ff; SPOTLIGHT_VISIBLE_SCANLINES],
             next_entry_earliest: Some(DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_EARLIEST),
             next_entry_latest: Some(DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_LATEST),
+            successor_entry_earliest: None,
+            successor_entry_latest: None,
         }),
         None,
         iteration,

@@ -3317,6 +3317,8 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
         following_window_words: [0; SPOTLIGHT_VISIBLE_SCANLINES],
         next_entry_earliest: Some(DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_EARLIEST),
         next_entry_latest: Some(DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_LATEST),
+        successor_entry_earliest: None,
+        successor_entry_latest: None,
     };
     assert!(cpu_plan(0x00_f38d).interrupted_during_table_build_or_copy());
     assert!(!cpu_plan(0x00_f38d).interrupted_during_table_copy());
@@ -4784,6 +4786,8 @@ fn interrupted_dungeon_exit_spotlight_publishes_the_rom_prefix_before_waiting() 
             following_window_words: [0x00ff; SPOTLIGHT_VISIBLE_SCANLINES],
             next_entry_earliest: Some(DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_EARLIEST),
             next_entry_latest: Some(DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_LATEST),
+            successor_entry_earliest: None,
+            successor_entry_latest: None,
         }),
         None,
         SpotlightIteration::closing(SpotlightIterationPhase::CloseEntryBeforeTablePublication,),

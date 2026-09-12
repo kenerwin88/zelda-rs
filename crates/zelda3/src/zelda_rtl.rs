@@ -2761,6 +2761,7 @@ fn dungeon_exit_spotlight_cpu_plan_at(
     let mut completed_following_window_words = None;
     let mut next_entry_after_second_nmi = None;
     let mut module_ended_after_second_nmi = false;
+    let mut successor_entry = None;
 
     for _ in 0..5_000_000 {
         // ZeldaRunGameLoop calls NMI_PrepareSprites at $00:805a. Reaching
@@ -2778,12 +2779,15 @@ fn dungeon_exit_spotlight_cpu_plan_at(
             if run.pc() == 0x00_8036 && run.ram_byte(MAIN_MODULE) != 0x0f {
                 module_ended_after_second_nmi = true;
             }
+            if module_ended_after_second_nmi && run.pc() == 0x00_8051 {
+                successor_entry.get_or_insert(budget.raster_position());
+            }
         }
         if let (Some(active_window_words), Some(following_window_words)) = (
             completed_active_window_words,
             completed_following_window_words,
         ) {
-            if next_entry_after_second_nmi.is_some() || module_ended_after_second_nmi {
+            if next_entry_after_second_nmi.is_some() || successor_entry.is_some() {
                 let iterations_before_nmi =
                     iterations_before_nmi.expect("completed plan must retain its loop count");
                 let interrupted_pc =
@@ -2815,6 +2819,8 @@ fn dungeon_exit_spotlight_cpu_plan_at(
                     following_window_words,
                     next_entry_earliest: next_entry_after_second_nmi,
                     next_entry_latest: next_entry_after_second_nmi,
+                    successor_entry_earliest: successor_entry,
+                    successor_entry_latest: successor_entry,
                 });
             }
         }
@@ -2892,6 +2898,50 @@ fn dungeon_exit_spotlight_cpu_plan_at(
     );
 }
 
+fn pre_dungeon_load_nmi_slices_at(state: &ZeldaState, entry: CpuRasterPosition) -> u8 {
+    // Resume the successor's main prefix at INC $1a. The translated caller
+    // has already incremented its counter, but has not run Module_PreDungeon.
+    let checkpoint = RomCpuCheckpoint {
+        // Sprite_ResetAll's return is before the conditional song-bank
+        // transfer, which retains its independent CPU/SPC continuation.
+        // JSL at $02:8348 saves $834b; RTL resumes at $834c.
+        stop_pc: 0x02_834c,
+        ..OVERWORLD_SPOTLIGHT_CPU_CHECKPOINT
+    };
+    let ram = spotlight_cpu_timing_ram(state, checkpoint);
+    let dma = state.dma_with_native_hdma_enable();
+    let mut run = RomCpuTimingRun::new(&state.rom, &ram, &state.sram,
+        &state.ppu, &dma, state.zelda_audio_apu_output_ports(), checkpoint)
+        .expect("pre-dungeon timing requires the loaded development ROM");
+    let mut budget = CpuCycleBudget::until_next_nmi_acceptance(entry,
+        CpuBusWorkload::with_dynamic_hdma(),
+        CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0));
+    let mut nmis = 0u8;
+    for _ in 0..10_000_000 {
+        if run.is_complete() {
+            if crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
+                eprintln!("pre_dungeon_cpu_schedule host={} entry={entry:?} nmis={nmis} return={:?}",
+                    state.frame_ctr_dbg, budget.raster_position());
+            }
+            return nmis;
+        }
+        let (v, h) = budget.raster_position().coordinates();
+        run.set_raster_position(v, h);
+        if advance_rom_cpu_step(&mut run, &mut budget).reached_boundary().is_some() {
+            nmis = nmis.checked_add(1).expect("pre-dungeon timing exceeded 255 NMIs");
+            advance_rom_cpu_through_nmi(&mut run, &mut budget);
+        }
+    }
+    panic!("pre-dungeon timing did not reach Sprite_ResetAll's caller return");
+}
+
+pub(crate) fn pre_dungeon_load_nmi_slices(state: &ZeldaState, entry: (CpuRasterPosition, CpuRasterPosition)) -> u8 {
+    let earliest = pre_dungeon_load_nmi_slices_at(state, entry.0);
+    let latest = pre_dungeon_load_nmi_slices_at(state, entry.1);
+    assert_eq!(earliest, latest, "pre-dungeon crossing count changed across its caller entry envelope");
+    earliest
+}
+
 fn complete_spotlight_window_words(
     run: &RomCpuTimingRun,
     captured: &[Option<u16>; SPOTLIGHT_VISIBLE_SCANLINES],
@@ -2930,6 +2980,7 @@ fn dungeon_exit_spotlight_cpu_plan(
     }
     if let (Some(earliest), Some(latest)) = (&mut earliest, latest) {
         earliest.next_entry_latest = latest.next_entry_latest;
+        earliest.successor_entry_latest = latest.successor_entry_latest;
     }
     earliest
 }
@@ -9790,6 +9841,8 @@ pub struct ZeldaState {
     #[serde(skip)]
     dungeon_exit_spotlight_cpu_entry_envelope: Option<(CpuRasterPosition, CpuRasterPosition)>,
     #[serde(skip)]
+    pub(crate) pre_dungeon_cpu_entry_envelope: Option<(CpuRasterPosition, CpuRasterPosition)>,
+    #[serde(skip)]
     overworld_spotlight_cpu_entry_envelope: Option<(CpuRasterPosition, CpuRasterPosition)>,
     #[serde(skip)]
     dungeon_landing_goal_transition_pending: bool,
@@ -12219,6 +12272,7 @@ impl ZeldaState {
             last_nmi_prepare_sprites_master_cycles: None,
             audio_after_publication_ambient_nmi: None,
             dungeon_exit_spotlight_cpu_entry_envelope: None,
+            pre_dungeon_cpu_entry_envelope: None,
             overworld_spotlight_cpu_entry_envelope: None,
             dungeon_landing_goal_transition_pending: false,
             normal_dialogue_following_main_nmi_uses_host_animated_bg_operands: None,
@@ -12402,6 +12456,7 @@ impl ZeldaState {
         self.main_loop_sprite_preparation_completed = false;
         self.pending_main_loop_common_suffix = None;
         self.native_overworld_packing_progress = None;
+        self.pre_dungeon_cpu_entry_envelope = None;
         self.native_overworld_map_graphics_nmi_slices = None;
         self.native_overworld_song_upload = None;
         self.dungeon_landing_goal_transition_pending = false;
@@ -12502,6 +12557,7 @@ impl ZeldaState {
             self.pre_overworld_overlays_cpu_nmis = None;
             self.native_overworld_song_upload = None;
             self.native_overworld_packing_progress = None;
+        self.pre_dungeon_cpu_entry_envelope = None;
             self.native_overworld_map_graphics_nmi_slices = None;
             self.sprite_main_cpu_boundary = None;
             self.sprite_main_cpu_nmi_slices = 0;

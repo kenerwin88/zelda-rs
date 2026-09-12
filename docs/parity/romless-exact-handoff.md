@@ -4,7 +4,44 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 39,727
+## Current native frontier — 39,742
+
+Pre-dungeon loading now measures its room-dependent CPU workload instead
+of always waiting 58 NMIs. The preceding Module0F CPU plan retains the
+successor's entry at `$00:8051`; the loader follows that entry through
+`Sprite_ResetAll` to `$02:834c`, before the independent song-bank transfer.
+Both ends of the carried entry envelope must produce the same crossing
+count. Entrances without that carried phase retain the existing fallback;
+receipt-driven execution retains its existing authority.
+
+The two exercised loads measure 58 and 57 held NMIs, matching counted
+Snes9x acceptance events. Do not count host callbacks: callbacks with zero
+or two acceptances made the previous 58/58 diagnosis incorrect. Also,
+`$02:834b` is the stacked return address; RTL resumes at `$02:834c`.
+
+Binary `558e53fcab9a5ee21051f1d5def23d73657b7eb350a1294e524a604e5fabe518`:
+
+- Native video/audio exact through 39,741; first video mismatch 39,742,
+  with audio still exact (`target/native-pre-dungeon-return-pc-native`,
+  57.43 seconds). The earlier 11,538 audio boundary passes.
+- Engine suite: 1,775 passed, 3 ignored
+  (`/tmp/native-pre-dungeon-measured-lib-tests.log`, 24.37 seconds).
+- Receipt-driven cached A/V: all 40,000 frames exact on the same binary
+  (`target/native-pre-dungeon-measured-receipt`, 47.79 seconds).
+
+Counts are source-checked; sub-frame entry timing is not yet exact. The
+carried entries are V248/C1188 and V248/C1174, versus source C1170 and
+C1178. Do not use an unexplained offset to reconcile them or claim that
+the measured return rasters have independent source proof. This remains
+a development ROM CPU measurement, not a completed ROM-less model.
+
+The next frontier is later in the opening landing wipe. Capture around
+comparison 39,742 using this binary and the existing 38,001 source pair;
+current presented dumps stop at engine host 39,735. Batch subsequent fixes
+before another full-route run. The old full 1,581,079-frame receipt proof
+still belongs to runtime `d7d92a85`, not this batch.
+
+## Previous native frontier — 39,727
 
 After the requested local merge, the next source-backed fix separates
 interrupted spotlight entry HDMA from the trailing NMI's graphics DMA.
@@ -55,7 +92,10 @@ experimental artifacts are `target/native-pre-dungeon-crossing-native`
 and `target/native-pre-dungeon-audio-diagnostic`; they are not the accepted
 runtime. Main remains the 39,727-frontier runtime.
 
-Both source loads cross 58 held NMIs, but their final handler spans differ:
+Counting actual `nmi` events (not host calls) gives **58 held NMIs for
+the first load and 57 for the later load**. Some host calls contain zero
+or two acceptances, so the earlier inference that both counts were 58
+was incorrect. Their final handler spans also differ:
 
 - First load starts 11,480. Its last held acceptance is `$09:c47f` at
   11,537 V225/C32. That host returns in the vector at V225/C94; the next
@@ -65,8 +105,8 @@ Both source loads cross 58 held NMIs, but their final handler spans differ:
   before acceptance. Host 39,723 accepts at `$09:c480`, V225/C18,
   finishes the handler and caller, and reaches main wait at V225/C6.
 
-Model the actual final NMI/host-return phase; neither a universal decrement
-nor a room/bank exception is justified. The initial host also differs:
+Measure the actual room-loader workload and preserve its caller phase;
+neither a universal decrement nor a room/bank exception is justified. The initial host also differs:
 11,480 begins with an already accepted handler, whereas 39,666 begins
 before the open NMI. Preserve the caller's CPU raster rather than inventing
 an entry offset. The Module0F CPU plan already follows its final caller

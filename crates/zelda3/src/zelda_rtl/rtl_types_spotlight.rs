@@ -86,6 +86,8 @@ pub(crate) struct DungeonExitSpotlightCpuPlan {
     pub(crate) following_window_words: [u16; SPOTLIGHT_VISIBLE_SCANLINES],
     pub(crate) next_entry_earliest: Option<CpuRasterPosition>,
     pub(crate) next_entry_latest: Option<CpuRasterPosition>,
+    pub(crate) successor_entry_earliest: Option<CpuRasterPosition>,
+    pub(crate) successor_entry_latest: Option<CpuRasterPosition>,
 }
 
 impl DungeonExitSpotlightCpuPlan {

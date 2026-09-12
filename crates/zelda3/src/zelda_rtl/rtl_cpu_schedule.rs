@@ -777,7 +777,7 @@ impl ZeldaState {
         true
     }
 
-    pub(super) fn begin_pre_dungeon_entrance_load_work(&mut self) -> bool {
+    pub(super) fn begin_pre_dungeon_entrance_load_work(&mut self, measured_nmis: Option<u8>) -> bool {
         if !self.rom_startup_timing() {
             return false;
         }
@@ -786,7 +786,7 @@ impl ZeldaState {
             GameWorkContinuation::FinishPreDungeonEntranceLoad {
                 sprite_reset: PreDungeonSpriteResetContinuation::Pending,
             },
-            PRE_DUNGEON_ENTRANCE_LOAD_NMI_SLICES,
+            measured_nmis.unwrap_or(PRE_DUNGEON_ENTRANCE_LOAD_NMI_SLICES),
         );
         true
     }
