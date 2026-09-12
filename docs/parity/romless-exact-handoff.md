@@ -37,6 +37,28 @@ genuine paired pre-frame 47,200 checkpoint. Its decode
 `/tmp/native-48111-source.jsonl` uses raw run +47,200. The next audio
 failure occurs during dialogue rendering; investigate fresh timing evidence.
 
+Next-front diagnosis: `target/native-48111-diagnostic` captures actual WRAM;
+main/submodule/latch/frame counter agree through 48,105-48,114. Native
+clears `$012f` on dialogue returns 48,109 and 48,113 while source retains
+12. `target/native-48111-dsp` traces native SPC instructions and DSP writes
+48,108-48,111. At comparison 48,110 native changes SPC input port 3 from
+12 to zero (cycle 819394052); source writes 12 throughout that field.
+Native restores 12 at 48,111, but its SPC instruction path and DSP phases
+already differ. Source port/DSP evidence:
+`target/native-48111-source-audio-writes.jsonl`.
+
+Do not compensate with an audio marker yet. Source click trace
+`target/native-48111-source-click` / `/tmp/native-48111-source-click.jsonl`
+shows an actual `$012f=12` store at `$0e:cacc`, comparison 48,109 V252/C18,
+after the leading NMI cleared it. Native host 48,110 instead resumes
+read position `$33`, glyph `$42`, Drawing with 32,992 clocks remaining,
+then reaches read `$35` without a new click. Its marker trace is
+`/tmp/native-48111-marker.log`: host 48,111 queues zero. Native read positions
+are one ahead of source on interrupted fields 48,105-48,108 and
+48,110-48,112; they converge at line returns. Determine the earliest
+glyph-progress/timing cause before changing audio transport. Source WRAM
+trace filters use the low offset `012f`, not the banked `7e:012f`.
+
 ## Previous native frontier — 47,975
 
 Two native caller fixes extend exact A/V through 47,974:
