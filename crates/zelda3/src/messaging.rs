@@ -4342,9 +4342,10 @@ impl ZeldaState {
         self.set_mosaic_copy(3);
         let hdmaen = self.game_state.display.hdma_enable_mask;
         self.set_mapbak_hdmaen(hdmaen);
-        if let Some(scanline) = self
+        let measured_scanline = self.pending_dungeon_map_force_blank_output_scanline.take();
+        if let Some(scanline) = measured_scanline.or_else(|| self
             .last_sprite_main_timing_workload
-            .and_then(SpriteMainTimingWorkload::dungeon_map_backup_force_blank_output_scanline)
+            .and_then(SpriteMainTimingWorkload::dungeon_map_backup_force_blank_output_scanline))
         {
             self.enable_force_blank_during_active_scanout(scanline);
         } else {

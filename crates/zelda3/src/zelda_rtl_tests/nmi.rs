@@ -1,6 +1,16 @@
 use super::*;
 
 #[test]
+fn force_blank_write_respects_the_scanline_render_event() {
+    assert_eq!(force_blank_output_row(49, 320), 48);
+    assert_eq!(force_blank_output_row(27, 511), 26);
+    assert_eq!(force_blank_output_row(27, 512), 27);
+    assert_eq!(force_blank_output_row(1, 0), 0);
+    assert_eq!(force_blank_output_row(224, 1000), 224);
+    assert_eq!(force_blank_output_row(225, 1000), 0);
+}
+
+#[test]
 fn dungeon_map_terminal_fade_blanks_after_the_measured_active_prefix() {
     assert_eq!(
         dungeon_map_terminal_fade_blank_scanline(14, 3, 1, 1),

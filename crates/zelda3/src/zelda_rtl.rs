@@ -3370,6 +3370,47 @@ fn dungeon_submodule_cpu_schedule(state: &ZeldaState) -> DungeonSubmoduleCpuSche
     }
 }
 
+/// Measure the direct INIDISP write after the leading NMI and Sprite_Main.
+/// This is a development CPU plan, independent of receipt workload selectors.
+fn dungeon_map_backup_cpu_blank_scanline(state: &ZeldaState) -> u8 {
+    let timing_dma = state.dma_with_native_hdma_enable();
+    let mut run = RomCpuTimingRun::new(
+        &state.rom, &state.ram, &state.sram, &state.ppu, &timing_dma,
+        state.zelda_audio_apu_output_ports(),
+        RomCpuCheckpoint {
+            // EnableForceBlank's STA $2100 has completed at this checkpoint.
+            stop_pc: 0x00_8942,
+            ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+        },
+    ).expect("dungeon-map fade CPU timing requires the development ROM");
+    let mut budget = CpuCycleBudget::at_nmi_acceptance(
+        CpuBusWorkload::with_dynamic_hdma(),
+        CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0),
+    );
+    advance_rom_cpu_through_nmi(&mut run, &mut budget);
+    for _ in 0..1_000_000 {
+        if run.is_complete() {
+            let (scanline, master_cycle) = budget.raster_position().coordinates();
+            return force_blank_output_row(scanline, master_cycle);
+        }
+        let (scanline, master_cycle) = budget.raster_position().coordinates();
+        run.set_raster_position(scanline, master_cycle);
+        assert_eq!(advance_rom_cpu_step(&mut run, &mut budget), CpuWorkAdvance::Complete,
+            "dungeon-map fade crossed another NMI before EnableForceBlank");
+    }
+    panic!("dungeon-map fade did not reach its force-blank write");
+}
+
+fn force_blank_output_row(scanline: u16, master_cycle: u16) -> u8 {
+    if !(1..=224).contains(&scanline) {
+        return 0;
+    }
+    // Pinned Snes9x renders each row at HC_RENDER_EVENT (128 dots = 512
+    // master cycles). An INIDISP write after that event cannot blank the
+    // already-rendered row. Before it, hardware V=1 maps to output row zero.
+    (scanline - 1 + u16::from(master_cycle >= 512)) as u8
+}
+
 /// Measure the reset's first interruption from the preceding main wait,
 /// including the leading NMI and the palette caller. Only source checkpoints
 /// with a translated resumable prefix may be returned.
@@ -9608,6 +9649,9 @@ pub struct ZeldaState {
     /// is consumed exactly once by the following file-select iteration.
     #[serde(default)]
     pending_file_select_force_blank_output_scanline: Option<u8>,
+    /// Measured next DungMap_Backup write, carried from its preceding NMI.
+    #[serde(skip)]
+    pending_dungeon_map_force_blank_output_scanline: Option<u8>,
     /// Work performed by the most recent `Sprite_Main` call in this host
     /// frame. Consumers use it only through measured raster timing models.
     #[serde(skip)]
@@ -11937,6 +11981,7 @@ impl ZeldaState {
             nmi_active_display_blanking_candidate: NmiActiveDisplayBlanking::default(),
             active_display_force_blank_event: None,
             pending_file_select_force_blank_output_scanline: None,
+            pending_dungeon_map_force_blank_output_scanline: None,
             last_sprite_main_timing_workload: None,
             nmi_poly_upload_deferred: 0,
             nmi_poly_upload_started: false,
@@ -12065,6 +12110,7 @@ impl ZeldaState {
         self.attract_first_story_render_delay = 0;
         self.game_execution_scheduler.reset();
         self.dungeon_submodule_cpu_schedule = None;
+        self.pending_dungeon_map_force_blank_output_scanline = None;
         self.dungeon_post_sprite_main_return_pending = false;
         self.dungeon_nmi_prepare_sprites_return_pending = false;
         self.dungeon_quadrant_cpu_continuation_active = false;

@@ -96,7 +96,7 @@ Work remains on `fix/romless-spiral-palette-return`; `main` remains the accepted
 baseline above. No push. Short receipt comparisons protect the shared path
 while native timing advances; they are not native acceptance evidence.
 
-Current native frontier: **27888, video-only**. This batch has corrected:
+Current native frontier: **27926, video-only**. This batch has corrected:
 
 - `510da835`: grayscale caller finishes its held NMI before authoring the next
   palette; retires at main wait. Exposed earlier native frontier 14076.
@@ -129,13 +129,20 @@ Current native frontier: **27888, video-only**. This batch has corrected:
   publishes pending uploads before the following palette iteration. Native
   25925 → 26516; all16 focused stair tests and26,530 receipt frames pass.
   WRAM25924–25928 agree apart from scratch.
-- Movable-mantle drawing, its bank/inactive caller, and shared OAM correction
+- `33ff03af`: movable-mantle drawing, its bank/inactive caller, and shared OAM correction
   costs now follow the ROM instructions. The reference matrix checks exact
   cycles and OAM bytes for clipping, tile counts and size flags, including the
   complete dialogue-time mantle caller. Guard/follower references also pass.
   Native26516 →27888; receipt27,920 frames pass. WRAM26510–26517 now agree
   apart from scratch. Evidence: `target/mantle-cycle-native` and
   `target/mantle-cycle-receipt`.
+
+- Dungeon-map terminal fade measures the direct INIDISP write from the leading
+  NMI through Sprite_Main. The output row accounts for the Snes9x render event
+  at master cycle512. Native27888 →27926, including the earlier14286 map
+  entry. Both focused regressions and27,950 receipt frames pass. Evidence:
+  `target/map-blank-native2`, `target/map-blank-receipt`. The CPU plan still
+  requires the development ROM; it is not a completed ROM-less timing model.
 
 The audio mismatch at 25054 came from missing drawing work before the text
 renderer. The original enters VWF at v=50 on host 25048; the old ledger left
@@ -160,8 +167,10 @@ The quadrant upload chain (states5–8) is repaired. Evidence:
 The room51 dialogue audio mismatch is repaired. Source receipts:
 `target/native-26516-source`; original WRAM/VWF/cycle-ledger probe:
 `target/native-26516`, `target/native-26516-ledger`, `target/native-26516-profiles`.
-**Next:27888**, video in Module0E/submodule3, room41, just before a long
-interface operation. Source receipts: `target/native-27888-source`; native
+**Repaired:27888**, dungeon-map forced-blank write.
+**Next:27926**, video at dungeon-map initialization/fade-in return.
+Source: `target/native-27926-source`; native probe: `target/native-27926`;
+receipt probe: `target/map-blank-receipt`. Source receipts: `target/native-27888-source`; native
 probe `target/native-27888`; receipt probe `target/mantle-cycle-receipt`.
 Prefix evidence: `target/vwf-25054-source`,
 `target/drawing-batch-ledger`, `target/drawing-batch-profiles`; chronological
