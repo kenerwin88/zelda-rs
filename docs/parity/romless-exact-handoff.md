@@ -54,7 +54,7 @@ a demonstrated timing correction solely to preserve the old native frame
 number. This supersedes the overly conservative rejection in the spotlight
 investigation recorded in `romless-exact-play.md`.
 
-## Last accepted main baseline
+## Previous combined A/V and WRAM baseline
 
 | | |
 |---|---|
@@ -94,8 +94,10 @@ The user requested a larger batch on 2026-09-11 targeting native exact A/V
 of at least 100,000 frames. On 2026-09-12 the user explicitly allowed a full
 parity check whenever needed, lifting the earlier prohibition before100k.
 Continue batching; use full acceptance when the shared-path risk warrants it.
-Work remains on `fix/romless-spiral-palette-return`; `main` remains the accepted
-baseline above. No push. Short receipt comparisons protect the shared path
+The full-parity-tested batch was merged to local `main` on2026-09-12 at
+`edd069d420ca64e1abbe6442d3bd75018a42fad7`, with verification hooks skipped
+at the user's explicit request after the full pass. No push. The new upload
+experiment remains on `fix/native-song-upload`. Short receipt comparisons protect the shared path
 while native timing advances; they are not native acceptance evidence.
 
 Current native frontier: **37688, video-only**. This batch has corrected:
