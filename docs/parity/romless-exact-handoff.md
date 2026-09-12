@@ -210,6 +210,60 @@ when measuring native SPC state.
 The source traces are diagnostic runs with A/V comparisons disabled, not
 acceptance gates. Keep the candidate isolated while batching further fixes.
 
+The byte-packing batch now advances native exact A/V through **38738**;
+the first mismatch is **38739, video-only**, with audio still exact.
+`target/native-byte-packing-scroll-native` and
+`/tmp/native-byte-packing-scroll-native.log` record the 100001-frame attempt
+(46.71s). Candidate binary SHA256:
+`f8d062f7a7eff3769e9a2c33278fafc2c5bc563619c3b9bca328b2a9990075b1`.
+The runtime remains uncommitted in `target/native-song-upload-worktree`.
+This does not replace main's full 1581079-frame receipt proof.
+
+New `ExtendedOamPackingProgress` records committed bytes and CPU cost within
+one four-byte pass. Prefix/resume preserve already committed bytes, execute
+the stateful suffix once, and sum to the atomic cost. The focused regression
+pins the source's Y4/PC8620 boundary at7232 CPU clocks (412 within the pass).
+The native overworld predictor executes an isolated pre-NMI source shadow
+with actual host input seeded into the auto-joypad register. Zero input
+incorrectly missed this workload. It predicts entry V219/C488 and the same
+one committed byte at V225/C14, PC861f (398 in the pass); source entry is
+V219/C478 and acceptance PC8620/V225/C18. Those small clock differences are
+still unresolved; no compensating constant was added.
+
+`target/native-byte-packing-source-display` resumes the paired source from
+38001 through38735 and captures WRAM/VRAM. Comparison with
+`target/native-byte-packing-display-trace` proves native OAM bytes $0800-$0a1f,
+frame counter and latch match source at38730..38734 after the packing change.
+The remaining display fix captures the next field for the native overworld
+return, avoids the dungeon-specific retained OBJ cache, and uses the existing
+`retain_completed_nmi_scroll_for_current_scanout`: Held NMI still executes
+WritePpuRegisters. Before that last change, native host38733 retained scroll
+[(1209,1161),(1138,1298)] instead of source [(1208,1161),(1137,1299)].
+Composed captures are `target/native-byte-packing-presented` and
+`target/native-byte-packing-receipt-presented`; their raw OAM, VRAM and CGRAM
+agree at that host. OBJ latch storage/semantic cache representations differ;
+do not assume that alone is a rendered mismatch.
+
+The shared packing refactor retains **40000 exact receipt A/V frames** in
+`target/native-byte-packing-receipt` (47.61s), on binary
+`c227db7909f2389ba848235e9659e4e70ce26f73ab6a65ceddfa1ba69ebbc589`.
+The subsequent change only extends the explicitly native completed-scroll
+guard. Final-head engine suite:1772 passed,3 ignored in24.17s,
+`/tmp/native-byte-scroll-lib-tests.log`.
+
+Next: the final pointer-publication tail of NMI_PrepareSprites, $874e-$8780.
+The same predictor reports PC876e at engine host38739 and PC8761 at38743,
+after packing has completed; these currently return no continuation.
+Fresh source `target/native-preparation-tail-source` resumes38001 through38745.
+Decoded `/tmp/native-preparation-tail-source.jsonl` has run numbers relative
+to the checkpoint: add38001 for comparison frames. Source run737 (38738)
+enters preparation V216/C202, accepts Held NMI at PC876e/V225/C22 and returns
+inside the handler atPC80c9/V225/C84; run738 reaches caller805d V227/C690.
+Run742 accepts atPC8761/V225/C36; run743 reaches caller805d V227/C846.
+The tail publishes head/body/travel-bird source-word pairs, then SEP/RTS;
+its 610 CPU clocks are currently atomic in misc.rs. Split those committed
+words and the remaining cost without repeating either animation countdown.
+
 - `510da835`: grayscale caller finishes its held NMI before authoring the next
   palette; retires at main wait. Exposed earlier native frontier 14076.
 - `2368fe51`: ground-item decoder return preserves the following Open NMI;
