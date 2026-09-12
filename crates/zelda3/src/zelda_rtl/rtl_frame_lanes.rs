@@ -5187,6 +5187,19 @@ impl ZeldaState {
         )>,
         oam_dma_source: Option<Vec<u8>>,
     ) -> bool {
+        // The supertile loader returns into the continuously measured
+        // quadrant chain. Other dungeon submodules retain their own caller
+        // schedules, including spiral callers which can reenter the dispatcher.
+        let native_quadrant_return = caller == SpriteMainCpuCaller::DungeonModule07
+            && self.game_state.frame.submodule == 2
+            && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live);
+        if native_quadrant_return {
+            // This handler interrupted the parked Sprite_Main. Original
+            // hosts 24931/24937 complete it before returning the module and
+            // common suffix; the next host owns the following Open NMI.
+            self.capture_display_snapshot();
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+        }
         assert!(matches!(
             caller,
             SpriteMainCpuCaller::DungeonModule07
@@ -5383,6 +5396,11 @@ impl ZeldaState {
             self.game_execution_scheduler
                 .finish_call_stack_at_main_wait_before_nmi();
             self.stage_resumed_sprite_main_return_obj_scanout();
+            if native_quadrant_return {
+                self.dungeon_quadrant_cpu_continuation_active = false;
+                self.prepare_dungeon_cpu_advance_after_returned_main_wait();
+                return true;
+            }
             // The generic scheduled-work tail below publishes the
             // following NMI after this resumed caller returns to the
             // wait loop. That is the same trailing boundary the ROM
@@ -5390,7 +5408,7 @@ impl ZeldaState {
             // begin a fresh main-loop iteration without inserting a
             // second synthetic leading NMI.
         }
-        false
+        native_quadrant_return
     }
 
     /// Scheduled-work arm of `run_frame_internal_after_original_timing_body` (mechanically extracted; the body is unchanged).

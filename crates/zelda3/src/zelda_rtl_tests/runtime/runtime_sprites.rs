@@ -2017,6 +2017,46 @@ fn sprite_conversion_cached_return_retires_before_the_next_quadrant_nmi() {
 }
 
 #[test]
+fn parked_dungeon_sprite_return_keeps_the_next_quadrant_behind_its_nmi() {
+    // Original host 24937 finishes the held Sprite_Main caller at state 4;
+    // host 24938 owns the Open NMI and the next quadrant's CPU slice.
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_animated_tile_data_source_address(0xa680);
+    state.set_indoor_flag(1);
+    state.set_main_module(7);
+    state.set_submodule(2);
+    state.set_subsubmodule(4);
+    state.set_frame_counter(0x4e);
+    state.latch_nmi_update();
+    state.active_dungeon_sprite_main_return = Some(DungeonSpriteMainReturn {
+        link_oam: None, bg2_x: 0, bg2_y: 0, bg1_x: 0, bg1_y: 0,
+    });
+    state.pending_main_loop_common_suffix =
+        Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch);
+    // Isolate caller retirement from the development-only ROM measurement.
+    let next = DungeonModuleCpuAdvance {
+        phase: ModuleCpuPhase::CompleteBeforeNmi, resumed_phase: None,
+        submodule_nmi_slices: 0, subsubmodule: 5, palette_countdown: 0,
+        sprite_main_boundary: None, cached_sprite_interruption: None,
+    };
+    state.dungeon_landing_cpu_advance_pending = Some(next);
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishSpriteMain {
+            boundary: SpriteMainCpuBoundary::AfterSlot(1),
+            caller: SpriteMainCpuCaller::DungeonModule07,
+        }, 1,
+    );
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert_eq!(state.game_state.frame.subsubmodule, 4);
+    assert_eq!(state.game_state.frame.frame_counter, 0x4e);
+    assert!(!state.game_state.display.nmi_update_is_latched());
+    assert_eq!(state.dungeon_landing_cpu_advance_pending, Some(next));
+    state.game_execution_scheduler.begin_host_frame();
+    assert!(state.game_execution_scheduler.main_return_requires_leading_nmi());
+}
+
+#[test]
 fn dungeon_sprite_preparation_return_leaves_uploads_for_the_following_nmi() {
     // Original host 23203 completes the held NMI and shared suffix at
     // counter $FB, substep 5. $12 clears but $17/$710 remain set until
