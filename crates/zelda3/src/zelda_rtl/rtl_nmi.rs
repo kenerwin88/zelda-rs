@@ -654,9 +654,18 @@ impl ZeldaState {
                     self.clear_nmi_update_latch();
                 }
                 self.prepare_dungeon_cpu_advance_after_returned_main_wait();
-                if typed_main_loop_return {
+                let native_quadrant_main_wait = self.game_state.frame.submodule == 2
+                    && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live);
+                if typed_main_loop_return || native_quadrant_main_wait {
                     // The wire proves this host ends at main wait; the next
                     // host's own leading NMI crosses the following boundary.
+                    // Native quadrant callers follow the same order: their
+                    // resumed LinkOam/HUD/preparation suffix must not consume
+                    // its queued uploads with an extra trailing interrupt.
+                    if native_quadrant_main_wait {
+                        self.game_execution_scheduler
+                            .finish_call_stack_at_main_wait_before_nmi();
+                    }
                     return;
                 }
                 // The resumed caller reaches the main wait before the next

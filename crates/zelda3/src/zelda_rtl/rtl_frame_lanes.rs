@@ -3710,10 +3710,14 @@ impl ZeldaState {
         authoritative_supertile_sprite_main_returned: bool,
         oam_dma_source: Option<Vec<u8>>,
     ) -> bool {
-        let native_straight_bg_return = work == DungeonSupertileTransitionWork::StraightInterroomBgCharacters34
+        let native_held_caller_return = matches!(work,
+            DungeonSupertileTransitionWork::StraightInterroomBgCharacters34
+                | DungeonSupertileTransitionWork::FilteredQuadrantTilemapBuild
+                | DungeonSupertileTransitionWork::QuadrantUploadCallerReturn
+        )
             && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live);
-        if native_straight_bg_return {
-            // The conversion returns after its final Held handler. Its caller
+        if native_held_caller_return {
+            // The interrupted transition returns after its Held handler. Its caller
             // leaves the BG upload and palette pending for the next Open NMI.
             self.capture_display_snapshot();
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
@@ -4539,10 +4543,10 @@ impl ZeldaState {
             }
         }
         finish_supertile_claims(self);
-        if native_straight_bg_return {
+        if native_held_caller_return {
             self.game_execution_scheduler.finish_call_stack_at_main_wait_before_nmi();
         }
-        native_straight_bg_return
+        native_held_caller_return
     }
 
     /// Scheduled-work arm of `run_frame_internal_after_original_timing_body` (mechanically extracted; the body is unchanged).

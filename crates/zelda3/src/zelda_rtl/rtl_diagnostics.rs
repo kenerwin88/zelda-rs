@@ -127,6 +127,9 @@ impl ZeldaState {
         let watched_addr = Self::parse_trace_env_u32("ZELDA3_REPLAY_RAM_WATCH_ADDR")
             .and_then(|addr| self.ram.get(addr as usize).map(|value| (addr, *value)));
         let frame = &self.game_state.frame;
+        eprintln!("ram-watch-work frame={} {label} work={:?} suffix={:?}",
+            self.frame_ctr_dbg, self.game_execution_scheduler.current_work(),
+            self.pending_main_loop_common_suffix);
         eprintln!(
             "ram-watch frame={} {label} fc=0x{:02x} main={} sub={} subsub={} watch={} d340={:02x} d341={:02x} d342={:02x} d343={:02x} d344={:02x} d345={:02x} d346={:02x} d347={:02x} deep=0x{:04x} normal=0x{:04x} inwater=0x{:02x} link=0x{:04x}/0x{:04x} state=0x{:02x}",
             self.frame_ctr_dbg,

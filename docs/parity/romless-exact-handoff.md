@@ -96,7 +96,7 @@ Work remains on `fix/romless-spiral-palette-return`; `main` remains the accepted
 baseline above. No push. Short receipt comparisons protect the shared path
 while native timing advances; they are not native acceptance evidence.
 
-Current native frontier: **31363, video-only**.. This batch has corrected:
+Current native frontier: **31367, video-only**. This batch has corrected:
 
 - `510da835`: grayscale caller finishes its held NMI before authoring the next
   palette; retires at main wait. Exposed earlier native frontier 14076.
@@ -161,12 +161,25 @@ Current native frontier: **31363, video-only**.. This batch has corrected:
   native29,540 passes: `target/animated-entry-native-prefix`; receipt:
   `target/animated-entry-receipt`; source: `target/native-29550-source`.
 
-- Straight-stair reset measurement recognizes the existing Disable tokens at
+- `163f1fa6`: straight-stair reset measurement recognizes the existing Disable tokens at
   $09:c252 and$c255. No new runtime capability: the source29550 confirms
   SpriteLimitInstanceCleared. The expanded prefix regression preserves seeded
   counters/garnish until resume; native29547–29552 WRAM matches apart from
   scratch. Native reaches31363; receipt31,400 passes. Evidence:
   `target/reset-disable-native`, `target/reset-disable-receipt`.
+
+- Quadrant caller batch: cached Sprite_Main, post-Sprite_Main, filtered build
+  and upload returns consume the held handler before completing their callers,
+  then leave queued uploads for the next Open NMI. A CPU interruption before
+  NMI_PrepareSprites retains and executes the whole pending common suffix.
+  Native31363 →31367; all14 quadrant regressions and31,400 receipt frames pass.
+  WRAM31357–31367 matches apart from scratch $1f00. Evidence:
+  `target/quadrant-batch-native`, `target/quadrant-batch-receipt` and
+  `/tmp/quadrant-batch-final-tests.log`. Source: `target/native-31363-source`.
+  Next31367 is animated-BG presentation during a post-Sprite_Main return:
+  composed VRAM, BG VRAM, CGRAM and OAM agree; raw animated tiles decode
+  exactly to the oracle. The renderer's animated source generation remains
+  suspect. Do not change the corrected CPU counters to hide this difference.
 
 The audio mismatch at 25054 came from missing drawing work before the text
 renderer. The original enters VWF at v=50 on host 25048; the old ledger left

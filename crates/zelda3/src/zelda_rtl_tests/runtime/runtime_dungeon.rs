@@ -1276,6 +1276,62 @@ fn straight_bg_conversion_return_leaves_uploads_for_the_next_open_nmi() {
 }
 
 #[test]
+fn quadrant_upload_return_leaves_uploads_for_the_next_open_nmi() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_animated_tile_data_source_address(0xa680);
+    state.set_indoor_flag(1);
+    state.set_main_module(7);
+    state.set_submodule(2);
+    state.set_subsubmodule(11);
+    state.set_frame_counter(0xa5);
+    state.set_pending_nmi_subroutine(9);
+    state.set_core_update_disable_flag(9);
+    state.latch_nmi_update();
+    state.pending_main_loop_common_suffix =
+        Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch);
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishDungeonSupertileTransition {
+            work: DungeonSupertileTransitionWork::QuadrantUploadCallerReturn,
+        }, 1,
+    );
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert_eq!(state.game_state.frame.subsubmodule, 12);
+    assert_eq!(state.game_state.frame.frame_counter, 0xa5);
+    assert!(!state.game_state.display.nmi_update_is_latched());
+    assert_eq!(state.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX], 9);
+    assert_eq!(state.ram[crate::game_state::constants::NMI_DISABLE_CORE_UPDATES], 9);
+    state.game_execution_scheduler.begin_host_frame();
+    assert!(state.game_execution_scheduler.main_return_requires_leading_nmi());
+}
+
+#[test]
+fn quadrant_preparation_interruption_retains_and_retires_the_whole_suffix() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.initialized = true;
+    state.set_animated_tile_data_source_address(0xa680);
+    state.set_indoor_flag(1);
+    state.set_main_module(7);
+    state.set_submodule(2);
+    state.set_subsubmodule(13);
+    state.set_frame_counter(3);
+    state.latch_nmi_update();
+    state.ram[crate::game_state::constants::BG_TILE_ANIMATION_COUNTDOWN] = 4;
+    state.sync_native_game_state_from_ram();
+    state.dungeon_state_12_caller_suffix_nmi_pending = true;
+    state.complete_module07_dungeon_after_submodule_caller();
+    assert_eq!(state.pending_main_loop_common_suffix,
+        Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch));
+    assert_eq!(state.ram[crate::game_state::constants::BG_TILE_ANIMATION_COUNTDOWN], 4);
+    state.run_frame_internal_after_original_timing(0, crate::RUN_MAIN);
+    assert!(state.pending_main_loop_common_suffix.is_none());
+    assert_eq!(state.ram[crate::game_state::constants::BG_TILE_ANIMATION_COUNTDOWN], 3);
+    assert_eq!(state.game_state.frame.frame_counter, 3);
+    assert!(!state.game_state.display.nmi_update_is_latched());
+}
+
+#[test]
 fn native_straight_reset_preserves_the_measured_prefix_until_resume() {
     for room in [0x51, 0x22] {
         for progress in [

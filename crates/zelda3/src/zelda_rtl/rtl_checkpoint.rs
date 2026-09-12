@@ -2818,6 +2818,11 @@ impl ZeldaState {
             // this boundary. The caller then returns and clears the latch; the
             // following host boundary starts the next dungeon state.
             debug_assert_eq!(resume.nmi_latch_clear_phase(), Some(NmiPhase::AfterNmi));
+            if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                && self.pending_main_loop_common_suffix.is_some()
+            {
+                self.complete_pending_main_loop_common_suffix_after_module_return();
+            }
             self.clear_nmi_update_latch();
             self.game_execution_scheduler
                 .schedule_pre_main_nmi_resume(PreMainNmiResume::DungeonSupertileQuadrantUploads);

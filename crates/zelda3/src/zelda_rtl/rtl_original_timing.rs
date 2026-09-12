@@ -12410,6 +12410,15 @@ impl ZeldaState {
                     live_slot_backup,
                     dungeon,
                 }) => {
+                    let native_quadrant_return = self.game_state.frame.submodule == 2
+                        && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live);
+                    if native_quadrant_return {
+                        // Cached slots are still inside Sprite_Main when the
+                        // held NMI interrupts. Finish that handler before the
+                        // resumed caller authors its palette/VRAM publication.
+                        self.capture_display_snapshot();
+                        self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    }
                     // The interrupting acceptance can refine which exact
                     // UncacheAndExecuteSprite statement the source suspended
                     // on; the typed receipt supersedes the estimate boundary
@@ -12440,6 +12449,13 @@ impl ZeldaState {
                         self.clear_nmi_update_latch();
                     }
                     self.stage_resumed_sprite_main_return_obj_scanout();
+                    if native_quadrant_return {
+                        self.dungeon_quadrant_cpu_continuation_active = false;
+                        self.game_execution_scheduler
+                            .finish_call_stack_at_main_wait_before_nmi();
+                        self.prepare_dungeon_cpu_advance_after_returned_main_wait();
+                        return;
+                    }
                 }
                 GameWorkStep::Complete(
                     GameWorkContinuation::FinishSpiralStaircasePaletteFilter { .. },

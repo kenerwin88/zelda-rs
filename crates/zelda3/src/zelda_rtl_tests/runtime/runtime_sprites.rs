@@ -2106,6 +2106,56 @@ fn dungeon_sprite_preparation_return_leaves_uploads_for_the_following_nmi() {
 }
 
 #[test]
+fn quadrant_link_oam_return_keeps_queued_uploads_until_the_next_open_nmi() {
+    for step in [5, 11, 12, 13] {
+      for cached in [false, true] {
+        let mut state = ZeldaState::new();
+        state.restore_live_rom_timing_after_checkpoint();
+        state.initialized = true;
+        state.set_animated_tile_data_source_address(0xa680);
+        state.set_indoor_flag(1);
+        state.set_main_module(7);
+        state.set_submodule(2);
+        state.set_subsubmodule(step);
+        state.set_frame_counter(0x5e);
+        state.latch_nmi_update();
+        state.active_dungeon_sprite_main_return = Some(DungeonSpriteMainReturn {
+            link_oam: None, bg2_x: 0, bg2_y: 0, bg1_x: 0, bg1_y: 0,
+        });
+        state.pending_main_loop_common_suffix =
+            Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch);
+        let next = DungeonModuleCpuAdvance {
+            phase: ModuleCpuPhase::CompleteBeforeNmi, resumed_phase: None,
+            submodule_nmi_slices: 0, subsubmodule: step + 1, palette_countdown: 0,
+            sprite_main_boundary: None, cached_sprite_interruption: None,
+        };
+        state.dungeon_landing_cpu_advance_pending = Some(next);
+        let work = if cached {
+            GameWorkContinuation::FinishDungeonCachedSpriteMain {
+                boundary: CachedSpriteCpuInterruption::Restoring { slot: 0, live_fields: 24 },
+                live_slot_backup: [0; 24],
+                dungeon: state.active_dungeon_sprite_main_return.take().unwrap(),
+            }
+        } else {
+            GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn
+        };
+        state.game_execution_scheduler.schedule_work(work, 1);
+        state.set_pending_nmi_subroutine(1);
+        state.set_core_update_disable_flag(1);
+        state.run_frame_internal_after_original_timing(0, crate::RUN_MAIN);
+        assert_eq!(state.game_state.frame.subsubmodule, step);
+        assert_eq!(state.game_state.frame.frame_counter, 0x5e);
+        assert!(!state.game_state.display.nmi_update_is_latched());
+        assert_eq!(state.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX], 1);
+        assert_eq!(state.ram[crate::game_state::constants::NMI_DISABLE_CORE_UPDATES], 1);
+        assert_eq!(state.dungeon_landing_cpu_advance_pending, Some(next));
+        state.game_execution_scheduler.begin_host_frame();
+        assert!(state.game_execution_scheduler.main_return_requires_leading_nmi());
+      }
+    }
+}
+
+#[test]
 fn scroll_return_precedes_a_suspended_extended_oam_suffix() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);

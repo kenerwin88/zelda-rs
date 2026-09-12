@@ -13981,6 +13981,13 @@ impl ZeldaState {
             return;
         }
         if std::mem::take(&mut self.dungeon_state_12_caller_suffix_nmi_pending) {
+            if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+                // The measured CPU stopped before preparation, so retain the
+                // whole common suffix for its return after the held handler.
+                self.pending_main_loop_common_suffix = Some(
+                    MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch,
+                );
+            }
             self.game_execution_scheduler.schedule_work(
                 GameWorkContinuation::FinishCpuInstructionNmi {
                     // The module body returned immediately before
