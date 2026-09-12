@@ -28,9 +28,27 @@ tests pass,3 ignored (24.50s):
 that the interrupt retains its scroll for one capture and leaves live
 registers and the following capture independent.
 
-The next source checkpoint remains `target/native-source-pair-52000`.
-Trace the earliest main-iteration or sword-charge progress difference before
-changing random-call timing. No full receipt gate was repeated.
+### Next: interrupted HUD decimal conversion
+
+Source `target/native-53745-source` resumed the genuine52,000 checkpoint,
+matched its enabled video lane through53,755, and saved a new paired source
+checkpoint at `target/native-source-pair-53500`. Decode:
+`/tmp/native-53745-source.jsonl` (raw run +52,000). Source comparison53,742
+returns inside NMI with counter133/latch1;53,743 finishes with counter133/
+latch0. The interrupted PC is `$0d:f105` in `Hud_IntToDecimal`, V225/C20.
+Native WRAM in `target/native-53745-diagnostic` already clears the latch at
+53,742, then advances to counter134 at53,743 and135 at53,744.
+
+The native CPU probe logs `host=53743 entry=None pc=0df10f` V225/C24,
+with no packing/source/pointer progress. Its current return type only
+represents sprite preparation, so a HUD interruption returns None. Check
+the probe host phase against comparison frames before interpreting that
+label. Extend the actual HUD/main continuation and preserve its partial
+work; do not delay or offset the later random call. The random panic at
+53,745 is downstream of the earlier missing held iteration.
+`/tmp/native-53745-diagnostic.log` completed in64.91s.
+
+No full receipt gate was repeated.
 
 ## Previous native frontier — 52,448 (video)
 
