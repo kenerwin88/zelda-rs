@@ -2512,6 +2512,18 @@ impl ZeldaState {
                 }
                 self.finish_pre_main_caller_continuation(continuation);
                 let animated_bg_operands = self.stage_spiral_stairs_second_grayscale_nmi();
+                let native_return =
+                    !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live);
+                if native_return {
+                    // The held NMI resumes this saved palette caller; it does
+                    // not publish the palette that the caller has yet to write.
+                    // Original host 23945 completes that handler before the
+                    // second walk and common suffix. The following Open NMI
+                    // is accepted at host return and completes on the next host.
+                    self.interrupt_nmi_with_animated_bg_operands(
+                        input, oam_dma_source, false, Some(animated_bg_operands),
+                    );
+                }
                 self.complete_spiral_stairs_second_grayscale_palette_filter();
                 // The live wire can publish the module tail's Sprite_Main
                 // return inside this host and then interrupt NMI_PrepareSprites
@@ -2619,6 +2631,11 @@ impl ZeldaState {
                 }));
                 self.capture_display_snapshot();
                 self.publish_completed_palette_filter_cgram_scanout();
+                if native_return {
+                    self.game_execution_scheduler
+                        .finish_call_stack_at_main_wait_before_nmi();
+                    return true;
+                }
                 self.interrupt_nmi_with_animated_bg_operands(
                     input,
                     oam_dma_source,

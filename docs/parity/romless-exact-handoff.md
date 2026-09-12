@@ -150,8 +150,10 @@ Engine host N corresponds to Snes9x run N−1.
 ## Batch fixes before full-route validation
 
 The user requested batching on 2026-09-11 because a full-route check takes
-about 25 minutes. Aim for 3–5 tractable, independently explained frontier
-fixes per batch, with one root cause per commit. Run the expensive acceptance
+about 25 minutes. The user strengthened this on 2026-09-11: keep batching
+source-backed fixes until native exact A/V reaches at least 100,000 frames
+before launching another full-route run. Use focused regressions and short
+receipt checks during development, with one root cause per commit. Run the expensive acceptance
 and promotion sequence once for the completed batch, rather than once per
 fix. End a batch sooner if an acceptance regression cannot be isolated
 confidently. An explained backward move of the native frontier is not itself
