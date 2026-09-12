@@ -31,13 +31,12 @@ fn staged_display_promotes_current_hdma_without_promoting_future_vram() {
     let animated = presented.host_boundary_animated_bg_scanout.as_ref().unwrap();
     assert_eq!(animated.destination_address, 0x3c00);
     assert_eq!(animated.vram, vec![0x5678; 0x200]);
-    let mut interrupted = presented.clone();
-    interrupted.oam_scanout_source = OamScanoutSource::RetainPreviousPresented;
+    assert_eq!(presented.oam_scanout_source, OamScanoutSource::RetainPreviousPresented);
     let signals = DisplayPublicationSignals {
         dungeon_exit_crosses_nmi_boundary: true,
         ..DisplayPublicationSignals::default()
     };
-    let plan = DisplayPublicationPlan::resolve(&interrupted, signals);
+    let plan = DisplayPublicationPlan::resolve(presented, signals);
     assert_eq!(plan.link_obj_scanout_generation, GraphicsDmaGeneration::HostBoundaryBeforeMain);
     assert_eq!(plan.link_obj_source_generation, GraphicsDmaGeneration::HostBoundaryBeforeMain);
     let SpotlightScanoutGeneration::ComposeLiveAfterNmi(scanout) =

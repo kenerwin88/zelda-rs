@@ -12935,6 +12935,15 @@ impl ZeldaState {
                 self.capture_display_snapshot_with_current_spotlight(publication_override);
             } else {
                 self.capture_display_snapshot_with_override(publication_override);
+                if matches!(work_slice, GameWorkStep::Complete(
+                    GameWorkContinuation::FinishDungeonExitSpotlightEntry { .. }))
+                    && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                {
+                    // Current HDMA rows can already be attached to the active
+                    // field, leaving no queued receipt. The entry's trailing
+                    // graphics DMA still belongs to the following scanout.
+                    self.retain_spotlight_entry_graphics_before_trailing_nmi();
+                }
             }
             if let GameWorkStep::Complete(
                 GameWorkContinuation::FinishOverworldSpotlightBuild { iteration, .. }

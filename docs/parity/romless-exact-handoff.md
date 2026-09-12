@@ -4,7 +4,44 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 41,244
+## Current native frontier — 47,130
+
+The closing entry at comparison 41,244 had correct CPU counters/radius,
+all HDMA window rows, OAM, and CGRAM, but 77 VRAM bytes in Link's OBJ page
+already matched the following source field. Native host 41,245's full VRAM
+matched source host 41,246; source hosts 41,244 and 41,245 retained the same
+Link page. Evidence: `target/native-41244-diagnostic[-presented]` and
+`target/native-41244-source[-presented]` (source video comparison passes
+through 41,270, audio disabled).
+
+The current-field graphics retention was conditional on a queued HDMA
+receipt. At this entry the measured rows were already attached to the
+active field, so generic capture bypassed that helper and published the
+trailing Link upload. `retain_spotlight_entry_graphics_before_trailing_nmi`
+now applies to both native entry-completion capture paths. HDMA routing
+stays independent; the receipt-driven Live branch is unchanged. The
+existing publication test now checks the capture's own OAM retention
+instead of manually replacing that policy before resolving the plan.
+
+An initial experiment changing only the existing helper had no effect and
+was reverted before the complete fix. Its diagnostic log
+`/tmp/native-entry-obj-owner-pipe.log` shows the bypassed path selecting
+`ComposeLiveAfterNmi`, Link `LiveAfterMain/LiveAfterMain`, despite retained
+OAM. Do not diagnose this as another CPU delay or table-row mismatch.
+
+Accepted binary SHA-256:
+`0fb57f18bea219f0ffc0b713cde2b2499c31c31634d9225d7df3e4eedb73ca7f`.
+Native cached A/V is exact through 47,129; first video mismatch 47,130,
+audio exact there (`target/native-entry-resident-native`, 60.88s).
+Engine validation: 1,778 passed, 3 ignored (24.22s),
+`/tmp/native-entry-resident-lib-tests.log`.
+No additional receipt replay was run for this native-only publication fix.
+The full 1,581,079-frame receipt proof remains the older runtime `d7d92a85`;
+do not attribute it to this binary. Continue batching toward 100,000 native.
+Next: capture source and native state/display at comparison 47,130 before
+changing timing or graphics publication.
+
+## Previous native frontier — 41,244
 
 Two independent timing errors are fixed in this batch:
 
