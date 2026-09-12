@@ -38,6 +38,17 @@ ensure resumption cannot rewrite already completed digits or erase pending
 ones. No full receipt gate was repeated. The100k native target is pending.
 The latest genuine paired source checkpoint is `target/native-source-pair-53500`.
 
+### Next: closing iris entry
+
+Source `target/native-53926-source[-presented]` resumes53,500 and matches
+its enabled video lane through53,940. Decode `/tmp/native-53926-source.jsonl`
+uses raw run +53,500. Module0F entry is visible at53,924; source NMI PCs
+are `$00:f4e8` at53,925 (counter57/latch1, sub0), `$07:e3cb` at53,926
+(counter57/latch1, sub1), then main wait at53,927 (counter57/latch0).
+Native diagnostic output is `target/native-53926-diagnostic[-presented]`,
+`/tmp/native-53926-diagnostic.log`; inspect process state before restarting
+if this session is still running. Presented host53,927 owns comparison53,926.
+
 ## Previous native frontier — 53,745 (random-call timing)
 
 Interrupted native overworld sprite preparation now retains the scroll
