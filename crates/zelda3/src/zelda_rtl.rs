@@ -2780,6 +2780,15 @@ fn dungeon_exit_spotlight_cpu_plan_at(
     let mut successor_entry = None;
 
     for _ in 0..5_000_000 {
+        if matches!(run.pc(), 0x00_f3e5 | 0x00_8942)
+            && crate::debug_env::var_os("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some()
+        {
+            eprintln!(
+                "[SPOTLIGHT-BLANK] host={} pc={:06x} raster={:?} first_nmi={} active_complete={}",
+                state.frame_ctr_dbg, run.pc(), budget.raster_position(),
+                iterations_before_nmi.is_some(), completed_active_window_words.is_some(),
+            );
+        }
         // ZeldaRunGameLoop calls NMI_PrepareSprites at $00:805a. Reaching
         // $00:805d proves the original subroutine returned; its complete DMA
         // operand/countdown side effects now belong to this C iteration.
@@ -2891,6 +2900,10 @@ fn dungeon_exit_spotlight_cpu_plan_at(
             if iterations_before_nmi.is_none() {
                 iterations_before_nmi = Some(iterations);
                 interrupted_pc = Some(run.pc());
+                if crate::debug_env::var_os("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some() {
+                    eprintln!("[SPOTLIGHT-FIRST-NMI] host={} pc={:06x} raster={:?}",
+                        state.frame_ctr_dbg, run.pc(), budget.raster_position());
+                }
                 interrupted_return_address = Some(run.stack_return_address());
                 returned_to_main_wait_before_first_nmi =
                     Some(matches!(run.pc(), 0x00_8034 | 0x00_8036));

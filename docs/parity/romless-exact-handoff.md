@@ -33,8 +33,48 @@ Build and native comparison validate this native-only probe change; the
 prior50,000 receipt and1,781-test evidence below belongs to the preceding
 binary. No repeated receipt/full gate was run for this measurement change.
 
-Next source capture: `target/native-49036-source[-presented]`, resumed
-from pre-frame48,481. Use its fresh evidence to classify the next boundary.
+### Next boundary: closing-goal scanout at49,036
+
+`target/native-49036-source[-presented]` and
+`target/native-49036-diagnostic[-presented]` isolate the final closing-wipe
+field. Actual CPU main/submodule, counter, and brightness agree as Module0F
+switches to Module8/sub0. Presented host49,037 has identical VRAM, OAM, and
+CGRAM, but source retains brightness15 and windowsel330333 until force blank
+at output row221. Native instead publishes brightness0, a whole-field blank,
+windowsel0, and cleared screen-window masks. This is a display-generation
+failure; changing only the blank row would still leave the wrong windows.
+
+The direct PPU trace `target/native-49036-source-blank`, decoded to
+`/tmp/native-49036-source-blank.jsonl`, establishes two INIDISP stores:
+IrisSpotlight_ConfigureTable's store ending at `$00:f3e5` occurs at V221/C1044;
+EnableForceBlank's later store ending at `$00:8942` occurs at V222/C426.
+Both select output row221, but the iris store owns the first blanking event.
+Raw run555 is comparison49,036 (paired pre-frame48,481). The source changes
+window mirrors later at V223, after blanking has begun.
+
+Use `ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE` for `[SPOTLIGHT-BLANK]` and
+`[SPOTLIGHT-FIRST-NMI]` diagnostics: these preserve the direct-store raster
+and unnormalized interruption PC. The ordinary `[SPOTLIGHT-PLAN]` PC0 is
+normalization of a non-table interruption, not the actual CPU address.
+The next fix must retain the visible field's measured window rows and
+register generation through the first direct blanking store. Do not add a
+constant row221 exception or reuse the map-fade caller's pending state.
+
+The native diagnostic `target/native-closing-goal-phase` confirms the first
+store at V221/C1254 before the first measured NMI; its output row agrees
+with source despite the210-cycle residual. The later `$00:8942` store is
+V222/C634 and would incorrectly choose row222 if used alone. The first
+interruption is `$0d:a1d8` at V225/C24, normalized to PC0 in the old log.
+The plan records `active_window_words` only after that first NMI and
+`following_window_words` after the second: both are already all blank.
+The terminal visible field precedes both arrays. Preserve its own HDMA
+history and first blanking event rather than substituting either array.
+
+The diagnostic-only build retains the same49,036 video frontier and exact
+audio (59.71s); `/tmp/native-closing-goal-phase.log`. Binary SHA-256:
+`f473261fc70a4c91600bbd14d371d25b9e4131fe432e7dc5e9c8302f8a9346de`.
+No gameplay behavior changed in this diagnostic increment, and no receipt
+or full-route verification was repeated for its merge.
 
 ## Previous native frontier — 48,541 (video)
 
