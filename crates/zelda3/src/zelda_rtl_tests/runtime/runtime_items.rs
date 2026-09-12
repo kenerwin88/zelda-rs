@@ -1300,6 +1300,32 @@ fn big_key_drop_publishes_entry_dma_then_holds_it_across_waiting_slices() {
 }
 
 #[test]
+fn big_key_entry_after_leading_nmi_attaches_scroll_to_the_current_field() {
+    // Original 20201 shows X=$a4; the following carried handler publishes
+    // X=$a2. Entry scroll must not leak into that following capture.
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.ppu.bg_layer[0].h_scroll = 0xa4;
+    state.capture_display_snapshot();
+    state.game_execution_scheduler.begin_host_frame();
+    state.game_execution_scheduler.mark_main_iteration_after_leading_nmi();
+    state.game_execution_scheduler.begin_main_loop_iteration();
+    state.active_dungeon_sprite_main_return = Some(DungeonSpriteMainReturn {
+        link_oam: None, bg2_x: 0xa2, bg2_y: 0x1010,
+        bg1_x: 0xa2, bg1_y: 0x1010,
+    });
+    assert!(state.begin_big_key_drop_graphics_work(2));
+    assert!(matches!(state.display_snapshot.as_ref().unwrap().bg_scroll_generation,
+        DisplayBgScrollGeneration::RetainCpuSliceEntry(_)));
+    assert_eq!(state.next_display_bg_scroll_generation, DisplayBgScrollGeneration::default());
+    state.ppu.bg_layer[0].h_scroll = 0xa2;
+    state.capture_display_snapshot();
+    assert_eq!(state.display_snapshot.as_ref().unwrap().bg_scroll_generation,
+        DisplayBgScrollGeneration::default());
+    assert_eq!(state.display_snapshot.as_ref().unwrap().ppu.bg_layer[0].h_scroll, 0xa2);
+}
+
+#[test]
 fn c_big_key_decompression_retains_leading_nmi_scroll_until_its_nmi_returns() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();

@@ -296,6 +296,8 @@ impl ZeldaState {
             return false;
         };
         let active_scanout_scroll = BgScrollRegisterScanout::capture(&self.ppu);
+        let display_already_captured = self.game_execution_scheduler
+            .current_main_iteration_follows_leading_nmi();
         self.game_execution_scheduler.schedule_work(
             GameWorkContinuation::FinishBigKeyDropGraphics {
                 sprite_slot: sprite_slot as u8,
@@ -309,8 +311,17 @@ impl ZeldaState {
         // WritePpuRegisters. Carry the A4 register generation into the
         // imminent snapshot; the A2 software copies and trailing register
         // receipt belong to the following field.
-        self.next_display_bg_scroll_generation =
-            DisplayBgScrollGeneration::RetainCpuSliceEntry(active_scanout_scroll);
+        let scroll_generation = DisplayBgScrollGeneration::RetainCpuSliceEntry(active_scanout_scroll);
+        if display_already_captured {
+            // A leading-NMI iteration already captured this host's display.
+            // Attach the entry selection to that field, not the next capture
+            // after the carried handler updates scroll (original 20201-20202).
+            self.display_snapshot.as_mut()
+                .expect("leading-NMI graphics entry requires its active display")
+                .bg_scroll_generation = scroll_generation;
+        } else {
+            self.next_display_bg_scroll_generation = scroll_generation;
+        }
         // The entry main slice has already crossed the OAM DMA that published
         // the host-boundary shadow, but it will not reach another sprite-prep
         // epilogue before the decompressor is interrupted. Publish that prior
