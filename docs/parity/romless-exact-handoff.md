@@ -42,6 +42,25 @@ Next frontier follows a dialogue caller: source held/rendering at
 main at 47,237, then rendering holds resume. Diagnose native/source
 state and displayed text before altering dialogue duration.
 
+Follow-up evidence narrows 47,237 to HUD publication, not text timing:
+`target/native-47237-diagnostic[-presented]` and
+`target/native-47237-source[-presented]`. Source video passes through
+47,260 (audio disabled). Both CPU counters/latches match through 47,240;
+rupee actual reaches zero on both at 47,233. Both HUD WRAM words at
+`$c754` are `$2490`. Source presented VRAM word `$606a` remains `$2491`
+through engine hosts 47,238-47,240, whereas native displays `$2490`.
+That single byte is the entire VRAM difference at those hosts; OAM and
+CGRAM match. At host 47,235 there are also 422 animated-page VRAM byte
+differences, but enabled video was exact there. Do not confuse them with
+the first visible failure.
+
+A genuine source paired checkpoint is now available at
+`target/native-dialogue-source-pair-47200` (pre-frame 47,200), saved by the
+successful source replay. Use it for nearby source diagnostics; it is not
+a native timing checkpoint. Next inspect the HUD/message DMA destination
+and persistent channel-0 transfer plus display composition: a zero in
+WRAM does not prove a completed hardware upload to the HUD destination.
+
 ## Previous native frontier — 47,130
 
 The closing entry at comparison 41,244 had correct CPU counters/radius,
