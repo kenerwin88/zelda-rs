@@ -1294,6 +1294,7 @@ fn module10_goal_return_publishes_the_rom_vblank_generation() {
         // IrisSpotlight_ResetTable. Later scanouts collected by the timing
         // plan must not overwrite the already-proven module-exit boundary.
         nmis_before_module_exit: Some(1),
+        first_window_words: [0x00ff; SPOTLIGHT_VISIBLE_SCANLINES],
         active_window_words: [0x00ff; SPOTLIGHT_VISIBLE_SCANLINES],
         following_window_words: [0x00ff; SPOTLIGHT_VISIBLE_SCANLINES],
         next_entry_earliest: None,

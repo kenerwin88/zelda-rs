@@ -2778,8 +2778,15 @@ fn dungeon_exit_spotlight_cpu_plan_at(
     let mut next_entry_after_second_nmi = None;
     let mut module_ended_after_second_nmi = false;
     let mut successor_entry = None;
+    let mut first_window_words = [None; SPOTLIGHT_VISIBLE_SCANLINES];
+    let mut terminal_blank_row = None;
+    let mut terminal_field = None;
 
     for _ in 0..5_000_000 {
+        if run.pc() == 0x00_f3e5 && iterations_before_nmi.is_none() {
+            let (v, h) = budget.raster_position().coordinates();
+            terminal_blank_row.get_or_insert(force_blank_output_row(v, h));
+        }
         if matches!(run.pc(), 0x00_f3e5 | 0x00_8942)
             && crate::debug_env::var_os("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some()
         {
@@ -2846,6 +2853,7 @@ fn dungeon_exit_spotlight_cpu_plan_at(
                     next_entry_latest: next_entry_after_second_nmi,
                     successor_entry_earliest: successor_entry,
                     successor_entry_latest: successor_entry,
+                    terminal_field,
                 });
             }
         }
@@ -2880,7 +2888,11 @@ fn dungeon_exit_spotlight_cpu_plan_at(
                     run.set_raster_position(scanline, 1_106);
                     let cycles = run.run_hdma_scanline_master_cycles();
                     let scanline = usize::from(scanline);
-                    if active_scanout && scanline < SPOTLIGHT_VISIBLE_SCANLINES {
+                    if iterations_before_nmi.is_none() && scanline < SPOTLIGHT_VISIBLE_SCANLINES {
+                        let (left, right) = run.window1_bounds();
+                        first_window_words[scanline] =
+                            Some(u16::from(left) | (u16::from(right) << 8));
+                    } else if active_scanout && scanline < SPOTLIGHT_VISIBLE_SCANLINES {
                         let (left, right) = run.window1_bounds();
                         active_window_words[scanline] =
                             Some(u16::from(left) | (u16::from(right) << 8));
@@ -2898,6 +2910,11 @@ fn dungeon_exit_spotlight_cpu_plan_at(
             budget.advance_started_general_dma(instruction, run.drain_started_dma_master_cycles());
         if advance.reached_boundary().is_some() {
             if iterations_before_nmi.is_none() {
+                terminal_field = terminal_blank_row.map(|force_blank_output_row|
+                    SpotlightTerminalCpuField {
+                        window_words: complete_spotlight_window_words(&run, &first_window_words),
+                        force_blank_output_row,
+                    });
                 iterations_before_nmi = Some(iterations);
                 interrupted_pc = Some(run.pc());
                 if crate::debug_env::var_os("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some() {
@@ -3054,6 +3071,8 @@ fn overworld_spotlight_cpu_plan_at(
     let mut iterations_before_nmi = None;
     let mut nmis_elapsed_after_interruption = 0u8;
     let mut nmis_before_module_exit = None;
+    let mut first_window_words = [None; SPOTLIGHT_VISIBLE_SCANLINES];
+    let mut completed_first_window_words = None;
     let mut active_window_words = [None; SPOTLIGHT_VISIBLE_SCANLINES];
     let mut completed_active_window_words = None;
     let mut following_window_words = [None; SPOTLIGHT_VISIBLE_SCANLINES];
@@ -3091,6 +3110,8 @@ fn overworld_spotlight_cpu_plan_at(
                     iterations_before_nmi: iterations_before_nmi
                         .expect("completed opening plan must retain its loop count"),
                     nmis_before_module_exit,
+                    first_window_words: completed_first_window_words
+                        .expect("opening plan must retain the field before its first NMI"),
                     active_window_words,
                     following_window_words,
                     next_entry_earliest: next_entry,
@@ -3119,7 +3140,11 @@ fn overworld_spotlight_cpu_plan_at(
                     run.set_raster_position(scanline, 1_106);
                     let cycles = run.run_hdma_scanline_master_cycles();
                     let scanline = usize::from(scanline);
-                    if active_scanout && scanline < SPOTLIGHT_VISIBLE_SCANLINES {
+                    if iterations_before_nmi.is_none() && scanline < SPOTLIGHT_VISIBLE_SCANLINES {
+                        let (left, right) = run.window1_bounds();
+                        first_window_words[scanline] =
+                            Some(u16::from(left) | (u16::from(right) << 8));
+                    } else if active_scanout && scanline < SPOTLIGHT_VISIBLE_SCANLINES {
                         let (left, right) = run.window1_bounds();
                         active_window_words[scanline] =
                             Some(u16::from(left) | (u16::from(right) << 8));
@@ -3140,6 +3165,8 @@ fn overworld_spotlight_cpu_plan_at(
                 iterations_before_nmi = Some(iterations);
                 interrupted_pc = Some(run.pc());
                 interrupted_return_address = Some(run.stack_return_address());
+                completed_first_window_words =
+                    Some(complete_spotlight_window_words(&run, &first_window_words));
             } else if completed_active_window_words.is_none() {
                 completed_active_window_words =
                     Some(complete_spotlight_window_words(&run, &active_window_words));
@@ -10070,6 +10097,10 @@ pub struct ZeldaState {
     nmi_active_display_blanking_candidate: NmiActiveDisplayBlanking,
     #[serde(skip)]
     active_display_force_blank_event: Option<u8>,
+    /// Current native field's iris history before the first measured NMI.
+    /// Reset at each host entry; never used by receipt-owned playback.
+    #[serde(skip)]
+    active_native_spotlight_field_scanout: Option<NativeSpotlightFieldScanout>,
     /// Measured raster position of the next FileSelect_EraseTriforce
     /// EnableForceBlank request when its preceding C caller crossed into the
     /// active field. This is CPU-workload provenance, not display state, so it
@@ -12421,6 +12452,7 @@ impl ZeldaState {
             legacy_nmi_forced_blank_from_scanline_pending: None,
             nmi_active_display_blanking_candidate: NmiActiveDisplayBlanking::default(),
             active_display_force_blank_event: None,
+            active_native_spotlight_field_scanout: None,
             pending_file_select_force_blank_output_scanline: None,
             pending_map_force_blank_output_scanline: None,
             native_dialogue_fresh_cpu_entry: None,
@@ -12554,6 +12586,7 @@ impl ZeldaState {
         self.game_execution_scheduler.reset();
         self.dungeon_submodule_cpu_schedule = None;
         self.pending_map_force_blank_output_scanline = None;
+        self.active_native_spotlight_field_scanout = None;
         self.native_dialogue_fresh_cpu_entry = None;
         self.pending_dungeon_map_room_drawing_nmi_slices = None;
         self.dungeon_post_sprite_main_return_pending = false;

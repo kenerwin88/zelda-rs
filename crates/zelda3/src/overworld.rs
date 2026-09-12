@@ -3262,6 +3262,17 @@ impl ZeldaState {
             None
         };
         let iteration = SpotlightIteration::opening_from_rom_cpu_plan(cpu_plan);
+        if self.game_state.frame.submodule != 0 {
+            if let Some(plan) = cpu_plan {
+                self.active_native_spotlight_field_scanout = Some(
+                    crate::zelda_rtl::NativeSpotlightFieldScanout {
+                        windows: crate::zelda_rtl::LiveSpotlightScanout::capture(self)
+                            .with_authoritative_rom_hdma_words(&plan.first_window_words),
+                        blanking: None,
+                    },
+                );
+            }
+        }
         self.sprite_main();
         if let Some(
             interruption
@@ -3492,6 +3503,16 @@ impl ZeldaState {
             // would make native gameplay depend on a guessed raster entry.
             None
         };
+        if let Some(terminal) = cpu_plan.and_then(|plan| plan.terminal_field) {
+            self.active_native_spotlight_field_scanout = Some(
+                crate::zelda_rtl::NativeSpotlightFieldScanout {
+                    windows: crate::zelda_rtl::LiveSpotlightScanout::capture(self)
+                        .with_authoritative_rom_hdma_words(&terminal.window_words),
+                    blanking: Some((self.game_state.display.screen_brightness & 0x0f,
+                        terminal.force_blank_output_row)),
+                },
+            );
+        }
         let vertical_center = spotlight_vertical_center(
             self.game_state.player.follower_link.y(),
             self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),

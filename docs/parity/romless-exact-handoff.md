@@ -4,7 +4,54 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 49,036 (video)
+## Current native frontier — 50,755 (video)
+
+Native spotlight plans now retain the HDMA rows consumed before their first
+measured NMI. A field-local `NativeSpotlightFieldScanout` keeps those rows
+with their window controls, independent of the later CPU table/register
+generation. It resets at every host entry and is never populated by the
+Live receipt owner. Rendering composes it into the outgoing surface and
+restores the live state afterward.
+
+Two source-backed fixes share this mechanism:
+
+- Closing goals retain the visible prefix and brightness through the first
+  direct INIDISP store at `$00:f3e5`. Its measured output row owns blanking;
+  the later EnableForceBlank call and cleared window mirrors cannot erase
+  already scanned rows. This fixes49,036 without a fixed row exception.
+- Recurring Module10 opening calls retain the first field's actual HDMA
+  consumption, including races with the working-to-hardware table copy.
+  At49,129 source's final three rows use the newly copied table while native
+  previously retained the old table for the whole field. Those rows now
+  match exactly. Initial opening entries retain their existing publication
+  path; they can begin mid-field after a loader, outside a full row history.
+
+Native cached A/V is exact through50,754, with a video-only mismatch at50,755:
+`target/native-iris-first-field`, `/tmp/native-iris-first-field.log` (72.72s
+while library tests compiled). Binary SHA-256:
+`b4ddb4e97dfa9bf3292a0e526ddb2a3473807e79720ce30ea2cc34644bb3bb5d`.
+All1,781 engine tests pass (3 ignored,24.77s):
+`/tmp/native-iris-first-field-lib-tests.log`.
+The intermediate closing-only binary passed49,128, then exposed49,129;
+`target/native-terminal-field` (70.80s) and its1,781 passing library tests
+in `/tmp/native-terminal-field-lib-tests.log` (24.18s).
+
+Opening evidence: `target/native-49129-source[-presented]`,
+`target/native-49129-diagnostic[-presented]`, and
+`target/native-iris-first-field-presented/49130-*`. VRAM, OAM, and CGRAM
+already agreed; the new candidate removes all three window-row differences.
+Direct source PC trace: `target/native-49129-source-entry`, decoded to
+`/tmp/native-49129-source-pcs.jsonl`. Source49,129 enters `$00:8051` at
+V248/C1140 and copies224 words from V192/C200 through V221/C486.
+
+Next boundary: `target/native-50755-source[-presented]`, resumed from paired
+pre-frame48,481; decode `/tmp/native-50755-source.jsonl`. Source is finishing
+a Module7/sub0f opening goal, reaching radius126 at50,755 and returning to
+Module7/sub0 at50,756. Classify its display domains before changing timing.
+No full or repeated receipt gate has been run for this native-only batch;
+the100k native target remains pending.
+
+## Previous native frontier — 49,036 (video)
 
 The pre-dungeon CPU measurement now stops at `$02:8350`, after both
 Sprite_ResetAll and Dungeon_ResetSprites. It previously stopped at

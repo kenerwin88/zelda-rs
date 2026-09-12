@@ -40,6 +40,7 @@ pub(crate) struct OverworldSpotlightCpuPlan {
     pub(crate) interrupted_return_address: u32,
     pub(crate) iterations_before_nmi: usize,
     pub(crate) nmis_before_module_exit: Option<u8>,
+    pub(crate) first_window_words: [u16; SPOTLIGHT_VISIBLE_SCANLINES],
     pub(crate) active_window_words: [u16; SPOTLIGHT_VISIBLE_SCANLINES],
     pub(crate) following_window_words: [u16; SPOTLIGHT_VISIBLE_SCANLINES],
     pub(crate) next_entry_earliest: Option<CpuRasterPosition>,
@@ -56,12 +57,14 @@ impl OverworldSpotlightCpuPlan {
         Option<u8>,
         [u16; SPOTLIGHT_VISIBLE_SCANLINES],
         [u16; SPOTLIGHT_VISIBLE_SCANLINES],
+        [u16; SPOTLIGHT_VISIBLE_SCANLINES],
     ) {
         (
             self.interrupted_pc,
             self.interrupted_return_address,
             self.iterations_before_nmi,
             self.nmis_before_module_exit,
+            self.first_window_words,
             self.active_window_words,
             self.following_window_words,
         )
@@ -88,6 +91,22 @@ pub(crate) struct DungeonExitSpotlightCpuPlan {
     pub(crate) next_entry_latest: Option<CpuRasterPosition>,
     pub(crate) successor_entry_earliest: Option<CpuRasterPosition>,
     pub(crate) successor_entry_latest: Option<CpuRasterPosition>,
+    pub(crate) terminal_field: Option<SpotlightTerminalCpuField>,
+}
+
+/// The visible field before the goal's first NMI, including the first
+/// direct INIDISP store. Later all-blank fields cannot reconstruct it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SpotlightTerminalCpuField {
+    pub(crate) window_words: [u16; SPOTLIGHT_VISIBLE_SCANLINES],
+    pub(crate) force_blank_output_row: u8,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct NativeSpotlightFieldScanout {
+    pub(crate) windows: LiveSpotlightScanout,
+    /// Brightness before the first direct INIDISP store, and its output row.
+    pub(crate) blanking: Option<(u8, u8)>,
 }
 
 impl DungeonExitSpotlightCpuPlan {
@@ -102,6 +121,7 @@ impl DungeonExitSpotlightCpuPlan {
         bool,
         [u16; SPOTLIGHT_VISIBLE_SCANLINES],
         [u16; SPOTLIGHT_VISIBLE_SCANLINES],
+        Option<SpotlightTerminalCpuField>,
     ) {
         (
             self.interrupted_pc,
@@ -112,6 +132,7 @@ impl DungeonExitSpotlightCpuPlan {
             self.main_loop_sprite_preparation_completed_before_second_nmi,
             self.active_window_words,
             self.following_window_words,
+            self.terminal_field,
         )
     }
 

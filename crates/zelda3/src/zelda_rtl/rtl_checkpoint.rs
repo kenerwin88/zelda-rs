@@ -1816,6 +1816,21 @@ impl ZeldaState {
             captured_screen_brightness,
             &publication_plan,
         );
+        if let Some(field) = self.active_native_spotlight_field_scanout.as_ref() {
+            // Main can finish a table copy or disable the iris before capture.
+            // Retain the controls and individual rows consumed during this
+            // field, independently of those later CPU-side publications.
+            field.windows.compose_into(&mut self.ram, &mut self.ppu, &mut self.dma);
+            if let Some((brightness, output_row)) = field.blanking {
+                self.ppu.brightness = brightness;
+                self.ppu.scanout_brightness_override = None;
+                self.ppu.forced_blank = false;
+                self.ppu.forced_blank_scanlines = 0;
+                self.ppu.forced_blank_from_scanline = Some(output_row);
+                self.ppu.retain_active_display_history = false;
+                self.ppu.refresh_brightness_cache();
+            }
+        }
         if let Some(inidisp) = display.presented_inidisp_override {
             // The receipt describes the completed scanout's semantic raster,
             // so it replaces the native approximation for this one outgoing

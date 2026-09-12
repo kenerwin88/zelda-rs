@@ -8706,6 +8706,7 @@ impl ZeldaState {
         }
         self.link_obj_dma_completed_this_frame = false;
         self.active_display_force_blank_event = None;
+        self.active_native_spotlight_field_scanout = None;
         self.last_sprite_main_timing_workload = None;
         self.assert_native_frame_state_matches_ram();
         self.assert_native_world_location_state_matches_ram();
