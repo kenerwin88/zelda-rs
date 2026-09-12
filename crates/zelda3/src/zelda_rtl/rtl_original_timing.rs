@@ -8912,6 +8912,27 @@ impl ZeldaState {
                 (None, None)
             }
         };
+        if self.native_overworld_song_upload == Some(NativeOverworldSongUpload::AwaitReturn) {
+            assert!(!matches!(self.original_timing_owner, OriginalTimingOwnerState::Live));
+            self.capture_display_snapshot_with_override(Some(DisplaySnapshotPublication::RetainPublished));
+            let returned = self.native_overworld_song_upload_return();
+            if let Some(position) = returned {
+                // Restoring $4200 while the hardware vblank flag remains set
+                // immediately accepts a Held NMI. An active-display return
+                // instead reaches the common suffix before the next NMI.
+                if position.coordinates().0 >= 225 {
+                    self.queue_native_song_upload_return_nmi(position);
+                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                }
+                if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+                    eprintln!("song_upload return host={} position={position:?}", self.frame_ctr_dbg);
+                }
+                self.native_overworld_song_upload = None;
+                self.complete_pending_main_loop_common_suffix_after_module_return();
+                self.game_execution_scheduler.finish_call_stack_at_main_wait_before_nmi();
+            }
+            return;
+        }
         let initialized_audio_bank_this_frame =
             !self.game_state.display.has_animated_tile_data_source();
         // Ordinary live NMI samples the preceding audio commands before main;
@@ -11637,6 +11658,12 @@ impl ZeldaState {
                         overworld_screen,
                         sprite_presence_published,
                     );
+                    if self.native_overworld_song_upload == Some(NativeOverworldSongUpload::AwaitReturn) {
+                        assert!(self.pending_main_loop_common_suffix.is_none());
+                        self.pending_main_loop_common_suffix =
+                            Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch);
+                        return;
+                    }
                     if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
                         && authoritative_scheduled_caller_return_timeline.is_none()
                     {
@@ -11731,18 +11758,32 @@ impl ZeldaState {
             // the saved suffix, then cross the following field boundary before
             // returning this host interval.
             if authoritative_scheduled_caller_accepts_nmi_at_return.is_none() {
+                // The overworld packing interruption follows an Open NMI
+                // whose registers and DMA already own this next field. Its
+                // Held return must capture that field, not retain the display
+                // from before the Open handler ran.
+                let publication = if matches!(continuation,
+                    GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn {
+                        caller: NmiPrepareSpritesCpuCaller::OverworldModule09,
+                    }) && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+                    DisplaySnapshotPublication::PublishCaptured
+                } else {
+                    DisplaySnapshotPublication::RetainPublished
+                };
                 self.capture_display_snapshot_with_publication(
-                    DisplaySnapshotPublication::RetainPublished,
+                    publication,
                 );
                 self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             }
-            if self.game_state.frame.submodule == 2
-                && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
-                && matches!(continuation,
+            if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                && ((self.game_state.frame.submodule == 2 && matches!(continuation,
                     GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn
                         | GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn {
                             caller: NmiPrepareSpritesCpuCaller::DungeonModule07,
-                        })
+                        })) || matches!(continuation,
+                    GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn {
+                        caller: NmiPrepareSpritesCpuCaller::OverworldModule09,
+                    }))
             {
                 self.retain_completed_nmi_scroll_for_current_scanout();
             }
@@ -12875,7 +12916,18 @@ impl ZeldaState {
                     }
                 }
             }
-            self.capture_display_snapshot_with_override(publication_override);
+            if matches!(work_slice, GameWorkStep::Complete(
+                GameWorkContinuation::FinishDungeonExitSpotlightEntry { .. }))
+                && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                && self.next_display_spotlight_scanout.as_ref()
+                    .is_some_and(|scanout| scanout.authoritative_rom_hdma_receipt)
+            {
+                // The interrupted entry's first HDMA field is active now;
+                // its OAM/VRAM still follow the entry's staged publication.
+                self.capture_display_snapshot_with_current_spotlight(publication_override);
+            } else {
+                self.capture_display_snapshot_with_override(publication_override);
+            }
             if let GameWorkStep::Complete(
                 GameWorkContinuation::FinishOverworldSpotlightBuild { iteration, .. }
                 | GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration }

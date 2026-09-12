@@ -525,6 +525,20 @@ impl ZeldaState {
         }
     }
 
+    /// The caller has established that the queued spotlight rows describe
+    /// this field, independently of the staged OAM/VRAM publication.
+    pub(super) fn capture_display_snapshot_with_current_spotlight(
+        &mut self, publication: Option<DisplaySnapshotPublication>,
+    ) {
+        let scanout = self.next_display_spotlight_scanout.take()
+            .expect("current spotlight capture requires its measured rows");
+        assert!(scanout.authoritative_rom_hdma_receipt);
+        self.capture_display_snapshot_with_override(publication);
+        let display = self.display_snapshot.as_mut().expect("captured current display");
+        display.spotlight_scanout_generation = SpotlightScanoutGeneration::ComposeLiveAfterNmi(scanout);
+        display.hdma_table_generation = DisplayHdmaTableGeneration::Captured;
+    }
+
     pub(super) fn capture_display_snapshot_with_publication(
         &mut self,
         publication: DisplaySnapshotPublication,

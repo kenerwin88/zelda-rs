@@ -734,7 +734,8 @@ impl ZeldaState {
                 // caller. Keep the resident host-boundary OBJ generation for
                 // the scanout being retired; the synthetic trailing NMI below
                 // owns the following field.
-                let native_dungeon_main_wait = caller == NmiPrepareSpritesCpuCaller::DungeonModule07
+                let native_dungeon_main_wait = matches!(caller,
+                    NmiPrepareSpritesCpuCaller::DungeonModule07 | NmiPrepareSpritesCpuCaller::OverworldModule09)
                     && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live);
                 if !native_dungeon_main_wait {
                     self.stage_resumed_sprite_main_return_obj_scanout();
@@ -760,9 +761,11 @@ impl ZeldaState {
                         // This retained cache belongs to the held return's
                         // already captured field. Carrying it into the next
                         // capture would undo that field's Open-NMI Link DMA.
-                        self.display_snapshot.as_mut()
-                            .expect("native preparation return requires its captured display")
-                            .explicit_obj_cache_vram = Some(interrupted_obj_cache_vram);
+                        if caller == NmiPrepareSpritesCpuCaller::DungeonModule07 {
+                            self.display_snapshot.as_mut()
+                                .expect("native preparation return requires its captured display")
+                                .explicit_obj_cache_vram = Some(interrupted_obj_cache_vram);
+                        }
                         self.game_execution_scheduler
                             .finish_call_stack_at_main_wait_before_nmi();
                     } else {

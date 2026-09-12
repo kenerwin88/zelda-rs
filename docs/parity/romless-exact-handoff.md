@@ -4,6 +4,35 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
+## Latest local merge — 2026-09-12
+
+The user explicitly requested merging the accumulated native timing batch
+into local main without repeating verification. This overrides the older
+branch-only/full-gate-before-merge workflow below for this merge.
+
+The batch includes SPC upload/caller-return timing, byte-level extended OAM
+and final pointer-store continuations, measured map graphics NMI counts,
+and spotlight entry/current-field HDMA publication. Existing checks on binary
+`d96b3c27e3e42d2fb0aad1dabe9927d3c6d5d146d1238831b8efd02e179884df`:
+
+- Engine library: 1,774 passed, 3 ignored (`/tmp/native-entry-hdma-lib-tests.log`).
+- Receipt-driven cached A/V: all 40,000 frames exact
+  (`target/native-entry-hdma-receipt`, 47.62 seconds).
+- Native cached A/V: exact through frame 39,629; video first differs at
+  39,630, with audio still exact (`target/native-entry-hdma-native`).
+
+The last full 1,581,079-frame receipt A/V proof is for runtime `d7d92a85`
+(`target/native-batch-full-d7d92a85`); it has not been repeated for this batch.
+Do not attribute that full-route proof to the newly merged runtime.
+The development binary remains in `target/song-upload-build/parity/zelda3`;
+`target/parity/zelda3` remains the older fully checked binary.
+
+Next: compare the current composed spotlight field at engine host 39,631
+with `target/native-spotlight-source-presented`. The scoped HDMA publication
+restored the earlier 11,443 boundary and changed the 39,630 image, but the
+remaining cause is unresolved. Source entry is V255/C594 versus measured
+V255/C600; do not introduce an unexplained six-clock adjustment.
+
 ## What the program is
 
 The engine reproduces the game exactly, but only while it is driven by

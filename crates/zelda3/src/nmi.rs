@@ -399,7 +399,7 @@ impl ZeldaState {
         // DMA, and raster generation as the real handler. Capture centrally
         // so every hardware-NMI entry path has identical provenance.
         self.debug_obj_pipe("nmi_entry", &self.ppu.vram[0x4000..0x4400]);
-        self.capture_cpu_schedules_before_nmi();
+        self.capture_cpu_schedules_before_nmi(records_trailing_nmi_receipts, input);
         self.stash_preemptive_poly_thread_nmi_swap();
         let trace_nmi = crate::debug_env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some()
             && debug_hardware_frame_matches(self.frame_ctr_dbg);

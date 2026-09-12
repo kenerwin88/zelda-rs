@@ -1,6 +1,29 @@
 use super::*;
 
 #[test]
+fn staged_display_promotes_current_hdma_without_promoting_future_vram() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(15);
+    state.set_submodule(1);
+    state.ppu.vram[0] = 0x1234;
+    state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::AdvanceStaged);
+    state.ppu.vram[0] = 0xabcd;
+    state.next_display_spotlight_scanout = Some(LiveSpotlightScanout::capture(&state)
+        .with_authoritative_rom_hdma_words(&[0x3412; SPOTLIGHT_VISIBLE_SCANLINES]));
+    state.capture_display_snapshot_with_current_spotlight(Some(DisplaySnapshotPublication::AdvanceStaged));
+    let presented = state.display_snapshot.as_ref().unwrap();
+    assert_eq!(presented.ppu.vram[0], 0x1234);
+    let SpotlightScanoutGeneration::ComposeLiveAfterNmi(scanout) =
+        &presented.spotlight_scanout_generation else { panic!("current HDMA rows were deferred"); };
+    assert!(scanout.authoritative_rom_hdma_receipt);
+    assert_eq!(&scanout.hdma_tables[0][..2], &[0x12, 0x34]);
+    let deferred = state.deferred_display_snapshot.as_ref().unwrap();
+    assert_eq!(deferred.ppu.vram[0], 0xabcd);
+    assert!(matches!(deferred.spotlight_scanout_generation,
+        SpotlightScanoutGeneration::CapturedBeforeNmi));
+}
+
+#[test]
 fn interrupted_palette_filter_continuation_preserves_its_cpu_caller() {
     let spiral = InterruptedPaletteFilterCaller::from_dungeon_submodule(0x0e);
     let straight = InterruptedPaletteFilterCaller::from_dungeon_submodule(0x12);

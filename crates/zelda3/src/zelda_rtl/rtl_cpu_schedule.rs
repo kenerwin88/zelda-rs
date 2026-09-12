@@ -25,8 +25,48 @@ impl ZeldaState {
             })
     }
 
-    pub(super) fn capture_cpu_schedules_before_nmi(&mut self) {
+    pub(super) fn capture_cpu_schedules_before_nmi(&mut self, nmi_is_trailing: bool, input: u16) {
         let frame = self.game_state.frame;
+        if self.rom_startup_timing()
+            && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && frame.main_module == 0x0f && frame.submodule == 0
+            && !self.game_state.display.nmi_update_is_latched()
+            && self.game_execution_scheduler.is_idle()
+        {
+            let entry = module_cpu_entry_after_leading_nmi(self, input,
+                DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT.entry_pc);
+            self.dungeon_exit_spotlight_cpu_entry_envelope = Some((entry, entry));
+        }
+        if self.rom_startup_timing()
+            && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && frame.main_module == 9 && matches!(frame.submodule, 3 | 17)
+            && !self.game_state.display.nmi_update_is_latched()
+            && self.game_execution_scheduler.is_idle()
+            && self.native_overworld_map_graphics_nmi_slices.is_none()
+        {
+            self.native_overworld_map_graphics_nmi_slices =
+                Some(overworld_map_graphics_cpu_nmi_slices(self, input));
+        }
+        if self.rom_startup_timing()
+            && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && frame.main_module == 9 && frame.submodule == 0
+            && !self.game_state.display.nmi_update_is_latched()
+            && self.game_execution_scheduler.is_idle()
+            && self.native_overworld_packing_progress.is_none()
+        {
+            self.native_overworld_packing_progress = overworld_main_loop_packing_interruption(self, input);
+        }
+        if self.rom_startup_timing()
+            && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && frame.main_module == 8 && frame.submodule == 0
+            && self.resident_song_bank_is_dungeon()
+            && !self.game_state.display.nmi_update_is_latched()
+            && self.game_execution_scheduler.is_idle()
+            && self.native_overworld_song_upload.is_none()
+        {
+            self.native_overworld_song_upload =
+                Some(pre_overworld_song_upload_command(self, nmi_is_trailing));
+        }
         if self.rom_startup_timing()
             && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
             && frame.main_module == 7

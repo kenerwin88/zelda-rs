@@ -506,6 +506,11 @@ impl RomCpuTimingRun {
         timing
     }
 
+    /// Seed the hardware auto-read word from the host's serial button bits.
+    pub(crate) fn set_joypad_input(&mut self, input: u16) {
+        self.shadow.port_auto_read[0] = input.reverse_bits();
+    }
+
     pub(crate) fn enable_cpu_write_trace(&mut self) {
         self.shadow.debug_cpu_write_trace = Some(Vec::new());
     }

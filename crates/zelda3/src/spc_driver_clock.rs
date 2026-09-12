@@ -5,6 +5,9 @@
 //! deliberately skips sample synthesis; [`crate::modern_audio::ModernAudioEngine`]
 //! remains the sole renderer in production.
 
+#[cfg(test)]
+mod upload_return_tests;
+
 use crate::game_output::{DspWriteEvent, EngineAudioCommandBatch};
 use snes::{apu::ApuState, snes9x_wram_refresh_cycle, CpuFieldTiming};
 
@@ -33,6 +36,11 @@ const SMP_CPU_LOOKAHEAD_CYCLES: u64 = 19;
 // routine, expressed in SNES master clocks. These are protocol timings, not
 // route coordinates: every runtime song-bank upload executes these paths.
 const SONG_BANK_WRITE_TO_FIRST_READY_POLL_MASTER_CLOCKS: u64 = 386;
+// Between $02:855d STA's port bus access and CMP's first port read:
+// remaining STA access6, JSL62, $8913 caller180, $8888-$8890 setup92,
+// then CMP's opcode/address24. Both endpoints use bus-start timestamps.
+// The unqualified receipt-era command timestamp retains its legacy estimate.
+const TIMED_OVERWORLD_COMMAND_TO_FIRST_READY_READ_MASTER_CLOCKS: u64 = 364;
 const SONG_BANK_READY_LOW_TO_HIGH_MASTER_CLOCKS: u64 = 6;
 const SONG_BANK_READY_HIGH_TO_NEXT_LOW_MASTER_CLOCKS: u64 = 52;
 const SONG_BANK_ACK_POLL_MASTER_CLOCKS: u64 = 52;
@@ -76,6 +84,30 @@ struct HostPortTransport {
 }
 
 impl HostPortTransport {
+    fn nmi_latch_writes(&mut self, latches: [u8; 4], last: [u8; 2], acknowledgements: [u8; 4]) -> HostPortWrites {
+        // Original Interrupt_NMI $80df-$811b: command source bytes and
+        // acknowledgement bytes have distinct owners. In particular $12d
+        // nonzero always republishes APUI01, even if its value repeats.
+        let music = if latches[0] != 0 {
+            (latches[0] != last[0]).then_some(latches[0])
+        } else {
+            (acknowledgements[0] == last[0]).then_some(0)
+        };
+        let ambient = if latches[1] != 0 {
+            Some(latches[1])
+        } else {
+            (acknowledgements[1] == last[1]).then_some(0)
+        };
+        if let Some(value) = music.filter(|value| *value != 0) {
+            self.requested_music = value;
+        }
+        if let Some(value) = ambient {
+            self.ambient_input = value;
+            if value != 0 { self.requested_ambient = value; }
+        }
+        HostPortWrites { writes: [music, ambient, Some(latches[2]), Some(latches[3])] }
+    }
+
     fn frame_writes(
         &mut self,
         commands: EngineAudioCommandBatch,
@@ -141,6 +173,10 @@ struct SongBankHostTransfer {
     phase: SongBankHostTransferPhase,
     command_pending: bool,
     next_host_access_master_clock: Option<u64>,
+    #[serde(skip)]
+    completed_port_clear_master_clock: Option<u64>,
+    #[serde(skip)]
+    timed_command: bool,
 }
 
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
@@ -199,6 +235,8 @@ impl SongBankHostTransfer {
             phase: SongBankHostTransferPhase::AwaitReceiverReadyLow,
             command_pending: true,
             next_host_access_master_clock: None,
+            completed_port_clear_master_clock: None,
+            timed_command: false,
         }
     }
 
@@ -207,13 +245,21 @@ impl SongBankHostTransfer {
     }
 
     fn mark_command_scheduled(&mut self, command_apu_cycle: u64) {
+        self.mark_command_scheduled_at_master_clock(apu_cycle_to_snes_master_clock(command_apu_cycle));
+    }
+
+    fn mark_command_scheduled_at_master_clock(&mut self, command_master_clock: u64) {
         if !self.command_pending {
             return;
         }
         self.command_pending = false;
-        let command_master_clock = apu_cycle_to_snes_master_clock(command_apu_cycle);
-        self.next_host_access_master_clock =
-            Some(command_master_clock + SONG_BANK_WRITE_TO_FIRST_READY_POLL_MASTER_CLOCKS);
+        let first_read = if self.timed_command {
+            advance_snes_cpu_master_clock(command_master_clock,
+                TIMED_OVERWORLD_COMMAND_TO_FIRST_READY_READ_MASTER_CLOCKS)
+        } else {
+            command_master_clock + SONG_BANK_WRITE_TO_FIRST_READY_POLL_MASTER_CLOCKS
+        };
+        self.next_host_access_master_clock = Some(first_read);
     }
 
     fn advance_host_cpu_until(
@@ -345,6 +391,7 @@ impl SongBankHostTransfer {
             SongBankHostTransferPhase::ClearPort { port } => {
                 Self::write_input_port(in_ports, port, 0);
                 if port == 3 {
+                    self.completed_port_clear_master_clock = self.next_host_access_master_clock;
                     self.next_host_access_master_clock = None;
                     return true;
                 }
@@ -424,10 +471,18 @@ pub(crate) struct AbsoluteDspEventClock {
     pending_writes: Vec<(u64, u8, u8)>,
     #[serde(default)]
     pending_main_cpu_port_writes: Vec<(u8, u8)>,
+    // Native CPU plans are transient, like ZeldaState's interrupted callers;
+    // retain the existing receipt-driven audio snapshot wire layout.
+    #[serde(skip)]
+    pending_timed_main_cpu_port_writes: Vec<(u64, u8, u8)>,
+    #[serde(skip)]
+    pending_upload_return_nmi_master_clock: Option<(u64, [u8; 4], [u8; 2])>,
     #[serde(default)]
     song_bank_transfer: Option<SongBankHostTransfer>,
     #[serde(default)]
     completed_song_bank_id: Option<u8>,
+    #[serde(skip)]
+    completed_song_bank_port_clear_master_clock: Option<u64>,
     #[serde(default)]
     host_frame_index: u64,
     #[serde(default)]
@@ -463,8 +518,11 @@ impl AbsoluteDspEventClock {
             next_poll_boundary: DRIVER_POLL_PUSH_Y_PC,
             pending_writes: Vec::new(),
             pending_main_cpu_port_writes: Vec::new(),
+            pending_timed_main_cpu_port_writes: Vec::new(),
+            pending_upload_return_nmi_master_clock: None,
             song_bank_transfer: None,
             completed_song_bank_id: None,
+            completed_song_bank_port_clear_master_clock: None,
             host_frame_index: 0,
             host_transport: HostPortTransport::default(),
         };
@@ -492,8 +550,11 @@ impl AbsoluteDspEventClock {
         self.next_poll_boundary = DRIVER_POLL_PUSH_Y_PC;
         self.pending_writes.clear();
         self.pending_main_cpu_port_writes.clear();
+        self.pending_timed_main_cpu_port_writes.clear();
+        self.pending_upload_return_nmi_master_clock = None;
         self.song_bank_transfer = None;
         self.completed_song_bank_id = None;
+        self.completed_song_bank_port_clear_master_clock = None;
         self.host_frame_index = 0;
         self.host_transport = HostPortTransport::default();
         self.apu.dsp_write_history.clear();
@@ -576,6 +637,7 @@ impl AbsoluteDspEventClock {
                 .into_iter()
                 .map(|(port, value)| (frame_end_cycle, port, value)),
         );
+        host_port_events.extend(std::mem::take(&mut self.pending_timed_main_cpu_port_writes));
         if let Some(transfer) = self.song_bank_transfer.as_mut() {
             transfer.mark_command_scheduled(frame_end_cycle);
         }
@@ -585,6 +647,21 @@ impl AbsoluteDspEventClock {
         let execution_target = frame_end_cycle + SMP_CPU_LOOKAHEAD_CYCLES;
         let mut execution_cycle = self.apu_cycle_origin + u64::from(self.apu.cycles);
         while execution_cycle < execution_target {
+            if self.pending_upload_return_nmi_master_clock.is_some_and(|(master, _, _)|
+                snes_master_clock_to_apu_cycle(master) <= execution_cycle)
+            {
+                let (master, latches, last) = self.pending_upload_return_nmi_master_clock.take().unwrap();
+                assert!(self.song_bank_transfer.is_none(), "return NMI preceded upload completion");
+                let writes = self.host_transport.nmi_latch_writes(latches, last, self.apu.out_ports);
+                let targets = host_port_target_cycles_at_nmi_entry(master, writes);
+                if debug_transport {
+                    eprintln!("spc_transport_return_nmi host={} master={} writes={:?} targets={targets:?}",
+                        self.host_frame_index, master, writes.writes);
+                }
+                host_port_events.extend(writes.writes.into_iter().enumerate().filter_map(|(port, value)|
+                    value.map(|value| (targets[port], port as u8, value))));
+                host_port_events[next_host_port..].sort_by_key(|&(target, port, _)| (target, port));
+            }
             let instruction_start = execution_cycle;
             let opcode = self.apu.ram[self.apu.spc.pc as usize];
             let step_durations = snes9x_opcode_step_durations(opcode);
@@ -631,11 +708,22 @@ impl AbsoluteDspEventClock {
                     next_host_port += 1;
                 }
             }
+            let mut transfer_completed = false;
             if execution_cycle >= self.apu_cycle_origin {
-                self.apu.run_cycle_sequenced_instruction_without_dsp();
+                if self.song_bank_transfer.as_ref().is_some_and(|transfer| transfer.timed_command) {
+                    let origin = self.apu_cycle_origin;
+                    let transfer = self.song_bank_transfer.as_mut().unwrap();
+                    self.apu.run_instruction_with_host_ports_without_dsp(|local, input, output| {
+                        transfer_completed |= transfer.advance_host_cpu_until(
+                            origin + u64::from(local), input, output,
+                        );
+                    }).expect("timed song upload reached unsupported SPC instruction");
+                } else {
+                    self.apu.run_cycle_sequenced_instruction_without_dsp();
+                }
             }
             execution_cycle = self.apu_cycle_origin + u64::from(self.apu.cycles);
-            let transfer_completed = self.song_bank_transfer.as_mut().is_some_and(|transfer| {
+            transfer_completed |= self.song_bank_transfer.as_mut().is_some_and(|transfer| {
                 transfer.advance_host_cpu_until(
                     execution_cycle,
                     &mut self.apu.in_ports,
@@ -645,6 +733,8 @@ impl AbsoluteDspEventClock {
             if transfer_completed {
                 let transfer = self.song_bank_transfer.take().unwrap();
                 self.completed_song_bank_id = Some(transfer.bank_id);
+                self.completed_song_bank_port_clear_master_clock =
+                    transfer.completed_port_clear_master_clock;
             }
             if let Some(step_durations) = step_durations {
                 let predicted_end =
@@ -721,9 +811,65 @@ impl AbsoluteDspEventClock {
     }
 
     pub(crate) fn begin_song_bank_transfer(&mut self, bank_id: u8, stream: &[u8]) {
+        self.begin_song_bank_transfer_at(bank_id, stream, None);
+    }
+
+    pub(crate) fn begin_song_bank_transfer_at(
+        &mut self, bank_id: u8, stream: &[u8], position: Option<snes::CpuRasterPosition>,
+    ) {
         debug_assert!(self.song_bank_transfer.is_none());
         self.song_bank_transfer = Some(SongBankHostTransfer::new(bank_id, stream));
-        self.queue_main_cpu_port_write(0, 0xff);
+        self.completed_song_bank_port_clear_master_clock = None;
+        if let Some(position) = position {
+            self.song_bank_transfer.as_mut().unwrap().timed_command = true;
+            let (v, h) = position.coordinates();
+            let field = self.host_frame_index.saturating_sub(u64::from(v >= 225));
+            let master = CpuFieldTiming::NON_INTERLACE_EVEN.master_cycles_at(field, position);
+            self.song_bank_transfer.as_mut().unwrap()
+                .mark_command_scheduled_at_master_clock(master);
+            self.pending_timed_main_cpu_port_writes.push((
+                snes_master_clock_to_apu_cycle(master), 0, 0xff,
+            ));
+            if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+                eprintln!("song_upload command host={} v={v} h={h} master={master} audio={}",
+                    self.host_frame_index, self.absolute_apu_cycle);
+            }
+        } else {
+            self.queue_main_cpu_port_write(0, 0xff);
+        }
+    }
+
+    /// Forecast only the receiver protocol through the current host's next
+    /// physical NMI boundary. The real audio owner is advanced separately.
+    pub(crate) fn preview_overworld_song_upload_return(&self) -> Option<snes::CpuRasterPosition> {
+        let end = snes_frame_start_master_clock(self.host_frame_index)
+            + NMI_AUDIO_VCOUNTER * SNES_MASTER_CLOCKS_PER_SCANLINE;
+        let mut preview = self.clone();
+        let cycles = snes_master_clock_to_apu_cycle(end).saturating_sub(self.absolute_apu_cycle);
+        if preview.song_bank_transfer.is_some() && cycles != 0 {
+            let samples = u32::try_from(cycles.div_ceil(APU_CYCLES_PER_DSP_SAMPLE))
+                .expect("upload preview exceeds one audio window");
+            preview.advance(EngineAudioCommandBatch::default(), samples, 0);
+        }
+        let clear = preview.completed_song_bank_port_clear_master_clock?;
+        // $88ff PLP / $8900 RTS, then $8923 CLI / RTL and the caller's
+        // LDA #$81 / STA $4200: 70 + 104 CPU master clocks.
+        let restored = advance_snes_cpu_master_clock(clear, 174);
+        if restored >= end { return None; }
+        let (_, scanline, _, hclock) = snes_scanline_clock(restored);
+        Some(snes::CpuRasterPosition::new(scanline as u16, hclock as u16))
+    }
+
+    pub(crate) fn queue_upload_return_nmi(&mut self, restored: snes::CpuRasterPosition,
+        latches: [u8; 4], last: [u8; 2]) {
+        assert!(self.pending_upload_return_nmi_master_clock.is_none());
+        let field = self.host_frame_index.saturating_sub(1);
+        let master = CpuFieldTiming::NON_INTERLACE_EVEN.master_cycles_at(field, restored);
+        // $02:8566 STA $4200's remaining bus cycle6, $8569 RTS42,
+        // then the slow-ROM hardware NMI entry62. Snes9x accepts NMI
+        // after that RTS, not in the middle of the just-enabled instruction.
+        self.pending_upload_return_nmi_master_clock =
+            Some((advance_snes_cpu_master_clock(master, 6 + 42 + 62), latches, last));
     }
 
     pub(crate) fn take_completed_song_bank_id(&mut self) -> Option<u8> {
@@ -979,8 +1125,23 @@ fn host_port_target_cycles(frame_index: u64, writes: HostPortWrites) -> [u64; 4]
         + NMI_AUDIO_VCOUNTER * SNES_MASTER_CLOCKS_PER_SCANLINE
         + NMI_AUDIO_NOMINAL_ENTRY_HCLOCK;
 
-    // These are instruction-path durations from the clean ROM's NMI entry to
-    // its APUI stores. A written music port lengthens the path to the ambient
+    host_port_master_clock_offsets(writes)
+        .map(|offset| snes_master_clock_to_apu_cycle(nmi_entry_master_clock + offset))
+}
+
+fn host_port_target_cycles_at_nmi_entry(master: u64, writes: HostPortWrites) -> [u64; 4] {
+    // The legacy V225/C84 offsets include the one refresh crossed by that
+    // nominal handler. A held NMI may enter anywhere: advance its CPU work
+    // through refresh from its actual vector-entry position instead.
+    host_port_master_clock_offsets(writes).map(|offset|
+        snes_master_clock_to_apu_cycle(advance_snes_cpu_master_clock(
+            master, offset.saturating_sub(SNES_WRAM_REFRESH_STALL_MASTER_CLOCKS),
+        )))
+}
+
+fn host_port_master_clock_offsets(writes: HostPortWrites) -> [u64; 4] {
+    // These are durations from the clean ROM's nominal NMI entry to its APUI
+    // stores, including its one WRAM refresh. A music write lengthens the path to the ambient
     // branch; the ambient branch then has separate no-write, clear, and new-
     // effect paths. This models the transport protocol rather than assigning a
     // special phase to any route frame or DSP command.
@@ -995,14 +1156,12 @@ fn host_port_target_cycles(frame_index: u64, writes: HostPortWrites) -> [u64; 4]
             Some(_) => (600, 694, 756),
             None => (0, 678, 740),
         };
-    let master_clock_offsets = [
+    [
         port_zero_offset,
         port_one_offset + music_suffix,
         port_two_offset + music_suffix,
         port_three_offset + music_suffix,
-    ];
-    master_clock_offsets
-        .map(|offset| snes_master_clock_to_apu_cycle(nmi_entry_master_clock + offset))
+    ]
 }
 
 fn upload_song_bank_to_ram(ram: &mut [u8], data: &[u8]) -> Result<(), String> {

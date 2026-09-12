@@ -2517,6 +2517,10 @@ pub(crate) static ROM_CPU_SHADOW_HDMA_DEBUG: [std::sync::atomic::AtomicU64; 3] =
 ];
 
 fn advance_rom_cpu_step(run: &mut RomCpuTimingRun, budget: &mut CpuCycleBudget) -> CpuWorkAdvance {
+    advance_rom_cpu_step_measured(run, budget).0
+}
+
+fn advance_rom_cpu_step_measured(run: &mut RomCpuTimingRun, budget: &mut CpuCycleBudget) -> (CpuWorkAdvance, u32) {
     use std::sync::atomic::Ordering::Relaxed;
     let timing = run.step();
     let instruction =
@@ -2537,7 +2541,140 @@ fn advance_rom_cpu_step(run: &mut RomCpuTimingRun, budget: &mut CpuCycleBudget) 
             CpuBusEvent::WramRefresh => unreachable!(),
         });
     let dma_master_cycles = run.drain_started_dma_master_cycles();
-    budget.advance_started_general_dma(instruction, dma_master_cycles)
+    (budget.advance_started_general_dma(instruction, dma_master_cycles), u32::from(timing.master_cycles))
+}
+
+fn module_cpu_entry_after_leading_nmi(state: &ZeldaState, input: u16, entry_pc: u32) -> CpuRasterPosition {
+    let checkpoint = RomCpuCheckpoint {
+        entry_pc: 0x00_8036, stop_pc: entry_pc, waiting: false,
+        ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+    };
+    let timing_dma = state.dma_with_native_hdma_enable();
+    let mut run = RomCpuTimingRun::new(&state.rom, &state.ram, &state.sram,
+        &state.ppu, &timing_dma, state.zelda_audio_apu_output_ports(), checkpoint)
+        .expect("module entry CPU timing requires the development ROM");
+    run.set_joypad_input(input);
+    let mut budget = CpuCycleBudget::at_nmi_acceptance(CpuBusWorkload::with_dynamic_hdma(),
+        CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0));
+    advance_rom_cpu_through_nmi(&mut run, &mut budget);
+    for _ in 0..50_000 {
+        if run.is_complete() {
+            if crate::debug_env::var_os("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some() {
+                eprintln!("module_cpu_entry host={} pc={entry_pc:06x} position={:?}",
+                    state.frame_ctr_dbg, budget.raster_position());
+            }
+            return budget.raster_position();
+        }
+        let (v,h) = budget.raster_position().coordinates();
+        run.set_raster_position(v,h);
+        assert_eq!(advance_rom_cpu_step(&mut run, &mut budget), CpuWorkAdvance::Complete,
+            "module dispatch prefix crossed another NMI");
+    }
+    panic!("module dispatch prefix did not reach {entry_pc:06x}");
+}
+
+fn overworld_map_graphics_cpu_nmi_slices(state: &ZeldaState, input: u16) -> (u8, u8) {
+    let checkpoint = RomCpuCheckpoint {
+        entry_pc: 0x00_8036, stop_pc: 0x00_805d, waiting: false,
+        ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+    };
+    let timing_dma = state.dma_with_native_hdma_enable();
+    let mut run = RomCpuTimingRun::new(&state.rom, &state.ram, &state.sram,
+        &state.ppu, &timing_dma, state.zelda_audio_apu_output_ports(), checkpoint)
+        .expect("overworld map CPU timing requires the development ROM");
+    run.set_joypad_input(input);
+    let mut budget = CpuCycleBudget::at_nmi_acceptance(CpuBusWorkload::with_dynamic_hdma(),
+        CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0));
+    advance_rom_cpu_through_nmi(&mut run, &mut budget);
+    let entry_submodule = state.game_state.frame.submodule;
+    let mut nmis = 0u8;
+    let mut quadrant_nmis = None;
+    for _ in 0..5_000_000 {
+        if quadrant_nmis.is_none() && run.ram_byte(0x11) != entry_submodule {
+            assert_eq!(run.ram_byte(0x11), entry_submodule + 1);
+            quadrant_nmis = Some(nmis);
+        }
+        if run.is_complete() {
+            let quadrants = quadrant_nmis.expect("map caller did not finish its quadrants");
+            if crate::debug_env::var_os("ZELDA3_DEBUG_OVERWORLD_CPU_PACKING").is_some() {
+                eprintln!("overworld_map_cpu host={} quadrants={quadrants} tail={} return={:?}",
+                    state.frame_ctr_dbg, nmis - quadrants, budget.raster_position());
+            }
+            assert!(quadrants != 0 && nmis > quadrants);
+            return (quadrants, nmis - quadrants);
+        }
+        let (v, h) = budget.raster_position().coordinates();
+        run.set_raster_position(v, h);
+        if advance_rom_cpu_step(&mut run, &mut budget).reached_boundary().is_some() {
+            nmis = nmis.checked_add(1).expect("map NMI count overflow");
+            advance_rom_cpu_through_nmi(&mut run, &mut budget);
+        }
+    }
+    panic!("overworld map CPU timing did not return");
+}
+
+fn overworld_main_loop_packing_interruption(state: &ZeldaState, input: u16) -> Option<SpritePreparationProgress> {
+    let checkpoint = RomCpuCheckpoint {
+        entry_pc: 0x00_8036, stop_pc: 0x00_805d, waiting: false,
+        ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+    };
+    let timing_dma = state.dma_with_native_hdma_enable();
+    let mut run = RomCpuTimingRun::new(&state.rom, &state.ram, &state.sram,
+        &state.ppu, &timing_dma, state.zelda_audio_apu_output_ports(), checkpoint)
+        .expect("overworld CPU timing requires the loaded Zelda ROM");
+    run.set_joypad_input(input);
+    run.enable_cpu_write_trace();
+    let field_timing = CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0);
+    let mut budget = CpuCycleBudget::at_nmi_acceptance(CpuBusWorkload::with_dynamic_hdma(), field_timing);
+    advance_rom_cpu_through_nmi(&mut run, &mut budget);
+    let mut packing_entry = None;
+    let mut group = 32u8;
+    let mut progress = None;
+    let mut pointer_tail_cycles = None;
+    for _ in 0..200_000 {
+        if run.is_complete() {
+            if crate::debug_env::var_os("ZELDA3_DEBUG_OVERWORLD_CPU_PACKING").is_some()
+                && packing_entry.is_some_and(|position: CpuRasterPosition| position.coordinates().0 >= 215) {
+                eprintln!("overworld_cpu_packing host={} entry={packing_entry:?} returned={:?}",
+                    state.frame_ctr_dbg, budget.raster_position());
+            }
+            return None;
+        }
+        let pc = run.pc();
+        if pc == 0x00_874e { pointer_tail_cycles = Some(0u16); }
+        if pc == 0x00_85fc { packing_entry = Some(budget.raster_position()); }
+        if packing_entry.is_some() && pc == 0x00_85fe {
+            group = group.checked_sub(4).expect("packing loop exceeded eight passes");
+            progress = Some(ExtendedOamPackingProgress::before_group(group));
+        }
+        let (v, h) = budget.raster_position().coordinates();
+        run.set_raster_position(v, h);
+        let (advance, cpu_cycles) = advance_rom_cpu_step_measured(&mut run, &mut budget);
+        let writes = run.take_cpu_wram_writes();
+        if let Some(cycles) = pointer_tail_cycles.as_mut() {
+            *cycles += u16::try_from(cpu_cycles).unwrap();
+        }
+        if (0x00_85fe..=0x00_865a).contains(&pc) {
+            if let Some(progress) = progress.as_mut() {
+                progress.group_master_cycles += u16::try_from(cpu_cycles).unwrap();
+                progress.completed_bytes += writes.iter().filter(|(address, _)|
+                    (0x0a00..0x0a20).contains(address)).count() as u8;
+            }
+        } else if pc >= 0x00_865c && pc < 0x00_8700 {
+            progress = None;
+        }
+        if advance.reached_boundary().is_some() {
+            if crate::debug_env::var_os("ZELDA3_DEBUG_OVERWORLD_CPU_PACKING").is_some() {
+                eprintln!("overworld_cpu_packing host={} entry={packing_entry:?} pc={:06x} boundary={:?} progress={progress:?} pointer_tail_cycles={pointer_tail_cycles:?}",
+                    state.frame_ctr_dbg, run.pc(), budget.raster_position());
+            }
+            if let Some(progress) = progress { progress.validate(); }
+            return pointer_tail_cycles.map(|master_cycles|
+                SpritePreparationProgress::PointerTail(SpritePreparationPointerProgress { master_cycles }))
+                .or_else(|| progress.map(SpritePreparationProgress::ExtendedOam));
+        }
+    }
+    panic!("overworld timing failed to reach the next NMI or caller return");
 }
 
 fn advance_rom_cpu_through_nmi(run: &mut RomCpuTimingRun, budget: &mut CpuCycleBudget) {
@@ -3715,6 +3852,56 @@ fn dungeon_submodule_cpu_schedule_plan(
         "dungeon submodule ROM timing did not reach the main wait; stopped at {:06x}",
         run.pc(),
     );
+}
+
+fn pre_overworld_song_upload_command(state: &ZeldaState, nmi_is_trailing: bool) -> NativeOverworldSongUpload {
+    let timing_dma = state.dma_with_native_hdma_enable();
+    // The source enters this leading NMI at $8036 after LDA $12 observed
+    // zero. RTI restores that zero flag, so BEQ must loop once before the
+    // newly set latch is read. The generic synthetic WAI seed skips that
+    // branch and adds a wake cycle which the busy loop never executes.
+    let checkpoint = RomCpuCheckpoint {
+        entry_pc: 0x00_8036,
+        waiting: false,
+        ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+    };
+    let mut run = RomCpuTimingRun::new(
+        &state.rom, &state.ram, &state.sram, &state.ppu, &timing_dma,
+        state.zelda_audio_apu_output_ports(), checkpoint,
+    ).expect("pre-overworld upload timing requires the loaded Zelda ROM");
+    let mut budget = CpuCycleBudget::at_nmi_acceptance(
+        CpuBusWorkload::with_dynamic_hdma(),
+        CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0),
+    );
+    advance_rom_cpu_through_nmi(&mut run, &mut budget);
+    let mut nmis = 0u32;
+    for _ in 0..5_000_000 {
+        let command = run.pc() == 0x02_855d;
+        let (scanline, master_cycle) = budget.raster_position().coordinates();
+        run.set_raster_position(scanline, master_cycle);
+        if advance_rom_cpu_step(&mut run, &mut budget) != CpuWorkAdvance::Complete {
+            nmis += 1;
+            if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+                eprintln!("song_upload nmi crossing={nmis} pc={:06x} position={:?}",
+                    run.pc(), budget.raster_position());
+            }
+            advance_rom_cpu_through_nmi(&mut run, &mut budget);
+        }
+        if command {
+            if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+                eprintln!("song_upload measured entry_host={} trailing={nmi_is_trailing} nmis={nmis} position={:?}",
+                    state.frame_ctr_dbg, budget.raster_position());
+            }
+            return NativeOverworldSongUpload::CommandAt {
+                // A trailing NMI belongs to the next host's CPU slice;
+                // active-scanout entry already belongs to this host.
+                host: state.frame_ctr_dbg + nmis
+                    + u32::from(nmi_is_trailing),
+                position: budget.raster_position(),
+            };
+        }
+    }
+    panic!("pre-overworld caller did not reach its upload command at {:06x}", run.pc());
 }
 
 /// Count the complete overlay caller, including the main-loop suffix, from
@@ -9408,6 +9595,8 @@ pub struct ZeldaState {
     #[serde(skip)]
     pre_overworld_overlays_cpu_nmis: Option<u8>,
     #[serde(skip)]
+    native_overworld_song_upload: Option<NativeOverworldSongUpload>,
+    #[serde(skip)]
     sprite_main_cpu_boundary: Option<SpriteMainCpuBoundary>,
     #[serde(skip)]
     sprite_main_cpu_nmi_slices: u8,
@@ -9520,6 +9709,10 @@ pub struct ZeldaState {
     /// checkpoints reject this runtime-only owner until it has retired.
     #[serde(skip)]
     pending_main_loop_common_suffix: Option<MainLoopCommonSuffixContinuation>,
+    #[serde(skip)]
+    native_overworld_packing_progress: Option<SpritePreparationProgress>,
+    #[serde(skip)]
+    native_overworld_map_graphics_nmi_slices: Option<(u8, u8)>,
     #[serde(skip)]
     next_display_spotlight_scanout: Option<LiveSpotlightScanout>,
     /// Spotlight program authored after the current field's HDMA initialization.
@@ -11974,6 +12167,7 @@ impl ZeldaState {
             dungeon_submodule_cpu_schedule: None,
             module09_cpu_schedule: None,
             pre_overworld_overlays_cpu_nmis: None,
+            native_overworld_song_upload: None,
             sprite_main_cpu_boundary: None,
             sprite_main_cpu_nmi_slices: 0,
             sprite_main_cpu_caller: SpriteMainCpuCaller::default(),
@@ -12004,6 +12198,8 @@ impl ZeldaState {
             link_obj_dma_completed_this_frame: false,
             main_loop_sprite_preparation_completed: false,
             pending_main_loop_common_suffix: None,
+            native_overworld_packing_progress: None,
+            native_overworld_map_graphics_nmi_slices: None,
             next_display_spotlight_scanout: None,
             spotlight_scanout_after_active_field: None,
             interrupted_dungeon_submodule_publication: None,
@@ -12205,6 +12401,9 @@ impl ZeldaState {
         self.audio_after_publication_ambient_nmi = None;
         self.main_loop_sprite_preparation_completed = false;
         self.pending_main_loop_common_suffix = None;
+        self.native_overworld_packing_progress = None;
+        self.native_overworld_map_graphics_nmi_slices = None;
+        self.native_overworld_song_upload = None;
         self.dungeon_landing_goal_transition_pending = false;
         self.dungeon_landing_spotlight_reset_prefix_scanlines = None;
         self.active_dungeon_landing_spotlight_reset_prefix_scanlines = None;
@@ -12301,6 +12500,9 @@ impl ZeldaState {
             self.dungeon_submodule_cpu_schedule = None;
             self.module09_cpu_schedule = None;
             self.pre_overworld_overlays_cpu_nmis = None;
+            self.native_overworld_song_upload = None;
+            self.native_overworld_packing_progress = None;
+            self.native_overworld_map_graphics_nmi_slices = None;
             self.sprite_main_cpu_boundary = None;
             self.sprite_main_cpu_nmi_slices = 0;
             self.sprite_main_cpu_caller = SpriteMainCpuCaller::default();
@@ -13250,6 +13452,12 @@ impl ZeldaState {
         // (route host 154795, the post-game-over dialogue).
         self.dialogue_fast_forward_hold_active = false;
         match continuation {
+            MainLoopCommonSuffixContinuation::ResumeSpritePreparationBytePackingAndClearNmiLatch { progress } => {
+                assert!(!self.main_loop_sprite_preparation_completed);
+                self.nmi_prepare_sprites_resume_after_progress(progress);
+                self.main_loop_sprite_preparation_completed = true;
+                self.clear_nmi_update_latch();
+            }
             MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch => {
                 assert!(
                     !self.main_loop_sprite_preparation_completed,

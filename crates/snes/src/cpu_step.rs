@@ -784,6 +784,18 @@ pub fn cpu_run_opcode(snes: &mut Snes) -> u8 {
 pub fn cpu_run_opcode_timed(snes: &mut Snes) -> CpuInstructionTiming {
     snes.cpu_mem_ops = 0;
     snes.cpu_bus_master_cycles = 0;
+    // Snes9x S9xOpcode_NMI/IRQ starts with MemSpeed + ONE_CYCLE:
+    // one apparent internal cycle is the interrupted opcode fetch. Price
+    // that fetch without adding memory side effects or executing the opcode.
+    let interrupt_fetch_extra = if !snes.cpu.stopped && !snes.cpu.waiting
+        && (snes.cpu.nmi_wanted || (snes.cpu.irq_wanted && !snes.cpu.i))
+    {
+        u32::from(snes.hardware_access_time(
+            (u32::from(snes.cpu.k) << 16) | u32::from(snes.cpu.pc),
+        )) - 6
+    } else {
+        0
+    };
     let cpu_cycles = cpu_run_opcode(snes);
     let bus_accesses = snes.cpu_mem_ops;
     let internal_cycles = cpu_cycles
@@ -792,7 +804,8 @@ pub fn cpu_run_opcode_timed(snes: &mut Snes) -> CpuInstructionTiming {
     CpuInstructionTiming {
         cpu_cycles,
         bus_accesses,
-        master_cycles: u32::from(internal_cycles) * 6 + snes.cpu_bus_master_cycles,
+        master_cycles: u32::from(internal_cycles) * 6 + snes.cpu_bus_master_cycles
+            + interrupt_fetch_extra,
     }
 }
 
@@ -2369,5 +2382,36 @@ mod tests {
         assert_eq!(page_crossing_load.cpu_cycles, 5);
         assert_eq!(page_crossing_load.bus_accesses, 4);
         assert_eq!(page_crossing_load.master_cycles, 38);
+    }
+
+    #[test]
+    fn timed_hardware_interrupt_prices_the_interrupted_opcode_fetch() {
+        // Pinned Snes9x cpuops.cpp S9xOpcode_NMI and S9xOpcode_IRQ:
+        // MemSpeed + 6, four slow stack writes and two slow vector reads.
+        for irq in [false, true] {
+            for (bank, fast_mem, expected) in [(0, false, 62), (0x80, false, 62), (0x80, true, 60)] {
+                let mut snes = Snes::new();
+                snes.cpu.k = bank;
+                snes.cpu.pc = 0x8000;
+                snes.cpu.sp = 0x1ff;
+                snes.cpu.i = false;
+                snes.cpu.nmi_wanted = !irq;
+                snes.cpu.irq_wanted = irq;
+                snes.fast_mem = fast_mem;
+                let timing = cpu_run_opcode_timed(&mut snes);
+                assert_eq!(timing.cpu_cycles, 8);
+                assert_eq!(timing.bus_accesses, 6);
+                assert_eq!(timing.master_cycles, expected);
+                assert_eq!(snes.cpu.sp, 0x1fb);
+                assert_eq!(snes.ram[0x1ff], bank);
+                assert_eq!(snes.ram[0x1fe], 0x80);
+                assert_eq!(snes.ram[0x1fd], 0);
+            }
+        }
+        let mut snes = Snes::new();
+        snes.cpu.waiting = true;
+        snes.cpu.nmi_wanted = true;
+        assert_eq!(cpu_run_opcode_timed(&mut snes).master_cycles, 6);
+        assert!(snes.cpu.nmi_wanted, "WAI wake has not entered the interrupt yet");
     }
 }

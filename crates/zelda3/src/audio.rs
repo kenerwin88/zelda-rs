@@ -817,20 +817,25 @@ impl ZeldaState {
 
     pub fn zelda_push_apu_state(&mut self) {
         let current_vwf_glyph_completed = self.dialogue_vwf_glyph_cpu_phase.is_ready();
+        let deferred_before = self.audio.modern.queue.vwf_glyph_tone_crossed_vblank_deferred;
         let (owned_marker, legacy_marker, pending_effect2, input_effect2) =
             self.audio.modern.queue.push(current_vwf_glyph_completed);
         let marker_debug = crate::debug_env::var("ZELDA3_DEBUG_VWF_MARKER_POLICY").ok();
+        let selected_host = marker_debug.as_deref().and_then(|range| range.split_once('-'))
+            .and_then(|(start, end)| Some((start.parse::<u32>().ok()?, end.parse::<u32>().ok()?)))
+            .is_some_and(|(start, end)| (start..=end).contains(&self.frame_ctr_dbg));
         if marker_debug.is_some()
-            && (owned_marker != legacy_marker
+            && (selected_host || owned_marker != legacy_marker
                 || marker_debug.as_deref() == Some("all") && (owned_marker || legacy_marker))
         {
             eprintln!(
-                "vwf_marker_policy host={} owned={} legacy={} pending_effect2={} input_effect2={} deferred={:?} position={} count={} module={} submodule={} read_pos={:#x} phase={:?}",
+                "vwf_marker_policy host={} owned={} legacy={} pending_effect2={} input_effect2={} deferred_before={:?} deferred={:?} position={} count={} module={} submodule={} read_pos={:#x} phase={:?}",
                 self.frame_ctr_dbg,
                 owned_marker,
                 legacy_marker,
                 pending_effect2,
                 input_effect2,
+                deferred_before,
                 self.audio
                     .modern
                     .queue
@@ -1052,6 +1057,8 @@ impl ZeldaState {
                 native_samples,
                 self.audio.modern.queue.input_commands.legacy_ports(),
             );
+            eprintln!("music_window events={frame:?}");
+            eprintln!("music_window clock={:?}", self.zelda_spc_driver_clock_debug_summary());
         }
         self.audio
             .modern
@@ -1219,11 +1226,38 @@ impl ZeldaState {
 
     pub(crate) fn begin_runtime_song_bank_transfer(&mut self, bank_id: u8, stream: &[u8]) -> bool {
         if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
-            clock.begin_song_bank_transfer(bank_id, stream);
+            if let Some(NativeOverworldSongUpload::CommandAt { host, position }) =
+                self.native_overworld_song_upload
+            {
+                assert_eq!(bank_id, 0, "overworld caller selected a different song bank");
+                assert_eq!(host, self.frame_ctr_dbg,
+                    "properties caller reached the upload on a different CPU host");
+                clock.begin_song_bank_transfer_at(bank_id, stream, Some(position));
+                self.native_overworld_song_upload = Some(NativeOverworldSongUpload::AwaitReturn);
+            } else {
+                clock.begin_song_bank_transfer(bank_id, stream);
+            }
             true
         } else {
+            self.native_overworld_song_upload = None;
             false
         }
+    }
+
+    pub(super) fn native_overworld_song_upload_return(&self) -> Option<snes::CpuRasterPosition> {
+        self.audio.modern.driver_clock.as_ref()
+            .expect("native song upload lost its SPC receiver")
+            .preview_overworld_song_upload_return()
+    }
+
+    pub(super) fn queue_native_song_upload_return_nmi(&mut self, position: snes::CpuRasterPosition) {
+        let signals = &self.game_state.system_signals;
+        let latches = [signals.music_control(), signals.ambient_sound_effect(),
+            signals.sound_effect_1(), signals.sound_effect_2()];
+        let last = [signals.last_music_control(), signals.last_ambient_sound_effect()];
+        self.audio.modern.driver_clock.as_mut()
+            .expect("native song upload lost its SPC receiver")
+            .queue_upload_return_nmi(position, latches, last);
     }
 
     pub(crate) fn initialize_spc_driver_clock(

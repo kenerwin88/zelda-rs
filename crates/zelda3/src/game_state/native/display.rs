@@ -5304,6 +5304,15 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         self.set_link_dma_source(LinkDmaSourceSlot::TravelBirdLower, lower);
     }
 
+    pub(crate) fn set_sprite_preparation_pointer_word(&mut self, word: usize, value: u16) {
+        let slot = [
+            LinkDmaSourceSlot::HeadPointerUpper, LinkDmaSourceSlot::HeadPointerLower,
+            LinkDmaSourceSlot::BodyPointerUpper, LinkDmaSourceSlot::BodyPointerLower,
+            LinkDmaSourceSlot::TravelBirdUpper, LinkDmaSourceSlot::TravelBirdLower,
+        ][word];
+        self.set_link_dma_source(slot, value);
+    }
+
     pub(crate) fn reset_bg_tile_animation_countdown(&mut self, value: u16) {
         self.display.reset_bg_tile_animation_countdown(value);
         write_le_u16(self.ram, BG_TILE_ANIMATION_COUNTDOWN, value);

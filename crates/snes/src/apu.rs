@@ -1609,6 +1609,23 @@ impl ApuState {
             self.smp_coroutine.is_idle(),
             "cannot run an atomic SPC instruction while a resumable instruction is in progress"
         );
+        self.record_spc_instruction_trace();
+        let state = self.cycle_sequenced_smp_state();
+        let (state, cycles) = {
+            let mut smp = Smp::new(self, state);
+            let cycles = smp.run_instruction();
+            (smp.state(), cycles)
+        };
+        self.apply_cycle_sequenced_smp_state(state);
+        self.spc.cycles_used = cycles as u8;
+        self.cpu_cycles_left = 0;
+        cycles as u8
+    }
+
+    fn record_spc_instruction_trace(&mut self) {
+        if self.debug_spc_instruction_trace.is_none() {
+            return;
+        }
         let direct_page_base = if self.spc.p { 0x100 } else { 0 };
         let direct_page_0_3 = self.ram[direct_page_base..direct_page_base + 4]
             .try_into()
@@ -1644,16 +1661,37 @@ impl ApuState {
                 timer0_counter: self.timer[0].counter,
             });
         }
-        let state = self.cycle_sequenced_smp_state();
-        let (state, cycles) = {
-            let mut smp = Smp::new(self, state);
-            let cycles = smp.run_instruction();
-            (smp.state(), cycles)
-        };
-        self.apply_cycle_sequenced_smp_state(state);
-        self.spc.cycles_used = cycles as u8;
-        self.cpu_cycles_left = 0;
-        cycles as u8
+    }
+
+    /// Execute one instruction, yielding host-port access at each pinned
+    /// Snes9x pseudo-op boundary. A host read must not observe a port store
+    /// from the future end of the same SPC instruction.
+    pub fn run_instruction_with_host_ports_without_dsp(
+        &mut self,
+        mut host: impl FnMut(u32, &mut [u8; 6], [u8; 4]),
+    ) -> Result<u8, UnsupportedSmpMicroStep> {
+        assert!(self.snes9x_dsp.is_none());
+        assert!(self.smp_coroutine.is_idle());
+        self.record_spc_instruction_trace();
+        let start = self.cycles;
+        let mut continuation = SmpCoroutineState::enabled();
+        loop {
+            let state = self.cycle_sequenced_smp_state();
+            let (state, result) = {
+                let mut smp = Smp::new(self, state);
+                let result = smp.run_resumable_micro_step(&mut continuation);
+                (smp.state(), result)
+            };
+            self.apply_cycle_sequenced_smp_state(state);
+            let result = result?;
+            host(self.cycles, &mut self.in_ports, self.out_ports);
+            if matches!(result, SmpMicroStepResult::InstructionComplete { .. }) {
+                let cycles = self.cycles.wrapping_sub(start) as u8;
+                self.spc.cycles_used = cycles;
+                self.cpu_cycles_left = 0;
+                return Ok(cycles);
+            }
+        }
     }
 
     /// Run exactly one pinned-Snes9x SMP coroutine pseudo-op boundary.
@@ -3705,6 +3743,36 @@ mod tests {
         );
         assert_eq!(apu.cycles, bb_cycle);
         assert_eq!(apu.out_ports[..2], [0xaa, 0xbb]);
+    }
+
+    #[test]
+    fn host_port_callbacks_observe_the_pinned_ipl_store_boundaries() {
+        let fixture = pinned_snes9x_bootstrap_fixture();
+        let expected = smp_output_port_writes(&fixture[2]);
+        let mut apu = ApuState::new();
+        apu.reset();
+        apu.spc.sp = 0xef;
+        apu.spc.z = true;
+        while apu.spc.pc != 0xffc9 {
+            apu.run_instruction_with_host_ports_without_dsp(|_, _, _| {}).unwrap();
+            assert!(apu.cycles < expected[0].absolute_cycle);
+        }
+        let mut observations = Vec::new();
+        for _ in 0..2 {
+            apu.run_instruction_with_host_ports_without_dsp(|cycle, _, output| {
+                observations.push((cycle, output));
+            }).unwrap();
+        }
+        // The pinned CPU/APU handshake can poll after the operand read at
+        //2398, before the first AA output store at2400. Whole-instruction
+        // callbacks would expose that later AA value to the earlier poll.
+        assert!(observations.iter().any(|&(cycle, output)| cycle == 2398 && output[0] == 0));
+        assert_eq!(observations.iter().find(|(_, output)| output[0] == 0xaa).unwrap().0,
+            expected[0].absolute_cycle);
+        assert_eq!(observations.iter().find(|(_, output)| output[1] == 0xbb).unwrap().0,
+            expected[1].absolute_cycle);
+        assert!(apu.smp_coroutine.is_idle());
+        apu.run_cycle_sequenced_instruction_without_dsp();
     }
 
     #[test]

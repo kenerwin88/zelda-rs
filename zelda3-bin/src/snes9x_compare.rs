@@ -1445,6 +1445,9 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
                 // `ZELDA3_CACHED_AV_NATIVE_TIMING=1`: do not install the cache's timing
                 // receipts; measure how far the engine's own timing stays exact.
                 let native_timing = std::env::var_os("ZELDA3_CACHED_AV_NATIVE_TIMING").is_some();
+                let debug_dsp_trace_frames = debug_frame_selection_from_env(
+                    "ZELDA3_DEBUG_DSP_TRACE_FRAMES", Some("ZELDA3_DEBUG_DSP_TRACE_FRAME"),
+                );
                 let mut receipt_nanos = 0_u128;
                 let mut engine_nanos = 0_u128;
                 let mut audio_nanos = 0_u128;
@@ -1554,8 +1557,32 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
                     process::exit(2);
                 });
             audio_buffer.resize(sample_frames.saturating_mul(2), 0);
-            game.zelda_render_audio(&mut audio_buffer, sample_frames as i32, 2);
+            let debug_dsp_trace_frame = debug_dsp_trace_frames.contains(&record.frame);
+            if debug_dsp_trace_frame {
+                game.zelda_begin_spc_driver_instruction_trace();
+            }
+            let rust_event_frame = game.zelda_render_audio(&mut audio_buffer, sample_frames as i32, 2);
             game.zelda_discard_unused_audio_frames();
+            if debug_dsp_trace_frame {
+                let modern_audio_state = game.zelda_modern_audio_state();
+                let receipt = serde_json::json!({
+                    "comparison_frame": record.frame,
+                    "native_timing": native_timing,
+                    "rust_spc_instruction_trace": game.zelda_take_spc_driver_instruction_trace(),
+                    "rust_audio_event_frame": rust_event_frame,
+                    "rust_audio": audio_buffer,
+                    "rust_voice_samples": modern_audio_state.1.debug_voice_samples(),
+                    "rust_voice_gains": modern_audio_state.1.debug_voice_gains(),
+                    "rust_voice_positions": modern_audio_state.1.debug_voice_positions(),
+                    "rust_dsp_global_counter": modern_audio_state.1.debug_dsp_global_counter(),
+                    "rust_dsp_rendered_samples": modern_audio_state.1.debug_dsp_rendered_samples(),
+                    "rust_voices_after": game.zelda_modern_audio_voice_debug_states(),
+                });
+                fs::write(
+                    output.join(format!("dsp_trace_frame_{}.json", record.frame)),
+                    serde_json::to_vec(&receipt).expect("serialize cached SPC trace"),
+                ).expect("write cached SPC trace");
+            }
             let rust_audio = compare_audio.then(|| canonical_audio_digest(&audio_buffer));
             if timing_enabled {
                 audio_nanos += audio_started.elapsed().as_nanos();

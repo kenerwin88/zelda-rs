@@ -2413,6 +2413,93 @@ fn game_loop_clears_oam_y_slots_and_keeps_nmi_update_latched() {
 }
 
 #[test]
+fn sprite_preparation_pointer_interruption_preserves_stores_and_countdowns() {
+    let mut base = ZeldaState::new();
+    base.set_sprite_dma_head_pointer(0x10);
+    base.set_sprite_dma_body_pointer(0xa0);
+    base.display_core_mut().set_travel_bird_tile_offset(3);
+    base.reset_bg_tile_animation_countdown(1);
+    for word in 0..6 {
+        base.display_core_mut().set_sprite_preparation_pointer_word(word, 0x5555);
+    }
+    let addresses = [DMA_SOURCE_ADDR_16, DMA_SOURCE_ADDR_18, DMA_SOURCE_ADDR_17,
+        DMA_SOURCE_ADDR_19, DMA_SOURCE_ADDR_20, DMA_SOURCE_ADDR_21];
+    let expected = [0xb960, 0xbb60, 0xba80, 0xbc80, 0xb546, 0xb746];
+    let mut atomic = base.clone();
+    let before = crate::cycle_ledger::master();
+    atomic.nmi_prepare_sprites();
+    let atomic_cost = crate::cycle_ledger::master() - before;
+    // Source accepts at $8761 after222 clocks/two stores, and at $876e
+    // after364 clocks/four stores. Also exercise every individual STA edge.
+    for (master_cycles, words) in [(0,0), (118,1), (182,2), (222,2),
+        (300,3), (364,4), (482,5), (546,6), (610,6)] {
+        let progress = SpritePreparationProgress::PointerTail(
+            SpritePreparationPointerProgress { master_cycles });
+        let mut split = base.clone();
+        let before = crate::cycle_ledger::master();
+        split.nmi_prepare_sprites_through_progress(progress);
+        let prefix_cost = crate::cycle_ledger::master() - before;
+        for (word, &address) in addresses.iter().enumerate() {
+            assert_eq!(read_le_u16(&split.ram, address),
+                if word < words { expected[word] } else { 0x5555 });
+        }
+        assert_eq!(split.game_state.display.bg_tile_animation_countdown,
+            atomic.game_state.display.bg_tile_animation_countdown);
+        let mut changed = split.clone();
+        for word in 0..words {
+            changed.display_core_mut().set_sprite_preparation_pointer_word(word, 0xa55a);
+        }
+        changed.nmi_prepare_sprites_resume_after_progress(progress);
+        for &address in addresses.iter().take(words) {
+            assert_eq!(read_le_u16(&changed.ram, address), 0xa55a);
+        }
+        let before = crate::cycle_ledger::master();
+        split.nmi_prepare_sprites_resume_after_progress(progress);
+        assert_eq!(prefix_cost + crate::cycle_ledger::master() - before, atomic_cost);
+        assert_eq!(bincode::serialize(&split).unwrap(), bincode::serialize(&atomic).unwrap());
+    }
+}
+
+#[test]
+fn source_mid_group_sprite_packing_preserves_committed_bytes_and_remaining_cost() {
+    let mut base = ZeldaState::new();
+    for i in 0..128 {
+        base.ram[crate::game_state::constants::BYTEWISE_EXTENDED_OAM + i] =
+            (i as u8 + 1) & 3;
+    }
+    base.sync_native_game_state_from_ram();
+    for i in 0..32 { base.oam_state_mut().set_packed_extended_oam_byte(i, 0x5a); }
+    base.reset_bg_tile_animation_countdown(5);
+    // Cold pinned Snes9x38731 enters $85fc at V219/C478. The next NMI
+    // accepts at $8620, Y4/X16: six whole passes and412 CPU clocks of
+    // pass4 have completed. Only that pass's $0a04 store has committed.
+    let progress = ExtendedOamPackingProgress {
+        group_start: 4, completed_bytes: 1, group_master_cycles: 412,
+    };
+    let mut split = base.clone();
+    let before = crate::cycle_ledger::master();
+    split.nmi_prepare_sprites_through_packing_progress(progress);
+    let prefix_cost = crate::cycle_ledger::master() - before;
+    assert_eq!(prefix_cost, 7232);
+    for i in 0..32 {
+        assert_eq!(split.ram[crate::game_state::constants::EXTENDED_OAM + i],
+            if i >= 8 || i == 4 { 0x39 } else { 0x5a }, "packed byte {i}");
+    }
+    assert_eq!(split.game_state.display.bg_tile_animation_countdown, 5);
+    let mut externally_changed = split.clone();
+    externally_changed.oam_state_mut().set_packed_extended_oam_byte(4, 0xa5);
+    externally_changed.nmi_prepare_sprites_resume_after_packing_progress(progress);
+    assert_eq!(externally_changed.ram[crate::game_state::constants::EXTENDED_OAM + 4], 0xa5);
+    let before = crate::cycle_ledger::master();
+    split.nmi_prepare_sprites_resume_after_packing_progress(progress);
+    let suffix_cost = crate::cycle_ledger::master() - before;
+    let before = crate::cycle_ledger::master();
+    base.nmi_prepare_sprites();
+    assert_eq!(prefix_cost + suffix_cost, crate::cycle_ledger::master() - before);
+    assert_eq!(bincode::serialize(&split).unwrap(), bincode::serialize(&base).unwrap());
+}
+
+#[test]
 fn graphics_half_slot_transforms_uncompressed_sprite_pack() {
     let mut state = ZeldaState::new();
     let mut pack = vec![0; 0x300 + 24 * 32];

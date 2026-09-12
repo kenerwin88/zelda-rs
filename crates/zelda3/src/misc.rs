@@ -1721,17 +1721,30 @@ impl ZeldaState {
         &mut self,
         next_group_start: u8,
     ) {
-        assert!(next_group_start <= 28 && next_group_start & 3 == 0);
+        self.nmi_prepare_sprites_through_packing_progress(
+            ExtendedOamPackingProgress::before_group(next_group_start));
+    }
+
+    pub(super) fn nmi_prepare_sprites_through_packing_progress(
+        &mut self, progress: ExtendedOamPackingProgress,
+    ) {
+        progress.validate();
         // Cycle ledger: the prefix of NMI_PrepareSprites ($00:85FC) up to the
         // interrupted packing group; the resume below records the remainder
         // under the same address, so a sliced call appears as two entries.
         let _scope = crate::cycle_ledger::routine(0x00_85fc);
         crate::cycle_ledger::charge(16);
         for group_start in [28usize, 24, 20, 16, 12, 8, 4, 0] {
-            if group_start == usize::from(next_group_start) {
+            if group_start == usize::from(progress.group_start) {
                 break;
             }
             self.nmi_prepare_sprites_pack_extended_oam_group(group_start);
+        }
+        crate::cycle_ledger::charge(u64::from(progress.group_master_cycles));
+        for byte in 0..progress.completed_bytes {
+            let i = usize::from(progress.group_start + byte);
+            let value = self.game_state.oam.packed_extended_oam_byte(i);
+            self.oam_state_mut().set_packed_extended_oam_byte(i, value);
         }
     }
 
@@ -1741,21 +1754,75 @@ impl ZeldaState {
         &mut self,
         next_group_start: u8,
     ) {
-        assert!(next_group_start <= 28 && next_group_start & 3 == 0);
+        self.nmi_prepare_sprites_resume_after_packing_progress(
+            ExtendedOamPackingProgress::before_group(next_group_start));
+    }
+
+    pub(super) fn nmi_prepare_sprites_resume_after_packing_progress(
+        &mut self, progress: ExtendedOamPackingProgress,
+    ) {
+        progress.validate();
         // Cycle ledger: the remainder of a sliced NMI_PrepareSprites
         // ($00:85FC); the prefix was recorded by
         // `nmi_prepare_sprites_through_extended_oam_packing`.
         let _scope = crate::cycle_ledger::routine(0x00_85fc);
+        let group_total = if progress.group_start == 0 { 1128 } else { 1134 };
+        crate::cycle_ledger::charge(group_total - u64::from(progress.group_master_cycles));
+        for byte in progress.completed_bytes..4 {
+            let i = usize::from(progress.group_start + byte);
+            let value = self.game_state.oam.packed_extended_oam_byte(i);
+            self.oam_state_mut().set_packed_extended_oam_byte(i, value);
+        }
         for group_start in [28usize, 24, 20, 16, 12, 8, 4, 0]
             .into_iter()
-            .skip_while(|&group_start| group_start > usize::from(next_group_start))
+            .skip_while(|&group_start| group_start >= usize::from(progress.group_start))
         {
             self.nmi_prepare_sprites_pack_extended_oam_group(group_start);
         }
         self.nmi_prepare_sprites_after_extended_oam();
     }
 
+    pub(super) fn nmi_prepare_sprites_through_progress(&mut self, progress: SpritePreparationProgress) {
+        match progress {
+            SpritePreparationProgress::ExtendedOam(progress) =>
+                self.nmi_prepare_sprites_through_packing_progress(progress),
+            SpritePreparationProgress::PointerTail(progress) => {
+                let _scope = crate::cycle_ledger::routine(0x00_85fc);
+                crate::cycle_ledger::charge(16);
+                for group in [28, 24, 20, 16, 12, 8, 4, 0] {
+                    self.nmi_prepare_sprites_pack_extended_oam_group(group);
+                }
+                self.nmi_prepare_sprites_before_pointer_tail();
+                crate::cycle_ledger::charge(u64::from(progress.master_cycles));
+                self.nmi_prepare_sprites_publish_pointer_words(0, progress.completed_words());
+            }
+        }
+    }
+
+    pub(super) fn nmi_prepare_sprites_resume_after_progress(&mut self, progress: SpritePreparationProgress) {
+        match progress {
+            SpritePreparationProgress::ExtendedOam(progress) =>
+                self.nmi_prepare_sprites_resume_after_packing_progress(progress),
+            SpritePreparationProgress::PointerTail(progress) => {
+                let _scope = crate::cycle_ledger::routine(0x00_85fc);
+                let completed = progress.completed_words();
+                crate::cycle_ledger::charge(610 - u64::from(progress.master_cycles));
+                self.nmi_prepare_sprites_publish_pointer_words(completed, 6);
+            }
+        }
+    }
+
     fn nmi_prepare_sprites_after_extended_oam(&mut self) {
+        self.nmi_prepare_sprites_before_pointer_tail();
+        // $874e-$8780: three source-word pairs, SEP, RTS.
+        crate::cycle_ledger::charge(610);
+        let words = self.nmi_prepare_sprites_pointer_words();
+        self.set_link_head_pointer_dma_sources(words[0], words[1]);
+        self.set_link_body_pointer_dma_sources(words[2], words[3]);
+        self.set_travel_bird_dma_sources(words[4], words[5]);
+    }
+
+    fn nmi_prepare_sprites_before_pointer_tail(&mut self) {
         fn link_dma_table_value(table: &[u16], index: usize, table_name: &str) -> u16 {
             // C indexes these static DMA tables directly; this keeps an invalid
             // translated index from becoming a silent wrong DMA source.
@@ -1926,20 +1993,23 @@ impl ZeldaState {
             // the taken `BNE $00874E`.
             crate::cycle_ledger::charge(132);
         }
-        // $00:874E-$00:8780 (610): the head/body pointer and travel-bird
-        // sources, `SEP #$20`, RTS.
-        crate::cycle_ledger::charge(610);
-        let source16 = 0xb940u16
-            .wrapping_add((self.game_state.display.sprite_dma_head_pointer as u16).wrapping_mul(2));
-        self.set_link_head_pointer_dma_sources(source16, source16.wrapping_add(0x200));
+    }
 
-        let source17 = 0xb940u16
-            .wrapping_add((self.game_state.display.sprite_dma_body_pointer as u16).wrapping_mul(2));
-        self.set_link_body_pointer_dma_sources(source17, source17.wrapping_add(0x200));
+    fn nmi_prepare_sprites_pointer_words(&self) -> [u16; 6] {
+        let bases = [0xb940u16, 0xb940, 0xb540];
+        let pointers = [self.game_state.display.sprite_dma_head_pointer,
+            self.game_state.display.sprite_dma_body_pointer,
+            self.game_state.display.travel_bird_tile_offset];
+        std::array::from_fn(|word| bases[word / 2]
+                .wrapping_add(u16::from(pointers[word / 2]).wrapping_mul(2))
+                .wrapping_add(if word & 1 == 0 { 0 } else { 0x200 }))
+    }
 
-        let source20 = 0xb540u16
-            .wrapping_add((self.game_state.display.travel_bird_tile_offset as u16).wrapping_mul(2));
-        self.set_travel_bird_dma_sources(source20, source20.wrapping_add(0x200));
+    fn nmi_prepare_sprites_publish_pointer_words(&mut self, first: usize, end: usize) {
+        let words = self.nmi_prepare_sprites_pointer_words();
+        for word in first..end {
+            self.display_core_mut().set_sprite_preparation_pointer_word(word, words[word]);
+        }
     }
 
     pub(super) fn nmi_prepare_animated_bg(&mut self) {

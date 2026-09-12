@@ -83,6 +83,61 @@ pub(crate) enum PreMainCallerContinuation {
 pub(crate) enum MainLoopCommonSuffixContinuation {
     PrepareSpritesAndClearNmiLatch,
     ResumeSpritePreparationExtendedOamPackingAndClearNmiLatch { next_group_start: u8 },
+    ResumeSpritePreparationBytePackingAndClearNmiLatch { progress: SpritePreparationProgress },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SpritePreparationProgress {
+    ExtendedOam(ExtendedOamPackingProgress),
+    PointerTail(SpritePreparationPointerProgress),
+}
+
+/// Instruction-boundary progress through $874e-$8780. Each STA commits a
+/// complete source word; the three pointer pairs precede SEP and RTS.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SpritePreparationPointerProgress {
+    pub(crate) master_cycles: u16,
+}
+
+impl SpritePreparationPointerProgress {
+    pub(crate) fn completed_words(self) -> usize {
+        assert!(self.master_cycles <= 610);
+        [118, 182, 300, 364, 482, 546].into_iter()
+            .filter(|&cycles| cycles <= self.master_cycles).count()
+    }
+}
+
+/// A suspended pass of $0085FE-$00865A. Stores within a pass commit in
+/// ascending byte order; passes themselves visit 28,24,...,0.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ExtendedOamPackingProgress {
+    pub(crate) group_start: u8,
+    pub(crate) completed_bytes: u8,
+    pub(crate) group_master_cycles: u16,
+}
+
+impl ExtendedOamPackingProgress {
+    pub(crate) fn before_group(group_start: u8) -> Self {
+        Self { group_start, completed_bytes: 0, group_master_cycles: 0 }
+    }
+
+    pub(crate) fn validate(self) {
+        assert!(self.group_start <= 28 && self.group_start & 3 == 0);
+        assert!(self.completed_bytes <= 4);
+        let group_total = if self.group_start == 0 { 1128 } else { 1134 };
+        assert!(self.group_master_cycles <= group_total);
+        // TYA/ASL/ASL/TAX56, then each packed byte's four reads, six
+        // shifts and store250. A store is committed only after its access.
+        let stores = [306, 556, 806, 1056];
+        assert_eq!(usize::from(self.completed_bytes), stores.into_iter()
+            .filter(|&cycle| cycle <= self.group_master_cycles).count());
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NativeOverworldSongUpload {
+    CommandAt { host: u32, position: CpuRasterPosition },
+    AwaitReturn,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -863,6 +918,7 @@ pub(crate) enum SpriteMainCpuCaller {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum NmiPrepareSpritesCpuCaller {
     DungeonModule07,
+    OverworldModule09,
     DesertPrayer,
     WorldMapOverlayReload,
     /// `Module19_TriforceRoom`'s LinkOam_Main interrupted by vblank after

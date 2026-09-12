@@ -74,6 +74,20 @@ It does not replace the pinned live Snes9x A/V authority.
 - Debug/trace env switches live behind the `parity-debug` cargo feature (default on;
   `scripts/package_macos.sh` builds release with `--no-default-features`). Add new switches via
   `crate::debug_env::{var, var_os, is_set}`, never `std::env` directly.
+- `ZELDA3_DEBUG_SONG_UPLOAD=1` reports native upload command and caller-return
+  positions without dumping the stream or changing the live audio clock.
+- `ZELDA3_DEBUG_OVERWORLD_CPU_PACKING=1` reports the native overworld
+  source measurement when it reaches NMI, including committed packing bytes,
+  and completed calls whose packing entry is at scanline 215 or later.
+- `ZELDA3_DEBUG_MUSIC_WINDOW_FRAME=<engine-host>` includes DSP write offsets
+  and the absolute SPC clock summary for that audio window; compare these
+  with source port bus timestamps, which precede the next CPU instruction.
+- `ZELDA3_DEBUG_VWF_MARKER_POLICY=<first-host>-<last-host>` also reports
+  unmarked audio publications and the deferred markers before queue rotation.
+- `ZELDA3_DEBUG_DSP_TRACE_FRAMES=<comparison-frames>` also works in cached A/V
+  replay, writing Rust SPC instructions, DSP events and audio beside its
+  ledgers. These files contain no live oracle trace; align them with a pinned
+  source capture to distinguish native fidelity from receipt-clock agreement.
 - `ZELDA3_DEBUG_PRESENTED_FRAMES` with `ZELDA3_DEBUG_PRESENTED_DIR` dumps composed
   VRAM, OAM, palette, registers, CHR identities, composed scanline windows and
   spotlight publication ownership. Each entry in `chr-sources.bin`

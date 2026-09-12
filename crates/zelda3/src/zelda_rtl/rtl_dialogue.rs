@@ -2244,6 +2244,17 @@ impl ZeldaState {
         {
             return;
         }
+        if let Some(progress) = self.native_overworld_packing_progress.take() {
+            assert!(!matches!(self.original_timing_owner, OriginalTimingOwnerState::Live));
+            self.nmi_prepare_sprites_through_progress(progress);
+            assert!(self.pending_main_loop_common_suffix.replace(
+                MainLoopCommonSuffixContinuation::ResumeSpritePreparationBytePackingAndClearNmiLatch { progress },
+            ).is_none());
+            self.schedule_live_interrupted_nmi_prepare_sprites_caller_return(
+                NmiPrepareSpritesCpuCaller::OverworldModule09,
+            );
+            return;
+        }
         if let Some(
             interruption @ crate::MainLoopInterruption::SpritePreparationExtendedOamPacking {
                 next_group_start,

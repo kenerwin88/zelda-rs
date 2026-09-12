@@ -3473,6 +3473,10 @@ impl ZeldaState {
                 self.dungeon_exit_spotlight_cpu_entry_envelope
                     .expect("recurring Module0F entry requires the preceding ROM CPU raster")
             };
+            let (entry_earliest, entry_latest) = if self.game_state.frame.submodule == 0 {
+                self.dungeon_exit_spotlight_cpu_entry_envelope
+                    .unwrap_or((entry_earliest, entry_latest))
+            } else { (entry_earliest, entry_latest) };
             let plan = dungeon_exit_spotlight_cpu_plan(self, entry_earliest, entry_latest);
             self.dungeon_exit_spotlight_cpu_entry_envelope =
                 plan.and_then(|plan| plan.next_entry_earliest.zip(plan.next_entry_latest));
@@ -5587,8 +5591,11 @@ impl ZeldaState {
     pub(super) fn Module09_LoadNewMapAndGFX(&mut self) {
         self.set_overworld_peg_puzzle_progress(0);
         if self.rom_startup_timing() {
-            let timing =
-                overworld_map_and_sprite_graphics_timing(self.overworld_map_graphics_workload());
+            let (quadrant_nmis, tail_nmis) = self.native_overworld_map_graphics_nmi_slices.take()
+                .unwrap_or_else(|| {
+                    let timing = overworld_map_and_sprite_graphics_timing(self.overworld_map_graphics_workload());
+                    (timing.quadrant_load_nmi_slices, timing.scroll_map_and_sprite_gfx_tail_nmi_slices)
+                });
             // The first quadrant decompression begins on the caller's entry
             // slice. The ROM exposes two distinct interruptible generations:
             // map quadrants finish first (and advance the visible submodule),
@@ -5596,10 +5603,9 @@ impl ZeldaState {
             // the CPU stack for a separately named tail.
             self.game_execution_scheduler.schedule_work(
                 GameWorkContinuation::FinishOverworldMapQuadrants {
-                    scroll_map_and_sprite_gfx_tail_nmi_slices: timing
-                        .scroll_map_and_sprite_gfx_tail_nmi_slices,
+                    scroll_map_and_sprite_gfx_tail_nmi_slices: tail_nmis,
                 },
-                timing.quadrant_load_nmi_slices,
+                quadrant_nmis,
             );
             return;
         }
