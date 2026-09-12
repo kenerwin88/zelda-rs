@@ -96,7 +96,7 @@ Work remains on `fix/romless-spiral-palette-return`; `main` remains the accepted
 baseline above. No push. Short receipt comparisons protect the shared path
 while native timing advances; they are not native acceptance evidence.
 
-Current native frontier: **26516, audio-only**. This batch has corrected:
+Current native frontier: **27888, video-only**. This batch has corrected:
 
 - `510da835`: grayscale caller finishes its held NMI before authoring the next
   palette; retires at main wait. Exposed earlier native frontier 14076.
@@ -125,10 +125,17 @@ Current native frontier: **26516, audio-only**. This batch has corrected:
   Held NMIs before the resumed callers. The reset uses a measured partial
   garnish-clear checkpoint. Native 25922 → 25925; 15 focused stair tests and
   26,000 receipt frames pass. WRAM25920–25923 agree apart from scratch.
-- Straight-stair quadrant callers retire at main wait, so the next Open NMI
+- `51761a5a`: straight-stair quadrant callers retire at main wait, so the next Open NMI
   publishes pending uploads before the following palette iteration. Native
   25925 → 26516; all16 focused stair tests and26,530 receipt frames pass.
   WRAM25924–25928 agree apart from scratch.
+- Movable-mantle drawing, its bank/inactive caller, and shared OAM correction
+  costs now follow the ROM instructions. The reference matrix checks exact
+  cycles and OAM bytes for clipping, tile counts and size flags, including the
+  complete dialogue-time mantle caller. Guard/follower references also pass.
+  Native26516 →27888; receipt27,920 frames pass. WRAM26510–26517 now agree
+  apart from scratch. Evidence: `target/mantle-cycle-native` and
+  `target/mantle-cycle-receipt`.
 
 The audio mismatch at 25054 came from missing drawing work before the text
 renderer. The original enters VWF at v=50 on host 25048; the old ledger left
@@ -150,9 +157,12 @@ live trace ended at its configured trace cutoff with a missing final return;
 its25920–25923 CPU evidence is complete, but it is not an acceptance run.
 The quadrant upload chain (states5–8) is repaired. Evidence:
 `target/straight-quadrant-native`, `target/straight-quadrant-receipt`.
-**Next:26516**, audio during dialogue in room51. Source receipts:
-`target/native-26516-source`; native WRAM/VWF/cycle-ledger probe:
+The room51 dialogue audio mismatch is repaired. Source receipts:
+`target/native-26516-source`; original WRAM/VWF/cycle-ledger probe:
 `target/native-26516`, `target/native-26516-ledger`, `target/native-26516-profiles`.
+**Next:27888**, video in Module0E/submodule3, room41, just before a long
+interface operation. Source receipts: `target/native-27888-source`; native
+probe `target/native-27888`; receipt probe `target/mantle-cycle-receipt`.
 Prefix evidence: `target/vwf-25054-source`,
 `target/drawing-batch-ledger`, `target/drawing-batch-profiles`; chronological
 working notes: `target/native-100k-batch/progress.md`.

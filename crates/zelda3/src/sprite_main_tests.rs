@@ -360,3 +360,71 @@ fn guard_drawing_cycle_charges_match_rom_for_poses_and_clipping() {
         }
     }
 }
+
+#[test]
+fn mantle_and_oam_correction_cycles_match_rom_for_clipping() {
+    use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+    let rom_path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"));
+    let Ok(mut rom) = std::fs::read(rom_path) else {
+        eprintln!("OAM cycle reference skipped: no development ROM");
+        return;
+    };
+    if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+    for entry in [0x06_febc, 0x1a_fcb3, 0x1a_fc31] {
+        for (x, y) in [(40u16, 50u16), (255, 223), (511, 0xfff0), (0xff80, 0x80)] {
+            for size in [0, 2, 0xff] {
+                for count in [0, 1, 5, 7] {
+                    let mut state = ZeldaState::new();
+                    state.clear_oam_buffer();
+                    state.sprite_set_x(4, x);
+                    state.sprite_set_y(4, y);
+                    state.set_bg2_x(0x10);
+                    state.set_bg2_y(0x20);
+                    state.sprite_slot_view_mut(4).set_state(9);
+                    state.sprite_slot_view_mut(4).set_sprite_type(0xee);
+                    state.set_submodule(2); // the mantle's dialogue-time inactive return
+                    state.oam_state_mut().set_current_pointer(0x0800);
+                    state.oam_state_mut().set_current_extended_pointer(0x0a20);
+                    for i in 0..8 {
+                        state.oam_state_mut().write_entry(0x0800 + 4 * i, (i * 37) as u8, (255 - i * 31) as u8, 0, 0);
+                        state.oam_state_mut().set_extended_byte_at(0x0a20 + i, (i & 2) as u8);
+                    }
+                    state.game_state.write_to_ram(&mut state.ram);
+                    let bank = (entry >> 16) as u8;
+                    let checkpoint = RomCpuCheckpoint {
+                        entry_pc: entry, stop_pc: (u32::from(bank) << 16) | 0x8000,
+                        a: count as u16, x: 4, y: size as u16,
+                        sp: if entry == 0x1a_fc31 { 0x01fc } else { 0x01fd },
+                        dp: 0, db: bank, carry: false, zero: false,
+                        overflow: false, negative: false, interrupt_disable: true,
+                        decimal: false, accumulator_is_8_bit: true, index_is_8_bit: true,
+                        emulation: false, waiting: false,
+                        stack_address: if entry == 0x1a_fc31 { 0x01fd } else { 0x01fe },
+                        stack_bytes: if entry == 0x1a_fc31 { &[0xff, 0x7f, 0x1a] } else { &[0xff, 0x7f] },
+                    };
+                    let mut cpu = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                        &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+                    let mut expected = 0u64;
+                    for _ in 0..100_000 {
+                        if cpu.is_complete() { break; }
+                        expected += u64::from(cpu.step().master_cycles);
+                    }
+                    assert!(cpu.is_complete());
+                    let before = crate::cycle_ledger::master();
+                    if entry == 0x06_febc {
+                        state.sprite_correct_oam_entries(4, count, size);
+                    } else if entry == 0x1a_fcb3 {
+                        state.movable_mantle_draw(4);
+                    } else {
+                        state.sprite_ee_movable_mantle(4);
+                    }
+                    assert_eq!(crate::cycle_ledger::master() - before, expected,
+                        "entry={entry:06x} x={x} y={y} size={size} count={count}");
+                    assert_eq!(&state.ram[0x800..0xa40], &cpu.ram()[0x800..0xa40],
+                        "OAM entry={entry:06x} x={x} y={y} size={size} count={count}");
+                }
+            }
+        }
+    }
+}

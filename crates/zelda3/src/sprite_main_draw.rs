@@ -4876,10 +4876,14 @@ impl ZeldaState {
     //   Six hand-written OAM tiles; no canonical DrawMultipleData table in C.
     // }
     pub(super) fn movable_mantle_draw(&mut self, k: usize) {
+        let _scope = crate::cycle_ledger::routine(0x1a_fcb3);
+        crate::cycle_ledger::charge(156); // $FCB3..FCBD, allocate + coordinate calls
         self.oam_allocate_from_region_b(0x20);
         let Some((x, y, _flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Long) else {
+            crate::cycle_ledger::charge(6 + 42); // taken BCS, $FCEC RTS
             return;
         };
+        crate::cycle_ledger::charge(38); // $FCBF..FCC0
         let mut oam = self.game_state.oam.current_pointer_usize();
         for i in (0..6).rev() {
             self.oam_state_mut().write_entry(
@@ -4890,54 +4894,81 @@ impl ZeldaState {
                 MOVABLE_MANTLE_FLAGS[i],
             );
             oam += 4;
+            crate::cycle_ledger::charge(474 + if i != 0 { 6 } else { 0 }); // $FCC2..FCE1
         }
-        self.sprite_correct_oam_entries(k, 5, 2);
+        crate::cycle_ledger::charge(122); // $FCE3..FCE8, including correction JSL
+        self.sprite_correct_oam_entries_long(k, 5, 2);
+        crate::cycle_ledger::charge(42); // $FCEC RTS
     }
 
     // -----------------------------------------------------------------------
     // void Sprite_EE_MovableMantle(int k) {  // 85e819
     pub(super) fn sprite_ee_movable_mantle(&mut self, k: usize) {
+        crate::cycle_ledger::charge_routine(0x1a_fc31, 190); // bank wrapper $FC31..FC38
+        let _scope = crate::cycle_ledger::routine(0x1a_fc39);
+        crate::cycle_ledger::charge(92); // $FC39..FC3C, drawing/inactive JSRs
         self.movable_mantle_draw(k);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive_bank1a(k) {
             return;
         }
+        crate::cycle_ledger::charge(78); // $FC3F..FC43, damage JSL + BCC
         if !self.sprite_check_damage_to_link_same_layer(k) {
+            crate::cycle_ledger::charge(6 + 42); // taken BCC, $FC9A RTS
             return;
         }
+        crate::cycle_ledger::charge(124); // $FC45..FC49, hookshot/dash calls
         self.sprite_nullify_hookshot_drag();
         self.sprite_repel_dash();
 
-        if self.game_state.sprites.follower_runtime.indicator() != 1
-            || self.game_state.inventory.items.torch() == 0
-            || self.game_state.player.follower_link.is_running()
-            || self.sprite_slot_view(k).g() == 0x90
-            || sign8(
+        if { crate::cycle_ledger::charge(72); // $FC4D..FC53
+            self.game_state.sprites.follower_runtime.indicator() != 1 }
+            || { crate::cycle_ledger::charge(56); // $FC55..FC59
+                self.game_state.inventory.items.torch() == 0 }
+            || { crate::cycle_ledger::charge(48); // $FC5B..FC5E
+                self.game_state.player.follower_link.is_running() }
+            || { crate::cycle_ledger::charge(64); // $FC60..FC65
+                self.sprite_slot_view(k).g() == 0x90 }
+            || { crate::cycle_ledger::charge(56); // $FC67..FC6B
+                sign8(
                 self.game_state
                     .player
                     .follower_link
                     .actual_x_velocity()
                     .wrapping_sub(24),
-            )
+            ) }
         {
+            crate::cycle_ledger::charge(6 + 42); // taken guard, $FC9A RTS
             return;
         }
 
+        crate::cycle_ledger::charge(172); // $FC6D..FC7B
         self.save_progress_mut().set_which_starting_point(4);
         self.sprite_slot_view_mut(k).add_subtype2(1);
 
         if (self.sprite_slot_view(k).subtype2() & 1) == 0 {
+            crate::cycle_ledger::charge(52); // $FC7D INC
             self.sprite_slot_view_mut(k).add_g(1);
+        } else {
+            crate::cycle_ledger::charge(6); // $FC7B BNE taken
         }
 
+        crate::cycle_ledger::charge(64); // $FC80..FC85
         if self.sprite_slot_view(k).g() < 8 {
+            crate::cycle_ledger::charge(6 + 42); // taken BCC, $FC9A RTS
             return;
         }
+        crate::cycle_ledger::charge(48); // $FC87..FC8A
         if self.game_state.system_signals.sound_effect_1() == 0 {
+            crate::cycle_ledger::charge(48); // $FC8C..FC8E
             self.set_sound_effect_1(34);
+        } else {
+            crate::cycle_ledger::charge(6); // $FC8A BNE taken
         }
+        crate::cycle_ledger::charge(116); // $FC91..FC96, including movement JSL
         let value = 2;
         self.sprite_slot_view_mut(k).set_x_velocity(value);
         self.sprite_move_xy(k);
+        crate::cycle_ledger::charge(42); // $FC9A RTS
     }
 
     // -----------------------------------------------------------------------

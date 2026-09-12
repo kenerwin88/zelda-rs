@@ -1056,6 +1056,10 @@ impl ZeldaState {
     //   } while (oam++, extp++, --n >= 0);
     // }
     pub(super) fn sprite_correct_oam_entries(&mut self, k: usize, n: i32, islarge: u8) {
+        let _scope = crate::cycle_ledger::routine(0x06_febc);
+        crate::cycle_ledger::charge(218); // $FEBC..FEC8, including coordinate JSR
+        // Sprite_GetScreenRelativeCoords, $FF26..FF48, fixed 8-bit slot reads.
+        crate::cycle_ledger::charge_routine(0x06_ff26, 438);
         let mut oam = self.game_state.oam.current_pointer_usize();
         let mut extp = self.game_state.oam.current_extended_pointer_usize();
         let spr_x = self.sprite_get_x(k);
@@ -1064,13 +1068,23 @@ impl ZeldaState {
             spr_x.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2()) as u8;
         let scrolly =
             spr_y.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2()) as u8;
-        for _ in 0..=n {
+        for index in 0..=n {
+            crate::cycle_ledger::charge(72 + if sign8(islarge) { 46 } else { 6 }); // $FECA..FED2
             let x = spr_x.wrapping_add(
                 self.game_state.oam.entry_x(oam).wrapping_sub(scrollx) as i8 as i16 as u16,
             );
             let y = spr_y.wrapping_add(
                 self.game_state.oam.entry_y(oam).wrapping_sub(scrolly) as i8 as i16 as u16,
             );
+            // $FED4..FEE2: sign-extend the tile's relative X displacement.
+            crate::cycle_ledger::charge(170 + if sign8(self.game_state.oam.entry_x(oam).wrapping_sub(scrollx)) { 14 } else { 6 });
+            let offscreen_x = x.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2()) >= 0x100;
+            crate::cycle_ledger::charge(186 + if offscreen_x { 76 } else { 6 }); // $FEE3..FEF4
+            crate::cycle_ledger::charge_routine(0x06_ff49, 188); // $FF49..FF55
+            crate::cycle_ledger::charge(154 + if sign8(self.game_state.oam.entry_y(oam).wrapping_sub(scrolly)) { 14 } else { 6 }); // $FEF6..FF03
+            let offscreen_y = y.wrapping_add(0x10).wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2()) >= 0x100;
+            crate::cycle_ledger::charge(186 + if offscreen_y { 46 } else { 6 }); // $FF04..FF15
+            crate::cycle_ledger::charge_routine(0x06_ff56, 356); // $FF56..FF6C
             let ext = if sign8(islarge) {
                 self.game_state.oam.extended_byte_at(extp) & 2
             } else {
@@ -1089,7 +1103,15 @@ impl ZeldaState {
             }
             oam += 4;
             extp += 1;
+            crate::cycle_ledger::charge(166 + if index < n { 6 } else { 0 }); // $FF17..FF20
         }
+        crate::cycle_ledger::charge(92); // $FF22..FF25
+    }
+
+    pub(super) fn sprite_correct_oam_entries_long(&mut self, k: usize, n: i32, islarge: u8) {
+        // $06:FEB4..FEBB: bank wrapper, including JSR of the shared body.
+        crate::cycle_ledger::charge_routine(0x06_feb4, 190);
+        self.sprite_correct_oam_entries(k, n, islarge);
     }
 
     // void Link_SetupHitBox_conditional(SpriteHitBox *hb) {  // 86f705
@@ -6699,9 +6721,19 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     /// with the coordinate-prep wrappers (host 2297: wrapper self 186 in a
     /// dialogue submodule, the caller +70).
     pub(super) fn sprite_return_if_inactive_bank5(&self, k: usize) -> bool {
+        self.sprite_return_if_inactive_with_cost(k, 0x05_f94e)
+    }
+
+    /// $1A:F954..F970 has the same branch costs and double-return ownership
+    /// as the bank-5 wrapper above.
+    pub(super) fn sprite_return_if_inactive_bank1a(&self, k: usize) -> bool {
+        self.sprite_return_if_inactive_with_cost(k, 0x1a_f954)
+    }
+
+    fn sprite_return_if_inactive_with_cost(&self, k: usize, address: u32) -> bool {
         let inactive = self.sprite_return_if_inactive(k);
         {
-            let _wrapper = crate::cycle_ledger::routine(0x05_f94e);
+            let _wrapper = crate::cycle_ledger::routine(address);
             let slot = self.sprite_slot_view(k);
             crate::cycle_ledger::charge(if slot.state() != 9 {
                 64 + 6 + 28
