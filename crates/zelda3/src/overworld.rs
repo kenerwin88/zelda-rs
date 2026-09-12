@@ -765,6 +765,7 @@ impl ZeldaState {
         // this call. Keep that lightweight prefix on the entry boundary so NMI
         // never observes the temporary value 5.
         if self.prepare_overworld_load_overlays() {
+            self.pre_overworld_overlays_cpu_nmis = None;
             return;
         }
         if self.begin_pre_overworld_overlays_work() {

@@ -90,13 +90,15 @@ test, exact validation and the remaining coarse pixel-copy limitation.
 
 ## Current working batch: native 100k
 
-The user requested a larger batch on 2026-09-11: **do not run the full-route
-acceptance gate again until native exact A/V reaches at least 100,000 frames**.
+The user requested a larger batch on 2026-09-11 targeting native exact A/V
+of at least 100,000 frames. On 2026-09-12 the user explicitly allowed a full
+parity check whenever needed, lifting the earlier prohibition before100k.
+Continue batching; use full acceptance when the shared-path risk warrants it.
 Work remains on `fix/romless-spiral-palette-return`; `main` remains the accepted
 baseline above. No push. Short receipt comparisons protect the shared path
 while native timing advances; they are not native acceptance evidence.
 
-Current native frontier: **37690, video-only**. This batch has corrected:
+Current native frontier: **37688, video-only**. This batch has corrected:
 
 - `510da835`: grayscale caller finishes its held NMI before authoring the next
   palette; retires at main wait. Exposed earlier native frontier 14076.
@@ -290,6 +292,35 @@ Current native frontier: **37690, video-only**. This batch has corrected:
   Never filter $00:8034 for this investigation: it is a hot busy-wait loop;
   the abandoned trace was stopped and its 4.6GB file removed.
 
+**Measured pre-overworld overlays.** Native now measures the full
+PreOverworld_LoadOverlays caller from the leading NMI through main wait,
+including overlay-dependent map decoding and the common suffix. The old
+fixed six-slice delay was two hosts too long for screen$13/progress2:
+source runs37687–37691 cross four Held NMIs. The regression executes the
+pinned ROM, checks four crossings, verifies live RAM is unchanged, and checks
+the zero-crossing special-area branch retires its pending measurement.
+Receipt ownership keeps its existing authority; measurement is native-only.
+The corrected duration exposes the missing song-upload wait two hosts earlier:
+native37690 →37688, video-only. This is the user-authorized source-fidelity
+correction, not claimed native frontier improvement. Evidence:
+`target/overlays-final-native`, `/tmp/overlays-final-test.log`,
+`target/overlays-final-receipt` (37,710 exact), and
+`/tmp/overlays-final-lib-tests.log` (1,766 passed,3 ignored).
+The interrupted upload is not repaired by this commit. Next implementation
+needs two independent facts: the main-CPU APUI0 command position (the current
+SPC clock schedules unqualified main writes at the end of the audio window)
+and the final upload acknowledgement/port-clear timestamp. Connecting only a
+transfer-busy boolean to the caller risks returning one host late because
+audio currently advances after gameplay. The existing protocol in
+`spc_driver_clock.rs` already prices the handshake, block headers, bytes and
+port clears; extend that owner rather than introducing a fixed upload delay.
+For a native return model, measure the properties prefix through $02:855d,
+then preserve the CPU suffix's actual interrupt phase after the receiver
+returns. Source $00:88ff PLP + $00:8900 RTS takes70 master clocks after the
+last port clear; CLI/RTL/LDA/STA in the overworld caller takes104 more to
+restore $4200. Refresh stalls still apply; an active-field return need not
+accept the immediate Held NMI seen in this particular trace.
+
 The audio mismatch at 25054 came from missing drawing work before the text
 renderer. The original enters VWF at v=50 on host 25048; the old ledger left
 native about one glyph ahead by host 25050, moving the final click before
@@ -389,9 +420,9 @@ Engine host N corresponds to Snes9x run N−1.
 ## Batch fixes before full-route validation
 
 The user requested batching on 2026-09-11 because a full-route check takes
-about 25 minutes. The user strengthened this on 2026-09-11: keep batching
-source-backed fixes until native exact A/V reaches at least 100,000 frames
-before launching another full-route run. Use focused regressions and short
+about 25 minutes. The user strengthened this on 2026-09-11 to target native
+exact A/V of at least100,000 frames. On 2026-09-12 the user allowed full
+parity checks when needed, including before100k. Use focused regressions and short
 receipt checks during development, with one root cause per commit. Run the expensive acceptance
 and promotion sequence once for the completed batch, rather than once per
 fix. End a batch sooner if an acceptance regression cannot be isolated

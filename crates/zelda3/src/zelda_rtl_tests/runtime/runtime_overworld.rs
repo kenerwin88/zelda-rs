@@ -1192,6 +1192,39 @@ fn overworld_animated_bg_vram_generation_follows_scanout_authority() {
 }
 
 #[test]
+fn pre_overworld_overlay_cpu_schedule_counts_source_caller_crossings() {
+    let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"));
+    let Ok(rom) = std::fs::read(path) else { return; };
+    let mut state = ZeldaState::new();
+    state.set_rom(&rom);
+    state.set_main_module(8);
+    state.set_submodule(1);
+    state.set_overworld_screen_word(0x13);
+    state.ram[0xf3c5] = 2;
+    state.ram[FRAME_COUNTER] = 15;
+    state.sync_native_game_state_from_ram();
+    // Snes9x calls the overlay on run37687, crosses four Held NMIs,
+    // and clears $12 on run37691 at V144/C354. The old six-slice estimate
+    // keeps this caller alive two extra hosts. Only the ROM shadow runs;
+    // its map/graphics writes must not publish into the live game.
+    let before = state.ram.clone();
+    assert_eq!(pre_overworld_overlays_cpu_nmis(&state), 4);
+    assert_eq!(state.ram, before);
+    // PreOverworld_LoadOverlays skips the map decoder for ordinary special
+    // areas (the C $0182/$0183 branch). This zero-crossing return must not
+    // leave a measurement for the next overworld load to consume.
+    state.set_overworld_screen_word(0x81);
+    write_le_u16(&mut state.ram, 0xa0, 0x182);
+    state.sync_native_game_state_from_ram();
+    assert_eq!(pre_overworld_overlays_cpu_nmis(&state), 0);
+    state.pre_overworld_overlays_cpu_nmis = Some(0);
+    state.PreOverworld_LoadOverlays();
+    assert_eq!(state.game_state.frame.submodule, 2);
+    assert_eq!(state.pre_overworld_overlays_cpu_nmis, None);
+}
+
+#[test]
 fn pre_overworld_load_models_measured_snes9x_nmi_boundaries() {
     let screen_build_workload = OverworldMapGraphicsWorkload {
         map32_definition_changes: 796,

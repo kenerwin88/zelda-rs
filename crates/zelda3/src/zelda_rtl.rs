@@ -3717,6 +3717,36 @@ fn dungeon_submodule_cpu_schedule_plan(
     );
 }
 
+/// Count the complete overlay caller, including the main-loop suffix, from
+/// its leading NMI. Map decompression varies with the selected overlay.
+fn pre_overworld_overlays_cpu_nmis(state: &ZeldaState) -> u8 {
+    let timing_dma = state.dma_with_native_hdma_enable();
+    let mut run = RomCpuTimingRun::new(
+        &state.rom, &state.ram, &state.sram, &state.ppu, &timing_dma,
+        state.zelda_audio_apu_output_ports(), DUNGEON_MAIN_WAIT_CPU_CHECKPOINT,
+    ).expect("pre-overworld overlay timing requires the loaded Zelda ROM");
+    let mut budget = CpuCycleBudget::at_nmi_acceptance(
+        CpuBusWorkload::with_dynamic_hdma(),
+        CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0),
+    );
+    advance_rom_cpu_through_nmi(&mut run, &mut budget);
+    let mut nmis = 0u8;
+    let mut entered = false;
+    for _ in 0..5_000_000 {
+        entered |= run.pc() == 0x02_af19;
+        if entered && run.is_complete() {
+            return nmis;
+        }
+        let (scanline, master_cycle) = budget.raster_position().coordinates();
+        run.set_raster_position(scanline, master_cycle);
+        if advance_rom_cpu_step(&mut run, &mut budget) != CpuWorkAdvance::Complete {
+            nmis = nmis.checked_add(1).expect("overlay caller exceeded NMI count");
+            advance_rom_cpu_through_nmi(&mut run, &mut budget);
+        }
+    }
+    panic!("pre-overworld overlay caller did not return at {:06x}", run.pc());
+}
+
 fn module09_cpu_schedule(state: &ZeldaState) -> Module09CpuSchedule {
     const MODULE09_ENTRY_PC: u32 = 0x02_a475;
     const SPRITE_MAIN_RETURN_PC: u32 = 0x02_a4b5;
@@ -9376,6 +9406,8 @@ pub struct ZeldaState {
     #[serde(skip)]
     module09_cpu_schedule: Option<Module09CpuSchedule>,
     #[serde(skip)]
+    pre_overworld_overlays_cpu_nmis: Option<u8>,
+    #[serde(skip)]
     sprite_main_cpu_boundary: Option<SpriteMainCpuBoundary>,
     #[serde(skip)]
     sprite_main_cpu_nmi_slices: u8,
@@ -11941,6 +11973,7 @@ impl ZeldaState {
             dungeon_room_load_cpu_schedule: None,
             dungeon_submodule_cpu_schedule: None,
             module09_cpu_schedule: None,
+            pre_overworld_overlays_cpu_nmis: None,
             sprite_main_cpu_boundary: None,
             sprite_main_cpu_nmi_slices: 0,
             sprite_main_cpu_caller: SpriteMainCpuCaller::default(),
@@ -12267,6 +12300,7 @@ impl ZeldaState {
             self.dungeon_room_load_cpu_schedule = None;
             self.dungeon_submodule_cpu_schedule = None;
             self.module09_cpu_schedule = None;
+            self.pre_overworld_overlays_cpu_nmis = None;
             self.sprite_main_cpu_boundary = None;
             self.sprite_main_cpu_nmi_slices = 0;
             self.sprite_main_cpu_caller = SpriteMainCpuCaller::default();

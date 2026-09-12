@@ -100,6 +100,15 @@ impl ZeldaState {
             );
         }
         if self.rom_startup_timing()
+            && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && frame.main_module == 8 && frame.submodule == 1
+            && !self.game_state.display.nmi_update_is_latched()
+            && self.game_execution_scheduler.is_idle()
+            && self.pre_overworld_overlays_cpu_nmis.is_none()
+        {
+            self.pre_overworld_overlays_cpu_nmis = Some(pre_overworld_overlays_cpu_nmis(self));
+        }
+        if self.rom_startup_timing()
             && frame.main_module == 9
             && matches!(frame.submodule, 0x20 | 0x21)
             && self.game_execution_scheduler.is_idle()
@@ -340,9 +349,12 @@ impl ZeldaState {
         if !self.rom_startup_timing() || self.game_state.frame.main_module != 8 {
             return false;
         }
+        let nmi_slices = self.pre_overworld_overlays_cpu_nmis.take()
+            .unwrap_or(PRE_OVERWORLD_OVERLAYS_NMI_SLICES);
+        if nmi_slices == 0 { return false; }
         self.game_execution_scheduler.schedule_work(
             GameWorkContinuation::FinishPreOverworldOverlays,
-            PRE_OVERWORLD_OVERLAYS_NMI_SLICES,
+            nmi_slices,
         );
         true
     }
