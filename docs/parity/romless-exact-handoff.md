@@ -4,7 +4,45 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 47,130
+## Current native frontier — 47,237
+
+The sprite item-receipt caller now retires at the main wait before NMI.
+Its final held handler interrupts decompression; the resumed sprite and
+module suffix then update the HUD and return. The next open handler must
+consume those operands before the next main iteration edits the HUD.
+Previously only the ground-item caller restored this scheduler phase;
+sprite and ancilla receipt continuations left it at the prior phase.
+The fix is confined to native resumed sprite/ancilla callers after their
+common suffix and existing item-graphics postlude. Live receipts retain
+their own timing authority.
+
+Source comparison 47,129 returns at `$00:8034`, V225/C8, with frame counter
+97 and rupee goal/actual 0/99. Comparison 47,130 has counter 98 and actual
+98 on both sides. The old native display nevertheless skipped 99: at
+engine host 47,131, VRAM word `$606a` was `$2498`, source `$2499`. All other
+VRAM bytes, OAM, and CGRAM matched. After the phase fix the displayed
+99 -> 98 -> 97 sequence agrees with source, without changing the rupee
+logic or load duration.
+
+Evidence: `target/native-47130-source[-presented]` (source video passes
+through 47,150, audio disabled), `target/native-47130-diagnostic[-presented]`,
+and `target/native-item-return-phase-presented`. Source trace decode:
+`/tmp/native-47130-source.jsonl`, raw runs +38,001.
+
+Accepted binary SHA-256:
+`d2ef7cf20e12afc46d8c31b5b952fa6f277e9de0ad3d41e69685cf753f5a9abc`.
+Native video/audio exact through 47,236; first video mismatch 47,237,
+audio exact there (`target/native-item-return-phase-native`, 57.47s).
+Engine suite: 1,778 passed, 3 ignored (24.26s),
+`/tmp/native-item-return-phase-lib-tests.log`. No new receipt replay;
+the full 1,581,079 receipt proof remains runtime `d7d92a85`.
+
+Next frontier follows a dialogue caller: source held/rendering at
+47,233-47,236, common suffix completed at 47,236, open NMI and a fresh
+main at 47,237, then rendering holds resume. Diagnose native/source
+state and displayed text before altering dialogue duration.
+
+## Previous native frontier — 47,130
 
 The closing entry at comparison 41,244 had correct CPU counters/radius,
 all HDMA window rows, OAM, and CGRAM, but 77 VRAM bytes in Link's OBJ page

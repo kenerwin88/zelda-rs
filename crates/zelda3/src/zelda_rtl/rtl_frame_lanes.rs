@@ -5017,6 +5017,17 @@ impl ZeldaState {
             // in-arm NMI above ran before that epilogue, so record
             // the law transfer it performs here.
             self.complete_atomic_item_graphics_return_postlude(continuation);
+            if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                && matches!(continuation,
+                    ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt { .. }
+                    | ItemReceiptGraphicsContinuation::ResumeAncillaItemReceipt { .. })
+            {
+                // The final held handler precedes the resumed sprite caller
+                // and its common suffix. After that suffix reaches the main
+                // wait, the next open handler must consume its HUD operands
+                // before another main iteration edits them (source $8034).
+                self.game_execution_scheduler.finish_call_stack_at_main_wait_before_nmi();
+            }
             return true;
         }
         false
