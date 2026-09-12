@@ -714,6 +714,13 @@ impl ZeldaState {
                 self.nmi_prepare_sprites();
                 self.clear_nmi_update_latch();
             }
+            GameWorkContinuation::FinishOverworldHudCallerReturn { inventory, animate_hearts } => {
+                self.resume_overworld_hud_inventory(inventory, animate_hearts);
+                self.OverworldOverlay_HandleRain();
+                self.complete_pending_main_loop_common_suffix_after_module_return();
+                self.game_execution_scheduler.finish_call_stack_at_main_wait_before_nmi();
+                return;
+            }
             GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn { caller } => {
                 // The interrupt landed in NMI_PrepareSprites' initial OAM
                 // packing loop. The NMI update latch was still set, so that

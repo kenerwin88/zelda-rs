@@ -620,7 +620,10 @@ impl ZeldaState {
                 // pair; the body blocks charge themselves.
                 let _scope = crate::cycle_ledger::routine(0x0d_fc09);
                 self.hud_update_magic();
-                self.hud_update_inventory();
+                if let Some(inventory) = self.hud_update_inventory_from(None) {
+                    self.schedule_interrupted_overworld_hud_return(inventory, true);
+                    return;
+                }
             }
             self.hud_animate_heart_refill();
             self.increment_hud_update_flag();
@@ -667,7 +670,10 @@ impl ZeldaState {
                 {
                     let _scope = crate::cycle_ledger::routine(0x0d_fc09);
                     self.hud_update_magic();
-                    self.hud_update_inventory();
+                    if let Some(inventory) = self.hud_update_inventory_from(None) {
+                    self.schedule_interrupted_overworld_hud_return(inventory, true);
+                    return;
+                }
                 }
                 self.hud_animate_heart_refill();
                 self.increment_hud_update_flag();
@@ -690,7 +696,10 @@ impl ZeldaState {
             let _scope = crate::cycle_ledger::routine(0x0d_fb94);
             self.hud_update_hearts();
             self.hud_update_magic();
-            self.hud_update_inventory();
+            if let Some(inventory) = self.hud_update_inventory_from(None) {
+                    self.schedule_interrupted_overworld_hud_return(inventory, false);
+                    return;
+                }
         }
         self.increment_hud_update_flag();
     }
@@ -1829,34 +1838,18 @@ impl ZeldaState {
     }
 
     fn hud_update_inventory(&mut self) {
-        let d =
-            hud_int_to_decimal(self.game_state.inventory.player_resources.rupees_actual() as u32);
-        let inv_offs = usize::from(d[0] == 0x90);
-        let dst = hudxy(8, 0);
-        for i in 0..12 {
-            self.hud_buffer_set(
-                dst + hudxy(i, 0),
-                HUD_INVENTORY_BACKGROUND_TILES[inv_offs + i],
-            );
-            self.hud_buffer_set(
-                dst + hudxy(i, 1),
-                HUD_INVENTORY_BACKGROUND_TILES[13 + inv_offs + i],
-            );
-        }
-        let bow = self.game_state.inventory.items.bow();
-        if bow != 0 {
-            let has_arrows = self.game_state.inventory.player_resources.arrows() != 0;
-            if bow >= 3 {
-                self.hud_buffer_set(hudxy(15, 0), 0x2486);
-                self.hud_buffer_set(hudxy(16, 0), 0x2487);
-                self.inventory_items_mut()
-                    .set_inventory_item(0, if has_arrows { 4 } else { 3 });
-            } else {
-                self.inventory_items_mut()
-                    .set_inventory_item(0, if has_arrows { 2 } else { 1 });
-            }
-        }
+        assert!(
+            self.hud_update_inventory_from(None).is_none(),
+            "a HUD interruption requires its refill caller continuation"
+        );
+    }
 
+    fn hud_update_inventory_from(
+        &mut self,
+        resume: Option<HudInventoryResume>,
+    ) -> Option<HudInventoryResume> {
+        let first = resume.map_or(HudInventoryField::Rupees, |r| r.interruption.field);
+        let dst = hudxy(8, 0);
         let base_tiles = [
             0x2400,
             if self
@@ -1869,70 +1862,187 @@ impl ZeldaState {
                 0x2400
             },
         ];
-        let base_tile = base_tiles[usize::from(
-            self.game_state.inventory.player_resources.rupees_actual() == self.max_rupees(),
-        )];
-        let digit_x = usize::from(inv_offs == 0);
-        if inv_offs == 0 {
-            self.hud_buffer_set(dst + hudxy(0, 1), base_tile | d[0] as u16);
+        if first <= HudInventoryField::Rupees {
+            let d = match self.hud_inventory_decimal(
+                HudInventoryField::Rupees,
+                self.game_state.inventory.player_resources.rupees_actual() as u32,
+                resume,
+            ) {
+                Ok(digits) => digits,
+                Err(pending) => return Some(pending),
+            };
+
+            let inv_offs = usize::from(d[0] == 0x90);
+            let dst = hudxy(8, 0);
+            for i in 0..12 {
+                // The port refreshes the inventory backdrop here. Numeric
+                // slots still belong to their previous conversion until the
+                // source's digit stores below; do not transiently erase them.
+                if i != 10 {
+                    self.hud_buffer_set(
+                        dst + hudxy(i, 0),
+                        HUD_INVENTORY_BACKGROUND_TILES[inv_offs + i],
+                    );
+                }
+                if !matches!(i, 4 | 5 | 7 | 8 | 10) {
+                    self.hud_buffer_set(
+                        dst + hudxy(i, 1),
+                        HUD_INVENTORY_BACKGROUND_TILES[13 + inv_offs + i],
+                    );
+                }
+            }
+            let bow = self.game_state.inventory.items.bow();
+            if bow != 0 {
+                let has_arrows = self.game_state.inventory.player_resources.arrows() != 0;
+                if bow >= 3 {
+                    self.hud_buffer_set(hudxy(15, 0), 0x2486);
+                    self.hud_buffer_set(hudxy(16, 0), 0x2487);
+                    self.inventory_items_mut()
+                        .set_inventory_item(0, if has_arrows { 4 } else { 3 });
+                } else {
+                    self.inventory_items_mut()
+                        .set_inventory_item(0, if has_arrows { 2 } else { 1 });
+                }
+            }
+
+            let base_tile = base_tiles[usize::from(
+                self.game_state.inventory.player_resources.rupees_actual() == self.max_rupees(),
+            )];
+            let digit_x = usize::from(inv_offs == 0);
+            if inv_offs == 0 {
+                self.hud_buffer_set(dst + hudxy(0, 1), base_tile | d[0] as u16);
+            }
+            self.hud_buffer_set(dst + hudxy(digit_x, 1), base_tile | d[1] as u16);
+            self.hud_buffer_set(dst + hudxy(digit_x + 1, 1), base_tile | d[2] as u16);
+            self.hud_buffer_set(dst + hudxy(digit_x + 2, 1), base_tile | d[3] as u16);
+
+            // REP and the digit stores at $fc5e-fc80.
+            crate::cycle_ledger::charge(406);
         }
-        self.hud_buffer_set(dst + hudxy(digit_x, 1), base_tile | d[1] as u16);
-        self.hud_buffer_set(dst + hudxy(digit_x + 1, 1), base_tile | d[2] as u16);
-        self.hud_buffer_set(dst + hudxy(digit_x + 2, 1), base_tile | d[3] as u16);
+        if first <= HudInventoryField::Bombs {
+            let d = match self.hud_inventory_decimal(
+                HudInventoryField::Bombs,
+                self.game_state.inventory.player_resources.bombs() as u32,
+                resume,
+            ) {
+                Ok(digits) => digits,
+                Err(pending) => return Some(pending),
+            };
 
-        let d = hud_int_to_decimal(self.game_state.inventory.player_resources.bombs() as u32);
-        let base_tile = base_tiles[usize::from(
-            self.game_state.inventory.player_resources.bombs()
-                == MAX_BOMBS_BY_UPGRADE_LEVEL[self
-                    .game_state
-                    .inventory
-                    .player_resources
-                    .bomb_upgrade_level() as usize],
-        )];
-        self.hud_buffer_set(dst + hudxy(4, 1), base_tile | d[2] as u16);
-        self.hud_buffer_set(dst + hudxy(5, 1), base_tile | d[3] as u16);
+            let base_tile = base_tiles[usize::from(
+                self.game_state.inventory.player_resources.bombs()
+                    == MAX_BOMBS_BY_UPGRADE_LEVEL[self
+                        .game_state
+                        .inventory
+                        .player_resources
+                        .bomb_upgrade_level()
+                        as usize],
+            )];
+            self.hud_buffer_set(dst + hudxy(4, 1), base_tile | d[2] as u16);
+            self.hud_buffer_set(dst + hudxy(5, 1), base_tile | d[3] as u16);
 
-        let d = hud_int_to_decimal(self.game_state.inventory.player_resources.arrows() as u32);
-        let base_tile = base_tiles[usize::from(
-            self.game_state.inventory.player_resources.arrows()
-                == MAX_ARROWS_BY_UPGRADE_LEVEL[self
-                    .game_state
-                    .inventory
-                    .player_resources
-                    .arrow_upgrade_level() as usize],
-        )];
-        self.hud_buffer_set(dst + hudxy(7, 1), base_tile | d[2] as u16);
-        self.hud_buffer_set(dst + hudxy(8, 1), base_tile | d[3] as u16);
+            // REP and the digit stores at $fc8e-fca4.
+            crate::cycle_ledger::charge(278);
+        }
+        if first <= HudInventoryField::Arrows {
+            let d = match self.hud_inventory_decimal(
+                HudInventoryField::Arrows,
+                self.game_state.inventory.player_resources.arrows() as u32,
+                resume,
+            ) {
+                Ok(digits) => digits,
+                Err(pending) => return Some(pending),
+            };
 
+            let base_tile = base_tiles[usize::from(
+                self.game_state.inventory.player_resources.arrows()
+                    == MAX_ARROWS_BY_UPGRADE_LEVEL[self
+                        .game_state
+                        .inventory
+                        .player_resources
+                        .arrow_upgrade_level()
+                        as usize],
+            )];
+            self.hud_buffer_set(dst + hudxy(7, 1), base_tile | d[2] as u16);
+            self.hud_buffer_set(dst + hudxy(8, 1), base_tile | d[3] as u16);
+
+            // REP and the digit stores at $fcb2-fcc8.
+            crate::cycle_ledger::charge(278);
+        }
+        if resume.is_none_or(|r| r.interruption.field != HudInventoryField::Keys) {
+            // $fccc-fcdb: blank digit, key load and comparison.
+            crate::cycle_ledger::charge(168);
+        }
         let mut d = [0u8; 4];
         d[3] = 0x7f;
         if self.game_state.inventory.player_resources.keys() != 0xff {
-            d = hud_int_to_decimal(self.game_state.inventory.player_resources.keys() as u32);
+            d = match self.hud_inventory_decimal(
+                HudInventoryField::Keys,
+                self.game_state.inventory.player_resources.keys() as u32,
+                resume,
+            ) {
+                Ok(digits) => digits,
+                Err(pending) => return Some(pending),
+            };
+        } else {
+            crate::cycle_ledger::charge(6); // $fcdb BEQ taken
         }
         let key = 0x2400 | d[3] as u16;
-        self.hud_buffer_set(dst + hudxy(10, 1), key);
-        // Cycle ledger, Hud_Update_IgnoreHealth ($0D:FC09) inventory block.
-        // $0D:FC57-$0D:FCDB (1460): rupees, bombs and arrows through three
-        // `JSR Hud_IntToDecimal` (46 each) and their digit stores, `LDA
-        // #$007F; STA $05`, then `LDA $7EF36F; AND; CMP #$00FF; BEQ` (taken
-        // +6 without keys, else the fourth `JSR Hud_IntToDecimal` at
-        // $0D:FCDD, 46). $0D:FCE0-$0D:FCF1 (190) stores the key digit and
-        // tests it against $247F (`BNE` taken +6 unless blank; a blank runs
-        // $0D:FCF3, 48). $0D:FCF7-$0D:FCF9 `SEP #$30; RTS` (64).
-        // The port's background-tile refresh, bow-icon update and yellow
-        // maximum tiles are not in this ROM routine and cost nothing here.
-        crate::cycle_ledger::charge(
-            1460 + if self.game_state.inventory.player_resources.keys() != 0xff {
-                46
-            } else {
-                6
-            } + 190
-                + if key == 0x247f { 48 } else { 6 }
-                + 64,
-        );
+        self.hud_buffer_set(hudxy(18, 1), key);
+        let inv_offs =
+            usize::from(self.game_state.inventory.player_resources.rupees_actual() < 1000);
+        self.hud_buffer_set(hudxy(18, 0), HUD_INVENTORY_BACKGROUND_TILES[inv_offs + 10]);
+        // $fce0-fcf9: key digit, optional blank label, SEP and RTS.
+        crate::cycle_ledger::charge(190 + if key == 0x247f { 48 } else { 6 } + 64);
         if key == 0x247f {
-            self.hud_buffer_set(dst + hudxy(10, 0), 0x247f);
+            self.hud_buffer_set(hudxy(18, 0), 0x247f);
         }
+        None
+    }
+
+    fn hud_inventory_decimal(
+        &mut self,
+        field: HudInventoryField,
+        number: u32,
+        resume: Option<HudInventoryResume>,
+    ) -> Result<[u8; 4], HudInventoryResume> {
+        if self
+            .native_overworld_hud_interruption
+            .is_some_and(|p| p.field == field)
+        {
+            let interruption = self.native_overworld_hud_interruption.take().unwrap();
+            assert!(resume.is_none(), "HUD conversion cannot begin twice");
+            assert!(interruption.entry_master_cycles <= field.entry_cycles());
+            crate::cycle_ledger::charge(
+                u64::from(interruption.entry_master_cycles) + u64::from(interruption.master_cycles),
+            );
+            return Err(HudInventoryResume {
+                interruption,
+                number,
+            });
+        }
+        let completed_entry = resume
+            .filter(|r| r.interruption.field == field)
+            .map_or(0, |r| r.interruption.entry_master_cycles);
+        // The value load and JSR are $fc57-fc5b, $fc84-fc8b, $fca8-fcaf,
+        // or the key's JSR at $fcdd. Resume only their unexecuted cycles.
+        crate::cycle_ledger::charge(u64::from(field.entry_cycles() - completed_entry));
+        let (number, elapsed) = resume
+            .filter(|r| r.interruption.field == field)
+            .map_or((number, 0), |r| (r.number, r.interruption.master_cycles));
+        Ok(hud_int_to_decimal_after_cycles(number, elapsed))
+    }
+
+    pub(super) fn resume_overworld_hud_inventory(
+        &mut self,
+        inventory: HudInventoryResume,
+        animate_hearts: bool,
+    ) {
+        assert!(self.hud_update_inventory_from(Some(inventory)).is_none());
+        if animate_hearts {
+            self.hud_animate_heart_refill();
+        }
+        self.increment_hud_update_flag();
     }
 
     fn hud_update_hearts_inner(&mut self, dst: usize, src: &[u16; 3], mut n: i32) {
@@ -2157,6 +2267,10 @@ pub(super) const fn pv(a: [u16; 8]) -> u16 {
 }
 
 fn hud_int_to_decimal(number: u32) -> [u8; 4] {
+    hud_int_to_decimal_after_cycles(number, 0)
+}
+
+fn hud_int_to_decimal_after_cycles(number: u32, elapsed: u16) -> [u8; 4] {
     // Cycle ledger: Hud_IntToDecimal $0D:F0F7 (JSR target, m16 x16), the
     // ROM's three-digit form (hundreds and tens by repeated subtraction of
     // the $0D:F9F9 weights, the ones digit as the remainder; the port's
@@ -2169,7 +2283,8 @@ fn hud_int_to_decimal(number: u32) -> [u8; 4] {
     // #$90 (16) and $0D:F122-F125 (60; BPL taken +6 twice); $0D:F127 RTS
     // (42). 906 for a value below ten, plus 204 per subtraction.
     let _scope = crate::cycle_ledger::routine(0x0d_f0f7);
-    crate::cycle_ledger::charge(906 + 204 * u64::from(number / 100 + (number % 100) / 10));
+    crate::cycle_ledger::charge((906 + 204 * u64::from(number / 100 + (number % 100) / 10))
+        .checked_sub(u64::from(elapsed)).expect("HUD conversion progress exceeds its instruction cost"));
     [
         (number / 1000) as u8 + 0x90,
         ((number % 1000) / 100) as u8 + 0x90,
@@ -2323,6 +2438,66 @@ const HUD_TILEMAP_RIGHT_PART: [u16; 12 * 5] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inventory_conversion_resume_matches_uninterrupted_tiles_and_cycles() {
+        let mut baseline = ZeldaState::new();
+        let start = crate::cycle_ledger::master();
+        baseline.hud_update_inventory();
+        let expected_cycles = crate::cycle_ledger::master() - start;
+        // Four zero-valued conversions (906 each), plus the source inventory
+        // caller's 1766 cycles with a present key digit.
+        assert_eq!(expected_cycles, 4 * 906 + 1766);
+        let expected: Vec<_> = (0..160)
+            .map(|i| baseline.hud_state().tile_word(i))
+            .collect();
+        for field in [
+            HudInventoryField::Rupees,
+            HudInventoryField::Bombs,
+            HudInventoryField::Arrows,
+            HudInventoryField::Keys,
+        ] {
+            for (entry_master_cycles, master_cycles) in
+                [(field.entry_cycles(), 172), (field.entry_cycles() - 46, 0)]
+            {
+                let mut state = ZeldaState::new();
+                state.native_overworld_hud_interruption = Some(HudInventoryInterruption {
+                    field,
+                    entry_master_cycles,
+                    master_cycles,
+                });
+                let start = crate::cycle_ledger::master();
+                let resume = state.hud_update_inventory_from(None).unwrap();
+                assert_eq!(resume.interruption.field, field);
+                assert!(state.hud_update_inventory_from(Some(resume)).is_none());
+                assert_eq!(crate::cycle_ledger::master() - start, expected_cycles);
+                assert_eq!(
+                    (0..160)
+                        .map(|i| state.hud_state().tile_word(i))
+                        .collect::<Vec<_>>(),
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn resumed_arrow_conversion_does_not_rewrite_completed_rupee_digits() {
+        let mut state = ZeldaState::new();
+        state.hud_buffer_set(hudxy(15, 1), 0x5678);
+        state.hud_buffer_set(hudxy(18, 0), 0x2468);
+        state.native_overworld_hud_interruption = Some(HudInventoryInterruption {
+            field: HudInventoryField::Arrows,
+            entry_master_cycles: 118,
+            master_cycles: 172,
+        });
+        let resume = state.hud_update_inventory_from(None).unwrap();
+        assert_eq!(state.hud_state().tile_word(hudxy(15, 1)), 0x5678);
+        assert_eq!(state.hud_state().tile_word(hudxy(18, 0)), 0x2468);
+        state.hud_buffer_set(hudxy(9, 1), 0x1234);
+        assert!(state.hud_update_inventory_from(Some(resume)).is_none());
+        assert_eq!(state.hud_state().tile_word(hudxy(9, 1)), 0x1234);
+    }
 
     fn normal_menu_with_select(switch_lr: bool) -> ZeldaState {
         let mut state = ZeldaState::new();

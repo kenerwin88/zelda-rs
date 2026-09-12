@@ -2613,7 +2613,7 @@ fn overworld_map_graphics_cpu_nmi_slices(state: &ZeldaState, input: u16) -> (u8,
     panic!("overworld map CPU timing did not return");
 }
 
-fn overworld_main_loop_packing_interruption(state: &ZeldaState, input: u16) -> Option<SpritePreparationProgress> {
+fn overworld_main_loop_packing_interruption(state: &ZeldaState, input: u16) -> (Option<SpritePreparationProgress>, Option<HudInventoryInterruption>) {
     let checkpoint = RomCpuCheckpoint {
         entry_pc: 0x00_8036, stop_pc: 0x00_805d, waiting: false,
         ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
@@ -2632,6 +2632,8 @@ fn overworld_main_loop_packing_interruption(state: &ZeldaState, input: u16) -> O
     let mut progress = None;
     let mut pointer_tail_cycles = None;
     let mut source_progress = None;
+    let mut hud_conversion = None;
+    let mut in_hud_conversion = false;
     for _ in 0..200_000 {
         if run.is_complete() {
             if crate::debug_env::var_os("ZELDA3_DEBUG_OVERWORLD_CPU_PACKING").is_some()
@@ -2639,9 +2641,23 @@ fn overworld_main_loop_packing_interruption(state: &ZeldaState, input: u16) -> O
                 eprintln!("overworld_cpu_packing host={} entry={packing_entry:?} returned={:?}",
                     state.frame_ctr_dbg, budget.raster_position());
             }
-            return None;
+            return (None, None);
         }
         let pc = run.pc();
+        let hud_entry = match pc {
+            0x0d_fc57 => Some(HudInventoryField::Rupees),
+            0x0d_fc84 => Some(HudInventoryField::Bombs),
+            0x0d_fca8 => Some(HudInventoryField::Arrows),
+            0x0d_fcdd => Some(HudInventoryField::Keys),
+            _ => None,
+        };
+        if let Some(field) = hud_entry {
+            hud_conversion = Some(HudInventoryInterruption {
+                field, entry_master_cycles: 0, master_cycles: 0,
+            });
+            in_hud_conversion = false;
+        }
+        if pc == 0x0d_f0f7 { in_hud_conversion = true; }
         if pc == 0x00_865c {
             source_progress = Some(SpritePreparationSourceProgress {
                 completed_words: 0, master_cycles: 0,
@@ -2658,6 +2674,15 @@ fn overworld_main_loop_packing_interruption(state: &ZeldaState, input: u16) -> O
         run.set_raster_position(v, h);
         let (advance, cpu_cycles) = advance_rom_cpu_step_measured(&mut run, &mut budget);
         let writes = run.take_cpu_wram_writes();
+        if let Some(conversion) = hud_conversion.as_mut() {
+            if in_hud_conversion {
+                conversion.master_cycles += u16::try_from(cpu_cycles).unwrap();
+            } else {
+                conversion.entry_master_cycles += u16::try_from(cpu_cycles).unwrap();
+            }
+        }
+        if pc == 0x0d_f127 { hud_conversion = None; }
+
         if let Some(progress) = source_progress.as_mut() {
             progress.master_cycles += u16::try_from(cpu_cycles).unwrap();
             let bytes = writes.iter().filter(|(address, _)|
@@ -2684,10 +2709,10 @@ fn overworld_main_loop_packing_interruption(state: &ZeldaState, input: u16) -> O
                     state.frame_ctr_dbg, run.pc(), budget.raster_position());
             }
             if let Some(progress) = progress { progress.validate(); }
-            return pointer_tail_cycles.map(|master_cycles|
+            return (pointer_tail_cycles.map(|master_cycles|
                 SpritePreparationProgress::PointerTail(SpritePreparationPointerProgress { master_cycles }))
                 .or_else(|| source_progress.map(SpritePreparationProgress::SourceWords))
-                .or_else(|| progress.map(SpritePreparationProgress::ExtendedOam));
+                .or_else(|| progress.map(SpritePreparationProgress::ExtendedOam)), hud_conversion);
         }
     }
     panic!("overworld timing failed to reach the next NMI or caller return");
@@ -9896,6 +9921,8 @@ pub struct ZeldaState {
     #[serde(skip)]
     native_overworld_packing_progress: Option<SpritePreparationProgress>,
     #[serde(skip)]
+    native_overworld_hud_interruption: Option<HudInventoryInterruption>,
+    #[serde(skip)]
     native_overworld_map_graphics_nmi_slices: Option<(u8, u8)>,
     #[serde(skip)]
     next_display_spotlight_scanout: Option<LiveSpotlightScanout>,
@@ -12396,6 +12423,7 @@ impl ZeldaState {
             main_loop_sprite_preparation_completed: false,
             pending_main_loop_common_suffix: None,
             native_overworld_packing_progress: None,
+            native_overworld_hud_interruption: None,
             native_overworld_map_graphics_nmi_slices: None,
             next_display_spotlight_scanout: None,
             spotlight_scanout_after_active_field: None,
@@ -12604,6 +12632,7 @@ impl ZeldaState {
         self.main_loop_sprite_preparation_completed = false;
         self.pending_main_loop_common_suffix = None;
         self.native_overworld_packing_progress = None;
+        self.native_overworld_hud_interruption = None;
         self.pre_dungeon_cpu_entry_envelope = None;
         self.native_overworld_map_graphics_nmi_slices = None;
         self.native_overworld_song_upload = None;
@@ -12708,6 +12737,7 @@ impl ZeldaState {
             self.pre_overworld_screen_build_cpu_nmis = None;
             self.native_overworld_song_upload = None;
             self.native_overworld_packing_progress = None;
+        self.native_overworld_hud_interruption = None;
         self.pre_dungeon_cpu_entry_envelope = None;
             self.native_overworld_map_graphics_nmi_slices = None;
             self.sprite_main_cpu_boundary = None;

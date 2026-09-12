@@ -86,6 +86,30 @@ pub(crate) enum MainLoopCommonSuffixContinuation {
     ResumeSpritePreparationBytePackingAndClearNmiLatch { progress: SpritePreparationProgress },
 }
 
+/// A conversion call in Hud_Update_IgnoreHealth's inventory suffix.
+/// No digit tiles are published until that conversion returns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum HudInventoryField { Rupees, Bombs, Arrows, Keys }
+
+impl HudInventoryField {
+    pub(crate) const fn entry_cycles(self) -> u16 {
+        match self { Self::Rupees => 94, Self::Bombs | Self::Arrows => 118, Self::Keys => 46 }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct HudInventoryInterruption {
+    pub(crate) field: HudInventoryField,
+    pub(crate) entry_master_cycles: u16,
+    pub(crate) master_cycles: u16,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct HudInventoryResume {
+    pub(crate) interruption: HudInventoryInterruption,
+    pub(crate) number: u32,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SpritePreparationProgress {
     ExtendedOam(ExtendedOamPackingProgress),
@@ -1620,6 +1644,7 @@ pub(crate) enum GameWorkContinuation {
     /// NMI interrupted the main-loop suffix while it packed the extended OAM
     /// staging bytes. Resume sprite preparation before the next publishable
     /// NMI without replaying Module 7.
+    FinishOverworldHudCallerReturn { inventory: HudInventoryResume, animate_hearts: bool },
     FinishNmiPrepareSpritesCallerReturn {
         caller: NmiPrepareSpritesCpuCaller,
     },
@@ -1967,6 +1992,7 @@ impl GameWorkContinuation {
                 }
                 | Self::FinishDungeonSubtilePaletteFilter
                 | Self::FinishNmiPrepareSpritesCallerReturn { .. }
+                | Self::FinishOverworldHudCallerReturn { .. }
                 | Self::FinishDungeonPostSpriteMainCallerReturn
                 | Self::FinishDungeonExitSpotlightGoalCaller { .. }
                 | Self::FinishDungeonCachedSpriteMain { .. }
@@ -2111,6 +2137,7 @@ impl GameWorkContinuation {
                 | Self::FinishDungeonPostSpriteMainCallerReturn
                 | Self::FinishModule09LinkOamCallerReturn { .. }
                 | Self::FinishNmiPrepareSpritesCallerReturn { .. }
+                | Self::FinishOverworldHudCallerReturn { .. }
         )
     }
 

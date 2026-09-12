@@ -4,7 +4,41 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 53,745 (random-call timing)
+## Current native frontier — 53,926 (video)
+
+Native overworld HUD inventory work now has a typed continuation across
+NMI. The CPU probe records which conversion is interrupted, completed
+value-load/call cycles, and elapsed conversion cycles. The translated HUD
+commits completed digit groups, retains unfinished groups, and resumes only
+the remaining conversion, HUD update flag, rain caller, and common sprite
+preparation suffix. It does not rerun refill or player logic. Live receipt
+playback never creates this native continuation.
+
+Two source boundaries are covered by this batch: `$0d:f105` inside arrow
+conversion near53,742, and `$0d:fc8b` before bomb conversion at53,763.
+The C port's redundant backdrop writes no longer clear unfinished numeric
+slots or the key label before their owning conversion returns. Completed
+full HUD output and total instruction charges are unchanged.
+
+`target/native-hud-entry` / `/tmp/native-hud-entry.log` proves exact native
+A/V through53,925, first video mismatch53,926 with audio exact (75.47s while
+tests compiled). Binary SHA:
+`98d5e4c88f3f4972e68dc645d307ec636eec58da295da663c5d08e4df71bb455`.
+Direct WRAM comparisons at53,742..53,744 and53,763..53,764 match source
+counter/latch and the entire HUD buffer `$c700..$c880`, including the partial
+field. Source sessions: `target/native-53745-source` and
+`target/native-53763-source`; their decodes are `/tmp/native-53745-source.jsonl`
+(raw +52,000) and `/tmp/native-53763-source.jsonl` (raw +53,500).
+
+All1,785 library tests pass,3 ignored (23.99s):
+`/tmp/native-hud-entry-lib-tests.log`.
+Regression tests suspend all four conversions both before the JSR and
+inside the conversion, check the source-derived total cycle cost, and
+ensure resumption cannot rewrite already completed digits or erase pending
+ones. No full receipt gate was repeated. The100k native target is pending.
+The latest genuine paired source checkpoint is `target/native-source-pair-53500`.
+
+## Previous native frontier — 53,745 (random-call timing)
 
 Interrupted native overworld sprite preparation now retains the scroll
 registers installed by its leading NMI for the current field. The main
