@@ -41,7 +41,7 @@ ZELDA3_CACHED_AV_NATIVE_TIMING=1 ./parity cached-av <cache> \
 Build that binary with `CARGO_TARGET_DIR=target/alt` so a frontier run can
 never rebuild the binary a comparison is using.
 
-History of the frontier: 8889 → 4660 → 2507 → 8716 → 7330 → 2507 → 8890 → 11444 → 4785 → 11444 → 20257 → 20262 → **23203** (completed entry/item batch).
+History of the frontier: 8889 → 4660 → 2507 → 8716 → 7330 → 2507 → 8890 → 11444 → 4785 → 11444 → 20257 → 20262 → 23203 → 23206 → 23935 → **23945** (completed quadrant/audio batch).
 It moves backwards whenever a newly exact cost exposes a wrong one
 downstream; that is normal and not a regression of the acceptance gate.
 
@@ -58,15 +58,15 @@ investigation recorded in `romless-exact-play.md`.
 
 | | |
 |---|---|
-| branch | locally merged to `main`; three source-backed entry/item fixes |
+| branch | locally merged to `main`; three source-backed quadrant/audio fixes |
 | promoted ledger | full route exact, four WRAM goldens and endpoint matched |
-| library suite | 1,741 passing, 3 ignored; dev builds have zero warnings |
-| native frontier | frame 23203, audio exact through that frontier |
+| library suite | 1,743 passing, 3 ignored; dev builds have zero warnings |
+| native frontier | frame 23945, audio exact through that frontier |
 
-Validated runtime commit: `1b362fb9f12c6edbce564a7b950cc68f60931fd1`.
-Binary SHA-256: `788aca964b44bc25cec7d0edccd2b563ad2c624debae8c47ab514f4295aba1e0`.
+Validated runtime commit: `e70152ae55c787ed3c53a86014dc805d604cd097`.
+Binary SHA-256: `1245aeb75f851063dcb0610b06789f2efefb48f39e18c086b5a6005c199e6814`.
 The full-route receipt is
-`routes/full_run/receipts/item-batch-full.manifest.json`.
+`routes/full_run/receipts/quadrant-batch-full.manifest.json`.
 
 The scroll-return milestone is complete. The native lane carries the scroll's
 remaining CPU work, finishes a fitting return after the held NMI, and marks
@@ -88,46 +88,37 @@ test, exact validation and the remaining coarse pixel-copy limitation.
   and verify against the recorded shadow profiles; the lead measures.
 - Never `git checkout <file>`; revert your own edits surgically.
 
-## The immediate next task: frame 23203
+## The immediate next task: frame 23945
 
-The completed batch adds three independently explained fixes to the previous
-spotlight work:
+The completed batch fixes cached sprite-conversion retirement (`6704a050`),
+dungeon NMI_PrepareSprites main-wait retirement (`63443ece`), and an obsolete
+room-specific spiral audio sample (`e70152ae`). The native frontier advances
+23203 → 23206 → 23935 → **23945**, now video-only. The 24,100-frame cold
+live-Snes9x check, 200k/full receipt gates, WRAM goldens and endpoints all
+pass. See "Completed quadrant-return and spiral-audio batch" in
+`romless-exact-play.md` for source contracts and regressions.
 
-- `abc11f36` retains the prior OAM generation across the held spotlight-entry
-  NMI. The coarse dungeon-exit display rule respects the explicit owner.
-- `3d96ecb8` retains the active hardware scroll when synchronous item graphics
-  suspend, preserving the newer software camera for the following field.
-- `1b362fb9` applies the completed item-sheet Link tile policy to typed resumed
-  callers using the canonical graphics table, preserving caller-specific OAM.
+At 23940-23944 native and receipt WRAM differ only at known scratch $1f00.
+At 23945 both modes remain in 07/0e/0f. Native/receipt differences are
+$12=01/00, $15=00/02, $16=00/01, $19=00/58 and scratch $1f00=00/01.
+Original host 23945 completes its carried handler, Sprite_Main and common
+suffix, then accepts an Open NMI. Investigate publication at that trailing
+acceptance after the grayscale palette caller returns. This is a starting
+diagnosis, not a proven cause; do not add another frame/room exception.
 
-The native frontier advances from 11444 to 20257 to 20262 to **23203**. The
-23,400-frame cold live-Snes9x check is exact for video and 12,474,979 stereo
-sample frames. The 200k and full receipt routes, their WRAM goldens and their
-endpoints all match. See "Completed spotlight-entry and item-pickup batch"
-in `romless-exact-play.md` for reference-backed regressions and evidence.
+Use `ZELDA3_DEBUG_PRESENTED_FRAMES=23946` and
+`ZELDA3_DEBUG_PRESENTED_DIR=<dir>` to capture fully composed display VRAM,
+OBJ VRAM, CGRAM, OAM, presentation RAM and registers. These dumps describe
+the renderer's selected generations; use WRAM dumps separately for live CPU
+state. See CLAUDE.md for the reusable diagnostic added in `0a99f7f9`.
 
-The earlier Module0F entry envelope remains source-backed; do not retune it
-to move the frontier. The pending within-row decrement remains a separate
-CPU-continuation limitation, recorded in the preceding spotlight history.
-
-At 23203 native and receipt now disagree on CPU state: native advances the
-dungeon transition from 07/02/05 to 07/02/06 while receipt remains at 05;
-frame counter $1A is $FC versus $FB. There are nine WRAM byte differences
-already at 23202 and 1,965 at 23203. Original host 23202 is interrupted in
-SpritePreparation by a held NMI. Host 23203 completes that NMI and the
-common suffix without starting a new iteration. Trace the preceding
-interruption and retirement before changing quadrant costs or display
-publication. This is not yet a root cause; do not add a frame/room exception.
-
-Retained evidence: `target/item-batch-native-final` (native frontier/dumps),
-`target/item-batch-validation` (compact acceptance proofs, receipt WRAM
-samples, `next-frontier.md` and complete byte differences),
-`target/item-batch-cold-av` (live-Snes9x A/V), and
-`target/item-batch-next-source` (original hosts 23200 through 23205).
-Earlier source probes remain in `target/spotlight-entry-*`,
-`target/romless-20257-*`, `target/romless-20262-*` and
-`target/romless-11444-original-timestamps`. No temporary probe remains in
-runtime code. Rebuild `target/alt` from `main` before the next batch.
+Evidence: `target/quadrant-batch-validation` (compact proofs and
+`next-frontier.md`), `target/quadrant-batch-native-final`,
+`target/quadrant-batch-cold-av`, and `target/quadrant-batch-next-source`.
+Earlier quadrant/spiral probes remain under `target/quadrant-*`. Rebuild
+`target/alt` from `main` before beginning the next batch. The earlier
+Module0F entry envelope and pending within-row CPU decrement remain
+separate source-backed work; do not retune them to move this frontier.
 
 ## How to diagnose a frontier frame
 
@@ -136,10 +127,10 @@ runtime code. Rebuild `target/alt` from `main` before the next batch.
    at the frontier and a few frames before, and compare the dumps. The
    receipt path is the ground truth. At the repaired 8889/8890 boundary only
    the known scratch byte remains. At repaired frame 4785, matching CPU tables
-   narrowed the mismatch to display publication. At current frame 23203,
-   start with CPU/NMI scheduling and the already-present WRAM differences at
-   23202; compare presented generations after understanding the execution
-   boundary. `$1f00` differs benignly; interpret `$12` against the actual NMI
+   narrowed the mismatch to display publication. At current frame 23945,
+   trace the trailing Open acceptance and compare its composed palette and
+   display generations; live module state agrees but four control bytes
+   differ. `$1f00` differs benignly; interpret `$12` against the actual NMI
    boundary rather than dismissing it as scratch.
 2. **Then the subsystem's own trace.** For dialogue:
    `ZELDA3_DEBUG_SCROLL_STAGE=1 ZELDA3_DEBUG_SCROLL_RETAIN=1` in both

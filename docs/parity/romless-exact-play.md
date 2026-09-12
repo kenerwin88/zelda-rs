@@ -873,3 +873,73 @@ no fresh IterationStarted. Investigate CPU/NMI retirement before applying
 another display policy. This is a starting diagnosis, not a proven cause.
 See `target/item-batch-validation/next-frontier.md`, native and receipt WRAM
 dumps there, and original excerpts in `target/item-batch-next-source`.
+
+## Completed quadrant-return and spiral-audio batch
+
+Three source-backed fixes advance the native frontier from 23203 to 23206,
+23935, then **23945**. Audio is exact through the new video frontier.
+
+`6704a050` marks the cached sprite-conversion caller as part of the existing
+quadrant continuation and retires it at main wait before the next NMI.
+Original hosts 12135-12137 and 23202-23203 prove that returning from the held
+NMI does not start another module iteration. The regression
+`sprite_conversion_cached_return_retires_before_the_next_quadrant_nmi`
+checks the cached slot-8 return, preserved queued uploads and next leading
+NMI. A marker-only intermediate exposed an earlier mismatch at 12154;
+completing the scheduler retirement fixed that missing upload boundary.
+
+`63443ece` retires the native DungeonModule07 NMI_PrepareSprites return at
+main wait, retaining its interrupted OBJ generation and leaving pending
+uploads for the next NMI. Original hosts 23203 and 23205 finish the suffix
+without a trailing acceptance. The regression
+`dungeon_sprite_preparation_return_leaves_uploads_for_the_following_nmi`
+checks the actual continuation and pending requests. Repaired frames
+23203-23206 have only the known scratch-byte WRAM difference at $1f00.
+
+`e70152ae` removes an obsolete room-$01 spiral audio exception. Original
+host 23932 completes its Open NMI before the fresh state-7 iteration queues
+sound $24. Native engine host 23933 sampled the audio ports both before
+main and again after main; receipt sampled only once. The additional sample
+caused the first audible mismatch at 23935. The regression
+`resumed_spiral_state_7_keeps_its_sound_queued_until_the_next_nmi` runs the
+actual continuation and proves the blip remains queued until the next NMI.
+It supplies the source-observed one-host CPU schedule to isolate audio
+publication from development-only ROM timing measurement.
+
+`0a99f7f9` also adds an opt-in diagnostic that dumps fully composed display
+VRAM, OBJ VRAM, CGRAM, OAM, presentation RAM and registers for selected
+engine hosts. See `ZELDA3_DEBUG_PRESENTED_FRAMES` in CLAUDE.md. It is reusable
+diagnostic support, not a runtime timing exception.
+
+Frozen runtime commit: `e70152ae55c787ed3c53a86014dc805d604cd097`.
+Binary SHA-256: `1245aeb75f851063dcb0610b06789f2efefb48f39e18c086b5a6005c199e6814`.
+Library tests: 1,743 passed, three ignored; cargo check and development
+library-test compilation have zero warnings. Ownership audit: zero high-risk
+same-mode overlaps. Cold live-Snes9x A/V matches 24,100 video frames and
+12,848,165 stereo sample frames. The short cold run disables engine-state
+comparison; WRAM evidence comes from the longer receipt gates.
+
+The 200k receipt gate matches all A/V frames in 188.96 seconds, both WRAM
+goldens, and endpoint SHA-256
+`dd45975cee5acdd270d1b0c74c5d38f1ba3ce3bd7e0af648264b8f77e95f244d`.
+The full receipt gate matches **1,581,079 video/audio frames** in 1582.93
+seconds, all four WRAM goldens and final endpoint SHA-256
+`316193798ccb2f771546b25443df7d417bddac8a7cac65326fa189c1264fbdb6`.
+The frozen commit/binary are promoted with
+`routes/full_run/receipts/quadrant-batch-full.manifest.json`.
+The batch is locally merged to `main`; nothing is pushed.
+
+Compact evidence is retained in `target/quadrant-batch-validation`, native
+frontier samples in `target/quadrant-batch-native-final`, cold A/V proof in
+`target/quadrant-batch-cold-av`, and original host excerpts in
+`target/quadrant-batch-next-source`. Large acceptance runs are pruned only
+after verifying the promoted receipt and compact evidence.
+
+Next frontier **23945** is video-only. At 23940-23944 native and receipt
+WRAM differ only at known scratch $1f00. At 23945 both remain in 07/0e/0f;
+native/receipt differences are $12=01/00, $15=00/02, $16=00/01,
+$19=00/58 and scratch $1f00=00/01. Original host 23945 completes its carried
+handler, Sprite_Main and common suffix, then accepts an Open NMI. Trace
+that acceptance's publication after the grayscale palette caller returns;
+compare final display generations at engine host 23946 before changing
+palette costs. This is a starting diagnosis, not a proven root cause.
