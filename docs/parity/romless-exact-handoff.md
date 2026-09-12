@@ -4,7 +4,55 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 50,755 (video)
+## Current native frontier — 52,448 (video)
+
+Recurring native dungeon-iris holds now capture resident OAM and Link VRAM
+at the interrupt boundary and carry that memory into the pending display
+publication. A retained older snapshot can no longer undo the preceding
+full NMI's upload. The initial pre-spotlight retirement keeps its existing
+owner, and Live receipt playback never creates this native memory record.
+
+`target/native-held-goal-provenance` / `/tmp/native-held-goal-provenance.log`
+proved that at host50,756 the resident PPU and host-boundary VRAM already
+held the correct new generation (OAM c678/ca7d, VRAM word4020=0040), while the
+selected snapshot still held c778/cb7d and0000. The fixed candidate matches
+source VRAM and OAM exactly at that boundary. The diagnostic remains under
+`ZELDA3_DEBUG_DISPLAY_OAM_FRAME` as `interrupted_obj_publication`.
+
+Native cached A/V is exact through52,447; video differs at52,448 with audio
+exact: `target/native-held-resident-obj`,
+`/tmp/native-held-resident-obj.log` (74.68s while tests compiled). Binary SHA:
+`ac9c5bff392366f9e68dc35ada89b05f73a9514f0f0c3ebff47e01ec8498aaa7`.
+All1,782 engine tests pass,3 ignored (24.30s):
+`/tmp/native-held-resident-obj-lib-tests.log`. The new regression advances
+live hardware after the interrupt, then checks that two display captures
+retain the interrupt's memory and leave live hardware unchanged.
+
+### Next: overworld sprite-preparation interruption
+
+Source: `target/native-52448-source[-presented]`, decode
+`/tmp/native-52448-source.jsonl` (raw run +48,481). A genuine paired source
+checkpoint is now available at `target/native-source-pair-52000`; use this
+for the next short source trace. Native:
+`target/native-52448-diagnostic[-presented]`,
+`/tmp/native-52448-diagnostic.log`.
+
+Source comparison52,448 accepts NMI at `$00:8768`, V225/C34, inside the
+sprite-preparation pointer tail, counter186/latch1. Both engines retain that
+counter for52,449 before advancing again. OAM, CGRAM, all window rows, and
+WRAM source words0ac0..0aea match. Presented host52,449 differs in34 bytes
+of Link VRAM only. Raw Link-page hash prefixes show native one generation
+ahead: source hosts52,447..52,450 are `faef33481f00`, `faef33481f00`,
+`e15840dba043`, `fb7640d25089`; native has `faef33481f00`, `e15840dba043`,
+`fb7640d25089`, `fb7640d25089`. The earlier raw difference is not itself a
+video failure because decoded-cache provenance can retain another generation.
+Inspect the native pointer-tail probe and decoded Link cache at this held
+NMI; the current diagnostic did not enable the CPU-packing trace.
+
+No full or repeated receipt gate was run for this native-only increment.
+The100k native target remains pending.
+
+## Previous native frontier — 50,755 (video)
 
 Native spotlight plans now retain the HDMA rows consumed before their first
 measured NMI. A field-local `NativeSpotlightFieldScanout` keeps those rows

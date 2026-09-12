@@ -1104,6 +1104,7 @@ pub(crate) struct InterruptedDungeonSubmodulePublication {
     pub(crate) retiring_pre_spotlight_scanout: Option<LiveSpotlightScanout>,
     pub(crate) oam_scanout_source: OamScanoutSource,
     pub(crate) obj_cache_generation: DisplayObjCacheGeneration,
+    pub(crate) resident_obj_memory: Option<DisplayObjGeneration>,
     pub(crate) ppu_registers: NmiPpuRegisterScanout,
     pub(crate) spotlight: Option<LiveSpotlightScanout>,
     pub(crate) provenance: &'static core::panic::Location<'static>,

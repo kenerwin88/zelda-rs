@@ -161,6 +161,19 @@ impl ZeldaState {
                 retiring_pre_spotlight_scanout,
                 oam_scanout_source,
                 obj_cache_generation,
+                // The recurring native iris field follows a completed full
+                // NMI. Its held interrupt preserves resident OBJ memory even
+                // when the selected staged snapshot predates that upload.
+                // Capture at the interrupt, not at the later application:
+                // another NMI may advance the live PPU in between.
+                resident_obj_memory: (self.rom_startup_timing()
+                    && !matches!(self.original_timing_owner(), OriginalTimingOwner::Live)
+                    && rom_dungeon_landing_wipe_is_active(frame.main_module, frame.submodule)
+                    && !retires_pre_spotlight_scanout)
+                    .then(|| DisplayObjGeneration::RetainCapturedMemory {
+                        oam: self.ppu.oam.clone(),
+                        vram: self.ppu.vram[0x4000..0x4400].to_vec(),
+                    }),
                 ppu_registers: NmiPpuRegisterScanout::capture(&self.ppu),
                 spotlight,
                 provenance: core::panic::Location::caller(),
@@ -171,6 +184,18 @@ impl ZeldaState {
         let Some(pending) = self.interrupted_dungeon_submodule_publication.take() else {
             return;
         };
+        if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_DISPLAY_OAM_FRAME", self.frame_ctr_dbg) {
+            let obj = |ppu: &PpuState| (ppu.oam[204], ppu.oam[214], ppu.vram[0x4020]);
+            eprintln!("interrupted_obj_publication host={} from={} resident={:04x?} captured={:04x?} host_vram={:04x?} last_oam={:04x?} staged_oam={:04x?} last_vram={:04x?} staged_vram={:04x?} history={:?}",
+                self.frame_ctr_dbg, pending.provenance, obj(&self.ppu),
+                self.display_snapshot.as_ref().map(|d| obj(&d.ppu)),
+                self.pre_main_graphics_dma.as_ref().map(|d| d.obj_vram[0x4020]),
+                self.last_presented_oam.as_ref().map(|o| (o[204],o[214])),
+                self.staged_presented_oam.as_ref().map(|o| (o[204],o[214])),
+                self.last_presented_obj_vram.as_ref().map(|v| v[0x4020]),
+                self.staged_presented_obj_vram.as_ref().map(|v| v[0x4020]),
+                self.presented_history_host_frame);
+        }
         let active = self
             .display_snapshot
             .as_mut()
@@ -219,6 +244,14 @@ impl ZeldaState {
         active.link_obj_scanout_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
         active.link_obj_source_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
         active.obj_cache_generation = pending.obj_cache_generation;
+        if !observed_full_nmi_owns_obj_memory {
+            if let Some(memory) = pending.resident_obj_memory {
+                active.ppu.oam.clone_from_slice(memory.retained_oam().unwrap());
+                active.ppu.vram[0x4000..0x4400]
+                    .clone_from_slice(memory.retained_vram().unwrap());
+                active.obj_generation = memory;
+            }
+        }
         active.obj_scanout_provenance = Some(pending.provenance);
         active.interrupted_dungeon_submodule_nmi_owns_scanout = true;
 

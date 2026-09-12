@@ -1962,6 +1962,39 @@ fn first_interrupted_landing_field_retires_the_pre_spotlight_scanout() {
 }
 
 #[test]
+fn held_landing_publication_keeps_obj_memory_from_the_interrupt() {
+    let mut state = ZeldaState::new();
+    state.rom_startup_timing = true;
+    state.set_main_module(7);
+    state.set_submodule(0x0f);
+    state.set_subsubmodule(1);
+    state.ppu.oam[0] = 0x1111;
+    state.ppu.vram[0x4020] = 0x1111;
+    state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::PublishCaptured);
+
+    // A completed NMI has replaced the graphics since that older capture.
+    state.ppu.oam[0] = 0x2222;
+    state.ppu.vram[0x4020] = 0x2222;
+    state.stage_interrupted_dungeon_submodule_publication();
+
+    // Publication may run later, after live hardware has advanced again.
+    state.ppu.oam[0] = 0x3333;
+    state.ppu.vram[0x4020] = 0x3333;
+    state.apply_interrupted_dungeon_submodule_publication();
+    let display = state.display_snapshot.as_ref().unwrap();
+    assert_eq!(display.ppu.oam[0], 0x2222);
+    assert_eq!(display.ppu.vram[0x4020], 0x2222);
+    assert_eq!(display.obj_generation.retained_oam().unwrap()[0], 0x2222);
+    assert_eq!(display.obj_generation.retained_vram().unwrap()[0x20], 0x2222);
+    for _ in 0..2 {
+        assert_eq!(state.with_display_snapshot(|game|
+            (game.ppu.oam[0], game.ppu.vram[0x4020])), (0x2222, 0x2222));
+    }
+    assert_eq!(state.ppu.oam[0], 0x3333);
+    assert_eq!(state.ppu.vram[0x4020], 0x3333);
+}
+
+#[test]
 fn trailing_animated_bg_dma_refines_only_an_already_staged_following_scanout() {
     const DESTINATION: usize = 0x3c00;
     let mut state = ZeldaState::new();
