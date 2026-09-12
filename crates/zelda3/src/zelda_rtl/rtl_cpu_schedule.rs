@@ -28,6 +28,22 @@ impl ZeldaState {
     pub(super) fn capture_cpu_schedules_before_nmi(&mut self) {
         let frame = self.game_state.frame;
         if self.rom_startup_timing()
+            && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && frame.main_module == 7
+            && matches!(frame.submodule, 0x11 | 0x12)
+            && frame.subsubmodule == 1
+            && !self.game_state.display.nmi_update_is_latched()
+            && self.game_execution_scheduler.is_idle()
+            && self.dungeon_landing_cpu_advance_pending.is_none()
+        {
+            // Measure the next fadeout iteration continuously from main wait,
+            // including this Open NMI. A palette-count list cannot identify
+            // whether the caller stops in Sprite_Main, LinkOam, or sprite prep.
+            self.dungeon_landing_cpu_advance_pending = Some(
+                dungeon_module_7_cpu_advance_after_leading_nmi(self, DUNGEON_PALETTE_CALLER_CPU_CHECKPOINT),
+            );
+        }
+        if self.rom_startup_timing()
             && frame.main_module == 9
             && matches!(frame.submodule, 0x20 | 0x21)
             && self.game_execution_scheduler.is_idle()
@@ -122,6 +138,11 @@ impl ZeldaState {
         &mut self,
         palette_countdown: u8,
     ) {
+        if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+            // The native fadeout caller consumes the measured CPU phase at
+            // its submodule return, before running the shared sprite suffix.
+            return;
+        }
         let frame = self.game_state.frame;
         if self.rom_startup_timing()
             && straight_interroom_fadeout_suffix_crosses_vblank(

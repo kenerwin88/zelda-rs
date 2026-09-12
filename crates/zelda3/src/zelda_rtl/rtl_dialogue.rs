@@ -2091,7 +2091,8 @@ impl ZeldaState {
             }
         } else if !(frame.main_module == 7
             && ((frame.submodule == 2 && matches!(frame.subsubmodule, 4..=7 | 12))
-                || frame.submodule == 0x0f))
+                || frame.submodule == 0x0f
+                || (matches!(frame.submodule, 0x11 | 0x12) && frame.subsubmodule == 1)))
         {
             self.dungeon_landing_cpu_advance_pending = None;
             self.dungeon_landing_spotlight_reset_prefix_scanlines = None;

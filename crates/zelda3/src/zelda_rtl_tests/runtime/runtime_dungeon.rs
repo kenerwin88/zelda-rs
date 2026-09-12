@@ -4809,9 +4809,10 @@ fn supertile_scroll_keeps_the_pre_main_link_generation_from_palette_entry_throug
 }
 
 #[test]
-fn straight_interroom_fadeout_schedules_only_measured_caller_return_slices() {
+fn straight_interroom_legacy_fadeout_schedule_is_receipt_scoped() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
     state.set_main_module(7);
     state.set_submodule(0x12);
     state.set_subsubmodule(1);
@@ -4872,6 +4873,35 @@ fn straight_interroom_fadeout_schedules_only_measured_caller_return_slices() {
     state.set_dungeon_room_index(0x52);
     state.suspend_straight_interroom_fadeout_suffix_if_crosses_nmi(1);
     assert!(!state.game_execution_scheduler.work_is_pending());
+}
+
+#[test]
+fn native_straight_fadeout_uses_the_measured_caller_phase() {
+    for room in [0x51, 0x22] {
+        for phase in [ModuleCpuPhase::CompleteBeforeNmi, ModuleCpuPhase::InterruptedInNmiPrepareSprites] {
+            let mut state = ZeldaState::new();
+            state.restore_live_rom_timing_after_checkpoint();
+            state.set_animated_tile_data_source_address(0xa680);
+            state.set_indoor_flag(1);
+            state.set_main_module(7);
+            state.set_submodule(0x12);
+            state.set_subsubmodule(1);
+            state.set_dungeon_room_index(room);
+            state.dungeon_stair_movement_mut().set_staircase_index(0x30);
+            state.set_countdown_word(0);
+            state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
+                phase, resumed_phase: Some(ModuleCpuPhase::CompleteBeforeNmi),
+                submodule_nmi_slices: 0, subsubmodule: 1, palette_countdown: 1,
+                sprite_main_boundary: None, cached_sprite_interruption: None,
+            });
+            state.Module07_11_StraightInterroomStairs();
+            assert!(state.dungeon_landing_cpu_advance_pending.is_none());
+            assert!(state.game_execution_scheduler.is_idle(),
+                "a caller interruption cannot park before Sprite_Main");
+            assert_eq!(state.dungeon_nmi_prepare_sprites_return_pending,
+                phase == ModuleCpuPhase::InterruptedInNmiPrepareSprites);
+        }
+    }
 }
 
 #[test]

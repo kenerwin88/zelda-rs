@@ -12931,6 +12931,10 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_module07_11_straight_interroom_stairs_after_attribute_loader(&mut self) {
+        let fadeout_cpu_advance = (self.rom_startup_timing()
+            && !matches!(self.original_timing_owner, crate::zelda_rtl::OriginalTimingOwnerState::Live)
+            && self.game_state.frame.subsubmodule == 1)
+            .then(|| self.take_dungeon_landing_cpu_advance()).flatten();
         if self.game_state.frame.subsubmodule >= 13 {
             self.Graphics_IncrementalVRAMUpload();
         }
@@ -12984,6 +12988,9 @@ impl ZeldaState {
             other => {
                 panic!("invalid Module07_11_StraightInterroomStairs subsubmodule_index {other}")
             }
+        }
+        if let Some(advance) = fadeout_cpu_advance {
+            self.apply_dungeon_quadrant_cpu_advance(advance);
         }
     }
 
