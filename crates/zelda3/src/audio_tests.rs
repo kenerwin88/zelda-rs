@@ -1012,17 +1012,37 @@ fn acknowledged_ambient_clear_uses_the_live_nmi_latch_without_hiding_a_new_comma
 }
 
 #[test]
-fn spiral_return_audio_selects_live_one_shot_sfx_only_at_the_measured_cpu_boundary() {
-    assert!(super::spiral_return_audio_uses_live_one_shot_sfx_latches(
-        7, 0x0e, 0x0b, 1, 0x30
-    ));
-    assert!(super::spiral_return_audio_uses_live_one_shot_sfx_latches(
-        7, 0x0e, 0x0f, 1, 0x30
-    ));
-    assert!(!super::spiral_return_audio_uses_live_one_shot_sfx_latches(
-        7, 0x0e, 0x0a, 1, 0x30
-    ));
-    assert!(!super::spiral_return_audio_uses_live_one_shot_sfx_latches(
-        7, 0x0e, 0x0b, 2, 0x30
-    ));
+fn spiral_stair_sound_reaches_the_spc_clock_only_after_nmi_sampling() {
+    // Original host 23983 completes its handler, then authors effect1=$17.
+    // The following host completes the next handler and clears that latch.
+    let assets = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../zelda3_assets.dat")).unwrap();
+    let mut state = ZeldaState::new();
+    state.set_assets(&assets).unwrap();
+    assert!(state.audio.modern.driver_clock.is_some());
+    state.set_main_module(7);
+    state.set_submodule(0x0e);
+    state.set_subsubmodule(0x11);
+    state.game_state.write_to_ram(&mut state.ram);
+    state.ram[0xa0] = 1;
+    state.sync_native_game_state_from_ram();
+    state.dungeon_stair_movement_mut().set_staircase_index(0x30);
+    let mut control = state.clone();
+    state.set_sound_effect_1(0x17);
+    let mut samples = [0i16; 1068];
+    state.zelda_push_apu_state();
+    control.zelda_push_apu_state();
+    state.zelda_render_audio(&mut samples, 534, 2);
+    control.zelda_render_audio(&mut samples, 534, 2);
+    assert_eq!(state.zelda_audio_snapshot_bytes(), control.zelda_audio_snapshot_bytes(),
+        "an unsampled gameplay latch must not alter SPC state");
+    state.interrupt_nmi_audio_parts();
+    control.interrupt_nmi_audio_parts();
+    state.zelda_push_apu_state();
+    control.zelda_push_apu_state();
+    state.zelda_render_audio(&mut samples, 534, 2);
+    control.zelda_render_audio(&mut samples, 534, 2);
+    assert_eq!(state.game_state.system_signals.sound_effect_1(), 0);
+    assert_ne!(state.zelda_audio_snapshot_bytes(), control.zelda_audio_snapshot_bytes(),
+        "the sampled sound must reach the audio transport");
 }
