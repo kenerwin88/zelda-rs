@@ -2118,6 +2118,10 @@ fn quadrant_link_oam_return_keeps_queued_uploads_until_the_next_open_nmi() {
         state.set_submodule(2);
         state.set_subsubmodule(step);
         state.set_frame_counter(0x5e);
+        // Source31367: held Interrupt_NMI still publishes BG1 from $ffb2
+        // to $ffb4 before LinkOam and the common caller resume.
+        state.ppu.bg_layer[0].h_scroll = 0xffb2;
+        state.set_bg1_h_copy(0xffb4);
         state.latch_nmi_update();
         state.active_dungeon_sprite_main_return = Some(DungeonSpriteMainReturn {
             link_oam: None, bg2_x: 0, bg2_y: 0, bg1_x: 0, bg1_y: 0,
@@ -2149,6 +2153,12 @@ fn quadrant_link_oam_return_keeps_queued_uploads_until_the_next_open_nmi() {
         assert_eq!(state.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX], 1);
         assert_eq!(state.ram[crate::game_state::constants::NMI_DISABLE_CORE_UPDATES], 1);
         assert_eq!(state.dungeon_landing_cpu_advance_pending, Some(next));
+        let display = state.display_snapshot.as_ref().unwrap();
+        let source = DisplayedBgScrollSource::resolve(display.bg_scroll_generation, false, false, false);
+        let mut shown = state.ppu.clone();
+        shown.bg_layer[0].h_scroll = 0xffb2;
+        source.compose_into(&mut shown, &state.ppu);
+        assert_eq!(shown.bg_layer[0].h_scroll, 0xffb4);
         state.game_execution_scheduler.begin_host_frame();
         assert!(state.game_execution_scheduler.main_return_requires_leading_nmi());
       }

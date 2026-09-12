@@ -96,7 +96,7 @@ Work remains on `fix/romless-spiral-palette-return`; `main` remains the accepted
 baseline above. No push. Short receipt comparisons protect the shared path
 while native timing advances; they are not native acceptance evidence.
 
-Current native frontier: **31367, video-only**. This batch has corrected:
+Current native frontier: **33895, video-only**. This batch has corrected:
 
 - `510da835`: grayscale caller finishes its held NMI before authoring the next
   palette; retires at main wait. Exposed earlier native frontier 14076.
@@ -168,7 +168,7 @@ Current native frontier: **31367, video-only**. This batch has corrected:
   scratch. Native reaches31363; receipt31,400 passes. Evidence:
   `target/reset-disable-native`, `target/reset-disable-receipt`.
 
-- Quadrant caller batch: cached Sprite_Main, post-Sprite_Main, filtered build
+- `caf91b9e`: quadrant caller batch: cached Sprite_Main, post-Sprite_Main, filtered build
   and upload returns consume the held handler before completing their callers,
   then leave queued uploads for the next Open NMI. A CPU interruption before
   NMI_PrepareSprites retains and executes the whole pending common suffix.
@@ -176,10 +176,26 @@ Current native frontier: **31367, video-only**. This batch has corrected:
   WRAM31357–31367 matches apart from scratch $1f00. Evidence:
   `target/quadrant-batch-native`, `target/quadrant-batch-receipt` and
   `/tmp/quadrant-batch-final-tests.log`. Source: `target/native-31363-source`.
-  Next31367 is animated-BG presentation during a post-Sprite_Main return:
-  composed VRAM, BG VRAM, CGRAM and OAM agree; raw animated tiles decode
-  exactly to the oracle. The renderer's animated source generation remains
-  suspect. Do not change the corrected CPU counters to hide this difference.
+  The initial animated-BG hypothesis at31367 was disproved: its raw tiles
+  already agree. Source scanlines present BG1 scroll65460 while native retained
+  65458. Interrupt_NMI writes scroll outside its latch-gated DMA body.
+
+- Landing/return batch: retain completed held-NMI scroll on the current field;
+  classify $0085fc as NMI_PrepareSprites entry; measure native landing states
+  from the actual pre-NMI state instead of a calibrated entry-time interval;
+  retain only the dedicated preparation continuation after LinkOam/HUD return;
+  attach the interrupted OBJ cache to its current return field, leaving the
+  next Open NMI free to publish new Link art. Native31367 →33895. Source:
+  `target/native-31363-source`, `target/native-33322-source`,
+  `target/native-27215-source`; CPU trace `/tmp/native-33322-cpu.log`.
+  All1762 library tests pass (3 ignored): `/tmp/landing-batch-lib-tests.log`.
+  Native evidence: `target/prep-cache-owner-native`. WRAM27210–27217 and
+  33318–33325 match apart from scratch $1f00. Next source window:
+  `target/native-33895-source`. The receipt batch check is
+  `target/landing-batch-receipt` (33,920 exact frames); full-route acceptance
+  remains deferred.
+  Reusable composed-display dumps now include five-byte logical/preview CHR
+  identities, documented in CLAUDE.md.
 
 The audio mismatch at 25054 came from missing drawing work before the text
 renderer. The original enters VWF at v=50 on host 25048; the old ledger left

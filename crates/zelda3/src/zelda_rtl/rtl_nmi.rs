@@ -171,6 +171,16 @@ impl ZeldaState {
         self.finish_dungeon_room_load_caller_at_main_wait();
     }
 
+    pub(super) fn retain_completed_nmi_scroll_for_current_scanout(&mut self) {
+        // WritePpuRegisters runs even when the software latch holds the DMA
+        // body. The resumed caller can author the next scroll mirrors, but
+        // this field retains the registers that the completed handler wrote.
+        let scroll = BgScrollRegisterScanout::capture(&self.ppu);
+        self.display_snapshot.as_mut()
+            .expect("completed held NMI requires its captured display")
+            .bg_scroll_generation = DisplayBgScrollGeneration::RetainCpuSliceEntry(scroll);
+    }
+
     pub(super) fn bg_scroll_scanout_from_nmi_register_mirrors(&self) -> BgScrollRegisterScanout {
         let scroll = &self.game_state.display.ppu_scroll_copy;
         BgScrollRegisterScanout::after_nmi_writes(
@@ -724,7 +734,11 @@ impl ZeldaState {
                 // caller. Keep the resident host-boundary OBJ generation for
                 // the scanout being retired; the synthetic trailing NMI below
                 // owns the following field.
-                self.stage_resumed_sprite_main_return_obj_scanout();
+                let native_dungeon_main_wait = caller == NmiPrepareSpritesCpuCaller::DungeonModule07
+                    && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live);
+                if !native_dungeon_main_wait {
+                    self.stage_resumed_sprite_main_return_obj_scanout();
+                }
                 if caller == NmiPrepareSpritesCpuCaller::DungeonModule07 {
                     // The dungeon caller has now reached the real main wait.
                     // Preserve a continuous ROM-timed advance from this exact
@@ -736,18 +750,23 @@ impl ZeldaState {
                             begin_dungeon_cached_sprite_cpu_advance_after_leading_nmi(self);
                     }
                 }
-                let native_dungeon_main_wait = caller == NmiPrepareSpritesCpuCaller::DungeonModule07
-                    && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live);
                 if typed_main_loop_return || native_dungeon_main_wait {
                     // The interrupted dungeon caller retires after its held
                     // NMI. Original quadrant hosts 23203/23205 clear $12 and
                     // wait; their next hosts accept the publishing Open NMI.
                     // Preserve that boundary instead of consuming the upload
                     // with a synthetic trailing NMI in this return host.
-                    self.next_display_obj_cache_vram = Some(interrupted_obj_cache_vram);
                     if native_dungeon_main_wait {
+                        // This retained cache belongs to the held return's
+                        // already captured field. Carrying it into the next
+                        // capture would undo that field's Open-NMI Link DMA.
+                        self.display_snapshot.as_mut()
+                            .expect("native preparation return requires its captured display")
+                            .explicit_obj_cache_vram = Some(interrupted_obj_cache_vram);
                         self.game_execution_scheduler
                             .finish_call_stack_at_main_wait_before_nmi();
+                    } else {
+                        self.next_display_obj_cache_vram = Some(interrupted_obj_cache_vram);
                     }
                     return;
                 }

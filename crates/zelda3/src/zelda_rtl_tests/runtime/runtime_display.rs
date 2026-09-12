@@ -1171,7 +1171,7 @@ fn module09_scroll_prefix_retains_the_pending_vertical_pair() {
 }
 
 #[test]
-fn state_13_suspends_common_module_suffix_when_rom_run_reaches_nmi_after_module() {
+fn state_13_keeps_preparation_and_module_return_continuations_distinct() {
     for phase in [
         ModuleCpuPhase::InterruptedInNmiPrepareSprites,
         ModuleCpuPhase::InterruptedAfterModule,
@@ -1196,6 +1196,14 @@ fn state_13_suspends_common_module_suffix_when_rom_run_reaches_nmi_after_module(
         state.Dungeon_InterRoomTrans_State13();
 
         assert_eq!(state.game_state.frame.subsubmodule, 13);
+        if phase == ModuleCpuPhase::InterruptedInNmiPrepareSprites {
+            // Source27210 returned Sprite_Main before the preparation
+            // interruption. Keep the Module 7 caller runnable; its completed
+            // suffix arms the dedicated preparation return after Link/HUD.
+            assert!(state.game_execution_scheduler.is_idle());
+            assert!(state.dungeon_nmi_prepare_sprites_return_pending);
+            continue;
+        }
         assert_eq!(
             state.game_execution_scheduler.current_work(),
             Some(GameWorkContinuation::FinishDungeonSupertileTransition {

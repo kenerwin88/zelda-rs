@@ -6805,7 +6805,10 @@ fn dungeon_module_7_cpu_timing(
                 ModuleCpuPhase::InterruptedInNmiPrepareSprites
             } else if module_returned {
                 ModuleCpuPhase::InterruptedAfterModule
-            } else if executing_module_7_return || run.pc() == MODULE_7_RETURN_PC {
+            } else if executing_module_7_return
+                || run.pc() == MODULE_7_RETURN_PC
+                || run.pc() == NMI_PREPARE_SPRITES_ENTRY_PC
+            {
                 ModuleCpuPhase::InterruptedBeforeNmiPrepareSprites
             } else if link_oam_started && !link_oam_returned {
                 ModuleCpuPhase::InterruptedInLinkOam
@@ -7244,6 +7247,17 @@ pub(super) fn debug_cached_sprite_cpu_for_host(host: u32) -> bool {
 }
 
 fn rom_dungeon_landing_cpu_advance(state: &ZeldaState) -> DungeonModuleCpuTiming {
+    if !matches!(state.original_timing_owner, OriginalTimingOwnerState::Live)
+        && state.game_state.frame.main_module == 7
+        && state.game_state.frame.submodule == 2
+    {
+        // The actual leading NMI and main prefix determine the dispatcher
+        // entry. A calibrated interval can straddle the LinkOam/HUD return
+        // and NMI_PrepareSprites entry, which have different remaining work.
+        return dungeon_module_7_cpu_timing(
+            state, DUNGEON_PALETTE_CALLER_CPU_CHECKPOINT, None, false,
+        );
+    }
     let filtered = state.game_state.dungeon.torch.any_lights_out_request() != 0;
     let (earliest, latest) = if filtered {
         (

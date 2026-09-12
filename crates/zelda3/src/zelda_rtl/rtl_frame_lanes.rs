@@ -3721,6 +3721,7 @@ impl ZeldaState {
             // leaves the BG upload and palette pending for the next Open NMI.
             self.capture_display_snapshot();
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+            self.retain_completed_nmi_scroll_for_current_scanout();
         }
         // A wire-proven caller return names how many shared
         // Sprite_Main loops the resumed transition body runs;

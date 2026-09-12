@@ -29,6 +29,18 @@ impl ZeldaState {
         write_words("bg-vram", self.ppu.bg_vram_latch.as_deref().unwrap_or(&self.ppu.vram));
         write_words("cgram", &self.ppu.cgram);
         write_words("oam", &self.ppu.oam);
+        for (name, sources) in [
+            ("chr-sources", &self.vram_chr_source),
+            ("chr-preview-sources", &self.vram_chr_preview_source),
+        ] {
+            let bytes: Vec<u8> = sources.as_slice().iter().flat_map(|source| {
+                let pack = source.pack.to_le_bytes();
+                let tile = source.tile_off.to_le_bytes();
+                [source.kind, pack[0], pack[1], tile[0], tile[1]]
+            }).collect();
+            std::fs::write(root.join(format!("{}-{name}.bin", self.frame_ctr_dbg)), bytes)
+                .expect("write presented CHR identities");
+        }
         std::fs::write(root.join(format!("{}-ram.bin", self.frame_ctr_dbg)), &self.ram)
             .expect("write presented-state RAM");
         let scroll: Vec<_> = self.ppu.bg_layer.iter().map(|bg| (bg.h_scroll, bg.v_scroll)).collect();

@@ -11736,6 +11736,16 @@ impl ZeldaState {
                 );
                 self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             }
+            if self.game_state.frame.submodule == 2
+                && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                && matches!(continuation,
+                    GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn
+                        | GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn {
+                            caller: NmiPrepareSpritesCpuCaller::DungeonModule07,
+                        })
+            {
+                self.retain_completed_nmi_scroll_for_current_scanout();
+            }
             self.complete_post_trailing_nmi_continuation(
                 continuation,
                 input,
@@ -12418,6 +12428,7 @@ impl ZeldaState {
                         // resumed caller authors its palette/VRAM publication.
                         self.capture_display_snapshot();
                         self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                        self.retain_completed_nmi_scroll_for_current_scanout();
                     }
                     // The interrupting acceptance can refine which exact
                     // UncacheAndExecuteSprite statement the source suspended

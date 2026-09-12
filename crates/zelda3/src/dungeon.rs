@@ -10461,6 +10461,14 @@ impl ZeldaState {
         {
             match advance.phase {
                 ModuleCpuPhase::InterruptedInNmiPrepareSprites
+                    if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) =>
+                {
+                    // Sprite_Main, LinkOam and HUD have already returned.
+                    // Only preparation resumes after this held handler; the
+                    // next Open NMI owns its queued palette and OBJ uploads.
+                    self.dungeon_nmi_prepare_sprites_return_pending = true;
+                }
+                ModuleCpuPhase::InterruptedInNmiPrepareSprites
                 | ModuleCpuPhase::InterruptedAfterModule => {
                     if self.original_timing_owes_sprite_main_return() {
                         // The live wire still owes this host its Sprite_Main
@@ -10503,17 +10511,15 @@ impl ZeldaState {
                     self.dungeon_state_13_atomic_caller_return_publication_host_frame =
                         Some(self.frame_ctr_dbg);
                 }
-                ModuleCpuPhase::InterruptedBeforeNmiPrepareSprites
-                    if matches!(
-                        self.original_timing_owner,
-                        crate::zelda_rtl::OriginalTimingOwnerState::Live
-                    ) =>
-                {
+                ModuleCpuPhase::InterruptedBeforeNmiPrepareSprites => {
                     // The interrupt landed after the module body and its
                     // Sprite_Main but before NMI_PrepareSprites began. The
                     // live host plan's armed pending common suffix owns the
                     // deferred prep; no scheduled work is needed (route host
                     // 33322).
+                    if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+                        self.dungeon_state_12_caller_suffix_nmi_pending = true;
+                    }
                 }
                 phase => panic!(
                     "state-13 vblank reached {phase:?}; a semantic continuation is required \

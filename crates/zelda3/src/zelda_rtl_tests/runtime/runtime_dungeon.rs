@@ -1319,12 +1319,84 @@ fn quadrant_preparation_interruption_retains_and_retires_the_whole_suffix() {
     state.latch_nmi_update();
     state.ram[crate::game_state::constants::BG_TILE_ANIMATION_COUNTDOWN] = 4;
     state.sync_native_game_state_from_ram();
-    state.dungeon_state_12_caller_suffix_nmi_pending = true;
+    // Source33322 reaches $0085fc after LinkOam/HUD return. The native
+    // state-13 body must leave only the common preparation suffix pending.
+    state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
+        phase: ModuleCpuPhase::InterruptedBeforeNmiPrepareSprites,
+        resumed_phase: None,
+        submodule_nmi_slices: 0,
+        subsubmodule: 13,
+        palette_countdown: 0,
+        sprite_main_boundary: None,
+        cached_sprite_interruption: None,
+    });
+    state.Dungeon_InterRoomTrans_State13();
+    assert!(state.dungeon_state_12_caller_suffix_nmi_pending);
+    assert!(state.game_execution_scheduler.is_idle());
     state.complete_module07_dungeon_after_submodule_caller();
     assert_eq!(state.pending_main_loop_common_suffix,
         Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch));
     assert_eq!(state.ram[crate::game_state::constants::BG_TILE_ANIMATION_COUNTDOWN], 4);
     state.run_frame_internal_after_original_timing(0, crate::RUN_MAIN);
+    assert!(state.pending_main_loop_common_suffix.is_none());
+    assert_eq!(state.ram[crate::game_state::constants::BG_TILE_ANIMATION_COUNTDOWN], 3);
+    assert_eq!(state.game_state.frame.frame_counter, 3);
+    assert!(!state.game_state.display.nmi_update_is_latched());
+}
+
+#[test]
+fn quadrant_preparation_body_interruption_keeps_the_completed_caller_before_nmi() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.initialized = true;
+    state.set_animated_tile_data_source_address(0xa680);
+    state.set_indoor_flag(1);
+    state.set_main_module(7);
+    state.set_submodule(2);
+    state.set_subsubmodule(13);
+    state.set_frame_counter(3);
+    state.latch_nmi_update();
+    state.ram[crate::game_state::constants::BG_TILE_ANIMATION_COUNTDOWN] = 4;
+    state.sync_native_game_state_from_ram();
+    // Source27210-27211 interrupts preparation after Sprite_Main returns;
+    // the held return leaves its uploads for the following Open NMI.
+    state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
+        phase: ModuleCpuPhase::InterruptedInNmiPrepareSprites,
+        resumed_phase: None,
+        submodule_nmi_slices: 0,
+        subsubmodule: 13,
+        palette_countdown: 0,
+        sprite_main_boundary: None,
+        cached_sprite_interruption: None,
+    });
+    state.Dungeon_InterRoomTrans_State13();
+    assert!(state.dungeon_nmi_prepare_sprites_return_pending);
+    assert!(state.game_execution_scheduler.is_idle());
+    state.complete_module07_dungeon_after_submodule_caller();
+    assert_eq!(state.game_execution_scheduler.current_work(), Some(
+        GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn {
+            caller: NmiPrepareSpritesCpuCaller::DungeonModule07,
+        },
+    ));
+    assert_eq!(state.ram[crate::game_state::constants::BG_TILE_ANIMATION_COUNTDOWN], 4);
+    state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
+        phase: ModuleCpuPhase::CompleteBeforeNmi, resumed_phase: None,
+        submodule_nmi_slices: 0, subsubmodule: 13, palette_countdown: 0,
+        sprite_main_boundary: None, cached_sprite_interruption: None,
+    });
+    state.set_pending_nmi_subroutine(1);
+    state.set_core_update_disable_flag(1);
+    // Source27213 retains its interrupted Link art; source27214's Open
+    // NMI installs the successor. The old cache must not be queued for it.
+    state.interrupted_nmi_prepare_obj_cache_vram = Some(vec![0x1111; 0x8000]);
+    state.ppu.vram[0x4020] = 0x2222;
+    state.run_frame_internal_after_original_timing(0, crate::RUN_MAIN);
+    assert_eq!(state.display_snapshot.as_ref().unwrap()
+        .explicit_obj_cache_vram.as_ref().unwrap()[0x4020], 0x1111);
+    assert!(state.next_display_obj_cache_vram.is_none());
+    assert!(state.next_display_obj_scanout_generation.is_none());
+    assert_eq!(state.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX], 1);
+    assert_eq!(state.ram[crate::game_state::constants::NMI_DISABLE_CORE_UPDATES], 1);
     assert!(state.pending_main_loop_common_suffix.is_none());
     assert_eq!(state.ram[crate::game_state::constants::BG_TILE_ANIMATION_COUNTDOWN], 3);
     assert_eq!(state.game_state.frame.frame_counter, 3);

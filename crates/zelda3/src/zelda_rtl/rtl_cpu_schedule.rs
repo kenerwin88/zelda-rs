@@ -29,6 +29,23 @@ impl ZeldaState {
         let frame = self.game_state.frame;
         if self.rom_startup_timing()
             && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && frame.main_module == 7
+            && frame.submodule == 2
+            && matches!(frame.subsubmodule, 2 | 13 | 14)
+            && !self.game_state.display.nmi_update_is_latched()
+            && self.game_execution_scheduler.is_idle()
+            && self.dungeon_landing_cpu_advance_pending.is_none()
+        {
+            // Capture the input to the leading handler. Measuring at the
+            // subsequent game-loop entry would replay NMI from its already
+            // mutated latch/DMA state and omit the real upload workload.
+            let timing = rom_dungeon_landing_cpu_advance(self);
+            self.dungeon_landing_spotlight_reset_prefix_scanlines =
+                timing.spotlight_reset_prefix_scanlines;
+            self.dungeon_landing_cpu_advance_pending = Some(timing.advance);
+        }
+        if self.rom_startup_timing()
+            && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
             && frame.main_module == 14
             && frame.submodule == 3
             && self.overworld_map_state() == 1
