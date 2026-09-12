@@ -48,6 +48,20 @@ Next: comparison 47,333 is an ordinary main-loop return, immediately
 before held work begins at 47,334. Capture actual native/source WRAM and
 display domains; do not assume it is another HUD or dialogue failure.
 
+Captured next-boundary evidence: `target/native-47333-diagnostic[-presented]`
+and `target/native-47333-source[-presented]`. CPU module/submodule, latch,
+brightness mirror, and counters match through 47,336. All presented VRAM,
+OAM, and CGRAM match at engine hosts 47,332-47,336. At host 47,334 native
+has brightness 1 with full forced blank; source has brightness 1 and a
+forced-blank suffix beginning at presented row 45. Source PPU trace
+`target/native-47333-source-blank` (video passes through 47,340; audio off)
+shows comparison 47,333 restore `$2100=1` at `$00:8220`, V250/C1148, then
+write `$2100=$80` at `$00:8942`, V46/C308. Decode is
+`/tmp/native-47333-source-blank.jsonl`, raw runs +47,200. This is a
+mid-field main-thread force-blank write during Module0E/7, not a tile,
+palette, or OAM divergence. Native needs the measured CPU write boundary;
+do not hard-code row 45 or borrow another module's fade estimate.
+
 ## Previous native frontier — 47,237
 
 The sprite item-receipt caller now retires at the main wait before NMI.
