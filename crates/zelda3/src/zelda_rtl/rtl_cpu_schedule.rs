@@ -31,6 +31,18 @@ impl ZeldaState {
         let frame = self.game_state.frame;
         if self.rom_startup_timing()
             && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && frame.main_module == 14 && frame.submodule == 2
+            && self.game_state.messaging.runtime.module() == 1
+            && self.game_state.messaging.runtime.text_render_state() == 3
+            && !self.game_state.display.nmi_update_is_latched()
+            && self.game_execution_scheduler.is_idle()
+            && self.native_dialogue_fresh_cpu_entry.is_none()
+        {
+            self.native_dialogue_fresh_cpu_entry = Some(
+                module_cpu_entry_after_leading_nmi(self, input, 0x0e_c984));
+        }
+        if self.rom_startup_timing()
+            && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
             && frame.main_module == 8 && frame.submodule == 2
             && !self.game_state.display.nmi_update_is_latched()
             && self.game_execution_scheduler.is_idle()

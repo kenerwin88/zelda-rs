@@ -4,7 +4,57 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 48,111 (audio)
+## Current native frontier — 48,541 (video)
+
+Fresh Module0E dialogue rendering now uses a measured message-loop entry.
+Before the leading NMI, the existing isolated CPU probe runs from main wait
+through the current sprite/module prefix to `$0e:c984`. Its one-shot
+`native_dialogue_fresh_cpu_entry` supplies the CPU budget after refresh/HDMA
+stalls. This replaces the fixed-span fallback for these entries; other
+entry paths retain their existing budgets, and held glyphs resume their
+remaining work. The measured-entry helper supports a vblank entry across
+the field wrap and remains disabled under receipt ownership.
+
+At comparison 48,101, source enters at V81/C162; native host 48,102
+measures V81/C158. Previously one unpriced sprite call rejected the ledger
+prefix and selected a 224,608-cycle fallback budget, starting an extra
+glyph too early. Native now performs the final line click after the held
+NMI instead of queuing zero for comparison 48,110. No audio marker changed.
+Evidence: `target/native-48111-source-glyph`, decode
+`/tmp/native-48111-source-glyph.jsonl`, and pre-fix native
+`target/native-48111-glyph` / `/tmp/native-48111-glyph.log`.
+
+The entry measurement exposed a second root cause at 14,208: an indoor
+held glyph re-entered `Dungeon_PushBlock_Handler` through the translated
+Module0E dispatcher. Its completed prefix charged another 184 cycles on
+each held field. The call now runs only on a fresh iteration. Source
+resumes directly inside VWF; no caller-return threshold or offset changed.
+Source entry V26/C34 agrees with native V26/C10. Source completes its
+sprite preparation and latch clear at comparison 14,207 before NMI.
+Source evidence: `target/native-14208-source-entry`,
+`target/native-14208-source-suffix-full`, and the reusable genuine paired
+pre-frame checkpoint `target/native-dialogue-source-pair-14000`.
+
+Combined native A/V is exact through 48,540, then video differs at 48,541
+with audio exact: `target/native-dialogue-entry-prefix-native` (64.91s),
+`/tmp/native-dialogue-entry-prefix-native.log`. Binary SHA-256:
+`5b74459a51d52772ed85f8632c6fdbd38fa99b504d5240d36fd243ae0194bdfc`.
+Engine suite: 1,781 passed, 3 ignored (24.20s),
+`/tmp/native-dialogue-entry-prefix-lib-tests.log`.
+Receipt-driven A/V: all 50,000 frames exact on this binary,
+`target/native-dialogue-entry-prefix-receipt` (58.48s),
+`/tmp/native-dialogue-entry-prefix-receipt.log`. The full 1,581,079-frame
+receipt proof still belongs to `d7d92a85`; no full gate was repeated.
+
+Next: a dungeon entrance spotlight (`07/0f`). Source
+`target/native-48541-source[-presented]` passes video through 48,555
+(audio disabled), resumed from pre-frame 47,200. Raw runs add 47,200.
+Comparisons 48,539/48,541/48,543 end held inside LinkOam at `$0d:a49b`,
+`$0d:a3f9`, `$0d:a412`; the alternating fields complete the caller.
+Compare current native state and presented windows/graphics before carrying
+forward the earlier opening-wipe diagnosis.
+
+## Previous native frontier — 48,111 (audio)
 
 Sprite preparation now retains instruction-boundary progress through the
 fourteen graphics source words at `$865c-$86de`. The existing native

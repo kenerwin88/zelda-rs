@@ -10065,6 +10065,10 @@ pub struct ZeldaState {
     /// Measured next dungeon/overworld map fade write, carried from its preceding NMI.
     #[serde(skip)]
     pending_map_force_blank_output_scanline: Option<u8>,
+    /// Fresh RenderText message-loop entry measured through the leading NMI
+    /// and current sprite/module prefix; consumed by that handler only.
+    #[serde(skip)]
+    native_dialogue_fresh_cpu_entry: Option<CpuRasterPosition>,
     #[serde(skip)]
     pending_dungeon_map_room_drawing_nmi_slices: Option<u8>,
     /// Work performed by the most recent `Sprite_Main` call in this host
@@ -12405,6 +12409,7 @@ impl ZeldaState {
             active_display_force_blank_event: None,
             pending_file_select_force_blank_output_scanline: None,
             pending_map_force_blank_output_scanline: None,
+            native_dialogue_fresh_cpu_entry: None,
             pending_dungeon_map_room_drawing_nmi_slices: None,
             last_sprite_main_timing_workload: None,
             nmi_poly_upload_deferred: 0,
@@ -12535,6 +12540,7 @@ impl ZeldaState {
         self.game_execution_scheduler.reset();
         self.dungeon_submodule_cpu_schedule = None;
         self.pending_map_force_blank_output_scanline = None;
+        self.native_dialogue_fresh_cpu_entry = None;
         self.pending_dungeon_map_room_drawing_nmi_slices = None;
         self.dungeon_post_sprite_main_return_pending = false;
         self.dungeon_nmi_prepare_sprites_return_pending = false;

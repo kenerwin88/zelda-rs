@@ -735,6 +735,14 @@ mod fast_forward_cycle_tests {
         let first = state.vwf_exact_fresh_entry_budget(VWF_FIRST_LINE_ENTRY_MASTER_CYCLES).unwrap();
         assert!(first.master_cycles < fresh.master_cycles);
         assert!(state.vwf_exact_fresh_entry_budget(VWF_RESUMED_FRAME_MASTER_CYCLES).is_none());
+        // A measured entry during vblank precedes the *next* field's NMI.
+        // It must retain that field's work instead of failing the old
+        // same-field calibrated-span conversion.
+        let wrapped = state.vwf_exact_measured_entry_budget(
+            snes::CpuRasterPosition::new(255, 0)).unwrap();
+        assert!(wrapped.master_cycles > 300_000 && wrapped.master_cycles < 320_000);
+        assert_eq!(wrapped.since_nmi_master_cycles,
+            30 * 1364 - u64::from(snes::SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES));
 
         state.original_timing_owner = crate::zelda_rtl::OriginalTimingOwnerState::Live;
         assert!(!state.vwf_uses_exact_costs());
@@ -748,6 +756,8 @@ mod fast_forward_cycle_tests {
         );
         assert_eq!(state.vwf_exact_loop_budget(), None);
         assert_eq!(state.vwf_exact_fresh_entry_budget(VWF_LATER_LINE_ENTRY_MASTER_CYCLES), None);
+        assert_eq!(state.vwf_exact_measured_entry_budget(
+            snes::CpuRasterPosition::new(255, 0)), None);
     }
 
     #[test]
@@ -829,7 +839,12 @@ impl ZeldaState {
             } else {
                 // BNE taken ; $00:F815: JSL Dungeon_PushBlock_Handler : BRA $F82A
                 charge(6 + 62 + 22);
-                self.dungeon_push_block_handler();
+                // A held glyph resumes inside RenderText, after this caller
+                // prefix. Re-entering the Rust dispatcher must not rerun
+                // block updates or charge their already-completed work.
+                if fresh_iteration {
+                    self.dungeon_push_block_handler();
+                }
             }
         } else {
             // $00:F800: LDA $1B : BEQ (taken) ; $00:F81B: LDA $11 : CMP #$07 : BEQ $F825
@@ -5537,7 +5552,15 @@ impl ZeldaState {
         // stalls of the span are taken out.
         let mut fresh_converted_budget = None;
         let mut fresh_derived_budget = None;
-        let exact_budget = if resuming {
+        let measured_fresh_entry = if resuming { None } else {
+            self.native_dialogue_fresh_cpu_entry.take()
+        };
+        let exact_budget = if let Some(entry) = measured_fresh_entry {
+            if debug_vwf_budget {
+                eprintln!("vwf_measured_entry host={} position={entry:?}", self.frame_ctr_dbg);
+            }
+            self.vwf_exact_measured_entry_budget(entry)
+        } else if resuming {
             self.vwf_exact_loop_budget()
         } else {
             // A fresh entry takes the budget derived from the ledger prefix
@@ -6151,7 +6174,6 @@ impl ZeldaState {
     /// acceptance and the budget is the work that fits from there, with
     /// WRAM refresh and the live HDMA stall taken out. `None` under receipts.
     fn vwf_exact_fresh_entry_budget(&self, span_before_nmi: u32) -> Option<VwfExactLoopBudget> {
-        use crate::zelda_rtl::game_execution_scheduler::{CpuCycleBudget, CpuWorkAdvance};
         if !self.vwf_uses_exact_costs() {
             return None;
         }
@@ -6163,6 +6185,20 @@ impl ZeldaState {
             (entry / snes::MASTER_CYCLES_PER_SCANLINE) as u16,
             (entry % snes::MASTER_CYCLES_PER_SCANLINE) as u16,
         );
+        self.vwf_exact_measured_entry_budget(entry)
+    }
+
+    /// A measured entry can occur on either side of the field wrap. Price
+    /// the remaining CPU work from that position, excluding refresh/HDMA.
+    fn vwf_exact_measured_entry_budget(&self, entry: snes::CpuRasterPosition) -> Option<VwfExactLoopBudget> {
+        use crate::zelda_rtl::game_execution_scheduler::{CpuCycleBudget, CpuWorkAdvance};
+        if !self.vwf_uses_exact_costs() { return None; }
+        let (v, h) = entry.coordinates();
+        let acceptance = snes::NMI_SCANLINE * snes::MASTER_CYCLES_PER_SCANLINE
+            + snes::SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES as u32;
+        let entry_cycles = u32::from(v) * snes::MASTER_CYCLES_PER_SCANLINE + u32::from(h);
+        let span_before_nmi = (acceptance + SNES_NTSC_MASTER_CYCLES_PER_FRAME - entry_cycles)
+            % SNES_NTSC_MASTER_CYCLES_PER_FRAME;
         let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
             entry,
             snes::CpuBusWorkload::with_hdma_stall(self.native_hdma_scanline_stall_master_cycles()),
