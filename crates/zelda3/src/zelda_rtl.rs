@@ -784,23 +784,6 @@ fn rom_graphics_dma_plan_at_host_boundary(frame: crate::game_state::FrameState) 
     plan
 }
 
-fn animated_bg_scanout_across_main(
-    entry: GraphicsDmaPlan,
-    exit: GraphicsDmaPlan,
-) -> AnimatedBgScanoutGeneration {
-    // When main changes CPU/NMI phases, the NMI after that main slice belongs
-    // to the following active frame. Its DMA may legitimately consume the
-    // exit phase's operands, but the scanout that just completed still owns
-    // the VRAM resident at the host boundary. Combining the entry scanout rule
-    // with the exit operand rule creates a generation that never existed on
-    // hardware.
-    if entry.animated_bg_scanout != exit.animated_bg_scanout {
-        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
-    } else {
-        entry.animated_bg_scanout
-    }
-}
-
 const fn dungeon_supertile_scroll_nmi_precedes_link_animation(
     entry: crate::game_state::FrameState,
     exit: crate::game_state::FrameState,

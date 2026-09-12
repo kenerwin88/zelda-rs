@@ -932,10 +932,12 @@ impl ZeldaState {
                         // carries the completed DMA into the following image.
                         return AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi;
                     }
-                    let generation = animated_bg_scanout_across_main(
-                        entry_graphics_dma_plan,
-                        rom_graphics_dma_plan_at_host_boundary(captured_frame),
-                    );
+                    // Main can select a new module, but cannot undo the
+                    // animated-page DMA from its own leading NMI. Likewise,
+                    // entering a leading-NMI phase cannot publish a future
+                    // upload into the field that just completed. The entry
+                    // phase owns this scanout; the exit owns the next upload.
+                    let generation = entry_graphics_dma_plan.animated_bg_scanout;
                     if leading_nmi_precedes_captured_scanout
                         || rom_dungeon_item_hold_to_dialogue_publishes_live_animated_bg(
                             entry_frame,

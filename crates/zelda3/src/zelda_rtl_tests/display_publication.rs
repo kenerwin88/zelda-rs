@@ -493,10 +493,7 @@ fn dungeon_supertile_filter_entry_keeps_animated_tiles_at_the_host_boundary() {
     // operands consumed by the following NMI. The state-7 palette call then
     // advances to state 8 without performing a PPU write itself.
     assert_eq!(
-        animated_bg_scanout_across_main(
-            rom_graphics_dma_plan_at_host_boundary(filter_return),
-            rom_graphics_dma_plan_at_host_boundary(first_scroll),
-        ),
+        rom_graphics_dma_plan_at_host_boundary(filter_return).animated_bg_scanout,
         AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi,
     );
     assert!(rom_dungeon_module_iteration_runs_after_leading_nmi(
@@ -4107,6 +4104,43 @@ fn completed_room_load_can_publish_live_animated_bg_independently() {
         state.next_display_animated_bg_scanout_generation,
         Some(AnimatedBgScanoutGeneration::LiveAfterNmi)
     );
+}
+
+#[test]
+fn main_phase_change_keeps_its_completed_leading_animated_upload() {
+    for next_submodule in [0x0a, 0x0e, 0x12] {
+        let mut state = ZeldaState::new();
+        state.set_main_module(7);
+        state.set_submodule(0);
+        state.set_animated_tile_vram_destination_address(0x3b00);
+        let entry_frame = state.game_state.frame;
+        state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
+            entry_frame,
+            entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
+            entry_link_handler_state: 0,
+            animated_tile: None,
+            link_operands: PreMainLinkDmaOperands::capture(&state.ram),
+            obj_vram: state.ppu.vram.clone(),
+            oam_shadow: vec![0; state.ppu.oam.len() * 2],
+        });
+        // The NMI has uploaded the new animation before gameplay selects the
+        // staircase/transition. A changed dispatcher must not resurrect old CHR.
+        state.ppu.vram[0x3b00] = 0xbbbb;
+        state.set_submodule(next_submodule);
+        state.capture_display_snapshot();
+        let mut following = state.display_snapshot.as_ref().unwrap().clone();
+        following.host_boundary_animated_bg_scanout = Some(AnimatedBgScanout {
+            destination_address: 0x3b00,
+            vram: vec![0x2222; 0x200],
+            logical_sources: state.vram_chr_source.clone(),
+            preview_sources: state.vram_chr_preview_source.clone(),
+        });
+        following.vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
+        let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+        state.ppu.vram[0x3b00] = 0x2222;
+        state.compose_display_vram(&following, &plan, None);
+        assert_eq!(state.ppu.vram[0x3b00], 0xbbbb, "submodule {next_submodule:02x}");
+    }
 }
 
 #[test]

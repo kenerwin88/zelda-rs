@@ -26,6 +26,7 @@ impl ZeldaState {
         };
         write_words("vram", &self.ppu.vram);
         write_words("obj-vram", self.ppu.obj_vram_latch.as_deref().unwrap_or(&self.ppu.vram));
+        write_words("bg-vram", self.ppu.bg_vram_latch.as_deref().unwrap_or(&self.ppu.vram));
         write_words("cgram", &self.ppu.cgram);
         write_words("oam", &self.ppu.oam);
         std::fs::write(root.join(format!("{}-ram.bin", self.frame_ctr_dbg)), &self.ram)

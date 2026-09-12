@@ -1361,19 +1361,11 @@ fn animated_bg_phase_change_retains_the_completed_scanout_generation() {
         GraphicsDmaGeneration::LiveAfterMain
     );
     assert_eq!(
-        animated_bg_scanout_across_main(gameplay, gameplay),
+        gameplay.animated_bg_scanout,
         AnimatedBgScanoutGeneration::LiveAfterNmi
     );
     assert_eq!(
-        animated_bg_scanout_across_main(brightness, brightness),
-        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
-    );
-    assert_eq!(
-        animated_bg_scanout_across_main(gameplay, brightness),
-        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
-    );
-    assert_eq!(
-        animated_bg_scanout_across_main(brightness, gameplay),
+        brightness.animated_bg_scanout,
         AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
     );
     assert_eq!(
