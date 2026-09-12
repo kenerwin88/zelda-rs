@@ -4596,6 +4596,38 @@ fn dungeon_falling_entry_retains_the_pre_transition_obj_generation() {
 }
 
 #[test]
+fn native_straight_quadrant_returns_wait_for_the_next_open_nmi() {
+    for step in 5..=8 {
+        let mut state = ZeldaState::new();
+        state.restore_live_rom_timing_after_checkpoint();
+        state.set_animated_tile_data_source_address(0xa680);
+        state.set_indoor_flag(1);
+        state.set_main_module(7);
+        state.set_submodule(0x12);
+        state.set_subsubmodule(step);
+        state.set_frame_counter(0xa7);
+        state.latch_nmi_update();
+        state.set_core_update_disable_flag(1);
+        state.game_execution_scheduler.schedule_work(
+            GameWorkContinuation::FinishSpiralStaircasePaletteFilter {
+                tail: if step & 1 != 0 {
+                    SpiralStaircasePaletteTail::BuildQuadrantForVram
+                } else {
+                    SpiralStaircasePaletteTail::PrepareNextQuadrant
+                },
+                caller: InterruptedPaletteFilterCaller::StraightInterroomStairs,
+            }, 1,
+        );
+        state.run_frame_internal(0, crate::RUN_MAIN);
+        assert_eq!(state.game_state.frame.subsubmodule, step + 1);
+        assert_eq!(state.game_state.frame.frame_counter, 0xa7);
+        assert!(!state.game_state.display.nmi_update_is_latched());
+        state.game_execution_scheduler.begin_host_frame();
+        assert!(state.game_execution_scheduler.main_return_requires_leading_nmi());
+    }
+}
+
+#[test]
 fn suspended_spiral_palette_filter_holds_core_nmi_updates() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);

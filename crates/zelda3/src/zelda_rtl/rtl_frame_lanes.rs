@@ -2735,6 +2735,13 @@ impl ZeldaState {
                 self.game_execution_scheduler.schedule_pre_main_nmi_resume(
                     PreMainNmiResume::DungeonSupertileQuadrantUploads,
                 );
+            } else if caller == InterruptedPaletteFilterCaller::StraightInterroomStairs
+                && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            {
+                // The quadrant caller returned after its Held NMI. The next
+                // Open handler must publish this upload before the following
+                // iteration authors another palette and core-DMA request.
+                self.game_execution_scheduler.finish_call_stack_at_main_wait_before_nmi();
             }
             self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();

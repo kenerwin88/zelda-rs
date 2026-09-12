@@ -96,7 +96,7 @@ Work remains on `fix/romless-spiral-palette-return`; `main` remains the accepted
 baseline above. No push. Short receipt comparisons protect the shared path
 while native timing advances; they are not native acceptance evidence.
 
-Current native frontier: **25925, video-only**. This batch has corrected:
+Current native frontier: **26516, audio-only**. This batch has corrected:
 
 - `510da835`: grayscale caller finishes its held NMI before authoring the next
   palette; retires at main wait. Exposed earlier native frontier 14076.
@@ -121,10 +121,14 @@ Current native frontier: **25925, video-only**. This batch has corrected:
   interruption is in NMI_PrepareSprites after Sprite_Main and LinkOam return.
   Native 25868 → 25922; 13 focused stair tests and 25,950 receipt frames pass.
   Across 25865–25869, native/receipt WRAM differ only at scratch $1f00.
-- Straight-stair BG34 conversion and sprite-reset returns now consume their
+- `b1839b4b`: straight-stair BG34 conversion and sprite-reset returns now consume their
   Held NMIs before the resumed callers. The reset uses a measured partial
   garnish-clear checkpoint. Native 25922 → 25925; 15 focused stair tests and
   26,000 receipt frames pass. WRAM25920–25923 agree apart from scratch.
+- Straight-stair quadrant callers retire at main wait, so the next Open NMI
+  publishes pending uploads before the following palette iteration. Native
+  25925 → 26516; all16 focused stair tests and26,530 receipt frames pass.
+  WRAM25924–25928 agree apart from scratch.
 
 The audio mismatch at 25054 came from missing drawing work before the text
 renderer. The original enters VWF at v=50 on host 25048; the old ledger left
@@ -144,8 +148,11 @@ The working-batch proof is `target/reset-phase-native6` and
 `target/reset-phase-receipt`; full-route acceptance remains deferred. The short
 live trace ended at its configured trace cutoff with a missing final return;
 its25920–25923 CPU evidence is complete, but it is not an acceptance run.
-**Next:25925**, the straight-stair quadrant upload chain (states5–8).
-Source receipts: `target/native-25925-source`.
+The quadrant upload chain (states5–8) is repaired. Evidence:
+`target/straight-quadrant-native`, `target/straight-quadrant-receipt`.
+**Next:26516**, audio during dialogue in room51. Source receipts:
+`target/native-26516-source`; native WRAM/VWF/cycle-ledger probe:
+`target/native-26516`, `target/native-26516-ledger`, `target/native-26516-profiles`.
 Prefix evidence: `target/vwf-25054-source`,
 `target/drawing-batch-ledger`, `target/drawing-batch-profiles`; chronological
 working notes: `target/native-100k-batch/progress.md`.
