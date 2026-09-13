@@ -147,7 +147,7 @@ pub struct Snes9xCpuQuiescentCheckpoint {
     #[serde(default)]
     source_vmain_full_graphic_count_nonzero: bool,
     #[serde(default)]
-    source_ppu_open_bus1: u8,
+    source_ppu_reads: SourcePpuReadState,
     nmi_acceptance_not_before: Option<CpuMasterTimestamp>,
     deferred_nmi_enable_edge: bool,
     #[serde(default)]
@@ -276,7 +276,9 @@ impl Snes9xColdCpuExecutor {
             pending_completion: None,
             pending_general_dma: None,
             source_vmain_full_graphic_count_nonzero: false,
-            source_ppu_open_bus1: 0,
+            // ppu.cpp:S9xSoftResetPPU leaves WRIO/RDIO at $ff with zeroed read
+            // buses, counters and flips.
+            source_ppu_reads: SourcePpuReadState::snes9x_reset(),
             nmi_acceptance_not_before: None,
             deferred_nmi_enable_edge: false,
             irq_timer_at: None,
@@ -374,7 +376,7 @@ impl Snes9xColdCpuExecutor {
             .capture_snes9x_apu_coroutine_checkpoint()
             .ok_or(Snes9xCpuQuiescentCheckpointError::MissingApuSidecar)?;
         Ok(Snes9xCpuQuiescentCheckpoint {
-            version: 5,
+            version: 6,
             snes: self.machine.snes.clone(),
             timeline: self.machine.timeline.clone(),
             apu_clock: self.machine.apu_clock.checkpoint(),
@@ -383,7 +385,7 @@ impl Snes9xColdCpuExecutor {
             source_vmain_full_graphic_count_nonzero: self
                 .machine
                 .source_vmain_full_graphic_count_nonzero,
-            source_ppu_open_bus1: self.machine.source_ppu_open_bus1,
+            source_ppu_reads: self.machine.source_ppu_reads,
             nmi_acceptance_not_before: self.machine.nmi_acceptance_not_before,
             deferred_nmi_enable_edge: self.machine.deferred_nmi_enable_edge,
             irq_timer_at: self.machine.irq_timer_at,
@@ -394,7 +396,7 @@ impl Snes9xColdCpuExecutor {
     pub fn from_quiescent_checkpoint(
         checkpoint: Snes9xCpuQuiescentCheckpoint,
     ) -> Result<Self, Snes9xCpuQuiescentCheckpointError> {
-        if checkpoint.version != 5 {
+        if checkpoint.version != 6 {
             return Err(Snes9xCpuQuiescentCheckpointError::Version {
                 version: checkpoint.version,
             });
@@ -411,7 +413,7 @@ impl Snes9xColdCpuExecutor {
             pending_general_dma: None,
             source_vmain_full_graphic_count_nonzero: checkpoint
                 .source_vmain_full_graphic_count_nonzero,
-            source_ppu_open_bus1: checkpoint.source_ppu_open_bus1,
+            source_ppu_reads: checkpoint.source_ppu_reads,
             nmi_acceptance_not_before: checkpoint.nmi_acceptance_not_before,
             deferred_nmi_enable_edge: checkpoint.deferred_nmi_enable_edge,
             irq_timer_at: checkpoint.irq_timer_at,
@@ -1146,8 +1148,21 @@ impl Snes9xColdCpuExecutor {
             // product byte to PPU.OpenBus1. The caller-owned CPU OpenBus is
             // still deferred until the mapped access has drained.
             let value = self.machine.snes.ppu.read(adr as u8);
-            self.machine.source_ppu_open_bus1 = value;
+            self.machine.source_ppu_reads.open_bus1 = value;
             return Ok(value);
+        }
+        if (bank & 0x7f) < 0x40 {
+            // ppu.cpp SLHV/OPHCT/OPVCT/STAT78 and the RDIO port share one
+            // counter/open-bus owner with the source-ordered timing probe.
+            // STAT77's RangeTimeOver has no owner here and still fails closed.
+            let beam = self
+                .machine
+                .timeline
+                .synchronous_beam_position()
+                .expect("the exact cold executor owns a synchronous timeline");
+            if let Some(value) = self.machine.source_ppu_reads.read(adr, beam) {
+                return Ok(value);
+            }
         }
         if (bank & 0x7f) < 0x40 && adr == 0x4210 {
             // ppu.cpp:S9xGetCPU(RDNMI): sample and clear the latch before the
@@ -1247,6 +1262,17 @@ impl Snes9xColdCpuExecutor {
             if !self.machine.snes.auto_joy_read {
                 self.machine.snes.auto_joy_timer = 0;
             }
+            return Ok(());
+        }
+        if (bank & 0x7f) < 0x40 && adr == 0x4201 {
+            // ppu.cpp:S9xSetCPU($4201) force-latches the counters on WRIO
+            // bit7's high-to-low edge, then publishes the byte to $4201/$4213.
+            let beam = self
+                .machine
+                .timeline
+                .synchronous_beam_position()
+                .expect("the exact cold executor owns a synchronous timeline");
+            self.machine.source_ppu_reads.write_wrio(value, beam);
             return Ok(());
         }
         if (bank & 0x7f) < 0x40 && matches!(adr, 0x4209 | 0x420a) {
@@ -1396,8 +1422,6 @@ impl Snes9xColdCpuExecutor {
             end_wram_refresh_position,
         });
     }
-
-
 }
 
 impl SourceCpuInstructionBus for Snes9xColdCpuExecutor {
@@ -1577,6 +1601,43 @@ mod tests {
         "/../../external/snes9x-libretro/fixtures/zelda3-cold-first-nmi-dma-setup.jsonl"
     ));
 
+    /// The cartridge SRAM these original-ROM proofs were recorded against.
+    ///
+    /// It is a save-present image: the boot's `$00:87EF LDA $7003E5 : CMP
+    /// #$55AA : BEQ` reads `$55AA` and takes the branch, which costs the
+    /// `bOP` ONE_CYCLE the recorded transaction stream charges. Seeding a
+    /// fresh `$60`-filled cartridge instead makes that branch fall through and
+    /// every later transaction disagree, so the marker is checked here rather
+    /// than left to surface as an unexplained timing mismatch.
+    fn route_initial_sram() -> Vec<u8> {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+        if let Some(explicit) = std::env::var_os("ZELDA3_ROUTE_SRAM") {
+            candidates.push(explicit.into());
+        }
+        candidates.push(root.join("routes/full_run/comparisons/continuous-audio/initial.srm"));
+        candidates.push(root.join("saves/sram.dat"));
+        let path = candidates
+            .iter()
+            .find(|path| path.is_file())
+            .unwrap_or_else(|| {
+                panic!(
+                    "these proofs need the recorded save-present cartridge SRAM; set \
+                     ZELDA3_ROUTE_SRAM or place it at {}",
+                    candidates[candidates.len() - 2].display()
+                )
+            });
+        let sram = std::fs::read(path).expect("the located cartridge SRAM must be readable");
+        assert_eq!(sram.len(), 0x2000, "LoROM cartridge SRAM is 8 KiB");
+        assert_eq!(
+            &sram[0x03e5..0x03e7],
+            &[0xaa, 0x55],
+            "{} is not the recorded save-present seed: $7003E5 must hold $55AA",
+            path.display()
+        );
+        sram
+    }
+
     fn synthetic_rom(program: &[u8]) -> Vec<u8> {
         let mut rom = vec![0xea; 0x8000];
         rom[..program.len()].copy_from_slice(program);
@@ -1620,17 +1681,29 @@ mod tests {
     }
 
     #[test]
-    fn checkpoint_v5_roundtrips_ppu_capability_sidecars() {
+    fn checkpoint_v6_roundtrips_ppu_capability_sidecars() {
         let rom = synthetic_rom(&[0x18]);
         let mut source = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
         source.machine.source_vmain_full_graphic_count_nonzero = true;
-        source.machine.source_ppu_open_bus1 = 0x5a;
+        source.machine.source_ppu_reads = SourcePpuReadState {
+            open_bus1: 0x5a,
+            open_bus2: 0x3c,
+            wrio: 0x7f,
+            h_latched: 0x123,
+            v_latched: 200,
+            h_read_high: true,
+            v_read_high: true,
+            counter_latched: true,
+        };
         let encoded = serde_json::to_vec(&source.capture_quiescent_checkpoint().unwrap()).unwrap();
         let checkpoint: Snes9xCpuQuiescentCheckpoint = serde_json::from_slice(&encoded).unwrap();
-        assert_eq!(checkpoint.version, 5);
+        assert_eq!(checkpoint.version, 6);
         let mut restored = Snes9xColdCpuExecutor::from_quiescent_checkpoint(checkpoint).unwrap();
         assert!(restored.machine.source_vmain_full_graphic_count_nonzero);
-        assert_eq!(restored.machine.source_ppu_open_bus1, 0x5a);
+        assert_eq!(
+            restored.machine.source_ppu_reads,
+            source.machine.source_ppu_reads
+        );
 
         let dma = &mut restored.machine.snes.dma.channel[0];
         dma.a_bank = 0x7e;
@@ -1649,7 +1722,7 @@ mod tests {
     }
 
     #[test]
-    fn checkpoint_v5_roundtrips_vertical_irq_timer_and_rejects_v4_without_mutation() {
+    fn checkpoint_v6_roundtrips_vertical_irq_timer_and_rejects_v5_without_mutation() {
         let rom = synthetic_rom(&[0x18]);
         let mut source = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
         source.machine.snes.v_irq_enabled = true;
@@ -1671,17 +1744,17 @@ mod tests {
         let mut target = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
         let target_before = serde_json::to_vec(target.machine.snes()).unwrap();
         let target_timestamp = target.machine.timestamp();
-        let mut legacy_v4 =
+        let mut legacy_v5 =
             serde_json::to_value(source.capture_quiescent_checkpoint().unwrap()).unwrap();
-        legacy_v4["version"] = serde_json::json!(4);
-        legacy_v4
+        legacy_v5["version"] = serde_json::json!(5);
+        legacy_v5
             .as_object_mut()
             .unwrap()
-            .remove("source_ppu_open_bus1");
-        let legacy_v4: Snes9xCpuQuiescentCheckpoint = serde_json::from_value(legacy_v4).unwrap();
+            .remove("source_ppu_reads");
+        let legacy_v5: Snes9xCpuQuiescentCheckpoint = serde_json::from_value(legacy_v5).unwrap();
         assert_eq!(
-            target.restore_quiescent_checkpoint(legacy_v4).unwrap_err(),
-            Snes9xCpuQuiescentCheckpointError::Version { version: 4 }
+            target.restore_quiescent_checkpoint(legacy_v5).unwrap_err(),
+            Snes9xCpuQuiescentCheckpointError::Version { version: 5 }
         );
         assert_eq!(
             serde_json::to_vec(target.machine.snes()).unwrap(),
@@ -2325,8 +2398,95 @@ mod tests {
             ],
         );
         assert_eq!(cpu.machine.snes.cpu.a, 0x551d);
-        assert_eq!(cpu.machine.source_ppu_open_bus1, 0x1d);
+        assert_eq!(cpu.machine.source_ppu_reads.open_bus1, 0x1d);
         assert_eq!(cpu.machine.snes.open_bus, 0x1d);
+    }
+
+    /// Place the cold executor at an explicit raster without changing any
+    /// other owner, so a counter read's beam position is the test input.
+    fn place_at_raster(cpu: &mut Snes9xColdCpuExecutor, scanline: u16, cycle: u16) {
+        cpu.machine.timeline = CpuMasterTimeline::at_raster(
+            0,
+            crate::CpuRasterPosition::new(scanline, cycle),
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        cpu.machine.timeline.begin_synchronous_timeline().unwrap();
+    }
+
+    #[test]
+    fn cold_executor_latches_counters_at_the_slhv_access_beam() {
+        // LDA $2137 : LDA $213C : LDA $213C
+        let rom = synthetic_rom(&[0xad, 0x37, 0x21, 0xad, 0x3c, 0x21, 0xad, 0x3c, 0x21]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        // ppu.cpp:S9xResetPPU leaves WRIO at $ff, so SLHV latches.
+        assert_eq!(cpu.machine.source_ppu_reads.wrio, 0xff);
+        cpu.machine.snes.cpu.mf = true;
+        cpu.machine.source_ppu_reads.open_bus1 = 0xa5;
+        // An 8-clock opcode fetch plus a 16-clock word operand puts the SLHV
+        // access at1268, before the first long dot at1292.
+        place_at_raster(&mut cpu, 103, 1_244);
+
+        cpu.step().unwrap();
+        assert_eq!(
+            cpu.machine.snes.cpu.a & 0xff,
+            0xa5,
+            "SLHV returns PPU.OpenBus1"
+        );
+        assert_eq!(cpu.machine.source_ppu_reads.h_latched, 1_268 / 4);
+        assert_eq!(cpu.machine.source_ppu_reads.v_latched, 103);
+        assert!(cpu.machine.source_ppu_reads.counter_latched);
+
+        // OPHCT low then high: the high read retains PPU.OpenBus2 bits7..1.
+        cpu.step().unwrap();
+        assert_eq!(cpu.machine.snes.cpu.a & 0xff, (1_268 / 4) as u16 & 0xff);
+        cpu.step().unwrap();
+        assert_eq!(
+            cpu.machine.snes.cpu.a & 0xff,
+            u16::from(((1_268u32 / 4) as u8 & 0xfe) | 1)
+        );
+    }
+
+    #[test]
+    fn cold_executor_force_latches_on_the_wrio_falling_edge() {
+        // STZ $4201 : LDA $213C
+        let rom = synthetic_rom(&[0x9c, 0x01, 0x42, 0xad, 0x3c, 0x21]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.snes.cpu.mf = true;
+        cpu.machine.source_ppu_reads.h_latched = 0x123;
+        cpu.machine.source_ppu_reads.v_latched = 4;
+        // The store's access beam is1292 after the 8+16-clock fetch, the first
+        // long dot, so the recorded counter is322 rather than323.
+        place_at_raster(&mut cpu, 5, 1_268);
+
+        cpu.step().unwrap();
+        assert_eq!(cpu.machine.source_ppu_reads.wrio, 0);
+        assert_eq!(cpu.machine.source_ppu_reads.h_latched, 322);
+        assert_eq!(cpu.machine.source_ppu_reads.v_latched, 5);
+
+        cpu.step().unwrap();
+        assert_eq!(cpu.machine.snes.cpu.a & 0xff, 322 & 0xff);
+        // With WRIO bit7 low, a later SLHV read no longer latches.
+        let before = cpu.machine.source_ppu_reads;
+        let beam = cpu
+            .machine
+            .timeline
+            .synchronous_beam_position()
+            .expect("the exact cold executor owns a synchronous timeline");
+        cpu.machine.source_ppu_reads.read(0x2137, beam);
+        assert_eq!(cpu.machine.source_ppu_reads.h_latched, before.h_latched);
+        assert_eq!(cpu.machine.source_ppu_reads.v_latched, before.v_latched);
+    }
+
+    #[test]
+    fn cold_executor_still_fails_closed_on_the_unowned_range_over_flag() {
+        // STAT77's PPU.RangeTimeOver has no owner in this executor.
+        let rom = synthetic_rom(&[0xad, 0x3e, 0x21]); // LDA $213E
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        assert!(matches!(
+            cpu.step(),
+            Err(SourceCpuError::UnsupportedBusMap { address: 0x00_213e })
+        ));
     }
 
     #[test]
@@ -2346,7 +2506,7 @@ mod tests {
             ))
         ));
         assert_eq!(cpu.program_address(), 0x00_8003);
-        assert_eq!(cpu.machine.source_ppu_open_bus1, 0x1d);
+        assert_eq!(cpu.machine.source_ppu_reads.open_bus1, 0x1d);
         assert_eq!(cpu.machine.snes.open_bus, 0x21);
         assert_eq!(cpu.machine.snes.cpu.a, 0x5500);
         assert_eq!(
@@ -9646,10 +9806,7 @@ mod tests {
     fn local_zelda_rom_reaches_first_two_exact_main_loop_returns() {
         let rom_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../zelda3.sfc");
         let rom = std::fs::read(rom_path).expect("local zelda3.sfc is required for this proof");
-        let sram_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../routes/full_run/comparisons/continuous-audio/initial.srm");
-        let sram =
-            std::fs::read(sram_path).expect("captured route SRAM is required for this proof");
+        let sram = route_initial_sram();
         let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset_with_sram(&rom, Some(&sram)).unwrap();
 
         let first = cpu.run_until_main_loop_return().unwrap();
@@ -9680,10 +9837,7 @@ mod tests {
     fn local_zelda_rom_source_owner_runs_continuously_through_host_call_1000() {
         let rom_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../zelda3.sfc");
         let rom = std::fs::read(rom_path).expect("local zelda3.sfc is required for this proof");
-        let sram_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../routes/full_run/comparisons/continuous-audio/initial.srm");
-        let sram =
-            std::fs::read(sram_path).expect("captured route SRAM is required for this proof");
+        let sram = route_initial_sram();
         let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset_with_sram(&rom, Some(&sram)).unwrap();
 
         let mut last = None;
@@ -9709,10 +9863,7 @@ mod tests {
     fn local_zelda_rom_matches_post_handoff_cpu_through_first_nmi_apui_read() {
         let rom_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../zelda3.sfc");
         let rom = std::fs::read(rom_path).expect("local zelda3.sfc is required for this proof");
-        let sram_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../routes/full_run/comparisons/continuous-audio/initial.srm");
-        let sram =
-            std::fs::read(sram_path).expect("captured route SRAM is required for this proof");
+        let sram = route_initial_sram();
         let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset_with_sram(&rom, Some(&sram)).unwrap();
 
         // First consume the permanent reset-through-IPL transaction stream so

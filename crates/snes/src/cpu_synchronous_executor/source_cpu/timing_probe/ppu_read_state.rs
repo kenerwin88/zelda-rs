@@ -3,7 +3,7 @@ use crate::cpu_timeline::CpuSynchronousBeamPosition;
 /// Explicit pinned NTSC PPU read-register state for a development CPU probe.
 /// CPU OpenBus is a separate owner. Supplying this state asserts provenance;
 /// the probe never infers it from rendered pixels or WRAM snapshots.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SourcePpuReadState {
     pub wrio: u8,
     pub open_bus1: u8,
@@ -14,6 +14,12 @@ pub struct SourcePpuReadState {
     pub v_read_high: bool,
     /// Memory.FillRAM[$213f] bit6, cleared by reading STAT78.
     pub counter_latched: bool,
+}
+
+impl Default for SourcePpuReadState {
+    fn default() -> Self {
+        Self::snes9x_reset()
+    }
 }
 
 impl SourcePpuReadState {
@@ -49,7 +55,7 @@ impl SourcePpuReadState {
         self.counter_latched = true;
     }
 
-    pub(super) fn write_wrio(&mut self, value: u8, beam: CpuSynchronousBeamPosition) {
+    pub(crate) fn write_wrio(&mut self, value: u8, beam: CpuSynchronousBeamPosition) {
         // S9xSetCPU($4201) force-latches on the high-to-low edge, then
         // publishes the complete WRIO byte to both $4201 and RDIO($4213).
         if value & 0x80 == 0 && self.wrio & 0x80 != 0 {
@@ -58,7 +64,7 @@ impl SourcePpuReadState {
         self.wrio = value;
     }
 
-    pub(super) fn read(&mut self, address: u16, beam: CpuSynchronousBeamPosition) -> Option<u8> {
+    pub(crate) fn read(&mut self, address: u16, beam: CpuSynchronousBeamPosition) -> Option<u8> {
         match address {
             0x2137 => {
                 if self.wrio & 0x80 != 0 {
