@@ -4,7 +4,52 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 56,417 (video)
+## Current native frontier — 56,419 (video)
+
+`fa1972e3` owns the second ordinary-overworld interruption class, moving the
+frontier 56,417 -> 56,419 (audio exact at both). Binary in
+`target/native-hearts-fix` (70.52s): exact video+audio 0..56,418.
+
+The mechanism is `cba205c8`'s, one routine further along the suffix. A captured
+PC trace showed the iteration started at frame 56,416 V255/C224 was still
+running at the NMI of 56,417 (V225/C34), so its handler ended at V227 instead
+of V250 and the interrupted iteration resumed and returned at V234/C946 with no
+new iteration in that host. The native measurement already reached that
+boundary at V225/C20, PC `$0D:FDB0` inside `Hud_UpdateHearts`, and dropped it.
+
+`HudUpdateInterruption::InsideHearts` resumes through the existing
+`HudUpdateResume::BeforeHearts` callee re-run. **That is exact for the hearts
+routine specifically, and the reason does not generalise:**
+
+- `Hud_UpdateHearts` ($0D:FDAB..$0D:FDD8) plus `Hud_UpdateHearts_DrawHeart`
+  ($0D:FDD9..$0D:FDEE) store only `$00`, `$07` and `[$07],Y` — their own loop
+  count, their own row pointer, and HUD tile words. No game state.
+- The buffer is published only when `$16` is set (`$00:8B67 LDA $16 : BEQ`),
+  and `$16` rises only at `$0D:DD26 INC $16`, after the callee returns.
+  Measured on the trace: 56,416 raises `$16` at V183 and the gate uploads at
+  V242; 56,417's interrupting NMI has no `$16` write before it and never
+  reaches `$00:8B67`; `$16` rises at V234 after the resume, and 56,418's NMI
+  uploads it. The partial buffer is never seen.
+- The re-run derives its count from unmutated health capacity/current health,
+  so the source's partial pass is a subset of the same words.
+
+### Next native frontier — 56,419: the inventory tail, and why it needs more
+
+The boundary is `$0D:FCEA` (`STA $7EC764`) in the inventory tail, with
+`$0D:FDB8`, `$0D:F124`, `$0D:F105` and `$06:F80F` following close behind.
+
+**Do not extend `InsideHearts` to cover it.** `hud_update_inventory_from`
+writes game state — `set_inventory_item(0, …)` for the bow slot — not only HUD
+tile words, so re-running the block whole would defer a real WRAM write by a
+host. That is exactly why the inventory path already carries the finer
+`HudInventoryInterruption { field, entry_master_cycles, master_cycles }` and
+`HudInventoryResume`. The right fix extends that grammar to the tail after the
+Keys field, not the hearts resume.
+
+`$06:F80F` is different again — `link_oam_caller=None`, so it is outside the
+suffix's LinkOam/HUD chain entirely and needs its own owner.
+
+## Previous native frontier — 56,417 (video)
 
 `cba205c8` gave the native lane its first main-loop interruption owner for the
 ordinary overworld, moving the frontier 56,390 -> 56,417 (audio was already
