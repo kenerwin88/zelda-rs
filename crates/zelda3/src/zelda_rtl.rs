@@ -2665,25 +2665,9 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
                 // Continue the caller's real sprite-preparation suffix and
                 // busy loop. Only CPU phase crosses into the next probe;
                 // the translated engine remains the owner of every RAM write.
-                for _ in 0..50_000 {
-                    let (v, h) = budget.raster_position().coordinates();
-                    run.set_raster_position(v, h);
-                    if advance_rom_cpu_step(&mut run, &mut budget).reached_boundary().is_some() {
-                        let next_entry = if run.ram_byte(MAIN_MODULE) == 0x0f {
-                            DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT.entry_pc
-                        } else { 0x00_805d };
-                        let checkpoint = run.main_wait_checkpoint(next_entry);
-                        let host = state.frame_ctr_dbg + 1 + u32::from(nmi_is_trailing);
-                        if next_entry == DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT.entry_pc
-                            && crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
-                            eprintln!("song_upload iris_wait host={host} pc={:06x} position={:?} zero={}",
-                                checkpoint.entry_pc, budget.raster_position(), checkpoint.zero);
-                        }
-                        state.native_main_wait_cpu_phase = Some(NativeMainWaitCpuPhase { host, checkpoint, budget });
-                        return (None, None);
-                    }
-                }
-                panic!("overworld caller did not reach its successor's NMI");
+                let host = state.frame_ctr_dbg + 1 + u32::from(nmi_is_trailing);
+                state.native_main_wait_cpu_phase = Some(overworld_cpu_suffix_main_wait_phase(run, budget, host));
+                return (None, None);
             }
             return (None, None);
         }
@@ -2759,18 +2743,47 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
                     Some(u16::try_from(run.pc() - 0x0d_a9ed).unwrap() * 14);
             }
             if let Some(progress) = progress { progress.validate(); }
-            return (pointer_tail_cycles.map(|master_cycles|
+            let packing = pointer_tail_cycles.map(|master_cycles|
                 SpritePreparationProgress::PointerTail(SpritePreparationPointerProgress { master_cycles }))
                 .or_else(|| source_progress.map(SpritePreparationProgress::SourceWords))
-                .or_else(|| progress.map(SpritePreparationProgress::ExtendedOam)),
-                if run.pc() == 0x0d_fb94 {
+                .or_else(|| progress.map(SpritePreparationProgress::ExtendedOam));
+            let hud = if run.pc() == 0x0d_fb94 {
                     // JSR has transferred control to the callee, but none of
                     // the hearts block's instructions have executed yet.
                     Some(HudUpdateInterruption::BeforeHearts)
-                } else { hud_conversion.map(HudUpdateInterruption::Inventory) });
+                } else { hud_conversion.map(HudUpdateInterruption::Inventory) };
+            if packing.is_some() || hud.is_some() || state.native_overworld_link_body_selection_cycles.is_some() {
+                // The typed continuation resumes after this NMI, then returns
+                // through the same common suffix and busy loop. Keep that
+                // CPU phase instead of reseeding the next caller at H=12.
+                // Shadow RAM remains private: only registers/clock survive.
+                advance_rom_cpu_through_nmi(&mut run, &mut budget);
+                let host = state.frame_ctr_dbg + 2 + u32::from(nmi_is_trailing);
+                state.native_main_wait_cpu_phase = Some(overworld_cpu_suffix_main_wait_phase(run, budget, host));
+            }
+            return (packing, hud);
         }
     }
     panic!("overworld timing failed to reach the next NMI or caller return");
+}
+
+fn overworld_cpu_suffix_main_wait_phase(mut run: RomCpuTimingRun, mut budget: CpuCycleBudget, host: u32) -> NativeMainWaitCpuPhase {
+    for _ in 0..50_000 {
+        let (v, h) = budget.raster_position().coordinates();
+        run.set_raster_position(v, h);
+        if advance_rom_cpu_step(&mut run, &mut budget).reached_boundary().is_some() {
+            let next_entry = if run.ram_byte(MAIN_MODULE) == 0x0f {
+                DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT.entry_pc
+            } else { 0x00_805d };
+            let checkpoint = run.main_wait_checkpoint(next_entry);
+            if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+                eprintln!("song_upload main_wait host={host} pc={:06x} position={:?} zero={}",
+                    checkpoint.entry_pc, budget.raster_position(), checkpoint.zero);
+            }
+            return NativeMainWaitCpuPhase { host, checkpoint, budget };
+        }
+    }
+    panic!("overworld caller did not reach its successor's NMI");
 }
 
 fn overworld_upload_suffix_interruption(

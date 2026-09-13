@@ -4,7 +4,58 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 56,390 (video)
+## Current native frontier — 54,043 (audio)
+
+Interrupted ordinary-overworld HUD, Link-body, and sprite-preparation
+suffixes now preserve the CPU's real next main-wait phase. The existing
+probe executes the accepted NMI and remaining source instructions through
+the common suffix and busy loop, then retains only the register checkpoint
+and cycle budget for the next eligible host. Shadow RAM is never copied
+into gameplay. Uninterrupted callers use the same suffix-to-wait helper.
+The subsequent caller no longer silently falls back to `$8036`/H12 after
+these typed interruptions. `ZELDA3_DEBUG_SONG_UPLOAD=1` now logs these as
+`song_upload main_wait`, including the retained host, PC, raster and Z flag.
+
+This removes an accidental timing cancellation: native first audio mismatch
+returns to54,043, with video still exact there. The command at native host
+54,020 now reachesV118/C246 versus source comparison54,019 C234 (12 clocks
+late); the old fallback happened to reachC236. Do not compensate this with
+a command offset. The unit regression uses the original `$8034 LDA $12` /
+`$8036 BEQ $8034` bytes and source costs24/22: two paths reach the same
+V225/H12 boundary with different next PCs, and both must survive unchanged
+with their CPU flags/registers. Generic raster reseeding cannot represent
+that distinction. Absolute caller phase still requires the upstream fixes
+below; this is not a claim of improved native route coverage.
+
+`target/native-overworld-suffix-phase` and
+`target/native-overworld-suffix-phase-upload` reproduce this native frontier
+from frame zero (68.74s/67.20s). Binary SHA:
+`1a5a866384f39ccf97900f25654cb0770cb46e394b6bb79674b78ba821aaa1d5`.
+All1,796 library tests pass,3 ignored (23.70s), including the new busy-loop
+regression: `/tmp/native-overworld-suffix-phase-lib-tests.log`.
+`target/native-overworld-suffix-phase-receipt` matches all56,397 receipt-driven
+frames (63.81s). No full1,581,079-frame run was repeated for this binary.
+
+### Next: preserve the phase when dialogue returns to the overworld
+
+The last non-suffix gap before this upload is dialogue14/2 returning to9/0.
+`target/native-52752-source`, from the valid paired52000 checkpoint, is
+video exact through53,926. `/tmp/native-52752-source.jsonl` shows source
+comparison52,749 accepting a trailing NMI at `$8036`, V225/C22, counter165,
+after returning to9/0; the callback returns at `$80c9`, C84.52,750 starts
+inside that handler, advances counter166, and accepts the next NMI at
+`$8034`, C14. The native ordinary probe's first retained phase after this
+dialogue is host52,752 `$8036`/C28; the entry before it was a fallback.
+Trace the dialogue caller's actual return and carry its phase into the
+ordinary loop. Do not seed a frame-specific PC/raster from this observation.
+Source WRAM52,748..52,756 is in that session; its decoded trace has both
+frame entry/return and NMI records. Align counter and leading/trailing
+ownership before equating native `host` with source comparison frame.
+
+The independently confirmed beam-counter bus-sampling defect described below
+also remains open. It needs actual access-time sampling, not RNG substitution.
+
+## Previous native frontier — 56,390 (video)
 
 LinkOam's body drawing now has a native continuation between upper-entry
 stores and lower-entry selection. The CPU probe recognizes the four ASL

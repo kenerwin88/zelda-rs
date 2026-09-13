@@ -5,6 +5,45 @@ use super::*;
 use crate::tile_definition::NativeTile;
 
 #[test]
+fn overworld_suffix_retains_both_source_busy_loop_instruction_edges() {
+    // Original $00:8034 LDA $12; $8036 BEQ $8034. The pinned CPU uses
+    // 24 clocks for the direct-page load and 22 for the taken branch.
+    // At the H=12 NMI deadline these two source paths have the same raster
+    // position but DIFFERENT next instructions. An H=12 fallback loses it.
+    let mut rom = vec![0; 0x8000];
+    rom[0x34..0x38].copy_from_slice(&[0xa5, 0x12, 0xf0, 0xfc]);
+    rom[0x7fc0..0x7fd5].fill(b' ');
+    rom[0x7fd5] = 0x20;
+    rom[0x7fd6] = 2;
+    rom[0x7fd7] = 5;
+    rom[0x7fd8] = 3;
+    rom[0x7fdc..0x7fde].copy_from_slice(&0xffffu16.to_le_bytes());
+    rom[0x7ffc..0x7ffe].copy_from_slice(&0x8034u16.to_le_bytes());
+    let mut machine = snes::Snes::new();
+    machine.ram[MAIN_MODULE] = 9;
+    for (entry_h, expected_pc) in [(1330, 0x00_8034), (1352, 0x00_8036)] {
+        let checkpoint = RomCpuCheckpoint {
+            entry_pc: 0x00_8034, stop_pc: 0x00_805d, waiting: false,
+            a: 0x5a00, x: 37, y: 42, carry: true, zero: false,
+            ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+        };
+        let run = RomCpuTimingRun::new(&rom, &machine.ram, &machine.cart.ram,
+            &machine.ppu, &machine.dma, [0; 4], checkpoint).unwrap();
+        let budget = CpuCycleBudget::until_next_nmi_acceptance(
+            CpuRasterPosition::new(224, entry_h), CpuBusWorkload::with_hdma_stall(0),
+            CpuFieldTiming::NON_INTERLACE_EVEN);
+        let phase = overworld_cpu_suffix_main_wait_phase(run, budget, 17);
+        assert_eq!(phase.host, 17);
+        assert_eq!(phase.budget.raster_position(), CpuRasterPosition::new(225, 12));
+        assert_eq!(phase.checkpoint.entry_pc, expected_pc);
+        assert_eq!((phase.checkpoint.a, phase.checkpoint.x, phase.checkpoint.y), (0x5a00, 37, 42));
+        assert!(phase.checkpoint.zero && phase.checkpoint.carry);
+        assert_eq!(phase.checkpoint.sp, 0x1ff);
+        assert!(phase.checkpoint.stack_bytes.is_empty());
+    }
+}
+
+#[test]
 fn native_probe_field_phase_crosses_vzero_without_flipping_at_host_vblank() {
     for host in 1..=4 {
         let vblank = native_cpu_field_timing_at_entry(host, CpuRasterPosition::new(248, 0));
