@@ -8913,10 +8913,11 @@ impl ZeldaState {
                 (None, None)
             }
         };
-        if self.native_overworld_song_upload == Some(NativeOverworldSongUpload::AwaitReturn) {
+        if self.native_overworld_song_upload == Some(NativeOverworldSongUpload::AwaitReturn)
+            || self.native_dungeon_song_upload_awaiting_return {
             assert!(!matches!(self.original_timing_owner, OriginalTimingOwnerState::Live));
             self.capture_display_snapshot_with_override(Some(DisplaySnapshotPublication::RetainPublished));
-            let returned = self.native_overworld_song_upload_return();
+            let returned = self.native_song_upload_return();
             if let Some(position) = returned {
                 // Restoring $4200 while the hardware vblank flag remains set
                 // immediately accepts a Held NMI. An active-display return
@@ -8929,7 +8930,14 @@ impl ZeldaState {
                     eprintln!("song_upload return host={} position={position:?}", self.frame_ctr_dbg);
                 }
                 self.native_overworld_song_upload = None;
-                self.complete_pending_main_loop_common_suffix_after_module_return();
+                if self.native_dungeon_song_upload_awaiting_return {
+                    self.native_dungeon_song_upload_awaiting_return = false;
+                    self.complete_module_pre_dungeon_after_song_bank_transfer();
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                } else {
+                    self.complete_pending_main_loop_common_suffix_after_module_return();
+                }
                 self.game_execution_scheduler.finish_call_stack_at_main_wait_before_nmi();
             }
             return;

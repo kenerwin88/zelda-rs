@@ -840,6 +840,11 @@ impl ZeldaState {
     }
 
     pub(super) fn begin_pre_dungeon_song_bank_transfer_work(&mut self) -> bool {
+        if self.native_dungeon_song_upload_awaiting_return {
+            // The positioned command has an executing SPC receiver. Its
+            // handshake completion owns the suspended caller's return.
+            return true;
+        }
         if !self.rom_startup_timing() {
             return false;
         }

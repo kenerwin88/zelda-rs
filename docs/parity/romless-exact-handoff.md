@@ -4,7 +4,51 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 54,045 (video)
+## Current native frontier — 54,276 (video)
+
+Positioned native dungeon uploads now suspend their caller until the
+executing SPC receiver completes its handshake. They bypass the fixed
+22-host scheduler estimate, use the shared upload-return forecast, then
+run the dungeon ambient-sound and common main-loop suffix once. The
+translated engine remains the state owner. No hold count was retuned.
+
+`target/native-dungeon-upload-return` proves exact native A/V through
+54,275, first video mismatch 54,276 with audio exact (78.20s).
+Binary SHA: `57b4c3f31c905de42cc1d40f7de0a7dd514c48d6744c9205b819642a3b61e311`.
+All 1,792 library tests pass, 3 ignored (23.99s):
+`/tmp/native-dungeon-upload-return-lib-tests.log`.
+`target/native-dungeon-return-receipt` matches all54,279 receipt-driven
+frames (61.99s). No full1,581,079-frame gate was repeated for this binary.
+
+Source `target/native-dungeon-return-source/return-phase-summary.json`
+proves final port-clear bus V1/C1014, PLP at1020, CLI at1090,
+caller LDA at1148, STA instruction at1164, and RTS at1194. The $4200
+bus access is1188, 174 CPU clocks after the final clear. A regression
+checks this active-display return and that forecasting does not retire
+the live receiver. Native restores at1190, retaining the unresolved
+two-clock command phase rather than compensating for it.
+Native/source main counter, latch, and spotlight radius agree across
+54,043..54,047; completed OAM also agrees on54,043/45/47.
+
+### Next: the following overworld upload's interrupted common suffix
+
+Source `target/native-54276-source`, resumed from the valid paired53500
+checkpoint, remains video exact through54,278. Frame/NMI trace decoded
+to `/tmp/native-54276-source.jsonl` shows the upload returning in54,250,
+then NMI interrupts `$00:864f` inside sprite preparation at V225/C12.
+Source reaches the main wait in54,251 and starts the next main iteration
+in54,252. The native return forecast is host54,251, V220/C1010; its
+current return branch completes the common suffix atomically. Trace its
+remaining CPU work and reuse the typed partial sprite-preparation owner
+if the measured suffix crosses NMI. Do not add a host delay based on the
+return scanline or patch the later opening iris.
+`target/native-54276-diagnostic/caller-state-comparison.json` confirms
+the premature native latch clear at54,250 and counter increment at54,251.
+That one-host lead survives overlay/loading returns into the visible iris.
+Both native/source OAM buffers are identical throughout54,249..54,272;
+the earlier scheduling difference precedes the eventual OBJ divergence.
+
+### Previous native frontier — 54,045 (video)
 
 The dungeon upload now queues its command at the caller's measured STA
 bus access. The pre-dungeon CPU probe continues through the conditional

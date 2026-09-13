@@ -4624,6 +4624,9 @@ impl ZeldaState {
         self.capture_display_snapshot();
         self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
         self.complete_pre_dungeon_entrance_load_after(sprite_reset);
+        if self.native_dungeon_song_upload_awaiting_return {
+            return true;
+        }
         if self.game_execution_scheduler.work_is_pending() {
             return true;
         }

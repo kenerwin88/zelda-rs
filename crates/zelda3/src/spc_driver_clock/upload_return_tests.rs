@@ -117,7 +117,7 @@ fn upload_return_forecast_preserves_the_live_receiver_and_source_return_phase() 
         Some(251 * SNES_MASTER_CLOCKS_PER_SCANLINE + 470);
     clock.song_bank_transfer = Some(transfer);
     let before = clock.clone();
-    assert_eq!(clock.preview_overworld_song_upload_return(),
+    assert_eq!(clock.preview_song_upload_return(),
         Some(snes::CpuRasterPosition::new(251, 774)));
     assert_eq!(clock.absolute_apu_cycle, before.absolute_apu_cycle);
     assert_eq!(clock.apu.in_ports, before.apu.in_ports);
@@ -137,7 +137,25 @@ fn upload_return_after_the_next_nmi_cannot_retire_this_host() {
     let mut clock = clock_at_first_host_boundary();
     clock.completed_song_bank_port_clear_master_clock =
         Some(snes_frame_start_master_clock(1) + 226 * SNES_MASTER_CLOCKS_PER_SCANLINE);
-    assert_eq!(clock.preview_overworld_song_upload_return(), None);
+    assert_eq!(clock.preview_song_upload_return(), None);
+}
+
+#[test]
+fn dungeon_upload_return_is_in_active_scanout_after_the_final_port_clear() {
+    let mut clock = clock_at_first_host_boundary();
+    let mut transfer = SongBankHostTransfer::new(1, &[0, 0]);
+    transfer.command_pending = false;
+    transfer.phase = SongBankHostTransferPhase::ClearPort { port: 0 };
+    // Source comparison54043: four STZ accesses at V1/C924,954,984,1014.
+    // Both bank entries share PLP/RTS, CLI/RTL, then LDA/STA $4200.
+    let field_start = snes_frame_start_master_clock(1);
+    transfer.next_host_access_master_clock =
+        Some(field_start + SNES_MASTER_CLOCKS_PER_SCANLINE + 924);
+    clock.song_bank_transfer = Some(transfer);
+    assert_eq!(clock.preview_song_upload_return(),
+        Some(snes::CpuRasterPosition::new(1, 1188)));
+    assert!(clock.completed_song_bank_port_clear_master_clock.is_none());
+    assert!(clock.song_bank_transfer.is_some(), "preview must not retire the live receiver");
 }
 
 #[test]

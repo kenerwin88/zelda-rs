@@ -1239,6 +1239,7 @@ impl ZeldaState {
                 assert_eq!(command.host, self.frame_ctr_dbg,
                     "dungeon caller reached the upload on a different CPU host");
                 clock.begin_song_bank_transfer_at(bank_id, stream, Some(command.position));
+                self.native_dungeon_song_upload_awaiting_return = true;
             } else {
                 clock.begin_song_bank_transfer(bank_id, stream,
                     !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live));
@@ -1247,14 +1248,15 @@ impl ZeldaState {
         } else {
             self.native_overworld_song_upload = None;
             self.native_dungeon_song_upload_command = None;
+            self.native_dungeon_song_upload_awaiting_return = false;
             false
         }
     }
 
-    pub(super) fn native_overworld_song_upload_return(&self) -> Option<snes::CpuRasterPosition> {
+    pub(super) fn native_song_upload_return(&self) -> Option<snes::CpuRasterPosition> {
         self.audio.modern.driver_clock.as_ref()
             .expect("native song upload lost its SPC receiver")
-            .preview_overworld_song_upload_return()
+            .preview_song_upload_return()
     }
 
     pub(super) fn queue_native_song_upload_return_nmi(&mut self, position: snes::CpuRasterPosition) {

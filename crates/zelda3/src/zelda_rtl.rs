@@ -10076,6 +10076,8 @@ pub struct ZeldaState {
     #[serde(skip)]
     native_dungeon_song_upload_command: Option<NativeSongUploadCommand>,
     #[serde(skip)]
+    native_dungeon_song_upload_awaiting_return: bool,
+    #[serde(skip)]
     native_overworld_hud_interruption: Option<HudInventoryInterruption>,
     #[serde(skip)]
     native_overworld_map_graphics_nmi_slices: Option<(u8, u8)>,
@@ -12580,6 +12582,7 @@ impl ZeldaState {
             native_overworld_packing_progress: None,
             native_main_wait_cpu_phase: None,
             native_dungeon_song_upload_command: None,
+            native_dungeon_song_upload_awaiting_return: false,
             native_overworld_hud_interruption: None,
             native_overworld_map_graphics_nmi_slices: None,
             next_display_spotlight_scanout: None,
@@ -12791,6 +12794,7 @@ impl ZeldaState {
         self.native_overworld_packing_progress = None;
         self.native_main_wait_cpu_phase = None;
         self.native_dungeon_song_upload_command = None;
+        self.native_dungeon_song_upload_awaiting_return = false;
         self.native_overworld_hud_interruption = None;
         self.pre_dungeon_cpu_entry_envelope = None;
         self.native_overworld_map_graphics_nmi_slices = None;
@@ -12898,6 +12902,7 @@ impl ZeldaState {
             self.native_overworld_packing_progress = None;
             self.native_main_wait_cpu_phase = None;
             self.native_dungeon_song_upload_command = None;
+            self.native_dungeon_song_upload_awaiting_return = false;
         self.native_overworld_hud_interruption = None;
         self.pre_dungeon_cpu_entry_envelope = None;
             self.native_overworld_map_graphics_nmi_slices = None;

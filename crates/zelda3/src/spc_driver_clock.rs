@@ -860,7 +860,9 @@ impl AbsoluteDspEventClock {
 
     /// Forecast only the receiver protocol through the current host's next
     /// physical NMI boundary. The real audio owner is advanced separately.
-    pub(crate) fn preview_overworld_song_upload_return(&self) -> Option<snes::CpuRasterPosition> {
+    /// Dungeon entry $8925 branches into the same upload/return suffix as
+    /// overworld entry $8913; both callers then restore $4200.
+    pub(crate) fn preview_song_upload_return(&self) -> Option<snes::CpuRasterPosition> {
         let end = snes_frame_start_master_clock(self.host_frame_index)
             + NMI_AUDIO_VCOUNTER * SNES_MASTER_CLOCKS_PER_SCANLINE;
         let mut preview = self.clone();
