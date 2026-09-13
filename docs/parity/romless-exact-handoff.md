@@ -93,6 +93,48 @@ fix belongs to CPU timing, probe hardware state, or gameplay ownership.
 Do not substitute cached RNG results into the timing probe simply to make
 this branch match without establishing the intended input contract.
 
+### Confirmed probe defect: beam-counter sampling uses instruction start
+
+`target/native-56390-rng-source` is source video exact through56,391.
+Decoded `/tmp/native-56390-rng-source.jsonl` proves the RNG's `$0d:ba71`
+`LDA $2137` starts atV103/C1168, reads SLHV atC1192 (after three slow-ROM
+fetches), and latchesH298. `$ba74` reads OPHCT atC1222 and obtains$2a;
+with counter$ad, seed$5a, and entry carry1 the routine returns$32/carry1.
+
+The current probe calls `cpu_run_opcode_timed`, which only accumulates bus
+costs; it does not advance `Snes.h_pos` between memory accesses. Therefore
+`snes.rs::read_b_bus($37)` latches the instruction-start position. A tiny
+CPU-only reproduction in
+`target/native-56390-rng-source/reproduce-counter-read.rs` links the current
+`libsnes-c0fd764a432c4362.rlib` from `target/song-upload-build/parity/deps`.
+Its executable/log beside it confirm RNG$29 at native startC1156, and$2c
+even at the source's exact startC1168. This isolates a hardware-access
+timing defect independently of the earlier12-clock phase difference.
+The reproduction takes0.15s; use it before another route run. The original
+ROM remains an external input. No gameplay or probe-timing fix has landed.
+
+The correct implementation needs source-ordered counter sampling at the
+actual CPU bus access, including intervening stalls; setting an RNG-specific
+24-clock offset or supplying cached RNG output would hide the missing bus
+model. The legacy interpreter's timed API currently reports only aggregate
+instruction cost. The separate opt-in `cpu_synchronous_executor/source_cpu.rs`
+has source-ordered transactions, but has a deliberately constrained seed
+and supported-hardware contract; do not bypass those constraints to graft
+it onto the probe. Establish the bus-clock ownership before changing it.
+
+`target/native-56390-nmi-phase/instruction-comparison.json` joins109 handler
+PCs with `target/native-56390-nmi-source`. The instruction paths match and
+native remains10 clocks late from NMI handler entry `$80c9` to its return;
+one temporary40-clock difference at `$81b5` reconverges at `$81b8` because
+refresh falls in a different instruction. There is no missing NMI/DMA
+charge in this handler. Native resumes the main wait at `$8034`; source
+resumes `$8036` and takes the22-clock branch back to `$8034`, explaining
+the resulting12-clock lead at main entry. Investigate retained busy-loop
+phase separately, especially the fallback after an interrupted suffix.
+The NMI diagnostic again first fails video56,390 (70.79s). Its temporary
+instrumentation was removed and saved as `diagnostic.patch` beside the
+comparison; the candidate executable still includes that debug-only probe.
+
 ### Previous native frontier — 54,762 (video)
 
 The native HUD probe now retains a typed `BeforeHearts` interruption when
