@@ -8930,6 +8930,18 @@ impl ZeldaState {
                     eprintln!("song_upload return host={} position={position:?}", self.frame_ctr_dbg);
                 }
                 self.native_overworld_song_upload = None;
+                if !self.native_dungeon_song_upload_awaiting_return && position.coordinates().0 < 225 {
+                    if let Some(progress) = overworld_upload_suffix_interruption(self, position) {
+                        assert_eq!(self.pending_main_loop_common_suffix,
+                            Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch));
+                        self.nmi_prepare_sprites_through_progress(progress);
+                        self.pending_main_loop_common_suffix = Some(
+                            MainLoopCommonSuffixContinuation::ResumeSpritePreparationBytePackingAndClearNmiLatch { progress });
+                        self.schedule_live_interrupted_nmi_prepare_sprites_caller_return(
+                            NmiPrepareSpritesCpuCaller::OverworldSongUpload);
+                        return;
+                    }
+                }
                 if self.native_dungeon_song_upload_awaiting_return {
                     self.native_dungeon_song_upload_awaiting_return = false;
                     self.complete_module_pre_dungeon_after_song_bank_transfer();

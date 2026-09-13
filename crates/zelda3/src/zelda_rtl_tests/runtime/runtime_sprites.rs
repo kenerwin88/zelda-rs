@@ -2544,6 +2544,37 @@ fn source_mid_group_sprite_packing_preserves_committed_bytes_and_remaining_cost(
 }
 
 #[test]
+fn upload_sprite_preparation_return_waits_for_the_next_nmi_before_new_main() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(8);
+    state.set_submodule(1);
+    state.latch_nmi_update();
+    state.reset_bg_tile_animation_countdown(5);
+    let counter = state.game_state.frame.frame_counter;
+    let progress = SpritePreparationProgress::ExtendedOam(
+        ExtendedOamPackingProgress::before_group(12));
+    state.nmi_prepare_sprites_through_progress(progress);
+    state.pending_main_loop_common_suffix = Some(
+        MainLoopCommonSuffixContinuation::ResumeSpritePreparationBytePackingAndClearNmiLatch { progress });
+    let caller = NmiPrepareSpritesCpuCaller::OverworldSongUpload;
+    state.schedule_live_interrupted_nmi_prepare_sprites_caller_return(caller);
+    assert!(state.game_state.display.nmi_update_is_latched());
+    assert_eq!(state.game_state.display.bg_tile_animation_countdown, 5);
+    state.game_execution_scheduler.begin_host_frame();
+    let continuation = GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn { caller };
+    assert_eq!(state.game_execution_scheduler.advance_work_one_nmi_slice(),
+        Some(GameWorkStep::Complete(continuation)));
+    state.complete_post_trailing_nmi_continuation(continuation, 0, false, false);
+    assert!(!state.game_state.display.nmi_update_is_latched(),
+        "return must clear the latch without a synthetic trailing NMI");
+    assert_eq!(state.game_state.frame.frame_counter, counter);
+    assert_eq!(state.game_state.display.bg_tile_animation_countdown, 4);
+    assert!(state.pending_main_loop_common_suffix.is_none());
+    state.game_execution_scheduler.begin_host_frame();
+    assert!(state.game_execution_scheduler.main_return_requires_leading_nmi());
+}
+
+#[test]
 fn graphics_half_slot_transforms_uncompressed_sprite_pack() {
     let mut state = ZeldaState::new();
     let mut pack = vec![0; 0x300 + 24 * 32];

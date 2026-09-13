@@ -960,6 +960,9 @@ pub(crate) enum NmiPrepareSpritesCpuCaller {
     /// A resumed Module09 long-load caller (aux graphics or a whirlpool
     /// step) whose NMI_PrepareSprites was interrupted at the host boundary.
     Module09LongLoad,
+    /// The upload caller returned during active scanout, then NMI
+    /// interrupted its shared sprite-preparation suffix.
+    OverworldSongUpload,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

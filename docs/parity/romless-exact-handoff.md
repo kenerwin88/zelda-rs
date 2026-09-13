@@ -4,7 +4,54 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 54,276 (video)
+## Current native frontier — 54,741 (video)
+
+The native overworld upload return now probes its common main-loop suffix
+from the measured $4200 restore position. The remaining STA bus cycle,
+RTS, and router RTL take6+42+44 CPU clocks; the real JSR and sprite
+preparation instructions then determine whether NMI interrupts the suffix.
+The probe copies no RAM into gameplay. Its progress selects the existing
+partial sprite-preparation implementation and a typed upload-return
+continuation; that continuation clears the latch after resuming without
+consuming a synthetic trailing NMI or starting another main iteration.
+
+Source `target/native-upload-suffix-source/cpu-boundaries.json` proves
+comparison54,250: STA atV220/C986, RTS1016, common JSR1102,
+sprite-preparation entry1148, NMI at `$00:864f`, V225/C12, Y12/X48.
+The native probe reaches exactly that PC and raster position, with
+group12/three committed bytes/972 CPU clocks of that group. There is
+no scanline threshold, extra hold count, or OAM-generation freeze.
+
+`target/native-upload-suffix` proves exact native A/V through54,740,
+first video mismatch54,741 with audio exact (79.48s).
+Binary SHA: `4354b7dc3bb5a0e594d4b050f5036df0294eaf06b1525972720de4f5a329bf12`.
+All1,793 library tests pass,3 ignored (23.76s), including the new
+upload-suffix return/latch/main-wait regression:
+`/tmp/native-upload-suffix-lib-tests.log`.
+`target/native-upload-suffix-receipt` matches all54,746 receipt-driven
+frames (62.05s). The older frozen binary still owns the last full-route
+proof; no1,581,079-frame check was repeated for this batch.
+Its `caller-state-comparison.json` confirms main module/submodule,
+counter, and radius agree across54,249..54,278. The premature54,250
+latch clear is gone. Later opening-iris latch differences remain at
+54,275/77 while video stays exact; do not call this whole-WRAM parity.
+
+### Next: the HUD hearts block's fresh-entry interruption
+
+Source `target/native-54741-source`, paired from53500, is video exact
+through54,745. `/tmp/native-54741-source.jsonl` shows comparison54,740
+NMI at `$0d:fb94`, V225/C20: entry to Hud_Update_IgnoreItemBox's hearts
+block, before its writes. Source counter110/latch1 persists that host;
+the suffix returns in54,741 with counter110/latch0. The current native
+HUD interruption probe covers inventory entries/conversions, but does
+not retain this pre-hearts entry. `target/native-54741-diagnostic` confirms
+native clears the latch early in54,740, then increments the counter to111
+in54,741 while source stays110. HUD tile words still match; OAM differs
+in2 bytes at54,740 and42 bytes at54,741. Preserve the CPU call boundary
+with a typed pre-hearts continuation. Do not treat this as an inventory field or skip/replay
+already executed refill/item-box work.
+
+### Previous native frontier — 54,276 (video)
 
 Positioned native dungeon uploads now suspend their caller until the
 executing SPC receiver completes its handshake. They bypass the fixed

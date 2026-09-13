@@ -2762,6 +2762,90 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
     panic!("overworld timing failed to reach the next NMI or caller return");
 }
 
+fn overworld_upload_suffix_interruption(
+    state: &ZeldaState, restored: CpuRasterPosition,
+) -> Option<SpritePreparationProgress> {
+    // $02:8566's final STA bus cycle6, RTS42, then the module router's RTL44.
+    // $805a JSR NMI_PrepareSprites follows. Its first LDY/TYA/TAX sequence
+    // replaces the upload's A/X/Y before any register-dependent control flow.
+    let checkpoint = RomCpuCheckpoint {
+        entry_pc: 0x00_805a, stop_pc: 0x00_8034, waiting: false,
+        ..DUNGEON_PALETTE_CALLER_CPU_CHECKPOINT
+    };
+    let dma = state.dma_with_native_hdma_enable();
+    let mut run = RomCpuTimingRun::new(&state.rom, &state.ram, &state.sram,
+        &state.ppu, &dma, state.zelda_audio_apu_output_ports(), checkpoint)
+        .expect("upload suffix timing requires the loaded development ROM");
+    run.enable_cpu_write_trace();
+    let mut budget = CpuCycleBudget::until_next_nmi_acceptance(restored,
+        CpuBusWorkload::with_dynamic_hdma(),
+        native_cpu_field_timing_at_entry(state.frame_ctr_dbg, restored));
+    let prefix = budget.advance_instruction_with_hdma(6 + 42 + 44, |event, scanline| {
+        match event {
+            CpuBusEvent::HdmaInit => {
+                run.set_raster_position(scanline, 20);
+                run.run_hdma_init_master_cycles()
+            }
+            CpuBusEvent::HdmaStart => {
+                run.set_raster_position(scanline, 1_106);
+                run.run_hdma_scanline_master_cycles()
+            }
+            CpuBusEvent::WramRefresh => unreachable!(),
+        }
+    });
+    assert!(prefix.reached_boundary().is_none(), "upload return interrupted before common suffix");
+    let mut group = 32u8;
+    let mut packing = None;
+    let mut sources = None;
+    let mut pointers = None;
+    for _ in 0..10_000 {
+        if run.is_complete() { return None; }
+        let pc = run.pc();
+        if pc == 0x00_85fe {
+            group = group.checked_sub(4).expect("upload packing exceeded eight groups");
+            packing = Some(ExtendedOamPackingProgress::before_group(group));
+        }
+        if pc == 0x00_865c {
+            sources = Some(SpritePreparationSourceProgress { completed_words: 0, master_cycles: 0 });
+        }
+        if pc == 0x00_86df { sources = None; }
+        if pc == 0x00_874e { pointers = Some(0u16); }
+        let (v, h) = budget.raster_position().coordinates();
+        run.set_raster_position(v, h);
+        let (advance, cycles) = advance_rom_cpu_step_measured(&mut run, &mut budget);
+        let writes = run.take_cpu_wram_writes();
+        let cycles = u16::try_from(cycles).unwrap();
+        if let Some(progress) = sources.as_mut() {
+            progress.master_cycles += cycles;
+            let bytes = writes.iter().filter(|(address, _)| (0x0ac0..0x0adc).contains(address)).count();
+            assert_eq!(bytes % 2, 0);
+            progress.completed_words += u8::try_from(bytes / 2).unwrap();
+        }
+        if let Some(cycles_so_far) = pointers.as_mut() { *cycles_so_far += cycles; }
+        if (0x00_85fe..=0x00_865a).contains(&pc) {
+            if let Some(progress) = packing.as_mut() {
+                progress.group_master_cycles += cycles;
+                progress.completed_bytes += writes.iter().filter(|(address, _)|
+                    (0x0a00..0x0a20).contains(address)).count() as u8;
+            }
+        } else if (0x00_865c..0x00_8700).contains(&pc) { packing = None; }
+        if advance.reached_boundary().is_some() {
+            let progress = pointers.map(|master_cycles|
+                SpritePreparationProgress::PointerTail(SpritePreparationPointerProgress { master_cycles }))
+                .or_else(|| sources.map(SpritePreparationProgress::SourceWords))
+                .or_else(|| packing.map(SpritePreparationProgress::ExtendedOam))
+                .expect("upload suffix interrupted outside modeled sprite preparation");
+            if let Some(packing) = packing { packing.validate(); }
+            if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+                eprintln!("song_upload suffix host={} pc={:06x} position={:?} progress={progress:?}",
+                    state.frame_ctr_dbg, run.pc(), budget.raster_position());
+            }
+            return Some(progress);
+        }
+    }
+    panic!("upload common suffix failed to return");
+}
+
 fn advance_rom_cpu_through_nmi(run: &mut RomCpuTimingRun, budget: &mut CpuCycleBudget) {
     let return_pc = run.pc();
     let return_sp = run.stack_pointer();
