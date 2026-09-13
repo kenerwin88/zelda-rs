@@ -284,6 +284,14 @@ pub enum CpuTimelineDeadlineAdvance {
     ReachedDeadline { remaining_work_master_cycles: u32 },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CpuSynchronousBeamPosition {
+    pub(crate) scanline: u16,
+    pub(crate) cycles: u32,
+    pub(crate) line_master_cycles: u16,
+    pub(crate) odd_field: bool,
+}
+
 /// Generic hardware timeline used by higher-level schedulers.
 ///
 /// The timeline owns the absolute clock, field parity, bus workload, and event
@@ -643,6 +651,23 @@ impl CpuMasterTimeline {
             "PCBase fetch requires a claimed synchronous timeline"
         );
         self.advance_physical_clock_preserving_refresh(u64::from(memory_speed));
+    }
+
+    /// CPU-visible beam position before the next source event drain. A fast
+    /// opcode fetch can cross HMax without advancing CPU.V_Counter yet.
+    /// Physical `raster_position()` alone loses that pending-event ownership.
+    pub(crate) fn synchronous_beam_position(&self) -> Option<CpuSynchronousBeamPosition> {
+        let CpuTimelineMode::Synchronous(cursor) = self.mode else { return None; };
+        let line_start = cursor.master_cycles - u64::from(cursor.cycle_in_scanline);
+        let short = cursor.scanline == 240 && !self.field_timing.interlace
+            && self.field_timing.field_is_odd(cursor.field_index);
+        Some(CpuSynchronousBeamPosition {
+            scanline: cursor.scanline,
+            cycles: u32::try_from(self.clock_master_cycles - line_start)
+                .expect("source transaction beam position fits in a CPU cycle counter"),
+            line_master_cycles: if short { 1360 } else { 1364 },
+            odd_field: self.field_timing.field_is_odd(cursor.field_index),
+        })
     }
 
     pub fn raster_position(&self) -> CpuRasterPosition {

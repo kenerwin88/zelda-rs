@@ -59,6 +59,76 @@ ownership boundaries before interpreting a later OAM interruption as a new
 missing hold. Earlier failures are acceptable evidence when source fidelity
 improves; exact coverage alone must never justify a timing shortcut.
 
+### Source-ordered timing probe: original RNG/Cucco path now proven in isolation
+
+`RomCpuTimingProbe` is a separate development bus owner using the shared
+instruction layer. It accepts an explicit SNES machine, physical timeline,
+and `SourcePpuReadState`; it is not an alternate constructor for the exact
+cold CPU/APU executor. It currently supports the audited LoROM/WRAM/SRAM
+map, Mode7 product reads, WRIO/RDIO, and the counter/status read subset.
+Unsupported I/O fails closed and poisons the probe. Pending interrupts,
+DMA/HDMA work, ambiguous refresh seeds, and invalid cartridge/counter seeds
+are rejected. APUI, NMI dispatch, and DMA/HDMA execution are not supplied by
+this owner yet, so it has not replaced the native route's aggregate probe.
+
+Counter state explicitly owns WRIO, PPU.OpenBus1/2, latchedH/V, read flips,
+and the STAT78 latch flag. The reset factory follows `S9xSoftResetPPU`
+(WRIO=$ff); it must not be used as a guessed later-frame seed. Source read
+semantics now cover gatedSLHV, forced WRIO falling-edge latching, the two
+long dots, the odd-field short line, high-byte OpenBus2 retention, and
+STAT78's model3/field/latch bits and flip reset. CPU OpenBus remains separate.
+This subset assumes NTSC with no pending light-gun latch.
+
+`CpuMasterTimeline::synchronous_beam_position` uses the unconsumed source
+event cursor. An opcode fetch can physically cross HMax before `CPU.V_Counter`
+advances; normalizing the absolute timestamp alone loses that distinction.
+Regressions cover ordinary HMax, the short scanline240, and field wrap.
+
+The ignored local-ROM test
+`local_rom_counter_probe_matches_source_cucco_branch` executes the actual
+`$0d:ba71` RNG routine, RTL, `$06:a7f9 STA $0f`, AND, and BEQ with the
+recorded source stack/register/RAM inputs. It asserts every owned write,
+register preservation, returned PC and exact raster. No RNG result is fed
+into execution. `/tmp/native-timing-probe-rom-witness2.log` records:
+
+| Input phase | Computed RNG | Next PC | End raster |
+| --- | --- | --- | --- |
+| SourceV103/C1168 | $32 | $06:a7ff | V104/C52 |
+| Earlier nativeV103/C1156 | $2f | $06:a7ff | V104/C40 |
+
+Both cases pass with initial PPU.OpenBus2=$00 and$ff, proving the prior value
+is irrelevant to this low-byte read. Source comparison56,389 in
+`/tmp/native-56390-cucco-source.jsonl` independently records `$a7f9` at
+V103/C1360, `$a7fb` atV104/C20, `$a7fd` atC36 and `$a7ff` atC52.
+The old aggregate-interpreter reproduction at the exact source entry gave
+RNG$2c and therefore the other branch. The new probe fixes that isolated
+bus-access cause while preserving the remaining12-clock entry difference;
+it does not establish a new native A/V frontier.
+
+The bus audit also fixed accepted FastROM operands in the exact executor and
+new probe: immediate8/16/long now use the active opcode's MemSpeed instead of
+hard-coded SlowROM8/16/24 clocks. Tests assert a FastROM immediate word's
+6+12 transaction sequence and a counter read's6+12+6 sequence. Direct PCBase
+operands at the bank-end switch to an unimplemented slow-path variant now
+fail closed rather than silently wrapping through a different memory map.
+
+Validation:413 SNES library tests plus the integration test pass,6 optional
+local-ROM tests ignored by the ordinary suite:
+`/tmp/native-timing-probe-all-tests2.log`. The external-ROM RNG/Cucco test was
+run explicitly and passes; the exact cold executor's recorded3.2M-transaction
+IPL proof also passes: `/tmp/native-timing-probe-ipl-proof.log`.
+`cargo check --profile parity -p zelda3` passes (17.37s):
+`/tmp/native-timing-probe-integration-check.log`. No frozen
+fixtures, ROM files, or runtime timing offsets were introduced. No native or
+receipt A/V run was repeated because this probe is not connected to that path.
+
+Next establish the native caller's authoritative PPU-read/timeline seed and
+an explicit NMI/APUI/DMA ownership boundary before integration. Reuse real
+source handler transactions or a source-proven handoff; do not bypass the
+constructor checks, switch interpreters only around RNG, supply cached RNG, or seed
+an arbitrary later caller with reset values. Then batch the source opcode
+and hardware coverage exposed by a frame-zero native run toward100k.
+
 ### Shared source instruction execution and optimized completion ownership
 
 `crates/snes/src/cpu_synchronous_executor/source_cpu/instruction_set.rs` now

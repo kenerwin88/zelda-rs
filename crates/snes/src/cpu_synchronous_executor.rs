@@ -17,7 +17,7 @@ use crate::snes9x_apu_clock::{Snes9xApuClockError, Snes9xApuClockState};
 
 mod source_cpu;
 pub use source_cpu::{
-    Snes9xColdCpuExecutor, Snes9xCpuQuiescentCheckpoint, Snes9xCpuQuiescentCheckpointError,
+    RomCpuTimingProbe, RomCpuTimingProbeSeedError, SourcePpuReadState, Snes9xColdCpuExecutor, Snes9xCpuQuiescentCheckpoint, Snes9xCpuQuiescentCheckpointError,
     Snes9xMainLoopReceipt, SourceCpuBusAccess, SourceCpuBusAccessKind, SourceCpuError,
     SourceCpuStepReceipt, SourceCpuTransaction, SourceCpuTransactionKind,
 };

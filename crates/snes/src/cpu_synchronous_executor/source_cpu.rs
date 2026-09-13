@@ -17,6 +17,8 @@ use crate::snes::Snes;
 use crate::snes9x_apu_clock::{Snes9xApuClockCheckpoint, Snes9xApuClockError, Snes9xApuClockState};
 
 mod instruction_set;
+mod timing_probe;
+pub use timing_probe::{RomCpuTimingProbe, RomCpuTimingProbeSeedError, SourcePpuReadState};
 use instruction_set::{SourceCpuInstructionBus, SourceCpuInstructions};
 
 const ONE_CYCLE: u32 = 6;
