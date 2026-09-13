@@ -88,12 +88,20 @@ BEQ` reads `$55AA` and takes the branch, which costs the `cpumacro.h:bOP`
 ONE_CYCLE the recorded transaction stream charges. Every `initial.srm` under
 `routes/` is instead a fresh `$60` fill, so seeding one makes that branch fall
 through and every later transaction disagree — that, not a timing bug, is what
-substituting the route seed produces. `saves/sram.dat` is the recorded image.
-`route_initial_sram()` tries `ZELDA3_ROUTE_SRAM`, then
-`routes/full_run/comparisons/continuous-audio/initial.srm`, then
+substituting the route seed produces.
+
+The image the fixture was actually captured with (SHA-256 `d8a02e6e...`) is
+still gone. `saves/sram.dat` is a *different* save-present image (SHA-256
+`71b9a4021b8329ac8ca9567febfa018fc5020059f62bafbf70d42bad31bf5f28`) that
+reproduces every compared transaction through 1,000 host calls, so it is
+equivalent for these proofs — it is not the recorded capture seed, and a proof
+that reads further into the save block could legitimately need the original.
+It has been copied to
+`routes/full_run/comparisons/continuous-audio/initial.srm` so the proofs bind
+to a stable fixture rather than to a live save file that the game rewrites.
+`route_initial_sram()` tries `ZELDA3_ROUTE_SRAM`, then that path, then
 `saves/sram.dat`, and asserts the `$55AA` marker so a wrong seed reports
-itself. Copy `saves/sram.dat` to the recorded path to restore it on a fresh
-checkout. With it, all seven external-ROM tests pass — including 1,000
+itself. With it, all seven external-ROM tests pass — including 1,000
 continuous host calls of the real ROM through the exact cold executor, which
 is what covers the new counter owner.
 

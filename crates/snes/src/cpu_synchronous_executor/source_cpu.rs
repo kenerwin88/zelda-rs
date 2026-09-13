@@ -1601,14 +1601,21 @@ mod tests {
         "/../../external/snes9x-libretro/fixtures/zelda3-cold-first-nmi-dma-setup.jsonl"
     ));
 
-    /// The cartridge SRAM these original-ROM proofs were recorded against.
+    /// A cartridge SRAM that satisfies these original-ROM proofs.
     ///
-    /// It is a save-present image: the boot's `$00:87EF LDA $7003E5 : CMP
+    /// It must be a save-present image: the boot's `$00:87EF LDA $7003E5 : CMP
     /// #$55AA : BEQ` reads `$55AA` and takes the branch, which costs the
-    /// `bOP` ONE_CYCLE the recorded transaction stream charges. Seeding a
-    /// fresh `$60`-filled cartridge instead makes that branch fall through and
-    /// every later transaction disagree, so the marker is checked here rather
-    /// than left to surface as an unexplained timing mismatch.
+    /// `cpumacro.h:bOP` ONE_CYCLE the recorded transaction stream charges.
+    /// Seeding a fresh `$60`-filled cartridge instead makes that branch fall
+    /// through and every later transaction disagree, so the marker is checked
+    /// here rather than left to surface as an unexplained timing mismatch.
+    ///
+    /// The exact image the fixture was captured with (SHA-256 `d8a02e6e...`)
+    /// was deleted and is not recoverable. `saves/sram.dat` is a different
+    /// image (`71b9a402...`) that nonetheless reproduces every compared
+    /// transaction through 1,000 host calls, so it is equivalent *for these
+    /// proofs* — it is not the recorded capture seed, and a future proof that
+    /// reads further into the save block could legitimately need the original.
     fn route_initial_sram() -> Vec<u8> {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let mut candidates: Vec<std::path::PathBuf> = Vec::new();
