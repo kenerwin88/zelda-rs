@@ -4,7 +4,61 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 56,419 (video)
+## Current native frontier — 56,425 (video)
+
+The inventory-tail continuation moves the native frontier **56,419 -> 56,425**.
+The frame-zero baseline reproduces 56,419 in
+`target/native-inventory-tail-work/baseline` (74.88s); the candidate is exact
+video+audio through 56,424 in `target/native-inventory-tail-work/candidate`
+(75.38s). At 56,425 video differs and audio remains exact. Candidate binary
+SHA-256: `d13797a118ecd1e593438b01288070af344965da49a55431f14c662ae6c7370b`.
+These runs use `ZELDA3_CACHED_AV_NATIVE_TIMING=1`: the ROM timing probe remains
+available, but recorded host timing receipts are not installed. This is not
+full-route native or ROM-free parity.
+
+The bug class is a missing CPU/NMI continuation. At `$0D:FCEA`, the native
+probe reached NMI after the inventory conversions but discarded the boundary
+because its classifier recognized only conversions and hearts. The original
+tail owns HUD words `$7E:C764` and `$7E:C724`; earlier bow/resource mutations
+must remain before the interrupt. `HudInventoryResume::Tail` retains the
+computed key digit, backdrop word and completed instruction cycles. The
+overworld caller discriminator remains `$02:A4CC`. On resume, only the tail's
+remaining stores execute, followed by the existing caller return.
+
+The split is derived from the ROM instructions, not the failing frame:
+`REP` 22 + `LDA` 32 + `AND` 24 + `ORA` 24 = **102** master cycles before
+`$FCEA STA`. That store ends at 150, `CMP` at 174, and `BNE` at 190 (blank)
+or 196 (digit). The blank-label store ends at 238; `SEP` 22 + `RTS` 42
+finish at **302** or **260**. The probe counts CPU cycles without bus stalls.
+`inventory_tail_instruction_boundaries_match_original_rom_stores_and_cycles`
+executes the pinned ROM bytes and checks every instruction edge, all WRAM
+writes, both branches and split/resume totals. A second regression changes
+keys/arrows across the interruption to detect a repeated inventory mutation.
+
+Targeted inventory tests (17), HUD tests (7), game-state tests (273), and the
+production feature check pass. The ownership scan has the same existing
+diagnostics as the baseline and no new overlaps.
+
+Full-route preservation passes on the same binary: **1,581,079 exact A/V
+frames**, from frame zero with no paired resume, in 1625.82s
+(`target/native-inventory-tail-full`). There is no RNG drift. All four
+WRAM goldens match, as does the complete final WRAM image, SHA-256
+`316193798ccb2f771546b25443df7d417bddac8a7cac65326fa189c1264fbdb6`.
+This full run installs the established timing receipts; it preserves that
+lane's parity while the native frontier remains 56,425. The cold live-Snes9x
+check is pending.
+
+The independent frame-zero confirmation in
+`target/native-inventory-tail-work/confirm` reproduces 56,425 (77.31s).
+`ZELDA3_DEBUG_OVERWORLD_CPU_ITERATION=56418-56428` confirms the now-owned
+`$0D:FCEA` boundary at host 56,419 V225/C14, then hearts `$0D:FDB8` at
+56,421 and decimal conversion `$0D:F124` at 56,423. The next boundary is
+host 56,425 **`$06:F80F`, V225/C28, `link_oam_caller=None`**. This is outside
+the LinkOam/HUD suffix; diagnose its actual caller and owned mutations before
+introducing another continuation. WRAM 56,418..56,428 is retained beside the
+confirmation's A/V ledgers. The log is `/tmp/native-inventory-confirm.log`.
+
+## Previous native frontier — 56,419 (video)
 
 `fa1972e3` owns the second ordinary-overworld interruption class, moving the
 frontier 56,417 -> 56,419 (audio exact at both). Binary in
@@ -33,7 +87,7 @@ routine specifically, and the reason does not generalise:**
 - The re-run derives its count from unmutated health capacity/current health,
   so the source's partial pass is a subset of the same words.
 
-### Next native frontier — 56,419: the inventory tail
+### Original diagnosis — 56,419: the inventory tail (resolved above)
 
 Native's boundary is `$0D:FCEA` at V225/C14; the source's NMI for that frame is
 V225/C12. `$0D:FDB8`, `$0D:F124`, `$0D:F105` and `$06:F80F` follow close behind.

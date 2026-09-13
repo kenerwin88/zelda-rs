@@ -1864,6 +1864,14 @@ impl ZeldaState {
         &mut self,
         resume: Option<HudInventoryResume>,
     ) -> Option<HudInventoryResume> {
+        let resume = match resume {
+            Some(HudInventoryResume::Tail { key, label, master_cycles }) => {
+                self.hud_update_inventory_tail(key, label, master_cycles, None);
+                return None;
+            }
+            Some(HudInventoryResume::Conversion(conversion)) => Some(conversion),
+            None => None,
+        };
         let first = resume.map_or(HudInventoryField::Rupees, |r| r.interruption.field);
         let dst = hudxy(8, 0);
         let base_tiles = [
@@ -1885,7 +1893,7 @@ impl ZeldaState {
                 resume,
             ) {
                 Ok(digits) => digits,
-                Err(pending) => return Some(pending),
+                Err(pending) => return Some(HudInventoryResume::Conversion(pending)),
             };
 
             let inv_offs = usize::from(d[0] == 0x90);
@@ -1942,7 +1950,7 @@ impl ZeldaState {
                 resume,
             ) {
                 Ok(digits) => digits,
-                Err(pending) => return Some(pending),
+                Err(pending) => return Some(HudInventoryResume::Conversion(pending)),
             };
 
             let base_tile = base_tiles[usize::from(
@@ -1967,7 +1975,7 @@ impl ZeldaState {
                 resume,
             ) {
                 Ok(digits) => digits,
-                Err(pending) => return Some(pending),
+                Err(pending) => return Some(HudInventoryResume::Conversion(pending)),
             };
 
             let base_tile = base_tiles[usize::from(
@@ -1998,30 +2006,62 @@ impl ZeldaState {
                 resume,
             ) {
                 Ok(digits) => digits,
-                Err(pending) => return Some(pending),
+                Err(pending) => return Some(HudInventoryResume::Conversion(pending)),
             };
         } else {
             crate::cycle_ledger::charge(6); // $fcdb BEQ taken
         }
         let key = 0x2400 | d[3] as u16;
-        self.hud_buffer_set(hudxy(18, 1), key);
         let inv_offs =
             usize::from(self.game_state.inventory.player_resources.rupees_actual() < 1000);
-        self.hud_buffer_set(hudxy(18, 0), HUD_INVENTORY_BACKGROUND_TILES[inv_offs + 10]);
-        // $fce0-fcf9: key digit, optional blank label, SEP and RTS.
-        crate::cycle_ledger::charge(190 + if key == 0x247f { 48 } else { 6 } + 64);
-        if key == 0x247f {
+        let label = HUD_INVENTORY_BACKGROUND_TILES[inv_offs + 10];
+        if let Some(HudUpdateInterruption::InventoryTail { master_cycles }) =
+            self.native_overworld_hud_interruption
+        {
+            self.native_overworld_hud_interruption = None;
+            self.hud_update_inventory_tail(key, label, 0, Some(master_cycles));
+            return Some(HudInventoryResume::Tail { key, label, master_cycles });
+        }
+        self.hud_update_inventory_tail(key, label, 0, None);
+        None
+    }
+
+    fn hud_update_inventory_tail(
+        &mut self,
+        key: u16,
+        label: u16,
+        completed: u16,
+        stop: Option<u16>,
+    ) {
+        // $FCE0 REP22, LDA32, AND24, ORA24 = 102 before $FCEA STA48.
+        // CMP24 and BNE16 finish the original 190-cycle block. The taken
+        // branch adds 6; fall-through instead executes $FCF3 STA48. Both
+        // paths finish with $FCF7 SEP22 and $FCF9 RTS42 (260 or 302 total).
+        let blank = key == 0x247f;
+        let branch_end = if blank { 190 } else { 196 };
+        let stores_end = if blank { 238 } else { branch_end };
+        let total = stores_end + 64;
+        let end = stop.unwrap_or(total);
+        let boundaries = [0, 22, 54, 78, 102, 150, 174, branch_end, stores_end, stores_end + 22, total];
+        assert!(completed <= end && boundaries.contains(&completed) && boundaries.contains(&end),
+            "HUD inventory tail must suspend at an instruction boundary");
+        crate::cycle_ledger::charge(u64::from(end - completed));
+        if completed < 150 && end >= 150 {
+            self.hud_buffer_set(hudxy(18, 1), key);
+            // Preserve the port's backdrop refresh alongside the key store.
+            self.hud_buffer_set(hudxy(18, 0), label);
+        }
+        if blank && completed < 238 && end >= 238 {
             self.hud_buffer_set(hudxy(18, 0), 0x247f);
         }
-        None
     }
 
     fn hud_inventory_decimal(
         &mut self,
         field: HudInventoryField,
         number: u32,
-        resume: Option<HudInventoryResume>,
-    ) -> Result<[u8; 4], HudInventoryResume> {
+        resume: Option<HudInventoryConversionResume>,
+    ) -> Result<[u8; 4], HudInventoryConversionResume> {
         if self
             .native_overworld_hud_interruption
             .is_some_and(|p| matches!(p, HudUpdateInterruption::Inventory(i) if i.field == field))
@@ -2033,7 +2073,7 @@ impl ZeldaState {
             crate::cycle_ledger::charge(
                 u64::from(interruption.entry_master_cycles) + u64::from(interruption.master_cycles),
             );
-            return Err(HudInventoryResume {
+            return Err(HudInventoryConversionResume {
                 interruption,
                 number,
             });
@@ -2473,6 +2513,111 @@ mod tests {
     use super::*;
 
     #[test]
+    fn inventory_tail_instruction_boundaries_match_original_rom_stores_and_cycles() {
+        use crate::rom_cpu_timing::{lorom_offset, RomCpuCheckpoint, RomCpuTimingRun};
+
+        let path = std::env::var_os("ZELDA3_ROM")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../saves/zelda3.sfc"));
+        let Ok(mut rom) = std::fs::read(path) else { return; };
+        if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+        let start = lorom_offset(0x0d_fce0).unwrap();
+        assert_eq!(&rom[start..start + 26], &[
+            0xc2, 0x30, 0xa5, 0x05, 0x29, 0xff, 0x00, 0x09, 0x00, 0x24,
+            0x8f, 0x64, 0xc7, 0x7e, 0xc9, 0x7f, 0x24, 0xd0, 0x04,
+            0x8f, 0x24, 0xc7, 0x7e, 0xe2, 0x30, 0x60,
+        ], "Hud_Update inventory tail changed; rederive its continuation");
+
+        for digit in [0x90, 0x91, 0x99, 0x7f] {
+            let mut state = ZeldaState::new();
+            state.ram[5] = digit;
+            state.ram[6] = 0xab; // AND #$00FF must discard the adjacent byte.
+            state.sync_native_game_state_from_ram();
+            state.hud_buffer_set(hudxy(18, 1), 0x5a5a);
+            let label = HUD_INVENTORY_BACKGROUND_TILES[11];
+            state.hud_buffer_set(hudxy(18, 0), label);
+            let initial_ram = state.ram.clone();
+            let checkpoint = RomCpuCheckpoint {
+                entry_pc: 0x0d_fce0, stop_pc: 0x0d_dd24,
+                a: 0, x: 0, y: 0, sp: 0x01fd, dp: 0, db: 0x0d,
+                carry: false, zero: false, overflow: false, negative: false,
+                interrupt_disable: false, decimal: false, accumulator_is_8_bit: true,
+                index_is_8_bit: true, emulation: false, waiting: false,
+                stack_address: 0x01fe, stack_bytes: &[0x23, 0xdd],
+            };
+            let mut run = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+            run.enable_cpu_write_trace();
+            let mut elapsed = 0u16;
+            let mut edges = vec![0];
+            let mut expected_ram = initial_ram.clone();
+            while !run.is_complete() {
+                let pc = run.pc();
+                if pc == 0x0d_fcea { assert_eq!(elapsed, 102); }
+                let before = elapsed;
+                elapsed += u16::try_from(run.step().master_cycles).unwrap();
+                for (address, value) in run.take_cpu_wram_writes() {
+                    assert!((0xc764..0xc766).contains(&address)
+                        || (0xc724..0xc726).contains(&address),
+                        "unexpected original tail write at {address:05x}");
+                    expected_ram[address] = value;
+                }
+                let charge_start = crate::cycle_ledger::master();
+                state.hud_update_inventory_tail(0x2400 | u16::from(digit), label,
+                    before, Some(elapsed));
+                assert_eq!(crate::cycle_ledger::master() - charge_start,
+                    u64::from(elapsed - before));
+                assert_eq!(state.ram, expected_ram, "tail diverged after PC {pc:06x}");
+                edges.push(elapsed);
+                assert!(edges.len() <= 11, "tail failed to return");
+            }
+            assert_eq!(elapsed, if digit == 0x7f { 302 } else { 260 });
+            // Every actual ROM instruction edge is also a legal two-part
+            // continuation, with the same stores and total charge.
+            for edge in edges {
+                let mut split = ZeldaState::new();
+                split.ram.copy_from_slice(&initial_ram);
+                split.sync_native_game_state_from_ram();
+                let charge_start = crate::cycle_ledger::master();
+                split.hud_update_inventory_tail(0x2400 | u16::from(digit), label, 0, Some(edge));
+                split.hud_update_inventory_tail(0x2400 | u16::from(digit), label, edge, None);
+                assert_eq!(crate::cycle_ledger::master() - charge_start, u64::from(elapsed));
+                assert_eq!(split.ram, expected_ram, "split at {edge} master cycles");
+            }
+        }
+    }
+
+    #[test]
+    fn inventory_tail_resume_retains_digit_and_does_not_repeat_inventory_mutations() {
+        let mut state = ZeldaState::new();
+        state.player_resources_mut().set_keys(3);
+        state.player_resources_mut().set_arrows(5);
+        state.inventory_items_mut().set_inventory_item(0, 1);
+        state.hud_buffer_set(hudxy(18, 1), 0x5a5a);
+        state.native_overworld_hud_interruption =
+            Some(HudUpdateInterruption::InventoryTail { master_cycles: 102 });
+        let resume = state.hud_update_inventory_from(None).unwrap();
+        assert!(matches!(resume, HudInventoryResume::Tail { key: 0x2493, master_cycles: 102, .. }));
+        assert_eq!(state.game_state.inventory.items.bow(), 2,
+            "the bow update belongs before the tail's NMI boundary");
+        assert_eq!(state.hud_state().tile_word(hudxy(18, 1)), 0x5a5a);
+        assert!(state.native_overworld_hud_interruption.is_none());
+        // Changed inputs make an accidental whole-inventory re-run visible.
+        state.player_resources_mut().set_keys(8);
+        state.player_resources_mut().set_arrows(0);
+        state.hud_buffer_set(hudxy(9, 1), 0x1234);
+        let before = state.ram.clone();
+        assert!(state.hud_update_inventory_from(Some(resume)).is_none());
+        assert_eq!(state.hud_state().tile_word(hudxy(18, 1)), 0x2493);
+        assert_eq!(state.game_state.inventory.items.bow(), 2);
+        assert_eq!(state.hud_state().tile_word(hudxy(9, 1)), 0x1234);
+        assert!(state.ram.iter().zip(&before).enumerate().all(|(address, (a, b))|
+            a == b || (0xc764..0xc766).contains(&address) || (0xc724..0xc726).contains(&address)),
+            "resuming the tail must write only its two HUD words");
+    }
+
+    #[test]
     fn inventory_conversion_resume_matches_uninterrupted_tiles_and_cycles() {
         let mut baseline = ZeldaState::new();
         let start = crate::cycle_ledger::master();
@@ -2501,7 +2646,7 @@ mod tests {
                 }));
                 let start = crate::cycle_ledger::master();
                 let resume = state.hud_update_inventory_from(None).unwrap();
-                assert_eq!(resume.interruption.field, field);
+                assert!(matches!(resume, HudInventoryResume::Conversion(r) if r.interruption.field == field));
                 assert!(state.hud_update_inventory_from(Some(resume)).is_none());
                 assert_eq!(crate::cycle_ledger::master() - start, expected_cycles);
                 assert_eq!(

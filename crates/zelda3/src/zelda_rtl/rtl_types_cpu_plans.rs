@@ -105,9 +105,17 @@ pub(crate) struct HudInventoryInterruption {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct HudInventoryResume {
+pub(crate) struct HudInventoryConversionResume {
     pub(crate) interruption: HudInventoryInterruption,
     pub(crate) number: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HudInventoryResume {
+    Conversion(HudInventoryConversionResume),
+    /// Computed digit and backdrop retained across an instruction boundary in
+    /// $0D:FCE0..$0D:FCF9. Resource conversions and bow updates have finished.
+    Tail { key: u16, label: u16, master_cycles: u16 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -119,6 +127,8 @@ pub(crate) enum HudUpdateInterruption {
     /// through the same `HudUpdateResume::BeforeHearts` callee re-run.
     InsideHearts,
     Inventory(HudInventoryInterruption),
+    /// Completed CPU instruction cycles in the inventory's key-store tail.
+    InventoryTail { master_cycles: u16 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

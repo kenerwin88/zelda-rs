@@ -2654,6 +2654,8 @@ const HUD_UPDATE_HEARTS_END_PC: u32 = 0x0d_fdef;
 /// return address $02:A4CC is what admits the interruption.
 const MODULE09_HUD_REFILL_CALLER_RETURN: u32 = 0x02_a4cc;
 const HUD_REFILL_LOGIC_ENTRY_PC: u32 = 0x0d_db75;
+const HUD_INVENTORY_TAIL_START_PC: u32 = 0x0d_fce0;
+const HUD_INVENTORY_TAIL_RETURN_PC: u32 = 0x0d_fcf9;
 
 fn native_main_loop_cpu_run(state: &mut ZeldaState, input: u16, nmi_is_trailing: bool) -> (RomCpuTimingRun, CpuCycleBudget) {
     let phase = state.native_main_wait_cpu_phase.take();
@@ -2757,6 +2759,7 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
     let mut source_progress = None;
     let mut hud_conversion = None;
     let mut in_hud_conversion = false;
+    let mut hud_tail_cycles = None;
     let mut link_oam_caller_return = None;
     let mut hud_refill_caller_return = None;
     for _ in 0..200_000 {
@@ -2791,6 +2794,7 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
             in_hud_conversion = false;
         }
         if pc == 0x0d_f0f7 { in_hud_conversion = true; }
+        if pc == HUD_INVENTORY_TAIL_START_PC { hud_tail_cycles = Some(0u16); }
         if pc == 0x00_865c {
             source_progress = Some(SpritePreparationSourceProgress {
                 completed_words: 0, master_cycles: 0,
@@ -2831,6 +2835,10 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
             }
         }
         if pc == 0x0d_f127 { hud_conversion = None; }
+        if let Some(cycles) = hud_tail_cycles.as_mut() {
+            *cycles += u16::try_from(cpu_cycles).unwrap();
+        }
+        if pc == HUD_INVENTORY_TAIL_RETURN_PC { hud_tail_cycles = None; }
 
         if let Some(progress) = source_progress.as_mut() {
             progress.master_cycles += u16::try_from(cpu_cycles).unwrap();
@@ -2897,6 +2905,20 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
                     // The source accepted this host's NMI part-way through the
                     // suffix's own heart drawing.
                     Some(HudUpdateInterruption::InsideHearts)
+                } else if (HUD_INVENTORY_TAIL_START_PC..=HUD_INVENTORY_TAIL_RETURN_PC)
+                    .contains(&run.pc())
+                    && hud_refill_caller_return == Some(MODULE09_HUD_REFILL_CALLER_RETURN)
+                {
+                    // The four conversions already returned. Preserve only
+                    // the executed tail instructions, excluding bus stalls;
+                    // the translated continuation owns its remaining stores.
+                    Some(HudUpdateInterruption::InventoryTail {
+                        master_cycles: if run.pc() == HUD_INVENTORY_TAIL_START_PC {
+                            0
+                        } else {
+                            hud_tail_cycles.expect("HUD tail boundary requires its entry")
+                        },
+                    })
                 } else { hud_conversion.map(HudUpdateInterruption::Inventory) };
             if packing.is_some()
                 || hud.is_some()
