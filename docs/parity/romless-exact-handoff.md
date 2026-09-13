@@ -47,6 +47,97 @@ command still reachesV118/C220 versus sourceC234,14 clocks early. Restored
 audio parity is not proof of exact absolute CPU phase. Do not compensate
 that residual with a command offset.
 
+### APUI ownership and the shared beam-counter owner (this batch)
+
+Two hardware owners the development executors lacked. Neither is reachable
+from the native route yet — nothing outside the snes crate's own tests
+constructs `RomCpuTimingProbe`, `ApuHostPortProbe`, `ApuHostPortTiming`,
+`Snes9xColdCpuExecutor` or `CpuSynchronousMachine` — so the native frontier is
+unchanged and no A/V claim is made for either.
+
+`ApuHostPortTiming` (`3f44007a`) is the APUI owner the source NMI prefix
+stopped at. It pairs `ApuHostPortProbe`'s retained SPC continuation with
+`Snes9xApuClockState`, so pinned `S9xAPUReadPort`/`S9xAPUWritePort` run
+`S9xAPUExecute` first and access the port only at that synchronized boundary,
+and HMax runs `S9xAPUEndScanline`. The pinned NTSC ratio, its remainder and
+the signed SMP credit/debt are the only clock model: nothing resets the APU,
+seeds a lookahead, opens a host output window or manufactures a cold
+checkpoint. A negative `smp_clock` seed is refused, because a completed
+instruction boundary cannot owe execution `S9xAPUExecute` already performed.
+`ApuHostPortProbe::from_snes9x_coroutine` adds the second provenance — a
+machine already in coroutine form, whose exact DSP owner `end_scanline_at`
+drains where `SNES::dsp.synchronize()` does. `RomCpuTimingProbe` adopts an
+owner only through `attach_apu_port_owner`, which refuses a clock reference
+ahead of its own CPU master clock; without an owner `$2140..$217f` still fails
+closed. APUI accesses synchronize to the access's *start* timestamp, because
+pinned `getset.h:S9xGetByte` runs the register semantic before
+`addCyclesInMemoryAccess`.
+
+The beam-counter owner is now shared (`fdcd2f0d`). `CpuSynchronousMachine`'s
+lone `source_ppu_open_bus1` became the whole `SourcePpuReadState`, so the exact
+cold executor no longer rejects `$2137`, `$213c`, `$213d`, `$213f`, `$4213` or
+`$4201`, and both executors use one counter/open-bus implementation. Its cold
+seed is `ppu.cpp:S9xSoftResetPPU` (WRIO/RDIO `$ff`), so the SLHV gate comes
+from the documented reset state rather than an assumption. The quiescent
+checkpoint is version 6 and rejects 5. STAT77's `PPU.RangeTimeOver` still has
+no owner and keeps failing closed.
+
+**Recovered fixture — the three "lost SRAM" proofs run again.** They need a
+save-present cartridge image: the boot's `$00:87EF LDA $7003E5 : CMP #$55AA :
+BEQ` reads `$55AA` and takes the branch, which costs the `cpumacro.h:bOP`
+ONE_CYCLE the recorded transaction stream charges. Every `initial.srm` under
+`routes/` is instead a fresh `$60` fill, so seeding one makes that branch fall
+through and every later transaction disagree — that, not a timing bug, is what
+substituting the route seed produces. `saves/sram.dat` is the recorded image.
+`route_initial_sram()` tries `ZELDA3_ROUTE_SRAM`, then
+`routes/full_run/comparisons/continuous-audio/initial.srm`, then
+`saves/sram.dat`, and asserts the `$55AA` marker so a wrong seed reports
+itself. Copy `saves/sram.dat` to the recorded path to restore it on a fresh
+checkout. With it, all seven external-ROM tests pass — including 1,000
+continuous host calls of the real ROM through the exact cold executor, which
+is what covers the new counter owner.
+
+Evidence: `retained_continuation_port_timing_matches_the_pinned_cold_ipl_handshake`
+reproduces every recorded CPU/APU handshake access through the first CC from a
+real IPL execution; `local_rom_probe_apu_ports_match_the_pinned_cold_boot_writes`
+seeds the probe only at the pinned `S9xSoftResetCPU` boundary, runs the ROM's
+own boot, and lands its four `$2140..$2143` writes at the recorded
+`(v_counter, cpu_cycle)` with the recorded `apu_cycle_after` before failing
+closed at `$00:8018`'s unowned `$2100` write — synchronizing six clocks later
+instead fails it at write 1 (APU 18 vs the recorded 16), so the ordering is
+load-bearing. 423 snes tests pass (7 ignored, all seven run and pass with the
+ROM and the recovered SRAM); 1,799 zelda3 tests pass, 3 ignored.
+
+Native A/V re-measured on the rebuilt binary (SHA
+`4b72d7d3909b7e174b6dc315fc99ad8ab1f1930486acecc5d7979a15fc33d6a6`,
+`target/native-counter-apui-smoke`, 70.44s): exact through 56,389, first video
+mismatch 56,390, audio exact — identical to the previous binary, as a
+runtime-unreachable change must be. No full 1,581,079-frame run was made.
+
+What is still unowned, in the order the native route needs it:
+
+1. **The route's APUI hand-over.** `RomCpuTimingRun::new` copies four
+   `apu_output_ports` bytes into a fresh shadow. `ApuHostPortTiming` needs the
+   engine's live APU and its clock provenance handed over and returned, not a
+   copied latch.
+2. **PPU register writes in `RomCpuTimingProbe`.** It fails closed at the very
+   first `$2100` write, which is why its cold-boot witness stops at `$00:8018`.
+   The exact cold executor already owns `$2100..$21ff` through `snes.write`.
+3. **Automatic NMI dispatch and auto-joypad in the probe.** Its HMax handler
+   only moves `in_vblank`/`in_nmi`; the cold executor's already publishes RDNMI,
+   schedules the H=12 acceptance deadline and runs the V228 auto-read. It also
+   needs a real NMITIMEN owner — the probe currently accepts only the no-op
+   `$4200` write `S9xSetCPU` takes via its `Byte == FillRAM[0x4200]` early-out.
+4. **DMA/HDMA execution in the probe.** The cold executor already models
+   general DMA; the probe rejects every nonzero enable.
+
+The duplication in 2-4 is worth weighing against finishing the probe: the exact
+cold executor is far more complete and now reads counters too, so the remaining
+gap between it and the native route is its *seed* — it constructs only from a
+cold LoROM reset or a quiescent checkpoint, never from an arbitrary route
+frame. Closing that seed may be cheaper than re-deriving PPU writes, NMI
+dispatch and DMA in the probe.
+
 ### Next: fix bus access timing and remaining CPU-phase ownership
 
 The confirmed beam-counter defect below still samples `$2137` at instruction
@@ -68,8 +159,10 @@ cold CPU/APU executor. It currently supports the audited LoROM/WRAM/SRAM
 map, Mode7 product reads, WRIO/RDIO, and the counter/status read subset.
 Unsupported I/O fails closed and poisons the probe. Pending interrupts,
 DMA/HDMA work, ambiguous refresh seeds, and invalid cartridge/counter seeds
-are rejected. APUI, automatic NMI dispatch, and DMA/HDMA execution are not supplied by
-this owner yet, so it has not replaced the native route's aggregate probe.
+are rejected. APUI is now supplied, but only through an explicitly adopted
+`ApuHostPortTiming` (see the batch section above); automatic NMI dispatch and
+DMA/HDMA execution are still not supplied by this owner, so it has not replaced
+the native route's aggregate probe.
 
 The next batch shares the source native interrupt-entry bus sequence with
 this probe. `accept_native_nmi` requires an already accepted interrupt at
@@ -90,12 +183,17 @@ from `$80c9` V225/C76 through `$80e1` V225/C442. It fails closed at the
 actual APUI read V225/C466. This is a seeded prefix witness, not proof of
 interrupt acceptance, whole-handler execution or native route coverage.
 
-The next APUI owner must preserve the real SPC phase and queued writes.
-`AbsoluteDspEventClock::advance` starts a host audio window and increments
+That APUI owner now exists as `ApuHostPortTiming` (see the batch section
+above); the constraints it was written under still hold for anyone extending
+it. `AbsoluteDspEventClock::advance` starts a host audio window and increments
 the host index; repeatedly calling it for CPU bus accesses would be wrong.
 Its legacy APU state is also not an exact Snes9x SMP coroutine checkpoint.
 Do not seed frozen acknowledgement ports, reset a late APU, or manufacture
-an exact checkpoint to bypass this missing ownership boundary.
+an exact checkpoint to bypass an ownership boundary. What remains unowned is
+the *route's* APUI: `RomCpuTimingRun::new` still copies four `apu_output_ports`
+bytes into a fresh shadow instead of handing over the engine's live APU, so
+integrating `ApuHostPortTiming` there needs an explicit hand-over-and-return
+boundary for that machine and its clock provenance.
 
 A further SPC queue audit reproduced lost future CPU writes: `advance`
 took the complete scheduled-write queue but discarded the unconsumed suffix
@@ -272,6 +370,13 @@ causes of frame56,390. That frame's first low-byte read atC1192 is before the
 long dots, and its source instruction-start sampling defect remains the
 separate, executable RNG reproduction below.
 
+These four rows describe the **live `Snes`/`PpuState` bus**, which the native
+route's aggregate `RomCpuTimingRun` uses. They are still open there. The exact
+cold executor and the source-ordered probe no longer share that bus: both now
+read counters through `SourcePpuReadState` (`fdcd2f0d`), which implements every
+row. Fixing the live bus is therefore a separate, runtime-reachable change;
+do not assume the shared owner already covers it.
+
 The relevant ownership gaps are concrete. `Snes::read_b_bus($37)` currently
 latches unconditionally with `h_pos/4` and returns CPU OpenBus. The source
 checks WRIO bit7, uses the physical scanline's long-dot conversion, and
@@ -280,12 +385,18 @@ match does not latch anything. `PpuState::read_latched_counter` drops the
 retained PPU.OpenBus2 high bits. Its `$213f` path resets the flip-flops but
 returns a placeholder$ff instead of owning the source status/open-bus state.
 
-Do not simply turn on the missing WRIO gate: `RomCpuTimingRun::from_checkpoint`
-creates `Snes::new`, clones RAM/PPU/DMA and APU ports, but does not seed WRIO;
-`ppu_latch` therefore starts false. Correct gating requires authoritative
-hardware state carried into the probe, rather than assuming it high to keep
-RNG working. Physical field, PPU open buses, and latch/read-flip state must
-also have explicit owners before constructing an exact counter seed.
+Do not simply turn on the missing WRIO gate: `RomCpuTimingRun::new` creates
+`Snes::new`, clones RAM/PPU/DMA and the four APU output-port bytes, but does
+not seed WRIO; `Snes::ppu_latch` therefore starts false while `S9xResetPPU`
+sets `FillRAM[$4201] = FillRAM[$4213] = $ff`. Gating SLHV on a field that
+starts wrong would stop the route latching at all. Correct gating requires
+authoritative hardware state carried into the shadow, rather than assuming it
+high to keep RNG working. Physical field, PPU open buses, and latch/read-flip
+state must also have explicit owners before constructing an exact counter seed.
+`Snes::ppu_latch` is a one-bit model of WRIO bit 7 and `$4213` returns only
+that bit, so a full RDIO byte needs an owner too. The cold executor shows the
+shape this should take: one `SourcePpuReadState` seeded from the documented
+reset, not a scatter of fields on `Snes`.
 
 The timing architecture has a separate constraint. `RomCpuTimingRun::step`
 executes all instruction semantics first;
