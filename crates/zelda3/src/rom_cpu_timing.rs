@@ -356,6 +356,8 @@ impl RomCpuTimingRun {
         (u32::from(self.shadow.cpu.k) << 16) | u32::from(self.shadow.cpu.pc)
     }
 
+    pub(crate) fn index_x(&self) -> u16 { self.shadow.cpu.x }
+
     pub(crate) fn stack_pointer(&self) -> u16 {
         self.shadow.cpu.sp
     }

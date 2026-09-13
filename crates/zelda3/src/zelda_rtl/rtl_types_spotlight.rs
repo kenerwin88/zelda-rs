@@ -92,6 +92,15 @@ pub(crate) struct DungeonExitSpotlightCpuPlan {
     pub(crate) successor_entry_earliest: Option<CpuRasterPosition>,
     pub(crate) successor_entry_latest: Option<CpuRasterPosition>,
     pub(crate) terminal_field: Option<SpotlightTerminalCpuField>,
+    pub(crate) following_link_interruption: Option<NativeSpotlightLinkInterruption>,
+}
+
+/// The table's following field can itself end inside the Link axis loop.
+/// Keep that native CPU checkpoint separate from source receipt ownership.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct NativeSpotlightLinkInterruption {
+    pub(crate) checkpoint: crate::MainLoopInterruption,
+    pub(crate) prepares_sprites_before_next_nmi: bool,
 }
 
 /// The visible field before the goal's first NMI, including the first
@@ -122,6 +131,7 @@ impl DungeonExitSpotlightCpuPlan {
         [u16; SPOTLIGHT_VISIBLE_SCANLINES],
         [u16; SPOTLIGHT_VISIBLE_SCANLINES],
         Option<SpotlightTerminalCpuField>,
+        Option<NativeSpotlightLinkInterruption>,
     ) {
         (
             self.interrupted_pc,
@@ -133,6 +143,7 @@ impl DungeonExitSpotlightCpuPlan {
             self.active_window_words,
             self.following_window_words,
             self.terminal_field,
+            self.following_link_interruption,
         )
     }
 
@@ -289,6 +300,7 @@ pub(crate) struct SpotlightIteration {
     pub(crate) rom_following_field_receipt: Option<SpotlightFollowingFieldReceipt>,
     pub(crate) main_loop_sprite_preparation_before_second_nmi: bool,
     pub(crate) completed_hdma_table_owns_active_scanout: bool,
+    pub(crate) native_link_interruption: Option<NativeSpotlightLinkInterruption>,
 }
 
 impl SpotlightIteration {
@@ -303,6 +315,7 @@ impl SpotlightIteration {
             rom_following_field_receipt: None,
             main_loop_sprite_preparation_before_second_nmi: false,
             completed_hdma_table_owns_active_scanout: false,
+            native_link_interruption: None,
         }
     }
 
@@ -338,6 +351,7 @@ impl SpotlightIteration {
             rom_following_field_receipt: None,
             main_loop_sprite_preparation_before_second_nmi: false,
             completed_hdma_table_owns_active_scanout: false,
+            native_link_interruption: None,
         }
     }
 
@@ -416,6 +430,7 @@ impl SpotlightIteration {
             rom_following_field_receipt: None,
             main_loop_sprite_preparation_before_second_nmi: false,
             completed_hdma_table_owns_active_scanout: false,
+            native_link_interruption: None,
         }
     }
 

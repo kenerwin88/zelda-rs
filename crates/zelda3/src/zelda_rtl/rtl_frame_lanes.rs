@@ -5453,7 +5453,7 @@ impl ZeldaState {
     pub(super) fn lane_finish_dungeon_exit_spotlight_entry(
         &mut self,
         mut table_build: SpotlightTableBuildContinuation,
-        iteration: SpotlightIteration,
+        mut iteration: SpotlightIteration,
         authoritative_dungeon_exit_spotlight_entry_iteration_returned: bool,
         authoritative_scheduled_caller_nmi_timeline: Option<
             &OriginalTimingMainLoopInterruptionTimeline,
@@ -5483,6 +5483,13 @@ impl ZeldaState {
                 table_build = self.begin_iris_spotlight_configure_table_at_progress(claim.progress);
             }
         }
+        let native_link = iteration.native_link_interruption.take();
+        if let Some(native_link) = native_link {
+            assert!(!matches!(self.original_timing_owner, OriginalTimingOwnerState::Live));
+            if native_link.prepares_sprites_before_next_nmi {
+                iteration = iteration.with_main_loop_sprite_preparation_before_second_nmi();
+            }
+        }
         let link_position_interruption = authoritative_scheduled_caller_nmi_timeline
             .map(|timeline| timeline.interruption)
             .filter(|interruption| {
@@ -5496,7 +5503,7 @@ impl ZeldaState {
                         | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
                         | crate::MainLoopInterruption::LinkPositionAfterCoordinates { .. }
                 )
-            });
+            }).or_else(|| native_link.map(|n| n.checkpoint));
         match link_position_interruption {
             Some(crate::MainLoopInterruption::LinkActualVelocity {
                 horizontal_resolved,
@@ -5567,13 +5574,20 @@ impl ZeldaState {
         &mut self,
         table_build: SpotlightTableBuildContinuation,
         projection_completed: bool,
-        iteration: SpotlightIteration,
+        mut iteration: SpotlightIteration,
         authoritative_dungeon_exit_spotlight_caller_returned: bool,
         authoritative_dungeon_exit_spotlight_link_oam_interruption: bool,
         authoritative_dungeon_exit_spotlight_same_host_iteration: bool,
         authoritative_scheduled_caller_interrupted_fresh_iteration: bool,
         prospective_spotlight_build_link_oam_plan: Option<OriginalTimingSpotlightBuildLinkOamPlan>,
     ) {
+        let native_link = iteration.native_link_interruption.take();
+        if let Some(native_link) = native_link {
+            assert!(!matches!(self.original_timing_owner, OriginalTimingOwnerState::Live));
+            if native_link.prepares_sprites_before_next_nmi {
+                iteration = iteration.with_main_loop_sprite_preparation_before_second_nmi();
+            }
+        }
         let link_position_interruption = prospective_spotlight_build_link_oam_plan
             .as_ref()
             .map(|plan| plan.interruption)
@@ -5588,7 +5602,7 @@ impl ZeldaState {
                         | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
                         | crate::MainLoopInterruption::LinkPositionAfterCoordinates { .. }
                 )
-            });
+            }).or_else(|| native_link.map(|n| n.checkpoint));
         if let Some(interruption) = link_position_interruption {
             // The host ended inside Link_MovePosition after the
             // completed build (route host 179586): consume that

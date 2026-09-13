@@ -3575,6 +3575,8 @@ impl ZeldaState {
         } else {
             iteration
         };
+        let mut iteration = iteration;
+        iteration.native_link_interruption = cpu_plan.and_then(|plan| plan.following_link_interruption);
         if self.game_state.frame.submodule != 0 {
             if let Some(plan) = cpu_plan {
                 self.publish_or_stage_spotlight_active_field(&plan.active_window_words);
@@ -4189,15 +4191,9 @@ impl ZeldaState {
         table_build: SpotlightTableBuildContinuation,
         iteration: SpotlightIteration,
     ) -> (SpotlightIterationPhase, SpotlightIteration) {
-        let vertical_center = spotlight_vertical_center(
-            self.game_state.player.follower_link.y(),
-            self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
-        );
-        let phase = SpotlightIterationPhase::for_close_iteration(
-            self.game_state.frame.submodule,
-            self.game_state.display.spotlight_hdma.window_radius(),
-            vertical_center,
-        );
+        // The interrupting CPU plan already chose this phase. Recomputing
+        // the geometry fallback here can lose a measured extra held field.
+        let phase = iteration.phase;
         self.complete_iris_spotlight_configure_table(table_build);
         // The entry resumes after a held NMI. Its Link/sprite shadow is
         // uploaded only by the NMI ending this field, so that DMA cannot

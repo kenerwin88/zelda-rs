@@ -3320,6 +3320,57 @@ fn measured_close_entry_suffix_retires_without_a_geometry_wait() {
 }
 
 #[test]
+fn measured_close_entry_phase_survives_short_geometry_resume() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.set_main_module(0x0f);
+    state.set_submodule(0);
+    state.follower_link_state_mut().set_position(440, 2376);
+    state.set_bg2_v_copy2(2278);
+    state.set_spotlight_window_state(0);
+    state.set_spotlight_window_radius(126);
+    assert_eq!(SpotlightIterationPhase::for_close_iteration(0, 126, 110),
+        SpotlightIterationPhase::CloseEntryAfterTablePublication);
+    let table = state.begin_iris_spotlight_configure_table(0);
+    let iteration = SpotlightIteration::closing(
+        SpotlightIterationPhase::CloseEntryBeforeTablePublication);
+    state.complete_dungeon_exit_spotlight_entry(table, iteration);
+    assert!(matches!(state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishSpotlightIteration { .. })));
+    assert!(!state.main_loop_sprite_preparation_completed);
+}
+
+#[test]
+fn native_close_entry_retains_its_second_interrupt_inside_link_movement() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.set_main_module(0x0f);
+    state.set_submodule(0);
+    state.set_indoor_flag(0);
+    state.follower_link_state_mut().set_position(440, 2376);
+    state.set_bg2_v_copy2(2278);
+    state.set_spotlight_window_state(0);
+    state.set_spotlight_window_radius(126);
+    state.latch_nmi_update();
+    let table = state.begin_iris_spotlight_configure_table(0);
+    let mut iteration = SpotlightIteration::closing(
+        SpotlightIterationPhase::CloseEntryBeforeTablePublication);
+    iteration.native_link_interruption = Some(NativeSpotlightLinkInterruption {
+        checkpoint: spotlight_link_axis_interruption(0x07_e3cb, 0).unwrap(),
+        prepares_sprites_before_next_nmi: true,
+    });
+    let shadow = state.ram[0x800..0xa20].to_vec();
+    state.lane_finish_dungeon_exit_spotlight_entry(table, iteration, false, None, None);
+    assert!(matches!(state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow {
+            pass: 0, ..
+        })));
+    assert_eq!(&state.ram[0x800..0xa20], shadow.as_slice());
+    assert!(!state.main_loop_sprite_preparation_completed);
+    assert!(state.game_state.display.nmi_update_is_latched());
+}
+
+#[test]
 fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     // 189-row calibration center (dungeon landing): $70 publishes in-slice.
     assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(0x7e, 36));
@@ -3349,6 +3400,7 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
         successor_entry_earliest: None,
         successor_entry_latest: None,
         terminal_field: None,
+        following_link_interruption: None,
     };
     assert!(cpu_plan(0x00_f38d).interrupted_during_table_build_or_copy());
     assert!(!cpu_plan(0x00_f38d).interrupted_during_table_copy());
@@ -4845,6 +4897,7 @@ fn interrupted_dungeon_exit_spotlight_publishes_the_rom_prefix_before_waiting() 
             successor_entry_earliest: None,
             successor_entry_latest: None,
             terminal_field: None,
+            following_link_interruption: None,
         }),
         None,
         SpotlightIteration::closing(SpotlightIterationPhase::CloseEntryBeforeTablePublication,),

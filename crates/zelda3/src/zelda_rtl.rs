@@ -2767,6 +2767,19 @@ fn spotlight_cpu_timing_ram(state: &ZeldaState, checkpoint: RomCpuCheckpoint) ->
     rom_ram
 }
 
+fn spotlight_link_axis_interruption(pc: u32, x: u16) -> Option<crate::MainLoopInterruption> {
+    // Player_MovePosition1_ uses X=2*axis until its two DEX instructions.
+    // The subpixel, low-coordinate and high-coordinate stores retire in order.
+    let pass = u8::try_from(x / 2).ok()?;
+    if x > 4 || x & 1 != 0 { return None; }
+    match pc {
+        0x07_e3b2..=0x07_e3c8 => Some(crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass }),
+        0x07_e3ca..=0x07_e3cd => Some(crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { pass }),
+        0x07_e3cf..=0x07_e3d1 => Some(crate::MainLoopInterruption::LinkPositionAfterCoordinates { pass }),
+        _ => None,
+    }
+}
+
 fn dungeon_exit_spotlight_cpu_plan_at(
     state: &ZeldaState,
     entry: CpuRasterPosition,
@@ -2806,6 +2819,8 @@ fn dungeon_exit_spotlight_cpu_plan_at(
     let mut first_window_words = [None; SPOTLIGHT_VISIBLE_SCANLINES];
     let mut terminal_blank_row = None;
     let mut terminal_field = None;
+    let mut second_link_interruption = None;
+    let mut sprites_before_third_nmi = false;
 
     for _ in 0..5_000_000 {
         if run.pc() == 0x00_f3e5 && iterations_before_nmi.is_none() {
@@ -2879,6 +2894,10 @@ fn dungeon_exit_spotlight_cpu_plan_at(
                     successor_entry_earliest: successor_entry,
                     successor_entry_latest: successor_entry,
                     terminal_field,
+                    following_link_interruption: second_link_interruption.map(|checkpoint|
+                        NativeSpotlightLinkInterruption {
+                            checkpoint, prepares_sprites_before_next_nmi: sprites_before_third_nmi,
+                        }),
                 });
             }
         }
@@ -2950,11 +2969,17 @@ fn dungeon_exit_spotlight_cpu_plan_at(
                 returned_to_main_wait_before_first_nmi =
                     Some(matches!(run.pc(), 0x00_8034 | 0x00_8036));
             } else if completed_active_window_words.is_none() {
+                second_link_interruption = spotlight_link_axis_interruption(run.pc(), run.index_x());
+                if crate::debug_env::var_os("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some() {
+                    eprintln!("[SPOTLIGHT-SECOND-NMI] host={} pc={:06x} raster={:?} link={second_link_interruption:?}",
+                        state.frame_ctr_dbg, run.pc(), budget.raster_position());
+                }
                 main_loop_sprite_preparation_completed_before_second_nmi =
                     Some(main_loop_sprite_preparation_completed);
                 completed_active_window_words =
                     Some(complete_spotlight_window_words(&run, &active_window_words));
             } else if completed_following_window_words.is_none() {
+                sprites_before_third_nmi = main_loop_sprite_preparation_completed;
                 completed_following_window_words = Some(complete_spotlight_window_words(
                     &run,
                     &following_window_words,

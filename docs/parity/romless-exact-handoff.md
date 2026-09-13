@@ -4,7 +4,53 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 53,926 (video)
+## Current native frontier — 54,043 (audio)
+
+Closing-iris continuations retain their selected phase across table
+completion, rather than replacing a measured CPU phase with a geometry
+fallback. The native CPU plan also retains a second NMI inside Link's axis
+loop: its completed subpixel/coordinate-store phase and the following
+field's sprite-preparation completion. The existing partial movement
+continuations now receive that native checkpoint, without replaying movement
+or prematurely authoring Link OAM. Entry and recurring table resumes use
+the same mechanism.
+
+Source comparison53,925 ends after a second NMI at `$07:e3cb` (V225/C18),
+after the Y low-coordinate store but before its high byte. The native probe
+finds the same instruction at V225/C24. At53,924..53,929, the fixed native
+counter, player bytes `$20..$31`, and OAM shadow `$800..$a20` agree with
+source. The native software latch still reflects a different host phase at
+53,926 and53,928; do not call these full-WRAM matches.
+
+`target/native-iris-second-interrupt` /
+`/tmp/native-iris-second-interrupt.log` proves native exact A/V through54,042;
+first audio mismatch54,043, video still exact (69.65s while tests compiled).
+Binary SHA:
+`73771fad011ff9494cc76e330c1188bb2de7df32aa0871a60862fe966670768a`.
+Library validation:1,786 passed in the full run (23.87s); the new test's
+accidental whole-WRAM comparison was corrected to the OAM range and passed
+separately. All1,787 tests are covered,3 ignored:
+`/tmp/native-iris-second-interrupt-lib-tests.log`,
+`/tmp/native-iris-second-interrupt-corrected-test.log`.
+Tests retain a measured entry phase despite short geometry and verify that
+the second native interrupt leaves Link OAM and sprite preparation pending.
+
+### Next: song-bank upload completion
+
+Source `target/native-54043-source2`, `/tmp/native-54043-source2.log`;
+decode `/tmp/native-54043-source2.jsonl` uses raw run +53,500. Source frames
+54,036..54,042 remain inside the APU upload loop `$00:88a4..88bb`, module7/
+sub0f, counter75. Frame54,043 enters at `$00:88b6` V225/C18 and returns to
+main wait `$00:8034` V225/C4. The next field begins landing iris work.
+Trace the final upload handshake and native SPC scheduling before changing
+any audio marker.
+
+The attempted checkpoint at54,000 failed because the loader still held an
+unserialized ROM-call continuation. Do not use `target/native-source-pair-54000`.
+The valid source checkpoint remains `target/native-source-pair-53500`.
+No full receipt gate was repeated;100k native remains pending.
+
+## Previous native frontier — 53,926 (video)
 
 Native overworld HUD inventory work now has a typed continuation across
 NMI. The CPU probe records which conversion is interrupted, completed
