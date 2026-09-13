@@ -532,6 +532,30 @@ mod fast_forward_cycle_tests {
     };
 
     #[test]
+    fn dialogue_finish_charges_source_tail_and_only_publishes_its_owned_bytes() {
+        let mut state = crate::zelda_rtl::ZeldaState::new();
+        state.set_main_module(14);
+        state.set_submodule(2);
+        state.game_state.frame.saved_module_for_menu = 9;
+        state.ram[0x010c] = 9;
+        state.messaging_state_mut().set_module(1);
+        state.messaging_state_mut().set_text_msgbox_topleft(0x61a4);
+        let before = state.ram.clone();
+        let clock = crate::cycle_ledger::master();
+        state.RenderText_Draw_Finish();
+        // Original $0E:CA35-CA6B costs 738, its one $D29C callee 204.
+        assert_eq!(crate::cycle_ledger::master() - clock, 942);
+        assert_eq!(&state.ram[0x1002..0x100a], &[0x61, 0xa4, 0x42, 0x2e, 0x7f, 0x38, 0xff, 0xff]);
+        assert_eq!(&state.ram[0x1cd0..0x1cd2], &0x61a4u16.to_le_bytes());
+        assert_eq!((state.ram[0x10], state.ram[0x11], state.ram[0x14], state.ram[0x1cd8]), (9, 0, 1, 0));
+        for (address, (old, new)) in before.iter().zip(state.ram.iter()).enumerate() {
+            if !matches!(address, 0x10 | 0x11 | 0x14 | 0x1cd8 | 0x1cd0..=0x1cd1 | 0x1002..=0x1009) {
+                assert_eq!(old, new, "unexpected finish write at ${address:05x}");
+            }
+        }
+    }
+
+    #[test]
     fn render_loop_budget_tracks_rom_entry_and_resume_phases() {
         assert_eq!(
             vwf_render_loop_cycle_budget(false, 0, VwfHandlerEntryPhase::OrdinaryModuleIteration),
@@ -5974,6 +5998,10 @@ impl ZeldaState {
     }
 
     pub(super) fn RenderText_Draw_Finish(&mut self) {
+        // $0E:CA35-CA6B: 738 clocks, including the border-initializer JSR
+        // but not its separately charged body. Text_Render jumps here, so
+        // the finish block belongs to the existing caller's ledger scope.
+        crate::cycle_ledger::charge(738);
         self.RenderText_DrawBorderInitialize();
         let top_left = self.game_state.messaging.runtime.text_msgbox_topleft_copy();
         self.write_vram_upload_buffer_word(0, top_left.swap_bytes());
