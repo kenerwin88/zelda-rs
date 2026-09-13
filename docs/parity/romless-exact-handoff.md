@@ -59,6 +59,54 @@ ownership boundaries before interpreting a later OAM interruption as a new
 missing hold. Earlier failures are acceptable evidence when source fidelity
 improves; exact coverage alone must never justify a timing shortcut.
 
+### Counter audit: a bus-clock fix also needs a valid hardware seed
+
+`target/native-counter-contract/{probe.rs,probe.log,manifest.json}` records
+four CPU-only reproductions against the unchanged current SNES library.
+Expected values below come from pinned `source/ppu.cpp:S9xLatchCounters` and
+`S9xGetPPU`, not an additional live-core run:
+
+| Contract | Source-derived expectation | Current Rust observation |
+| --- | --- | --- |
+| `$2137` with WRIO bit7 low, previousH=$123, currentH=100 | retain291 | overwrites with100 |
+| `$4201` bit7 falling, same old/current counter values | latch100 | retains291 |
+| Normal scanline103 atC1292 | horizontal counter322 | counter323 |
+| `$213c` low then high fromH=$123 | low$23, high$23 (PPU.OpenBus2 bits7..1 retained) | low$23, high$01 |
+
+These are independent counter-contract defects; they are not newly proven
+causes of frame56,390. That frame's first low-byte read atC1192 is before the
+long dots, and its source instruction-start sampling defect remains the
+separate, executable RNG reproduction below.
+
+The relevant ownership gaps are concrete. `Snes::read_b_bus($37)` currently
+latches unconditionally with `h_pos/4` and returns CPU OpenBus. The source
+checks WRIO bit7, uses the physical scanline's long-dot conversion, and
+returns PPU.OpenBus1. `Snes::write_reg($4201)` calls `ppu.read($37)`, whose
+match does not latch anything. `PpuState::read_latched_counter` drops the
+retained PPU.OpenBus2 high bits. Its `$213f` path resets the flip-flops but
+returns a placeholder$ff instead of owning the source status/open-bus state.
+
+Do not simply turn on the missing WRIO gate: `RomCpuTimingRun::from_checkpoint`
+creates `Snes::new`, clones RAM/PPU/DMA and APU ports, but does not seed WRIO;
+`ppu_latch` therefore starts false. Correct gating requires authoritative
+hardware state carried into the probe, rather than assuming it high to keep
+RNG working. Physical field, PPU open buses, and latch/read-flip state must
+also have explicit owners before constructing an exact counter seed.
+
+The timing architecture has a separate constraint. `RomCpuTimingRun::step`
+executes all instruction semantics first;
+`advance_rom_cpu_step_measured` subsequently drains the aggregate CPU work,
+HDMA and general DMA. Adding a bus-access prefix to the raster cannot fully
+reproduce pinned `PCBase` fetches, word operand transactions, internal cycles,
+and event draining. The existing `source_cpu.rs` executor already models
+those transaction boundaries, but its audited read map intentionally rejects
+`$2137/$213c` and its quiescent seed is a complete CPU/APU/timeline owner.
+Do not bypass that seed contract to transplant a partial shadow. Reuse the
+source transaction semantics through an explicit timing-probe backend, or
+extend the seed only with evidence for every hardware field it requires.
+The counter semantics and source-ordered hardware access path need to be
+validated together before claiming the RNG probe exact.
+
 ## Previous phase-retention regression — 54,043 (audio)
 
 Interrupted ordinary-overworld HUD, Link-body, and sprite-preparation
