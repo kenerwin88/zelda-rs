@@ -5,6 +5,22 @@ use super::*;
 use crate::tile_definition::NativeTile;
 
 #[test]
+fn native_probe_field_phase_crosses_vzero_without_flipping_at_host_vblank() {
+    for host in 1..=4 {
+        let vblank = native_cpu_field_timing_at_entry(host, CpuRasterPosition::new(248, 0));
+        let active = native_cpu_field_timing_at_entry(host, CpuRasterPosition::new(118, 0));
+        let next_host = native_cpu_field_timing_at_entry(host + 1, CpuRasterPosition::new(225, 0));
+        // V0 changes the physical field inside one host; V225 changes the
+        // host inside one physical field. Rebased probes must agree on the
+        // short scanline of that shared field, including later alternations.
+        for field in 0..3 {
+            assert_eq!(vblank.field_master_cycles(field + 1), active.field_master_cycles(field));
+            assert_eq!(active.field_master_cycles(field), next_host.field_master_cycles(field));
+        }
+    }
+}
+
+#[test]
 fn parity_probe_direct_entrance_loads_room_from_entrance_assets() {
     let mut state = ZeldaState::new();
     state.assets = Some(probe_entrance_asset_pack(0x2a, 0x0122));

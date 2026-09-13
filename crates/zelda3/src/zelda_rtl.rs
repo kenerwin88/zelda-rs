@@ -2780,6 +2780,15 @@ fn spotlight_link_axis_interruption(pc: u32, x: u16) -> Option<crate::MainLoopIn
     }
 }
 
+fn native_cpu_field_timing_at_entry(host: u32, entry: CpuRasterPosition) -> CpuFieldTiming {
+    // frame_ctr_dbg has advanced at host entry. A host spans V225 through
+    // the next V225, so physical field parity flips at V0 inside that host.
+    // Pinned Snes9x's pre-frame53500 state has TIM.InterlaceField=1 at V225;
+    // the active-display portion of that same host belongs to the even field.
+    let (v, _) = entry.coordinates();
+    CpuFieldTiming::non_interlace((host & 1 != 0) ^ (v < 225))
+}
+
 fn dungeon_exit_spotlight_cpu_plan_at(
     state: &ZeldaState,
     entry: CpuRasterPosition,
@@ -2800,7 +2809,7 @@ fn dungeon_exit_spotlight_cpu_plan_at(
     let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
         entry,
         CpuBusWorkload::with_dynamic_hdma(),
-        CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0),
+        native_cpu_field_timing_at_entry(state.frame_ctr_dbg, entry),
     );
     let mut iterations = 0usize;
     let mut iterations_before_nmi = None;
@@ -2985,7 +2994,13 @@ fn dungeon_exit_spotlight_cpu_plan_at(
                     &following_window_words,
                 ));
             }
+            let before = budget.raster_position();
+            let interrupted_pc = run.pc();
             advance_rom_cpu_through_nmi(&mut run, &mut budget);
+            if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+                eprintln!("song_upload iris_nmi entry_host={} entry={entry:?} pc={interrupted_pc:06x} before={before:?} after={:?}",
+                    state.frame_ctr_dbg, budget.raster_position());
+            }
         }
     }
     panic!(
@@ -3012,11 +3027,12 @@ fn pre_dungeon_load_nmi_slices_at(state: &ZeldaState, entry: CpuRasterPosition) 
         .expect("pre-dungeon timing requires the loaded development ROM");
     let mut budget = CpuCycleBudget::until_next_nmi_acceptance(entry,
         CpuBusWorkload::with_dynamic_hdma(),
-        CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0));
+        native_cpu_field_timing_at_entry(state.frame_ctr_dbg, entry));
     let mut nmis = 0u8;
     for _ in 0..10_000_000 {
         if run.is_complete() {
-            if crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
+            if crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some()
+                || crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
                 eprintln!("pre_dungeon_cpu_schedule host={} entry={entry:?} nmis={nmis} return={:?}",
                     state.frame_ctr_dbg, budget.raster_position());
             }
@@ -3048,7 +3064,13 @@ fn pre_dungeon_load_nmi_slices_at(state: &ZeldaState, entry: CpuRasterPosition) 
         run.set_raster_position(v, h);
         if advance_rom_cpu_step(&mut run, &mut budget).reached_boundary().is_some() {
             nmis = nmis.checked_add(1).expect("pre-dungeon timing exceeded 255 NMIs");
+            let before = budget.raster_position();
+            let interrupted_pc = run.pc();
             advance_rom_cpu_through_nmi(&mut run, &mut budget);
+            if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+                eprintln!("song_upload loader_nmi entry_host={} nmi={nmis} pc={interrupted_pc:06x} before={before:?} after={:?}",
+                    state.frame_ctr_dbg, budget.raster_position());
+            }
         }
     }
     panic!("pre-dungeon timing did not reach Dungeon_ResetSprites' caller return");

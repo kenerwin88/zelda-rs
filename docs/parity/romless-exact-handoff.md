@@ -6,6 +6,52 @@ annotating any routine.
 
 ## Current native frontier — 54,043 (audio)
 
+The iris and pre-dungeon CPU probes now select physical field parity from
+their entry raster position. A comparison host spans V225 through the next
+V225; parity flips at V0 inside that host. These probes had used the
+active-display field even for their V248/V255 entries, putting the short
+scanline240 in the wrong field. `native_cpu_field_timing_at_entry` handles
+both entry phases. The saved Snes9x state
+`target/native-source-pair-53500/oracle.state` proves CPU.V_Counter225 and
+TIM.InterlaceField1. `snapshot.cpp` saves the actual `S9xInterlaceField()`;
+the TIM block's first11 fields are32-bit and the next byte is this flag.
+
+Before the correction, matched loader NMI PCs alternated2/6 cycles late.
+Afterward,52 of57 NMI PCs match source with a uniform2-cycle difference;
+the other5 accept at neighboring instructions because that remaining
+entry error straddles the NMI threshold. The loader's `$02:8350` return
+improves from V117/C906 to C902 (source900), and command-after improves
+from V118/C246 to C242 (source240). This removes the field error without
+compensating the remaining caller phase.
+
+Evidence: `target/native-upload-nmi-phase` (before correction,65.46s),
+`target/native-upload-field-phase` (74.11s while tests compiled), and its
+`loader-nmi-alignment.json`; source decode
+`/tmp/native-upload-all-nmis-source.jsonl` uses raw run +53,500.
+Native A/V still matches through54,042, same first audio mismatch54,043.
+Binary SHA: `471ee30659fd9372d3b8937a571ca1a6440646a180faa6163aac0e350e74ca7f`.
+All1,789 library tests pass,3 ignored (23.91s), including a regression that
+requires consistent field lengths across V0 and the host's V225 boundary:
+`/tmp/native-upload-field-phase-lib-tests.log`.
+
+### Next: replace the synthetic leading-NMI phase at iris entry
+
+`target/native-iris-entry-phase-source` /
+`/tmp/native-iris-entry-phase-source.jsonl` proves comparison53,924 enters
+Module0F at `$02:9982` V255/C508; native entry host53,925 uses C510.
+Source's leading NMI is at `$00:8034` V225/C28, followed by `$00:8051`
+V251/C118. `module_cpu_entry_after_leading_nmi` instead seeds `$00:8036`
+at the earliest acceptance boundary with a synthetic zero flag. Trace the
+preceding caller's actual wait-loop phase and carry it forward; do not
+replace this with a fixed28-cycle NMI or subtract2 from the result.
+The recurring source entries53,927 V255/C528 and53,929 V253/C204 also
+provide checks. This remaining inherited phase reaches pre-dungeon entry
+at nativeV248/C1200 versus source1198. After correcting it, wire the
+measured dungeon command's bus access into the existing transfer protocol,
+with its386-cycle caller path. No full receipt gate was repeated.
+
+### Previous native upload interleaving fix
+
 Native song-bank transfers now interleave CPU handshake accesses at SPC
 micro-operation boundaries even when their command timestamp is not yet
 measured. This separates hardware port visibility from caller timestamp
