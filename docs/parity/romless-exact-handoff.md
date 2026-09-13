@@ -33,88 +33,55 @@ Note the two lanes' host labels can differ by one: the packing trace prints
 `state.frame_ctr_dbg`, which a trailing-NMI host leaves one below the
 receipt's `host_call`.
 
-### Next native frontier — 56,417: a cycle-cost question, not a missing class
+### Next native frontier — 56,417: an unclassified NMI boundary in the HUD
 
-Host 56,416's source vector is
-`[NmiAccepted(Open), NmiHandlerCompleted, JoypadPublication, IterationStarted,
-SpriteMainReturned]` — no `MainLoopCommonSuffixCompleted`, no interruption
-receipt and no trailing acceptance — and 56,417 is
-`[NmiAccepted(LatchHeld), NmiHandlerCompleted, CallStackContinued,
-MainLoopCommonSuffixCompleted, NmiAccepted(Open)]`. So the source's main loop
-returned the host after `$00:8056 JSL Module_MainRouting` came back but before
-`$00:805A JSR NMI_PrepareSprites` / `$00:805D STZ $12` finished, and the held
-NMI was accepted at the start of the next host.
+**Settled by a captured Snes9x PC trace** (`00:8051,00:8056,00:805a,00:805d`,
+whole 56,421-frame prefix). Two earlier readings of this frontier were wrong
+and are retracted: it is neither a host return before the common suffix, nor a
+cycle-cost difference. It is the same shape as 56,389 — the native measurement
+reaches the NMI boundary and the classifier does not recognise the PC.
 
-Pinned `cpuexec.cpp:S9xMainLoop` explains the shape: each loop iteration takes
-a due NMI first (`Timings.NMITriggerPos <= CPU.Cycles`, 12 master cycles after
-VBlank publication) and only then breaks on `SCAN_KEYS_FLAG`, which the V225
-HMax event set. An instruction boundary landing in V225 `[C0, C12)` therefore
-returns the host with the NMI still pending; a boundary at `C12` or later
-accepts it first and returns with the handler entered.
+The source's per-frame main-loop landmarks around the frontier:
 
-**But host 56,416 never reaches that window in the native measurement.** An
-instrumented run over the first 56k hosts found the window entered at only 17
-hosts, eleven of them below the current frontier where native is already
-exact — and 56,416 is not among them. The native iteration therefore *finishes
-earlier* than the source's, which crossed V225. So this is not a missing
-boundary class to add to `overworld_main_loop_packing_interruption`; it is a
-cycle-cost or entry-phase difference in the measured iteration, and modelling
-the `[C0, C12)` break without first explaining that difference would be a
-guess. Do not add the window check on its own — it would also re-classify the
-eleven already-exact hosts.
+| frame | `00805a` return | `00805d` | NMI | handler end `008225` | `008051` | `008056` |
+| --- | --- | --- | --- | --- | --- | --- |
+|56,414 | V189/C610 | V198/C722 | V225/C28 | V250/C1160 | V251/C118 | V255/C206 |
+|56,415 | V213/C314 | V222/C426 | V225/C20 | V250/C1148 | V251/C128 | V255/C216 |
+|56,416 | V183/C822 | V192/C934 | V225/C24 | V250/C1156 | V251/C136 | V255/C224 |
+|56,417 | V234/C946 | V243/C680 | V225/C34 | V227/C124 | — | — |
 
-`ZELDA3_DEBUG_OVERWORLD_CPU_ITERATION=<lo>-<hi>` now measures this in one
-run. Across 56,412..56,418 it gives:
+An iteration starts at `008056` near V255 and returns at `00805a` in the
+*following* frame. Frames 56,414-56,416 return early (V183-V213), so the NMI at
+V225 finds the main loop idle and a fresh iteration starts at V251/V255. Frame
+56,417 is different: the iteration started at 56,416 V255/C224 was **still
+running** when the NMI arrived at V225/C34, so the handler ends at V227 instead
+of V250, the interrupted iteration resumes and returns at V234/C946, and no new
+iteration starts in that host. That is exactly host 56,416's receipt
+(`IterationStarted, SpriteMainReturned`, no suffix) followed by 56,417's
+(`NmiAccepted(LatchHeld) … CallStackContinued, MainLoopCommonSuffixCompleted`).
 
-| host | entry after NMI handler | `$00:8056` | `$00:805A` return | outcome |
-| --- | --- | --- | --- | --- |
-|56,414 | V253/C798 | V257/C962 | V189/C610 | completed |
-|56,415 | V251/C28 | V255/C214 | V213/C322 | completed |
-|56,416 | V251/C22 | V255/C186 | V183/C792 | completed |
-|56,417 | V251/C38 | V255/C202 | — | NMI at `$0D:FDB0`, V225/C20 |
+The native measurement already sees it. `ZELDA3_DEBUG_OVERWORLD_CPU_ITERATION`
+reports for that iteration: entry V251/C38, `008056` at V255/C202, and an **NMI
+boundary at V225/C20 with PC `$0D:FDB0`**. The source's NMI is at V225/C34, 14
+master cycles later. Native's returns for the neighbouring iterations match the
+source to 0, +8 and −30 master cycles (`00805a` V189/C610 vs V189/C610,
+V213/C322 vs V213/C314, V183/C792 vs V183/C822) — the measured iteration cost
+is right; the earlier "~40 scanlines of missing work" was a misreading of the
+receipt vector, not a measurement.
 
-So native's 56,416 iteration leaves `Module_MainRouting` at V183 and finishes
-its suffix well before V225, while the source was still inside that suffix at
-V225. That is roughly forty scanlines of missing work, not cycle noise. Two
-candidates, in order: the accepted NMI handler's own cost (56,416 enters at
-V251/C22 — among the shortest in the window, and `native_main_loop_cpu_run`
-prices the handler's DMA from `state.dma_with_native_hdma_enable()`), and the
-module iteration itself. Settle it by comparing against the source's raster at
-`$00:8056`/`$00:805A` for that host.
+`$0D:FDB0` is `CMP #$0008` in the HUD's heart/inventory drawing loop
+(`$0D:FDAE LDA $00 : CMP #$0008 : BCC : SBC #$0008 : STA $00 : LDY #$0004 :
+JSR $FDD9`). The neighbouring unclassified boundaries are `$0D:FDB8` and
+`$0D:FCEE`. The existing classifier knows only `$0D:FB94` (before hearts),
+`$0D:FC57/FC84/FCA8/FCDD` (inventory fields) and `$0D:F0F7..F127` (conversion),
+so these fall through to "no interruption" exactly as `$0D:AAB9` did.
 
-**Getting the source raster needs one trace-capture rule.** The cached receipts
-carry no PC or raster (their nineteen fields are `host_call`, `input_state`,
-`semantic`, the NMI register operands and the presented-state domains), so the
-comparison needs a Snes9x PC trace. Capturing one works, but only unbounded:
-
-> **Never set `ZELDA3_SNES9X_TRACE_FRAMES` (or `microscope
-> --trace-internal-frames` on a cold run) while the comparison harness needs
-> semantic receipts.** The compare binary's semantic-receipt adapter reads
-> those receipts out of the Z3TRACE1 trace itself, so a frame filter starves it
-> and the run dies at frame 0 with *"failed to read pinned-Snes9x semantic
-> receipts at frame 0: Snes9x host call omitted frame/entry receipt"*. Filter
-> with `ZELDA3_SNES9X_TRACE_PCS` instead and leave the frame range open.
-
-Verified on a 30-frame A/B: `ZELDA3_SNES9X_TRACE` + `ZELDA3_SNES9X_TRACE_PCS`
-completes and writes 9,728 trace bytes; adding `ZELDA3_SNES9X_TRACE_FRAMES`
-fails at frame 0 and leaves only the 8-byte `Z3TRACE1` header. A PC-filtered
-trace costs roughly 324 bytes per frame, so the whole 56,417-frame prefix is
-about 18 MB — well inside `--max-trace-mib`.
-
-Two smaller gotchas on the way in: `./parity doctor`'s `parity binary` staleness
-check compares mtimes, so a binary built in a worktree always looks stale from
-the main checkout (rebuild in the main checkout with
-`CARGO_TARGET_DIR=target/song-upload-build` and pass `--binary`; never rebuild
-the frozen `target/parity/zelda3`, and note `--allow-stale` is `--dry-run`
-only). And `microscope --recorded-rng` is refused — "selected replay core
-disagrees with the current route signature" — because the available `run-*`
-dirs replay the instrumented core (`6f112667…`) while the route signature pins
-`f8265824…`; use the live-RNG selection or pass the cache's own
-`--rom-random-script`.
-
-The trace core itself is current: its receipt lists all eleven maintained
-patches including `zelda3-trace-binary-format.patch`, and it emits Z3TRACE1 as
-`docs/parity/binary-trace-format.md` describes.
+So the fix has the same shape as `cba205c8`, but the continuation is the hard
+part: unlike `LinkOam_Main`, `Hud_Update` publishes as it goes, so resuming it
+whole is not obviously safe. Establish what `$0D:FDD9` and its caller own
+before choosing between a finer `HudUpdateResume` variant and a
+progress-carrying continuation. Use the trace: it is cheap to re-capture and
+gives the source's own interrupted PC and resume point.
 
 ## Previous native frontier — 56,390 (video): dialogue/return timing
 
