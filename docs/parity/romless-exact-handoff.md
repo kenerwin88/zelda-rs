@@ -4,7 +4,43 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 54,741 (video)
+## Current native frontier — 54,762 (video)
+
+The native HUD probe now retains a typed `BeforeHearts` interruption when
+NMI arrives at `$0d:fb94`, before the hearts block executes. The resumed
+callee performs hearts, magic, inventory, and the HUD flag once, then
+returns through the existing rain/common-suffix continuation. It does not
+repeat resource refill or represent hearts as an inventory digit field.
+A regression checks deferred HUD tiles, one rupee update, the return flag,
+and equal aggregate CPU cost against uninterrupted execution.
+
+`target/native-hud-hearts-entry` proves native exact A/V through54,761,
+first video mismatch54,762 with audio exact (78.80s).
+Binary SHA: `5ee9d2d12362e9ebf56ba3db58adde757dc8b61e1aac1bfb9cb24f4c726a73d2`.
+All1,794 library tests pass,3 ignored (23.70s):
+`/tmp/native-hud-hearts-entry-lib-tests.log`.
+`target/native-hud-hearts-entry-receipt` matches all54,767 receipt-driven
+frames (62.69s). No full1,581,079-frame run was repeated for this binary.
+`state-comparison.json` in that native run proves counter, latch, and OAM
+agree with source across54,739..54,745. The probe reaches `$0d:fb94` at
+V225/C34 versus source C20; no14-cycle offset was applied.
+
+### Next: Link body OAM interruption before the lower entry
+
+Source `target/native-54762-source`, paired from53500, is video exact
+through54,766. `/tmp/native-54762-source.jsonl` shows comparison54,761
+ending at `$0d:a9ef`, V225/C8, counter130/latch1. The next callback
+accepts NMI at `$0d:a9f0`, C22 and eventually clears the latch with the
+same counter. Native's probe reports `$0d:a9ef`, C22 on host54,762,
+but currently supplies no LinkOam continuation for this ordinary caller.
+`player_oam.rs::link_oam_after_equipment` draws both body entries
+atomically; the ROM is selecting the lower entry after upper stores.
+Retain its actual locals and committed body stores, then resume the
+remaining body/blink/water-grass/HUD suffix. Do not replay equipment,
+freeze all OAM, or add a host delay. Capture native WRAM at this window
+in the next candidate run; the current native WRAM dump ends54,745.
+
+### Previous native frontier — 54,741 (video)
 
 The native overworld upload return now probes its common main-loop suffix
 from the measured $4200 restore position. The remaining STA bus cycle,

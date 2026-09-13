@@ -111,6 +111,18 @@ pub(crate) struct HudInventoryResume {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HudUpdateInterruption {
+    BeforeHearts,
+    Inventory(HudInventoryInterruption),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HudUpdateResume {
+    BeforeHearts,
+    Inventory { inventory: HudInventoryResume, animate_hearts: bool },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SpritePreparationProgress {
     ExtendedOam(ExtendedOamPackingProgress),
     SourceWords(SpritePreparationSourceProgress),
@@ -1644,10 +1656,11 @@ pub(crate) enum GameWorkContinuation {
     FinishModule09LinkOamCallerReturn {
         caller: Module09ItemReceiptCallerReturn,
     },
+    /// NMI interrupted HUD work after the refill logic's resource updates.
+    FinishOverworldHudCallerReturn { hud: HudUpdateResume },
     /// NMI interrupted the main-loop suffix while it packed the extended OAM
     /// staging bytes. Resume sprite preparation before the next publishable
     /// NMI without replaying Module 7.
-    FinishOverworldHudCallerReturn { inventory: HudInventoryResume, animate_hearts: bool },
     FinishNmiPrepareSpritesCallerReturn {
         caller: NmiPrepareSpritesCpuCaller,
     },

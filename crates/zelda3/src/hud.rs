@@ -693,6 +693,11 @@ impl ZeldaState {
             // Hud_Update_IgnoreItemBox ($0D:FB94): the hearts block falls
             // through into the magic + inventory code and returns at
             // $0D:FCF9, so one scope covers all three.
+            if self.native_overworld_hud_interruption == Some(HudUpdateInterruption::BeforeHearts) {
+                self.native_overworld_hud_interruption = None;
+                self.schedule_interrupted_overworld_hud_update(HudUpdateResume::BeforeHearts);
+                return;
+            }
             let _scope = crate::cycle_ledger::routine(0x0d_fb94);
             self.hud_update_hearts();
             self.hud_update_magic();
@@ -2008,9 +2013,10 @@ impl ZeldaState {
     ) -> Result<[u8; 4], HudInventoryResume> {
         if self
             .native_overworld_hud_interruption
-            .is_some_and(|p| p.field == field)
+            .is_some_and(|p| matches!(p, HudUpdateInterruption::Inventory(i) if i.field == field))
         {
-            let interruption = self.native_overworld_hud_interruption.take().unwrap();
+            let Some(HudUpdateInterruption::Inventory(interruption)) =
+                self.native_overworld_hud_interruption.take() else { unreachable!() };
             assert!(resume.is_none(), "HUD conversion cannot begin twice");
             assert!(interruption.entry_master_cycles <= field.entry_cycles());
             crate::cycle_ledger::charge(
@@ -2043,6 +2049,22 @@ impl ZeldaState {
             self.hud_animate_heart_refill();
         }
         self.increment_hud_update_flag();
+    }
+
+    pub(super) fn resume_overworld_hud_update(&mut self, hud: HudUpdateResume) {
+        match hud {
+            HudUpdateResume::BeforeHearts => {
+                // Resource refill, item-box work, and the caller JSR already
+                // ran before NMI. Resume only the callee and its return flag.
+                let _scope = crate::cycle_ledger::routine(0x0d_fb94);
+                self.hud_update_hearts();
+                self.hud_update_magic();
+                assert!(self.hud_update_inventory_from(None).is_none());
+                self.increment_hud_update_flag();
+            }
+            HudUpdateResume::Inventory { inventory, animate_hearts } =>
+                self.resume_overworld_hud_inventory(inventory, animate_hearts),
+        }
     }
 
     fn hud_update_hearts_inner(&mut self, dst: usize, src: &[u16; 3], mut n: i32) {
@@ -2461,11 +2483,11 @@ mod tests {
                 [(field.entry_cycles(), 172), (field.entry_cycles() - 46, 0)]
             {
                 let mut state = ZeldaState::new();
-                state.native_overworld_hud_interruption = Some(HudInventoryInterruption {
+                state.native_overworld_hud_interruption = Some(HudUpdateInterruption::Inventory(HudInventoryInterruption {
                     field,
                     entry_master_cycles,
                     master_cycles,
-                });
+                }));
                 let start = crate::cycle_ledger::master();
                 let resume = state.hud_update_inventory_from(None).unwrap();
                 assert_eq!(resume.interruption.field, field);
@@ -2482,15 +2504,44 @@ mod tests {
     }
 
     #[test]
+    fn hud_hearts_entry_resume_preserves_refill_updates_without_repeating_them() {
+        let mut baseline = ZeldaState::new();
+        baseline.ram[0xf36c] = 24; // capacity
+        baseline.ram[0xf36d] = 16; // current health
+        baseline.sync_native_game_state_from_ram();
+        baseline.player_resources_mut().set_rupees_goal(5);
+        for i in 0..160 { baseline.hud_buffer_set(i, 0x5a5a); }
+        let mut split = baseline.clone();
+        let start = crate::cycle_ledger::master();
+        baseline.hud_refill_logic();
+        let expected_cycles = crate::cycle_ledger::master() - start;
+        split.rom_startup_timing = true;
+        split.native_overworld_hud_interruption = Some(HudUpdateInterruption::BeforeHearts);
+        let start = crate::cycle_ledger::master();
+        split.hud_refill_logic();
+        assert_eq!(split.game_state.inventory.player_resources.rupees_actual(), 1);
+        assert!((0..160).all(|i| split.hud_state().tile_word(i) == 0x5a5a));
+        assert_eq!(split.ram[0x16], 0, "HUD flag belongs to the callee return");
+        assert!(split.native_overworld_hud_interruption.is_none());
+        split.resume_overworld_hud_update(HudUpdateResume::BeforeHearts);
+        assert_eq!(crate::cycle_ledger::master() - start, expected_cycles);
+        assert_eq!(split.game_state.inventory.player_resources.rupees_actual(), 1,
+            "resuming hearts must not repeat the resource refill prefix");
+        assert_eq!(split.ram[0x16], baseline.ram[0x16]);
+        assert_eq!((0..160).map(|i| split.hud_state().tile_word(i)).collect::<Vec<_>>(),
+            (0..160).map(|i| baseline.hud_state().tile_word(i)).collect::<Vec<_>>());
+    }
+
+    #[test]
     fn resumed_arrow_conversion_does_not_rewrite_completed_rupee_digits() {
         let mut state = ZeldaState::new();
         state.hud_buffer_set(hudxy(15, 1), 0x5678);
         state.hud_buffer_set(hudxy(18, 0), 0x2468);
-        state.native_overworld_hud_interruption = Some(HudInventoryInterruption {
+        state.native_overworld_hud_interruption = Some(HudUpdateInterruption::Inventory(HudInventoryInterruption {
             field: HudInventoryField::Arrows,
             entry_master_cycles: 118,
             master_cycles: 172,
-        });
+        }));
         let resume = state.hud_update_inventory_from(None).unwrap();
         assert_eq!(state.hud_state().tile_word(hudxy(15, 1)), 0x5678);
         assert_eq!(state.hud_state().tile_word(hudxy(18, 0)), 0x2468);

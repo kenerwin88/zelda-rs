@@ -2623,7 +2623,7 @@ fn overworld_map_graphics_cpu_nmi_slices(state: &ZeldaState, input: u16) -> (u8,
     panic!("overworld map CPU timing did not return");
 }
 
-fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, nmi_is_trailing: bool) -> (Option<SpritePreparationProgress>, Option<HudInventoryInterruption>) {
+fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, nmi_is_trailing: bool) -> (Option<SpritePreparationProgress>, Option<HudUpdateInterruption>) {
     let phase = state.native_main_wait_cpu_phase.take();
     if let Some(phase) = phase.as_ref() {
         assert_eq!(phase.host, state.frame_ctr_dbg + u32::from(nmi_is_trailing),
@@ -2756,7 +2756,12 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
             return (pointer_tail_cycles.map(|master_cycles|
                 SpritePreparationProgress::PointerTail(SpritePreparationPointerProgress { master_cycles }))
                 .or_else(|| source_progress.map(SpritePreparationProgress::SourceWords))
-                .or_else(|| progress.map(SpritePreparationProgress::ExtendedOam)), hud_conversion);
+                .or_else(|| progress.map(SpritePreparationProgress::ExtendedOam)),
+                if run.pc() == 0x0d_fb94 {
+                    // JSR has transferred control to the callee, but none of
+                    // the hearts block's instructions have executed yet.
+                    Some(HudUpdateInterruption::BeforeHearts)
+                } else { hud_conversion.map(HudUpdateInterruption::Inventory) });
         }
     }
     panic!("overworld timing failed to reach the next NMI or caller return");
@@ -10162,7 +10167,7 @@ pub struct ZeldaState {
     #[serde(skip)]
     native_dungeon_song_upload_awaiting_return: bool,
     #[serde(skip)]
-    native_overworld_hud_interruption: Option<HudInventoryInterruption>,
+    native_overworld_hud_interruption: Option<HudUpdateInterruption>,
     #[serde(skip)]
     native_overworld_map_graphics_nmi_slices: Option<(u8, u8)>,
     #[serde(skip)]

@@ -1075,6 +1075,11 @@ impl ZeldaState {
         inventory: HudInventoryResume,
         animate_hearts: bool,
     ) {
+        self.schedule_interrupted_overworld_hud_update(
+            HudUpdateResume::Inventory { inventory, animate_hearts });
+    }
+
+    pub(super) fn schedule_interrupted_overworld_hud_update(&mut self, hud: HudUpdateResume) {
         assert!(self.rom_startup_timing());
         assert!(!matches!(
             self.original_timing_owner,
@@ -1087,8 +1092,7 @@ impl ZeldaState {
             .is_none());
         self.game_execution_scheduler.schedule_work(
             GameWorkContinuation::FinishOverworldHudCallerReturn {
-                inventory,
-                animate_hearts,
+                hud,
             },
             1,
         );
