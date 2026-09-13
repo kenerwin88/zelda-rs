@@ -6,6 +6,56 @@ annotating any routine.
 
 ## Current native frontier — 54,043 (audio)
 
+Native song-bank transfers now interleave CPU handshake accesses at SPC
+micro-operation boundaries even when their command timestamp is not yet
+measured. This separates hardware port visibility from caller timestamp
+ownership; receipt-driven transfers retain their existing scheduling.
+A regression test uses `MOVW $f4,YA` to verify that an earlier CPU ready poll
+cannot see the instruction's later output stores and publish a header early.
+All1,788 library tests pass,3 ignored (25.32s):
+`/tmp/native-upload-interleaving-lib-tests.log`.
+
+This fixes intermediate port visibility but does **not** fix the current
+audio divergence. `target/native-upload-interleaving` (65.28s) retains the
+same first mismatch and audio hash. Its receiver `(PC,A,X,Y)` alignment
+with source is unchanged, though some intermediate input-port counters
+are no longer published early. Binary SHA:
+`959e7139d50b8f1dd51647fae71076bc1efff4080fd65f31b783882bce6cb010`.
+
+The additional development-only `ZELDA3_DEBUG_SONG_UPLOAD` probe continues
+the isolated pre-dungeon CPU run from `$02:8350` to the conditional command
+store. `target/native-upload-command-probe` /
+`/tmp/native-upload-command-probe.log` (65.18s) reproduces the same exact
+prefix with this instrumentation; binary SHA:
+`b728f49ecc4e74b11f17e70e7a9d93faa1e60438b9e35d9804c97d346f152c1b`.
+The full library suite preceded this diagnostic-only addition.
+
+### Next: fix the command caller's CPU phase, without an offset
+
+At native entry host53,963, both probe endpoints are V248/C1200. They
+count57 loader NMI crossings and reach the instruction after the `$ff`
+store at V118/C246. The actual unpositioned transfer begins on audio
+host54,019 and currently queues its command at the audio window end.
+An earlier dungeon upload is also covered by the generic probe:
+entry host11,481 V248/C1188,58 crossings, command-after V197/C336,
+unpositioned audio host11,538. State host and audio host differ by one.
+
+Source `target/native-upload-caller-source` /
+`/tmp/native-upload-caller-source.jsonl` (raw run +53,500) proves:
+comparison53,962 `$00:8051` is V248/C1198; comparison54,019
+`$02:8350` is V117/C900, `$02:9bff` V118/C210, and following
+`$02:9c02` V118/C240. Thus the native probe is already2 master cycles
+late at entry and6 late after the command instruction. The actual command
+bus access is C234,6 before the following instruction. Do not subtract
+12 from the probe as a correction; diagnose the caller/bus phase.
+The source's first ready reads are V118/C660,666, then718,724:
+the dungeon path takes386 CPU master cycles plus the crossed40-cycle
+WRAM refresh from command to first read. It must not reuse the overworld
+caller's364-cycle path. The measured command is not yet wired into native
+dungeon playback. No full receipt run was repeated;100k native remains pending.
+
+### Previous closing-iris fix
+
 Closing-iris continuations retain their selected phase across table
 completion, rather than replacing a measured CPU phase with a geometry
 fallback. The native CPU plan also retains a second NMI inside Link's axis
@@ -45,7 +95,7 @@ main wait `$00:8034` V225/C4. The next field begins landing iris work.
 Trace the final upload handshake and native SPC scheduling before changing
 any audio marker.
 
-Additional upload evidence (no runtime patch):
+Initial upload evidence (before the interleaving fix above):
 `target/native-54043-source-ports`, `/tmp/native-54043-source-ports.jsonl`
 captures CPU/APU accesses from the valid53,500 pair. The actual `$ff`
 command write is comparison54,019, PC`$02:9c02` (following the store),
@@ -55,7 +105,7 @@ there is no return NMI in that comparison field. Therefore the previous
 overworld upload's missing return-NMI fix is not the explanation here.
 
 `target/native-54043-upload-transport` reproduces the same first mismatch
-(64.70s), with no timed dungeon command logged. Bank1 uses
+(64.70s), with no timed dungeon command logged. At that revision, bank1 used
 `begin_song_bank_transfer(..., None)`, whereas bank0's native path supplies
 a measured command position and permits CPU/APU handshake interaction at
 SPC micro-operation boundaries. The pre-dungeon timing probe stops at

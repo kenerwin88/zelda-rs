@@ -3020,6 +3020,28 @@ fn pre_dungeon_load_nmi_slices_at(state: &ZeldaState, entry: CpuRasterPosition) 
                 eprintln!("pre_dungeon_cpu_schedule host={} entry={entry:?} nmis={nmis} return={:?}",
                     state.frame_ctr_dbg, budget.raster_position());
             }
+            if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+                // Continue only the isolated development probe through the
+                // conditional upload caller. No probe writes enter gameplay.
+                let mut tail_nmis = 0;
+                for _ in 0..100_000 {
+                    if matches!(run.pc(), 0x00_8034 | 0x00_8036) {
+                        break;
+                    }
+                    let command = run.pc() == 0x02_9bff;
+                    let (v, h) = budget.raster_position().coordinates();
+                    run.set_raster_position(v, h);
+                    if advance_rom_cpu_step(&mut run, &mut budget).reached_boundary().is_some() {
+                        tail_nmis += 1;
+                        advance_rom_cpu_through_nmi(&mut run, &mut budget);
+                    }
+                    if command {
+                        eprintln!("song_upload dungeon_probe entry_host={} entry={entry:?} load_nmis={nmis} tail_nmis={tail_nmis} command_after={:?}",
+                            state.frame_ctr_dbg, budget.raster_position());
+                        break;
+                    }
+                }
+            }
             return nmis;
         }
         let (v, h) = budget.raster_position().coordinates();

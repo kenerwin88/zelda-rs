@@ -1235,7 +1235,8 @@ impl ZeldaState {
                 clock.begin_song_bank_transfer_at(bank_id, stream, Some(position));
                 self.native_overworld_song_upload = Some(NativeOverworldSongUpload::AwaitReturn);
             } else {
-                clock.begin_song_bank_transfer(bank_id, stream);
+                clock.begin_song_bank_transfer(bank_id, stream,
+                    !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live));
             }
             true
         } else {

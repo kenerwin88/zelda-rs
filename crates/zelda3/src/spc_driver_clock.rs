@@ -177,6 +177,8 @@ struct SongBankHostTransfer {
     completed_port_clear_master_clock: Option<u64>,
     #[serde(skip)]
     timed_command: bool,
+    #[serde(skip)]
+    interleave_host_cpu: bool,
 }
 
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
@@ -237,6 +239,7 @@ impl SongBankHostTransfer {
             next_host_access_master_clock: None,
             completed_port_clear_master_clock: None,
             timed_command: false,
+            interleave_host_cpu: false,
         }
     }
 
@@ -710,7 +713,7 @@ impl AbsoluteDspEventClock {
             }
             let mut transfer_completed = false;
             if execution_cycle >= self.apu_cycle_origin {
-                if self.song_bank_transfer.as_ref().is_some_and(|transfer| transfer.timed_command) {
+                if self.song_bank_transfer.as_ref().is_some_and(|transfer| transfer.interleave_host_cpu) {
                     let origin = self.apu_cycle_origin;
                     let transfer = self.song_bank_transfer.as_mut().unwrap();
                     self.apu.run_instruction_with_host_ports_without_dsp(|local, input, output| {
@@ -810,8 +813,12 @@ impl AbsoluteDspEventClock {
         self.pending_main_cpu_port_writes.push((port, value));
     }
 
-    pub(crate) fn begin_song_bank_transfer(&mut self, bank_id: u8, stream: &[u8]) {
+    pub(crate) fn begin_song_bank_transfer(&mut self, bank_id: u8, stream: &[u8], interleave_host_cpu: bool) {
         self.begin_song_bank_transfer_at(bank_id, stream, None);
+        // CPU reads can observe an SPC store before that instruction returns.
+        // This hardware ordering is independent of whether the main caller
+        // has supplied an exact raster timestamp for its initial command.
+        self.song_bank_transfer.as_mut().unwrap().interleave_host_cpu = interleave_host_cpu;
     }
 
     pub(crate) fn begin_song_bank_transfer_at(
@@ -822,6 +829,7 @@ impl AbsoluteDspEventClock {
         self.completed_song_bank_port_clear_master_clock = None;
         if let Some(position) = position {
             self.song_bank_transfer.as_mut().unwrap().timed_command = true;
+            self.song_bank_transfer.as_mut().unwrap().interleave_host_cpu = true;
             let (v, h) = position.coordinates();
             let field = self.host_frame_index.saturating_sub(u64::from(v >= 225));
             let master = CpuFieldTiming::NON_INTERLACE_EVEN.master_cycles_at(field, position);
@@ -835,6 +843,10 @@ impl AbsoluteDspEventClock {
                     self.host_frame_index, self.absolute_apu_cycle);
             }
         } else {
+            if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+                eprintln!("song_upload unpositioned_command host={} bank={bank_id} audio={}",
+                    self.host_frame_index, self.absolute_apu_cycle);
+            }
             self.queue_main_cpu_port_write(0, 0xff);
         }
     }

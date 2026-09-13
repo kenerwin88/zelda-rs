@@ -26,6 +26,28 @@ fn clock_at_first_host_boundary() -> AbsoluteDspEventClock {
 }
 
 #[test]
+fn native_upload_polls_cannot_observe_future_stores_in_the_same_spc_instruction() {
+    let mut clock = clock_at_first_host_boundary();
+    // MOVW $f4,YA publishes the receiver-ready bytes separately, then BRA
+    // keeps the SPC idle. The CPU's first low-port read precedes those stores
+    // and must fail, even though both bytes exist when MOVW returns.
+    clock.apu.ram[0x2000..0x2004].copy_from_slice(&[0xda, 0xf4, 0x2f, 0xfe]);
+    clock.apu.spc.a = 0xaa;
+    clock.apu.spc.y = 0xbb;
+    clock.apu.in_ports[2] = 0x77;
+    clock.begin_song_bank_transfer(1, &[0, 0, 0, 8], true);
+    clock.pending_main_cpu_port_writes.clear();
+    let start = clock.absolute_apu_cycle;
+    let transfer = clock.song_bank_transfer.as_mut().unwrap();
+    transfer.command_pending = false;
+    transfer.next_host_access_master_clock = Some(apu_cycle_to_snes_master_clock(start + 1));
+    clock.advance(EngineAudioCommandBatch::default(), 0, 0);
+    assert_eq!(clock.apu.out_ports[..2], [0xaa, 0xbb]);
+    assert_eq!(clock.apu.in_ports[2], 0x77,
+        "a prematurely successful ready poll published the block header early");
+}
+
+#[test]
 fn upload_command_uses_its_cpu_position_instead_of_the_audio_window_end() {
     for (position, field) in [
         (snes::CpuRasterPosition::new(31, 900), 1),
