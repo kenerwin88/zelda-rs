@@ -59,6 +59,57 @@ ownership boundaries before interpreting a later OAM interruption as a new
 missing hold. Earlier failures are acceptable evidence when source fidelity
 improves; exact coverage alone must never justify a timing shortcut.
 
+### Shared source instruction execution and optimized completion ownership
+
+`crates/snes/src/cpu_synchronous_executor/source_cpu/instruction_set.rs` now
+owns the37 source opcode/address/stack/ALU methods behind a private
+`SourceCpuInstructionBus` interface. The existing cold executor implements
+that interface through its original immediate/getset/AddCycles methods.
+Its complete CPU/APU/timeline seed, event draining, poison state and
+checkpoint validation remain with that owner. No raw shadow seed API was
+added. `target/native-source-instruction-extraction/mechanical-comparison.json`
+compares all37 methods to the prior code after only accessor/format
+normalization, with no remaining differences.
+
+A separate test-only bus executes original `$0d:ba71..ba7e` with the recorded
+comparison56,389 register/RAM inputs. The shared instructions sample
+`$2137` atC1192, `$213c` atC1222, and write RNG$32 atC1308, endingC1316.
+The expected RNG is asserted, never supplied to the computation. This is
+a scoped low-counter source witness, not a runtime PPU seed or a complete
+counter model. A second test starts an absolute read atC522: the non-draining
+opcode fetch adds8, the word operand transaction adds16 and observes refresh
+atC546; the register is sampled atC586 after the40-clock refresh. Together
+these exercise a bus owner independent of the exact CPU/APU constructor.
+
+This validation exposed a real optimized-build ownership defect, also
+reproduced on unchanged baseline38143608. Seven successful completion
+retirements were hidden inside `debug_assert_eq!`; release/parity builds
+therefore left `pending_completion` populated and rejected the following
+instruction with `PendingCompletionMustResume { completion: Write }`.
+Those retirements now use unconditional assertions, so byte/word reads and
+writes, APUI writes and completed general-DMA resumptions consume their
+completion exactly once in every build profile. Failed event drains still
+retain their existing completion for explicit resumption. A consecutive
+LDA/STA/REP/SEP regression checks byte and word ownership, all writes, final
+registers, and the exact198..408 CPU-clock interval.
+
+Validation: all404 SNES library tests and the integration test pass,5 local
+ROM tests ignored by the ordinary suite:
+`/tmp/native-source-completion-all-tests.log`. The local-ROM
+`local_zelda_rom_matches_every_timing_transaction_through_final_ipl_handoff`
+was then run explicitly and passes its recorded3.2M transaction comparison:
+`/tmp/native-source-completion-ipl-proof.log`. Its pre-fix baseline failure
+is `/tmp/native-source-instructions-ipl-baseline.log`. No fixtures or ROM
+bytes were regenerated, and the temporary ROM symlinks were removed.
+
+The native timing probe still uses the legacy aggregate interpreter. Its
+56,390 video frontier has not been remeasured or improved by this extraction;
+no native or receipt A/V run was spent on this isolated source-executor work.
+Next implement the timing-probe bus owner against this shared instruction
+layer, with explicit physical event/counter state, retaining all seed and
+unsupported-hardware boundaries described below. Do not enable the incomplete
+counter model merely because the isolated RNG witness now matches.
+
 ### Counter audit: a bus-clock fix also needs a valid hardware seed
 
 `target/native-counter-contract/{probe.rs,probe.log,manifest.json}` records
