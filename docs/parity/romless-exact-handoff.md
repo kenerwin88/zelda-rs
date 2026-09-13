@@ -45,6 +45,35 @@ main wait `$00:8034` V225/C4. The next field begins landing iris work.
 Trace the final upload handshake and native SPC scheduling before changing
 any audio marker.
 
+Additional upload evidence (no runtime patch):
+`target/native-54043-source-ports`, `/tmp/native-54043-source-ports.jsonl`
+captures CPU/APU accesses from the valid53,500 pair. The actual `$ff`
+command write is comparison54,019, PC`$02:9c02` (following the store),
+V118/C234. Do not confuse later `$ff` transfer counters at PC`$00:88be`
+with that command. Final clears in54,043 are V1/C924,954,984,1014;
+there is no return NMI in that comparison field. Therefore the previous
+overworld upload's missing return-NMI fix is not the explanation here.
+
+`target/native-54043-upload-transport` reproduces the same first mismatch
+(64.70s), with no timed dungeon command logged. Bank1 uses
+`begin_song_bank_transfer(..., None)`, whereas bank0's native path supplies
+a measured command position and permits CPU/APU handshake interaction at
+SPC micro-operation boundaries. The pre-dungeon timing probe stops at
+`$02:8350`; its caller currently schedules the subsequent transfer with
+`PRE_DUNGEON_SONG_BANK_TRANSFER_NMI_SLICES` (22). Replace missing timing
+ownership using the caller/receiver protocol, not by adjusting this count.
+
+Instruction evidence: `target/native-54043-upload-instructions` (65.25s)
+and `target/native-54043-source-instructions`, both with DSP trace JSON for
+54,042 and54,043. At54,042, native instruction0 matches source instruction9
+for4,258 consecutive `(PC,A,X,Y)` tuples. At54,043, native instruction0
+matches source instruction7 for1,243 tuples; driver return PC`$0a16`
+occurs at native index626 versus source633. Relative to each trace's first
+instruction, that return is2,500 versus2,528 APU cycles. These are relative
+trace measurements, not proof of an absolute28-cycle clock offset. Establish
+the command boundary and shared clock origin before changing scheduling.
+No audio compensation, frame exception, or speculative runtime fix was added.
+
 The attempted checkpoint at54,000 failed because the loader still held an
 unserialized ROM-call continuation. Do not use `target/native-source-pair-54000`.
 The valid source checkpoint remains `target/native-source-pair-53500`.
