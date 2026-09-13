@@ -772,11 +772,29 @@ impl Snes9xColdCpuExecutor {
         Ok(opcode)
     }
 
+    fn validate_pcbase_operand(&self, width: u8) -> Result<(), SourceCpuError> {
+        let address = self.program_address();
+        // cpuexec.cpp switches to S9xOpcodesSlow at the bank-end mapping
+        // boundary. Do not silently execute a direct-PCBase operand there.
+        if (address as u16) < 0x8000 || u32::from(address as u16) + u32::from(width) >= 0x10000 {
+            return Err(SourceCpuError::UnsupportedBusMap { address });
+        }
+        Ok(())
+    }
+
+    fn operand_master_cycles(&self, width: u8) -> u8 {
+        // cpuaddr.h:Immediate8/16/AbsoluteLong use the active PCBase
+        // MemSpeed, including six-clock FastROM fetches in high banks.
+        self.active_trace.as_ref().and_then(|trace| trace.memory_speed)
+            .expect("source operand follows its opcode fetch") * width
+    }
+
     fn immediate8(
         &mut self,
         update_open_bus: bool,
         accesses: &mut Vec<SourceCpuBusAccess>,
     ) -> Result<u8, SourceCpuError> {
+        self.validate_pcbase_operand(1)?;
         let address = self.program_address();
         let timestamp = self.machine.timestamp();
         let value = self.machine.snes.cart.read(
@@ -784,7 +802,8 @@ impl Snes9xColdCpuExecutor {
             address as u16,
             self.machine.snes.open_bus,
         );
-        self.add_cycles(8)?;
+        let cycles = self.operand_master_cycles(1);
+        self.add_cycles(u32::from(cycles))?;
         self.machine.snes.cpu.pc = self.machine.snes.cpu.pc.wrapping_add(1);
         if update_open_bus {
             self.machine.snes.open_bus = value;
@@ -792,7 +811,7 @@ impl Snes9xColdCpuExecutor {
         accesses.push(SourceCpuBusAccess {
             address,
             timestamp,
-            charged_master_cycles: 8,
+            charged_master_cycles: cycles,
             kind: SourceCpuBusAccessKind::Read {
                 value: u16::from(value),
                 width: 1,
@@ -806,6 +825,7 @@ impl Snes9xColdCpuExecutor {
         update_open_bus: bool,
         accesses: &mut Vec<SourceCpuBusAccess>,
     ) -> Result<u16, SourceCpuError> {
+        self.validate_pcbase_operand(2)?;
         let address = self.program_address();
         let timestamp = self.machine.timestamp();
         let bank = (address >> 16) as u8;
@@ -820,7 +840,8 @@ impl Snes9xColdCpuExecutor {
             self.machine.snes.open_bus,
         );
         let value = u16::from_le_bytes([low, high]);
-        self.add_cycles(16)?;
+        let cycles = self.operand_master_cycles(2);
+        self.add_cycles(u32::from(cycles))?;
         self.machine.snes.cpu.pc = self.machine.snes.cpu.pc.wrapping_add(2);
         if update_open_bus {
             self.machine.snes.open_bus = high;
@@ -828,7 +849,7 @@ impl Snes9xColdCpuExecutor {
         accesses.push(SourceCpuBusAccess {
             address,
             timestamp,
-            charged_master_cycles: 16,
+            charged_master_cycles: cycles,
             kind: SourceCpuBusAccessKind::Read { value, width: 2 },
         });
         Ok(value)
@@ -853,6 +874,7 @@ impl Snes9xColdCpuExecutor {
         update_open_bus: bool,
         accesses: &mut Vec<SourceCpuBusAccess>,
     ) -> Result<u32, SourceCpuError> {
+        self.validate_pcbase_operand(3)?;
         let address = self.program_address();
         let timestamp = self.machine.timestamp();
         let bank = (address >> 16) as u8;
@@ -875,7 +897,8 @@ impl Snes9xColdCpuExecutor {
         let value = u32::from(low) | (u32::from(high) << 8) | (u32::from(data_bank) << 16);
         // cpuaddr.h:AbsoluteLong uses one AddCycles transaction for all three
         // already-read direct PCBase bytes.
-        self.add_cycles(24)?;
+        let cycles = self.operand_master_cycles(3);
+        self.add_cycles(u32::from(cycles))?;
         self.machine.snes.cpu.pc = self.machine.snes.cpu.pc.wrapping_add(3);
         if update_open_bus {
             self.machine.snes.open_bus = data_bank;
@@ -883,7 +906,7 @@ impl Snes9xColdCpuExecutor {
         accesses.push(SourceCpuBusAccess {
             address,
             timestamp,
-            charged_master_cycles: 24,
+            charged_master_cycles: cycles,
             kind: SourceCpuBusAccessKind::ReadLong { value },
         });
         Ok(value)
@@ -1992,6 +2015,21 @@ mod tests {
                 assert_eq!(new, old, "unexpected transaction write at ${address:05x}");
             }
         }
+    }
+
+    #[test]
+    fn fastrom_immediate_transactions_follow_source_memspeed() {
+        let rom = synthetic_rom(&[0xa9, 0x34, 0x12]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.snes.fast_mem = true;
+        cpu.machine.snes.cpu.k = 0x80;
+        cpu.machine.snes.cpu.e = false;
+        cpu.machine.snes.cpu.mf = false;
+        let step = cpu.step().unwrap();
+        assert_eq!(step.transactions.iter().map(|t| t.duration_master_cycles).collect::<Vec<_>>(), vec![6, 12]);
+        assert_eq!(step.ended_at.master_cycles() - step.started_at.master_cycles(), 18);
+        assert_eq!(cpu.machine.snes.cpu.a, 0x1234);
+        assert_eq!(cpu.machine.snes.open_bus, 0x12);
     }
 
     #[test]
