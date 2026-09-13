@@ -4,7 +4,72 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 56,390 (video)
+## Current native frontier — 56,417 (video)
+
+`cba205c8` gave the native lane its first main-loop interruption owner for the
+ordinary overworld, moving the frontier 56,390 -> 56,417 (audio was already
+exact at both). Binary SHA
+`9f4938f6d9fdf97ebefa363e2785bce18d1cf7c56dedd61674c0e27a605dea3b`,
+`target/native-linkoam-confirm` (70.76s): exact video+audio 0..56,416.
+
+### The method that found it (reuse this — it is a ~2 minute loop)
+
+1. Dump both lanes' presented state at the failing engine host and diff it:
+   `ZELDA3_DEBUG_PRESENTED_FRAMES=<frame+1> ZELDA3_DEBUG_PRESENTED_DIR=<dir>`
+   once with `ZELDA3_CACHED_AV_NATIVE_TIMING=1` and once without. At 56,390 BG
+   VRAM and CGRAM were identical while the snapshot RAM differed in 109 bytes
+   that were all one step apart — frame counter `$ae` vs `$ad`, Link, camera,
+   BG scroll. That is "native ran an iteration the source held", not a
+   rendering or beam-counter bug, and it takes two 70s runs to establish.
+2. Read the source's disposition for those hosts with
+   `ZELDA3_DEBUG_INSTALL_RECEIPTS=<lo>-<hi>` on the receipt lane
+   (`--ignore-video`, ~43s). Host 56,389 was
+   `MainLoopInterrupted(LinkOam)` and 56,390 `CallStackContinued`.
+3. Read what the native ROM-CPU measurement saw for the same hosts with
+   `ZELDA3_DEBUG_OVERWORLD_CPU_PACKING=1` on the native lane (~52s). It had
+   already reached the NMI boundary at `$0D:AAB9` and thrown it away.
+
+Note the two lanes' host labels can differ by one: the packing trace prints
+`state.frame_ctr_dbg`, which a trailing-NMI host leaves one below the
+receipt's `host_call`.
+
+### Next native frontier — 56,417: a cycle-cost question, not a missing class
+
+Host 56,416's source vector is
+`[NmiAccepted(Open), NmiHandlerCompleted, JoypadPublication, IterationStarted,
+SpriteMainReturned]` — no `MainLoopCommonSuffixCompleted`, no interruption
+receipt and no trailing acceptance — and 56,417 is
+`[NmiAccepted(LatchHeld), NmiHandlerCompleted, CallStackContinued,
+MainLoopCommonSuffixCompleted, NmiAccepted(Open)]`. So the source's main loop
+returned the host after `$00:8056 JSL Module_MainRouting` came back but before
+`$00:805A JSR NMI_PrepareSprites` / `$00:805D STZ $12` finished, and the held
+NMI was accepted at the start of the next host.
+
+Pinned `cpuexec.cpp:S9xMainLoop` explains the shape: each loop iteration takes
+a due NMI first (`Timings.NMITriggerPos <= CPU.Cycles`, 12 master cycles after
+VBlank publication) and only then breaks on `SCAN_KEYS_FLAG`, which the V225
+HMax event set. An instruction boundary landing in V225 `[C0, C12)` therefore
+returns the host with the NMI still pending; a boundary at `C12` or later
+accepts it first and returns with the handler entered.
+
+**But host 56,416 never reaches that window in the native measurement.** An
+instrumented run over the first 56k hosts found the window entered at only 17
+hosts, eleven of them below the current frontier where native is already
+exact — and 56,416 is not among them. The native iteration therefore *finishes
+earlier* than the source's, which crossed V225. So this is not a missing
+boundary class to add to `overworld_main_loop_packing_interruption`; it is a
+cycle-cost or entry-phase difference in the measured iteration, and modelling
+the `[C0, C12)` break without first explaining that difference would be a
+guess. Do not add the window check on its own — it would also re-classify the
+eleven already-exact hosts.
+
+The throwaway probe that produced this was one block after
+`advance_rom_cpu_step_measured` in `overworld_main_loop_packing_interruption`,
+printing `run.pc()`, `budget.raster_position()` and `run.is_complete()`
+whenever the position is V225 with `master_cycle <
+SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES`. It is not in the tree.
+
+## Previous native frontier — 56,390 (video): dialogue/return timing
 
 The native dialogue/return timing batch restores exact A/V through56,389;
 56,390 still fails video with audio exact. These are source timing and
@@ -471,7 +536,7 @@ ownership before equating native `host` with source comparison frame.
 The independently confirmed beam-counter bus-sampling defect described below
 also remains open. It needs actual access-time sampling, not RNG substitution.
 
-## Previous native frontier — 56,390 (video)
+## Previous native frontier — 56,390 (video): LinkOam body drawing
 
 LinkOam's body drawing now has a native continuation between upper-entry
 stores and lower-entry selection. The CPU probe recognizes the four ASL
