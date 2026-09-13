@@ -33,21 +33,52 @@ routine specifically, and the reason does not generalise:**
 - The re-run derives its count from unmutated health capacity/current health,
   so the source's partial pass is a subset of the same words.
 
-### Next native frontier — 56,419: the inventory tail, and why it needs more
+### Next native frontier — 56,419: the inventory tail
 
-The boundary is `$0D:FCEA` (`STA $7EC764`) in the inventory tail, with
-`$0D:FDB8`, `$0D:F124`, `$0D:F105` and `$06:F80F` following close behind.
+Native's boundary is `$0D:FCEA` at V225/C14; the source's NMI for that frame is
+V225/C12. `$0D:FDB8`, `$0D:F124`, `$0D:F105` and `$06:F80F` follow close behind.
+`$06:F80F` is outside the suffix's LinkOam/HUD chain entirely
+(`link_oam_caller=None`) and needs its own owner.
 
-**Do not extend `InsideHearts` to cover it.** `hud_update_inventory_from`
-writes game state — `set_inventory_item(0, …)` for the bow slot — not only HUD
-tile words, so re-running the block whole would defer a real WRAM write by a
-host. That is exactly why the inventory path already carries the finer
-`HudInventoryInterruption { field, entry_master_cycles, master_cycles }` and
-`HudInventoryResume`. The right fix extends that grammar to the tail after the
-Keys field, not the hearts resume.
+**Do not extend `InsideHearts` to cover the inventory.**
+`hud_update_inventory_from` writes game state — `set_inventory_item(0, …)` for
+the bow slot — not only HUD tile words, so re-running the block whole would
+defer a real WRAM write by a host. That is why the inventory path already
+carries `HudInventoryInterruption { field, entry_master_cycles, master_cycles }`
+and `HudInventoryResume`.
 
-`$06:F80F` is different again — `link_oam_caller=None`, so it is outside the
-suffix's LinkOam/HUD chain entirely and needs its own owner.
+But the existing grammar does not fit either: it models "suspended *inside* a
+field's decimal conversion", consumed in `hud_inventory_decimal` before any of
+that field's digits are written. `$0D:FCEA` is **after** all four conversions,
+in the block's tail. Forcing it into `field: Keys` would mean synthesizing
+`entry_master_cycles`/`master_cycles` for a conversion that actually completed
+— a guessed offset.
+
+The tail itself is well behaved. `$0D:FCE0-FCF9` is
+`REP #$30 : LDA $05 : AND #$00FF : ORA #$2400 : STA $7EC764 : CMP #$247F :
+BNE : STA $7EC724 : SEP #$30 : RTS` — `$7EC764` is `hudxy(18,1)` and `$7EC724`
+is `hudxy(18,0)`, both HUD tile words, derived from the Keys digit and
+`rupees_actual()`. No game state. So the needed shape is:
+
+1. `HudUpdateInterruption::InventoryTail`, detected for a boundary in
+   `$0D:FCE0..$0D:FCF9` with the same `$02:A4CC` `Hud_RefillLogic` caller
+   discriminator `InsideHearts` uses.
+2. `hud_update_inventory_from` returning a third outcome rather than
+   `Option<HudInventoryResume>` — e.g. `enum { Completed, Conversion(..), Tail }`
+   — with the tail extracted into its own method taking the computed `key`
+   word, which is exactly the `$05`-derived value the source has live at the
+   boundary.
+3. `HudUpdateResume::InventoryTail { key }` running only that method.
+
+**The open sub-problem is the cycle split.** The tail is currently charged as
+one `190 + (48|6) + 64` block for `$fce0-fcf9`. Suspending at `$FCEA` has to
+split that 190 at the `STA $7EC764`, which means pricing
+`REP #$30 : LDA $05 : AND #$00FF : ORA #$2400` from their own access costs and
+proving the two halves still sum to 190. Do that with
+`docs/parity/cycle-ledger-recipe.md` before writing the continuation; charging
+the whole 190 on the resume (or all of it before) would be a guessed offset of
+exactly the kind this program refuses. This is why the fix was not attempted
+alongside `fa1972e3`.
 
 ## Previous native frontier — 56,417 (video)
 
