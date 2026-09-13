@@ -122,6 +122,28 @@ Neither is a valid replacement for the source CPU phase and retained SMP
 clock/remainder at an arbitrary bus access. Do not tune these constants;
 prove and preserve the actual synchronization state when integrating APUI.
 
+`apu::ApuHostPortProbe` now supplies retained native SPC instruction ownership
+for that future adapter. Its constructor consumes an explicit completed
+legacy APU instruction boundary, rejecting pending legacy cycles, another
+coroutine, and an exact DSP owner. It preserves the actual RAM, timers,
+ports and scheduled events, with no reset or CPU/SMP clock seed. Each step
+uses the existing source pseudo-op executor. A suspended or poisoned probe
+cannot return its machine to legacy instruction execution; refusal retains
+the entire probe. CPU port publication is explicit and does not advance time.
+This type is deliberately not serializable and is not a cold checkpoint.
+
+`/tmp/native-apu-port-probe-tests.log`:417 SNES tests pass,6 ignored, plus
+integration. The regression uses the pinned IPL fixture: suspend at2398
+before AA, refuse a partial machine handoff, then resume AA/BB at the source
+store cycles. Scheduled input events survive, and the final RAM, ports,
+PC, cycle count and instruction duration agree with complete-instruction
+execution. The existing runtime callers are unchanged; this new capability
+still needs a proven CPU-to-SMP synchronization owner before native integration.
+
+The queue-fix A/V binary above predates this isolated API addition. No A/V
+run is claimed for a binary rebuilt with this probe; runtime callers have
+not been switched to it.
+
 Counter state explicitly owns WRIO, PPU.OpenBus1/2, latchedH/V, read flips,
 and the STAT78 latch flag. The reset factory follows `S9xSoftResetPPU`
 (WRIO=$ff); it must not be used as a guessed later-frame seed. Source read

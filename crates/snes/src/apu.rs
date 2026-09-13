@@ -10,6 +10,9 @@ use crate::snes9x_dsp_phase::{
     Snes9xDspCheckpointError, Snes9xDspPhaseMachine, Snes9xDspPhaseState,
 };
 
+mod host_port_probe;
+pub use host_port_probe::{ApuHostPortProbe, ApuHostPortProbeError};
+
 const BOOT_ROM: [u8; 0x40] = [
     0xcd, 0xef, 0xbd, 0xe8, 0x00, 0xc6, 0x1d, 0xd0, 0xfc, 0x8f, 0xaa, 0xf4, 0x8f, 0xbb, 0xf5, 0x78,
     0xcc, 0xf4, 0xd0, 0xfb, 0x2f, 0x19, 0xeb, 0xf4, 0xd0, 0xfc, 0x7e, 0xf4, 0xd0, 0x0b, 0xe4, 0xf5,
@@ -3743,6 +3746,75 @@ mod tests {
         );
         assert_eq!(apu.cycles, bb_cycle);
         assert_eq!(apu.out_ports[..2], [0xaa, 0xbb]);
+    }
+
+    #[test]
+    fn host_port_probe_retains_the_pinned_ipl_instruction_across_a_cpu_poll() {
+        let fixture = pinned_snes9x_bootstrap_fixture();
+        let expected = smp_output_port_writes(&fixture[2]);
+        let mut apu = ApuState::new();
+        apu.reset();
+        apu.spc.sp = 0xef;
+        apu.spc.z = true;
+        while apu.spc.pc != 0xffc9 {
+            apu.run_instruction_with_host_ports_without_dsp(|_, _, _| {}).unwrap();
+        }
+        apu.schedule_input_port_event(2401, 2, 0x55);
+        let mut complete = apu.clone();
+        let start = apu.cycles;
+        let mut probe = ApuHostPortProbe::new(apu).unwrap();
+        assert_eq!(probe.machine().cycles, start, "handoff must not reset the clock");
+        assert_eq!(probe.machine().spc.pc, 0xffc9);
+        while probe.machine().cycles < 2398 { probe.step().unwrap(); }
+        assert_eq!(probe.machine().cycles, 2398);
+        assert_eq!(probe.machine().out_ports[0], 0, "the AA store is still in the future");
+        assert!(!probe.at_instruction_boundary());
+        assert!(matches!(ApuHostPortProbe::new(probe.machine().clone()),
+            Err(ApuHostPortProbeError::InvalidBoundary)));
+        probe = match probe.into_machine() {
+            Err(retained) => retained,
+            Ok(_) => panic!("partial SPC instruction escaped into a legacy machine"),
+        };
+        probe.write_cpu_port(3, 0x66).unwrap();
+        let mut observed = Vec::new();
+        let mut last = [0; 4];
+        while probe.machine().out_ports[1] != 0xbb {
+            probe.step().unwrap();
+            let machine = probe.machine();
+            for port in 0..2 {
+                if machine.out_ports[port] != last[port] {
+                    observed.push((machine.cycles, port, machine.out_ports[port]));
+                }
+            }
+            last = machine.out_ports;
+        }
+        assert_eq!(observed, vec![(expected[0].absolute_cycle, 0, 0xaa),
+            (expected[1].absolute_cycle, 1, 0xbb)]);
+        assert!(probe.at_instruction_boundary());
+        let resumed = probe.into_machine().unwrap_or_else(|_| panic!("completed instruction retained"));
+        complete.in_ports[3] = 0x66;
+        for _ in 0..2 {
+            complete.run_instruction_with_host_ports_without_dsp(|_, _, _| {}).unwrap();
+        }
+        assert_eq!(resumed.in_ports, complete.in_ports);
+        assert_eq!(resumed.in_ports[2..4], [0x55, 0x66]);
+        assert_eq!(resumed.out_ports, complete.out_ports);
+        assert_eq!((resumed.cycles, resumed.spc.pc, resumed.spc.cycles_used),
+            (complete.cycles, complete.spc.pc, complete.spc.cycles_used));
+        for (address, (&actual, &expected)) in resumed.ram.iter().zip(&complete.ram).enumerate() {
+            assert_eq!(actual, expected, "SPC RAM ${address:04x}");
+        }
+        assert!(!resumed.smp_coroutine.is_enabled());
+    }
+
+    #[test]
+    fn host_port_probe_rejects_unfinished_legacy_cycles_and_exact_dsp_owners() {
+        let mut apu = ApuState::new();
+        apu.reset();
+        assert!(matches!(ApuHostPortProbe::new(apu), Err(ApuHostPortProbeError::InvalidBoundary)));
+        let mut exact = ApuState::new();
+        exact.reset_snes9x_coroutine();
+        assert!(matches!(ApuHostPortProbe::new(exact), Err(ApuHostPortProbeError::InvalidBoundary)));
     }
 
     #[test]
