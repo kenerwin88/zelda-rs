@@ -204,7 +204,7 @@ impl CpuSynchronousMachine {
         self.pending_completion = Some(CpuSynchronousCompletion::Write);
         let access_master_cycles = u32::from(self.snes.hardware_access_time(full_adr));
         self.drain_add_cycles_after_committed_semantic(access_master_cycles)?;
-        debug_assert_eq!(
+        assert_eq!(
             self.take_pending_completion(),
             CpuSynchronousCompletion::Write
         );
@@ -223,7 +223,7 @@ impl CpuSynchronousMachine {
         if self.pending_general_dma.is_some() {
             self.run_pending_general_dma()?;
             debug_assert!(self.pending_general_dma.is_none());
-            debug_assert_eq!(
+            assert_eq!(
                 self.take_pending_completion(),
                 CpuSynchronousCompletion::GeneralDmaWrite
             );
@@ -527,6 +527,8 @@ impl CpuSynchronousMachine {
             .advance_synchronous_pcbase_opcode_fetch(master_cycles);
     }
 
+    // Retirement is a state transition, not debug-only validation. Callers
+    // must consume successful completions in optimized builds as well.
     fn take_pending_completion(&mut self) -> CpuSynchronousCompletion {
         self.pending_completion
             .take()

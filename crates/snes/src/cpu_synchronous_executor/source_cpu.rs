@@ -2106,7 +2106,7 @@ impl Snes9xColdCpuExecutor {
             SourceCpuTransactionKind::GetSetMemoryAccessAfterSemanticDraining,
             u32::from(duration),
         )?;
-        debug_assert_eq!(
+        assert_eq!(
             self.machine.take_pending_completion(),
             CpuSynchronousCompletion::Read(value)
         );
@@ -2142,7 +2142,7 @@ impl Snes9xColdCpuExecutor {
                 receipt.outer_start_wram_refresh_position,
                 receipt.outer_end_wram_refresh_position,
             );
-            debug_assert_eq!(
+            assert_eq!(
                 self.machine.take_pending_completion(),
                 CpuSynchronousCompletion::GeneralDmaWrite
             );
@@ -2167,7 +2167,7 @@ impl Snes9xColdCpuExecutor {
                 SourceCpuTransactionKind::GetSetMemoryAccessAfterSemanticDraining,
                 u32::from(duration),
             )?;
-            debug_assert_eq!(
+            assert_eq!(
                 self.machine.take_pending_completion(),
                 CpuSynchronousCompletion::Write
             );
@@ -2203,7 +2203,7 @@ impl Snes9xColdCpuExecutor {
                 SourceCpuTransactionKind::GetSetMemoryAccessX2AfterSemanticDraining,
                 u32::from(duration),
             )?;
-            debug_assert_eq!(
+            assert_eq!(
                 self.machine.take_pending_completion(),
                 CpuSynchronousCompletion::ReadWord(value)
             );
@@ -2252,7 +2252,7 @@ impl Snes9xColdCpuExecutor {
                 SourceCpuTransactionKind::GetSetMemoryAccessX2AfterSemanticDraining,
                 u32::from(duration),
             )?;
-            debug_assert_eq!(
+            assert_eq!(
                 self.machine.take_pending_completion(),
                 CpuSynchronousCompletion::WriteWord
             );
@@ -3303,6 +3303,37 @@ mod tests {
             .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
             .find(|record| record["kind"] == "first-nmi-dma-setup")
             .expect("fixture omitted the first-NMI DMA setup receipt")
+    }
+
+    #[test]
+    fn successful_byte_and_word_transactions_retire_before_the_next_instruction() {
+        // Source LDA/STA direct and REP/SEP paths: each completed getset
+        // transaction retires exactly once, including in optimized builds.
+        // Register-width changes exercise byte and direct-word completions.
+        let rom = synthetic_rom(&[
+            0xa9, 0x5a, 0x85, 0x10, 0xa5, 0x10, 0xc2, 0x20,
+            0xa9, 0x34, 0x12, 0x85, 0x12, 0xa5, 0x12, 0xe2, 0x20, 0xea,
+        ]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.snes.cpu.e = false;
+        let before = cpu.machine.snes.ram.clone();
+        for expected_cycles in [16, 24, 24, 22, 24, 32, 32, 22, 14] {
+            let receipt = cpu.step().unwrap();
+            assert_eq!(receipt.ended_at.master_cycles() - receipt.started_at.master_cycles(), expected_cycles);
+            assert_eq!(cpu.machine.pending_completion(), None);
+            assert!(!cpu.is_poisoned());
+        }
+        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(408));
+        assert_eq!(cpu.machine.snes.cpu.pc, 0x8012);
+        assert_eq!(cpu.machine.snes.cpu.a, 0x1234);
+        assert!(cpu.machine.snes.cpu.mf);
+        assert_eq!(cpu.machine.snes.ram[0x10], 0x5a);
+        assert_eq!(&cpu.machine.snes.ram[0x12..0x14], &[0x34, 0x12]);
+        for (address, (&old, &new)) in before.iter().zip(&cpu.machine.snes.ram).enumerate() {
+            if !matches!(address, 0x10 | 0x12 | 0x13) {
+                assert_eq!(new, old, "unexpected transaction write at ${address:05x}");
+            }
+        }
     }
 
     #[test]
