@@ -257,8 +257,15 @@ impl SongBankHostTransfer {
         }
         self.command_pending = false;
         let first_read = if self.timed_command {
+            // $8925's dungeon pointer setup is 22 clocks longer than the
+            // overworld entry at $8913. Both then enter the same receiver.
+            let caller_cycles = match self.bank_id {
+                0 => TIMED_OVERWORLD_COMMAND_TO_FIRST_READY_READ_MASTER_CLOCKS,
+                1 => 386,
+                _ => panic!("song bank has no measured command caller"),
+            };
             advance_snes_cpu_master_clock(command_master_clock,
-                TIMED_OVERWORLD_COMMAND_TO_FIRST_READY_READ_MASTER_CLOCKS)
+                caller_cycles)
         } else {
             command_master_clock + SONG_BANK_WRITE_TO_FIRST_READY_POLL_MASTER_CLOCKS
         };

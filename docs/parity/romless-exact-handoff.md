@@ -4,7 +4,46 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 54,043 (audio)
+## Current native frontier — 54,045 (video)
+
+The dungeon upload now queues its command at the caller's measured STA
+bus access. The pre-dungeon CPU probe continues through the conditional
+caller, accounts for masked host boundaries, and records only the command
+host and raster position. It copies no shadow RAM into gameplay. The
+receiver uses the dungeon entry's 386 CPU clocks to its first ready read,
+including refresh, rather than the overworld entry's 364 clocks. A source
+regression checks the first three read timestamps (660, 666, 718 from a
+V118/C234 command). No frame-specific offset or hold-count change was added.
+
+`target/native-dungeon-upload-command` proves exact native A/V through
+54,044, first video mismatch 54,045 with audio still exact (78.40s).
+Binary SHA: `30bb6f5783119485716163f3bb7d9857f10390e3151fe0de5c889d45c1914424`.
+`target/native-dungeon-command-receipt` also matches all 54,047 receipt-driven
+frames (61.99s). The prior 1,581,079-frame proof belongs to the older frozen
+binary; this batch has not repeated that full run.
+All 1,791 library tests pass, 3 ignored (23.75s):
+`/tmp/native-dungeon-upload-command-lib-tests.log`.
+The command remains two master cycles late against source (V118/C236
+versus C234); that inherited phase error has not been compensated away.
+
+### Next: derive the dungeon upload return from receiver completion
+
+`target/native-54045-diagnostic` and `target/native-54043-source2` show
+native's main counter one iteration ahead by comparison frame 54,043
+(76 versus 75), then 77 versus 76 at 54,044 and 54,045. Source finishes
+the upload in active scanout at 54,043, reaches the main wait, and only
+starts the landing iteration in 54,044 (interrupted in Link OAM).
+The native scheduler still uses `PRE_DUNGEON_SONG_BANK_TRANSFER_NMI_SLICES`
+and `lane_finish_pre_dungeon_song_bank_transfer`, which can start a
+successor iteration on its estimated terminal host. Trace this boundary
+before changing spotlight/OAM publication. Replace the fixed estimate
+with actual receiver completion and the source caller suffix; do not
+increase the count or freeze a display generation to hide the mismatch.
+Source presentation evidence: `target/native-54045-source-presented`,
+paired diagnostic `target/native-54045-source` (video exact through 54,046).
+Native presentation: `target/native-54045-diagnostic-presented`.
+
+### Previous native frontier — 54,043 (audio)
 
 Ordinary overworld CPU probes now continue from their common suffix into
 the main wait loop and retain the actual CPU registers and timing budget
@@ -27,7 +66,7 @@ same first audio mismatch54,043 (76.04s while tests compiled). Binary SHA:
 All1,790 library tests pass,3 ignored (23.56s):
 `/tmp/native-overworld-wait-phase3-lib-tests.log`.
 
-### Next: wire the measured upload command; retain the unresolved phase evidence
+### Previous command diagnosis (wiring now implemented above)
 
 The iris now inherits `$00:8034` at V225/C30 for host53,925, versus source
 comparison53,924 `$00:8034` at C28. It reaches `$02:9982` at V255/C510,

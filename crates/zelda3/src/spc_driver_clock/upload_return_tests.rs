@@ -87,6 +87,24 @@ fn timed_overworld_request_matches_source_ready_poll_bus_timestamps() {
 }
 
 #[test]
+fn timed_dungeon_request_matches_source_ready_poll_bus_timestamps() {
+    // Snes9x comparison54019: FF at V118/C234, low/high reads660/666,
+    // then718/724. The 386-clock caller crosses one40-clock refresh.
+    let field = CpuFieldTiming::NON_INTERLACE_EVEN;
+    let at = |h| field.master_cycles_at(54019, snes::CpuRasterPosition::new(118, h));
+    let mut transfer = SongBankHostTransfer::new(1, &[0, 0]);
+    transfer.timed_command = true;
+    transfer.mark_command_scheduled_at_master_clock(at(234));
+    assert_eq!(transfer.next_host_access_master_clock, Some(at(660)));
+    let mut input = [0; 6];
+    assert!(!transfer.perform_host_access(&mut input, [7, 5, 0, 0]));
+    assert_eq!(transfer.next_host_access_master_clock, Some(at(666)));
+    assert!(!transfer.perform_host_access(&mut input, [7, 5, 0, 0]));
+    assert_eq!(transfer.next_host_access_master_clock, Some(at(718)));
+    assert_eq!(input, [0; 6]);
+}
+
+#[test]
 fn upload_return_forecast_preserves_the_live_receiver_and_source_return_phase() {
     let mut clock = clock_at_first_host_boundary();
     let mut transfer = SongBankHostTransfer::new(0, &[0, 0]);

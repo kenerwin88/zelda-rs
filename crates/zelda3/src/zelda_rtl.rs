@@ -3053,7 +3053,13 @@ fn dungeon_exit_spotlight_cpu_plan_at(
     );
 }
 
-fn pre_dungeon_load_nmi_slices_at(state: &ZeldaState, entry: CpuRasterPosition) -> u8 {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct NativeSongUploadCommand {
+    host: u32,
+    position: CpuRasterPosition,
+}
+
+fn pre_dungeon_load_nmi_slices_at(state: &ZeldaState, entry: CpuRasterPosition) -> (u8, Option<NativeSongUploadCommand>) {
     // Resume the successor's main prefix at INC $1a. The translated caller
     // has already incremented its counter, but has not run Module_PreDungeon.
     let checkpoint = RomCpuCheckpoint {
@@ -3080,29 +3086,60 @@ fn pre_dungeon_load_nmi_slices_at(state: &ZeldaState, entry: CpuRasterPosition) 
                 eprintln!("pre_dungeon_cpu_schedule host={} entry={entry:?} nmis={nmis} return={:?}",
                     state.frame_ctr_dbg, budget.raster_position());
             }
-            if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
-                // Continue only the isolated development probe through the
-                // conditional upload caller. No probe writes enter gameplay.
+            {
+                // Continue through the conditional dungeon upload caller.
+                // The load and the command retain separate timing owners.
                 let mut tail_nmis = 0;
+                let mut nmi_masked = false;
                 for _ in 0..100_000 {
-                    if matches!(run.pc(), 0x00_8034 | 0x00_8036) {
-                        break;
+                    if matches!(run.pc(), 0x00_8034 | 0x00_8036 | 0x02_855d) {
+                        // The overworld-bank caller owns its own upload path.
+                        return (nmis, None);
                     }
                     let command = run.pc() == 0x02_9bff;
                     let (v, h) = budget.raster_position().coordinates();
                     run.set_raster_position(v, h);
+                    if command {
+                        // STA $2140 reads its opcode and two address bytes
+                        // (3*8 master clocks) before the final 6-clock port
+                        // access. Advance to the bus access, not past it.
+                        let crossing = budget.advance_instruction_with_hdma(24, |event, scanline| {
+                            match event {
+                                CpuBusEvent::HdmaInit => {
+                                    run.set_raster_position(scanline, 20);
+                                    run.run_hdma_init_master_cycles()
+                                }
+                                CpuBusEvent::HdmaStart => {
+                                    run.set_raster_position(scanline, 1_106);
+                                    run.run_hdma_scanline_master_cycles()
+                                }
+                                CpuBusEvent::WramRefresh => unreachable!(),
+                            }
+                        });
+                        tail_nmis += u32::from(crossing.reached_boundary().is_some());
+                        let command = NativeSongUploadCommand {
+                            host: state.frame_ctr_dbg + u32::from(nmis) + tail_nmis,
+                            position: budget.raster_position(),
+                        };
+                        if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+                            eprintln!("song_upload dungeon_command {command:?}");
+                        }
+                        return (nmis, Some(command));
+                    }
+                    nmi_masked |= run.pc() == 0x02_9bf4; // STZ $4200
                     if advance_rom_cpu_step(&mut run, &mut budget).reached_boundary().is_some() {
                         tail_nmis += 1;
-                        advance_rom_cpu_through_nmi(&mut run, &mut budget);
-                    }
-                    if command {
-                        eprintln!("song_upload dungeon_probe entry_host={} entry={entry:?} load_nmis={nmis} tail_nmis={tail_nmis} command_after={:?}",
-                            state.frame_ctr_dbg, budget.raster_position());
-                        break;
+                        if nmi_masked {
+                            // Only the host boundary passed; $4200 masks the
+                            // interrupt while the main CPU owns the transfer.
+                            budget.begin_nmi_handler();
+                        } else {
+                            advance_rom_cpu_through_nmi(&mut run, &mut budget);
+                        }
                     }
                 }
             }
-            return nmis;
+            panic!("pre-dungeon upload caller did not return or reach its command");
         }
         let (v, h) = budget.raster_position().coordinates();
         run.set_raster_position(v, h);
@@ -3120,11 +3157,12 @@ fn pre_dungeon_load_nmi_slices_at(state: &ZeldaState, entry: CpuRasterPosition) 
     panic!("pre-dungeon timing did not reach Dungeon_ResetSprites' caller return");
 }
 
-pub(crate) fn pre_dungeon_load_nmi_slices(state: &ZeldaState, entry: (CpuRasterPosition, CpuRasterPosition)) -> u8 {
+pub(crate) fn pre_dungeon_load_nmi_slices(state: &mut ZeldaState, entry: (CpuRasterPosition, CpuRasterPosition)) -> u8 {
     let earliest = pre_dungeon_load_nmi_slices_at(state, entry.0);
     let latest = pre_dungeon_load_nmi_slices_at(state, entry.1);
     assert_eq!(earliest, latest, "pre-dungeon crossing count changed across its caller entry envelope");
-    earliest
+    state.native_dungeon_song_upload_command = earliest.1;
+    earliest.0
 }
 
 fn complete_spotlight_window_words(
@@ -10036,6 +10074,8 @@ pub struct ZeldaState {
     #[serde(skip)]
     native_main_wait_cpu_phase: Option<NativeMainWaitCpuPhase>,
     #[serde(skip)]
+    native_dungeon_song_upload_command: Option<NativeSongUploadCommand>,
+    #[serde(skip)]
     native_overworld_hud_interruption: Option<HudInventoryInterruption>,
     #[serde(skip)]
     native_overworld_map_graphics_nmi_slices: Option<(u8, u8)>,
@@ -12539,6 +12579,7 @@ impl ZeldaState {
             pending_main_loop_common_suffix: None,
             native_overworld_packing_progress: None,
             native_main_wait_cpu_phase: None,
+            native_dungeon_song_upload_command: None,
             native_overworld_hud_interruption: None,
             native_overworld_map_graphics_nmi_slices: None,
             next_display_spotlight_scanout: None,
@@ -12749,6 +12790,7 @@ impl ZeldaState {
         self.pending_main_loop_common_suffix = None;
         self.native_overworld_packing_progress = None;
         self.native_main_wait_cpu_phase = None;
+        self.native_dungeon_song_upload_command = None;
         self.native_overworld_hud_interruption = None;
         self.pre_dungeon_cpu_entry_envelope = None;
         self.native_overworld_map_graphics_nmi_slices = None;
@@ -12855,6 +12897,7 @@ impl ZeldaState {
             self.native_overworld_song_upload = None;
             self.native_overworld_packing_progress = None;
             self.native_main_wait_cpu_phase = None;
+            self.native_dungeon_song_upload_command = None;
         self.native_overworld_hud_interruption = None;
         self.pre_dungeon_cpu_entry_envelope = None;
             self.native_overworld_map_graphics_nmi_slices = None;

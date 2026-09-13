@@ -1234,6 +1234,11 @@ impl ZeldaState {
                     "properties caller reached the upload on a different CPU host");
                 clock.begin_song_bank_transfer_at(bank_id, stream, Some(position));
                 self.native_overworld_song_upload = Some(NativeOverworldSongUpload::AwaitReturn);
+            } else if let Some(command) = self.native_dungeon_song_upload_command.take() {
+                assert_eq!(bank_id, 1, "dungeon caller selected a different song bank");
+                assert_eq!(command.host, self.frame_ctr_dbg,
+                    "dungeon caller reached the upload on a different CPU host");
+                clock.begin_song_bank_transfer_at(bank_id, stream, Some(command.position));
             } else {
                 clock.begin_song_bank_transfer(bank_id, stream,
                     !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live));
@@ -1241,6 +1246,7 @@ impl ZeldaState {
             true
         } else {
             self.native_overworld_song_upload = None;
+            self.native_dungeon_song_upload_command = None;
             false
         }
     }
