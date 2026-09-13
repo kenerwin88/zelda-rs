@@ -1194,6 +1194,19 @@ impl ZeldaState {
             self.schedule_interrupted_overworld_suffix_return(OverworldSuffixResume::LinkBody(body));
             return;
         }
+        if std::mem::take(&mut self.native_overworld_link_oam_interruption) {
+            // The measured NMI landed inside this suffix's `LinkOam_Main`
+            // call with no finer progress boundary. LinkOam_Main publishes
+            // nothing before it returns, so the suspended call resumes whole
+            // after the interrupt; this is the same disposition the wire
+            // names as `MainLoopInterrupted(LinkOam)`.
+            assert!(
+                caller.link_oam.is_none(),
+                "native LinkOam interruption cannot replay a retained equipment prefix"
+            );
+            self.schedule_interrupted_overworld_suffix_return(OverworldSuffixResume::LinkOam);
+            return;
+        }
         if let Some(continuation) = caller.link_oam {
             self.link_oam_after_equipment(continuation);
         } else {

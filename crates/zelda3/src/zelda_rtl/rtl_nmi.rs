@@ -721,6 +721,12 @@ impl ZeldaState {
                         self.link_oam_after_lower_body(body);
                         self.hud_refill_logic();
                     }
+                    OverworldSuffixResume::LinkOam => {
+                        // `$02:A4C5 JSL LinkOam_Main` then `$02:A4C9 JSL
+                        // Hud_RefillLogic`: the suspended call resumes whole.
+                        self.link_oam_main();
+                        self.hud_refill_logic();
+                    }
                 }
                 self.OverworldOverlay_HandleRain();
                 self.complete_pending_main_loop_common_suffix_after_module_return();

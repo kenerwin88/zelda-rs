@@ -1694,3 +1694,90 @@ fn c_overworld_handle_rain_color_math_branches_are_source_exact() {
         );
     }
 }
+
+/// The Module09 overworld suffix's own `LinkOam_Main` call, executed on the
+/// original ROM. The native main-loop measurement classifies an accepted NMI
+/// as this suffix's interruption only when the retained stack return address
+/// names this call site, so both the site and the address the 65816 actually
+/// pushes have to be proven against the cartridge, not assumed.
+#[test]
+fn module09_link_oam_call_site_pushes_the_native_discriminator() {
+    let path = std::env::var_os("ZELDA3_ROM")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc")
+        });
+    let Ok(mut rom) = std::fs::read(path) else {
+        return;
+    };
+    if rom.len() % 0x400 == 0x200 {
+        rom.drain(..0x200);
+    }
+    let at = |address: u32| -> usize {
+        let bank = (address >> 16) as usize;
+        bank * 0x8000 + ((address as u16 as usize) - 0x8000)
+    };
+
+    // `$02:A4B1 JSL Sprite_Main`, then the four PLA/STA that restore the
+    // caller's stack-local BG scroll words ($e6/$e0/$e8/$e2), then
+    // `$02:A4C5 JSL LinkOam_Main` and `$02:A4C9 JSL Hud_RefillLogic` — the
+    // statement sequence `complete_module09_after_sprite_main` translates.
+    assert_eq!(&rom[at(0x02_a4b1)..at(0x02_a4b1) + 4], &[0x22, 0x28, 0x83, 0x06]);
+    assert_eq!(
+        &rom[at(0x02_a4b7)..at(0x02_a4c5)],
+        &[0x68, 0x85, 0xe6, 0x68, 0x85, 0xe0, 0x68, 0x85, 0xe8, 0x68, 0x85, 0xe2, 0xe2, 0x20],
+    );
+    assert_eq!(&rom[at(0x02_a4c5)..at(0x02_a4c5) + 4], &[0x22, 0x8e, 0xa1, 0x0d]);
+    assert_eq!(&rom[at(0x02_a4c9)..at(0x02_a4c9) + 4], &[0x22, 0x75, 0xdb, 0x0d]);
+
+    // Only this one of the ROM's `JSL LinkOam_Main` sites may be folded into
+    // the Module09 suffix; the others belong to different callers.
+    let sites: Vec<u32> = (0..rom.len() - 3)
+        .filter(|&offset| rom[offset..offset + 4] == [0x22, 0x8e, 0xa1, 0x0d])
+        .map(|offset| {
+            (((offset / 0x8000) as u32) << 16) | (0x8000 + (offset % 0x8000)) as u32
+        })
+        .collect();
+    assert_eq!(
+        sites,
+        vec![
+            0x00_f82e, 0x02_8852, 0x02_9328, 0x02_9d11, 0x02_a4c5, 0x07_9523, 0x09_f29d,
+            0x09_f7aa,
+        ],
+    );
+
+    // Execute the call itself: a JSL pushes the address of its final operand
+    // byte, so the innermost retained return address is $02:A4C8.
+    let machine = snes::Snes::new();
+    let checkpoint = RomCpuCheckpoint {
+        entry_pc: 0x02_a4c5,
+        stop_pc: 0x0d_a18e,
+        db: 0x02,
+        waiting: false,
+        ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+    };
+    let mut run = RomCpuTimingRun::new(
+        &rom,
+        &machine.ram,
+        &machine.cart.ram,
+        &machine.ppu,
+        &machine.dma,
+        [0; 4],
+        checkpoint,
+    )
+    .unwrap();
+    assert!(!run.is_complete());
+    run.step();
+    assert!(run.is_complete(), "the JSL must transfer control to LinkOam_Main");
+    assert_eq!(run.pc(), LINK_OAM_MAIN_ENTRY_PC);
+    assert_eq!(run.stack_return_address(), MODULE09_LINK_OAM_CALLER_RETURN);
+
+    // These bounds are the Snes9x semantic adapter's own
+    // `LINK_OAM_START_PC`/`LINK_OAM_END_PC`, the range it publishes as
+    // `MainLoopInterruption::LinkOam`; `$0D:ADB6` is the following routine's
+    // `SEP #$30`. The finer lower-body window the native measurement checks
+    // first lies inside that range, so the classifier's ordering depends on it.
+    assert_eq!((LINK_OAM_MAIN_ENTRY_PC, LINK_OAM_MAIN_END_PC), (0x0d_a18e, 0x0d_adb6));
+    assert_eq!(&rom[at(LINK_OAM_MAIN_END_PC)..at(LINK_OAM_MAIN_END_PC) + 2], &[0xe2, 0x30]);
+    assert!(LINK_OAM_MAIN_ENTRY_PC < 0x0d_a9ed && 0x0d_a9f1 < LINK_OAM_MAIN_END_PC);
+}

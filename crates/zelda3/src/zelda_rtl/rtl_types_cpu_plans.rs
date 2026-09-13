@@ -126,6 +126,9 @@ pub(crate) enum HudUpdateResume {
 pub(crate) enum OverworldSuffixResume {
     Hud(HudUpdateResume),
     LinkBody(player_oam::LinkOamBodyContinuation),
+    /// The whole `LinkOam_Main` call plus `Hud_RefillLogic`, suspended at an
+    /// NMI accepted inside `LinkOam_Main` with no finer progress boundary.
+    LinkOam,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

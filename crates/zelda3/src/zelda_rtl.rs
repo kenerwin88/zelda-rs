@@ -2629,6 +2629,20 @@ fn overworld_map_graphics_cpu_nmi_slices(state: &ZeldaState, input: u16) -> (u8,
     panic!("overworld map CPU timing did not return");
 }
 
+/// `LinkOam_Main` ($0D:A18E..$0D:ADB6). The Snes9x semantic adapter classifies
+/// an accepted NMI whose PC is in this range as `MainLoopInterruption::LinkOam`.
+const LINK_OAM_MAIN_ENTRY_PC: u32 = 0x0d_a18e;
+const LINK_OAM_MAIN_END_PC: u32 = 0x0d_adb6;
+/// `$02:A4C5 JSL LinkOam_Main` is the Module09 overworld suffix's own call: it
+/// follows `$02:A4B2 JSL Sprite_Main` and the four PLA/STA that restore the
+/// caller's stack-local BG scroll values, and is followed immediately by
+/// `JSL Hud_RefillLogic` ($0D:DB75) — exactly the statements
+/// `complete_module09_after_sprite_main` translates. A JSL pushes the address
+/// of its final operand byte, so the retained stack return address is $02:A4C8.
+/// The ROM's seven other `JSL LinkOam_Main` sites belong to different callers
+/// and stay unclassified rather than being folded into this suffix.
+const MODULE09_LINK_OAM_CALLER_RETURN: u32 = 0x02_a4c8;
+
 fn native_main_loop_cpu_run(state: &mut ZeldaState, input: u16, nmi_is_trailing: bool) -> (RomCpuTimingRun, CpuCycleBudget) {
     let phase = state.native_main_wait_cpu_phase.take();
     if let Some(phase) = phase.as_ref() {
@@ -2696,6 +2710,7 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
     let mut source_progress = None;
     let mut hud_conversion = None;
     let mut in_hud_conversion = false;
+    let mut link_oam_caller_return = None;
     for _ in 0..200_000 {
         if run.is_complete() {
             if crate::debug_env::var_os("ZELDA3_DEBUG_OVERWORLD_CPU_PACKING").is_some()
@@ -2736,6 +2751,12 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
         if pc == 0x00_86df { source_progress = None; }
         if pc == 0x00_874e { pointer_tail_cycles = Some(0u16); }
         if pc == 0x00_85fc { packing_entry = Some(budget.raster_position()); }
+        if pc == LINK_OAM_MAIN_ENTRY_PC {
+            // The JSL's return address is still on top of the shadow's stack
+            // at LinkOam_Main's first instruction, so it names the original
+            // call site of the call the CPU is now inside.
+            link_oam_caller_return = Some(run.stack_return_address());
+        }
         if packing_entry.is_some() && pc == 0x00_85fe {
             group = group.checked_sub(4).expect("packing loop exceeded eight passes");
             progress = Some(ExtendedOamPackingProgress::before_group(group));
@@ -2775,7 +2796,7 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
         }
         if advance.reached_boundary().is_some() {
             if crate::debug_env::var_os("ZELDA3_DEBUG_OVERWORLD_CPU_PACKING").is_some() {
-                eprintln!("overworld_cpu_packing host={} entry={packing_entry:?} pc={:06x} boundary={:?} progress={progress:?} source_progress={source_progress:?} pointer_tail_cycles={pointer_tail_cycles:?}",
+                eprintln!("overworld_cpu_packing host={} entry={packing_entry:?} pc={:06x} boundary={:?} progress={progress:?} source_progress={source_progress:?} pointer_tail_cycles={pointer_tail_cycles:?} link_oam_caller={link_oam_caller_return:06x?}",
                     state.frame_ctr_dbg, run.pc(), budget.raster_position());
             }
             // The lower-body nibble is shifted by four one-byte ASLs.
@@ -2783,6 +2804,16 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
             if (0x0d_a9ed..=0x0d_a9f1).contains(&run.pc()) {
                 state.native_overworld_link_body_selection_cycles =
                     Some(u16::try_from(run.pc() - 0x0d_a9ed).unwrap() * 14);
+            } else if (LINK_OAM_MAIN_ENTRY_PC..LINK_OAM_MAIN_END_PC).contains(&run.pc())
+                && link_oam_caller_return == Some(MODULE09_LINK_OAM_CALLER_RETURN)
+            {
+                // The source accepted this host's NMI inside the Module09
+                // suffix's own `LinkOam_Main` call, the disposition the wire
+                // publishes as `MainLoopInterrupted(LinkOam)`. The caller's
+                // scroll restore has already run; the whole LinkOam/HUD suffix
+                // resumes after the interrupt, exactly as the receipt-driven
+                // lane's `FinishModule09LinkOamCallerReturn` does.
+                state.native_overworld_link_oam_interruption = true;
             }
             if let Some(progress) = progress { progress.validate(); }
             let packing = pointer_tail_cycles.map(|master_cycles|
@@ -2794,7 +2825,11 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
                     // the hearts block's instructions have executed yet.
                     Some(HudUpdateInterruption::BeforeHearts)
                 } else { hud_conversion.map(HudUpdateInterruption::Inventory) };
-            if packing.is_some() || hud.is_some() || state.native_overworld_link_body_selection_cycles.is_some() {
+            if packing.is_some()
+                || hud.is_some()
+                || state.native_overworld_link_body_selection_cycles.is_some()
+                || state.native_overworld_link_oam_interruption
+            {
                 // The typed continuation resumes after this NMI, then returns
                 // through the same common suffix and busy loop. Keep that
                 // CPU phase instead of reseeding the next caller at H=12.
@@ -10241,6 +10276,11 @@ pub struct ZeldaState {
     native_overworld_hud_interruption: Option<HudUpdateInterruption>,
     #[serde(skip)]
     native_overworld_link_body_selection_cycles: Option<u16>,
+    /// The native main-loop measurement accepted this host's NMI inside the
+    /// Module09 suffix's own `LinkOam_Main` call, with no finer progress
+    /// receipt. Runtime-only, like every other native CPU-phase observation.
+    #[serde(skip)]
+    native_overworld_link_oam_interruption: bool,
     #[serde(skip)]
     native_overworld_map_graphics_nmi_slices: Option<(u8, u8)>,
     #[serde(skip)]
@@ -12747,6 +12787,7 @@ impl ZeldaState {
             native_dungeon_song_upload_awaiting_return: false,
             native_overworld_hud_interruption: None,
             native_overworld_link_body_selection_cycles: None,
+            native_overworld_link_oam_interruption: false,
             native_overworld_map_graphics_nmi_slices: None,
             next_display_spotlight_scanout: None,
             spotlight_scanout_after_active_field: None,
@@ -12960,6 +13001,7 @@ impl ZeldaState {
         self.native_dungeon_song_upload_awaiting_return = false;
         self.native_overworld_hud_interruption = None;
         self.native_overworld_link_body_selection_cycles = None;
+        self.native_overworld_link_oam_interruption = false;
         self.pre_dungeon_cpu_entry_envelope = None;
         self.native_overworld_map_graphics_nmi_slices = None;
         self.native_overworld_song_upload = None;
@@ -13069,6 +13111,7 @@ impl ZeldaState {
             self.native_dungeon_song_upload_awaiting_return = false;
         self.native_overworld_hud_interruption = None;
         self.native_overworld_link_body_selection_cycles = None;
+        self.native_overworld_link_oam_interruption = false;
         self.pre_dungeon_cpu_entry_envelope = None;
             self.native_overworld_map_graphics_nmi_slices = None;
             self.sprite_main_cpu_boundary = None;
