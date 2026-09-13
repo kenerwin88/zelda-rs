@@ -6,6 +6,53 @@ annotating any routine.
 
 ## Current native frontier — 54,043 (audio)
 
+Ordinary overworld CPU probes now continue from their common suffix into
+the main wait loop and retain the actual CPU registers and timing budget
+at the next NMI. The next ordinary overworld or initial iris probe consumes
+that phase instead of reconstructing its PC and flags. Only CPU timing
+crosses the boundary; no shadow RAM is copied into gameplay. The retained
+phase expires once its host has passed, so dialogue/scrolling work cannot
+leave a stale snapshot for a later overworld return. A regression covers
+future, current, and expired host ownership.
+
+The overworld probe's fallback NMI seed now also distinguishes leading
+from trailing NMI when selecting physical field parity. A trailing NMI
+belongs to the following host; retained budgets preserve this parity and
+the existing refresh/HDMA timeline across ordinary iterations.
+
+`target/native-overworld-wait-phase3` /
+`/tmp/native-overworld-wait-phase3.log` proves native exact A/V through54,042,
+same first audio mismatch54,043 (76.04s while tests compiled). Binary SHA:
+`7754149827779b98f796a7a6ccbff5b61b7a0c5ff3e87ef87b135439a780acb0`.
+All1,790 library tests pass,3 ignored (23.56s):
+`/tmp/native-overworld-wait-phase3-lib-tests.log`.
+
+### Next: wire the measured upload command; retain the unresolved phase evidence
+
+The iris now inherits `$00:8034` at V225/C30 for host53,925, versus source
+comparison53,924 `$00:8034` at C28. It reaches `$02:9982` at V255/C510,
+versus source508. Thus the PC/flag owner is correct but the inherited
+timeline remains2 cycles late. Pre-dungeon entry remains V248/C1200
+(source1198), loader return V117/C902 (source900), and command-after
+V118/C242 (source240). There is still no positioned dungeon command:
+`begin_runtime_song_bank_transfer` queues bank1 at the audio window end.
+Connect the measured caller position to the existing receiver protocol
+using the dungeon's386-cycle first-read path, rather than an audio offset
+or a different fixed host count. Account for the actual6-cycle final bus
+access of the command STA; do not subtract the unresolved2-cycle error.
+The command position is not yet source-exact. Trace the last fallback
+phase after an intervening caller to resolve the inherited difference.
+
+The iris-only prototype (`native-iris-wait-phase`) still inherited the
+synthetic predecessor and did not solve the phase. The first continuous
+prototype (`native-overworld-wait-phase`) stopped on a stale host44254
+after dialogue returned at44592; the expiry fix removes that invalid reuse.
+`native-overworld-wait-phase2` retained the wrong field parity. Use phase3
+for current evidence. No full receipt gate was repeated;100k native remains
+pending.
+
+### Previous physical field-parity fix
+
 The iris and pre-dungeon CPU probes now select physical field parity from
 their entry raster position. A comparison host spans V225 through the next
 V225; parity flips at V0 inside that host. These probes had used the
@@ -34,7 +81,7 @@ All1,789 library tests pass,3 ignored (23.91s), including a regression that
 requires consistent field lengths across V0 and the host's V225 boundary:
 `/tmp/native-upload-field-phase-lib-tests.log`.
 
-### Next: replace the synthetic leading-NMI phase at iris entry
+### Prior diagnosis: synthetic leading-NMI phase at iris entry
 
 `target/native-iris-entry-phase-source` /
 `/tmp/native-iris-entry-phase-source.jsonl` proves comparison53,924 enters

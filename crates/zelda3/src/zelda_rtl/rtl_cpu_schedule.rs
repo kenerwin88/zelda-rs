@@ -28,6 +28,13 @@ impl ZeldaState {
     }
 
     pub(super) fn capture_cpu_schedules_before_nmi(&mut self, nmi_is_trailing: bool, input: u16) {
+        // Other callers (dialogue, scrolling, and scheduled work) may own the
+        // intervening NMI instead of the ordinary main-wait consumer. A CPU
+        // snapshot is valid only at its recorded host, never after that work.
+        let cpu_host = self.frame_ctr_dbg + u32::from(nmi_is_trailing);
+        if self.native_main_wait_cpu_phase.as_ref().is_some_and(|phase| phase.host < cpu_host) {
+            self.native_main_wait_cpu_phase = None;
+        }
         let frame = self.game_state.frame;
         if self.rom_startup_timing()
             && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
@@ -39,7 +46,7 @@ impl ZeldaState {
             && self.native_dialogue_fresh_cpu_entry.is_none()
         {
             self.native_dialogue_fresh_cpu_entry = Some(
-                module_cpu_entry_after_leading_nmi(self, input, 0x0e_c984));
+                module_cpu_entry_after_leading_nmi(self, input, 0x0e_c984, None));
         }
         if self.rom_startup_timing()
             && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
@@ -56,8 +63,13 @@ impl ZeldaState {
             && !self.game_state.display.nmi_update_is_latched()
             && self.game_execution_scheduler.is_idle()
         {
+            let phase = self.native_main_wait_cpu_phase.take();
+            if let Some(phase) = phase.as_ref() {
+                assert_eq!(phase.host, self.frame_ctr_dbg + u32::from(nmi_is_trailing),
+                    "iris caller CPU phase belongs to a different host");
+            }
             let entry = module_cpu_entry_after_leading_nmi(self, input,
-                DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT.entry_pc);
+                DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT.entry_pc, phase);
             self.dungeon_exit_spotlight_cpu_entry_envelope = Some((entry, entry));
         }
         if self.rom_startup_timing()
@@ -78,7 +90,7 @@ impl ZeldaState {
             && self.native_overworld_packing_progress.is_none()
         {
             (self.native_overworld_packing_progress, self.native_overworld_hud_interruption) =
-                overworld_main_loop_packing_interruption(self, input);
+                overworld_main_loop_packing_interruption(self, input, nmi_is_trailing);
         }
         if self.rom_startup_timing()
             && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)

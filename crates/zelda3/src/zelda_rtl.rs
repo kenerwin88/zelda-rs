@@ -2544,18 +2544,28 @@ fn advance_rom_cpu_step_measured(run: &mut RomCpuTimingRun, budget: &mut CpuCycl
     (budget.advance_started_general_dma(instruction, dma_master_cycles), u32::from(timing.master_cycles))
 }
 
-fn module_cpu_entry_after_leading_nmi(state: &ZeldaState, input: u16, entry_pc: u32) -> CpuRasterPosition {
-    let checkpoint = RomCpuCheckpoint {
+#[derive(Clone, Debug)]
+struct NativeMainWaitCpuPhase {
+    host: u32,
+    checkpoint: RomCpuCheckpoint,
+    budget: CpuCycleBudget,
+}
+
+fn module_cpu_entry_after_leading_nmi(state: &ZeldaState, input: u16, entry_pc: u32,
+    phase: Option<NativeMainWaitCpuPhase>) -> CpuRasterPosition {
+    let checkpoint = phase.as_ref().map(|phase| phase.checkpoint).unwrap_or(RomCpuCheckpoint {
         entry_pc: 0x00_8036, stop_pc: entry_pc, waiting: false,
         ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
-    };
+    });
+    assert_eq!(checkpoint.stop_pc, entry_pc);
     let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(&state.rom, &state.ram, &state.sram,
         &state.ppu, &timing_dma, state.zelda_audio_apu_output_ports(), checkpoint)
         .expect("module entry CPU timing requires the development ROM");
     run.set_joypad_input(input);
-    let mut budget = CpuCycleBudget::at_nmi_acceptance(CpuBusWorkload::with_dynamic_hdma(),
-        CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0));
+    let mut budget = phase.map(|phase| phase.budget).unwrap_or_else(||
+        CpuCycleBudget::at_nmi_acceptance(CpuBusWorkload::with_dynamic_hdma(),
+            CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0)));
     advance_rom_cpu_through_nmi(&mut run, &mut budget);
     for _ in 0..50_000 {
         if run.is_complete() {
@@ -2613,19 +2623,29 @@ fn overworld_map_graphics_cpu_nmi_slices(state: &ZeldaState, input: u16) -> (u8,
     panic!("overworld map CPU timing did not return");
 }
 
-fn overworld_main_loop_packing_interruption(state: &ZeldaState, input: u16) -> (Option<SpritePreparationProgress>, Option<HudInventoryInterruption>) {
-    let checkpoint = RomCpuCheckpoint {
+fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, nmi_is_trailing: bool) -> (Option<SpritePreparationProgress>, Option<HudInventoryInterruption>) {
+    let phase = state.native_main_wait_cpu_phase.take();
+    if let Some(phase) = phase.as_ref() {
+        assert_eq!(phase.host, state.frame_ctr_dbg + u32::from(nmi_is_trailing),
+            "overworld caller CPU phase belongs to a different host");
+    }
+    let checkpoint = phase.as_ref().map(|phase| phase.checkpoint).unwrap_or(RomCpuCheckpoint {
         entry_pc: 0x00_8036, stop_pc: 0x00_805d, waiting: false,
         ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
-    };
+    });
+    assert_eq!(checkpoint.stop_pc, 0x00_805d);
     let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(&state.rom, &state.ram, &state.sram,
         &state.ppu, &timing_dma, state.zelda_audio_apu_output_ports(), checkpoint)
         .expect("overworld CPU timing requires the loaded Zelda ROM");
     run.set_joypad_input(input);
     run.enable_cpu_write_trace();
-    let field_timing = CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0);
-    let mut budget = CpuCycleBudget::at_nmi_acceptance(CpuBusWorkload::with_dynamic_hdma(), field_timing);
+    let field_timing = native_cpu_field_timing_at_entry(
+        state.frame_ctr_dbg + u32::from(nmi_is_trailing),
+        CpuRasterPosition::new(225, 12),
+    );
+    let mut budget = phase.map(|phase| phase.budget).unwrap_or_else(||
+        CpuCycleBudget::at_nmi_acceptance(CpuBusWorkload::with_dynamic_hdma(), field_timing));
     advance_rom_cpu_through_nmi(&mut run, &mut budget);
     let mut packing_entry = None;
     let mut group = 32u8;
@@ -2640,6 +2660,30 @@ fn overworld_main_loop_packing_interruption(state: &ZeldaState, input: u16) -> (
                 && packing_entry.is_some_and(|position: CpuRasterPosition| position.coordinates().0 >= 215) {
                 eprintln!("overworld_cpu_packing host={} entry={packing_entry:?} returned={:?}",
                     state.frame_ctr_dbg, budget.raster_position());
+            }
+            if matches!(run.ram_byte(MAIN_MODULE), 9 | 0x0f) && run.ram_byte(SUBMODULE) == 0 {
+                // Continue the caller's real sprite-preparation suffix and
+                // busy loop. Only CPU phase crosses into the next probe;
+                // the translated engine remains the owner of every RAM write.
+                for _ in 0..50_000 {
+                    let (v, h) = budget.raster_position().coordinates();
+                    run.set_raster_position(v, h);
+                    if advance_rom_cpu_step(&mut run, &mut budget).reached_boundary().is_some() {
+                        let next_entry = if run.ram_byte(MAIN_MODULE) == 0x0f {
+                            DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT.entry_pc
+                        } else { 0x00_805d };
+                        let checkpoint = run.main_wait_checkpoint(next_entry);
+                        let host = state.frame_ctr_dbg + 1 + u32::from(nmi_is_trailing);
+                        if next_entry == DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT.entry_pc
+                            && crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+                            eprintln!("song_upload iris_wait host={host} pc={:06x} position={:?} zero={}",
+                                checkpoint.entry_pc, budget.raster_position(), checkpoint.zero);
+                        }
+                        state.native_main_wait_cpu_phase = Some(NativeMainWaitCpuPhase { host, checkpoint, budget });
+                        return (None, None);
+                    }
+                }
+                panic!("overworld caller did not reach its successor's NMI");
             }
             return (None, None);
         }
@@ -9990,6 +10034,8 @@ pub struct ZeldaState {
     #[serde(skip)]
     native_overworld_packing_progress: Option<SpritePreparationProgress>,
     #[serde(skip)]
+    native_main_wait_cpu_phase: Option<NativeMainWaitCpuPhase>,
+    #[serde(skip)]
     native_overworld_hud_interruption: Option<HudInventoryInterruption>,
     #[serde(skip)]
     native_overworld_map_graphics_nmi_slices: Option<(u8, u8)>,
@@ -12492,6 +12538,7 @@ impl ZeldaState {
             main_loop_sprite_preparation_completed: false,
             pending_main_loop_common_suffix: None,
             native_overworld_packing_progress: None,
+            native_main_wait_cpu_phase: None,
             native_overworld_hud_interruption: None,
             native_overworld_map_graphics_nmi_slices: None,
             next_display_spotlight_scanout: None,
@@ -12701,6 +12748,7 @@ impl ZeldaState {
         self.main_loop_sprite_preparation_completed = false;
         self.pending_main_loop_common_suffix = None;
         self.native_overworld_packing_progress = None;
+        self.native_main_wait_cpu_phase = None;
         self.native_overworld_hud_interruption = None;
         self.pre_dungeon_cpu_entry_envelope = None;
         self.native_overworld_map_graphics_nmi_slices = None;
@@ -12806,6 +12854,7 @@ impl ZeldaState {
             self.pre_overworld_screen_build_cpu_nmis = None;
             self.native_overworld_song_upload = None;
             self.native_overworld_packing_progress = None;
+            self.native_main_wait_cpu_phase = None;
         self.native_overworld_hud_interruption = None;
         self.pre_dungeon_cpu_entry_envelope = None;
             self.native_overworld_map_graphics_nmi_slices = None;

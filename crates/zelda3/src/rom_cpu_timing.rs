@@ -358,6 +358,19 @@ impl RomCpuTimingRun {
 
     pub(crate) fn index_x(&self) -> u16 { self.shadow.cpu.x }
 
+    pub(crate) fn main_wait_checkpoint(&self, stop_pc: u32) -> RomCpuCheckpoint {
+        assert!(matches!(self.pc(), 0x00_8034 | 0x00_8036));
+        let cpu = &self.shadow.cpu;
+        assert_eq!(cpu.sp, 0x01ff, "main wait must have no suspended caller");
+        RomCpuCheckpoint {
+            entry_pc: self.pc(), stop_pc, a: cpu.a, x: cpu.x, y: cpu.y,
+            sp: cpu.sp, dp: cpu.dp, db: cpu.db, carry: cpu.c, zero: cpu.z,
+            overflow: cpu.v, negative: cpu.n, interrupt_disable: cpu.i,
+            decimal: cpu.d, accumulator_is_8_bit: cpu.mf, index_is_8_bit: cpu.xf,
+            emulation: cpu.e, waiting: cpu.waiting, stack_address: 0, stack_bytes: &[],
+        }
+    }
+
     pub(crate) fn stack_pointer(&self) -> u16 {
         self.shadow.cpu.sp
     }

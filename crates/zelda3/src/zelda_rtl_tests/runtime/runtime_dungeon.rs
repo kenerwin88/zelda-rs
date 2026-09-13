@@ -21,6 +21,29 @@ fn native_probe_field_phase_crosses_vzero_without_flipping_at_host_vblank() {
 }
 
 #[test]
+fn native_main_wait_phase_expires_after_an_intervening_nmi_owner() {
+    let mut state = ZeldaState::new();
+    state.frame_ctr_dbg = 1;
+    state.native_main_wait_cpu_phase = Some(NativeMainWaitCpuPhase {
+        host: 2,
+        checkpoint: DUNGEON_MAIN_WAIT_CPU_CHECKPOINT,
+        budget: CpuCycleBudget::at_nmi_acceptance(
+            CpuBusWorkload::with_dynamic_hdma(), CpuFieldTiming::NON_INTERLACE_EVEN),
+    });
+    // A trailing acceptance can belong to the next host. Neither the
+    // earlier acceptance nor that exact host may discard a future owner.
+    state.capture_cpu_schedules_before_nmi(false, 0);
+    assert!(state.native_main_wait_cpu_phase.is_some());
+    state.capture_cpu_schedules_before_nmi(true, 0);
+    assert!(state.native_main_wait_cpu_phase.is_some());
+    // An intervening caller did not consume this phase. It cannot become
+    // the entry seed when ordinary overworld work eventually resumes.
+    state.frame_ctr_dbg = 2;
+    state.capture_cpu_schedules_before_nmi(true, 0);
+    assert!(state.native_main_wait_cpu_phase.is_none());
+}
+
+#[test]
 fn parity_probe_direct_entrance_loads_room_from_entrance_assets() {
     let mut state = ZeldaState::new();
     state.assets = Some(probe_entrance_asset_pack(0x2a, 0x0122));
