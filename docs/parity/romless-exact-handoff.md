@@ -63,11 +63,33 @@ the `[C0, C12)` break without first explaining that difference would be a
 guess. Do not add the window check on its own — it would also re-classify the
 eleven already-exact hosts.
 
-The throwaway probe that produced this was one block after
-`advance_rom_cpu_step_measured` in `overworld_main_loop_packing_interruption`,
-printing `run.pc()`, `budget.raster_position()` and `run.is_complete()`
-whenever the position is V225 with `master_cycle <
-SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES`. It is not in the tree.
+`ZELDA3_DEBUG_OVERWORLD_CPU_ITERATION=<lo>-<hi>` now measures this in one
+run. Across 56,412..56,418 it gives:
+
+| host | entry after NMI handler | `$00:8056` | `$00:805A` return | outcome |
+| --- | --- | --- | --- | --- |
+|56,414 | V253/C798 | V257/C962 | V189/C610 | completed |
+|56,415 | V251/C28 | V255/C214 | V213/C322 | completed |
+|56,416 | V251/C22 | V255/C186 | V183/C792 | completed |
+|56,417 | V251/C38 | V255/C202 | — | NMI at `$0D:FDB0`, V225/C20 |
+
+So native's 56,416 iteration leaves `Module_MainRouting` at V183 and finishes
+its suffix well before V225, while the source was still inside that suffix at
+V225. That is roughly forty scanlines of missing work, not cycle noise. Two
+candidates, in order: the accepted NMI handler's own cost (56,416 enters at
+V251/C22 — among the shortest in the window, and `native_main_loop_cpu_run`
+prices the handler's DMA from `state.dma_with_native_hdma_enable()`), and the
+module iteration itself. Settle it by comparing against the source's raster at
+`$00:8056`/`$00:805A` for that host.
+
+**Getting the source raster is the blocker.** The cached receipts carry no PC
+or raster (their nineteen fields are `host_call`, `input_state`, `semantic`,
+the NMI register operands and the presented-state domains), so the comparison
+needs a Snes9x trace. `./parity doctor` currently fails `replay provenance`
+("no sufficiently long run has an eligible start"), so `microscope` cannot
+capture one until a cold recorded-RNG run with this binary bootstraps it. Do
+that before spending more probes on 56,417 — and note `target/parity/zelda3`
+is frozen, so bootstrap with an explicit `--binary`.
 
 ## Previous native frontier — 56,390 (video): dialogue/return timing
 

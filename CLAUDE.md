@@ -90,6 +90,18 @@ It does not replace the pinned live Snes9x A/V authority.
 - `ZELDA3_DEBUG_OVERWORLD_CPU_PACKING=1` reports the native overworld
   source measurement when it reaches NMI, including committed packing bytes,
   and completed calls whose packing entry is at scanline 215 or later.
+- `ZELDA3_DEBUG_OVERWORLD_CPU_ITERATION=<lo>-<hi>` reports where the measured
+  Module09 main-loop iteration spends the field for each host in range: the
+  raster it enters at once the accepted NMI's handler has returned, the raster
+  at `$00:8056 JSL Module_MainRouting` and at its return `$00:805A`, and either
+  `$00:805D` (iteration complete) or the PC and raster of the NMI boundary it
+  hit instead, with the retained `LinkOam_Main` caller. Pinned
+  `cpuexec.cpp:S9xMainLoop` takes a due NMI before it breaks on
+  `SCAN_KEYS_FLAG`, so an instruction boundary inside V225 `[0, 12)` returns
+  the host with the NMI still pending while a later one accepts it first.
+  Comparing these positions across neighbouring hosts separates a missing
+  interruption class from a plain cycle-cost difference in the measured
+  iteration — the native frontier's two failure shapes.
 - `ZELDA3_DEBUG_MUSIC_WINDOW_FRAME=<engine-host>` includes DSP write offsets
   and the absolute SPC clock summary for that audio window; compare these
   with source port bus timestamps, which precede the next CPU instruction.

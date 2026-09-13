@@ -2701,8 +2701,43 @@ fn dialogue_main_loop_cpu_phase(state: &mut ZeldaState, input: u16, nmi_is_trail
     panic!("dialogue timing failed to reach the next NMI or caller return");
 }
 
+/// `ZELDA3_DEBUG_OVERWORLD_CPU_ITERATION=<lo>-<hi>` reports, for each host in
+/// range, where the measured Module09 main-loop iteration actually spends the
+/// field: the raster the CPU enters at once the accepted NMI's handler has
+/// returned, the raster at `$00:8056 JSL Module_MainRouting` and at its return,
+/// and the raster at `$00:805D` where the iteration is complete — or the PC and
+/// raster of the NMI boundary it hit instead.
+///
+/// Pinned `cpuexec.cpp:S9xMainLoop` takes a due NMI before it breaks on
+/// `SCAN_KEYS_FLAG`, so an instruction boundary inside V225
+/// `[0, SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES)` returns the host with the
+/// NMI still pending while a later one accepts it first. Comparing these
+/// positions across neighbouring hosts is the direct read on whether a
+/// divergence is a missing interruption class or a plain cycle-cost
+/// difference in the measured iteration.
+fn debug_overworld_cpu_iteration_host_matches(host: u32) -> bool {
+    static RANGE: std::sync::OnceLock<Option<(u32, u32)>> = std::sync::OnceLock::new();
+    let Some((lo, hi)) = RANGE.get_or_init(|| {
+        let value = crate::debug_env::var("ZELDA3_DEBUG_OVERWORLD_CPU_ITERATION").ok()?;
+        let (lo, hi) = value.split_once('-')?;
+        Some((lo.parse().ok()?, hi.parse().ok()?))
+    }) else {
+        return false;
+    };
+    (*lo..=*hi).contains(&host)
+}
+
 fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, nmi_is_trailing: bool) -> (Option<SpritePreparationProgress>, Option<HudUpdateInterruption>) {
     let (mut run, mut budget) = native_main_loop_cpu_run(state, input, nmi_is_trailing);
+    let trace_iteration = debug_overworld_cpu_iteration_host_matches(state.frame_ctr_dbg);
+    if trace_iteration {
+        eprintln!(
+            "[OWCPU] host={} entry={:?} pc={:06x}",
+            state.frame_ctr_dbg,
+            budget.raster_position(),
+            run.pc()
+        );
+    }
     let mut packing_entry = None;
     let mut group = 32u8;
     let mut progress = None;
@@ -2751,6 +2786,13 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
         if pc == 0x00_86df { source_progress = None; }
         if pc == 0x00_874e { pointer_tail_cycles = Some(0u16); }
         if pc == 0x00_85fc { packing_entry = Some(budget.raster_position()); }
+        if trace_iteration && matches!(pc, 0x00_8056 | 0x00_805a | 0x00_805d) {
+            eprintln!(
+                "[OWCPU] host={} pc={pc:06x} at={:?}",
+                state.frame_ctr_dbg,
+                budget.raster_position()
+            );
+        }
         if pc == LINK_OAM_MAIN_ENTRY_PC {
             // The JSL's return address is still on top of the shadow's stack
             // at LinkOam_Main's first instruction, so it names the original
@@ -2795,6 +2837,14 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
             progress = None;
         }
         if advance.reached_boundary().is_some() {
+            if trace_iteration {
+                eprintln!(
+                    "[OWCPU] host={} nmi_boundary pc={:06x} at={:?} link_oam_caller={link_oam_caller_return:06x?}",
+                    state.frame_ctr_dbg,
+                    run.pc(),
+                    budget.raster_position()
+                );
+            }
             if crate::debug_env::var_os("ZELDA3_DEBUG_OVERWORLD_CPU_PACKING").is_some() {
                 eprintln!("overworld_cpu_packing host={} entry={packing_entry:?} pc={:06x} boundary={:?} progress={progress:?} source_progress={source_progress:?} pointer_tail_cycles={pointer_tail_cycles:?} link_oam_caller={link_oam_caller_return:06x?}",
                     state.frame_ctr_dbg, run.pc(), budget.raster_position());
