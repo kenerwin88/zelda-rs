@@ -261,6 +261,8 @@ pub(crate) fn run_standalone_play() {
 
 fn run_play_with_state(mut game: ZeldaState) {
     let last_panic = install_crash_panic_hook();
+    let capture_crash_snapshot =
+        zelda3::debug_env::var("ZELDA3_DEBUG_CRASH_SNAPSHOT").as_deref() == Ok("1");
     let width = 256u32;
     let height = 224u32;
     let mut renderer = match play_renderer::configured_from_env(
@@ -399,7 +401,7 @@ fn run_play_with_state(mut game: ZeldaState) {
                     process::exit(1);
                 });
         }
-        let pre_frame_game = game.clone();
+        let pre_frame_game = capture_crash_snapshot.then(|| game.clone());
         let mut crash_stage = "run_frame";
         let frame_result = panic::catch_unwind(AssertUnwindSafe(|| {
             game.zelda_run_frame(live_input as i32);
@@ -413,7 +415,8 @@ fn run_play_with_state(mut game: ZeldaState) {
         if let Err(payload) = frame_result {
             let panic_info = captured_panic_from(last_panic.clone(), payload);
             write_play_crash_report(
-                &pre_frame_game,
+                &game,
+                pre_frame_game.as_ref(),
                 host_frame,
                 live_input,
                 run_what,

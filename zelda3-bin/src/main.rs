@@ -1520,12 +1520,13 @@ fn panic_message_from_payload(payload: &(dyn std::any::Any + Send)) -> String {
 
 pub(crate) fn write_play_crash_report(
     game: &ZeldaState,
+    pre_frame_game: Option<&ZeldaState>,
     host_frame: u32,
     input: u16,
     run_what: u8,
     crash_stage: &str,
     panic_info: Option<&CapturedPanic>,
-) {
+) -> PathBuf {
     let seconds = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
@@ -1533,6 +1534,18 @@ pub(crate) fn write_play_crash_report(
     let stem = format!("zelda3-rs-crash-{}-{seconds}", process::id());
     let report_path = env::temp_dir().join(format!("{stem}.txt"));
     let state_path = env::temp_dir().join(format!("{stem}.z3play"));
+    // Without a snapshot, the state may be partially advanced by the failed
+    // frame. It is useful diagnostics, but must never be offered for replay.
+    let game = pre_frame_game.unwrap_or(game);
+    let (diagnostic_state, checkpoint_state, checkpoint_path) = if pre_frame_game.is_some() {
+        (
+            "before_crashing_frame",
+            "before_crashing_frame",
+            state_path.display().to_string(),
+        )
+    } else {
+        ("after_panic", "unavailable", "disabled".to_string())
+    };
     let trace = TraceState::from_ram(&game.ram, input, run_what);
     let panic_message = panic_info
         .map(|info| info.message.as_str())
@@ -1545,7 +1558,8 @@ pub(crate) fn write_play_crash_report(
         "zelda3-rs playable crash\n\
          host_frame={host_frame}\n\
          crash_stage={crash_stage}\n\
-         checkpoint_state=before_crashing_frame\n\
+         diagnostic_state={diagnostic_state}\n\
+         checkpoint_state={checkpoint_state}\n\
          panic={panic_message}\n\
          panic_location={panic_location}\n\
          frame_ctr_dbg={}\n\
@@ -1567,7 +1581,7 @@ pub(crate) fn write_play_crash_report(
         game.ppu.forced_blank,
         game.ppu.brightness,
         format_link_dma_trace(&game.ram),
-        state_path.display(),
+        checkpoint_path,
     );
     let report = if backtrace.is_empty() {
         report
@@ -1580,6 +1594,16 @@ pub(crate) fn write_play_crash_report(
             report_path.display()
         );
     }
+    if let Some(info) = panic_info {
+        eprintln!("zelda3-rs panic: {}", info.message);
+        eprintln!("zelda3-rs panic location: {}", info.location);
+    }
+    eprintln!("zelda3-rs crash report: {}", report_path.display());
+    let Some(game) = pre_frame_game else {
+        eprintln!("include the report text when reporting the crash");
+        eprintln!("to capture a replay checkpoint, launch with ZELDA3_DEBUG_CRASH_SNAPSHOT=1 (requires parity-debug)");
+        return report_path;
+    };
     let checkpoint = PlayCrashCheckpoint {
         magic: *PLAY_CRASH_CHECKPOINT_MAGIC,
         host_frame,
@@ -1601,17 +1625,13 @@ pub(crate) fn write_play_crash_report(
             state_path.display()
         ),
     }
-    if let Some(info) = panic_info {
-        eprintln!("zelda3-rs panic: {}", info.message);
-        eprintln!("zelda3-rs panic location: {}", info.location);
-    }
-    eprintln!("zelda3-rs crash report: {}", report_path.display());
     eprintln!("zelda3-rs crash checkpoint: {}", state_path.display());
     eprintln!(
         "replay with: cargo run -p zelda3-bin -- --replay-crash <rom.sfc> {}",
         state_path.display()
     );
     eprintln!("include the report text and checkpoint path when reporting the crash");
+    report_path
 }
 
 pub(crate) fn load_play_state(rom_path: &str) -> ZeldaState {
@@ -1851,7 +1871,8 @@ fn run_replay_crash(args: &[String]) {
             Err(payload) => {
                 let panic_info = captured_panic_from(last_panic.clone(), payload);
                 write_play_crash_report(
-                    &pre_frame_game,
+                    &game,
+                    Some(&pre_frame_game),
                     host_frame,
                     input,
                     run_what,
@@ -2638,6 +2659,61 @@ fn find_asset_pack_with_override(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn play_crash_report_only_writes_replay_checkpoint_with_pre_frame_snapshot() {
+        let mut game = ZeldaState::new();
+        game.frame_ctr_dbg = 41;
+        let pre_frame_game = game.clone();
+        game.frame_ctr_dbg = 42;
+        game.ram[0x20] = 7;
+        let panic_info = CapturedPanic {
+            message: "test frame panic".to_string(),
+            location: "test.rs:1:1".to_string(),
+            backtrace: "test backtrace".to_string(),
+        };
+
+        for snapshot in [None, Some(&pre_frame_game)] {
+            let report_path = write_play_crash_report(
+                &game,
+                snapshot,
+                41,
+                0x80,
+                1,
+                "run_frame",
+                Some(&panic_info),
+            );
+            let state_path = report_path.with_extension("z3play");
+            let report = fs::read_to_string(&report_path).unwrap();
+            assert!(report.contains("host_frame=41\n"));
+            assert!(report.contains("crash_stage=run_frame\n"));
+            assert!(report.contains("panic=test frame panic\n"));
+            assert!(report.contains("panic_location=test.rs:1:1\n"));
+            assert!(report.contains("test backtrace"));
+            assert!(report.contains(&format!(
+                "trace={}",
+                TraceState::from_ram(&snapshot.unwrap_or(&game).ram, 0x80, 1)
+            )));
+            if snapshot.is_some() {
+                assert!(report.contains("checkpoint_state=before_crashing_frame\n"));
+                assert!(report.contains("diagnostic_state=before_crashing_frame\n"));
+                let checkpoint = load_play_crash_checkpoint(&state_path).unwrap();
+                assert_eq!(checkpoint.host_frame, 41);
+                assert_eq!(checkpoint.input, 0x80);
+                assert_eq!(checkpoint.run_what, 1);
+                assert_eq!(checkpoint.game.frame_ctr_dbg, 41);
+                assert_eq!(checkpoint.game.ram, pre_frame_game.ram);
+                fs::remove_file(state_path).unwrap();
+            } else {
+                assert!(report.contains("diagnostic_state=after_panic\n"));
+                assert!(report.contains("checkpoint_state=unavailable\n"));
+                assert!(report.contains("checkpoint=disabled\n"));
+                assert!(report.contains("frame_ctr_dbg=42\n"));
+                assert!(!state_path.exists());
+            }
+            fs::remove_file(report_path).unwrap();
+        }
+    }
 
     #[test]
     fn mistyped_rom_first_oracle_flag_cannot_fall_through_to_play_mode() {

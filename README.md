@@ -227,6 +227,14 @@ Leaving these unset preserves the vanilla presentation.
 During native play, F6 cycles presentation mode, F7 cycles lighting mode, and F8
 cycles shadow mode. The changed mode is shown briefly in the top-left corner.
 
+Normal play writes a text crash report with the panic, backtrace, frame, input,
+failing stage, and state diagnostics without copying the game state every frame.
+For a reproducible pre-frame crash checkpoint, opt in with
+`ZELDA3_DEBUG_CRASH_SNAPSHOT=1 cargo run --release -p zelda3-bin`.
+This adds a full state copy each frame and requires the `parity-debug` feature
+(enabled by default). Without it, state diagnostics describe the state after
+the panic and are not a replay checkpoint.
+
 ### Host Menu
 
 The native frontend opens an LTTP-styled host menu before the game starts.
