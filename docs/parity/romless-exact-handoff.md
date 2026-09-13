@@ -4,7 +4,56 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 54,762 (video)
+## Current native frontier — 56,390 (video)
+
+LinkOam's body drawing now has a native continuation between upper-entry
+stores and lower-entry selection. The CPU probe recognizes the four ASL
+instruction boundaries at `$0d:a9ed..$0d:a9f1`; it retains their executed
+CPU work, not a frame/scanline exception. The translated prefix publishes
+the upper entry and retains the lower entry's data and caller locals.
+Resuming finishes the lower entry, visibility/stair return, HUD, rain, and
+common suffix without replaying equipment or upper stores. The existing
+HUD continuation is now named `FinishOverworldSuffixCallerReturn`, with
+typed HUD and LinkBody variants sharing the same NMI/caller lifecycle.
+
+`target/native-link-lower-body` proves native exact A/V through56,389,
+first video mismatch56,390 with audio exact (80.92s).
+Binary SHA: `d53f5df0048af99382e4cd4912678664c99a520e68493e756e71ab63aa7c8e0f`.
+All1,795 library tests pass,3 ignored (23.94s):
+`/tmp/native-link-lower-body-lib-tests.log`. The new regression covers
+all five lower-selection edges, deferred lower stores, preservation of a
+changed committed upper entry, and equal OAM/CPU totals after resumption.
+The native run's `state-comparison.json` proves counter/latch/OAM agree
+with source across54,758..54,766. Its WRAM dump extends through55,262;
+the new frontier is beyond that diagnostic window.
+`target/native-link-lower-body-receipt` matches all56,397 receipt-driven
+frames (63.42s). No full1,581,079-frame check was repeated for this binary.
+
+### Next: reconcile the next body interruption with the probe's CPU phase
+
+`target/native-56390-source`, paired from53500, is video exact through
+56,396. `/tmp/native-56390-source.jsonl` shows source56,388 reaching
+the main wait with counter172 before its trailing NMI. Source56,389 ends at `$0d:aa05`, V225/C6,
+counter173/latch1;56,390 accepts NMI at `$0d:aa08`, C52 and clears the
+latch without advancing the counter. Native's probe instead reports
+host56,389 `$0d:aab9`/C14 and host56,390 `$00:8605`/C24. These are not
+the same interruption: compare native WRAM/entry phase before extending
+the body continuation or changing packing. Diagnostic running/recorded
+as `target/native-56390-diagnostic`, with presented captures in
+`target/native-56390-diagnostic-presented`; source presented captures in
+`target/native-56390-source-presented`. Do not add a late-return hold from
+the native `$aab9` report without reconciling that earlier source phase.
+`target/native-56390-diagnostic/state-comparison.json` confirms counters
+and OAM agree through56,388 (native/source latch values differ during
+the preceding ordinary cadence). At56,389 both counters173/latches1
+agree, but native `$09a5=105` versus source240 and `$0a08=234` versus254.
+Source PC `$aa05` is the lower XY STA, and `$aa08` is its following TXA:
+the host return precedes that store, while NMI accepts after it. At56,390
+native counter174 versus source173 precedes45 OAM byte differences.
+The probe log's host is `frame_ctr_dbg`; account for its leading/trailing
+NMI ownership before aligning it with comparison frames.
+
+### Previous native frontier — 54,762 (video)
 
 The native HUD probe now retains a typed `BeforeHearts` interruption when
 NMI arrives at `$0d:fb94`, before the hearts block executes. The resumed

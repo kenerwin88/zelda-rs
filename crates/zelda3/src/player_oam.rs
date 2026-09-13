@@ -25,6 +25,14 @@ pub(crate) struct LinkOamEquipmentContinuation {
     weapons_complete: bool,
 }
 
+/// Body stores completed before NMI, with the lower entry still pending.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct LinkOamBodyContinuation {
+    equipment: LinkOamEquipmentContinuation,
+    lower: Option<(usize, u16, u8, u8)>,
+    lower_selection_cycles: u16,
+}
+
 #[derive(Clone, Copy)]
 struct LinkSpriteBody {
     y: i8,
@@ -3576,14 +3584,20 @@ impl ZeldaState {
     }
 
     pub(super) fn link_oam_after_equipment(&mut self, continuation: LinkOamEquipmentContinuation) {
+        let body = self.link_oam_before_lower_body(continuation, 0);
+        self.link_oam_after_lower_body(body);
+    }
+
+    pub(super) fn link_oam_before_lower_body(
+        &mut self, continuation: LinkOamEquipmentContinuation, lower_selection_cycles: u16,
+    ) -> LinkOamBodyContinuation {
+        assert!(lower_selection_cycles <= 56 && lower_selection_cycles % 14 == 0);
         let continuation = if continuation.equipment_complete {
             continuation
         } else {
             self.link_oam_before_body(continuation)
         };
         let LinkOamEquipmentContinuation {
-            y_coord_backup,
-            submodule,
             xcoord,
             ycoord,
             scratch_0_var,
@@ -3612,6 +3626,7 @@ impl ZeldaState {
             + sort_sprites_offset_into_oam_buffer)
             >> 2) as usize;
         let j = kLinkDmaGraphicsIndices[r2] as usize;
+        let mut lower = None;
         if self.game_state.player.follower_link.visibility_status() != 12 {
             let zcoord = self.game_state.player.follower_link.z_for_oam();
             let sp = kLinkSpriteBodys[j];
@@ -3633,7 +3648,7 @@ impl ZeldaState {
                         476
                     }
                     + if ((td << 4) & 0xf000) != 0xf000 {
-                        96 + 556
+                        96 + u64::from(lower_selection_cycles)
                     } else {
                         102
                     },
@@ -3648,19 +3663,29 @@ impl ZeldaState {
                 self.oam_state_mut().set_extended_byte(oam_pos, value);
             }
             if ((td << 4) & 0xf000) != 0xf000 {
-                self.set_oam_charnum(
-                    oam_pos + 1,
+                lower = Some((oam_pos + 1,
                     ((td << 4) & 0xf000) | oam_priority_value | link_palette_bits_of_oam | 2,
-                );
-                self.set_oam_word_xy(
-                    oam_pos + 1,
-                    xcoord,
-                    ycoord.wrapping_sub(zcoord).wrapping_add(8),
-                );
-                let value = 2;
-                self.oam_state_mut().set_extended_byte(oam_pos + 1, value);
+                    xcoord, ycoord.wrapping_sub(zcoord).wrapping_add(8)));
             }
         }
+        assert!(lower.is_some() || lower_selection_cycles == 0,
+            "lower selection cannot execute for an invisible or blank lower body");
+        LinkOamBodyContinuation { equipment: continuation, lower, lower_selection_cycles }
+    }
+
+    pub(super) fn link_oam_after_lower_body(&mut self, body: LinkOamBodyContinuation) {
+        if let Some((oam_pos, flags, x, y)) = body.lower {
+            // $a9ed..$aa15: the four ASLs precede every lower-body store.
+            // Resume their unexecuted CPU work and publish this entry once.
+            crate::cycle_ledger::charge(556 - u64::from(body.lower_selection_cycles));
+            self.set_oam_charnum(oam_pos, flags);
+            self.set_oam_word_xy(oam_pos, x, y);
+            self.oam_state_mut().set_extended_byte(oam_pos, 2);
+        }
+        let LinkOamEquipmentContinuation {
+            y_coord_backup, submodule, scratch_0_var,
+            sort_sprites_offset_into_oam_buffer, r4loc, ..
+        } = body.equipment;
 
         // Cycle ledger only: the blink countdown before the `hide` test below
         // decrements it, so the ROM's `DEC; CMP #$04` path can be priced.
@@ -4116,6 +4141,40 @@ impl ZeldaState {
 mod equipment_cycle_tests {
     use super::*;
     use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+
+    #[test]
+    fn lower_body_resume_preserves_upper_stores_and_total_cpu_work() {
+        let mut base = ZeldaState::new();
+        let equipment = base.link_oam_before_equipment();
+        let mut equipment = base.link_oam_before_body(equipment);
+        equipment.r2 = (0..kLinkDmaGraphicsIndices.len()).find(|&i| {
+            let tile = kLinkSpriteBodys[kLinkDmaGraphicsIndices[i] as usize].tile;
+            tile & 0xf != 0xf && tile >> 4 != 0xf
+        }).unwrap();
+        let mut atomic = base.clone();
+        let start = crate::cycle_ledger::master();
+        atomic.link_oam_after_equipment(equipment);
+        let expected_cycles = crate::cycle_ledger::master() - start;
+        // Every ASL boundary in $a9ed..$a9f1 precedes all lower-entry stores.
+        for completed in [0, 14, 28, 42, 56] {
+            let mut split = base.clone();
+            let start = crate::cycle_ledger::master();
+            let body = split.link_oam_before_lower_body(equipment, completed);
+            let prefix_cycles = crate::cycle_ledger::master() - start;
+            let lower = body.lower.unwrap().0;
+            let offset = oam_addr(lower);
+            assert_eq!(&split.ram[offset..offset + 4], &base.ram[offset..offset + 4]);
+            let mut changed = split.clone();
+            changed.set_oam_charnum(lower - 1, 0x5678);
+            changed.link_oam_after_lower_body(body);
+            assert_eq!(read_le_u16(&changed.ram, oam_addr(lower - 1) + 2), 0x5678,
+                "the committed upper entry must not be redrawn on resume");
+            let start = crate::cycle_ledger::master();
+            split.link_oam_after_lower_body(body);
+            assert_eq!(prefix_cycles + crate::cycle_ledger::master() - start, expected_cycles);
+            assert_eq!(&split.ram[0x800..0xaa0], &atomic.ram[0x800..0xaa0]);
+        }
+    }
 
     #[test]
     fn equipment_helpers_match_rom_cycles_for_every_table_entry_and_offset() {

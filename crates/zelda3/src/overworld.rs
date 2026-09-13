@@ -1186,6 +1186,14 @@ impl ZeldaState {
         self.replay_trace_ram_watch("module09-after-scroll-restore");
 
         self.replay_trace_ram_watch("module09-before-link-oam");
+        if let Some(cycles) = self.native_overworld_link_body_selection_cycles.take() {
+            assert!(caller.link_oam.is_none(), "native body prefix cannot replay a retained equipment prefix");
+            let _scope = crate::cycle_ledger::routine(0x0d_a18e);
+            let equipment = self.link_oam_before_equipment();
+            let body = self.link_oam_before_lower_body(equipment, cycles);
+            self.schedule_interrupted_overworld_suffix_return(OverworldSuffixResume::LinkBody(body));
+            return;
+        }
         if let Some(continuation) = caller.link_oam {
             self.link_oam_after_equipment(continuation);
         } else {

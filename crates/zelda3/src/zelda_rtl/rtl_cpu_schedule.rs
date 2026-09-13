@@ -1080,6 +1080,10 @@ impl ZeldaState {
     }
 
     pub(super) fn schedule_interrupted_overworld_hud_update(&mut self, hud: HudUpdateResume) {
+        self.schedule_interrupted_overworld_suffix_return(OverworldSuffixResume::Hud(hud));
+    }
+
+    pub(super) fn schedule_interrupted_overworld_suffix_return(&mut self, suffix: OverworldSuffixResume) {
         assert!(self.rom_startup_timing());
         assert!(!matches!(
             self.original_timing_owner,
@@ -1091,8 +1095,8 @@ impl ZeldaState {
             .replace(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch)
             .is_none());
         self.game_execution_scheduler.schedule_work(
-            GameWorkContinuation::FinishOverworldHudCallerReturn {
-                hud,
+            GameWorkContinuation::FinishOverworldSuffixCallerReturn {
+                suffix,
             },
             1,
         );

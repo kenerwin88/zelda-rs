@@ -465,7 +465,7 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishDungeonPushBlocks { .. }
                 | GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn
                 | GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn { .. }
-                | GameWorkContinuation::FinishOverworldHudCallerReturn { .. }
+                | GameWorkContinuation::FinishOverworldSuffixCallerReturn { .. }
                 | GameWorkContinuation::FinishModule09LinkOamCallerReturn { .. }
                 | GameWorkContinuation::FinishDialogueInitializationPrefix { .. }
                 | GameWorkContinuation::FinishDialogueInitializationCallerReturn

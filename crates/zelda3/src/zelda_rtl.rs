@@ -2752,6 +2752,12 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
                 eprintln!("overworld_cpu_packing host={} entry={packing_entry:?} pc={:06x} boundary={:?} progress={progress:?} source_progress={source_progress:?} pointer_tail_cycles={pointer_tail_cycles:?}",
                     state.frame_ctr_dbg, run.pc(), budget.raster_position());
             }
+            // The lower-body nibble is shifted by four one-byte ASLs.
+            // No lower entry store has occurred at these instruction edges.
+            if (0x0d_a9ed..=0x0d_a9f1).contains(&run.pc()) {
+                state.native_overworld_link_body_selection_cycles =
+                    Some(u16::try_from(run.pc() - 0x0d_a9ed).unwrap() * 14);
+            }
             if let Some(progress) = progress { progress.validate(); }
             return (pointer_tail_cycles.map(|master_cycles|
                 SpritePreparationProgress::PointerTail(SpritePreparationPointerProgress { master_cycles }))
@@ -10169,6 +10175,8 @@ pub struct ZeldaState {
     #[serde(skip)]
     native_overworld_hud_interruption: Option<HudUpdateInterruption>,
     #[serde(skip)]
+    native_overworld_link_body_selection_cycles: Option<u16>,
+    #[serde(skip)]
     native_overworld_map_graphics_nmi_slices: Option<(u8, u8)>,
     #[serde(skip)]
     next_display_spotlight_scanout: Option<LiveSpotlightScanout>,
@@ -12673,6 +12681,7 @@ impl ZeldaState {
             native_dungeon_song_upload_command: None,
             native_dungeon_song_upload_awaiting_return: false,
             native_overworld_hud_interruption: None,
+            native_overworld_link_body_selection_cycles: None,
             native_overworld_map_graphics_nmi_slices: None,
             next_display_spotlight_scanout: None,
             spotlight_scanout_after_active_field: None,
@@ -12885,6 +12894,7 @@ impl ZeldaState {
         self.native_dungeon_song_upload_command = None;
         self.native_dungeon_song_upload_awaiting_return = false;
         self.native_overworld_hud_interruption = None;
+        self.native_overworld_link_body_selection_cycles = None;
         self.pre_dungeon_cpu_entry_envelope = None;
         self.native_overworld_map_graphics_nmi_slices = None;
         self.native_overworld_song_upload = None;
@@ -12993,6 +13003,7 @@ impl ZeldaState {
             self.native_dungeon_song_upload_command = None;
             self.native_dungeon_song_upload_awaiting_return = false;
         self.native_overworld_hud_interruption = None;
+        self.native_overworld_link_body_selection_cycles = None;
         self.pre_dungeon_cpu_entry_envelope = None;
             self.native_overworld_map_graphics_nmi_slices = None;
             self.sprite_main_cpu_boundary = None;

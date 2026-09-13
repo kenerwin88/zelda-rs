@@ -714,8 +714,14 @@ impl ZeldaState {
                 self.nmi_prepare_sprites();
                 self.clear_nmi_update_latch();
             }
-            GameWorkContinuation::FinishOverworldHudCallerReturn { hud } => {
-                self.resume_overworld_hud_update(hud);
+            GameWorkContinuation::FinishOverworldSuffixCallerReturn { suffix } => {
+                match suffix {
+                    OverworldSuffixResume::Hud(hud) => self.resume_overworld_hud_update(hud),
+                    OverworldSuffixResume::LinkBody(body) => {
+                        self.link_oam_after_lower_body(body);
+                        self.hud_refill_logic();
+                    }
+                }
                 self.OverworldOverlay_HandleRain();
                 self.complete_pending_main_loop_common_suffix_after_module_return();
                 self.game_execution_scheduler.finish_call_stack_at_main_wait_before_nmi();

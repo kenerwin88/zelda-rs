@@ -123,6 +123,12 @@ pub(crate) enum HudUpdateResume {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OverworldSuffixResume {
+    Hud(HudUpdateResume),
+    LinkBody(player_oam::LinkOamBodyContinuation),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SpritePreparationProgress {
     ExtendedOam(ExtendedOamPackingProgress),
     SourceWords(SpritePreparationSourceProgress),
@@ -1656,8 +1662,8 @@ pub(crate) enum GameWorkContinuation {
     FinishModule09LinkOamCallerReturn {
         caller: Module09ItemReceiptCallerReturn,
     },
-    /// NMI interrupted HUD work after the refill logic's resource updates.
-    FinishOverworldHudCallerReturn { hud: HudUpdateResume },
+    /// NMI interrupted Link drawing or HUD work in the ordinary caller suffix.
+    FinishOverworldSuffixCallerReturn { suffix: OverworldSuffixResume },
     /// NMI interrupted the main-loop suffix while it packed the extended OAM
     /// staging bytes. Resume sprite preparation before the next publishable
     /// NMI without replaying Module 7.
@@ -2008,7 +2014,7 @@ impl GameWorkContinuation {
                 }
                 | Self::FinishDungeonSubtilePaletteFilter
                 | Self::FinishNmiPrepareSpritesCallerReturn { .. }
-                | Self::FinishOverworldHudCallerReturn { .. }
+                | Self::FinishOverworldSuffixCallerReturn { .. }
                 | Self::FinishDungeonPostSpriteMainCallerReturn
                 | Self::FinishDungeonExitSpotlightGoalCaller { .. }
                 | Self::FinishDungeonCachedSpriteMain { .. }
@@ -2153,7 +2159,7 @@ impl GameWorkContinuation {
                 | Self::FinishDungeonPostSpriteMainCallerReturn
                 | Self::FinishModule09LinkOamCallerReturn { .. }
                 | Self::FinishNmiPrepareSpritesCallerReturn { .. }
-                | Self::FinishOverworldHudCallerReturn { .. }
+                | Self::FinishOverworldSuffixCallerReturn { .. }
         )
     }
 

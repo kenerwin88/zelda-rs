@@ -11773,7 +11773,7 @@ impl ZeldaState {
             continuation @ (GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn
             | GameWorkContinuation::FinishModule09LinkOamCallerReturn { .. }
             | GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn { .. }
-            | GameWorkContinuation::FinishOverworldHudCallerReturn { .. }),
+            | GameWorkContinuation::FinishOverworldSuffixCallerReturn { .. }),
         )) = scheduled_work_step
         {
             // The prior host returned when vblank interrupted the translated
@@ -11788,7 +11788,7 @@ impl ZeldaState {
                 let publication = if matches!(continuation,
                     GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn {
                         caller: NmiPrepareSpritesCpuCaller::OverworldModule09,
-                    } | GameWorkContinuation::FinishOverworldHudCallerReturn { .. }) && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+                    } | GameWorkContinuation::FinishOverworldSuffixCallerReturn { .. }) && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
                     DisplaySnapshotPublication::PublishCaptured
                 } else {
                     DisplaySnapshotPublication::RetainPublished
@@ -11806,7 +11806,7 @@ impl ZeldaState {
                         })) || matches!(continuation,
                     GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn {
                         caller: NmiPrepareSpritesCpuCaller::OverworldModule09,
-                    } | GameWorkContinuation::FinishOverworldHudCallerReturn { .. }))
+                    } | GameWorkContinuation::FinishOverworldSuffixCallerReturn { .. }))
             {
                 self.retain_completed_nmi_scroll_for_current_scanout();
             }
@@ -12787,7 +12787,7 @@ impl ZeldaState {
                     | GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn
                     | GameWorkContinuation::FinishModule09LinkOamCallerReturn { .. }
                     | GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn { .. }
-                    | GameWorkContinuation::FinishOverworldHudCallerReturn { .. },
+                    | GameWorkContinuation::FinishOverworldSuffixCallerReturn { .. },
                 ) => {
                     unreachable!(
                         "post-NMI caller return is handled before generic work publication"
