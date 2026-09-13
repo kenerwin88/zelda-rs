@@ -2642,6 +2642,18 @@ const LINK_OAM_MAIN_END_PC: u32 = 0x0d_adb6;
 /// The ROM's seven other `JSL LinkOam_Main` sites belong to different callers
 /// and stay unclassified rather than being folded into this suffix.
 const MODULE09_LINK_OAM_CALLER_RETURN: u32 = 0x02_a4c8;
+/// `Hud_UpdateHearts` ($0D:FDAB..$0D:FDD8) together with the
+/// `Hud_UpdateHearts_DrawHeart` ($0D:FDD9..$0D:FDEE) it branches into. The
+/// pair writes nothing but HUD tile-buffer words (`LDA [$0a],Y : STA [$07],Y`)
+/// and derives every input from its caller, so it restarts exactly.
+const HUD_UPDATE_HEARTS_START_PC: u32 = 0x0d_fdab;
+const HUD_UPDATE_HEARTS_END_PC: u32 = 0x0d_fdef;
+/// `$02:A4C9 JSL Hud_RefillLogic` is the Module09 overworld suffix's own call,
+/// made immediately after its `JSL LinkOam_Main`. `Hud_RefillLogic` has seven
+/// call sites; only this one belongs to the suffix, so its retained stack
+/// return address $02:A4CC is what admits the interruption.
+const MODULE09_HUD_REFILL_CALLER_RETURN: u32 = 0x02_a4cc;
+const HUD_REFILL_LOGIC_ENTRY_PC: u32 = 0x0d_db75;
 
 fn native_main_loop_cpu_run(state: &mut ZeldaState, input: u16, nmi_is_trailing: bool) -> (RomCpuTimingRun, CpuCycleBudget) {
     let phase = state.native_main_wait_cpu_phase.take();
@@ -2746,6 +2758,7 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
     let mut hud_conversion = None;
     let mut in_hud_conversion = false;
     let mut link_oam_caller_return = None;
+    let mut hud_refill_caller_return = None;
     for _ in 0..200_000 {
         if run.is_complete() {
             if crate::debug_env::var_os("ZELDA3_DEBUG_OVERWORLD_CPU_PACKING").is_some()
@@ -2798,6 +2811,9 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
             // at LinkOam_Main's first instruction, so it names the original
             // call site of the call the CPU is now inside.
             link_oam_caller_return = Some(run.stack_return_address());
+        }
+        if pc == HUD_REFILL_LOGIC_ENTRY_PC {
+            hud_refill_caller_return = Some(run.stack_return_address());
         }
         if packing_entry.is_some() && pc == 0x00_85fe {
             group = group.checked_sub(4).expect("packing loop exceeded eight passes");
@@ -2874,6 +2890,13 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
                     // JSR has transferred control to the callee, but none of
                     // the hearts block's instructions have executed yet.
                     Some(HudUpdateInterruption::BeforeHearts)
+                } else if (HUD_UPDATE_HEARTS_START_PC..HUD_UPDATE_HEARTS_END_PC)
+                    .contains(&run.pc())
+                    && hud_refill_caller_return == Some(MODULE09_HUD_REFILL_CALLER_RETURN)
+                {
+                    // The source accepted this host's NMI part-way through the
+                    // suffix's own heart drawing.
+                    Some(HudUpdateInterruption::InsideHearts)
                 } else { hud_conversion.map(HudUpdateInterruption::Inventory) };
             if packing.is_some()
                 || hud.is_some()

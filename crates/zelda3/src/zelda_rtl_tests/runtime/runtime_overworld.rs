@@ -1781,3 +1781,110 @@ fn module09_link_oam_call_site_pushes_the_native_discriminator() {
     assert_eq!(&rom[at(LINK_OAM_MAIN_END_PC)..at(LINK_OAM_MAIN_END_PC) + 2], &[0xe2, 0x30]);
     assert!(LINK_OAM_MAIN_ENTRY_PC < 0x0d_a9ed && 0x0d_a9f1 < LINK_OAM_MAIN_END_PC);
 }
+
+/// The Module09 suffix's `Hud_RefillLogic` call and the heart-drawing routine
+/// an accepted NMI can land inside, executed on the original ROM.
+///
+/// The native measurement resumes such an interruption by re-running the whole
+/// `Hud_Update_IgnoreItemBox` callee. That is exact only because of three ROM
+/// facts, each pinned here: the heart routine writes nothing but HUD tile
+/// words through `[$07],Y`, its publication is gated on `$16`, and `$16` is
+/// incremented only after the callee returns.
+#[test]
+fn module09_hud_hearts_interruption_contract_holds_on_the_rom() {
+    let path = std::env::var_os("ZELDA3_ROM")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc")
+        });
+    let Ok(mut rom) = std::fs::read(path) else {
+        return;
+    };
+    if rom.len() % 0x400 == 0x200 {
+        rom.drain(..0x200);
+    }
+    let at = |address: u32| -> usize {
+        let bank = (address >> 16) as usize;
+        bank * 0x8000 + ((address as u16 as usize) - 0x8000)
+    };
+
+    // `Hud_UpdateHearts` ($0D:FDAB..$0D:FDD8) and the
+    // `Hud_UpdateHearts_DrawHeart` ($0D:FDD9..$0D:FDEE) it branches into. The
+    // only stores are `STA $00` (the loop's own count), `STA $07` (its own row
+    // pointer) and `STA [$07],Y` (a HUD tile word) — no game state.
+    assert_eq!(
+        &rom[at(HUD_UPDATE_HEARTS_START_PC)..at(HUD_UPDATE_HEARTS_END_PC)],
+        &[
+            0xa2, 0x00, 0x00, 0xa5, 0x00, 0xc9, 0x08, 0x00, 0x90, 0x0f, 0xe9, 0x08, 0x00, 0x85,
+            0x00, 0xa0, 0x04, 0x00, 0x20, 0xd9, 0xfd, 0xe8, 0xe8, 0x80, 0xea, 0xc9, 0x05, 0x00,
+            0x90, 0x05, 0xa0, 0x04, 0x00, 0x80, 0x0b, 0xc9, 0x01, 0x00, 0x90, 0x05, 0xa0, 0x02,
+            0x00, 0x80, 0x01, 0x60, 0xe0, 0x14, 0x00, 0x90, 0x0b, 0xa2, 0x00, 0x00, 0xa5, 0x07,
+            0x18, 0x69, 0x40, 0x00, 0x85, 0x07, 0xb7, 0x0a, 0x9b, 0x97, 0x07, 0x60,
+        ],
+        "Hud_UpdateHearts/DrawHeart changed; the restart argument must be re-derived",
+    );
+
+    // The only way into that routine is `Hud_Update_IgnoreItemBox`, and the
+    // only way into that is `Hud_RefillLogic`'s tail — so the suffix's own
+    // `Hud_RefillLogic` call is the discriminator the measurement needs.
+    let jsr_sites = |target: u16, bank: u32| -> Vec<u32> {
+        let base = bank as usize * 0x8000;
+        (base..base + 0x8000 - 2)
+            .filter(|&offset| {
+                rom[offset] == 0x20
+                    && u16::from_le_bytes([rom[offset + 1], rom[offset + 2]]) == target
+            })
+            .map(|offset| (bank << 16) | (0x8000 + (offset - base)) as u32)
+            .collect()
+    };
+    assert_eq!(jsr_sites(0xfdab, 0x0d), vec![0x0d_fbbd, 0x0d_fc06]);
+    assert_eq!(jsr_sites(0xfb94, 0x0d), vec![0x0d_dd21]);
+    let jsl_sites: Vec<u32> = (0..rom.len() - 3)
+        .filter(|&offset| {
+            rom[offset] == 0x22
+                && u32::from_le_bytes([rom[offset + 1], rom[offset + 2], rom[offset + 3], 0])
+                    == HUD_REFILL_LOGIC_ENTRY_PC
+        })
+        .map(|offset| (((offset / 0x8000) as u32) << 16) | (0x8000 + (offset % 0x8000)) as u32)
+        .collect();
+    assert_eq!(
+        jsl_sites,
+        vec![0x00_f83a, 0x02_83ea, 0x02_8856, 0x02_9bcb, 0x02_9c8e, 0x02_a4c9, 0x09_f718],
+        "Hud_RefillLogic's call sites changed; the Module09 discriminator must be rechecked",
+    );
+
+    // `$0D:DD21 JSR Hud_Update_IgnoreItemBox` then `$0D:DD24 SEP #$30` then
+    // `$0D:DD26 INC $16`: the publication flag is raised only after the whole
+    // callee returns, so an NMI inside it cannot publish a partial buffer.
+    assert_eq!(
+        &rom[at(0x0d_dd21)..at(0x0d_dd21) + 7],
+        &[0x20, 0x94, 0xfb, 0xe2, 0x30, 0xe6, 0x16],
+    );
+    // `$00:8B67 LDA $16 : BEQ` is the NMI's HUD-DMA gate.
+    assert_eq!(&rom[at(0x00_8b67)..at(0x00_8b67) + 4], &[0xa5, 0x16, 0xf0, 0x1c]);
+
+    // Execute the suffix's own call: the 65816 pushes the address of the JSL's
+    // final operand byte, so the retained return address is $02:A4CC.
+    assert_eq!(&rom[at(0x02_a4c9)..at(0x02_a4c9) + 4], &[0x22, 0x75, 0xdb, 0x0d]);
+    let machine = snes::Snes::new();
+    let checkpoint = RomCpuCheckpoint {
+        entry_pc: 0x02_a4c9,
+        stop_pc: HUD_REFILL_LOGIC_ENTRY_PC,
+        db: 0x02,
+        waiting: false,
+        ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+    };
+    let mut run = RomCpuTimingRun::new(
+        &rom,
+        &machine.ram,
+        &machine.cart.ram,
+        &machine.ppu,
+        &machine.dma,
+        [0; 4],
+        checkpoint,
+    )
+    .unwrap();
+    run.step();
+    assert!(run.is_complete(), "the JSL must transfer control to Hud_RefillLogic");
+    assert_eq!(run.stack_return_address(), MODULE09_HUD_REFILL_CALLER_RETURN);
+}

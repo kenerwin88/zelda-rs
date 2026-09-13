@@ -113,6 +113,11 @@ pub(crate) struct HudInventoryResume {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum HudUpdateInterruption {
     BeforeHearts,
+    /// The NMI landed inside `Hud_UpdateHearts` itself rather than before the
+    /// call. The drawing has partially run, but it publishes nothing outside
+    /// the HUD tile buffer and restarts from unmutated inputs, so it resumes
+    /// through the same `HudUpdateResume::BeforeHearts` callee re-run.
+    InsideHearts,
     Inventory(HudInventoryInterruption),
 }
 

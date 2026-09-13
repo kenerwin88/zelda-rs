@@ -693,7 +693,18 @@ impl ZeldaState {
             // Hud_Update_IgnoreItemBox ($0D:FB94): the hearts block falls
             // through into the magic + inventory code and returns at
             // $0D:FCF9, so one scope covers all three.
-            if self.native_overworld_hud_interruption == Some(HudUpdateInterruption::BeforeHearts) {
+            if matches!(
+                self.native_overworld_hud_interruption,
+                Some(HudUpdateInterruption::BeforeHearts | HudUpdateInterruption::InsideHearts)
+            ) {
+                // `InsideHearts` resumes through the same callee re-run.
+                // `Hud_UpdateHearts` writes only HUD tile-buffer words and
+                // derives its count from the unmutated health capacity and
+                // current health, so the partial pass the source made before
+                // the interrupt is a subset of the words the re-run writes.
+                // Nothing observes it in between: `$00:8B67 LDA $16 : BEQ`
+                // gates the HUD DMA, and `$16` is incremented only at
+                // `$0D:DD28`, after the whole block returns.
                 self.native_overworld_hud_interruption = None;
                 self.schedule_interrupted_overworld_hud_update(HudUpdateResume::BeforeHearts);
                 return;
