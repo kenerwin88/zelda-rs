@@ -97,6 +97,31 @@ Its legacy APU state is also not an exact Snes9x SMP coroutine checkpoint.
 Do not seed frozen acknowledgement ports, reset a late APU, or manufacture
 an exact checkpoint to bypass this missing ownership boundary.
 
+A further SPC queue audit reproduced lost future CPU writes: `advance`
+took the complete scheduled-write queue but discarded the unconsumed suffix
+when the output window ended. It now retains that suffix at its original
+absolute timestamps. Consumed writes remain exclusively owned by the APU
+scheduler or published latches. The regression executes SPC `MOV A,$f4;
+MOV $f5,A; BRA` and verifies delayed publication, an actual port echo,
+identical PC/cycles after split versus uninterrupted windows, and no replay.
+It fails on the previous implementation with input0 instead of$ff:
+`/tmp/native-future-apui-baseline.log`. The source contract is
+`apu/apu.cpp:S9xAPUWritePort`: synchronize the APU, then publish the input
+latch; an audio output boundary cannot cancel a pending CPU write.
+The queue-fix binary SHA is
+`4f1b67a1880bff62b410501e1ed09b4b6e6acc85ab836f6fd52fbc6bfbd419db`.
+`target/native-future-apui` remains native exact through56,389, first video
+failure56,390 with audio exact (458.97s). The same binary matches all56,397
+receipt-driven frames in `target/native-future-apui-receipt` (367.97s).
+No full1,581,079-frame comparison was repeated.
+All1,799 library tests pass,3 ignored (23.69s):
+`/tmp/native-future-apui-tests.log`. This queue repair does not yet supply
+fine-grained APUI sampling or remove the host-window semantics of `advance`.
+The legacy clock also retains nominal NMI entryC84 and SPC lookahead19.
+Neither is a valid replacement for the source CPU phase and retained SMP
+clock/remainder at an arbitrary bus access. Do not tune these constants;
+prove and preserve the actual synchronization state when integrating APUI.
+
 Counter state explicitly owns WRIO, PPU.OpenBus1/2, latchedH/V, read flips,
 and the STAT78 latch flag. The reset factory follows `S9xSoftResetPPU`
 (WRIO=$ff); it must not be used as a guessed later-frame seed. Source read

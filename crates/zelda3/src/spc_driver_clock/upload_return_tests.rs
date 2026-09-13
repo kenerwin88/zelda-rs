@@ -68,6 +68,35 @@ fn upload_command_uses_its_cpu_position_instead_of_the_audio_window_end() {
 }
 
 #[test]
+fn future_cpu_port_write_survives_until_its_scheduled_bus_access() {
+    let mut clock = clock_at_first_host_boundary();
+    // SPC MOV A,$f4; MOV $f5,A; BRA: echo CPU port0 to output port1.
+    // The Snes9x APUI/SMP port contract keeps the input latch unchanged
+    // until the CPU write and then exposes that write to subsequent reads.
+    // The audio window boundary itself has no port-register side effect.
+    clock.apu.ram[0x2000..0x2006].copy_from_slice(&[0xe4, 0xf4, 0xc4, 0xf5, 0x2f, 0xfa]);
+    clock.begin_song_bank_transfer_at(0, &[0, 0],
+        Some(snes::CpuRasterPosition::new(251, 900)));
+    let mut uninterrupted = clock.clone();
+
+    clock.advance(EngineAudioCommandBatch::default(), 1, 0);
+    assert_eq!(clock.apu.in_ports[0], 0, "future write must not publish early");
+    assert_eq!(clock.apu.out_ports[1], 0);
+
+    clock.advance(EngineAudioCommandBatch::default(), 99, 0);
+    uninterrupted.advance(EngineAudioCommandBatch::default(), 100, 0);
+    assert_eq!(clock.apu.in_ports[0], 0xff, "window end must not discard the CPU command");
+    assert_eq!(clock.apu.out_ports[1], 0xff, "the SPC must observe the real input latch");
+    assert_eq!(clock.apu.out_ports, uninterrupted.apu.out_ports);
+    assert_eq!(clock.apu.spc.pc, uninterrupted.apu.spc.pc);
+    assert_eq!(clock.apu.cycles, uninterrupted.apu.cycles);
+
+    clock.apu.in_ports[0] = 0;
+    clock.advance(EngineAudioCommandBatch::default(), 2, 0);
+    assert_eq!(clock.apu.out_ports[1], 0, "a retired write must not replay");
+}
+
+#[test]
 fn timed_overworld_request_matches_source_ready_poll_bus_timestamps() {
     // Cold Snes9x run37662, APUI bus accesses: FF at V31/C832,
     // CMP low at1196, high at1202, failed-pair next low at1254.

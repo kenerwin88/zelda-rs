@@ -776,6 +776,12 @@ impl AbsoluteDspEventClock {
                 }
             }
         }
+        // The output window does not retire a CPU bus write. Retain every
+        // event not yet delivered to the SPC scheduler at its original
+        // absolute timestamp; consumed events already belong to the APU's
+        // input-event queue or have been published at a coroutine boundary.
+        self.pending_timed_main_cpu_port_writes
+            .extend_from_slice(&host_port_events[next_host_port..]);
         self.absolute_apu_cycle = frame_end_cycle;
         self.host_frame_index = self.host_frame_index.wrapping_add(1);
 
