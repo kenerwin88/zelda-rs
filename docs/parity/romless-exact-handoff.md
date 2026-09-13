@@ -53,6 +53,46 @@ native counter174 versus source173 precedes45 OAM byte differences.
 The probe log's host is `frame_ctr_dbg`; account for its leading/trailing
 NMI ownership before aligning it with comparison frames.
 
+### Probe diagnosis: Cucco avenger RNG changes the measured path
+
+The next diagnostic must reconcile the probe's CPU/beam/RNG input, not
+extend Link's late-return continuation. `target/native-56390-sprite-phase`
+and `target/native-56390-cucco-phase` both retain first video mismatch56,390
+(70.05s and70.04s). No runtime fix landed from these probes.
+
+For source comparison56,389 / native effective CPU host56,390, both enter
+the main routine with counter173. Native is12 master clocks early at
+`$02:a475`, Sprite_Main `$06:8328`, and sprite-slot13 entry `$06:84e2`.
+The earlier slots preserve this difference. Slot13 is Cucco type$0b and
+enters `Cucco_SummonAvenger` on this iteration. The source RNG call at
+`$06:a7f5` returns$32 at `$06:a7f9`; its `AND #$02` branch takes `$a7ff`.
+The native timing probe instead takes `$a823`. After the spawned avenger's
+speed calculation returns at `$a84b`, native is708 clocks early; after
+Sprite_Main returns it is682 early. These are different instruction paths,
+not evidence for adding a fixed670/682-cycle charge or holding OAM.
+The earlier12-clock phase difference may affect the RNG's beam-counter
+reads, but the exact cause of the RNG disagreement is still unresolved.
+
+Source `target/native-56390-cucco-source` resumes the valid paired53500
+checkpoint and is video exact through56,391. Its decoded critical run is
+`/tmp/native-56390-cucco-source.jsonl`; the earlier main/slot phase trace is
+`/tmp/native-56390-phase-source.jsonl`. Joined source/native instructions
+are saved in `target/native-56390-cucco-phase/instruction-comparison.json`.
+Native pre-NMI WRAM is in
+`target/native-56390-sprite-phase-input/56390-input-wram.bin`; sprite arrays
+match source56,388 before this iteration. The temporary instrumentation
+was removed from source; its reproducible patch is saved beside the joined
+instructions as `diagnostic.patch`. The candidate binary still includes
+that debug-only instrumentation; it is not a new gameplay revision.
+
+Preceding ordinary iterations also expose an inherited phase difference:
+native effective hosts56,387..56,390 reach main entry36,28,20,12 clocks
+early respectively, compared with source56,386..56,389. Trace that phase
+and the actual RNG register/counter accesses before deciding whether the
+fix belongs to CPU timing, probe hardware state, or gameplay ownership.
+Do not substitute cached RNG results into the timing probe simply to make
+this branch match without establishing the intended input contract.
+
 ### Previous native frontier — 54,762 (video)
 
 The native HUD probe now retains a typed `BeforeHearts` interruption when
