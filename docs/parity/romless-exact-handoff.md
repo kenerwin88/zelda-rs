@@ -82,42 +82,39 @@ prices the handler's DMA from `state.dma_with_native_hdma_enable()`), and the
 module iteration itself. Settle it by comparing against the source's raster at
 `$00:8056`/`$00:805A` for that host.
 
-**Getting the source raster is blocked by a tooling regression — read this
-before retrying.** The cached receipts carry no PC or raster (their nineteen
-fields are `host_call`, `input_state`, `semantic`, the NMI register operands
-and the presented-state domains), so the comparison needs a Snes9x PC trace.
-`./parity microscope` cannot currently capture one. The chain, in the order it
-fails:
+**Getting the source raster needs one trace-capture rule.** The cached receipts
+carry no PC or raster (their nineteen fields are `host_call`, `input_state`,
+`semantic`, the NMI register operands and the presented-state domains), so the
+comparison needs a Snes9x PC trace. Capturing one works, but only unbounded:
 
-1. `./parity doctor` fails `parity binary` (stale) and `replay provenance`.
-   The staleness guard compares mtimes, so a binary built in a worktree always
-   looks stale from the main checkout; rebuild in the main checkout with
-   `CARGO_TARGET_DIR=target/song-upload-build` and pass `--binary` — never
-   rebuild the frozen `target/parity/zelda3`. `--allow-stale` does not help:
-   `parity_probe` restricts it to `--dry-run`.
-2. `microscope --recorded-rng` is refused: "selected replay core disagrees with
-   the current route signature". The available `run-*` dirs replay the
-   instrumented core (`6f112667…`) while the route signature pins `f8265824…`.
-3. Live-RNG `microscope` then selects `diagnostic-checkpoint` tier and fails —
-   the probe checkpoint it names
-   (`target/parity-probes/checkpoints/frontier-full_run-…`) has no saved
-   generation.
-4. `microscope --cold --trace-internal-frames 56410-56420` plans correctly and
-   runs, but dies at frame 0: *"failed to read pinned-Snes9x semantic receipts
-   at frame 0: Snes9x host call omitted frame/entry receipt"*.
+> **Never set `ZELDA3_SNES9X_TRACE_FRAMES` (or `microscope
+> --trace-internal-frames` on a cold run) while the comparison harness needs
+> semantic receipts.** The compare binary's semantic-receipt adapter reads
+> those receipts out of the Z3TRACE1 trace itself, so a frame filter starves it
+> and the run dies at frame 0 with *"failed to read pinned-Snes9x semantic
+> receipts at frame 0: Snes9x host call omitted frame/entry receipt"*. Filter
+> with `ZELDA3_SNES9X_TRACE_PCS` instead and leave the frame range open.
 
-Step 4 is the real blocker and it is **not** about RNG, the event filter, or
-engine-state comparison — all were ruled out. Running the instrumented core
-with no trace environment at all works (it reaches the frame-0 engine-state
-comparison normally, which only needs `--compare-engine-state-from-frame` or
-`--ignore-engine-state`). Setting `ZELDA3_SNES9X_TRACE` alone is enough to
-break it. The pinned core gives the matching complaint from the other side:
-*"not a Z3TRACE1 binary trace (magic `{\"event\"`); JSON Lines traces are no
-longer produced by the pinned core"*. So the semantic-receipt reader has
-migrated to a Z3TRACE1 binary stream while the instrumented trace core still
-emits JSON Lines, and enabling a trace routes the receipts through the stale
-format. Fixing that migration is the prerequisite for any further PC/raster
-evidence — including 56,417.
+Verified on a 30-frame A/B: `ZELDA3_SNES9X_TRACE` + `ZELDA3_SNES9X_TRACE_PCS`
+completes and writes 9,728 trace bytes; adding `ZELDA3_SNES9X_TRACE_FRAMES`
+fails at frame 0 and leaves only the 8-byte `Z3TRACE1` header. A PC-filtered
+trace costs roughly 324 bytes per frame, so the whole 56,417-frame prefix is
+about 18 MB — well inside `--max-trace-mib`.
+
+Two smaller gotchas on the way in: `./parity doctor`'s `parity binary` staleness
+check compares mtimes, so a binary built in a worktree always looks stale from
+the main checkout (rebuild in the main checkout with
+`CARGO_TARGET_DIR=target/song-upload-build` and pass `--binary`; never rebuild
+the frozen `target/parity/zelda3`, and note `--allow-stale` is `--dry-run`
+only). And `microscope --recorded-rng` is refused — "selected replay core
+disagrees with the current route signature" — because the available `run-*`
+dirs replay the instrumented core (`6f112667…`) while the route signature pins
+`f8265824…`; use the live-RNG selection or pass the cache's own
+`--rom-random-script`.
+
+The trace core itself is current: its receipt lists all eleven maintained
+patches including `zelda3-trace-binary-format.patch`, and it emits Z3TRACE1 as
+`docs/parity/binary-trace-format.md` describes.
 
 ## Previous native frontier — 56,390 (video): dialogue/return timing
 
