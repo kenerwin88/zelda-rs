@@ -4,7 +4,62 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 54,043 (audio)
+## Current native frontier — 56,390 (video)
+
+The native dialogue/return timing batch restores exact A/V through56,389;
+56,390 still fails video with audio exact. These are source timing and
+CPU-state ownership fixes, not offsets chosen to move the frontier:
+
+- `RenderText_Draw_Finish` now charges the original `$0e:ca35..ca6b`
+  straight-line738 clocks. Its separately annotated border initializer
+  costs204. The regression asserts942 total clocks, the exact upload bytes,
+  module return, and absence of writes outside the finish block's ownership.
+- Fresh dialogue iterations use the retained main-wait checkpoint through
+  the leading NMI. When the iteration reaches the common return, the probe
+  retains its actual next CPU checkpoint/budget instead of reseeding the
+  next caller. Interrupted glyph/scroll work remains with its translated
+  continuation; the probe does not predict future joypad input or copy
+  shadow RAM into gameplay.
+- A measured glyph entry retains its physical field as well as its raster.
+  Its budget uses the actual alternating field lengths, including the
+  four-clock short odd scanline240. Resumed dialogue uses the same physical
+  field convention. A regression covers both field lengths and stall costs.
+- The song-upload sprite-preparation suffix retains its CPU return phase
+  after its accepted NMI and typed continuation. Source comparison54,252
+  and native effective host54,253 both reach `$8034`, V225/C28, counter173:
+  `target/native-dialogue-upload-phase/upload-return-phase-comparison.json`.
+  This proves that return checkpoint, not every subsequent module entry.
+
+`target/native-dialogue-upload-phase` is the frame-zero native run (81.55s).
+Binary SHA:
+`1db17ef5c24a22ebd279ae3bb3784c1e79e8d857659bba1a75d3443e563c1538`.
+All1,798 library tests pass,3 ignored (23.82s):
+`/tmp/native-dialogue-upload-phase-lib-tests.log`.
+`target/native-dialogue-upload-phase-receipt` matches all56,397 receipt-driven
+frames (63.85s).
+No full1,581,079-frame run was repeated for this binary. The older full
+receipt result remains evidence for its recorded binary only.
+
+An intermediate run, `target/native-dialogue-main-wait-field`, has the same
+native frontier; its `dialogue-return-comparison.json` confirms source/native
+module, counter, and all OAM bytes agree across52,748..52,756. The dungeon
+command still reachesV118/C220 versus sourceC234,14 clocks early. Restored
+audio parity is not proof of exact absolute CPU phase. Do not compensate
+that residual with a command offset.
+
+### Next: fix bus access timing and remaining CPU-phase ownership
+
+The confirmed beam-counter defect below still samples `$2137` at instruction
+entry rather than its source bus-access time. Fix ordered bus timing, with
+source-backed access timestamps and stall handling; do not inject cached RNG
+or add an RNG-specific24-clock adjustment. Dialogue initialization and
+interrupted dialogue returns still do not retain every CPU phase; fresh
+completed iterations are the scope of this batch. Continue tracing those
+ownership boundaries before interpreting a later OAM interruption as a new
+missing hold. Earlier failures are acceptable evidence when source fidelity
+improves; exact coverage alone must never justify a timing shortcut.
+
+## Previous phase-retention regression — 54,043 (audio)
 
 Interrupted ordinary-overworld HUD, Link-body, and sprite-preparation
 suffixes now preserve the CPU's real next main-wait phase. The existing
@@ -36,7 +91,7 @@ regression: `/tmp/native-overworld-suffix-phase-lib-tests.log`.
 `target/native-overworld-suffix-phase-receipt` matches all56,397 receipt-driven
 frames (63.81s). No full1,581,079-frame run was repeated for this binary.
 
-### Next: preserve the phase when dialogue returns to the overworld
+### Evidence that motivated dialogue return-phase retention
 
 The last non-suffix gap before this upload is dialogue14/2 returning to9/0.
 `target/native-52752-source`, from the valid paired52000 checkpoint, is

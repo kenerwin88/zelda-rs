@@ -2551,6 +2551,12 @@ struct NativeMainWaitCpuPhase {
     budget: CpuCycleBudget,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct NativeDialogueCpuEntry {
+    position: CpuRasterPosition,
+    field_timing: CpuFieldTiming,
+}
+
 fn module_cpu_entry_after_leading_nmi(state: &ZeldaState, input: u16, entry_pc: u32,
     phase: Option<NativeMainWaitCpuPhase>) -> CpuRasterPosition {
     let checkpoint = phase.as_ref().map(|phase| phase.checkpoint).unwrap_or(RomCpuCheckpoint {
@@ -2623,7 +2629,7 @@ fn overworld_map_graphics_cpu_nmi_slices(state: &ZeldaState, input: u16) -> (u8,
     panic!("overworld map CPU timing did not return");
 }
 
-fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, nmi_is_trailing: bool) -> (Option<SpritePreparationProgress>, Option<HudUpdateInterruption>) {
+fn native_main_loop_cpu_run(state: &mut ZeldaState, input: u16, nmi_is_trailing: bool) -> (RomCpuTimingRun, CpuCycleBudget) {
     let phase = state.native_main_wait_cpu_phase.take();
     if let Some(phase) = phase.as_ref() {
         assert_eq!(phase.host, state.frame_ctr_dbg + u32::from(nmi_is_trailing),
@@ -2647,6 +2653,42 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
     let mut budget = phase.map(|phase| phase.budget).unwrap_or_else(||
         CpuCycleBudget::at_nmi_acceptance(CpuBusWorkload::with_dynamic_hdma(), field_timing));
     advance_rom_cpu_through_nmi(&mut run, &mut budget);
+    (run, budget)
+}
+
+/// Measure a fresh dialogue iteration and retain its common caller return.
+/// A glyph/scroll interruption remains owned by the translated continuation;
+/// this probe never predicts a future host's joypad input to finish it.
+fn dialogue_main_loop_cpu_phase(state: &mut ZeldaState, input: u16, nmi_is_trailing: bool) {
+    let (mut run, mut budget) = native_main_loop_cpu_run(state, input, nmi_is_trailing);
+    let mut glyph_entry = None;
+    for _ in 0..200_000 {
+        if run.pc() == 0x0e_c984 && glyph_entry.is_none() {
+            let position = budget.raster_position();
+            glyph_entry = Some(NativeDialogueCpuEntry {
+                position,
+                field_timing: native_cpu_field_timing_at_entry(
+                    state.frame_ctr_dbg + u32::from(nmi_is_trailing), position),
+            });
+        }
+        if run.is_complete() {
+            let host = state.frame_ctr_dbg + 1 + u32::from(nmi_is_trailing);
+            state.native_main_wait_cpu_phase = Some(overworld_cpu_suffix_main_wait_phase(run, budget, host));
+            state.native_dialogue_fresh_cpu_entry = glyph_entry;
+            return;
+        }
+        let (v, h) = budget.raster_position().coordinates();
+        run.set_raster_position(v, h);
+        if advance_rom_cpu_step(&mut run, &mut budget).reached_boundary().is_some() {
+            state.native_dialogue_fresh_cpu_entry = glyph_entry;
+            return;
+        }
+    }
+    panic!("dialogue timing failed to reach the next NMI or caller return");
+}
+
+fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, nmi_is_trailing: bool) -> (Option<SpritePreparationProgress>, Option<HudUpdateInterruption>) {
+    let (mut run, mut budget) = native_main_loop_cpu_run(state, input, nmi_is_trailing);
     let mut packing_entry = None;
     let mut group = 32u8;
     let mut progress = None;
@@ -2777,8 +2819,8 @@ fn overworld_cpu_suffix_main_wait_phase(mut run: RomCpuTimingRun, mut budget: Cp
             } else { 0x00_805d };
             let checkpoint = run.main_wait_checkpoint(next_entry);
             if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
-                eprintln!("song_upload main_wait host={host} pc={:06x} position={:?} zero={}",
-                    checkpoint.entry_pc, budget.raster_position(), checkpoint.zero);
+                eprintln!("song_upload main_wait host={host} pc={:06x} position={:?} zero={} counter={}",
+                    checkpoint.entry_pc, budget.raster_position(), checkpoint.zero, run.ram_byte(FRAME_COUNTER));
             }
             return NativeMainWaitCpuPhase { host, checkpoint, budget };
         }
@@ -2787,7 +2829,7 @@ fn overworld_cpu_suffix_main_wait_phase(mut run: RomCpuTimingRun, mut budget: Cp
 }
 
 fn overworld_upload_suffix_interruption(
-    state: &ZeldaState, restored: CpuRasterPosition,
+    state: &mut ZeldaState, restored: CpuRasterPosition,
 ) -> Option<SpritePreparationProgress> {
     // $02:8566's final STA bus cycle6, RTS42, then the module router's RTL44.
     // $805a JSR NMI_PrepareSprites follows. Its first LDY/TYA/TAX sequence
@@ -2823,7 +2865,11 @@ fn overworld_upload_suffix_interruption(
     let mut sources = None;
     let mut pointers = None;
     for _ in 0..10_000 {
-        if run.is_complete() { return None; }
+        if run.is_complete() {
+            state.native_main_wait_cpu_phase = Some(overworld_cpu_suffix_main_wait_phase(
+                run, budget, state.frame_ctr_dbg + 1));
+            return None;
+        }
         let pc = run.pc();
         if pc == 0x00_85fe {
             group = group.checked_sub(4).expect("upload packing exceeded eight groups");
@@ -2864,6 +2910,12 @@ fn overworld_upload_suffix_interruption(
                 eprintln!("song_upload suffix host={} pc={:06x} position={:?} progress={progress:?}",
                     state.frame_ctr_dbg, run.pc(), budget.raster_position());
             }
+            // The upload's typed sprite-preparation continuation owns the
+            // next host. Follow its accepted NMI and caller return without
+            // discarding the CPU phase before the subsequent fresh module.
+            advance_rom_cpu_through_nmi(&mut run, &mut budget);
+            state.native_main_wait_cpu_phase = Some(overworld_cpu_suffix_main_wait_phase(
+                run, budget, state.frame_ctr_dbg + 2));
             return Some(progress);
         }
     }
@@ -10407,7 +10459,7 @@ pub struct ZeldaState {
     /// Fresh RenderText message-loop entry measured through the leading NMI
     /// and current sprite/module prefix; consumed by that handler only.
     #[serde(skip)]
-    native_dialogue_fresh_cpu_entry: Option<CpuRasterPosition>,
+    native_dialogue_fresh_cpu_entry: Option<NativeDialogueCpuEntry>,
     #[serde(skip)]
     pending_dungeon_map_room_drawing_nmi_slices: Option<u8>,
     /// Work performed by the most recent `Sprite_Main` call in this host

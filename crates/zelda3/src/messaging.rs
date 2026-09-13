@@ -556,6 +556,20 @@ mod fast_forward_cycle_tests {
     }
 
     #[test]
+    fn measured_dialogue_budget_keeps_the_entries_physical_field() {
+        let state = crate::zelda_rtl::ZeldaState::new();
+        // Snes9x non-interlace odd fields shorten scanline240 by four
+        // clocks. This entry crosses that scanline before the next NMI.
+        let entry = snes::CpuRasterPosition::new(230, 0);
+        let even = state.vwf_exact_entry_budget(entry, snes::CpuFieldTiming::non_interlace(false)).unwrap();
+        let odd = state.vwf_exact_entry_budget(entry, snes::CpuFieldTiming::non_interlace(true)).unwrap();
+        assert_eq!(even.master_cycles - odd.master_cycles, 4);
+        assert_eq!(even.stall_master_cycles, odd.stall_master_cycles);
+        assert_eq!(even.since_nmi_master_cycles, 5 * 1364 - 12);
+        assert_eq!(odd.since_nmi_master_cycles, even.since_nmi_master_cycles);
+    }
+
+    #[test]
     fn render_loop_budget_tracks_rom_entry_and_resume_phases() {
         assert_eq!(
             vwf_render_loop_cycle_budget(false, 0, VwfHandlerEntryPhase::OrdinaryModuleIteration),
@@ -5583,7 +5597,7 @@ impl ZeldaState {
             if debug_vwf_budget {
                 eprintln!("vwf_measured_entry host={} position={entry:?}", self.frame_ctr_dbg);
             }
-            self.vwf_exact_measured_entry_budget(entry)
+            self.vwf_exact_entry_budget(entry.position, entry.field_timing)
         } else if resuming {
             self.vwf_exact_loop_budget()
         } else {
@@ -6139,7 +6153,8 @@ impl ZeldaState {
             + self.last_nmi_dma_master_cycles;
         let mut budget = CpuCycleBudget::at_nmi_acceptance(
             snes::CpuBusWorkload::with_hdma_stall(self.native_hdma_scanline_stall_master_cycles()),
-            snes::CpuFieldTiming::non_interlace(self.frame_ctr_dbg & 1 == 0),
+            super::native_cpu_field_timing_at_entry(self.frame_ctr_dbg,
+                snes::CpuRasterPosition::new(225, snes::SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES as u16)),
         );
         budget.begin_nmi_handler();
         let since_nmi = u32::try_from(since_nmi_master_cycles).unwrap_or(u32::MAX);
@@ -6219,18 +6234,28 @@ impl ZeldaState {
     /// A measured entry can occur on either side of the field wrap. Price
     /// the remaining CPU work from that position, excluding refresh/HDMA.
     fn vwf_exact_measured_entry_budget(&self, entry: snes::CpuRasterPosition) -> Option<VwfExactLoopBudget> {
+        self.vwf_exact_entry_budget(entry,
+            super::native_cpu_field_timing_at_entry(self.frame_ctr_dbg, entry))
+    }
+
+    fn vwf_exact_entry_budget(&self, entry: snes::CpuRasterPosition, field_timing: snes::CpuFieldTiming) -> Option<VwfExactLoopBudget> {
         use crate::zelda_rtl::game_execution_scheduler::{CpuCycleBudget, CpuWorkAdvance};
         if !self.vwf_uses_exact_costs() { return None; }
-        let (v, h) = entry.coordinates();
-        let acceptance = snes::NMI_SCANLINE * snes::MASTER_CYCLES_PER_SCANLINE
-            + snes::SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES as u32;
-        let entry_cycles = u32::from(v) * snes::MASTER_CYCLES_PER_SCANLINE + u32::from(h);
-        let span_before_nmi = (acceptance + SNES_NTSC_MASTER_CYCLES_PER_FRAME - entry_cycles)
-            % SNES_NTSC_MASTER_CYCLES_PER_FRAME;
+        let acceptance = snes::CpuRasterPosition::new(225, snes::SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES as u16);
+        let entry_cycles = field_timing.master_cycles_at(0, entry);
+        let same_field_acceptance = field_timing.master_cycles_at(0, acceptance);
+        let next_field = u64::from(entry_cycles >= same_field_acceptance);
+        let span_before_nmi = u32::try_from(
+            field_timing.master_cycles_at(next_field, acceptance) - entry_cycles).unwrap();
+        let since_nmi_master_cycles = if next_field == 1 {
+            entry_cycles - same_field_acceptance
+        } else {
+            field_timing.field_master_cycles(1) - same_field_acceptance + entry_cycles
+        };
         let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
             entry,
             snes::CpuBusWorkload::with_hdma_stall(self.native_hdma_scanline_stall_master_cycles()),
-            snes::CpuFieldTiming::non_interlace(self.frame_ctr_dbg & 1 == 0),
+            field_timing,
         );
         const PROBE: u32 = 4 * SNES_NTSC_MASTER_CYCLES_PER_FRAME;
         let master_cycles = match budget.advance_interruptible(PROBE) {
@@ -6242,7 +6267,7 @@ impl ZeldaState {
         };
         Some(VwfExactLoopBudget {
             master_cycles,
-            since_nmi_master_cycles: u64::from(SNES_NTSC_MASTER_CYCLES_PER_FRAME - span_before_nmi),
+            since_nmi_master_cycles,
             stall_master_cycles: span_before_nmi.saturating_sub(master_cycles),
         })
     }
