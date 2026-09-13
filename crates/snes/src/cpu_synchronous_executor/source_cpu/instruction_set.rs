@@ -72,6 +72,31 @@ pub(super) trait SourceCpuInstructionBus {
 }
 
 pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
+    /// cpumacro.h:S9xOpcode_NMI/IRQ native entry bus sequence. Interrupt
+    /// selection, pending-latch retirement and deadlines belong to the owner.
+    fn enter_native_interrupt_bus(
+        &mut self,
+        vector_address: u32,
+        memory_speed: u8,
+        accesses: &mut Vec<SourceCpuBusAccess>,
+    ) -> Result<(), SourceCpuError> {
+        self.add_cycles(u32::from(memory_speed) + ONE_CYCLE)?;
+        let program_bank = self.cpu().k;
+        self.push_byte(program_bank, accesses)?;
+        let program_counter = self.cpu().pc;
+        self.push_word(program_counter, accesses)?;
+        let status = self.cpu().pack_flags();
+        self.push_byte(status, accesses)?;
+        self.set_open_bus(status);
+        self.cpu_mut().d = false;
+        self.cpu_mut().i = true;
+        let vector = self.read_word(vector_address, WordWrap::Bank, accesses)?;
+        self.set_open_bus((vector >> 8) as u8);
+        self.cpu_mut().k = 0;
+        self.cpu_mut().pc = vector;
+        Ok(())
+    }
+
     fn execute(
         &mut self,
         opcode: u8,

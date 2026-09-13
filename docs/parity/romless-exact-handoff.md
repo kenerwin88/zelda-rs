@@ -68,8 +68,34 @@ cold CPU/APU executor. It currently supports the audited LoROM/WRAM/SRAM
 map, Mode7 product reads, WRIO/RDIO, and the counter/status read subset.
 Unsupported I/O fails closed and poisons the probe. Pending interrupts,
 DMA/HDMA work, ambiguous refresh seeds, and invalid cartridge/counter seeds
-are rejected. APUI, NMI dispatch, and DMA/HDMA execution are not supplied by
+are rejected. APUI, automatic NMI dispatch, and DMA/HDMA execution are not supplied by
 this owner yet, so it has not replaced the native route's aggregate probe.
+
+The next batch shares the source native interrupt-entry bus sequence with
+this probe. `accept_native_nmi` requires an already accepted interrupt at
+an instruction boundary; it does not invent VBlank or schedule NMI deadlines.
+A separate interrupt receipt records the stack/vector transactions without
+a fake opcode. SlowROM/FastROM entry takes62/60 clocks; RTI restores the
+original bank, PC, status and stack. RDNMI acknowledgement belongs only to
+reading `$4210`. Zero writes to inactive DMA/HDMA enables are accepted;
+nonzero enables still fail before activating DMA.
+
+Validation: `/tmp/native-probe-nmi-tests.log` has415 passing SNES tests,
+6 ignored, plus the integration test. The explicit original-ROM IPL test
+passes in `/tmp/native-probe-nmi-ipl-proof.log`. The development witness
+`target/native-source-nmi-prefix/{probe.rs,probe.log,source-prefix.json}`
+loads the original ROM and recorded source WRAM, then matches the source
+NMI prefix's PC, raster, A/X/Y, SP and status at every traced instruction
+from `$80c9` V225/C76 through `$80e1` V225/C442. It fails closed at the
+actual APUI read V225/C466. This is a seeded prefix witness, not proof of
+interrupt acceptance, whole-handler execution or native route coverage.
+
+The next APUI owner must preserve the real SPC phase and queued writes.
+`AbsoluteDspEventClock::advance` starts a host audio window and increments
+the host index; repeatedly calling it for CPU bus accesses would be wrong.
+Its legacy APU state is also not an exact Snes9x SMP coroutine checkpoint.
+Do not seed frozen acknowledgement ports, reset a late APU, or manufacture
+an exact checkpoint to bypass this missing ownership boundary.
 
 Counter state explicitly owns WRIO, PPU.OpenBus1/2, latchedH/V, read flips,
 and the STAT78 latch flag. The reset factory follows `S9xSoftResetPPU`

@@ -35,7 +35,7 @@ pub(crate) mod test_util;
 pub use cpu_step::{cpu_run_opcode, cpu_run_opcode_timed, CpuInstructionTiming};
 pub use cpu_synchronous_executor::{
     CpuSynchronousCompletion, CpuSynchronousMachine, CpuSynchronousMachineError,
-    RomCpuTimingProbe, RomCpuTimingProbeSeedError, SourcePpuReadState, Snes9xColdCpuExecutor, Snes9xCpuQuiescentCheckpoint, Snes9xCpuQuiescentCheckpointError,
+    RomCpuTimingProbe, RomCpuTimingProbeSeedError, RomCpuNmiReceipt, RomCpuInterruptTransaction, SourcePpuReadState, Snes9xColdCpuExecutor, Snes9xCpuQuiescentCheckpoint, Snes9xCpuQuiescentCheckpointError,
     Snes9xMainLoopReceipt, SourceCpuBusAccess, SourceCpuBusAccessKind, SourceCpuError,
     SourceCpuStepReceipt, SourceCpuTransaction, SourceCpuTransactionKind,
 };

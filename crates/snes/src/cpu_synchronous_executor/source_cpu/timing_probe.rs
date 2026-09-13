@@ -33,11 +33,34 @@ pub enum RomCpuTimingProbeSeedError {
     Timeline(#[from] CpuSynchronousTimelineStartError),
 }
 
+/// An accepted NMI has no opcode fetch. Its transactions retain timing and
+/// bus ownership without inventing an opcode to fit an instruction receipt.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RomCpuInterruptTransaction {
+    pub kind: SourceCpuTransactionKind,
+    pub duration_master_cycles: u8,
+    pub started_at: CpuMasterTimestamp,
+    pub ended_at: CpuMasterTimestamp,
+    pub start_wram_refresh_position: u16,
+    pub end_wram_refresh_position: u16,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RomCpuNmiReceipt {
+    pub interrupted_pc: u32,
+    pub memory_speed: u8,
+    pub started_at: CpuMasterTimestamp,
+    pub ended_at: CpuMasterTimestamp,
+    pub accesses: Vec<SourceCpuBusAccess>,
+    pub transactions: Vec<RomCpuInterruptTransaction>,
+}
+
 pub struct RomCpuTimingProbe {
     snes: Snes,
     timeline: CpuMasterTimeline,
     ppu_reads: SourcePpuReadState,
     active_trace: Option<SourceCpuInstructionTrace>,
+    active_interrupt_trace: Option<Vec<RomCpuInterruptTransaction>>,
     poisoned: bool,
 }
 
@@ -84,6 +107,7 @@ impl RomCpuTimingProbe {
             timeline,
             ppu_reads,
             active_trace: None,
+            active_interrupt_trace: None,
             poisoned: false,
         })
     }
@@ -99,6 +123,45 @@ impl RomCpuTimingProbe {
     }
     pub fn is_poisoned(&self) -> bool {
         self.poisoned
+    }
+
+    /// Execute an NMI already accepted by the caller's interrupt owner at
+    /// this instruction boundary. This does not invent a VBlank event, clear
+    /// RDNMI, enable NMI, or alter the source scheduler's future deadlines.
+    pub fn accept_native_nmi(&mut self) -> Result<RomCpuNmiReceipt, SourceCpuError> {
+        if self.poisoned {
+            return Err(SourceCpuError::Poisoned);
+        }
+        if self.snes.cpu.e || self.snes.cpu.waiting || self.snes.cpu.stopped {
+            return Err(SourceCpuError::UnsupportedNmiEntryState);
+        }
+        let interrupted_pc = self.program_address();
+        let memory_speed = self.snes.hardware_access_time(interrupted_pc);
+        if (interrupted_pc as u16) < 0x8000 || !matches!(memory_speed, 6 | 8) {
+            return Err(SourceCpuError::UnsupportedBusMap {
+                address: interrupted_pc,
+            });
+        }
+        let started_at = self.timeline.timestamp();
+        let mut accesses = Vec::new();
+        self.active_interrupt_trace = Some(Vec::new());
+        if let Err(error) = self.enter_native_interrupt_bus(0x00_ffea, memory_speed, &mut accesses)
+        {
+            self.poisoned = true;
+            self.active_interrupt_trace = None;
+            return Err(error);
+        }
+        Ok(RomCpuNmiReceipt {
+            interrupted_pc,
+            memory_speed,
+            started_at,
+            ended_at: self.timeline.timestamp(),
+            accesses,
+            transactions: self
+                .active_interrupt_trace
+                .take()
+                .expect("accepted NMI owns its trace"),
+        })
     }
 
     pub fn step(&mut self) -> Result<SourceCpuStepReceipt, SourceCpuError> {
@@ -151,6 +214,17 @@ impl RomCpuTimingProbe {
         let bank = (address >> 16) as u8;
         let adr = address as u16;
         if bank & 0x7f < 0x40 {
+            if adr == 0x4210 {
+                let value = (u8::from(self.snes.in_nmi) << 7) | (self.snes.open_bus & 0x70) | 2;
+                self.snes.in_nmi = false;
+                return Ok(value);
+            }
+            if adr == 0x4211 {
+                let value = (u8::from(self.snes.cpu.irq_wanted) << 7) | (self.snes.open_bus & 0x7f);
+                self.snes.cpu.irq_wanted = false;
+                self.snes.in_irq = false;
+                return Ok(value);
+            }
             if let Some(value) = self.ppu_reads.read(adr, self.beam()) {
                 return Ok(value);
             }
@@ -179,6 +253,11 @@ impl RomCpuTimingProbe {
     fn source_write_semantic(&mut self, address: u32, value: u8) -> Result<(), SourceCpuError> {
         let bank = (address >> 16) as u8;
         let adr = address as u16;
+        if bank & 0x7f < 0x40 && matches!(adr, 0x420b | 0x420c) && value == 0 {
+            // With no active DMA/HDMA owner, source mask-zero writes start
+            // no transfer. Nonzero masks remain unsupported before mutation.
+            return Ok(());
+        }
         if bank & 0x7f < 0x40 && adr == 0x4201 {
             self.ppu_reads.write_wrio(value, self.beam());
             return Ok(());
@@ -605,6 +684,17 @@ impl RomCpuTimingProbe {
         start_wram_refresh_position: u16,
         end_wram_refresh_position: u16,
     ) {
+        if let Some(trace) = self.active_interrupt_trace.as_mut() {
+            trace.push(RomCpuInterruptTransaction {
+                kind,
+                duration_master_cycles,
+                started_at,
+                ended_at,
+                start_wram_refresh_position,
+                end_wram_refresh_position,
+            });
+            return;
+        }
         let trace = self
             .active_trace
             .as_mut()

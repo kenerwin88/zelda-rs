@@ -297,3 +297,97 @@ fn direct_operand_cannot_silently_cross_the_pcbase_bank_boundary() {
     assert_eq!(probe.snes().cpu.a, 0);
     assert!(probe.is_poisoned());
 }
+
+#[test]
+fn accepted_nmi_owns_source_stack_vector_and_bus_transactions() {
+    for (bank, fast, cycles) in [(0, false, 62), (0x80, true, 60)] {
+        let (mut snes, timeline) = seed(&[0xea], 225, 14, false);
+        snes.cart.rom[0xc9] = 0x40; // RTI
+        snes.cart.rom[0x7fea..0x7fec].copy_from_slice(&[0xc9, 0x80]);
+        snes.cpu.k = bank;
+        snes.cpu.sp = 0x1ff;
+        snes.cpu.a = 0x2468;
+        snes.cpu.x = 0x12;
+        snes.cpu.y = 0x34;
+        snes.cpu.c = true;
+        snes.cpu.d = true;
+        snes.cpu.i = false;
+        snes.fast_mem = fast;
+        snes.in_nmi = true;
+        let status = snes.cpu.pack_flags();
+        let before = snes.ram.clone();
+        let mut probe =
+            RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset()).unwrap();
+        let nmi = probe.accept_native_nmi().unwrap();
+        assert_eq!(
+            nmi.ended_at.master_cycles() - nmi.started_at.master_cycles(),
+            cycles
+        );
+        assert_eq!(
+            nmi.transactions
+                .iter()
+                .map(|t| t.duration_master_cycles)
+                .collect::<Vec<_>>(),
+            vec![if fast { 12 } else { 14 }, 8, 16, 8, 16]
+        );
+        assert_eq!(
+            nmi.accesses.iter().map(|a| a.address).collect::<Vec<_>>(),
+            vec![0x1ff, 0x1fd, 0x1fc, 0xffea]
+        );
+        assert!(nmi
+            .accesses
+            .iter()
+            .all(|a| !matches!(a.kind, SourceCpuBusAccessKind::OpcodeFetch { .. })));
+        assert_eq!(&probe.snes().ram[0x1fc..0x200], &[status, 0x00, 0x80, bank]);
+        assert_eq!(probe.program_address(), 0x80c9);
+        assert_eq!(probe.snes().cpu.sp, 0x1fb);
+        assert!(probe.snes().cpu.i && !probe.snes().cpu.d);
+        assert!(probe.snes().in_nmi, "entry does not acknowledge RDNMI");
+        for (address, (&old, &new)) in before.iter().zip(&probe.snes().ram).enumerate() {
+            if !(0x1fc..0x200).contains(&address) {
+                assert_eq!(new, old, "unexpected NMI write at ${address:05x}");
+            }
+        }
+        let rti = probe.step().unwrap();
+        assert_eq!(
+            rti.ended_at.master_cycles() - rti.started_at.master_cycles(),
+            52
+        );
+        assert_eq!(probe.program_address(), (u32::from(bank) << 16) | 0x8000);
+        assert_eq!(probe.snes().cpu.pack_flags(), status);
+        assert_eq!(
+            (
+                probe.snes().cpu.a,
+                probe.snes().cpu.x,
+                probe.snes().cpu.y,
+                probe.snes().cpu.sp
+            ),
+            (0x2468, 0x12, 0x34, 0x1ff)
+        );
+    }
+}
+
+#[test]
+fn nmi_acknowledges_only_the_rdnmi_read_and_rejects_dma_enable() {
+    let (mut snes, timeline) = seed(
+        &[0xad, 0x10, 0x42, 0xa9, 0x01, 0x8d, 0x0b, 0x42],
+        225,
+        100,
+        false,
+    );
+    snes.in_nmi = true;
+    snes.in_vblank = true;
+    let mut probe =
+        RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset()).unwrap();
+    probe.step().unwrap();
+    assert!(!probe.snes().in_nmi);
+    assert!(probe.snes().in_vblank);
+    assert_eq!(probe.snes().cpu.a, 0xc2); // immediate operand publishes $42 before RDNMI
+    probe.step().unwrap();
+    assert!(matches!(
+        probe.step(),
+        Err(SourceCpuError::UnsupportedBusMap { address: 0x420b })
+    ));
+    assert!(!probe.snes().dma.dma_busy);
+    assert!(probe.snes().dma.channel.iter().all(|c| !c.dma_active));
+}

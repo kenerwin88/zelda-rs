@@ -18,7 +18,7 @@ use crate::snes9x_apu_clock::{Snes9xApuClockCheckpoint, Snes9xApuClockError, Sne
 
 mod instruction_set;
 mod timing_probe;
-pub use timing_probe::{RomCpuTimingProbe, RomCpuTimingProbeSeedError, SourcePpuReadState};
+pub use timing_probe::{RomCpuTimingProbe, RomCpuTimingProbeSeedError, RomCpuNmiReceipt, RomCpuInterruptTransaction, SourcePpuReadState};
 use instruction_set::{SourceCpuInstructionBus, SourceCpuInstructions};
 
 const ONE_CYCLE: u32 = 6;
@@ -657,21 +657,7 @@ impl Snes9xColdCpuExecutor {
             .as_ref()
             .and_then(|trace| trace.memory_speed)
             .expect("interrupt entry follows one source-owned opcode fetch");
-        self.add_cycles(u32::from(memory_speed) + ONE_CYCLE)?;
-        let program_bank = self.machine.snes.cpu.k;
-        self.push_byte(program_bank, accesses)?;
-        let program_counter = self.machine.snes.cpu.pc;
-        self.push_word(program_counter, accesses)?;
-        let status = self.machine.snes.cpu.pack_flags();
-        self.push_byte(status, accesses)?;
-        self.machine.snes.open_bus = status;
-        self.machine.snes.cpu.d = false;
-        self.machine.snes.cpu.i = true;
-        let vector = self.read_word(vector_address, WordWrap::Bank, accesses)?;
-        self.machine.snes.open_bus = (vector >> 8) as u8;
-        self.machine.snes.cpu.k = 0;
-        self.machine.snes.cpu.pc = vector;
-        Ok(())
+        self.enter_native_interrupt_bus(vector_address, memory_speed, accesses)
     }
 
     /// Finish the pinned `S9xMainLoop` boundary after one complete opcode.
