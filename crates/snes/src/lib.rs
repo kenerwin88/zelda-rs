@@ -40,6 +40,7 @@ pub use cpu_synchronous_executor::{
     SourceCpuStepReceipt, SourceCpuTransaction, SourceCpuTransactionKind,
 };
 
+pub use apu::{ApuHostPortProbe, ApuHostPortProbeError, ApuHostPortTiming, ApuHostPortTimingError};
 pub use cart::{Cart, CartType};
 pub use cpu::CpuState;
 pub use cpu_timeline::{

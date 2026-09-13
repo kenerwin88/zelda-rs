@@ -1,5 +1,7 @@
 use super::*;
-use crate::{CartType, CpuBusWorkload, CpuFieldTiming, CpuRasterPosition};
+use crate::{
+    CartType, CpuBusWorkload, CpuFieldTiming, CpuRasterPosition, MASTER_CYCLES_PER_SCANLINE,
+};
 
 fn seed(program: &[u8], v: u16, h: u16, odd: bool) -> (Snes, CpuMasterTimeline) {
     let mut rom = vec![0xea; 0x8000];
@@ -390,4 +392,173 @@ fn nmi_acknowledges_only_the_rdnmi_read_and_rejects_dma_enable() {
     ));
     assert!(!probe.snes().dma.dma_busy);
     assert!(probe.snes().dma.channel.iter().all(|c| !c.dma_active));
+}
+
+/// Pinned `cpu.cpp:S9xSoftResetCPU` hands the first instruction a machine that
+/// has already read the reset vector through the bus (182 + a 16-clock direct
+/// word read) and published its high byte to CPU OpenBus.
+fn cold_lorom_reset_seed(rom: &[u8]) -> (Snes, CpuMasterTimeline) {
+    let mut snes = Snes::new();
+    snes.cart.load(CartType::LoRom, rom, 0x2000);
+    snes.cart.ram.fill(0x60);
+    snes.ram.fill(0x55);
+    let reset_pc = u16::from(snes.cart.rom[0x7ffc]) | (u16::from(snes.cart.rom[0x7ffd]) << 8);
+    snes.cpu.pc = reset_pc;
+    snes.cpu.k = 0;
+    snes.cpu.db = 0;
+    snes.cpu.dp = 0;
+    snes.cpu.sp = 0x01ff;
+    snes.cpu.a = 0;
+    snes.cpu.x = 0;
+    snes.cpu.y = 0;
+    snes.cpu.e = true;
+    snes.cpu.mf = true;
+    snes.cpu.xf = true;
+    snes.cpu.i = true;
+    snes.open_bus = (reset_pc >> 8) as u8;
+    let mut timeline = CpuMasterTimeline::new(
+        198,
+        CpuBusWorkload::default(),
+        CpuFieldTiming::NON_INTERLACE_EVEN,
+    );
+    timeline.begin_synchronous_timeline().unwrap();
+    (snes, timeline)
+}
+
+#[test]
+#[ignore = "requires the local external Zelda3 ROM; cold APUI ownership witness"]
+fn local_rom_probe_apu_ports_match_the_pinned_cold_boot_writes() {
+    use crate::apu::{ApuHostPortProbe, ApuHostPortTiming, ApuState};
+    use crate::test_bootstrap_fixture::{cpu_apu_accesses, records};
+    use crate::Snes9xApuClockCheckpoint;
+
+    let rom = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"),
+    )
+    .unwrap();
+    let fixture = records();
+    let bootstrap = fixture
+        .iter()
+        .find(|record| record["kind"] == "bootstrap-events")
+        .unwrap();
+    let expected: Vec<_> = cpu_apu_accesses(bootstrap)
+        .into_iter()
+        .take_while(|access| access.v_counter == 0 && !access.is_read)
+        .collect();
+    assert_eq!(
+        expected
+            .iter()
+            .map(|access| (access.port, access.value))
+            .collect::<Vec<_>>(),
+        [(0, 0), (1, 0), (2, 0), (3, 0)],
+        "the recorded cold boot opens with four zeroed APU port writes"
+    );
+
+    let (snes, timeline) = cold_lorom_reset_seed(&rom);
+    let mut probe = RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset())
+        .expect("the LoROM reset seed owns no active hardware");
+
+    let mut apu = ApuState::new();
+    apu.reset_snes9x_coroutine();
+    assert!(apu.has_exact_dsp_owner());
+    let owner = ApuHostPortTiming::new(
+        ApuHostPortProbe::from_snes9x_coroutine(apu).unwrap(),
+        Snes9xApuClockCheckpoint::new(0, 0, 0).unwrap(),
+    )
+    .unwrap();
+    probe.attach_apu_port_owner(owner).unwrap();
+
+    let mut observed = Vec::new();
+    let mut stopped_at = None;
+    for _ in 0..64 {
+        let origin_pc = probe.program_address();
+        match probe.step() {
+            Ok(receipt) => {
+                for access in &receipt.accesses {
+                    let Some(port) = Snes::synchronous_cpu_apu_port(access.address) else {
+                        continue;
+                    };
+                    let SourceCpuBusAccessKind::Write { value, width: 1 } = access.kind else {
+                        panic!("the boot APU access is a single-byte write");
+                    };
+                    let cycles = access.timestamp.master_cycles();
+                    observed.push((
+                        port & 3,
+                        value as u8,
+                        (cycles / u64::from(MASTER_CYCLES_PER_SCANLINE)) as u16,
+                        (cycles % u64::from(MASTER_CYCLES_PER_SCANLINE)) as u16,
+                        receipt.ended_at.master_cycles() - receipt.started_at.master_cycles(),
+                        probe.apu_ports().unwrap().machine().cycles,
+                    ));
+                }
+            }
+            Err(error) => {
+                stopped_at = Some((origin_pc, error));
+                break;
+            }
+        }
+    }
+
+    assert_eq!(observed.len(), expected.len());
+    for (index, (access, actual)) in expected.iter().zip(&observed).enumerate() {
+        assert_eq!(
+            (actual.0, actual.1, actual.2, actual.3, actual.5),
+            (
+                access.port & 3,
+                access.value,
+                access.v_counter,
+                access.cpu_cycle,
+                access.apu_cycle_after,
+            ),
+            "recorded cold APU port write {index}"
+        );
+        // `STZ abs` in emulation mode: an 8-clock opcode fetch, a 16-clock
+        // word operand and the 6-clock `$21xx` store.
+        assert_eq!(actual.4, 30);
+    }
+
+    // The boot's next PPU register write is outside the audited bus map, so
+    // the probe fails closed instead of guessing at unowned hardware.
+    let (pc, error) = stopped_at.expect("the probe must stop at unowned hardware");
+    assert_eq!(pc, 0x00_8018);
+    assert!(matches!(
+        error,
+        SourceCpuError::UnsupportedBusMap { address: 0x00_2100 }
+    ));
+}
+
+#[test]
+fn apu_port_owner_is_refused_when_its_clock_is_ahead_of_the_cpu() {
+    use crate::apu::{ApuHostPortProbe, ApuHostPortTiming, ApuState};
+    use crate::Snes9xApuClockCheckpoint;
+
+    let (snes, timeline) = seed(&[0xad, 0x40, 0x21], 103, 1168, false);
+    let mut probe =
+        RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset()).unwrap();
+    let timeline_cycles = probe.timeline().timestamp().master_cycles();
+
+    let build_owner = |reference: u64| {
+        let mut apu = ApuState::new();
+        apu.reset_snes9x_coroutine();
+        ApuHostPortTiming::new(
+            ApuHostPortProbe::from_snes9x_coroutine(apu).unwrap(),
+            Snes9xApuClockCheckpoint::new(reference, 0, 0).unwrap(),
+        )
+        .unwrap()
+    };
+
+    assert!(matches!(
+        probe.attach_apu_port_owner(build_owner(timeline_cycles + 1)),
+        Err(RomCpuTimingProbeSeedError::ApuPortsAheadOfCpu { .. })
+    ));
+    // Without an owner the APUI read stays outside the audited bus map.
+    assert!(matches!(
+        probe.step(),
+        Err(SourceCpuError::UnsupportedBusMap { address: 0x00_2140 })
+    ));
+    assert!(probe.is_poisoned());
+    assert!(matches!(
+        probe.attach_apu_port_owner(build_owner(timeline_cycles)),
+        Err(RomCpuTimingProbeSeedError::ApuPortsIntoPoisonedProbe)
+    ));
 }

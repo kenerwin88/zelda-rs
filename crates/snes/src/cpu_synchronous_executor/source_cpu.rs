@@ -116,6 +116,8 @@ pub enum SourceCpuError {
     UnsupportedIrqEntryState,
     #[error(transparent)]
     Machine(#[from] CpuSynchronousMachineError),
+    #[error("source CPU APUI access has no owner: {0}")]
+    ApuPorts(#[from] crate::apu::ApuHostPortTimingError),
 }
 
 /// Isolated pinned-Snes9x cold CPU/APU executor for the audited opcode subset.

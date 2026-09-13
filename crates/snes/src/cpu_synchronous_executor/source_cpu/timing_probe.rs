@@ -16,6 +16,7 @@ use crate::cpu_timeline::{
     CpuMasterTimeline, CpuMasterTimestamp, CpuSynchronousBeamPosition, CpuSynchronousTimelineEvent,
     CpuSynchronousTimelineStartError,
 };
+use crate::apu::ApuHostPortTiming;
 use crate::snes::Snes;
 
 mod ppu_read_state;
@@ -29,6 +30,14 @@ pub enum RomCpuTimingProbeSeedError {
     Cartridge,
     #[error("timing probe counter seed is outside the NTSC hardware range")]
     CounterState,
+    #[error("timing probe already owns an APUI synchronization owner")]
+    ApuPortsAlreadyOwned,
+    #[error(
+        "APUI clock reference {reference} is ahead of the probe's CPU master clock {timeline}"
+    )]
+    ApuPortsAheadOfCpu { reference: u64, timeline: u64 },
+    #[error("a poisoned timing probe cannot adopt an APUI owner")]
+    ApuPortsIntoPoisonedProbe,
     #[error(transparent)]
     Timeline(#[from] CpuSynchronousTimelineStartError),
 }
@@ -59,6 +68,10 @@ pub struct RomCpuTimingProbe {
     snes: Snes,
     timeline: CpuMasterTimeline,
     ppu_reads: SourcePpuReadState,
+    /// Explicitly adopted APUI owner. Without one, `$2140..$217f` stays
+    /// outside the audited bus map and fails closed; the probe never samples
+    /// a copied port latch in place of a synchronized SMP.
+    apu_ports: Option<ApuHostPortTiming>,
     active_trace: Option<SourceCpuInstructionTrace>,
     active_interrupt_trace: Option<Vec<RomCpuInterruptTransaction>>,
     poisoned: bool,
@@ -106,6 +119,7 @@ impl RomCpuTimingProbe {
             snes,
             timeline,
             ppu_reads,
+            apu_ports: None,
             active_trace: None,
             active_interrupt_trace: None,
             poisoned: false,
@@ -123,6 +137,42 @@ impl RomCpuTimingProbe {
     }
     pub fn is_poisoned(&self) -> bool {
         self.poisoned
+    }
+    pub fn apu_ports(&self) -> Option<&ApuHostPortTiming> {
+        self.apu_ports.as_ref()
+    }
+
+    /// Adopt a caller-owned APUI synchronization owner.
+    ///
+    /// The owner carries its own machine and clock provenance; this only
+    /// checks that the two clocks can still be ordered. A reference ahead of
+    /// the probe's CPU master clock would make the first `S9xAPUExecute`
+    /// convert a negative interval, so it is refused instead of normalized.
+    pub fn attach_apu_port_owner(
+        &mut self,
+        owner: ApuHostPortTiming,
+    ) -> Result<(), RomCpuTimingProbeSeedError> {
+        if self.poisoned {
+            return Err(RomCpuTimingProbeSeedError::ApuPortsIntoPoisonedProbe);
+        }
+        if self.apu_ports.is_some() {
+            return Err(RomCpuTimingProbeSeedError::ApuPortsAlreadyOwned);
+        }
+        let reference = owner.clock().checkpoint().cpu_reference_master_cycles();
+        let timeline = self.timeline.timestamp().master_cycles();
+        if reference > timeline {
+            return Err(RomCpuTimingProbeSeedError::ApuPortsAheadOfCpu {
+                reference,
+                timeline,
+            });
+        }
+        self.apu_ports = Some(owner);
+        Ok(())
+    }
+
+    /// Return the APUI owner with its retained continuation intact.
+    pub fn take_apu_port_owner(&mut self) -> Option<ApuHostPortTiming> {
+        self.apu_ports.take()
     }
 
     /// Execute an NMI already accepted by the caller's interrupt owner at
@@ -213,6 +263,16 @@ impl RomCpuTimingProbe {
     fn source_read_semantic(&mut self, address: u32) -> Result<u8, SourceCpuError> {
         let bank = (address >> 16) as u8;
         let adr = address as u16;
+        if let Some(port) = Snes::synchronous_cpu_apu_port(address) {
+            // Pinned `getset.h:S9xGetByte` runs the register semantic before
+            // `addCyclesInMemoryAccess`, so `S9xAPUReadPort` synchronizes the
+            // SMP to the timestamp this access started at.
+            let timestamp = self.timeline.timestamp().master_cycles();
+            let Some(apu) = self.apu_ports.as_mut() else {
+                return Err(SourceCpuError::UnsupportedBusMap { address });
+            };
+            return Ok(apu.read_cpu_port_at(timestamp, port)?);
+        }
         if bank & 0x7f < 0x40 {
             if adr == 0x4210 {
                 let value = (u8::from(self.snes.in_nmi) << 7) | (self.snes.open_bus & 0x70) | 2;
@@ -253,10 +313,38 @@ impl RomCpuTimingProbe {
     fn source_write_semantic(&mut self, address: u32, value: u8) -> Result<(), SourceCpuError> {
         let bank = (address >> 16) as u8;
         let adr = address as u16;
+        if let Some(port) = Snes::synchronous_cpu_apu_port(address) {
+            // Pinned `S9xSetCPU($2140..$217f)`: `S9xAPUWritePort` synchronizes
+            // the SMP, publishes the input latch, and mirrors the byte into
+            // `Memory.FillRAM`.
+            let timestamp = self.timeline.timestamp().master_cycles();
+            let Some(apu) = self.apu_ports.as_mut() else {
+                return Err(SourceCpuError::UnsupportedBusMap { address });
+            };
+            apu.write_cpu_port_at(timestamp, port, value)?;
+            self.snes.cart.write(bank, adr, value);
+            return Ok(());
+        }
         if bank & 0x7f < 0x40 && matches!(adr, 0x420b | 0x420c) && value == 0 {
             // With no active DMA/HDMA owner, source mask-zero writes start
             // no transfer. Nonzero masks remain unsupported before mutation.
             return Ok(());
+        }
+        if bank & 0x7f < 0x40 && adr == 0x4200 {
+            // `S9xSetCPU($4200)` returns immediately when the byte equals the
+            // current NMITIMEN shadow. The probe's seed requires every modeled
+            // enable to be clear, so a zero write is that complete no-op. It
+            // cannot represent unused-bit history or an enable it does not own,
+            // so every other write fails closed before mutating anything.
+            if value == 0
+                && !self.snes.nmi_enabled
+                && !self.snes.auto_joy_read
+                && !self.snes.h_irq_enabled
+                && !self.snes.v_irq_enabled
+            {
+                return Ok(());
+            }
+            return Err(SourceCpuError::UnsupportedBusMap { address });
         }
         if bank & 0x7f < 0x40 && adr == 0x4201 {
             self.ppu_reads.write_wrio(value, self.beam());
@@ -342,12 +430,18 @@ impl RomCpuTimingProbe {
     ) -> Result<(), SourceCpuError> {
         let started = self.timeline.timestamp();
         let refresh = self.timeline.wram_refresh_cycle() as u16;
+        let apu_ports = &mut self.apu_ports;
         self.timeline
-            .advance_synchronous_after_semantics_with(cycles, |event, _| {
+            .advance_synchronous_after_semantics_with(cycles, |event, timestamp| {
                 if let CpuSynchronousTimelineEvent::HMax {
                     completed_scanline, ..
                 } = event
                 {
+                    // Pinned `cpuexec.cpp:HC_HCOUNTER_MAX_EVENT` runs
+                    // `S9xAPUEndScanline` before the scanline counter advances.
+                    if let Some(apu) = apu_ports.as_mut() {
+                        apu.end_scanline_at(timestamp.master_cycles())?;
+                    }
                     let next = (completed_scanline + 1) % 262;
                     if next == 225 {
                         self.snes.in_vblank = true;

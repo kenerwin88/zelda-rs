@@ -11,7 +11,9 @@ use crate::snes9x_dsp_phase::{
 };
 
 mod host_port_probe;
-pub use host_port_probe::{ApuHostPortProbe, ApuHostPortProbeError};
+pub use host_port_probe::{
+    ApuHostPortProbe, ApuHostPortProbeError, ApuHostPortTiming, ApuHostPortTimingError,
+};
 
 const BOOT_ROM: [u8; 0x40] = [
     0xcd, 0xef, 0xbd, 0xe8, 0x00, 0xc6, 0x1d, 0xd0, 0xfc, 0x8f, 0xaa, 0xf4, 0x8f, 0xbb, 0xf5, 0x78,
@@ -3150,6 +3152,13 @@ impl ApuState {
     /// Pinned Snes9x `DSP::synchronize()`: drain every pending DSP clock
     /// against this APU's sole RAM image and retain phase-27 samples until a
     /// caller explicitly takes their publication receipt.
+    /// Whether the exact Snes9x DSP owner is attached to this machine. A
+    /// legacy machine drives its own `dsp` instead and publishes no phase-27
+    /// samples.
+    pub fn has_exact_dsp_owner(&self) -> bool {
+        self.snes9x_dsp.is_some()
+    }
+
     pub(crate) fn synchronize_snes9x_dsp(&mut self) {
         let Some(sidecar) = self.snes9x_dsp.as_mut() else {
             return;
@@ -3333,6 +3342,9 @@ impl ApuState {
 mod tests {
     use super::*;
     use crate::cycle_spc700::tests::{expand_ledger_sequence, opcode_ledger};
+    use crate::snes9x_apu_clock::{
+        Snes9xApuClockCheckpoint, Snes9xApuClockError, SNES9X_NTSC_APU_CLOCK_DENOMINATOR,
+    };
     use crate::test_bootstrap_fixture::{
         cpu_apu_accesses, first_cc_output_port_writes, records, smp_instruction_boundaries,
         smp_output_port_writes, split_first_cc_cpu_accesses,
@@ -3805,6 +3817,122 @@ mod tests {
             assert_eq!(actual, expected, "SPC RAM ${address:04x}");
         }
         assert!(!resumed.smp_coroutine.is_enabled());
+    }
+
+    /// Build the retained continuation the native route would hand over: the
+    /// original IPL boot ROM executed on the legacy complete-instruction
+    /// executor up to its CPU-poll loop. Nothing is seeded from a snapshot.
+    fn retained_legacy_ipl_continuation() -> ApuState {
+        let mut apu = ApuState::new();
+        apu.reset();
+        apu.spc.sp = 0xef;
+        apu.spc.z = true;
+        for _ in 0..10_000 {
+            if apu.spc.pc == 0xffc9 {
+                return apu;
+            }
+            apu.run_instruction_with_host_ports_without_dsp(|_, _, _| {})
+                .unwrap();
+        }
+        panic!("the IPL boot ROM never reached its CPU-poll loop");
+    }
+
+    #[test]
+    fn retained_continuation_port_timing_matches_the_pinned_cold_ipl_handshake() {
+        let fixture = pinned_snes9x_bootstrap_fixture();
+        let accesses = cpu_apu_accesses(&fixture[2]);
+        let (reset_writes, handshake) = split_first_cc_cpu_accesses(&accesses);
+
+        let apu = retained_legacy_ipl_continuation();
+        let retained_cycles = apu.cycles;
+        // Pinned Snes9x reaches the same boundary at the same SMP cycle.
+        assert_eq!(retained_cycles, 2_394);
+        // Every CPU access the recorded run made before this boundary writes
+        // the value the machine already holds, so replaying them could not
+        // change the continuation and skipping them cannot hide a difference.
+        for event in reset_writes {
+            assert!(!event.is_read);
+            assert!(event.apu_cycle_after < retained_cycles);
+            assert_eq!(apu.in_ports[usize::from(event.port & 3)], event.value);
+        }
+        assert!(retained_cycles <= handshake[0].apu_cycle_before);
+
+        // `S9xAPUExecute` keeps pseudo-step overshoot as positive credit. A
+        // machine that has executed `retained_cycles` while the CPU master
+        // clock reference is still zero therefore holds exactly that credit;
+        // no remainder has accumulated yet.
+        let clock = Snes9xApuClockCheckpoint::new(0, 0, i64::from(retained_cycles)).unwrap();
+        let probe = ApuHostPortProbe::new(apu).unwrap();
+        let mut timing = ApuHostPortTiming::new(probe, clock).unwrap();
+
+        for event in handshake {
+            let at = event.absolute_master_cycle();
+            if event.is_read {
+                assert_eq!(
+                    timing.read_cpu_port_at(at, event.port).unwrap(),
+                    event.value,
+                    "port ${:04x} read at {at}",
+                    0x2140 + u16::from(event.port & 3)
+                );
+            } else {
+                let before = timing.machine().in_ports[usize::from(event.port & 3)];
+                timing
+                    .write_cpu_port_at(at, event.port, event.value)
+                    .unwrap();
+                assert_eq!(
+                    timing.machine().in_ports[usize::from(event.port & 3)],
+                    event.value
+                );
+                // The CC publication happens after synchronization: the
+                // just-completed CMP/branch still observed the old latch.
+                if event.port == 0 && event.value == 0xcc {
+                    assert_eq!(before, 0);
+                    assert_eq!(timing.machine().cycles, 2_431);
+                    assert_eq!(timing.machine().spc.pc, 0xffcf);
+                    assert!(!timing.machine().spc.z);
+                }
+            }
+            assert_eq!(timing.machine().cycles, event.apu_cycle_after);
+        }
+
+        assert_eq!(timing.machine().cycles, 2_461);
+        assert_eq!(timing.machine().spc.pc, 0xfff7);
+        assert_eq!(timing.machine().out_ports, [0xcc, 0xbb, 0, 0]);
+        // The owner hands the continuation back at a complete instruction.
+        let returned = timing
+            .into_probe()
+            .unwrap_or_else(|_| panic!("a completed instruction must be returnable"));
+        assert!(returned.at_instruction_boundary());
+    }
+
+    #[test]
+    fn retained_continuation_timing_rejects_incoherent_clock_and_suspended_instructions() {
+        let apu = retained_legacy_ipl_continuation();
+        let retained_cycles = apu.cycles;
+
+        // A completed instruction boundary cannot simultaneously owe the SMP
+        // execution `S9xAPUExecute` has already performed.
+        let debt = Snes9xApuClockCheckpoint::new(0, 0, -1).unwrap();
+        assert!(matches!(
+            ApuHostPortTiming::new(ApuHostPortProbe::new(apu.clone()).unwrap(), debt),
+            Err(ApuHostPortTimingError::RetainedSmpDebt(-1))
+        ));
+
+        // A remainder outside the pinned NTSC denominator is not a clock state.
+        assert!(matches!(
+            Snes9xApuClockCheckpoint::new(0, SNES9X_NTSC_APU_CLOCK_DENOMINATOR, 0),
+            Err(Snes9xApuClockError::InvalidRemainder { .. })
+        ));
+
+        // A suspended SPC instruction may not be adopted by a clock owner.
+        let mut probe = ApuHostPortProbe::new(apu).unwrap();
+        probe.step().unwrap();
+        assert!(!probe.at_instruction_boundary());
+        let clock = Snes9xApuClockCheckpoint::new(0, 0, i64::from(retained_cycles)).unwrap();
+        assert!(matches!(
+            ApuHostPortTiming::new(probe, clock),
+            Err(ApuHostPortTimingError::SuspendedInstruction)
+        ));
     }
 
     #[test]
