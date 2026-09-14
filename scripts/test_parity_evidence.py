@@ -594,6 +594,8 @@ class CachedAvPromotionTests(unittest.TestCase):
             {"resume_paired": "/somewhere/frame-00000005"},
             {"frames_compared": 99},
             {"stop_before_frame": 60},
+            {"stop_before_frame": 100, "frames_compared": 99},
+            {"stop_before_frame": 100, "frames_completed": 99},
             {"comparison_lanes": {"video": True, "audio": False}},
             {"binary_sha256": "f" * 64},
             {"rom": {"path": "rom.sfc", "sha256": "0" * 64}},
@@ -601,6 +603,27 @@ class CachedAvPromotionTests(unittest.TestCase):
             self.write_run_manifest(**overrides)
             with self.assertRaises(SystemExit, msg=str(overrides)):
                 self.promote()
+
+    def test_explicit_limit_at_cache_end_preserves_full_route_receipt(self) -> None:
+        # --frames is an exclusive stop, clamped to the cache end by the
+        # replay producer. A limit equal to the full frame count omits no frame.
+        self.write_run_manifest(stop_before_frame=100)
+        manifest_sha = evidence.sha256_file(self.run / "manifest.json")
+        promoted = self.promote()["promoted"]
+        self.assertEqual(promoted["last_exact_video_frame"], 99)
+        self.assertEqual(promoted["last_exact_audio_frame"], 99)
+        receipt = promoted["cached_av_receipt"]
+        self.assertEqual(receipt["frames"], 100)
+        self.assertEqual(receipt["manifest_sha256"], manifest_sha)
+        copied = json.loads((self.ledger.parent / receipt["receipt_path"]).read_text())
+        self.assertEqual(copied["stop_before_frame"], 100)
+
+    def test_partial_impossible_or_malformed_frame_limits_are_rejected(self) -> None:
+        for limit in (0, 99, 101, -1, True, 100.0, "100", [], {}):
+            with self.subTest(limit=limit):
+                self.write_run_manifest(stop_before_frame=limit)
+                with self.assertRaises(SystemExit):
+                    self.promote()
 
     def test_dirty_tree_is_rejected(self) -> None:
         self.write_run_manifest()

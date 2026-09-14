@@ -6,7 +6,7 @@ annotating any routine.
 
 ## Current native frontier — 56,425 (video)
 
-The inventory-tail continuation moves the native frontier **56,419 -> 56,425**.
+`62f43a27`'s inventory-tail continuation moves the native frontier **56,419 -> 56,425**.
 The frame-zero baseline reproduces 56,419 in
 `target/native-inventory-tail-work/baseline` (74.88s); the candidate is exact
 video+audio through 56,424 in `target/native-inventory-tail-work/candidate`
@@ -45,8 +45,13 @@ frames**, from frame zero with no paired resume, in 1625.82s
 WRAM goldens match, as does the complete final WRAM image, SHA-256
 `316193798ccb2f771546b25443df7d417bddac8a7cac65326fa189c1264fbdb6`.
 This full run installs the established timing receipts; it preserves that
-lane's parity while the native frontier remains 56,425. The cold live-Snes9x
-check is pending.
+lane's parity while the native frontier remains 56,425. The pinned cold check
+passes 57,000 video frames and 30,387,879 stereo sample frames exactly
+(`routes/full_run/comparisons/precommit/run-57000-exact-eo5czasy`, 448.0s),
+after live-oracle RNG calibration and video preflight. Its immutable receipt is
+`.git/parity-cold-passes/1789344555828402000-57000-37ad9e5ebaff.json`.
+The local cold ratchet remains 194,000; this candidate's focused cold proof is
+57,000, and its full-route proof is the cached A/V run described above.
 
 The independent frame-zero confirmation in
 `target/native-inventory-tail-work/confirm` reproduces 56,425 (77.31s).
@@ -56,7 +61,16 @@ The independent frame-zero confirmation in
 host 56,425 **`$06:F80F`, V225/C28, `link_oam_caller=None`**. This is outside
 the LinkOam/HUD suffix; diagnose its actual caller and owned mutations before
 introducing another continuation. WRAM 56,418..56,428 is retained beside the
-confirmation's A/V ledgers. The log is `/tmp/native-inventory-confirm.log`.
+confirmation's A/V ledgers. Logs and test output are copied to
+`target/native-inventory-tail-work/validation`.
+
+Promotion tooling also now accepts an explicit `--frames` limit exactly equal
+to the cache's full frame count. The previous validator rejected every explicit
+limit, including this complete 1,581,079-frame run. The correction preserves
+the original manifest and still rejects partial coverage, resumed runs,
+mismatches, disabled lanes, and malformed or out-of-range bounds. Regression
+tests reproduce the rejection and check both the accepted endpoint and those
+failure cases; the evidence and pre-commit gate Python suites pass.
 
 ## Previous native frontier — 56,419 (video)
 

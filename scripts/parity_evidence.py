@@ -733,8 +733,6 @@ def promote_frontier_from_cached_av(
         problems.append("the run did not start comparing at frame 0")
     if run.get("resume_paired") not in (None, ""):
         problems.append("the run resumed a paired checkpoint")
-    if run.get("stop_before_frame") not in (None, ""):
-        problems.append("the run was bounded before the cache end")
     if not (lanes.get("video") is True and lanes.get("audio") is True):
         problems.append("both the video and audio lanes must be enabled")
     if run.get("first_rng_drift") not in (None, ""):
@@ -750,6 +748,13 @@ def promote_frontier_from_cached_av(
     if cache_manifest.get("cache_key") != run.get("oracle_cache_key"):
         problems.append("the run's cache key does not match the cache manifest")
     cache_frames = int(cache_manifest.get("oracle_av_hash_frames", 0))
+    stop_before_frame = run.get("stop_before_frame")
+    # The producer clamps an explicit --frames limit to the cache end. With
+    # frame-zero coverage, that exact exclusive bound still covers every frame.
+    if stop_before_frame not in (None, "") and not (
+        type(stop_before_frame) is int and stop_before_frame == cache_frames
+    ):
+        problems.append("the run's frame limit is not the cache end")
     frames_completed = int(run.get("frames_completed", 0))
     frames_compared = int(run.get("frames_compared", 0))
     if cache_frames == 0 or frames_completed != cache_frames or frames_compared != cache_frames:
