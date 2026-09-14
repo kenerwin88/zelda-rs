@@ -71,6 +71,9 @@ the original manifest and still rejects partial coverage, resumed runs,
 mismatches, disabled lanes, and malformed or out-of-range bounds. Regression
 tests reproduce the rejection and check both the accepted endpoint and those
 failure cases; the evidence and pre-commit gate Python suites pass.
+The full-route pass is promoted for `8d3c640a` in
+`routes/full_run/parity-frontier.json`, with the unchanged replay manifest
+retained at `routes/full_run/receipts/native-inventory-tail-full.manifest.json`.
 
 ## Previous native frontier — 56,419 (video)
 

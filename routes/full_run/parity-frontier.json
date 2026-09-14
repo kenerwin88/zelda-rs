@@ -19,7 +19,7 @@
   },
   "project": "routes/full_run",
   "promoted": {
-    "binary_sha256": "1245aeb75f851063dcb0610b06789f2efefb48f39e18c086b5a6005c199e6814",
+    "binary_sha256": "d13797a118ecd1e593438b01288070af344965da49a55431f14c662ae6c7370b",
     "cached_av_receipt": {
       "candidate_ledger_sha256": "3d52711c51a4f01031bd336aa582d4b6a316c71199710d3354ef015fcca1440c",
       "frames": 1581079,
@@ -27,13 +27,13 @@
         "video",
         "audio"
       ],
-      "manifest_sha256": "0e90ddb6424265ae4aa52c43c0103977c4be9c33981953db71ee82b30577061b",
+      "manifest_sha256": "34c778ff2dbd856c652845ad3e96c438f762c80b2b74083c3ed1a317e3c5c498",
       "oracle_cache_key": "ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18",
       "oracle_cache_manifest_sha256": "4c7f88fbf327a4b3af7d3f8614d82ebb2318f11b607798d5dddb4a97b7fe2715",
-      "receipt_path": "receipts/quadrant-batch-full.manifest.json",
-      "run": "/Users/missingno/Documents/zelda3-rs/target/quadrant-batch-full"
+      "receipt_path": "receipts/native-inventory-tail-full.manifest.json",
+      "run": "/Users/missingno/Documents/zelda3-rs/target/native-inventory-tail-full"
     },
-    "commit": "e70152ae55c787ed3c53a86014dc805d604cd097",
+    "commit": "8d3c640a65f8e2f60f909f1523d0244a4f67c78d",
     "kind": "cached_av_pass",
     "last_exact_audio_frame": 1581078,
     "last_exact_engine_state_frame": 1581078,
