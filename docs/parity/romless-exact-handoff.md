@@ -64,6 +64,29 @@ introducing another continuation. WRAM 56,418..56,428 is retained beside the
 confirmation's A/V ledgers. Logs and test output are copied to
 `target/native-inventory-tail-work/validation`.
 
+### Next-boundary investigation (2026-09-23)
+
+The source receipt for host 56,424 accepts NMI after Cucco slot 6's first
+graphics publication; host 56,425 returns from `Sprite_Main`. The native ROM
+probe at `frame_ctr_dbg=56425` reaches `$06:F80F` (V225/C28), inside
+`Sprite_SetupHitBox` for that same slot. Its `Cucco_AnimateFast` graphics
+store at `$06:A6F7` wrote `$0DC6` before the interrupt. This helper can be
+reached through a tail jump, so the top stack return (`$00:83A6` here) does
+not identify the Cucco call site. A detector keyed only to the hitbox PC or
+to a JSR return address is insufficient.
+
+An uncommitted experiment used the actual Cucco graphics store to arm the
+existing `AfterCuccoGraphicsPublication` continuation. It changed the native
+frame-56,425 video digest from `d05febca...` to `0f28586e...`, but the oracle
+is `e7536701...`; audio remained exact. The experiment was removed. At that
+frame, native and receipt-driven WRAM differed only at transient `$1F00`.
+Their captured PPU states had identical OAM and CGRAM, but 337 different VRAM
+words in `$3C00..$3DFF`, different OBJ decode latches, a receipt-only BG
+decode latch, and BG1/BG2 scroll values one pixel ahead in the receipt lane.
+The unresolved owner is the NMI/display publication and resumed Module09
+suffix around this interrupt, not a proven Cucco gameplay-state mutation.
+Trace those publication phases before introducing a native continuation.
+
 Promotion tooling also now accepts an explicit `--frames` limit exactly equal
 to the cache's full frame count. The previous validator rejected every explicit
 limit, including this complete 1,581,079-frame run. The correction preserves
