@@ -87,6 +87,23 @@ The unresolved owner is the NMI/display publication and resumed Module09
 suffix around this interrupt, not a proven Cucco gameplay-state mutation.
 Trace those publication phases before introducing a native continuation.
 
+The next probe isolated the ordering error. The native timing shadow reaches
+the Cucco interruption with scroll source words `$00E6=08DF`, `$00E2=00B0`,
+and `$00E8=08D8`, while the translated mirrors still hold `08DE`, `00AF`,
+and `08D7` when its NMI writes PPU registers. The source acceptance operand
+at host 56,424 also contains the newer values. The translated Module09 camera
+and scroll-prefix work runs later in native host 56,425; a diagnostic call
+stack shows its earlier NMI came from `lane_rom_startup_run_main`'s active
+scanout path. The source host 56,424 contains both completion of the preceding
+Open NMI and a later Held acceptance inside Cucco. The existing lane presents
+the leading NMI and suspends the fresh iteration without owning that later
+acceptance in the same host interval. This is a two-NMI/scanout ownership
+problem; merely arming `AfterCuccoGraphicsPublication` retains the CPU stack
+but still presents the old scroll and animated BG generation. Correct the
+measured phase and display publication in that lane before using the Cucco
+checkpoint as a native continuation. The experiment was removed; main and
+the 1,581,079-frame receipt proof are unchanged.
+
 Promotion tooling also now accepts an explicit `--frames` limit exactly equal
 to the cache's full frame count. The previous validator rejected every explicit
 limit, including this complete 1,581,079-frame run. The correction preserves
