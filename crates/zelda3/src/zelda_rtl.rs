@@ -2762,6 +2762,8 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
     let mut hud_tail_cycles = None;
     let mut link_oam_caller_return = None;
     let mut hud_refill_caller_return = None;
+    let mut cucco_graphics = None;
+    let mut cucco_helper_count = 0u8;
     for _ in 0..200_000 {
         if run.is_complete() {
             if crate::debug_env::var_os("ZELDA3_DEBUG_OVERWORLD_CPU_PACKING").is_some()
@@ -2780,6 +2782,12 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
             return (None, None);
         }
         let pc = run.pc();
+        if matches!(pc, 0x06_83a1 | 0x06_83a7) {
+            cucco_graphics = None;
+            if pc == 0x06_83a1 {
+                cucco_helper_count = 0;
+            }
+        }
         let hud_entry = match pc {
             0x0d_fc57 => Some(HudInventoryField::Rupees),
             0x0d_fc84 => Some(HudInventoryField::Bombs),
@@ -2827,6 +2835,21 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
         run.set_raster_position(v, h);
         let (advance, cpu_cycles) = advance_rom_cpu_step_measured(&mut run, &mut budget);
         let writes = run.take_cpu_wram_writes();
+        // $06:A6F7 publishes Cucco_AnimateFast's graphics to $0DC0,X.
+        // The helper tail-jumps into its hitbox routine, so a later PC or
+        // stack return does not identify this source checkpoint by itself.
+        if pc == 0x06_a6f7 {
+            let slot = run.index_x() as u8;
+            if run.ram_byte(0x0fa0) == slot
+                && run.ram_byte(0x0e20 + usize::from(slot)) == 0x0b
+                && writes.iter().any(|(address, _)| *address == 0x0dc0 + usize::from(slot))
+            {
+                cucco_graphics = Some((slot, cucco_helper_count));
+                cucco_helper_count = cucco_helper_count
+                    .checked_add(1)
+                    .expect("Cucco helper ordinal overflowed one Sprite_Main slot");
+            }
+        }
         if let Some(conversion) = hud_conversion.as_mut() {
             if in_hud_conversion {
                 conversion.master_cycles += u16::try_from(cpu_cycles).unwrap();
@@ -2889,6 +2912,19 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
                 // lane's `FinishModule09LinkOamCallerReturn` does.
                 state.native_overworld_link_oam_interruption = true;
             }
+            if let Some((slot, helper_ordinal)) = cucco_graphics {
+                if run.ram_byte(0x0fa0) == slot {
+                    state.arm_sprite_main_cpu_continuation(
+                        SpriteMainCpuBoundary::AfterCuccoGraphicsPublication {
+                            slot, helper_ordinal, continuation: None,
+                        },
+                        1,
+                        SpriteMainCpuCaller::Module09 {
+                            boundary: OriginalTimingBoundary::NmiAccepted,
+                        },
+                    );
+                }
+            }
             if let Some(progress) = progress { progress.validate(); }
             let packing = pointer_tail_cycles.map(|master_cycles|
                 SpritePreparationProgress::PointerTail(SpritePreparationPointerProgress { master_cycles }))
@@ -2924,6 +2960,7 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
                 || hud.is_some()
                 || state.native_overworld_link_body_selection_cycles.is_some()
                 || state.native_overworld_link_oam_interruption
+                || state.sprite_main_cpu_boundary.is_some()
             {
                 // The typed continuation resumes after this NMI, then returns
                 // through the same common suffix and busy loop. Keep that
@@ -10546,6 +10583,10 @@ pub struct ZeldaState {
     staged_presented_vram_chr_preview_source: Option<crate::chr_source::VramChrSourceTable>,
     #[serde(skip)]
     deferred_display_snapshot: Option<Box<DisplaySnapshot>>,
+    /// Native Module09 Sprite_Main NMI accepted after the leading scanout;
+    /// its handler and display publication complete in the following host.
+    #[serde(skip)]
+    native_module09_sprite_nmi_acceptance_snapshot: Option<Box<DisplaySnapshot>>,
     /// Dynamic Mode 7 table generation before the ROM begins its descending
     /// projection loop. Captured separately because HDMA can consume the old
     /// and new generations within one field.
@@ -12929,6 +12970,7 @@ impl ZeldaState {
             staged_presented_vram_chr_source: None,
             staged_presented_vram_chr_preview_source: None,
             deferred_display_snapshot: None,
+            native_module09_sprite_nmi_acceptance_snapshot: None,
             attract_map_hdma_projection_before: None,
             pre_main_graphics_dma: None,
             debug_display_publication_candidates: Vec::new(),
@@ -13153,6 +13195,7 @@ impl ZeldaState {
         self.staged_presented_vram_chr_source = None;
         self.staged_presented_vram_chr_preview_source = None;
         self.deferred_display_snapshot = None;
+        self.native_module09_sprite_nmi_acceptance_snapshot = None;
         self.emu_synchronize_whole_state();
     }
 
@@ -13271,6 +13314,7 @@ impl ZeldaState {
             self.staged_presented_vram_chr_source = None;
             self.staged_presented_vram_chr_preview_source = None;
             self.deferred_display_snapshot = None;
+            self.native_module09_sprite_nmi_acceptance_snapshot = None;
             self.dungeon_landing_goal_display_handoff = DungeonLandingGoalDisplayHandoff::None;
         } else if self.original_timing_cold_start_eligible && self.frame_ctr_dbg == 0 {
             self.original_timing_owner = OriginalTimingOwnerState::PendingColdStart;

@@ -104,6 +104,28 @@ measured phase and display publication in that lane before using the Cucco
 checkpoint as a native continuation. The experiment was removed; main and
 the 1,581,079-frame receipt proof are unchanged.
 
+### Native Cucco acceptance correction (working branch)
+
+The measured `$06:A6F7` graphics store now identifies
+`AfterCuccoGraphicsPublication` without guessing from the later hitbox PC.
+The Module09 leading-NMI lane retains its current scanout, captures the
+post-camera acceptance state, and completes that Held NMI against the
+captured state on the following host before `Sprite_Main` returns. Its
+animated BG generation comes from the already completed leading NMI. This
+keeps both NMI/display generations in their source order; copying timing
+probe RAM into native state is unnecessary.
+
+The cleaned native candidate matches cached video and audio through frame
+56,438 inclusive (`target/native-cucco-clean-56442`); the next video-only
+divergence is frame 56,439. The source receipt at host 56,438 interrupts
+`Sprite_Main` after timers/OAM in slot 3, while the native CPU probe at
+`frame_ctr_dbg=56439` reaches `$00:878E` at V225/C34. That is a separate
+CPU-phase frontier. The branch's frozen `target/parity/zelda3` binary also
+passed the full cached receipt route in `target/receipt-cucco-full`: all
+1,581,079 video and audio hashes match, with contiguous frames 0–1,581,078
+and no disabled lanes. The remaining promotion gates have not run for this
+batch.
+
 Promotion tooling also now accepts an explicit `--frames` limit exactly equal
 to the cache's full frame count. The previous validator rejected every explicit
 limit, including this complete 1,581,079-frame run. The correction preserves

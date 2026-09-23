@@ -205,6 +205,27 @@ impl ZeldaState {
             .game_execution_scheduler
             .take_after_current_trailing_nmi()
         {
+            if matches!(
+                continuation,
+                GameWorkContinuation::FinishSpriteMain {
+                    boundary: SpriteMainCpuBoundary::AfterCuccoGraphicsPublication { .. },
+                    caller: SpriteMainCpuCaller::Module09 {
+                        boundary: OriginalTimingBoundary::NmiAccepted,
+                    },
+                }
+            ) {
+                if let Some(accepted) = self.native_module09_sprite_nmi_acceptance_snapshot.take() {
+                    // The preceding host presented its leading NMI. This
+                    // snapshot instead belongs to the later accepted NMI;
+                    // complete that handler before returning Sprite_Main.
+                    self.display_snapshot = Some(accepted);
+                    self.interrupt_nmi_for_active_scanout_without_dialogue_owner(
+                        input,
+                        oam_dma_source.as_deref(),
+                        false,
+                    );
+                }
+            }
             let live_nonterminal_peg_flip = continuation
                 == GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn
                 && self.dungeon_peg_attribute_flip_pending.is_some()
@@ -3262,6 +3283,39 @@ impl ZeldaState {
                     false,
                 );
                 self.zelda_run_game_loop_after_leading_nmi();
+                if matches!(
+                    self.game_execution_scheduler.current_work(),
+                    Some(GameWorkContinuation::FinishSpriteMain {
+                        boundary: SpriteMainCpuBoundary::AfterCuccoGraphicsPublication { .. },
+                        caller: SpriteMainCpuCaller::Module09 {
+                            boundary: OriginalTimingBoundary::NmiAccepted,
+                        },
+                        ..
+                    })
+                ) {
+                    // The measured fresh Module09 iteration accepts another
+                    // NMI while Sprite_Main remains on the CPU stack. Capture
+                    // its acceptance operands after the camera has run; the
+                    // carried handler completes on the following host.
+                    let leading_scanout = self.display_snapshot.take();
+                    self.capture_display_snapshot();
+                    let mut accepted = self
+                        .display_snapshot
+                        .take()
+                        .expect("Sprite_Main NMI acceptance lost its display snapshot");
+                    // The leading handler already uploaded animated BG tiles.
+                    // The carried Held handler does not upload them again, but
+                    // its following scanout uses that completed generation.
+                    accepted.animated_bg_scanout_generation =
+                        AnimatedBgScanoutGeneration::LiveAfterNmi;
+                    assert!(
+                        self.native_module09_sprite_nmi_acceptance_snapshot
+                            .replace(accepted)
+                            .is_none(),
+                        "Module09 accepted a second Sprite_Main NMI before completing the first",
+                    );
+                    self.display_snapshot = leading_scanout;
+                }
                 if self.game_execution_scheduler.current_work()
                     == Some(GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn)
                 {
