@@ -119,12 +119,35 @@ The cleaned native candidate matches cached video and audio through frame
 56,438 inclusive (`target/native-cucco-clean-56442`); the next video-only
 divergence is frame 56,439. The source receipt at host 56,438 interrupts
 `Sprite_Main` after timers/OAM in slot 3, while the native CPU probe at
-`frame_ctr_dbg=56439` reaches `$00:878E` at V225/C34. That is a separate
-CPU-phase frontier. The branch's frozen `target/parity/zelda3` binary also
+`frame_ctr_dbg=56439` reaches `$00:878E` at V225/C34. The branch's frozen `target/parity/zelda3` binary also
 passed the full cached receipt route in `target/receipt-cucco-full`: all
 1,581,079 video and audio hashes match, with contiguous frames 0–1,581,078
 and no disabled lanes. The remaining promotion gates have not run for this
 batch.
+
+### Native post-timer Sprite_Main dispatch (working branch)
+
+An instrumented Snes9x trace (`target/source-f56439-pc-trace`, run 56,438)
+shows that the source also accepts the held NMI at `$00:878E` (V225/C16).
+The earlier interpretation that native CPU execution was several sprite
+slots ahead was wrong: both machines entered slot 3 and returned from
+`Sprite_TimersAndOam` at `$06:84EB`. The source's
+`SpriteMainAfterTimersAndOam(3)` receipt describes the still-active call
+stack at `JumpTableLocal`, not a different interrupt PC.
+
+The native timing probe now recognizes that post-timer checkpoint only
+when `$00:878E` retains Sprite_ExecuteSingle's `$00:83A6` return frame
+and the current slot matches the observed timer return. This leaves later
+handler checkpoints with their own owner: a broad timer-return rule
+incorrectly claimed item-receipt graphics at host 47,125 and was removed.
+The Module09 held-NMI display snapshot path applies to this typed
+Sprite_Main continuation as well as the preceding Cucco case. The cleaned
+native comparison matches frames 56,437–56,457; the next video-only
+divergence is frame 56,458 (`target/native-after-timers-clean`). The same
+cleaned binary matched receipt-driven video and audio for all 23 frames
+56,437–56,459 (`target/receipt-after-timers-clean`). The previous full
+1,581,079-frame receipt proof belongs to the preceding Cucco commit; this
+increment has not repeated the full route or promotion gates.
 
 Promotion tooling also now accepts an explicit `--frames` limit exactly equal
 to the cache's full frame count. The previous validator rejected every explicit

@@ -2764,6 +2764,7 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
     let mut hud_refill_caller_return = None;
     let mut cucco_graphics = None;
     let mut cucco_helper_count = 0u8;
+    let mut timers_and_oam_return = None;
     for _ in 0..200_000 {
         if run.is_complete() {
             if crate::debug_env::var_os("ZELDA3_DEBUG_OVERWORLD_CPU_PACKING").is_some()
@@ -2784,8 +2785,19 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
         let pc = run.pc();
         if matches!(pc, 0x06_83a1 | 0x06_83a7) {
             cucco_graphics = None;
+            timers_and_oam_return = None;
             if pc == 0x06_83a1 {
                 cucco_helper_count = 0;
+            }
+        }
+        if pc == 0x06_84eb {
+            // The source receipt names the active slot once
+            // Sprite_TimersAndOam returns, before its handler dispatch.
+            let slot = run.index_x() as u8;
+            if run.ram_byte(0x0fa0) == slot
+                && run.ram_byte(0x0dd0 + usize::from(slot)) != 0
+            {
+                timers_and_oam_return = Some(slot);
             }
         }
         let hud_entry = match pc {
@@ -2918,6 +2930,24 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
                         SpriteMainCpuBoundary::AfterCuccoGraphicsPublication {
                             slot, helper_ordinal, continuation: None,
                         },
+                        1,
+                        SpriteMainCpuCaller::Module09 {
+                            boundary: OriginalTimingBoundary::NmiAccepted,
+                        },
+                    );
+                }
+            } else if let Some(slot) = timers_and_oam_return {
+                // JumpTableLocal has consumed the inline state table's
+                // return address, but its JML has not entered a sprite
+                // handler yet. The remaining $00:83A6 return frame proves
+                // this is Sprite_ExecuteSingle's post-timer dispatch. A
+                // later handler PC may have a more specific source receipt.
+                if run.ram_byte(0x0fa0) == slot
+                    && run.pc() == 0x00_878e
+                    && run.stack_return_address() == 0x00_83a6
+                {
+                    state.arm_sprite_main_cpu_continuation(
+                        SpriteMainCpuBoundary::AfterTimersAndOam { slot, state: None },
                         1,
                         SpriteMainCpuCaller::Module09 {
                             boundary: OriginalTimingBoundary::NmiAccepted,

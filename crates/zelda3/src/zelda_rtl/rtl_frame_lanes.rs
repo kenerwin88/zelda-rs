@@ -208,10 +208,10 @@ impl ZeldaState {
             if matches!(
                 continuation,
                 GameWorkContinuation::FinishSpriteMain {
-                    boundary: SpriteMainCpuBoundary::AfterCuccoGraphicsPublication { .. },
                     caller: SpriteMainCpuCaller::Module09 {
                         boundary: OriginalTimingBoundary::NmiAccepted,
                     },
+                    ..
                 }
             ) {
                 if let Some(accepted) = self.native_module09_sprite_nmi_acceptance_snapshot.take() {
@@ -3286,7 +3286,6 @@ impl ZeldaState {
                 if matches!(
                     self.game_execution_scheduler.current_work(),
                     Some(GameWorkContinuation::FinishSpriteMain {
-                        boundary: SpriteMainCpuBoundary::AfterCuccoGraphicsPublication { .. },
                         caller: SpriteMainCpuCaller::Module09 {
                             boundary: OriginalTimingBoundary::NmiAccepted,
                         },
