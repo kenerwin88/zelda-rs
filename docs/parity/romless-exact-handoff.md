@@ -198,13 +198,31 @@ constant or a translated spawn-coordinate defect. The source proof is in
 `ZELDA3_DEBUG_OVERWORLD_CPU_ITERATION=56458-56458` with
 `ZELDA3_DEBUG_OVERWORLD_CPU_PCS=06:a7f5,06:a7f9,06:e9c8`.
 
+The source read-state lineage is explicit in the paired-resume trace. Resumed
+run 5 reads `$213C` low as `$0E`; run 10 first reads high as `$0E`, then
+reads low as `$EB` at V146/C972. No `$213C` or `$213F` read occurs from
+run 11 through run 28. Run 29's high read preserves `$EB`'s upper seven bits
+and replaces bit zero with the newly latched H counter's high bit, producing
+`$EA`. This state crosses 19 source runs; a frame-56,458 seed or a local
+Cucco branch adjustment cannot derive it.
+
 An experimental copy of PPU counter-read state from each overworld timing
 shadow into the translated PPU was rejected: it shifted receipt RNG call
 order at host 55,074, before the present frontier. A correct fix needs one
 source-ordered owner for `$2137/$213C/$213F`, including read flip and PPU
-open-bus values, across all CPU timing plans and frame boundaries. Do not
-promote that isolated overworld-only copy or compensate with an extra 304
-cycles. The diagnostic experiment was removed from the branch.
+open-bus values, across all CPU timing plans and frame boundaries. The
+existing `SourcePpuReadState` has the right register semantics, but the
+native `RomCpuTimingRun` still executes instruction side effects before
+charging aggregate cycles and rebuilds its `Snes` shadow for each plan.
+The next clean slice is to make that source-ordered read state a retained
+native CPU peripheral, seeded from reset and updated at the actual bus
+access timestamp. Extend the timing probe's audited active-HDMA/NMI and
+checkpoint support before replacing an overworld caller; preserve the same
+owner through every module/plan transition. Compare the complete `$213C`
+read sequence above and the first RNG/call-order deviation before measuring
+the new A/V frontier. Do not promote the isolated overworld-only copy or
+compensate with an extra 304 cycles. The diagnostic experiment was removed
+from the branch.
 
 Promotion tooling also now accepts an explicit `--frames` limit exactly equal
 to the cache's full frame count. The previous validator rejected every explicit
