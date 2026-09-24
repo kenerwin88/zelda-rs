@@ -235,6 +235,19 @@ not a native-parity result: `RomCpuTimingRun` is still the aggregate timing
 owner, and the source-ordered probe still needs audited MMIO coverage and
 a persistent native checkpoint before an overworld plan can use it.
 
+The probe can now transfer an opaque instruction-boundary handoff containing
+the CPU machine, synchronous timeline cursor, PPU read state, and adopted APU
+owner. A two-plan test reads `$213C` low as `$EB`, crosses field rollover,
+then reads its retained high phase as `$EA` after handoff. ROM writes to HDMA
+channel registers and `$420C` now configure the same channel owner that the
+timeline later charges; an unowned dynamic HDMA request fails before mutation.
+Auto-joypad result reads, arithmetic results, and NMI-enable changes outside
+the pending VBlank edge also have source-ordered bus semantics. The handoff is
+not yet stored in `ZeldaState`: its current `CpuCycleBudget` owns a separate
+legacy timeline, and the production `RomCpuTimingRun` still executes aggregate
+instructions. Both must be replaced as one owner before using this path for
+native timing or changing the parity frontier.
+
 Promotion tooling also now accepts an explicit `--frames` limit exactly equal
 to the cache's full frame count. The previous validator rejected every explicit
 limit, including this complete 1,581,079-frame run. The correction preserves

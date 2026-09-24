@@ -345,6 +345,78 @@ fn active_hdma_initializes_the_source_descriptor_at_line_zero() {
 }
 
 #[test]
+fn source_cpu_configures_hdma_channels_before_the_timeline_owns_them() {
+    let program = [
+        0xa9, 0x42, 0x8d, 0x70, 0x43, // LDA #$42; STA $4370: mode 2, indirect
+        0xa9, 0x1e, 0x8d, 0x71, 0x43, // LDA #$1E; STA $4371: M7B
+        0xa9, 0x80, 0x8d, 0x0c, 0x42, // LDA #$80; STA $420C: enable channel 7
+    ];
+    let (snes, _) = seed(&program, 1, 100, false);
+    let timeline = CpuMasterTimeline::at_raster(
+        0,
+        CpuRasterPosition::new(1, 100),
+        CpuBusWorkload::with_dynamic_hdma(),
+        CpuFieldTiming::non_interlace(false),
+    );
+    let mut probe =
+        RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset()).unwrap();
+    for _ in 0..6 {
+        probe.step().unwrap();
+    }
+    let channel = &probe.snes().dma.channel[7];
+    assert!(channel.hdma_active && channel.indirect);
+    assert_eq!(channel.mode, 2);
+    assert_eq!(channel.b_adr, 0x1e);
+
+    let (snes, timeline) = seed(&program[10..], 1, 100, false);
+    let mut unowned =
+        RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset()).unwrap();
+    unowned.step().unwrap();
+    assert!(matches!(
+        unowned.step(),
+        Err(SourceCpuError::UnsupportedBusMap { address: 0x420c })
+    ));
+    assert!(!unowned.snes().dma.channel[7].hdma_active);
+    assert!(unowned.is_poisoned());
+}
+
+#[test]
+fn auto_read_ports_and_nmi_enable_remain_source_ordered() {
+    let (mut snes, timeline) = seed(
+        &[
+            0xad, 0x18, 0x42, // LDA $4218
+            0xad, 0x19, 0x42, // LDA $4219
+            0xa9, 0x80, 0x8d, 0x00, 0x42, // enable NMI outside VBlank
+        ],
+        1,
+        100,
+        false,
+    );
+    snes.port_auto_read[0] = 0x1234;
+    let mut probe =
+        RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset()).unwrap();
+    probe.step().unwrap();
+    assert_eq!(probe.snes().cpu.a as u8, 0x34);
+    probe.step().unwrap();
+    assert_eq!(probe.snes().cpu.a as u8, 0x12);
+    probe.step().unwrap();
+    probe.step().unwrap();
+    assert!(probe.snes().nmi_enabled);
+
+    let (mut snes, timeline) = seed(&[0xa9, 0x80, 0x8d, 0x00, 0x42], 225, 100, false);
+    snes.in_vblank = true;
+    snes.in_nmi = true;
+    let mut pending =
+        RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset()).unwrap();
+    pending.step().unwrap();
+    assert!(matches!(
+        pending.step(),
+        Err(SourceCpuError::UnsupportedBusMap { address: 0x4200 })
+    ));
+    assert!(!pending.snes().nmi_enabled);
+}
+
+#[test]
 fn counter_read_bus_and_flip_survive_a_field_boundary() {
     let (snes, _) = seed(&[0xad, 0x3c, 0x21], 261, 1340, false);
     let timeline = CpuMasterTimeline::at_raster(
@@ -367,6 +439,36 @@ fn counter_read_bus_and_flip_survive_a_field_boundary() {
     assert!(!probe.ppu_reads().h_read_high);
     assert_eq!(probe.ppu_reads().open_bus2, 0xea);
     assert!(probe.ppu_reads().counter_latched);
+}
+
+#[test]
+fn handoff_keeps_the_ppu_read_bus_and_timeline_event_cursor_together() {
+    let (snes, _) = seed(&[0xad, 0x3c, 0x21, 0xad, 0x3c, 0x21], 261, 1320, false);
+    let timeline = CpuMasterTimeline::at_raster(
+        0,
+        CpuRasterPosition::new(261, 1320),
+        CpuBusWorkload::default(),
+        CpuFieldTiming::non_interlace(false),
+    );
+    let ppu_reads = SourcePpuReadState {
+        h_latched: 0xeb,
+        ..SourcePpuReadState::snes9x_reset()
+    };
+    let mut first = RomCpuTimingProbe::new(snes, timeline, ppu_reads).unwrap();
+    first.step().unwrap();
+    assert_eq!(first.snes().cpu.a as u8, 0xeb);
+    assert_eq!(
+        first.timeline().raster_position().coordinates(),
+        (261, 1350)
+    );
+
+    let handoff = first.into_handoff().ok().expect("healthy boundary");
+    let mut second = RomCpuTimingProbe::from_handoff(handoff);
+    second.step().unwrap();
+    assert_eq!(second.timeline().raster_position().coordinates(), (0, 16));
+    assert_eq!(second.snes().cpu.a as u8, 0xea);
+    assert_eq!(second.ppu_reads().open_bus2, 0xea);
+    assert!(!second.ppu_reads().h_read_high);
 }
 
 #[test]
@@ -401,6 +503,7 @@ fn direct_operand_cannot_silently_cross_the_pcbase_bank_boundary() {
     ));
     assert_eq!(probe.snes().cpu.a, 0);
     assert!(probe.is_poisoned());
+    assert!(probe.into_handoff().is_err());
 }
 
 #[test]

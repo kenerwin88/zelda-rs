@@ -77,6 +77,16 @@ pub struct RomCpuTimingProbe {
     poisoned: bool,
 }
 
+/// Opaque instruction-boundary ownership transfer. The CPU, pending timeline
+/// event, PPU read flips/open buses, and synchronized APU ports move together;
+/// callers cannot rebuild the next plan from a rendered PPU or WRAM snapshot.
+pub struct RomCpuTimingProbeHandoff {
+    snes: Snes,
+    timeline: CpuMasterTimeline,
+    ppu_reads: SourcePpuReadState,
+    apu_ports: Option<ApuHostPortTiming>,
+}
+
 impl RomCpuTimingProbe {
     pub fn new(
         snes: Snes,
@@ -137,6 +147,34 @@ impl RomCpuTimingProbe {
     }
     pub fn apu_ports(&self) -> Option<&ApuHostPortTiming> {
         self.apu_ports.as_ref()
+    }
+
+    /// Suspend only a completed, healthy instruction boundary. A failed
+    /// instruction cannot be laundered into a fresh probe by handing it off.
+    pub fn into_handoff(self) -> Result<RomCpuTimingProbeHandoff, Self> {
+        if self.poisoned || self.active_trace.is_some() || self.active_interrupt_trace.is_some() {
+            return Err(self);
+        }
+        Ok(RomCpuTimingProbeHandoff {
+            snes: self.snes,
+            timeline: self.timeline,
+            ppu_reads: self.ppu_reads,
+            apu_ports: self.apu_ports,
+        })
+    }
+
+    /// Resume the exact owned timeline. Re-seeding through `new` would lose
+    /// its processed-event cursor and is therefore deliberately bypassed.
+    pub fn from_handoff(handoff: RomCpuTimingProbeHandoff) -> Self {
+        Self {
+            snes: handoff.snes,
+            timeline: handoff.timeline,
+            ppu_reads: handoff.ppu_reads,
+            apu_ports: handoff.apu_ports,
+            active_trace: None,
+            active_interrupt_trace: None,
+            poisoned: false,
+        }
     }
 
     /// Adopt a caller-owned APUI synchronization owner.
@@ -282,6 +320,19 @@ impl RomCpuTimingProbe {
                 self.snes.in_irq = false;
                 return Ok(value);
             }
+            if (0x4214..=0x4217).contains(&adr) {
+                return Ok(match adr {
+                    0x4214 => self.snes.divide_result as u8,
+                    0x4215 => (self.snes.divide_result >> 8) as u8,
+                    0x4216 => self.snes.multiply_result as u8,
+                    0x4217 => (self.snes.multiply_result >> 8) as u8,
+                    _ => unreachable!(),
+                });
+            }
+            if (0x4218..=0x421f).contains(&adr) {
+                let index = usize::from(adr - 0x4218);
+                return Ok(self.snes.port_auto_read[index / 2].to_le_bytes()[index & 1]);
+            }
             if let Some(value) = self.ppu_reads.read(adr, self.beam()) {
                 return Ok(value);
             }
@@ -322,28 +373,60 @@ impl RomCpuTimingProbe {
             self.snes.cart.write(bank, adr, value);
             return Ok(());
         }
-        if bank & 0x7f < 0x40 && matches!(adr, 0x420b | 0x420c) && value == 0 {
-            // With no active DMA/HDMA owner, source mask-zero writes start
-            // no transfer. Nonzero masks remain unsupported before mutation.
+        if bank & 0x7f < 0x40 && adr == 0x420b {
+            // General DMA needs its own bus-stall owner. Mask zero starts no
+            // transfer; an active request fails before changing the channel.
+            return if value == 0 {
+                Ok(())
+            } else {
+                Err(SourceCpuError::UnsupportedBusMap { address })
+            };
+        }
+        if bank & 0x7f < 0x40 && adr == 0x420c {
+            if value != 0 && !self.timeline.bus_workload().dynamic_hdma() {
+                return Err(SourceCpuError::UnsupportedBusMap { address });
+            }
+            self.snes.dma_start_real(value, true);
+            return Ok(());
+        }
+        if bank & 0x7f < 0x40 && (0x4300..=0x437f).contains(&adr) {
+            self.snes.dma_write_reg(adr, value);
             return Ok(());
         }
         if bank & 0x7f < 0x40 && adr == 0x4200 {
-            // `S9xSetCPU($4200)` returns immediately when the byte equals the
-            // current NMITIMEN shadow. With every modeled enable clear, a
-            // zero write is that complete no-op. The probe does not retain
-            // unused-bit history, so other writes fail closed before mutation.
-            if value == 0
-                && !self.snes.nmi_enabled
-                && !self.snes.auto_joy_read
-                && !self.snes.h_irq_enabled
-                && !self.snes.v_irq_enabled
+            // The caller owns NMI acceptance. Do not silently synthesize the
+            // source's pending enable edge during VBlank or claim an IRQ or
+            // auto-joy timer that this probe cannot schedule.
+            let enable_nmi = value & 0x80 != 0;
+            if value & 0x31 != u8::from(self.snes.auto_joy_read)
+                || (enable_nmi && !self.snes.nmi_enabled && self.snes.in_vblank && self.snes.in_nmi)
             {
-                return Ok(());
+                return Err(SourceCpuError::UnsupportedBusMap { address });
             }
-            return Err(SourceCpuError::UnsupportedBusMap { address });
+            self.snes.nmi_enabled = enable_nmi;
+            return Ok(());
         }
         if bank & 0x7f < 0x40 && adr == 0x4201 {
             self.ppu_reads.write_wrio(value, self.beam());
+            return Ok(());
+        }
+        if bank & 0x7f < 0x40 && (0x4204..=0x4206).contains(&adr) {
+            match adr {
+                0x4204 => self.snes.divide_a = (self.snes.divide_a & 0xff00) | u16::from(value),
+                0x4205 => {
+                    self.snes.divide_a = (self.snes.divide_a & 0x00ff) | (u16::from(value) << 8)
+                }
+                0x4206 => {
+                    if value == 0 {
+                        self.snes.divide_result = 0xffff;
+                        self.snes.multiply_result = self.snes.divide_a;
+                    } else {
+                        self.snes.divide_result = self.snes.divide_a / u16::from(value);
+                        self.snes.multiply_result = self.snes.divide_a % u16::from(value);
+                    }
+                }
+                _ => unreachable!(),
+            }
             return Ok(());
         }
         match self.source_map_class(address) {
