@@ -357,6 +357,7 @@ impl RomCpuTimingRun {
     }
 
     pub(crate) fn index_x(&self) -> u16 { self.shadow.cpu.x }
+    pub(crate) fn accumulator(&self) -> u16 { self.shadow.cpu.a }
 
     pub(crate) fn main_wait_checkpoint(&self, stop_pc: u32) -> RomCpuCheckpoint {
         assert!(matches!(self.pc(), 0x00_8034 | 0x00_8036));

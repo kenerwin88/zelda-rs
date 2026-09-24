@@ -2741,6 +2741,30 @@ fn debug_overworld_cpu_iteration_host_matches(host: u32) -> bool {
     (*lo..=*hi).contains(&host)
 }
 
+/// Optional exact-PC probes within the selected native CPU iteration hosts.
+/// Addresses use the same bank:offset notation as the Snes9x PC trace.
+fn debug_overworld_cpu_pc_matches(pc: u32) -> bool {
+    static PCS: std::sync::OnceLock<Vec<u32>> = std::sync::OnceLock::new();
+    PCS.get_or_init(|| {
+        crate::debug_env::var("ZELDA3_DEBUG_OVERWORLD_CPU_PCS")
+            .ok()
+            .map(|value| {
+                value
+                    .split(',')
+                    .filter_map(|address| {
+                        let (bank, offset) = address.trim().split_once(':')?;
+                        Some(
+                            (u32::from(u8::from_str_radix(bank, 16).ok()?) << 16)
+                                | u32::from(u16::from_str_radix(offset, 16).ok()?),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    })
+    .contains(&pc)
+}
+
 fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, nmi_is_trailing: bool) -> (Option<SpritePreparationProgress>, Option<HudUpdateInterruption>) {
     let (mut run, mut budget) = native_main_loop_cpu_run(state, input, nmi_is_trailing);
     let trace_iteration = debug_overworld_cpu_iteration_host_matches(state.frame_ctr_dbg);
@@ -2783,6 +2807,26 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
             return (None, None);
         }
         let pc = run.pc();
+        if trace_iteration && debug_overworld_cpu_pc_matches(pc) {
+            let hdma = ROM_CPU_SHADOW_HDMA_DEBUG
+                .each_ref()
+                .map(|counter| counter.load(std::sync::atomic::Ordering::Relaxed));
+            eprintln!(
+                "[OWCPU-PC] host={} pc={pc:06x} at={:?} slot={} x={:04x} a={:04x} rng={:02x} dp00={:02x} dp0b={:02x} dp0c={:02x} dp0d={:02x} sp={:04x} return={:06x} hdma={hdma:?}",
+                state.frame_ctr_dbg,
+                budget.raster_position(),
+                run.ram_byte(0x0fa0),
+                run.index_x(),
+                run.accumulator(),
+                run.ram_byte(0x0fa1),
+                run.ram_byte(0x00),
+                run.ram_byte(0x0b),
+                run.ram_byte(0x0c),
+                run.ram_byte(0x0d),
+                run.stack_pointer(),
+                run.stack_return_address(),
+            );
+        }
         if matches!(pc, 0x06_83a1 | 0x06_83a7) {
             cucco_graphics = None;
             timers_and_oam_return = None;

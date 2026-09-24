@@ -169,11 +169,42 @@ exact and video first differs at frame 56,458. The source trace is in
 `target/source-f56458-pc-trace`; the native comparison is in
 `target/native-systemic-baseline`. The receipt names this call stack
 `AfterTimersAndOam(2)`, but that checkpoint does not describe the partial
-Cucco/shadow draw at acceptance. The next runtime fix must account for the
-source-ordered CPU work and committed draw prefix at an instruction boundary,
-then resume the same stack. Widening the existing post-timer rule would erase
+Cucco/shadow draw at acceptance. Restore the source-ordered CPU work first,
+then re-evaluate whether an instruction-boundary draw prefix and resumed
+stack remain necessary. Widening the existing post-timer rule would erase
 the distinction between this case and the item-receipt continuation at host
 20,257 (and the previously observed item decompressor at 47,125).
+
+The immediate display difference is the captured BG scroll, not OAM: source
+scanline zero uses `(259,2271)/(210,2265)`, while native uses
+`(258,2271)/(208,2265)` with `CapturedBeforeNmi`; displayed OAM entries
+12–21 match. The CPU timing gap is upstream of the partial draw. Source and
+native agree within 22 master cycles at Cucco's `$06:A618`, but differ by
+326 cycles after the avenger's `Sprite_ApplySpeedTowardsLink` call. The
+32-iteration projection loop takes different branches with the same X
+sequence; both sides charge the same 1,344 HDMA master cycles over its 32
+scanlines. The first differing input is the avenger's `GetRandomNumber`
+result at `$0D:BA71`: source seed `$C3` yields `$8C`, while the isolated
+native ROM timing shadow yields `$55`. At source V83/C762, `$2137` latches
+H=190; the subsequent `$213C` read at C792 returns `$EA` because the source
+PPU is on its high-byte read phase and preserves the PPU bus bits. The native
+shadow starts this frame with a fresh counter-read phase and returns a low H
+byte instead. Source and native WRAM match at the pre-frame boundary,
+including seed `$C3`, Link coordinates, and sprite slots. This is a PPU
+read-register continuation ownership problem, not a Cucco-specific cycle
+constant or a translated spawn-coordinate defect. The source proof is in
+`target/source-f56458-rng-ppu-trace` and
+`target/source-f56458-ppu-read-trace`; native exact-PC probes use
+`ZELDA3_DEBUG_OVERWORLD_CPU_ITERATION=56458-56458` with
+`ZELDA3_DEBUG_OVERWORLD_CPU_PCS=06:a7f5,06:a7f9,06:e9c8`.
+
+An experimental copy of PPU counter-read state from each overworld timing
+shadow into the translated PPU was rejected: it shifted receipt RNG call
+order at host 55,074, before the present frontier. A correct fix needs one
+source-ordered owner for `$2137/$213C/$213F`, including read flip and PPU
+open-bus values, across all CPU timing plans and frame boundaries. Do not
+promote that isolated overworld-only copy or compensate with an extra 304
+cycles. The diagnostic experiment was removed from the branch.
 
 Promotion tooling also now accepts an explicit `--frames` limit exactly equal
 to the cache's full frame count. The previous validator rejected every explicit
