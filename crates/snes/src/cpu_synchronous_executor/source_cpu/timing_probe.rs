@@ -410,6 +410,15 @@ impl RomCpuTimingProbe {
             self.ppu_reads.write_wrio(value, self.beam());
             return Ok(());
         }
+        if bank & 0x7f < 0x40 && (0x2100..=0x2133).contains(&adr) {
+            // Reuse the same PPU register owner as the exact cold executor.
+            // The source instruction bus publishes OpenBus only after the
+            // semantic and its charged memory access have completed.
+            let open_bus = self.snes.open_bus;
+            self.snes.write(address, value);
+            self.snes.open_bus = open_bus;
+            return Ok(());
+        }
         if bank & 0x7f < 0x40 && (0x4204..=0x4206).contains(&adr) {
             match adr {
                 0x4204 => self.snes.divide_a = (self.snes.divide_a & 0xff00) | u16::from(value),

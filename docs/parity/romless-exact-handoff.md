@@ -259,6 +259,14 @@ change is claimed. The next step is a persistent source CPU/peripheral owner
 across native plans, including poly-thread IRQ scheduling, before replacing
 the aggregate run and budget together.
 
+The source probe now routes `$2100..$2133` writes to the same PPU register
+owner as the exact cold executor, at each ordered CPU bus access. A two-plan
+test retains INIDISP and OBSEL writes across an opaque handoff; the external
+ROM cold-boot witness passes the former `$00:8018`/`$2100` stop while retaining
+its recorded first four APU write timestamps. This removes one unsupported
+register class from the probe. It does not yet supply automatic interrupt
+dispatch, general DMA, or a persistent native route owner.
+
 Promotion tooling also now accepts an explicit `--frames` limit exactly equal
 to the cache's full frame count. The previous validator rejected every explicit
 limit, including this complete 1,581,079-frame run. The correction preserves

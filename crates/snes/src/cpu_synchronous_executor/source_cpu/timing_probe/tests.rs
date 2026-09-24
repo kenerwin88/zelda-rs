@@ -472,6 +472,44 @@ fn handoff_keeps_the_ppu_read_bus_and_timeline_event_cursor_together() {
 }
 
 #[test]
+fn ppu_register_writes_keep_one_source_ordered_owner_across_handoff() {
+    let (snes, timeline) = seed(
+        &[0xa9, 0x8f, 0x8d, 0x00, 0x21, 0xa9, 0x23, 0x8d, 0x01, 0x21],
+        100,
+        100,
+        false,
+    );
+    let mut first =
+        RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset()).unwrap();
+    first.step().unwrap();
+    let write = first.step().unwrap();
+    assert_eq!(
+        write.accesses.last(),
+        Some(&SourceCpuBusAccess {
+            address: 0x2100,
+            timestamp: CpuMasterTimestamp::new(100 * u64::from(MASTER_CYCLES_PER_SCANLINE) + 140),
+            charged_master_cycles: 6,
+            kind: SourceCpuBusAccessKind::Write {
+                value: 0x8f,
+                width: 1
+            },
+        })
+    );
+    assert_eq!(first.snes().ppu.brightness, 15);
+    assert!(first.snes().ppu.forced_blank);
+    assert_eq!(first.snes().open_bus, 0x8f);
+
+    let mut second =
+        RomCpuTimingProbe::from_handoff(first.into_handoff().ok().expect("healthy boundary"));
+    second.step().unwrap();
+    second.step().unwrap();
+    assert_eq!(second.snes().ppu.brightness, 15);
+    assert!(second.snes().ppu.forced_blank);
+    assert_eq!(second.snes().ppu.obj_tile_adr1, 3 << 13);
+    assert_eq!(second.snes().open_bus, 0x23);
+}
+
+#[test]
 fn enabled_nmi_is_accepted_only_by_the_external_interrupt_owner() {
     let (mut snes, timeline) = seed(&[0xea], 224, 1350, false);
     snes.nmi_enabled = true;
@@ -675,33 +713,46 @@ fn local_rom_probe_apu_ports_match_the_pinned_cold_boot_writes() {
     probe.attach_apu_port_owner(owner).unwrap();
 
     let mut observed = Vec::new();
-    let mut stopped_at = None;
+    let mut first_ppu_write = None;
     for _ in 0..64 {
         let origin_pc = probe.program_address();
-        match probe.step() {
-            Ok(receipt) => {
-                for access in &receipt.accesses {
-                    let Some(port) = Snes::synchronous_cpu_apu_port(access.address) else {
-                        continue;
-                    };
-                    let SourceCpuBusAccessKind::Write { value, width: 1 } = access.kind else {
-                        panic!("the boot APU access is a single-byte write");
-                    };
-                    let cycles = access.timestamp.master_cycles();
-                    observed.push((
-                        port & 3,
-                        value as u8,
-                        (cycles / u64::from(MASTER_CYCLES_PER_SCANLINE)) as u16,
-                        (cycles % u64::from(MASTER_CYCLES_PER_SCANLINE)) as u16,
-                        receipt.ended_at.master_cycles() - receipt.started_at.master_cycles(),
-                        probe.apu_ports().unwrap().machine().cycles,
-                    ));
-                }
+        let receipt = probe
+            .step()
+            .expect("the audited cold boot prefix is supported");
+        for access in &receipt.accesses {
+            if access.address == 0x00_2100 {
+                let SourceCpuBusAccessKind::Write { value, width: 1 } = access.kind else {
+                    panic!("INIDISP is written one byte at a time");
+                };
+                first_ppu_write.get_or_insert((
+                    origin_pc,
+                    value as u8,
+                    access.timestamp,
+                    probe.snes().ppu.brightness,
+                    probe.snes().ppu.forced_blank,
+                ));
             }
-            Err(error) => {
-                stopped_at = Some((origin_pc, error));
-                break;
+            let Some(port) = Snes::synchronous_cpu_apu_port(access.address) else {
+                continue;
+            };
+            let SourceCpuBusAccessKind::Write { value, width: 1 } = access.kind else {
+                continue;
+            };
+            if observed.len() == expected.len() {
+                continue;
             }
+            let cycles = access.timestamp.master_cycles();
+            observed.push((
+                port & 3,
+                value as u8,
+                (cycles / u64::from(MASTER_CYCLES_PER_SCANLINE)) as u16,
+                (cycles % u64::from(MASTER_CYCLES_PER_SCANLINE)) as u16,
+                receipt.ended_at.master_cycles() - receipt.started_at.master_cycles(),
+                probe.apu_ports().unwrap().machine().cycles,
+            ));
+        }
+        if first_ppu_write.is_some() {
+            break;
         }
     }
 
@@ -723,14 +774,18 @@ fn local_rom_probe_apu_ports_match_the_pinned_cold_boot_writes() {
         assert_eq!(actual.4, 30);
     }
 
-    // The boot's next PPU register write is outside the audited bus map, so
-    // the probe fails closed instead of guessing at unowned hardware.
-    let (pc, error) = stopped_at.expect("the probe must stop at unowned hardware");
+    // The first PPU write follows the recorded APU writes. It is now executed
+    // by the same register owner and at the source bus-access timestamp.
+    let (pc, value, timestamp, brightness, forced_blank) =
+        first_ppu_write.expect("cold boot writes INIDISP");
     assert_eq!(pc, 0x00_8018);
-    assert!(matches!(
-        error,
-        SourceCpuError::UnsupportedBusMap { address: 0x00_2100 }
-    ));
+    assert!(
+        timestamp.master_cycles()
+            > u64::from(observed[3].2) * u64::from(MASTER_CYCLES_PER_SCANLINE)
+                + u64::from(observed[3].3)
+    );
+    assert_eq!(brightness, value & 0x0f);
+    assert_eq!(forced_blank, value & 0x80 != 0);
 }
 
 #[test]
