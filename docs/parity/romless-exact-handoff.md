@@ -248,6 +248,17 @@ legacy timeline, and the production `RomCpuTimingRun` still executes aggregate
 instructions. Both must be replaced as one owner before using this path for
 native timing or changing the parity frontier.
 
+`CpuCycleBudget` can now observe a source instruction or NMI receipt by
+adopting the probe's synchronous timeline cursor. It checks that the entry
+clock, exit clock, bus workload, and field schedule agree, then reports the
+same typed boundary without charging CPU work, refresh, or HDMA a second time.
+Focused tests cover a refresh-crossing instruction, NMI entry after a boundary,
+and a mismatched odd-field schedule. This is an integration seam, not a native
+route switch: `ZeldaState` still runs `RomCpuTimingRun`, so no A/V frontier
+change is claimed. The next step is a persistent source CPU/peripheral owner
+across native plans, including poly-thread IRQ scheduling, before replacing
+the aggregate run and budget together.
+
 Promotion tooling also now accepts an explicit `--frames` limit exactly equal
 to the cache's full frame count. The previous validator rejected every explicit
 limit, including this complete 1,581,079-frame run. The correction preserves

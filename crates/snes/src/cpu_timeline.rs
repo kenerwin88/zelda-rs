@@ -452,6 +452,10 @@ impl CpuMasterTimeline {
         self.bus
     }
 
+    pub const fn field_timing(&self) -> CpuFieldTiming {
+        self.field_timing
+    }
+
     pub const fn wram_refresh_cycle(&self) -> u32 {
         self.wram_refresh_cycle as u32
     }

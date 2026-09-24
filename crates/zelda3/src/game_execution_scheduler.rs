@@ -7,9 +7,9 @@ use super::{
 };
 pub(super) use snes::{CpuBusEvent, CpuBusWorkload, CpuFieldTiming, CpuRasterPosition};
 use snes::{
-    CpuMasterTimeline, CpuTimelineDeadlineAdvance, CpuTimelineEvent, NMI_SCANLINE,
-    SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES, SNES9X_NMI_GENERAL_DMA_DELAY_MASTER_CYCLES,
-    WRAM_REFRESH_STALL_MASTER_CYCLES,
+    CpuMasterTimeline, CpuTimelineDeadlineAdvance, CpuTimelineEvent, RomCpuNmiReceipt,
+    SourceCpuStepReceipt, NMI_SCANLINE, SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES,
+    SNES9X_NMI_GENERAL_DMA_DELAY_MASTER_CYCLES, WRAM_REFRESH_STALL_MASTER_CYCLES,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -274,6 +274,81 @@ impl CpuCycleBudget {
             );
         self.steal_poly_thread_slice();
         if self.timeline.clock_master_cycles() >= self.deadline.master_cycles {
+            CpuWorkAdvance::ReachedBoundary {
+                boundary: self.deadline.boundary,
+                remaining_work_master_cycles: 0,
+            }
+        } else {
+            CpuWorkAdvance::Complete
+        }
+    }
+
+    /// Observe a source-ordered instruction that has already charged its own
+    /// bus events. The copied synchronous cursor is a deadline view, never a
+    /// second executor: legacy advance methods reject a synchronous timeline.
+    pub(super) fn observe_source_instruction(
+        &mut self,
+        receipt: &SourceCpuStepReceipt,
+        source_timeline: &CpuMasterTimeline,
+    ) -> CpuWorkAdvance {
+        self.observe_source_interval(
+            receipt.started_at.master_cycles(),
+            receipt.ended_at.master_cycles(),
+            source_timeline,
+        )
+    }
+
+    /// NMI bus entry is also source-owned and must advance the same clock
+    /// after `begin_nmi_handler` opens the next deadline.
+    pub(super) fn observe_source_nmi(
+        &mut self,
+        receipt: &RomCpuNmiReceipt,
+        source_timeline: &CpuMasterTimeline,
+    ) -> CpuWorkAdvance {
+        self.observe_source_interval(
+            receipt.started_at.master_cycles(),
+            receipt.ended_at.master_cycles(),
+            source_timeline,
+        )
+    }
+
+    fn observe_source_interval(
+        &mut self,
+        started_at: u64,
+        ended_at: u64,
+        source_timeline: &CpuMasterTimeline,
+    ) -> CpuWorkAdvance {
+        assert!(
+            self.poly_thread_irq.is_none(),
+            "source CPU needs an owned poly-thread scheduler before observation"
+        );
+        assert_eq!(
+            self.timeline.clock_master_cycles(),
+            started_at,
+            "source CPU and native boundary budget have different entry clocks"
+        );
+        assert!(
+            started_at < self.deadline.master_cycles,
+            "source CPU advanced before the prior boundary was accepted"
+        );
+        assert!(ended_at >= started_at, "source CPU clock moved backwards");
+        assert_eq!(
+            source_timeline.clock_master_cycles(),
+            ended_at,
+            "source CPU receipt does not end at its owned timeline"
+        );
+        assert_eq!(
+            self.timeline.bus_workload(),
+            source_timeline.bus_workload(),
+            "source CPU and native boundary budget have different bus workloads"
+        );
+        assert_eq!(
+            self.timeline.field_timing(),
+            source_timeline.field_timing(),
+            "source CPU and native boundary budget have different field timing"
+        );
+        self.timeline = source_timeline.clone();
+        if ended_at >= self.deadline.master_cycles {
             CpuWorkAdvance::ReachedBoundary {
                 boundary: self.deadline.boundary,
                 remaining_work_master_cycles: 0,
@@ -1785,13 +1860,34 @@ mod cpu_timing_tests {
     use super::*;
     use crate::zelda_rtl::{SpriteMainCpuBoundary, SpriteMainCpuCaller};
     use snes::{
-        snes9x_wram_refresh_cycle, HDMA_START_CYCLE, MASTER_CYCLES_PER_SCANLINE,
-        NTSC_FIELD_MASTER_CYCLES,
+        snes9x_wram_refresh_cycle, CartType, RomCpuTimingProbe, Snes, SourcePpuReadState,
+        HDMA_START_CYCLE, MASTER_CYCLES_PER_SCANLINE, NTSC_FIELD_MASTER_CYCLES,
     };
 
     const DUNGEON_HDMA_STALL: u16 = 42;
     const LONG_TIMELINE_FIELD: u64 = 24_001;
     const WORK_TO_CACHED_RESTORE: u32 = 1_400 + 4 * 10_674 + 8_884;
+
+    fn source_probe_at(entry: CpuRasterPosition, program: &[u8]) -> RomCpuTimingProbe {
+        let mut rom = vec![0xea; 0x8000];
+        rom[..program.len()].copy_from_slice(program);
+        rom[0x7fea..0x7fec].copy_from_slice(&[0xc9, 0x80]);
+        let mut snes = Snes::new();
+        snes.cart.load(CartType::LoRom, &rom, 0x2000);
+        snes.cpu.pc = 0x8000;
+        snes.cpu.sp = 0x1ff;
+        snes.cpu.e = false;
+        snes.cpu.mf = true;
+        snes.cpu.xf = true;
+        snes.nmi_enabled = true;
+        let timeline = CpuMasterTimeline::at_raster(
+            0,
+            entry,
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset()).unwrap()
+    }
 
     fn budget_at_field(
         field_index: u64,
@@ -2304,6 +2400,78 @@ mod cpu_timing_tests {
             hdma_start.raster_position(),
             CpuRasterPosition::new(100, 1_138),
         );
+    }
+
+    #[test]
+    fn source_cpu_refresh_is_observed_once_by_the_native_boundary_budget() {
+        let refresh = snes9x_wram_refresh_cycle(0, 100, CpuFieldTiming::NON_INTERLACE_EVEN);
+        let entry = CpuRasterPosition::new(100, (refresh - 6) as u16);
+        let mut probe = source_probe_at(entry, &[0xea]);
+        let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
+            entry,
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        let receipt = probe.step().unwrap();
+        assert_eq!(
+            budget.observe_source_instruction(&receipt, probe.timeline()),
+            CpuWorkAdvance::Complete
+        );
+        assert_eq!(
+            budget.timeline.clock_master_cycles(),
+            probe.timeline().clock_master_cycles()
+        );
+        assert_eq!(budget.raster_position(), probe.timeline().raster_position());
+        assert_eq!(
+            receipt.ended_at.master_cycles() - receipt.started_at.master_cycles(),
+            54,
+            "14 CPU clocks and one 40-clock WRAM refresh"
+        );
+    }
+
+    #[test]
+    fn source_cpu_nmi_boundary_and_entry_share_one_clock_owner() {
+        let entry = CpuRasterPosition::new(224, 1350);
+        let mut probe = source_probe_at(entry, &[0xea, 0xea]);
+        let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
+            entry,
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        let first = probe.step().unwrap();
+        assert_eq!(
+            budget.observe_source_instruction(&first, probe.timeline()),
+            CpuWorkAdvance::Complete
+        );
+        let second = probe.step().unwrap();
+        assert_eq!(
+            budget.observe_source_instruction(&second, probe.timeline()),
+            CpuWorkAdvance::ReachedBoundary {
+                boundary: CpuRasterBoundary::CpuNmiAcceptance,
+                remaining_work_master_cycles: 0,
+            }
+        );
+        budget.begin_nmi_handler();
+        let nmi = probe.accept_native_nmi().unwrap();
+        assert_eq!(
+            budget.observe_source_nmi(&nmi, probe.timeline()),
+            CpuWorkAdvance::Complete
+        );
+        assert_eq!(budget.raster_position(), probe.timeline().raster_position());
+    }
+
+    #[test]
+    #[should_panic(expected = "different field timing")]
+    fn source_cpu_budget_rejects_a_different_odd_field_schedule() {
+        let entry = CpuRasterPosition::new(100, 100);
+        let mut probe = source_probe_at(entry, &[0xea]);
+        let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
+            entry,
+            CpuBusWorkload::default(),
+            CpuFieldTiming::non_interlace(true),
+        );
+        let receipt = probe.step().unwrap();
+        budget.observe_source_instruction(&receipt, probe.timeline());
     }
 
     #[test]
