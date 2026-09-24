@@ -224,6 +224,17 @@ the new A/V frontier. Do not promote the isolated overworld-only copy or
 compensate with an extra 304 cycles. The diagnostic experiment was removed
 from the branch.
 
+The source-ordered timing probe now executes active HDMA init/scanline
+events at their CPU timeline deadlines and charges the DMA core's measured
+cost plus Snes9x's two sync clocks. A source-shaped channel-7 mode-2 test
+checks the 42-clock scanline stall and descriptor advancement. The probe
+also accepts an already-enabled NMI while leaving interrupt dispatch with
+the external owner; boundary tests check that handoff and retention of the
+`$213C` read flip/open bus across field rollover. These are prerequisites,
+not a native-parity result: `RomCpuTimingRun` is still the aggregate timing
+owner, and the source-ordered probe still needs audited MMIO coverage and
+a persistent native checkpoint before an overworld plan can use it.
+
 Promotion tooling also now accepts an explicit `--frames` limit exactly equal
 to the cache's full frame count. The previous validator rejected every explicit
 limit, including this complete 1,581,079-frame run. The correction preserves

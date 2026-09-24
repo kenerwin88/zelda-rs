@@ -12,11 +12,11 @@ use super::{
     SourceCpuMapClass, SourceCpuStepReceipt, SourceCpuTransaction, SourceCpuTransactionKind,
     WordWrap, WordWriteOrder,
 };
+use crate::apu::ApuHostPortTiming;
 use crate::cpu_timeline::{
     CpuMasterTimeline, CpuMasterTimestamp, CpuSynchronousBeamPosition, CpuSynchronousTimelineEvent,
     CpuSynchronousTimelineStartError,
 };
-use crate::apu::ApuHostPortTiming;
 use crate::snes::Snes;
 
 mod ppu_read_state;
@@ -89,16 +89,13 @@ impl RomCpuTimingProbe {
             || snes.cpu.irq_wanted
             || snes.h_irq_enabled
             || snes.v_irq_enabled
-            || snes.nmi_enabled
             || snes.dma.dma_busy
             || snes.dma.dma_timer != 0
             || snes.dma.hdma_timer != 0
-            || snes
-                .dma
-                .channel
-                .iter()
-                .any(|channel| channel.dma_active || channel.hdma_active)
-            || timeline.bus_workload().dynamic_hdma()
+            || snes.dma.channel.iter().any(|channel| {
+                channel.dma_active
+                    || (channel.hdma_active && !timeline.bus_workload().dynamic_hdma())
+            })
             || timeline.bus_workload().hdma_stall_master_cycles() != 0
         {
             return Err(RomCpuTimingProbeSeedError::ActiveHardware);
@@ -332,10 +329,9 @@ impl RomCpuTimingProbe {
         }
         if bank & 0x7f < 0x40 && adr == 0x4200 {
             // `S9xSetCPU($4200)` returns immediately when the byte equals the
-            // current NMITIMEN shadow. The probe's seed requires every modeled
-            // enable to be clear, so a zero write is that complete no-op. It
-            // cannot represent unused-bit history or an enable it does not own,
-            // so every other write fails closed before mutating anything.
+            // current NMITIMEN shadow. With every modeled enable clear, a
+            // zero write is that complete no-op. The probe does not retain
+            // unused-bit history, so other writes fail closed before mutation.
             if value == 0
                 && !self.snes.nmi_enabled
                 && !self.snes.auto_joy_read
@@ -431,27 +427,49 @@ impl RomCpuTimingProbe {
         let started = self.timeline.timestamp();
         let refresh = self.timeline.wram_refresh_cycle() as u16;
         let apu_ports = &mut self.apu_ports;
+        let snes = &mut self.snes;
         self.timeline
             .advance_synchronous_after_semantics_with(cycles, |event, timestamp| {
-                if let CpuSynchronousTimelineEvent::HMax {
-                    completed_scanline, ..
-                } = event
-                {
-                    // Pinned `cpuexec.cpp:HC_HCOUNTER_MAX_EVENT` runs
-                    // `S9xAPUEndScanline` before the scanline counter advances.
-                    if let Some(apu) = apu_ports.as_mut() {
-                        apu.end_scanline_at(timestamp.master_cycles())?;
+                let stall = match event {
+                    CpuSynchronousTimelineEvent::Bus(
+                        crate::cpu_timeline::CpuBusEvent::HdmaInit,
+                    ) => {
+                        snes.dma_init_hdma();
+                        let cycles = u32::from(snes.dma.hdma_timer);
+                        snes.dma.hdma_timer = 0;
+                        cycles + u32::from(cycles != 0) * 2
                     }
-                    let next = (completed_scanline + 1) % 262;
-                    if next == 225 {
-                        self.snes.in_vblank = true;
-                        self.snes.in_nmi = true;
-                    } else if next == 0 {
-                        self.snes.in_vblank = false;
-                        self.snes.in_nmi = false;
+                    CpuSynchronousTimelineEvent::Bus(
+                        crate::cpu_timeline::CpuBusEvent::HdmaStart,
+                    ) => {
+                        snes.dma_do_hdma();
+                        let cycles = u32::from(snes.dma.hdma_timer);
+                        snes.dma.hdma_timer = 0;
+                        cycles + u32::from(cycles != 0) * 2
                     }
-                }
-                Ok::<_, SourceCpuError>(0)
+                    CpuSynchronousTimelineEvent::Bus(
+                        crate::cpu_timeline::CpuBusEvent::WramRefresh,
+                    ) => 0,
+                    CpuSynchronousTimelineEvent::HMax {
+                        completed_scanline, ..
+                    } => {
+                        // Pinned `cpuexec.cpp:HC_HCOUNTER_MAX_EVENT` runs
+                        // `S9xAPUEndScanline` before the scanline counter advances.
+                        if let Some(apu) = apu_ports.as_mut() {
+                            apu.end_scanline_at(timestamp.master_cycles())?;
+                        }
+                        let next = (completed_scanline + 1) % 262;
+                        if next == 225 {
+                            snes.in_vblank = true;
+                            snes.in_nmi = true;
+                        } else if next == 0 {
+                            snes.in_vblank = false;
+                            snes.in_nmi = false;
+                        }
+                        0
+                    }
+                };
+                Ok::<_, SourceCpuError>(stall)
             })?;
         self.record_transaction(
             kind,

@@ -285,6 +285,109 @@ fn seed_rejects_pending_dma_and_ambiguous_refresh_ownership() {
 }
 
 #[test]
+fn active_hdma_stalls_the_source_ordered_cpu_at_the_scanline_event() {
+    let (mut snes, _) = seed(&[0xea], 1, 1100, false);
+    let channel = &mut snes.dma.channel[7];
+    channel.hdma_active = true;
+    channel.terminated = false;
+    channel.do_transfer = true;
+    channel.rep_count = 27;
+    channel.indirect = true;
+    channel.ind_bank = 0x7e;
+    channel.size = 0x1baa;
+    channel.b_adr = 0x1e;
+    channel.mode = 2;
+    channel.from_b = false;
+    snes.ram[0x1baa..0x1bac].copy_from_slice(&[0, 255]);
+    let timeline = CpuMasterTimeline::at_raster(
+        0,
+        CpuRasterPosition::new(1, 1100),
+        CpuBusWorkload::with_dynamic_hdma(),
+        CpuFieldTiming::non_interlace(false),
+    );
+    let mut probe =
+        RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset()).unwrap();
+    probe.step().unwrap();
+    // NOP's 8-clock opcode fetch and 6-clock internal cycle cross H=1106.
+    // The source's channel-7, mode-2 transfer at frame 56,458 costs 42
+    // master cycles: 8+16+16 bus clocks and two CPU/DMA sync clocks.
+    assert_eq!(probe.timeline().raster_position().coordinates(), (1, 1156));
+    assert_eq!(probe.snes().dma.channel[7].rep_count, 26);
+    assert_eq!(probe.snes().dma.channel[7].size, 0x1bac);
+    assert_eq!(probe.snes().dma.hdma_timer, 0);
+}
+
+#[test]
+fn active_hdma_initializes_the_source_descriptor_at_line_zero() {
+    let (mut snes, _) = seed(&[0xea], 0, 14, false);
+    let channel = &mut snes.dma.channel[7];
+    channel.hdma_active = true;
+    channel.indirect = true;
+    channel.a_bank = 0x7e;
+    channel.a_adr = 0x1ba0;
+    snes.ram[0x1ba0..0x1ba3].copy_from_slice(&[27, 0xaa, 0x1b]);
+    let timeline = CpuMasterTimeline::at_raster(
+        0,
+        CpuRasterPosition::new(0, 14),
+        CpuBusWorkload::with_dynamic_hdma(),
+        CpuFieldTiming::non_interlace(false),
+    );
+    let mut probe =
+        RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset()).unwrap();
+    probe.step().unwrap();
+    assert_eq!(probe.timeline().raster_position().coordinates(), (0, 70));
+    let channel = &probe.snes().dma.channel[7];
+    assert_eq!(channel.table_adr, 0x1ba3);
+    assert_eq!(channel.rep_count, 27);
+    assert_eq!(channel.size, 0x1baa);
+    assert!(channel.do_transfer);
+    assert_eq!(probe.snes().dma.hdma_timer, 0);
+}
+
+#[test]
+fn counter_read_bus_and_flip_survive_a_field_boundary() {
+    let (snes, _) = seed(&[0xad, 0x3c, 0x21], 261, 1340, false);
+    let timeline = CpuMasterTimeline::at_raster(
+        0,
+        CpuRasterPosition::new(261, 1340),
+        CpuBusWorkload::default(),
+        CpuFieldTiming::non_interlace(false),
+    );
+    let ppu_reads = SourcePpuReadState {
+        open_bus2: 0xeb,
+        h_latched: 190,
+        h_read_high: true,
+        counter_latched: true,
+        ..SourcePpuReadState::snes9x_reset()
+    };
+    let mut probe = RomCpuTimingProbe::new(snes, timeline, ppu_reads).unwrap();
+    probe.step().unwrap();
+    assert_eq!(probe.timeline().raster_position().coordinates(), (0, 6));
+    assert_eq!(probe.snes().cpu.a as u8, 0xea);
+    assert!(!probe.ppu_reads().h_read_high);
+    assert_eq!(probe.ppu_reads().open_bus2, 0xea);
+    assert!(probe.ppu_reads().counter_latched);
+}
+
+#[test]
+fn enabled_nmi_is_accepted_only_by_the_external_interrupt_owner() {
+    let (mut snes, timeline) = seed(&[0xea], 224, 1350, false);
+    snes.nmi_enabled = true;
+    snes.cpu.sp = 0x1ff;
+    snes.cart.rom[0x7fea..0x7fec].copy_from_slice(&[0xc9, 0x80]);
+    let mut probe =
+        RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset()).unwrap();
+    probe.step().unwrap();
+    assert_eq!(probe.timeline().raster_position().coordinates(), (225, 0));
+    assert!(probe.snes().in_nmi);
+    assert!(!probe.snes().cpu.nmi_wanted);
+    assert_eq!(probe.program_address(), 0x8001);
+    let receipt = probe.accept_native_nmi().unwrap();
+    assert_eq!(receipt.interrupted_pc, 0x8001);
+    assert_eq!(probe.program_address(), 0x80c9);
+}
+
+#[test]
 fn direct_operand_cannot_silently_cross_the_pcbase_bank_boundary() {
     let (mut snes, timeline) = seed(&[], 103, 100, false);
     snes.cpu.pc = 0xfffe;
