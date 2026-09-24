@@ -149,6 +149,32 @@ cleaned binary matched receipt-driven video and audio for all 23 frames
 1,581,079-frame receipt proof belongs to the preceding Cucco commit; this
 increment has not repeated the full route or promotion gates.
 
+### Interruption-class audit before the next native change
+
+`scripts/sprite_main_interruption_matrix.py` streams the immutable timing
+receipts and groups `SpriteMainProgressed` by the NMI acceptances in its host
+and the following host. Through host 56,459, six post-timer progress hosts have
+no NMI acceptance of their own and are followed by a held acceptance; five
+return `Sprite_Main` on that following host (24,651, 27,137, 30,771, 31,283,
+56,457), while the item-receipt caller at 20,257 remains suspended. The same
+matrix preserves multiple acceptances within one host, as at 56,438. This
+rules out treating a post-timer progress receipt as synonymous with an
+accepted NMI or a ready-to-return Sprite_Main stack.
+
+At the new native video frontier, source run 56,458 accepts its held NMI at
+V225/C20, PC `$06:DCE3` inside `Sprite_DrawShadowEx_`, with slot 2 active.
+The clean native CPU probe for the corresponding iteration reaches its NMI
+boundary at V225/C12, PC `$06:A618` inside `Sprite_0B_Cucco`; audio is still
+exact and video first differs at frame 56,458. The source trace is in
+`target/source-f56458-pc-trace`; the native comparison is in
+`target/native-systemic-baseline`. The receipt names this call stack
+`AfterTimersAndOam(2)`, but that checkpoint does not describe the partial
+Cucco/shadow draw at acceptance. The next runtime fix must account for the
+source-ordered CPU work and committed draw prefix at an instruction boundary,
+then resume the same stack. Widening the existing post-timer rule would erase
+the distinction between this case and the item-receipt continuation at host
+20,257 (and the previously observed item decompressor at 47,125).
+
 Promotion tooling also now accepts an explicit `--frames` limit exactly equal
 to the cache's full frame count. The previous validator rejected every explicit
 limit, including this complete 1,581,079-frame run. The correction preserves
