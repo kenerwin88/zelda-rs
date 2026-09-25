@@ -228,7 +228,7 @@ The source-ordered timing probe now executes active HDMA init/scanline
 events at their CPU timeline deadlines and charges the DMA core's measured
 cost plus Snes9x's two sync clocks. A source-shaped channel-7 mode-2 test
 checks the 42-clock scanline stall and descriptor advancement. The probe
-also accepts an already-enabled NMI while leaving interrupt dispatch with
+also schedules an enabled VBlank NMI for H=12 while leaving interrupt entry with
 the external owner; boundary tests check that handoff and retention of the
 `$213C` read flip/open bus across field rollover. These are prerequisites,
 not a native-parity result: `RomCpuTimingRun` is still the aggregate timing
@@ -258,6 +258,17 @@ route switch: `ZeldaState` still runs `RomCpuTimingRun`, so no A/V frontier
 change is claimed. The next step is a persistent source CPU/peripheral owner
 across native plans, including poly-thread IRQ scheduling, before replacing
 the aggregate run and budget together.
+
+The source probe now carries `CPU.NMIPending` and its H=12 acceptance deadline
+through the opaque handoff. It rejects early external entry and refuses the
+next CPU instruction once the deadline is due until the interrupt owner enters
+the NMI. The boundary test crosses VBlank, hands off at H=14, verifies the
+blocked instruction, then executes the native entry; an ambiguous mid-VBlank
+seed also fails closed. A separate read witness confirms that acknowledging
+RDNMI (`$4210`) does not discard the independently scheduled CPU NMI. This
+removes a silent timing divergence in the probe.
+Automatic interrupt dispatch, poly-thread IRQ, and a persistent native-route
+owner remain separate work.
 
 The source probe now routes `$2100..$2133` writes to the same PPU register
 owner as the exact cold executor, at each ordered CPU bus access. A two-plan

@@ -112,6 +112,10 @@ pub enum SourceCpuError {
     UnexpectedInterruptOrDma,
     #[error("source CPU NMI entry is currently proven only for native, non-WAI execution")]
     UnsupportedNmiEntryState,
+    #[error("source CPU reached NMI acceptance at master cycle {deadline}; the interrupt owner must enter before the next instruction")]
+    PendingNmiAcceptance { deadline: u64 },
+    #[error("source CPU NMI acceptance at master cycle {deadline} is not due at {now}")]
+    NmiAcceptanceNotDue { deadline: u64, now: u64 },
     #[error("source CPU IRQ entry is currently proven only for native, non-WAI execution")]
     UnsupportedIrqEntryState,
     #[error(transparent)]

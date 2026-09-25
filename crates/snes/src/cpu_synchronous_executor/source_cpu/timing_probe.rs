@@ -2,8 +2,9 @@
 //!
 //! Unlike the exact cold CPU/APU owner, this accepts an explicit caller-owned
 //! machine/PPU-read seed. It never claims that an arbitrary snapshot is an
-//! exact cold checkpoint. Unsupported I/O, interrupts and DMA fail closed;
-//! a failed instruction poisons the probe instead of silently falling back
+//! exact cold checkpoint. An enabled VBlank NMI must be accepted by the
+//! external interrupt owner at its source deadline. Unsupported I/O and DMA
+//! fail closed. A failed instruction poisons the probe instead of falling back
 //! to the aggregate interpreter or supplying cached semantic results.
 
 use super::instruction_set::{SourceCpuInstructionBus, SourceCpuInstructions};
@@ -15,7 +16,7 @@ use super::{
 use crate::apu::ApuHostPortTiming;
 use crate::cpu_timeline::{
     CpuMasterTimeline, CpuMasterTimestamp, CpuSynchronousBeamPosition, CpuSynchronousTimelineEvent,
-    CpuSynchronousTimelineStartError,
+    CpuSynchronousTimelineStartError, SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES,
 };
 use crate::snes::Snes;
 
@@ -72,6 +73,10 @@ pub struct RomCpuTimingProbe {
     /// outside the audited bus map and fails closed; the probe never samples
     /// a copied port latch in place of a synchronized SMP.
     apu_ports: Option<ApuHostPortTiming>,
+    /// Pinned `CPU.NMIPending` and `NMITriggerPos`. The external interrupt
+    /// owner must consume this at an instruction boundary before CPU work
+    /// continues; it travels with the machine across plan handoffs.
+    nmi_acceptance_not_before: Option<CpuMasterTimestamp>,
     active_trace: Option<SourceCpuInstructionTrace>,
     active_interrupt_trace: Option<Vec<RomCpuInterruptTransaction>>,
     poisoned: bool,
@@ -85,6 +90,7 @@ pub struct RomCpuTimingProbeHandoff {
     timeline: CpuMasterTimeline,
     ppu_reads: SourcePpuReadState,
     apu_ports: Option<ApuHostPortTiming>,
+    nmi_acceptance_not_before: Option<CpuMasterTimestamp>,
 }
 
 impl RomCpuTimingProbe {
@@ -97,6 +103,7 @@ impl RomCpuTimingProbe {
             || snes.cpu.stopped
             || snes.cpu.nmi_wanted
             || snes.cpu.irq_wanted
+            || (snes.nmi_enabled && snes.in_vblank)
             || snes.h_irq_enabled
             || snes.v_irq_enabled
             || snes.dma.dma_busy
@@ -127,6 +134,7 @@ impl RomCpuTimingProbe {
             timeline,
             ppu_reads,
             apu_ports: None,
+            nmi_acceptance_not_before: None,
             active_trace: None,
             active_interrupt_trace: None,
             poisoned: false,
@@ -141,6 +149,9 @@ impl RomCpuTimingProbe {
     }
     pub fn ppu_reads(&self) -> &SourcePpuReadState {
         &self.ppu_reads
+    }
+    pub fn pending_nmi_acceptance(&self) -> Option<CpuMasterTimestamp> {
+        self.nmi_acceptance_not_before
     }
     pub fn is_poisoned(&self) -> bool {
         self.poisoned
@@ -160,6 +171,7 @@ impl RomCpuTimingProbe {
             timeline: self.timeline,
             ppu_reads: self.ppu_reads,
             apu_ports: self.apu_ports,
+            nmi_acceptance_not_before: self.nmi_acceptance_not_before,
         })
     }
 
@@ -171,6 +183,7 @@ impl RomCpuTimingProbe {
             timeline: handoff.timeline,
             ppu_reads: handoff.ppu_reads,
             apu_ports: handoff.apu_ports,
+            nmi_acceptance_not_before: handoff.nmi_acceptance_not_before,
             active_trace: None,
             active_interrupt_trace: None,
             poisoned: false,
@@ -210,12 +223,20 @@ impl RomCpuTimingProbe {
         self.apu_ports.take()
     }
 
-    /// Execute an NMI already accepted by the caller's interrupt owner at
-    /// this instruction boundary. This does not invent a VBlank event, clear
-    /// RDNMI, enable NMI, or alter the source scheduler's future deadlines.
+    /// Execute the external owner's NMI entry at an instruction boundary.
+    /// A VBlank-scheduled NMI cannot enter before its H=12 deadline. This
+    /// does not invent a VBlank event, clear RDNMI, or enable NMI.
     pub fn accept_native_nmi(&mut self) -> Result<RomCpuNmiReceipt, SourceCpuError> {
         if self.poisoned {
             return Err(SourceCpuError::Poisoned);
+        }
+        if let Some(deadline) = self.nmi_acceptance_not_before {
+            if self.timeline.timestamp() < deadline {
+                return Err(SourceCpuError::NmiAcceptanceNotDue {
+                    deadline: deadline.master_cycles(),
+                    now: self.timeline.clock_master_cycles(),
+                });
+            }
         }
         if self.snes.cpu.e || self.snes.cpu.waiting || self.snes.cpu.stopped {
             return Err(SourceCpuError::UnsupportedNmiEntryState);
@@ -228,6 +249,8 @@ impl RomCpuTimingProbe {
             });
         }
         let started_at = self.timeline.timestamp();
+        self.snes.cpu.nmi_wanted = false;
+        self.nmi_acceptance_not_before = None;
         let mut accesses = Vec::new();
         self.active_interrupt_trace = Some(Vec::new());
         if let Err(error) = self.enter_native_interrupt_bus(0x00_ffea, memory_speed, &mut accesses)
@@ -252,6 +275,13 @@ impl RomCpuTimingProbe {
     pub fn step(&mut self) -> Result<SourceCpuStepReceipt, SourceCpuError> {
         if self.poisoned {
             return Err(SourceCpuError::Poisoned);
+        }
+        if let Some(deadline) = self.nmi_acceptance_not_before {
+            if self.timeline.timestamp() >= deadline {
+                return Err(SourceCpuError::PendingNmiAcceptance {
+                    deadline: deadline.master_cycles(),
+                });
+            }
         }
         let origin_pc = self.program_address();
         let started_at = self.timeline.timestamp();
@@ -520,6 +550,7 @@ impl RomCpuTimingProbe {
         let refresh = self.timeline.wram_refresh_cycle() as u16;
         let apu_ports = &mut self.apu_ports;
         let snes = &mut self.snes;
+        let nmi_acceptance_not_before = &mut self.nmi_acceptance_not_before;
         self.timeline
             .advance_synchronous_after_semantics_with(cycles, |event, timestamp| {
                 let stall = match event {
@@ -543,7 +574,9 @@ impl RomCpuTimingProbe {
                         crate::cpu_timeline::CpuBusEvent::WramRefresh,
                     ) => 0,
                     CpuSynchronousTimelineEvent::HMax {
-                        completed_scanline, ..
+                        completed_scanline,
+                        event_timestamp,
+                        ..
                     } => {
                         // Pinned `cpuexec.cpp:HC_HCOUNTER_MAX_EVENT` runs
                         // `S9xAPUEndScanline` before the scanline counter advances.
@@ -554,6 +587,13 @@ impl RomCpuTimingProbe {
                         if next == 225 {
                             snes.in_vblank = true;
                             snes.in_nmi = true;
+                            if snes.nmi_enabled {
+                                snes.cpu.nmi_wanted = true;
+                                *nmi_acceptance_not_before = Some(CpuMasterTimestamp::new(
+                                    event_timestamp.master_cycles()
+                                        + SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES,
+                                ));
+                            }
                         } else if next == 0 {
                             snes.in_vblank = false;
                             snes.in_nmi = false;

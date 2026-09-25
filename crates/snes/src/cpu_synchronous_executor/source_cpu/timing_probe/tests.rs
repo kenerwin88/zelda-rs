@@ -520,11 +520,84 @@ fn enabled_nmi_is_accepted_only_by_the_external_interrupt_owner() {
     probe.step().unwrap();
     assert_eq!(probe.timeline().raster_position().coordinates(), (225, 0));
     assert!(probe.snes().in_nmi);
-    assert!(!probe.snes().cpu.nmi_wanted);
+    assert!(probe.snes().cpu.nmi_wanted);
+    let deadline = probe
+        .pending_nmi_acceptance()
+        .expect("VBlank schedules NMI");
+    assert_eq!(
+        deadline.master_cycles(),
+        225 * u64::from(MASTER_CYCLES_PER_SCANLINE) + 12
+    );
     assert_eq!(probe.program_address(), 0x8001);
+    assert!(matches!(
+        probe.accept_native_nmi(),
+        Err(SourceCpuError::NmiAcceptanceNotDue { .. })
+    ));
+    probe.step().unwrap();
+    assert_eq!(probe.timeline().raster_position().coordinates(), (225, 14));
+    let mut resumed = RomCpuTimingProbe::from_handoff(
+        probe
+            .into_handoff()
+            .ok()
+            .expect("pending NMI survives handoff"),
+    );
+    assert_eq!(resumed.pending_nmi_acceptance(), Some(deadline));
+    assert!(matches!(
+        resumed.step(),
+        Err(SourceCpuError::PendingNmiAcceptance { deadline: due }) if due == deadline.master_cycles()
+    ));
+    assert!(!resumed.is_poisoned());
+    let receipt = resumed.accept_native_nmi().unwrap();
+    assert_eq!(receipt.interrupted_pc, 0x8002);
+    assert_eq!(resumed.program_address(), 0x80c9);
+    assert_eq!(resumed.pending_nmi_acceptance(), None);
+    assert!(!resumed.snes().cpu.nmi_wanted);
+}
+
+#[test]
+fn probe_rejects_an_ambiguous_mid_vblank_nmi_seed() {
+    for rdnmi_latch in [false, true] {
+        let (mut snes, timeline) = seed(&[0xea], 225, 20, false);
+        snes.nmi_enabled = true;
+        snes.in_vblank = true;
+        snes.in_nmi = rdnmi_latch;
+        assert!(matches!(
+            RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset()),
+            Err(RomCpuTimingProbeSeedError::ActiveHardware)
+        ));
+    }
+}
+
+#[test]
+fn rdnmi_acknowledgement_does_not_discard_the_scheduled_cpu_nmi() {
+    let (mut snes, timeline) = seed(&[0xea, 0xad, 0x10, 0x42], 224, 1350, false);
+    snes.nmi_enabled = true;
+    snes.cpu.sp = 0x1ff;
+    snes.cart.rom[0x7fea..0x7fec].copy_from_slice(&[0xc9, 0x80]);
+    let mut probe =
+        RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset()).unwrap();
+    probe.step().unwrap();
+    let deadline = probe.pending_nmi_acceptance().unwrap();
+    let read = probe.step().unwrap();
+    assert!(read.accesses.iter().any(|access| {
+        access.address == 0x4210
+            && matches!(
+                access.kind,
+                SourceCpuBusAccessKind::Read {
+                    value: 0xc2,
+                    width: 1
+                }
+            )
+    }));
+    assert!(!probe.snes().in_nmi);
+    assert!(probe.snes().cpu.nmi_wanted);
+    assert_eq!(probe.pending_nmi_acceptance(), Some(deadline));
+    assert!(matches!(
+        probe.step(),
+        Err(SourceCpuError::PendingNmiAcceptance { .. })
+    ));
     let receipt = probe.accept_native_nmi().unwrap();
-    assert_eq!(receipt.interrupted_pc, 0x8001);
-    assert_eq!(probe.program_address(), 0x80c9);
+    assert_eq!(receipt.interrupted_pc, 0x8004);
 }
 
 #[test]
