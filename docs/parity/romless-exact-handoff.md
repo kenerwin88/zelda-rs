@@ -589,7 +589,7 @@ libretro control rule for both opposing-direction pairs and both ports at the
 input boundary. The raw serial-state setter keeps its original semantics. The
 source owner then matches every presented OAM byte on **all 6,277 calls of
 take 0000**. The longer cached whole-route run now matches all 544 presented
-OAM bytes through **300,000 host calls**, using that oracle's exact SRAM and
+OAM bytes through **400,000 host calls**, using that oracle's exact SRAM and
 recorded input. This is a source-owner presentation witness, not a production
 native A/V parity result.
 
