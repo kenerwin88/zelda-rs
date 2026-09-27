@@ -428,17 +428,7 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
             }
             0x46 => {
                 let address = self.direct_address(true, accesses)?;
-                let value = if self.cpu().mf {
-                    u16::from(self.read_byte(address, accesses)?)
-                } else {
-                    self.read_word(address, WordWrap::Bank, accesses)?
-                };
-                self.cpu_mut().c = value & 1 != 0;
-                let result = value >> 1;
-                self.add_cycles(ONE_CYCLE)?;
-                self.write_by_m(address, result, WordWriteOrder::HighLow, accesses)?;
-                self.set_open_bus(result as u8);
-                self.set_zn(result, self.cpu().mf);
+                self.lsr_memory(address, WordWrap::Bank, accesses)?;
             }
             0x48 => {
                 self.add_cycles(ONE_CYCLE)?;
@@ -472,6 +462,10 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 let address = self.absolute_address(true, accesses)?;
                 let value = self.read_by_m(address, WordWrap::None, accesses)?;
                 self.eor_accumulator(value);
+            }
+            0x4e => {
+                let address = self.absolute_address(true, accesses)?;
+                self.lsr_memory(address, WordWrap::None, accesses)?;
             }
             0x4f => {
                 let address = self.absolute_long_address(true, accesses)?;
@@ -520,6 +514,10 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 let value = self.read_by_m(address, WordWrap::Bank, accesses)?;
                 self.eor_accumulator(value);
             }
+            0x56 => {
+                let address = self.direct_indexed_x_address(true, accesses)?;
+                self.lsr_memory(address, WordWrap::Bank, accesses)?;
+            }
             0x58 => {
                 self.add_cycles(ONE_CYCLE)?;
                 self.cpu_mut().i = false;
@@ -548,6 +546,10 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 let address = self.absolute_indexed_read_address(self.cpu().x, accesses)?;
                 let value = self.read_by_m(address, WordWrap::None, accesses)?;
                 self.eor_accumulator(value);
+            }
+            0x5e => {
+                let address = self.absolute_indexed_modify_address(accesses)?;
+                self.lsr_memory(address, WordWrap::None, accesses)?;
             }
             0x5f => {
                 let address = self.absolute_long_address(true, accesses)?;
@@ -595,6 +597,11 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 let address = self.direct_address(true, accesses)?;
                 self.ror_memory(address, WordWrap::Bank, accesses)?;
             }
+            0x67 => {
+                let address = self.direct_indirect_long_address(accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.adc(value);
+            }
             0x68 => {
                 self.add_cycles(TWO_CYCLES)?;
                 let value = if self.cpu().mf {
@@ -616,6 +623,10 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
             0x69 => {
                 let value = self.immediate_by_m(accesses)?;
                 self.adc(value);
+            }
+            0x6a => {
+                self.add_cycles(ONE_CYCLE)?;
+                self.ror_accumulator();
             }
             0x6d => {
                 let address = self.absolute_address(true, accesses)?;
@@ -816,6 +827,11 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 let address = self.direct_indirect_address(accesses)?;
                 self.store_accumulator(address, accesses)?;
             }
+            0x94 => {
+                let address = self.direct_indexed_x_address(false, accesses)?;
+                let value = self.cpu().y;
+                self.store_index_register(address, value, accesses)?;
+            }
             0x95 => {
                 let address = self.direct_indexed_x_address(false, accesses)?;
                 self.store_accumulator(address, accesses)?;
@@ -991,6 +1007,12 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 let address = self.direct_indirect_indexed_y_address(false, accesses)?;
                 let value = self.read_by_m(address, WordWrap::None, accesses)?;
                 self.load_accumulator(value);
+            }
+            0xb4 => {
+                let address = self.direct_indexed_x_address(true, accesses)?;
+                let value = self.read_by_x(address, WordWrap::Bank, accesses)?;
+                self.cpu_mut().y = value;
+                self.set_zn(value, self.cpu().xf);
             }
             0xb5 => {
                 let address = self.direct_indexed_x_address(true, accesses)?;
@@ -1744,6 +1766,33 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
         Ok(())
     }
 
+    fn lsr_memory(
+        &mut self,
+        address: u32,
+        wrap: WordWrap,
+        accesses: &mut Vec<SourceCpuBusAccess>,
+    ) -> Result<(), SourceCpuError> {
+        // cpumacro.h:LSR8/LSR16 reads, sets carry, charges one internal
+        // cycle, then writes. WRITE_10 stores the high byte first in M16.
+        let wide = !self.cpu().mf;
+        let old = if wide {
+            self.read_word(address, wrap, accesses)?
+        } else {
+            u16::from(self.read_byte(address, accesses)?)
+        };
+        self.cpu_mut().c = old & 1 != 0;
+        let result = old >> 1;
+        self.add_cycles(ONE_CYCLE)?;
+        if wide {
+            self.write_word(address, result, wrap, WordWriteOrder::HighLow, accesses)?;
+        } else {
+            self.write_byte(address, result as u8, accesses)?;
+        }
+        self.set_open_bus(result as u8);
+        self.set_zn(result, !wide);
+        Ok(())
+    }
+
     fn test_and_modify_memory(
         &mut self,
         address: u32,
@@ -2072,6 +2121,18 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
         let result = (u32::from(self.cpu().a & mask) << 1) | u32::from(self.cpu().c);
         self.cpu_mut().c = result & carry_bit != 0;
         let value = result as u16 & mask;
+        self.cpu_mut().a = (self.cpu().a & !mask) | value;
+        self.set_zn(value, eight_bit);
+    }
+
+    fn ror_accumulator(&mut self) {
+        // cpuops.cpp:Op6AM1/M0 rotates through carry after one internal cycle.
+        let eight_bit = self.cpu().mf;
+        let mask = if eight_bit { 0x00ff } else { 0xffff };
+        let carry = u16::from(self.cpu().c) << if eight_bit { 7 } else { 15 };
+        let old = self.cpu().a & mask;
+        let value = (old >> 1) | carry;
+        self.cpu_mut().c = old & 1 != 0;
         self.cpu_mut().a = (self.cpu().a & !mask) | value;
         self.set_zn(value, eight_bit);
     }

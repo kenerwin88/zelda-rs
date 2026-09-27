@@ -588,30 +588,44 @@ directly to the JOYSER latch. `set_libretro_joypad_words` now applies the pinned
 libretro control rule for both opposing-direction pairs and both ports at the
 input boundary. The raw serial-state setter keeps its original semantics. The
 source owner then matches every presented OAM byte on **all 6,277 calls of
-take 0000**. Continuing the cached whole-route input finds the next presented
-OAM difference at host call 7,129, byte `$00`, after the `$0120` A-button
-transition. The probe fails at that first difference rather than masking it.
+take 0000**. The longer cached whole-route run now matches all 544 presented
+OAM bytes through **200,000 host calls**, using that oracle's exact SRAM and
+recorded input. This is a source-owner presentation witness, not a production
+native A/V parity result.
 
 The separate live Snes9x frame trace gives a stricter CPU-return witness.
-Through take 0000, source and oracle return PC/V/H differ on 549 of 6,277
-calls: 15 transient differences in calls 0..667, and a sustained sequence
-starting at call 5,722. All calls 668..5,721 match the return PC and beam
-position. At call 5,722 the source has entered the NMI handler (`$80c9`,
-V225/H80, stack `$01fb`), while the oracle still returns in the `$8034/$8036`
-wait loop (V225/H10, stack `$01ff`); its next traced PC enters `$80c9` at
-V225/H90. The source's final wait-loop LDA spans this interrupt boundary.
-At the same host call, traced PCs agree in position through `$80c6` at
-V6/H424. The next shared trace point, `$805a` at V134, is eight master
-cycles later in the source (H214 versus oracle H206); the wait-loop phase
-remains eight cycles apart through V224. This narrows the first measured
-phase difference to game execution between those two PCs. The return
-discrepancy reflects CPU/interrupt phase, not an OAM write; the responsible
-transaction within that interval remains unidentified. OAM agreement does
-**not** establish exact CPU timing or
-native parity. Exact-source execution also required the pinned disabled-H-IRQ
-`$4207/$4208` register writes and four memory ROL opcode forms. Continue by
-measuring the first host-5,722 transaction difference, then the first
-host-7,129 game-state difference, without an output-value patch.
+Through take 0000, source and oracle return PC/V/H now differ on only 15
+transient calls in 0..667; every call 668..6,276 matches the return PC and
+beam position. The first sustained difference had been an eight-master-cycle
+shift at host call 5,722. Full PC tracing located it at `JSL $05:B5C3`
+(`$06:BFEA`, V15/H1066): the source charged 58 clocks to terminate an
+indirect HDMA channel where pinned Snes9x charged 50. The final active
+channel's zero descriptor uses one indirect fetch cycle and reads from the
+descriptor address itself; a higher active channel retains two cycles and
+reads from the following address. Both HDMA initialization and per-line
+reload now follow those rules. At host call 5,722 all 11,490 traced
+instruction PCs and all 11,219 active-frame PC beam positions match the
+oracle. The source additionally needed pinned LoROM open-bus reads, ignored
+writes to read-only `$4210..$421f`, mirrored DMA register reads, LoROM
+open-bus holes, the live `$2180..$2183` WRAM port, and the encountered LSR,
+ROR, ADC `[dp]`, LDY, and STY instruction forms to continue the recorded
+route. OAM agreement does
+**not** establish exact CPU timing beyond the measured return/trace interval
+or native production parity. Next compare source register/WRAM and return
+timing against same-event oracle receipts beyond take 0000, then integrate
+the retained source CPU into production native execution without substituting
+probe-only values.
+
+A rebuilt production `zelda3` binary (SHA-256
+`a790c35bbd13294ea370ab3d7d4bd37dc37a65f76d2af26ee04c62aba055c4fe`)
+matched the cached recorded-receipt route for **1,581,079 contiguous exact
+video and audio frames**, from frame zero, in
+`target/source-cpu-central-full-preservation` (1,619.59s). The independent
+cold native-timing gate on the same binary again reached the established
+first-video-mismatch frame **56,458** (1,684 mismatched pixels; audio had not
+failed). The existing counter-read continuation analysis above remains the
+next native integration target; the source-owner OAM witness and the
+receipt-driven full-route proof cannot substitute for native-timing parity.
 
 Evidence: `retained_continuation_port_timing_matches_the_pinned_cold_ipl_handshake`
 reproduces every recorded CPU/APU handshake access through the first CC from a

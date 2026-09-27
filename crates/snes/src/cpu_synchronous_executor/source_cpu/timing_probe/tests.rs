@@ -24,6 +24,39 @@ fn seed(program: &[u8], v: u16, h: u16, odd: bool) -> (Snes, CpuMasterTimeline) 
 }
 
 #[test]
+fn timing_probe_reads_mirrored_dma_channel_register() {
+    let (mut snes, timeline) = seed(&[0xad, 0x60, 0x43], 10, 100, false);
+    snes.cpu.db = 0x10;
+    snes.dma.channel[6] = crate::dma::DmaChannel::default();
+    snes.dma.channel[6].mode = 5;
+    snes.dma.channel[6].indirect = true;
+    let mut probe =
+        RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset()).unwrap();
+
+    let receipt = probe.step().unwrap();
+
+    assert_eq!(probe.snes().cpu.a as u8, 0x45);
+    assert_eq!(receipt.accesses[2].address, 0x10_4360);
+    assert_eq!(receipt.accesses[2].charged_master_cycles, 6);
+}
+
+#[test]
+fn timing_probe_wram_data_read_advances_the_shared_pointer() {
+    let (mut snes, timeline) = seed(&[0xad, 0x80, 0x21], 10, 100, false);
+    snes.cpu.db = 0x10;
+    snes.ram_adr = 0x1ffff;
+    snes.ram[0x1ffff] = 0xa6;
+    let mut probe =
+        RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset()).unwrap();
+
+    let receipt = probe.step().unwrap();
+
+    assert_eq!(probe.snes().cpu.a as u8, 0xa6);
+    assert_eq!(probe.snes().ram_adr, 0);
+    assert_eq!(receipt.accesses[2].address, 0x10_2180);
+}
+
+#[test]
 fn real_probe_reproduces_source_rng_bus_timestamps_and_result() {
     // Original $0d:ba71..ba7e and source comparison56389 register/RAM inputs.
     let (mut snes, timeline) = seed(

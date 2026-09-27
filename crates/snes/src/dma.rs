@@ -470,10 +470,22 @@ impl Snes {
                 let addr = self.dma.channel[i].table_adr;
                 let rep = self.read(((bank as u32) << 16) | addr as u32);
                 self.dma.channel[i].rep_count = rep;
+                self.dma.channel[i].terminated = rep == 0;
                 self.dma.channel[i].table_adr = self.dma.channel[i].table_adr.wrapping_add(1);
                 self.dma.hdma_timer = self.dma.hdma_timer.wrapping_add(8);
 
                 if self.dma.channel[i].indirect {
+                    let terminal = rep == 0;
+                    let higher_active = self.dma.channel[i + 1..]
+                        .iter()
+                        .any(|channel| channel.hdma_active);
+                    if terminal && !higher_active {
+                        // HDMAReadLineCount reads the terminal indirect word
+                        // starting at the zero descriptor itself when no
+                        // higher channel remains in the active mask.
+                        self.dma.channel[i].table_adr =
+                            self.dma.channel[i].table_adr.wrapping_sub(1);
+                    }
                     let lo_addr = self.dma.channel[i].table_adr;
                     let lo = self.read(((bank as u32) << 16) | lo_addr as u32);
                     self.dma.channel[i].table_adr = self.dma.channel[i].table_adr.wrapping_add(1);
@@ -481,13 +493,19 @@ impl Snes {
                     let hi = self.read(((bank as u32) << 16) | hi_addr as u32);
                     self.dma.channel[i].table_adr = self.dma.channel[i].table_adr.wrapping_add(1);
                     self.dma.channel[i].size = lo as u16 | ((hi as u16) << 8);
-                    self.dma.hdma_timer = self.dma.hdma_timer.wrapping_add(16);
+                    // dma.cpp:HDMAReadLineCount charges only one slow cycle
+                    // for a zero descriptor on the final active channel.
+                    // An active higher channel keeps the two-cycle charge.
+                    let reload_cycles = if terminal && !higher_active { 8 } else { 16 };
+                    self.dma.hdma_timer = self.dma.hdma_timer.wrapping_add(reload_cycles);
                 }
                 self.dma.channel[i].do_transfer = true;
             } else {
                 self.dma.channel[i].do_transfer = false;
             }
-            self.dma.channel[i].terminated = false;
+            if !self.dma.channel[i].hdma_active {
+                self.dma.channel[i].terminated = false;
+            }
         }
         if any {
             self.dma.hdma_timer = self.dma.hdma_timer.wrapping_add(16);
@@ -539,6 +557,13 @@ impl Snes {
                 self.dma.channel[i].table_adr = self.dma.channel[i].table_adr.wrapping_add(1);
                 self.dma.channel[i].rep_count = next;
                 if self.dma.channel[i].indirect {
+                    let higher_active = self.dma.channel[i + 1..]
+                        .iter()
+                        .any(|channel| channel.hdma_active && !channel.terminated);
+                    if next == 0 && !higher_active {
+                        self.dma.channel[i].table_adr =
+                            self.dma.channel[i].table_adr.wrapping_sub(1);
+                    }
                     let lo_addr = self.dma.channel[i].table_adr;
                     let lo = self.read(((bank as u32) << 16) | lo_addr as u32);
                     self.dma.channel[i].table_adr = self.dma.channel[i].table_adr.wrapping_add(1);
@@ -546,7 +571,11 @@ impl Snes {
                     let hi = self.read(((bank as u32) << 16) | hi_addr as u32);
                     self.dma.channel[i].table_adr = self.dma.channel[i].table_adr.wrapping_add(1);
                     self.dma.channel[i].size = lo as u16 | ((hi as u16) << 8);
-                    self.dma.hdma_timer = self.dma.hdma_timer.wrapping_add(16);
+                    // The pinned HDMAReadLineCount zero-descriptor path
+                    // charges 8 cycles unless a higher channel remains
+                    // active, in which case it charges 16.
+                    let reload_cycles = if next == 0 && !higher_active { 8 } else { 16 };
+                    self.dma.hdma_timer = self.dma.hdma_timer.wrapping_add(reload_cycles);
                 }
                 if self.dma.channel[i].rep_count == 0 {
                     self.dma.channel[i].terminated = true;
@@ -735,5 +764,69 @@ mod tests {
         snes.dma.channel[0].size = 1;
         assert!(snes.synchronous_general_dma_commit_byte(0));
         assert_eq!(snes.dma.channel[0].size, 0);
+    }
+
+    #[test]
+    fn terminal_indirect_hdma_descriptor_uses_source_reload_timing() {
+        let mut snes = Snes::new();
+        let channel = &mut snes.dma.channel[7];
+        channel.hdma_active = true;
+        channel.indirect = true;
+        channel.mode = 1;
+        channel.b_adr = 0x26;
+        channel.ind_bank = 0x7e;
+        channel.size = 0x2000;
+        channel.a_bank = 0x7e;
+        channel.table_adr = 0x1000;
+        channel.rep_count = 1;
+        channel.do_transfer = true;
+        snes.ram[0x1000..0x1003].copy_from_slice(&[0, 0x34, 0x12]);
+
+        // Pinned S9xDoHDMA: 18 CPU/DMA sync + 16 transfer + 8 line-count
+        // fetch + 8 terminal indirect fetch = 50 master cycles.
+        assert_eq!(snes.synchronous_hdma_stall(CpuBusEvent::HdmaStart), 50);
+        assert!(snes.dma.channel[7].terminated);
+        assert_eq!(snes.dma.channel[7].table_adr, 0x1002);
+        assert_eq!(snes.dma.channel[7].size, 0x3400);
+        assert_eq!(snes.synchronous_hdma_stall(CpuBusEvent::HdmaStart), 0);
+    }
+
+    #[test]
+    fn zero_indirect_hdma_descriptor_terminates_at_init() {
+        let mut snes = Snes::new();
+        let channel = &mut snes.dma.channel[7];
+        channel.hdma_active = true;
+        channel.indirect = true;
+        channel.a_bank = 0x7e;
+        channel.a_adr = 0x1000;
+        snes.ram[0x1000..0x1003].copy_from_slice(&[0, 0x34, 0x12]);
+
+        // S9xStartHDMA uses 18 sync + 8 line-count + 8 final-channel
+        // indirect fetch, and removes the channel from the live HDMA mask.
+        assert_eq!(snes.synchronous_hdma_stall(CpuBusEvent::HdmaInit), 34);
+        assert!(snes.dma.channel[7].terminated);
+        assert_eq!(snes.dma.channel[7].table_adr, 0x1002);
+        assert_eq!(snes.dma.channel[7].size, 0x3400);
+        assert_eq!(snes.synchronous_hdma_stall(CpuBusEvent::HdmaStart), 0);
+    }
+
+    #[test]
+    fn terminal_indirect_descriptor_keeps_two_fetch_cycles_with_higher_active_channel() {
+        let mut snes = Snes::new();
+        for channel in [0, 7] {
+            let dma = &mut snes.dma.channel[channel];
+            dma.hdma_active = true;
+            dma.indirect = true;
+            dma.a_bank = 0x7e;
+            dma.a_adr = 0x1000 + u16::try_from(channel).unwrap() * 0x10;
+        }
+        snes.ram[0x1000..0x1003].copy_from_slice(&[0, 0x34, 0x12]);
+        snes.ram[0x1070..0x1073].copy_from_slice(&[2, 0x78, 0x56]);
+
+        // S9xStartHDMA retains the two-cycle indirect fetch on channel 0
+        // because channel 7 remains enabled after channel 0 terminates.
+        assert_eq!(snes.synchronous_hdma_stall(CpuBusEvent::HdmaInit), 66);
+        assert!(snes.dma.channel[0].terminated);
+        assert!(!snes.dma.channel[7].terminated);
     }
 }

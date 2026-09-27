@@ -63,6 +63,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         })
         .transpose()?;
     let trace_returns = env::var_os("ZELDA3_SOURCE_TRACE_RETURNS").is_some();
+    let trace_transactions = env::var_os("ZELDA3_SOURCE_TRACE_TRANSACTIONS").is_some();
     let trace_hosts = env::var("ZELDA3_SOURCE_TRACE_HOSTS")
         .ok()
         .map(|value| {
@@ -86,6 +87,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                     step.started_at.master_cycles(),
                     step.ended_at.master_cycles(),
                 );
+                if trace_transactions {
+                    for transaction in &step.transactions {
+                        eprintln!(
+                            "source-transaction host={host} pc={:06x} kind={:?} duration={} start={} end={} refresh={}..{}",
+                            step.origin_pc,
+                            transaction.kind,
+                            transaction.duration_master_cycles,
+                            transaction.started_at.master_cycles(),
+                            transaction.ended_at.master_cycles(),
+                            transaction.start_wram_refresh_position,
+                            transaction.end_wram_refresh_position,
+                        );
+                    }
+                }
             }
             if let Some(address) = trace_wram {
                 if trace_this_host {
@@ -123,7 +138,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         if let Err(error) = result {
-            eprintln!("source owner stopped at host call {host}: {error}");
+            let beam = cpu.raster_position();
+            let state = &cpu.machine().snes().cpu;
+            eprintln!(
+                "source owner stopped at host call {host} pc={:06x} v={} cycles={}: {error}",
+                (u32::from(state.k) << 16) | u32::from(state.pc),
+                beam.scanline(),
+                beam.master_cycle(),
+            );
             return Err(error.into());
         }
         if let Some(reader) = oracle.as_mut() {

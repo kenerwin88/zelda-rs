@@ -9,9 +9,9 @@
 
 use super::instruction_set::{SourceCpuInstructionBus, SourceCpuInstructions};
 use super::{
-    source_hvbjoy, SourceCpuBusAccess, SourceCpuBusAccessKind, SourceCpuError,
-    SourceCpuInstructionTrace, SourceCpuMapClass, SourceCpuStepReceipt, SourceCpuTransaction,
-    SourceCpuTransactionKind, WordWrap, WordWriteOrder,
+    source_hvbjoy, source_lorom_open_bus_read, SourceCpuBusAccess, SourceCpuBusAccessKind,
+    SourceCpuError, SourceCpuInstructionTrace, SourceCpuMapClass, SourceCpuStepReceipt,
+    SourceCpuTransaction, SourceCpuTransactionKind, WordWrap, WordWriteOrder,
 };
 use crate::apu::ApuHostPortTiming;
 use crate::cpu_timeline::{
@@ -339,6 +339,12 @@ impl RomCpuTimingProbe {
             return Ok(apu.read_cpu_port_at(timestamp, port)?);
         }
         if bank & 0x7f < 0x40 {
+            if adr == 0x2180 {
+                return Ok(self.snes.read_b_bus(0x80));
+            }
+            if (0x4300..=0x437f).contains(&adr) {
+                return Ok(self.snes.dma_read_reg(adr));
+            }
             if adr == 0x4210 {
                 let value = (u8::from(self.snes.in_nmi) << 7) | (self.snes.open_bus & 0x70) | 2;
                 self.snes.in_nmi = false;
@@ -390,6 +396,9 @@ impl RomCpuTimingProbe {
                 return Ok(value);
             }
         }
+        if source_lorom_open_bus_read(address) {
+            return Ok(self.snes.open_bus);
+        }
         match self.source_map_class(address) {
             Some(SourceCpuMapClass::Wram) => {
                 let offset = if bank == 0x7e || bank == 0x7f {
@@ -409,6 +418,13 @@ impl RomCpuTimingProbe {
     fn source_write_semantic(&mut self, address: u32, value: u8) -> Result<(), SourceCpuError> {
         let bank = (address >> 16) as u8;
         let adr = address as u16;
+        if bank & 0x7f < 0x40 && (0x4210..=0x421f).contains(&adr) {
+            return Ok(());
+        }
+        if bank & 0x7f < 0x40 && (0x2180..=0x2183).contains(&adr) {
+            self.snes.write_b_bus(adr as u8, value);
+            return Ok(());
+        }
         if let Some(port) = Snes::synchronous_cpu_apu_port(address) {
             // Pinned `S9xSetCPU($2140..$217f)`: `S9xAPUWritePort` synchronizes
             // the SMP, publishes the input latch, and mirrors the byte into
