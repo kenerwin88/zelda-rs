@@ -31,6 +31,7 @@ pub(crate) struct SourceOamPort {
     obj_changed: bool,
     obj_line_flags: Vec<u8>,
     range_time_over: u8,
+    presented_data: Vec<u8>,
 }
 
 impl SourceOamPort {
@@ -67,6 +68,7 @@ impl SourceOamPort {
             obj_changed: true,
             obj_line_flags: vec![0; OBJ_LINES],
             range_time_over: 0,
+            presented_data: vec![0; 0x220],
         }
     }
 
@@ -91,6 +93,9 @@ impl SourceOamPort {
             self.current_line = 0;
         } else if scanline == self.screen_height + 1 {
             self.flush_redraw();
+            // gfx.cpp:S9xEndScreenRefresh captures OAM before cpuexec.cpp
+            // restores the OAM address at the start of VBlank.
+            self.presented_data.copy_from_slice(&self.data);
             if !self.forced_blank {
                 self.address = self.saved_address;
                 self.flip = false;
@@ -102,6 +107,10 @@ impl SourceOamPort {
     pub(crate) fn stat77_flags(&mut self) -> u8 {
         self.flush_redraw();
         self.range_time_over
+    }
+
+    pub(crate) fn presented_data(&self) -> &[u8] {
+        &self.presented_data
     }
 
     fn flush_redraw(&mut self) {
@@ -287,6 +296,24 @@ mod tests {
         port.write(0x02, 0);
         assert_eq!(port.read(), 0x56);
         assert_eq!(port.read(), 0);
+    }
+
+    #[test]
+    fn presentation_captures_oam_before_following_vblank_writes() {
+        let mut port = SourceOamPort::reset();
+        port.write(0x02, 0);
+        port.write(0x04, 0x12);
+        port.write(0x04, 0x34);
+        port.enter_scanline(225);
+        assert_eq!(&port.presented_data()[..2], &[0x12, 0x34]);
+
+        port.write(0x02, 0);
+        port.write(0x04, 0x56);
+        port.write(0x04, 0x78);
+        assert_eq!(&port.presented_data()[..2], &[0x12, 0x34]);
+        port.enter_scanline(0);
+        port.enter_scanline(225);
+        assert_eq!(&port.presented_data()[..2], &[0x56, 0x78]);
     }
 
     #[test]

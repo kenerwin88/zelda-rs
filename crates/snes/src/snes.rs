@@ -116,6 +116,10 @@ impl Snes {
         self.source_oam.as_mut().map(SourceOamPort::stat77_flags)
     }
 
+    pub(crate) fn source_presented_oam(&self) -> Option<&[u8]> {
+        self.source_oam.as_ref().map(SourceOamPort::presented_data)
+    }
+
     pub(crate) fn read_source_oam_data(&mut self) -> Option<u8> {
         self.source_oam.as_mut().map(SourceOamPort::read)
     }

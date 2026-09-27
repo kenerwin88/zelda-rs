@@ -555,7 +555,8 @@ bus and width behavior. The opt-in source OAM port owns `$2138` storage and
 buffering. A source OBJ evaluator and H=512 render event now supply STAT77
 `$213E`'s accumulated range/time-over bits in source event order. The cold
 owner also implements the multiplication register transaction used by the
-take. Its quiescent checkpoint is version 8. Normal native `Snes` instances
+take. Its quiescent checkpoint is version 9, including the presented OAM
+snapshot. Normal native `Snes` instances
 do not enable the source OAM port.
 
 The capability probe completes all 6,277 host calls of take 0000 without an
@@ -564,15 +565,29 @@ unsupported CPU/MMIO operation:
 That is **execution coverage, not source parity**. The existing cold-owner
 1,000-call test runs neutral input; its fixed timing/return witness cannot
 validate the recorded take after its first nonzero input at host call 68. A
-same-event source receipt is needed to validate the take's OAM/STAT77 values,
-timing, and game state.
-The cached oracle's `presented_oam` is captured at presentation, so comparing
-it with the cold owner's live OAM at a main-loop return cannot establish an
-OAM divergence. The available SRAM is proven equivalent to the deleted
+same-event source receipt is needed to validate the take's timing, register
+reads, and game state. The cached oracle's `presented_oam` is captured at
+presentation, so comparing it with the cold owner's live OAM at a main-loop
+return cannot establish an OAM divergence. The available SRAM is proven equivalent to the deleted
 capture seed only through host call 1,000. Production native still uses
 `RomCpuTimingRun`; promoting the exact owner requires retained handoff into
 native execution and source receipt comparison across that transition. The
 1,581,079-frame A/V gate is a separate production-native acceptance check.
+
+The cached whole-route oracle has a different initial SRAM image (SHA-256
+`a6af0ddf25ae5feafba301100938f5ef81137ee76dcdc483a04fb6e961347828`)
+from the source-route fixture above (SHA-256 `71b9a402...`). Comparing their
+OAM after host call 1,000 misattributes save-dependent game state to CPU/PPU
+logic. The probe now optionally reads the cached oracle's compressed host
+receipts and compares **presented OAM at the same VBlank capture event**.
+With that oracle's exact SRAM and recorded input, all 544 presented OAM bytes
+match for host calls 0..=4,399. The source CPU then differs at host call 4,400,
+byte `$51` (`$46` source, `$47` oracle). This is the current source-data
+witness frontier; it does not establish CPU transaction, STAT77, audio, or
+production-native parity. Exact-source execution also required the pinned
+disabled-H-IRQ `$4207/$4208` register writes and the four memory ROL opcode
+forms. Continue from the first differing sprite-shadow write with a matching
+oracle/source event trace, rather than patching the OAM byte.
 
 Evidence: `retained_continuation_port_timing_matches_the_pinned_cold_ipl_handshake`
 reproduces every recorded CPU/APU handshake access through the first CC from a

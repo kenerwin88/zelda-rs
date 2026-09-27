@@ -234,6 +234,14 @@ struct SourceCpuInstructionTrace {
 }
 
 impl Snes9xColdCpuExecutor {
+    /// OAM captured at the most recent source-ordered VBlank presentation.
+    pub fn presented_oam(&self) -> &[u8] {
+        self.machine
+            .snes
+            .source_presented_oam()
+            .expect("the cold source executor owns an OAM port")
+    }
+
     /// Construct the exact cold CPU subset seed, then perform Snes9x's reset
     /// vector `S9xGetWord($00fffc)` transaction at T=182..198.
     pub fn from_lorom_reset(rom: &[u8]) -> Result<Self, SourceCpuError> {
@@ -400,7 +408,7 @@ impl Snes9xColdCpuExecutor {
             .capture_snes9x_apu_coroutine_checkpoint()
             .ok_or(Snes9xCpuQuiescentCheckpointError::MissingApuSidecar)?;
         Ok(Snes9xCpuQuiescentCheckpoint {
-            version: 8,
+            version: 9,
             snes: self.machine.snes.clone(),
             timeline: self.machine.timeline.clone(),
             apu_clock: self.machine.apu_clock.checkpoint(),
@@ -420,7 +428,7 @@ impl Snes9xColdCpuExecutor {
     pub fn from_quiescent_checkpoint(
         checkpoint: Snes9xCpuQuiescentCheckpoint,
     ) -> Result<Self, Snes9xCpuQuiescentCheckpointError> {
-        if checkpoint.version != 8 {
+        if checkpoint.version != 9 {
             return Err(Snes9xCpuQuiescentCheckpointError::Version {
                 version: checkpoint.version,
             });
@@ -1334,6 +1342,18 @@ impl Snes9xColdCpuExecutor {
             self.machine.source_ppu_reads.write_wrio(value, beam);
             return Ok(());
         }
+        if (bank & 0x7f) < 0x40 && matches!(adr, 0x4207 | 0x4208) {
+            // ppu.cpp:S9xSetCPU updates the nine-bit horizontal compare
+            // register even while H-IRQ is disabled. H-IRQ enable still fails
+            // closed at $4200 until its event owner is implemented.
+            let old = self.machine.snes.h_timer;
+            self.machine.snes.h_timer = if adr == 0x4207 {
+                (old & 0x100) | u16::from(value)
+            } else {
+                (old & 0x0ff) | (u16::from(value & 1) << 8)
+            };
+            return Ok(());
+        }
         if (bank & 0x7f) < 0x40 && matches!(adr, 0x4209 | 0x420a) {
             let old = self.machine.snes.v_timer;
             self.machine.snes.v_timer = if adr == 0x4209 {
@@ -1838,7 +1858,7 @@ mod tests {
     }
 
     #[test]
-    fn checkpoint_v7_roundtrips_ppu_capability_sidecars() {
+    fn checkpoint_v9_roundtrips_ppu_capability_sidecars() {
         let rom = synthetic_rom(&[0x18]);
         let mut source = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
         source.machine.source_vmain_full_graphic_count_nonzero = true;
@@ -1854,7 +1874,7 @@ mod tests {
         };
         let encoded = serde_json::to_vec(&source.capture_quiescent_checkpoint().unwrap()).unwrap();
         let checkpoint: Snes9xCpuQuiescentCheckpoint = serde_json::from_slice(&encoded).unwrap();
-        assert_eq!(checkpoint.version, 8);
+        assert_eq!(checkpoint.version, 9);
         let mut restored = Snes9xColdCpuExecutor::from_quiescent_checkpoint(checkpoint).unwrap();
         assert!(restored.machine.source_vmain_full_graphic_count_nonzero);
         assert_eq!(
@@ -1879,7 +1899,7 @@ mod tests {
     }
 
     #[test]
-    fn checkpoint_v8_roundtrips_vertical_irq_timer_and_rejects_v7_without_mutation() {
+    fn checkpoint_v9_roundtrips_vertical_irq_timer_and_rejects_v7_without_mutation() {
         let rom = synthetic_rom(&[0x18]);
         let mut source = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
         source.machine.snes.v_irq_enabled = true;
@@ -2775,6 +2795,74 @@ mod tests {
         assert_eq!(cpu.machine.snes.ram[0x1_0000], 0);
         assert!(cpu.machine.snes.cpu.c);
         assert_eq!(cpu.machine.snes.open_bus, 2);
+    }
+
+    #[test]
+    fn rol_direct_m8_uses_incoming_carry_and_publishes_low_byte() {
+        let rom = synthetic_rom(&[0x26, 0x12]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.snes.ram[0x12] = 0x80;
+        cpu.machine.snes.cpu.c = true;
+        let receipt = cpu.step().unwrap();
+        assert_source_transaction_shape(
+            &receipt,
+            &[
+                (
+                    SourceCpuTransactionKind::FastPcBaseOpcodeFetchNonDraining,
+                    8,
+                ),
+                (SourceCpuTransactionKind::CpuOpsAddCyclesDraining, 8),
+                (
+                    SourceCpuTransactionKind::GetSetMemoryAccessAfterSemanticDraining,
+                    8,
+                ),
+                (SourceCpuTransactionKind::CpuOpsAddCyclesDraining, 6),
+                (
+                    SourceCpuTransactionKind::GetSetMemoryAccessAfterSemanticDraining,
+                    8,
+                ),
+            ],
+        );
+        assert_eq!(cpu.machine.snes.ram[0x12], 1);
+        assert!(cpu.machine.snes.cpu.c);
+        assert!(!cpu.machine.snes.cpu.n);
+        assert_eq!(cpu.machine.snes.open_bus, 1);
+    }
+
+    #[test]
+    fn rol_absolute_x_m16_writes_high_then_low_across_bank() {
+        let rom = synthetic_rom(&[0x3e, 0xfe, 0xff]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.snes.cpu.e = false;
+        cpu.machine.snes.cpu.mf = false;
+        cpu.machine.snes.cpu.db = 0x7e;
+        cpu.machine.snes.cpu.x = 1;
+        cpu.machine.snes.cpu.c = true;
+        cpu.machine.snes.ram[0xffff] = 0x00;
+        cpu.machine.snes.ram[0x1_0000] = 0x80;
+        let receipt = cpu.step().unwrap();
+        assert_eq!(receipt.accesses[2].address, 0x7e_ffff);
+        assert_eq!(receipt.accesses[3].address, 0x7f_0000);
+        assert_eq!(receipt.accesses[4].address, 0x7f_0000);
+        assert_eq!(receipt.accesses[5].address, 0x7e_ffff);
+        assert_eq!(cpu.machine.snes.ram[0xffff], 1);
+        assert_eq!(cpu.machine.snes.ram[0x1_0000], 0);
+        assert!(cpu.machine.snes.cpu.c);
+        assert_eq!(cpu.machine.snes.open_bus, 1);
+    }
+
+    #[test]
+    fn horizontal_compare_register_accepts_both_bytes_with_h_irq_disabled() {
+        let rom = synthetic_rom(&[
+            0xa9, 0x34, 0x8d, 0x07, 0x42, // LDA #$34; STA $4207
+            0xa9, 0x01, 0x8d, 0x08, 0x42, // LDA #$01; STA $4208
+        ]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        for _ in 0..4 {
+            cpu.step().unwrap();
+        }
+        assert_eq!(cpu.machine.snes.h_timer, 0x134);
+        assert!(!cpu.machine.snes.h_irq_enabled);
     }
 
     #[test]
