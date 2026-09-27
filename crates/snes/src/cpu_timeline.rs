@@ -8,6 +8,8 @@ pub const MASTER_CYCLES_PER_SCANLINE: u32 = 1_364;
 pub const NTSC_SCANLINES_PER_FIELD: u32 = 262;
 pub const NMI_SCANLINE: u32 = 225;
 pub const HDMA_INIT_CYCLE: u32 = 20;
+/// Pinned `HC_RENDER_EVENT` (`SNES_RENDER_START_HC`) runs at dot 128.
+pub const SNES9X_RENDER_CYCLE: u32 = 512;
 // Despite its name, pinned Snes9x's `M1SNES = { 1, 3, 2 }`: `_5A22 == 2`
 // selects the v2 WRAM refresh schedule. Reset starts at H=538, then each new
 // scanline toggles H=534/H=538 except entry to odd non-interlace V=240.
@@ -105,6 +107,10 @@ pub enum CpuTimelineEvent {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CpuSynchronousTimelineEvent {
     Bus(CpuBusEvent),
+    RenderLine {
+        scanline: u16,
+        odd_field: bool,
+    },
     HMax {
         completed_field_index: u64,
         completed_scanline: u16,
@@ -125,6 +131,8 @@ pub enum CpuSynchronousTimelineStartError {
         event: CpuBusEvent,
         timestamp: CpuMasterTimestamp,
     },
+    #[error("CPU timeline checkpoint at {timestamp:?} has ambiguous render-event ownership")]
+    AmbiguousRenderEvent { timestamp: CpuMasterTimestamp },
 }
 
 /// A single physical S-CPU master-clock timestamp observed before bus
@@ -353,7 +361,8 @@ impl CpuMasterTimeline {
         let CpuTimelineMode::Synchronous(cursor) = self.mode else {
             return Err(CpuSynchronousTimelineCheckpointError::NotSynchronous);
         };
-        if self.bus != CpuBusWorkload::default() {
+        if self.bus != CpuBusWorkload::default() && self.bus != CpuBusWorkload::with_dynamic_hdma()
+        {
             return Err(CpuSynchronousTimelineCheckpointError::BusWorkload);
         }
         if self.field_timing != CpuFieldTiming::NON_INTERLACE_EVEN {
@@ -570,12 +579,18 @@ impl CpuMasterTimeline {
 
         let raster = self.raster_position();
         for (cycle, event, enabled) in
-            self.synchronous_bus_events(self.field_index(), raster.scanline)
+            self.synchronous_line_events(self.field_index(), raster.scanline)
         {
             if !enabled {
                 continue;
             }
-            let fixed_stall = self.fixed_event_advance(CpuTimelineEvent::Bus(event));
+            let fixed_stall = match event {
+                CpuSynchronousTimelineEvent::Bus(bus) => {
+                    self.fixed_event_advance(CpuTimelineEvent::Bus(bus))
+                }
+                CpuSynchronousTimelineEvent::RenderLine { .. } => 0,
+                CpuSynchronousTimelineEvent::HMax { .. } => unreachable!(),
+            };
             let raster_cycle = u32::from(raster.master_cycle);
             let ambiguous = if fixed_stall == 0 {
                 raster_cycle == cycle
@@ -583,9 +598,19 @@ impl CpuMasterTimeline {
                 (cycle..cycle + fixed_stall).contains(&raster_cycle)
             };
             if ambiguous {
-                return Err(CpuSynchronousTimelineStartError::AmbiguousEventState {
-                    event,
-                    timestamp: self.timestamp(),
+                return Err(match event {
+                    CpuSynchronousTimelineEvent::Bus(bus) => {
+                        CpuSynchronousTimelineStartError::AmbiguousEventState {
+                            event: bus,
+                            timestamp: self.timestamp(),
+                        }
+                    }
+                    CpuSynchronousTimelineEvent::RenderLine { .. } => {
+                        CpuSynchronousTimelineStartError::AmbiguousRenderEvent {
+                            timestamp: self.timestamp(),
+                        }
+                    }
+                    CpuSynchronousTimelineEvent::HMax { .. } => unreachable!(),
                 });
             }
         }
@@ -636,7 +661,8 @@ impl CpuMasterTimeline {
                 CpuSynchronousTimelineEvent::Bus(event) => {
                     self.fixed_event_advance(CpuTimelineEvent::Bus(event))
                 }
-                CpuSynchronousTimelineEvent::HMax { .. } => 0,
+                CpuSynchronousTimelineEvent::RenderLine { .. }
+                | CpuSynchronousTimelineEvent::HMax { .. } => 0,
             };
             self.advance_physical_clock_preserving_refresh(
                 u64::from(fixed_master_cycles) + u64::from(handler_master_cycles),
@@ -661,9 +687,12 @@ impl CpuMasterTimeline {
     /// opcode fetch can cross HMax without advancing CPU.V_Counter yet.
     /// Physical `raster_position()` alone loses that pending-event ownership.
     pub(crate) fn synchronous_beam_position(&self) -> Option<CpuSynchronousBeamPosition> {
-        let CpuTimelineMode::Synchronous(cursor) = self.mode else { return None; };
+        let CpuTimelineMode::Synchronous(cursor) = self.mode else {
+            return None;
+        };
         let line_start = cursor.master_cycles - u64::from(cursor.cycle_in_scanline);
-        let short = cursor.scanline == 240 && !self.field_timing.interlace
+        let short = cursor.scanline == 240
+            && !self.field_timing.interlace
             && self.field_timing.field_is_odd(cursor.field_index);
         Some(CpuSynchronousBeamPosition {
             scanline: cursor.scanline,
@@ -742,25 +771,33 @@ impl CpuMasterTimeline {
         }
     }
 
-    fn synchronous_bus_events(
+    fn synchronous_line_events(
         &self,
         field_index: u64,
         scanline: u16,
-    ) -> [(u32, CpuBusEvent, bool); 3] {
+    ) -> [(u32, CpuSynchronousTimelineEvent, bool); 4] {
         [
             (
                 HDMA_INIT_CYCLE,
-                CpuBusEvent::HdmaInit,
+                CpuSynchronousTimelineEvent::Bus(CpuBusEvent::HdmaInit),
                 scanline == 0 && self.bus.dynamic_hdma,
             ),
             (
+                SNES9X_RENDER_CYCLE,
+                CpuSynchronousTimelineEvent::RenderLine {
+                    scanline,
+                    odd_field: self.field_timing.field_is_odd(field_index),
+                },
+                true,
+            ),
+            (
                 snes9x_wram_refresh_cycle(field_index, scanline, self.field_timing),
-                CpuBusEvent::WramRefresh,
+                CpuSynchronousTimelineEvent::Bus(CpuBusEvent::WramRefresh),
                 true,
             ),
             (
                 HDMA_START_CYCLE,
-                CpuBusEvent::HdmaStart,
+                CpuSynchronousTimelineEvent::Bus(CpuBusEvent::HdmaStart),
                 u32::from(scanline) < NMI_SCANLINE
                     && (self.bus.dynamic_hdma || self.bus.hdma_stall_master_cycles != 0),
             ),
@@ -774,14 +811,14 @@ impl CpuMasterTimeline {
         line_start_master_cycles: u64,
         after_cycle: Option<u32>,
     ) -> CpuSynchronousEventCursor {
-        for (cycle, event, enabled) in self.synchronous_bus_events(field_index, scanline) {
+        for (cycle, event, enabled) in self.synchronous_line_events(field_index, scanline) {
             if enabled && after_cycle.is_none_or(|after| cycle > after) {
                 return CpuSynchronousEventCursor {
                     master_cycles: line_start_master_cycles + u64::from(cycle),
                     field_index,
                     scanline,
                     cycle_in_scanline: cycle as u16,
-                    event: CpuSynchronousTimelineEvent::Bus(event),
+                    event,
                 };
             }
         }
@@ -815,12 +852,14 @@ impl CpuMasterTimeline {
         cursor: CpuSynchronousEventCursor,
     ) -> CpuSynchronousEventCursor {
         match cursor.event {
-            CpuSynchronousTimelineEvent::Bus(_) => self.synchronous_cursor_on_line_after(
-                cursor.field_index,
-                cursor.scanline,
-                cursor.master_cycles - u64::from(cursor.cycle_in_scanline),
-                Some(u32::from(cursor.cycle_in_scanline)),
-            ),
+            CpuSynchronousTimelineEvent::Bus(_)
+            | CpuSynchronousTimelineEvent::RenderLine { .. } => self
+                .synchronous_cursor_on_line_after(
+                    cursor.field_index,
+                    cursor.scanline,
+                    cursor.master_cycles - u64::from(cursor.cycle_in_scanline),
+                    Some(u32::from(cursor.cycle_in_scanline)),
+                ),
             CpuSynchronousTimelineEvent::HMax { .. } => {
                 let (field_index, scanline) =
                     if u32::from(cursor.scanline) + 1 == NTSC_SCANLINES_PER_FIELD {
@@ -1125,6 +1164,50 @@ mod tests {
             )
         );
         assert_eq!(timeline.raster_position(), CpuRasterPosition::new(101, 118));
+    }
+
+    #[test]
+    fn synchronous_render_event_precedes_refresh_after_atomic_overshoot() {
+        let mut timeline = at_raster(
+            0,
+            CpuRasterPosition::new(100, 500),
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        timeline.begin_synchronous_timeline().unwrap();
+        let mut events = Vec::new();
+        timeline
+            .advance_synchronous_after_semantics_with(50, |event, timestamp| {
+                events.push((event, timestamp));
+                Ok::<u32, ()>(0)
+            })
+            .unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(
+            events[0].0,
+            CpuSynchronousTimelineEvent::RenderLine {
+                scanline: 100,
+                odd_field: false,
+            }
+        );
+        assert_eq!(
+            events[1].0,
+            CpuSynchronousTimelineEvent::Bus(CpuBusEvent::WramRefresh)
+        );
+        assert_eq!(events[0].1, events[1].1);
+
+        let mut ambiguous = at_raster(
+            0,
+            CpuRasterPosition::new(100, SNES9X_RENDER_CYCLE as u16),
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        assert_eq!(
+            ambiguous.begin_synchronous_timeline(),
+            Err(CpuSynchronousTimelineStartError::AmbiguousRenderEvent {
+                timestamp: ambiguous.timestamp(),
+            })
+        );
     }
 
     #[test]

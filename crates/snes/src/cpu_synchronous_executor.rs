@@ -17,9 +17,11 @@ use crate::snes9x_apu_clock::{Snes9xApuClockError, Snes9xApuClockState};
 
 mod source_cpu;
 pub use source_cpu::{
-    RomCpuTimingProbe, RomCpuTimingProbeHandoff, RomCpuTimingProbeSeedError, RomCpuNmiReceipt, RomCpuInterruptTransaction, SourcePpuReadState, Snes9xColdCpuExecutor, Snes9xCpuQuiescentCheckpoint, Snes9xCpuQuiescentCheckpointError,
-    Snes9xMainLoopReceipt, SourceCpuBusAccess, SourceCpuBusAccessKind, SourceCpuError,
-    SourceCpuStepReceipt, SourceCpuTransaction, SourceCpuTransactionKind,
+    RomCpuInterruptTransaction, RomCpuNmiReceipt, RomCpuTimingProbe, RomCpuTimingProbeHandoff,
+    RomCpuTimingProbeSeedError, Snes9xColdCpuExecutor, Snes9xCpuQuiescentCheckpoint,
+    Snes9xCpuQuiescentCheckpointError, Snes9xMainLoopReceipt, SourceCpuBusAccess,
+    SourceCpuBusAccessKind, SourceCpuError, SourceCpuStepReceipt, SourceCpuTransaction,
+    SourceCpuTransactionKind, SourcePpuReadState,
 };
 
 /// A CPU bus semantic which has committed exactly once and whose access charge
@@ -109,7 +111,7 @@ impl CpuSynchronousMachine {
         snes.apu.reset_snes9x_coroutine();
         let mut timeline = CpuMasterTimeline::new(
             0,
-            CpuBusWorkload::default(),
+            CpuBusWorkload::with_dynamic_hdma(),
             CpuFieldTiming::NON_INTERLACE_EVEN,
         );
         timeline
@@ -271,7 +273,7 @@ impl CpuSynchronousMachine {
             });
         }
         let bus = self.timeline.bus_workload();
-        if bus.dynamic_hdma() || bus.hdma_stall_master_cycles() != 0 {
+        if !bus.dynamic_hdma() && bus.hdma_stall_master_cycles() != 0 {
             return Err(CpuSynchronousMachineError::GeneralDmaDynamicHdma);
         }
         // Capability checks precede `$420b` mutation and every timing charge.
@@ -567,6 +569,7 @@ impl CpuSynchronousMachine {
                     } else {
                         completed_scanline + 1
                     };
+                    snes.source_oam_enter_scanline(next_scanline);
                     if u32::from(next_scanline) == NMI_SCANLINE {
                         // cpuexec.cpp publishes RDNMI before scheduling an
                         // enabled NMI for H=12 of the new VBlank scanline.
@@ -599,7 +602,20 @@ impl CpuSynchronousMachine {
                     }
                     Ok(0)
                 }
-                CpuSynchronousTimelineEvent::Bus(_) => Ok(0),
+                CpuSynchronousTimelineEvent::Bus(
+                    event @ (crate::cpu_timeline::CpuBusEvent::HdmaInit
+                    | crate::cpu_timeline::CpuBusEvent::HdmaStart),
+                ) => Ok(snes.synchronous_hdma_stall(event)),
+                CpuSynchronousTimelineEvent::Bus(crate::cpu_timeline::CpuBusEvent::WramRefresh) => {
+                    Ok(0)
+                }
+                CpuSynchronousTimelineEvent::RenderLine {
+                    scanline,
+                    odd_field,
+                } => {
+                    snes.source_oam_render_line(scanline, odd_field);
+                    Ok(0)
+                }
             })
     }
 
@@ -1216,7 +1232,7 @@ mod tests {
     }
 
     #[test]
-    fn general_dma_rejects_unselected_and_dynamic_hdma_owners() {
+    fn general_dma_rejects_active_hdma_but_accepts_an_idle_dynamic_timeline() {
         let mut machine = CpuSynchronousMachine::from_snes9x_apu_reset_seed();
         configure_wram_to_b_bus_dma(&mut machine, 0, 0, 1, 0, 0x18);
         machine.snes.dma.channel[7].hdma_active = true;
@@ -1235,11 +1251,44 @@ mod tests {
         timeline.begin_synchronous_timeline().unwrap();
         dynamic.timeline = timeline;
         configure_wram_to_b_bus_dma(&mut dynamic, 0, 0, 1, 0, 0x18);
-        assert_eq!(
-            dynamic.write_general_dma_control(1),
-            Err(CpuSynchronousMachineError::GeneralDmaDynamicHdma)
+        dynamic.write_general_dma_control(1).unwrap();
+        assert_eq!(dynamic.timestamp(), CpuMasterTimestamp::new(40));
+        assert!(!dynamic.snes.dma.dma_busy);
+    }
+
+    #[test]
+    fn exact_machine_charges_live_hdma_at_the_source_bus_event() {
+        let mut machine = CpuSynchronousMachine::from_snes9x_apu_reset_seed();
+        let channel = &mut machine.snes.dma.channel[7];
+        channel.hdma_active = true;
+        channel.indirect = true;
+        channel.mode = 2;
+        channel.a_bank = 0x7e;
+        channel.a_adr = 0x1ba0;
+        channel.table_adr = 0x1ba3;
+        channel.size = 0x1baa;
+        channel.rep_count = 27;
+        channel.do_transfer = true;
+        channel.b_adr = 0x1e;
+        channel.from_b = false;
+        machine.snes.ram[0x1baa..0x1bac].copy_from_slice(&[0, 255]);
+        let mut timeline = CpuMasterTimeline::at_raster(
+            0,
+            crate::cpu_timeline::CpuRasterPosition::new(1, 1100),
+            CpuBusWorkload::with_dynamic_hdma(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
         );
-        assert_eq!(dynamic.timestamp(), CpuMasterTimestamp::new(0));
+        timeline.begin_synchronous_timeline().unwrap();
+        machine.timeline = timeline;
+
+        machine
+            .drain_add_cycles_after_committed_semantic(14)
+            .unwrap();
+
+        assert_eq!(machine.timeline.raster_position().coordinates(), (1, 1156));
+        assert_eq!(machine.snes.dma.channel[7].rep_count, 26);
+        assert_eq!(machine.snes.dma.channel[7].size, 0x1bac);
+        assert_eq!(machine.snes.dma.hdma_timer, 0);
     }
 
     #[test]

@@ -1,5 +1,6 @@
 //! DMA + HDMA. Port of `zelda3/snes/dma.c`.
 
+use crate::cpu_timeline::CpuBusEvent;
 use crate::snes::Snes;
 
 #[derive(Default, Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
@@ -201,6 +202,19 @@ pub(crate) enum SynchronousGeneralDmaUnsupported {
 }
 
 impl Snes {
+    /// Charge one source-owned HDMA bus event from live channel/table state.
+    /// Both synchronous CPU executors must use the same semantic and sync
+    /// clocks; a rendered PPU snapshot cannot reconstruct this transfer.
+    pub(crate) fn synchronous_hdma_stall(&mut self, event: CpuBusEvent) -> u32 {
+        match event {
+            CpuBusEvent::HdmaInit => self.dma_init_hdma(),
+            CpuBusEvent::HdmaStart => self.dma_do_hdma(),
+            CpuBusEvent::WramRefresh => unreachable!("WRAM refresh has no HDMA semantic"),
+        }
+        let cycles = u32::from(self.dma.hdma_timer);
+        self.dma.hdma_timer = 0;
+        cycles + u32::from(cycles != 0) * 2
+    }
     pub(crate) fn validate_synchronous_general_dma(
         &self,
         mask: u8,

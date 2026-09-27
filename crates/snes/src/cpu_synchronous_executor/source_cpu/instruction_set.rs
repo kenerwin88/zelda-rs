@@ -104,10 +104,23 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
         accesses: &mut Vec<SourceCpuBusAccess>,
     ) -> Result<(), SourceCpuError> {
         match opcode {
+            0x01 => {
+                let address = self.direct_indexed_indirect_x_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.ora_accumulator(value);
+            }
+            0x04 => {
+                let address = self.direct_address(true, accesses)?;
+                self.test_and_modify_memory(address, WordWrap::Bank, true, accesses)?;
+            }
             0x05 => {
                 let address = self.direct_address(true, accesses)?;
                 let operand = self.read_by_m(address, WordWrap::Bank, accesses)?;
                 self.ora_accumulator(operand);
+            }
+            0x06 => {
+                let address = self.direct_address(true, accesses)?;
+                self.asl_memory(address, WordWrap::Bank, accesses)?;
             }
             0x07 => {
                 let address = self.direct_indirect_long_address(accesses)?;
@@ -128,11 +141,47 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 self.push_word(direct_page, accesses)?;
                 self.set_open_bus(direct_page as u8);
             }
+            0x0c => {
+                let address = self.absolute_address(true, accesses)?;
+                self.test_and_modify_memory(address, WordWrap::Bank, true, accesses)?;
+            }
+            0x0d => {
+                let address = self.absolute_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.ora_accumulator(value);
+            }
+            0x0e => {
+                let address = self.absolute_address(true, accesses)?;
+                self.asl_memory(address, WordWrap::None, accesses)?;
+            }
+            0x0f => {
+                let address = self.absolute_long_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.ora_accumulator(value);
+            }
             0x10 => self.branch(!self.cpu().n, accesses)?,
+            0x11 => {
+                let address = self.direct_indirect_indexed_y_address(false, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.ora_accumulator(value);
+            }
+            0x12 => {
+                let address = self.direct_indirect_address(accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.ora_accumulator(value);
+            }
+            0x14 => {
+                let address = self.direct_address(true, accesses)?;
+                self.test_and_modify_memory(address, WordWrap::Bank, false, accesses)?;
+            }
             0x15 => {
                 let address = self.direct_indexed_x_address(true, accesses)?;
                 let operand = self.read_by_m(address, WordWrap::Bank, accesses)?;
                 self.ora_accumulator(operand);
+            }
+            0x16 => {
+                let address = self.direct_indexed_x_address(true, accesses)?;
+                self.asl_memory(address, WordWrap::Bank, accesses)?;
             }
             0x08 => {
                 let flags = self.cpu().pack_flags();
@@ -143,6 +192,11 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
             0x18 => {
                 self.cpu_mut().c = false;
                 self.add_cycles(ONE_CYCLE)?;
+            }
+            0x19 => {
+                let address = self.absolute_indexed_read_address(self.cpu().y, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.ora_accumulator(value);
             }
             0x1a => {
                 self.add_cycles(ONE_CYCLE)?;
@@ -161,10 +215,24 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 self.cpu_mut().sp = self.cpu().a;
                 self.fix_emulation_stack();
             }
+            0x1c => {
+                let address = self.absolute_address(true, accesses)?;
+                self.test_and_modify_memory(address, WordWrap::Bank, false, accesses)?;
+            }
             0x1d => {
                 let address = self.absolute_indexed_read_address(self.cpu().x, accesses)?;
                 let operand = self.read_by_m(address, WordWrap::None, accesses)?;
                 self.ora_accumulator(operand);
+            }
+            0x1e => {
+                let address = self.absolute_indexed_modify_address(accesses)?;
+                self.asl_memory(address, WordWrap::None, accesses)?;
+            }
+            0x1f => {
+                let address = self.absolute_long_address(true, accesses)?;
+                let address = address.wrapping_add(u32::from(self.cpu().x)) & 0x00ff_ffff;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.ora_accumulator(value);
             }
             0x20 => {
                 let target = self.immediate16(false, accesses)?;
@@ -172,6 +240,11 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 let return_pc = self.cpu().pc.wrapping_sub(1);
                 self.push_word(return_pc, accesses)?;
                 self.cpu_mut().pc = target;
+            }
+            0x21 => {
+                let address = self.direct_indexed_indirect_x_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.and_accumulator(value);
             }
             0x22 => {
                 let target = self.absolute_long_address(false, accesses)?;
@@ -188,6 +261,11 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 }
                 self.cpu_mut().pc = target as u16;
                 self.cpu_mut().k = (target >> 16) as u8;
+            }
+            0x24 => {
+                let address = self.direct_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::Bank, accesses)?;
+                self.bit_memory(value);
             }
             0x25 => {
                 let address = self.direct_address(true, accesses)?;
@@ -227,10 +305,50 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                     self.cpu_mut().sp = 0x0100 | (self.cpu().sp & 0x00ff);
                 }
             }
+            0x2c => {
+                let address = self.absolute_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.bit_memory(value);
+            }
+            0x2d => {
+                let address = self.absolute_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.and_accumulator(value);
+            }
+            0x2f => {
+                let address = self.absolute_long_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.and_accumulator(value);
+            }
             0x30 => self.branch(self.cpu().n, accesses)?,
+            0x31 => {
+                let address = self.direct_indirect_indexed_y_address(false, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.and_accumulator(value);
+            }
+            0x32 => {
+                let address = self.direct_indirect_address(accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.and_accumulator(value);
+            }
+            0x34 => {
+                let address = self.direct_indexed_x_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::Bank, accesses)?;
+                self.bit_memory(value);
+            }
+            0x35 => {
+                let address = self.direct_indexed_x_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::Bank, accesses)?;
+                self.and_accumulator(value);
+            }
             0x38 => {
                 self.cpu_mut().c = true;
                 self.add_cycles(ONE_CYCLE)?;
+            }
+            0x39 => {
+                let address = self.absolute_indexed_read_address(self.cpu().y, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.and_accumulator(value);
             }
             0x3a => {
                 self.add_cycles(ONE_CYCLE)?;
@@ -248,6 +366,16 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 self.add_cycles(ONE_CYCLE)?;
                 self.cpu_mut().a = self.cpu().sp;
                 self.set_zn(self.cpu().a, false);
+            }
+            0x3c => {
+                let address = self.absolute_indexed_read_address(self.cpu().x, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.bit_memory(value);
+            }
+            0x3d => {
+                let address = self.absolute_indexed_read_address(self.cpu().x, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.and_accumulator(value);
             }
             0x3f => {
                 let address = self.absolute_long_address(true, accesses)?;
@@ -271,6 +399,11 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                     self.set_open_bus(program_bank);
                 }
                 self.fix_status_widths();
+            }
+            0x41 => {
+                let address = self.direct_indexed_indirect_x_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.eor_accumulator(value);
             }
             0x45 => {
                 let address = self.direct_address(true, accesses)?;
@@ -319,6 +452,27 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 let target = self.immediate16(false, accesses)?;
                 self.cpu_mut().pc = target;
             }
+            0x4d => {
+                let address = self.absolute_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.eor_accumulator(value);
+            }
+            0x4f => {
+                let address = self.absolute_long_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.eor_accumulator(value);
+            }
+            0x50 => self.branch(!self.cpu().v, accesses)?,
+            0x51 => {
+                let address = self.direct_indirect_indexed_y_address(false, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.eor_accumulator(value);
+            }
+            0x52 => {
+                let address = self.direct_indirect_address(accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.eor_accumulator(value);
+            }
             0x54 => {
                 let destination_bank = self.immediate8(false, accesses)?;
                 self.cpu_mut().db = destination_bank;
@@ -345,6 +499,11 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 }
                 self.add_cycles(TWO_CYCLES)?;
             }
+            0x55 => {
+                let address = self.direct_indexed_x_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::Bank, accesses)?;
+                self.eor_accumulator(value);
+            }
             0x58 => {
                 self.add_cycles(ONE_CYCLE)?;
                 self.cpu_mut().i = false;
@@ -369,6 +528,17 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 self.cpu_mut().dp = self.cpu().a;
                 self.set_zn(self.cpu().dp, false);
             }
+            0x5d => {
+                let address = self.absolute_indexed_read_address(self.cpu().x, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.eor_accumulator(value);
+            }
+            0x5f => {
+                let address = self.absolute_long_address(true, accesses)?;
+                let address = address.wrapping_add(u32::from(self.cpu().x)) & 0x00ff_ffff;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.eor_accumulator(value);
+            }
             0x5c => {
                 let target = self.absolute_long_address(false, accesses)?;
                 self.cpu_mut().pc = target as u16;
@@ -379,6 +549,11 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 let target = self.pull_word(accesses)?;
                 self.add_cycles(ONE_CYCLE)?;
                 self.cpu_mut().pc = target.wrapping_add(1);
+            }
+            0x61 => {
+                let address = self.direct_indexed_indirect_x_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.adc(value);
             }
             0x64 => {
                 let address = self.direct_address(false, accesses)?;
@@ -399,6 +574,10 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 let address = self.direct_address(true, accesses)?;
                 let value = self.read_by_m(address, WordWrap::Bank, accesses)?;
                 self.adc(value);
+            }
+            0x66 => {
+                let address = self.direct_address(true, accesses)?;
+                self.ror_memory(address, WordWrap::Bank, accesses)?;
             }
             0x68 => {
                 self.add_cycles(TWO_CYCLES)?;
@@ -427,6 +606,10 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 let value = self.read_by_m(address, WordWrap::None, accesses)?;
                 self.adc(value);
             }
+            0x6e => {
+                let address = self.absolute_address(true, accesses)?;
+                self.ror_memory(address, WordWrap::None, accesses)?;
+            }
             0x6b => {
                 self.add_cycles(TWO_CYCLES)?;
                 let target = self.pull_word_bank(accesses)?;
@@ -441,6 +624,45 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 self.cpu_mut().pc = self.cpu().pc.wrapping_add(1);
             }
             0x70 => self.branch(self.cpu().v, accesses)?,
+            0x71 => {
+                let address = self.direct_indirect_indexed_y_address(false, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.adc(value);
+            }
+            0x6f => {
+                let address = self.absolute_long_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.adc(value);
+            }
+            0x72 => {
+                let address = self.direct_indirect_address(accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.adc(value);
+            }
+            0x74 => {
+                let address = self.direct_indexed_x_address(false, accesses)?;
+                if self.cpu().mf {
+                    self.write_byte(address, 0, accesses)?;
+                } else {
+                    self.write_word(
+                        address,
+                        0,
+                        WordWrap::Bank,
+                        WordWriteOrder::LowHigh,
+                        accesses,
+                    )?;
+                }
+                self.set_open_bus(0);
+            }
+            0x75 => {
+                let address = self.direct_indexed_x_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::Bank, accesses)?;
+                self.adc(value);
+            }
+            0x76 => {
+                let address = self.direct_indexed_x_address(true, accesses)?;
+                self.ror_memory(address, WordWrap::Bank, accesses)?;
+            }
             0x78 => {
                 self.add_cycles(ONE_CYCLE)?;
                 self.cpu_mut().i = true;
@@ -469,6 +691,10 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 let operand = self.read_by_m(address, WordWrap::None, accesses)?;
                 self.adc(operand);
             }
+            0x7e => {
+                let address = self.absolute_indexed_modify_address(accesses)?;
+                self.ror_memory(address, WordWrap::None, accesses)?;
+            }
             0x79 => {
                 let address = self.absolute_indexed_read_address(self.cpu().y, accesses)?;
                 let operand = self.read_by_m(address, WordWrap::None, accesses)?;
@@ -481,6 +707,16 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 self.adc(operand);
             }
             0x80 => self.branch(true, accesses)?,
+            0x81 => {
+                let address = self.direct_indexed_indirect_x_address(false, accesses)?;
+                self.store_accumulator(address, accesses)?;
+            }
+            0x82 => {
+                let offset = self.immediate16(true, accesses)? as i16;
+                self.add_cycles(ONE_CYCLE)?;
+                let next = self.cpu().pc.wrapping_add_signed(offset);
+                self.cpu_mut().pc = next;
+            }
             0x84 => {
                 let address = self.direct_address(false, accesses)?;
                 let value = self.cpu().y;
@@ -494,6 +730,10 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 let address = self.direct_address(false, accesses)?;
                 let value = self.cpu().x;
                 self.store_index_register(address, value, accesses)?;
+            }
+            0x87 => {
+                let address = self.direct_indirect_long_address(accesses)?;
+                self.store_accumulator(address, accesses)?;
             }
             0x88 => {
                 self.add_cycles(ONE_CYCLE)?;
@@ -552,6 +792,14 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 self.set_open_bus(data_bank);
             }
             0x90 => self.branch(!self.cpu().c, accesses)?,
+            0x91 => {
+                let address = self.direct_indirect_indexed_y_address(true, accesses)?;
+                self.store_accumulator(address, accesses)?;
+            }
+            0x92 => {
+                let address = self.direct_indirect_address(accesses)?;
+                self.store_accumulator(address, accesses)?;
+            }
             0x95 => {
                 let address = self.direct_indexed_x_address(false, accesses)?;
                 self.store_accumulator(address, accesses)?;
@@ -626,6 +874,11 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                     self.cpu_mut().y = value;
                 }
                 self.set_zn(value, self.cpu().xf);
+            }
+            0xa1 => {
+                let address = self.direct_indexed_indirect_x_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.load_accumulator(value);
             }
             0xa2 => {
                 let value = self.immediate_by_x(accesses)?;
@@ -713,6 +966,11 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 self.set_open_bus(data_bank);
             }
             0xb0 => self.branch(self.cpu().c, accesses)?,
+            0xb2 => {
+                let address = self.direct_indirect_address(accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.load_accumulator(value);
+            }
             0xb1 => {
                 let address = self.direct_indirect_indexed_y_address(false, accesses)?;
                 let value = self.read_by_m(address, WordWrap::None, accesses)?;
@@ -722,6 +980,12 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 let address = self.direct_indexed_x_address(true, accesses)?;
                 let value = self.read_by_m(address, WordWrap::Bank, accesses)?;
                 self.load_accumulator(value);
+            }
+            0xb6 => {
+                let address = self.direct_indexed_y_address(true, accesses)?;
+                let value = self.read_by_x(address, WordWrap::Bank, accesses)?;
+                self.cpu_mut().x = value;
+                self.set_zn(value, self.cpu().xf);
             }
             0xb7 => {
                 let address = self
@@ -735,6 +999,12 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 let address = self.absolute_indexed_read_address(self.cpu().y, accesses)?;
                 let value = self.read_by_m(address, WordWrap::None, accesses)?;
                 self.load_accumulator(value);
+            }
+            0xbe => {
+                let address = self.absolute_indexed_read_address(self.cpu().y, accesses)?;
+                let value = self.read_by_x(address, WordWrap::Bank, accesses)?;
+                self.cpu_mut().x = value;
+                self.set_zn(value, self.cpu().xf);
             }
             0xbf => {
                 // cpuaddr.h:AbsoluteLongIndexedX is exactly AbsoluteLong(READ)
@@ -774,12 +1044,22 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 let value = self.immediate_by_m(accesses)?;
                 self.compare(self.cpu().a, value, self.cpu().mf);
             }
+            0xc1 => {
+                let address = self.direct_indexed_indirect_x_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.compare(self.cpu().a, value, self.cpu().mf);
+            }
             0xc2 => {
                 let mask = self.immediate8(true, accesses)?;
                 let flags = self.cpu().pack_flags() & !mask;
                 self.cpu_mut().unpack_flags(flags);
                 self.add_cycles(ONE_CYCLE)?;
                 self.fix_status_widths();
+            }
+            0xc4 => {
+                let address = self.direct_address(true, accesses)?;
+                let value = self.read_by_x(address, WordWrap::Bank, accesses)?;
+                self.compare(self.cpu().y, value, self.cpu().xf);
             }
             0xc5 => {
                 let address = self.direct_address(true, accesses)?;
@@ -788,26 +1068,7 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
             }
             0xc6 => {
                 let address = self.direct_address(true, accesses)?;
-                let value = self.read_by_m(address, WordWrap::Bank, accesses)?;
-                let result = if self.cpu().mf {
-                    u16::from((value as u8).wrapping_sub(1))
-                } else {
-                    value.wrapping_sub(1)
-                };
-                self.add_cycles(ONE_CYCLE)?;
-                if self.cpu().mf {
-                    self.write_byte(address, result as u8, accesses)?;
-                } else {
-                    self.write_word(
-                        address,
-                        result,
-                        WordWrap::Bank,
-                        WordWriteOrder::HighLow,
-                        accesses,
-                    )?;
-                }
-                self.set_open_bus(result as u8);
-                self.set_zn(result, self.cpu().mf);
+                self.decrement_memory(address, WordWrap::Bank, accesses)?;
             }
             0xc8 => {
                 self.add_cycles(ONE_CYCLE)?;
@@ -831,6 +1092,11 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 };
                 self.set_zn(value, self.cpu().xf);
             }
+            0xcc => {
+                let address = self.absolute_address(true, accesses)?;
+                let value = self.read_by_x(address, WordWrap::None, accesses)?;
+                self.compare(self.cpu().y, value, self.cpu().xf);
+            }
             0xcd => {
                 let address = self.absolute_address(true, accesses)?;
                 let value = self.read_by_m(address, WordWrap::None, accesses)?;
@@ -838,25 +1104,50 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
             }
             0xce => {
                 let address = self.absolute_address(true, accesses)?;
+                self.decrement_memory(address, WordWrap::None, accesses)?;
+            }
+            0xcf => {
+                let address = self.absolute_long_address(true, accesses)?;
                 let value = self.read_by_m(address, WordWrap::None, accesses)?;
-                let result = if self.cpu().mf {
-                    u16::from((value as u8).wrapping_sub(1))
-                } else {
-                    value.wrapping_sub(1)
-                };
-                self.add_cycles(ONE_CYCLE)?;
-                self.write_by_m(address, result, WordWriteOrder::HighLow, accesses)?;
-                self.set_open_bus(result as u8);
-                self.set_zn(result, self.cpu().mf);
+                self.compare(self.cpu().a, value, self.cpu().mf);
             }
             0xd0 => self.branch(!self.cpu().z, accesses)?,
+            0xd1 => {
+                let address = self.direct_indirect_indexed_y_address(false, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.compare(self.cpu().a, value, self.cpu().mf);
+            }
+            0xd2 => {
+                let address = self.direct_indirect_address(accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.compare(self.cpu().a, value, self.cpu().mf);
+            }
             0xd5 => {
                 let address = self.direct_indexed_x_address(true, accesses)?;
                 let value = self.read_by_m(address, WordWrap::Bank, accesses)?;
                 self.compare(self.cpu().a, value, self.cpu().mf);
             }
+            0xd6 => {
+                let address = self.direct_indexed_x_address(true, accesses)?;
+                self.decrement_memory(address, WordWrap::Bank, accesses)?;
+            }
+            0xd9 => {
+                let address = self.absolute_indexed_read_address(self.cpu().y, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.compare(self.cpu().a, value, self.cpu().mf);
+            }
             0xdd => {
                 let address = self.absolute_indexed_read_address(self.cpu().x, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.compare(self.cpu().a, value, self.cpu().mf);
+            }
+            0xde => {
+                let address = self.absolute_indexed_modify_address(accesses)?;
+                self.decrement_memory(address, WordWrap::None, accesses)?;
+            }
+            0xdf => {
+                let address = self.absolute_long_address(true, accesses)?;
+                let address = address.wrapping_add(u32::from(self.cpu().x)) & 0x00ff_ffff;
                 let value = self.read_by_m(address, WordWrap::None, accesses)?;
                 self.compare(self.cpu().a, value, self.cpu().mf);
             }
@@ -879,9 +1170,20 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 self.cpu_mut().pc = target;
                 self.cpu_mut().k = program_bank;
             }
+            0x6c => {
+                let pointer = self.immediate16(true, accesses)?;
+                let target = self.read_word(u32::from(pointer), WordWrap::None, accesses)?;
+                self.set_open_bus((target >> 8) as u8);
+                self.cpu_mut().pc = target;
+            }
             0xe0 => {
                 let value = self.immediate_by_x(accesses)?;
                 self.compare(self.cpu().x, value, self.cpu().xf);
+            }
+            0xe1 => {
+                let address = self.direct_indexed_indirect_x_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.sbc(value);
             }
             0xe2 => {
                 let mask = self.immediate8(true, accesses)?;
@@ -902,16 +1204,7 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
             }
             0xe6 => {
                 let address = self.direct_address(true, accesses)?;
-                let value = self.read_by_m(address, WordWrap::Bank, accesses)?;
-                let result = if self.cpu().mf {
-                    u16::from((value as u8).wrapping_add(1))
-                } else {
-                    value.wrapping_add(1)
-                };
-                self.add_cycles(ONE_CYCLE)?;
-                self.write_by_m(address, result, WordWriteOrder::HighLow, accesses)?;
-                self.set_open_bus(result as u8);
-                self.set_zn(result, self.cpu().mf);
+                self.increment_direct_memory(address, accesses)?;
             }
             0xe8 => {
                 self.add_cycles(ONE_CYCLE)?;
@@ -928,7 +1221,17 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 let operand = self.immediate_by_m(accesses)?;
                 self.sbc(operand);
             }
+            0xe7 => {
+                let address = self.direct_indirect_long_address(accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.sbc(value);
+            }
             0xea => self.add_cycles(ONE_CYCLE)?,
+            0xec => {
+                let address = self.absolute_address(true, accesses)?;
+                let value = self.read_by_x(address, WordWrap::None, accesses)?;
+                self.compare(self.cpu().x, value, self.cpu().xf);
+            }
             0xed => {
                 let address = self.absolute_address(true, accesses)?;
                 let operand = self.read_by_m(address, WordWrap::None, accesses)?;
@@ -959,6 +1262,35 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 self.add_cycles(TWO_CYCLES)?;
             }
             0xf0 => self.branch(self.cpu().z, accesses)?,
+            0xf2 => {
+                let address = self.direct_indirect_address(accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.sbc(value);
+            }
+            0xf1 => {
+                let address = self.direct_indirect_indexed_y_address(false, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.sbc(value);
+            }
+            0xf5 => {
+                let address = self.direct_indexed_x_address(true, accesses)?;
+                let value = self.read_by_m(address, WordWrap::Bank, accesses)?;
+                self.sbc(value);
+            }
+            0xf6 => {
+                let address = self.direct_indexed_x_address(true, accesses)?;
+                self.increment_direct_memory(address, accesses)?;
+            }
+            0xf9 => {
+                let address = self.absolute_indexed_read_address(self.cpu().y, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.sbc(value);
+            }
+            0xfd => {
+                let address = self.absolute_indexed_read_address(self.cpu().x, accesses)?;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.sbc(value);
+            }
             0xfa => {
                 let value = self.pull_by_x(accesses)?;
                 self.cpu_mut().x = value;
@@ -990,6 +1322,35 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
                 std::mem::swap(&mut cpu.c, &mut cpu.e);
                 self.fix_status_widths();
                 self.fix_emulation_stack();
+            }
+            0xfc => {
+                // Snes9x's slow JSR (a,X) reads both operand bytes separately.
+                // Between them it publishes the low PC byte on OpenBus; the
+                // target word is then fetched before the return-address push.
+                let operand_address = (u32::from(self.cpu().k) << 16) | u32::from(self.cpu().pc);
+                let low = self.read_byte(operand_address, accesses)?;
+                self.cpu_mut().pc = self.cpu().pc.wrapping_add(1);
+                self.set_open_bus(self.cpu().pc as u8);
+                let operand_address = (u32::from(self.cpu().k) << 16) | u32::from(self.cpu().pc);
+                let high = self.read_byte(operand_address, accesses)?;
+                self.cpu_mut().pc = self.cpu().pc.wrapping_add(1);
+                let pointer = u16::from_le_bytes([low, high]).wrapping_add(self.cpu().x);
+                self.add_cycles(ONE_CYCLE)?;
+                let address = (u32::from(self.cpu().k) << 16) | u32::from(pointer);
+                let target = self.read_word(address, WordWrap::Bank, accesses)?;
+                self.set_open_bus((target >> 8) as u8);
+                let return_pc = self.cpu().pc.wrapping_sub(1);
+                self.push_word_without_emulation_bounds(return_pc, accesses)?;
+                if self.cpu().e {
+                    self.cpu_mut().sp = 0x0100 | (self.cpu().sp & 0x00ff);
+                }
+                self.cpu_mut().pc = target;
+            }
+            0xff => {
+                let address = self.absolute_long_address(true, accesses)?;
+                let address = address.wrapping_add(u32::from(self.cpu().x)) & 0x00ff_ffff;
+                let value = self.read_by_m(address, WordWrap::None, accesses)?;
+                self.sbc(value);
             }
             _ => {
                 return Err(SourceCpuError::UnsupportedOpcode {
@@ -1041,11 +1402,28 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
         update_open_bus: bool,
         accesses: &mut Vec<SourceCpuBusAccess>,
     ) -> Result<u32, SourceCpuError> {
+        self.direct_indexed_address(self.cpu().x, update_open_bus, accesses)
+    }
+
+    fn direct_indexed_y_address(
+        &mut self,
+        update_open_bus: bool,
+        accesses: &mut Vec<SourceCpuBusAccess>,
+    ) -> Result<u32, SourceCpuError> {
+        self.direct_indexed_address(self.cpu().y, update_open_bus, accesses)
+    }
+
+    fn direct_indexed_address(
+        &mut self,
+        index: u16,
+        update_open_bus: bool,
+        accesses: &mut Vec<SourceCpuBusAccess>,
+    ) -> Result<u32, SourceCpuError> {
         let address = self.direct_address(update_open_bus, accesses)? as u16;
         let indexed = if self.cpu().e && self.cpu().dp as u8 == 0 {
-            (address & 0xff00) | u16::from((address as u8).wrapping_add(self.cpu().x as u8))
+            (address & 0xff00) | u16::from((address as u8).wrapping_add(index as u8))
         } else {
-            address.wrapping_add(self.cpu().x)
+            address.wrapping_add(index)
         };
         self.add_cycles(ONE_CYCLE)?;
         Ok(u32::from(indexed))
@@ -1073,6 +1451,17 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
         Ok(address.wrapping_add(u32::from(index)) & 0x00ff_ffff)
     }
 
+    fn absolute_indexed_modify_address(
+        &mut self,
+        accesses: &mut Vec<SourceCpuBusAccess>,
+    ) -> Result<u32, SourceCpuError> {
+        let address = self.absolute_address(true, accesses)?;
+        // cpuaddr.h:AbsoluteIndexedXX1(MODIFY) always takes the WRITE cycle,
+        // including an X8 index that does not cross a page.
+        self.add_cycles(ONE_CYCLE)?;
+        Ok(address.wrapping_add(u32::from(self.cpu().x)) & 0x00ff_ffff)
+    }
+
     fn direct_indirect_long_address(
         &mut self,
         accesses: &mut Vec<SourceCpuBusAccess>,
@@ -1090,6 +1479,53 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
         write: bool,
         accesses: &mut Vec<SourceCpuBusAccess>,
     ) -> Result<u32, SourceCpuError> {
+        let pointer = self.direct_indirect_pointer(!write, accesses)?;
+        if write
+            || !self.cpu().xf
+            || u16::from(pointer as u8).wrapping_add(u16::from(self.cpu().y as u8)) >= 0x100
+        {
+            self.add_cycles(ONE_CYCLE)?;
+        }
+        Ok(((u32::from(self.cpu().db) << 16) | u32::from(pointer))
+            .wrapping_add(u32::from(self.cpu().y))
+            & 0x00ff_ffff)
+    }
+
+    fn direct_indirect_address(
+        &mut self,
+        accesses: &mut Vec<SourceCpuBusAccess>,
+    ) -> Result<u32, SourceCpuError> {
+        let pointer = self.direct_indirect_pointer(true, accesses)?;
+        Ok((u32::from(self.cpu().db) << 16) | u32::from(pointer))
+    }
+
+    fn direct_indexed_indirect_x_address(
+        &mut self,
+        update_open_bus: bool,
+        accesses: &mut Vec<SourceCpuBusAccess>,
+    ) -> Result<u32, SourceCpuError> {
+        // cpuaddr.h:DirectIndexedIndirect first indexes the direct-page
+        // operand (including its internal cycle), then fetches a pointer.
+        // Emulation with an aligned DP wraps both the index and pointer read
+        // within the direct page; native or unaligned DP wraps at the bank.
+        let pointer_address = self.direct_indexed_x_address(true, accesses)?;
+        let pointer_wrap = if self.cpu().e && self.cpu().dp as u8 == 0 {
+            WordWrap::Page
+        } else {
+            WordWrap::Bank
+        };
+        let pointer = self.read_word(pointer_address, pointer_wrap, accesses)?;
+        if update_open_bus {
+            self.set_open_bus((pointer >> 8) as u8);
+        }
+        Ok((u32::from(self.cpu().db) << 16) | u32::from(pointer))
+    }
+
+    fn direct_indirect_pointer(
+        &mut self,
+        update_open_bus: bool,
+        accesses: &mut Vec<SourceCpuBusAccess>,
+    ) -> Result<u16, SourceCpuError> {
         let pointer_address = self.direct_address(true, accesses)?;
         let pointer_wrap = if self.cpu().e {
             if self.cpu().dp as u8 == 0 {
@@ -1101,16 +1537,10 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
             WordWrap::None
         };
         let pointer = self.read_word(pointer_address, pointer_wrap, accesses)?;
-        self.set_open_bus((pointer >> 8) as u8);
-        if write
-            || !self.cpu().xf
-            || u16::from(pointer as u8).wrapping_add(u16::from(self.cpu().y as u8)) >= 0x100
-        {
-            self.add_cycles(ONE_CYCLE)?;
+        if update_open_bus {
+            self.set_open_bus((pointer >> 8) as u8);
         }
-        Ok(((u32::from(self.cpu().db) << 16) | u32::from(pointer))
-            .wrapping_add(u32::from(self.cpu().y))
-            & 0x00ff_ffff)
+        Ok(pointer)
     }
 
     fn branch(
@@ -1197,6 +1627,163 @@ pub(super) trait SourceCpuInstructions: SourceCpuInstructionBus {
             self.cpu_mut().a &= operand;
             self.set_zn(self.cpu().a, false);
         }
+    }
+
+    fn bit_memory(&mut self, operand: u16) {
+        let eight_bit = self.cpu().mf;
+        let mask = if eight_bit { 0x00ff } else { 0xffff };
+        let sign = if eight_bit { 0x0080 } else { 0x8000 };
+        let overflow = sign >> 1;
+        let accumulator = self.cpu().a;
+        self.cpu_mut().z = accumulator & operand & mask == 0;
+        self.cpu_mut().n = operand & sign != 0;
+        self.cpu_mut().v = operand & overflow != 0;
+    }
+
+    fn increment_direct_memory(
+        &mut self,
+        address: u32,
+        accesses: &mut Vec<SourceCpuBusAccess>,
+    ) -> Result<(), SourceCpuError> {
+        let value = self.read_by_m(address, WordWrap::Bank, accesses)?;
+        let result = if self.cpu().mf {
+            u16::from((value as u8).wrapping_add(1))
+        } else {
+            value.wrapping_add(1)
+        };
+        self.add_cycles(ONE_CYCLE)?;
+        if self.cpu().mf {
+            self.write_byte(address, result as u8, accesses)?;
+        } else {
+            self.write_word(
+                address,
+                result,
+                WordWrap::Bank,
+                WordWriteOrder::HighLow,
+                accesses,
+            )?;
+        }
+        self.set_open_bus(result as u8);
+        self.set_zn(result, self.cpu().mf);
+        Ok(())
+    }
+
+    fn decrement_memory(
+        &mut self,
+        address: u32,
+        wrap: WordWrap,
+        accesses: &mut Vec<SourceCpuBusAccess>,
+    ) -> Result<(), SourceCpuError> {
+        let wide = !self.cpu().mf;
+        let old = if wide {
+            self.read_word(address, wrap, accesses)?
+        } else {
+            u16::from(self.read_byte(address, accesses)?)
+        };
+        let result = if wide {
+            old.wrapping_sub(1)
+        } else {
+            u16::from((old as u8).wrapping_sub(1))
+        };
+        self.add_cycles(ONE_CYCLE)?;
+        if wide {
+            self.write_word(address, result, wrap, WordWriteOrder::HighLow, accesses)?;
+        } else {
+            self.write_byte(address, result as u8, accesses)?;
+        }
+        self.set_open_bus(result as u8);
+        self.set_zn(result, !wide);
+        Ok(())
+    }
+
+    fn asl_memory(
+        &mut self,
+        address: u32,
+        wrap: WordWrap,
+        accesses: &mut Vec<SourceCpuBusAccess>,
+    ) -> Result<(), SourceCpuError> {
+        // cpumacro.h:ASL8/ASL16 reads without publishing the operand to CPU
+        // OpenBus, sets carry, charges one internal cycle, then writes. The
+        // 16-bit WRITE_10 stores high before low, and finally publishes low.
+        let wide = !self.cpu().mf;
+        let old = if wide {
+            self.read_word(address, wrap, accesses)?
+        } else {
+            u16::from(self.read_byte(address, accesses)?)
+        };
+        self.cpu_mut().c = old & if wide { 0x8000 } else { 0x0080 } != 0;
+        let result = if wide {
+            old.wrapping_shl(1)
+        } else {
+            u16::from((old as u8).wrapping_shl(1))
+        };
+        self.add_cycles(ONE_CYCLE)?;
+        if wide {
+            self.write_word(address, result, wrap, WordWriteOrder::HighLow, accesses)?;
+        } else {
+            self.write_byte(address, result as u8, accesses)?;
+        }
+        self.set_open_bus(result as u8);
+        self.set_zn(result, !wide);
+        Ok(())
+    }
+
+    fn test_and_modify_memory(
+        &mut self,
+        address: u32,
+        wrap: WordWrap,
+        set_bits: bool,
+        accesses: &mut Vec<SourceCpuBusAccess>,
+    ) -> Result<(), SourceCpuError> {
+        // cpumacro.h:TSB/TRB set Z from the original memory value before
+        // their internal cycle, then WRITE_10 high-before-low for M16.
+        let wide = !self.cpu().mf;
+        let old = if wide {
+            self.read_word(address, wrap, accesses)?
+        } else {
+            u16::from(self.read_byte(address, accesses)?)
+        };
+        let accumulator = self.cpu().a & if wide { 0xffff } else { 0x00ff };
+        self.cpu_mut().z = old & accumulator == 0;
+        let result = if set_bits {
+            old | accumulator
+        } else {
+            old & !accumulator
+        };
+        self.add_cycles(ONE_CYCLE)?;
+        if wide {
+            self.write_word(address, result, wrap, WordWriteOrder::HighLow, accesses)?;
+        } else {
+            self.write_byte(address, result as u8, accesses)?;
+        }
+        self.set_open_bus(result as u8);
+        Ok(())
+    }
+
+    fn ror_memory(
+        &mut self,
+        address: u32,
+        wrap: WordWrap,
+        accesses: &mut Vec<SourceCpuBusAccess>,
+    ) -> Result<(), SourceCpuError> {
+        let wide = !self.cpu().mf;
+        let old = if wide {
+            self.read_word(address, wrap, accesses)?
+        } else {
+            u16::from(self.read_byte(address, accesses)?)
+        };
+        let incoming_carry = self.cpu().c;
+        self.cpu_mut().c = old & 1 != 0;
+        let result = (old >> 1) | (u16::from(incoming_carry) << if wide { 15 } else { 7 });
+        self.add_cycles(ONE_CYCLE)?;
+        if wide {
+            self.write_word(address, result, wrap, WordWriteOrder::HighLow, accesses)?;
+        } else {
+            self.write_byte(address, result as u8, accesses)?;
+        }
+        self.set_open_bus(result as u8);
+        self.set_zn(result, !wide);
+        Ok(())
     }
 
     fn eor_accumulator(&mut self, operand: u16) {

@@ -545,6 +545,35 @@ itself. With it, all seven external-ROM tests pass — including 1,000
 continuous host calls of the real ROM through the exact cold executor, which
 is what covers the new counter owner.
 
+The exact cold executor now shares a source-ordered active-HDMA stall with the
+timing probe, retains enabled HDMA across quiescent checkpoints, reads HVBJOY
+from the processed beam cursor, and implements the 65816 instruction families
+encountered on the recorded take. The eight `(direct page,X)` ALU/store forms
+share one pinned indexed-pointer sequence; later direct-indexed, indirect-Y,
+shift/rotate, test/set/reset, and absolute-indexed forms retain their distinct
+bus and width behavior. The opt-in source OAM port owns `$2138` storage and
+buffering. A source OBJ evaluator and H=512 render event now supply STAT77
+`$213E`'s accumulated range/time-over bits in source event order. The cold
+owner also implements the multiplication register transaction used by the
+take. Its quiescent checkpoint is version 8. Normal native `Snes` instances
+do not enable the source OAM port.
+
+The capability probe completes all 6,277 host calls of take 0000 without an
+unsupported CPU/MMIO operation:
+`cargo run -p snes --example source_route_probe -- zelda3.sfc routes/full_run/comparisons/continuous-audio/initial.srm routes/full_run/takes/0000/input.txt 6277`.
+That is **execution coverage, not source parity**. The existing cold-owner
+1,000-call test runs neutral input; its fixed timing/return witness cannot
+validate the recorded take after its first nonzero input at host call 68. A
+same-event source receipt is needed to validate the take's OAM/STAT77 values,
+timing, and game state.
+The cached oracle's `presented_oam` is captured at presentation, so comparing
+it with the cold owner's live OAM at a main-loop return cannot establish an
+OAM divergence. The available SRAM is proven equivalent to the deleted
+capture seed only through host call 1,000. Production native still uses
+`RomCpuTimingRun`; promoting the exact owner requires retained handoff into
+native execution and source receipt comparison across that transition. The
+1,581,079-frame A/V gate is a separate production-native acceptance check.
+
 Evidence: `retained_continuation_port_timing_matches_the_pinned_cold_ipl_handshake`
 reproduces every recorded CPU/APU handshake access through the first CC from a
 real IPL execution; `local_rom_probe_apu_ports_match_the_pinned_cold_boot_writes`

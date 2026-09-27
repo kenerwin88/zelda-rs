@@ -9,9 +9,9 @@
 
 use super::instruction_set::{SourceCpuInstructionBus, SourceCpuInstructions};
 use super::{
-    SourceCpuBusAccess, SourceCpuBusAccessKind, SourceCpuError, SourceCpuInstructionTrace,
-    SourceCpuMapClass, SourceCpuStepReceipt, SourceCpuTransaction, SourceCpuTransactionKind,
-    WordWrap, WordWriteOrder,
+    source_hvbjoy, SourceCpuBusAccess, SourceCpuBusAccessKind, SourceCpuError,
+    SourceCpuInstructionTrace, SourceCpuMapClass, SourceCpuStepReceipt, SourceCpuTransaction,
+    SourceCpuTransactionKind, WordWrap, WordWriteOrder,
 };
 use crate::apu::ApuHostPortTiming;
 use crate::cpu_timeline::{
@@ -350,6 +350,16 @@ impl RomCpuTimingProbe {
                 self.snes.in_irq = false;
                 return Ok(value);
             }
+            if adr == 0x4212 {
+                return Ok(source_hvbjoy(&self.snes, self.beam()));
+            }
+            if adr == 0x213e {
+                let flags = self
+                    .snes
+                    .source_oam_stat77_flags()
+                    .ok_or(SourceCpuError::UnsupportedBusMap { address })?;
+                return Ok(self.ppu_reads.read_stat77(flags));
+            }
             if (0x4214..=0x4217).contains(&adr) {
                 return Ok(match adr {
                     0x4214 => self.snes.divide_result as u8,
@@ -364,6 +374,14 @@ impl RomCpuTimingProbe {
                 return Ok(self.snes.port_auto_read[index / 2].to_le_bytes()[index & 1]);
             }
             if let Some(value) = self.ppu_reads.read(adr, self.beam()) {
+                return Ok(value);
+            }
+            if adr == 0x2138 {
+                let value = self
+                    .snes
+                    .read_source_oam_data()
+                    .ok_or(SourceCpuError::UnsupportedBusMap { address })?;
+                self.ppu_reads.open_bus1 = value;
                 return Ok(value);
             }
             if (0x2134..=0x2136).contains(&adr) {
@@ -441,16 +459,24 @@ impl RomCpuTimingProbe {
             return Ok(());
         }
         if bank & 0x7f < 0x40 && (0x2100..=0x2133).contains(&adr) {
+            if adr == 0x2103 && value & 0x80 != 0 {
+                return Err(SourceCpuError::UnsupportedBusMap { address });
+            }
             // Reuse the same PPU register owner as the exact cold executor.
             // The source instruction bus publishes OpenBus only after the
             // semantic and its charged memory access have completed.
             let open_bus = self.snes.open_bus;
+            self.snes.set_source_oam_v_counter(self.beam().scanline);
             self.snes.write(address, value);
             self.snes.open_bus = open_bus;
             return Ok(());
         }
-        if bank & 0x7f < 0x40 && (0x4204..=0x4206).contains(&adr) {
+        if bank & 0x7f < 0x40 && (0x4202..=0x4206).contains(&adr) {
             match adr {
+                0x4202 => self.snes.multiply_a = value,
+                0x4203 => {
+                    self.snes.multiply_result = u16::from(self.snes.multiply_a) * u16::from(value)
+                }
                 0x4204 => self.snes.divide_a = (self.snes.divide_a & 0xff00) | u16::from(value),
                 0x4205 => {
                     self.snes.divide_a = (self.snes.divide_a & 0x00ff) | (u16::from(value) << 8)
@@ -555,24 +581,19 @@ impl RomCpuTimingProbe {
             .advance_synchronous_after_semantics_with(cycles, |event, timestamp| {
                 let stall = match event {
                     CpuSynchronousTimelineEvent::Bus(
-                        crate::cpu_timeline::CpuBusEvent::HdmaInit,
-                    ) => {
-                        snes.dma_init_hdma();
-                        let cycles = u32::from(snes.dma.hdma_timer);
-                        snes.dma.hdma_timer = 0;
-                        cycles + u32::from(cycles != 0) * 2
-                    }
-                    CpuSynchronousTimelineEvent::Bus(
-                        crate::cpu_timeline::CpuBusEvent::HdmaStart,
-                    ) => {
-                        snes.dma_do_hdma();
-                        let cycles = u32::from(snes.dma.hdma_timer);
-                        snes.dma.hdma_timer = 0;
-                        cycles + u32::from(cycles != 0) * 2
-                    }
+                        event @ (crate::cpu_timeline::CpuBusEvent::HdmaInit
+                        | crate::cpu_timeline::CpuBusEvent::HdmaStart),
+                    ) => snes.synchronous_hdma_stall(event),
                     CpuSynchronousTimelineEvent::Bus(
                         crate::cpu_timeline::CpuBusEvent::WramRefresh,
                     ) => 0,
+                    CpuSynchronousTimelineEvent::RenderLine {
+                        scanline,
+                        odd_field,
+                    } => {
+                        snes.source_oam_render_line(scanline, odd_field);
+                        0
+                    }
                     CpuSynchronousTimelineEvent::HMax {
                         completed_scanline,
                         event_timestamp,
@@ -584,6 +605,7 @@ impl RomCpuTimingProbe {
                             apu.end_scanline_at(timestamp.master_cycles())?;
                         }
                         let next = (completed_scanline + 1) % 262;
+                        snes.source_oam_enter_scanline(next);
                         if next == 225 {
                             snes.in_vblank = true;
                             snes.in_nmi = true;

@@ -12,6 +12,7 @@ use crate::cpu::CpuState;
 use crate::dma::DmaState;
 use crate::input::InputState;
 use crate::ppu::PpuState;
+use crate::source_oam::SourceOamPort;
 
 pub const WRAM_SIZE: usize = 0x20000;
 const SNES_CORE_SAVELOAD_SIZE: usize = 58;
@@ -21,6 +22,10 @@ pub struct Snes {
     pub cpu: CpuState,
     pub apu: ApuState,
     pub ppu: PpuState,
+    /// Opt-in source bus port. Both CPU and DMA writes enter through
+    /// `write_b_bus`; the translated renderer never reads this state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_oam: Option<SourceOamPort>,
     pub dma: DmaState,
     pub cart: Cart,
     pub input1: InputState,
@@ -81,11 +86,46 @@ pub struct Snes {
 }
 
 impl Snes {
+    pub(crate) fn enable_source_oam_port(&mut self) {
+        self.source_oam = Some(SourceOamPort::reset());
+    }
+
+    pub(crate) fn has_source_oam_port(&self) -> bool {
+        self.source_oam.is_some()
+    }
+
+    pub(crate) fn set_source_oam_v_counter(&mut self, scanline: u16) {
+        if let Some(port) = self.source_oam.as_mut() {
+            port.set_v_counter(scanline);
+        }
+    }
+
+    pub(crate) fn source_oam_render_line(&mut self, scanline: u16, odd_field: bool) {
+        if let Some(port) = self.source_oam.as_mut() {
+            port.render_line(scanline, odd_field);
+        }
+    }
+
+    pub(crate) fn source_oam_enter_scanline(&mut self, scanline: u16) {
+        if let Some(port) = self.source_oam.as_mut() {
+            port.enter_scanline(scanline);
+        }
+    }
+
+    pub(crate) fn source_oam_stat77_flags(&mut self) -> Option<u8> {
+        self.source_oam.as_mut().map(SourceOamPort::stat77_flags)
+    }
+
+    pub(crate) fn read_source_oam_data(&mut self) -> Option<u8> {
+        self.source_oam.as_mut().map(SourceOamPort::read)
+    }
+
     pub fn new() -> Self {
         Self {
             cpu: CpuState::new(),
             apu: ApuState::new(),
             ppu: PpuState::new(),
+            source_oam: None,
             dma: DmaState::new(),
             cart: Cart::new(),
             input1: InputState::new(),
@@ -137,6 +177,9 @@ impl Snes {
         self.apu.reset();
         self.dma.reset();
         self.ppu.reset();
+        if self.source_oam.is_some() {
+            self.source_oam = Some(SourceOamPort::reset());
+        }
         self.input1.reset();
         self.input2.reset();
 
@@ -361,6 +404,9 @@ impl Snes {
 
     pub fn write_b_bus(&mut self, adr: u8, val: u8) {
         if adr < 0x40 {
+            if let Some(port) = self.source_oam.as_mut() {
+                port.write(adr, val);
+            }
             self.ppu.write(adr, val);
             return;
         }

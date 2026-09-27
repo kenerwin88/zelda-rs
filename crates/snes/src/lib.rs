@@ -25,6 +25,8 @@ pub mod snes;
 pub mod snes9x_apu_clock;
 pub mod snes9x_apu_timing;
 pub mod snes9x_dsp_phase;
+mod source_oam;
+mod source_obj;
 pub mod tracing;
 
 #[cfg(test)]
@@ -35,9 +37,11 @@ pub(crate) mod test_util;
 pub use cpu_step::{cpu_run_opcode, cpu_run_opcode_timed, CpuInstructionTiming};
 pub use cpu_synchronous_executor::{
     CpuSynchronousCompletion, CpuSynchronousMachine, CpuSynchronousMachineError,
-    RomCpuTimingProbe, RomCpuTimingProbeHandoff, RomCpuTimingProbeSeedError, RomCpuNmiReceipt, RomCpuInterruptTransaction, SourcePpuReadState, Snes9xColdCpuExecutor, Snes9xCpuQuiescentCheckpoint, Snes9xCpuQuiescentCheckpointError,
-    Snes9xMainLoopReceipt, SourceCpuBusAccess, SourceCpuBusAccessKind, SourceCpuError,
-    SourceCpuStepReceipt, SourceCpuTransaction, SourceCpuTransactionKind,
+    RomCpuInterruptTransaction, RomCpuNmiReceipt, RomCpuTimingProbe, RomCpuTimingProbeHandoff,
+    RomCpuTimingProbeSeedError, Snes9xColdCpuExecutor, Snes9xCpuQuiescentCheckpoint,
+    Snes9xCpuQuiescentCheckpointError, Snes9xMainLoopReceipt, SourceCpuBusAccess,
+    SourceCpuBusAccessKind, SourceCpuError, SourceCpuStepReceipt, SourceCpuTransaction,
+    SourceCpuTransactionKind, SourcePpuReadState,
 };
 
 pub use apu::{ApuHostPortProbe, ApuHostPortProbeError, ApuHostPortTiming, ApuHostPortTimingError};
