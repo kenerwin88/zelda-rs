@@ -600,8 +600,14 @@ position. At call 5,722 the source has entered the NMI handler (`$80c9`,
 V225/H80, stack `$01fb`), while the oracle still returns in the `$8034/$8036`
 wait loop (V225/H10, stack `$01ff`); its next traced PC enters `$80c9` at
 V225/H90. The source's final wait-loop LDA spans this interrupt boundary.
-The first sustained discrepancy is thus CPU/interrupt timing, not an OAM
-write. OAM agreement does **not** establish exact CPU timing or
+At the same host call, traced PCs agree in position through `$80c6` at
+V6/H424. The next shared trace point, `$805a` at V134, is eight master
+cycles later in the source (H214 versus oracle H206); the wait-loop phase
+remains eight cycles apart through V224. This narrows the first measured
+phase difference to game execution between those two PCs. The return
+discrepancy reflects CPU/interrupt phase, not an OAM write; the responsible
+transaction within that interval remains unidentified. OAM agreement does
+**not** establish exact CPU timing or
 native parity. Exact-source execution also required the pinned disabled-H-IRQ
 `$4207/$4208` register writes and four memory ROL opcode forms. Continue by
 measuring the first host-5,722 transaction difference, then the first
