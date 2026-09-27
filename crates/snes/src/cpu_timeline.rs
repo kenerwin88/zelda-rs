@@ -45,6 +45,14 @@ impl CpuRasterPosition {
         }
     }
 
+    pub const fn scanline(self) -> u16 {
+        self.scanline
+    }
+
+    pub const fn master_cycle(self) -> u16 {
+        self.master_cycle
+    }
+
     const fn nominal_field_master_cycles(self) -> u64 {
         self.scanline as u64 * MASTER_CYCLES_PER_SCANLINE as u64 + self.master_cycle as u64
     }

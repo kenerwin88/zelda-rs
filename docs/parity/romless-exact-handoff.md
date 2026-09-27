@@ -581,13 +581,31 @@ OAM after host call 1,000 misattributes save-dependent game state to CPU/PPU
 logic. The probe now optionally reads the cached oracle's compressed host
 receipts and compares **presented OAM at the same VBlank capture event**.
 With that oracle's exact SRAM and recorded input, all 544 presented OAM bytes
-match for host calls 0..=4,399. The source CPU then differs at host call 4,400,
-byte `$51` (`$46` source, `$47` oracle). This is the current source-data
-witness frontier; it does not establish CPU transaction, STAT77, audio, or
-production-native parity. Exact-source execution also required the pinned
-disabled-H-IRQ `$4207/$4208` register writes and the four memory ROL opcode
-forms. Continue from the first differing sprite-shadow write with a matching
-oracle/source event trace, rather than patching the OAM byte.
+originally matched for host calls 0..=4,399. The next byte came from a Link Y
+write after input `$0030`: pinned libretro reports Up before Down and, with
+opposing directions disabled, Down wins. The source owner had sent both bits
+directly to the JOYSER latch. `set_libretro_joypad_words` now applies the pinned
+libretro control rule for both opposing-direction pairs and both ports at the
+input boundary. The raw serial-state setter keeps its original semantics. The
+source owner then matches every presented OAM byte on **all 6,277 calls of
+take 0000**. Continuing the cached whole-route input finds the next presented
+OAM difference at host call 7,129, byte `$00`, after the `$0120` A-button
+transition. The probe fails at that first difference rather than masking it.
+
+The separate live Snes9x frame trace gives a stricter CPU-return witness.
+Through take 0000, source and oracle return PC/V/H differ on 549 of 6,277
+calls: 15 transient differences in calls 0..667, and a sustained sequence
+starting at call 5,722. All calls 668..5,721 match the return PC and beam
+position. At call 5,722 the source has entered the NMI handler (`$80c9`,
+V225/H80, stack `$01fb`), while the oracle still returns in the `$8034/$8036`
+wait loop (V225/H10, stack `$01ff`); its next traced PC enters `$80c9` at
+V225/H90. The source's final wait-loop LDA spans this interrupt boundary.
+The first sustained discrepancy is thus CPU/interrupt timing, not an OAM
+write. OAM agreement does **not** establish exact CPU timing or
+native parity. Exact-source execution also required the pinned disabled-H-IRQ
+`$4207/$4208` register writes and four memory ROL opcode forms. Continue by
+measuring the first host-5,722 transaction difference, then the first
+host-7,129 game-state difference, without an output-value patch.
 
 Evidence: `retained_continuation_port_timing_matches_the_pinned_cold_ipl_handshake`
 reproduces every recorded CPU/APU handshake access through the first CC from a

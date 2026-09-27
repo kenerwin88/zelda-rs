@@ -2,7 +2,7 @@
 //!
 //! Usage: cargo run -p snes --example source_route_probe -- ROM SRAM INPUT HOST_CALLS [ORACLE_JSONL_ZST]
 
-use snes::Snes9xColdCpuExecutor;
+use snes::{Snes9xColdCpuExecutor, SourceCpuBusAccessKind};
 use std::{
     env,
     error::Error,
@@ -48,9 +48,81 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
     let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset_with_sram(&rom, Some(&sram))?;
+    let trace_wram = env::var("ZELDA3_SOURCE_TRACE_WRAM")
+        .ok()
+        .map(|value| u16::from_str_radix(value.trim_start_matches("0x"), 16))
+        .transpose()?;
+    let trace_pc_range = env::var("ZELDA3_SOURCE_TRACE_PC_RANGE")
+        .ok()
+        .map(|value| {
+            let (start, end) = value.split_once('-').ok_or("invalid trace PC range")?;
+            Ok::<_, Box<dyn Error>>((
+                u32::from_str_radix(start.trim_start_matches("0x"), 16)?,
+                u32::from_str_radix(end.trim_start_matches("0x"), 16)?,
+            ))
+        })
+        .transpose()?;
+    let trace_returns = env::var_os("ZELDA3_SOURCE_TRACE_RETURNS").is_some();
+    let trace_hosts = env::var("ZELDA3_SOURCE_TRACE_HOSTS")
+        .ok()
+        .map(|value| {
+            let (start, end) = value.split_once('-').ok_or("invalid trace host range")?;
+            Ok::<_, Box<dyn Error>>((start.parse::<usize>()?, end.parse::<usize>()?))
+        })
+        .transpose()?;
     for (host, buttons) in buttons.into_iter().enumerate() {
-        cpu.set_joypad_serial_state(buttons, 0);
-        if let Err(error) = cpu.run_until_main_loop_return() {
+        cpu.set_libretro_joypad_words(buttons, 0);
+        let trace_this_host = trace_hosts.is_some_and(|(start, end)| (start..=end).contains(&host));
+        let result = cpu.run_until_main_loop_return_with(|step| {
+            if trace_this_host
+                && trace_pc_range.is_some_and(|(start, end)| {
+                    (start..=end).contains(&step.origin_pc)
+                })
+            {
+                eprintln!(
+                    "source-step host={host} pc={:06x} opcode={:02x} start={} end={}",
+                    step.origin_pc,
+                    step.opcode,
+                    step.started_at.master_cycles(),
+                    step.ended_at.master_cycles(),
+                );
+            }
+            if let Some(address) = trace_wram {
+                if trace_this_host {
+                    for access in &step.accesses {
+                        if access.address & 0xffff == u32::from(address) {
+                            if let SourceCpuBusAccessKind::Write { value, width } = access.kind {
+                                eprintln!(
+                                    "source host={host} pc={:06x} time={} address={:06x} value={value:04x} width={width}",
+                                    step.origin_pc,
+                                    access.timestamp.master_cycles(),
+                                    access.address,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        if trace_returns && trace_this_host {
+            if result.is_ok() {
+                let state = &cpu.machine().snes().cpu;
+                let beam = cpu.raster_position();
+                eprintln!(
+                    "source-return host={host} pc={:06x} v={} cycles={} time={} a={} x={} y={} s={} p={}",
+                    (u32::from(state.k) << 16) | u32::from(state.pc),
+                    beam.scanline(),
+                    beam.master_cycle(),
+                    cpu.machine().timestamp().master_cycles(),
+                    state.a,
+                    state.x,
+                    state.y,
+                    state.sp,
+                    state.pack_flags(),
+                );
+            }
+        }
+        if let Err(error) = result {
             eprintln!("source owner stopped at host call {host}: {error}");
             return Err(error.into());
         }
@@ -70,12 +142,22 @@ fn main() -> Result<(), Box<dyn Error>> {
             if expected.len() != actual.len() {
                 return Err(format!("oracle OAM length mismatch at host call {host}").into());
             }
-            for (index, (expected, actual)) in expected.iter().zip(actual).enumerate() {
-                if expected.as_u64() != Some(u64::from(*actual)) {
-                    return Err(format!(
-                        "presented OAM differs at host call {host}, byte {index:#x}: source={actual:#04x} oracle={expected}"
-                    ).into());
-                }
+            let differences: Vec<_> = expected
+                .iter()
+                .zip(actual)
+                .enumerate()
+                .filter_map(|(index, (expected, actual))| {
+                    (expected.as_u64() != Some(u64::from(*actual)))
+                        .then(|| format!("{index:#x}: source={actual:#04x} oracle={expected}"))
+                })
+                .collect();
+            if !differences.is_empty() {
+                return Err(format!(
+                    "presented OAM differs at host call {host} in {} bytes; first: {}",
+                    differences.len(),
+                    differences[..differences.len().min(12)].join(", ")
+                )
+                .into());
             }
         }
     }

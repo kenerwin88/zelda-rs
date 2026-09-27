@@ -29,6 +29,24 @@ const ONE_CYCLE: u32 = 6;
 const TWO_CYCLES: u32 = 12;
 const RESET_CPU_MASTER_CYCLE: u64 = 182;
 
+/// Pinned libretro `report_buttons` reports joypad IDs in ascending order.
+/// `controls.cpp:S9xApplyCommand` clears an opposite direction whenever a
+/// direction is pressed (with default `Settings.UpAndDown = false`), so the
+/// later Down/Right reports win when a raw libretro word holds both bits.
+fn source_libretro_joypad_word(mut raw: u16) -> u16 {
+    const UP: u16 = 1 << 4;
+    const DOWN: u16 = 1 << 5;
+    const LEFT: u16 = 1 << 6;
+    const RIGHT: u16 = 1 << 7;
+    if raw & (UP | DOWN) == UP | DOWN {
+        raw &= !UP;
+    }
+    if raw & (LEFT | RIGHT) == LEFT | RIGHT {
+        raw &= !LEFT;
+    }
+    raw
+}
+
 /// Pinned Snes9x `REGISTER_4212`: the CPU's processed beam cursor, not the
 /// physical clock beyond an undrained HMax, owns HVBJOY at the read semantic.
 fn source_hvbjoy(snes: &Snes, beam: CpuSynchronousBeamPosition) -> u8 {
@@ -234,6 +252,11 @@ struct SourceCpuInstructionTrace {
 }
 
 impl Snes9xColdCpuExecutor {
+    /// Physical beam position at the current source CPU boundary.
+    pub fn raster_position(&self) -> CpuRasterPosition {
+        self.machine.timeline.raster_position()
+    }
+
     /// OAM captured at the most recent source-ordered VBlank presentation.
     pub fn presented_oam(&self) -> &[u8] {
         self.machine
@@ -344,12 +367,19 @@ impl Snes9xColdCpuExecutor {
         &self.machine
     }
 
-    /// Publish the two libretro joypad words immediately before an exact
-    /// `S9xMainLoop` call. The source JOYSER latch and V228 auto-read semantics
-    /// consume these states later on the physical CPU timeline.
+    /// Publish controller serial states before an exact `S9xMainLoop` call.
+    /// The source JOYSER latch and V228 auto-read consume them on the CPU timeline.
     pub fn set_joypad_serial_state(&mut self, port1: u16, port2: u16) {
         self.machine.snes.input1.current_state = port1;
         self.machine.snes.input2.current_state = port2;
+    }
+
+    /// Apply pinned libretro's button report order before publishing states.
+    pub fn set_libretro_joypad_words(&mut self, port1: u16, port2: u16) {
+        self.set_joypad_serial_state(
+            source_libretro_joypad_word(port1),
+            source_libretro_joypad_word(port2),
+        );
     }
 
     /// Transfer every sample emitted by the exact DSP sidecar since the prior
@@ -1686,6 +1716,21 @@ enum WordWriteOrder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn libretro_default_controller_mapping_resolves_opposing_directions_in_report_order() {
+        assert_eq!(source_libretro_joypad_word(0x0030), 0x0020);
+        assert_eq!(source_libretro_joypad_word(0x00c0), 0x0080);
+        assert_eq!(source_libretro_joypad_word(0x0050), 0x0050);
+        assert_eq!(source_libretro_joypad_word(0x00f0), 0x00a0);
+        let mut rom = vec![0x18; 0x8000];
+        rom[0x7ffc] = 0x00;
+        rom[0x7ffd] = 0x80;
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.set_libretro_joypad_words(0x0030, 0x00c0);
+        assert_eq!(cpu.machine.snes.input1.current_state, 0x0020);
+        assert_eq!(cpu.machine.snes.input2.current_state, 0x0080);
+    }
     use crate::test_bootstrap_fixture::{
         cpu_apu_accesses, cpu_timing_transactions_through_first_cc, records,
         split_first_cc_cpu_accesses, visit_cpu_timing_transactions, CpuTimingTransaction,
