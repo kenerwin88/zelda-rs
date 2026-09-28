@@ -22,7 +22,8 @@ mod timing_probe;
 use instruction_set::{SourceCpuInstructionBus, SourceCpuInstructions};
 pub use timing_probe::{
     RomCpuInterruptTransaction, RomCpuIrqReceipt, RomCpuNmiReceipt, RomCpuProbeAdvance,
-    RomCpuTimingProbe, RomCpuTimingProbeHandoff, RomCpuTimingProbeSeedError, SourcePpuReadState,
+    RomCpuSourceTransferError, RomCpuTimingProbe, RomCpuTimingProbeHandoff,
+    RomCpuTimingProbeSeedError, SourcePpuReadState,
 };
 
 const ONE_CYCLE: u32 = 6;
@@ -2140,6 +2141,82 @@ mod tests {
             source.machine.snes.dma.channel[7].size,
             probe.snes().dma.channel[7].size
         );
+    }
+
+    #[test]
+    fn cold_cpu_transfer_keeps_cpu_ppu_timeline_and_apu_owner() {
+        let rom = synthetic_rom(&[0xad, 0x3c, 0x21, 0xad, 0x40, 0x21, 0xad, 0x3c, 0x21]);
+        let mut source = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        source.step().unwrap();
+        let checkpoint = source.capture_quiescent_checkpoint().unwrap();
+        let mut reference = Snes9xColdCpuExecutor::from_quiescent_checkpoint(checkpoint).unwrap();
+        let mut probe = RomCpuTimingProbe::from_cold_cpu_executor(source).unwrap();
+
+        assert!(probe.apu_ports().is_some());
+        assert_eq!(probe.ppu_reads(), &reference.machine.source_ppu_reads);
+        assert_eq!(probe.timeline().timestamp(), reference.machine.timestamp());
+        for _ in 0..2 {
+            assert_eq!(probe.step().unwrap(), reference.step().unwrap());
+            assert_eq!(probe.ppu_reads(), &reference.machine.source_ppu_reads);
+            assert_eq!(probe.timeline().timestamp(), reference.machine.timestamp());
+            assert_eq!(probe.snes().cpu.pc, reference.machine.snes.cpu.pc);
+            assert_eq!(probe.snes().cpu.a, reference.machine.snes.cpu.a);
+            assert_eq!(
+                probe.apu_ports().unwrap().clock().checkpoint(),
+                reference.machine.apu_clock.checkpoint()
+            );
+        }
+    }
+
+    #[test]
+    fn cold_cpu_transfer_refuses_unconsumed_host_return_and_vmain_state() {
+        let rom = synthetic_rom(&[0xea]);
+        let mut source = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        source.machine.main_loop_return_pending = Some(source.machine.timestamp());
+        assert!(matches!(
+            RomCpuTimingProbe::from_cold_cpu_executor(source),
+            Err(RomCpuSourceTransferError::PendingHostReturn)
+        ));
+
+        let mut source = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        source.machine.source_vmain_full_graphic_count_nonzero = true;
+        assert!(matches!(
+            RomCpuTimingProbe::from_cold_cpu_executor(source),
+            Err(RomCpuSourceTransferError::VramRemapping)
+        ));
+    }
+
+    #[test]
+    fn cold_cpu_transfer_keeps_enabled_hdma_and_its_timeline_cursor() {
+        let rom = synthetic_rom(&[0xa9, 0x80, 0x8d, 0x0c, 0x42, 0xea]);
+        let mut source = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        source.step().unwrap();
+        source.step().unwrap();
+        assert!(source.machine.snes.dma.channel[7].hdma_active);
+        let checkpoint = source.capture_quiescent_checkpoint().unwrap();
+        let mut reference = Snes9xColdCpuExecutor::from_quiescent_checkpoint(checkpoint).unwrap();
+        let mut probe = RomCpuTimingProbe::from_cold_cpu_executor(source).unwrap();
+
+        assert!(probe.snes().dma.channel[7].hdma_active);
+        assert_eq!(probe.step().unwrap(), reference.step().unwrap());
+        assert_eq!(probe.timeline().timestamp(), reference.machine.timestamp());
+        assert_eq!(
+            probe.snes().dma.channel[7].rep_count,
+            reference.machine.snes.dma.channel[7].rep_count
+        );
+    }
+
+    #[test]
+    fn cold_cpu_transfer_publishes_unclaimed_dsp_samples_once() {
+        let rom = synthetic_rom(&[0xea]);
+        let mut source = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        while source.machine.snes.apu.cycles < 32 {
+            source.machine.snes.apu.run_snes9x_micro_step_without_dsp().unwrap();
+        }
+        source.machine.snes.apu.synchronize_snes9x_dsp();
+        let mut probe = RomCpuTimingProbe::from_cold_cpu_executor(source).unwrap();
+        assert!(!probe.take_dsp_samples().unwrap().samples.is_empty());
+        assert!(probe.take_dsp_samples().unwrap().samples.is_empty());
     }
 
     #[test]
