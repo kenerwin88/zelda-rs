@@ -667,6 +667,13 @@ pointer, and status flags at **every one of the first 160,000 host returns**.
 This includes the opening and call-159,583 return differences from the
 pre-fix run.
 
+At the route endpoint, save a source checkpoint after host 1,581,078 and run
+`python3 scripts/compare_source_cpu_final_state.py SOURCE_CHECKPOINT ORACLE_CACHE`.
+The comparator verifies ROM/SRAM/input hashes against the cache manifest and
+the oracle snapshot hash before comparing CPU registers, all 128 KiB of WRAM,
+and the 8 KiB cartridge SRAM. It does not compare PPU or APU internals; a
+matching OAM route alone must not be described as full CPU-state parity.
+
 The separate live Snes9x frame trace gives a stricter CPU-return witness.
 Through take 0000, source and oracle return PC/V/H now differ on only 15
 transient calls in 0..667; every call 668..6,276 matches the return PC and
