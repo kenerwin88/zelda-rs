@@ -2165,6 +2165,18 @@ mod tests {
                 probe.apu_ports().unwrap().clock().checkpoint(),
                 reference.machine.apu_clock.checkpoint()
             );
+            assert_eq!(
+                probe
+                    .apu_ports()
+                    .unwrap()
+                    .machine()
+                    .capture_snes9x_apu_coroutine_checkpoint(),
+                reference
+                    .machine
+                    .snes
+                    .apu
+                    .capture_snes9x_apu_coroutine_checkpoint()
+            );
         }
     }
 
