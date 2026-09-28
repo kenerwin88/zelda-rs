@@ -75,6 +75,15 @@ pub struct RomCpuIrqReceipt {
     pub transactions: Vec<RomCpuInterruptTransaction>,
 }
 
+/// One source-owned boundary. Interrupts remain distinct from instructions:
+/// they do not fetch an opcode and carry their own bus transactions.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RomCpuProbeAdvance {
+    Instruction(SourceCpuStepReceipt),
+    Nmi(RomCpuNmiReceipt),
+    Irq(RomCpuIrqReceipt),
+}
+
 pub struct RomCpuTimingProbe {
     snes: Snes,
     timeline: CpuMasterTimeline,
@@ -423,6 +432,25 @@ impl RomCpuTimingProbe {
             accesses,
             transactions: trace.transactions,
         })
+    }
+
+    /// Advance the retained CPU owner through its next instruction or selected
+    /// interrupt. A plan using this entry point cannot accidentally execute an
+    /// opcode while a due NMI or IRQ is waiting for its separate entry.
+    pub fn advance(&mut self) -> Result<RomCpuProbeAdvance, SourceCpuError> {
+        if self.poisoned {
+            return Err(SourceCpuError::Poisoned);
+        }
+        if self
+            .nmi_acceptance_not_before
+            .is_some_and(|deadline| self.timeline.timestamp() >= deadline)
+        {
+            return self.accept_native_nmi().map(RomCpuProbeAdvance::Nmi);
+        }
+        if self.irq_acceptance_due {
+            return self.accept_native_irq().map(RomCpuProbeAdvance::Irq);
+        }
+        self.step().map(RomCpuProbeAdvance::Instruction)
     }
 
     fn beam(&self) -> CpuSynchronousBeamPosition {

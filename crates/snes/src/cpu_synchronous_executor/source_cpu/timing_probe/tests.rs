@@ -43,7 +43,10 @@ fn vertical_irq_timer_and_cli_selection_survive_a_plan_handoff() {
     let mut probe =
         RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset()).unwrap();
     for _ in 0..4 {
-        probe.step().unwrap();
+        assert!(matches!(
+            probe.advance().unwrap(),
+            RomCpuProbeAdvance::Instruction(_)
+        ));
     }
     assert_eq!(probe.snes().v_timer, 10);
     assert!(probe.irq_timer_at.is_some());
@@ -69,7 +72,9 @@ fn vertical_irq_timer_and_cli_selection_survive_a_plan_handoff() {
             .expect("selected IRQ survives handoff"),
     );
     assert!(resumed.pending_irq_acceptance());
-    let receipt = resumed.accept_native_irq().unwrap();
+    let RomCpuProbeAdvance::Irq(receipt) = resumed.advance().unwrap() else {
+        panic!("selected IRQ must enter before the next opcode");
+    };
     assert_eq!(receipt.interrupted_pc, 0x800c);
     assert_eq!(
         receipt.ended_at.master_cycles() - receipt.started_at.master_cycles(),
@@ -120,7 +125,9 @@ fn simultaneous_vblank_nmi_takes_priority_over_vertical_irq() {
         probe.step(),
         Err(SourceCpuError::PendingNmiAcceptance { .. })
     ));
-    probe.accept_native_nmi().unwrap();
+    let RomCpuProbeAdvance::Nmi(_) = probe.advance().unwrap() else {
+        panic!("due NMI must outrank the simultaneous IRQ");
+    };
     assert_eq!(probe.program_address(), 0x80c9);
     assert!(probe.snes().cpu.i);
     assert!(probe.snes().cpu.irq_wanted);
@@ -683,7 +690,9 @@ fn enabled_nmi_is_accepted_only_by_the_external_interrupt_owner() {
         Err(SourceCpuError::PendingNmiAcceptance { deadline: due }) if due == deadline.master_cycles()
     ));
     assert!(!resumed.is_poisoned());
-    let receipt = resumed.accept_native_nmi().unwrap();
+    let RomCpuProbeAdvance::Nmi(receipt) = resumed.advance().unwrap() else {
+        panic!("retained NMI must enter before the next opcode");
+    };
     assert_eq!(receipt.interrupted_pc, 0x8002);
     assert_eq!(resumed.program_address(), 0x80c9);
     assert_eq!(resumed.pending_nmi_acceptance(), None);

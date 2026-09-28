@@ -289,6 +289,16 @@ the full SNES library suite passes. Horizontal IRQ, automatic native-route
 interrupt dispatch, general DMA, and the persistent `ZeldaState` owner remain
 unimplemented. This is a probe capability, not a production A/V frontier move.
 
+The retained probe now exposes one `advance` entry point that selects a due
+NMI or IRQ before fetching another opcode and returns a distinct instruction,
+NMI, or IRQ receipt. Its tests cross a plan handoff with a pending interrupt
+and check simultaneous VBlank NMI priority over vertical IRQ. This removes
+interrupt selection from future native plan callers; the separate low-level
+`step` and interrupt-entry methods remain for timing tests. General DMA and
+the persistent `ZeldaState` source CPU owner are still required before the
+aggregate native timing path can be replaced. This API alone does not change
+the production native A/V frontier.
+
 Promotion tooling also now accepts an explicit `--frames` limit exactly equal
 to the cache's full frame count. The previous validator rejected every explicit
 limit, including this complete 1,581,079-frame run. The correction preserves
