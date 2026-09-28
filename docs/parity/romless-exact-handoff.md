@@ -299,6 +299,25 @@ the persistent `ZeldaState` source CPU owner are still required before the
 aggregate native timing path can be replaced. This API alone does not change
 the production native A/V frontier.
 
+The central cold CPU owner completed the 1,581,079-host recorded route with
+exact presented OAM at every host. A separately resumed final checkpoint at
+host 1,581,078 matched the oracle's CPU registers, all 128 KiB of WRAM, and
+the cartridge's 8 KiB SRAM with zero differences
+(`target/source-cli-fixed-final-state-comparison.log`). This validates the
+source CPU owner over the full route, not the production translated native
+renderer or its frame-56,458 video frontier. The production parity binary
+remained SHA-256 `a790c35bbd13294ea370ab3d7d4bd37dc37a65f76d2af26ee04c62aba055c4fe`;
+the next cold gate matched 204,000 exact A/V frames from frame zero.
+
+The native budget's source-observation seam now consumes the probe's typed
+instruction/NMI/IRQ advances with one timeline. In this mode, NMI acceptance
+is reported only after the source CPU actually enters NMI; crossing nominal
+H=12 with NMI disabled no longer fabricates a boundary. A real vertical IRQ
+test retains the CPU and clock across plan handoff. The production path still
+needs a persistent source CPU owner in `ZeldaState`, ordered reconciliation
+with translated memory writes, and source-owned DMA/APU/display publication
+before the aggregate timing runner and synthetic poly-thread clock can go.
+
 Promotion tooling also now accepts an explicit `--frames` limit exactly equal
 to the cache's full frame count. The previous validator rejected every explicit
 limit, including this complete 1,581,079-frame run. The correction preserves

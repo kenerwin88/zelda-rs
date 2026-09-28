@@ -7,8 +7,8 @@ use super::{
 };
 pub(super) use snes::{CpuBusEvent, CpuBusWorkload, CpuFieldTiming, CpuRasterPosition};
 use snes::{
-    CpuMasterTimeline, CpuTimelineDeadlineAdvance, CpuTimelineEvent, RomCpuNmiReceipt,
-    SourceCpuStepReceipt, NMI_SCANLINE, SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES,
+    CpuMasterTimeline, CpuTimelineDeadlineAdvance, CpuTimelineEvent, RomCpuProbeAdvance,
+    NMI_SCANLINE, SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES,
     SNES9X_NMI_GENERAL_DMA_DELAY_MASTER_CYCLES, WRAM_REFRESH_STALL_MASTER_CYCLES,
 };
 
@@ -101,6 +101,10 @@ pub(super) struct CpuCycleBudget {
     /// master cycle of the next firing) hands the rest of every field to the
     /// poly thread; the simulated main thread resumes at the NMI acceptance.
     poly_thread_irq: Option<(u16, u64)>,
+    /// Source-observed CPU work uses the source owner's actual NMI entry,
+    /// rather than the nominal H=12 deadline, to open the native handler.
+    source_observation_active: bool,
+    source_nmi_boundary_pending: bool,
     /// Field index of the budget's entry and a bitmask of field offsets from
     /// it whose IRQ slice is NOT stolen: the poly thread disables its V-IRQ
     /// when a frame completes and the NMI re-enables it only after the main
@@ -149,6 +153,8 @@ impl CpuCycleBudget {
             timeline,
             deadline,
             poly_thread_irq: None,
+            source_observation_active: false,
+            source_nmi_boundary_pending: false,
             poly_thread_free_fields: (0, 0),
         }
     }
@@ -174,6 +180,8 @@ impl CpuCycleBudget {
             ),
             deadline,
             poly_thread_irq: None,
+            source_observation_active: false,
+            source_nmi_boundary_pending: false,
             poly_thread_free_fields: (0, 0),
         }
     }
@@ -283,32 +291,25 @@ impl CpuCycleBudget {
         }
     }
 
-    /// Observe a source-ordered instruction that has already charged its own
-    /// bus events. The copied synchronous cursor is a deadline view, never a
-    /// second executor: legacy advance methods reject a synchronous timeline.
-    pub(super) fn observe_source_instruction(
+    /// Observe one source-owned instruction or interrupt. The copied
+    /// synchronous cursor is only a deadline view: the source machine has
+    /// already charged bus work, DMA, refresh, and interrupt entry exactly
+    /// once. Legacy advance methods reject this synchronous timeline.
+    pub(super) fn observe_source_advance(
         &mut self,
-        receipt: &SourceCpuStepReceipt,
+        advance: &RomCpuProbeAdvance,
         source_timeline: &CpuMasterTimeline,
     ) -> CpuWorkAdvance {
+        let (started_at, ended_at) = match advance {
+            RomCpuProbeAdvance::Instruction(receipt) => (receipt.started_at, receipt.ended_at),
+            RomCpuProbeAdvance::Nmi(receipt) => (receipt.started_at, receipt.ended_at),
+            RomCpuProbeAdvance::Irq(receipt) => (receipt.started_at, receipt.ended_at),
+        };
         self.observe_source_interval(
-            receipt.started_at.master_cycles(),
-            receipt.ended_at.master_cycles(),
+            started_at.master_cycles(),
+            ended_at.master_cycles(),
             source_timeline,
-        )
-    }
-
-    /// NMI bus entry is also source-owned and must advance the same clock
-    /// after `begin_nmi_handler` opens the next deadline.
-    pub(super) fn observe_source_nmi(
-        &mut self,
-        receipt: &RomCpuNmiReceipt,
-        source_timeline: &CpuMasterTimeline,
-    ) -> CpuWorkAdvance {
-        self.observe_source_interval(
-            receipt.started_at.master_cycles(),
-            receipt.ended_at.master_cycles(),
-            source_timeline,
+            matches!(advance, RomCpuProbeAdvance::Nmi(_)),
         )
     }
 
@@ -317,6 +318,7 @@ impl CpuCycleBudget {
         started_at: u64,
         ended_at: u64,
         source_timeline: &CpuMasterTimeline,
+        accepted_nmi: bool,
     ) -> CpuWorkAdvance {
         assert!(
             self.poly_thread_irq.is_none(),
@@ -327,9 +329,14 @@ impl CpuCycleBudget {
             started_at,
             "source CPU and native boundary budget have different entry clocks"
         );
+        assert_eq!(
+            self.deadline.boundary,
+            CpuRasterBoundary::CpuNmiAcceptance,
+            "source CPU observation currently owns only NMI acceptance",
+        );
         assert!(
-            started_at < self.deadline.master_cycles,
-            "source CPU advanced before the prior boundary was accepted"
+            !self.source_nmi_boundary_pending,
+            "source CPU advanced before the prior NMI boundary was accepted"
         );
         assert!(ended_at >= started_at, "source CPU clock moved backwards");
         assert_eq!(
@@ -348,7 +355,10 @@ impl CpuCycleBudget {
             "source CPU and native boundary budget have different field timing"
         );
         self.timeline = source_timeline.clone();
-        if ended_at >= self.deadline.master_cycles {
+        self.source_observation_active = true;
+        if accepted_nmi {
+            self.deadline.master_cycles = started_at;
+            self.source_nmi_boundary_pending = true;
             CpuWorkAdvance::ReachedBoundary {
                 boundary: self.deadline.boundary,
                 remaining_work_master_cycles: 0,
@@ -417,6 +427,13 @@ impl CpuCycleBudget {
             CpuRasterBoundary::CpuNmiAcceptance,
             "only a CPU NMI acceptance boundary can begin the NMI handler",
         );
+        if self.source_observation_active {
+            assert!(
+                self.source_nmi_boundary_pending,
+                "source CPU has not entered the NMI"
+            );
+            self.source_nmi_boundary_pending = false;
+        }
         debug_assert!(self.timeline.clock_master_cycles() >= self.deadline.master_cycles);
         let next_field = self
             .timeline
@@ -1869,6 +1886,14 @@ mod cpu_timing_tests {
     const WORK_TO_CACHED_RESTORE: u32 = 1_400 + 4 * 10_674 + 8_884;
 
     fn source_probe_at(entry: CpuRasterPosition, program: &[u8]) -> RomCpuTimingProbe {
+        source_probe_at_with_nmi(entry, program, true)
+    }
+
+    fn source_probe_at_with_nmi(
+        entry: CpuRasterPosition,
+        program: &[u8],
+        nmi_enabled: bool,
+    ) -> RomCpuTimingProbe {
         let mut rom = vec![0xea; 0x8000];
         rom[..program.len()].copy_from_slice(program);
         rom[0x7fea..0x7fec].copy_from_slice(&[0xc9, 0x80]);
@@ -1879,7 +1904,7 @@ mod cpu_timing_tests {
         snes.cpu.e = false;
         snes.cpu.mf = true;
         snes.cpu.xf = true;
-        snes.nmi_enabled = true;
+        snes.nmi_enabled = nmi_enabled;
         let timeline = CpuMasterTimeline::at_raster(
             0,
             entry,
@@ -1911,6 +1936,8 @@ mod cpu_timing_tests {
                 ),
             },
             poly_thread_irq: None,
+            source_observation_active: false,
+            source_nmi_boundary_pending: false,
             poly_thread_free_fields: (0, 0),
         }
     }
@@ -2412,9 +2439,9 @@ mod cpu_timing_tests {
             CpuBusWorkload::default(),
             CpuFieldTiming::NON_INTERLACE_EVEN,
         );
-        let receipt = probe.step().unwrap();
+        let receipt = probe.advance().unwrap();
         assert_eq!(
-            budget.observe_source_instruction(&receipt, probe.timeline()),
+            budget.observe_source_advance(&receipt, probe.timeline()),
             CpuWorkAdvance::Complete
         );
         assert_eq!(
@@ -2422,8 +2449,11 @@ mod cpu_timing_tests {
             probe.timeline().clock_master_cycles()
         );
         assert_eq!(budget.raster_position(), probe.timeline().raster_position());
+        let RomCpuProbeAdvance::Instruction(instruction) = receipt else {
+            panic!("refresh witness must execute one instruction");
+        };
         assert_eq!(
-            receipt.ended_at.master_cycles() - receipt.started_at.master_cycles(),
+            instruction.ended_at.master_cycles() - instruction.started_at.master_cycles(),
             54,
             "14 CPU clocks and one 40-clock WRAM refresh"
         );
@@ -2438,26 +2468,95 @@ mod cpu_timing_tests {
             CpuBusWorkload::default(),
             CpuFieldTiming::NON_INTERLACE_EVEN,
         );
-        let first = probe.step().unwrap();
+        let first = probe.advance().unwrap();
         assert_eq!(
-            budget.observe_source_instruction(&first, probe.timeline()),
+            budget.observe_source_advance(&first, probe.timeline()),
             CpuWorkAdvance::Complete
         );
-        let second = probe.step().unwrap();
+        let second = probe.advance().unwrap();
         assert_eq!(
-            budget.observe_source_instruction(&second, probe.timeline()),
+            budget.observe_source_advance(&second, probe.timeline()),
+            CpuWorkAdvance::Complete
+        );
+        let nmi = probe.advance().unwrap();
+        assert!(matches!(nmi, RomCpuProbeAdvance::Nmi(_)));
+        assert_eq!(
+            budget.observe_source_advance(&nmi, probe.timeline()),
             CpuWorkAdvance::ReachedBoundary {
                 boundary: CpuRasterBoundary::CpuNmiAcceptance,
                 remaining_work_master_cycles: 0,
             }
         );
         budget.begin_nmi_handler();
-        let nmi = probe.accept_native_nmi().unwrap();
+        assert_eq!(budget.raster_position(), probe.timeline().raster_position());
+    }
+
+    #[test]
+    fn source_cpu_disabled_nmi_does_not_accept_the_nominal_h12_boundary() {
+        let entry = CpuRasterPosition::new(224, 1350);
+        let mut probe = source_probe_at_with_nmi(entry, &[0xea; 4], false);
+        let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
+            entry,
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        let nominal_h12 = budget.deadline.master_cycles;
+        for _ in 0..4 {
+            let advance = probe.advance().unwrap();
+            assert!(matches!(advance, RomCpuProbeAdvance::Instruction(_)));
+            assert_eq!(
+                budget.observe_source_advance(&advance, probe.timeline()),
+                CpuWorkAdvance::Complete
+            );
+        }
+        assert!(budget.timeline.clock_master_cycles() > nominal_h12);
+        assert_eq!(probe.pending_nmi_acceptance(), None);
+        assert_eq!(budget.raster_position(), probe.timeline().raster_position());
+    }
+
+    #[test]
+    fn source_cpu_vertical_irq_handoff_uses_the_same_native_budget_clock() {
+        let entry = CpuRasterPosition::new(10, 100);
+        let mut probe = source_probe_at(
+            entry,
+            &[
+                0x78, // SEI before enabling the vertical timer
+                0xa9, 0x0a, 0x8d, 0x09, 0x42, // V timer = scanline 10
+                0xa9, 0x20, 0x8d, 0x00, 0x42, // enable vertical-only IRQ
+                0x58, 0xea, // CLI, then NOP selects the asserted IRQ
+            ],
+        );
+        let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
+            entry,
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        for _ in 0..8 {
+            let advance = probe.advance().unwrap();
+            assert!(matches!(advance, RomCpuProbeAdvance::Instruction(_)));
+            assert_eq!(
+                budget.observe_source_advance(&advance, probe.timeline()),
+                CpuWorkAdvance::Complete
+            );
+            if probe.pending_irq_acceptance() {
+                break;
+            }
+        }
+        assert!(probe.pending_irq_acceptance());
+        let mut resumed = RomCpuTimingProbe::from_handoff(
+            probe.into_handoff().ok().expect("selected IRQ is a healthy boundary"),
+        );
+        let advance = resumed.advance().unwrap();
+        let RomCpuProbeAdvance::Irq(ref irq) = advance else {
+            panic!("retained vertical IRQ must enter before another opcode");
+        };
+        assert_eq!(irq.interrupted_pc, 0x800d);
         assert_eq!(
-            budget.observe_source_nmi(&nmi, probe.timeline()),
+            budget.observe_source_advance(&advance, resumed.timeline()),
             CpuWorkAdvance::Complete
         );
-        assert_eq!(budget.raster_position(), probe.timeline().raster_position());
+        assert_eq!(budget.timeline.clock_master_cycles(), resumed.timeline().clock_master_cycles());
+        assert_eq!(budget.raster_position(), resumed.timeline().raster_position());
     }
 
     #[test]
@@ -2470,8 +2569,8 @@ mod cpu_timing_tests {
             CpuBusWorkload::default(),
             CpuFieldTiming::non_interlace(true),
         );
-        let receipt = probe.step().unwrap();
-        budget.observe_source_instruction(&receipt, probe.timeline());
+        let receipt = probe.advance().unwrap();
+        budget.observe_source_advance(&receipt, probe.timeline());
     }
 
     #[test]
