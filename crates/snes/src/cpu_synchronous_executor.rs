@@ -21,7 +21,8 @@ pub use source_cpu::{
     RomCpuSourceTransferError, RomCpuTimingProbe, RomCpuTimingProbeHandoff,
     RomCpuTimingProbeSeedError, Snes9xColdCpuExecutor,
     Snes9xCpuQuiescentCheckpoint, Snes9xCpuQuiescentCheckpointError, Snes9xMainLoopReceipt,
-    SourceCpuBusAccess, SourceCpuBusAccessKind, SourceCpuError, SourceCpuStepReceipt,
+    SourceCpuAcceptedInterrupt, SourceCpuBusAccess, SourceCpuBusAccessKind, SourceCpuError,
+    SourceCpuStepReceipt,
     SourceCpuTransaction, SourceCpuTransactionKind, SourcePpuReadState,
 };
 
@@ -137,6 +138,10 @@ impl CpuSynchronousMachine {
 
     pub fn timestamp(&self) -> CpuMasterTimestamp {
         self.timeline.timestamp()
+    }
+
+    pub const fn timeline(&self) -> &CpuMasterTimeline {
+        &self.timeline
     }
 
     pub const fn snes(&self) -> &Snes {

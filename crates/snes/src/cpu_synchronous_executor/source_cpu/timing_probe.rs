@@ -500,6 +500,7 @@ impl RomCpuTimingProbe {
             ended_at: self.timeline.timestamp(),
             accesses,
             transactions: trace.transactions,
+            accepted_interrupt: None,
         })
     }
 

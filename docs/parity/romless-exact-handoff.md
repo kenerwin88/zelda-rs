@@ -318,6 +318,25 @@ needs a persistent source CPU owner in `ZeldaState`, ordered reconciliation
 with translated memory writes, and source-owned DMA/APU/display publication
 before the aggregate timing runner and synthetic poly-thread clock can go.
 
+The exact reset-proven CPU can now transfer its quiescent CPU, timeline, PPU
+read latches, APU coroutine, and unpublished DSP samples into the probe. A
+frame-56,458 source checkpoint kept CPU registers, WRAM, and master clock in
+agreement for 14,522 instructions before the probe reached its unsupported
+nonzero `$420B` general DMA path. The exact CPU already executes that DMA.
+Its instruction receipt now names accepted NMI/IRQ entry and its clock, and
+`CpuCycleBudget` can observe that same source machine through a nested DMA
+without charging the transfer again. This is a development ownership seam;
+production translated native video still first diverges at frame 56,458.
+At the saved source checkpoint immediately before that host, `$06:DCE2`
+starts at master clock 20176119170, accepts NMI at 20176119184, and finishes
+its entry at 20176119246. The event is selected after the opcode, so its
+acceptance clock cannot be inferred from nominal V225/H12 alone.
+The parity binary SHA-256 `ee5e0fd6338fda18aceb54d984e8524a8e59f6f2a57cfb9605f0c086997dd71e`
+matched all 1,581,079 contiguous cached video and audio frames in
+`target/exact-source-budget-full`. The same binary's production native timing
+path still first diverged at frame 56,458, video only, in
+`target/exact-source-budget-native`.
+
 Promotion tooling also now accepts an explicit `--frames` limit exactly equal
 to the cache's full frame count. The previous validator rejected every explicit
 limit, including this complete 1,581,079-frame run. The correction preserves

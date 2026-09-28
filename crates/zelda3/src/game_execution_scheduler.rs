@@ -7,8 +7,9 @@ use super::{
 };
 pub(super) use snes::{CpuBusEvent, CpuBusWorkload, CpuFieldTiming, CpuRasterPosition};
 use snes::{
-    CpuMasterTimeline, CpuTimelineDeadlineAdvance, CpuTimelineEvent, RomCpuProbeAdvance,
-    NMI_SCANLINE, SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES,
+    CpuMasterTimeline, CpuSynchronousMachine, CpuTimelineDeadlineAdvance, CpuTimelineEvent,
+    RomCpuProbeAdvance, SourceCpuAcceptedInterrupt, SourceCpuStepReceipt, NMI_SCANLINE,
+    SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES,
     SNES9X_NMI_GENERAL_DMA_DELAY_MASTER_CYCLES, WRAM_REFRESH_STALL_MASTER_CYCLES,
 };
 
@@ -114,6 +115,35 @@ pub(super) struct CpuCycleBudget {
 }
 
 impl CpuCycleBudget {
+    /// Borrow the exact CPU's already-running timeline. No raster re-seed or
+    /// provisional bus work is allowed when this machine is the clock owner.
+    pub(super) fn from_source_cpu(machine: &CpuSynchronousMachine) -> Self {
+        let timeline = machine.timeline().clone();
+        let mut field = timeline.field_index();
+        let mut boundary = timeline.master_cycles_at_raster(
+            field,
+            CpuRasterBoundary::CpuNmiAcceptance.raster_position(),
+        );
+        if boundary <= timeline.clock_master_cycles() {
+            field += 1;
+            boundary = timeline.master_cycles_at_raster(
+                field,
+                CpuRasterBoundary::CpuNmiAcceptance.raster_position(),
+            );
+        }
+        Self {
+            timeline,
+            deadline: CpuBoundaryDeadline {
+                boundary: CpuRasterBoundary::CpuNmiAcceptance,
+                master_cycles: boundary,
+            },
+            poly_thread_irq: None,
+            source_observation_active: true,
+            source_nmi_boundary_pending: false,
+            poly_thread_free_fields: (0, 0),
+        }
+    }
+
     pub(super) fn until_next_vblank_publication(
         entry: CpuRasterPosition,
         bus: CpuBusWorkload,
@@ -300,16 +330,42 @@ impl CpuCycleBudget {
         advance: &RomCpuProbeAdvance,
         source_timeline: &CpuMasterTimeline,
     ) -> CpuWorkAdvance {
-        let (started_at, ended_at) = match advance {
-            RomCpuProbeAdvance::Instruction(receipt) => (receipt.started_at, receipt.ended_at),
-            RomCpuProbeAdvance::Nmi(receipt) => (receipt.started_at, receipt.ended_at),
-            RomCpuProbeAdvance::Irq(receipt) => (receipt.started_at, receipt.ended_at),
+        let (started_at, ended_at, accepted_nmi_at) = match advance {
+            RomCpuProbeAdvance::Instruction(receipt) => (receipt.started_at, receipt.ended_at, None),
+            RomCpuProbeAdvance::Nmi(receipt) => (
+                receipt.started_at,
+                receipt.ended_at,
+                Some(receipt.started_at.master_cycles()),
+            ),
+            RomCpuProbeAdvance::Irq(receipt) => (receipt.started_at, receipt.ended_at, None),
         };
         self.observe_source_interval(
             started_at.master_cycles(),
             ended_at.master_cycles(),
             source_timeline,
-            matches!(advance, RomCpuProbeAdvance::Nmi(_)),
+            accepted_nmi_at,
+        )
+    }
+
+    /// Observe a full exact-source opcode, including any interrupt entry it
+    /// selected after the opcode. General DMA stays with that CPU machine;
+    /// the budget only follows its completed timeline and NMI acceptance.
+    pub(super) fn observe_exact_source_step(
+        &mut self,
+        receipt: &SourceCpuStepReceipt,
+        source_timeline: &CpuMasterTimeline,
+    ) -> CpuWorkAdvance {
+        let accepted_nmi_at = match receipt.accepted_interrupt {
+            Some(SourceCpuAcceptedInterrupt::Nmi { started_at }) => {
+                Some(started_at.master_cycles())
+            }
+            Some(SourceCpuAcceptedInterrupt::Irq { .. }) | None => None,
+        };
+        self.observe_source_interval(
+            receipt.started_at.master_cycles(),
+            receipt.ended_at.master_cycles(),
+            source_timeline,
+            accepted_nmi_at,
         )
     }
 
@@ -318,7 +374,7 @@ impl CpuCycleBudget {
         started_at: u64,
         ended_at: u64,
         source_timeline: &CpuMasterTimeline,
-        accepted_nmi: bool,
+        accepted_nmi_at: Option<u64>,
     ) -> CpuWorkAdvance {
         assert!(
             self.poly_thread_irq.is_none(),
@@ -356,8 +412,12 @@ impl CpuCycleBudget {
         );
         self.timeline = source_timeline.clone();
         self.source_observation_active = true;
-        if accepted_nmi {
-            self.deadline.master_cycles = started_at;
+        if let Some(accepted_nmi_at) = accepted_nmi_at {
+            assert!(
+                (started_at..=ended_at).contains(&accepted_nmi_at),
+                "source NMI acceptance is outside its completed CPU interval"
+            );
+            self.deadline.master_cycles = accepted_nmi_at;
             self.source_nmi_boundary_pending = true;
             CpuWorkAdvance::ReachedBoundary {
                 boundary: self.deadline.boundary,
@@ -1877,8 +1937,9 @@ mod cpu_timing_tests {
     use super::*;
     use crate::zelda_rtl::{SpriteMainCpuBoundary, SpriteMainCpuCaller};
     use snes::{
-        snes9x_wram_refresh_cycle, CartType, RomCpuTimingProbe, Snes, SourcePpuReadState,
-        HDMA_START_CYCLE, MASTER_CYCLES_PER_SCANLINE, NTSC_FIELD_MASTER_CYCLES,
+        snes9x_wram_refresh_cycle, CartType, RomCpuTimingProbe, Snes, Snes9xColdCpuExecutor,
+        SourcePpuReadState, HDMA_START_CYCLE, MASTER_CYCLES_PER_SCANLINE,
+        NTSC_FIELD_MASTER_CYCLES,
     };
 
     const DUNGEON_HDMA_STALL: u16 = 42;
@@ -2469,6 +2530,7 @@ mod cpu_timing_tests {
             CpuFieldTiming::NON_INTERLACE_EVEN,
         );
         let first = probe.advance().unwrap();
+        let after_first = probe.timeline().clone();
         assert_eq!(
             budget.observe_source_advance(&first, probe.timeline()),
             CpuWorkAdvance::Complete
@@ -2480,6 +2542,46 @@ mod cpu_timing_tests {
         );
         let nmi = probe.advance().unwrap();
         assert!(matches!(nmi, RomCpuProbeAdvance::Nmi(_)));
+        let RomCpuProbeAdvance::Instruction(first_instruction) = &first else {
+            unreachable!()
+        };
+        let RomCpuProbeAdvance::Instruction(second_instruction) = &second else {
+            unreachable!()
+        };
+        let RomCpuProbeAdvance::Nmi(nmi_receipt) = &nmi else {
+            unreachable!()
+        };
+        let mut exact_budget = CpuCycleBudget::until_next_nmi_acceptance(
+            entry,
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        assert_eq!(
+            exact_budget.observe_exact_source_step(first_instruction, &after_first),
+            CpuWorkAdvance::Complete
+        );
+        let exact_step = SourceCpuStepReceipt {
+            origin_pc: second_instruction.origin_pc,
+            opcode: second_instruction.opcode,
+            started_at: second_instruction.started_at,
+            ended_at: nmi_receipt.ended_at,
+            accesses: Vec::new(),
+            transactions: Vec::new(),
+            accepted_interrupt: Some(SourceCpuAcceptedInterrupt::Nmi {
+                started_at: nmi_receipt.started_at,
+            }),
+        };
+        assert_eq!(
+            exact_budget.observe_exact_source_step(&exact_step, probe.timeline()),
+            CpuWorkAdvance::ReachedBoundary {
+                boundary: CpuRasterBoundary::CpuNmiAcceptance,
+                remaining_work_master_cycles: 0,
+            }
+        );
+        assert_eq!(
+            exact_budget.deadline.master_cycles,
+            nmi_receipt.started_at.master_cycles()
+        );
         assert_eq!(
             budget.observe_source_advance(&nmi, probe.timeline()),
             CpuWorkAdvance::ReachedBoundary {
@@ -2489,6 +2591,45 @@ mod cpu_timing_tests {
         );
         budget.begin_nmi_handler();
         assert_eq!(budget.raster_position(), probe.timeline().raster_position());
+    }
+
+    #[test]
+    fn exact_source_budget_follows_nested_general_dma_without_recharging_it() {
+        let mut program = Vec::new();
+        for (register, value) in [
+            (0x4300u16, 0),
+            (0x4301, 0x18),
+            (0x4302, 0),
+            (0x4303, 0),
+            (0x4304, 0x7e),
+            (0x4305, 1),
+            (0x4306, 0),
+            (0x420b, 1),
+        ] {
+            program.extend_from_slice(&[
+                0xa9,
+                value,
+                0x8d,
+                register as u8,
+                (register >> 8) as u8,
+            ]);
+        }
+        let mut rom = vec![0xea; 0x8000];
+        rom[..program.len()].copy_from_slice(&program);
+        rom[0x7ffc..0x7ffe].copy_from_slice(&[0, 0x80]);
+        let mut source = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        let mut budget = CpuCycleBudget::from_source_cpu(source.machine());
+
+        for _ in 0..16 {
+            let receipt = source.step().unwrap();
+            assert_eq!(
+                budget.observe_exact_source_step(&receipt, source.machine().timeline()),
+                CpuWorkAdvance::Complete
+            );
+            assert_eq!(budget.timeline.timestamp(), source.machine().timestamp());
+        }
+        assert_eq!(source.machine().snes().ppu.vram[0], 0x0055);
+        assert!(!budget.source_nmi_boundary_pending);
     }
 
     #[test]

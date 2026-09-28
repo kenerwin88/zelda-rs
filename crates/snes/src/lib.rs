@@ -41,7 +41,8 @@ pub use cpu_synchronous_executor::{
     RomCpuSourceTransferError, RomCpuTimingProbe, RomCpuTimingProbeHandoff,
     RomCpuTimingProbeSeedError, Snes9xColdCpuExecutor,
     Snes9xCpuQuiescentCheckpoint, Snes9xCpuQuiescentCheckpointError, Snes9xMainLoopReceipt,
-    SourceCpuBusAccess, SourceCpuBusAccessKind, SourceCpuError, SourceCpuStepReceipt,
+    SourceCpuAcceptedInterrupt, SourceCpuBusAccess, SourceCpuBusAccessKind, SourceCpuError,
+    SourceCpuStepReceipt,
     SourceCpuTransaction, SourceCpuTransactionKind, SourcePpuReadState,
 };
 

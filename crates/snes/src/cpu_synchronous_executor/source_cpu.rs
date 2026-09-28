@@ -135,6 +135,15 @@ pub struct SourceCpuStepReceipt {
     pub ended_at: CpuMasterTimestamp,
     pub accesses: Vec<SourceCpuBusAccess>,
     pub transactions: Vec<SourceCpuTransaction>,
+    /// Interrupt selected after this opcode by the exact source main loop.
+    /// Its entry clocks are already included in `ended_at` and `transactions`.
+    pub accepted_interrupt: Option<SourceCpuAcceptedInterrupt>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceCpuAcceptedInterrupt {
+    Nmi { started_at: CpuMasterTimestamp },
+    Irq { started_at: CpuMasterTimestamp },
 }
 
 /// One exact pinned-Snes9x `S9xMainLoop` call, ending only after the
@@ -687,12 +696,13 @@ impl Snes9xColdCpuExecutor {
             } else {
                 self.machine.snes.cpu.i
             };
-            self.finish_instruction_interrupt_boundary(&mut accesses, irq_mask_for_selection)?;
+            let interrupt = self
+                .finish_instruction_interrupt_boundary(&mut accesses, irq_mask_for_selection)?;
             self.assert_source_execution_scope()?;
-            Ok(opcode)
+            Ok((opcode, interrupt))
         })();
-        let opcode = match result {
-            Ok(opcode) => opcode,
+        let (opcode, accepted_interrupt) = match result {
+            Ok(result) => result,
             Err(error) => {
                 self.poisoned = true;
                 self.active_trace = None;
@@ -712,6 +722,7 @@ impl Snes9xColdCpuExecutor {
             ended_at: self.machine.timestamp(),
             accesses,
             transactions: trace.transactions,
+            accepted_interrupt,
         })
     }
 
@@ -787,7 +798,7 @@ impl Snes9xColdCpuExecutor {
         &mut self,
         accesses: &mut Vec<SourceCpuBusAccess>,
         irq_mask_for_selection: bool,
-    ) -> Result<(), SourceCpuError> {
+    ) -> Result<Option<SourceCpuAcceptedInterrupt>, SourceCpuError> {
         let old_nmi_is_due = self.machine.snes.cpu.nmi_wanted
             && self
                 .machine
@@ -802,9 +813,10 @@ impl Snes9xColdCpuExecutor {
             self.machine.snes.cpu.nmi_wanted = false;
             self.machine.nmi_acceptance_not_before = None;
             self.publish_deferred_nmi_enable_edge();
+            let started_at = self.machine.timestamp();
             self.enter_native_interrupt(0x00_ffea, accesses)?;
             self.publish_due_vertical_irq();
-            return Ok(());
+            return Ok(Some(SourceCpuAcceptedInterrupt::Nmi { started_at }));
         }
 
         self.publish_due_vertical_irq();
@@ -813,11 +825,13 @@ impl Snes9xColdCpuExecutor {
                 return Err(SourceCpuError::UnsupportedIrqEntryState);
             }
             self.publish_deferred_nmi_enable_edge();
+            let started_at = self.machine.timestamp();
             self.enter_native_interrupt(0x00_ffee, accesses)?;
+            return Ok(Some(SourceCpuAcceptedInterrupt::Irq { started_at }));
         } else {
             self.publish_deferred_nmi_enable_edge();
         }
-        Ok(())
+        Ok(None)
     }
 
     fn program_address(&self) -> u32 {
@@ -2795,6 +2809,12 @@ mod tests {
         let receipt = cpu.step().unwrap();
         assert_eq!(receipt.origin_pc, 0x00_8000);
         assert_eq!(receipt.opcode, 0xf0);
+        assert_eq!(
+            receipt.accepted_interrupt,
+            Some(SourceCpuAcceptedInterrupt::Nmi {
+                started_at: receipt.transactions[3].started_at,
+            })
+        );
         assert_source_transaction_shape(
             &receipt,
             &[
@@ -2958,13 +2978,18 @@ mod tests {
         cpu.machine.snes.v_timer = 144;
         cpu.machine.irq_timer_at = Some(cpu.machine.timestamp());
 
-        cpu.step().unwrap();
+        let first = cpu.step().unwrap();
+        assert_eq!(first.accepted_interrupt, None);
         assert_eq!(cpu.machine.snes.cpu.pc, 0x8001);
         assert!(!cpu.machine.snes.cpu.i);
         assert!(cpu.machine.snes.cpu.irq_wanted);
         assert_eq!(cpu.machine.snes.cpu.sp, 0x01ff);
 
-        cpu.step().unwrap();
+        let second = cpu.step().unwrap();
+        assert!(matches!(
+            second.accepted_interrupt,
+            Some(SourceCpuAcceptedInterrupt::Irq { .. })
+        ));
         assert_eq!(cpu.machine.snes.cpu.pc, 0x8100);
         assert_eq!(&cpu.machine.snes.ram[0x01fd..=0x01fe], &[0x02, 0x80]);
     }
