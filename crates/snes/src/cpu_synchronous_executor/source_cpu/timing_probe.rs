@@ -2,16 +2,16 @@
 //!
 //! Unlike the exact cold CPU/APU owner, this accepts an explicit caller-owned
 //! machine/PPU-read seed. It never claims that an arbitrary snapshot is an
-//! exact cold checkpoint. An enabled VBlank NMI must be accepted by the
-//! external interrupt owner at its source deadline. Unsupported I/O and DMA
+//! exact cold checkpoint. A due NMI or vertical IRQ must be accepted by the
+//! external interrupt owner at its source boundary. Unsupported I/O and DMA
 //! fail closed. A failed instruction poisons the probe instead of falling back
 //! to the aggregate interpreter or supplying cached semantic results.
 
 use super::instruction_set::{SourceCpuInstructionBus, SourceCpuInstructions};
 use super::{
-    source_hvbjoy, source_lorom_open_bus_read, SourceCpuBusAccess, SourceCpuBusAccessKind,
-    SourceCpuError, SourceCpuInstructionTrace, SourceCpuMapClass, SourceCpuStepReceipt,
-    SourceCpuTransaction, SourceCpuTransactionKind, WordWrap, WordWriteOrder,
+    source_hvbjoy, source_lorom_open_bus_read, vertical_irq_deadline, SourceCpuBusAccess,
+    SourceCpuBusAccessKind, SourceCpuError, SourceCpuInstructionTrace, SourceCpuMapClass,
+    SourceCpuStepReceipt, SourceCpuTransaction, SourceCpuTransactionKind, WordWrap, WordWriteOrder,
 };
 use crate::apu::ApuHostPortTiming;
 use crate::cpu_timeline::{
@@ -43,7 +43,7 @@ pub enum RomCpuTimingProbeSeedError {
     Timeline(#[from] CpuSynchronousTimelineStartError),
 }
 
-/// An accepted NMI has no opcode fetch. Its transactions retain timing and
+/// An accepted interrupt has no opcode fetch. Its transactions retain timing and
 /// bus ownership without inventing an opcode to fit an instruction receipt.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RomCpuInterruptTransaction {
@@ -56,7 +56,7 @@ pub struct RomCpuInterruptTransaction {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RomCpuNmiReceipt {
+pub struct RomCpuInterruptReceipt {
     pub interrupted_pc: u32,
     pub memory_speed: u8,
     pub started_at: CpuMasterTimestamp,
@@ -64,6 +64,9 @@ pub struct RomCpuNmiReceipt {
     pub accesses: Vec<SourceCpuBusAccess>,
     pub transactions: Vec<RomCpuInterruptTransaction>,
 }
+
+pub type RomCpuNmiReceipt = RomCpuInterruptReceipt;
+pub type RomCpuIrqReceipt = RomCpuInterruptReceipt;
 
 pub struct RomCpuTimingProbe {
     snes: Snes,
@@ -77,6 +80,8 @@ pub struct RomCpuTimingProbe {
     /// owner must consume this at an instruction boundary before CPU work
     /// continues; it travels with the machine across plan handoffs.
     nmi_acceptance_not_before: Option<CpuMasterTimestamp>,
+    irq_timer_at: Option<CpuMasterTimestamp>,
+    irq_acceptance_due: bool,
     active_trace: Option<SourceCpuInstructionTrace>,
     active_interrupt_trace: Option<Vec<RomCpuInterruptTransaction>>,
     poisoned: bool,
@@ -91,6 +96,8 @@ pub struct RomCpuTimingProbeHandoff {
     ppu_reads: SourcePpuReadState,
     apu_ports: Option<ApuHostPortTiming>,
     nmi_acceptance_not_before: Option<CpuMasterTimestamp>,
+    irq_timer_at: Option<CpuMasterTimestamp>,
+    irq_acceptance_due: bool,
 }
 
 impl RomCpuTimingProbe {
@@ -135,6 +142,8 @@ impl RomCpuTimingProbe {
             ppu_reads,
             apu_ports: None,
             nmi_acceptance_not_before: None,
+            irq_timer_at: None,
+            irq_acceptance_due: false,
             active_trace: None,
             active_interrupt_trace: None,
             poisoned: false,
@@ -152,6 +161,9 @@ impl RomCpuTimingProbe {
     }
     pub fn pending_nmi_acceptance(&self) -> Option<CpuMasterTimestamp> {
         self.nmi_acceptance_not_before
+    }
+    pub fn pending_irq_acceptance(&self) -> bool {
+        self.irq_acceptance_due
     }
     pub fn is_poisoned(&self) -> bool {
         self.poisoned
@@ -172,6 +184,8 @@ impl RomCpuTimingProbe {
             ppu_reads: self.ppu_reads,
             apu_ports: self.apu_ports,
             nmi_acceptance_not_before: self.nmi_acceptance_not_before,
+            irq_timer_at: self.irq_timer_at,
+            irq_acceptance_due: self.irq_acceptance_due,
         })
     }
 
@@ -184,6 +198,8 @@ impl RomCpuTimingProbe {
             ppu_reads: handoff.ppu_reads,
             apu_ports: handoff.apu_ports,
             nmi_acceptance_not_before: handoff.nmi_acceptance_not_before,
+            irq_timer_at: handoff.irq_timer_at,
+            irq_acceptance_due: handoff.irq_acceptance_due,
             active_trace: None,
             active_interrupt_trace: None,
             poisoned: false,
@@ -223,6 +239,25 @@ impl RomCpuTimingProbe {
         self.apu_ports.take()
     }
 
+    fn reschedule_vertical_irq(&mut self, initial: bool) {
+        self.irq_timer_at = if self.snes.v_irq_enabled {
+            vertical_irq_deadline(&self.timeline, self.snes.v_timer, initial)
+        } else {
+            None
+        };
+    }
+
+    fn publish_due_vertical_irq(&mut self) {
+        if self
+            .irq_timer_at
+            .is_some_and(|deadline| self.timeline.timestamp() >= deadline)
+        {
+            self.reschedule_vertical_irq(false);
+            self.snes.cpu.irq_wanted = true;
+            self.snes.in_irq = true;
+        }
+    }
+
     /// Execute the external owner's NMI entry at an instruction boundary.
     /// A VBlank-scheduled NMI cannot enter before its H=12 deadline. This
     /// does not invent a VBlank event, clear RDNMI, or enable NMI.
@@ -251,6 +286,7 @@ impl RomCpuTimingProbe {
         let started_at = self.timeline.timestamp();
         self.snes.cpu.nmi_wanted = false;
         self.nmi_acceptance_not_before = None;
+        self.irq_acceptance_due = false;
         let mut accesses = Vec::new();
         self.active_interrupt_trace = Some(Vec::new());
         if let Err(error) = self.enter_native_interrupt_bus(0x00_ffea, memory_speed, &mut accesses)
@@ -259,7 +295,8 @@ impl RomCpuTimingProbe {
             self.active_interrupt_trace = None;
             return Err(error);
         }
-        Ok(RomCpuNmiReceipt {
+        self.publish_due_vertical_irq();
+        Ok(RomCpuInterruptReceipt {
             interrupted_pc,
             memory_speed,
             started_at,
@@ -269,6 +306,50 @@ impl RomCpuTimingProbe {
                 .active_interrupt_trace
                 .take()
                 .expect("accepted NMI owns its trace"),
+        })
+    }
+
+    /// Enter the selected vertical IRQ before any further opcode. The IRQ
+    /// line remains asserted until the ROM acknowledges `$4211`.
+    pub fn accept_native_irq(&mut self) -> Result<RomCpuIrqReceipt, SourceCpuError> {
+        if self.poisoned {
+            return Err(SourceCpuError::Poisoned);
+        }
+        if !self.irq_acceptance_due {
+            return Err(SourceCpuError::IrqAcceptanceNotDue {
+                now: self.timeline.clock_master_cycles(),
+            });
+        }
+        if self.snes.cpu.e || self.snes.cpu.waiting || self.snes.cpu.stopped {
+            return Err(SourceCpuError::UnsupportedIrqEntryState);
+        }
+        let interrupted_pc = self.program_address();
+        let memory_speed = self.snes.hardware_access_time(interrupted_pc);
+        if (interrupted_pc as u16) < 0x8000 || !matches!(memory_speed, 6 | 8) {
+            return Err(SourceCpuError::UnsupportedBusMap {
+                address: interrupted_pc,
+            });
+        }
+        let started_at = self.timeline.timestamp();
+        self.irq_acceptance_due = false;
+        let mut accesses = Vec::new();
+        self.active_interrupt_trace = Some(Vec::new());
+        if let Err(error) = self.enter_native_interrupt_bus(0x00_ffee, memory_speed, &mut accesses)
+        {
+            self.poisoned = true;
+            self.active_interrupt_trace = None;
+            return Err(error);
+        }
+        Ok(RomCpuInterruptReceipt {
+            interrupted_pc,
+            memory_speed,
+            started_at,
+            ended_at: self.timeline.timestamp(),
+            accesses,
+            transactions: self
+                .active_interrupt_trace
+                .take()
+                .expect("accepted IRQ owns its trace"),
         })
     }
 
@@ -283,6 +364,11 @@ impl RomCpuTimingProbe {
                 });
             }
         }
+        if self.irq_acceptance_due {
+            return Err(SourceCpuError::PendingIrqAcceptance {
+                at: self.timeline.clock_master_cycles(),
+            });
+        }
         let origin_pc = self.program_address();
         let started_at = self.timeline.timestamp();
         self.active_trace = Some(SourceCpuInstructionTrace {
@@ -294,7 +380,20 @@ impl RomCpuTimingProbe {
         let mut accesses = Vec::new();
         let result = (|| {
             let opcode = self.fetch_opcode(&mut accesses)?;
+            let irq_mask_before_instruction = self.snes.cpu.i;
             self.execute(opcode, origin_pc, &mut accesses)?;
+            self.publish_due_vertical_irq();
+            let irq_mask_for_selection = if matches!(opcode, 0x58 | 0x78) {
+                irq_mask_before_instruction
+            } else {
+                self.snes.cpu.i
+            };
+            let nmi_due = self.snes.cpu.nmi_wanted
+                && self
+                    .nmi_acceptance_not_before
+                    .is_some_and(|deadline| self.timeline.timestamp() >= deadline);
+            self.irq_acceptance_due =
+                !nmi_due && self.snes.cpu.irq_wanted && !irq_mask_for_selection;
             Ok(opcode)
         })();
         let opcode = match result {
@@ -458,20 +557,50 @@ impl RomCpuTimingProbe {
             return Ok(());
         }
         if bank & 0x7f < 0x40 && adr == 0x4200 {
-            // The caller owns NMI acceptance. Do not silently synthesize the
-            // source's pending enable edge during VBlank or claim an IRQ or
-            // auto-joy timer that this probe cannot schedule.
+            // The caller owns interrupt entry. A new NMI enable edge during
+            // VBlank and H-IRQ still fail closed; vertical-only IRQ has an
+            // ordered deadline retained across plan handoffs.
             let enable_nmi = value & 0x80 != 0;
-            if value & 0x31 != u8::from(self.snes.auto_joy_read)
+            if value & 0x11 != u8::from(self.snes.auto_joy_read)
                 || (enable_nmi && !self.snes.nmi_enabled && self.snes.in_vblank && self.snes.in_nmi)
             {
                 return Err(SourceCpuError::UnsupportedBusMap { address });
             }
             self.snes.nmi_enabled = enable_nmi;
+            let was_v_irq_enabled = self.snes.v_irq_enabled;
+            self.snes.v_irq_enabled = value & 0x20 != 0;
+            if was_v_irq_enabled != self.snes.v_irq_enabled {
+                self.reschedule_vertical_irq(true);
+            }
+            if !self.snes.v_irq_enabled {
+                self.snes.cpu.irq_wanted = false;
+                self.snes.in_irq = false;
+            }
             return Ok(());
         }
         if bank & 0x7f < 0x40 && adr == 0x4201 {
             self.ppu_reads.write_wrio(value, self.beam());
+            return Ok(());
+        }
+        if bank & 0x7f < 0x40 && matches!(adr, 0x4207 | 0x4208) {
+            let old = self.snes.h_timer;
+            self.snes.h_timer = if adr == 0x4207 {
+                (old & 0x100) | u16::from(value)
+            } else {
+                (old & 0x0ff) | (u16::from(value & 1) << 8)
+            };
+            return Ok(());
+        }
+        if bank & 0x7f < 0x40 && matches!(adr, 0x4209 | 0x420a) {
+            let old = self.snes.v_timer;
+            self.snes.v_timer = if adr == 0x4209 {
+                (old & 0xff00) | u16::from(value)
+            } else {
+                (old & 0x00ff) | (u16::from(value & 1) << 8)
+            };
+            if self.snes.v_timer != old {
+                self.reschedule_vertical_irq(true);
+            }
             return Ok(());
         }
         if bank & 0x7f < 0x40 && (0x2100..=0x2133).contains(&adr) {

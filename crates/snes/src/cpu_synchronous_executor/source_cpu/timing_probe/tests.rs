@@ -24,6 +24,109 @@ fn seed(program: &[u8], v: u16, h: u16, odd: bool) -> (Snes, CpuMasterTimeline) 
 }
 
 #[test]
+fn vertical_irq_timer_and_cli_selection_survive_a_plan_handoff() {
+    // Snes9x checks IRQ against the old I bit, then publishes CLI's change.
+    let (mut snes, timeline) = seed(
+        &[
+            0xa9, 0x0a, 0x8d, 0x09, 0x42, // set V timer to scanline 10
+            0xa9, 0x20, 0x8d, 0x00, 0x42, // enable vertical-only IRQ
+            0x58, 0xea, // CLI; NOP
+        ],
+        10,
+        100,
+        false,
+    );
+    snes.cpu.i = true;
+    snes.cpu.sp = 0x1ff;
+    snes.cart.rom[0x7fee..0x7ff0].copy_from_slice(&[0xc9, 0x80]);
+    snes.cart.rom[0xc9..0xcc].copy_from_slice(&[0xad, 0x11, 0x42]); // LDA $4211
+    let mut probe =
+        RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset()).unwrap();
+    for _ in 0..4 {
+        probe.step().unwrap();
+    }
+    assert_eq!(probe.snes().v_timer, 10);
+    assert!(probe.irq_timer_at.is_some());
+    assert!(!probe.pending_irq_acceptance());
+    probe.step().unwrap(); // CLI cannot select the newly unmasked IRQ.
+    assert!(probe.snes().cpu.irq_wanted);
+    assert!(!probe.snes().cpu.i);
+    assert!(!probe.pending_irq_acceptance());
+
+    let mut resumed =
+        RomCpuTimingProbe::from_handoff(probe.into_handoff().ok().expect("healthy boundary"));
+    resumed.step().unwrap(); // Following NOP selects the retained IRQ line.
+    assert!(resumed.pending_irq_acceptance());
+    assert!(matches!(
+        resumed.step(),
+        Err(SourceCpuError::PendingIrqAcceptance { .. })
+    ));
+    assert!(!resumed.is_poisoned());
+    let mut resumed = RomCpuTimingProbe::from_handoff(
+        resumed
+            .into_handoff()
+            .ok()
+            .expect("selected IRQ survives handoff"),
+    );
+    assert!(resumed.pending_irq_acceptance());
+    let receipt = resumed.accept_native_irq().unwrap();
+    assert_eq!(receipt.interrupted_pc, 0x800c);
+    assert_eq!(
+        receipt.ended_at.master_cycles() - receipt.started_at.master_cycles(),
+        62
+    );
+    assert_eq!(resumed.program_address(), 0x80c9);
+    assert_eq!(resumed.snes().ram[0x1fc] & 0x04, 0);
+    assert!(resumed.snes().cpu.i);
+    assert!(resumed.snes().cpu.irq_wanted); // `$4211` owns acknowledgement.
+    resumed.step().unwrap();
+    assert!(!resumed.snes().cpu.irq_wanted);
+    assert!(!resumed.snes().in_irq);
+}
+
+#[test]
+fn sei_selects_an_existing_irq_with_the_previous_mask() {
+    let (mut snes, timeline) = seed(&[0x78], 10, 100, false);
+    snes.cpu.i = false;
+    snes.cpu.sp = 0x1ff;
+    snes.cart.rom[0x7fee..0x7ff0].copy_from_slice(&[0xc9, 0x80]);
+    let mut probe =
+        RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset()).unwrap();
+    probe.snes.cpu.irq_wanted = true;
+    probe.step().unwrap();
+    assert!(probe.snes().cpu.i);
+    assert!(probe.pending_irq_acceptance());
+    probe.accept_native_irq().unwrap();
+    assert_ne!(probe.snes().ram[0x1fc] & 0x04, 0);
+}
+
+#[test]
+fn simultaneous_vblank_nmi_takes_priority_over_vertical_irq() {
+    let (mut snes, timeline) = seed(&[0xea, 0xea], 224, 1350, false);
+    snes.nmi_enabled = true;
+    snes.cpu.i = false;
+    snes.cpu.sp = 0x1ff;
+    snes.v_timer = 225;
+    snes.cart.rom[0x7fea..0x7fec].copy_from_slice(&[0xc9, 0x80]);
+    let mut probe =
+        RomCpuTimingProbe::new(snes, timeline, SourcePpuReadState::snes9x_reset()).unwrap();
+    probe.snes.v_irq_enabled = true;
+    probe.reschedule_vertical_irq(false);
+    probe.step().unwrap(); // Cross VBlank; NMI is delayed until H=12.
+    probe.step().unwrap(); // Both deadlines are now due.
+    assert!(probe.snes().cpu.irq_wanted);
+    assert!(!probe.pending_irq_acceptance());
+    assert!(matches!(
+        probe.step(),
+        Err(SourceCpuError::PendingNmiAcceptance { .. })
+    ));
+    probe.accept_native_nmi().unwrap();
+    assert_eq!(probe.program_address(), 0x80c9);
+    assert!(probe.snes().cpu.i);
+    assert!(probe.snes().cpu.irq_wanted);
+}
+
+#[test]
 fn timing_probe_reads_mirrored_dma_channel_register() {
     let (mut snes, timeline) = seed(&[0xad, 0x60, 0x43], 10, 100, false);
     snes.cpu.db = 0x10;

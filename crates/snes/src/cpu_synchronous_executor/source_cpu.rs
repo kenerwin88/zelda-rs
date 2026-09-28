@@ -21,8 +21,8 @@ mod instruction_set;
 mod timing_probe;
 use instruction_set::{SourceCpuInstructionBus, SourceCpuInstructions};
 pub use timing_probe::{
-    RomCpuInterruptTransaction, RomCpuNmiReceipt, RomCpuTimingProbe, RomCpuTimingProbeHandoff,
-    RomCpuTimingProbeSeedError, SourcePpuReadState,
+    RomCpuInterruptReceipt, RomCpuInterruptTransaction, RomCpuIrqReceipt, RomCpuNmiReceipt,
+    RomCpuTimingProbe, RomCpuTimingProbeHandoff, RomCpuTimingProbeSeedError, SourcePpuReadState,
 };
 
 const ONE_CYCLE: u32 = 6;
@@ -169,6 +169,10 @@ pub enum SourceCpuError {
     NmiAcceptanceNotDue { deadline: u64, now: u64 },
     #[error("source CPU IRQ entry is currently proven only for native, non-WAI execution")]
     UnsupportedIrqEntryState,
+    #[error("source CPU reached IRQ acceptance at master cycle {at}; the interrupt owner must enter before the next instruction")]
+    PendingIrqAcceptance { at: u64 },
+    #[error("source CPU IRQ acceptance is not due at master cycle {now}")]
+    IrqAcceptanceNotDue { now: u64 },
     #[error(transparent)]
     Machine(#[from] CpuSynchronousMachineError),
     #[error("source CPU APUI access has no owner: {0}")]
@@ -265,6 +269,37 @@ struct SourceCpuInstructionTrace {
     opcode: Option<u8>,
     memory_speed: Option<u8>,
     transactions: Vec<SourceCpuTransaction>,
+}
+
+/// Pinned Snes9x vertical-only IRQ compare, shared by the cold owner and the
+/// plan probe so a handoff cannot invent a different timer phase.
+fn vertical_irq_deadline(
+    timeline: &CpuMasterTimeline,
+    v_timer: u16,
+    initial: bool,
+) -> Option<CpuMasterTimestamp> {
+    if u32::from(v_timer) >= NTSC_SCANLINES_PER_FIELD {
+        return None;
+    }
+    // ppu.cpp:S9xUpdateIRQPositions uses IRQTriggerCycles(14) minus one
+    // four-master-cycle dot when only the V timer is enabled.
+    const V_IRQ_MASTER_CYCLE: u16 = 10;
+    let (scanline, master_cycle) = timeline.raster_position().coordinates();
+    if initial && scanline == v_timer {
+        return Some(CpuMasterTimestamp::new(
+            timeline.timestamp().master_cycles() + u64::from(V_IRQ_MASTER_CYCLE),
+        ));
+    }
+    let field = if v_timer > scanline || (v_timer == scanline && V_IRQ_MASTER_CYCLE > master_cycle)
+    {
+        timeline.field_index()
+    } else {
+        timeline.field_index().checked_add(1)?
+    };
+    Some(CpuMasterTimestamp::new(timeline.master_cycles_at_raster(
+        field,
+        CpuRasterPosition::new(v_timer, V_IRQ_MASTER_CYCLE),
+    )))
 }
 
 impl Snes9xColdCpuExecutor {
@@ -595,7 +630,7 @@ impl Snes9xColdCpuExecutor {
             }
         }
         let expected_irq_timer = if machine.snes.v_irq_enabled {
-            Self::vertical_irq_deadline(&machine.timeline, machine.snes.v_timer, false)
+            vertical_irq_deadline(&machine.timeline, machine.snes.v_timer, false)
         } else {
             None
         };
@@ -705,38 +740,9 @@ impl Snes9xColdCpuExecutor {
         }
     }
 
-    fn vertical_irq_deadline(
-        timeline: &CpuMasterTimeline,
-        v_timer: u16,
-        initial: bool,
-    ) -> Option<CpuMasterTimestamp> {
-        if u32::from(v_timer) >= NTSC_SCANLINES_PER_FIELD {
-            return None;
-        }
-        // ppu.cpp:S9xUpdateIRQPositions uses IRQTriggerCycles(14) minus one
-        // four-master-cycle dot when only the V timer is enabled.
-        const V_IRQ_MASTER_CYCLE: u16 = 10;
-        let (scanline, master_cycle) = timeline.raster_position().coordinates();
-        if initial && scanline == v_timer {
-            return Some(CpuMasterTimestamp::new(
-                timeline.timestamp().master_cycles() + u64::from(V_IRQ_MASTER_CYCLE),
-            ));
-        }
-        let field =
-            if v_timer > scanline || (v_timer == scanline && V_IRQ_MASTER_CYCLE > master_cycle) {
-                timeline.field_index()
-            } else {
-                timeline.field_index().checked_add(1)?
-            };
-        Some(CpuMasterTimestamp::new(timeline.master_cycles_at_raster(
-            field,
-            CpuRasterPosition::new(v_timer, V_IRQ_MASTER_CYCLE),
-        )))
-    }
-
     fn reschedule_vertical_irq(&mut self, initial: bool) {
         self.machine.irq_timer_at = if self.machine.snes.v_irq_enabled {
-            Self::vertical_irq_deadline(&self.machine.timeline, self.machine.snes.v_timer, initial)
+            vertical_irq_deadline(&self.machine.timeline, self.machine.snes.v_timer, initial)
         } else {
             None
         };
@@ -2220,11 +2226,8 @@ mod tests {
         let mut source = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
         source.machine.snes.v_irq_enabled = true;
         source.machine.snes.v_timer = 144;
-        source.machine.irq_timer_at = Snes9xColdCpuExecutor::vertical_irq_deadline(
-            &source.machine.timeline,
-            source.machine.snes.v_timer,
-            false,
-        );
+        source.machine.irq_timer_at =
+            vertical_irq_deadline(&source.machine.timeline, source.machine.snes.v_timer, false);
 
         let checkpoint = source.capture_quiescent_checkpoint().unwrap();
         let encoded = serde_json::to_vec(&checkpoint).unwrap();
@@ -2902,11 +2905,8 @@ mod tests {
         cpu.machine.snes.cpu.a = 0x5500;
         cpu.machine.snes.v_irq_enabled = true;
         cpu.machine.snes.v_timer = 144;
-        cpu.machine.irq_timer_at = Snes9xColdCpuExecutor::vertical_irq_deadline(
-            &cpu.machine.timeline,
-            cpu.machine.snes.v_timer,
-            false,
-        );
+        cpu.machine.irq_timer_at =
+            vertical_irq_deadline(&cpu.machine.timeline, cpu.machine.snes.v_timer, false);
         let deadline = cpu.machine.irq_timer_at;
         cpu.machine.snes.cpu.irq_wanted = true;
         cpu.machine.snes.in_irq = true;

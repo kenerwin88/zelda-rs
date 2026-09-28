@@ -37,11 +37,11 @@ pub(crate) mod test_util;
 pub use cpu_step::{cpu_run_opcode, cpu_run_opcode_timed, CpuInstructionTiming};
 pub use cpu_synchronous_executor::{
     CpuSynchronousCompletion, CpuSynchronousMachine, CpuSynchronousMachineError,
-    RomCpuInterruptTransaction, RomCpuNmiReceipt, RomCpuTimingProbe, RomCpuTimingProbeHandoff,
-    RomCpuTimingProbeSeedError, Snes9xColdCpuExecutor, Snes9xCpuQuiescentCheckpoint,
-    Snes9xCpuQuiescentCheckpointError, Snes9xMainLoopReceipt, SourceCpuBusAccess,
-    SourceCpuBusAccessKind, SourceCpuError, SourceCpuStepReceipt, SourceCpuTransaction,
-    SourceCpuTransactionKind, SourcePpuReadState,
+    RomCpuInterruptReceipt, RomCpuInterruptTransaction, RomCpuIrqReceipt, RomCpuNmiReceipt,
+    RomCpuTimingProbe, RomCpuTimingProbeHandoff, RomCpuTimingProbeSeedError, Snes9xColdCpuExecutor,
+    Snes9xCpuQuiescentCheckpoint, Snes9xCpuQuiescentCheckpointError, Snes9xMainLoopReceipt,
+    SourceCpuBusAccess, SourceCpuBusAccessKind, SourceCpuError, SourceCpuStepReceipt,
+    SourceCpuTransaction, SourceCpuTransactionKind, SourcePpuReadState,
 };
 
 pub use apu::{ApuHostPortProbe, ApuHostPortProbeError, ApuHostPortTiming, ApuHostPortTimingError};

@@ -278,6 +278,17 @@ its recorded first four APU write timestamps. This removes one unsupported
 register class from the probe. It does not yet supply automatic interrupt
 dispatch, general DMA, or a persistent native route owner.
 
+The plan probe now schedules vertical-only IRQs from source-ordered `$4200`
+and `$4209/$420A` writes using the same pinned deadline calculation as the
+cold CPU owner. It retains the timer and a selected IRQ through an opaque
+handoff, blocks the next opcode until the external owner enters IRQ, and keeps
+the IRQ line asserted until `$4211` acknowledges it. CLI/SEI select using the
+previous I flag while the pushed status uses the new flag; a simultaneous
+VBlank NMI takes priority. Focused probe tests cover these boundaries and
+the full SNES library suite passes. Horizontal IRQ, automatic native-route
+interrupt dispatch, general DMA, and the persistent `ZeldaState` owner remain
+unimplemented. This is a probe capability, not a production A/V frontier move.
+
 Promotion tooling also now accepts an explicit `--frames` limit exactly equal
 to the cache's full frame count. The previous validator rejected every explicit
 limit, including this complete 1,581,079-frame run. The correction preserves
