@@ -142,6 +142,12 @@ pub struct ApuHostPortTiming {
 }
 
 impl ApuHostPortTiming {
+    /// Transfer unpublished exact DSP samples from the sole retained APU
+    /// owner. A second take cannot publish the same samples again.
+    pub fn take_dsp_samples(&mut self) -> crate::apu::Snes9xDspSampleReceipt {
+        self.probe.apu.take_snes9x_dsp_samples()
+    }
+
     /// Adopt a retained continuation with explicit clock provenance.
     ///
     /// A completed instruction boundary has already been executed, so pinned

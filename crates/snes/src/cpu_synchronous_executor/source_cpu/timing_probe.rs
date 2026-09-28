@@ -11,9 +11,13 @@ use super::instruction_set::{SourceCpuInstructionBus, SourceCpuInstructions};
 use super::{
     source_hvbjoy, source_lorom_open_bus_read, vertical_irq_deadline, SourceCpuBusAccess,
     SourceCpuBusAccessKind, SourceCpuError, SourceCpuInstructionTrace, SourceCpuMapClass,
-    SourceCpuStepReceipt, SourceCpuTransaction, SourceCpuTransactionKind, WordWrap, WordWriteOrder,
+    Snes9xColdCpuExecutor, Snes9xCpuQuiescentCheckpointError, SourceCpuStepReceipt,
+    SourceCpuTransaction, SourceCpuTransactionKind, WordWrap, WordWriteOrder,
 };
-use crate::apu::ApuHostPortTiming;
+use crate::apu::{
+    ApuHostPortProbe, ApuHostPortProbeError, ApuHostPortTiming, ApuHostPortTimingError,
+    Snes9xDspSampleReceipt,
+};
 use crate::cpu_timeline::{
     CpuMasterTimeline, CpuMasterTimestamp, CpuSynchronousBeamPosition, CpuSynchronousTimelineEvent,
     CpuSynchronousTimelineStartError, SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES,
@@ -41,6 +45,22 @@ pub enum RomCpuTimingProbeSeedError {
     ApuPortsIntoPoisonedProbe,
     #[error(transparent)]
     Timeline(#[from] CpuSynchronousTimelineStartError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum RomCpuSourceTransferError {
+    #[error(transparent)]
+    Quiescent(#[from] Snes9xCpuQuiescentCheckpointError),
+    #[error("the source CPU has an unconsumed host-return event")]
+    PendingHostReturn,
+    #[error("the timing probe does not own source VMAIN remapping")]
+    VramRemapping,
+    #[error("the source CPU has a due interrupt that its own boundary has not accepted")]
+    PendingInterrupt,
+    #[error(transparent)]
+    ApuProbe(#[from] ApuHostPortProbeError),
+    #[error(transparent)]
+    ApuTiming(#[from] ApuHostPortTimingError),
 }
 
 /// An accepted interrupt has no opcode fetch. Its transactions retain timing and
@@ -117,6 +137,50 @@ pub struct RomCpuTimingProbeHandoff {
 }
 
 impl RomCpuTimingProbe {
+    /// Move an exact reset-proven source machine at a completed CPU boundary.
+    /// The APU coroutine and its clock leave `Snes` together; subsequent APUI
+    /// accesses and DSP scanline drains use the probe's sole APU owner.
+    pub fn from_cold_cpu_executor(
+        source: Snes9xColdCpuExecutor,
+    ) -> Result<Self, RomCpuSourceTransferError> {
+        if source.poisoned {
+            return Err(Snes9xCpuQuiescentCheckpointError::Poisoned.into());
+        }
+        if source.active_trace.is_some() {
+            return Err(Snes9xCpuQuiescentCheckpointError::ActiveInstruction.into());
+        }
+        Snes9xColdCpuExecutor::validate_quiescent_machine(&source.machine)?;
+        let machine = source.machine;
+        if machine.main_loop_return_pending.is_some() {
+            return Err(RomCpuSourceTransferError::PendingHostReturn);
+        }
+        if machine.source_vmain_full_graphic_count_nonzero {
+            return Err(RomCpuSourceTransferError::VramRemapping);
+        }
+        if machine
+            .nmi_acceptance_not_before
+            .is_some_and(|deadline| machine.timestamp() >= deadline)
+            || (machine.snes.cpu.irq_wanted && !machine.snes.cpu.i)
+        {
+            return Err(RomCpuSourceTransferError::PendingInterrupt);
+        }
+        let mut snes = machine.snes;
+        let apu_probe = ApuHostPortProbe::from_snes9x_coroutine(std::mem::take(&mut snes.apu))?;
+        let apu_ports = ApuHostPortTiming::new(apu_probe, machine.apu_clock.checkpoint())?;
+        Ok(Self {
+            snes,
+            timeline: machine.timeline,
+            ppu_reads: machine.source_ppu_reads,
+            apu_ports: Some(apu_ports),
+            nmi_acceptance_not_before: machine.nmi_acceptance_not_before,
+            irq_timer_at: machine.irq_timer_at,
+            irq_acceptance_due: false,
+            active_trace: None,
+            active_interrupt_trace: None,
+            poisoned: false,
+        })
+    }
+
     pub fn new(
         snes: Snes,
         mut timeline: CpuMasterTimeline,
@@ -186,6 +250,11 @@ impl RomCpuTimingProbe {
     }
     pub fn apu_ports(&self) -> Option<&ApuHostPortTiming> {
         self.apu_ports.as_ref()
+    }
+
+    /// Publish exact DSP samples only when an APU owner has been transferred.
+    pub fn take_dsp_samples(&mut self) -> Option<Snes9xDspSampleReceipt> {
+        self.apu_ports.as_mut().map(ApuHostPortTiming::take_dsp_samples)
     }
 
     /// Suspend only a completed, healthy instruction boundary. A failed
