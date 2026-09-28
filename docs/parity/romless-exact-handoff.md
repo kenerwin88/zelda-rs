@@ -588,10 +588,65 @@ directly to the JOYSER latch. `set_libretro_joypad_words` now applies the pinned
 libretro control rule for both opposing-direction pairs and both ports at the
 input boundary. The raw serial-state setter keeps its original semantics. The
 source owner then matches every presented OAM byte on **all 6,277 calls of
-take 0000**. The longer cached whole-route run now matches all 544 presented
-OAM bytes through **400,000 host calls**, using that oracle's exact SRAM and
-recorded input. This is a source-owner presentation witness, not a production
-native A/V parity result.
+take 0000**. Before the CLI IRQ-selection fix, the longer cached whole-route
+run matched all 544 presented OAM bytes through host call **413,641**, using
+that oracle's exact SRAM and recorded input. Its first difference was host
+413,642: OAM offset `$35` was
+`$4D` from the source owner and `$52` from Snes9x; the other 543 bytes
+match. The source CPU stores `$4D` into WRAM `$0835` at `$08:F6F9` on calls
+413,641 and 413,642, so the first observed error is upstream of the OAM
+port. The ROM instruction at `$08:F6F9` is an indirect store of a previously
+computed value. At the same indexed polyhedral table load in call 413,641,
+the source reads `$5D` from `$08:0C02` while Snes9x reads `$62`. Both execute
+the table store at `$09:AD08` during call 413,640, with different computed
+accumulators. The first **1,405** ordered writes to that mirrored WRAM byte
+match; this is the first unequal write. The immediate differing operand is
+the preceding `GetRandomNumber` read of `$213C` at `$0D:BA74`: source gets
+`$23`, Snes9x gets `$28`. The call-413,640 instruction traces show an earlier
+register difference at `$00:82CB`: the interrupt return path reads `$1F2F`
+from WRAM `$1F0A` in the source owner and `$1F2E` in Snes9x. The source wrote
+`$1F2F` at `$00:832A` on call 413,639; the oracle wrote `$1F2E` at the same
+ROM store (the trace records its post-store PC `$00:832D`). This resumed capture matched
+the cold oracle's video and audio hashes on both calls 413,639 and 413,640.
+That saved value changes the restored stack pointer and return path. Its
+source-owner divergence predates the random read and still needs tracing to
+the first differing instruction boundary. The source enters the V48 interrupt
+after the idle-loop load at `$09:F81D`; Snes9x enters after the following
+branch at `$09:F81F`. Their RTI targets are `$00:8034` and `$00:8036`, respectively,
+leaving source 22 master cycles earlier at the `$213C` read. A 42-cycle HDMA
+stall then lands during source's `$2137` read but before the oracle's
+callee entry. These are downstream effects of a source IRQ-acceptance error,
+not reasons to adjust the RNG value or force an extra idle instruction.
+This is a source-owner presentation witness, not a production native A/V
+parity result.
+
+A pre-fix cold source/oracle CPU-return comparison through host 413,639 checked
+PC, V/H, A/X/Y, stack pointer, and status flags at each host boundary. Following
+the 15 previously known transient differences on calls 0..667, all eight
+fields match on every call 668..159,582, then differ on 33 calls in
+159,583..159,849. They match again on every call 159,850..413,625. The next
+11 differing returns occur in 413,626..413,639, beginning with a different
+idle-loop PC and beam cycle at 413,626. Full instruction traces place the
+first difference at `$09:FB6B` (`CLI`) in call 413,626. Both machines enter
+that instruction at V48/C4 with identical registers and timing. The source
+executor used CLI's newly cleared I flag to select the pending IRQ at the
+same boundary; pinned Snes9x checks IRQ against the previous I flag, then
+publishes the CLI change and executes `$09:FB6C` (`RTS`) before entering IRQ.
+The central executor now selects IRQ with the pre-CLI/SEI I flag while
+retaining the new flag for pushed status and following instructions. From the
+matched call-413,625 checkpoint, this rule makes all 11,937 instruction PCs,
+post-instruction A/X/Y/stack/status values, and instruction-start master
+times exact on call 413,626; its return PC/V/H and registers also match.
+The new cold OAM replay from reset matches **all 544 presented bytes through
+500,000 host calls** using the cached oracle's identical ROM, SRAM, and input.
+This advances the source presentation witness beyond the former call-413,642
+failure. Neither the focused checkpoint nor the source OAM witness promotes
+the production native A/V frontier.
+
+A new cold replay from reset matches the oracle's PC, V/H, A/X/Y, stack
+pointer, and status flags at **every one of the first 160,000 host returns**.
+This includes the opening and call-159,583 return differences from the
+pre-fix run.
 
 The separate live Snes9x frame trace gives a stricter CPU-return witness.
 Through take 0000, source and oracle return PC/V/H now differ on only 15

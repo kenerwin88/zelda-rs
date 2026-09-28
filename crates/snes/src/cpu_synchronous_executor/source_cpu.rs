@@ -415,6 +415,16 @@ impl Snes9xColdCpuExecutor {
         &mut self,
         mut consume_instruction: impl FnMut(&SourceCpuStepReceipt),
     ) -> Result<Snes9xMainLoopReceipt, SourceCpuError> {
+        self.run_until_main_loop_return_with_state(|receipt, _| consume_instruction(receipt))
+    }
+
+    /// Stream the same instruction receipts with the resulting CPU registers.
+    /// The state is borrowed at the instruction boundary, so tracing does not
+    /// clone the CPU or retain a per-instruction history.
+    pub fn run_until_main_loop_return_with_state(
+        &mut self,
+        mut consume_instruction: impl FnMut(&SourceCpuStepReceipt, &crate::cpu::CpuState),
+    ) -> Result<Snes9xMainLoopReceipt, SourceCpuError> {
         if self.poisoned {
             return Err(SourceCpuError::Poisoned);
         }
@@ -433,7 +443,7 @@ impl Snes9xColdCpuExecutor {
             instruction_count = instruction_count
                 .checked_add(1)
                 .expect("one host call instruction count fits u64");
-            consume_instruction(&receipt);
+            consume_instruction(&receipt, &self.machine.snes.cpu);
         }
     }
 
@@ -631,8 +641,17 @@ impl Snes9xColdCpuExecutor {
         let mut accesses = Vec::new();
         let result = (|| {
             let opcode = self.fetch_opcode(&mut accesses)?;
+            let irq_mask_before_instruction = self.machine.snes.cpu.i;
             self.execute(opcode, origin_pc, &mut accesses)?;
-            self.finish_instruction_interrupt_boundary(&mut accesses)?;
+            // cpuexec.cpp checks IRQ before CHECK_FOR_IRQ_CHANGE publishes a
+            // CLI/SEI change. Their new I bit is visible to the following
+            // opcode, but cannot select the interrupt at this boundary.
+            let irq_mask_for_selection = if matches!(opcode, 0x58 | 0x78) {
+                irq_mask_before_instruction
+            } else {
+                self.machine.snes.cpu.i
+            };
+            self.finish_instruction_interrupt_boundary(&mut accesses, irq_mask_for_selection)?;
             self.assert_source_execution_scope()?;
             Ok(opcode)
         })();
@@ -755,10 +774,12 @@ impl Snes9xColdCpuExecutor {
     /// `CHECK_FOR_IRQ_CHANGE` can publish a new `$4200` low-to-high edge before
     /// the selected interrupt is entered. The newly queued NMI therefore
     /// survives that entry and is considered only after the handler executes
-    /// its first complete opcode.
+    /// its first complete opcode. CLI/SEI keep their previous I bit for IRQ
+    /// selection, since their status change is published by that later check.
     fn finish_instruction_interrupt_boundary(
         &mut self,
         accesses: &mut Vec<SourceCpuBusAccess>,
+        irq_mask_for_selection: bool,
     ) -> Result<(), SourceCpuError> {
         let old_nmi_is_due = self.machine.snes.cpu.nmi_wanted
             && self
@@ -780,7 +801,7 @@ impl Snes9xColdCpuExecutor {
         }
 
         self.publish_due_vertical_irq();
-        if self.machine.snes.cpu.irq_wanted && !self.machine.snes.cpu.i {
+        if self.machine.snes.cpu.irq_wanted && !irq_mask_for_selection {
             if self.machine.snes.cpu.e || self.machine.snes.cpu.waiting {
                 return Err(SourceCpuError::UnsupportedIrqEntryState);
             }
@@ -2831,6 +2852,47 @@ mod tests {
         assert!(cpu.machine.snes.in_irq);
         assert_eq!(cpu.machine.snes.open_bus, 0x81);
         assert!(cpu.machine.irq_timer_at.unwrap() > cpu.machine.timestamp());
+    }
+
+    #[test]
+    fn cli_defers_pending_irq_selection_until_after_the_following_opcode() {
+        let mut rom = synthetic_rom(&[0x58, 0xea]); // CLI; NOP
+        rom[0x7fee] = 0x00;
+        rom[0x7fef] = 0x81;
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.snes.cpu.e = false;
+        cpu.machine.snes.cpu.i = true;
+        cpu.machine.snes.v_irq_enabled = true;
+        cpu.machine.snes.v_timer = 144;
+        cpu.machine.irq_timer_at = Some(cpu.machine.timestamp());
+
+        cpu.step().unwrap();
+        assert_eq!(cpu.machine.snes.cpu.pc, 0x8001);
+        assert!(!cpu.machine.snes.cpu.i);
+        assert!(cpu.machine.snes.cpu.irq_wanted);
+        assert_eq!(cpu.machine.snes.cpu.sp, 0x01ff);
+
+        cpu.step().unwrap();
+        assert_eq!(cpu.machine.snes.cpu.pc, 0x8100);
+        assert_eq!(&cpu.machine.snes.ram[0x01fd..=0x01fe], &[0x02, 0x80]);
+    }
+
+    #[test]
+    fn sei_uses_previous_irq_mask_for_selection_but_pushes_new_status() {
+        let mut rom = synthetic_rom(&[0x78]); // SEI
+        rom[0x7fee] = 0x00;
+        rom[0x7fef] = 0x81;
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.snes.cpu.e = false;
+        cpu.machine.snes.cpu.i = false;
+        cpu.machine.snes.v_irq_enabled = true;
+        cpu.machine.snes.v_timer = 144;
+        cpu.machine.irq_timer_at = Some(cpu.machine.timestamp());
+
+        cpu.step().unwrap();
+        assert_eq!(cpu.machine.snes.cpu.pc, 0x8100);
+        assert_eq!(&cpu.machine.snes.ram[0x01fd..=0x01fe], &[0x01, 0x80]);
+        assert_ne!(cpu.machine.snes.ram[0x01fc] & 0x04, 0);
     }
 
     #[test]
