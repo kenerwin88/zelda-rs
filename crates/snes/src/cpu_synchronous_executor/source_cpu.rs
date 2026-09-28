@@ -21,8 +21,8 @@ mod instruction_set;
 mod timing_probe;
 use instruction_set::{SourceCpuInstructionBus, SourceCpuInstructions};
 pub use timing_probe::{
-    RomCpuInterruptReceipt, RomCpuInterruptTransaction, RomCpuIrqReceipt, RomCpuNmiReceipt,
-    RomCpuTimingProbe, RomCpuTimingProbeHandoff, RomCpuTimingProbeSeedError, SourcePpuReadState,
+    RomCpuInterruptTransaction, RomCpuIrqReceipt, RomCpuNmiReceipt, RomCpuTimingProbe,
+    RomCpuTimingProbeHandoff, RomCpuTimingProbeSeedError, SourcePpuReadState,
 };
 
 const ONE_CYCLE: u32 = 6;

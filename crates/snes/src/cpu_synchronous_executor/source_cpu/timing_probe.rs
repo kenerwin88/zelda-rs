@@ -56,7 +56,7 @@ pub struct RomCpuInterruptTransaction {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RomCpuInterruptReceipt {
+pub struct RomCpuNmiReceipt {
     pub interrupted_pc: u32,
     pub memory_speed: u8,
     pub started_at: CpuMasterTimestamp,
@@ -65,8 +65,15 @@ pub struct RomCpuInterruptReceipt {
     pub transactions: Vec<RomCpuInterruptTransaction>,
 }
 
-pub type RomCpuNmiReceipt = RomCpuInterruptReceipt;
-pub type RomCpuIrqReceipt = RomCpuInterruptReceipt;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RomCpuIrqReceipt {
+    pub interrupted_pc: u32,
+    pub memory_speed: u8,
+    pub started_at: CpuMasterTimestamp,
+    pub ended_at: CpuMasterTimestamp,
+    pub accesses: Vec<SourceCpuBusAccess>,
+    pub transactions: Vec<RomCpuInterruptTransaction>,
+}
 
 pub struct RomCpuTimingProbe {
     snes: Snes,
@@ -296,7 +303,7 @@ impl RomCpuTimingProbe {
             return Err(error);
         }
         self.publish_due_vertical_irq();
-        Ok(RomCpuInterruptReceipt {
+        Ok(RomCpuNmiReceipt {
             interrupted_pc,
             memory_speed,
             started_at,
@@ -340,7 +347,7 @@ impl RomCpuTimingProbe {
             self.active_interrupt_trace = None;
             return Err(error);
         }
-        Ok(RomCpuInterruptReceipt {
+        Ok(RomCpuIrqReceipt {
             interrupted_pc,
             memory_speed,
             started_at,
