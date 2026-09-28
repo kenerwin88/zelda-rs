@@ -5,7 +5,10 @@
 //! quiescent owner after one checked host; `ZELDA3_SOURCE_RESUME` reloads it.
 
 use sha2::{Digest, Sha256};
-use snes::{Snes9xColdCpuExecutor, Snes9xCpuQuiescentCheckpoint, SourceCpuBusAccessKind};
+use snes::{
+    Snes9xColdCpuExecutor, Snes9xCpuQuiescentCheckpoint, SourceCpuAcceptedInterrupt,
+    SourceCpuBusAccessKind,
+};
 use std::{
     env,
     error::Error,
@@ -115,6 +118,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let trace_returns = env::var_os("ZELDA3_SOURCE_TRACE_RETURNS").is_some();
     let trace_transactions = env::var_os("ZELDA3_SOURCE_TRACE_TRANSACTIONS").is_some();
     let trace_accesses = env::var_os("ZELDA3_SOURCE_TRACE_ACCESSES").is_some();
+    let trace_interrupts = env::var_os("ZELDA3_SOURCE_TRACE_INTERRUPTS").is_some();
+    let trace_ppu_reads = env::var_os("ZELDA3_SOURCE_TRACE_PPU_READS").is_some();
     let progress_every = env::var("ZELDA3_SOURCE_PROGRESS_EVERY")
         .ok()
         .map(|value| value.parse::<usize>())
@@ -143,6 +148,41 @@ fn main() -> Result<(), Box<dyn Error>> {
         cpu.set_libretro_joypad_words(buttons, 0);
         let trace_this_host = trace_hosts.is_some_and(|(start, end)| (start..=end).contains(&host));
         let result = cpu.run_until_main_loop_return_with_state(|step, state| {
+            if trace_this_host && trace_interrupts {
+                let selected = match step.accepted_interrupt {
+                    Some(SourceCpuAcceptedInterrupt::Nmi { started_at }) => {
+                        Some(("nmi", started_at))
+                    }
+                    Some(SourceCpuAcceptedInterrupt::Irq { started_at }) => {
+                        Some(("irq", started_at))
+                    }
+                    None => None,
+                };
+                if let Some((kind, started_at)) = selected {
+                    eprintln!(
+                        "source-interrupt host={host} kind={kind} pc={:06x} opcode={:02x} instruction_start={} acceptance={} step_end={}",
+                        step.origin_pc,
+                        step.opcode,
+                        step.started_at.master_cycles(),
+                        started_at.master_cycles(),
+                        step.ended_at.master_cycles(),
+                    );
+                }
+            }
+            if trace_this_host && trace_ppu_reads {
+                for access in &step.accesses {
+                    let register = access.address & 0xffff;
+                    if matches!(register, 0x2137 | 0x213c | 0x213d | 0x213f | 0x4201) {
+                        eprintln!(
+                            "source-ppu-bus host={host} pc={:06x} time={} address={:06x} kind={:?}",
+                            step.origin_pc,
+                            access.timestamp.master_cycles(),
+                            access.address,
+                            access.kind,
+                        );
+                    }
+                }
+            }
             if trace_this_host
                 && trace_pc_range.is_some_and(|(start, end)| {
                     (start..=end).contains(&step.origin_pc)
@@ -231,6 +271,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                 beam.master_cycle(),
             );
             return Err(error.into());
+        }
+        if trace_this_host && trace_ppu_reads {
+            eprintln!(
+                "source-ppu-owner host={host} time={} state={:?}",
+                cpu.machine().timestamp().master_cycles(),
+                cpu.machine().source_ppu_reads(),
+            );
         }
         drop(cpu.take_dsp_samples());
         if let Some(reader) = oracle.as_mut() {

@@ -148,6 +148,10 @@ impl CpuSynchronousMachine {
         &self.snes
     }
 
+    pub const fn source_ppu_reads(&self) -> SourcePpuReadState {
+        self.source_ppu_reads
+    }
+
     pub const fn pending_completion(&self) -> Option<CpuSynchronousCompletion> {
         self.pending_completion
     }
