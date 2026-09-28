@@ -643,6 +643,14 @@ This advances the source presentation witness beyond the former call-413,642
 failure. Neither the focused checkpoint nor the source OAM witness promotes
 the production native A/V frontier.
 
+A SHA-bound source checkpoint at host 413,625 was resumed through host
+500,000, and the resulting host-499,999 checkpoint was resumed through host
+600,000. Both resumed segments matched all 544 presented OAM bytes on every
+host call. The source probe now accepts `ZELDA3_SOURCE_PROGRESS_EVERY` to
+report its current host during long comparisons. The checkpoints and logs are
+under `target/source-cli-fixed-*`; this extends the source OAM witness, not
+the production native A/V result.
+
 A new cold replay from reset matches the oracle's PC, V/H, A/X/Y, stack
 pointer, and status flags at **every one of the first 160,000 host returns**.
 This includes the opening and call-159,583 return differences from the

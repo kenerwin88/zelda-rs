@@ -115,6 +115,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let trace_returns = env::var_os("ZELDA3_SOURCE_TRACE_RETURNS").is_some();
     let trace_transactions = env::var_os("ZELDA3_SOURCE_TRACE_TRANSACTIONS").is_some();
     let trace_accesses = env::var_os("ZELDA3_SOURCE_TRACE_ACCESSES").is_some();
+    let progress_every = env::var("ZELDA3_SOURCE_PROGRESS_EVERY")
+        .ok()
+        .map(|value| value.parse::<usize>())
+        .transpose()?
+        .filter(|&value| value != 0);
     let trace_hosts = env::var("ZELDA3_SOURCE_TRACE_HOSTS")
         .ok()
         .map(|value| {
@@ -131,6 +136,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
             continue;
+        }
+        if progress_every.is_some_and(|interval| host % interval == 0) {
+            eprintln!("source route starting host call {host}");
         }
         cpu.set_libretro_joypad_words(buttons, 0);
         let trace_this_host = trace_hosts.is_some_and(|(start, end)| (start..=end).contains(&host));
