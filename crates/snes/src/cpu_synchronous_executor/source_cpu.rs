@@ -142,8 +142,16 @@ pub struct SourceCpuStepReceipt {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SourceCpuAcceptedInterrupt {
-    Nmi { started_at: CpuMasterTimestamp },
-    Irq { started_at: CpuMasterTimestamp },
+    /// `interrupted_pc` is the next instruction address after the completed
+    /// opcode, captured before the vector and stack entry change CPU state.
+    Nmi {
+        started_at: CpuMasterTimestamp,
+        interrupted_pc: u32,
+    },
+    Irq {
+        started_at: CpuMasterTimestamp,
+        interrupted_pc: u32,
+    },
 }
 
 /// One exact pinned-Snes9x `S9xMainLoop` call, ending only after the
@@ -243,6 +251,20 @@ pub enum Snes9xCpuQuiescentCheckpointError {
     UnsupportedExecutionScope,
     #[error("source CPU checkpoint cannot resume WAI/STP state")]
     UnsupportedPowerState,
+    #[error("semantic CPU handoff expected clock {expected}, owner is at {actual}")]
+    SemanticBoundaryClockMismatch { expected: u64, actual: u64 },
+    #[error("translated timing shadow supplied {actual} {region} bytes, expected {expected}")]
+    SemanticMemoryLength {
+        region: &'static str,
+        expected: usize,
+        actual: usize,
+    },
+    #[error("translated timing shadow supplied an invalid or overlapping {region} region {start}..{end}")]
+    SemanticMemoryRegion {
+        region: &'static str,
+        start: usize,
+        end: usize,
+    },
     #[error("source CPU checkpoint does not contain an exact APU sidecar")]
     MissingApuSidecar,
     #[error("source CPU checkpoint does not contain the source OAM port")]
@@ -492,6 +514,39 @@ impl Snes9xColdCpuExecutor {
         }
     }
 
+    /// Execute a host while allowing an owner to synchronize external state
+    /// after each complete instruction. The hook sees a quiescent CPU: it may
+    /// rebase translated-owned memory at that exact timestamp, while the
+    /// interpreter retains its physical PPU/APU/DMA and interrupt state.
+    pub fn run_until_main_loop_return_with_quiescent_step_hook<E>(
+        &mut self,
+        mut hook: impl FnMut(&SourceCpuStepReceipt, &mut Self) -> Result<(), E>,
+    ) -> Result<Snes9xMainLoopReceipt, E>
+    where
+        E: From<SourceCpuError>,
+    {
+        if self.poisoned {
+            return Err(SourceCpuError::Poisoned.into());
+        }
+        let started_at = self.machine.timestamp();
+        let mut instruction_count = 0u64;
+        loop {
+            if let Some(vblank_event_at) = self.machine.main_loop_return_pending.take() {
+                return Ok(Snes9xMainLoopReceipt {
+                    started_at,
+                    ended_at: self.machine.timestamp(),
+                    vblank_event_at,
+                    instruction_count,
+                });
+            }
+            let receipt = self.step().map_err(E::from)?;
+            instruction_count = instruction_count
+                .checked_add(1)
+                .expect("one host call instruction count fits u64");
+            hook(&receipt, self)?;
+        }
+    }
+
     pub fn capture_quiescent_checkpoint(
         &self,
     ) -> Result<Snes9xCpuQuiescentCheckpoint, Snes9xCpuQuiescentCheckpointError> {
@@ -568,6 +623,122 @@ impl Snes9xColdCpuExecutor {
     ) -> Result<(), Snes9xCpuQuiescentCheckpointError> {
         let candidate = Self::from_quiescent_checkpoint(checkpoint)?;
         *self = candidate;
+        Ok(())
+    }
+
+    /// Rebase the *private timing shadow* to translated game state at a proved
+    /// instruction timestamp. The translated engine remains the only owner of
+    /// gameplay WRAM/SRAM; the CPU interpreter gets a copy for its next ROM
+    /// routine. PPU read phase, APU/DMA state, interrupt requests, bus latches,
+    /// and the physical clock remain with this executor. No source RAM value
+    /// is published back to the translated game. The caller must prove that
+    /// its registers and memory describe the next original-ROM instruction;
+    /// a matching host number or raster estimate is not such proof.
+    pub fn rebase_private_timing_state_at(
+        &mut self,
+        expected_at: CpuMasterTimestamp,
+        registers: &crate::cpu::CpuState,
+        translated_wram: &[u8],
+        translated_sram: &[u8],
+    ) -> Result<(), Snes9xCpuQuiescentCheckpointError> {
+        self.rebase_private_timing_regions_at(
+            expected_at,
+            registers,
+            translated_wram,
+            translated_sram,
+            &[0..translated_wram.len()],
+            &[0..translated_sram.len()],
+        )
+    }
+
+    /// Rebase only proven translated-owned memory regions. CPU-private stack
+    /// frames and scratch stay with the retained owner when omitted. Ranges
+    /// must be sorted, disjoint, and inside the supplied full-size memories;
+    /// all validation completes before any state changes.
+    pub fn rebase_private_timing_regions_at(
+        &mut self,
+        expected_at: CpuMasterTimestamp,
+        registers: &crate::cpu::CpuState,
+        translated_wram: &[u8],
+        translated_sram: &[u8],
+        wram_regions: &[std::ops::Range<usize>],
+        sram_regions: &[std::ops::Range<usize>],
+    ) -> Result<(), Snes9xCpuQuiescentCheckpointError> {
+        if self.poisoned {
+            return Err(Snes9xCpuQuiescentCheckpointError::Poisoned);
+        }
+        if self.active_trace.is_some() {
+            return Err(Snes9xCpuQuiescentCheckpointError::ActiveInstruction);
+        }
+        Self::validate_quiescent_machine(&self.machine)?;
+        if self.machine.timestamp() != expected_at {
+            return Err(
+                Snes9xCpuQuiescentCheckpointError::SemanticBoundaryClockMismatch {
+                    expected: expected_at.master_cycles(),
+                    actual: self.machine.timestamp().master_cycles(),
+                },
+            );
+        }
+        if registers.waiting || registers.stopped {
+            return Err(Snes9xCpuQuiescentCheckpointError::UnsupportedPowerState);
+        }
+        for (region, expected, actual) in [
+            ("WRAM", self.machine.snes.ram.len(), translated_wram.len()),
+            (
+                "SRAM",
+                self.machine.snes.cart.ram.len(),
+                translated_sram.len(),
+            ),
+        ] {
+            if expected != actual {
+                return Err(Snes9xCpuQuiescentCheckpointError::SemanticMemoryLength {
+                    region,
+                    expected,
+                    actual,
+                });
+            }
+        }
+        for (name, len, regions) in [
+            ("WRAM", translated_wram.len(), wram_regions),
+            ("SRAM", translated_sram.len(), sram_regions),
+        ] {
+            let mut previous_end = 0;
+            for range in regions {
+                if range.start < previous_end || range.start > range.end || range.end > len {
+                    return Err(Snes9xCpuQuiescentCheckpointError::SemanticMemoryRegion {
+                        region: name,
+                        start: range.start,
+                        end: range.end,
+                    });
+                }
+                previous_end = range.end;
+            }
+        }
+        for range in wram_regions {
+            self.machine.snes.ram[range.clone()].copy_from_slice(&translated_wram[range.clone()]);
+        }
+        for range in sram_regions {
+            self.machine.snes.cart.ram[range.clone()]
+                .copy_from_slice(&translated_sram[range.clone()]);
+        }
+        let cpu = &mut self.machine.snes.cpu;
+        cpu.a = registers.a;
+        cpu.x = registers.x;
+        cpu.y = registers.y;
+        cpu.sp = registers.sp;
+        cpu.pc = registers.pc;
+        cpu.dp = registers.dp;
+        cpu.k = registers.k;
+        cpu.db = registers.db;
+        cpu.c = registers.c;
+        cpu.z = registers.z;
+        cpu.v = registers.v;
+        cpu.n = registers.n;
+        cpu.i = registers.i;
+        cpu.d = registers.d;
+        cpu.xf = registers.xf;
+        cpu.mf = registers.mf;
+        cpu.e = registers.e;
         Ok(())
     }
 
@@ -696,8 +867,8 @@ impl Snes9xColdCpuExecutor {
             } else {
                 self.machine.snes.cpu.i
             };
-            let interrupt = self
-                .finish_instruction_interrupt_boundary(&mut accesses, irq_mask_for_selection)?;
+            let interrupt =
+                self.finish_instruction_interrupt_boundary(&mut accesses, irq_mask_for_selection)?;
             self.assert_source_execution_scope()?;
             Ok((opcode, interrupt))
         })();
@@ -814,9 +985,13 @@ impl Snes9xColdCpuExecutor {
             self.machine.nmi_acceptance_not_before = None;
             self.publish_deferred_nmi_enable_edge();
             let started_at = self.machine.timestamp();
+            let interrupted_pc = self.program_address();
             self.enter_native_interrupt(0x00_ffea, accesses)?;
             self.publish_due_vertical_irq();
-            return Ok(Some(SourceCpuAcceptedInterrupt::Nmi { started_at }));
+            return Ok(Some(SourceCpuAcceptedInterrupt::Nmi {
+                started_at,
+                interrupted_pc,
+            }));
         }
 
         self.publish_due_vertical_irq();
@@ -826,8 +1001,12 @@ impl Snes9xColdCpuExecutor {
             }
             self.publish_deferred_nmi_enable_edge();
             let started_at = self.machine.timestamp();
+            let interrupted_pc = self.program_address();
             self.enter_native_interrupt(0x00_ffee, accesses)?;
-            return Ok(Some(SourceCpuAcceptedInterrupt::Irq { started_at }));
+            return Ok(Some(SourceCpuAcceptedInterrupt::Irq {
+                started_at,
+                interrupted_pc,
+            }));
         } else {
             self.publish_deferred_nmi_enable_edge();
         }
@@ -845,7 +1024,6 @@ impl Snes9xColdCpuExecutor {
         let address = self.program_address();
         let timestamp = self.machine.timestamp();
         let start_wram_refresh_position = self.machine.timeline.wram_refresh_cycle() as u16;
-        let bank = (address >> 16) as u8;
         let adr = address as u16;
         let memory_speed = self.machine.snes.hardware_access_time(address);
         if adr < 0x8000 || !matches!(memory_speed, 6 | 8) {
@@ -856,11 +1034,8 @@ impl Snes9xColdCpuExecutor {
         }
         // cpuexec.cpp reads direct `PCBase` without changing OpenBus or
         // draining a due event, then adds MemSpeed directly.
-        let opcode = self
-            .machine
-            .snes
-            .cart
-            .read(bank, adr, self.machine.snes.open_bus);
+        let (opcode, fetched_memory_speed) = self.machine.fetch_pcbase_opcode_alias()?;
+        debug_assert_eq!(memory_speed, fetched_memory_speed);
         self.active_trace
             .as_mut()
             .expect("opcode fetch requires an active instruction trace")
@@ -870,11 +1045,7 @@ impl Snes9xColdCpuExecutor {
             .expect("opcode fetch requires an active instruction trace")
             .memory_speed = Some(memory_speed);
 
-        self.machine
-            .timeline
-            .advance_synchronous_pcbase_opcode_fetch(memory_speed);
         let ended_at = self.machine.timestamp();
-        self.machine.snes.cpu.pc = self.machine.snes.cpu.pc.wrapping_add(1);
         self.record_transaction(
             SourceCpuTransactionKind::FastPcBaseOpcodeFetchNonDraining,
             memory_speed,
@@ -1279,40 +1450,10 @@ impl Snes9xColdCpuExecutor {
             // before the outer getset memory-access charge.
             return Ok(self.machine.snes.read_b_bus(0x80));
         }
-        if (bank & 0x7f) < 0x40 && (0x2134..=0x2136).contains(&adr) {
-            // ppu.cpp:S9xGetPPU lazily publishes the signed 16x8 Mode-7
-            // product byte to PPU.OpenBus1. The caller-owned CPU OpenBus is
-            // still deferred until the mapped access has drained.
-            let value = self.machine.snes.ppu.read(adr as u8);
-            self.machine.source_ppu_reads.open_bus1 = value;
-            return Ok(value);
-        }
-        if (bank & 0x7f) < 0x40 && adr == 0x2138 {
-            let value = self
-                .machine
-                .snes
-                .read_source_oam_data()
-                .ok_or(SourceCpuError::UnsupportedBusMap { address })?;
-            self.machine.source_ppu_reads.open_bus1 = value;
-            return Ok(value);
-        }
-        if (bank & 0x7f) < 0x40 && adr == 0x213e {
-            let flags = self
-                .machine
-                .snes
-                .source_oam_stat77_flags()
-                .ok_or(SourceCpuError::UnsupportedBusMap { address })?;
-            return Ok(self.machine.source_ppu_reads.read_stat77(flags));
-        }
         if (bank & 0x7f) < 0x40 {
-            // ppu.cpp SLHV/OPHCT/OPVCT/STAT78 and the RDIO port share one
-            // counter/open-bus owner with the source-ordered timing probe.
-            let beam = self
-                .machine
-                .timeline
-                .synchronous_beam_position()
-                .expect("the exact cold executor owns a synchronous timeline");
-            if let Some(value) = self.machine.source_ppu_reads.read(adr, beam) {
+            // ppu.cpp's readable PPU ports share one OpenBus/counter owner.
+            // The caller-owned CPU OpenBus still publishes after the access.
+            if let Some(value) = self.machine.commit_source_ppu_read_semantic(adr) {
                 return Ok(value);
             }
         }
@@ -1362,11 +1503,8 @@ impl Snes9xColdCpuExecutor {
         }
         match self.source_map_class(address) {
             Some(SourceCpuMapClass::Wram) => {
-                let index = if bank == 0x7e || bank == 0x7f {
-                    ((usize::from(bank) - 0x7e) << 16) | usize::from(adr)
-                } else {
-                    usize::from(adr)
-                };
+                let index = CpuSynchronousMachine::source_wram_index(address)
+                    .expect("source WRAM map was classified before access");
                 Ok(self.machine.snes.ram[index])
             }
             Some(SourceCpuMapClass::LoRom) => {
@@ -1444,12 +1582,7 @@ impl Snes9xColdCpuExecutor {
         if (bank & 0x7f) < 0x40 && adr == 0x4201 {
             // ppu.cpp:S9xSetCPU($4201) force-latches the counters on WRIO
             // bit7's high-to-low edge, then publishes the byte to $4201/$4213.
-            let beam = self
-                .machine
-                .timeline
-                .synchronous_beam_position()
-                .expect("the exact cold executor owns a synchronous timeline");
-            self.machine.source_ppu_reads.write_wrio(value, beam);
+            self.machine.commit_source_wrio_semantic(value);
             return Ok(());
         }
         if (bank & 0x7f) < 0x40 && matches!(adr, 0x4207 | 0x4208) {
@@ -1527,27 +1660,14 @@ impl Snes9xColdCpuExecutor {
                 // renderer still rejects it. Do not publish a partial write.
                 return Err(SourceCpuError::UnsupportedBusMap { address });
             }
-            let beam = self
-                .machine
-                .timeline
-                .synchronous_beam_position()
-                .expect("the exact cold executor owns a synchronous timeline");
-            self.machine.snes.set_source_oam_v_counter(beam.scanline);
-            if adr == 0x2115 {
-                self.machine.source_vmain_full_graphic_count_nonzero = value & 0x0c != 0;
-            }
-            let open_bus = self.machine.snes.open_bus;
-            self.machine.snes.write(address, value);
-            self.machine.snes.open_bus = open_bus;
+            self.machine
+                .commit_source_ppu_register_semantic(address, value);
             return Ok(());
         }
         match self.source_map_class(address) {
             Some(SourceCpuMapClass::Wram) => {
-                let index = if bank == 0x7e || bank == 0x7f {
-                    ((usize::from(bank) - 0x7e) << 16) | usize::from(adr)
-                } else {
-                    usize::from(adr)
-                };
+                let index = CpuSynchronousMachine::source_wram_index(address)
+                    .expect("source WRAM map was classified before access");
                 self.machine.snes.ram[index] = value;
                 Ok(())
             }
@@ -1590,8 +1710,23 @@ impl Snes9xColdCpuExecutor {
             .expect("audited source CPU transactions fit in one byte");
         let started_at = self.machine.timestamp();
         let start_wram_refresh_position = self.machine.timeline.wram_refresh_cycle() as u16;
-        self.machine
-            .drain_add_cycles_after_committed_semantic(u32::from(duration_master_cycles))?;
+        if kind == SourceCpuTransactionKind::CpuOpsAddCyclesDraining {
+            if let Err(error) = self
+                .machine
+                .advance_cpu_add_cycles_alias(duration_master_cycles)
+            {
+                // The cold CPU poisons its partially executed instruction on
+                // failure. It cannot resume an external translated transaction,
+                // so retain the pre-existing no-completion failure contract.
+                if self.machine.pending_completion == Some(CpuSynchronousCompletion::CpuAddCycles) {
+                    self.machine.pending_completion = None;
+                }
+                return Err(error.into());
+            }
+        } else {
+            self.machine
+                .drain_add_cycles_after_committed_semantic(u32::from(duration_master_cycles))?;
+        }
         if self.active_trace.is_some() {
             self.record_transaction(
                 kind,
@@ -1643,7 +1778,9 @@ impl SourceCpuInstructionBus for Snes9xColdCpuExecutor {
         &mut self.machine.snes.cpu
     }
     fn set_open_bus(&mut self, value: u8) {
-        self.machine.snes.open_bus = value;
+        self.machine
+            .publish_cpu_open_bus(value)
+            .expect("the cold CPU publishes OpenBus only after its bus access drains");
     }
     fn immediate8(
         &mut self,
@@ -2092,6 +2229,124 @@ mod tests {
     }
 
     #[test]
+    fn translated_ppu_bus_write_matches_the_cold_cpu_bus_transaction() {
+        let rom = synthetic_rom(&[0xea]);
+        let mut cold = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        let mut translated = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cold.machine.snes.open_bus = 0xa5;
+        translated.machine.snes.open_bus = 0xa5;
+        let write_at = cold.machine.timestamp();
+        let mut accesses = Vec::new();
+
+        cold.write_byte(0x80_2105, 0x09, &mut accesses).unwrap();
+        translated
+            .machine
+            .write_ppu_register_alias(0x80_2105, 0x09)
+            .unwrap();
+
+        assert_eq!(cold.machine.timestamp(), translated.machine.timestamp());
+        assert_eq!(cold.machine.snes.ppu.mode, translated.machine.snes.ppu.mode);
+        assert_eq!(cold.machine.snes.open_bus, translated.machine.snes.open_bus);
+        cold.set_open_bus(0x09);
+        translated.machine.publish_cpu_open_bus(0x09).unwrap();
+        assert_eq!(cold.machine.snes.open_bus, translated.machine.snes.open_bus);
+        assert_eq!(accesses.len(), 1);
+        assert_eq!(accesses[0].timestamp, write_at);
+    }
+
+    #[test]
+    fn translated_counter_read_matches_the_cold_cpu_bus_transaction() {
+        let rom = synthetic_rom(&[0xea]);
+        let mut cold = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        let mut translated = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        for machine in [&mut cold.machine, &mut translated.machine] {
+            machine.source_ppu_reads.h_latched = 190;
+            machine.source_ppu_reads.h_read_high = true;
+            machine.source_ppu_reads.open_bus2 = 0xeb;
+        }
+        let mut accesses = Vec::new();
+        let source = cold.read_byte(0x00_213c, &mut accesses).unwrap();
+        let external = translated
+            .machine
+            .read_ppu_register_alias(0x00_213c)
+            .unwrap();
+
+        assert_eq!(source, 0xea);
+        assert_eq!(external, source);
+        assert_eq!(cold.machine.timestamp(), translated.machine.timestamp());
+        assert_eq!(
+            cold.machine.source_ppu_reads,
+            translated.machine.source_ppu_reads
+        );
+        cold.set_open_bus(source);
+        translated.machine.publish_cpu_open_bus(external).unwrap();
+        assert_eq!(cold.machine.snes.open_bus, translated.machine.snes.open_bus);
+        assert_eq!(accesses.len(), 1);
+    }
+
+    #[test]
+    fn translated_wram_aliases_match_cold_cpu_bus_transactions() {
+        let rom = synthetic_rom(&[0xea]);
+        let mut cold = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        let mut translated = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        let mut accesses = Vec::new();
+
+        cold.write_byte(0x7e_1234, 0x9a, &mut accesses).unwrap();
+        translated
+            .machine
+            .write_wram_alias(0x7e_1234, 0x9a)
+            .unwrap();
+        assert_eq!(cold.machine.timestamp(), translated.machine.timestamp());
+        assert_eq!(
+            cold.machine.snes.ram[0x1234],
+            translated.machine.snes.ram[0x1234]
+        );
+        assert_eq!(cold.machine.snes.open_bus, translated.machine.snes.open_bus);
+
+        let source = cold.read_byte(0x80_1234, &mut accesses).unwrap();
+        let external = translated.machine.read_wram_alias(0x80_1234).unwrap();
+        assert_eq!(source, 0x9a);
+        assert_eq!(source, external);
+        assert_eq!(cold.machine.timestamp(), translated.machine.timestamp());
+        cold.set_open_bus(source);
+        translated.machine.publish_cpu_open_bus(external).unwrap();
+        assert_eq!(cold.machine.snes.open_bus, translated.machine.snes.open_bus);
+        assert_eq!(accesses.len(), 2);
+    }
+
+    #[test]
+    fn translated_opcode_fetch_and_add_cycles_match_a_cold_nop() {
+        let rom = synthetic_rom(&[0xea, 0xea]);
+        let mut cold = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        let mut translated = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        let source = cold.step().unwrap();
+
+        let start = translated.machine.timestamp();
+        let (opcode, memory_speed) = translated.machine.fetch_pcbase_opcode_alias().unwrap();
+        assert_eq!(opcode, 0xea);
+        assert_eq!(memory_speed, source.transactions[0].duration_master_cycles);
+        assert_eq!(source.transactions[0].started_at, start);
+        assert_eq!(
+            translated.machine.timestamp(),
+            source.transactions[0].ended_at
+        );
+        translated.machine.advance_cpu_add_cycles_alias(6).unwrap();
+
+        assert_eq!(translated.machine.timestamp(), cold.machine.timestamp());
+        assert_eq!(translated.machine.snes.cpu.pc, cold.machine.snes.cpu.pc);
+        assert_eq!(translated.machine.snes.open_bus, cold.machine.snes.open_bus);
+        assert_eq!(
+            translated.machine.source_ppu_reads,
+            cold.machine.source_ppu_reads
+        );
+        assert_eq!(source.transactions.len(), 2);
+        assert_eq!(
+            source.transactions[1].kind,
+            SourceCpuTransactionKind::CpuOpsAddCyclesDraining
+        );
+    }
+
+    #[test]
     fn cold_source_cpu_retains_enabled_hdma_across_quiescent_handoff() {
         let rom = synthetic_rom(&[0xa9, 0x80, 0x8d, 0x0c, 0x42, 0xea]);
         let mut source = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
@@ -2237,7 +2492,12 @@ mod tests {
         let rom = synthetic_rom(&[0xea]);
         let mut source = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
         while source.machine.snes.apu.cycles < 32 {
-            source.machine.snes.apu.run_snes9x_micro_step_without_dsp().unwrap();
+            source
+                .machine
+                .snes
+                .apu
+                .run_snes9x_micro_step_without_dsp()
+                .unwrap();
         }
         source.machine.snes.apu.synchronize_snes9x_dsp();
         let mut probe = RomCpuTimingProbe::from_cold_cpu_executor(source).unwrap();
@@ -2433,6 +2693,199 @@ mod tests {
             cpu.capture_quiescent_checkpoint().err().unwrap(),
             Snes9xCpuQuiescentCheckpointError::UnsupportedPowerState
         );
+    }
+
+    #[test]
+    fn semantic_rebase_retains_the_physical_bus_and_interrupt_owners() {
+        let rom = synthetic_rom(&[0xea, 0xad, 0x3c, 0x21, 0xad, 0x34, 0x12]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.source_ppu_reads.h_latched = 190;
+        cpu.machine.source_ppu_reads.h_read_high = true;
+        cpu.machine.source_ppu_reads.open_bus2 = 0xeb;
+        cpu.machine.snes.ram[0x1234] = 0x55;
+        cpu.machine.snes.open_bus = 0x42;
+        cpu.machine.snes.cpu.irq_wanted = true;
+        let mut translated_wram = cpu.machine.snes.ram.clone();
+        translated_wram[0x1234] = 0x7d;
+        let mut translated_sram = cpu.machine.snes.cart.ram.clone();
+        translated_sram[0] = 0x39;
+        let before_clock = cpu.machine.timestamp();
+        let before_ppu = cpu.machine.source_ppu_reads;
+        let before_apu = cpu.machine.apu_clock.checkpoint();
+        let before_timeline = cpu.machine.timeline.clone();
+
+        let mut translated = cpu.machine.snes.cpu.clone();
+        translated.a = 0x1234;
+        translated.x = 0x0042;
+        translated.pc = 0x8001;
+        translated.z = true;
+        translated.irq_wanted = false; // hardware pending state is not rebased
+        cpu.rebase_private_timing_state_at(
+            before_clock,
+            &translated,
+            &translated_wram,
+            &translated_sram,
+        )
+        .unwrap();
+
+        assert_eq!(cpu.program_address(), 0x00_8001);
+        assert_eq!(cpu.machine.snes.cpu.a, 0x1234);
+        assert_eq!(cpu.machine.snes.cpu.x, 0x0042);
+        assert!(cpu.machine.snes.cpu.z);
+        assert!(cpu.machine.snes.cpu.irq_wanted);
+        assert_eq!(cpu.machine.timestamp(), before_clock);
+        assert_eq!(cpu.machine.timeline, before_timeline);
+        assert_eq!(cpu.machine.apu_clock.checkpoint(), before_apu);
+        assert_eq!(cpu.machine.source_ppu_reads, before_ppu);
+        assert_eq!(cpu.machine.snes.ram[0x1234], 0x7d);
+        assert_eq!(cpu.machine.snes.cart.ram[0], 0x39);
+        assert_eq!(cpu.machine.snes.open_bus, 0x42);
+        let receipt = cpu.step().unwrap();
+        assert_eq!(receipt.origin_pc, 0x00_8001);
+        assert!(receipt.accesses.iter().any(|access| {
+            access.address == 0x00_213c
+                && access.kind
+                    == SourceCpuBusAccessKind::Read {
+                        value: 0xea,
+                        width: 1,
+                    }
+        }));
+        assert_eq!(cpu.machine.snes.cpu.a & 0xff, 0xea);
+        assert!(!cpu.machine.source_ppu_reads.h_read_high);
+        let wram_read = cpu.step().unwrap();
+        assert_eq!(wram_read.origin_pc, 0x00_8004);
+        assert!(wram_read.accesses.iter().any(|access| {
+            access.address == 0x00_1234
+                && access.kind
+                    == SourceCpuBusAccessKind::Read {
+                        value: 0x7d,
+                        width: 1,
+                    }
+        }));
+        assert_eq!(cpu.machine.snes.cpu.a & 0xff, 0x7d);
+    }
+
+    #[test]
+    fn semantic_region_rebase_keeps_the_retained_cpu_return_stack() {
+        let rom = synthetic_rom(&[0x20, 0x05, 0x80, 0xea, 0xea, 0x60]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.step().unwrap(); // JSR $8005 pushes its return address into WRAM.
+        assert_eq!(cpu.program_address(), 0x00_8005);
+        let stack_pointer = usize::from(cpu.machine.snes.cpu.sp);
+        assert_eq!(stack_pointer, 0x01fd);
+        let retained_stack = cpu.machine.snes.ram[0x01fe..0x0200].to_vec();
+        let registers = cpu.machine.snes.cpu.clone();
+        let mut translated_wram = cpu.machine.snes.ram.clone();
+        translated_wram[0x01fe..0x0200].fill(0);
+        translated_wram[0x1234] = 0x7d;
+        let translated_sram = cpu.machine.snes.cart.ram.clone();
+        let clock = cpu.machine.timestamp();
+
+        cpu.rebase_private_timing_regions_at(
+            clock,
+            &registers,
+            &translated_wram,
+            &translated_sram,
+            &[0..0x0100, 0x0200..translated_wram.len()],
+            &[0..translated_sram.len()],
+        )
+        .unwrap();
+        assert_eq!(cpu.machine.snes.ram[0x01fe..0x0200], retained_stack);
+        assert_eq!(cpu.machine.snes.ram[0x1234], 0x7d);
+        assert_eq!(cpu.machine.timestamp(), clock);
+        cpu.step().unwrap(); // RTS must consume the owner's return address.
+        assert_eq!(cpu.program_address(), 0x00_8003);
+
+        let before_ram = cpu.machine.snes.ram.clone();
+        assert_eq!(
+            cpu.rebase_private_timing_regions_at(
+                cpu.machine.timestamp(),
+                &cpu.machine.snes.cpu.clone(),
+                &translated_wram,
+                &translated_sram,
+                &[0..0x0200, 0x01ff..translated_wram.len()],
+                &[],
+            ),
+            Err(Snes9xCpuQuiescentCheckpointError::SemanticMemoryRegion {
+                region: "WRAM",
+                start: 0x01ff,
+                end: translated_wram.len(),
+            })
+        );
+        assert_eq!(cpu.machine.snes.ram, before_ram);
+    }
+
+    #[test]
+    fn semantic_rebase_rejects_a_pending_bus_completion_without_mutation() {
+        let rom = synthetic_rom(&[0xea]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        let mut translated = cpu.machine.snes.cpu.clone();
+        translated.pc = 0x8123;
+        let translated_wram = cpu.machine.snes.ram.clone();
+        let translated_sram = cpu.machine.snes.cart.ram.clone();
+        cpu.machine.pending_completion = Some(CpuSynchronousCompletion::Read(0xea));
+
+        assert_eq!(
+            cpu.rebase_private_timing_state_at(
+                cpu.machine.timestamp(),
+                &translated,
+                &translated_wram,
+                &translated_sram,
+            ),
+            Err(Snes9xCpuQuiescentCheckpointError::PendingCompletion {
+                completion: CpuSynchronousCompletion::Read(0xea),
+            })
+        );
+        assert_eq!(cpu.program_address(), 0x00_8000);
+        assert_eq!(
+            cpu.machine.pending_completion,
+            Some(CpuSynchronousCompletion::Read(0xea))
+        );
+
+        cpu.machine.pending_completion = None;
+        translated.waiting = true;
+        assert_eq!(
+            cpu.rebase_private_timing_state_at(
+                cpu.machine.timestamp(),
+                &translated,
+                &translated_wram,
+                &translated_sram,
+            ),
+            Err(Snes9xCpuQuiescentCheckpointError::UnsupportedPowerState)
+        );
+        assert_eq!(cpu.program_address(), 0x00_8000);
+        translated.waiting = false;
+        let wrong_clock = CpuMasterTimestamp::new(cpu.machine.timestamp().master_cycles() + 6);
+        assert_eq!(
+            cpu.rebase_private_timing_state_at(
+                wrong_clock,
+                &translated,
+                &translated_wram,
+                &translated_sram,
+            ),
+            Err(
+                Snes9xCpuQuiescentCheckpointError::SemanticBoundaryClockMismatch {
+                    expected: wrong_clock.master_cycles(),
+                    actual: cpu.machine.timestamp().master_cycles(),
+                }
+            )
+        );
+        assert_eq!(cpu.program_address(), 0x00_8000);
+        let short_wram = &translated_wram[..translated_wram.len() - 1];
+        assert_eq!(
+            cpu.rebase_private_timing_state_at(
+                cpu.machine.timestamp(),
+                &translated,
+                short_wram,
+                &translated_sram,
+            ),
+            Err(Snes9xCpuQuiescentCheckpointError::SemanticMemoryLength {
+                region: "WRAM",
+                expected: translated_wram.len(),
+                actual: short_wram.len(),
+            })
+        );
+        assert_eq!(cpu.program_address(), 0x00_8000);
     }
 
     #[test]
@@ -2813,6 +3266,7 @@ mod tests {
             receipt.accepted_interrupt,
             Some(SourceCpuAcceptedInterrupt::Nmi {
                 started_at: receipt.transactions[3].started_at,
+                interrupted_pc: 0x00_8000,
             })
         );
         assert_source_transaction_shape(
@@ -2988,7 +3442,10 @@ mod tests {
         let second = cpu.step().unwrap();
         assert!(matches!(
             second.accepted_interrupt,
-            Some(SourceCpuAcceptedInterrupt::Irq { .. })
+            Some(SourceCpuAcceptedInterrupt::Irq {
+                interrupted_pc: 0x00_8002,
+                ..
+            })
         ));
         assert_eq!(cpu.machine.snes.cpu.pc, 0x8100);
         assert_eq!(&cpu.machine.snes.ram[0x01fd..=0x01fe], &[0x02, 0x80]);
@@ -5853,6 +6310,41 @@ mod tests {
             serde_json::to_vec(&cpu.capture_quiescent_checkpoint().unwrap()).unwrap(),
             serde_json::to_vec(&restored.capture_quiescent_checkpoint().unwrap()).unwrap()
         );
+    }
+
+    #[test]
+    fn main_loop_step_hook_rebases_at_a_quiescent_instruction_boundary() {
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&synthetic_rom(&[0xea])).unwrap();
+        place_source_cpu_at_raster(&mut cpu, crate::CpuRasterPosition::new(224, 1_358));
+        cpu.machine.snes.ram[0x1234] = 0x55;
+        let mut translated_wram = cpu.machine.snes.ram.clone();
+        translated_wram[0x1234] = 0x7d;
+        let translated_sram = cpu.machine.snes.cart.ram.clone();
+        let mut observed = Vec::new();
+
+        let receipt = cpu
+            .run_until_main_loop_return_with_quiescent_step_hook::<Box<dyn std::error::Error>>(
+                |step, cpu| {
+                    observed.push((step.origin_pc, cpu.machine.timestamp()));
+                    let at = cpu.machine.timestamp();
+                    let registers = cpu.machine.snes.cpu.clone();
+                    cpu.rebase_private_timing_regions_at(
+                        at,
+                        &registers,
+                        &translated_wram,
+                        &translated_sram,
+                        &[0x1234..0x1235],
+                        &[],
+                    )?;
+                    assert_eq!(cpu.machine.timestamp(), at);
+                    Ok(())
+                },
+            )
+            .unwrap();
+
+        assert_eq!(receipt.instruction_count, 1);
+        assert_eq!(observed, [(0x00_8000, receipt.ended_at)]);
+        assert_eq!(cpu.machine.snes.ram[0x1234], 0x7d);
     }
 
     #[test]

@@ -187,7 +187,11 @@ impl ZeldaState {
             self.take_original_timing_cached_sprite_execution_progress()
                 .map(|receipt| (receipt.progress.into(), Some(receipt.boundary)))
         } else {
-            legacy_shadow.map(|boundary| (boundary, None))
+            self.native_exact_cpu_host_trace
+                .as_ref()
+                .and_then(|trace| trace.cached_sprite_progress)
+                .map(|receipt| (receipt.progress.into(), Some(receipt.boundary)))
+                .or_else(|| legacy_shadow.map(|boundary| (boundary, None)))
         }
     }
 

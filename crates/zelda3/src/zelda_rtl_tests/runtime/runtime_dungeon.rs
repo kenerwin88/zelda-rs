@@ -3539,6 +3539,7 @@ fn resumed_spiral_state_7_keeps_its_sound_queued_until_the_next_nmi() {
     state.game_execution_scheduler.schedule_pre_main_nmi_resume(
         PreMainNmiResume::DungeonSupertileQuadrantUploads,
     );
+    state.game_execution_scheduler.begin_host_frame();
     assert!(state.resume_after_pre_main_nmi(0, None));
     assert_eq!(state.game_state.frame.subsubmodule, 8);
     assert_eq!(state.game_state.system_signals.sound_effect_2(), 0x24);
@@ -4776,6 +4777,7 @@ fn spiral_palette_callers_finish_held_nmi_before_authoring_the_next_palette() {
         state.ppu.cgram.fill(0x1234);
         state.latch_nmi_update();
         state.schedule_pre_main_caller_continuation(continuation);
+        state.game_execution_scheduler.begin_host_frame();
         assert!(state.resume_pre_main_caller_continuation(0, None));
         assert_eq!(state.game_state.frame.frame_counter, 0xb2);
         assert_eq!(state.game_state.display.palette_filter.countdown(), 2);

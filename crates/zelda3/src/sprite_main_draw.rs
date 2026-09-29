@@ -2576,6 +2576,11 @@ impl ZeldaState {
 
     // void SpriteActive_Main(int k) {  // 869271
     pub(super) fn sprite_active_main(&mut self, k: usize) {
+        self.charge_sprite_active_main_dispatch(k);
+        self.sprite_active_main_dispatch(k);
+    }
+
+    pub(super) fn charge_sprite_active_main_dispatch(&self, k: usize) {
         // Cycle ledger: SpriteActive_Main $06:9271 (entry m8 x8) as reached
         // by Sprite_ExecuteSingle's JMP: an RTS dispatch (LDA $e20,x REP #$30
         // AND #$00ff ASL TAY LDA $9283,y DEC PHA SEP #$30 RTS, 260) that runs
@@ -2593,7 +2598,6 @@ impl ZeldaState {
         if (0x41..=0x70).contains(&self.sprite_slot_view(k).sprite_type()) {
             crate::cycle_ledger::charge(62 + 190 + 290 + 42);
         }
-        self.sprite_active_main_dispatch(k);
     }
 
     /// `SpriteActive_Main` reached by `JSR $06:9271` (SpriteDeath_MainEx,
@@ -14988,6 +14992,11 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_4B_GreenKnifeGuard(int k) {  // 85bca2
     pub(super) fn sprite_4_b_green_knife_guard(&mut self, k: usize) {
+        self.green_knife_guard_before_recruit_oam_prep(k);
+        self.green_knife_guard_from_recruit_draw(k);
+    }
+
+    pub(super) fn green_knife_guard_before_recruit_oam_prep(&mut self, k: usize) {
         // Cycle ledger (an RTS-dispatch target of SpriteActive2_Main, m8 x8,
         // charging into the open Sprite_ExecuteSingle scope): $05:BCA2-BCAF
         // the graphics-index setup (178), $05:BCB2 JSR Recruit_Draw (46).
@@ -14998,6 +15007,9 @@ impl ZeldaState {
                 .wrapping_add((self.sprite_slot_view(k).subtype2() >> 1) & 4),
         )];
         self.sprite_slot_view_mut(k).set_graphics(value);
+    }
+
+    pub(super) fn green_knife_guard_from_recruit_draw(&mut self, k: usize) {
         self.recruit_draw(k);
         // $05:BCB5 JSR Sprite_ReturnIfInactive_ (46), $05:BCB8 JSR
         // Sprite_ReturnIfRecoiling_ (46): each double-returns when it fires.

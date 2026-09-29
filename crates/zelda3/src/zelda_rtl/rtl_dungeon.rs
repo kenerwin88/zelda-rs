@@ -368,7 +368,14 @@ impl ZeldaState {
         // cached-sprite interruption was observed for this host call.
         let cached_sprite_interruption = self
             .take_original_timing_cached_sprite_execution_progress()
-            .map(|receipt| (receipt.progress.into(), receipt.boundary));
+            .map(|receipt| (receipt.progress.into(), receipt.boundary))
+            .or_else(|| {
+                self.native_exact_cpu_host_trace.as_ref().and_then(|trace| {
+                    trace.cached_sprite_progress.map(|receipt| {
+                        (receipt.progress.into(), receipt.boundary)
+                    })
+                })
+            });
         if schedule.caller_sprite_main_nmis != 0 {
             if let Some((boundary, authority_boundary)) = cached_sprite_interruption {
                 assert_eq!(

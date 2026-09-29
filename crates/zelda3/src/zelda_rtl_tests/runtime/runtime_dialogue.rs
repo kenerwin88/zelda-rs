@@ -2379,6 +2379,7 @@ fn native_scroll_return_preserves_the_original_post_return_nmi_wait() {
         state.render_text_scroll_pixels(2);
         state.dialogue_scroll_remaining_master_cycles = Some(583_026 - entry_budget);
 
+        state.game_execution_scheduler.begin_host_frame();
         assert!(state.lane_native_dialogue_scroll_continuation(0, None));
         assert!(state.dialogue_scroll_remaining_master_cycles.is_none());
         assert_eq!(state.game_state.frame.frame_counter, 0);

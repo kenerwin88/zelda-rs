@@ -3782,6 +3782,18 @@ impl ZeldaState {
         self.begin_iris_spotlight_configure_table_inner(max_iterations, true)
     }
 
+    /// Rebuild the source loop's lower cursor from translated spotlight
+    /// inputs and the number of completed row pairs. The retained CPU's PC
+    /// selects a statement boundary; its private WRAM never supplies this
+    /// translated cursor.
+    pub(super) fn spotlight_lower_cursor_after_completed_rows(&self, rows: u16) -> u16 {
+        let center = spotlight_vertical_center(
+            self.game_state.player.follower_link.y(),
+            self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
+        );
+        center.wrapping_mul(2).max(224).wrapping_sub(rows)
+    }
+
     /// The C prologue and up to `max_iterations` row-loop iterations. With
     /// `price == false` the work is a replay of instructions the ROM executed
     /// before an interruption and charges nothing.

@@ -1103,6 +1103,7 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
         let PairedResumeArtifacts {
             rust_state,
             original_timing_resume,
+            native_exact_cpu,
             ..
         } = paired_resume_artifacts(path).unwrap_or_else(|error| {
             eprintln!(
@@ -1184,11 +1185,29 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
         });
         let mut game = checkpoint.game;
         game.restore_live_rom_timing_after_checkpoint();
-        restore_original_timing_resume_checkpoint(&mut game, &original_timing_resume)
-            .unwrap_or_else(|error| {
+        if std::env::var_os("ZELDA3_NATIVE_EXACT_CPU_OWNER").is_some() {
+            let path = native_exact_cpu.unwrap_or_else(|| {
+                eprintln!("paired resume has no native exact CPU sidecar; opt-in CPU replay requires its retained owner");
+                process::exit(2);
+            });
+            let bytes = fs::read(&path).unwrap_or_else(|error| {
+                eprintln!("failed to read {}: {error}", path.display());
+                process::exit(2);
+            });
+            game.restore_native_exact_cpu_checkpoint(&bytes).unwrap_or_else(|error| {
+                eprintln!("failed to restore native exact CPU sidecar: {error}");
+                process::exit(2);
+            });
+        } else {
+            let path = original_timing_resume.unwrap_or_else(|| {
+                eprintln!("paired resume requires native exact CPU mode for its timing sidecar");
+                process::exit(2);
+            });
+            restore_original_timing_resume_checkpoint(&mut game, &path).unwrap_or_else(|error| {
                 eprintln!("{error}");
                 process::exit(2);
             });
+        }
         (game, checkpoint.host_frame)
     } else if std::env::var_os("ZELDA3_CACHED_AV_ROM_TIMING_OFF").is_some() {
         // The ROM-free frontier: the no-argument launch's engine (ROM
@@ -1233,7 +1252,7 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
         );
         process::exit(2);
     }
-    let _compare_lock = acquire_snes9x_compare_lock();
+    let _compare_lock = acquire_snes9x_compare_lock_mode(compare_video);
     let mut renderer = compare_video.then(|| {
         NativeWindowOracleRenderer::load_from_env().unwrap_or_else(|error| {
             eprintln!("failed to initialize cached A/V GPU renderer: {error}");
@@ -1617,7 +1636,8 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
                 paired_checkpoint_interval.is_some_and(|interval| frames_completed % interval == 0);
             let paired_boundary = (paired_checkpoint_due
                 && game.paired_resume_cpu_boundary_is_quiescent()
-                && game.capture_original_timing_resume_checkpoint().is_ok())
+                && (game.native_exact_cpu_checkpoint_available()
+                    || game.capture_original_timing_resume_checkpoint().is_ok()))
             .then(|| {
                 paired_checkpoint_due = false;
                 (frames_completed, Box::new(game.clone()))

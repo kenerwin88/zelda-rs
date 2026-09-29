@@ -22,7 +22,239 @@ pub(super) enum SelectedGameEntranceContinuation {
     AfterScroll { selection: (usize, bool) },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(super) enum EarlyDungeonRoomOwner {
+    FallingEntrance,
+    PreDungeon,
+}
+
+/// One translated floor draw, advanced in the ROM's tile-store order. Both
+/// layers contain four quadrants of eight rows of eight 4x4 tile blocks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(super) struct DungeonFloorDrawWork {
+    room: u16,
+    floor_types: u8,
+    completed_words: u16,
+}
+
+/// The object stream has two sections. Keeping the section in the caller's
+/// work item lets the translated parser return between complete objects.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct DungeonObjectStreamProgress {
+    in_doors: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(super) struct DungeonObjectDrawWork {
+    room: u16,
+    first_room_stream_offset: u16,
+    phase: u8,
+    stream: DungeonObjectStreamProgress,
+    completed_objects: u16,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(super) struct DungeonRoomUploadWork {
+    completed_quadrants: u8,
+}
+
+impl DungeonRoomUploadWork {
+    pub(super) fn completed_quadrants(self) -> u8 {
+        self.completed_quadrants
+    }
+}
+
+impl DungeonObjectDrawWork {
+    pub(super) fn finished(self) -> bool {
+        self.phase == 4
+    }
+
+    pub(super) fn completed_objects(self) -> u16 {
+        self.completed_objects
+    }
+}
+
+impl DungeonFloorDrawWork {
+    pub(super) const TOTAL_WORDS: u16 = 8192;
+
+    pub(super) fn completed_words(self) -> u16 {
+        self.completed_words
+    }
+
+    fn next_tile(self) -> (usize, usize, usize, u32) {
+        assert!(self.completed_words < Self::TOTAL_WORDS);
+        let ordinal = usize::from(self.completed_words);
+        let layer = ordinal / 4096;
+        let layer_word = ordinal % 4096;
+        let quadrant = layer_word / 1024;
+        let row = (layer_word % 1024) / 128;
+        let block = (layer_word % 128) / 16;
+        let vertical_pass = (layer_word % 16) / 8;
+        let y = (layer_word % 8) / 4;
+        let x = layer_word % 4;
+        let base = if layer == 0 {
+            ROOM_BG1_TILEMAP_BASE
+        } else {
+            ROOM_BG2_TILEMAP_BASE
+        };
+        let source = if layer == 0 {
+            usize::from(self.floor_types & 0xf0)
+        } else {
+            usize::from((self.floor_types & 0x0f) << 4)
+        };
+        let byte_offset = DUNGEON_QUADRANT_OFFSETS[quadrant]
+            + row * xy(0, 4) * 2
+            + block * xy(4, 0) * 2
+            + vertical_pass * xy(0, 2) * 2
+            + xy(x, y) * 2;
+        (base, byte_offset, source + (y * 4 + x) * 2,
+            0x7e_0000 + u32::try_from(base + byte_offset).unwrap())
+    }
+}
+
+#[cfg(test)]
+mod floor_draw_tests {
+    use super::*;
+
+    #[test]
+    fn resumable_floor_stores_reproduce_the_eager_room_floor() {
+        let mut eager = ZeldaState::new();
+        let asset_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("zelda3_assets.dat");
+        eager.assets = Some(AssetPack::parse(&std::fs::read(asset_path).unwrap()).unwrap());
+        eager.set_dungeon_room(0x55);
+        eager.Dungeon_LoadHeader();
+        eager.dungeon_load_room_before_floors();
+        let mut resumed = eager.clone();
+        eager.RoomDraw_DrawFloorsCurrentRoom();
+
+        let mut work = resumed.begin_dungeon_floor_draw_current_room().unwrap();
+        for ordinal in 1..=DungeonFloorDrawWork::TOTAL_WORDS {
+            let (_, _, source_offset, address) = work.next_tile();
+            let value = read_word_from_slice(
+                resumed.asset_raw(69).unwrap(), source_offset,
+            );
+            resumed.advance_dungeon_floor_draw_one(&mut work, ordinal, address, value);
+        }
+        assert_eq!(work.completed_words(), DungeonFloorDrawWork::TOTAL_WORDS);
+        assert_eq!(resumed.ram, eager.ram);
+        assert_eq!(resumed.game_state.dungeon.room_tilemaps,
+            eager.game_state.dungeon.room_tilemaps);
+    }
+
+    #[test]
+    fn resumable_object_stream_reproduces_the_eager_room_objects() {
+        let mut eager = ZeldaState::new();
+        let asset_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("zelda3_assets.dat");
+        eager.assets = Some(AssetPack::parse(&std::fs::read(asset_path).unwrap()).unwrap());
+        eager.set_dungeon_room(0x55);
+        eager.Dungeon_LoadHeader();
+        eager.dungeon_load_room_before_floors();
+        eager.RoomDraw_DrawFloorsCurrentRoom();
+        let mut resumed = eager.clone();
+        eager.dungeon_room_tilemaps_mut()
+            .copy_line_pointer_bytes(&DUNGEON_DRAW_OBJECT_OFFSETS_BG1);
+        eager.RoomDraw_DrawAllObjectsCurrentRoom();
+
+        let mut work = resumed.begin_dungeon_object_draw_current_room().unwrap();
+        let mut object_count = 0;
+        while resumed.advance_dungeon_object_draw_one(&mut work) {
+            object_count += 1;
+        }
+        assert!(work.finished());
+        assert!(object_count > 0);
+        assert_eq!(resumed.ram, eager.ram);
+        assert_eq!(resumed.game_state.dungeon, eager.game_state.dungeon);
+    }
+
+    #[test]
+    fn resumable_quadrant_upload_reproduces_the_eager_room_upload() {
+        let mut eager = ZeldaState::new();
+        let asset_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("zelda3_assets.dat");
+        eager.assets = Some(AssetPack::parse(&std::fs::read(asset_path).unwrap()).unwrap());
+        eager.set_dungeon_room(0x55);
+        eager.Dungeon_LoadHeader();
+        eager.dungeon_load_room_before_floors();
+        eager.RoomDraw_DrawFloorsCurrentRoom();
+        let mut resumed = eager.clone();
+        eager.Dungeon_UploadRoomQuadrants();
+        let mut work = resumed.begin_dungeon_room_upload();
+        for count in 1..=4 {
+            resumed.advance_dungeon_room_upload_one(&mut work);
+            assert_eq!(work.completed_quadrants(), count);
+        }
+        resumed.finish_dungeon_room_upload(work);
+        assert_eq!(resumed.ram, eager.ram);
+        assert_eq!(resumed.game_state.dungeon, eager.game_state.dungeon);
+        assert_eq!(resumed.ppu.vram, eager.ppu.vram);
+    }
+}
+
 impl ZeldaState {
+    pub(super) fn begin_dungeon_object_draw_current_room(&mut self) -> Option<DungeonObjectDrawWork> {
+        let room = self.game_state.world.location.dungeon_room();
+        let room_layout = self.dungeon_room_layout(usize::from(room))?;
+        let first_room_stream_offset = self.game_state.dungeon.room_load.load_ptr_offset();
+        let layout = usize::from(*room_layout.get(usize::from(first_room_stream_offset))?);
+        self.dungeon_room_tilemaps_mut()
+            .copy_line_pointer_bytes(&DUNGEON_DRAW_OBJECT_OFFSETS_BG1);
+        self.dungeon_room_parser_mut()
+            .set_room_layout_and_starting_quadrant(layout as u16);
+        self.dungeon_room_load_mut().set_load_ptr_offset(0);
+        Some(DungeonObjectDrawWork {
+            room,
+            first_room_stream_offset,
+            phase: 0,
+            stream: DungeonObjectStreamProgress::default(),
+            completed_objects: 0,
+        })
+    }
+
+    /// Advance to the next complete native object, crossing empty streams and
+    /// layer transitions without creating artificial object completions.
+    pub(super) fn advance_dungeon_object_draw_one(&mut self, work: &mut DungeonObjectDrawWork) -> bool {
+        assert_eq!(self.game_state.world.location.dungeon_room(), work.room);
+        while !work.finished() {
+            let room_layout = self.dungeon_room_layout(usize::from(work.room)).map(Vec::from)
+                .expect("room layout disappeared during object draw");
+            let layout_byte = room_layout[usize::from(work.first_room_stream_offset)];
+            let stream = if work.phase == 0 {
+                self.default_room_layout(usize::from(layout_byte >> 2)).map(Vec::from)
+            } else {
+                Some(room_layout)
+            };
+            if let Some(stream) = stream {
+                if self.room_data_draw_next_object_from(&stream, &mut work.stream) {
+                    work.completed_objects += 1;
+                    return true;
+                }
+            }
+            work.phase += 1;
+            work.stream = DungeonObjectStreamProgress::default();
+            match work.phase {
+                1 => self.dungeon_room_load_mut().set_load_ptr_offset(
+                    work.first_room_stream_offset.saturating_add(1)),
+                2 | 3 => {
+                    let next = self.game_state.dungeon.room_load.load_ptr_offset().wrapping_add(2);
+                    self.dungeon_room_load_mut().set_load_ptr_offset(next);
+                    if work.phase == 2 {
+                        self.dungeon_room_tilemaps_mut().copy_bg2_draw_line_offsets();
+                    } else {
+                        self.dungeon_room_tilemaps_mut().copy_bg1_draw_line_offsets();
+                    }
+                }
+                4 => self.dungeon_room_load_mut().set_load_ptr_offset(0x0120),
+                _ => unreachable!(),
+            }
+        }
+        false
+    }
+
     pub fn parity_probe_direct_entrance(&mut self, entrance_index: u16) -> u16 {
         self.set_which_entrance_word(entrance_index);
         self.Dungeon_LoadEntrance();
@@ -122,9 +354,48 @@ impl ZeldaState {
         let hdma = self.game_state.display.hdma_enable_mask;
         self.clear_hdma_enable_mask();
         self.Dungeon_LoadRoom();
+        self.dungeon_load_and_draw_room_after_room_load(hdma);
+    }
+
+    fn dungeon_load_and_draw_room_after_early_header(&mut self, hdma: u8) {
+        self.dungeon_load_room_after_header();
+        self.dungeon_load_and_draw_room_after_room_load(hdma);
+    }
+
+    fn dungeon_load_and_draw_room_after_early_floor(&mut self, hdma: u8) {
+        self.dungeon_load_room_after_floors();
+        self.dungeon_load_and_draw_room_after_room_load(hdma);
+    }
+
+    fn dungeon_load_and_draw_room_after_early_objects(&mut self, hdma: u8) {
+        self.dungeon_load_room_after_objects();
+        self.dungeon_load_and_draw_room_after_room_load(hdma);
+    }
+
+    pub(super) fn begin_dungeon_room_upload_after_early_objects(&mut self) -> DungeonRoomUploadWork {
+        self.dungeon_load_room_after_objects();
+        self.clear_screen_transition();
+        self.set_overworld_map_state(0);
+        self.begin_dungeon_room_upload()
+    }
+
+    fn dungeon_load_and_draw_room_after_early_upload(
+        &mut self,
+        work: DungeonRoomUploadWork,
+        hdma: u8,
+    ) {
+        self.finish_dungeon_room_upload(work);
+        self.dungeon_load_and_draw_room_after_upload(hdma);
+    }
+
+    fn dungeon_load_and_draw_room_after_room_load(&mut self, hdma: u8) {
         self.clear_screen_transition();
         self.set_overworld_map_state(0);
         self.Dungeon_UploadRoomQuadrants();
+        self.dungeon_load_and_draw_room_after_upload(hdma);
+    }
+
+    fn dungeon_load_and_draw_room_after_upload(&mut self, hdma: u8) {
         self.set_hdma_enable_mask(hdma);
         self.clear_pending_nmi_subroutine();
         self.set_overworld_map_state(0);
@@ -1094,6 +1365,16 @@ impl ZeldaState {
 
     pub(super) fn Dungeon_LoadRoom(&mut self) {
         self.Dungeon_LoadHeader();
+        self.dungeon_load_room_after_header();
+    }
+
+    fn dungeon_load_room_after_header(&mut self) {
+        self.dungeon_load_room_before_floors();
+        self.RoomDraw_DrawFloorsCurrentRoom();
+        self.dungeon_load_room_after_floors();
+    }
+
+    fn dungeon_load_room_before_floors(&mut self) {
         self.dungeon_load_room_reset_floor_velocity();
         // C clears SOMARIA_BLOCK_BG_CHECK_FLAG (0x3f4) here at room load (dungeon.c). It is
         // incremented per somaria-block tile during room draw, so without this reset the count
@@ -1182,10 +1463,16 @@ impl ZeldaState {
         self.dungeon_room_doors_mut()
             .clear_exit_door_count_and_flags();
         self.dungeon_room_load_mut().set_load_ptr_offset(0);
-        self.RoomDraw_DrawFloorsCurrentRoom();
+    }
+
+    fn dungeon_load_room_after_floors(&mut self) {
         self.dungeon_room_tilemaps_mut()
             .copy_line_pointer_bytes(&DUNGEON_DRAW_OBJECT_OFFSETS_BG1);
         self.RoomDraw_DrawAllObjectsCurrentRoom();
+        self.dungeon_load_room_after_objects();
+    }
+
+    fn dungeon_load_room_after_objects(&mut self) {
         self.dungeon_torch_mut().resync_from_ram();
         let room = self.game_state.world.location.dungeon_room();
         for offset in (0..0x018c).step_by(4) {
@@ -1446,6 +1733,51 @@ impl ZeldaState {
         self.RoomDraw_DrawFloors(&room_layout);
     }
 
+    fn begin_dungeon_floor_draw_current_room(&mut self) -> Option<DungeonFloorDrawWork> {
+        let room = self.game_state.world.location.dungeon_room();
+        let floor_types = *self.dungeon_room_layout(usize::from(room))?.first()?;
+        self.dungeon_room_tilemaps_mut().copy_bg2_draw_line_offsets();
+        self.dungeon_room_parser_mut()
+            .set_floor_1_filler_low(floor_types & 0xf0);
+        self.dungeon_room_parser_mut().set_floor_1_filler_high(0);
+        Some(DungeonFloorDrawWork {
+            room,
+            floor_types,
+            completed_words: 0,
+        })
+    }
+
+    pub(super) fn advance_dungeon_floor_draw_one(
+        &mut self,
+        work: &mut DungeonFloorDrawWork,
+        ordinal: u16,
+        source_address: u32,
+        source_value: u16,
+    ) {
+        assert_eq!(self.game_state.world.location.dungeon_room(), work.room);
+        assert_eq!(ordinal, work.completed_words + 1);
+        let (base, byte_offset, source_offset, address) = work.next_tile();
+        assert_eq!(source_address, address,
+            "translated floor draw reached a different tilemap address");
+        let tile = read_word_from_slice(
+            self.asset_raw(69).expect("missing predefined dungeon tile asset"),
+            source_offset,
+        );
+        assert_eq!(source_value, tile,
+            "translated floor asset disagrees with source tile value");
+        self.dungeon_room_tilemaps_mut()
+            .set_room_tilemap_word_by_byte_offset(base, byte_offset, tile);
+        work.completed_words = ordinal;
+        if ordinal == 4096 {
+            self.dungeon_room_tilemaps_mut().copy_bg1_draw_line_offsets();
+            self.dungeon_room_parser_mut()
+                .set_floor_2_filler_low((work.floor_types & 0x0f) << 4);
+            self.dungeon_room_parser_mut().set_floor_2_filler_high(0);
+        } else if ordinal == DungeonFloorDrawWork::TOTAL_WORDS {
+            self.dungeon_room_load_mut().set_load_ptr_offset(1);
+        }
+    }
+
     pub(super) fn RoomDraw_DrawFloors(&mut self, level_data: &[u8]) {
         // Cycle ledger: RoomDraw_DrawFloors $01:89DC, entered with M=16 X=16.
         let _scope = crate::cycle_ledger::routine(0x01_89dc);
@@ -1525,6 +1857,18 @@ impl ZeldaState {
     pub(super) fn RoomData_DrawObjects_from(&mut self, layout: &[u8]) {
         // Cycle ledger: RoomDraw_DrawAllObjects $01:88E4, entered with M=16 X=16.
         let _scope = crate::cycle_ledger::routine(0x01_88e4);
+        let mut progress = DungeonObjectStreamProgress::default();
+        while self.room_data_draw_next_object_from(layout, &mut progress) {}
+    }
+
+    /// Execute one complete object or door from the current stream. A caller
+    /// can retain `progress` and the room-load pointer across CPU interrupts.
+    fn room_data_draw_next_object_from(
+        &mut self,
+        layout: &[u8],
+        progress: &mut DungeonObjectStreamProgress,
+    ) -> bool {
+        if !progress.in_doors {
         loop {
             // $0188E4-$0188EF: STZ $B2 / STZ $B4, read the object word, CMP #$FFFF.
             crate::cycle_ledger::charge(192);
@@ -1537,13 +1881,14 @@ impl ZeldaState {
             if raw == 0xffff {
                 // BEQ $0188FD taken (+6) and the RTS at $0188FD (42).
                 crate::cycle_ledger::charge(48);
-                return;
+                return false;
             }
             // $0188F1-$0188F6: STA $00, CMP #$FFF0.
             crate::cycle_ledger::charge(72);
             if raw == 0xfff0 {
                 // BEQ $0188FE taken (+6), then $0188FE-$018900 INC $BA twice (108).
                 crate::cycle_ledger::charge(114);
+                progress.in_doors = true;
                 break;
             }
             // $0188F8-$0188FB: JSR RoomData_DrawObject (46, the callee charges
@@ -1554,6 +1899,8 @@ impl ZeldaState {
             self.dungeon_room_load_mut()
                 .set_load_ptr_offset(pos.wrapping_add(3) as u16);
             self.RoomData_DrawObject(raw, idx);
+            return true;
+        }
         }
         loop {
             // $018902-$018909: read the door word, CMP #$FFFF. The INC $BA pair
@@ -1571,12 +1918,13 @@ impl ZeldaState {
             if raw == 0xffff {
                 // BEQ $0188FD taken (+6) and the RTS at $0188FD (42).
                 crate::cycle_ledger::charge(48);
-                return;
+                return false;
             }
             // $01890B-$018914: STA $00, JSR RoomData_DrawObject_Door (46, the
             // callee charges itself), INC $BA twice, BRA $018902 (priced taken).
             crate::cycle_ledger::charge(208);
             self.RoomData_DrawObject_Door(raw);
+            return true;
         }
     }
 
@@ -5195,14 +5543,33 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_UploadRoomQuadrants(&mut self) {
+        let mut work = self.begin_dungeon_room_upload();
+        while work.completed_quadrants() != 4 {
+            self.advance_dungeon_room_upload_one(&mut work);
+        }
+        self.finish_dungeon_room_upload(work);
+    }
+
+    fn begin_dungeon_room_upload(&mut self) -> DungeonRoomUploadWork {
         self.dungeon_room_load_mut().clear_quadrant_upload_index();
         self.set_overworld_map_state(0);
-        while self.game_state.dungeon.room_load.quadrant_upload_index() != 16 {
-            self.TileMapPrep_NotWaterOnTag();
-            self.upload_tilemap_now();
-            self.Dungeon_PrepareNextRoomQuadrantUpload();
-            self.upload_tilemap_now();
-        }
+        DungeonRoomUploadWork { completed_quadrants: 0 }
+    }
+
+    pub(super) fn advance_dungeon_room_upload_one(&mut self, work: &mut DungeonRoomUploadWork) {
+        assert!(work.completed_quadrants < 4);
+        assert_eq!(self.game_state.dungeon.room_load.quadrant_upload_index(),
+            work.completed_quadrants * 4);
+        self.TileMapPrep_NotWaterOnTag();
+        self.upload_tilemap_now();
+        self.Dungeon_PrepareNextRoomQuadrantUpload();
+        self.upload_tilemap_now();
+        work.completed_quadrants += 1;
+    }
+
+    fn finish_dungeon_room_upload(&mut self, work: DungeonRoomUploadWork) {
+        assert_eq!(work.completed_quadrants, 4);
+        assert_eq!(self.game_state.dungeon.room_load.quadrant_upload_index(), 16);
         self.clear_pending_nmi_subroutine();
         self.set_overworld_map_state(0);
         self.set_subsubmodule(0);
@@ -10716,11 +11083,44 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_02_01_LoadNextRoom(&mut self) {
-        self.Dungeon_LoadRoom();
+        if self.native_exact_cpu_owner.is_some()
+            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_FLOOR_DRAW_LIVE_TRIAL").is_some()
+            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_OBJECT_DRAW_LIVE_TRIAL").is_some()
+        {
+            // Dungeon_LoadRoom's floor and object loops cross multiple CPU
+            // hosts. Retain their translated cursors until the source-owned
+            // statement completions, as for the entrance room loader.
+            self.Dungeon_LoadHeader();
+            self.dungeon_load_room_before_floors();
+            assert!(self.active_early_dungeon_floor_draw.is_none());
+            self.active_early_dungeon_floor_draw = self.begin_dungeon_floor_draw_current_room();
+            assert!(self.active_early_dungeon_floor_draw.is_some());
+        } else {
+            self.Dungeon_LoadRoom();
+        }
         if self.begin_dungeon_supertile_transition_work(DungeonSupertileTransitionWork::RoomLoad) {
             return;
         }
+        self.finish_live_dungeon_supertile_room_load();
         self.continue_module07_02_01_after_room_load();
+    }
+
+    pub(super) fn finish_live_dungeon_supertile_room_load(&mut self) {
+        let Some(floor) = self.active_early_dungeon_floor_draw.take() else {
+            return;
+        };
+        assert_eq!(floor.completed_words(), DungeonFloorDrawWork::TOTAL_WORDS,
+            "supertile room load returned before its floor draw completed");
+        let mut objects = self.active_early_dungeon_object_draw.take()
+            .expect("supertile room load lost its object cursor");
+        // The retained CPU has returned from Dungeon_LoadRoom, so all of its
+        // remaining object statements have executed. The per-object tracker
+        // publishes completed draw calls during held hosts; finish the
+        // translated stream here, including any tail the tracker cannot
+        // distinguish from the parser's stream transitions.
+        while self.advance_dungeon_object_draw_one(&mut objects) {}
+        assert!(objects.finished());
+        self.dungeon_load_room_after_objects();
     }
 
     pub(super) fn continue_module07_02_01_after_room_load(&mut self) {
@@ -10999,6 +11399,7 @@ impl ZeldaState {
             // slice. Bug class 5 (collapsed timed side-effect phase), the same
             // split as the f2235 selected-game-load room preload.
             self.module11_02_load_entrance_prefix();
+            self.begin_module11_02_room_header_if_source_returned();
             return;
         }
         self.module11_02_load_entrance_prefix();
@@ -11048,10 +11449,90 @@ impl ZeldaState {
         self.follower_link_state_mut().set_y(new_y);
     }
 
+    fn begin_module11_02_room_header_if_source_returned(&mut self) {
+        self.begin_early_dungeon_room_header_if_source_returned(
+            EarlyDungeonRoomOwner::FallingEntrance,
+        );
+    }
+
+    pub(super) fn begin_early_dungeon_room_header_if_source_returned(
+        &mut self,
+        owner: EarlyDungeonRoomOwner,
+    ) {
+        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_ROOM_HEADER_LIVE_TRIAL").is_none() {
+            return;
+        }
+        let Some(trace) = self.native_exact_cpu_host_trace.as_ref() else {
+            return;
+        };
+        if trace.dungeon_header_index_writes.is_empty() {
+            return;
+        }
+        assert_eq!(trace.dungeon_header_index_writes.len(), 1);
+        let source_value = trace.dungeon_header_index_writes[0].value;
+        let room = self.game_state.world.location.dungeon_room();
+        assert_eq!(source_value, room.wrapping_mul(3),
+            "source header index disagrees with translated room");
+        assert!(self.pending_early_dungeon_room_hdma.is_none(),
+            "source-ordered room header began twice");
+        assert!(self.pending_early_dungeon_room_owner.is_none());
+        let floor_draw_trial =
+            crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_FLOOR_DRAW_LIVE_TRIAL").is_some();
+        if floor_draw_trial {
+            self.dungeon_torch_mut().clear_lit_torches();
+            self.dungeon_torch_mut().clear_dungeon_dark_with_lantern();
+        }
+        let hdma = self.game_state.display.hdma_enable_mask;
+        self.clear_hdma_enable_mask();
+        self.Dungeon_LoadHeader();
+        self.pending_early_dungeon_room_hdma = Some(hdma);
+        self.pending_early_dungeon_room_owner = Some(owner);
+        if floor_draw_trial {
+            self.dungeon_load_room_before_floors();
+            assert!(self.active_early_dungeon_floor_draw.is_none());
+            self.active_early_dungeon_floor_draw =
+                self.begin_dungeon_floor_draw_current_room();
+            assert!(self.active_early_dungeon_floor_draw.is_some(),
+                "source floor draw entered without translated room layout");
+        }
+    }
+
+    fn finish_early_dungeon_room_load(&mut self, owner: EarlyDungeonRoomOwner) -> bool {
+        let Some(hdma) = self.pending_early_dungeon_room_hdma.take() else {
+            assert!(self.pending_early_dungeon_room_owner.is_none());
+            assert!(self.active_early_dungeon_floor_draw.is_none());
+            return false;
+        };
+        assert_eq!(self.pending_early_dungeon_room_owner.take(), Some(owner));
+        if let Some(work) = self.active_early_dungeon_floor_draw.take() {
+            assert_eq!(work.completed_words(), DungeonFloorDrawWork::TOTAL_WORDS,
+                "room draw reached caller return before floors completed");
+            if let Some(upload) = self.active_early_dungeon_room_upload.take() {
+                assert_eq!(upload.completed_quadrants(), 4,
+                    "room upload reached caller return before four quadrants");
+                self.dungeon_load_and_draw_room_after_early_upload(upload, hdma);
+            } else if let Some(mut objects) = self.active_early_dungeon_object_draw.take() {
+                assert!(!self.advance_dungeon_object_draw_one(&mut objects),
+                    "room draw reached caller return with objects pending");
+                assert!(objects.finished());
+                self.dungeon_load_and_draw_room_after_early_objects(hdma);
+            } else {
+                self.dungeon_load_and_draw_room_after_early_floor(hdma);
+            }
+        } else {
+            self.dungeon_load_and_draw_room_after_early_header(hdma);
+        }
+        true
+    }
+
     pub(super) fn complete_module11_02_load_entrance(&mut self) {
-        self.dungeon_torch_mut().clear_lit_torches();
-        self.dungeon_torch_mut().clear_dungeon_dark_with_lantern();
-        self.Dungeon_LoadAndDrawRoom();
+        if self.active_early_dungeon_floor_draw.is_none() {
+            self.dungeon_torch_mut().clear_lit_torches();
+            self.dungeon_torch_mut().clear_dungeon_dark_with_lantern();
+        }
+        if !self.finish_early_dungeon_room_load(EarlyDungeonRoomOwner::FallingEntrance) {
+            self.Dungeon_LoadAndDrawRoom();
+        }
         self.Dungeon_LoadCustomTileAttr();
         let animated = DUNG_ANIMATED_TILES
             [self.game_state.world.palette_theme.main_tile_theme_index() as usize];
@@ -11693,10 +12174,10 @@ impl ZeldaState {
     /// authority handoff which lets a later native timing backend replace
     /// Snes9x without exposing a CPU PC or raster selector to gameplay code.
     fn arm_live_cached_sprite_main_cpu_continuation(&mut self) -> bool {
-        if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
-            return false;
-        }
-        let Some(receipt) = self.take_original_timing_cached_sprite_execution_progress() else {
+        let receipt = self.take_original_timing_cached_sprite_execution_progress()
+            .or_else(|| self.native_exact_cpu_host_trace.as_ref()
+                .and_then(|trace| trace.cached_sprite_progress));
+        let Some(receipt) = receipt else {
             return false;
         };
         assert!(
@@ -11960,7 +12441,35 @@ impl ZeldaState {
     /// camera land immediately, route host 91638) and only this tail at the
     /// terminal completion.
     pub(super) fn dungeon_initialize_room_from_special_after_adjust(&mut self) {
-        self.Dungeon_LoadRoom();
+        if self.native_exact_cpu_owner.is_some()
+            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_FLOOR_DRAW_LIVE_TRIAL").is_some()
+            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_OBJECT_DRAW_LIVE_TRIAL").is_some()
+            && self.game_state.frame.main_module == 7
+            && self.game_state.frame.submodule == 0x0e
+        {
+            // The spiral-stair caller enters the same Dungeon_LoadRoom loop as
+            // Module07_02_01. Its floor and object writes belong to the CPU
+            // continuation, not to the host that entered this function.
+            self.Dungeon_LoadHeader();
+            self.dungeon_load_room_before_floors();
+            assert!(self.active_early_dungeon_floor_draw.is_none());
+            self.active_early_dungeon_floor_draw = self.begin_dungeon_floor_draw_current_room();
+            assert!(self.active_early_dungeon_floor_draw.is_some());
+            if self.begin_dungeon_supertile_transition_work(
+                DungeonSupertileTransitionWork::SpiralRoomInitialization,
+            ) {
+                return;
+            }
+            self.finish_live_dungeon_supertile_room_load();
+            self.complete_spiral_room_initialization_after_room_load(false);
+            self.increment_subsubmodule();
+        } else {
+            self.Dungeon_LoadRoom();
+            self.complete_spiral_room_initialization_after_room_load(true);
+        }
+    }
+
+    pub(super) fn complete_spiral_room_initialization_after_room_load(&mut self, schedule: bool) {
         self.ResetStarTileGraphics();
         self.LoadTransAuxGFX();
         self.Dungeon_LoadCustomTileAttr();
@@ -11968,7 +12477,8 @@ impl ZeldaState {
         self.dungeon_room_tracking_mut()
             .set_room_index2(dungeon_room_index);
         self.follower_initialize();
-        if self.game_state.frame.main_module == 7
+        if schedule
+            && self.game_state.frame.main_module == 7
             && self.game_state.frame.submodule == 0x0e
             && self.begin_dungeon_supertile_transition_work(
                 DungeonSupertileTransitionWork::SpiralRoomInitialization,
@@ -11976,7 +12486,9 @@ impl ZeldaState {
         {
             return;
         }
-        self.increment_subsubmodule();
+        if schedule {
+            self.increment_subsubmodule();
+        }
     }
 
     pub(super) fn DungeonTransition_AdjustForFatStairScroll(&mut self) {
@@ -12343,8 +12855,16 @@ impl ZeldaState {
 
     pub(super) fn DungeonTransition_TriggerBGC34UpdateAndAdvance(&mut self) {
         self.PrepTransAuxGfx();
-        self.set_pending_nmi_subroutine(9);
-        self.set_core_update_disable_flag(9);
+        // The conversion can span several CPU hosts. The ROM publishes the
+        // DMA request only after it finishes, so the source CPU receipt owns
+        // these two stores while the translated conversion is suspended.
+        if self.native_exact_cpu_owner.is_none()
+            || crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_BG_CHARS_GATE_LIVE_TRIAL")
+                .is_none()
+        {
+            self.set_pending_nmi_subroutine(9);
+            self.set_core_update_disable_flag(9);
+        }
         if self.game_state.frame.main_module == 7 {
             let work = match self.game_state.frame.submodule {
                 // Fat stairs and falling transitions call the same helper;
@@ -12361,8 +12881,13 @@ impl ZeldaState {
     }
 
     pub(super) fn DungeonTransition_TriggerBGC56UpdateAndAdvance(&mut self) {
-        self.set_pending_nmi_subroutine(10);
-        self.set_core_update_disable_flag(10);
+        if self.native_exact_cpu_owner.is_none()
+            || crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_BG_CHARS_GATE_LIVE_TRIAL")
+                .is_none()
+        {
+            self.set_pending_nmi_subroutine(10);
+            self.set_core_update_disable_flag(10);
+        }
         self.increment_subsubmodule();
     }
 
@@ -12628,6 +13153,12 @@ impl ZeldaState {
         self.sprite_main();
         // $9338: JSL IrisSpotlight_ConfigureTable (the callee charges itself).
         crate::cycle_ledger::charge(62);
+        if let Some(progress) = self.native_exact_cpu_landing_spotlight_checkpoint() {
+            assert!(self.native_exact_cpu_landing_spotlight_build.is_none());
+            self.native_exact_cpu_landing_spotlight_build =
+                Some(self.begin_iris_spotlight_configure_table_at_progress(progress));
+            return;
+        }
         self.IrisSpotlight_ConfigureTable();
         self.complete_module07_0f_operate_spotlight_suffix();
     }
@@ -12696,6 +13227,18 @@ impl ZeldaState {
             0 => self.Module07_0F_00_InitSpotlight(),
             1 => self.Module07_0F_01_OperateSpotlight(),
             other => panic!("invalid Module07_0F_LandingWipe subsubmodule_index {other}"),
+        }
+        if self.native_exact_cpu_landing_spotlight_build.is_some() {
+            // The retained CPU stopped inside the table builder. Keep the
+            // native C caller suspended across that host boundary instead of
+            // eagerly running its return and Link/OAM.
+            self.latch_nmi_update();
+            self.game_execution_scheduler
+                .schedule_cpu_timed_work_from_current_main_iteration(
+                    GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn,
+                    1,
+                );
+            return;
         }
         // $9324: JSL Link_HandleMovingAnimation_FullLongEntry; $9328: JSL
         // LinkOam_Main (the callees charge themselves when annotated);
@@ -13575,7 +14118,9 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_module_pre_dungeon_before_sprite_reset(&mut self) {
-        self.Dungeon_LoadAndDrawRoom();
+        if !self.finish_early_dungeon_room_load(EarlyDungeonRoomOwner::PreDungeon) {
+            self.Dungeon_LoadAndDrawRoom();
+        }
         self.Dungeon_LoadCustomTileAttr();
 
         let animated = DUNG_ANIMATED_TILES

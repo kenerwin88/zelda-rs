@@ -54,7 +54,9 @@ impl ZeldaState {
             && self.game_execution_scheduler.is_idle()
             && self.pre_overworld_screen_build_cpu_nmis.is_none()
         {
-            self.pre_overworld_screen_build_cpu_nmis = Some(pre_overworld_load_cpu_nmis(self, None));
+            let (nmis, crossings) = pre_overworld_screen_build_cpu_plan(self);
+            self.pre_overworld_screen_build_cpu_nmis = Some(nmis);
+            self.pre_overworld_screen_build_cpu_crossings = Some(crossings);
         }
         if self.rom_startup_timing()
             && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
@@ -182,7 +184,9 @@ impl ZeldaState {
             && self.game_execution_scheduler.is_idle()
             && self.pre_overworld_overlays_cpu_nmis.is_none()
         {
-            self.pre_overworld_overlays_cpu_nmis = Some(pre_overworld_overlays_cpu_nmis(self));
+            let (nmis, tile_counts, decoder_started) = pre_overworld_overlays_cpu_plan(self);
+            self.pre_overworld_overlays_cpu_nmis = Some(nmis);
+            self.pre_overworld_overlay_cpu_progress = Some((tile_counts, decoder_started));
         }
         if self.rom_startup_timing()
             && frame.main_module == 9
@@ -190,7 +194,9 @@ impl ZeldaState {
             && self.game_execution_scheduler.is_idle()
             && self.module09_cpu_schedule.is_none()
         {
-            self.module09_cpu_schedule = Some(module09_cpu_schedule(self));
+            let (schedule, overlay_progress) = module09_cpu_schedule(self);
+            self.module09_cpu_schedule = Some(schedule);
+            self.module09_overlay_cpu_progress = overlay_progress;
         }
         if self.rom_startup_timing()
             && frame.main_module == 7
@@ -428,11 +434,28 @@ impl ZeldaState {
         }
         let nmi_slices = self.pre_overworld_overlays_cpu_nmis.take()
             .unwrap_or(PRE_OVERWORLD_OVERLAYS_NMI_SLICES);
-        if nmi_slices == 0 { return false; }
+        if nmi_slices == 0 {
+            self.pre_overworld_overlay_cpu_progress = None;
+            return false;
+        }
+        self.native_pre_overworld_overlay_decode = self.pre_overworld_overlay_cpu_progress.take()
+            .map(|(tile_counts_at_nmi, decoder_started_at_nmi)| {
+                assert_eq!(tile_counts_at_nmi.len(), usize::from(nmi_slices));
+                assert_eq!(decoder_started_at_nmi.len(), usize::from(nmi_slices));
+                PreOverworldOverlayDecodeProgress {
+                    tile_counts_at_nmi,
+                    decoder_started_at_nmi,
+                    started: false,
+                    published_tiles: 0,
+                }
+            });
         self.game_execution_scheduler.schedule_work(
             GameWorkContinuation::FinishPreOverworldOverlays,
             nmi_slices,
         );
+        // The first measured crossing belongs to this entry host: the C
+        // caller already ran its decoder prefix before retro_run returns.
+        self.advance_pre_overworld_overlay_decode_at_nmi(0);
         true
     }
 
@@ -442,12 +465,28 @@ impl ZeldaState {
         }
         if let Some(nmis) = self.pre_overworld_screen_build_cpu_nmis.take() {
             assert_ne!(nmis, 0, "screen build must cross its measured NMI");
+            let crossings = self.pre_overworld_screen_build_cpu_crossings.take();
+            let saved_map16_offsets = crossings.as_ref()
+                .map(|_| self.begin_overworld_ambient_overlay_map_position());
+            self.native_pre_overworld_screen_build = crossings
+                .map(|crossings| {
+                    assert_eq!(crossings.len(), usize::from(nmis));
+                    PreOverworldScreenBuildProgress {
+                        crossings,
+                        published: PreOverworldScreenBuildCrossing::default(),
+                        quadrant_started: [false; 4],
+                        quadrant_bytes: std::array::from_fn(|_| None),
+                        saved_map16_offsets: saved_map16_offsets.expect("measured screen build has a map position"),
+                        quadrant_suffix_published: false,
+                    }
+                });
             // The measurement excludes the leading handler and counts every
             // held acceptance up to the caller return. Its final handler is
             // consumed by the completion lane, not prepaid on module entry.
             self.game_execution_scheduler.schedule_work(
                 GameWorkContinuation::FinishPreOverworldScreenBuild, nmis,
             );
+            self.advance_pre_overworld_screen_build_at_nmi(0);
             return true;
         }
         let timing =
@@ -948,6 +987,14 @@ impl ZeldaState {
         // The interrupting NMI landed before the indirect Module 7 submodule
         // call returned. Resume the common caller suffix exactly once without
         // replaying the translated submodule.
+        let native_spotlight_caller_returned = self.native_exact_cpu_landing_spotlight_build.is_some();
+        if let Some(build) = self.native_exact_cpu_landing_spotlight_build.take() {
+            assert_eq!(self.game_state.frame.main_module, 7);
+            assert_eq!(self.game_state.frame.submodule, 0x0f);
+            assert_eq!(self.game_state.frame.subsubmodule, 1);
+            self.complete_iris_spotlight_configure_table(build);
+            self.complete_deferred_module07_0f_operate_spotlight_suffix();
+        }
         if self.dungeon_peg_attribute_flip_pending.is_some() {
             if let Some(next) = self.take_original_timing_dungeon_peg_attribute_flip_progress() {
                 // A terminal host may expose the loop's last source cursor at
@@ -1023,6 +1070,11 @@ impl ZeldaState {
             self.complete_deferred_module07_0f_operate_spotlight_suffix();
         }
         self.complete_module07_dungeon_after_submodule();
+        if native_spotlight_caller_returned
+            && self.game_state.system_signals.music_control() != 0
+        {
+            self.native_exact_cpu_landing_music_nmi_pending = true;
+        }
     }
 
     pub(super) fn prepare_dungeon_cpu_advance_after_returned_main_wait(&mut self) {

@@ -364,6 +364,7 @@ impl ZeldaState {
         self.last_nmi_dma_master_cycles = dma.master_cycles();
         self.last_nmi_handler_master_cycles =
             Some(u32::try_from(cpu + dma.master_cycles()).unwrap_or(u32::MAX));
+        self.note_native_exact_cpu_translated_nmi_completion();
     }
 
     /// Count one DMA transfer the NMI handler performs (`bytes` on the
@@ -639,11 +640,13 @@ impl ZeldaState {
             == Some(self.frame_ctr_dbg)
         {
             eprintln!(
-                "audio_nmi_sample host={} phase={:02x}/{:02x}/{:02x} ambient={:02x} effect1={:02x} effect2={:02x}",
+                "audio_nmi_sample host={} phase={:02x}/{:02x}/{:02x} music={:02x} last_music={:02x} ambient={:02x} effect1={:02x} effect2={:02x}",
                 self.frame_ctr_dbg,
                 self.game_state.frame.main_module,
                 self.game_state.frame.submodule,
                 self.game_state.frame.subsubmodule,
+                self.game_state.system_signals.music_control(),
+                self.game_state.system_signals.last_music_control(),
                 self.game_state.system_signals.ambient_sound_effect(),
                 self.game_state.system_signals.sound_effect_1(),
                 self.game_state.system_signals.sound_effect_2(),

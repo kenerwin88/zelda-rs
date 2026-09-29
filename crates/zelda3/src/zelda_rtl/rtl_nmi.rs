@@ -763,7 +763,8 @@ impl ZeldaState {
                 // owns the following field.
                 let native_dungeon_main_wait = matches!(caller,
                     NmiPrepareSpritesCpuCaller::DungeonModule07 | NmiPrepareSpritesCpuCaller::OverworldModule09
-                        | NmiPrepareSpritesCpuCaller::OverworldSongUpload)
+                        | NmiPrepareSpritesCpuCaller::OverworldSongUpload
+                        | NmiPrepareSpritesCpuCaller::DialogueModule0E)
                     && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live);
                 if !native_dungeon_main_wait {
                     self.stage_resumed_sprite_main_return_obj_scanout();

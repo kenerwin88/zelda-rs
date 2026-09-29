@@ -6582,7 +6582,7 @@ impl ZeldaState {
                         self.game_execution_scheduler.schedule_work(
                             GameWorkContinuation::FinishPreOverworldProperties {
                                 overworld_screen,
-                                sprite_presence_published: false,
+                                sprite_reload_stage: PreOverworldSpriteReloadStage::AwaitingPresence,
                             },
                             PRE_OVERWORLD_PROPERTIES_AFTER_SPRITE_RESET_NMI_SLICES,
                         );
@@ -6591,7 +6591,7 @@ impl ZeldaState {
                         matches!(
                             self.game_execution_scheduler.current_work(),
                             Some(GameWorkContinuation::FinishPreOverworldProperties {
-                                sprite_presence_published: false,
+                                sprite_reload_stage: PreOverworldSpriteReloadStage::AwaitingPresence,
                                 ..
                             })
                         ),
@@ -6622,7 +6622,7 @@ impl ZeldaState {
                                 self.game_execution_scheduler.current_work(),
                                 Some(
                                     GameWorkContinuation::FinishPreOverworldProperties {
-                                        sprite_presence_published: true,
+                                        sprite_reload_stage: PreOverworldSpriteReloadStage::SourceReceiptScan,
                                         ..
                                     } | GameWorkContinuation::FinishFluteMenuSelectedScreen {
                                         step: FluteMenuSelectedScreenStep::OverworldReloadScan,
@@ -11345,6 +11345,20 @@ impl ZeldaState {
                 Some(GameWorkContinuation::FinishDungeonSupertileTransition {
                     work: DungeonSupertileTransitionWork::AuxiliarySpriteGraphics,
                 })
+            ) && self.native_exact_cpu_host_trace.is_some()
+            {
+                // The retained CPU is the native timing owner for this JSR.
+                // The seven-NMI estimate cannot retire the translated call
+                // before or after the actual Module07 return at $02:8A67.
+                let returned = self.native_exact_cpu_host_trace.as_ref()
+                    .is_some_and(|trace| trace.auxiliary_sprite_graphics_returned);
+                self.game_execution_scheduler
+                    .advance_work_one_nmi_slice_with_authoritative_completion(returned)
+            } else if matches!(
+                self.game_execution_scheduler.current_work(),
+                Some(GameWorkContinuation::FinishDungeonSupertileTransition {
+                    work: DungeonSupertileTransitionWork::AuxiliarySpriteGraphics,
+                })
             ) && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
             {
                 // The ROM-CPU shadow supplies the native fallback budget, but
@@ -11533,6 +11547,21 @@ impl ZeldaState {
                         authoritative_pre_dungeon_returned,
                     )
             } else if self.game_execution_scheduler.current_work()
+                == Some(GameWorkContinuation::FinishDungeonSupertileTransition {
+                    work: DungeonSupertileTransitionWork::RoomLoad,
+                })
+                && self.active_early_dungeon_floor_draw.is_some()
+                && self.native_exact_cpu_host_trace.is_some()
+            {
+                // The floor and object cursors follow source statements.
+                // Only the exact CPU's return from Dungeon_LoadRoom can
+                // release their caller; the aggregate NMI estimate can end
+                // while RoomDraw_DrawAllObjects is still executing.
+                let returned = self.native_exact_cpu_host_trace.as_ref()
+                    .is_some_and(|trace| trace.room_load_returned);
+                self.game_execution_scheduler
+                    .advance_work_one_nmi_slice_with_authoritative_completion(returned)
+            } else if self.game_execution_scheduler.current_work()
                 == Some(GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn)
                 && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
                 && self.original_timing_semantic_receipts.is_some()
@@ -11552,6 +11581,19 @@ impl ZeldaState {
                         }));
                 let caller_returned = caller_reached_sprite_main
                     || self.original_timing_main_loop_return_timeline().is_some();
+                self.game_execution_scheduler
+                    .advance_work_one_nmi_slice_with_authoritative_completion(caller_returned)
+            } else if self.game_execution_scheduler.current_work()
+                == Some(GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn)
+                && self.native_exact_cpu_landing_spotlight_build.is_some()
+                && self.native_exact_cpu_host_trace.is_some()
+            {
+                // The retained CPU can stop inside this synchronous caller
+                // without accepting an NMI. Its observed main-wait return,
+                // rather than an aggregate slice count, retires the native
+                // call stack. The table/reset phase is advanced separately.
+                let caller_returned = self.native_exact_cpu_host_trace.as_ref()
+                    .is_some_and(|trace| !trace.main_wait_returns.is_empty());
                 self.game_execution_scheduler
                     .advance_work_one_nmi_slice_with_authoritative_completion(caller_returned)
             } else {
@@ -11604,6 +11646,61 @@ impl ZeldaState {
             scheduled_work_step,
         ) {
             return;
+        }
+        if matches!(scheduled_work_step, Some(GameWorkStep::Waiting))
+            && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && matches!(
+                self.game_execution_scheduler.current_work(),
+                Some(GameWorkContinuation::FinishPreOverworldProperties {
+                    sprite_reload_stage: PreOverworldSpriteReloadStage::AwaitingPresence,
+                    ..
+                })
+            )
+            && self.game_execution_scheduler.scheduled_work_slices_remaining()
+                == Some(PRE_OVERWORLD_PROPERTIES_AFTER_SPRITE_RESET_NMI_SLICES - 1)
+        {
+            // The first held NMI after Sprite_ResetAll_noDisable reaches
+            // Overworld_LoadSprites before the host returns. Publish the
+            // loader's complete presence map now; the proximity scan and
+            // caller suffix still belong to the later return boundary.
+            self.overworld_load_sprites();
+            self.begin_overworld_proximity_scan_continuation();
+            self.set_overworld_horizontal_scroll_delta_low(0xff);
+            assert!(self.game_execution_scheduler
+                .mark_native_pre_overworld_sprite_presence_published());
+        }
+        if matches!(scheduled_work_step, Some(GameWorkStep::Waiting))
+            && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && matches!(
+                self.game_execution_scheduler.current_work(),
+                Some(
+                    GameWorkContinuation::FinishPreOverworldOverlays
+                        | GameWorkContinuation::FinishWorldMapOverlayReload
+                )
+            )
+        {
+            if let (Some(progress), Some(remaining)) = (
+                self.native_pre_overworld_overlay_decode.as_ref(),
+                self.game_execution_scheduler.scheduled_work_slices_remaining(),
+            ) {
+                let crossing = progress.tile_counts_at_nmi.len() - usize::from(remaining);
+                self.advance_pre_overworld_overlay_decode_at_nmi(crossing);
+            }
+        }
+        if matches!(scheduled_work_step, Some(GameWorkStep::Waiting))
+            && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && matches!(
+                self.game_execution_scheduler.current_work(),
+                Some(GameWorkContinuation::FinishPreOverworldScreenBuild)
+            )
+        {
+            if let (Some(progress), Some(remaining)) = (
+                self.native_pre_overworld_screen_build.as_ref(),
+                self.game_execution_scheduler.scheduled_work_slices_remaining(),
+            ) {
+                let crossing = progress.crossings.len() - usize::from(remaining);
+                self.advance_pre_overworld_screen_build_at_nmi(crossing);
+            }
         }
         if matches!(scheduled_work_step, Some(GameWorkStep::Waiting))
             && self
@@ -11667,18 +11764,18 @@ impl ZeldaState {
                     self.game_execution_scheduler.schedule_work(
                         GameWorkContinuation::FinishPreOverworldProperties {
                             overworld_screen,
-                            sprite_presence_published: false,
+                            sprite_reload_stage: PreOverworldSpriteReloadStage::AwaitingPresence,
                         },
                         PRE_OVERWORLD_PROPERTIES_AFTER_SPRITE_RESET_NMI_SLICES,
                     );
                 }
                 GameWorkContinuation::FinishPreOverworldProperties {
                     overworld_screen,
-                    sprite_presence_published,
+                    sprite_reload_stage,
                 } => {
                     self.complete_pre_overworld_load_properties_after_sprite_reset_with_presence(
                         overworld_screen,
-                        sprite_presence_published,
+                        sprite_reload_stage,
                     );
                     if self.native_overworld_song_upload == Some(NativeOverworldSongUpload::AwaitReturn) {
                         assert!(self.pending_main_loop_common_suffix.is_none());
@@ -12687,6 +12784,7 @@ impl ZeldaState {
                         .module09_cpu_schedule
                         .take()
                         .expect("Module09/$21 completion lost its ROM CPU schedule");
+                    assert_eq!(schedule.body_return_nmis, schedule.submodule_nmis);
                     assert_eq!(schedule.caller_nmis, 0);
                     assert_eq!(schedule.caller_sprite_main_nmis, 0);
                     assert_eq!(schedule.caller_suffix_nmis, 0);

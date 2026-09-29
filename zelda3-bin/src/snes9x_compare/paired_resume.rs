@@ -65,7 +65,8 @@ pub(crate) struct PairedResumeManifest {
     /// checkpoint resumes only the Rust-only cached replay (which never loads
     /// an oracle state); the live Snes9x compare rejects it.
     pub(crate) oracle_state: Option<PairedResumeArtifact>,
-    pub(crate) original_timing_resume_checkpoint: PairedResumeArtifact,
+    pub(crate) original_timing_resume_checkpoint: Option<PairedResumeArtifact>,
+    pub(crate) native_exact_cpu_checkpoint: Option<PairedResumeArtifact>,
     pub(crate) semantic_trace_checkpoint: Option<PairedResumeArtifact>,
     pub(crate) core: PairedResumeProvenance,
     pub(crate) rom: PairedResumeProvenance,
@@ -130,7 +131,8 @@ pub(crate) fn resolve_paired_resume_dir(path: &Path) -> Result<(PathBuf, Option<
 pub(crate) struct PairedResumeArtifacts {
     pub(crate) rust_state: PathBuf,
     pub(crate) oracle_state: Option<PathBuf>,
-    pub(crate) original_timing_resume: PathBuf,
+    pub(crate) original_timing_resume: Option<PathBuf>,
+    pub(crate) native_exact_cpu: Option<PathBuf>,
     pub(crate) semantic_trace: Option<PathBuf>,
 }
 
@@ -148,12 +150,10 @@ pub(crate) fn paired_resume_paths(
             path.display()
         ));
     };
-    Ok((
-        artifacts.rust_state,
-        oracle_state,
-        artifacts.original_timing_resume,
-        semantic_trace,
-    ))
+    let original_timing_resume = artifacts.original_timing_resume.ok_or_else(|| {
+        format!("{} is a native exact CPU checkpoint, not an original-timing checkpoint", path.display())
+    })?;
+    Ok((artifacts.rust_state, oracle_state, original_timing_resume, semantic_trace))
 }
 
 pub(crate) fn paired_resume_artifacts(path: &Path) -> Result<PairedResumeArtifacts, String> {
@@ -219,10 +219,13 @@ pub(crate) fn paired_resume_artifacts(path: &Path) -> Result<PairedResumeArtifac
         .as_ref()
         .map(|artifact| verify_artifact("oracle state", artifact))
         .transpose()?;
-    let original_timing_resume = verify_artifact(
-        "original-timing checkpoint",
-        &manifest.original_timing_resume_checkpoint,
-    )?;
+    let original_timing_resume = manifest.original_timing_resume_checkpoint.as_ref()
+        .map(|artifact| verify_artifact("original-timing checkpoint", artifact)).transpose()?;
+    let native_exact_cpu = manifest.native_exact_cpu_checkpoint.as_ref()
+        .map(|artifact| verify_artifact("native exact CPU checkpoint", artifact)).transpose()?;
+    if original_timing_resume.is_some() == native_exact_cpu.is_some() {
+        return Err(format!("{} must contain exactly one timing-owner checkpoint", manifest_path.display()));
+    }
     let semantic_trace = manifest
         .semantic_trace_checkpoint
         .as_ref()
@@ -249,6 +252,7 @@ pub(crate) fn paired_resume_artifacts(path: &Path) -> Result<PairedResumeArtifac
         rust_state,
         oracle_state,
         original_timing_resume,
+        native_exact_cpu,
         semantic_trace,
     })
 }
@@ -484,15 +488,16 @@ pub(crate) fn write_cached_av_paired_resume_from_sources(
                 temporary_dir.display()
             )
         })?;
-        let original_timing_resume =
-            game.capture_original_timing_resume_checkpoint()
-                .map_err(|error| {
-                    format!("cached Rust frontier is not an exact timing boundary: {error}")
-                })?;
-        let original_timing_resume_bytes = serde_json::to_vec_pretty(&original_timing_resume)
-            .map_err(|error| {
+        let native_exact_cpu_bytes = game.capture_native_exact_cpu_checkpoint()?;
+        let original_timing_resume_bytes = if native_exact_cpu_bytes.is_none() {
+            let checkpoint = game.capture_original_timing_resume_checkpoint()
+                .map_err(|error| format!("cached Rust frontier is not an exact timing boundary: {error}"))?;
+            Some(serde_json::to_vec_pretty(&checkpoint).map_err(|error| {
                 format!("failed to encode original-timing resume checkpoint: {error}")
-            })?;
+            })?)
+        } else {
+            None
+        };
         let rust_state = PlayCrashCheckpoint {
             magic: *PLAY_CRASH_CHECKPOINT_MAGIC,
             host_frame: frame,
@@ -504,11 +509,14 @@ pub(crate) fn write_cached_av_paired_resume_from_sources(
             .map_err(|error| format!("failed to serialize cached Rust frontier: {error}"))?;
         fs::write(temporary_dir.join("rust.z3state"), &rust_bytes)
             .map_err(|error| format!("failed to write cached Rust frontier: {error}"))?;
-        fs::write(
-            temporary_dir.join("original-timing.resume.json"),
-            &original_timing_resume_bytes,
-        )
-        .map_err(|error| format!("failed to write original-timing resume checkpoint: {error}"))?;
+        if let Some(bytes) = native_exact_cpu_bytes.as_ref() {
+            fs::write(temporary_dir.join("native-exact-cpu.z3timing"), bytes)
+                .map_err(|error| format!("failed to write native exact CPU frontier: {error}"))?;
+        }
+        if let Some(bytes) = original_timing_resume_bytes.as_ref() {
+            fs::write(temporary_dir.join("original-timing.resume.json"), bytes)
+                .map_err(|error| format!("failed to write original-timing resume checkpoint: {error}"))?;
+        }
         fs::copy(&initial_sram_source, temporary_dir.join("initial.srm"))
             .map_err(|error| format!("failed to copy cached initial SRAM: {error}"))?;
         if let Some((oracle_source, semantic_trace_source)) = oracle_sources {
@@ -541,11 +549,19 @@ pub(crate) fn write_cached_av_paired_resume_from_sources(
                 "artifact": "rust.z3state",
                 "sha256": parity::evidence::sha256_bytes(&rust_bytes),
             },
+            "native_exact_cpu_checkpoint": native_exact_cpu_bytes.as_ref().map(|bytes| {
+                serde_json::json!({
+                    "artifact": "native-exact-cpu.z3timing",
+                    "sha256": parity::evidence::sha256_bytes(bytes),
+                })
+            }),
             "oracle_state": oracle_state,
-            "original_timing_resume_checkpoint": {
-                "artifact": "original-timing.resume.json",
-                "sha256": parity::evidence::sha256_bytes(&original_timing_resume_bytes),
-            },
+            "original_timing_resume_checkpoint": original_timing_resume_bytes.as_ref().map(|bytes| {
+                serde_json::json!({
+                    "artifact": "original-timing.resume.json",
+                    "sha256": parity::evidence::sha256_bytes(bytes),
+                })
+            }),
             "semantic_trace_checkpoint": semantic_trace_checkpoint,
             "source": {
                 "kind": "matched-rust-only-cached-snes9x-av-replay",

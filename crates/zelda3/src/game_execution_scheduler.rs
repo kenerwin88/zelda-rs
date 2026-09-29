@@ -1,6 +1,7 @@
 use super::{
     DisplaySnapshotPublication, GameWorkContinuation, ItemReceiptGraphicsContinuation,
-    PreDungeonSpriteResetContinuation, PreMainCallerContinuation, PreMainNmiResume,
+    PreDungeonSpriteResetContinuation, PreOverworldSpriteReloadStage,
+    PreMainCallerContinuation, PreMainNmiResume,
     SelectedGameLoadDestination, SpotlightIteration, SpriteResetAllProgress,
     FILE_SELECT_GRAPHICS_NMI_SLICES, SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES,
     SELECTED_GAME_LOAD_BEFORE_PRE_DUNGEON_AUDIO_NMI_SLICES,
@@ -356,7 +357,7 @@ impl CpuCycleBudget {
         source_timeline: &CpuMasterTimeline,
     ) -> CpuWorkAdvance {
         let accepted_nmi_at = match receipt.accepted_interrupt {
-            Some(SourceCpuAcceptedInterrupt::Nmi { started_at }) => {
+            Some(SourceCpuAcceptedInterrupt::Nmi { started_at, .. }) => {
                 Some(started_at.master_cycles())
             }
             Some(SourceCpuAcceptedInterrupt::Irq { .. }) | None => None,
@@ -1237,6 +1238,7 @@ impl GameExecutionScheduler {
         }
     }
 
+
     fn schedule_continuation(&mut self, continuation: GameExecutionContinuation) {
         assert!(
             self.continuation.is_none(),
@@ -1689,19 +1691,36 @@ impl GameExecutionScheduler {
     }
 
     pub(super) fn mark_pre_overworld_sprite_presence_published(&mut self) -> bool {
+        self.mark_pre_overworld_sprite_reload_stage(
+            PreOverworldSpriteReloadStage::SourceReceiptScan,
+        )
+    }
+
+    pub(super) fn mark_native_pre_overworld_sprite_presence_published(&mut self) -> bool {
+        self.mark_pre_overworld_sprite_reload_stage(
+            PreOverworldSpriteReloadStage::NativePresencePublished,
+        )
+    }
+
+    fn mark_pre_overworld_sprite_reload_stage(
+        &mut self,
+        published: PreOverworldSpriteReloadStage,
+    ) -> bool {
         let Some(GameExecutionContinuation::ScheduledWork(work)) = self.continuation.as_mut()
         else {
             return false;
         };
         let GameWorkContinuation::FinishPreOverworldProperties {
-            sprite_presence_published,
+            sprite_reload_stage,
             ..
         } = &mut work.continuation
         else {
             return false;
         };
-        let newly_published = !*sprite_presence_published;
-        *sprite_presence_published = true;
+        let newly_published = *sprite_reload_stage == PreOverworldSpriteReloadStage::AwaitingPresence;
+        if newly_published {
+            *sprite_reload_stage = published;
+        }
         newly_published
     }
 
@@ -2569,6 +2588,7 @@ mod cpu_timing_tests {
             transactions: Vec::new(),
             accepted_interrupt: Some(SourceCpuAcceptedInterrupt::Nmi {
                 started_at: nmi_receipt.started_at,
+                interrupted_pc: second_instruction.origin_pc + 1, // the synthetic opcode is NOP
             }),
         };
         assert_eq!(
@@ -3094,6 +3114,7 @@ mod cpu_timing_tests {
         assert!(scheduler.fresh_main_loop_iteration_is_ready());
         assert!(!scheduler.main_return_requires_leading_nmi());
     }
+
 
     #[test]
     fn native_caller_state_machine_can_return_to_wait_after_leading_nmi() {

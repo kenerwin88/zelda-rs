@@ -5362,7 +5362,7 @@ impl ZeldaState {
         match self.dialogue_vwf_glyph_cpu_phase {
             VwfGlyphCpuPhase::Ready => {
                 self.dialogue_vwf_dispatch_cursor = dispatch_cursor;
-                self.begin_vwf_glyph(param);
+                self.begin_vwf_glyph(param, read_pos as u16);
                 self.dialogue_vwf_glyph_cpu_phase = VwfGlyphCpuPhase::Drawing {
                     remaining_master_cycles: drawing_master_cycles,
                 };
@@ -5626,7 +5626,8 @@ impl ZeldaState {
         let mut authority_boundary_reached = false;
         let mut retain_incomplete_click = false;
         loop {
-            let read_pos = self.game_state.messaging.runtime.dialogue_msg_read_pos() as usize;
+            let read_pos = self.dialogue_vwf_pending_glyph_read_pos
+                .unwrap_or(self.game_state.messaging.runtime.dialogue_msg_read_pos()) as usize;
             let c = self.game_state.messaging.decoded_text.byte(read_pos);
             let (param, cmd, multibyte) = self.text_decode_cmd(
                 c,
@@ -5668,6 +5669,8 @@ impl ZeldaState {
                         let width = self.dialogue_glyph_width(param);
                         let fast_forward =
                             self.game_state.messaging.runtime.vwf_line_speed_cur() == 0;
+                        let mut bitmap_published_incrementally = false;
+                        let mut drawing_setup_published = false;
                         if fast_forward {
                             // VWF_RenderSingle applies $0720 before reading
                             // vwf_arr[i]. Time the first glyph from that line's
@@ -5709,6 +5712,7 @@ impl ZeldaState {
                                 glyph_costs,
                                 handler_entry_glyph_phase,
                             );
+                            let phase_before = self.dialogue_vwf_glyph_cpu_phase;
                             let advance = self
                                 .dialogue_vwf_glyph_cpu_phase
                                 .advance(cycles_left, glyph_costs);
@@ -5727,7 +5731,44 @@ impl ZeldaState {
                                         handler_entry_glyph_phase,
                                         retention_costs,
                                     );
-                                self.begin_vwf_glyph(param);
+                                self.begin_vwf_glyph(param, read_pos as u16);
+                            }
+                            if exact_costs {
+                                if !matches!(phase_before, VwfGlyphCpuPhase::Drawing { .. })
+                                    && matches!(advance.next_phase,
+                                        VwfGlyphCpuPhase::Drawing { .. } | VwfGlyphCpuPhase::Ready)
+                                {
+                                    self.publish_vwf_glyph_drawing_setup(param);
+                                }
+                                drawing_setup_published = matches!(advance.next_phase,
+                                    VwfGlyphCpuPhase::Drawing { .. } | VwfGlyphCpuPhase::Ready);
+                            }
+                            if exact_costs && self.dialogue_glyph_font_rows(param).is_some() {
+                                let drawing = glyph_costs.drawing;
+                                let drawn_before = match phase_before {
+                                    VwfGlyphCpuPhase::Drawing { remaining_master_cycles } =>
+                                        drawing.saturating_sub(remaining_master_cycles),
+                                    _ => 0,
+                                };
+                                let drawn_after = match advance.next_phase {
+                                    VwfGlyphCpuPhase::Ready => drawing,
+                                    VwfGlyphCpuPhase::Drawing { remaining_master_cycles } =>
+                                        drawing.saturating_sub(remaining_master_cycles),
+                                    _ => 0,
+                                };
+                                self.publish_vwf_glyph_bitmap_range(
+                                    param, width, x, drawn_before, drawn_after,
+                                );
+                                let read_position_write =
+                                    crate::cycle_models::vwf::glyph_read_position_write_at(drawing);
+                                if drawn_before < read_position_write
+                                    && read_position_write <= drawn_after
+                                {
+                                    self.messaging_state_mut().set_dialogue_msg_read_pos(
+                                        (read_pos as u16).wrapping_add(1),
+                                    );
+                                }
+                                bitmap_published_incrementally = true;
                             }
                             if !advance.completed {
                                 midline_yield = true;
@@ -5754,10 +5795,13 @@ impl ZeldaState {
                             self.dialogue_vwf_dispatch_cursor = glyph_dispatch_cursor;
                             exact_command_master_cycles = u64::from(glyph_costs.total())
                                 + crate::cycle_models::vwf::RENDER_SINGLE_EPILOGUE_MASTER_CYCLES;
-                            self.begin_vwf_glyph(param);
+                            self.begin_vwf_glyph(param, read_pos as u16);
                         }
                         frame_advance = frame_advance.saturating_add(u16::from(width));
-                        self.complete_vwf_glyph(param, read_pos as u16);
+                        self.complete_vwf_glyph(
+                            param, read_pos as u16, drawing_setup_published,
+                            bitmap_published_incrementally,
+                        );
                         command_done = true;
                         if fast_forward {
                             cycles_left = cycles_left
@@ -5940,6 +5984,9 @@ impl ZeldaState {
                 self.messaging_state_mut().set_dialogue_msg_read_pos(
                     (read_pos as u16).wrapping_add(1 + u16::from(multibyte)),
                 );
+                if is_letter {
+                    self.dialogue_vwf_pending_glyph_read_pos = None;
+                }
                 if self.dialogue_live_message_read_position_target
                     == Some(self.game_state.messaging.runtime.dialogue_msg_read_pos())
                 {
@@ -6284,7 +6331,10 @@ impl ZeldaState {
             .unwrap_or(0)
     }
 
-    fn begin_vwf_glyph(&mut self, c: u8) {
+    fn begin_vwf_glyph(&mut self, c: u8, read_pos: u16) {
+        assert!(self.dialogue_vwf_pending_glyph_read_pos.is_none(),
+            "a VWF glyph cannot enter while another glyph body is active");
+        self.dialogue_vwf_pending_glyph_read_pos = Some(read_pos);
         if c != 0x59 {
             self.set_sound_effect_2(12);
         }
@@ -6308,7 +6358,53 @@ impl ZeldaState {
         }
     }
 
-    fn complete_vwf_glyph(&mut self, c: u8, dialogue_offset: u16) {
+    fn publish_vwf_glyph_bitmap_range(
+        &mut self,
+        c: u8,
+        width: u8,
+        x: u8,
+        drawn_before: u32,
+        drawn_after: u32,
+    ) {
+        if drawn_before >= drawn_after {
+            return;
+        }
+        let Some(rows) = self.dialogue_glyph_font_rows(c) else {
+            return;
+        };
+        let line_ptr = usize::from(self.game_state.messaging.vwf_render.line_render_offset());
+        for write in crate::cycle_models::vwf::glyph_bitmap_writes(width, x, line_ptr, rows) {
+            if write.after_master_cycles <= drawn_before
+                || write.after_master_cycles > drawn_after
+            {
+                continue;
+            }
+            match write.kind {
+                crate::cycle_models::vwf::GlyphBitmapWriteKind::Xor(mask) =>
+                    self.xor_messaging_render_buffer_mask(write.offset, mask),
+                crate::cycle_models::vwf::GlyphBitmapWriteKind::Clear(mask) =>
+                    self.clear_messaging_render_buffer_mask(write.offset, mask),
+                crate::cycle_models::vwf::GlyphBitmapWriteKind::SetWord(value) =>
+                    self.set_messaging_render_buffer_word_at_byte_offset(write.offset, value),
+            }
+        }
+    }
+
+    fn publish_vwf_glyph_drawing_setup(&mut self, c: u8) {
+        let width = self.dialogue_glyph_width(c);
+        let i = self.game_state.messaging.vwf_render.glyph_cursor_usize();
+        self.increment_vwf_glyph_cursor();
+        let arrval = self.vwf_glyph_advance_prefix_sum(i);
+        self.set_vwf_next_glyph_advance_prefix_sum(i, arrval.wrapping_add(width));
+    }
+
+    fn complete_vwf_glyph(
+        &mut self,
+        c: u8,
+        dialogue_offset: u16,
+        drawing_setup_published: bool,
+        bitmap_published_incrementally: bool,
+    ) {
         let Some(dialogue_font) = self.asset_memblk(95, self.dialogue_font_blk_index) else {
             return;
         };
@@ -6317,17 +6413,19 @@ impl ZeldaState {
         self.zelda_complete_vwf_glyph_boundary_marker();
         let width = widths.get(c as usize).copied().unwrap_or(0);
         assert!(width <= 8);
-        let i = self.game_state.messaging.vwf_render.glyph_cursor_usize();
-        self.increment_vwf_glyph_cursor();
-        // C: arrval = vwf_arr[i]; vwf_arr[i + 1] = arrval + width (vwf_arr = raw g_ram).
+        if !drawing_setup_published {
+            self.publish_vwf_glyph_drawing_setup(c);
+        }
+        let i = usize::from(self.game_state.messaging.vwf_render.glyph_cursor().wrapping_sub(1));
         let arrval = self.vwf_glyph_advance_prefix_sum(i);
-        self.set_vwf_next_glyph_advance_prefix_sum(i, arrval.wrapping_add(width));
         let r10 = ((c as usize & 0x70) * 2) + (c as usize & 0x0f);
         let r0 = arrval as usize * 2;
         let line_ptr = self.game_state.messaging.vwf_render.line_render_offset() as usize;
         self.record_bg3_vwf_glyph_run(c, arrval, line_ptr, width, dialogue_offset);
-        self.messaging_vwf_render_half(&font_data, r10, r0, line_ptr, width);
-        self.messaging_vwf_render_half(&font_data, r10 + 16, r0, line_ptr + 0x150, width);
+        if !bitmap_published_incrementally {
+            self.messaging_vwf_render_half(&font_data, r10, r0, line_ptr, width);
+            self.messaging_vwf_render_half(&font_data, r10 + 16, r0, line_ptr + 0x150, width);
+        }
     }
 
     fn messaging_vwf_render_half(

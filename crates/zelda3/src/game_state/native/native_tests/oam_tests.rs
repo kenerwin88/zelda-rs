@@ -154,3 +154,27 @@ fn native_oam_bridge_dual_writes_changes_from_native_state() {
     assert_eq!(oam.region_alloc_counter(1), 0x0008);
     assert_eq!(OamState::load_from_ram(&ram), oam);
 }
+
+#[test]
+fn extended_oam_store_can_follow_a_suspended_entry_publication() {
+    let mut ram = vec![0; WRAM_SIZE];
+    let mut oam = OamState::load_from_ram(&ram);
+    let mut atomic_ram = ram.clone();
+    let mut atomic = oam.clone();
+    let addr = OAM_BUF + 8;
+    let pending = {
+        let mut bridge = NativeOamStateBridgeMut::new(&mut oam, &mut ram);
+        bridge.write_entry_before_extended(addr, 0x0123, 0x45, 0x67, 0x89, 2)
+    };
+    assert_eq!(&ram[addr..addr + 4], &[0x23, 0x45, 0x67, 0x89]);
+    assert_eq!(ram[BYTEWISE_EXTENDED_OAM + 2], 0);
+    assert_eq!(oam.extended_byte(2), 0);
+
+    NativeOamStateBridgeMut::new(&mut oam, &mut ram)
+        .finish_pending_extended_write(pending);
+    NativeOamStateBridgeMut::new(&mut atomic, &mut atomic_ram)
+        .write_entry_with_extended(addr, 0x0123, 0x45, 0x67, 0x89, 2);
+    assert_eq!(ram, atomic_ram);
+    assert_eq!(oam, atomic);
+    assert_eq!(oam.extended_byte(2), 3);
+}

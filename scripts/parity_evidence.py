@@ -20,10 +20,19 @@ from typing import Any, Iterable
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _git_common_path(name: str) -> Path:
+    common_dir = subprocess.check_output(
+        ["git", "rev-parse", "--git-common-dir"], cwd=ROOT, text=True
+    ).strip()
+    return (ROOT / common_dir / name).resolve()
+
+
 DEFAULT_PROJECT = ROOT / "routes" / "full_run"
 DEFAULT_LEDGER = DEFAULT_PROJECT / "parity-frontier.json"
-PASS_ROOT = ROOT / ".git" / "parity-cold-passes"
-ORACLE_CACHE_ROOT = ROOT / ".git" / "parity-oracle-cache"
+PASS_ROOT = _git_common_path("parity-cold-passes")
+ORACLE_CACHE_ROOT = _git_common_path("parity-oracle-cache")
 ZPARITY = ROOT / "target" / "parity" / "zparity"
 LEGACY_PASS_SCHEMA = 1
 PASS_SCHEMA = 2

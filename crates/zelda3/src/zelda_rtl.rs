@@ -4607,12 +4607,24 @@ fn pre_overworld_song_upload_command(state: &ZeldaState, nmi_is_trailing: bool) 
 }
 
 /// Count the complete overlay caller, including the main-loop suffix, from
-/// its leading NMI. Map decompression varies with the selected overlay.
-fn pre_overworld_overlays_cpu_nmis(state: &ZeldaState) -> u8 {
-    pre_overworld_load_cpu_nmis(state, Some(0x02_af19))
+/// its leading NMI and record the decoder's statement progress at each NMI.
+/// Map decompression varies with the selected overlay.
+fn pre_overworld_overlays_cpu_plan(state: &ZeldaState) -> (u8, Vec<u16>, Vec<bool>) {
+    let (nmis, tiles, started, _) = pre_overworld_load_cpu_plan(state, Some(0x02_af19));
+    (nmis, tiles, started)
 }
 
-fn pre_overworld_load_cpu_nmis(state: &ZeldaState, entry_pc: Option<u32>) -> u8 {
+fn pre_overworld_screen_build_cpu_plan(
+    state: &ZeldaState,
+) -> (u8, Vec<PreOverworldScreenBuildCrossing>) {
+    let (nmis, _, _, crossings) = pre_overworld_load_cpu_plan(state, None);
+    (nmis, crossings)
+}
+
+fn pre_overworld_load_cpu_plan(
+    state: &ZeldaState,
+    entry_pc: Option<u32>,
+) -> (u8, Vec<u16>, Vec<bool>, Vec<PreOverworldScreenBuildCrossing>) {
     let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(
         &state.rom, &state.ram, &state.sram, &state.ppu, &timing_dma,
@@ -4624,29 +4636,91 @@ fn pre_overworld_load_cpu_nmis(state: &ZeldaState, entry_pc: Option<u32>) -> u8 
     );
     advance_rom_cpu_through_nmi(&mut run, &mut budget);
     let mut nmis = 0u8;
+    let mut map32_tiles = 0u16;
+    let mut tile_counts_at_nmi = Vec::new();
+    let mut decoder_started = false;
+    let mut decoder_started_at_nmi = Vec::new();
+    let screen_build = entry_pc.is_none();
+    let debug_screen_build = screen_build
+        && crate::debug_env::var_os("ZELDA3_DEBUG_PRE_OVERWORLD_DECODE").is_some();
+    if screen_build {
+        run.enable_cpu_write_trace();
+    }
+    let mut screen_build_progress = PreOverworldScreenBuildCrossing::default();
+    let mut screen_build_crossings = Vec::new();
     // $8036 is also visited while leaving the initial wait loop. Do not
     // mistake that pre-dispatch visit for the completed caller's return.
     let mut entered = false;
     for _ in 0..5_000_000 {
         entered |= run.pc() == entry_pc.unwrap_or(0x00_8051);
+        if entry_pc == Some(0x02_af19) && run.pc() == 0x02_f695 {
+            map32_tiles = map32_tiles.saturating_add(1);
+        }
+        if entry_pc == Some(0x02_af19) && matches!(run.pc(), 0x02_f84f | 0x02_f609) {
+            decoder_started = true;
+        }
+        if screen_build && run.pc() == 0x02_f695 {
+            screen_build_progress.tiles += 1;
+        }
         if entered && run.is_complete() {
             if crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
                 eprintln!("pre_overworld_load_cpu host={} submodule={} nmis={nmis} return={:?}",
                     state.frame_ctr_dbg, state.game_state.frame.submodule, budget.raster_position());
             }
-            return nmis;
+            if screen_build {
+                assert_eq!(screen_build_progress.tiles, 1024);
+                assert_eq!(screen_build_progress.decompressed, [[256; 2]; 4]);
+                assert_eq!(screen_build_progress.copied, [[256; 2]; 4]);
+            }
+            return (nmis, tile_counts_at_nmi, decoder_started_at_nmi, screen_build_crossings);
         }
         let (scanline, master_cycle) = budget.raster_position().coordinates();
         run.set_raster_position(scanline, master_cycle);
-        if advance_rom_cpu_step(&mut run, &mut budget) != CpuWorkAdvance::Complete {
+        let step_pc = run.pc();
+        let advance = advance_rom_cpu_step(&mut run, &mut budget);
+        if screen_build {
+            for (address, _) in run.take_cpu_wram_writes() {
+                let quadrant = (screen_build_progress.tiles / 256) as usize;
+                if quadrant < 4 && (0x1_4400..0x1_4500).contains(&address)
+                    && (0x02_fe00..=0x02_ffff).contains(&step_pc)
+                {
+                    let phase = usize::from(screen_build_progress.copied[quadrant][0] == 256);
+                    screen_build_progress.decompressed[quadrant][phase] += 1;
+                } else if quadrant < 4 && (0x1_4000..0x1_4200).contains(&address)
+                    && matches!(step_pc, 0x02_f653 | 0x02_f65b | 0x02_f663 | 0x02_f66b)
+                {
+                    let phase = usize::from(screen_build_progress.copied[quadrant][0] == 256);
+                    screen_build_progress.copied[quadrant][phase] += 1;
+                }
+            }
+        }
+        if advance != CpuWorkAdvance::Complete {
             nmis = nmis.checked_add(1).expect("overlay caller exceeded NMI count");
+            tile_counts_at_nmi.push(map32_tiles);
+            decoder_started_at_nmi.push(decoder_started);
+            if screen_build {
+                screen_build_crossings.push(screen_build_progress);
+            }
+            if debug_screen_build {
+                eprintln!("pre_overworld_screen_build host={} crossing={} pc={:06x} decompressed={:?} copied={:?} tiles={}",
+                    state.frame_ctr_dbg, nmis, run.pc(), screen_build_progress.decompressed,
+                    screen_build_progress.copied, screen_build_progress.tiles);
+            }
+            if entry_pc == Some(0x02_af19)
+                && crate::debug_env::var_os("ZELDA3_DEBUG_PRE_OVERWORLD_DECODE").is_some()
+            {
+                eprintln!("pre_overworld_decode host={} crossing={} tiles={} pc={:06x}",
+                    state.frame_ctr_dbg, nmis, map32_tiles, run.pc());
+            }
             advance_rom_cpu_through_nmi(&mut run, &mut budget);
         }
     }
     panic!("pre-overworld overlay caller did not return at {:06x}", run.pc());
 }
 
-fn module09_cpu_schedule(state: &ZeldaState) -> Module09CpuSchedule {
+fn module09_cpu_schedule(
+    state: &ZeldaState,
+) -> (Module09CpuSchedule, Option<(Vec<u16>, Vec<bool>)>) {
     const MODULE09_ENTRY_PC: u32 = 0x02_a475;
     const SPRITE_MAIN_RETURN_PC: u32 = 0x02_a4b5;
     const SPRITE_EXECUTE_SINGLE_ENTRY_PC: u32 = 0x06_84e2;
@@ -4696,6 +4770,10 @@ fn module09_cpu_schedule(state: &ZeldaState) -> Module09CpuSchedule {
     let mut caller_first_nmi_phase = None;
     let mut link_oam_started = false;
     let mut nmi_prepare_sprites_started = false;
+    let mut overlay_tiles = 0u16;
+    let mut overlay_decoder_started = false;
+    let mut overlay_tiles_at_nmi = Vec::new();
+    let mut overlay_decoder_started_at_nmi = Vec::new();
 
     run.enable_cpu_write_trace();
 
@@ -4709,12 +4787,13 @@ fn module09_cpu_schedule(state: &ZeldaState) -> Module09CpuSchedule {
             if sprite_main_return_nmis == submodule_return_nmis {
                 sprite_main_boundary = None;
             }
-            // If the body returns and Module09 is interrupted before this
-            // host's trailing NMI, that boundary is shared: it is both the
-            // body's final scheduled slice and the caller's first crossing.
-            // A caller which reaches the main wait first has no shared slice.
+            // The aggregate scheduler needs one more callback when the
+            // returning body enters a caller that crosses an NMI. Keep that
+            // callback count separate from the measured CPU body crossings:
+            // the scheduler entry phase is not the source CPU return phase.
             let submodule_nmis = submodule_return_nmis + u8::from(caller_nmis != 0);
-            return Module09CpuSchedule {
+            let schedule = Module09CpuSchedule {
+                body_return_nmis: submodule_return_nmis,
                 submodule_nmis,
                 caller_nmis,
                 caller_sprite_main_nmis: sprite_main_return_nmis
@@ -4723,9 +4802,25 @@ fn module09_cpu_schedule(state: &ZeldaState) -> Module09CpuSchedule {
                 caller_first_nmi_phase,
                 sprite_main_boundary,
             };
+            let overlay_progress = (entry_submodule == 0x20 && overlay_tiles != 0).then(|| {
+                let body_crossings = usize::from(submodule_nmis);
+                assert!(overlay_tiles_at_nmi.len() >= body_crossings);
+                overlay_tiles_at_nmi.truncate(body_crossings);
+                overlay_decoder_started_at_nmi.truncate(body_crossings);
+                (overlay_tiles_at_nmi, overlay_decoder_started_at_nmi)
+            });
+            return (schedule, overlay_progress);
         }
 
         let pc = run.pc();
+        if entry_submodule == 0x20 && submodule_nmis.is_none() {
+            if pc == 0x02_f695 {
+                overlay_tiles = overlay_tiles.saturating_add(1);
+            }
+            if matches!(pc, 0x02_f84f | 0x02_f609) {
+                overlay_decoder_started = true;
+            }
+        }
         if submodule_nmis.is_some() && pc == SPRITE_EXECUTE_SINGLE_ENTRY_PC {
             let slot = run.ram_byte(CUR_OBJECT_INDEX);
             assert!(slot < 16, "Sprite_Main entered an invalid slot {slot}");
@@ -4784,6 +4879,10 @@ fn module09_cpu_schedule(state: &ZeldaState) -> Module09CpuSchedule {
                 });
             }
             nmis = nmis.checked_add(1).expect("Module09 NMI count overflowed");
+            if entry_submodule == 0x20 {
+                overlay_tiles_at_nmi.push(overlay_tiles);
+                overlay_decoder_started_at_nmi.push(overlay_decoder_started);
+            }
             advance_rom_cpu_through_nmi(&mut run, &mut budget);
         }
     }
@@ -10005,6 +10104,10 @@ pub struct ZeldaState {
     /// effects and owns only pixel-loop work.
     #[serde(skip)]
     pub(crate) dialogue_vwf_glyph_cpu_phase: messaging::VwfGlyphCpuPhase,
+    /// Decoder position of a glyph whose source CPU body is still active.
+    /// `$1CD9` can advance in the glyph's epilogue before that body returns.
+    #[serde(skip)]
+    pub(crate) dialogue_vwf_pending_glyph_read_pos: Option<u16>,
     /// The ROM's fixed-width text cursor (`$1CDD`/`$1CE6`), dead for the
     /// port's rendering but clamped by every `RenderText_Draw_MessageCharacters`
     /// dispatch; it selects which comparisons the dispatch takes, so the
@@ -10258,6 +10361,13 @@ pub struct ZeldaState {
     /// Native entrance selection retained across its vertical-scroll stores.
     #[serde(skip)]
     pending_selected_game_entrance: Option<dungeon::SelectedGameEntranceContinuation>,
+    pending_early_dungeon_room_hdma: Option<u8>,
+    pending_early_dungeon_room_owner: Option<dungeon::EarlyDungeonRoomOwner>,
+    active_early_dungeon_floor_draw: Option<dungeon::DungeonFloorDrawWork>,
+    active_early_dungeon_object_draw: Option<dungeon::DungeonObjectDrawWork>,
+    active_early_dungeon_room_upload: Option<dungeon::DungeonRoomUploadWork>,
+    #[serde(skip)]
+    early_ground_item_receipt_tail: Option<ItemReceiptReturn>,
     /// Native loader publications in source order. A later allocation may
     /// reuse a slot before the scan returns, so the final array is insufficient.
     #[serde(skip)]
@@ -10352,9 +10462,19 @@ pub struct ZeldaState {
     #[serde(skip)]
     module09_cpu_schedule: Option<Module09CpuSchedule>,
     #[serde(skip)]
+    module09_overlay_cpu_progress: Option<(Vec<u16>, Vec<bool>)>,
+    #[serde(skip)]
     pre_overworld_overlays_cpu_nmis: Option<u8>,
     #[serde(skip)]
+    pre_overworld_overlay_cpu_progress: Option<(Vec<u16>, Vec<bool>)>,
+    #[serde(skip)]
+    native_pre_overworld_overlay_decode: Option<PreOverworldOverlayDecodeProgress>,
+    #[serde(skip)]
     pre_overworld_screen_build_cpu_nmis: Option<u8>,
+    #[serde(skip)]
+    pre_overworld_screen_build_cpu_crossings: Option<Vec<PreOverworldScreenBuildCrossing>>,
+    #[serde(skip)]
+    native_pre_overworld_screen_build: Option<PreOverworldScreenBuildProgress>,
     #[serde(skip)]
     native_overworld_song_upload: Option<NativeOverworldSongUpload>,
     #[serde(skip)]
@@ -10474,6 +10594,18 @@ pub struct ZeldaState {
     native_overworld_packing_progress: Option<SpritePreparationProgress>,
     #[serde(skip)]
     native_main_wait_cpu_phase: Option<NativeMainWaitCpuPhase>,
+    /// Cold source-ordered timing owner is separate from translated WRAM and
+    /// exists only in the explicit native integration probe.
+    #[serde(skip)]
+    native_exact_cpu_owner: Option<rtl_native_exact_cpu::NativeExactCpuOwner>,
+    #[serde(skip)]
+    native_exact_cpu_host_trace: Option<rtl_native_exact_cpu::NativeExactCpuHostTrace>,
+    #[serde(skip)]
+    native_exact_cpu_overworld_scan_trial:
+        Option<Box<rtl_native_exact_cpu::NativeExactCpuOverworldScanTrial>>,
+    #[serde(skip)]
+    native_exact_cpu_overworld_live_scan:
+        Option<rtl_native_exact_cpu::NativeExactCpuOverworldLiveScan>,
     #[serde(skip)]
     native_dungeon_song_upload_command: Option<NativeSongUploadCommand>,
     #[serde(skip)]
@@ -10506,6 +10638,14 @@ pub struct ZeldaState {
     /// measured call stack actually returns.
     #[serde(skip)]
     interrupted_dungeon_spotlight_build_in_flight: Option<LiveSpotlightScanout>,
+    /// Translated landing-wipe table builder parked at a source CPU statement.
+    /// Only the opt-in exact-CPU trial uses this caller continuation.
+    #[serde(skip)]
+    native_exact_cpu_landing_spotlight_build: Option<SpotlightTableBuildContinuation>,
+    /// A translated landing caller published a music command after its
+    /// carried NMI; its next source NMI owns the sample of that command.
+    #[serde(skip)]
+    native_exact_cpu_landing_music_nmi_pending: bool,
     /// Last table whose interrupted C builder reached its caller return. A new
     /// atomic landing iteration can overwrite WRAM before its translated call
     /// is allowed to return, so suspended captures retain this completed
@@ -12869,6 +13009,7 @@ impl ZeldaState {
             rom_damage_check_y_register: None,
             dialogue_vwf_handler_entry_phase: messaging::VwfHandlerEntryPhase::default(),
             dialogue_vwf_glyph_cpu_phase: messaging::VwfGlyphCpuPhase::Ready,
+            dialogue_vwf_pending_glyph_read_pos: None,
             dialogue_vwf_dispatch_cursor: crate::cycle_models::vwf::DispatchCursor::default(),
             dialogue_vwf_deferred_handler_exits: 0,
             dialogue_scroll_remaining_master_cycles: None,
@@ -12935,6 +13076,12 @@ impl ZeldaState {
             pending_module09_frame_advance: None,
             pending_overworld_sprite_reload_slots: None,
             pending_selected_game_entrance: None,
+            pending_early_dungeon_room_hdma: None,
+            pending_early_dungeon_room_owner: None,
+            active_early_dungeon_floor_draw: None,
+            active_early_dungeon_object_draw: None,
+            active_early_dungeon_room_upload: None,
+            early_ground_item_receipt_tail: None,
             pending_overworld_sprite_activations: None,
             overworld_proximity_scan_saved_scroll: None,
             intro_poly_thread_initialization_phase: 0,
@@ -12958,8 +13105,13 @@ impl ZeldaState {
             dungeon_room_load_cpu_schedule: None,
             dungeon_submodule_cpu_schedule: None,
             module09_cpu_schedule: None,
+            module09_overlay_cpu_progress: None,
             pre_overworld_overlays_cpu_nmis: None,
+            pre_overworld_overlay_cpu_progress: None,
+            native_pre_overworld_overlay_decode: None,
             pre_overworld_screen_build_cpu_nmis: None,
+            pre_overworld_screen_build_cpu_crossings: None,
+            native_pre_overworld_screen_build: None,
             native_overworld_song_upload: None,
             sprite_main_cpu_boundary: None,
             sprite_main_cpu_nmi_slices: 0,
@@ -12993,6 +13145,10 @@ impl ZeldaState {
             pending_main_loop_common_suffix: None,
             native_overworld_packing_progress: None,
             native_main_wait_cpu_phase: None,
+            native_exact_cpu_owner: None,
+            native_exact_cpu_host_trace: None,
+            native_exact_cpu_overworld_scan_trial: None,
+            native_exact_cpu_overworld_live_scan: None,
             native_dungeon_song_upload_command: None,
             native_dungeon_song_upload_awaiting_return: false,
             native_overworld_hud_interruption: None,
@@ -13003,6 +13159,8 @@ impl ZeldaState {
             spotlight_scanout_after_active_field: None,
             interrupted_dungeon_submodule_publication: None,
             interrupted_dungeon_spotlight_build_in_flight: None,
+            native_exact_cpu_landing_spotlight_build: None,
+            native_exact_cpu_landing_music_nmi_pending: false,
             last_completed_interrupted_dungeon_spotlight_scanout: None,
             dungeon_landing_entry_started_after_leading_nmi: false,
             dungeon_landing_goal_display_handoff: DungeonLandingGoalDisplayHandoff::None,
@@ -13187,6 +13345,12 @@ impl ZeldaState {
         self.attract_init_graphics_phase = 0;
         self.attract_first_story_render_delay = 0;
         self.game_execution_scheduler.reset();
+        self.pending_early_dungeon_room_hdma = None;
+        self.pending_early_dungeon_room_owner = None;
+        self.active_early_dungeon_floor_draw = None;
+        self.active_early_dungeon_object_draw = None;
+        self.active_early_dungeon_room_upload = None;
+        self.early_ground_item_receipt_tail = None;
         self.dungeon_submodule_cpu_schedule = None;
         self.pending_map_force_blank_output_scanline = None;
         self.active_native_spotlight_field_scanout = None;
@@ -13208,6 +13372,10 @@ impl ZeldaState {
         self.pending_main_loop_common_suffix = None;
         self.native_overworld_packing_progress = None;
         self.native_main_wait_cpu_phase = None;
+        self.native_exact_cpu_owner = None;
+        self.native_exact_cpu_host_trace = None;
+        self.native_exact_cpu_overworld_scan_trial = None;
+        self.native_exact_cpu_overworld_live_scan = None;
         self.native_dungeon_song_upload_command = None;
         self.native_dungeon_song_upload_awaiting_return = false;
         self.native_overworld_hud_interruption = None;
@@ -13217,6 +13385,8 @@ impl ZeldaState {
         self.native_overworld_map_graphics_nmi_slices = None;
         self.native_overworld_song_upload = None;
         self.dungeon_landing_goal_transition_pending = false;
+        self.native_exact_cpu_landing_spotlight_build = None;
+        self.native_exact_cpu_landing_music_nmi_pending = false;
         self.dungeon_landing_spotlight_reset_prefix_scanlines = None;
         self.dungeon_landing_spotlight_copy_visible_rows = None;
         self.active_dungeon_landing_spotlight_reset_prefix_scanlines = None;
@@ -13314,11 +13484,20 @@ impl ZeldaState {
             self.dungeon_room_load_cpu_schedule = None;
             self.dungeon_submodule_cpu_schedule = None;
             self.module09_cpu_schedule = None;
+            self.module09_overlay_cpu_progress = None;
             self.pre_overworld_overlays_cpu_nmis = None;
+            self.pre_overworld_overlay_cpu_progress = None;
+            self.native_pre_overworld_overlay_decode = None;
             self.pre_overworld_screen_build_cpu_nmis = None;
+            self.pre_overworld_screen_build_cpu_crossings = None;
+            self.native_pre_overworld_screen_build = None;
             self.native_overworld_song_upload = None;
             self.native_overworld_packing_progress = None;
             self.native_main_wait_cpu_phase = None;
+            self.native_exact_cpu_owner = None;
+            self.native_exact_cpu_host_trace = None;
+            self.native_exact_cpu_overworld_scan_trial = None;
+            self.native_exact_cpu_overworld_live_scan = None;
             self.native_dungeon_song_upload_command = None;
             self.native_dungeon_song_upload_awaiting_return = false;
         self.native_overworld_hud_interruption = None;
@@ -13343,6 +13522,8 @@ impl ZeldaState {
             self.audio_after_publication_ambient_nmi = None;
             self.pending_main_loop_common_suffix = None;
             self.dungeon_landing_goal_transition_pending = false;
+            self.native_exact_cpu_landing_spotlight_build = None;
+            self.native_exact_cpu_landing_music_nmi_pending = false;
             self.dungeon_landing_spotlight_reset_prefix_scanlines = None;
             self.dungeon_landing_spotlight_copy_visible_rows = None;
             self.active_dungeon_landing_spotlight_reset_prefix_scanlines = None;
@@ -14613,6 +14794,7 @@ mod rtl_dialogue;
 mod rtl_dungeon;
 mod rtl_frame_lanes;
 mod rtl_nmi;
+mod rtl_native_exact_cpu;
 mod rtl_oam_compose_lanes;
 mod rtl_oam_obj;
 mod rtl_original_timing;

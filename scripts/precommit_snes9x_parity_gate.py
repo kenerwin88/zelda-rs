@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run a self-ratcheting Snes9x parity gate for pre-commit.
 
-The script keeps local state under .git/precommit-snes9x-parity-state.json. Each
+The script keeps local state under Git's worktree-specific directory. Each
 run extends a committed frame frontier (or re-checks the existing frontier on
 route/hash changes) so regressions are blocked before they land.
 """
@@ -26,9 +26,18 @@ from extract_snes9x_rom_random import extract_samples, write_script
 from parity_probe import TRACE_CORE, newest_source_mtime, validate_trace_core
 
 ROOT = Path(__file__).resolve().parents[1]
-STATE_PATH = ROOT / ".git" / "precommit-snes9x-parity-state.json"
-CHECKPOINT_PATH = ROOT / ".git" / "precommit-snes9x-parity-checkpoint"
-RNG_CACHE_PATH = ROOT / ".git" / "precommit-snes9x-rom-random-cache"
+
+
+def _git_path(name: str) -> Path:
+    path = subprocess.check_output(
+        ["git", "rev-parse", "--git-path", name], cwd=ROOT, text=True
+    ).strip()
+    return (ROOT / path).resolve()
+
+
+STATE_PATH = _git_path("precommit-snes9x-parity-state.json")
+CHECKPOINT_PATH = _git_path("precommit-snes9x-parity-checkpoint")
+RNG_CACHE_PATH = _git_path("precommit-snes9x-rom-random-cache")
 DEFAULT_PROJECT = ROOT / "routes" / "full_run"
 STATE_SCHEMA = 1
 # The oracle boots from the ROM reset vector, so its WRAM reads 0x55 (and Rust's

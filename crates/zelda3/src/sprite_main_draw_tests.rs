@@ -6,6 +6,28 @@ fn fresh_state() -> ZeldaState {
 }
 
 #[test]
+fn shadow_draw_extended_oam_tail_resumes_after_ordinary_entry() {
+    let mut split = fresh_state();
+    split.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+    split.sprite_slot_view_mut(2).set_y(0x0020);
+    let mut atomic = split.clone();
+    let mut split_info = PrepOamCoordsRet { x: 0x0123, y: 0, r4: 0, flags: 0x20 };
+    let mut atomic_info = split_info;
+
+    let pending = split.sprite_draw_shadow_custom_before_extended(2, &mut split_info, 10)
+        .expect("visible shadow has an extended-OAM tail");
+    assert_eq!(&split.ram[OAM_BUF..OAM_BUF + 4], &[0x23, 0x2a, 0x6c, 0x28]);
+    assert_eq!(split.game_state.oam.extended_byte(0), 0);
+    split.finish_shadow_extended_oam_write(pending);
+
+    atomic.sprite_draw_shadow_custom(2, &mut atomic_info, 10);
+    assert_eq!(split.ram, atomic.ram);
+    assert_eq!(split.game_state, atomic.game_state);
+    assert_eq!(split_info.y, atomic_info.y);
+    assert_eq!(split.game_state.oam.extended_byte(0), 3);
+}
+
+#[test]
 fn rat_random_run_delay_preserves_rng_carry_through_and_adc() {
     assert_eq!(rat_random_run_delay(RomRandomResult::new(1, false)), 0x41);
     assert_eq!(rat_random_run_delay(RomRandomResult::new(1, true)), 0x42);

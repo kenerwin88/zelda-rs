@@ -521,6 +521,127 @@ const BOTTOM_TILE_SETUP_MASTER_CYCLES: u64 = 274;
 /// #$30 : PLB : RTS` (consumes the glyph and returns to `$0E:CAD8`).
 const RENDER_CHARACTER_EPILOGUE_MASTER_CYCLES: u64 = INC_ABS_16 + REP_SEP + 28 + RTS;
 
+/// `$0E:CCF1 INC $1CD9` commits before `SEP`, `PLB`, and `RTS`. A host may
+/// stop after that store while the glyph caller is still on the CPU stack.
+pub(crate) fn glyph_read_position_write_at(drawing_master_cycles: u32) -> u32 {
+    drawing_master_cycles
+        - u32::try_from(RENDER_CHARACTER_EPILOGUE_MASTER_CYCLES).unwrap()
+        + u32::try_from(INC_ABS_16).unwrap()
+}
+
+/// A bitmap store made by `VWF_RenderCharacter`, timed from its first row at
+/// `$0E:CBD1`. The source may return to the host while a glyph is only partly
+/// drawn, so the translated buffer must publish each completed store once.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GlyphBitmapWriteKind {
+    Xor(u8),
+    Clear(u8),
+    SetWord(u16),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct GlyphBitmapWrite {
+    pub(crate) after_master_cycles: u32,
+    pub(crate) offset: usize,
+    pub(crate) kind: GlyphBitmapWriteKind,
+}
+
+/// Source-ordered WRAM stores for one glyph. `line_ptr` is `$0722` and `x` is
+/// the advance in pixels; the existing row cost model supplies the same
+/// instruction timings used by the native CPU budget.
+pub(crate) fn glyph_bitmap_writes(
+    width: u8,
+    x: u8,
+    line_ptr: usize,
+    rows: [u16; 16],
+) -> Vec<GlyphBitmapWrite> {
+    let mut writes = Vec::new();
+    let mut at = 0u64;
+    for (half_index, half) in [GlyphHalf::Top, GlyphHalf::Bottom].into_iter().enumerate() {
+        if half_index != 0 {
+            at += BOTTOM_TILE_SETUP_MASTER_CYCLES;
+        }
+        let base = usize::from(x) * 2 + line_ptr + half_index * 0x150;
+        let column_start = ((base >> 1) & 7) as u8;
+        for row in 0..8 {
+            let word = rows[half_index * 8 + row];
+            let row_start = at;
+            at += match half {
+                GlyphHalf::Top => 470,
+                GlyphHalf::Bottom => 556,
+            };
+            let mut remaining = width;
+            let mut shifted = word;
+            let mut column = column_start;
+            let offset = (base & 0xff0) + row * 2;
+            loop {
+                let mask = 0x80u8 >> column;
+                at += 38; // ASL $04
+                let plane0_set = shifted & 0x0080 != 0;
+                at += if plane0_set { BRANCH_NOT_TAKEN } else { BRANCH_TAKEN };
+                at += 40 + 38 + 40; // LDA, EOR/AND, STA
+                writes.push(GlyphBitmapWrite {
+                    after_master_cycles: at as u32,
+                    offset,
+                    kind: if plane0_set { GlyphBitmapWriteKind::Xor(mask) }
+                          else { GlyphBitmapWriteKind::Clear(mask) },
+                });
+                if plane0_set { at += BRA; }
+
+                at += 38; // ASL $05
+                let plane1_set = shifted & 0x8000 != 0;
+                at += if plane1_set { BRANCH_NOT_TAKEN } else { BRANCH_TAKEN };
+                at += 40 + 38 + 40;
+                writes.push(GlyphBitmapWrite {
+                    after_master_cycles: at as u32,
+                    offset: offset + 1,
+                    kind: if plane1_set { GlyphBitmapWriteKind::Xor(mask) }
+                          else { GlyphBitmapWriteKind::Clear(mask) },
+                });
+                if plane1_set { at += BRA; }
+
+                shifted = (shifted & 0x7f7f) << 1;
+                at += 38; // DEC $03
+                remaining = remaining.wrapping_sub(1);
+                if remaining == 0 {
+                    at += BRANCH_TAKEN;
+                    break;
+                }
+                at += BRANCH_NOT_TAKEN + 14 + 24; // BEQ, INY, CPY
+                column += 1;
+                if column == 8 {
+                    at += BRANCH_NOT_TAKEN;
+                    break;
+                }
+                at += BRANCH_TAKEN;
+            }
+            at += 22 + 14 + 14 + 24 + 14 + 32; // row seed setup
+            if shifted != 0 {
+                at += BRANCH_NOT_TAKEN + 48; // BEQ, STA long
+                writes.push(GlyphBitmapWrite {
+                    after_master_cycles: at as u32,
+                    offset: offset + 16,
+                    kind: GlyphBitmapWriteKind::SetWord(shifted),
+                });
+            } else {
+                at += BRANCH_TAKEN;
+            }
+            at += 36 + 14 + 14 + 32 + 14 + 14 + 24;
+            at += match (half, row == 7) {
+                (GlyphHalf::Top, false) => BRANCH_TAKEN,
+                (GlyphHalf::Top, true) => BRANCH_NOT_TAKEN,
+                (GlyphHalf::Bottom, false) => BRANCH_NOT_TAKEN + 30,
+                (GlyphHalf::Bottom, true) => BRANCH_TAKEN,
+            };
+            debug_assert_eq!(at - row_start,
+                glyph_row_master_cycles(word, width, column_start, half, row == 7));
+        }
+    }
+    at += RENDER_CHARACTER_EPILOGUE_MASTER_CYCLES;
+    debug_assert_eq!(at, glyph_drawing_master_cycles(width, x, rows));
+    writes
+}
+
 /// The engine's **drawing** phase: `$0E:CBD1..$0E:CCF7`, the sixteen rows
 /// of glyph `c` (`rows` from [`glyph_font_rows`]) of `width` pixels at
 /// pixel position `x` (the advance `vwf_arr[i]`; only `x & 7` matters),
@@ -1049,6 +1170,58 @@ pub(crate) fn message_characters_call_master_cycles(
 mod tests {
     use super::*;
     use crate::rom_cpu_timing::{lorom_offset, RomCpuCheckpoint, RomCpuTimingRun};
+
+    #[test]
+    fn glyph_bitmap_store_timeline_replays_the_atomic_raster() {
+        let rows = [0x80ff, 0x0000, 0x7f81, 0xffff, 0x0180, 0x8040, 0x5500, 0x00aa,
+                    0xff00, 0x0080, 0x4040, 0x0101, 0xf0f0, 0x0f0f, 0xaaaa, 0x5555];
+        for width in 1..=8u8 {
+            for x in 0..16u8 {
+                let line_ptr = 0x20usize;
+                let mut replay = [0x5au8; 0x1000];
+                let mut atomic = replay;
+                let events = glyph_bitmap_writes(width, x, line_ptr, rows);
+                let drawing = glyph_drawing_master_cycles(width, x, rows);
+                assert!(events.windows(2).all(|pair| {
+                    pair[0].after_master_cycles < pair[1].after_master_cycles
+                }));
+                assert!(events.last().is_some_and(|last| u64::from(last.after_master_cycles) < drawing));
+                for event in events {
+                    match event.kind {
+                        GlyphBitmapWriteKind::Xor(mask) => replay[event.offset] ^= mask,
+                        GlyphBitmapWriteKind::Clear(mask) => replay[event.offset] &= !mask,
+                        GlyphBitmapWriteKind::SetWord(value) => {
+                            replay[event.offset..event.offset + 2]
+                                .copy_from_slice(&value.to_le_bytes());
+                        }
+                    }
+                }
+                for (half_index, half_rows) in rows.chunks_exact(8).enumerate() {
+                    let base = usize::from(x) * 2 + line_ptr + half_index * 0x150;
+                    for (row, &original) in half_rows.iter().enumerate() {
+                        let mut word = original;
+                        let offset = (base & 0xff0) + row * 2;
+                        let mut column = ((base >> 1) & 7) as u8;
+                        for _ in 0..width {
+                            let mask = 0x80u8 >> column;
+                            if word & 0x0080 != 0 { atomic[offset] ^= mask; }
+                            else { atomic[offset] &= !mask; }
+                            if word & 0x8000 != 0 { atomic[offset + 1] ^= mask; }
+                            else { atomic[offset + 1] &= !mask; }
+                            word = (word & 0x7f7f) << 1;
+                            column += 1;
+                            if column == 8 { break; }
+                        }
+                        if word != 0 {
+                            atomic[offset + 16..offset + 18]
+                                .copy_from_slice(&word.to_le_bytes());
+                        }
+                    }
+                }
+                assert_eq!(replay, atomic, "width={width} x={x}");
+            }
+        }
+    }
 
     fn test_rom() -> Option<Vec<u8>> {
         let path = std::env::var_os("ZELDA3_ROM")

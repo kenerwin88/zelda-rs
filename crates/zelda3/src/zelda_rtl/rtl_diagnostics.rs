@@ -151,8 +151,9 @@ impl ZeldaState {
         let watched_addr = Self::parse_trace_env_u32("ZELDA3_REPLAY_RAM_WATCH_ADDR")
             .and_then(|addr| self.ram.get(addr as usize).map(|value| (addr, *value)));
         let frame = &self.game_state.frame;
-        eprintln!("ram-watch-work frame={} {label} work={:?} suffix={:?}",
+        eprintln!("ram-watch-work frame={} {label} work={:?} slices_remaining={:?} suffix={:?}",
             self.frame_ctr_dbg, self.game_execution_scheduler.current_work(),
+            self.game_execution_scheduler.scheduled_work_slices_remaining(),
             self.pending_main_loop_common_suffix);
         eprintln!(
             "ram-watch frame={} {label} fc=0x{:02x} main={} sub={} subsub={} watch={} d340={:02x} d341={:02x} d342={:02x} d343={:02x} d344={:02x} d345={:02x} d346={:02x} d347={:02x} deep=0x{:04x} normal=0x{:04x} inwater=0x{:02x} link=0x{:04x}/0x{:04x} state=0x{:02x}",
@@ -498,6 +499,7 @@ impl ZeldaState {
         // Own exactly one source S9xMainLoop interval across either dispatch
         // branch; a callback which calls the public internal entry sees this
         // active guard and cannot advance it again.
+        self.advance_native_exact_cpu_host();
         let owns_original_timing_dispatch = self.begin_original_timing_host_dispatch(input_state);
         if self.emu_runframe.is_none()
             || self.game_state.enhanced_features.bits() != 0
@@ -510,6 +512,14 @@ impl ZeldaState {
         } else if let Some(func) = self.emu_runframe {
             func(self, input_state, run_what);
         }
+        self.advance_native_exact_cpu_bg_chars_gate();
+        self.advance_native_exact_cpu_pre_dungeon_room_header();
+        self.advance_native_exact_cpu_floor_live_draw();
+        self.advance_native_exact_cpu_object_live_draw();
+        self.advance_native_exact_cpu_room_upload();
+        self.advance_native_exact_cpu_ground_item_receipt_tail();
+        self.advance_native_exact_cpu_overworld_scan_trial();
+        self.advance_native_exact_cpu_overworld_live_scan();
         self.zelda_push_apu_state();
         if self
             .game_execution_scheduler

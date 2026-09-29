@@ -95,7 +95,7 @@ pub(crate) use misc::{
     NativeMinigameBridgeMut, NativeSaveLoadTransferBridgeMut, NativeScratchCounterBridgeMut,
     NativeSpriteBattleBridgeMut, SaveLoadTransferState, ScratchCounterState, SpriteBattleState,
 };
-pub(crate) use oam::{NativeOamStateBridgeMut, OamState};
+pub(crate) use oam::{NativeOamStateBridgeMut, OamState, PendingExtendedOamWrite};
 #[cfg(test)]
 pub(crate) use player::Bg1MovementAccumulatorState;
 pub(crate) use player::TileResult;

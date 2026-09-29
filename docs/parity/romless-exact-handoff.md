@@ -4,7 +4,951 @@ Read this first, then `docs/parity/romless-exact-play.md` for the program's
 history and evidence, and `docs/parity/cycle-ledger-recipe.md` before
 annotating any routine.
 
-## Current native frontier — 56,425 (video)
+## Native exact CPU ownership frontier (2026-09-29)
+
+The opt-in CPU trial now diagnoses the first differing read with the source
+and translated-trial last bus writers, the pre-rebase native value, and the
+active native continuation. A versioned native CPU sidecar lets paired
+checkpoints replay short windows with the same ROM, source CPU, translated
+trial, and writer history. `scripts/native_exact_cpu_diagnose.sh` supplies the
+validated trial flags; its final argument is the absolute host at which the
+contiguous translated-memory trial begins. Checkpoint replays are diagnostic,
+not cold full-route A/V proof.
+
+The first mismatch at host 13,607 was the spiral room loader's eager object
+draw: source `$047E=0`, native `2`, although both CPU streams last wrote `0` at
+host 13,603. The opt-in spiral load now retains the same native floor/object
+cursors as the ordinary supertile room load and completes them at the source
+owned caller boundary. The next two mismatches were the BG-character NMI gate
+stores. The source CPU publishes `$0710=9` only after the 3/4 conversion at
+host 13,627, then `$0710=10` for the 5/6 transfer at host 13,628; native had
+published them before the corresponding CPU statements. Both requests are
+now published by those source instruction receipts, with native values and
+buffers retained.
+
+On binary SHA-256
+`5e4a299087b340242d88b489a9ee14215fa2ea766c4295acd45a4fe509922c4f`,
+the resumed translated-memory CPU trial agrees on instructions, reads,
+writes, and NMI schedule through host 13,632. At host 13,633 the first read
+differs at `$0710`: source `0`, native `10`. The source NMI consumed request
+`10` and cleared the gate at host 13,629; the native NMI dispatch did not run
+that request until host 13,632. The next fix belongs to the NMI/spiral
+continuation that delays this dispatch, not a forced gate clear. The same
+diagnostic binary matches cached native-timing audio through frame 13,639
+(`target/native-owner-final-13640.log`); no final 56,459-frame or full Metal
+gate has run on it. The prior full-route A/V result used an older binary.
+
+To reproduce from the verified frame-8192 paired checkpoint, run
+`scripts/native_exact_cpu_diagnose.sh CACHE_DIR ROM_PATH PAIRED_CHECKPOINT OUTPUT_DIR 5448 11589`.
+`5448` is the number of frames after the checkpoint, so this reaches frame
+13,640. The script compares cached audio and traces the CPU trial; it does
+not compare video. A native exact CPU run must preserve all of the script's
+trial flags or it may split much earlier for unrelated reasons.
+
+## Retained exact CPU owner in the native runtime (2026-09-28)
+
+The next native-timing CPU frontier exposed a room-load ownership error. At
+host 12,118 the source CPU and translated-memory trial both write BG2
+`$7E:27D2=0x0CFD`, but the eager native `Dungeon_LoadRoom` had already
+overwritten that word with an object tile (`0x8846`) before the source reached
+the object loop's read at host 12,121. The opt-in supertile room load now uses
+the existing native floor and object cursors and waits for the retained CPU's
+actual return at `$02:8A5F`; the aggregate NMI estimate had retired this call
+while source objects were still running. On binary SHA-256
+`bd69c7b5528772c0ccb71841c05ff7e36fe75cad8454446784c76f8dae4050a6`,
+the translated-memory CPU trial agrees on instructions, reads, and writes
+through host 12,129 (`target/native-supertile-return-tail-12140.log`). Its
+first schedule split is host 12,130: source Sprite_Main is held inside
+`Sprite_PrepOamCoordOrDoubleRet` at the prior host return, while translated
+Sprite_Main finishes a different slot prefix, leaving current sprite X
+`$0FD8` at `0x0130` instead of `0x02AC`. Cached native-timing audio matches
+all 56,459 contiguous frames on that binary
+(`target/native-supertile-return-tail-56459.log`). The Zelda library suite
+passes 1,829 tests (three ignored). A video preflight on the same binary
+cannot acquire a Metal adapter (`target/native-supertile-video-preflight.log`);
+the full source-route audio gate is running separately.
+
+Cached audio-only replays now acquire no rendering comparison lock, matching
+the lock contract already used by renderless live comparisons. This permits a
+full source-route audio regression and a short native CPU diagnostic to run
+concurrently with separate output directories.
+
+The opt-in landing-spotlight continuation now uses the retained CPU's actual
+host-return PC as well as accepted NMI positions. Source host 11,595 returns
+at `$00:F38D` inside `IrisSpotlight_ConfigureTable` without accepting an NMI;
+the former NMI-only cursor completed the translated builder too early. The
+translated row cursor is derived from native inputs and completed row pairs,
+while the source PC selects the statement boundary. A separate scheduler
+gate waits for the exact CPU's main-wait return before retiring the landing
+caller. Source bus observations show the reset-table stores span hosts 11,596
+and 11,597, and the caller's `$012C=0x10` music command is consumed by the
+following NMI. The pending music-command owner clears a stale translated NMI
+sample marker only when that exact NMI reads the native command; it neither
+copies source memory nor moves the audio command to an earlier host.
+
+On binary SHA-256
+`f8860cbc6fe7f143f28aa2096ac01bd975eef784bf42c0a3f51477d88a694c0b`,
+56,459 contiguous cached native-timing audio frames match. The
+translated-memory CPU trial has no instruction schedule split from host
+11,589 through 12,120; the first split is host 12,121, beginning with a
+different BG2 tilemap word read at `$7E:27D2` (`0x0CFD` source,
+`0x8846` translated) at `$01:8FCA` (`target/native-music-nmi-owner-56459.log`).
+The full Zelda library suite passes 1,828 tests (three ignored). These
+receipts exclude video and do not establish full-route native A/V parity.
+
+Previously frozen opt-in CPU baseline: binary
+`5f5b9e33db5700e21e9e3039b7299ab4be250fcf85b7193da3a6afcb069c6063`,
+first schedule split at host 11,590, 56,459 cached native-timing audio frames
+matched, Zelda library suite 1,824 passed. Default source-route audio also
+matches all 1,581,079 contiguous frames from zero through 1,581,078
+(`target/native-predungeon-source-full.log`; video disabled). Video preflight
+still cannot acquire a wgpu Metal
+adapter (`target/native-predungeon-video-preflight.log`). Production native
+still uses aggregate timing plans. Receipts and exact phase boundaries follow.
+
+### Resumable room drawing and upload
+
+The falling-entrance room loader now has native cursors for all 8,192 floor
+tile stores and for complete objects in the default and three room streams.
+The floor cursor computes tiles from the native asset and verifies each source
+store's ordinal, address, and value; it does not copy source tile values into
+native memory. The object cursor executes the existing translated object
+drawers one at a time, retaining the parser section and load pointer across
+CPU interruptions. Focused tests compare both cursors with the eager native
+room draw at room `$0055`.
+
+With floor and object live trials enabled, frozen binary SHA-256
+`f1d9aedaf33dbbec1170da512f65ff59b438f64880c32ce15352882a0c1fa719`
+matches all 56,459 cached native-timing audio frames
+(`target/native-object-live-56459.log`). The exact CPU rebase trial agrees on
+instructions, reads, and writes through host 8,458. The earlier tilemap read
+split at host 8,457 is gone: source and translated CPU both read `$7E:2760`
+as `0x10AC` at `$01:B193`. The first data split is host 8,459 at the room
+quadrant-upload counter `$045C` (source `4`, trial `0`); the first CPU schedule
+split is host 8,460 (`target/native-object-live-8470.log`). This remains an
+opt-in translated-memory CPU trial; production native scheduling still uses
+aggregate timing plans, and the receipts exclude video.
+
+The source writes `$045C=0` at `$02:C58A` in host 8,457, then `$045C=4` at
+`$00:91B3` in host 8,458; later writes advance through 8, 12, and 16. The
+translated `Dungeon_UploadRoomQuadrants` was previously eager at caller
+return. It is now split into native begin, per-quadrant, and finish steps,
+including the VRAM upload for each quadrant. The opt-in
+`ZELDA3_NATIVE_EXACT_CPU_ROOM_UPLOAD_LIVE_TRIAL=1` consumes the source
+completion events as ordering witnesses. A focused test confirms that the
+four-step cursor reaches the eager upload's RAM, dungeon state, and VRAM.
+The Zelda library suite passes 1,824 tests (three ignored). On binary SHA-256
+`4d0fa80d4e96c84ee88a3c42247faad9fb9ca7306c2ba913eae9f5bfd1e20e71`,
+the exact CPU trial agrees on instruction and bus paths through host 8,461.
+Its first data-only difference is a graphics-decompression buffer read in
+host 8,462; that buffer reconverges by host 8,468. A later data-only split
+at host 8,478 reads the misc sprite graphics index before translated
+tileset initialization publishes it. The first CPU **schedule** split is
+host 10,038, where source `$08:C3AC` reads ancilla step slot `$0C58=1` and
+the translated-memory trial reads `3` (`target/native-upload-live-56459.log`).
+That is a 1,578-host schedule advance from the prior 8,460 frontier. The
+56,459-frame cached native-timing audio replay matches contiguously through
+frame 56,458 (`target/native-upload-live-56459.log`). These checks exclude
+video and do not establish full-route native A/V parity.
+
+At the new host-10,038 frontier, `$0C58` is ancilla step slot 4. The source
+CPU writes `1` at `$09:8801` in host 10,037 during a chest item receipt, and
+both source and translated CPU see that write within the host. Native state
+then reprojects the still-pending graphics continuation's older step `3` at
+the next boundary. The work is `FinishItemReceiptGraphics` with a retained
+`ground_apress_tail` for item `$35`; the source's tail has begun even though
+the aggregate slice estimate keeps it pending. The opt-in
+`ZELDA3_NATIVE_EXACT_CPU_ITEM_RECEIPT_LIVE_TRIAL=1` now runs the translated
+receipt tail at the source step-store boundary and records its completion so
+the later scheduler callback cannot run it twice. This is a source-ordered
+native phase transition, not a copied source step value. With that trial
+enabled, binary SHA-256
+`5861025b346d977815162293f7d67f25c52cbb9abd5872a785c22d57e800e8ac`
+matches all 56,459 cached native-timing audio frames
+(`target/native-item-receipt-live-56459.log`). The exact CPU schedule agrees
+through host 11,483; the next schedule split is host 11,484. Source
+`Dungeon_LoadRoom` reads `$0110=0x0123` at `$01:883B` while translated memory
+still has the previous room index `0x00FF`. The source header actually wrote
+`0x0123` at `$01:B6C1` in host 11,480. Native is in
+`FinishPreDungeonEntranceLoad { sprite_reset: Pending }` with 56 aggregate
+slices left, so the room header has no translated owner yet. This is the
+same class of missing early room-load publication as Module11, now under the
+pre-dungeon caller. The native room cursor is now shared by both callers:
+the source header event starts translated room preparation, and the pre-dungeon
+return resumes the unfinished native suffix without rerunning the room draw.
+On binary SHA-256
+`5f5b9e33db5700e21e9e3039b7299ab4be250fcf85b7193da3a6afcb069c6063`,
+the opt-in CPU path agrees through host 11,490 and 11,500 cached
+native-timing audio frames match (`target/native-predungeon-live-11500.log`).
+The 56,459-frame cached native-timing audio replay also matches
+(`target/native-predungeon-live-56459.log`). The first CPU schedule split is
+host 11,590, where `IrisSpotlight_BuildTable` at `$00:F36D` reads the
+spotlight window Y buffer `$067A=5` in source and `0` in translated memory.
+The first intervening data-only split after this room load is host 11,507:
+the source's misc sprite graphics index has changed, but translated tileset
+initialization is still deferred. A read-only `$067A` trace across hosts
+11,580–11,590 (`target/native-spotlight-owner-watch-11591.log`) identifies the
+next owner: native enters `Module07_0F_LandingWipe` and schedules
+`FinishDungeonAfterSubmoduleCallerReturn`, while the source has already run
+the spotlight prologue at `$00:F341` and is iterating its table builder at
+`$00:F36D`. Source writes successive window Y values 70, 77, 84, 91, and 98
+across hosts 11,581–11,589; native still presents `$067A=0` at host 11,590.
+The next clean phase is a source-ordered native spotlight builder cursor,
+using `begin_iris_spotlight_configure_table_at_progress` and retaining its
+table, HDMA, and caller-continuation state. A direct `$067A` correction would
+hide the missing phase. The full source-route audio replay on this binary
+matched all 1,581,079 cached frames in 1,024.92 seconds. Default production
+timing remains aggregate.
+
+### Interrupted sprite preparation and next room-load owner
+
+The final frozen trial binary is SHA-256
+`a84df260e2d461feccd89e703c34f27763a012fc2ac3ad3f37bf5aa1d07a0521`.
+The Zelda library suite passes 1,821 tests (three ignored). With the exact
+CPU owner, live scan, sprite-preparation, and early room-header trials enabled,
+it matches 56,459 contiguous cached native-timing audio frames
+(`target/native-sprite-refresh-56459.log`). With the trials disabled, the
+same binary matches all 1,581,079 cached source-route audio frames,
+contiguous from zero through 1,581,078
+(`target/native-sprite-refresh-source-full.log`). These checks exclude video.
+A one-frame video preflight failed to acquire a Metal adapter from wgpu
+(`target/native-sprite-refresh-video-preflight-final.log`), although macOS
+reports an Apple M2 Max with Metal support; no video or production native
+A/V parity claim follows from these audio results.
+
+The opt-in `ZELDA3_NATIVE_EXACT_CPU_SPRITE_PREP_LIVE_TRIAL=1` now consumes
+the retained CPU's instruction-ordered `NMI_PrepareSprites` packing cursor.
+When an NMI interrupts the Module0E caller, translated gameplay publishes
+only the bytes completed before acceptance, keeps the shared suffix pending,
+and returns through that suffix after the carried handler completes. The
+source CPU also records the `$00:805D` main-wait latch release, so the return
+cannot be inferred from a host-frame count. At host 7,322 the interrupt is
+accepted at `$00:8605` after 88 master cycles in packing group 16; no group
+byte has completed. Host 7,323 finishes that NMI, and the caller clears `$12`
+at master cycle 2,616,952,186.
+The cursor counts charged instruction transactions rather than physical
+timestamp deltas. WRAM refresh can add physical elapsed cycles without
+advancing the OAM store instruction, and interrupt-entry clocks belong to the
+handler. A later interruption around frame 14,169 exposed the distinction;
+the full 56,459-frame trial now passes with the nominal cursor and a focused
+refresh/interrupt-entry test.
+
+With the live scan and sprite-preparation trials enabled, the contiguous
+translated-memory CPU's first **schedule** split moves from host 7,324 to
+8,455 (`target/native-sprite-prep-live-trial-10000-c.log`), a 1,131-host
+advance. All 10,000 cached audio frames match. At host 8,455, source
+`Dungeon_LoadRoom` reads `$0110=0x00ff` at `$01:883B`; the translated-memory
+trial supplies the stale `0x030c`. The following branch at `$01:8AA1` takes
+a different cycle count and admits an extra NMI in the trial. Earlier
+data-only mismatches can occur without changing the CPU schedule; the
+contiguous trial retains them rather than claiming full read equality.
+
+The separate `ZELDA3_NATIVE_EXACT_CPU_ROOM_HEADER_LIVE_TRIAL=1` consumes the
+source header's actual `$01:B6C1` store to `$0110` and publishes the whole
+translated `Dungeon_LoadHeader` phase on that host. The ordinary room load
+still calls the same header in its original order. In the trial the saved
+HDMA mask is restored only after the deferred room draw, and the header is
+not replayed at completion. Source room `$0055` produces index `$00FF`,
+matching the translated entrance room; the source write is in host 8,451,
+before the room-draw NMI. This removes the `$0110` schedule split. The first
+source/translated read difference in that room load is then host 8,457 at
+BG2 tilemap `$7E:2760` (`0x10AC` versus `0x046E`), while the first schedule
+split is host 8,458 on the final binary
+(`target/native-sprite-refresh-cpu-8460.log`). The
+remaining aggregate 56-slice continuation defers floor and object drawing;
+the next clean step is a source-event-driven resumable floor/object cursor,
+with intermediate tilemap writes owned by the translated room draw. Copying
+source tilemap words into the trial would hide the missing execution phase.
+
+`ZELDA3_NATIVE_EXACT_CPU_WATCH_WRAM_ADDR` is an opt-in hexadecimal bus watch
+for tracing source and translated-trial reads and writes to a WRAM address.
+It records instruction PC, width, value, and master-cycle order without
+publishing source memory to native gameplay.
+The contiguous CPU trial now compares bus writes as well as instructions and
+reads, so a write divergence cannot be reported as an identical path merely
+because the changed value is read in a later host.
+
+### NMI branch ownership at the dialogue frontier
+
+The retained CPU now records bus-ordered `$12`/`$0710` accesses with NMI
+ancestry and emits a typed decision at the ROM's `$00:8138` latch read. This
+is opt-in observation; it does not yet drive translated NMI scheduling.
+At source host 7,322, RenderText writes `$0710=2` repeatedly before an NMI
+is accepted at master cycle 2,616,940,768. That handler's `$12` read in host
+7,323 sees `1`, so it skips `NMI_DoUpdates` and never reads `$0710`. The next
+NMI, accepted in host 7,324, reads `$12=0`, then `$0710=2` at `$00:89E7` and
+clears it later in the same handler. See
+`target/native-nmi-gate-ordered-cpu-10000.log` and the typed event tests in
+`rtl_native_exact_cpu.rs`.
+
+The translated handler already sees its latch set on native frame 7,323,
+but takes the following leading NMI on native frame 7,324, which corresponds
+to source host 7,323. That consumes `$0710` one host before the source's
+acceptance. The clean next change is to let source NMI acceptance and the
+`$12` branch decision own a retained translated handler/caller boundary;
+audio, DMA, and main-loop execution must stay ordered around that boundary.
+A trial that merely deferred a RenderText trailing NMI did not run at this
+point because the scheduler was already in the leading-NMI phase; it was
+removed. A broad suppression of NMIs also failed audio at host 4,926 and
+remains removed. No native CPU or A/V frontier advance is claimed here.
+
+The frozen diagnostic binary has SHA-256
+`4acaaac3f29dc6149777058ac4961d544d544ac23f2dfc8023ae2a677711118c`.
+On it, 1,819 Zelda library tests pass (three ignored), the opt-in live scan
+matches 56,459 contiguous cached native-timing audio frames
+(`target/native-nmi-gate-ordered-native-56459.log`), and the complete cached
+source route matches 1,581,079 contiguous audio frames
+(`target/native-nmi-gate-ordered-source-full.log`). The translated-memory CPU
+trial still first splits at host 7,324 on `$0710`, with source value `2` and
+translated value `0` (`target/native-nmi-gate-ordered-cpu-10000.log`). All three
+comparisons exclude video, and source-route audio preservation does not prove
+production native A/V parity.
+
+### Source-driven live overworld scan trial
+
+`ZELDA3_NATIVE_EXACT_CPU_SCAN_LIVE_TRIAL=1` with
+`ZELDA3_NATIVE_EXACT_CPU_OWNER=1` now keeps the translated Module09 reload's
+presence publication and proximity scan as separate live phases. The source
+CPU's `$09:C56A` write starts the translated cursor, each `$09:C5E6` return
+advances it once, and `$09:C585` finishes it. A detached preview supplies
+the existing aggregate workload and deferred final slot generation while this
+is an opt-in trial; the source event drives the CPU-visible scan state, without
+copying source WRAM. This is not yet the default scheduler or a completed
+replacement for the aggregate publication plan.
+
+On the frozen binary
+`f2608ba07ce17967b9824d065383d2439bd7a0d41f1d56ebf9f732503fd2e264`,
+the live trial matched 56,459 contiguous cached native-timing audio frames.
+It completed four source-driven scans, including the 6,949/6,950 and
+39,267/39,268 split scans (`target/native-live-scan-final-native-56459.log`).
+The same frozen binary matches all 1,581,079 cached source-route audio
+frames, contiguous from 0 through 1,581,078
+(`target/native-live-scan-final-source-full.log`); the Zelda library suite
+passes 1,816 tests (three ignored).
+The contiguous translated-memory CPU trial now remains instruction-, read-,
+and clock-identical through host 7,323; its first instruction split is at
+host 7,324 on `$0710` in the NMI handler
+(`target/native-live-scan-final-cpu-10000.log`). The source did not accept
+an NMI in host 7,323, while native consumed the pending dialogue command in
+that host. A broad experimental suppression of native trailing NMIs was
+removed: it broke audio at frame 4,926 even though the CPU instruction trial
+remained aligned there (`target/native-exact-nmi-authority-phase-cpu-10000.log`).
+The next clean owner must coordinate the source NMI acceptance, translated
+caller phase, and APU publication; copying `$0710` back would only mask the
+phase error. A one-frame video preflight still found no Metal adapter
+(`target/native-live-scan-final-video-preflight.log`), so this trial has no
+new video or production A/V frontier claim.
+
+The Module09 loader now exposes a `OverworldSpriteReloadScanWork` caller that
+begins after slot reset and overworld presence publication, advances to an
+exact completed-cell ordinal, and finishes only after all cells. Ordinary
+gameplay still completes it in one translated call. With both
+`ZELDA3_NATIVE_EXACT_CPU_OWNER=1` and
+`ZELDA3_NATIVE_EXACT_CPU_SCAN_TRIAL=1`, an opt-in shadow caller consumes the
+CPU owner's actual scan events while the live caller keeps its existing
+publication behavior. The shadow retains its `$069F=$FF` scan value after
+347 cells at host 6,949, then returns after cell 484 at host 6,950. At that
+return its full translated 128 KiB RAM and `GameState` equal the ordinary
+eager scan's post-return state, including sprite slots, presence, loaded
+masks, and caller scroll restoration. Across 56,459 cached native-timing
+audio frames, four scans finished with identical full translated state; two
+crossed a host boundary (6,949/6,950 and 39,267/39,268). All 56,459 audio
+frames matched contiguously (`target/native-exact-scan-shadow-final-native-56459.log`,
+binary SHA-256 `e40aad955f5633142d66009650021180e07ec2f04bbed971f1eb13f867325c71`).
+The same binary matched all 1,581,079 cached source-route audio frames,
+contiguous from 0 through 1,581,078
+(`target/native-exact-scan-shadow-final-source-full.log`). The Zelda library
+suite passes 1,816 tests (three ignored).
+This validates the whole resumable caller's end state under source CPU event
+ordering; it does not make the shadow authoritative or advance native A/V
+parity. The live Module09 publication still needs to move from the aggregate
+timer to the retained CPU events, with OAM and slot generations reconciled at
+each NMI boundary. The final binary's contiguous translated-memory CPU trial
+remains instruction- and clock-aligned through host 6,949; host 6,950 first
+splits on the `$069F` read (`target/native-exact-scan-shadow-final-cpu-6951.log`).
+The shadow's `$FF` at that boundary identifies the missing live handoff, not a
+reason to exclude the byte from the comparison.
+
+`ZELDA3_NATIVE_EXACT_CPU_OWNER=1` now retains a cold, source-ordered Rust
+65816/PPU/APU CPU owner across native host calls. It takes the same raw host
+input and records accepted interrupts and beam-register reads, but does not
+publish source WRAM or display state to the translated game. It is an opt-in
+integration probe, not a production timing replacement or native A/V proof.
+The production scheduler still uses aggregate `RomCpuTimingRun` plans.
+
+The central CPU owner now emits typed overworld proximity-scan boundaries
+from the original ROM's own instructions: the temporary `$069F` write at
+`$09:C56A`, each return from the `$09:C6F5` per-cell call at `$09:C5E6`,
+and the restore at `$09:C585`. On the recorded route it observes a begin and
+347 completed cells in host 6,949, then 137 more cells and a finish at ordinal
+484 in host 6,950 (`target/native-resumable-scan-final-events-6949.log`,
+`target/native-resumable-scan-final-events-6950.log`). The translated
+`sprite_activate_all_proxima` now uses a resumable cell cursor. Its ordinary
+caller runs that cursor to completion; a future CPU-owned caller can advance
+it through a source cell ordinal without replaying completed cells or copying
+source WRAM. The central event and translated cursor are not yet connected in
+production. The current Module09 loader still precomputes the scan in one
+translated call, so these changes do not claim a later native A/V frontier.
+The remaining handoff is concrete: park `Module09_LoadNewSprites` after its
+reset and presence publication, retain the cell cursor as part of the
+suspended translated caller, consume source `CellReturned` ordinals before
+each NMI publication, and retire it only on the source `Finished` event.
+Sprite activation and OAM publication must follow the same cursor; merely
+holding `$069F=$FF` after the eager full scan would preserve the wrong
+execution order. Once this caller owns its source-timed scan, its aggregate
+`load_nmi_slices` estimate can be removed and the CPU trial rerun.
+
+The current binary is
+`d98b23f7ae273596c316254e6e0c1c1094f251adb94b83a4788f9fc69ce27a7d`.
+It matches 56,459 contiguous native-timing audio frames
+(`target/native-resumable-scan-final-native-56459`) and all 1,581,079 cached
+source-route audio frames, contiguous from zero through 1,581,078 with no
+RNG drift (`target/native-resumable-scan-final-source-full`).
+The opt-in retained CPU owner also completes the same 56,459-frame native
+audio window without RNG drift or scan-event lifecycle failure
+(`target/native-resumable-scan-final-owner-56459`). A clean rebuild after
+removing unrelated formatting changes reproduces the exact binary SHA-256.
+At native frames 6,948 through 6,951, its full 128 KiB WRAM images are
+byte-identical to the previous binary's captures. The exact CPU trial still
+splits at host 6,950 on `$069F`
+(`target/native-resumable-scan-final-cpu-10000.log`): the new
+cursor preserves current behavior but is not yet a production scheduler
+handoff. The Zelda and SNES library suites pass 1,815 and 497 tests. A
+one-frame native video preflight again failed before rendering because wgpu
+found no Metal adapter (`target/native-resumable-scan-final-video-preflight.log`).
+
+The retained owner can now rebase its private memory at a **quiescent
+instruction boundary** inside a host call, rather than only at host entry.
+The diagnostic trial waits for the `RTI` of the specific NMI carried into the
+host before copying translated-owned memory; it retains the physical clock,
+PPU/APU/DMA bus, pending interrupts, and CPU-private stack and scratch. This
+keeps the source instruction schedule aligned at host 6,174, where a generic
+host-entry rebase had broken it. With the source-owned bank-`$7F` overworld
+decode buffers (`$4000..$41FF` and `$4400..$44FF`) excluded from that copy,
+the contiguous trial remains instruction- and clock-identical through host
+6,949. The trial then splits at host 6,950 on a read of `$069F`: source reads
+`$FF`, translated memory supplies `$00`. See
+`target/native-exact-cpu-quiescent-hook-7000.log`,
+`target/native-exact-cpu-overworld-scratch-10000.log`, and
+`target/native-exact-cpu-scroll-delta-source-6950.log`.
+
+`$069F` is the horizontal scroll delta, not CPU-private decode storage. The
+source writes `$FF` at `$09:C56A` during host 6,949's suspended overworld
+sprite proximity scan and clears it in host 6,950. The source's host-6,949
+semantic receipts include `PresencePublished` and `ProximityScanSuspended`,
+while the native frame-6,949 WRAM capture already holds `$00` at `$069F`
+(`target/native-scroll-delta-6951`). At CPU host 6,949 the native scheduler is
+already in `FinishOverworldSpriteReloadTail` with two NMI slices remaining,
+while the source is still publishing presence and suspending the scan
+(`target/native-scroll-delta-scheduler-6949.log`,
+`target/native-exact-cpu-scroll-delta-semantic-6950.log`). The aggregate plan has
+not retained the source scan's in-flight scroll-delta value in translated
+memory; the scheduled tail by itself does not prove that the scan has returned.
+The central CPU trial deliberately stops at that read; excluding `$069F`
+would mask the problem. The next production step is to drive the suspended
+scan's publication and return from source-ordered CPU events instead of a
+whole-reload estimate, then rerun the contiguous CPU trial and A/V gate. None
+of these diagnostic rebases changes normal gameplay.
+
+The earlier quiescent-trial binary SHA-256 is
+`1cc20272d86a062cbf0554bdfd1bffb8e37e9023f7074b5981129af919f25537`.
+It matches 56,459 contiguous native-timing **audio** frames with no RNG drift
+(`target/native-exact-cpu-quiescent-final-native-56459`); the Zelda library
+suite passes 1,813 tests and the SNES library suite passes 497. The same
+binary matches all 1,581,079 cached source-route **audio** frames, contiguous
+from zero through 1,581,078 with no RNG drift
+(`target/native-exact-cpu-quiescent-final-source-full`). A one-frame native
+video preflight failed before rendering because this process still reported no Metal adapter
+(`target/native-exact-cpu-quiescent-final-video-preflight-native.log`).
+
+The owner runs contiguously through native host 56,458 with audio parity.
+On host 56,457, its retained PPU bus reads `$06:2137` at master clock
+20,175,926,238 and `$06:213C` at 20,175,926,268; the latter returns `$EA`,
+the source high-byte/open-bus result that the fresh native shadow loses.
+On host 56,458 its exact NMI acceptance is at master clock 20,176,119,184,
+inside `$06:DCE3` (the PC after the interrupted opcode). The native timing
+shadow independently reaches `$06:A618`; this is the same CPU ownership gap
+identified by the source trace, now visible from a retained in-process owner.
+The central CPU receipt records the interrupted PC before entering the NMI
+handler, separately from the opcode's starting PC. A branch or multi-byte
+opcode makes those different, so a continuation must use the former.
+
+Source and translated WRAM captures at the host returns differ in 42 bytes at
+56,457 and 108 bytes at 56,458. These include scroll inputs and sprite tables,
+not just the CPU's private scratch. Copying the source CPU's NMI timestamp,
+register state, or whole WRAM into the translated scheduler would therefore
+hide the execution mismatch. The next production step needs one bus transaction
+owner that charges translated semantic operations in source order and carries
+PPU read phase through ordinary main waits and NMIs. The exact sidecar supplies
+a diagnostic timeline but does not yet perform that handoff.
+
+Validation for the working binary SHA-256
+`d5ae40e9310e8051fb407f84d1b73400f044d340bc4cc602fbdcf2f5a51d649e`:
+the opt-in native run matched 56,459 contiguous audio frames and observed the
+correct `$06:DCE3` NMI PC at host 56,458. The source-route comparison matched
+all 1,581,079 contiguous **audio** frames in
+`target/native-exact-owner-full-audio-final`. Video remains unverified on this
+binary: even a one-frame preflight failed because wgpu found no Metal adapter
+(`target/native-exact-owner-video-preflight.log`). Do not report this as an
+exact 1.5M A/V gate or a new production-native frontier.
+The last measured translated-native video frontier remains frame 56,458 on
+the earlier validated binary.
+
+The exact CPU executor now has a quiescent *private timing shadow* rebase.
+A future translated timing plan can supply its program registers and copies of
+its authoritative WRAM/SRAM at an exact master-clock timestamp. The executor
+retains its physical timeline, pending interrupts, PPU read bus, APU, DMA, and
+CPU OpenBus. It never publishes private source memory back to native gameplay.
+The rebase rejects a pending bus completion, suspended CPU state, wrong clock,
+or wrong memory length before mutation. A synthetic test retargets the next
+opcode to `LDA $213C`, reads the retained `$EA` high phase, then reads the
+translated WRAM byte from the private copy. This is a prerequisite for
+replacing a ROM timing plan; no production plan invokes it yet.
+
+The handoff cannot be attached to a frame number. Before native host 2,337,
+the retained source CPU is at `$00:80C9` (NMI handler entry), while native's
+main-wait phase is already recorded for host 2,338 at `$00:8036`; their WRAM
+images differ in 1,727 bytes. At the *end* of host 2,337, both CPU paths have
+reached `$00:8036`, but their WRAM still differs in 1,728 bytes. Before host
+56,458, source is at `$06:DCE2` inside a suspended sprite draw, native has no
+main-wait phase, and their WRAM differs in 1,785 bytes; at the host return,
+source reaches `$00:8036` and 1,863 bytes differ. Both lanes report the same
+main module. These are different game-state representations, not a safe
+whole-WRAM equality or copy boundary. Evidence is in
+`target/native-exact-owner-entry-2337`,
+`target/native-exact-owner-after-2337`,
+`target/native-exact-owner-entry-56458`, and
+`target/native-exact-owner-after-56458`. The temporary comparison code was
+removed after recording the results. A production caller must align the same
+instruction transaction timestamp, seed the timing shadow from translated
+state, and account for its plan-specific ROM stack/asset normalization.
+
+The intermediate binary SHA-256
+`c1bd485d6af2f0de23470ea363a0c9f6fad3c6eabcafc7bd169b779e6914f894`
+matched 56,459 contiguous native audio frames with the opt-in owner
+(`target/native-exact-owner-rebase-audio`). The source NMI at host 56,458
+remained `$06:DCE3` at master clock 20,176,119,184. The new rebase API is not
+called by the production scheduler, so neither that run nor the later audits
+establish a new video frontier or a fresh full-route gate.
+
+The checkpoint's program-register mapping is now shared by the production
+`RomCpuTimingRun::new` constructor and any future exact-owner rebase. This
+removes a second source of CPU-register drift when switching a timing plan.
+The current binary SHA-256
+`2f8f0b464545aa06ec2d6d72f5fcf3e05e6024a49ad7db25db2e650138946209`
+matched 56,459 contiguous native audio frames in
+`target/native-private-shadow-prefix`; the exact sidecar still observed the
+source `$06:DCE3` NMI. All 495 active SNES library tests, the focused Zelda
+timing test, and the Zelda library check pass. The private shadow rebase is
+not yet called by native scheduling, and it does not reconcile translated
+PPU display/DMA control state or plan-specific stack/asset normalization.
+The full 1,581,079-frame audio proof above remains on the earlier binary.
+
+The native timing-plan profiler now accepts
+`ZELDA3_DEBUG_ROM_CPU_PROFILE_HOST=<host>` or `<first>-<last>` alongside
+`ZELDA3_DEBUG_ROM_CPU_PROFILE=<dir>`. It selects plans before allocating their
+per-instruction attribution, so a long route can inspect one handoff window
+without generating profiles for every host. An unrestricted 56,459-host
+attempt produced about 1.6 GiB of profiles and exhausted available disk
+space before replay completed; those generated files were removed. Profile
+output is diagnostic evidence, not a production CPU handoff.
+
+With the bounded profiler, binary SHA-256
+`d57b1c6cfe579a021d6d1ce6914c94924c63dbce9dca44e32896fd474850f70e`
+matched 56,459 contiguous native **audio** frames in
+`target/native-plan-window/result`. The seven timing plans selected for hosts
+56,450–56,459 are in `target/native-plan-window/host-*.json`. Host 56,458's
+fresh shadow begins at `$00:8036`, stops at `$00:805D`, and executes 11,917
+instructions / 337,406 master cycles with one NMI. The retained exact CPU is
+already at `$06:DCE2` before that host, so this fresh main-loop plan is not a
+valid exact-owner rebase point. The next owner change must carry CPU and bus
+state through the earlier translated operations that led into this suspended
+routine, rather than switch at the host number or replace only this plan.
+The one-frame video preflight on this same binary still fails before comparison:
+wgpu Metal reports `no suitable GPU adapter: NotFound`
+(`target/native-video-preflight-current.log`). Its 56,459-frame result is
+audio-only and does not advance the measured video frontier.
+
+An opt-in rebase trial now clones the retained exact CPU at an arbitrary host,
+imports translated WRAM/SRAM into that *copy*, and compares source-ordered bus
+reads, NMIs, final PC, and clock with the untouched owner. A full-memory copy
+at host 2,337 first changes the CPU return-stack read at `$00:822C` from
+`$32` to `$00` (`$01FC`), then reaches invalid PC `$000000` after only 240
+reads. The same trial preserving the active stack segment reads all 18,237
+bus values at the same timestamps and finishes at the same `$00:8036` and
+clock 835,471,248. This shows why CPU-private stack bytes cannot be
+overwritten by translated WRAM even when game state is rebased. The central
+executor now supports validated, sorted, non-overlapping translated-memory
+regions, with a synthetic `JSR`/`RTS` test proving return-stack retention.
+The stack-segment selection in the runtime trial is diagnostic; a production
+caller must prove its complete active stack extent.
+
+A bounded trial over hosts 2,293–2,340 confirms this is a conditional
+boundary, not a blanket frame-level rule: 24 of 48 independent one-host
+stack-preserving trials follow the same read/NMI/PC/clock path. The early
+sequence alternates between matching main waits and mismatched poly-thread
+hosts; the first mismatch at 2,293 is `$12` (`0` source versus `1`
+translated), and later poly-thread trials first disagree on private `$02/$04`
+words. Hosts 2,335–2,340 match consecutively. See
+`target/native-exact-rebase-trial/early-range.log`. Any production takeover
+must choose a proved instruction transaction and memory ownership map, not
+enable the rebase on every host return.
+
+At host 56,458 the stack-preserving trial still first diverges at the NMI
+gate's `$00:8138` read of `$0012`: the exact owner reads `1`, translated
+prehost WRAM supplies `0`, at the same master clock 20,176,120,194. The trial
+then accepts an extra NMI and ends at `$00:80C9` instead of the ordinary host
+return. This is a temporal NMI-handshake mismatch, not a stack-byte or Cucco
+offset to patch. The full and stack-preserving receipts are in
+`target/native-exact-rebase-trial`. No trial result drives production native
+timing or publishes source memory into translated gameplay.
+
+The 56,400–56,458 scan finds 45 matching and 14 mismatched independent
+stack-preserving one-host trials. The failing hosts are 56,412, 56,417,
+56,421, 56,423, 56,425, 56,427, 56,439, 56,442, 56,445, 56,448,
+56,451, 56,454, 56,456, and 56,458. Most first mismatches are low
+direct-page words `$00/$02/$0A`; 56,458 is `$12`. Host 56,457 matches, but
+this intermittent result cannot license a host-number switch or a blanket
+direct-page copy. The exact owner and translated scheduler need a shared
+transaction-level account of which NMI/control and game-state writes have
+committed before each read.
+
+Retaining the CPU's current direct-page window as well as its active stack
+segment makes 58 of those 59 **independent** trials instruction-compatible.
+The sole remaining mismatch is host 56,458: after the correct `$06:DCE3`
+NMI, the exact CPU reads Cucco slot 2's `$0F52` at `$06:A620`. The source
+value is `$49`; translated prehost WRAM supplies `$59`. The source only writes
+`$59` at `$06:A625` after it resumes the interrupted shadow draw. Source
+`$06:DCE0` already wrote the shadow OAM flags before NMI, while its extended
+OAM store at `$06:DCEC` and the Cucco `$0F52 |= $10` suffix remain pending.
+The translated Cucco routine currently completes that suffix before the
+source CPU's NMI boundary. This identifies a real semantic publication-order
+defect, not a missing fixed cycle charge. The independent diagnostic receipts
+are in `target/native-exact-rebase-trial/frontier-dp.log`; source writes and
+the shadow-draw instruction tail are in `source-oam-flags.log` and
+`source-shadow-tail.log` beside it. A contiguous translated-memory trial is
+still needed before using this CPU as the production timing owner.
+
+The native OAM bridge now exposes the ordinary-entry write and its following
+extended-OAM byte as separate operations; the existing atomic helper composes
+them in the same order. This is the bus-level seam needed for the NMI at
+`$06:DCE3`: source has published shadow X/Y/character/flags through
+`$06:DCE0`, but its `$06:DCEC` extended byte is pending. A focused native
+test and a sprite-draw test check the partial publication and exact completed
+state; both pass. No native
+scheduler invokes the partial helper yet, so this does not claim a frontier
+advance.
+
+The contiguous stack/direct-page trial from host 56,400 matches every bus
+read, accepted NMI, final PC, and master clock through host 56,457. Its first
+failure is again the `$0F52` read at `$06:A620` on host 56,458
+(`target/native-exact-rebase-trial/contiguous-56400.log`). This rules out a
+hidden accumulation error in that late-game window: the exact owner carries
+the correct physical PPU/NMI phase across 58 successive translated-memory
+rebases. A much earlier contiguous trial from host 2,335 matches 90 hosts,
+then fails at host 2,425 when the source reads the dialogue message-source
+offset `$1CDD` as `$0050` but translated WRAM supplies `$0000`
+(`contiguous-2335.log`). The region mapping is therefore not safe across all
+modules; dialogue pointer representation needs explicit ownership before a
+route-wide takeover. Neither trial changes the production native schedule.
+
+The diagnostic now distinguishes exact bus-value parity from exact
+instruction timing. Original dialogue decoder offset and pointer-table bytes
+stay in the CPU-owned region because the original ROM and translated dialogue
+assets encode them differently. With that semantic ownership, a contiguous
+trial from host 2,335 matches every read and instruction through host 2,506,
+including the former `$1CDD` failure at 2,425. Host 2,507 first reads a
+different `$7F:0002` tile-buffer word (`$48B5` source, `$48B4` translated),
+but all 8,510 executed instructions and both NMIs still have identical PCs
+and master-clock timestamps. Retaining a trial on data-only differences shows
+the instruction schedule remains exact through host 3,816. At 3,817 a VWF
+read at `$0E:CCBD` first sees `$40` source versus `$00` translated in
+`$7F:01C5`; the subsequent glyph-column branch at `$0E:CC32` takes a
+different number of master cycles. This identified a source-backed ownership
+gap: dialogue's mutable tile buffer must be published at the same CPU
+transaction point as the renderer, not simply exempted from rebasing. The
+receipts are `target/native-exact-rebase-trial/contiguous-schedule-10000.log`
+and the source instruction traces `source-2507-7f0002.log` and
+`source-3817-vwf.log`. The 10,000-frame cached replay used for this
+diagnosis matched audio only; it did not change production native timing.
+
+The frozen intermediate binary SHA-256
+`3e87fe2e33b3e5f30286e91c5a9736e46fb9ee0f572aadf4f5eed10719308f93`
+matched all 1,581,079 contiguous source-route **audio** frames in
+`target/native-current-full-audio`. Its manifest identifies zero video frames.
+The instruction-timeline diagnostic and dialogue ownership extension were
+built after that run, so this full-route receipt must not be attributed to
+the final working-tree binary.
+The later binary SHA-256
+`002d6e8dab86e937d001613b43c880d4d3c3b92658dc3b28532db1f6c28448f6`
+includes instruction-level schedule comparison and matched the 10,000-frame
+diagnostic audio replay. Its video preflight still cannot start because wgpu reports
+no Metal adapter (`target/native-current-video-preflight.log`).
+The same final binary passed all 1,581,079 contiguous **source-route audio**
+frames in `target/native-final-source-full-audio`, with frames 0–1,581,078
+paired and no enabled video lane. This gate did not enable translated native
+timing; the native result remains separate.
+With translated native timing enabled, that binary also matched 56,459
+contiguous audio frames (`target/native-final-56459-audio`). Extending the
+same native run exposed a ROM-random call-order divergence at execution frame
+56,482 in `cucco_summon_avenger`: Rust called while the replay expected frame 56,488
+(`target/native-final-full-audio.log`). This is beyond the measured video
+frontier and may be downstream of the unresolved CPU/OAM continuation; it is
+not a basis for a frame-specific random fix. A fresh full source-route audio
+gate on the final binary does not erase this native timing failure.
+
+### Transaction-ordered VWF stores (later working tree)
+
+The source writes `$7F:01C5 = $40` from `$0E:CCB7` during host 3,816 and
+returns inside the lower half of the glyph at `$0E:CC9B`. The earlier
+translated renderer held the whole glyph bitmap until completion, leaving
+that byte `$00` at the host return and publishing final `$49` on the next
+host. The VWF cycle model now emits the actual byte/seed-word stores in
+instruction order. Native rendering applies each store only when its CPU
+drawing phase crosses that store, and the old atomic result is unchanged when
+the glyph completes. The ROM's `$0724` glyph cursor changes on drawing entry;
+`$1CD9` changes after `$0E:CCF1 INC` but before the remaining glyph epilogue.
+The native continuation retains its original glyph decoder position across
+that early `$1CD9` store so resuming does not render the next glyph twice.
+The synthetic bitmap replay test passes, as do the ROM-backed 1,904-glyph
+and 71-command cycle-model comparisons and the VWF runtime tests.
+
+With this ownership, native WRAM at the 3,816 return has `$7F:01C5 = $40`
+and `$0724 = 12`, and the retained CPU trial matches the source's reads,
+instructions, NMI, PC and clock through host 3,817. The same checks match at
+the former `$1CD9` mismatch on host 4,654. A contiguous trial from 2,335
+has the same **instruction schedule** through 4,858. Its first schedule split
+is now at host 4,859: `$09:C6FA` reads `$0FBC` as `$0800` in source timing
+but `$0000` from translated WRAM. Source `$09:C4B5` wrote the high `$08`
+byte during the preceding host inside `Overworld_LoadSprites`; translated
+pre-overworld reload work has not published that collision-base prefix yet.
+This is a lifecycle stage of a suspended overworld call, not a reason to
+preserve one byte by frame number. Trial receipts are in
+`target/native-vwf-readpos-10000.log`, with source writes in
+`target/native-exact-rebase-trial/source-4859-0fbd.log`.
+
+The working binary SHA-256
+`1db53bbac362da07f75bfc9b8a632db30b0564d19136d31ce816b744d2a58045`
+matched 56,459 contiguous translated-native **audio** frames in
+`target/native-vwf-final-56459`; video remains unverified because the Metal
+adapter preflight failed on the preceding binary. A fresh one-frame preflight
+on this binary also failed before comparison with `no suitable GPU adapter:
+NotFound` (`target/native-vwf-current-video-preflight.log`). This does not yet advance
+the production translated-native frontier at host 56,458.
+
+The same frozen binary passed the complete 1,581,079-frame **source-route
+audio** cache in `target/native-vwf-final-source-full` (manifest SHA matches,
+frames 0..1,581,078 contiguous, no RNG drift). That gate exercises the new
+code without establishing translated-native timing parity.
+
+The focused translated-native replay `target/native-vwf-4859-schedule` confirms
+that at frame 4,859 the scheduled C caller is still
+`FinishPreOverworldProperties { sprite_presence_published: false }` and
+`$0FBD` is zero. The source CPU committed `$0FBD=08` at `$09:C4B5` during
+host 4,858. The next clean ownership step is to expose the entry/prefix of
+`Overworld_LoadSprites` within that suspended call, so the translated
+collision bounds are published when the CPU reaches their stores. Moving a
+single byte or tuning the call's completion frame would hide the cause.
+
+### Staged native sprite reload (next working binary)
+
+The native scheduler now gives `FinishPreOverworldProperties` an explicit
+presence-loaded stage. At its first held NMI, `overworld_load_sprites()`
+publishes the collision bounds and presence map, and the proximity scan's
+temporary scroll state begins. The scan and caller suffix still complete at
+the scheduled return. Source-receipt execution retains its separate
+activation-applied stage. This models the suspended C call's semantic order,
+not a special case for route frame 4,859.
+
+On binary `5c3e10d4ee09b280712cae02cd6058c0062b9f85ccc6edd4a961f82653d04964`,
+the contiguous CPU trial from 2,335 matches source reads, instructions, NMI,
+PC and clock through host 4,861. The former `$0FBC` and `$069F` divergences
+are gone. Native audio remains exact through frame 56,458
+(`target/native-preow-staged-56459`). The next schedule split is host 4,862:
+source `$02:F695` reads live Map32 decode scratch `$7F:4440=$3FD0`, while
+translated memory still has `$04FB` because `PreOverworld_LoadOverlays` holds
+the entire quadrant decode until its caller return. Source
+`target/native-preow-map-source-window.log` shows `$02:F695` entering 14
+Map32 definitions during host 4,861 and 103 during 4,862, with the cache
+last-value word updated at `$02:F69D`. The next structural fix is a typed
+quadrant decoder that publishes each definition's C stores according to the
+central CPU timeline, including decompression before the first tile and the
+cache reset between quadrants. Publishing the final map early would skip the
+observed partial-state boundary.
+
+### CPU-counted overlay quadrant (subsequent working binary)
+
+The pre-overworld overlay CPU plan now records the cumulative number of
+`$02:F695` Map32 definitions and whether the quadrant's decompression has
+reached its cache-reset statement at each NMI. The translated C decoder has
+a resumable tile cursor; it publishes its own decompressed source and Map32
+stores through that count. For the first overlay on the route, the plan's
+counts are **14, 117, 210, 256**, exactly matching the source's 14, 103,
+93, 46 definitions over consecutive hosts. The first count belongs to the
+entry host, not the next scheduled NMI. The candidate does not copy source
+map values into gameplay.
+
+Binary `a70fd0d2b8cdc8da1c3ddf369f2e8e41c36194e31057a54345f209f5e6f2417a`
+matches 56,459 translated-native audio frames
+(`target/native-preow-incremental-map-56459`). Its contiguous retained-CPU
+trial agrees in all reads, instructions, NMI, PC and clock through host 4,864;
+hosts 4,865–4,868 retain the same instruction schedule despite different
+partially published Map16-to-Map8 scratch. The next instruction-schedule
+split is host 4,869: source `$02:FF0F` wrote the next quadrant's partial
+decompression buffer `$7F:4400=$4C` in host 4,868, whereas translated C
+still holds that decompression until the screen-build caller returns. The
+follow-on work is an interruptible decompressor and copy-to-source phase
+driven by CPU write counts, then the same Map32 tile cursor across four
+quadrants. A one-byte preservation would leave the rest of the decoder's
+live scratch and tile map on the wrong generation.
+
+The same frozen binary also passes the cached **source-route audio** gate over
+all 1,581,079 frames, 0 through 1,581,078, with contiguous coverage and no
+RNG drift (`target/native-preow-incremental-map-source-full`, manifest and
+comparison log). This preserves the established source-ordered audio route;
+it does not extend the production-native video frontier or prove the remaining
+interrupted decoder state.
+
+### Central CPU schedule for the next overworld callers (working tree)
+
+The next CPU-owner split at host 4,869 belongs to Module08's
+`Overworld_LoadAndBuildScreen`, which runs all four screen quadrants. The
+ROM shadow now supplies only the per-NMI counts of decompression writes,
+source-word copies, and Map32 definitions. The translated decoder publishes
+its own scratch and tile writes through those counts, retaining a typed cursor
+across NMIs. A ROM-backed regression checks the 15 source crossings and the
+staged decoder's final WRAM against the atomic translated decoder. The
+contiguous retained-CPU trial moved its first instruction-schedule split from
+host 4,869 to host 6,163; the 10,000-frame translated-native audio comparison
+is exact (`target/native-screen-build-trial-10000`).
+
+Host 6,163 enters Module09's overlay reload. The same typed Map32 cursor now
+advances for this caller from the centrally counted CPU schedule, including
+the entry-host definitions and held-NMI progress. This moved the first CPU
+instruction-schedule split to host 6,174, again with exact translated-native
+audio through 10,000 frames (`target/native-module09-staged-final-trial-10000`
+on the retained binary).
+At 6,174 the source has returned from Module09 submodule `$21` after writing
+`$0710=4`, then accepts an Open NMI. The translated scheduler still holds the
+caller until the next host. A trial that returned it before that NMI moved the
+CPU split to 6,931, but moved an RNG call one host early near 56,438 in the
+longer native audio route. That trial was removed. The next fix must give the
+Module09 return and NMI acceptance an owner that preserves both early CPU
+ordering and the later sprite/audio ordering; a return branch at this one
+continuation is insufficient.
+
+The retained parity binary is
+`dba5327bc67bef75dfbf1a1bb3612bb934b8bd2aa45d4ce961b43c9abf1a5e45`.
+It matches 56,459 translated-native audio frames
+(`target/native-module09-staged-56459`). The same frozen binary passes the
+cached source-route audio comparison for all **1,581,079** frames, with
+contiguous coverage from 0 through 1,581,078 and no disabled audio lane
+(`target/native-module09-staged-source-full`). This is an audio preservation
+result; video was deliberately excluded from both checks. The earlier
+56,425+ native video frontier and the full source-route A/V proof on prior
+binaries are distinct results.
+
+### Module09 body return and NMI handler are separate CPU events
+
+An instruction trace of route hosts 6,162–6,174 shows `$09/$20` enters in
+6,162, changes `$11` to `$21` in 6,168 after **six** NMI crossings, and then
+enters Sprite_Main before a seventh, caller-owned NMI. The aggregate native
+plan needs seven **scheduler callbacks** to reach the matching host phase;
+`body_return_nmis` separately records six source CPU crossings. A six-callback
+trial put the translated completion at debug host 6,168, which is CPU host
+6,167 because `advance_native_exact_cpu_host` labels the retained CPU host as
+`frame_ctr_dbg - 1`. The validated seven-callback completion at debug host
+6,169 is CPU host 6,168, matching the source `$11` transition. A trial that
+also carried the caller's accepted NMI into the next handler host still moved
+the native `$1A` increment one host early and changed the thunder cue at
+audio frame 6,359. Both trial changes were removed.
+
+The pending NMI command `$0710=4` is written by `$20` in source host 6,168
+and stays live through host 6,169. The Open NMI accepted at clock
+2,204,897,770 in host 6,169 finishes its handler at clock 2,204,993,868 in
+host 6,170; the handler reads and clears `$0710` during that later host. The
+retained exact CPU owner now records both accepted and completed NMI events
+across hosts (`NativeExactCpuHostTrace::nmi_completions`). Its diagnostic
+receipts are `target/native-exact-nmi-accept-6171` and
+`target/native-exact-nmi-return-6172`. These CPU events remain separate, but
+their separation alone does not justify reducing the aggregate callback count.
+The next production change must align the scheduler's entry and return phases
+with the retained CPU owner, then place acceptance and handler completion on
+their measured hosts. Moving the callback or an individual WRAM command
+without that alignment changes later audio timing.
+
+The exact CPU owner also publishes `pending_nmis_at_return` as a typed host
+result. At host 6,173 it carries the acceptance at clock 2,206,327,240; at
+host 6,174 it records that handler's `RTI` at clock 2,206,423,338 while
+carrying the next accepted NMI. See `target/native-module09-pending-nmi-6173.log`
+and `target/native-module09-pending-nmi-6174.log`. This makes the pending
+phase explicit for a central scheduler handoff; translated gameplay does not
+yet consume it.
+
+The final diagnostic binary is
+`2d6afad29771ea578f9dd8b2058f86e45513b81aef016527407abca656305829`.
+It matches 56,459 translated-native audio frames
+(`target/native-module09-pending-nmi-56459`) and all 1,581,079 cached
+source-route audio frames, contiguous with no RNG drift
+(`target/native-module09-pending-nmi-source-full`). The Zelda library suite
+passes 1,813 tests and the SNES library suite passes 496 tests. These checks
+exclude video; the Metal adapter failure recorded below still prevents a
+native A/V rerun in this process.
+
+The next instruction split is now localized to `$09/$21`. The source writes
+`$0710=4` at `$02:EDB1` in CPU host 6,173, accepts another NMI in that host,
+and clears the command inside its handler in host 6,174
+(`target/native-module09-command-source-6175.log`). The validated native
+scheduler completes `FinishWorldMapAmbientMap8` at debug host 6,174 (CPU host
+6,173), but also runs the trailing NMI handler before that host returns. Its
+frame-6,173 WRAM snapshot has `$11=22` and `$0710=0`
+(`target/native-module09-phase-wram-6180`). Thus the trial CPU reads zero at
+the start of host 6,174 where the source CPU reads four. This is an
+acceptance-versus-handler phase error at the **correct** `$21` body completion,
+not evidence for shortening the `$20` plan. A previous trial that moved only
+the `$21` return across the handler passed the short CPU schedule gate but
+caused an RNG call one host early near 56,438; the handler and resumed caller
+must move together under a source-owned CPU phase.
+
+A generic trial that rebased translated WRAM immediately after every carried
+source NMI handler returned was rejected. It moved the first CPU instruction
+split backward from 6,174 to 3,814 while native audio still matched 7,000
+frames (`target/native-exact-cpu-after-carried-nmi-7000`). In the dialogue
+initialization crossing, source host 3,812 writes `$0710=2`, host 3,813's
+handler clears it, and the translated frame 3,812 still retains the pending
+command (`target/native-exact-cpu-phase-3814-source.log`,
+`target/native-exact-cpu-phase-3814-native`). The translated host-entry WRAM
+can therefore represent either side of a carried handler depending on the
+scheduled caller's phase. An `AfterCurrentTrailingNmi` gate did not restore
+alignment because the exact CPU owner advances before that host's translated
+continuation is staged. The trial code was removed. The scheduler needs an
+explicit, persisted host-boundary phase contract before the central owner can
+copy translated WRAM at the correct instruction boundary.
+
+After removing the failed six-callback/early-handler trial, the frozen binary
+`ac889ebacc61b44c59fdea303a35929c996add912d7a0fdc148bc1bfd448bf15`
+matches 56,459 translated-native audio frames
+(`target/native-module09-phase-corrected-56459`) and all 1,581,079 cached
+source-route audio frames with contiguous coverage and no RNG drift
+(`target/native-module09-phase-corrected-source-full`). The library suite has
+1,813 passing tests. A native video rerun on this binary could not start: the
+offscreen/native-window renderer found no Metal adapter in this process,
+although macOS reports the built-in Apple M2 Max GPU and Metal support
+(`target/native-module09-phase-corrected-56426-av.log`). Do not treat the
+audio gate as a new native A/V frontier.
+
+The frozen binary for this diagnostic increment is
+`79646c22b1a6a7156cc9f61a59897318940a3a40a63fed322eefff150c39dc3d`.
+Its translated-native audio comparison matches 56,459 frames
+(`target/native-exact-nmi-completion-56459`), the library suite passes 1,813
+tests, and its cached source-route audio comparison matches all 1,581,079
+frames with contiguous coverage and no RNG drift
+(`target/native-exact-nmi-completion-source-full`). Video was excluded from
+both A/V comparisons. The retained CPU trial's first schedule split remains
+host 6,174; this increment improves event ownership evidence, not that
+frontier yet.
+
+## Earlier native frontier — 56,425 (video)
 
 `62f43a27`'s inventory-tail continuation moves the native frontier **56,419 -> 56,425**.
 The frame-zero baseline reproduces 56,419 in
@@ -216,13 +1160,116 @@ native `RomCpuTimingRun` still executes instruction side effects before
 charging aggregate cycles and rebuilds its `Snes` shadow for each plan.
 The next clean slice is to make that source-ordered read state a retained
 native CPU peripheral, seeded from reset and updated at the actual bus
-access timestamp. Extend the timing probe's audited active-HDMA/NMI and
-checkpoint support before replacing an overworld caller; preserve the same
-owner through every module/plan transition. Compare the complete `$213C`
+access timestamp. The central `CpuSynchronousMachine` already owns the
+source-ordered NMI/IRQ, HDMA, APU, and nested nonzero `$420B` general-DMA
+drain; the separate `RomCpuTimingProbe` still rejects nonzero `$420B`.
+Native integration should retain one central owner across plans rather than
+copy its register state into fresh legacy shadows or duplicate DMA in the
+probe. Translate each caller's semantic writes at its actual source bus
+boundary, and require the central machine's CPU/PPU/APU cursor to agree
+before a plan returns. Compare the complete `$213C`
 read sequence above and the first RNG/call-order deviation before measuring
 the new A/V frontier. Do not promote the isolated overworld-only copy or
 compensate with an extra 304 cycles. The diagnostic experiment was removed
 from the branch.
+
+An exact resumed source checkpoint now witnesses the handoff directly:
+host 56,457 reads `$2137` at master clock 20,175,926,238 and `$213C` at
+20,175,926,268, obtaining `$EA`. Its completed host retains
+`h_read_high=false`, `open_bus2=$EA`, and latched H=190. Host 56,458 begins
+with that same PPU read owner; NMI is accepted during opcode `$98` at
+`$06:DCE2` at clock 20,176,119,184. The opt-in
+`ZELDA3_SOURCE_TRACE_PPU_READS` and `ZELDA3_SOURCE_TRACE_INTERRUPTS`
+diagnostics produce this witness from the same exact checkpoint without
+changing the normal execution path. It proves source ordering and owner
+retention, not translated-native video parity.
+
+The committed `455066b1` parity binary (SHA-256
+`4653467c159380847d44e9a4051359acb1d3e0a8d265f22c4a4c67a830c2a684`)
+matched both cached A/V lanes for all 1,581,079 contiguous source-route
+frames. Its translated native audio-only lane matched 56,482 contiguous
+frames (hosts 0 through 56,481). The next host panicked under strict RNG
+replay: `cucco_summon_avenger` called `GetRandomNumber` at execution frame
+56,482 while the next source sample belonged to 56,488. This is a
+downstream call-order witness on the same avenger path, not a new video
+frontier. The native video lane could not run in that session because wgpu
+found no Metal adapter, despite macOS listing the built-in M2 Max GPU.
+
+The first central-owner integration seam is now in `CpuSynchronousMachine`:
+`write_ppu_register_alias` commits a translated PPU register write and its
+source bus access on the machine's current timeline. Exact 65816 execution
+uses the same PPU-write semantic, and a synthetic cold-CPU transaction test
+checks the external path's PPU result, OpenBus retention, and end timestamp.
+`read_ppu_register_alias` likewise shares the exact CPU's audited PPU read
+owner, including OpenBus1 producers (`$2134..$2136`, `$2138`, `$213E`) and
+counter ports (`$2137`, `$213C`, `$213D`, `$213F`, `$4213`). A cold-CPU
+transaction test proves the `$EA` high read, and a failed-drain test proves
+that resumption returns the retained byte without flipping the read phase
+again. `write_wrio_alias` shares the exact CPU's `$4201` semantic; a V83/C760
+high-to-low WRIO edge test captures H=190 and V=83 before its bus charge.
+`publish_cpu_open_bus` is the matching post-drain publication step. It refuses
+to publish while a bus transaction has a pending completion; the exact cold
+CPU's instruction bus uses the same guard, and tests cover normal and failed
+PPU reads. This makes the transaction boundary explicit, but does not supply
+the production translated caller's retained CPU cursor.
+The owner also accepts exact-timed direct and mirrored WRAM reads/writes through
+`read_wram_alias` and `write_wram_alias`. The cold CPU and external caller share
+one address resolver, and a two-access test compares memory, bus timestamps,
+and OpenBus publication. A failed-drain read retains its original sampled byte
+even if the WRAM cell changes before resumption. Other bus addresses are
+rejected rather than treated as ordinary memory.
+`fetch_pcbase_opcode_alias` and `advance_cpu_add_cycles_alias` now expose the
+two distinct instruction-clock operations from the same owner. The exact
+cold CPU uses those methods for its opcode fetch and `AddCycles` transaction;
+an external NOP test checks opcode, PC, transaction timestamps, and OpenBus
+against a cold step. The fetch intentionally leaves due events pending while
+`AddCycles` drains them. Neither method accepts a fresh raster estimate, and
+both refuse to overtake an unfinished bus completion.
+`AddCycles` now retains a typed completion if its event drain fails. A test
+places a PCBase fetch across HMax, forces the following APU drain to fail,
+then resumes it and matches a successful one-shot reference without a second
+opcode fetch or cycle charge. The cold CPU still poisons a failed partial
+instruction and drops that external continuation; only a translated caller
+which retains its instruction state may resume it.
+The branch parity binary SHA-256 `2a6a006aca3791031ea15e52ca0d65affd8a705054dd962728094ebe2151150b`
+matched all 1,581,079 contiguous source-route audio frames in
+`target/native-timing-owner-full-audio`. The translated native lane matched
+56,482 contiguous audio frames in `target/native-timing-owner-native-audio-prefix`
+and still reaches the strict RNG call-order failure at host 56,482. The
+one-frame video smoke attempt still failed to acquire a Metal adapter, so
+neither a branch full A/V gate nor a new native video frontier is established.
+No native plan calls this API yet; the next integration must supply its actual
+bus boundary and retain the CPU cursor instead of reseeding a fresh timing
+shadow from the translated PPU image.
+An opt-in experiment retained the entire legacy `RomCpuTimingRun` across the
+overworld main-wait boundary. It matched 10,000 native audio frames, but its
+first WRAM difference from the translated owner appeared at host 2,337
+(`$0000`, shadow `$7D`, translated `$A8`). At host 41,225, the retained run's
+module-dependent stop PC was `$00:805D` while the translated route entered
+Module0F at `$02:9982`; the cross-module plan rejected the mismatch. Evidence:
+`target/native-retained-shadow-10k` and
+`target/native-retained-shadow-56500.log`. The experiment was removed. A
+retained legacy shadow cannot be promoted as the native owner without ordered
+reconciliation of translated writes; silently changing its stop PC or
+rebuilding it at that transition would hide the ownership gap.
+The exact cold source CPU's return probe confirms that WRAM `$10` remains
+`$09` at hosts 41,223–41,227, with no `$10` write in that interval, while the
+translated route has entered its Module0F path at host 41,225. The source
+trace is `target/native-retained-shadow-source-module-value.log` (the probe
+now prints watched WRAM at each traced host return). These are distinct
+internal representations at a common host boundary, so whole-WRAM equality
+is not a valid prerequisite for a persistent source CPU timing owner.
+The first tempting caller, `native_main_loop_cpu_run`, has no such boundary:
+it reconstructs `RomCpuTimingRun` from translated WRAM/PPU/DMA and advances a
+separate aggregate `CpuCycleBudget` after each legacy instruction. The legacy
+`PpuState::read($213C)` high phase returns only the counter's bit zero, while
+the source owner returns `(OpenBus2 & $FE) | bit0`; retaining the legacy flip
+would still not produce `$EA`. A native integration needs a persistent
+source-ordered CPU/bus cursor across the main wait, NMI, and module plans,
+with translated writes reconciled at their actual bus transactions. The
+external PPU-write seam is tested for post-semantic drain failure and resume
+without replaying a scroll write, but must not be called from a synthesized
+frame raster position.
 
 The source-ordered timing probe now executes active HDMA init/scanline
 events at their CPU timeline deadlines and charges the DMA core's measured

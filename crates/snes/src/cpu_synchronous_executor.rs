@@ -26,8 +26,8 @@ pub use source_cpu::{
     SourceCpuTransaction, SourceCpuTransactionKind, SourcePpuReadState,
 };
 
-/// A CPU bus semantic which has committed exactly once and whose access charge
-/// is waiting for a fallible hardware-event drain to finish.
+/// A CPU bus semantic or `AddCycles` transaction which has committed exactly
+/// once and whose hardware-event drain may still need to finish.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CpuSynchronousCompletion {
     Read(u8),
@@ -35,6 +35,7 @@ pub enum CpuSynchronousCompletion {
     Write,
     WriteWord,
     GeneralDmaWrite,
+    CpuAddCycles,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -73,10 +74,11 @@ pub(crate) struct SynchronousGeneralDmaWriteReceipt {
 
 /// Coherent opt-in owner for the modeled synchronous S-CPU/APUI subset.
 ///
-/// There is deliberately no public `from_parts` or raw cycle-advance API.
-/// Future CPU execution must call the private transaction drain from the exact
-/// AddCycles boundaries in the pinned Snes9x source. The only public seed is
-/// the source-exact T=0 Snes9x SMP coroutine reset used by this subset.
+/// There is deliberately no public `from_parts` or aggregate cycle-budget API.
+/// External CPU execution may advance only at a retained PCBase fetch, an
+/// audited bus access, or one exact `AddCycles` transaction boundary. The only
+/// public seed is the source-exact T=0 Snes9x SMP coroutine reset used by this
+/// subset.
 pub struct CpuSynchronousMachine {
     snes: Snes,
     timeline: CpuMasterTimeline,
@@ -156,6 +158,117 @@ impl CpuSynchronousMachine {
         self.pending_completion
     }
 
+    /// Publish the enclosing CPU operand's OpenBus byte only after its bus
+    /// transaction has finished draining due PPU/APU/DMA events. A translated
+    /// caller must resume a failed transaction before publishing this byte;
+    /// otherwise an event would observe a value the source CPU has not yet
+    /// put on the bus.
+    pub fn publish_cpu_open_bus(
+        &mut self,
+        value: u8,
+    ) -> Result<(), CpuSynchronousMachineError> {
+        self.reject_new_semantic_while_pending()?;
+        self.snes.open_bus = value;
+        Ok(())
+    }
+
+    /// Fetch the opcode at this owner's retained PCBase. Pinned Snes9x
+    /// advances the physical CPU clock without draining a due event or
+    /// publishing CPU OpenBus; the following instruction transaction owns
+    /// that drain. A translated caller must use this retained PC, never a
+    /// frame-derived raster or an aggregate instruction-cycle charge.
+    pub fn fetch_pcbase_opcode_alias(
+        &mut self,
+    ) -> Result<(u8, u8), CpuSynchronousMachineError> {
+        self.reject_new_semantic_while_pending()?;
+        let cpu = &self.snes.cpu;
+        let address = (u32::from(cpu.k) << 16) | u32::from(cpu.pc);
+        let memory_speed = self.snes.hardware_access_time(address);
+        if (address as u16) < 0x8000 || !matches!(memory_speed, 6 | 8) {
+            return Err(CpuSynchronousMachineError::UnsupportedCpuBusAddress {
+                full_adr: address,
+            });
+        }
+        let opcode = self.snes.cart.read(
+            (address >> 16) as u8,
+            address as u16,
+            self.snes.open_bus,
+        );
+        self.timeline
+            .advance_synchronous_pcbase_opcode_fetch(memory_speed);
+        self.snes.cpu.pc = self.snes.cpu.pc.wrapping_add(1);
+        Ok((opcode, memory_speed))
+    }
+
+    /// Execute one source `AddCycles` transaction after the caller has
+    /// committed its preceding CPU semantic. This drains events at their
+    /// deadlines, unlike the direct PCBase fetch above. It must be called at
+    /// each source transaction boundary, never once for a whole instruction.
+    pub fn advance_cpu_add_cycles_alias(
+        &mut self,
+        master_cycles: u8,
+    ) -> Result<(), CpuSynchronousMachineError> {
+        self.reject_new_semantic_while_pending()?;
+        self.pending_completion = Some(CpuSynchronousCompletion::CpuAddCycles);
+        self.drain_add_cycles_after_committed_semantic(u32::from(master_cycles))?;
+        assert_eq!(
+            self.take_pending_completion(),
+            CpuSynchronousCompletion::CpuAddCycles
+        );
+        Ok(())
+    }
+
+    /// Resolve the CPU's direct and low-bank mirrored WRAM maps. Do not treat
+    /// other LoROM regions as memory: their reads may have MMIO side effects.
+    fn source_wram_index(full_adr: u32) -> Option<usize> {
+        let address = full_adr & 0x00ff_ffff;
+        let bank = (address >> 16) as u8;
+        let offset = address as u16;
+        match bank {
+            0x7e | 0x7f => Some(((usize::from(bank) - 0x7e) << 16) | usize::from(offset)),
+            _ if bank & 0x7f < 0x40 && offset < 0x2000 => Some(usize::from(offset)),
+            _ => None,
+        }
+    }
+
+    /// Sample translated WRAM at the current CPU bus boundary. The byte is
+    /// retained through a failed event drain and returned exactly once on
+    /// `resume_pending_completion`; CPU OpenBus is caller-published afterward.
+    pub fn read_wram_alias(
+        &mut self,
+        full_adr: u32,
+    ) -> Result<u8, CpuSynchronousMachineError> {
+        self.reject_new_semantic_while_pending()?;
+        let index = Self::source_wram_index(full_adr)
+            .ok_or(CpuSynchronousMachineError::UnsupportedCpuBusAddress { full_adr })?;
+        let value = self.snes.ram[index];
+        self.pending_completion = Some(CpuSynchronousCompletion::Read(value));
+        let cycles = u32::from(self.snes.hardware_access_time(full_adr));
+        self.drain_add_cycles_after_committed_semantic(cycles)?;
+        match self.take_pending_completion() {
+            CpuSynchronousCompletion::Read(value) => Ok(value),
+            _ => unreachable!("WRAM read installed a byte completion"),
+        }
+    }
+
+    /// Commit a translated WRAM store before its source bus access is
+    /// charged. The enclosing CPU instruction publishes OpenBus after drain.
+    pub fn write_wram_alias(
+        &mut self,
+        full_adr: u32,
+        value: u8,
+    ) -> Result<(), CpuSynchronousMachineError> {
+        self.reject_new_semantic_while_pending()?;
+        let index = Self::source_wram_index(full_adr)
+            .ok_or(CpuSynchronousMachineError::UnsupportedCpuBusAddress { full_adr })?;
+        self.snes.ram[index] = value;
+        self.pending_completion = Some(CpuSynchronousCompletion::Write);
+        let cycles = u32::from(self.snes.hardware_access_time(full_adr));
+        self.drain_add_cycles_after_committed_semantic(cycles)?;
+        assert_eq!(self.take_pending_completion(), CpuSynchronousCompletion::Write);
+        Ok(())
+    }
+
     /// Transfer samples emitted by scanline-end/F3 DSP synchronization exactly
     /// once from the machine that owns the physical CPU/APU timeline.
     pub fn take_dsp_samples(&mut self) -> Snes9xDspSampleReceipt {
@@ -186,7 +299,8 @@ impl CpuSynchronousMachine {
             CpuSynchronousCompletion::ReadWord(_)
             | CpuSynchronousCompletion::Write
             | CpuSynchronousCompletion::WriteWord
-            | CpuSynchronousCompletion::GeneralDmaWrite => {
+            | CpuSynchronousCompletion::GeneralDmaWrite
+            | CpuSynchronousCompletion::CpuAddCycles => {
                 unreachable!("read installed a byte-read completion")
             }
         }
@@ -221,6 +335,133 @@ impl CpuSynchronousMachine {
             CpuSynchronousCompletion::Write
         );
         Ok(())
+    }
+
+    /// Commit a translated CPU write at this machine's current source bus
+    /// boundary. The PPU semantic and the following memory-access drain stay
+    /// with the same owner used by exact 65816 execution. The enclosing
+    /// translated instruction still owns its instruction-specific CPU OpenBus
+    /// publication; this bus access preserves the prior value until then.
+    pub fn write_ppu_register_alias(
+        &mut self,
+        full_adr: u32,
+        value: u8,
+    ) -> Result<(), CpuSynchronousMachineError> {
+        self.reject_new_semantic_while_pending()?;
+        let address = full_adr & 0x00ff_ffff;
+        let bank = (address >> 16) as u8;
+        let register = address as u16;
+        if bank & 0x7f >= 0x40
+            || !(0x2100..=0x2133).contains(&register)
+            || (register == 0x2103 && value & 0x80 != 0)
+        {
+            return Err(CpuSynchronousMachineError::UnsupportedCpuBusAddress { full_adr });
+        }
+        self.commit_source_ppu_register_semantic(address, value);
+        self.pending_completion = Some(CpuSynchronousCompletion::Write);
+        let access_master_cycles = u32::from(self.snes.hardware_access_time(address));
+        self.drain_add_cycles_after_committed_semantic(access_master_cycles)?;
+        assert_eq!(self.take_pending_completion(), CpuSynchronousCompletion::Write);
+        Ok(())
+    }
+
+    /// Sample an audited CPU-visible PPU port at the current source bus
+    /// boundary. OpenBus1 producers and beam-counter consumers share one
+    /// owner. A fallible post-semantic event drain retains the sampled byte;
+    /// resumption never repeats the read semantic.
+    pub fn read_ppu_register_alias(
+        &mut self,
+        full_adr: u32,
+    ) -> Result<u8, CpuSynchronousMachineError> {
+        self.reject_new_semantic_while_pending()?;
+        let address = full_adr & 0x00ff_ffff;
+        let bank = (address >> 16) as u8;
+        let register = address as u16;
+        if bank & 0x7f >= 0x40 {
+            return Err(CpuSynchronousMachineError::UnsupportedCpuBusAddress { full_adr });
+        }
+        let value = self
+            .commit_source_ppu_read_semantic(register)
+            .ok_or(CpuSynchronousMachineError::UnsupportedCpuBusAddress { full_adr })?;
+        self.pending_completion = Some(CpuSynchronousCompletion::Read(value));
+        let access_master_cycles = u32::from(self.snes.hardware_access_time(address));
+        self.drain_add_cycles_after_committed_semantic(access_master_cycles)?;
+        match self.take_pending_completion() {
+            CpuSynchronousCompletion::Read(value) => Ok(value),
+            _ => unreachable!("PPU counter read installed a byte completion"),
+        }
+    }
+
+    /// Write WRIO/RDIO on the source bus. A high-to-low bit-7 edge captures
+    /// the current beam before the enclosing memory access is charged.
+    pub fn write_wrio_alias(
+        &mut self,
+        full_adr: u32,
+        value: u8,
+    ) -> Result<(), CpuSynchronousMachineError> {
+        self.reject_new_semantic_while_pending()?;
+        let address = full_adr & 0x00ff_ffff;
+        let bank = (address >> 16) as u8;
+        if bank & 0x7f >= 0x40 || address as u16 != 0x4201 {
+            return Err(CpuSynchronousMachineError::UnsupportedCpuBusAddress { full_adr });
+        }
+        self.commit_source_wrio_semantic(value);
+        self.pending_completion = Some(CpuSynchronousCompletion::Write);
+        let access_master_cycles = u32::from(self.snes.hardware_access_time(address));
+        self.drain_add_cycles_after_committed_semantic(access_master_cycles)?;
+        assert_eq!(self.take_pending_completion(), CpuSynchronousCompletion::Write);
+        Ok(())
+    }
+
+    fn commit_source_wrio_semantic(&mut self, value: u8) {
+        let beam = self
+            .timeline
+            .synchronous_beam_position()
+            .expect("source WRIO writes require a synchronous timeline");
+        self.source_ppu_reads.write_wrio(value, beam);
+    }
+
+    fn commit_source_ppu_read_semantic(&mut self, register: u16) -> Option<u8> {
+        match register {
+            0x2134..=0x2136 => {
+                let value = self.snes.ppu.read(register as u8);
+                self.source_ppu_reads.open_bus1 = value;
+                return Some(value);
+            }
+            0x2138 => {
+                let value = self.snes.read_source_oam_data()?;
+                self.source_ppu_reads.open_bus1 = value;
+                return Some(value);
+            }
+            0x213e => {
+                let flags = self.snes.source_oam_stat77_flags()?;
+                return Some(self.source_ppu_reads.read_stat77(flags));
+            }
+            0x2137 | 0x213c | 0x213d | 0x213f | 0x4213 => {}
+            _ => return None,
+        }
+        let beam = self
+            .timeline
+            .synchronous_beam_position()
+            .expect("source PPU reads require a synchronous timeline");
+        self.source_ppu_reads.read(register, beam)
+    }
+
+    fn commit_source_ppu_register_semantic(&mut self, address: u32, value: u8) {
+        let register = address as u16;
+        debug_assert!((0x2100..=0x21ff).contains(&register));
+        let beam = self
+            .timeline
+            .synchronous_beam_position()
+            .expect("source PPU writes require a synchronous timeline");
+        self.snes.set_source_oam_v_counter(beam.scanline);
+        if register == 0x2115 {
+            self.source_vmain_full_graphic_count_nonzero = value & 0x0c != 0;
+        }
+        // CPU store macros publish OpenBus only after the enclosing access.
+        let open_bus = self.snes.open_bus;
+        self.snes.write(address, value);
+        self.snes.open_bus = open_bus;
     }
 
     /// Resume the already-charged event drain for one committed bus semantic.
@@ -547,9 +788,9 @@ impl CpuSynchronousMachine {
             .expect("a committed semantic owns its completion until drain succeeds")
     }
 
-    /// One post-semantic pinned-Snes9x AddCycles transaction. This remains
-    /// private until the source CPU executor can supply exact transaction
-    /// boundaries; it must never be driven per logical byte or receipt.
+    /// One post-semantic pinned-Snes9x AddCycles transaction. Callers must
+    /// preserve the exact instruction/bus boundary; an aggregate routine or
+    /// frame charge cannot be substituted for this drain.
     fn drain_add_cycles_after_committed_semantic(
         &mut self,
         master_cycles: u32,
@@ -669,7 +910,7 @@ impl CpuSynchronousMachine {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum CpuSynchronousMachineError {
-    #[error("synchronous CPU bus address ${full_adr:06x} is not an APU port alias")]
+    #[error("synchronous CPU bus address ${full_adr:06x} is not a supported peripheral alias")]
     UnsupportedCpuBusAddress { full_adr: u32 },
     #[error("the committed {completion:?} bus semantic must be resumed before a new semantic")]
     PendingCompletionMustResume {
@@ -734,6 +975,28 @@ mod tests {
         }
     }
 
+    #[test]
+    fn translated_ppu_write_uses_the_source_bus_owner() {
+        let mut machine = CpuSynchronousMachine::from_snes9x_apu_reset_seed();
+        machine.snes.open_bus = 0xa5;
+        let duration = u64::from(machine.snes.hardware_access_time(0x00_2105));
+        machine.write_ppu_register_alias(0x80_2105, 0x09).unwrap();
+        assert_eq!(machine.snes.ppu.mode, 0x09);
+        assert_eq!(machine.snes.open_bus, 0xa5);
+        assert_eq!(machine.timestamp().master_cycles(), duration);
+        assert_eq!(machine.pending_completion(), None);
+
+        let before = machine.timestamp();
+        assert_eq!(
+            machine.write_ppu_register_alias(0x00_2103, 0x80),
+            Err(CpuSynchronousMachineError::UnsupportedCpuBusAddress {
+                full_adr: 0x00_2103,
+            })
+        );
+        assert_eq!(machine.timestamp(), before);
+        assert_eq!(machine.pending_completion(), None);
+    }
+
     fn post_semantic_hmax_failure_machine() -> CpuSynchronousMachine {
         let checkpoint = Snes9xApuClockCheckpoint::new(1_358, 250_000, 0).unwrap();
         let mut machine = machine_at_source_checkpoint(
@@ -746,6 +1009,181 @@ mod tests {
 
     fn zero_cycle_smp_step() -> CpuSynchronousMachineError {
         CpuSynchronousMachineError::ApuClock(Snes9xApuClockError::ZeroCycleSmpStep)
+    }
+
+    #[test]
+    fn translated_ppu_write_resumes_the_event_drain_without_replaying_its_semantic() {
+        let mut machine = post_semantic_hmax_failure_machine();
+        assert_eq!(
+            machine.write_ppu_register_alias(0x00_210d, 0x34),
+            Err(zero_cycle_smp_step())
+        );
+        assert_eq!(machine.pending_completion(), Some(CpuSynchronousCompletion::Write));
+        let scroll = machine.snes.ppu.bg_layer[0].h_scroll;
+        assert_eq!(machine.snes.ppu.scroll_prev, 0x34);
+        assert_eq!(
+            machine.write_ppu_register_alias(0x00_210d, 0x56),
+            Err(CpuSynchronousMachineError::PendingCompletionMustResume {
+                completion: CpuSynchronousCompletion::Write,
+            })
+        );
+
+        machine.force_zero_cycle_smp_step = false;
+        assert_eq!(
+            machine.resume_pending_completion(),
+            Ok(CpuSynchronousCompletion::Write)
+        );
+        assert_eq!(machine.snes.ppu.bg_layer[0].h_scroll, scroll);
+        assert_eq!(machine.snes.ppu.scroll_prev, 0x34);
+        assert_eq!(machine.pending_completion(), None);
+    }
+
+    #[test]
+    fn ppu_counter_high_read_retains_open_bus_across_a_failed_drain() {
+        let mut machine = post_semantic_hmax_failure_machine();
+        machine.snes.open_bus = 0x5a;
+        machine.source_ppu_reads.h_latched = 190;
+        machine.source_ppu_reads.h_read_high = true;
+        machine.source_ppu_reads.open_bus2 = 0xeb;
+        assert_eq!(machine.read_ppu_register_alias(0x00_213c), Err(zero_cycle_smp_step()));
+        assert_eq!(machine.pending_completion(), Some(CpuSynchronousCompletion::Read(0xea)));
+        assert!(!machine.source_ppu_reads.h_read_high);
+        assert_eq!(machine.source_ppu_reads.open_bus2, 0xea);
+        assert_eq!(machine.snes.open_bus, 0x5a);
+        assert_eq!(
+            machine.publish_cpu_open_bus(0xea),
+            Err(CpuSynchronousMachineError::PendingCompletionMustResume {
+                completion: CpuSynchronousCompletion::Read(0xea),
+            })
+        );
+        assert_eq!(machine.snes.open_bus, 0x5a);
+
+        machine.force_zero_cycle_smp_step = false;
+        assert_eq!(
+            machine.resume_pending_completion(),
+            Ok(CpuSynchronousCompletion::Read(0xea))
+        );
+        assert!(!machine.source_ppu_reads.h_read_high);
+        assert_eq!(machine.source_ppu_reads.open_bus2, 0xea);
+        assert_eq!(machine.pending_completion(), None);
+        machine.publish_cpu_open_bus(0xea).unwrap();
+        assert_eq!(machine.snes.open_bus, 0xea);
+    }
+
+    #[test]
+    fn translated_wram_read_retains_sample_through_a_failed_drain() {
+        let mut machine = post_semantic_hmax_failure_machine();
+        machine.snes.ram[0x1234] = 0x9a;
+        assert_eq!(machine.read_wram_alias(0x80_1234), Err(zero_cycle_smp_step()));
+        assert_eq!(machine.pending_completion(), Some(CpuSynchronousCompletion::Read(0x9a)));
+        machine.snes.ram[0x1234] = 0x34;
+        let pending = CpuSynchronousMachineError::PendingCompletionMustResume {
+            completion: CpuSynchronousCompletion::Read(0x9a),
+        };
+        assert_eq!(machine.fetch_pcbase_opcode_alias(), Err(pending.clone()));
+        assert_eq!(machine.advance_cpu_add_cycles_alias(6), Err(pending.clone()));
+        assert_eq!(
+            machine.read_wram_alias(0x7e_1234),
+            Err(pending)
+        );
+        machine.force_zero_cycle_smp_step = false;
+        assert_eq!(
+            machine.resume_pending_completion(),
+            Ok(CpuSynchronousCompletion::Read(0x9a))
+        );
+        machine.publish_cpu_open_bus(0x9a).unwrap();
+        assert_eq!(machine.snes.open_bus, 0x9a);
+        assert_eq!(machine.snes.ram[0x1234], 0x34);
+    }
+
+    #[test]
+    fn translated_wram_alias_rejects_mmio_and_unmapped_banks() {
+        let mut machine = CpuSynchronousMachine::from_snes9x_apu_reset_seed();
+        let before = machine.timestamp();
+        assert_eq!(
+            machine.read_wram_alias(0x00_213c),
+            Err(CpuSynchronousMachineError::UnsupportedCpuBusAddress {
+                full_adr: 0x00_213c,
+            })
+        );
+        assert_eq!(
+            machine.write_wram_alias(0x40_1234, 0x9a),
+            Err(CpuSynchronousMachineError::UnsupportedCpuBusAddress {
+                full_adr: 0x40_1234,
+            })
+        );
+        assert_eq!(machine.timestamp(), before);
+        assert_eq!(machine.pending_completion(), None);
+    }
+
+    #[test]
+    fn pcbase_fetch_leaves_hmax_for_resumable_add_cycles_drain() {
+        let seeded = || {
+            let mut machine = post_semantic_hmax_failure_machine();
+            machine.snes.cart.load(crate::cart::CartType::LoRom, &vec![0xea; 0x8000], 0x2000);
+            machine.snes.cpu.pc = 0x8000;
+            machine.snes.open_bus = 0x5a;
+            machine
+        };
+        let mut reference = seeded();
+        reference.force_zero_cycle_smp_step = false;
+        let mut interrupted = seeded();
+
+        assert_eq!(reference.fetch_pcbase_opcode_alias(), Ok((0xea, 8)));
+        assert_eq!(interrupted.fetch_pcbase_opcode_alias(), Ok((0xea, 8)));
+        assert_eq!(interrupted.timestamp().master_cycles(), 1_366);
+        assert_eq!(interrupted.snes.open_bus, 0x5a);
+
+        reference.advance_cpu_add_cycles_alias(6).unwrap();
+        assert_eq!(interrupted.advance_cpu_add_cycles_alias(6), Err(zero_cycle_smp_step()));
+        assert_eq!(
+            interrupted.pending_completion(),
+            Some(CpuSynchronousCompletion::CpuAddCycles)
+        );
+        assert_eq!(
+            interrupted.advance_cpu_add_cycles_alias(6),
+            Err(CpuSynchronousMachineError::PendingCompletionMustResume {
+                completion: CpuSynchronousCompletion::CpuAddCycles,
+            })
+        );
+        interrupted.force_zero_cycle_smp_step = false;
+        assert_eq!(
+            interrupted.resume_pending_completion(),
+            Ok(CpuSynchronousCompletion::CpuAddCycles)
+        );
+        assert_eq!(interrupted.timestamp(), reference.timestamp());
+        assert_eq!(interrupted.snes.cpu.pc, reference.snes.cpu.pc);
+        assert_eq!(interrupted.snes.open_bus, reference.snes.open_bus);
+        assert_eq!(interrupted.pending_completion(), None);
+    }
+
+    #[test]
+    fn ppu_open_bus1_producer_feeds_the_later_counter_latch_read() {
+        let mut machine = CpuSynchronousMachine::from_snes9x_apu_reset_seed();
+        machine.snes.ppu.m7_matrix[0] = 0x1234;
+        machine.snes.ppu.m7_matrix[1] = 0x0100;
+        assert_eq!(machine.read_ppu_register_alias(0x00_2134), Ok(0x34));
+        assert_eq!(machine.source_ppu_reads.open_bus1, 0x34);
+        assert_eq!(machine.read_ppu_register_alias(0x00_2137), Ok(0x34));
+        assert!(machine.source_ppu_reads.counter_latched);
+        assert_eq!(machine.source_ppu_reads.open_bus1, 0x34);
+    }
+
+    #[test]
+    fn wrio_falling_edge_latches_the_current_source_beam() {
+        let raster = CpuRasterPosition::new(83, 760);
+        let start = CpuFieldTiming::NON_INTERLACE_EVEN.master_cycles_at(0, raster);
+        let clock = Snes9xApuClockState::from_checkpoint(
+            Snes9xApuClockCheckpoint::new(start, 0, 0).unwrap(),
+        )
+        .unwrap();
+        let mut machine = machine_at_source_checkpoint(raster, clock);
+        machine.write_wrio_alias(0x80_4201, 0x7f).unwrap();
+        assert_eq!(machine.source_ppu_reads.wrio, 0x7f);
+        assert_eq!(machine.source_ppu_reads.h_latched, 190);
+        assert_eq!(machine.source_ppu_reads.v_latched, 83);
+        assert!(machine.source_ppu_reads.counter_latched);
+        assert_eq!(machine.read_ppu_register_alias(0x00_4213), Ok(0x7f));
     }
 
     #[test]

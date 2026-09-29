@@ -48,6 +48,54 @@ pub(super) struct SpriteSpawnInfo {
     pub r7_overlord_y: u16,
 }
 
+/// Translated state of the ROM's interruptible $09:C55E proximity scan.
+/// A cell is one return from the source $09:C6F5 inner call. Keeping the
+/// cursor and caller locals explicit lets the CPU owner stop the translated
+/// scan at that same boundary without rerunning completed cells.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct OverworldProximityScanWork {
+    saved_bg2_h: u16,
+    saved_scroll_delta: u8,
+    x_extension: u16,
+    x: u16,
+    y: u16,
+    y_start: u16,
+    rows_in_column: u8,
+    columns_remaining: u8,
+    cells_completed: u16,
+    total_cells: u16,
+    in_bounds_proximity_checks: u16,
+}
+
+impl OverworldProximityScanWork {
+    pub(crate) fn total_cells(&self) -> u16 {
+        self.total_cells
+    }
+
+    pub(crate) fn cells_completed(&self) -> u16 {
+        self.cells_completed
+    }
+}
+
+/// The caller state between the overworld presence load and the return from
+/// its proximity scan. Reset and presence publication run exactly once; only
+/// the per-cell scan can be resumed after an interrupt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct OverworldSpriteReloadScanWork {
+    sprite_records: usize,
+    scan: OverworldProximityScanWork,
+}
+
+impl OverworldSpriteReloadScanWork {
+    pub(crate) fn cells_completed(&self) -> u16 {
+        self.scan.cells_completed()
+    }
+
+    pub(crate) fn total_cells(&self) -> u16 {
+        self.scan.total_cells()
+    }
+}
+
 #[derive(Copy, Clone, Default, serde::Serialize, serde::Deserialize, Debug)]
 pub(super) struct PrepOamCoordsRet {
     pub x: u16,
@@ -1762,15 +1810,67 @@ impl ZeldaState {
     pub(super) fn sprite_overworld_reload_all_just_load(
         &mut self,
     ) -> OverworldSpriteReloadWorkload {
+        let work = self.begin_overworld_sprite_reload_just_load();
+        self.complete_overworld_sprite_reload_scan(work)
+    }
+
+    pub(super) fn begin_overworld_sprite_reload_just_load(
+        &mut self,
+    ) -> OverworldSpriteReloadScanWork {
+        let sprite_records = self.begin_overworld_sprite_reload_presence_just_load();
+        self.begin_overworld_sprite_reload_scan_from_presence(sprite_records)
+    }
+
+    pub(super) fn begin_overworld_sprite_reload_presence_just_load(&mut self) -> usize {
         self.sprite_reset_all_no_disable();
-        self.sprite_finish_reload_all_overworld()
+        self.overworld_load_sprites()
     }
 
     pub(super) fn sprite_finish_reload_all_overworld(&mut self) -> OverworldSpriteReloadWorkload {
+        let work = self.begin_overworld_sprite_reload_scan();
+        self.complete_overworld_sprite_reload_scan(work)
+    }
+
+    pub(super) fn complete_overworld_sprite_reload_scan(
+        &mut self,
+        mut work: OverworldSpriteReloadScanWork,
+    ) -> OverworldSpriteReloadWorkload {
+        let total_cells = work.total_cells();
+        self.advance_overworld_sprite_reload_scan_through_cell(&mut work, total_cells);
+        self.finish_overworld_sprite_reload_scan(work)
+    }
+
+    pub(super) fn begin_overworld_sprite_reload_scan(&mut self) -> OverworldSpriteReloadScanWork {
         let sprite_records = self.overworld_load_sprites();
-        let in_bounds_proximity_checks = self.sprite_activate_all_proxima();
-        OverworldSpriteReloadWorkload {
+        self.begin_overworld_sprite_reload_scan_from_presence(sprite_records)
+    }
+
+    pub(super) fn begin_overworld_sprite_reload_scan_from_presence(
+        &mut self,
+        sprite_records: usize,
+    ) -> OverworldSpriteReloadScanWork {
+        let scan = self.begin_overworld_proximity_cell_scan();
+        OverworldSpriteReloadScanWork {
             sprite_records,
+            scan,
+        }
+    }
+
+    pub(super) fn advance_overworld_sprite_reload_scan_through_cell(
+        &mut self,
+        work: &mut OverworldSpriteReloadScanWork,
+        ordinal: u16,
+    ) {
+        self.advance_overworld_proximity_scan_through_cell(&mut work.scan, ordinal);
+    }
+
+    pub(super) fn finish_overworld_sprite_reload_scan(
+        &mut self,
+        work: OverworldSpriteReloadScanWork,
+    ) -> OverworldSpriteReloadWorkload {
+        let in_bounds_proximity_checks = self.finish_overworld_proximity_cell_scan(work.scan);
+        OverworldSpriteReloadWorkload {
+            sprite_records: work.sprite_records,
             in_bounds_proximity_checks,
         }
     }
@@ -1825,11 +1925,17 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_activate_all_proxima(&mut self) -> usize {
-        let bak0 = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
-        let bak1 = self.overworld_horizontal_scroll_delta_low();
-        self.set_overworld_horizontal_scroll_delta_low(0xff);
+        let mut scan = self.begin_overworld_proximity_cell_scan();
+        let total_cells = scan.total_cells();
+        self.advance_overworld_proximity_scan_through_cell(&mut scan, total_cells);
+        self.finish_overworld_proximity_cell_scan(scan)
+    }
 
-        let xt: u16 = if self
+    pub(super) fn begin_overworld_proximity_cell_scan(&mut self) -> OverworldProximityScanWork {
+        let saved_bg2_h = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
+        let saved_scroll_delta = self.overworld_horizontal_scroll_delta_low();
+        self.set_overworld_horizontal_scroll_delta_low(0xff);
+        let extension: u16 = if self
             .game_state
             .enhanced_features
             .has(FEATURES0_EXTEND_SCREEN64_SPRITE)
@@ -1838,21 +1944,105 @@ impl ZeldaState {
         } else {
             0
         };
-        self.set_bg2_x(bak0.wrapping_sub(xt));
-        let mut in_bounds_proximity_checks = 0usize;
-        for _ in (0..=(21 + (xt >> 3))).rev() {
-            in_bounds_proximity_checks += self.sprite_activate_when_proximal();
-            let bg = self
+        self.set_bg2_x(saved_bg2_h.wrapping_sub(extension));
+        let y_start = self
+            .game_state
+            .display
+            .ppu_scroll_copy
+            .bg2_v_copy2()
+            .wrapping_sub(0x30);
+        OverworldProximityScanWork {
+            saved_bg2_h,
+            saved_scroll_delta,
+            x_extension: extension,
+            // Sprite_ActivateWhenProximal sees the temporary $069F=$FF and
+            // computes its first X from the current BG2 and screen extension.
+            x: self
+                .game_state
+                .display
+                .ppu_scroll_copy
+                .bg2_h_copy2()
+                .wrapping_sub(0x10)
+                .wrapping_sub(extension),
+            y: y_start,
+            y_start,
+            rows_in_column: 0,
+            columns_remaining: (22 + (extension >> 3)) as u8,
+            cells_completed: 0,
+            total_cells: (22 + (extension >> 3)) * 22,
+            in_bounds_proximity_checks: 0,
+        }
+    }
+
+    pub(super) fn advance_overworld_proximity_cell_scan(
+        &mut self,
+        scan: &mut OverworldProximityScanWork,
+    ) -> bool {
+        if scan.columns_remaining == 0 {
+            return false;
+        }
+        scan.in_bounds_proximity_checks +=
+            u16::from(self.sprite_overworld_proximity_motivated_load(scan.x, scan.y));
+        scan.cells_completed += 1;
+        scan.rows_in_column += 1;
+        if scan.rows_in_column == 22 {
+            scan.rows_in_column = 0;
+            scan.columns_remaining -= 1;
+            let bg2_h = self
                 .game_state
                 .display
                 .ppu_scroll_copy
                 .bg2_h_copy2()
                 .wrapping_add(16);
-            self.set_bg2_x(bg);
+            self.set_bg2_x(bg2_h);
+            // The original caller recomputes these locals on every column.
+            // A sprite activation may mutate translated state in between.
+            scan.x = self
+                .game_state
+                .display
+                .ppu_scroll_copy
+                .bg2_h_copy2()
+                .wrapping_sub(0x10)
+                .wrapping_sub(scan.x_extension);
+            scan.y_start = self
+                .game_state
+                .display
+                .ppu_scroll_copy
+                .bg2_v_copy2()
+                .wrapping_sub(0x30);
+            scan.y = scan.y_start;
+        } else {
+            scan.y = scan.y.wrapping_add(16);
         }
-        self.set_overworld_horizontal_scroll_delta_low(bak1);
-        self.set_bg2_x(bak0);
-        in_bounds_proximity_checks
+        true
+    }
+
+    /// Bring the translated scan to a source `CellReturned` ordinal. A later
+    /// caller can consume the exact CPU event without guessing an NMI budget
+    /// or replaying cells already completed in an earlier host.
+    pub(super) fn advance_overworld_proximity_scan_through_cell(
+        &mut self,
+        scan: &mut OverworldProximityScanWork,
+        ordinal: u16,
+    ) {
+        assert!(ordinal >= scan.cells_completed && ordinal <= scan.total_cells);
+        while scan.cells_completed < ordinal {
+            assert!(self.advance_overworld_proximity_cell_scan(scan));
+        }
+    }
+
+    pub(super) fn finish_overworld_proximity_cell_scan(
+        &mut self,
+        scan: OverworldProximityScanWork,
+    ) -> usize {
+        assert_eq!(
+            scan.columns_remaining, 0,
+            "overworld proximity scan returned before its last cell"
+        );
+        assert_eq!(scan.cells_completed, scan.total_cells);
+        self.set_overworld_horizontal_scroll_delta_low(scan.saved_scroll_delta);
+        self.set_bg2_x(scan.saved_bg2_h);
+        usize::from(scan.in_bounds_proximity_checks)
     }
 
     pub(super) fn sprite_proximity_activation(&mut self) {
@@ -4952,6 +5142,41 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                         } => unreachable!(
                             "cached Antfairy boundary was already bound before entering its native call site"
                         ),
+                        CachedSpriteCpuInterruption::ExecutingGreenKnifeGuardBeforeRecruitOamPrep { .. } => {
+                            self.cached_sprite_slot_mut(i)
+                                .load_cached_into_live(&mut live_slot_backup);
+                            assert_eq!(self.sprite_slot_view(i).state(), 9);
+                            assert_eq!(self.sprite_slot_view(i).sprite_type(), 0x4b);
+                            let _uncache = crate::cycle_ledger::routine(0x1d_ea00);
+                            crate::cycle_ledger::charge(3_160);
+                            let _wrapper = crate::cycle_ledger::routine(0x06_84da);
+                            crate::cycle_ledger::charge(190);
+                            let _execute_single = self.sprite_execute_single_lane_scope(i, true);
+                            self.sprite_timers_and_oam(i);
+                            self.charge_sprite_active_main_dispatch(i);
+                            self.green_knife_guard_before_recruit_oam_prep(i);
+                        }
+                        CachedSpriteCpuInterruption::ExecutingAfterOamAllocation {
+                            state: None, ..
+                        } => {
+                            self.cached_sprite_slot_mut(i)
+                                .load_cached_into_live(&mut live_slot_backup);
+                            let state = self.sprite_slot_view(i).state();
+                            assert_ne!(state, 0);
+                            let _uncache = crate::cycle_ledger::routine(0x1d_ea00);
+                            crate::cycle_ledger::charge(3_160);
+                            let _wrapper = crate::cycle_ledger::routine(0x06_84da);
+                            crate::cycle_ledger::charge(190);
+                            let _execute_single = self.sprite_execute_single_lane_scope(i, false);
+                            self.sprite_timers_and_oam_through_oam_allocation(i);
+                            boundary = CachedSpriteCpuInterruption::ExecutingAfterOamAllocation {
+                                slot: i as u8,
+                                state: Some(state),
+                            };
+                        }
+                        CachedSpriteCpuInterruption::ExecutingAfterOamAllocation {
+                            state: Some(_), ..
+                        } => unreachable!("cached OAM boundary was already bound"),
                         CachedSpriteCpuInterruption::Restoring { live_fields, .. } => {
                             self.cached_sprite_slot_mut(i)
                                 .load_cached_into_live(&mut live_slot_backup);
@@ -5072,6 +5297,42 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             } => unreachable!(
                 "cached Antfairy subtype boundary did not bind to a native draw caller"
             ),
+            CachedSpriteCpuInterruption::ExecutingGreenKnifeGuardBeforeRecruitOamPrep { .. } => {
+                let _uncache = crate::cycle_ledger::routine(0x1d_ea00);
+                let _wrapper = crate::cycle_ledger::routine(0x06_84da);
+                let _execute_single = crate::cycle_ledger::routine(0x06_84e2);
+                self.green_knife_guard_from_recruit_draw(interrupted_slot);
+                if self.sprite_slot_view(interrupted_slot).pause() != 0 {
+                    crate::cycle_ledger::charge(38);
+                    self.cached_sprite_slot_mut(interrupted_slot).clear_state();
+                } else {
+                    crate::cycle_ledger::charge(6);
+                }
+                crate::cycle_ledger::charge(1_628);
+                self.cached_sprite_slot_mut(interrupted_slot)
+                    .restore_live_from_backup(&live_slot_backup);
+            }
+            CachedSpriteCpuInterruption::ExecutingAfterOamAllocation {
+                state: Some(state), ..
+            } => {
+                let _uncache = crate::cycle_ledger::routine(0x1d_ea00);
+                let _wrapper = crate::cycle_ledger::routine(0x06_84da);
+                let _execute_single = crate::cycle_ledger::routine(0x06_84e2);
+                self.sprite_timers_and_oam_after_oam_allocation(interrupted_slot);
+                self.sprite_execute_single_after_timers(interrupted_slot, state);
+                if self.sprite_slot_view(interrupted_slot).pause() != 0 {
+                    crate::cycle_ledger::charge(38);
+                    self.cached_sprite_slot_mut(interrupted_slot).clear_state();
+                } else {
+                    crate::cycle_ledger::charge(6);
+                }
+                crate::cycle_ledger::charge(1_628);
+                self.cached_sprite_slot_mut(interrupted_slot)
+                    .restore_live_from_backup(&live_slot_backup);
+            }
+            CachedSpriteCpuInterruption::ExecutingAfterOamAllocation {
+                state: None, ..
+            } => unreachable!("cached OAM boundary did not bind its dispatch state"),
             CachedSpriteCpuInterruption::Restoring { live_fields, .. } => {
                 self.cached_sprite_slot_mut(interrupted_slot)
                     .restore_live_prefix_from_backup_after_nmi(
@@ -5302,6 +5563,11 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     }
 
     pub(super) fn sprite_timers_and_oam_through_main_timer_decrement(&mut self, k: usize) {
+        self.sprite_timers_and_oam_through_oam_allocation(k);
+        self.sprite_timers_and_oam_after_oam_allocation_through_main_timer_decrement(k);
+    }
+
+    pub(super) fn sprite_timers_and_oam_through_oam_allocation(&mut self, k: usize) {
         // $06:83F2-8400 JSR Sprite_Get16BitCoords, LDA $e40,x AND #$1f INC ASL
         // ASL, LDY $0fb3, BEQ not taken (184). The translation inlines
         // Sprite_Get16BitCoords ($06:84C1, four abs,x/abs moves + RTS, 298,
@@ -5332,6 +5598,10 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             self.oam_allocate_from_region_a(num);
         }
 
+    }
+
+    fn sprite_timers_and_oam_after_oam_allocation_through_main_timer_decrement(&mut self, k: usize) {
+
         // $06:8417-841C LDA $11 ORA $0fc1 BEQ (72): taken (+6) into the timer
         // blocks when both are zero, else $06:841E JMP $84A4 (24). The ROM
         // tests this once; the later pieces re-test it in Rust for free.
@@ -5353,6 +5623,15 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             let value = self.sprite_slot_view(k).delay_main().wrapping_sub(1);
             self.sprite_slot_view_mut(k).set_delay_main(value);
         }
+    }
+
+    pub(super) fn sprite_timers_and_oam_after_oam_allocation(&mut self, k: usize) {
+        let _scope = crate::cycle_ledger::routine(0x06_83f2);
+        self.sprite_timers_and_oam_after_oam_allocation_through_main_timer_decrement(k);
+        self.sprite_timers_and_oam_aux1_timer_decrement(k);
+        self.sprite_timers_and_oam_after_main_and_aux1_through_primary_timer_decrements(k);
+        self.sprite_timers_and_oam_after_primary_through_timer_decrements(k);
+        self.sprite_timers_and_oam_after_timer_decrements(k);
     }
 
     fn sprite_timers_and_oam_aux1_timer_decrement(&mut self, k: usize) {
@@ -10057,33 +10336,60 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         info: &mut PrepOamCoordsRet,
         a: u8,
     ) {
+        if let Some(pending) = self.sprite_draw_shadow_custom_before_extended(k, info, a) {
+            self.finish_shadow_extended_oam_write(pending);
+        }
+    }
+
+    /// Stop after the ordinary OAM entry's flags store. The original ROM can
+    /// accept NMI here before the separate extended-OAM byte publication.
+    pub(super) fn sprite_draw_shadow_custom_before_extended(
+        &mut self,
+        k: usize,
+        info: &mut PrepOamCoordsRet,
+        a: u8,
+    ) -> Option<crate::game_state::PendingExtendedOamWrite> {
         let mut y = self.sprite_get_y(k).wrapping_add(u16::from(a));
         info.y = y;
         if self.sprite_slot_view(k).pause() != 0
             || (self.sprite_slot_view(k).state() == 10
                 && self.sprite_slot_view(k).draw_work_byte_3() == 3)
         {
-            return;
+            return None;
         }
         y = y.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         info.y = y;
         if y.wrapping_add(0x10) >= 0x100 {
-            return;
+            return None;
         }
         let oam = self.game_state.oam.current_pointer_usize()
             + usize::from(self.sprite_slot_view(k).flags2() & 0x1f) * 4;
         if self.sprite_slot_view(k).flags3() & 0x20 != 0 {
-            self.set_oam_helper1_at(
+            Some(self.oam_state_mut().write_entry_before_extended(
                 oam,
                 info.x,
                 y.wrapping_add(1) as u8,
                 0x38,
                 (info.flags & 0x30) | 8,
                 0,
-            );
+            ))
         } else {
-            self.set_oam_helper1_at(oam, info.x, y as u8, 0x6c, (info.flags & 0x30) | 8, 2);
+            Some(self.oam_state_mut().write_entry_before_extended(
+                oam,
+                info.x,
+                y as u8,
+                0x6c,
+                (info.flags & 0x30) | 8,
+                2,
+            ))
         }
+    }
+
+    pub(super) fn finish_shadow_extended_oam_write(
+        &mut self,
+        pending: crate::game_state::PendingExtendedOamWrite,
+    ) {
+        self.oam_state_mut().finish_pending_extended_write(pending);
     }
 
     // void SpriteDraw_SingleSmall(int k) {  // 86dcef

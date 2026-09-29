@@ -1,8 +1,88 @@
 use super::*;
-use crate::types::{read_le_u16};
+use crate::types::read_le_u16;
 
 fn fresh_state() -> Box<ZeldaState> {
     Box::new(ZeldaState::new())
+}
+
+#[test]
+fn overworld_proximity_scan_can_pause_inside_a_column_and_resume() {
+    let mut atomic = fresh_state();
+    atomic.set_bg2_x(0x1234);
+    atomic.set_bg2_y(0x0456);
+    atomic.set_overworld_horizontal_scroll_delta_low(2);
+    atomic.garnish_state_mut().set_sprcoll_x_base(0);
+    atomic.garnish_state_mut().set_sprcoll_y_base(0);
+    atomic.garnish_state_mut().set_sprcoll_x_size(u16::MAX);
+    atomic.garnish_state_mut().set_sprcoll_y_size(u16::MAX);
+    let mut staged = atomic.clone();
+
+    let expected_checks = atomic.sprite_activate_all_proxima();
+    assert_eq!(expected_checks, 22 * 22);
+    let mut scan = staged.begin_overworld_proximity_cell_scan();
+    staged.advance_overworld_proximity_scan_through_cell(&mut scan, 22 * 3 + 7);
+    assert_eq!(scan.cells_completed(), 22 * 3 + 7);
+    assert_eq!(staged.overworld_horizontal_scroll_delta_low(), 0xff);
+    assert_eq!(
+        staged.game_state.display.ppu_scroll_copy.bg2_h_copy2(),
+        0x1264
+    );
+    staged.advance_overworld_proximity_scan_through_cell(&mut scan, 22 * 22);
+    assert_eq!(scan.cells_completed(), scan.total_cells());
+    let staged_checks = staged.finish_overworld_proximity_cell_scan(scan);
+
+    assert_eq!(staged_checks, expected_checks);
+    assert_eq!(staged.ram, atomic.ram);
+    assert_eq!(
+        staged.game_state.display.ppu_scroll_copy.bg2_h_copy2(),
+        0x1234
+    );
+    assert_eq!(staged.overworld_horizontal_scroll_delta_low(), 2);
+}
+
+#[test]
+fn overworld_reload_caller_resumes_without_repeating_presence_or_reset() {
+    let mut atomic = fresh_state();
+    let mut ranges = vec![(0, 0); 161];
+    ranges[159] = (0, 2);
+    ranges[160] = (2, 6);
+    // One live sprite in the first scan cell ($0551), followed by the ROM's
+    // end marker. The staged caller must load presence before scanning it.
+    atomic.assets = Some(AssetPack::from_data_ranges(
+        vec![0, 0, 0x05, 0x51, 0x41, 0xff],
+        ranges,
+    ));
+    atomic.set_bg2_x(0x0120);
+    atomic.set_bg2_y(0x0180);
+    atomic.set_overworld_horizontal_scroll_delta_low(2);
+    let mut staged = atomic.clone();
+
+    let expected = atomic.sprite_overworld_reload_all_just_load();
+    let sprite_records = staged.begin_overworld_sprite_reload_presence_just_load();
+    assert_eq!(sprite_records, 1);
+    assert_eq!(
+        staged
+            .game_state
+            .sprites
+            .overworld_sprite_presence
+            .marker(0x551),
+        0x42
+    );
+    assert_eq!(staged.overworld_horizontal_scroll_delta_low(), 2);
+    let mut work = staged.begin_overworld_sprite_reload_scan_from_presence(sprite_records);
+    assert_eq!(work.cells_completed(), 0);
+    assert_eq!(staged.overworld_horizontal_scroll_delta_low(), 0xff);
+    staged.advance_overworld_sprite_reload_scan_through_cell(&mut work, 1);
+    assert!((0..16).any(|slot| staged.sprite_slot_view(slot).sprite_type() == 0x41));
+    staged.advance_overworld_sprite_reload_scan_through_cell(&mut work, 347);
+    assert_eq!(work.cells_completed(), 347);
+    assert_eq!(staged.overworld_horizontal_scroll_delta_low(), 0xff);
+    staged.advance_overworld_sprite_reload_scan_through_cell(&mut work, 484);
+    let actual = staged.finish_overworld_sprite_reload_scan(work);
+
+    assert_eq!(actual, expected);
+    assert_eq!(staged.ram, atomic.ram);
+    assert_eq!(staged.overworld_horizontal_scroll_delta_low(), 2);
 }
 
 #[test]

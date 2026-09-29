@@ -195,7 +195,7 @@ fn live_overworld_sprite_receipts_advance_the_suspended_native_c_caller() {
     state.game_execution_scheduler.schedule_work(
         GameWorkContinuation::FinishPreOverworldProperties {
             overworld_screen: 0,
-            sprite_presence_published: false,
+            sprite_reload_stage: PreOverworldSpriteReloadStage::AwaitingPresence,
         },
         3,
     );
@@ -214,7 +214,7 @@ fn live_overworld_sprite_receipts_advance_the_suspended_native_c_caller() {
     assert!(matches!(
         state.game_execution_scheduler.current_work(),
         Some(GameWorkContinuation::FinishPreOverworldProperties {
-            sprite_presence_published: true,
+            sprite_reload_stage: PreOverworldSpriteReloadStage::SourceReceiptScan,
             ..
         })
     ));

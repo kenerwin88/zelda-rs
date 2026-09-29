@@ -2488,7 +2488,7 @@ impl ZeldaState {
                 unreachable!("terminal ground-item plan changed continuation kind")
             };
             self.begin_original_timing_sprite_main_return_claim_scope(1);
-            self.complete_ancilla_add_item_receipt(receipt);
+            self.complete_ground_item_receipt_tail_once(receipt);
             self.complete_link_receive_item(receipt.item);
             self.player_handler_00_ground_3_after_a_press(true);
             self.complete_module07_dungeon_after_submodule();
@@ -3835,6 +3835,7 @@ impl ZeldaState {
                 // Begin the next real call on the same suspended
                 // stack so its NMI request and graphics generation
                 // are visible at the correct boundary.
+                self.finish_live_dungeon_supertile_room_load();
                 self.continue_module07_02_01_after_room_load();
             }
             DungeonSupertileTransitionWork::AuxiliarySpriteGraphics => {
@@ -3865,7 +3866,9 @@ impl ZeldaState {
                     return true;
                 }
                 self.complete_module07_02_01_before_dungeon_reset_sprites();
-                let progress = self.take_original_timing_dungeon_reset_sprites_progress();
+                let progress = self.take_original_timing_dungeon_reset_sprites_progress()
+                    .or_else(|| self.native_exact_cpu_host_trace.as_ref()
+                        .and_then(|trace| trace.dungeon_reset_progress));
                 let progressed_sprite_main_boundary =
                     self.original_timing_sprite_main_progress_boundary();
                 let interrupted_sprite_main_boundary = authoritative_scheduled_caller_nmi_timeline
@@ -3893,7 +3896,11 @@ impl ZeldaState {
                 // A wire host that already shows Sprite_Main (or its
                 // cached-sprite tail) proves the reset ran here too;
                 // the estimated prefix split cannot defer it.
-                let wire_sprite_main_in_host =
+                let native_cached_sprite_progress = self
+                    .native_exact_cpu_host_trace
+                    .as_ref()
+                    .and_then(|trace| trace.cached_sprite_progress);
+                let wire_sprite_main_in_host = native_cached_sprite_progress.is_some() ||
                     matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
                         && (self.original_timing_owes_sprite_main_return()
                             || authoritative_supertile_sprite_main_returned
@@ -3976,9 +3983,8 @@ impl ZeldaState {
                         // crosses the boundary when the wire says so,
                         // and the shared suffix stays with the wire
                         // (route host 688997).
-                        let cached_tail_crosses = self
-                            .original_timing_cached_sprite_execution_progress()
-                            .is_some();
+                        let cached_tail_crosses = native_cached_sprite_progress.is_some()
+                            || self.original_timing_cached_sprite_execution_progress().is_some();
                         schedule.caller_prefix_nmis = 0;
                         schedule.caller_sprite_main_nmis =
                             u8::from(cached_tail_crosses || wire_sprite_main_boundary.is_some());
@@ -4216,6 +4222,10 @@ impl ZeldaState {
                 self.retire_or_run_main_loop_common_suffix_after_module_return();
             }
             DungeonSupertileTransitionWork::SpiralRoomInitialization => {
+                if self.active_early_dungeon_floor_draw.is_some() {
+                    self.finish_live_dungeon_supertile_room_load();
+                    self.complete_spiral_room_initialization_after_room_load(false);
+                }
                 self.increment_subsubmodule();
                 let schedule = self
                     .dungeon_submodule_cpu_schedule
@@ -4798,7 +4808,7 @@ impl ZeldaState {
             // post-submodule suffix. Resume that call chain in order;
             // Sprite_Main must not run while the ROM CPU is still
             // inside the decompressor.
-            self.complete_ancilla_add_item_receipt(receipt);
+            self.complete_ground_item_receipt_tail_once(receipt);
             self.complete_link_receive_item(receipt.item);
             self.player_handler_00_ground_3_after_a_press(true);
             self.complete_module07_dungeon_after_submodule();
@@ -6129,11 +6139,16 @@ impl ZeldaState {
             .module09_cpu_schedule
             .take()
             .expect("Module09/$20 completion lost its ROM CPU schedule");
+        assert_eq!(
+            schedule.submodule_nmis,
+            schedule.body_return_nmis + u8::from(schedule.caller_nmis != 0),
+            "Module09 overlay callback count lost its measured CPU phase offset",
+        );
         // The live wire may re-state the resumed caller's exact
         // Sprite_Main boundary; it must agree with the ROM
         // schedule's saved plan before either is executed.
         let claimed_sprite_main_boundary = self.take_original_timing_sprite_main_progress();
-        self.finish_overworld_load_overlays();
+        self.complete_pre_overworld_load_overlays();
         assert_eq!(
             schedule.caller_nmis,
             schedule.caller_sprite_main_nmis + schedule.caller_suffix_nmis,

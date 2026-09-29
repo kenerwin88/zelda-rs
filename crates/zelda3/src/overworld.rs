@@ -165,22 +165,28 @@ impl ZeldaState {
     ) {
         self.complete_pre_overworld_load_properties_after_sprite_reset_with_presence(
             overworld_screen,
-            false,
+            PreOverworldSpriteReloadStage::AwaitingPresence,
         );
     }
 
     pub(super) fn complete_pre_overworld_load_properties_after_sprite_reset_with_presence(
         &mut self,
         overworld_screen: u8,
-        sprite_presence_published: bool,
+        sprite_reload_stage: PreOverworldSpriteReloadStage,
     ) {
-        if sprite_presence_published {
-            // Every source activation was already applied from the ordered
-            // reload receipts. Retire the suspended scan by restoring its C
-            // locals instead of rerunning the whole activation loop.
-            self.complete_overworld_proximity_scan_continuation();
-        } else {
-            self.sprite_finish_reload_all_overworld();
+        match sprite_reload_stage {
+            PreOverworldSpriteReloadStage::AwaitingPresence => {
+                self.sprite_finish_reload_all_overworld();
+            }
+            PreOverworldSpriteReloadStage::NativePresencePublished => {
+                self.sprite_activate_all_proxima();
+                self.complete_overworld_proximity_scan_continuation();
+            }
+            PreOverworldSpriteReloadStage::SourceReceiptScan => {
+                // Every source activation was already applied from ordered
+                // receipts. Retire the suspended scan's C locals only.
+                self.complete_overworld_proximity_scan_continuation();
+            }
         }
         if overworld_screen & 0x40 == 0 {
             self.sprite_initialize_mirror_portal();
@@ -669,6 +675,10 @@ impl ZeldaState {
 
     pub(super) fn finish_overworld_load_overlays(&mut self) {
         self.LoadOverworldOverlay();
+        self.finish_overworld_load_overlays_suffix();
+    }
+
+    fn finish_overworld_load_overlays_suffix(&mut self) {
         if self.game_state.world.region.overlay_index() == 0x94 {
             let value = self.game_state.display.ppu_scroll_copy.bg1_v_copy2() | 0x0100;
             self.set_bg1_y(value);
@@ -684,6 +694,7 @@ impl ZeldaState {
 
     pub(super) fn Overworld_LoadOverlays2(&mut self) {
         if self.prepare_overworld_load_overlays() {
+            self.module09_overlay_cpu_progress = None;
             return;
         }
         if self.rom_startup_timing()
@@ -697,11 +708,29 @@ impl ZeldaState {
             let schedule = self
                 .module09_cpu_schedule
                 .expect("Module09/$20 timing must be captured at its leading NMI");
+            if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+                self.native_pre_overworld_overlay_decode = self.module09_overlay_cpu_progress.take()
+                    .map(|(tile_counts_at_nmi, decoder_started_at_nmi)| {
+                        assert_eq!(tile_counts_at_nmi.len(), usize::from(schedule.submodule_nmis));
+                        assert_eq!(decoder_started_at_nmi.len(), usize::from(schedule.submodule_nmis));
+                        PreOverworldOverlayDecodeProgress {
+                            tile_counts_at_nmi,
+                            decoder_started_at_nmi,
+                            started: false,
+                            published_tiles: 0,
+                        }
+                    });
+            } else {
+                self.module09_overlay_cpu_progress = None;
+            }
             self.game_execution_scheduler
                 .schedule_cpu_timed_work_from_current_main_iteration(
                     GameWorkContinuation::FinishWorldMapOverlayReload,
                     schedule.submodule_nmis,
                 );
+            if self.native_pre_overworld_overlay_decode.is_some() {
+                self.advance_pre_overworld_overlay_decode_at_nmi(0);
+            }
             return;
         }
         self.finish_overworld_load_overlays();
@@ -766,6 +795,7 @@ impl ZeldaState {
         // never observes the temporary value 5.
         if self.prepare_overworld_load_overlays() {
             self.pre_overworld_overlays_cpu_nmis = None;
+            self.pre_overworld_overlay_cpu_progress = None;
             return;
         }
         if self.begin_pre_overworld_overlays_work() {
@@ -775,23 +805,130 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_pre_overworld_load_overlays(&mut self) {
-        self.finish_overworld_load_overlays();
+        if let Some(progress) = self.native_pre_overworld_overlay_decode.take() {
+            if !progress.started {
+                self.begin_overworld_quadrant_decode(
+                    i32::from(self.game_state.world.location.overworld_screen_index()),
+                );
+            }
+            self.draw_overworld_quadrant_definitions(0x4000, progress.published_tiles, 256);
+            self.LoadOverworldOverlayAfterMap32();
+            self.finish_overworld_load_overlays_suffix();
+        } else {
+            self.finish_overworld_load_overlays();
+        }
+    }
+
+    pub(super) fn advance_pre_overworld_overlay_decode_at_nmi(&mut self, crossing: usize) {
+        let Some(mut progress) = self.native_pre_overworld_overlay_decode.take() else {
+            return;
+        };
+        let target = progress.tile_counts_at_nmi[crossing];
+        let should_start = progress.decoder_started_at_nmi[crossing];
+        assert!(target >= progress.published_tiles && target <= 256);
+        if should_start && !progress.started {
+            self.begin_overworld_quadrant_decode(
+                i32::from(self.game_state.world.location.overworld_screen_index()),
+            );
+            progress.started = true;
+        }
+        assert!(progress.started || target == 0);
+        if target != progress.published_tiles {
+            self.draw_overworld_quadrant_definitions(
+                0x4000,
+                progress.published_tiles,
+                target,
+            );
+            progress.published_tiles = target;
+        }
+        self.native_pre_overworld_overlay_decode = Some(progress);
+    }
+
+    pub(super) fn advance_pre_overworld_screen_build_at_nmi(&mut self, crossing: usize) {
+        let Some(mut progress) = self.native_pre_overworld_screen_build.take() else {
+            return;
+        };
+        let target = progress.crossings[crossing];
+        let previous = progress.published;
+        assert!(target.tiles >= previous.tiles && target.tiles <= 1024);
+        let screen = i32::from(self.game_state.world.location.overworld_screen_index());
+        for quadrant in 0..4 {
+            let quadrant_screen = screen + [0, 1, 8, 9][quadrant];
+            let tile_dst = [0x2000, 0x2040, 0x3000, 0x3040][quadrant];
+            for phase in 0..2 {
+                let from_decode = previous.decompressed[quadrant][phase];
+                let to_decode = target.decompressed[quadrant][phase];
+                let from_copy = previous.copied[quadrant][phase];
+                let to_copy = target.copied[quadrant][phase];
+                assert!(from_decode <= to_decode && to_decode <= 256);
+                assert!(from_copy <= to_copy && to_copy <= 256);
+                if to_decode != 0 && !progress.quadrant_started[quadrant] {
+                    progress.quadrant_bytes[quadrant] =
+                        Some(self.predecode_overworld_quadrant_bytes(quadrant_screen));
+                    progress.quadrant_started[quadrant] = true;
+                }
+                if to_decode == 0 {
+                    assert_eq!(to_copy, 0);
+                    continue;
+                }
+                let bytes = progress.quadrant_bytes[quadrant].as_ref().unwrap();
+                let phase_bytes = if phase == 0 { &bytes.0 } else { &bytes.1 };
+                for index in from_decode..to_decode {
+                    self.write_overworld_map16_decompressed_byte(
+                        OVERWORLD_DECOMP_BUFFER + usize::from(index),
+                        phase_bytes[usize::from(index)],
+                    );
+                }
+                assert!(to_copy <= to_decode);
+                for index in from_copy..to_copy {
+                    self.ram[WORD_7F4000_OVERWORLD + usize::from(index) * 2 + (1 - phase)] =
+                        phase_bytes[usize::from(index)];
+                }
+            }
+            let start_tile = quadrant as u16 * 256;
+            let from_tile = previous.tiles.saturating_sub(start_tile).min(256);
+            let to_tile = target.tiles.saturating_sub(start_tile).min(256);
+            if previous.copied[quadrant][1] < 256 && target.copied[quadrant][1] == 256 {
+                self.set_overworld_map16_decode_last(0xffff);
+            }
+            if to_tile != from_tile {
+                assert_eq!(target.copied[quadrant], [256; 2]);
+                self.draw_overworld_quadrant_definitions(tile_dst, from_tile, to_tile);
+            }
+        }
+        if target.tiles == 1024 && !progress.quadrant_suffix_published {
+            self.finish_overworld_draw_quadrants_and_overlays();
+            progress.quadrant_suffix_published = true;
+        }
+        progress.published = target;
+        self.native_pre_overworld_screen_build = Some(progress);
     }
 
     pub(super) fn Overworld_LoadAmbientOverlay(&mut self, load_map_data: bool) {
-        let bak_src_off = self.overworld_map16_src_off();
-        let bak_dst_off = self.overworld_map16_dst_off();
-        let bak_y_unit = self.overworld_map16_y_unit();
-        if self.overworld_map_is_small() {
-            self.set_small_overworld_mirror_map_position();
-        }
+        let saved_offsets = self.begin_overworld_ambient_overlay_map_position();
         if load_map_data {
             self.Overworld_DrawQuadrantsAndOverlays();
         }
+        self.finish_overworld_ambient_overlay_map8(saved_offsets);
+    }
+
+    pub(super) fn begin_overworld_ambient_overlay_map_position(&mut self) -> (u16, u16, u16) {
+        let saved_offsets = (
+            self.overworld_map16_src_off(),
+            self.overworld_map16_dst_off(),
+            self.overworld_map16_y_unit(),
+        );
+        if self.overworld_map_is_small() {
+            self.set_small_overworld_mirror_map_position();
+        }
+        saved_offsets
+    }
+
+    pub(super) fn finish_overworld_ambient_overlay_map8(&mut self, saved_offsets: (u16, u16, u16)) {
         self.Map16ToMap8(OverworldMap16SourcePage::Main, 0);
-        self.set_overworld_map16_y_unit(bak_y_unit);
-        self.set_overworld_map16_dst_off(bak_dst_off);
-        self.set_overworld_map16_src_off(bak_src_off);
+        self.set_overworld_map16_y_unit(saved_offsets.2);
+        self.set_overworld_map16_dst_off(saved_offsets.1);
+        self.set_overworld_map16_src_off(saved_offsets.0);
         self.set_pending_nmi_subroutine(4);
         self.set_core_update_disable_flag(4);
         self.increment_submodule();
@@ -824,6 +961,10 @@ impl ZeldaState {
 
     pub(super) fn LoadOverworldOverlay(&mut self) {
         self.OverworldLoad_LoadSubOverlayMap32();
+        self.LoadOverworldOverlayAfterMap32();
+    }
+
+    fn LoadOverworldOverlayAfterMap32(&mut self) {
         self.Map16ToMap8(OverworldMap16SourcePage::Overlay, 0x1000);
         self.set_pending_nmi_subroutine(4);
         self.set_core_update_disable_flag(4);
@@ -5403,15 +5544,14 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn Decompress_bank02(&mut self, dst: usize, src: &[u8]) -> i32 {
-        let dst_org = dst;
-        let mut dst = dst;
+    fn decompress_bank02_into(dst: &mut [u8], src: &[u8]) -> usize {
+        let mut written = 0usize;
         let mut src_pos = 0usize;
         loop {
             let mut cmd = src[src_pos];
             src_pos += 1;
             if cmd == 0xff {
-                return dst.wrapping_sub(dst_org) as i32;
+                return written;
             }
             let mut len;
             if cmd & 0xe0 != 0xe0 {
@@ -5428,8 +5568,8 @@ impl ZeldaState {
                 while len != 0 {
                     let value = src[src_pos];
                     src_pos += 1;
-                    self.write_overworld_map16_decompressed_byte(dst, value);
-                    dst += 1;
+                    dst[written] = value;
+                    written += 1;
                     len -= 1;
                 }
             } else if cmd & 0x80 != 0 {
@@ -5438,8 +5578,8 @@ impl ZeldaState {
                 src_pos += 2;
                 let mut offs = (hi << 8) | lo;
                 while len != 0 {
-                    self.copy_overworld_map16_decompressed_byte(dst_org, dst, offs);
-                    dst += 1;
+                    dst[written] = dst[offs];
+                    written += 1;
                     offs += 1;
                     len -= 1;
                 }
@@ -5447,8 +5587,8 @@ impl ZeldaState {
                 let value = src[src_pos];
                 src_pos += 1;
                 while len != 0 {
-                    self.write_overworld_map16_decompressed_byte(dst, value);
-                    dst += 1;
+                    dst[written] = value;
+                    written += 1;
                     len -= 1;
                 }
             } else if cmd & 0x20 == 0 {
@@ -5456,27 +5596,39 @@ impl ZeldaState {
                 let hi = src[src_pos + 1];
                 src_pos += 2;
                 while len != 0 {
-                    self.write_overworld_map16_decompressed_byte(dst, lo);
-                    dst += 1;
+                    dst[written] = lo;
+                    written += 1;
                     len -= 1;
                     if len == 0 {
                         break;
                     }
-                    self.write_overworld_map16_decompressed_byte(dst, hi);
-                    dst += 1;
+                    dst[written] = hi;
+                    written += 1;
                     len -= 1;
                 }
             } else {
                 let mut value = src[src_pos];
                 src_pos += 1;
                 while len != 0 {
-                    self.write_overworld_map16_decompressed_byte(dst, value);
-                    dst += 1;
+                    dst[written] = value;
+                    written += 1;
                     value = value.wrapping_add(1);
                     len -= 1;
                 }
             }
         }
+    }
+
+    pub(super) fn Decompress_bank02(&mut self, dst: usize, src: &[u8]) -> i32 {
+        Self::decompress_bank02_into(&mut self.ram[dst..], src) as i32
+    }
+
+    fn predecode_overworld_quadrant_bytes(&self, screen: i32) -> (Vec<u8>, Vec<u8>) {
+        let mut scratch = self.ram[OVERWORLD_DECOMP_BUFFER..OVERWORLD_DECOMP_BUFFER + 256].to_vec();
+        assert_eq!(Self::decompress_bank02_into(&mut scratch, &self.GetOverworldHibytes(screen)), 256);
+        let high = scratch.clone();
+        assert_eq!(Self::decompress_bank02_into(&mut scratch, &self.GetOverworldLobytes(screen)), 256);
+        (high, scratch)
     }
 
     pub(super) fn Overworld_DecompressAndDrawAllQuadrants(&mut self) {
@@ -5487,7 +5639,18 @@ impl ZeldaState {
         self.Overworld_DecompressAndDrawOneQuadrant(0x3040, si + 9);
     }
 
-    pub(super) fn Overworld_DecompressAndDrawOneQuadrant(&mut self, mut dst: usize, screen: i32) {
+    pub(super) fn Overworld_DecompressAndDrawOneQuadrant(&mut self, dst: usize, screen: i32) {
+        self.begin_overworld_quadrant_decode(screen);
+        self.draw_overworld_quadrant_definitions(dst, 0, 256);
+    }
+
+    /// The decompressed word source and map32 definition cache are shared
+    /// scratch. A suspended quadrant can start here and then publish a tile
+    /// prefix without materializing the rest of the C call.
+    pub(super) fn begin_overworld_quadrant_decode(&mut self, screen: i32) {
+        if crate::debug_env::var_os("ZELDA3_DEBUG_PRE_OVERWORLD_DECODE").is_some() {
+            eprintln!("native_quadrant_decode_begin frame={} screen={screen}", self.frame_ctr_dbg);
+        }
         let hibytes = self.GetOverworldHibytes(screen);
         self.Decompress_bank02(OVERWORLD_DECOMP_BUFFER, &hibytes);
         self.copy_overworld_map16_scratch_to_source_words_high(256);
@@ -5497,18 +5660,28 @@ impl ZeldaState {
         self.copy_overworld_map16_scratch_to_source_words_low(256);
 
         self.set_overworld_map16_decode_last(0xffff);
-        let mut src_offset = 0usize;
-        for _ in 0..16 {
-            for _ in 0..16 {
-                let input = self
-                    .overworld_map16_decode()
-                    .source_word(src_offset)
-                    .wrapping_mul(2);
-                src_offset += 2;
-                self.Overworld_ParseMap32Definition(dst, input);
-                dst += 4;
+    }
+
+    pub(super) fn draw_overworld_quadrant_definitions(
+        &mut self,
+        dst: usize,
+        from_tile: u16,
+        to_tile: u16,
+    ) {
+        assert!(from_tile <= to_tile && to_tile <= 256);
+        for tile in from_tile..to_tile {
+            let tile = usize::from(tile);
+            let input = self
+                .overworld_map16_decode()
+                .source_word(tile * 2)
+                .wrapping_mul(2);
+            if dst == 0x4000 && tile < 16
+                && crate::debug_env::var_os("ZELDA3_DEBUG_PRE_OVERWORLD_DECODE").is_some()
+            {
+                eprintln!("native_quadrant_tile frame={} tile={tile} input={input:04x}", self.frame_ctr_dbg);
             }
-            dst += 192;
+            let tile_dst = dst + (tile / 16) * 256 + (tile % 16) * 4;
+            self.Overworld_ParseMap32Definition(tile_dst, input);
         }
     }
 
@@ -5696,6 +5869,10 @@ impl ZeldaState {
 
     pub(super) fn Overworld_DrawQuadrantsAndOverlays(&mut self) {
         self.Overworld_DecompressAndDrawAllQuadrants();
+        self.finish_overworld_draw_quadrants_and_overlays();
+    }
+
+    pub(super) fn finish_overworld_draw_quadrants_and_overlays(&mut self) {
         for i in 0..64 {
             self.dungeon_room_tilemaps_mut().set_bg1_tile(i, 0x0dc4);
         }
@@ -5895,7 +6072,26 @@ impl ZeldaState {
         if self.rom_startup_timing() {
             self.begin_deferred_overworld_sprite_activations();
         }
-        let sprite_reload_workload = self.sprite_overworld_reload_all_just_load();
+        let (sprite_reload_workload, live_final_slots) = if self.rom_startup_timing()
+            && self.native_exact_cpu_owner.is_some()
+            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SCAN_LIVE_TRIAL").is_some()
+        {
+            let sprite_records = self.begin_overworld_sprite_reload_presence_just_load();
+            let (workload, final_slots) =
+                self.begin_native_exact_cpu_overworld_live_scan(sprite_records);
+            (workload, Some(final_slots))
+        } else if self.rom_startup_timing()
+            && self.native_exact_cpu_owner.is_some()
+            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SCAN_TRIAL").is_some()
+        {
+            let work = self.begin_overworld_sprite_reload_just_load();
+            self.begin_native_exact_cpu_overworld_scan_trial(work);
+            let workload = self.complete_overworld_sprite_reload_scan(work);
+            self.record_native_exact_cpu_overworld_scan_expected_state();
+            (workload, None)
+        } else {
+            (self.sprite_overworld_reload_all_just_load(), None)
+        };
         self.memorized_tile_mut().clear_count();
         if !self.rom_startup_timing()
             && self.game_state.inventory.save_progress.progress_indicator() >= 2
@@ -5932,10 +6128,15 @@ impl ZeldaState {
             let resume_scanout = reload_timing
                 .resume_boundary
                 .capture_scanout(self, bg1_generation);
-            self.defer_module09_sprite_slots_until_reload_return(
-                sprite_slots_before_reload
-                    .expect("live Module09 reload must retain its entry sprite slots"),
-            );
+            if let Some(final_slots) = live_final_slots {
+                assert!(self.pending_overworld_sprite_reload_slots.is_none());
+                self.pending_overworld_sprite_reload_slots = Some(final_slots);
+            } else {
+                self.defer_module09_sprite_slots_until_reload_return(
+                    sprite_slots_before_reload
+                        .expect("live Module09 reload must retain its entry sprite slots"),
+                );
+            }
             self.game_execution_scheduler.schedule_work(
                 GameWorkContinuation::FinishOverworldSpriteReloadTail {
                     post_return_hold_nmi_slices: reload_timing.post_return_hold_nmi_slices,
@@ -6565,7 +6766,15 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_pre_overworld_screen_build(&mut self) {
-        self.Overworld_LoadAndBuildScreen();
+        if let Some(progress) = self.native_pre_overworld_screen_build.take() {
+            assert_eq!(progress.published.tiles, 1024);
+            assert_eq!(progress.published.decompressed, [[256; 2]; 4]);
+            assert_eq!(progress.published.copied, [[256; 2]; 4]);
+            assert!(progress.quadrant_suffix_published);
+            self.finish_overworld_ambient_overlay_map8(progress.saved_map16_offsets);
+        } else {
+            self.Overworld_LoadAndBuildScreen();
+        }
         self.set_main_module(16);
         self.set_submodule(0);
         self.set_subsubmodule(0);

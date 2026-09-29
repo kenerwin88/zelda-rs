@@ -270,7 +270,7 @@ fn live_pre_overworld_properties_applies_source_proximity_scan_coordinate() {
     state.game_execution_scheduler.schedule_work(
         GameWorkContinuation::FinishPreOverworldProperties {
             overworld_screen: 43,
-            sprite_presence_published: false,
+            sprite_reload_stage: PreOverworldSpriteReloadStage::AwaitingPresence,
         },
         3,
     );
@@ -298,7 +298,10 @@ fn live_pre_overworld_properties_applies_source_proximity_scan_coordinate() {
     );
     assert_eq!(state.overworld_horizontal_scroll_delta_low(), 0xff);
 
-    state.complete_pre_overworld_load_properties_after_sprite_reset_with_presence(43, true);
+    state.complete_pre_overworld_load_properties_after_sprite_reset_with_presence(
+        43,
+        PreOverworldSpriteReloadStage::SourceReceiptScan,
+    );
     assert_eq!(
         (
             state.game_state.display.ppu_scroll_copy.bg2_h_copy2(),
@@ -998,12 +1001,15 @@ fn world_map_exit_tilesets_resume_after_the_measured_nmi_slices() {
 fn module09_world_map_bodies_use_the_original_rom_cpu_schedule() {
     // Production captures these plans by executing the original ROM from its
     // $00:8034 main wait. Cold Snes9x proves $09/$20 crosses six body NMIs and
-    // one caller NMI after Sprite_Main slot 8, while $09/$21 crosses only three.
+    // one caller NMI after Sprite_Main slot 8. The aggregate scheduler needs
+    // seven callbacks to reach the matching host phase; the exact CPU body
+    // return count remains six in the plan.
     for (submodule, schedule, expected_work, expected_slices) in [
         (
             0x20,
             Module09CpuSchedule {
-                submodule_nmis: 6,
+                body_return_nmis: 6,
+                submodule_nmis: 7,
                 caller_nmis: 1,
                 caller_sprite_main_nmis: 1,
                 caller_suffix_nmis: 0,
@@ -1011,11 +1017,12 @@ fn module09_world_map_bodies_use_the_original_rom_cpu_schedule() {
                 sprite_main_boundary: Some(SpriteMainCpuBoundary::AfterSlot(8)),
             },
             GameWorkContinuation::FinishWorldMapOverlayReload,
-            6,
+            7,
         ),
         (
             0x21,
             Module09CpuSchedule {
+                body_return_nmis: 3,
                 submodule_nmis: 3,
                 ..Module09CpuSchedule::default()
             },
@@ -1209,7 +1216,10 @@ fn pre_overworld_overlay_cpu_schedule_counts_source_caller_crossings() {
     // keeps this caller alive two extra hosts. Only the ROM shadow runs;
     // its map/graphics writes must not publish into the live game.
     let before = state.ram.clone();
-    assert_eq!(pre_overworld_overlays_cpu_nmis(&state), 4);
+    let (nmis, tile_counts, decoder_started) = pre_overworld_overlays_cpu_plan(&state);
+    assert_eq!(nmis, 4);
+    assert_eq!(tile_counts, [117, 256, 256, 256]);
+    assert_eq!(decoder_started, [true; 4]);
     assert_eq!(state.ram, before);
     // PreOverworld_LoadOverlays skips the map decoder for ordinary special
     // areas (the C $0182/$0183 branch). This zero-crossing return must not
@@ -1217,11 +1227,55 @@ fn pre_overworld_overlay_cpu_schedule_counts_source_caller_crossings() {
     state.set_overworld_screen_word(0x81);
     write_le_u16(&mut state.ram, 0xa0, 0x182);
     state.sync_native_game_state_from_ram();
-    assert_eq!(pre_overworld_overlays_cpu_nmis(&state), 0);
+    assert_eq!(pre_overworld_overlays_cpu_plan(&state), (0, vec![], vec![]));
     state.pre_overworld_overlays_cpu_nmis = Some(0);
     state.PreOverworld_LoadOverlays();
     assert_eq!(state.game_state.frame.submodule, 2);
     assert_eq!(state.pre_overworld_overlays_cpu_nmis, None);
+}
+
+#[test]
+fn pre_overworld_screen_build_cpu_schedule_counts_source_caller_crossings() {
+    let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"));
+    let Ok(rom) = std::fs::read(path) else { return; };
+    let mut state = ZeldaState::new();
+    state.set_rom(&rom);
+    let asset_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("zelda3_assets.dat");
+    state.assets = Some(AssetPack::parse(&std::fs::read(asset_path).unwrap()).unwrap());
+    state.set_main_module(8);
+    state.set_submodule(2);
+    state.set_overworld_screen_word(0x13);
+    state.ram[0xf3c5] = 2;
+    state.ram[FRAME_COUNTER] = 15;
+    state.sync_native_game_state_from_ram();
+    let before = state.ram.clone();
+    let (nmis, crossings) = pre_overworld_screen_build_cpu_plan(&state);
+    assert_eq!(nmis, 15);
+    assert_eq!(crossings.len(), usize::from(nmis));
+    assert_eq!(crossings[9].decompressed[3], [256, 115]);
+    assert_eq!(crossings[9].copied[3], [256, 0]);
+    assert_eq!(crossings[9].tiles, 768);
+    assert_eq!(crossings[12].tiles, 1024);
+    assert_eq!(state.ram, before);
+
+    state.set_rom_startup_timing(true);
+    let mut atomic = state.clone();
+    atomic.complete_pre_overworld_screen_build();
+    state.pre_overworld_screen_build_cpu_nmis = Some(nmis);
+    state.pre_overworld_screen_build_cpu_crossings = Some(crossings);
+    assert!(state.begin_pre_overworld_screen_build_work());
+    for crossing in 1..usize::from(nmis) {
+        state.advance_pre_overworld_screen_build_at_nmi(crossing);
+    }
+    state.complete_pre_overworld_screen_build();
+    assert_eq!(state.game_state.frame, atomic.game_state.frame);
+    if let Some((offset, (&actual, &expected))) = state.ram.iter().zip(&atomic.ram)
+        .enumerate().find(|(_, (actual, expected))| actual != expected) {
+        panic!("screen-build staged WRAM differs at {offset:05x}: {actual:02x} != {expected:02x}");
+    }
 }
 
 #[test]
@@ -1242,7 +1296,7 @@ fn pre_overworld_unmeasured_load_retains_legacy_estimates() {
         (
             GameWorkContinuation::FinishPreOverworldProperties {
                 overworld_screen: 0x00,
-                sprite_presence_published: false,
+                sprite_reload_stage: PreOverworldSpriteReloadStage::AwaitingPresence,
             },
             PRE_OVERWORLD_PROPERTIES_AFTER_SPRITE_RESET_NMI_SLICES,
         ),

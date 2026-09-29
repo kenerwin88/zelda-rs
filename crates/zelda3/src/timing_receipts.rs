@@ -1497,6 +1497,12 @@ pub enum CachedSpriteExecutionProgress {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CachedSpriteExecutionBodyProgress {
     AfterAntfairySubtype2Increment,
+    /// Shared `Sprite_TimersAndOam` has published coordinates and its OAM
+    /// allocation, before any of this slot's countdown statements run.
+    AfterOamAllocation,
+    /// A cached green knife guard published its graphics and entered
+    /// `Recruit_Draw`, but its OAM-coordinate helper has not written yet.
+    BeforeGreenKnifeGuardRecruitOamPrep,
 }
 
 /// Source-order cursor inside `Dungeon_FlipCrystalPegAttribute`. The ROM

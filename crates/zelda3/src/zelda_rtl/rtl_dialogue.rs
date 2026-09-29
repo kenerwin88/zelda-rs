@@ -2246,6 +2246,37 @@ impl ZeldaState {
         {
             return;
         }
+        if self.rom_startup_timing()
+            && self.game_state.frame.main_module == 0x0e
+            && self.game_state.frame.submodule == 2
+            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SPRITE_PREP_LIVE_TRIAL").is_some()
+        {
+            let interruption = self.native_exact_cpu_host_trace.as_ref().and_then(|trace| {
+                if trace.sprite_preparation_interruptions.len() == 1 {
+                    Some(trace.sprite_preparation_interruptions[0])
+                } else {
+                    None
+                }
+            });
+            if let Some(interruption) = interruption {
+                if self.pre_main_caller_continuation_is(PreMainCallerContinuation::DialogueVwfReturn) {
+                    self.finish_pre_main_caller_continuation(
+                        PreMainCallerContinuation::DialogueVwfReturn,
+                    );
+                    self.dialogue_fast_forward_hold_active = false;
+                    self.complete_module0e_interface_after_run();
+                }
+                let progress = SpritePreparationProgress::ExtendedOam(interruption.progress);
+                self.nmi_prepare_sprites_through_progress(progress);
+                assert!(self.pending_main_loop_common_suffix.replace(
+                    MainLoopCommonSuffixContinuation::ResumeSpritePreparationBytePackingAndClearNmiLatch { progress },
+                ).is_none(), "exact CPU sprite preparation overlaps another main-loop suffix");
+                self.schedule_live_interrupted_nmi_prepare_sprites_caller_return(
+                    NmiPrepareSpritesCpuCaller::DialogueModule0E,
+                );
+                return;
+            }
+        }
         if let Some(progress) = self.native_overworld_packing_progress.take() {
             assert!(!matches!(self.original_timing_owner, OriginalTimingOwnerState::Live));
             self.nmi_prepare_sprites_through_progress(progress);

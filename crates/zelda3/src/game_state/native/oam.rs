@@ -339,6 +339,15 @@ pub(crate) struct NativeOamStateBridgeMut<'a> {
     ram: &'a mut [u8],
 }
 
+/// The CPU has published an ordinary four-byte OAM entry but has not reached
+/// its following extended-OAM byte store. A suspended sprite draw can retain
+/// this write across an NMI without publishing the suffix early.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct PendingExtendedOamWrite {
+    index: usize,
+    value: u8,
+}
+
 impl<'a> NativeOamStateBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut OamState, ram: &'a mut [u8]) -> Self {
         Self { state, ram }
@@ -520,9 +529,29 @@ impl<'a> NativeOamStateBridgeMut<'a> {
         flags: u8,
         big: u8,
     ) {
+        let pending = self.write_entry_before_extended(addr, x, y, charnum, flags, big);
+        self.finish_pending_extended_write(pending);
+    }
+
+    pub(crate) fn write_entry_before_extended(
+        &mut self,
+        addr: usize,
+        x: u16,
+        y: u8,
+        charnum: u8,
+        flags: u8,
+        big: u8,
+    ) -> PendingExtendedOamWrite {
         self.write_entry(addr, x as u8, y, charnum, flags);
         let ext_index = (addr - OAM_BUF) / 4;
-        self.set_extended_byte(ext_index, big | ((x >> 8) as u8 & 1));
+        PendingExtendedOamWrite {
+            index: ext_index,
+            value: big | ((x >> 8) as u8 & 1),
+        }
+    }
+
+    pub(crate) fn finish_pending_extended_write(&mut self, pending: PendingExtendedOamWrite) {
+        self.set_extended_byte(pending.index, pending.value);
     }
 
     pub(crate) fn write_clipped_entry_with_extended(

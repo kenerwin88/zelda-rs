@@ -82,15 +82,6 @@ impl OverworldMap16DecodeScratch {
         ram.write_byte(dst, value);
     }
 
-    pub(crate) fn copy_decompressed_byte(
-        ram: &mut [u8],
-        dst_org: usize,
-        dst: usize,
-        offset: usize,
-    ) {
-        ram[dst] = ram[dst_org + offset];
-    }
-
     pub(crate) fn decode_block_fill(ram: &mut [u8], dst: usize, table: &[u8], x: usize) {
         ram[dst] = table[x];
         ram[dst + 2] = table[x + 1];

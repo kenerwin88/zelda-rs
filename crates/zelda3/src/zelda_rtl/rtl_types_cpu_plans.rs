@@ -178,7 +178,7 @@ impl SpritePreparationPointerProgress {
 
 /// A suspended pass of $0085FE-$00865A. Stores within a pass commit in
 /// ascending byte order; passes themselves visit 28,24,...,0.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ExtendedOamPackingProgress {
     pub(crate) group_start: u8,
     pub(crate) completed_bytes: u8,
@@ -199,7 +199,8 @@ impl ExtendedOamPackingProgress {
         // shifts and store250. A store is committed only after its access.
         let stores = [306, 556, 806, 1056];
         assert_eq!(usize::from(self.completed_bytes), stores.into_iter()
-            .filter(|&cycle| cycle <= self.group_master_cycles).count());
+            .filter(|&cycle| cycle <= self.group_master_cycles).count(),
+            "extended-OAM packing cursor disagrees with source stores: {self:?}");
     }
 }
 
@@ -386,6 +387,10 @@ pub(crate) struct DungeonSubmoduleCpuSchedule {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Module09CpuSchedule {
+    /// Actual number of accepted NMIs before the submodule changes. The
+    /// aggregate scheduler's callback count can differ because its entry
+    /// phase does not align with this source CPU boundary.
+    pub(crate) body_return_nmis: u8,
     pub(crate) submodule_nmis: u8,
     pub(crate) caller_nmis: u8,
     pub(crate) caller_sprite_main_nmis: u8,
@@ -988,6 +993,7 @@ pub(crate) enum SpriteMainCpuCaller {
 pub(crate) enum NmiPrepareSpritesCpuCaller {
     DungeonModule07,
     OverworldModule09,
+    DialogueModule0E,
     DesertPrayer,
     WorldMapOverlayReload,
     /// `Module19_TriforceRoom`'s LinkOam_Main interrupted by vblank after
@@ -1011,6 +1017,8 @@ pub(crate) enum CachedSpriteCpuInterruption {
         slot: u8,
         continuation: Option<AntfairyDrawContinuation>,
     },
+    ExecutingGreenKnifeGuardBeforeRecruitOamPrep { slot: u8 },
+    ExecutingAfterOamAllocation { slot: u8, state: Option<u8> },
     Restoring {
         slot: u8,
         live_fields: u8,
@@ -1022,6 +1030,8 @@ impl CachedSpriteCpuInterruption {
         match self {
             Self::Loading { slot, .. }
             | Self::ExecutingAntfairyAfterSubtype2Increment { slot, .. }
+            | Self::ExecutingGreenKnifeGuardBeforeRecruitOamPrep { slot }
+            | Self::ExecutingAfterOamAllocation { slot, .. }
             | Self::Restoring { slot, .. } => slot,
         }
     }
@@ -1043,6 +1053,12 @@ impl From<crate::CachedSpriteExecutionProgress> for CachedSpriteCpuInterruption 
                         slot,
                         continuation: None,
                     }
+                }
+                crate::CachedSpriteExecutionBodyProgress::BeforeGreenKnifeGuardRecruitOamPrep => {
+                    Self::ExecutingGreenKnifeGuardBeforeRecruitOamPrep { slot }
+                }
+                crate::CachedSpriteExecutionBodyProgress::AfterOamAllocation => {
+                    Self::ExecutingAfterOamAllocation { slot, state: None }
                 }
             },
             crate::CachedSpriteExecutionProgress::Restoring { slot, live_fields } => {
@@ -1624,6 +1640,49 @@ pub(crate) enum PreDungeonSpriteResetContinuation {
     GarnishDisableThrough(u8),
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum PreOverworldSpriteReloadStage {
+    #[default]
+    AwaitingPresence,
+    /// The translated loader published the collision bounds and presence map;
+    /// its proximity scan still belongs to the suspended caller.
+    NativePresencePublished,
+    /// Source-ordered receipts own the presence map and subsequent per-slot
+    /// activations. At the caller return only the scan's C locals remain.
+    SourceReceiptScan,
+}
+
+/// The original CPU owns when each Map32 definition finishes; the translated
+/// quadrant decoder owns every byte it writes. Counts are cumulative at each
+/// NMI crossing of the suspended overlay caller.
+#[derive(Clone, Debug)]
+pub(crate) struct PreOverworldOverlayDecodeProgress {
+    pub(crate) tile_counts_at_nmi: Vec<u16>,
+    pub(crate) decoder_started_at_nmi: Vec<bool>,
+    pub(crate) started: bool,
+    pub(crate) published_tiles: u16,
+}
+
+/// Cumulative CPU statement progress of the four main-screen quadrants at an
+/// NMI crossing. The ROM shadow supplies only instruction/write counts;
+/// translated map assets still supply every decompressed and drawn value.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PreOverworldScreenBuildCrossing {
+    pub(crate) decompressed: [[u16; 2]; 4],
+    pub(crate) copied: [[u16; 2]; 4],
+    pub(crate) tiles: u16,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PreOverworldScreenBuildProgress {
+    pub(crate) crossings: Vec<PreOverworldScreenBuildCrossing>,
+    pub(crate) published: PreOverworldScreenBuildCrossing,
+    pub(crate) quadrant_started: [bool; 4],
+    pub(crate) quadrant_bytes: [Option<(Vec<u8>, Vec<u8>)>; 4],
+    pub(crate) saved_map16_offsets: (u16, u16, u16),
+    pub(crate) quadrant_suffix_published: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum FluteMenuSelectedScreenStep {
     InitialSpriteReset,
@@ -1871,7 +1930,7 @@ pub(crate) enum GameWorkContinuation {
     },
     FinishPreOverworldProperties {
         overworld_screen: u8,
-        sprite_presence_published: bool,
+        sprite_reload_stage: PreOverworldSpriteReloadStage,
     },
     /// `FluteMenu_LoadSelectedScreen` is suspended inside the selected bird-
     /// travel destination load. The source wire advances this synchronous C

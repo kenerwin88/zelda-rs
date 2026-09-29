@@ -150,17 +150,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         let result = cpu.run_until_main_loop_return_with_state(|step, state| {
             if trace_this_host && trace_interrupts {
                 let selected = match step.accepted_interrupt {
-                    Some(SourceCpuAcceptedInterrupt::Nmi { started_at }) => {
-                        Some(("nmi", started_at))
+                    Some(SourceCpuAcceptedInterrupt::Nmi { started_at, interrupted_pc }) => {
+                        Some(("nmi", started_at, interrupted_pc))
                     }
-                    Some(SourceCpuAcceptedInterrupt::Irq { started_at }) => {
-                        Some(("irq", started_at))
+                    Some(SourceCpuAcceptedInterrupt::Irq { started_at, interrupted_pc }) => {
+                        Some(("irq", started_at, interrupted_pc))
                     }
                     None => None,
                 };
-                if let Some((kind, started_at)) = selected {
+                if let Some((kind, started_at, interrupted_pc)) = selected {
                     eprintln!(
-                        "source-interrupt host={host} kind={kind} pc={:06x} opcode={:02x} instruction_start={} acceptance={} step_end={}",
+                        "source-interrupt host={host} kind={kind} origin_pc={:06x} interrupted_pc={interrupted_pc:06x} opcode={:02x} instruction_start={} acceptance={} step_end={}",
                         step.origin_pc,
                         step.opcode,
                         step.started_at.master_cycles(),
@@ -259,6 +259,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                     state.sp,
                     state.pack_flags(),
                 );
+            }
+        }
+        if trace_this_host {
+            if let Some(address) = trace_wram {
+                if result.is_ok() {
+                    eprintln!(
+                        "source-wram-return host={host} address={address:04x} value={:02x}",
+                        cpu.machine().snes().ram[usize::from(address)],
+                    );
+                }
             }
         }
         if let Err(error) = result {

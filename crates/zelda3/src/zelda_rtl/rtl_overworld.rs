@@ -238,15 +238,6 @@ impl ZeldaState {
         OverworldMap16DecodeScratch::write_decompressed_byte(&mut self.ram, dst, value);
     }
 
-    pub(crate) fn copy_overworld_map16_decompressed_byte(
-        &mut self,
-        dst_org: usize,
-        dst: usize,
-        offset: usize,
-    ) {
-        OverworldMap16DecodeScratch::copy_decompressed_byte(&mut self.ram, dst_org, dst, offset);
-    }
-
     pub(crate) fn fill_overworld_map16_decode_block(&mut self, dst: usize, table: &[u8], x: usize) {
         OverworldMap16DecodeScratch::decode_block_fill(&mut self.ram, dst, table, x);
     }

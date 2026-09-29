@@ -1,7 +1,7 @@
 use snes::{CpuInstructionTiming, DmaState, PpuState, Snes};
 
 const TEXT_DIALOGUE_POINTERS: usize = 0x171c0;
-const ROM_DIALOGUE_MESSAGE_COUNT: usize = 398;
+pub(crate) const ROM_DIALOGUE_MESSAGE_COUNT: usize = 398;
 const ROM_DIALOGUE_SECOND_SEGMENT_INDEX: usize = 359;
 const ROM_DIALOGUE_FIRST_SEGMENT: u32 = 0x1c_8000;
 const ROM_DIALOGUE_SECOND_SEGMENT: u32 = 0x0e_df40;
@@ -68,6 +68,32 @@ pub(crate) struct RomCpuCheckpoint {
     pub(crate) waiting: bool,
     pub(crate) stack_address: u16,
     pub(crate) stack_bytes: &'static [u8],
+}
+
+impl RomCpuCheckpoint {
+    /// Apply only the translated routine's 65816 program state. Interrupt
+    /// requests and other hardware-owned CPU fields stay with the receiver;
+    /// the exact timing owner can use this same mapping at a proved bus clock.
+    pub(crate) fn apply_program_registers(self, cpu: &mut snes::CpuState) {
+        cpu.a = self.a;
+        cpu.x = self.x;
+        cpu.y = self.y;
+        cpu.sp = self.sp;
+        cpu.pc = self.entry_pc as u16;
+        cpu.dp = self.dp;
+        cpu.k = (self.entry_pc >> 16) as u8;
+        cpu.db = self.db;
+        cpu.c = self.carry;
+        cpu.z = self.zero;
+        cpu.v = self.overflow;
+        cpu.n = self.negative;
+        cpu.i = self.interrupt_disable;
+        cpu.d = self.decimal;
+        cpu.mf = self.accumulator_is_8_bit;
+        cpu.xf = self.index_is_8_bit;
+        cpu.e = self.emulation;
+        cpu.waiting = self.waiting;
+    }
 }
 
 /// Read/write-isolated execution of a translated routine's original ROM path.
@@ -150,6 +176,18 @@ pub(crate) fn note_rom_cpu_profile_host(host: u32) {
 
 fn rom_cpu_profile_dir() -> Option<std::path::PathBuf> {
     crate::debug_env::var_os("ZELDA3_DEBUG_ROM_CPU_PROFILE").map(std::path::PathBuf::from)
+}
+
+fn rom_cpu_profile_host_selected() -> bool {
+    let Ok(selection) = crate::debug_env::var("ZELDA3_DEBUG_ROM_CPU_PROFILE_HOST") else {
+        return true;
+    };
+    let host = ROM_CPU_PROFILE_HOST.with(|cell| cell.get());
+    let (first, last) = selection.split_once('-').unwrap_or((&selection, &selection));
+    match (first.parse::<u32>(), last.parse::<u32>()) {
+        (Ok(first), Ok(last)) if first <= last => (first..=last).contains(&host),
+        _ => panic!("invalid ZELDA3_DEBUG_ROM_CPU_PROFILE_HOST: {selection}"),
+    }
 }
 
 impl RomCpuProfile {
@@ -286,24 +324,7 @@ impl RomCpuTimingRun {
         shadow.ppu = ppu.clone();
         shadow.dma = dma.clone();
         shadow.apu.out_ports = apu_output_ports;
-        shadow.cpu.a = checkpoint.a;
-        shadow.cpu.x = checkpoint.x;
-        shadow.cpu.y = checkpoint.y;
-        shadow.cpu.sp = checkpoint.sp;
-        shadow.cpu.pc = checkpoint.entry_pc as u16;
-        shadow.cpu.dp = checkpoint.dp;
-        shadow.cpu.k = (checkpoint.entry_pc >> 16) as u8;
-        shadow.cpu.db = checkpoint.db;
-        shadow.cpu.c = checkpoint.carry;
-        shadow.cpu.z = checkpoint.zero;
-        shadow.cpu.v = checkpoint.overflow;
-        shadow.cpu.n = checkpoint.negative;
-        shadow.cpu.i = checkpoint.interrupt_disable;
-        shadow.cpu.d = checkpoint.decimal;
-        shadow.cpu.mf = checkpoint.accumulator_is_8_bit;
-        shadow.cpu.xf = checkpoint.index_is_8_bit;
-        shadow.cpu.e = checkpoint.emulation;
-        shadow.cpu.waiting = checkpoint.waiting;
+        checkpoint.apply_program_registers(&mut shadow.cpu);
 
         let stack_start = usize::from(checkpoint.stack_address);
         let stack_end = stack_start + checkpoint.stack_bytes.len();
@@ -312,7 +333,7 @@ impl RomCpuTimingRun {
         Ok(Self {
             shadow,
             stop_pc: checkpoint.stop_pc,
-            profile: rom_cpu_profile_dir().map(|_| RomCpuProfile {
+            profile: rom_cpu_profile_dir().filter(|_| rom_cpu_profile_host_selected()).map(|_| RomCpuProfile {
                 entry_pc: checkpoint.entry_pc,
                 stop_pc: checkpoint.stop_pc,
                 ..RomCpuProfile::default()
