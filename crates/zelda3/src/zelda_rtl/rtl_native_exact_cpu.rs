@@ -2316,7 +2316,7 @@ impl ZeldaState {
                         );
                     }
                 }
-                let mut region_counts = std::collections::BTreeMap::<u32, usize>::new();
+                let mut region_writes = std::collections::BTreeMap::<u32, (usize, u64)>::new();
                 for write in &baseline_writes {
                     let Some(address) = native_exact_cpu_wram_key(write.address) else { continue };
                     let region = match address {
@@ -2325,10 +2325,12 @@ impl ZeldaState {
                         0x14000..0x14600 => 0x14000,
                         _ => continue,
                     };
-                    *region_counts.entry(region).or_default() += 1;
+                    let entry = region_writes.entry(region).or_insert((0, 0xcbf29ce484222325));
+                    entry.0 += 1;
+                    entry.1 = (entry.1 ^ (address - region) as u64).wrapping_mul(0x100000001b3);
                 }
-                for (region, stores) in region_counts {
-                    eprintln!("native-tileset-source-writes host={host} region=${region:05x} stores={stores}");
+                for (region, (stores, address_hash)) in region_writes {
+                    eprintln!("native-tileset-source-writes host={host} region=${region:05x} stores={stores} address_hash={address_hash:016x}");
                 }
             }
             if diagnose_ownership {

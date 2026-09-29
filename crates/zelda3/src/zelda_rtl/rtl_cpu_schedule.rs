@@ -1232,7 +1232,7 @@ impl ZeldaState {
         advance_rom_cpu_through_nmi(&mut run, &mut budget);
         let mut entered = false;
         let mut nmis = 0u32;
-        let mut counts = std::collections::BTreeMap::<(u32, usize), usize>::new();
+        let mut writes = std::collections::BTreeMap::<(u32, usize), (usize, u64)>::new();
         for _ in 0..5_000_000 {
             if run.pc() == 0x00_e19b && !entered {
                 entered = true;
@@ -1256,7 +1256,9 @@ impl ZeldaState {
                     0x14000..0x14600 => 0x14000,
                     _ => continue,
                 };
-                *counts.entry((nmis, region)).or_default() += 1;
+                let entry = writes.entry((nmis, region)).or_insert((0, 0xcbf29ce484222325));
+                entry.0 += 1;
+                entry.1 = (entry.1 ^ (address - region) as u64).wrapping_mul(0x100000001b3);
             }
             if advance != CpuWorkAdvance::Complete {
                 if entered { nmis += 1; }
@@ -1265,8 +1267,8 @@ impl ZeldaState {
         }
         eprintln!("native-tileset-shadow-return host={} complete={} nmis={nmis}",
             self.frame_ctr_dbg, entered && run.is_complete());
-        for ((slice, region), stores) in counts {
-            eprintln!("native-tileset-shadow-writes host={} slice={slice} region=${region:05x} stores={stores}",
+        for ((slice, region), (stores, address_hash)) in writes {
+            eprintln!("native-tileset-shadow-writes host={} slice={slice} region=${region:05x} stores={stores} address_hash={address_hash:016x}",
                 self.frame_ctr_dbg + slice);
         }
     }
