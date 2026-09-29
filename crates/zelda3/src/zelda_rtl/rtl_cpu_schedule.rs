@@ -144,6 +144,11 @@ impl ZeldaState {
             && self.game_execution_scheduler.is_idle()
             && self.pending_map_force_blank_output_scanline.is_none()
         {
+            if frame.submodule == 3
+                && crate::debug_env::var_os("ZELDA3_NATIVE_TILESET_FULL_PLAN_PROBE").is_some()
+            {
+                self.probe_dungeon_map_tileset_wram_schedule(input);
+            }
             self.pending_map_force_blank_output_scanline =
                 Some(map_fade_cpu_blank_scanline(self, input));
         }
@@ -1206,5 +1211,63 @@ impl ZeldaState {
         // initializer writes through a bridge, otherwise stale values can
         // immediately re-project the bytes the ROM just cleared.
         self.sync_native_game_state_from_ram();
+    }
+
+    /// Diagnose the full suspended tileset call from native pre-fade state.
+    /// The shadow CPU supplies instruction/NMI timing only; no writes escape
+    /// this probe into translated game state.
+    fn probe_dungeon_map_tileset_wram_schedule(&self, input: u16) {
+        let timing_dma = self.dma_with_native_hdma_enable();
+        let mut run = RomCpuTimingRun::new(
+            &self.rom, &self.ram, &self.sram, &self.ppu, &timing_dma,
+            self.zelda_audio_apu_output_ports(),
+            RomCpuCheckpoint { stop_pc: 0x00_805a, ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT },
+        ).expect("map graphics timing probe needs the development ROM");
+        run.set_joypad_input(input);
+        run.enable_cpu_write_trace();
+        let mut budget = CpuCycleBudget::at_nmi_acceptance(
+            CpuBusWorkload::with_dynamic_hdma(),
+            CpuFieldTiming::non_interlace(self.frame_ctr_dbg & 1 == 0),
+        );
+        advance_rom_cpu_through_nmi(&mut run, &mut budget);
+        let mut entered = false;
+        let mut nmis = 0u32;
+        let mut counts = std::collections::BTreeMap::<(u32, usize), usize>::new();
+        for _ in 0..5_000_000 {
+            if run.pc() == 0x00_e19b && !entered {
+                entered = true;
+                eprintln!("native-tileset-shadow-entry host={} preceding_nmis={} raster={:?}",
+                    self.frame_ctr_dbg, nmis, budget.raster_position());
+                nmis = 0;
+            }
+            if entered && run.is_complete() { break; }
+            if entered && matches!(run.pc(), 0x00_e772 | 0x00_e78f) {
+                eprintln!("native-tileset-shadow-decompress host={} slice={nmis} pc={:06x} sheet={} raster={:?}",
+                    self.frame_ctr_dbg + nmis, run.pc(), run.index_y(), budget.raster_position());
+            }
+            let (v, h) = budget.raster_position().coordinates();
+            run.set_raster_position(v, h);
+            let advance = advance_rom_cpu_step(&mut run, &mut budget);
+            for (address, _) in run.take_cpu_wram_writes() {
+                if !entered { continue; }
+                let region = match address {
+                    0x6000..0x9000 => 0x6000 + (address - 0x6000) / 0x600 * 0x600,
+                    0xc2fc..0xc300 => 0xc2fc,
+                    0x14000..0x14600 => 0x14000,
+                    _ => continue,
+                };
+                *counts.entry((nmis, region)).or_default() += 1;
+            }
+            if advance != CpuWorkAdvance::Complete {
+                if entered { nmis += 1; }
+                advance_rom_cpu_through_nmi(&mut run, &mut budget);
+            }
+        }
+        eprintln!("native-tileset-shadow-return host={} complete={} nmis={nmis}",
+            self.frame_ctr_dbg, entered && run.is_complete());
+        for ((slice, region), stores) in counts {
+            eprintln!("native-tileset-shadow-writes host={} slice={slice} region=${region:05x} stores={stores}",
+                self.frame_ctr_dbg + slice);
+        }
     }
 }

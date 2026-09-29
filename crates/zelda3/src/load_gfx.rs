@@ -22,10 +22,10 @@ use load_gfx_shared::{
 const LOAD_GFX_FEATURES0_MISC_BUG_FIXES: u32 = 4096;
 const LOAD_GFX_FEATURES0_DIM_FLASHES: u32 = 65536;
 
-/// Native WRAM publication cursor for one sprite sheet. The bytes come from
+/// Native WRAM publication cursor for one graphics sheet. The bytes come from
 /// the translated decoder; the instruction-priced ROM model only determines
 /// when each store becomes visible to an interrupting CPU read.
-struct SpriteDecompressionCursor {
+struct GraphicsDecompressionCursor {
     destination: usize,
     bytes: Vec<u8>,
     stores: Vec<DecompressStore>,
@@ -44,7 +44,7 @@ mod sprite_decompression_cursor_tests {
         let (cost, stores) = decompress_store_timeline(
             DecompressEntry::Sprite, 97, &stream, 0x8000, 0x7e_7800,
         );
-        let mut cursor = SpriteDecompressionCursor::new(0x7800, expected.clone(), stores, cost.master).unwrap();
+        let mut cursor = GraphicsDecompressionCursor::new(0x7800, expected.clone(), stores, cost.master).unwrap();
         let mut ram = vec![0xa5; 0x10000];
         let first = cursor.stores[0].after_master_cycles;
         cursor.publish_through(first - 1, &mut ram);
@@ -78,8 +78,26 @@ mod sprite_decompression_cursor_tests {
 
     #[test]
     fn dungeon_map_sprite_store_events_match_independent_cpu_execution() {
-        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let Some((state, rom)) = loaded_graphics_test_inputs() else { return };
+        for (slot, sheet) in [97usize, 98, 99, 80].into_iter().enumerate() {
+            let destination = 0x7800 + slot * 0x600;
+            let cursor = state.sprite_decompression_cursor(sheet, destination).unwrap();
+            assert_cursor_matches_shadow(&rom, 0x00_e772, sheet, destination, cursor);
+        }
+    }
 
+    #[test]
+    fn dungeon_map_background_store_events_match_independent_cpu_execution() {
+        let Some((state, rom)) = loaded_graphics_test_inputs() else { return };
+        let sheets = [58, 59, 60, 61, 55, 56, 62, 91];
+        let destinations = [0x14000, 0x14000, 0x14000, 0x6000, 0x6600, 0x6c00, 0x7200, 0x14000];
+        for (sheet, destination) in sheets.into_iter().zip(destinations) {
+            let cursor = state.background_decompression_cursor(sheet, destination).unwrap();
+            assert_cursor_matches_shadow(&rom, 0x00_e78f, sheet, destination, cursor);
+        }
+    }
+
+    fn loaded_graphics_test_inputs() -> Option<(ZeldaState, Vec<u8>)> {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let asset_path = std::env::var_os("ZELDA3_ASSETS")
             .map(std::path::PathBuf::from)
@@ -88,57 +106,61 @@ mod sprite_decompression_cursor_tests {
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| root.join("saves/zelda3.sfc"));
         let (Ok(assets), Ok(rom)) = (std::fs::read(asset_path), std::fs::read(rom_path)) else {
-            return;
+            return None;
         };
         let mut state = ZeldaState::new();
         state.set_assets(&assets).unwrap();
-        for (slot, sheet) in [97usize, 98, 99, 80].into_iter().enumerate() {
-            const RETURN_TO_MAIN_WAIT: [u8; 2] = [0x35, 0x80];
-            let destination = 0x7800 + slot * 0x600;
-            let cursor = state.sprite_decompression_cursor(sheet, destination).unwrap();
-            let checkpoint = RomCpuCheckpoint {
-                entry_pc: 0x00_e772, stop_pc: 0x00_8036,
-                a: 0, x: 0, y: sheet as u16, sp: 0x01fc, dp: 0, db: 0,
-                carry: false, zero: false, overflow: false, negative: false,
-                interrupt_disable: true, decimal: false,
-                accumulator_is_8_bit: true, index_is_8_bit: true,
-                emulation: false, waiting: false,
-                stack_address: 0x01fd, stack_bytes: &RETURN_TO_MAIN_WAIT,
-            };
-            let mut ram = vec![0; 0x2_0000];
-            ram[0] = destination as u8;
-            ram[1] = (destination >> 8) as u8;
-            ram[2] = 0x7e;
-            let mut run = RomCpuTimingRun::new(
-                &rom, &ram, &[0; 0x2000], &snes::PpuState::default(),
-                &snes::DmaState::default(), [0; 4], checkpoint,
-            ).unwrap();
-            run.enable_cpu_write_trace();
-            let mut elapsed = 0u64;
-            let mut writes = Vec::new();
-            for _ in 0..4_000_000 {
-                if run.is_complete() { break; }
-                elapsed += u64::from(run.step().master_cycles);
-                for (address, value) in run.take_cpu_wram_writes() {
-                    if (destination..destination + 0x600).contains(&address) {
-                        writes.push((elapsed, address - destination, value));
-                    }
+        Some((state, rom))
+    }
+
+    fn assert_cursor_matches_shadow(
+        rom: &[u8], entry_pc: u32, sheet: usize, destination: usize,
+        cursor: GraphicsDecompressionCursor,
+    ) {
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        const RETURN_TO_MAIN_WAIT: [u8; 2] = [0x35, 0x80];
+        let checkpoint = RomCpuCheckpoint {
+            entry_pc, stop_pc: 0x00_8036,
+            a: 0, x: 0, y: sheet as u16, sp: 0x01fc, dp: 0, db: 0,
+            carry: false, zero: false, overflow: false, negative: false,
+            interrupt_disable: true, decimal: false,
+            accumulator_is_8_bit: true, index_is_8_bit: true,
+            emulation: false, waiting: false,
+            stack_address: 0x01fd, stack_bytes: &RETURN_TO_MAIN_WAIT,
+        };
+        let mut ram = vec![0; 0x2_0000];
+        ram[0] = destination as u8;
+        ram[1] = (destination >> 8) as u8;
+        ram[2] = ((0x7e_0000 + destination as u32) >> 16) as u8;
+        let mut run = RomCpuTimingRun::new(
+            rom, &ram, &[0; 0x2000], &snes::PpuState::default(),
+            &snes::DmaState::default(), [0; 4], checkpoint,
+        ).unwrap();
+        run.enable_cpu_write_trace();
+        let mut elapsed = 0u64;
+        let mut writes = Vec::new();
+        for _ in 0..4_000_000 {
+            if run.is_complete() { break; }
+            elapsed += u64::from(run.step().master_cycles);
+            for (address, value) in run.take_cpu_wram_writes() {
+                if (destination..destination + 0x600).contains(&address) {
+                    writes.push((elapsed, address - destination, value));
                 }
             }
-            assert!(run.is_complete(), "sheet {sheet} did not return");
-            assert_eq!(writes.len(), cursor.stores.len());
-            for (index, (at, offset, value)) in writes.into_iter().enumerate() {
-                assert_eq!((at, offset, value), (
-                    cursor.stores[index].after_master_cycles,
-                    usize::from(cursor.stores[index].output_offset),
-                    cursor.bytes[index],
-                ), "sheet {sheet} store {index}");
-            }
+        }
+        assert!(run.is_complete(), "sheet {sheet} did not return");
+        assert_eq!(writes.len(), cursor.stores.len());
+        for (index, (at, offset, value)) in writes.into_iter().enumerate() {
+            assert_eq!((at, offset, value), (
+                cursor.stores[index].after_master_cycles,
+                usize::from(cursor.stores[index].output_offset),
+                cursor.bytes[index],
+            ), "sheet {sheet} store {index}");
         }
     }
 }
 
-impl SpriteDecompressionCursor {
+impl GraphicsDecompressionCursor {
     fn new(destination: usize, bytes: Vec<u8>, stores: Vec<DecompressStore>, total_master_cycles: u64) -> Option<Self> {
         if bytes.len() != stores.len()
             || stores.iter().enumerate().any(|(index, store)| store.output_offset as usize != index)
@@ -1655,7 +1677,7 @@ impl ZeldaState {
         );
     }
 
-    fn sprite_decompression_cursor(&self, sheet: usize, destination: usize) -> Option<SpriteDecompressionCursor> {
+    fn sprite_decompression_cursor(&self, sheet: usize, destination: usize) -> Option<GraphicsDecompressionCursor> {
         // The port's special handling of sheets 0..11 reads stale WRAM during
         // back-references. Those sheets need a live-buffer decoder cursor.
         if sheet < 12 {
@@ -1671,7 +1693,21 @@ impl ZeldaState {
             stream_source_offset(DecompressEntry::Sprite, sheet_number),
             0x7e_0000 + destination as u32,
         );
-        SpriteDecompressionCursor::new(destination, bytes, stores, cost.master)
+        GraphicsDecompressionCursor::new(destination, bytes, stores, cost.master)
+    }
+
+    fn background_decompression_cursor(&self, sheet: usize, destination: usize) -> Option<GraphicsDecompressionCursor> {
+        let sheet_number = u8::try_from(sheet).ok()?;
+        let stream = self.asset_bytes(65, sheet)?;
+        let bytes = self.decompressed_background_graphics_data(sheet)?;
+        let (cost, stores) = decompress_store_timeline(
+            DecompressEntry::BackgroundTables,
+            sheet_number,
+            stream,
+            stream_source_offset(DecompressEntry::BackgroundTables, sheet_number),
+            0x7e_0000 + destination as u32,
+        );
+        GraphicsDecompressionCursor::new(destination, bytes, stores, cost.master)
     }
 
     pub(super) fn decompressed_sprite_graphics_data(&self, gfx: usize) -> Option<Vec<u8>> {

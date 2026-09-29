@@ -2316,6 +2316,20 @@ impl ZeldaState {
                         );
                     }
                 }
+                let mut region_counts = std::collections::BTreeMap::<u32, usize>::new();
+                for write in &baseline_writes {
+                    let Some(address) = native_exact_cpu_wram_key(write.address) else { continue };
+                    let region = match address {
+                        0x6000..0x9000 => 0x6000 + (address - 0x6000) / 0x600 * 0x600,
+                        0xc2fc..0xc300 => 0xc2fc,
+                        0x14000..0x14600 => 0x14000,
+                        _ => continue,
+                    };
+                    *region_counts.entry(region).or_default() += 1;
+                }
+                for (region, stores) in region_counts {
+                    eprintln!("native-tileset-source-writes host={host} region=${region:05x} stores={stores}");
+                }
             }
             if diagnose_ownership {
                 if let Some((source_read, trial_read)) = first_read_difference {
