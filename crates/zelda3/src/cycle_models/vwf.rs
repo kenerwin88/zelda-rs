@@ -859,6 +859,86 @@ pub(crate) fn terminate_master_cycles(countdown2: u8, any_pressed: bool) -> u64 
 pub(crate) const SCROLL_PASS_MASTER_CYCLES: u64 =
     22 + 32 + 126 * 910 + 125 * 6 + 21 * 40 + 22 + 40 + 14 + 16 + 40 + 16;
 
+/// Source-ordered stores in `$0E:CFFD..D0B9`. A pass can be interrupted
+/// inside its 126-iteration copy loop: its `$1CDF` increment happens only
+/// after every word copy and clear has completed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ScrollCopyStore {
+    pub(crate) after_master_cycles: u64,
+    pub(crate) kind: ScrollCopyStoreKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ScrollCopyStoreKind {
+    Copy { destination: usize, source: usize },
+    Clear { destination: usize },
+    PassCompleted,
+}
+
+pub(crate) fn scroll_copy_stores(
+    b_held: bool,
+    scroll_speed: u8,
+    line_counter: u8,
+) -> Vec<ScrollCopyStore> {
+    // $0E:CFE2..CFF7, ending after STA $02.
+    let mut at = 22 + 16 + 22 + 28 + 24 + 16;
+    at += if b_held {
+        BRANCH_NOT_TAKEN + 40 + BRA
+    } else {
+        BRANCH_TAKEN + 40
+    };
+    at += 24;
+    let mut stores = Vec::new();
+    let mut counter = line_counter;
+    for pass in 0..=scroll_speed {
+        let pass_start = at;
+        at += 22 + 32; // REP #$30; STZ $00
+        for tile in 0..126usize {
+            let base = tile * 16;
+            for word in 0..8usize {
+                at += 92; // LDA long, STA long, and the next source setup
+                stores.push(ScrollCopyStore {
+                    after_master_cycles: at,
+                    kind: ScrollCopyStoreKind::Copy {
+                        destination: base + word * 2,
+                        source: base + if word == 7 { 168 * 2 } else { (word + 1) * 2 },
+                    },
+                });
+            }
+            at += 174; // remaining loop/index work after the eighth store
+            if tile != 125 {
+                at += 6; // taken BCC $CFFD
+            }
+        }
+        for column in (0x34f..=0x3ef).step_by(8) {
+            at += 40; // STZ long
+            stores.push(ScrollCopyStore {
+                after_master_cycles: at,
+                kind: ScrollCopyStoreKind::Clear {
+                    destination: column * 2,
+                },
+            });
+        }
+        at += 22 + 40 + 14 + 16 + 40; // through STA $1CDF
+        stores.push(ScrollCopyStore {
+            after_master_cycles: at,
+            kind: ScrollCopyStoreKind::PassCompleted,
+        });
+        at += 16; // AND #$0F
+        debug_assert_eq!(at - pass_start, SCROLL_PASS_MASTER_CYCLES);
+        counter = counter.wrapping_add(1);
+        if counter & 0x0f == 0 {
+            break;
+        }
+        at += BRANCH_TAKEN + 38; // BNE; DEC $02
+        if pass == scroll_speed {
+            break;
+        }
+        at += BRANCH_NOT_TAKEN + 24; // BMI not taken; JMP $CFF9
+    }
+    stores
+}
+
 /// What a `RenderText_Draw_Scroll` call did.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ScrollStep {
@@ -1170,6 +1250,27 @@ pub(crate) fn message_characters_call_master_cycles(
 mod tests {
     use super::*;
     use crate::rom_cpu_timing::{lorom_offset, RomCpuCheckpoint, RomCpuTimingRun};
+
+    #[test]
+    fn scroll_copy_timeline_exposes_partial_pass_before_counter_store() {
+        let events = scroll_copy_stores(false, 4, 0);
+        let passes: Vec<_> = events.iter().enumerate()
+            .filter(|(_, event)| event.kind == ScrollCopyStoreKind::PassCompleted)
+            .map(|(index, _)| index)
+            .collect();
+        assert_eq!(passes.len(), 5);
+        let third_word = events[passes[1] + 2];
+        assert_eq!(third_word.kind, ScrollCopyStoreKind::Copy {
+            destination: 2, source: 4,
+        });
+        assert!(events[passes[1]].after_master_cycles < third_word.after_master_cycles);
+        assert!(third_word.after_master_cycles < events[passes[2]].after_master_cycles);
+        let first_word = events[0].after_master_cycles;
+        let second_word = events[1].after_master_cycles;
+        assert_eq!(second_word - first_word, 92);
+        assert_eq!(events.iter().filter(|event| matches!(event.kind,
+            ScrollCopyStoreKind::Copy { .. })).count(), 5 * 126 * 8);
+    }
 
     #[test]
     fn glyph_bitmap_store_timeline_replays_the_atomic_raster() {

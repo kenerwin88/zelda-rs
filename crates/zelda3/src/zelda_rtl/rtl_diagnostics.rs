@@ -500,6 +500,7 @@ impl ZeldaState {
         // branch; a callback which calls the public internal entry sees this
         // active guard and cannot advance it again.
         self.advance_native_exact_cpu_host();
+        self.arm_native_exact_cpu_leading_spiral_sprite_nmi();
         let owns_original_timing_dispatch = self.begin_original_timing_host_dispatch(input_state);
         if self.emu_runframe.is_none()
             || self.game_state.enhanced_features.bits() != 0
@@ -513,6 +514,7 @@ impl ZeldaState {
             func(self, input_state, run_what);
         }
         self.advance_native_exact_cpu_bg_chars_gate();
+        self.advance_native_exact_cpu_story_decompression();
         self.advance_native_exact_cpu_pre_dungeon_room_header();
         self.advance_native_exact_cpu_floor_live_draw();
         self.advance_native_exact_cpu_object_live_draw();

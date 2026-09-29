@@ -59,7 +59,7 @@ pub use cpu_timeline::{
     SNES9X_NMI_GENERAL_DMA_DELAY_MASTER_CYCLES, SNES9X_WRAM_REFRESH_V2_EARLY_CYCLE,
     SNES9X_WRAM_REFRESH_V2_LATE_CYCLE, WRAM_REFRESH_STALL_MASTER_CYCLES,
 };
-pub use dma::{DmaChannel, DmaState};
+pub use dma::{DmaChannel, DmaState, HdmaTimingState};
 pub use input::InputState;
 pub use loader::{load_rom, LoadRomError};
 pub use ppu::PpuState;

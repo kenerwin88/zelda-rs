@@ -273,6 +273,33 @@ impl CpuCycleBudget {
         }
     }
 
+    pub(super) fn advance_interruptible_with_hdma(
+        &mut self,
+        work_master_cycles: u32,
+        mut hdma_stall: impl FnMut(CpuBusEvent, u16) -> u32,
+    ) -> CpuWorkAdvance {
+        debug_assert!(self.timeline.clock_master_cycles() < self.deadline.master_cycles);
+        let advance = self.timeline.advance_interruptible_until_with(
+            self.deadline.master_cycles,
+            work_master_cycles,
+            |event, scanline| match event {
+                CpuTimelineEvent::Bus(CpuBusEvent::WramRefresh) =>
+                    WRAM_REFRESH_STALL_MASTER_CYCLES,
+                CpuTimelineEvent::Bus(event @ (CpuBusEvent::HdmaInit | CpuBusEvent::HdmaStart)) =>
+                    hdma_stall(event, scanline),
+                CpuTimelineEvent::ShortScanline => 0,
+            },
+        );
+        match advance {
+            CpuTimelineDeadlineAdvance::Complete => CpuWorkAdvance::Complete,
+            CpuTimelineDeadlineAdvance::ReachedDeadline { remaining_work_master_cycles } =>
+                CpuWorkAdvance::ReachedBoundary {
+                    boundary: self.deadline.boundary,
+                    remaining_work_master_cycles,
+                },
+        }
+    }
+
     /// Advance one indivisible 65816 instruction. A boundary reached during the
     /// instruction is observed immediately after it completes.
     pub(super) fn advance_instruction(&mut self, instruction_master_cycles: u32) -> CpuWorkAdvance {

@@ -10123,6 +10123,14 @@ pub struct ZeldaState {
     /// Native CPU work left in the suspended scroll call after its entry
     /// host's vblank budget was exhausted (no source timing receipts).
     pub(crate) dialogue_scroll_remaining_master_cycles: Option<u64>,
+    /// In-flight CPU cursor, like the VWF glyph phase above; paired resumes
+    /// start at a quiescent boundary and cannot reconstruct a held scroll.
+    #[serde(skip)]
+    pub(crate) native_scroll_copy_cursor: Option<messaging::NativeScrollCopyCursor>,
+    /// The display mask saved by the early dungeon-map configuration while
+    /// its `InitializeTilesets` CPU work is held across NMI boundaries.
+    #[serde(skip)]
+    pub(crate) dungeon_map_graphics_saved_hdma_enable: Option<u8>,
     /// `cycle_ledger::silent_calls()` at the last NMI acceptance: probed
     /// routines that ran unpriced since then make the ledger delta, and so
     /// the derived fresh-entry budget, incomplete.
@@ -12857,21 +12865,62 @@ impl ZeldaState {
         self.messaging_render_buffer_mut().set_word(index, value);
     }
 
+    fn native_exact_cpu_watched_messaging_offset(&self) -> Option<usize> {
+        if self.native_exact_cpu_owner.is_none() {
+            return None;
+        }
+        static WATCH: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
+        *WATCH.get_or_init(|| {
+            crate::debug_env::var("ZELDA3_NATIVE_EXACT_CPU_WATCH_WRAM_ADDR")
+                .ok()
+                .and_then(|value| usize::from_str_radix(value.trim_start_matches("0x"), 16).ok())
+                .filter(|offset| *offset < 0x1000)
+        })
+    }
+
+    #[track_caller]
     pub(crate) fn set_messaging_render_buffer_word_at_byte_offset(
         &mut self,
         byte_offset: usize,
         value: u16,
     ) {
+        let watch = self.native_exact_cpu_watched_messaging_offset()
+            .filter(|offset| (byte_offset..byte_offset + 2).contains(offset));
+        let before = watch.map(|offset| self.game_state.messaging.render_buffer.byte(offset));
         self.messaging_render_buffer_mut()
             .set_word_at_byte_offset(byte_offset, value);
+        if let (Some(offset), Some(before)) = (watch, before) {
+            eprintln!("native-exact-cpu-native-wram-write host={} address=7f{offset:04x} before={before:02x} after={:02x} operation=set-word caller={}",
+                self.frame_ctr_dbg.saturating_sub(1),
+                self.game_state.messaging.render_buffer.byte(offset),
+                std::panic::Location::caller());
+        }
     }
 
+    #[track_caller]
     pub(crate) fn xor_messaging_render_buffer_mask(&mut self, offset: usize, mask: u8) {
+        let watch = self.native_exact_cpu_watched_messaging_offset() == Some(offset);
+        let before = watch.then(|| self.game_state.messaging.render_buffer.byte(offset));
         self.messaging_render_buffer_mut().xor_mask(offset, mask);
+        if let Some(before) = before {
+            eprintln!("native-exact-cpu-native-wram-write host={} address=7f{offset:04x} before={before:02x} after={:02x} operation=xor mask={mask:02x} caller={}",
+                self.frame_ctr_dbg.saturating_sub(1),
+                self.game_state.messaging.render_buffer.byte(offset),
+                std::panic::Location::caller());
+        }
     }
 
+    #[track_caller]
     pub(crate) fn clear_messaging_render_buffer_mask(&mut self, offset: usize, mask: u8) {
+        let watch = self.native_exact_cpu_watched_messaging_offset() == Some(offset);
+        let before = watch.then(|| self.game_state.messaging.render_buffer.byte(offset));
         self.messaging_render_buffer_mut().clear_mask(offset, mask);
+        if let Some(before) = before {
+            eprintln!("native-exact-cpu-native-wram-write host={} address=7f{offset:04x} before={before:02x} after={:02x} operation=clear mask={mask:02x} caller={}",
+                self.frame_ctr_dbg.saturating_sub(1),
+                self.game_state.messaging.render_buffer.byte(offset),
+                std::panic::Location::caller());
+        }
     }
 
     pub(crate) fn clear_messaging_render_buffer_range(&mut self, byte_count: usize) {
@@ -13013,6 +13062,8 @@ impl ZeldaState {
             dialogue_vwf_dispatch_cursor: crate::cycle_models::vwf::DispatchCursor::default(),
             dialogue_vwf_deferred_handler_exits: 0,
             dialogue_scroll_remaining_master_cycles: None,
+            native_scroll_copy_cursor: None,
+            dungeon_map_graphics_saved_hdma_enable: None,
             silent_ledger_calls_at_nmi_acceptance: 0,
             vwf_prefix_fully_charged: false,
             published_bg3_vwf_glyph_runs: Vec::new(),

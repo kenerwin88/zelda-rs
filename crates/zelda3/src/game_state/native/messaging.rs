@@ -835,6 +835,10 @@ impl Default for MessagingRenderBufferState {
 }
 
 impl MessagingRenderBufferState {
+    pub(crate) fn byte(&self, offset: usize) -> u8 {
+        self.bytes.get(offset).copied().unwrap_or(0)
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         let mut bytes = vec![0; MESSAGING_RENDER_BUFFER_LEN];
         if let Some(src) = ram.get(MESSAGING_RENDER_BUFFER..MESSAGING_RENDER_BUFFER + bytes.len()) {

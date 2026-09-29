@@ -496,13 +496,35 @@ impl CpuMasterTimeline {
     pub fn advance_interruptible_until(
         &mut self,
         deadline_master_cycles: u64,
+        work_master_cycles: u32,
+    ) -> CpuTimelineDeadlineAdvance {
+        let fixed_hdma_stall = u32::from(self.bus.hdma_stall_master_cycles);
+        self.advance_interruptible_until_with(
+            deadline_master_cycles,
+            work_master_cycles,
+            |event, _| match event {
+                CpuTimelineEvent::Bus(CpuBusEvent::WramRefresh) => {
+                    WRAM_REFRESH_STALL_MASTER_CYCLES
+                }
+                CpuTimelineEvent::Bus(CpuBusEvent::HdmaStart) => fixed_hdma_stall,
+                CpuTimelineEvent::Bus(CpuBusEvent::HdmaInit)
+                | CpuTimelineEvent::ShortScanline => 0,
+            },
+        )
+    }
+
+    /// Advance interruptible work with bus stalls priced from the live HDMA
+    /// channel/table state. The callback runs only when its event is reached.
+    pub fn advance_interruptible_until_with(
+        &mut self,
+        deadline_master_cycles: u64,
         mut work_master_cycles: u32,
+        mut event_advance: impl FnMut(CpuTimelineEvent, u16) -> u32,
     ) -> CpuTimelineDeadlineAdvance {
         self.claim_legacy_timeline();
         debug_assert!(self.clock_master_cycles < deadline_master_cycles);
         while work_master_cycles != 0 {
             let (work_until_event, event) = self.next_timeline_event();
-            let event_stall = event.map_or(0, |event| self.fixed_event_advance(event));
             let master_cycles_until_deadline = deadline_master_cycles - self.clock_master_cycles;
             if master_cycles_until_deadline <= u64::from(work_until_event) {
                 if u64::from(work_master_cycles) < master_cycles_until_deadline {
@@ -523,8 +545,14 @@ impl CpuMasterTimeline {
 
             self.advance_physical_clock(u64::from(work_until_event));
             work_master_cycles -= work_until_event;
+            let mut event_stall = 0;
             if let Some(event) = event {
+                let scanline = match event {
+                    CpuTimelineEvent::ShortScanline => 240,
+                    CpuTimelineEvent::Bus(_) => self.raster_position().scanline,
+                };
                 self.processed_timeline_event = Some((self.clock_master_cycles, event));
+                event_stall = event_advance(event, scanline);
             }
             if self.clock_master_cycles + u64::from(event_stall) >= deadline_master_cycles {
                 self.set_physical_clock(deadline_master_cycles);
@@ -1417,6 +1445,29 @@ mod tests {
             },
         );
         assert_eq!(timeline.raster_position(), CpuRasterPosition::new(225, 0));
+    }
+
+    #[test]
+    fn interruptible_dynamic_hdma_charges_live_events_before_deadline() {
+        let timing = CpuFieldTiming::NON_INTERLACE_EVEN;
+        let mut timeline = at_raster(
+            0,
+            CpuRasterPosition::new(0, 0),
+            CpuBusWorkload::with_dynamic_hdma(),
+            timing,
+        );
+        let deadline = timing.master_cycles_at(0, CpuRasterPosition::new(0, 100));
+        let mut events = Vec::new();
+        assert_eq!(
+            timeline.advance_interruptible_until_with(deadline, 100, |event, scanline| {
+                events.push((event, scanline));
+                if event == CpuTimelineEvent::Bus(CpuBusEvent::HdmaInit) { 34 } else { 0 }
+            }),
+            CpuTimelineDeadlineAdvance::ReachedDeadline {
+                remaining_work_master_cycles: 34,
+            }
+        );
+        assert_eq!(events, [(CpuTimelineEvent::Bus(CpuBusEvent::HdmaInit), 0)]);
     }
 
     #[test]

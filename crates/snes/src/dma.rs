@@ -160,6 +160,114 @@ impl DmaState {
     }
 }
 
+/// HDMA bus timing without a PPU transfer. This owns a copy of the channel
+/// cursors so a translated CPU budget can price the same descriptor reloads
+/// as the source machine without constructing a second SNES.
+#[derive(Clone, Debug)]
+pub struct HdmaTimingState {
+    channels: [DmaChannel; 8],
+}
+
+impl HdmaTimingState {
+    pub fn new(dma: &DmaState) -> Self {
+        Self { channels: dma.channel }
+    }
+
+    /// Returns None when the caller cannot supply a table byte. A translated
+    /// budget must then decline an exact answer rather than invent bus time.
+    pub fn stall(
+        &mut self,
+        event: CpuBusEvent,
+        mut read: impl FnMut(u32) -> Option<u8>,
+    ) -> Option<u32> {
+        let mut cycles = 0u32;
+        let mut any = false;
+        match event {
+            CpuBusEvent::HdmaInit => {
+                for i in 0..8 {
+                    let higher_active = self.channels[i + 1..].iter().any(|c| c.hdma_active);
+                    let channel = &mut self.channels[i];
+                    if !channel.hdma_active {
+                        channel.do_transfer = false;
+                        channel.terminated = false;
+                        continue;
+                    }
+                    any = true;
+                    channel.dma_active = false;
+                    channel.off_index = 0;
+                    channel.table_adr = channel.a_adr;
+                    let bank = u32::from(channel.a_bank) << 16;
+                    let rep = read(bank | u32::from(channel.table_adr))?;
+                    channel.rep_count = rep;
+                    channel.terminated = rep == 0;
+                    channel.table_adr = channel.table_adr.wrapping_add(1);
+                    cycles += 8;
+                    if channel.indirect {
+                        if rep == 0 && !higher_active {
+                            channel.table_adr = channel.table_adr.wrapping_sub(1);
+                        }
+                        let lo = read(bank | u32::from(channel.table_adr))?;
+                        channel.table_adr = channel.table_adr.wrapping_add(1);
+                        let hi = read(bank | u32::from(channel.table_adr))?;
+                        channel.table_adr = channel.table_adr.wrapping_add(1);
+                        channel.size = u16::from(lo) | (u16::from(hi) << 8);
+                        cycles += if rep == 0 && !higher_active { 8 } else { 16 };
+                    }
+                    channel.do_transfer = true;
+                }
+            }
+            CpuBusEvent::HdmaStart => {
+                for i in 0..8 {
+                    if !self.channels[i].hdma_active || self.channels[i].terminated {
+                        continue;
+                    }
+                    any = true;
+                    let higher_active = self.channels[i + 1..]
+                        .iter()
+                        .any(|c| c.hdma_active && !c.terminated);
+                    let channel = &mut self.channels[i];
+                    channel.dma_active = false;
+                    channel.off_index = 0;
+                    cycles += 8;
+                    if channel.do_transfer {
+                        let len = TRANSFER_LENGTH[channel.mode as usize];
+                        cycles += 8 * u32::from(len);
+                        if channel.indirect {
+                            channel.size = channel.size.wrapping_add(u16::from(len));
+                        } else {
+                            channel.table_adr = channel.table_adr.wrapping_add(u16::from(len));
+                        }
+                    }
+                    channel.rep_count = channel.rep_count.wrapping_sub(1);
+                    channel.do_transfer = channel.rep_count & 0x80 != 0;
+                    if channel.rep_count & 0x7f == 0 {
+                        let bank = u32::from(channel.a_bank) << 16;
+                        let next = read(bank | u32::from(channel.table_adr))?;
+                        channel.table_adr = channel.table_adr.wrapping_add(1);
+                        channel.rep_count = next;
+                        if channel.indirect {
+                            if next == 0 && !higher_active {
+                                channel.table_adr = channel.table_adr.wrapping_sub(1);
+                            }
+                            let lo = read(bank | u32::from(channel.table_adr))?;
+                            channel.table_adr = channel.table_adr.wrapping_add(1);
+                            let hi = read(bank | u32::from(channel.table_adr))?;
+                            channel.table_adr = channel.table_adr.wrapping_add(1);
+                            channel.size = u16::from(lo) | (u16::from(hi) << 8);
+                            cycles += if next == 0 && !higher_active { 8 } else { 16 };
+                        }
+                        channel.terminated = next == 0;
+                        channel.do_transfer = true;
+                    }
+                }
+            }
+            CpuBusEvent::WramRefresh => unreachable!("refresh is not HDMA"),
+        }
+        if any { cycles += 16; }
+        Some(cycles + u32::from(cycles != 0) * 2)
+    }
+}
+
 /// $43x0..$43xf register table.
 const B_ADR_OFFSETS: [[u8; 4]; 8] = [
     [0, 0, 0, 0],
@@ -674,6 +782,40 @@ mod saveload_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hdma_timing_shadow_matches_source_descriptor_progression() {
+        let mut snes = Snes::new();
+        let channel = &mut snes.dma.channel[7];
+        channel.hdma_active = true;
+        channel.a_bank = 0x7e;
+        channel.a_adr = 0x1000;
+        channel.indirect = true;
+        channel.ind_bank = 0x7e;
+        channel.mode = 1;
+        channel.b_adr = 0x10;
+        let table = [0x82, 0x00, 0x20, 0x01, 0x04, 0x20, 0x00, 0x00];
+        for (offset, value) in table.iter().enumerate() {
+            snes.write(0x7e_1000 + offset as u32, *value);
+        }
+        let mut timing = HdmaTimingState::new(&snes.dma);
+        for event in [CpuBusEvent::HdmaInit, CpuBusEvent::HdmaStart,
+            CpuBusEvent::HdmaStart, CpuBusEvent::HdmaStart,
+            CpuBusEvent::HdmaStart] {
+            let expected = snes.synchronous_hdma_stall(event);
+            let actual = timing.stall(event, |address| {
+                let offset = (address & 0xffff).checked_sub(0x1000)? as usize;
+                table.get(offset).copied()
+            });
+            assert_eq!(actual, Some(expected), "{event:?}");
+            let source = &snes.dma.channel[7];
+            let shadow = &timing.channels[7];
+            assert_eq!((shadow.table_adr, shadow.size, shadow.rep_count, shadow.terminated,
+                shadow.do_transfer),
+                (source.table_adr, source.size, source.rep_count, source.terminated,
+                source.do_transfer));
+        }
+    }
 
     #[test]
     fn reset_initializes_channels_to_ones() {

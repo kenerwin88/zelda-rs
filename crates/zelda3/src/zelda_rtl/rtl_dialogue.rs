@@ -599,6 +599,15 @@ impl ZeldaState {
         u16::from(progress.completed_pixel_passes)
     }
 
+    fn finish_terminal_dialogue_scroll_copies(&mut self) -> bool {
+        if self.native_scroll_copy_cursor.is_some() {
+            self.finish_native_scroll_copy()
+        } else {
+            let passes = self.take_terminal_dialogue_scroll_pixel_passes();
+            self.render_text_scroll_pixels(passes)
+        }
+    }
+
     /// One lag host of a Module19 message-line scroll held by wire: apply
     /// this host's copy receipt and report whether `RenderText_Draw_Scroll`
     /// returned. Mirrors the Module0E terminal without its
@@ -686,8 +695,7 @@ impl ZeldaState {
             DialogueScrollCompletionTiming::AfterReturnBoundary,
             "a Continued victory-module scroll must complete after its return boundary",
         );
-        let passes = self.take_terminal_dialogue_scroll_pixel_passes();
-        let command_done = self.render_text_scroll_pixels(passes);
+        let command_done = self.finish_terminal_dialogue_scroll_copies();
         if command_done {
             let read_pos = self.game_state.messaging.runtime.dialogue_msg_read_pos();
             self.messaging_state_mut()
@@ -704,7 +712,6 @@ impl ZeldaState {
     pub(super) fn complete_module0e_dialogue_scroll_before_common_suffix(&mut self) {
         assert_eq!(self.game_state.frame.main_module, 0x0e);
         assert!(self.dialogue_scroll_is_copying_remaining_pixels());
-        let passes = self.take_terminal_dialogue_scroll_pixel_passes();
         let completion_timing = self
             .finish_dialogue_scroll_remaining_pixels_with_main_loop_receipt(
                 crate::MainLoopProgress::CallStackContinued,
@@ -713,7 +720,7 @@ impl ZeldaState {
             completion_timing,
             DialogueScrollCompletionTiming::AfterReturnBoundary
         );
-        if self.render_text_scroll_pixels(passes) {
+        if self.finish_terminal_dialogue_scroll_copies() {
             let read_pos = self.game_state.messaging.runtime.dialogue_msg_read_pos();
             self.messaging_state_mut()
                 .set_dialogue_msg_read_pos(read_pos.wrapping_add(1));
@@ -1898,7 +1905,11 @@ impl ZeldaState {
                 }
                 None => self.finish_dialogue_scroll_remaining_pixels(),
             };
-            let command_done = self.render_text_scroll_pixels(passes);
+            let command_done = if self.native_scroll_copy_cursor.is_some() {
+                self.finish_native_scroll_copy()
+            } else {
+                self.render_text_scroll_pixels(passes)
+            };
             // The slow $0e:cfe2 text-buffer copy has now returned through
             // RenderText_Draw_MessageCharacters and RunInterface. The ROM
             // advances past the scroll command only when the low nibble

@@ -2,6 +2,12 @@ use super::*;
 use crate::game_state::constants::{ANIMATED_TILE_DATA_SRC, ANIMATED_TILE_VRAM_ADDR};
 
 #[test]
+fn idle_music_nmi_prices_a_nonzero_echo_from_the_apu_port() {
+    assert_eq!(idle_music_echo_master_cycles(0x10, 0x10), 130);
+    assert_eq!(idle_music_echo_master_cycles(0, 0x10), 84);
+}
+
+#[test]
 fn nmi_core_update_copies_animated_tiles_even_from_zero_source() {
     let mut s = ZeldaState::new();
     write_le_u16(&mut s.ram, ANIMATED_TILE_DATA_SRC, 0);

@@ -6,7 +6,7 @@
 use super::{
     sprite::OverworldSpriteReloadScanWork, ExtendedOamPackingProgress, GameState,
     GameWorkContinuation, ItemReceiptGraphicsContinuation, ItemReceiptReturn,
-    OverworldSpriteReloadWorkload, SpriteSlotsState, ZeldaState,
+    OverworldSpriteReloadWorkload, PreMainNmiResume, SpriteSlotsState, ZeldaState,
 };
 use crate::game_state::constants::{
     ANCILLA_STEP, DIALOGUE_MSG_SRC_OFFS, OVERWORLD_DECOMP_BUFFER, OVERWORLD_MAP16_DECODE_SRC,
@@ -200,6 +200,82 @@ pub(super) struct NativeExactCpuOverworldLiveScan {
 }
 
 impl ZeldaState {
+    pub(super) fn advance_native_exact_cpu_story_decompression(&mut self) {
+        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_STORY_DECOMP_LIVE_TRIAL")
+            .is_none()
+        {
+            return;
+        }
+        let Some(trace) = self.native_exact_cpu_host_trace.as_ref() else {
+            return;
+        };
+        if trace.story_decompression_writes.is_empty() {
+            return;
+        }
+        if !matches!(
+            self.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishDialogueInitializationPrefix { .. })
+        ) {
+            return;
+        }
+        let first = self.decompressed_sprite_graphics_data(0x67)
+            .expect("story sprite sheet 0x67 is missing");
+        let second = self.decompressed_sprite_graphics_data(0x68)
+            .expect("story sprite sheet 0x68 is missing");
+        for write in &trace.story_decompression_writes {
+            for byte_index in 0..usize::from(write.width) {
+                let address = write.address as usize + byte_index;
+                let (sheet, offset) = if address < 0x7f_4800 {
+                    (&first, address - 0x7f_4000)
+                } else {
+                    (&second, address - 0x7f_4800)
+                };
+                let native_byte = *sheet.get(offset)
+                    .expect("source story decompression exceeded the native sheet");
+                let source_byte = (write.value >> (byte_index * 8)) as u8;
+                assert_eq!(native_byte, source_byte,
+                    "native story sheet disagrees with the source decompressor");
+                self.ram[address - 0x7e_0000] = native_byte;
+            }
+        }
+    }
+
+    pub(super) fn arm_native_exact_cpu_leading_spiral_sprite_nmi(&mut self) {
+        if crate::debug_env::var_os(
+            "ZELDA3_NATIVE_EXACT_CPU_SPIRAL_SPRITE_LEADING_NMI_LIVE_TRIAL",
+        )
+        .is_none()
+            || self.game_state.frame.main_module != 7
+            || self.game_state.frame.submodule != 0x0e
+            || self.game_state.frame.subsubmodule != 6
+            || !self.game_execution_scheduler.is_idle()
+        {
+            return;
+        }
+        let Some(trace) = self.native_exact_cpu_host_trace.as_ref() else {
+            return;
+        };
+        let Some(main_entry) = trace.main_loop_entries.first() else {
+            return;
+        };
+        let leading_open_nmi = trace.nmi_update_decisions.iter().any(|decision| {
+            decision.runs_updates
+                && trace.nmi_completions.iter().any(|completion| {
+                    completion.accepted_at == decision.accepted_at
+                        && completion.returned_at < main_entry.at
+                })
+        });
+        if leading_open_nmi {
+            // The prior state published BG character request 10 after its
+            // trailing handler. Hardware consumes it before the next fresh
+            // spiral SpriteGFX iteration. The native schedule would enter
+            // the long graphics call first and delay the NMI until it returns.
+            self.game_execution_scheduler.schedule_pre_main_nmi_resume(
+                PreMainNmiResume::DungeonSupertileNextIterationAfterLeadingNmi,
+            );
+        }
+    }
+
     pub(super) fn advance_native_exact_cpu_bg_chars_gate(&mut self) {
         if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_BG_CHARS_GATE_LIVE_TRIAL").is_none() {
             return;
@@ -836,6 +912,18 @@ pub(super) struct NativeExactCpuHostTrace {
     pub ppu_reads: Vec<NativeExactCpuPpuAccess>,
     pub nmi_gate_accesses: Vec<NativeExactCpuNmiGateAccess>,
     pub nmi_update_decisions: Vec<NativeExactCpuNmiUpdateDecision>,
+    pub story_decompression_writes: Vec<NativeExactCpuWrite>,
+    pub dialogue_decode_cursor_writes: Vec<NativeExactCpuWrite>,
+    pub track_story_decompression_writes: bool,
+    pub track_dialogue_decode_cursor_writes: bool,
+    pub track_vwf_cpu_work: bool,
+    pub vwf_cpu_work_master_cycles: u64,
+    pub vwf_work_since_nmi: u64,
+    pub vwf_first_step_at: Option<u64>,
+    pub vwf_last_step_at: Option<u64>,
+    pub vwf_cursor_work: Vec<(u16, u64)>,
+    pub vwf_draw_entry_work: Vec<u64>,
+    pub nmi_cpu_work_by_block: [u64; 4],
     pub main_wait_returns: Vec<NativeExactCpuMainWaitReturn>,
     /// The room-loader JSR has returned to Module07's next instruction.
     pub room_load_returned: bool,
@@ -863,6 +951,14 @@ pub(super) struct NativeExactCpuHostTrace {
     pub overworld_scan_events: Vec<NativeExactCpuOverworldScanEvent>,
     pub wram_watch_address: Option<u16>,
     pub wram_watch_accesses: Vec<NativeExactCpuWramWatchAccess>,
+}
+
+impl NativeExactCpuHostTrace {
+    pub(crate) fn dialogue_decode_reached_native_length(&self, len: u16) -> bool {
+        self.dialogue_decode_cursor_writes
+            .last()
+            .is_some_and(|write| write.width == 2 && write.value == len)
+    }
 }
 
 impl NativeExactCpuHostTrace {
@@ -935,7 +1031,7 @@ struct NativeExactCpuRead {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-struct NativeExactCpuWrite {
+pub(super) struct NativeExactCpuWrite {
     pc: u32,
     address: u32,
     value: u16,
@@ -1333,6 +1429,37 @@ impl NativeExactCpuOwner {
         writes: Option<&mut Vec<NativeExactCpuWrite>>,
         instructions: Option<&mut Vec<NativeExactCpuInstruction>>,
     ) -> Option<NativeExactCpuNmiCompletion> {
+        if trace.track_vwf_cpu_work && interrupt_stack.iter().any(|interrupt| matches!(interrupt, NativeExactCpuInterrupt::Nmi(_))) {
+            let block = match step.origin_pc {
+                0x00_80c9..=0x00_811b => 0,
+                0x00_811c..=0x00_8143 => 1,
+                0x00_8144..=0x00_822c => 2,
+                _ => 3,
+            };
+            trace.nmi_cpu_work_by_block[block] += step.transactions.iter()
+                .map(|transaction| u64::from(transaction.duration_master_cycles))
+                .sum::<u64>();
+        }
+        if trace.track_vwf_cpu_work
+            && ((0x0e_c984..=0x0e_ccf7).contains(&step.origin_pc)
+                || (0x00_8781..=0x00_87b5).contains(&step.origin_pc))
+        {
+            trace.vwf_first_step_at.get_or_insert(step.started_at.master_cycles());
+            trace.vwf_last_step_at = Some(step.ended_at.master_cycles());
+            let interrupt_started_at = step.accepted_interrupt.map(|interrupt| match interrupt {
+                SourceCpuAcceptedInterrupt::Nmi { started_at, .. }
+                | SourceCpuAcceptedInterrupt::Irq { started_at, .. } => started_at.master_cycles(),
+            });
+            let work = step.transactions.iter()
+                .filter(|transaction| interrupt_started_at.is_none_or(|at| transaction.started_at.master_cycles() < at))
+                .map(|transaction| u64::from(transaction.duration_master_cycles))
+                .sum::<u64>();
+            trace.vwf_cpu_work_master_cycles += work;
+            trace.vwf_work_since_nmi += work;
+            if step.origin_pc == 0x0e_cbd1 {
+                trace.vwf_draw_entry_work.push(trace.vwf_work_since_nmi - work);
+            }
+        }
         overworld_scan.observe(step, &mut trace.overworld_scan_events);
         sprite_preparation.observe(step);
         floor_draw.observe(step, trace);
@@ -1380,6 +1507,45 @@ impl NativeExactCpuOwner {
                         width,
                         at: access.timestamp.master_cycles(),
                     });
+                }
+            }
+        }
+        if trace.track_story_decompression_writes
+            && (0x00_e790..=0x00_e842).contains(&step.origin_pc)
+        {
+            for access in &step.accesses {
+                if (0x7f_4000..0x7f_5000).contains(&access.address) {
+                    if let SourceCpuBusAccessKind::Write { value, width } = access.kind {
+                        trace.story_decompression_writes.push(NativeExactCpuWrite {
+                            pc: step.origin_pc,
+                            address: access.address,
+                            value,
+                            width,
+                            at: access.timestamp.master_cycles(),
+                        });
+                    }
+                }
+            }
+        }
+        if trace.track_dialogue_decode_cursor_writes
+            && (0x0e_c000..=0x0e_dfff).contains(&step.origin_pc)
+        {
+            for access in &step.accesses {
+                if access.address as u16 == 0x1cd9
+                    && (access.address >> 16) <= 0x3f
+                {
+                    if let SourceCpuBusAccessKind::Write { value, width } = access.kind {
+                        trace.dialogue_decode_cursor_writes.push(NativeExactCpuWrite {
+                            pc: step.origin_pc,
+                            address: access.address,
+                            value,
+                            width,
+                            at: access.timestamp.master_cycles(),
+                        });
+                        if trace.track_vwf_cpu_work {
+                            trace.vwf_cursor_work.push((value, trace.vwf_work_since_nmi));
+                        }
+                    }
                 }
             }
         }
@@ -1485,7 +1651,7 @@ impl NativeExactCpuOwner {
                         });
                 }
             }
-            let wram_bank = bank == 0x7e
+            let wram_bank = matches!(bank, 0x7e | 0x7f)
                 || (address < 0x2000 && (bank <= 0x3f || (0x80..=0xbf).contains(&bank)));
             if trace.wram_watch_address == Some(address) && wram_bank {
                 let watched = match access.kind {
@@ -1604,6 +1770,7 @@ impl NativeExactCpuOwner {
         };
         if let Some(completed) = completed {
             trace.nmi_completions.push(completed);
+            trace.vwf_work_since_nmi = 0;
         }
         match step.accepted_interrupt {
             Some(SourceCpuAcceptedInterrupt::Nmi {
@@ -1660,6 +1827,15 @@ impl NativeExactCpuOwner {
         self.cpu.set_libretro_joypad_words(raw_input, 0);
         let mut trace = NativeExactCpuHostTrace {
             host,
+            track_story_decompression_writes: crate::debug_env::var_os(
+                "ZELDA3_NATIVE_EXACT_CPU_STORY_DECOMP_LIVE_TRIAL",
+            ).is_some(),
+            track_dialogue_decode_cursor_writes: crate::debug_env::var_os(
+                "ZELDA3_NATIVE_EXACT_CPU_DIALOGUE_DECODE_LIVE_TRIAL",
+            ).is_some(),
+            track_vwf_cpu_work: crate::debug_env::var_os(
+                "ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_VWF_WORK",
+            ).is_some(),
             track_floor_tile_writes: crate::debug_env::var_os(
                 "ZELDA3_NATIVE_EXACT_CPU_FLOOR_DRAW_LIVE_TRIAL",
             )
@@ -1849,6 +2025,24 @@ impl ZeldaState {
             .frame_ctr_dbg
             .checked_sub(1)
             .expect("native exact CPU host starts after frame entry");
+        let diagnose_nmi = crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_NMI")
+            .is_some()
+            && crate::debug_env::var("ZELDA3_NATIVE_EXACT_CPU_TRACE_HOST")
+                .ok()
+                .and_then(|value| {
+                    let (first, last) = value.split_once('-').unwrap_or((&value, &value));
+                    Some((first.parse::<u32>().ok()?, last.parse::<u32>().ok()?))
+                })
+                .is_some_and(|(first, last)| (first..=last).contains(&host));
+        if diagnose_nmi {
+            eprintln!("native-exact-nmi-entry host={host} work={:?} module={:02x}/{:02x}/{:02x} latch={} request={} gate={}",
+                self.game_execution_scheduler.current_work(),
+                self.game_state.frame.main_module, self.game_state.frame.submodule,
+                self.game_state.frame.subsubmodule,
+                self.game_state.display.nmi_update_is_latched(),
+                self.game_state.display.pending_nmi_subroutine,
+                self.game_state.display.core_update_disable_flag);
+        }
         let trace_host = crate::debug_env::var("ZELDA3_NATIVE_EXACT_CPU_TRACE_HOST")
             .ok()
             .and_then(|value| {
@@ -1870,6 +2064,7 @@ impl ZeldaState {
                 .and_then(|value| value.parse::<u32>().ok());
         let diagnose_ownership =
             crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_OWNERSHIP").is_some();
+        let diagnostic_scroll_phase = diagnose_ownership.then(|| self.dialogue_scroll_phase());
         let owner = if let Some(owner) = self.native_exact_cpu_owner.as_mut() {
             owner
         } else {
@@ -2078,7 +2273,29 @@ impl ZeldaState {
                         let native = self.ram.get(index).copied()?;
                         Some((before, native))
                     });
-                    eprintln!("native-exact-cpu-ownership host={host} first_read=({source_read:?}, {trial_read:?}) source_last_writer={source_writer:?} trial_last_writer={trial_writer:?} rebase_before_native={rebase:?} native_continuation={:?} cached_checkpoint={:?} dungeon_reset_checkpoint={:?}",
+                    let native_state_owner = match native_exact_cpu_wram_key(source_read.address) {
+                        Some(0x10000..=0x10fff)
+                            if (0x0e_cfe2..=0x0e_d0c2).contains(&source_read.pc) => format!(
+                            "MessagingScrollCopy(phase={:?}, remaining_cpu_work={:?}, copy_cursor={:?}, line_counter={})",
+                            diagnostic_scroll_phase,
+                            self.dialogue_scroll_remaining_master_cycles,
+                            self.native_scroll_copy_cursor,
+                            self.game_state.messaging.dialogue_source_offset.bank_offset_low_nibble(),
+                        ),
+                        Some(0x10000..=0x10fff) => format!(
+                            "MessagingRenderBuffer(read_pos={:04x}, glyph_phase={:?}, dispatch={:?})",
+                            self.game_state.messaging.runtime.dialogue_msg_read_pos(),
+                            self.dialogue_vwf_glyph_cpu_phase,
+                            self.dialogue_vwf_dispatch_cursor,
+                        ),
+                        Some(0x14000..=0x14fff) => "StorySpriteDecompression".to_owned(),
+                        Some(0x7800..=0x8fff)
+                            if (0x00_e790..=0x00_e842).contains(&source_read.pc) =>
+                            "TilesetDecompressionOutput".to_owned(),
+                        Some(0x1cd9..=0x1cda) => "DialogueDecodeCursor".to_owned(),
+                        _ => format!("{:?}", self.game_execution_scheduler.current_work()),
+                    };
+                    eprintln!("native-exact-cpu-ownership host={host} first_read=({source_read:?}, {trial_read:?}) source_last_writer={source_writer:?} trial_last_writer={trial_writer:?} rebase_before_native={rebase:?} native_state_owner={native_state_owner} native_continuation={:?} cached_checkpoint={:?} dungeon_reset_checkpoint={:?}",
                         self.game_execution_scheduler.current_work(),
                         trace.cached_sprite_progress, trace.dungeon_reset_progress);
                 }
@@ -2200,6 +2417,16 @@ impl ZeldaState {
             }
         }
         self.reconcile_native_exact_cpu_landing_music_nmi(&trace);
+        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_VWF_WORK").is_some()
+            && trace_host
+        {
+            eprintln!("native-exact-vwf-work host={host} cpu={} since_nmi={} first={:?} last={:?} cursor_work={:?} draw_entry_work={:?} nmi_blocks={:?} nmis={:?} completions={:?}",
+                trace.vwf_cpu_work_master_cycles, trace.vwf_work_since_nmi,
+                trace.vwf_first_step_at,
+                trace.vwf_last_step_at, trace.vwf_cursor_work, trace.vwf_draw_entry_work,
+                trace.nmi_cpu_work_by_block,
+                trace.nmis, trace.nmi_completions);
+        }
         self.native_exact_cpu_host_trace = Some(trace);
     }
 }

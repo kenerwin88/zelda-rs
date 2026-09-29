@@ -24,6 +24,10 @@ const PPU_BBUS_OAM_DATA: u8 = 0x04;
 const PPU_BBUS_VRAM_DATA_LOW: u8 = 0x18;
 const PPU_BBUS_CGRAM_DATA: u8 = 0x22;
 
+fn idle_music_echo_master_cycles(apu_output: u8, last_music_control: u8) -> u64 {
+    if apu_output == last_music_control { 78 + 52 } else { 84 }
+}
+
 const DMA_BBUS_OFFSETS: [[u8; 4]; 8] = [
     [0, 0, 0, 0],
     [0, 1, 0, 1],
@@ -640,7 +644,7 @@ impl ZeldaState {
             == Some(self.frame_ctr_dbg)
         {
             eprintln!(
-                "audio_nmi_sample host={} phase={:02x}/{:02x}/{:02x} music={:02x} last_music={:02x} ambient={:02x} effect1={:02x} effect2={:02x}",
+                "audio_nmi_sample host={} phase={:02x}/{:02x}/{:02x} music={:02x} last_music={:02x} ambient={:02x} last_ambient={:02x} apu_output={:02x?} effect1={:02x} effect2={:02x}",
                 self.frame_ctr_dbg,
                 self.game_state.frame.main_module,
                 self.game_state.frame.submodule,
@@ -648,6 +652,8 @@ impl ZeldaState {
                 self.game_state.system_signals.music_control(),
                 self.game_state.system_signals.last_music_control(),
                 self.game_state.system_signals.ambient_sound_effect(),
+                self.game_state.system_signals.last_ambient_sound_effect(),
+                self.zelda_audio_apu_output_ports(),
                 self.game_state.system_signals.sound_effect_1(),
                 self.game_state.system_signals.sound_effect_2(),
             );
@@ -658,13 +664,10 @@ impl ZeldaState {
         // is taken (+6) when $12C is nonzero.
         // $12C == 0: $00:80E1-$00:80E7 (78) reads the APU echo port $2140 and
         //   compares it with $133; equal runs $00:80E9-$00:80EC (52, `STZ
-        //   $2140` + BRA), else the BNE is taken (84). The C port dropped this
-        //   echo handshake, so the engine has no port-0 echo state. The
-        //   shadow profiles show the equal case exactly while $133 is 0 (the
-        //   driver's output port rests at 0), and never on ordinary frames, so
-        //   it is priced on `last_music_control == 0`. The single echo frame
-        //   after each fresh command (port == $133 once, before the ROM's STZ
-        //   is echoed back) is not modeled: 52 under on that frame.
+        //   $2140` + BRA), else the BNE is taken (84). Price the branch from
+        //   the current APU output latch. The echo may still equal a nonzero
+        //   last command across ordinary frames; testing only whether $133
+        //   is zero undercharged this NMI path by 46 master cycles.
         // $12C != 0: $00:80EE-$00:80F1 (48): equal to $133 takes the BEQ (54)
         //   and leaves $12C set (the vanilla "already playing" skip); else
         //   $00:80F3-$00:80FB (94; `BCS` taken +6 for $F2 and above) then
@@ -672,11 +675,10 @@ impl ZeldaState {
         // The cost is stashed rather than charged so the NMI handler scope
         // receives it even when this runs before main.
         let ledger_music_cycles: u64 = if music_control == 0 {
-            366 + if self.game_state.system_signals.last_music_control() == 0 {
-                78 + 52
-            } else {
-                84
-            }
+            366 + idle_music_echo_master_cycles(
+                self.zelda_audio_apu_output_ports()[0],
+                self.game_state.system_signals.last_music_control(),
+            )
         } else if music_control == self.game_state.system_signals.last_music_control() {
             372 + 54
         } else if music_control < 0xf2 {
@@ -1313,6 +1315,20 @@ impl ZeldaState {
         } else {
             self.take_pending_nmi_subroutine()
         };
+        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_NMI").is_some()
+            && crate::debug_env::var("ZELDA3_NATIVE_EXACT_CPU_TRACE_HOST")
+                .ok()
+                .and_then(|value| {
+                    let (first, last) = value.split_once('-').unwrap_or((&value, &value));
+                    Some((first.parse::<u32>().ok()?, last.parse::<u32>().ok()?))
+                })
+                .is_some_and(|(first, last)| (first..=last).contains(&self.frame_ctr_dbg.saturating_sub(1)))
+        {
+            eprintln!("native-exact-nmi-dispatch host={} request={} gate={} work={:?}",
+                self.frame_ctr_dbg.saturating_sub(1), nmi_subroutine_index,
+                self.game_state.display.core_update_disable_flag,
+                self.game_execution_scheduler.current_work());
+        }
         match nmi_subroutine_index {
             0 => self.nmi_upload_tilemap_do_nothing(),
             1 => self.nmi_upload_tilemap(),

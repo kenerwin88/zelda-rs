@@ -120,6 +120,14 @@ pub(crate) struct DecompressCost {
     pub(crate) get_next_byte_calls: u64,
 }
 
+/// One source-ordered output store. The offset is the decompressor's 16-bit
+/// output cursor; callers own the WRAM destination and the byte value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct DecompressStore {
+    pub(crate) after_master_cycles: u64,
+    pub(crate) output_offset: u16,
+}
+
 /// One `GetNextByte` call that does not cross a bank end: `LDA [$C8] : LDX
 /// $C8 : INX : BNE taken : STX $C8 : RTS`. The one call that wraps costs
 /// 56 more (`BNE` not taken, `LDX #$8000 : INC $CA`).
@@ -145,8 +153,36 @@ pub(crate) fn decompress_cost(
     entry: DecompressEntry,
     sheet: u8,
     source: &[u8],
+    source_offset: u16,
+    destination: u32,
+) -> DecompressCost {
+    decompress_cost_with_stores(entry, sheet, source, source_offset, destination, |_| {})
+}
+
+/// Share the exact command and bus pricing with the output-store timeline.
+/// This keeps interruption boundaries tied to the same CPU model that prices
+/// the complete decompressor call.
+pub(crate) fn decompress_store_timeline(
+    entry: DecompressEntry,
+    sheet: u8,
+    source: &[u8],
+    source_offset: u16,
+    destination: u32,
+) -> (DecompressCost, Vec<DecompressStore>) {
+    let mut stores = Vec::new();
+    let cost = decompress_cost_with_stores(
+        entry, sheet, source, source_offset, destination, |store| stores.push(store),
+    );
+    (cost, stores)
+}
+
+fn decompress_cost_with_stores(
+    entry: DecompressEntry,
+    sheet: u8,
+    source: &[u8],
     mut source_offset: u16,
     destination: u32,
+    mut emit: impl FnMut(DecompressStore),
 ) -> DecompressCost {
     // `[$00],Y` accesses: the 24-bit destination plus the 16-bit output
     // cursor, priced by the bus rule at that address.
@@ -222,7 +258,9 @@ pub(crate) fn decompress_cost(
                 // .copy JSR GetNextByte : STA [$00],Y : INY : LDX $CB : DEX : STX $CB : BNE .copy : BRA .loop
                 for remaining in (1..=length).rev() {
                     next(&mut cost, &mut read);
-                    cost.master += write_cost(cursor) + IMPLIED + LDX_STX_DP_16 + IMPLIED + LDX_STX_DP_16;
+                    cost.master += write_cost(cursor);
+                    emit(DecompressStore { after_master_cycles: cost.master, output_offset: cursor });
+                    cost.master += IMPLIED + LDX_STX_DP_16 + IMPLIED + LDX_STX_DP_16;
                     cursor = cursor.wrapping_add(1);
                     cost.master += if remaining > 1 { BRANCH_TAKEN } else { BRANCH_NOT_TAKEN };
                 }
@@ -234,7 +272,9 @@ pub(crate) fn decompress_cost(
                 next(&mut cost, &mut read);
                 cost.master += LDX_STX_DP_16;
                 for remaining in (1..=length).rev() {
-                    cost.master += write_cost(cursor) + IMPLIED + IMPLIED;
+                    cost.master += write_cost(cursor);
+                    emit(DecompressStore { after_master_cycles: cost.master, output_offset: cursor });
+                    cost.master += IMPLIED + IMPLIED;
                     cursor = cursor.wrapping_add(1);
                     cost.master += if remaining > 1 { BRANCH_TAKEN } else { BRANCH_NOT_TAKEN };
                 }
@@ -251,14 +291,18 @@ pub(crate) fn decompress_cost(
                 // - XBA : STA [$00],Y : INY : DEX : BEQ .done : XBA : STA [$00],Y : INY : DEX : BNE - : .done JMP .loop
                 let mut remaining = length;
                 loop {
-                    cost.master += XBA + write_cost(cursor) + IMPLIED + IMPLIED;
+                    cost.master += XBA + write_cost(cursor);
+                    emit(DecompressStore { after_master_cycles: cost.master, output_offset: cursor });
+                    cost.master += IMPLIED + IMPLIED;
                     cursor = cursor.wrapping_add(1);
                     remaining -= 1;
                     if remaining == 0 {
                         cost.master += BRANCH_TAKEN;
                         break;
                     }
-                    cost.master += BRANCH_NOT_TAKEN + XBA + write_cost(cursor) + IMPLIED + IMPLIED;
+                    cost.master += BRANCH_NOT_TAKEN + XBA + write_cost(cursor);
+                    emit(DecompressStore { after_master_cycles: cost.master, output_offset: cursor });
+                    cost.master += IMPLIED + IMPLIED;
                     cursor = cursor.wrapping_add(1);
                     remaining -= 1;
                     if remaining == 0 {
@@ -276,7 +320,9 @@ pub(crate) fn decompress_cost(
                 next(&mut cost, &mut read);
                 cost.master += LDX_STX_DP_16;
                 for remaining in (1..=length).rev() {
-                    cost.master += write_cost(cursor) + IMPLIED + IMPLIED + IMPLIED;
+                    cost.master += write_cost(cursor);
+                    emit(DecompressStore { after_master_cycles: cost.master, output_offset: cursor });
+                    cost.master += IMPLIED + IMPLIED + IMPLIED;
                     cursor = cursor.wrapping_add(1);
                     cost.master += if remaining > 1 { BRANCH_TAKEN } else { BRANCH_NOT_TAKEN };
                 }
@@ -294,7 +340,9 @@ pub(crate) fn decompress_cost(
                 // : REP #$20 : DEC $CB : SEP #$20 : BNE - : JMP .loop
                 for remaining in (1..=length).rev() {
                     cost.master += PHY_16 + IMPLIED + write_cost(source_cursor) + IMPLIED + PLY_16
-                        + write_cost(cursor) + IMPLIED + IMPLIED + REP_SEP + DEC_DP_16 + REP_SEP;
+                        + write_cost(cursor);
+                    emit(DecompressStore { after_master_cycles: cost.master, output_offset: cursor });
+                    cost.master += IMPLIED + IMPLIED + REP_SEP + DEC_DP_16 + REP_SEP;
                     cursor = cursor.wrapping_add(1);
                     source_cursor = source_cursor.wrapping_add(1);
                     cost.master += if remaining > 1 { BRANCH_TAKEN } else { BRANCH_NOT_TAKEN };
@@ -309,6 +357,29 @@ pub(crate) fn decompress_cost(
 mod tests {
     use super::*;
     use crate::rom_cpu_timing::{lorom_offset, RomCpuCheckpoint, RomCpuTimingRun};
+
+    #[test]
+    fn output_store_timeline_shares_all_command_costs() {
+        let stream = [
+            0x02, 1, 2, 3,        // three literal bytes
+            0x21, 0xaa,           // two filled bytes
+            0x41, 0x55, 0x66,     // two alternating bytes
+            0x61, 0x77,           // two increasing bytes
+            0x80, 0, 0,           // one back-reference byte
+            0xff,
+        ];
+        let (cost, stores) = decompress_store_timeline(
+            DecompressEntry::Sprite, 0x20, &stream, 0x8000, 0x7e_7800,
+        );
+        assert_eq!(cost, decompress_cost(
+            DecompressEntry::Sprite, 0x20, &stream, 0x8000, 0x7e_7800,
+        ));
+        assert_eq!(stores.iter().map(|store| store.output_offset).collect::<Vec<_>>(),
+            (0..10).collect::<Vec<_>>());
+        assert!(stores.windows(2).all(|pair|
+            pair[0].after_master_cycles < pair[1].after_master_cycles));
+        assert!(stores.last().unwrap().after_master_cycles < cost.master);
+    }
 
     fn test_rom() -> Option<Vec<u8>> {
         let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from).unwrap_or_else(|| {

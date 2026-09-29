@@ -107,6 +107,33 @@ struct VwfExactLoopBudget {
     stall_master_cycles: u32,
 }
 
+/// CPU work already executed inside one native scroll call. The render buffer
+/// stores below are committed at their source instruction boundaries, while
+/// `$1CDF` advances only after a full pixel pass.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct NativeScrollCopyCursor {
+    pub(crate) elapsed_master_cycles: u64,
+    pub(crate) b_held: bool,
+    pub(crate) scroll_speed: u8,
+    pub(crate) starting_line_counter: u8,
+}
+
+#[cfg(test)]
+mod dungeon_map_preparation_tests {
+    #[test]
+    fn early_map_configuration_precedes_held_tileset_work() {
+        let mut state = crate::zelda_rtl::ZeldaState::new();
+        state.set_hdma_enable_mask(0x80);
+        state.sprite_system_mut().set_graphics_index(0x44);
+        state.begin_dungeon_map_graphics_preparation();
+
+        assert_eq!(state.game_state.sprites.system.graphics_index(), 0x80);
+        assert_eq!(state.game_state.display.ppu_scroll_copy.mapbak_sprite_graphics_index(), 0x44);
+        assert_eq!(state.dungeon_map_graphics_saved_hdma_enable, Some(0x80));
+        assert_eq!(state.game_state.dungeon_map_display.dungmap_init_state(), 0);
+    }
+}
+
 /// The three phase costs of one glyph as the CPU phase machine consumes
 /// them: through the click store (`Entering`), the post-click setup
 /// (`PreparingDrawing`) and the pixel rows (`Drawing`).
@@ -256,8 +283,11 @@ fn debug_vwf_budget_for_frame(host_frame: u32) -> bool {
     }
     crate::debug_env::var("ZELDA3_DEBUG_VWF_BUDGET_FRAME")
         .ok()
-        .and_then(|value| value.parse::<u32>().ok())
-        == Some(host_frame)
+        .and_then(|value| {
+            let (first, last) = value.split_once('-').unwrap_or((&value, &value));
+            Some((first.parse::<u32>().ok()?, last.parse::<u32>().ok()?))
+        })
+        .is_some_and(|(first, last)| (first..=last).contains(&host_frame))
 }
 
 fn vwf_glyph_cursor_after_pending_line_transition(
@@ -3422,6 +3452,7 @@ impl ZeldaState {
 
     pub(super) fn Module0E_03_01_00_PrepMapGraphics(&mut self) {
         if self.rom_startup_timing() {
+            self.begin_dungeon_map_graphics_preparation();
             self.game_execution_scheduler.schedule_work(
                 GameWorkContinuation::FinishDungeonMapGraphicsPreparation,
                 DUNGEON_MAP_GRAPHICS_PREPARATION_NMI_SLICES,
@@ -3431,9 +3462,14 @@ impl ZeldaState {
         self.complete_dungeon_map_graphics_preparation();
     }
 
-    pub(super) fn complete_dungeon_map_graphics_preparation(&mut self) {
+    fn begin_dungeon_map_graphics_preparation(&mut self) {
         self.replay_trace_ram_watch("dungmap-prep-entry");
+        assert!(
+            self.dungeon_map_graphics_saved_hdma_enable.is_none(),
+            "dungeon-map graphics preparation already owns its early configuration",
+        );
         let hdmaen_bak = self.game_state.display.hdma_enable_mask;
+        self.dungeon_map_graphics_saved_hdma_enable = Some(hdmaen_bak);
         self.clear_hdma_enable_mask();
         let main_tile_theme = self.game_state.world.palette_theme.main_tile_theme_index();
         let sprite_gfx = self.game_state.sprites.system.graphics_index();
@@ -3453,6 +3489,13 @@ impl ZeldaState {
         self.set_main_screen_layers(0x16);
         self.set_sub_screen_layers(1);
         self.EraseTileMaps_dungeonmap();
+    }
+
+    pub(super) fn complete_dungeon_map_graphics_preparation(&mut self) {
+        if self.dungeon_map_graphics_saved_hdma_enable.is_none() {
+            self.begin_dungeon_map_graphics_preparation();
+        }
+        let hdmaen_bak = self.dungeon_map_graphics_saved_hdma_enable.take().unwrap();
         self.InitializeTilesets();
         self.select_overworld_aux_palette_offset();
         self.replay_trace_ram_watch("dungmap-prep-before-bg-palette");
@@ -4788,8 +4831,19 @@ impl ZeldaState {
         };
         let dialogue = find_index_in_memblk(dialogue_blk, 1);
         let text_index = self.game_state.messaging.dialogue_message_index.value() as usize;
-        (find_index_in_memblk(dialogue, text_index).ptr.len() as u16)
-            .min(ROM_TEXT_DECODE_FIRST_SLICE_CURSOR)
+        let encoded_len = find_index_in_memblk(dialogue, text_index).ptr.len() as u16;
+        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_DIALOGUE_DECODE_LIVE_TRIAL")
+            .is_some()
+            && self.native_exact_cpu_host_trace.as_ref().is_some_and(|trace| {
+                trace.dialogue_decode_reached_native_length(encoded_len)
+            })
+        {
+            // The source has completed every character-buffer fetch. Use the
+            // native message length instead of the estimated first-slice cap.
+            encoded_len
+        } else {
+            encoded_len.min(ROM_TEXT_DECODE_FIRST_SLICE_CURSOR)
+        }
     }
 
     pub(super) fn Text_InitVwfState(&mut self) {
@@ -5675,11 +5729,22 @@ impl ZeldaState {
                             // VWF_RenderSingle applies $0720 before reading
                             // vwf_arr[i]. Time the first glyph from that line's
                             // reset cursor, not the stale prior-line cursor.
-                            let glyph_cursor = vwf_glyph_cursor_after_pending_line_transition(
-                                self.game_state.messaging.vwf_render.glyph_cursor_usize(),
-                                self.game_state.messaging.vwf_render.current_line(),
-                                self.game_state.messaging.vwf_render.next_line_requested() != 0,
-                            );
+                            let entered_cursor = self.game_state.messaging.vwf_render.glyph_cursor_usize();
+                            let glyph_cursor = if exact_costs && entered_cursor != 0 && matches!(
+                                self.dialogue_vwf_glyph_cpu_phase,
+                                VwfGlyphCpuPhase::Drawing { .. }
+                            ) {
+                                // Native drawing setup has already advanced
+                                // the cursor. The held row loop still owns
+                                // the preceding glyph's advance and bitmap.
+                                entered_cursor - 1
+                            } else {
+                                vwf_glyph_cursor_after_pending_line_transition(
+                                    self.game_state.messaging.vwf_render.glyph_cursor_usize(),
+                                    self.game_state.messaging.vwf_render.current_line(),
+                                    self.game_state.messaging.vwf_render.next_line_requested() != 0,
+                                )
+                            };
                             let x = self.vwf_glyph_advance_prefix_sum(glyph_cursor);
                             let next_line_pending = self
                                 .game_state
@@ -5692,7 +5757,7 @@ impl ZeldaState {
                             let drawing_master_cycles = glyph_costs.drawing;
                             if debug_vwf_budget {
                                 eprintln!(
-                                    "vwf_glyph host={} read_pos={:#x} code={:#x} width={} cursor={} line_x={} cycles_left={} phase={:?} drawing_cycles={}",
+                                    "vwf_glyph host={} read_pos={:#x} code={:#x} width={} cursor={} line_x={} cycles_left={} phase={:?} click_cycles={} post_click_cycles={} drawing_cycles={}",
                                     self.frame_ctr_dbg,
                                     read_pos,
                                     param,
@@ -5701,6 +5766,8 @@ impl ZeldaState {
                                     x,
                                     cycles_left,
                                     self.dialogue_vwf_glyph_cpu_phase,
+                                    glyph_costs.click,
+                                    glyph_costs.post_click,
                                     drawing_master_cycles,
                                 );
                             }
@@ -6007,6 +6074,14 @@ impl ZeldaState {
             self.dialogue_vwf_glyph_cpu_phase = VwfGlyphCpuPhase::Ready;
         }
         if debug_vwf_budget {
+            for (index, channel) in self.dma.channel.iter().enumerate() {
+                if self.game_state.display.is_hdma_channel_enabled(index) {
+                    eprintln!("vwf_hdma host={} channel={} bank={:02x} table={:04x} a_adr={:04x} mode={} indirect={} rep={:02x} active={} terminated={}",
+                        self.frame_ctr_dbg, index, channel.a_bank, channel.table_adr,
+                        channel.a_adr, channel.mode, channel.indirect, channel.rep_count,
+                        channel.hdma_active, channel.terminated);
+                }
+            }
             let cursor = self.game_state.messaging.vwf_render.glyph_cursor_usize();
             let arrval = self.vwf_glyph_advance_prefix_sum(cursor);
             eprintln!(
@@ -6181,6 +6256,19 @@ impl ZeldaState {
         }
     }
 
+    fn native_hdma_table_byte(&self, address: u32) -> Option<u8> {
+        let bank = (address >> 16) as u8;
+        let offset = address as u16;
+        if bank == 0x7e || bank == 0x7f {
+            return self.ram.get(usize::from(bank - 0x7e) * 0x10000 + usize::from(offset)).copied();
+        }
+        if (bank & 0x7f) < 0x40 && offset < 0x2000 {
+            return self.ram.get(usize::from(offset)).copied();
+        }
+        let rom_offset = crate::rom_cpu_timing::lorom_offset(address)?;
+        self.rom.get(rom_offset).copied()
+    }
+
     /// The master cycles this host's dialogue loop owns on the exact budget:
     /// the CPU work that fits between the loop entry and the next NMI
     /// acceptance on the raster, with WRAM refresh and the live HDMA stalls.
@@ -6199,13 +6287,20 @@ impl ZeldaState {
             .saturating_sub(nmi_acceptance)
             + self.last_nmi_dma_master_cycles;
         let mut budget = CpuCycleBudget::at_nmi_acceptance(
-            snes::CpuBusWorkload::with_hdma_stall(self.native_hdma_scanline_stall_master_cycles()),
+            snes::CpuBusWorkload::with_dynamic_hdma(),
             super::native_cpu_field_timing_at_entry(self.frame_ctr_dbg,
                 snes::CpuRasterPosition::new(225, snes::SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES as u16)),
         );
         budget.begin_nmi_handler();
+        let mut hdma = snes::HdmaTimingState::new(&self.dma_with_native_hdma_enable());
+        let mut unsupported_hdma_table = false;
+        let mut price_hdma = |event, _: u16| {
+            hdma.stall(event, |address| self.native_hdma_table_byte(address))
+                .unwrap_or_else(|| { unsupported_hdma_table = true; 0 })
+        };
         let since_nmi = u32::try_from(since_nmi_master_cycles).unwrap_or(u32::MAX);
-        if let CpuWorkAdvance::ReachedBoundary { .. } = budget.advance_interruptible(since_nmi) {
+        if let CpuWorkAdvance::ReachedBoundary { .. } = budget.advance_interruptible_with_hdma(since_nmi, &mut price_hdma) {
+            if unsupported_hdma_table { return None; }
             return Some(VwfExactLoopBudget {
                 master_cycles: 0,
                 since_nmi_master_cycles,
@@ -6214,13 +6309,14 @@ impl ZeldaState {
         }
         // Everything that still fits before the deadline is the budget.
         const PROBE: u32 = 4 * SNES_NTSC_MASTER_CYCLES_PER_FRAME;
-        let master_cycles = match budget.advance_interruptible(PROBE) {
+        let master_cycles = match budget.advance_interruptible_with_hdma(PROBE, &mut price_hdma) {
             CpuWorkAdvance::ReachedBoundary {
                 remaining_work_master_cycles,
                 ..
             } => PROBE - remaining_work_master_cycles,
             CpuWorkAdvance::Complete => PROBE,
         };
+        if unsupported_hdma_table { return None; }
         Some(VwfExactLoopBudget {
             master_cycles,
             since_nmi_master_cycles,
@@ -6774,11 +6870,78 @@ impl ZeldaState {
                 + u64::from(self.dialogue_vwf_deferred_handler_exits)
                     * crate::cycle_models::vwf::HANDLER_EXIT_MASTER_CYCLES,
         );
-        let command_done = self.render_text_scroll_pixels(2);
+        let command_done = if self.vwf_uses_exact_costs() {
+            self.native_scroll_copy_cursor = Some(NativeScrollCopyCursor {
+                elapsed_master_cycles: 0,
+                b_held: self.game_state.player.follower_link.joypad1l_last() & 0x80 != 0,
+                scroll_speed: self.game_state.messaging.runtime.dialogue_scroll_speed(),
+                starting_line_counter: nibble_before as u8,
+            });
+            self.advance_native_scroll_copy(cycles_before_vblank.into())
+        } else {
+            self.render_text_scroll_pixels(2)
+        };
         debug_assert!(!command_done);
-        // Phase 2 is the remaining three copy passes. Phase 1 is the
-        // post-vblank caller suffix; it performs no further pixel copies.
+        // The source scroll call retains both its CPU work and its next
+        // copy-store boundary across NMI. Its caller suffix remains separate.
         false
+    }
+
+    pub(crate) fn advance_native_scroll_copy(&mut self, work_master_cycles: u64) -> bool {
+        use crate::cycle_models::vwf::{scroll_copy_stores, scroll_master_cycles, ScrollCopyStoreKind};
+        let Some(mut cursor) = self.native_scroll_copy_cursor.take() else {
+            return false;
+        };
+        let total = scroll_master_cycles(
+            cursor.b_held, cursor.scroll_speed, cursor.starting_line_counter,
+        ).master;
+        let end = cursor.elapsed_master_cycles.saturating_add(work_master_cycles).min(total);
+        let mut line_completed = false;
+        for store in scroll_copy_stores(
+            cursor.b_held, cursor.scroll_speed, cursor.starting_line_counter,
+        ) {
+            if store.after_master_cycles <= cursor.elapsed_master_cycles
+                || store.after_master_cycles > end
+            {
+                continue;
+            }
+            match store.kind {
+                ScrollCopyStoreKind::Copy { destination, source } => {
+                    let value = self.game_state.messaging.render_buffer.word_at_byte_offset(source);
+                    self.set_messaging_render_buffer_word_at_byte_offset(destination, value);
+                }
+                ScrollCopyStoreKind::Clear { destination } => {
+                    self.set_messaging_render_buffer_word_at_byte_offset(destination, 0);
+                }
+                ScrollCopyStoreKind::PassCompleted => {
+                    self.scroll_bg3_vwf_glyph_runs_up_one_pixel();
+                    let counter = self.dialogue_source_offset_mut()
+                        .increment_bank_offset_low_nibble();
+                    if counter & 0x0f == 0 {
+                        self.set_vwf_current_line(4);
+                        self.request_vwf_next_line(1);
+                        self.dialogue_vwf_dispatch_cursor =
+                            crate::cycle_models::vwf::DispatchCursor::after_scroll_completion();
+                        line_completed = true;
+                    }
+                }
+            }
+        }
+        cursor.elapsed_master_cycles = end;
+        if end < total {
+            self.native_scroll_copy_cursor = Some(cursor);
+        }
+        line_completed
+    }
+
+    pub(crate) fn finish_native_scroll_copy(&mut self) -> bool {
+        let Some(cursor) = self.native_scroll_copy_cursor else {
+            return false;
+        };
+        let total = crate::cycle_models::vwf::scroll_master_cycles(
+            cursor.b_held, cursor.scroll_speed, cursor.starting_line_counter,
+        ).master;
+        self.advance_native_scroll_copy(total.saturating_sub(cursor.elapsed_master_cycles))
     }
 
     pub(super) fn dialogue_long_scroll_starts_this_frame(&self) -> bool {

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 6 ]]; then
-  echo "usage: $0 CACHE_DIR ROM_PATH PAIRED_CHECKPOINT OUTPUT_DIR FRAMES_FROM_CHECKPOINT TRIAL_START_HOST" >&2
+if [[ $# -lt 6 ]]; then
+  echo "usage: $0 CACHE_DIR ROM_PATH PAIRED_CHECKPOINT OUTPUT_DIR FRAMES_FROM_CHECKPOINT TRIAL_START_HOST [REPLAY_OPTION...]" >&2
   exit 2
 fi
 
@@ -12,6 +12,7 @@ checkpoint=$3
 output_dir=$4
 frames=$5
 trial_start=$6
+shift 6
 
 exec env \
   ZELDA3_CACHED_AV_NATIVE_TIMING=1 \
@@ -32,7 +33,10 @@ exec env \
   ZELDA3_NATIVE_EXACT_CPU_SCAN_TRIAL=1 \
   ZELDA3_NATIVE_EXACT_CPU_SPOTLIGHT_LIVE_TRIAL=1 \
   ZELDA3_NATIVE_EXACT_CPU_BG_CHARS_GATE_LIVE_TRIAL=1 \
+  ZELDA3_NATIVE_EXACT_CPU_SPIRAL_SPRITE_LEADING_NMI_LIVE_TRIAL=1 \
+  ZELDA3_NATIVE_EXACT_CPU_STORY_DECOMP_LIVE_TRIAL=1 \
+  ZELDA3_NATIVE_EXACT_CPU_DIALOGUE_DECODE_LIVE_TRIAL=1 \
   ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_OWNERSHIP=1 \
   target/parity/zelda3 --replay-cached-snes9x-av \
   "$cache_dir" "$rom_path" "$output_dir" \
-  --resume-paired "$checkpoint" --frames "$frames" --ignore-video
+  --resume-paired "$checkpoint" --frames "$frames" --ignore-video "$@"
