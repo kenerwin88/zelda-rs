@@ -97,6 +97,18 @@ mod sprite_decompression_cursor_tests {
         }
     }
 
+    #[test]
+    fn background_cursor_publishes_into_bank_7f() {
+        let Some((state, _)) = loaded_graphics_test_inputs() else { return };
+        let expected = state.decompressed_background_graphics_data(58).unwrap();
+        let mut cursor = state.background_decompression_cursor(58, 0x14000).unwrap();
+        let mut ram = vec![0xa5; 0x2_0000];
+        cursor.publish_through(cursor.total_master_cycles, &mut ram);
+        assert!(cursor.is_complete());
+        assert_eq!(&ram[0x14000..0x14000 + expected.len()], expected.as_slice());
+        assert!(ram[0x4000..0x4000 + expected.len()].iter().all(|&byte| byte == 0xa5));
+    }
+
     fn loaded_graphics_test_inputs() -> Option<(ZeldaState, Vec<u8>)> {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let asset_path = std::env::var_os("ZELDA3_ASSETS")
@@ -175,7 +187,7 @@ impl GraphicsDecompressionCursor {
             && self.stores[self.next_store].after_master_cycles <= elapsed_master_cycles
         {
             let offset = self.stores[self.next_store].output_offset as usize;
-            ram[(self.destination + offset) & 0xffff] = self.bytes[self.next_store];
+            ram[self.destination + offset] = self.bytes[self.next_store];
             self.next_store += 1;
         }
     }
