@@ -3853,6 +3853,7 @@ fn trace_dungeon_cpu_checkpoint(
 fn dungeon_room_load_cpu_plan(
     state: &ZeldaState,
     entry: CpuRasterPosition,
+    bus: CpuBusWorkload,
 ) -> DungeonRoomLoadCpuPlan {
     const ROOM_LOAD_RETURN_PC: u32 = 0x02_8a5f;
     const AUXILIARY_GRAPHICS_ENTRY_PC: u32 = 0x02_8a63;
@@ -3885,7 +3886,7 @@ fn dungeon_room_load_cpu_plan(
     .expect("dungeon room-load CPU timing requires the loaded Zelda ROM");
     let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
         entry,
-        CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL_MASTER_CYCLES),
+        bus,
         CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0),
     );
     let mut nmis = 0u8;
@@ -3903,6 +3904,8 @@ fn dungeon_room_load_cpu_plan(
     let mut sprite_main_entry_nmis: Option<u8> = None;
     let mut sprite_main_return_nmis: Option<u8> = None;
     let mut link_oam_return_nmis: Option<u8> = None;
+    let mut reset_tracker = crate::dungeon_reset_progress::DungeonResetSpritesProgressTracker::default();
+    let mut reset_progress = None;
 
     run.enable_cpu_write_trace();
 
@@ -3984,12 +3987,18 @@ fn dungeon_room_load_cpu_plan(
                 link_oam_returned_before_suffix_nmi: caller_suffix_nmis != 0
                     && link_oam_return_nmis == Some(sprite_main_return_nmis),
                 sprite_main_boundary,
+                reset_progress,
             };
         }
 
         let (scanline, master_cycle) = raster.coordinates();
         run.set_raster_position(scanline, master_cycle);
         let advance = advance_rom_cpu_step(&mut run, &mut budget);
+        let in_caller_prefix = auxiliary_graphics_return.is_some() && sprite_main_entry_nmis.is_none();
+        let after_pc = run.pc() & 0x7f_ffff;
+        if in_caller_prefix && after_pc == crate::dungeon_reset_progress::DUNGEON_RESET_SPRITES_RETURN_PC {
+            reset_tracker.retire_at_return();
+        }
         for (address, value) in run.take_cpu_wram_writes() {
             if auxiliary_graphics_return.is_some()
                 && (SPRITE_STATE..SPRITE_STATE + 16).contains(&address)
@@ -3997,8 +4006,21 @@ fn dungeon_room_load_cpu_plan(
             {
                 initialized_sprite_slot = Some((address - SPRITE_STATE) as u8);
             }
+            if in_caller_prefix && address < 0x1_0000 {
+                reset_tracker
+                    .observe_write(after_pc, address as u16, Some(value), Some(run.index_x()), false)
+                    .unwrap_or_else(|error| panic!("room-load ROM timing: {error}"));
+            }
         }
         if advance.reached_boundary().is_some() {
+            if in_caller_prefix && nmis == auxiliary_graphics_return_nmis {
+                reset_tracker.observe_boundary(
+                    after_pc,
+                    Some(run.accumulator()),
+                    Some(run.index_y()),
+                );
+                reset_progress = reset_tracker.pending_reset_progress;
+            }
             if sprite_main_entry_nmis.is_some() && !sprite_main_first_nmi_observed {
                 sprite_main_first_nmi_observed = true;
                 // The ROM writes $0fa0 immediately before every
@@ -4034,10 +4056,29 @@ fn dungeon_room_load_cpu_plan(
     );
 }
 
-fn dungeon_room_load_cpu_schedule(state: &ZeldaState) -> DungeonRoomLoadCpuSchedule {
-    let earliest =
-        dungeon_room_load_cpu_plan(state, DUNGEON_ROOM_LOAD_CPU_ENTRY_EARLIEST).schedule();
-    let latest = dungeon_room_load_cpu_plan(state, DUNGEON_ROOM_LOAD_CPU_ENTRY_LATEST).schedule();
+fn dungeon_room_load_cpu_schedule(
+    state: &ZeldaState,
+    measured_entry: Option<CpuRasterPosition>,
+) -> DungeonRoomLoadCpuSchedule {
+    if let Some(entry) = measured_entry {
+        // A measured entry is exact, so each HDMA steal is derived from the
+        // cloned channel tables rather than the envelope's calibrated mean:
+        // the reset's caller NMI must land on the same source statement.
+        return dungeon_room_load_cpu_plan(state, entry, CpuBusWorkload::with_dynamic_hdma())
+            .schedule();
+    }
+    let envelope_bus = CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL_MASTER_CYCLES);
+    let mut earliest =
+        dungeon_room_load_cpu_plan(state, DUNGEON_ROOM_LOAD_CPU_ENTRY_EARLIEST, envelope_bus)
+            .schedule();
+    let mut latest =
+        dungeon_room_load_cpu_plan(state, DUNGEON_ROOM_LOAD_CPU_ENTRY_LATEST, envelope_bus)
+            .schedule();
+    // An entry envelope spans several instructions, so neither bound names
+    // the reset statement its caller NMI interrupts. A live timing authority
+    // publishes that receipt itself; otherwise the legacy fallback remains.
+    earliest.reset_progress = None;
+    latest.reset_progress = None;
     if earliest != latest
         && matches!(state.original_timing_owner, OriginalTimingOwnerState::Live)
         && (DungeonRoomLoadCpuSchedule {
@@ -10740,6 +10781,10 @@ pub struct ZeldaState {
     audio_after_publication_ambient_nmi: Option<(u8, u8)>,
     #[serde(skip)]
     dungeon_exit_spotlight_cpu_entry_envelope: Option<(CpuRasterPosition, CpuRasterPosition)>,
+    /// Module07_02 state-1 dispatcher entry measured through the leading NMI
+    /// when no timing authority is live; replaces the fixed entry envelope.
+    #[serde(skip)]
+    native_dungeon_room_load_cpu_entry: Option<CpuRasterPosition>,
     #[serde(skip)]
     pub(crate) pre_dungeon_cpu_entry_envelope: Option<(CpuRasterPosition, CpuRasterPosition)>,
     #[serde(skip)]
@@ -13261,6 +13306,7 @@ impl ZeldaState {
             last_nmi_prepare_sprites_master_cycles: None,
             audio_after_publication_ambient_nmi: None,
             dungeon_exit_spotlight_cpu_entry_envelope: None,
+            native_dungeon_room_load_cpu_entry: None,
             pre_dungeon_cpu_entry_envelope: None,
             overworld_spotlight_cpu_entry_envelope: None,
             dungeon_landing_goal_transition_pending: false,

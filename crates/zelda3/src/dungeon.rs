@@ -10960,7 +10960,8 @@ impl ZeldaState {
             // room-attribute cursors. Capture that exact state once; cloning
             // inside Module07_02_01 would execute the prefix twice in the
             // isolated instruction stream.
-            let schedule = dungeon_room_load_cpu_schedule(self);
+            let measured_entry = self.native_dungeon_room_load_cpu_entry.take();
+            let schedule = dungeon_room_load_cpu_schedule(self, measured_entry);
             if crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
                 eprintln!(
                     "dungeon_room_load_cpu_schedule host={} room={:04x} room_load_nmis={} auxiliary_graphics_nmis={} caller_nmis={} prefix_nmis={} sprite_main_nmis={} suffix_nmis={} boundary={:?}",

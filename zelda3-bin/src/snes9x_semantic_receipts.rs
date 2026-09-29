@@ -9,14 +9,13 @@ use std::path::{Path, PathBuf};
 mod consume_event_arms;
 
 use serde::{Deserialize, Serialize};
+use zelda3::dungeon_reset_progress::*;
 use zelda3::{
-    CachedSpriteCacheField, CachedSpriteExecutionBodyProgress, CachedSpriteExecutionProgress,
+    CachedSpriteExecutionBodyProgress, CachedSpriteExecutionProgress,
     CachedSpriteExecutionProgressReceipt, CreditsEndSequence32ProgressReceipt,
     CreditsSceneLoadProgress, CreditsSceneLoadProgressReceipt, DialogueExecutionProgress,
-    DungeonFallingEntranceProgress, DungeonLoadSpritesCpuProgress,
-    DungeonPegAttributeFlipProgressReceipt, DungeonResetSpritesCpuProgress,
-    DungeonResetSpritesProgressReceipt, DungeonSpriteDisableCpuProgress,
-    DungeonSpriteLoadCheckpoint, FileSelectGraphicsLowWramClearProgress, ItemReceiptGraphicsCaller,
+    DungeonFallingEntranceProgress, DungeonPegAttributeFlipProgressReceipt, DungeonResetSpritesCpuProgress,
+    DungeonResetSpritesProgressReceipt, FileSelectGraphicsLowWramClearProgress, ItemReceiptGraphicsCaller,
     ItemReceiptGraphicsProgressReceipt, JoypadPublication, MainLoopInterruption, MainLoopProgress,
     NmiPpuRegisterOperands, NmiUpdateGate, OriginalTimingBoundary, OriginalTimingSemanticReceipt,
     OverworldSpriteReloadProgress, PreOverworldStageCompletion,
@@ -301,45 +300,14 @@ const NMI_HANDLER_ENTRY_PC: u32 = 0x0080c9;
 // private adapter provenance; gameplay receives only the source call-start
 // fact, and only for the preemptive dungeon/Triforce users modeled there.
 const POLYHEDRAL_RENDER_START_PC: u32 = 0x09f825;
-const DUNGEON_CACHE_TRANS_SPRITES_START_PC: u32 = 0x09c176;
-const DUNGEON_CACHE_TRANS_SPRITES_END_PC: u32 = 0x09c244;
-const DUNGEON_RESET_SPRITES_CLEAR_PC: u32 = 0x09c244;
 // After Sprite_DisableAll returns, Dungeon_ResetSprites publishes the paired
 // collision sizes and performs a read-only four-entry room-history search.
 // An interrupt anywhere in the search can resume from its source start: no
 // history mutation has occurred yet. These private PCs distinguish that
 // caller checkpoint from the completed callee boundary at $09:C244..C290.
-const DUNGEON_RESET_SPRITES_AFTER_DISABLE_PC: u32 = 0x09c124;
-const DUNGEON_RESET_SPRITES_COLLISION_Y_STORE_PC: u32 = 0x09c12c;
-const DUNGEON_RESET_SPRITES_HISTORY_SEARCH_START_PC: u32 = 0x09c12f;
-const DUNGEON_RESET_SPRITES_HISTORY_FIRST_MUTATION_PC: u32 = 0x09c148;
-const DUNGEON_RESET_SPRITES_HISTORY_FOUND_PC: u32 = 0x09c16e;
-const DUNGEON_RESET_SPRITES_LOAD_CALL_PC: u32 = 0x09c170;
 // First instruction after Dungeon_LoadSprites returns to Dungeon_ResetSprites.
 // Any partial cache/disable/load cursor is retired here even when the room had
 // no new sprite-record writes to supersede it.
-const DUNGEON_RESET_SPRITES_RETURN_PC: u32 = 0x09c173;
-const SPRITE_DISABLE_ALL_END_PC: u32 = 0x09c290;
-const SPRITE_DISABLE_ALL_FINAL_GARNISH_PC: u32 = 0x09c281;
-const GARNISH_TYPE_SLOT_ZERO: u16 = 0x0b00;
-const ANCILLA_TYPE_BASE: u16 = 0x0c4a;
-const ANCILLA_PICKUP_FLAG: u16 = 0x02ec;
-const SPRITE_LIMIT_INSTANCE: u16 = 0x0b6a;
-const DUNGEON_LOAD_SINGLE_SPRITE_STATE_PC: u32 = 0x09c38c;
-const DUNGEON_LOAD_SINGLE_SPRITE_TEMP_Y_PC: u32 = 0x09c391;
-const DUNGEON_LOAD_SINGLE_SPRITE_FLOOR_PC: u32 = 0x09c398;
-const DUNGEON_LOAD_SINGLE_SPRITE_Y_LOW_PC: u32 = 0x09c3a1;
-const DUNGEON_LOAD_SINGLE_SPRITE_Y_HIGH_PC: u32 = 0x09c3a9;
-const DUNGEON_LOAD_SINGLE_SPRITE_SHARED_X_PC: u32 = 0x09c3af;
-const DUNGEON_LOAD_SINGLE_SPRITE_X_LOW_PC: u32 = 0x09c3b6;
-const DUNGEON_LOAD_SINGLE_SPRITE_X_HIGH_PC: u32 = 0x09c3be;
-const DUNGEON_LOAD_SINGLE_SPRITE_TYPE_PC: u32 = 0x09c3c4;
-const DUNGEON_LOAD_SINGLE_SPRITE_SUBTYPE_CLEAR_PC: u32 = 0x09c3c7;
-const DUNGEON_LOAD_SINGLE_SPRITE_TEMP_SUBTYPE_PC: u32 = 0x09c3d1;
-const DUNGEON_LOAD_SINGLE_SPRITE_SUBTYPE_FINAL_PC: u32 = 0x09c3df;
-const DUNGEON_LOAD_SINGLE_SPRITE_SPAWN_INDEX_PC: u32 = 0x09c3e4;
-const DUNGEON_LOAD_SINGLE_SPRITE_COMPLETE_PC: u32 = 0x09c3e7;
-const DUNGEON_LOAD_SINGLE_SPRITE_END_PC: u32 = 0x09c3e8;
 // `Module_PreDungeon` calls `Sprite_ResetAll` at $02:8348; the stacked return
 // address exposed by the pinned trace is $02:834b (RTL resumes at $02:834c).
 // The shared reset routine itself is
@@ -504,8 +472,6 @@ fn laser_eye_draw_in_flight_pc(pc: u32) -> bool {
         || (0x06_e416..=0x06_e4aa).contains(&pc)
 }
 const SPRITE_Z_BASE: u16 = 0x0f70;
-const SPRITE_X_LOW_BASE: u16 = 0x0d10;
-const SPRITE_X_HIGH_BASE: u16 = 0x0d30;
 const SPRITE_Y_SUBPIXEL_BASE: u16 = 0x0d60;
 const SPRITE_GRAPHICS_BASE: u16 = 0x0dc0;
 const SPRITE_SUBTYPE2_BASE: u16 = 0x0e80;
@@ -713,18 +679,8 @@ const VWF_RENDER_SINGLE_END_PC: u32 = 0x0ecd1a;
 const UNCACHE_SPRITE_START_PC: u32 = 0x1dea00;
 const UNCACHE_SPRITE_RESTORE_START_PC: u32 = 0x1deb06;
 const UNCACHE_SPRITE_END_PC: u32 = 0x1deb68;
-const SPRITE_STATE_BASE: u16 = 0x0dd0;
-const SPRITE_Y_LOW_BASE: u16 = 0x0d00;
-const SPRITE_Y_HIGH_BASE: u16 = 0x0d20;
-const SPRITE_N_WORD_BASE: u16 = 0x0bc0;
-const SPRITE_TYPE_BASE: u16 = 0x0e20;
-const SPRITE_SUBTYPE_BASE: u16 = 0x0e30;
-const SPRITE_FLOOR_BASE: u16 = 0x0f20;
 const SPRITE_DIRECTION_BASE: u16 = 0x0de0;
 const SPRITE_N_BASE: u16 = 0x0bc0;
-const SPRITE_DIE_ACTION_BASE: u16 = 0x0cba;
-const DUNGEON_LOAD_TEMP_Y: u16 = 0x0fb5;
-const DUNGEON_LOAD_SHARED_X: u16 = 0x0fb6;
 const OVERWORLD_SPRITE_SCAN_START_PC: u32 = 0x09c55e;
 const OVERWORLD_SPRITE_SCAN_END_PC: u32 = 0x09c881;
 const OVERWORLD_LOAD_SINGLE_SPRITE_START_PC: u32 = 0x09c770;
@@ -791,39 +747,7 @@ const CACHED_SPRITE_LIVE_FIELDS: [u16; 24] = [
     0x0e40, 0x0f20, 0x0d80, 0x0e60, 0x0da0, 0x0db0, 0x0e90, 0x0e80, 0x0f70, 0x0df0, 0xf9c2, 0x0ba0,
 ];
 
-const CACHE_FIELD_WRITES: [(CachedSpriteCacheField, u16); 25] = [
-    (CachedSpriteCacheField::StateClear, 0x1d00),
-    (CachedSpriteCacheField::Type, 0x1d10),
-    (CachedSpriteCacheField::XLow, 0x1d20),
-    (CachedSpriteCacheField::Graphics, 0x1d60),
-    (CachedSpriteCacheField::XHigh, 0x1d30),
-    (CachedSpriteCacheField::YLow, 0x1d40),
-    (CachedSpriteCacheField::YHigh, 0x1d50),
-    (CachedSpriteCacheField::State, 0x1d00),
-    (CachedSpriteCacheField::A, 0x1d70),
-    (CachedSpriteCacheField::HeadDirection, 0x1d80),
-    (CachedSpriteCacheField::OamFlags, 0x1d90),
-    (CachedSpriteCacheField::ObjPriority, 0x1da0),
-    (CachedSpriteCacheField::D, 0x1db0),
-    (CachedSpriteCacheField::Flags2, 0x1dc0),
-    (CachedSpriteCacheField::Floor, 0x1dd0),
-    (CachedSpriteCacheField::SpawnedFlag, 0x1de0),
-    (CachedSpriteCacheField::Flags3, 0x1df0),
-    (CachedSpriteCacheField::B, 0xfa5c),
-    (CachedSpriteCacheField::C, 0xfa6c),
-    (CachedSpriteCacheField::E, 0xfa7c),
-    (CachedSpriteCacheField::Subtype2, 0xfa8c),
-    (CachedSpriteCacheField::HeightAboveShadow, 0xfa9c),
-    (CachedSpriteCacheField::DelayMain, 0xfaac),
-    (CachedSpriteCacheField::I, 0xfacc),
-    (CachedSpriteCacheField::IgnoreProjectile, 0xfadc),
-];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-struct CacheWriteProgress {
-    slot: u8,
-    next_field_index: usize,
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct CachedSpriteExecutionTracker {
@@ -4601,9 +4525,7 @@ pub(crate) struct Snes9xOracleSemanticTrace {
     seed_warmup_active: bool,
     path: PathBuf,
     offset: u64,
-    cache_write_progress: Option<CacheWriteProgress>,
-    normal_load_ordinal: Option<u16>,
-    pending_reset_progress: Option<DungeonResetSpritesCpuProgress>,
+    reset_progress: DungeonResetSpritesProgressTracker,
     last_host_return_reset_progress: Option<DungeonResetSpritesCpuProgress>,
     cached_sprite_execution: Option<CachedSpriteExecutionTracker>,
     overworld_presence_published: bool,
@@ -4643,9 +4565,8 @@ const SEMANTIC_TRACE_CHECKPOINT_SCHEMA: u32 = 19;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Snes9xOracleSemanticTraceCheckpoint {
     schema: u32,
-    cache_write_progress: Option<CacheWriteProgress>,
-    normal_load_ordinal: Option<u16>,
-    pending_reset_progress: Option<DungeonResetSpritesCpuProgress>,
+    #[serde(flatten)]
+    reset_progress: DungeonResetSpritesProgressTracker,
     #[serde(default)]
     last_host_return_reset_progress: Option<DungeonResetSpritesCpuProgress>,
     cached_sprite_execution: Option<CachedSpriteExecutionTracker>,
@@ -5748,9 +5669,7 @@ impl Snes9xOracleSemanticTrace {
             // The trace core opens its configured output for a fresh session
             // during load, so semantic consumption always starts at byte 0.
             offset: 0,
-            cache_write_progress: None,
-            normal_load_ordinal: None,
-            pending_reset_progress: None,
+            reset_progress: DungeonResetSpritesProgressTracker::default(),
             last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
@@ -5796,9 +5715,7 @@ impl Snes9xOracleSemanticTrace {
     pub(crate) fn checkpoint(&self) -> Snes9xOracleSemanticTraceCheckpoint {
         Snes9xOracleSemanticTraceCheckpoint {
             schema: SEMANTIC_TRACE_CHECKPOINT_SCHEMA,
-            cache_write_progress: self.cache_write_progress,
-            normal_load_ordinal: self.normal_load_ordinal,
-            pending_reset_progress: self.pending_reset_progress,
+            reset_progress: self.reset_progress,
             last_host_return_reset_progress: self.last_host_return_reset_progress,
             cached_sprite_execution: self.cached_sprite_execution,
             overworld_presence_published: self.overworld_presence_published,
@@ -5861,9 +5778,7 @@ impl Snes9xOracleSemanticTrace {
             );
         }
 
-        self.cache_write_progress = checkpoint.cache_write_progress;
-        self.normal_load_ordinal = checkpoint.normal_load_ordinal;
-        self.pending_reset_progress = checkpoint.pending_reset_progress;
+        self.reset_progress = checkpoint.reset_progress;
         self.last_host_return_reset_progress = checkpoint.last_host_return_reset_progress;
         self.cached_sprite_execution = checkpoint.cached_sprite_execution;
         self.overworld_presence_published = checkpoint.overworld_presence_published;
@@ -6186,12 +6101,13 @@ impl Snes9xOracleSemanticTrace {
                 // The shared Sprite_DisableAll candidate belongs to the
                 // enclosing Sprite_ResetAll call identified above, not to the
                 // later Dungeon_ResetSprites call. Keep the domains separate.
-                self.pending_reset_progress = None;
+                self.reset_progress.pending_reset_progress = None;
                 if host_frame.overworld_load_overlays_sprite_reload_active {
                     self.overworld_sprite_reload_reset_published = true;
                 }
-            } else if let Some(progress) = dungeon_reset_sprites_caller_progress(returned_event) {
-                self.pending_reset_progress = Some(progress);
+            } else if let Some(pc) = returned_event.pc {
+                self.reset_progress
+                    .observe_boundary(pc, returned_event.a, returned_event.y);
             }
         }
         // `retro_run` may return at the SCAN_KEYS boundary without accepting
@@ -6395,7 +6311,7 @@ impl Snes9xOracleSemanticTrace {
         boundary: OriginalTimingBoundary,
     ) {
         let prior_host_return = self.last_host_return_reset_progress.take();
-        if let Some(progress) = self.pending_reset_progress.take() {
+        if let Some(progress) = self.reset_progress.pending_reset_progress.take() {
             // A leading NMI can land in the same non-mutating source range
             // already published at host return. That is a restatement, not
             // a native continuation transition. Genuine new progress survives.
@@ -8386,101 +8302,7 @@ fn retire_resumed_main_loop_interruption(
     }
 }
 
-fn sprite_disable_progress(
-    pc: u32,
-    address: u16,
-    value: Option<u8>,
-) -> Result<Option<DungeonSpriteDisableCpuProgress>, String> {
-    if !(DUNGEON_RESET_SPRITES_CLEAR_PC..SPRITE_DISABLE_ALL_END_PC).contains(&pc) {
-        return Ok(None);
-    }
-    let progress = if pc == DUNGEON_RESET_SPRITES_CLEAR_PC
-        && (SPRITE_STATE_BASE..SPRITE_STATE_BASE + 16).contains(&address)
-    {
-        Some(DungeonSpriteDisableCpuProgress::SpriteStatesThrough {
-            slot: (address - SPRITE_STATE_BASE) as u8,
-        })
-    } else if (ANCILLA_TYPE_BASE..ANCILLA_TYPE_BASE + 10).contains(&address) {
-        Some(DungeonSpriteDisableCpuProgress::AncillasThrough {
-            slot: (address - ANCILLA_TYPE_BASE) as u8,
-        })
-    } else if address == ANCILLA_PICKUP_FLAG {
-        Some(DungeonSpriteDisableCpuProgress::AncillaPickupFlagCleared)
-    } else if address == SPRITE_LIMIT_INSTANCE {
-        Some(DungeonSpriteDisableCpuProgress::SpriteLimitInstanceCleared)
-    } else {
-        None
-    };
-    if progress.is_some() && value != Some(0) {
-        return Err(format!(
-            "Snes9x Sprite_DisableAll progress wrote nonzero value {:?} to ${address:04x}",
-            value
-        ));
-    }
-    Ok(progress)
-}
 
-fn dungeon_load_single_sprite_write_progress(
-    pc: u32,
-    address: u16,
-    x: Option<u16>,
-) -> Result<Option<(u8, DungeonSpriteLoadCheckpoint)>, String> {
-    let slot =
-        u8::try_from(x.ok_or("Snes9x Dungeon_LoadSingleSprite field write omitted source slot X")?)
-            .map_err(|_| "Snes9x Dungeon_LoadSingleSprite source slot exceeded one byte")?;
-    if slot >= 16 {
-        return Err(format!(
-            "Snes9x Dungeon_LoadSingleSprite used invalid source slot {slot}",
-        ));
-    }
-    let indexed = |base: u16| address == base + u16::from(slot);
-    let checkpoint = match pc {
-        DUNGEON_LOAD_SINGLE_SPRITE_TEMP_Y_PC if address == DUNGEON_LOAD_TEMP_Y => {
-            DungeonSpriteLoadCheckpoint::TempY
-        }
-        DUNGEON_LOAD_SINGLE_SPRITE_FLOOR_PC if indexed(SPRITE_FLOOR_BASE) => {
-            DungeonSpriteLoadCheckpoint::Floor
-        }
-        DUNGEON_LOAD_SINGLE_SPRITE_Y_LOW_PC if indexed(SPRITE_Y_LOW_BASE) => {
-            DungeonSpriteLoadCheckpoint::YLow
-        }
-        DUNGEON_LOAD_SINGLE_SPRITE_Y_HIGH_PC if indexed(SPRITE_Y_HIGH_BASE) => {
-            DungeonSpriteLoadCheckpoint::YHigh
-        }
-        DUNGEON_LOAD_SINGLE_SPRITE_SHARED_X_PC if address == DUNGEON_LOAD_SHARED_X => {
-            DungeonSpriteLoadCheckpoint::SharedX
-        }
-        DUNGEON_LOAD_SINGLE_SPRITE_X_LOW_PC if indexed(SPRITE_X_LOW_BASE) => {
-            DungeonSpriteLoadCheckpoint::XLow
-        }
-        DUNGEON_LOAD_SINGLE_SPRITE_X_HIGH_PC if indexed(SPRITE_X_HIGH_BASE) => {
-            DungeonSpriteLoadCheckpoint::XHigh
-        }
-        DUNGEON_LOAD_SINGLE_SPRITE_TYPE_PC if indexed(SPRITE_TYPE_BASE) => {
-            DungeonSpriteLoadCheckpoint::Type
-        }
-        DUNGEON_LOAD_SINGLE_SPRITE_SUBTYPE_CLEAR_PC if indexed(SPRITE_SUBTYPE_BASE) => {
-            DungeonSpriteLoadCheckpoint::SubtypeClear
-        }
-        DUNGEON_LOAD_SINGLE_SPRITE_TEMP_SUBTYPE_PC if address == DUNGEON_LOAD_TEMP_Y => {
-            DungeonSpriteLoadCheckpoint::TempSubtype
-        }
-        DUNGEON_LOAD_SINGLE_SPRITE_SUBTYPE_FINAL_PC if indexed(SPRITE_SUBTYPE_BASE) => {
-            DungeonSpriteLoadCheckpoint::SubtypeFinal
-        }
-        DUNGEON_LOAD_SINGLE_SPRITE_SPAWN_INDEX_PC
-            if (SPRITE_N_WORD_BASE..SPRITE_N_WORD_BASE + 16).contains(&address)
-                && indexed(SPRITE_N_WORD_BASE) =>
-        {
-            DungeonSpriteLoadCheckpoint::SpawnIndex
-        }
-        DUNGEON_LOAD_SINGLE_SPRITE_COMPLETE_PC if indexed(SPRITE_DIE_ACTION_BASE) => {
-            DungeonSpriteLoadCheckpoint::Complete
-        }
-        _ => return Ok(None),
-    };
-    Ok(Some((slot, checkpoint)))
-}
 
 fn dungeon_push_blocks_pending(event: &RawTraceEvent) -> bool {
     // PHB/PHK/PLB and the first block-index read have completed. The saved
@@ -8521,44 +8343,6 @@ fn dungeon_push_blocks_handled(event: &RawTraceEvent) -> bool {
         )
 }
 
-fn dungeon_reset_sprites_caller_progress(
-    event: &RawTraceEvent,
-) -> Option<DungeonResetSpritesCpuProgress> {
-    let pc = event.pc? & 0x00ff_ffff;
-    // The history rotation has finished. CMP #$ffff / BEQ skips the
-    // evicted-room death-mask clear for an empty history entry, leaving no
-    // gameplay writes before Dungeon_LoadSprites starts reading its pointer.
-    if matches!(pc, 0x09_c163 | 0x09_c166) && event.a == Some(0xffff) {
-        return Some(DungeonResetSpritesCpuProgress::LoadBeforeOrigin);
-    }
-    // First Dungeon_LoadSingleSprite call, after its two INYs and type
-    // read, before either the marker branch or normal-slot publication.
-    if (0x09_c32b..0x09_c330).contains(&pc) && event.y == Some(3) {
-        return Some(DungeonResetSpritesCpuProgress::LoadStarted);
-    }
-    if (0x09_c290..0x09_c2a6).contains(&pc) {
-        return Some(DungeonResetSpritesCpuProgress::LoadBeforeOrigin);
-    }
-    if (DUNGEON_RESET_SPRITES_AFTER_DISABLE_PC..DUNGEON_RESET_SPRITES_COLLISION_Y_STORE_PC)
-        .contains(&pc)
-    {
-        Some(DungeonResetSpritesCpuProgress::SpritesDisabled)
-    } else if (DUNGEON_RESET_SPRITES_COLLISION_Y_STORE_PC
-        ..DUNGEON_RESET_SPRITES_HISTORY_SEARCH_START_PC)
-        .contains(&pc)
-    {
-        Some(DungeonResetSpritesCpuProgress::CollisionXSizeSet)
-    } else if (DUNGEON_RESET_SPRITES_HISTORY_SEARCH_START_PC
-        ..DUNGEON_RESET_SPRITES_HISTORY_FIRST_MUTATION_PC)
-        .contains(&pc)
-        || (DUNGEON_RESET_SPRITES_HISTORY_FOUND_PC..DUNGEON_RESET_SPRITES_LOAD_CALL_PC)
-            .contains(&pc)
-    {
-        Some(DungeonResetSpritesCpuProgress::RoomHistorySearchStarted)
-    } else {
-        None
-    }
-}
 
 fn cached_sprite_live_field(address: u16) -> Option<(usize, u8)> {
     CACHED_SPRITE_LIVE_FIELDS

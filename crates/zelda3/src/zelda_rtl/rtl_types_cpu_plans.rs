@@ -357,6 +357,11 @@ pub(crate) struct DungeonRoomLoadCpuSchedule {
     /// LinkOam_Main returned before the first NMI in the caller suffix.
     pub(crate) link_oam_returned_before_suffix_nmi: bool,
     pub(crate) sprite_main_boundary: Option<SpriteMainCpuBoundary>,
+    /// Source statement Dungeon_ResetSprites had completed when the first
+    /// caller-prefix NMI interrupted it, measured by the native ROM timing
+    /// shadow with the same classifier as the Snes9x adapter.
+    #[serde(default)]
+    pub(crate) reset_progress: Option<DungeonResetSpritesCpuProgress>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -373,6 +378,7 @@ pub(crate) struct DungeonRoomLoadCpuPlan {
     pub(crate) caller_suffix_nmis: u8,
     pub(crate) link_oam_returned_before_suffix_nmi: bool,
     pub(crate) sprite_main_boundary: Option<SpriteMainCpuBoundary>,
+    pub(crate) reset_progress: Option<DungeonResetSpritesCpuProgress>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -413,6 +419,7 @@ impl DungeonRoomLoadCpuPlan {
             caller_suffix_nmis: self.caller_suffix_nmis,
             link_oam_returned_before_suffix_nmi: self.link_oam_returned_before_suffix_nmi,
             sprite_main_boundary: self.sprite_main_boundary,
+            reset_progress: self.reset_progress,
         }
     }
 }

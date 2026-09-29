@@ -3945,7 +3945,18 @@ impl ZeldaState {
                 self.complete_module07_02_01_before_dungeon_reset_sprites();
                 let progress = self.take_original_timing_dungeon_reset_sprites_progress()
                     .or_else(|| self.native_exact_cpu_host_trace.as_ref()
-                        .and_then(|trace| trace.dungeon_reset_progress));
+                        .and_then(|trace| trace.dungeon_reset_progress))
+                    // Without a timing authority, the native ROM shadow names
+                    // the reset statement its single prefix NMI interrupted.
+                    .or_else(|| {
+                        (schedule.caller_prefix_nmis == 1)
+                            .then_some(schedule.reset_progress)
+                            .flatten()
+                            .map(|progress| crate::DungeonResetSpritesProgressReceipt {
+                                progress,
+                                boundary: OriginalTimingBoundary::NmiAccepted,
+                            })
+                    });
                 let progressed_sprite_main_boundary =
                     self.original_timing_sprite_main_progress_boundary();
                 let interrupted_sprite_main_boundary = authoritative_scheduled_caller_nmi_timeline

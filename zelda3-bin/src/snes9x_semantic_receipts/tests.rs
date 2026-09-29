@@ -1,6 +1,16 @@
 use super::*;
+use zelda3::{
+    CachedSpriteCacheField, DungeonLoadSpritesCpuProgress, DungeonSpriteDisableCpuProgress,
+    DungeonSpriteLoadCheckpoint,
+};
 
 const NMI_HANDLER_COMPLETE_PC: u32 = NMI_HANDLER_COMPLETE_PCS[0];
+
+fn event_reset_caller_progress(event: &RawTraceEvent) -> Option<DungeonResetSpritesCpuProgress> {
+    event
+        .pc
+        .and_then(|pc| dungeon_reset_sprites_caller_progress(pc, event.a, event.y))
+}
 
 #[test]
 fn desert_prayer_iris_exports_source_statement_progress() {
@@ -4331,11 +4341,11 @@ fn dungeon_reset_caller_pc_maps_to_the_last_published_source_statement() {
         let mut event = raw("nmi", Some(pc), None, None);
         event.a = Some(0xffff);
         assert_eq!(
-            dungeon_reset_sprites_caller_progress(&event),
+            event_reset_caller_progress(&event),
             Some(DungeonResetSpritesCpuProgress::LoadBeforeOrigin)
         );
         event.a = Some(0x0123);
-        assert_eq!(dungeon_reset_sprites_caller_progress(&event), None);
+        assert_eq!(event_reset_caller_progress(&event), None);
     }
     let cases = [
         (
@@ -4362,12 +4372,12 @@ fn dungeon_reset_caller_pc_maps_to_the_last_published_source_statement() {
     for (pc, expected) in cases {
         let event = raw("nmi", Some(pc), None, None);
         assert_eq!(
-            dungeon_reset_sprites_caller_progress(&event),
+            event_reset_caller_progress(&event),
             Some(expected)
         );
     }
     assert_eq!(
-        dungeon_reset_sprites_caller_progress(&raw(
+        event_reset_caller_progress(&raw(
             "nmi",
             Some(DUNGEON_RESET_SPRITES_HISTORY_FIRST_MUTATION_PC),
             None,
@@ -5290,9 +5300,7 @@ fn empty_semantic_tracker() -> Snes9xOracleSemanticTrace {
     Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -5624,9 +5632,7 @@ fn sprite_item_receipt_call_progress_hides_cpu_provenance_and_preserves_call_ord
     let mut tracker = Snes9xOracleSemanticTrace {
         path,
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -6691,9 +6697,7 @@ fn overworld_sprite_writes_become_backend_neutral_publication_receipts() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -7347,9 +7351,7 @@ fn unrelated_module09_sprite_writes_do_not_publish_reload_activation() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -7436,9 +7438,7 @@ fn nmi_inside_overworld_sprite_scan_publishes_presence_once() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -7601,9 +7601,7 @@ fn nmi_inside_common_sprite_preparation_becomes_a_backend_neutral_receipt() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -8010,9 +8008,7 @@ fn nmi_inside_link_oam_becomes_a_backend_neutral_receipt() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -8081,9 +8077,7 @@ fn nmi_before_link_coordinate_publication_becomes_a_backend_neutral_receipt() {
         let mut tracker = Snes9xOracleSemanticTrace {
             path: PathBuf::new(),
             offset: 0,
-            cache_write_progress: None,
-            normal_load_ordinal: None,
-            pending_reset_progress: None,
+            reset_progress: Default::default(),
             last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
@@ -8129,9 +8123,7 @@ fn nmi_after_spotlight_submodule_return_preserves_the_link_suffix() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -8248,17 +8240,17 @@ fn host_boundary_after_actual_x_velocity_retains_the_pending_y_component() {
 #[test]
 fn first_dungeon_record_inspection_proves_the_completed_reset_prefix() {
     assert_eq!(
-        dungeon_reset_sprites_caller_progress(&raw("frame", Some(0x09_c2a0), Some(2), None)),
+        event_reset_caller_progress(&raw("frame", Some(0x09_c2a0), Some(2), None)),
         Some(DungeonResetSpritesCpuProgress::LoadBeforeOrigin)
     );
     let mut event = raw("frame", Some(0x09_c32e), Some(19), None);
     event.y = Some(3);
     assert_eq!(
-        dungeon_reset_sprites_caller_progress(&event),
+        event_reset_caller_progress(&event),
         Some(DungeonResetSpritesCpuProgress::LoadStarted)
     );
     event.y = Some(6);
-    assert_eq!(dungeon_reset_sprites_caller_progress(&event), None);
+    assert_eq!(event_reset_caller_progress(&event), None);
 }
 
 #[test]
@@ -8343,9 +8335,7 @@ fn nmi_inside_spotlight_circle_build_reports_exact_c_statement_progress() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -8476,9 +8466,7 @@ fn nmi_inside_pure_circle_helper_rewinds_to_its_c_call_boundary() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -8559,9 +8547,7 @@ fn completed_spotlight_entry_supersedes_helper_interruption_progress() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -8636,9 +8622,7 @@ fn completed_recurring_spotlight_call_supersedes_helper_interruption_progress() 
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -8845,9 +8829,7 @@ fn recurring_spotlight_link_oam_interruption_supersedes_helper_progress() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -8922,9 +8904,7 @@ fn completed_overworld_spotlight_goal_supersedes_helper_interruption_progress() 
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -8994,9 +8974,7 @@ fn helper_interruption_rejects_unproven_non_nmi_host_return() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -9201,9 +9179,7 @@ fn nmi_before_upper_spotlight_write_derives_input_from_source_cursor() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -9264,9 +9240,7 @@ fn nmi_between_spotlight_upper_and_lower_writes_reports_exact_c_statement_progre
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -9328,9 +9302,7 @@ fn shared_circle_helper_in_dungeon_caller_does_not_cross_receipt_domains() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -9380,9 +9352,7 @@ fn nmi_after_spotlight_projection_store_reports_copied_word_prefix() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -9448,9 +9418,7 @@ fn nmi_at_spotlight_loop_completion_test_reports_published_iteration() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -9583,9 +9551,7 @@ fn loop_completion_uses_the_upper_cursor_when_the_lower_store_is_offscreen() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -9688,9 +9654,7 @@ fn shared_spotlight_copy_in_another_caller_does_not_cross_receipt_domains() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -9736,9 +9700,7 @@ fn recurring_close_projection_store_remains_pending_in_its_semantic_receipt() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -9955,9 +9917,11 @@ fn pre_dungeon_nmi_inside_reset_suffix_routes_completed_disable_to_its_source_ca
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: Some(DungeonResetSpritesCpuProgress::SpritesDisabled),
+        reset_progress: DungeonResetSpritesProgressTracker {
+            cache_write_progress: None,
+            normal_load_ordinal: None,
+            pending_reset_progress: Some(DungeonResetSpritesCpuProgress::SpritesDisabled),
+        },
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -9999,7 +9963,7 @@ fn pre_dungeon_nmi_inside_reset_suffix_routes_completed_disable_to_its_source_ca
             OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
         ],
     );
-    assert_eq!(tracker.pending_reset_progress, None);
+    assert_eq!(tracker.reset_progress.pending_reset_progress, None);
 }
 
 #[test]
@@ -10034,9 +9998,7 @@ fn nmi_acceptance_and_publication_remain_distinct_ordered_receipts() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -10110,9 +10072,7 @@ fn frame_boundary_context_resume_is_private_and_deduplicates_the_direct_marker()
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -10165,9 +10125,7 @@ fn new_nmi_at_restored_context_validates_the_old_resume_without_republishing_it(
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -10217,9 +10175,7 @@ fn nested_nmi_contexts_resume_in_stack_order_without_gameplay_receipts() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -10280,9 +10236,7 @@ fn mismatched_direct_nmi_completion_fails_closed_without_losing_target() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -10410,9 +10364,7 @@ fn live_trace_preserves_main_loop_start_between_leading_and_trailing_nmi_phases(
     let mut tracker = Snes9xOracleSemanticTrace {
         path: path.clone(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -10500,9 +10452,7 @@ fn live_trace_publishes_exact_common_suffix_before_poly_nmi_and_across_next_host
     let mut tracker = Snes9xOracleSemanticTrace {
         path: path.clone(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -10646,9 +10596,7 @@ fn continued_trace_publishes_progress_and_exact_suffix_before_following_open_nmi
     let mut tracker = Snes9xOracleSemanticTrace {
         path: path.clone(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -10717,9 +10665,7 @@ fn cached_sprite_load_and_restore_writes_become_semantic_progress() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -10815,9 +10761,7 @@ fn cached_sprite_progress_at_scan_keys_return_keeps_host_return_ownership() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -10876,9 +10820,7 @@ fn source_y_high_then_nmi_becomes_one_typed_progress_receipt() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path,
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -10973,7 +10915,7 @@ fn source_y_high_then_nmi_becomes_one_typed_progress_receipt() {
 #[test]
 fn completed_dungeon_sprite_record_survives_to_host_return() {
     let mut tracker = empty_semantic_tracker();
-    tracker.normal_load_ordinal = Some(5);
+    tracker.reset_progress.normal_load_ordinal = Some(5);
     let mut receipts = Vec::new();
     let slot = 6u16;
     let writes = [
@@ -11058,9 +11000,7 @@ fn cache_short_branch_then_nmi_becomes_a_typed_field_receipt() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -11153,9 +11093,7 @@ fn host_return_without_nmi_publishes_the_completed_sprite_disable_prefix() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -11210,19 +11148,19 @@ fn host_return_without_nmi_publishes_the_completed_sprite_disable_prefix() {
 fn leading_nmi_does_not_republish_the_same_reset_checkpoint() {
     let progress = DungeonResetSpritesCpuProgress::RoomHistorySearchStarted;
     let mut tracker = empty_semantic_tracker();
-    tracker.pending_reset_progress = Some(progress);
+    tracker.reset_progress.pending_reset_progress = Some(progress);
     let mut first_host = Vec::new();
     tracker.flush_reset_progress(&mut first_host, OriginalTimingBoundary::HostReturn);
     assert_eq!(first_host.len(), 1);
     let checkpoint = tracker.checkpoint();
     let mut resumed = empty_semantic_tracker();
     resumed.restore_checkpoint(checkpoint).unwrap();
-    resumed.pending_reset_progress = Some(progress);
+    resumed.reset_progress.pending_reset_progress = Some(progress);
     let mut next_host = Vec::new();
     resumed.flush_reset_progress(&mut next_host, OriginalTimingBoundary::NmiAccepted);
     assert!(next_host.is_empty());
 
-    tracker.pending_reset_progress = Some(DungeonResetSpritesCpuProgress::LoadBeforeOrigin);
+    tracker.reset_progress.pending_reset_progress = Some(DungeonResetSpritesCpuProgress::LoadBeforeOrigin);
     tracker.flush_reset_progress(&mut next_host, OriginalTimingBoundary::NmiAccepted);
     assert_eq!(
         next_host,
@@ -11240,9 +11178,7 @@ fn sprite_disable_progress_refines_across_host_return_then_nmi() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -11348,9 +11284,7 @@ fn pinned_route_receipt_decodes_to_normal_load_one_slot_one_y_high() {
     let mut trace = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -11417,9 +11351,11 @@ fn later_source_write_refines_the_y_high_candidate() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path,
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: Some(0),
-        pending_reset_progress: None,
+        reset_progress: DungeonResetSpritesProgressTracker {
+            cache_write_progress: None,
+            normal_load_ordinal: Some(0),
+            pending_reset_progress: None,
+        },
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,
@@ -11484,9 +11420,7 @@ fn later_source_write_invalidates_the_sprite_disable_candidate() {
     let mut tracker = Snes9xOracleSemanticTrace {
         path: PathBuf::new(),
         offset: 0,
-        cache_write_progress: None,
-        normal_load_ordinal: None,
-        pending_reset_progress: None,
+        reset_progress: Default::default(),
         last_host_return_reset_progress: None,
         cached_sprite_execution: None,
         overworld_presence_published: false,

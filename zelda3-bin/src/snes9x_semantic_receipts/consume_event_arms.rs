@@ -21,10 +21,8 @@ impl Snes9xOracleSemanticTrace {
             receipts.push(OriginalTimingSemanticReceipt::SelectedGameEntranceReturned);
         }
         if pc == DUNGEON_RESET_SPRITES_RETURN_PC {
-            self.pending_reset_progress = None;
+            self.reset_progress.retire_at_return();
             self.last_host_return_reset_progress = None;
-            self.cache_write_progress = None;
-            self.normal_load_ordinal = None;
         }
         if pc == SAVE_QUIT_RESET_DUNGEON_INFO_CLEAR_ENTRY_PC {
             if (event.main, event.sub, event.subsub) != (Some(0), Some(10), Some(10)) {
@@ -1381,29 +1379,6 @@ impl Snes9xOracleSemanticTrace {
             execution.initialize_load_properties = None;
         }
         self.observe_overworld_sprite_publication(event, pc, address, receipts)?;
-        let disable_progress = sprite_disable_progress(pc, address, event.value)?;
-        // `SpritesDisabled` is a candidate for a host boundary at the
-        // final Sprite_DisableAll write, not a durable description of
-        // the rest of Dungeon_ResetSprites.  Once any later source
-        // write is observed, execution has advanced beyond that exact
-        // statement.  Drop the candidate fail-closed; a more precise
-        // cache/load receipt below may replace it.
-        if matches!(
-            self.pending_reset_progress,
-            Some(DungeonResetSpritesCpuProgress::SpritesDisabled)
-        ) && !(pc == SPRITE_DISABLE_ALL_FINAL_GARNISH_PC
-            && event.x == Some(0)
-            && address == GARNISH_TYPE_SLOT_ZERO)
-        {
-            self.pending_reset_progress = None;
-        }
-        if matches!(
-            self.pending_reset_progress,
-            Some(DungeonResetSpritesCpuProgress::Disable(_))
-        ) && disable_progress.is_none()
-        {
-            self.pending_reset_progress = None;
-        }
         let cached_sprite_write = (UNCACHE_SPRITE_START_PC..UNCACHE_SPRITE_END_PC)
             .contains(&pc)
             .then(|| cached_sprite_live_field(address))
@@ -1441,116 +1416,14 @@ impl Snes9xOracleSemanticTrace {
                     CachedSpriteExecutionTracker::from_observed_write(pc, slot, field_index),
                 );
             }
-        } else if let Some(progress) = disable_progress {
-            self.cache_write_progress = None;
-            self.normal_load_ordinal = None;
-            self.pending_reset_progress = Some(DungeonResetSpritesCpuProgress::Disable(progress));
-        } else if pc == SPRITE_DISABLE_ALL_FINAL_GARNISH_PC
-            && event.x == Some(0)
-            && address == GARNISH_TYPE_SLOT_ZERO
-        {
-            self.pending_reset_progress = Some(DungeonResetSpritesCpuProgress::SpritesDisabled);
-        } else if (DUNGEON_CACHE_TRANS_SPRITES_START_PC..DUNGEON_CACHE_TRANS_SPRITES_END_PC)
-            .contains(&pc)
-            && CACHE_FIELD_WRITES
-                .iter()
-                .any(|&(_, base)| (base..base + 16).contains(&address))
-        {
-            let slot = u8::try_from(
-                event
-                    .x
-                    .ok_or("Snes9x Dungeon_CacheTransSprites write omitted X")?,
-            )
-            .map_err(|_| "Snes9x Dungeon_CacheTransSprites X exceeded one byte")?;
-            if slot >= 16 {
-                return Err(format!(
-                    "Snes9x Dungeon_CacheTransSprites slot {slot} is outside 0..16"
-                ));
-            }
-            let progress = match self.cache_write_progress {
-                Some(progress) if progress.slot == slot => progress,
-                Some(progress) if slot < progress.slot => CacheWriteProgress {
-                    slot,
-                    next_field_index: 0,
-                },
-                // A completed call may have no later traced reset
-                // write (Sprite_DisableAll stores only active slots).
-                // The next source call is nevertheless unambiguous:
-                // its descending C loop begins with slot 15's
-                // StateClear publication.
-                Some(_) if slot == 15 && address == 0x1d0f => CacheWriteProgress {
-                    slot,
-                    next_field_index: 0,
-                },
-                Some(progress) => {
-                    return Err(format!(
-                        "Snes9x Dungeon_CacheTransSprites slot order advanced from {} to {slot}",
-                        progress.slot
-                    ));
-                }
-                None => CacheWriteProgress {
-                    slot,
-                    next_field_index: 0,
-                },
-            };
-            let &(field, base) = CACHE_FIELD_WRITES
-                .get(progress.next_field_index)
-                .ok_or("Snes9x Dungeon_CacheTransSprites wrote past the final field")?;
-            let expected_address = base + u16::from(slot);
-            if address != expected_address {
-                return Err(format!(
-                    "Snes9x Dungeon_CacheTransSprites field {field:?} for slot {slot} expected ${expected_address:04x}, observed ${address:04x}"
-                ));
-            }
-            self.cache_write_progress = Some(CacheWriteProgress {
-                slot,
-                next_field_index: progress.next_field_index + 1,
-            });
-            self.pending_reset_progress =
-                Some(DungeonResetSpritesCpuProgress::Cache { slot, field });
-        } else if pc == DUNGEON_LOAD_SINGLE_SPRITE_STATE_PC
-            && (SPRITE_STATE_BASE..SPRITE_STATE_BASE + 16).contains(&address)
-        {
-            let slot = (address - SPRITE_STATE_BASE) as u8;
-            if event.x != Some(u16::from(slot)) {
-                return Err(format!(
-                    "Snes9x Dungeon_LoadSingleSprite state write disagrees on slot: x={:?}, address=${address:04x}",
-                    event.x
-                ));
-            }
-            self.normal_load_ordinal = Some(
-                self.normal_load_ordinal
-                    .map(|ordinal| ordinal.saturating_add(1))
-                    .unwrap_or(0),
-            );
-            self.pending_reset_progress = Some(DungeonResetSpritesCpuProgress::Load(
-                DungeonLoadSpritesCpuProgress {
-                    normal_load_ordinal: self.normal_load_ordinal.unwrap(),
-                    slot,
-                    checkpoint: DungeonSpriteLoadCheckpoint::State,
-                },
-            ));
-        } else if (DUNGEON_LOAD_SINGLE_SPRITE_STATE_PC..DUNGEON_LOAD_SINGLE_SPRITE_END_PC)
-            .contains(&pc)
-        {
-            let Some((slot, checkpoint)) =
-                dungeon_load_single_sprite_write_progress(pc, address, event.x)?
-            else {
-                return Err(format!(
-                    "Snes9x Dungeon_LoadSingleSprite wrote unsupported source field ${address:04x} at ${pc:06x}",
-                ));
-            };
-            let normal_load_ordinal = self
-                .normal_load_ordinal
-                .ok_or("Snes9x observed Dungeon_LoadSingleSprite field before record state")?;
-            self.pending_reset_progress = Some(DungeonResetSpritesCpuProgress::Load(
-                DungeonLoadSpritesCpuProgress {
-                    normal_load_ordinal,
-                    slot,
-                    checkpoint,
-                },
-            ));
         }
+        self.reset_progress.observe_write(
+            pc,
+            address,
+            event.value,
+            event.x,
+            cached_sprite_write.is_some(),
+        )?;
         Ok(())
     }
 
@@ -1739,12 +1612,12 @@ impl Snes9xOracleSemanticTrace {
             // innermost source return address prove this execution is
             // the former, so the generic reset candidate must not
             // escape into the wrong semantic domain below.
-            self.pending_reset_progress = None;
+            self.reset_progress.pending_reset_progress = None;
             if self.overworld_load_overlays_sprite_reload_active {
                 self.overworld_sprite_reload_reset_published = true;
             }
-        } else if let Some(progress) = dungeon_reset_sprites_caller_progress(event) {
-            self.pending_reset_progress = Some(progress);
+        } else if let Some(pc) = event.pc {
+            self.reset_progress.observe_boundary(pc, event.a, event.y);
         }
         let overworld_sprite_scan_suspended =
             self.publish_overworld_presence_at_scan_boundary(event, receipts);

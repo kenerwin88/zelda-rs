@@ -13,6 +13,7 @@ pub mod config;
 pub mod cycle_ledger;
 pub(crate) mod cycle_models;
 pub mod debug_env;
+pub mod dungeon_reset_progress;
 pub mod game_output;
 pub(crate) mod game_state;
 pub mod modern_audio;

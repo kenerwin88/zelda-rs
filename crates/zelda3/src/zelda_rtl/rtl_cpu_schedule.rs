@@ -108,6 +108,27 @@ impl ZeldaState {
             && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
             && frame.main_module == 7
             && frame.submodule == 2
+            && frame.subsubmodule == 1
+            && !self.game_state.display.nmi_update_is_latched()
+            && self.game_execution_scheduler.is_idle()
+        {
+            // The room-load plan resumes the ROM at the state-1 dispatch. Its
+            // raster is where this leading handler's measured work returns
+            // the main loop, not a fixed envelope: the reset's first caller
+            // NMI lands inside a single source statement.
+            let phase = self.native_main_wait_cpu_phase.take();
+            if let Some(phase) = phase.as_ref() {
+                assert_eq!(phase.host, self.frame_ctr_dbg + u32::from(nmi_is_trailing),
+                    "room-load caller CPU phase belongs to a different host");
+            }
+            self.native_dungeon_room_load_cpu_entry = Some(module_cpu_entry_after_leading_nmi(
+                self, input, DUNGEON_ROOM_LOAD_CPU_CHECKPOINT.entry_pc, phase,
+            ));
+        }
+        if self.rom_startup_timing()
+            && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && frame.main_module == 7
+            && frame.submodule == 2
             && matches!(frame.subsubmodule, 2 | 13 | 14)
             && !self.game_state.display.nmi_update_is_latched()
             && self.game_execution_scheduler.is_idle()
