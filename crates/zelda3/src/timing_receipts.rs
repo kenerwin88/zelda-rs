@@ -1490,6 +1490,9 @@ pub enum CachedSpriteExecutionProgress {
         slot: u8,
         live_fields: u8,
     },
+    /// This cached slot returned before vblank. Its loop tail and lower slots
+    /// remain on the source stack, even when the returned slot was inactive.
+    AfterSlot(u8),
 }
 
 /// Source statements completed by the cached sprite handler after the live

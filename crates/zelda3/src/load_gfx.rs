@@ -2224,6 +2224,37 @@ impl ZeldaState {
         self.replay_trace_ram_watch("loadgfx-after-decode-animated-sprite-tile");
     }
 
+    /// Commit a source-order prefix of the shared two-sheet animated sprite
+    /// loader. The exact CPU supplies only the output cursor; the bytes come
+    /// from this runtime's independently decoded graphics asset.
+    pub(super) fn apply_animated_sprite_tile_sheet_slice(
+        &mut self,
+        tile: u8,
+        first_sheet: bool,
+        start: u16,
+        end: u16,
+    ) {
+        assert!(start <= end && end <= 0x0600);
+        let sheet = if first_sheet {
+            animated_sprite_tile_secondary_sheet(tile)
+        } else {
+            0x5a
+        };
+        let data = self
+            .decompressed_sprite_graphics_data(usize::from(sheet))
+            .expect("animated sprite loader requires its own decoded sheet");
+        assert_eq!(data.len(), 0x0600);
+        let base = if first_sheet {
+            GraphicsDecompressionScratch::secondary_buffer_offset()
+        } else {
+            GraphicsDecompressionScratch::primary_buffer_offset()
+        };
+        self.copy_decompressed_graphics_to(
+            base + usize::from(start),
+            &data[usize::from(start)..usize::from(end)],
+        );
+    }
+
     /// `LoadTransAuxGFX` (`$00:D66E`, entered m8; `REP #$30` at `$D67B`).
     pub(super) fn LoadTransAuxGFX(&mut self) {
         let _scope = crate::cycle_ledger::routine(0x00_d66e);

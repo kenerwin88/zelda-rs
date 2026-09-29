@@ -238,7 +238,7 @@ fn vwf_render_loop_cycle_budget(
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum VwfHandlerEntryPhase {
     #[default]
     OrdinaryModuleIteration,
@@ -315,7 +315,7 @@ fn vwf_glyph_cursor_after_pending_line_transition(
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum VwfGlyphCpuPhase {
     #[default]
     Ready,
@@ -4818,6 +4818,7 @@ impl ZeldaState {
             .init_msgbox_state_from(&TEXT_INITIALIZATION_DATA);
         // The same copy zeroes $1CDD/$1CE6.
         self.dialogue_vwf_dispatch_cursor = crate::cycle_models::vwf::DispatchCursor::default();
+        self.dialogue_character_load_progress = None;
         self.clear_bg3_vwf_glyph_runs();
         self.Text_InitVwfState();
         // A fresh message's render machine cannot inherit the previous
@@ -4838,13 +4839,30 @@ impl ZeldaState {
     }
 
     pub(super) fn prepare_text_character_buffer_for_carry(&mut self) {
-        let encoded_len = self.current_encoded_dialogue_len();
-        self.Text_LoadCharacterBuffer();
-        self.messaging_state_mut()
-            .set_dialogue_msg_read_pos(encoded_len);
+        let source_cursor = self.native_exact_cpu_host_trace.as_ref()
+            .and_then(|trace| trace.dialogue_decode_cursor_at_return());
+        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_DIALOGUE_LOADER").is_some() {
+            eprintln!("native-dialogue-loader-prepare host={} source_cursor={source_cursor:?} progress={:?}",
+                self.frame_ctr_dbg - 1,
+                self.dialogue_character_load_progress.as_ref().map(|progress| progress.source_index));
+        }
+        let consumed = self.text_load_character_buffer_until(source_cursor.map(usize::from));
+        if let Some(cursor) = source_cursor {
+            assert_eq!(consumed, cursor, "native dialogue decoder did not reach the source output boundary");
+        }
+        self.messaging_state_mut().set_dialogue_msg_read_pos(consumed);
+        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_DIALOGUE_LOADER").is_some() {
+            eprintln!("native-dialogue-loader-published host={} cursor={} sentinel={:?}",
+                self.frame_ctr_dbg - 1,
+                self.game_state.messaging.runtime.dialogue_msg_read_pos(),
+                self.game_state.messaging.decoded_text.as_slice().iter().position(|&byte| byte == 0x7f));
+        }
     }
 
     pub(super) fn complete_text_initialization_carry_suffix(&mut self) {
+        if self.dialogue_character_load_progress.is_some() {
+            self.Text_LoadCharacterBuffer();
+        }
         self.messaging_state_mut().clear_dialogue_msg_read_pos();
         self.finish_text_initialization_after_character_buffer();
     }
@@ -4868,27 +4886,6 @@ impl ZeldaState {
         self.set_core_update_disable_flag(2);
     }
 
-    fn current_encoded_dialogue_len(&self) -> u16 {
-        let Some(dialogue_blk) = self.asset_memblk(94, self.dialogue_blk_index) else {
-            return 0;
-        };
-        let dialogue = find_index_in_memblk(dialogue_blk, 1);
-        let text_index = self.game_state.messaging.dialogue_message_index.value() as usize;
-        let encoded_len = find_index_in_memblk(dialogue, text_index).ptr.len() as u16;
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_DIALOGUE_DECODE_LIVE_TRIAL")
-            .is_some()
-            && self.native_exact_cpu_host_trace.as_ref().is_some_and(|trace| {
-                trace.dialogue_decode_reached_native_length(encoded_len)
-            })
-        {
-            // The source has completed every character-buffer fetch. Use the
-            // native message length instead of the estimated first-slice cap.
-            encoded_len
-        } else {
-            encoded_len.min(ROM_TEXT_DECODE_FIRST_SLICE_CURSOR)
-        }
-    }
-
     pub(super) fn Text_InitVwfState(&mut self) {
         // $0E:C4C9-$0E:C4E1: eight STZ abs and RTS.
         crate::cycle_ledger::charge_routine(0x0e_c4c9, 298);
@@ -4904,8 +4901,12 @@ impl ZeldaState {
     }
 
     pub(super) fn Text_LoadCharacterBuffer(&mut self) {
+        self.text_load_character_buffer_until(None);
+    }
+
+    fn text_load_character_buffer_until(&mut self, limit: Option<usize>) -> u16 {
         let Some(dialogue_blk) = self.asset_memblk(94, self.dialogue_blk_index) else {
-            return;
+            return 0;
         };
         let dictionary = find_index_in_memblk(dialogue_blk, 0).ptr.to_vec();
         let dialogue = find_index_in_memblk(dialogue_blk, 1).ptr.to_vec();
@@ -4914,16 +4915,28 @@ impl ZeldaState {
             .ptr
             .to_vec();
 
-        let mut src = 0usize;
-        let mut decoded = Vec::new();
+        let progress = self.dialogue_character_load_progress.take().unwrap_or_default();
+        let mut src = progress.source_index;
+        let mut decoded = progress.decoded;
+        let mut pending_output = progress.pending_output;
         // C's Text_WritePlayerName writes all 6 name chars (including trailing 0x59 blanks)
         // to the buffer, then returns a pointer advanced by only the *effective* length
         // (trimming trailing blanks). Subsequent text overwrites from effective_len onward,
         // leaving any blanks beyond that position in the buffer. We track (name_start,
         // name_end_6) for each NAME command so we can re-inject those trailing blanks
         // after the loop exactly as C leaves them.
-        let mut name_ranges: Vec<(usize, usize)> = Vec::new(); // (effective_end, full_end)
-        while src < text_str.len() {
+        let mut name_ranges = progress.name_ranges; // (effective_end, full_end)
+        while limit.is_none_or(|limit| decoded.len() < limit) {
+            if !pending_output.is_empty() {
+                let take = limit.map_or(pending_output.len(), |limit| {
+                    limit.saturating_sub(decoded.len()).min(pending_output.len())
+                });
+                decoded.extend(pending_output.drain(..take));
+                continue;
+            }
+            if src >= text_str.len() {
+                break;
+            }
             let c = text_str[src];
             src += 1;
             if c >= TEXT_DICT_BASE {
@@ -4931,7 +4944,7 @@ impl ZeldaState {
                     MemBlk { ptr: &dictionary },
                     (c - TEXT_DICT_BASE) as usize,
                 );
-                decoded.extend_from_slice(blk.ptr);
+                pending_output.extend_from_slice(blk.ptr);
                 continue;
             }
             let (param, cmd, multibyte) = self.text_decode_cmd(c, text_str.get(src).copied());
@@ -4941,10 +4954,11 @@ impl ZeldaState {
                     // We write all 6 to decoded, truncate to effective_len, and record the
                     // range [effective_end, full_end=effective_end+(6-effective_len)] so we
                     // can re-inject the trailing blanks after the loop (matching C).
-                    let effective_len = self.text_write_player_name_vec_full(&mut decoded);
-                    let full_end = decoded.len(); // effective_len + 6
-                    let effective_end = full_end - (6 - effective_len);
-                    decoded.truncate(effective_end);
+                    let mut name = Vec::with_capacity(6);
+                    let effective_len = self.text_write_player_name_vec_full(&mut name);
+                    let effective_end = decoded.len() + effective_len;
+                    let full_end = decoded.len() + 6;
+                    pending_output.extend_from_slice(&name[..effective_len]);
                     name_ranges.push((effective_end, full_end));
                 }
                 TEXT_CMD_WINDOW => self.messaging_state_mut().set_text_render_state(param),
@@ -4954,7 +4968,7 @@ impl ZeldaState {
                         .messaging
                         .dialogue_number
                         .packed_digits((param >> 1) as usize);
-                    decoded.push(0x34 + if param & 1 != 0 { v >> 4 } else { v & 0x0f });
+                    pending_output.push(0x34 + if param & 1 != 0 { v >> 4 } else { v & 0x0f });
                 }
                 TEXT_CMD_POSITION => {
                     self.messaging_state_mut()
@@ -4965,10 +4979,10 @@ impl ZeldaState {
                     self.messaging_state_mut().set_text_tilemap_cur(value);
                 }
                 _ => {
-                    decoded.push(c);
+                    pending_output.push(c);
                     if multibyte {
                         if let Some(next) = text_str.get(src) {
-                            decoded.push(*next);
+                            pending_output.push(*next);
                         }
                     }
                 }
@@ -4977,21 +4991,35 @@ impl ZeldaState {
                 src += 1;
             }
         }
-        decoded.push(0x7f);
+        let output_cursor = decoded.len();
+        let partial = limit.is_some() && (!pending_output.is_empty() || src < text_str.len());
+        if !partial {
+            decoded.push(0x7f);
+        }
         // Re-inject trailing 0x59 blanks from player-name writes that were not overwritten
         // by subsequent text. In C, Text_WritePlayerName writes all 6 chars at p[0..6] and
         // returns p+effective_len; positions [effective_len..6] remain as 0x59 unless later
         // text overwrites them. We reproduce that by appending the "orphaned" blanks now.
-        for (_effective_end, full_end) in name_ranges {
-            let leftover = full_end.saturating_sub(decoded.len());
-            decoded.extend(std::iter::repeat_n(0x59, leftover));
+        let mut published = decoded.clone();
+        for &(_effective_end, full_end) in &name_ranges {
+            let leftover = full_end.saturating_sub(published.len());
+            published.extend(std::iter::repeat_n(0x59, leftover));
         }
-        self.messaging_text_mut().load_decoded_dialogue(&decoded);
+        self.messaging_text_mut().load_decoded_dialogue(&published);
+        if partial {
+            self.dialogue_character_load_progress = Some(DialogueCharacterLoadProgress {
+                source_index: src,
+                decoded,
+                name_ranges,
+                pending_output,
+            });
+        }
         self.messaging_state_mut().clear_dialogue_msg_read_pos();
-        // The ROM's loader leaves its source index in $1CDD (dead here, but
-        // it selects the render dispatch's comparison path).
+        // The ROM's loader leaves its encoded input index in $1CDD (dead here,
+        // but it selects the render dispatch's comparison path).
         self.dialogue_vwf_dispatch_cursor =
             self.dialogue_vwf_dispatch_cursor.after_character_buffer_load(text_index);
+        output_cursor as u16
     }
 
     /// Build the 6-char player name buffer from SRAM (all 6 entries, including trailing 0x59
@@ -5151,6 +5179,27 @@ impl ZeldaState {
         // text path does not split a glyph across synthetic host work slices.
         // Keeping that artificial budget delayed the first story glyph by one
         // display boundary, leaving the Triforce caption partially absent.
+        // The retained CPU can return from this host inside the shared
+        // NMI_PrepareSprites suffix. In that case the ROM has necessarily
+        // completed the resident VWF handler and its Module0E caller first.
+        // Finish the same native handler, without granting it another
+        // estimated host budget or publishing source WRAM values.
+        if self.dialogue_fast_forward_hold_active
+            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SPRITE_PREP_LIVE_TRIAL").is_some()
+            && self.native_exact_cpu_host_trace.as_ref().is_some_and(|trace| {
+                trace.sprite_preparation_progress_at_return.is_some()
+            })
+        {
+            let transition = self.advance_suspended_vwf_to_handler_completion();
+            assert!(
+                !transition.begins_message_line_scroll(),
+                "a dialogue caller in sprite preparation cannot still own a scroll copy",
+            );
+            self.dialogue_fast_forward_hold_pending = false;
+            self.finish_dialogue_character_render_call();
+            self.dialogue_fast_forward_hold_active = false;
+            return;
+        }
         let outcome = self.render_text_draw_message_characters_slice();
         let yielded_midline = matches!(outcome, VwfCpuSliceOutcome::InterruptedMidGlyph { .. });
         let yielded_to_authority = matches!(outcome, VwfCpuSliceOutcome::AuthorityBoundaryReached);
@@ -5723,6 +5772,15 @@ impl ZeldaState {
         let mut authority_boundary_reached = false;
         let mut retain_incomplete_click = false;
         loop {
+            if self.dialogue_vwf_transition_remaining_master_cycles != 0 {
+                let consumed = cycles_left.min(self.dialogue_vwf_transition_remaining_master_cycles);
+                self.dialogue_vwf_transition_remaining_master_cycles -= consumed;
+                cycles_left -= consumed;
+                if self.dialogue_vwf_transition_remaining_master_cycles != 0 {
+                    midline_yield = true;
+                    break;
+                }
+            }
             let read_pos = self.dialogue_vwf_pending_glyph_read_pos
                 .unwrap_or(self.game_state.messaging.runtime.dialogue_msg_read_pos()) as usize;
             let c = self.game_state.messaging.decoded_text.byte(read_pos);
@@ -5914,8 +5972,14 @@ impl ZeldaState {
                         );
                         command_done = true;
                         if fast_forward {
-                            cycles_left = cycles_left
-                                .saturating_sub(self.vwf_glyph_transition_master_cycles());
+                            let transition = self.vwf_glyph_transition_master_cycles();
+                            if exact_costs && transition > cycles_left {
+                                self.dialogue_vwf_transition_remaining_master_cycles =
+                                    transition - cycles_left;
+                                cycles_left = 0;
+                            } else {
+                                cycles_left = cycles_left.saturating_sub(transition);
+                            }
                             if exact_costs {
                                 self.dialogue_vwf_deferred_handler_exits += 1;
                             }
@@ -6349,6 +6413,10 @@ impl ZeldaState {
                 since_nmi_master_cycles,
                 stall_master_cycles: 0,
             });
+        }
+        if debug_vwf_budget_for_frame(self.frame_ctr_dbg) {
+            eprintln!("vwf_entry_raster host={} since_nmi={} position={:?}",
+                self.frame_ctr_dbg, since_nmi, budget.raster_position());
         }
         // Everything that still fits before the deadline is the budget.
         const PROBE: u32 = 4 * SNES_NTSC_MASTER_CYCLES_PER_FRAME;
@@ -6913,6 +6981,9 @@ impl ZeldaState {
                 + u64::from(self.dialogue_vwf_deferred_handler_exits)
                     * crate::cycle_models::vwf::HANDLER_EXIT_MASTER_CYCLES,
         );
+        let source_scroll_progress = self.native_exact_cpu_host_trace.as_ref()
+            .filter(|_| crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SCROLL_COPY_LIVE_TRIAL").is_some())
+            .and_then(|trace| trace.scroll_copy_progress);
         let command_done = if self.vwf_uses_exact_costs() {
             self.native_scroll_copy_cursor = Some(NativeScrollCopyCursor {
                 elapsed_master_cycles: 0,
@@ -6920,7 +6991,11 @@ impl ZeldaState {
                 scroll_speed: self.game_state.messaging.runtime.dialogue_scroll_speed(),
                 starting_line_counter: nibble_before as u8,
             });
-            self.advance_native_scroll_copy(cycles_before_vblank.into())
+            if let Some(progress) = source_scroll_progress {
+                self.advance_native_scroll_copy_to_source_progress(progress)
+            } else {
+                self.advance_native_scroll_copy(cycles_before_vblank.into())
+            }
         } else {
             self.render_text_scroll_pixels(2)
         };
@@ -6975,6 +7050,41 @@ impl ZeldaState {
             self.native_scroll_copy_cursor = Some(cursor);
         }
         line_completed
+    }
+
+    /// Execute native copy stores only through the source CPU's ordered
+    /// progress in the same call. The source supplies a position, while every
+    /// copied word still comes from the translated render buffer.
+    pub(super) fn advance_native_scroll_copy_to_source_progress(
+        &mut self,
+        progress: super::rtl_native_exact_cpu::NativeExactCpuScrollCopyProgress,
+    ) -> bool {
+        use crate::cycle_models::vwf::scroll_copy_stores;
+        let cursor = self.native_scroll_copy_cursor
+            .expect("source scroll progress requires a native copy continuation");
+        let stores = scroll_copy_stores(
+            cursor.b_held,
+            cursor.scroll_speed,
+            cursor.starting_line_counter,
+        );
+        let stores_per_pass = 126 * 8 + 21;
+        assert!(usize::from(progress.stores_in_pass) <= stores_per_pass);
+        let completed_events = usize::from(progress.completed_passes) * (stores_per_pass + 1)
+            + usize::from(progress.stores_in_pass);
+        assert!(
+            completed_events <= stores.len(),
+            "source scroll cursor exceeds the native call's store sequence",
+        );
+        let target = if completed_events == 0 {
+            0
+        } else {
+            stores[completed_events - 1].after_master_cycles
+        };
+        assert!(
+            target >= cursor.elapsed_master_cycles,
+            "native scroll copy advanced past its source-owned store boundary",
+        );
+        self.advance_native_scroll_copy(target - cursor.elapsed_master_cycles)
     }
 
     pub(crate) fn finish_native_scroll_copy(&mut self) -> bool {
@@ -7320,4 +7430,14 @@ impl ZeldaState {
             self.game_state.player.follower_link.filtered_joypad_l() & 0x40 != 0
         }
     }
+}
+/// Native state of a character-buffer load stopped at a decoded output
+/// boundary. Encoded input and pending dictionary/command expansion remain
+/// native-owned, so resumption never repeats a command effect.
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DialogueCharacterLoadProgress {
+    source_index: usize,
+    decoded: Vec<u8>,
+    name_ranges: Vec<(usize, usize)>,
+    pending_output: Vec<u8>,
 }

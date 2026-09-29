@@ -455,6 +455,13 @@ impl ZeldaState {
                     work: DungeonSupertileTransitionWork::RoomLoadCallerResume,
                 })
             ));
+            if schedule.link_oam_returned_before_suffix_nmi {
+                let sprite_return = self.active_dungeon_sprite_main_return.take()
+                    .expect("LinkOam return requires the completed Sprite_Main caller");
+                self.complete_module07_link_oam_after_sprite_main(sprite_return);
+                assert!(!self.dungeon_room_load_hud_suffix_pending);
+                self.dungeon_room_load_hud_suffix_pending = true;
+            }
         }
         false
     }

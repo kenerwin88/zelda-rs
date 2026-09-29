@@ -379,6 +379,13 @@ impl ZeldaState {
         self.begin_dungeon_room_upload()
     }
 
+    pub(super) fn begin_dungeon_room_upload_after_early_object_prefix(&mut self) -> DungeonRoomUploadWork {
+        self.dungeon_load_room_after_object_prefix();
+        self.clear_screen_transition();
+        self.set_overworld_map_state(0);
+        self.begin_dungeon_room_upload()
+    }
+
     fn dungeon_load_and_draw_room_after_early_upload(
         &mut self,
         work: DungeonRoomUploadWork,
@@ -1473,6 +1480,13 @@ impl ZeldaState {
     }
 
     fn dungeon_load_room_after_objects(&mut self) {
+        self.dungeon_load_room_post_object_prefix();
+        self.dungeon_load_room_after_object_prefix();
+    }
+
+    /// The source has finished its push-block loop and published both torch
+    /// range indices before entering the room's torch stream.
+    pub(super) fn dungeon_load_room_post_object_prefix(&mut self) {
         self.dungeon_torch_mut().resync_from_ram();
         let room = self.game_state.world.location.dungeon_room();
         for offset in (0..0x018c).step_by(4) {
@@ -1496,6 +1510,10 @@ impl ZeldaState {
         self.dungeon_torch_mut()
             .set_torch_index_range_start(misc_objs);
         self.dungeon_torch_mut().set_torch_index(misc_objs);
+    }
+
+    pub(super) fn dungeon_load_room_after_object_prefix(&mut self) {
+        let room = self.game_state.world.location.dungeon_room();
         let mut i = 0usize;
         loop {
             if self
@@ -11111,16 +11129,17 @@ impl ZeldaState {
         };
         assert_eq!(floor.completed_words(), DungeonFloorDrawWork::TOTAL_WORDS,
             "supertile room load returned before its floor draw completed");
-        let mut objects = self.active_early_dungeon_object_draw.take()
-            .expect("supertile room load lost its object cursor");
-        // The retained CPU has returned from Dungeon_LoadRoom, so all of its
-        // remaining object statements have executed. The per-object tracker
-        // publishes completed draw calls during held hosts; finish the
-        // translated stream here, including any tail the tracker cannot
-        // distinguish from the parser's stream transitions.
-        while self.advance_dungeon_object_draw_one(&mut objects) {}
-        assert!(objects.finished());
-        self.dungeon_load_room_after_objects();
+        if let Some(mut objects) = self.active_early_dungeon_object_draw.take() {
+            // The retained CPU has returned from Dungeon_LoadRoom, so all of
+            // its remaining object statements have executed.
+            while self.advance_dungeon_object_draw_one(&mut objects) {}
+            assert!(objects.finished());
+            self.dungeon_load_room_after_objects();
+        } else if self.active_early_dungeon_room_upload.is_none() {
+            // The source already crossed the post-object torch-index stores
+            // on an earlier host. Only its remaining torch stream is owed.
+            self.dungeon_load_room_after_object_prefix();
+        }
     }
 
     pub(super) fn continue_module07_02_01_after_room_load(&mut self) {
@@ -14836,6 +14855,15 @@ impl ZeldaState {
         &mut self,
         sprite_return: DungeonSpriteMainReturn,
     ) {
+        self.complete_module07_link_oam_after_sprite_main(sprite_return);
+        self.complete_module07_hud_after_link_oam();
+    }
+
+    /// LinkOam_Main returns before Module 7 enters Hud_RefillLogic.
+    pub(super) fn complete_module07_link_oam_after_sprite_main(
+        &mut self,
+        sprite_return: DungeonSpriteMainReturn,
+    ) {
         if let Some(continuation) = sprite_return.link_oam {
             self.link_oam_after_equipment(continuation);
         } else {
@@ -14846,6 +14874,9 @@ impl ZeldaState {
             self.link_oam_main();
         }
         self.replay_trace_ram_watch("module07-after-link-oam");
+    }
+
+    pub(super) fn complete_module07_hud_after_link_oam(&mut self) {
         self.hud_refill_logic();
         self.replay_trace_ram_watch("module07-after-refill");
         self.hud_floor_indicator();

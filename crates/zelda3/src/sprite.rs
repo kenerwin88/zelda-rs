@@ -3749,6 +3749,9 @@ impl ZeldaState {
             }
         }
         self.complete_sprite_main_after_all_slots();
+        if self.game_execution_scheduler.work_suspends_translated_call_stack() {
+            return;
+        }
         let suffix_nmi_slices =
             std::mem::take(&mut self.dungeon_room_load_module_suffix_nmi_slices);
         if suffix_nmi_slices != 0 {
@@ -3878,6 +3881,9 @@ impl ZeldaState {
             crate::cycle_ledger::charge(if k > 0 { 30 + 6 } else { 30 });
         }
         self.complete_sprite_main_after_all_slots();
+        if self.game_execution_scheduler.work_suspends_translated_call_stack() {
+            return;
+        }
         let suffix_nmi_slices =
             std::mem::take(&mut self.dungeon_room_load_module_suffix_nmi_slices);
         if suffix_nmi_slices != 0 {
@@ -4934,6 +4940,9 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         self.clear_overworld_vertical_scroll_delta_low();
         self.set_overworld_horizontal_scroll_delta_low(0);
         self.execute_cached_sprites();
+        if self.game_execution_scheduler.work_suspends_translated_call_stack() {
+            return;
+        }
         if self.game_state.display.has_chr_halfslot_request() {
             // $06:83BE STA $0fc6 (32) + $06:83C1 RTL (44).
             crate::cycle_ledger::charge(32 + 44);
@@ -5090,16 +5099,21 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             } else {
                 crate::cycle_ledger::charge(80 + 6);
             }
-            if self.cached_sprite_slot(i).is_active() {
+            if self.cached_sprite_slot(i).is_active()
+                || interruption.is_some_and(|(boundary, _)|
+                    matches!(boundary, CachedSpriteCpuInterruption::AfterSlot { slot } if usize::from(slot) == i))
+            {
                 if interruption.is_some_and(|(boundary, _)| usize::from(boundary.slot()) == i) {
-                    // An NMI boundary inside this slot's UncacheAndExecuteSprite:
-                    // the split of its $1D:EA00 blocks across the two hosts is
-                    // not modelled; only the nested Sprite_ExecuteSingle
-                    // charges itself. The loop tail and the remaining slots
-                    // are charged by the continuation.
+                    // The boundary can follow an inactive cached slot. Keep
+                    // this slot's DEX and every lower slot for the resumed loop.
                     let mut live_slot_backup = [0; 24];
                     let (mut boundary, authority_boundary) = interruption.unwrap();
                     match boundary {
+                        CachedSpriteCpuInterruption::AfterSlot { .. } => {
+                            if self.cached_sprite_slot(i).is_active() {
+                                self.uncache_and_execute_sprite(i);
+                            }
+                        }
                         CachedSpriteCpuInterruption::Loading { copied_fields, .. } => {
                             self.cached_sprite_slot_mut(i)
                                 .load_cached_fields_into_live_before_nmi(
@@ -5225,7 +5239,9 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                     }
                     return;
                 }
-                self.uncache_and_execute_sprite(i);
+                if self.cached_sprite_slot(i).is_active() {
+                    self.uncache_and_execute_sprite(i);
+                }
             }
             // $1D:E9F8-E9F9 DEX : BPL (30), taken (+6) for every slot but 0.
             crate::cycle_ledger::charge(if i > 0 { 30 + 6 } else { 30 });
@@ -5246,6 +5262,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         let interrupted_slot = usize::from(boundary.slot());
         let mut live_slot_backup = *live_slot_backup;
         match boundary {
+            CachedSpriteCpuInterruption::AfterSlot { .. } => {}
             CachedSpriteCpuInterruption::Loading { copied_fields, .. } => {
                 self.cached_sprite_slot_mut(interrupted_slot)
                     .complete_cached_dynamic_fields_into_live_after_nmi(

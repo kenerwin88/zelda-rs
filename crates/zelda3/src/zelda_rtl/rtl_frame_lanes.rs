@@ -2028,6 +2028,30 @@ impl ZeldaState {
                         refined_boundary
                     }
                     (
+                        SpriteMainCpuBoundary::AfterSlot(completed_slot),
+                        SpriteMainCpuBoundary::FollowerGraphics {
+                            slot,
+                            caller: crate::SpriteFollowerGraphicsCaller::Zelda,
+                            prefix_completed: false,
+                            saved_follower_indicator: None,
+                            stage,
+                        },
+                    ) if slot < completed_slot => {
+                        if slot + 1 < completed_slot {
+                            self.advance_sprite_main_after_slot_boundary(completed_slot, slot + 1);
+                        }
+                        self.sprite_system_mut().set_cur_object_index(slot);
+                        let saved = self.sprite_main_zelda_follower_prefix(usize::from(slot));
+                        self.apply_follower_graphics_progress(None, stage);
+                        SpriteMainCpuBoundary::FollowerGraphics {
+                            slot,
+                            caller: crate::SpriteFollowerGraphicsCaller::Zelda,
+                            prefix_completed: true,
+                            saved_follower_indicator: Some(saved),
+                            stage,
+                        }
+                    }
+                    (
                         SpriteMainCpuBoundary::FollowerGraphics {
                             slot,
                             caller,
@@ -3104,6 +3128,26 @@ impl ZeldaState {
         // The outgoing scanout still owns the frozen text generation.
         self.interrupt_nmi(input, oam_dma_source, false);
         self.capture_display_snapshot();
+        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SCROLL_COPY_LIVE_TRIAL").is_some() {
+            let source_scroll = self.native_exact_cpu_host_trace.as_ref()
+                .map(|trace| (trace.scroll_copy_progress, trace.scroll_copy_returned));
+            if let Some((Some(progress), _)) = source_scroll {
+                self.advance_native_scroll_copy_to_source_progress(progress);
+                // The source is still inside the same scroll call. Retain the
+                // caller for its next host instead of consuming the estimated
+                // remaining-work budget as a return receipt.
+                self.dialogue_scroll_remaining_master_cycles = Some(1);
+                return true;
+            }
+            if let Some((None, true)) = source_scroll {
+                self.complete_module0e_dialogue_scroll_before_common_suffix();
+                self.nmi_prepare_sprites_for_main_loop();
+                self.clear_nmi_update_latch();
+                self.game_execution_scheduler
+                    .finish_call_stack_at_main_wait_before_nmi();
+                return true;
+            }
+        }
         if self.native_dialogue_scroll_can_return_after_nmi(remaining) {
             self.complete_module0e_dialogue_scroll_before_common_suffix();
             self.nmi_prepare_sprites_for_main_loop();
@@ -3129,6 +3173,26 @@ impl ZeldaState {
         oam_dma_source: Option<Vec<u8>>,
     ) -> bool {
         if self.rom_startup_timing() && run_what & crate::RUN_MAIN != 0 {
+            if self.game_execution_scheduler.is_idle()
+                && self.native_exact_cpu_host_trace.as_ref().is_some_and(
+                    |trace| trace.carried_nmi_completes_before_main(),
+                )
+            {
+                // A source NMI accepted at the previous host return completes
+                // before this host's fresh main iteration. Preserve that
+                // instruction order rather than running it after main.
+                self.capture_display_snapshot();
+                self.interrupt_nmi_for_active_scanout_without_dialogue_owner(
+                    input,
+                    oam_dma_source.as_deref(),
+                    false,
+                );
+                self.zelda_run_game_loop_after_leading_nmi();
+                self.assert_native_frame_state_matches_ram();
+                self.assert_native_world_location_state_matches_ram();
+                self.assert_native_display_state_matches_ram();
+                return true;
+            }
             if self.uncle_passage_item_receipt_starts_this_main_slice() {
                 // ROM trace: Uncle_InPassage enters Link_ReceiveItem only
                 // after the pending NMI has consumed the dialogue-clear
@@ -3389,6 +3453,13 @@ impl ZeldaState {
         oam_dma_source: Option<Vec<u8>>,
         resumed_main_is_waiting_for_nmi: bool,
     ) {
+        if self.native_exact_cpu_host_trace.as_ref().is_some_and(
+            |trace| trace.accepted_nmi_carries_out(),
+        ) {
+            // Acceptance at host return has not executed its handler. The
+            // next source host owns that NMI before its main-loop entry.
+            return;
+        }
         if !defer_room_82_sprite_conversion_nmi && !resumed_main_is_waiting_for_nmi {
             let trailing_oam_dma_source = self
                 .game_execution_scheduler
@@ -3843,6 +3914,12 @@ impl ZeldaState {
                     .dungeon_room_load_cpu_schedule
                     .take()
                     .expect("room-load CPU schedule must survive auxiliary graphics");
+                if let Some(trace) = self.native_exact_cpu_host_trace.as_ref() {
+                    if trace.auxiliary_sprite_graphics_returned {
+                        schedule.link_oam_returned_before_suffix_nmi =
+                            trace.module07_link_oam_returned;
+                    }
+                }
                 if self.original_timing_dungeon_push_blocks_pending()
                     || self
                         .original_timing_dungeon_push_blocks_in_progress()

@@ -549,6 +549,7 @@ impl ZeldaState {
             GameWorkContinuation::FinishBigKeyDropGraphics {
                 sprite_slot: sprite_slot as u8,
                 dungeon,
+                progress: None,
             },
             BIG_KEY_DROP_GRAPHICS_NMI_SLICES,
         );

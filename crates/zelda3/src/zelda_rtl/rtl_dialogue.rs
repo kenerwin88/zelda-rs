@@ -2243,6 +2243,30 @@ impl ZeldaState {
             return;
         }
         if self.rom_startup_timing()
+            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SPRITE_PREP_LIVE_TRIAL").is_some()
+            && self.game_state.frame.main_module == 0x0e
+            && self.game_state.frame.submodule == 2
+        {
+            if let Some(source_progress) = self.native_exact_cpu_host_trace.as_ref()
+                .and_then(|trace| trace.sprite_preparation_progress_at_return)
+            {
+                assert!(
+                    !self.dialogue_fast_forward_hold_active
+                        && !self.game_execution_scheduler.work_is_pending(),
+                    "source reached sprite packing before the native dialogue caller returned",
+                );
+                let progress = SpritePreparationProgress::ExtendedOam(source_progress);
+                self.nmi_prepare_sprites_through_progress(progress);
+                assert!(self.pending_main_loop_common_suffix.replace(
+                    MainLoopCommonSuffixContinuation::ResumeSpritePreparationBytePackingAndClearNmiLatch { progress },
+                ).is_none(), "source sprite packing overlapped another common suffix");
+                self.schedule_live_interrupted_nmi_prepare_sprites_caller_return(
+                    NmiPrepareSpritesCpuCaller::DialogueModule0E,
+                );
+                return;
+            }
+        }
+        if self.rom_startup_timing()
             && (self.game_execution_scheduler.work_is_pending()
                 || matches!(
                     self.game_execution_scheduler.pre_main_caller_continuation(),

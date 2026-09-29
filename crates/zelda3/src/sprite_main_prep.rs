@@ -4885,6 +4885,27 @@ impl ZeldaState {
         self.sprite_prep_key_set_item_drop(k);
     }
 
+    pub(super) fn sprite_prep_big_key_load_graphics_after_progress(
+        &mut self,
+        k: usize,
+        progress: Option<crate::zelda_rtl::AnimatedSpriteTileDecompressionProgress>,
+    ) {
+        use crate::zelda_rtl::AnimatedSpriteTileDecompressionProgress::{FirstSheet, SecondSheet};
+        match progress {
+            None => self.DecodeAnimatedSpriteTile_variable(0x22),
+            Some(FirstSheet(completed)) => {
+                self.apply_animated_sprite_tile_sheet_slice(0x22, true, completed, 0x0600);
+                self.apply_animated_sprite_tile_sheet_slice(0x22, false, 0, 0x0600);
+                self.WriteTo4BPPBuffer_at_7F4000(0x22);
+            }
+            Some(SecondSheet(completed)) => {
+                self.apply_animated_sprite_tile_sheet_slice(0x22, false, completed, 0x0600);
+                self.WriteTo4BPPBuffer_at_7F4000(0x22);
+            }
+        }
+        self.sprite_prep_key_set_item_drop(k);
+    }
+
     pub(super) fn sprite_prep_incr_xy_low8(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).add_x_low(8);
         self.sprite_slot_view_mut(k).add_y_low(8);

@@ -513,11 +513,15 @@ impl ZeldaState {
         } else if let Some(func) = self.emu_runframe {
             func(self, input_state, run_what);
         }
+        self.advance_native_exact_cpu_dialogue_loader();
         self.advance_native_exact_cpu_bg_chars_gate();
         self.advance_native_exact_cpu_story_decompression();
         self.advance_native_exact_cpu_pre_dungeon_room_header();
         self.advance_native_exact_cpu_floor_live_draw();
         self.advance_native_exact_cpu_object_live_draw();
+        self.advance_native_exact_cpu_post_object_prefix();
+        self.advance_native_exact_cpu_zelda_follower_graphics();
+        self.advance_native_exact_cpu_big_key_graphics();
         self.advance_native_exact_cpu_room_upload();
         self.advance_native_exact_cpu_ground_item_receipt_tail();
         self.advance_native_exact_cpu_overworld_scan_trial();

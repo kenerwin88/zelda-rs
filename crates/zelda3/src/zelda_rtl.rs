@@ -300,7 +300,6 @@ const ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES: u8 = 4;
 // decompressor before vblank; four following host boundaries pass before the
 // call returns through the sprite loop and Module 7 caller suffix.
 const BIG_KEY_DROP_GRAPHICS_NMI_SLICES: u8 = 4;
-const ROM_TEXT_DECODE_FIRST_SLICE_CURSOR: u16 = 94;
 const POLY_WORKER_TWO_FRAME_CYCLE_THRESHOLD: u32 = 28_250;
 const SNES9X_INTRO_POLY_BOOTSTRAP_STEPS: u8 = 0;
 const SNES9X_INTRO_THREAD_START_DELAY: u8 = 0;
@@ -3866,6 +3865,8 @@ fn dungeon_room_load_cpu_plan(
     // inside slot initialization before reaching this address at the fourth
     // boundary.
     const SPRITE_MAIN_RETURN_PC: u32 = 0x02_8842;
+    // Return from Module 7's JSL LinkOam_Main, before Hud_RefillLogic.
+    const LINK_OAM_RETURN_PC: u32 = 0x02_8856;
     const SPRITE_EXECUTE_SINGLE_ENTRY_PC: u32 = 0x06_84e2;
     // The loop reaches this instruction after each Sprite_ExecuteSingle
     // returns. It is a per-slot semantic commit point, not the end of the
@@ -3901,6 +3902,7 @@ fn dungeon_room_load_cpu_plan(
     let mut sprite_main_boundary = None;
     let mut sprite_main_entry_nmis: Option<u8> = None;
     let mut sprite_main_return_nmis: Option<u8> = None;
+    let mut link_oam_return_nmis: Option<u8> = None;
 
     run.enable_cpu_write_trace();
 
@@ -3938,6 +3940,11 @@ fn dungeon_room_load_cpu_plan(
             {
                 sprite_main_return_nmis = Some(nmis);
             }
+            LINK_OAM_RETURN_PC
+                if auxiliary_graphics_return.is_some() && link_oam_return_nmis.is_none() =>
+            {
+                link_oam_return_nmis = Some(nmis);
+            }
             _ => {}
         }
         if run.is_complete() {
@@ -3974,6 +3981,8 @@ fn dungeon_room_load_cpu_plan(
                     .saturating_sub(auxiliary_graphics_return_nmis),
                 caller_sprite_main_nmis,
                 caller_suffix_nmis,
+                link_oam_returned_before_suffix_nmi: caller_suffix_nmis != 0
+                    && link_oam_return_nmis == Some(sprite_main_return_nmis),
                 sprite_main_boundary,
             };
         }
@@ -10104,6 +10113,10 @@ pub struct ZeldaState {
     /// effects and owns only pixel-loop work.
     #[serde(skip)]
     pub(crate) dialogue_vwf_glyph_cpu_phase: messaging::VwfGlyphCpuPhase,
+    /// Unretired `VWF_RenderSingle`/render-all return work before the next
+    /// message dispatch. A vblank can interrupt this suffix between glyphs.
+    #[serde(skip)]
+    pub(crate) dialogue_vwf_transition_remaining_master_cycles: u32,
     /// Decoder position of a glyph whose source CPU body is still active.
     /// `$1CD9` can advance in the glyph's epilogue before that body returns.
     #[serde(skip)]
@@ -10114,6 +10127,8 @@ pub struct ZeldaState {
     /// exact native dialogue budget carries it (`cycle_models::vwf`).
     #[serde(skip)]
     pub(crate) dialogue_vwf_dispatch_cursor: crate::cycle_models::vwf::DispatchCursor,
+    #[serde(skip)]
+    pub(crate) dialogue_character_load_progress: Option<messaging::DialogueCharacterLoadProgress>,
     /// Speed-0 glyph restarts of the current `RenderText_Draw_MessageCharacters`
     /// call whose `$0E:C9F5` exit block the ROM still owes: each `JMP $C984`
     /// leaves the `JSR HandleNext` return on the stack, and the final `RTS`
@@ -10123,8 +10138,8 @@ pub struct ZeldaState {
     /// Native CPU work left in the suspended scroll call after its entry
     /// host's vblank budget was exhausted (no source timing receipts).
     pub(crate) dialogue_scroll_remaining_master_cycles: Option<u64>,
-    /// In-flight CPU cursor, like the VWF glyph phase above; paired resumes
-    /// start at a quiescent boundary and cannot reconstruct a held scroll.
+    /// In-flight CPU cursor, like the VWF glyph phase above. The native exact
+    /// CPU paired sidecar retains it across a held-scroll host boundary.
     #[serde(skip)]
     pub(crate) native_scroll_copy_cursor: Option<messaging::NativeScrollCopyCursor>,
     /// The display mask saved by the early dungeon-map configuration while
@@ -10403,6 +10418,9 @@ pub struct ZeldaState {
     /// call stack resumes at the same semantic boundary.
     #[serde(skip)]
     active_dungeon_sprite_main_return: Option<DungeonSpriteMainReturn>,
+    /// The room-load caller returned from LinkOam before an NMI in HUD.
+    #[serde(skip)]
+    dungeon_room_load_hud_suffix_pending: bool,
     /// Return frame for a `Sprite_Main` call made by Module 9. Synchronous
     /// sprite handlers move this frame into their continuation so the native
     /// caller restores its four stack-local scroll values exactly once.
@@ -13067,8 +13085,10 @@ impl ZeldaState {
             rom_damage_check_y_register: None,
             dialogue_vwf_handler_entry_phase: messaging::VwfHandlerEntryPhase::default(),
             dialogue_vwf_glyph_cpu_phase: messaging::VwfGlyphCpuPhase::Ready,
+            dialogue_vwf_transition_remaining_master_cycles: 0,
             dialogue_vwf_pending_glyph_read_pos: None,
             dialogue_vwf_dispatch_cursor: crate::cycle_models::vwf::DispatchCursor::default(),
+            dialogue_character_load_progress: None,
             dialogue_vwf_deferred_handler_exits: 0,
             dialogue_scroll_remaining_master_cycles: None,
             native_scroll_copy_cursor: None,
@@ -13150,6 +13170,7 @@ impl ZeldaState {
             attract_first_story_render_delay: 0,
             game_execution_scheduler: GameExecutionScheduler::default(),
             active_dungeon_sprite_main_return: None,
+            dungeon_room_load_hud_suffix_pending: false,
             active_module09_sprite_main_return: None,
             dungeon_cached_sprite_cpu_interruption_pending: None,
             dungeon_cached_sprite_cpu_interruption_boundary: None,

@@ -69,7 +69,7 @@ const JUMP_TABLE_LOCAL: u64 = 414;
 /// `Text_LoadCharacterBuffer` leaves the message's source byte count in
 /// `$1CDD`; `VWF_SetLine` stores `0`/`$28`/`$50` and zeroes `$1CE6`; a
 /// completed scroll stores `$50` and zeroes `$1CE6`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DispatchCursor {
     pub(crate) src_offs: u16,
     pub(crate) next_position: u8,

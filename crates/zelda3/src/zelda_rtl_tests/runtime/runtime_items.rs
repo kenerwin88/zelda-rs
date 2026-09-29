@@ -798,6 +798,7 @@ fn live_big_key_publication_enters_the_existing_source_call_continuation() {
         state.game_execution_scheduler.current_work(),
         Some(GameWorkContinuation::FinishBigKeyDropGraphics {
             sprite_slot: 2,
+            progress: None,
             dungeon: DungeonSpriteMainReturn {
                 link_oam: None,
                 bg2_x: 0,
@@ -1288,6 +1289,7 @@ fn big_key_drop_publishes_entry_dma_then_holds_it_across_waiting_slices() {
         state.game_execution_scheduler.current_work(),
         Some(GameWorkContinuation::FinishBigKeyDropGraphics {
             sprite_slot: 2,
+            progress: None,
             dungeon: DungeonSpriteMainReturn {
                 link_oam: None,
                 bg2_x: 1,

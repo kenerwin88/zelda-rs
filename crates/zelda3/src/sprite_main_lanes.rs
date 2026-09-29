@@ -1366,16 +1366,7 @@ impl ZeldaState {
                         None
                     }
                     crate::SpriteFollowerGraphicsCaller::Zelda => {
-                        assert_eq!(self.sprite_slot_view(k).state(), 8);
-                        assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x76);
-                        // Cycle ledger: this lane enters the slot's Sprite_ExecuteSingle body
-                        // directly; open its scope for the timers and the handler part.
-                        let _execute_single = self.sprite_execute_single_lane_scope(k, true);
-                        self.sprite_timers_and_oam(k);
-                        self.sprite_module_initialize_properties(k);
-                        Some(self.sprite_prep_zelda_before_follower_graphics(k).expect(
-                            "source follower-graphics progress requires Zelda's live prep path",
-                        ))
+                        Some(self.sprite_main_zelda_follower_prefix(k))
                     }
                     crate::SpriteFollowerGraphicsCaller::BlindMaidenBody => {
                         assert_eq!(self.sprite_slot_view(k).state(), 9);
@@ -1448,6 +1439,19 @@ impl ZeldaState {
             }
         }
         false
+    }
+
+    /// Run Zelda's Sprite_ExecuteSingle prefix through the call to the shared
+    /// follower loader. Both semantic receipts and the exact CPU owner enter
+    /// here; neither may replay this prefix when the decompressor resumes.
+    pub(super) fn sprite_main_zelda_follower_prefix(&mut self, k: usize) -> u8 {
+        assert_eq!(self.sprite_slot_view(k).state(), 8);
+        assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x76);
+        let _execute_single = self.sprite_execute_single_lane_scope(k, true);
+        self.sprite_timers_and_oam(k);
+        self.sprite_module_initialize_properties(k);
+        self.sprite_prep_zelda_before_follower_graphics(k)
+            .expect("source follower-graphics progress requires Zelda's live prep path")
     }
 
     /// Extracted from `sprite_main` (mechanical move; body unchanged).

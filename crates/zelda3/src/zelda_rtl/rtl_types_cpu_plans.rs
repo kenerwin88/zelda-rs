@@ -354,6 +354,8 @@ pub(crate) struct DungeonRoomLoadCpuSchedule {
     pub(crate) caller_prefix_nmis: u8,
     pub(crate) caller_sprite_main_nmis: u8,
     pub(crate) caller_suffix_nmis: u8,
+    /// LinkOam_Main returned before the first NMI in the caller suffix.
+    pub(crate) link_oam_returned_before_suffix_nmi: bool,
     pub(crate) sprite_main_boundary: Option<SpriteMainCpuBoundary>,
 }
 
@@ -369,6 +371,7 @@ pub(crate) struct DungeonRoomLoadCpuPlan {
     pub(crate) caller_prefix_nmis: u8,
     pub(crate) caller_sprite_main_nmis: u8,
     pub(crate) caller_suffix_nmis: u8,
+    pub(crate) link_oam_returned_before_suffix_nmi: bool,
     pub(crate) sprite_main_boundary: Option<SpriteMainCpuBoundary>,
 }
 
@@ -408,6 +411,7 @@ impl DungeonRoomLoadCpuPlan {
             caller_prefix_nmis: self.caller_prefix_nmis,
             caller_sprite_main_nmis: self.caller_sprite_main_nmis,
             caller_suffix_nmis: self.caller_suffix_nmis,
+            link_oam_returned_before_suffix_nmi: self.link_oam_returned_before_suffix_nmi,
             sprite_main_boundary: self.sprite_main_boundary,
         }
     }
@@ -1023,12 +1027,14 @@ pub(crate) enum CachedSpriteCpuInterruption {
         slot: u8,
         live_fields: u8,
     },
+    AfterSlot { slot: u8 },
 }
 
 impl CachedSpriteCpuInterruption {
     pub(crate) const fn slot(self) -> u8 {
         match self {
-            Self::Loading { slot, .. }
+            Self::AfterSlot { slot }
+            | Self::Loading { slot, .. }
             | Self::ExecutingAntfairyAfterSubtype2Increment { slot, .. }
             | Self::ExecutingGreenKnifeGuardBeforeRecruitOamPrep { slot }
             | Self::ExecutingAfterOamAllocation { slot, .. }
@@ -1040,6 +1046,7 @@ impl CachedSpriteCpuInterruption {
 impl From<crate::CachedSpriteExecutionProgress> for CachedSpriteCpuInterruption {
     fn from(progress: crate::CachedSpriteExecutionProgress) -> Self {
         match progress {
+            crate::CachedSpriteExecutionProgress::AfterSlot(slot) => Self::AfterSlot { slot },
             crate::CachedSpriteExecutionProgress::Loading {
                 slot,
                 copied_fields,
@@ -1712,6 +1719,12 @@ pub(crate) enum FluteMenuSelectedScreenStep {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AnimatedSpriteTileDecompressionProgress {
+    FirstSheet(u16),
+    SecondSheet(u16),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GameWorkContinuation {
     FinishAttractWorldMap,
     FinishAttractWorldMapExit,
@@ -1777,6 +1790,7 @@ pub(crate) enum GameWorkContinuation {
     FinishBigKeyDropGraphics {
         sprite_slot: u8,
         dungeon: DungeonSpriteMainReturn,
+        progress: Option<AnimatedSpriteTileDecompressionProgress>,
     },
     FinishDungeonMapGraphicsPreparation,
     FinishDungeonMapRoomDrawing,

@@ -152,7 +152,10 @@ impl ZeldaState {
     }
 
     pub(super) fn finish_dungeon_room_load_caller_after_trailing_nmi(&mut self) {
-        if let Some(sprite_return) = self.active_dungeon_sprite_main_return.take() {
+        if std::mem::take(&mut self.dungeon_room_load_hud_suffix_pending) {
+            assert!(self.active_dungeon_sprite_main_return.is_none());
+            self.complete_module07_hud_after_link_oam();
+        } else if let Some(sprite_return) = self.active_dungeon_sprite_main_return.take() {
             self.complete_module07_after_sprite_main(sprite_return);
         } else {
             self.complete_module07_dungeon_after_submodule();

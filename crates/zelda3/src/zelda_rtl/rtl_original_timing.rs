@@ -533,6 +533,7 @@ impl ZeldaState {
         if cached_sprite_progress
             .iter()
             .any(|receipt| match receipt.progress {
+                crate::CachedSpriteExecutionProgress::AfterSlot(slot) => slot >= 16,
                 crate::CachedSpriteExecutionProgress::Loading {
                     slot,
                     copied_fields,
@@ -7962,6 +7963,11 @@ impl ZeldaState {
                 | DungeonSupertileTransitionWork::SpriteConversionCallerResume
         ));
         if work == DungeonSupertileTransitionWork::RoomLoadCallerResume
+            && std::mem::take(&mut self.dungeon_room_load_hud_suffix_pending)
+        {
+            assert!(self.active_dungeon_sprite_main_return.is_none());
+            self.complete_module07_hud_after_link_oam();
+        } else if work == DungeonSupertileTransitionWork::RoomLoadCallerResume
             && self.active_dungeon_sprite_main_return.is_some()
         {
             let sprite_return = self
@@ -12294,7 +12300,7 @@ impl ZeldaState {
                 GameWorkStep::Complete(GameWorkContinuation::FinishBigKeyDropGraphics {
                     sprite_slot,
                     dungeon,
-                    ..
+                    progress,
                 }) => {
                     let sprite_slot = usize::from(sprite_slot);
                     // Resume exactly where PrepareEnemyDrop was interrupted:
@@ -12309,7 +12315,7 @@ impl ZeldaState {
                             *sprite_main_return_claims,
                         );
                     }
-                    self.sprite_prep_big_key_load_graphics(sprite_slot);
+                    self.sprite_prep_big_key_load_graphics_after_progress(sprite_slot, progress);
                     self.complete_prepare_enemy_drop(sprite_slot);
                     self.complete_sprite_main_after_interrupted_slot(sprite_slot);
                     self.complete_module07_after_sprite_main(dungeon);
