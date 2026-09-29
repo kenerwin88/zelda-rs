@@ -75,6 +75,67 @@ mod sprite_decompression_cursor_tests {
             assert_eq!(&ram[destination..destination + 0x600], expected.as_slice());
         }
     }
+
+    #[test]
+    fn dungeon_map_sprite_store_events_match_independent_cpu_execution() {
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let asset_path = std::env::var_os("ZELDA3_ASSETS")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| root.join("zelda3_assets.dat"));
+        let rom_path = std::env::var_os("ZELDA3_ROM")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| root.join("saves/zelda3.sfc"));
+        let (Ok(assets), Ok(rom)) = (std::fs::read(asset_path), std::fs::read(rom_path)) else {
+            return;
+        };
+        let mut state = ZeldaState::new();
+        state.set_assets(&assets).unwrap();
+        for (slot, sheet) in [97usize, 98, 99, 80].into_iter().enumerate() {
+            const RETURN_TO_MAIN_WAIT: [u8; 2] = [0x35, 0x80];
+            let destination = 0x7800 + slot * 0x600;
+            let cursor = state.sprite_decompression_cursor(sheet, destination).unwrap();
+            let checkpoint = RomCpuCheckpoint {
+                entry_pc: 0x00_e772, stop_pc: 0x00_8036,
+                a: 0, x: 0, y: sheet as u16, sp: 0x01fc, dp: 0, db: 0,
+                carry: false, zero: false, overflow: false, negative: false,
+                interrupt_disable: true, decimal: false,
+                accumulator_is_8_bit: true, index_is_8_bit: true,
+                emulation: false, waiting: false,
+                stack_address: 0x01fd, stack_bytes: &RETURN_TO_MAIN_WAIT,
+            };
+            let mut ram = vec![0; 0x2_0000];
+            ram[0] = destination as u8;
+            ram[1] = (destination >> 8) as u8;
+            ram[2] = 0x7e;
+            let mut run = RomCpuTimingRun::new(
+                &rom, &ram, &[0; 0x2000], &snes::PpuState::default(),
+                &snes::DmaState::default(), [0; 4], checkpoint,
+            ).unwrap();
+            run.enable_cpu_write_trace();
+            let mut elapsed = 0u64;
+            let mut writes = Vec::new();
+            for _ in 0..4_000_000 {
+                if run.is_complete() { break; }
+                elapsed += u64::from(run.step().master_cycles);
+                for (address, value) in run.take_cpu_wram_writes() {
+                    if (destination..destination + 0x600).contains(&address) {
+                        writes.push((elapsed, address - destination, value));
+                    }
+                }
+            }
+            assert!(run.is_complete(), "sheet {sheet} did not return");
+            assert_eq!(writes.len(), cursor.stores.len());
+            for (index, (at, offset, value)) in writes.into_iter().enumerate() {
+                assert_eq!((at, offset, value), (
+                    cursor.stores[index].after_master_cycles,
+                    usize::from(cursor.stores[index].output_offset),
+                    cursor.bytes[index],
+                ), "sheet {sheet} store {index}");
+            }
+        }
+    }
 }
 
 impl SpriteDecompressionCursor {
