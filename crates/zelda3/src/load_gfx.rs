@@ -5,7 +5,8 @@ use crate::game_state::constants::MENU_PREV_JOYPAD_H;
 
 use crate::chr_source;
 use crate::cycle_models::decompress::{
-    decompress_cost, stream_source_offset, DecompressEntry, GET_NEXT_BYTE_MASTER,
+    decompress_cost, decompress_store_timeline, stream_source_offset, DecompressEntry,
+    DecompressStore, GET_NEXT_BYTE_MASTER,
 };
 use crate::game_state::{PaletteSliceSource, PaletteTransform};
 use zelda3_palette::{Bank, ChannelReference};
@@ -20,6 +21,86 @@ use load_gfx_shared::{
 
 const LOAD_GFX_FEATURES0_MISC_BUG_FIXES: u32 = 4096;
 const LOAD_GFX_FEATURES0_DIM_FLASHES: u32 = 65536;
+
+/// Native WRAM publication cursor for one sprite sheet. The bytes come from
+/// the translated decoder; the instruction-priced ROM model only determines
+/// when each store becomes visible to an interrupting CPU read.
+struct SpriteDecompressionCursor {
+    destination: usize,
+    bytes: Vec<u8>,
+    stores: Vec<DecompressStore>,
+    next_store: usize,
+    total_master_cycles: u64,
+}
+
+#[cfg(test)]
+mod sprite_decompression_cursor_tests {
+    use super::*;
+
+    #[test]
+    fn stores_become_visible_only_after_their_cpu_instruction() {
+        let stream = [0x02, 1, 2, 3, 0x21, 0xaa, 0x41, 0x55, 0x66, 0x61, 0x77, 0x80, 0, 0, 0xff];
+        let expected = decompress_asset(&stream);
+        let (cost, stores) = decompress_store_timeline(
+            DecompressEntry::Sprite, 97, &stream, 0x8000, 0x7e_7800,
+        );
+        let mut cursor = SpriteDecompressionCursor::new(0x7800, expected.clone(), stores, cost.master).unwrap();
+        let mut ram = vec![0xa5; 0x10000];
+        let first = cursor.stores[0].after_master_cycles;
+        cursor.publish_through(first - 1, &mut ram);
+        assert!(ram[0x7800..0x7800 + expected.len()].iter().all(|&byte| byte == 0xa5));
+        cursor.publish_through(first, &mut ram);
+        assert_eq!(ram[0x7800], expected[0]);
+        assert_eq!(cursor.next_store, 1);
+        cursor.publish_through(cursor.total_master_cycles, &mut ram);
+        assert!(cursor.is_complete());
+        assert_eq!(&ram[0x7800..0x7800 + expected.len()], expected.as_slice());
+    }
+
+    #[test]
+    fn dungeon_map_sprite_sheets_match_the_existing_decoder() {
+        let path = std::env::var_os("ZELDA3_ASSETS")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../zelda3_assets.dat"));
+        let Ok(assets) = std::fs::read(path) else { return };
+        let mut state = ZeldaState::new();
+        state.set_assets(&assets).unwrap();
+        for (slot, sheet) in [97, 98, 99, 80].into_iter().enumerate() {
+            let destination = 0x7800 + slot * 0x600;
+            let expected = state.decompressed_sprite_graphics_data(sheet).unwrap();
+            let mut cursor = state.sprite_decompression_cursor(sheet, destination).unwrap();
+            let mut ram = vec![0xa5; 0x10000];
+            cursor.publish_through(cursor.total_master_cycles, &mut ram);
+            assert!(cursor.is_complete());
+            assert_eq!(&ram[destination..destination + 0x600], expected.as_slice());
+        }
+    }
+}
+
+impl SpriteDecompressionCursor {
+    fn new(destination: usize, bytes: Vec<u8>, stores: Vec<DecompressStore>, total_master_cycles: u64) -> Option<Self> {
+        if bytes.len() != stores.len()
+            || stores.iter().enumerate().any(|(index, store)| store.output_offset as usize != index)
+        {
+            return None;
+        }
+        Some(Self { destination, bytes, stores, next_store: 0, total_master_cycles })
+    }
+
+    fn publish_through(&mut self, elapsed_master_cycles: u64, ram: &mut [u8]) {
+        while self.next_store < self.stores.len()
+            && self.stores[self.next_store].after_master_cycles <= elapsed_master_cycles
+        {
+            let offset = self.stores[self.next_store].output_offset as usize;
+            ram[(self.destination + offset) & 0xffff] = self.bytes[self.next_store];
+            self.next_store += 1;
+        }
+    }
+
+    fn is_complete(&self) -> bool {
+        self.next_store == self.stores.len()
+    }
+}
 
 pub(super) const fn animated_sprite_tile_secondary_sheet(tile: u8) -> u8 {
     if tile == 0x23 || tile >= 0x37 {
@@ -1511,6 +1592,25 @@ impl ZeldaState {
             0x00_e843,
             cost.get_next_byte_master - last_call * GET_NEXT_BYTE_MASTER,
         );
+    }
+
+    fn sprite_decompression_cursor(&self, sheet: usize, destination: usize) -> Option<SpriteDecompressionCursor> {
+        // The port's special handling of sheets 0..11 reads stale WRAM during
+        // back-references. Those sheets need a live-buffer decoder cursor.
+        if sheet < 12 {
+            return None;
+        }
+        let sheet_number = u8::try_from(sheet).ok()?;
+        let stream = self.asset_bytes(64, sheet)?;
+        let bytes = self.decompressed_sprite_graphics_data(sheet)?;
+        let (cost, stores) = decompress_store_timeline(
+            DecompressEntry::Sprite,
+            sheet_number,
+            stream,
+            stream_source_offset(DecompressEntry::Sprite, sheet_number),
+            0x7e_0000 + destination as u32,
+        );
+        SpriteDecompressionCursor::new(destination, bytes, stores, cost.master)
     }
 
     pub(super) fn decompressed_sprite_graphics_data(&self, gfx: usize) -> Option<Vec<u8>> {

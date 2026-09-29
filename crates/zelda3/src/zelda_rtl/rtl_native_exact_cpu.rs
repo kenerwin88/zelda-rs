@@ -1851,6 +1851,13 @@ impl NativeExactCpuOwner {
         };
         self.cpu
             .run_until_main_loop_return_with_quiescent_step_hook(|step, cpu| {
+                if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_TILESET_PHASES").is_some()
+                    && step.origin_pc == 0x00_e19b
+                {
+                    eprintln!("native-tileset-source-raster host={} pc={:06x} start={} end={} after={:?}",
+                        trace.host, step.origin_pc, step.started_at.master_cycles(),
+                        step.ended_at.master_cycles(), cpu.raster_position());
+                }
                 let completed = Self::record_step(
                     &mut self.interrupt_stack,
                     &mut self.overworld_scan,
