@@ -11602,6 +11602,14 @@ impl ZeldaState {
         } else {
             None
         };
+        if self.native_map_graphics_write_plan.is_some()
+            && (matches!(scheduled_work_step,
+                Some(GameWorkStep::Complete(GameWorkContinuation::FinishDungeonMapGraphicsPreparation)))
+                || self.game_execution_scheduler.current_work()
+                    == Some(GameWorkContinuation::FinishDungeonMapGraphicsPreparation))
+        {
+            self.advance_native_map_graphics_write_plan();
+        }
         if crate::debug_env::var_os("ZELDA3_DEBUG_HOST_PATH").is_some() {
             eprintln!(
                 "[HOSTPATH] host={} step={:?} nmi_timeline={:?} return_timeline={} remaining={:?}",

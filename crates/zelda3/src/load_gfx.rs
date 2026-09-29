@@ -1264,6 +1264,95 @@ impl ZeldaState {
         }
     }
 
+    /// Pair measured CPU addresses with translated graphics bytes. The CPU
+    /// timing run never supplies a gameplay value to this plan.
+    pub(super) fn build_native_map_graphics_write_plan(
+        &self, timing: NativeMapGraphicsTiming,
+    ) -> NativeMapGraphicsWritePlan {
+        let main = load_gfx_main_tileset(
+            self.game_state.world.palette_theme.main_tile_theme_index() as usize,
+        );
+        let aux = load_gfx_aux_tileset(
+            self.game_state.world.palette_theme.aux_tile_theme_index() as usize,
+        );
+        let sprite = load_gfx_sprite_tileset(
+            self.game_state.sprites.system.graphics_index() as usize,
+        );
+        let sprite_sheets: [usize; 4] = std::array::from_fn(|slot| usize::from(
+            if sprite[slot] != 0 { sprite[slot] }
+            else { self.game_state.sprites.workspace.graphics_subset(slot) }
+        ));
+        let aux_sheets: [usize; 4] = std::array::from_fn(|slot| usize::from(
+            if aux[slot] != 0 { aux[slot] } else { main[slot + 3] }
+        ));
+        let mut operations: Vec<(u32, usize, GraphicsDecompressionCursor)> = Vec::new();
+        for (slot, sheet) in sprite_sheets.into_iter().enumerate() {
+            let destination = 0x7800 + slot * 0x600;
+            operations.push((0x00_e772, sheet,
+                self.sprite_decompression_cursor(sheet, destination)
+                    .expect("map sprite sheet requires a timed translated decoder")));
+        }
+        for (slot, sheet) in [
+            usize::from(main[0]), usize::from(main[1]), usize::from(main[2]),
+            aux_sheets[0], aux_sheets[1], aux_sheets[2], aux_sheets[3],
+            usize::from(main[7]),
+        ].into_iter().enumerate() {
+            let destination = match slot {
+                3..=6 => 0x6000 + (slot - 3) * 0x600,
+                _ => GraphicsDecompressionScratch::primary_buffer_offset(),
+            };
+            operations.push((0x00_e78f, sheet,
+                self.background_decompression_cursor(sheet, destination)
+                    .expect("map background sheet requires a timed translated decoder")));
+        }
+        assert_eq!(timing.decompressions.len(), operations.len());
+        for ((observed_pc, observed_sheet), (pc, sheet, _)) in
+            timing.decompressions.iter().zip(&operations)
+        {
+            assert_eq!(*observed_pc, *pc, "map decompressor entry differs");
+            assert_eq!(usize::from(*observed_sheet), *sheet, "map sheet choice differs");
+        }
+        let mut writes_by_slice = Vec::with_capacity(timing.writes_by_slice.len());
+        for slice in timing.writes_by_slice {
+            let mut writes = Vec::with_capacity(slice.len());
+            for (operation, address) in slice {
+                if (0xc2fc..0xc300).contains(&address) {
+                    let slot = address - 0xc2fc;
+                    writes.push((address, sprite_sheets[slot] as u8));
+                    continue;
+                }
+                let (_, _, cursor) = &mut operations[usize::from(operation)];
+                let offset = cursor.next_store;
+                assert!(offset < cursor.bytes.len(), "map decompression writes exceeded decoder output");
+                assert_eq!(address, cursor.destination + offset,
+                    "map timed store address differs from translated decoder");
+                writes.push((address, cursor.bytes[offset]));
+                cursor.next_store += 1;
+            }
+            writes_by_slice.push(writes);
+        }
+        for (_, sheet, cursor) in operations {
+            assert_eq!(cursor.next_store, cursor.bytes.len(),
+                "map sheet {sheet} timing omitted translated bytes");
+        }
+        NativeMapGraphicsWritePlan { writes_by_slice, next_slice: 0 }
+    }
+
+    pub(super) fn advance_native_map_graphics_write_plan(&mut self) {
+        let Some(mut plan) = self.native_map_graphics_write_plan.take() else { return };
+        for (address, value) in &plan.writes_by_slice[plan.next_slice] {
+            if (0xc2fc..0xc300).contains(address) {
+                self.sprite_workspace_mut().set_graphics_subset(*address - 0xc2fc, *value);
+            } else {
+                self.ram[*address] = *value;
+            }
+        }
+        plan.next_slice += 1;
+        if plan.next_slice < plan.writes_by_slice.len() {
+            self.native_map_graphics_write_plan = Some(plan);
+        }
+    }
+
     pub(super) fn initialize_tilesets(&mut self) {
         let main_tile_set = load_gfx_main_tileset(
             self.game_state.world.palette_theme.main_tile_theme_index() as usize,

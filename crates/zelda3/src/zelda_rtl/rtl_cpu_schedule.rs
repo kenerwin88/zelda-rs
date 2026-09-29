@@ -145,9 +145,12 @@ impl ZeldaState {
             && self.pending_map_force_blank_output_scanline.is_none()
         {
             if frame.submodule == 3
-                && crate::debug_env::var_os("ZELDA3_NATIVE_TILESET_FULL_PLAN_PROBE").is_some()
+                && (crate::debug_env::var_os("ZELDA3_NATIVE_TILESET_FULL_PLAN_PROBE").is_some()
+                    || crate::debug_env::var_os("ZELDA3_NATIVE_TILESET_TIMED_WRAM").is_some())
             {
-                self.probe_dungeon_map_tileset_wram_schedule(input);
+                self.native_map_graphics_timing = Some(
+                    self.probe_dungeon_map_tileset_wram_schedule(input)
+                );
             }
             self.pending_map_force_blank_output_scanline =
                 Some(map_fade_cpu_blank_scanline(self, input));
@@ -1216,7 +1219,7 @@ impl ZeldaState {
     /// Diagnose the full suspended tileset call from native pre-fade state.
     /// The shadow CPU supplies instruction/NMI timing only; no writes escape
     /// this probe into translated game state.
-    fn probe_dungeon_map_tileset_wram_schedule(&self, input: u16) {
+    fn probe_dungeon_map_tileset_wram_schedule(&self, input: u16) -> NativeMapGraphicsTiming {
         let timing_dma = self.dma_with_native_hdma_enable();
         let mut run = RomCpuTimingRun::new(
             &self.rom, &self.ram, &self.sram, &self.ppu, &timing_dma,
@@ -1233,6 +1236,9 @@ impl ZeldaState {
         let mut entered = false;
         let mut nmis = 0u32;
         let mut writes = std::collections::BTreeMap::<(u32, usize), (usize, u64)>::new();
+        let mut writes_by_slice = vec![Vec::new()];
+        let mut decompressions = Vec::new();
+        let mut current_decompression = u8::MAX;
         for _ in 0..5_000_000 {
             if run.pc() == 0x00_e19b && !entered {
                 entered = true;
@@ -1242,6 +1248,9 @@ impl ZeldaState {
             }
             if entered && run.is_complete() { break; }
             if entered && matches!(run.pc(), 0x00_e772 | 0x00_e78f) {
+                current_decompression = u8::try_from(decompressions.len())
+                    .expect("map graphics has too many decompressions");
+                decompressions.push((run.pc(), run.index_y()));
                 eprintln!("native-tileset-shadow-decompress host={} slice={nmis} pc={:06x} sheet={} raster={:?}",
                     self.frame_ctr_dbg + nmis, run.pc(), run.index_y(), budget.raster_position());
             }
@@ -1256,12 +1265,16 @@ impl ZeldaState {
                     0x14000..0x14600 => 0x14000,
                     _ => continue,
                 };
+                writes_by_slice[nmis as usize].push((current_decompression, address));
                 let entry = writes.entry((nmis, region)).or_insert((0, 0xcbf29ce484222325));
                 entry.0 += 1;
                 entry.1 = (entry.1 ^ (address - region) as u64).wrapping_mul(0x100000001b3);
             }
             if advance != CpuWorkAdvance::Complete {
-                if entered { nmis += 1; }
+                if entered {
+                    nmis += 1;
+                    writes_by_slice.push(Vec::new());
+                }
                 advance_rom_cpu_through_nmi(&mut run, &mut budget);
             }
         }
@@ -1271,5 +1284,7 @@ impl ZeldaState {
             eprintln!("native-tileset-shadow-writes host={} slice={slice} region=${region:05x} stores={stores} address_hash={address_hash:016x}",
                 self.frame_ctr_dbg + slice);
         }
+        assert!(entered && run.is_complete(), "map tileset timing call did not return");
+        NativeMapGraphicsTiming { writes_by_slice, decompressions }
     }
 }

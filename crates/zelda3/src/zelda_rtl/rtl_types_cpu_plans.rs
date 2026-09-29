@@ -1663,6 +1663,21 @@ pub(crate) struct PreOverworldOverlayDecodeProgress {
     pub(crate) published_tiles: u16,
 }
 
+/// Instruction-ordered addresses observed during a native map tileset call.
+/// The timing CPU contributes only addresses and interruption boundaries;
+/// translated graphics decoding supplies all bytes during publication.
+#[derive(Clone, Debug)]
+pub(crate) struct NativeMapGraphicsTiming {
+    pub(crate) writes_by_slice: Vec<Vec<(u8, usize)>>,
+    pub(crate) decompressions: Vec<(u32, u16)>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct NativeMapGraphicsWritePlan {
+    pub(crate) writes_by_slice: Vec<Vec<(usize, u8)>>,
+    pub(crate) next_slice: usize,
+}
+
 /// Cumulative CPU statement progress of the four main-screen quadrants at an
 /// NMI crossing. The ROM shadow supplies only instruction/write counts;
 /// translated map assets still supply every decompressed and drawn value.

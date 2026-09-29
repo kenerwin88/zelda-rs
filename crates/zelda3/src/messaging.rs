@@ -3489,6 +3489,15 @@ impl ZeldaState {
         self.set_main_screen_layers(0x16);
         self.set_sub_screen_layers(1);
         self.EraseTileMaps_dungeonmap();
+        if self.rom_startup_timing()
+            && crate::debug_env::var_os("ZELDA3_NATIVE_TILESET_TIMED_WRAM").is_some()
+        {
+            let timing = self.native_map_graphics_timing.take()
+                .expect("timed map graphics requires the native CPU schedule");
+            self.native_map_graphics_write_plan =
+                Some(self.build_native_map_graphics_write_plan(timing));
+            self.advance_native_map_graphics_write_plan();
+        }
     }
 
     pub(super) fn complete_dungeon_map_graphics_preparation(&mut self) {
