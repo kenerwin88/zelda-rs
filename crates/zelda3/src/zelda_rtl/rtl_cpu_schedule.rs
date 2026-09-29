@@ -1235,7 +1235,7 @@ impl ZeldaState {
     /// The shadow CPU supplies instruction/NMI timing only; no writes escape
     /// this probe into translated game state.
     fn probe_dungeon_map_tileset_wram_schedule(
-        &self, input: u16, stop_after_graphics: bool,
+        &self, input: u16, track_recovery_tail: bool,
     ) -> NativeMapGraphicsTiming {
         let timing_dma = self.dma_with_native_hdma_enable();
         let mut run = RomCpuTimingRun::new(
@@ -1254,6 +1254,7 @@ impl ZeldaState {
         let mut nmis = 0u32;
         let mut writes = std::collections::BTreeMap::<(u32, usize), (usize, u64)>::new();
         let mut writes_by_slice = vec![Vec::new()];
+        let mut quadrant_cursor_writes_by_slice = vec![0u8];
         let mut decompressions = Vec::new();
         let mut current_decompression = u8::MAX;
         let mut graphics_stores = 0usize;
@@ -1277,6 +1278,12 @@ impl ZeldaState {
             let advance = advance_rom_cpu_step(&mut run, &mut budget);
             for (address, _) in run.take_cpu_wram_writes() {
                 if !entered { continue; }
+                if track_recovery_tail && address == 0x045c {
+                    quadrant_cursor_writes_by_slice[nmis as usize] += 1;
+                }
+                if track_recovery_tail && graphics_stores == 12 * 0x600 {
+                    continue;
+                }
                 let region = match address {
                     0x6000..0x9000 => 0x6000 + (address - 0x6000) / 0x600 * 0x600,
                     0xc2fc..0xc300 => 0xc2fc,
@@ -1291,13 +1298,11 @@ impl ZeldaState {
                 entry.0 += 1;
                 entry.1 = (entry.1 ^ (address - region) as u64).wrapping_mul(0x100000001b3);
             }
-            if stop_after_graphics && graphics_stores == 12 * 0x600 {
-                break;
-            }
             if advance != CpuWorkAdvance::Complete {
                 if entered {
                     nmis += 1;
                     writes_by_slice.push(Vec::new());
+                    quadrant_cursor_writes_by_slice.push(0);
                 }
                 advance_rom_cpu_through_nmi(&mut run, &mut budget);
             }
@@ -1308,9 +1313,13 @@ impl ZeldaState {
             eprintln!("native-tileset-shadow-writes host={} slice={slice} region=${region:05x} stores={stores} address_hash={address_hash:016x}",
                 self.frame_ctr_dbg + slice);
         }
-        assert!(entered && (run.is_complete() || stop_after_graphics && graphics_stores == 12 * 0x600),
-            "map tileset timing call did not reach its graphics suffix");
-        NativeMapGraphicsTiming { writes_by_slice, decompressions }
+        assert!(entered && run.is_complete(), "map tileset timing call did not return");
+        if track_recovery_tail {
+            assert_eq!(graphics_stores, 12 * 0x600);
+            assert_eq!(quadrant_cursor_writes_by_slice.iter().map(|&count| usize::from(count)).sum::<usize>(), 5,
+                "recovery must clear and advance four room quadrants");
+        }
+        NativeMapGraphicsTiming { writes_by_slice, decompressions, quadrant_cursor_writes_by_slice }
     }
 
     /// Locate the recovery theme restore in native CPU time before moving its

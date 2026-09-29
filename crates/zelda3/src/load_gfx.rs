@@ -1312,6 +1312,7 @@ impl ZeldaState {
             assert_eq!(*observed_pc, *pc, "map decompressor entry differs");
             assert_eq!(usize::from(*observed_sheet), *sheet, "map sheet choice differs");
         }
+        assert_eq!(timing.writes_by_slice.len(), timing.quadrant_cursor_writes_by_slice.len());
         let mut writes_by_slice = Vec::with_capacity(timing.writes_by_slice.len());
         for slice in timing.writes_by_slice {
             let mut writes = Vec::with_capacity(slice.len());
@@ -1335,7 +1336,12 @@ impl ZeldaState {
             assert_eq!(cursor.next_store, cursor.bytes.len(),
                 "map sheet {sheet} timing omitted translated bytes");
         }
-        NativeMapGraphicsWritePlan { writes_by_slice, next_slice: 0 }
+        NativeMapGraphicsWritePlan {
+            writes_by_slice,
+            quadrant_cursor_writes_by_slice: timing.quadrant_cursor_writes_by_slice,
+            next_quadrant_write: 0,
+            next_slice: 0,
+        }
     }
 
     pub(super) fn advance_native_map_graphics_write_plan(&mut self) {
@@ -1346,6 +1352,23 @@ impl ZeldaState {
             } else {
                 self.ram[*address] = *value;
             }
+        }
+        for _ in 0..plan.quadrant_cursor_writes_by_slice[plan.next_slice] {
+            if plan.next_quadrant_write == 0 {
+                assert!(self.native_map_recovery_quadrants_started.is_none());
+                self.clear_screen_transition();
+                self.dungeon_room_load_mut().clear_quadrant_upload_index();
+                self.native_map_recovery_quadrants_started = Some(0);
+            } else {
+                assert_eq!(self.native_map_recovery_quadrants_started,
+                    Some(plan.next_quadrant_write - 1));
+                self.WaterFlood_BuildOneQuadrantForVRAM();
+                self.upload_tilemap_now();
+                self.Dungeon_PrepareNextRoomQuadrantUpload();
+                self.upload_tilemap_now();
+                self.native_map_recovery_quadrants_started = Some(plan.next_quadrant_write);
+            }
+            plan.next_quadrant_write += 1;
         }
         plan.next_slice += 1;
         if plan.next_slice < plan.writes_by_slice.len() {

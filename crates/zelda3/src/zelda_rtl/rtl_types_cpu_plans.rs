@@ -1670,11 +1670,16 @@ pub(crate) struct PreOverworldOverlayDecodeProgress {
 pub(crate) struct NativeMapGraphicsTiming {
     pub(crate) writes_by_slice: Vec<Vec<(u8, usize)>>,
     pub(crate) decompressions: Vec<(u32, u16)>,
+    /// Recovery's initial cursor clear and four completed room quadrants.
+    /// Counts come from native CPU instruction boundaries, never its values.
+    pub(crate) quadrant_cursor_writes_by_slice: Vec<u8>,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct NativeMapGraphicsWritePlan {
     pub(crate) writes_by_slice: Vec<Vec<(usize, u8)>>,
+    pub(crate) quadrant_cursor_writes_by_slice: Vec<u8>,
+    pub(crate) next_quadrant_write: u8,
     pub(crate) next_slice: usize,
 }
 

@@ -10637,6 +10637,8 @@ pub struct ZeldaState {
     #[serde(skip)]
     native_map_graphics_write_plan: Option<NativeMapGraphicsWritePlan>,
     #[serde(skip)]
+    native_map_recovery_quadrants_started: Option<u8>,
+    #[serde(skip)]
     next_display_spotlight_scanout: Option<LiveSpotlightScanout>,
     /// Spotlight program authored after the current field's HDMA initialization.
     /// It becomes eligible only after that already-active field is captured.
@@ -13216,6 +13218,7 @@ impl ZeldaState {
             native_overworld_map_graphics_nmi_slices: None,
             native_map_graphics_timing: None,
             native_map_graphics_write_plan: None,
+            native_map_recovery_quadrants_started: None,
             next_display_spotlight_scanout: None,
             spotlight_scanout_after_active_field: None,
             interrupted_dungeon_submodule_publication: None,
@@ -13447,6 +13450,7 @@ impl ZeldaState {
         self.native_overworld_map_graphics_nmi_slices = None;
         self.native_map_graphics_timing = None;
         self.native_map_graphics_write_plan = None;
+        self.native_map_recovery_quadrants_started = None;
         self.native_overworld_song_upload = None;
         self.dungeon_landing_goal_transition_pending = false;
         self.native_exact_cpu_landing_spotlight_build = None;
@@ -13572,6 +13576,7 @@ impl ZeldaState {
             self.dungeon_map_recovery_saved_hdma_enable = None;
             self.native_map_graphics_timing = None;
             self.native_map_graphics_write_plan = None;
+            self.native_map_recovery_quadrants_started = None;
             self.sprite_main_cpu_boundary = None;
             self.sprite_main_cpu_nmi_slices = 0;
             self.sprite_main_cpu_caller = SpriteMainCpuCaller::default();

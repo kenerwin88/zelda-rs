@@ -4418,17 +4418,18 @@ impl ZeldaState {
         self.set_hud_palette(0);
         self.hud_rebuild();
 
-        self.clear_screen_transition();
-        self.dungeon_room_load_mut().clear_quadrant_upload_index();
-        loop {
+        let completed_quadrants = self.native_map_recovery_quadrants_started.take();
+        if completed_quadrants.is_none() {
+            self.clear_screen_transition();
+            self.dungeon_room_load_mut().clear_quadrant_upload_index();
+        }
+        for _ in completed_quadrants.unwrap_or(0)..4 {
             self.WaterFlood_BuildOneQuadrantForVRAM();
             self.upload_tilemap_now();
             self.Dungeon_PrepareNextRoomQuadrantUpload();
             self.upload_tilemap_now();
-            if self.game_state.dungeon.room_load.quadrant_upload_index() == 0x10 {
-                break;
-            }
         }
+        assert_eq!(self.game_state.dungeon.room_load.quadrant_upload_index(), 0x10);
 
         self.clear_pending_nmi_subroutine();
         self.set_subsubmodule(0);
