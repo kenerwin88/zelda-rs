@@ -2254,6 +2254,62 @@ impl ZeldaState {
             });
             let same_path =
                 same_schedule && baseline_reads == trial_reads && baseline_writes == trial_writes;
+            if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_TILESET_PHASES").is_some() {
+                let phase = |pc: u32| match pc {
+                    0x00_e19b => Some("initialize-tilesets"),
+                    0x00_e1ae => Some("select-sprite-sheets"),
+                    0x00_e6b7 => Some("common-sprite-expand"),
+                    0x00_e583 => Some("sprite-sheet-load"),
+                    0x00_e772 => Some("sprite-decompress"),
+                    0x00_e78f => Some("background-decompress"),
+                    0x00_e609 => Some("background-sheet-load"),
+                    _ => None,
+                };
+                let mut work_master_cycles = 0u64;
+                for instruction in &baseline_instructions {
+                    if let Some(current) = phase(instruction.pc) {
+                        eprintln!(
+                            "native-tileset-phase host={host} phase={} pc={:06x} at={} work_before={work_master_cycles}",
+                            current, instruction.pc, instruction.started_at,
+                        );
+                    }
+                    if (0x00_e100..=0x00_e900).contains(&instruction.pc) {
+                        work_master_cycles += instruction.ended_at - instruction.started_at;
+                    }
+                }
+                if work_master_cycles != 0 {
+                    eprintln!("native-tileset-work host={host} master_cycles={work_master_cycles}");
+                }
+                let work_at = |at: u64| baseline_instructions.iter()
+                    .filter(|instruction| (0x00_e100..=0x00_e900).contains(&instruction.pc))
+                    .map(|instruction| at.min(instruction.ended_at)
+                        .saturating_sub(instruction.started_at))
+                    .sum::<u64>();
+                for slot in 0..4 {
+                    let selection = baseline_writes.iter().find(|write| {
+                        native_exact_cpu_wram_key(write.address) == Some(0xc2fc + slot)
+                    });
+                    if let Some(write) = selection {
+                        eprintln!(
+                            "native-tileset-selection host={host} slot={slot} sheet={} pc={:06x} at={} work_before={}",
+                            write.value, write.pc, write.at, work_at(write.at),
+                        );
+                    }
+                    let base = 0x7800 + slot * 0x600;
+                    let mut stores = baseline_writes.iter().filter(|write| {
+                        native_exact_cpu_wram_key(write.address)
+                            .is_some_and(|address| (base..base + 0x600).contains(&address))
+                    });
+                    if let Some(first) = stores.next() {
+                        let last = stores.last().unwrap_or(first);
+                        eprintln!(
+                            "native-tileset-stores host={host} slot={slot} first_pc={:06x} first_address={:06x} first_at={} first_work={} last_address={:06x} last_at={} last_work={}",
+                            first.pc, first.address, first.at, work_at(first.at),
+                            last.address, last.at, work_at(last.at),
+                        );
+                    }
+                }
+            }
             if diagnose_ownership {
                 if let Some((source_read, trial_read)) = first_read_difference {
                     let source_writer = native_exact_cpu_last_writer(

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ $# -lt 6 ]]; then
-  echo "usage: $0 CACHE_DIR ROM_PATH PAIRED_CHECKPOINT OUTPUT_DIR FRAMES_FROM_CHECKPOINT TRIAL_START_HOST [--from-host REPORT_START_HOST] [REPLAY_OPTION...]" >&2
+  echo "usage: $0 CACHE_DIR ROM_PATH PAIRED_CHECKPOINT OUTPUT_DIR FRAMES_FROM_CHECKPOINT TRIAL_START_HOST [--from-host REPORT_START_HOST] [--tileset-phases] [REPLAY_OPTION...]" >&2
   exit 2
 fi
 
@@ -15,20 +15,34 @@ trial_start=$6
 shift 6
 
 report_start=$trial_start
-if [[ ${1:-} == --from-host ]]; then
-  if [[ $# -lt 2 ]]; then
-    echo "--from-host requires a host number" >&2
-    exit 2
-  fi
-  report_start=$2
-  shift 2
-fi
+tileset_phases=0
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --from-host)
+      if [[ $# -lt 2 ]]; then
+        echo "--from-host requires a host number" >&2
+        exit 2
+      fi
+      report_start=$2
+      shift 2
+      ;;
+    --tileset-phases)
+      tileset_phases=1
+      shift
+      ;;
+    *) break ;;
+  esac
+done
 
 mkdir -p "$output_dir"
 first_log="$output_dir/first.log"
 watched_log="$output_dir/watched.log"
 
-scripts/native_exact_cpu_diagnose.sh \
+phase_env=()
+if [[ $tileset_phases == 1 ]]; then
+  phase_env=(env ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_TILESET_PHASES=1)
+fi
+"${phase_env[@]}" scripts/native_exact_cpu_diagnose.sh \
   "$cache_dir" "$rom_path" "$checkpoint" "$output_dir/first" \
   "$frames" "$trial_start" "$@" > "$first_log" 2>&1
 
@@ -44,3 +58,6 @@ ZELDA3_NATIVE_EXACT_CPU_WATCH_WRAM_ADDR="$watch_offset" \
   "$cache_dir" "$rom_path" "$checkpoint" "$output_dir/watched" \
   "$frames" "$trial_start" "$@" > "$watched_log" 2>&1
 python3 scripts/native_exact_cpu_report.py "$watched_log" --from-host "$report_start"
+if [[ $tileset_phases == 1 ]]; then
+  python3 scripts/native_tileset_phase_report.py "$first_log" --from-host "$report_start"
+fi
