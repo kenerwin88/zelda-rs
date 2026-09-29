@@ -132,6 +132,19 @@ mod dungeon_map_preparation_tests {
         assert_eq!(state.dungeon_map_graphics_saved_hdma_enable, Some(0x80));
         assert_eq!(state.game_state.dungeon_map_display.dungmap_init_state(), 0);
     }
+
+    #[test]
+    fn recovery_restores_saved_theme_before_held_tileset_work() {
+        let mut state = crate::zelda_rtl::ZeldaState::new();
+        state.set_hdma_enable_mask(0x80);
+        state.set_mapbak_sprite_graphics_index(0x44);
+        state.sprite_system_mut().set_graphics_index(0x81);
+        state.begin_dungeon_map_recovery();
+
+        assert_eq!(state.game_state.sprites.system.graphics_index(), 0x44);
+        assert_eq!(state.ram[0x0aa3], 0x44);
+        assert_eq!(state.dungeon_map_recovery_saved_hdma_enable, Some(0x80));
+    }
 }
 
 /// The three phase costs of one glyph as the CPU phase machine consumes
@@ -4342,6 +4355,7 @@ impl ZeldaState {
 
     pub(super) fn DungeonMap_RecoverGFX(&mut self) {
         if self.rom_startup_timing() {
+            self.begin_dungeon_map_recovery();
             self.game_execution_scheduler.schedule_work(
                 GameWorkContinuation::FinishDungeonMapRecovery,
                 DUNGEON_MAP_RECOVERY_NMI_SLICES,
@@ -4351,8 +4365,11 @@ impl ZeldaState {
         self.complete_dungeon_map_recovery();
     }
 
-    pub(super) fn complete_dungeon_map_recovery(&mut self) {
+    fn begin_dungeon_map_recovery(&mut self) {
+        assert!(self.dungeon_map_recovery_saved_hdma_enable.is_none(),
+            "dungeon-map recovery already owns its entry prefix");
         let hdmaen_bak = self.game_state.display.hdma_enable_mask;
+        self.dungeon_map_recovery_saved_hdma_enable = Some(hdmaen_bak);
         self.clear_hdma_enable_mask();
         self.EraseTileMaps_normal();
 
@@ -4380,6 +4397,22 @@ impl ZeldaState {
             .mapbak_aux_tile_theme_index();
         self.world_palette_theme_mut()
             .set_aux_tile_theme_index(aux_tile_theme);
+        if self.rom_startup_timing()
+            && crate::debug_env::var_os("ZELDA3_NATIVE_TILESET_TIMED_WRAM").is_some()
+        {
+            let timing = self.native_map_graphics_timing.take()
+                .expect("timed recovery graphics requires the native CPU schedule");
+            self.native_map_graphics_write_plan =
+                Some(self.build_native_map_graphics_write_plan(timing));
+            self.advance_native_map_graphics_write_plan();
+        }
+    }
+
+    pub(super) fn complete_dungeon_map_recovery(&mut self) {
+        if self.dungeon_map_recovery_saved_hdma_enable.is_none() {
+            self.begin_dungeon_map_recovery();
+        }
+        let hdmaen_bak = self.dungeon_map_recovery_saved_hdma_enable.take().unwrap();
         self.InitializeTilesets();
         self.clear_overworld_aux_or_main_offset();
         self.set_hud_palette(0);

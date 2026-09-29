@@ -149,11 +149,26 @@ impl ZeldaState {
                     || crate::debug_env::var_os("ZELDA3_NATIVE_TILESET_TIMED_WRAM").is_some())
             {
                 self.native_map_graphics_timing = Some(
-                    self.probe_dungeon_map_tileset_wram_schedule(input)
+                    self.probe_dungeon_map_tileset_wram_schedule(input, false)
                 );
             }
             self.pending_map_force_blank_output_scanline =
                 Some(map_fade_cpu_blank_scanline(self, input));
+        }
+        if self.rom_startup_timing()
+            && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && frame.main_module == 14 && frame.submodule == 3
+            && self.overworld_map_state() == 6
+            && !self.game_state.display.nmi_update_is_latched()
+            && self.game_execution_scheduler.is_idle()
+        {
+            if crate::debug_env::var_os("ZELDA3_NATIVE_TILESET_TIMED_WRAM").is_some() {
+                self.native_map_graphics_timing = Some(
+                    self.probe_dungeon_map_tileset_wram_schedule(input, true)
+                );
+            } else if crate::debug_env::var_os("ZELDA3_NATIVE_MAP_RECOVERY_PROBE").is_some() {
+                self.probe_dungeon_map_recovery_restore_schedule(input);
+            }
         }
         if self.rom_startup_timing()
             && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
@@ -1219,7 +1234,9 @@ impl ZeldaState {
     /// Diagnose the full suspended tileset call from native pre-fade state.
     /// The shadow CPU supplies instruction/NMI timing only; no writes escape
     /// this probe into translated game state.
-    fn probe_dungeon_map_tileset_wram_schedule(&self, input: u16) -> NativeMapGraphicsTiming {
+    fn probe_dungeon_map_tileset_wram_schedule(
+        &self, input: u16, stop_after_graphics: bool,
+    ) -> NativeMapGraphicsTiming {
         let timing_dma = self.dma_with_native_hdma_enable();
         let mut run = RomCpuTimingRun::new(
             &self.rom, &self.ram, &self.sram, &self.ppu, &timing_dma,
@@ -1239,6 +1256,7 @@ impl ZeldaState {
         let mut writes_by_slice = vec![Vec::new()];
         let mut decompressions = Vec::new();
         let mut current_decompression = u8::MAX;
+        let mut graphics_stores = 0usize;
         for _ in 0..5_000_000 {
             if run.pc() == 0x00_e19b && !entered {
                 entered = true;
@@ -1266,9 +1284,15 @@ impl ZeldaState {
                     _ => continue,
                 };
                 writes_by_slice[nmis as usize].push((current_decompression, address));
+                if address != 0xc2fc && !(0xc2fd..0xc300).contains(&address) {
+                    graphics_stores += 1;
+                }
                 let entry = writes.entry((nmis, region)).or_insert((0, 0xcbf29ce484222325));
                 entry.0 += 1;
                 entry.1 = (entry.1 ^ (address - region) as u64).wrapping_mul(0x100000001b3);
+            }
+            if stop_after_graphics && graphics_stores == 12 * 0x600 {
+                break;
             }
             if advance != CpuWorkAdvance::Complete {
                 if entered {
@@ -1284,7 +1308,56 @@ impl ZeldaState {
             eprintln!("native-tileset-shadow-writes host={} slice={slice} region=${region:05x} stores={stores} address_hash={address_hash:016x}",
                 self.frame_ctr_dbg + slice);
         }
-        assert!(entered && run.is_complete(), "map tileset timing call did not return");
+        assert!(entered && (run.is_complete() || stop_after_graphics && graphics_stores == 12 * 0x600),
+            "map tileset timing call did not reach its graphics suffix");
         NativeMapGraphicsTiming { writes_by_slice, decompressions }
+    }
+
+    /// Locate the recovery theme restore in native CPU time before moving its
+    /// translated state mutation out of the return-only continuation.
+    fn probe_dungeon_map_recovery_restore_schedule(&self, input: u16) {
+        let timing_dma = self.dma_with_native_hdma_enable();
+        let mut run = RomCpuTimingRun::new(
+            &self.rom, &self.ram, &self.sram, &self.ppu, &timing_dma,
+            self.zelda_audio_apu_output_ports(),
+            RomCpuCheckpoint { stop_pc: 0x00_805a, ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT },
+        ).expect("map recovery timing probe needs the development ROM");
+        run.set_joypad_input(input);
+        run.enable_cpu_write_trace();
+        let mut budget = CpuCycleBudget::at_nmi_acceptance(
+            CpuBusWorkload::with_dynamic_hdma(),
+            CpuFieldTiming::non_interlace(self.frame_ctr_dbg & 1 == 0),
+        );
+        advance_rom_cpu_through_nmi(&mut run, &mut budget);
+        let mut nmis = 0u32;
+        let mut entered = false;
+        let mut reported = false;
+        for _ in 0..5_000_000 {
+            if run.is_complete() { break; }
+            if run.pc() == 0x00_e19b && !entered {
+                entered = true;
+                eprintln!("native-map-recovery-tileset-entry host={} nmis={nmis}", self.frame_ctr_dbg);
+            }
+            let (v, h) = budget.raster_position().coordinates();
+            run.set_raster_position(v, h);
+            let advance = advance_rom_cpu_step(&mut run, &mut budget);
+            for (address, value) in run.take_cpu_wram_writes() {
+                if address == 0x045c {
+                    eprintln!("native-map-recovery-quadrant-write host={} nmis={nmis} value={value:02x} pc={:06x}",
+                        self.frame_ctr_dbg + nmis, run.pc());
+                }
+                if address == 0x0aa3 && !reported {
+                    eprintln!("native-map-recovery-sprite-theme-write host={} nmis={nmis} value={value:02x} entered_tilesets={entered} pc={:06x}",
+                        self.frame_ctr_dbg + nmis, run.pc());
+                    reported = true;
+                }
+            }
+            if advance != CpuWorkAdvance::Complete {
+                nmis += 1;
+                advance_rom_cpu_through_nmi(&mut run, &mut budget);
+            }
+        }
+        eprintln!("native-map-recovery-probe-return host={} nmis={nmis} complete={} reported={reported}",
+            self.frame_ctr_dbg, run.is_complete());
     }
 }

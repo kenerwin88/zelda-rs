@@ -10131,6 +10131,9 @@ pub struct ZeldaState {
     /// its `InitializeTilesets` CPU work is held across NMI boundaries.
     #[serde(skip)]
     pub(crate) dungeon_map_graphics_saved_hdma_enable: Option<u8>,
+    /// Recovery's entry-host restore precedes its suspended tileset caller.
+    #[serde(skip)]
+    pub(crate) dungeon_map_recovery_saved_hdma_enable: Option<u8>,
     /// `cycle_ledger::silent_calls()` at the last NMI acceptance: probed
     /// routines that ran unpriced since then make the ledger delta, and so
     /// the derived fresh-entry budget, incomplete.
@@ -13068,6 +13071,7 @@ impl ZeldaState {
             dialogue_scroll_remaining_master_cycles: None,
             native_scroll_copy_cursor: None,
             dungeon_map_graphics_saved_hdma_enable: None,
+            dungeon_map_recovery_saved_hdma_enable: None,
             silent_ledger_calls_at_nmi_acceptance: 0,
             vwf_prefix_fully_charged: false,
             published_bg3_vwf_glyph_runs: Vec::new(),
@@ -13413,6 +13417,7 @@ impl ZeldaState {
         self.active_native_spotlight_field_scanout = None;
         self.native_dialogue_fresh_cpu_entry = None;
         self.pending_dungeon_map_room_drawing_nmi_slices = None;
+        self.dungeon_map_recovery_saved_hdma_enable = None;
         self.dungeon_post_sprite_main_return_pending = false;
         self.dungeon_nmi_prepare_sprites_return_pending = false;
         self.dungeon_quadrant_cpu_continuation_active = false;
@@ -13564,6 +13569,7 @@ impl ZeldaState {
         self.native_overworld_link_oam_interruption = false;
         self.pre_dungeon_cpu_entry_envelope = None;
             self.native_overworld_map_graphics_nmi_slices = None;
+            self.dungeon_map_recovery_saved_hdma_enable = None;
             self.native_map_graphics_timing = None;
             self.native_map_graphics_write_plan = None;
             self.sprite_main_cpu_boundary = None;

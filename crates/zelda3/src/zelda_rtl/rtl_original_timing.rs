@@ -11604,9 +11604,14 @@ impl ZeldaState {
         };
         if self.native_map_graphics_write_plan.is_some()
             && (matches!(scheduled_work_step,
-                Some(GameWorkStep::Complete(GameWorkContinuation::FinishDungeonMapGraphicsPreparation)))
+                Some(GameWorkStep::Complete(
+                    GameWorkContinuation::FinishDungeonMapGraphicsPreparation
+                    | GameWorkContinuation::FinishDungeonMapRecovery,
+                )))
                 || self.game_execution_scheduler.current_work()
-                    == Some(GameWorkContinuation::FinishDungeonMapGraphicsPreparation))
+                    .is_some_and(|work| matches!(work,
+                        GameWorkContinuation::FinishDungeonMapGraphicsPreparation
+                        | GameWorkContinuation::FinishDungeonMapRecovery)))
         {
             self.advance_native_map_graphics_write_plan();
         }
