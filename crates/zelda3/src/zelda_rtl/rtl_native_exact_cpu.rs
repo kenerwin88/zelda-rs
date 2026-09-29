@@ -4,9 +4,10 @@
 //! ROM timing plans. It does not publish source WRAM or presentation state.
 
 use super::{
-    sprite::OverworldSpriteReloadScanWork, ExtendedOamPackingProgress, GameState,
+    decompress_asset, find_index_in_memblk, sprite::OverworldSpriteReloadScanWork,
+    ExtendedOamPackingProgress, GameState,
     GameWorkContinuation, ItemReceiptGraphicsContinuation, ItemReceiptReturn,
-    OverworldSpriteReloadWorkload, PreMainNmiResume, SpriteSlotsState, ZeldaState,
+    MemBlk, OverworldSpriteReloadWorkload, PreMainNmiResume, SpriteSlotsState, ZeldaState,
 };
 use crate::game_state::constants::{
     ANCILLA_STEP, DIALOGUE_MSG_SRC_OFFS, OVERWORLD_DECOMP_BUFFER, OVERWORLD_MAP16_DECODE_SRC,
@@ -2289,9 +2290,54 @@ impl ZeldaState {
                             self.dialogue_vwf_dispatch_cursor,
                         ),
                         Some(0x14000..=0x14fff) => "StorySpriteDecompression".to_owned(),
-                        Some(0x7800..=0x8fff)
-                            if (0x00_e790..=0x00_e842).contains(&source_read.pc) =>
-                            "TilesetDecompressionOutput".to_owned(),
+                        Some(offset @ 0x7800..=0x8fff)
+                            if (0x00_e790..=0x00_e842).contains(&source_read.pc) => {
+                            let slot = ((offset - 0x7800) / 0x600) as usize;
+                            let native_sheet = self.game_state.sprites.workspace.graphics_subset(slot);
+                            let source_sheet = owner.cpu.machine().snes().ram
+                                .get(0xc2fc + slot).copied();
+                            let subset_read = NativeExactCpuRead {
+                                pc: source_read.pc,
+                                address: 0x7e_c2fc + slot as u32,
+                                value: u16::from(source_sheet.unwrap_or(0)),
+                                width: 1,
+                                at: source_read.at,
+                            };
+                            let subset_source_writer = native_exact_cpu_last_writer(
+                                subset_read, &baseline_writes, &owner.diagnostic_writers, host,
+                            );
+                            let buffer_base = 0x7800 + slot * 0x600;
+                            let output_offset = offset as usize - buffer_base;
+                            let entry = crate::cycle_models::decompress::DecompressEntry::Sprite;
+                            let sprite_asset = self.assets.as_ref()
+                                .and_then(|assets| assets.asset(64));
+                            let describe_sheet = |sheet: u8| {
+                                let stream = sprite_asset.map(|asset| {
+                                    find_index_in_memblk(MemBlk { ptr: asset }, usize::from(sheet)).ptr
+                                })?;
+                                let (_, stores) = crate::cycle_models::decompress::decompress_store_timeline(
+                                    entry,
+                                    sheet,
+                                    stream,
+                                    crate::cycle_models::decompress::stream_source_offset(entry, sheet),
+                                    0x7e_0000 + buffer_base as u32,
+                                );
+                                let store_time = stores.iter()
+                                    .find(|store| usize::from(store.output_offset) == output_offset)
+                                    .map(|store| store.after_master_cycles);
+                                let data = if sheet < 103 && stream.len() == 0x600 {
+                                    stream.to_vec()
+                                } else {
+                                    decompress_asset(stream)
+                                };
+                                Some((data.get(output_offset).copied(), store_time))
+                            };
+                            let source_output = source_sheet.and_then(describe_sheet);
+                            let native_output = describe_sheet(native_sheet);
+                            format!(
+                                "TilesetDecompressionOutput(slot={slot}, source_sheet={source_sheet:?}, native_sheet={native_sheet}, subset_source_writer={subset_source_writer:?}, buffer={buffer_base:04x}, offset={output_offset:04x}, source_output={source_output:?}, native_output={native_output:?})"
+                            )
+                        }
                         Some(0x1cd9..=0x1cda) => "DialogueDecodeCursor".to_owned(),
                         _ => format!("{:?}", self.game_execution_scheduler.current_work()),
                     };

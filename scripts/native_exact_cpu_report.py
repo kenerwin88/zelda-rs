@@ -12,11 +12,33 @@ READ = re.compile(
 NATIVE_WRITE = re.compile(
     r"native-exact-cpu-native-wram-write host=(\d+) address=([0-9a-f]+) "
 )
+WITNESS = re.compile(
+    r"host: (\d+), write: NativeExactCpuWrite \{ pc: (\d+), "
+    r"address: (\d+), value: (\d+)"
+)
+TILESET = re.compile(
+    r"TilesetDecompressionOutput\(slot=(\d+), "
+    r"source_sheet=Some\((\d+)\), native_sheet=(\d+), "
+    r"subset_source_writer=(.*?), buffer=([0-9a-f]+), "
+    r"offset=([0-9a-f]+), source_output=(.*?), native_output=(.*?)\)$"
+)
+SHEET_OUTPUT = re.compile(r"Some\(\(Some\((\d+)\), Some\((\d+)\)\)\)")
 
 
 def field(line: str, start: str, end: str | None = None) -> str:
     value = line.split(start, 1)[1]
     return value.split(end, 1)[0] if end else value.strip()
+
+
+def witness_summary(value: str) -> str:
+    match = WITNESS.search(value)
+    if not match:
+        return value
+    host, pc, address, byte = map(int, match.groups())
+    return (
+        f"host {host}, PC ${pc >> 16:02X}:{pc & 0xFFFF:04X}, "
+        f"address ${address >> 16:02X}:{address & 0xFFFF:04X}, byte {byte:02X}"
+    )
 
 
 def main() -> None:
@@ -25,6 +47,10 @@ def main() -> None:
     parser.add_argument(
         "--from-host", type=int, default=0,
         help="start at this host when an earlier checkpoint retains known mismatches",
+    )
+    parser.add_argument(
+        "--address-only", action="store_true",
+        help="print the first differing WRAM offset for a watched replay",
     )
     args = parser.parse_args()
 
@@ -38,13 +64,17 @@ def main() -> None:
         None,
     )
     if mismatch is None:
-        print("No differing CPU read was reported.")
+        if not args.address_only:
+            print("No differing CPU read was reported.")
         return
 
     host = int(field(mismatch, "host=", " "))
     source, trial = [tuple(map(int, match)) for match in READ.findall(mismatch)[:2]]
     pc, address, source_value, width, _ = source
     trial_value = trial[2]
+    if args.address_only:
+        print(f"{address & 0xFFFF:04x}")
+        return
     print(
         f"First read: host {host}, PC ${pc >> 16:02X}:{pc & 0xFFFF:04X}, "
         f"address ${address >> 16:02X}:{address & 0xFFFF:04X}, "
@@ -52,16 +82,35 @@ def main() -> None:
     )
     print(
         "Source CPU last writer: "
-        + field(mismatch, "source_last_writer=", " trial_last_writer=")
+        + witness_summary(field(mismatch, "source_last_writer=", " trial_last_writer="))
     )
     print(
         "Trial CPU last writer: "
-        + field(mismatch, "trial_last_writer=", " rebase_before_native=")
+        + witness_summary(field(mismatch, "trial_last_writer=", " rebase_before_native="))
     )
-    print(
-        "Native state owner: "
-        + field(mismatch, "native_state_owner=", " native_continuation=")
-    )
+    owner = field(mismatch, "native_state_owner=", " native_continuation=")
+    tileset = TILESET.fullmatch(owner)
+    if tileset:
+        slot, source_sheet, native_sheet, subset_writer, buffer, offset, source, native = (
+            tileset.groups()
+        )
+        print(f"Native state owner: TilesetDecompressionOutput, slot {slot}")
+        print(
+            f"Sheet selection: source {source_sheet} ({witness_summary(subset_writer)}); "
+            f"native retained {native_sheet}"
+        )
+        source_output = SHEET_OUTPUT.fullmatch(source)
+        native_output = SHEET_OUTPUT.fullmatch(native)
+        if source_output and native_output:
+            source_byte, source_cycles = map(int, source_output.groups())
+            native_byte, native_cycles = map(int, native_output.groups())
+            print(
+                f"Asset output at ${buffer}+${offset}: source sheet {source_byte:02X} "
+                f"after {source_cycles} decompressor master cycles; native sheet "
+                f"{native_byte:02X} after {native_cycles} cycles"
+            )
+    else:
+        print("Native state owner: " + owner)
     print(
         "Native continuation: "
         + field(mismatch, "native_continuation=", " cached_checkpoint=")
@@ -73,18 +122,19 @@ def main() -> None:
 
     native_address = f"{address:06x}"
     writers = [
-        line for line in lines
+        (int(match.group(1)), line)
+        for line in lines
         if (match := NATIVE_WRITE.match(line))
-        and int(match.group(1)) < host
         and match.group(2) == native_address
     ]
-    if writers:
-        print("Native last writer: " + writers[-1])
+    previous = [line for write_host, line in writers if write_host < host]
+    following = [line for write_host, line in writers if write_host >= host]
+    if previous:
+        print("Native last writer: " + previous[-1])
     else:
-        print(
-            "Native last writer: not observed; replay with "
-            f"ZELDA3_NATIVE_EXACT_CPU_WATCH_WRAM_ADDR={address & 0xFFFF:04x}"
-        )
+        print("Native last writer: not observed by the enabled WRAM write hooks")
+    if following:
+        print("Native next writer: " + following[0])
 
     schedule = next(
         (

@@ -142,8 +142,35 @@ impl ZeldaState {
         GraphicsDecompressionScratch::combined_buffers(&self.ram)
     }
 
+    #[track_caller]
     pub(crate) fn copy_decompressed_graphics_to(&mut self, dst: usize, data: &[u8]) -> usize {
-        GraphicsDecompressionScratch::copy_to_buffer(&mut self.ram, dst, data)
+        static WATCH: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
+        let watched = if self.native_exact_cpu_owner.is_some() {
+            *WATCH.get_or_init(|| {
+                crate::debug_env::var("ZELDA3_NATIVE_EXACT_CPU_WATCH_WRAM_ADDR")
+                    .ok()
+                    .and_then(|value| {
+                        usize::from_str_radix(value.trim_start_matches("0x"), 16).ok()
+                    })
+            })
+        } else {
+            None
+        };
+        let observed = watched
+            .filter(|offset| {
+                *offset < self.ram.len() && (dst..dst.saturating_add(data.len())).contains(offset)
+            })
+            .map(|offset| (offset, self.ram[offset]));
+        let copied = GraphicsDecompressionScratch::copy_to_buffer(&mut self.ram, dst, data);
+        if let Some((offset, before)) = observed {
+            eprintln!(
+                "native-exact-cpu-native-wram-write host={} address=7e{offset:04x} before={before:02x} after={:02x} operation=decompress-copy caller={}",
+                self.frame_ctr_dbg.saturating_sub(1),
+                self.ram[offset],
+                std::panic::Location::caller(),
+            );
+        }
+        copied
     }
 
     #[track_caller]
