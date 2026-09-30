@@ -2765,6 +2765,8 @@ fn debug_overworld_cpu_pc_matches(pc: u32) -> bool {
 }
 
 fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, nmi_is_trailing: bool) -> (Option<SpritePreparationProgress>, Option<HudUpdateInterruption>) {
+    const SPRITE_MAIN_ENTRY_PC: u32 = 0x06_8328;
+    const SPRITE_SLOT_RETURN_PC: u32 = 0x06_83a7;
     let (mut run, mut budget) = native_main_loop_cpu_run(state, input, nmi_is_trailing);
     let trace_iteration = debug_overworld_cpu_iteration_host_matches(state.frame_ctr_dbg);
     if trace_iteration {
@@ -2788,6 +2790,10 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
     let mut cucco_graphics = None;
     let mut cucco_helper_count = 0u8;
     let mut timers_and_oam_return = None;
+    // The caller's resume address while this iteration is inside Sprite_Main,
+    // and the last slot whose Sprite_ExecuteSingle returned in that call.
+    let mut sprite_main_resume_pc: Option<u32> = None;
+    let mut sprite_main_last_completed_slot: Option<u8> = None;
     for _ in 0..200_000 {
         if run.is_complete() {
             if crate::debug_env::var_os("ZELDA3_DEBUG_OVERWORLD_CPU_PACKING").is_some()
@@ -2826,7 +2832,19 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
                 run.stack_return_address(),
             );
         }
-        if matches!(pc, 0x06_83a1 | 0x06_83a7) {
+        if pc == SPRITE_MAIN_ENTRY_PC {
+            // JSL leaves the caller's last byte on the stack; RTL resumes one
+            // past it in the same bank.
+            let call = run.stack_return_address();
+            sprite_main_resume_pc = Some((call & 0xff_0000) | (call.wrapping_add(1) & 0xffff));
+            sprite_main_last_completed_slot = None;
+        } else if sprite_main_resume_pc == Some(pc) {
+            sprite_main_resume_pc = None;
+        }
+        if pc == SPRITE_SLOT_RETURN_PC && sprite_main_resume_pc.is_some() {
+            sprite_main_last_completed_slot = Some(run.ram_byte(0x0fa0));
+        }
+        if matches!(pc, 0x06_83a1 | SPRITE_SLOT_RETURN_PC) {
             cucco_graphics = None;
             timers_and_oam_return = None;
             if pc == 0x06_83a1 {
@@ -2980,14 +2998,19 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
                     );
                 }
             } else if let Some(slot) = timers_and_oam_return {
-                // JumpTableLocal has consumed the inline state table's
-                // return address, but its JML has not entered a sprite
-                // handler yet. The remaining $00:83A6 return frame proves
-                // this is Sprite_ExecuteSingle's post-timer dispatch. A
-                // later handler PC may have a more specific source receipt.
+                // Sprite_TimersAndOam returned for the still-active slot and
+                // the slot has not returned to Sprite_Main ($06:83A1/83A7
+                // retire this cursor). The source names that checkpoint
+                // wherever the NMI lands in the handler which follows,
+                // including the $00:878E post-timer dispatch: the handler
+                // resumes whole after the interrupt (route host 56457,
+                // NMI at $06:DCD2 inside slot 2's handler). A handler inside
+                // the shared graphics decompressor ($00:E772..E851) is owned
+                // by its caller's typed graphics continuation instead, the
+                // precedence the source vocabulary gives it (route host
+                // 47125, item-receipt graphics in slot 12).
                 if run.ram_byte(0x0fa0) == slot
-                    && run.pc() == 0x00_878e
-                    && run.stack_return_address() == 0x00_83a6
+                    && !(0x00_e772..=0x00_e851).contains(&run.pc())
                 {
                     state.arm_sprite_main_cpu_continuation(
                         SpriteMainCpuBoundary::AfterTimersAndOam { slot, state: None },
@@ -2997,6 +3020,21 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
                         },
                     );
                 }
+            } else if sprite_main_resume_pc.is_some()
+                && !(0x00_e772..=0x00_e851).contains(&run.pc())
+            {
+                // Inside Sprite_Main with no finer statement: the source names
+                // the last slot whose Sprite_ExecuteSingle returned, and the
+                // in-flight slot resumes whole after this latch-held NMI
+                // (route host 56532, AfterSlot(2) at `Oam_GetBufferPosition`).
+                state.arm_sprite_main_cpu_continuation(
+                    sprite_main_last_completed_slot
+                        .map_or(SpriteMainCpuBoundary::BeforeFirstSlot, SpriteMainCpuBoundary::AfterSlot),
+                    1,
+                    SpriteMainCpuCaller::Module09 {
+                        boundary: OriginalTimingBoundary::NmiAccepted,
+                    },
+                );
             }
             if let Some(progress) = progress { progress.validate(); }
             let packing = pointer_tail_cycles.map(|master_cycles|
@@ -3041,7 +3079,7 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
                 // Shadow RAM remains private: only registers/clock survive.
                 advance_rom_cpu_through_nmi(&mut run, &mut budget);
                 let host = state.frame_ctr_dbg + 2 + u32::from(nmi_is_trailing);
-                state.native_main_wait_cpu_phase = Some(overworld_cpu_suffix_main_wait_phase(run, budget, host));
+                state.native_main_wait_cpu_phase = try_overworld_cpu_suffix_main_wait_phase(run, budget, host);
             }
             return (packing, hud);
         }
@@ -3049,11 +3087,23 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
     panic!("overworld timing failed to reach the next NMI or caller return");
 }
 
-fn overworld_cpu_suffix_main_wait_phase(mut run: RomCpuTimingRun, mut budget: CpuCycleBudget, host: u32) -> NativeMainWaitCpuPhase {
+fn overworld_cpu_suffix_main_wait_phase(run: RomCpuTimingRun, budget: CpuCycleBudget, host: u32) -> NativeMainWaitCpuPhase {
+    try_overworld_cpu_suffix_main_wait_phase(run, budget, host)
+        .expect("overworld caller reached its successor's NMI outside main wait")
+}
+
+/// The CPU phase of a caller suffix at its successor's NMI, if that NMI lands
+/// in the main-wait loop. A resumed handler whose remaining work crosses the
+/// next vblank leaves no main-wait phase to carry; the next host measures its
+/// own entry instead.
+fn try_overworld_cpu_suffix_main_wait_phase(mut run: RomCpuTimingRun, mut budget: CpuCycleBudget, host: u32) -> Option<NativeMainWaitCpuPhase> {
     for _ in 0..50_000 {
         let (v, h) = budget.raster_position().coordinates();
         run.set_raster_position(v, h);
         if advance_rom_cpu_step(&mut run, &mut budget).reached_boundary().is_some() {
+            if !matches!(run.pc(), 0x00_8034 | 0x00_8036) {
+                return None;
+            }
             let next_entry = if run.ram_byte(MAIN_MODULE) == 0x0f {
                 DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT.entry_pc
             } else { 0x00_805d };
@@ -3062,7 +3112,7 @@ fn overworld_cpu_suffix_main_wait_phase(mut run: RomCpuTimingRun, mut budget: Cp
                 eprintln!("song_upload main_wait host={host} pc={:06x} position={:?} zero={} counter={}",
                     checkpoint.entry_pc, budget.raster_position(), checkpoint.zero, run.ram_byte(FRAME_COUNTER));
             }
-            return NativeMainWaitCpuPhase { host, checkpoint, budget };
+            return Some(NativeMainWaitCpuPhase { host, checkpoint, budget });
         }
     }
     panic!("overworld caller did not reach its successor's NMI");
