@@ -529,6 +529,12 @@ pub(crate) fn glyph_read_position_write_at(drawing_master_cycles: u32) -> u32 {
         + u32::try_from(INC_ABS_16).unwrap()
 }
 
+/// Where that `INC $1CD9` begins; like a bitmap store, it completes before
+/// NMI once it has started.
+pub(crate) fn glyph_read_position_instruction_start(drawing_master_cycles: u32) -> u32 {
+    glyph_read_position_write_at(drawing_master_cycles) - u32::try_from(INC_ABS_16).unwrap()
+}
+
 /// A bitmap store made by `VWF_RenderCharacter`, timed from its first row at
 /// `$0E:CBD1`. The source may return to the host while a glyph is only partly
 /// drawn, so the translated buffer must publish each completed store once.
@@ -544,6 +550,19 @@ pub(crate) struct GlyphBitmapWrite {
     pub(crate) after_master_cycles: u32,
     pub(crate) offset: usize,
     pub(crate) kind: GlyphBitmapWriteKind,
+}
+
+impl GlyphBitmapWrite {
+    /// Where the storing `STA $7F0000,X` begins. NMI is accepted only at an
+    /// instruction boundary, so a store whose instruction has begun before a
+    /// vblank deadline still completes before the handler runs.
+    pub(crate) fn instruction_start(self) -> u32 {
+        let length = match self.kind {
+            GlyphBitmapWriteKind::Xor(_) | GlyphBitmapWriteKind::Clear(_) => 40,
+            GlyphBitmapWriteKind::SetWord(_) => 48,
+        };
+        self.after_master_cycles - length
+    }
 }
 
 /// Source-ordered WRAM stores for one glyph. `line_ptr` is `$0722` and `x` is
@@ -1250,6 +1269,34 @@ pub(crate) fn message_characters_call_master_cycles(
 mod tests {
     use super::*;
     use crate::rom_cpu_timing::{lorom_offset, RomCpuCheckpoint, RomCpuTimingRun};
+
+    #[test]
+    fn glyph_store_straddling_a_deadline_belongs_to_the_earlier_slice() {
+        // Route host 20857: the source NMI interrupted $0E:CCBB, the
+        // instruction after `STA $7F0000,X` at $0E:CCB7, although the native
+        // deadline fell 20 cycles before that store's last cycle. NMI waits
+        // for the instruction boundary, so the store is visible before it.
+        let rows = [0x8080u16; 16];
+        let writes = glyph_bitmap_writes(6, 50, 0x530, rows);
+        let store = writes[1];
+        assert!(matches!(store.kind, GlyphBitmapWriteKind::Xor(_)));
+        assert_eq!(store.instruction_start(), store.after_master_cycles - 40);
+        let deadline = store.after_master_cycles - 20;
+        let slice: Vec<_> = writes.iter()
+            .filter(|write| write.instruction_start() < deadline)
+            .collect();
+        assert!(slice.contains(&&store));
+        let rest = writes.iter().filter(|write| write.instruction_start() >= deadline).count();
+        assert_eq!(slice.len() + rest, writes.len(), "every store belongs to exactly one slice");
+        let word = writes.iter().find(|write| matches!(write.kind, GlyphBitmapWriteKind::SetWord(_)));
+        if let Some(word) = word {
+            assert_eq!(word.instruction_start(), word.after_master_cycles - 48);
+        }
+        assert_eq!(
+            glyph_read_position_instruction_start(43_006),
+            glyph_read_position_write_at(43_006) - 62,
+        );
+    }
 
     #[test]
     fn scroll_copy_timeline_exposes_partial_pass_before_counter_store() {

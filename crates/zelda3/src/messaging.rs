@@ -5928,9 +5928,9 @@ impl ZeldaState {
                                     param, width, x, drawn_before, drawn_after,
                                 );
                                 let read_position_write =
-                                    crate::cycle_models::vwf::glyph_read_position_write_at(drawing);
-                                if drawn_before < read_position_write
-                                    && read_position_write <= drawn_after
+                                    crate::cycle_models::vwf::glyph_read_position_instruction_start(drawing);
+                                if drawn_before <= read_position_write
+                                    && read_position_write < drawn_after
                                 {
                                     self.messaging_state_mut().set_dialogue_msg_read_pos(
                                         (read_pos as u16).wrapping_add(1),
@@ -6580,10 +6580,11 @@ impl ZeldaState {
             return;
         };
         let line_ptr = usize::from(self.game_state.messaging.vwf_render.line_render_offset());
+        // `drawn_*` are continuous CPU positions at host deadlines. A store
+        // belongs to the slice in which its instruction began.
         for write in crate::cycle_models::vwf::glyph_bitmap_writes(width, x, line_ptr, rows) {
-            if write.after_master_cycles <= drawn_before
-                || write.after_master_cycles > drawn_after
-            {
+            let start = write.instruction_start();
+            if start < drawn_before || start >= drawn_after {
                 continue;
             }
             match write.kind {
