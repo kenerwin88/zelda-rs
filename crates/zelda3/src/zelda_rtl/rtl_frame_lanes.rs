@@ -4310,7 +4310,10 @@ impl ZeldaState {
                 self.retire_or_run_main_loop_common_suffix_after_module_return();
             }
             DungeonSupertileTransitionWork::SpiralRoomInitialization => {
-                if self.active_early_dungeon_floor_draw.is_some() {
+                if let Some(publication) = self.active_spiral_aux_graphics.take() {
+                    publication.publish_rest(&mut self.ram);
+                    self.complete_spiral_room_initialization_after_aux_graphics(false);
+                } else if self.active_early_dungeon_floor_draw.is_some() {
                     self.finish_live_dungeon_supertile_room_load();
                     self.complete_spiral_room_initialization_after_room_load(false);
                 }

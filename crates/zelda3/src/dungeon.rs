@@ -12492,6 +12492,22 @@ impl ZeldaState {
     pub(super) fn complete_spiral_room_initialization_after_room_load(&mut self, schedule: bool) {
         self.ResetStarTileGraphics();
         self.LoadTransAuxGFX();
+        self.complete_spiral_room_initialization_after_aux_graphics(schedule);
+    }
+
+    /// Run `ResetStarTileGraphics` and `LoadTransAuxGFX` with translated
+    /// decoders, then withhold the decompressed WRAM so the source store
+    /// cursor can publish it in order.
+    pub(super) fn begin_spiral_aux_graphics_publication(&mut self) -> AuxGraphicsPublication {
+        self.ResetStarTileGraphics();
+        let before = self.ram[AuxGraphicsPublication::RANGE].to_vec();
+        self.LoadTransAuxGFX();
+        let bytes = self.ram[AuxGraphicsPublication::RANGE].to_vec();
+        self.ram[AuxGraphicsPublication::RANGE].copy_from_slice(&before);
+        AuxGraphicsPublication { bytes, published: 0 }
+    }
+
+    pub(super) fn complete_spiral_room_initialization_after_aux_graphics(&mut self, schedule: bool) {
         self.Dungeon_LoadCustomTileAttr();
         let dungeon_room_index = self.game_state.world.location.dungeon_room_index();
         self.dungeon_room_tracking_mut()
@@ -15959,3 +15975,46 @@ impl ZeldaState {
 #[cfg(test)]
 #[path = "dungeon_tests.rs"]
 mod tests;
+
+/// `LoadTransAuxGFX` output ($7E:6000..8FFF) decoded by the translated
+/// decompressors, published in store order as the source CPU advances.
+#[derive(Clone, Debug)]
+pub(super) struct AuxGraphicsPublication {
+    bytes: Vec<u8>,
+    published: usize,
+}
+
+impl AuxGraphicsPublication {
+    pub(super) const RANGE: std::ops::Range<usize> = 0x6000..0x9000;
+
+    pub(super) fn publish_through(&mut self, address: usize, ram: &mut [u8]) {
+        assert!(Self::RANGE.contains(&address), "aux graphics store outside its buffer");
+        let end = address - Self::RANGE.start + 1;
+        assert!(end >= self.published, "source aux graphics cursor moved backward");
+        ram[Self::RANGE.start + self.published..Self::RANGE.start + end]
+            .copy_from_slice(&self.bytes[self.published..end]);
+        self.published = end;
+    }
+
+    pub(super) fn publish_rest(mut self, ram: &mut [u8]) {
+        self.publish_through(Self::RANGE.end - 1, ram);
+    }
+}
+
+#[cfg(test)]
+mod aux_graphics_publication_tests {
+    use super::AuxGraphicsPublication;
+
+    #[test]
+    fn publishes_translated_bytes_through_the_source_store_cursor_once() {
+        let bytes: Vec<u8> = (0..0x3000).map(|i| (i % 251) as u8).collect();
+        let mut publication = AuxGraphicsPublication { bytes: bytes.clone(), published: 0 };
+        let mut ram = vec![0xa5u8; 0x10000];
+        publication.publish_through(0x6120, &mut ram);
+        assert_eq!(&ram[0x6000..=0x6120], &bytes[..=0x120]);
+        assert!(ram[0x6121..0x9000].iter().all(|&b| b == 0xa5));
+        publication.publish_through(0x6120, &mut ram);
+        publication.publish_rest(&mut ram);
+        assert_eq!(&ram[0x6000..0x9000], bytes.as_slice());
+    }
+}

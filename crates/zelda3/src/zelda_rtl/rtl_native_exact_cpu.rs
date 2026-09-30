@@ -532,6 +532,40 @@ impl ZeldaState {
         );
     }
 
+    /// Publish the translated `LoadTransAuxGFX` output through the source
+    /// decompressor's last store. Both decoders emit each sheet in address
+    /// order, so the store address alone is the cursor; the source value is
+    /// only compared.
+    pub(super) fn advance_native_exact_cpu_spiral_aux_graphics(&mut self) {
+        let Some((address, source_value)) = self.native_exact_cpu_host_trace.as_ref()
+            .and_then(|trace| trace.aux_graphics_decompression_store)
+        else {
+            return;
+        };
+        if !matches!(
+            self.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishDungeonSupertileTransition {
+                work: super::DungeonSupertileTransitionWork::SpiralRoomInitialization,
+            })
+        ) {
+            return;
+        }
+        if self.active_spiral_aux_graphics.is_none() {
+            if self.active_early_dungeon_floor_draw.is_none() {
+                return;
+            }
+            self.finish_live_dungeon_supertile_room_load();
+            self.active_spiral_aux_graphics = Some(self.begin_spiral_aux_graphics_publication());
+        }
+        let mut publication = self.active_spiral_aux_graphics.take().unwrap();
+        publication.publish_through(address, &mut self.ram);
+        assert_eq!(
+            self.ram[address], source_value,
+            "native LoadTransAuxGFX byte at ${address:04x} disagrees with the source store",
+        );
+        self.active_spiral_aux_graphics = Some(publication);
+    }
+
     pub(super) fn advance_native_exact_cpu_room_upload(&mut self) {
         if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_ROOM_UPLOAD_LIVE_TRIAL").is_none() {
             return;
@@ -1125,6 +1159,9 @@ pub(super) struct NativeExactCpuHostTrace {
     /// The destination selects a scratch sheet; only native asset data is
     /// written when a translated caller advances to this cursor.
     pub sprite_decompression_progress: Option<(bool, u16, u8)>,
+    /// Last `LoadTransAuxGFX` decompressor store into $7E:6000..8FFF in this
+    /// host: its WRAM offset and the source value, a witness only.
+    pub aux_graphics_decompression_store: Option<(usize, u8)>,
     pub room_upload_events: Vec<NativeExactCpuRoomUploadEvent>,
     pub item_receipt_step_writes: Vec<NativeExactCpuItemReceiptStepWrite>,
     pub spotlight_events: Vec<NativeExactCpuSpotlightEvent>,
@@ -1636,6 +1673,7 @@ impl ZeldaState {
             && !matches!(self.dialogue_scroll_phase(),
                 crate::zelda_rtl::DialogueScrollPhase::CompletionStagedAfterFrozenScanout
                 | crate::zelda_rtl::DialogueScrollPhase::CompletionStagedAfterSnapshot)
+            && self.active_spiral_aux_graphics.is_none()
     }
 
     pub fn capture_native_exact_cpu_checkpoint(&self) -> Result<Option<Vec<u8>>, String> {
@@ -1650,6 +1688,9 @@ impl ZeldaState {
             | crate::zelda_rtl::DialogueScrollPhase::CompletionStagedAfterSnapshot)
         {
             return Err("native exact CPU checkpoint cannot capture staged dialogue scroll publication".to_string());
+        }
+        if self.active_spiral_aux_graphics.is_some() {
+            return Err("native exact CPU checkpoint cannot capture partial auxiliary graphics".to_string());
         }
         let mut scroll_cursors = Vec::new();
         owner.collect_scroll_cursors(&mut scroll_cursors);
@@ -1883,6 +1924,15 @@ impl NativeExactCpuOwner {
                 };
                 let completed_bytes = (access.address - base + 1) as u16;
                 trace.sprite_decompression_progress = Some((first_sheet, completed_bytes, value as u8));
+            }
+            for access in &step.accesses {
+                let SourceCpuBusAccessKind::Write { value, width: 1 } = access.kind else {
+                    continue;
+                };
+                if (0x7e_6000..0x7e_9000).contains(&access.address) {
+                    trace.aux_graphics_decompression_store =
+                        Some(((access.address & 0xffff) as usize, value as u8));
+                }
             }
         }
         if step.origin_pc == 0x02_8a5f {

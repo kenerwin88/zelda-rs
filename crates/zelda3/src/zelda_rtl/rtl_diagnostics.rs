@@ -522,6 +522,7 @@ impl ZeldaState {
         self.advance_native_exact_cpu_post_object_prefix();
         self.advance_native_exact_cpu_zelda_follower_graphics();
         self.advance_native_exact_cpu_big_key_graphics();
+        self.advance_native_exact_cpu_spiral_aux_graphics();
         self.advance_native_exact_cpu_room_upload();
         self.advance_native_exact_cpu_ground_item_receipt_tail();
         self.advance_native_exact_cpu_overworld_scan_trial();

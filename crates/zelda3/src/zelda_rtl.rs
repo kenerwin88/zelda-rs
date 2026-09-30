@@ -10433,6 +10433,11 @@ pub struct ZeldaState {
     active_early_dungeon_floor_draw: Option<dungeon::DungeonFloorDrawWork>,
     active_early_dungeon_object_draw: Option<dungeon::DungeonObjectDrawWork>,
     active_early_dungeon_room_upload: Option<dungeon::DungeonRoomUploadWork>,
+    /// Translated `LoadTransAuxGFX` output being published at the source
+    /// decompressor's store cursor (exact-CPU live trial only). Checkpoint
+    /// capture defers while it is active.
+    #[serde(skip)]
+    active_spiral_aux_graphics: Option<dungeon::AuxGraphicsPublication>,
     #[serde(skip)]
     early_ground_item_receipt_tail: Option<ItemReceiptReturn>,
     /// Native loader publications in source order. A later allocation may
@@ -13207,6 +13212,7 @@ impl ZeldaState {
             active_early_dungeon_floor_draw: None,
             active_early_dungeon_object_draw: None,
             active_early_dungeon_room_upload: None,
+            active_spiral_aux_graphics: None,
             early_ground_item_receipt_tail: None,
             pending_overworld_sprite_activations: None,
             overworld_proximity_scan_saved_scroll: None,
@@ -13481,6 +13487,7 @@ impl ZeldaState {
         self.active_early_dungeon_floor_draw = None;
         self.active_early_dungeon_object_draw = None;
         self.active_early_dungeon_room_upload = None;
+        self.active_spiral_aux_graphics = None;
         self.early_ground_item_receipt_tail = None;
         self.dungeon_submodule_cpu_schedule = None;
         self.pending_map_force_blank_output_scanline = None;
