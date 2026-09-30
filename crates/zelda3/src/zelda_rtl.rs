@@ -2645,6 +2645,10 @@ const MODULE09_LINK_OAM_CALLER_RETURN: u32 = 0x02_a4c8;
 /// `Hud_UpdateHearts_DrawHeart` ($0D:FDD9..$0D:FDEE) it branches into. The
 /// pair writes nothing but HUD tile-buffer words (`LDA [$0a],Y : STA [$07],Y`)
 /// and derives every input from its caller, so it restarts exactly.
+/// The hearts block of `Hud_Update_IgnoreItemBox` after its first
+/// instruction, up to the magic meter's first statement.
+const HUD_HEARTS_BLOCK_BODY_PC: u32 = 0x0d_fb95;
+const HUD_MAGIC_BLOCK_START_PC: u32 = 0x0d_fc09;
 const HUD_UPDATE_HEARTS_START_PC: u32 = 0x0d_fdab;
 const HUD_UPDATE_HEARTS_END_PC: u32 = 0x0d_fdef;
 /// `$02:A4C9 JSL Hud_RefillLogic` is the Module09 overworld suffix's own call,
@@ -3045,12 +3049,15 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
                     // JSR has transferred control to the callee, but none of
                     // the hearts block's instructions have executed yet.
                     Some(HudUpdateInterruption::BeforeHearts)
-                } else if (HUD_UPDATE_HEARTS_START_PC..HUD_UPDATE_HEARTS_END_PC)
+                } else if ((HUD_UPDATE_HEARTS_START_PC..HUD_UPDATE_HEARTS_END_PC)
                     .contains(&run.pc())
+                    || (HUD_HEARTS_BLOCK_BODY_PC..HUD_MAGIC_BLOCK_START_PC).contains(&run.pc()))
                     && hud_refill_caller_return == Some(MODULE09_HUD_REFILL_CALLER_RETURN)
                 {
                     // The source accepted this host's NMI part-way through the
-                    // suffix's own heart drawing.
+                    // suffix's own heart drawing: inside Hud_UpdateHearts_Inner
+                    // or in the hearts block around its two calls (route host
+                    // 56598, $0D:FBFD between them). Magic has not started.
                     Some(HudUpdateInterruption::InsideHearts)
                 } else if (HUD_INVENTORY_TAIL_START_PC..=HUD_INVENTORY_TAIL_RETURN_PC)
                     .contains(&run.pc())
