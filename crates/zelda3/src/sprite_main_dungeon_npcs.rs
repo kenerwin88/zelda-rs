@@ -1809,6 +1809,25 @@ impl ZeldaState {
         }
     }
 
+    pub(crate) fn native_uncle_draw_table_byte(address: u32) -> Option<u8> {
+        match address {
+            0x0dd203..=0x0dd382 => {
+                let offset = (address - 0x0dd203) as usize;
+                let record = UNCLE_DRAW_FRAMES[offset / 8];
+                let word = match offset % 8 / 2 {
+                    0 => record.x as i16 as u16,
+                    1 => record.y as i16 as u16,
+                    2 => record.char_flags,
+                    _ => u16::from(record.ext) << 8,
+                };
+                Some(word.to_le_bytes()[offset & 1])
+            }
+            0x0dd383..=0x0dd389 => Some(UNCLE_DRAW_SWORD_DMA_INDEX[(address - 0x0dd383) as usize]),
+            0x0dd38a..=0x0dd391 => Some(UNCLE_DRAW_SHIELD_DMA_INDEX[(address - 0x0dd38a) as usize]),
+            _ => None,
+        }
+    }
+
     pub(super) fn sprite_prep_uncle_and_priest_bounce(&mut self, k: usize) {
         let room = self.game_state.world.location.dungeon_room_index();
         if room == 18 {

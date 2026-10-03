@@ -512,6 +512,20 @@ mod tests {
             }
             ram[0xdd0] = if case & 1 == 0 { 8 } else { 9 };
             ram[0xe20] = 0x73;
+            // Compose both the frozen active-body double return and the
+            // unfrozen subtype handoff after drawing. Blanket clipping still
+            // varies independently across the full coordinate matrix above.
+            if case & 1 != 0 {
+                ram[0x11] = if case & 2 == 0 { 15 } else { 0 };
+                let x = scroll_x.wrapping_add(80);
+                let y = scroll_y.wrapping_add(64);
+                ram[0xd10] = x as u8;
+                ram[0xd30] = (x >> 8) as u8;
+                ram[0xd00] = y as u8;
+                ram[0xd20] = (y >> 8) as u8;
+                ram[0xdc0] = (case / 8 % 2) as u8;
+                ram[0xde0] = (case / 16 % 4) as u8;
+            }
             cpu.bank = 6;
             cpu.pc = 0x8328;
             cpu.sp = 0x1fc;
@@ -578,7 +592,7 @@ mod tests {
                 assert_eq!(w.child(), Some(HANDLERS[usize::from(kind - 1)]));
                 assert_eq!((cpu.bank, cpu.sp), (8, 0x1fd));
             }
-            Fixture::Sprites(w) if case & 1 == 0 => {
+            Fixture::Sprites(w) if case & 3 != 3 => {
                 assert!(w.complete());
                 assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, 0x9338, 0x1ff));
             }
@@ -587,10 +601,10 @@ mod tests {
                 assert_eq!(
                     w.child(),
                     Some(SpriteChild::Sprite(
-                        super::super::sprite_slot::SlotChild::Active(0x05db86)
+                        super::super::sprite_slot::SlotChild::Active(0x05de3e)
                     ))
                 );
-                assert_eq!((cpu.bank, cpu.pc, cpu.x), (5, 0xdb86, 0));
+                assert_eq!((cpu.bank, cpu.pc, cpu.x), (5, 0xde3e, 0));
             }
         }
         instructions

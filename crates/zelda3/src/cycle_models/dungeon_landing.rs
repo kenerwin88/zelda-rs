@@ -3,6 +3,7 @@
 use super::{
     native_work::{Work, WorkBus},
     nmi_stack::{NativeNmiContext, ZERO},
+    player_animation::PlayerAnimation,
     spotlight::Spotlight,
     sprite_main::{SpriteChild, SpriteMain},
 };
@@ -12,14 +13,13 @@ pub(crate) fn table_byte(address: u32) -> Option<u8> {
     match address {
         0x029319..=0x02931c => Some([0x2d, 0x93, 0x34, 0x93][(address - 0x029319) as usize]),
         0x029323 => Some(0x93),
-        _ => None,
+        _ => super::player_animation::table_byte(address),
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum LandingChild {
     Sprites(SpriteChild),
-    PlayerAnimation,
     LinkOam,
 }
 
@@ -28,6 +28,7 @@ pub(crate) struct DungeonLanding {
     pc: u16,
     spotlight: Option<Spotlight>,
     sprites: Option<SpriteMain>,
+    animation: Option<PlayerAnimation>,
     child: Option<LandingChild>,
     complete: bool,
 }
@@ -37,6 +38,7 @@ impl Default for DungeonLanding {
             pc: 0x931d,
             spotlight: None,
             sprites: None,
+            animation: None,
             child: None,
             complete: false,
         }
@@ -77,6 +79,14 @@ impl DungeonLanding {
             self.child.is_none(),
             "landing child must retain CPU ownership through its return"
         );
+        if let Some(animation) = self.animation.as_mut() {
+            let cycles = animation.step(cpu, clock, bus);
+            if animation.complete() {
+                self.animation = None;
+                assert_eq!((cpu.bank, cpu.pc), (2, self.pc));
+            }
+            return cycles;
+        }
         if let Some(sprites) = self.sprites.as_mut() {
             let cycles = sprites.step(cpu, clock, bus);
             if sprites.complete() {
@@ -134,7 +144,7 @@ impl DungeonLanding {
             0x9324 | 0x9328 | 0x932d | 0x9334 | 0x9338 => {
                 let target = match pc {
                     0x9324 => {
-                        self.child = Some(LandingChild::PlayerAnimation);
+                        self.animation = Some(PlayerAnimation::default());
                         0x07e6a6
                     }
                     0x9328 => {
@@ -153,7 +163,7 @@ impl DungeonLanding {
                 w.push(pc + 3, 2);
                 w.cpu.bank = (target >> 16) as u8;
                 w.cpu.pc = target as u16;
-                if self.child.is_none() && self.sprites.is_none() {
+                if self.child.is_none() && self.sprites.is_none() && self.animation.is_none() {
                     self.spotlight = Some(Spotlight::new(target as u16));
                 }
                 pc + 4
@@ -197,7 +207,7 @@ impl DungeonLanding {
             }
             _ => unreachable!("landing caller {pc:04x}"),
         };
-        if self.child.is_none() && self.spotlight.is_none() && self.sprites.is_none() {
+        if self.child.is_none() && self.spotlight.is_none() && self.sprites.is_none() && self.animation.is_none() {
             w.cpu.pc = self.pc;
         }
         Some(w.cycles)

@@ -5,11 +5,14 @@ use super::{
     native_work::{Work, WorkBus},
     nmi_stack::{NativeNmiContext, CARRY, ZERO},
     oam_allocate::OamAllocate,
+    sprite_drawing::{DrawingChild, SpriteDrawing},
     sprite_slot_data,
 };
 use snes::CpuMasterTimeline;
 pub(crate) fn table_byte(address: u32) -> Option<u8> {
     let entry = match address {
+        0x05db95..=0x05db9a => Some((&[0xde2c, 0xdce6, 0xdb9b][..], 0x05db95)),
+        0x05de3a..=0x05de3d => Some((&[0xde3e, 0xdf19][..], 0x05de3a)),
         0x0684f4..=0x06850b => Some((&sprite_slot_data::STATES[..], 0x0684f4)),
         0x06865b..=0x068840 => Some((&sprite_slot_data::PREP[..], 0x06865b)),
         0x069283..=0x069468 => Some((&sprite_slot_data::ACTIVE[..], 0x069283)),
@@ -20,6 +23,7 @@ pub(crate) fn table_byte(address: u32) -> Option<u8> {
         return Some(words[i / 2].to_le_bytes()[i & 1]);
     }
     crate::ZeldaState::native_uncle_prep_table_byte(address)
+        .or_else(|| super::sprite_drawing::table_byte(address))
         .or_else(|| crate::ZeldaState::native_sprite_property_table_byte(address))
         .or_else(|| super::ancilla_main::table_byte(address))
 }
@@ -32,6 +36,13 @@ pub(crate) enum SlotChild {
     Active(u32),
     PriestMantle,
     FaceLink,
+    Drawing(DrawingChild),
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Dispatch {
+    State,
+    Prep,
+    Active,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Call {
@@ -43,7 +54,8 @@ pub(crate) struct SpriteSlot {
     pc: u32,
     calls: Vec<Call>,
     allocator: Option<OamAllocate>,
-    dispatch_prep: bool,
+    dispatch: Dispatch,
+    drawing: Option<SpriteDrawing>,
     child: Option<SlotChild>,
     complete: bool,
 }
@@ -58,7 +70,8 @@ impl SpriteSlot {
             pc,
             calls: Vec::new(),
             allocator: None,
-            dispatch_prep: false,
+            dispatch: Dispatch::State,
+            drawing: None,
             child: None,
             complete: false,
         }
@@ -70,7 +83,15 @@ impl SpriteSlot {
         self.complete
     }
     pub(crate) fn return_from_child(&mut self, cpu: &NativeNmiContext) {
-        assert!(self.child.take().is_some());
+        let child = self.child.take().expect("slot child must be pending");
+        if let Some(drawing) = self.drawing.as_mut() {
+            assert_eq!(
+                child,
+                SlotChild::Drawing(drawing.child().expect("drawing child"))
+            );
+            drawing.return_from_child(cpu);
+            return;
+        }
         self.accept_return(cpu, None);
     }
     fn accept_return(&mut self, cpu: &NativeNmiContext, far: Option<bool>) {
@@ -95,6 +116,16 @@ impl SpriteSlot {
             return None;
         }
         assert!(self.child.is_none(), "sprite slot child still owns the CPU");
+        if let Some(drawing) = self.drawing.as_mut() {
+            let cycles = drawing.step(cpu, clock, bus);
+            if drawing.complete() {
+                self.drawing = None;
+                self.accept_return(cpu, Some(true));
+            } else if let Some(child) = drawing.child() {
+                self.child = Some(SlotChild::Drawing(child));
+            }
+            return cycles;
+        }
         if let Some(allocator) = self.allocator.as_mut() {
             let cycles = allocator.step(cpu, clock, bus);
             if allocator.complete() {
@@ -198,7 +229,7 @@ impl SpriteSlot {
                 }
             }
             0x0684e8 | 0x0683f2 | 0x068475 | 0x06847e | 0x06864d | 0x0db818 | 0x06bfe5
-            | 0x06bfe0 | 0x05da2c | 0x05da46 | 0x05da8f => {
+            | 0x06bfe0 | 0x05da2c | 0x05da46 | 0x05da8f | 0x05db89 | 0x05de30 | 0x05de2c => {
                 let (target, far, child) = match pc {
                     0x0684e8 => (0x0683f2, false, None),
                     0x0683f2 => (0x0684c1, false, None),
@@ -207,7 +238,10 @@ impl SpriteSlot {
                     0x06864d => (0x0db818, true, None),
                     0x0db818 => (0x0db871, true, None),
                     0x06bfe5 => (0x05da29, true, None),
-                    0x06bfe0 => (0x05db86, true, Some(SlotChild::Active(0x05db86))),
+                    0x06bfe0 => (0x05db86, true, None),
+                    0x05db89 => (0x05db8e, false, None),
+                    0x05de30 => (0x05f94e, false, None),
+                    0x05de2c => (0x0dd391, true, None),
                     0x05da2c => (0x05da3d, false, None),
                     0x05da46 => (0x05db27, false, Some(SlotChild::PriestMantle)),
                     _ => (0x05f93f, false, Some(SlotChild::FaceLink)),
@@ -223,6 +257,9 @@ impl SpriteSlot {
                     far,
                 });
                 self.child = child;
+                if pc == 0x05de2c {
+                    self.drawing = Some(SpriteDrawing::new(target));
+                }
                 target
             }
             0x068407 | 0x06840d | 0x068413 => {
@@ -513,11 +550,15 @@ impl SpriteSlot {
             }
             // The shared JSL dispatcher removes its own far frame and jumps
             // through the live DP pointer, leaving the slot's near return.
-            0x0684f0 | 0x068657 => {
+            0x0684f0 | 0x068657 | 0x05db91 | 0x05de36 => {
                 w.operand_then_internal(3);
-                w.push(6, 1);
+                w.push(u16::from(w.cpu.bank), 1);
                 w.push(pc as u16 + 3, 2);
-                self.dispatch_prep = pc == 0x068657;
+                self.dispatch = match pc {
+                    0x0684f0 => Dispatch::State,
+                    0x068657 => Dispatch::Prep,
+                    _ => Dispatch::Active,
+                };
                 0x008781
             }
             0x008781 | 0x008784 => {
@@ -578,11 +619,11 @@ impl SpriteSlot {
                 let low = w.read(0, 2);
                 let bank = w.read(2, 1);
                 let target = (u32::from(bank) << 16) | u32::from(low);
-                if !matches!(target, 0x06864d | 0x06bfe5) {
-                    self.child = Some(if self.dispatch_prep {
-                        SlotChild::Prep(target)
-                    } else {
-                        SlotChild::State(target)
+                if !matches!(target, 0x06864d | 0x06bfe5 | 0x05de2c) {
+                    self.child = Some(match self.dispatch {
+                        Dispatch::Prep => SlotChild::Prep(target),
+                        Dispatch::State => SlotChild::State(target),
+                        Dispatch::Active => SlotChild::Active(target),
                     });
                 }
                 target
@@ -688,6 +729,73 @@ impl SpriteSlot {
                 self.accept_return(w.cpu, Some(far));
                 self.pc
             }
+            0x05db86 | 0x05db87 => {
+                w.drain(6);
+                let bank = if pc == 0x05db86 { w.cpu.db } else { w.cpu.bank };
+                w.push(u16::from(bank), 1);
+                pc + 1
+            }
+            0x05db88 | 0x05db8c => {
+                w.drain(12);
+                w.cpu.db = w.pull(1) as u8;
+                w.flags(u16::from(w.cpu.db), 1);
+                pc + 1
+            }
+            0x05db8d => {
+                w.rtl();
+                self.accept_return(w.cpu, Some(true));
+                self.pc
+            }
+            0x05db8e | 0x05de33 | 0x05f94e | 0x05f95e | 0x05f963 => {
+                w.drain(16);
+                let a = match pc {
+                    0x05db8e => 0xe90,
+                    0x05de33 => 0xe80,
+                    0x05f94e => 0xdd0,
+                    0x05f95e => 0xcaa,
+                    _ => 0xf00,
+                };
+                let v = w.read(w.absolute(a) + u32::from(w.cpu.x), 1);
+                w.load(v, 1);
+                pc + 3
+            }
+            0x05f951 => {
+                w.compare_immediate(9, 1);
+                pc + 2
+            }
+            0x05f955 => {
+                w.drain(16);
+                let v = w.read(w.absolute(0xfc1), 1);
+                w.load(v, 1);
+                pc + 3
+            }
+            0x05f95a => {
+                let v = w.dp_read(0x11, 1);
+                w.load(v, 1);
+                pc + 2
+            }
+            0x05f953 | 0x05f958 | 0x05f95c | 0x05f961 | 0x05f966 => {
+                let (take, target) = match pc {
+                    0x05f961 => (w.cpu.p & 0x80 != 0, 0x05f96a),
+                    0x05f966 => (w.cpu.p & ZERO != 0, 0x05f96a),
+                    _ => (w.cpu.p & ZERO == 0, 0x05f968),
+                };
+                if w.branch(take) { target } else { pc + 2 }
+            }
+            0x05f968 | 0x05f969 => {
+                w.drain(12);
+                let v = w.pull(1);
+                w.load(v, 1);
+                if pc == 0x05f969 {
+                    assert!(!self.calls.pop().expect("inactive near frame").far);
+                }
+                pc + 1
+            }
+            0x05f96a => {
+                w.rts();
+                self.accept_return(w.cpu, Some(false));
+                self.pc
+            }
             _ => unreachable!("sprite slot {pc:06x}"),
         };
         if self.allocator.is_none() {
@@ -746,13 +854,17 @@ mod tests {
         ram[0xf3c6] = (case & 31) as u8;
         ram[0xf359] = ((case / 8) % 4) as u8;
         ram[0xf3cc] = ((case / 16) % 3) as u8;
+        ram[0xe90 + slot] = (case % 3) as u8;
+        ram[0xe80 + slot] = (case / 3 % 2) as u8;
+        ram[0xdc0 + slot] = (case / 8 % 2) as u8;
+        ram[0xde0 + slot] = (case / 16 % 4) as u8;
         for region in 0..6 {
             let base = [0u16, 0x1f0, 0x200, 0x300][case % 4];
             ram[0xfe0 + region * 2..0xfe2 + region * 2].copy_from_slice(&base.to_le_bytes());
             ram[0xfec + region * 2..0xfee + region * 2]
                 .copy_from_slice(&(case as u16).wrapping_add(0xfff8).to_le_bytes());
         }
-        let far = matches!(entry, 0x0db818 | 0x05da29);
+        let far = matches!(entry, 0x0db818 | 0x05da29 | 0x05db86);
         let mut cpu = NativeNmiContext {
             a: 0xab00 | u16::from(state),
             x: slot as u16,
@@ -873,6 +985,8 @@ mod tests {
             0x0db080..0x0db818,
             0x0684b9..0x0684bd,
             0x05da31..0x05da3d,
+            0x05db95..0x05db9b,
+            0x05de3a..0x05de3e,
         ] {
             for a in range {
                 assert_eq!(
@@ -947,5 +1061,30 @@ mod tests {
         }
         assert!(mantle > 0 && facing > 0);
         eprintln!("6144 Uncle/Priest prep fixtures, {instructions} instruction boundaries, mantle={mantle}, facing={facing}");
+    }
+
+    #[test]
+    fn uncle_active_wrapper_matches_source_drawing_and_inactive_double_return() {
+        let rom = rom();
+        let mut instructions = 0;
+        let mut returns = 0;
+        let mut children = 0;
+        for slot in 0..16 {
+            for case in 0..128 {
+                let (n, child) = run(
+                    &rom, 0x05db86, slot, 0x73,
+                    [8, 9, 10, 11][case / 4 % 4], case,
+                    [0, 1, 30002, 30003][case % 4],
+                );
+                instructions += n;
+                if child.is_none() {
+                    returns += 1;
+                } else {
+                    children += 1;
+                }
+            }
+        }
+        assert!(returns > 0 && children > 0);
+        eprintln!("2048 active Uncle/Priest fixtures, {instructions} instructions, returns={returns}, pending={children}");
     }
 }

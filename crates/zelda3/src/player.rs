@@ -17,6 +17,19 @@ const DASH_FOLLOWER_SLOWDOWN_INDICATORS: [u8; 15] =
 const DASH_FOLLOWER_RELEASE_INDICATORS: [u8; 15] = [0xff, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
 impl ZeldaState {
+    pub(crate) fn native_player_animation_table_byte(address: u32) -> Option<u8> {
+        let (table, base): (&[u8], u32) = match address {
+            0x07e671..=0x07e674 => (&LINK_HANDLE_MOVING_ANIMATION_FULL_LONG_ENTRY_FACING_DIRECTION_BITS, 0x07e671),
+            0x07e675..=0x07e684 => (&LINK_HANDLE_MOVING_ANIMATION_START_WITH_DASH_POSE_ANIMATION_DELAYS, 0x07e675),
+            0x07e685..=0x07e69c => (&LINK_HANDLE_MOVING_ANIMATION_START_WITH_DASH_WALK_ANIMATION_DELAYS, 0x07e685),
+            0x07e842..=0x07e879 => (&LINK_HANDLE_MOVING_ANIMATION_DASH_DASH_CHARGE_ANIM_DELAYS, 0x07e842),
+            0x07e87a..=0x07e880 => (&LINK_HANDLE_MOVING_ANIMATION_DASH_DASH_CHARGE_MIN_ANIM_STEPS, 0x07e87a),
+            0x07e881..=0x07e887 => (&LINK_HANDLE_MOVING_ANIMATION_DASH_DASH_CHARGE_ANIM_THRESHOLDS, 0x07e881),
+            _ => return None,
+        };
+        Some(table[(address - base) as usize])
+    }
+
     pub(super) fn bit_sum4(value: u8) -> u8 {
         (value & 1) + ((value >> 1) & 1) + ((value >> 2) & 1) + ((value >> 3) & 1)
     }

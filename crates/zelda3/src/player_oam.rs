@@ -2123,6 +2123,63 @@ fn read_u16_from_u8_table(table: &[u8], idx: usize) -> u16 {
 }
 
 impl ZeldaState {
+    pub(crate) fn native_link_oam_table_byte(address: u32) -> Option<u8> {
+        let byte_table: Option<(&[u8], u32)> = match address {
+            0x079635..=0x079638 => Some((&SWIMMING_SPLASH_FRAME_BY_DIRECTION, 0x079635)),
+            0x0d838c..=0x0d839a => Some((&kPlayerOam_Prio, 0x0d838c)),
+            0x0d9cf1..=0x0d9eef => Some((&kPlayerOamSpriteLocs, 0x0d9cf1)),
+            0x0da078..=0x0da083 => Some((&kPlayerOam_Tab19A, 0x0da078)),
+            0x0da084..=0x0da08f => Some((&kPlayerOam_Tab20A, 0x0da084)),
+            0x0da090..=0x0da09b => Some((&kSwordStuff_oam_index_ptrs_0, 0x0da090)),
+            0x0da0c0..=0x0da0cb => Some((&kPlayerOam_Tab19B, 0x0da0c0)),
+            0x0da0cc..=0x0da0d7 => Some((&kPlayerOam_Tab20B, 0x0da0cc)),
+            0x0da0d8..=0x0da0e3 => Some((&kSwordStuff_oam_index_ptrs_1, 0x0da0d8)),
+            _ => None,
+        };
+        if let Some((table, base)) = byte_table { return Some(table[(address - base) as usize]); }
+        let signed_table: Option<(&[i8], u32)> = match address {
+            0x0d89f9..=0x0d8a74 => Some((&kPlayerOam_Spr1Bank, 0x0d89f9)),
+            0x0d8a75..=0x0d8af0 => Some((&kPlayerOam_Spr2Bank, 0x0d8a75)),
+            0x0d92ed..=0x0d9368 => Some((&kPlayerOam_Spr1Y, 0x0d92ed)),
+            0x0d9369..=0x0d93e4 => Some((&kPlayerOam_Spr1X, 0x0d9369)),
+            0x0d93e5..=0x0d9460 => Some((&kPlayerOam_Spr2Y, 0x0d93e5)),
+            0x0d9461..=0x0d94dc => Some((&kPlayerOam_Spr2X, 0x0d9461)),
+            0x0da131..=0x0da139 => Some((&kPlayerOam_Tab1, 0x0da131)),
+            0x0da13a..=0x0da141 => Some((&kPlayerOam_Tab2, 0x0da13a)),
+            0x0da142..=0x0da147 => Some((&kPlayerOam_Tab3, 0x0da142)),
+            0x0da148..=0x0da14f => Some((&kPlayerOam_Tab4, 0x0da148)),
+            _ => None,
+        };
+        if let Some((table, base)) = signed_table { return Some(table[(address - base) as usize] as u8); }
+        match address {
+            // The final bank-2 word read also observes this adjacent byte.
+            0x0d8af1 => Some(0xff),
+            0x0da124..=0x0da125 => Some(0),
+            0x0da150..=0x0da15d => {
+                let i = (address - 0x0da150) as usize;
+                Some(u16::from(kPlayerOam_Tab5[i / 2]).to_le_bytes()[i & 1])
+            }
+            0x0da15e..=0x0da18d => {
+                let i = (address - 0x0da15e) as usize;
+                Some((kPlayerOam_StairsOffsY[i / 2] as i16).to_le_bytes()[i & 1])
+            }
+            _ => {
+                let (table, base): (&[u16], u32) = match address {
+                    0x0d9ef0..=0x0da02f => (&kPlayerOamOtherOffs, 0x0d9ef0),
+                    0x0da030..=0x0da037 => (&[0, 80, 160, 240], 0x0da030),
+                    0x0da038..=0x0da06f => (&kPlayerOam_Tab6, 0x0da038),
+                    0x0da070..=0x0da077 => (&[0, 14, 28, 42], 0x0da070),
+                    0x0da108..=0x0da10f => (&[0xa078, 0xa0c0, 0xa084, 0xa0cc], 0x0da108),
+                    0x0da120..=0x0da123 => (&kPlayerOam_SortSpritesOffs, 0x0da120),
+                    0x0da126..=0x0da12d => (&kPlayerOam_FloorOamPrio, 0x0da126),
+                    _ => return None,
+                };
+                let i = (address - base) as usize;
+                Some(table[i / 2].to_le_bytes()[i & 1])
+            }
+        }
+    }
+
     fn set_oam_word_xy(&mut self, oam_pos: usize, x: u8, y: u8) {
         let oam = oam_addr(oam_pos);
         self.oam_state_mut().set_entry_xy(oam, x, y);

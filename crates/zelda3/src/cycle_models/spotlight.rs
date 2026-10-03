@@ -691,8 +691,15 @@ mod tests {
                         machine.ram[0xc4a] = 0x20;
                     }
                     if matches!(case, 49 | 55) {
-                        machine.ram[0xdd0] = if case == 49 { 9 } else { 8 };
+                        machine.ram[0xdd0] = 9;
                         machine.ram[0xe20] = 0x73;
+                        if case == 55 {
+                            // Frozen active Uncle still draws and unwinds the
+                            // inactive helper before SpriteMain can return.
+                            machine.ram[0x11] = 15;
+                            machine.ram[0xde0] = 1;
+                            machine.ram[0xdc0] = 1;
+                        }
                     }
                 }
                 for (a, v) in [
@@ -867,9 +874,9 @@ mod tests {
                     assert_eq!(
                         work.child(),
                         Some(if case == 49 {
-                            LandingChild::Sprites(SpriteChild::Sprite(SlotChild::Active(0x05db86)))
+                            LandingChild::Sprites(SpriteChild::Sprite(SlotChild::Active(0x05de3e)))
                         } else {
-                            LandingChild::PlayerAnimation
+                            LandingChild::LinkOam
                         })
                     );
                     assert!(
