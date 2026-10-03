@@ -1,6 +1,7 @@
 //! Landing-wipe caller. Child calls retain the real far return on the stack;
 //! the enclosing dungeon owner must finish each child before resuming here.
 use super::{
+    link_oam::LinkOam,
     native_work::{Work, WorkBus},
     nmi_stack::{NativeNmiContext, ZERO},
     player_animation::PlayerAnimation,
@@ -13,14 +14,14 @@ pub(crate) fn table_byte(address: u32) -> Option<u8> {
     match address {
         0x029319..=0x02931c => Some([0x2d, 0x93, 0x34, 0x93][(address - 0x029319) as usize]),
         0x029323 => Some(0x93),
-        _ => super::player_animation::table_byte(address),
+        _ => super::player_animation::table_byte(address)
+            .or_else(|| super::link_oam::table_byte(address)),
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum LandingChild {
     Sprites(SpriteChild),
-    LinkOam,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,6 +30,7 @@ pub(crate) struct DungeonLanding {
     spotlight: Option<Spotlight>,
     sprites: Option<SpriteMain>,
     animation: Option<PlayerAnimation>,
+    oam: Option<LinkOam>,
     child: Option<LandingChild>,
     complete: bool,
 }
@@ -39,6 +41,7 @@ impl Default for DungeonLanding {
             spotlight: None,
             sprites: None,
             animation: None,
+            oam: None,
             child: None,
             complete: false,
         }
@@ -63,7 +66,7 @@ impl DungeonLanding {
             sprites.return_from_child(cpu);
             return;
         }
-        assert_eq!((cpu.bank, cpu.pc), (2, self.pc));
+        unreachable!("landing child has no owning continuation: {child:?}");
     }
 
     pub(crate) fn step(
@@ -79,6 +82,14 @@ impl DungeonLanding {
             self.child.is_none(),
             "landing child must retain CPU ownership through its return"
         );
+        if let Some(oam) = self.oam.as_mut() {
+            let cycles = oam.step(cpu, clock, bus);
+            if oam.complete() {
+                self.oam = None;
+                assert_eq!((cpu.bank, cpu.pc), (2, self.pc));
+            }
+            return cycles;
+        }
         if let Some(animation) = self.animation.as_mut() {
             let cycles = animation.step(cpu, clock, bus);
             if animation.complete() {
@@ -148,7 +159,7 @@ impl DungeonLanding {
                         0x07e6a6
                     }
                     0x9328 => {
-                        self.child = Some(LandingChild::LinkOam);
+                        self.oam = Some(LinkOam::default());
                         0x0da18e
                     }
                     0x9334 => {
@@ -163,7 +174,7 @@ impl DungeonLanding {
                 w.push(pc + 3, 2);
                 w.cpu.bank = (target >> 16) as u8;
                 w.cpu.pc = target as u16;
-                if self.child.is_none() && self.sprites.is_none() && self.animation.is_none() {
+                if self.child.is_none() && self.sprites.is_none() && self.animation.is_none() && self.oam.is_none() {
                     self.spotlight = Some(Spotlight::new(target as u16));
                 }
                 pc + 4
@@ -207,7 +218,7 @@ impl DungeonLanding {
             }
             _ => unreachable!("landing caller {pc:04x}"),
         };
-        if self.child.is_none() && self.spotlight.is_none() && self.sprites.is_none() && self.animation.is_none() {
+        if self.child.is_none() && self.spotlight.is_none() && self.sprites.is_none() && self.animation.is_none() && self.oam.is_none() {
             w.cpu.pc = self.pc;
         }
         Some(w.cycles)

@@ -1,6 +1,7 @@
-//! Link OAM's live pose selection and initial sprite-bank publications.
-//! The equipment suffix is an explicit tail handoff, with the original PHB,
-//! optional stair Y backup and caller return still on the native stack.
+//! Link OAM's retained pose, equipment and body publications. Nested drawing
+//! calls and the optional stair Y backup stay on the live native stack until
+//! their actual returns; no aggregate drawing call republishes prior stores.
+mod suffix;
 use super::{
     native_work::{Work, WorkBus},
     nmi_stack::{NativeNmiContext, CARRY, NEGATIVE, ZERO},
@@ -8,10 +9,6 @@ use super::{
 use snes::CpuMasterTimeline;
 pub(crate) fn table_byte(address: u32) -> Option<u8> {
     crate::ZeldaState::native_link_oam_table_byte(address)
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum LinkOamChild {
-    Equipment,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct LinkOam {
@@ -29,19 +26,8 @@ impl Default for LinkOam {
     }
 }
 impl LinkOam {
-    pub(crate) fn child(&self) -> Option<LinkOamChild> {
-        (self.pc == 0xa5ce && !self.complete).then_some(LinkOamChild::Equipment)
-    }
     pub(crate) fn complete(&self) -> bool {
         self.complete
-    }
-    /// The remaining tail must consume the real PLB/RTL before the parent can
-    /// resume. No synthetic call/return is introduced at the linear boundary.
-    pub(crate) fn return_from_child(&mut self, cpu: &NativeNmiContext) {
-        assert_eq!(self.child(), Some(LinkOamChild::Equipment));
-        assert!(self.near_returns.is_empty());
-        self.pc = cpu.pc;
-        self.complete = true;
     }
     pub(crate) fn step(
         &mut self,
@@ -52,7 +38,6 @@ impl LinkOam {
         if self.complete {
             return None;
         }
-        assert!(self.child().is_none(), "Link OAM tail still owns the CPU");
         assert_eq!((cpu.bank, cpu.pc, cpu.d, cpu.p & 8), (13, self.pc, 0, 0));
         let mut w = Work {
             cpu,
@@ -370,11 +355,11 @@ impl LinkOam {
                 w.dp_store(a, v, if pc == 0xa19f { x } else { m });
                 pc + 2
             }
-            0xa1a9 | 0xa1e7 | 0xa202 | 0xa217 | 0xa223 | 0xa234 | 0xa24b | 0xa277 | 0xa282 | 0xa28b
-            | 0xa2ab | 0xa2ce | 0xa2d1 | 0xa2d4 | 0xa2d7 | 0xa2de | 0xa2e3 | 0xa2f0 | 0xa301
-            | 0xa308 | 0xa336 | 0xa350 | 0xa357 | 0xa36d | 0xa373 | 0xa38c | 0xa3a4 | 0xa3ac
-            | 0xa3b7 | 0xa3c1 | 0xa3c6 | 0xa3d0 | 0xa3dd | 0xa3e8 | 0xa40b | 0xa47e | 0xa48f
-            | 0xa4d7 | 0xa52b | 0xa564 | 0xa5b8 => {
+            0xa1a9 | 0xa1e7 | 0xa202 | 0xa217 | 0xa223 | 0xa234 | 0xa24b | 0xa277 | 0xa282
+            | 0xa28b | 0xa2ab | 0xa2ce | 0xa2d1 | 0xa2d4 | 0xa2d7 | 0xa2de | 0xa2e3 | 0xa2f0
+            | 0xa301 | 0xa308 | 0xa336 | 0xa350 | 0xa357 | 0xa36d | 0xa373 | 0xa38c | 0xa3a4
+            | 0xa3ac | 0xa3b7 | 0xa3c1 | 0xa3c6 | 0xa3d0 | 0xa3dd | 0xa3e8 | 0xa40b | 0xa47e
+            | 0xa48f | 0xa4d7 | 0xa52b | 0xa564 | 0xa5b8 => {
                 let a = match pc {
                     0xa1a9 | 0xa277 => 0x462,
                     0xa202 => 0xfb3,
@@ -703,7 +688,7 @@ impl LinkOam {
                 assert_eq!(self.near_returns.pop(), Some(w.cpu.pc));
                 w.cpu.pc
             }
-            _ => unreachable!("Link OAM {pc:04x}"),
+            _ => self.suffix_step(&mut w, pc, m, x),
         };
         w.cpu.pc = self.pc;
         Some(w.cycles)
@@ -718,6 +703,7 @@ mod tests {
         mode: usize,
         case: usize,
         banks: bool,
+        full: bool,
         visited: &mut std::collections::BTreeSet<u16>,
     ) -> usize {
         let mut machine = snes::Snes::new();
@@ -750,6 +736,19 @@ mod tests {
         ram[0x300] = (case / 4 % 3) as u8;
         ram[0x30a] = (case / 4 % 3) as u8;
         ram[0x31c] = (case / 4 % 3) as u8;
+        if full {
+            ram[0xf359] = (case % 4) as u8;
+            ram[0xf35a] = (case / 4 % 4) as u8;
+            ram[0xf3c5] = u8::from(case & 32 != 0);
+            ram[0x307] = (case % 3 + 1) as u8;
+            ram[0x303] = if case & 2 != 0 { 13 } else { 0 };
+            ram[0x3d] = if case & 4 != 0 { 15 } else { 0 };
+            ram[0x30e] = (case % 4) as u8;
+            ram[0x355] = (case % 3) as u8;
+            ram[0x356] = (case / 3 % 16) as u8;
+            ram[0x51] = (case as u8).wrapping_mul(19);
+            ram[0x55] = u8::from(case & 64 != 0);
+        }
         match if banks { 0 } else { mode } {
             0 => {}
             1 => {
@@ -803,6 +802,19 @@ mod tests {
                 ram[0x3a] = 0x80;
                 ram[0x3c] = (case / 4 % 18) as u8;
             }
+            21 => ram[0x309] = 4,
+            22 => {
+                ram[0x351] = 2;
+                ram[0x2e] %= 6;
+            }
+            23 => {
+                ram[0x3a] = 0x80;
+                ram[0x3c] = (case % 9) as u8;
+                ram[0x351] = 0;
+            }
+            24 => ram[0x31f] = case as u8,
+            25 => ram[0x6c] = 1,
+            26 => ram[0x4b] = 12,
             _ => unreachable!(),
         }
         let stair = stair && mode != 4;
@@ -859,8 +871,10 @@ mod tests {
                 .unwrap();
         let mut clock = source.timeline().clone();
         let mut instructions = 0;
-        for _ in 0..2000 {
-            if work.child().is_some() {
+        let initial_y = u16::from_le_bytes([ram[0x20], ram[0x21]]);
+        let initial_db = cpu.db;
+        for _ in 0..4000 {
+            if work.complete() || (!full && work.pc == 0xa5ce) {
                 break;
             }
             visited.insert(work.pc);
@@ -899,12 +913,22 @@ mod tests {
             );
             instructions += 1;
         }
-        assert_eq!(work.child(), Some(LinkOamChild::Equipment));
-        assert!(!work.complete());
-        assert_eq!(
-            (cpu.bank, cpu.pc, cpu.sp),
-            (13, 0xa5ce, if !banks && stair { 0x1f9 } else { 0x1fb })
-        );
+        if full {
+            assert!(work.complete());
+            assert!(work.near_returns.is_empty());
+            assert_eq!(
+                (cpu.bank, cpu.pc, cpu.sp, cpu.db),
+                (2, 0x932c, 0x1ff, initial_db)
+            );
+            assert_eq!(u16::from_le_bytes([ram[0x20], ram[0x21]]), initial_y);
+        } else {
+            assert_eq!(work.pc, 0xa5ce);
+            assert!(!work.complete());
+            assert_eq!(
+                (cpu.bank, cpu.pc, cpu.sp),
+                (13, 0xa5ce, if !banks && stair { 0x1f9 } else { 0x1fb })
+            );
+        }
         assert_eq!(ram, source.snes().ram);
         instructions
     }
@@ -918,12 +942,12 @@ mod tests {
         let mut instructions = 0;
         for mode in 0..21 {
             for case in 0..256 {
-                instructions += run(&rom, mode, case, false, &mut visited);
+                instructions += run(&rom, mode, case, false, false, &mut visited);
             }
         }
         for bank_index in 0..124 {
             for case in 0..48 {
-                instructions += run(&rom, bank_index, case, true, &mut visited);
+                instructions += run(&rom, bank_index, case, true, false, &mut visited);
             }
         }
         for pc in [
@@ -933,5 +957,49 @@ mod tests {
             assert!(visited.contains(&pc), "uncovered OAM path {pc:04x}");
         }
         eprintln!("11328 LinkOam pose/bank fixtures, {instructions} instruction boundaries, {} distinct PCs",visited.len());
+    }
+
+    #[test]
+    fn link_oam_complete_call_matches_source_equipment_shadow_body_and_live_return() {
+        let rom = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"),
+        )
+        .unwrap();
+        // Verify the native representation of every nominal table, including
+        // word reads that cross byte-table and body-record boundaries.
+        for (lo, hi) in [
+            (0x0d8000, 0x0da18e),
+            (0x0daacc, 0x0dab6f),
+            (0x0dabca, 0x0dabe7),
+            (0x0dac45, 0x0dacd5),
+            (0x0dad82, 0x0dadb6),
+            (0x0dae38, 0x0dae3b),
+            (0x0daeca, 0x0daed1),
+        ] {
+            for a in lo..hi {
+                assert_eq!(
+                    table_byte(a),
+                    Some(rom[(a >> 16) as usize * 0x8000 + (a as usize & 0x7fff)]),
+                    "LinkOam table {a:06x}"
+                );
+            }
+        }
+        let mut visited = std::collections::BTreeSet::new();
+        let mut instructions = 0;
+        for mode in 0..27 {
+            for case in 0..256 {
+                instructions += run(&rom, mode, case, false, true, &mut visited);
+            }
+        }
+        for pc in [
+            0xab6e, 0xabe6, 0xacd5, 0xadb6, 0xae3b, 0xaed1, 0xafc0, 0xa6f2, 0xa815, 0xa9b8, 0xa9f9,
+            0xaa15, 0xaa50, 0xaa70, 0xaabb, 0xaac2,
+        ] {
+            assert!(visited.contains(&pc), "uncovered LinkOam path {pc:04x}");
+        }
+        eprintln!(
+            "6912 full LinkOam fixtures, {instructions} instruction boundaries, {} distinct PCs",
+            visited.len()
+        );
     }
 }

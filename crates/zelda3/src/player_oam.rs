@@ -2131,29 +2131,65 @@ impl ZeldaState {
             0x0da078..=0x0da083 => Some((&kPlayerOam_Tab19A, 0x0da078)),
             0x0da084..=0x0da08f => Some((&kPlayerOam_Tab20A, 0x0da084)),
             0x0da090..=0x0da09b => Some((&kSwordStuff_oam_index_ptrs_0, 0x0da090)),
+            0x0da09c..=0x0da0a7 => Some((&kLinkBody_oam_index_0, 0x0da09c)),
+            0x0da0a8..=0x0da0b3 => Some((&kShieldStuff_oam_index_ptrs_0, 0x0da0a8)),
+            0x0da0b4..=0x0da0bf => Some((&kShadow_oam_indexes_0, 0x0da0b4)),
             0x0da0c0..=0x0da0cb => Some((&kPlayerOam_Tab19B, 0x0da0c0)),
             0x0da0cc..=0x0da0d7 => Some((&kPlayerOam_Tab20B, 0x0da0cc)),
             0x0da0d8..=0x0da0e3 => Some((&kSwordStuff_oam_index_ptrs_1, 0x0da0d8)),
+            0x0da0e4..=0x0da0ef => Some((&kLinkBody_oam_index_1, 0x0da0e4)),
+            0x0da0f0..=0x0da0fb => Some((&kShieldStuff_oam_index_ptrs_1, 0x0da0f0)),
+            0x0da0fc..=0x0da107 => Some((&kShadow_oam_indexes_1, 0x0da0fc)),
+            0x0daacc..=0x0dab17 => Some((&kPlayerOam_Main_SwordStuff_array3, 0x0daacc)),
+            0x0dab18..=0x0dab21 => Some((&kPlayerOam_Main_SwordStuff_array4, 0x0dab18)),
+            0x0dab22..=0x0dab6d => Some((&kPlayerOam_Main_SwordStuff_array2, 0x0dab22)),
+            0x0dabca..=0x0dabdb => Some((&kPlayerOam_ShieldStuff_array2, 0x0dabca)),
+            0x0dabdc..=0x0dabe5 => Some((&kPlayerOam_ShieldStuff_array3, 0x0dabdc)),
+            0x0dadb4..=0x0dadb5 => Some((&[0, 4], 0x0dadb4)),
+            0x0dae38..=0x0dae3a => Some((&kPlayerOam_DrawOam_2X, 0x0dae38)),
+            0x0daeca..=0x0daecc => Some((&[10, 2, 14], 0x0daeca)),
+            0x0daecd..=0x0daed0 => Some((&kShieldTypeToOffs, 0x0daecd)),
             _ => None,
         };
         if let Some((table, base)) = byte_table { return Some(table[(address - base) as usize]); }
         let signed_table: Option<(&[i8], u32)> = match address {
             0x0d89f9..=0x0d8a74 => Some((&kPlayerOam_Spr1Bank, 0x0d89f9)),
             0x0d8a75..=0x0d8af0 => Some((&kPlayerOam_Spr2Bank, 0x0d8a75)),
+            0x0d8af1..=0x0d8cef => Some((&kPlayerOam_Main_SwordStuff_array1, 0x0d8af1)),
+            0x0d8cf0..=0x0d8eee => Some((&kPlayerOam_ShieldStuff_array1, 0x0d8cf0)),
+            0x0d8eef..=0x0d90ed => Some((&kDrawSword_y, 0x0d8eef)),
+            0x0d90ee..=0x0d92ec => Some((&kDrawSword_x, 0x0d90ee)),
             0x0d92ed..=0x0d9368 => Some((&kPlayerOam_Spr1Y, 0x0d92ed)),
             0x0d9369..=0x0d93e4 => Some((&kPlayerOam_Spr1X, 0x0d9369)),
             0x0d93e5..=0x0d9460 => Some((&kPlayerOam_Spr2Y, 0x0d93e5)),
             0x0d9461..=0x0d94dc => Some((&kPlayerOam_Spr2X, 0x0d9461)),
+            0x0d94dd..=0x0d96db => Some((&kShieldStuff_y, 0x0d94dd)),
+            0x0d96dc..=0x0d98da => Some((&kShieldStuff_x, 0x0d96dc)),
+            0x0d98db..=0x0d98e6 => Some((&kOffsToShadowGivenDir_Y, 0x0d98db)),
+            0x0d98e7..=0x0d98f2 => Some((&kOffsToShadowGivenDir_X, 0x0d98e7)),
+            0x0d98f3..=0x0d9af1 => Some((&kSwordOamYOffs, 0x0d98f3)),
+            0x0d9af2..=0x0d9cf0 => Some((&kSwordOamXOffs, 0x0d9af2)),
+            0x0da12e..=0x0da130 => Some((&kPlayerOam_Rod, 0x0da12e)),
             0x0da131..=0x0da139 => Some((&kPlayerOam_Tab1, 0x0da131)),
             0x0da13a..=0x0da141 => Some((&kPlayerOam_Tab2, 0x0da13a)),
             0x0da142..=0x0da147 => Some((&kPlayerOam_Tab3, 0x0da142)),
             0x0da148..=0x0da14f => Some((&kPlayerOam_Tab4, 0x0da148)),
+            0x0dac8d..=0x0dacb0 => Some((&kSwordOamYOffs_Good, 0x0dac8d)),
+            0x0dacb1..=0x0dacd4 => Some((&kSwordOamXOffs_Good, 0x0dacb1)),
+            0x0dad84..=0x0dad93 => Some((&kPlayerOam_DrawOam_Throwing_State, 0x0dad84)),
+            0x0dad94..=0x0dada3 => Some((&kPlayerOam_DrawOam_Throwing_X, 0x0dad94)),
+            0x0dada4..=0x0dadb3 => Some((&kPlayerOam_DrawOam_Throwing_Y, 0x0dada4)),
             _ => None,
         };
         if let Some((table, base)) = signed_table { return Some(table[(address - base) as usize] as u8); }
         match address {
-            // The final bank-2 word read also observes this adjacent byte.
-            0x0d8af1 => Some(0xff),
+            // Byte-indexed word reads also observe the adjacent REP byte.
+            0x0dab6e | 0x0dabe6 => Some(0xc2),
+            0x0d8000..=0x0d838b => {
+                let i = (address - 0x0d8000) as usize;
+                let body = kLinkSpriteBodys[i / 3];
+                Some([body.y as u8, body.x as u8, body.tile][i % 3])
+            }
             0x0da124..=0x0da125 => Some(0),
             0x0da150..=0x0da15d => {
                 let i = (address - 0x0da150) as usize;
@@ -2165,13 +2201,20 @@ impl ZeldaState {
             }
             _ => {
                 let (table, base): (&[u16], u32) = match address {
+                    0x0d839b..=0x0d8562 => (&kSwordTiledata, 0x0d839b),
+                    0x0d8563..=0x0d85ce => (&kShieldStuff_OamData, 0x0d8563),
+                    0x0d85cf..=0x0d85fa => (&kLinkShadows_Chardata, 0x0d85cf),
+                    0x0d85fb..=0x0d89f8 => (&kLinkDmaGraphicsIndices, 0x0d85fb),
                     0x0d9ef0..=0x0da02f => (&kPlayerOamOtherOffs, 0x0d9ef0),
                     0x0da030..=0x0da037 => (&[0, 80, 160, 240], 0x0da030),
                     0x0da038..=0x0da06f => (&kPlayerOam_Tab6, 0x0da038),
                     0x0da070..=0x0da077 => (&[0, 14, 28, 42], 0x0da070),
                     0x0da108..=0x0da10f => (&[0xa078, 0xa0c0, 0xa084, 0xa0cc], 0x0da108),
+                    0x0da110..=0x0da11f => (&[0xa090, 0xa0d8, 0xa09c, 0xa0e4, 0xa0a8, 0xa0f0, 0xa0b4, 0xa0fc], 0x0da110),
                     0x0da120..=0x0da123 => (&kPlayerOam_SortSpritesOffs, 0x0da120),
                     0x0da126..=0x0da12d => (&kPlayerOam_FloorOamPrio, 0x0da126),
+                    0x0dac45..=0x0dac8c => (&kSwordTipSomething, 0x0dac45),
+                    0x0dad82..=0x0dad83 => (&[0x2609], 0x0dad82),
                     _ => return None,
                 };
                 let i = (address - base) as usize;

@@ -871,18 +871,14 @@ mod tests {
                 }
                 assert!(work.finished(), "{field}/{case} stopped {:04x}", cpu.pc);
                 if let FixtureWork::Landing(work) = &work {
-                    assert_eq!(
-                        work.child(),
-                        Some(if case == 49 {
-                            LandingChild::Sprites(SpriteChild::Sprite(SlotChild::Active(0x05de3e)))
-                        } else {
-                            LandingChild::LinkOam
-                        })
-                    );
-                    assert!(
-                        !work.complete(),
-                        "a pending child cannot complete the caller"
-                    );
+                    if case == 49 {
+                        assert_eq!(work.child(), Some(LandingChild::Sprites(
+                            SpriteChild::Sprite(SlotChild::Active(0x05de3e)))));
+                        assert!(!work.complete(), "a pending child cannot complete the caller");
+                    } else {
+                        assert!(work.complete());
+                        assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, 0x87af, 0x1fe));
+                    }
                 } else {
                     assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, 0x805a, 0x1ff));
                 }

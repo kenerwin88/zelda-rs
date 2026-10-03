@@ -1,0 +1,1739 @@
+//! Equipment, shadow, body and return progress owned by LinkOam.
+//! All operands and branches below are compiled native state transitions.
+//! Lookup data alone goes through the bus; no opcode decoder is used here.
+use super::*;
+impl LinkOam {
+    pub(super) fn suffix_step<B: WorkBus>(
+        &mut self,
+        w: &mut Work<'_, B>,
+        pc: u16,
+        m: u8,
+        x: u8,
+    ) -> u16 {
+        let mask = if m == 1 { 255 } else { 65535 };
+        let xmask = if x == 1 { 255 } else { 65535 };
+        match pc {
+            0xa5ce | 0xa5f9 | 0xa601 | 0xa60c | 0xa614 | 0xa61c | 0xa668 | 0xa66f | 0xa67e
+            | 0xa693 | 0xa6a3 | 0xa6aa | 0xa6fd | 0xa7d4 | 0xa868 | 0xa86f | 0xa8ad | 0xa925
+            | 0xaa4a | 0xaa67 | 0xab91 | 0xaba8 | 0xabbb | 0xac02 | 0xac19 | 0xac31 | 0xad2a
+            | 0xaed1 | 0xaee1 | 0xaef6 | 0xaf0f | 0xaf29 => {
+                let (operand, next) = match pc {
+                    0xa5ce => (0x0309, 0xa5d1),
+                    0xa5f9 => (0x0308, 0xa5fc),
+                    0xa601 => (0x03ef, 0xa604),
+                    0xa60c => (0x0301, 0xa60f),
+                    0xa614 => (0x037a, 0xa617),
+                    0xa61c => (0x0301, 0xa61f),
+                    0xa668 => (0x0301, 0xa66b),
+                    0xa66f => (0x0300, 0xa672),
+                    0xa67e => (0x0301, 0xa681),
+                    0xa693 => (0x0301, 0xa696),
+                    0xa6a3 => (0x037a, 0xa6a6),
+                    0xa6aa => (0x0303, 0xa6ad),
+                    0xa6fd => (0x0346, 0xa700),
+                    0xa7d4 => (0x0347, 0xa7d7),
+                    0xa868 => (0x0354, 0xa86b),
+                    0xa86f => (0x0351, 0xa872),
+                    0xa8ad => (0x0323, 0xa8b0),
+                    0xa925 => (0x0346, 0xa928),
+                    0xaa4a => (0x031f, 0xaa4d),
+                    0xaa67 => (0x0352, 0xaa6a),
+                    0xab91 => (0x0301, 0xab94),
+                    0xaba8 => (0x0109, 0xabab),
+                    0xabbb => (0x0107, 0xabbe),
+                    0xac02 => (0x0301, 0xac05),
+                    0xac19 => (0x0109, 0xac1c),
+                    0xac31 => (0x0108, 0xac34),
+                    0xad2a => (0x0346, 0xad2d),
+                    0xaed1 => (0x0356, 0xaed4),
+                    0xaee1 => (0x0355, 0xaee4),
+                    0xaef6 => (0x0323, 0xaef9),
+                    0xaf0f => (0x0355, 0xaf12),
+                    0xaf29 => (0x0351, 0xaf2c),
+                    _ => unreachable!(),
+                };
+                w.drain(16);
+                let value = w.read(w.absolute(operand), m);
+                w.load(value, m);
+                next
+            }
+            0xa5d1 | 0xa5dd | 0xa5fc | 0xa607 | 0xa60f | 0xa617 | 0xa61f | 0xa626 | 0xa630
+            | 0xa66b | 0xa681 | 0xa696 | 0xa6a6 | 0xa6cb | 0xa6d1 | 0xa6ed | 0xa6f5 | 0xa705
+            | 0xa715 | 0xa722 | 0xa729 | 0xa74c | 0xa766 | 0xa786 | 0xa78f | 0xa7f3 | 0xa7f9
+            | 0xa80e | 0xa840 | 0xa8be | 0xa8ef | 0xa8f5 | 0xa905 | 0xa90e | 0xa92d | 0xa939
+            | 0xa958 | 0xa9ab | 0xa9c2 | 0xa9d7 | 0xa9e5 | 0xaa0f | 0xaa57 | 0xaa84 | 0xaa8e
+            | 0xaa9c | 0xaaa2 | 0xab75 | 0xab83 | 0xab94 | 0xaba3 | 0xabab | 0xabb6 | 0xabbe
+            | 0xabef | 0xabfd | 0xac05 | 0xac14 | 0xac1c | 0xac24 | 0xac2c | 0xac34 | 0xace4
+            | 0xacf5 | 0xacfc | 0xad09 | 0xad22 | 0xad32 | 0xadda | 0xade0 | 0xae08 | 0xae0f
+            | 0xae80 | 0xae86 | 0xae99 | 0xaed5 | 0xaee5 | 0xaf63 | 0xaf68 | 0xaf73 | 0xafc2
+            | 0xafd4 => {
+                let (operand, next) = match pc {
+                    0xa5d1 => (0x0004, 0xa5d4),
+                    0xa5dd => (0x00ff, 0xa5e0),
+                    0xa5fc => (0x00ff, 0xa5ff),
+                    0xa607 => (0x00ff, 0xa60a),
+                    0xa60f => (0x0040, 0xa612),
+                    0xa617 => (0x003d, 0xa61a),
+                    0xa61f => (0x0093, 0xa622),
+                    0xa626 => (0x0080, 0xa629),
+                    0xa630 => (0x00fe, 0xa633),
+                    0xa66b => (0x0002, 0xa66d),
+                    0xa681 => (0x0005, 0xa683),
+                    0xa696 => (0x0005, 0xa698),
+                    0xa6a6 => (0x0008, 0xa6a8),
+                    0xa6cb => (0x00ff, 0xa6ce),
+                    0xa6d1 => (0x00ff, 0xa6d4),
+                    0xa6ed => (0xcfff, 0xa6f0),
+                    0xa6f5 => (0x0e00, 0xa6f8),
+                    0xa705 => (0xf1ff, 0xa708),
+                    0xa715 => (0xf1ff, 0xa718),
+                    0xa722 => (0x00ff, 0xa725),
+                    0xa729 => (0x00ff, 0xa72c),
+                    0xa74c => (0x00fe, 0xa74e),
+                    0xa766 => (0x0001, 0xa768),
+                    0xa786 => (0x00ff, 0xa789),
+                    0xa78f => (0x00ff, 0xa792),
+                    0xa7f3 => (0x00ff, 0xa7f6),
+                    0xa7f9 => (0x00ff, 0xa7fc),
+                    0xa80e => (0xc1ff, 0xa811),
+                    0xa840 => (0x0001, 0xa842),
+                    0xa8be => (0x00ff, 0xa8c1),
+                    0xa8ef => (0x00ff, 0xa8f2),
+                    0xa8f5 => (0x00ff, 0xa8f8),
+                    0xa905 => (0xcfff, 0xa908),
+                    0xa90e => (0x3fff, 0xa911),
+                    0xa92d => (0xf1ff, 0xa930),
+                    0xa939 => (0xf1ff, 0xa93c),
+                    0xa958 => (0x00ff, 0xa95b),
+                    0xa9ab => (0xf000, 0xa9ae),
+                    0xa9c2 => (0x00ff, 0xa9c5),
+                    0xa9d7 => (0xff00, 0xa9da),
+                    0xa9e5 => (0x0f00, 0xa9e8),
+                    0xaa0f => (0xff00, 0xaa12),
+                    0xaa57 => (0x0001, 0xaa59),
+                    0xaa84 => (0x00ff, 0xaa87),
+                    0xaa8e => (0x00ff, 0xaa91),
+                    0xaa9c => (0x00ff, 0xaa9f),
+                    0xaaa2 => (0x00ff, 0xaaa5),
+                    0xab75 => (0x00ff, 0xab78),
+                    0xab83 => (0x00ff, 0xab86),
+                    0xab94 => (0x0005, 0xab97),
+                    0xaba3 => (0x00ff, 0xaba6),
+                    0xabab => (0xff00, 0xabae),
+                    0xabb6 => (0x00ff, 0xabb9),
+                    0xabbe => (0xff00, 0xabc1),
+                    0xabef => (0x00ff, 0xabf2),
+                    0xabfd => (0x00f8, 0xac00),
+                    0xac05 => (0x0005, 0xac08),
+                    0xac14 => (0x00ff, 0xac17),
+                    0xac1c => (0xff00, 0xac1f),
+                    0xac24 => (0x0007, 0xac27),
+                    0xac2c => (0x00ff, 0xac2f),
+                    0xac34 => (0xff00, 0xac37),
+                    0xace4 => (0x00ff, 0xace7),
+                    0xacf5 => (0x0080, 0xacf8),
+                    0xacfc => (0x00ff, 0xacff),
+                    0xad09 => (0x00ff, 0xad0c),
+                    0xad22 => (0xcfff, 0xad25),
+                    0xad32 => (0xf1ff, 0xad35),
+                    0xadda => (0x00ff, 0xaddd),
+                    0xade0 => (0x00ff, 0xade3),
+                    0xae08 => (0x00ff, 0xae0b),
+                    0xae0f => (0xcfff, 0xae12),
+                    0xae80 => (0x00ff, 0xae83),
+                    0xae86 => (0x00ff, 0xae89),
+                    0xae99 => (0xcfff, 0xae9c),
+                    0xaed5 => (0x000f, 0xaed7),
+                    0xaee5 => (0x0003, 0xaee7),
+                    0xaf63 => (0x00ff, 0xaf66),
+                    0xaf68 => (0x00ff, 0xaf6b),
+                    0xaf73 => (0xcfff, 0xaf76),
+                    0xafc2 => (0x00ff, 0xafc5),
+                    0xafd4 => (0x0001, 0xafd7),
+                    _ => unreachable!(),
+                };
+                w.drain(8 * u32::from(m));
+                let value = operand;
+                w.load(w.cpu.a & value & mask, m);
+                next
+            }
+            0xa5d4 | 0xa5e3 | 0xa5e8 | 0xa5ed | 0xa5f2 | 0xa5f7 | 0xa629 | 0xa633 | 0xa66d
+            | 0xa698 | 0xa6a8 | 0xa6eb | 0xa6fb | 0xa710 | 0xa779 | 0xa789 | 0xa792 | 0xa80c
+            | 0xa866 | 0xa86d | 0xa872 | 0xa87d | 0xa883 | 0xa889 | 0xa88d | 0xa89d | 0xa9b1
+            | 0xa9eb | 0xaa20 | 0xaa4d | 0xaa59 | 0xaa5f | 0xaa63 | 0xaa8a | 0xaab5 | 0xab7b
+            | 0xab97 | 0xabf5 | 0xac00 | 0xac08 | 0xac27 | 0xacdb | 0xace7 | 0xacec | 0xacf1
+            | 0xacf8 | 0xad20 | 0xae04 | 0xae97 => {
+                let (operand, next) = match pc {
+                    0xa5d4 => (0xa5db, 0xa5d6),
+                    0xa5e3 => (0xa62b, 0xa5e5),
+                    0xa5e8 => (0xa62b, 0xa5ea),
+                    0xa5ed => (0xa62b, 0xa5ef),
+                    0xa5f2 => (0xa62b, 0xa5f4),
+                    0xa5f7 => (0xa62b, 0xa5f9),
+                    0xa629 => (0xa63a, 0xa62b),
+                    0xa633 => (0xa63a, 0xa635),
+                    0xa66d => (0xa67e, 0xa66f),
+                    0xa698 => (0xa6a3, 0xa69a),
+                    0xa6a8 => (0xa6b5, 0xa6aa),
+                    0xa6eb => (0xa756, 0xa6ed),
+                    0xa6fb => (0xa70e, 0xa6fd),
+                    0xa710 => (0xa71d, 0xa712),
+                    0xa779 => (0xa77e, 0xa77b),
+                    0xa789 => (0xa799, 0xa78b),
+                    0xa792 => (0xa799, 0xa794),
+                    0xa80c => (0xa831, 0xa80e),
+                    0xa866 => (0xa898, 0xa868),
+                    0xa86d => (0xa879, 0xa86f),
+                    0xa872 => (0xa879, 0xa874),
+                    0xa87d => (0xa898, 0xa87f),
+                    0xa883 => (0xa898, 0xa885),
+                    0xa889 => (0xa89b, 0xa88b),
+                    0xa88d => (0xa89b, 0xa88f),
+                    0xa89d => (0xa8a9, 0xa89f),
+                    0xa9b1 => (0xa9e3, 0xa9b3),
+                    0xa9eb => (0xaa18, 0xa9ed),
+                    0xaa20 => (0xaa44, 0xaa22),
+                    0xaa4d => (0xaa5b, 0xaa4f),
+                    0xaa59 => (0xaa65, 0xaa5b),
+                    0xaa5f => (0xaa65, 0xaa61),
+                    0xaa63 => (0xaab1, 0xaa65),
+                    0xaa8a => (0xaaaf, 0xaa8c),
+                    0xaab5 => (0xaabb, 0xaab7),
+                    0xab7b => (0xabc8, 0xab7d),
+                    0xab97 => (0xaba2, 0xab99),
+                    0xabf5 => (0xac43, 0xabf7),
+                    0xac00 => (0xac2b, 0xac02),
+                    0xac08 => (0xac13, 0xac0a),
+                    0xac27 => (0xac3c, 0xac29),
+                    0xacdb => (0xace0, 0xacdd),
+                    0xace7 => (0xacdd, 0xace9),
+                    0xacec => (0xacdd, 0xacee),
+                    0xacf1 => (0xacdd, 0xacf3),
+                    0xacf8 => (0xacdd, 0xacfa),
+                    0xad20 => (0xad7b, 0xad22),
+                    0xae04 => (0xae2b, 0xae06),
+                    0xae97 => (0xaea7, 0xae99),
+                    _ => unreachable!(),
+                };
+                if w.branch(w.cpu.p & ZERO != 0) {
+                    operand
+                } else {
+                    next
+                }
+            }
+            0xa5d6 | 0xa635 | 0xa6dd | 0xa794 | 0xa7cb | 0xa874 | 0xa895 | 0xad5a | 0xadba => {
+                let (operand, next) = match pc {
+                    0xa5d6 => (0xadb6, 0xa5d9),
+                    0xa635 => (0xab6e, 0xa638),
+                    0xa6dd => (0xacd5, 0xa6e0),
+                    0xa794 => (0xabe6, 0xa797),
+                    0xa7cb => (0xafc0, 0xa7ce),
+                    0xa874 => (0xaed1, 0xa877),
+                    0xa895 => (0xae3b, 0xa898),
+                    0xad5a => (0xafc0, 0xad5d),
+                    0xadba => (0xaac3, 0xadbd),
+                    _ => unreachable!(),
+                };
+                w.operand_then_internal(2);
+                w.push(next - 1, 2);
+                self.near_returns.push(next);
+                operand
+            }
+            0xa5d9 | 0xa647 | 0xa67c | 0xa7a6 | 0xa877 | 0xa982 | 0xabb3 | 0xac29 | 0xaf3c
+            | 0xaf56 => {
+                let (operand, next) = match pc {
+                    0xa5d9 => (0xa63a, 0xa5db),
+                    0xa647 => (0xa651, 0xa649),
+                    0xa67c => (0xa685, 0xa67e),
+                    0xa7a6 => (0xa7b0, 0xa7a8),
+                    0xa877 => (0xa898, 0xa879),
+                    0xa982 => (0xa98c, 0xa984),
+                    0xabb3 => (0xabc6, 0xabb5),
+                    0xac29 => (0xac41, 0xac2b),
+                    0xaf3c => (0xaf41, 0xaf3e),
+                    0xaf56 => (0xaf60, 0xaf58),
+                    _ => unreachable!(),
+                };
+                if w.branch(true) {
+                    operand
+                } else {
+                    next
+                }
+            }
+            0xa5db | 0xa624 | 0xa641 | 0xa645 | 0xa649 | 0xa653 | 0xa65e | 0xa676 | 0xa6b7
+            | 0xa6c9 | 0xa6da | 0xa70e | 0xa71d | 0xa727 | 0xa747 | 0xa758 | 0xa761 | 0xa76a
+            | 0xa771 | 0xa775 | 0xa7a0 | 0xa7a4 | 0xa7a8 | 0xa7b2 | 0xa7be | 0xa7df | 0xa7f1
+            | 0xa818 | 0xa824 | 0xa833 | 0xa83e | 0xa844 | 0xa84b | 0xa84f | 0xa859 | 0xa862
+            | 0xa879 | 0xa87f | 0xa887 | 0xa88f | 0xa89b | 0xa8a3 | 0xa8b4 | 0xa8d0 | 0xa8d4
+            | 0xa8dc | 0xa8ed | 0xa8fd | 0xa917 | 0xa960 | 0xa973 | 0xa97c | 0xa980 | 0xa984
+            | 0xa990 | 0xa99b | 0xa9bd | 0xa9e3 | 0xa9fc | 0xaa1e | 0xaa24 | 0xaa33 | 0xaa46
+            | 0xaa5b | 0xaa61 | 0xaa82 | 0xaa8c | 0xaa9a | 0xaab1 | 0xacd5 | 0xacd9 | 0xacf3
+            | 0xacfa | 0xad07 | 0xad5f | 0xadd8 | 0xadee | 0xadf6 | 0xae17 | 0xae2f | 0xae3d
+            | 0xae5e | 0xae6b | 0xae7e | 0xaea2 | 0xaeb2 | 0xaec1 | 0xaeff | 0xaf07 | 0xaf41
+            | 0xaf85 => {
+                let (operand, next) = match pc {
+                    0xa5db => (0x005d, 0xa5dd),
+                    0xa624 => (0x003a, 0xa626),
+                    0xa641 => (0x0025, 0xa643),
+                    0xa645 => (0x0024, 0xa647),
+                    0xa649 => (0x0024, 0xa64b),
+                    0xa653 => (0x0001, 0xa655),
+                    0xa65e => (0x0000, 0xa660),
+                    0xa676 => (0x003d, 0xa678),
+                    0xa6b7 => (0x0006, 0xa6b9),
+                    0xa6c9 => (0x0004, 0xa6cb),
+                    0xa6da => (0x000e, 0xa6dc),
+                    0xa70e => (0x000e, 0xa710),
+                    0xa71d => (0x000a, 0xa71f),
+                    0xa727 => (0x0000, 0xa729),
+                    0xa747 => (0x000c, 0xa749),
+                    0xa758 => (0x000a, 0xa75a),
+                    0xa761 => (0x0006, 0xa763),
+                    0xa76a => (0x000b, 0xa76c),
+                    0xa771 => (0x0008, 0xa773),
+                    0xa775 => (0x0006, 0xa777),
+                    0xa7a0 => (0x0025, 0xa7a2),
+                    0xa7a4 => (0x0024, 0xa7a6),
+                    0xa7a8 => (0x0024, 0xa7aa),
+                    0xa7b2 => (0x0001, 0xa7b4),
+                    0xa7be => (0x0000, 0xa7c0),
+                    0xa7df => (0x0006, 0xa7e1),
+                    0xa7f1 => (0x0004, 0xa7f3),
+                    0xa818 => (0x000a, 0xa81a),
+                    0xa824 => (0x000c, 0xa826),
+                    0xa833 => (0x000a, 0xa835),
+                    0xa83e => (0x0006, 0xa840),
+                    0xa844 => (0x000b, 0xa846),
+                    0xa84b => (0x0008, 0xa84d),
+                    0xa84f => (0x0006, 0xa851),
+                    0xa859 => (0x004b, 0xa85b),
+                    0xa862 => (0x005d, 0xa864),
+                    0xa879 => (0x004d, 0xa87b),
+                    0xa87f => (0x005d, 0xa881),
+                    0xa887 => (0x005b, 0xa889),
+                    0xa88f => (0x005a, 0xa891),
+                    0xa89b => (0x004d, 0xa89d),
+                    0xa8a3 => (0x0055, 0xa8a5),
+                    0xa8b4 => (0x0020, 0xa8b6),
+                    0xa8d0 => (0x0007, 0xa8d2),
+                    0xa8d4 => (0x0001, 0xa8d6),
+                    0xa8dc => (0x0000, 0xa8de),
+                    0xa8ed => (0x0004, 0xa8ef),
+                    0xa8fd => (0x000a, 0xa8ff),
+                    0xa917 => (0x0006, 0xa919),
+                    0xa960 => (0x0002, 0xa962),
+                    0xa973 => (0x004b, 0xa975),
+                    0xa97c => (0x0025, 0xa97e),
+                    0xa980 => (0x0024, 0xa982),
+                    0xa984 => (0x0024, 0xa986),
+                    0xa990 => (0x0001, 0xa992),
+                    0xa99b => (0x0000, 0xa99d),
+                    0xa9bd => (0x000a, 0xa9bf),
+                    0xa9e3 => (0x0006, 0xa9e5),
+                    0xa9fc => (0x0000, 0xa9fe),
+                    0xaa1e => (0x006c, 0xaa20),
+                    0xaa24 => (0x0022, 0xaa26),
+                    0xaa33 => (0x0020, 0xaa35),
+                    0xaa46 => (0x0011, 0xaa48),
+                    0xaa5b => (0x004b, 0xaa5d),
+                    0xaa61 => (0x0055, 0xaa63),
+                    0xaa82 => (0x004b, 0xaa84),
+                    0xaa8c => (0x000e, 0xaa8e),
+                    0xaa9a => (0x0004, 0xaa9c),
+                    0xaab1 => (0x0011, 0xaab3),
+                    0xacd5 => (0x000a, 0xacd7),
+                    0xacd9 => (0x005d, 0xacdb),
+                    0xacf3 => (0x003a, 0xacf5),
+                    0xacfa => (0x003c, 0xacfc),
+                    0xad07 => (0x002f, 0xad09),
+                    0xad5f => (0x000a, 0xad61),
+                    0xadd8 => (0x0004, 0xadda),
+                    0xadee => (0x0001, 0xadf0),
+                    0xadf6 => (0x0000, 0xadf8),
+                    0xae17 => (0x000a, 0xae19),
+                    0xae2f => (0x0006, 0xae31),
+                    0xae3d => (0x0051, 0xae3f),
+                    0xae5e => (0x0051, 0xae60),
+                    0xae6b => (0x0000, 0xae6d),
+                    0xae7e => (0x0003, 0xae80),
+                    0xaea2 => (0x0006, 0xaea4),
+                    0xaeb2 => (0x0006, 0xaeb4),
+                    0xaec1 => (0x0004, 0xaec3),
+                    0xaeff => (0x0001, 0xaf01),
+                    0xaf07 => (0x0000, 0xaf09),
+                    0xaf41 => (0x002e, 0xaf43),
+                    0xaf85 => (0x0006, 0xaf87),
+                    _ => unreachable!(),
+                };
+                let value = w.dp_read(operand, m);
+                w.load(value, m);
+                next
+            }
+            0xa5e0 | 0xa5e5 | 0xa5ea | 0xa5ef | 0xa5f4 | 0xa64b | 0xa672 | 0xa678 | 0xa6ad
+            | 0xa6e8 | 0xa6f8 | 0xa735 | 0xa777 | 0xa7aa | 0xa809 | 0xa851 | 0xa85b | 0xa864
+            | 0xa86b | 0xa87b | 0xa881 | 0xa88b | 0xa891 | 0xa89f | 0xa8c1 | 0xa975 | 0xa986
+            | 0xa9ae | 0xa9c5 | 0xa9e8 | 0xaa29 | 0xaa2e | 0xaa38 | 0xaa3d | 0xaa53 | 0xaa5d
+            | 0xaa87 | 0xaab3 | 0xaab7 | 0xab78 | 0xab8c | 0xabf2 | 0xace9 | 0xacee | 0xacff
+            | 0xad1d | 0xae02 | 0xae31 | 0xae45 | 0xae49 | 0xae4f | 0xae94 | 0xaec3 | 0xaeda
+            | 0xaeea | 0xaf2c | 0xaf43 | 0xafc5 => {
+                let (operand, next) = match pc {
+                    0xa5e0 => (0x0008, 0xa5e3),
+                    0xa5e5 => (0x0009, 0xa5e8),
+                    0xa5ea => (0x000a, 0xa5ed),
+                    0xa5ef => (0x0003, 0xa5f2),
+                    0xa5f4 => (0x001e, 0xa5f7),
+                    0xa64b => (0x00f0, 0xa64d),
+                    0xa672 => (0x0002, 0xa674),
+                    0xa678 => (0x000f, 0xa67a),
+                    0xa6ad => (0x000d, 0xa6af),
+                    0xa6e8 => (0xffff, 0xa6eb),
+                    0xa6f8 => (0x0200, 0xa6fb),
+                    0xa735 => (0x0080, 0xa738),
+                    0xa777 => (0x0003, 0xa779),
+                    0xa7aa => (0x00f0, 0xa7ac),
+                    0xa809 => (0xffff, 0xa80c),
+                    0xa851 => (0x0003, 0xa853),
+                    0xa85b => (0x000c, 0xa85d),
+                    0xa864 => (0x0016, 0xa866),
+                    0xa86b => (0x0005, 0xa86d),
+                    0xa87b => (0x0004, 0xa87d),
+                    0xa881 => (0x0004, 0xa883),
+                    0xa88b => (0x0001, 0xa88d),
+                    0xa891 => (0x0006, 0xa893),
+                    0xa89f => (0x0001, 0xa8a1),
+                    0xa8c1 => (0x0080, 0xa8c4),
+                    0xa975 => (0x000c, 0xa977),
+                    0xa986 => (0x00f0, 0xa988),
+                    0xa9ae => (0xf000, 0xa9b1),
+                    0xa9c5 => (0x00f8, 0xa9c8),
+                    0xa9e8 => (0x0f00, 0xa9eb),
+                    0xaa29 => (0x0004, 0xaa2c),
+                    0xaa2e => (0x00fc, 0xaa31),
+                    0xaa38 => (0x0004, 0xaa3b),
+                    0xaa3d => (0x00e0, 0xaa40),
+                    0xaa53 => (0x0004, 0xaa55),
+                    0xaa5d => (0x000c, 0xaa5f),
+                    0xaa87 => (0x000c, 0xaa8a),
+                    0xaab3 => (0x0012, 0xaab5),
+                    0xaab7 => (0x0013, 0xaab9),
+                    0xab78 => (0x00ff, 0xab7b),
+                    0xab8c => (0x001d, 0xab8f),
+                    0xabf2 => (0x00ff, 0xabf5),
+                    0xace9 => (0x00ff, 0xacec),
+                    0xacee => (0x0001, 0xacf1),
+                    0xacff => (0x0009, 0xad02),
+                    0xad1d => (0xffff, 0xad20),
+                    0xae02 => (0x00ff, 0xae04),
+                    0xae31 => (0x0004, 0xae33),
+                    0xae45 => (0x00f0, 0xae47),
+                    0xae49 => (0x0030, 0xae4b),
+                    0xae4f => (0x0060, 0xae51),
+                    0xae94 => (0xffff, 0xae97),
+                    0xaec3 => (0x0002, 0xaec5),
+                    0xaeda => (0x0009, 0xaedc),
+                    0xaeea => (0x0003, 0xaeec),
+                    0xaf2c => (0x0002, 0xaf2e),
+                    0xaf43 => (0x0003, 0xaf45),
+                    0xafc5 => (0x0080, 0xafc8),
+                    _ => unreachable!(),
+                };
+                w.drain(8 * u32::from(m));
+                let value = operand;
+                let left = w.cpu.a & mask;
+                w.cpu.p = (w.cpu.p & !CARRY) | u8::from(left >= value);
+                w.flags(left.wrapping_sub(value) & mask, m);
+                next
+            }
+            0xa5ff | 0xa60a | 0xa612 | 0xa61a | 0xa622 | 0xa674 | 0xa67a | 0xa683 | 0xa6af
+            | 0xa700 | 0xa768 | 0xa7d7 | 0xa842 | 0xa853 | 0xa85d | 0xa8a1 | 0xa8a5 | 0xa8d2
+            | 0xa928 | 0xa977 | 0xaa48 | 0xaa91 | 0xaab9 | 0xad2d | 0xae33 | 0xaec5 | 0xaeec
+            | 0xaf2e | 0xaf38 => {
+                let (operand, next) = match pc {
+                    0xa5ff => (0xa62b, 0xa601),
+                    0xa60a => (0xa62b, 0xa60c),
+                    0xa612 => (0xa63a, 0xa614),
+                    0xa61a => (0xa635, 0xa61c),
+                    0xa622 => (0xa635, 0xa624),
+                    0xa674 => (0xa68f, 0xa676),
+                    0xa67a => (0xa68f, 0xa67c),
+                    0xa683 => (0xa68f, 0xa685),
+                    0xa6af => (0xa6b5, 0xa6b1),
+                    0xa700 => (0xa70e, 0xa702),
+                    0xa768 => (0xa775, 0xa76a),
+                    0xa7d7 => (0xa7dd, 0xa7d9),
+                    0xa842 => (0xa84f, 0xa844),
+                    0xa853 => (0xa802, 0xa855),
+                    0xa85d => (0xa862, 0xa85f),
+                    0xa8a1 => (0xa8a7, 0xa8a3),
+                    0xa8a5 => (0xa8a9, 0xa8a7),
+                    0xa8d2 => (0xa898, 0xa8d4),
+                    0xa928 => (0xa942, 0xa92a),
+                    0xa977 => (0xa97c, 0xa979),
+                    0xaa48 => (0xaa5b, 0xaa4a),
+                    0xaa91 => (0xaaaf, 0xaa93),
+                    0xaab9 => (0xaac1, 0xaabb),
+                    0xad2d => (0xad3b, 0xad2f),
+                    0xae33 => (0xadec, 0xae35),
+                    0xaec5 => (0xae8f, 0xaec7),
+                    0xaeec => (0xaef1, 0xaeee),
+                    0xaf2e => (0xaf58, 0xaf30),
+                    0xaf38 => (0xaf3e, 0xaf3a),
+                    _ => unreachable!(),
+                };
+                if w.branch(w.cpu.p & ZERO == 0) {
+                    operand
+                } else {
+                    next
+                }
+            }
+            0xa604 | 0xa826 | 0xa908 | 0xa9b5 | 0xa9f3 | 0xad74 | 0xae9c | 0xaf76 | 0xaf7f => {
+                let (operand, next) = match pc {
+                    0xa604 => (0x0360, 0xa607),
+                    0xa826 => (0x03fa, 0xa829),
+                    0xa908 => (0x035d, 0xa90b),
+                    0xa9b5 => (0x0346, 0xa9b8),
+                    0xa9f3 => (0x0346, 0xa9f6),
+                    0xad74 => (0x03fa, 0xad77),
+                    0xae9c => (0x035d, 0xae9f),
+                    0xaf76 => (0x035d, 0xaf79),
+                    0xaf7f => (0x035d, 0xaf82),
+                    _ => unreachable!(),
+                };
+                w.drain(16);
+                let value = w.read(w.absolute(operand), m);
+                w.load((w.cpu.a | value) & mask, m);
+                next
+            }
+            0xa62b | 0xa782 | 0xa78b | 0xace0 | 0xaef1 => {
+                let (operand, next) = match pc {
+                    0xa62b => (0x7ef359, 0xa62f),
+                    0xa782 => (0x7ef35a, 0xa786),
+                    0xa78b => (0x7ef3c5, 0xa78f),
+                    0xace0 => (0x7ef359, 0xace4),
+                    0xaef1 => (0x7ef35a, 0xaef5),
+                    _ => unreachable!(),
+                };
+                w.drain(24);
+                let value = w.read(operand, m);
+                w.load(value, m);
+                next
+            }
+            0xa62f | 0xa734 | 0xa763 | 0xaed4 | 0xaee4 => {
+                let next = match pc {
+                    0xa62f => 0xa630,
+                    0xa734 => 0xa735,
+                    0xa763 => 0xa764,
+                    0xaed4 => 0xaed5,
+                    0xaee4 => 0xaee5,
+                    _ => unreachable!(),
+                };
+                w.increment_a(m);
+                next
+            }
+            0xa638 | 0xa64d | 0xa738 | 0xa797 | 0xa7ac | 0xa893 | 0xa8c4 | 0xa988 | 0xa9c8
+            | 0xaa2c | 0xaa3b | 0xaa55 | 0xab8f | 0xae4b | 0xae51 | 0xaedc | 0xaf45 | 0xafc8 => {
+                let (operand, next) = match pc {
+                    0xa638 => (0xa63d, 0xa63a),
+                    0xa64d => (0xa651, 0xa64f),
+                    0xa738 => (0xa73f, 0xa73a),
+                    0xa797 => (0xa79c, 0xa799),
+                    0xa7ac => (0xa7b0, 0xa7ae),
+                    0xa893 => (0xa898, 0xa895),
+                    0xa8c4 => (0xa8c9, 0xa8c6),
+                    0xa988 => (0xa98c, 0xa98a),
+                    0xa9c8 => (0xa9cf, 0xa9ca),
+                    0xaa2c => (0xaa65, 0xaa2e),
+                    0xaa3b => (0xaa65, 0xaa3d),
+                    0xaa55 => (0xaa5b, 0xaa57),
+                    0xab8f => (0xabb5, 0xab91),
+                    0xae4b => (0xae4f, 0xae4d),
+                    0xae51 => (0xae55, 0xae53),
+                    0xaedc => (0xaef1, 0xaede),
+                    0xaf45 => (0xaf4a, 0xaf47),
+                    0xafc8 => (0xafcd, 0xafca),
+                    _ => unreachable!(),
+                };
+                if w.branch(w.cpu.p & CARRY == 0) {
+                    operand
+                } else {
+                    next
+                }
+            }
+            0xa63a | 0xa77b | 0xa799 | 0xa85f | 0xa898 | 0xa979 | 0xacdd => {
+                let operand = match pc {
+                    0xa63a => 0xa780,
+                    0xa77b => 0xa6e3,
+                    0xa799 => 0xa857,
+                    0xa85f => 0xa94b,
+                    0xa898 => 0xa94b,
+                    0xa979 => 0xaa18,
+                    0xacdd => 0xad7b,
+                    _ => unreachable!(),
+                };
+                w.operand_then_internal(2);
+                operand
+            }
+            0xa63d | 0xa79c | 0xa954 | 0xab70 | 0xabea | 0xade8 | 0xaf23 => {
+                let (operand, next) = match pc {
+                    0xa63d => (0x0002, 0xa63f),
+                    0xa79c => (0x0002, 0xa79e),
+                    0xa954 => (0x0004, 0xa956),
+                    0xab70 => (0x0002, 0xab72),
+                    0xabea => (0x0002, 0xabec),
+                    0xade8 => (0x0006, 0xadea),
+                    0xaf23 => (0x0004, 0xaf25),
+                    _ => unreachable!(),
+                };
+                let value = w.dp_read(operand, x);
+                w.cpu.y = value;
+                w.flags(value, x);
+                next
+            }
+            0xa63f | 0xa745 | 0xa756 | 0xa77e | 0xa79e | 0xa822 | 0xa831 | 0xa855 | 0xa857
+            | 0xa8ce | 0xa949 | 0xa971 | 0xaa18 | 0xaa42 | 0xaaaf | 0xad3e | 0xadb6 | 0xadec
+            | 0xae21 | 0xaeac | 0xaec7 | 0xaf9a | 0xafda => {
+                let (operand, next) = match pc {
+                    0xa63f => (0x0020, 0xa641),
+                    0xa745 => (0x0020, 0xa747),
+                    0xa756 => (0x0020, 0xa758),
+                    0xa77e => (0x0010, 0xa780),
+                    0xa79e => (0x0020, 0xa7a0),
+                    0xa822 => (0x0020, 0xa824),
+                    0xa831 => (0x0020, 0xa833),
+                    0xa855 => (0x0010, 0xa857),
+                    0xa857 => (0x0030, 0xa859),
+                    0xa8ce => (0x0020, 0xa8d0),
+                    0xa949 => (0x0030, 0xa94b),
+                    0xa971 => (0x0020, 0xa973),
+                    0xaa18 => (0x0030, 0xaa1a),
+                    0xaa42 => (0x0020, 0xaa44),
+                    0xaaaf => (0x0030, 0xaab1),
+                    0xad3e => (0x0020, 0xad40),
+                    0xadb6 => (0x0030, 0xadb8),
+                    0xadec => (0x0020, 0xadee),
+                    0xae21 => (0x0020, 0xae23),
+                    0xaeac => (0x0020, 0xaeae),
+                    0xaec7 => (0x0010, 0xaec9),
+                    0xaf9a => (0x0030, 0xaf9c),
+                    0xafda => (0x0020, 0xafdc),
+                    _ => unreachable!(),
+                };
+                w.width(operand as u8, false);
+                next
+            }
+            0xa643 | 0xa7a2 | 0xa97e => {
+                let (operand, next) = match pc {
+                    0xa643 => (0xa649, 0xa645),
+                    0xa7a2 => (0xa7a8, 0xa7a4),
+                    0xa97e => (0xa984, 0xa980),
+                    _ => unreachable!(),
+                };
+                if w.branch(w.cpu.p & NEGATIVE != 0) {
+                    operand
+                } else {
+                    next
+                }
+            }
+            0xa64f | 0xa6b1 | 0xa73a | 0xa7ae | 0xa7d0 | 0xa7d9 | 0xa98a | 0xa9ca | 0xaa1a
+            | 0xaa6d | 0xac3c | 0xad71 | 0xadca | 0xaf4e | 0xaf58 => {
+                let (operand, next) = match pc {
+                    0xa64f => (0x0000, 0xa651),
+                    0xa6b1 => (0x0004, 0xa6b3),
+                    0xa73a => (0x0001, 0xa73d),
+                    0xa7ae => (0x0000, 0xa7b0),
+                    0xa7d0 => (0x000a, 0xa7d2),
+                    0xa7d9 => (0x0006, 0xa7db),
+                    0xa98a => (0x0000, 0xa98c),
+                    0xa9ca => (0x0001, 0xa9cd),
+                    0xaa1a => (0x0001, 0xaa1c),
+                    0xaa6d => (0x0101, 0xaa70),
+                    0xac3c => (0x0002, 0xac3f),
+                    0xad71 => (0x0000, 0xad74),
+                    0xadca => (0x0042, 0xadcc),
+                    0xaf4e => (0x0008, 0xaf50),
+                    0xaf58 => (0x0005, 0xaf5a),
+                    _ => unreachable!(),
+                };
+                w.drain(8 * u32::from(m));
+                let value = operand;
+                w.load(value, m);
+                next
+            }
+            0xa651 | 0xa65c | 0xa664 | 0xa666 | 0xa688 | 0xa68d | 0xa6a1 | 0xa6b3 | 0xa6c7
+            | 0xa6e1 | 0xa725 | 0xa74e | 0xa75d | 0xa764 | 0xa76f | 0xa773 | 0xa7b0 | 0xa7bc
+            | 0xa7c4 | 0xa7c6 | 0xa7d2 | 0xa7db | 0xa7ef | 0xa838 | 0xa849 | 0xa84d | 0xa8b9
+            | 0xa8cc | 0xa8da | 0xa8e2 | 0xa8eb | 0xa952 | 0xa967 | 0xa98c | 0xa999 | 0xa9a1
+            | 0xa9a9 | 0xa9cd | 0xaa1c | 0xaa98 | 0xaabc | 0xaabf | 0xab7d | 0xab86 | 0xaba6
+            | 0xabb9 | 0xabf7 | 0xac17 | 0xac2f | 0xac3f | 0xad05 | 0xad0d | 0xad46 | 0xad4e
+            | 0xad53 | 0xad58 | 0xad7f | 0xadc6 | 0xadd6 | 0xadf4 | 0xadfc | 0xae5c | 0xae69
+            | 0xae70 | 0xae7c | 0xaeb7 | 0xaf05 | 0xaf0d | 0xaf14 | 0xaf1c | 0xaf21 | 0xaf4c => {
+                let (operand, next) = match pc {
+                    0xa651 => (0x000b, 0xa653),
+                    0xa65c => (0x000b, 0xa65e),
+                    0xa664 => (0x000a, 0xa666),
+                    0xa666 => (0x0008, 0xa668),
+                    0xa688 => (0x0044, 0xa68a),
+                    0xa68d => (0x0045, 0xa68f),
+                    0xa6a1 => (0x000f, 0xa6a3),
+                    0xa6b3 => (0x000f, 0xa6b5),
+                    0xa6c7 => (0x0074, 0xa6c9),
+                    0xa6e1 => (0x000e, 0xa6e3),
+                    0xa725 => (0x0074, 0xa727),
+                    0xa74e => (0x000c, 0xa750),
+                    0xa75d => (0x000a, 0xa75f),
+                    0xa764 => (0x0006, 0xa766),
+                    0xa76f => (0x000b, 0xa771),
+                    0xa773 => (0x000a, 0xa775),
+                    0xa7b0 => (0x000b, 0xa7b2),
+                    0xa7bc => (0x000b, 0xa7be),
+                    0xa7c4 => (0x000a, 0xa7c6),
+                    0xa7c6 => (0x0008, 0xa7c8),
+                    0xa7d2 => (0x000f, 0xa7d4),
+                    0xa7db => (0x000f, 0xa7dd),
+                    0xa7ef => (0x0074, 0xa7f1),
+                    0xa838 => (0x000a, 0xa83a),
+                    0xa849 => (0x000b, 0xa84b),
+                    0xa84d => (0x000a, 0xa84f),
+                    0xa8b9 => (0x0006, 0xa8bb),
+                    0xa8cc => (0x0006, 0xa8ce),
+                    0xa8da => (0x0007, 0xa8dc),
+                    0xa8e2 => (0x0006, 0xa8e4),
+                    0xa8eb => (0x0074, 0xa8ed),
+                    0xa952 => (0x0074, 0xa954),
+                    0xa967 => (0x000e, 0xa969),
+                    0xa98c => (0x000f, 0xa98e),
+                    0xa999 => (0x000b, 0xa99b),
+                    0xa9a1 => (0x000a, 0xa9a3),
+                    0xa9a9 => (0x0006, 0xa9ab),
+                    0xa9cd => (0x0002, 0xa9cf),
+                    0xaa1c => (0x000e, 0xaa1e),
+                    0xaa98 => (0x0074, 0xaa9a),
+                    0xaabc => (0x0021, 0xaabe),
+                    0xaabf => (0x0020, 0xaac1),
+                    0xab7d => (0x0006, 0xab7f),
+                    0xab86 => (0x000c, 0xab88),
+                    0xaba6 => (0x000a, 0xaba8),
+                    0xabb9 => (0x000a, 0xabbb),
+                    0xabf7 => (0x0006, 0xabf9),
+                    0xac17 => (0x000a, 0xac19),
+                    0xac2f => (0x000a, 0xac31),
+                    0xac3f => (0x000c, 0xac41),
+                    0xad05 => (0x000a, 0xad07),
+                    0xad0d => (0x000e, 0xad0f),
+                    0xad46 => (0x000b, 0xad48),
+                    0xad4e => (0x000a, 0xad50),
+                    0xad53 => (0x0044, 0xad55),
+                    0xad58 => (0x0045, 0xad5a),
+                    0xad7f => (0x000a, 0xad81),
+                    0xadc6 => (0x0006, 0xadc8),
+                    0xadd6 => (0x0074, 0xadd8),
+                    0xadf4 => (0x000b, 0xadf6),
+                    0xadfc => (0x000a, 0xadfe),
+                    0xae5c => (0x0006, 0xae5e),
+                    0xae69 => (0x0007, 0xae6b),
+                    0xae70 => (0x0006, 0xae72),
+                    0xae7c => (0x0074, 0xae7e),
+                    0xaeb7 => (0x0006, 0xaeb9),
+                    0xaf05 => (0x0007, 0xaf07),
+                    0xaf0d => (0x0006, 0xaf0f),
+                    0xaf14 => (0x008d, 0xaf16),
+                    0xaf1c => (0x0074, 0xaf1e),
+                    0xaf21 => (0x0075, 0xaf23),
+                    0xaf4c => (0x008d, 0xaf4e),
+                    _ => unreachable!(),
+                };
+                w.dp_store(operand, w.cpu.a & mask, m);
+                next
+            }
+            0xa655 | 0xa660 | 0xa6ba | 0xa6d4 | 0xa75a | 0xa76c | 0xa7b4 | 0xa7c0 | 0xa7e2
+            | 0xa7fc | 0xa835 | 0xa846 | 0xa8c9 | 0xa8d6 | 0xa8de | 0xa8f8 | 0xa91d | 0xa95b
+            | 0xa96d | 0xa992 | 0xa99d | 0xaa01 | 0xaaa5 | 0xabc6 | 0xac41 | 0xad12 | 0xad16
+            | 0xad43 | 0xad4b | 0xadc0 | 0xade3 | 0xadf0 | 0xadf8 | 0xae66 | 0xae6d | 0xae89
+            | 0xaeb4 | 0xaefa | 0xaf01 | 0xaf09 | 0xaf52 | 0xaf5c | 0xaf6b | 0xaf8b | 0xafcd => {
+                let next = match pc {
+                    0xa655 => 0xa656,
+                    0xa660 => 0xa661,
+                    0xa6ba => 0xa6bb,
+                    0xa6d4 => 0xa6d5,
+                    0xa75a => 0xa75b,
+                    0xa76c => 0xa76d,
+                    0xa7b4 => 0xa7b5,
+                    0xa7c0 => 0xa7c1,
+                    0xa7e2 => 0xa7e3,
+                    0xa7fc => 0xa7fd,
+                    0xa835 => 0xa836,
+                    0xa846 => 0xa847,
+                    0xa8c9 => 0xa8ca,
+                    0xa8d6 => 0xa8d7,
+                    0xa8de => 0xa8df,
+                    0xa8f8 => 0xa8f9,
+                    0xa91d => 0xa91e,
+                    0xa95b => 0xa95c,
+                    0xa96d => 0xa96e,
+                    0xa992 => 0xa993,
+                    0xa99d => 0xa99e,
+                    0xaa01 => 0xaa02,
+                    0xaaa5 => 0xaaa6,
+                    0xabc6 => 0xabc7,
+                    0xac41 => 0xac42,
+                    0xad12 => 0xad13,
+                    0xad16 => 0xad17,
+                    0xad43 => 0xad44,
+                    0xad4b => 0xad4c,
+                    0xadc0 => 0xadc1,
+                    0xade3 => 0xade4,
+                    0xadf0 => 0xadf1,
+                    0xadf8 => 0xadf9,
+                    0xae66 => 0xae67,
+                    0xae6d => 0xae6e,
+                    0xae89 => 0xae8a,
+                    0xaeb4 => 0xaeb5,
+                    0xaefa => 0xaefb,
+                    0xaf01 => 0xaf02,
+                    0xaf09 => 0xaf0a,
+                    0xaf52 => 0xaf53,
+                    0xaf5c => 0xaf5d,
+                    0xaf6b => 0xaf6c,
+                    0xaf8b => 0xaf8c,
+                    0xafcd => 0xafce,
+                    _ => unreachable!(),
+                };
+                w.clear_carry();
+                next
+            }
+            0xa656 | 0xa661 | 0xa7b5 | 0xa7c1 | 0xa8d7 | 0xa8df | 0xa993 | 0xa99e | 0xadf1
+            | 0xadf9 | 0xaefb | 0xaf02 | 0xaf0a => {
+                let (operand, next) = match pc {
+                    0xa656 => (0x8eef, 0xa659),
+                    0xa661 => (0x90ee, 0xa664),
+                    0xa7b5 => (0x94dd, 0xa7b8),
+                    0xa7c1 => (0x96dc, 0xa7c4),
+                    0xa8d7 => (0x98db, 0xa8da),
+                    0xa8df => (0x98e7, 0xa8e2),
+                    0xa993 => (0x8000, 0xa996),
+                    0xa99e => (0x8001, 0xa9a1),
+                    0xadf1 => (0xad94, 0xadf4),
+                    0xadf9 => (0xada4, 0xadfc),
+                    0xaefb => (0xaecd, 0xaefe),
+                    0xaf02 => (0x98db, 0xaf05),
+                    0xaf0a => (0x98e7, 0xaf0d),
+                    _ => unreachable!(),
+                };
+                w.drain(16);
+                if x == 2 || (operand & 255) + w.cpu.y > 255 {
+                    w.drain(6);
+                }
+                let value = w.read(w.absolute(operand) + u32::from(w.cpu.y), m);
+                if m == 1 {
+                    w.adc_byte(value);
+                } else {
+                    w.adc(value);
+                }
+                next
+            }
+            0xa659 | 0xa72c | 0xa7b9 | 0xa8b6 | 0xa996 | 0xa9fe | 0xaa26 | 0xaa35 | 0xab9a
+            | 0xabc8 | 0xac0b | 0xac43 | 0xad6a | 0xae3f | 0xae42 | 0xae60 | 0xae63 | 0xaf47
+            | 0xafd0 => {
+                let next = match pc {
+                    0xa659 => 0xa65a,
+                    0xa72c => 0xa72d,
+                    0xa7b9 => 0xa7ba,
+                    0xa8b6 => 0xa8b7,
+                    0xa996 => 0xa997,
+                    0xa9fe => 0xa9ff,
+                    0xaa26 => 0xaa27,
+                    0xaa35 => 0xaa36,
+                    0xab9a => 0xab9b,
+                    0xabc8 => 0xabc9,
+                    0xac0b => 0xac0c,
+                    0xac43 => 0xac44,
+                    0xad6a => 0xad6b,
+                    0xae3f => 0xae40,
+                    0xae42 => 0xae43,
+                    0xae60 => 0xae61,
+                    0xae63 => 0xae64,
+                    0xaf47 => 0xaf48,
+                    0xafd0 => 0xafd1,
+                    _ => unreachable!(),
+                };
+                w.drain(6);
+                w.cpu.p |= CARRY;
+                next
+            }
+            0xa65a | 0xa72d | 0xa7ba | 0xa8b7 | 0xa997 | 0xa9ff | 0xaa27 | 0xaa36 | 0xae43
+            | 0xae64 | 0xafd1 => {
+                let (operand, next) = match pc {
+                    0xa65a => (0x000b, 0xa65c),
+                    0xa72d => (0x0074, 0xa72f),
+                    0xa7ba => (0x000b, 0xa7bc),
+                    0xa8b7 => (0x00e8, 0xa8b9),
+                    0xa997 => (0x000f, 0xa999),
+                    0xa9ff => (0x000e, 0xaa01),
+                    0xaa27 => (0x00e2, 0xaa29),
+                    0xaa36 => (0x00e8, 0xaa38),
+                    0xae43 => (0x0020, 0xae45),
+                    0xae64 => (0x00e8, 0xae66),
+                    0xafd1 => (0x00e2, 0xafd3),
+                    _ => unreachable!(),
+                };
+                let value = w.dp_read(operand, m);
+                w.sbc(value, m);
+                next
+            }
+            0xa685 | 0xa68a | 0xa69e | 0xa6e5 | 0xa7c8 | 0xa806 | 0xa8bb | 0xa902 | 0xa964
+            | 0xa9a5 | 0xab72 | 0xabec | 0xad1a | 0xad40 | 0xad48 | 0xad50 | 0xad55 | 0xadff
+            | 0xae0c | 0xae91 | 0xaf32 | 0xaf70 | 0xaf7c => {
+                let (operand, next) = match pc {
+                    0xa685 => (0x98f3, 0xa688),
+                    0xa68a => (0x9af2, 0xa68d),
+                    0xa69e => (0xa12e, 0xa6a1),
+                    0xa6e5 => (0x839b, 0xa6e8),
+                    0xa7c8 => (0x96dc, 0xa7cb),
+                    0xa806 => (0x8563, 0xa809),
+                    0xa8bb => (0x98db, 0xa8be),
+                    0xa902 => (0x85cf, 0xa905),
+                    0xa964 => (0x85fb, 0xa967),
+                    0xa9a5 => (0x8002, 0xa9a8),
+                    0xab72 => (0x8af1, 0xab75),
+                    0xabec => (0x8cf0, 0xabef),
+                    0xad1a => (0xac45, 0xad1d),
+                    0xad40 => (0xac8d, 0xad43),
+                    0xad48 => (0xacb1, 0xad4b),
+                    0xad50 => (0xac8d, 0xad53),
+                    0xad55 => (0xacb1, 0xad58),
+                    0xadff => (0xad84, 0xae02),
+                    0xae0c => (0xad82, 0xae0f),
+                    0xae91 => (0x85cf, 0xae94),
+                    0xaf32 => (0xaeca, 0xaf35),
+                    0xaf70 => (0x85cf, 0xaf73),
+                    0xaf7c => (0x85d1, 0xaf7f),
+                    _ => unreachable!(),
+                };
+                w.drain(16);
+                if x == 2 || (operand & 255) + w.cpu.y > 255 {
+                    w.drain(6);
+                }
+                let value = w.read(w.absolute(operand) + u32::from(w.cpu.y), m);
+                w.load(value, m);
+                next
+            }
+            0xa68f | 0xa691 | 0xa6bf | 0xa7ce | 0xa7e7 | 0xa804 | 0xa8ab | 0xa98e | 0xa9bb
+            | 0xaa44 | 0xabe8 | 0xad7b | 0xadc8 | 0xadea | 0xae72 | 0xaf3a => {
+                let (operand, next) = match pc {
+                    0xa68f => (0x000e, 0xa691),
+                    0xa691 => (0x000f, 0xa693),
+                    0xa6bf => (0x0006, 0xa6c1),
+                    0xa7ce => (0x000e, 0xa7d0),
+                    0xa7e7 => (0x0006, 0xa7e9),
+                    0xa804 => (0x0074, 0xa806),
+                    0xa8ab => (0x000b, 0xa8ad),
+                    0xa98e => (0x000e, 0xa990),
+                    0xa9bb => (0x0002, 0xa9bd),
+                    0xaa44 => (0x000e, 0xaa46),
+                    0xabe8 => (0x000c, 0xabea),
+                    0xad7b => (0x000e, 0xad7d),
+                    0xadc8 => (0x0007, 0xadca),
+                    0xadea => (0x0006, 0xadec),
+                    0xae72 => (0x0004, 0xae74),
+                    0xaf3a => (0x008d, 0xaf3c),
+                    _ => unreachable!(),
+                };
+                w.dp_store(operand, 0, m);
+                next
+            }
+            0xa69a => {
+                let (operand, next) = (0x0307, 0xa69d);
+                w.drain(16);
+                let value = w.read(w.absolute(operand), x);
+                w.cpu.y = value;
+                w.flags(value, x);
+                next
+            }
+            0xa69d | 0xaf3e => {
+                let next = match pc {
+                    0xa69d => 0xa69e,
+                    0xaf3e => 0xaf3f,
+                    _ => unreachable!(),
+                };
+                w.drain(6);
+                w.cpu.y = w.cpu.y.wrapping_sub(1) & xmask;
+                w.flags(w.cpu.y, x);
+                next
+            }
+            0xa6b5 | 0xa6e3 | 0xa780 | 0xa7dd | 0xa802 | 0xa8b2 | 0xa8e4 | 0xa94b | 0xa9a3
+            | 0xaa22 | 0xaa65 | 0xab6e | 0xabe6 | 0xad5d | 0xadcf | 0xae06 | 0xae35 | 0xae74
+            | 0xae8f | 0xaf60 | 0xafc0 => {
+                let (operand, next) = match pc {
+                    0xa6b5 => (0x0020, 0xa6b7),
+                    0xa6e3 => (0x0020, 0xa6e5),
+                    0xa780 => (0x0030, 0xa782),
+                    0xa7dd => (0x0030, 0xa7df),
+                    0xa802 => (0x0020, 0xa804),
+                    0xa8b2 => (0x0020, 0xa8b4),
+                    0xa8e4 => (0x0030, 0xa8e6),
+                    0xa94b => (0x0030, 0xa94d),
+                    0xa9a3 => (0x0020, 0xa9a5),
+                    0xaa22 => (0x0020, 0xaa24),
+                    0xaa65 => (0x0030, 0xaa67),
+                    0xab6e => (0x0030, 0xab70),
+                    0xabe6 => (0x0030, 0xabe8),
+                    0xad5d => (0x0020, 0xad5f),
+                    0xadcf => (0x0030, 0xadd1),
+                    0xae06 => (0x0020, 0xae08),
+                    0xae35 => (0x0030, 0xae37),
+                    0xae74 => (0x0030, 0xae76),
+                    0xae8f => (0x0020, 0xae91),
+                    0xaf60 => (0x0030, 0xaf62),
+                    0xafc0 => (0x0020, 0xafc2),
+                    _ => unreachable!(),
+                };
+                w.width(operand as u8, true);
+                next
+            }
+            0xa6b9 | 0xa6bd | 0xa7e1 | 0xa7e5 | 0xa8ff | 0xa900 | 0xa962 | 0xa969 | 0xa9ed
+            | 0xa9ee | 0xa9ef | 0xa9f0 | 0xad04 | 0xad0f | 0xad10 | 0xad11 | 0xad15 | 0xadc4
+            | 0xadc5 | 0xaf12 | 0xaf13 | 0xaf4a | 0xaf4b | 0xaf50 | 0xaf51 | 0xaf5a | 0xaf5b => {
+                let next = match pc {
+                    0xa6b9 => 0xa6ba,
+                    0xa6bd => 0xa6be,
+                    0xa7e1 => 0xa7e2,
+                    0xa7e5 => 0xa7e6,
+                    0xa8ff => 0xa900,
+                    0xa900 => 0xa901,
+                    0xa962 => 0xa963,
+                    0xa969 => 0xa96a,
+                    0xa9ed => 0xa9ee,
+                    0xa9ee => 0xa9ef,
+                    0xa9ef => 0xa9f0,
+                    0xa9f0 => 0xa9f1,
+                    0xad04 => 0xad05,
+                    0xad0f => 0xad10,
+                    0xad10 => 0xad11,
+                    0xad11 => 0xad12,
+                    0xad15 => 0xad16,
+                    0xadc4 => 0xadc5,
+                    0xadc5 => 0xadc6,
+                    0xaf12 => 0xaf13,
+                    0xaf13 => 0xaf14,
+                    0xaf4a => 0xaf4b,
+                    0xaf4b => 0xaf4c,
+                    0xaf50 => 0xaf51,
+                    0xaf51 => 0xaf52,
+                    0xaf5a => 0xaf5b,
+                    0xaf5b => 0xaf5c,
+                    _ => unreachable!(),
+                };
+                w.shift_left(m);
+                next
+            }
+            0xa6bb | 0xa7e3 | 0xa8ca | 0xa96e | 0xad13 | 0xad17 | 0xad44 | 0xad4c | 0xae6e
+            | 0xaf53 | 0xaf5d | 0xafce => {
+                let (operand, next) = match pc {
+                    0xa6bb => (0x0006, 0xa6bd),
+                    0xa7e3 => (0x0006, 0xa7e5),
+                    0xa8ca => (0x0006, 0xa8cc),
+                    0xa96e => (0x000e, 0xa970),
+                    0xad13 => (0x000e, 0xad15),
+                    0xad17 => (0x000a, 0xad19),
+                    0xad44 => (0x0001, 0xad46),
+                    0xad4c => (0x0000, 0xad4e),
+                    0xae6e => (0x0006, 0xae70),
+                    0xaf53 => (0x008d, 0xaf55),
+                    0xaf5d => (0x008d, 0xaf5f),
+                    0xafce => (0x0022, 0xafd0),
+                    _ => unreachable!(),
+                };
+                let value = w.dp_read(operand, m);
+                if m == 1 {
+                    w.adc_byte(value);
+                } else {
+                    w.adc(value);
+                }
+                next
+            }
+            0xa6be | 0xa6ce | 0xa7e6 | 0xa7f6 | 0xa8b1 | 0xa8f2 | 0xa901 | 0xa963 | 0xa970
+            | 0xaa9f | 0xad19 | 0xad3d | 0xaddd | 0xae0b | 0xae83 | 0xaef5 | 0xaefe | 0xaf55
+            | 0xaf5f | 0xaf66 => {
+                let next = match pc {
+                    0xa6be => 0xa6bf,
+                    0xa6ce => 0xa6cf,
+                    0xa7e6 => 0xa7e7,
+                    0xa7f6 => 0xa7f7,
+                    0xa8b1 => 0xa8b2,
+                    0xa8f2 => 0xa8f3,
+                    0xa901 => 0xa902,
+                    0xa963 => 0xa964,
+                    0xa970 => 0xa971,
+                    0xaa9f => 0xaaa0,
+                    0xad19 => 0xad1a,
+                    0xad3d => 0xad3e,
+                    0xaddd => 0xadde,
+                    0xae0b => 0xae0c,
+                    0xae83 => 0xae84,
+                    0xaef5 => 0xaef6,
+                    0xaefe => 0xaeff,
+                    0xaf55 => 0xaf56,
+                    0xaf5f => 0xaf60,
+                    0xaf66 => 0xaf67,
+                    _ => unreachable!(),
+                };
+                w.drain(6);
+                w.cpu.y = w.cpu.a & xmask;
+                w.flags(w.cpu.y, x);
+                next
+            }
+            0xa6c1 | 0xa73f | 0xa7e9 | 0xacd8 | 0xadfe | 0xae76 | 0xaf16 => {
+                let next = match pc {
+                    0xa6c1 => 0xa6c2,
+                    0xa73f => 0xa740,
+                    0xa7e9 => 0xa7ea,
+                    0xacd8 => 0xacd9,
+                    0xadfe => 0xadff,
+                    0xae76 => 0xae77,
+                    0xaf16 => 0xaf17,
+                    _ => unreachable!(),
+                };
+                w.drain(6);
+                w.push(w.cpu.y, x);
+                next
+            }
+            0xa6c2 | 0xa7ea | 0xa8e6 | 0xa94d | 0xaa93 | 0xadd1 | 0xae77 | 0xaf17 => {
+                let (operand, next) = match pc {
+                    0xa6c2 => (0x0072, 0xa6c4),
+                    0xa7ea => (0x0072, 0xa7ec),
+                    0xa8e6 => (0x0072, 0xa8e8),
+                    0xa94d => (0x0072, 0xa94f),
+                    0xaa93 => (0x0072, 0xaa95),
+                    0xadd1 => (0x0072, 0xadd3),
+                    0xae77 => (0x0072, 0xae79),
+                    0xaf17 => (0x0072, 0xaf19),
+                    _ => unreachable!(),
+                };
+                let value = w.dp_read(operand, x);
+                w.cpu.x = value;
+                w.flags(value, x);
+                next
+            }
+            0xa6c4 | 0xa702 | 0xa712 | 0xa7ec | 0xa8e8 | 0xa92a | 0xa936 | 0xa94f | 0xa9d4
+            | 0xaa0c | 0xaa95 | 0xab80 | 0xad2f | 0xadbd | 0xadd3 | 0xae59 | 0xae79 | 0xaf19
+            | 0xaf1e => {
+                let (operand, next) = match pc {
+                    0xa6c4 => (0xa110, 0xa6c7),
+                    0xa702 => (0x0802, 0xa705),
+                    0xa712 => (0x0802, 0xa715),
+                    0xa7ec => (0xa118, 0xa7ef),
+                    0xa8e8 => (0xa11c, 0xa8eb),
+                    0xa92a => (0x0802, 0xa92d),
+                    0xa936 => (0x0806, 0xa939),
+                    0xa94f => (0xa114, 0xa952),
+                    0xa9d4 => (0x0a20, 0xa9d7),
+                    0xaa0c => (0x0a21, 0xaa0f),
+                    0xaa95 => (0xa11c, 0xaa98),
+                    0xab80 => (0xab22, 0xab83),
+                    0xad2f => (0x0802, 0xad32),
+                    0xadbd => (0xadb4, 0xadc0),
+                    0xadd3 => (0xa110, 0xadd6),
+                    0xae59 => (0xae38, 0xae5c),
+                    0xae79 => (0xa11c, 0xae7c),
+                    0xaf19 => (0xa11c, 0xaf1c),
+                    0xaf1e => (0xa11d, 0xaf21),
+                    _ => unreachable!(),
+                };
+                w.drain(16);
+                if x == 2 || (operand & 255) + w.cpu.x > 255 {
+                    w.drain(6);
+                }
+                let value = w.read(w.absolute(operand) + u32::from(w.cpu.x), m);
+                w.load(value, m);
+                next
+            }
+            0xa6cf | 0xa7f7 | 0xa8f3 | 0xa956 | 0xaaa0 | 0xadde | 0xae84 | 0xaf25 => {
+                let (operand, next) = match pc {
+                    0xa6cf => (0x0074, 0xa6d1),
+                    0xa7f7 => (0x0074, 0xa7f9),
+                    0xa8f3 => (0x0074, 0xa8f5),
+                    0xa956 => (0x0074, 0xa958),
+                    0xaaa0 => (0x0074, 0xaaa2),
+                    0xadde => (0x0074, 0xade0),
+                    0xae84 => (0x0074, 0xae86),
+                    0xaf25 => (0x0074, 0xaf27),
+                    _ => unreachable!(),
+                };
+                w.drain(8);
+                let pointer = w.read(operand as u32, 2);
+                if x == 2 || (pointer & 255) + w.cpu.y > 255 {
+                    w.drain(6);
+                }
+                let value = w.read(w.absolute(pointer) + u32::from(w.cpu.y), m);
+                w.load(value, m);
+                next
+            }
+            0xa6d5 | 0xa7fd | 0xa8f9 | 0xa95c | 0xaaa6 | 0xadc1 | 0xade4 | 0xae8a | 0xaf6c => {
+                let (operand, next) = match pc {
+                    0xa6d5 => (0x0352, 0xa6d8),
+                    0xa7fd => (0x0352, 0xa800),
+                    0xa8f9 => (0x0352, 0xa8fc),
+                    0xa95c => (0x0352, 0xa95f),
+                    0xaaa6 => (0x0352, 0xaaa9),
+                    0xadc1 => (0x030e, 0xadc4),
+                    0xade4 => (0x0352, 0xade7),
+                    0xae8a => (0x0352, 0xae8d),
+                    0xaf6c => (0x0352, 0xaf6f),
+                    _ => unreachable!(),
+                };
+                w.drain(16);
+                let value = w.read(w.absolute(operand), m);
+                if m == 1 {
+                    w.adc_byte(value);
+                } else {
+                    w.adc(value);
+                }
+                next
+            }
+            0xa6d8 | 0xa744 | 0xa800 | 0xa821 | 0xa8fc | 0xa945 | 0xa95f | 0xa9d3 | 0xaa0b
+            | 0xaa6c | 0xaaab | 0xab7f | 0xab9e | 0xabf9 | 0xac0f | 0xad70 | 0xade7 | 0xae20
+            | 0xae58 | 0xae8d | 0xaeab | 0xaf27 | 0xaf6f | 0xaf96 => {
+                let next = match pc {
+                    0xa6d8 => 0xa6d9,
+                    0xa744 => 0xa745,
+                    0xa800 => 0xa801,
+                    0xa821 => 0xa822,
+                    0xa8fc => 0xa8fd,
+                    0xa945 => 0xa946,
+                    0xa95f => 0xa960,
+                    0xa9d3 => 0xa9d4,
+                    0xaa0b => 0xaa0c,
+                    0xaa6c => 0xaa6d,
+                    0xaaab => 0xaaac,
+                    0xab7f => 0xab80,
+                    0xab9e => 0xab9f,
+                    0xabf9 => 0xabfa,
+                    0xac0f => 0xac10,
+                    0xad70 => 0xad71,
+                    0xade7 => 0xade8,
+                    0xae20 => 0xae21,
+                    0xae58 => 0xae59,
+                    0xae8d => 0xae8e,
+                    0xaeab => 0xaeac,
+                    0xaf27 => 0xaf28,
+                    0xaf6f => 0xaf70,
+                    0xaf96 => 0xaf97,
+                    _ => unreachable!(),
+                };
+                w.drain(6);
+                w.cpu.x = w.cpu.a & xmask;
+                w.flags(w.cpu.x, x);
+                next
+            }
+            0xa6d9 | 0xa751 | 0xa801 | 0xad7d | 0xae2b | 0xae8e | 0xaf28 => {
+                let next = match pc {
+                    0xa6d9 => 0xa6da,
+                    0xa751 => 0xa752,
+                    0xa801 => 0xa802,
+                    0xad7d => 0xad7e,
+                    0xae2b => 0xae2c,
+                    0xae8e => 0xae8f,
+                    0xaf28 => 0xaf29,
+                    _ => unreachable!(),
+                };
+                w.drain(12);
+                let value = w.pull(x);
+                w.cpu.y = value;
+                w.flags(value, x);
+                next
+            }
+            0xa6dc | 0xacd7 => {
+                let next = match pc {
+                    0xa6dc => 0xa6dd,
+                    0xacd7 => 0xacd8,
+                    _ => unreachable!(),
+                };
+                w.drain(6);
+                w.push(w.cpu.a, m);
+                next
+            }
+            0xa6e0 | 0xaabb | 0xaabe | 0xad7e => {
+                let next = match pc {
+                    0xa6e0 => 0xa6e1,
+                    0xaabb => 0xaabc,
+                    0xaabe => 0xaabf,
+                    0xad7e => 0xad7f,
+                    _ => unreachable!(),
+                };
+                w.drain(12);
+                let value = w.pull(m);
+                w.load(value, m);
+                next
+            }
+            0xa6f0 | 0xa718 | 0xa811 | 0xa813 | 0xa9b3 | 0xa9da | 0xa9f1 | 0xabae | 0xabc1
+            | 0xac1f | 0xac37 | 0xad25 | 0xae12 => {
+                let (operand, next) = match pc {
+                    0xa6f0 => (0x0064, 0xa6f2),
+                    0xa718 => (0x000e, 0xa71a),
+                    0xa811 => (0x000e, 0xa813),
+                    0xa813 => (0x0064, 0xa815),
+                    0xa9b3 => (0x0064, 0xa9b5),
+                    0xa9da => (0x0002, 0xa9dc),
+                    0xa9f1 => (0x0064, 0xa9f3),
+                    0xabae => (0x000a, 0xabb0),
+                    0xabc1 => (0x000a, 0xabc3),
+                    0xac1f => (0x000a, 0xac21),
+                    0xac37 => (0x000a, 0xac39),
+                    0xad25 => (0x0064, 0xad27),
+                    0xae12 => (0x0064, 0xae14),
+                    _ => unreachable!(),
+                };
+                let value = w.dp_read(operand, m);
+                w.load((w.cpu.a | value) & mask, m);
+                next
+            }
+            0xa6f2 | 0xa70b | 0xa71a | 0xa71f | 0xa749 | 0xa815 | 0xa81a | 0xa829 | 0xa90b
+            | 0xa914 | 0xa919 | 0xa922 | 0xa933 | 0xa93f | 0xa9b8 | 0xa9bf | 0xa9df | 0xa9f9
+            | 0xaa05 | 0xaa15 | 0xaa70 | 0xaa73 | 0xaa76 | 0xaa79 | 0xaa7c | 0xaa7f | 0xad27
+            | 0xad38 | 0xad61 | 0xad77 | 0xae14 | 0xae19 | 0xae9f | 0xaea4 | 0xaf79 | 0xaf82
+            | 0xaf87 | 0xaf90 => {
+                let (operand, next) = match pc {
+                    0xa6f2 => (0x0802, 0xa6f5),
+                    0xa70b => (0x0802, 0xa70e),
+                    0xa71a => (0x0802, 0xa71d),
+                    0xa71f => (0x0800, 0xa722),
+                    0xa749 => (0x0a20, 0xa74c),
+                    0xa815 => (0x0802, 0xa818),
+                    0xa81a => (0x0800, 0xa81d),
+                    0xa829 => (0x0a20, 0xa82c),
+                    0xa90b => (0x0802, 0xa90e),
+                    0xa914 => (0x0806, 0xa917),
+                    0xa919 => (0x0800, 0xa91c),
+                    0xa922 => (0x0804, 0xa925),
+                    0xa933 => (0x0802, 0xa936),
+                    0xa93f => (0x0806, 0xa942),
+                    0xa9b8 => (0x0802, 0xa9bb),
+                    0xa9bf => (0x0800, 0xa9c2),
+                    0xa9df => (0x0a20, 0xa9e2),
+                    0xa9f9 => (0x0806, 0xa9fc),
+                    0xaa05 => (0x0804, 0xaa08),
+                    0xaa15 => (0x0a21, 0xaa18),
+                    0xaa70 => (0x0a20, 0xaa73),
+                    0xaa73 => (0x0a22, 0xaa76),
+                    0xaa76 => (0x0a24, 0xaa79),
+                    0xaa79 => (0x0a26, 0xaa7c),
+                    0xaa7c => (0x0a28, 0xaa7f),
+                    0xaa7f => (0x0a2a, 0xaa82),
+                    0xad27 => (0x0802, 0xad2a),
+                    0xad38 => (0x0802, 0xad3b),
+                    0xad61 => (0x0800, 0xad64),
+                    0xad77 => (0x0a20, 0xad7a),
+                    0xae14 => (0x0802, 0xae17),
+                    0xae19 => (0x0800, 0xae1c),
+                    0xae9f => (0x0802, 0xaea2),
+                    0xaea4 => (0x0800, 0xaea7),
+                    0xaf79 => (0x0802, 0xaf7c),
+                    0xaf82 => (0x0806, 0xaf85),
+                    0xaf87 => (0x0800, 0xaf8a),
+                    0xaf90 => (0x0804, 0xaf93),
+                    _ => unreachable!(),
+                };
+                w.operand_then_internal(2);
+                w.write(w.absolute(operand) + u32::from(w.cpu.x), w.cpu.a & mask, m);
+                next
+            }
+            0xa708 | 0xa8c6 | 0xa911 | 0xa930 | 0xa93c | 0xa9dc | 0xa9f6 | 0xaa12 | 0xad35
+            | 0xafca => {
+                let (operand, next) = match pc {
+                    0xa708 => (0x0600, 0xa70b),
+                    0xa8c6 => (0xff00, 0xa8c9),
+                    0xa911 => (0x4000, 0xa914),
+                    0xa930 => (0x0600, 0xa933),
+                    0xa93c => (0x0600, 0xa93f),
+                    0xa9dc => (0x0002, 0xa9df),
+                    0xa9f6 => (0x0002, 0xa9f9),
+                    0xaa12 => (0x0002, 0xaa15),
+                    0xad35 => (0x0600, 0xad38),
+                    0xafca => (0xff00, 0xafcd),
+                    _ => unreachable!(),
+                };
+                w.drain(8 * u32::from(m));
+                let value = operand;
+                w.load((w.cpu.a | value) & mask, m);
+                next
+            }
+            0xa72f | 0xaf3f => {
+                let (operand, next) = match pc {
+                    0xa72f => (0xa735, 0xa731),
+                    0xaf3f => (0xaf32, 0xaf41),
+                    _ => unreachable!(),
+                };
+                if w.branch(w.cpu.p & NEGATIVE == 0) {
+                    operand
+                } else {
+                    next
+                }
+            }
+            0xa731 => {
+                let (operand, next) = (0xffff, 0xa734);
+                w.drain(8 * u32::from(m));
+                let value = operand;
+                w.load((w.cpu.a ^ value) & mask, m);
+                next
+            }
+            0xa73d => {
+                let (operand, next) = (0x000c, 0xa73f);
+                let value = w.dp_read(operand, m);
+                w.drain(6);
+                w.cpu.p = (w.cpu.p & !ZERO) | if value & w.cpu.a & mask == 0 { ZERO } else { 0 };
+                w.write(u32::from(operand), value | (w.cpu.a & mask), m);
+                next
+            }
+            0xa740 | 0xa81d | 0xa9cf | 0xad68 | 0xae1c | 0xaea7 => {
+                let next = match pc {
+                    0xa740 => 0xa741,
+                    0xa81d => 0xa81e,
+                    0xa9cf => 0xa9d0,
+                    0xad68 => 0xad69,
+                    0xae1c => 0xae1d,
+                    0xaea7 => 0xaea8,
+                    _ => unreachable!(),
+                };
+                w.drain(6);
+                w.push(w.cpu.x, x);
+                next
+            }
+            0xa741 | 0xa81e | 0xa942 | 0xa9d0 | 0xaa08 | 0xab88 | 0xab99 | 0xac0a | 0xad69
+            | 0xae1d | 0xaea8 | 0xaf67 | 0xaf93 => {
+                let next = match pc {
+                    0xa741 => 0xa742,
+                    0xa81e => 0xa81f,
+                    0xa942 => 0xa943,
+                    0xa9d0 => 0xa9d1,
+                    0xaa08 => 0xaa09,
+                    0xab88 => 0xab89,
+                    0xab99 => 0xab9a,
+                    0xac0a => 0xac0b,
+                    0xad69 => 0xad6a,
+                    0xae1d => 0xae1e,
+                    0xaea8 => 0xaea9,
+                    0xaf67 => 0xaf68,
+                    0xaf93 => 0xaf94,
+                    _ => unreachable!(),
+                };
+                w.drain(6);
+                w.load(w.cpu.x, m);
+                next
+            }
+            0xa742 | 0xa743 | 0xa81f | 0xa820 | 0xa8b0 | 0xa943 | 0xa944 | 0xa9d1 | 0xa9d2
+            | 0xaa09 | 0xaa0a | 0xaa6a | 0xaa6b | 0xaaa9 | 0xaaaa | 0xad0c | 0xad3c | 0xad6e
+            | 0xad6f | 0xadb8 | 0xadb9 | 0xae1e | 0xae1f | 0xae56 | 0xae57 | 0xaea9 | 0xaeaa
+            | 0xaef9 | 0xaf94 | 0xaf95 => {
+                let next = match pc {
+                    0xa742 => 0xa743,
+                    0xa743 => 0xa744,
+                    0xa81f => 0xa820,
+                    0xa820 => 0xa821,
+                    0xa8b0 => 0xa8b1,
+                    0xa943 => 0xa944,
+                    0xa944 => 0xa945,
+                    0xa9d1 => 0xa9d2,
+                    0xa9d2 => 0xa9d3,
+                    0xaa09 => 0xaa0a,
+                    0xaa0a => 0xaa0b,
+                    0xaa6a => 0xaa6b,
+                    0xaa6b => 0xaa6c,
+                    0xaaa9 => 0xaaaa,
+                    0xaaaa => 0xaaab,
+                    0xad0c => 0xad0d,
+                    0xad3c => 0xad3d,
+                    0xad6e => 0xad6f,
+                    0xad6f => 0xad70,
+                    0xadb8 => 0xadb9,
+                    0xadb9 => 0xadba,
+                    0xae1e => 0xae1f,
+                    0xae1f => 0xae20,
+                    0xae56 => 0xae57,
+                    0xae57 => 0xae58,
+                    0xaea9 => 0xaeaa,
+                    0xaeaa => 0xaeab,
+                    0xaef9 => 0xaefa,
+                    0xaf94 => 0xaf95,
+                    0xaf95 => 0xaf96,
+                    _ => unreachable!(),
+                };
+                w.drain(6);
+                let value = w.cpu.a & mask;
+                w.cpu.p = (w.cpu.p & !CARRY) | (value & 1) as u8;
+                w.load(value >> 1, m);
+                next
+            }
+            0xa750 | 0xa82c | 0xa9e2 | 0xad7a | 0xae26 | 0xaeb1 => {
+                let next = match pc {
+                    0xa750 => 0xa751,
+                    0xa82c => 0xa82d,
+                    0xa9e2 => 0xa9e3,
+                    0xad7a => 0xad7b,
+                    0xae26 => 0xae27,
+                    0xaeb1 => 0xaeb2,
+                    _ => unreachable!(),
+                };
+                w.drain(12);
+                let value = w.pull(x);
+                w.cpu.x = value;
+                w.flags(value, x);
+                next
+            }
+            0xa752 | 0xa753 | 0xa754 | 0xa755 | 0xa82d | 0xa82e | 0xa82f | 0xa830 | 0xad64
+            | 0xad65 | 0xad66 | 0xad67 | 0xae27 | 0xae28 | 0xae29 | 0xae2a | 0xaebb | 0xaebc
+            | 0xaebd | 0xaebe => {
+                let next = match pc {
+                    0xa752 => 0xa753,
+                    0xa753 => 0xa754,
+                    0xa754 => 0xa755,
+                    0xa755 => 0xa756,
+                    0xa82d => 0xa82e,
+                    0xa82e => 0xa82f,
+                    0xa82f => 0xa830,
+                    0xa830 => 0xa831,
+                    0xad64 => 0xad65,
+                    0xad65 => 0xad66,
+                    0xad66 => 0xad67,
+                    0xad67 => 0xad68,
+                    0xae27 => 0xae28,
+                    0xae28 => 0xae29,
+                    0xae29 => 0xae2a,
+                    0xae2a => 0xae2b,
+                    0xaebb => 0xaebc,
+                    0xaebc => 0xaebd,
+                    0xaebd => 0xaebe,
+                    0xaebe => 0xaebf,
+                    _ => unreachable!(),
+                };
+                w.drain(6);
+                w.cpu.x = w.cpu.x.wrapping_add(1) & xmask;
+                w.flags(w.cpu.x, x);
+                next
+            }
+            0xa75b | 0xa76d | 0xa836 | 0xa847 | 0xa91e | 0xaa02 | 0xae67 | 0xaeb5 | 0xaf8c => {
+                let (operand, next) = match pc {
+                    0xa75b => (0x0008, 0xa75d),
+                    0xa76d => (0x0008, 0xa76f),
+                    0xa836 => (0x0008, 0xa838),
+                    0xa847 => (0x0008, 0xa849),
+                    0xa91e => (0x0800, 0xa921),
+                    0xaa02 => (0x0800, 0xaa05),
+                    0xae67 => (0x001d, 0xae69),
+                    0xaeb5 => (0x0008, 0xaeb7),
+                    0xaf8c => (0x0800, 0xaf8f),
+                    _ => unreachable!(),
+                };
+                w.drain(8 * u32::from(m));
+                let value = operand;
+                if m == 1 {
+                    w.adc_byte(value);
+                } else {
+                    w.adc(value);
+                }
+                next
+            }
+            0xa75f | 0xa760 | 0xa83a | 0xa83b | 0xae2c | 0xaeb9 | 0xaeba => {
+                let next = match pc {
+                    0xa75f => 0xa760,
+                    0xa760 => 0xa761,
+                    0xa83a => 0xa83b,
+                    0xa83b => 0xa83c,
+                    0xae2c => 0xae2d,
+                    0xaeb9 => 0xaeba,
+                    0xaeba => 0xaebb,
+                    _ => unreachable!(),
+                };
+                w.drain(6);
+                w.cpu.y = w.cpu.y.wrapping_add(1) & xmask;
+                w.flags(w.cpu.y, x);
+                next
+            }
+            0xa7b8 | 0xaa4f => {
+                let next = match pc {
+                    0xa7b8 => 0xa7b9,
+                    0xaa4f => 0xaa50,
+                    _ => unreachable!(),
+                };
+                w.drain(6);
+                w.load(w.cpu.a.wrapping_sub(1) & mask, m);
+                next
+            }
+            0xa83c | 0xae2d | 0xaebf => {
+                let (operand, next) = match pc {
+                    0xa83c => (0x0006, 0xa83e),
+                    0xae2d => (0x0006, 0xae2f),
+                    0xaebf => (0x0004, 0xaec1),
+                    _ => unreachable!(),
+                };
+                w.dp_increment(operand, m, true);
+                next
+            }
+            0xa885 | 0xa8a7 | 0xae3b | 0xae4d | 0xae53 | 0xaf30 => {
+                let (operand, next) = match pc {
+                    0xa885 => (0x0000, 0xa887),
+                    0xa8a7 => (0x0001, 0xa8a9),
+                    0xae3b => (0x0000, 0xae3d),
+                    0xae4d => (0x0004, 0xae4f),
+                    0xae53 => (0x0008, 0xae55),
+                    0xaf30 => (0x0006, 0xaf32),
+                    _ => unreachable!(),
+                };
+                w.drain(8 * u32::from(x));
+                let value = operand;
+                w.cpu.y = value;
+                w.flags(value, x);
+                next
+            }
+            0xa8a9 => {
+                let (operand, next) = (0x000a, 0xa8ab);
+                w.dp_store(operand, w.cpu.y, x);
+                next
+            }
+            0xa91c | 0xa921 | 0xa9a8 | 0xaf8a | 0xaf8f | 0xafd3 => {
+                let next = match pc {
+                    0xa91c => 0xa91d,
+                    0xa921 => 0xa922,
+                    0xa9a8 => 0xa9a9,
+                    0xaf8a => 0xaf8b,
+                    0xaf8f => 0xaf90,
+                    0xafd3 => 0xafd4,
+                    _ => unreachable!(),
+                };
+                w.swap_bytes();
+                next
+            }
+            0xa946 | 0xaaac | 0xae23 | 0xaeae | 0xaf97 => {
+                let (operand, next) = match pc {
+                    0xa946 => (0x0a20, 0xa949),
+                    0xaaac => (0x0a20, 0xaaaf),
+                    0xae23 => (0x0a20, 0xae26),
+                    0xaeae => (0x0a20, 0xaeb1),
+                    0xaf97 => (0x0a20, 0xaf9a),
+                    _ => unreachable!(),
+                };
+                w.operand_then_internal(2);
+                w.write(w.absolute(operand) + u32::from(w.cpu.x), 0, m);
+                next
+            }
+            0xa96a | 0xaa50 | 0xabb0 | 0xabc3 | 0xac21 | 0xac39 | 0xadcc | 0xaed7 | 0xaee7
+            | 0xafd7 => {
+                let (operand, next) = match pc {
+                    0xa96a => (0x0100, 0xa96d),
+                    0xaa50 => (0x031f, 0xaa53),
+                    0xabb0 => (0x0109, 0xabb3),
+                    0xabc3 => (0x0107, 0xabc6),
+                    0xac21 => (0x0109, 0xac24),
+                    0xac39 => (0x0108, 0xac3c),
+                    0xadcc => (0x0109, 0xadcf),
+                    0xaed7 => (0x0356, 0xaeda),
+                    0xaee7 => (0x0355, 0xaeea),
+                    0xafd7 => (0x03fa, 0xafda),
+                    _ => unreachable!(),
+                };
+                w.drain(16);
+                w.write(w.absolute(operand), w.cpu.a & mask, m);
+                next
+            }
+            0xaa31 | 0xaa40 | 0xad02 | 0xae47 => {
+                let (operand, next) = match pc {
+                    0xaa31 => (0xaa65, 0xaa33),
+                    0xaa40 => (0xaa65, 0xaa42),
+                    0xad02 => (0xacdd, 0xad04),
+                    0xae47 => (0xae55, 0xae49),
+                    _ => unreachable!(),
+                };
+                if w.branch(w.cpu.p & CARRY != 0) {
+                    operand
+                } else {
+                    next
+                }
+            }
+            0xaac1 => {
+                let next = 0xaac2;
+                w.drain(12);
+                let value = w.pull(1);
+                w.cpu.db = value as u8;
+                w.flags(value, 1);
+                next
+            }
+            0xaac2 => {
+                assert!(self.near_returns.is_empty());
+                w.rtl();
+                self.complete = true;
+                w.cpu.pc
+            }
+            0xab89 | 0xab9f | 0xabfa | 0xac10 => {
+                let (operand, next) = match pc {
+                    0xab89 => (0xaacc, 0xab8c),
+                    0xab9f => (0xab18, 0xaba2),
+                    0xabfa => (0xabca, 0xabfd),
+                    0xac10 => (0xabdc, 0xac13),
+                    _ => unreachable!(),
+                };
+                w.drain(16);
+                if x == 2 || (operand & 255) + w.cpu.x > 255 {
+                    w.drain(6);
+                }
+                let value = w.read(w.absolute(operand) + u32::from(w.cpu.x), x);
+                w.cpu.y = value;
+                w.flags(value, x);
+                next
+            }
+            0xab9b | 0xac0c | 0xad6b | 0xae40 | 0xae61 | 0xaf48 => {
+                let (operand, next) = match pc {
+                    0xab9b => (0x001d, 0xab9e),
+                    0xac0c => (0x0008, 0xac0f),
+                    0xad6b => (0x0004, 0xad6e),
+                    0xae40 => (0x000c, 0xae42),
+                    0xae61 => (0x000c, 0xae63),
+                    0xaf48 => (0x0003, 0xaf4a),
+                    _ => unreachable!(),
+                };
+                w.drain(8 * u32::from(m));
+                let value = operand;
+                w.sbc(value, m);
+                next
+            }
+            0xaba2 | 0xabb5 | 0xac13 | 0xac2b | 0xad3b | 0xae55 | 0xaf62 => {
+                let next = match pc {
+                    0xaba2 => 0xaba3,
+                    0xabb5 => 0xabb6,
+                    0xac13 => 0xac14,
+                    0xac2b => 0xac2c,
+                    0xad3b => 0xad3c,
+                    0xae55 => 0xae56,
+                    0xaf62 => 0xaf63,
+                    _ => unreachable!(),
+                };
+                w.drain(6);
+                w.load(w.cpu.y, m);
+                next
+            }
+            0xabc7 | 0xabc9 | 0xac42 | 0xac44 | 0xad81 | 0xae37 | 0xaec9 | 0xaf9c | 0xafdc => {
+                w.rts();
+                assert_eq!(self.near_returns.pop(), Some(w.cpu.pc));
+                w.cpu.pc
+            }
+            0xaede | 0xaeee => {
+                let (operand, next) = match pc {
+                    0xaede => (0x0356, 0xaee1),
+                    0xaeee => (0x0355, 0xaef1),
+                    _ => unreachable!(),
+                };
+                w.drain(16);
+                w.write(w.absolute(operand), 0, m);
+                next
+            }
+            0xaf35 => {
+                let (operand, next) = (0x0354, 0xaf38);
+                w.drain(16);
+                let value = w.read(w.absolute(operand), m);
+                let left = w.cpu.a & mask;
+                w.cpu.p = (w.cpu.p & !CARRY) | u8::from(left >= value);
+                w.flags(left.wrapping_sub(value) & mask, m);
+                next
+            }
+            _ => unreachable!("Link OAM suffix {pc:04x}"),
+        }
+    }
+}
