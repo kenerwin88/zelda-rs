@@ -121,6 +121,14 @@ impl ZeldaState {
     }
 
     pub(super) fn PreOverworld_LoadProperties(&mut self) {
+        if self.game_state.frame.main_module == 8 {
+            if let Some(entry) = self.spotlight_successor_cpu_entry_envelope.take() {
+                if self.resident_song_bank_is_dungeon() {
+                    self.native_overworld_song_upload = Some(
+                        pre_overworld_song_upload_after_spotlight(self, entry));
+                }
+            }
+        }
         self.set_color_window_selection(0x82);
         self.dungeon_environment_mut()
             .clear_somaria_block_bg_check_flag();
@@ -3680,7 +3688,7 @@ impl ZeldaState {
                 plan.and_then(|plan| plan.next_entry_earliest.zip(plan.next_entry_latest));
             if let Some(entry) = plan.and_then(|plan|
                 plan.successor_entry_earliest.zip(plan.successor_entry_latest)) {
-                self.pre_dungeon_cpu_entry_envelope = Some(entry);
+                self.spotlight_successor_cpu_entry_envelope = Some(entry);
             }
             plan
         } else {

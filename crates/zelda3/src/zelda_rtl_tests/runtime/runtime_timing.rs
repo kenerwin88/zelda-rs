@@ -4,6 +4,33 @@
 use super::*;
 
 #[test]
+fn overworld_upload_command_hands_off_at_the_source_port_bus_access() {
+    let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc"));
+    let mut rom = std::fs::read(path).expect("upload bus test requires the source ROM");
+    if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+    let offset = crate::rom_cpu_timing::lorom_offset(0x02_855d).unwrap();
+    assert_eq!(&rom[offset..offset + 3], &[0x8d, 0x40, 0x21]); // STA $2140
+    let state = ZeldaState::new();
+    let checkpoint = RomCpuCheckpoint {
+        entry_pc: 0x02_855d, stop_pc: 0x02_8560, a: 0xff,
+        waiting: false, ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+    };
+    for (entry, access) in [(CpuRasterPosition::new(31, 808), CpuRasterPosition::new(31, 832)),
+        (CpuRasterPosition::new(178, 870), CpuRasterPosition::new(178, 894))] {
+        let make_run = || RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+            &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+        let mut source = make_run();
+        assert_eq!(source.step().master_cycles, 30);
+        let budget = CpuCycleBudget::until_next_nmi_acceptance(entry,
+            CpuBusWorkload::with_dynamic_hdma(), CpuFieldTiming::NON_INTERLACE_EVEN);
+        assert_eq!(pre_overworld_song_upload_command_from_cpu(make_run(), budget, 10),
+            NativeOverworldSongUpload::CommandAt { host: 10, position: access });
+    }
+}
+
+#[test]
 fn random_routine_work_matches_source_instructions_without_pricing_its_caller() {
     let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

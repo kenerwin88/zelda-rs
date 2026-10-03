@@ -48,6 +48,14 @@ impl ZeldaState {
         let frame = self.game_state.frame;
         if self.rom_startup_timing()
             && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && frame.main_module == 7 && frame.submodule == 0
+            && !self.game_state.display.nmi_update_is_latched()
+            && self.game_execution_scheduler.is_idle()
+        {
+            dungeon_main_loop_cpu_phase(self, input, nmi_is_trailing);
+        }
+        if self.rom_startup_timing()
+            && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
             && frame.main_module == 14 && frame.submodule == 2
             && self.game_state.messaging.runtime.module() == 1
             && !self.game_state.display.nmi_update_is_latched()
@@ -110,9 +118,10 @@ impl ZeldaState {
             && !self.game_state.display.nmi_update_is_latched()
             && self.game_execution_scheduler.is_idle()
             && self.native_overworld_song_upload.is_none()
+            && self.spotlight_successor_cpu_entry_envelope.is_none()
         {
             self.native_overworld_song_upload =
-                Some(pre_overworld_song_upload_command(self, nmi_is_trailing));
+                Some(pre_overworld_song_upload_command(self, input, nmi_is_trailing));
         }
         if self.rom_startup_timing()
             && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)

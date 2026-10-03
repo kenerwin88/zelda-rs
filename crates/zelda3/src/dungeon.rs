@@ -15030,7 +15030,7 @@ fn object_subtype3_param(idx: u8) -> Option<usize> {
 
 impl ZeldaState {
     pub(super) fn module_pre_dungeon(&mut self) {
-        let measured_nmis = self.pre_dungeon_cpu_entry_envelope.take()
+        let measured_nmis = self.spotlight_successor_cpu_entry_envelope.take()
             .map(|entry| crate::zelda_rtl::pre_dungeon_load_nmi_slices(self, entry));
         self.module_pre_dungeon_audio_prefix();
         self.module_pre_dungeon_entrance_prefix();

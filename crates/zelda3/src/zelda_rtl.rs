@@ -2708,6 +2708,28 @@ fn native_main_loop_cpu_run(state: &mut ZeldaState, input: u16, nmi_is_trailing:
     (run, budget)
 }
 
+/// Carry a completed ordinary dungeon caller into the next main-wait NMI.
+/// In particular, changing module to the closing spotlight does not discard
+/// the caller's suffix, wait instruction, or raster phase. Interrupted work
+/// remains with its existing dungeon continuation; no private stores escape.
+fn dungeon_main_loop_cpu_phase(state: &mut ZeldaState, input: u16, nmi_is_trailing: bool) {
+    let (mut run, mut budget) = native_main_loop_cpu_run(state, input, nmi_is_trailing);
+    for _ in 0..200_000 {
+        if run.is_complete() {
+            let host = state.frame_ctr_dbg + 1 + u32::from(nmi_is_trailing);
+            state.native_main_wait_cpu_phase =
+                try_overworld_cpu_suffix_main_wait_phase(run, budget, host);
+            return;
+        }
+        let (v, h) = budget.raster_position().coordinates();
+        run.set_raster_position(v, h);
+        if advance_rom_cpu_step(&mut run, &mut budget).reached_boundary().is_some() {
+            return;
+        }
+    }
+    panic!("ordinary dungeon timing failed to reach NMI or caller return");
+}
+
 /// Measure a fresh dialogue iteration and retain its common caller return.
 /// A glyph/scroll interruption remains owned by the translated continuation;
 /// this probe never predicts a future host's joypad input to finish it.
@@ -4746,31 +4768,56 @@ fn dungeon_submodule_cpu_schedule_plan(
     );
 }
 
-fn pre_overworld_song_upload_command(state: &ZeldaState, nmi_is_trailing: bool) -> NativeOverworldSongUpload {
-    let timing_dma = state.dma_with_native_hdma_enable();
-    // The source enters this leading NMI at $8036 after LDA $12 observed
-    // zero. RTI restores that zero flag, so BEQ must loop once before the
-    // newly set latch is read. The generic synthetic WAI seed skips that
-    // branch and adds a wake cycle which the busy loop never executes.
-    let checkpoint = RomCpuCheckpoint {
-        entry_pc: 0x00_8036,
-        waiting: false,
-        ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+fn pre_overworld_song_upload_command(state: &mut ZeldaState, input: u16, nmi_is_trailing: bool) -> NativeOverworldSongUpload {
+    let (run, budget) = native_main_loop_cpu_run(state, input, nmi_is_trailing);
+    pre_overworld_song_upload_command_from_cpu(run, budget,
+        state.frame_ctr_dbg + u32::from(nmi_is_trailing))
+}
+
+pub(crate) fn pre_overworld_song_upload_after_spotlight(
+    state: &ZeldaState, entry: (CpuRasterPosition, CpuRasterPosition),
+) -> NativeOverworldSongUpload {
+    let measure = |entry| {
+        // The native main prefix has already incremented $1a; the retained
+        // successor starts at that instruction, after its leading NMI.
+        let checkpoint = OVERWORLD_SPOTLIGHT_CPU_CHECKPOINT;
+        let ram = spotlight_cpu_timing_ram(state, checkpoint);
+        let dma = state.dma_with_native_hdma_enable();
+        let run = RomCpuTimingRun::new(&state.rom, &ram, &state.sram,
+            &state.ppu, &dma, state.zelda_audio_apu_output_ports(), checkpoint)
+            .expect("spotlight successor upload requires the loaded Zelda ROM");
+        let budget = CpuCycleBudget::until_next_nmi_acceptance(entry,
+            CpuBusWorkload::with_dynamic_hdma(),
+            native_cpu_field_timing_at_entry(state.frame_ctr_dbg, entry));
+        pre_overworld_song_upload_command_from_cpu(run, budget, state.frame_ctr_dbg)
     };
-    let mut run = RomCpuTimingRun::new(
-        &state.rom, &state.ram, &state.sram, &state.ppu, &timing_dma,
-        state.zelda_audio_apu_output_ports(), checkpoint,
-    ).expect("pre-overworld upload timing requires the loaded Zelda ROM");
-    let mut budget = CpuCycleBudget::at_nmi_acceptance(
-        CpuBusWorkload::with_dynamic_hdma(),
-        CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0),
-    );
-    advance_rom_cpu_through_nmi(&mut run, &mut budget);
+    let earliest = measure(entry.0);
+    let latest = measure(entry.1);
+    assert_eq!(earliest, latest, "spotlight successor has ambiguous upload timing");
+    earliest
+}
+
+fn pre_overworld_song_upload_command_from_cpu(
+    mut run: RomCpuTimingRun, mut budget: CpuCycleBudget, entry_host: u32,
+) -> NativeOverworldSongUpload {
     let mut nmis = 0u32;
     for _ in 0..5_000_000 {
-        let command = run.pc() == 0x02_855d;
         let (scanline, master_cycle) = budget.raster_position().coordinates();
         run.set_raster_position(scanline, master_cycle);
+        if run.pc() == 0x02_855d {
+            // STA $2140 fetches its opcode/address in 3*8 clocks. The
+            // receiver owns the final six-clock bus access, not its end.
+            let crossing = advance_instruction_with_rom_hdma(&mut run, &mut budget, 24);
+            nmis += u32::from(crossing.reached_boundary().is_some());
+            if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+                eprintln!("song_upload measured entry_host={entry_host} nmis={nmis} position={:?}",
+                    budget.raster_position());
+            }
+            return NativeOverworldSongUpload::CommandAt {
+                host: entry_host + nmis,
+                position: budget.raster_position(),
+            };
+        }
         if advance_rom_cpu_step(&mut run, &mut budget) != CpuWorkAdvance::Complete {
             nmis += 1;
             if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
@@ -4778,19 +4825,6 @@ fn pre_overworld_song_upload_command(state: &ZeldaState, nmi_is_trailing: bool) 
                     run.pc(), budget.raster_position());
             }
             advance_rom_cpu_through_nmi(&mut run, &mut budget);
-        }
-        if command {
-            if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
-                eprintln!("song_upload measured entry_host={} trailing={nmi_is_trailing} nmis={nmis} position={:?}",
-                    state.frame_ctr_dbg, budget.raster_position());
-            }
-            return NativeOverworldSongUpload::CommandAt {
-                // A trailing NMI belongs to the next host's CPU slice;
-                // active-scanout entry already belongs to this host.
-                host: state.frame_ctr_dbg + nmis
-                    + u32::from(nmi_is_trailing),
-                position: budget.raster_position(),
-            };
         }
     }
     panic!("pre-overworld caller did not reach its upload command at {:06x}", run.pc());
@@ -10991,7 +11025,7 @@ pub struct ZeldaState {
     #[serde(skip)]
     native_dungeon_room_load_cpu_entry: Option<CpuRasterPosition>,
     #[serde(skip)]
-    pub(crate) pre_dungeon_cpu_entry_envelope: Option<(CpuRasterPosition, CpuRasterPosition)>,
+    pub(crate) spotlight_successor_cpu_entry_envelope: Option<(CpuRasterPosition, CpuRasterPosition)>,
     #[serde(skip)]
     overworld_spotlight_cpu_entry_envelope: Option<(CpuRasterPosition, CpuRasterPosition)>,
     #[serde(skip)]
@@ -13543,7 +13577,7 @@ impl ZeldaState {
             audio_after_publication_ambient_nmi: None,
             dungeon_exit_spotlight_cpu_entry_envelope: None,
             native_dungeon_room_load_cpu_entry: None,
-            pre_dungeon_cpu_entry_envelope: None,
+            spotlight_successor_cpu_entry_envelope: None,
             overworld_spotlight_cpu_entry_envelope: None,
             dungeon_landing_goal_transition_pending: false,
             normal_dialogue_following_main_nmi_uses_host_animated_bg_operands: None,
@@ -13759,7 +13793,7 @@ impl ZeldaState {
         self.native_overworld_rain_interruption = None;
         self.native_overworld_link_body_selection_cycles = None;
         self.native_overworld_link_oam_interruption = false;
-        self.pre_dungeon_cpu_entry_envelope = None;
+        self.spotlight_successor_cpu_entry_envelope = None;
         self.native_overworld_map_graphics_nmi_slices = None;
         self.native_map_graphics_timing = None;
         self.native_pre_overworld_animated_graphics = None;
@@ -13896,7 +13930,7 @@ impl ZeldaState {
         self.native_overworld_rain_interruption = None;
         self.native_overworld_link_body_selection_cycles = None;
         self.native_overworld_link_oam_interruption = false;
-        self.pre_dungeon_cpu_entry_envelope = None;
+        self.spotlight_successor_cpu_entry_envelope = None;
             self.native_overworld_map_graphics_nmi_slices = None;
             self.dungeon_map_recovery_saved_hdma_enable = None;
             self.native_map_graphics_timing = None;
