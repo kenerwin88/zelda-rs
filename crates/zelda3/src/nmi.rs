@@ -766,7 +766,7 @@ impl ZeldaState {
                             // scheduler's line at this bus timestamp, acknowledged here.
                             Access::ReadByte(0x4211)=>(u16::from(irq_deadline.take().is_some_and(|deadline|at>=deadline))<<7)|0x42,
                             Access::WriteByte(0x4200|0x4207..=0x420a,_)=>0,
-                            _=>self.native_nmi_tail_access(access),
+                            _=>self.native_nmi_tail_access(at, access),
                         }
                     });
                 if let Some(programming)=programming {
@@ -947,7 +947,7 @@ impl ZeldaState {
         let mut irq=PolyInterrupt::irq();
         let mut irq_pending=true;
         let mut nmitimen=None;
-        while let Some(cycles)=irq.step_with_beam(context,clock,&mut dma,|_,access,beam| match access {
+        while let Some(cycles)=irq.step_with_beam(context,clock,&mut dma,|at,access,beam| match access {
             Access::Read(0x4211,1)=>{
                 // TIMEUP preserves the low seven bits from LDA absolute's
                 // last operand fetch. Reading it acknowledges the live line.
@@ -969,7 +969,8 @@ impl ZeldaState {
             Access::Write(0x1f0a,value,2)=>{self.set_nmi_thread_stack_pointer(value);0}
             Access::Write(0x128,value,1)=>{self.set_irq_control_flag(value as u8);0}
             Access::Write(address @ (0x2111|0x2112),value,1)=>{
-                self.zelda_ppu_write(address,value as u8);0
+                self.native_bg3_scroll_write(at, address as u16, value as u8);
+                0
             }
             Access::Write(0x4200,value,1)=>{nmitimen=Some(value as u8);0}
             Access::Write(address,value,width)=>{
@@ -988,7 +989,7 @@ impl ZeldaState {
         nmitimen
     }
 
-    fn native_nmi_tail_access(&mut self,
+    fn native_nmi_tail_access(&mut self, at: u64,
         access: crate::cycle_models::nmi_stack::NmiTailAccess) -> u16 {
         use crate::cycle_models::nmi_stack::NmiTailAccess as Access;
         match access {
@@ -998,6 +999,9 @@ impl ZeldaState {
                 assert_eq!(value, 0, "native startup tail cannot start HDMA");
                 for channel in &mut self.dma.channel { channel.hdma_active = false; }
                 0
+            }
+            Access::WriteByte(address @ (0x2111 | 0x2112), value) => {
+                self.native_bg3_scroll_write(at, address, value); 0
             }
             Access::WriteByte(address @ 0x2100..=0x213f, value) => {
                 self.zelda_ppu_write(u32::from(address), value); 0

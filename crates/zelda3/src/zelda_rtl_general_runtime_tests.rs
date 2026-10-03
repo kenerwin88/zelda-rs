@@ -2867,9 +2867,10 @@ fn name_file_initialization_matches_independent_cold_source_hosts() {
 }
 
 #[test]
-#[ignore = "LoadFile destination continuations must be retained before connecting its common prefix"]
 fn load_file_entry_matches_independent_cold_source_hosts() {
-    compare_native_file_menu_cold_hosts(true,(5,0),Some(7),1,true,&[0,0,8]);
+    // LoadFile returns to the dungeon's entrance-fade state, after publishing
+    // its destination at $02:8383/$02:8387. Module 5 is its entry, not its return.
+    compare_native_file_menu_cold_hosts(true,(7,15),Some(7),0,true,&[0,0,8]);
 }
 
 #[test]
@@ -2989,6 +2990,9 @@ fn compare_native_file_menu_cold_hosts(public_dispatch: bool,stop:(u8,u8),press_
 
 fn compare_native_name_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press_start_in:Option<u8>,mut active_hosts:usize,valid_saves:bool,menu_inputs:&[u16],name_inputs:&[u16]) {
     let stop_submodule=if stop.0==0 {stop.1}else{9};
+    let load_file_destination = stop == (7, 15);
+    let mut load_file_save_copy_checked = false;
+    let mut load_file_destination_writes = Vec::new();
     let path = std::env::var_os("ZELDA3_ASSETS").expect("cold intro test requires embedded assets");
     let rom = std::fs::read(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"),
@@ -3048,11 +3052,20 @@ fn compare_native_name_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
             }else{0};
         source.set_joypad_serial_state(input, 0);
         let mut interrupt_events=Vec::new();
+        let mut source_scroll_ppu = source.machine().snes().ppu.clone();
+        let mut source_scroll_writes = Vec::new();
         source
             .run_until_main_loop_return_with(|receipt| {
                 if receipt.accepted_interrupt.is_some() {interrupt_events.push(format!("{:?} at {:?} pc={:06x}",receipt.accepted_interrupt,receipt.started_at,receipt.origin_pc));}
                 for access in &receipt.accesses {
                     if let snes::SourceCpuBusAccessKind::Write{value,..}=access.kind {
+                        if access.address & 0x400000 == 0
+                            && (0x210d..=0x2114).contains(&(access.address & 0xffff)) {
+                            source_scroll_writes.push((access.timestamp, access.address as u8, value as u8));
+                        }
+                        if matches!(receipt.origin_pc, 0x028383 | 0x028387) {
+                            load_file_destination_writes.push((receipt.origin_pc, access.address & 0xffff, value));
+                        }
                         match (access.address&0xffff,value) {
                             (0x128,255) if receipt.origin_pc==0x0cdc81=>naming_irq_finish[0]=true,
                             (0x128,0) if naming_irq_finish[0]=>naming_irq_finish[1]=true,
@@ -3166,6 +3179,25 @@ fn compare_native_name_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
         assert_eq!((state.ppu.scroll_prev, state.ppu.scroll_prev2),
             (source.machine().snes().ppu.scroll_prev, source.machine().snes().ppu.scroll_prev2),
             "scroll latch host={host}");
+        if state.native_bg3_scroll_scanout.is_some() {
+            // Observe source register writes independently of the native IRQ
+            // owner. Sample their retained values at each hardware render event,
+            // including the NMI writes before IRQ changes the live end-state.
+            let clock = source.machine().timeline();
+            let mut writes = source_scroll_writes.iter().copied().peekable();
+            let native_rows = state.with_display_snapshot(|state| state.ppu_scanline_windows());
+            for row in 0..224 {
+                let render_at = clock.master_cycles_at_raster(clock.field_index(),
+                    snes::CpuRasterPosition::new(row as u16 + 1, snes::cpu_timeline::SNES9X_RENDER_CYCLE as u16));
+                while writes.peek().is_some_and(|(at, _, _)| at.master_cycles() < render_at) {
+                    let (_, address, value) = writes.next().unwrap();
+                    source_scroll_ppu.write(address, value);
+                }
+                assert_eq!([native_rows[row].5[2], native_rows[row].6[2]],
+                    [source_scroll_ppu.bg_layer[2].h_scroll, source_scroll_ppu.bg_layer[2].v_scroll],
+                    "native IRQ scroll scanout host={host} row={row} render_at={render_at} source_writes={source_scroll_writes:?}");
+            }
+        }
         // Attract/credits coordinates and scratch share player and room bytes
         // (28/29 and CC/CE). Once intro returns, those active owners replace
         // the ending view. CPU, all RAM and PPU checks above remain unconditional.
@@ -3177,6 +3209,14 @@ fn compare_native_name_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
             );
         }
         compared += 1;
+        if load_file_destination && !load_file_save_copy_checked
+            && state.game_state.frame.main_module == 5 {
+            let slot = state.selected_save_slot_index();
+            assert_eq!(slot, menu_inputs.iter().filter(|&&v| v == 0x20).count());
+            assert_eq!(&state.ram[0xf000..0xf500], &state.sram[slot*0x500..slot*0x500+0x500],
+                "selected save must be copied before LoadFile mutates live inventory");
+            load_file_save_copy_checked = true;
+        }
         if state.game_state.frame.main_module==0 && stop_submodule>=7 && state.game_state.frame.submodule>=5 {
             assert_eq!(state.game_state.intro_sword,crate::game_state::IntroSwordState::load_from_ram(&state.ram),"typed sword host={host}");
         }
@@ -3184,6 +3224,11 @@ fn compare_native_name_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
             && (name_inputs.is_empty() || naming_host>0)
             && !(stop.0!=0 && state.native_intro_clear_pending()) {
             if active_hosts != 0 { active_hosts -= 1; continue; }
+            if load_file_destination {
+                assert!(load_file_save_copy_checked);
+                assert_eq!(load_file_destination_writes, [(0x028383, 0x10, 7), (0x028387, 0x11, 15)],
+                    "the source LoadFile caller must publish the requested destination before returning");
+            }
             if stop.0==4 && stop.1>=1 {
                 assert_eq!(read_le_u16(&state.ram,0x200)as usize,menu_inputs.iter().filter(|&&v|v==0x20).count()*0x500);
                 if stop.1>=3 {
@@ -3254,8 +3299,13 @@ fn compare_native_name_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
             (state.game_state.frame.main_module==0 && (3..stop_submodule).contains(&state.game_state.frame.submodule))
                 || (stop.0!=0 && state.game_state.frame.main_module==1 && state.game_state.frame.submodule<=5)
                 || (state.game_state.frame.main_module==stop.0 && stop.0!=0 && state.game_state.frame.submodule<=stop.1)
+                || (load_file_destination && state.game_state.frame.main_module==5 && state.game_state.frame.submodule==0)
                 || (!name_inputs.is_empty() && state.game_state.frame.main_module==4 && state.game_state.frame.submodule<=3),
-            "unexpected intro transition at host {host}"
+            "unexpected intro transition at host {host}: native main={} sub={} pending={} source main={} sub={} CPU={:?}",
+            state.game_state.frame.main_module, state.game_state.frame.submodule,
+            state.native_intro_clear_pending(), source.machine().snes().ram[0x10],
+            source.machine().snes().ram[0x11],
+            state.native_startup_cpu.as_ref().and_then(|cpu| cpu.startup.retained_context())
         );
     }
     panic!("native animation did not finish; compared={compared}");

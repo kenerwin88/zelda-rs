@@ -1044,6 +1044,14 @@ impl InidispRegisterScanout {
     }
 }
 
+/// Native BG3 register history for one host, retained separately from the
+/// live post-IRQ latch and sampled with the native CPU's physical field clock.
+#[derive(Clone, Debug)]
+pub(crate) struct NativeBg3ScrollScanout {
+    pub(crate) initial: [u16; 2],
+    pub(crate) writes: Vec<(u64, [u16; 2])>,
+}
+
 /// Coupled hardware generation installed by C `WritePpuRegisters`.
 ///
 /// This is intentionally one receipt rather than independent predictions for

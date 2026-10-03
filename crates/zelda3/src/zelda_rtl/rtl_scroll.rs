@@ -5,6 +5,17 @@
 use super::*;
 
 impl ZeldaState {
+    /// Preserve each native bus store, including the first byte's intermediate
+    /// latch value. A later IRQ or an NMI overrun cannot rewrite earlier rows.
+    pub(super) fn native_bg3_scroll_write(&mut self, at: u64, address: u16, value: u8) {
+        let initial = [self.ppu.bg_layer[2].h_scroll, self.ppu.bg_layer[2].v_scroll];
+        self.zelda_ppu_write(u32::from(address), value);
+        let after = [self.ppu.bg_layer[2].h_scroll, self.ppu.bg_layer[2].v_scroll];
+        self.native_bg3_scroll_scanout.get_or_insert_with(|| NativeBg3ScrollScanout {
+            initial, writes: Vec::new(),
+        }).writes.push((at, after));
+    }
+
     /// Materialize the hardware HDMA enable register for an isolated ROM run.
     ///
     /// The translated game owns the C `HDMAEN_copy` value in native display
@@ -518,6 +529,23 @@ impl ZeldaState {
         }
         self.ppu.m7_matrix = saved_m7_matrix;
         self.ppu.m7_prev = saved_m7_prev;
+
+        if let Some(history) = self.native_bg3_scroll_scanout.as_ref() {
+            let clock = &self.native_startup_cpu.as_ref().expect("native scroll retains its CPU clock").timeline;
+            let mut writes = history.writes.iter().peekable();
+            let mut scroll = history.initial;
+            for (row, line) in result.iter_mut().enumerate() {
+                let render_at = clock.master_cycles_at_raster(clock.field_index(),
+                    snes::CpuRasterPosition::new(row as u16 + 1, snes::cpu_timeline::SNES9X_RENDER_CYCLE as u16));
+                // Absolute-store operand cycles have already drained a render
+                // event at this timestamp before the bus store takes place.
+                while writes.peek().is_some_and(|(at, _)| *at < render_at) {
+                    scroll = writes.next().unwrap().1;
+                }
+                line.5[2] = scroll[0];
+                line.6[2] = scroll[1];
+            }
+        }
 
         if let Some(authority) = self.active_presented_bg_scroll.as_ref() {
             let mut mismatched_scanline_layers = 0;

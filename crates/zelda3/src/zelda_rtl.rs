@@ -11094,6 +11094,9 @@ pub struct ZeldaState {
     /// Reset at each host entry; never used by receipt-owned playback.
     #[serde(skip)]
     active_native_spotlight_field_scanout: Option<NativeSpotlightFieldScanout>,
+    /// Bus-timed BG3 writes from native main, NMI and IRQ in this host interval.
+    #[serde(skip)]
+    native_bg3_scroll_scanout: Option<NativeBg3ScrollScanout>,
     /// Measured raster position of the next FileSelect_EraseTriforce
     /// EnableForceBlank request when its preceding C caller crossed into the
     /// active field. This is CPU-workload provenance, not display state, so it
@@ -13553,6 +13556,7 @@ impl ZeldaState {
             nmi_active_display_blanking_candidate: NmiActiveDisplayBlanking::default(),
             active_display_force_blank_event: None,
             active_native_spotlight_field_scanout: None,
+            native_bg3_scroll_scanout: None,
             pending_file_select_force_blank_output_scanline: None,
             pending_map_force_blank_output_scanline: None,
             native_dialogue_fresh_cpu_entry: None,
@@ -13699,6 +13703,7 @@ impl ZeldaState {
         self.dungeon_submodule_cpu_schedule = None;
         self.pending_map_force_blank_output_scanline = None;
         self.active_native_spotlight_field_scanout = None;
+        self.native_bg3_scroll_scanout = None;
         self.native_dialogue_fresh_cpu_entry = None;
         self.pending_dungeon_map_room_drawing_nmi_slices = None;
         self.dungeon_map_recovery_saved_hdma_enable = None;
@@ -15097,6 +15102,7 @@ impl ZeldaState {
                             let i=(address-0x700000) as usize;
                             self.sram[i..i+usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
                         }
+                        0x2111 | 0x2112 if graphics => {assert_eq!(width,1);self.native_bg3_scroll_write(at, address as u16, value as u8);}
                         0x2100..=0x213f if graphics => {assert_eq!(width,1);self.ppu.write(address as u8,value as u8);}
                         0x2140..=0x2143 if load_file => {
                             assert_eq!(width, 1);
