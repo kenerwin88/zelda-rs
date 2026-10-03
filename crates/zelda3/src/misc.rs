@@ -1897,12 +1897,25 @@ impl ZeldaState {
                 if let Some((index, value)) = instruction.store {
                     self.display_core_mut().set_sprite_preparation_source_word(index, value);
                 }
-                if child.is_complete() { *work = SpritePreparationWork::Animations(Default::default()); }
+                if child.is_complete() {
+                    let (x, y) = child.return_indices();
+                    if let Some(clock) = self.native_dialogue_caller_clock.as_mut() {
+                        clock.return_x = Some(x);
+                        clock.return_y = Some(y);
+                    }
+                    *work = SpritePreparationWork::Animations(
+                        crate::cycle_models::sprite_dma::Animations::with_entry_index(x));
+                }
                 instruction.master_cycles
             }
             SpritePreparationWork::Animations(child) => {
                 let instruction = self.step_sprite_dma_animations(child).expect("active sprite animation");
-                if child.is_complete() { *work = SpritePreparationWork::Pointers(Default::default()); }
+                if child.is_complete() {
+                    if let Some(clock) = self.native_dialogue_caller_clock.as_mut() {
+                        clock.return_x = Some(child.return_index());
+                    }
+                    *work = SpritePreparationWork::Pointers(Default::default());
+                }
                 instruction.master_cycles
             }
             SpritePreparationWork::Pointers(child) => {
@@ -1910,12 +1923,21 @@ impl ZeldaState {
                 if let Some((index, value)) = instruction.store {
                     self.display_core_mut().set_sprite_preparation_pointer_word(index, value);
                 }
-                if child.is_complete() { *work = SpritePreparationWork::Complete; }
+                if child.is_complete() {
+                    if let Some(clock) = self.native_dialogue_caller_clock.as_mut() {
+                        let (a, carry, overflow) = child.return_registers();
+                        clock.return_a = Some(a);
+                        clock.return_carry = carry;
+                        clock.return_overflow = overflow;
+                    }
+                    *work = SpritePreparationWork::Complete;
+                }
                 instruction.master_cycles
             }
             SpritePreparationWork::Complete => return None,
         };
         crate::cycle_ledger::charge(u64::from(cycles));
+        self.advance_native_dialogue_caller_clock(cycles);
         Some(cycles)
     }
 

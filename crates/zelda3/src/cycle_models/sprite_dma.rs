@@ -69,6 +69,11 @@ pub(crate) const SOURCE_WORD_ADDRESSES: [u16; 14] = [
 ];
 
 impl SourceWords {
+    pub(crate) fn return_indices(self) -> (u16, u16) {
+        assert!(self.is_complete());
+        (self.index, u16::from(self.group))
+    }
+
     pub(crate) fn is_complete(self) -> bool {
         self.instruction == 53
     }
@@ -452,9 +457,16 @@ pub(crate) struct PointerWords {
     instruction: u8,
     accumulator: u16,
     carry: bool,
+    #[serde(default)]
+    overflow: bool,
 }
 
 impl PointerWords {
+    pub(crate) fn return_registers(self) -> (u16, bool, bool) {
+        assert!(self.is_complete());
+        (self.accumulator, self.carry, self.overflow)
+    }
+
     pub(crate) fn is_complete(self) -> bool {
         self.instruction == 20
     }
@@ -483,6 +495,8 @@ impl PointerWords {
                             0xb940
                         };
                         let sum = u32::from(self.accumulator) + value + u32::from(self.carry);
+                        self.overflow = (!(self.accumulator ^ value as u16)
+                            & (self.accumulator ^ sum as u16) & 0x8000) != 0;
                         self.accumulator = sum as u16;
                         self.carry = sum > 0xffff;
                         24
@@ -536,6 +550,15 @@ pub(crate) struct Animations {
 }
 
 impl Animations {
+    pub(crate) fn with_entry_index(index: u16) -> Self {
+        Self { index: index as u8, ..Self::default() }
+    }
+
+    pub(crate) fn return_index(self) -> u16 {
+        assert!(self.is_complete());
+        u16::from(self.index)
+    }
+
     pub(crate) fn is_complete(self) -> bool {
         self.instruction == 44
     }

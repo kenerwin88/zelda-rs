@@ -87,7 +87,7 @@ impl ZeldaState {
                 assert_eq!(phase.host, self.frame_ctr_dbg + u32::from(nmi_is_trailing),
                     "iris caller CPU phase belongs to a different host");
             }
-            let entry = module_cpu_entry_after_leading_nmi(self, input,
+            let entry = module_cpu_entry_after_leading_nmi(self, input, cpu_host,
                 DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT.entry_pc, phase);
             self.dungeon_exit_spotlight_cpu_entry_envelope = Some((entry, entry));
         }
@@ -141,7 +141,7 @@ impl ZeldaState {
                     "room-load caller CPU phase belongs to a different host");
             }
             self.native_dungeon_room_load_cpu_entry = Some(module_cpu_entry_after_leading_nmi(
-                self, input, DUNGEON_ROOM_LOAD_CPU_CHECKPOINT.entry_pc, phase,
+                self, input, cpu_host, DUNGEON_ROOM_LOAD_CPU_CHECKPOINT.entry_pc, phase,
             ));
         }
         if self.rom_startup_timing()

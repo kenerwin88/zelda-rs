@@ -2566,7 +2566,7 @@ struct NativeDialogueCpuEntry {
     field_timing: CpuFieldTiming,
 }
 
-fn module_cpu_entry_after_leading_nmi(state: &ZeldaState, input: u16, entry_pc: u32,
+fn module_cpu_entry_after_leading_nmi(state: &ZeldaState, input: u16, cpu_host: u32, entry_pc: u32,
     phase: Option<NativeMainWaitCpuPhase>) -> CpuRasterPosition {
     let checkpoint = phase.as_ref().map(|phase| phase.checkpoint).unwrap_or(RomCpuCheckpoint {
         entry_pc: 0x00_8036, stop_pc: entry_pc, waiting: false,
@@ -2579,8 +2579,9 @@ fn module_cpu_entry_after_leading_nmi(state: &ZeldaState, input: u16, entry_pc: 
         .expect("module entry CPU timing requires the development ROM");
     run.set_joypad_input(input);
     let mut budget = phase.map(|phase| phase.budget).unwrap_or_else(||
-        CpuCycleBudget::at_nmi_acceptance(CpuBusWorkload::with_dynamic_hdma(),
-            CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0)));
+        CpuCycleBudget::at_nmi_acceptance_in_field(
+            native_cpu_field_index_at_entry(cpu_host, CpuRasterPosition::new(225, 12)),
+            CpuBusWorkload::with_dynamic_hdma()));
     advance_rom_cpu_through_nmi(&mut run, &mut budget);
     for _ in 0..50_000 {
         if run.is_complete() {
@@ -2694,12 +2695,12 @@ fn native_main_loop_cpu_run(state: &mut ZeldaState, input: u16, nmi_is_trailing:
         .expect("overworld CPU timing requires the loaded Zelda ROM");
     run.set_joypad_input(input);
     run.enable_cpu_write_trace();
-    let field_timing = native_cpu_field_timing_at_entry(
+    let field_index = native_cpu_field_index_at_entry(
         state.frame_ctr_dbg + u32::from(nmi_is_trailing),
         CpuRasterPosition::new(225, 12),
     );
     let mut budget = phase.map(|phase| phase.budget).unwrap_or_else(||
-        CpuCycleBudget::at_nmi_acceptance(CpuBusWorkload::with_dynamic_hdma(), field_timing));
+        CpuCycleBudget::at_nmi_acceptance_in_field(field_index, CpuBusWorkload::with_dynamic_hdma()));
     advance_rom_cpu_through_nmi(&mut run, &mut budget);
     if trace {
         eprintln!("native-main-wait-after-nmi frame={} pc={:06x} raster={:?}",
@@ -3386,6 +3387,12 @@ fn spotlight_link_axis_interruption(pc: u32, x: u16) -> Option<crate::MainLoopIn
     }
 }
 
+fn native_cpu_field_index_at_entry(host: u32, entry: CpuRasterPosition) -> u64 {
+    // Internal hosts are one-based. Each host begins in the preceding
+    // physical field's vblank and crosses V0 before active display.
+    u64::from(host).saturating_sub(1 + u64::from(entry.coordinates().0 >= 225))
+}
+
 fn native_cpu_field_timing_at_entry(host: u32, entry: CpuRasterPosition) -> CpuFieldTiming {
     // frame_ctr_dbg has advanced at host entry. A host spans V225 through
     // the next V225, so physical field parity flips at V0 inside that host.
@@ -3412,10 +3419,10 @@ fn dungeon_exit_spotlight_cpu_plan_at(
         DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT,
     )
     .expect("dungeon-exit spotlight CPU timing requires the loaded Zelda ROM");
-    let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
+    let mut budget = CpuCycleBudget::until_next_nmi_acceptance_in_field(
+        native_cpu_field_index_at_entry(state.frame_ctr_dbg, entry),
         entry,
         CpuBusWorkload::with_dynamic_hdma(),
-        native_cpu_field_timing_at_entry(state.frame_ctr_dbg, entry),
     );
     let mut iterations = 0usize;
     let mut iterations_before_nmi = None;
@@ -4786,9 +4793,9 @@ pub(crate) fn pre_overworld_song_upload_after_spotlight(
         let run = RomCpuTimingRun::new(&state.rom, &ram, &state.sram,
             &state.ppu, &dma, state.zelda_audio_apu_output_ports(), checkpoint)
             .expect("spotlight successor upload requires the loaded Zelda ROM");
-        let budget = CpuCycleBudget::until_next_nmi_acceptance(entry,
-            CpuBusWorkload::with_dynamic_hdma(),
-            native_cpu_field_timing_at_entry(state.frame_ctr_dbg, entry));
+        let budget = CpuCycleBudget::until_next_nmi_acceptance_in_field(
+            native_cpu_field_index_at_entry(state.frame_ctr_dbg, entry), entry,
+            CpuBusWorkload::with_dynamic_hdma());
         pre_overworld_song_upload_command_from_cpu(run, budget, state.frame_ctr_dbg)
     };
     let earliest = measure(entry.0);
@@ -10883,6 +10890,8 @@ pub struct ZeldaState {
     native_overworld_packing_progress: Option<SpritePreparationProgress>,
     #[serde(skip)]
     native_main_wait_cpu_phase: Option<NativeMainWaitCpuPhase>,
+    #[serde(skip)]
+    native_dialogue_caller_clock: Option<messaging::NativeDialogueCallerClock>,
     /// Cold source-ordered timing owner is separate from translated WRAM and
     /// exists only in the explicit native integration probe.
     #[serde(skip)]
@@ -13532,6 +13541,7 @@ impl ZeldaState {
             pending_main_loop_common_suffix: None,
             native_overworld_packing_progress: None,
             native_main_wait_cpu_phase: None,
+            native_dialogue_caller_clock: None,
             native_exact_cpu_owner: None,
             native_exact_cpu_host_trace: None,
             native_exact_cpu_overworld_scan_trial: None,
@@ -13783,6 +13793,7 @@ impl ZeldaState {
         self.pending_main_loop_common_suffix = None;
         self.native_overworld_packing_progress = None;
         self.native_main_wait_cpu_phase = None;
+        self.native_dialogue_caller_clock = None;
         self.native_exact_cpu_owner = None;
         self.native_exact_cpu_host_trace = None;
         self.native_exact_cpu_overworld_scan_trial = None;
@@ -13920,6 +13931,7 @@ impl ZeldaState {
             self.native_overworld_song_upload = None;
             self.native_overworld_packing_progress = None;
             self.native_main_wait_cpu_phase = None;
+            self.native_dialogue_caller_clock = None;
             self.native_exact_cpu_owner = None;
             self.native_exact_cpu_host_trace = None;
             self.native_exact_cpu_overworld_scan_trial = None;

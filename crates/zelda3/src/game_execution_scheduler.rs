@@ -77,13 +77,14 @@ pub(super) struct CpuBoundaryDeadline {
 
 impl CpuBoundaryDeadline {
     fn next_after(
+        field_index: u64,
         entry: CpuRasterPosition,
         boundary: CpuRasterBoundary,
         field_timing: CpuFieldTiming,
     ) -> Self {
-        let entry_master_cycles = field_timing.master_cycles_at(0, entry);
-        let boundary_master_cycles = field_timing.master_cycles_at(0, boundary.raster_position());
-        let field = u64::from(entry_master_cycles >= boundary_master_cycles);
+        let entry_master_cycles = field_timing.master_cycles_at(field_index, entry);
+        let boundary_master_cycles = field_timing.master_cycles_at(field_index, boundary.raster_position());
+        let field = field_index + u64::from(entry_master_cycles >= boundary_master_cycles);
         Self {
             boundary,
             master_cycles: field_timing.master_cycles_at(field, boundary.raster_position()),
@@ -177,8 +178,29 @@ impl CpuCycleBudget {
         bus: CpuBusWorkload,
         field_timing: CpuFieldTiming,
     ) -> Self {
-        let timeline = CpuMasterTimeline::at_raster(0, entry, bus, field_timing);
-        let deadline = CpuBoundaryDeadline::next_after(entry, boundary, field_timing);
+        Self::until_next_boundary_in_field(0, entry, boundary, bus, field_timing)
+    }
+
+    /// Resume a native caller on its physical field. Odd/even parity alone
+    /// cannot preserve the WRAM refresh toggle carried across short fields.
+    pub(super) fn until_next_nmi_acceptance_in_field(
+        field_index: u64,
+        entry: CpuRasterPosition,
+        bus: CpuBusWorkload,
+    ) -> Self {
+        Self::until_next_boundary_in_field(field_index, entry,
+            CpuRasterBoundary::CpuNmiAcceptance, bus, CpuFieldTiming::NON_INTERLACE_EVEN)
+    }
+
+    fn until_next_boundary_in_field(
+        field_index: u64,
+        entry: CpuRasterPosition,
+        boundary: CpuRasterBoundary,
+        bus: CpuBusWorkload,
+        field_timing: CpuFieldTiming,
+    ) -> Self {
+        let timeline = CpuMasterTimeline::at_raster(field_index, entry, bus, field_timing);
+        let deadline = CpuBoundaryDeadline::next_after(field_index, entry, boundary, field_timing);
         debug_assert!(timeline.clock_master_cycles() < deadline.master_cycles);
         Self {
             timeline,
@@ -197,14 +219,22 @@ impl CpuCycleBudget {
     /// The existing synthetic dungeon main-wait seed still models its busy
     /// loop separately; this constructor does not claim that seed is a WAI.
     pub(super) fn at_nmi_acceptance(bus: CpuBusWorkload, field_timing: CpuFieldTiming) -> Self {
+        Self::at_nmi_acceptance_with_field(0, bus, field_timing)
+    }
+
+    pub(super) fn at_nmi_acceptance_in_field(field_index: u64, bus: CpuBusWorkload) -> Self {
+        Self::at_nmi_acceptance_with_field(field_index, bus, CpuFieldTiming::NON_INTERLACE_EVEN)
+    }
+
+    fn at_nmi_acceptance_with_field(field_index: u64, bus: CpuBusWorkload, field_timing: CpuFieldTiming) -> Self {
         let deadline = CpuBoundaryDeadline {
             boundary: CpuRasterBoundary::CpuNmiAcceptance,
             master_cycles: field_timing
-                .master_cycles_at(0, CpuRasterBoundary::CpuNmiAcceptance.raster_position()),
+                .master_cycles_at(field_index, CpuRasterBoundary::CpuNmiAcceptance.raster_position()),
         };
         Self {
             timeline: CpuMasterTimeline::at_raster(
-                0,
+                field_index,
                 CpuRasterBoundary::CpuNmiAcceptance.raster_position(),
                 bus,
                 field_timing,
@@ -2047,6 +2077,43 @@ mod cpu_timing_tests {
             source_observation_active: false,
             source_nmi_boundary_pending: false,
             poly_thread_free_fields: (0, 0),
+        }
+    }
+
+    #[test]
+    fn resumed_native_budget_preserves_four_field_refresh_phase() {
+        // The source v2 refresh toggle is carried across odd-field V240,
+        // so equal field parity does not imply equal refresh positions.
+        for base in [0, 24_000, 1_581_076] {
+            for (line, ends) in [(100, [536, 536, 576, 576]), (240, [536, 576, 576, 536])] {
+                for (offset, expected_h) in ends.into_iter().enumerate() {
+                    let field = base + offset as u64;
+                    let mut budget = CpuCycleBudget::until_next_nmi_acceptance_in_field(
+                        field, CpuRasterPosition::new(line, 532), CpuBusWorkload::default());
+                    assert_eq!(budget.advance_instruction(4), CpuWorkAdvance::Complete);
+                    assert_eq!(budget.raster_position(), CpuRasterPosition::new(line, expected_h));
+                    assert_eq!(budget.timeline.field_index(), field);
+                    let boundary_field = field + u64::from(line >= 225);
+                    assert_eq!(budget.deadline.master_cycles,
+                        CpuFieldTiming::NON_INTERLACE_EVEN.master_cycles_at(
+                            boundary_field, CpuRasterPosition::new(225, 12)));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn resumed_native_nmi_budget_keeps_the_physical_field_after_handler_entry() {
+        for field in 24_000..24_004 {
+            let mut budget = CpuCycleBudget::at_nmi_acceptance_in_field(
+                field, CpuBusWorkload::default());
+            assert_eq!(budget.timeline.field_index(), field);
+            assert_eq!(budget.raster_position(), CpuRasterPosition::new(225, 12));
+            budget.begin_nmi_handler();
+            assert_eq!(budget.timeline.field_index(), field);
+            assert_eq!(budget.deadline.master_cycles,
+                CpuFieldTiming::NON_INTERLACE_EVEN.master_cycles_at(
+                    field + 1, CpuRasterPosition::new(225, 12)));
         }
     }
 

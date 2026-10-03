@@ -97,7 +97,7 @@ fn vwf_exact_caller_suffix_master_cycles(nmi_prepare_sprites_master_cycles: Opti
 /// The native dialogue budget of one handler call without timing receipts:
 /// the CPU cycles from the loop entry to the next NMI acceptance on the
 /// raster, and the pieces it was derived from (for the debug trace).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 struct VwfExactLoopBudget {
     master_cycles: u32,
     /// Ledger work since the NMI acceptance (handler, main-loop prefix,
@@ -105,6 +105,34 @@ struct VwfExactLoopBudget {
     since_nmi_master_cycles: u64,
     /// Refresh and HDMA stalls between the loop entry and the deadline.
     stall_master_cycles: u32,
+    clock: Option<NativeDialogueCallerClock>,
+}
+
+/// Hardware time retained when a held native character handler returns.
+/// Its callers advance this same clock with their own retired instructions.
+#[derive(Clone, Debug)]
+pub(super) struct NativeDialogueCallerClock {
+    budget: super::game_execution_scheduler::CpuCycleBudget,
+    hdma: snes::HdmaTimingState,
+    pub(super) return_x: Option<u16>,
+    pub(super) return_y: Option<u16>,
+    pub(super) return_a: Option<u16>,
+    pub(super) return_carry: bool,
+    pub(super) return_overflow: bool,
+}
+
+impl NativeDialogueCallerClock {
+    fn new(budget: super::game_execution_scheduler::CpuCycleBudget, hdma: snes::HdmaTimingState) -> Self {
+        Self { budget, hdma, return_x: None, return_y: None, return_a: None,
+            return_carry: false, return_overflow: false }
+    }
+
+    fn advance(&mut self, state: &ZeldaState, cycles: u32) -> super::game_execution_scheduler::CpuWorkAdvance {
+        self.budget.advance_instruction_with_hdma(cycles, |event, _| {
+            self.hdma.stall(event, |address| state.native_hdma_table_byte(address))
+                .expect("native dialogue caller lost its HDMA table")
+        })
+    }
 }
 
 /// CPU work already executed inside one native scroll call. The render buffer
@@ -1293,6 +1321,62 @@ mod fast_forward_cycle_tests {
     }
 
     #[test]
+    fn native_dialogue_caller_clock_matches_source_return_registers_and_wait_phase() {
+        use crate::zelda_rtl::game_execution_scheduler::{CpuCycleBudget, CpuWorkAdvance};
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let (assets, rom) = character_decoder_fixture().expect("native caller source fixture");
+        for field in 30_000..30_004u64 {
+            for countdown in [1u16, 2] {
+                let mut state = crate::zelda_rtl::ZeldaState::new();
+                state.set_assets(&assets).unwrap();
+                state.frame_ctr_dbg = field as u32 + 1;
+                state.ram[0x12] = 1;
+                state.ram[0x0aa2] = 0xa0;
+                for address in [0xc00d, 0xc013] {
+                    state.ram[address..address + 2].copy_from_slice(&countdown.to_le_bytes());
+                }
+                state.sync_native_game_state_from_ram();
+                state.main_loop_caller_phase = crate::cycle_models::main_wait::MainLoopCallerPhase::ModuleRouting;
+                let entry = snes::CpuRasterPosition::new(10, 532);
+                let budget = CpuCycleBudget::until_next_nmi_acceptance_in_field(
+                    field, entry, snes::CpuBusWorkload::with_dynamic_hdma());
+                state.native_dialogue_caller_clock = Some(super::NativeDialogueCallerClock::new(
+                    budget.clone(), snes::HdmaTimingState::new(&state.dma)));
+                let checkpoint = RomCpuCheckpoint {
+                    entry_pc: 0x0e_c9f5, stop_pc: 0x00_8034,
+                    sp: 0x01f6, db: 0x0e, stack_address: 0x01f7, waiting: false,
+                    // Handler RTS, RenderText PLB/RTL, then Module0E RTL
+                    // back to the main caller's sprite-preparation JSR.
+                    stack_bytes: &[0x45, 0xc4, 0x00, 0x4d, 0xf8, 0x00, 0x59, 0x80, 0x00],
+                    ..crate::zelda_rtl::DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+                };
+                let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                    &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+                let mut source_budget = budget;
+                loop {
+                    let (v, h) = source_budget.raster_position().coordinates();
+                    source.set_raster_position(v, h);
+                    if crate::zelda_rtl::advance_rom_cpu_step(&mut source, &mut source_budget) != CpuWorkAdvance::Complete {
+                        break;
+                    }
+                }
+                assert!(matches!(source.pc(), 0x8034 | 0x8036));
+                state.finish_dialogue_character_render_call();
+                state.finish_render_text_return();
+                state.complete_module0e_interface_after_run();
+                state.nmi_prepare_sprites_for_main_loop();
+                state.finish_main_loop_caller_return();
+                let phase = state.native_main_wait_cpu_phase.as_ref().unwrap();
+                assert_eq!(phase.host, state.frame_ctr_dbg + 1);
+                assert_eq!(phase.checkpoint, source.main_wait_checkpoint(0x805d));
+                assert_eq!(phase.budget.raster_position(), source_budget.raster_position());
+                assert_eq!(&state.ram[0xa00..0xae4], &source.ram()[0xa00..0xae4]);
+                assert!(state.native_dialogue_caller_clock.is_none());
+            }
+        }
+    }
+
+    #[test]
     fn measured_dialogue_budget_keeps_the_entries_physical_field() {
         let state = crate::zelda_rtl::ZeldaState::new();
         // Snes9x non-interlace odd fields shorten scanline240 by four
@@ -1563,10 +1647,12 @@ mod fast_forward_cycle_tests {
             snes::CpuFieldTiming::NON_INTERLACE_EVEN,
         ).unwrap();
         state.set_hdma_enable_mask(0);
-        assert_eq!(Some(terminated), state.vwf_exact_entry_budget(
+        let disabled = state.vwf_exact_entry_budget(
             snes::CpuRasterPosition::new(43, 716),
             snes::CpuFieldTiming::NON_INTERLACE_EVEN,
-        ));
+        ).unwrap();
+        assert_eq!((terminated.master_cycles, terminated.since_nmi_master_cycles, terminated.stall_master_cycles),
+            (disabled.master_cycles, disabled.since_nmi_master_cycles, disabled.stall_master_cycles));
     }
 
     #[test]
@@ -1601,7 +1687,7 @@ mod fast_forward_cycle_tests {
             state.vwf_click_retention_costs(exact, VwfGlyphCpuPhase::Ready),
             VwfClickRetentionCosts { click: exact.click, vblank_margin: 0, entering_shift: 0, preparing_drawing_shift: 0 }
         );
-        assert_eq!(state.vwf_exact_loop_budget(), None);
+        assert!(state.vwf_exact_loop_budget().is_none());
         // A held NMI (2,982) with no HDMA: the loop owns the frame minus the
         // handler and the WRAM refresh stalls (40 per scanline) up to the
         // next acceptance.
@@ -1660,10 +1746,10 @@ mod fast_forward_cycle_tests {
             state.vwf_click_retention_costs(estimated, VwfGlyphCpuPhase::Ready),
             VwfClickRetentionCosts::estimated()
         );
-        assert_eq!(state.vwf_exact_loop_budget(), None);
-        assert_eq!(state.vwf_exact_fresh_entry_budget(VWF_LATER_LINE_ENTRY_MASTER_CYCLES), None);
-        assert_eq!(state.vwf_exact_measured_entry_budget(
-            snes::CpuRasterPosition::new(255, 0)), None);
+        assert!(state.vwf_exact_loop_budget().is_none());
+        assert!(state.vwf_exact_fresh_entry_budget(VWF_LATER_LINE_ENTRY_MASTER_CYCLES).is_none());
+        assert!(state.vwf_exact_measured_entry_budget(
+            snes::CpuRasterPosition::new(255, 0)).is_none());
     }
 
     #[test]
@@ -1912,6 +1998,7 @@ impl ZeldaState {
             [self.game_state.world.scroll.bg1_x_offset(), self.game_state.world.scroll.bg1_y_offset()],
         )?;
         crate::cycle_ledger::charge(u64::from(instruction.master_cycles));
+        self.advance_native_dialogue_caller_clock(instruction.master_cycles);
         if let Some((axis, value)) = instruction.scroll_store {
             match axis {
                 0 => self.set_bg2_h_copy(value),
@@ -1928,7 +2015,52 @@ impl ZeldaState {
         let mut work = crate::cycle_models::text_initialize::RenderTextReturn::default();
         while let Some(cost) = work.step() {
             crate::cycle_ledger::charge(u64::from(cost));
+            self.advance_native_dialogue_caller_clock(cost);
         }
+    }
+
+    pub(super) fn advance_native_dialogue_caller_clock(&mut self, cycles: u32) {
+        let Some(mut clock) = self.native_dialogue_caller_clock.take() else { return; };
+        assert!(clock.advance(self, cycles).reached_boundary().is_none(),
+            "native dialogue caller exhausted its reserved return budget");
+        self.native_dialogue_caller_clock = Some(clock);
+    }
+
+    pub(super) fn retain_native_dialogue_main_wait(&mut self) {
+        let Some(mut clock) = self.native_dialogue_caller_clock.take() else { return; };
+        let a = clock.return_a.expect("dialogue caller has not returned from sprite pointers");
+        let mut checkpoint = RomCpuCheckpoint {
+            entry_pc: 0x00_8034, stop_pc: 0x00_805d,
+            a, x: clock.return_x.expect("dialogue caller lost its sprite-preparation X"),
+            y: clock.return_y.expect("dialogue caller lost its sprite-preparation Y"),
+            sp: 0x1ff, dp: 0, db: 0, carry: clock.return_carry,
+            zero: a == 0, negative: a & 0x8000 != 0, overflow: clock.return_overflow,
+            interrupt_disable: false, decimal: false, accumulator_is_8_bit: true,
+            index_is_8_bit: true, emulation: false, waiting: false,
+            stack_address: 0, stack_bytes: &[],
+        };
+        assert!(!self.game_state.display.nmi_update_is_latched());
+        let mut wait = crate::cycle_models::main_wait::MainWait::default();
+        for _ in 0..50_000 {
+            let instruction = wait.step(0);
+            checkpoint.entry_pc = wait.next_pc();
+            if let Some(value) = instruction.loaded_latch {
+                checkpoint.a = (checkpoint.a & 0xff00) | u16::from(value);
+                checkpoint.zero = value == 0;
+                checkpoint.negative = value & 0x80 != 0;
+            }
+            if clock.advance(self, instruction.master_cycles).reached_boundary().is_some() {
+                if debug_vwf_budget_for_frame(self.frame_ctr_dbg) {
+                    eprintln!("vwf_main_wait host={} pc={:06x} position={:?}",
+                        self.frame_ctr_dbg, checkpoint.entry_pc, clock.budget.raster_position());
+                }
+                assert!(self.native_main_wait_cpu_phase.replace(NativeMainWaitCpuPhase {
+                    host: self.frame_ctr_dbg + 1, checkpoint, budget: clock.budget,
+                }).is_none(), "dialogue caller overlapped another main-wait phase");
+                return;
+            }
+        }
+        panic!("native dialogue caller failed to reach its next NMI");
     }
 
     pub(super) fn Module_Messaging_0(&mut self) {
@@ -5519,7 +5651,7 @@ impl ZeldaState {
                 _ => {}
             }
         }
-        if fresh_iteration && !matches!(
+        if (fresh_iteration || self.native_dialogue_caller_clock.is_some()) && !matches!(
             self.game_execution_scheduler.current_work(),
             Some(GameWorkContinuation::FinishDialogueInitializationPrefix { .. }
                 | GameWorkContinuation::FinishDialogueInitializationCallerReturn)
@@ -6822,6 +6954,11 @@ impl ZeldaState {
     }
 
     pub(super) fn finish_dialogue_character_render_call(&mut self) {
+        // $C9F5: LDA #2, STA $17, STA $0710, RTS. A resumed handler
+        // reaches this exit only after its retained glyph work has returned.
+        for cycles in [16, 24, 32, 42] {
+            self.advance_native_dialogue_caller_clock(cycles);
+        }
         self.set_pending_nmi_subroutine(2);
         self.set_core_update_disable_flag(2);
     }
@@ -6892,12 +7029,12 @@ impl ZeldaState {
             fresh_converted_budget = self.vwf_exact_fresh_entry_budget(traced_budget);
             fresh_derived_budget = self.vwf_exact_loop_budget();
             if self.vwf_prefix_fully_charged {
-                fresh_derived_budget.or(fresh_converted_budget)
+                fresh_derived_budget.clone().or(fresh_converted_budget.clone())
             } else {
-                fresh_converted_budget
+                fresh_converted_budget.clone()
             }
         };
-        if let Some(budget) = exact_budget {
+        if let Some(budget) = exact_budget.as_ref() {
             cycles_left = budget.master_cycles;
         }
         let loop_budget = cycles_left;
@@ -7329,8 +7466,8 @@ impl ZeldaState {
                 caller_suffix_master_cycles,
                 !midline_yield && cycles_left < caller_suffix_master_cycles,
                 nmi_cost = self.last_nmi_handler_master_cycles,
-                since_nmi = exact_budget.map(|budget| budget.since_nmi_master_cycles),
-                stalls = exact_budget.map(|budget| budget.stall_master_cycles),
+                since_nmi = exact_budget.as_ref().map(|budget| budget.since_nmi_master_cycles),
+                stalls = exact_budget.as_ref().map(|budget| budget.stall_master_cycles),
                 hdma_stall = self.native_hdma_scanline_stall_master_cycles(),
                 deferred_exits = self.dialogue_vwf_deferred_handler_exits,
                 fresh_derived = fresh_derived_budget.map(|budget| budget.master_cycles),
@@ -7355,6 +7492,17 @@ impl ZeldaState {
                     deferred
                         .saturating_mul(crate::cycle_models::vwf::HANDLER_EXIT_MASTER_CYCLES as u32),
                 );
+            }
+            if resuming && exact_costs && self.dialogue_scroll_cpu_is_idle()
+                && cycles_left >= caller_suffix_master_cycles
+                && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            {
+                if let Some(mut clock) = exact_budget.and_then(|budget| budget.clock) {
+                    assert!(clock.advance(self, loop_budget - cycles_left).reached_boundary().is_none(),
+                        "completed VWF handler crossed its caller boundary");
+                    assert!(self.native_dialogue_caller_clock.replace(clock).is_none(),
+                        "VWF handler overlapped an unfinished caller clock");
+                }
             }
             VwfCpuSliceOutcome::HandlerComplete {
                 master_cycles_before_vblank: cycles_left,
@@ -7516,10 +7664,9 @@ impl ZeldaState {
         let since_nmi_master_cycles = crate::cycle_ledger::master()
             .saturating_sub(nmi_acceptance)
             + self.last_nmi_dma_master_cycles;
-        let mut budget = CpuCycleBudget::at_nmi_acceptance(
+        let mut budget = CpuCycleBudget::at_nmi_acceptance_in_field(
+            super::native_cpu_field_index_at_entry(self.frame_ctr_dbg, snes::CpuRasterPosition::new(225, 12)),
             snes::CpuBusWorkload::with_dynamic_hdma(),
-            super::native_cpu_field_timing_at_entry(self.frame_ctr_dbg,
-                snes::CpuRasterPosition::new(225, snes::SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES as u16)),
         );
         budget.begin_nmi_handler();
         let mut hdma = snes::HdmaTimingState::new(&self.dma_with_native_hdma_enable());
@@ -7535,12 +7682,19 @@ impl ZeldaState {
                 master_cycles: 0,
                 since_nmi_master_cycles,
                 stall_master_cycles: 0,
+                clock: None,
             });
         }
         if debug_vwf_budget_for_frame(self.frame_ctr_dbg) {
             eprintln!("vwf_entry_raster host={} since_nmi={} position={:?}",
                 self.frame_ctr_dbg, since_nmi, budget.raster_position());
         }
+        drop(price_hdma);
+        let caller_clock = NativeDialogueCallerClock::new(budget.clone(), hdma.clone());
+        let mut price_hdma = |event, _: u16| {
+            hdma.stall(event, |address| self.native_hdma_table_byte(address))
+                .unwrap_or_else(|| { unsupported_hdma_table = true; 0 })
+        };
         // Everything that still fits before the deadline is the budget.
         const PROBE: u32 = 4 * SNES_NTSC_MASTER_CYCLES_PER_FRAME;
         let master_cycles = match budget.advance_interruptible_with_hdma(PROBE, &mut price_hdma) {
@@ -7557,6 +7711,7 @@ impl ZeldaState {
             stall_master_cycles: SNES_NTSC_MASTER_CYCLES_PER_FRAME
                 .saturating_sub(since_nmi)
                 .saturating_sub(master_cycles),
+            clock: Some(caller_clock),
         })
     }
 
@@ -7653,6 +7808,7 @@ impl ZeldaState {
                     |address| self.native_hdma_table_byte(address))?;
             }
         }
+        let caller_clock = NativeDialogueCallerClock::new(budget.clone(), hdma.clone());
         let mut unsupported_hdma_table = false;
         let mut price_hdma = |event, _: u16| {
             hdma.stall(event, |address| self.native_hdma_table_byte(address))
@@ -7671,6 +7827,7 @@ impl ZeldaState {
             master_cycles,
             since_nmi_master_cycles,
             stall_master_cycles: span_before_nmi.saturating_sub(master_cycles),
+            clock: Some(caller_clock),
         })
     }
 

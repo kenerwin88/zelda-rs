@@ -1099,6 +1099,7 @@ impl ZeldaState {
     pub(super) fn enter_main_loop_sprite_preparation(&mut self) {
         let cycles = self.main_loop_caller_phase.enter_sprite_preparation();
         crate::cycle_ledger::charge_routine(0x00_8034, u64::from(cycles));
+        self.advance_native_dialogue_caller_clock(cycles);
     }
 
     /// The main caller's STZ/BRA, distinct from gameplay routines which also
@@ -1112,11 +1113,13 @@ impl ZeldaState {
             return;
         }
         while self.step_main_loop_caller_return().is_some() {}
+        self.retain_native_dialogue_main_wait();
     }
 
     pub(super) fn step_main_loop_caller_return(&mut self) -> Option<u32> {
         let instruction = self.main_loop_caller_phase.step_return_to_wait()?;
         crate::cycle_ledger::charge_routine(0x00_8034, u64::from(instruction.master_cycles));
+        self.advance_native_dialogue_caller_clock(instruction.master_cycles);
         if instruction.clear_latch { self.clear_nmi_update_latch(); }
         Some(instruction.master_cycles)
     }
