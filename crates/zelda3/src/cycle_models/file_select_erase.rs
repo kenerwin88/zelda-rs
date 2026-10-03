@@ -1,8 +1,8 @@
 //! File menu initialization owns the flag clear, tilemap DMA, palette calls,
 //! and final update requests on one interruptible native CPU stack.
+use super::native_work::WorkBus;
 use super::{
     file_select_palettes::FileSelectPalettes,
-    intro_clear::Access,
     intro_palettes::PaletteSource,
     native_tilemap_erase::NativeTilemapErase,
     native_work::Work,
@@ -63,7 +63,7 @@ impl FileSelectErase {
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
         dma: &mut DmaState,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete {
             return None;

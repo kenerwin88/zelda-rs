@@ -1,8 +1,8 @@
 //! Native intro animation caller, scene loop and title-screen actor dispatch.
 //! Calls push their real return addresses. Nested work keeps the same CPU and
 //! bus; no semantic callee fabricates the caller's continuation.
+use super::native_work::WorkBus;
 use super::{
-    intro_clear::Access,
     intro_sprite_init::{Initializer, IntroSpriteInit},
     intro_sprite_work::{AddObjectsToOam, MoveTriangle},
     native_work::Work,
@@ -30,7 +30,7 @@ impl Child {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         match self {
             Self::Triforce(w) => w.step(cpu, clock, bus),
@@ -66,7 +66,7 @@ impl IntroAnimation {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete {
             return None;
@@ -501,21 +501,21 @@ impl IntroAnimation {
         Some(w.cycles)
     }
 }
-fn call<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, target: u16) {
+fn call<B: WorkBus>(w: &mut Work<'_, B>, target: u16) {
     w.drain(22);
     w.push(w.cpu.pc + 2, 2);
     w.cpu.pc = target;
 }
-fn load<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, a: u16) {
+fn load<B: WorkBus>(w: &mut Work<'_, B>, a: u16) {
     w.drain(16);
     let value = w.read(w.absolute(a), 1);
     w.load(value, 1);
 }
-fn store<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, a: u16) {
+fn store<B: WorkBus>(w: &mut Work<'_, B>, a: u16) {
     w.drain(16);
     w.write(w.absolute(a), w.cpu.a & 255, 1);
 }
-fn indexed_read<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, a: u16, y: bool) -> u16 {
+fn indexed_read<B: WorkBus>(w: &mut Work<'_, B>, a: u16, y: bool) -> u16 {
     w.drain(16);
     let index = if y { w.cpu.y } else { w.cpu.x };
     if (a & 255) + index > 255 {
@@ -523,15 +523,15 @@ fn indexed_read<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, a: u16, y: bo
     }
     w.read(w.absolute(a.wrapping_add(index)), 1)
 }
-fn indexed_load<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, a: u16, y: bool) {
+fn indexed_load<B: WorkBus>(w: &mut Work<'_, B>, a: u16, y: bool) {
     let value = indexed_read(w, a, y);
     w.load(value, 1);
 }
-fn indexed_store<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, a: u16, value: u16) {
+fn indexed_store<B: WorkBus>(w: &mut Work<'_, B>, a: u16, value: u16) {
     w.drain(22);
     w.write(w.absolute(a.wrapping_add(w.cpu.x)), value & 255, 1);
 }
-fn shift_right<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>) {
+fn shift_right<B: WorkBus>(w: &mut Work<'_, B>) {
     w.drain(6);
     let a = w.cpu.a & 255;
     w.cpu.p = (w.cpu.p & !CARRY) | (a & 1) as u8;

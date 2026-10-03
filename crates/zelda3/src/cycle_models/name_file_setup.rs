@@ -1,9 +1,11 @@
 //! Name-entry setup shares the retained menu erase and checkerboard owners.
 //! SRAM clearing and all following control stores retire on the same CPU.
+#[cfg(test)]
+use super::intro_clear::Access;
+use super::native_work::WorkBus;
 use super::{
     file_select_erase::FileSelectErase,
     file_select_stripes::FileSelectStripes,
-    intro_clear::Access,
     intro_palettes::PaletteSource,
     native_work::Work,
     nmi_stack::{NativeNmiContext, CARRY, ZERO},
@@ -59,7 +61,7 @@ impl NameFileSetup {
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
         dma: &mut DmaState,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete {
             return None;

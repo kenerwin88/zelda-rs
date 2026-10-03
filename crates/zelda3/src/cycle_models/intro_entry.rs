@@ -53,7 +53,7 @@ pub(crate) fn table_byte(address: u32) -> Option<u8> {
 }
 
 pub(crate) fn enter_name_file(cpu:&mut NativeNmiContext,clock:&mut CpuMasterTimeline,
-    bus:impl FnMut(u64,Access)->u16)->u64 {
+    bus:impl FnMut(&CpuMasterTimeline,Access)->u16)->u64 {
     assert_eq!((cpu.bank,cpu.pc,cpu.db,cpu.d,cpu.p&0x38),(12,0xd88a,0,0,0x30));
     let mut w=Work{cpu,clock,bus,cycles:0};
     w.load_dp(0x11);assert!(w.cpu.a&255<=3);
@@ -62,7 +62,7 @@ pub(crate) fn enter_name_file(cpu:&mut NativeNmiContext,clock:&mut CpuMasterTime
 }
 
 pub(crate) fn enter_kill_file(cpu:&mut NativeNmiContext,clock:&mut CpuMasterTimeline,
-    bus:impl FnMut(u64,Access)->u16)->u64 {
+    bus:impl FnMut(&CpuMasterTimeline,Access)->u16)->u64 {
     assert_eq!((cpu.bank,cpu.pc,cpu.db,cpu.d,cpu.p&0x38),(12,0xd485,0,0,0x30));
     let mut w=Work{cpu,clock,bus,cycles:0};
     w.load_dp(0x11);assert!(w.cpu.a&255<=4);
@@ -71,7 +71,7 @@ pub(crate) fn enter_kill_file(cpu:&mut NativeNmiContext,clock:&mut CpuMasterTime
 }
 
 pub(crate) fn enter_file_select(cpu:&mut NativeNmiContext,clock:&mut CpuMasterTimeline,
-    bus:impl FnMut(u64,Access)->u16)->u64 {
+    bus:impl FnMut(&CpuMasterTimeline,Access)->u16)->u64 {
     assert_eq!((cpu.bank,cpu.pc,cpu.db,cpu.d,cpu.p&0x38),(12,0xcd7d,0,0,0x30));
     let mut w=Work{cpu,clock,bus,cycles:0};
     for address in [0xe4,0xe5,0xea,0xeb] {w.store_dp(address,0,1);}
@@ -89,7 +89,7 @@ pub(crate) fn enter_file_select(cpu:&mut NativeNmiContext,clock:&mut CpuMasterTi
 pub(crate) fn enter_half_slot(
     cpu: &mut NativeNmiContext,
     clock: &mut CpuMasterTimeline,
-    bus: impl FnMut(u64, Access) -> u16,
+    bus: impl FnMut(&CpuMasterTimeline, Access) -> u16,
 ) -> u64 {
     assert_eq!(
         (cpu.bank, cpu.pc, cpu.db, cpu.d, cpu.p & 0x38),
@@ -156,7 +156,7 @@ pub(crate) fn enter_half_slot(
 pub(crate) fn finish_setup(
     cpu: &mut NativeNmiContext,
     clock: &mut CpuMasterTimeline,
-    bus: impl FnMut(u64, Access) -> u16,
+    bus: impl FnMut(&CpuMasterTimeline, Access) -> u16,
 ) -> u64 {
     assert_eq!(
         (cpu.bank, cpu.pc, cpu.db, cpu.d, cpu.p & 0x38),
@@ -198,7 +198,7 @@ pub(crate) fn finish_setup(
         w.fetch();
         w.drain(24);
         (w.bus)(
-            w.clock.clock_master_cycles(),
+            w.clock,
             Access::WriteLongWord(0x7ec620 + u32::from(w.cpu.x), w.cpu.a),
         );
         w.drain(16);
@@ -232,7 +232,7 @@ pub(crate) fn finish_setup(
 pub(crate) fn enter_first_clear(
     cpu: &mut NativeNmiContext,
     clock: &mut CpuMasterTimeline,
-    bus: impl FnMut(u64, Access) -> u16,
+    bus: impl FnMut(&CpuMasterTimeline, Access) -> u16,
 ) -> u64 {
     enter_continue(cpu, clock, bus, true, (12, 0xc1a0))
 }
@@ -240,7 +240,7 @@ pub(crate) fn enter_first_clear(
 pub(crate) fn enter_following_clear(
     cpu: &mut NativeNmiContext,
     clock: &mut CpuMasterTimeline,
-    bus: impl FnMut(u64, Access) -> u16,
+    bus: impl FnMut(&CpuMasterTimeline, Access) -> u16,
 ) -> u64 {
     enter_continue(cpu, clock, bus, false, (12, 0xc1a0))
 }
@@ -248,26 +248,26 @@ pub(crate) fn enter_following_clear(
 pub(crate) fn enter_text_pointers(
     cpu: &mut NativeNmiContext,
     clock: &mut CpuMasterTimeline,
-    bus: impl FnMut(u64, Access) -> u16,
+    bus: impl FnMut(&CpuMasterTimeline, Access) -> u16,
 ) -> u64 {
     enter_continue(cpu, clock, bus, false, (2, 0x8116))
 }
 pub(crate) fn enter_item_graphics(
     cpu: &mut NativeNmiContext,
     clock: &mut CpuMasterTimeline,
-    bus: impl FnMut(u64, Access) -> u16,
+    bus: impl FnMut(&CpuMasterTimeline, Access) -> u16,
 ) -> u64 {
     enter_continue(cpu, clock, bus, false, (0, 0xd231))
 }
 pub(crate) fn enter_follower_graphics(
     cpu: &mut NativeNmiContext,
     clock: &mut CpuMasterTimeline,
-    bus: impl FnMut(u64, Access) -> u16,
+    bus: impl FnMut(&CpuMasterTimeline, Access) -> u16,
 ) -> u64 {
     enter_continue(cpu, clock, bus, false, (0, 0xd423))
 }
 pub(crate) fn enter_poly(cpu: &mut NativeNmiContext, clock: &mut CpuMasterTimeline,
-    bus: impl FnMut(u64, Access) -> u16) -> u64 {
+    bus: impl FnMut(&CpuMasterTimeline, Access) -> u16) -> u64 {
     assert_eq!((cpu.bank,cpu.pc,cpu.db,cpu.d,cpu.p&0x38),(12,0xc120,0,0,0x30));
     let mut w=Work {cpu,clock,bus,cycles:0};
     w.module_dispatch(2);
@@ -276,7 +276,7 @@ pub(crate) fn enter_poly(cpu: &mut NativeNmiContext, clock: &mut CpuMasterTimeli
 }
 
 pub(crate) fn enter_animation(cpu: &mut NativeNmiContext, clock: &mut CpuMasterTimeline,
-    bus: impl FnMut(u64, Access) -> u16, submodule: u8) -> u64 {
+    bus: impl FnMut(&CpuMasterTimeline, Access) -> u16, submodule: u8) -> u64 {
     assert!(matches!(submodule,3|4));
     assert_eq!((cpu.bank,cpu.pc,cpu.db,cpu.d,cpu.p&0x38),(12,0xc120,0,0,0x30));
     let mut w=Work {cpu,clock,bus,cycles:0};
@@ -286,7 +286,7 @@ pub(crate) fn enter_animation(cpu: &mut NativeNmiContext, clock: &mut CpuMasterT
 }
 
 pub(crate) fn enter_title(cpu: &mut NativeNmiContext, clock: &mut CpuMasterTimeline,
-    bus: impl FnMut(u64, Access) -> u16, submodule: u8) -> u64 {
+    bus: impl FnMut(&CpuMasterTimeline, Access) -> u16, submodule: u8) -> u64 {
     assert!(matches!(submodule,5..=8));
     assert_eq!((cpu.bank,cpu.pc,cpu.db,cpu.d,cpu.p&0x38),(12,0xc120,0,0,0x30));
     let mut w=Work {cpu,clock,bus,cycles:0};
@@ -297,14 +297,14 @@ pub(crate) fn enter_title(cpu: &mut NativeNmiContext, clock: &mut CpuMasterTimel
 }
 
 pub(crate) fn enter_darkening(cpu: &mut NativeNmiContext, clock: &mut CpuMasterTimeline,
-    bus: impl FnMut(u64, Access) -> u16) -> u64 {
+    bus: impl FnMut(&CpuMasterTimeline, Access) -> u16) -> u64 {
     enter_continue(cpu, clock, bus, false, (12, 0xc1f5))
 }
 
 fn enter_continue(
     cpu: &mut NativeNmiContext,
     clock: &mut CpuMasterTimeline,
-    bus: impl FnMut(u64, Access) -> u16,
+    bus: impl FnMut(&CpuMasterTimeline, Access) -> u16,
     first: bool,
     target: (u8, u16),
 ) -> u64 {
@@ -415,7 +415,7 @@ struct Work<'a, B> {
     bus: B,
     cycles: u64,
 }
-impl<B: FnMut(u64, Access) -> u16> Work<'_, B> {
+impl<B: FnMut(&CpuMasterTimeline, Access) -> u16> Work<'_, B> {
     fn module_dispatch(&mut self, expected: u8) {
         self.load_dp(0x11);
         assert_eq!(self.cpu.a as u8, expected);
@@ -593,7 +593,7 @@ impl<B: FnMut(u64, Access) -> u16> Work<'_, B> {
         } else {
             Access::ReadWord(address)
         };
-        let value = (self.bus)(self.clock.clock_master_cycles(), op);
+        let value = (self.bus)(self.clock, op);
         self.drain(8 * u32::from(width));
         value
     }
@@ -603,7 +603,7 @@ impl<B: FnMut(u64, Access) -> u16> Work<'_, B> {
         } else {
             Access::WriteWord(address, value)
         };
-        (self.bus)(self.clock.clock_master_cycles(), op);
+        (self.bus)(self.clock, op);
         self.drain(if matches!(address, 0x2100..=0x213f | 0x420c) {
             6
         } else {
@@ -776,8 +776,8 @@ mod tests {
                         }
                     }
                     let mut actual = Vec::new();
-                    let cycles = enter_half_slot(&mut native, &mut clock, |at, access| {
-                        actual.push((at, access));
+                    let cycles = enter_half_slot(&mut native, &mut clock, |clock, access| {
+                        actual.push((clock.clock_master_cycles(), access));
                         let read = |address: u32| {
                             table_byte(address).unwrap_or_else(|| ram[address as usize])
                         };
@@ -931,8 +931,8 @@ mod tests {
                         }
                     }
                     let mut actual = Vec::new();
-                    let cycles = finish_setup(&mut native, &mut clock, |at, access| {
-                        actual.push((at, access));
+                    let cycles = finish_setup(&mut native, &mut clock, |clock, access| {
+                        actual.push((clock.clock_master_cycles(), access));
                         let read = |address: u32| ram[address as usize];
                         match access {
                             Access::WriteLongWord(address, value) => {
@@ -1099,7 +1099,8 @@ mod tests {
                         let cycles = enter_continue(
                             &mut native,
                             &mut clock,
-                            |at, op| {
+                            |clock, op| {
+                                let at = clock.clock_master_cycles();
                                 let read =
                                     |a: u32| table_byte(a).unwrap_or_else(|| ram[a as usize]);
                                 let value = match op {

@@ -33,12 +33,12 @@ impl<F: FnMut(u64, Access) -> u16> WorkBus for F {
         self(at, access)
     }
 }
-pub(super) struct BeamBus<F> {
+pub(crate) struct BeamBus<F> {
     callback: F,
     beam: Option<snes::cpu_timeline::CpuSynchronousBeamPosition>,
 }
 impl<F> BeamBus<F> {
-    pub(super) fn new(callback: F) -> Self {
+    pub(crate) fn new(callback: F) -> Self {
         Self {
             callback,
             beam: None,

@@ -618,13 +618,13 @@ mod tests {
             (self.callback)(at, access)
         }
         fn observe_clock(&mut self, clock: &CpuMasterTimeline) {
+            self.ppu.borrow_mut().synchronize(clock);
             self.beam.set(clock.synchronous_beam_position());
         }
         fn timeline_event(&mut self, event: CpuSynchronousTimelineEvent, processed_at: u64) {
             if matches!(event, CpuSynchronousTimelineEvent::HMax { .. }) {
                 self.apu.borrow_mut().end_scanline_at(processed_at).unwrap();
             }
-            self.ppu.borrow_mut().timeline_event(event);
         }
     }
     fn apu(at: u64) -> ApuHostPortTiming {
@@ -791,7 +791,17 @@ mod tests {
                 let mut devices = snes::Snes::new();
                 devices.write(0x2100, 0x80);
                 // Independent hardware owners; no values come from the probe.
-                let ppu = RefCell::new(super::super::native_ppu::NativePpuState::reset());
+                let mut timeline = CpuMasterTimeline::at_raster(
+                    field,
+                    snes::CpuRasterPosition::new(
+                        if case % 2 == 0 { 224 } else { 0 },
+                        if case % 2 == 0 { 1320 } else { 520 },
+                    ),
+                    snes::CpuBusWorkload::default(),
+                    snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+                );
+                timeline.begin_synchronous_timeline().unwrap();
+                let ppu = RefCell::new(super::super::native_ppu::NativePpuState::reset(&timeline));
                 let reset_beam = CpuSynchronousBeamPosition {
                     scanline: 0, cycles: 0, line_master_cycles: 1364, odd_field: false,
                 };
@@ -808,15 +818,6 @@ mod tests {
                 ppu.borrow_mut().write(0x2102, 0, reset_beam);
                 ppu.borrow_mut().write(0x2103, 0, reset_beam);
                 let beam = Cell::new(None);
-                let timeline = CpuMasterTimeline::at_raster(
-                    field,
-                    snes::CpuRasterPosition::new(
-                        if case % 2 == 0 { 224 } else { 0 },
-                        if case % 2 == 0 { 1320 } else { 520 },
-                    ),
-                    snes::CpuBusWorkload::default(),
-                    snes::CpuFieldTiming::NON_INTERLACE_EVEN,
-                );
                 let mut source = snes::RomCpuTimingProbe::new(machine, timeline,
                     snes::SourcePpuReadState::snes9x_reset()).unwrap();
                 let mut clock = source.timeline().clone();
@@ -921,6 +922,7 @@ mod tests {
                     assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, 0x805a, 0x1ff));
                 }
                 assert_eq!(ram, source.snes().ram, "{field}/{case}");
+                ppu.borrow_mut().synchronize(&clock);
                 assert_eq!(
                     ppu.borrow().read_state(),
                     *source.ppu_reads(),

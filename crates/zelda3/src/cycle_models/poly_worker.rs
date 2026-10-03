@@ -2,7 +2,7 @@
 //! this progress; the next NMI resumes the same partially drawn polygon.
 use super::{
     intro_clear::Access,
-    native_work::Work,
+    native_work::{Work, WorkBus},
     nmi_stack::NativeNmiContext,
     poly_buffer_clear::PolyBufferClear,
     poly_faces::PolyFaces,
@@ -13,6 +13,22 @@ use super::{
     poly_vertices::{PolyDivider, PolyVertices},
 };
 use snes::CpuMasterTimeline;
+
+struct DividerBus<'a, B> {
+    divider: &'a mut PolyDivider,
+    bus: B,
+}
+
+impl<B: WorkBus> WorkBus for DividerBus<'_, B> {
+    fn access(&mut self, at: u64, access: Access) -> u16 {
+        self.divider.access(access).unwrap_or_else(|| self.bus.access(at, access))
+    }
+    fn observe_clock(&mut self, clock: &CpuMasterTimeline) { self.bus.observe_clock(clock); }
+    fn end_scanline(&mut self, at: u64) { self.bus.end_scanline(at); }
+    fn timeline_event(&mut self, event: snes::cpu_timeline::CpuSynchronousTimelineEvent, at: u64) {
+        self.bus.timeline_event(event, at);
+    }
+}
 
 pub(crate) struct WorkerInstruction {
     pub(crate) master_cycles: u64,
@@ -61,7 +77,7 @@ impl PolyWorker {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        mut bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> WorkerInstruction {
         // Crossing a callee boundary costs no extra instruction or time. Only
         // the instruction implemented by the selected owner advances the CPU.
@@ -106,8 +122,7 @@ impl PolyWorker {
             Phase::Raster { raster, .. } => raster.defers_irq_mask_change(),
             _ => false,
         }.then_some(cpu.p & 4 != 0);
-        let divider = &mut self.divider;
-        let access = |at, event| divider.access(event).unwrap_or_else(|| bus(at, event));
+        let access = DividerBus { divider: &mut self.divider, bus };
         let master_cycles = match &mut self.phase {
             Phase::Wait(work) => work.step(cpu, clock, access),
             Phase::Clear(work) => work.step(cpu, clock, access).unwrap(),

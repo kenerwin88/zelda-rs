@@ -1294,6 +1294,7 @@ impl ZeldaState {
     pub(crate) fn clear_spc_driver_clock(&mut self) {
         self.audio.modern.driver_clock = None;
         self.native_startup_cpu = None;
+        self.native_ppu = None;
     }
 
     pub(crate) fn native_cpu_apu_access_pending(&self) -> bool {
@@ -1330,7 +1331,9 @@ impl ZeldaState {
         if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
             let origin = crate::spc_driver_clock::native_bootstrap_origin(upload)?;
             clock.configure_rom_bootstrap(&origin);
-            self.native_startup_cpu = Some(origin.into_cpu());
+            let (cpu, ppu) = origin.into_parts();
+            self.native_startup_cpu = Some(cpu);
+            self.native_ppu = Some(ppu);
             if cold_memory {
                 // Pinned S9xReset (cpu.cpp) fills all WRAM with $55. The
                 // native upload and memory initializer own the later stores;

@@ -1,8 +1,8 @@
 //! Retained file-selection initializer. Calls share the live CPU and stack;
 //! palette and graphics children retire their own bus work across interrupts.
+use super::native_work::WorkBus;
 use super::{
     default_graphics::DefaultGraphics,
-    intro_clear::Access,
     intro_palettes::{IntroPalettes, PaletteSource},
     native_tilesets::NativeTilesets,
     native_work::Work,
@@ -59,7 +59,7 @@ impl FileSelectInit {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete {
             return None;

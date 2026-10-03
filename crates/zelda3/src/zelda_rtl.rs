@@ -10612,11 +10612,14 @@ pub struct ZeldaState {
     intro_initialization_reset_obj_control_pending: bool,
     #[serde(skip)]
     rom_reset_frame_delay: u8,
-    /// Native reset continuation through first NMI acceptance. After that
-    /// handoff the stored clock is historical; the handler/main clock is not
-    /// yet retained. Resumed diagnostic checkpoints do not reconstruct it.
+    /// Native CPU continuation and clock from reset. Resumed diagnostic
+    /// checkpoints do not reconstruct this hardware history.
     #[serde(skip)]
     pub(crate) native_startup_cpu: Option<crate::spc_driver_clock::NativeBootstrapCpu>,
+    /// Independent bus state stays accessible while a native caller owns
+    /// the CPU continuation outside ZeldaState during NMI or DMA.
+    #[serde(skip)]
+    pub(crate) native_ppu: Option<crate::cycle_models::native_ppu::NativePpuState>,
     #[serde(skip)]
     intro_memory_darken_frame_delay: u8,
     save_quit_reset_hold: bool,
@@ -13462,6 +13465,7 @@ impl ZeldaState {
             intro_initialization_reset_obj_control_pending: false,
             rom_reset_frame_delay: 0,
             native_startup_cpu: None,
+            native_ppu: None,
             intro_memory_darken_frame_delay: 0,
             save_quit_reset_hold: false,
             save_quit_reset_state_published: false,
@@ -13707,6 +13711,7 @@ impl ZeldaState {
 
     pub fn zelda_reset(&mut self, preserve_sram: bool) {
         self.native_startup_cpu = None;
+        self.native_ppu = None;
         self.dialogue_initialization_caller = None;
         self.frame_ctr_dbg = 0;
         self.original_timing_owner = if self.rom_startup_timing {
@@ -13890,6 +13895,7 @@ impl ZeldaState {
         self.rom_startup_timing = enabled;
         if !enabled {
             self.native_startup_cpu = None;
+            self.native_ppu = None;
             self.native_main_force_blank_ppu = None;
             self.dialogue_initialization_caller = None;
             if self.frame_ctr_dbg != 0 {
@@ -14910,7 +14916,8 @@ impl ZeldaState {
                 self.native_startup_cpu=Some(cpu);
                 return Some(false);
             }
-            match cpu.startup.step(&mut cpu.timeline, &mut self.ram, &mut self.sram, &mut cpu.ppu) {
+            match cpu.startup.step(&mut cpu.timeline, &mut self.ram, &mut self.sram,
+                self.native_ppu.as_mut().expect("cold CPU retains its PPU bus owner")) {
                 StartupStep::Instruction => {}
                 StartupStep::ClearWindow => self.zelda_ppu_write_word(0x212e, 0),
                 StartupStep::MemoryComplete => {
@@ -15036,7 +15043,8 @@ impl ZeldaState {
             .or_else(||crate::cycle_models::follower_graphics::table_byte(address))
             .or_else(||load_gfx::native_tileset_table_byte(address));
         let mut dma=std::mem::take(&mut self.dma);
-        let boundary = cpu.startup.advance_intro_clear(&mut cpu.timeline, &mut dma, |at, event| {
+        let mut native_ppu = self.native_ppu.take();
+        let boundary = cpu.startup.advance_intro_clear(&mut cpu.timeline, &mut dma, &mut native_ppu, |at, event| {
             use crate::cycle_models::startup_bus::{CallerOwner, StartupAccess};
             let (access, palette_source, caller_owner) = match event {
                 StartupAccess::Memory(access, palette_source, owner) => (access, palette_source, owner),
@@ -15480,6 +15488,8 @@ impl ZeldaState {
                 Access::Vblank { .. } => 0,
             }
         });
+        if let Some(ppu) = native_ppu.as_mut() { ppu.synchronize(&cpu.timeline); }
+        self.native_ppu = native_ppu;
         self.dma=dma;
         let returned = match boundary {
             IntroClearBoundary::AcceptNmi(mut context) => {
@@ -15632,7 +15642,12 @@ impl ZeldaState {
             .and_then(|cpu|cpu.startup.entered_module_context()) else {return false};
         let mut cpu=self.native_startup_cpu.take().unwrap();
         let enter=if name_file {intro_entry::enter_name_file}else if kill_file {intro_entry::enter_kill_file}else{intro_entry::enter_file_select};
-        let cycles=enter(&mut context,&mut cpu.timeline,|at,access|match access {
+        let cycles=enter(&mut context,&mut cpu.timeline,|clock: &snes::CpuMasterTimeline,access| {
+            let at = clock.clock_master_cycles();
+            if let Access::WriteByte(address @ 0x2100..=0x213f, value) = access {
+                self.native_ppu_bus_write(clock, address, value);
+            }
+            match access {
             Access::ReadByte(a)=>u16::from(intro_entry::table_byte(a).unwrap_or_else(||{assert!(a<0x2000);self.ram[a as usize]})),
             Access::ReadWord(a)=>{
                 let read=|a|intro_entry::table_byte(a).unwrap_or_else(||{assert!(a<0x2000);self.ram[a as usize]});
@@ -15651,7 +15666,7 @@ impl ZeldaState {
             }
             Access::WriteWord(a,value)=>{assert!(matches!(a,0..=3|0x100..=0x1fe));write_le_u16(&mut self.ram,usize::from(a),value);0}
             Access::WriteLongWord(..)=>unreachable!(),
-        });
+        }});
         crate::cycle_ledger::charge_routine(if name_file {0x0cd88a}else if kill_file {0x0cd485}else{0x0ccd7d},cycles);
         cpu.startup.enter_file_select(context);self.native_startup_cpu=Some(cpu);true
     }
@@ -15709,7 +15724,11 @@ impl ZeldaState {
         assert_eq!(self.game_state.display.hdma_enable_mask, 0,
             "initial intro setup cannot replace an active HDMA continuation");
         let mut cpu = self.native_startup_cpu.take().unwrap();
-        let cycles = intro_entry::enter_half_slot(&mut context, &mut cpu.timeline, |at, access| {
+        let cycles = intro_entry::enter_half_slot(&mut context, &mut cpu.timeline, |clock, access| {
+            let at = clock.clock_master_cycles();
+            if let Access::WriteByte(address @ 0x2100..=0x213f, value) = access {
+                self.native_ppu_bus_write(clock, address, value);
+            }
             if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                 if let Access::WriteByte(address @ (0x2100..=0x213f | 0x420c), value) = access {
                     eprintln!("native-intro-ppu clock={at} address={address:04x} value={value:02x}");
@@ -15833,7 +15852,11 @@ impl ZeldaState {
         let Some(mut context) = self.native_startup_cpu.as_ref()
             .and_then(|cpu| cpu.startup.intro_setup_after_half_slot_context()) else { return false };
         let mut cpu = self.native_startup_cpu.take().unwrap();
-        let cycles = intro_entry::finish_setup(&mut context, &mut cpu.timeline, |at, access| {
+        let cycles = intro_entry::finish_setup(&mut context, &mut cpu.timeline, |clock, access| {
+            let at = clock.clock_master_cycles();
+            if let Access::WriteByte(address @ 0x2100..=0x213f, value) = access {
+                self.native_ppu_bus_write(clock, address, value);
+            }
             if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                 eprintln!("native-intro-setup-bus clock={at} access={access:?}");
             }
@@ -15945,7 +15968,11 @@ impl ZeldaState {
             Some(streams)
         } else {None};
         let mut cpu = self.native_startup_cpu.take().unwrap();
-        let bus = |at, access| {
+        let bus = |clock: &snes::CpuMasterTimeline, access| {
+            let at = clock.clock_master_cycles();
+            if let Access::WriteByte(address @ 0x2100..=0x213f, value) = access {
+                self.native_ppu_bus_write(clock, address, value);
+            }
             if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                 eprintln!("native-intro-clear-entry-bus clock={at} access={access:?}");
             }

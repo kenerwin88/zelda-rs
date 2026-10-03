@@ -21,6 +21,7 @@ pub(crate) struct NativeBootstrapOrigin {
     pub(super) apu: ApuState,
     pub(super) apu_clock: snes::snes9x_apu_clock::Snes9xApuClockCheckpoint,
     cpu: NativeBootstrapCpu,
+    ppu: crate::cycle_models::native_ppu::NativePpuState,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,12 +30,11 @@ pub(crate) struct NativeBootstrapCpu {
     pub(crate) upload_pointer: [u8; 3],
     pub(crate) startup: crate::cycle_models::startup::Startup,
     pub(crate) poly_worker: Option<crate::cycle_models::poly_worker::PolyWorker>,
-    pub(crate) ppu: crate::cycle_models::native_ppu::NativePpuState,
 }
 
 impl NativeBootstrapOrigin {
-    pub(crate) fn into_cpu(self) -> NativeBootstrapCpu {
-        self.cpu
+    pub(crate) fn into_parts(self) -> (NativeBootstrapCpu, crate::cycle_models::native_ppu::NativePpuState) {
+        (self.cpu, self.ppu)
     }
 }
 
@@ -78,12 +78,13 @@ impl<F: FnMut(PortAccess)> ColdUpload<F> {
         timeline
             .begin_synchronous_timeline()
             .map_err(|e| e.to_string())?;
+        let ppu = crate::cycle_models::native_ppu::NativePpuState::reset(&timeline);
         let mut this = Self {
             timeline,
             apu,
             observe,
             upload_bank: 0x19,
-            ppu: crate::cycle_models::native_ppu::NativePpuState::reset(),
+            ppu,
         };
         this.work(16)?;
         Ok(this)
@@ -96,18 +97,18 @@ impl<F: FnMut(PortAccess)> ColdUpload<F> {
             return Err("native bootstrap receiver did not finish".to_owned());
         }
         let apu = &mut self.apu;
-        let ppu = &mut self.ppu;
         self.timeline
             .advance_synchronous_after_semantics_with(cycles, |event, at| {
-                ppu.timeline_event(event);
                 if matches!(event, CpuSynchronousTimelineEvent::HMax { .. }) {
                     apu.end_scanline_at(at.master_cycles())
                         .map_err(|e| e.to_string())?;
                 }
                 // Reset disables HDMA/DMA; NMI remains masked throughout this
                 // upload. The timeline itself owns refresh and field rollover.
-                Ok(0)
-            })
+                Ok::<_, String>(0)
+            })?;
+        self.ppu.synchronize(&self.timeline);
+        Ok(())
     }
 
     fn instructions(&mut self, costs: &[u32]) -> Result<(), String> {
@@ -283,8 +284,8 @@ impl<F: FnMut(PortAccess)> ColdUpload<F> {
                 poly_worker: None,
                 timeline: self.timeline,
                 upload_pointer: [0x00, 0x80, self.upload_bank],
-                ppu: self.ppu,
             },
+            ppu: self.ppu,
         })
     }
 }
@@ -307,7 +308,7 @@ mod tests {
         use crate::cycle_models::startup::StartupStep;
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
-        let mut cpu = native_bootstrap_origin(&rom[0xc8000..0xd5337]).unwrap().into_cpu();
+        let (mut cpu, mut ppu) = native_bootstrap_origin(&rom[0xc8000..0xd5337]).unwrap().into_parts();
         let mut ram = vec![0x55; 0x20000];
         ram[..3].copy_from_slice(&cpu.upload_pointer);
         let mut sram = vec![0xff; 0x2000];
@@ -325,14 +326,14 @@ mod tests {
         let mut instructions = 0;
         let context = loop {
             assert!(instructions < 100_000);
-            let step = cpu.startup.step(&mut cpu.timeline, &mut ram, &mut sram, &mut cpu.ppu);
+            let step = cpu.startup.step(&mut cpu.timeline, &mut ram, &mut sram, &mut ppu);
             match step {
                 StartupStep::Instruction | StartupStep::ClearWindow => {
                     let receipt = source.step().unwrap();
                     instructions += 1;
                     if receipt.accepted_interrupt.is_some() {
                         assert_eq!(cpu.startup.step(&mut cpu.timeline, &mut ram, &mut sram,
-                            &mut cpu.ppu), StartupStep::AcceptNmi);
+                            &mut ppu), StartupStep::AcceptNmi);
                         let mut context = cpu.startup.accepted_context();
                         context.accept_interrupt_clocked(&mut ram, &mut cpu.timeline);
                         assert_eq!(cpu.timeline, *source.machine().timeline());
@@ -349,7 +350,7 @@ mod tests {
         assert_eq!(sram.iter().zip(&source.machine().snes().cart.ram).position(|(a, b)| a != b), None,
             "first differing startup SRAM byte");
         // Reset/upload/initialization have not read any PPU registers.
-        assert_eq!(cpu.ppu.read_state(), snes::SourcePpuReadState::snes9x_reset());
+        assert_eq!(ppu.read_state(), snes::SourcePpuReadState::snes9x_reset());
         let expected = &source.machine().snes().cpu;
         assert_eq!((context.a, context.x, context.y, context.d, context.db, context.bank,
             context.pc, context.sp, context.p),
@@ -406,7 +407,7 @@ mod tests {
         };
         let mut clock = native_bootstrap_origin(&rom[0xc8000..0xd5337])
             .unwrap()
-            .into_cpu()
+            .into_parts().0
             .timeline;
         let mut ram = vec![0x55; 0x20000];
         let mut sram = vec![0xff; 0x2000];

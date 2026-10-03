@@ -759,20 +759,21 @@ impl ZeldaState {
                 self.native_poly_nmi_tail(context,clock,thread_programming.expect("threaded NMI retains its IRQ owner"));
             } else {
                 let programming=context.initial_register_tail(clock,
-                    |at, access| {
+                    |clock, access| {
                         use crate::cycle_models::nmi_stack::NmiTailAccess as Access;
                         match access {
                             // LDA absolute leaves $42 on open bus; bit 7 is the
                             // scheduler's line at this bus timestamp, acknowledged here.
-                            Access::ReadByte(0x4211)=>(u16::from(irq_deadline.take().is_some_and(|deadline|at>=deadline))<<7)|0x42,
+                            Access::ReadByte(0x4211)=>(u16::from(irq_deadline.take().is_some_and(|deadline|clock.clock_master_cycles()>=deadline))<<7)|0x42,
                             Access::WriteByte(0x4200|0x4207..=0x420a,_)=>0,
-                            _=>self.native_nmi_tail_access(at, access),
+                            _=>self.native_nmi_tail_access(clock, access),
                         }
                     });
                 if let Some(programming)=programming {
                     *thread_programming.expect("ordinary NMI retains its IRQ owner")=programming;
                 }
             }
+            if let Some(ppu) = self.native_ppu.as_mut() { ppu.synchronize(clock); }
             self.record_completed_ppu_registers_for_display_boundary();
             if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                 eprintln!("native-nmi-rti pc={:02x}:{:04x} clock={} raster={:?}",
@@ -826,8 +827,10 @@ impl ZeldaState {
         use crate::cycle_models::{intro_clear::Access,poly_interrupt::PolyInterrupt};
         assert!(self.poly_completed_upload.is_none(),"native poly tail requires live buffer ownership");
         let mut dma=std::mem::take(&mut self.dma);
+        let mut native_ppu = self.native_ppu.take();
         let mut work=PolyInterrupt::nmi();
-        while let Some(cycles)=work.step(context,clock,&mut dma,|at,access| {
+        while let Some(cycles)=work.step(context,clock,&mut dma,
+            crate::cycle_models::native_ppu::NativePpuBus::new(&mut native_ppu, |at,access| {
             match access {
                 Access::Read(address,width) => {
                     let offset=if (0x7e0000..0x800000).contains(&address) {
@@ -861,8 +864,10 @@ impl ZeldaState {
                 }
                 Access::Vblank {..}=>panic!("poly NMI crossed another NMI deadline"),
             }
-        }) {crate::cycle_ledger::charge(cycles);}
+        })) {crate::cycle_ledger::charge(cycles);}
         programming.irq_deadline=work.irq_deadline();
+        if let Some(ppu) = native_ppu.as_mut() { ppu.synchronize(clock); }
+        self.native_ppu = native_ppu;
         self.dma=dma;
     }
 
@@ -947,7 +952,10 @@ impl ZeldaState {
         let mut irq=PolyInterrupt::irq();
         let mut irq_pending=true;
         let mut nmitimen=None;
-        while let Some(cycles)=irq.step_with_beam(context,clock,&mut dma,|at,access,beam| match access {
+        let mut native_ppu = self.native_ppu.take();
+        while let Some(cycles)=irq.step_on_bus(context,clock,&mut dma,
+            crate::cycle_models::native_ppu::NativePpuBus::new(&mut native_ppu,
+                crate::cycle_models::native_work::BeamBus::new(|at,access,beam: Option<snes::cpu_timeline::CpuSynchronousBeamPosition>| match access {
             Access::Read(0x4211,1)=>{
                 // TIMEUP preserves the low seven bits from LDA absolute's
                 // last operand fetch. Reading it acknowledges the live line.
@@ -979,7 +987,9 @@ impl ZeldaState {
                     .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);0
             }
             Access::Vblank {..}=>panic!("poly IRQ crossed NMI before its return"),
-        }) {crate::cycle_ledger::charge_routine(0x0082d8,cycles);}
+        }))) {crate::cycle_ledger::charge_routine(0x0082d8,cycles);}
+        if let Some(ppu) = native_ppu.as_mut() { ppu.synchronize(clock); }
+        self.native_ppu = native_ppu;
         assert!(!irq_pending,"poly IRQ did not acknowledge its line");
         if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
             eprintln!("native-poly-irq-return clock={} raster={:?} context={context:?}",
@@ -989,7 +999,7 @@ impl ZeldaState {
         nmitimen
     }
 
-    fn native_nmi_tail_access(&mut self, at: u64,
+    fn native_nmi_tail_access(&mut self, clock: &snes::CpuMasterTimeline,
         access: crate::cycle_models::nmi_stack::NmiTailAccess) -> u16 {
         use crate::cycle_models::nmi_stack::NmiTailAccess as Access;
         match access {
@@ -1001,9 +1011,11 @@ impl ZeldaState {
                 0
             }
             Access::WriteByte(address @ (0x2111 | 0x2112), value) => {
-                self.native_bg3_scroll_write(at, address, value); 0
+                self.native_ppu_bus_write(clock, address, value);
+                self.native_bg3_scroll_write(clock.clock_master_cycles(), address, value); 0
             }
             Access::WriteByte(address @ 0x2100..=0x213f, value) => {
+                self.native_ppu_bus_write(clock, address, value);
                 self.zelda_ppu_write(u32::from(address), value); 0
             }
             _ => panic!("unsupported native NMI tail access {access:?}"),
@@ -1055,7 +1067,10 @@ impl ZeldaState {
             CoreAccess::WriteByte(address, value) => {
                 match address {
                     0x17 => { assert_eq!(value, 0); self.take_pending_nmi_subroutine(); }
-                    0x2100..=0x213f => self.zelda_ppu_write(u32::from(address), value),
+                    0x2100..=0x213f => {
+                        self.native_ppu_bus_write(clock, address, value);
+                        self.zelda_ppu_write(u32::from(address), value);
+                    }
                     0x4300..=0x437f => self.dma.write_register(address, value),
                     _ => panic!("unsupported native NMI core write {address:04x}"),
                 }
@@ -1097,7 +1112,10 @@ impl ZeldaState {
                 } else {
                     assert_eq!(width,1);
                     match address {
-                        0x2100..=0x213f => self.zelda_ppu_write(address,value as u8),
+                        0x2100..=0x213f => {
+                            self.native_ppu_bus_write(clock, address as u16, value as u8);
+                            self.zelda_ppu_write(address,value as u8);
+                        }
                         0x4300..=0x437f => self.dma.write_register(address as u16,value as u8),
                         _ => panic!("unowned stripe store {address:06x}"),
                     }
@@ -1110,12 +1128,15 @@ impl ZeldaState {
                     .map(|(_,c)|if c.size==0 {65536}else{usize::from(c.size)}).sum();
                 self.account_nmi_dma_run(mask.count_ones(),bytes);
                 let ram=&self.ram;let assets=self.assets.as_ref();let ppu=&mut self.ppu;
+                let bus_ppu = &mut self.native_ppu;
                 let mut words=Vec::new();
-                self.dma.run_synchronous_forward_ppu(clock,mask,|_,_,address,target| {
+                self.dma.run_synchronous_forward_ppu_with_clock(clock,mask,|clock,_,address,target| {
                     assert!(matches!(target,0x18|0x19));
                     words.push(usize::from(ppu.vram_pointer&0x7fff));
-                    ppu.write(target,native_stripe_source_byte(ram,assets,address));
-                });
+                    let value = native_stripe_source_byte(ram,assets,address);
+                    if let Some(ppu) = bus_ppu { ppu.write_clocked(clock, 0x2100 | u16::from(target), value); }
+                    ppu.write(target,value);
+                }, |_, _| {});
                 words.sort_unstable();words.dedup();
                 for word in words {self.mark_effective_dma_vram_word(word);}
                 0
@@ -1141,9 +1162,10 @@ impl ZeldaState {
         self.account_nmi_dma_run(mask.count_ones(), bytes);
         let ram = &self.ram;
         let ppu = &mut self.ppu;
+        let bus_ppu = &mut self.native_ppu;
         let mut written_words = Vec::new();
         let mut touched_oam = false; let mut touched_cgram = false;
-        self.dma.run_synchronous_forward_ppu(clock, mask, |_, _, address, target| {
+        self.dma.run_synchronous_forward_ppu_with_clock(clock, mask, |clock, _, address, target| {
             let bank = address >> 16; let low = address as u16;
             let value = if matches!(bank,0x7e|0x7f) { ram[(address-0x7e0000) as usize] }
                 else { assert!(bank & 0x40 == 0 && low < 0x2000); ram[usize::from(low)] };
@@ -1153,8 +1175,9 @@ impl ZeldaState {
                 0x22 => touched_cgram = true,
                 _ => unreachable!("validated maintenance DMA destination"),
             }
+            if let Some(ppu) = bus_ppu { ppu.write_clocked(clock, 0x2100 | u16::from(target), value); }
             ppu.write(target,value);
-        });
+        }, |_, _| {});
         written_words.sort_unstable();
         written_words.dedup();
         for &word in &written_words { self.mark_effective_dma_vram_word(word); }
@@ -1203,7 +1226,8 @@ impl ZeldaState {
         let ram = &self.ram;
         let graphics = self.assets.as_ref().and_then(|assets| assets.asset(57));
         let ppu = &mut self.ppu;
-        self.dma.run_synchronous_forward_ppu(clock, mask, |_, channel, address, target| {
+        let bus_ppu = &mut self.native_ppu;
+        self.dma.run_synchronous_forward_ppu_with_clock(clock, mask, |clock, channel, address, target| {
             if previous != Some(channel) {
                 segments.push((usize::from(ppu.vram_pointer & 0x7fff), address,
                     usize::from(channels[usize::from(channel)].size)));
@@ -1217,8 +1241,9 @@ impl ZeldaState {
                 0x10 if low >= 0x8000 => graphics.expect("native Link DMA requires its graphics asset")[usize::from(low - 0x8000)],
                 _ => panic!("unsupported native core DMA source {address:06x}"),
             };
+            if let Some(ppu) = bus_ppu { ppu.write_clocked(clock, 0x2100 | u16::from(target), value); }
             ppu.write(target, value);
-        });
+        }, |_, _| {});
         // Receipts and CHR identities describe transfers just performed. They
         // never copy pixels again or substitute captured main-thread operands.
         for (dst, source, bytes) in segments {
@@ -1250,9 +1275,10 @@ impl ZeldaState {
     }
 
     fn native_nmi_header_access(
-        &mut self, at: u64, access: crate::cycle_models::nmi_stack::NmiHeaderAccess,
+        &mut self, clock: &snes::CpuMasterTimeline, access: crate::cycle_models::nmi_stack::NmiHeaderAccess,
     ) -> u8 {
         use crate::cycle_models::nmi_stack::NmiHeaderAccess::*;
+        let at = clock.clock_master_cycles();
         match access {
             Read(address @ 0x2140..=0x2143) => self.native_nmi_port_at(at, (address - 0x2140) as u8, None),
             Write(address @ 0x2140..=0x2143, value) => self.native_nmi_port_at(at, (address - 0x2140) as u8, Some(value)),
@@ -1269,7 +1295,10 @@ impl ZeldaState {
                 self.save_ambient_sound_effect_as_last();
                 0
             }
-            Write(0x2100, value) => { self.zelda_ppu_write(0x2100, value); 0 }
+            Write(0x2100, value) => {
+                self.native_ppu_bus_write(clock, 0x2100, value);
+                self.zelda_ppu_write(0x2100, value); 0
+            }
             Write(0x420c, value) => {
                 for (i, channel) in self.dma.channel.iter_mut().enumerate() {
                     channel.hdma_active = value & (1 << i) != 0;

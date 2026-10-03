@@ -114,11 +114,13 @@ impl NativeTilemapErase {
                 );
                 let start = w.clock.clock_master_cycles();
                 let bus = std::cell::RefCell::new(&mut w.bus);
-                self.dma_end = dma.run_synchronous_forward_ppu_with_timed_events(
+                self.dma_end = dma.run_synchronous_forward_ppu_with_clock(
                     w.clock,
                     w.cpu.y as u8,
-                    |at, _, source, register| {
+                    |clock, _, source, register| {
                         let mut bus = bus.borrow_mut();
+                        bus.observe_clock(clock);
+                        let at = clock.clock_master_cycles();
                         let value = bus.access(at, Access::Read(source, 1));
                         bus.access(at, Access::Write(0x2100 + u32::from(register), value, 1));
                     },

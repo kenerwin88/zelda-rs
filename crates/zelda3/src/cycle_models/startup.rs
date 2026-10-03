@@ -147,10 +147,8 @@ impl IntroGraphics {
         match self { Self::LoadFile(work) => work.routine(), Self::Items(work) => work.routine(), Self::Follower(work) => work.routine(), Self::Darkening(work)=>work.routine(), Self::Poly(work)=>work.routine(), Self::Animation(work)=>work.routine(), Self::Title(work)=>work.routine(), Self::FileSelect(work)=>work.routine(), Self::FileMenu(work)=>work.routine(), Self::FileStripes(work)=>work.routine(), Self::FileActive(work)=>work.routine(),Self::KillFile(work)=>work.routine(),Self::NameSetup(work)=>work.routine(),Self::NameActive(work)=>work.routine() }
     }
     fn step(&mut self, cpu: &mut super::nmi_stack::NativeNmiContext, clock: &mut CpuMasterTimeline, dma: &mut snes::DmaState,
-        mut bus: impl WorkBus) -> Option<u64> {
+        bus: impl WorkBus) -> Option<u64> {
         if let Self::LoadFile(work) = self { return work.step(cpu, clock, dma, bus); }
-        // Earlier startup owners still expose their memory-only callback API.
-        let bus = |at, access| bus.access(at, access);
         match self { Self::LoadFile(_) => unreachable!(), Self::Items(work) => work.step(cpu, clock, bus), Self::Follower(work) => work.step(cpu, clock, bus),Self::Darkening(work)=>work.step(cpu,clock,dma,bus),Self::Poly(work)=>work.step(cpu,clock,bus),Self::Animation(work)=>work.step(cpu,clock,bus),Self::Title(work)=>work.step(cpu,clock,bus),Self::FileSelect(work)=>work.step(cpu,clock,bus),Self::FileMenu(work)=>work.step(cpu,clock,dma,bus),Self::FileStripes(work)=>work.step(cpu,clock,bus),Self::FileActive(work)=>work.step(cpu,clock,bus),Self::KillFile(work)=>work.step(cpu,clock,bus),Self::NameSetup(work)=>work.step(cpu,clock,dma,bus),Self::NameActive(work)=>work.step(cpu,clock,bus) }
     }
 }
@@ -535,6 +533,7 @@ impl Startup {
     }
 
     pub(crate) fn advance_intro_clear(&mut self, clock: &mut CpuMasterTimeline, dma: &mut snes::DmaState,
+        ppu: &mut Option<super::native_ppu::NativePpuState>,
         mut bus: impl FnMut(u64, StartupAccess) -> u16) -> IntroClearBoundary {
         assert_eq!(self.phase, Phase::IntroClearActive);
         loop {
@@ -585,11 +584,11 @@ impl Startup {
                     IntroGraphics::LoadFile(work) if work.parent_active() => super::startup_bus::CallerOwner::LoadFileParent,
                     _ => super::startup_bus::CallerOwner::Startup,
                 };
-                let cycles=graphics.step(self.context.as_mut().unwrap(),clock,dma, CallerBus {
+                let cycles=graphics.step(self.context.as_mut().unwrap(),clock,dma, super::native_ppu::NativePpuBus::new(ppu, CallerBus {
                     callback: &mut bus, palette: palette_source, vblank: &mut vblank,
                     owner,
                     nmitimen: &mut nmitimen, hdma: &mut hdma, in_vblank: false,
-                }).expect("completed graphics must return to its caller");
+                })).expect("completed graphics must return to its caller");
                 let enable_in_vblank = nmitimen.is_some_and(|(value, blank)| value & 0x80 != 0 && !self.nmi_enabled && blank);
                 if let Some((value, _)) = nmitimen {
                     assert_eq!(value & 0x30, 0, "load-game caller does not program a vertical IRQ");
@@ -751,7 +750,7 @@ impl Startup {
         }
         if let Phase::Wait(wait) = &mut self.phase {
             let mut vblank = None;
-            wait.step_clocked_observed(self.context.as_mut().unwrap(), clock, |_, access| {
+            wait.step_clocked(self.context.as_mut().unwrap(), clock, |_, access| {
                 match access {
                     super::main_wait::WaitAccess::ReadLatch => ram[0x12],
                     super::main_wait::WaitAccess::Vblank { field, at } => {
@@ -759,7 +758,8 @@ impl Startup {
                         0
                     }
                 }
-            }, |event, _| ppu.timeline_event(event));
+            });
+            ppu.synchronize(clock);
             self.note_wait_vblank(vblank);
             if matches!(self.phase,Phase::Wait(MainWait::Complete)) {
                 self.phase=Phase::Complete;
@@ -817,9 +817,9 @@ impl Startup {
             // semantic boundary. In particular HMax may separate the writes.
             clock.advance_synchronous_pcbase_opcode_fetch(8);
             self.advance_reset_clock(clock, ppu, 16);
-            ppu.write(0x212e, 0, clock.synchronous_beam_position().unwrap());
+            ppu.write_clocked(clock, 0x212e, 0);
             self.advance_reset_clock(clock, ppu, 6);
-            ppu.write(0x212f, 0, clock.synchronous_beam_position().unwrap());
+            ppu.write_clocked(clock, 0x212f, 0);
             self.advance_reset_clock(clock, ppu, 6);
         } else {
             self.advance_reset_clock(clock, ppu, cycles);
@@ -831,7 +831,6 @@ impl Startup {
         ppu: &mut super::native_ppu::NativePpuState, cycles: u32) {
         clock
             .advance_synchronous_after_semantics_with(cycles, |event, _| {
-                ppu.timeline_event(event);
                 if let CpuSynchronousTimelineEvent::HMax {
                     completed_field_index,
                     completed_scanline: 224,
@@ -851,6 +850,7 @@ impl Startup {
                 Ok::<u32, String>(0)
             })
             .expect("native reset caller clock");
+        ppu.synchronize(clock);
     }
 
     /// Resume the saved wait instruction on the same clock after actual RTI.

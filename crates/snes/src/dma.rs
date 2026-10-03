@@ -80,6 +80,19 @@ impl DmaState {
         clock: &mut crate::CpuMasterTimeline,
         mask: u8,
         mut transfer: impl FnMut(u64, u8, u32, u8),
+        event: impl FnMut(crate::cpu_timeline::CpuSynchronousTimelineEvent, u64),
+    ) -> Option<u64> {
+        self.run_synchronous_forward_ppu_with_clock(clock, mask,
+            |clock, channel, address, target| transfer(clock.clock_master_cycles(), channel, address, target), event)
+    }
+
+    /// The transfer sees the processed-event cursor as well as the physical
+    /// clock. Non-draining setup may cross HMax before the first byte write.
+    pub fn run_synchronous_forward_ppu_with_clock(
+        &mut self,
+        clock: &mut crate::CpuMasterTimeline,
+        mask: u8,
+        mut transfer: impl FnMut(&crate::CpuMasterTimeline, u8, u32, u8),
         mut event: impl FnMut(crate::cpu_timeline::CpuSynchronousTimelineEvent, u64),
     ) -> Option<u64> {
         assert!(!self.dma_busy);
@@ -108,7 +121,7 @@ impl DmaState {
             loop {
                 let a = (u32::from(c.a_bank) << 16) | u32::from(c.a_adr);
                 let b = c.b_adr.wrapping_add(B_ADR_OFFSETS[usize::from(c.mode)][phase]);
-                transfer(clock.clock_master_cycles(), i as u8, a, b);
+                transfer(clock, i as u8, a, b);
                 if !c.fixed {
                     c.a_adr = if c.decrement { c.a_adr.wrapping_sub(1) }
                         else { c.a_adr.wrapping_add(1) };

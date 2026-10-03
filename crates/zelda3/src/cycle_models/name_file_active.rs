@@ -1,7 +1,9 @@
 //! Active name entry retains cursor motion, character stripes and save checksum
 //! work on the interrupted CPU, including the real nested return stack.
+#[cfg(test)]
+use super::intro_clear::Access;
+use super::native_work::WorkBus;
 use super::{
-    intro_clear::Access,
     native_work::Work,
     nmi_stack::{NativeNmiContext, CARRY, NEGATIVE, ZERO},
 };
@@ -38,7 +40,7 @@ impl NameFileActive {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete {
             return None;

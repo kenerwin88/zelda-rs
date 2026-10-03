@@ -1,8 +1,8 @@
 //! Retained intro poly-thread initializer. The upload, thread stack copy,
 //! palette and actor stores retire on the caller's live bus and clock.
+use super::native_work::WorkBus;
 use super::{
     common_sprite_graphics::CommonSpriteGraphics,
-    intro_clear::Access,
     native_work::Work,
     nmi_stack::{NativeNmiContext, NEGATIVE},
 };
@@ -108,7 +108,7 @@ impl IntroPolyInit {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         use Phase::*;
         if self.complete() {
@@ -394,7 +394,7 @@ impl IntroPolyInit {
         Some(w.cycles)
     }
 }
-fn store_abs<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, a: u16, width: u8) {
+fn store_abs<B: WorkBus>(w: &mut Work<'_, B>, a: u16, width: u8) {
     w.drain(16);
     w.write(
         w.absolute(a),
@@ -402,13 +402,13 @@ fn store_abs<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, a: u16, width: u
         width,
     );
 }
-fn call_short<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, pc: u16) {
+fn call_short<B: WorkBus>(w: &mut Work<'_, B>, pc: u16) {
     w.drain(16);
     w.drain(6);
     w.push(w.cpu.pc + 2, 2);
     w.cpu.pc = pc;
 }
-fn call_long<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, bank: u8, pc: u16) {
+fn call_long<B: WorkBus>(w: &mut Work<'_, B>, bank: u8, pc: u16) {
     w.drain(24);
     w.drain(6);
     w.push(u16::from(w.cpu.bank), 1);

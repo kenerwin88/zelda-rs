@@ -1,8 +1,9 @@
 //! Live save validation, backup repair, and descending sprite-table clear.
 //! Checksums and every partially completed store remain CPU-owned.
+#[cfg(test)]
+use super::intro_clear::Access;
 use super::{
-    intro_clear::Access,
-    native_work::Work,
+    native_work::{Work, WorkBus},
     nmi_stack::{NativeNmiContext, NEGATIVE, ZERO},
 };
 use snes::CpuMasterTimeline;
@@ -31,7 +32,7 @@ impl SramValidate {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete {
             return None;

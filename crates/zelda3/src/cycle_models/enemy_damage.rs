@@ -1,9 +1,8 @@
 //! Enemy damage initialization retains its compressed source pointer and
 //! expands each nibble from the live output buffer, including its untouched tail.
 use super::{
-    intro_clear::Access,
     native_decompress::NativeDecompression,
-    native_work::Work,
+    native_work::{Work, WorkBus},
     nmi_stack::{NativeNmiContext, CARRY},
 };
 use snes::CpuMasterTimeline;
@@ -36,7 +35,7 @@ impl EnemyDamage {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete {
             return None;

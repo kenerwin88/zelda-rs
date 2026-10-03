@@ -1,8 +1,7 @@
 //! Retained scene-sprite drawing and fixed-point movement. The CPU, stack,
 //! live coordinates and shared OAM cursor remain owned across each instruction.
 use super::{
-    intro_clear::Access,
-    native_work::Work,
+    native_work::{Work, WorkBus},
     nmi_stack::{NativeNmiContext, CARRY, NEGATIVE, ZERO},
 };
 use snes::CpuMasterTimeline;
@@ -31,7 +30,7 @@ impl MoveTriangle {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete() {
             return None;
@@ -160,7 +159,7 @@ impl AddObjectsToOam {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete() {
             return None;
@@ -306,14 +305,14 @@ impl AddObjectsToOam {
         Some(w.cycles)
     }
 }
-fn indexed_read<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, base: u16, width: u8) -> u16 {
+fn indexed_read<B: WorkBus>(w: &mut Work<'_, B>, base: u16, width: u8) -> u16 {
     w.drain(16);
     if w.cpu.p & 0x10 == 0 || (base & 255) + w.cpu.x > 255 {
         w.drain(6);
     }
     w.read(w.absolute(base.wrapping_add(w.cpu.x)), width)
 }
-fn indexed_store<B: FnMut(u64, Access) -> u16>(
+fn indexed_store<B: WorkBus>(
     w: &mut Work<'_, B>,
     base: u16,
     value: u16,
@@ -326,7 +325,7 @@ fn indexed_store<B: FnMut(u64, Access) -> u16>(
         width,
     );
 }
-fn table_read<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, width: u8) -> u16 {
+fn table_read<B: WorkBus>(w: &mut Work<'_, B>, width: u8) -> u16 {
     w.drain(8);
     let pointer = w.read(8, 2);
     if w.cpu.p & 0x10 == 0 || (pointer & 255) + w.cpu.y > 255 {
@@ -334,7 +333,7 @@ fn table_read<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, width: u8) -> u
     }
     w.read(w.absolute(pointer).wrapping_add(u32::from(w.cpu.y)), width)
 }
-fn shift_right<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, width: u8) {
+fn shift_right<B: WorkBus>(w: &mut Work<'_, B>, width: u8) {
     w.drain(6);
     let value = w.cpu.a & if width == 1 { 255 } else { 65535 };
     w.cpu.p = (w.cpu.p & !CARRY) | (value & 1) as u8;

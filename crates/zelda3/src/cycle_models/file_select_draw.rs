@@ -1,8 +1,9 @@
 //! Save-slot drawing retains its live SRAM reads, scratch pointers, stack and
 //! individual OAM/stripe stores through interrupts. No completed row is replayed.
+#[cfg(test)]
+use super::intro_clear::Access;
 use super::{
-    intro_clear::Access,
-    native_work::Work,
+    native_work::{Work, WorkBus},
     nmi_stack::{NativeNmiContext, CARRY, NEGATIVE, ZERO},
 };
 use snes::CpuMasterTimeline;
@@ -32,7 +33,7 @@ impl FileSelectDraw {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete {
             return None;

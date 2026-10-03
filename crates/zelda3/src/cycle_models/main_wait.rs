@@ -94,24 +94,13 @@ impl MainWait {
         &mut self,
         cpu: &mut super::nmi_stack::NativeNmiContext,
         clock: &mut snes::CpuMasterTimeline,
-        bus: impl FnMut(u64, WaitAccess) -> u8,
-    ) -> u32 {
-        self.step_clocked_observed(cpu, clock, bus, |_, _| {})
-    }
-
-    pub(crate) fn step_clocked_observed(
-        &mut self,
-        cpu: &mut super::nmi_stack::NativeNmiContext,
-        clock: &mut snes::CpuMasterTimeline,
         mut bus: impl FnMut(u64, WaitAccess) -> u8,
-        mut observe: impl FnMut(snes::cpu_timeline::CpuSynchronousTimelineEvent, u64),
     ) -> u32 {
         assert_eq!((cpu.bank, cpu.pc, cpu.d, cpu.p & 0x30),
             (0, self.next_pc() as u16, 0, 0x30));
         clock.advance_synchronous_pcbase_opcode_fetch(8);
-        let mut drain = |clock: &mut snes::CpuMasterTimeline, cycles, bus: &mut dyn FnMut(u64, WaitAccess) -> u8| {
-            clock.advance_synchronous_after_semantics_with(cycles, |event, at| {
-                observe(event, at.master_cycles());
+        let drain = |clock: &mut snes::CpuMasterTimeline, cycles, bus: &mut dyn FnMut(u64, WaitAccess) -> u8| {
+            clock.advance_synchronous_after_semantics_with(cycles, |event, _| {
                 if let snes::cpu_timeline::CpuSynchronousTimelineEvent::HMax {
                     completed_field_index, completed_scanline: 224, event_timestamp, ..
                 } = event {

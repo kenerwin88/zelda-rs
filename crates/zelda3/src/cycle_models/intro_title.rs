@@ -1,8 +1,8 @@
 //! Title fade, sword descent, input and exit callers. Child work returns through the live
 //! stack, including palette passes and thread teardown interrupted by NMI.
+use super::native_work::WorkBus;
 use super::{
     intro_animation::IntroAnimation,
-    intro_clear::Access,
     intro_palette_fade::IntroPaletteFade,
     intro_sword::IntroSword,
     native_work::Work,
@@ -167,7 +167,7 @@ impl IntroTitle {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete {
             return None;

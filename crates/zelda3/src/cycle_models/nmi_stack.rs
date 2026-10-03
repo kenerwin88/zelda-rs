@@ -282,8 +282,8 @@ mod tests {
                             }
                         }
                         let mut actual = Vec::new();
-                        let programming=native.initial_register_tail(&mut clock, |at, access| {
-                            actual.push((at, access));
+                        let programming=native.initial_register_tail(&mut clock, |clock, access| {
+                            actual.push((clock.clock_master_cycles(), access));
                             match access {
                                 Access::ReadByte(0x4211) => 0x42,
                                 Access::ReadByte(address) => u16::from(ram[usize::from(address)]),
@@ -450,8 +450,8 @@ mod tests {
                         }
                         let mut actual = Vec::new();
                         let mut input_ports = [0; 4];
-                        let result = native.audio_and_update_gate(&mut clock, |at, access| {
-                            actual.push((at, access));
+                        let result = native.audio_and_update_gate(&mut clock, |clock, access| {
+                            actual.push((clock.clock_master_cycles(), access));
                             match access {
                                 NmiHeaderAccess::Read(0x2141) => echo,
                                 NmiHeaderAccess::Read(address) => ram[usize::from(address)],
@@ -512,14 +512,14 @@ mod tests {
                         }
                     }
                     let mut actual=Vec::new();
-                    let (issued,_)=native.music_header(&mut clock,|at,access| {
+                    let (issued,_)=native.music_header(&mut clock,|clock,access| {
                         let value=match access {
                             NmiHeaderAccess::Read(0x2140)=>echo,
                             NmiHeaderAccess::Read(a)=>ram[usize::from(a)],
                             NmiHeaderAccess::Write(0x2140,_)=>0,
                             NmiHeaderAccess::Write(a,v)=>{ram[usize::from(a)]=v;0},
                             _=>unreachable!(),
-                        };actual.push((at,access,value));value
+                        };actual.push((clock.clock_master_cycles(),access,value));value
                     });
                     assert_eq!(actual,expected,"command={command:02x} last={last:02x} echo={echo:02x} h={h}");
                     assert_eq!(issued,(command!=0&&command!=last).then_some(command));
@@ -697,7 +697,7 @@ impl NativeNmiContext {
     /// Return live IRQ programming to the caller that owns subsequent execution.
     pub(crate) fn initial_register_tail(
         &mut self, clock: &mut CpuMasterTimeline,
-        mut bus: impl FnMut(u64, NmiTailAccess) -> u16,
+        mut bus: impl FnMut(&CpuMasterTimeline, NmiTailAccess) -> u16,
     ) -> Option<super::poly_interrupt::PolyIrqProgramming> {
         use EntryBus::*;
         assert_eq!((self.bank, self.pc, self.db, self.d, self.p & 0x30),
@@ -741,7 +741,7 @@ impl NativeNmiContext {
         } else {
             // TIMEUP uses the actual pending hardware line and acknowledges it.
             for work in [Fetch,Internal(16)] {work.advance(clock);}
-            let value=bus(clock.clock_master_cycles(),NmiTailAccess::ReadByte(0x4211)) as u8;
+            let value=bus(clock,NmiTailAccess::ReadByte(0x4211)) as u8;
             RegisterAccess.advance(clock);self.load_a_byte(value);
             for work in [Fetch,Internal(8)] {work.advance(clock);}
             self.load_a_byte(0x80);
@@ -752,7 +752,7 @@ impl NativeNmiContext {
             for work in [Fetch,Internal(16)] {work.advance(clock);}
             let enabled_at=clock.clock_master_cycles();
             let irq_deadline=snes::cpu_timeline::vertical_irq_deadline(clock,0x80,true).map(|at|at.master_cycles());
-            bus(enabled_at,NmiTailAccess::WriteByte(0x4200,0xa1));RegisterAccess.advance(clock);
+            bus(clock,NmiTailAccess::WriteByte(0x4200,0xa1));RegisterAccess.advance(clock);
             Some(super::poly_interrupt::PolyIrqProgramming{vertical_timer:0x80,nmitimen:0xa1,enabled_at,irq_deadline})
         };
         for (source, target) in [(0x13, 0x2100), (0x9b, 0x420c)] {
@@ -782,29 +782,29 @@ impl NativeNmiContext {
     }
 
     fn tail_load(&mut self, clock: &mut CpuMasterTimeline,
-        bus: &mut impl FnMut(u64, NmiTailAccess) -> u16, address: u16) -> u8 {
+        bus: &mut impl FnMut(&CpuMasterTimeline, NmiTailAccess) -> u16, address: u16) -> u8 {
         EntryBus::Fetch.advance(clock);
         EntryBus::Internal(if address < 0x100 { 8 } else { 16 }).advance(clock);
-        let value = bus(clock.clock_master_cycles(), NmiTailAccess::ReadByte(address)) as u8;
+        let value = bus(clock, NmiTailAccess::ReadByte(address)) as u8;
         EntryBus::Read { address, value: u16::from(value), width: 1 }.advance(clock);
         self.load_a_byte(value);
         value
     }
 
     fn tail_store(&mut self, clock: &mut CpuMasterTimeline,
-        bus: &mut impl FnMut(u64, NmiTailAccess) -> u16, address: u16, value: u8) {
+        bus: &mut impl FnMut(&CpuMasterTimeline, NmiTailAccess) -> u16, address: u16, value: u8) {
         for work in [EntryBus::Fetch, EntryBus::Internal(16)] { work.advance(clock); }
-        bus(clock.clock_master_cycles(), NmiTailAccess::WriteByte(address, value));
+        bus(clock, NmiTailAccess::WriteByte(address, value));
         EntryBus::RegisterAccess.advance(clock);
     }
 
     fn tail_pop(&mut self, clock: &mut CpuMasterTimeline,
-        bus: &mut impl FnMut(u64, NmiTailAccess) -> u16, width: u8) -> u16 {
+        bus: &mut impl FnMut(&CpuMasterTimeline, NmiTailAccess) -> u16, width: u8) -> u16 {
         let address = self.sp.wrapping_add(1);
         assert!(usize::from(address) + usize::from(width) <= 0x2000);
         let access = if width == 1 { NmiTailAccess::ReadByte(address) }
             else { NmiTailAccess::ReadWord(address) };
-        let value = bus(clock.clock_master_cycles(), access);
+        let value = bus(clock, access);
         EntryBus::Read { address, value, width }.advance(clock);
         self.sp = self.sp.wrapping_add(u16::from(width));
         value
@@ -883,7 +883,7 @@ impl NativeNmiContext {
     pub(crate) fn audio_and_update_gate(
         &mut self,
         clock: &mut CpuMasterTimeline,
-        mut bus: impl FnMut(u64, NmiHeaderAccess) -> u8,
+        mut bus: impl FnMut(&CpuMasterTimeline, NmiHeaderAccess) -> u8,
     ) -> NmiHeaderResult {
         use EntryBus::*;
         assert_eq!((self.bank, self.pc, self.db, self.d, self.p & ACCUMULATOR_BYTE),
@@ -899,7 +899,7 @@ impl NativeNmiContext {
         } else {
             let echo = self.header_load_absolute(clock, &mut bus, 0x2141);
             for work in [Fetch, Internal(16)] { work.advance(clock); } // CMP $0131
-            let last = bus(clock.clock_master_cycles(), NmiHeaderAccess::Read(0x131));
+            let last = bus(clock, NmiHeaderAccess::Read(0x131));
             Read { address: 0x131, value: u16::from(last), width: 1 }.advance(clock);
             self.compare_a_byte(last);
             for work in [Fetch, Internal(8)] { work.advance(clock); }
@@ -925,7 +925,7 @@ impl NativeNmiContext {
         self.header_store_absolute(clock, &mut bus, 0x2100, 0x80);
         self.header_store_absolute(clock, &mut bus, 0x420c, 0);
         for work in [Fetch, Internal(8)] { work.advance(clock); } // LDA $12
-        let latch = bus(clock.clock_master_cycles(), NmiHeaderAccess::Read(0x12));
+        let latch = bus(clock, NmiHeaderAccess::Read(0x12));
         Read { address: 0x12, value: u16::from(latch), width: 1 }.advance(clock);
         self.load_a_byte(latch);
         for work in [Fetch, Internal(8)] { work.advance(clock); } // BNE
@@ -934,18 +934,18 @@ impl NativeNmiContext {
             self.pc = 0x8144;
         } else {
             for work in [Fetch, Internal(8)] { work.advance(clock); } // INC $12
-            let value = bus(clock.clock_master_cycles(), NmiHeaderAccess::Read(0x12));
+            let value = bus(clock, NmiHeaderAccess::Read(0x12));
             Read { address: 0x12, value: u16::from(value), width: 1 }.advance(clock);
             Internal(6).advance(clock);
             let value = value.wrapping_add(1);
             self.p = (self.p & !(ZERO | NEGATIVE))
                 | if value == 0 { ZERO } else { 0 } | (value & NEGATIVE);
-            bus(clock.clock_master_cycles(), NmiHeaderAccess::Write(0x12, value));
+            bus(clock, NmiHeaderAccess::Write(0x12, value));
             Write { address: 0x12, value: u16::from(value), width: 1 }.advance(clock);
             for work in [Fetch, Internal(16), Internal(6)] { work.advance(clock); } // JSR
             assert!((1..0x2000).contains(&self.sp));
             let address = self.sp - 1;
-            bus(clock.clock_master_cycles(), NmiHeaderAccess::WriteWord(address, 0x8140));
+            bus(clock, NmiHeaderAccess::WriteWord(address, 0x8140));
             Write { address, value: 0x8140, width: 2 }.advance(clock);
             self.sp = self.sp.wrapping_sub(2);
             self.pc = 0x89e0;
@@ -955,10 +955,10 @@ impl NativeNmiContext {
 
     fn header_load_absolute(
         &mut self, clock: &mut CpuMasterTimeline,
-        bus: &mut impl FnMut(u64, NmiHeaderAccess) -> u8, address: u16,
+        bus: &mut impl FnMut(&CpuMasterTimeline, NmiHeaderAccess) -> u8, address: u16,
     ) -> u8 {
         for work in [EntryBus::Fetch, EntryBus::Internal(16)] { work.advance(clock); }
-        let value = bus(clock.clock_master_cycles(), NmiHeaderAccess::Read(address));
+        let value = bus(clock, NmiHeaderAccess::Read(address));
         Self::header_data_cycle(clock, address);
         self.load_a_byte(value);
         value
@@ -966,10 +966,10 @@ impl NativeNmiContext {
 
     fn header_store_absolute(
         &mut self, clock: &mut CpuMasterTimeline,
-        bus: &mut impl FnMut(u64, NmiHeaderAccess) -> u8, address: u16, value: u8,
+        bus: &mut impl FnMut(&CpuMasterTimeline, NmiHeaderAccess) -> u8, address: u16, value: u8,
     ) {
         for work in [EntryBus::Fetch, EntryBus::Internal(16)] { work.advance(clock); }
-        bus(clock.clock_master_cycles(), NmiHeaderAccess::Write(address, value));
+        bus(clock, NmiHeaderAccess::Write(address, value));
         Self::header_data_cycle(clock, address);
     }
 
@@ -994,7 +994,7 @@ impl NativeNmiContext {
     /// NMI music ledger charge; all hardware time advances on the actual bus.
     pub(crate) fn music_header(
         &mut self, clock: &mut CpuMasterTimeline,
-        mut bus: impl FnMut(u64, NmiHeaderAccess) -> u8,
+        mut bus: impl FnMut(&CpuMasterTimeline, NmiHeaderAccess) -> u8,
     ) -> (Option<u8>, u64) {
         use EntryBus::*;
         assert_eq!((self.bank,self.pc,self.db,self.d,self.p & ACCUMULATOR_BYTE),
@@ -1007,7 +1007,7 @@ impl NativeNmiContext {
         let (issued,cycles)=if command==0 {
             let echo=self.header_load_absolute(clock,&mut bus,0x2140);
             for work in [Fetch,Internal(16)] {work.advance(clock);}
-            let last=bus(clock.clock_master_cycles(),NmiHeaderAccess::Read(0x133));
+            let last=bus(clock,NmiHeaderAccess::Read(0x133));
             Self::header_data_cycle(clock,0x133);self.compare_a_byte(last);
             for work in [Fetch,Internal(8)] {work.advance(clock);}
             if echo!=last {Internal(6).advance(clock);(None,366+84)}
@@ -1019,7 +1019,7 @@ impl NativeNmiContext {
         } else {
             Internal(6).advance(clock);
             for work in [Fetch,Internal(16)] {work.advance(clock);}
-            let last=bus(clock.clock_master_cycles(),NmiHeaderAccess::Read(0x133));
+            let last=bus(clock,NmiHeaderAccess::Read(0x133));
             Self::header_data_cycle(clock,0x133);self.compare_a_byte(last);
             for work in [Fetch,Internal(8)] {work.advance(clock);}
             if command==last {Internal(6).advance(clock);(None,372+54)}

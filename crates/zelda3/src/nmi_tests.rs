@@ -5,6 +5,9 @@ use crate::game_state::constants::{ANIMATED_TILE_DATA_SRC, ANIMATED_TILE_VRAM_AD
 fn native_nmi_header_bus_writes_keep_typed_latches_and_hardware_owned() {
     use crate::cycle_models::nmi_stack::NmiHeaderAccess::*;
     let mut s = ZeldaState::new();
+    let mut clock = snes::CpuMasterTimeline::new(0, Default::default(), snes::CpuFieldTiming::NON_INTERLACE_EVEN);
+    clock.begin_synchronous_timeline().unwrap();
+    s.native_ppu = Some(crate::cycle_models::native_ppu::NativePpuState::reset(&clock));
     s.ram[0x12d] = 0x37;
     s.ram[0x12e] = 0x5a;
     s.ram[0x12f] = 0xa5;
@@ -13,15 +16,15 @@ fn native_nmi_header_bus_writes_keep_typed_latches_and_hardware_owned() {
     let mut expected = s.ram.clone();
     s.ppu.forced_blank = false;
     for channel in &mut s.dma.channel { channel.hdma_active = true; }
-    assert_eq!(s.native_nmi_header_access(0, Read(0x12d)), 0x37);
+    assert_eq!(s.native_nmi_header_access(&clock, Read(0x12d)), 0x37);
     for (address, value) in [(0x131, 0x37), (0x12d, 0), (0x12e, 0), (0x12f, 0), (0x12, 1)] {
-        s.native_nmi_header_access(0, Write(address, value));
+        s.native_nmi_header_access(&clock, Write(address, value));
         expected[usize::from(address)] = value;
     }
-    s.native_nmi_header_access(0, WriteWord(0x1f1, 0x8140));
+    s.native_nmi_header_access(&clock, WriteWord(0x1f1, 0x8140));
     expected[0x1f1..0x1f3].copy_from_slice(&[0x40, 0x81]);
-    s.native_nmi_header_access(0, Write(0x2100, 0x80));
-    s.native_nmi_header_access(0, Write(0x420c, 0));
+    s.native_nmi_header_access(&clock, Write(0x2100, 0x80));
+    s.native_nmi_header_access(&clock, Write(0x420c, 0));
     assert_eq!(s.ram, expected);
     assert_eq!(s.game_state.system_signals.last_ambient_sound_effect(), 0x37);
     assert_eq!(s.game_state.system_signals.ambient_sound_effect(), 0);

@@ -1468,6 +1468,62 @@ mod tests {
     }
 
     #[test]
+    fn native_dma_cursor_preserves_oam_byte_before_pending_vblank_reset() {
+        use crate::cpu_timeline::CpuSynchronousTimelineEvent;
+        use crate::SourceOamPort;
+        // Isolated device fixtures, not cold boot evidence. An odd OAM
+        // write flip makes the first DMA byte observable on either side of
+        // the vblank address reset. Sweep setup and byte drains across HMax.
+        for h in 1310..1364 {
+            for size in [1, 2, 3, 544] {
+                let at = 224 * u64::from(MASTER_CYCLES_PER_SCANLINE) + u64::from(h);
+                let apu = Snes9xApuClockState::from_checkpoint(
+                    Snes9xApuClockCheckpoint::new(at, 0, 0).unwrap()).unwrap();
+                let mut source = machine_at_source_checkpoint(CpuRasterPosition::new(224, h), apu);
+                source.snes.enable_source_oam_port();
+                let mut oam = SourceOamPort::reset();
+                source.snes.set_source_oam_v_counter(224);
+                oam.set_v_counter(224);
+                for (register, value) in [(0, 0x0f), (2, 7), (3, 0), (4, 0xaa)] {
+                    source.snes.write(0x2100 | u32::from(register), value);
+                    oam.write(register, value);
+                }
+                for (i, byte) in source.snes.ram[..544].iter_mut().enumerate() {
+                    *byte = (i as u8).wrapping_mul(37).wrapping_add(19);
+                }
+                configure_wram_to_b_bus_dma(&mut source, 0, 0, size, 0, 4);
+                let bytes = source.snes.ram[..544].to_vec();
+                let mut dma = source.snes.dma.clone();
+                let mut clock = source.timeline.clone();
+                let mut observer = clock.synchronous_event_observer();
+                let synchronize = |clock: &CpuMasterTimeline,
+                    observer: &mut crate::cpu_timeline::CpuSynchronousEventObserver,
+                    oam: &mut SourceOamPort| {
+                    clock.observe_processed_synchronous_events(observer, |event| match event {
+                        CpuSynchronousTimelineEvent::RenderLine { scanline, odd_field } => oam.render_line(scanline, odd_field),
+                        CpuSynchronousTimelineEvent::HMax { completed_scanline, .. } => oam.enter_scanline((completed_scanline + 1) % 262),
+                        _ => {},
+                    });
+                };
+                let mut first_beam = None;
+                dma.run_synchronous_forward_ppu_with_clock(&mut clock, 1, |clock, _, address, register| {
+                    synchronize(clock, &mut observer, &mut oam);
+                    let beam = clock.synchronous_beam_position().unwrap();
+                    first_beam.get_or_insert(beam);
+                    oam.set_v_counter(beam.scanline);
+                    oam.write(register, bytes[(address & 0xffff) as usize]);
+                }, |_, _| {});
+                synchronize(&clock, &mut observer, &mut oam);
+                source.write_general_dma_control(1).unwrap();
+                assert_eq!(clock, source.timeline, "DMA clock h={h} size={size}");
+                assert_eq!(Some(&oam), source.snes.source_oam_port(), "OAM h={h} size={size}");
+                assert_eq!(first_beam.unwrap().scanline, 224);
+                if h >= 1338 { assert!(first_beam.unwrap().cycles >= 1364); }
+            }
+        }
+    }
+
+    #[test]
     fn general_dma_byte_drain_processes_refresh_after_the_semantic() {
         let start = 504;
         let clock = Snes9xApuClockState::from_checkpoint(

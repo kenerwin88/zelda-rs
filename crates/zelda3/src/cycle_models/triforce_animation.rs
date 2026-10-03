@@ -1,8 +1,7 @@
 //! Retained Triforce animation request and step dispatch. Each phase retires
 //! one instruction; loaded operands, flags and stack belong to the caller.
 use super::{
-    intro_clear::Access,
-    native_work::Work,
+    native_work::{Work, WorkBus},
     nmi_stack::{NativeNmiContext, CARRY, ZERO},
 };
 use snes::CpuMasterTimeline;
@@ -100,7 +99,7 @@ impl TriforceAnimation {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete() {
             return None;
@@ -441,16 +440,16 @@ impl TriforceAnimation {
         Some(w.cycles)
     }
 }
-fn load<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, address: u16) {
+fn load<B: WorkBus>(w: &mut Work<'_, B>, address: u16) {
     w.drain(16);
     let value = w.read(w.absolute(address), 1);
     w.load(value, 1);
 }
-fn store<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, address: u16, value: u16) {
+fn store<B: WorkBus>(w: &mut Work<'_, B>, address: u16, value: u16) {
     w.drain(16);
     w.write(w.absolute(address), value & 255, 1);
 }
-fn increment<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, address: u16, up: bool) {
+fn increment<B: WorkBus>(w: &mut Work<'_, B>, address: u16, up: bool) {
     w.drain(16);
     let old = w.read(w.absolute(address), 1);
     let value = if up {

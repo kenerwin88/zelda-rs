@@ -68,7 +68,7 @@ impl PolyWait {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> u64 {
         assert_eq!(
             (cpu.bank, cpu.pc, cpu.d, cpu.db, cpu.p & 0x30),
@@ -230,7 +230,7 @@ impl PolyInterrupt {
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
         dma: &mut DmaState,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         self.step_on_bus(cpu, clock, dma, bus)
     }
@@ -243,7 +243,7 @@ impl PolyInterrupt {
     ) -> Option<u64> {
         self.step_on_bus(cpu, clock, dma, BeamBus::new(bus))
     }
-    fn step_on_bus(
+    pub(crate) fn step_on_bus(
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
@@ -346,17 +346,19 @@ impl PolyInterrupt {
                         );
                         let mut events = Vec::new();
                         let bus = &mut w.bus;
-                        dma.run_synchronous_forward_ppu_with_events(
+                        dma.run_synchronous_forward_ppu_with_clock(
                             w.clock,
                             w.cpu.a as u8,
-                            |at, _, source, register| {
+                            |clock, _, source, register| {
+                                bus.observe_clock(clock);
+                                let at = clock.clock_master_cycles();
                                 let value = bus.access(at, Access::Read(source, 1));
                                 bus.access(
                                     at,
                                     Access::Write(0x2100 + u32::from(register), value, 1),
                                 );
                             },
-                            |event| events.push(event),
+                            |event, _| events.push(event),
                         );
                         // DMA and refresh belong to hardware accounting;
                         // the CPU instruction owns its six-clock I/O write.

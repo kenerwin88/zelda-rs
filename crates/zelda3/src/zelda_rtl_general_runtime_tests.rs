@@ -374,6 +374,7 @@ fn native_next_intro_nmi_matches_full_cold_source_owner() {
     assert_eq!(state.ram, source.machine().snes().ram, "next cold native NMI RAM ownership");
     assert_eq!(state.ppu.cgram, source.machine().snes().ppu.cgram, "next NMI palette DMA");
     assert_eq!(state.ppu.vram, source.machine().snes().ppu.vram, "next NMI graphics DMA");
+    state.native_ppu.as_mut().unwrap().assert_matches_source(&cpu.timeline, source.machine());
     state.zelda_run_game_loop();
     assert!(state.native_startup_cpu.as_ref().unwrap().startup.entered_module_context().is_none(),
         "the following clear must claim its module entry");
@@ -2591,6 +2592,7 @@ fn native_intro_through_poly_worker_irq_matches_full_cold_source_hosts() {
             panic!("intro caller must retain its clock through the common suffix host={host}");
         }
         assert_eq!(cpu.timeline,*source.machine().timeline(),"host={host}");
+        state.native_ppu.as_mut().unwrap().assert_matches_source(&cpu.timeline, source.machine());
         let differences:Vec<_>=state.ram.iter().zip(&source.machine().snes().ram).enumerate()
             .filter(|(_, (a,b))|a!=b).map(|(i,(a,b))|(i,*a,*b)).collect();
         assert!(differences.is_empty(),"host={host} RAM count={} first={:?}",differences.len(),&differences[..differences.len().min(8)]);
@@ -3140,6 +3142,7 @@ fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
         assert!(matches!(state.paired_resume_cpu_boundary_blocker(),
             Some("retained-native-apu-port-access" | "retained-native-bootstrap-clock")),
             "checkpoint would discard the retained CPU at host={host}");
+        state.native_ppu.as_mut().unwrap().assert_matches_source(&cpu.timeline, source.machine());
         let c = &source.machine().snes().cpu;
         if cpu.timeline != *source.machine().timeline() {
             eprintln!("source interrupt events host={host}: {interrupt_events:?}");

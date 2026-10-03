@@ -1,7 +1,7 @@
 //! Item-sheet caller composition. Native callees keep their live CPU/scratch
 //! ownership; the return stack and retained caller phase must agree.
 use super::{
-    intro_clear::Access, item_graphics::ItemConversion, native_decompress::NativeDecompression,
+    item_graphics::ItemConversion, native_decompress::NativeDecompression,
     native_work::{Work, WorkBus}, nmi_stack::NativeNmiContext,
 };
 use snes::CpuMasterTimeline;
@@ -116,7 +116,7 @@ impl ItemGraphics {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         use Phase::*;
         if self.complete() {

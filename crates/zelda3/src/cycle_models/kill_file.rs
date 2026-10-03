@@ -1,8 +1,10 @@
 //! Erase-menu selection and confirmation. Live slot flags, stripe writes and
 //! SRAM clearing share the retained caller stack, including drawing children.
+#[cfg(test)]
+use super::intro_clear::Access;
+use super::native_work::WorkBus;
 use super::{
     file_select_draw::FileSelectDraw,
-    intro_clear::Access,
     native_work::Work,
     nmi_stack::{NativeNmiContext, CARRY, NEGATIVE, ZERO},
 };
@@ -143,7 +145,7 @@ impl KillFile {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete {
             return None;

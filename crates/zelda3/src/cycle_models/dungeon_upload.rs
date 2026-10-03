@@ -342,6 +342,7 @@ impl TilemapUpload {
                 w.drain(16);
                 for byte in 0..width {
                     let value = (value >> (byte * 8)) & 255;
+                    w.bus.observe_clock(w.clock);
                     w.bus.access(
                         w.clock.clock_master_cycles(),
                         Access::Write(u32::from(a + u16::from(byte)), value, 1),
@@ -385,11 +386,13 @@ impl TilemapUpload {
                 // Hardware events must publish before the next DMA byte, while
                 // the bus still exposes the partially uploaded tilemap.
                 let bus = std::cell::RefCell::new(&mut w.bus);
-                self.dma_end = dma.run_synchronous_forward_ppu_with_timed_events(
+                self.dma_end = dma.run_synchronous_forward_ppu_with_clock(
                     w.clock,
                     w.cpu.y as u8,
-                    |at, _, source, register| {
+                    |clock, _, source, register| {
                         let mut bus = bus.borrow_mut();
+                        bus.observe_clock(clock);
+                        let at = clock.clock_master_cycles();
                         let value = bus.access(at, Access::Read(source, 1));
                         bus.access(at, Access::Write(0x2100 + u32::from(register), value, 1));
                     },

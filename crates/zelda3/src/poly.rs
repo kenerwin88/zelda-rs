@@ -269,7 +269,9 @@ impl ZeldaState {
         clock:&mut snes::CpuMasterTimeline,
         mut vblank:impl FnMut(u64,u64)) -> crate::cycle_models::poly_worker::WorkerInstruction {
         use crate::cycle_models::{intro_clear::Access,poly_buffer_clear};
-        work.step(context,clock,|_,access| match access {
+        let mut native_ppu = self.native_ppu.take();
+        let result = work.step(context,clock,
+            crate::cycle_models::native_ppu::NativePpuBus::new(&mut native_ppu, |_,access| match access {
             Access::Read(address,width)=>{
                 if let Some(low)=Self::native_poly_table_byte(address).or_else(||poly_buffer_clear::table_byte(address)) {
                     return if width==1 {u16::from(low)} else {u16::from_le_bytes([low,Self::native_poly_table_byte(address+1).expect("native poly table word")])};
@@ -297,7 +299,10 @@ impl ZeldaState {
                 0
             }
             Access::Vblank {field,at}=>{vblank(field,at);0},
-        })
+        }));
+        if let Some(ppu) = native_ppu.as_mut() { ppu.synchronize(clock); }
+        self.native_ppu = native_ppu;
+        result
     }
 
     pub(super) fn poly_run_frame(&mut self) {

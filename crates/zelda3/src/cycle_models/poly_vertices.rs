@@ -1,6 +1,6 @@
 //! Retained vertex transform/projection worker. CPU registers, partial WRAM
 //! stores and external math registers survive between individual instructions.
-use super::{intro_clear::Access, native_work::Work, nmi_stack::NativeNmiContext};
+use super::{intro_clear::Access, native_work::{Work, WorkBus}, nmi_stack::NativeNmiContext};
 use snes::CpuMasterTimeline;
 
 /// CPU divider register semantics used by the pinned reference executor.
@@ -111,7 +111,7 @@ impl PolyVertices {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete() {
             return None;

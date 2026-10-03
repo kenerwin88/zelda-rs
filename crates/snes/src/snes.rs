@@ -94,6 +94,11 @@ impl Snes {
         self.source_oam.is_some()
     }
 
+    /// Read-only hardware state for independent native bus comparisons.
+    pub fn source_oam_port(&self) -> Option<&SourceOamPort> {
+        self.source_oam.as_ref()
+    }
+
     pub(crate) fn set_source_oam_v_counter(&mut self, scanline: u16) {
         if let Some(port) = self.source_oam.as_mut() {
             port.set_v_counter(scanline);

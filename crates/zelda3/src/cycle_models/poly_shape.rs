@@ -1,7 +1,7 @@
 //! Retained model selection and descriptor copy for the poly worker.
 //! Each step owns one source instruction, including one MVN byte, so an
 //! interrupt can retain the live registers and partially published descriptor.
-use super::{intro_clear::Access, native_work::Work, nmi_stack::NativeNmiContext};
+use super::{native_work::{Work, WorkBus}, nmi_stack::NativeNmiContext};
 use snes::CpuMasterTimeline;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -25,7 +25,7 @@ impl PolyShape {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete() {
             return None;

@@ -1,6 +1,6 @@
 //! Retained face extraction, winding and color selection. Raster work is a
 //! separate owner; reaching it leaves the live JSL frame and face cursor intact.
-use super::{intro_clear::Access, native_work::Work, nmi_stack::NativeNmiContext};
+use super::{native_work::{Work, WorkBus}, nmi_stack::NativeNmiContext};
 use snes::CpuMasterTimeline;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -143,7 +143,7 @@ impl PolyFaces {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete() || self.raster_pending() {
             return None;
@@ -639,24 +639,24 @@ impl PolyFaces {
         Some(w.cycles)
     }
 }
-fn jsr<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>) {
+fn jsr<B: WorkBus>(w: &mut Work<'_, B>) {
     w.drain(16);
     w.drain(6);
     w.push(w.cpu.pc + 2, 2);
 }
-fn jsl<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>) {
+fn jsl<B: WorkBus>(w: &mut Work<'_, B>) {
     w.drain(24);
     w.drain(6);
     w.push(u16::from(w.cpu.bank), 1);
     w.push(w.cpu.pc + 3, 2);
 }
-fn lsr<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, width: u8) {
+fn lsr<B: WorkBus>(w: &mut Work<'_, B>, width: u8) {
     w.drain(6);
     let v = if width == 1 { w.cpu.a & 255 } else { w.cpu.a };
     w.cpu.p = (w.cpu.p & !1) | (v as u8 & 1);
     w.load(v >> 1, width);
 }
-fn index_step<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, x: bool, increment: bool) {
+fn index_step<B: WorkBus>(w: &mut Work<'_, B>, x: bool, increment: bool) {
     w.drain(6);
     let old = if x { w.cpu.x } else { w.cpu.y };
     let v = (if increment {
@@ -671,7 +671,7 @@ fn index_step<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, x: bool, increm
     }
     w.flags(v, 1);
 }
-fn face_read<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>) {
+fn face_read<B: WorkBus>(w: &mut Work<'_, B>) {
     let ptr = w.dp_read(0x1f43, 2);
     let at = ptr.wrapping_add(w.cpu.y);
     if ptr & 0xff00 != at & 0xff00 {
@@ -680,7 +680,7 @@ fn face_read<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>) {
     let v = w.read(w.absolute(at), 1);
     w.load(v, 1);
 }
-fn indexed_read<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, base: u16, width: u8) -> u16 {
+fn indexed_read<B: WorkBus>(w: &mut Work<'_, B>, base: u16, width: u8) -> u16 {
     let at = base.wrapping_add(w.cpu.y);
     w.drain(16);
     if base & 0xff00 != at & 0xff00 {
@@ -688,7 +688,7 @@ fn indexed_read<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, base: u16, wi
     }
     w.read(w.absolute(at), width)
 }
-fn indexed_store<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, width: u8) {
+fn indexed_store<B: WorkBus>(w: &mut Work<'_, B>, width: u8) {
     w.drain(8);
     w.drain(6);
     w.write(

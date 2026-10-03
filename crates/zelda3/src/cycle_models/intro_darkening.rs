@@ -1,9 +1,11 @@
 //! Intro darkening and zero-brightness initialization. DMA and graphics calls
 //! retain their own progress until the shared module return.
+#[cfg(test)]
+use super::intro_clear::Access;
+use super::native_work::WorkBus;
 use super::{
     animated_dungeon_graphics::AnimatedDungeonGraphics,
     default_graphics::DefaultGraphics,
-    intro_clear::Access,
     native_tilemap_erase::NativeTilemapErase,
     native_tilesets::NativeTilesets,
     native_work::Work,
@@ -278,7 +280,7 @@ impl IntroDarkening {
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
         dma: &mut DmaState,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         use Phase::*;
         match self.phase {

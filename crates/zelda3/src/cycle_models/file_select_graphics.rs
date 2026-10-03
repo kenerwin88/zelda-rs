@@ -1,9 +1,8 @@
 //! File-selection CHR uploads, with live decompressor, planar loops and font
 //! reads retained on the caller's CPU stack.
 use super::{
-    intro_clear::Access,
     native_decompress::NativeDecompression,
-    native_work::Work,
+    native_work::{Work, WorkBus},
     nmi_stack::{NativeNmiContext, NEGATIVE},
     ppu_plane_conversion::{PlaneLoop, PpuPlaneConversion},
 };
@@ -44,7 +43,7 @@ impl FileSelectGraphics {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete {
             return None;

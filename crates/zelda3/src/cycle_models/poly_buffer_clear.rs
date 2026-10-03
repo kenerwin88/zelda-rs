@@ -1,6 +1,6 @@
 //! Poly worker's live bitmap clear, including its caller and interruptible
 //! MVN. The next projection call remains a separate native continuation.
-use super::{intro_clear::Access, native_work::Work, nmi_stack::NativeNmiContext};
+use super::{native_work::{Work, WorkBus}, nmi_stack::NativeNmiContext};
 use snes::CpuMasterTimeline;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,7 +40,7 @@ impl PolyBufferClear {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete() {
             return None;

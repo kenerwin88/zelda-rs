@@ -1,6 +1,6 @@
 //! Retained polygon edge walking and bitmap writes. The live CPU stack owns
 //! calls/returns; the phase owns progress while IRQ/NMI handlers run elsewhere.
-use super::{intro_clear::Access, native_work::Work, nmi_stack::NativeNmiContext};
+use super::{native_work::{Work, WorkBus}, nmi_stack::NativeNmiContext};
 use snes::CpuMasterTimeline;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,7 +52,7 @@ impl PolyRaster {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete() {
             return None;
@@ -647,23 +647,23 @@ impl PolyRaster {
         Some(w.cycles)
     }
 }
-fn jsr<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>) {
+fn jsr<B: WorkBus>(w: &mut Work<'_, B>) {
     w.drain(16);
     w.drain(6);
     w.push(w.cpu.pc + 2, 2);
 }
-fn dp_x<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, offset: u16) -> u16 {
+fn dp_x<B: WorkBus>(w: &mut Work<'_, B>, offset: u16) -> u16 {
     w.drain(8);
     w.drain(6);
     w.read(u32::from(0x1f00 + offset + w.cpu.x), 1)
 }
-fn compare<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, rhs: u16, x: bool, width: u8) {
+fn compare<B: WorkBus>(w: &mut Work<'_, B>, rhs: u16, x: bool, width: u8) {
     let mask = if width == 1 { 255 } else { 65535 };
     let lhs = (if x { w.cpu.x } else { w.cpu.a }) & mask;
     w.cpu.p = (w.cpu.p & !1) | u8::from(lhs >= rhs);
     w.flags(lhs.wrapping_sub(rhs) & mask, width);
 }
-fn transfer_index<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, x: bool, value: u16) {
+fn transfer_index<B: WorkBus>(w: &mut Work<'_, B>, x: bool, value: u16) {
     w.drain(6);
     let width = if w.cpu.p & 0x10 != 0 { 1 } else { 2 };
     let value = value & if width == 1 { 255 } else { 65535 };
@@ -674,7 +674,7 @@ fn transfer_index<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, x: bool, va
     }
     w.flags(value, width);
 }
-fn index_step<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, increment: bool, width: u8) {
+fn index_step<B: WorkBus>(w: &mut Work<'_, B>, increment: bool, width: u8) {
     w.drain(6);
     w.cpu.x = (if increment {
         w.cpu.x.wrapping_add(1)
@@ -683,17 +683,17 @@ fn index_step<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, increment: bool
     }) & if width == 1 { 255 } else { 65535 };
     w.flags(w.cpu.x, width);
 }
-fn lsr<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, width: u8) {
+fn lsr<B: WorkBus>(w: &mut Work<'_, B>, width: u8) {
     w.drain(6);
     let v = w.cpu.a & if width == 1 { 255 } else { 65535 };
     w.cpu.p = (w.cpu.p & !1) | (v as u8 & 1);
     w.load(v >> 1, width);
 }
-fn bit_immediate<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, mask: u16) {
+fn bit_immediate<B: WorkBus>(w: &mut Work<'_, B>, mask: u16) {
     w.drain(8);
     w.cpu.p = (w.cpu.p & !2) | if w.cpu.a & mask == 0 { 2 } else { 0 };
 }
-fn indexed_read<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, base: u16, width: u8) -> u16 {
+fn indexed_read<B: WorkBus>(w: &mut Work<'_, B>, base: u16, width: u8) -> u16 {
     let at = base.wrapping_add(w.cpu.y);
     w.drain(16);
     if w.cpu.p & 0x10 == 0 || base & 0xff00 != at & 0xff00 {
@@ -701,12 +701,12 @@ fn indexed_read<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, base: u16, wi
     }
     w.read(w.absolute(at), width)
 }
-fn indexed_store<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, base: u16) {
+fn indexed_store<B: WorkBus>(w: &mut Work<'_, B>, base: u16) {
     w.drain(16);
     w.drain(6);
     w.write(w.absolute(base.wrapping_add(w.cpu.y)), w.cpu.a, 2);
 }
-fn mask_read<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, base: u32) -> u16 {
+fn mask_read<B: WorkBus>(w: &mut Work<'_, B>, base: u32) -> u16 {
     w.drain(24);
     w.read(base + u32::from(w.cpu.x), 2)
 }

@@ -1,8 +1,7 @@
 //! Scene actor initializers. Their retained CPU owns each indexed operand and
 //! partial coordinate/velocity publication until the real RTS returns.
 use super::{
-    intro_clear::Access,
-    native_work::Work,
+    native_work::{Work, WorkBus},
     nmi_stack::{NativeNmiContext, CARRY},
 };
 use snes::CpuMasterTimeline;
@@ -60,7 +59,7 @@ impl IntroSpriteInit {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete() {
             return None;
@@ -185,23 +184,23 @@ impl IntroSpriteInit {
         Some(w.cycles)
     }
 }
-fn to_y<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>) {
+fn to_y<B: WorkBus>(w: &mut Work<'_, B>) {
     w.drain(6);
     w.cpu.y = w.cpu.a & 255;
     w.flags(w.cpu.y, 1);
 }
-fn indexed_read<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, base: u16, index: u16) -> u16 {
+fn indexed_read<B: WorkBus>(w: &mut Work<'_, B>, base: u16, index: u16) -> u16 {
     w.drain(16);
     if (base & 255) + index > 255 {
         w.drain(6);
     }
     w.read(w.absolute(base.wrapping_add(index)), 1)
 }
-fn indexed_store<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>, base: u16, value: u16) {
+fn indexed_store<B: WorkBus>(w: &mut Work<'_, B>, base: u16, value: u16) {
     w.drain(22);
     w.write(w.absolute(base + w.cpu.x), value & 255, 1);
 }
-fn increment_phase<B: FnMut(u64, Access) -> u16>(w: &mut Work<'_, B>) {
+fn increment_phase<B: WorkBus>(w: &mut Work<'_, B>) {
     w.drain(22);
     let address = w.absolute(0x1e10 + w.cpu.x);
     let value = w.read(address, 1).wrapping_add(1) & 255;

@@ -1,8 +1,9 @@
 //! Save-slot palette loads use live SRAM words and retain their copy loops,
 //! stack, and partially retired palette stores across interrupts.
+#[cfg(test)]
+use super::intro_clear::Access;
 use super::{
-    intro_clear::Access,
-    native_work::Work,
+    native_work::{Work, WorkBus},
     nmi_stack::{NativeNmiContext, ZERO},
 };
 use snes::CpuMasterTimeline;
@@ -149,7 +150,7 @@ impl FileSelectPalettes {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.complete {
             return None;
