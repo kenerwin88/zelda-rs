@@ -24,6 +24,7 @@ fn normalize(a: u32) -> u32 {
     }
 }
 struct Fixture {
+    native: crate::ZeldaState,
     source: Snes9xColdCpuExecutor,
     cpu: NativeNmiContext,
     clock: CpuMasterTimeline,
@@ -98,7 +99,11 @@ impl Fixture {
             .rebase_private_timing_state_at(source.machine().timestamp(), &registers, &ram, &sram)
             .unwrap();
         let clock = source.machine().timeline().clone();
+        let mut native = crate::ZeldaState::new();
+        native.ram.copy_from_slice(&ram);
+        native.sync_native_game_state_from_ram();
         Self {
+            native,
             source,
             cpu,
             clock,
@@ -143,6 +148,11 @@ impl Fixture {
             let mut vblanks = Vec::new();
             let ram = &mut self.ram;
             let writes = &mut self.writes;
+            let native = &mut self.native;
+            let cleanup_active = owner.interactive_cleanup_active();
+            let cache_active = owner.room_entry_cache_active();
+            let follower_active = owner.follower_initialization_active();
+            let mut published = false;
             owner
                 .step(&mut self.cpu, &mut self.clock, |at, access| {
                     let read = |a: u32| {
@@ -176,6 +186,18 @@ impl Fixture {
                             };
                             ram[i..i + usize::from(width)]
                                 .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                            if (cleanup_active && native.native_interactive_cleanup_store(a, value, width))
+                                || (cache_active && native.native_room_entry_cache_store(a, value, width))
+                                || (follower_active && native.native_follower_initialization_store(a, value, width)) {
+                                published = true;
+                            } else {
+                                if cleanup_active || cache_active || follower_active {
+                                    assert!(matches!(i, 0..=0xf | 0x100..=0x1ff),
+                                        "{label} pc{origin:06x}: unowned interactive store {a:06x}");
+                                }
+                                native.ram[i..i + usize::from(width)]
+                                    .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                            }
                             *writes.entry(a).or_default() += 1;
                             (Access::Write(a, value, width), 0)
                         }
@@ -189,6 +211,27 @@ impl Fixture {
                 })
                 .unwrap();
             assert_eq!(actual, expected, "{label} pc{origin:06x}");
+            assert_eq!(self.native.ram, self.ram, "{label}: native cleanup publications");
+            if published {
+                let expected = crate::game_state::GameState::load_from_ram(&self.ram);
+                assert_eq!(self.native.game_state.player.follower_link, expected.player.follower_link,
+                    "{label} pc{origin:06x}: player cleanup owner");
+                assert_eq!(self.native.game_state.sprites.ancilla_slots, expected.sprites.ancilla_slots,
+                    "{label} pc{origin:06x}: retained ancilla slots");
+                assert_eq!(self.native.game_state.sprites.follower_runtime, expected.sprites.follower_runtime);
+                assert_eq!(self.native.game_state.minigame, expected.minigame);
+                assert_eq!(self.native.game_state.dungeon.environment, expected.dungeon.environment);
+                if follower_active {
+                    assert_eq!(self.native.game_state.sprites.tagalong_trail, expected.sprites.tagalong_trail,
+                        "{label}: initial follower history sample");
+                }
+                if cache_active {
+                    assert_eq!(self.native.game_state.world, expected.world, "{label}: cached world state");
+                    assert_eq!(self.native.game_state.display, expected.display, "{label}: cached display state");
+                    assert_eq!(self.native.game_state.dungeon, expected.dungeon, "{label}: cached dungeon state");
+                    assert_eq!(self.native.game_state.frame, expected.frame, "{label}: room-entry phase");
+                }
+            }
             let c = &self.source.machine().snes().cpu;
             assert_eq!(
                 self.cpu,

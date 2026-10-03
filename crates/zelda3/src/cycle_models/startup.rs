@@ -550,6 +550,11 @@ impl Startup {
                 let mut nmitimen = None;
                 let mut hdma = None;
                 let owner = match graphics {
+                    IntroGraphics::LoadFile(work) if work.sprite_reset_suffix_active() => super::startup_bus::CallerOwner::SpriteResetSuffix,
+                    IntroGraphics::LoadFile(work) if work.sprite_disable_active() => super::startup_bus::CallerOwner::SpriteDisable,
+                    IntroGraphics::LoadFile(work) if work.follower_initialization_active() => super::startup_bus::CallerOwner::FollowerInitialization,
+                    IntroGraphics::LoadFile(work) if work.room_entry_cache_active() => super::startup_bus::CallerOwner::RoomEntryCache,
+                    IntroGraphics::LoadFile(work) if work.interactive_cleanup_active() => super::startup_bus::CallerOwner::InteractiveCleanup,
                     IntroGraphics::LoadFile(work) if work.visited_active() => super::startup_bus::CallerOwner::DungeonVisited,
                     IntroGraphics::LoadFile(work) if work.attributes_active() => super::startup_bus::CallerOwner::DungeonAttributes,
                     IntroGraphics::LoadFile(work) if work.room_upload_active() => super::startup_bus::CallerOwner::DungeonRoomUpload,

@@ -1030,6 +1030,10 @@ pub(crate) struct SpriteBattleState {
 }
 
 impl SpriteBattleState {
+    pub(crate) fn clear_item_drop_counter(&mut self) {
+        self.item_drop_counter = 0;
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             sprites_killed: ram_byte(ram, NUM_SPRITES_KILLED),
@@ -1123,7 +1127,7 @@ impl<'a> NativeSpriteBattleBridgeMut<'a> {
     }
 
     pub(crate) fn clear_item_drop_counter(&mut self) {
-        self.sprite_battle.item_drop_counter = 0;
+        self.sprite_battle.clear_item_drop_counter();
         self.sync();
     }
 

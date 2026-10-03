@@ -80,6 +80,94 @@ impl ZeldaState {
         true
     }
 
+    /// Room-entry caching publishes its reset bytes and camera/player snapshots
+    /// in source order, retaining partial caches across interruption boundaries.
+    pub(crate) fn native_room_entry_cache_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        let address = if (0x7e0000..0x800000).contains(&address) {
+            address as usize - 0x7e0000
+        } else { address as usize };
+        if matches!(address, 0xc180..=0xc19e) {
+            assert_eq!(width, 2);
+            assert_eq!(address & 1, 0);
+            let world = &mut self.game_state.world;
+            match address {
+                0xc180 | 0xc182 => self.game_state.display.ppu_scroll_copy.write_room_entry_cache_word(address, value),
+                0xc184 | 0xc186 | 0xc19e => {
+                    for (i, byte) in value.to_le_bytes().into_iter().enumerate() {
+                        assert!(self.game_state.player.follower_link.write_room_entry_cache_byte(address + i, byte));
+                    }
+                }
+                0xc188 => world.transient.cached_room_bounds_y_start = value,
+                0xc18a => world.transient.cached_room_bounds_y_end = value,
+                0xc18c => world.transient.cached_room_bounds_x_start = value,
+                0xc18e => world.transient.cached_room_bounds_x_end = value,
+                0xc190..=0xc196 => world.camera_boundaries.cached_scroll_targets[(address - 0xc190) / 2] = value,
+                0xc198 => world.camera_boundaries.cached_camera_y_low = value,
+                0xc19a => world.camera_boundaries.cached_camera_x_low = value,
+                0xc19c => {
+                    world.transient.cached_quadrant_fullsize_x = value as u8;
+                    world.transient.cached_quadrant_fullsize_y = (value >> 8) as u8;
+                }
+                _ => unreachable!(),
+            }
+        } else {
+            if !matches!(address, 0x11 | 0xb0 | 0x200 | 0x418 | 0x641 | 0x642 | 0xc1a6..=0xc1aa) {
+                return false;
+            }
+            assert_eq!(width, 1);
+            let byte = value as u8;
+            match address {
+                0x11 => self.game_state.frame.set_submodule(byte),
+                0xb0 => self.game_state.frame.set_subsubmodule(byte),
+                0x200 => self.game_state.world.overworld.map_ui.set_map_state(byte),
+                0x418 => self.game_state.world.overworld.transition.set_screen_transition(byte),
+                0x641 | 0x642 | 0xc1aa => {
+                    assert!(self.game_state.dungeon.write_room_entry_cache_byte(address, byte));
+                }
+                0xc1a6..=0xc1a8 => {
+                    assert!(self.game_state.player.follower_link.write_room_entry_cache_byte(address, byte));
+                }
+                0xc1a9 => self.game_state.world.transient.set_standing_in_doorway_cached(byte),
+                _ => unreachable!(),
+            }
+        }
+        self.ram[address..address + usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        true
+    }
+
+    /// Interactive cleanup retains its slot loop and pickup/recoil decisions.
+    /// Publish each retired store without adopting other components from RAM.
+    pub(crate) fn native_interactive_cleanup_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        let address = if (0x7e0000..0x800000).contains(&address) {
+            address as usize - 0x7e0000
+        } else { address as usize };
+        assert_eq!(width, 1);
+        let byte = value as u8;
+        if self.game_state.player.follower_link.write_interactive_cleanup_byte(address, byte) {
+            // The native player component owns these individual action bytes.
+        } else {
+            match address {
+                0xc4a..=0xc4f => self.game_state.sprites.ancilla_slots.set_type(address - 0xc4a, byte),
+                0x2f2 => {
+                    assert_eq!(byte, 0);
+                    self.game_state.sprites.follower_runtime.clear_event_flags();
+                }
+                0x35f => {
+                    assert_eq!(byte, 0);
+                    self.game_state.minigame.clear_flag_boomerang_in_place();
+                }
+                0x3fc => self.game_state.minigame.set_is_archer_or_shovel_game(byte),
+                0x646 => {
+                    assert_eq!(byte, 0);
+                    self.game_state.dungeon.environment.clear_somaria_block_switch_counter();
+                }
+                _ => return false,
+            }
+        }
+        self.ram[address] = byte;
+        true
+    }
+
     pub(super) fn link_initialize(&mut self) {
         self.follower_link_state_mut()
             .initialize_link_action_state();

@@ -27,6 +27,7 @@ fn normalize(a: u32) -> u32 {
     }
 }
 struct Fixture {
+    native: crate::ZeldaState,
     source: Snes9xColdCpuExecutor,
     cpu: NativeNmiContext,
     clock: CpuMasterTimeline,
@@ -102,7 +103,11 @@ impl Fixture {
             .rebase_private_timing_state_at(source.machine().timestamp(), &registers, &ram, &sram)
             .unwrap();
         let clock = source.machine().timeline().clone();
+        let mut native = crate::ZeldaState::new();
+        native.ram.copy_from_slice(&ram);
+        native.sync_native_game_state_from_ram();
         Self {
+            native,
             source,
             cpu,
             clock,
@@ -156,6 +161,10 @@ impl Fixture {
             let mut vblanks = Vec::new();
             let ram = &mut self.ram;
             let writes = &mut self.writes;
+            let native = &mut self.native;
+            let disable_active = owner.disable_active();
+            let reset_suffix_active = owner.reset_suffix_active();
+            let mut published = false;
             owner
                 .step(&mut self.cpu, &mut self.clock, |at, access| {
                     let read = |a: u32| {
@@ -189,6 +198,17 @@ impl Fixture {
                             };
                             ram[i..i + usize::from(width)]
                                 .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                            if (disable_active && native.native_sprite_disable_store(a, value, width))
+                                || (reset_suffix_active && native.native_sprite_reset_suffix_store(a, value, width)) {
+                                published = true;
+                            } else {
+                                if disable_active || reset_suffix_active {
+                                    assert!(matches!(i, 0..=0xf | 0x100..=0x1ff),
+                                        "{label} pc{origin:06x}: unowned sprite-disable store {a:06x}");
+                                }
+                                native.ram[i..i + usize::from(width)]
+                                    .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                            }
                             *writes.entry(a).or_default() += 1;
                             (Access::Write(a, value, width), 0)
                         }
@@ -202,6 +222,36 @@ impl Fixture {
                 })
                 .unwrap();
             assert_eq!(actual, expected, "{label} pc{origin:06x}");
+            assert_eq!(self.native.ram, self.ram, "{label}: native sprite-disable publications");
+            if published {
+                let expected = crate::game_state::GameState::load_from_ram(&self.ram);
+                let native = &self.native.game_state;
+                assert_eq!(native.sprites.ancilla_slots, expected.sprites.ancilla_slots, "{label}: ancilla slots");
+                assert_eq!(native.sprites.sprite_slots, expected.sprites.sprite_slots, "{label}: live sprite slots");
+                assert_eq!(native.sprites.system.limit_instance(), expected.sprites.system.limit_instance());
+                assert_eq!(native.sprites.system.chr_halfslot_state(), expected.sprites.system.chr_halfslot_state());
+                assert_eq!(native.sprites.garnish_runtime, expected.sprites.garnish_runtime);
+                assert_eq!(native.sprites.workspace, expected.sprites.workspace);
+                assert_eq!(native.archery_game, expected.archery_game);
+                assert_eq!(native.sprite_battle, expected.sprite_battle);
+                assert_eq!(native.minigame, expected.minigame);
+                assert_eq!(native.dungeon.room_effects, expected.dungeon.room_effects);
+                assert_eq!(native.ending.attract_scene.intro_palette_flash_count,
+                    expected.ending.attract_scene.intro_palette_flash_count);
+                assert_eq!(native.player.follower_link.ancilla_pickup_flag(),
+                    expected.player.follower_link.ancilla_pickup_flag());
+                assert_eq!(native.player.follower_link.menu_block_flag(),
+                    expected.player.follower_link.menu_block_flag());
+                if reset_suffix_active {
+                    assert_eq!(native.sprites.system, expected.sprites.system);
+                    assert_eq!(native.sprites.overworld_sprite_presence, expected.sprites.overworld_sprite_presence);
+                    assert_eq!(native.sprites.overworld_sprite_loaded, expected.sprites.overworld_sprite_loaded);
+                    assert_eq!(native.dungeon.room_tracking, expected.dungeon.room_tracking);
+                    assert_eq!(native.oam, expected.oam);
+                    assert_eq!(native.display.hud_runtime, expected.display.hud_runtime);
+                    assert_eq!(native.messaging.runtime, expected.messaging.runtime);
+                }
+            }
             let c = &self.source.machine().snes().cpu;
             assert_eq!(
                 self.cpu,

@@ -182,6 +182,16 @@ pub(crate) struct DungeonState {
 }
 
 impl DungeonState {
+    pub(crate) fn write_room_entry_cache_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            DUNG_FLAG_MOVABLE_BLOCK_WAS_PUSHED => self.environment.movable_block_was_pushed = value,
+            DUNG_FLAG_STATECHANGE_WATERPUZZLE => self.environment.water_puzzle_state_changed = value,
+            DUNG_CUR_FLOOR_CACHED => self.stair_movement.cached_floor = value,
+            _ => return false,
+        }
+        true
+    }
+
     pub(crate) fn write_attribute_byte(&mut self, address: usize, value: u8) -> bool {
         match address {
             0xb2..=0xb5 => self.write_object_parser_byte(address, value),
@@ -905,7 +915,7 @@ impl DungeonEnvironmentState {
         value
     }
 
-    fn clear_somaria_block_switch_counter(&mut self) {
+    pub(crate) fn clear_somaria_block_switch_counter(&mut self) {
         self.somaria_block_switch_counter = 0;
     }
 
@@ -1701,6 +1711,12 @@ impl Default for DungeonRoomTrackingState {
 }
 
 impl DungeonRoomTrackingState {
+    pub(crate) fn write_history_byte(&mut self, index: usize, value: u8) {
+        let word = &mut self.history[index / 2];
+        let shift = (index & 1) * 8;
+        *word = (*word & !(255 << shift)) | (u16::from(value) << shift);
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         let mut history = [0xffff; DUNGEON_ROOM_HISTORY_COUNT];
         for (index, entry) in history.iter_mut().enumerate() {
@@ -2800,11 +2816,11 @@ impl DungeonRoomEffectsState {
         self.trap_trigger_latch = 1;
     }
 
-    fn clear_trap_trigger_latch(&mut self) {
+    pub(crate) fn clear_trap_trigger_latch(&mut self) {
         self.trap_trigger_latch = 0;
     }
 
-    fn set_activate_bomb_trap_overlord(&mut self, value: u8) {
+    pub(crate) fn set_activate_bomb_trap_overlord(&mut self, value: u8) {
         self.bomb_trap_activation = value;
     }
 }

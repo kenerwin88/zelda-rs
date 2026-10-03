@@ -1848,6 +1848,58 @@ impl ZeldaState {
     // void Sprite_DisableAll() {  // 89c22f
     //   ...see sprite.c...
     // }
+    /// Reset suffix stores follow the completed disable child. Keep the long
+    /// descending clears and byte-wise history reset visible to native owners.
+    pub(crate) fn native_sprite_reset_suffix_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        let address = if (0x7e0000..0x800000).contains(&address) {
+            address as usize - 0x7e0000
+        } else { address as usize };
+        if !matches!(address, 0x2f0 | 0x4b4 | 0xb6a | 0xb80..=0xb87 | 0xfb3 | 0xfc6 |
+            0xfdc | 0xfdd | 0xffd | 0x1df80..=0x1f17f) { return false; }
+        assert_eq!(width, 1);
+        let byte = value as u8;
+        if !self.game_state.sprites.write_reset_suffix_byte(address, byte) {
+            match address {
+                0x2f0 => self.game_state.messaging.runtime.message_or_sprite_state_cache = byte,
+                0x4b4 => self.game_state.display.hud_runtime.set_super_bomb_indicator_timer(byte),
+                0xb80..=0xb87 => self.game_state.dungeon.room_tracking.write_history_byte(address - 0xb80, byte),
+                0xfb3 => self.game_state.oam.set_sprite_sorting_setting(byte),
+                _ => unreachable!("unowned sprite-reset suffix byte {address:05x}"),
+            }
+        }
+        self.ram[address] = byte;
+        true
+    }
+
+    /// Retire one Sprite_DisableAll store through its native actor owner. The
+    /// continuation retains the descending slot cursors and conditional guards.
+    pub(crate) fn native_sprite_disable_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        let address = if (0x7e0000..0x800000).contains(&address) {
+            address as usize - 0x7e0000
+        } else { address as usize };
+        if !matches!(address, 0x2ec | 0x3fc | 0xb00..=0xb07 | 0xb6a | 0xb88 | 0xb99 |
+            0xb9b | 0xb9e | 0xc4a..=0xc53 | 0xcf4 | 0xdd0..=0xddf | 0xfb4 | 0xfc6 |
+            0xff8 | 0xff9 | 0xffb..=0xffd | 0x1f800..=0x1f81d) { return false; }
+        assert_eq!((width, value), (1, 0));
+        if !self.game_state.sprites.write_disable_byte(address, value as u8)
+            && !self.game_state.player.follower_link.write_sprite_disable_byte(address, value as u8) {
+            match address {
+                0xb00..=0xb07 => self.overlord_slot_view_mut(address - 0xb00).clear(),
+                0x1f800..=0x1f81d => self.garnish_slot_view_mut(address - 0x1f800).set_garnish_type(0),
+                0x3fc => self.game_state.minigame.clear_is_archer_or_shovel_game(),
+                0xb88 => self.game_state.archery_game.clear_hit_counter(),
+                0xb99 => self.game_state.archery_game.set_arrows_left(0),
+                0xb9b => self.game_state.sprite_battle.clear_item_drop_counter(),
+                0xb9e => self.game_state.dungeon.room_effects.clear_trap_trigger_latch(),
+                0xcf4 => self.game_state.dungeon.room_effects.set_activate_bomb_trap_overlord(0),
+                0xff9 => self.game_state.ending.attract_scene.intro_palette_flash_count = 0,
+                _ => unreachable!("unowned sprite-disable byte {address:05x}"),
+            }
+        }
+        self.ram[address] = value as u8;
+        true
+    }
+
     pub(super) fn sprite_disable_all(&mut self) {
         self.apply_sprite_disable_actions_through(
             None,

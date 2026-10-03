@@ -7,6 +7,60 @@ use super::*;
 use crate::game_state::native::ram_target::RamTarget;
 
 impl FollowerLinkState {
+    pub(crate) fn write_sprite_disable_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            FLAG_IS_ANCILLA_TO_PICK_UP => self.actions.ancilla_pickup_flag = value,
+            FLAG_BLOCK_LINK_MENU => self.actions.menu_block_flag = value,
+            _ => return false,
+        }
+        true
+    }
+
+    pub(crate) fn set_speed_setting(&mut self, value: u8) {
+        self.movement.set_speed_setting(value);
+    }
+
+    pub(crate) fn write_room_entry_cache_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            LINK_QUADRANT_X_CACHED => self.movement.cached_quadrant_x = value,
+            LINK_QUADRANT_Y_CACHED => self.movement.cached_quadrant_y = value,
+            LINK_FACING_CACHED => self.movement.cached_facing = value,
+            LINK_IS_ON_LOWER_LEVEL_CACHED => self.movement.cached_lower_level_state = value,
+            LINK_IS_ON_LOWER_LEVEL_MIRROR_CACHED => self.movement.cached_lower_level_mirror_state = value,
+            _ => {
+                let word = match address & !1 {
+                    LINK_Y_COORD_CACHED => &mut self.movement.cached_y,
+                    LINK_X_COORD_CACHED => &mut self.movement.cached_x,
+                    _ => return false,
+                };
+                let shift = (address & 1) * 8;
+                *word = (*word & !(255 << shift)) | (u16::from(value) << shift);
+            }
+        }
+        true
+    }
+
+    pub(crate) fn write_interactive_cleanup_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            BUTTON_MASK_B_Y => self.input.button_mask_b_y = value,
+            LINK_INCAPACITATED_TIMER => self.actions.incapacitated_timer = value,
+            PLAYER_DEFENSE_FLAGS => self.actions.defense_flags = value,
+            LINK_CANT_CHANGE_DIRECTION => self.movement.direction_lock = value,
+            LINK_HANDLER_STATE => self.actions.handler_state = value,
+            LINK_SPEED_SETTING => self.movement.speed_setting = value,
+            FLAG_IS_ANCILLA_TO_PICK_UP => self.actions.ancilla_pickup_flag = value,
+            ANCILLA_INTERACTIVE_RESET_FLAG => self.actions.ancilla_interactive_reset_flag = value,
+            LINK_ELECTROCUTE_ON_TOUCH => self.actions.electrocute_on_touch = value,
+            LINK_POSITION_MODE => self.movement.position_mode = value,
+            LINK_DISABLE_SPRITE_DAMAGE => self.actions.sprite_damage_disabled = value,
+            RELATED_TO_HOOKSHOT => self.actions.hookshot_interlock = value,
+            FLUTE_COUNTDOWN => self.actions.flute_countdown = value,
+            PLAYER_SPECIAL_DRAW_FLAG => self.presentation.player_special_draw_flag = value,
+            _ => return false,
+        }
+        true
+    }
+
     pub(crate) fn write_load_parent_byte(&mut self, address: usize, value: u8) -> bool {
         match address {
             0x57 => self.movement.speed_modifier = value,

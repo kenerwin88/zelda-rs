@@ -17,6 +17,11 @@ pub(crate) enum CallerOwner {
     DungeonRoomUpload,
     DungeonAttributes,
     DungeonVisited,
+    InteractiveCleanup,
+    RoomEntryCache,
+    FollowerInitialization,
+    SpriteDisable,
+    SpriteResetSuffix,
 }
 
 pub(crate) enum StartupAccess {

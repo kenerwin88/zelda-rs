@@ -41,6 +41,18 @@ pub(crate) struct LoadFilePlayer {
     complete: bool,
 }
 impl LoadFilePlayer {
+    pub(crate) fn follower_initialization_active(&self) -> bool {
+        self.routine() == 0x099efc
+    }
+
+    pub(crate) fn room_entry_cache_active(&self) -> bool {
+        self.routine() == 0x028d71
+    }
+
+    pub(crate) fn interactive_cleanup_active(&self) -> bool {
+        self.routine() == 0x09ac6b
+    }
+
     pub(crate) fn from_entry(entry: u32) -> Self {
         assert!(matches!(
             entry,

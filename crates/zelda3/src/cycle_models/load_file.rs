@@ -54,6 +54,26 @@ impl Default for LoadFile {
     }
 }
 impl LoadFile {
+    pub(crate) fn sprite_reset_suffix_active(&self) -> bool {
+        matches!(&self.child, Some(Child::Sprite(work)) if work.reset_suffix_active())
+    }
+
+    pub(crate) fn sprite_disable_active(&self) -> bool {
+        matches!(&self.child, Some(Child::Sprite(work)) if work.disable_active())
+    }
+
+    pub(crate) fn follower_initialization_active(&self) -> bool {
+        matches!(&self.child, Some(Child::Player(work)) if work.follower_initialization_active())
+    }
+
+    pub(crate) fn room_entry_cache_active(&self) -> bool {
+        matches!(&self.child, Some(Child::Player(work)) if work.room_entry_cache_active())
+    }
+
+    pub(crate) fn interactive_cleanup_active(&self) -> bool {
+        matches!(&self.child, Some(Child::Player(work)) if work.interactive_cleanup_active())
+    }
+
     pub(crate) fn visited_active(&self) -> bool {
         matches!(self.child, Some(Child::Visited(_)))
     }

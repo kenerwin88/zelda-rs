@@ -720,6 +720,30 @@ impl ZeldaState {
         abs16(0x1568u16.wrapping_sub(y)) < 24 && abs16(0x1980u16.wrapping_sub(x)) < 24
     }
 
+    /// Retain each follower initialization publication without refreshing the
+    /// trail or timer companions from RAM between stores.
+    pub(crate) fn native_follower_initialization_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        let address = if (0x7e0000..0x800000).contains(&address) {
+            address as usize - 0x7e0000
+        } else { address as usize };
+        assert_eq!(width, 1);
+        let byte = value as u8;
+        if !self.game_state.sprites.tagalong_trail.write_initial_sample_byte(address, byte) {
+            let follower = &mut self.game_state.sprites.follower_runtime;
+            match address {
+                0x2cf => follower.set_data_index(byte),
+                0x2d0 => { assert_eq!(byte, 0); follower.clear_hookshot_interlock(); }
+                0x2d2 => follower.set_reacquire_timer_low(byte),
+                0x2d3 => follower.set_tail_write_index(byte),
+                0x2d6 => { assert_eq!(byte, 0); follower.clear_jump_timer(); }
+                0x5e => self.game_state.player.follower_link.set_speed_setting(byte),
+                _ => return false,
+            }
+        }
+        self.ram[address] = byte;
+        true
+    }
+
     pub(super) fn follower_initialize(&mut self) {
         let link = self.game_state.player.follower_link;
         let y = link.y();

@@ -23,6 +23,14 @@ pub(crate) struct SpriteReset {
     complete: bool,
 }
 impl SpriteReset {
+    pub(crate) fn reset_suffix_active(&self) -> bool {
+        self.routine() == 0x09c44e
+    }
+
+    pub(crate) fn disable_active(&self) -> bool {
+        self.routine() == 0x09c22f
+    }
+
     pub(crate) fn from_entry(entry: u32) -> Self {
         assert!(matches!(
             entry,

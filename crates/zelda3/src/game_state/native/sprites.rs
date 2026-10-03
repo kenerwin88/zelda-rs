@@ -1,4 +1,5 @@
 use crate::game_state::constants::{
+    GARNISH_ACTIVE, OVERWORLD_BOULDER_TRAP_COUNT,
     ALT_SPRITES_FLAG, ALT_SPRITE_GRAPHICS, ALT_SPRITE_SPAWNED_FLAG, ALT_SPRITE_STATE,
     ALT_SPRITE_TYPE, ALT_SPRITE_X_HI, ALT_SPRITE_X_LO, ALT_SPRITE_Y_HI, ALT_SPRITE_Y_LO,
     ANCILLA_AUX_TIMER, ANCILLA_ITEM_TO_LINK, ANCILLA_STEP, ANCILLA_TIMER, ANCILLA_X_HI,
@@ -195,6 +196,46 @@ pub(crate) struct SpriteState {
 }
 
 impl SpriteState {
+    pub(crate) fn write_reset_suffix_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            SPRITE_ALERT_FLAG => self.system.set_alert_flag(value),
+            0xfdd => {
+                assert_eq!(value, 0);
+                self.garnish_runtime.clear_haunted_grove_flute_event_latch();
+            }
+            0x1df80..=0x1ef7f => {
+                // This physical bank is shared by dungeon kill masks and the
+                // overworld presence table. A reset clears both native views.
+                self.workspace.where_in_room[address - 0x1df80] = value;
+                self.overworld_sprite_presence.set_marker(address - 0x1df80, value);
+            }
+            0x1ef80..=0x1f17f => self.overworld_sprite_loaded.set_byte(address - 0x1ef80, value),
+            SPRITE_LIMIT_INSTANCE | SPRITE_CHR_HALFSLOT_STATE | OVERWORLD_BOULDER_TRAP_COUNT => {
+                assert!(self.write_disable_byte(address, value));
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    pub(crate) fn write_disable_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            0xdd0..=0xddf => self.sprite_slots.set_byte_at(address, value),
+            0xc4a..=0xc53 => self.ancilla_slots.set_type(address - 0xc4a, value),
+            SPRITE_LIMIT_INSTANCE => self.system.set_limit_instance(value),
+            SPRITE_CHR_HALFSLOT_STATE => self.system.set_chr_halfslot_state(value),
+            SPRITE_RESET_WORK_A => self.workspace.set_reset_scratch_a(value),
+            SPRITE_RESET_WORK_B => self.workspace.set_reset_scratch_b(value),
+            GARNISH_ACTIVE => self.garnish_runtime.set_active_type(value),
+            OVERWORLD_BOULDER_TRAP_COUNT => {
+                assert_eq!(value, 0);
+                self.garnish_runtime.clear_boulder_trap_count();
+            }
+            _ => return false,
+        }
+        true
+    }
+
     /// Resync the ancilla slot models from RAM. Used after code writes WRAM that the
     /// ancilla model also covers but doesn't go through the ancilla bridge — e.g. the
     /// boomerang temp coords (BOOMERANG_TEMP_X/Y at 0x399-0x39c) alias ANCILLA_G[5..9],

@@ -15014,6 +15014,26 @@ impl ZeldaState {
                     let address=if address&0x400000==0 && address&65535<0x2000 {address&65535}else{address};
                     match address {
                         _ if caller_owner == CallerOwner::DungeonEntrance && self.native_dungeon_entrance_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::SpriteResetSuffix && self.native_sprite_reset_suffix_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::SpriteResetSuffix && !matches!(address, 0..=0xf | 0x100..=0x1ff) => {
+                            panic!("unowned sprite-reset suffix store {address:06x}");
+                        }
+                        _ if caller_owner == CallerOwner::SpriteDisable && self.native_sprite_disable_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::SpriteDisable && !matches!(address, 0..=0xf | 0x100..=0x1ff) => {
+                            panic!("unowned sprite-disable store {address:06x}");
+                        }
+                        _ if caller_owner == CallerOwner::FollowerInitialization && self.native_follower_initialization_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::FollowerInitialization && !matches!(address, 0..=0xf | 0x100..=0x1ff) => {
+                            panic!("unowned follower initialization store {address:06x}");
+                        }
+                        _ if caller_owner == CallerOwner::RoomEntryCache && self.native_room_entry_cache_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::RoomEntryCache && !matches!(address, 0..=0xf | 0x100..=0x1ff) => {
+                            panic!("unowned room-entry cache store {address:06x}");
+                        }
+                        _ if caller_owner == CallerOwner::InteractiveCleanup && self.native_interactive_cleanup_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::InteractiveCleanup && !matches!(address, 0..=0xf | 0x100..=0x1ff) => {
+                            panic!("unowned interactive cleanup store {address:06x}");
+                        }
                         _ if caller_owner == CallerOwner::DungeonRoomUpload && self.native_dungeon_room_upload_store(address, value, width) => {}
                         _ if caller_owner == CallerOwner::DungeonAttributes && self.native_dungeon_attribute_store(address, value, width) => {}
                         _ if caller_owner == CallerOwner::DungeonVisited && self.native_dungeon_visited_store(address, value, width) => {}

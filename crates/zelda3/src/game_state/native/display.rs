@@ -2155,6 +2155,14 @@ impl Default for PpuScrollCopyState {
 }
 
 impl PpuScrollCopyState {
+    pub(crate) fn write_room_entry_cache_word(&mut self, address: usize, value: u16) {
+        match address {
+            BG2_H_SCROLL_COPY2_CACHED => self.bg2_h_copy2_cached = value,
+            BG2_V_SCROLL_COPY2_CACHED => self.bg2_v_copy2_cached = value,
+            _ => unreachable!("unowned scroll cache word {address:05x}"),
+        }
+    }
+
     pub(crate) fn write_entrance_byte(&mut self, address: usize, value: u8) -> bool {
         let word = match address & !1 {
             0xe0 => &mut self.bg1_h_copy2,

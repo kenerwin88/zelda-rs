@@ -103,6 +103,11 @@ fn is_ancilla_r_overflow(offset: usize) -> bool {
 }
 
 impl AncillaSlotsState {
+    pub(crate) fn set_type(&mut self, slot: usize, value: u8) {
+        assert!(slot < ANCILLA_SLOT_COUNT);
+        self.set_byte(slot, ANCILLA_TYPE, value);
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         let mut state = Self::default();
         for offset in Self::field_offsets() {

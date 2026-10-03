@@ -381,6 +381,19 @@ pub(crate) struct TagalongTrailState {
 }
 
 impl TagalongTrailState {
+    /// Initialization seeds only the first history sample, byte by byte.
+    pub(crate) fn write_initial_sample_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            TAGALONG_Y_LO => self.y_low[0] = value,
+            TAGALONG_Y_HI => self.y_high[0] = value,
+            TAGALONG_X_LO => self.x_low[0] = value,
+            TAGALONG_X_HI => self.x_high[0] = value,
+            TAGALONG_LAYERBITS => self.layer_bits[0] = value,
+            _ => return false,
+        }
+        true
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             x_low: read_tagalong_bank(ram, TAGALONG_X_LO),
