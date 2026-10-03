@@ -14910,7 +14910,7 @@ impl ZeldaState {
                 self.native_startup_cpu=Some(cpu);
                 return Some(false);
             }
-            match cpu.startup.step(&mut cpu.timeline, &mut self.ram, &mut self.sram) {
+            match cpu.startup.step(&mut cpu.timeline, &mut self.ram, &mut self.sram, &mut cpu.ppu) {
                 StartupStep::Instruction => {}
                 StartupStep::ClearWindow => self.zelda_ppu_write_word(0x212e, 0),
                 StartupStep::MemoryComplete => {

@@ -29,6 +29,7 @@ pub(crate) struct NativeBootstrapCpu {
     pub(crate) upload_pointer: [u8; 3],
     pub(crate) startup: crate::cycle_models::startup::Startup,
     pub(crate) poly_worker: Option<crate::cycle_models::poly_worker::PolyWorker>,
+    pub(crate) ppu: crate::cycle_models::native_ppu::NativePpuState,
 }
 
 impl NativeBootstrapOrigin {
@@ -57,6 +58,7 @@ pub(super) struct ColdUpload<F> {
     apu: ApuHostPortTiming,
     observe: F,
     upload_bank: u8,
+    ppu: crate::cycle_models::native_ppu::NativePpuState,
 }
 
 impl<F: FnMut(PortAccess)> ColdUpload<F> {
@@ -81,6 +83,7 @@ impl<F: FnMut(PortAccess)> ColdUpload<F> {
             apu,
             observe,
             upload_bank: 0x19,
+            ppu: crate::cycle_models::native_ppu::NativePpuState::reset(),
         };
         this.work(16)?;
         Ok(this)
@@ -93,8 +96,10 @@ impl<F: FnMut(PortAccess)> ColdUpload<F> {
             return Err("native bootstrap receiver did not finish".to_owned());
         }
         let apu = &mut self.apu;
+        let ppu = &mut self.ppu;
         self.timeline
             .advance_synchronous_after_semantics_with(cycles, |event, at| {
+                ppu.timeline_event(event);
                 if matches!(event, CpuSynchronousTimelineEvent::HMax { .. }) {
                     apu.end_scanline_at(at.master_cycles())
                         .map_err(|e| e.to_string())?;
@@ -278,6 +283,7 @@ impl<F: FnMut(PortAccess)> ColdUpload<F> {
                 poly_worker: None,
                 timeline: self.timeline,
                 upload_pointer: [0x00, 0x80, self.upload_bank],
+                ppu: self.ppu,
             },
         })
     }
@@ -295,6 +301,62 @@ fn read_word(stream: &[u8], cursor: &mut usize) -> Result<u16, String> {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn native_reset_ppu_and_startup_reach_first_nmi_on_the_cold_source_clock() {
+        use crate::cycle_models::startup::StartupStep;
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+        let mut cpu = native_bootstrap_origin(&rom[0xc8000..0xd5337]).unwrap().into_cpu();
+        let mut ram = vec![0x55; 0x20000];
+        ram[..3].copy_from_slice(&cpu.upload_pointer);
+        let mut sram = vec![0xff; 0x2000];
+        // The source starts at reset too. No source snapshot seeds the native
+        // registers, memory, clock or PPU bus state.
+        let reset = snes::Snes9xColdCpuExecutor::from_lorom_reset_with_sram(&rom, Some(&sram)).unwrap();
+        let mut source = reset;
+        let mut source_upload_instructions = 0;
+        while (source.machine().snes().cpu.k, source.machine().snes().cpu.pc) != (0, 0x802c) {
+            assert!(source_upload_instructions < 2_000_000);
+            source.step().unwrap();
+            source_upload_instructions += 1;
+        }
+        assert_eq!(cpu.timeline, *source.machine().timeline());
+        let mut instructions = 0;
+        let context = loop {
+            assert!(instructions < 100_000);
+            let step = cpu.startup.step(&mut cpu.timeline, &mut ram, &mut sram, &mut cpu.ppu);
+            match step {
+                StartupStep::Instruction | StartupStep::ClearWindow => {
+                    let receipt = source.step().unwrap();
+                    instructions += 1;
+                    if receipt.accepted_interrupt.is_some() {
+                        assert_eq!(cpu.startup.step(&mut cpu.timeline, &mut ram, &mut sram,
+                            &mut cpu.ppu), StartupStep::AcceptNmi);
+                        let mut context = cpu.startup.accepted_context();
+                        context.accept_interrupt_clocked(&mut ram, &mut cpu.timeline);
+                        assert_eq!(cpu.timeline, *source.machine().timeline());
+                        break context;
+                    }
+                    assert_eq!(cpu.timeline, *source.machine().timeline(), "startup instruction {instructions}");
+                }
+                StartupStep::MemoryComplete | StartupStep::HostReturn => {}
+                other => panic!("unexpected first-reset boundary {other:?}"),
+            }
+        };
+        assert_eq!(ram.iter().zip(&source.machine().snes().ram).position(|(a, b)| a != b), None,
+            "first differing startup WRAM byte");
+        assert_eq!(sram.iter().zip(&source.machine().snes().cart.ram).position(|(a, b)| a != b), None,
+            "first differing startup SRAM byte");
+        // Reset/upload/initialization have not read any PPU registers.
+        assert_eq!(cpu.ppu.read_state(), snes::SourcePpuReadState::snes9x_reset());
+        let expected = &source.machine().snes().cpu;
+        assert_eq!((context.a, context.x, context.y, context.d, context.db, context.bank,
+            context.pc, context.sp, context.p),
+            (expected.a, expected.x, expected.y, expected.dp, expected.db, expected.k,
+                expected.pc, expected.sp, expected.pack_flags()));
+        eprintln!("cold source upload {source_upload_instructions} instructions; native startup {instructions} instructions; first NMI acceptance at {}", cpu.timeline.clock_master_cycles());
+    }
 
     #[test]
     fn native_upload_handoff_preserves_receiver_state_and_continues_driver_clock() {

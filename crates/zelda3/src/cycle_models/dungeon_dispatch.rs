@@ -2,8 +2,7 @@
 //! Layer effects run on the inherited clock and stack; the selected submodule
 //! must claim the resulting context before any common caller suffix can run.
 use super::{
-    intro_clear::Access,
-    native_work::Work,
+    native_work::{Work, WorkBus},
     nmi_stack::{NativeNmiContext, CARRY, ZERO},
 };
 use snes::CpuMasterTimeline;
@@ -52,7 +51,7 @@ impl DungeonDispatch {
         &mut self,
         cpu: &mut NativeNmiContext,
         clock: &mut CpuMasterTimeline,
-        bus: impl FnMut(u64, Access) -> u16,
+        bus: impl WorkBus,
     ) -> Option<u64> {
         if self.entered_submodule {
             return None;

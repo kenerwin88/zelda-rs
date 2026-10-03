@@ -725,6 +725,7 @@ impl Startup {
         clock: &mut CpuMasterTimeline,
         ram: &mut [u8],
         sram: &mut [u8],
+        ppu: &mut super::native_ppu::NativePpuState,
     ) -> StartupStep {
         // Snes9x checks the interrupt deadline before its SCAN_KEYS host exit.
         if self
@@ -750,7 +751,7 @@ impl Startup {
         }
         if let Phase::Wait(wait) = &mut self.phase {
             let mut vblank = None;
-            wait.step_clocked(self.context.as_mut().unwrap(), clock, |_, access| {
+            wait.step_clocked_observed(self.context.as_mut().unwrap(), clock, |_, access| {
                 match access {
                     super::main_wait::WaitAccess::ReadLatch => ram[0x12],
                     super::main_wait::WaitAccess::Vblank { field, at } => {
@@ -758,7 +759,7 @@ impl Startup {
                         0
                     }
                 }
-            });
+            }, |event, _| ppu.timeline_event(event));
             self.note_wait_vblank(vblank);
             if matches!(self.phase,Phase::Wait(MainWait::Complete)) {
                 self.phase=Phase::Complete;
@@ -811,8 +812,26 @@ impl Startup {
             Phase::Wait(_) => unreachable!("wait has its own bus owner"),
             Phase::Accepted(_) | Phase::WaitHandler(_) | Phase::Complete | Phase::ModuleEntered | Phase::IntroHalfSlotEntered | Phase::IntroHalfSlotReturned | Phase::IntroSetupReturned | Phase::IntroFirstClearEntered | Phase::IntroClearActive | Phase::IntroClearAccepted | Phase::IntroClearReturned | Phase::IntroPackingReturned | Phase::IntroSourcesReturned | Phase::IntroTailReturned | Phase::IntroTextReturned => panic!("startup instruction after NMI handoff"),
         };
+        if result == StartupStep::ClearWindow {
+            // STZ $212E is a word store: each six-clock PPU byte has its own
+            // semantic boundary. In particular HMax may separate the writes.
+            clock.advance_synchronous_pcbase_opcode_fetch(8);
+            self.advance_reset_clock(clock, ppu, 16);
+            ppu.write(0x212e, 0, clock.synchronous_beam_position().unwrap());
+            self.advance_reset_clock(clock, ppu, 6);
+            ppu.write(0x212f, 0, clock.synchronous_beam_position().unwrap());
+            self.advance_reset_clock(clock, ppu, 6);
+        } else {
+            self.advance_reset_clock(clock, ppu, cycles);
+        }
+        result
+    }
+
+    fn advance_reset_clock(&mut self, clock: &mut CpuMasterTimeline,
+        ppu: &mut super::native_ppu::NativePpuState, cycles: u32) {
         clock
             .advance_synchronous_after_semantics_with(cycles, |event, _| {
+                ppu.timeline_event(event);
                 if let CpuSynchronousTimelineEvent::HMax {
                     completed_field_index,
                     completed_scanline: 224,
@@ -832,7 +851,6 @@ impl Startup {
                 Ok::<u32, String>(0)
             })
             .expect("native reset caller clock");
-        result
     }
 
     /// Resume the saved wait instruction on the same clock after actual RTI.

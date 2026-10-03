@@ -62,7 +62,7 @@ impl SourcePpuReadState {
         self.counter_latched = true;
     }
 
-    pub(crate) fn write_wrio(&mut self, value: u8, beam: CpuSynchronousBeamPosition) {
+    pub fn write_wrio(&mut self, value: u8, beam: CpuSynchronousBeamPosition) {
         // S9xSetCPU($4201) force-latches on the high-to-low edge, then
         // publishes the complete WRIO byte to both $4201 and RDIO($4213).
         if value & 0x80 == 0 && self.wrio & 0x80 != 0 {

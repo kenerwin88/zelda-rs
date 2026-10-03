@@ -84,6 +84,8 @@ pub(crate) mod dungeon_dispatch;
 pub(crate) mod dungeon_landing;
 pub(crate) mod dungeon_push_blocks;
 pub(crate) mod dungeon_common;
+pub(crate) mod dungeon_module;
+pub(crate) mod native_ppu;
 pub(crate) mod push_block_drawing;
 pub(crate) mod floor_indicator;
 pub(crate) mod hud_update;

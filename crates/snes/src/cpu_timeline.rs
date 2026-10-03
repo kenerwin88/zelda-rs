@@ -371,6 +371,42 @@ struct CpuSynchronousEventCursor {
     event: CpuSynchronousTimelineEvent,
 }
 
+/// A device's retained position in the CPU's processed event stream. This
+/// records no CPU state or bus values and never advances the CPU clock.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CpuSynchronousEventObserver {
+    next: CpuSynchronousEventCursor,
+    bus: CpuBusWorkload,
+    field_timing: CpuFieldTiming,
+}
+
+impl CpuMasterTimeline {
+    pub fn synchronous_event_observer(&self) -> CpuSynchronousEventObserver {
+        let CpuTimelineMode::Synchronous(next) = self.mode else {
+            panic!("hardware observation requires the synchronous CPU timeline");
+        };
+        CpuSynchronousEventObserver { next, bus: self.bus, field_timing: self.field_timing }
+    }
+
+    /// Visit exactly the events retired since this device last observed the
+    /// CPU. A PC-base fetch or DMA setup may put the physical clock beyond a
+    /// pending event; that event stays pending until the CPU actually drains it.
+    pub fn observe_processed_synchronous_events(&self,
+        observer: &mut CpuSynchronousEventObserver,
+        mut event: impl FnMut(CpuSynchronousTimelineEvent)) {
+        let target = self.synchronous_event_observer();
+        assert_eq!((observer.bus, observer.field_timing), (target.bus, target.field_timing),
+            "hardware event observation cannot cross a changed timeline configuration");
+        assert!(observer.next.master_cycles <= target.next.master_cycles,
+            "hardware event observer is ahead of its CPU");
+        while observer.next.master_cycles < target.next.master_cycles {
+            event(observer.next.event);
+            observer.next = self.synchronous_cursor_after(observer.next);
+        }
+        assert_eq!(observer.next, target.next);
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum CpuSynchronousTimelineCheckpointError {
     #[error("CPU timeline checkpoint is not owned by the synchronous executor")]
@@ -1546,5 +1582,49 @@ mod tests {
             }
         ));
         assert_eq!(observed[0].1.master_cycles(), 1_374);
+    }
+}
+
+#[cfg(test)]
+mod event_observer_tests {
+    use super::*;
+
+    #[test]
+    fn retained_observer_matches_callbacks_and_keeps_non_draining_events_pending() {
+        for field in [0, 1, 30002, 30003] {
+            for (v, h) in [(224, 1350), (239, 1350), (261, 1350)] {
+                let mut clock = CpuMasterTimeline::at_raster(field,
+                    CpuRasterPosition::new(v, h), CpuBusWorkload::with_dynamic_hdma(),
+                    CpuFieldTiming::NON_INTERLACE_EVEN);
+                clock.begin_synchronous_timeline().unwrap();
+                let mut observer = clock.synchronous_event_observer();
+                let mut expected = Vec::new();
+                let mut actual = Vec::new();
+                for iteration in 0..2000 {
+                    clock.advance_synchronous_pcbase_opcode_fetch(8);
+                    // First DMA bytes can publish after non-draining setup
+                    // crosses HMax. Seeing the later physical clock must not
+                    // retire that HMax or reset the OAM flip prematurely.
+                    clock.advance_synchronous_without_event_drain(26);
+                    clock.observe_processed_synchronous_events(&mut observer, |e| actual.push(e));
+                    assert_eq!(actual, expected);
+                    clock.advance_synchronous_after_semantics_with(
+                        [6, 8, 16, 24, 40][iteration % 5], |e, _| {
+                            expected.push(e); Ok::<_, String>(0)
+                        }).unwrap();
+                    if iteration % 7 == 0 {
+                        // A retained continuation may miss many callbacks.
+                        let mut resumed = observer;
+                        clock.observe_processed_synchronous_events(&mut resumed, |e| actual.push(e));
+                        observer = resumed;
+                        assert_eq!(actual, expected);
+                    }
+                }
+                clock.observe_processed_synchronous_events(&mut observer, |e| actual.push(e));
+                assert_eq!(actual, expected);
+                assert!(actual.iter().any(|e| matches!(e,
+                    CpuSynchronousTimelineEvent::HMax { completed_scanline: 261, .. })));
+            }
+        }
     }
 }

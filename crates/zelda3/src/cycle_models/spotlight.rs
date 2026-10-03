@@ -568,6 +568,8 @@ impl Spotlight {
 #[cfg(test)]
 mod tests {
     use super::super::dungeon_landing::DungeonLanding;
+    use super::super::dungeon_module::{DungeonChild, DungeonModule};
+    use super::super::dungeon_common::CommonChild;
     use super::super::{intro_clear::Access, native_work::compare_instruction_with_devices};
     use super::*;
     use snes::apu::{ApuHostPortProbe, ApuHostPortTiming, ApuState};
@@ -577,12 +579,14 @@ mod tests {
     enum FixtureWork {
         Spotlight(Spotlight),
         Landing(DungeonLanding),
+        Dungeon(DungeonModule),
     }
     impl FixtureWork {
         fn finished(&self) -> bool {
             match self {
                 Self::Spotlight(work) => work.complete(),
                 Self::Landing(work) => work.complete() || work.child().is_some(),
+                Self::Dungeon(work) => work.complete() || work.child().is_some(),
             }
         }
         fn step(
@@ -594,6 +598,10 @@ mod tests {
             match self {
                 Self::Spotlight(work) => work.step(cpu, clock, bus),
                 Self::Landing(work) => work.step(cpu, clock, bus),
+                Self::Dungeon(work) => {
+                    *work = work.clone();
+                    work.step(cpu, clock, bus)
+                }
             }
             .unwrap();
         }
@@ -602,7 +610,7 @@ mod tests {
     struct DeviceBus<'a, F> {
         callback: F,
         beam: &'a Cell<Option<CpuSynchronousBeamPosition>>,
-        oam: &'a RefCell<snes::SourceOamPort>,
+        ppu: &'a RefCell<super::super::native_ppu::NativePpuState>,
         apu: &'a RefCell<ApuHostPortTiming>,
     }
     impl<F: FnMut(u64, Access) -> u16> WorkBus for DeviceBus<'_, F> {
@@ -613,23 +621,10 @@ mod tests {
             self.beam.set(clock.synchronous_beam_position());
         }
         fn timeline_event(&mut self, event: CpuSynchronousTimelineEvent, processed_at: u64) {
-            match event {
-                CpuSynchronousTimelineEvent::RenderLine {
-                    scanline,
-                    odd_field,
-                } => {
-                    self.oam.borrow_mut().render_line(scanline, odd_field);
-                }
-                CpuSynchronousTimelineEvent::HMax {
-                    completed_scanline, ..
-                } => {
-                    self.apu.borrow_mut().end_scanline_at(processed_at).unwrap();
-                    self.oam
-                        .borrow_mut()
-                        .enter_scanline((completed_scanline + 1) % 262);
-                }
-                _ => {}
+            if matches!(event, CpuSynchronousTimelineEvent::HMax { .. }) {
+                self.apu.borrow_mut().end_scanline_at(processed_at).unwrap();
             }
+            self.ppu.borrow_mut().timeline_event(event);
         }
     }
     fn apu(at: u64) -> ApuHostPortTiming {
@@ -659,13 +654,16 @@ mod tests {
         let mut waits = 0;
         let mut copies = 0;
         let mut resets = 0;
+        let mut dungeon_returns = 0;
+        let mut dungeon_children = 0;
         for field in [0, 1, 30_002, 30_003] {
-            for case in 0..56usize {
+            for case in 0..88usize {
                 let entry = match case {
                     0 => 0xf295,
                     1 => 0xf28b,
                     2 => 0xf427,
                     48..=55 => 0x931d,
+                    56..=87 => 0x87a2,
                     _ => 0xf312,
                 };
                 // Device-capable isolated source fixture. This is not a cold
@@ -678,7 +676,7 @@ mod tests {
                 machine.ram.fill(0);
                 machine.write(0x2100, 0x80);
                 machine.ram[0x1fd..0x200].copy_from_slice(&[0x59, 0x80, 2]);
-                if case >= 48 {
+                if (48..56).contains(&case) {
                     machine.ram[0x1fd..0x1ff].copy_from_slice(&0x87aeu16.to_le_bytes());
                     machine.ram[0xb0] = u8::from(matches!(case, 49 | 55));
                     machine.ram[0x1b] = 1;
@@ -745,6 +743,31 @@ mod tests {
                 machine.ram[0x1d] = 2;
                 machine.ram[0x8a] = 0x22;
                 machine.ram[0x15b22] = 0x31;
+                if case >= 56 {
+                    let r = &mut machine.ram;
+                    r[0x10] = 7;
+                    r[0x11] = 15;
+                    r[0x1b] = 1;
+                    r[0xad] = ((case - 56) / 4) as u8;
+                    r[0xb0] = (case & 1) as u8;
+                    r[0x67c..0x67e].copy_from_slice(
+                        &(if case & 2 == 0 { 119u16 } else { 0 }).to_le_bytes());
+                    r[0x67e..0x680].copy_from_slice(&2u16.to_le_bytes());
+                    r[0xc4a] = 0x20;
+                    r[0xdd0] = 9;
+                    r[0xe20] = 0x73;
+                    r[0xd00] = 80;
+                    r[0xd10] = 64;
+                    r[0xde0] = ((case / 4) % 4) as u8;
+                    r[0xdc0] = 1;
+                    r[0x5fc] = 1;
+                    r[0x5fd] = 2;
+                    r[0x478] = 2;
+                    r[0x2c4] = 1;
+                    r[0x2f] = ((case / 2) % 4 * 2) as u8;
+                    r[0x4a0] = [0, 1, 63, 191][case % 4];
+                    r[0x428] = ((case / 2) & 1) as u8;
+                }
                 let mut cpu = NativeNmiContext {
                     a: 0xab01,
                     x: 0xe0,
@@ -768,20 +791,22 @@ mod tests {
                 let mut devices = snes::Snes::new();
                 devices.write(0x2100, 0x80);
                 // Independent hardware owners; no values come from the probe.
-                let oam = RefCell::new(snes::SourceOamPort::reset());
-                oam.borrow_mut().write(0, 0x80);
+                let ppu = RefCell::new(super::super::native_ppu::NativePpuState::reset());
+                let reset_beam = CpuSynchronousBeamPosition {
+                    scanline: 0, cycles: 0, line_master_cycles: 1364, odd_field: false,
+                };
+                ppu.borrow_mut().write(0x2100, 0x80, reset_beam);
                 // Exercise actual byte storage and the read flip, rather than
                 // letting an all-zero OAM fixture hide a constant-value stub.
                 for i in 0..544 {
                     let value = (i as u8).wrapping_mul(37).wrapping_add(case as u8);
                     machine.write(0x2104, value);
-                    oam.borrow_mut().write(4, value);
+                    ppu.borrow_mut().write(0x2104, value, reset_beam);
                 }
                 machine.write(0x2102, 0);
                 machine.write(0x2103, 0);
-                oam.borrow_mut().write(2, 0);
-                oam.borrow_mut().write(3, 0);
-                let mut reads = snes::SourcePpuReadState::snes9x_reset();
+                ppu.borrow_mut().write(0x2102, 0, reset_beam);
+                ppu.borrow_mut().write(0x2103, 0, reset_beam);
                 let beam = Cell::new(None);
                 let timeline = CpuMasterTimeline::at_raster(
                     field,
@@ -792,13 +817,16 @@ mod tests {
                     snes::CpuBusWorkload::default(),
                     snes::CpuFieldTiming::NON_INTERLACE_EVEN,
                 );
-                let mut source = snes::RomCpuTimingProbe::new(machine, timeline, reads).unwrap();
+                let mut source = snes::RomCpuTimingProbe::new(machine, timeline,
+                    snes::SourcePpuReadState::snes9x_reset()).unwrap();
                 let mut clock = source.timeline().clone();
                 let ports = RefCell::new(apu(clock.clock_master_cycles()));
                 source
                     .attach_apu_port_owner(apu(clock.clock_master_cycles()))
                     .unwrap();
-                let mut work = if case >= 48 {
+                let mut work = if case >= 56 {
+                    FixtureWork::Dungeon(Default::default())
+                } else if case >= 48 {
                     FixtureWork::Landing(Default::default())
                 } else {
                     FixtureWork::Spotlight(Spotlight::new(entry))
@@ -827,28 +855,35 @@ mod tests {
                                 assert_eq!(width, 1);
                                 let v = if a == 0x2140 {
                                     ports.borrow_mut().read_cpu_port_at(at, 0).unwrap()
-                                } else if a == 0x2138 {
-                                    let value = oam.borrow_mut().read();
-                                    reads.open_bus1 = value;
-                                    value
-                                } else if a == 0x213e {
-                                    reads.read_stat77(oam.borrow_mut().stat77_flags())
-                                } else if let Some(v) = reads.read(a as u16, beam.get().unwrap()) {
+                                } else if let Some(v) = ppu.borrow_mut().read(a as u16, beam.get().unwrap()) {
                                     v
                                 } else {
-                                    devices.read(a)
+                                    let value = devices.read(a);
+                                    if (0x2134..=0x2136).contains(&a) {
+                                        ppu.borrow_mut().note_multiplier_read(a as u16, value);
+                                    }
+                                    value
                                 };
                                 Some(u16::from(v))
                             }
                             Access::Write(a, v, width) if (0x2100..0x4400).contains(&a) => {
                                 assert_eq!(width, 1);
-                                if (0x2100..0x2140).contains(&a) {
-                                    let mut port = oam.borrow_mut();
-                                    port.set_v_counter(beam.get().unwrap().scanline);
-                                    port.write(a as u8, v as u8);
-                                }
+                                ppu.borrow_mut().write(a as u16, v as u8, beam.get().unwrap());
                                 devices.write(a, v as u8);
                                 Some(0)
+                            }
+                            Access::Read(a, width) if case >= 56 && a & 0x8000 != 0
+                                && !(0x7e0000..0x800000).contains(&a) => {
+                                let mut value = 0u16;
+                                for i in 0..width {
+                                    let at = a + u32::from(i);
+                                    let byte = super::super::dungeon_module::table_byte(at)
+                                        .unwrap_or_else(|| panic!("unowned dungeon table {at:06x}"));
+                                    assert_eq!(byte, rom[(at >> 16) as usize * 0x8000
+                                        + (at as usize & 0x7fff)]);
+                                    value |= u16::from(byte) << (i * 8);
+                                }
+                                Some(value)
                             }
                             _ => None,
                         },
@@ -859,7 +894,7 @@ mod tests {
                                 DeviceBus {
                                     callback: bus,
                                     beam: &beam,
-                                    oam: &oam,
+                                    ppu: &ppu,
                                     apu: &ports,
                                 },
                             );
@@ -868,7 +903,17 @@ mod tests {
                     instructions += 1;
                 }
                 assert!(work.finished(), "{field}/{case} stopped {:04x}", cpu.pc);
-                if let FixtureWork::Landing(work) = &work {
+                if let FixtureWork::Dungeon(work) = &work {
+                    if work.complete() {
+                        dungeon_returns += 1;
+                        assert_eq!(work.child(), None);
+                        assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, 0x805a, 0x1ff));
+                    } else {
+                        dungeon_children += 1;
+                        assert_eq!(work.child(), Some(DungeonChild::Common(CommonChild::Call(0x00e3fa))));
+                        assert_eq!((cpu.bank, cpu.pc, cpu.sp), (0, 0xe3fa, 0x1f9));
+                    }
+                } else if let FixtureWork::Landing(work) = &work {
                     assert!(work.complete());
                     assert_eq!(work.child(), None);
                     assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, 0x87af, 0x1fe));
@@ -877,7 +922,7 @@ mod tests {
                 }
                 assert_eq!(ram, source.snes().ram, "{field}/{case}");
                 assert_eq!(
-                    reads,
+                    ppu.borrow().read_state(),
                     *source.ppu_reads(),
                     "PPU counter state {field}/{case}"
                 );
@@ -889,6 +934,7 @@ mod tests {
             }
         }
         assert!(waits > 192 && copies > 0 && resets > 0);
-        eprintln!("192 spotlight and 32 landing caller fixtures, {instructions} instruction boundaries, {waits} counter polls, {copies} projection words, {resets} reset iterations");
+        assert!(dungeon_returns > 0 && dungeon_children > 0);
+        eprintln!("192 spotlight, 32 landing and 128 connected dungeon fixtures, {instructions} instruction boundaries, {waits} counter polls, {copies} projection words, {resets} reset iterations, {dungeon_returns} dungeon returns, {dungeon_children} retained child boundaries");
     }
 }
