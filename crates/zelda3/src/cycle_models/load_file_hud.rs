@@ -12,6 +12,7 @@ pub(crate) struct LoadFileHud {
     entry: u16,
     pc: u16,
     complete: bool,
+    near_return_sp: Option<u16>,
 }
 impl LoadFileHud {
     pub(crate) fn new(entry: u16) -> Self {
@@ -20,6 +21,18 @@ impl LoadFileHud {
             entry,
             pc: entry,
             complete: false,
+            near_return_sp: None,
+        }
+    }
+    /// The caller already performed its real JSR. Complete only when that
+    /// return has been popped; nested helper returns stay within this owner.
+    pub(crate) fn new_near(entry: u16, entry_sp: u16) -> Self {
+        assert!(matches!(entry, 0xe399 | 0xdfa9 | 0xfa70 | 0xfb94 | 0xfc09));
+        Self {
+            entry,
+            pc: entry,
+            complete: false,
+            near_return_sp: Some(entry_sp.wrapping_add(2)),
         }
     }
     pub(crate) fn complete(&self) -> bool {
@@ -51,7 +64,7 @@ impl LoadFileHud {
         w.fetch();
         self.pc = match self.pc {
             0xe395 | 0xe3c0 | 0xdee2 | 0xdee5 | 0xdd32 | 0xfa6c | 0xfa8a | 0xfb91 | 0xfbbd
-            | 0xfc06 | 0xfc5b | 0xfc8b | 0xfcaf | 0xfcdd | 0xfdbd => {
+            | 0xfc06 | 0xfc5b | 0xfc8b | 0xfcaf | 0xfcdd | 0xfdbd | 0xdfac => {
                 w.operand_then_internal(2);
                 w.push(self.pc + 2, 2);
                 match self.pc {
@@ -60,6 +73,7 @@ impl LoadFileHud {
                     0xdee2 => 0xdecb,
                     0xdd32 => 0xdfaf,
                     0xfa6c => 0xfa70,
+                    0xdfac => 0xfa85,
                     0xfa8a => 0xfb91,
                     0xfb91 => 0xfafd,
                     0xfbbd | 0xfc06 => 0xfdab,
@@ -75,6 +89,9 @@ impl LoadFileHud {
             0xe3b5 | 0xdeba | 0xdebc | 0xded8 | 0xdeea | 0xdfb9 | 0xfa92 | 0xfb90 | 0xfcf9
             | 0xfdd8 | 0xfdee | 0xf127 => {
                 w.rts();
+                if self.near_return_sp == Some(w.cpu.sp) {
+                    self.complete = true;
+                }
                 w.cpu.pc
             }
             0xe3c5 => {
@@ -82,12 +99,13 @@ impl LoadFileHud {
                 0xdee2
             }
             0xe399 | 0xfa70 | 0xfa8e | 0xfafd | 0xfb3c | 0xfb94 | 0xfbae | 0xfbc0 | 0xfbf4
-            | 0xfc09 | 0xfc5e | 0xfc8e | 0xfcb2 | 0xfce0 | 0xfcf7 | 0xf0f7 | 0xf116 => {
+            | 0xfc09 | 0xfc5e | 0xfc8e | 0xfcb2 | 0xfce0 | 0xfcf7 | 0xf0f7 | 0xf116 | 0xfa85 => {
                 w.width(
                     0x30,
                     matches!(
                         self.pc,
                         0xfa70
+                            | 0xfa85
                             | 0xfb3c
                             | 0xfbae
                             | 0xfbf4
@@ -101,10 +119,10 @@ impl LoadFileHud {
                 );
                 self.pc + 2
             }
-            0xfa72 | 0xfa80 | 0xfa81 => {
+            0xfa72 | 0xfa80 | 0xfa81 | 0xfa87 | 0xfa88 => {
                 w.drain(6);
                 w.push(
-                    u16::from(if self.pc == 0xfa81 {
+                    u16::from(if matches!(self.pc, 0xfa81 | 0xfa88) {
                         w.cpu.bank
                     } else {
                         w.cpu.db
@@ -113,12 +131,21 @@ impl LoadFileHud {
                 );
                 self.pc + 1
             }
-            0xfa7f | 0xfa82 | 0xfa8d => {
+            0xfa7f | 0xfa82 | 0xfa8d | 0xfa89 => {
                 w.drain(12);
                 let v = w.pull(1);
                 w.cpu.db = v as u8;
                 w.flags(v, 1);
                 self.pc + 1
+            }
+            0xdfa9 => {
+                w.drain(16);
+                let address = w.absolute(0x200);
+                let value = w.read(address, m).wrapping_add(1) & mask;
+                w.drain(6);
+                w.flags(value, m);
+                w.write_high_low(address, value, m);
+                self.pc + 3
             }
             0xfa7c => {
                 w.drain(8);

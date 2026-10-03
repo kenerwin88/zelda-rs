@@ -9875,6 +9875,19 @@ impl ZeldaState {
         true
     }
 
+    pub(crate) fn native_push_block_drawing_table_byte(address: u32) -> Option<u8> {
+        match address {
+            0x07f0cc..=0x07f0cf => Some(
+                SPRITE_DUNGEON_DRAW_SINGLE_PUSH_BLOCK_CHARS[(address - 0x07f0cc) as usize],
+            ),
+            0x07f0d0..=0x07f0d8 => Some(
+                SPRITE_DUNGEON_DRAW_SINGLE_PUSH_BLOCK_PUSH_BLOCK_CHAR_INDEX_BY_MODE
+                    [(address - 0x07f0d0) as usize] as u8,
+            ),
+            _ => None,
+        }
+    }
+
     pub(super) fn sprite_dungeon_draw_single_push_block(&mut self, mut j: usize) {
         let _scope = crate::cycle_ledger::routine(0x07_f0d9);
         crate::cycle_ledger::charge(100); // PHY, allocation size, JSL allocator.

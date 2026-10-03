@@ -2,8 +2,9 @@
 //! preparation. Every nested return consumes the live native stack. Bodies not
 //! owned here remain explicit children, including damage and priest helpers.
 use super::{
+    indoor_camera::IndoorCamera,
     native_work::{Work, WorkBus},
-    nmi_stack::{NativeNmiContext, CARRY, ZERO},
+    nmi_stack::{NativeNmiContext, CARRY, NEGATIVE, ZERO},
     oam_allocate::OamAllocate,
     sprite_drawing::{DrawingChild, SpriteDrawing},
     sprite_slot_data,
@@ -13,6 +14,8 @@ pub(crate) fn table_byte(address: u32) -> Option<u8> {
     let entry = match address {
         0x05db95..=0x05db9a => Some((&[0xde2c, 0xdce6, 0xdb9b][..], 0x05db95)),
         0x05de3a..=0x05de3d => Some((&[0xde3e, 0xdf19][..], 0x05de3a)),
+        0x05de48..=0x05de51 => Some((&[0xde52, 0xde72, 0xde9a, 0xdeb4, 0xdef8][..], 0x05de48)),
+        0x05df20..=0x05df25 => Some((&[0xdf26, 0xdf44, 0xdf43][..], 0x05df20)),
         0x0684f4..=0x06850b => Some((&sprite_slot_data::STATES[..], 0x0684f4)),
         0x06865b..=0x068840 => Some((&sprite_slot_data::PREP[..], 0x06865b)),
         0x069283..=0x069468 => Some((&sprite_slot_data::ACTIVE[..], 0x069283)),
@@ -26,6 +29,7 @@ pub(crate) fn table_byte(address: u32) -> Option<u8> {
         .or_else(|| super::sprite_drawing::table_byte(address))
         .or_else(|| crate::ZeldaState::native_sprite_property_table_byte(address))
         .or_else(|| super::ancilla_main::table_byte(address))
+        .or_else(|| super::indoor_camera::table_byte(address))
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SlotChild {
@@ -36,6 +40,8 @@ pub(crate) enum SlotChild {
     Active(u32),
     PriestMantle,
     FaceLink,
+    UncleCall(u32),
+    RoomTransition(u32),
     Drawing(DrawingChild),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -56,6 +62,7 @@ pub(crate) struct SpriteSlot {
     allocator: Option<OamAllocate>,
     dispatch: Dispatch,
     drawing: Option<SpriteDrawing>,
+    camera: Option<super::indoor_camera::IndoorCamera>,
     child: Option<SlotChild>,
     complete: bool,
 }
@@ -72,6 +79,7 @@ impl SpriteSlot {
             allocator: None,
             dispatch: Dispatch::State,
             drawing: None,
+            camera: None,
             child: None,
             complete: false,
         }
@@ -84,6 +92,11 @@ impl SpriteSlot {
     }
     pub(crate) fn return_from_child(&mut self, cpu: &NativeNmiContext) {
         let child = self.child.take().expect("slot child must be pending");
+        if let Some(camera) = self.camera.as_mut() {
+            assert_eq!(child, SlotChild::RoomTransition(camera.child().unwrap()));
+            camera.return_from_child(cpu);
+            return;
+        }
         if let Some(drawing) = self.drawing.as_mut() {
             assert_eq!(
                 child,
@@ -116,6 +129,15 @@ impl SpriteSlot {
             return None;
         }
         assert!(self.child.is_none(), "sprite slot child still owns the CPU");
+        if let Some(camera) = self.camera.as_mut() {
+            let cycles = camera.step(cpu, clock, bus);
+            self.child = camera.child().map(SlotChild::RoomTransition);
+            if camera.complete() {
+                self.camera = None;
+                self.accept_return(cpu, Some(false));
+            }
+            return cycles;
+        }
         if let Some(drawing) = self.drawing.as_mut() {
             let cycles = drawing.step(cpu, clock, bus);
             if drawing.complete() {
@@ -145,6 +167,10 @@ impl SpriteSlot {
             cycles: 0,
         };
         let pc = self.pc;
+        let m = if w.cpu.p & 0x20 != 0 { 1 } else { 2 };
+        let x = if w.cpu.p & 0x10 != 0 { 1 } else { 2 };
+        let mask = if m == 1 { 255 } else { 65535 };
+        let xmask = if x == 1 { 255 } else { 65535 };
         w.fetch();
         self.pc = match pc {
             0x0684e7 | 0x068453 | 0x06927f => {
@@ -619,7 +645,9 @@ impl SpriteSlot {
                 let low = w.read(0, 2);
                 let bank = w.read(2, 1);
                 let target = (u32::from(bank) << 16) | u32::from(low);
-                if !matches!(target, 0x06864d | 0x06bfe5 | 0x05de2c) {
+                if !matches!(target, 0x06864d | 0x06bfe5 | 0x05de2c
+                    | 0x05de3e | 0x05df19 | 0x05de52 | 0x05de72 | 0x05de9a
+                    | 0x05deb4 | 0x05def8 | 0x05df26 | 0x05df44 | 0x05df43) {
                     self.child = Some(match self.dispatch {
                         Dispatch::Prep => SlotChild::Prep(target),
                         Dispatch::State => SlotChild::State(target),
@@ -795,6 +823,767 @@ impl SpriteSlot {
                 w.rts();
                 self.accept_return(w.cpu, Some(false));
                 self.pc
+            }
+            0x5de3e | 0x5f9ed | 0x5f9f0 | 0x5f9f9 | 0x791b9 => {
+                let (operand, next) = match pc {
+                    0x5de3e => (0x5f9ed, 0x5de41),
+                    0x5f9ed => (0x5f9f4, 0x5f9f0),
+                    0x5f9f0 => (0x5fa00, 0x5f9f3),
+                    0x5f9f9 => (0x5fa00, 0x5f9fc),
+                    0x791b9 => (0x79195, 0x791bc),
+                    _ => unreachable!(),
+                };
+                w.operand_then_internal(2);
+                w.push((next - 1) as u16, 2);
+                self.calls.push(Call {
+                    returned: next,
+                    far: false,
+                });
+                operand
+            }
+            0x5de41 | 0x5deb4 | 0x5debe | 0x5dee3 | 0x5df19 | 0x5fa00 | 0x5fa10 | 0x5e214 | 0x7919d
+            | 0xff546 => {
+                let (operand, next) = match pc {
+                    0x5de41 => (0x0d80, 0x5de44),
+                    0x5deb4 => (0x0df0, 0x5deb7),
+                    0x5debe => (0x0d00, 0x5dec1),
+                    0x5dee3 => (0x0d90, 0x5dee6),
+                    0x5df19 => (0x0d80, 0x5df1c),
+                    0x5fa00 => (0x0d40, 0x5fa03),
+                    0x5fa10 => (0x0d40, 0x5fa13),
+                    0x5e214 => (0x0de0, 0x5e217),
+                    0x7919d => (0x0c4a, 0x791a0),
+                    0xff546 => (0x0c4a, 0xff549),
+                    _ => unreachable!(),
+                };
+                w.drain(16);
+                if x == 2 || (operand & 255) + w.cpu.x > 255 {
+                    w.drain(6);
+                }
+                let value = w.read(w.absolute(operand) + u32::from(w.cpu.x), m);
+                w.load(value, m);
+                next
+            }
+            0x5de44 | 0x5df1c => {
+                let (operand, next) = match pc {
+                    0x5de44 => (0x8781, 0x5de48),
+                    0x5df1c => (0x8781, 0x5df20),
+                    _ => unreachable!(),
+                };
+                w.operand_then_internal(3);
+                w.push(u16::from(w.cpu.bank), 1);
+                w.push((next - 1) as u16, 2);
+                self.dispatch = Dispatch::Active;
+                operand
+            }
+            0x5de52 | 0x5de57 | 0x5de5c | 0x5de61 | 0x5de66 | 0x5de8c | 0x5de90 | 0x5de94 | 0x5de9a
+            | 0x5dea5 | 0x5deaa | 0x5def8 | 0x5defe | 0x5df03 | 0x5df30 | 0x5df3a | 0x5df50
+            | 0x5df55 | 0x5df65 | 0x5e225 | 0x5e22e | 0x5e247 => {
+                let (operand, next) = match pc {
+                    0x5de52 => (0x0040, 0x5de54),
+                    0x5de57 => (0x0009, 0x5de59),
+                    0x5de5c => (0x005a, 0x5de5e),
+                    0x5de61 => (0x0021, 0x5de63),
+                    0x5de66 => (0x001f, 0x5de68),
+                    0x5de8c => (0x0057, 0x5de8e),
+                    0x5de90 => (0x0021, 0x5de92),
+                    0x5de94 => (0x0001, 0x5de96),
+                    0x5de9a => (0x000d, 0x5de9c),
+                    0x5dea5 => (0x0003, 0x5dea7),
+                    0x5deaa => (0x0001, 0x5deac),
+                    0x5def8 => (0x0005, 0x5defa),
+                    0x5defe => (0x00f3, 0x5df00),
+                    0x5df03 => (0x000d, 0x5df05),
+                    0x5df30 => (0x000e, 0x5df32),
+                    0x5df3a => (0x0000, 0x5df3c),
+                    0x5df50 => (0x0001, 0x5df52),
+                    0x5df55 => (0x0003, 0x5df57),
+                    0x5df65 => (0x0001, 0x5df67),
+                    0x5e225 => (0x0002, 0x5e227),
+                    0x5e22e => (0x000e, 0x5e230),
+                    0x5e247 => (0x0000, 0x5e249),
+                    _ => unreachable!(),
+                };
+                w.drain(8 * u32::from(m));
+                let value = operand;
+                w.load(value, m);
+                next
+            }
+            0x5de54 | 0x5de59 | 0x5de5e | 0x5de63 | 0x5de96 | 0x5dea7 | 0x5df00 | 0x5df05 | 0x5e1f0
+            | 0x5e219 | 0x5e22b => {
+                let (operand, next) = match pc {
+                    0x5de54 => (0x0fc2, 0x5de57),
+                    0x5de59 => (0x0fc3, 0x5de5c),
+                    0x5de5e => (0x0fc4, 0x5de61),
+                    0x5de63 => (0x0fc5, 0x5de66),
+                    0x5de96 => (0x02e4, 0x5de99),
+                    0x5dea7 => (0x012c, 0x5deaa),
+                    0x5df00 => (0x02cd, 0x5df03),
+                    0x5df05 => (0x02ce, 0x5df08),
+                    0x5e1f0 => (0x1cf0, 0x5e1f3),
+                    0x5e219 => (0x1cf0, 0x5e21c),
+                    0x5e22b => (0x010c, 0x5e22e),
+                    _ => unreachable!(),
+                };
+                w.drain(16);
+                w.write(w.absolute(operand), w.cpu.a & mask, m);
+                next
+            }
+            0x5de68 | 0x5de9c | 0x5df32 | 0x5df44 | 0x5fa18 => {
+                let (operand, next) = match pc {
+                    0x5de68 => (0x0000, 0x5de6a),
+                    0x5de9c => (0x0000, 0x5de9e),
+                    0x5df32 => (0x0000, 0x5df34),
+                    0x5df44 => (0x0000, 0x5df46),
+                    0x5fa18 => (0x0000, 0x5fa1a),
+                    _ => unreachable!(),
+                };
+                w.drain(8 * u32::from(x));
+                let value = operand;
+                w.cpu.y = value;
+                w.flags(value, x);
+                next
+            }
+            0x5de6a | 0x5de9e | 0x5df2c | 0x5df34 | 0x5e208 | 0x5e233 | 0x5e239 | 0xff570 => {
+                let (operand, next) = match pc {
+                    0x5de6a => (0x5e219, 0x5de6e),
+                    0x5de9e => (0x5e219, 0x5dea2),
+                    0x5df2c => (0x791b9, 0x5df30),
+                    0x5df34 => (0x5e1f0, 0x5df38),
+                    0x5e208 => (0x5e219, 0x5e20c),
+                    0x5e233 => (0xff540, 0x5e237),
+                    0x5e239 => (0x791b9, 0x5e23d),
+                    0xff570 => (0x7f42f, 0xff574),
+                    _ => unreachable!(),
+                };
+                w.operand_then_internal(3);
+                w.push(u16::from(w.cpu.bank), 1);
+                w.push((next - 1) as u16, 2);
+                self.calls.push(Call {
+                    returned: next,
+                    far: true,
+                });
+                operand
+            }
+            0x5de6e | 0x5de83 | 0x5dea2 | 0x5dee0 | 0x5deea | 0x5df40 | 0x5df4d => {
+                let (operand, next) = match pc {
+                    0x5de6e => (0x0d80, 0x5de71),
+                    0x5de83 => (0x0d80, 0x5de86),
+                    0x5dea2 => (0x0d80, 0x5dea5),
+                    0x5dee0 => (0x0d90, 0x5dee3),
+                    0x5deea => (0x0d80, 0x5deed),
+                    0x5df40 => (0x0d80, 0x5df43),
+                    0x5df4d => (0x0d80, 0x5df50),
+                    _ => unreachable!(),
+                };
+                w.operand_then_internal(2);
+                let address = w.absolute(operand) + u32::from(w.cpu.x);
+                let old = w.read(address, m);
+                w.drain(6);
+                let value = old.wrapping_add(1) & mask;
+                w.flags(value, m);
+                w.write_high_low(address, value, m);
+                next
+            }
+            0x5de71 | 0x5de82 | 0x5de99 | 0x5deaf | 0x5def7 | 0x5df18 | 0x5df43 | 0x5df6b | 0x5f9f3
+            | 0x5f9ff | 0x5fa2d | 0x791b8 => {
+                w.rts();
+                self.accept_return(w.cpu, Some(false));
+                self.pc
+            }
+            0x5de72 | 0x5de78 | 0x5deed | 0x5e1fc | 0x5e229 | 0x5e241 | 0xff55a | 0xff55e => {
+                let (operand, next) = match pc {
+                    0x5de72 => (0x001a, 0x5de74),
+                    0x5de78 => (0x009c, 0x5de7a),
+                    0x5deed => (0x001a, 0x5deef),
+                    0x5e1fc => (0x004d, 0x5e1fe),
+                    0x5e229 => (0x0010, 0x5e22b),
+                    0x5e241 => (0x005d, 0x5e243),
+                    0xff55a => (0x0023, 0xff55c),
+                    0xff55e => (0x0021, 0xff560),
+                    _ => unreachable!(),
+                };
+                let value = w.dp_read(operand, m);
+                w.load(value, m);
+                next
+            }
+            0x5de74 | 0x5def2 => {
+                let (operand, next) = match pc {
+                    0x5de74 => (0x0003, 0x5de76),
+                    0x5def2 => (0x0001, 0x5def4),
+                    _ => unreachable!(),
+                };
+                w.drain(8 * u32::from(m));
+                let value = operand;
+                w.load(w.cpu.a & value & mask, m);
+                next
+            }
+            0x5de76 | 0x5deb7 | 0x5debc | 0x5dee8 | 0x5e245 | 0x791a2 | 0xff54b => {
+                let (operand, next) = match pc {
+                    0x5de76 => (0x5de82, 0x5de78),
+                    0x5deb7 => (0x5deed, 0x5deb9),
+                    0x5debc => (0x5dec7, 0x5debe),
+                    0x5dee8 => (0x5deed, 0x5deea),
+                    0x5e245 => (0x5e24b, 0x5e247),
+                    0x791a2 => (0x791a7, 0x791a4),
+                    0xff54b => (0xff557, 0xff54d),
+                    _ => unreachable!(),
+                };
+                if w.branch(w.cpu.p & ZERO == 0) {
+                    operand
+                } else {
+                    next
+                }
+            }
+            0x5de7a | 0x5dee6 | 0x5e1fe | 0x5e243 | 0x791a0 | 0xff549 => {
+                let (operand, next) = match pc {
+                    0x5de7a => (0x0020, 0x5de7c),
+                    0x5dee6 => (0x0003, 0x5dee8),
+                    0x5e1fe => (0x0002, 0x5e200),
+                    0x5e243 => (0x0002, 0x5e245),
+                    0x791a0 => (0x001e, 0x791a2),
+                    0xff549 => (0x001f, 0xff54b),
+                    _ => unreachable!(),
+                };
+                w.drain(8 * u32::from(m));
+                let value = operand;
+                let left = w.cpu.a & mask;
+                w.cpu.p = (w.cpu.p & !CARRY) | u8::from(left >= value);
+                w.flags(left.wrapping_sub(value) & mask, m);
+                next
+            }
+            0x5de7c | 0x5fa03 | 0x5e200 | 0x79198 | 0xff550 => {
+                let (operand, next) = match pc {
+                    0x5de7c => (0x5de83, 0x5de7e),
+                    0x5fa03 => (0x5fa2d, 0x5fa05),
+                    0x5e200 => (0x5e214, 0x5e202),
+                    0x79198 => (0x791b8, 0x7919a),
+                    0xff550 => (0xff557, 0xff552),
+                    _ => unreachable!(),
+                };
+                if w.branch(w.cpu.p & ZERO != 0) {
+                    operand
+                } else {
+                    next
+                }
+            }
+            0x5de7e | 0x5de80 => {
+                let (operand, next) = match pc {
+                    0x5de7e => (0x009c, 0x5de80),
+                    0x5de80 => (0x009d, 0x5de82),
+                    _ => unreachable!(),
+                };
+                w.dp_increment(operand, m, false);
+                next
+            }
+            0x5de86 | 0x5de89 => {
+                let (operand, next) = match pc {
+                    0x5de86 => (0x037d, 0x5de89),
+                    0x5de89 => (0x037c, 0x5de8c),
+                    _ => unreachable!(),
+                };
+                w.drain(16);
+                let address = w.absolute(operand);
+                let old = w.read(address, m);
+                w.drain(6);
+                let value = old.wrapping_add(1) & mask;
+                w.flags(value, m);
+                w.write_high_low(address, value, m);
+                next
+            }
+            0x5de8e | 0x5de92 | 0x5e227 | 0x5e230 | 0x5e249 | 0xff55c | 0xff560 | 0xff567 | 0xff56c => {
+                let (operand, next) = match pc {
+                    0x5de8e => (0x0020, 0x5de90),
+                    0x5de92 => (0x0021, 0x5de94),
+                    0x5e227 => (0x0011, 0x5e229),
+                    0x5e230 => (0x0010, 0x5e232),
+                    0x5e249 => (0x005d, 0x5e24b),
+                    0xff55c => (0x0041, 0xff55e),
+                    0xff560 => (0x0040, 0xff562),
+                    0xff567 => (0x0022, 0xff569),
+                    0xff56c => (0x0020, 0xff56e),
+                    _ => unreachable!(),
+                };
+                w.dp_store(operand, w.cpu.a & mask, m);
+                next
+            }
+            0x5deac | 0x5dec4 | 0x5deca | 0x5ded0 | 0x5ded7 | 0x5dedd | 0x5def4 | 0x5df52 | 0x5fa0d
+            | 0x5fa23 | 0x5fa2a => {
+                let (operand, next) = match pc {
+                    0x5deac => (0x0dc0, 0x5deaf),
+                    0x5dec4 => (0x0d00, 0x5dec7),
+                    0x5deca => (0x0df0, 0x5decd),
+                    0x5ded0 => (0x0de0, 0x5ded3),
+                    0x5ded7 => (0x0d50, 0x5deda),
+                    0x5dedd => (0x0d40, 0x5dee0),
+                    0x5def4 => (0x0dc0, 0x5def7),
+                    0x5df52 => (0x0dc0, 0x5df55),
+                    0x5fa0d => (0x0d60, 0x5fa10),
+                    0x5fa23 => (0x0d00, 0x5fa26),
+                    0x5fa2a => (0x0d20, 0x5fa2d),
+                    _ => unreachable!(),
+                };
+                w.operand_then_internal(2);
+                w.write(w.absolute(operand) + u32::from(w.cpu.x), w.cpu.a & mask, m);
+                next
+            }
+            0x5deb9 => {
+                let (operand, next) = (0x0d90, 0x5debc);
+                w.drain(16);
+                if x == 2 || (operand & 255) + w.cpu.x > 255 {
+                    w.drain(6);
+                }
+                let value = w.read(w.absolute(operand) + u32::from(w.cpu.x), x);
+                w.cpu.y = value;
+                w.flags(value, x);
+                next
+            }
+            0x5dec1 | 0x5e212 => {
+                let next = match pc {
+                    0x5dec1 => 0x5dec2,
+                    0x5e212 => 0x5e213,
+                    _ => unreachable!(),
+                };
+                w.drain(6);
+                w.cpu.p |= CARRY;
+                next
+            }
+            0x5dec2 => {
+                let (operand, next) = (0x0002, 0x5dec4);
+                w.drain(8 * u32::from(m));
+                let value = operand;
+                w.sbc(value, m);
+                next
+            }
+            0x5dec7 | 0x5decd | 0x5ded4 | 0x5deda => {
+                let (operand, next) = match pc {
+                    0x5dec7 => (0xdeb0, 0x5deca),
+                    0x5decd => (0xdeb2, 0x5ded0),
+                    0x5ded4 => (0xde24, 0x5ded7),
+                    0x5deda => (0xde28, 0x5dedd),
+                    _ => unreachable!(),
+                };
+                w.drain(16);
+                if x == 2 || (operand & 255) + w.cpu.y > 255 {
+                    w.drain(6);
+                }
+                let value = w.read(w.absolute(operand) + u32::from(w.cpu.y), m);
+                w.load(value, m);
+                next
+            }
+            0x5ded3 => {
+                let next = 0x5ded4;
+                w.drain(6);
+                w.cpu.y = w.cpu.a & xmask;
+                w.flags(w.cpu.y, x);
+                next
+            }
+            0x5deef | 0x5def0 | 0x5def1 | 0x5fa14 | 0x5fa15 | 0x5fa16 | 0x5fa17 => {
+                let next = match pc {
+                    0x5deef => 0x5def0,
+                    0x5def0 => 0x5def1,
+                    0x5def1 => 0x5def2,
+                    0x5fa14 => 0x5fa15,
+                    0x5fa15 => 0x5fa16,
+                    0x5fa16 => 0x5fa17,
+                    0x5fa17 => 0x5fa18,
+                    _ => unreachable!(),
+                };
+                w.drain(6);
+                let value = w.cpu.a & mask;
+                w.cpu.p = (w.cpu.p & !CARRY) | (value & 1) as u8;
+                w.load(value >> 1, m);
+                next
+            }
+            0x5defa | 0x5df0e | 0x5df3c | 0x5df57 | 0x5df61 | 0x5df67 => {
+                let (operand, next) = match pc {
+                    0x5defa => (0x7ef3cc, 0x5defe),
+                    0x5df0e => (0x7ef3c6, 0x5df12),
+                    0x5df3c => (0x7ef3cc, 0x5df40),
+                    0x5df57 => (0x7ef3c8, 0x5df5b),
+                    0x5df61 => (0x7ef3c6, 0x5df65),
+                    0x5df67 => (0x7ef3c5, 0x5df6b),
+                    _ => unreachable!(),
+                };
+                w.drain(24);
+                w.write(operand, w.cpu.a & mask, m);
+                next
+            }
+            0x5df08 | 0x5df5b => {
+                let (operand, next) = match pc {
+                    0x5df08 => (0x7ef3c6, 0x5df0c),
+                    0x5df5b => (0x7ef3c6, 0x5df5f),
+                    _ => unreachable!(),
+                };
+                w.drain(24);
+                let value = w.read(operand, m);
+                w.load(value, m);
+                next
+            }
+            0x5df0c | 0x5df5f | 0x5fa1d => {
+                let (operand, next) = match pc {
+                    0x5df0c => (0x0010, 0x5df0e),
+                    0x5df5f => (0x0001, 0x5df61),
+                    0x5fa1d => (0x00f0, 0x5fa1f),
+                    _ => unreachable!(),
+                };
+                w.drain(8 * u32::from(m));
+                let value = operand;
+                w.load((w.cpu.a | value) & mask, m);
+                next
+            }
+            0x5df12 | 0x791a4 => {
+                let (operand, next) = match pc {
+                    0x5df12 => (0x0dd0, 0x5df15),
+                    0x791a4 => (0x0c4a, 0x791a7),
+                    _ => unreachable!(),
+                };
+                w.operand_then_internal(2);
+                w.write(w.absolute(operand) + u32::from(w.cpu.x), 0, m);
+                next
+            }
+            0x5df15 | 0x5df46 | 0x5e21f | 0x5e222 | 0x791ab | 0x791b0 | 0x791b5 | 0xff552 => {
+                let (operand, next) = match pc {
+                    0x5df15 => (0x02e4, 0x5df18),
+                    0x5df46 => (0x02e9, 0x5df49),
+                    0x5e21f => (0x0223, 0x5e222),
+                    0x5e222 => (0x1cd8, 0x5e225),
+                    0x791ab => (0x0374, 0x791ae),
+                    0x791b0 => (0x0372, 0x791b3),
+                    0x791b5 => (0x032b, 0x791b8),
+                    0xff552 => (0x037e, 0xff555),
+                    _ => unreachable!(),
+                };
+                w.drain(16);
+                w.write(w.absolute(operand), 0, m);
+                next
+            }
+            0x5df26 | 0x5df49 | 0x5e1f6 => {
+                let (operand, next) = match pc {
+                    0x5df26 => (0x6f129, 0x5df2a),
+                    0x5df49 => (0x799ad, 0x5df4d),
+                    0x5e1f6 => (0x6f129, 0x5e1fa),
+                    _ => unreachable!(),
+                };
+                w.operand_then_internal(3);
+                w.push(u16::from(w.cpu.bank), 1);
+                w.push((next - 1) as u16, 2);
+                self.calls.push(Call {
+                    returned: next,
+                    far: true,
+                });
+                self.child = Some(SlotChild::UncleCall(operand));
+                operand
+            }
+            0x5df2a | 0x5df38 | 0x5e1fa => {
+                let (operand, next) = match pc {
+                    0x5df2a => (0x5df30, 0x5df2c),
+                    0x5df38 => (0x5df43, 0x5df3a),
+                    0x5e1fa => (0x5e214, 0x5e1fc),
+                    _ => unreachable!(),
+                };
+                if w.branch(w.cpu.p & CARRY == 0) {
+                    operand
+                } else {
+                    next
+                }
+            }
+            0x5f9f4 => {
+                let next = 0x5f9f5;
+                w.drain(6);
+                w.load(w.cpu.x, m);
+                next
+            }
+            0x5f9f5 | 0x5fa09 | 0x5e217 => {
+                let next = match pc {
+                    0x5f9f5 => 0x5f9f6,
+                    0x5fa09 => 0x5fa0a,
+                    0x5e217 => 0x5e218,
+                    _ => unreachable!(),
+                };
+                w.clear_carry();
+                next
+            }
+            0x5f9f6 => {
+                let (operand, next) = (0x0010, 0x5f9f8);
+                w.drain(8 * u32::from(m));
+                let value = operand;
+                if m == 1 {
+                    w.adc_byte(value);
+                } else {
+                    w.adc(value);
+                }
+                next
+            }
+            0x5f9f8 => {
+                let next = 0x5f9f9;
+                w.drain(6);
+                w.cpu.x = w.cpu.a & xmask;
+                w.flags(w.cpu.x, x);
+                next
+            }
+            0x5f9fc => {
+                let (operand, next) = (0x0fa0, 0x5f9ff);
+                w.drain(16);
+                let value = w.read(w.absolute(operand), x);
+                w.cpu.x = value;
+                w.flags(value, x);
+                next
+            }
+            0x5fa05 | 0x5fa06 | 0x5fa07 | 0x5fa08 => {
+                let next = match pc {
+                    0x5fa05 => 0x5fa06,
+                    0x5fa06 => 0x5fa07,
+                    0x5fa07 => 0x5fa08,
+                    0x5fa08 => 0x5fa09,
+                    _ => unreachable!(),
+                };
+                w.shift_left(m);
+                next
+            }
+            0x5fa0a | 0x5fa20 | 0x5fa27 => {
+                let (operand, next) = match pc {
+                    0x5fa0a => (0x0d60, 0x5fa0d),
+                    0x5fa20 => (0x0d00, 0x5fa23),
+                    0x5fa27 => (0x0d20, 0x5fa2a),
+                    _ => unreachable!(),
+                };
+                w.drain(16);
+                if x == 2 || (operand & 255) + w.cpu.x > 255 {
+                    w.drain(6);
+                }
+                let value = w.read(w.absolute(operand) + u32::from(w.cpu.x), m);
+                if m == 1 {
+                    w.adc_byte(value);
+                } else {
+                    w.adc(value);
+                }
+                next
+            }
+            0x5fa13 => {
+                let next = 0x5fa14;
+                w.drain(6);
+                w.push(u16::from(w.cpu.p), 1);
+                next
+            }
+            0x5fa1a => {
+                let next = 0x5fa1b;
+                w.drain(12);
+                w.cpu.p = w.pull(1) as u8;
+                if w.cpu.p & 0x10 != 0 {
+                    w.cpu.x &= 255;
+                    w.cpu.y &= 255;
+                }
+                next
+            }
+            0x5fa1b | 0x791a8 | 0xff558 => {
+                let (operand, next) = match pc {
+                    0x5fa1b => (0x5fa20, 0x5fa1d),
+                    0x791a8 => (0x7919d, 0x791aa),
+                    0xff558 => (0xff546, 0xff55a),
+                    _ => unreachable!(),
+                };
+                if w.branch(w.cpu.p & NEGATIVE == 0) {
+                    operand
+                } else {
+                    next
+                }
+            }
+            0x5fa1f => {
+                let next = 0x5fa20;
+                w.drain(6);
+                w.cpu.y = w.cpu.y.wrapping_sub(1) & xmask;
+                w.flags(w.cpu.y, x);
+                next
+            }
+            0x5fa26 | 0x5e20f => {
+                let next = match pc {
+                    0x5fa26 => 0x5fa27,
+                    0x5e20f => 0x5e210,
+                    _ => unreachable!(),
+                };
+                w.drain(6);
+                w.load(w.cpu.y, m);
+                next
+            }
+            0x5e1f3 | 0x5e21c => {
+                let (operand, next) = match pc {
+                    0x5e1f3 => (0x1cf1, 0x5e1f6),
+                    0x5e21c => (0x1cf1, 0x5e21f),
+                    _ => unreachable!(),
+                };
+                w.drain(16);
+                w.write(w.absolute(operand), w.cpu.y, x);
+                next
+            }
+            0x5e202 | 0x79195 | 0xff54d | 0xff564 | 0xff569 => {
+                let (operand, next) = match pc {
+                    0x5e202 => (0x1cf0, 0x5e205),
+                    0x79195 => (0x0372, 0x79198),
+                    0xff54d => (0x037e, 0xff550),
+                    0xff564 => (0x0fc2, 0xff567),
+                    0xff569 => (0x0fc4, 0xff56c),
+                    _ => unreachable!(),
+                };
+                w.drain(16);
+                let value = w.read(w.absolute(operand), m);
+                w.load(value, m);
+                next
+            }
+            0x5e205 => {
+                let (operand, next) = (0x1cf1, 0x5e208);
+                w.drain(16);
+                let value = w.read(w.absolute(operand), x);
+                w.cpu.y = value;
+                w.flags(value, x);
+                next
+            }
+            0x5e20c => {
+                let (operand, next) = (0x5f93f, 0x5e20f);
+                w.operand_then_internal(2);
+                w.push((next - 1) as u16, 2);
+                self.calls.push(Call {
+                    returned: next,
+                    far: false,
+                });
+                self.child = Some(SlotChild::FaceLink);
+                operand
+            }
+            0x5e210 => {
+                let (operand, next) = (0x0003, 0x5e212);
+                w.drain(8 * u32::from(m));
+                let value = operand;
+                w.load((w.cpu.a ^ value) & mask, m);
+                next
+            }
+            0x5e213 | 0x5e218 | 0x5e24c | 0x791bc | 0x7f438 | 0xff576 => {
+                w.rtl();
+                self.accept_return(w.cpu, Some(true));
+                self.pc
+            }
+            0x5e232 | 0x7919a | 0x7f432 | 0xff543 => {
+                let next = match pc {
+                    0x5e232 => 0x5e233,
+                    0x7919a => 0x7919b,
+                    0x7f432 => 0x7f433,
+                    0xff543 => 0xff544,
+                    _ => unreachable!(),
+                };
+                w.drain(6);
+                w.push(w.cpu.x, x);
+                next
+            }
+            0x5e237 | 0x5e23d | 0x5e23f | 0x791ae | 0x791b3 => {
+                let (operand, next) = match pc {
+                    0x5e237 => (0x005e, 0x5e239),
+                    0x5e23d => (0x004d, 0x5e23f),
+                    0x5e23f => (0x0046, 0x5e241),
+                    0x791ae => (0x005e, 0x791b0),
+                    0x791b3 => (0x0050, 0x791b5),
+                    _ => unreachable!(),
+                };
+                w.dp_store(operand, 0, m);
+                next
+            }
+            0x5e24b | 0x791aa | 0x7f436 | 0xff574 => {
+                let next = match pc {
+                    0x5e24b => 0x5e24c,
+                    0x791aa => 0x791ab,
+                    0x7f436 => 0x7f437,
+                    0xff574 => 0xff575,
+                    _ => unreachable!(),
+                };
+                w.drain(12);
+                let value = w.pull(x);
+                w.cpu.x = value;
+                w.flags(value, x);
+                next
+            }
+            0x7919b | 0xff544 => {
+                let (operand, next) = match pc {
+                    0x7919b => (0x0004, 0x7919d),
+                    0xff544 => (0x0004, 0xff546),
+                    _ => unreachable!(),
+                };
+                w.drain(8 * u32::from(x));
+                let value = operand;
+                w.cpu.x = value;
+                w.flags(value, x);
+                next
+            }
+            0x791a7 | 0xff557 => {
+                let next = match pc {
+                    0x791a7 => 0x791a8,
+                    0xff557 => 0xff558,
+                    _ => unreachable!(),
+                };
+                w.drain(6);
+                w.cpu.x = w.cpu.x.wrapping_sub(1) & xmask;
+                w.flags(w.cpu.x, x);
+                next
+            }
+            0x7f42f | 0xff540 => {
+                let next = match pc {
+                    0x7f42f => 0x7f430,
+                    0xff540 => 0xff541,
+                    _ => unreachable!(),
+                };
+                w.drain(6);
+                w.push(u16::from(w.cpu.db), 1);
+                next
+            }
+            0x7f430 | 0xff541 => {
+                let next = match pc {
+                    0x7f430 => 0x7f431,
+                    0xff541 => 0xff542,
+                    _ => unreachable!(),
+                };
+                w.drain(6);
+                w.push(u16::from(w.cpu.bank), 1);
+                next
+            }
+            0x7f431 | 0x7f437 | 0xff542 | 0xff575 => {
+                let next = match pc {
+                    0x7f431 => 0x7f432,
+                    0x7f437 => 0x7f438,
+                    0xff542 => 0xff543,
+                    0xff575 => 0xff576,
+                    _ => unreachable!(),
+                };
+                w.drain(12);
+                let value = w.pull(1);
+                w.cpu.db = value as u8;
+                w.flags(value, 1);
+                next
+            }
+            0x7f433 => {
+                let (operand, next) = (0x7e8f0, 0x7f436);
+                w.operand_then_internal(2);
+                w.push((next - 1) as u16, 2);
+                self.calls.push(Call {
+                    returned: next,
+                    far: false,
+                });
+                self.camera = Some(IndoorCamera::default());
+                operand
+            }
+            0xff555 => {
+                let (operand, next) = (0xff55a, 0xff557);
+                if w.branch(true) {
+                    operand
+                } else {
+                    next
+                }
+            }
+            0xff562 => {
+                let (operand, next) = (0x0020, 0xff564);
+                w.width(operand as u8, true);
+                next
+            }
+            0xff56e => {
+                let (operand, next) = (0x0020, 0xff570);
+                w.width(operand as u8, false);
+                next
             }
             _ => unreachable!("sprite slot {pc:06x}"),
         };
@@ -1086,5 +1875,158 @@ mod tests {
         }
         assert!(returns > 0 && children > 0);
         eprintln!("2048 active Uncle/Priest fixtures, {instructions} instructions, returns={returns}, pending={children}");
+    }
+    #[test]
+    fn uncle_states_match_source_movement_dialogue_camera_and_real_returns() {
+        use super::super::intro_clear::Access;
+        use std::collections::BTreeSet;
+        let rom = rom();
+        let mut visited = BTreeSet::new();
+        let mut instructions = 0;
+        let mut complete = 0;
+        let mut children = BTreeSet::new();
+        for entry in [0x05de3e, 0x05df19] {
+            for slot in 0..16usize {
+                for case in 0..256usize {
+                    let mut machine = snes::Snes::new();
+                    machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                    let r = &mut machine.ram;
+                    r[0xfa0] = slot as u8;
+                    r[0xd80 + slot] = (case % if entry == 0x05de3e { 5 } else { 3 }) as u8;
+                    r[0xd90 + slot] = (case % 3) as u8;
+                    r[0xdf0 + slot] = [0, 1, 128, 255][case % 4];
+                    for offset in [0, 16] {
+                        let k = slot + offset;
+                        r[0xd40 + k] = [0, 1, 12, 127, 128, 244, 255, 16][case / 4 % 8];
+                        r[0xd60 + k] = (case as u8).wrapping_mul(37);
+                        r[0xd00 + k] = (case as u8).wrapping_mul(19);
+                        r[0xd20 + k] = [0, 1, 127, 255][case % 4];
+                    }
+                    r[0x1a] = (case % 8) as u8;
+                    r[0x9c] = [0x20, 0x21, 0, 255][case / 8 % 4];
+                    r[0x9d] = case as u8;
+                    r[0x10] = 7;
+                    r[0x1b] = 1;
+                    r[0x6c] = 0;
+                    r[0x20] = 0x50;
+                    r[0x21] = 0x21;
+                    r[0x22] = 0x40;
+                    r[0x23] = 9;
+                    r[0x40] = r[0x21];
+                    r[0x41] = r[0x23];
+                    r[0xa0] = case as u8;
+                    r[0xa1] = 0;
+                    r[0xa9] = (case % 2) as u8;
+                    r[0xaa] = (case / 2 % 2 * 2) as u8;
+                    r[0xa6] = (case / 4 % 2 * 2) as u8;
+                    r[0xa7] = (case / 8 % 2 * 2) as u8;
+                    r[0x5d] = [0, 2, 3, 8][case / 32 % 4];
+                    r[0x372] = (case % 2) as u8;
+                    r[0x374] = 1;
+                    r[0x50] = 3;
+                    r[0x32b] = 4;
+                    r[0x37e] = (case / 2 % 2) as u8;
+                    for k in 0..5 {
+                        r[0xc4a + k] = [0, 0x1e, 0x1f][(case + k) % 3];
+                    }
+                    for (at, value) in [(0xfc2, 0x0940u16), (0xfc4, 0x215a)] {
+                        r[at..at + 2].copy_from_slice(&value.to_le_bytes());
+                    }
+                    r[0x1fe..0x200].copy_from_slice(&[0x59, 0x80]);
+                    let mut cpu = NativeNmiContext {
+                        a: 0xabcd,
+                        x: slot as u16,
+                        y: 7,
+                        d: 0,
+                        db: 5,
+                        bank: 5,
+                        pc: entry as u16,
+                        sp: 0x1fd,
+                        p: 0x30 | (case as u8 & 0xc3),
+                    };
+                    machine.cpu.a = cpu.a;
+                    machine.cpu.x = cpu.x;
+                    machine.cpu.y = cpu.y;
+                    machine.cpu.k = cpu.bank;
+                    machine.cpu.db = cpu.db;
+                    machine.cpu.pc = cpu.pc;
+                    machine.cpu.sp = cpu.sp;
+                    machine.cpu.e = false;
+                    machine.cpu.unpack_flags(cpu.p);
+                    let mut ram = machine.ram.clone();
+                    let clock = CpuMasterTimeline::at_raster(
+                        4000 + case as u64,
+                        snes::CpuRasterPosition::new(if case & 1 == 0 { 224 } else { 261 }, 1300),
+                        snes::CpuBusWorkload::default(),
+                        snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+                    );
+                    let mut source = snes::RomCpuTimingProbe::new(
+                        machine,
+                        clock,
+                        snes::SourcePpuReadState::snes9x_reset(),
+                    )
+                    .unwrap();
+                    let mut clock = source.timeline().clone();
+                    let mut work = SpriteSlot::from_entry(entry);
+                    for _ in 0..2000 {
+                        if work.complete() || work.child().is_some() {
+                            break;
+                        }
+                        visited.insert((u32::from(cpu.bank) << 16) | u32::from(cpu.pc));
+                        super::super::native_work::compare_instruction(
+                            &format!(
+                                "Uncle entry={entry:06x} slot={slot} case={case} pc={:02x}:{:04x}",
+                                cpu.bank, cpu.pc
+                            ),
+                            &mut cpu,
+                            &mut clock,
+                            &mut source,
+                            &mut ram,
+                            &rom,
+                            |cpu, clock, bus| {
+                                work.step(cpu, clock, |at, access| {
+                                    if let Access::Read(a, width) = access {
+                                        if a & 0x408000 == 0x8000 {
+                                            for b in 0..width {
+                                                let a = a + u32::from(b);
+                                                assert_eq!(
+                                                    table_byte(a),
+                                                    Some(
+                                                        rom[(a >> 16) as usize * 0x8000
+                                                            + (a as usize & 0x7fff)]
+                                                    ),
+                                                    "Uncle table {a:06x}"
+                                                );
+                                            }
+                                        }
+                                    }
+                                    bus(at, access)
+                                })
+                                .unwrap();
+                            },
+                        );
+                        work = work.clone();
+                        instructions += 1;
+                    }
+                    assert!(work.complete() || work.child().is_some());
+                    assert_eq!(ram, source.snes().ram);
+                    if work.complete() {
+                        complete += 1;
+                        assert_eq!((cpu.bank, cpu.pc, cpu.sp, cpu.db), (5, 0x805a, 0x1ff, 5));
+                        assert!(work.calls.is_empty());
+                    } else {
+                        children.insert((u32::from(cpu.bank) << 16) | u32::from(cpu.pc));
+                    }
+                }
+            }
+        }
+        for pc in [
+            0x05de52, 0x05de72, 0x05de9a, 0x05deb4, 0x05def8, 0x05df26, 0x05df44, 0x05df43,
+            0x05fa1d, 0x05fa27, 0x05e24c, 0x0ff54d, 0x0791a4, 0x07e8f0,
+        ] {
+            assert!(visited.contains(&pc), "uncovered Uncle path {pc:06x}");
+        }
+        assert_eq!(children, BTreeSet::from([0x06f129, 0x0799ad]));
+        eprintln!("8192 active Uncle fixtures, {instructions} instruction boundaries, {complete} full returns, {} PCs; remaining passage calls {children:x?}",visited.len());
     }
 }

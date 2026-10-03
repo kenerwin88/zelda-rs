@@ -567,9 +567,7 @@ impl Spotlight {
 
 #[cfg(test)]
 mod tests {
-    use super::super::dungeon_landing::{DungeonLanding, LandingChild};
-    use super::super::sprite_main::SpriteChild;
-    use super::super::sprite_slot::SlotChild;
+    use super::super::dungeon_landing::DungeonLanding;
     use super::super::{intro_clear::Access, native_work::compare_instruction_with_devices};
     use super::*;
     use snes::apu::{ApuHostPortProbe, ApuHostPortTiming, ApuState};
@@ -686,8 +684,8 @@ mod tests {
                     machine.ram[0x1b] = 1;
                     if matches!(case, 49 | 55) {
                         // Retain the landing -> SpriteMain -> blanket path up
-                        // to an active body, or through SpriteMain's real RTL
-                        // and the caller's subsequent Spotlight work.
+                        // through both active and frozen Uncle work, then
+                        // SpriteMain's real RTL and the subsequent Spotlight work.
                         machine.ram[0xc4a] = 0x20;
                     }
                     if matches!(case, 49 | 55) {
@@ -871,14 +869,9 @@ mod tests {
                 }
                 assert!(work.finished(), "{field}/{case} stopped {:04x}", cpu.pc);
                 if let FixtureWork::Landing(work) = &work {
-                    if case == 49 {
-                        assert_eq!(work.child(), Some(LandingChild::Sprites(
-                            SpriteChild::Sprite(SlotChild::Active(0x05de3e)))));
-                        assert!(!work.complete(), "a pending child cannot complete the caller");
-                    } else {
-                        assert!(work.complete());
-                        assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, 0x87af, 0x1fe));
-                    }
+                    assert!(work.complete());
+                    assert_eq!(work.child(), None);
+                    assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, 0x87af, 0x1fe));
                 } else {
                     assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, 0x805a, 0x1ff));
                 }

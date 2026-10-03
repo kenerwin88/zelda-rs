@@ -419,7 +419,7 @@ impl AncillaMain {
 
 #[cfg(test)]
 mod tests {
-    use super::super::sprite_main::{SpriteChild, SpriteMain};
+    use super::super::sprite_main::SpriteMain;
     use super::*;
 
     enum Fixture {
@@ -513,7 +513,7 @@ mod tests {
             ram[0xdd0] = if case & 1 == 0 { 8 } else { 9 };
             ram[0xe20] = 0x73;
             // Compose both the frozen active-body double return and the
-            // unfrozen subtype handoff after drawing. Blanket clipping still
+            // unfrozen house-state return after drawing. Blanket clipping still
             // varies independently across the full coordinate matrix above.
             if case & 1 != 0 {
                 ram[0x11] = if case & 2 == 0 { 15 } else { 0 };
@@ -592,19 +592,10 @@ mod tests {
                 assert_eq!(w.child(), Some(HANDLERS[usize::from(kind - 1)]));
                 assert_eq!((cpu.bank, cpu.sp), (8, 0x1fd));
             }
-            Fixture::Sprites(w) if case & 3 != 3 => {
-                assert!(w.complete());
-                assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, 0x9338, 0x1ff));
-            }
             Fixture::Sprites(w) => {
-                assert!(!w.complete());
-                assert_eq!(
-                    w.child(),
-                    Some(SpriteChild::Sprite(
-                        super::super::sprite_slot::SlotChild::Active(0x05de3e)
-                    ))
-                );
-                assert_eq!((cpu.bank, cpu.pc, cpu.x), (5, 0xde3e, 0));
+                assert!(w.complete());
+                assert_eq!(w.child(), None);
+                assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, 0x9338, 0x1ff));
             }
         }
         instructions

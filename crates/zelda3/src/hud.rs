@@ -379,6 +379,29 @@ impl ZeldaState {
         item
     }
 
+    pub(crate) fn native_hud_update_table_byte(address: u32) -> Option<u8> {
+        match address {
+            0x0ddb48..=0x0ddb4f => Some(MAX_BOMBS_BY_UPGRADE_LEVEL[(address - 0x0ddb48) as usize]),
+            0x0ddb58..=0x0ddb5f => Some(MAX_ARROWS_BY_UPGRADE_LEVEL[(address - 0x0ddb58) as usize]),
+            0x0ddb60..=0x0ddb74 => Some(MAX_HEALTH_BY_CAPACITY_LEVEL[(address - 0x0ddb60) as usize]),
+            0x0dfa09..=0x0dfa10 => {
+                let offset = (address - 0x0dfa09) as usize;
+                Some(HUD_PARTIAL_HEART_ANIMATION_TILES[offset / 2].to_le_bytes()[offset & 1])
+            }
+            0x0dfa11..=0x0dfa14 => Some(1),
+            _ => Self::native_load_hud_table_byte(address),
+        }
+    }
+
+    pub(crate) fn native_floor_indicator_table_byte(address: u32) -> Option<u8> {
+        let (table, offset) = match address {
+            0x0afce0..=0x0afcf5 => (&DUNGEON_FLOOR_INDICATOR_TOP_TILES, address - 0x0afce0),
+            0x0afcf6..=0x0afd0b => (&DUNGEON_FLOOR_INDICATOR_BOTTOM_TILES, address - 0x0afcf6),
+            _ => return None,
+        };
+        Some(table[offset as usize / 2].to_le_bytes()[offset as usize & 1])
+    }
+
     pub(super) fn hud_floor_indicator(&mut self) {
         let _scope = crate::cycle_ledger::routine(0x0a_fd0c);
         crate::cycle_ledger::charge(102); // REP #$30 : LDA $04A0 : AND #$FF : BEQ.

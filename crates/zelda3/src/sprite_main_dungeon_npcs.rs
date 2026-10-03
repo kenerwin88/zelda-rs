@@ -1800,6 +1800,12 @@ impl ZeldaState {
     // }
     pub(crate) fn native_uncle_prep_table_byte(address: u32) -> Option<u8> {
         match address {
+            0x05de24..=0x05de27 => Some(UNCLE_LEAVE_HOUSE_X_VELOCITIES[(address - 0x05de24) as usize] as u8),
+            0x05de28..=0x05de2b => Some(UNCLE_LEAVE_HOUSE_Y_VELOCITIES[(address - 0x05de28) as usize] as u8),
+            0x05deb0..=0x05deb1 => Some(UNCLE_LEAVE_HOUSE_DELAYS[(address - 0x05deb0) as usize]),
+            0x05deb2..=0x05deb4 => Some(UNCLE_LEAVE_HOUSE_DIRECTIONS[(address - 0x05deb2) as usize]),
+            0x05dee1 => Some(UNCLE_LEAVE_HOUSE_OOB_X_VELOCITY as u8),
+            0x05dee5 => Some(UNCLE_LEAVE_HOUSE_OOB_Y_VELOCITY as u8),
             0x05da31..=0x05da36 => Some((-6i16).to_le_bytes()[((address - 0x05da31) & 1) as usize]),
             0x05da37..=0x05da3c => {
                 let offset = (address - 0x05da37) as usize;

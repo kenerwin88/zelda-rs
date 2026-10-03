@@ -86,7 +86,7 @@ mod tests {
                     ..Default::default()
                 };
                 for _ in 0..20000 {
-                    if work.child().is_some() {
+                    if work.child().is_some() || work.complete() {
                         break;
                     }
                     compare_instruction(
@@ -106,21 +106,14 @@ mod tests {
                     instructions += 1;
                 }
                 assert!(
-                    work.child().is_some(),
+                    work.child().is_some() || work.complete(),
                     "common entry={entry:04x} case={case}"
                 );
-                assert!(!work.complete());
                 assert_eq!(ram, source.snes().ram);
-                if entry == 0x87e5 {
-                    assert_eq!(work.child(), Some(CommonChild::Call(0x07f0ac)));
-                    assert_eq!(cpu.sp, 0x1e5);
-                }
-                if matches!(entry, 0x8842 | 0x8852) {
-                    assert_eq!(work.child(), Some(CommonChild::Call(0x0ddb75)));
-                }
-                if entry == 0x885a {
-                    assert_eq!(work.child(), Some(CommonChild::Call(0x0afd0c)));
-                    assert_eq!(cpu.sp, 0x1f0);
+                if matches!(entry, 0x87e5 | 0x883e | 0x8842 | 0x8852 | 0x8856 | 0x885a) {
+                    assert!(work.complete());
+                    assert_eq!(work.child(), None);
+                    assert_eq!(cpu.sp, if matches!(entry, 0x883e | 0x8842) { 0x1fb } else { 0x1f3 });
                 }
             }
         }
@@ -131,6 +124,9 @@ mod tests {
 use super::{
     dungeon_push_blocks::{DungeonPushBlocks, PushBlockChild},
     lamp_cone::LampCone,
+    push_block_drawing::PushBlockDrawing,
+    floor_indicator::FloorIndicator,
+    hud_update::HudUpdate,
     link_oam::LinkOam,
     native_work::{Work, WorkBus},
     nmi_stack::{NativeNmiContext, ZERO},
@@ -143,6 +139,9 @@ pub(crate) fn table_byte(address: u32) -> Option<u8> {
         .or_else(|| super::sprite_main::table_byte(address))
         .or_else(|| super::link_oam::table_byte(address))
         .or_else(|| super::lamp_cone::table_byte(address))
+        .or_else(|| super::push_block_drawing::table_byte(address))
+        .or_else(|| super::floor_indicator::table_byte(address))
+        .or_else(|| super::hud_update::table_byte(address))
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CommonChild {
@@ -156,6 +155,9 @@ enum OwnedChild {
     Sprites(SpriteMain),
     LinkOam(LinkOam),
     Lamp(LampCone),
+    PushBlockDrawing(PushBlockDrawing),
+    FloorIndicator(FloorIndicator),
+    Hud(HudUpdate),
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DungeonCommon {
@@ -202,6 +204,9 @@ impl DungeonCommon {
             }
             Some(OwnedChild::LinkOam(_)) => unreachable!("LinkOam owns all its children"),
             Some(OwnedChild::Lamp(_)) => unreachable!("lamp cone has no external children"),
+            Some(OwnedChild::PushBlockDrawing(_)) => unreachable!("push-block drawing owns its allocator"),
+            Some(OwnedChild::FloorIndicator(_)) => unreachable!("floor indicator has no children"),
+            Some(OwnedChild::Hud(_)) => unreachable!("HUD update owns its shared calls"),
             None => {
                 assert!(matches!(child, CommonChild::Call(_)));
                 assert_eq!(cpu.sp, self.return_sp);
@@ -241,10 +246,27 @@ impl DungeonCommon {
                     let cycles = w.step(cpu, clock, bus);
                     (cycles, w.complete(), None)
                 }
+                OwnedChild::PushBlockDrawing(w) => {
+                    let cycles = w.step(cpu, clock, bus);
+                    (cycles, w.complete(), None)
+                }
+                OwnedChild::FloorIndicator(w) => {
+                    let cycles = w.step(cpu, clock, bus);
+                    (cycles, w.complete(), None)
+                }
+                OwnedChild::Hud(w) => {
+                    let cycles = w.step(cpu, clock, bus);
+                    (cycles, w.complete(), None)
+                }
             };
             if complete {
                 self.owned = None;
-                assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, self.pc, self.return_sp));
+                assert_eq!(cpu.sp, self.return_sp);
+                if self.tail {
+                    self.complete = true;
+                } else {
+                    assert_eq!((cpu.bank, cpu.pc), (2, self.pc));
+                }
             }
             self.child = child;
             return cycles;
@@ -310,7 +332,10 @@ impl DungeonCommon {
                         self.owned = Some(OwnedChild::Lamp(Default::default()));
                         0x00f567
                     }
-                    0x883a => 0x07f0ac,
+                    0x883a => {
+                        self.owned = Some(OwnedChild::PushBlockDrawing(Default::default()));
+                        0x07f0ac
+                    }
                     0x883e => {
                         self.owned = Some(OwnedChild::Sprites(Default::default()));
                         0x068328
@@ -319,8 +344,14 @@ impl DungeonCommon {
                         self.owned = Some(OwnedChild::LinkOam(Default::default()));
                         0x0da18e
                     }
-                    0x8856 => 0x0ddb75,
-                    _ => 0x0afd0c,
+                    0x8856 => {
+                        self.owned = Some(OwnedChild::Hud(Default::default()));
+                        0x0ddb75
+                    }
+                    _ => {
+                        self.owned = Some(OwnedChild::FloorIndicator(Default::default()));
+                        0x0afd0c
+                    }
                 };
                 self.return_sp = w.cpu.sp;
                 let size = if matches!(pc, 0x87be | 0x87de) { 3 } else { 4 };
