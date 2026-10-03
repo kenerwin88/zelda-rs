@@ -303,6 +303,10 @@ pub(crate) struct DungeonObjectTiles {
     complete: bool,
 }
 impl DungeonObjectTiles {
+    pub(crate) fn door_state_active(&self) -> bool {
+        self.doors.as_ref().is_some_and(|work| work.state_active())
+    }
+
     pub(crate) fn saved_objects_active(&self) -> bool {
         self.saved.is_some()
     }
@@ -3751,6 +3755,8 @@ mod tests {
                     let mut expected = crate::game_state::GameState::load_from_ram(&ram);
                     expected.dungeon.scratch_word = state.game_state.dungeon.scratch_word;
                     assert_eq!(state.game_state.dungeon, expected.dungeon, "{label}: saved-object owners");
+                    assert_eq!(state.game_state.player.pushed_block, expected.player.pushed_block,
+                        "{label}: adjacent pushed-block banks");
                     assert_eq!(state.game_state.player.follower_link.temp_bunny_timer(),
                         expected.player.follower_link.temp_bunny_timer(), "{label}: tile counter companion");
                 }
@@ -3789,16 +3795,19 @@ mod tests {
                 if !DungeonObjectTiles::new(0x010000 | u32::from(target)).is_some_and(|draw| draw.saved_objects_active()) { continue; }
                 for variant in 0..4 {
                     for saved in [0u16, 0xffff] {
+                      for misc_index in [0u16, 30, 32, 34] {
                         let mut initial = vec![(0x402, saved as u8), (0x403, (saved >> 8) as u8)];
                         for address in [0x42c, 0x42e, 0x432, 0x45a, 0x496, 0x498] {
                             initial.extend([(address, 0), (address + 1, 0)]);
                         }
+                        initial.extend([(0x42c, misc_index as u8), (0x42d, (misc_index >> 8) as u8)]);
                         let stream = saved_object_stream(family, kind as u8, 0, 16, 32);
                         let result = run_configured(&stream, variant, true, &data, &rom, 0x88e4, None, &initial);
                         assert_eq!(result.draws, 2);
                         cases += 1;
                         stores += result.saved_publications;
                         instructions += result.count;
+                      }
                     }
                 }
             }

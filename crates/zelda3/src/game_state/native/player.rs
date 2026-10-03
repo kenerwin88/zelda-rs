@@ -1486,6 +1486,28 @@ pub(crate) struct PushedBlockState {
 }
 
 impl PushedBlockState {
+    /// Indexed room-object stores can cross into these adjacent banks. Preserve
+    /// both bytes of each physical word, including the unused slot companions.
+    pub(crate) fn write_bank_word(&mut self, address: usize, value: u16) -> bool {
+        let banks = [
+            (PUSHEDBLOCKS_X_HI, &mut self.x_high),
+            (PUSHEDBLOCKS_X_LO, &mut self.x_low),
+            (PUSHEDBLOCKS_TARGET, &mut self.target),
+            (PUSHEDBLOCKS_Y_HI, &mut self.y_high),
+            (PUSHEDBLOCKS_Y_LO, &mut self.y_low),
+            (PUSHEDBLOCKS_SUBPIXEL, &mut self.subpixel),
+            (PUSHEDBLOCK_FACING_PLAYER, &mut self.facing_player),
+        ];
+        for (base, bank) in banks {
+            if (base..base + PUSHED_BLOCK_BANK_LEN).contains(&address) {
+                assert_eq!(address & 1, 0);
+                bank[address - base..address - base + 2].copy_from_slice(&value.to_le_bytes());
+                return true;
+            }
+        }
+        false
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             x_high: read_pushed_block_bank(ram, PUSHEDBLOCKS_X_HI),

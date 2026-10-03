@@ -298,6 +298,8 @@ mod tests {
                         assert!(state.game_state.dungeon == expected.dungeon,
                             "{label}: {:?}", state.game_state.dungeon.report_incoherent_with_ram(&ram));
                         assert_eq!(state.game_state.display, expected.display, "{label}: display owner");
+                        assert_eq!(state.game_state.player.pushed_block, expected.player.pushed_block,
+                            "{label}: adjacent pushed-block banks");
                         // Tile-detection fields alias this routine's direct-page
                         // scratch. Only the BG1 accumulator is player-owned here.
                         assert_eq!(state.game_state.player.bg1_movement_accumulator,
@@ -423,6 +425,11 @@ impl Default for DungeonRoom {
     }
 }
 impl DungeonRoom {
+    pub(crate) fn door_state_active(&self) -> bool {
+        matches!(&self.child, Some(Child::Objects { tiles: Some(draw), .. })
+            if draw.door_state_active())
+    }
+
     pub(crate) fn saved_objects_active(&self) -> bool {
         matches!(&self.child, Some(Child::Saved(_)))
             || matches!(&self.child, Some(Child::Objects { tiles: Some(draw), .. })

@@ -17,6 +17,10 @@ pub(crate) struct DungeonDoors {
     complete: bool,
 }
 impl DungeonDoors {
+    pub(crate) fn state_active(&self) -> bool {
+        self.state.is_some()
+    }
+
     pub(crate) fn new(entry: u16) -> Self {
         assert!(matches!(entry, 0xa81c | 0xa984 | 0xaad7 | 0xab99));
         Self {

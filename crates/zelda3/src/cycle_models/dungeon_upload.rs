@@ -446,12 +446,22 @@ impl Default for DungeonLoadAndDraw {
     }
 }
 impl DungeonLoadAndDraw {
+    /// The caller and its preparation/DMA children share the upload buffer.
+    /// Room construction retains its separate object and header owners.
+    pub(crate) fn upload_active(&self) -> bool {
+        !matches!(self.child, Some(Child::Room(_)))
+    }
+
     pub(crate) fn object_tiles_active(&self) -> bool {
         matches!(&self.child, Some(Child::Room(work)) if work.object_tiles_active())
     }
 
     pub(crate) fn saved_objects_active(&self) -> bool {
         matches!(&self.child, Some(Child::Room(work)) if work.saved_objects_active())
+    }
+
+    pub(crate) fn door_state_active(&self) -> bool {
+        matches!(&self.child, Some(Child::Room(work)) if work.door_state_active())
     }
 
     pub(crate) fn object_parser_active(&self) -> bool {

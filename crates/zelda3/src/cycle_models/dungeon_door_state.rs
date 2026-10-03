@@ -365,6 +365,9 @@ mod tests {
                             machine.cpu.e = false;
                             machine.cpu.unpack_flags(cpu.p);
                             let mut ram = machine.ram.clone();
+                            let mut native = crate::ZeldaState::new();
+                            native.ram.copy_from_slice(&ram);
+                            native.sync_native_game_state_from_ram();
                             let (v, h) = if variant & 1 == 0 {
                                 (224, 1338)
                             } else {
@@ -397,6 +400,15 @@ mod tests {
                                     &rom,
                                     None,
                                     |_, access| match access {
+                                        Access::Write(address, value, width) => {
+                                            if !native.native_dungeon_door_state_store(address, value, width) {
+                                                assert!(matches!(address, 0..=0xf | 0x100..=0x1ff),
+                                                    "{label}: unowned door-state store {address:06x}");
+                                                native.ram[address as usize..address as usize + usize::from(width)]
+                                                    .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                                            }
+                                            None
+                                        }
                                         Access::Read(a, width)
                                             if a & 0x8000 != 0 && a < 0x7e0000 =>
                                         {
@@ -417,6 +429,10 @@ mod tests {
                                     },
                                 );
                                 assert_eq!(ram, source.snes().ram, "{label}");
+                                assert_eq!(native.ram, ram, "{label}: continuous door-state publications");
+                                assert_eq!(native.game_state.dungeon,
+                                    crate::game_state::GameState::load_from_ram(&ram).dungeon,
+                                    "{label}: native door-state owner");
                                 work = work.clone();
                                 instructions += 1;
                                 assert!(instructions < 100);

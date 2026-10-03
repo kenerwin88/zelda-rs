@@ -74,6 +74,7 @@ impl Owner {
     }
 }
 struct Fixture {
+    native: crate::ZeldaState,
     source: Snes9xColdCpuExecutor,
     cpu: NativeNmiContext,
     clock: CpuMasterTimeline,
@@ -156,7 +157,11 @@ impl Fixture {
             .rebase_private_timing_state_at(source.machine().timestamp(), &registers, &ram, &sram)
             .unwrap();
         let clock = source.machine().timeline().clone();
+        let mut native = crate::ZeldaState::new();
+        native.ram.copy_from_slice(&ram);
+        native.sync_native_game_state_from_ram();
         Self {
+            native,
             source,
             cpu,
             clock,
@@ -201,6 +206,8 @@ impl Fixture {
             let mut vblanks = Vec::new();
             let ram = &mut self.ram;
             let writes = &mut self.writes;
+            let native = &mut self.native;
+            let mut published = false;
             owner.step(&mut self.cpu, &mut self.clock, |at, access| {
                 let read = |a: u32| {
                     let a = normalize(a);
@@ -233,6 +240,14 @@ impl Fixture {
                         };
                         ram[i..i + usize::from(width)]
                             .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                        if native.native_dungeon_attribute_store(a, value, width) {
+                            published = true;
+                        } else {
+                            assert!(matches!(a, 0..=0xf | 0x100..=0x1ff),
+                                "{label} pc{origin:06x}: unowned attribute store {a:06x}");
+                            native.ram[i..i + usize::from(width)]
+                                .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                        }
                         *writes.entry(a).or_default() += 1;
                         (Access::Write(a, value, width), 0)
                     }
@@ -245,6 +260,14 @@ impl Fixture {
                 value
             });
             assert_eq!(actual, expected, "{label} pc{origin:06x}");
+            assert_eq!(self.native.ram, self.ram, "{label}: native attribute publications");
+            if published {
+                let expected = crate::game_state::GameState::load_from_ram(&self.ram);
+                assert_eq!(self.native.game_state.dungeon, expected.dungeon,
+                    "{label} pc{origin:06x}: native attribute state");
+                assert_eq!(self.native.overworld_map_state_word(),
+                    crate::types::read_le_u16(&self.ram, 0x200), "{label}: attribute phase word");
+            }
             let c = &self.source.machine().snes().cpu;
             assert_eq!(
                 self.cpu,

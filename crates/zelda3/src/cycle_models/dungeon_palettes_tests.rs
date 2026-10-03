@@ -71,6 +71,7 @@ fn normalize(a: u32) -> u32 {
     }
 }
 struct Fixture {
+    visited_native: Option<crate::ZeldaState>,
     source: Snes9xColdCpuExecutor,
     cpu: NativeNmiContext,
     clock: CpuMasterTimeline,
@@ -144,7 +145,14 @@ impl Fixture {
             .rebase_private_timing_state_at(source.machine().timestamp(), &registers, &ram, &sram)
             .unwrap();
         let clock = source.machine().timeline().clone();
+        let visited_native = matches!(owner, Owner::Visited(_)).then(|| {
+            let mut native = crate::ZeldaState::new();
+            native.ram.copy_from_slice(&ram);
+            native.sync_native_game_state_from_ram();
+            native
+        });
         Self {
+            visited_native,
             source,
             cpu,
             clock,
@@ -189,6 +197,8 @@ impl Fixture {
             let mut vblanks = Vec::new();
             let ram = &mut self.ram;
             let writes = &mut self.writes;
+            let native = &mut self.visited_native;
+            let mut published = false;
             owner
                 .step(&mut self.cpu, &mut self.clock, |at, access| {
                     let read =
@@ -223,6 +233,16 @@ impl Fixture {
                             };
                             ram[i..i + usize::from(width)]
                                 .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                            if let Some(native) = native.as_mut() {
+                                if native.native_dungeon_visited_store(a, value, width) {
+                                    published = true;
+                                } else {
+                                    assert!(matches!(a, 0..=0xf | 0x100..=0x1ff),
+                                        "{label} pc{origin:06x}: unowned visited store {a:06x}");
+                                    native.ram[i..i + usize::from(width)]
+                                        .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                                }
+                            }
                             *writes.entry(a).or_default() += 1;
                             if (0x7ec300..0x7ec700).contains(&a) {
                                 if (0x02c771..=0x02c7a9).contains(&origin) {
@@ -251,6 +271,16 @@ impl Fixture {
                 })
                 .unwrap();
             assert_eq!(actual, expected, "{label} pc{origin:06x}");
+            if let Some(native) = self.visited_native.as_ref() {
+                assert_eq!(native.ram, self.ram, "{label}: native visited publications");
+                if published {
+                    let expected = crate::game_state::GameState::load_from_ram(&self.ram);
+                    assert_eq!(native.game_state.dungeon.room_load, expected.dungeon.room_load,
+                        "{label}: live visited word");
+                    assert_eq!(native.game_state.inventory.save_progress, expected.inventory.save_progress,
+                        "{label}: saved visited word");
+                }
+            }
             let c = &self.source.machine().snes().cpu;
             assert_eq!(
                 self.cpu,

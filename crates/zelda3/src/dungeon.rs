@@ -1867,10 +1867,103 @@ impl ZeldaState {
         true
     }
 
+    /// Visitation first changes the live quadrant byte, then the saved room
+    /// word. Publish each store without refreshing the rest of the save state.
+    pub(crate) fn native_dungeon_visited_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        let offset = if (0x7e0000..0x800000).contains(&address) {
+            address as usize - 0x7e0000
+        } else { address as usize };
+        if offset == 0x408 {
+            assert_eq!(width, 1);
+            assert!(self.game_state.dungeon.write_header_byte(offset, value as u8));
+        } else if (0xf000..0xf000 + crate::game_state::DUNGEON_ROOM_COUNT * 2).contains(&offset) {
+            assert_eq!(width, 2);
+            assert_eq!(offset & 1, 0);
+            self.game_state.inventory.save_progress.set_dungeon_info_word((offset - 0xf000) / 2, value);
+        } else {
+            return false;
+        }
+        self.ram[offset..offset + usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        true
+    }
+
+    /// Attribute construction retains its cursors and native collision tiles
+    /// through basic, object, door, and crystal-peg child returns.
+    pub(crate) fn native_dungeon_attribute_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        let offset = if (0x7e0000..0x800000).contains(&address) {
+            address as usize - 0x7e0000
+        } else { address as usize };
+        if !matches!(offset, 0xb2 | 0xb4 | 0x200 | 0x42e | 0x44a | 0x6e0..=0x6ea |
+            0xfe00..=0xffff | 0x12000..=0x13fff) { return false; }
+        assert!(matches!(width, 1 | 2));
+        if offset == 0x200 {
+            if width == 1 {
+                self.game_state.world.overworld.map_ui.set_map_state(value as u8);
+            } else {
+                self.game_state.world.overworld.map_ui.set_map_state_word(value);
+            }
+        } else {
+            for byte in 0..usize::from(width) {
+                assert!(self.game_state.dungeon.write_attribute_byte(offset + byte, (value >> (byte * 8)) as u8),
+                    "unowned attribute byte {:05x}", offset + byte);
+            }
+        }
+        self.ram[offset..offset + usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        true
+    }
+
+    /// Publish the load-and-draw caller and its preparation/DMA children. The
+    /// upload buffer is RAM-backed and owns its cursor/door-scratch aliases for
+    /// this phase; do not project those inactive scalar views over its tiles.
+    pub(crate) fn native_dungeon_room_upload_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        if (0x1000..=0x17fe).contains(&address) {
+            assert_eq!(width, 2);
+            assert_eq!(address & 1, 0);
+            self.write_vram_upload_tilemap_word(address as usize - 0x1000, value);
+            return true;
+        }
+        if !matches!(address, 0x17 | 0x9b | 0xb0 | 0x116 | 0x200 | 0x418 | 0x45c | 0x710) {
+            return false;
+        }
+        assert_eq!(width, 1);
+        let byte = value as u8;
+        match address {
+            0x17 => self.game_state.display.pending_nmi_subroutine = byte,
+            0x9b => self.game_state.display.hdma_enable_mask = byte,
+            0xb0 => self.game_state.frame.set_subsubmodule(byte),
+            0x116 => self.game_state.display.set_nmi_load_target_page(byte),
+            0x200 => self.game_state.world.overworld.map_ui.set_map_state(byte),
+            0x418 => self.game_state.world.overworld.transition.set_screen_transition(byte),
+            0x45c => { assert!(self.game_state.dungeon.write_room_parent_byte(address as usize, byte)); }
+            0x710 => self.game_state.display.core_update_disable_flag = byte,
+            _ => unreachable!(),
+        }
+        self.ram[address as usize] = byte;
+        true
+    }
+
+    /// The shared door-state child owns all record and open-state stores until
+    /// its carry result returns to the directional drawer.
+    pub(crate) fn native_dungeon_door_state_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        if !matches!(address, 0x400 | 0x436 | 0x460 | 0x68c | 0x1980..=0x19de) {
+            return false;
+        }
+        assert_eq!(width, 2);
+        assert_eq!(address & 1, 0);
+        self.game_state.dungeon.write_door_state_word(address as usize, value);
+        self.ram[address as usize..address as usize + 2].copy_from_slice(&value.to_le_bytes());
+        true
+    }
+
     /// Saved objects retain their counters, records and background tiles across
     /// nested drawing calls. Publish each word through its native component.
     pub(crate) fn native_dungeon_saved_object_store(&mut self, address: u32, value: u16, width: u8) -> bool {
         if self.native_dungeon_object_tile_store(address, value, width) { return true; }
+        if self.game_state.player.pushed_block.write_bank_word(address as usize, value) {
+            assert_eq!(width, 2);
+            self.ram[address as usize..address as usize + 2].copy_from_slice(&value.to_le_bytes());
+            return true;
+        }
         if !matches!(address, 0xae | 0x42c | 0x42e | 0x432 | 0x45a | 0x496 | 0x498 |
             0x500..=0x5de | 0x6a0..=0x6b6 | 0x6e0..=0x6ea) { return false; }
         assert_eq!(width, 2);

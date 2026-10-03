@@ -15014,12 +15014,28 @@ impl ZeldaState {
                     let address=if address&0x400000==0 && address&65535<0x2000 {address&65535}else{address};
                     match address {
                         _ if caller_owner == CallerOwner::DungeonEntrance && self.native_dungeon_entrance_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::DungeonRoomUpload && self.native_dungeon_room_upload_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::DungeonAttributes && self.native_dungeon_attribute_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::DungeonVisited && self.native_dungeon_visited_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::DungeonVisited && !matches!(address, 0..=0xf | 0x100..=0x1ff) => {
+                            panic!("unowned dungeon visited store {address:06x}");
+                        }
+                        _ if caller_owner == CallerOwner::DungeonAttributes && !matches!(address, 0..=0xf | 0x100..=0x1ff) => {
+                            panic!("unowned dungeon attribute store {address:06x}");
+                        }
+                        _ if caller_owner == CallerOwner::DungeonRoomUpload && address < 0x2000 && !matches!(address, 0..=0xf | 0x100..=0x1ff) => {
+                            panic!("unowned dungeon room-upload store {address:06x}");
+                        }
                         _ if caller_owner == CallerOwner::DungeonHeader && self.native_dungeon_header_store(address, value, width) => {}
                         _ if caller_owner == CallerOwner::DungeonRoomParent && self.native_dungeon_room_parent_store(address, value, width) => {}
                         _ if caller_owner == CallerOwner::DungeonFloors && self.native_dungeon_floor_store(address, value, width) => {}
                         _ if caller_owner == CallerOwner::DungeonObjectParser && self.native_dungeon_object_parser_store(address, value, width) => {}
                         _ if caller_owner == CallerOwner::DungeonObjectTiles && self.native_dungeon_object_tile_store(address, value, width) => {}
                         _ if caller_owner == CallerOwner::DungeonSavedObjects && self.native_dungeon_saved_object_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::DungeonDoorState && self.native_dungeon_door_state_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::DungeonDoorState && !matches!(address, 0..=0xf | 0x100..=0x1ff) => {
+                            panic!("unowned dungeon door-state store {address:06x}");
+                        }
                         _ if caller_owner == CallerOwner::DungeonSavedObjects && !matches!(address, 0..=0xf | 0x100..=0x1ff) => {
                             panic!("unowned saved object store {address:06x}");
                         }

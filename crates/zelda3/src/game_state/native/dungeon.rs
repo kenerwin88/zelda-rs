@@ -182,6 +182,40 @@ pub(crate) struct DungeonState {
 }
 
 impl DungeonState {
+    pub(crate) fn write_attribute_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            0xb2..=0xb5 => self.write_object_parser_byte(address, value),
+            0x42e..=0x42f => { assert!(self.write_room_parent_byte(address, value)); }
+            0x44a..=0x44b => {
+                let word = &mut self.stair_movement.in_room_kind;
+                let shift = (address & 1) * 8;
+                *word = (*word & !(255 << shift)) | (u16::from(value) << shift);
+            }
+            0x6e0..=0x6eb => {
+                let word = &mut self.room_items.chest_locations[(address - 0x6e0) / 2];
+                let shift = (address & 1) * 8;
+                *word = (*word & !(255 << shift)) | (u16::from(value) << shift);
+            }
+            0xfe00..=0xffff => self.room_parser.tile_attributes[address - 0xfe00] = NativeTile::from_cartridge(value),
+            0x12000..=0x13fff => self.bg2_attributes.set_bg2_tile(address - 0x12000, NativeTile::from_cartridge(value)),
+            _ => return false,
+        }
+        true
+    }
+
+    pub(crate) fn write_door_state_word(&mut self, address: usize, value: u16) {
+        match address {
+            0x400 => self.doors.opened_doors = value,
+            0x68c => self.doors.opened_doors_including_adjacent = value,
+            0x436 | 0x460 | 0x1980..=0x19de => {
+                for (byte, value) in value.to_le_bytes().into_iter().enumerate() {
+                    assert!(self.write_room_parent_byte(address + byte, value));
+                }
+            }
+            _ => unreachable!("unowned door state word {address:04x}"),
+        }
+    }
+
     pub(crate) fn write_saved_object_word(&mut self, address: usize, value: u16) {
         match address {
             0xae => self.header.tags = value.to_le_bytes(),

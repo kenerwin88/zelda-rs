@@ -54,12 +54,28 @@ impl Default for LoadFile {
     }
 }
 impl LoadFile {
+    pub(crate) fn visited_active(&self) -> bool {
+        matches!(self.child, Some(Child::Visited(_)))
+    }
+
+    pub(crate) fn attributes_active(&self) -> bool {
+        matches!(self.child, Some(Child::Attributes(_) | Child::Custom(_)))
+    }
+
+    pub(crate) fn room_upload_active(&self) -> bool {
+        matches!(&self.child, Some(Child::Room(work)) if work.upload_active())
+    }
+
     pub(crate) fn object_tiles_active(&self) -> bool {
         matches!(&self.child, Some(Child::Room(work)) if work.object_tiles_active())
     }
 
     pub(crate) fn saved_objects_active(&self) -> bool {
         matches!(&self.child, Some(Child::Room(work)) if work.saved_objects_active())
+    }
+
+    pub(crate) fn door_state_active(&self) -> bool {
+        matches!(&self.child, Some(Child::Room(work)) if work.door_state_active())
     }
 
     pub(crate) fn object_parser_active(&self) -> bool {

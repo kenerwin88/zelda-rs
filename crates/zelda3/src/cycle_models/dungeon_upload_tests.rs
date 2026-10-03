@@ -37,7 +37,7 @@ impl Owner {
         match self {
             Self::Preparation(w) => w.routine(),
             Self::Upload(w) => w.routine(),
-            Self::Load(_) => 0x02c57b,
+            Self::Load(w) => 0x020000 | u32::from(w.pc),
         }
     }
     fn complete(&self) -> bool {
@@ -70,6 +70,7 @@ impl Owner {
     }
 }
 struct Fixture {
+    native: crate::ZeldaState,
     source: Snes9xColdCpuExecutor,
     cpu: NativeNmiContext,
     clock: CpuMasterTimeline,
@@ -146,7 +147,11 @@ impl Fixture {
         let clock = source.machine().timeline().clone();
         let ppu = source.machine().snes().ppu.clone();
         let dma = source.machine().snes().dma.clone();
+        let mut native = crate::ZeldaState::new();
+        native.ram.copy_from_slice(&ram);
+        native.sync_native_game_state_from_ram();
         Self {
+            native,
             source,
             cpu,
             clock,
@@ -198,6 +203,13 @@ impl Fixture {
         let mut dma_reads = Vec::new();
         let mut dma_writes = 0;
         let mut vblanks = Vec::new();
+        let upload_active = match owner {
+            Owner::Load(work) => work.upload_active(),
+            _ => true,
+        };
+        let room_parent = matches!(owner, Owner::Load(work) if work.room_parent_active());
+        let native = &mut self.native;
+        let mut published = false;
         let ram = &mut self.ram;
         let ppu = &mut self.ppu;
         owner.step(
@@ -239,6 +251,21 @@ impl Fixture {
                             };
                             ram[i..i + usize::from(width)]
                                 .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                            if upload_active && native.native_dungeon_room_upload_store(a, value, width) {
+                                published = true;
+                            } else if room_parent && native.native_dungeon_room_parent_store(a, value, width) {
+                                // The room caller resets the shared quadrant
+                                // cursor before the upload caller resumes.
+                            } else {
+                                if upload_active {
+                                    assert!(matches!(a, 0..=0xf | 0x100..=0x1ff),
+                                        "{label} pc{origin:06x}: unowned upload store {a:06x}");
+                                }
+                                // Other children retain their independent native
+                                // output; no source RAM is imported on return.
+                                native.ram[i..i + usize::from(width)]
+                                    .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                            }
                         } else if (0x2100..0x2140).contains(&a) {
                             assert_eq!(width, 1);
                             ppu.write(a as u8, value as u8);
@@ -274,6 +301,20 @@ impl Fixture {
             }),
         );
         self.apu.assert_matches(&self.source, label);
+        assert_eq!(self.native.ram, self.ram, "{label}: native publication bytes");
+        if published {
+            let state = &self.native.game_state;
+            assert_eq!(state.display.pending_nmi_subroutine, self.ram[0x17]);
+            assert_eq!(state.display.hdma_enable_mask, self.ram[0x9b]);
+            assert_eq!(state.display.nmi_load_target_address,
+                crate::types::read_le_u16(&self.ram, 0x116));
+            assert_eq!(state.display.core_update_disable_flag, self.ram[0x710]);
+            assert_eq!(state.world.overworld.transition.screen_transition_word(),
+                crate::types::read_le_u16(&self.ram, 0x418));
+            assert_eq!(state.dungeon.room_load.quadrant_upload_index(), self.ram[0x45c]);
+            assert_eq!(state.frame.subsubmodule, self.ram[0xb0]);
+            assert_eq!(self.native.overworld_map_state(), self.ram[0x200]);
+        }
         assert_eq!(actual, expected, "{label} pc{origin:06x}");
         let c = &self.source.machine().snes().cpu;
         assert_eq!(
@@ -440,12 +481,22 @@ fn dungeon_tilemap_dma_matches_cold_source_returns_live_bytes_and_video_events()
 }
 #[test]
 fn dungeon_load_and_draw_matches_cold_source_all_rooms_uploads_and_mask_restore() {
+    load_and_draw_rooms(0..320);
+}
+
+#[test]
+fn dungeon_upload_publication_retains_caller_state_across_room_and_dma_returns() {
+    load_and_draw_rooms(0..4);
+}
+
+fn load_and_draw_rooms(rooms: std::ops::Range<u16>) {
+    let cases = rooms.len();
     let data = data();
     let rom = rom();
     let (mut count, mut transfers) = (0, 0);
     let mut scanlines = 0;
     let mut visited = BTreeSet::new();
-    for room in 0..320u16 {
+    for room in rooms {
         let variant = usize::from(room & 3);
         let saved_mask = [0, 0x80, 0x55, 0xff][variant];
         let mut owner = Owner::Load(DungeonLoadAndDraw::default());
@@ -511,6 +562,6 @@ fn dungeon_load_and_draw_matches_cold_source_all_rooms_uploads_and_mask_restore(
             "missing load/draw continuation {pc:06x}"
         );
     }
-    eprintln!("320 complete load/draw fixtures matched {count} cold source instructions with {transfers} live tilemap DMAs and restored HDMA shadows");
-    eprintln!("320 complete load/draw fixtures retained independent APU hardware across {scanlines} scanlines");
+    eprintln!("{cases} complete load/draw fixtures matched {count} cold source instructions with {transfers} live tilemap DMAs and restored HDMA shadows");
+    eprintln!("{cases} complete load/draw fixtures retained independent APU hardware across {scanlines} scanlines");
 }

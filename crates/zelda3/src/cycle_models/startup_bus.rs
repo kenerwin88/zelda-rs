@@ -13,6 +13,10 @@ pub(crate) enum CallerOwner {
     DungeonObjectParser,
     DungeonObjectTiles,
     DungeonSavedObjects,
+    DungeonDoorState,
+    DungeonRoomUpload,
+    DungeonAttributes,
+    DungeonVisited,
 }
 
 pub(crate) enum StartupAccess {
