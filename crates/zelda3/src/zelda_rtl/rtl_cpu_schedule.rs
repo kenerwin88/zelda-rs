@@ -33,6 +33,11 @@ impl ZeldaState {
         // snapshot is valid only at its recorded host, never after that work.
         let cpu_host = self.frame_ctr_dbg + u32::from(nmi_is_trailing);
         if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_DIALOGUE_CPU_PHASE", self.frame_ctr_dbg) {
+            if let Some(cpu) = self.native_startup_cpu.as_ref() {
+                eprintln!("native-clock-origin frame={} field={} position={:?} module_entry={:?}",
+                    self.frame_ctr_dbg, cpu.timeline.field_index(), cpu.timeline.raster_position(),
+                    cpu.startup.entered_module_context());
+            }
             eprintln!("native-main-phase-capture frame={} cpu_host={} trailing={} module={:02x}/{:02x}/{:02x} text={} latch={} hold={} scheduler={:?} scroll={:?} retained={:?}",
                 self.frame_ctr_dbg, cpu_host, nmi_is_trailing,
                 self.game_state.frame.main_module, self.game_state.frame.submodule,

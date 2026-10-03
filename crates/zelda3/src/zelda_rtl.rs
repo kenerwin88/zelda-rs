@@ -2563,7 +2563,7 @@ struct NativeMainWaitCpuPhase {
 #[derive(Clone, Copy, Debug)]
 struct NativeDialogueCpuEntry {
     position: CpuRasterPosition,
-    field_timing: CpuFieldTiming,
+    field_index: u64,
 }
 
 fn module_cpu_entry_after_leading_nmi(state: &ZeldaState, input: u16, cpu_host: u32, entry_pc: u32,
@@ -2742,8 +2742,7 @@ fn dialogue_main_loop_cpu_phase(state: &mut ZeldaState, input: u16, nmi_is_trail
             let position = budget.raster_position();
             glyph_entry = Some(NativeDialogueCpuEntry {
                 position,
-                field_timing: native_cpu_field_timing_at_entry(
-                    state.frame_ctr_dbg + u32::from(nmi_is_trailing), position),
+                field_index: budget.field_index(),
             });
         }
         if run.is_complete() {

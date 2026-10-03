@@ -595,6 +595,10 @@ impl CpuCycleBudget {
         CpuPhaseSequenceAdvance::Complete
     }
 
+    pub(super) fn field_index(&self) -> u64 {
+        self.timeline.field_index()
+    }
+
     pub(super) fn raster_position(&self) -> CpuRasterPosition {
         self.timeline.raster_position()
     }

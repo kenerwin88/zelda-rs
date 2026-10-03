@@ -119,12 +119,13 @@ pub(super) struct NativeDialogueCallerClock {
     pub(super) return_a: Option<u16>,
     pub(super) return_carry: bool,
     pub(super) return_overflow: bool,
+    instruction_clocked_by_caller: bool,
 }
 
 impl NativeDialogueCallerClock {
     fn new(budget: super::game_execution_scheduler::CpuCycleBudget, hdma: snes::HdmaTimingState) -> Self {
         Self { budget, hdma, return_x: None, return_y: None, return_a: None,
-            return_carry: false, return_overflow: false }
+            return_carry: false, return_overflow: false, instruction_clocked_by_caller: false }
     }
 
     fn advance(&mut self, state: &ZeldaState, cycles: u32) -> super::game_execution_scheduler::CpuWorkAdvance {
@@ -132,6 +133,20 @@ impl NativeDialogueCallerClock {
             self.hdma.stall(event, |address| state.native_hdma_table_byte(address))
                 .expect("native dialogue caller lost its HDMA table")
         })
+    }
+
+    fn main_wait_checkpoint(&self) -> RomCpuCheckpoint {
+        let a = self.return_a.expect("dialogue caller has not returned from sprite pointers");
+        RomCpuCheckpoint {
+            entry_pc: 0x00_8034, stop_pc: 0x00_805d,
+            a, x: self.return_x.expect("dialogue caller lost its sprite-preparation X"),
+            y: self.return_y.expect("dialogue caller lost its sprite-preparation Y"),
+            sp: 0x1ff, dp: 0, db: 0, carry: self.return_carry,
+            zero: a == 0, negative: a & 0x8000 != 0, overflow: self.return_overflow,
+            interrupt_disable: false, decimal: false, accumulator_is_8_bit: true,
+            index_is_8_bit: true, emulation: false, waiting: false,
+            stack_address: 0, stack_bytes: &[],
+        }
     }
 }
 
@@ -662,6 +677,79 @@ enum DialogueInitializationCallerPhase {
     Preparation,
     Return,
     Complete,
+}
+
+/// One native call stack and the clock at which its next instruction runs.
+/// Admission requires the caller's actual budget and HDMA cursor; the legacy
+/// initialization entry interval is deliberately not a constructor input.
+/// This is not serializable: paired checkpoints reject the resident caller.
+/// Runtime admission still needs the upstream native entry-clock handoff.
+#[allow(dead_code)]
+struct ClockedDialogueInitializationCaller {
+    work: DialogueInitializationCallerWork,
+    clock: Option<NativeDialogueCallerClock>,
+    wait: crate::cycle_models::main_wait::MainWait,
+    wait_checkpoint: Option<RomCpuCheckpoint>,
+    nmi_pending: bool,
+}
+
+#[allow(dead_code)]
+impl ClockedDialogueInitializationCaller {
+    fn new(work: DialogueInitializationCallerWork, clock: NativeDialogueCallerClock) -> Self {
+        Self { work, clock: Some(clock), wait: Default::default(),
+            wait_checkpoint: None, nmi_pending: false }
+    }
+
+    fn step(&mut self, state: &mut ZeldaState) -> (u32, super::game_execution_scheduler::CpuWorkAdvance) {
+        assert!(!self.nmi_pending, "initializer advanced before its accepted NMI");
+        assert!(state.native_dialogue_caller_clock.is_none(), "two owners of the dialogue clock");
+        let mut clock = self.clock.take().expect("initializer clock was not returned");
+        // Shared return/sprite helpers still publish their native registers,
+        // but this owner clocks every retired instruction exactly once.
+        clock.instruction_clocked_by_caller = true;
+        state.native_dialogue_caller_clock = Some(clock);
+        let cycles = if let Some(cycles) = state.step_dialogue_initialization_caller(&mut self.work) {
+            cycles
+        } else {
+            let checkpoint = self.wait_checkpoint.get_or_insert_with(|| {
+                state.native_dialogue_caller_clock.as_ref().unwrap().main_wait_checkpoint()
+            });
+            let instruction = self.wait.step(u8::from(state.game_state.display.nmi_update_is_latched()));
+            checkpoint.entry_pc = self.wait.next_pc();
+            if let Some(value) = instruction.loaded_latch {
+                checkpoint.a = (checkpoint.a & 0xff00) | u16::from(value);
+                checkpoint.zero = value == 0;
+                checkpoint.negative = value & 0x80 != 0;
+            }
+            instruction.master_cycles
+        };
+        let mut clock = state.native_dialogue_caller_clock.take().unwrap();
+        clock.instruction_clocked_by_caller = false;
+        let advance = clock.advance(state, cycles);
+        self.nmi_pending = advance.reached_boundary().is_some();
+        self.clock = Some(clock);
+        (cycles, advance)
+    }
+
+    /// Lend the same clock to the native interrupt owner. That owner must
+    /// retire its CPU and bus work before resuming the saved instruction.
+    fn begin_nmi(&mut self) -> &mut NativeDialogueCallerClock {
+        assert!(self.nmi_pending, "initializer accepted an unscheduled NMI");
+        self.nmi_pending = false;
+        let clock = self.clock.as_mut().unwrap();
+        clock.budget.begin_nmi_handler();
+        clock
+    }
+
+    fn into_main_wait_phase(self, state: &ZeldaState, host: u32) -> NativeMainWaitCpuPhase {
+        assert!(self.nmi_pending, "main-wait handoff requires an accepted NMI");
+        assert_eq!(state.main_loop_caller_phase,
+            crate::cycle_models::main_wait::MainLoopCallerPhase::Waiting);
+        assert!(!state.game_state.display.nmi_update_is_latched());
+        let clock = self.clock.unwrap();
+        let checkpoint = self.wait_checkpoint.unwrap_or_else(|| clock.main_wait_checkpoint());
+        NativeMainWaitCpuPhase { host, checkpoint, budget: clock.budget }
+    }
 }
 
 #[cfg(test)]
@@ -1382,12 +1470,29 @@ mod fast_forward_cycle_tests {
         // Snes9x non-interlace odd fields shorten scanline240 by four
         // clocks. This entry crosses that scanline before the next NMI.
         let entry = snes::CpuRasterPosition::new(230, 0);
-        let even = state.vwf_exact_entry_budget(entry, snes::CpuFieldTiming::non_interlace(false)).unwrap();
-        let odd = state.vwf_exact_entry_budget(entry, snes::CpuFieldTiming::non_interlace(true)).unwrap();
+        let even = state.vwf_exact_entry_budget(entry, 30_000).unwrap();
+        let odd = state.vwf_exact_entry_budget(entry, 30_001).unwrap();
         assert_eq!(even.master_cycles - odd.master_cycles, 4);
         assert_eq!(even.stall_master_cycles, odd.stall_master_cycles);
         assert_eq!(even.since_nmi_master_cycles, 5 * 1364 - 12);
         assert_eq!(odd.since_nmi_master_cycles, even.since_nmi_master_cycles);
+    }
+
+    #[test]
+    fn measured_dialogue_budget_retains_all_four_refresh_phases() {
+        let state = crate::zelda_rtl::ZeldaState::new();
+        for base in [0, 30_000, 1_581_076] {
+            for (line, ends) in [(100, [536, 536, 576, 576]), (240, [536, 576, 576, 536])] {
+                for (offset, expected_h) in ends.into_iter().enumerate() {
+                    let field = base + offset as u64;
+                    let entry = snes::CpuRasterPosition::new(line, 532);
+                    let mut clock = state.vwf_exact_entry_budget(entry, field).unwrap().clock.unwrap();
+                    assert_eq!(clock.budget.field_index(), field);
+                    clock.advance(&state, 4);
+                    assert_eq!(clock.budget.raster_position(), snes::CpuRasterPosition::new(line, expected_h));
+                }
+            }
+        }
     }
 
     #[test]
@@ -1628,7 +1733,7 @@ mod fast_forward_cycle_tests {
         for line in [43u16, 128] {
             let entry = snes::CpuRasterPosition::new(line, 716);
             let actual = state.vwf_exact_entry_budget(
-                entry, snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+                entry, 0,
             ).unwrap();
             let remaining_lines = 225 - u32::from(line);
             let span = remaining_lines * 1364 + 12 - 716;
@@ -1644,12 +1749,12 @@ mod fast_forward_cycle_tests {
         state.ram[0x2000] = 0;
         let terminated = state.vwf_exact_entry_budget(
             snes::CpuRasterPosition::new(43, 716),
-            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+            0,
         ).unwrap();
         state.set_hdma_enable_mask(0);
         let disabled = state.vwf_exact_entry_budget(
             snes::CpuRasterPosition::new(43, 716),
-            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+            0,
         ).unwrap();
         assert_eq!((terminated.master_cycles, terminated.since_nmi_master_cycles, terminated.stall_master_cycles),
             (disabled.master_cycles, disabled.since_nmi_master_cycles, disabled.stall_master_cycles));
@@ -2020,6 +2125,8 @@ impl ZeldaState {
     }
 
     pub(super) fn advance_native_dialogue_caller_clock(&mut self, cycles: u32) {
+        if self.native_dialogue_caller_clock.as_ref()
+            .is_some_and(|clock| clock.instruction_clocked_by_caller) { return; }
         let Some(mut clock) = self.native_dialogue_caller_clock.take() else { return; };
         assert!(clock.advance(self, cycles).reached_boundary().is_none(),
             "native dialogue caller exhausted its reserved return budget");
@@ -2028,17 +2135,11 @@ impl ZeldaState {
 
     pub(super) fn retain_native_dialogue_main_wait(&mut self) {
         let Some(mut clock) = self.native_dialogue_caller_clock.take() else { return; };
-        let a = clock.return_a.expect("dialogue caller has not returned from sprite pointers");
-        let mut checkpoint = RomCpuCheckpoint {
-            entry_pc: 0x00_8034, stop_pc: 0x00_805d,
-            a, x: clock.return_x.expect("dialogue caller lost its sprite-preparation X"),
-            y: clock.return_y.expect("dialogue caller lost its sprite-preparation Y"),
-            sp: 0x1ff, dp: 0, db: 0, carry: clock.return_carry,
-            zero: a == 0, negative: a & 0x8000 != 0, overflow: clock.return_overflow,
-            interrupt_disable: false, decimal: false, accumulator_is_8_bit: true,
-            index_is_8_bit: true, emulation: false, waiting: false,
-            stack_address: 0, stack_bytes: &[],
-        };
+        if debug_vwf_budget_for_frame(self.frame_ctr_dbg) {
+            eprintln!("vwf_caller_return host={} position={:?}",
+                self.frame_ctr_dbg, clock.budget.raster_position());
+        }
+        let mut checkpoint = clock.main_wait_checkpoint();
         assert!(!self.game_state.display.nmi_update_is_latched());
         let mut wait = crate::cycle_models::main_wait::MainWait::default();
         for _ in 0..50_000 {
@@ -7017,7 +7118,7 @@ impl ZeldaState {
             if debug_vwf_budget {
                 eprintln!("vwf_measured_entry host={} position={entry:?}", self.frame_ctr_dbg);
             }
-            self.vwf_exact_entry_budget(entry.position, entry.field_timing)
+            self.vwf_exact_entry_budget(entry.position, entry.field_index)
         } else if resuming {
             self.vwf_exact_loop_budget()
         } else {
@@ -7500,6 +7601,10 @@ impl ZeldaState {
                 if let Some(mut clock) = exact_budget.and_then(|budget| budget.clock) {
                     assert!(clock.advance(self, loop_budget - cycles_left).reached_boundary().is_none(),
                         "completed VWF handler crossed its caller boundary");
+                    if debug_vwf_budget {
+                        eprintln!("vwf_handler_return host={} work={} position={:?}",
+                            self.frame_ctr_dbg, loop_budget - cycles_left, clock.budget.raster_position());
+                    }
                     assert!(self.native_dialogue_caller_clock.replace(clock).is_none(),
                         "VWF handler overlapped an unfinished caller clock");
                 }
@@ -7767,27 +7872,31 @@ impl ZeldaState {
     /// the remaining CPU work from that position, excluding refresh/HDMA.
     fn vwf_exact_measured_entry_budget(&self, entry: snes::CpuRasterPosition) -> Option<VwfExactLoopBudget> {
         self.vwf_exact_entry_budget(entry,
-            super::native_cpu_field_timing_at_entry(self.frame_ctr_dbg, entry))
+            super::native_cpu_field_index_at_entry(self.frame_ctr_dbg, entry))
     }
 
-    fn vwf_exact_entry_budget(&self, entry: snes::CpuRasterPosition, field_timing: snes::CpuFieldTiming) -> Option<VwfExactLoopBudget> {
+    fn vwf_exact_entry_budget(&self, entry: snes::CpuRasterPosition, field_index: u64) -> Option<VwfExactLoopBudget> {
         use crate::zelda_rtl::game_execution_scheduler::{CpuCycleBudget, CpuWorkAdvance};
         if !self.vwf_uses_exact_costs() { return None; }
+        let field_timing = snes::CpuFieldTiming::NON_INTERLACE_EVEN;
         let acceptance = snes::CpuRasterPosition::new(225, snes::SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES as u16);
-        let entry_cycles = field_timing.master_cycles_at(0, entry);
-        let same_field_acceptance = field_timing.master_cycles_at(0, acceptance);
+        let entry_cycles = field_timing.master_cycles_at(field_index, entry);
+        let same_field_acceptance = field_timing.master_cycles_at(field_index, acceptance);
         let next_field = u64::from(entry_cycles >= same_field_acceptance);
         let span_before_nmi = u32::try_from(
-            field_timing.master_cycles_at(next_field, acceptance) - entry_cycles).unwrap();
+            field_timing.master_cycles_at(field_index + next_field, acceptance) - entry_cycles).unwrap();
         let since_nmi_master_cycles = if next_field == 1 {
             entry_cycles - same_field_acceptance
         } else {
-            field_timing.field_master_cycles(1) - same_field_acceptance + entry_cycles
+            // The preceding field has the opposite parity, including when
+            // a fixture begins in field zero. Keep this arithmetic relative
+            // to the current field so absolute counters cannot underflow.
+            field_timing.field_master_cycles(field_index ^ 1) - (same_field_acceptance - entry_cycles)
         };
-        let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
+        let mut budget = CpuCycleBudget::until_next_nmi_acceptance_in_field(
+            field_index,
             entry,
             snes::CpuBusWorkload::with_dynamic_hdma(),
-            field_timing,
         );
         // The fresh entry is measured after HDMA has already advanced through
         // part of this field. Reconstruct its descriptor cursor from native

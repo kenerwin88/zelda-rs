@@ -3,7 +3,6 @@
 //! admission values or a replacement for the missing native clock origin.
 
 use super::*;
-use crate::cycle_models::main_wait::MainWait;
 use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -70,7 +69,8 @@ fn native_initialization_caller_keeps_one_clock_across_held_nmis() {
     let mut interrupts = 0;
     let mut fixtures = 0;
     let mut interrupted_callers = std::collections::BTreeMap::<Caller, usize>::new();
-    for odd in [false, true] {
+    for field in 30_000..30_004u64 {
+        let odd = field & 1 != 0;
         for hdma_enabled in [false, true] {
             for start_at_return in [false, true] {
                 for entry in [
@@ -104,7 +104,7 @@ fn native_initialization_caller_keeps_one_clock_across_held_nmis() {
                             .copy_from_slice(&[0xff, 0, 0x30, 0xff, 0, 0x32, 0]);
                     }
                     let timing_dma = state.dma_with_native_hdma_enable();
-                    let mut hdma = snes::HdmaTimingState::new(&timing_dma);
+                    let hdma = snes::HdmaTimingState::new(&timing_dma);
                     const STACK: [u8; 9] = [0x45, 0xc4, 0, 0x4d, 0xf8, 0, 0x59, 0x80, 0];
                     let checkpoint = RomCpuCheckpoint {
                         entry_pc: if start_at_return {
@@ -143,24 +143,22 @@ fn native_initialization_caller_keeps_one_clock_across_held_nmis() {
                     )
                     .unwrap();
                     source.restore_original_dialogue_pointer_table().unwrap();
-                    let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
+                    let budget = CpuCycleBudget::until_next_nmi_acceptance_in_field(
+                        field,
                         CpuRasterPosition::new(entry.0, entry.1),
                         CpuBusWorkload::with_dynamic_hdma(),
-                        CpuFieldTiming::non_interlace(odd),
                     );
                     let mut source_budget = budget.clone();
                     let mut work = state.native_dialogue_initialization_caller_work().unwrap();
                     if start_at_return {
                         work.phase = DialogueInitializationCallerPhase::RenderReturn;
                     }
-                    let mut wait = MainWait::default();
+                    let mut owner = ClockedDialogueInitializationCaller::new(
+                        work, NativeDialogueCallerClock::new(budget, hdma));
                     let mut saw_open_nmi = false;
                     for _ in 0..200_000 {
-                        let cycles = state.step_dialogue_initialization_caller(&mut work)
-                            .unwrap_or_else(|| wait.step(u8::from(
-                                state.game_state.display.nmi_update_is_latched()
-                            )).master_cycles);
-                        let caller = match work.phase {
+                        let (cycles, native_advance) = owner.step(&mut state);
+                        let caller = match owner.work.phase {
                             DialogueInitializationCallerPhase::Initialize => Caller::Initialize,
                             DialogueInitializationCallerPhase::RenderReturn => Caller::RenderReturn,
                             DialogueInitializationCallerPhase::InterfaceReturn => Caller::InterfaceReturn,
@@ -177,18 +175,13 @@ fn native_initialization_caller_keeps_one_clock_across_held_nmis() {
                             cycles, actual_cost,
                             "entry={entry:?} odd={odd} caller={caller:?} PC={pc:06x}"
                         );
-                        let native_advance =
-                            budget.advance_instruction_with_hdma(cycles, |event, _| {
-                                hdma.stall(event, |address| state.native_hdma_table_byte(address))
-                                    .expect("native WRAM HDMA table")
-                            });
                         let source_advance = super::super::advance_instruction_with_rom_hdma(
                             &mut source,
                             &mut source_budget,
                             actual_cost,
                         );
                         assert_eq!(native_advance, source_advance);
-                        assert_eq!(budget, source_budget);
+                        assert_eq!(owner.clock.as_ref().unwrap().budget, source_budget);
                         boundaries += 1;
                         if native_advance.reached_boundary().is_some() {
                             *interrupted_callers.entry(caller).or_default() += 1;
@@ -204,7 +197,7 @@ fn native_initialization_caller_keeps_one_clock_across_held_nmis() {
                                             state.main_loop_caller_phase,
                                             MainLoopCallerPhase::Waiting
                                         );
-                                        wait.next_pc()
+                                        owner.wait.next_pc()
                                     }
                                     Caller::Return => match state.main_loop_caller_phase {
                                         MainLoopCallerPhase::ReturnBranch => 0x805f,
@@ -214,6 +207,11 @@ fn native_initialization_caller_keeps_one_clock_across_held_nmis() {
                                     _ => panic!("callee opened NMI before the main caller's STZ"),
                                 };
                                 assert_eq!(next_pc, source.pc());
+                                if state.main_loop_caller_phase == MainLoopCallerPhase::Waiting {
+                                    let phase = owner.into_main_wait_phase(&state, 30_002);
+                                    assert_eq!(phase.checkpoint, source.main_wait_checkpoint(0x805d));
+                                    assert_eq!(phase.budget, source_budget);
+                                }
                                 for range in [
                                     0x1cd0..0x1cf0,
                                     0x720..0x728,
@@ -234,7 +232,7 @@ fn native_initialization_caller_keeps_one_clock_across_held_nmis() {
                                 break;
                             }
                             // Exercise the runtime owner itself across the held NMI.
-                            state.dialogue_initialization_caller = Some(work);
+                            state.dialogue_initialization_caller = Some(owner.work.clone());
                             assert_eq!(state.paired_resume_cpu_boundary_blocker(),
                                 Some("retained-dialogue-initialization-caller"));
                             let serialized = bincode::serialize(
@@ -244,7 +242,7 @@ fn native_initialization_caller_keeps_one_clock_across_held_nmis() {
                             // Native handler accounting determines the CPU work. The
                             // same native hardware budget owns refresh and overshoot.
                             // No source cost or clock is copied into this path.
-                            budget.begin_nmi_handler();
+                            let clock = owner.begin_nmi();
                             state.interrupt_nmi_with_animated_bg_operands(0, None, false, None);
                             let native_nmi_work = state.last_nmi_handler_master_cycles.unwrap();
                             assert_eq!(
@@ -252,22 +250,14 @@ fn native_initialization_caller_keeps_one_clock_across_held_nmis() {
                                 "held NMI must not run general DMA"
                             );
                             assert_eq!(
-                                budget.advance_instruction_with_hdma(
-                                    native_nmi_work,
-                                    |event, _| {
-                                        hdma.stall(event, |address| {
-                                            state.native_hdma_table_byte(address)
-                                        })
-                                        .expect("native WRAM HDMA table")
-                                    }
-                                ),
+                                clock.advance(&state, native_nmi_work),
                                 CpuWorkAdvance::Complete
                             );
                             super::super::advance_rom_cpu_through_nmi(
                                 &mut source,
                                 &mut source_budget,
                             );
-                            assert_eq!(budget, source_budget,
+                            assert_eq!(clock.budget, source_budget,
                         "entry={entry:?} odd={odd} caller={caller:?} PC={pc:06x} native NMI work={native_nmi_work}");
                             for range in [
                                 0x1cd0..0x1cf0,
@@ -284,7 +274,7 @@ fn native_initialization_caller_keeps_one_clock_across_held_nmis() {
                                     );
                                 }
                             }
-                            work = state.dialogue_initialization_caller.take().unwrap();
+                            owner.work = state.dialogue_initialization_caller.take().unwrap();
                             interrupts += 1;
                         }
                     }
