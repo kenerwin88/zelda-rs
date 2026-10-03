@@ -1867,6 +1867,19 @@ impl ZeldaState {
         true
     }
 
+    /// Saved objects retain their counters, records and background tiles across
+    /// nested drawing calls. Publish each word through its native component.
+    pub(crate) fn native_dungeon_saved_object_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        if self.native_dungeon_object_tile_store(address, value, width) { return true; }
+        if !matches!(address, 0xae | 0x42c | 0x42e | 0x432 | 0x45a | 0x496 | 0x498 |
+            0x500..=0x5de | 0x6a0..=0x6b6 | 0x6e0..=0x6ea) { return false; }
+        assert_eq!(width, 2);
+        assert_eq!(address & 1, 0);
+        self.game_state.dungeon.write_saved_object_word(address as usize, value);
+        self.ram[address as usize..address as usize + 2].copy_from_slice(&value.to_le_bytes());
+        true
+    }
+
     /// Floor drawing retires one pointer, selector or tile store at a time.
     /// Do not project the other layer or the live line-pointer table with it.
     pub(crate) fn native_dungeon_floor_store(&mut self, address: u32, value: u16, width: u8) -> bool {

@@ -84,6 +84,7 @@ mod tests {
         let mut pending_draw_entries = 0;
         let (mut shared_instructions, mut shared_tile_stores, mut shared_scalar_stores, mut draw_returns) = (0, 0, 0, 0);
         let mut shared_domains = BTreeSet::new();
+        let mut saved_stores = 0;
         for room in 0..320u16 {
             for variant in 0..4usize {
                 let mut machine = Snes::new();
@@ -198,6 +199,7 @@ mod tests {
                     let parent = work.parent_active();
                     let parser = work.object_parser_active();
                     let shared = work.object_tiles_active();
+                    let saved = work.saved_objects_active();
                     // Check the retained owner against the independent source's
                     // parser instruction domain, including the first tail target.
                     let source_cpu = &source.snes().cpu;
@@ -220,7 +222,7 @@ mod tests {
                         &rom,
                         None,
                         |_, access| match access {
-                            Access::Write(address, value, width) if parent || header || floors || parser || shared => {
+                            Access::Write(address, value, width) if parent || header || floors || parser || shared || saved => {
                                 wrote = true;
                                 let handled = if parent {
                                     state.native_dungeon_room_parent_store(address, value, width)
@@ -230,14 +232,17 @@ mod tests {
                                     state.native_dungeon_object_parser_store(address, value, width)
                                 } else if shared {
                                     state.native_dungeon_object_tile_store(address, value, width)
+                                } else if saved {
+                                    saved_stores += 1;
+                                    state.native_dungeon_saved_object_store(address, value, width)
                                 } else {
                                     state.native_dungeon_header_store(address, value, width)
                                 };
                                 if handled {
-                                    if (floors || shared) && (0x7e2000..0x7e6000).contains(&address) {
+                                    if (floors || shared || saved) && (0x7e2000..0x7e6000).contains(&address) {
                                         tile_write = Some(address as usize - 0x7e0000);
                                         if floors { floor_tile_stores += 1; }
-                                        else { shared_tile_stores += 1; }
+                                        else if shared { shared_tile_stores += 1; }
                                     } else {
                                         published = true;
                                         if shared {
@@ -309,10 +314,9 @@ mod tests {
                     if !parser && work.object_parser_active() {
                         if !parent {
                             draw_returns += 1;
-                            // Specialized drawers retain a separate publication
-                            // boundary. Shared drawers and their floor blocks
-                            // return continuously, without any RAM import.
-                            if !shared {
+                            // Shared and saved-object drawers return continuously
+                            // through their owners, without any RAM import.
+                            if !shared && !saved {
                                 state.ram.copy_from_slice(&ram);
                                 state.sync_native_game_state_from_ram();
                                 native_draw_inputs += 1;
@@ -321,11 +325,9 @@ mod tests {
                     }
                     if had_child && work.child.is_none() {
                         child_returns += 1;
-                        if !header && !floors && !parser {
-                            // Saved-object production publication is still
-                            // separate work. The next parent segment starts
-                            // from the native child's computed output;
-                            // source RAM never initializes this candidate.
+                        if !header && !floors && !parser && !saved {
+                            // Remaining specialized children provide their
+                            // independently computed native output to this fixture.
                             state.ram.copy_from_slice(&ram);
                             state.sync_native_game_state_from_ram();
                             native_child_inputs += 1;
@@ -360,6 +362,8 @@ mod tests {
         assert_eq!(pending_draw_entries, draw_returns);
         eprintln!("room object parser publications: instructions={parser_instructions} stores={parser_stores} domains={} positions={} native_draw_inputs={native_draw_inputs} pending_draw_entries={pending_draw_entries}", parser_domains.len(), parser_positions.len());
         eprintln!("room shared object publications: instructions={shared_instructions} tiles={shared_tile_stores} scalars={shared_scalar_stores} domains={shared_domains:x?} continuous_returns={}", draw_returns - native_draw_inputs);
+        assert!(saved_stores > 0);
+        eprintln!("room saved-object publication stores: {saved_stores}");
     }
 }
 impl Child {
@@ -419,6 +423,12 @@ impl Default for DungeonRoom {
     }
 }
 impl DungeonRoom {
+    pub(crate) fn saved_objects_active(&self) -> bool {
+        matches!(&self.child, Some(Child::Saved(_)))
+            || matches!(&self.child, Some(Child::Objects { tiles: Some(draw), .. })
+                if draw.saved_objects_active())
+    }
+
     pub(crate) fn object_tiles_active(&self) -> bool {
         matches!(&self.child, Some(Child::Objects { tiles: Some(draw), .. })
             if draw.shared_tiles_active())

@@ -12,6 +12,7 @@ pub(crate) enum CallerOwner {
     DungeonFloors,
     DungeonObjectParser,
     DungeonObjectTiles,
+    DungeonSavedObjects,
 }
 
 pub(crate) enum StartupAccess {

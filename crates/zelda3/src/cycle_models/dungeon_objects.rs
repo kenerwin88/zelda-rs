@@ -303,6 +303,10 @@ pub(crate) struct DungeonObjectTiles {
     complete: bool,
 }
 impl DungeonObjectTiles {
+    pub(crate) fn saved_objects_active(&self) -> bool {
+        self.saved.is_some()
+    }
+
     /// Shared tile/dimension work, including its retained floor-block child.
     /// Specialized object families keep their own state publication boundary.
     pub(crate) fn shared_tiles_active(&self) -> bool {
@@ -3537,6 +3541,7 @@ mod tests {
         target: Option<u32>,
         draws: usize,
         counter_publications: usize,
+        saved_publications: usize,
     }
     fn run(
         stream: &[u8],
@@ -3646,7 +3651,9 @@ mod tests {
             target: None,
             draws: 0,
             counter_publications: 0,
+            saved_publications: 0,
         };
+        let mut saved_owner: Option<crate::ZeldaState> = None;
         loop {
             if let Some(target) = work.pending_draw() {
                 assert!(!work.complete());
@@ -3665,6 +3672,17 @@ mod tests {
                 break;
             }
             out.visited.insert(cpu.pc);
+            if child.as_ref().is_some_and(|child| child.saved_objects_active()) {
+                if saved_owner.is_none() {
+                    let mut state = crate::ZeldaState::new();
+                    state.ram.copy_from_slice(&ram);
+                    state.sync_native_game_state_from_ram();
+                    saved_owner = Some(state);
+                }
+            } else {
+                saved_owner = None;
+            }
+            let mut saved_published = false;
             let label = format!(
                 "object stream {stream:02x?} variant{variant} pc{:04x}",
                 cpu.pc
@@ -3687,6 +3705,19 @@ mod tests {
                 rom,
                 None,
                 |_, access| match access {
+                    Access::Write(address, value, width) if saved_owner.is_some() => {
+                        let state = saved_owner.as_mut().unwrap();
+                        if state.native_dungeon_saved_object_store(address, value, width) {
+                            saved_published = true;
+                            out.saved_publications += 1;
+                        } else {
+                            assert!(matches!(address, 0..=0xf | 0x100..=0x1ff),
+                                "{label}: unowned saved-object store {address:06x}");
+                            state.ram[address as usize..address as usize + usize::from(width)]
+                                .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                        }
+                        None
+                    }
                     Access::Write(0x3f4, value, width) if counter_owner.is_some() => {
                         assert!(counter_owner.as_mut().unwrap().native_dungeon_object_tile_store(0x3f4, value, width));
                         None
@@ -3714,6 +3745,16 @@ mod tests {
                 },
             );
             assert_eq!(ram, source.snes().ram, "{label}");
+            if let Some(state) = saved_owner.as_ref() {
+                assert_eq!(state.ram, ram, "{label}: retained saved-object publications");
+                if saved_published {
+                    let mut expected = crate::game_state::GameState::load_from_ram(&ram);
+                    expected.dungeon.scratch_word = state.game_state.dungeon.scratch_word;
+                    assert_eq!(state.game_state.dungeon, expected.dungeon, "{label}: saved-object owners");
+                    assert_eq!(state.game_state.player.follower_link.temp_bunny_timer(),
+                        expected.player.follower_link.temp_bunny_timer(), "{label}: tile counter companion");
+                }
+            }
             if let Some(state) = counter_owner {
                 assert_eq!(state.ram, ram, "{label}: exact counter store");
                 assert_eq!(state.game_state.dungeon.environment,
@@ -3735,6 +3776,37 @@ mod tests {
         }
         out
     }
+    #[test]
+    fn saved_object_publications_follow_native_records_and_nested_tile_returns() {
+        use super::super::dungeon_data::{OBJECT_TARGETS_EXTENDED, OBJECT_TARGETS_ORDINARY, OBJECT_TARGETS_SIZED};
+        let data = data();
+        let rom = rom();
+        let mut cases = 0;
+        let mut stores = 0;
+        let mut instructions = 0;
+        for (family, table) in [OBJECT_TARGETS_ORDINARY.as_slice(), OBJECT_TARGETS_EXTENDED.as_slice(), OBJECT_TARGETS_SIZED.as_slice()].into_iter().enumerate() {
+            for (kind, &target) in table.iter().enumerate() {
+                if !DungeonObjectTiles::new(0x010000 | u32::from(target)).is_some_and(|draw| draw.saved_objects_active()) { continue; }
+                for variant in 0..4 {
+                    for saved in [0u16, 0xffff] {
+                        let mut initial = vec![(0x402, saved as u8), (0x403, (saved >> 8) as u8)];
+                        for address in [0x42c, 0x42e, 0x432, 0x45a, 0x496, 0x498] {
+                            initial.extend([(address, 0), (address + 1, 0)]);
+                        }
+                        let stream = saved_object_stream(family, kind as u8, 0, 16, 32);
+                        let result = run_configured(&stream, variant, true, &data, &rom, 0x88e4, None, &initial);
+                        assert_eq!(result.draws, 2);
+                        cases += 1;
+                        stores += result.saved_publications;
+                        instructions += result.count;
+                    }
+                }
+            }
+        }
+        assert!(cases > 0 && stores > 0);
+        eprintln!("saved native publication fixtures: {cases} cases, {instructions} instructions, {stores} stores");
+    }
+
     fn door_streams(direction: u8) -> (usize, usize, usize, BTreeSet<u16>) {
         let data = data();
         let rom = rom();

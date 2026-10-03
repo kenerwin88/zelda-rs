@@ -58,6 +58,10 @@ impl LoadFile {
         matches!(&self.child, Some(Child::Room(work)) if work.object_tiles_active())
     }
 
+    pub(crate) fn saved_objects_active(&self) -> bool {
+        matches!(&self.child, Some(Child::Room(work)) if work.saved_objects_active())
+    }
+
     pub(crate) fn object_parser_active(&self) -> bool {
         matches!(&self.child, Some(Child::Room(work)) if work.object_parser_active())
     }

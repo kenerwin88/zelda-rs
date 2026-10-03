@@ -15019,6 +15019,10 @@ impl ZeldaState {
                         _ if caller_owner == CallerOwner::DungeonFloors && self.native_dungeon_floor_store(address, value, width) => {}
                         _ if caller_owner == CallerOwner::DungeonObjectParser && self.native_dungeon_object_parser_store(address, value, width) => {}
                         _ if caller_owner == CallerOwner::DungeonObjectTiles && self.native_dungeon_object_tile_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::DungeonSavedObjects && self.native_dungeon_saved_object_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::DungeonSavedObjects && !matches!(address, 0..=0xf | 0x100..=0x1ff) => {
+                            panic!("unowned saved object store {address:06x}");
+                        }
                         _ if caller_owner == CallerOwner::DungeonObjectTiles && !matches!(address, 0..=0xf | 0x100..=0x1ff) => {
                             panic!("unowned shared object tile store {address:06x}");
                         }

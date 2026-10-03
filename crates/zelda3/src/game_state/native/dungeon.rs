@@ -182,6 +182,25 @@ pub(crate) struct DungeonState {
 }
 
 impl DungeonState {
+    pub(crate) fn write_saved_object_word(&mut self, address: usize, value: u16) {
+        match address {
+            0xae => self.header.tags = value.to_le_bytes(),
+            // The word increment also writes the unmodeled companion byte.
+            0x45a => self.torch.lit_torches = value as u8,
+            0x560..=0x5de => {
+                self.room_items.replacement_tilemap_quads[(address & 0x1f) / 2][(address - 0x560) / 0x20] = value;
+            }
+            0x6a0..=0x6b6 => self.room_parser.star_switch_tilemap_positions[(address - 0x6a0) / 2] = value,
+            0x6e0..=0x6ea => self.room_items.chest_locations[(address - 0x6e0) / 2] = value,
+            0x42c | 0x42e | 0x432 | 0x496 | 0x498 | 0x500..=0x55e => {
+                for (byte, value) in value.to_le_bytes().into_iter().enumerate() {
+                    assert!(self.write_room_parent_byte(address + byte, value));
+                }
+            }
+            _ => unreachable!("unowned saved object word {address:04x}"),
+        }
+    }
+
     pub(crate) fn write_object_tile_word(&mut self, address: usize, value: u16) {
         match address {
             0x3f4 => self.environment.somaria_block_bg_check_flag = value as u8,

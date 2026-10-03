@@ -550,6 +550,7 @@ impl Startup {
                 let mut nmitimen = None;
                 let mut hdma = None;
                 let owner = match graphics {
+                    IntroGraphics::LoadFile(work) if work.saved_objects_active() => super::startup_bus::CallerOwner::DungeonSavedObjects,
                     IntroGraphics::LoadFile(work) if work.object_tiles_active() => super::startup_bus::CallerOwner::DungeonObjectTiles,
                     IntroGraphics::LoadFile(work) if work.object_parser_active() => super::startup_bus::CallerOwner::DungeonObjectParser,
                     IntroGraphics::LoadFile(work) if work.floors_active() => super::startup_bus::CallerOwner::DungeonFloors,
