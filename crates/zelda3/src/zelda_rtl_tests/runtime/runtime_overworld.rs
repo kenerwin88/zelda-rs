@@ -1826,14 +1826,29 @@ fn module09_link_oam_call_site_pushes_the_native_discriminator() {
     assert_eq!(run.pc(), LINK_OAM_MAIN_ENTRY_PC);
     assert_eq!(run.stack_return_address(), MODULE09_LINK_OAM_CALLER_RETURN);
 
-    // These bounds are the Snes9x semantic adapter's own
-    // `LINK_OAM_START_PC`/`LINK_OAM_END_PC`, the range it publishes as
-    // `MainLoopInterruption::LinkOam`; `$0D:ADB6` is the following routine's
-    // `SEP #$30`. The finer lower-body window the native measurement checks
-    // first lies inside that range, so the classifier's ordering depends on it.
-    assert_eq!((LINK_OAM_MAIN_ENTRY_PC, LINK_OAM_MAIN_END_PC), (0x0d_a18e, 0x0d_adb6));
-    assert_eq!(&rom[at(LINK_OAM_MAIN_END_PC)..at(LINK_OAM_MAIN_END_PC) + 2], &[0xe2, 0x30]);
-    assert!(LINK_OAM_MAIN_ENTRY_PC < 0x0d_a9ed && 0x0d_a9f1 < LINK_OAM_MAIN_END_PC);
+    // Execute the whole call, including its coordinate helper outside the
+    // contiguous main body. Leaving that range cannot retire this caller;
+    // only its actual long return reaches the following HUD call.
+    let mut machine = machine;
+    machine.ram[0xf35a] = 1; // equipped shield
+    machine.ram[0xf3c5] = 1; // gameplay started: enable shield drawing
+    let mut run = RomCpuTimingRun::new(
+        &rom, &machine.ram, &machine.cart.ram, &machine.ppu, &machine.dma,
+        [0; 4], RomCpuCheckpoint { stop_pc: 0x02_a4c9, ..checkpoint },
+    ).unwrap();
+    let mut coordinate_helper_entries = 0;
+    for _ in 0..10_000 {
+        if run.is_complete() { break; }
+        if run.pc() == 0x0d_afc0 {
+            coordinate_helper_entries += 1;
+            assert_ne!(run.stack_return_address(), MODULE09_LINK_OAM_CALLER_RETURN,
+                "the child has its own return; the outer caller must remain retained");
+        }
+        run.step();
+    }
+    assert!(coordinate_helper_entries > 0, "fixture must exercise the out-of-line child");
+    assert!(run.is_complete(), "LinkOam and its children must return to the HUD call");
+    assert_eq!(run.pc(), 0x02_a4c9);
 }
 
 /// The Module09 suffix's `Hud_RefillLogic` call and the heart-drawing routine

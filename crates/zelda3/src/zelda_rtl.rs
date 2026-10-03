@@ -2638,10 +2638,9 @@ fn overworld_map_graphics_cpu_nmi_slices(state: &ZeldaState, input: u16) -> (u8,
     panic!("overworld map CPU timing did not return");
 }
 
-/// `LinkOam_Main` ($0D:A18E..$0D:ADB6). The Snes9x semantic adapter classifies
-/// an accepted NMI whose PC is in this range as `MainLoopInterruption::LinkOam`.
+/// `LinkOam_Main` entry. Its caller remains active through out-of-line
+/// equipment and coordinate helpers until the matching long return.
 const LINK_OAM_MAIN_ENTRY_PC: u32 = 0x0d_a18e;
-const LINK_OAM_MAIN_END_PC: u32 = 0x0d_adb6;
 /// `$02:A4C5 JSL LinkOam_Main` is the Module09 overworld suffix's own call: it
 /// follows `$02:A4B2 JSL Sprite_Main` and the four PLA/STA that restore the
 /// caller's stack-local BG scroll values, and is followed immediately by
@@ -2937,6 +2936,14 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
         run.set_raster_position(v, h);
         let (advance, cpu_cycles) = advance_rom_cpu_step_measured(&mut run, &mut budget);
         let writes = run.take_cpu_wram_writes();
+        if link_oam_caller_return.is_some_and(|call|
+            run.pc() == (call & 0xff_0000) | (call.wrapping_add(1) & 0xffff))
+        {
+            // The RTL completed before this instruction boundary. A nested
+            // RTS cannot retire the caller merely by leaving the main body's
+            // address range; its helpers still belong to this LinkOam call.
+            link_oam_caller_return = None;
+        }
         // $06:A6F7 publishes Cucco_AnimateFast's graphics to $0DC0,X.
         // The helper tail-jumps into its hitbox routine, so a later PC or
         // stack return does not identify this source checkpoint by itself.
@@ -3000,15 +3007,15 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
             }
             // The lower-body nibble is shifted by four one-byte ASLs.
             // No lower entry store has occurred at these instruction edges.
-            if (0x0d_a9ed..=0x0d_a9f1).contains(&run.pc()) {
+            if link_oam_caller_return == Some(MODULE09_LINK_OAM_CALLER_RETURN)
+                && (0x0d_a9ed..=0x0d_a9f1).contains(&run.pc()) {
                 state.native_overworld_link_body_selection_cycles =
                     Some(u16::try_from(run.pc() - 0x0d_a9ed).unwrap() * 14);
-            } else if (LINK_OAM_MAIN_ENTRY_PC..LINK_OAM_MAIN_END_PC).contains(&run.pc())
-                && link_oam_caller_return == Some(MODULE09_LINK_OAM_CALLER_RETURN)
+            } else if link_oam_caller_return == Some(MODULE09_LINK_OAM_CALLER_RETURN)
             {
                 // The source accepted this host's NMI inside the Module09
-                // suffix's own `LinkOam_Main` call, the disposition the wire
-                // publishes as `MainLoopInterrupted(LinkOam)`. The caller's
+                // suffix's own `LinkOam_Main` call or one of its children.
+                // Retain the call until its actual return. The caller's
                 // scroll restore has already run; the whole LinkOam/HUD suffix
                 // resumes after the interrupt, exactly as the receipt-driven
                 // lane's `FinishModule09LinkOamCallerReturn` does.
@@ -3084,6 +3091,13 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
                     // or in the hearts block around its two calls (route host
                     // 56598, $0D:FBFD between them). Magic has not started.
                     Some(HudUpdateInterruption::InsideHearts)
+                } else if let Some(master_cycles) = ZeldaState::hud_arrow_digit_progress_at_pc(run.pc())
+                    .filter(|_| hud_refill_caller_return == Some(MODULE09_HUD_REFILL_CALLER_RETURN))
+                {
+                    // The decimal conversion has returned, but one or both
+                    // arrow-digit stores still belong to this suspended HUD
+                    // caller. Retain its native store cursor and common suffix.
+                    Some(HudUpdateInterruption::ArrowDigits { master_cycles })
                 } else if (HUD_INVENTORY_TAIL_START_PC..=HUD_INVENTORY_TAIL_RETURN_PC)
                     .contains(&run.pc())
                     && hud_refill_caller_return == Some(MODULE09_HUD_REFILL_CALLER_RETURN)
