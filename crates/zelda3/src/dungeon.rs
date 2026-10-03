@@ -16,6 +16,90 @@ use crate::zelda_rtl::sprite::SpriteSpawnInfo;
 mod dungeon_shared;
 use dungeon_shared::*;
 
+impl ZeldaState {
+    pub(crate) fn native_lamp_cone_table_byte(address: u32) -> Option<u8> {
+        let (word, byte) = match address {
+            0x00f53e..=0x00f545 => {
+                let i = (address - 0x00f53e) as usize;
+                (
+                    ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_BG1_X_BASE_OFFSETS[i / 2],
+                    i & 1,
+                )
+            }
+            0x00f546..=0x00f54d => {
+                let i = (address - 0x00f546) as usize;
+                (
+                    ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_BG1_Y_BASE_OFFSETS[i / 2],
+                    i & 1,
+                )
+            }
+            0x00f54e..=0x00f555 => {
+                let i = (address - 0x00f54e) as usize;
+                (
+                    ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_SCROLL_ADJUSTMENTS[i / 2] as u16,
+                    i & 1,
+                )
+            }
+            0x00f556..=0x00f55d => {
+                let i = (address - 0x00f556) as usize;
+                (
+                    ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_SCROLL_BASELINES[i / 2] as u16,
+                    i & 1,
+                )
+            }
+            0x00f55e..=0x00f565 => {
+                let i = (address - 0x00f55e) as usize;
+                (ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_SCROLL_CLAMPS[i / 2], i & 1)
+            }
+            _ => return None,
+        };
+        Some(word.to_le_bytes()[byte])
+    }
+
+    /// Immutable lookup bytes used by the retained push-block caller and children.
+    pub(crate) fn native_push_block_table_byte(address: u32) -> Option<u8> {
+        match address {
+            0x01d7c0..=0x01d7c7 => {
+                let i = (address - 0x01d7c0) as usize;
+                Some(
+                    DUNGEON_PUSH_BLOCK_HANDLER_PUSH_BLOCK_MOVE_DISTANCES[i / 2].to_le_bytes()
+                        [i & 1],
+                )
+            }
+            0x07edf4..=0x07edf8 => Some(9),
+            0x07ee30 => Some(12),
+            0x07ee31..=0x07ee34 => {
+                Some(PUSH_BLOCK_APPLY_VELOCITY_PUSHED_BLOCK_DIR_MASK[(address - 0x07ee31) as usize])
+            }
+            0x07ef61..=0x07ef64 => Some(
+                PUSH_BLOCK_APPLY_VELOCITY_PUSH_BLOCK_X_RECOIL_BY_DIRECTION
+                    [(address - 0x07ef61) as usize],
+            ),
+            0x07ef65..=0x07ef68 => Some(
+                PUSH_BLOCK_APPLY_VELOCITY_PUSH_BLOCK_Y_RECOIL_BY_DIRECTION
+                    [(address - 0x07ef65) as usize],
+            ),
+            _ => {
+                let (words, base): (&[u16], u32) = match address {
+                    0x07ef69..=0x07ef70 => (&PUSH_BLOCK_HANDLE_COLLISION_PUSH_BLOCK_E, 0x07ef69),
+                    0x07ef71..=0x07ef78 => (&PUSH_BLOCK_HANDLE_COLLISION_PUSH_BLOCK_A, 0x07ef71),
+                    0x07ef79..=0x07ef80 => (&PUSH_BLOCK_HANDLE_COLLISION_PUSH_BLOCK_B, 0x07ef79),
+                    0x07ef81..=0x07ef88 => (&PUSH_BLOCK_HANDLE_COLLISION_PUSH_BLOCK_F, 0x07ef81),
+                    0x07ef89..=0x07ef90 => (&PUSH_BLOCK_HANDLE_COLLISION_PUSH_BLOCK_C, 0x07ef89),
+                    0x07ef91..=0x07ef98 => (&PUSH_BLOCK_HANDLE_COLLISION_PUSH_BLOCK_D, 0x07ef91),
+                    0x07ef99..=0x07efa0 => (&[0x20, 0x20, 0x22, 0x22], 0x07ef99),
+                    0x07efa1..=0x07efa8 => (&[0x22, 0x22, 0x20, 0x20], 0x07efa1),
+                    0x07efa9..=0x07efb0 => (&[0x72, 0x72, 0x74, 0x74], 0x07efa9),
+                    0x07efb1..=0x07efb8 => (&[0x74, 0x74, 0x72, 0x72], 0x07efb1),
+                    _ => return None,
+                };
+                let i = (address - base) as usize;
+                Some(words[i / 2].to_le_bytes()[i & 1])
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(super) enum SelectedGameEntranceContinuation {
     BeforeSelection,

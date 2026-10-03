@@ -347,7 +347,7 @@ impl<B: WorkBus> Work<'_, B> {
         let value = if width == 1 { value & 255 } else { value };
         self.drain(6);
         self.flags(value, width);
-        self.write(u32::from(address), value, width);
+        self.write_high_low(u32::from(address), value, width);
     }
     pub(super) fn indirect_read(&mut self, pointer: u16, width: u8) -> u16 {
         self.drain(8);
@@ -484,6 +484,21 @@ impl<B: WorkBus> Work<'_, B> {
         value
     }
     pub(super) fn write(&mut self, a: u32, value: u16, width: u8) {
+        self.write_ordered(a, value, width, false);
+    }
+    /// RMW instructions and stack pushes write the high byte first when a
+    /// word crosses the source map's direct-transaction boundary.
+    pub(super) fn write_high_low(&mut self, a: u32, value: u16, width: u8) {
+        self.write_ordered(a, value, width, true);
+    }
+    fn write_ordered(&mut self, a: u32, value: u16, width: u8, high_first: bool) {
+        if width == 2 && a & 0xfff == 0xfff {
+            let bytes = if high_first { [1, 0] } else { [0, 1] };
+            for byte in bytes {
+                self.write(a + byte, (value >> (byte * 8)) & 255, 1);
+            }
+            return;
+        }
         self.bus.observe_clock(self.clock);
         self.bus.access(
             self.clock.clock_master_cycles(),
@@ -506,7 +521,7 @@ impl<B: WorkBus> Work<'_, B> {
         }
     }
     pub(super) fn push(&mut self, value: u16, width: u8) {
-        self.write(u32::from(self.cpu.sp + 1 - u16::from(width)), value, width);
+        self.write_high_low(u32::from(self.cpu.sp + 1 - u16::from(width)), value, width);
         self.cpu.sp -= u16::from(width);
     }
     pub(super) fn pull(&mut self, width: u8) -> u16 {
