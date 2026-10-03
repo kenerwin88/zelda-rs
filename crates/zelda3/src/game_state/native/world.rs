@@ -2551,9 +2551,8 @@ impl WorldTransientState {
         self.exit_tilemap_layer_copy
     }
 
-    pub(crate) fn increment_move_overlay_ctr(&mut self) -> u8 {
-        self.move_overlay_counter = self.move_overlay_counter.wrapping_add(1) & 3;
-        self.move_overlay_counter
+    pub(crate) fn set_move_overlay_ctr(&mut self, value: u8) {
+        self.move_overlay_counter = value;
     }
 
     pub(crate) fn set_overworld_hole_scan_step(&mut self, value: u8) {
@@ -3070,7 +3069,7 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
         fn force_vertical_fullsize_for_blast_wall();
         fn save_spexit_tm_copy(layer_masks: u16);
         fn save_exit_tm_copy(layer_masks: u16);
-        fn increment_move_overlay_ctr() -> u8;
+        fn set_move_overlay_ctr(value: u8);
         fn set_overworld_hole_scan_step(value: u8);
         fn set_overworld_peg_puzzle_progress(value: u16);
         fn set_overworld_hole_tilemap_pos(value: u16);

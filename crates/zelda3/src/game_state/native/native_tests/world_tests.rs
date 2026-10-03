@@ -539,7 +539,8 @@ fn world_transient_state_owns_transient_behavior() {
     transient.save_exit_tm_copy(0x5678);
     assert_eq!(transient.exit_layer_masks(), 0x5678);
 
-    assert_eq!(transient.increment_move_overlay_ctr(), 1);
+    transient.set_move_overlay_ctr(1);
+    assert_eq!(transient.move_overlay_counter, 1);
     transient.decrement_boss_prize_graphics_countdown();
     assert_eq!(transient.boss_prize_graphics_countdown(), 0xff);
 }

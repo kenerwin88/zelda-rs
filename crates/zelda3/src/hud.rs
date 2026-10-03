@@ -7,6 +7,8 @@ use crate::game_state::constants::MENU_PREV_JOYPAD_H;
 
 mod hud_shared;
 use hud_shared::*;
+mod hud_refill_prefix;
+pub(crate) use hud_refill_prefix::HudRefillPrefix;
 
 const USE_NEW_STYLE_INVENTORY: bool = false;
 const HUD_ITEM_COUNT: usize = if USE_NEW_STYLE_INVENTORY { 24 } else { 20 };
@@ -521,98 +523,19 @@ impl ZeldaState {
         }
         // $0D:DB75-$0D:DB7B with the `BEQ Hud_RefillLogic` taken: 126.
         crate::cycle_ledger::charge(126);
-        // $0D:DB92-$0D:DB96 `LDA $7EF373; BEQ` (56, taken 62).
-        // Filler set: $0D:DB98-$0D:DB9E (72; `BCC` taken +6 below 128).
-        //   At or above 128: $0D:DBA0-$0D:DBAC (134, BRA included).
-        //   Below: $0D:DBAE-$0D:DBC4 (244; the `BNE` on `$1A & 3` is taken
-        //   +6 off the tick), then $0D:DBC6-$0D:DBC9 (48, taken 54 when a
-        //   sound effect is pending) and $0D:DBCB-$0D:DBCD (48).
-        crate::cycle_ledger::charge({
-            let filler = self.game_state.inventory.player_resources.magic_filler();
-            if filler == 0 {
-                62
-            } else if self.game_state.inventory.player_resources.magic.amount() >= 128 {
-                56 + 72 + 134
-            } else if self.game_state.frame.frame_counter & 3 != 0 {
-                56 + 78 + 250
-            } else if self.game_state.system_signals.has_sound_effect_1() {
-                56 + 78 + 244 + 54
-            } else {
-                56 + 78 + 244 + 48 + 48
-            }
-        });
-        if self.game_state.inventory.player_resources.magic_filler() != 0 {
-            // link_magic_power (0xf36e) is owned solely by FollowerLinkState; only
-            // magic_filler stays in PlayerResourcesState.
-            if self.game_state.inventory.player_resources.magic.amount() >= 128 {
-                self.player_magic_mut().set_magic_power(128);
-                self.player_resources_mut().clear_magic_filler();
-            } else {
-                self.player_resources_mut().decrement_magic_filler();
-                self.player_magic_mut().increment_magic_power();
-                if self.game_state.frame.frame_counter & 3 == 0
-                    && !self.game_state.system_signals.has_sound_effect_1()
-                {
-                    self.set_sound_effect_1(45);
-                }
-            }
+        let mut prefix = HudRefillPrefix::new();
+        if let Some(HudUpdateInterruption::RefillPrefix { pc }) =
+            self.native_overworld_hud_interruption
+        {
+            prefix.advance_to(self, pc);
+            self.native_overworld_hud_interruption = None;
+            return Some(HudUpdateResume::RefillPrefix(prefix));
         }
+        prefix.finish(self);
+        self.hud_refill_after_magic_and_rupees()
+    }
 
-        let mut a = self.game_state.inventory.player_resources.rupees_actual();
-        let goal = self.game_state.inventory.player_resources.rupees_goal();
-        // $0D:DBD0-$0D:DBDA `REP #$30; LDA $7EF362; CMP $7EF360; BEQ` (134,
-        // taken 140 into $0D:DC13-$0D:DC15 `SEP #$30; STZ $0CFD` (54)).
-        if a != goal {
-            crate::cycle_ledger::charge(134);
-            if a >= goal {
-                // $0D:DBDC `BMI` not taken (16); $0D:DBDE-$0D:DBDF `DEC; BPL
-                // $0DDBF7` (30, taken 36 while the result stays non-negative);
-                // a negative result runs $0D:DBE1-$0D:DBE8 (94, BRA included).
-                a = a.wrapping_sub(1);
-                if (a as i16) < 0 {
-                    crate::cycle_ledger::charge(16 + 30 + 94);
-                    a = 0;
-                    self.player_resources_mut().set_rupees_goal(0);
-                } else {
-                    crate::cycle_ledger::charge(16 + 36);
-                }
-            } else {
-                // $0D:DBDC `BMI` taken (22); $0D:DBEA-$0D:DBEE `INC; CMP
-                // #$03E8; BCC $0DDBF7` (54, taken 60 below 1000); at 1000 the
-                // clamp $0D:DBF0-$0D:DBF3 (72) runs. The ROM compares against
-                // 1000 whatever the enhanced rupee cap is.
-                a = a.wrapping_add(1);
-                crate::cycle_ledger::charge(if a < 0x3e8 { 22 + 60 } else { 22 + 54 + 72 });
-                let m = self.max_rupees();
-                if a > m {
-                    a = m;
-                    self.player_resources_mut().set_rupees_goal(m);
-                }
-            }
-            self.player_resources_mut().set_rupees_actual(a);
-            // $0D:DBF7-$0D:DC00 (118): store, `SEP #$30`, `LDA $012E; BNE`
-            // (taken 124 into $0D:DC13 (54) when a sound effect is pending).
-            // Otherwise $0D:DC02-$0D:DC0A (110): `LDA $0CFD; INC $0CFD; AND
-            // #$07; BNE $0DDC18` (taken +6 off the beat); on the beat
-            // $0D:DC0C-$0D:DC11 (70, BRA included) sets the sound.
-            if !self.game_state.system_signals.has_sound_effect_1() {
-                let delay = self.hud_state().rupee_sfx_sound_delay();
-                self.set_rupee_sfx_sound_delay(delay.wrapping_add(1));
-                if delay & 7 == 0 {
-                    crate::cycle_ledger::charge(118 + 110 + 70);
-                    self.set_sound_effect_1(41);
-                } else {
-                    crate::cycle_ledger::charge(118 + 116);
-                }
-            } else {
-                crate::cycle_ledger::charge(124 + 54);
-                self.set_rupee_sfx_sound_delay(0);
-            }
-        } else {
-            crate::cycle_ledger::charge(140 + 54);
-            self.set_rupee_sfx_sound_delay(0);
-        }
-
+    fn hud_refill_after_magic_and_rupees(&mut self) -> Option<HudUpdateResume> {
         // $0D:DC18-$0D:DC1C `LDA $7EF375; BEQ` (56, taken 62). Filler set:
         // $0D:DC1E-$0D:DC33 (236; `CMP $DB48,Y` never crosses a page for the
         // upgrade levels) with the `BEQ` taken (+6) at the maximum, else
@@ -2245,6 +2168,11 @@ impl ZeldaState {
 
     pub(super) fn resume_overworld_hud_update(&mut self, hud: HudUpdateResume) {
         match hud {
+            HudUpdateResume::RefillPrefix(mut prefix) => {
+                let _scope = crate::cycle_ledger::routine(0x0d_db75);
+                prefix.finish(self);
+                assert!(self.hud_refill_after_magic_and_rupees().is_none());
+            }
             HudUpdateResume::BeforeHearts => {
                 // Resource refill, item-box work, and the caller JSR already
                 // ran before NMI. Resume only the callee and its return flag.

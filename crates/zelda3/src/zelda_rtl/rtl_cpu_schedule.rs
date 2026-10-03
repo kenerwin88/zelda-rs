@@ -1125,6 +1125,11 @@ impl ZeldaState {
             self.complete_deferred_iris_spotlight_goal_transition();
             self.complete_dungeon_landing_goal_active_scanout(reset_prefix);
             self.complete_deferred_module07_0f_operate_spotlight_suffix();
+            // IrisSpotlight_ConfigureTable cleared the submodule before
+            // returning through both landing callers. Their animation/OAM
+            // suffix must observe that publication, before Module07's
+            // separate sprite/Link/HUD suffix runs.
+            self.complete_deferred_module07_0f_landing_wipe_suffix();
         }
         self.complete_module07_dungeon_after_submodule();
         if native_spotlight_caller_returned

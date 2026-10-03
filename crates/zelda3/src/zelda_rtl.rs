@@ -3073,11 +3073,22 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
                 );
             }
             if let Some(progress) = progress { progress.validate(); }
+            // Module09 falls directly from its HUD call into the rain tail.
+            // Other callers of the shared rain helper do not own this return.
+            if hud_refill_caller_return == Some(MODULE09_HUD_REFILL_CALLER_RETURN)
+                && overworld::OverworldRainContinuation::contains_pc(run.pc())
+            {
+                state.native_overworld_rain_interruption = Some(run.pc() as u16);
+            }
             let packing = pointer_tail_cycles.map(|master_cycles|
                 SpritePreparationProgress::PointerTail(SpritePreparationPointerProgress { master_cycles }))
                 .or_else(|| source_progress.map(SpritePreparationProgress::SourceWords))
                 .or_else(|| progress.map(SpritePreparationProgress::ExtendedOam));
-            let hud = if run.pc() == 0x0d_fb94 {
+            let hud = if hud_refill_caller_return == Some(MODULE09_HUD_REFILL_CALLER_RETURN)
+                && hud::HudRefillPrefix::contains_pc(run.pc())
+            {
+                Some(HudUpdateInterruption::RefillPrefix { pc: run.pc() as u16 })
+            } else if run.pc() == 0x0d_fb94 {
                     // JSR has transferred control to the callee, but none of
                     // the hearts block's instructions have executed yet.
                     Some(HudUpdateInterruption::BeforeHearts)
@@ -3117,6 +3128,7 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
                 || hud.is_some()
                 || state.native_overworld_link_body_selection_cycles.is_some()
                 || state.native_overworld_link_oam_interruption
+                || state.native_overworld_rain_interruption.is_some()
                 || state.sprite_main_cpu_boundary.is_some()
             {
                 // The typed continuation resumes after this NMI, then returns
@@ -10856,6 +10868,8 @@ pub struct ZeldaState {
     #[serde(skip)]
     native_overworld_hud_interruption: Option<HudUpdateInterruption>,
     #[serde(skip)]
+    native_overworld_rain_interruption: Option<u16>,
+    #[serde(skip)]
     native_overworld_link_body_selection_cycles: Option<u16>,
     /// The native main-loop measurement accepted this host's NMI inside the
     /// Module09 suffix's own `LinkOam_Main` call, with no finer progress
@@ -12201,10 +12215,6 @@ impl ZeldaState {
             .apply_reset_xy_quadrant_overrides(reset_xy_flags);
     }
 
-    pub(crate) fn increment_move_overlay_ctr(&mut self) -> u8 {
-        self.world_transient_mut().increment_move_overlay_ctr()
-    }
-
     pub(crate) fn set_overworld_map16_stripe_word(&mut self, index: usize, value: u16) {
         self.world_transient_mut()
             .set_overworld_map16_stripe_word(index, value);
@@ -13495,6 +13505,7 @@ impl ZeldaState {
             native_dungeon_song_upload_command: None,
             native_dungeon_song_upload_awaiting_return: false,
             native_overworld_hud_interruption: None,
+            native_overworld_rain_interruption: None,
             native_overworld_link_body_selection_cycles: None,
             native_overworld_link_oam_interruption: false,
             native_overworld_map_graphics_nmi_slices: None,
@@ -13745,6 +13756,7 @@ impl ZeldaState {
         self.native_dungeon_song_upload_command = None;
         self.native_dungeon_song_upload_awaiting_return = false;
         self.native_overworld_hud_interruption = None;
+        self.native_overworld_rain_interruption = None;
         self.native_overworld_link_body_selection_cycles = None;
         self.native_overworld_link_oam_interruption = false;
         self.pre_dungeon_cpu_entry_envelope = None;
@@ -13881,6 +13893,7 @@ impl ZeldaState {
             self.native_dungeon_song_upload_command = None;
             self.native_dungeon_song_upload_awaiting_return = false;
         self.native_overworld_hud_interruption = None;
+        self.native_overworld_rain_interruption = None;
         self.native_overworld_link_body_selection_cycles = None;
         self.native_overworld_link_oam_interruption = false;
         self.pre_dungeon_cpu_entry_envelope = None;

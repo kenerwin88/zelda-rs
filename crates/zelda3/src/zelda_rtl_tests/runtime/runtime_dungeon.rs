@@ -3296,6 +3296,44 @@ fn maiden_warp_room_rom_work_resumes_after_its_room_build_nmis() {
 }
 
 #[test]
+fn deferred_landing_goal_retains_animation_and_both_link_oam_callers() {
+    for blink in [4, 5, 22, 23] {
+        let mut eager = ZeldaState::new();
+        eager.set_main_module(7);
+        eager.set_submodule(0x0f);
+        eager.set_subsubmodule(1);
+        eager.set_saved_module_for_menu(7);
+        eager.set_indoor_flag(1);
+        eager.follower_link_state_mut().set_x(0x80);
+        eager.follower_link_state_mut().set_y(0x70);
+        eager.follower_link_state_mut().set_blink_countdown(blink);
+        eager.set_spotlight_window_state(2);
+        eager.set_spotlight_window_radius(0x77);
+        let mut deferred = eager.clone();
+        deferred.set_rom_startup_timing(true);
+        deferred.capture_display_snapshot();
+
+        eager.Module07_0F_LandingWipe();
+        eager.complete_module07_dungeon_after_submodule();
+
+        deferred.Module07_0F_LandingWipe();
+        assert!(deferred.dungeon_landing_goal_transition_pending);
+        assert_eq!(deferred.game_state.frame.submodule, 0x0f);
+        assert_eq!(deferred.game_state.player.follower_link.blink_countdown(), blink);
+        deferred.complete_dungeon_after_submodule_cpu_caller_return();
+
+        // Source $00:F3EF clears $11 before the landing JSL at $02:9328
+        // and the shared dungeon JSL at $02:8852. Both therefore reach
+        // the $0D:AA50 blink store under submodule zero.
+        assert!(!deferred.dungeon_landing_goal_transition_pending);
+        assert_eq!(deferred.game_state.frame.submodule, 0);
+        assert_eq!(deferred.game_state.player.follower_link.blink_countdown(), blink - 2);
+        assert_eq!(deferred.game_state, eager.game_state);
+        assert_eq!(deferred.ram, eager.ram);
+    }
+}
+
+#[test]
 fn dungeon_landing_goal_authors_final_circle_before_resetting_the_live_table() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);

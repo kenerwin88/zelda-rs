@@ -14246,7 +14246,12 @@ impl ZeldaState {
                 );
             return;
         }
-        self.complete_module07_0f_landing_wipe_suffix();
+        if !self.dungeon_landing_goal_transition_pending {
+            // A deferred IrisSpotlight return still owns the submodule
+            // publication. Animation and Link OAM must run after that
+            // publication, under the resumed landing caller.
+            self.complete_module07_0f_landing_wipe_suffix();
+        }
         if authoritative_link_oam_suspension {
             // The temporary Live authority observed the host return while the
             // source was still inside this landing submodule's LinkOam_Main

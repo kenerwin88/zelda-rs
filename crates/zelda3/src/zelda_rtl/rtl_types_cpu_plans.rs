@@ -121,6 +121,8 @@ pub(crate) enum HudInventoryResume {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum HudUpdateInterruption {
+    /// Instruction boundary in the shared magic/rupee refill prefix.
+    RefillPrefix { pc: u16 },
     BeforeHearts,
     /// The NMI landed inside `Hud_UpdateHearts` itself rather than before the
     /// call. The drawing has partially run, but it publishes nothing outside
@@ -135,12 +137,14 @@ pub(crate) enum HudUpdateInterruption {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum HudUpdateResume {
+    RefillPrefix(hud::HudRefillPrefix),
     BeforeHearts,
     Inventory { inventory: HudInventoryResume, animate_hearts: bool },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum OverworldSuffixResume {
+    Rain(overworld::OverworldRainContinuation),
     Hud(HudUpdateResume),
     LinkBody(player_oam::LinkOamBodyContinuation),
     /// The whole `LinkOam_Main` call plus `Hud_RefillLogic`, suspended at an
