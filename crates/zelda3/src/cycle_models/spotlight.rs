@@ -568,6 +568,8 @@ impl Spotlight {
 #[cfg(test)]
 mod tests {
     use super::super::dungeon_landing::{DungeonLanding, LandingChild};
+    use super::super::sprite_main::SpriteChild;
+    use super::super::sprite_slot::SlotChild;
     use super::super::{intro_clear::Access, native_work::compare_instruction_with_devices};
     use super::*;
     use snes::apu::{ApuHostPortProbe, ApuHostPortTiming, ApuState};
@@ -680,7 +682,18 @@ mod tests {
                 machine.ram[0x1fd..0x200].copy_from_slice(&[0x59, 0x80, 2]);
                 if case >= 48 {
                     machine.ram[0x1fd..0x1ff].copy_from_slice(&0x87aeu16.to_le_bytes());
-                    machine.ram[0xb0] = u8::from(case == 49);
+                    machine.ram[0xb0] = u8::from(matches!(case, 49 | 55));
+                    machine.ram[0x1b] = 1;
+                    if matches!(case, 49 | 55) {
+                        // Retain the landing -> SpriteMain -> blanket path up
+                        // to an active body, or through SpriteMain's real RTL
+                        // and the caller's subsequent Spotlight work.
+                        machine.ram[0xc4a] = 0x20;
+                    }
+                    if matches!(case, 49 | 55) {
+                        machine.ram[0xdd0] = if case == 49 { 9 } else { 8 };
+                        machine.ram[0xe20] = 0x73;
+                    }
                 }
                 for (a, v) in [
                     (0x20, if case % 4 == 0 { 24u16 } else { 80 }),
@@ -854,7 +867,7 @@ mod tests {
                     assert_eq!(
                         work.child(),
                         Some(if case == 49 {
-                            LandingChild::Sprites
+                            LandingChild::Sprites(SpriteChild::Sprite(SlotChild::Active(0x05db86)))
                         } else {
                             LandingChild::PlayerAnimation
                         })

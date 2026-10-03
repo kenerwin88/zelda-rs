@@ -2,13 +2,15 @@
 //! Unimplemented active bodies are explicit handoffs with their real stack
 //! frames still live. They cannot be skipped or completed by this owner.
 use super::{
+    ancilla_main::AncillaMain,
     native_work::{Work, WorkBus},
     nmi_stack::{NativeNmiContext, CARRY, NEGATIVE, ZERO},
+    sprite_slot::{SlotChild, SpriteSlot},
 };
 use snes::CpuMasterTimeline;
 
 pub(crate) fn table_byte(address: u32) -> Option<u8> {
-    crate::ZeldaState::native_oam_table_byte(address)
+    super::sprite_slot::table_byte(address)
 }
 
 #[cfg(test)]
@@ -50,7 +52,7 @@ mod tests {
                     match case {
                         16 => ram[0xf3cc] = 1,
                         17 => ram[0xfac] = 1,
-                        18 => ram[0xc4a + 3] = 0x20,
+                        18 => ram[0xc4a + 3] = 0x21,
                         19 => {
                             ram[0x11] = 0;
                             ram[0xb00 + 4] = 1;
@@ -146,7 +148,21 @@ mod tests {
                     assert!(work.complete() || work.child().is_some());
                     assert_eq!(ram, source.snes().ram, "{entry:06x}/{case}/{field}");
                     if let Some(child) = work.child() {
-                        children[child as usize] += 1;
+                        let kind = match child {
+                            SpriteChild::Proximity => 0,
+                            SpriteChild::Garnish => 1,
+                            SpriteChild::Follower => 2,
+                            SpriteChild::AncillaSpark => 3,
+                            SpriteChild::Ancilla => 4,
+                            SpriteChild::Overlord => 5,
+                            SpriteChild::OverworldSpawner => 6,
+                            SpriteChild::Sprite(_) => 7,
+                            SpriteChild::CachedSprite => 8,
+                            SpriteChild::PaletteRestore => 9,
+                            SpriteChild::PaletteAdd => 10,
+                            SpriteChild::PaletteSubtract => 11,
+                        };
+                        children[kind] += 1;
                         assert!(!work.complete());
                     } else {
                         completed += 1;
@@ -175,7 +191,7 @@ pub(crate) enum SpriteChild {
     Ancilla,
     Overlord,
     OverworldSpawner,
-    Sprite,
+    Sprite(SlotChild),
     CachedSprite,
     PaletteRestore,
     PaletteAdd,
@@ -191,6 +207,8 @@ struct Call {
 pub(crate) struct SpriteMain {
     pc: u32,
     calls: Vec<Call>,
+    ancilla: Option<AncillaMain>,
+    slot: Option<SpriteSlot>,
     child: Option<SpriteChild>,
     complete: bool,
 }
@@ -208,6 +226,8 @@ impl SpriteMain {
         Self {
             pc,
             calls: Vec::new(),
+            ancilla: None,
+            slot: None,
             child: None,
             complete: false,
         }
@@ -219,7 +239,28 @@ impl SpriteMain {
         self.child
     }
     pub(crate) fn return_from_child(&mut self, cpu: &NativeNmiContext) {
-        assert!(self.child.take().is_some());
+        let child = self.child.take().expect("sprite child must be pending");
+        if let Some(slot) = self.slot.as_mut() {
+            assert_eq!(
+                child,
+                SpriteChild::Sprite(slot.child().expect("slot body must be pending"))
+            );
+            slot.return_from_child(cpu);
+            if slot.complete() {
+                self.slot = None;
+                self.finish_call(cpu);
+            }
+            return;
+        }
+        if let Some(ancilla) = self.ancilla.take() {
+            assert!(
+                ancilla.child().is_some(),
+                "ancilla must reach its body handoff"
+            );
+        }
+        self.finish_call(cpu);
+    }
+    fn finish_call(&mut self, cpu: &NativeNmiContext) {
         let returned = (u32::from(cpu.bank) << 16) | u32::from(cpu.pc);
         if let Some(call) = self.calls.pop() {
             assert_eq!(
@@ -241,6 +282,34 @@ impl SpriteMain {
             return None;
         }
         assert!(self.child.is_none(), "sprite child still owns the CPU");
+        if let Some(slot) = self.slot.as_mut() {
+            let cycles = slot.step(cpu, clock, bus);
+            if slot.complete() {
+                self.slot = None;
+                self.finish_call(cpu);
+            } else if let Some(child) = slot.child() {
+                self.child = Some(SpriteChild::Sprite(child));
+            }
+            return cycles;
+        }
+        if let Some(ancilla) = self.ancilla.as_mut() {
+            let cycles = ancilla.step(cpu, clock, bus);
+            if ancilla.complete() {
+                self.ancilla = None;
+                let returned = (u32::from(cpu.bank) << 16) | u32::from(cpu.pc);
+                assert_eq!(
+                    self.calls.pop(),
+                    Some(Call {
+                        returned,
+                        far: false
+                    })
+                );
+                self.pc = returned;
+            } else if ancilla.child().is_some() {
+                self.child = Some(SpriteChild::Ancilla);
+            }
+            return cycles;
+        }
         assert_eq!(
             (cpu.bank, cpu.pc, cpu.d, cpu.p & 0x18),
             ((self.pc >> 16) as u8, self.pc as u16, 0, 0x10)
@@ -312,13 +381,15 @@ impl SpriteMain {
                 };
                 let next = if w.branch(take) { target } else { pc + 2 };
                 self.child = match next {
-                    0x0684e7 => Some(SpriteChild::Sprite),
                     0x09b0bf => Some(SpriteChild::Garnish),
                     0x099fcb => Some(SpriteChild::Follower),
                     0x088f8e => Some(SpriteChild::AncillaSpark),
                     0x09b724 => Some(SpriteChild::OverworldSpawner),
                     _ => None,
                 };
+                if next == 0x0684e7 {
+                    self.slot = Some(SpriteSlot::default());
+                }
                 next
             }
             0x06832c | 0x06832f | 0x068332 | 0x068335 | 0x068338 | 0x068352 | 0x068355
@@ -584,7 +655,11 @@ impl SpriteMain {
                     returned: pc + 1 + u32::from(width),
                     far,
                 });
-                self.child = child;
+                if child == Some(SpriteChild::Ancilla) {
+                    self.ancilla = Some(AncillaMain::default());
+                } else {
+                    self.child = child;
+                }
                 target
             }
             0x0683c1 | 0x09b07e | 0x09b08b | 0x099f98 | 0x08824c | 0x09b77d | 0x1de9c8

@@ -1798,6 +1798,17 @@ impl ZeldaState {
     //     }
     //   }
     // }
+    pub(crate) fn native_uncle_prep_table_byte(address: u32) -> Option<u8> {
+        match address {
+            0x05da31..=0x05da36 => Some((-6i16).to_le_bytes()[((address - 0x05da31) & 1) as usize]),
+            0x05da37..=0x05da3c => {
+                let offset = (address - 0x05da37) as usize;
+                Some(UNCLE_AND_SAGE_Y[offset / 2].to_le_bytes()[offset & 1])
+            }
+            _ => None,
+        }
+    }
+
     pub(super) fn sprite_prep_uncle_and_priest_bounce(&mut self, k: usize) {
         let room = self.game_state.world.location.dungeon_room_index();
         if room == 18 {

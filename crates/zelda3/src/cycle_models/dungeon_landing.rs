@@ -4,6 +4,7 @@ use super::{
     native_work::{Work, WorkBus},
     nmi_stack::{NativeNmiContext, ZERO},
     spotlight::Spotlight,
+    sprite_main::{SpriteChild, SpriteMain},
 };
 use snes::CpuMasterTimeline;
 
@@ -17,7 +18,7 @@ pub(crate) fn table_byte(address: u32) -> Option<u8> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum LandingChild {
-    Sprites,
+    Sprites(SpriteChild),
     PlayerAnimation,
     LinkOam,
 }
@@ -26,6 +27,7 @@ pub(crate) enum LandingChild {
 pub(crate) struct DungeonLanding {
     pc: u16,
     spotlight: Option<Spotlight>,
+    sprites: Option<SpriteMain>,
     child: Option<LandingChild>,
     complete: bool,
 }
@@ -34,6 +36,7 @@ impl Default for DungeonLanding {
         Self {
             pc: 0x931d,
             spotlight: None,
+            sprites: None,
             child: None,
             complete: false,
         }
@@ -49,7 +52,15 @@ impl DungeonLanding {
 
     /// The child, including its RTL, must run on the inherited CPU and clock.
     pub(crate) fn return_from_child(&mut self, cpu: &NativeNmiContext) {
-        assert!(self.child.take().is_some());
+        let child = self.child.take().expect("landing child must be pending");
+        if let Some(sprites) = self.sprites.as_mut() {
+            assert_eq!(
+                child,
+                LandingChild::Sprites(sprites.child().expect("sprite body must be pending"))
+            );
+            sprites.return_from_child(cpu);
+            return;
+        }
         assert_eq!((cpu.bank, cpu.pc), (2, self.pc));
     }
 
@@ -66,6 +77,16 @@ impl DungeonLanding {
             self.child.is_none(),
             "landing child must retain CPU ownership through its return"
         );
+        if let Some(sprites) = self.sprites.as_mut() {
+            let cycles = sprites.step(cpu, clock, bus);
+            if sprites.complete() {
+                self.sprites = None;
+                assert_eq!((cpu.bank, cpu.pc), (2, self.pc));
+            } else if let Some(child) = sprites.child() {
+                self.child = Some(LandingChild::Sprites(child));
+            }
+            return cycles;
+        }
         if let Some(spotlight) = self.spotlight.as_mut() {
             let cycles = spotlight.step(cpu, clock, bus);
             if spotlight.complete() {
@@ -121,7 +142,7 @@ impl DungeonLanding {
                         0x0da18e
                     }
                     0x9334 => {
-                        self.child = Some(LandingChild::Sprites);
+                        self.sprites = Some(SpriteMain::default());
                         0x068328
                     }
                     0x932d => 0x00f295,
@@ -132,7 +153,7 @@ impl DungeonLanding {
                 w.push(pc + 3, 2);
                 w.cpu.bank = (target >> 16) as u8;
                 w.cpu.pc = target as u16;
-                if self.child.is_none() {
+                if self.child.is_none() && self.sprites.is_none() {
                     self.spotlight = Some(Spotlight::new(target as u16));
                 }
                 pc + 4
@@ -176,7 +197,7 @@ impl DungeonLanding {
             }
             _ => unreachable!("landing caller {pc:04x}"),
         };
-        if self.child.is_none() && self.spotlight.is_none() {
+        if self.child.is_none() && self.spotlight.is_none() && self.sprites.is_none() {
             w.cpu.pc = self.pc;
         }
         Some(w.cycles)
@@ -249,7 +270,7 @@ mod tests {
                     pc: entry,
                     ..Default::default()
                 };
-                for _ in 0..40 {
+                for _ in 0..2000 {
                     if work.complete() || work.child().is_some() || work.spotlight.is_some() {
                         break;
                     }

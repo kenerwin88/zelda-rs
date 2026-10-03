@@ -24,6 +24,15 @@ const ANCILLA_SPRITE_COLLISION_RECOIL_X: [u8; 4] = [0, 0, 0xc0, 0x40];
 const ANCILLA_SPRITE_COLLISION_RECOIL_Y: [u8; 4] = [0xc0, 0x40, 0, 0];
 
 impl ZeldaState {
+    pub(crate) fn native_ancilla_oam_table_byte(address: u32) -> Option<u8> {
+        match address {
+            0x08c003..=0x08c00a => Some(ANCILLA20_BLANKET_BEDSPREAD_CHAR[(address - 0x08c003) as usize]),
+            0x08c00b..=0x08c012 => Some(ANCILLA20_BLANKET_BEDSPREAD_FLAGS[(address - 0x08c00b) as usize]),
+            0x08f66d..=0x08f670 => Some(ANCILLA_PREP_OAM_COORD_TAGALONG_LAYER_BITS[(address - 0x08f66d) as usize]),
+            _ => None,
+        }
+    }
+
     pub(crate) fn native_ancilla_sprite_count(kind: usize) -> Option<u8> {
         ANCILLA_DRAW_SPRITE_COUNTS.get(kind).copied()
     }
