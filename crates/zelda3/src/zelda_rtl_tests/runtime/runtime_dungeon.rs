@@ -2246,12 +2246,12 @@ fn c_dungeon_reset_sprites_resumes_after_the_rom_observed_y_checkpoint() {
     let obj_tiles = state.ppu.vram[0x4000..0x4400].to_vec();
     let mut atomic = state.clone();
 
-    let progress =
-        sprite::DungeonResetSpritesCpuProgress::Load(sprite::DungeonLoadSpritesCpuProgress {
-            normal_load_ordinal: 1,
-            slot: 1,
-            checkpoint: sprite::DungeonSpriteLoadCheckpoint::YHigh,
-        });
+    let checkpoint = sprite::DungeonSpriteLoadCheckpoint::from_next_source_pc(0x09_c3ac)
+        .expect("the pending X-scratch store follows the committed Y-high store");
+    assert_eq!(checkpoint, sprite::DungeonSpriteLoadCheckpoint::YHigh);
+    let load = state.dungeon_load_progress_for_slot(1, checkpoint);
+    assert_eq!(load.normal_load_ordinal, 1, "the die-action marker is not a sprite load");
+    let progress = sprite::DungeonResetSpritesCpuProgress::Load(load);
     state.dungeon_reset_sprites_through_cpu_progress(progress);
 
     assert_eq!(state.sprite_slot_view(0).state(), 8);
@@ -2323,6 +2323,42 @@ fn c_dungeon_reset_sprites_resumes_after_the_rom_observed_y_checkpoint() {
             state.sprite_slot_view(slot).die_action(),
             atomic.sprite_slot_view(slot).die_action(),
         );
+    }
+}
+
+#[test]
+fn dungeon_sprite_loader_resumes_each_field_boundary_with_native_record_values() {
+    use sprite::DungeonSpriteLoadCheckpoint as Field;
+    let mut data = Vec::new();
+    let mut ranges = vec![(0, 0); 60];
+    put_test_asset(&mut data, &mut ranges, 58,
+        vec![0x02, 0x66, 0x21, 0x41, 0xfe, 0x00, 0xe4, 0x99, 0x31, 0x42, 0xff]);
+    put_test_asset(&mut data, &mut ranges, 59, vec![0, 0]);
+    let mut initial = ZeldaState::new();
+    initial.assets = Some(AssetPack::from_data_ranges(data, ranges));
+    initial.sprite_set_x(1, 0x7777);
+    initial.temp_counter_mut().set(0xa5);
+    initial.sprite_workspace_mut().set_shared_scratch_a(0x55);
+    let mut atomic = initial.clone();
+    atomic.dungeon_reset_sprites();
+    for field in [Field::State, Field::TempY, Field::Floor, Field::YLow, Field::YHigh,
+        Field::SharedX, Field::XLow, Field::XHigh, Field::Type, Field::SubtypeClear,
+        Field::TempSubtype, Field::SubtypeFinal, Field::SpawnIndex, Field::Complete] {
+        let mut state = initial.clone();
+        let progress = DungeonResetSpritesCpuProgress::Load(
+            state.dungeon_load_progress_for_slot(1, field));
+        state.dungeon_reset_sprites_through_cpu_progress(progress);
+        if field == Field::YHigh {
+            assert_eq!(state.game_state.scratch_counter.value(), 0x99);
+            assert_eq!(state.sprite_get_y(1), 0x0190);
+            assert_eq!(state.sprite_get_x(1), 0x7777);
+            // Only the preceding record has published X scratch.
+            assert_eq!(state.ram[crate::game_state::constants::TEMP_COUNTER + 1], 0x21);
+        }
+        state.dungeon_resume_reset_sprites_after_cpu_progress(progress);
+        assert_eq!(state.ram, atomic.ram, "resumed RAM after {field:?}");
+        assert_eq!(state.game_state.sprites, atomic.game_state.sprites,
+            "resumed native sprite state after {field:?}");
     }
 }
 

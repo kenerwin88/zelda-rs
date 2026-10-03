@@ -412,8 +412,8 @@ impl ZeldaState {
             && frame.main_module == 0
             && frame.submodule == 7
             && self.game_state.intro_sword.anim_step_raw() == 2;
-        let wait_player_poly_teardown = self.rom_startup_timing
-            && rom_intro_wait_player_tears_down_poly_thread(
+        let main_poly_teardown = self.rom_startup_timing
+            && rom_intro_main_tears_down_poly_thread(
                 self.game_state.frame.main_module,
                 self.game_state.frame.submodule,
                 self.game_state.display.nmi_thread_active,
@@ -421,9 +421,15 @@ impl ZeldaState {
         self.snes9x_hold_intro_step_this_frame = false;
         let poly_thread_teardown_frame = self.intro_poly_thread_teardown_pending;
         self.intro_poly_thread_teardown_pending = false;
-        let run_what = if poly_thread_teardown_frame {
+        let run_what = if self.native_startup_cpu.as_ref()
+            .is_some_and(|cpu| cpu.startup.owns_cpu_clock()) {
+            // The retained CPU selects main/worker execution through NMI and
+            // IRQ itself. The legacy frame scheduler must not run a second
+            // semantic worker over its partially completed WRAM and stack.
+            1
+        } else if poly_thread_teardown_frame {
             0
-        } else if wait_player_poly_teardown {
+        } else if main_poly_teardown {
             3
         } else if title_fade_poly_thread {
             let poly_phase = self.intro_title_fade_poly_phase;
@@ -520,10 +526,20 @@ impl ZeldaState {
         self.advance_native_exact_cpu_floor_live_draw();
         self.advance_native_exact_cpu_object_live_draw();
         self.advance_native_exact_cpu_post_object_prefix();
+        self.advance_native_exact_cpu_transition_aux_graphics();
+        self.advance_native_exact_cpu_sprite_timer_prefix();
+        self.advance_native_exact_cpu_link_oam_prefix();
         self.advance_native_exact_cpu_zelda_follower_graphics();
         self.advance_native_exact_cpu_big_key_graphics();
-        self.advance_native_exact_cpu_spiral_aux_graphics();
+        self.advance_native_exact_cpu_pre_overworld_animated_graphics();
+        self.advance_native_exact_cpu_overworld_map8();
+        self.advance_native_exact_cpu_initial_scroll();
+        self.advance_native_exact_cpu_overworld_quadrants();
+        if self.native_transition_aux_graphics_progress.is_none() {
+            self.advance_native_exact_cpu_spiral_aux_graphics();
+        }
         self.advance_native_exact_cpu_room_upload();
+        self.advance_native_exact_cpu_pre_dungeon_animated_graphics();
         self.advance_native_exact_cpu_ground_item_receipt_tail();
         self.advance_native_exact_cpu_overworld_scan_trial();
         self.advance_native_exact_cpu_overworld_live_scan();

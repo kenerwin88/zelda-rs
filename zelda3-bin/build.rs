@@ -17,6 +17,12 @@ const DIALOGUE_SOURCE_SIDECAR_ASSET_NAME: &str = "kDialogueSourceSemantic";
 const SPC_DRIVER_TIMING_ASSET_NAME: &str = "kSpcDriverTimingProgram";
 const SPC_DRIVER_TIMING_FILE: &str = "spc_driver.bin";
 const SPC_DRIVER_TIMING_LENGTH: usize = 0x0f9e;
+const SPC_BOOTSTRAP_ASSET_NAME: &str = "kSpcBootstrapUpload";
+const SPC_BOOTSTRAP_FILE: &str = "spc_bootstrap_upload.bin";
+const ENEMY_DAMAGE_STREAM_ASSET_NAME: &str = "kEnemyDamageCompressed";
+const ENEMY_DAMAGE_STREAM_FILE: &str = "enemy_damage_compressed.bin";
+const DUNGEON_HEADER_ENCODING_ASSET_NAME: &str = "kDungeonHeaderEncoding";
+const DUNGEON_HEADER_ENCODING_FILE: &str = "dungeon_header_encoding.bin";
 const DIALOGUE_SOURCE_SIDECAR_MAGIC: &[u8; 16] = b"Z3DLGSRCv1\0\0\0\0\0\0";
 
 struct NavigationField {
@@ -486,7 +492,7 @@ fn find_rom(repo_root: &Path) -> Option<PathBuf> {
         .map(PathBuf::from)
         .filter(|path| path.is_file())
         .or_else(|| {
-            ["zelda3.sfc", "zelda3.smc"]
+            ["zelda3.sfc", "zelda3.smc", "saves/zelda3.sfc", "saves/zelda3.smc"]
                 .into_iter()
                 .map(|name| repo_root.join(name))
                 .find(|path| path.is_file())
@@ -563,6 +569,25 @@ fn pack_assets(generated_dir: &Path) -> PathBuf {
     key_signature.push(0);
     names.push(SPC_DRIVER_TIMING_ASSET_NAME.to_string());
     assets.push(spc_driver);
+    key_signature.extend_from_slice(SPC_BOOTSTRAP_ASSET_NAME.as_bytes());
+    key_signature.push(0);
+    names.push(SPC_BOOTSTRAP_ASSET_NAME.to_string());
+    assets.push(read_spc_bootstrap_upload(generated_dir));
+    key_signature.extend_from_slice(ENEMY_DAMAGE_STREAM_ASSET_NAME.as_bytes());
+    key_signature.push(0);
+    names.push(ENEMY_DAMAGE_STREAM_ASSET_NAME.to_string());
+    assets.push(read_enemy_damage_stream(generated_dir));
+    key_signature.extend_from_slice(DUNGEON_HEADER_ENCODING_ASSET_NAME.as_bytes());
+    key_signature.push(0);
+    names.push(DUNGEON_HEADER_ENCODING_ASSET_NAME.to_string());
+    assets.push(read_dungeon_header_encoding(generated_dir));
+    for bank in 0..3 {
+        let name = format!("kSpcRuntimeUpload{bank}");
+        key_signature.extend_from_slice(name.as_bytes());
+        key_signature.push(0);
+        names.push(name);
+        assets.push(read_spc_runtime_upload(generated_dir, bank));
+    }
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let asset_pack = out_dir.join("zelda3_assets.dat");
@@ -584,6 +609,101 @@ fn pack_assets(generated_dir: &Path) -> PathBuf {
     fs::write(&asset_pack, file_data)
         .unwrap_or_else(|err| panic!("failed to write {}: {err}", asset_pack.display()));
     asset_pack
+}
+
+fn read_spc_runtime_upload(generated_dir: &Path, bank: usize) -> Vec<u8> {
+    let path = generated_dir.join(format!("spc_runtime_upload_{bank}.bin"));
+    println!("cargo:rerun-if-changed={}", path.display());
+    if path.is_file() {
+        return fs::read(&path).expect("failed to read runtime SPC upload asset");
+    }
+    // Upgrade old packs in OUT_DIR, leaving the generated source untouched.
+    let repo_root = dialogue_repo_root();
+    let rom = find_rom(&repo_root)
+        .expect("missing runtime SPC upload; regenerate assets or set ZELDA3_ROM");
+    println!("cargo:rerun-if-changed={}", rom.display());
+    let output = Command::new("python3")
+        .current_dir(repo_root.join("scripts"))
+        .args(["-c", "import sys; from pathlib import Path; from extract_assets import extract_spc_runtime_upload; sys.stdout.buffer.write(extract_spc_runtime_upload(Path(sys.argv[1]).read_bytes(), int(sys.argv[2])))"])
+        .arg(rom)
+        .arg(bank.to_string())
+        .output()
+        .expect("failed to extract runtime SPC upload asset");
+    assert!(output.status.success(), "runtime SPC upload extraction failed: {}", String::from_utf8_lossy(&output.stderr));
+    output.stdout
+}
+
+fn read_spc_bootstrap_upload(generated_dir: &Path) -> Vec<u8> {
+    let path = generated_dir.join(SPC_BOOTSTRAP_FILE);
+    println!("cargo:rerun-if-changed={}", path.display());
+    if path.is_file() {
+        return fs::read(&path).expect("failed to read cold SPC upload asset");
+    }
+    // Older generated packs omit this sidecar. Extract it into the build's
+    // output pack without mutating the user's generated asset directory.
+    let repo_root = dialogue_repo_root();
+    let rom = find_rom(&repo_root).expect(
+        "missing spc_bootstrap_upload.bin; regenerate assets or set ZELDA3_ROM",
+    );
+    println!("cargo:rerun-if-changed={}", rom.display());
+    let output = Command::new("python3")
+        .current_dir(repo_root.join("scripts"))
+        .args(["-c", "import sys; from pathlib import Path; from extract_assets import extract_spc_bootstrap_upload; sys.stdout.buffer.write(extract_spc_bootstrap_upload(Path(sys.argv[1]).read_bytes()))"])
+        .arg(rom)
+        .output()
+        .expect("failed to extract cold SPC upload asset");
+    assert!(output.status.success(), "cold SPC asset extraction failed: {}", String::from_utf8_lossy(&output.stderr));
+    output.stdout
+}
+
+fn read_enemy_damage_stream(generated_dir: &Path) -> Vec<u8> {
+    let path = generated_dir.join(ENEMY_DAMAGE_STREAM_FILE);
+    println!("cargo:rerun-if-changed={}", path.display());
+    if path.is_file() {
+        return fs::read(&path).expect("failed to read encoded enemy damage asset");
+    }
+    // Upgrade old generated packs inside the build output only.
+    let repo_root = dialogue_repo_root();
+    let rom = find_rom(&repo_root).expect(
+        "missing enemy_damage_compressed.bin; regenerate assets or set ZELDA3_ROM",
+    );
+    println!("cargo:rerun-if-changed={}", rom.display());
+    let output = Command::new("python3")
+        .current_dir(repo_root.join("scripts"))
+        .args(["-c", "import sys; from pathlib import Path; from extract_assets import extract_enemy_damage_stream; sys.stdout.buffer.write(extract_enemy_damage_stream(Path(sys.argv[1]).read_bytes()))"])
+        .arg(rom)
+        .output()
+        .expect("failed to extract encoded enemy damage asset");
+    assert!(output.status.success(), "enemy damage asset extraction failed: {}", String::from_utf8_lossy(&output.stderr));
+    output.stdout
+}
+
+fn read_dungeon_header_encoding(generated_dir: &Path) -> Vec<u8> {
+    let path = generated_dir.join(DUNGEON_HEADER_ENCODING_FILE);
+    println!("cargo:rerun-if-changed={}", path.display());
+    let data = if path.is_file() {
+        fs::read(&path).expect("failed to read packed dungeon header asset")
+    } else {
+        // Upgrade older packs in OUT_DIR without mutating generated assets.
+        let repo_root = dialogue_repo_root();
+        let rom = find_rom(&repo_root).expect(
+            "missing dungeon_header_encoding.bin; regenerate assets or set ZELDA3_ROM",
+        );
+        println!("cargo:rerun-if-changed={}", rom.display());
+        let output = Command::new("python3")
+            .current_dir(repo_root.join("scripts"))
+            .args(["-c", "import sys; from pathlib import Path; from extract_assets import extract_dungeon_header_encoding; sys.stdout.buffer.write(extract_dungeon_header_encoding(Path(sys.argv[1]).read_bytes()))"])
+            .arg(rom)
+            .output()
+            .expect("failed to extract packed dungeon headers");
+        assert!(output.status.success(), "dungeon header asset extraction failed: {}", String::from_utf8_lossy(&output.stderr));
+        output.stdout
+    };
+    assert_eq!(data.len(), 0xefe, "packed dungeon header and palette asset length");
+    for pointer in data[..640].chunks_exact(2) {
+        assert!((0xf782..=0xfff2).contains(&u16::from_le_bytes([pointer[0], pointer[1]])), "packed dungeon header pointer");
+    }
+    data
 }
 
 fn read_spc_driver_timing_program(generated_dir: &Path) -> Vec<u8> {
@@ -620,8 +740,9 @@ fn dialogue_repo_root() -> PathBuf {
 ///      the tracked authority),
 ///   2. the tracked `assets/dialogue/messages.toml` (the sole authority; it is
 ///      committed, so every clone has it — there is no generated fallback).
-///      `kDialogue` is always source-built (never the stale `.bin`), matching the runtime's
-///      required `kDialogueSourceSemantic` sidecar.
+///      `kDialogue` is source-built, matching the required semantic sidecar.
+///      Unchanged messages retain donor encoding only after byte-for-byte
+///      comparison of its expansion with the newly compiled source.
 fn read_dialogue_messages_document(
     _generated_dir: &Path,
 ) -> zelda3_dialogue::DialogueMessagesDocument {
@@ -650,8 +771,14 @@ fn read_dialogue_messages_document(
 
 fn read_dialogue_asset(generated_dir: &Path) -> Vec<u8> {
     let doc = read_dialogue_messages_document(generated_dir);
-    zelda3_dialogue::compile_messages_document(&doc)
-        .unwrap_or_else(|err| panic!("failed to compile dialogue messages: {err}"))
+    let reference_path = generated_dir.join("assets/094-kDialogue.bin");
+    println!("cargo:rerun-if-changed={}", reference_path.display());
+    let compiled = if let Ok(reference) = fs::read(&reference_path) {
+        zelda3_dialogue::compile_messages_with_reference_encoding(&doc, &reference)
+    } else {
+        zelda3_dialogue::compile_messages_document(&doc)
+    };
+    compiled.unwrap_or_else(|err| panic!("failed to compile dialogue messages: {err}"))
 }
 
 /// Return the source-authoritative `kSprGfx`/`kBgGfx` payload. The tracked

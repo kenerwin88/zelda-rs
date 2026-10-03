@@ -225,6 +225,79 @@ const DUNGEON_FLOOR_INDICATOR_BOTTOM_TILES: [u16; 11] = [
 ];
 
 impl ZeldaState {
+    /// Immutable data addressed by the retained save-load HUD calls. Runtime
+    /// reads share the semantic HUD tables; inventory and tile writes remain
+    /// the responsibility of the live native bus.
+    pub(crate) fn native_load_hud_table_byte(address: u32) -> Option<u8> {
+        const ITEM_POINTERS: [u16; 20] = [
+            0xf629, 0xf651, 0xf669, 0xf679, 0xf689, 0xf6a1, 0xf6b1, 0xf6c1,
+            0xf6d1, 0xf6e1, 0xf6f1, 0xf701, 0xf711, 0xf731, 0xf741, 0xf751,
+            0xf799, 0xf7a9, 0xf7b9, 0xf7c9,
+        ];
+        fn word_byte(words: &[u16], offset: usize) -> Option<u8> {
+            Some(words.get(offset / 2)?.to_le_bytes()[offset & 1])
+        }
+        match address {
+            // MVN's source-bank operand is an observable bus read.
+            0x0dfa7e => Some(13),
+            0x0dfa15..=0x0dfa29 => Some(HUD_ITEM_ORDER_TO_INVENTORY_ITEM[(address - 0x0dfa15) as usize]),
+            0x0dfa93..=0x0dfaba => word_byte(&ITEM_POINTERS, (address - 0x0dfa93) as usize),
+            0x0df629..=0x0df7e8 => {
+                let offset = address as u16;
+                let item = ITEM_POINTERS.iter().rposition(|&p| p <= offset)?;
+                let byte = usize::from(offset - ITEM_POINTERS[item]);
+                word_byte(Self::hud_item_box_gfx_ptr(item as u8).get(byte / 8)?, byte % 8)
+            }
+            0x0df9f9..=0x0df9fc => word_byte(&[10, 100], (address - 0x0df9f9) as usize),
+            0x0df9fd..=0x0dfa02 => word_byte(&HUD_FULL_HEART_TILES, (address - 0x0df9fd) as usize),
+            0x0dfa03..=0x0dfa08 => word_byte(&HUD_CURRENT_HEART_TILES, (address - 0x0dfa03) as usize),
+            0x0dfdef..=0x0dfe76 => {
+                let offset = (address - 0x0dfdef) as usize;
+                word_byte(&MAGIC_METER_TILEMAP_BY_LEVEL[offset / 8], offset % 8)
+            }
+            0x0dfe77..=0x0dffc0 => {
+                let offset = (address - 0x0dfe77) as usize;
+                let row = offset / 64;
+                let col = offset / 2 % 32;
+                let tile = if col < 8 {
+                    HUD_TILEMAP_LEFT_PART[row * 8 + col]
+                } else if col >= 20 {
+                    HUD_TILEMAP_RIGHT_PART[row * 12 + col - 20]
+                } else if row == 0 {
+                    HUD_INVENTORY_BACKGROUND_TILES[col - 7]
+                } else {
+                    0x207f
+                };
+                Some(tile.to_le_bytes()[offset & 1])
+            }
+            _ => None,
+        }
+    }
+
+    /// Publish the retained HUD caller's individual stores through their owners.
+    pub(crate) fn native_load_hud_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        match address {
+            0x202 => {assert_eq!(width,1);self.save_progress_mut().set_hud_current_item(value as u8);}
+            0x203 => {assert_eq!(width,1);self.save_progress_mut().set_hud_current_item_high(value as u8);}
+            0x204 => {assert_eq!((width,value),(1,0));self.save_progress_mut().clear_post_message_refresh_flag();}
+            0x303 => {assert_eq!(width,1);self.follower_link_state_mut().set_current_item_y(value as u8);}
+            0x7ef340 => {assert_eq!(width,1);self.inventory_items_mut().set_inventory_item(0,value as u8);}
+            0x7ef36f => {assert_eq!(width,1);self.player_resources_mut().set_keys(value as u8);}
+            0x16 => {assert_eq!(width,1);assert_eq!(self.increment_hud_update_flag(),value as u8);}
+            0x7ec700..=0x7ec87f => {
+                let offset=(address-0x7ec700) as usize;
+                assert!(matches!(width,1|2));
+                assert!(offset+usize::from(width)<=MOVING_WALL_REPLACEMENT_BUFFER-HUD_TILE_INDICES_BUFFER);
+                if width==2 && offset&1==0 {self.set_hud_tile_word(offset/2,value);}
+                else {
+                    for byte in 0..usize::from(width) {self.set_hud_tile_byte(offset+byte,(value>>(byte*8))as u8);}
+                }
+            }
+            _ => return false,
+        }
+        true
+    }
+
     pub(super) fn hud_refresh_icon(&mut self) {
         self.hud_search_for_equipped_item();
         self.hud_update_hud();
@@ -305,15 +378,23 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_floor_indicator(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x0a_fd0c);
+        crate::cycle_ledger::charge(102); // REP #$30 : LDA $04A0 : AND #$FF : BEQ.
         let mut a = u16::from(self.hud_state().floor_changed_timer_low());
         if a == 0 {
+            crate::cycle_ledger::charge(6); // Tail branch to the shared removal routine.
             self.hud_remove_super_bomb_indicator();
             return;
         }
+        crate::cycle_ledger::charge(54); // INC : CMP #$C0 : BNE.
         a = a.wrapping_add(1);
         if a == 0xc0 {
+            crate::cycle_ledger::charge(24); // LDA #0.
             a = 0;
+        } else {
+            crate::cycle_ledger::charge(6);
         }
+        crate::cycle_ledger::charge(452); // FD1F..FD42: timer, bank, base tiles, floor sign test.
         self.set_hud_floor_changed_timer(a);
 
         self.hud_buffer_set(0xf2 / 2, 0x251e);
@@ -323,24 +404,41 @@ impl ZeldaState {
 
         let mut k = 0usize;
         let j = if (self.game_state.dungeon.stair_movement.current_floor() as i8) >= 0 {
-            if self.game_state.dungeon.stair_movement.current_floor_word() == 0
-                && self.game_state.world.location.dungeon_room() != 2
-                && self.game_state.inventory.save_progress.progress_indicator() < 2
-            {
-                self.set_ambient_sound_effect(3);
+            crate::cycle_ledger::charge(48); // LDA $A4 : BNE.
+            if self.game_state.dungeon.stair_movement.current_floor_word() == 0 {
+                crate::cycle_ledger::charge(72); // LDA $A0 : CMP #2 : BEQ.
+                if self.game_state.world.location.dungeon_room() != 2 {
+                    crate::cycle_ledger::charge(94); // SEP : LDA progress : CMP #2 : BCS.
+                    if self.game_state.inventory.save_progress.progress_indicator() < 2 {
+                        crate::cycle_ledger::charge(48); // LDA #3 : STA ambient sound.
+                        self.set_ambient_sound_effect(3);
+                    } else {
+                        crate::cycle_ledger::charge(6);
+                    }
+                    crate::cycle_ledger::charge(22); // REP #$20.
+                } else {
+                    crate::cycle_ledger::charge(6);
+                }
+            } else {
+                crate::cycle_ledger::charge(6);
             }
+            crate::cycle_ledger::charge(78); // LDA $A4 : AND #$FF : BRA.
             self.game_state.dungeon.stair_movement.current_floor()
         } else {
+            crate::cycle_ledger::charge(6 + 200); // Taken BMI, FD67..FD77: basement sound/index.
             self.set_ambient_sound_effect(5);
             k += 1;
             self.game_state.dungeon.stair_movement.current_floor() ^ 0xff
         } as usize;
+        crate::cycle_ledger::charge(348); // Floor tiles, SEP/PLB, HUD update, RTL.
         self.hud_buffer_set(k + 0xf2 / 2, DUNGEON_FLOOR_INDICATOR_TOP_TILES[j]);
         self.hud_buffer_set(k + 0x132 / 2, DUNGEON_FLOOR_INDICATOR_BOTTOM_TILES[j]);
         self.increment_hud_update_flag();
     }
 
     pub(super) fn hud_remove_super_bomb_indicator(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x0a_fd90);
+        crate::cycle_ledger::charge(304); // REP/LDA, four long word stores, SEP/RTL.
         self.hud_buffer_set(0xf2 / 2, 0x7f);
         self.hud_buffer_set(0x132 / 2, 0x7f);
         self.hud_buffer_set(0xf4 / 2, 0x7f);
@@ -404,6 +502,14 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_refill_logic(&mut self) {
+        if let Some(hud) = self.hud_refill_logic_until_interruption() {
+            self.schedule_interrupted_overworld_hud_update(hud);
+        }
+    }
+
+    /// Return the pending native HUD locals to the enclosing module caller;
+    /// that caller, rather than HUD, owns interrupt and display scheduling.
+    pub(super) fn hud_refill_logic_until_interruption(&mut self) -> Option<HudUpdateResume> {
         // Cycle ledger: Hud_RefillLogic_Far ($0D:DB75), the JSL target every
         // caller uses; it branches into Hud_RefillLogic ($0D:DB92), which is
         // never called on its own. Entered m8 x8; data bank $0D.
@@ -411,7 +517,7 @@ impl ZeldaState {
         if self.overworld_map_state() != 0 {
             // $0D:DB75-$0D:DB7B (120) then $0D:DB7D-$0D:DB7E `PLB; RTL` (72).
             crate::cycle_ledger::charge(120 + 72);
-            return;
+            return None;
         }
         // $0D:DB75-$0D:DB7B with the `BEQ Hud_RefillLogic` taken: 126.
         crate::cycle_ledger::charge(126);
@@ -621,13 +727,12 @@ impl ZeldaState {
                 let _scope = crate::cycle_ledger::routine(0x0d_fc09);
                 self.hud_update_magic();
                 if let Some(inventory) = self.hud_update_inventory_from(None) {
-                    self.schedule_interrupted_overworld_hud_return(inventory, true);
-                    return;
+                    return Some(HudUpdateResume::Inventory { inventory, animate_hearts: true });
                 }
             }
             self.hud_animate_heart_refill();
             self.increment_hud_update_flag();
-            return;
+            return None;
         }
         // $0D:DCAD-$0D:DCB1 `LDA $7EF372; BEQ` (56, taken 62 into the plain
         // exit $0D:DD1A-$0D:DD29 (256: `JSR Hud_Update_IgnoreItemBox` at 46,
@@ -671,13 +776,12 @@ impl ZeldaState {
                     let _scope = crate::cycle_ledger::routine(0x0d_fc09);
                     self.hud_update_magic();
                     if let Some(inventory) = self.hud_update_inventory_from(None) {
-                    self.schedule_interrupted_overworld_hud_return(inventory, true);
-                    return;
-                }
+                        return Some(HudUpdateResume::Inventory { inventory, animate_hearts: true });
+                    }
                 }
                 self.hud_animate_heart_refill();
                 self.increment_hud_update_flag();
-                return;
+                return None;
             }
             // $0D:DCB3-$0D:DCBB (96) falling through into the clamp
             // $0D:DCBD-$0D:DCCB (158, BRA included), then the plain exit.
@@ -706,18 +810,17 @@ impl ZeldaState {
                 // gates the HUD DMA, and `$16` is incremented only at
                 // `$0D:DD28`, after the whole block returns.
                 self.native_overworld_hud_interruption = None;
-                self.schedule_interrupted_overworld_hud_update(HudUpdateResume::BeforeHearts);
-                return;
+                return Some(HudUpdateResume::BeforeHearts);
             }
             let _scope = crate::cycle_ledger::routine(0x0d_fb94);
             self.hud_update_hearts();
             self.hud_update_magic();
             if let Some(inventory) = self.hud_update_inventory_from(None) {
-                    self.schedule_interrupted_overworld_hud_return(inventory, false);
-                    return;
-                }
+                return Some(HudUpdateResume::Inventory { inventory, animate_hearts: false });
+            }
         }
         self.increment_hud_update_flag();
+        None
     }
 
     pub(super) fn hud_module_run(&mut self) {
@@ -1217,6 +1320,7 @@ impl ZeldaState {
     pub(super) fn hud_search_for_equipped_item(&mut self) {
         if !self.hud_have_any_items() {
             self.save_progress_mut().set_hud_current_item(0);
+            self.save_progress_mut().set_hud_current_item_high(0);
             self.save_progress_mut().clear_post_message_refresh_flag();
         } else {
             if self.game_state.inventory.save_progress.hud_current_item() == 0 {
@@ -1864,15 +1968,21 @@ impl ZeldaState {
         &mut self,
         resume: Option<HudInventoryResume>,
     ) -> Option<HudInventoryResume> {
+        let arrow_resume = match resume {
+            Some(HudInventoryResume::ArrowDigits { words, master_cycles }) => Some((words, master_cycles)),
+            _ => None,
+        };
         let resume = match resume {
             Some(HudInventoryResume::Tail { key, label, master_cycles }) => {
                 self.hud_update_inventory_tail(key, label, master_cycles, None);
                 return None;
             }
             Some(HudInventoryResume::Conversion(conversion)) => Some(conversion),
+            Some(HudInventoryResume::ArrowDigits { .. }) => None,
             None => None,
         };
-        let first = resume.map_or(HudInventoryField::Rupees, |r| r.interruption.field);
+        let first = if arrow_resume.is_some() { HudInventoryField::Arrows }
+            else { resume.map_or(HudInventoryField::Rupees, |r| r.interruption.field) };
         let dst = hudxy(8, 0);
         let base_tiles = [
             0x2400,
@@ -1969,29 +2079,37 @@ impl ZeldaState {
             crate::cycle_ledger::charge(278);
         }
         if first <= HudInventoryField::Arrows {
-            let d = match self.hud_inventory_decimal(
-                HudInventoryField::Arrows,
-                self.game_state.inventory.player_resources.arrows() as u32,
-                resume,
-            ) {
-                Ok(digits) => digits,
-                Err(pending) => return Some(HudInventoryResume::Conversion(pending)),
-            };
+            if let Some((words, completed)) = arrow_resume {
+                self.hud_update_arrow_digits(words, completed, 278);
+            } else {
+                let d = match self.hud_inventory_decimal(
+                    HudInventoryField::Arrows,
+                    self.game_state.inventory.player_resources.arrows() as u32,
+                    resume,
+                ) {
+                    Ok(digits) => digits,
+                    Err(pending) => return Some(HudInventoryResume::Conversion(pending)),
+                };
 
-            let base_tile = base_tiles[usize::from(
-                self.game_state.inventory.player_resources.arrows()
-                    == MAX_ARROWS_BY_UPGRADE_LEVEL[self
-                        .game_state
-                        .inventory
-                        .player_resources
-                        .arrow_upgrade_level()
-                        as usize],
-            )];
-            self.hud_buffer_set(dst + hudxy(7, 1), base_tile | d[2] as u16);
-            self.hud_buffer_set(dst + hudxy(8, 1), base_tile | d[3] as u16);
-
-            // REP and the digit stores at $fcb2-fcc8.
-            crate::cycle_ledger::charge(278);
+                let base_tile = base_tiles[usize::from(
+                    self.game_state.inventory.player_resources.arrows()
+                        == MAX_ARROWS_BY_UPGRADE_LEVEL[self
+                            .game_state
+                            .inventory
+                            .player_resources
+                            .arrow_upgrade_level()
+                            as usize],
+                )];
+                let words = [base_tile | d[2] as u16, base_tile | d[3] as u16];
+                if let Some(HudUpdateInterruption::ArrowDigits { master_cycles }) =
+                    self.native_overworld_hud_interruption
+                {
+                    self.native_overworld_hud_interruption = None;
+                    self.hud_update_arrow_digits(words, 0, master_cycles);
+                    return Some(HudInventoryResume::ArrowDigits { words, master_cycles });
+                }
+                self.hud_update_arrow_digits(words, 0, 278);
+            }
         }
         if resume.is_none_or(|r| r.interruption.field != HudInventoryField::Keys) {
             // $fccc-fcdb: blank digit, key load and comparison.
@@ -2024,6 +2142,29 @@ impl ZeldaState {
         }
         self.hud_update_inventory_tail(key, label, 0, None);
         None
+    }
+
+    fn hud_update_arrow_digits(&mut self, words: [u16; 2], completed: u16, end: u16) {
+        // $FCB2 REP22, LDA32, AND24, ORA24, STA48; then the
+        // second LDA32, AND24, ORA24, STA48. Only STA publishes a tile.
+        const BOUNDARIES: [u16; 10] = [0, 22, 54, 78, 102, 150, 182, 206, 230, 278];
+        assert!(completed <= end && BOUNDARIES.contains(&completed) && BOUNDARIES.contains(&end));
+        crate::cycle_ledger::charge(u64::from(end - completed));
+        if completed < 150 && end >= 150 {
+            self.hud_buffer_set(hudxy(15, 1), words[0]);
+        }
+        if completed < 278 && end >= 278 {
+            self.hud_buffer_set(hudxy(16, 1), words[1]);
+        }
+    }
+
+    pub(super) fn hud_arrow_digit_progress_at_pc(pc: u32) -> Option<u16> {
+        Some(match pc {
+            0x0d_fcb2 => 0, 0x0d_fcb4 => 22, 0x0d_fcb6 => 54,
+            0x0d_fcb9 => 78, 0x0d_fcbc => 102, 0x0d_fcc0 => 150,
+            0x0d_fcc2 => 182, 0x0d_fcc5 => 206, 0x0d_fcc8 => 230,
+            _ => return None,
+        })
     }
 
     fn hud_update_inventory_tail(
@@ -2513,6 +2654,63 @@ mod tests {
     use super::*;
 
     #[test]
+    fn floor_indicator_caller_tail_work_and_publications_match_rom() {
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../saves/zelda3.sfc"));
+        let Ok(mut rom) = std::fs::read(path) else { return };
+        if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+        for timer in 0..=u8::MAX {
+            for floor in (0u8..11).chain(245..=255) {
+                for floor_high in [0, 1] {
+                    for variant in 0..4 {
+                        let mut state = ZeldaState::new();
+                        state.ram[0x4a0] = timer;
+                        state.ram[0x4a1] = 0xa5;
+                        state.ram[0xa4] = floor;
+                        state.ram[0xa5] = floor_high;
+                        state.ram[0xa0] = if variant & 1 == 0 { 2 } else { 3 };
+                        state.ram[0xf3c5] = if variant & 2 == 0 { 0 } else { 2 };
+                        state.ram[0x12d] = 0xa5;
+                        state.ram[0x16] = 255;
+                        state.sync_native_game_state_from_ram();
+                        let checkpoint = RomCpuCheckpoint {
+                            entry_pc: 0x0a_fd0c, stop_pc: 0x00_8036,
+                            a: 0, x: 15, y: 2, sp: 0x01fb, dp: 0, db: 2,
+                            carry: true, zero: false, overflow: true, negative: false,
+                            interrupt_disable: false, decimal: false,
+                            accumulator_is_8_bit: true, index_is_8_bit: true,
+                            emulation: false, waiting: false,
+                            stack_address: 0x01fc, stack_bytes: &[0x35, 0x80, 0],
+                        };
+                        let mut run = RomCpuTimingRun::new(&rom, &state.ram, &[0; 0x2000],
+                            &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
+                        run.enable_cpu_write_trace();
+                        let mut expected = state.ram.clone();
+                        let mut cycles = 0u64;
+                        let mut steps = 0;
+                        while !run.is_complete() {
+                            cycles += u64::from(run.step().master_cycles);
+                            for (address, value) in run.take_cpu_wram_writes() { expected[address] = value; }
+                            steps += 1;
+                            assert!(steps < 200, "HUD floor tail did not return");
+                        }
+                        let before = crate::cycle_ledger::master();
+                        state.hud_floor_indicator();
+                        assert_eq!(crate::cycle_ledger::master() - before, cycles,
+                            "timer={timer} floor={floor:02x}/{floor_high:02x} variant={variant}");
+                        assert_eq!(&state.ram[0xc700..0xc880], &expected[0xc700..0xc880]);
+                        for address in [0x4a0, 0x4a1, 0x12d, 0x16] {
+                            assert_eq!(state.ram[address], expected[address], "address={address:04x}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn inventory_tail_instruction_boundaries_match_original_rom_stores_and_cycles() {
         use crate::rom_cpu_timing::{lorom_offset, RomCpuCheckpoint, RomCpuTimingRun};
 
@@ -2585,6 +2783,83 @@ mod tests {
                 assert_eq!(crate::cycle_ledger::master() - charge_start, u64::from(elapsed));
                 assert_eq!(split.ram, expected_ram, "split at {edge} master cycles");
             }
+        }
+    }
+
+    #[test]
+    fn arrow_digit_continuation_matches_each_rom_instruction() {
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../saves/zelda3.sfc"));
+        let Ok(mut rom) = std::fs::read(path) else { return; };
+        if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+        let mut state = ZeldaState::new();
+        state.ram[4] = 0x92;
+        state.ram[5] = 0x97;
+        state.ram[6] = 0xab;
+        state.hud_buffer_set(hudxy(15, 1), 0x1234);
+        state.hud_buffer_set(hudxy(16, 1), 0x5678);
+        let initial = state.clone();
+        let checkpoint = RomCpuCheckpoint {
+            entry_pc: 0x0d_fcb2, stop_pc: 0x0d_fccc,
+            a: 0, x: 0, y: 0, sp: 0x01fd, dp: 0, db: 0x0d,
+            carry: false, zero: false, overflow: false, negative: false,
+            interrupt_disable: false, decimal: false, accumulator_is_8_bit: true,
+            index_is_8_bit: true, emulation: false, waiting: false,
+            stack_address: 0x01fe, stack_bytes: &[0x23, 0xdd],
+        };
+        let mut run = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+            &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+        run.enable_cpu_write_trace();
+        let mut elapsed = 0u16;
+        let mut expected_ram = state.ram.clone();
+        let mut edges = vec![0];
+        while !run.is_complete() {
+            let pc = run.pc();
+            assert_eq!(ZeldaState::hud_arrow_digit_progress_at_pc(pc), Some(elapsed));
+            let before = elapsed;
+            elapsed += u16::try_from(run.step().master_cycles).unwrap();
+            for (address, value) in run.take_cpu_wram_writes() {
+                assert!((0xc75e..0xc762).contains(&address));
+                expected_ram[address] = value;
+            }
+            state.hud_update_arrow_digits([0x2492, 0x2497], before, elapsed);
+            assert_eq!(state.ram, expected_ram, "after PC {pc:06x}");
+            edges.push(elapsed);
+        }
+        assert_eq!(elapsed, 278);
+        for edge in edges {
+            let mut split = initial.clone();
+            let start = crate::cycle_ledger::master();
+            split.hud_update_arrow_digits([0x2492, 0x2497], 0, edge);
+            split.hud_update_arrow_digits([0x2492, 0x2497], edge, 278);
+            assert_eq!(crate::cycle_ledger::master() - start, 278);
+            assert_eq!(split.ram, expected_ram);
+        }
+    }
+
+    #[test]
+    fn resumed_arrow_stores_preserve_completed_digits_and_resource_refills() {
+        for edge in [0, 78, 150, 230] {
+            let mut atomic = ZeldaState::new();
+            atomic.ram[0xf360] = 1; // rupee goal
+            atomic.ram[0xf377] = 27; // arrows
+            atomic.sync_native_game_state_from_ram();
+            let mut split = atomic.clone();
+            let start = crate::cycle_ledger::master();
+            atomic.hud_refill_logic();
+            let cycles = crate::cycle_ledger::master() - start;
+            split.native_overworld_hud_interruption = Some(HudUpdateInterruption::ArrowDigits { master_cycles: edge });
+            let start = crate::cycle_ledger::master();
+            let hud = split.hud_refill_logic_until_interruption().unwrap();
+            assert_eq!(split.ram[0x16], 0, "HUD publication flag must remain pending");
+            let rupees = split.game_state.inventory.player_resources.rupees_actual();
+            split.resume_overworld_hud_update(hud);
+            assert_eq!(crate::cycle_ledger::master() - start, cycles);
+            assert_eq!(split.game_state.inventory.player_resources.rupees_actual(), rupees);
+            assert_eq!(split.ram, atomic.ram);
+            assert_eq!(split.game_state, atomic.game_state);
         }
     }
 

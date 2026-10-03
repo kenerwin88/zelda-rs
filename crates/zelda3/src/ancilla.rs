@@ -24,6 +24,10 @@ const ANCILLA_SPRITE_COLLISION_RECOIL_X: [u8; 4] = [0, 0, 0xc0, 0x40];
 const ANCILLA_SPRITE_COLLISION_RECOIL_Y: [u8; 4] = [0xc0, 0x40, 0, 0];
 
 impl ZeldaState {
+    pub(crate) fn native_ancilla_sprite_count(kind: usize) -> Option<u8> {
+        ANCILLA_DRAW_SPRITE_COUNTS.get(kind).copied()
+    }
+
     pub(super) fn ancilla_main(&mut self) {
         // Cycle ledger: Ancilla_Main $08:8242 (m8 x8, JSL target): PHB PHK PLB
         // JSR Ancilla_WeaponTink JSR Ancilla_ExecuteAll PLB RTL (236; the
@@ -6774,25 +6778,37 @@ impl ZeldaState {
     }
 
     fn ancilla_receive_item_draw(&mut self, k: usize, x: u16, y: u16) -> usize {
+        let _scope = crate::cycle_ledger::routine(0x08_c690);
+        crate::cycle_ledger::charge(186); // PHX, palette/item locals, LDY #0, JSR SetOam_XY.
         let mut oam = self.game_state.oam.current_pointer_usize();
         let j = self.ancilla_slot_view(k).item_to_link() as usize;
+        let x_bit = self.ancilla_set_oam_xy(oam, x, y);
+        crate::cycle_ledger::charge(132); // Character store and palette lookup/test.
         let mut a = WISH_POND_ITEM_OAM_FLAGS[j];
         if sign8(a) {
+            crate::cycle_ledger::charge(24);
             a = self.ancilla_slot_view(k).work_byte_4();
+        } else {
+            crate::cycle_ledger::charge(6);
         }
-        self.ancilla_set_oam(
-            oam,
-            x,
-            y,
-            0x24,
-            a.wrapping_mul(2) | 0x30,
-            RECEIVE_ITEM_OAM_EXT_SIZES[j],
-        );
+        crate::cycle_ledger::charge(344); // Flags/extended store and second-tile test.
+        self.oam_state_mut().set_entry_char(oam, 0x24);
+        self.oam_state_mut().set_entry_flags(oam, a.wrapping_mul(2) | 0x30);
+        self.oam_state_mut().set_extended_byte((oam - OAM_BUF) / 4, RECEIVE_ITEM_OAM_EXT_SIZES[j] | x_bit);
         oam += 4;
         if RECEIVE_ITEM_OAM_EXT_SIZES[j] == 0 {
-            self.ancilla_set_oam(oam, x, y.wrapping_add(8), 0x34, a.wrapping_mul(2) | 0x30, 0);
+            crate::cycle_ledger::charge(154); // Load saved second Y, SEP, JSR SetOam_XY.
+            let x_bit = self.ancilla_set_oam_xy(oam, x, y.wrapping_add(8));
+            crate::cycle_ledger::charge(132 + if sign8(WISH_POND_ITEM_OAM_FLAGS[j]) { 24 } else { 6 });
+            crate::cycle_ledger::charge(288); // Second flags/extended store.
+            self.oam_state_mut().set_entry_char(oam, 0x34);
+            self.oam_state_mut().set_entry_flags(oam, a.wrapping_mul(2) | 0x30);
+            self.oam_state_mut().set_extended_byte((oam - OAM_BUF) / 4, x_bit);
             oam += 4;
+        } else {
+            crate::cycle_ledger::charge(6);
         }
+        crate::cycle_ledger::charge(70); // PLX : RTS.
         oam
     }
 
@@ -6809,70 +6825,135 @@ impl ZeldaState {
     }
 
     fn ancilla22_item_receipt(&mut self, k: usize) {
+        let _scope = crate::cycle_ledger::routine(0x08_c38a);
+        crate::cycle_ledger::charge(64); // Immobilized-state load, compare and BEQ.
         if self.game_state.player.follower_link.immobilized_flag() != 2 {
+            // The successive submodule comparisons stop at their taken branch.
+            crate::cycle_ledger::charge(match self.game_state.frame.submodule {
+                0 => 40 + 6,
+                43 => 40 + 32 + 6,
+                9 => 40 + 32 + 32 + 6,
+                2 => 40 + 32 + 32 + 32,
+                _ => 40 + 32 + 32 + 32 + 6,
+            });
             if self.game_state.frame.submodule != 0
                 && self.game_state.frame.submodule != 43
                 && self.game_state.frame.submodule != 9
             {
                 if self.game_state.frame.submodule == 2 {
+                    crate::cycle_ledger::charge(54); // LDA #16 : STA timer,X.
                     let value = 16;
                     self.ancilla_slot_view_mut(k).set_timer(value);
                 }
+                crate::cycle_ledger::charge(30); // BRL drawing.
             } else {
+                crate::cycle_ledger::charge(94 + match self.ancilla_slot_view(k).step() {
+                    0 => 6,
+                    3 => 32 + 6,
+                    _ => 32 + 30,
+                }); // INC modal pause, step tests, possible BRL C515.
                 self.increment_modal_pause_flag();
 
                 if self.ancilla_slot_view(k).step() != 0 && self.ancilla_slot_view(k).step() != 3 {
+                    crate::cycle_ledger::charge(100); // DEC/LDA aux timer : BPL.
                     let value = self.ancilla_slot_view(k).aux_timer().wrapping_sub(1);
                     self.ancilla_slot_view_mut(k).set_aux_timer(value);
                     if sign8(self.ancilla_slot_view(k).aux_timer()) {
+                        crate::cycle_ledger::charge(30); // BRL finish.
                         self.ancilla22_item_receipt_finish(k);
                         return;
                     }
+                    crate::cycle_ledger::charge(6 + 32); // Taken BPL : CMP #0 : BEQ.
                     if self.ancilla_slot_view(k).aux_timer() == 0 {
+                        crate::cycle_ledger::charge(6);
                         self.ancilla22_item_receipt_show_message(k);
                     } else {
-                        if self.ancilla_slot_view(k).aux_timer() == 40
-                            && self.ancilla_slot_view(k).step() != 2
-                            && (self.ancilla_add_rupees(k)
-                                || self.ancilla_slot_view(k).item_to_link() != 0x17)
-                        {
-                            self.ancilla_sfx3_near(0x0f);
+                        crate::cycle_ledger::charge(32); // CMP #40 : BNE.
+                        let mut play_sound = false;
+                        if self.ancilla_slot_view(k).aux_timer() == 40 {
+                            crate::cycle_ledger::charge(64); // LDA step : CMP #2 : BEQ.
+                            if self.ancilla_slot_view(k).step() != 2 {
+                                crate::cycle_ledger::charge(78); // JSL AddRupees : BCS.
+                                if self.ancilla_add_rupees(k) {
+                                    crate::cycle_ledger::charge(6);
+                                    play_sound = true;
+                                } else {
+                                    crate::cycle_ledger::charge(64); // Item test after carry clear.
+                                    if self.ancilla_slot_view(k).item_to_link() != 0x17 {
+                                        crate::cycle_ledger::charge(6);
+                                        play_sound = true;
+                                    }
+                                }
+                            } else {
+                                crate::cycle_ledger::charge(6);
+                            }
+                        } else {
+                            crate::cycle_ledger::charge(6);
                         }
+                        if play_sound {
+                            crate::cycle_ledger::charge(62); // LDA #15 : JSR sound.
+                            self.ancilla_sfx3_near(0x0f);
+                            crate::cycle_ledger::charge(22); // BRA to the shared movement branch.
+                        }
+                        crate::cycle_ledger::charge(30); // BRL movement.
                         self.ancilla22_item_receipt_move_label_b(k);
                     }
                 } else if self.ancilla_slot_view(k).item_to_link() == 1
                     && self.ancilla_slot_view(k).step() != 2
                 {
+                    crate::cycle_ledger::charge(64 + 64 + 48); // Item, step, timer tests.
                     if self.ancilla_slot_view(k).timer() == 0 {
+                        crate::cycle_ledger::charge(6);
                         self.ancilla22_item_receipt_label_a(k);
                         return;
                     }
+                    crate::cycle_ledger::charge(32); // CMP #17 : BNE.
                     if self.ancilla_slot_view(k).timer() == 17 {
+                        crate::cycle_ledger::charge(164 + 30); // Shared message timer, follower, BRL message.
                         self.start_shared_message_timer(0x0df3);
                         self.follower_state_mut().set_indicator(0x0e);
                         self.ancilla22_item_receipt_show_message(k);
+                    } else {
+                        crate::cycle_ledger::charge(6 + 30); // Taken BNE : BRL drawing.
                     }
                 } else {
+                    crate::cycle_ledger::charge(64 + 6 + 100); // Non-sword item, DEC/LDA aux : BEQ.
                     let value = self.ancilla_slot_view(k).aux_timer().wrapping_sub(1);
                     self.ancilla_slot_view_mut(k).set_aux_timer(value);
                     let a = self.ancilla_slot_view(k).aux_timer();
                     if a == 0 {
+                        crate::cycle_ledger::charge(6);
                         self.ancilla22_item_receipt_label_a(k);
                         return;
                     }
+                    crate::cycle_ledger::charge(32); // CMP #1 : BNE.
                     if a == 1 {
                         let item = self.ancilla_slot_view(k).item_to_link();
+                        crate::cycle_ledger::charge(match item {
+                            0x37 => 64 + 6,
+                            0x38 => 64 + 32 + 6,
+                            0x39 => 64 + 32 + 32,
+                            _ => 64 + 32 + 32 + 6,
+                        });
+                        let pendant = (0x37..=0x39).contains(&item);
+                        if pendant { crate::cycle_ledger::charge(46); } // System-bank APUI00 read + BEQ.
                         if (item == 0x37 || item == 0x38 || item == 0x39)
                             && self.zelda_read_apui00_for_song_end_poll() != 0
                         {
+                            crate::cycle_ledger::charge(74 + 30); // INC aux : BRA : BRL drawing.
                             let value = self.ancilla_slot_view(k).aux_timer().wrapping_add(1);
                             self.ancilla_slot_view_mut(k).set_aux_timer(value);
                         } else {
+                            crate::cycle_ledger::charge(if pendant { 6 + 60 } else { 60 }); // Two BRLs to message.
                             self.ancilla22_item_receipt_show_message(k);
                         }
+                    } else {
+                        crate::cycle_ledger::charge(6 + 30); // Taken BNE : BRL drawing.
                     }
                 }
             }
+        } else {
+            crate::cycle_ledger::charge(6 + 30); // Taken BEQ : BRL drawing.
         }
 
         self.ancilla22_item_receipt_draw_and_update(k);
@@ -6961,34 +7042,71 @@ impl ZeldaState {
     }
 
     fn ancilla22_item_receipt_show_message(&mut self, k: usize) {
+        let _scope = crate::cycle_ledger::routine(0x08_c546);
+        crate::cycle_ledger::charge(40); // Indoor test.
         if self.game_state.world.location.is_indoors() {
             let room = self.game_state.world.location.dungeon_room();
+            crate::cycle_ledger::charge(match room {
+                0x00ff => 94 + 6,
+                0x010f => 94 + 40 + 6,
+                0x0110 => 94 + 80 + 6,
+                0x0112 => 94 + 120 + 6,
+                0x011f => 94 + 160,
+                _ => 94 + 160 + 6,
+            });
             if room == 0x00ff
                 || room == 0x010f
                 || room == 0x0110
                 || room == 0x0112
                 || room == 0x011f
             {
+                crate::cycle_ledger::charge(44); // SEP : BRA movement.
                 self.ancilla22_item_receipt_move_label_b(k);
                 return;
             }
+        } else {
+            crate::cycle_ledger::charge(6);
         }
         let item = self.ancilla_slot_view(k).item_to_link() as usize;
+        crate::cycle_ledger::charge(86 + if item == 0x38 { 6 } else { 32 });
         let mut msg = -1i16;
+        let mut general_message = false;
         if self.ancilla_slot_view(k).item_to_link() == 0x38
             || self.ancilla_slot_view(k).item_to_link() == 0x39
         {
+            crate::cycle_ledger::charge(102); // Pendant flags test.
             if self.game_state.inventory.player_resources.pendant_flags() & 7 == 7 {
+                crate::cycle_ledger::charge(218); // Special table, message store, SEP : BRA.
                 msg = RECEIVE_ITEM_SPECIAL_MESSAGES[item - 0x38];
             } else {
-                msg = RECEIVE_ITEM_MESSAGES[item];
+                crate::cycle_ledger::charge(6);
+                general_message = true;
             }
-        } else if self.ancilla_slot_view(k).step() != 2 {
-            if self.ancilla_slot_view(k).item_to_link() == 0x17 {
-                msg = RECEIVE_ITEM_HEART_PIECE_MESSAGES
-                    [self.game_state.inventory.player_resources.heart_pieces() as usize];
+        } else {
+            crate::cycle_ledger::charge(6 + 64); // Taken non-pendant branch and step test.
+            if self.ancilla_slot_view(k).step() != 2 {
+                crate::cycle_ledger::charge(64); // Heart-piece item test.
+                if item == 0x17 {
+                    crate::cycle_ledger::charge(170);
+                    msg = RECEIVE_ITEM_HEART_PIECE_MESSAGES
+                        [self.game_state.inventory.player_resources.heart_pieces() as usize];
+                    crate::cycle_ledger::charge(if msg == -1 { 6 } else { 84 });
+                } else {
+                    crate::cycle_ledger::charge(6);
+                    general_message = true;
+                }
             } else {
-                msg = RECEIVE_ITEM_MESSAGES[item];
+                crate::cycle_ledger::charge(6);
+            }
+        }
+        if general_message {
+            // The word table starts at C2DD; Y = 2*item crosses the page at item 18.
+            crate::cycle_ledger::charge(162 + if item >= 18 { 6 } else { 0 });
+            msg = RECEIVE_ITEM_MESSAGES[item];
+            if msg == -1 {
+                crate::cycle_ledger::charge(6);
+            } else {
+                crate::cycle_ledger::charge(80 + if msg == 0x70 { 70 } else { 6 } + 22);
             }
         }
         if msg != -1 {
@@ -6996,76 +7114,129 @@ impl ZeldaState {
             if msg == 0x70 {
                 self.set_ambient_sound_effect(9);
             }
+            crate::cycle_ledger::charge(62); // JSL Main_ShowTextMessage.
             self.main_show_text_message();
+            crate::cycle_ledger::charge(22); // BRA drawing after the call returns.
         }
     }
 
     fn ancilla22_item_receipt_move_label_b(&mut self, k: usize) {
+        let _scope = crate::cycle_ledger::routine(0x08_c5e0);
+        crate::cycle_ledger::charge(64); // Aux timer : CMP #24 : BCC.
         if self.ancilla_slot_view(k).aux_timer() >= 24 {
+            crate::cycle_ledger::charge(94); // Velocity decrement and lower-bound test.
             let a = self.ancilla_slot_view(k).y_velocity().wrapping_sub(1);
             if a >= 248 {
+                crate::cycle_ledger::charge(38);
                 let value = a;
                 self.ancilla_slot_view_mut(k).set_y_velocity(value);
+            } else {
+                crate::cycle_ledger::charge(6);
             }
+            crate::cycle_ledger::charge(46); // JSR MoveY.
             self.ancilla_move_y(k);
+        } else {
+            crate::cycle_ledger::charge(6);
         }
     }
 
     fn ancilla22_item_receipt_draw_and_update(&mut self, k: usize) {
+        let _scope = crate::cycle_ledger::routine(0x08_c5f7);
+        crate::cycle_ledger::charge(86); // SEP : LDA item : CMP #$20 : BNE.
         if self.ancilla_slot_view(k).item_to_link() == 0x20 {
+            crate::cycle_ledger::charge(84); // STZ z : JSR sparkle.
             let value = 0;
             self.ancilla_slot_view_mut(k).set_z(value);
             self.ancilla_add_occasional_sparkle(k);
+            crate::cycle_ledger::charge(46); // System-bank APUI00 read : BNE.
             if self.zelda_read_apui00_for_song_end_poll() == 0 {
+                crate::cycle_ledger::charge(78); // Music store : BRL crystal continuation.
                 self.set_music_control(0x1a);
                 self.item_receipt_transmute_to_rising_crystal(k);
                 return;
             }
-        } else if self.ancilla_slot_view(k).item_to_link() == 1 {
+            crate::cycle_ledger::charge(6);
+        } else {
+            crate::cycle_ledger::charge(6);
+        }
+        crate::cycle_ledger::charge(86); // C613..C61A: SEP and sword test.
+        if self.ancilla_slot_view(k).item_to_link() == 1 {
+            crate::cycle_ledger::charge(134); // First crystal frame and step test.
             let value = RECEIVE_ITEM_CRYSTAL_FRAME_SEQUENCE[0];
             self.ancilla_slot_view_mut(k).set_work_byte_4(value);
             if self.ancilla_slot_view(k).step() != 2 {
+                crate::cycle_ledger::charge(64); // Timer : CMP #16 : BCC.
                 if self.ancilla_slot_view(k).timer() < 16 {
+                    crate::cycle_ledger::charge(6 + 16 + 122);
                     let value = 0;
                     self.ancilla_slot_view_mut(k).set_work_byte_1(value);
                     let value = RECEIVE_ITEM_CRYSTAL_FRAME_SEQUENCE[0];
                     self.ancilla_slot_view_mut(k).set_work_byte_4(value);
                 } else {
+                    crate::cycle_ledger::charge(68); // DEC frame timer : BPL.
                     self.ancilla_slot_view_mut(k).tick_work_byte_3();
                     if sign8(self.ancilla_slot_view(k).work_byte_3()) {
+                        crate::cycle_ledger::charge(132); // Reset timer, advance frame and test wrap.
                         let value = 2;
                         self.ancilla_slot_view_mut(k).set_work_byte_3(value);
                         let mut a = self.ancilla_slot_view(k).work_byte_1().wrapping_add(1);
                         if a == 3 {
+                            crate::cycle_ledger::charge(16);
                             a = 0;
+                        } else {
+                            crate::cycle_ledger::charge(6);
                         }
+                        crate::cycle_ledger::charge(122); // Frame and palette publication.
                         let value = a;
                         self.ancilla_slot_view_mut(k).set_work_byte_1(value);
                         let value = RECEIVE_ITEM_CRYSTAL_FRAME_SEQUENCE[a as usize];
                         self.ancilla_slot_view_mut(k).set_work_byte_4(value);
+                    } else {
+                        crate::cycle_ledger::charge(6);
                     }
                 }
+            } else {
+                crate::cycle_ledger::charge(6);
             }
+        } else {
+            crate::cycle_ledger::charge(6);
         }
 
+        crate::cycle_ledger::charge(match self.ancilla_slot_view(k).item_to_link() {
+            0x34 => 64 + 6,
+            0x35 => 64 + 32 + 6,
+            0x36 => 64 + 32 + 32,
+            _ => 64 + 32 + 32 + 6,
+        }); // Milestone animation item tests.
         if self.ancilla_slot_view(k).item_to_link() == 0x34
             || self.ancilla_slot_view(k).item_to_link() == 0x35
             || self.ancilla_slot_view(k).item_to_link() == 0x36
         {
+            crate::cycle_ledger::charge(68); // DEC frame timer : BPL.
             self.ancilla_slot_view_mut(k).tick_work_byte_3();
             if sign8(self.ancilla_slot_view(k).work_byte_3()) {
+                crate::cycle_ledger::charge(116); // INC/LDA frame : CMP #3 : BNE.
                 let mut a = self.ancilla_slot_view(k).work_byte_1().wrapping_add(1);
                 if a == 3 {
+                    crate::cycle_ledger::charge(54);
                     a = 0;
+                } else {
+                    crate::cycle_ledger::charge(6);
                 }
+                crate::cycle_ledger::charge(200); // Tables, timer store, PHX and JSL graphics.
                 let value = a;
                 self.ancilla_slot_view_mut(k).set_work_byte_1(value);
                 let value = RECEIVE_ITEM_MILESTONE_FRAME_TIMERS[a as usize];
                 self.ancilla_slot_view_mut(k).set_work_byte_3(value);
                 self.WriteTo4BPPBuffer_at_7F4000(RECEIVE_ITEM_MILESTONE_GFX_SOURCES[a as usize]);
+                crate::cycle_ledger::charge(28); // PLX after graphics return.
+            } else {
+                crate::cycle_ledger::charge(6);
             }
         }
+        crate::cycle_ledger::charge(46); // JSR adjusted coordinates.
         let (x, y) = self.ancilla_prep_adjusted_oam_coord(k);
+        crate::cycle_ledger::charge(146); // Save y+8 for the optional second tile.
         self.ancilla_receive_item_draw(k, x, y);
     }
 
@@ -9956,6 +10127,12 @@ impl ZeldaState {
     }
 
     fn ancilla_prep_adjusted_oam_coord(&mut self, k: usize) -> (u16, u16) {
+        let _scope = crate::cycle_ledger::routine(0x08_f6a4);
+        // F6A4..F6D8 is straight-line priority setup, coordinate loads,
+        // scroll subtraction and RTS (m8/x8, with the REP/SEP pair).
+        // LDA $0BFA,X crosses its page for slots 6..9; the other slot
+        // arrays and the four floor priorities do not cross a page.
+        crate::cycle_ledger::charge(690 + if k >= 6 { 6 } else { 0 });
         let floor = self.ancilla_slot_view(k).floor() as usize;
         self.oam_state_mut().set_priority_word(
             (ANCILLA_PREP_ADJUSTED_OAM_COORD_TAGALONG_LAYER_BITS[floor] as u16) << 8,
@@ -10680,21 +10857,40 @@ impl ZeldaState {
         self.entity_sloped_tile_collision(x, y).unwrap_or(true)
     }
 
-    fn ancilla_set_oam(&mut self, oam: usize, x: u16, y: u16, charnum: u8, flags: u8, mut big: u8) {
+    /// ROM SetOam_XY stops before character, flags and extended publication.
+    fn ancilla_set_oam_xy(&mut self, oam: usize, x: u16, y: u16) -> u8 {
+        let _scope = crate::cycle_ledger::routine(0x08_f6e1);
+        crate::cycle_ledger::charge(78 + if y >= 256 {
+            6
+        } else {
+            40 + if x >= 256 { 6 } else { 126 + if y < 0xf0 { 14 } else { 6 } }
+        } + 158);
+        self.ancilla_write_oam_xy(oam, x, y)
+    }
+
+    // Shared semantic writer; other merged draw helpers still need their
+    // source call boundaries mapped before charging SetOam_XY at those sites.
+    fn ancilla_write_oam_xy(&mut self, oam: usize, x: u16, y: u16) -> u8 {
         let mut yval = 0xf0;
+        let mut x_bit = 0;
         let xt: u16 = if self.game_state.enhanced_features.has(1) {
             0x40
         } else {
             0
         };
         if x.wrapping_add(xt) < 256 + xt * 2 && y < 256 {
-            big |= ((x >> 8) as u8) & 1;
+            x_bit = ((x >> 8) as u8) & 1;
             self.oam_state_mut().set_entry_x(oam, x as u8);
             if y < 0xf0 {
                 yval = y as u8;
             }
         }
         self.oam_state_mut().set_entry_y(oam, yval);
+        x_bit
+    }
+
+    fn ancilla_set_oam(&mut self, oam: usize, x: u16, y: u16, charnum: u8, flags: u8, big: u8) {
+        let big = big | self.ancilla_write_oam_xy(oam, x, y);
         self.oam_state_mut().set_entry_char(oam, charnum);
         self.oam_state_mut().set_entry_flags(oam, flags);
         let value = big;

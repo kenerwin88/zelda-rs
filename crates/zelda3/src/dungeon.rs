@@ -44,6 +44,43 @@ struct DungeonObjectStreamProgress {
     in_doors: bool,
 }
 
+/// A statement boundary in RoomDraw_Downwards4x2VariableSpacing. The loop
+/// counter still includes the current block until its DEC has retired.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Dungeon4x2DrawBoundary {
+    pub remaining_blocks: u16,
+    pub words_in_block: u8,
+}
+
+impl Dungeon4x2DrawBoundary {
+    pub(super) fn from_source_pc(pc: u32, remaining_blocks: u16) -> Option<Self> {
+        let words_in_block = match pc {
+            0x01_b222..=0x01_b225 | 0x01_b251..=0x01_b253 => 0,
+            0x01_b227..=0x01_b22a => 1,
+            0x01_b22c..=0x01_b22f => 2,
+            0x01_b231..=0x01_b234 => 3,
+            0x01_b236..=0x01_b239 => 4,
+            0x01_b23b..=0x01_b23e => 5,
+            0x01_b240..=0x01_b243 => 6,
+            0x01_b245..=0x01_b248 => 7,
+            0x01_b24a..=0x01_b24f => 8,
+            _ => return None,
+        };
+        Some(Self { remaining_blocks, words_in_block })
+    }
+}
+
+/// Native arguments and publication cursor of the shared 4x2 tail call.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Dungeon4x2DrawWork {
+    base: usize,
+    increment: u16,
+    src: usize,
+    dsto: u16,
+    count: u16,
+    completed_words: u16,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(super) struct DungeonObjectDrawWork {
     room: u16,
@@ -56,6 +93,43 @@ pub(super) struct DungeonObjectDrawWork {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(super) struct DungeonRoomUploadWork {
     completed_quadrants: u8,
+}
+
+/// Native arguments and store cursor of the shared 1024-word quadrant copy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct DungeonQuadrantUploadWork {
+    source_base: usize,
+    table_index: usize,
+    dst_bias: u8,
+    completed_words: u16,
+}
+
+impl DungeonQuadrantUploadWork {
+    /// Source Y is a destination loop cursor, not a tile value. Between the
+    /// four INYs account for only the already-published block's stores.
+    pub(super) fn completed_words_at_source_pc(pc: u32, y: u16) -> Option<u16> {
+        let (y, words) = match pc {
+            0x00_9153 | 0x00_9157 => (y, 0),
+            0x00_915a | 0x00_915e => (y, 1),
+            0x00_9161 | 0x00_9165 => (y, 2),
+            0x00_9168 | 0x00_916c => (y, 3),
+            0x00_916f | 0x00_9173 => (y, 4),
+            0x00_9176 | 0x00_917a => (y, 5),
+            0x00_917d | 0x00_9181 => (y, 6),
+            0x00_9184 | 0x00_9188 => (y, 7),
+            0x00_918b..=0x00_918f => (y, 8),
+            0x00_9190..=0x00_9192 => (y.checked_sub((pc - 0x00_918f) as u16)?, 8),
+            0x00_9193 | 0x00_9194 | 0x00_9197 | 0x00_9199 | 0x00_919a
+                | 0x00_919b | 0x00_919e | 0x00_919f | 0x00_91a0
+                | 0x00_91a1 | 0x00_91a4 | 0x00_91a5 | 0x00_91a8
+                | 0x00_91aa => (y, 0),
+            // SEP truncates Y after all stores. The index store is still owed.
+            0x00_91ab | 0x00_91ad | 0x00_91b0 | 0x00_91b1 | 0x00_91b3 => return Some(1024),
+            _ => return None,
+        };
+        let completed = (y / 256) * 128 + (y % 256 / 4) * 8 + words;
+        (completed <= 1024).then_some(completed)
+    }
 }
 
 impl DungeonRoomUploadWork {
@@ -144,6 +218,53 @@ mod floor_draw_tests {
     }
 
     #[test]
+    fn straight_room_initialization_resumes_shared_draw_and_graphics_before_its_tail() {
+        let mut eager = ZeldaState::new();
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../zelda3_assets.dat");
+        eager.assets = Some(AssetPack::parse(&std::fs::read(path).unwrap()).unwrap());
+        eager.set_main_module(7);
+        eager.set_submodule(0x12);
+        eager.set_subsubmodule(2);
+        eager.set_indoor_flag(1);
+        eager.set_dungeon_room(0x51);
+        let torch_init = eager.asset_raw(54).unwrap().to_vec();
+        eager.dungeon_torch_mut().copy_torch_data_table(&torch_init);
+        let mut staged = eager.clone();
+        eager.Dungeon_LoadRoom();
+        eager.complete_straight_room_initialization_after_room_load();
+
+        staged.begin_live_dungeon_supertile_room_load();
+        assert_eq!(read_le_u16(&staged.ram, 0x043e), 0,
+            "stair objects have not run at room-draw entry");
+        let mut floor = staged.active_early_dungeon_floor_draw.take().unwrap();
+        for ordinal in 1..=DungeonFloorDrawWork::TOTAL_WORDS {
+            let (_, _, offset, address) = floor.next_tile();
+            let value = read_word_from_slice(staged.asset_raw(69).unwrap(), offset);
+            staged.advance_dungeon_floor_draw_one(&mut floor, ordinal, address, value);
+        }
+        staged.active_early_dungeon_floor_draw = Some(floor);
+        assert_eq!(read_le_u16(&staged.ram, 0x043e), 0);
+        assert_ne!(staged.game_state.dungeon.room_tilemaps, eager.game_state.dungeon.room_tilemaps,
+            "completed floors must not publish the later room objects");
+        let mut objects = staged.begin_dungeon_object_draw_current_room().unwrap();
+        while staged.advance_dungeon_object_draw_one(&mut objects) {}
+        staged.active_early_dungeon_object_draw = Some(objects);
+        staged.finish_live_dungeon_supertile_room_load();
+        staged.Dungeon_RestoreStarTileChr();
+        let prefix = load_gfx::TransitionAuxGraphicsProgress { sheet: 0, completed_bytes: 0x100 };
+        staged.advance_transition_aux_graphics(None, prefix);
+        staged.native_transition_aux_graphics_progress = Some(prefix);
+        assert_eq!(staged.game_state.frame.subsubmodule, 2,
+            "the straight-stair caller cannot advance before initialization returns");
+        staged.complete_straight_room_initialization_after_room_load();
+        assert!(staged.active_early_dungeon_floor_draw.is_none());
+        assert!(staged.native_transition_aux_graphics_progress.is_none());
+        assert_eq!(staged.ram, eager.ram);
+        assert_eq!(staged.game_state, eager.game_state);
+    }
+
+    #[test]
     fn resumable_object_stream_reproduces_the_eager_room_objects() {
         let mut eager = ZeldaState::new();
         let asset_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -171,6 +292,66 @@ mod floor_draw_tests {
     }
 
     #[test]
+    fn four_by_two_object_retains_each_source_store_and_resumes_once() {
+        let mut initial = ZeldaState::new();
+        let data: Vec<u8> = (0x1001u16..=0x1008).flat_map(u16::to_le_bytes).collect();
+        let mut ranges = vec![(0, 0); 70];
+        ranges[69] = (0, data.len());
+        initial.assets = Some(AssetPack::from_data_ranges(data, ranges));
+        initial.ram[0x2000..0x6000].fill(0xbe);
+        initial.sync_native_game_state_from_ram();
+        initial.dungeon_room_tilemaps_mut()
+            .copy_line_pointer_bytes(&DUNGEON_DRAW_OBJECT_OFFSETS_BG1);
+        let mut eager = initial.clone();
+        eager.RoomDraw_Downwards4x2VariableSpacing(128, 0, 5, 3);
+        for blocks in 0..3 {
+            for words in 0..=8 {
+                let mut state = initial.clone();
+                let boundary = Dungeon4x2DrawBoundary {
+                    remaining_blocks: 3 - blocks, words_in_block: words,
+                };
+                state.pending_dungeon_object_4x2_boundary = Some(boundary);
+                state.RoomDraw_Downwards4x2VariableSpacing(128, 0, 5, 3);
+                let target = blocks * 8 + u16::from(words);
+                for i in 0..24u16 {
+                    let field = i % 8;
+                    let dst = 5 + (i / 8) * 128 + field % 4 + (field / 4) * 64;
+                    assert_eq!(state.room_read_current(dst),
+                        if i < target { 0x1001 + field } else { 0xbebe },
+                        "uncommitted field at boundary {boundary:?}, word {i}");
+                }
+                assert_eq!(state.game_state.dungeon.room_load.draw_width_indicator(),
+                    (3 - blocks) as u8);
+                assert!(!state.paired_resume_cpu_boundary_is_quiescent());
+                let mut work = DungeonObjectDrawWork {
+                    room: 0, first_room_stream_offset: 0, phase: 0,
+                    stream: DungeonObjectStreamProgress::default(), completed_objects: 2,
+                };
+                let before_repeat = state.ram.clone();
+                state.advance_dungeon_object_4x2_prefix(&mut work, 3, boundary);
+                assert_eq!(state.ram, before_repeat);
+                assert_eq!(work.completed_objects(), 2);
+                assert!(state.advance_dungeon_object_draw_one(&mut work));
+                assert_eq!(work.completed_objects(), 3);
+                assert!(state.active_dungeon_object_4x2.is_none());
+                assert_eq!(state.ram, eager.ram);
+                assert_eq!(state.game_state.dungeon, eager.game_state.dungeon);
+            }
+        }
+    }
+
+    #[test]
+    fn four_by_two_boundary_distinguishes_pending_store_and_loop_decrement() {
+        assert_eq!(Dungeon4x2DrawBoundary::from_source_pc(0x01_b22c, 3),
+            Some(Dungeon4x2DrawBoundary { remaining_blocks: 3, words_in_block: 2 }));
+        assert_eq!(Dungeon4x2DrawBoundary::from_source_pc(0x01_b24f, 3),
+            Some(Dungeon4x2DrawBoundary { remaining_blocks: 3, words_in_block: 8 }));
+        assert_eq!(Dungeon4x2DrawBoundary::from_source_pc(0x01_b251, 2),
+            Some(Dungeon4x2DrawBoundary { remaining_blocks: 2, words_in_block: 0 }));
+        assert_eq!(Dungeon4x2DrawBoundary::from_source_pc(0x01_b254, 0), None);
+    }
+
+    #[test]
     fn resumable_quadrant_upload_reproduces_the_eager_room_upload() {
         let mut eager = ZeldaState::new();
         let asset_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -192,6 +373,68 @@ mod floor_draw_tests {
         assert_eq!(resumed.ram, eager.ram);
         assert_eq!(resumed.game_state.dungeon, eager.game_state.dungeon);
         assert_eq!(resumed.ppu.vram, eager.ppu.vram);
+    }
+
+    #[test]
+    fn quadrant_copy_cursor_matches_rom_stores_and_defers_publication() {
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        for quadrant in [0, 4, 8, 12] {
+            for direction in 0..4 {
+                let mut state = ZeldaState::new();
+                for (i, bytes) in state.ram[0x2000..0x6000].chunks_exact_mut(2).enumerate() {
+                    bytes.copy_from_slice(&(0x8000 | i as u16).to_le_bytes());
+                }
+                state.ram[0x1000..0x1800].fill(0x5a);
+                state.ram[0x0418] = direction;
+                state.ram[0x045c] = quadrant;
+                state.sync_native_game_state_from_ram();
+                state.set_nmi_load_target_page(0xa5);
+                state.set_pending_nmi_subroutine(9);
+                state.set_core_update_disable_flag(9);
+                let mut eager = state.clone();
+                let checkpoint = RomCpuCheckpoint {
+                    entry_pc: 0x00_913f, stop_pc: 0x00_91c3, a: 0, x: 0, y: 0,
+                    sp: 0x01fc, dp: 0, db: 0, carry: false, zero: false,
+                    overflow: false, negative: false, interrupt_disable: true,
+                    decimal: false, accumulator_is_8_bit: true, index_is_8_bit: true,
+                    emulation: false, waiting: false, stack_address: 0x01fd,
+                    stack_bytes: &[0xff, 0x7f, 0],
+                };
+                let mut cpu = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                    &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+                cpu.enable_cpu_write_trace();
+                let mut work = state.begin_dungeon_quadrant_upload(ROOM_BG2_TILEMAP_BASE,
+                    usize::from(quadrant), 0);
+                let mut source_stores = 0;
+                for _ in 0..6000 {
+                    if let Some(words) = DungeonQuadrantUploadWork::completed_words_at_source_pc(cpu.pc(), cpu.index_y()) {
+                        assert_eq!(words, source_stores, "pc={:06x} y={:04x}", cpu.pc(), cpu.index_y());
+                        state.advance_dungeon_quadrant_upload(&mut work, words);
+                        assert_eq!(&state.ram[0x1000..0x1800], &cpu.ram()[0x1000..0x1800]);
+                        assert_eq!(state.ram[0x045c], quadrant);
+                        assert_eq!(state.ram[0x0116], 0xa5);
+                        assert_eq!(state.ram[0x17], 9);
+                        assert_eq!(state.ram[0x0710], 9);
+                    }
+                    if cpu.is_complete() { break; }
+                    cpu.step();
+                    source_stores += (cpu.take_cpu_wram_writes().iter()
+                        .filter(|(address, _)| (0x1000..0x1800).contains(address)).count() / 2) as u16;
+                }
+                assert!(cpu.is_complete());
+                assert_eq!(source_stores, 1024);
+                state.complete_dungeon_quadrant_upload(work);
+                assert_eq!(&state.ram[0x1000..0x1800], &cpu.ram()[0x1000..0x1800]);
+                for address in [0x045c, 0x0116, 0x17, 0x0710] {
+                    assert_eq!(state.ram[address], cpu.ram()[address]);
+                }
+                eager.Dungeon_PrepareNextRoomQuadrantUpload();
+                assert_eq!(state.ram, eager.ram);
+                assert_eq!(state.game_state, eager.game_state);
+            }
+        }
     }
 }
 
@@ -219,6 +462,13 @@ impl ZeldaState {
     /// layer transitions without creating artificial object completions.
     pub(super) fn advance_dungeon_object_draw_one(&mut self, work: &mut DungeonObjectDrawWork) -> bool {
         assert_eq!(self.game_state.world.location.dungeon_room(), work.room);
+        if let Some(mut draw) = self.active_dungeon_object_4x2.take() {
+            let total = draw.count * 8;
+            self.advance_dungeon_4x2_draw_words(&mut draw, total);
+            self.dungeon_room_load_mut().set_draw_width_indicator_word(0);
+            work.completed_objects += 1;
+            return true;
+        }
         while !work.finished() {
             let room_layout = self.dungeon_room_layout(usize::from(work.room)).map(Vec::from)
                 .expect("room layout disappeared during object draw");
@@ -230,7 +480,11 @@ impl ZeldaState {
             };
             if let Some(stream) = stream {
                 if self.room_data_draw_next_object_from(&stream, &mut work.stream) {
-                    work.completed_objects += 1;
+                    // A tail-call boundary may return control to the scheduler
+                    // with this object's body still suspended.
+                    if self.active_dungeon_object_4x2.is_none() {
+                        work.completed_objects += 1;
+                    }
                     return true;
                 }
             }
@@ -253,6 +507,28 @@ impl ZeldaState {
             }
         }
         false
+    }
+
+    pub(super) fn advance_dungeon_object_4x2_prefix(
+        &mut self,
+        work: &mut DungeonObjectDrawWork,
+        ordinal: u16,
+        boundary: Dungeon4x2DrawBoundary,
+    ) {
+        assert_eq!(ordinal, work.completed_objects + 1);
+        if let Some(mut draw) = self.active_dungeon_object_4x2.take() {
+            self.advance_dungeon_4x2_draw_boundary(&mut draw, boundary);
+            self.active_dungeon_object_4x2 = Some(draw);
+        } else {
+            assert!(self.pending_dungeon_object_4x2_boundary.is_none());
+            self.pending_dungeon_object_4x2_boundary = Some(boundary);
+            assert!(self.advance_dungeon_object_draw_one(work));
+            assert!(self.pending_dungeon_object_4x2_boundary.is_none(),
+                "native next object did not enter the source 4x2 tail call");
+            assert!(self.active_dungeon_object_4x2.is_some());
+            assert_eq!(work.completed_objects + 1, ordinal,
+                "partial object was incorrectly marked complete");
+        }
     }
 
     pub fn parity_probe_direct_entrance(&mut self, entrance_index: u16) -> u16 {
@@ -409,9 +685,110 @@ impl ZeldaState {
         self.set_subsubmodule(0);
     }
 
+    /// Source-address bindings for immutable entrance data already owned by
+    /// the native asset pack. The continuation uses live WRAM for selectors.
+    pub(crate) fn native_dungeon_entrance_table_byte(&self, address: u32) -> Option<u8> {
+        let (asset, start) = match address {
+            0x02c813..=0x02c91c => (ENTRANCE_DATA_ASSETS.rooms, 0x02c813),
+            0x02c91d..=0x02cd44 => (ENTRANCE_DATA_ASSETS.relative_coords, 0x02c91d),
+            0x02cd45..=0x02ce4e => (ENTRANCE_DATA_ASSETS.scroll_x, 0x02cd45),
+            0x02ce4f..=0x02cf58 => (ENTRANCE_DATA_ASSETS.scroll_y, 0x02ce4f),
+            0x02cf59..=0x02d062 => (ENTRANCE_DATA_ASSETS.player_y, 0x02cf59),
+            0x02d063..=0x02d16c => (ENTRANCE_DATA_ASSETS.player_x, 0x02d063),
+            0x02d16d..=0x02d276 => (ENTRANCE_DATA_ASSETS.camera_y, 0x02d16d),
+            0x02d277..=0x02d380 => (ENTRANCE_DATA_ASSETS.camera_x, 0x02d277),
+            0x02d381..=0x02d405 => (ENTRANCE_DATA_ASSETS.blockset, 0x02d381),
+            0x02d406..=0x02d48a => (ENTRANCE_DATA_ASSETS.floor, 0x02d406),
+            0x02d48b..=0x02d50f => (ENTRANCE_DATA_ASSETS.palace, 0x02d48b),
+            0x02d510..=0x02d594 => (ENTRANCE_DATA_ASSETS.doorway_orientation, 0x02d510),
+            0x02d595..=0x02d619 => (ENTRANCE_DATA_ASSETS.starting_bg, 0x02d595),
+            0x02d61a..=0x02d69e => (ENTRANCE_DATA_ASSETS.quadrant1, 0x02d61a),
+            0x02d69f..=0x02d723 => (ENTRANCE_DATA_ASSETS.quadrant2, 0x02d69f),
+            0x02d724..=0x02d82d => (ENTRANCE_DATA_ASSETS.door_settings, 0x02d724),
+            0x02d82e..=0x02d8b2 => (27, 0x02d82e),
+            0x02db6e..=0x02db7b => (STARTING_POINT_ASSETS.rooms, 0x02db6e),
+            0x02db7c..=0x02dbb3 => (STARTING_POINT_ASSETS.relative_coords, 0x02db7c),
+            0x02dbb4..=0x02dbc1 => (STARTING_POINT_ASSETS.scroll_x, 0x02dbb4),
+            0x02dbc2..=0x02dbcf => (STARTING_POINT_ASSETS.scroll_y, 0x02dbc2),
+            0x02dbd0..=0x02dbdd => (STARTING_POINT_ASSETS.player_y, 0x02dbd0),
+            0x02dbde..=0x02dbeb => (STARTING_POINT_ASSETS.player_x, 0x02dbde),
+            0x02dbec..=0x02dbf9 => (STARTING_POINT_ASSETS.camera_y, 0x02dbec),
+            0x02dbfa..=0x02dc07 => (STARTING_POINT_ASSETS.camera_x, 0x02dbfa),
+            0x02dc08..=0x02dc0e => (STARTING_POINT_ASSETS.blockset, 0x02dc08),
+            0x02dc0f..=0x02dc15 => (STARTING_POINT_ASSETS.floor, 0x02dc0f),
+            0x02dc16..=0x02dc1c => (STARTING_POINT_ASSETS.palace, 0x02dc16),
+            0x02dc1d..=0x02dc23 => (STARTING_POINT_ASSETS.starting_bg, 0x02dc1d),
+            0x02dc24..=0x02dc2a => (STARTING_POINT_ASSETS.quadrant1, 0x02dc24),
+            0x02dc2b..=0x02dc31 => (STARTING_POINT_ASSETS.quadrant2, 0x02dc2b),
+            0x02dc32..=0x02dc3f => (STARTING_POINT_ASSETS.door_settings, 0x02dc32),
+            0x02dc40..=0x02dc4d => {
+                let offset = (address - 0x02dc40) as usize;
+                let value = *self.asset_raw(44)?.get(offset / 2)?;
+                return Some(if offset & 1 == 0 { value } else { 0 });
+            }
+            0x02dc4e..=0x02dc54 => (45, 0x02dc4e),
+            0x04f1de..=0x04f369 => (53, 0x04f1de),
+            0x04f36a..=0x04f489 => (54, 0x04f36a),
+            0x04f48a..=0x04f4e9 => (55, 0x04f48a),
+            _ => return None,
+        };
+        self.asset_raw(asset)?.get((address - start) as usize).copied()
+    }
+
     pub(super) fn Dungeon_LoadEntrance(&mut self) {
         let selection = self.dungeon_load_entrance_before_fields();
         self.dungeon_load_entrance_after_selection(selection, false);
+    }
+
+    /// Route retained entrance stores before generic startup RAM ranges. The
+    /// value comes from the live native caller; no source state is imported.
+    pub(crate) fn native_dungeon_entrance_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        let offset = if (0x7e0000..0x800000).contains(&address) {
+            address as usize - 0x7e0000
+        } else { address as usize };
+        match offset {
+            0x10a => {
+                assert!(matches!(width, 1 | 2));
+                self.game_state.system_signals.set_game_over_check_flag(value as u8);
+            }
+            0x10e => {
+                if width == 1 { self.set_which_entrance(value as u8); }
+                else { assert_eq!(width, 2); self.set_which_entrance_word(value); }
+            }
+            0x11a => { assert_eq!(width, 2); self.set_bg1_x_offset(value); }
+            0x11c => { assert_eq!(width, 2); self.set_bg1_y_offset(value); }
+            0x132 => { assert_eq!(width, 1); self.game_state.system_signals.set_queued_music_control(value as u8); }
+            0x4aa => { assert_eq!(width, 1); self.game_state.system_signals.set_restart_check_flag(value as u8); }
+            0x40c => { assert_eq!(width, 1); self.save_progress_mut().set_palace_index_x2(value as u8); }
+            0xec => { assert_eq!(width, 2); self.tile_detect_position_mut().set_location_calc_mask(value); }
+            0x1b | 0x20..=0x25 | 0x29 | 0x2f | 0x42..=0x45 | 0x6c |
+            0x8a..=0x8d | 0xa0..=0xa1 | 0xa4..=0xa7 | 0xa9..=0xaa |
+            0xe0..=0xe3 | 0xe6..=0xe9 | 0xee | 0x11e..=0x125 |
+            0x476 | 0x48e..=0x48f | 0x4bc..=0x4bd | 0x600..=0x61f |
+            0x696..=0x699 | 0xaa1 | 0xc140..=0xc167 | 0xc16a..=0xc173 |
+            0xf580..=0xf8ff | 0xf940..=0xfcbf => {
+                assert!(matches!(width, 1 | 2));
+                for byte in 0..usize::from(width) {
+                    let at = offset + byte;
+                    let v = (value >> (byte * 8)) as u8;
+                    // Keep both owners updated where the cartridge overlays
+                    // fields. Each publisher changes only this native byte.
+                    let mut owned = self.game_state.world.write_entrance_byte(at, v);
+                    owned |= self.game_state.dungeon.write_entrance_byte(at, v);
+                    owned |= self.game_state.player.follower_link.write_entrance_byte(at, v);
+                    owned |= self.game_state.display.ppu_scroll_copy.write_entrance_byte(at, v);
+                    if (0xf800..=0xf8ff).contains(&at) {
+                        self.game_state.memorized_tiles.write_address_byte(at - 0xf800, v);
+                        owned = true;
+                    }
+                    assert!(owned, "unowned dungeon entrance byte {at:04x}");
+                }
+            }
+            _ => return false,
+        }
+        self.ram[offset..offset + usize::from(width)]
+            .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        true
     }
 
     fn dungeon_load_entrance_before_fields(&mut self) -> (usize, bool) {
@@ -641,6 +1018,20 @@ impl ZeldaState {
             .set_quadrants_from_packed_nibbles(quadrant2);
 
         room
+    }
+
+    pub(crate) fn native_dungeon_spiral_background(index: usize) -> Option<u8> {
+        DUNGEON_RESET_TORCH_BACKGROUND_AND_PLAYER_SPIRAL_BG_PROPERTIES
+            .get(index)
+            .map(|&value| value as u8)
+    }
+
+    pub(crate) fn native_load_file_table_byte(address: u32) -> Option<u8> {
+        match address {
+            0x02811e..=0x028135 => DUNG_ANIMATED_TILES.get((address - 0x02811e) as usize).copied(),
+            0x02a1e5..=0x02a1e8 => DUNGEON_LIT_TORCH_COLOR_PLUS.get((address - 0x02a1e5) as usize).copied(),
+            _ => None,
+        }
     }
 
     pub(super) fn Dungeon_ResetTorchBackgroundAndPlayer(&mut self) {
@@ -1358,6 +1749,40 @@ impl ZeldaState {
             .copy_custom_tile_attrs(&custom_attrs);
     }
 
+    pub(crate) fn native_dungeon_visited_flag_byte(address: u32) -> Option<u8> {
+        address.checked_sub(0x02b5cc)
+            .and_then(|i| DUNGEON_QUADRANT_VISITING_FLAGS.get(i as usize))
+            .map(|&value| value as u8)
+    }
+
+    /// Physical immutable selectors and bytes for the custom attribute owner.
+    pub(crate) fn native_dungeon_custom_attribute_data(&self) -> Option<std::collections::BTreeMap<u32, u8>> {
+        let mut bytes = std::collections::BTreeMap::new();
+        for (base, asset) in [(0x0e9000, 51), (0x0e902a, 52)] {
+            for (i, &value) in self.asset_raw(asset)?.iter().enumerate() {
+                if let Some(previous) = bytes.insert(base + i as u32, value) {
+                    assert_eq!(previous, value, "overlapping custom attribute data");
+                }
+            }
+        }
+        Some(bytes)
+    }
+
+    pub(crate) fn native_dungeon_attribute_data(&self) -> Option<std::collections::BTreeMap<u32, u8>> {
+        let mut bytes = self.native_dungeon_custom_attribute_data()?;
+        for i in 0..16 {
+            for (b, value) in upper_bitmask(i).to_le_bytes().into_iter().enumerate() {
+                bytes.insert(0x0098c0 + (i * 2 + b) as u32, value);
+            }
+        }
+        for (i, pair) in DUNGEON_LOAD_SINGLE_DOOR_ATTRIBUTE_TILE_ATTRS_BY_DOOR.iter().enumerate() {
+            for b in 0..2 {
+                bytes.insert(0x009a52 + (i * 2 + b) as u32, pair.0[b].cartridge_attribute());
+            }
+        }
+        Some(bytes)
+    }
+
     pub(super) fn SaveDungeonKeys(&mut self) {
         let mut idx = self.game_state.inventory.save_progress.palace_index_x2();
         if idx == 0xff {
@@ -1379,6 +1804,85 @@ impl ZeldaState {
         self.dungeon_load_room_before_floors();
         self.RoomDraw_DrawFloorsCurrentRoom();
         self.dungeon_load_room_after_floors();
+    }
+
+    /// Stores from DungeonRoom itself, excluding its retained child routines.
+    pub(crate) fn native_dungeon_room_parent_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        let offset = address as usize;
+        match offset {
+            0x41c => { assert_eq!(width, 2); self.bg1_move_calc_mut().set_buffer(value); }
+            0x68a => { assert_eq!(width, 2); self.water_hdma_window_mut().set_window_y_radius_alt(value); }
+            0xb7 | 0xb8 | 0xba | 0xc0..=0xde | 0xfc | 0x310 | 0x312 | 0x3f4 |
+            0x40e | 0x41a | 0x420 | 0x422 | 0x424 | 0x428 | 0x42c | 0x42e |
+            0x430 | 0x432 | 0x436 | 0x438 | 0x43a | 0x43c | 0x43e |
+            0x440 | 0x442 | 0x444 | 0x446 | 0x448 | 0x44e | 0x450 | 0x452 |
+            0x454 | 0x456 | 0x45c | 0x460 | 0x478 | 0x47e | 0x480 | 0x482 |
+            0x484 | 0x496 | 0x498 | 0x49a | 0x49c | 0x49e | 0x4a2 | 0x4a4 |
+            0x4a6 | 0x4a8 | 0x4ae | 0x4b0 | 0x4f0..=0x55e | 0x1980..=0x19e8 => {
+                assert_eq!(width, if offset == 0x3f4 { 1 } else { 2 });
+                for byte in 0..usize::from(width) {
+                    let at = offset + byte;
+                    assert!(self.game_state.dungeon.write_room_parent_byte(at, (value >> (byte * 8)) as u8),
+                        "unowned dungeon room parent byte {at:04x}");
+                }
+            }
+            _ => return false,
+        }
+        self.ram[offset..offset + usize::from(width)]
+            .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        true
+    }
+
+    /// The retained object parser owns its dimensions and stream cursor.
+    /// Byte-sized dimensions preserve the native high byte left by the clear.
+    pub(crate) fn native_dungeon_object_parser_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        match address {
+            0xb2 | 0xb4 => assert!(matches!(width, 1 | 2)),
+            0xba => assert_eq!(width, 2),
+            _ => return false,
+        }
+        for byte in 0..usize::from(width) {
+            self.game_state.dungeon.write_object_parser_byte(address as usize + byte, (value >> (byte * 8)) as u8);
+        }
+        self.ram[address as usize..address as usize + usize::from(width)]
+            .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        true
+    }
+
+    /// Shared object drawers publish their actual stores, including floor-block
+    /// children and the word counter spanning a dungeon and player field.
+    pub(crate) fn native_dungeon_object_tile_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        if matches!(address, 0xb2 | 0xb4) {
+            assert_eq!(width, 2);
+            return self.native_dungeon_object_parser_store(address, value, width);
+        }
+        if self.native_dungeon_floor_store(address, value, width) { return true; }
+        if !matches!(address, 0x3f4 | 0x47c | 0x4b0) { return false; }
+        assert_eq!(width, 2);
+        self.game_state.dungeon.write_object_tile_word(address as usize, value);
+        if address == 0x3f4 {
+            self.game_state.player.follower_link.write_temp_bunny_timer_low((value >> 8) as u8);
+        }
+        self.ram[address as usize..address as usize + 2].copy_from_slice(&value.to_le_bytes());
+        true
+    }
+
+    /// Floor drawing retires one pointer, selector or tile store at a time.
+    /// Do not project the other layer or the live line-pointer table with it.
+    pub(crate) fn native_dungeon_floor_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        let offset = if (0x7e0000..0x800000).contains(&address) {
+            address as usize - 0x7e0000
+        } else { address as usize };
+        if !matches!(offset, 0xba | 0xbf..=0xde | 0x46a | 0x490 | 0x2000..=0x5ffe) {
+            return false;
+        }
+        assert_eq!(width, 2);
+        if offset >= 0x2000 { assert_eq!(offset & 1, 0); }
+        for byte in 0..2 {
+            assert!(self.game_state.dungeon.write_floor_byte(offset + byte, (value >> (byte * 8)) as u8));
+        }
+        self.ram[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+        true
     }
 
     fn dungeon_load_room_before_floors(&mut self) {
@@ -1569,6 +2073,82 @@ impl ZeldaState {
     fn dungeon_load_room_reset_floor_velocity(&mut self) {
         self.dungeon_moving_floor_mut().set_floor_y_velocity(0);
         self.dungeon_moving_floor_mut().set_floor_x_velocity(0);
+    }
+
+    /// The retained header CPU owns these stores; its stack and direct-page
+    /// work bytes continue through the shared native bus.
+    pub(crate) fn native_dungeon_header_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        let offset = if (0x7e0000..0x800000).contains(&address) {
+            address as usize - 0x7e0000
+        } else { address as usize };
+        match offset {
+            0xaa2 => { assert_eq!(width, 1); self.world_palette_theme_mut().set_aux_tile_theme_index(value as u8); }
+            0xaa3 => { assert_eq!(width, 1); self.sprite_system_mut().set_graphics_index(value as u8); }
+            0xaac => { assert_eq!(width, 1); self.set_sp0l(value as u8); }
+            0xaad => { assert_eq!(width, 1); self.set_sp5l(value as u8); }
+            0xaae => { assert_eq!(width, 1); self.set_sp6l(value as u8); }
+            0xab6 => { assert_eq!(width, 1); self.set_palette_main_indoors(value as u8); }
+            0xad..=0xaf | 0xb7..=0xb8 | 0x110 | 0x400 | 0x402 | 0x408 |
+            0x414 | 0x468 | 0x46c | 0x4ba | 0x62c | 0x62e | 0x63c..=0x642 |
+            0x646 | 0x68c | 0x1100 | 0x1110..=0x1120 | 0x19a0..=0x19be |
+            0xc000..=0xc006 | 0xc208 => {
+                assert!(matches!(width, 1 | 2));
+                for byte in 0..usize::from(width) {
+                    let at = offset + byte;
+                    assert!(self.game_state.dungeon.write_header_byte(at, (value >> (byte * 8)) as u8),
+                        "unowned dungeon header byte {at:04x}");
+                }
+            }
+            _ => return false,
+        }
+        self.ram[offset..offset + usize::from(width)]
+            .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        true
+    }
+
+    /// Immutable packed headers and door records from native assets at their
+    /// physical addresses. Shared records must agree byte for byte.
+    /// Mutable door flags and scratch are never included in this data image.
+    pub(crate) fn native_dungeon_header_data(&self) -> Option<std::collections::BTreeMap<u32, u8>> {
+        use crate::cycle_models::dungeon_data::DOOR_POINTERS;
+        let mut bytes = std::collections::BTreeMap::new();
+        let mut insert = |address: u32, data: &[u8]| -> Option<()> {
+            for (i, &value) in data.iter().enumerate() {
+                if let Some(old) = bytes.insert(address + i as u32, value) {
+                    if old != value { return None; }
+                }
+            }
+            Some(())
+        };
+        let headers = self.assets.as_ref()?.asset_by_name("kDungeonHeaderEncoding")?;
+        if headers.len() != 0xefe { return None; }
+        insert(0x04f502, &headers[..0xafe])?;
+        // Palette selectors are bytes, including FF in unused packed headers.
+        // Bind their entire immutable read window, not only the named palettes.
+        insert(0x0ed460, &headers[0xafe..])?;
+        for room in 0..320 {
+            let door = DOOR_POINTERS[room];
+            insert(0x1f83c0 + room as u32 * 3, &door.to_le_bytes()[..3])?;
+            let data = self.GetRoomDoorInfo(room)?;
+            let end = data.chunks_exact(2).take(9).position(|v| v == [255, 255])? * 2 + 2;
+            insert(door, &data[..end])?;
+        }
+        for (i, value) in DUNGEON_LOAD_HEADER_ADJUSTMENTS.iter().enumerate() {
+            insert(0x01b560 + i as u32 * 2, &value.to_le_bytes())?;
+        }
+        for (i, value) in DUNG_PAL_INFOS.iter().enumerate() {
+            insert(0x0ed460 + i as u32 * 4, value)?;
+        }
+        for (i, value) in DUNGEON_CHECK_ADJACENT_ROOMS_FOR_OPEN_DOORS_LOOKUP_TABLE.iter().enumerate() {
+            insert(0x009aa2 + i as u32 * 2, &value.to_le_bytes())?;
+        }
+        for (i, value) in DUNGEON_CHECK_ADJACENT_ROOMS_FOR_OPEN_DOORS_LOOKUP_TABLE2.iter().enumerate() {
+            insert(0x009ad2 + i as u32 * 2, &value.to_le_bytes())?;
+        }
+        for i in 0..16 {
+            insert(0x0098c0 + i as u32 * 2, &upper_bitmask(i).to_le_bytes())?;
+        }
+        Some(bytes)
     }
 
     pub(super) fn Dungeon_LoadHeader(&mut self) {
@@ -1796,6 +2376,29 @@ impl ZeldaState {
         }
     }
 
+    /// Immutable floor tiles and pointer tables, shared with semantic drawing.
+    pub(crate) fn native_dungeon_floor_data(&self) -> Option<std::collections::BTreeMap<u32, u8>> {
+        use crate::game_state::{
+            DUNGEON_DRAW_OBJECT_OFFSETS_BG1, DUNGEON_DRAW_OBJECT_OFFSETS_BG2,
+        };
+        let mut bytes = std::collections::BTreeMap::new();
+        for (base, data) in [
+            (0x0186f8, DUNGEON_DRAW_OBJECT_OFFSETS_BG1.as_slice()),
+            (0x018719, DUNGEON_DRAW_OBJECT_OFFSETS_BG2.as_slice()),
+            (0x009b52, self.asset_raw(69)?.get(..256)?),
+        ] {
+            for (i, &value) in data.iter().enumerate() {
+                bytes.insert(base + i as u32, value);
+            }
+        }
+        for (i, &offset) in DUNGEON_QUADRANT_OFFSETS.iter().enumerate() {
+            for (b, value) in (offset as u16).to_le_bytes().into_iter().enumerate() {
+                bytes.insert(0x009b02 + (i * 2 + b) as u32, value);
+            }
+        }
+        Some(bytes)
+    }
+
     pub(super) fn RoomDraw_DrawFloors(&mut self, level_data: &[u8]) {
         // Cycle ledger: RoomDraw_DrawFloors $01:89DC, entered with M=16 X=16.
         let _scope = crate::cycle_ledger::routine(0x01_89dc);
@@ -1870,6 +2473,116 @@ impl ZeldaState {
             .copy_bg1_draw_line_offsets();
         self.RoomData_DrawObjects_from(&room_layout);
         self.dungeon_room_load_mut().set_load_ptr_offset(0x0120);
+    }
+
+    /// Immutable parameters, dispatch addresses and tile data for native object owners.
+    pub(crate) fn native_dungeon_object_data(&self) -> Option<std::collections::BTreeMap<u32, u8>> {
+        use crate::cycle_models::dungeon_data::*;
+        let mut bytes = self.native_dungeon_floor_data()?;
+        let mut insert_word = |address: u32, value: u16| {
+            for (i, v) in value.to_le_bytes().into_iter().enumerate() {
+                bytes.insert(address + i as u32, v);
+            }
+        };
+        for (base, targets) in [
+            (0x018200, OBJECT_TARGETS_ORDINARY.as_slice()),
+            (0x018470, OBJECT_TARGETS_EXTENDED.as_slice()),
+            (0x0185f0, OBJECT_TARGETS_SIZED.as_slice()),
+            (0x0186f0, OBJECT_TARGETS_DOOR.as_slice()),
+        ] {
+            for (i, &target) in targets.iter().enumerate() { insert_word(base + i as u32 * 2, target); }
+        }
+        for (base, count, param) in [
+            (0x018000, 248, object_subtype1_param as fn(u8) -> Option<usize>),
+            (0x0183f0, 64, object_subtype2_param as fn(u8) -> Option<usize>),
+            (0x0184f0, 128, object_subtype3_param as fn(u8) -> Option<usize>),
+        ] {
+            for i in 0..count { insert_word(base + i as u32 * 2, param(i as u8)? as u16); }
+        }
+        for (base, sizes) in [(0x009b0a, MOVING_WALL_SIZE_TABLE0), (0x009b12, MOVING_WALL_SIZE_TABLE1)] {
+            for (i, size) in sizes.into_iter().enumerate() { insert_word(base + i as u32 * 2, size); }
+        }
+        // Water overlays use 2..5 blocks, their pixel radii, and 2*n-1 tile rows.
+        for indicator in 0..4u16 {
+            let blocks = indicator + 2;
+            insert_word(0x009b3a + u32::from(indicator) * 2, blocks);
+            insert_word(0x009b42 + u32::from(indicator) * 2, blocks << 4);
+            insert_word(0x009b4a + u32::from(indicator) * 2, blocks * 2 - 1);
+        }
+        for (i, mask) in DUNGEON_CHEST_OPEN_MASKS.into_iter().enumerate() {
+            insert_word(0x009900 + i as u32 * 2, mask);
+        }
+        for i in 0..16 {
+            insert_word(0x0098c0 + i as u32 * 2, upper_bitmask(i));
+        }
+        for (i, value) in DOOR_TYPE_REMAP.into_iter().enumerate() {
+            insert_word(0x009a02 + i as u32 * 2, u16::from(value));
+        }
+        // Opened stair-mask types can index past the right-door table into
+        // the adjacent animation sources; retain their actual data addresses.
+        for (base, words) in [(0x00997e, DOOR_POSITION_UP.as_slice()), (0x009996, DOOR_POSITION_DOWN.as_slice()), (0x0099ae, DOOR_POSITION_LEFT.as_slice()), (0x0099c6, DOOR_POSITION_RIGHT.as_slice()), (0x0099de, DOOR_BLAST_WALL_UP_DESTINATIONS.as_slice()), (0x00cd9e, DOOR_TYPE_SRC_UP.as_slice()), (0x00ce06, DOOR_TYPE_SRC_DOWN.as_slice()), (0x00ce66, DOOR_TYPE_SRC_LEFT.as_slice()), (0x00cec6, DOOR_TYPE_SRC_RIGHT.as_slice()), (0x00cf24, DOOR_ANIMATION_UP_SOURCES.as_slice())] {
+            for (i, &value) in words.iter().enumerate() {
+                insert_word(base + i as u32 * 2, value);
+            }
+        }
+        // High bytes of the two saved-room tag masks used by the wall gate.
+        for slot in 0..2 {
+            bytes.insert(0x0098c7 + slot * 2, ((0x1000u16 >> slot) >> 8) as u8);
+        }
+        for (i, &value) in self.asset_raw(69)?.iter().enumerate() {
+            bytes.insert(0x009b52 + i as u32, value);
+        }
+        for (i, &value) in WATERGATE_LAYOUT_BYTES.iter().enumerate() {
+            bytes.insert(0x04f1cd + i as u32, value);
+        }
+        Some(bytes)
+    }
+
+    /// Complete immutable room streams at their physical addresses. This composes
+    /// native assets only; mutable saved objects and parser scratch stay on the bus.
+    pub(crate) fn native_dungeon_room_data(&self) -> Option<std::collections::BTreeMap<u32, u8>> {
+        use crate::cycle_models::dungeon_data::{ROOM_POINTERS, DEFAULT_LAYOUT_POINTERS};
+        let mut bytes = self.native_dungeon_object_data()?;
+        let mut insert = |address: u32, data: &[u8]| -> Option<()> {
+            for (i, &value) in data.iter().enumerate() {
+                if let Some(old) = bytes.insert(address + i as u32, value) {
+                    if old != value { return None; }
+                }
+            }
+            Some(())
+        };
+        for (base, pointers, asset, offsets) in [
+            (0x1f8000, ROOM_POINTERS.as_slice(), 3, 4),
+            (0x04ef2f, DEFAULT_LAYOUT_POINTERS.as_slice(), 46, 47),
+        ] {
+            let data = self.asset_raw(asset)?;
+            let offsets: Vec<_> = self.asset_raw(offsets)?.chunks_exact(2)
+                .map(|v| usize::from(u16::from_le_bytes([v[0], v[1]]))).collect();
+            if offsets.len() != pointers.len() { return None; }
+            for (i, &address) in pointers.iter().enumerate() {
+                insert(base + i as u32 * 3, &address.to_le_bytes()[..3])?;
+                let start = offsets[i];
+                let end = offsets.iter().copied().filter(|&v| v > start).min().unwrap_or(data.len());
+                insert(address, data.get(start..end)?)?;
+            }
+        }
+        for (address, value) in self.native_dungeon_header_data()? {
+            insert(address, &[value])?;
+        }
+        Some(bytes)
+    }
+
+    /// Immutable selectors used by the room-buffer preparation and DMA caller.
+    pub(crate) fn native_dungeon_upload_data(&self) -> Option<std::collections::BTreeMap<u32, u8>> {
+        let mut bytes = self.native_dungeon_room_data()?;
+        for (i, &value) in UPLOAD_BG_SRCS.iter().enumerate() {
+            for (b, v) in (value as u16).to_le_bytes().into_iter().enumerate() {
+                bytes.insert(0x00910f + (i * 2 + b) as u32, v);
+            }
+        }
+        for (i, &v) in UPLOAD_BG_DSTS.iter().enumerate() { bytes.insert(0x00912f + i as u32, v); }
+        for (i, &v) in NMI_VRAM_ADDRS.iter().enumerate() { bytes.insert(0x009888 + i as u32, v as u8); }
+        Some(bytes)
     }
 
     pub(super) fn RoomData_DrawObjects_from(&mut self, layout: &[u8]) {
@@ -4278,19 +4991,45 @@ impl ZeldaState {
         dsto: u16,
         count: u16,
     ) {
-        let mut dst = dsto;
-        for _ in 0..count {
-            for x in 0..4 {
-                for y in 0..2 {
-                    self.room_write_current(
-                        dst + x + y * 64,
-                        self.tile_word(src, (y * 4 + x) as usize),
-                    );
-                }
-            }
-            dst = dst.wrapping_add(increment);
+        let mut work = Dungeon4x2DrawWork {
+            base: self.game_state.dungeon.room_tilemaps.first_line_pointer_row0() as usize,
+            increment, src, dsto, count, completed_words: 0,
+        };
+        if let Some(boundary) = self.pending_dungeon_object_4x2_boundary.take() {
+            assert!(self.active_dungeon_object_4x2.is_none());
+            self.advance_dungeon_4x2_draw_boundary(&mut work, boundary);
+            self.active_dungeon_object_4x2 = Some(work);
+            return;
         }
+        self.advance_dungeon_4x2_draw_words(&mut work, count * 8);
         self.dungeon_room_load_mut().set_draw_width_indicator(0);
+    }
+
+    fn advance_dungeon_4x2_draw_boundary(
+        &mut self,
+        work: &mut Dungeon4x2DrawWork,
+        boundary: Dungeon4x2DrawBoundary,
+    ) {
+        let blocks = work.count.checked_sub(boundary.remaining_blocks)
+            .expect("4x2 source boundary exceeds the native object's block count");
+        assert!(boundary.words_in_block <= 8);
+        let target = blocks * 8 + u16::from(boundary.words_in_block);
+        self.advance_dungeon_4x2_draw_words(work, target);
+        self.dungeon_room_load_mut().set_draw_width_indicator_word(work.count - blocks);
+    }
+
+    fn advance_dungeon_4x2_draw_words(&mut self, work: &mut Dungeon4x2DrawWork, target: u16) {
+        assert!(work.completed_words <= target && target <= work.count * 8);
+        while work.completed_words < target {
+            let block = work.completed_words / 8;
+            let field = work.completed_words % 8;
+            // The source stores src[0..4] on the first row, then src[4..8]
+            // on the second row. Overlapping blocks retain that order too.
+            let dst = work.dsto.wrapping_add(block.wrapping_mul(work.increment))
+                .wrapping_add(field % 4 + (field / 4) * 64);
+            self.room_write_bg(work.base, dst, self.tile_word(work.src, usize::from(field)));
+            work.completed_words += 1;
+        }
     }
 
     pub(super) fn Object_Table_Helper(&mut self, src: usize, dsto: u16, width: u16) {
@@ -5595,21 +6334,16 @@ impl ZeldaState {
 
     pub(super) fn Dungeon_PrepareNextRoomQuadrantUpload(&mut self) {
         let quadrant = self.game_state.dungeon.room_load.quadrant_upload_index() as usize;
-        self.Dungeon_PrepareNextRoomQuadrantUploadFromBg2(quadrant, 0);
-        self.dungeon_room_load_mut()
-            .advance_quadrant_upload_index_by(4);
+        let work = self.begin_dungeon_quadrant_upload(ROOM_BG2_TILEMAP_BASE, quadrant, 0);
+        self.complete_dungeon_quadrant_upload(work);
     }
 
-    pub(super) fn Dungeon_PrepareNextRoomQuadrantUploadFromBg2(
-        &mut self,
-        quadrant_upload: usize,
-        dst_bias: u8,
-    ) {
-        self.Dungeon_PrepareNextRoomQuadrantUploadFrom(
-            ROOM_BG2_TILEMAP_BASE,
-            quadrant_upload,
-            dst_bias,
-        );
+    pub(super) fn complete_dungeon_quadrant_upload(&mut self, mut work: DungeonQuadrantUploadWork) {
+        self.advance_dungeon_quadrant_upload(&mut work, 1024);
+        // $00:91B3 precedes the target-page and NMI-request stores.
+        self.dungeon_room_load_mut()
+            .advance_quadrant_upload_index_by(4);
+        self.publish_dungeon_quadrant_upload(work);
     }
 
     pub(super) fn Dungeon_PrepareNextRoomQuadrantUploadFrom(
@@ -5618,35 +6352,38 @@ impl ZeldaState {
         quadrant_upload: usize,
         dst_bias: u8,
     ) {
+        let mut work = self.begin_dungeon_quadrant_upload(source_base, quadrant_upload, dst_bias);
+        self.advance_dungeon_quadrant_upload(&mut work, 1024);
+        self.publish_dungeon_quadrant_upload(work);
+    }
+
+    fn begin_dungeon_quadrant_upload(&self, source_base: usize, quadrant_upload: usize,
+        dst_bias: u8) -> DungeonQuadrantUploadWork {
         let table_index = ((self.screen_transition() as usize & 0x0f) + quadrant_upload)
             & ROOM_QUADRANT_UPLOAD_TABLE_MASK;
-        let mut src = UPLOAD_BG_SRCS[table_index];
-        let mut p = 0usize;
-        loop {
-            loop {
-                for y in 0..4 {
-                    for x in 0..2 {
-                        let value = self
-                            .game_state
-                            .dungeon
-                            .room_tilemaps
-                            .room_tilemap_word_by_byte_offset(source_base, src + xy(x, y) * 2);
-                        self.write_vram_upload_tilemap_word((p + y * 32 + x) * 2, value);
-                    }
-                }
-                src += 2 * 2;
-                p += 2;
-                if p & 0x1f == 0 {
-                    break;
-                }
-            }
-            src += 224 * 2;
-            p += 128 - 32;
-            if p == 0x400 {
-                break;
-            }
+        DungeonQuadrantUploadWork { source_base, table_index, dst_bias, completed_words: 0 }
+    }
+
+    fn advance_dungeon_quadrant_upload(&mut self, work: &mut DungeonQuadrantUploadWork, words: u16) {
+        assert!(words >= work.completed_words && words <= 1024);
+        while work.completed_words < words {
+            let ordinal = usize::from(work.completed_words);
+            let row = ordinal / 128;
+            let block = ordinal % 128 / 8;
+            let y = ordinal % 8 / 2;
+            let x = ordinal % 2;
+            let src = UPLOAD_BG_SRCS[work.table_index] + row * 512 + block * 4 + xy(x, y) * 2;
+            let dst = (row * 128 + block * 2 + y * 32 + x) * 2;
+            let value = self.game_state.dungeon.room_tilemaps
+                .room_tilemap_word_by_byte_offset(work.source_base, src);
+            self.write_vram_upload_tilemap_word(dst, value);
+            work.completed_words += 1;
         }
-        self.set_nmi_load_target_page(UPLOAD_BG_DSTS[table_index] + dst_bias);
+    }
+
+    fn publish_dungeon_quadrant_upload(&mut self, work: DungeonQuadrantUploadWork) {
+        assert_eq!(work.completed_words, 1024);
+        self.set_nmi_load_target_page(UPLOAD_BG_DSTS[work.table_index] + work.dst_bias);
         self.set_pending_nmi_subroutine(1);
         self.set_core_update_disable_flag(1);
     }
@@ -6344,8 +7081,10 @@ impl ZeldaState {
                 self.set_subsubmodule(0);
                 return;
             }
+            // B86E branches past adjustment when the room indices match.
+            // The C translation inverted this condition; follow the ROM.
             if self.game_state.dungeon.room_tracking.room_index2()
-                == self.game_state.world.location.dungeon_room_index()
+                != self.game_state.world.location.dungeon_room_index()
             {
                 let previous_room = self.game_state.dungeon.room_tracking.room_index2();
                 self.dungeon_room_tracking_mut()
@@ -8095,26 +8834,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Sprite_HandlePushedBlocks_One(&mut self, i: usize) {
-        self.oam_allocate_from_region_b(4);
-
-        let y = self
-            .game_state
-            .player
-            .pushed_block
-            .y(i)
-            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())
-            .wrapping_sub(1);
-        let x = self
-            .game_state
-            .player
-            .pushed_block
-            .x(i)
-            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
-
-        if self.game_state.player.pushed_block.animation_mode() < 3 {
-            self.oam_state_mut()
-                .write_current_entry_with_extended(x as u8, y as u8, 12, 0x20, 2);
-        }
+        self.sprite_dungeon_draw_single_push_block(i * 2);
     }
 
     pub(super) fn Object_Draw_DoorLeft_3x4(&mut self, src: u16, door: usize) {
@@ -10144,14 +10864,21 @@ impl ZeldaState {
         self.SaveDungeonKeys();
     }
 
-    pub(super) fn Dung_TagRoutine_0x00(&mut self, _k: usize) {}
+    pub(super) fn Dung_TagRoutine_0x00(&mut self, _k: usize) {
+        let _scope = crate::cycle_ledger::routine(0x01_c328);
+        crate::cycle_ledger::charge(42); // RTS, including the empty tag's return.
+    }
 
     pub(super) fn Dungeon_DetectStaircase(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x01_c329);
+        crate::cycle_ledger::charge(94); // Direction mask and no-probe branch.
         let k = self.game_state.player.follower_link.direction() & 12;
         if k == 0 {
+            crate::cycle_ledger::charge(6 + 64); // Taken branch and shared SEP/RTS.
             return;
         }
 
+        crate::cycle_ledger::charge(400);
         let lookup = DUNGEON_DETECT_STAIRCASE_BUGGY_LOOKUP[(k >> 1) as usize] as i16 as u16;
         let mut pos = (self
             .game_state
@@ -10167,36 +10894,54 @@ impl ZeldaState {
             .player
             .follower_link
             .lower_level_tilemap_offset();
+        crate::cycle_ledger::charge(if self.game_state.player.follower_link.lower_level_state() == 0 { 6 } else { 24 });
+        crate::cycle_ledger::charge(138 + if k == 4 { 52 } else { 6 } + 130);
 
         let at_pos = pos.wrapping_add(if k == 4 { 0x80 } else { 0 }) as usize;
         let head = self.game_state.dungeon.bg2_attributes.bg2_tile(at_pos);
+        crate::cycle_ledger::charge(match head.cartridge_attribute() {
+            0x26 => 6,
+            0x38 => 32 + 6,
+            0x39 => 64 + 6,
+            0x5e => 96 + 6,
+            0x5f => 128,
+            _ => 128 + 6,
+        });
         let straight = match head.dungeon_role() {
             DungeonRole::StraightStairHead { descending } => Some(descending),
             DungeonRole::SpiralStairHead | DungeonRole::WallSpiralStairHead { .. } => None,
-            _ => return,
+            _ => {
+                crate::cycle_ledger::charge(64);
+                return;
+            }
         };
 
+        crate::cycle_ledger::charge(148); // Save head, load landing and test attribute.
         let landing = self
             .game_state
             .dungeon
             .bg2_attributes
             .bg2_tile(pos as usize + xy(0, 1));
         if !matches!(landing.dungeon_role(), DungeonRole::StairLanding { .. }) {
+            crate::cycle_ledger::charge(6 + 28 + 64); // Taken branch, PLA, shared return.
             return;
         }
         let attr2 = landing.cartridge_attribute();
 
+        crate::cycle_ledger::charge(48); // Carry/lift sign test.
         if self
             .game_state
             .player
             .follower_link
             .is_lifting_or_carrying()
         {
+            crate::cycle_ledger::charge(144 + 64); // Restore previous Y, shared return.
             self.follower_link_state_mut()
                 .restore_y_from_previous_position();
             return;
         }
 
+        crate::cycle_ledger::charge(6 + 210); // Taken BPL, stair/room stores, quadrant JSL.
         self.dungeon_stair_movement_mut().set_staircase_index(attr2);
         self.dungeon_stair_movement_mut()
             .set_staircase_index_high((pos >> 8) as u8);
@@ -10205,16 +10950,26 @@ impl ZeldaState {
             .set_previous_room_index_word(dungeon_room);
         self.Dungeon_FlagRoomData_Quadrants();
 
+        crate::cycle_ledger::charge(78 + match head.cartridge_attribute() {
+            0x38 => 6,
+            0x39 => 32,
+            _ => 32 + 6,
+        }); // Resume after quadrant call and test straight-stair heads.
         if let Some(descending) = straight {
+            crate::cycle_ledger::charge(80);
             self.dungeon_stair_movement_mut()
                 .set_staircase_move_counter(0x20);
             if descending {
+                crate::cycle_ledger::charge(6 + 62); // Taken south branch and JSL.
                 self.Dungeon_StartInterRoomTrans_Down();
             } else {
+                crate::cycle_ledger::charge(62);
                 self.Dungeon_StartInterRoomTrans_Up();
+                crate::cycle_ledger::charge(22); // BRA after north call returns.
             }
         }
 
+        crate::cycle_ledger::charge(246); // Destination/plane lookup and lower-floor test.
         let j = (self.game_state.dungeon.stair_movement.staircase_index() & 3) as usize;
         let room = self.game_state.dungeon.header.travel_destination(j + 1);
         let plane = self.game_state.dungeon.header.staircase_plane(j);
@@ -10228,6 +10983,12 @@ impl ZeldaState {
         } else {
             0
         };
+        crate::cycle_ledger::charge(if self.game_state.player.follower_link.lower_level_state() != 0 {
+            6
+        } else {
+            64 + if lower_level_status != 0 { 16 } else { 6 }
+        });
+        crate::cycle_ledger::charge(292); // Clear action state, restore head, spiral test.
         self.set_dungeon_room_index(room);
         self.dungeon_stair_movement_mut()
             .set_current_staircase_plane(plane);
@@ -10242,6 +11003,7 @@ impl ZeldaState {
         self.follower_link_state_mut().clear_direction_lock_bits(1);
 
         if head == NativeTile::SPIRAL_STAIR_HEAD {
+            crate::cycle_ledger::charge(6 + 104);
             self.set_submodule(6);
             let sound_effect_1 = if self
                 .game_state
@@ -10250,17 +11012,26 @@ impl ZeldaState {
                 .current_staircase_plane()
                 < 0x34
             {
+                crate::cycle_ledger::charge(6);
                 22
             } else {
+                crate::cycle_ledger::charge(16);
                 24
             };
+            crate::cycle_ledger::charge(74); // Sound store and RTS.
             self.set_sound_effect_1(sound_effect_1);
         } else if let Some(descending) = straight {
+            crate::cycle_ledger::charge(48 + if descending { 48 } else { 0 } + 6 + 86);
             let submodule = if descending { 19 } else { 18 };
             self.set_submodule(submodule);
+            // The source's LinkResetPushTimer is semantically inlined here.
+            crate::cycle_ledger::charge_routine(0x07_f3f3, 192);
             self.follower_link_state_mut().set_push_fatigue_timer(7);
+            crate::cycle_ledger::charge(42);
         } else {
+            crate::cycle_ledger::charge(96 + 62); // Straight tests and wall-stair JSL.
             self.UsedForStraightInterRoomStaircase();
+            crate::cycle_ledger::charge(82); // LDX/STX submodule and RTS after the call.
             self.set_submodule(14);
         }
     }
@@ -11109,11 +11880,7 @@ impl ZeldaState {
             // Dungeon_LoadRoom's floor and object loops cross multiple CPU
             // hosts. Retain their translated cursors until the source-owned
             // statement completions, as for the entrance room loader.
-            self.Dungeon_LoadHeader();
-            self.dungeon_load_room_before_floors();
-            assert!(self.active_early_dungeon_floor_draw.is_none());
-            self.active_early_dungeon_floor_draw = self.begin_dungeon_floor_draw_current_room();
-            assert!(self.active_early_dungeon_floor_draw.is_some());
+            self.begin_live_dungeon_supertile_room_load();
         } else {
             self.Dungeon_LoadRoom();
         }
@@ -11122,6 +11889,16 @@ impl ZeldaState {
         }
         self.finish_live_dungeon_supertile_room_load();
         self.continue_module07_02_01_after_room_load();
+    }
+
+    /// Begin the shared Dungeon_LoadRoom draw without publishing its floor,
+    /// object, or post-object work before that work's continuation advances.
+    pub(super) fn begin_live_dungeon_supertile_room_load(&mut self) {
+        self.Dungeon_LoadHeader();
+        self.dungeon_load_room_before_floors();
+        assert!(self.active_early_dungeon_floor_draw.is_none());
+        self.active_early_dungeon_floor_draw = self.begin_dungeon_floor_draw_current_room();
+        assert!(self.active_early_dungeon_floor_draw.is_some());
     }
 
     pub(super) fn finish_live_dungeon_supertile_room_load(&mut self) {
@@ -11688,6 +12465,19 @@ impl ZeldaState {
         if self.game_state.frame.subsubmodule == 6 {
             self.stage_dungeon_supertile_quadrant_upload_obj_scanout();
         }
+        if let Some((words, boundary)) = self.take_native_exact_cpu_quadrant_copy_boundary() {
+            let quadrant = usize::from(self.game_state.dungeon.room_load.quadrant_upload_index());
+            let mut copy = self.begin_dungeon_quadrant_upload(ROOM_BG2_TILEMAP_BASE, quadrant, 0);
+            self.advance_dungeon_quadrant_upload(&mut copy, words);
+            let work = GameWorkContinuation::FinishDungeonSupertileTransition {
+                work: DungeonSupertileTransitionWork::QuadrantUploadCopy { copy },
+            };
+            match boundary {
+                OriginalTimingBoundary::HostReturn => self.game_execution_scheduler.schedule_work(work, 1),
+                OriginalTimingBoundary::NmiAccepted => self.game_execution_scheduler.schedule_after_current_trailing_nmi(work),
+            }
+            return;
+        }
         self.Dungeon_PrepareNextRoomQuadrantUpload();
         if self.rom_startup_timing()
             && self.game_state.frame.submodule == 2
@@ -12194,9 +12984,13 @@ impl ZeldaState {
     /// authority handoff which lets a later native timing backend replace
     /// Snes9x without exposing a CPU PC or raster selector to gameplay code.
     fn arm_live_cached_sprite_main_cpu_continuation(&mut self) -> bool {
-        let receipt = self.take_original_timing_cached_sprite_execution_progress()
-            .or_else(|| self.native_exact_cpu_host_trace.as_ref()
-                .and_then(|trace| trace.cached_sprite_progress));
+        let wire_receipt = self.take_original_timing_cached_sprite_execution_progress();
+        // The submodule dispatcher and the outer Module07 caller can both
+        // reach this arming point. A retained CPU receipt transfers once,
+        // just like the wire receipt, rather than rearming the same caller.
+        let native_receipt = self.native_exact_cpu_host_trace.as_mut()
+            .and_then(|trace| trace.cached_sprite_progress.take());
+        let receipt = wire_receipt.or(native_receipt);
         let Some(receipt) = receipt else {
             return false;
         };
@@ -12490,7 +13284,9 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_spiral_room_initialization_after_room_load(&mut self, schedule: bool) {
-        self.ResetStarTileGraphics();
+        if self.native_transition_aux_graphics_progress.is_none() {
+            self.ResetStarTileGraphics();
+        }
         self.LoadTransAuxGFX();
         self.complete_spiral_room_initialization_after_aux_graphics(schedule);
     }
@@ -12928,39 +13724,79 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_TryScreenEdgeTransition(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x02_885e);
+        crate::cycle_ledger::charge(94); // REP, Y-velocity test.
         let mut dir = None;
 
         if self.game_state.player.follower_link.y_velocity() != 0 {
+            crate::cycle_ledger::charge(200); // Axis direction, masked Y, north comparison.
             let y = self.game_state.player.follower_link.y() & 0x01ff;
             if y < 4 {
+                crate::cycle_ledger::charge(6);
                 dir = Some(3);
-            } else if y >= 476 {
-                dir = Some(2);
+            } else {
+                crate::cycle_ledger::charge(56); // South comparison.
+                if y >= 476 {
+                    crate::cycle_ledger::charge(6);
+                    dir = Some(2);
+                }
             }
+        } else {
+            crate::cycle_ledger::charge(6);
         }
 
-        if dir.is_none() && self.game_state.player.follower_link.x_velocity() != 0 {
-            let x = self.game_state.player.follower_link.x() & 0x01ff;
-            if x < 8 {
-                dir = Some(1);
-            } else if x >= 489 {
-                dir = Some(0);
+        if dir.is_none() {
+            crate::cycle_ledger::charge(72); // X-velocity test.
+            if self.game_state.player.follower_link.x_velocity() != 0 {
+                crate::cycle_ledger::charge(200); // Axis direction, masked X, west comparison.
+                let x = self.game_state.player.follower_link.x() & 0x01ff;
+                if x < 8 {
+                    crate::cycle_ledger::charge(6);
+                    dir = Some(1);
+                } else {
+                    crate::cycle_ledger::charge(56); // East comparison.
+                    if x >= 489 {
+                        dir = Some(0);
+                    } else {
+                        crate::cycle_ledger::charge(6);
+                    }
+                }
+            } else {
+                crate::cycle_ledger::charge(6);
             }
         }
 
         let Some(dir) = dir else {
+            crate::cycle_ledger::charge(64); // Shared SEP : RTS.
             return;
         };
 
-        if !self.link_check_for_edge_screen_transition() && self.game_state.frame.main_module == 7 {
-            self.Dungeon_HandleEdgeTransitionMovement(dir);
+        crate::cycle_ledger::charge(84); // SEP : JSL predicate.
+        let blocked = self.link_check_for_edge_screen_transition();
+        crate::cycle_ledger::charge(16); // BCS after the predicate returns.
+        if blocked {
+            crate::cycle_ledger::charge(6);
+        } else {
+            crate::cycle_ledger::charge(56); // Main-module gate.
             if self.game_state.frame.main_module == 7 {
-                self.set_submodule(2);
+                crate::cycle_ledger::charge(62);
+                self.Dungeon_HandleEdgeTransitionMovement(dir);
+                crate::cycle_ledger::charge(56); // Recheck after movement (which can exit the dungeon).
+                if self.game_state.frame.main_module == 7 {
+                    crate::cycle_ledger::charge(40);
+                    self.set_submodule(2);
+                } else {
+                    crate::cycle_ledger::charge(6);
+                }
+            } else {
+                crate::cycle_ledger::charge(6);
             }
         }
+        crate::cycle_ledger::charge(64);
     }
 
     pub(super) fn Dungeon_HandleEdgeTransitionMovement(&mut self, dir: u8) {
+        let _scope = crate::cycle_ledger::routine(0x02_88c5);
         self.follower_link_state_mut().mask_direction(
             DUNGEON_HANDLE_EDGE_TRANSITION_MOVEMENT_LIMIT_DIRECTION_ON_ONE_AXIS[dir as usize],
         );
@@ -13190,13 +14026,27 @@ impl ZeldaState {
         // $9338: JSL IrisSpotlight_ConfigureTable (the callee charges itself).
         crate::cycle_ledger::charge(62);
         if let Some(progress) = self.native_exact_cpu_landing_spotlight_checkpoint() {
-            assert!(self.native_exact_cpu_landing_spotlight_build.is_none());
-            self.native_exact_cpu_landing_spotlight_build =
-                Some(self.begin_iris_spotlight_configure_table_at_progress(progress));
+            self.suspend_landing_spotlight_table(progress);
             return;
         }
         self.IrisSpotlight_ConfigureTable();
         self.complete_module07_0f_operate_spotlight_suffix();
+    }
+
+    pub(super) fn suspend_landing_spotlight_table(
+        &mut self,
+        progress: crate::SpotlightTableBuildProgress,
+    ) {
+        assert!(self.native_exact_cpu_landing_spotlight_build.is_none());
+        assert!(!self.main_loop_sprite_preparation_completed);
+        self.native_exact_cpu_landing_spotlight_build =
+            Some(self.begin_iris_spotlight_configure_table_at_progress(progress));
+        // The table builder still owns the Module 7 stack. Its eventual
+        // return also owes ZeldaRunGameLoop's sprite-DMA preparation and
+        // latch clear, even when the host stops without accepting an NMI.
+        self.pending_main_loop_common_suffix.get_or_insert(
+            MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch,
+        );
     }
 
     /// The Module07_0F_01 suffix run after a deferred landing goal
@@ -13276,15 +14126,7 @@ impl ZeldaState {
                 );
             return;
         }
-        // $9324: JSL Link_HandleMovingAnimation_FullLongEntry; $9328: JSL
-        // LinkOam_Main (the callees charge themselves when annotated);
-        // $932C: RTS. When the host return interrupts LinkOam_Main the ROM
-        // reaches the RTS on the following host; it is charged here.
-        crate::cycle_ledger::charge(62);
-        self.link_handle_moving_animation_full_long_entry();
-        crate::cycle_ledger::charge(62);
-        self.link_oam_main();
-        crate::cycle_ledger::charge(42);
+        self.complete_module07_0f_landing_wipe_suffix();
         if authoritative_link_oam_suspension {
             // The temporary Live authority observed the host return while the
             // source was still inside this landing submodule's LinkOam_Main
@@ -13339,6 +14181,23 @@ impl ZeldaState {
                 }
             }
         }
+    }
+
+    pub(super) fn complete_deferred_module07_0f_landing_wipe_suffix(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x02_931d);
+        self.complete_module07_0f_landing_wipe_suffix();
+    }
+
+    fn complete_module07_0f_landing_wipe_suffix(&mut self) {
+        // The indirect spotlight call returns through this landing caller
+        // before Module 7's shared tail. Retain both animation and Link OAM
+        // when that call is suspended, including the animation wrap.
+        // $9324/$9328: JSL animation, JSL LinkOam_Main; $932C: RTS.
+        crate::cycle_ledger::charge(62);
+        self.link_handle_moving_animation_full_long_entry();
+        crate::cycle_ledger::charge(62);
+        self.link_oam_main();
+        crate::cycle_ledger::charge(42);
     }
 
     pub(super) fn Module07_10_SouthIntraRoomStairs(&mut self) {
@@ -13621,18 +14480,35 @@ impl ZeldaState {
 
     pub(super) fn Module07_11_02_LoadAndPrepRoom(&mut self) {
         self.ApplyPaletteFilter_bounce();
-        self.Dungeon_LoadRoom();
-        self.Dungeon_RestoreStarTileChr();
-        self.LoadTransAuxGFX();
-        self.Dungeon_LoadCustomTileAttr();
-        self.Dungeon_AdjustForRoomLayout();
-        self.follower_initialize();
+        let live_draw = self.native_exact_cpu_owner.is_some()
+            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_FLOOR_DRAW_LIVE_TRIAL").is_some()
+            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_OBJECT_DRAW_LIVE_TRIAL").is_some();
+        if live_draw {
+            self.begin_live_dungeon_supertile_room_load();
+        } else {
+            self.Dungeon_LoadRoom();
+            self.complete_straight_room_initialization_after_room_load();
+        }
         if self.begin_dungeon_supertile_transition_work(
             DungeonSupertileTransitionWork::StraightInterroomRoomInitialization,
         ) {
             return;
         }
+        if live_draw {
+            self.finish_live_dungeon_supertile_room_load();
+            self.complete_straight_room_initialization_after_room_load();
+        }
         self.increment_subsubmodule();
+    }
+
+    pub(super) fn complete_straight_room_initialization_after_room_load(&mut self) {
+        if self.native_transition_aux_graphics_progress.is_none() {
+            self.Dungeon_RestoreStarTileChr();
+        }
+        self.LoadTransAuxGFX();
+        self.Dungeon_LoadCustomTileAttr();
+        self.Dungeon_AdjustForRoomLayout();
+        self.follower_initialize();
     }
 
     pub(super) fn Module07_11_03_FilterAndLoadBGChars(&mut self) {
@@ -14153,25 +15029,42 @@ impl ZeldaState {
         self.sprite_reset_all_no_disable();
     }
 
-    pub(super) fn complete_module_pre_dungeon_before_sprite_reset(&mut self) {
+    pub(super) fn complete_module_pre_dungeon_before_animated_tiles(&mut self) {
         if !self.finish_early_dungeon_room_load(EarlyDungeonRoomOwner::PreDungeon) {
             self.Dungeon_LoadAndDrawRoom();
         }
         self.Dungeon_LoadCustomTileAttr();
+    }
 
+    pub(super) fn complete_module_pre_dungeon_before_tilesets(&mut self) {
+        if self.native_pre_dungeon_animated_graphics.is_none() {
+            self.complete_module_pre_dungeon_before_animated_tiles();
+        }
         let animated = DUNG_ANIMATED_TILES
             [self.game_state.world.palette_theme.main_tile_theme_index() as usize];
         self.decompress_animated_dungeon_tiles(animated as usize);
         self.Dungeon_LoadAttributeTable();
         self.world_palette_theme_mut()
             .set_misc_sprites_graphics_index(10);
+    }
+
+    pub(super) fn complete_module_pre_dungeon_before_palette_cache(&mut self) {
+        if self.native_pre_dungeon_tileset_publication.is_none() {
+            self.complete_module_pre_dungeon_before_tilesets();
+        }
         self.initialize_tilesets();
+        self.native_pre_dungeon_tileset_publication = None;
         // PALETTE_SP6R_INDOORS (0xab1) is read by palette_load_sprite_environment_dungeon
         // off display.palette_buffer, not world.palette_theme. Set the display owner so
         // the immediately-following dungeon_load_palettes() loads the selector-10 sprite
         // environment palette instead of a stale selector (matches raw-RAM single-byte).
         self.set_sp6r_indoors(10);
-        self.dungeon_load_palettes();
+        self.dungeon_load_palettes_before_cache();
+    }
+
+    pub(super) fn complete_module_pre_dungeon_before_sprite_reset(&mut self) {
+        self.advance_pre_dungeon_palette_cache(257);
+        self.native_pre_dungeon_palette_cache = None;
 
         let room = self.game_state.world.location.dungeon_room();
         self.dungeon_room_load_mut()
@@ -14509,8 +15402,10 @@ impl ZeldaState {
     }
 
     pub(super) fn module07_dungeon(&mut self) {
+        crate::cycle_ledger::charge_routine(0x02_87a2, 84); // SEP #$30 : JSL layer effect.
         self.dungeon_handle_layer_effect();
         self.replay_trace_ram_watch("module07-after-layer-effect");
+        crate::cycle_ledger::charge_routine(0x02_87a2, 114); // LDA $11 : ASL : TAX : JSR (table,X).
         self.run_dungeon_submodule();
         self.replay_trace_ram_watch("module07-after-submodule");
         if !self
@@ -14596,6 +15491,9 @@ impl ZeldaState {
             if self.game_execution_scheduler.is_idle() {
                 // This measured body and its common suffix retire within one
                 // CPU slice, after the NMI request they consumed.
+                // This is the atomic publication's gate update; the enclosing
+                // main caller still executes sprite preparation after this
+                // module returns, and owns its own return work there.
                 self.clear_nmi_update_latch();
             }
         }
@@ -14608,6 +15506,7 @@ impl ZeldaState {
             .has(FEATURE_MISC_BUG_FIXES_DUNGEON)
             || self.game_state.frame.main_module == 7;
         if runs_push_block_handler {
+            crate::cycle_ledger::charge_routine(0x02_87a2, 94); // STZ $042C : JSL push-block handler.
             self.dungeon_object_tracking_mut().clear_misc_object_index();
             if let Some(next_index) = self.take_original_timing_dungeon_push_blocks_in_progress() {
                 // The wire's host boundary fell inside Dungeon_PushBlock_Handler:
@@ -14647,32 +15546,76 @@ impl ZeldaState {
         runs_push_block_handler: bool,
     ) {
         if runs_push_block_handler {
+            crate::cycle_ledger::charge_routine(0x02_87a2, 40); // 87B6: LDA $11 : BNE.
             if self.game_state.frame.submodule == 0 {
+                crate::cycle_ledger::charge_routine(0x02_87a2, 62);
                 self.graphics_load_chr_half_slot();
+                crate::cycle_ledger::charge_routine(0x02_87a2, 46);
                 self.dungeon_handle_camera();
                 self.replay_trace_ram_watch("module07-after-camera");
-            }
-            if self.game_state.frame.submodule == 0 {
-                self.dungeon_handle_room_tags();
-                self.replay_trace_ram_watch("module07-after-room-tags");
-            }
-            if self.game_state.frame.submodule == 0 {
-                self.dungeon_process_torches_and_doors();
-                self.replay_trace_ram_watch("module07-after-torches-doors");
-                if self.game_state.dungeon.room_effects.crush_wall_progress() != 0 {
-                    self.dungeon_clear_away_exploding_wall();
-                    self.replay_trace_ram_watch("module07-after-blast-wall");
+                crate::cycle_ledger::charge_routine(0x02_87a2, 40); // 87C1: LDA $11 : BNE.
+                if self.game_state.frame.submodule == 0 {
+                    crate::cycle_ledger::charge_routine(0x02_87a2, 62);
+                    self.dungeon_handle_room_tags();
+                    self.replay_trace_ram_watch("module07-after-room-tags");
+                    crate::cycle_ledger::charge_routine(0x02_87a2, 40); // 87C9: LDA $11 : BNE.
+                    if self.game_state.frame.submodule == 0 {
+                        crate::cycle_ledger::charge_routine(0x02_87a2, 62);
+                        self.dungeon_process_torches_and_doors();
+                        self.replay_trace_ram_watch("module07-after-torches-doors");
+                        crate::cycle_ledger::charge_routine(0x02_87a2, 48); // LDA $0454 : BEQ.
+                        if self.game_state.dungeon.room_effects.crush_wall_progress() != 0 {
+                            crate::cycle_ledger::charge_routine(0x02_87a2, 62);
+                            self.dungeon_clear_away_exploding_wall();
+                            self.replay_trace_ram_watch("module07-after-blast-wall");
+                        } else {
+                            crate::cycle_ledger::charge_routine(0x02_87a2, 6);
+                        }
+                        crate::cycle_ledger::charge_routine(0x02_87a2, 40); // LDA $6C : BNE.
+                        if self.game_state.player.follower_link.doorway_state() == 0 {
+                            crate::cycle_ledger::charge_routine(0x02_87a2, 46);
+                            self.Dungeon_TryScreenEdgeTransition();
+                            self.replay_trace_ram_watch("module07-after-screen-edge");
+                        } else {
+                            crate::cycle_ledger::charge_routine(0x02_87a2, 6);
+                        }
+                    } else {
+                        crate::cycle_ledger::charge_routine(0x02_87a2, 6);
+                    }
+                } else {
+                    crate::cycle_ledger::charge_routine(0x02_87a2, 6);
                 }
-                if self.game_state.player.follower_link.doorway_state() == 0 {
-                    self.Dungeon_TryScreenEdgeTransition();
-                    self.replay_trace_ram_watch("module07-after-screen-edge");
-                }
+            } else {
+                crate::cycle_ledger::charge_routine(0x02_87a2, 6);
             }
         }
 
+        crate::cycle_ledger::charge_routine(0x02_87a2, 62); // JSL OrientLampLightCone.
         self.orient_lamp_light_cone();
         self.replay_trace_ram_watch("module07-after-lamp");
 
+        let sprite_return = self.begin_module07_sprite_scroll();
+        // SEP #$20 : JSL push-block drawing. A parked draw has entered the
+        // callee; its resumed caller must not charge this call again.
+        crate::cycle_ledger::charge_routine(0x02_87a2, 84);
+        if self.take_original_timing_dungeon_push_blocks_pending() {
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishDungeonPushBlocks {
+                    dungeon: sprite_return,
+                },
+                1,
+            );
+            return;
+        }
+        self.sprite_dungeon_draw_all_push_blocks();
+        self.replay_trace_ram_watch("module07-after-draw-push-blocks");
+        self.run_module07_sprite_main_caller(sprite_return);
+    }
+
+    /// Save the caller's scroll words and publish the sprite drawing view.
+    /// The returned words own restoration after Sprite_Main actually returns.
+    fn begin_module07_sprite_scroll(&mut self) -> DungeonSpriteMainReturn {
+        crate::cycle_ledger::charge_routine(0x02_87a2, 840); // 87E5..881C, through the collision test.
         let bg2x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
         let bg2y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
         let bg1x = self.game_state.display.ppu_scroll_copy.bg1_h_copy2();
@@ -14696,6 +15639,7 @@ impl ZeldaState {
             .header_collision_2_mirror()
             != 0
         {
+            crate::cycle_ledger::charge_routine(0x02_87a2, 448); // Replace the saved BG1 words with moving-floor coordinates.
             bg1x_restore = self
                 .game_state
                 .display
@@ -14712,27 +15656,17 @@ impl ZeldaState {
             self.copy_bg1_live_to_ppu_copy();
             self.set_bg1_y(bg1y_restore);
             self.copy_bg1_live_to_ppu_copy();
+        } else {
+            crate::cycle_ledger::charge_routine(0x02_87a2, 6); // Taken BEQ skips moving-floor work.
         }
 
-        let sprite_return = DungeonSpriteMainReturn {
+        DungeonSpriteMainReturn {
             bg2_x: bg2x,
             bg2_y: bg2y,
             bg1_x: bg1x_restore,
             bg1_y: bg1y_restore,
             link_oam: None,
-        };
-        if self.take_original_timing_dungeon_push_blocks_pending() {
-            self.game_execution_scheduler.schedule_work(
-                GameWorkContinuation::FinishDungeonPushBlocks {
-                    dungeon: sprite_return,
-                },
-                1,
-            );
-            return;
         }
-        self.sprite_dungeon_draw_all_push_blocks();
-        self.replay_trace_ram_watch("module07-after-draw-push-blocks");
-        self.run_module07_sprite_main_caller(sprite_return);
     }
 
     /// Resume the existing Module 7 caller at its `Sprite_Main` statement.
@@ -14744,8 +15678,16 @@ impl ZeldaState {
         &mut self,
         sprite_return: DungeonSpriteMainReturn,
     ) {
+        crate::cycle_ledger::charge_routine(0x02_87a2, 62); // 883E: JSL Sprite_Main, once on entry.
         self.active_dungeon_sprite_main_return = Some(sprite_return);
-        if self.original_timing_ancilla_item_receipt_suspended() {
+        if let Some((progress, boundary)) =
+            self.take_native_exact_cpu_follower_body_draw_boundary()
+        {
+            self.arm_authoritative_sprite_main_cpu_continuation(
+                progress,
+                SpriteMainCpuCaller::DungeonModule07Live { boundary },
+            );
+        } else if self.original_timing_ancilla_item_receipt_suspended() {
             // The falling milestone item's receipt suspended inside
             // Sprite_Main's prefix before any slot ran (route host 1142850:
             // SpriteMainProgressed(BeforeFirstSlot) with the ancilla receipt
@@ -14837,11 +15779,8 @@ impl ZeldaState {
                 });
             }
             if let Some(progress) = stair_progress {
-                self.set_bg2_x(sprite_return.bg2_x);
-                self.set_bg2_y(sprite_return.bg2_y);
-                self.set_bg1_x(sprite_return.bg1_x);
-                self.set_bg1_y(sprite_return.bg1_y);
-                sprite_return.link_oam = Some(match progress {
+                self.restore_module07_scroll_before_link_oam(&sprite_return);
+                sprite_return.link_oam = Some(player_oam::LinkOamContinuation::Equipment(match progress {
                     crate::LinkOamStairProgress::PoseSelected => {
                         self.link_oam_after_pose_selection()
                     }
@@ -14856,7 +15795,7 @@ impl ZeldaState {
                         let continuation = self.link_oam_before_equipment();
                         self.link_oam_before_shadow(continuation)
                     }
-                });
+                }));
             }
             self.active_dungeon_sprite_main_return = Some(sprite_return);
             self.game_execution_scheduler.schedule_work(
@@ -14868,6 +15807,40 @@ impl ZeldaState {
         self.complete_module07_after_sprite_main(sprite_return);
     }
 
+    /// Refine a parked LinkOam caller through its graphics-index store, keeping
+    /// the native drawing locals and the existing NMI/caller ownership.
+    pub(super) fn refine_dungeon_link_oam_to_body_selection(&mut self) {
+        self.refine_dungeon_link_oam_body_progress(None);
+    }
+
+    pub(super) fn refine_dungeon_link_oam_body_progress(
+        &mut self, progress: Option<player_oam::LinkOamLowerBodyProgress>,
+    ) {
+        if self.game_execution_scheduler.current_work()
+            != Some(GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn) {
+            return;
+        }
+        let mut sprite_return = self.active_dungeon_sprite_main_return
+            .expect("parked dungeon LinkOam lost its caller");
+        use player_oam::LinkOamContinuation::{Body, Equipment};
+        let continuation = match sprite_return.link_oam {
+            Some(continuation) => continuation,
+            None => {
+                self.restore_module07_scroll_before_link_oam(&sprite_return);
+                let continuation = self.link_oam_before_equipment();
+                Equipment(self.link_oam_before_body(continuation))
+            }
+        };
+        sprite_return.link_oam = Some(match (continuation, progress) {
+            (Equipment(equipment), Some(progress)) =>
+                Body(self.link_oam_before_lower_body_progress(equipment, progress)),
+            (Body(body), Some(progress)) =>
+                Body(self.advance_link_oam_lower_body_progress(body, progress)),
+            (continuation, None) => continuation,
+        });
+        self.active_dungeon_sprite_main_return = Some(sprite_return);
+    }
+
     pub(super) fn complete_module07_after_sprite_main(
         &mut self,
         sprite_return: DungeonSpriteMainReturn,
@@ -14876,26 +15849,44 @@ impl ZeldaState {
         self.complete_module07_hud_after_link_oam();
     }
 
+    fn restore_module07_scroll_before_link_oam(&mut self, sprite_return: &DungeonSpriteMainReturn) {
+        // 8842..8852: REP, four PLA/STA pairs, SEP and JSL LinkOam_Main.
+        // A retained LinkOam continuation already owns this completed prefix.
+        crate::cycle_ledger::charge_routine(0x02_87a2, 378);
+        self.set_bg2_x(sprite_return.bg2_x);
+        self.set_bg2_y(sprite_return.bg2_y);
+        self.set_bg1_x(sprite_return.bg1_x);
+        self.set_bg1_y(sprite_return.bg1_y);
+    }
+
     /// LinkOam_Main returns before Module 7 enters Hud_RefillLogic.
     pub(super) fn complete_module07_link_oam_after_sprite_main(
         &mut self,
         sprite_return: DungeonSpriteMainReturn,
     ) {
         if let Some(continuation) = sprite_return.link_oam {
-            self.link_oam_after_equipment(continuation);
+            match continuation {
+                player_oam::LinkOamContinuation::Equipment(equipment) =>
+                    self.link_oam_after_equipment(equipment),
+                player_oam::LinkOamContinuation::Body(body) =>
+                    self.link_oam_after_lower_body(body),
+            }
         } else {
-            self.set_bg2_x(sprite_return.bg2_x);
-            self.set_bg2_y(sprite_return.bg2_y);
-            self.set_bg1_x(sprite_return.bg1_x);
-            self.set_bg1_y(sprite_return.bg1_y);
+            self.restore_module07_scroll_before_link_oam(&sprite_return);
             self.link_oam_main();
         }
         self.replay_trace_ram_watch("module07-after-link-oam");
     }
 
     pub(super) fn complete_module07_hud_after_link_oam(&mut self) {
+        crate::cycle_ledger::charge_routine(0x02_87a2, 62); // 8856: JSL Hud_RefillLogic_Far.
         self.hud_refill_logic();
+        self.complete_module07_after_hud_refill();
+    }
+
+    pub(super) fn complete_module07_after_hud_refill(&mut self) {
         self.replay_trace_ram_watch("module07-after-refill");
+        crate::cycle_ledger::charge_routine(0x02_87a2, 32); // 885A: JML Hud_FloorIndicator.
         self.hud_floor_indicator();
         self.replay_trace_ram_watch("module07-after-floor-indicator");
         if std::mem::take(&mut self.spiral_stair_return_player_control_pending) {
@@ -14909,7 +15900,7 @@ impl ZeldaState {
                 read_le_u16(&self.ram, OAM_BUF + 102 * 4 + word * 2)
             }));
             self.nmi_prepare_sprites();
-            self.clear_nmi_update_latch();
+            self.finish_main_loop_caller_return();
             self.begin_spiral_stair_return_main_loop_reentry();
             self.module07_00_player_control();
             self.link_oam_main();
@@ -14936,7 +15927,66 @@ impl ZeldaState {
         self.clear_oam_buffer();
     }
 
+    pub(super) fn refine_dungeon_subtile_caller_to_hud_arrow_digits(&mut self, master_cycles: u16) {
+        let expected = GameWorkContinuation::FinishDungeonSubtilePaletteFilter;
+        if self.game_execution_scheduler.current_work() != Some(expected) {
+            return;
+        }
+        // Run the completed native prefix without retiring or re-scheduling
+        // its existing interrupt. The temporary caller stops at LinkOam so
+        // HUD can return its own saved locals instead of an overworld owner.
+        let scheduler = std::mem::take(&mut self.game_execution_scheduler);
+        assert!(self.active_dungeon_sprite_main_return.is_none());
+        assert!(!self.dungeon_post_sprite_main_return_pending);
+        if self.game_state.display.palette_filter.countdown() != 0 {
+            self.ApplyPaletteFilter_bounce();
+        }
+        self.dungeon_post_sprite_main_return_pending = true;
+        self.complete_module07_dungeon_after_submodule();
+        assert_eq!(self.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn));
+        let caller = self.active_dungeon_sprite_main_return.take()
+            .expect("subtile prefix must retain its LinkOam caller");
+        self.game_execution_scheduler.finish_work();
+        self.complete_module07_link_oam_after_sprite_main(caller);
+        assert!(self.native_overworld_hud_interruption.is_none());
+        self.native_overworld_hud_interruption = Some(HudUpdateInterruption::ArrowDigits { master_cycles });
+        crate::cycle_ledger::charge_routine(0x02_87a2, 62); // Enter the same HUD callee, stopping inside it.
+        let hud = self.hud_refill_logic_until_interruption()
+            .expect("source arrow-store boundary requires a native HUD update");
+        assert!(self.native_overworld_hud_interruption.is_none());
+        self.game_execution_scheduler = scheduler;
+        self.game_execution_scheduler.refine_scheduled_work(expected,
+            GameWorkContinuation::FinishDungeonSubtileHud { hud });
+    }
+
+    pub(super) fn refine_dungeon_spiral_caller_to_sprite_prefix(&mut self, boundary: SpriteMainCpuBoundary) {
+        let expected = GameWorkContinuation::FinishDungeonSupertileTransition {
+            work: DungeonSupertileTransitionWork::SpiralRoomCallerResume,
+        };
+        if self.game_execution_scheduler.current_work() != Some(expected) {
+            return;
+        }
+        let scheduler = std::mem::take(&mut self.game_execution_scheduler);
+        assert!(self.active_dungeon_sprite_main_return.is_none());
+        // The ordinary Module07 caller binds its native prefix. Keep the spiral return's pending NMI
+        // and its caller/display policy, rather than scheduling another call.
+        self.arm_authoritative_sprite_main_cpu_continuation(boundary, SpriteMainCpuCaller::DungeonModule07);
+        self.complete_module07_dungeon_after_submodule();
+        let Some(GameWorkContinuation::FinishSpriteMain { boundary, .. }) =
+            self.game_execution_scheduler.current_work() else {
+                panic!("spiral source prefix must suspend the native Sprite_Main caller");
+            };
+        self.game_execution_scheduler = scheduler;
+        self.game_execution_scheduler.refine_scheduled_work(expected,
+            GameWorkContinuation::FinishDungeonSupertileTransition {
+                work: DungeonSupertileTransitionWork::SpiralRoomSpriteMain { boundary },
+            });
+    }
+
     pub(super) fn module07_00_player_control(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x02_88de);
+        crate::cycle_ledger::charge(112); // Spell, immobilization and menu-block gate.
         if (self
             .game_state
             .world
@@ -14946,35 +15996,53 @@ impl ZeldaState {
             | self.game_state.player.follower_link.menu_block_flag())
             == 0
         {
+            crate::cycle_ledger::charge(6 + 56); // Taken BEQ, then pause-button test.
             if self.game_state.player.follower_link.filtered_joypad_h() & 0x10 != 0 {
+                crate::cycle_ledger::charge(70 + 162); // Clear map state, select pause, publish module, RTS.
                 self.set_overworld_map_state(0);
                 self.set_submodule(1);
                 self.save_main_module_for_menu();
                 self.set_main_module(14);
                 return;
-            } else if self.did_press_button_for_map() {
-                if self.game_state.inventory.save_progress.palace_index_x2() != 0xff
-                    && self.game_state.world.location.dungeon_room_index() != 0
-                {
-                    self.set_overworld_map_state(0);
-                    self.set_submodule(3);
-                    self.save_main_module_for_menu();
-                    self.set_main_module(14);
+            }
+            crate::cycle_ledger::charge(6 + 56); // Skip pause setup, then map-button test.
+            if self.did_press_button_for_map() {
+                crate::cycle_ledger::charge(64); // Palace gate.
+                if self.game_state.inventory.save_progress.palace_index_x2() != 0xff {
+                    crate::cycle_ledger::charge(40); // Low room-byte gate.
+                    if self.game_state.world.location.dungeon_room_index() != 0 {
+                        crate::cycle_ledger::charge(48 + 162);
+                        self.set_overworld_map_state(0);
+                        self.set_submodule(3);
+                        self.save_main_module_for_menu();
+                        self.set_main_module(14);
+                        return;
+                    }
+                }
+            }
+            // Every rejected map gate lands at the same Select check. The ROM
+            // leaves $0200 alone on this path; only pause/map entry clears it.
+            crate::cycle_ledger::charge(6 + 56);
+            if self.game_state.player.follower_link.joypad1h_last() & 0x20 != 0 {
+                crate::cycle_ledger::charge(56); // Progress gate.
+                if self.game_state.inventory.save_progress.progress_indicator() != 0 {
+                    crate::cycle_ledger::charge(280); // Choice backup, message index, saved module, JSL.
+                    self.DisplaySelectMenu();
+                    crate::cycle_ledger::charge(114 + 162); // Restore module, select menu, common RTS.
                     return;
                 }
-            } else if self.game_state.player.follower_link.joypad1h_last() & 0x20 != 0
-                && self.game_state.inventory.save_progress.progress_indicator() != 0
-            {
-                self.set_overworld_map_state(0);
-                self.DisplaySelectMenu();
-                return;
             }
+            crate::cycle_ledger::charge(6); // Taken Select/progress rejection.
             self.replay_trace_ram_watch("module07-before-hud-switch");
             self.hud_handle_item_switch_inputs();
             self.replay_trace_ram_watch("module07-after-hud-switch");
+        } else {
+            crate::cycle_ledger::charge(24); // JMP Link_Main call.
         }
+        crate::cycle_ledger::charge(62);
         self.replay_trace_ram_watch("module07-before-link-main");
         self.link_main();
+        crate::cycle_ledger::charge(42); // RTS after Link_Main returns.
         self.replay_trace_ram_watch("module07-after-link-main");
     }
 
@@ -14983,6 +16051,8 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_HandleLayerEffect(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x0a_fe80);
+        crate::cycle_ledger::charge(98); // LDA, ASL, TAX, indirect tail jump.
         match self.game_state.dungeon.room_load.header_collision_2() {
             0 | 1 => self.LayerEffect_Nothing(),
             2 => self.LayerEffect_Scroll(),
@@ -14995,25 +16065,37 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn LayerEffect_Nothing(&mut self) {}
+    pub(super) fn LayerEffect_Nothing(&mut self) {
+        crate::cycle_ledger::charge(44); // Shared RTL at $0A:FE87.
+    }
 
     pub(super) fn LayerEffect_Scroll(&mut self) {
+        crate::cycle_ledger::charge(64);
         if self.game_state.dungeon.savegame_state.savegame_state_bits() & 0x8000 != 0 {
+            crate::cycle_ledger::charge(68);
             self.dungeon_room_load_mut().clear_header_collision_2();
             return;
         }
+        crate::cycle_ledger::charge(6 + 172);
         self.dungeon_moving_floor_mut().set_floor_x_velocity(0);
         self.dungeon_moving_floor_mut().set_floor_y_velocity(0);
         let flags = self.game_state.dungeon.moving_floor.floor_move_flags();
         if flags & 1 != 0 {
+            crate::cycle_ledger::charge(6 + 66);
             return;
         }
+        crate::cycle_ledger::charge(248);
         let subpixel = self.bg1_move_calc_mut().advance_x_subpixel(0x80);
         let mut t = (subpixel >> 8) as i16;
         if flags & 2 != 0 {
+            crate::cycle_ledger::charge(38);
             t = -t;
+        } else {
+            crate::cycle_ledger::charge(6);
         }
+        crate::cycle_ledger::charge(80);
         if flags < 4 {
+            crate::cycle_ledger::charge(318);
             self.dungeon_moving_floor_mut()
                 .set_floor_x_velocity(t as u16);
             let x_offs = self
@@ -15031,6 +16113,7 @@ impl ZeldaState {
                 .wrapping_add(x_offs);
             self.set_bg1_x(bg1);
         } else {
+            crate::cycle_ledger::charge(6 + 252 + 66);
             self.dungeon_moving_floor_mut()
                 .set_floor_y_velocity(t as u16);
             let y_offs = self
@@ -15051,6 +16134,7 @@ impl ZeldaState {
     }
 
     pub(super) fn LayerEffect_Trinexx(&mut self) {
+        crate::cycle_ledger::charge(436);
         let x = self
             .game_state
             .dungeon
@@ -15071,13 +16155,25 @@ impl ZeldaState {
 
     pub(super) fn LayerEffect_Agahnim2(&mut self) {
         let j = self.game_state.frame.frame_counter & 0x7f;
+        // The ROM tests 3, 5, 36, 38 in that order, sharing the two palette tails.
+        crate::cycle_ledger::charge(72);
+        if j != 3 {
+            crate::cycle_ledger::charge(32);
+            if j != 5 {
+                crate::cycle_ledger::charge(32);
+                if j != 36 { crate::cycle_ledger::charge(32); }
+            }
+        }
+        if j != 38 { crate::cycle_ledger::charge(6); }
         if j == 3 || j == 36 {
+            crate::cycle_ledger::charge(212 + 156);
             self.set_main_color_constant(0x6d, 0x1d59);
             self.set_main_color_constant(0x6e, 0x25ff);
             self.set_main_color_constant(0x6f, 0x001a);
             self.set_main_color_constant(0x77, 0x001a);
             self.increment_cgram_update_flag();
         } else if j == 5 || j == 38 {
+            crate::cycle_ledger::charge(262 + 156);
             self.copy_color(
                 (zelda3_palette::Bank::Aux, 0x6d),
                 (zelda3_palette::Bank::Main, 0x6d),
@@ -15096,12 +16192,15 @@ impl ZeldaState {
             );
             self.increment_cgram_update_flag();
         }
+        crate::cycle_ledger::charge(84);
         self.set_sub_screen_layers(2);
     }
 
     pub(super) fn LayerEffect_InvisibleFloor(&mut self) {
+        crate::cycle_ledger::charge(78);
         let mut count = 0;
         for i in 0..16 {
+            crate::cycle_ledger::charge(76);
             if self
                 .game_state
                 .dungeon
@@ -15110,23 +16209,40 @@ impl ZeldaState {
                 & 0x8000
                 != 0
             {
+                crate::cycle_ledger::charge(54);
                 count += 1;
+            } else {
+                crate::cycle_ledger::charge(6);
             }
+            crate::cycle_ledger::charge(68 + if i != 15 { 6 } else { 0 });
         }
+        crate::cycle_ledger::charge(96 + if count == 0 { 48 } else { 6 });
         let (x, y) = if count == 0 { (0, 0) } else { (0x2940, 0x4e60) };
+        crate::cycle_ledger::charge(78);
         if self.game_state.display.palette_buffer.aux_color(0x7b) != x {
+            crate::cycle_ledger::charge(260);
             self.set_main_color_constant(0x7b, x);
             self.set_aux_color_constant(0x7b, x);
             self.set_main_color_constant(0x7c, y);
             self.set_aux_color_constant(0x7c, y);
-            self.increment_cgram_update_flag();
+            // $0A:FF9B is INC $15 with a 16-bit accumulator. Carry belongs
+            // to the adjacent HUD-update flag, not a discarded byte overflow.
+            if self.increment_cgram_update_flag() == 0 {
+                self.system_signals_mut().increment_hud_update_flag();
+            }
+        } else {
+            crate::cycle_ledger::charge(6);
         }
+        crate::cycle_ledger::charge(106);
         self.set_sub_screen_layers(2);
     }
 
     pub(super) fn LayerEffect_Ganon(&mut self) {
+        crate::cycle_ledger::charge(78);
         let mut count = 0u8;
-        for i in 0..16 {
+        // The source stops at byte offset 6: only the first three object words.
+        for i in 0..3 {
+            crate::cycle_ledger::charge(76);
             if self
                 .game_state
                 .dungeon
@@ -15135,23 +16251,32 @@ impl ZeldaState {
                 & 0x8000
                 != 0
             {
+                crate::cycle_ledger::charge(62);
                 count = count.wrapping_add(1);
+            } else {
+                crate::cycle_ledger::charge(6);
             }
+            crate::cycle_ledger::charge(68 + if i != 2 { 6 } else { 0 });
         }
+        crate::cycle_ledger::charge(70);
         self.dungeon_torch_mut().set_ganon_torch_count(count);
         if count == 0 {
+            crate::cycle_ledger::charge(108);
             self.set_sub_screen_layers(0);
             self.set_color_math_control(0xb3);
         } else if count == 1 {
+            crate::cycle_ledger::charge(6 + 32 + 124);
             self.set_sub_screen_layers(2);
             self.set_color_math_control(0x70);
         } else {
+            crate::cycle_ledger::charge(6 + 32 + 6 + 108);
             self.set_sub_screen_layers(0);
             self.set_color_math_control(0x70);
         }
     }
 
     pub(super) fn LayerEffect_WaterRapids(&mut self) {
+        crate::cycle_ledger::charge(372);
         let t = self.bg1_move_calc_mut().advance_x_subpixel(0x80);
         self.dungeon_moving_floor_mut()
             .set_floor_x_velocity((-(t as i16 >> 8)) as u16);
@@ -15296,18 +16421,29 @@ impl ZeldaState {
     }
 
     pub(super) fn dungeon_handle_camera(&mut self) {
-        let link_y_vel = self.game_state.player.follower_link.y_velocity();
-        if link_y_vel != 0 {
-            let z = if self.game_state.world.transient.allow_scroll_z() != 0
-                && self.game_state.player.follower_link.z() != 0xffff
-            {
+        let _scope = crate::cycle_ledger::routine(0x02_ba31);
+        // BA31..BA5E executes even when vertical velocity is zero.
+        crate::cycle_ledger::charge(150);
+        let z = if self.game_state.world.transient.allow_scroll_z() != 0 {
+            crate::cycle_ledger::charge(72);
+            if self.game_state.player.follower_link.z() != 0xffff {
+                crate::cycle_ledger::charge(6);
                 self.game_state.player.follower_link.z()
             } else {
+                crate::cycle_ledger::charge(24);
                 0
-            };
+            }
+        } else {
+            crate::cycle_ledger::charge(6);
+            0
+        };
+        crate::cycle_ledger::charge(276);
+        let link_y_vel = self.game_state.player.follower_link.y_velocity();
+        if link_y_vel != 0 {
             let y = self.game_state.player.follower_link.y().wrapping_sub(z) & 0x01ff;
             let y = y.wrapping_add(12);
             let moving_up = (link_y_vel as i8).is_negative();
+            crate::cycle_ledger::charge(64 + if moving_up { 146 } else { 6 } + 14);
             let scrollamt: i16 = if moving_up { -1 } else { 1 };
             let steps = if moving_up {
                 (link_y_vel as i8).wrapping_neg() as u8
@@ -15315,39 +16451,52 @@ impl ZeldaState {
                 link_y_vel
             };
 
-            for _ in 0..steps {
+            for step in 0..steps {
+                crate::cycle_ledger::charge(120); // Loop velocity/direction test.
                 let mut qm = self
                     .game_state
                     .world
                     .transient
                     .vertical_room_bounds_base_index();
                 if moving_up {
+                    crate::cycle_ledger::charge(88); // Compare the low camera limit.
                     if y > self
                         .game_state
                         .world
                         .camera_boundaries
                         .camera_y_coord_scroll_low()
                     {
+                        crate::cycle_ledger::charge(22); // BCS not taken, BCC taken.
+                        crate::cycle_ledger::charge(30 + if step + 1 < steps { 6 } else { 0 });
                         continue;
                     }
+                    crate::cycle_ledger::charge(6); // Taken BCS to room-bound test.
                 } else {
+                    crate::cycle_ledger::charge(6 + 88); // Taken direction branch, high limit.
                     if y < self
                         .game_state
                         .world
                         .camera_boundaries
                         .camera_y_coord_scroll_hi()
                     {
+                        crate::cycle_ledger::charge(6);
+                        crate::cycle_ledger::charge(30 + if step + 1 < steps { 6 } else { 0 });
                         continue;
                     }
+                    crate::cycle_ledger::charge(56); // Four INX instructions.
                     qm += 2;
                 }
 
+                crate::cycle_ledger::charge(88); // Live BG2 versus selected room bound.
                 if self.game_state.display.ppu_scroll_copy.bg2_v_copy2()
                     == self.game_state.world.room_bounds.y_bound(qm)
                 {
+                    crate::cycle_ledger::charge(6);
+                    crate::cycle_ledger::charge(30 + if step + 1 < steps { 6 } else { 0 });
                     continue;
                 }
 
+                crate::cycle_ledger::charge(150); // Update BG2, then test room sentinel.
                 let bg2 = self
                     .game_state
                     .display
@@ -15356,9 +16505,12 @@ impl ZeldaState {
                     .wrapping_add(scrollamt as u16);
                 self.set_bg2_y(bg2);
                 if self.game_state.world.location.dungeon_room() == 0xffff {
+                    crate::cycle_ledger::charge(6);
+                    crate::cycle_ledger::charge(30 + if step + 1 < steps { 6 } else { 0 });
                     continue;
                 }
 
+                crate::cycle_ledger::charge(172 + if moving_up { 24 } else { 6 } + 448);
                 let subpixel = self
                     .game_state
                     .display
@@ -15382,13 +16534,18 @@ impl ZeldaState {
                     .wrapping_add(scrollamt as u16);
                 self.set_camera_y_coord_scroll_low(camera_low);
                 self.set_camera_y_coord_scroll_hi(camera_low.wrapping_add(2));
+                crate::cycle_ledger::charge(30 + if step + 1 < steps { 6 } else { 0 }); // DEY : BNE.
             }
+        } else {
+            crate::cycle_ledger::charge(6);
         }
 
+        crate::cycle_ledger::charge(254); // BAD4..BAE9 horizontal setup and velocity test.
         let link_x_vel = self.game_state.player.follower_link.x_velocity();
         if link_x_vel != 0 {
             let x = (self.game_state.player.follower_link.x() & 0x01ff).wrapping_add(8);
             let moving_left = (link_x_vel as i8).is_negative();
+            crate::cycle_ledger::charge(64 + if moving_left { 146 } else { 6 } + 14);
             let scrollamt: i16 = if moving_left { -1 } else { 1 };
             let steps = if moving_left {
                 (link_x_vel as i8).wrapping_neg() as u8
@@ -15396,39 +16553,52 @@ impl ZeldaState {
                 link_x_vel
             };
 
-            for _ in 0..steps {
+            for step in 0..steps {
+                crate::cycle_ledger::charge(120);
                 let mut qm = self
                     .game_state
                     .world
                     .transient
                     .horizontal_room_bounds_base_index();
                 if moving_left {
+                    crate::cycle_ledger::charge(88);
                     if x > self
                         .game_state
                         .world
                         .camera_boundaries
                         .camera_x_coord_scroll_low()
                     {
+                        crate::cycle_ledger::charge(22);
+                        crate::cycle_ledger::charge(30 + if step + 1 < steps { 6 } else { 0 });
                         continue;
                     }
+                    crate::cycle_ledger::charge(6);
                 } else {
+                    crate::cycle_ledger::charge(6 + 88);
                     if x < self
                         .game_state
                         .world
                         .camera_boundaries
                         .camera_x_coord_scroll_hi()
                     {
+                        crate::cycle_ledger::charge(6);
+                        crate::cycle_ledger::charge(30 + if step + 1 < steps { 6 } else { 0 });
                         continue;
                     }
+                    crate::cycle_ledger::charge(56);
                     qm += 2;
                 }
 
+                crate::cycle_ledger::charge(88);
                 if self.game_state.display.ppu_scroll_copy.bg2_h_copy2()
                     == self.game_state.world.room_bounds.x_bound(qm)
                 {
+                    crate::cycle_ledger::charge(6);
+                    crate::cycle_ledger::charge(30 + if step + 1 < steps { 6 } else { 0 });
                     continue;
                 }
 
+                crate::cycle_ledger::charge(150);
                 let bg2 = self
                     .game_state
                     .display
@@ -15437,9 +16607,12 @@ impl ZeldaState {
                     .wrapping_add(scrollamt as u16);
                 self.set_bg2_x(bg2);
                 if self.game_state.world.location.dungeon_room() == 0xffff {
+                    crate::cycle_ledger::charge(6);
+                    crate::cycle_ledger::charge(30 + if step + 1 < steps { 6 } else { 0 });
                     continue;
                 }
 
+                crate::cycle_ledger::charge(172 + if moving_left { 24 } else { 6 } + 448);
                 let subpixel = self
                     .game_state
                     .display
@@ -15463,24 +16636,43 @@ impl ZeldaState {
                     .wrapping_add(scrollamt as u16);
                 self.set_camera_x_coord_scroll_low(camera_low);
                 self.set_camera_x_coord_scroll_hi(camera_low.wrapping_add(2));
+                crate::cycle_ledger::charge(30 + if step + 1 < steps { 6 } else { 0 });
             }
+        } else {
+            crate::cycle_ledger::charge(6);
         }
 
+        crate::cycle_ledger::charge(72); // BB5F room sentinel test.
         if self.game_state.world.location.dungeon_room() != 0xffff {
             let bg2_properties = self.game_state.dungeon.room_load.bg2_properties();
+            crate::cycle_ledger::charge(48 + match bg2_properties {
+                0 => 6,
+                6..=255 => 32 + 6,
+                4 => 64 + 6,
+                3 => 96 + 6,
+                2 => 128,
+                _ => 128 + 6,
+            });
             if bg2_properties == 0
                 || bg2_properties == 2
                 || bg2_properties == 3
                 || bg2_properties == 4
                 || bg2_properties >= 6
             {
+                crate::cycle_ledger::charge(150); // Fall through MirrorBg1Bg2Offs.
                 self.copy_bg2_live_to_bg1_live();
             }
+        } else {
+            crate::cycle_ledger::charge(6);
         }
+        crate::cycle_ledger::charge(64); // SEP : RTS, shared by both tails.
     }
 
     pub(super) fn dungeon_handle_room_tags(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x01_c2fd);
+        crate::cycle_ledger::charge(48); // LDA $04C7 : BNE.
         if self.game_state.dungeon.room_runtime.should_run_room_tags() {
+            crate::cycle_ledger::charge(68); // SEP #$30 : JSR DetectStaircase.
             self.Dungeon_DetectStaircase();
 
             if self
@@ -15495,13 +16687,18 @@ impl ZeldaState {
             // C writes the tag-routine index via `ram[R14] = k` as a BYTE (0x0e only); the
             // high byte 0x0f (R15) is left intact. Use the low-byte setter so we don't clobber
             // R15's stale leftover (collision_bits stays a u16 everywhere else).
+            crate::cycle_ledger::charge(138); // STZ $0E : LDA $AE : ASL : TAX : JSR (table,X).
             self.tile_detect_position_mut()
                 .set_collision_bits_low_byte(0);
             self.dungeon_run_tag_routine(0);
+            crate::cycle_ledger::charge(154); // LDA #1 : STA $0E : LDA $AF : ASL : TAX : JSR.
             self.tile_detect_position_mut()
                 .set_collision_bits_low_byte(1);
             self.dungeon_run_tag_routine(1);
+        } else {
+            crate::cycle_ledger::charge(6); // Taken BNE skips both tag calls.
         }
+        crate::cycle_ledger::charge(76); // STZ $04C7 : RTL.
         self.dungeon_room_runtime_mut().clear_room_tag_skip();
     }
 
@@ -15555,29 +16752,53 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn dungeon_process_torches_and_doors(&mut self) {
-        if self.game_state.frame.frame_counter & 3 == 0
-            && self
-                .game_state
-                .world
-                .transient
-                .flag_custom_spell_anim_active()
-                == 0
-        {
-            for i in 0..16 {
-                let timer = self.game_state.dungeon.torch.timer(i);
-                if timer != 0 {
-                    let next = timer.wrapping_sub(1);
-                    self.dungeon_torch_mut().set_timer(i, next);
-                    if next == 0 {
-                        self.dungeon_torch_mut().set_target(NativeTile::torch(i));
-                        self.Dungeon_ExtinguishTorch();
-                    }
+    /// `$01:CE70..CE98`: the timer scan is conditional CPU work, before the
+    /// door checks. Its frame gate, each timer branch, and the expiry call
+    /// belong to the native statements that execute them.
+    fn dungeon_process_torch_timers(&mut self) {
+        // LDA $1A : AND #3 : BNE.
+        crate::cycle_ledger::charge(56);
+        if self.game_state.frame.frame_counter & 3 != 0 {
+            crate::cycle_ledger::charge(6);
+            return;
+        }
+        // LDA $0112 : BNE.
+        crate::cycle_ledger::charge(48);
+        if self.game_state.world.transient.flag_custom_spell_anim_active() != 0 {
+            crate::cycle_ledger::charge(6);
+            return;
+        }
+        crate::cycle_ledger::charge(16); // LDX #0.
+        for i in 0..16 {
+            let timer = self.game_state.dungeon.torch.timer(i);
+            crate::cycle_ledger::charge(48); // LDA $04F0,X : BEQ.
+            if timer == 0 {
+                crate::cycle_ledger::charge(6);
+            } else {
+                let next = timer.wrapping_sub(1);
+                crate::cycle_ledger::charge(68); // DEC $04F0,X : BNE.
+                self.dungeon_torch_mut().set_timer(i, next);
+                if next != 0 {
+                    crate::cycle_ledger::charge(6);
+                } else {
+                    // PHX : TXA : ORA #$C0 : STA $0333 : JSL.
+                    crate::cycle_ledger::charge(146);
+                    self.dungeon_torch_mut().set_target(NativeTile::torch(i));
+                    self.Dungeon_ExtinguishTorch();
+                    crate::cycle_ledger::charge(28); // PLX after the callee returns.
                 }
             }
+            // INX : CPX #$10 : BNE (the table never crosses a page).
+            crate::cycle_ledger::charge(46 + if i != 15 { 6 } else { 0 });
         }
+    }
 
+    pub(super) fn dungeon_process_torches_and_doors(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x01_ce70);
+        self.dungeon_process_torch_timers();
+        crate::cycle_ledger::charge(48);
         if !self.game_state.player.follower_link.is_immobilized() {
+            crate::cycle_ledger::charge(6 + 518);
             let dir = self.game_state.player.follower_link.facing_index();
             let link_y = self.game_state.player.follower_link.y() as i32;
             let link_x = self.game_state.player.follower_link.x() as i32;
@@ -15593,6 +16814,8 @@ impl ZeldaState {
                         .lower_level_tilemap_offset(),
                 );
 
+            crate::cycle_ledger::charge(if self.game_state.player.follower_link.lower_level_state() == 0 { 6 } else { 24 });
+            crate::cycle_ledger::charge(148);
             let closed_door = |state: &Self, pos: usize| match state
                 .game_state
                 .dungeon
@@ -15605,23 +16828,41 @@ impl ZeldaState {
             };
             let mut openable = closed_door(self, pos);
             if openable.is_none() {
+                crate::cycle_ledger::charge(200);
                 pos += DUNGEON_PROCESS_TORCHES_AND_DOORS_LINK_POSITION_OFFSETS[dir];
                 openable = closed_door(self, pos);
+                if openable.is_none() { crate::cycle_ledger::charge(6); }
+            } else {
+                crate::cycle_ledger::charge(6);
             }
 
             if let Some(k) = openable {
+                crate::cycle_ledger::charge(272);
                 self.dungeon_room_load_mut().set_selected_key_door(k);
 
                 if (self.game_state.dungeon.doors.door_direction(k) & 3) == dir as u8 {
+                    crate::cycle_ledger::charge(110);
                     let door_type = self.game_state.dungeon.doors.door_type_and_slot(k) & 0xfe;
                     if door_type == DOOR_TYPE_BREAKABLE_WALL {
-                        if self.game_state.player.follower_link.is_running()
-                            && self.game_state.player.follower_link.dash_counter() < 63
+                        crate::cycle_ledger::charge(6 + 80);
+                        let running = self.game_state.player.follower_link.is_running();
+                        if running { crate::cycle_ledger::charge(80); }
+                        // The source compares the full word at $02F1: its high
+                        // byte is owned by the follower event flags at $02F2.
+                        let dash_word = u16::from(self.game_state.player.follower_link.dash_counter())
+                            | (u16::from(self.game_state.sprites.follower_runtime.event_flags()) << 8);
+                        if running && dash_word < 63
                         {
+                            crate::cycle_ledger::charge(148);
                             self.dungeon_doors_mut().set_current_door_pos(pos as u16);
 
-                            let db = self.ancilla_add_door_debris();
+                            let db = {
+                                let _scope = crate::cycle_ledger::routine(0x09_9c38);
+                                self.ancilla_add_door_debris()
+                            };
+                            crate::cycle_ledger::charge(16);
                             if db >= 0 {
+                                crate::cycle_ledger::charge(586);
                                 let db = db as usize;
                                 let direction = self.game_state.dungeon.doors.door_direction(k) & 3;
                                 self.door_debris_mut().set_direction(db, direction);
@@ -15640,13 +16881,22 @@ impl ZeldaState {
                                     .wrapping_add((addr & 0x1f80) >> 4);
                                 self.door_debris_mut().set_x_word(db, door_x);
                                 self.door_debris_mut().set_y_word(db, door_y);
+                            } else {
+                                crate::cycle_ledger::charge(6);
                             }
+                            crate::cycle_ledger::charge(172);
                             self.set_sound_effect_2(27);
                             self.set_submodule(9);
-                            self.sprite_repel_dash();
+                            {
+                                let _scope = crate::cycle_ledger::routine(0x07_9291);
+                                self.sprite_repel_dash();
+                            }
+                            crate::cycle_ledger::charge(44);
                             return;
                         }
+                        crate::cycle_ledger::charge(6);
                     } else if door_type == DOOR_TYPE_1E {
+                        crate::cycle_ledger::charge(40 + 40 + 230);
                         self.dungeon_doors_mut().clear_door_animation_step();
                         self.dungeon_doors_mut().set_current_door_pos(pos as u16);
                         let palace = (self
@@ -15661,20 +16911,11 @@ impl ZeldaState {
                             .player_resources
                             .has_big_key_mask(upper_bitmask(palace))
                         {
-                            self.dungeon_doors_mut().clear_door_animation_step();
-                            self.dungeon_doors_mut().set_current_door_pos(pos as u16);
-                            self.set_submodule(4);
-                            let sound_effect_2 = 20
-                                | DUNGEON_PROCESS_TORCHES_AND_DOORS_OPEN_DOOR_PANNING[(self
-                                    .game_state
-                                    .dungeon
-                                    .doors
-                                    .door_direction(k)
-                                    & 3)
-                                    as usize];
-                            self.set_sound_effect_2(sound_effect_2);
+                            crate::cycle_ledger::charge(6);
+                            self.dungeon_publish_key_door_open(k, pos);
                             return;
                         }
+                        crate::cycle_ledger::charge(56);
                         if self
                             .game_state
                             .world
@@ -15682,37 +16923,50 @@ impl ZeldaState {
                             .big_key_door_message_triggered()
                             == 0
                         {
+                            crate::cycle_ledger::charge(210);
                             self.set_big_key_door_message_triggered(1);
                             self.dialogue_message_index_mut().set_value(0x007a);
                             self.main_show_text_message();
+                            crate::cycle_ledger::charge(22);
+                        } else {
+                            crate::cycle_ledger::charge(6);
                         }
-                    } else if (DOOR_TYPE_SMALL_KEY_DOOR..0x2c).contains(&door_type)
-                        && door_type != 0x2a
-                        && self.game_state.inventory.player_resources.keys() != 0
-                    {
-                        self.player_resources_mut().decrement_keys();
-                        self.dungeon_doors_mut().clear_door_animation_step();
-                        self.dungeon_doors_mut().set_current_door_pos(pos as u16);
-                        self.set_submodule(4);
-                        let sound_effect_2 = 20
-                            | DUNGEON_PROCESS_TORCHES_AND_DOORS_OPEN_DOOR_PANNING
-                                [(self.game_state.dungeon.doors.door_direction(k) & 3) as usize];
-                        self.set_sound_effect_2(sound_effect_2);
+                        crate::cycle_ledger::charge(24);
+                    } else if self.dungeon_try_small_key_door(k, pos, door_type) {
                         return;
                     }
                 } else {
+                    crate::cycle_ledger::charge(6 + 64);
                     self.set_big_key_door_message_triggered(0);
                 }
             } else {
+                crate::cycle_ledger::charge(64);
                 self.set_big_key_door_message_triggered(0);
             }
+        } else {
+            crate::cycle_ledger::charge(24);
         }
 
+        crate::cycle_ledger::charge(70);
         let invisible = self.game_state.dungeon.door_setup.invisible_door_marker();
-        if invisible & 0x0080 == 0
-            && self.game_state.player.follower_link.doorway_state() == 0
-            && (self.game_state.player.follower_link.x() >> 8) == 0x000c
-        {
+        let eye_door = if invisible & 0x80 != 0 {
+            crate::cycle_ledger::charge(6);
+            false
+        } else {
+            crate::cycle_ledger::charge(40);
+            if self.game_state.player.follower_link.doorway_state() != 0 {
+                crate::cycle_ledger::charge(6);
+                false
+            } else {
+                crate::cycle_ledger::charge(56);
+                if self.game_state.player.follower_link.x() >> 8 != 0x000c {
+                    crate::cycle_ledger::charge(6);
+                    false
+                } else { true }
+            }
+        };
+        if eye_door {
+            crate::cycle_ledger::charge(104);
             let dir = invisible as u8;
             let j = ((invisible >> 8) >> 1) as usize;
             let mut opened = self
@@ -15720,13 +16974,20 @@ impl ZeldaState {
                 .dungeon
                 .doors
                 .opened_doors_including_adjacent();
-            if dir != self.game_state.player.follower_link.facing()
-                && (dir ^ 2) == self.game_state.player.follower_link.facing()
-            {
-                opened |= upper_bitmask(j);
-            } else {
+            if dir == self.game_state.player.follower_link.facing() {
+                crate::cycle_ledger::charge(6 + 102);
                 opened &= !upper_bitmask(j);
+            } else {
+                crate::cycle_ledger::charge(80);
+                if (dir ^ 2) == self.game_state.player.follower_link.facing() {
+                    crate::cycle_ledger::charge(124);
+                    opened |= upper_bitmask(j);
+                } else {
+                    crate::cycle_ledger::charge(6 + 102);
+                    opened &= !upper_bitmask(j);
+                }
             }
+            crate::cycle_ledger::charge(56);
             if opened
                 != self
                     .game_state
@@ -15734,24 +16995,47 @@ impl ZeldaState {
                     .doors
                     .opened_doors_including_adjacent()
             {
+                crate::cycle_ledger::charge(218);
                 self.dungeon_doors_mut()
                     .set_opened_doors_including_adjacent(opened);
-                self.DrawEyeWatchDoor(j);
+                {
+                    let _scope = crate::cycle_ledger::routine(0x01_d33a);
+                    self.DrawEyeWatchDoor(j);
+                }
                 let addr = self.game_state.dungeon.doors.door_tilemap_address(j);
-                self.dungeon_prep_overlay_dma_next_prep(0, addr);
-                self.Dungeon_LoadToggleDoorAttr_OtherEntry(j as i32);
+                crate::cycle_ledger::charge(46);
+                {
+                    let _scope = crate::cycle_ledger::routine(0x01_f764);
+                    self.dungeon_prep_overlay_dma_next_prep(0, addr);
+                }
+                crate::cycle_ledger::charge(86);
+                {
+                    let _scope = crate::cycle_ledger::routine(0x01_d51c);
+                    self.Dungeon_LoadToggleDoorAttr_OtherEntry(j as i32);
+                }
+                crate::cycle_ledger::charge(256);
                 self.request_nmi_copy_packets();
                 self.set_sound_effect_2(21);
                 return;
+            } else {
+                crate::cycle_ledger::charge(6);
             }
         }
 
-        if self.game_state.player.follower_link.button_mask_b_y() & 0x80 == 0
-            || self.game_state.player.follower_link.button_b_frames() != 4
-        {
+        crate::cycle_ledger::charge(76);
+        if self.game_state.player.follower_link.button_mask_b_y() & 0x80 == 0 {
+            crate::cycle_ledger::charge(6 + 44);
+            return;
+        }
+        crate::cycle_ledger::charge(56);
+        if self.game_state.player.follower_link.button_b_frames() != 4 {
+            crate::cycle_ledger::charge(6 + 44);
             return;
         }
 
+        crate::cycle_ledger::charge(118 + if self.game_state.player.follower_link.oam_y_offset_signed() < 0 { 24 } else { 6 });
+        crate::cycle_ledger::charge(240 + if self.game_state.player.follower_link.oam_x_offset_signed() < 0 { 24 } else { 6 });
+        crate::cycle_ledger::charge(294);
         let link_y =
             self.game_state.player.follower_link.y().wrapping_add(
                 self.game_state.player.follower_link.oam_y_offset_signed() as i16 as u16,
@@ -15770,9 +17054,18 @@ impl ZeldaState {
             .bg2_tile(pos)
             .dungeon_role()
         {
-            DungeonRole::Curtain { .. } => Some(None),
-            DungeonRole::ClosedDoor { slot } => Some(Some(slot)),
-            _ => None,
+            DungeonRole::Curtain { .. } => {
+                crate::cycle_ledger::charge(6);
+                Some(None)
+            }
+            DungeonRole::ClosedDoor { slot } => {
+                crate::cycle_ledger::charge(64 + 6);
+                Some(Some(slot))
+            }
+            _ => {
+                crate::cycle_ledger::charge(64);
+                None
+            }
         };
         let is_curtain = |state: &Self, pos: usize| {
             matches!(
@@ -15788,14 +17081,17 @@ impl ZeldaState {
         let mut y = 0x41u8;
         let mut hit = slashable(self, pos);
         if hit.is_none() {
+            crate::cycle_ledger::charge(140);
             pos += 1;
             y = 0x40;
             hit = slashable(self, pos);
             if hit.is_none() {
+                crate::cycle_ledger::charge(202);
                 pos += 63;
                 y = 1;
                 hit = slashable(self, pos);
                 if hit.is_none() {
+                    crate::cycle_ledger::charge(140);
                     pos += 1;
                     y = 0;
                     hit = slashable(self, pos);
@@ -15803,23 +17099,40 @@ impl ZeldaState {
             }
         }
         let Some(hit) = hit else {
+            crate::cycle_ledger::charge(66);
             return;
         };
 
+        crate::cycle_ledger::charge(72);
         let addr;
         if hit.is_none() {
+            crate::cycle_ledger::charge(6 + 72);
             if y & 0x40 != 0 {
+                crate::cycle_ledger::charge(248);
                 pos -= 64;
                 if !is_curtain(self, pos) {
+                    crate::cycle_ledger::charge(66);
                     pos += 64;
+                } else {
+                    crate::cycle_ledger::charge(6);
                 }
+            } else {
+                crate::cycle_ledger::charge(6);
             }
+            crate::cycle_ledger::charge(48);
             if y & 1 != 0 {
+                crate::cycle_ledger::charge(126);
                 pos -= 1;
                 if !is_curtain(self, pos) {
+                    crate::cycle_ledger::charge(14);
                     pos += 1;
+                } else {
+                    crate::cycle_ledger::charge(6);
                 }
+            } else {
+                crate::cycle_ledger::charge(6);
             }
+            crate::cycle_ledger::charge(534);
             let DungeonRole::Curtain { panel } = self
                 .game_state
                 .dungeon
@@ -15837,12 +17150,16 @@ impl ZeldaState {
                 DUNGEON_PROCESS_TORCHES_AND_DOORS_SOURCE_TILES1[panel] as usize,
                 addr >> 1,
             );
+            crate::cycle_ledger::charge(4 * 540 + 3 * 6 + 22); // Inline four-column draw and BRA.
         } else {
+            crate::cycle_ledger::charge(24 + 250);
             self.dungeon_doors_mut().set_current_door_pos(pos as u16);
             let k = hit.unwrap_or_default();
-            if self.game_state.dungeon.doors.door_type_and_slot(k) != DOOR_TYPE_SLASHABLE {
+            if self.game_state.dungeon.doors.door_type_and_slot(k) & 0xfe != DOOR_TYPE_SLASHABLE {
+                crate::cycle_ledger::charge(6 + 66);
                 return;
             }
+            crate::cycle_ledger::charge(522);
             self.set_sound_effect_2(27);
             addr = self.game_state.dungeon.doors.door_tilemap_address(k);
             let opened_adj = self
@@ -15858,13 +17175,68 @@ impl ZeldaState {
             self.dungeon_doors_mut().set_current_door_index_for_slot(k);
             self.dungeon_room_load_mut().set_selected_key_door(k);
             self.RoomDraw_Object_Nx4_Bg2(4, DOOR_TYPE_SRC_UP[0x56 / 2] as usize, addr >> 1);
-            self.Dungeon_LoadToggleDoorAttr_OtherEntry(k as i32);
+            crate::cycle_ledger::charge(86);
+            {
+                let _scope = crate::cycle_ledger::routine(0x01_d51c);
+                self.Dungeon_LoadToggleDoorAttr_OtherEntry(k as i32);
+            }
         }
 
-        self.dungeon_prep_overlay_dma_next_prep(0, addr);
-        let sound_effect_1 = 30 | self.calculate_sfx_pan_arbitrary(((addr & 0x007f) * 2) as u8);
+        crate::cycle_ledger::charge(46);
+        {
+            let _scope = crate::cycle_ledger::routine(0x01_f764);
+            self.dungeon_prep_overlay_dma_next_prep(0, addr);
+        }
+        crate::cycle_ledger::charge(138);
+        let sound_effect_1 = 30 | {
+            let _scope = crate::cycle_ledger::routine(0x0d_bbd0);
+            self.calculate_sfx_pan_arbitrary(((addr & 0x007f) * 2) as u8)
+        };
+        crate::cycle_ledger::charge(234 + 66);
         self.set_sound_effect_1(sound_effect_1);
         self.request_nmi_copy_packets();
+    }
+
+    fn dungeon_try_small_key_door(&mut self, door: usize, pos: usize, door_type: u8) -> bool {
+        crate::cycle_ledger::charge(40); // The direct $1C branch precedes the $1E big-key gate.
+        if door_type == DOOR_TYPE_SMALL_KEY_DOOR {
+            crate::cycle_ledger::charge(6);
+        } else {
+            crate::cycle_ledger::charge(40 + 6 + 40);
+            if door_type < DOOR_TYPE_SMALL_KEY_DOOR {
+                crate::cycle_ledger::charge(6 + 24);
+                return false;
+            }
+            crate::cycle_ledger::charge(40);
+            if door_type >= 0x2c {
+                crate::cycle_ledger::charge(6 + 24);
+                return false;
+            }
+            crate::cycle_ledger::charge(40);
+            if door_type == 0x2a {
+                crate::cycle_ledger::charge(6 + 24);
+                return false;
+            }
+        }
+        crate::cycle_ledger::charge(88);
+        if self.game_state.inventory.player_resources.keys() == 0 {
+            crate::cycle_ledger::charge(6 + 24);
+            return false;
+        }
+        crate::cycle_ledger::charge(110);
+        self.player_resources_mut().decrement_keys();
+        self.dungeon_publish_key_door_open(door, pos);
+        true
+    }
+
+    fn dungeon_publish_key_door_open(&mut self, door: usize, pos: usize) {
+        crate::cycle_ledger::charge(416); // Shared $01:CF6B..CF8D publication and RTL.
+        self.dungeon_doors_mut().clear_door_animation_step();
+        self.dungeon_doors_mut().set_current_door_pos(pos as u16);
+        self.set_submodule(4);
+        let pan = DUNGEON_PROCESS_TORCHES_AND_DOORS_OPEN_DOOR_PANNING
+            [(self.game_state.dungeon.doors.door_direction(door) & 3) as usize];
+        self.set_sound_effect_2(20 | pan);
     }
 
     pub(super) fn dungeon_clear_away_exploding_wall(&mut self) {
@@ -15954,7 +17326,17 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_dungeon_draw_all_push_blocks(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x07_f0ac);
+        crate::cycle_ledger::charge(152); // Bank setup and the two-slot activity gate.
+        if self.game_state.dungeon.object_tracking.changeable_object_index(0)
+            | self.game_state.dungeon.object_tracking.changeable_object_index(1) == 0
+        {
+            crate::cycle_ledger::charge(6 + 72); // Taken BEQ, PLB, RTL.
+            return;
+        }
+        crate::cycle_ledger::charge(16); // LDX #1.
         for i in (0..=1).rev() {
+            crate::cycle_ledger::charge(48);
             if self
                 .game_state
                 .dungeon
@@ -15962,9 +17344,15 @@ impl ZeldaState {
                 .changeable_object_index(i)
                 != 0
             {
+                crate::cycle_ledger::charge(110); // Select slot, save X, JSR.
                 self.Sprite_HandlePushedBlocks_One(i);
+                crate::cycle_ledger::charge(28); // Restore X after the callee returns.
+            } else {
+                crate::cycle_ledger::charge(6);
             }
+            crate::cycle_ledger::charge(30 + if i != 0 { 6 } else { 0 });
         }
+        crate::cycle_ledger::charge(72);
     }
 
     pub(super) fn reset_transition_props_and_advance_reset_interface(&mut self) {

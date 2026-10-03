@@ -91,19 +91,6 @@ const STZ_DP: u64 = 24;
 const ABS_Y_8: u64 = 32; // LDA $abcd,Y with 8-bit accumulator, no page crossing
 const PAGE_CROSS: u64 = 6;
 
-/// `Decompression_GetNextByte` (`$00:E843`): `LDA [$C8] : LDX $C8 : INX :
-/// BNE +5 : LDX #$0000 : INC $CA : + STX $C8 : RTS`.
-fn get_next_byte(source_offset: &mut u16) -> u64 {
-    let wrapped = *source_offset == 0xffff;
-    *source_offset = source_offset.wrapping_add(1);
-    let wrap_cost = if wrapped {
-        BRANCH_NOT_TAKEN + LDX_IMM_16 + INC_DP_8
-    } else {
-        BRANCH_TAKEN
-    };
-    LONG_INDIRECT + LDX_STX_DP_16 + IMPLIED + wrap_cost + LDX_STX_DP_16 + RTS
-}
-
 /// The cost of one decompression, split between the entry routine's own
 /// instructions and its `Decompression_GetNextByte` (`$00:E843`) callee,
 /// which the profiler frames as a subroutine of its own.
@@ -122,10 +109,27 @@ pub(crate) struct DecompressCost {
 
 /// One source-ordered output store. The offset is the decompressor's 16-bit
 /// output cursor; callers own the WRAM destination and the byte value.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DecompressStore {
     pub(crate) after_master_cycles: u64,
     pub(crate) output_offset: u16,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DecompressInstruction {
+    pub(crate) master_cycles: u32,
+    pub(crate) in_get_next_byte: bool,
+    pub(crate) action: Option<DecompressAction>,
+}
+
+/// Values from the native compressed asset, or reads from the caller's live
+/// output buffer. A back-reference load and its later store are separate
+/// instructions: suspension between them must preserve the loaded byte.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) enum DecompressAction {
+    ReadBackReference(u16),
+    StoreBackReference(u16),
+    StoreLiteral { offset: u16, value: u8 },
 }
 
 /// One `GetNextByte` call that does not cross a bank end: `LDA [$C8] : LDX
@@ -156,7 +160,7 @@ pub(crate) fn decompress_cost(
     source_offset: u16,
     destination: u32,
 ) -> DecompressCost {
-    decompress_cost_with_stores(entry, sheet, source, source_offset, destination, |_| {})
+    decompress_cost_with_stores(entry, sheet, source, source_offset, destination, |_| {}, |_| {})
 }
 
 /// Share the exact command and bus pricing with the output-store timeline.
@@ -171,9 +175,58 @@ pub(crate) fn decompress_store_timeline(
 ) -> (DecompressCost, Vec<DecompressStore>) {
     let mut stores = Vec::new();
     let cost = decompress_cost_with_stores(
-        entry, sheet, source, source_offset, destination, |store| stores.push(store),
+        entry, sheet, source, source_offset, destination, |store| stores.push(store), |_| {},
     );
     (cost, stores)
+}
+
+/// The complete native instruction timeline, including the return instructions
+/// after the final output store. Each entry is one indivisible CPU instruction;
+/// refresh, HDMA, and NMI costs belong to the caller's hardware clock.
+pub(crate) fn decompress_instruction_timeline(
+    entry: DecompressEntry,
+    sheet: u8,
+    source: &[u8],
+    source_offset: u16,
+    destination: u32,
+) -> (DecompressCost, Vec<DecompressStore>, Vec<DecompressInstruction>) {
+    let mut stores = Vec::new();
+    let mut instructions = Vec::new();
+    let cost = decompress_cost_with_stores(
+        entry, sheet, source, source_offset, destination,
+        |store| stores.push(store), |cycles| instructions.push(cycles),
+    );
+    (cost, stores, instructions)
+}
+
+#[inline]
+fn charge_instructions(
+    cost: &mut DecompressCost,
+    instruction: &mut dyn FnMut(DecompressInstruction),
+    cycles: &[u64],
+) {
+    for &cycles in cycles {
+        cost.master += cycles;
+        instruction(DecompressInstruction {
+            master_cycles: u32::try_from(cycles).expect("one decompressor instruction fits u32"),
+            in_get_next_byte: false,
+            action: None,
+        });
+    }
+}
+
+fn charge_action(
+    cost: &mut DecompressCost,
+    instruction: &mut dyn FnMut(DecompressInstruction),
+    cycles: u64,
+    action: DecompressAction,
+) {
+    cost.master += cycles;
+    instruction(DecompressInstruction {
+        master_cycles: cycles as u32,
+        in_get_next_byte: false,
+        action: Some(action),
+    });
 }
 
 fn decompress_cost_with_stores(
@@ -183,6 +236,7 @@ fn decompress_cost_with_stores(
     mut source_offset: u16,
     destination: u32,
     mut emit: impl FnMut(DecompressStore),
+    mut instruction: impl FnMut(DecompressInstruction),
 ) -> DecompressCost {
     // `[$00],Y` accesses: the 24-bit destination plus the 16-bit output
     // cursor, priced by the bus rule at that address.
@@ -192,162 +246,218 @@ fn decompress_cost_with_stores(
         ABS_Y_8 + if u16::from(table_low_byte) + u16::from(sheet) > 0xff { PAGE_CROSS } else { 0 }
     };
     let mut cost = DecompressCost::default();
-    cost.master = match entry {
+    match entry {
         // LDA $CFF3,Y : STA $CA : LDA $D0D2,Y : STA $C9 : LDA $D1B1,Y : STA $C8 : BRA Decompress
         DecompressEntry::Sprite => {
-            table_load(0xf3) + LDA_STA_DP_8 + table_load(0xd2) + LDA_STA_DP_8
-                + table_load(0xb1) + LDA_STA_DP_8 + BRANCH_TAKEN
+            charge_instructions(&mut cost, &mut instruction, &[
+                table_load(0xf3), LDA_STA_DP_8, table_load(0xd2), LDA_STA_DP_8, table_load(0xb1),
+                LDA_STA_DP_8, BRANCH_TAKEN
+            ]);
         }
         // STZ $00 : LDA #$40 : STA $01 : LDA #$7F : STA $02 : STA $05
         // : LDA $CF80,Y : STA $CA : LDA $D05F,Y : STA $C9 : LDA $D13E,Y : STA $C8
         DecompressEntry::Background => {
-            STZ_DP + IMM_8 + LDA_STA_DP_8 + IMM_8 + LDA_STA_DP_8 + LDA_STA_DP_8
-                + table_load(0x80) + LDA_STA_DP_8 + table_load(0x5f) + LDA_STA_DP_8
-                + table_load(0x3e) + LDA_STA_DP_8
+            charge_instructions(&mut cost, &mut instruction, &[
+                STZ_DP, IMM_8, LDA_STA_DP_8, IMM_8, LDA_STA_DP_8, LDA_STA_DP_8, table_load(0x80),
+                LDA_STA_DP_8, table_load(0x5f), LDA_STA_DP_8, table_load(0x3e), LDA_STA_DP_8
+            ]);
         }
         // LDA $CF80,Y : STA $CA : LDA $D05F,Y : STA $C9 : LDA $D13E,Y : STA $C8
         DecompressEntry::BackgroundTables => {
-            table_load(0x80) + LDA_STA_DP_8 + table_load(0x5f) + LDA_STA_DP_8
-                + table_load(0x3e) + LDA_STA_DP_8
+            charge_instructions(&mut cost, &mut instruction, &[
+                table_load(0x80), LDA_STA_DP_8, table_load(0x5f), LDA_STA_DP_8, table_load(0x3e),
+                LDA_STA_DP_8
+            ]);
         }
     };
     // Decompress: REP #$10 : LDY #$0000
-    cost.master += REP_SEP + LDY_IMM_16;
+    charge_instructions(&mut cost, &mut instruction, &[REP_SEP, LDY_IMM_16]);
     let mut read = 0usize;
-    let mut next = |cost: &mut DecompressCost, read: &mut usize| -> u8 {
+    let mut next = |cost: &mut DecompressCost, read: &mut usize, instruction: &mut dyn FnMut(DecompressInstruction)| -> u8 {
         let byte = source.get(*read).copied().unwrap_or(0xff);
         *read += 1;
-        let callee = get_next_byte(&mut source_offset);
-        cost.master += JSR_ABS + callee;
+        charge_instructions(cost, instruction, &[JSR_ABS]);
+        let instruction = &mut |mut step: DecompressInstruction| {
+            step.in_get_next_byte = true;
+            instruction(step);
+        };
+        let before = cost.master;
+        let wrapped = source_offset == 0xffff;
+        source_offset = source_offset.wrapping_add(1);
+        charge_instructions(cost, instruction, &[LONG_INDIRECT, LDX_STX_DP_16, IMPLIED]);
+        if wrapped {
+            charge_instructions(cost, instruction, &[BRANCH_NOT_TAKEN, LDX_IMM_16, INC_DP_8]);
+        } else {
+            charge_instructions(cost, instruction, &[BRANCH_TAKEN]);
+        }
+        charge_instructions(cost, instruction, &[LDX_STX_DP_16, RTS]);
+        let callee = cost.master - before;
         cost.get_next_byte_master += callee;
         cost.get_next_byte_calls += 1;
         byte
     };
     loop {
         // .loop JSR GetNextByte : CMP #$FF : BNE .command
-        let header = next(&mut cost, &mut read);
-        cost.master += IMM_8;
+        let header = next(&mut cost, &mut read, &mut instruction);
+        charge_instructions(&mut cost, &mut instruction, &[IMM_8]);
         if header == 0xff {
             // SEP #$10 : RTS
-            cost.master += BRANCH_NOT_TAKEN + REP_SEP + RTS;
+            charge_instructions(&mut cost, &mut instruction, &[BRANCH_NOT_TAKEN, REP_SEP, RTS]);
             return cost;
         }
-        cost.master += BRANCH_TAKEN;
+        charge_instructions(&mut cost, &mut instruction, &[BRANCH_TAKEN]);
         // STA $CD : AND #$E0 : CMP #$E0 : BEQ .extended
-        cost.master += LDA_STA_DP_8 + IMM_8 + IMM_8;
+        charge_instructions(&mut cost, &mut instruction, &[LDA_STA_DP_8, IMM_8, IMM_8]);
         let (command, length) = if header & 0xe0 != 0xe0 {
             // PHA : LDA $CD : REP #$20 : AND #$001F : BRA .length
-            cost.master += BRANCH_NOT_TAKEN + PHA_8 + LDA_STA_DP_8 + REP_SEP + IMM_16 + BRANCH_TAKEN;
+            charge_instructions(&mut cost, &mut instruction, &[
+                BRANCH_NOT_TAKEN, PHA_8, LDA_STA_DP_8, REP_SEP, IMM_16, BRANCH_TAKEN
+            ]);
             (header & 0xe0, u16::from(header & 0x1f))
         } else {
             // LDA $CD : ASL : ASL : ASL : AND #$E0 : PHA : LDA $CD : AND #$03
             // : XBA : JSR GetNextByte : REP #$20
-            cost.master += BRANCH_TAKEN + LDA_STA_DP_8 + 3 * IMPLIED + IMM_8 + PHA_8
-                + LDA_STA_DP_8 + IMM_8 + XBA;
-            let low = next(&mut cost, &mut read);
-            cost.master += REP_SEP;
+            charge_instructions(&mut cost, &mut instruction, &[
+                BRANCH_TAKEN, LDA_STA_DP_8, IMPLIED, IMPLIED, IMPLIED, IMM_8, PHA_8, LDA_STA_DP_8,
+                IMM_8, XBA
+            ]);
+            let low = next(&mut cost, &mut read, &mut instruction);
+            charge_instructions(&mut cost, &mut instruction, &[REP_SEP]);
             ((header << 3) & 0xe0, (u16::from(header & 3) << 8) | u16::from(low))
         };
         // .length INC A : STA $CB : SEP #$20 : PLA
-        cost.master += IMPLIED + LDX_STX_DP_16 + REP_SEP + PLA_8;
+        charge_instructions(&mut cost, &mut instruction, &[IMPLIED, LDX_STX_DP_16, REP_SEP, PLA_8]);
         let length = length + 1;
         // BEQ .copy : BMI .backReference : ASL : BPL .fill : ASL : BPL .wordFill
         match command >> 5 {
             0 => {
-                cost.master += BRANCH_TAKEN;
+                charge_instructions(&mut cost, &mut instruction, &[BRANCH_TAKEN]);
                 // .copy JSR GetNextByte : STA [$00],Y : INY : LDX $CB : DEX : STX $CB : BNE .copy : BRA .loop
                 for remaining in (1..=length).rev() {
-                    next(&mut cost, &mut read);
-                    cost.master += write_cost(cursor);
+                    let value = next(&mut cost, &mut read, &mut instruction);
+                    charge_action(&mut cost, &mut instruction, write_cost(cursor),
+                        DecompressAction::StoreLiteral { offset: cursor, value });
                     emit(DecompressStore { after_master_cycles: cost.master, output_offset: cursor });
-                    cost.master += IMPLIED + LDX_STX_DP_16 + IMPLIED + LDX_STX_DP_16;
+                    charge_instructions(&mut cost, &mut instruction, &[
+                        IMPLIED, LDX_STX_DP_16, IMPLIED, LDX_STX_DP_16
+                    ]);
                     cursor = cursor.wrapping_add(1);
-                    cost.master += if remaining > 1 { BRANCH_TAKEN } else { BRANCH_NOT_TAKEN };
+                    charge_instructions(&mut cost, &mut instruction, &[
+                        if remaining > 1 { BRANCH_TAKEN } else { BRANCH_NOT_TAKEN }
+                    ]);
                 }
-                cost.master += BRANCH_TAKEN;
+                charge_instructions(&mut cost, &mut instruction, &[BRANCH_TAKEN]);
             }
             1 => {
-                cost.master += BRANCH_NOT_TAKEN + BRANCH_NOT_TAKEN + IMPLIED + BRANCH_TAKEN;
+                charge_instructions(&mut cost, &mut instruction, &[
+                    BRANCH_NOT_TAKEN, BRANCH_NOT_TAKEN, IMPLIED, BRANCH_TAKEN
+                ]);
                 // .fill JSR GetNextByte : LDX $CB : - STA [$00],Y : INY : DEX : BNE - : BRA .loop
-                next(&mut cost, &mut read);
-                cost.master += LDX_STX_DP_16;
+                let value = next(&mut cost, &mut read, &mut instruction);
+                charge_instructions(&mut cost, &mut instruction, &[LDX_STX_DP_16]);
                 for remaining in (1..=length).rev() {
-                    cost.master += write_cost(cursor);
+                    charge_action(&mut cost, &mut instruction, write_cost(cursor),
+                        DecompressAction::StoreLiteral { offset: cursor, value });
                     emit(DecompressStore { after_master_cycles: cost.master, output_offset: cursor });
-                    cost.master += IMPLIED + IMPLIED;
+                    charge_instructions(&mut cost, &mut instruction, &[IMPLIED, IMPLIED]);
                     cursor = cursor.wrapping_add(1);
-                    cost.master += if remaining > 1 { BRANCH_TAKEN } else { BRANCH_NOT_TAKEN };
+                    charge_instructions(&mut cost, &mut instruction, &[
+                        if remaining > 1 { BRANCH_TAKEN } else { BRANCH_NOT_TAKEN }
+                    ]);
                 }
-                cost.master += BRANCH_TAKEN;
+                charge_instructions(&mut cost, &mut instruction, &[BRANCH_TAKEN]);
             }
             2 => {
-                cost.master += BRANCH_NOT_TAKEN + BRANCH_NOT_TAKEN + IMPLIED + BRANCH_NOT_TAKEN
-                    + IMPLIED + BRANCH_TAKEN;
+                charge_instructions(&mut cost, &mut instruction, &[
+                    BRANCH_NOT_TAKEN, BRANCH_NOT_TAKEN, IMPLIED, BRANCH_NOT_TAKEN, IMPLIED, BRANCH_TAKEN
+                ]);
                 // .wordFill JSR : XBA : JSR : LDX $CB
-                next(&mut cost, &mut read);
-                cost.master += XBA;
-                next(&mut cost, &mut read);
-                cost.master += LDX_STX_DP_16;
+                let low = next(&mut cost, &mut read, &mut instruction);
+                charge_instructions(&mut cost, &mut instruction, &[XBA]);
+                let high = next(&mut cost, &mut read, &mut instruction);
+                charge_instructions(&mut cost, &mut instruction, &[LDX_STX_DP_16]);
                 // - XBA : STA [$00],Y : INY : DEX : BEQ .done : XBA : STA [$00],Y : INY : DEX : BNE - : .done JMP .loop
                 let mut remaining = length;
                 loop {
-                    cost.master += XBA + write_cost(cursor);
+                    charge_instructions(&mut cost, &mut instruction, &[XBA]);
+                    charge_action(&mut cost, &mut instruction, write_cost(cursor),
+                        DecompressAction::StoreLiteral { offset: cursor, value: low });
                     emit(DecompressStore { after_master_cycles: cost.master, output_offset: cursor });
-                    cost.master += IMPLIED + IMPLIED;
+                    charge_instructions(&mut cost, &mut instruction, &[IMPLIED, IMPLIED]);
                     cursor = cursor.wrapping_add(1);
                     remaining -= 1;
                     if remaining == 0 {
-                        cost.master += BRANCH_TAKEN;
+                        charge_instructions(&mut cost, &mut instruction, &[BRANCH_TAKEN]);
                         break;
                     }
-                    cost.master += BRANCH_NOT_TAKEN + XBA + write_cost(cursor);
+                    charge_instructions(&mut cost, &mut instruction, &[
+                        BRANCH_NOT_TAKEN, XBA
+                    ]);
+                    charge_action(&mut cost, &mut instruction, write_cost(cursor),
+                        DecompressAction::StoreLiteral { offset: cursor, value: high });
                     emit(DecompressStore { after_master_cycles: cost.master, output_offset: cursor });
-                    cost.master += IMPLIED + IMPLIED;
+                    charge_instructions(&mut cost, &mut instruction, &[IMPLIED, IMPLIED]);
                     cursor = cursor.wrapping_add(1);
                     remaining -= 1;
                     if remaining == 0 {
-                        cost.master += BRANCH_NOT_TAKEN;
+                        charge_instructions(&mut cost, &mut instruction, &[BRANCH_NOT_TAKEN]);
                         break;
                     }
-                    cost.master += BRANCH_TAKEN;
+                    charge_instructions(&mut cost, &mut instruction, &[BRANCH_TAKEN]);
                 }
-                cost.master += JMP_ABS;
+                charge_instructions(&mut cost, &mut instruction, &[JMP_ABS]);
             }
             3 => {
-                cost.master += BRANCH_NOT_TAKEN + BRANCH_NOT_TAKEN + IMPLIED + BRANCH_NOT_TAKEN
-                    + IMPLIED + BRANCH_NOT_TAKEN;
+                charge_instructions(&mut cost, &mut instruction, &[
+                    BRANCH_NOT_TAKEN, BRANCH_NOT_TAKEN, IMPLIED, BRANCH_NOT_TAKEN, IMPLIED,
+                    BRANCH_NOT_TAKEN
+                ]);
                 // .increasing JSR GetNextByte : LDX $CB : - STA [$00],Y : INC A : INY : DEX : BNE - : BRA .loop
-                next(&mut cost, &mut read);
-                cost.master += LDX_STX_DP_16;
+                let mut value = next(&mut cost, &mut read, &mut instruction);
+                charge_instructions(&mut cost, &mut instruction, &[LDX_STX_DP_16]);
                 for remaining in (1..=length).rev() {
-                    cost.master += write_cost(cursor);
+                    charge_action(&mut cost, &mut instruction, write_cost(cursor),
+                        DecompressAction::StoreLiteral { offset: cursor, value });
+                    value = value.wrapping_add(1);
                     emit(DecompressStore { after_master_cycles: cost.master, output_offset: cursor });
-                    cost.master += IMPLIED + IMPLIED + IMPLIED;
+                    charge_instructions(&mut cost, &mut instruction, &[IMPLIED, IMPLIED, IMPLIED]);
                     cursor = cursor.wrapping_add(1);
-                    cost.master += if remaining > 1 { BRANCH_TAKEN } else { BRANCH_NOT_TAKEN };
+                    charge_instructions(&mut cost, &mut instruction, &[
+                        if remaining > 1 { BRANCH_TAKEN } else { BRANCH_NOT_TAKEN }
+                    ]);
                 }
-                cost.master += BRANCH_TAKEN;
+                charge_instructions(&mut cost, &mut instruction, &[BRANCH_TAKEN]);
             }
             _ => {
-                cost.master += BRANCH_NOT_TAKEN + BRANCH_TAKEN;
+                charge_instructions(&mut cost, &mut instruction, &[BRANCH_NOT_TAKEN, BRANCH_TAKEN]);
                 // .backReference JSR : XBA : JSR : XBA : TAX
-                let low = next(&mut cost, &mut read);
-                cost.master += XBA;
-                let high = next(&mut cost, &mut read);
-                cost.master += XBA + IMPLIED;
+                let low = next(&mut cost, &mut read, &mut instruction);
+                charge_instructions(&mut cost, &mut instruction, &[XBA]);
+                let high = next(&mut cost, &mut read, &mut instruction);
+                charge_instructions(&mut cost, &mut instruction, &[XBA, IMPLIED]);
                 let mut source_cursor = u16::from(high) << 8 | u16::from(low);
                 // - PHY : TXY : LDA [$00],Y : TYX : PLY : STA [$00],Y : INY : INX
                 // : REP #$20 : DEC $CB : SEP #$20 : BNE - : JMP .loop
                 for remaining in (1..=length).rev() {
-                    cost.master += PHY_16 + IMPLIED + write_cost(source_cursor) + IMPLIED + PLY_16
-                        + write_cost(cursor);
+                    charge_instructions(&mut cost, &mut instruction, &[
+                        PHY_16, IMPLIED
+                    ]);
+                    charge_action(&mut cost, &mut instruction, write_cost(source_cursor),
+                        DecompressAction::ReadBackReference(source_cursor));
+                    charge_instructions(&mut cost, &mut instruction, &[IMPLIED, PLY_16]);
+                    charge_action(&mut cost, &mut instruction, write_cost(cursor),
+                        DecompressAction::StoreBackReference(cursor));
                     emit(DecompressStore { after_master_cycles: cost.master, output_offset: cursor });
-                    cost.master += IMPLIED + IMPLIED + REP_SEP + DEC_DP_16 + REP_SEP;
+                    charge_instructions(&mut cost, &mut instruction, &[
+                        IMPLIED, IMPLIED, REP_SEP, DEC_DP_16, REP_SEP
+                    ]);
                     cursor = cursor.wrapping_add(1);
                     source_cursor = source_cursor.wrapping_add(1);
-                    cost.master += if remaining > 1 { BRANCH_TAKEN } else { BRANCH_NOT_TAKEN };
+                    charge_instructions(&mut cost, &mut instruction, &[
+                        if remaining > 1 { BRANCH_TAKEN } else { BRANCH_NOT_TAKEN }
+                    ]);
                 }
-                cost.master += JMP_ABS;
+                charge_instructions(&mut cost, &mut instruction, &[JMP_ABS]);
             }
         }
     }
@@ -411,7 +521,9 @@ mod tests {
         Some((address, &rom[start..]))
     }
 
-    fn shadow_master_cycles(rom: &[u8], entry: DecompressEntry, sheet: u8) -> Option<u64> {
+    fn shadow_master_cycles(
+        rom: &[u8], entry: DecompressEntry, sheet: u8, instructions: &[DecompressInstruction],
+    ) -> Option<u64> {
         // The caller returns to $00:8036 (RTS adds one to the pushed word).
         const RETURN_TO_MAIN_WAIT: [u8; 2] = [0x35, 0x80];
         let checkpoint = RomCpuCheckpoint {
@@ -450,11 +562,17 @@ mod tests {
         let mut run =
             RomCpuTimingRun::new(rom, &ram, &[0u8; 0x2000], &ppu, &dma, [0; 4], checkpoint).ok()?;
         let mut master = 0u64;
-        for _ in 0..4_000_000 {
+        for index in 0..4_000_000 {
             if run.is_complete() {
+                assert_eq!(index, instructions.len(), "{entry:?} sheet {sheet:#04x}: return boundary");
                 return Some(master);
             }
-            master += u64::from(run.step().master_cycles);
+            let pc = run.pc();
+            let step = run.step().master_cycles;
+            assert_eq!(instructions.get(index).map(|i| (i.master_cycles, i.in_get_next_byte)),
+                Some((step, (0x00_e843..=0x00_e852).contains(&pc))),
+                "{entry:?} sheet {sheet:#04x}: instruction {index} at {pc:06x}, elapsed={master}");
+            master += u64::from(step);
         }
         None
     }
@@ -479,11 +597,16 @@ mod tests {
                     outside += 1;
                     continue;
                 };
-                let Some(measured) = shadow_master_cycles(&rom, entry, sheet) else {
+                let (cost, stores, instructions) = decompress_instruction_timeline(
+                    entry, sheet, stream, address as u16, 0x7f_4000,
+                );
+                let Some(measured) = shadow_master_cycles(&rom, entry, sheet, &instructions) else {
                     unfinished += 1;
                     continue;
                 };
-                let cost = decompress_cost(entry, sheet, stream, address as u16, 0x7f_4000);
+                assert_eq!((cost, stores), decompress_store_timeline(
+                    entry, sheet, stream, address as u16, 0x7f_4000,
+                ));
                 let modeled = cost.master;
                 assert!(cost.get_next_byte_calls >= 1 && cost.get_next_byte_master <= cost.master);
                 assert!(

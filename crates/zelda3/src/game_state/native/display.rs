@@ -622,6 +622,10 @@ impl HudTilemapState {
             self.tile_indices[offset + 1] = (value >> 8) as u8;
         }
     }
+
+    pub(crate) fn set_tile_byte(&mut self, offset: usize, value: u8) {
+        self.tile_indices[offset] = value;
+    }
 }
 
 pub(crate) struct HudStateRead<'a> {
@@ -1602,6 +1606,12 @@ impl<'a> NativePaletteBufferBridgeMut<'a> {
         write_le_u16(self.ram, OVERWORLD_PALETTE_AUX_OR_MAIN, 0x0200);
     }
 
+    pub(crate) fn set_palette_destination_high(&mut self,value:u8) {
+        let old=self.display.palette_buffer.overworld_aux_or_main_offset();
+        self.display.palette_buffer.set_overworld_aux_or_main_offset((old&255)|(u16::from(value)<<8));
+        self.ram[OVERWORLD_PALETTE_AUX_OR_MAIN+1]=value;
+    }
+
     pub(crate) fn keep_overworld_aux_or_main_low_byte(&mut self) {
         self.display
             .palette_buffer
@@ -1624,19 +1634,19 @@ impl<'a> NativePaletteBufferBridgeMut<'a> {
         );
     }
 
-    /// Establish the power-on provenance of the palette buffers: at boot the
-    /// WRAM palette shadow is zero, so every word is a known `constant 0` until
-    /// something writes it. Mirror-only (the shadow is already zero, so no RAM
-    /// write) — this seeds the Backup/Aux banks whose transparent color-0 slots
-    /// the game never explicitly loads, so transforms that read them stay clean.
-    pub(crate) fn initialize_mirror_from_zeroed_buffers(&mut self) {
-        for bank in [
-            zelda3_palette::Bank::Main,
-            zelda3_palette::Bank::Aux,
-            zelda3_palette::Bank::Backup,
+    /// Import the reset/initializer-owned palette values without writing RAM.
+    /// Only main color zero was cleared by Startup_InitializeMemory; untouched
+    /// words may still contain the machine's power-on WRAM value.
+    pub(crate) fn initialize_mirror_from_buffers(&mut self) {
+        for (bank, base) in [
+            (zelda3_palette::Bank::Main, MAIN_PALETTE_BUFFER),
+            (zelda3_palette::Bank::Aux, AUX_PALETTE_BUFFER),
+            (zelda3_palette::Bank::Backup, MAPBAK_PALETTE),
         ] {
-            self.mirror()
-                .fill_constant_range(bank, 0, zelda3_palette::PALETTE_WORDS, 0);
+            for word in 0..zelda3_palette::PALETTE_WORDS {
+                let value = read_le_u16(self.ram, base + word * 2);
+                self.mirror().set_constant_word(bank, word, value);
+            }
         }
     }
 
@@ -2145,6 +2155,25 @@ impl Default for PpuScrollCopyState {
 }
 
 impl PpuScrollCopyState {
+    pub(crate) fn write_entrance_byte(&mut self, address: usize, value: u8) -> bool {
+        let word = match address & !1 {
+            0xe0 => &mut self.bg1_h_copy2,
+            0xe2 => &mut self.bg2_h_copy2,
+            0xe6 => &mut self.bg1_v_copy2,
+            0xe8 => &mut self.bg2_v_copy2,
+            0x11e => &mut self.bg2_h_copy,
+            0x120 => &mut self.bg1_h_copy,
+            0x122 => &mut self.bg2_v_copy,
+            0x124 => &mut self.bg1_v_copy,
+            0xc144 => &mut self.exit_bg2_v_copy2,
+            0xc146 => &mut self.exit_bg2_h_copy2,
+            _ => return false,
+        };
+        let shift = (address & 1) * 8;
+        *word = (*word & !(255 << shift)) | (u16::from(value) << shift);
+        true
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             bg1_h_copy: read_le_u16(ram, BG1_H_SCROLL_COPY),
@@ -2874,6 +2903,37 @@ pub(crate) struct DisplayState {
 }
 
 impl DisplayState {
+    pub(crate) fn write_load_parent_byte(&mut self, address: usize, value: u8) -> bool {
+        let byte = match address {
+            0x13 => &mut self.screen_brightness,
+            0x1c => &mut self.main_screen_layers,
+            0x1d => &mut self.sub_screen_layers,
+            0x94 => &mut self.bg_mode,
+            0x95 => &mut self.mosaic_copy,
+            0x99 => &mut self.palette_filter.color_window_selection,
+            0x9a => &mut self.palette_filter.color_math_control,
+            0x9c => &mut self.palette_filter.fixed_color_red,
+            0x9d => &mut self.palette_filter.fixed_color_green,
+            0x9e => &mut self.palette_filter.fixed_color_blue,
+            0x4b4 => &mut self.hud_runtime.super_bomb_indicator_timer,
+            0xab1 => &mut self.palette_buffer.sprite_palette_6_right_indoors,
+            0xc007 => &mut self.palette_filter.countdown,
+            0xc008 => &mut self.palette_filter.countdown_high,
+            0xc009 => &mut self.palette_filter.darkening_or_lightening_screen,
+            0xc00a => &mut self.palette_filter.darkening_or_lightening_screen_high,
+            0xc00b => &mut self.mosaic_target_level,
+            0xc011 => &mut self.mosaic_level,
+            0xaa9 => {
+                self.palette_buffer.overworld_aux_or_main_offset =
+                    (self.palette_buffer.overworld_aux_or_main_offset & 255) | (u16::from(value) << 8);
+                return true;
+            }
+            _ => return false,
+        };
+        *byte = value;
+        true
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             screen_brightness: ram_byte(ram, INIDISP_COPY),
@@ -5318,6 +5378,25 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
             LinkDmaSourceSlot::BodyPointerUpper, LinkDmaSourceSlot::BodyPointerLower,
             LinkDmaSourceSlot::TravelBirdUpper, LinkDmaSourceSlot::TravelBirdLower,
         ][word];
+        self.set_link_dma_source(slot, value);
+    }
+
+    pub(crate) fn sprite_preparation_pointer_word(&self, pointer: usize) -> u16 {
+        // The native producers own the low byte; the adjacent byte remains in
+        // the native WRAM image. NMI_PrepareSprites loads both. Keep byte-sized
+        // producers from clearing that retained high byte or interpreting it
+        // as part of a gameplay flag (notably the travel-bird flag).
+        let (address, low) = [
+            (DMA_HEAD_POINTER, self.display.sprite_dma_head_pointer),
+            (DMA_BODY_POINTER, self.display.sprite_dma_body_pointer),
+            (FLAG_TRAVEL_BIRD, self.display.travel_bird_tile_offset),
+        ][pointer];
+        debug_assert_eq!(ram_byte(self.ram, address), low);
+        read_le_u16(self.ram, address)
+    }
+
+    pub(crate) fn set_sprite_preparation_animation_word(&mut self, word: usize, value: u16) {
+        let slot = [LinkDmaSourceSlot::AnimatedTileUpper, LinkDmaSourceSlot::AnimatedTileLower][word];
         self.set_link_dma_source(slot, value);
     }
 

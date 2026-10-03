@@ -1853,12 +1853,15 @@ const fn rom_attract_world_map_mode7_brightness_is_early_published(
     main_module == 20 && submodule == 0 && sequence == 1 && attract_state == 4
 }
 
-const fn rom_intro_wait_player_tears_down_poly_thread(
+const fn rom_intro_main_tears_down_poly_thread(
     main_module: u8,
     submodule: u8,
     nmi_thread_active: bool,
 ) -> bool {
-    main_module == 0 && submodule == 8 && nmi_thread_active
+    // Both callers deactivate the outgoing IRQ worker. Its synthetic atomic
+    // stack alternation cannot decide whether their main continuation runs:
+    // the V-IRQ returns to that caller in the same host as the worker's slot.
+    main_module == 0 && matches!(submodule, 6 | 8) && nmi_thread_active
 }
 
 const fn legacy_poly_scheduler_is_active(
@@ -2520,10 +2523,17 @@ fn advance_rom_cpu_step(run: &mut RomCpuTimingRun, budget: &mut CpuCycleBudget) 
 }
 
 fn advance_rom_cpu_step_measured(run: &mut RomCpuTimingRun, budget: &mut CpuCycleBudget) -> (CpuWorkAdvance, u32) {
-    use std::sync::atomic::Ordering::Relaxed;
     let timing = run.step();
+    (advance_instruction_with_rom_hdma(run, budget, timing.master_cycles),
+        u32::from(timing.master_cycles))
+}
+
+fn advance_instruction_with_rom_hdma(
+    run: &mut RomCpuTimingRun, budget: &mut CpuCycleBudget, master_cycles: u32,
+) -> CpuWorkAdvance {
+    use std::sync::atomic::Ordering::Relaxed;
     let instruction =
-        budget.advance_instruction_with_hdma(timing.master_cycles, |event, scanline| match event {
+        budget.advance_instruction_with_hdma(master_cycles, |event, scanline| match event {
             CpuBusEvent::HdmaInit => {
                 run.set_raster_position(scanline, 20);
                 let cycles = run.run_hdma_init_master_cycles();
@@ -2540,7 +2550,7 @@ fn advance_rom_cpu_step_measured(run: &mut RomCpuTimingRun, budget: &mut CpuCycl
             CpuBusEvent::WramRefresh => unreachable!(),
         });
     let dma_master_cycles = run.drain_started_dma_master_cycles();
-    (budget.advance_started_general_dma(instruction, dma_master_cycles), u32::from(timing.master_cycles))
+    budget.advance_started_general_dma(instruction, dma_master_cycles)
 }
 
 #[derive(Clone, Debug)]
@@ -2662,6 +2672,14 @@ const HUD_INVENTORY_TAIL_RETURN_PC: u32 = 0x0d_fcf9;
 
 fn native_main_loop_cpu_run(state: &mut ZeldaState, input: u16, nmi_is_trailing: bool) -> (RomCpuTimingRun, CpuCycleBudget) {
     let phase = state.native_main_wait_cpu_phase.take();
+    let trace = nmi::debug_frame_selection_env_matches(
+        "ZELDA3_DEBUG_DIALOGUE_CPU_PHASE", state.frame_ctr_dbg,
+    );
+    if trace {
+        eprintln!("native-main-wait-entry frame={} trailing={} retained={:?}",
+            state.frame_ctr_dbg, nmi_is_trailing, phase.as_ref().map(|phase|
+                (phase.host, phase.checkpoint, phase.budget.raster_position())));
+    }
     if let Some(phase) = phase.as_ref() {
         assert_eq!(phase.host, state.frame_ctr_dbg + u32::from(nmi_is_trailing),
             "overworld caller CPU phase belongs to a different host");
@@ -2684,6 +2702,10 @@ fn native_main_loop_cpu_run(state: &mut ZeldaState, input: u16, nmi_is_trailing:
     let mut budget = phase.map(|phase| phase.budget).unwrap_or_else(||
         CpuCycleBudget::at_nmi_acceptance(CpuBusWorkload::with_dynamic_hdma(), field_timing));
     advance_rom_cpu_through_nmi(&mut run, &mut budget);
+    if trace {
+        eprintln!("native-main-wait-after-nmi frame={} pc={:06x} raster={:?}",
+            state.frame_ctr_dbg, run.pc(), budget.raster_position());
+    }
     (run, budget)
 }
 
@@ -2774,11 +2796,14 @@ fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, 
     let (mut run, mut budget) = native_main_loop_cpu_run(state, input, nmi_is_trailing);
     let trace_iteration = debug_overworld_cpu_iteration_host_matches(state.frame_ctr_dbg);
     if trace_iteration {
+        // `$1A` names the iteration this measurement covers, independent of
+        // how the host labels of leading/trailing acceptances line up.
         eprintln!(
-            "[OWCPU] host={} entry={:?} pc={:06x}",
+            "[OWCPU] host={} entry={:?} pc={:06x} frame_counter={:02x}",
             state.frame_ctr_dbg,
             budget.raster_position(),
-            run.pc()
+            run.pc(),
+            run.ram_byte(FRAME_COUNTER),
         );
     }
     let mut packing_entry = None;
@@ -3105,6 +3130,38 @@ fn overworld_cpu_suffix_main_wait_phase(run: RomCpuTimingRun, budget: CpuCycleBu
 /// own entry instead.
 fn try_overworld_cpu_suffix_main_wait_phase(mut run: RomCpuTimingRun, mut budget: CpuCycleBudget, host: u32) -> Option<NativeMainWaitCpuPhase> {
     for _ in 0..50_000 {
+        if run.pc() == 0x00_8034 {
+            // The caller has cleared $12 and returned with an exact clock.
+            // Retain the wait instruction natively; no ROM execution or
+            // guessed instruction/raster seed is needed for the busy loop.
+            assert_eq!(run.ram_byte(NMI_BOOLEAN), 0);
+            let next_entry = if run.ram_byte(MAIN_MODULE) == 0x0f {
+                DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT.entry_pc
+            } else { 0x00_805d };
+            let mut checkpoint = run.main_wait_checkpoint(next_entry);
+            assert!(checkpoint.accumulator_is_8_bit && checkpoint.dp == 0
+                && !checkpoint.emulation, "main wait requires the native m8/direct-page-zero caller");
+            let mut wait = crate::cycle_models::main_wait::MainWait::default();
+            for _ in 0..50_000 {
+                let step = wait.step(0);
+                checkpoint.entry_pc = wait.next_pc();
+                if let Some(value) = step.loaded_latch {
+                    checkpoint.a = (checkpoint.a & 0xff00) | u16::from(value);
+                    checkpoint.zero = value == 0;
+                    checkpoint.negative = value & 0x80 != 0;
+                }
+                if advance_instruction_with_rom_hdma(&mut run, &mut budget, step.master_cycles)
+                    .reached_boundary().is_some()
+                {
+                    if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+                        eprintln!("song_upload main_wait host={host} pc={:06x} position={:?} zero={} counter={}",
+                            checkpoint.entry_pc, budget.raster_position(), checkpoint.zero, run.ram_byte(FRAME_COUNTER));
+                    }
+                    return Some(NativeMainWaitCpuPhase { host, checkpoint, budget });
+                }
+            }
+            panic!("native main wait did not reach NMI");
+        }
         let (v, h) = budget.raster_position().coordinates();
         run.set_raster_position(v, h);
         if advance_rom_cpu_step(&mut run, &mut budget).reached_boundary().is_some() {
@@ -5128,10 +5185,18 @@ fn sprite_main_cpu_interruption_boundary(
 /// partial checkpoints identify the in-flight slot directly.
 fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCpuBoundary) -> bool {
     match boundary {
+        SpriteMainCpuBoundary::CuccoDraw { work } => work.slot() == slot,
+        SpriteMainCpuBoundary::FollowerBodyDraw { .. }
+        | SpriteMainCpuBoundary::FollowerWrapperReturn { .. }
+        | SpriteMainCpuBoundary::FollowerAnimationSelection { .. }
+        | SpriteMainCpuBoundary::FollowerHeadCoordinates { .. } => false,
         SpriteMainCpuBoundary::BeforeFirstSlot
         | SpriteMainCpuBoundary::Module09FinalScrollPairPending => slot == 15,
         SpriteMainCpuBoundary::AfterSlot(after_slot) => slot.checked_add(1) == Some(after_slot),
         SpriteMainCpuBoundary::AfterTimersAndOam {
+            slot: active_slot, ..
+        }
+        | SpriteMainCpuBoundary::TimerCoordinateMoves {
             slot: active_slot, ..
         }
         | SpriteMainCpuBoundary::AfterTimerDecrements {
@@ -5298,6 +5363,8 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         | SpriteMainCpuBoundary::GuardAnimation {
             slot: active_slot, ..
         }
+        | SpriteMainCpuBoundary::RatOamFlagsPending { slot: active_slot, .. }
+        | SpriteMainCpuBoundary::KeeseInactiveCheckPending { slot: active_slot }
         | SpriteMainCpuBoundary::MiniMoldormHistory {
             slot: active_slot, ..
         } => active_slot == slot,
@@ -7553,10 +7620,16 @@ fn same_optional_sprite_main_source_checkpoint(
 /// intentionally not interchangeable.
 const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
     match boundary {
+        SpriteMainCpuBoundary::CuccoDraw { work } => 2 * (16 - work.slot()) - 1,
         SpriteMainCpuBoundary::BeforeFirstSlot
+        | SpriteMainCpuBoundary::FollowerBodyDraw { .. }
+        | SpriteMainCpuBoundary::FollowerWrapperReturn { .. }
+        | SpriteMainCpuBoundary::FollowerAnimationSelection { .. }
+        | SpriteMainCpuBoundary::FollowerHeadCoordinates { .. }
         | SpriteMainCpuBoundary::Module09FinalScrollPairPending => 0,
         SpriteMainCpuBoundary::AfterSlot(slot) => 2 * (16 - slot),
         SpriteMainCpuBoundary::AfterCuccoGraphicsPublication { slot, .. }
+        | SpriteMainCpuBoundary::TimerCoordinateMoves { slot, .. }
         | SpriteMainCpuBoundary::AfterTimersAndOam { slot, .. }
         | SpriteMainCpuBoundary::AfterTimerDecrements { slot, .. }
         | SpriteMainCpuBoundary::AfterPrimaryTimerDecrements { slot, .. }
@@ -7631,6 +7704,8 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::GuardPrepPatrolDelay { slot, .. }
         | SpriteMainCpuBoundary::GuardPrepTileCollisionReturned { slot, .. }
         | SpriteMainCpuBoundary::GuardAnimation { slot, .. }
+        | SpriteMainCpuBoundary::RatOamFlagsPending { slot, .. }
+        | SpriteMainCpuBoundary::KeeseInactiveCheckPending { slot }
         | SpriteMainCpuBoundary::MiniMoldormHistory { slot, .. } => 2 * (16 - slot) - 1,
         SpriteMainCpuBoundary::AfterWallmasterResetPrefix(slot)
         | SpriteMainCpuBoundary::WallmasterResetClear { slot, .. } => 2 * (16 - slot) - 1,
@@ -10211,6 +10286,10 @@ pub struct ZeldaState {
     /// effects and owns only pixel-loop work.
     #[serde(skip)]
     pub(crate) dialogue_vwf_glyph_cpu_phase: messaging::VwfGlyphCpuPhase,
+    /// Whole drawing instructions and loaded operands. Ordinary saves omit
+    /// active call stacks; paired capture must reject this retained owner.
+    #[serde(skip)]
+    pub(crate) dialogue_vwf_drawing: Option<crate::cycle_models::vwf_drawing::Drawing>,
     /// Unretired `VWF_RenderSingle`/render-all return work before the next
     /// message dispatch. A vblank can interrupt this suffix between glyphs.
     #[serde(skip)]
@@ -10227,6 +10306,9 @@ pub struct ZeldaState {
     pub(crate) dialogue_vwf_dispatch_cursor: crate::cycle_models::vwf::DispatchCursor,
     #[serde(skip)]
     pub(crate) dialogue_character_load_progress: Option<messaging::DialogueCharacterLoadProgress>,
+    /// A suspended native Text_Initialize and its unretired caller suffix.
+    #[serde(skip)]
+    pub(crate) dialogue_initialization_caller: Option<messaging::DialogueInitializationCallerWork>,
     /// Speed-0 glyph restarts of the current `RenderText_Draw_MessageCharacters`
     /// call whose `$0E:C9F5` exit block the ROM still owes: each `JMP $C984`
     /// leaves the `JSR HandleNext` return on the stack, and the final `RTS`
@@ -10464,6 +10546,11 @@ pub struct ZeldaState {
     intro_initialization_reset_obj_control_pending: bool,
     #[serde(skip)]
     rom_reset_frame_delay: u8,
+    /// Native reset continuation through first NMI acceptance. After that
+    /// handoff the stored clock is historical; the handler/main clock is not
+    /// yet retained. Resumed diagnostic checkpoints do not reconstruct it.
+    #[serde(skip)]
+    pub(crate) native_startup_cpu: Option<crate::spc_driver_clock::NativeBootstrapCpu>,
     #[serde(skip)]
     intro_memory_darken_frame_delay: u8,
     save_quit_reset_hold: bool,
@@ -10488,7 +10575,13 @@ pub struct ZeldaState {
     pending_early_dungeon_room_hdma: Option<u8>,
     pending_early_dungeon_room_owner: Option<dungeon::EarlyDungeonRoomOwner>,
     active_early_dungeon_floor_draw: Option<dungeon::DungeonFloorDrawWork>,
+    #[serde(skip)]
+    native_transition_aux_graphics_progress: Option<load_gfx::TransitionAuxGraphicsProgress>,
     active_early_dungeon_object_draw: Option<dungeon::DungeonObjectDrawWork>,
+    #[serde(skip)]
+    pending_dungeon_object_4x2_boundary: Option<dungeon::Dungeon4x2DrawBoundary>,
+    #[serde(skip)]
+    active_dungeon_object_4x2: Option<dungeon::Dungeon4x2DrawWork>,
     active_early_dungeon_room_upload: Option<dungeon::DungeonRoomUploadWork>,
     /// Translated `LoadTransAuxGFX` output being published at the source
     /// decompressor's store cursor (exact-CPU live trial only). Checkpoint
@@ -10716,6 +10809,10 @@ pub struct ZeldaState {
     /// host frames, but the C caller owns exactly one preparation pass.
     #[serde(skip)]
     main_loop_sprite_preparation_completed: bool,
+    /// Chronological caller work across module/preparation suspension. Paired
+    /// checkpoints reject an active phase, just like the pending C suffix.
+    #[serde(skip)]
+    main_loop_caller_phase: crate::cycle_models::main_wait::MainLoopCallerPhase,
     /// Typed source continuation retained across host calls when a receipt
     /// proves that `Module_MainRouting` has not yet returned. Ordinary Zelda
     /// save states cannot serialize an active 65816 call stack, so paired
@@ -10755,6 +10852,24 @@ pub struct ZeldaState {
     native_overworld_map_graphics_nmi_slices: Option<(u8, u8)>,
     #[serde(skip)]
     native_map_graphics_timing: Option<NativeMapGraphicsTiming>,
+    #[serde(skip)]
+    native_pre_overworld_animated_graphics: Option<load_gfx::AnimatedOverworldGraphicsProgress>,
+    #[serde(skip)]
+    native_pre_dungeon_animated_graphics: Option<load_gfx::AnimatedDungeonGraphicsContinuation>,
+    #[serde(skip)]
+    native_pre_overworld_tileset_publication: Option<load_gfx::NativeTilesetGraphicsPublication>,
+    #[serde(skip)]
+    native_pre_dungeon_tileset_publication: Option<load_gfx::NativeTilesetGraphicsPublication>,
+    #[serde(skip)]
+    native_pre_dungeon_palette_cache: Option<u16>,
+    #[serde(skip)]
+    native_overworld_map8: Option<overworld::NativeOverworldMap8Cursor>,
+    #[serde(skip)]
+    native_overworld_quadrants: Option<overworld::NativeOverworldQuadrantCursor>,
+    #[serde(skip)]
+    native_initial_scroll: Option<overworld::NativeInitialScrollCursor>,
+    #[serde(skip)]
+    native_overworld_spotlight_link_oam: Option<player_oam::LinkOamEquipmentContinuation>,
     #[serde(skip)]
     native_map_graphics_write_plan: Option<NativeMapGraphicsWritePlan>,
     #[serde(skip)]
@@ -12815,6 +12930,13 @@ impl ZeldaState {
         }
     }
 
+    pub(crate) fn set_hud_tile_byte(&mut self, offset: usize, value: u8) {
+        assert!(offset < MOVING_WALL_REPLACEMENT_BUFFER - HUD_TILE_INDICES_BUFFER);
+        self.game_state.display.hud_tilemap.set_tile_byte(offset, value);
+        self.ram[HUD_TILE_INDICES_BUFFER + offset] = value;
+        self.debug_assert_hud_tilemap_matches_ram();
+    }
+
     pub(crate) fn initialize_default_hud_inventory_order(&mut self, count: usize) {
         self.hud_inventory_order_bridge_mut()
             .initialize_default_order(count);
@@ -13032,6 +13154,17 @@ impl ZeldaState {
     }
 
     #[track_caller]
+    pub(crate) fn set_messaging_render_buffer_byte(&mut self, offset: usize, value: u8) {
+        let watched = self.native_exact_cpu_watched_messaging_offset() == Some(offset);
+        let before = self.game_state.messaging.render_buffer.byte(offset);
+        self.messaging_render_buffer_mut().set_byte(offset, value);
+        if watched {
+            eprintln!("native-exact-cpu-native-wram-write host={} address=7f{offset:04x} before={before:02x} after={value:02x} operation=set-byte caller={}",
+                self.frame_ctr_dbg.saturating_sub(1), std::panic::Location::caller());
+        }
+    }
+
+    #[track_caller]
     pub(crate) fn xor_messaging_render_buffer_mask(&mut self, offset: usize, mask: u8) {
         let watch = self.native_exact_cpu_watched_messaging_offset() == Some(offset);
         let before = watch.then(|| self.game_state.messaging.render_buffer.byte(offset));
@@ -13155,18 +13288,14 @@ impl ZeldaState {
 
     pub fn new() -> Self {
         let mut state = Self {
-            // ROM $008900 establishes this descriptor during reset, before
-            // the first NMI can consume low WRAM as a DMA source. The normal
-            // ported initialization routine is intentionally deferred for
-            // Snes9x shows that the first visible NMI reads `00 80 00` here.
-            // The ROM's earlier reset descriptor ends in `$19`, but that byte
-            // has already been consumed/replaced before this NMI boundary.
+            // Default semantic-runtime image. The cold native bootstrap
+            // installs the complete machine reset image instead; its upload
+            // and memory continuations then author the descriptor themselves.
             ram: {
                 let mut ram = vec![0; WRAM_SIZE];
                 ram[0x0001] = 0x80;
-                // Snes9x power-on RAM is `$55`; only these two otherwise
-                // untouched first-NMI DMA windows remain observable before
-                // the ROM initializes them (ROM $008b01/$008b25).
+                // Legacy semantic startup's early DMA windows. These are
+                // subsumed by the full WRAM fill on the cold native path.
                 ram[0xbd40..0xbdc0].fill(0x55);
                 ram
             },
@@ -13192,10 +13321,12 @@ impl ZeldaState {
             rom_damage_check_y_register: None,
             dialogue_vwf_handler_entry_phase: messaging::VwfHandlerEntryPhase::default(),
             dialogue_vwf_glyph_cpu_phase: messaging::VwfGlyphCpuPhase::Ready,
+            dialogue_vwf_drawing: None,
             dialogue_vwf_transition_remaining_master_cycles: 0,
             dialogue_vwf_pending_glyph_read_pos: None,
             dialogue_vwf_dispatch_cursor: crate::cycle_models::vwf::DispatchCursor::default(),
             dialogue_character_load_progress: None,
+            dialogue_initialization_caller: None,
             dialogue_vwf_deferred_handler_exits: 0,
             dialogue_scroll_remaining_master_cycles: None,
             native_scroll_copy_cursor: None,
@@ -13257,6 +13388,7 @@ impl ZeldaState {
             intro_initialization_work_frames_pending: 0,
             intro_initialization_reset_obj_control_pending: false,
             rom_reset_frame_delay: 0,
+            native_startup_cpu: None,
             intro_memory_darken_frame_delay: 0,
             save_quit_reset_hold: false,
             save_quit_reset_state_published: false,
@@ -13267,7 +13399,10 @@ impl ZeldaState {
             pending_early_dungeon_room_hdma: None,
             pending_early_dungeon_room_owner: None,
             active_early_dungeon_floor_draw: None,
+            native_transition_aux_graphics_progress: None,
             active_early_dungeon_object_draw: None,
+            pending_dungeon_object_4x2_boundary: None,
+            active_dungeon_object_4x2: None,
             active_early_dungeon_room_upload: None,
             active_spiral_aux_graphics: None,
             early_ground_item_receipt_tail: None,
@@ -13332,6 +13467,7 @@ impl ZeldaState {
             enemy_drop_item_graphics_deferred_sound_effect_2: None,
             link_obj_dma_completed_this_frame: false,
             main_loop_sprite_preparation_completed: false,
+            main_loop_caller_phase: Default::default(),
             pending_main_loop_common_suffix: None,
             native_overworld_packing_progress: None,
             native_main_wait_cpu_phase: None,
@@ -13346,6 +13482,15 @@ impl ZeldaState {
             native_overworld_link_oam_interruption: false,
             native_overworld_map_graphics_nmi_slices: None,
             native_map_graphics_timing: None,
+            native_pre_overworld_animated_graphics: None,
+            native_pre_dungeon_animated_graphics: None,
+            native_pre_overworld_tileset_publication: None,
+            native_pre_dungeon_tileset_publication: None,
+            native_pre_dungeon_palette_cache: None,
+            native_overworld_map8: None,
+            native_overworld_quadrants: None,
+            native_initial_scroll: None,
+            native_overworld_spotlight_link_oam: None,
             native_map_graphics_write_plan: None,
             native_map_recovery_quadrants_started: None,
             next_display_spotlight_scanout: None,
@@ -13484,6 +13629,8 @@ impl ZeldaState {
     }
 
     pub fn zelda_reset(&mut self, preserve_sram: bool) {
+        self.native_startup_cpu = None;
+        self.dialogue_initialization_caller = None;
         self.frame_ctr_dbg = 0;
         self.original_timing_owner = if self.rom_startup_timing {
             OriginalTimingOwnerState::PendingColdStart
@@ -13542,7 +13689,10 @@ impl ZeldaState {
         self.pending_early_dungeon_room_hdma = None;
         self.pending_early_dungeon_room_owner = None;
         self.active_early_dungeon_floor_draw = None;
+        self.native_transition_aux_graphics_progress = None;
         self.active_early_dungeon_object_draw = None;
+        self.pending_dungeon_object_4x2_boundary = None;
+        self.active_dungeon_object_4x2 = None;
         self.active_early_dungeon_room_upload = None;
         self.active_spiral_aux_graphics = None;
         self.early_ground_item_receipt_tail = None;
@@ -13565,6 +13715,7 @@ impl ZeldaState {
         self.last_nmi_prepare_sprites_master_cycles = None;
         self.audio_after_publication_ambient_nmi = None;
         self.main_loop_sprite_preparation_completed = false;
+        self.main_loop_caller_phase = Default::default();
         self.pending_main_loop_common_suffix = None;
         self.native_overworld_packing_progress = None;
         self.native_main_wait_cpu_phase = None;
@@ -13580,6 +13731,15 @@ impl ZeldaState {
         self.pre_dungeon_cpu_entry_envelope = None;
         self.native_overworld_map_graphics_nmi_slices = None;
         self.native_map_graphics_timing = None;
+        self.native_pre_overworld_animated_graphics = None;
+        self.native_pre_dungeon_animated_graphics = None;
+        self.native_pre_overworld_tileset_publication = None;
+        self.native_pre_dungeon_tileset_publication = None;
+        self.native_pre_dungeon_palette_cache = None;
+        self.native_overworld_map8 = None;
+        self.native_overworld_quadrants = None;
+        self.native_initial_scroll = None;
+        self.native_overworld_spotlight_link_oam = None;
         self.native_map_graphics_write_plan = None;
         self.native_map_recovery_quadrants_started = None;
         self.native_overworld_song_upload = None;
@@ -13648,6 +13808,8 @@ impl ZeldaState {
         }
         self.rom_startup_timing = enabled;
         if !enabled {
+            self.native_startup_cpu = None;
+            self.dialogue_initialization_caller = None;
             if self.frame_ctr_dbg != 0 {
                 self.original_timing_cold_start_eligible = false;
             }
@@ -13706,6 +13868,15 @@ impl ZeldaState {
             self.native_overworld_map_graphics_nmi_slices = None;
             self.dungeon_map_recovery_saved_hdma_enable = None;
             self.native_map_graphics_timing = None;
+            self.native_pre_overworld_animated_graphics = None;
+            self.native_pre_dungeon_animated_graphics = None;
+            self.native_pre_overworld_tileset_publication = None;
+            self.native_pre_dungeon_tileset_publication = None;
+            self.native_pre_dungeon_palette_cache = None;
+            self.native_overworld_map8 = None;
+            self.native_overworld_quadrants = None;
+            self.native_initial_scroll = None;
+            self.native_overworld_spotlight_link_oam = None;
             self.native_map_graphics_write_plan = None;
             self.native_map_recovery_quadrants_started = None;
             self.sprite_main_cpu_boundary = None;
@@ -13919,7 +14090,9 @@ impl ZeldaState {
         if let Some((driver, intro_bank)) = driver_clock_assets {
             self.initialize_spc_driver_clock(driver, intro_bank)?;
             if self.rom_startup_timing {
-                self.configure_spc_driver_clock_for_rom_bootstrap();
+                let upload = parsed.asset_by_name("kSpcBootstrapUpload")
+                    .ok_or("cold SPC clock requires kSpcBootstrapUpload; regenerate the asset pack")?;
+                self.configure_spc_driver_clock_for_rom_bootstrap(upload)?;
             }
         } else {
             self.clear_spc_driver_clock();
@@ -14570,33 +14743,1134 @@ impl ZeldaState {
     }
 
     fn startup_initialize_memory(&mut self) {
-        const FIRST_BOOT_NMI_DMA_SOURCE_BYTE_0: usize = 0x0000;
-        const FIRST_BOOT_NMI_DMA_SOURCE_BYTE_1: usize = 0x0001;
-        SystemWorkArea::clear_startup_low_memory(&mut self.ram);
-        // The reset code at ROM $008900 initially writes `00 80 19`, but the
-        // Snes9x DMA trace proves that the first visible NMI reads `00 80 00`.
-        // This port reaches this setup after reset execution, so retain only
-        // the bytes that remain live at that NMI boundary.
-        self.ram[FIRST_BOOT_NMI_DMA_SOURCE_BYTE_0] = 0x00;
-        self.ram[FIRST_BOOT_NMI_DMA_SOURCE_BYTE_1] = 0x80;
-        // WRAM palette buffers are zero at power-on: seed the provenance mirror
-        // so words the game never explicitly writes (transparent color-0 slots)
-        // read as a known constant 0 rather than Unknown.
-        self.initialize_palette_mirror_from_zeroed_buffers();
-        self.set_main_color_constant(0, 0);
-        self.clear_selected_save_slot();
-
-        for offset in [0x03e5, 0x08e5, 0x0de5] {
-            if read_le_u16(&self.sram, offset) != 0x55aa {
-                write_le_u16(&mut self.sram, offset, 0);
+        let mut cpu = self.native_startup_cpu.take();
+        // Reset's JSR owns this return word. The callee saves it before its
+        // descending stores overwrite the stack, and restores it before RTS.
+        const STARTUP_RETURN_WORD: usize = 0x1fe;
+        write_le_u16(&mut self.ram, STARTUP_RETURN_WORD, 0x802e);
+        if let Some(clock) = cpu.as_mut().map(|cpu| &mut cpu.timeline) {
+            clock.advance_synchronous_after_semantics_with(46, |_, _| Ok::<u32, String>(0))
+                .expect("native startup call clock");
+        }
+        let mut work = crate::cycle_models::startup_memory::StartupMemoryWork::default();
+        loop {
+            let clear_window = work.clears_window_mask();
+            let Some(cycles) = work.step(&mut self.ram, &mut self.sram) else { break };
+            if clear_window { self.zelda_ppu_write_word(0x212e, 0); }
+            if let Some(clock) = cpu.as_mut().map(|cpu| &mut cpu.timeline) {
+                clock.advance_synchronous_after_semantics_with(cycles, |_, _| Ok::<u32, String>(0))
+                    .expect("native startup memory clock");
             }
         }
+        if let Some(cpu) = cpu.as_mut() {
+            // Atomic/source-timed callers own their own host lifecycle.
+            cpu.startup.complete_externally();
+        }
+        self.native_startup_cpu = cpu;
+        self.finish_startup_memory_publication();
+    }
 
-        self.set_screen_brightness(0x80);
-        self.increment_cgram_update_flag();
+    fn finish_startup_memory_publication(&mut self) {
         self.sync_native_game_state_from_ram();
+        self.initialize_palette_mirror_from_buffers();
         self.assert_native_world_location_state_matches_ram();
         self.assert_native_display_state_matches_ram();
+    }
+
+    /// None means another owner supplies startup timing; false means this
+    /// hardware host ended; true means its leading NMI has completed.
+    fn advance_native_startup_host(&mut self, input: u16) -> Option<bool> {
+        use crate::cycle_models::startup::StartupStep;
+        if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+            return None;
+        }
+        if self.native_intro_clear_pending() {
+            self.resume_native_intro_clear_host(input);
+            if self.native_intro_clear_pending() { return Some(false); }
+        }
+        if let Some(cpu) = self.native_startup_cpu.as_mut() {
+            if cpu.startup.intro_tail_returned_context().is_some() {
+                cpu.startup.resume_main_wait_after_sprite_tail();
+            }
+        }
+        let cpu = self.native_startup_cpu.as_ref()?;
+        if !cpu.startup.pending() { return None; }
+        let host = u64::from(self.frame_ctr_dbg.saturating_sub(1));
+        if !cpu.startup.ready_in_host(host) { return Some(false); }
+        if cpu.startup.begins_memory_call() { self.sound_load_intro_song_bank(); }
+        let mut cpu = self.native_startup_cpu.take().unwrap();
+        loop {
+            if cpu.startup.worker_selected() && !self.advance_native_selected_worker(Some(input),&mut cpu) {
+                self.native_startup_cpu=Some(cpu);
+                return Some(false);
+            }
+            match cpu.startup.step(&mut cpu.timeline, &mut self.ram, &mut self.sram) {
+                StartupStep::Instruction => {}
+                StartupStep::ClearWindow => self.zelda_ppu_write_word(0x212e, 0),
+                StartupStep::MemoryComplete => {
+                    self.finish_startup_memory_publication();
+                }
+                StartupStep::MainReady => {
+                    self.native_startup_cpu=Some(cpu);
+                    return Some(true);
+                }
+                StartupStep::HostReturn => {
+                    self.native_startup_cpu = Some(cpu);
+                    return Some(false);
+                }
+                StartupStep::AcceptNmi => {
+                    if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                        eprintln!("native-startup-nmi host={host} clock={} raster={:?} context={:?}",
+                            cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position(), cpu.startup.accepted_context());
+                    }
+                    let mut context = cpu.startup.accepted_context();
+                    context.accept_interrupt_clocked(&mut self.ram, &mut cpu.timeline);
+                    crate::cycle_ledger::charge_routine(0x00_80c9, 62);
+                    cpu.startup.accept_wait_interrupt(context);
+                    // Hardware acceptance precedes SCAN_KEYS. The next step
+                    // honors a pending host return before running the handler.
+                }
+                StartupStep::AcceptIrq(mut context,deadline) => {
+                    let nmitimen=self.accept_native_poly_irq(&mut context,&mut cpu.timeline,deadline);
+                    cpu.startup.return_from_main_irq(context,&cpu.timeline,nmitimen);
+                }
+                StartupStep::RunNmi => {
+                    let mut context = cpu.startup.wait_handler_context();
+                    if self.game_state.display.nmi_thread_active {
+                        let programming=self.interrupt_accepted_poly_nmi_with_native_context(input,&mut context,&mut cpu.timeline);
+                        self.run_native_poly_worker_to_irq(cpu.poly_worker.get_or_insert_with(Default::default),
+                            &mut context,&mut cpu.timeline,programming);
+                        cpu.startup.retain_vertical_irq(programming,&cpu.timeline);
+                    } else {
+                        let irq_deadline=cpu.startup.irq_deadline();
+                        if let Some(programming)=self.interrupt_accepted_nmi_with_native_context(input,&mut context,&mut cpu.timeline,irq_deadline) {
+                            cpu.startup.install_vertical_irq(programming);
+                        }
+                    }
+                    let wait_cycles = cpu.startup.return_from_nmi(&mut cpu.timeline, &mut context, &self.ram);
+                    crate::cycle_ledger::charge(u64::from(wait_cycles));
+                    if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                        eprintln!("native-main-caller pc={:02x}:{:04x} clock={} raster={:?} context={context:?}",
+                            context.bank, context.pc, cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());
+                    }
+                    self.native_startup_cpu = Some(cpu);
+                    self.rom_reset_frame_delay = 0;
+                    return Some(true);
+                }
+            }
+        }
+    }
+
+    fn native_intro_clear_pending(&self) -> bool {
+        self.native_startup_cpu.as_ref().is_some_and(|cpu| cpu.startup.intro_clear_pending())
+    }
+
+    /// An IRQ can select the worker before the next NMI, rather than restore
+    /// main. Keep the main caller suspended until the live NMI stack swap.
+    fn advance_native_selected_worker(&mut self,input:Option<u16>,cpu:&mut crate::spc_driver_clock::NativeBootstrapCpu)->bool {
+        use crate::cycle_models::startup::SelectedWorkerStep;
+        loop {
+            match cpu.startup.selected_worker_step(&cpu.timeline) {
+                SelectedWorkerStep::Instruction(mut context)=>{
+                    let mut vblank=None;
+                    let retired=self.step_native_poly_worker_with_vblank(cpu.poly_worker.get_or_insert_with(Default::default),
+                        &mut context,&mut cpu.timeline,|field,at|vblank=Some((field,at)));
+                    crate::cycle_ledger::charge(retired.master_cycles);
+                    cpu.startup.retire_selected_worker(context,vblank);
+                }
+                SelectedWorkerStep::AcceptNmi(mut context)=>{
+                    context.accept_interrupt_clocked(&mut self.ram,&mut cpu.timeline);
+                    crate::cycle_ledger::charge_routine(0x0080c9,62);
+                    cpu.startup.accept_selected_worker_nmi(context);
+                }
+                SelectedWorkerStep::HostReturn=>return false,
+                SelectedWorkerStep::RunNmi(mut context)=>{
+                    assert!(self.game_state.display.nmi_thread_active,"selected worker lost its thread flag");
+                    let input=input.expect("selected worker NMI must resume through its host input owner");
+                    let programming=self.interrupt_accepted_poly_nmi_with_native_context(input,&mut context,&mut cpu.timeline);
+                    cpu.startup.return_selected_worker_nmi(context,programming);
+                    return true;
+                }
+            }
+        }
+    }
+
+    fn begin_native_intro_clear(&mut self) {
+        self.native_startup_cpu.as_mut().unwrap().startup.begin_intro_clear();
+        self.run_native_intro_clear_until_boundary();
+    }
+
+    fn run_native_intro_clear_until_boundary(&mut self) -> bool {
+        use crate::cycle_models::{intro_clear::Access, startup::IntroClearBoundary};
+        let mut cpu = self.native_startup_cpu.take().unwrap();
+        let text_streams=cpu.startup.intro_text_streams().cloned();
+        let graphics=cpu.startup.intro_graphics_active();
+        let title=cpu.startup.intro_title_active();
+        let file_menu=cpu.startup.file_menu_active();
+        let name_file=cpu.startup.name_file_active();
+        let load_file=cpu.startup.load_file_active();
+        let load_data=load_file.then(|| self.native_load_file_data().expect("native load-game assets"));
+        let graphics_table=|address| crate::cycle_models::graphics_sources::table_byte(address)
+            .or_else(||load_data.as_ref().and_then(|data|data.get(&address).copied()))
+            .or_else(||Self::native_load_file_table_byte(address))
+            .or_else(||Self::native_load_hud_table_byte(address))
+            .or_else(||Self::native_dungeon_visited_flag_byte(address))
+            .or_else(||crate::cycle_models::load_file_player::data_byte(address))
+            .or_else(||crate::cycle_models::sram_validate::table_byte(address))
+            .or_else(||crate::cycle_models::file_select_palettes::table_byte(address))
+            .or_else(||select_file::native_file_select_data_byte(address))
+            .or_else(||crate::cycle_models::intro_poly_init::table_byte(address))
+            .or_else(||ending::native_poly_palette_byte(address))
+            .or_else(||ending::native_intro_sprite_table_byte(address))
+            .or_else(||crate::cycle_models::intro_sprite_init::table_byte(address))
+            .or_else(||crate::cycle_models::intro_animation::table_byte(address))
+            .or_else(||crate::cycle_models::intro_sword::table_byte(address))
+            .or_else(||crate::cycle_models::triforce_animation::table_byte(address))
+            .or_else(||crate::cycle_models::item_graphics_caller::table_byte(address))
+            .or_else(||crate::cycle_models::follower_graphics::table_byte(address))
+            .or_else(||load_gfx::native_tileset_table_byte(address));
+        let mut dma=std::mem::take(&mut self.dma);
+        let boundary = cpu.startup.advance_intro_clear(&mut cpu.timeline, &mut dma, |at, event| {
+            use crate::cycle_models::startup_bus::{CallerOwner, StartupAccess};
+            let (access, palette_source, caller_owner) = match event {
+                StartupAccess::Memory(access, palette_source, owner) => (access, palette_source, owner),
+                StartupAccess::EndScanline => {
+                    self.native_cpu_end_scanline_at(at);
+                    return 0;
+                }
+            };
+            match access {
+                Access::Read(address, width) => {
+                    let address=if address&0x400000==0 && address&65535<0x2000 {address&65535}else{address};
+                    if address < 0x2000 {
+                        if width == 1 { u16::from(self.ram[address as usize]) }
+                        else { read_le_u16(&self.ram, address as usize) }
+                    } else if (0x7e0000..=0x7ffffe).contains(&address) {
+                        if width==1 {u16::from(self.ram[address as usize-0x7e0000])}
+                        else {read_le_u16(&self.ram,address as usize-0x7e0000)}
+                    } else if load_file && (0x2140..=0x2143).contains(&address) {
+                        assert_eq!(width, 1);
+                        u16::from(self.native_main_port_at(at, (address - 0x2140) as u8, None))
+                    } else if graphics && (0x700000..0x702000).contains(&address) {
+                        let i=(address-0x700000) as usize;
+                        if width==1 {u16::from(self.sram[i])} else {read_le_u16(&self.sram,i)}
+                    } else if graphics && graphics_table(address).is_some() {
+                        let read=graphics_table;
+                        if width==1 {u16::from(read(address).unwrap())}
+                        else {u16::from_le_bytes([read(address).unwrap(),read(address+1).unwrap()])}
+                    } else if graphics && (0x108000..0x198000).contains(&address) {
+                        let read=|address:u32| {
+                            let offset=|a:u32| ((a>>16)&127)*0x8000+(a&0x7fff);
+                            for &(sprite,sheet,start) in crate::cycle_models::graphics_sources::SOURCES {
+                                let Some(at)=offset(address).checked_sub(offset(start)) else {continue};
+                                let Some(data)=self.asset_bytes(if sprite {64}else{65},sheet) else {continue};
+                                if let Some(&value)=data.get(at as usize) {return value;}
+                            }
+                            panic!("unmapped native graphics source byte {address:06x}");
+                        };
+                        if width==1 {u16::from(read(address))}else{u16::from_le_bytes([read(address),read(address+1)])}
+                    } else if graphics && (0x03e800..0x040000).contains(&address) {
+                        let data=self.assets.as_ref().and_then(|pack|pack.asset_by_name("kEnemyDamageCompressed"))
+                            .expect("native enemy loader requires encoded enemy damage asset");
+                        let i=(address-0x03e800) as usize;
+                        if width==1 {u16::from(data[i])}else{read_le_u16(data,i)}
+                    } else if graphics && (0x0e8000..0x0e9000).contains(&address) {
+                        let pack=self.asset_memblk(95,0).expect("native font asset");
+                        let font=find_index_in_memblk(pack,0).ptr;
+                        let i=(address-0x0e8000) as usize;
+                        if width==1 {u16::from(font[i])}else{read_le_u16(font,i)}
+                    } else if graphics && matches!(address,0x1bedf5|0x1bedf7) {
+                        assert_eq!(width,2);self.replay_gloves_color(((address-0x1bedf5)/2) as usize)
+                    } else if (0x1bd218..0x1bec77).contains(&address) {
+                        assert_eq!(width,2);
+                        let table=crate::cycle_models::intro_palettes::table_byte;
+                        if let Some(low)=table(address) {
+                            u16::from_le_bytes([low,table(address+1).expect("palette offset word")])
+                        } else {
+                            // Palette assets use the high-bank LoROM alias;
+                            // the source copy pointer addresses the same data in $1B.
+                            self.palette_asset_word_snes(address|0x800000)
+                                .unwrap_or_else(||panic!("unmapped native palette asset word {address:06x}"))
+                        }
+                    } else if text_streams.is_some() && ((0x0ed36b..0x0f0000).contains(&address) || (0x1c8000..0x1d0000).contains(&address)) {
+                        let streams=text_streams.as_ref().unwrap();
+                        let read=|a:u32| {
+                            crate::cycle_models::text_pointers::table_byte(a).unwrap_or_else(|| {
+                                let (bank,base)=if a>=0x1c8000 {(0,0x1c8000)} else {(1,0x0edf40)};
+                                *streams[bank].get((a-base) as usize).expect("text scan escaped its encoded native asset")
+                            })
+                        };
+                        if width==1 {u16::from(read(address))} else {u16::from_le_bytes([read(address),read(address+1)])}
+                    } else {
+                        assert_eq!(width, 2);
+                        let low = misc::link_dma_data_byte(address)
+                            .unwrap_or_else(|| panic!("unmapped native caller data {address:06x} width={width}"));
+                        let high = misc::link_dma_data_byte(address + 1)
+                            .unwrap_or_else(|| panic!("unmapped native caller data {:06x} width={width}", address + 1));
+                        u16::from_le_bytes([low, high])
+                    }
+                }
+                Access::Write(address, value, width) => {
+                    let address=if address&0x400000==0 && address&65535<0x2000 {address&65535}else{address};
+                    match address {
+                        _ if caller_owner == CallerOwner::DungeonEntrance && self.native_dungeon_entrance_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::DungeonHeader && self.native_dungeon_header_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::DungeonRoomParent && self.native_dungeon_room_parent_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::DungeonFloors && self.native_dungeon_floor_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::DungeonObjectParser && self.native_dungeon_object_parser_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::DungeonObjectTiles && self.native_dungeon_object_tile_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::DungeonObjectTiles && !matches!(address, 0..=0xf | 0x100..=0x1ff) => {
+                            panic!("unowned shared object tile store {address:06x}");
+                        }
+                        _ if caller_owner == CallerOwner::LoadFileParent && self.native_load_file_parent_store(address, value, width) => {}
+                        _ if load_file && self.native_load_hud_store(address, value, width) => {}
+                        _ if load_file && self.native_load_player_initialization_store(address as usize, value, width) => {}
+                        0x200 if load_file => {assert_eq!(width,1);self.set_overworld_map_state(value as u8);}
+                        0x3f4 if load_file => {assert_eq!((width,value),(1,0));self.dungeon_environment_mut().clear_somaria_block_bg_check_flag();}
+                        0x2d4 if load_file => {assert_eq!((width,value),(1,0));self.follower_state_mut().clear_tagalong_shared_state_a();}
+                        0x2d7 if load_file => {assert_eq!((width,value),(1,0));self.follower_state_mut().clear_draw_anim_frame();}
+                        0x2f9 if load_file => {assert_eq!(width,1);self.follower_state_mut().set_appearance_none_flag(value as u8);}
+                        0x379 if load_file => {assert_eq!((width,value),(1,0));self.follower_link_state_mut().clear_player_pose_draw_counter();}
+                        0x3fd if load_file => {assert_eq!(width,1);self.follower_link_state_mut().set_player_special_draw_flag(value as u8);}
+                        0x2cd | 0x2ce if load_file => {
+                            assert_eq!(width,1);
+                            let old = read_le_u16(&self.ram, crate::game_state::constants::SHARED_MESSAGE_TIMER);
+                            self.start_shared_message_timer(if address == 0x2cd {(old & 0xff00) | value} else {(old & 255) | (value << 8)});
+                        }
+                        0x700000..=0x701ffe if graphics => {
+                            let i=(address-0x700000) as usize;
+                            self.sram[i..i+usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                        }
+                        0x2100..=0x213f if graphics => {assert_eq!(width,1);self.ppu.write(address as u8,value as u8);}
+                        0x2140..=0x2143 if load_file => {
+                            assert_eq!(width, 1);
+                            self.native_main_port_at(at, (address - 0x2140) as u8, Some(value as u8));
+                        }
+                        0x4200 if load_file => { assert_eq!(width, 1); }
+                        0x420b|0x420c|0x4300..=0x437f if graphics => {assert_eq!(width,1);}
+                        0x11 if graphics => {
+                            assert_eq!(width,1);self.set_submodule(value as u8);
+                            if self.game_state.frame.main_module==0 {
+                                if value==2 {self.intro_poly_thread_initialization_phase=3;}
+                                if value==3 {self.intro_poly_thread_initialization_phase=0;}
+                            }
+                        }
+                        0x12c if graphics => {assert_eq!(width,1);self.set_music_control(value as u8);}
+                        0x12e if graphics => {assert_eq!(width,1);self.set_sound_effect_1(value as u8);}
+                        0x12f if graphics => {assert_eq!(width,1);self.set_sound_effect_2(value as u8);}
+                        0x10 if graphics => {assert_eq!(width,1);self.set_main_module(value as u8);}
+                        0xb9d if file_menu => {assert_eq!(width,1);self.select_file_menu_mut().write_remembered_cursor(value as u8);}
+                        0x100 if file_menu => {assert_eq!(width,2);self.follower_link_state_mut().set_link_dma_graphics_index_word(value);}
+                        0x10e if file_menu || load_file => {
+                            if width==1 {self.set_which_entrance(value as u8);}
+                            else {assert_eq!(width,2);self.set_which_entrance_word(value);}
+                        }
+                        0xa0 if load_file => {
+                            if width==1 {self.world_location_mut().set_dungeon_room_index(value as u8);}
+                            else {assert_eq!(width,2);self.world_location_mut().set_dungeon_room(value);}
+                        }
+                        0xa1 if load_file => {
+                            assert_eq!(width,1);
+                            let room=(self.ram[crate::game_state::constants::DUNGEON_ROOM] as u16)|(value<<8);
+                            self.world_location_mut().set_dungeon_room(room);
+                        }
+                        0xa2 if load_file => {
+                            if width==1 {self.dungeon_room_tracking_mut().set_room_index_prev(value as u8);}
+                            else {assert_eq!(width,2);self.dungeon_room_tracking_mut().set_previous_room_index_word(value);}
+                        }
+                        0x8c if load_file => {assert_eq!(width,2);self.set_overlay_index_word(value);}
+                        0x402 if load_file => {
+                            if width==1 {
+                                let old=read_le_u16(&self.ram,crate::game_state::constants::DUNG_SAVEGAME_STATE_BITS);
+                                self.dungeon_savegame_state_mut().set_savegame_state_bits((old&0xff00)|value);
+                            } else {assert_eq!(width,2);self.dungeon_savegame_state_mut().set_savegame_state_bits(value);}
+                        }
+                        0x219 if file_menu => {assert_eq!(width,2);self.set_message_dma_destination_address(value);}
+                        0x21d if file_menu => {assert_eq!(width,2);self.set_message_dma_tile_base(value);}
+                        0x21f if file_menu => {assert_eq!(width,2);self.set_message_dma_tile_limit(value);}
+                        0x221 if file_menu => {assert_eq!(width,2);self.set_message_dma_tile_sentinel(value);}
+                        0x204 if file_menu => {assert_eq!((width,value),(1,0x80));self.save_progress_mut().request_post_message_refresh();}
+                        0x1b if title || load_file => {assert_eq!(width,1);self.set_indoor_flag(value as u8);}
+                        0x94 if load_file => {assert_eq!(width,1);self.set_bg_mode(value as u8);}
+                        0x95 if load_file => {assert_eq!(width,1);self.set_mosaic_copy(value as u8);}
+                        0x128 if title || name_file => {assert_eq!(width,1);self.set_irq_control_flag(value as u8);}
+                        0x630 | 0xb10..=0xb16 if name_file => {self.select_file_menu_mut().write_name_control(address as usize,value,width);}
+                        0xe4 if name_file => {assert_eq!(width,2);self.set_bg3_h_copy2(value);}
+                        0x200 if name_file => {
+                            assert_eq!(width,2);self.attract_scene_mut().set_legend_ctr(value);
+                            self.game_state.world.overworld.map_ui.set_map_state_word(value);
+                        }
+                        0x4aa if title => {assert_eq!(width,1);self.set_restart_check_flag(value as u8);}
+                        0x22 if title && width==1 => {self.follower_link_state_mut().set_x_low(value as u8);}
+                        0x20..=0x8e if title => {
+                            assert_eq!((width,value),(2,0));
+                            self.follower_link_state_mut().clear_link_state_word_for_ending(address as usize);
+                        }
+                        0x7ef000..=0x7ef4fe if title => {
+                            assert_eq!((width,value),(2,0));
+                            self.clear_live_save_word(address as usize-0x7e0000);
+                        }
+                        0x7ef000..=0x7ef4fe if file_menu => {assert_eq!(width,2);self.write_live_save_word(address as usize-0x7e0000,value);}
+                        0xff9 if title => {assert_eq!(width,1);self.attract_scene_mut().set_intro_palette_flash_count(value as u8);}
+                        0xd00..=0xffe if graphics => {
+                            assert_eq!((width,value,address&1),(2,0,0));
+                            self.ram[address as usize..address as usize+2].fill(0);
+                            self.game_state.sprites.sprite_slots=SpriteSlotsState::load_from_ram(&self.ram);
+                            if address==0xff8 {self.attract_scene_mut().set_intro_palette_flash_count(0);}
+                        }
+                        0xc8..=0xcd | 0xd0 if title => {
+                            self.intro_sword_mut().write_instruction(address as usize,value,width);
+                            if address<=0xcd {
+                                self.ending_scratch_mut().write_graphics_scratch(address as usize,value,width);
+                                self.select_file_menu_mut().write_shared_work(address as usize,value,width);
+                            }
+                            if matches!(address,0xcc|0xcd) {
+                                // The sword phase/offset share the credits' CC/CD word.
+                                self.game_state.ending.credits.palace_death_count_digit_step=read_le_u16(&self.ram,crate::game_state::constants::ENDING_WHICH_DUNG);
+                            }
+                        }
+                        0x1c if graphics => {assert_eq!(width,1);self.set_main_screen_layers(value as u8);}
+                        0x1d if graphics => {assert_eq!(width,1);self.set_sub_screen_layers(value as u8);}
+                        0x99 if graphics => {assert_eq!(width,1);self.set_color_window_selection(value as u8);}
+                        0x9a if graphics => {assert_eq!(width,1);self.set_color_math_control(value as u8);}
+                        0xb0 if graphics => {assert_eq!(width,1);self.set_subsubmodule(value as u8);}
+                        0x14 if graphics => {assert_eq!(width,1);self.set_bg_vram_load_mode(value as u8);}
+                        0x800..=0x9ff if graphics => {
+                            for byte in 0..usize::from(width) {
+                                let address=address as usize+byte;
+                                let entry=address&!3;
+                                let value=(value>>(byte*8)) as u8;
+                                let mut oam=self.oam_state_mut();
+                                match address&3 {0=>oam.set_entry_x(entry,value),1=>oam.set_entry_y(entry,value),
+                                    2=>oam.set_entry_char(entry,value),3=>oam.set_entry_flags(entry,value),_=>unreachable!()}
+                            }
+                        }
+                        0xa20..=0xa9f if graphics => {assert_eq!(width,1);self.oam_state_mut().set_extended_byte((address-0xa20) as usize,value as u8);}
+                        0xff if graphics => {assert_eq!(width,1);self.set_vertical_irq_trigger(value as u8);}
+                        0x15 if graphics => {
+                            assert_eq!(width,1);self.increment_cgram_update_flag();
+                            assert_eq!(self.ram[crate::game_state::constants::FLAG_UPDATE_CGRAM_IN_NMI],value as u8);
+                        }
+                        0x12a if graphics => {assert_eq!(width,1);match value{0=>self.deactivate_nmi_thread(),1=>self.activate_nmi_thread(),_=>panic!("invalid native thread state {value}")}}
+                        0x1e00..=0x1fff if graphics => self.write_native_intro_poly_state(address as usize,value,width),
+                        0x1ab0..=0x1aef if file_menu => {assert_eq!(width,1);self.bird_travel_destination_bridge_mut().write_destination_byte(address as usize,value as u8);}
+                        0x1af0..=0x1aff if file_menu => {assert_eq!((width,value),(1,0));self.clear_bird_travel_stop_status((address-0x1af0)as usize);}
+                        0x1002..=0x1dff if graphics => {
+                            if width==1 {self.write_vram_upload_absolute_byte(address as usize,value as u8);}
+                            else {assert_eq!(width,2);self.write_vram_upload_absolute_word(address as usize,value);}
+                        }
+                        0x13 if graphics => {assert_eq!(width,1);self.set_screen_brightness(value as u8);}
+                        0x8a if graphics => {
+                            if width==1 {self.set_overworld_screen(value as u8);}
+                            else {assert_eq!(width,2);self.world_location_mut().set_overworld_screen_word(value);}
+                        }
+                        0x9b if graphics => {assert_eq!(width,1);self.display_core_mut().set_hdma_enable_mask(value as u8);}
+                        0xaa1 if graphics => {assert_eq!(width,1);self.world_palette_theme_mut().set_main_tile_theme_index(value as u8);}
+                        0xaa2 if graphics => {assert_eq!(width,1);self.world_palette_theme_mut().set_aux_tile_theme_index(value as u8);}
+                        0xaa3 if graphics => {assert_eq!(width,1);self.sprite_system_mut().set_graphics_index(value as u8);}
+                        0xaa4 if graphics => {assert_eq!(width,1);self.world_palette_theme_mut().set_misc_sprites_graphics_index(value as u8);}
+                        0xaa6 if graphics => {assert_eq!(width,1);self.dungeon_room_runtime_mut().set_reserved_gfx_config_low(value as u8);}
+                        0xab6 if graphics => {assert_eq!(width,1);self.set_palette_main_indoors(value as u8);}
+                        0xab2 if graphics => {assert_eq!(width,1);self.set_hud_palette(value as u8);}
+                        0x202 if graphics => {assert_eq!(width,1);self.save_progress_mut().set_hud_current_item(value as u8);}
+                        0x710 if graphics => {assert_eq!(width,1);self.set_core_update_disable_flag(value as u8);}
+                        0x134 if graphics => {assert_eq!(width,2);self.display_core_mut().set_animated_tile_vram_destination_address(value);}
+                        0x7ec2f8..=0x7ec2fb if graphics => {assert_eq!(width,1);self.world_palette_theme_mut().set_aux_bg_subset((address-0x7ec2f8)as usize,value as u8);}
+                        0x7ec2fc..=0x7ec2ff if graphics => {assert_eq!(width,1);self.sprite_workspace_mut().set_graphics_subset((address-0x7ec2fc)as usize,value as u8);}
+                        0x7ec007 if graphics => {
+                            assert!(width==1 || width==2);
+                            self.set_countdown_word(if width==1 {(read_le_u16(&self.ram,crate::game_state::constants::PALETTE_FILTER_COUNTDOWN)&0xff00)|value}else{value});
+                        }
+                        0x7ec009 if graphics => {
+                            assert!(width==1 || width==2);
+                            self.set_darkening_or_lightening_screen_word(if width==1 {(read_le_u16(&self.ram,crate::game_state::constants::DARKENING_OR_LIGHTENING_SCREEN)&0xff00)|value}else{value});
+                        }
+                        0x7ec00b if graphics => {
+                            if width==1 {self.set_mosaic_target_level(value as u8);}
+                            else {assert_eq!(width,2);self.set_mosaic_target_level_word(value);}
+                        }
+                        0x7ec00d|0x7ec00e if graphics && width==1 => {
+                            let old=read_le_u16(&self.ram,crate::game_state::constants::BG_TILE_ANIMATION_COUNTDOWN);
+                            self.reset_bg_tile_animation_countdown(if address==0x7ec00d {(old&0xff00)|value}else{(old&255)|(value<<8)});
+                        }
+                        0x12 => {
+                            assert_eq!((width,value),(1,0));
+                            let retired=self.main_loop_caller_phase.step_return_to_wait().expect("native caller STZ");
+                            assert!(retired.clear_latch);
+                            assert_eq!(retired.master_cycles,24);
+                            self.clear_nmi_update_latch();
+                        }
+                        0x7ec300..=0x7ec6fe => {
+                            use crate::cycle_models::intro_palettes::PaletteSource;
+                            use zelda3_palette::Bank;
+                            assert_eq!(width,2);assert_eq!(address&1,0);
+                            let (bank,index)=if address<0x7ec500 {(Bank::Aux,((address-0x7ec300)/2) as usize)}
+                                else {(Bank::Main,((address-0x7ec500)/2) as usize)};
+                            match palette_source {
+                                PaletteSource::Constant=>{
+                                    assert_eq!(value,0);
+                                    if bank==Bank::Aux {self.set_aux_color_constant(index,value);}else{self.set_main_color_constant(index,value);}
+                                }
+                                PaletteSource::Asset=>{
+                                    if bank==Bank::Aux {self.set_aux_color_asset(index,value);}else{self.set_main_color_asset(index,value);}
+                                }
+                                PaletteSource::AuxCopy(offset)=>{
+                                    assert_eq!(read_le_u16(&self.ram,crate::game_state::constants::AUX_PALETTE_BUFFER+usize::from(offset)),value);
+                                    self.copy_color((Bank::Aux,usize::from(offset)/2),(bank,index));
+                                }
+                                PaletteSource::RestoreAdditive=>{
+                                    assert_eq!(bank,Bank::Main);
+                                    self.transform_main_range(index,index+1,crate::game_state::PaletteTransform::RestoreAdditiveStep);
+                                    assert_eq!(read_le_u16(&self.ram,address as usize-0x7e0000),value,"retained palette store disagrees with native transform");
+                                }
+                            }
+                        }
+                        0x9c..=0x9e => {assert_eq!(width,1);self.palette_filter_mut().set_fixed_color_component((address-0x9c) as usize,value as u8);}
+                        0xab3 => {assert_eq!(width,1);self.set_overworld_palette_mode(value as u8);}
+                        0xab4 => {assert_eq!(width,1);self.world_palette_theme_mut().set_overworld_palette_aux1_hi(value as u8);}
+                        0xab5 => {assert_eq!(width,1);self.set_overworld_palette_aux2_hi(value as u8);}
+                        0xab8 => {assert_eq!(width,1);self.set_overworld_palette_aux3_lo(value as u8);}
+                        0xab1 => {assert_eq!(width,1);self.set_sp6r_indoors(value as u8);}
+                        0xaac => {assert_eq!(width,1);self.set_sp0l(value as u8);}
+                        0xabd => {assert_eq!(width,1);self.follower_state_mut().set_palette_swap_flag(value as u8);}
+                        0xaa9 => {assert_eq!(width,1);self.palette_buffer_mut().set_palette_destination_high(value as u8);}
+                        0x7ec00d => {assert_eq!(width,2);self.reset_bg_tile_animation_countdown(value);}
+                        0x7ec00f => {assert_eq!(width,2);self.player_state_mut().set_link_dma_source_offset(value);}
+                        0x7ec013 => {assert_eq!(width,2);self.player_state_mut().set_link_dma_countdown(value);}
+                        0x7ec015 => {assert_eq!(width,2);self.player_state_mut().set_link_dma_tile_offset(value);}
+                        0xadc => {assert_eq!(width,2);self.set_animated_tile_data_source_address(value);}
+                        0xae0 | 0xae2 => {
+                            assert_eq!(width,2);
+                            self.display_core_mut().set_sprite_preparation_animation_word(((address-0xae0)/2) as usize,value);
+                        }
+                        0xaec | 0xaee | 0xaf0 | 0xaf2 | 0xaf6 | 0xaf8 => {
+                            assert_eq!(width,2);
+                            let word=crate::cycle_models::sprite_dma::POINTER_WORD_ADDRESSES.iter()
+                                .position(|&a|u32::from(a)==address).unwrap();
+                            self.display_core_mut().set_sprite_preparation_pointer_word(word,value);
+                        }
+                        0..=0x0f | 0x0100..=0x01ff => {
+                            self.ram[address as usize..address as usize + usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                            if (file_menu || name_file) && address<2 {
+                                let offset=read_le_u16(&self.ram,0);
+                                self.game_state.save_load_transfer.set_source_offset(offset);
+                            }
+                        }
+                        0x7f71c0..=0x7f7668 => {
+                            assert_eq!(width,2);
+                            self.messaging_text_mut().write_dialogue_pointer_word((address-0x7f71c0) as usize,value);
+                        }
+                        0x0a00..=0x0a1f => {
+                            assert_eq!(width, 1);
+                            self.oam_state_mut().set_packed_extended_oam_byte((address - 0xa00) as usize, value as u8);
+                        }
+                        0x0ac0..=0x0ada => {
+                            assert_eq!(width, 2);
+                            let word = crate::cycle_models::sprite_dma::SOURCE_WORD_ADDRESSES.iter()
+                                .position(|&a| u32::from(a) == address).expect("unaligned native sprite DMA source");
+                            self.display_core_mut().set_sprite_preparation_source_word(word, value);
+                        }
+                        0xbf..=0xcd if graphics => {
+                            self.ending_scratch_mut().write_graphics_scratch(address as usize,value,width);
+                            self.select_file_menu_mut().write_shared_work(address as usize,value,width);
+                            if (0xc8..=0xcd).contains(&address) {
+                                self.intro_sword_mut().write_shared_scratch(address as usize,value,width);
+                            }
+                            if address<=0xcd && address+u32::from(width)>0xcc {
+                                self.game_state.ending.credits.palace_death_count_digit_step=read_le_u16(&self.ram,crate::game_state::constants::ENDING_WHICH_DUNG);
+                            }
+                        }
+                        0xbd if graphics => {
+                            assert_eq!(width,2);
+                            self.ram[address as usize..address as usize + 2].copy_from_slice(&value.to_le_bytes());
+                        }
+                        0xc8 => self.ending_scratch_mut().set_primary_word(value),
+                        0xca => self.ending_scratch_mut().set_secondary_word(value),
+                        0x7f6000..=0x7f6fff if graphics => {
+                            assert_eq!(width,1);
+                            self.enemy_damage_subclass_table_mut().set_entry((address-0x7f6000) as usize,value as u8);
+                        }
+                        0x7efcc0..=0x7efd3f if load_file => {
+                            self.copy_overworld_sprite_graphics_range((address-0x7efcc0) as usize, &value.to_le_bytes(), 0, usize::from(width));
+                        }
+                        0x7efd40..=0x7efdbf if load_file => {
+                            self.copy_overworld_sprite_palette_range((address-0x7efd40) as usize, &value.to_le_bytes(), 0, usize::from(width));
+                        }
+                        0x7efe00..=0x7effff if load_file => {
+                            for byte in 0..usize::from(width) {
+                                self.dungeon_room_parser_mut().write_tile_attribute_byte((address-0x7efe00) as usize+byte, (value>>(byte*8)) as u8);
+                            }
+                        }
+                        0x7e2000..=0x7ffffe => {
+                            let offset = address as usize - 0x7e0000;
+                            crate::types::ww_check(offset, usize::from(width), "native_intro_store", u32::from(value));
+                            self.ram[offset..offset+usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                        }
+                        _ => panic!("unowned intro clear store {address:06x}"),
+                    }
+                    if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                        eprintln!("native-intro-clear-store clock={at} address={address:06x} value={value:04x} width={width}");
+                    }
+                    0
+                }
+                Access::Vblank { .. } => 0,
+            }
+        });
+        self.dma=dma;
+        let returned = match boundary {
+            IntroClearBoundary::AcceptNmi(mut context) => {
+                if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                    eprintln!("native-intro-clear-nmi clock={} raster={:?} context={context:?}",
+                        cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());
+                }
+                context.accept_interrupt_clocked(&mut self.ram, &mut cpu.timeline);
+                crate::cycle_ledger::charge_routine(0x00_80c9, 62);
+                cpu.startup.accept_intro_clear_interrupt(context);
+                false
+            }
+            IntroClearBoundary::HostReturn => false,
+            IntroClearBoundary::AcceptIrq(mut context,deadline) => {
+                let nmitimen=self.accept_native_poly_irq(&mut context,&mut cpu.timeline,deadline);
+                cpu.startup.return_from_main_irq(context,&cpu.timeline,nmitimen);
+                if cpu.startup.worker_selected() && !self.advance_native_selected_worker(None,&mut cpu) {
+                    self.native_startup_cpu=Some(cpu);
+                    return false;
+                }
+                self.native_startup_cpu=Some(cpu);
+                return self.run_native_intro_clear_until_boundary();
+            }
+            IntroClearBoundary::TextReturned => {
+                if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                    eprintln!("native-intro-text-return clock={} raster={:?} context={:?}",
+                        cpu.timeline.clock_master_cycles(),cpu.timeline.raster_position(),cpu.startup.intro_text_returned_context().unwrap());
+                }
+                cpu.startup.begin_intro_palette_clear();
+                self.native_startup_cpu=Some(cpu);
+                return self.run_native_intro_clear_until_boundary();
+            }
+            IntroClearBoundary::PaletteCleared => {
+                if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                    eprintln!("native-intro-palette-clear-return clock={} raster={:?} context={:?}",
+                        cpu.timeline.clock_master_cycles(),cpu.timeline.raster_position(),cpu.startup.intro_text_returned_context().unwrap());
+                }
+                cpu.startup.begin_intro_palette_loads();
+                self.native_startup_cpu=Some(cpu);
+                return self.run_native_intro_clear_until_boundary();
+            }
+            IntroClearBoundary::Returned => {
+                let context = cpu.startup.intro_clear_returned_context().unwrap();
+                assert_eq!((context.bank, context.pc), (0, 0x805a));
+                if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                    eprintln!("native-intro-clear-return clock={} raster={:?} context={context:?}",
+                        cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());
+                }
+                assert_eq!(self.main_loop_caller_phase.enter_sprite_preparation(), 46);
+                cpu.startup.begin_intro_packing();
+                self.native_startup_cpu = Some(cpu);
+                return self.run_native_intro_clear_until_boundary();
+            }
+            IntroClearBoundary::Packed => {
+                let context = cpu.startup.intro_packing_returned_context().unwrap();
+                assert_eq!((context.bank, context.pc), (0, 0x865c));
+                if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                    eprintln!("native-intro-packing-return clock={} raster={:?} context={context:?}",
+                        cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());
+                }
+                cpu.startup.begin_intro_sources();
+                self.native_startup_cpu = Some(cpu);
+                return self.run_native_intro_clear_until_boundary();
+            }
+            IntroClearBoundary::Sources => {
+                let context = cpu.startup.intro_sources_returned_context().unwrap();
+                assert_eq!((context.bank, context.pc), (0, 0x86df));
+                if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                    eprintln!("native-intro-sources-return clock={} raster={:?} context={context:?}",
+                        cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());
+                }
+                cpu.startup.begin_intro_tail();
+                self.native_startup_cpu=Some(cpu);
+                return self.run_native_intro_clear_until_boundary();
+            }
+            IntroClearBoundary::Tail => {
+                let context=cpu.startup.intro_tail_returned_context().unwrap();
+                assert_eq!((context.bank,context.pc),(0,0x8034));
+                let retired=self.main_loop_caller_phase.step_return_to_wait().expect("native caller BRA");
+                assert!(!retired.clear_latch);
+                assert_eq!(retired.master_cycles,22);
+                // Both inline completion and a resumed host consume the same
+                // suffix here. An inline return must not run it a second time.
+                assert!(matches!(self.pending_main_loop_common_suffix.take(),
+                    None | Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch)));
+                assert!(!self.main_loop_sprite_preparation_completed);
+                self.rom_load_partial_nmi_this_frame=false;
+                self.dialogue_fast_forward_hold_active=false;
+                self.last_nmi_prepare_sprites_master_cycles=Some(u32::try_from(cpu.startup.intro_sprite_prefix_master_cycles()).unwrap());
+                self.main_loop_sprite_preparation_completed=true;
+                if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                    eprintln!("native-intro-tail-return clock={} raster={:?} context={context:?}",
+                        cpu.timeline.clock_master_cycles(),cpu.timeline.raster_position());
+                }
+                true
+            }
+        };
+        self.native_startup_cpu = Some(cpu);
+        returned
+    }
+
+    fn resume_native_intro_clear_host(&mut self, input: u16) {
+        let host = u64::from(self.frame_ctr_dbg.saturating_sub(1));
+        loop {
+            if !self.native_startup_cpu.as_ref().unwrap().startup.ready_in_host(host) { return; }
+            let mut cpu = self.native_startup_cpu.take().unwrap();
+            if cpu.startup.worker_selected() && !self.advance_native_selected_worker(Some(input),&mut cpu) {
+                self.native_startup_cpu=Some(cpu);
+                return;
+            }
+            if let Some(mut context) = cpu.startup.intro_clear_accepted_context() {
+                if self.game_state.display.nmi_thread_active {
+                    let programming=self.interrupt_accepted_poly_nmi_with_native_context(input,&mut context,&mut cpu.timeline);
+                    self.run_native_poly_worker_to_irq(cpu.poly_worker.get_or_insert_with(Default::default),
+                        &mut context,&mut cpu.timeline,programming);
+                    cpu.startup.retain_vertical_irq(programming,&cpu.timeline);
+                } else {
+                    let irq_deadline=cpu.startup.irq_deadline();
+                        if let Some(programming)=self.interrupt_accepted_nmi_with_native_context(input,&mut context,&mut cpu.timeline,irq_deadline) {
+                            cpu.startup.install_vertical_irq(programming);
+                        }
+                }
+                cpu.startup.resume_intro_clear(context);
+                self.intro_initialization_reset_obj_control_pending = false;
+            }
+            self.native_startup_cpu = Some(cpu);
+            if self.run_native_intro_clear_until_boundary() {
+                return;
+            }
+            // If the prior host returned before the NMI deadline, this host
+            // executes the remaining instruction and owns its handler too.
+            // A newly crossed vblank instead advances next_host and defers it.
+            if self.native_startup_cpu.as_ref().unwrap().startup.intro_clear_accepted_context().is_none() { return; }
+        }
+    }
+
+    fn try_native_load_file_entry(&mut self) -> bool {
+        let Some(context) = self.native_startup_cpu.as_ref()
+            .and_then(|cpu| cpu.startup.entered_module_context()) else { return false; };
+        self.native_startup_cpu.as_mut().unwrap().startup.enter_load_file(context);
+        true
+    }
+
+    fn try_native_file_select_entry(&mut self)->bool {
+        use crate::cycle_models::intro_entry::{self,Access};
+        let name_file=self.game_state.frame.main_module==4;
+        if self.game_state.frame.submodule>if name_file {3}else{5} {return false;}
+        let Some(mut context)=self.native_startup_cpu.as_ref()
+            .and_then(|cpu|cpu.startup.entered_module_context()) else {return false};
+        let mut cpu=self.native_startup_cpu.take().unwrap();
+        let enter=if name_file {intro_entry::enter_name_file}else{intro_entry::enter_file_select};
+        let cycles=enter(&mut context,&mut cpu.timeline,|_,access|match access {
+            Access::ReadByte(a)=>u16::from(intro_entry::table_byte(a).unwrap_or_else(||{assert!(a<0x2000);self.ram[a as usize]})),
+            Access::ReadWord(a)=>{
+                let read=|a|intro_entry::table_byte(a).unwrap_or_else(||{assert!(a<0x2000);self.ram[a as usize]});
+                u16::from_le_bytes([read(a),read(a+1)])
+            }
+            Access::WriteByte(a,value)=>{
+                match a {
+                    0xe4|0xe5=>{let old=read_le_u16(&self.ram,crate::game_state::constants::BG3_H_SCROLL_COPY2);self.set_bg3_h_copy2(if a==0xe4 {(old&0xff00)|u16::from(value)}else{(old&255)|(u16::from(value)<<8)});}
+                    0xea|0xeb=>{let old=read_le_u16(&self.ram,crate::game_state::constants::BG3_V_SCROLL_COPY2);self.set_bg3_v_copy2(if a==0xea {(old&0xff00)|u16::from(value)}else{(old&255)|(u16::from(value)<<8)});}
+                    0x13=>self.set_screen_brightness(value),
+                    0x9b=>{assert_eq!(value,0);self.clear_hdma_enable_mask();}
+                    0x2100=>self.zelda_ppu_write(u32::from(a),value),
+                    0x420c=>{assert_eq!(value,0);for channel in &mut self.dma.channel {channel.hdma_active=false;}}
+                    _=>{assert!(matches!(a,0..=5|0x100..=0x1ff));self.ram[usize::from(a)]=value;}
+                };0
+            }
+            Access::WriteWord(a,value)=>{assert!(matches!(a,0..=3|0x100..=0x1fe));write_le_u16(&mut self.ram,usize::from(a),value);0}
+            Access::WriteLongWord(..)=>unreachable!(),
+        });
+        crate::cycle_ledger::charge_routine(if name_file {0x0cd88a}else{0x0ccd7d},cycles);
+        cpu.startup.enter_file_select(context);self.native_startup_cpu=Some(cpu);true
+    }
+
+    fn try_native_startup_main_entry(&mut self) -> bool {
+        use crate::cycle_models::main_entry::{self, MainEntryAccess as Access};
+        let Some(mut context) = self.native_startup_cpu.as_ref()
+            .and_then(|cpu| cpu.startup.main_caller_context()) else { return false };
+        let mut cpu = self.native_startup_cpu.take().unwrap();
+        let module = main_entry::enter_module(&mut context, &mut cpu.timeline, |_, access| {
+            match access {
+                Access::ReadByte(address) => u16::from(main_entry::module_table_byte(address)
+                    .unwrap_or_else(|| self.ram[usize::from(address)])),
+                Access::ReadWord(address) => read_word_from_slice(&self.ram, usize::from(address)),
+                Access::WriteByte(address, value) => {
+                    match address {
+                        0x1a => self.frame_state_mut().set_frame_counter(value),
+                        3..=5 => self.ram[usize::from(address)] = value,
+                        0x0801..=0x09fd => {
+                            assert_eq!(address & 3, 1); assert_eq!(value, 0xf0);
+                            self.oam_state_mut().hide_sprite_row(usize::from(address - 0x0801) / 4);
+                        }
+                        _ => {
+                            assert!(address < 0x2000, "native main stack escaped WRAM");
+                            self.ram[usize::from(address)] = value;
+                        }
+                    }
+                    0
+                }
+                Access::WriteWord(address, value) => {
+                    assert!(address < 0x1fff, "native main stack escaped WRAM");
+                    self.ram[usize::from(address)..usize::from(address)+2].copy_from_slice(&value.to_le_bytes()); 0
+                }
+            }
+        });
+        assert_eq!(module, self.game_state.frame.main_module);
+        crate::cycle_ledger::charge_routine(0x00_8034, 14 + 22 + 38 + 46 + 62);
+        crate::cycle_ledger::charge_routine(0x00_841e, Self::CLEAR_OAM_BUFFER_MASTER_CYCLES);
+        // module_main_routing still accounts its own dispatch once when the
+        // selected Rust callee is entered below. Its pointer stores already ran.
+        cpu.startup.enter_module(context);
+        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+            eprintln!("native-main-module pc={:02x}:{:04x} clock={} raster={:?}",
+                context.bank, context.pc, cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());
+        }
+        self.native_startup_cpu = Some(cpu);
+        true
+    }
+
+    fn try_native_intro_setup_entry(&mut self) -> bool {
+        use crate::cycle_models::intro_entry::{self, Access};
+        let Some(mut context) = self.native_startup_cpu.as_ref()
+            .and_then(|cpu| cpu.startup.entered_module_context()) else { return false };
+        assert_eq!((self.game_state.frame.main_module, self.game_state.frame.submodule), (0, 0));
+        assert_eq!(self.game_state.display.hdma_enable_mask, 0,
+            "initial intro setup cannot replace an active HDMA continuation");
+        let mut cpu = self.native_startup_cpu.take().unwrap();
+        let cycles = intro_entry::enter_half_slot(&mut context, &mut cpu.timeline, |at, access| {
+            if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                if let Access::WriteByte(address @ (0x2100..=0x213f | 0x420c), value) = access {
+                    eprintln!("native-intro-ppu clock={at} address={address:04x} value={value:02x}");
+                }
+            }
+            match access {
+                Access::ReadByte(address) => u16::from(intro_entry::table_byte(address)
+                    .unwrap_or_else(|| self.ram[address as usize])),
+                Access::ReadWord(address) => {
+                    let read = |a| intro_entry::table_byte(a).unwrap_or_else(|| self.ram[a as usize]);
+                    u16::from_le_bytes([read(address), read(address + 1)])
+                }
+                Access::WriteByte(address, value) => {
+                    match address {
+                        0x710 => self.set_core_update_disable_flag(value),
+                        0x13 => self.set_screen_brightness(value),
+                        0x1c => self.set_main_screen_layers(value),
+                        0x1d => self.set_sub_screen_layers(value),
+                        0x94 => self.set_bg_mode(value),
+                        0x95 => self.set_mosaic_copy(value),
+                        0x99 => self.set_color_window_selection(value),
+                        0x9a => self.set_color_math_control(value),
+                        0x9b => { assert_eq!(value, 0); self.clear_hdma_enable_mask(); }
+                        0x9c => self.set_fixed_color_red(value),
+                        0x9d => self.set_fixed_color_green(value),
+                        0x9e => self.set_fixed_color_blue(value),
+                        0xaaa => self.set_chr_halfslot_request(value),
+                        0x420c => {
+                            assert_eq!(value, 0);
+                            for channel in &mut self.dma.channel { channel.hdma_active = false; }
+                        }
+                        0x2100..=0x213f => {
+                            self.zelda_ppu_write(u32::from(address), value);
+                            if address == 0x2100 {
+                                // This startup call blanks during vblank, so the
+                                // following visible field begins blank.
+                                self.active_display_force_blank_event = Some(0);
+                            }
+                        }
+                        _ => {
+                            assert!(matches!(address, 0..=5 | 0x100..=0x1ff));
+                            self.ram[usize::from(address)] = value;
+                        }
+                    }
+                    0
+                }
+                Access::WriteLongWord(..) => unreachable!("intro prefix has no long stores"),
+                Access::WriteWord(address, value) => {
+                    assert!(matches!(address, 0..=3 | 0x100..=0x1fe));
+                    self.ram[usize::from(address)..usize::from(address)+2].copy_from_slice(&value.to_le_bytes());
+                    0
+                }
+            }
+        });
+        crate::cycle_ledger::charge_routine(0x0c_c120, cycles);
+        cpu.startup.enter_intro_half_slot(context);
+        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+            eprintln!("native-intro-half-slot pc={:02x}:{:04x} clock={} raster={:?} work={cycles}",
+                context.bank, context.pc, cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());
+        }
+        self.native_startup_cpu = Some(cpu);
+        true
+    }
+
+    fn try_native_intro_half_slot(&mut self) -> bool {
+        use crate::cycle_models::half_slot::{self, Access, INTRO_SHEET, INTRO_SHEET_ADDRESS};
+        let Some(mut context) = self.native_startup_cpu.as_ref()
+            .and_then(|cpu| cpu.startup.intro_half_slot_context()) else { return false };
+        let mut art = self.asset_bytes(64, INTRO_SHEET).expect("intro graphics sheet missing").to_vec();
+        assert_eq!(art.len(), 0x600);
+        // The last word read contains the following sheet's first byte before
+        // AND #$00FF discards it. Preserve that actual read operand.
+        art.push(*self.asset_bytes(64, INTRO_SHEET + 1).and_then(|data| data.first())
+            .expect("following raw graphics sheet missing"));
+        let mut cpu = self.native_startup_cpu.take().unwrap();
+        let cycles = half_slot::load_intro(&mut context, &mut cpu.timeline, |at, access| {
+            match access {
+                Access::Read { address, width } => {
+                    let read = |a: u32| {
+                        if let Some(value) = half_slot::table_byte(a) { value }
+                        else if let Some(offset) = a.checked_sub(INTRO_SHEET_ADDRESS).filter(|&n| n <= 0x600) {
+                            art[offset as usize]
+                        } else {
+                            assert!(a < 0x2000, "unowned intro graphics read {a:06x}");
+                            self.ram[a as usize]
+                        }
+                    };
+                    let low = read(address);
+                    if width == 1 { u16::from(low) } else { u16::from_le_bytes([low, read(address + 1)]) }
+                }
+                Access::Write { address, value, width } => {
+                    match (address, width) {
+                        (0xaaa, 1) => self.set_chr_halfslot_request(value as u8),
+                        (0x116, 1) => self.set_nmi_load_target_page(value as u8),
+                        (0x17, 1) => self.set_pending_nmi_subroutine(value as u8),
+                        (0x7f1000..=0x7f13fe, 2) => {
+                            let offset = address as usize - 0x7e0000;
+                            crate::types::ww_check(offset, 2, "native_intro_half_slot_plane", u32::from(value));
+                            self.ram[offset..offset+2].copy_from_slice(&value.to_le_bytes());
+                            if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                                eprintln!("native-half-slot-store clock={at} address={address:06x} value={value:04x}");
+                            }
+                        }
+                        _ => {
+                            assert!(matches!(address, 0..=0xc | 0x100..=0x1ff));
+                            self.ram[address as usize] = value as u8;
+                            if width == 2 { self.ram[address as usize+1] = (value >> 8) as u8; }
+                        }
+                    }
+                    0
+                }
+            }
+        });
+        assert_eq!((context.bank, context.pc), (2, 0x8024));
+        crate::cycle_ledger::charge_routine(0x00_e3fa, cycles);
+        cpu.startup.return_intro_half_slot(context);
+        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+            eprintln!("native-half-slot-return pc={:02x}:{:04x} clock={} raster={:?} work={cycles}",
+                context.bank, context.pc, cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());
+        }
+        self.native_startup_cpu = Some(cpu);
+        true
+    }
+
+    fn try_native_intro_setup_return(&mut self) -> bool {
+        use crate::cycle_models::intro_entry::{self, Access};
+        let Some(mut context) = self.native_startup_cpu.as_ref()
+            .and_then(|cpu| cpu.startup.intro_setup_after_half_slot_context()) else { return false };
+        let mut cpu = self.native_startup_cpu.take().unwrap();
+        let cycles = intro_entry::finish_setup(&mut context, &mut cpu.timeline, |at, access| {
+            if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                eprintln!("native-intro-setup-bus clock={at} access={access:?}");
+            }
+            match access {
+                Access::ReadByte(address) => {
+                    assert!(address < 0x2000);
+                    u16::from(self.ram[address as usize])
+                }
+                Access::ReadWord(address) => {
+                    assert!(address < 0x1fff);
+                    crate::types::read_le_u16(&self.ram, address as usize)
+                }
+                Access::WriteByte(0xaaa, value) => { self.set_chr_halfslot_request(value); 0 }
+                Access::WriteByte(address @ 0x2115..=0x2119, value) => {
+                    self.zelda_ppu_write(u32::from(address), value); 0
+                }
+                Access::WriteWord(address, value) => {
+                    match address {
+                        0xc8 => self.ending_scratch_mut().set_primary_word(value),
+                        0xca => self.ending_scratch_mut().set_secondary_word(value),
+                        0x100..=0x1fe => self.ram[usize::from(address)..usize::from(address)+2]
+                            .copy_from_slice(&value.to_le_bytes()),
+                        _ => panic!("unowned intro setup word store {address:04x}"),
+                    }
+                    0
+                }
+                Access::WriteLongWord(address, value) => {
+                    assert!((0x7ec620..=0x7ec640).contains(&address) && address & 1 == 0);
+                    self.set_main_color_constant(144 + (address as usize - 0x7ec620) / 2, value);
+                    0
+                }
+                _ => panic!("unowned intro setup access {access:?}"),
+            }
+        });
+        assert_eq!((context.bank, context.pc), (12, 0xc161));
+        crate::cycle_ledger::charge_routine(0x02_8024, cycles);
+        cpu.startup.return_intro_setup(context);
+        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+            eprintln!("native-intro-setup-return pc={:02x}:{:04x} clock={} raster={:?} work={cycles}",
+                context.bank, context.pc, cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());
+        }
+        self.native_startup_cpu = Some(cpu);
+        true
+    }
+
+    fn try_native_intro_first_clear_entry(&mut self) -> bool {
+        self.try_native_intro_clear_entry(true)
+    }
+
+    fn try_native_intro_clear_entry(&mut self, first: bool) -> bool {
+        self.try_native_intro_continue_entry(first, crate::cycle_models::intro_entry::IntroWork::Clear)
+    }
+
+    fn try_native_intro_text_entry(&mut self) -> bool {
+        self.try_native_intro_continue_entry(false, crate::cycle_models::intro_entry::IntroWork::Text)
+    }
+    fn try_native_intro_items_entry(&mut self) -> bool {
+        self.try_native_intro_continue_entry(false,crate::cycle_models::intro_entry::IntroWork::Items)
+    }
+    fn try_native_intro_follower_entry(&mut self) -> bool {
+        self.try_native_intro_continue_entry(false,crate::cycle_models::intro_entry::IntroWork::Follower)
+    }
+    fn try_native_intro_darkening_entry(&mut self) -> bool {
+        self.try_native_intro_continue_entry(false,crate::cycle_models::intro_entry::IntroWork::Darkening)
+    }
+    fn try_native_intro_animation_entry(&mut self) -> bool {
+        self.try_native_intro_continue_entry(false,crate::cycle_models::intro_entry::IntroWork::Animation)
+    }
+    fn try_native_intro_title_entry(&mut self) -> bool {
+        self.try_native_intro_continue_entry(false,crate::cycle_models::intro_entry::IntroWork::Title)
+    }
+    fn try_native_intro_poly_entry(&mut self) -> bool {
+        self.try_native_intro_continue_entry(false,crate::cycle_models::intro_entry::IntroWork::Poly)
+    }
+
+    fn try_native_intro_continue_entry(&mut self, first: bool, work:crate::cycle_models::intro_entry::IntroWork) -> bool {
+        use crate::cycle_models::intro_entry::{self, Access,IntroWork};
+        let text=work==IntroWork::Text;
+        let items=work==IntroWork::Items;
+        let follower=work==IntroWork::Follower;
+        let darkening=work==IntroWork::Darkening;
+        let poly=work==IntroWork::Poly;
+        let animation=work==IntroWork::Animation;
+        let title=work==IntroWork::Title;
+        let submodule=self.game_state.frame.submodule;
+        let selected=match work {IntroWork::Clear=>self.game_state.frame.subsubmodule<=7,
+            IntroWork::Text=>self.game_state.frame.subsubmodule==8,IntroWork::Items=>self.game_state.frame.subsubmodule==9,
+            IntroWork::Follower=>self.game_state.frame.subsubmodule==10,
+            IntroWork::Darkening=>self.game_state.frame.subsubmodule>=11,IntroWork::Poly=>true,
+            IntroWork::Animation=>matches!(self.game_state.frame.submodule,3|4),
+            IntroWork::Title=>matches!(self.game_state.frame.submodule,5..=8)};
+        if !first && (!selected || !animation && !title && submodule != if poly {2}else{1}) {
+            return false;
+        }
+        let Some(mut context) = self.native_startup_cpu.as_ref()
+            .and_then(|cpu| if first { cpu.startup.intro_after_setup_context() }
+                else { cpu.startup.entered_module_context() }) else { return false };
+        if items && crate::cycle_models::item_graphics_caller::SOURCES.iter()
+            .any(|&(sprite,sheet,_)|self.asset_bytes(if sprite {64}else{65},sheet).is_none()) {return false;}
+        if follower && (self.game_state.sprites.follower_runtime.indicator()>=14 ||
+            crate::cycle_models::follower_graphics::SOURCES.iter()
+                .any(|&(_,sheet,_)|self.asset_bytes(64,sheet).is_none())) {return false;}
+        let streams = if text {
+            let Some(pack)=self.asset_memblk(94,self.dialogue_blk_index) else {return false};
+            let dialogue=find_index_in_memblk(pack,1);
+            if dialogue.ptr.len()<2 || read_le_u16(dialogue.ptr,dialogue.ptr.len()-2)&0x1fff != 396 {return false;}
+            let messages:Vec<_>=(0..397).map(|i|find_index_in_memblk(dialogue,i).ptr).collect();
+            let Some(streams)=crate::cycle_models::text_pointers::message_streams(&messages) else {return false};
+            Some(streams)
+        } else {None};
+        let mut cpu = self.native_startup_cpu.take().unwrap();
+        let bus = |at, access| {
+            if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                eprintln!("native-intro-clear-entry-bus clock={at} access={access:?}");
+            }
+            let read = |address: u32| {
+                intro_entry::table_byte(address).unwrap_or_else(|| {
+                    assert!(address < 0x2000, "unowned intro caller read {address:06x}");
+                    self.ram[address as usize]
+                })
+            };
+            match access {
+                Access::ReadByte(address) => u16::from(read(address)),
+                Access::ReadWord(address) => u16::from_le_bytes([read(address), read(address + 1)]),
+                Access::WriteByte(address, value) => {
+                    match address {
+                        0x13 => self.set_screen_brightness(value),
+                        0xb0 => self.set_subsubmodule(value),
+                        0x11 => self.set_submodule(value),
+                        0x15 => {
+                            self.increment_cgram_update_flag();
+                            assert_eq!(self.ram[crate::game_state::constants::FLAG_UPDATE_CGRAM_IN_NMI], value, "palette update owner diverged from its operand");
+                        }
+                        0x12f => self.set_sound_effect_2(value),
+                        0x800..=0x80f => {
+                            let entry = usize::from(address & !3);
+                            let mut oam = self.oam_state_mut();
+                            match address & 3 {
+                                0 => oam.set_entry_x(entry, value),
+                                1 => oam.set_entry_y(entry, value),
+                                2 => oam.set_entry_char(entry, value),
+                                3 => oam.set_entry_flags(entry, value),
+                                _ => unreachable!(),
+                            }
+                        }
+                        0xa20..=0xa23 => self.oam_state_mut().set_extended_byte(usize::from(address - 0xa20), value),
+                        _ => {
+                            assert!(matches!(address, 0..=5 | 0x100..=0x1ff));
+                            self.ram[usize::from(address)] = value;
+                        }
+                    }
+                    0
+                }
+                Access::WriteWord(address, value) => {
+                    assert!(matches!(address, 0..=3 | 0x100..=0x1fe));
+                    self.ram[usize::from(address)..usize::from(address)+2].copy_from_slice(&value.to_le_bytes());
+                    0
+                }
+                Access::WriteLongWord(..) => unreachable!("intro caller has no long stores"),
+            }
+        };
+        let cycles = if first {
+            intro_entry::enter_first_clear(&mut context, &mut cpu.timeline, bus)
+        } else if text {
+            intro_entry::enter_text_pointers(&mut context, &mut cpu.timeline, bus)
+        } else if items {
+            intro_entry::enter_item_graphics(&mut context,&mut cpu.timeline,bus)
+        } else if follower {
+            intro_entry::enter_follower_graphics(&mut context,&mut cpu.timeline,bus)
+        } else if darkening {
+            intro_entry::enter_darkening(&mut context,&mut cpu.timeline,bus)
+        } else if animation {
+            intro_entry::enter_animation(&mut context,&mut cpu.timeline,bus,submodule)
+        } else if title {
+            intro_entry::enter_title(&mut context,&mut cpu.timeline,bus,submodule)
+        } else if poly {
+            intro_entry::enter_poly(&mut context,&mut cpu.timeline,bus)
+        } else {
+            intro_entry::enter_following_clear(&mut context, &mut cpu.timeline, bus)
+        };
+        crate::cycle_ledger::charge_routine(if first { 0x0c_c161 } else { 0x0c_c120 }, cycles);
+        if let Some(streams)=streams {cpu.startup.enter_intro_text(context,streams);}
+        else if items {cpu.startup.enter_intro_items(context);}
+        else if follower {cpu.startup.enter_intro_follower(context);}
+        else if darkening {cpu.startup.enter_intro_darkening(context);}
+        else if poly {cpu.startup.enter_intro_poly(context);}
+        else if animation {cpu.startup.enter_intro_animation(context);}
+        else if title {cpu.startup.enter_intro_title(context);}
+        else {cpu.startup.enter_intro_clear(context);}
+        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+            let label = if animation {"animation"} else if poly {"poly"} else if darkening {"darkening"} else if follower {"follower"} else if items {"items"} else if text {"text"} else if first { "first" } else { "following" };
+            eprintln!("native-intro-{label}-clear pc={:02x}:{:04x} clock={} raster={:?} work={cycles}",
+                context.bank, context.pc, cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());
+        }
+        self.native_startup_cpu = Some(cpu);
+        true
     }
 
     fn zelda_run_game_loop(&mut self) {
@@ -14666,7 +15940,7 @@ impl ZeldaState {
                 assert!(!self.main_loop_sprite_preparation_completed);
                 self.nmi_prepare_sprites_resume_after_progress(progress);
                 self.main_loop_sprite_preparation_completed = true;
-                self.clear_nmi_update_latch();
+                self.finish_main_loop_caller_return();
             }
             MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch => {
                 assert!(
@@ -14674,7 +15948,7 @@ impl ZeldaState {
                     "pending ZeldaRunGameLoop common suffix would repeat NMI_PrepareSprites",
                 );
                 self.nmi_prepare_sprites_for_main_loop();
-                self.clear_nmi_update_latch();
+                self.finish_main_loop_caller_return();
             }
             MainLoopCommonSuffixContinuation::ResumeSpritePreparationExtendedOamPackingAndClearNmiLatch {
                 next_group_start,
@@ -14685,7 +15959,7 @@ impl ZeldaState {
                 );
                 self.nmi_prepare_sprites_resume_after_extended_oam_packing(next_group_start);
                 self.main_loop_sprite_preparation_completed = true;
-                self.clear_nmi_update_latch();
+                self.finish_main_loop_caller_return();
             }
         }
     }

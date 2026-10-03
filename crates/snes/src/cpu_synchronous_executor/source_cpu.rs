@@ -10,9 +10,8 @@ use crate::apu::{
 };
 use crate::cart::CartType;
 use crate::cpu_timeline::{
-    CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline, CpuMasterTimestamp, CpuRasterPosition,
+    vertical_irq_deadline, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline, CpuMasterTimestamp, CpuRasterPosition,
     CpuSynchronousBeamPosition, CpuSynchronousTimelineCheckpointError, NMI_SCANLINE,
-    NTSC_SCANLINES_PER_FIELD,
 };
 use crate::snes::Snes;
 use crate::snes9x_apu_clock::{Snes9xApuClockCheckpoint, Snes9xApuClockError, Snes9xApuClockState};
@@ -303,36 +302,6 @@ struct SourceCpuInstructionTrace {
     transactions: Vec<SourceCpuTransaction>,
 }
 
-/// Pinned Snes9x vertical-only IRQ compare, shared by the cold owner and the
-/// plan probe so a handoff cannot invent a different timer phase.
-fn vertical_irq_deadline(
-    timeline: &CpuMasterTimeline,
-    v_timer: u16,
-    initial: bool,
-) -> Option<CpuMasterTimestamp> {
-    if u32::from(v_timer) >= NTSC_SCANLINES_PER_FIELD {
-        return None;
-    }
-    // ppu.cpp:S9xUpdateIRQPositions uses IRQTriggerCycles(14) minus one
-    // four-master-cycle dot when only the V timer is enabled.
-    const V_IRQ_MASTER_CYCLE: u16 = 10;
-    let (scanline, master_cycle) = timeline.raster_position().coordinates();
-    if initial && scanline == v_timer {
-        return Some(CpuMasterTimestamp::new(
-            timeline.timestamp().master_cycles() + u64::from(V_IRQ_MASTER_CYCLE),
-        ));
-    }
-    let field = if v_timer > scanline || (v_timer == scanline && V_IRQ_MASTER_CYCLE > master_cycle)
-    {
-        timeline.field_index()
-    } else {
-        timeline.field_index().checked_add(1)?
-    };
-    Some(CpuMasterTimestamp::new(timeline.master_cycles_at_raster(
-        field,
-        CpuRasterPosition::new(v_timer, V_IRQ_MASTER_CYCLE),
-    )))
-}
 
 impl Snes9xColdCpuExecutor {
     /// Physical beam position at the current source CPU boundary.

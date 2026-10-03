@@ -49,6 +49,18 @@ impl ZeldaState {
             crate::game_state::SaveProgressState::load_from_ram(&self.ram);
     }
 
+    pub(crate) fn clear_live_save_word(&mut self,address:usize) {
+        self.write_live_save_word(address,0);
+    }
+
+    /// Retire one word of a save transfer and adopt its progress aliases.
+    pub(crate) fn write_live_save_word(&mut self,address:usize,value:u16) {
+        assert!((0xf000..0xf500).contains(&address)&&address&1==0);
+        self.ram[address..address+2].copy_from_slice(&value.to_le_bytes());
+        self.game_state.inventory.save_progress =
+            crate::game_state::SaveProgressState::load_from_ram(&self.ram);
+    }
+
     pub(crate) fn replace_live_save(&mut self, source: &[u8]) {
         crate::game_state::save_format::replace_live_save(&mut self.ram, source);
         self.game_state.inventory.save_progress =

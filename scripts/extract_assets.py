@@ -32,6 +32,10 @@ SPC_DRIVER_UPLOAD_ADDRESS = 0x998000
 SPC_DRIVER_LOAD_ADDRESS = 0x0800
 SPC_DRIVER_EXPECTED_LENGTH = 0x0F9E
 SPC_DRIVER_FILE = "spc_driver.bin"
+SPC_BOOTSTRAP_FILE = "spc_bootstrap_upload.bin"
+SPC_RUNTIME_UPLOAD_ADDRESSES = (0x1A9EF5, 0x1B8000, 0x1AD380)
+ENEMY_DAMAGE_STREAM_FILE = "enemy_damage_compressed.bin"
+DUNGEON_HEADER_ENCODING_FILE = "dungeon_header_encoding.bin"
 READABLE_ASSET_SOURCES = {
     "kLightOverworldTilemap": {
         "format": tilemap_json.FORMAT_BYTE_TILEMAP,
@@ -296,6 +300,79 @@ def extract_spc_driver_program(
     raise RuntimeError("intro SPC upload did not terminate")
 
 
+def extract_spc_bootstrap_upload(rom_data: bytes) -> bytes:
+    """Preserve upload block order and payloads, including the driver.
+
+    The playback bank is repacked and cannot represent the cold IPL protocol.
+    This is immutable upload data, not an execution trace or a clock seed.
+    """
+    extract_spc_driver_program(rom_data)  # Validate driver and terminal entry.
+    rom = rom_data[512:] if len(rom_data) % 0x8000 == 512 else rom_data
+    address = SPC_DRIVER_UPLOAD_ADDRESS
+    stream = bytearray()
+    for _ in range(256):
+        length, address = read_rom_word(rom, address)
+        target, address = read_rom_word(rom, address)
+        stream.extend(length.to_bytes(2, "little"))
+        stream.extend(target.to_bytes(2, "little"))
+        if length == 0:
+            return bytes(stream)
+        for _ in range(length):
+            stream.append(rom_byte(rom, address))
+            address = next_lorom_address(address)
+    raise RuntimeError("intro SPC upload did not terminate")
+
+
+def extract_spc_runtime_upload(rom_data: bytes, bank: int) -> bytes:
+    """Keep original block order, lengths and the terminal execution address.
+
+    Playback banks are normalized SPC memory images. The native CPU upload
+    needs the encoded data stream, with no opcodes or mutable CPU state.
+    """
+    if not 0 <= bank < len(SPC_RUNTIME_UPLOAD_ADDRESSES):
+        raise ValueError(f"invalid runtime song bank {bank}")
+    rom = rom_data[512:] if len(rom_data) % 0x8000 == 512 else rom_data
+    address = SPC_RUNTIME_UPLOAD_ADDRESSES[bank]
+    stream = bytearray()
+    for _ in range(256):
+        length, address = read_rom_word(rom, address)
+        target, address = read_rom_word(rom, address)
+        stream.extend(length.to_bytes(2, "little"))
+        stream.extend(target.to_bytes(2, "little"))
+        if length == 0:
+            if target != SPC_DRIVER_LOAD_ADDRESS:
+                raise RuntimeError(f"runtime SPC upload entry point ${target:04x}, expected $0800")
+            return bytes(stream)
+        for _ in range(length):
+            stream.append(rom_byte(rom, address))
+            address = next_lorom_address(address)
+    raise RuntimeError("runtime SPC upload did not terminate")
+
+
+def extract_dungeon_header_encoding(rom_data: bytes) -> bytes:
+    """Keep packed room headers and their full byte-indexed palette window.
+
+    The semantic export masks the fifth plane field and synthesizes zero
+    headers for unused rooms. Those operations lose bytes still read by the
+    native parser. Unused headers contain palette selector FF, so preserve
+    all 256 four-byte palette reads, including data beyond the named table.
+    This asset preserves data encoding, never CPU state.
+    """
+    rom = rom_data[512:] if len(rom_data) % 0x8000 == 512 else rom_data
+    start = lorom_offset(0x04F502)
+    end = lorom_offset(0x04FFFF) + 1
+    palette_start = lorom_offset(0x0ED460)
+    palette_end = palette_start + 256 * 4
+    if len(rom) < max(end, palette_end):
+        raise RuntimeError("ROM ends before the dungeon header data windows")
+    encoded = rom[start:end]
+    for room in range(320):
+        pointer = int.from_bytes(encoded[room * 2:room * 2 + 2], "little")
+        if not 0xF782 <= pointer <= 0xFFF2:
+            raise RuntimeError(f"room {room} header pointer ${pointer:04x} is outside its data bank")
+    return encoded + rom[palette_start:palette_end]
+
+
 def write_spc_driver_program(out_dir: Path, rom: Path) -> dict[str, object]:
     driver = extract_spc_driver_program(rom.read_bytes())
     if len(driver) != SPC_DRIVER_EXPECTED_LENGTH:
@@ -304,12 +381,55 @@ def write_spc_driver_program(out_dir: Path, rom: Path) -> dict[str, object]:
         )
     path = out_dir / SPC_DRIVER_FILE
     path.write_bytes(driver)
+    (out_dir / SPC_BOOTSTRAP_FILE).write_bytes(extract_spc_bootstrap_upload(rom.read_bytes()))
+    for bank in range(len(SPC_RUNTIME_UPLOAD_ADDRESSES)):
+        (out_dir / f"spc_runtime_upload_{bank}.bin").write_bytes(
+            extract_spc_runtime_upload(rom.read_bytes(), bank)
+        )
     return {
         "file": path.name,
         "load_address": f"0x{SPC_DRIVER_LOAD_ADDRESS:04x}",
         "rom_upload_address": f"0x{SPC_DRIVER_UPLOAD_ADDRESS:06x}",
         "size": len(driver),
+        "bootstrap_upload_file": SPC_BOOTSTRAP_FILE,
     }
+
+
+def extract_enemy_damage_stream(rom_data: bytes) -> bytes:
+    """Preserve the bank-02 decoder's immutable command stream.
+
+    The existing enemy asset contains expanded bytes and loses command order.
+    Read only the encoded data through its terminator, never executable code.
+    """
+    rom = rom_data[512:] if len(rom_data) % 0x8000 == 512 else rom_data
+    address = 0x03E800
+    stream = bytearray()
+
+    def read() -> int:
+        nonlocal address
+        value = rom_byte(rom, address)
+        address = next_lorom_address(address)
+        stream.append(value)
+        return value
+
+    output_length = 0
+    for _ in range(0x801):
+        header = read()
+        if header == 0xFF:
+            return bytes(stream)
+        if header >= 0xE0:
+            command = (header >> 2) & 7
+            length = ((header & 3) << 8 | read()) + 1
+        else:
+            command = header >> 5
+            length = (header & 31) + 1
+        output_length += length
+        if output_length > 0x800:
+            raise RuntimeError("enemy damage stream exceeds its packed buffer")
+        payload_length = length if command == 0 else (1 if command in (1, 3) else 2)
+        for _ in range(payload_length):
+            read()
+    raise RuntimeError("enemy damage stream did not terminate")
 
 
 def split_asset_pack(asset_pack: Path) -> tuple[bytes, bytes, list[tuple[str, bytes]]]:
@@ -841,6 +961,8 @@ def main() -> int:
 
     manifest_assets = write_asset_outputs(out_dir, assets)
     spc_driver_program = write_spc_driver_program(out_dir, rom)
+    (out_dir / ENEMY_DAMAGE_STREAM_FILE).write_bytes(extract_enemy_damage_stream(rom.read_bytes()))
+    (out_dir / DUNGEON_HEADER_ENCODING_FILE).write_bytes(extract_dungeon_header_encoding(rom.read_bytes()))
     chr_source_sheets = write_chr_source_sheets(out_dir)
     tile_effect_table = write_tile_effect_table(out_dir)
     base_effect_atlas = (

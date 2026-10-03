@@ -11,7 +11,7 @@
 //! `SpriteDraw_BombGuard_Arm` (sprite_main.c:4527) lives in
 //! `sprite_main_guard.rs` already; this file does NOT redefine it.
 
-use super::sprite::{PrepOamCoordsRet, SpriteSpawnInfo};
+use super::sprite::{PrepOamCoordsRet, SingleLargeDrawContinuation, SpriteSpawnInfo};
 use super::*;
 use crate::rom_random::RomRandomResult;
 use crate::tile_definition::NativeTile;
@@ -34,6 +34,19 @@ const fn rat_random_run_delay(random: RomRandomResult) -> u8 {
 
 const fn rope_random_run_delay(random: RomRandomResult) -> u8 {
     random.masked_adc(0x7f, 0x40)
+}
+
+/// Cucco's call to the shared draw owns both the suspended callee and the
+/// slot to which it must return. No state/type dispatch is repeated on resume.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct CuccoDrawContinuation {
+    slot: u8,
+    prefix: crate::cycle_models::cucco::DrawPrefixWork,
+    draw: Option<SingleLargeDrawContinuation>,
+}
+
+impl CuccoDrawContinuation {
+    pub(super) const fn slot(&self) -> u8 { self.slot }
 }
 
 impl ZeldaState {
@@ -13070,17 +13083,97 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_0B_Cucco(int k) {  // 86a5c2
     pub(super) fn sprite_0_b_cucco(&mut self, k: usize) {
-        if self.sprite_slot_view(k).x_velocity() != 0 {
-            let value = (self.sprite_slot_view(k).oam_flags() & !0x40)
-                | if sign8(self.sprite_slot_view(k).x_velocity()) {
-                    0
-                } else {
-                    0x40
-                };
-            self.sprite_slot_view_mut(k).set_oam_flags(value);
-        }
+        let work = self.begin_cucco_draw(k);
+        assert!(self.advance_or_suspend_cucco_draw(work, None, self.sprite_main_cpu_caller));
+    }
 
-        self.sprite_draw_single_large(k);
+    pub(super) fn begin_cucco_draw(&self, k: usize) -> CuccoDrawContinuation {
+        CuccoDrawContinuation {
+            slot: u8::try_from(k).expect("sprite slot fits a byte"),
+            prefix: crate::cycle_models::cucco::DrawPrefixWork::new(),
+            draw: None,
+        }
+    }
+
+    /// Advance from Cucco entry without executing the post-draw suffix. The caller must
+    /// supply its own running clock; this method never estimates a raster or
+    /// reconstructs progress from a source PC. Coordinate preparation, its
+    /// offscreen KillSelf call, and the double return share this retained owner.
+    pub(super) fn advance_cucco_draw(
+        &mut self,
+        work: &mut CuccoDrawContinuation,
+        mut budget: Option<&mut CpuCycleBudget>,
+    ) -> CpuWorkAdvance {
+        while let Some(cycles) = self.retire_cucco_draw_instruction(work) {
+            if let Some(budget) = budget.as_deref_mut() {
+                let advance = budget.advance_instruction(cycles);
+                if advance.reached_boundary().is_some() {
+                    return advance;
+                }
+            }
+        }
+        CpuWorkAdvance::Complete
+    }
+
+    fn retire_cucco_draw_instruction(&mut self, work: &mut CuccoDrawContinuation) -> Option<u32> {
+        use crate::cycle_models::cucco::Publication;
+        let k = usize::from(work.slot);
+        let slot = self.sprite_slot_view(k);
+        if let Some(instruction) = work.prefix.step(slot.x_velocity(), slot.oam_flags()) {
+            crate::cycle_ledger::charge_routine(0x06_a5c2, u64::from(instruction.master_cycles));
+            match instruction.publication {
+                Some(Publication::Flags(value)) => self.sprite_slot_view_mut(k).set_oam_flags(value),
+                Some(Publication::EnterDraw) => work.draw = Some(self.begin_single_large_draw(k)),
+                None => {}
+            }
+            return Some(instruction.master_cycles);
+        }
+        if let Some(draw) = work.draw.as_mut() {
+            if let Some(cycles) = self.retire_single_large_draw_instruction(draw) {
+                return Some(cycles);
+            }
+            work.draw = None;
+        }
+        None
+    }
+
+    /// Consume the returned call before executing the first post-draw load.
+    /// A held draw cannot publish the suffix, and resume cannot redo facing,
+    /// coordinate preparation, or any retired draw instruction.
+    pub(super) fn complete_cucco_draw(&mut self, work: CuccoDrawContinuation) {
+        assert!(work.prefix.is_complete() && work.draw.is_none(),
+            "Cucco caller resumed before its draw returned");
+        self.complete_cucco_after_large_draw(usize::from(work.slot));
+    }
+
+    /// Transfer the interrupted native call to Sprite_Main's existing stack
+    /// owner. Exactly one acceptance boundary was reached by this budget;
+    /// the typed caller decides which NMI-resume lane owns its return.
+    pub(super) fn advance_or_suspend_cucco_draw(
+        &mut self,
+        mut work: CuccoDrawContinuation,
+        budget: Option<&mut CpuCycleBudget>,
+        caller: SpriteMainCpuCaller,
+    ) -> bool {
+        match self.advance_cucco_draw(&mut work, budget) {
+            CpuWorkAdvance::Complete => {
+                self.complete_cucco_draw(work);
+                true
+            }
+            CpuWorkAdvance::ReachedBoundary {
+                boundary: CpuRasterBoundary::CpuNmiAcceptance, ..
+            } => {
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::CuccoDraw { work }, 1, caller);
+                false
+            }
+            CpuWorkAdvance::ReachedBoundary { .. } => {
+                panic!("Cucco suspension requires a CPU NMI acceptance budget")
+            }
+        }
+    }
+
+    fn complete_cucco_after_large_draw(&mut self, k: usize) {
         if self.sprite_slot_view(k).head_direction() != 0 {
             let value = 0x3d;
             self.sprite_slot_view_mut(k).set_sprite_type(value);
@@ -14070,11 +14163,22 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_6D_Rat(int k) {  // 85a8b0
     pub(super) fn sprite_6_d_rat(&mut self, k: usize) {
-        let mut j = usize::from(self.sprite_slot_view(k).a());
+        let flags = self.rat_animation_until_oam_flags_store(k);
+        self.complete_rat_animation_after_graphics(k, flags);
+    }
+
+    /// $05:A8B0-A8BE publishes graphics and computes the pending flags byte.
+    /// The byte belongs to this native call, including across an NMI before
+    /// $05:A8C1's store; the flags and drawing have not been published yet.
+    pub(super) fn rat_animation_until_oam_flags_store(&mut self, k: usize) -> u8 {
+        let j = usize::from(self.sprite_slot_view(k).a());
         let value = RAT_GRAPHICS_BY_ANIM_STATE[j];
         self.sprite_slot_view_mut(k).set_graphics(value);
-        let value = (self.sprite_slot_view(k).oam_flags() & 0x3f) | RAT_OAM_FLIP_BY_ANIM_STATE[j];
-        self.sprite_slot_view_mut(k).set_oam_flags(value);
+        (self.sprite_slot_view(k).oam_flags() & 0x3f) | RAT_OAM_FLIP_BY_ANIM_STATE[j]
+    }
+
+    pub(super) fn complete_rat_animation_after_graphics(&mut self, k: usize, flags: u8) {
+        self.sprite_slot_view_mut(k).set_oam_flags(flags);
         self.sprite_draw_single_large(k);
         if self.sprite_return_if_inactive(k) {
             return;
@@ -14095,7 +14199,7 @@ impl ZeldaState {
                 let value = 80;
                 self.sprite_slot_view_mut(k).set_delay_main(value);
             }
-            j = usize::from(self.sprite_slot_view(k).direction());
+            let mut j = usize::from(self.sprite_slot_view(k).direction());
             if self.sprite_slot_view(k).wall_collision() != 0 {
                 let value = RAT_WALL_TURN_DIRECTIONS[j];
                 self.sprite_slot_view_mut(k).set_direction(value);
@@ -14232,8 +14336,16 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_6F_Keese(int k) {  // 85aa8b
     pub(super) fn sprite_6_f_keese(&mut self, k: usize) {
+        self.keese_draw_before_inactive_check(k);
+        self.complete_keese_after_draw(k);
+    }
+
+    pub(super) fn keese_draw_before_inactive_check(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).or_object_priority(0x30);
         self.sprite_draw_single_large(k);
+    }
+
+    pub(super) fn complete_keese_after_draw(&mut self, k: usize) {
         if self.sprite_return_if_inactive(k) {
             return;
         }

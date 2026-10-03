@@ -30,6 +30,37 @@ pub const SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES: u64 = 12;
 // model sets NMIDMADelay to 24 master cycles (memmap.cpp).
 pub const SNES9X_NMI_GENERAL_DMA_DELAY_MASTER_CYCLES: u64 = 24;
 
+/// Pinned Snes9x vertical-only IRQ compare, shared by native continuations,
+/// the cold reference owner and the plan probe.
+pub fn vertical_irq_deadline(
+    timeline: &CpuMasterTimeline,
+    v_timer: u16,
+    initial: bool,
+) -> Option<CpuMasterTimestamp> {
+    if u32::from(v_timer) >= NTSC_SCANLINES_PER_FIELD {
+        return None;
+    }
+    // ppu.cpp:S9xUpdateIRQPositions uses IRQTriggerCycles(14) minus one
+    // four-master-cycle dot when only the V timer is enabled.
+    const V_IRQ_MASTER_CYCLE: u16 = 10;
+    let (scanline, master_cycle) = timeline.raster_position().coordinates();
+    if initial && scanline == v_timer {
+        return Some(CpuMasterTimestamp::new(
+            timeline.timestamp().master_cycles() + u64::from(V_IRQ_MASTER_CYCLE),
+        ));
+    }
+    let field = if v_timer > scanline || (v_timer == scanline && V_IRQ_MASTER_CYCLE > master_cycle)
+    {
+        timeline.field_index()
+    } else {
+        timeline.field_index().checked_add(1)?
+    };
+    Some(CpuMasterTimestamp::new(timeline.master_cycles_at_raster(
+        field,
+        CpuRasterPosition::new(v_timer, V_IRQ_MASTER_CYCLE),
+    )))
+}
+
 /// A 65816 position within an NTSC field, expressed in S-CPU master cycles.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CpuRasterPosition {
@@ -300,12 +331,13 @@ pub enum CpuTimelineDeadlineAdvance {
     ReachedDeadline { remaining_work_master_cycles: u32 },
 }
 
+/// CPU-visible beam counters, including any HMax event not yet drained.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct CpuSynchronousBeamPosition {
-    pub(crate) scanline: u16,
-    pub(crate) cycles: u32,
-    pub(crate) line_master_cycles: u16,
-    pub(crate) odd_field: bool,
+pub struct CpuSynchronousBeamPosition {
+    pub scanline: u16,
+    pub cycles: u32,
+    pub line_master_cycles: u16,
+    pub odd_field: bool,
 }
 
 /// Generic hardware timeline used by higher-level schedulers.
@@ -711,18 +743,27 @@ impl CpuMasterTimeline {
     /// Pinned Snes9x's direct `PCBase` opcode fetch increments `CPU.Cycles`
     /// without invoking `AddCycles`; a due event is intentionally left owned
     /// by the synchronous cursor until the next source transaction drains it.
-    pub(crate) fn advance_synchronous_pcbase_opcode_fetch(&mut self, memory_speed: u8) {
+    /// Native translated routines use this same hardware operation before
+    /// retiring their first operand/internal transaction. It neither reads an
+    /// opcode nor supplies instruction semantics or a new clock origin.
+    pub fn advance_synchronous_pcbase_opcode_fetch(&mut self, memory_speed: u8) {
+        self.advance_synchronous_without_event_drain(u32::from(memory_speed));
+    }
+
+    /// Raw hardware clock charge, as used by PCBase fetch and DMA setup.
+    /// The following bus transaction owns the eventual event drain.
+    pub fn advance_synchronous_without_event_drain(&mut self, master_cycles: u32) {
         assert!(
             matches!(self.mode, CpuTimelineMode::Synchronous(_)),
-            "PCBase fetch requires a claimed synchronous timeline"
+            "raw clock charge requires a claimed synchronous timeline"
         );
-        self.advance_physical_clock_preserving_refresh(u64::from(memory_speed));
+        self.advance_physical_clock_preserving_refresh(u64::from(master_cycles));
     }
 
     /// CPU-visible beam position before the next source event drain. A fast
     /// opcode fetch can cross HMax without advancing CPU.V_Counter yet.
     /// Physical `raster_position()` alone loses that pending-event ownership.
-    pub(crate) fn synchronous_beam_position(&self) -> Option<CpuSynchronousBeamPosition> {
+    pub fn synchronous_beam_position(&self) -> Option<CpuSynchronousBeamPosition> {
         let CpuTimelineMode::Synchronous(cursor) = self.mode else {
             return None;
         };

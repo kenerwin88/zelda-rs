@@ -19,6 +19,10 @@ struct DungeonRoomProgress {
 pub(crate) struct SaveProgressState {
     palace_index_x2: u8,
     hud_current_items: [u8; 4],
+    // Hud_UpdateItemBox reads the primary selection with a 16-bit LDX.
+    // Hud_SearchForEquippedItem clears its high byte in a separate STZ.
+    #[serde(default)]
+    hud_current_item_high: u8,
     #[serde(with = "serde_big_array::BigArray")]
     rooms: [DungeonRoomProgress; DUNGEON_ROOM_COUNT],
     progress_indicator: u8,
@@ -39,6 +43,7 @@ impl Default for SaveProgressState {
         Self {
             palace_index_x2: 0,
             hud_current_items: [0; 4],
+            hud_current_item_high: 0,
             rooms: [DungeonRoomProgress::default(); DUNGEON_ROOM_COUNT],
             progress_indicator: 0,
             progress_flags: 0,
@@ -61,6 +66,7 @@ impl SaveProgressState {
             palace_index_x2: ram_byte(ram, CUR_PALACE_INDEX_X2),
             hud_current_items: [HUD_CUR_ITEM, HUD_CUR_ITEM_X, HUD_CUR_ITEM_L, HUD_CUR_ITEM_R]
                 .map(|address| ram_byte(ram, address)),
+            hud_current_item_high: ram_byte(ram, HUD_CUR_ITEM_HIGH),
             post_message_refresh_flag: ram_byte(ram, HUD_POST_MESSAGE_REFRESH_FLAG),
             rooms: std::array::from_fn(|room| DungeonRoomProgress {
                 flags: read_le_u16(ram, SAVE_DUNG_INFO + room * 2),
@@ -85,6 +91,7 @@ impl SaveProgressState {
         // projection limited to runtime/HUD fields while legacy consumers remain.
         ram.write_byte(CUR_PALACE_INDEX_X2, self.palace_index_x2);
         ram.write_byte(HUD_CUR_ITEM, self.hud_current_items[0]);
+        ram.write_byte(HUD_CUR_ITEM_HIGH, self.hud_current_item_high);
         ram.write_byte(HUD_CUR_ITEM_X, self.hud_current_items[1]);
         ram.write_byte(HUD_CUR_ITEM_L, self.hud_current_items[2]);
         ram.write_byte(HUD_CUR_ITEM_R, self.hud_current_items[3]);
@@ -318,13 +325,14 @@ pub(crate) struct NativeSaveProgressBridgeMut<'a> {
 
 impl<'a> NativeSaveProgressBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut SaveProgressState, ram: &'a mut [u8]) -> Self {
-        // These six runtime/HUD bytes still have legacy writers. In particular,
+        // These runtime/HUD bytes still have legacy writers. In particular,
         // an out-of-range HUD slot clamps the native write to R but publishes
         // the first-slot fallback. Import only this runtime surface; dungeon
         // records and saved progress are never reloaded before mutations.
         state.palace_index_x2 = ram_byte(ram, CUR_PALACE_INDEX_X2);
         state.hud_current_items = [HUD_CUR_ITEM, HUD_CUR_ITEM_X, HUD_CUR_ITEM_L, HUD_CUR_ITEM_R]
             .map(|address| ram_byte(ram, address));
+        state.hud_current_item_high = ram_byte(ram, HUD_CUR_ITEM_HIGH);
         state.post_message_refresh_flag = ram_byte(ram, HUD_POST_MESSAGE_REFRESH_FLAG);
         Self { state, ram }
     }
@@ -428,6 +436,11 @@ impl<'a> NativeSaveProgressBridgeMut<'a> {
     pub(crate) fn set_hud_current_item(&mut self, value: u8) {
         self.state.set_hud_current_item(value);
         self.sync_hud_current_item_slot(0);
+    }
+
+    pub(crate) fn set_hud_current_item_high(&mut self, value: u8) {
+        self.state.hud_current_item_high = value;
+        self.sync_byte(HUD_CUR_ITEM_HIGH, value);
     }
 
     pub(crate) fn set_hud_current_item_slot(&mut self, slot: usize, value: u8) {

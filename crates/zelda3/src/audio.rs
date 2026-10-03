@@ -993,11 +993,16 @@ impl ZeldaState {
             let debug_spc_polls =
                 crate::debug_env::var_os("ZELDA3_DEBUG_SPC_CLOCK_WITNESS").is_some();
             let frame_start_apu_cycle = clock.absolute_dsp_cycle() * 32;
-            let window = clock.advance(
-                driver_commands,
-                native_samples,
-                vwf_glyph_tone_crossed_vblank,
-            );
+            let boundary = (!matches!(self.original_timing_owner, OriginalTimingOwnerState::Live))
+                .then(|| self.native_startup_cpu.as_ref()
+                    .filter(|cpu| cpu.startup.owns_cpu_clock())
+                    .map(|cpu| cpu.timeline.clock_master_cycles())).flatten();
+            let window = if let Some(master) = boundary {
+                clock.advance_at_cpu_boundary(driver_commands, native_samples,
+                    vwf_glyph_tone_crossed_vblank, master).expect("native CPU owns the audio boundary")
+            } else {
+                clock.advance(driver_commands, native_samples, vwf_glyph_tone_crossed_vblank)
+            };
             if debug_spc_polls {
                 let polls: Vec<_> = window
                     .polls
@@ -1269,6 +1274,12 @@ impl ZeldaState {
             .queue_upload_return_nmi(position, latches, last);
     }
 
+    #[cfg(test)]
+    pub(super) fn native_apu_port_owner_for_test(&self) -> snes::apu::ApuHostPortTiming {
+        self.audio.modern.driver_clock.as_ref().expect("fixture requires native SPC timing")
+            .cpu_port_owner_for_test()
+    }
+
     pub(crate) fn initialize_spc_driver_clock(
         &mut self,
         driver: &[u8],
@@ -1282,12 +1293,54 @@ impl ZeldaState {
 
     pub(crate) fn clear_spc_driver_clock(&mut self) {
         self.audio.modern.driver_clock = None;
+        self.native_startup_cpu = None;
     }
 
-    pub(crate) fn configure_spc_driver_clock_for_rom_bootstrap(&mut self) {
-        if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
-            clock.configure_rom_bootstrap();
+    pub(crate) fn native_cpu_apu_access_pending(&self) -> bool {
+        self.audio.modern.driver_clock.as_ref().is_some_and(|clock| clock.cpu_port_access_pending())
+    }
+
+    pub(crate) fn native_nmi_port_at(&mut self, master: u64, port: u8, write: Option<u8>) -> u8 {
+        let value = self.audio.modern.driver_clock.as_mut().expect("native NMI needs its APU owner")
+            .cpu_port_at(master, port, write).expect("native NMI APUI bus access");
+        if write.is_none() {
+            let mut ports = self.audio.modern.queue.acknowledged_commands.legacy_ports();
+            ports[usize::from(port)] = value;
+            self.audio.modern.queue.acknowledge_legacy_ports(ports);
         }
+        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+            eprintln!("native-nmi-apui clock={master} port={port} value={value:02x} write={}", write.is_some());
+        }
+        value
+    }
+
+    pub(crate) fn native_main_port_at(&mut self, master: u64, port: u8, write: Option<u8>) -> u8 {
+        self.audio.modern.driver_clock.as_mut().expect("native caller needs its APU")
+            .cpu_main_port_at(master, port, write).expect("native caller APUI bus access")
+    }
+
+    pub(crate) fn native_cpu_end_scanline_at(&mut self, master: u64) {
+        self.audio.modern.driver_clock.as_mut().expect("native caller needs its APU")
+            .cpu_end_scanline_at(master).expect("native caller scanline APU boundary");
+    }
+
+    pub(crate) fn configure_spc_driver_clock_for_rom_bootstrap(&mut self, upload: &[u8]) -> Result<(), String> {
+        let cold_memory = self.native_startup_cpu.is_none()
+            && self.original_timing_cold_start_eligible && self.frame_ctr_dbg == 0;
+        if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
+            let origin = crate::spc_driver_clock::native_bootstrap_origin(upload)?;
+            clock.configure_rom_bootstrap(&origin);
+            self.native_startup_cpu = Some(origin.into_cpu());
+            if cold_memory {
+                // Pinned S9xReset (cpu.cpp) fills all WRAM with $55. The
+                // native upload and memory initializer own the later stores;
+                // untouched words retain this reset value. Asset reloads and
+                // resumed states must not replay the machine reset.
+                self.ram.fill(0x55);
+                self.sync_native_game_state_from_ram();
+            }
+        }
+        Ok(())
     }
 
     pub fn zelda_spc_driver_clock_debug_summary(&self) -> Option<String> {

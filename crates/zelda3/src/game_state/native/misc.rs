@@ -70,6 +70,12 @@ pub(crate) struct MemorizedTileState {
 }
 
 impl MemorizedTileState {
+    pub(crate) fn write_address_byte(&mut self, offset: usize, value: u8) {
+        let word = &mut self.addresses[offset / 2];
+        let shift = (offset & 1) * 8;
+        *word = (*word & !(255 << shift)) | (u16::from(value) << shift);
+    }
+
     fn active_slots(count: u16) -> usize {
         usize::from(count >> 1)
     }
@@ -901,6 +907,28 @@ impl IntroSwordState {
 adopting_bridge!(NativeIntroSwordBridgeMut, intro_sword: IntroSwordState);
 
 impl<'a> NativeIntroSwordBridgeMut<'a> {
+    /// Graphics work reuses C8-CE with byte and unaligned word stores.
+    /// Adopt those live aliases without projecting unrelated sword fields.
+    pub(crate) fn write_shared_scratch(&mut self, address: usize, value: u16, width: u8) {
+        assert!((0xc8..=0xcd).contains(&address) && matches!(width, 1 | 2));
+        self.ram[address..address + usize::from(width)]
+            .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        *self.intro_sword = IntroSwordState::load_from_ram(self.ram);
+    }
+    /// Publish only the bytes retired by the retained sword instruction.
+    pub(crate) fn write_instruction(&mut self,address:usize,value:u16,width:u8) {
+        assert!(matches!((address,width),(0xc8,2)|(0xca..=0xcd,1)|(0xd0,1|2)));
+        match address {
+            0xc8=>self.intro_sword.y_position=value,
+            0xca=>self.intro_sword.sparkle_timer=value as u8,
+            0xcb=>self.intro_sword.sparkle_step=value as u8,
+            0xcc=>self.intro_sword.animation_step=value as u8,
+            0xcd=>self.intro_sword.sparkle_y_offset=value as u8,
+            0xd0=>{self.intro_sword.flash_rgb_channel=value as u8;if width==2{self.intro_sword.flash_rgb_channel_high=(value>>8)as u8;}},
+            _=>unreachable!(),
+        }
+        self.ram[address..address+usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+    }
     forward_synced! {
         intro_sword;
         fn reset_sword_state();

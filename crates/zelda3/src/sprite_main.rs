@@ -20,10 +20,22 @@ impl ZeldaState {
         // SpriteDraw_Shadow_custom (126), else the BEQ is taken (+6);
         // $05:C69D RTS (42).
         let _scope = crate::cycle_ledger::routine(0x05_c680);
+        let Some(poc) = self.guard_animation_through_weapon(k) else { return };
+        let direction = self.sprite_slot_view(k).direction() as usize;
+        if self.sprite_slot_view(k).flags3() & 0x10 != 0 {
+            crate::cycle_ledger::charge(126 + 42);
+            self.sprite_draw_shadow_custom_attract(
+                k, (poc.x, poc.y, poc.flags), SOLDIER_DRAW_SHADOW[direction],
+            );
+        } else {
+            crate::cycle_ledger::charge(6 + 42);
+        }
+    }
+
+    fn guard_animation_through_weapon(&mut self, k: usize) -> Option<PrepOamCoordsRet> {
         crate::cycle_ledger::charge(46);
-        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
-            return;
-        };
+        let (x, y, flags) = self.sprite_prep_oam_coord_or_double_ret_from(k,
+            super::sprite::PrepOamCoordEntry::Bank5DoubleRet)?;
         if self.sprite_slot_view(k).sprite_type() == 0x41 {
             if let Some(workload) = self.last_sprite_main_timing_workload.as_mut() {
                 workload.record_blue_guard_full_animation();
@@ -34,19 +46,9 @@ impl ZeldaState {
         self.guard_animate_head(k, 0, &poc);
         let sprite = self.sprite_slot_view(k);
         let direction = sprite.direction() as usize;
-        let flags3 = sprite.flags3();
         self.guard_animate_body(k, SOLDIER_DRAW2_OAM_IDX[direction] >> 2, &poc);
         self.guard_animate_weapon(k, &poc);
-        if flags3 & 0x10 != 0 {
-            crate::cycle_ledger::charge(126 + 42);
-            self.sprite_draw_shadow_custom_attract(
-                k,
-                (poc.x, poc.y, poc.flags),
-                SOLDIER_DRAW_SHADOW[direction],
-            );
-        } else {
-            crate::cycle_ledger::charge(6 + 42);
-        }
+        Some(poc)
     }
 
     pub(super) fn guard_animate_head(&mut self, k: usize, oam_offs: u8, poc: &PrepOamCoordsRet) {
@@ -218,9 +220,37 @@ impl ZeldaState {
             };
         }
         match checkpoint {
-            Stage::DrawReturned => {
+            Stage::OffscreenKillSelfPending => {
+                let (graphics, direction) = self.guard_main_prepare_animation_pose(k);
+                let _scope = crate::cycle_ledger::routine(0x05_c680);
+                crate::cycle_ledger::charge(46);
+                self.sprite_prep_oam_coord_bank5_until_kill_self(k);
+                return GuardAnimationContinuation {
+                    saved_initializer_submodule: None, graphics, direction, checkpoint,
+                    poc_x: 0, poc_y: 0, poc_flags: 0,
+                };
+            }
+            Stage::ShadowOamPending => {
+                let (graphics, direction) = self.guard_main_prepare_animation_pose(k);
+                let _scope = crate::cycle_ledger::routine(0x05_c680);
+                let poc = self.guard_animation_through_weapon(k)
+                    .expect("source guard shadow requires visible OAM coordinates");
+                assert_ne!(self.sprite_slot_view(k).flags3() & 0x10, 0);
+                crate::cycle_ledger::charge(126);
+                return GuardAnimationContinuation {
+                    saved_initializer_submodule: None, graphics, direction, checkpoint,
+                    poc_x: poc.x, poc_y: poc.y, poc_flags: poc.flags,
+                };
+            }
+            Stage::DrawReturned | Stage::ActiveStateChecked => {
                 let (graphics, direction) = self.guard_main_prepare_animation_pose(k);
                 self.guard_handle_all_animation(k);
+                if checkpoint == Stage::ActiveStateChecked {
+                    self.guard_main_restore_animation_pose(k, graphics, direction);
+                    assert_eq!(self.sprite_slot_view(k).state(), 9);
+                    // C250 taken, C25C JSR, F94E-F953 active-state test.
+                    crate::cycle_ledger::charge(6 + 46 + 64);
+                }
                 return GuardAnimationContinuation {
                     saved_initializer_submodule: None,
                     graphics,
@@ -402,7 +432,24 @@ impl ZeldaState {
             );
             return;
         }
+        if continuation.checkpoint == crate::GuardAnimationCheckpoint::OffscreenKillSelfPending {
+            self.sprite_prep_oam_coord_bank5_complete_kill_self(k);
+            self.guard_main_after_animation(k, continuation.graphics, continuation.direction);
+            return;
+        }
         if continuation.checkpoint == crate::GuardAnimationCheckpoint::DrawReturned {
+            self.guard_main_after_animation(k, continuation.graphics, continuation.direction);
+            return;
+        }
+        if continuation.checkpoint == crate::GuardAnimationCheckpoint::ActiveStateChecked {
+            self.guard_main_after_active_state_check(k);
+            return;
+        }
+        if continuation.checkpoint == crate::GuardAnimationCheckpoint::ShadowOamPending {
+            self.sprite_draw_shadow_custom_attract(k,
+                (continuation.poc_x, continuation.poc_y, continuation.poc_flags),
+                SOLDIER_DRAW_SHADOW[usize::from(self.sprite_slot_view(k).direction())]);
+            crate::cycle_ledger::charge(42);
             self.guard_main_after_animation(k, continuation.graphics, continuation.direction);
             return;
         }
@@ -479,6 +526,9 @@ impl ZeldaState {
             }
             Stage::WeaponCoordinates { .. }
             | Stage::DrawReturned
+            | Stage::ActiveStateChecked
+            | Stage::ShadowOamPending
+            | Stage::OffscreenKillSelfPending
             | Stage::HogSpearInitializerBodyReturned { .. } => unreachable!(),
         }
         if flags3 & 0x10 != 0 {

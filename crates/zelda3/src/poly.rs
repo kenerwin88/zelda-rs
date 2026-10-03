@@ -114,6 +114,192 @@ const POLY_RIGHT_EDGE_MASKS: [u16; 8] = [
 ];
 
 impl ZeldaState {
+    /// Immutable descriptors and vertex tables shared with the semantic renderer.
+    fn native_poly_table_byte(address: u32) -> Option<u8> {
+        if address == 0x09f862 { return Some(9); }
+        if (0x09fe94..0x09feb4).contains(&address) {
+            let offset=(address-0x09fe94) as usize;
+            let masks=if offset<16 {&POLY_LEFT_EDGE_MASKS} else {&POLY_RIGHT_EDGE_MASKS};
+            return Some(masks[(offset%16)/2].to_le_bytes()[offset%2]);
+        }
+        if (0x09fcc4..0x09fd04).contains(&address) {
+            let offset=(address-0x09fcc4) as usize;
+            return Some((POLY_RASTER_COLORS[offset/4]>>((offset%4)*8)) as u8);
+        }
+        for config in &POLY_MODEL_CONFIGS {
+            if let Some(offset)=address.checked_sub(0x090000|u32::from(config.vtx_val)) {
+                if let Some(vertex)=config.vertex.get(offset as usize/3) {
+                    return Some(match offset%3 {0=>vertex.x,1=>vertex.y,_=>vertex.z} as u8);
+                }
+            }
+            if let Some(offset)=address.checked_sub(0x090000|u32::from(config.polys_val)) {
+                if let Some(value)=config.poly.get(offset as usize) {return Some(*value);}
+            }
+        }
+        let offset = address.checked_sub(0x09ff8c)? as usize;
+        let config = POLY_MODEL_CONFIGS.get(offset / 6)?;
+        Some(match offset % 6 {
+            0 => config.num_vtx,
+            1 => config.num_poly,
+            2 => config.vtx_val as u8,
+            3 => (config.vtx_val >> 8) as u8,
+            4 => config.polys_val as u8,
+            5 => (config.polys_val >> 8) as u8,
+            _ => unreachable!(),
+        })
+    }
+
+    /// Bounded bridge for the first model setup. A scheduler that can cross
+    /// interrupts must retain PolyShape itself between instruction steps.
+    pub(super) fn run_native_poly_shape(&mut self,
+        context: &mut crate::cycle_models::nmi_stack::NativeNmiContext,
+        clock: &mut snes::CpuMasterTimeline) {
+        use crate::cycle_models::{intro_clear::Access, poly_shape::PolyShape};
+        let mut shape = PolyShape::default();
+        while let Some(cycles) = shape.step(context, clock, |_, access| match access {
+            Access::Read(address, width) => {
+                if let Some(value) = Self::native_poly_table_byte(address) {
+                    assert_eq!(width, 1); return u16::from(value);
+                }
+                assert!(address & 0x40_0000 == 0 && address & 65535 < 0x2000);
+                let offset = (address & 65535) as usize;
+                if width == 1 { u16::from(self.ram[offset]) }
+                else { crate::types::read_le_u16(&self.ram, offset) }
+            }
+            Access::Write(address, value, width) => {
+                assert!(address & 0x40_0000 == 0);
+                self.write_native_intro_poly_state((address & 65535) as usize, value, width);
+                0
+            }
+            Access::Vblank { .. } => panic!("poly shape needs an NMI continuation"),
+        }) { crate::cycle_ledger::charge(cycles); }
+    }
+
+    pub(super) fn run_native_poly_rotation(&mut self,
+        context: &mut crate::cycle_models::nmi_stack::NativeNmiContext,
+        clock: &mut snes::CpuMasterTimeline) {
+        use crate::cycle_models::{intro_clear::Access, poly_rotation::PolyRotation};
+        let mut rotation = PolyRotation::default();
+        while let Some(cycles) = rotation.step(context, clock, |_, access| match access {
+            Access::Read(address, width) => {
+                if (0x09fb6d..0x09fcad).contains(&address) {
+                    assert_eq!(width, 1);
+                    return u16::from(POLY_ROTATION_SIN_COS[(address-0x09fb6d) as usize] as u8);
+                }
+                if (0x2135..=0x2136).contains(&address) {
+                    assert_eq!(width, 1); return u16::from(self.ppu.read(address as u8));
+                }
+                assert!(address<0x2000);
+                if width==1 {u16::from(self.ram[address as usize])}
+                else {crate::types::read_le_u16(&self.ram,address as usize)}
+            }
+            Access::Write(address,value,width) => {
+                if matches!(address,0x211b|0x211c) {
+                    assert_eq!(width,1);self.ppu.write(address as u8,value as u8);
+                } else { self.write_native_intro_poly_state(address as usize,value,width); }
+                0
+            }
+            Access::Vblank {..}=>panic!("poly rotation needs an NMI continuation"),
+        }) {crate::cycle_ledger::charge(cycles);}
+    }
+
+    pub(super) fn run_native_poly_vertices(&mut self,
+        context:&mut crate::cycle_models::nmi_stack::NativeNmiContext,
+        clock:&mut snes::CpuMasterTimeline)->crate::cycle_models::poly_vertices::PolyDivider {
+        use crate::cycle_models::{intro_clear::Access,poly_vertices::{PolyDivider,PolyVertices}};
+        let mut work=PolyVertices::default();let mut divider=PolyDivider::default();
+        while let Some(cycles)=work.step(context,clock,|_,access| {
+            if let Some(value)=divider.access(access){return value;}
+            match access {
+                Access::Read(address,width)=>{
+                    if let Some(value)=Self::native_poly_table_byte(address) {assert_eq!(width,1);return u16::from(value);}
+                    if (0x2134..=0x2136).contains(&address) {assert_eq!(width,1);return u16::from(self.ppu.read(address as u8));}
+                    assert!(address<0x2000);
+                    if width==1 {u16::from(self.ram[address as usize])}
+                    else {crate::types::read_le_u16(&self.ram,address as usize)}
+                }
+                Access::Write(address,value,width)=>{
+                    if matches!(address,0x211b|0x211c){assert_eq!(width,1);self.ppu.write(address as u8,value as u8);}
+                    else {self.write_native_intro_poly_state(address as usize,value,width);}
+                    0
+                }
+                Access::Vblank {..}=>panic!("poly vertices need an NMI continuation"),
+            }
+        }) {crate::cycle_ledger::charge(cycles);}
+        divider
+    }
+
+    pub(super) fn run_native_poly_faces_to_raster(&mut self,
+        context:&mut crate::cycle_models::nmi_stack::NativeNmiContext,
+        clock:&mut snes::CpuMasterTimeline)->crate::cycle_models::poly_faces::PolyFaces {
+        use crate::cycle_models::{intro_clear::Access,poly_faces::PolyFaces};
+        let mut work=PolyFaces::default();
+        while let Some(cycles)=work.step(context,clock,|_,access|match access {
+            Access::Read(address,width)=>{
+                if let Some(low)=Self::native_poly_table_byte(address) {
+                    return if width==1 {u16::from(low)}else{u16::from_le_bytes([low,Self::native_poly_table_byte(address+1).expect("native poly table word")])};
+                }
+                if (0x2134..=0x2136).contains(&address) {assert_eq!(width,1);return u16::from(self.ppu.read(address as u8));}
+                assert!(address&0x40_0000==0 && address&65535<0x2000);
+                let offset=(address&65535) as usize;
+                if width==1 {u16::from(self.ram[offset])}else{crate::types::read_le_u16(&self.ram,offset)}
+            }
+            Access::Write(address,value,width)=>{
+                if matches!(address,0x211b|0x211c){assert_eq!(width,1);self.ppu.write(address as u8,value as u8);}
+                else {assert!(address&0x40_0000==0);self.write_native_intro_poly_state((address&65535) as usize,value,width);}
+                0
+            }
+            Access::Vblank {..}=>panic!("poly faces need an NMI continuation"),
+        }) {crate::cycle_ledger::charge(cycles);}
+        work
+    }
+
+    /// One instruction on the native thread's own RAM and hardware devices.
+    /// IRQ acceptance and stack exchange belong to the caller between steps.
+    pub(super) fn step_native_poly_worker(&mut self,
+        work:&mut crate::cycle_models::poly_worker::PolyWorker,
+        context:&mut crate::cycle_models::nmi_stack::NativeNmiContext,
+        clock:&mut snes::CpuMasterTimeline) -> crate::cycle_models::poly_worker::WorkerInstruction {
+        self.step_native_poly_worker_with_vblank(work,context,clock,|_,_|panic!("poly worker reached NMI before its scheduled V-IRQ"))
+    }
+
+    pub(super) fn step_native_poly_worker_with_vblank(&mut self,
+        work:&mut crate::cycle_models::poly_worker::PolyWorker,
+        context:&mut crate::cycle_models::nmi_stack::NativeNmiContext,
+        clock:&mut snes::CpuMasterTimeline,
+        mut vblank:impl FnMut(u64,u64)) -> crate::cycle_models::poly_worker::WorkerInstruction {
+        use crate::cycle_models::{intro_clear::Access,poly_buffer_clear};
+        work.step(context,clock,|_,access| match access {
+            Access::Read(address,width)=>{
+                if let Some(low)=Self::native_poly_table_byte(address).or_else(||poly_buffer_clear::table_byte(address)) {
+                    return if width==1 {u16::from(low)} else {u16::from_le_bytes([low,Self::native_poly_table_byte(address+1).expect("native poly table word")])};
+                }
+                if (0x09fb6d..0x09fcad).contains(&address) {
+                    assert_eq!(width,1); return u16::from(POLY_ROTATION_SIN_COS[(address-0x09fb6d) as usize] as u8);
+                }
+                if (0x2134..=0x2136).contains(&address) {assert_eq!(width,1);return u16::from(self.ppu.read(address as u8));}
+                let offset=if (0x7e0000..0x800000).contains(&address) {(address-0x7e0000) as usize}
+                    else {assert!(address&0x40_0000==0 && address&65535<0x2000,"unowned poly read {address:06x}");(address&65535) as usize};
+                if width==1 {u16::from(self.ram[offset])} else {crate::types::read_le_u16(&self.ram,offset)}
+            }
+            Access::Write(address,value,width)=>{
+                if matches!(address,0x211b|0x211c) {assert_eq!(width,1);self.ppu.write(address as u8,value as u8);return 0;}
+                let offset=if (0x7e0000..0x800000).contains(&address) {(address-0x7e0000) as usize}
+                    else {assert!(address&0x40_0000==0 && address&65535<0x2000,"unowned poly write {address:06x}");(address&65535) as usize};
+                if offset==0x1f0c {
+                    assert_eq!((value,width),(255,1));self.request_polyhedral_nmi_update();
+                    self.game_state.poly=crate::game_state::PolyState::load_from_ram(&self.ram);
+                } else if (0x1f00..0x2000).contains(&offset) {self.write_native_intro_poly_state(offset,value,width);}
+                else {
+                    assert!((0xe800..0xf000).contains(&offset) && offset+usize::from(width)<=0xf000);
+                    self.ram[offset..offset+usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                }
+                0
+            }
+            Access::Vblank {field,at}=>{vblank(field,at);0},
+        })
+    }
+
     pub(super) fn poly_run_frame(&mut self) {
         self.last_poly_work = PolyWorkMetrics::default();
         self.polyhedral_empty_bit_map_buffer();
@@ -519,5 +705,37 @@ impl ZeldaState {
 
     fn poly_config(&self) -> &'static PolyConfig {
         &POLY_MODEL_CONFIGS[self.game_state.poly.runtime.model() as usize]
+    }
+}
+
+#[cfg(test)]
+mod native_tables_tests {
+    use super::*;
+
+    #[test]
+    fn native_shape_and_rotation_tables_match_immutable_source_data() {
+        let rom=std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        for address in std::iter::once(0x09f862).chain(0x09ff8c..0x09ff98) {
+            assert_eq!(ZeldaState::native_poly_table_byte(address),
+                Some(rom[9*0x8000+(address as usize&0x7fff)]));
+        }
+        for (i,value) in POLY_ROTATION_SIN_COS.iter().enumerate() {
+            assert_eq!(*value as u8,rom[9*0x8000+0x7b6d+i],"trig index={i}");
+        }
+        for config in &POLY_MODEL_CONFIGS {
+            for offset in 0..config.vertex.len()*3 {
+                let address=0x090000|u32::from(config.vtx_val)+offset as u32;
+                assert_eq!(ZeldaState::native_poly_table_byte(address),
+                    Some(rom[9*0x8000+(address as usize&0x7fff)]));
+            }
+            for offset in 0..config.poly.len() {
+                let address=0x090000|u32::from(config.polys_val)+offset as u32;
+                assert_eq!(ZeldaState::native_poly_table_byte(address),Some(rom[9*0x8000+(address as usize&0x7fff)]));
+            }
+        }
+        for address in (0x09fcc4..0x09fd04).chain(0x09fe94..0x09feb4) {
+            assert_eq!(ZeldaState::native_poly_table_byte(address),Some(rom[9*0x8000+(address as usize&0x7fff)]));
+        }
     }
 }

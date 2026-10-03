@@ -8034,7 +8034,7 @@ impl ZeldaState {
         if work == DungeonSupertileTransitionWork::RoomLoadCallerResume {
             self.finish_dungeon_room_load_caller_at_main_wait();
         } else {
-            self.clear_nmi_update_latch();
+            self.finish_main_loop_caller_return();
         }
         if work.next_module_resumes_after_pre_main_nmi() {
             self.game_execution_scheduler
@@ -8789,7 +8789,11 @@ impl ZeldaState {
             .as_ref()
             .map(|graphics| graphics.oam_shadow.clone());
         let frame = self.game_state.frame;
+        // A retained CPU consumes the pending upload at the source NMI's
+        // actual bus boundary. The semantic host prelude cannot clear that
+        // request before its clocked handler reads it.
         if self.rom_startup_timing
+            && !self.native_startup_cpu.as_ref().is_some_and(|cpu|cpu.startup.owns_cpu_clock())
             && rom_intro_poly_thread_is_active(frame.main_module, frame.submodule)
             && self.game_state.display.has_pending_polyhedral_update()
         {
@@ -8799,6 +8803,14 @@ impl ZeldaState {
             self.nmi_poly_upload_from_deferred = true;
             self.nmi_update_irqgfx();
         }
+        let native_boot_nmi_completed = match self.advance_native_startup_host(input) {
+            Some(false) => {
+                self.capture_display_snapshot();
+                return;
+            }
+            Some(true) => true,
+            None => false,
+        };
         if self.rom_startup_timing() && self.rom_reset_frame_delay != 0 {
             // Isolate the reset-to-main handoff as a first-class timing
             // boundary. A parity policy can run the boot initialization
@@ -8952,7 +8964,7 @@ impl ZeldaState {
                     self.native_dungeon_song_upload_awaiting_return = false;
                     self.complete_module_pre_dungeon_after_song_bank_transfer();
                     self.nmi_prepare_sprites();
-                    self.clear_nmi_update_latch();
+                    self.finish_main_loop_caller_return();
                 } else {
                     self.complete_pending_main_loop_common_suffix_after_module_return();
                 }
@@ -8961,13 +8973,16 @@ impl ZeldaState {
             return;
         }
         let initialized_audio_bank_this_frame =
-            !self.game_state.display.has_animated_tile_data_source();
+            !self.game_state.display.has_animated_tile_data_source()
+                && self.native_startup_cpu.as_ref().is_none_or(|cpu| cpu.startup.pending());
         // Ordinary live NMI samples the preceding audio commands before main;
         // measured interrupted callers can instead assign that ownership to
         // the trailing boundary. The exact dialogue terminal lifecycle above
         // is validated first so malformed authority cannot mutate audio ports
         // or initialization state before failing closed.
-        self.prepare_audio_nmi_for_main_boundary(frame);
+        if !native_boot_nmi_completed {
+            self.prepare_audio_nmi_for_main_boundary(frame);
+        }
         if initialized_audio_bank_this_frame {
             self.zelda_initialization_code();
         }
@@ -9088,7 +9103,7 @@ impl ZeldaState {
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             self.capture_display_snapshot();
             self.nmi_prepare_sprites();
-            self.clear_nmi_update_latch();
+            self.finish_main_loop_caller_return();
             // The completed text becomes visible only after the next Open NMI
             // publishes its BG3 DMA receipt. Keep the semantic glyph positions
             // staged with the exact buffer they describe.
@@ -9581,7 +9596,7 @@ impl ZeldaState {
                         sprite_reset,
                     );
                     self.nmi_prepare_sprites();
-                    self.clear_nmi_update_latch();
+                    self.finish_main_loop_caller_return();
                     // The selected-game loader has returned to the main wait,
                     // and the NMI below completes before the freshly loaded
                     // module begins on the next host callback. Preserve that
@@ -9710,6 +9725,7 @@ impl ZeldaState {
             && self.intro_poly_thread_initialization_phase != 0
             && run_what & crate::RUN_MAIN != 0
             && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && !self.native_startup_cpu.as_ref().is_some_and(|cpu|cpu.startup.owns_cpu_clock())
         {
             let (begin_main_loop, complete_module, next_phase) =
                 rom_intro_poly_init_decision(self.intro_poly_thread_initialization_phase);
@@ -9733,7 +9749,9 @@ impl ZeldaState {
                 self.complete_pending_main_loop_common_suffix_after_module_return();
             }
             self.capture_display_snapshot();
-            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+            if !native_boot_nmi_completed {
+                self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+            }
             debug_host_path_early_return(self.frame_ctr_dbg, line!());
             return;
         }
@@ -9775,13 +9793,13 @@ impl ZeldaState {
                 // GFX-completion boundary. Its visible text work is deferred
                 // to the next slice, but the scene lifetime counter is not.
                 self.attract_scene_mut().decrement_legend_ctr();
-                self.clear_nmi_update_latch();
+                self.finish_main_loop_caller_return();
             } else if self.attract_first_story_render_delay == 1 {
                 self.attract_enact_story();
                 if !opening_polka_dots {
                     self.nmi_prepare_sprites();
                 }
-                self.clear_nmi_update_latch();
+                self.finish_main_loop_caller_return();
             }
             self.attract_first_story_render_delay =
                 self.attract_first_story_render_delay.saturating_sub(1);
@@ -10930,6 +10948,14 @@ impl ZeldaState {
                 GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn,
             );
         }
+        let native_bg_conversion_returns_after_held_nmi =
+            self.native_exact_cpu_bg_conversion_returns_after_held_nmi();
+        if native_bg_conversion_returns_after_held_nmi {
+            self.capture_display_snapshot();
+            self.interrupt_nmi_for_active_scanout_without_dialogue_owner(
+                input, oam_dma_source.as_deref(), false,
+            );
+        }
         self.lane_retire_completed_leading_nmi(
             input,
             authoritative_scheduled_caller_leading_nmi_completion,
@@ -11400,6 +11426,7 @@ impl ZeldaState {
                 Some(GameWorkContinuation::FinishDungeonSupertileTransition {
                     work: DungeonSupertileTransitionWork::RoomLoadCallerResume
                         | DungeonSupertileTransitionWork::SpiralRoomCallerResume
+                        | DungeonSupertileTransitionWork::SpiralRoomSpriteMain { .. }
                         | DungeonSupertileTransitionWork::SpriteConversionCallerResume,
                 })
             ) && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
@@ -11682,11 +11709,19 @@ impl ZeldaState {
             // Overworld_LoadSprites before the host returns. Publish the
             // loader's complete presence map now; the proximity scan and
             // caller suffix still belong to the later return boundary.
-            self.overworld_load_sprites();
+            let sprite_records = self.overworld_load_sprites();
             self.begin_overworld_proximity_scan_continuation();
             self.set_overworld_horizontal_scroll_delta_low(0xff);
-            assert!(self.game_execution_scheduler
-                .mark_native_pre_overworld_sprite_presence_published());
+            if self.native_exact_cpu_owner.is_some()
+                && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SCAN_LIVE_TRIAL").is_some()
+            {
+                self.begin_native_exact_cpu_overworld_live_scan(sprite_records);
+                assert!(self.game_execution_scheduler
+                    .mark_pre_overworld_sprite_presence_published());
+            } else {
+                assert!(self.game_execution_scheduler
+                    .mark_native_pre_overworld_sprite_presence_published());
+            }
         }
         if matches!(scheduled_work_step, Some(GameWorkStep::Waiting))
             && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
@@ -11821,7 +11856,7 @@ impl ZeldaState {
                         self.complete_pending_main_loop_common_suffix_after_module_return();
                     } else {
                         self.nmi_prepare_sprites();
-                        self.clear_nmi_update_latch();
+                        self.finish_main_loop_caller_return();
                     }
                     self.game_execution_scheduler
                         .finish_call_stack_at_main_wait_before_nmi();
@@ -11847,7 +11882,7 @@ impl ZeldaState {
                         self.complete_pending_main_loop_common_suffix_after_module_return();
                     } else {
                         self.nmi_prepare_sprites();
-                        self.clear_nmi_update_latch();
+                        self.finish_main_loop_caller_return();
                     }
                     self.game_execution_scheduler
                         .finish_call_stack_at_main_wait_before_nmi();
@@ -11873,7 +11908,7 @@ impl ZeldaState {
                         self.complete_pending_main_loop_common_suffix_after_module_return();
                     } else {
                         self.nmi_prepare_sprites();
-                        self.clear_nmi_update_latch();
+                        self.finish_main_loop_caller_return();
                     }
                     self.game_execution_scheduler
                         .finish_call_stack_at_main_wait_before_nmi();
@@ -12090,7 +12125,7 @@ impl ZeldaState {
                         self.complete_pending_main_loop_common_suffix_after_module_return();
                     } else {
                         self.nmi_prepare_sprites();
-                        self.clear_nmi_update_latch();
+                        self.finish_main_loop_caller_return();
                     }
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishFluteMenuSelectedScreen {
@@ -12114,7 +12149,7 @@ impl ZeldaState {
                         self.complete_pending_main_loop_common_suffix_after_module_return();
                     } else {
                         self.nmi_prepare_sprites();
-                        self.clear_nmi_update_latch();
+                        self.finish_main_loop_caller_return();
                     }
                 }
                 GameWorkStep::Complete(
@@ -12122,7 +12157,7 @@ impl ZeldaState {
                         caller_nmi_crossings,
                     },
                 ) => {
-                    self.complete_text_initialization_prefix();
+                    self.complete_scheduled_text_initialization_prefix();
                     self.prepare_text_character_buffer_for_carry();
                     if caller_nmi_crossings == 0 {
                         // The final interrupt inside Text_Initialize can land
@@ -12220,7 +12255,7 @@ impl ZeldaState {
                         self.complete_pending_main_loop_common_suffix_after_module_return();
                     } else {
                         self.nmi_prepare_sprites();
-                        self.clear_nmi_update_latch();
+                        self.finish_main_loop_caller_return();
                     }
                     return;
                 }
@@ -12260,7 +12295,7 @@ impl ZeldaState {
                         self.complete_pending_main_loop_common_suffix_after_module_return();
                     } else {
                         self.nmi_prepare_sprites();
-                        self.clear_nmi_update_latch();
+                        self.finish_main_loop_caller_return();
                     }
                     return;
                 }
@@ -12343,7 +12378,7 @@ impl ZeldaState {
                         self.complete_pending_main_loop_common_suffix_after_module_return();
                     } else {
                         self.nmi_prepare_sprites();
-                        self.clear_nmi_update_latch();
+                        self.finish_main_loop_caller_return();
                     }
                     return;
                 }
@@ -12363,7 +12398,7 @@ impl ZeldaState {
                         self.complete_pending_main_loop_common_suffix_after_module_return();
                     } else {
                         self.nmi_prepare_sprites();
-                        self.clear_nmi_update_latch();
+                        self.finish_main_loop_caller_return();
                     }
                     return;
                 }
@@ -12384,7 +12419,7 @@ impl ZeldaState {
                         self.complete_pending_main_loop_common_suffix_after_module_return();
                     } else {
                         self.nmi_prepare_sprites();
-                        self.clear_nmi_update_latch();
+                        self.finish_main_loop_caller_return();
                     }
                     return;
                 }
@@ -12394,7 +12429,10 @@ impl ZeldaState {
                 }
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishDungeonSubtilePaletteFilter) => {
-                self.lane_finish_dungeon_subtile_palette_filter(authoritative_scheduled_caller_return_timeline);
+                self.lane_finish_dungeon_subtile_palette_filter(authoritative_scheduled_caller_return_timeline, None);
+                }
+                GameWorkStep::Complete(GameWorkContinuation::FinishDungeonSubtileHud { hud }) => {
+                self.lane_finish_dungeon_subtile_palette_filter(authoritative_scheduled_caller_return_timeline, Some(hud));
                 }
                 GameWorkStep::Complete(
                     GameWorkContinuation::FinishStraightInterroomFadeoutSuffix,
@@ -12637,7 +12675,7 @@ impl ZeldaState {
                         self.complete_pending_main_loop_common_suffix_after_module_return();
                     } else {
                         self.nmi_prepare_sprites();
-                        self.clear_nmi_update_latch();
+                        self.finish_main_loop_caller_return();
                     }
                     self.stage_resumed_sprite_main_return_obj_scanout();
                     if native_quadrant_return {
@@ -12720,11 +12758,14 @@ impl ZeldaState {
                 GameWorkStep::Complete(GameWorkContinuation::FinishOverworldSpotlightLinkOam {
                     ..
                 }) => {
+                    if let Some(equipment) = self.native_overworld_spotlight_link_oam.take() {
+                        self.link_oam_after_equipment(equipment);
+                    }
                     self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
                         GraphicsDmaGeneration::HostBoundaryBeforeMain,
                     )));
                     self.nmi_prepare_sprites_for_main_loop_once();
-                    self.clear_nmi_update_latch();
+                    self.finish_main_loop_caller_return();
                 }
                 GameWorkStep::Complete(
                     GameWorkContinuation::FinishOverworldSpotlightGoalResetTable {
@@ -12744,7 +12785,7 @@ impl ZeldaState {
                         GraphicsDmaGeneration::HostBoundaryBeforeMain,
                     )));
                     self.nmi_prepare_sprites_for_main_loop_once();
-                    self.clear_nmi_update_latch();
+                    self.finish_main_loop_caller_return();
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishWorldMapExitTilesets) => {
                     // InitializeTilesets has returned through WorldMap_ExitMap
@@ -12776,7 +12817,7 @@ impl ZeldaState {
                         self.complete_pending_main_loop_common_suffix_after_module_return();
                     } else {
                         self.nmi_prepare_sprites();
-                        self.clear_nmi_update_latch();
+                        self.finish_main_loop_caller_return();
                     }
                 }
                 GameWorkStep::Complete(
@@ -12826,7 +12867,7 @@ impl ZeldaState {
                         self.complete_pending_main_loop_common_suffix_after_module_return();
                     } else {
                         self.nmi_prepare_sprites();
-                        self.clear_nmi_update_latch();
+                        self.finish_main_loop_caller_return();
                     }
                 }
                 GameWorkStep::Complete(
@@ -13179,10 +13220,16 @@ impl ZeldaState {
                 // source never published.
                 return;
             }
+            if native_bg_conversion_returns_after_held_nmi {
+                // The only handler in this host preceded the conversion's
+                // return. Preserve the native caller's latch clear and let
+                // the following host consume its newly published DMA request.
+                return;
+            }
             self.interrupt_nmi(input, trailing_oam_dma_source, false);
             self.stage_suspended_dungeon_submodule_after_nmi();
             if scheduled_work_completion_clears_nmi_latch_after_interrupt(work_slice) {
-                self.clear_nmi_update_latch();
+                self.finish_main_loop_caller_return();
             }
             self.restore_room_61_sprite_conversion_resident_oam();
             return;
@@ -13196,7 +13243,10 @@ impl ZeldaState {
         ) {
             return;
         }
-        if self.lane_rom_startup_run_main(input, run_what, frame, oam_dma_source.clone()) {
+        // The retained leading NMI already sampled input and owns the main
+        // entry. The atomic startup lane must not sample those edges again.
+        if !native_boot_nmi_completed
+            && self.lane_rom_startup_run_main(input, run_what, frame, oam_dma_source.clone()) {
             return;
         }
         if run_what & crate::RUN_MAIN != 0 {
@@ -13227,6 +13277,13 @@ impl ZeldaState {
             graphics_dma_plan.animated_bg_operands = GraphicsDmaGeneration::LiveAfterMain;
             self.nmi_core_animated_bg_update(graphics_dma_plan);
         }
+        // A short retained module can finish its common suffix in this same
+        // host. Its CPU still owns the wait loop through the next hardware
+        // vblank, just as a suffix resumed at host entry does.
+        if native_boot_nmi_completed && self.native_startup_cpu.as_ref()
+            .is_some_and(|cpu|cpu.startup.intro_tail_returned_context().is_some()) {
+            assert_eq!(self.advance_native_startup_host(input),Some(false));
+        }
         let publication_override = self
             .game_execution_scheduler
             .in_flight_display_publication();
@@ -13234,6 +13291,11 @@ impl ZeldaState {
         // is CPU-visible, but HDMA has already consumed the preceding staged
         // generation for the scanout that ends here.
         self.capture_display_snapshot_with_override(publication_override);
+        // This host's reset caller accepted its leading NMI before releasing
+        // the saved main wait. A trailing atomic handler would run it twice.
+        if native_boot_nmi_completed {
+            return;
+        }
         let effective_leading_graphics_dma = self.rom_startup_timing()
             && (self
                 .game_execution_scheduler
@@ -13311,7 +13373,7 @@ impl ZeldaState {
             // NMI. Its ordinary caller epilogue clears $12 after hardware has
             // consumed the pending update. The final pass remains scheduled
             // and releases the same latch in its dedicated continuation.
-            self.clear_nmi_update_latch();
+            self.finish_main_loop_caller_return();
         }
         self.replay_trace_ram_watch("after-nmi");
         self.assert_native_frame_state_matches_ram();

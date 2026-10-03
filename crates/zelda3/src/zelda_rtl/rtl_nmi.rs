@@ -302,7 +302,9 @@ impl ZeldaState {
                         | GameWorkContinuation::FinishSpriteMain { .. }
                         | GameWorkContinuation::FinishDungeonCachedSpriteMain { .. }
                         | GameWorkContinuation::FinishDungeonSupertileTransition {
-                            work: DungeonSupertileTransitionWork::RoomLoadCallerResume,
+                            work: DungeonSupertileTransitionWork::RoomLoadCallerResume
+                                | DungeonSupertileTransitionWork::QuadrantUploadCallerReturn
+                                | DungeonSupertileTransitionWork::QuadrantUploadCopy { .. },
                         }
                         | GameWorkContinuation::FinishStraightInterroomSpriteReset { .. }
                 ),
@@ -320,23 +322,25 @@ impl ZeldaState {
                 }
             }
             GameWorkContinuation::FinishDialogueInitializationCallerReturn => {
-                self.complete_text_initialization_carry_suffix();
-                if self.game_state.frame.main_module == 14
-                    && self.game_state.frame.submodule == 11
-                {
-                    // Save-menu RenderText is the suspended callee. Its
-                    // flags and selection-state suffix follow the completed
-                    // initialization, before Module0E's scroll-register tail.
-                    self.complete_save_menu_after_render_text();
-                }
-                self.complete_module0e_interface_after_run();
-                if self.pending_main_loop_common_suffix.is_some() {
-                    // The source-proven caller return already carries the
-                    // shared ZeldaRunGameLoop suffix; retire its one owner.
-                    self.complete_pending_main_loop_common_suffix_after_module_return();
-                } else {
-                    self.nmi_prepare_sprites();
-                    self.clear_nmi_update_latch();
+                if !self.complete_native_dialogue_initialization_caller() {
+                    self.complete_text_initialization_carry_suffix();
+                    if self.game_state.frame.main_module == 14
+                        && self.game_state.frame.submodule == 11
+                    {
+                        // Save-menu RenderText is the suspended callee. Its
+                        // flags and selection-state suffix follow the completed
+                        // initialization, before Module0E's scroll-register tail.
+                        self.complete_save_menu_after_render_text();
+                    }
+                    self.complete_module0e_interface_after_run();
+                    if self.pending_main_loop_common_suffix.is_some() {
+                        // The source-proven caller return already carries the
+                        // shared ZeldaRunGameLoop suffix; retire its one owner.
+                        self.complete_pending_main_loop_common_suffix_after_module_return();
+                    } else {
+                        self.nmi_prepare_sprites();
+                        self.finish_main_loop_caller_return();
+                    }
                 }
                 self.next_core_nmi_active_scanout_uses_host_animated_bg_operands = std::mem::take(
                     &mut self.normal_dialogue_following_main_nmi_uses_host_animated_bg_operands,
@@ -348,7 +352,7 @@ impl ZeldaState {
                 self.complete_dungeon_map_room_drawing();
                 self.complete_module0e_interface_after_run();
                 self.nmi_prepare_sprites();
-                self.clear_nmi_update_latch();
+                self.finish_main_loop_caller_return();
             }
             GameWorkContinuation::FinishDungeonSupertileTransition {
                 work: DungeonSupertileTransitionWork::RoomLoadCallerResume,
@@ -356,6 +360,19 @@ impl ZeldaState {
                 // Resume only the interrupted Module 7 suffix. The next fresh
                 // state-2 iteration remains behind the following leading NMI.
                 self.finish_dungeon_room_load_caller_after_trailing_nmi();
+            }
+            GameWorkContinuation::FinishDungeonSupertileTransition {
+                work: work @ (DungeonSupertileTransitionWork::QuadrantUploadCallerReturn
+                    | DungeonSupertileTransitionWork::QuadrantUploadCopy { .. }),
+            } => {
+                // The interrupting handler has already run in this lane.
+                // Resume the same copy/caller suffix without another NMI.
+                let copy = match work {
+                    DungeonSupertileTransitionWork::QuadrantUploadCopy { copy } => Some(copy),
+                    _ => None,
+                };
+                self.complete_dungeon_quadrant_upload_caller_return(copy);
+                self.game_execution_scheduler.finish_call_stack_at_main_wait_before_nmi();
             }
             GameWorkContinuation::FinishSpriteMain { boundary, caller } => {
                 if matches!(caller, SpriteMainCpuCaller::BossVictory { .. }) {
@@ -417,7 +434,7 @@ impl ZeldaState {
                                 self.complete_pending_main_loop_common_suffix_after_module_return();
                             } else {
                                 self.nmi_prepare_sprites();
-                                self.clear_nmi_update_latch();
+                                self.finish_main_loop_caller_return();
                             }
                         }
                         SpriteMainCpuCaller::Module09 { .. } => {
@@ -434,12 +451,16 @@ impl ZeldaState {
                             ) {
                                 return;
                             }
-                            if typed_main_loop_return {
+                            if typed_main_loop_return || self.pending_main_loop_common_suffix.is_some() {
+                                // Native resumed calls retain the same common
+                                // suffix as source-owned calls. Retire that
+                                // owner instead of running a second, untracked
+                                // preparation and leaving it pending.
                                 self.complete_pending_main_loop_common_suffix_after_module_return();
                                 return;
                             }
                             self.nmi_prepare_sprites();
-                            self.clear_nmi_update_latch();
+                            self.finish_main_loop_caller_return();
                         }
                         SpriteMainCpuCaller::DungeonModule07Live { .. } => {
                             let sprite_return = self
@@ -461,7 +482,7 @@ impl ZeldaState {
                                 self.complete_pending_main_loop_common_suffix_after_module_return();
                             } else {
                                 self.nmi_prepare_sprites();
-                                self.clear_nmi_update_latch();
+                                self.finish_main_loop_caller_return();
                             }
                         }
                     }
@@ -574,7 +595,7 @@ impl ZeldaState {
                     self.complete_pending_main_loop_common_suffix_after_module_return();
                 } else {
                     self.nmi_prepare_sprites();
-                    self.clear_nmi_update_latch();
+                    self.finish_main_loop_caller_return();
                 }
                 self.dungeon_quadrant_cpu_continuation_active = false;
                 self.prepare_dungeon_cpu_advance_after_returned_main_wait();
@@ -672,7 +693,7 @@ impl ZeldaState {
                     self.complete_pending_main_loop_common_suffix_after_module_return();
                 } else {
                     self.nmi_prepare_sprites();
-                    self.clear_nmi_update_latch();
+                    self.finish_main_loop_caller_return();
                 }
                 self.prepare_dungeon_cpu_advance_after_returned_main_wait();
                 let native_quadrant_main_wait = self.game_state.frame.submodule == 2
@@ -715,7 +736,7 @@ impl ZeldaState {
                     return;
                 }
                 self.nmi_prepare_sprites();
-                self.clear_nmi_update_latch();
+                self.finish_main_loop_caller_return();
             }
             GameWorkContinuation::FinishOverworldSuffixCallerReturn { suffix } => {
                 match suffix {
@@ -757,7 +778,7 @@ impl ZeldaState {
                     self.complete_pending_main_loop_common_suffix_after_module_return();
                 } else {
                     self.nmi_prepare_sprites();
-                    self.clear_nmi_update_latch();
+                    self.finish_main_loop_caller_return();
                 }
                 // The accepted NMI which suspended NMI_PrepareSprites has not
                 // yet published the Link OBJ operands authored by this resumed
@@ -1070,6 +1091,31 @@ impl ZeldaState {
     pub(super) fn nmi_prepare_sprites_for_main_loop(&mut self) {
         self.nmi_prepare_sprites();
         self.main_loop_sprite_preparation_completed = true;
+    }
+
+    pub(super) fn enter_main_loop_sprite_preparation(&mut self) {
+        let cycles = self.main_loop_caller_phase.enter_sprite_preparation();
+        crate::cycle_ledger::charge_routine(0x00_8034, u64::from(cycles));
+    }
+
+    /// The main caller's STZ/BRA, distinct from gameplay routines which also
+    /// write $12. A resumed sprite-preparation body owns this return once.
+    pub(super) fn finish_main_loop_caller_return(&mut self) {
+        if self.main_loop_caller_phase == crate::cycle_models::main_wait::MainLoopCallerPhase::Waiting {
+            // Legacy untracked callers still request this semantic clear.
+            // Retained callers use the instruction step below, whose completed
+            // phase cannot clear a latch that NMI has subsequently set.
+            self.clear_nmi_update_latch();
+            return;
+        }
+        while self.step_main_loop_caller_return().is_some() {}
+    }
+
+    pub(super) fn step_main_loop_caller_return(&mut self) -> Option<u32> {
+        let instruction = self.main_loop_caller_phase.step_return_to_wait()?;
+        crate::cycle_ledger::charge_routine(0x00_8034, u64::from(instruction.master_cycles));
+        if instruction.clear_latch { self.clear_nmi_update_latch(); }
+        Some(instruction.master_cycles)
     }
 
     pub(super) fn nmi_prepare_sprites_for_main_loop_once(&mut self) {

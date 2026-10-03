@@ -367,6 +367,21 @@ pub(crate) fn glyph_post_click_setup_master_cycles(c: u8, next_line_pending: boo
     master
 }
 
+// $CBA1..$CBD0 after STX $0724: TYA, AND, ASL, STA, TYA,
+// AND, ORA, STA, STZ, REP, LDA, STA, LDY, STY, REP, LDA long,X,
+// AND, ASL, STA, LDX, LDA, four ASLs, TAY. These instructions are
+// independent of the earlier line transition and width-table page crossing.
+const GLYPH_SETUP_AFTER_CURSOR_STORE: u32 = 14 + 16 + 14 + 24 + 14
+    + 16 + 24 + 24 + 24 + 22 + 24 + 32 + 16 + 24 + 22 + 48
+    + 24 + 14 + 32 + 24 + 32 + 4 * 14 + 14;
+
+/// Remaining setup work at the start of STA $7EC231,X ($CB99).
+pub(crate) const GLYPH_ADVANCE_STORE_REMAINING: u32 =
+    40 + 14 + 32 + GLYPH_SETUP_AFTER_CURSOR_STORE;
+/// Remaining setup work at the start of STX $0724 ($CB9E).
+pub(crate) const GLYPH_CURSOR_STORE_REMAINING: u32 =
+    32 + GLYPH_SETUP_AFTER_CURSOR_STORE;
+
 /// The whole entry work of a glyph: click plus post-click setup, from
 /// `$0E:C984` to `$0E:CBD1`. Replaces `VWF_GLYPH_ENTRY_MASTER_CYCLES`
 /// together with the per-row fixed costs inside
@@ -521,24 +536,39 @@ const BOTTOM_TILE_SETUP_MASTER_CYCLES: u64 = 274;
 /// #$30 : PLB : RTS` (consumes the glyph and returns to `$0E:CAD8`).
 const RENDER_CHARACTER_EPILOGUE_MASTER_CYCLES: u64 = INC_ABS_16 + REP_SEP + 28 + RTS;
 
-/// `$0E:CCF1 INC $1CD9` commits before `SEP`, `PLB`, and `RTS`. A host may
-/// stop after that store while the glyph caller is still on the CPU stack.
-pub(crate) fn glyph_read_position_write_at(drawing_master_cycles: u32) -> u32 {
-    drawing_master_cycles
-        - u32::try_from(RENDER_CHARACTER_EPILOGUE_MASTER_CYCLES).unwrap()
-        + u32::try_from(INC_ABS_16).unwrap()
+/// `$0E:CCF1 INC $1CD9` retires before NMI even when the nominal work
+/// cutoff falls inside the instruction. Publication does not consume the
+/// remaining instruction or return-path cycle debt, and a resumed slice
+/// must not publish the increment again.
+#[cfg(test)]
+pub(crate) fn glyph_read_position_retires_in_slice(
+    drawing_master_cycles: u32,
+    before: u32,
+    after: u32,
+) -> bool {
+    let starts_at = drawing_master_cycles
+        - u32::try_from(RENDER_CHARACTER_EPILOGUE_MASTER_CYCLES).unwrap();
+    before <= starts_at && starts_at < after
 }
 
 /// Where that `INC $1CD9` begins; like a bitmap store, it completes before
 /// NMI once it has started.
+#[cfg(test)]
 pub(crate) fn glyph_read_position_instruction_start(drawing_master_cycles: u32) -> u32 {
     glyph_read_position_write_at(drawing_master_cycles) - u32::try_from(INC_ABS_16).unwrap()
+}
+
+#[cfg(test)]
+fn glyph_read_position_write_at(drawing_master_cycles: u32) -> u32 {
+    drawing_master_cycles - u32::try_from(RENDER_CHARACTER_EPILOGUE_MASTER_CYCLES).unwrap()
+        + u32::try_from(INC_ABS_16).unwrap()
 }
 
 /// A bitmap store made by `VWF_RenderCharacter`, timed from its first row at
 /// `$0E:CBD1`. The source may return to the host while a glyph is only partly
 /// drawn, so the translated buffer must publish each completed store once.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub(crate) enum GlyphBitmapWriteKind {
     Xor(u8),
     Clear(u8),
@@ -546,13 +576,29 @@ pub(crate) enum GlyphBitmapWriteKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub(crate) struct GlyphBitmapWrite {
     pub(crate) after_master_cycles: u32,
     pub(crate) offset: usize,
     pub(crate) kind: GlyphBitmapWriteKind,
 }
 
+#[cfg(test)]
 impl GlyphBitmapWrite {
+    /// NMI accepts after the current instruction retires. A nominal work
+    /// cutoff inside STA therefore already owns this store. Keep the cutoff
+    /// cursor (including its remaining cycle debt) independent of publication,
+    /// so the resumed slice cannot apply an XOR a second time.
+    pub(crate) fn retires_in_slice(self, before: u32, after: u32) -> bool {
+        let instruction_cycles = match self.kind {
+            GlyphBitmapWriteKind::SetWord(_) => 48,
+            GlyphBitmapWriteKind::Xor(_) | GlyphBitmapWriteKind::Clear(_) => 40,
+        };
+        let starts_at = self.after_master_cycles - instruction_cycles;
+        before <= starts_at && starts_at < after
+
+    }
+
     /// Where the storing `STA $7F0000,X` begins. NMI is accepted only at an
     /// instruction boundary, so a store whose instruction has begun before a
     /// vblank deadline still completes before the handler runs.
@@ -568,6 +614,7 @@ impl GlyphBitmapWrite {
 /// Source-ordered WRAM stores for one glyph. `line_ptr` is `$0722` and `x` is
 /// the advance in pixels; the existing row cost model supplies the same
 /// instruction timings used by the native CPU budget.
+#[cfg(test)]
 pub(crate) fn glyph_bitmap_writes(
     width: u8,
     x: u8,
@@ -929,12 +976,14 @@ pub(crate) fn scroll_copy_stores(
                 at += 6; // taken BCC $CFFD
             }
         }
-        for column in (0x34f..=0x3ef).step_by(8) {
-            at += 40; // STZ long
+        // $0E:D03C..D078 clears $07DE down through $069E. Preserve
+        // that order when vblank splits the unrolled store sequence.
+        for column in (0..21).rev() {
+            at += 40; // STZ abs, DB=$7F
             stores.push(ScrollCopyStore {
                 after_master_cycles: at,
                 kind: ScrollCopyStoreKind::Clear {
-                    destination: column * 2,
+                    destination: 0x69e + column * 16,
                 },
             });
         }
@@ -1418,12 +1467,12 @@ mod tests {
     /// Run `RenderText_Draw_MessageCharacters` on the shadow CPU from the
     /// given state and buffer, through the caller suffix, stopping at the
     /// main loop's `JSR NMI_PrepareSprites` (`$00:805A`).
-    fn shadow_master_cycles(
+    fn shadow_run(
         rom: &[u8],
         state: &MessageCharactersState,
         buffer: &[u8],
         line_ptr: u16,
-    ) -> Option<u64> {
+    ) -> Option<RomCpuTimingRun> {
         // The stack RenderText_Draw_MessageCharacters sees: the JSR return into
         // RenderText ($0E:C446), RenderText's saved data bank, RunInterface's
         // JSL return into Module0E_Interface ($00:F84E) and Module_MainRouting's
@@ -1477,8 +1526,16 @@ mod tests {
         let sram = vec![0u8; 0x2000];
         let ppu = snes::PpuState::default();
         let dma = snes::DmaState::default();
-        let mut run =
-            RomCpuTimingRun::new(rom, &ram, &sram, &ppu, &dma, [0; 4], checkpoint).ok()?;
+        RomCpuTimingRun::new(rom, &ram, &sram, &ppu, &dma, [0; 4], checkpoint).ok()
+    }
+
+    fn shadow_master_cycles(
+        rom: &[u8],
+        state: &MessageCharactersState,
+        buffer: &[u8],
+        line_ptr: u16,
+    ) -> Option<u64> {
+        let mut run = shadow_run(rom, state, buffer, line_ptr)?;
         let mut master = 0u64;
         for _ in 0..400_000 {
             if run.is_complete() {
@@ -1516,6 +1573,129 @@ mod tests {
             mismatches.push(format!("{label}: modeled {modeled:?} measured {measured}"));
         }
         true
+    }
+
+    #[test]
+    fn glyph_setup_publications_match_rom_store_boundaries() {
+        let Some(rom) = test_rom() else { return };
+        for c in 0..0x63u8 {
+            for pending in [false, true] {
+                let mut state = state_with(0);
+                state.next_line_pending = pending;
+                state.current_line = (c % 3) * 2;
+                state.glyph_cursor = 17;
+                let mut run = shadow_run(&rom, &state, &[c, 0x7f], 0).unwrap();
+                run.enable_cpu_write_trace();
+                let mut elapsed = None;
+                let mut stores = Vec::new();
+                for _ in 0..10_000 {
+                    let pc = run.pc();
+                    if pc == 0x0e_cacc { elapsed = Some(0u32); }
+                    if pc == 0x0e_cbd1 { break; }
+                    let before = elapsed;
+                    let step = run.step();
+                    let writes = run.take_cpu_wram_writes();
+                    if let Some(master) = elapsed.as_mut() { *master += step.master_cycles; }
+                    if matches!(pc, 0x0e_cb99 | 0x0e_cb9e) {
+                        assert_eq!(writes.len(), 1);
+                        stores.push((pc, before.unwrap(), elapsed.unwrap()));
+                    }
+                }
+                assert_eq!(run.pc(), 0x0e_cbd1);
+                let total = elapsed.unwrap();
+                assert_eq!(u64::from(total), glyph_post_click_setup_master_cycles(c, pending));
+                assert_eq!(stores.len(), 2);
+                for ((pc, start, end), remaining) in stores.into_iter().zip([
+                    GLYPH_ADVANCE_STORE_REMAINING, GLYPH_CURSOR_STORE_REMAINING,
+                ]) {
+                    assert_eq!(total - start, remaining, "glyph={c:02x} line={pending} pc={pc:06x}");
+                    // A cutoff exactly at entry has not executed the store;
+                    // any cutoff inside the instruction retires it at NMI.
+                    assert!(!(total - start < remaining));
+                    for cutoff in start + 1..=end { assert!(total - cutoff < remaining); }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn glyph_bitmap_stores_retire_at_rom_instruction_boundaries() {
+        let Some(rom) = test_rom() else {
+            eprintln!("no ROM available; skipping glyph store retirement check");
+            return;
+        };
+        let (font, widths) = font_and_widths(&rom);
+        for c in 0..0x63u8 {
+            for x in 0..8u8 {
+                let mut state = state_with(0);
+                state.advance[0] = x;
+                let line_ptr = [0, 0x2a0, 0x540][usize::from(c % 3)];
+                let rows = glyph_font_rows(&font, c);
+                let events = glyph_bitmap_writes(widths[usize::from(c)], x, line_ptr, rows);
+                let mut run = shadow_run(&rom, &state, &[c, 0x7f], line_ptr as u16).unwrap();
+                run.enable_cpu_write_trace();
+                let mut started = false;
+                let mut master = 0u32;
+                let mut event_index = 0;
+                let mut cursor_retired = false;
+                let mut bitmap = vec![0u8; 0x1000];
+                for _ in 0..400_000 {
+                    if run.is_complete() { break; }
+                    if run.pc() == 0x0e_cbd1 && !started {
+                        started = true;
+                    }
+                    let before = master;
+                    let pc = run.pc();
+                    let step = run.step();
+                    let stores = run.take_cpu_wram_writes();
+                    if !started { continue; }
+                    master += step.master_cycles;
+                    if pc == 0x0e_ccf1 {
+                        assert_eq!(stores, vec![(0x1cda, 0), (0x1cd9, 1)]);
+                        let drawing = glyph_drawing_master_cycles(
+                            widths[usize::from(c)], x, rows,
+                        ) as u32;
+                        assert!(!glyph_read_position_retires_in_slice(drawing, 0, before));
+                        for cutoff in before + 1..=master {
+                            assert!(glyph_read_position_retires_in_slice(drawing, 0, cutoff),
+                                "glyph={c:02x} x={x} cutoff={cutoff}");
+                            assert!(!glyph_read_position_retires_in_slice(
+                                drawing, cutoff, drawing,
+                            ));
+                        }
+                        cursor_retired = true;
+                    }
+                    let bitmap_stores: Vec<_> = stores.into_iter()
+                        .filter(|(address, _)| (0x10000..0x11000).contains(address))
+                        .collect();
+                    if bitmap_stores.is_empty() { continue; }
+                    let event = events[event_index];
+                    assert_eq!(event.after_master_cycles, master,
+                        "glyph={c:02x} x={x} store={event_index}");
+                    assert!(!event.retires_in_slice(0, before));
+                    // Every cutoff inside this instruction publishes it; a
+                    // resumed slice after that cutoff must not repeat it.
+                    for cutoff in before + 1..=master {
+                        assert!(event.retires_in_slice(0, cutoff));
+                        assert!(!event.retires_in_slice(cutoff, master + 1));
+                    }
+                    match event.kind {
+                        GlyphBitmapWriteKind::Xor(mask) => bitmap[event.offset] ^= mask,
+                        GlyphBitmapWriteKind::Clear(mask) => bitmap[event.offset] &= !mask,
+                        GlyphBitmapWriteKind::SetWord(value) => bitmap[event.offset..event.offset + 2]
+                            .copy_from_slice(&value.to_le_bytes()),
+                    }
+                    for (byte, (address, value)) in bitmap_stores.iter().enumerate() {
+                        assert_eq!(*address, 0x10000 + event.offset + byte);
+                        assert_eq!(*value, bitmap[event.offset + byte]);
+                    }
+                    assert_eq!(&run.ram()[0x10000..0x11000], bitmap.as_slice());
+                    event_index += 1;
+                }
+                assert_eq!(event_index, events.len(), "glyph={c:02x} x={x}");
+                assert!(cursor_retired, "glyph={c:02x} x={x}");
+            }
+        }
     }
 
     #[test]

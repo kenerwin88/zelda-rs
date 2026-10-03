@@ -2097,6 +2097,7 @@ impl SpriteWorkspaceState {
             | (u16::from(self.zero_page_work[SPRITE_OAM_PREP_Y + 1]) << 8)
     }
 
+
     pub(crate) fn where_in_room(&self, room: usize) -> u16 {
         let offset = room * 2;
         let low = self.where_in_room.get(offset).copied().unwrap_or(0);
@@ -2199,12 +2200,6 @@ impl SpriteWorkspaceState {
         self.zero_page_work[SPRITE_OAM_PREP_Y + 1] = (y >> 8) as u8;
     }
 
-    fn set_killed_sprite_load_block(&mut self, block: u16) {
-        self.zero_page_work[SPRITE_LOAD_BLOCK_STATE] = block as u8;
-        let pointer = (block >> 3).wrapping_add(0xef80);
-        self.zero_page_work[SPRITE_LOAD_BLOCK_STATE + 1] = pointer as u8;
-        self.zero_page_work[SPRITE_LOAD_BLOCK_STATE + 2] = (pointer >> 8) as u8;
-    }
 
     fn set_where_in_room(&mut self, room: usize, value: u16) {
         let offset = room * 2;
@@ -2253,6 +2248,32 @@ impl<'a> NativeSpriteWorkspaceBridgeMut<'a> {
             fresh.where_in_room.clone_from(&self.state.where_in_room);
         }
         debug_assert_eq!(*self.state, fresh);
+    }
+
+    /// `$04/$05` is the height operand during coordinate preparation and
+    /// becomes the draw flags at its shared return. The offscreen-X branch
+    /// skips the height load and consumes the preceding owner's word. These
+    /// scratch aliases are outside the serialized coordinate mirror ($00..03).
+    pub(crate) fn oam_prep_scratch_word(&self) -> u16 {
+        read_le_u16(self.ram, 4)
+    }
+
+    pub(crate) fn set_oam_prep_height(&mut self, height: u8) {
+        write_le_u16(self.ram, 4, u16::from(height));
+    }
+
+    pub(crate) fn set_oam_prep_flags(&mut self, flags: u8) {
+        self.ram[5] = flags;
+        self.ram[4] = 0;
+    }
+
+    pub(crate) fn set_oam_prep_scratch_byte(&mut self, offset: usize, value: u8) {
+        assert!(offset < 6);
+        if offset < self.state.zero_page_work.len() {
+            self.state.zero_page_work[offset] = value;
+        }
+        self.ram[SPRITE_LOAD_BLOCK_STATE + offset] = value;
+        self.debug_assert_matches_ram();
     }
 
     forward_synced! {
@@ -2340,7 +2361,6 @@ impl<'a> NativeSpriteWorkspaceBridgeMut<'a> {
         fn add_current_sprite_y_low(value: u8);
         fn subtract_current_sprite_y_low(value: u8);
         fn set_oam_prep_coords(x: u16, y: u16);
-        fn set_killed_sprite_load_block(block: u16);
         fn set_where_in_room(room: usize, value: u16);
     }
 }
@@ -2485,6 +2505,10 @@ impl Default for OverworldSpriteLoadedState {
 }
 
 impl OverworldSpriteLoadedState {
+    pub(crate) fn set_byte(&mut self, index: usize, value: u8) {
+        self.flags[index] = value;
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             flags: ram[OVERWORLD_SPRITE_WAS_LOADED

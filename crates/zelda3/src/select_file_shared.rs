@@ -128,6 +128,14 @@ pub(super) const KILL_FILE_CHOOSE_TARGET_KILL_FILE_CONFIRM_STRIPE: [u8; 101] = [
     0xa9, 0x18, 0x1f, 0x18, 0x1b, 0x18, 0x10, 0x18, 0x38, 0x18, 0x14, 0x18, 0x31, 0x18, 0xff,
 ];
 
+pub(super) const NAME_FILE_INITIAL_SAVE: [u8; 60] = {
+    let mut data = [0; 60];
+    data[44] = 0x18;
+    data[45] = 0x18;
+    data[57] = 0xf8;
+    data
+};
+
 pub(super) const NAME_FILE_DO_THE_NAMING_NAME_PLAYER_CURSOR_X_DELTAS: [i16; 26] = [
     -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -2, 2, -2, 2, -2, 2, -2, 2, -4, 4,
 ];

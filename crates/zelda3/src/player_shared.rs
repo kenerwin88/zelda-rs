@@ -342,7 +342,8 @@ pub(super) const LINK_STATE_PITS_FEATURES0_MISC_BUG_FIXES: u32 = 4096;
 pub(super) const SPRITE_DUNGEON_DRAW_SINGLE_PUSH_BLOCK_PUSH_BLOCK_CHAR_INDEX_BY_MODE: [usize; 9] =
     [0, 1, 2, 3, 4, 0, 0, 0, 0];
 
-pub(super) const SPRITE_DUNGEON_DRAW_SINGLE_PUSH_BLOCK_CHARS: [u8; 4] = [0x0c, 0x0c, 0x0c, 0xff];
+// Mode 4 indexes the first byte of the adjacent mode-index table at $07:F0D0.
+pub(super) const SPRITE_DUNGEON_DRAW_SINGLE_PUSH_BLOCK_CHARS: [u8; 5] = [0x0c, 0x0c, 0x0c, 0xff, 0x00];
 
 pub(super) const PLAYER_HANDLER_00_GROUND_3_FEATURES0_MISC_BUG_FIXES: u32 = 4096;
 

@@ -417,6 +417,22 @@ impl RomCpuTimingRun {
         self.shadow.ram[address]
     }
 
+    #[cfg(test)]
+    pub(crate) fn vram(&self) -> &[u16] {
+        &self.shadow.ppu.vram
+    }
+
+    #[cfg(test)]
+    pub(crate) fn vram_register_state(&self) -> (u16, u16, bool) {
+        (self.shadow.ppu.vram_pointer, self.shadow.ppu.vram_increment,
+            self.shadow.ppu.vram_increment_on_high)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn dma_register_state(&self) -> Vec<u8> {
+        self.shadow.dma.save_c_saveload()
+    }
+
     /// Replace the C port's compatibility-only dialogue pointers with the
     /// original compressed-ROM boundaries expected by `Text_LoadCharacterBuffer`.
     ///

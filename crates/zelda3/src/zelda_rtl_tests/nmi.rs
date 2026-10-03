@@ -1,6 +1,82 @@
 use super::*;
 
 #[test]
+fn link_dma_reads_live_wram_in_both_source_banks() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.zelda_initialization_code();
+    state.latch_nmi_update();
+    assert_eq!(state.ram[0x12], 1);
+
+    // Both startup and later Link DMA must see writes made after the
+    // initializer. Bank $10's low mirror and bank $7E own the same bytes.
+    for module in [0, 7] {
+        state.game_state.frame.main_module = module;
+        for address in [0, 0x100, 0x1fc0] {
+            state.ram[address + 0x20] = 0x96 ^ module;
+            state.copy_asset_bytes_to_vram(0x4000, &[0xee; 0x40], address, 0x40);
+            state.copy_ram_bytes_to_vram(0x4100, address, 0x40);
+            for word in 0..0x20 {
+                let expected = read_le_u16(&state.ram, address + word * 2);
+                assert_eq!(state.ppu.vram[0x4000 + word], expected);
+                assert_eq!(state.ppu.vram[0x4100 + word], expected);
+            }
+        }
+    }
+    // The upper bank still reads ROM, even when low WRAM differs.
+    state.copy_asset_bytes_to_vram(0x4200, &[0x34, 0x12, 0x78, 0x56], 0x8002, 2);
+    assert_eq!(state.ppu.vram[0x4200], 0x5678);
+}
+
+#[test]
+fn native_nmi_entry_cost_matches_source_bus_transactions() {
+    use snes::{
+        CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline, CpuRasterPosition,
+        RomCpuTimingProbe, Snes, SourcePpuReadState,
+    };
+
+    let mut rom = vec![0xea; 0x8000];
+    rom[0x7fea..0x7fec].copy_from_slice(&[0xc9, 0x80]);
+    // The translated game executes in slow-ROM banks. Interrupt entry is
+    // independent of the interrupted routine and its register widths. Check
+    // both an ordinary entry and one spanning WRAM refresh: the ledger owns
+    // CPU transactions, while the hardware timeline owns the stall.
+    for bank in [0x00, 0x06, 0x0e, 0x1d] {
+        for (m8, x8) in [(false, false), (false, true), (true, false), (true, true)] {
+            for cycle in [100, 520] {
+                let mut machine = Snes::new();
+                machine.cart.load(CartType::LoRom, &rom, 0x2000);
+                machine.cpu.k = bank;
+                machine.cpu.pc = 0x8000;
+                machine.cpu.sp = 0x1cf;
+                machine.cpu.e = false;
+                machine.cpu.mf = m8;
+                machine.cpu.xf = x8;
+                let timeline = CpuMasterTimeline::at_raster(
+                    0,
+                    CpuRasterPosition::new(100, cycle),
+                    CpuBusWorkload::default(),
+                    CpuFieldTiming::NON_INTERLACE_EVEN,
+                );
+                let mut source = RomCpuTimingProbe::new(
+                    machine, timeline, SourcePpuReadState::snes9x_reset(),
+                ).unwrap();
+                let receipt = source.accept_native_nmi().unwrap();
+                assert_eq!(receipt.memory_speed, 8);
+                let transactions: Vec<_> = receipt.transactions.iter()
+                    .map(|transaction| transaction.duration_master_cycles).collect();
+                // MemorySpeed + ONE_CYCLE, PBR/PC/P pushes, vector word.
+                assert_eq!(transactions, [14, 8, 16, 8, 16]);
+                let cpu_work: u64 = transactions.into_iter().map(u64::from).sum();
+                assert_eq!(nmi::NATIVE_NMI_ENTRY_MASTER_CYCLES, cpu_work);
+                let elapsed = receipt.ended_at.master_cycles() - receipt.started_at.master_cycles();
+                assert_eq!(elapsed, cpu_work + if cycle == 520 { 40 } else { 0 });
+            }
+        }
+    }
+}
+
+#[test]
 fn force_blank_write_respects_the_scanline_render_event() {
     assert_eq!(force_blank_output_row(49, 320), 48);
     assert_eq!(force_blank_output_row(27, 511), 26);

@@ -3745,9 +3745,11 @@ fn rom_intro_poly_thread_remains_concurrent_during_title_fade() {
     }
     assert!(!rom_intro_poly_thread_is_active(0, 6));
     assert!(!rom_intro_poly_thread_is_active(1, 5));
-    assert!(rom_intro_wait_player_tears_down_poly_thread(0, 8, true));
-    assert!(!rom_intro_wait_player_tears_down_poly_thread(0, 8, false));
-    assert!(!rom_intro_wait_player_tears_down_poly_thread(0, 7, true));
+    assert!(rom_intro_main_tears_down_poly_thread(0, 8, true));
+    assert!(rom_intro_main_tears_down_poly_thread(0, 6, true));
+    assert!(!rom_intro_main_tears_down_poly_thread(0, 8, false));
+    assert!(!rom_intro_main_tears_down_poly_thread(0, 6, false));
+    assert!(!rom_intro_main_tears_down_poly_thread(0, 7, true));
     assert_eq!(
         [0, 1, 2, 0, 1, 2]
             .into_iter()
@@ -3996,6 +3998,30 @@ fn title_poly_thread_teardown_defers_the_next_main_loop_tick() {
     assert_eq!(state.game_state.frame.subsubmodule, 41);
     assert!(!state.game_state.display.nmi_thread_active);
     assert!(state.intro_poly_thread_teardown_pending);
+}
+
+#[test]
+fn title_poly_teardown_runs_main_independently_of_atomic_stack_phase() {
+    for stack in [0x1f31,0x01f2] {
+        let mut state=ZeldaState::new();
+        state.set_rom_startup_timing(true);
+        state.initialized=true;
+        state.rom_reset_frame_delay=0;
+        state.set_animated_tile_data_source_address(1);
+        state.set_main_module(0);
+        state.set_submodule(6);
+        state.set_subsubmodule(42);
+        state.activate_nmi_thread();
+        state.set_nmi_thread_stack_pointer(stack);
+        state.zelda_run_frame_with_replay_input_override(0,None);
+        assert_eq!(state.game_state.frame.frame_counter,1,"stack={stack:04x}");
+        assert_eq!(state.game_state.frame.subsubmodule,41,"stack={stack:04x}");
+        assert!(!state.game_state.display.nmi_thread_active);
+        assert!(state.intro_poly_thread_teardown_pending);
+        state.zelda_run_frame_with_replay_input_override(0,None);
+        assert_eq!(state.game_state.frame.frame_counter,1);
+        assert_eq!(state.game_state.frame.subsubmodule,41);
+    }
 }
 
 #[test]

@@ -5,10 +5,240 @@ fn fresh_state() -> ZeldaState {
     ZeldaState::new()
 }
 
+fn cucco_draw_fixture(velocity: u8) -> ZeldaState {
+    let mut state = fresh_state();
+    state.ram[0x0fd8..0x0fda].copy_from_slice(&0x20u16.to_le_bytes());
+    state.ram[0x0fda..0x0fdc].copy_from_slice(&0x30u16.to_le_bytes());
+    state.sync_native_game_state_from_ram();
+    state.oam_state_mut().set_current_pointer(0x800);
+    state.oam_state_mut().set_current_extended_pointer(0xa20);
+    let mut slot = state.sprite_slot_view_mut(2);
+    slot.set_sprite_type(0x0b);
+    slot.set_state(9);
+    slot.set_x(0x20);
+    slot.set_y(0x30);
+    slot.set_x_velocity(velocity);
+    slot.set_oam_flags(0x25);
+    slot.set_flags2(1);
+    slot.set_flags3(0x10);
+    state
+}
+
+#[test]
+fn cucco_draw_from_entry_matches_source_at_each_retained_instruction() {
+    use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+    let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc"));
+    let Ok(mut rom) = std::fs::read(path) else { return };
+    if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+    let mut cases = 0;
+    let mut boundaries = 0;
+    for velocity in 0..=u8::MAX {
+        for flags in [0, 0x25, 0x40, 0xff] {
+            for offscreen in [false, true] {
+                let mut native = cucco_draw_fixture(velocity);
+                native.sprite_slot_view_mut(2).set_oam_flags(flags);
+                if offscreen { native.sprite_workspace_mut().set_current_sprite_x(0x130); }
+                let checkpoint = RomCpuCheckpoint {
+                    entry_pc: 0x06_a5c2, stop_pc: 0x06_a5da,
+                    a: 0, x: 2, y: 0, sp: 0x01fc, dp: 0, db: 6,
+                    carry: true, zero: false, overflow: false, negative: false,
+                    interrupt_disable: false, decimal: false,
+                    accumulator_is_8_bit: true, index_is_8_bit: true,
+                    emulation: false, waiting: false,
+                    stack_address: 0x01fd, stack_bytes: &[0x35, 0x80],
+                };
+                let mut source = RomCpuTimingRun::new(&rom, &native.ram, &[0; 0x2000],
+                    &native.ppu, &native.dma, [0; 4], checkpoint).unwrap();
+                let initial_ram = native.ram.clone();
+                let before = crate::cycle_ledger::master();
+                let mut work = native.begin_cucco_draw(2);
+                assert_eq!(native.ram, initial_ram, "admission cannot publish facing or prep");
+                assert_eq!(crate::cycle_ledger::master(), before, "admission cannot consume unbudgeted work");
+                let mut cycles = 0u64;
+                let mut steps = 0;
+                let mut flags_waiting = false;
+                while !source.is_complete() {
+                    let pc = source.pc();
+                    if let Some(instruction) = work.prefix.clone().step(
+                        native.sprite_slot_view(2).x_velocity(), native.sprite_slot_view(2).oam_flags())
+                    {
+                        assert_eq!(instruction.pc, pc);
+                    }
+                    let source_cycles = source.step().master_cycles;
+                    cycles += u64::from(source_cycles);
+                    assert_eq!(native.retire_cucco_draw_instruction(&mut work), Some(source_cycles),
+                        "case={cases} PC={pc:06x}");
+                    if pc == 0x06_a5d4 { flags_waiting = false; }
+                    for address in (0..6).chain(0x800..0xaa0)
+                        .chain([0xdd2, 0xf02, 0xf52, 0xfa8, 0xfa9, 0xbc4, 0xbc5, 0x1ef80])
+                    {
+                        if flags_waiting && address == 0xf52 { continue; }
+                        assert_eq!(native.ram[address], source.ram_byte(address),
+                            "case={cases} PC={pc:06x} address={address:05x}");
+                    }
+                    match pc {
+                        // Change native inputs after their source loads. The
+                        // branch/sign and final flag store must use the saved
+                        // operands, even after a serialized suspension.
+                        0x06_a5c2 => native.sprite_slot_view_mut(2).set_x_velocity(velocity ^ 0xff),
+                        0x06_a5cc => {
+                            native.sprite_slot_view_mut(2).set_oam_flags(flags ^ 0xff);
+                            flags_waiting = true;
+                        }
+                        _ => {}
+                    }
+                    work = bincode::deserialize(&bincode::serialize(&work).unwrap()).unwrap();
+                    steps += 1;
+                    boundaries += 1;
+                    assert!(steps < 200);
+                }
+                assert_eq!(native.retire_cucco_draw_instruction(&mut work), None);
+                assert!(work.prefix.is_complete() && work.draw.is_none());
+                assert_eq!(crate::cycle_ledger::master() - before, cycles);
+                cases += 1;
+            }
+        }
+    }
+    eprintln!("Cucco entry and draw: {cases} cases, {boundaries} retained source instruction boundaries");
+}
+
+#[test]
+fn cucco_draw_retains_caller_across_each_native_clock_boundary() {
+    use super::super::game_execution_scheduler::{CpuBusWorkload, CpuFieldTiming, CpuRasterPosition};
+    let mut native = cucco_draw_fixture(1);
+    native.latch_nmi_update();
+    let mut work = native.begin_cucco_draw(2);
+    let mut expected = native.clone();
+    let mut expected_work = work;
+    assert_eq!(expected.advance_cucco_draw(&mut expected_work, None), CpuWorkAdvance::Complete);
+    let expected_oam = expected.ram[0x800..0xaa0].to_vec();
+    let mut boundaries = 0;
+    loop {
+        // A generic clock deadline immediately before NMI acceptance tests
+        // every draw instruction as the interrupted one, without a PC cut.
+        let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
+            CpuRasterPosition::new(225, 11), CpuBusWorkload::default(),
+            CpuFieldTiming::non_interlace(false));
+        let advance = native.advance_cucco_draw(&mut work, Some(&mut budget));
+        assert_eq!(native.sprite_slot_view(2).sprite_type(), 0x0b,
+            "the Cucco suffix must remain pending until its callee returns");
+        assert!(native.game_state.display.nmi_update_is_latched());
+        if advance == CpuWorkAdvance::Complete { break; }
+        assert!(advance.reached_boundary().is_some());
+        work = bincode::deserialize(&bincode::serialize(&work).unwrap()).unwrap();
+        // The saved facing and prep coordinates must not be recomputed.
+        // The head-direction load is still after the draw and must see this.
+        native.sprite_slot_view_mut(2).set_x_velocity(0xff);
+        native.sprite_slot_view_mut(2).set_head_direction(1);
+        if work.draw.as_ref().is_some_and(|draw| draw.coordinates_prepared()) {
+            native.sprite_workspace_mut().set_current_sprite_x(0x70);
+            native.sprite_workspace_mut().set_current_sprite_y(0x80);
+        }
+        boundaries += 1;
+        assert!(boundaries < 150);
+    }
+    assert!(boundaries > 40);
+    assert_eq!(&native.ram[0x800..0xaa0], &expected_oam);
+    let retired = crate::cycle_ledger::master();
+    assert_eq!(native.advance_cucco_draw(&mut work, None), CpuWorkAdvance::Complete);
+    assert_eq!(crate::cycle_ledger::master(), retired, "a returned callee has no work left");
+    native.complete_cucco_draw(work);
+    assert_eq!(native.sprite_slot_view(2).sprite_type(), 0x3d);
+    assert_eq!(native.sprite_slot_view(2).delay_main(), 48);
+    assert_eq!(&native.ram[0x800..0xaa0], &expected_oam, "caller return must not redraw");
+    assert!(native.game_state.display.nmi_update_is_latched(), "Cucco does not own the main caller latch");
+}
+
+#[test]
+#[should_panic(expected = "Cucco caller resumed before its draw returned")]
+fn cucco_caller_rejects_publishing_suffix_before_draw_return() {
+    let mut state = cucco_draw_fixture(1);
+    let work = state.begin_cucco_draw(2);
+    state.complete_cucco_draw(work);
+}
+
+#[test]
+fn cucco_native_budget_suspends_sprite_main_and_preserves_module09_return() {
+    use super::super::game_execution_scheduler::{CpuBusWorkload, CpuFieldTiming, CpuRasterPosition};
+    use crate::cycle_models::main_wait::MainLoopCallerPhase;
+    for (remaining, x) in [(1u16, 0x20), (80, 0x20), (400, 0x20), (900, 0x20),
+        (700, 0x130), (1300, 0x130), (1800, 0x130)] {
+        let mut state = cucco_draw_fixture(1);
+        state.sprite_workspace_mut().set_current_sprite_x(x);
+        state.set_main_module(9);
+        state.set_rom_startup_timing(true);
+        state.sprite_slot_view_mut(2).set_head_direction(1);
+        state.sprite_slot_view_mut(3).set_state(9);
+        state.sprite_slot_view_mut(3).set_delay_main(23);
+        state.latch_nmi_update();
+        state.main_loop_caller_phase = MainLoopCallerPhase::ModuleRouting;
+        state.pending_main_loop_common_suffix =
+            Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch);
+        let caller = SpriteMainCpuCaller::Module09 { boundary: OriginalTimingBoundary::NmiAccepted };
+        let module_return = Module09ItemReceiptCallerReturn {
+            link_oam: None,
+            scroll: Module09SpriteMainReturn { bg2_x: 0, bg2_y: 0, bg1_x: 0, bg1_y: 0 },
+            rain_already_published: false,
+            after_sprite_main: Module09AfterSpriteMain::Ordinary,
+        };
+        state.active_module09_sprite_main_return = Some(module_return);
+        state.game_execution_scheduler.begin_host_frame();
+        state.game_execution_scheduler.begin_main_loop_iteration();
+        let work = state.begin_cucco_draw(2);
+        let mut atomic = state.clone();
+        let mut atomic_work = work;
+        assert_eq!(atomic.advance_cucco_draw(&mut atomic_work, None), CpuWorkAdvance::Complete);
+        atomic.complete_cucco_draw(atomic_work);
+        atomic.complete_post_trailing_nmi_continuation(
+            GameWorkContinuation::FinishSpriteMain {
+                boundary: SpriteMainCpuBoundary::AfterSlot(2), caller,
+            }, 0, false, false);
+
+        let clock = 225u32 * 1364 + 12 - u32::from(remaining);
+        let entry = CpuRasterPosition::new((clock / 1364) as u16, (clock % 1364) as u16);
+        let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
+            entry, CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+        assert!(!state.advance_or_suspend_cucco_draw(work, Some(&mut budget), caller));
+        assert!(state.game_execution_scheduler.work_suspends_translated_call_stack());
+        assert_eq!(state.sprite_slot_view(2).sprite_type(), 0x0b);
+        assert_eq!(state.sprite_slot_view(3).delay_main(), 23);
+        assert_eq!(state.active_module09_sprite_main_return, Some(module_return));
+        assert_eq!(state.main_loop_caller_phase, MainLoopCallerPhase::ModuleRouting);
+        assert!(state.game_state.display.nmi_update_is_latched());
+        assert!(matches!(state.next_display_obj_scanout_generation,
+            Some(ObjScanoutGenerations { oam: OamScanoutSource::RetainResidentPpuOam, .. })));
+        let continuation = state.game_execution_scheduler.take_after_current_trailing_nmi()
+            .expect("a measured NMI acceptance retains the call behind that NMI");
+        let GameWorkContinuation::FinishSpriteMain {
+            boundary: SpriteMainCpuBoundary::CuccoDraw { work: saved }, caller: saved_caller,
+        } = continuation else { panic!("lost the native Cucco caller") };
+        assert_eq!(saved.slot(), 2);
+        assert_eq!(saved_caller, caller);
+        let boundary = SpriteMainCpuBoundary::CuccoDraw { work: saved };
+        let boundary = bincode::deserialize(&bincode::serialize(&boundary).unwrap()).unwrap();
+        // This is the real shared post-NMI resume dispatcher, including
+        // lower slots, saved Module09 return and main-loop caller completion.
+        state.complete_post_trailing_nmi_continuation(
+            GameWorkContinuation::FinishSpriteMain { boundary, caller: saved_caller },
+            0, false, false);
+        assert_eq!(state.ram, atomic.ram, "remaining={remaining}");
+        assert_eq!(state.game_state, atomic.game_state, "remaining={remaining}");
+        assert_eq!(state.sprite_slot_view(3).delay_main(), 23, "upper slots must not run again");
+        assert!(state.active_module09_sprite_main_return.is_none());
+        assert!(state.pending_main_loop_common_suffix.is_none());
+        assert_eq!(state.main_loop_caller_phase, MainLoopCallerPhase::Waiting);
+        assert!(!state.game_state.display.nmi_update_is_latched());
+        assert!(state.game_execution_scheduler.take_after_current_trailing_nmi().is_none());
+    }
+}
+
 #[test]
 fn shadow_draw_extended_oam_tail_resumes_after_ordinary_entry() {
     let mut split = fresh_state();
     split.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+    split.oam_state_mut().set_current_extended_pointer(0xa20);
     split.sprite_slot_view_mut(2).set_y(0x0020);
     let mut atomic = split.clone();
     let mut split_info = PrepOamCoordsRet { x: 0x0123, y: 0, r4: 0, flags: 0x20 };

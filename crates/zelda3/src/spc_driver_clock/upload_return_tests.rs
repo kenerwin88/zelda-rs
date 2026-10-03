@@ -1,5 +1,125 @@
 use super::*;
 
+fn cpu_port_clock_fixture(program: &[u8]) -> AbsoluteDspEventClock {
+    let mut clock = clock_at_first_host_boundary();
+    clock.absolute_apu_cycle = 0;
+    clock.host_frame_index = 0;
+    clock.apu.cycles = 0;
+    clock.apu.cpu_cycles_left = 0;
+    clock.apu.debug_dsp_write_trace = Some(Vec::new());
+    clock.apu.ram[0x2000..0x2000 + program.len()].copy_from_slice(program);
+    clock.cpu_port_clock = Some((Snes9xApuClockCheckpoint::default(), 0));
+    clock
+}
+
+#[test]
+fn cpu_port_reads_retain_partial_stores_and_credit_across_output_windows() {
+    let mut clock = cpu_port_clock_fixture(&[0xda, 0xf4, 0x2f, 0xfe]);
+    clock.apu.spc.a = 0x37;
+    clock.apu.spc.y = 0x91;
+    clock.host_transport.requested_ambient = 0x91;
+    clock.apu.in_ports[1] = 0x77;
+    let mut uninterrupted = ApuHostPortTiming::new(
+        ApuHostPortProbe::new(clock.apu.clone()).unwrap(), Default::default(),
+    ).unwrap();
+    // MOVW has published low, but not high, at this CPU deadline.
+    assert_eq!(clock.cpu_port_at(84, 1, None).unwrap(), 0);
+    assert_eq!(clock.host_acknowledgements(), [0x37, 0, 0, 0]);
+    assert!(clock.cpu_port_access_pending());
+    assert_eq!(uninterrupted.read_cpu_port_at(84, 1).unwrap(), 0);
+    assert_eq!(clock.cpu_port_at(84, 2, Some(0x66)).unwrap(), 0x66);
+    uninterrupted.write_cpu_port_at(84, 2, 0x66).unwrap();
+    // The later output window finishes the retained instruction once, then
+    // owns further execution. It must not replay the CPU store nominally.
+    clock.advance(Default::default(), 1, 0);
+    assert!(!clock.cpu_port_access_pending());
+    assert_eq!(clock.apu.in_ports[2], 0x66);
+    // The CPU saw no ambient acknowledgement. Completing MOVW publishes
+    // the matching high byte, but must not retroactively clear input port1.
+    assert_eq!(clock.apu.in_ports[1], 0x77);
+    assert!(!clock.pending_timed_main_cpu_port_writes.iter().any(|&(_, p, _)| p == 1));
+    assert!(!clock.pending_timed_main_cpu_port_writes.iter().any(|&(_, p, _)| p == 2));
+    assert_eq!(clock.cpu_port_at(1260, 1, None).unwrap(), 0x91);
+    assert_eq!(uninterrupted.read_cpu_port_at(1260, 1).unwrap(), 0x91);
+    let resumed = clock.cpu_ports.as_ref().unwrap();
+    assert_eq!(resumed.clock().checkpoint(), uninterrupted.clock().checkpoint());
+    assert_eq!(resumed.machine().save_c_saveload_prefix(), uninterrupted.machine().save_c_saveload_prefix());
+    assert_eq!(bincode::serialize(&resumed.machine().spc).unwrap(),
+        bincode::serialize(&uninterrupted.machine().spc).unwrap());
+}
+
+#[test]
+fn cpu_port_access_preserves_dsp_writes_until_their_output_window() {
+    let mut clock = cpu_port_clock_fixture(&[0x8f, 0x0c, 0xf2, 0x8f, 0x7f, 0xf3, 0x2f, 0xfe]);
+    clock.cpu_port_at(252, 0, None).unwrap();
+    let trace = clock.cpu_ports.as_ref().unwrap().machine().debug_dsp_write_trace.as_ref().unwrap();
+    assert_eq!(trace.len(), 1);
+    let (cycle, address, value) = trace[0];
+    let window = clock.advance(Default::default(), 1, 0);
+    assert_eq!(window.writes, vec![DspWriteEvent::new(address, value, (cycle / 32) as i32, (cycle % 32) as u8)]);
+    assert!(clock.advance(Default::default(), 1, 0).writes.is_empty());
+}
+
+#[test]
+fn timed_music_store_preserves_the_later_nominal_port_deadlines() {
+    let mut clock = cpu_port_clock_fixture(&[0x2f, 0xfe]);
+    let mut nominal = clock.clone();
+    clock.cpu_port_at(21, 0, Some(0)).unwrap();
+    clock.advance(Default::default(), 1, 0);
+    nominal.advance(Default::default(), 1, 0);
+    // Both NMIs took the music-clear branch. Its earlier publication must
+    // neither replay port0 nor shorten the following ambient/effect paths.
+    nominal.pending_timed_main_cpu_port_writes.retain(|&(_, port, _)| port != 0);
+    assert_eq!(clock.pending_timed_main_cpu_port_writes,
+        nominal.pending_timed_main_cpu_port_writes);
+    assert_eq!(clock.pending_timed_main_cpu_port_writes.len(), 3);
+}
+
+#[test]
+fn cpu_port_access_rejects_ahead_execution_and_due_unowned_writes() {
+    let mut clock = cpu_port_clock_fixture(&[0x2f, 0xfe]);
+    clock.apu.run_cycle_sequenced_instruction_without_dsp();
+    let before = bincode::serialize(&clock).unwrap();
+    assert!(clock.cpu_port_at(1, 0, None).unwrap_err().contains("beyond the CPU port deadline"));
+    assert_eq!(bincode::serialize(&clock).unwrap(), before);
+    clock.pending_timed_main_cpu_port_writes.push((4, 0, 0x22));
+    assert!(clock.cpu_port_at(105, 0, None).unwrap_err().contains("undelivered host transfer"));
+    assert!(!clock.cpu_port_access_pending());
+}
+
+#[test]
+fn cpu_owned_audio_window_preserves_the_next_port_deadline_and_write_receipts() {
+    let mut clock = cpu_port_clock_fixture(&[0x8f, 0x0c, 0xf2, 0x8f, 0x7f, 0xf3, 0x2f, 0xfe]);
+    let mut uninterrupted = ApuHostPortTiming::new(
+        ApuHostPortProbe::new(clock.apu.clone()).unwrap(), Default::default()).unwrap();
+    clock.cpu_port_at(252, 0, None).unwrap();
+    uninterrupted.read_cpu_port_at(252, 0).unwrap();
+    let window = clock.advance_at_cpu_boundary(Default::default(), 1, 0, 672).unwrap();
+    uninterrupted.sync_to(672).unwrap();
+    assert_eq!(window.writes.len(), 1);
+    assert_eq!(window.writes[0].addr, 0x0c);
+    assert!(clock.cpu_port_access_pending());
+    assert_eq!(clock.cpu_port_at(693, 0, None).unwrap(),
+        uninterrupted.read_cpu_port_at(693, 0).unwrap());
+    let owner = clock.cpu_ports.as_ref().unwrap();
+    assert_eq!(owner.clock().checkpoint(), uninterrupted.clock().checkpoint());
+    assert_eq!(owner.machine().save_c_saveload_prefix(), uninterrupted.machine().save_c_saveload_prefix());
+    assert_eq!(bincode::serialize(&owner.machine().spc).unwrap(),
+        bincode::serialize(&uninterrupted.machine().spc).unwrap());
+    assert!(clock.advance_at_cpu_boundary(Default::default(), 1, 0, 1344).unwrap().writes.is_empty());
+}
+
+#[test]
+fn cpu_owned_output_availability_matches_every_power_on_dsp_phase() {
+    let mut dsp = snes::Snes9xDspPhaseMachine::power_on();
+    let mut ram = [0; 65536];
+    let mut samples = 0;
+    for clocks in 1..=128 {
+        samples += u64::from(dsp.run_clock(&mut ram).is_some());
+        assert_eq!(samples, (clocks + DSP_CLOCKS_AFTER_OUTPUT) / APU_CYCLES_PER_DSP_SAMPLE);
+    }
+}
+
 fn clock_at_first_host_boundary() -> AbsoluteDspEventClock {
     let start = snes_master_clock_to_apu_cycle(225 * SNES_MASTER_CLOCKS_PER_SCANLINE);
     let mut apu = ApuState::new();
@@ -8,6 +128,9 @@ fn clock_at_first_host_boundary() -> AbsoluteDspEventClock {
     apu.spc.pc = 0x2000;
     apu.cycles = start as u32;
     AbsoluteDspEventClock {
+        cpu_ports: None,
+        cpu_port_clock: None,
+        cpu_port_actions: [None; 4],
         startup_template: apu.clone(),
         apu,
         absolute_apu_cycle: start,

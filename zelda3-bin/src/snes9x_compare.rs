@@ -39,7 +39,7 @@ use zelda3::{
 pub(crate) const ORACLE_MUSIC_CONTROL: usize = 0x012c;
 pub(crate) const ORACLE_QUEUED_MUSIC_CONTROL: usize = 0x0132;
 pub(crate) const ORACLE_LAST_MUSIC_CONTROL: usize = 0x0133;
-const COMPARE_ORACLE_USAGE: &str = "<path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-bundle <session-dir> | --input-script <path> --rom-random-script <path> --load-sram <path>] [--allow-mixed-replay-provenance] [--replay-save <path>] [--rom-random-script <path> | --live-oracle-rng] [--resume-paired <dir> | --resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--save-paired-resume-at <frame> <dir>] [--save-rolling-paired-resume <interval> <dir>] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--compare-engine-state-from-frame <n> | --ignore-engine-state] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--cold-evidence-invocation-id <id>] [--scan-all] (engine state is compared from --compare-from-frame by default; pass both --ignore-video and --ignore-audio for renderless replay)";
+const COMPARE_ORACLE_USAGE: &str = "<path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-bundle <session-dir> | --input-script <path> --rom-random-script <path> --load-sram <path>] [--allow-mixed-replay-provenance] [--replay-save <path>] [--rom-random-script <path> | --live-oracle-rng] [--resume-paired <dir> | --resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--save-paired-resume-at <frame> <dir>] [--save-rolling-paired-resume <interval> <dir>] [--native-apu-bootstrap <path>] [--native-timing] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--compare-engine-state-from-frame <n> | --ignore-engine-state] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--cold-evidence-invocation-id <id>] [--scan-all] (engine state is compared from --compare-from-frame by default; pass both --ignore-video and --ignore-audio for renderless replay)";
 
 // The cartridge RNG routine stores its return byte at mapped PC $0d:ba7f.
 // Other game code also writes $0fa1, so the address alone is not sufficient
@@ -1453,6 +1453,8 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
                 let mut frames_completed = frames_completed;
                 let mut first_rng_drift = first_rng_drift;
                 let mut paired_checkpoint_due = paired_checkpoint_due;
+                let debug_paired_checkpoints = std::env::var_os("ZELDA3_DEBUG_PAIRED_CHECKPOINT").is_some();
+                let mut checkpoint_blockers = std::collections::BTreeMap::<&'static str, u64>::new();
                 // `ZELDA3_DEBUG_HOST_FEATURES=<csv>` writes one row per host: the
                 // engine's state at the host boundary and the timing the receipt carried,
                 // for rule discovery over the route (docs/parity/romless-exact-play.md).
@@ -1634,10 +1636,24 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
             }
             paired_checkpoint_due |=
                 paired_checkpoint_interval.is_some_and(|interval| frames_completed % interval == 0);
-            let paired_boundary = (paired_checkpoint_due
-                && game.paired_resume_cpu_boundary_is_quiescent()
-                && (game.native_exact_cpu_checkpoint_available()
-                    || game.capture_original_timing_resume_checkpoint().is_ok()))
+            let checkpoint_blocker = paired_checkpoint_due.then(|| {
+                game.paired_resume_cpu_boundary_blocker().or_else(|| {
+                    (!(game.native_exact_cpu_checkpoint_available()
+                        || game.capture_original_timing_resume_checkpoint().is_ok()))
+                        .then_some("unavailable-timing-owner")
+                })
+            }).flatten();
+            if debug_paired_checkpoints {
+                if let Some(reason) = checkpoint_blocker {
+                    let count = checkpoint_blockers.entry(reason).or_default();
+                    if *count == 0 {
+                        eprintln!("paired-checkpoint-skipped first_host={frames_completed} reason={reason} timing_error={:?}",
+                            game.capture_original_timing_resume_checkpoint().err());
+                    }
+                    *count += 1;
+                }
+            }
+            let paired_boundary = (paired_checkpoint_due && checkpoint_blocker.is_none())
             .then(|| {
                 paired_checkpoint_due = false;
                 (frames_completed, Box::new(game.clone()))
@@ -1658,6 +1674,11 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
         // Dropping the receiver ends the producer at its next send; a parse error
         // it reported was already surfaced by the loop above.
         drop(parsed_rx);
+        if debug_paired_checkpoints {
+            for (reason, hosts) in checkpoint_blockers {
+                eprintln!("paired-checkpoint-blocker reason={reason} pending_hosts={hosts}");
+            }
+        }
         SimulationOutcome {
             game,
             frames_completed,
@@ -2009,6 +2030,7 @@ pub(crate) fn run_compare_libretro_oracle(
     let mut paired_resume_captures = Vec::<PairedResumeCapture>::new();
     let mut rolling_paired_resume = None::<RollingPairedResumeCapture>;
     let mut native_apu_bootstrap = None::<PathBuf>;
+    let mut native_timing = false;
     let mut compare_video = true;
     let mut compare_audio = true;
     let mut compare_from_frame = 0u32;
@@ -2180,6 +2202,10 @@ pub(crate) fn run_compare_libretro_oracle(
                 };
                 native_apu_bootstrap = Some(PathBuf::from(path));
                 i += 2;
+            }
+            "--native-timing" => {
+                native_timing = true;
+                i += 1;
             }
             "--ignore-video" => {
                 compare_video = false;
@@ -2674,7 +2700,15 @@ pub(crate) fn run_compare_libretro_oracle(
             env::set_var("ZELDA3_SNES9X_TRACE_EVENTS", "frame,hdma");
         }
     }
-    let semantic_trace_available = replay_save.is_none()
+    if native_timing
+        && (replay_save.is_some() || resume_rust_state.is_some() || seed_rust_from_oracle.is_some())
+    {
+        eprintln!("--native-timing requires a cold start without source-seeded or resumed state");
+        process::exit(2);
+    }
+    // The oracle remains an observer. Native game execution must not consume
+    // its host timing receipts when measuring the native scheduling path.
+    let semantic_trace_available = !native_timing && replay_save.is_none()
         && debug_smp_bootstrap_path.is_none()
         && debug_smp_first_nmi_path.is_none()
         && debug_first_nmi_dma_setup_path.is_none()
@@ -3112,6 +3146,8 @@ pub(crate) fn run_compare_libretro_oracle(
         skip_oracle_frames,
         compare_video,
         compare_audio,
+        native_timing,
+        oracle_semantic_trace.is_some(),
         audio_comparison,
         timing_options,
         replay_save.as_deref(),

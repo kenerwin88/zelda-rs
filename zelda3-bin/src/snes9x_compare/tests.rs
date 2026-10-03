@@ -180,7 +180,21 @@ fn matched_cached_av_replay_writes_a_quiescent_paired_frontier() {
         },
     });
     let manifest_bytes = serde_json::to_vec(&manifest).unwrap();
-    let game = super::load_default_play_state();
+    let mut game = super::load_default_play_state();
+    // A newly loaded cold game now owns an unserialized bootstrap clock.
+    // Reject that boundary before exercising the quiescent writer fixture.
+    assert_eq!(
+        game.paired_resume_cpu_boundary_blocker(),
+        Some("retained-native-bootstrap-clock")
+    );
+    assert!(write_cached_av_final_paired_resume(
+        &cache, &output, &manifest, &manifest_bytes,
+        Path::new("zelda3.sfc"), "rom-sha", 0, &game,
+    ).unwrap_err().to_string().contains("unserialized ROM-call continuation"));
+    // Disabling the clock alone does not initialize power-on WRAM. Use a
+    // separate initialized semantic fixture for the quiescent writer test.
+    game = zelda3::ZeldaState::new();
+    assert!(game.paired_resume_cpu_boundary_is_quiescent());
 
     let frontier = write_cached_av_final_paired_resume(
         &cache,

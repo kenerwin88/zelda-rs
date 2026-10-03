@@ -1373,6 +1373,13 @@ pub enum GuardAnimationCheckpoint {
     HogSpearInitializerBodyReturned {
         active_call: u8,
     },
+    /// Head, body and weapon returned; no shadow OAM has been published.
+    ShadowOamPending,
+    /// Off-screen coordinate/pause prefix returned into KillSelf, before its stores.
+    OffscreenKillSelfPending,
+    /// Guard_Main restored its pose and ReturnIfInactive passed state 9;
+    /// the shared pause test at $05:F955 has not started.
+    ActiveStateChecked,
 }
 
 impl GuardAnimationCheckpoint {
@@ -1383,6 +1390,9 @@ impl GuardAnimationCheckpoint {
                 | Self::DrawReturned
                 | Self::HeadExtendedPending
                 | Self::HeadFlagsPending
+                | Self::ShadowOamPending
+                | Self::OffscreenKillSelfPending
+                | Self::ActiveStateChecked
                 | Self::HogSpearInitializerBodyReturned { active_call: 1 | 2 }
                 | Self::WeaponCoordinates { entry: 0 | 1 }
                 | Self::WeaponBeforeCoordinates { entry: 0 | 1 }
@@ -1506,6 +1516,9 @@ pub enum CachedSpriteExecutionBodyProgress {
     /// A cached green knife guard published its graphics and entered
     /// `Recruit_Draw`, but its OAM-coordinate helper has not written yet.
     BeforeGreenKnifeGuardRecruitOamPrep,
+    GuardShadowOamPending,
+    /// Shared coordinate capture returned; allocation and timers are pending.
+    AfterCoordinates,
 }
 
 /// Source-order cursor inside `Dungeon_FlipCrystalPegAttribute`. The ROM
@@ -1744,6 +1757,9 @@ pub enum SpotlightTableBuildCheckpoint {
         upper_cursor: u16,
         lower_cursor: u16,
     },
+    /// The lower-row guard, TAX and LDA have retired. Only the lower table
+    /// store at $00:F392 and the loop tail remain. Native recomputes its value.
+    BeforeLowerTableStore { lower_cursor: u16 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

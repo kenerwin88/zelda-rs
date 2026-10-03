@@ -655,6 +655,7 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishGameOverIrisGoalPaletteFill { .. }
                 | GameWorkContinuation::FinishGameOverDeathAfterSpriteReset { .. }
                 | GameWorkContinuation::FinishDungeonSubtilePaletteFilter
+                | GameWorkContinuation::FinishDungeonSubtileHud { .. }
                 | GameWorkContinuation::FinishDungeonFallingRoomInitialization
                 | GameWorkContinuation::FinishRescuedMaidenTilemapClear { .. }
                 | GameWorkContinuation::FinishRescuedMaidenInitialization { .. }

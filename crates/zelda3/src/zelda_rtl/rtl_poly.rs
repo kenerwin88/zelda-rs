@@ -530,6 +530,36 @@ impl ZeldaState {
         self.game_state.poly = crate::game_state::PolyState::load_from_ram(&self.ram);
     }
 
+    /// Publish one initializer store or MVN byte. Adopt only the native
+    /// owners sharing this work area; never project their old values over an
+    /// interrupted clear or the newly copied thread stack.
+    pub(super) fn write_native_intro_poly_state(&mut self, address: usize, value: u16, width: u8) {
+        assert!(matches!(width,1|2));
+        let end=address+usize::from(width);
+        assert!((0x1e00..=0x1e70).contains(&address) && end<=0x1e70
+            || (0x1f00..0x2000).contains(&address) && end<=0x2000);
+        self.ram[address..end].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        if address<0x1f00 {
+            if address<0x1e0a && end>0x1e08 {
+                self.game_state.ending.intro_scene.sprite_oam_cursor=crate::types::read_le_u16(&self.ram,crate::game_state::constants::INTRO_SPRITE_ALLOC);
+            }
+            self.game_state.ending.intro_actors=crate::game_state::IntroActorState::load_from_ram(&self.ram);
+            self.game_state.ending.attract_scene=crate::game_state::AttractSceneState::load_from_ram(&self.ram);
+        } else {
+            self.game_state.poly=crate::game_state::PolyState::load_from_ram(&self.ram);
+            if address==0x1f00 {
+                self.game_state.ending.attract_scene.intro_did_run_step=self.ram[crate::game_state::constants::INTRO_DID_RUN_STEP];
+            }
+            if address<0x1f0c && end>0x1f0a {
+                self.set_nmi_thread_stack_pointer(crate::types::read_le_u16(&self.ram,crate::game_state::constants::POLY_THREAD_STACK));
+            }
+            if address<=0x1f0c && end>0x1f0c {
+                assert_eq!(self.ram[crate::game_state::constants::NMI_FLAG_UPDATE_POLYHEDRAL],0,"initializer must clear the pending poly upload");
+                self.clear_pending_polyhedral_update();
+            }
+        }
+    }
+
     pub(super) fn write_poly_thread_init_bytes(&mut self) {
         SystemWorkArea::write_poly_thread_bootstrap_bytes(&mut self.ram);
     }

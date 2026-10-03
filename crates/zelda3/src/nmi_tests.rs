@@ -2,6 +2,38 @@ use super::*;
 use crate::game_state::constants::{ANIMATED_TILE_DATA_SRC, ANIMATED_TILE_VRAM_ADDR};
 
 #[test]
+fn native_nmi_header_bus_writes_keep_typed_latches_and_hardware_owned() {
+    use crate::cycle_models::nmi_stack::NmiHeaderAccess::*;
+    let mut s = ZeldaState::new();
+    s.ram[0x12d] = 0x37;
+    s.ram[0x12e] = 0x5a;
+    s.ram[0x12f] = 0xa5;
+    s.ram[0x13] = 0x0f;
+    s.sync_native_game_state_from_ram();
+    let mut expected = s.ram.clone();
+    s.ppu.forced_blank = false;
+    for channel in &mut s.dma.channel { channel.hdma_active = true; }
+    assert_eq!(s.native_nmi_header_access(0, Read(0x12d)), 0x37);
+    for (address, value) in [(0x131, 0x37), (0x12d, 0), (0x12e, 0), (0x12f, 0), (0x12, 1)] {
+        s.native_nmi_header_access(0, Write(address, value));
+        expected[usize::from(address)] = value;
+    }
+    s.native_nmi_header_access(0, WriteWord(0x1f1, 0x8140));
+    expected[0x1f1..0x1f3].copy_from_slice(&[0x40, 0x81]);
+    s.native_nmi_header_access(0, Write(0x2100, 0x80));
+    s.native_nmi_header_access(0, Write(0x420c, 0));
+    assert_eq!(s.ram, expected);
+    assert_eq!(s.game_state.system_signals.last_ambient_sound_effect(), 0x37);
+    assert_eq!(s.game_state.system_signals.ambient_sound_effect(), 0);
+    assert_eq!(s.game_state.system_signals.sound_effect_1(), 0);
+    assert_eq!(s.game_state.system_signals.sound_effect_2(), 0);
+    assert!(s.game_state.display.nmi_update_is_latched());
+    assert_eq!(s.game_state.display.screen_brightness, 0x0f);
+    assert!(s.ppu.forced_blank);
+    assert!(s.dma.channel.iter().all(|channel| !channel.hdma_active));
+}
+
+#[test]
 fn idle_music_nmi_prices_a_nonzero_echo_from_the_apu_port() {
     assert_eq!(idle_music_echo_master_cycles(0x10, 0x10), 130);
     assert_eq!(idle_music_echo_master_cycles(0, 0x10), 84);

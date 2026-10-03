@@ -7,6 +7,16 @@ use sha2::{Digest, Sha256};
 
 #[test]
 fn tile_attributes_match_frozen_runtime_effects() {
+    let hash_projection = |digest: &mut Sha256, state: &ZeldaState| {
+        let mut projected = vec![0xa5; WRAM_SIZE];
+        state.game_state.write_to_ram(&mut projected);
+        // Preserve the historical projection hash and independently check the
+        // newly owned high byte. The full live RAM digest still includes it.
+        let high = crate::game_state::constants::HUD_CUR_ITEM_HIGH;
+        assert_eq!(projected[high], state.ram[high]);
+        projected[high] = 0xa5;
+        digest.update(&projected);
+    };
     // 131,072 tile executions, each digesting two WRAM images: the whole
     // library suite's tail. Every (indoors, tile) digest is independent, so
     // split the tiles across threads; the case text keeps its frozen order.
@@ -22,9 +32,7 @@ fn tile_attributes_match_frozen_runtime_effects() {
                 state.game_state = initial_native.clone();
                 state.tile_detect_execute_inner(tile, 0x100, bits, indoors);
                 digest.update(&state.ram);
-                let mut projected = vec![0xa5; WRAM_SIZE];
-                state.game_state.write_to_ram(&mut projected);
-                digest.update(&projected);
+                hash_projection(&mut digest, &state);
             }
         }
         format!("{indoors}/{tile:02x}: {:x}\n", digest.finalize())
@@ -49,9 +57,7 @@ fn tile_attributes_match_frozen_runtime_effects() {
         state.tile_detect_reset_state();
         let mut digest = Sha256::new();
         digest.update(&state.ram);
-        let mut projected = vec![0xa5; WRAM_SIZE];
-        state.game_state.write_to_ram(&mut projected);
-        digest.update(&projected);
+        hash_projection(&mut digest, &state);
         cases.push_str(&format!("reset/{seed}: {:x}\n", digest.finalize()));
     }
     assert_eq!(

@@ -7,6 +7,63 @@ const OAM_BUF_TAGALONG: usize = 0x0800;
 const FEATURES0_MISC_BUG_FIXES_TAGALONG: u32 = 4096;
 const FEATURES0_TURN_WHILE_DASHING_TAGALONG: u32 = 4;
 
+/// Native locals after the follower's animation/palette selection and optional
+/// splash sprites, before its two body sprites are published.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct FollowerBodyDrawContinuation {
+    oam: u16,
+    scrollx: u16,
+    scrolly: u16,
+    frame: u8,
+    indicator: u8,
+    pal: u8,
+    priority: u8,
+    head_prefix_cycles: u16,
+}
+
+/// Progress through the straight-line entry of the shared coordinate helper,
+/// up to its first clipping branch. Only its X word can have been published.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct FollowerCoordinatePrefix {
+    cycles: u16,
+    x_written: bool,
+}
+
+pub(super) fn follower_coordinate_entry_prefix(pc: u32) -> Option<FollowerCoordinatePrefix> {
+    let mut cycles = 0;
+    let mut x_written = false;
+    for (offset, cost) in [(0xabf9, 22), (0xabfb, 32), (0xabfd, 54),
+        (0xabff, 14), (0xac00, 14), (0xac01, 24), (0xac04, 24), (0xac07, 16)] {
+        if pc == (0x09_0000 | offset) {
+            return Some(FollowerCoordinatePrefix { cycles, x_written });
+        }
+        cycles += cost;
+        x_written |= offset == 0xabfd;
+    }
+    None
+}
+
+/// The straight-line head-coordinate selector has only register/stack and
+/// direct-page scratch writes. No OAM or DMA publication precedes AB62's JSR.
+/// This cursor carries control progress, never source coordinates or values.
+pub(super) fn follower_body_head_prefix_cycles(pc: u32) -> Option<u16> {
+    let instructions = [
+        (0xab34, 22), (0xab36, 30), (0xab37, 32), (0xab39, 24),
+        (0xab3c, 14), (0xab3d, 14), (0xab3e, 14), (0xab3f, 14),
+        (0xab40, 48), (0xab44, 24), (0xab47, 14), (0xab48, 14),
+        (0xab49, 14), (0xab4a, 14), (0xab4b, 46), (0xab4e, 14),
+        (0xab4f, 46), (0xab52, 14), (0xab53, 32), (0xab55, 32),
+        (0xab57, 46), (0xab5a, 14), (0xab5b, 32), (0xab5d, 32),
+        (0xab5f, 36), (0xab60, 22), (0xab62, 46),
+    ];
+    let mut cycles = 0;
+    for (offset, cost) in instructions {
+        if pc == (0x09_0000 | offset) { return Some(cycles); }
+        cycles += cost;
+    }
+    None
+}
+
 const TAGALONG_SLOWDOWN_INDICATOR_BY_FOLLOWER: [u8; 15] =
     [0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 const TAGALONG_RELEASE_INDICATOR_BY_FOLLOWER: [u8; 15] =
@@ -1522,24 +1579,48 @@ impl ZeldaState {
     }
 
     #[rustfmt::skip]
-    fn set_oam_follower_at(&mut self, oam: usize, x: u16, y: u16, charnum: u8, flags: u8, mut big: u8) {
+    fn set_oam_follower_at(&mut self, oam: usize, x: u16, y: u16, charnum: u8, flags: u8, big: u8) {
+        self.set_oam_follower_after_coordinate_prefix(oam, x, y, charnum, flags, big,
+            FollowerCoordinatePrefix::default());
+    }
+
+    #[rustfmt::skip]
+    fn set_oam_follower_after_coordinate_prefix(&mut self, oam: usize, x: u16, y: u16,
+        charnum: u8, flags: u8, mut big: u8, prefix: FollowerCoordinatePrefix) {
         // The coordinate part is JSR FollowerDraw_CalculateOamCoords:
         // ABF9-AC07 (200), AC09-AC1B (252) only when X fits,
         // AC1D-AC20 clipping (78), then AC22-AC25 (78).
         crate::cycle_ledger::charge_routine(0x09_abf9, 200 + if x.wrapping_add(0x80) >= 0x180 {
             6 + 78
-        } else { 252 + if y.wrapping_add(0x10) < 0x100 { 6 } else { 78 } } + 78);
+        } else { 252 + if y.wrapping_add(0x10) < 0x100 { 6 } else { 78 } } + 78 - u64::from(prefix.cycles));
         let visible = x.wrapping_add(0x80) < 0x180 && {
             big |= ((x >> 8) & 1) as u8;
             y.wrapping_add(0x10) < 0x100
         };
-        self.oam_state_mut()
-            .write_entry(oam, x as u8, if visible { y as u8 } else { 0xf0 }, charnum, flags);
+        if !prefix.x_written {
+            self.oam_state_mut().set_entry_x(oam, x as u8);
+        }
+        self.oam_state_mut().set_entry_y(oam, if visible { y as u8 } else { 0xf0 });
+        self.oam_state_mut().set_entry_char_flags(oam, u16::from_le_bytes([charnum, flags]));
         self.oam_state_mut()
             .set_extended_byte((oam - OAM_BUF_TAGALONG) / 4, big);
     }
 
     pub(super) fn follower_animate_movement_preserved(&mut self, ain: u8, xin: u16, yin: u16) {
+        if let Some(SpriteMainCpuBoundary::FollowerAnimationSelection { inputs: None }) =
+            self.sprite_main_cpu_boundary {
+            // The selector touches only CPU/direct-page temporaries. Its
+            // native expression can remain pending, but its caller's inputs
+            // must survive and OAM allocation must not run ahead of it.
+            self.sprite_main_cpu_boundary.take();
+            let slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+            let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+            self.schedule_sprite_main_cpu_continuation(
+                SpriteMainCpuBoundary::FollowerAnimationSelection {
+                    inputs: Some((ain, xin, yin)),
+                }, slices, caller);
+            return;
+        }
         let indicator = self.game_state.sprites.follower_runtime.indicator();
         let submodule = self.game_state.frame.submodule;
         let main_module = self.game_state.frame.main_module;
@@ -1746,22 +1827,75 @@ impl ZeldaState {
         } else {
             crate::cycle_ledger::charge(110 + 6);
         }
-        let sprd = TAGALONG_DRAW_SPR_XY[frame
-            + (TAGALONG_DRAW_OFFS[self.game_state.sprites.follower_runtime.indicator() as usize]
-                >> 3) as usize];
-        let sprf = TAGALONG_DMA_AND_FLAGS[frame];
         crate::cycle_ledger::charge(72 + if indicator == 13 { 6 } else { 32 + if indicator == 12 { 6 } else { 0 } }); // AB28-AB32.
-        if self.game_state.sprites.follower_runtime.indicator() != 12
-            && self.game_state.sprites.follower_runtime.indicator() != 13
-        {
-            crate::cycle_ledger::charge(1312); // AB34-AB91; 16-bit table reads include index cycle.
-            self.set_oam_follower_at(
+        let mut continuation = FollowerBodyDrawContinuation {
+            oam: oam as u16, scrollx, scrolly, frame: frame as u8, indicator, pal,
+            priority: (self.game_state.oam.priority_word() >> 8) as u8,
+            head_prefix_cycles: 0,
+        };
+        if let Some(SpriteMainCpuBoundary::FollowerHeadCoordinates { prefix, continuation: None }) =
+            self.sprite_main_cpu_boundary {
+            assert!(!matches!(indicator, 12 | 13), "head draw is skipped by this follower");
+            continuation.head_prefix_cycles = follower_body_head_prefix_cycles(0x09_ab62).unwrap() + 46;
+            crate::cycle_ledger::charge(u64::from(continuation.head_prefix_cycles));
+            crate::cycle_ledger::charge_routine(0x09_abf9, u64::from(prefix.cycles));
+            if prefix.x_written {
+                let sprd = TAGALONG_DRAW_SPR_XY[frame + (TAGALONG_DRAW_OFFS[usize::from(indicator)] >> 3) as usize];
+                let x = scrollx.wrapping_add(sprd.x1 as i16 as u16);
+                // ABFD stores a word: the next byte temporarily holds X high
+                // until the remaining helper publishes/clips Y.
+                self.oam_state_mut().set_entry_xy(oam, x as u8, (x >> 8) as u8);
+            }
+            self.sprite_main_cpu_boundary.take();
+            let slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+            let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+            self.schedule_sprite_main_cpu_continuation(SpriteMainCpuBoundary::FollowerHeadCoordinates {
+                prefix, continuation: Some(continuation),
+            }, slices, caller);
+            return;
+        }
+        if let Some(SpriteMainCpuBoundary::FollowerBodyDraw {
+            head_prefix_cycles, continuation: None,
+        }) = self.sprite_main_cpu_boundary {
+            assert!(!matches!(indicator, 12 | 13), "head selector is skipped by this follower");
+            continuation.head_prefix_cycles = head_prefix_cycles;
+            crate::cycle_ledger::charge(u64::from(head_prefix_cycles));
+            self.sprite_main_cpu_boundary.take();
+            let slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+            let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+            self.schedule_sprite_main_cpu_continuation(SpriteMainCpuBoundary::FollowerBodyDraw {
+                head_prefix_cycles, continuation: Some(continuation),
+            }, slices, caller);
+            return;
+        }
+        self.complete_follower_body_draw(continuation);
+    }
+
+    pub(super) fn complete_follower_body_draw(&mut self, work: FollowerBodyDrawContinuation) {
+        self.complete_follower_body_draw_after_coordinate_prefix(work, FollowerCoordinatePrefix::default());
+    }
+
+    pub(super) fn complete_follower_body_draw_after_coordinate_prefix(
+        &mut self, work: FollowerBodyDrawContinuation, prefix: FollowerCoordinatePrefix,
+    ) {
+        let FollowerBodyDrawContinuation {
+            oam, scrollx, scrolly, frame, indicator, pal, priority, head_prefix_cycles,
+        } = work;
+        let mut oam = usize::from(oam);
+        let frame = usize::from(frame);
+        let sprd = TAGALONG_DRAW_SPR_XY[frame + (TAGALONG_DRAW_OFFS[usize::from(indicator)] >> 3) as usize];
+        let sprf = TAGALONG_DMA_AND_FLAGS[frame];
+        if !matches!(indicator, 12 | 13) {
+            // AB34-AB91, less the register/scratch selector already retired.
+            crate::cycle_ledger::charge(1312 - u64::from(head_prefix_cycles));
+            self.set_oam_follower_after_coordinate_prefix(
                 oam,
                 scrollx.wrapping_add(sprd.x1 as i16 as u16),
                 scrolly.wrapping_add(sprd.y1 as i16 as u16),
                 0x20,
-                (sprf.flags & 0xf0) | (pal << 1) | (self.game_state.oam.priority_word() >> 8) as u8,
+                (sprf.flags & 0xf0) | (pal << 1) | priority,
                 2,
+                prefix,
             );
             oam += 4;
             self.set_sprite_dma_head_pointer(sprf.dma6);
@@ -1774,7 +1908,7 @@ impl ZeldaState {
             0x22,
             ((sprf.flags & 0x0f) << 4)
                 | (pal << 1)
-                | (self.game_state.oam.priority_word() >> 8) as u8,
+                | priority,
             2,
         );
         self.set_sprite_dma_body_pointer(sprf.dma7);
@@ -2067,6 +2201,119 @@ impl ZeldaState {
 mod drawing_cycle_tests {
     use super::*;
     use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+
+    #[test]
+    fn follower_head_selector_cursor_matches_each_rom_instruction() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc");
+        let rom = std::fs::read(path).expect("development ROM for follower cursor validation");
+        for indicator in [1, 3, 6] {
+            for frame in 0..16 {
+                let mut state = ZeldaState::new();
+                state.ram[0x04] = frame;
+                state.ram[0xf3cc] = indicator;
+                let checkpoint = RomCpuCheckpoint {
+                    entry_pc: 0x09_ab34, stop_pc: 0x09_ab62, a: 0, x: 0, y: 0,
+                    sp: 0x01fd, dp: 0, db: 9, carry: false, zero: false,
+                    overflow: false, negative: false, interrupt_disable: true,
+                    decimal: false, accumulator_is_8_bit: true, index_is_8_bit: true,
+                    emulation: false, waiting: false, stack_address: 0x01fe,
+                    stack_bytes: &[0xff, 0x7f],
+                };
+                let mut cpu = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                    &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+                let mut cycles = 0;
+                for _ in 0..32 {
+                    assert_eq!(follower_body_head_prefix_cycles(cpu.pc()), Some(cycles));
+                    if cpu.is_complete() { break; }
+                    cycles += cpu.step().master_cycles as u16;
+                }
+                assert!(cpu.is_complete());
+            }
+        }
+        assert_eq!(follower_body_head_prefix_cycles(0x09_ab56), None);
+        assert_eq!(follower_body_head_prefix_cycles(0x09_ab65), None);
+    }
+
+    #[test]
+    fn follower_body_suspends_sprite_main_prefix_and_resumes_native_locals() {
+        let mut boundaries = vec![SpriteMainCpuBoundary::FollowerBodyDraw {
+            head_prefix_cycles: follower_body_head_prefix_cycles(0x09_ab55).unwrap(),
+            continuation: None,
+        }, SpriteMainCpuBoundary::FollowerAnimationSelection { inputs: None }];
+        for pc in [0x09_abf9, 0x09_abfb, 0x09_abfd, 0x09_abff,
+            0x09_ac00, 0x09_ac01, 0x09_ac04, 0x09_ac07] {
+            boundaries.push(SpriteMainCpuBoundary::FollowerHeadCoordinates {
+                prefix: follower_coordinate_entry_prefix(pc).unwrap(), continuation: None,
+            });
+        }
+        for (layer, boundary) in [0, 0x40, 0x80].into_iter()
+            .flat_map(|layer| boundaries.iter().copied().map(move |boundary| (layer, boundary))) {
+            let mut staged = ZeldaState::new();
+            staged.set_main_module(7);
+            staged.set_submodule(2);
+            staged.set_indoor_flag(1);
+            staged.follower_state_mut().set_indicator(1);
+            staged.follower_state_mut().set_data_index(0);
+            staged.tagalong_slot_mut(0).set_position(40, 50);
+            staged.tagalong_slot_mut(0).set_layer_bits(layer);
+            staged.ram[0x47] = 5;
+            staged.sync_native_game_state_from_ram();
+            let mut eager = staged.clone();
+            let start = crate::cycle_ledger::master();
+            eager.sprite_main();
+            let eager_cycles = crate::cycle_ledger::master() - start;
+            staged.arm_sprite_main_cpu_continuation(boundary, 1, SpriteMainCpuCaller::DungeonModule07Live {
+                boundary: OriginalTimingBoundary::NmiAccepted,
+            });
+            let start = crate::cycle_ledger::master();
+            staged.sprite_main();
+            assert_eq!(staged.game_state.sprite_battle.damaging_enemies_timer(), 5,
+                "the Sprite_Main suffix after the follower is still pending");
+            assert_ne!(staged.game_state.oam, eager.game_state.oam,
+                "body OAM must remain uncommitted at the head selector");
+            let Some(GameWorkContinuation::FinishSpriteMain { boundary, .. }) =
+                staged.game_execution_scheduler.take_after_current_trailing_nmi() else {
+                panic!("follower draw must preserve its Sprite_Main caller");
+            };
+            if let SpriteMainCpuBoundary::FollowerHeadCoordinates {
+                prefix, continuation: Some(work),
+            } = boundary {
+                if prefix.x_written {
+                    let sprd = TAGALONG_DRAW_SPR_XY[usize::from(work.frame)
+                        + (TAGALONG_DRAW_OFFS[usize::from(work.indicator)] >> 3) as usize];
+                    let x = work.scrollx.wrapping_add(sprd.x1 as i16 as u16);
+                    assert_eq!(&staged.ram[usize::from(work.oam)..usize::from(work.oam) + 2],
+                        &x.to_le_bytes(), "the suspended head exposes X low and X high");
+                }
+            }
+            // Checkpoint serialization retains the native locals and appended
+            // enum variant without a separate unowned payload.
+            let encoded = bincode::serialize(&boundary).unwrap();
+            let boundary = bincode::deserialize(&encoded).unwrap();
+            staged.complete_sprite_main_after_cpu_boundary(boundary);
+            assert_eq!(crate::cycle_ledger::master() - start, eager_cycles);
+            assert_eq!(staged.ram, eager.ram);
+            assert_eq!(staged.game_state, eager.game_state);
+        }
+    }
+
+    #[test]
+    fn follower_return_does_not_stop_refining_an_existing_sprite_main_owner() {
+        let mut state = ZeldaState::new();
+        state.set_main_module(7);
+        state.set_submodule(2);
+        state.set_indoor_flag(1);
+        state.ram[0x47] = 5;
+        state.sync_native_game_state_from_ram();
+        state.schedule_sprite_main_cpu_continuation(SpriteMainCpuBoundary::BeforeFirstSlot,
+            1, SpriteMainCpuCaller::DungeonModule07Live {
+                boundary: OriginalTimingBoundary::NmiAccepted,
+            });
+        let owner = state.game_execution_scheduler.current_work();
+        state.advance_sprite_main_before_first_slot_to_after_slot(15);
+        assert_eq!(state.game_state.sprite_battle.damaging_enemies_timer(), 4);
+        assert_eq!(state.game_execution_scheduler.current_work(), owner);
+    }
 
     #[test]
     fn follower_drawing_cycle_charges_match_rom() {

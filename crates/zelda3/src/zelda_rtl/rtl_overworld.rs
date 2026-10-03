@@ -294,31 +294,24 @@ impl ZeldaState {
             .clear_loaded_mask(block, loaded_mask);
     }
 
-    pub(crate) fn clear_overworld_sprite_loaded_mask_wrapped(
+    pub(crate) fn store_overworld_sprite_loaded_byte_wrapped(
         &mut self,
-        block: u16,
-        loaded_mask: u8,
+        pointer: u16,
+        value: u8,
     ) {
-        // C computes the SNES address `addr = 0xEF80 + (blk >> 3)` in 16-bit
-        // (so it wraps mod 0x10000), THEN dereferences `&g_ram[addr + 0x10000]`.
-        // The bank add happens AFTER the 16-bit wrap, so a large `blk` whose
-        // 16-bit address wraps below 0xEF80 lands in 0x10000..=0x10F7F (the BG
-        // char buffer), not in low WRAM. Replicate that exact two-step math:
-        // mask the 16-bit address first, then add the 0x10000 bank.
-        let addr16 = 0xEF80u16.wrapping_add(block >> 3);
-        let address = 0x10000 + usize::from(addr16);
-        // A large `block` (e.g. a killed dungeon sprite whose load block is near
-        // 0xffff) wraps the 16-bit address below 0xEF80 and the raw `&=` spills out
-        // of the loaded table into 0x10000..=0x10F7F (the BG char buffer bank). No
-        // native state models that window, so the raw write needs no model adopt;
-        // only in-table addresses update the native loaded-mask mirror.
-        self.ram[address] &= !loaded_mask;
+        // KillSelf computes EF80 + (block >> 3) in 16 bits before adding
+        // bank 7F. A wrapped pointer reaches the BG character buffer; only
+        // in-table addresses also update the typed loaded-mask mirror.
+        // `value` was sampled and masked by the retained native call, so a
+        // resumed store must not read/modify the destination a second time.
+        let address = 0x10000 + usize::from(pointer);
+        self.ram[address] = value;
         if let Some(index) = address.checked_sub(OVERWORLD_SPRITE_WAS_LOADED) {
             if index < crate::game_state::OVERWORLD_SPRITE_FLAG_COUNT {
                 self.game_state
                     .sprites
                     .overworld_sprite_loaded
-                    .clear_loaded_mask(block, loaded_mask);
+                    .set_byte(index, value);
             }
         }
     }

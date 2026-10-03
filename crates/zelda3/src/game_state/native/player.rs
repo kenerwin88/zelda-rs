@@ -240,6 +240,11 @@ impl FollowerLinkState {
         self.actions.spin_attack_delay_timer = (value >> 8) as u8;
     }
 
+    /// The room's word-sized Somaria counter reaches the timer's low byte.
+    pub(crate) fn write_temp_bunny_timer_low(&mut self, value: u8) {
+        self.actions.temp_bunny_timer = (self.actions.temp_bunny_timer & 0xff00) | u16::from(value);
+    }
+
     fn decrement_button_b_frames_word(&mut self) -> u16 {
         let value = self.button_b_frames_word().wrapping_sub(1);
         self.set_button_b_frames_word(value);

@@ -2,6 +2,310 @@
 //! Split mechanically from the hub file; bodies unchanged.
 
 use super::*;
+
+#[test]
+fn random_routine_work_matches_source_instructions_without_pricing_its_caller() {
+    let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc"));
+    let Ok(mut rom) = std::fs::read(path) else { return };
+    if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+    for (seed, frame, carry) in [(0, 0, false), (0xff, 0xff, true), (0xc3, 0xdd, true)] {
+        let mut state = ZeldaState::new();
+        state.set_rng_seed(seed);
+        state.set_frame_counter(frame);
+        let checkpoint = RomCpuCheckpoint {
+            entry_pc: 0x0d_ba71,
+            stop_pc: 0x00_8000,
+            sp: 0x01fc,
+            stack_address: 0x01fd,
+            stack_bytes: &[0xff, 0x7f, 0],
+            carry,
+            waiting: false,
+            ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+        };
+        let mut run = RomCpuTimingRun::new(&rom, &state.ram, &[0; 0x2000],
+            &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+        let mut source_cycles = 0;
+        for (pc, cycles) in [(0x0d_ba71, 30), (0x0d_ba74, 30), (0x0d_ba77, 24),
+            (0x0d_ba79, 32), (0x0d_ba7c, 32), (0x0d_ba7f, 44)] {
+            assert_eq!(run.pc(), pc);
+            let step = run.step();
+            assert_eq!(step.master_cycles, cycles);
+            source_cycles += u64::from(step.master_cycles);
+        }
+        assert_eq!(run.pc(), checkpoint.stop_pc);
+        let before = crate::cycle_ledger::master();
+        state.get_random_number_with_carry();
+        assert_eq!(crate::cycle_ledger::master() - before, source_cycles);
+    }
+}
+
+#[test]
+fn paired_resume_rejects_live_poly_worker_even_with_idle_main_caller() {
+    let mut state = ZeldaState::new();
+    assert!(state.paired_resume_cpu_boundary_is_quiescent());
+    state.game_state.display.nmi_thread_active = true;
+    assert!(!state.paired_resume_cpu_boundary_is_quiescent());
+    state.game_state.display.nmi_thread_active = false;
+    state.poly_job_in_flight = true;
+    assert!(!state.paired_resume_cpu_boundary_is_quiescent());
+    state.poly_job_in_flight = false;
+    state.poly_job_hold_frames = 1;
+    assert!(!state.paired_resume_cpu_boundary_is_quiescent());
+    state.poly_job_hold_frames = 0;
+    assert!(state.paired_resume_cpu_boundary_is_quiescent());
+}
+
+#[test]
+fn native_intro_initialization_retires_its_suspended_main_caller_once() {
+    use crate::cycle_models::main_wait::MainLoopCallerPhase;
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.set_main_module(0);
+    state.set_submodule(1);
+    state.main_loop_caller_phase = MainLoopCallerPhase::ModuleRouting;
+    state.intro_initialization_work_frames_pending = 2;
+    state.latch_nmi_update();
+    assert!(state.lane_intro_initialization_work_frames(0, None));
+    assert_eq!(state.main_loop_caller_phase, MainLoopCallerPhase::ModuleRouting);
+    assert!(state.last_nmi_prepare_sprites_master_cycles.is_none());
+    assert!(state.lane_intro_initialization_work_frames(0, None));
+    assert_eq!(state.main_loop_caller_phase, MainLoopCallerPhase::Waiting);
+    assert!(state.last_nmi_prepare_sprites_master_cycles.is_some());
+    let retired = crate::cycle_ledger::master();
+    assert!(!state.lane_intro_initialization_work_frames(0, None));
+    assert_eq!(crate::cycle_ledger::master(), retired);
+}
+
+#[test]
+fn native_intro_module_keeps_its_main_suffix_until_the_continuation_returns() {
+    use crate::cycle_models::main_wait::MainLoopCallerPhase;
+    for step in 0..11 {
+        let mut state = ZeldaState::new();
+        state.set_rom_startup_timing(true);
+        state.set_main_module(0);
+        state.set_submodule(1);
+        state.set_subsubmodule(step);
+        state.ending_scratch_mut().set_primary_word(0x1ffe);
+        state.ending_scratch_mut().set_secondary_word(0x1bfe);
+        state.latch_nmi_update();
+        state.zelda_run_game_loop();
+        assert!(state.intro_initialization_work_frames_pending != 0);
+        assert_eq!(state.main_loop_caller_phase, MainLoopCallerPhase::ModuleRouting);
+        assert!(state.game_state.display.nmi_update_is_latched());
+        assert!(!state.main_loop_sprite_preparation_completed);
+        assert_eq!(state.pending_main_loop_common_suffix,
+            Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch));
+        let frame = state.game_state.frame;
+        while state.intro_initialization_work_frames_pending != 0 {
+            assert!(state.lane_intro_initialization_work_frames(0, None));
+        }
+        assert_eq!(state.game_state.frame, frame);
+        assert_eq!(state.main_loop_caller_phase, MainLoopCallerPhase::Waiting);
+        assert!(!state.game_state.display.nmi_update_is_latched());
+        assert!(state.main_loop_sprite_preparation_completed);
+        assert!(state.pending_main_loop_common_suffix.is_none());
+        let retired = crate::cycle_ledger::master();
+        assert!(!state.lane_intro_initialization_work_frames(0, None));
+        assert_eq!(crate::cycle_ledger::master(), retired);
+    }
+}
+
+#[test]
+fn main_caller_phase_preserves_raw_latch_writes_and_rejects_active_checkpoints() {
+    use crate::cycle_models::main_wait::MainLoopCallerPhase;
+    let mut state = ZeldaState::new();
+    assert!(state.paired_resume_cpu_boundary_is_quiescent());
+    state.main_loop_caller_phase = MainLoopCallerPhase::ModuleRouting;
+    assert!(!state.paired_resume_cpu_boundary_is_quiescent());
+    let before = crate::cycle_ledger::master();
+    state.clear_nmi_update_latch();
+    assert_eq!(state.main_loop_caller_phase, MainLoopCallerPhase::ModuleRouting);
+    assert_eq!(crate::cycle_ledger::master() - before, 0);
+    // The atomic dungeon publication opens its gate while the outer native
+    // module still owns the caller. Sprite preparation follows its return.
+    state.dungeon_state_13_atomic_caller_return_publication_host_frame =
+        Some(state.frame_ctr_dbg);
+    state.complete_module07_dungeon_after_submodule_caller();
+    assert_eq!(state.main_loop_caller_phase, MainLoopCallerPhase::ModuleRouting);
+    state.enter_main_loop_sprite_preparation();
+    assert!(!state.paired_resume_cpu_boundary_is_quiescent());
+    state.enter_main_loop_sprite_preparation();
+    assert_eq!(crate::cycle_ledger::master() - before, 46);
+    state.finish_main_loop_caller_return();
+    assert_eq!(crate::cycle_ledger::master() - before, 92);
+    assert!(state.paired_resume_cpu_boundary_is_quiescent());
+}
+
+#[test]
+fn native_main_wait_preserves_rom_nmi_phase_across_raster_boundaries() {
+    let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc"));
+    let Ok(mut rom) = std::fs::read(path) else { return };
+    if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+    let mut state = ZeldaState::new();
+    state.set_hdma_enable_mask(0x80);
+    let channel = &mut state.dma.channel[7];
+    channel.a_bank = 0x7e;
+    channel.a_adr = 0x2000;
+    channel.mode = 1;
+    channel.indirect = true;
+    state.ram[0x2000..0x2007].copy_from_slice(&[0xff, 0, 0x30, 0xff, 0, 0x31, 0]);
+    let dma = state.dma_with_native_hdma_enable();
+    let checkpoint = RomCpuCheckpoint {
+        entry_pc: 0x00_8034, stop_pc: 0x00_805d, waiting: false,
+        ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+    };
+    // Every even phase before the NMI line, plus field-wrap and refresh
+    // boundaries. Both field parities and fixed/dynamic HDMA must preserve
+    // the interrupted instruction, flags, and complete timeline exactly.
+    let entries = (0..1364).step_by(2).map(|h| CpuRasterPosition::new(224, h))
+        .chain([(0, 0), (0, 532), (225, 100), (261, 0), (261, 1360)]
+            .map(|(v, h)| CpuRasterPosition::new(v, h)));
+    for entry in entries {
+        for even in [false, true] {
+            for bus in [CpuBusWorkload::default(), CpuBusWorkload::with_hdma_stall(42),
+                CpuBusWorkload::with_dynamic_hdma()] {
+                let make_run = || RomCpuTimingRun::new(&rom, &state.ram, &[0; 0x2000],
+                    &snes::PpuState::default(), &dma, [0; 4], checkpoint).unwrap();
+                let mut expected = make_run();
+                let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
+                    entry, bus, CpuFieldTiming::non_interlace(even));
+                let native = overworld_cpu_suffix_main_wait_phase(make_run(), budget.clone(), 1);
+                loop {
+                    let (v, h) = budget.raster_position().coordinates();
+                    expected.set_raster_position(v, h);
+                    if advance_rom_cpu_step(&mut expected, &mut budget).reached_boundary().is_some() {
+                        break;
+                    }
+                }
+                assert_eq!(native.checkpoint, expected.main_wait_checkpoint(0x00_805d),
+                    "entry={entry:?} even={even}");
+                assert_eq!(native.budget, budget, "entry={entry:?} even={even}");
+            }
+        }
+    }
+}
+
+#[test]
+fn vwf_caller_return_respects_which_nmi_handler_is_still_owned() {
+    use rtl_native_exact_cpu::{
+        NativeExactCpuHostTrace, NativeExactCpuMainWaitReturn, NativeExactCpuNmiCompletion,
+        NativeExactCpuNmiUpdateDecision,
+    };
+    for carried_handler in [false, true] {
+        let mut state = ZeldaState::new();
+        state.set_rom_startup_timing(true);
+        state.set_main_module(14);
+        state.set_submodule(2);
+        state.set_frame_counter(87);
+        state.set_animated_tile_data_source_address(1);
+        state.latch_nmi_update();
+        state.set_core_update_disable_flag(2);
+        state.set_pending_nmi_subroutine(2);
+        state.dialogue_fast_forward_hold_active = true;
+        state.schedule_pre_main_caller_continuation(PreMainCallerContinuation::DialogueVwfReturn);
+        if carried_handler {
+            state.native_exact_cpu_host_trace = Some(NativeExactCpuHostTrace {
+                nmi_completions: vec![NativeExactCpuNmiCompletion {
+                    accepted_at: 100,
+                    returned_at: 200,
+                }],
+                nmi_update_decisions: vec![NativeExactCpuNmiUpdateDecision {
+                    accepted_at: 100,
+                    decided_at: 150,
+                    latch: 1,
+                    runs_updates: false,
+                }],
+                main_wait_returns: vec![NativeExactCpuMainWaitReturn { at: 300 }],
+                ..Default::default()
+            });
+        }
+
+        assert!(state.resume_pre_main_caller_continuation(0, None));
+
+        assert_eq!(
+            state.game_state.display.core_update_disable_flag,
+            if carried_handler { 2 } else { 0 }
+        );
+        assert_eq!(
+            state.game_state.display.pending_nmi_subroutine,
+            if carried_handler { 2 } else { 0 }
+        );
+        assert_eq!(
+            state.game_state.display.nmi_update_is_latched(),
+            !carried_handler
+        );
+        assert_eq!(state.game_state.frame.frame_counter, 87);
+        assert!(state.main_loop_sprite_preparation_completed);
+        assert_eq!(
+            state
+                .game_execution_scheduler
+                .returned_main_is_waiting_for_nmi(),
+            carried_handler
+        );
+        assert!(!state.dialogue_fast_forward_hold_active);
+        assert!(!state.resume_pre_main_caller_continuation(0, None));
+
+        // Only the following Open handler may consume the completed VWF upload.
+        if carried_handler {
+            state.interrupt_nmi(0, None, false);
+        }
+        assert_eq!(state.game_state.display.core_update_disable_flag, 0);
+        assert_eq!(state.game_state.display.pending_nmi_subroutine, 0);
+    }
+}
+
+#[test]
+fn partial_scroll_clear_preserves_the_roms_descending_store_boundary() {
+    let mut state = ZeldaState::new();
+    for offset in (0..0xa00).step_by(2) {
+        state.set_messaging_render_buffer_word_at_byte_offset(offset, 0x5a5a);
+    }
+    let mut atomic = state.clone();
+    assert!(!atomic.render_text_scroll_pixels(5));
+    state.native_scroll_copy_cursor = Some(messaging::NativeScrollCopyCursor {
+        elapsed_master_cycles: 0, b_held: true, scroll_speed: 4, starting_line_counter: 0,
+    });
+    assert!(!state.advance_native_scroll_copy_to_source_progress(
+        rtl_native_exact_cpu::NativeExactCpuScrollCopyProgress {
+            completed_passes: 2, stores_in_pass: 126 * 8 + 5,
+        },
+    ));
+    for offset in [0x7de, 0x7ce, 0x7be, 0x7ae, 0x79e] {
+        assert_eq!(state.game_state.messaging.render_buffer.word_at_byte_offset(offset), 0,
+            "completed source clear at ${offset:04x}");
+    }
+    for offset in [0x78e, 0x77e, 0x69e] {
+        assert_eq!(state.game_state.messaging.render_buffer.word_at_byte_offset(offset), 0x5a5a,
+            "pending source clear at ${offset:04x}");
+    }
+    assert!(!state.finish_native_scroll_copy());
+    assert!(state.native_scroll_copy_cursor.is_none());
+    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(state.game_state, atomic.game_state);
+}
+
+#[test]
+fn paired_checkpoint_waits_for_closing_spotlight_raster_and_animated_graphics() {
+    let mut state = ZeldaState::new();
+    assert!(state.paired_resume_cpu_boundary_is_quiescent());
+    let position = CpuRasterPosition::new(100, 300);
+    state.dungeon_exit_spotlight_cpu_entry_envelope = Some((position, position));
+    assert!(!state.paired_resume_cpu_boundary_is_quiescent());
+    state.dungeon_exit_spotlight_cpu_entry_envelope = None;
+    assert!(state.paired_resume_cpu_boundary_is_quiescent());
+    state.native_pre_dungeon_animated_graphics = Some(load_gfx::AnimatedDungeonGraphicsContinuation::default());
+    assert!(!state.paired_resume_cpu_boundary_is_quiescent());
+    state.native_pre_dungeon_animated_graphics = None;
+    assert!(state.paired_resume_cpu_boundary_is_quiescent());
+    state.native_pre_dungeon_palette_cache = Some(61);
+    assert!(!state.paired_resume_cpu_boundary_is_quiescent());
+    state.native_pre_dungeon_palette_cache = None;
+    assert!(state.paired_resume_cpu_boundary_is_quiescent());
+}
 use crate::tile_definition::NativeTile;
 
 #[test]
@@ -3116,6 +3420,15 @@ fn paired_resume_rejects_every_runtime_only_cpu_schedule() {
     let mut state = ZeldaState::new();
     assert!(state.paired_resume_cpu_boundary_is_quiescent());
 
+    state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
+        phase: ModuleCpuPhase::InterruptedInLinkOam, resumed_phase: None,
+        submodule_nmi_slices: 0, subsubmodule: 4, palette_countdown: 0,
+        sprite_main_boundary: None, cached_sprite_interruption: None,
+    });
+    assert!(state.game_execution_scheduler.is_idle());
+    assert!(!state.paired_resume_cpu_boundary_is_quiescent());
+    state.dungeon_landing_cpu_advance_pending = None;
+
     state.dungeon_room_load_cpu_schedule = Some(DungeonRoomLoadCpuSchedule::default());
     assert!(!state.paired_resume_cpu_boundary_is_quiescent());
     state.dungeon_room_load_cpu_schedule = None;
@@ -3141,6 +3454,71 @@ fn paired_resume_rejects_every_runtime_only_cpu_schedule() {
     state.pending_main_loop_common_suffix = None;
 
     assert!(state.paired_resume_cpu_boundary_is_quiescent());
+}
+
+#[test]
+fn paired_checkpoint_rejects_unserialized_vwf_instruction_operands() {
+    let mut state = ZeldaState::new();
+    state.dialogue_vwf_drawing = Some(crate::cycle_models::vwf_drawing::Drawing::new(0, 1, 0, [0; 16]));
+    assert!(state.game_execution_scheduler.is_idle());
+    let restored: ZeldaState = bincode::deserialize(&bincode::serialize(&state).unwrap()).unwrap();
+    assert!(restored.dialogue_vwf_drawing.is_none());
+    assert_eq!(state.paired_resume_cpu_boundary_blocker(), Some("retained-vwf-drawing-instruction"));
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    assert_eq!(state.capture_original_timing_resume_checkpoint().unwrap_err(),
+        OriginalTimingResumeCheckpointError::ActiveTranslatedContinuation);
+    state.dialogue_vwf_drawing = None;
+    assert!(state.paired_resume_cpu_boundary_is_quiescent());
+}
+
+#[test]
+fn paired_checkpoint_rejects_the_idle_callers_unserialized_wait_phase() {
+    let mut state = ZeldaState::new();
+    state.native_main_wait_cpu_phase = Some(NativeMainWaitCpuPhase {
+        host: 1,
+        checkpoint: DUNGEON_MAIN_WAIT_CPU_CHECKPOINT,
+        budget: CpuCycleBudget::at_nmi_acceptance(
+            CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false)),
+    });
+    assert!(state.game_execution_scheduler.is_idle());
+    assert_eq!(state.main_loop_caller_phase,
+        crate::cycle_models::main_wait::MainLoopCallerPhase::Waiting);
+    // Reproduce the information loss that makes this otherwise-idle state
+    // unsafe. A sidecar-free playable save may omit it; a paired proof may not.
+    let restored: ZeldaState = bincode::deserialize(&bincode::serialize(&state).unwrap()).unwrap();
+    assert!(restored.native_main_wait_cpu_phase.is_none());
+    assert_eq!(state.paired_resume_cpu_boundary_blocker(),
+        Some("retained-main-wait-cpu-phase"));
+    assert!(!state.paired_resume_cpu_boundary_is_quiescent());
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    assert_eq!(state.capture_original_timing_resume_checkpoint().unwrap_err(),
+        OriginalTimingResumeCheckpointError::ActiveTranslatedContinuation);
+    state.native_main_wait_cpu_phase = None;
+    assert!(state.paired_resume_cpu_boundary_is_quiescent());
+}
+
+#[test]
+fn paired_checkpoint_rejects_staged_scroll_for_both_timing_owners() {
+    for after_return in [false, true] {
+        let mut state = ZeldaState::new();
+        state.original_timing_owner = OriginalTimingOwnerState::Live;
+        let text = state.dialogue_text_scanout_from_render_buffer();
+        if after_return {
+            state.dialogue_scroll_machine_mut().stage_completion_after_return(text);
+        } else {
+            let mut scroll = state.dialogue_scroll_machine_mut();
+            scroll.begin_scroll(text.clone(), DialogueScrollCompletionTiming::BeforeNextVblank);
+            scroll.finish_remaining_pixels(None);
+            scroll.stage_early_completion(text);
+        }
+        assert!(state.game_execution_scheduler.is_idle());
+        assert_eq!(state.paired_resume_cpu_boundary_blocker(),
+            Some("staged-dialogue-scroll-publication"));
+        assert_eq!(state.capture_original_timing_resume_checkpoint().unwrap_err(),
+            OriginalTimingResumeCheckpointError::ActiveTranslatedContinuation);
+        state.dialogue_scroll_machine_mut().complete_staged_text_dma();
+        assert!(state.paired_resume_cpu_boundary_is_quiescent());
+    }
 }
 
 #[test]
@@ -3860,6 +4238,160 @@ fn cached_antfairy_body_checkpoint_publishes_then_resumes_without_reincrementing
 
     resumed.complete_cached_sprite_main_after_interrupted_slot(boundary, &live_slot_backup);
 
+    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(resumed.game_state.sprites, atomic.game_state.sprites);
+}
+
+#[test]
+fn cached_coordinates_precede_allocation_and_retain_the_displaced_slot() {
+    let mut base = ZeldaState::new();
+    base.set_main_module(7);
+    base.set_indoor_flag(1);
+    base.set_submodule(2);
+    base.oam_reset_region_bases();
+    {
+        let mut sprite = base.sprite_slot_view_mut(0);
+        sprite.set_state(9);
+        sprite.set_sprite_type(0x42);
+        sprite.set_flags2(8);
+        sprite.set_x(0x40);
+        sprite.set_y(0x50);
+        sprite.set_delay_main(9);
+    }
+    base.dungeon_cache_trans_sprites();
+    base.sprite_slot_view_mut(0).set_sprite_type(0x4b);
+    base.sprite_slot_view_mut(0).set_x(0x1234);
+    let mut atomic = base.clone();
+    atomic.execute_cached_sprites();
+    let mut resumed = base.clone();
+    resumed.dungeon_cached_sprite_cpu_interruption_pending = Some(
+        CachedSpriteCpuInterruption::ExecutingAfterCoordinates { slot: 0, state: None });
+    resumed.dungeon_cached_sprite_cpu_interruption_boundary = Some(OriginalTimingBoundary::NmiAccepted);
+    resumed.active_dungeon_sprite_main_return = Some(DungeonSpriteMainReturn {
+        link_oam: None, bg2_x: 0, bg2_y: 0, bg1_x: 0, bg1_y: 0,
+    });
+    resumed.execute_cached_sprites();
+    assert_eq!(resumed.game_state.sprites.workspace.current_sprite_x(), 0x40);
+    assert_eq!(resumed.game_state.sprites.workspace.current_sprite_y(), 0x50);
+    assert_eq!(resumed.sprite_slot_view(0).sprite_type(), 0x42);
+    assert_eq!(resumed.sprite_slot_view(0).delay_main(), 9);
+    assert_eq!(resumed.game_state.oam, base.game_state.oam,
+        "coordinate return must not allocate or draw OAM");
+    let Some(GameWorkContinuation::FinishDungeonCachedSpriteMain {
+        boundary, live_slot_backup, ..
+    }) = resumed.game_execution_scheduler.current_work() else {
+        panic!("coordinate return lost the cached sprite caller");
+    };
+    resumed.complete_cached_sprite_main_after_interrupted_slot(boundary, &live_slot_backup);
+    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(resumed.game_state.sprites, atomic.game_state.sprites);
+}
+
+#[test]
+fn cached_restore_keeps_unrestored_live_fields_and_the_completed_body() {
+    let mut base = ZeldaState::new();
+    base.set_main_module(7);
+    base.set_indoor_flag(1);
+    base.set_submodule(2);
+    base.oam_reset_region_bases();
+    let slot = 2;
+    {
+        let mut sprite = base.sprite_slot_view_mut(slot);
+        sprite.set_state(9);
+        sprite.set_sprite_type(0x42);
+        sprite.set_flags2(8);
+        sprite.set_x(0x40);
+        sprite.set_y(0x50);
+    }
+    base.dungeon_cache_trans_sprites();
+    for (i, address) in CACHED_SPRITE_LIVE_FIELDS.iter().enumerate() {
+        base.ram[address + slot] = 0xa0 + i as u8;
+    }
+    base.sync_native_game_state_from_ram();
+    let mut atomic = base.clone();
+    atomic.execute_cached_sprites();
+    let mut resumed = base.clone();
+    resumed.dungeon_cached_sprite_cpu_interruption_pending = Some(
+        CachedSpriteCpuInterruption::Restoring { slot: slot as u8, live_fields: 18 });
+    resumed.dungeon_cached_sprite_cpu_interruption_boundary = Some(OriginalTimingBoundary::NmiAccepted);
+    resumed.active_dungeon_sprite_main_return = Some(DungeonSpriteMainReturn {
+        link_oam: None, bg2_x: 0, bg2_y: 0, bg1_x: 0, bg1_y: 0,
+    });
+    resumed.execute_cached_sprites();
+    assert_eq!(resumed.sprite_slot_view(slot).sprite_type(), 0x42);
+    assert_eq!(resumed.game_state.oam, atomic.game_state.oam,
+        "the cached body and allocation have already completed");
+    for address in &CACHED_SPRITE_LIVE_FIELDS[18..] {
+        assert_eq!(resumed.ram[address + slot], base.ram[address + slot]);
+    }
+    let Some(GameWorkContinuation::FinishDungeonCachedSpriteMain {
+        boundary, live_slot_backup, ..
+    }) = resumed.game_execution_scheduler.current_work() else {
+        panic!("reverse restore must retain its native live-slot backup");
+    };
+    resumed.complete_cached_sprite_main_after_interrupted_slot(boundary, &live_slot_backup);
+    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(resumed.game_state.sprites, atomic.game_state.sprites);
+}
+
+#[test]
+fn cached_guard_retains_the_swap_and_pose_until_shadow_and_restore_return() {
+    let mut base = ZeldaState::new();
+    base.set_main_module(7);
+    base.set_indoor_flag(1);
+    base.set_submodule(2);
+    base.set_bg2_h_copy2(0x0400);
+    base.set_bg2_v_copy2(0x0500);
+    base.ram[OAM_BUF..OAM_BUF + 512].fill(0xcc);
+    base.sync_native_game_state_from_ram();
+    base.oam_reset_region_bases();
+    {
+        let mut slot = base.sprite_slot_view_mut(2);
+        slot.set_state(9);
+        slot.set_sprite_type(0x42);
+        slot.set_flags2(8);
+        slot.set_flags3(0x10);
+        slot.set_graphics(11);
+        slot.set_direction(0);
+        slot.set_delay_aux1(1);
+        slot.set_x(0x0440);
+        slot.set_y(0x0550);
+    }
+    base.dungeon_cache_trans_sprites();
+    {
+        let mut slot = base.sprite_slot_view_mut(2);
+        slot.set_sprite_type(0x4b);
+        slot.set_flags2(2);
+        slot.set_graphics(1);
+        slot.set_x(0x0380);
+        slot.set_y(0x0460);
+    }
+    let mut atomic = base.clone();
+    atomic.execute_cached_sprites();
+    let mut resumed = base;
+    resumed.dungeon_cached_sprite_cpu_interruption_pending = Some(
+        CachedSpriteCpuInterruption::ExecutingGuardBeforeShadow {
+            slot: 2, continuation: None,
+        });
+    resumed.dungeon_cached_sprite_cpu_interruption_boundary = Some(OriginalTimingBoundary::NmiAccepted);
+    resumed.active_dungeon_sprite_main_return = Some(DungeonSpriteMainReturn {
+        link_oam: None, bg2_x: 0, bg2_y: 0, bg1_x: 0, bg1_y: 0,
+    });
+    resumed.execute_cached_sprites();
+    assert_eq!(resumed.sprite_slot_view(2).sprite_type(), 0x42);
+    assert_eq!(resumed.sprite_slot_view(2).flags2(), 8);
+    assert_eq!(resumed.sprite_slot_view(2).graphics(), 8);
+    let shadow = resumed.game_state.oam.current_pointer_usize() + 8 * 4;
+    assert_eq!(resumed.ram[shadow + 2], 0xcc, "shadow must remain unpublished");
+    assert_eq!(atomic.ram[shadow + 2], 0x6c);
+    let Some(GameWorkContinuation::FinishDungeonCachedSpriteMain {
+        boundary, live_slot_backup, ..
+    }) = resumed.game_execution_scheduler.current_work() else {
+        panic!("cached guard must retain its native live-slot backup");
+    };
+    resumed.complete_cached_sprite_main_after_interrupted_slot(boundary, &live_slot_backup);
+    assert_eq!(resumed.sprite_slot_view(2).sprite_type(), 0x4b);
+    assert_eq!(resumed.sprite_slot_view(2).flags2(), 2);
     assert_eq!(resumed.ram, atomic.ram);
     assert_eq!(resumed.game_state.sprites, atomic.game_state.sprites);
 }

@@ -129,6 +129,7 @@ pub(crate) struct NativeWindowOracleRenderer {
 /// flight. Cold live-Snes9x comparison continues to use immediate readback.
 pub(crate) struct QueuedGpuVideoDigest {
     ticket: renderer::ModernGpuReadbackTicket,
+    debug_capture_path: Option<PathBuf>,
 }
 
 /// Live Snes9x comparisons present each compared frame to the native window
@@ -820,6 +821,64 @@ impl NativeWindowOracleRenderer {
         }
         let timing_enabled = std::env::var_os("ZELDA3_SNES9X_TIMING").is_some();
         let render_started = Instant::now();
+        let debug_capture_path = std::env::var_os("ZELDA3_CACHED_AV_CAPTURE_DIR")
+            .zip(capture.comparison_frame)
+            .filter(|(_, frame)| {
+                std::env::var("ZELDA3_CACHED_AV_CAPTURE_FRAMES")
+                    .is_ok_and(|frames| frames.split(',').any(|value| value.parse() == Ok(*frame)))
+            })
+            .map(|(dir, frame)| {
+                let dir = PathBuf::from(dir);
+                fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+                let gpu = capture.gpu_frame();
+                if let Some((x, y)) = std::env::var("ZELDA3_CACHED_AV_CAPTURE_PIXEL").ok()
+                    .and_then(|pixel| pixel.split_once(',').and_then(|(x, y)| Some((x.parse().ok()?, y.parse().ok()?)))) {
+                    for line in trace_modern_asset_capture_pixel(&capture, self.resources.source_atlas(), self.resources.variant_atlas(), x, y)? {
+                        eprintln!("cached_capture frame={frame} {line}");
+                    }
+                    if let Some(atlas) = self.resources.source_atlas() {
+                        let source_table = renderer::source_table_from_entries(capture.source_entries());
+                        let software = renderer::modern_extract::render_modern_frame_full_scaled_from_sources(
+                            &gpu, &source_table, atlas,
+                            &renderer::modern_hd_overrides::HdOverrideCtx::disabled(), 1,
+                        );
+                        let fresh_gpu = renderer::ModernGpuHeadless::new()
+                            .render_rgba_from_sources(&gpu, &source_table, atlas);
+                        let raw = renderer::modern_extract::render_modern_frame_full_from_vram(&gpu);
+                        let offset = (y as usize * 256 + x as usize) * 4;
+                        eprintln!("cached_capture frame={frame} software_pixel={:?} fresh_gpu_pixel={:?} raw_pixel={:?}",
+                            &software[offset..offset + 4], &fresh_gpu[offset..offset + 4], &raw[offset..offset + 4]);
+                    }
+                }
+                let ppu = serde_json::json!({
+                    "frame": frame,
+                    "vram": gpu.vram,
+                    "bg_vram": gpu.bg_vram,
+                    "obj_vram": gpu.obj_vram,
+                    "cgram": gpu.cgram,
+                    "oam": gpu.oam,
+                    "mode": gpu.mode,
+                    "bg": gpu.bg.map(|bg| serde_json::json!({"h_scroll":bg.h_scroll,"v_scroll":bg.v_scroll,"tilemap_wider":bg.tilemap_wider,"tilemap_higher":bg.tilemap_higher,"tilemap_adr":bg.tilemap_adr,"tile_adr":bg.tile_adr})),
+                    "screen_enabled": gpu.screen_enabled,
+                    "brightness": gpu.brightness,
+                    "math_enabled": gpu.math_enabled,
+                    "subtract_color": gpu.subtract_color,
+                    "half_color": gpu.half_color,
+                    "add_subscreen": gpu.add_subscreen,
+                    "fixed_color": [gpu.fixed_color_r, gpu.fixed_color_g, gpu.fixed_color_b],
+                    "clip_mode": gpu.clip_mode,
+                    "prevent_math_mode": gpu.prevent_math_mode,
+                    "windowsel": gpu.windowsel,
+                    "screen_windowed": gpu.screen_windowed,
+                    "raw_scanlines": capture.raw_scanlines.as_slice(),
+                    "source_entries": format!("{:?}", capture.source_entries),
+                    "palette_provenance": format!("{:?}", capture.cgram_provenance),
+                });
+                fs::write(dir.join(format!("ppu-{frame}.json")), ppu.to_string())
+                    .map_err(|error| error.to_string())?;
+                Ok::<_, String>(dir.join(format!("frame-{frame}.png")))
+            })
+            .transpose()?;
         let report = self
             .frontend
             .render_modern_asset_live_frame_offscreen_from_entries(
@@ -839,7 +898,7 @@ impl NativeWindowOracleRenderer {
         if timing_enabled {
             self.readback_submit_nanos += submit_started.elapsed().as_nanos();
         }
-        Ok(QueuedGpuVideoDigest { ticket })
+        Ok(QueuedGpuVideoDigest { ticket, debug_capture_path })
     }
 
     /// Account capture time spent on another thread in this renderer's timing.
@@ -853,7 +912,7 @@ impl NativeWindowOracleRenderer {
     ) -> Result<parity::av::VideoDigest, String> {
         let timing_enabled = std::env::var_os("ZELDA3_SNES9X_TIMING").is_some();
         let readback_started = Instant::now();
-        let (digest, video_hash_nanos) =
+        let (digest, video_hash_nanos, debug_rgba) =
             self.frontend
                 .finish_modern_gpu_target_readback(queued.ticket, |readback| {
                     let hash_started = Instant::now();
@@ -866,8 +925,15 @@ impl NativeWindowOracleRenderer {
                             sha256: digest.finish(),
                         },
                         hash_started.elapsed().as_nanos(),
+                        queued.debug_capture_path.as_ref().map(|_| {
+                            readback.rows().flat_map(|row| row.iter().copied()).collect::<Vec<_>>()
+                        }),
                     )
                 })?;
+        if let Some((path, rgba)) = queued.debug_capture_path.zip(debug_rgba) {
+            crate::image_output::write_rgba_frame_png(&path, &rgba, digest.width, digest.height)
+                .map_err(|error| error.to_string())?;
+        }
         if timing_enabled {
             let finish_nanos = readback_started.elapsed().as_nanos();
             self.video_hash_nanos += video_hash_nanos;

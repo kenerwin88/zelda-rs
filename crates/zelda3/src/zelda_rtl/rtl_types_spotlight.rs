@@ -234,9 +234,10 @@ impl SpotlightTableBuildContinuation {
             crate::SpotlightTableBuildCheckpoint::BeforeCircleCalculation { .. } => 1,
             crate::SpotlightTableBuildCheckpoint::AfterUpperTableWrite { .. } => 2,
             crate::SpotlightTableBuildCheckpoint::BeforeLowerTableWrite { .. } => 3,
-            crate::SpotlightTableBuildCheckpoint::BeforeLoopCompletionTest { .. } => 4,
-            crate::SpotlightTableBuildCheckpoint::BeforeLowerCursorDecrement { .. } => 5,
-            crate::SpotlightTableBuildCheckpoint::ProjectionCopy { .. } => 6,
+            crate::SpotlightTableBuildCheckpoint::BeforeLowerTableStore { .. } => 4,
+            crate::SpotlightTableBuildCheckpoint::BeforeLoopCompletionTest { .. } => 5,
+            crate::SpotlightTableBuildCheckpoint::BeforeLowerCursorDecrement { .. } => 6,
+            crate::SpotlightTableBuildCheckpoint::ProjectionCopy { .. } => 7,
         };
         assert!(
             progress.completed_iterations > source.completed_iterations

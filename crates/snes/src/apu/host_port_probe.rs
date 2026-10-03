@@ -22,7 +22,7 @@ pub enum ApuHostPortProbeError {
 /// synchronization deadline and advances through source pseudo-op boundaries.
 /// Deliberately not serializable: dropping a continuation into a legacy
 /// APU snapshot would lose the pending instruction.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ApuHostPortProbe {
     apu: ApuState,
     instruction_start: u32,
@@ -107,6 +107,59 @@ impl ApuHostPortProbe {
         apu.smp_coroutine = SmpCoroutineState::default();
         Ok(apu)
     }
+
+    /// Transfer a completed native upload to a driver event clock whose
+    /// renderer is owned separately. Preserve the entire SPC/hardware machine;
+    /// only retire the coroutine and its optional sample-synthesis sidecar.
+    /// A suspended or poisoned instruction cannot be converted this way.
+    pub fn into_machine_without_dsp(self) -> Result<ApuState, Self> {
+        self.into_machine().map(|mut apu| {
+            apu.snes9x_dsp = None;
+            apu
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn event_clock_handoff_refuses_a_partial_port_store_without_losing_it() {
+        let mut apu = ApuState::new();
+        apu.reset_snes9x_coroutine();
+        apu.rom_readable = false;
+        apu.spc.pc = 0x0200;
+        apu.spc.a = 0x37;
+        apu.spc.y = 0x91;
+        apu.ram[0x200..0x202].copy_from_slice(&[0xda, 0xf4]); // MOVW $f4,YA
+        apu.timer[0].target = 13;
+        apu.timer[0].divider = 9;
+        apu.timer[0].counter = 7;
+        apu.timer[0].enabled = true;
+        let mut probe = ApuHostPortProbe::from_snes9x_coroutine(apu).unwrap();
+        probe.step().unwrap();
+        assert!(!probe.at_instruction_boundary());
+        let mut probe = match probe.into_machine_without_dsp() {
+            Err(retained) => retained,
+            Ok(_) => panic!("suspended port instruction escaped its owner"),
+        };
+        while !probe.at_instruction_boundary() { probe.step().unwrap(); }
+        let before = serde_json::to_vec(probe.machine()).unwrap();
+        let mut machine = match probe.into_machine_without_dsp() {
+            Ok(machine) => machine,
+            Err(_) => panic!("completed instruction could not transfer"),
+        };
+        assert_eq!(serde_json::to_vec(&machine).unwrap(), before);
+        assert_eq!(&machine.out_ports[..2], &[0x37, 0x91]);
+        assert!(machine.snes9x_dsp.is_none());
+        assert!(!machine.smp_coroutine.is_enabled());
+        machine.ram[0x202] = 0; // NOP proves complete-instruction execution is now legal.
+        let cycles = machine.cycles;
+        machine.run_cycle_sequenced_instruction_without_dsp();
+        assert!(machine.cycles > cycles);
+        assert_eq!(&machine.out_ports[..2], &[0x37, 0x91]);
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
@@ -136,16 +189,38 @@ pub enum ApuHostPortTimingError {
 /// legacy instruction boundary, or a machine already in pinned Snes9x coroutine
 /// form. Only the second carries an exact DSP owner; the first publishes no
 /// samples, and `end_scanline_at` then has nothing to drain.
+#[derive(Clone, Debug)]
 pub struct ApuHostPortTiming {
     probe: ApuHostPortProbe,
     clock: Snes9xApuClockState,
 }
 
 impl ApuHostPortTiming {
+    /// Resume the retained instruction when a later event-clock window owns
+    /// further SMP execution. Preserve those executed cycles as clock credit;
+    /// the next CPU synchronization must not execute them a second time.
+    pub fn finish_instruction(&mut self) -> Result<(), ApuHostPortTimingError> {
+        let before = self.probe.machine().cycles;
+        while !self.probe.at_instruction_boundary() { self.probe.step()?; }
+        let consumed = self.probe.machine().cycles.wrapping_sub(before);
+        let c = self.clock.checkpoint();
+        let credit = c.smp_clock().checked_add(i64::from(consumed))
+            .ok_or(Snes9xApuClockError::SmpClockOverflow)?;
+        self.clock = Snes9xApuClockState::from_checkpoint(Snes9xApuClockCheckpoint::new(
+            c.cpu_reference_master_cycles(), c.remainder(), credit,
+        )?)?;
+        Ok(())
+    }
     /// Transfer unpublished exact DSP samples from the sole retained APU
     /// owner. A second take cannot publish the same samples again.
     pub fn take_dsp_samples(&mut self) -> crate::apu::Snes9xDspSampleReceipt {
         self.probe.apu.take_snes9x_dsp_samples()
+    }
+
+    /// Transfer register writes already executed by this sole SMP owner.
+    /// Publishing an audio window must not finish or replay a suspended step.
+    pub fn take_dsp_register_writes(&mut self) -> Vec<(u32, u8, u8)> {
+        self.probe.apu.debug_dsp_write_trace.as_mut().map(std::mem::take).unwrap_or_default()
     }
 
     /// Adopt a retained continuation with explicit clock provenance.

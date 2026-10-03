@@ -44,6 +44,7 @@ pub(crate) use display::{
     SpotlightHdmaState,
 };
 pub(crate) use dungeon::{
+    DUNGEON_DRAW_OBJECT_OFFSETS_BG1, DUNGEON_DRAW_OBJECT_OFFSETS_BG2,
     DungeonStairList, DungeonState, NativeDungeonBg2AttributeBridgeMut, NativeDungeonDoorBridgeMut,
     NativeDungeonEntranceBackupBridgeMut, NativeDungeonEnvironmentBridgeMut,
     NativeDungeonHeaderBridgeMut, NativeDungeonMovableBlockBridgeMut,
@@ -95,7 +96,7 @@ pub(crate) use misc::{
     NativeMinigameBridgeMut, NativeSaveLoadTransferBridgeMut, NativeScratchCounterBridgeMut,
     NativeSpriteBattleBridgeMut, SaveLoadTransferState, ScratchCounterState, SpriteBattleState,
 };
-pub(crate) use oam::{NativeOamStateBridgeMut, OamState, PendingExtendedOamWrite};
+pub(crate) use oam::{NativeOamStateBridgeMut, OamState};
 #[cfg(test)]
 pub(crate) use player::Bg1MovementAccumulatorState;
 pub(crate) use player::TileResult;

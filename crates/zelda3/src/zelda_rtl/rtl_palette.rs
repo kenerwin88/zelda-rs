@@ -141,9 +141,9 @@ impl ZeldaState {
             .select_overworld_aux_palette_offset();
     }
 
-    pub(crate) fn initialize_palette_mirror_from_zeroed_buffers(&mut self) {
+    pub(crate) fn initialize_palette_mirror_from_buffers(&mut self) {
         self.palette_buffer_mut()
-            .initialize_mirror_from_zeroed_buffers();
+            .initialize_mirror_from_buffers();
     }
 
     pub(crate) fn copy_main_palette_bytes_tagged(
@@ -655,6 +655,32 @@ impl ZeldaState {
         // refreshed at upload commits (which may not run for many frames during a fade), so
         // reconstitute it here too or the renderer substitutes a stale palette.
         mirror.reconstitute_cgram(&cgram);
+    }
+
+    /// Immutable palette bytes, at the physical addresses used by native loaders.
+    pub(crate) fn native_palette_data(&self) -> Option<std::collections::BTreeMap<u32, u8>> {
+        let mut bytes = std::collections::BTreeMap::new();
+        for &(base, asset) in PALETTE_ASSET_SNES_RANGES {
+            for (i, &value) in self.asset_raw(asset)?.iter().enumerate() {
+                if let Some(previous) = bytes.insert((base & 0x7fffff) + i as u32, value) {
+                    assert_eq!(previous, value, "overlapping native palette assets");
+                }
+            }
+        }
+        for address in 0x1bebb4..0x1bec77 {
+            if let Some(value) = crate::cycle_models::file_select_palettes::table_byte(address)
+                .or_else(|| crate::cycle_models::intro_palettes::table_byte(address)) {
+                if let Some(previous) = bytes.insert(address, value) {
+                    assert_eq!(previous, value, "overlapping native palette selectors");
+                }
+            }
+        }
+        for (i, &color) in self.gloves_color.iter().enumerate() {
+            for (b, value) in color.to_le_bytes().into_iter().enumerate() {
+                bytes.insert(0x1bedf5 + (i * 2 + b) as u32, value);
+            }
+        }
+        Some(bytes)
     }
 
     pub(super) fn palette_asset_word_snes(&self, addr: u32) -> Option<u16> {

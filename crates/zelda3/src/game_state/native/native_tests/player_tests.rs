@@ -571,6 +571,15 @@ fn native_bg1_movement_accumulator_bridge_dual_writes_changes_from_native_state(
 #[test]
 fn player_components_preserve_frozen_projection_and_mutations() {
     use sha2::{Digest, Sha256};
+    let hash_projection = |digest: &mut Sha256, projected: &[u8], ram: &[u8]| {
+        // The frozen pre-component projection left $0203 untouched. Keep
+        // checking every old byte against that receipt, and independently
+        // require the newly owned HUD selection high byte to publish correctly.
+        assert_eq!(projected[HUD_CUR_ITEM_HIGH], ram[HUD_CUR_ITEM_HIGH]);
+        digest.update(&projected[..HUD_CUR_ITEM_HIGH]);
+        digest.update([0xa5]);
+        digest.update(&projected[HUD_CUR_ITEM_HIGH + 1..]);
+    };
     let mut cases = String::new();
     for seed in 0..32u32 {
         let mut rng = seed + 1;
@@ -585,7 +594,7 @@ fn player_components_preserve_frozen_projection_and_mutations() {
         player.write_to_ram(&mut projected);
         inventory.write_to_ram(&mut projected);
         let mut digest = Sha256::new();
-        digest.update(&projected);
+        hash_projection(&mut digest, &projected, &ram);
         {
             let mut bridge = NativeFollowerLinkBridgeMut::new(&mut player, &mut ram);
             bridge.set_speed_setting(seed as u8);
@@ -602,7 +611,7 @@ fn player_components_preserve_frozen_projection_and_mutations() {
         digest.update(&ram);
         player.write_to_ram(&mut projected);
         inventory.write_to_ram(&mut projected);
-        digest.update(&projected);
+        hash_projection(&mut digest, &projected, &ram);
         cases.push_str(&format!("{seed}: {:x}\n", digest.finalize()));
     }
     assert_eq!(

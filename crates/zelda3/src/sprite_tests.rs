@@ -1,6 +1,346 @@
 use super::*;
 
 #[test]
+fn large_draw_retains_coordinate_prep_and_kill_self_at_each_source_instruction() {
+    use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+    let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc"));
+    let Ok(mut rom) = std::fs::read(path) else { return };
+    if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+    let mut cases = 0;
+    let mut boundaries = 0;
+    for x in [0x130u16, 0x12f, 0, 0xffc0, 0xffbf, 0xffff] {
+        for y in [0x30u16, 0x12f, 0x130, 0xffc0, 0xffbf, 0xffff] {
+            for scratch in [0x34a7u16, 0, 0xff00, 0x00ff] {
+                for height in [0u8, 3, 0xff] {
+                    for flags4 in [0, 0x20] {
+                        for (indoors, deflection) in [(0, 0), (1, 0), (1, 0x40), (0, 0x80)] {
+                            let k = cases % 16;
+                            let mut native = fresh_state();
+                            native.ram[0x800..0xaa0].fill(0xa5);
+                            native.ram[4..6].copy_from_slice(&scratch.to_le_bytes());
+                            native.sync_native_game_state_from_ram();
+                            native.set_indoor_flag(indoors);
+                            native.set_bg2_x(0x100);
+                            native.set_bg2_y(0x200);
+                            native.sprite_workspace_mut().set_current_sprite_x(x.wrapping_add(0x100));
+                            native.sprite_workspace_mut().set_current_sprite_y(y.wrapping_add(0x200));
+                            native.oam_state_mut().set_current_pointer(0x800);
+                            native.oam_state_mut().set_current_extended_pointer(0xa20);
+                            let block = [0x12, 0xff00, 0xffff][cases % 3];
+                            {
+                                let mut slot = native.sprite_slot_view_mut(k);
+                                slot.set_z(height);
+                                slot.set_y(y.wrapping_add(0x200));
+                                slot.set_state(9);
+                                slot.set_sprite_type(0x0b);
+                                slot.set_n_word(block);
+                                slot.set_deflection_bits(deflection);
+                                slot.set_oam_flags(0x65);
+                                slot.set_object_priority(0x23);
+                                slot.set_flags4(flags4);
+                                slot.set_flags3(if cases & 1 == 0 { 0x10 } else { 0 });
+                            }
+                            let address = 0x10000 + usize::from(0xef80u16.wrapping_add(block >> 3));
+                            native.ram[address] = 0xff;
+                            let checkpoint = RomCpuCheckpoint {
+                                entry_pc: 0x06_dc10, stop_pc: 0x06_8036,
+                                a: 0, x: k as u16, y: 0, sp: 0x01fc, dp: 0, db: 6,
+                                carry: true, zero: false, overflow: false, negative: false,
+                                interrupt_disable: false, decimal: false,
+                                accumulator_is_8_bit: true, index_is_8_bit: true,
+                                emulation: false, waiting: false,
+                                stack_address: 0x01fd, stack_bytes: &[0x35, 0x80],
+                            };
+                            let mut source = RomCpuTimingRun::new(&rom, &native.ram, &[0; 0x2000],
+                                &native.ppu, &native.dma, [0; 4], checkpoint).unwrap();
+                            let mut work = native.begin_single_large_draw(k);
+                            let mut steps = 0;
+                            while !source.is_complete() {
+                                let pc = source.pc();
+                                if let Some(prep) = work.prep.as_ref() {
+                                    if !prep.call_pending && prep.kill.is_none() {
+                                        if let Some(instruction) = prep.work.clone().step(native.coordinate_prep_inputs(k)) {
+                                            assert_eq!(instruction.pc, pc, "case {cases}");
+                                        }
+                                    }
+                                }
+                                let cycles = source.step().master_cycles;
+                                let before = crate::cycle_ledger::master();
+                                assert_eq!(native.retire_single_large_draw_instruction(&mut work), Some(cycles),
+                                    "case={cases} PC={pc:06x}");
+                                assert_eq!(crate::cycle_ledger::master() - before, u64::from(cycles));
+                                for address in (0..6).chain(0x800..0xaa0).chain([
+                                    address, 0xdd0 + k, 0xf00 + k, 0xfa8, 0xfa9,
+                                    0xbc0 + k, 0xbc0 + k * 2, 0xbc1 + k * 2,
+                                ]) {
+                                    assert_eq!(native.ram[address], source.ram_byte(address),
+                                        "case={cases} PC={pc:06x} address={address:05x}");
+                                }
+                                // Native inputs changed after their source loads must not
+                                // replace the operands retained across a suspended call.
+                                match pc {
+                                    0x06_e423 => native.sprite_workspace_mut().set_current_sprite_x(0xabcd),
+                                    0x06_e43f | 0x06_e478 => native.sprite_workspace_mut().set_current_sprite_y(0xdcba),
+                                    0x06_e436 => native.sprite_slot_view_mut(k).set_z(height ^ 0xff),
+                                    0x06_e45f => native.sprite_slot_view_mut(k).set_oam_flags(0x12),
+                                    0x06_e462 => native.sprite_slot_view_mut(k).set_object_priority(0x34),
+                                    _ => {}
+                                }
+                                work = bincode::deserialize(&bincode::serialize(&work).unwrap()).unwrap();
+                                steps += 1;
+                                boundaries += 1;
+                                assert!(steps < 200);
+                            }
+                            assert_eq!(native.retire_single_large_draw_instruction(&mut work), None);
+                            cases += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("large draw with coordinate prep: {cases} cases, {boundaries} retained source instruction boundaries");
+}
+
+#[test]
+fn single_large_draw_retains_source_order_table_reads_and_shadow_return() {
+    use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+    use crate::cycle_models::sprite_single::Inputs;
+    let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc"));
+    let Ok(mut rom) = std::fs::read(path) else { return };
+    if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+    let mut cases = 0;
+    let mut boundaries = 0;
+    for sprite_type in 0..236u8 {
+        for graphics in [0u8, 1, 255] {
+            for y in [0u16, 0xef, 0xf0, 0x100, 0xffef, 0xfff0] {
+                for flags3 in [0u8, 0x10, 0x30] {
+                    let k = cases % 16;
+                    let x = [0x23u16, 0x123, 0xff23][cases % 3];
+                    let pointer = 0x800u16 + (cases % 64) as u16 * 4;
+                    let extended = 0xa20u16 + (cases % 48) as u16;
+                    let mut native = ZeldaState::new();
+                    native.ram[0x800..0xaa0].fill(0xa5);
+                    native.ram[0..2].copy_from_slice(&x.to_le_bytes());
+                    native.ram[2..4].copy_from_slice(&y.to_le_bytes());
+                    native.ram[5] = 0xb7;
+                    native.ram[0x90..0x92].copy_from_slice(&pointer.to_le_bytes());
+                    native.ram[0x92..0x94].copy_from_slice(&extended.to_le_bytes());
+                    native.sync_native_game_state_from_ram();
+                    native.set_bg2_y(0x200);
+                    {
+                        let mut sprite = native.sprite_slot_view_mut(k);
+                        sprite.set_y(y.wrapping_add(0x200).wrapping_sub(10));
+                        sprite.set_state(9);
+                        sprite.set_sprite_type(sprite_type);
+                        sprite.set_graphics(graphics);
+                        sprite.set_flags2((cases % 32) as u8);
+                        sprite.set_flags3(flags3);
+                    }
+                    let checkpoint = RomCpuCheckpoint {
+                        entry_pc: 0x06_dc13, stop_pc: 0x06_8036,
+                        a: 0, x: k as u16, y: 0, sp: 0x01fc, dp: 0, db: 6,
+                        carry: true, zero: false, overflow: false, negative: false,
+                        interrupt_disable: false, decimal: false,
+                        accumulator_is_8_bit: true, index_is_8_bit: true,
+                        emulation: false, waiting: false,
+                        stack_address: 0x01fd, stack_bytes: &[0x35, 0x80],
+                    };
+                    let mut run = RomCpuTimingRun::new(&rom, &native.ram, &[0; 0x2000],
+                        &native.ppu, &native.dma, [0; 4], checkpoint).unwrap();
+                    run.enable_cpu_write_trace();
+                    let info = PrepOamCoordsRet { x, y, r4: 0, flags: 0xb7 };
+                    let mut work = SingleLargeDrawContinuation::new(k, &info);
+                    let mut expected = native.ram.clone();
+                    while !run.is_complete() {
+                        let pc = run.pc();
+                        if work.shadow.is_none() {
+                            let index = work.work.table_index();
+                            let slot = native.sprite_slot_view(k);
+                            let instruction = work.work.clone().step(Inputs {
+                                x: work.x, y: work.y, flags: work.flags,
+                                sprite_type: slot.sprite_type(), graphics: slot.graphics(),
+                                flags3: slot.flags3(),
+                                character_base: rom[0x30000 + 0x5b04 + index],
+                                character: rom[0x30000 + 0x5a09 + index],
+                                oam_pointer: pointer, extended_pointer: extended,
+                            }).unwrap();
+                            assert_eq!(instruction.pc, pc, "case {cases}");
+                        }
+                        let source_cycles = run.step().master_cycles;
+                        for (address, value) in run.take_cpu_wram_writes() {
+                            expected[address] = value;
+                        }
+                        let before = crate::cycle_ledger::master();
+                        assert_eq!(native.retire_single_large_draw_instruction(&mut work), Some(source_cycles),
+                            "case {cases}, PC={pc:06x}");
+                        assert_eq!(crate::cycle_ledger::master() - before, u64::from(source_cycles));
+                        assert_eq!(&native.ram[0x800..0xaa0], &expected[0x800..0xaa0],
+                            "case {cases}, PC={pc:06x}: publications");
+                        assert_eq!(work.y, u16::from_le_bytes([expected[2], expected[3]]));
+                        // Changes after source loads must not change the saved
+                        // table index, selected character, or shadow branch.
+                        match pc {
+                            0x06_dc35 => native.sprite_slot_view_mut(k).set_sprite_type(sprite_type ^ 1),
+                            0x06_dc3c => native.sprite_slot_view_mut(k).set_graphics(graphics ^ 255),
+                            0x06_dc51 => native.sprite_slot_view_mut(k).set_flags3(flags3 ^ 0x10),
+                            _ => {}
+                        }
+                        work = bincode::deserialize(&bincode::serialize(&work).unwrap()).unwrap();
+                        boundaries += 1;
+                    }
+                    assert_eq!(native.retire_single_large_draw_instruction(&mut work), None);
+                    cases += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(cases, 12_744);
+    eprintln!("single-large draw: {cases} cases, {boundaries} retained instruction boundaries");
+}
+
+#[test]
+fn shadow_work_and_split_publication_match_rom_branches() {
+    use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+    use crate::cycle_models::sprite_shadow::{Inputs, Publication, ShadowWork};
+    let path = std::env::var_os("ZELDA3_ROM")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc"));
+    let Ok(mut rom) = std::fs::read(path) else { return };
+    if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+    let mut cases = 0;
+    let mut instructions = 0;
+    for offset in 0..=u8::MAX {
+        for (pause, sprite_state, draw_work) in [(0, 9, 0), (1, 9, 0), (0, 10, 3), (0, 10, 2), (255, 10, 3)] {
+            for small in [false, true] {
+                for screen_y in [0u16, 0xef, 0xf0, 0xff, 0x100, 0xffef, 0xfff0, 0xffff] {
+                    let slot = usize::from(offset & 15);
+                    let mut state = ZeldaState::new();
+                    let pointer = 0x800 + [0, 0xe0, 0xfc][usize::from(offset) % 3];
+                    state.ram[0x800..0xaa0].fill(0xa5);
+                    state.ram[0x90..0x92].copy_from_slice(&(pointer as u16).to_le_bytes());
+                    // The extended destination is an independent pointer,
+                    // not a function of the ordinary OAM destination.
+                    state.ram[0x92..0x94].copy_from_slice(&(0xa20u16 + (pointer - 0x800) / 4 + u16::from(offset & 1) * 16).to_le_bytes());
+                    state.ram[0..2].copy_from_slice(&0x0123u16.to_le_bytes());
+                    state.ram[5] = 0xb7;
+                    state.sync_native_game_state_from_ram();
+                    state.set_bg2_y(0x200);
+                    {
+                        let mut sprite = state.sprite_slot_view_mut(slot);
+                        sprite.set_y(screen_y.wrapping_add(0x200).wrapping_sub(u16::from(offset)));
+                        sprite.set_pause(pause);
+                        sprite.set_state(sprite_state);
+                        sprite.set_draw_work_byte_3(draw_work);
+                        sprite.set_flags2(offset);
+                        sprite.set_flags3(if small { 0x20 } else { 0 });
+                    }
+                    let initial = state.clone();
+                    // Check the shared body and, for its actual offset, the
+                    // distinct default far entry with bank-save/restore work.
+                    for far_entry in [false, true] {
+                        if far_entry && offset != 10 { continue; }
+                        let checkpoint = RomCpuCheckpoint {
+                            entry_pc: if far_entry { 0x06_dc54 } else { 0x06_dc66 },
+                            stop_pc: if far_entry { 0x00_8036 } else { 0x06_8036 },
+                            a: u16::from(offset), x: slot as u16, y: 0,
+                            sp: if far_entry { 0x01fb } else { 0x01fc }, dp: 0, db: 6,
+                            carry: true, zero: false, overflow: true, negative: false,
+                            interrupt_disable: false, decimal: false,
+                            accumulator_is_8_bit: true, index_is_8_bit: true,
+                            emulation: false, waiting: false,
+                            stack_address: if far_entry { 0x01fc } else { 0x01fd },
+                            stack_bytes: if far_entry { &[0x35, 0x80, 0] } else { &[0x35, 0x80] },
+                        };
+                        let mut run = RomCpuTimingRun::new(&rom, &initial.ram, &[0; 0x2000],
+                            &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint)
+                            .unwrap();
+                        run.enable_cpu_write_trace();
+                        let mut expected = initial.ram.clone();
+                        let mut work_ram = initial.ram.clone();
+                        let mut work = ShadowWork::new(offset);
+                        let mut boundary = None;
+                        let mut cycles = 0u64;
+                        let mut steps = 0;
+                        while !run.is_complete() {
+                            let pc = run.pc();
+                            let source_cycles = run.step().master_cycles;
+                            cycles += u64::from(source_cycles);
+                            let source_writes = run.take_cpu_wram_writes();
+                            if !far_entry {
+                                let word = |address| u16::from_le_bytes([work_ram[address], work_ram[address + 1]]);
+                                let input = Inputs {
+                                    world_y: u16::from(work_ram[0xd00 + slot]) | (u16::from(work_ram[0xd20 + slot]) << 8),
+                                    pause: work_ram[0xf00 + slot], state: work_ram[0xdd0 + slot],
+                                    draw_work: work_ram[0x1fa1c + slot], scroll_y: word(0xe8),
+                                    flags2: work_ram[0xe40 + slot], flags3: work_ram[0xe60 + slot],
+                                    x: word(0), y: word(2), flags: work_ram[5],
+                                    oam_pointer: word(0x90), extended_pointer: word(0x92),
+                                };
+                                let retired = work.step(input).expect("native shadow returned early");
+                                assert_eq!(retired.pc, pc, "case {cases}");
+                                assert_eq!(retired.master_cycles, source_cycles, "case {cases} PC={pc:06x}");
+                                let writes = match retired.publication {
+                                    Some(Publication::YLow(value)) => vec![(2, value)],
+                                    Some(Publication::YHigh(value)) => vec![(3, value)],
+                                    Some(Publication::Y(value)) => vec![(2, value as u8), (3, (value >> 8) as u8)],
+                                    Some(Publication::OamByte { address, value } | Publication::ExtendedByte { address, value }) => vec![(usize::from(address), value)],
+                                    None => vec![],
+                                };
+                                assert_eq!(writes, source_writes, "case {cases} PC={pc:06x}: publication");
+                                for (address, value) in writes { work_ram[address] = value; }
+                                // Every instruction boundary is a serializable
+                                // continuation, including reads before stores
+                                // and RTS after the final publication.
+                                work = bincode::deserialize(&bincode::serialize(&work).unwrap()).unwrap();
+                                instructions += 1;
+                            }
+                            for (address, value) in source_writes { expected[address] = value; }
+                            if pc == 0x06_dcc2 || pc == 0x06_dce0 {
+                                boundary = Some((cycles, expected[0x800..0xaa0].to_vec()));
+                            }
+                            steps += 1;
+                            assert!(steps < 1000, "shadow did not return");
+                        }
+                        let mut native = initial.clone();
+                        let mut info = PrepOamCoordsRet { x: 0x123, y: 0, r4: 0, flags: 0xb7 };
+                        let before = crate::cycle_ledger::master();
+                        if far_entry {
+                            native.sprite_draw_shadow_default_long(slot, &mut info);
+                        } else {
+                            let tail = native.sprite_draw_shadow_custom_before_extended(slot, &mut info, offset);
+                            assert_eq!(tail.is_some(), boundary.is_some(), "case {cases}");
+                            if let Some(tail) = tail {
+                                let (prefix_cycles, prefix_oam) = boundary.as_ref().unwrap();
+                                assert_eq!(crate::cycle_ledger::master() - before, *prefix_cycles,
+                                    "case {cases}: prefix");
+                                assert_eq!(&native.ram[0x800..0xaa0], prefix_oam, "case {cases}: prefix OAM");
+                                // NMI/caller changes must not select a different
+                                // suffix after the ordinary entry was published.
+                                native.sprite_slot_view_mut(slot).set_flags3(if small { 0 } else { 0x20 });
+                                native.finish_shadow_extended_oam_write(tail);
+                            }
+                        }
+                        assert_eq!(crate::cycle_ledger::master() - before, cycles,
+                            "case {cases}: far={far_entry} offset={offset} pause={pause} state={sprite_state} small={small} y={screen_y:04x}");
+                        assert_eq!(&native.ram[0x800..0xaa0], &expected[0x800..0xaa0], "case {cases}: final OAM");
+                        assert_eq!(info.y, u16::from_le_bytes([expected[2], expected[3]]), "case {cases}: Y");
+                        cases += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(cases, 20_560);
+    eprintln!("shadow work: {cases} cases, {instructions} instruction/serialization boundaries");
+}
+
+#[test]
 fn zero_hit_timer_clear_does_not_publish_priority_early() {
     for hit_timer in [0, 0x80] {
         let mut atomic = ZeldaState::new();
@@ -856,6 +1196,79 @@ fn sprite_correct_oam_entries_recomputes_ext_bits_and_hides_offscreen_y() {
 }
 
 #[test]
+fn kill_self_publishes_source_pointer_bank_and_cycles() {
+    use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+    let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc"));
+    let Ok(mut rom) = std::fs::read(path) else { return };
+    if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+    let mut cases = 0;
+    for indoors in [0, 1] {
+        for deflection in [0, 0x40, 0x80, 0xc0] {
+            for block in [0u16, 1, 2, 3, 4, 5, 6, 7, 8, 0x12, 0x83ff, 0x8400, 0xff00, 0xfffe, 0xffff] {
+                let k = cases % 16;
+                let mut native = fresh_state();
+                native.ram[0..6].copy_from_slice(&[0xa1, 0xb2, 0xc3, 0xd4, 0xe5, 0xf6]);
+                native.sync_native_game_state_from_ram();
+                native.set_indoor_flag(indoors);
+                native.sprite_slot_view_mut(k).set_state(9);
+                native.sprite_slot_view_mut(k).set_deflection_bits(deflection);
+                native.sprite_slot_view_mut(k).set_n_word(block);
+                let address = 0x10000 + usize::from(0xef80u16.wrapping_add(block >> 3));
+                native.ram[address] = 0xff;
+                let checkpoint = RomCpuCheckpoint {
+                    entry_pc: 0x09_f1f8, stop_pc: 0x00_8000,
+                    a: 0, x: k as u16, y: 0, sp: 0x01fc, dp: 0, db: 6,
+                    carry: true, zero: false, overflow: false, negative: false,
+                    interrupt_disable: false, decimal: false,
+                    accumulator_is_8_bit: true, index_is_8_bit: true,
+                    emulation: false, waiting: false,
+                    stack_address: 0x01fd, stack_bytes: &[0xff, 0x7f, 0],
+                };
+                let mut source = RomCpuTimingRun::new(&rom, &native.ram, &[0; 0x2000],
+                    &native.ppu, &native.dma, [0; 4], checkpoint).unwrap();
+                let mut atomic = native.clone();
+                let mut work = crate::cycle_models::sprite_kill::KillWork::new();
+                let before = crate::cycle_ledger::master();
+                let mut cycles = 0u64;
+                while !source.is_complete() {
+                    let pc = source.pc();
+                    let instruction = work.clone().step(crate::cycle_models::sprite_kill::Inputs {
+                        slot: k as u8, deflection: native.sprite_slot_view(k).deflection_bits(),
+                        indoors, block: native.sprite_slot_view(k).n_word(),
+                        scratch: native.ram[..4].try_into().unwrap(),
+                        loaded: native.ram[address],
+                    }).unwrap();
+                    assert_eq!(instruction.pc, pc);
+                    let source_cycles = source.step().master_cycles;
+                    cycles += u64::from(source_cycles);
+                    assert_eq!(native.retire_sprite_kill_instruction(k, &mut work), Some(source_cycles));
+                    for checked in (0..6).chain([address, 0xdd0 + k, 0xbc0 + k, 0xbc0 + k * 2, 0xbc1 + k * 2]) {
+                        // The destination was changed after LDA below. AND
+                        // must leave that change alone; STA must overwrite it
+                        // with the retained source load on the following step.
+                        if pc == 0x09_f22e && checked == address { continue; }
+                        assert_eq!(native.ram[checked], source.ram_byte(checked),
+                            "case={cases} PC={pc:06x} block={block:04x} indoors={indoors} deflection={deflection:02x} address={checked:05x}");
+                    }
+                    if pc == 0x09_f22c {
+                        native.store_overworld_sprite_loaded_byte_wrapped(address as u16, 0);
+                    }
+                    work = bincode::deserialize(&bincode::serialize(&work).unwrap()).unwrap();
+                }
+                assert_eq!(native.retire_sprite_kill_instruction(k, &mut work), None);
+                assert_eq!(crate::cycle_ledger::master() - before, cycles, "case={cases}");
+                atomic.sprite_kill_self(k);
+                assert_eq!(native.ram, atomic.ram);
+                cases += 1;
+            }
+        }
+    }
+    eprintln!("KillSelf source matrix: {cases} cases");
+}
+
+#[test]
 fn sprite_kill_self_matches_indoor_guard_and_loaded_bit_clear() {
     let k = 5;
 
@@ -929,6 +1342,109 @@ fn stunned_sprite_sparkle_gate_uses_reference_masks() {
 }
 
 #[test]
+fn coordinate_prefix_defers_allocation_and_timer_decrements() {
+    let mut staged = fresh_state();
+    staged.oam_reset_region_bases();
+    {
+        let mut slot = staged.sprite_slot_view_mut(3);
+        slot.set_x(0x1234);
+        slot.set_y(0x5678);
+        slot.set_flags2(2);
+        slot.set_delay_main(9);
+        slot.set_delay_aux1(7);
+    }
+    let mut atomic = staged.clone();
+    let oam_before = staged.game_state.oam.clone();
+    let start = crate::cycle_ledger::master();
+    atomic.sprite_timers_and_oam(3);
+    let atomic_cycles = crate::cycle_ledger::master() - start;
+    let start = crate::cycle_ledger::master();
+    staged.sprite_timers_and_oam_through_coordinates(3);
+    assert_eq!(staged.game_state.sprites.workspace.current_sprite_x(), 0x1234);
+    assert_eq!(staged.game_state.sprites.workspace.current_sprite_y(), 0x5678);
+    assert_eq!(staged.game_state.oam, oam_before);
+    assert_eq!(staged.sprite_slot_view(3).delay_main(), 9);
+    assert_eq!(staged.sprite_slot_view(3).delay_aux1(), 7);
+    staged.sprite_timers_and_oam_after_coordinates_through_oam_allocation(3);
+    staged.sprite_timers_and_oam_after_oam_allocation(3);
+    assert_eq!(crate::cycle_ledger::master() - start, atomic_cycles);
+    assert_eq!(staged.sprite_slot_view(3).delay_main(), 8);
+    assert_eq!(staged.sprite_slot_view(3).delay_aux1(), 6);
+    assert_eq!(staged.ram, atomic.ram);
+    assert_eq!(staged.game_state, atomic.game_state);
+}
+
+#[test]
+fn coordinate_prep_preserves_source_scratch_ownership_on_each_bounds_branch() {
+    use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+    let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc"));
+    let Ok(mut rom) = std::fs::read(path) else { return };
+    if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+    let mut cases = 0;
+    for x in [0x130u16, 0x12f, 0, 0xffc0, 0xffbf, 0xffff] {
+        for y in [0x30u16, 0x12f, 0x130, 0xffc0, 0xffbf, 0xffff] {
+            for scratch in [0x34a7u16, 0, 0xff00, 0x00ff] {
+                for height in [0u8, 3, 0xff] {
+                    for flags4 in [0, 0x20] {
+                        let k = cases % 16;
+                        let mut native = fresh_state();
+                        native.ram[4..6].copy_from_slice(&scratch.to_le_bytes());
+                        native.sync_native_game_state_from_ram();
+                        native.set_bg2_x(0x100);
+                        native.set_bg2_y(0x200);
+                        native.sprite_workspace_mut().set_current_sprite_x(x.wrapping_add(0x100));
+                        native.sprite_workspace_mut().set_current_sprite_y(y.wrapping_add(0x200));
+                        {
+                            let mut slot = native.sprite_slot_view_mut(k);
+                            slot.set_z(height);
+                            slot.set_state(9);
+                            slot.set_deflection_bits(0x80); // isolate bounds and shared return from KillSelf.
+                            slot.set_oam_flags(0x65);
+                            slot.set_object_priority(0x23);
+                            slot.set_flags4(flags4);
+                        }
+                        let checkpoint = RomCpuCheckpoint {
+                            entry_pc: 0x06_e416, stop_pc: 0x00_8000,
+                            a: 0, x: k as u16, y: 0, sp: 0x01fc, dp: 0, db: 6,
+                            carry: true, zero: false, overflow: false, negative: false,
+                            interrupt_disable: false, decimal: false,
+                            accumulator_is_8_bit: true, index_is_8_bit: true,
+                            emulation: false, waiting: false,
+                            stack_address: 0x01fd, stack_bytes: &[0xff, 0x7f, 0],
+                        };
+                        let mut source = RomCpuTimingRun::new(&rom, &native.ram, &[0; 0x2000],
+                            &native.ppu, &native.dma, [0; 4], checkpoint).unwrap();
+                        let mut cycles = 0u64;
+                        let mut instructions = 0;
+                        while !source.is_complete() {
+                            cycles += u64::from(source.step().master_cycles);
+                            instructions += 1;
+                            assert!(instructions < 100);
+                        }
+                        let before = crate::cycle_ledger::master();
+                        let ret = native.sprite_prep_oam_coord(k);
+                        assert_eq!(crate::cycle_ledger::master() - before, cycles);
+                        let word = |address| u16::from_le_bytes([
+                            source.ram_byte(address), source.ram_byte(address + 1)]);
+                        assert_eq!((ret.x, ret.y), (word(0), word(2)),
+                            "x={x:04x} y={y:04x} scratch={scratch:04x} height={height} flags4={flags4:02x}");
+                        for address in [0, 1, 2, 3, 4, 5, 0x0fa8, 0x0fa9, 0x0f00 + k] {
+                            assert_eq!(native.ram[address], source.ram_byte(address),
+                                "publication {address:04x} case={cases}");
+                        }
+                        assert_eq!(ret.flags, source.ram_byte(5));
+                        cases += 1;
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("coordinate prep source matrix: {cases} cases");
+}
+
+#[test]
 fn sprite_prep_oam_coord_fills_ret_and_out_of_bounds_side_effects() {
     let k = 4;
     let mut visible = fresh_state();
@@ -963,7 +1479,7 @@ fn sprite_prep_oam_coord_fills_ret_and_out_of_bounds_side_effects() {
     let out_ret = out.sprite_prep_oam_coord(k);
 
     assert_eq!(out_ret.x, 0x8212);
-    assert_eq!(out_ret.y, 0x00ef);
+    assert_eq!(out_ret.y, 0x7fef); // KillSelf publishes the long pointer bank at $03.
     assert_eq!(out_ret.r4, 0);
     assert_eq!(out.sprite_slot_view(k).pause(), 1);
     assert_eq!(out.sprite_slot_view(k).state(), 0);

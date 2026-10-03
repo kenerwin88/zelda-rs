@@ -1377,6 +1377,8 @@ impl ZeldaState {
             return false;
         }
         self.spotlight_internal_before_table(0x7e, 0);
+        let live_progress = live_progress
+            .or_else(|| self.native_exact_cpu_spotlight_build_checkpoint());
         let table_build = match live_progress {
             Some(progress) => self.begin_iris_spotlight_configure_table_at_progress(progress),
             None => self.begin_iris_spotlight_configure_table(
@@ -1411,6 +1413,8 @@ impl ZeldaState {
         let legacy_plan = cpu_plan.filter(|plan| {
             self.rom_startup_timing() && plan.interrupted_during_table_build_or_copy()
         });
+        let live_progress = live_progress
+            .or_else(|| self.native_exact_cpu_spotlight_build_checkpoint());
         if legacy_plan.is_none() && live_progress.is_none() {
             return false;
         }

@@ -5,6 +5,22 @@
 use super::*;
 
 impl ZeldaState {
+    pub(super) fn complete_dungeon_quadrant_upload_caller_return(
+        &mut self, copy: Option<dungeon::DungeonQuadrantUploadWork>,
+    ) {
+        if let Some(copy) = copy {
+            self.complete_dungeon_quadrant_upload(copy);
+        }
+        // Both scheduling lanes resume the same Module 7 caller after the
+        // copy. Its pending upload belongs to the following Open NMI.
+        self.increment_subsubmodule();
+        self.complete_module07_dungeon_after_submodule();
+        self.retire_or_run_main_loop_common_suffix_after_module_return();
+        self.game_execution_scheduler.schedule_pre_main_nmi_resume(
+            PreMainNmiResume::DungeonSupertileQuadrantUploads,
+        );
+    }
+
     pub(crate) fn resident_song_bank_is_dungeon(&self) -> bool {
         self.game_state
             .system_signals
@@ -405,23 +421,18 @@ impl ZeldaState {
                         ..
                     }) if scheduled_boundary == boundary
                 ));
-            } else if let Some(boundary) = schedule.sprite_main_boundary {
-                self.sprite_main_cpu_boundary = Some(boundary);
+            } else {
+                // A measured Sprite_Main interruption proves that the common
+                // dungeon prefix (including the scroll-copy stores) returned.
+                // If no slot has completed, retain the sprite prefix at its
+                // existing entry continuation rather than deferring its caller.
+                self.sprite_main_cpu_boundary = Some(schedule.sprite_main_boundary
+                    .unwrap_or(SpriteMainCpuBoundary::BeforeFirstSlot));
                 self.sprite_main_cpu_nmi_slices = schedule.caller_sprite_main_nmis;
                 self.complete_module07_dungeon_after_submodule();
                 debug_assert!(self
                     .game_execution_scheduler
                     .work_suspends_translated_call_stack());
-            } else {
-                // No translated slot commit point was reached before the ROM
-                // interruption. Keep the measured remainder attached to the
-                // caller rather than inventing a sprite or room predicate.
-                self.dungeon_room_load_module_suffix_nmi_slices = 0;
-                self.dungeon_room_load_cpu_schedule = Some(schedule);
-                let scheduled = self.begin_dungeon_supertile_transition_work(
-                    DungeonSupertileTransitionWork::RoomLoadCallerResume,
-                );
-                debug_assert!(scheduled);
             }
         } else if schedule.caller_suffix_nmis == 0 {
             assert!(
@@ -767,7 +778,7 @@ impl ZeldaState {
         // NMI_PrepareSprites and then clears $12 before it waits for the next
         // hardware NMI. The scheduler records that pending hardware boundary;
         // the software latch must not be used as a second cadence owner.
-        self.clear_nmi_update_latch();
+        self.finish_main_loop_caller_return();
         self.game_execution_scheduler
             .finish_call_stack_at_main_wait_before_nmi();
     }

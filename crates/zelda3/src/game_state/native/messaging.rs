@@ -870,6 +870,10 @@ impl MessagingRenderBufferState {
         self.bytes[offset] ^= mask;
     }
 
+    pub(crate) fn set_byte(&mut self, offset: usize, value: u8) {
+        self.bytes[offset] = value;
+    }
+
     pub(crate) fn clear_mask(&mut self, offset: usize, mask: u8) {
         self.bytes[offset] &= !mask;
     }
@@ -1045,6 +1049,17 @@ impl VwfRenderState {
         self.line_render_offset = value;
     }
 
+    pub(crate) fn clear_state_byte(&mut self, index: u8) {
+        let word = match index / 2 {
+            0 => &mut self.next_line_requested,
+            1 => &mut self.current_line,
+            2 => &mut self.glyph_cursor,
+            3 => &mut self.line_render_offset,
+            _ => unreachable!("VWF state byte outside $0720..$0727"),
+        };
+        *word &= !(0xff << ((index & 1) * 8));
+    }
+
     pub(crate) fn set_tile_word_at_byte_offset(&mut self, byte_offset: usize, value: u16) {
         write_le_u16(&mut self.tile_words, byte_offset, value);
     }
@@ -1100,6 +1115,50 @@ impl MessagingState {
 adopting_bridge!(NativeSelectFileMenuBridgeMut, menu: SelectFileMenuState);
 
 impl<'a> NativeSelectFileMenuBridgeMut<'a> {
+    /// Retained naming work changes one control field at its bus retirement.
+    pub(crate) fn write_name_control(&mut self,address:usize,value:u16,width:u8) {
+        if address==SELECT_FILE_NAME_SCROLL_X {
+            assert_eq!(width,2);self.menu.name_scroll_x=value;
+            self.ram[address..address+2].copy_from_slice(&value.to_le_bytes());
+            return;
+        }
+        assert_eq!(width,1);
+        let field=match address {
+            SELECT_FILE_NAME_COLUMN=>&mut self.menu.name_column,
+            SELECT_FILE_NAME_CURSOR_Y=>&mut self.menu.name_cursor_y,
+            SELECT_FILE_NAME_SLOT=>&mut self.menu.name_slot,
+            SELECT_FILE_NAME_SCROLL_X_STEP=>&mut self.menu.name_scroll_x_step,
+            SELECT_FILE_NAME_SCROLL_Y_STEP=>&mut self.menu.name_scroll_y_step,
+            SELECT_FILE_NAME_ROW=>&mut self.menu.name_row,
+            SELECT_FILE_NAME_SCROLL_X_DIRECTION=>&mut self.menu.name_scroll_x_direction,
+            _=>panic!("unowned name control {address:04x}"),
+        };
+        *field=value as u8;self.ram[address]=value as u8;
+    }
+    pub(crate) fn write_remembered_cursor(&mut self,value:u8) {
+        self.menu.set_remembered_cursor(value);
+        self.ram[SELECT_FILE_REMEMBERED_CURSOR]=value;
+    }
+    /// Graphics and title work share BF-CD with the menu's flags and cursor.
+    /// Retire only the actual store; do not republish the other menu fields.
+    pub(crate) fn write_shared_work(&mut self, address: usize, value: u16, width: u8) {
+        assert!((0xbf..=0xcd).contains(&address) && matches!(width, 1 | 2));
+        for byte in 0..usize::from(width) {
+            let a = address + byte;
+            let v = (value >> (byte * 8)) as u8;
+            self.ram[a] = v;
+            match a {
+                0xbf..=0xc4 => {
+                    let slot = (a - SELECTFILE_SAVE_SLOT_FLAGS) / 2;
+                    self.menu.save_slot_flags[slot] = read_le_u16(self.ram, SELECTFILE_SAVE_SLOT_FLAGS + slot * 2);
+                }
+                SELECT_FILE_CURSOR_WORK => self.menu.cursor = v,
+                SELECT_FILE_TRANSITION_WORK => self.menu.transition_scratch = v,
+                0xca..=0xcd => self.menu.choice_work[a - SELECT_FILE_CHOICE_WORK] = v,
+                _ => {}
+            }
+        }
+    }
     forward_synced! {
         menu;
         fn set_choice(index: usize, value: u8);
@@ -1236,6 +1295,17 @@ impl<'a> NativeDecodedMessageTextBridgeMut<'a> {
         }
         self.debug_assert_matches_ram();
         len
+    }
+
+    /// Publish the scanner's overlapping word stores without publishing the
+    /// third pointer byte before its owning instruction has executed.
+    pub(crate) fn write_dialogue_pointer_word(&mut self, offset: usize, value: u16) {
+        assert!(offset+2 <= DIALOGUE_POINTER_COUNT*3);
+        write_le_u16(self.ram,TEXT_DIALOGUE_POINTERS+offset,value);
+        // The preceding native WRAM clears own this table's initial bytes.
+        // Adopt their state along with this store, without republishing any
+        // untouched bytes from the older semantic projection.
+        self.messaging.dialogue_pointers=DialoguePointerTableState::load_from_ram(self.ram);
     }
 
     pub(crate) fn set_dialogue_pointer(&mut self, index: usize, pointer: u32) {
@@ -1456,6 +1526,37 @@ impl<'a> NativeMessagingRuntimeBridgeMut<'a> {
         }
         self.sync();
     }
+
+    /// Retire one STA in the 32-byte initialization copy. Preserve the other
+    /// byte of word fields until its own store, including across an NMI.
+    pub(crate) fn initialize_msgbox_byte(&mut self, index: u8, value: u8) {
+        fn byte(word: &mut u16, index: u8, value: u8) {
+            let shift = index * 8;
+            *word = (*word & !(0xff << shift)) | (u16::from(value) << shift);
+        }
+        let runtime = &mut self.messaging.runtime;
+        match index {
+            0..=1 => byte(&mut runtime.text_msgbox_topleft_copy, index, value),
+            2..=3 => byte(&mut runtime.text_msgbox_topleft, index - 2, value),
+            4 => runtime.text_render_state = value,
+            5 => runtime.vwf_line_speed_cur = value,
+            6 => runtime.vwf_line_speed = value,
+            7 => runtime.text_incremental_state = value,
+            8 => runtime.module = value,
+            9..=10 => byte(&mut runtime.dialogue_msg_read_pos, index - 9, value),
+            12 => runtime.dialogue_text_color = value,
+            15 => self.messaging.dialogue_source_offset.set_bank_offset_low_nibble(value),
+            16..=17 => byte(&mut runtime.text_wait_countdown, index - 16, value),
+            18..=19 => byte(&mut runtime.text_tilemap_cur, index - 18, value),
+            24 => self.messaging.multiselect_choice.set_value(value),
+            25 => runtime.text_wait_countdown2 = value,
+            26 => runtime.dialogue_scroll_speed = value,
+            11 | 13..=14 | 20..=23 | 27..=31 => {}, // raw scratch/dispatch cursor
+            _ => unreachable!("message initialization index outside 32-byte state"),
+        }
+        self.ram[TEXT_MSGBOX_TOPLEFT_COPY + usize::from(index)] = value;
+        self.sync();
+    }
 }
 
 adopting_bridge!(NativeMessagingRenderBufferBridgeMut, render_buffer: MessagingRenderBufferState);
@@ -1464,6 +1565,7 @@ impl<'a> NativeMessagingRenderBufferBridgeMut<'a> {
     forward_synced! {
         render_buffer;
         fn xor_mask(offset: usize, mask: u8);
+        fn set_byte(offset: usize, value: u8);
         fn clear_mask(offset: usize, mask: u8);
         fn set_word(index: usize, value: u16);
     }
@@ -1495,6 +1597,7 @@ impl<'a> NativeVwfRenderBridgeMut<'a> {
         fn clear_next_line_request();
         fn set_current_line(value: u16);
         fn set_line_render_offset(value: u16);
+        fn clear_state_byte(index: u8);
     }
 
     forward_synced! {

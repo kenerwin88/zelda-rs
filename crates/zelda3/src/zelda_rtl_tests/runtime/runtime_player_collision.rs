@@ -48,6 +48,11 @@ fn player_collision_matches_frozen_runtime_effects() {
             digest.update(&state.ram);
             let mut projected = vec![0xa5; WRAM_SIZE];
             state.game_state.write_to_ram(&mut projected);
+            // The frozen projection predates ownership of the item index's
+            // high byte. Check it explicitly, retaining every old hash byte.
+            let high = crate::game_state::constants::HUD_CUR_ITEM_HIGH;
+            assert_eq!(projected[high], state.ram[high]);
+            projected[high] = 0xa5;
             digest.update(&projected);
             cases.push_str(&format!("{seed}/{operation}: {:x}\n", digest.finalize()));
         }

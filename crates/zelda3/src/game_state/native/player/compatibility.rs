@@ -7,6 +7,48 @@ use super::*;
 use crate::game_state::native::ram_target::RamTarget;
 
 impl FollowerLinkState {
+    pub(crate) fn write_load_parent_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            0x57 => self.movement.speed_modifier = value,
+            0x3a => self.input.button_mask_b_y = value,
+            0x3c => self.input.button_b_frames = value,
+            _ => return false,
+        }
+        true
+    }
+
+    pub(crate) fn write_entrance_byte(&mut self, address: usize, value: u8) -> bool {
+        let byte = match address {
+            LINK_Z_VELOCITY => &mut self.movement.z_velocity,
+            LINK_FACING => &mut self.movement.facing,
+            LINK_DIRECTION_MASK_A => &mut self.movement.direction_mask_a,
+            LINK_DIRECTION_MASK_B => &mut self.movement.direction_mask_b,
+            PLAYER_OAM_Y_OFFSET => &mut self.presentation.oam_y_offset,
+            PLAYER_OAM_X_OFFSET => &mut self.presentation.oam_x_offset,
+            IS_STANDING_IN_DOORWAY => &mut self.movement.doorway_state,
+            LINK_QUADRANT_X => &mut self.movement.quadrant_x,
+            LINK_QUADRANT_Y => &mut self.movement.quadrant_y,
+            LINK_IS_ON_LOWER_LEVEL => &mut self.movement.floor,
+            LINK_IS_ON_LOWER_LEVEL_MIRROR => &mut self.movement.lower_level_mirror_state,
+            // Exit coordinates use the retained WRAM cache, as do the native
+            // restore_position_from_overworld_exit methods below.
+            0xc148..=0xc14b => return true,
+            _ => {
+                let word = match address & !1 {
+                    LINK_Y_COORD => &mut self.movement.y,
+                    LINK_X_COORD => &mut self.movement.x,
+                    LINK_Z_COORD => &mut self.movement.z,
+                    _ => return false,
+                };
+                let shift = (address & 1) * 8;
+                *word = (*word & !(255 << shift)) | (u16::from(value) << shift);
+                return true;
+            }
+        };
+        *byte = value;
+        true
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             input: PlayerInputState {
@@ -610,6 +652,60 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
+    /// Publish one retained Link_Initialize store. A reset may be interrupted
+    /// between any two stores, so unrelated player fields stay untouched.
+    pub(crate) fn write_initialization_store(&mut self, address: usize, value: u16, width: u8) {
+        if matches!(address, 0x326 | 0x328) {
+            assert_eq!(width, 2);
+            self.state.movement.swim_stroke_frame_counters[(address - 0x326) / 2] = value;
+        } else {
+            assert_eq!(width, 1);
+            let value = value as u8;
+            match address {
+                0x25 => self.state.movement.z = (self.state.movement.z & 255) | (u16::from(value) << 8),
+                LINK_LAST_DIRECTION => self.state.movement.last_direction = value,
+                LINK_FACING => self.state.movement.facing = value,
+                BUTTON_MASK_B_Y => self.state.input.button_mask_b_y = value,
+                Y_BUTTON_ACTION_FLAGS => self.state.actions.y_button_action_flags = value,
+                BUTTON_B_FRAMES => self.state.input.button_b_frames = value,
+                LINK_DELAY_TIMER_SPIN_ATTACK => self.state.actions.spin_attack_delay_timer = value,
+                LINK_INCAPACITATED_TIMER => self.state.actions.incapacitated_timer = value,
+                PLAYER_DEFENSE_FLAGS => self.state.actions.defense_flags = value,
+                LINK_AUXILIARY_STATE => self.state.actions.auxiliary_state = value,
+                LINK_CANT_CHANGE_DIRECTION => self.state.movement.direction_lock = value,
+                LINK_CAPE_MODE => self.state.actions.cape_mode = value,
+                LINK_SPEED_SETTING => self.state.movement.speed_setting = value,
+                LINK_DIRECTION => self.state.movement.direction = value,
+                LINK_SPIN_ATTACK_STEP_COUNTER => self.state.actions.spin_attack_step_counter = value,
+                LINK_DEBUG_VALUE_1 => self.state.actions.item_debug_value_1 = value,
+                SWIMMING_COUNTDOWN => self.state.movement.swimming_countdown = value,
+                LINK_POSE_FOR_ITEM => self.state.presentation.item_hold_pose = value,
+                LINK_IS_TRANSFORMING => self.state.actions.transforming = value,
+                LINK_BUNNY_TRANSFORM_TIMER => self.state.actions.bunny_transform_timer = value,
+                PLAYER_ON_SOMARIA_PLATFORM => self.state.movement.somaria_platform_state = value,
+                PLAYER_HANDLER_TIMER => self.state.actions.action_handler_timer = value,
+                LINK_ITEM_IN_HAND => self.state.actions.item_in_hand = value,
+                LINK_STATE_BITS => self.state.actions.action_state_bits = value,
+                LINK_PICKING_THROW_STATE => self.state.actions.picking_throw_state = value,
+                Y_BUTTON_ACTION_STEP => self.state.actions.y_button_action_step = value,
+                LINK_ITEM_ACTION_STEP => self.state.actions.item_action_step = value,
+                LINK_THROW_OAM_STATE_INDEX => self.state.presentation.throw_oam_state_index = value,
+                COUNTDOWN_FOR_BLINK => self.state.presentation.blink_countdown = value,
+                LINK_MAYBE_SWIM_FASTER => self.state.movement.swim_fast_state = value,
+                LINK_SWIM_HARD_STROKE => self.state.movement.hard_swim_stroke = value,
+                LINK_DEBUG_VALUE_2 => self.state.actions.item_action_debug_value_2 = value,
+                LINK_ELECTROCUTE_ON_TOUCH => self.state.actions.electrocute_on_touch = value,
+                LINK_GRABBING_WALL => self.state.movement.grabbing_wall = value,
+                LINK_POSITION_MODE => self.state.movement.position_mode = value,
+                LINK_DISABLE_SPRITE_DAMAGE => self.state.actions.sprite_damage_disabled = value,
+                _ => panic!("unowned Link initialization store {address:04x}"),
+            }
+        }
+        self.ram[address..address + usize::from(width)]
+            .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn restore_position_from_cached(&mut self) {
         let x = self.state.movement.cached_x;
         let y = self.state.movement.cached_y;
@@ -738,6 +834,13 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.ram[LINK_Y_COORD..LINK_Y_COORD + 0x70].fill(0);
         self.sync_from_ram();
         self.sync();
+    }
+
+    /// One retired STZ in the title exit's descending Link-state clear.
+    pub(crate) fn clear_link_state_word_for_ending(&mut self,address:usize) {
+        assert!((LINK_Y_COORD..LINK_Y_COORD+0x70).contains(&address)&&address&1==0);
+        self.ram[address..address+2].fill(0);
+        self.sync_from_ram();
     }
 
     pub(crate) fn subtract_axis_velocity_delta(&mut self, horizontal: bool, delta: u8) {

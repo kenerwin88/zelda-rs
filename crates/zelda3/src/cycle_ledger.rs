@@ -16,6 +16,8 @@ use std::io::Write;
 
 #[derive(Debug, Default)]
 struct Ledger {
+    last_host_master: u64,
+    last_host_silent_calls: u64,
     /// Charges recorded by nested scopes that have closed, per open scope
     /// depth, so a routine's record excludes its annotated callees (a self
     /// cost, comparable with the profiler's own-instruction totals).
@@ -153,12 +155,26 @@ pub fn charge_routine(address: u32, master: u64) {
 pub fn flush_host(host: u32) {
     LEDGER.with(|ledger| {
         let mut ledger = ledger.borrow_mut();
-        if ledger.completed.is_empty() {
-            return;
-        }
+        let current_master = master();
+        let charged = current_master - ledger.last_host_master;
+        ledger.last_host_master = current_master;
+        let current_silent_calls = silent_calls();
+        let silent = current_silent_calls - ledger.last_host_silent_calls;
+        ledger.last_host_silent_calls = current_silent_calls;
         if let Some(dir) = crate::debug_env::var_os("ZELDA3_DEBUG_CYCLE_LEDGER") {
             let dir = std::path::PathBuf::from(dir);
             let _ = std::fs::create_dir_all(&dir);
+            // Completed scopes omit unscoped charges and can span a flush.
+            // Preserve the independent counter delta, including hosts with
+            // no completed scope, rather than treating their CSV sum as a
+            // complete CPU-work measurement. These are charged work cycles,
+            // not a raster clock or proof that every instruction was priced.
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true).append(true).open(dir.join("host_totals.csv"))
+            {
+                let scoped = ledger.completed.iter().map(|(_, cycles)| cycles).sum::<u64>();
+                let _ = writeln!(file, "{host},{charged},{scoped},{silent},{}", ledger.nested.len());
+            }
             if let Ok(file) = std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -172,6 +188,16 @@ pub fn flush_host(host: u32) {
         }
         ledger.completed.clear();
     });
+}
+
+/// Compare a native caller with ROM self work without attributing its
+/// separately annotated callees to that caller.
+#[cfg(test)]
+pub(crate) fn measure_routine_self_work(address: u32, run: impl FnOnce()) -> u64 {
+    let start = LEDGER.with(|ledger| ledger.borrow().completed.len());
+    run();
+    LEDGER.with(|ledger| ledger.borrow().completed[start..].iter()
+        .filter(|(pc, _)| *pc == address).map(|(_, cycles)| *cycles).sum())
 }
 
 #[cfg(test)]

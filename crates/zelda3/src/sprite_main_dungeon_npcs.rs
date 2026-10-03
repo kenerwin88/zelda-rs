@@ -1874,7 +1874,7 @@ impl ZeldaState {
             k,
             &PRIEST_DRAW_FRAMES[base..base + 2],
         );
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        self.sprite_draw_shadow_default_long(k, &mut info);
     }
 
     // ----- Thief cluster ------------------------------------------------

@@ -3959,6 +3959,56 @@ fn semantic_spotlight_projection_checkpoint_resumes_without_replaying_its_prefix
 }
 
 #[test]
+fn suspended_landing_spotlight_retains_sprite_preparation_until_caller_return() {
+    fn initial() -> ZeldaState {
+        let mut state = ZeldaState::new();
+        state.ram[crate::game_state::constants::LINK_ANIMATION_STEPS] = 8;
+        state.ram[LINK_FRAME_CHANGE_COUNTER] = 0;
+        state.sync_native_game_state_from_ram();
+        state.set_main_module(7);
+        state.set_submodule(0x0f);
+        state.set_subsubmodule(1);
+        state.follower_link_state_mut().set_x(120);
+        state.follower_link_state_mut().set_y(200);
+        state.follower_link_state_mut().set_direction_and_last_direction(8);
+        state.set_spotlight_window_radius(77);
+        state.set_spotlight_window_state(2);
+        state.latch_nmi_update();
+        state
+    }
+    let mut atomic = initial();
+    atomic.IrisSpotlight_ConfigureTable();
+    atomic.complete_deferred_module07_0f_operate_spotlight_suffix();
+    atomic.complete_deferred_module07_0f_landing_wipe_suffix();
+    atomic.complete_dungeon_after_submodule_cpu_caller_return();
+    atomic.nmi_prepare_sprites_for_main_loop();
+    atomic.clear_nmi_update_latch();
+
+    let mut resumed = initial();
+    let dma_before = resumed.ram[0xacc..0xae0].to_vec();
+    resumed.suspend_landing_spotlight_table(crate::SpotlightTableBuildProgress {
+        completed_iterations: 213,
+        checkpoint: crate::SpotlightTableBuildCheckpoint::ProjectionCopy { copied_words: 168 },
+    });
+    assert_eq!(&resumed.ram[0xacc..0xae0], dma_before);
+    assert!(resumed.game_state.display.nmi_update_is_latched());
+    assert!(!resumed.main_loop_sprite_preparation_completed);
+    assert_eq!(resumed.game_state.player.follower_link.animation_step(), 8);
+    assert_eq!(resumed.pending_main_loop_common_suffix,
+        Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch));
+    resumed.complete_dungeon_after_submodule_cpu_caller_return();
+    resumed.complete_pending_main_loop_common_suffix_after_module_return();
+    assert!(resumed.main_loop_sprite_preparation_completed);
+    assert_eq!(resumed.game_state.player.follower_link.animation_step(), 1);
+    assert!(resumed.pending_main_loop_common_suffix.is_none());
+    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(resumed.game_state, atomic.game_state);
+    let completed = resumed.ram.clone();
+    resumed.complete_pending_main_loop_common_suffix_after_module_return();
+    assert_eq!(resumed.ram, completed, "a retired suffix must not run twice");
+}
+
+#[test]
 fn authoritative_recurring_spotlight_return_finishes_the_existing_c_caller_once() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);

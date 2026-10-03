@@ -148,8 +148,8 @@ fn native_progress_owns_only_its_records_and_mutates_without_save_bank_reload() 
     let encoded = bincode::serialize(&captured).unwrap();
     assert_eq!(
         encoded.len(),
-        686,
-        "only 320 room records, named counters/flags, and six runtime bytes"
+        687,
+        "only 320 room records, named counters/flags, and seven runtime bytes"
     );
     let restored: crate::game_state::SaveProgressState = bincode::deserialize(&encoded).unwrap();
     assert_eq!(restored, captured);

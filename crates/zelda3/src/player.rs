@@ -64,6 +64,22 @@ impl ZeldaState {
         self.set_submodule(submodule);
     }
 
+    pub(crate) fn native_load_player_initialization_store(&mut self, address: usize, value: u16, width: u8) -> bool {
+        match address {
+            0x25 | 0x26 | 0x2f | 0x3a..=0x3d | 0x46 | 0x48 | 0x4d | 0x50 | 0x55 | 0x5e | 0x67 | 0x79 |
+            0x20b | 0x2cb | 0x2da | 0x2e1 | 0x2e2 | 0x2f5 | 0x300 | 0x301 | 0x308 | 0x309 | 0x30a |
+            0x30d | 0x30e | 0x31f | 0x326 | 0x328 | 0x32a | 0x34f | 0x350 | 0x360 | 0x376 | 0x37a | 0x37b => {
+                self.follower_link_state_mut().write_initialization_store(address, value, width);
+            }
+            0x32b | 0x32d => {assert_eq!(width,2);self.swim_acceleration_mut().set_mode(address-0x32b,value);}
+            0x32f | 0x331 => {assert_eq!(width,2);self.swim_acceleration_mut().set_speed_active_flag(address-0x32f,value);}
+            0x334 | 0x336 => {assert_eq!(width,2);self.swim_acceleration_mut().set_max_speed(address-0x334,value);}
+            0x33c | 0x33e => {assert_eq!(width,2);self.swim_acceleration_mut().set_acceleration(address-0x33c,value);}
+            _ => return false,
+        }
+        true
+    }
+
     pub(super) fn link_initialize(&mut self) {
         self.follower_link_state_mut()
             .initialize_link_action_state();
@@ -1486,6 +1502,7 @@ impl ZeldaState {
     }
 
     pub(super) fn link_check_for_edge_screen_transition(&mut self) -> bool {
+        let _scope = crate::cycle_ledger::routine(0x07_f439);
         if self
             .game_state
             .player
@@ -7318,16 +7335,24 @@ impl ZeldaState {
     }
 
     pub(super) fn link_main(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x07_8000);
+        crate::cycle_ledger::charge(340); // Bank/width setup, saved XY, pause and immobilization gate.
         self.follower_link_state_mut()
             .cache_previous_position_from_current_xy_order();
         self.clear_modal_pause_flag();
         if !self.game_state.player.follower_link.is_immobilized() {
+            crate::cycle_ledger::charge(46); // JSR control handler.
             self.link_control_handler();
+        } else {
+            crate::cycle_ledger::charge(6);
         }
+        crate::cycle_ledger::charge(46); // JSR shared ancilla scan.
         self.handle_somaria_and_graves();
+        crate::cycle_ledger::charge(72); // PLB : RTL after the scan returns.
     }
 
     pub(super) fn link_control_handler(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x07_807f);
         if self.game_state.player.follower_link.given_damage() != 0 {
             if self.game_state.player.follower_link.is_cape_active() {
                 self.follower_link_state_mut().clear_given_damage();
@@ -7687,21 +7712,40 @@ impl ZeldaState {
     }
 
     pub(super) fn handle_somaria_and_graves(&mut self) {
-        if self.game_state.world.location.is_outdoors()
-            && self.game_state.player.follower_link.hookshot_grave_latch()
-        {
-            for i in (0..5).rev() {
-                if self.ancilla_slot_view(i).ancilla_type() == 0x24 {
-                    self.gravestone_move(i);
+        let _scope = crate::cycle_ledger::routine(0x07_8689);
+        crate::cycle_ledger::charge(40); // Indoor gate.
+        if self.game_state.world.location.is_outdoors() {
+            crate::cycle_ledger::charge(48); // Grave latch gate.
+            if self.game_state.player.follower_link.hookshot_grave_latch() {
+                crate::cycle_ledger::charge(16); // LDX #4.
+                for i in (0..5).rev() {
+                    crate::cycle_ledger::charge(64);
+                    if self.ancilla_slot_view(i).ancilla_type() == 0x24 {
+                        crate::cycle_ledger::charge(62);
+                        self.gravestone_move(i);
+                    } else {
+                        crate::cycle_ledger::charge(6);
+                    }
+                    crate::cycle_ledger::charge(30 + if i != 0 { 6 } else { 0 }); // DEX : BPL.
                 }
+            } else {
+                crate::cycle_ledger::charge(6);
             }
+        } else {
+            crate::cycle_ledger::charge(6);
         }
+        crate::cycle_ledger::charge(16); // Somaria scan starts independently at slot 4.
         for i in (0..5).rev() {
+            crate::cycle_ledger::charge(64);
             if self.ancilla_slot_view(i).ancilla_type() == 0x2c {
+                crate::cycle_ledger::charge(62);
                 self.somaria_block_handle_player_interaction(i);
+                crate::cycle_ledger::charge(22 + 42); // BRA : RTS after first match.
                 return;
             }
+            crate::cycle_ledger::charge(6 + 30 + if i != 0 { 6 } else { 0 });
         }
+        crate::cycle_ledger::charge(42);
     }
 
     pub(super) fn link_state_on_ice(&mut self) {
@@ -9516,24 +9560,61 @@ impl ZeldaState {
     }
 
     pub(super) fn gravestone_act_as_barrier(&mut self, k: usize) {
+        let _scope = crate::cycle_ledger::routine(0x08_ee57);
+        crate::cycle_ledger::charge(600); // Coordinates, bounds and first Y comparison.
         let x = self.ancilla_get_x(k);
         let y = self.ancilla_get_y(k);
         let r4 = y.wrapping_add(0x18);
         let r6 = x.wrapping_add(0x20);
         let lx = self.game_state.player.follower_link.x().wrapping_add(8);
         let ly = self.game_state.player.follower_link.y().wrapping_add(8);
-        if ly >= y && ly < r4 && lx >= x && lx < r6 {
+        let intersects = if ly < y {
+            crate::cycle_ledger::charge(6);
+            false
+        } else {
+            crate::cycle_ledger::charge(48);
+            if ly >= r4 {
+                crate::cycle_ledger::charge(6);
+                false
+            } else {
+                crate::cycle_ledger::charge(118);
+                if lx < x {
+                    crate::cycle_ledger::charge(6);
+                    false
+                } else {
+                    crate::cycle_ledger::charge(48);
+                    if lx >= r6 {
+                        crate::cycle_ledger::charge(6);
+                        false
+                    } else {
+                        true
+                    }
+                }
+            }
+        };
+        if intersects {
+            crate::cycle_ledger::charge(94 + if ly.wrapping_sub(r4) & 0x8000 != 0 { 38 } else { 6 });
             let r10 = ly.abs_diff(r4);
             let new_y = self.game_state.player.follower_link.y().wrapping_add(r10);
             self.follower_link_state_mut().set_y(new_y);
+            // The source compares the full word at $30 before isolating the
+            // resulting low byte. X velocity supplies that word's high byte.
+            let velocity_word = u16::from(self.game_state.player.follower_link.y_velocity())
+                | (u16::from(self.game_state.player.follower_link.x_velocity()) << 8);
+            crate::cycle_ledger::charge(182 + if velocity_word < 0x80 { 6 } else { 24 } + 364);
             self.follower_link_state_mut()
                 .add_y_velocity_delta(r10 as u8);
             self.follower_link_state_mut().or_defense_flags(4);
         }
+        crate::cycle_ledger::charge(62); // SEP, facing load and BEQ.
         if self.game_state.player.follower_link.has_facing() {
-            let facing = self.game_state.player.follower_link.facing() & !4;
-            self.follower_link_state_mut().set_facing(facing);
+            crate::cycle_ledger::charge(64);
+            // EED7..EEDB reads and writes $48, not the facing byte at $2F.
+            self.follower_link_state_mut().and_defense_flags(!4);
+        } else {
+            crate::cycle_ledger::charge(6);
         }
+        crate::cycle_ledger::charge(42);
     }
 
     pub(super) fn link_handle_recoiling(&mut self) {
@@ -9659,8 +9740,11 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_dungeon_draw_single_push_block(&mut self, mut j: usize) {
+        let _scope = crate::cycle_ledger::routine(0x07_f0d9);
+        crate::cycle_ledger::charge(100); // PHY, allocation size, JSL allocator.
         j >>= 1;
         self.oam_allocate_from_region_b(4);
+        crate::cycle_ledger::charge(710); // PLY, relative coordinates, animation table and BNE.
         let y = self
             .game_state
             .player
@@ -9676,15 +9760,15 @@ impl ZeldaState {
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
         let ch = SPRITE_DUNGEON_DRAW_SINGLE_PUSH_BLOCK_CHARS
             [SPRITE_DUNGEON_DRAW_SINGLE_PUSH_BLOCK_PUSH_BLOCK_CHAR_INDEX_BY_MODE
-                [self.game_state.player.pushed_block.animation_mode() as usize]
-                .min(SPRITE_DUNGEON_DRAW_SINGLE_PUSH_BLOCK_CHARS.len() - 1)];
+                [self.game_state.player.pushed_block.animation_mode() as usize]];
         if ch != 0xff {
-            let oam = self.game_state.oam.current_pointer_usize();
+            crate::cycle_ledger::charge(6 + 492); // Taken BNE and OAM/extension stores.
             self.oam_state_mut()
-                .write_entry(oam, x as u8, y as u8, ch, 0x20);
-            let ext = self.game_state.oam.current_extended_pointer_usize();
-            self.oam_state_mut().set_extended_byte_at(ext, 2);
+                .write_current_entry_with_extended(x as u8, y as u8, ch, 0x20, 2);
+        } else {
+            crate::cycle_ledger::charge(22); // BRA over the stores.
         }
+        crate::cycle_ledger::charge(70); // PLY : RTS.
     }
 
     pub(super) fn handle_layer_of_destination(&mut self) {

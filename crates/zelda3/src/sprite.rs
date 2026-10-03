@@ -10,6 +10,62 @@ use crate::types::{
 mod sprite_shared;
 use sprite_shared::*;
 
+/// Retained shadow work and its caller-owned coordinate workspace. Sprite and
+/// OAM inputs are read from their native owners when each instruction retires.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(super) struct ShadowOamTail {
+    work: crate::cycle_models::sprite_shadow::ShadowWork,
+    slot: u8,
+    x: u16,
+    y: u16,
+    flags: u8,
+}
+
+/// A large draw owns the table-read temporaries and the shadow it tail-calls.
+/// Neither the caller nor a resumed shadow may repeat the ordinary OAM stores.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(super) struct SingleLargeDrawContinuation {
+    prep: Option<CoordinatePrepContinuation>,
+    skipped: bool,
+    work: crate::cycle_models::sprite_single::SingleLargeWork,
+    shadow: Option<ShadowOamTail>,
+    slot: u8,
+    x: u16,
+    y: u16,
+    flags: u8,
+}
+
+impl SingleLargeDrawContinuation {
+    fn new(k: usize, info: &PrepOamCoordsRet) -> Self {
+        Self {
+            prep: None,
+            skipped: false,
+            work: crate::cycle_models::sprite_single::SingleLargeWork::new(),
+            shadow: None,
+            slot: u8::try_from(k).expect("sprite slot fits a byte"),
+            x: info.x,
+            y: info.y,
+            flags: info.flags,
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn coordinates_prepared(&self) -> bool { self.prep.is_none() }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct CoordinatePrepContinuation {
+    call_pending: bool,
+    work: crate::cycle_models::sprite_prep::PrepWork,
+    kill: Option<crate::cycle_models::sprite_kill::KillWork>,
+}
+
+impl CoordinatePrepContinuation {
+    fn new(call_pending: bool) -> Self {
+        Self { call_pending, work: crate::cycle_models::sprite_prep::PrepWork::new(), kill: None }
+    }
+}
+
 // `Sprite_DrawMultiple` consumes a table of these draws (sprite.h:38-42).
 #[derive(Copy, Clone)]
 pub(super) struct DrawMultipleData {
@@ -178,6 +234,31 @@ pub enum DungeonSpriteLoadCheckpoint {
     SubtypeFinal,
     SpawnIndex,
     Complete,
+}
+
+impl DungeonSpriteLoadCheckpoint {
+    /// Last published statement at an instruction boundary in the normal
+    /// record body of Dungeon_LoadSingleSprite. The PC is the next instruction,
+    /// so a pending store still belongs to the continuation.
+    pub(crate) fn from_next_source_pc(pc: u32) -> Option<Self> {
+        Some(match pc {
+            0x09_c38c..=0x09_c38e => Self::State,
+            0x09_c391..=0x09_c395 => Self::TempY,
+            0x09_c398..=0x09_c39e => Self::Floor,
+            0x09_c3a1..=0x09_c3a6 => Self::YLow,
+            0x09_c3a9..=0x09_c3ac => Self::YHigh,
+            0x09_c3af..=0x09_c3b3 => Self::SharedX,
+            0x09_c3b6..=0x09_c3bb => Self::XLow,
+            0x09_c3be..=0x09_c3c1 => Self::XHigh,
+            0x09_c3c4 => Self::Type,
+            0x09_c3c7..=0x09_c3ce => Self::SubtypeClear,
+            0x09_c3d1..=0x09_c3dc => Self::TempSubtype,
+            0x09_c3df..=0x09_c3e1 => Self::SubtypeFinal,
+            0x09_c3e4 => Self::SpawnIndex,
+            0x09_c3e7 => Self::Complete,
+            _ => return None,
+        })
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -1398,20 +1479,86 @@ impl ZeldaState {
     //   return out_of_bounds;
     // }
     fn sprite_prep_oam_coord_or_double_ret_body(&mut self, k: usize) -> (PrepOamCoordsRet, bool) {
+        let mut work = CoordinatePrepContinuation::new(false);
+        while self.retire_coordinate_prep_instruction(k, &mut work).is_some() {}
+        (self.prepared_oam_coordinates(), work.work.out_of_bounds())
+    }
+
+    fn prepared_oam_coordinates(&self) -> PrepOamCoordsRet {
+        PrepOamCoordsRet {
+            x: u16::from_le_bytes([self.ram[0], self.ram[1]]),
+            y: u16::from_le_bytes([self.ram[2], self.ram[3]]),
+            r4: self.ram[4], flags: self.ram[5],
+        }
+    }
+
+    fn coordinate_prep_inputs(&self, k: usize) -> crate::cycle_models::sprite_prep::Inputs {
+        let slot = self.sprite_slot_view(k);
+        crate::cycle_models::sprite_prep::Inputs {
+            world_x: self.game_state.sprites.workspace.current_sprite_x(),
+            world_y: self.game_state.sprites.workspace.current_sprite_y(),
+            scroll_x: self.game_state.display.ppu_scroll_copy.bg2_h_copy2(),
+            scroll_y: self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
+            height: slot.z(), flags4: slot.flags4(), deflection: slot.deflection_bits(),
+            flags: slot.oam_flags(), priority: slot.object_priority(), pause: slot.pause(),
+            scratch: self.ram[..6].try_into().unwrap(),
+            extended_screen: self.game_state.enhanced_features.has(FEATURES0_EXTEND_SCREEN64_SPRITE),
+        }
+    }
+
+    fn retire_coordinate_prep_instruction(
+        &mut self, k: usize, work: &mut CoordinatePrepContinuation,
+    ) -> Option<u32> {
+        if work.call_pending {
+            work.call_pending = false;
+            crate::cycle_ledger::charge_routine(0x06_dc10, 46);
+            return Some(46);
+        }
+        if let Some(kill) = work.kill.as_mut() {
+            if let Some(cycles) = self.retire_sprite_kill_instruction(k, kill) {
+                return Some(cycles);
+            }
+            work.kill = None;
+        }
+        use crate::cycle_models::sprite_prep::Publication;
+        let instruction = work.work.step(self.coordinate_prep_inputs(k))?;
+        crate::cycle_ledger::charge_routine(0x06_e41e, u64::from(instruction.master_cycles));
+        match instruction.publication {
+            Some(Publication::ScratchByte { offset, value }) => {
+                self.sprite_workspace_mut().set_oam_prep_scratch_byte(offset, value);
+            }
+            Some(Publication::ScratchWord { offset, value }) => {
+                let mut workspace = self.sprite_workspace_mut();
+                workspace.set_oam_prep_scratch_byte(offset, value as u8);
+                workspace.set_oam_prep_scratch_byte(offset + 1, (value >> 8) as u8);
+            }
+            Some(Publication::Pause(value)) => self.sprite_slot_view_mut(k).set_pause(value),
+            Some(Publication::DrawX(value)) => {
+                let y = self.ram[crate::game_state::constants::DRAW_WORK_POSITION_Y];
+                self.draw_scratch_position_mut().set_low_position(value, y);
+            }
+            Some(Publication::DrawY(value)) => {
+                let x = self.ram[crate::game_state::constants::DRAW_WORK_POSITION_X];
+                self.draw_scratch_position_mut().set_low_position(x, value);
+            }
+            Some(Publication::EnterKill) => work.kill = Some(crate::cycle_models::sprite_kill::KillWork::new()),
+            None => {}
+        }
+        Some(instruction.master_cycles)
+    }
+
+    /// Coordinates and pause precede KillSelf; draw scratch belongs to the
+    /// shared return path and must remain unpublished while that call is parked.
+    fn sprite_prep_oam_coord_prefix(&mut self, k: usize) -> (bool, bool) {
         // Cycle ledger: Sprite_PrepOamCoordOrDoubleRet $06:E41E (entry m8 x8,
         // X <= 15 so no abs,x page crossing). The blocks are charged where
         // the bounds test resolves, below.
-        let _scope = crate::cycle_ledger::routine(0x06_e41e);
         let value = 0;
         self.sprite_slot_view_mut(k).set_pause(value);
         let cur_x = self.game_state.sprites.workspace.current_sprite_x();
         let cur_y = self.game_state.sprites.workspace.current_sprite_y();
         let x = cur_x.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
         let y = cur_y.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
-        let prep_y = y.wrapping_sub(self.sprite_slot_view(k).z() as u16);
-        self.sprite_workspace_mut().set_oam_prep_coords(x, prep_y);
-        let flags =
-            self.sprite_slot_view(k).oam_flags() ^ self.sprite_slot_view(k).object_priority();
         let xt = if self
             .game_state
             .enhanced_features
@@ -1428,6 +1575,16 @@ impl ZeldaState {
         let x_out_of_bounds = x.wrapping_add(0x40 + xt) >= 0x170 + xt * 2;
         let y_out_of_bounds = y.wrapping_add(0x40) >= 0x170;
         let flags4_keeps_offscreen = self.sprite_slot_view(k).flags4() & 0x20 != 0;
+        let height_operand = if x_out_of_bounds {
+            // BCS skips $E436..E43B. The later 16-bit SBC $04 consumes
+            // the word left by the preceding caller, not this sprite's Z.
+            self.sprite_workspace_mut().oam_prep_scratch_word()
+        } else {
+            let height = self.sprite_slot_view(k).z();
+            self.sprite_workspace_mut().set_oam_prep_height(height);
+            u16::from(height)
+        };
+        self.sprite_workspace_mut().set_oam_prep_coords(x, y.wrapping_sub(height_operand));
         crate::cycle_ledger::charge(if x_out_of_bounds {
             // BCS taken (+6) into $06:E476-E483 REP LDA $0fda SEC SBC $e8 SEC
             // SBC $04 STA $02 SEP (208), falling into $06:E485.
@@ -1460,10 +1617,16 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_pause(value);
             if (self.sprite_slot_view(k).deflection_bits() & 0x80) == 0 {
                 crate::cycle_ledger::charge(62);
-                self.sprite_kill_self(k);
+                return (true, true);
             } else {
                 crate::cycle_ledger::charge(6);
             }
+        }
+        (out, false)
+    }
+
+    fn sprite_prep_oam_coord_suffix(&mut self, k: usize, out: bool) -> (PrepOamCoordsRet, bool) {
+        if out {
             crate::cycle_ledger::charge(92);
         }
         // $06:E45F-E475 LDA $f50,x EOR $b89,x STA $05 STZ $04 LDA $00 STA
@@ -1475,11 +1638,43 @@ impl ZeldaState {
             x: ret_x,
             y: ret_y,
             r4: 0,
-            flags,
+            flags: self.sprite_slot_view(k).oam_flags()
+                ^ self.sprite_slot_view(k).object_priority(),
         };
+        self.sprite_workspace_mut().set_oam_prep_flags(ret.flags);
         self.draw_scratch_position_mut()
             .set_low_position(ret_x as u8, ret_y as u8);
         (ret, out)
+    }
+
+    /// Bank-5 draw wrapper suspended inside its shared off-screen KillSelf call.
+    pub(super) fn sprite_prep_oam_coord_bank5_until_kill_self(&mut self, k: usize) {
+        let _wrapper = crate::cycle_ledger::routine(0x05_fa50);
+        crate::cycle_ledger::charge(62 + 16);
+        let _long = crate::cycle_ledger::routine(0x06_e416);
+        crate::cycle_ledger::charge(46);
+        let _safe = crate::cycle_ledger::routine(0x06_e41a);
+        crate::cycle_ledger::charge(46);
+        let _body = crate::cycle_ledger::routine(0x06_e41e);
+        assert_eq!(self.sprite_prep_oam_coord_prefix(k), (true, true));
+    }
+
+    pub(super) fn sprite_prep_oam_coord_bank5_complete_kill_self(&mut self, k: usize) {
+        {
+            let _wrapper = crate::cycle_ledger::routine(0x05_fa50);
+            {
+                let _long = crate::cycle_ledger::routine(0x06_e416);
+                {
+                    let _safe = crate::cycle_ledger::routine(0x06_e41a);
+                    let _body = crate::cycle_ledger::routine(0x06_e41e);
+                    self.sprite_kill_self(k);
+                    self.sprite_prep_oam_coord_suffix(k, true);
+                }
+                crate::cycle_ledger::charge(44);
+            }
+            crate::cycle_ledger::charge(28);
+        }
+        crate::cycle_ledger::charge(28 + 42);
     }
 
     // void Sprite_InitializeSlots() {  // 89afd6
@@ -2242,6 +2437,39 @@ impl ZeldaState {
         }
     }
 
+    /// Bind existing native records and properties at their physical data
+    /// addresses. The reset owner reads these bytes without ROM execution.
+    pub(crate) fn native_dungeon_sprite_data(&self) -> Option<std::collections::BTreeMap<u32, u8>> {
+        let records = self.asset_raw(58)?;
+        let offsets = self.asset_raw(59)?;
+        let mut data = std::collections::BTreeMap::new();
+        let mut put = |address, value| {
+            if let Some(old) = data.insert(address, value) {
+                assert_eq!(old, value, "overlapping native sprite records at {address:06x}");
+            }
+        };
+        for (room, &pointer) in crate::cycle_models::sprite_reset_data::ROOM_POINTERS.iter().enumerate() {
+            for (i, value) in pointer.to_le_bytes().into_iter().enumerate() {
+                put(0x09d62e + (room * 2 + i) as u32, value);
+            }
+            let start = usize::from(read_word_from_slice(offsets, room * 2));
+            let mut end = start + 1;
+            while *records.get(end)? != 0xff { end += 3; }
+            for (i, &value) in records.get(start..=end)?.iter().enumerate() {
+                put(0x090000 + u32::from(pointer) + i as u32, value);
+            }
+        }
+        for slot in 0..16 {
+            for (i, value) in (1u16 << slot).to_le_bytes().into_iter().enumerate() {
+                put(0x09c2d5 + (slot * 2 + i) as u32, value);
+            }
+        }
+        for ty in 0..SPRITE_INIT_TABLE_LEN {
+            put(0x0db725 + ty as u32, sprite_init_value(SPRITE_INIT_DEFL_BITS_TABLE, ty as u8));
+        }
+        Some(data)
+    }
+
     pub(super) fn dungeon_reset_sprites(&mut self) {
         self.dungeon_reset_sprites_before_room_load();
         self.dungeon_load_sprites();
@@ -2650,6 +2878,36 @@ impl ZeldaState {
         (start < sprites.len()).then_some((sprites, start))
     }
 
+    /// Resolve the semantic load ordinal from native room records and the
+    /// native death mask. Markers, overlords and suppressed records do not
+    /// publish a normal sprite; a CPU slot is not a normal-load ordinal.
+    pub(super) fn dungeon_load_progress_for_slot(
+        &self,
+        slot: u8,
+        checkpoint: DungeonSpriteLoadCheckpoint,
+    ) -> DungeonLoadSpritesCpuProgress {
+        assert!(slot < 16);
+        let (sprites, start) = self.dungeon_sprite_records()
+            .expect("interrupted room sprite load requires native room records");
+        let mut k = 0usize;
+        let mut normal_load_ordinal = 0u16;
+        let mut src = start + 1;
+        while src + 2 < sprites.len() && sprites[src] != 0xff {
+            let (y, x, sprite_type) = (sprites[src], sprites[src + 1], sprites[src + 2]);
+            if self.dungeon_sprite_record_loads_normal_slot(k, y, x, sprite_type) {
+                if k == usize::from(slot) {
+                    return DungeonLoadSpritesCpuProgress { normal_load_ordinal, slot, checkpoint };
+                }
+                normal_load_ordinal += 1;
+            }
+            if Self::dungeon_sprite_record_advances_slot(y, x, sprite_type) {
+                k += 1;
+            }
+            src += 3;
+        }
+        panic!("interrupted sprite slot {slot} is not a native normal room load");
+    }
+
     fn dungeon_load_sprites_through_cpu_progress(
         &mut self,
         progress: DungeonLoadSpritesCpuProgress,
@@ -2990,21 +3248,42 @@ impl ZeldaState {
             // $06:834B-8350 with BNE taken.
             crate::cycle_ledger::charge(72 + 6);
         }
-        // $06:835E-837B JSR Oam_ResetRegionBases, JSL Garnish upper, JSL
-        // Tagalong_Main, pickup-flag moves, hitbox high byte, LDA $47 AND #$7f
-        // BEQ not taken (370; the callees charge their own bodies).
-        crate::cycle_ledger::charge(370);
+        // $06:835E-8365 JSR Oam_ResetRegionBases and the two JSLs to
+        // garnish/follower (46 + 62 + 62). The caller suffix follows return.
+        crate::cycle_ledger::charge(170);
         self.oam_reset_region_bases();
         self.replay_trace_ram_watch("sprite-after-oam-reset");
         self.garnish_execute_upper_slots();
         self.replay_trace_ram_watch("sprite-after-garnish-upper");
         {
             // Tagalong_Main_ $09:9F91, the JSL target wrapping Follower_Main:
-            // PHB PHK PLB JSR $09:9FC4 PLB RTL (190).
+            // PHB PHK PLB JSR $09:9FC4 (118); PLB RTL remain below the call.
             let _tagalong = crate::cycle_ledger::routine(0x09_9f91);
-            crate::cycle_ledger::charge(190);
+            crate::cycle_ledger::charge(118);
+            let parked_work = self.game_execution_scheduler.current_work();
             self.follower_main();
+            if self.game_execution_scheduler.current_work() != parked_work
+                && self.game_execution_scheduler.work_suspends_translated_call_stack() {
+                return;
+            }
+            if let Some(boundary @ SpriteMainCpuBoundary::FollowerWrapperReturn { plb_completed }) =
+                self.sprite_main_cpu_boundary
+            {
+                if plb_completed { crate::cycle_ledger::charge(28); }
+                self.sprite_main_cpu_boundary = None;
+                let slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(boundary, slices, caller);
+                return;
+            }
+            crate::cycle_ledger::charge(72);
         }
+        self.complete_sprite_main_prefix_after_follower();
+    }
+
+    pub(super) fn complete_sprite_main_prefix_after_follower(&mut self) {
+        // $06:8369-837B pickup-flag moves, hitbox high byte and timer test.
+        crate::cycle_ledger::charge(200);
         self.replay_trace_ram_watch("sprite-after-follower");
         let pickup_slot_cache = self.game_state.player.follower_link.sprite_pickup_flag();
         self.sprite_workspace_mut()
@@ -3085,6 +3364,119 @@ impl ZeldaState {
         self.advance_sprite_main_after_slot_to_after_timers(16, slot)
     }
 
+    /// Publish a completed timer/OAM prefix while retaining the same suspended
+    /// sprite caller and NMI ownership. The slot's dispatch runs on resume.
+    pub(super) fn refine_sprite_main_to_timer_return(&mut self, slot: u8) {
+        let Some(expected @ GameWorkContinuation::FinishSpriteMain { boundary, caller }) =
+            self.game_execution_scheduler.current_work() else { return };
+        let boundary = match boundary {
+            SpriteMainCpuBoundary::BeforeFirstSlot =>
+                self.advance_sprite_main_before_first_slot_to_after_timers_and_oam(slot),
+            SpriteMainCpuBoundary::AfterSlot(completed) if slot < completed =>
+                self.advance_sprite_main_after_slot_to_after_timers(completed, slot),
+            _ => return,
+        };
+        self.game_execution_scheduler.refine_scheduled_work(expected,
+            GameWorkContinuation::FinishSpriteMain { boundary, caller });
+    }
+
+    pub(super) fn refine_sprite_main_to_coordinate_moves(&mut self, slot: u8, next_instruction: u8) {
+        assert!(next_instruction <= 8);
+        let Some(expected @ GameWorkContinuation::FinishSpriteMain { boundary, caller }) =
+            self.game_execution_scheduler.current_work() else { return };
+        let completed_slot = match boundary {
+            SpriteMainCpuBoundary::BeforeFirstSlot => {
+                self.resume_sprite_main_before_first_slot_prefix();
+                16
+            }
+            SpriteMainCpuBoundary::AfterSlot(completed) if slot < completed => completed,
+            _ => return,
+        };
+        let state = self.begin_sprite_main_slot_after_boundary(completed_slot, slot);
+        // ExecuteSingle's LDA/BEQ, PHA/JSR; TimersAndOam's coordinate JSR.
+        crate::cycle_ledger::charge_routine(0x06_84e2, 48 + 22 + 46);
+        crate::cycle_ledger::charge_routine(0x06_83f2, 46);
+        let x = self.sprite_get_x(usize::from(slot)).to_le_bytes();
+        let y = self.sprite_get_y(usize::from(slot)).to_le_bytes();
+        let coordinates = [x[0], x[1], y[0], y[1]];
+        self.advance_sprite_coordinate_moves(coordinates, 0, next_instruction);
+        self.game_execution_scheduler.refine_scheduled_work(expected,
+            GameWorkContinuation::FinishSpriteMain {
+                boundary: SpriteMainCpuBoundary::TimerCoordinateMoves {
+                    slot, state, next_instruction, coordinates,
+                }, caller,
+            });
+    }
+
+    pub(super) fn refine_sprite_main_to_guard_offscreen_kill(&mut self, slot: u8) {
+        self.refine_sprite_main_to_guard_checkpoint(slot,
+            crate::GuardAnimationCheckpoint::OffscreenKillSelfPending);
+    }
+
+    pub(super) fn refine_sprite_main_to_rat_oam_flags_store(&mut self, slot: u8) {
+        self.refine_sprite_main_to_timer_return(slot);
+        let Some(expected @ GameWorkContinuation::FinishSpriteMain {
+            boundary: SpriteMainCpuBoundary::AfterTimersAndOam { slot: pending, state: Some(9) },
+            caller,
+        }) = self.game_execution_scheduler.current_work() else { return };
+        if pending != slot { return; }
+        let k = usize::from(slot);
+        assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x6d);
+        crate::cycle_ledger::charge(6 + 24);
+        self.charge_sprite_active_main_dispatch(k);
+        let flags = self.rat_animation_until_oam_flags_store(k);
+        self.game_execution_scheduler.refine_scheduled_work(expected,
+            GameWorkContinuation::FinishSpriteMain {
+                boundary: SpriteMainCpuBoundary::RatOamFlagsPending { slot, flags }, caller,
+            });
+    }
+
+    pub(super) fn refine_sprite_main_to_keese_inactive_check(&mut self, slot: u8) {
+        self.refine_sprite_main_to_timer_return(slot);
+        let Some(expected @ GameWorkContinuation::FinishSpriteMain {
+            boundary: SpriteMainCpuBoundary::AfterTimersAndOam { slot: pending, state: Some(9) },
+            caller,
+        }) = self.game_execution_scheduler.current_work() else { return };
+        if pending != slot { return; }
+        let k = usize::from(slot);
+        assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x6f);
+        crate::cycle_ledger::charge(6 + 24);
+        self.charge_sprite_active_main_dispatch(k);
+        self.keese_draw_before_inactive_check(k);
+        self.game_execution_scheduler.refine_scheduled_work(expected,
+            GameWorkContinuation::FinishSpriteMain {
+                boundary: SpriteMainCpuBoundary::KeeseInactiveCheckPending { slot }, caller,
+            });
+    }
+
+    pub(super) fn refine_sprite_main_to_guard_checkpoint(
+        &mut self,
+        slot: u8,
+        checkpoint: crate::GuardAnimationCheckpoint,
+    ) {
+        self.refine_sprite_main_to_timer_return(slot);
+        let Some(expected @ GameWorkContinuation::FinishSpriteMain {
+            boundary: SpriteMainCpuBoundary::AfterTimersAndOam { slot: pending, state: Some(9) },
+            caller,
+        }) = self.game_execution_scheduler.current_work() else { return };
+        if pending != slot { return; }
+        let k = usize::from(slot);
+        assert!((0x41..=0x44).contains(&self.sprite_slot_view(k).sprite_type()));
+        crate::cycle_ledger::charge(6 + 24);
+        self.charge_sprite_active_main_dispatch(k);
+        if self.sprite_slot_view(k).sprite_type() == 0x41 {
+            assert_eq!(self.sprite_slot_view(k).c(), 0);
+            crate::cycle_ledger::charge(48 + 24); // BlueGuard's Guard_Main dispatch.
+        }
+        let continuation = self.guard_animation_until_checkpoint(k, checkpoint);
+        self.game_execution_scheduler.refine_scheduled_work(expected,
+            GameWorkContinuation::FinishSpriteMain {
+                boundary: SpriteMainCpuBoundary::GuardAnimation {
+                    slot, checkpoint, continuation: Some(continuation),
+                }, caller,
+            });
+    }
+
     /// Advance only the descending slot delta after an already returned call.
     /// The destination dispatch state precedes its timer/OAM helper.
     pub(super) fn advance_sprite_main_after_slot_to_after_timers(
@@ -3092,6 +3484,16 @@ impl ZeldaState {
         completed_slot: u8,
         slot: u8,
     ) -> SpriteMainCpuBoundary {
+        let state = self.begin_sprite_main_slot_after_boundary(completed_slot, slot);
+        {
+            let _execute_single = crate::cycle_ledger::routine(0x06_84e2);
+            crate::cycle_ledger::charge(48 + 128);
+            self.sprite_timers_and_oam(usize::from(slot));
+        }
+        SpriteMainCpuBoundary::AfterTimersAndOam { slot, state: Some(state) }
+    }
+
+    fn begin_sprite_main_slot_after_boundary(&mut self, completed_slot: u8, slot: u8) -> u8 {
         assert!(slot < completed_slot && completed_slot <= 16);
         // Cycle ledger: a partial Sprite_Main $06:8328 body (its walk only).
         let _scope = crate::cycle_ledger::routine(0x06_8328);
@@ -3110,21 +3512,9 @@ impl ZeldaState {
             state, 0,
             "source timer/OAM return requires an active sprite slot",
         );
-        // $06:83A1-83A4 for the target slot, then Sprite_ExecuteSingle
-        // $06:84E2-84E5 LDA $dd0,x BEQ not taken (48) and $06:84E7-84EE PHA,
-        // JSR Sprite_TimersAndOam, PLA, CMP #$09, BEQ (128) up to the timer
-        // return; the dispatch after the timers is charged when the bound
-        // continuation resumes through `sprite_execute_single_after_timers`.
+        // $06:83A1-83A4 for the target slot. Its callee remains pending.
         crate::cycle_ledger::charge(78);
-        {
-            let _execute_single = crate::cycle_ledger::routine(0x06_84e2);
-            crate::cycle_ledger::charge(48 + 128);
-            self.sprite_timers_and_oam(usize::from(slot));
-        }
-        SpriteMainCpuBoundary::AfterTimersAndOam {
-            slot,
-            state: Some(state),
-        }
+        state
     }
 
     fn resume_sprite_main_before_first_slot_prefix(&mut self) {
@@ -3815,7 +4205,18 @@ impl ZeldaState {
         caller: SpriteMainCpuCaller,
     ) {
         self.stage_interrupted_sprite_main_oam_scanout();
-        let continuation = GameWorkContinuation::FinishSpriteMain { boundary, caller };
+        // A retained CPU trial can select a precise suspension boundary
+        // without installing the live semantic-receipt owner. Its resumed
+        // caller must use native completion; otherwise the scheduler waits
+        // forever for a Sprite_Main-return receipt that cannot arrive.
+        let resume_caller = match caller {
+            SpriteMainCpuCaller::DungeonModule07Live { .. }
+                if self.native_exact_cpu_host_trace.is_some()
+                    && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) =>
+                    SpriteMainCpuCaller::DungeonModule07,
+            caller => caller,
+        };
+        let continuation = GameWorkContinuation::FinishSpriteMain { boundary, caller: resume_caller };
         let resumes_after_current_nmi = match caller {
             SpriteMainCpuCaller::DungeonModule07 => {
                 self.dungeon_quadrant_cpu_continuation_active && nmi_slices == 1
@@ -3927,6 +4328,56 @@ impl ZeldaState {
         boundary: SpriteMainCpuBoundary,
     ) {
         match boundary {
+            SpriteMainCpuBoundary::CuccoDraw { mut work } => {
+                let slot = work.slot();
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.advance_cucco_draw(&mut work, None), CpuWorkAdvance::Complete);
+                self.complete_cucco_draw(work);
+                if !self.game_execution_scheduler.work_suspends_translated_call_stack() {
+                    self.complete_sprite_main_after_interrupted_slot(usize::from(slot));
+                }
+            }
+            SpriteMainCpuBoundary::FollowerWrapperReturn { plb_completed } => {
+                crate::cycle_ledger::charge_routine(0x09_9f91, if plb_completed { 44 } else { 72 });
+                self.complete_sprite_main_prefix_after_follower();
+                if !self.game_execution_scheduler.work_suspends_translated_call_stack() {
+                    self.complete_sprite_main_after_interrupted_slot(16);
+                }
+            }
+            SpriteMainCpuBoundary::FollowerAnimationSelection { inputs: Some((ain, xin, yin)) } => {
+                {
+                    let _scope = crate::cycle_ledger::routine(0x09_9fc4);
+                    self.follower_animate_movement_preserved(ain, xin, yin);
+                }
+                crate::cycle_ledger::charge_routine(0x09_9f91, 72); // PLB RTL.
+                self.complete_sprite_main_prefix_after_follower();
+                if !self.game_execution_scheduler.work_suspends_translated_call_stack() {
+                    self.complete_sprite_main_after_interrupted_slot(16);
+                }
+            }
+            SpriteMainCpuBoundary::FollowerAnimationSelection { inputs: None } => {
+                unreachable!("follower selector must bind its native arguments before suspension")
+            }
+            follower @ (SpriteMainCpuBoundary::FollowerBodyDraw { continuation: Some(work), .. }
+            | SpriteMainCpuBoundary::FollowerHeadCoordinates { continuation: Some(work), .. }) => {
+                {
+                    let _scope = crate::cycle_ledger::routine(0x09_9fc4);
+                    if let SpriteMainCpuBoundary::FollowerHeadCoordinates { prefix, .. } = follower {
+                        self.complete_follower_body_draw_after_coordinate_prefix(work, prefix);
+                    } else {
+                        self.complete_follower_body_draw(work);
+                    }
+                }
+                crate::cycle_ledger::charge_routine(0x09_9f91, 72); // PLB RTL.
+                self.complete_sprite_main_prefix_after_follower();
+                if !self.game_execution_scheduler.work_suspends_translated_call_stack() {
+                    self.complete_sprite_main_after_interrupted_slot(16);
+                }
+            }
+            SpriteMainCpuBoundary::FollowerBodyDraw { continuation: None, .. }
+            | SpriteMainCpuBoundary::FollowerHeadCoordinates { continuation: None, .. } => {
+                unreachable!("follower draw receipt must bind native locals before suspension")
+            }
             SpriteMainCpuBoundary::Module09FinalScrollPairPending => {
                 self.complete_module09_final_scroll_pair();
                 self.sprite_main();
@@ -3945,6 +4396,23 @@ impl ZeldaState {
             }
             SpriteMainCpuBoundary::AfterSlot(interrupted_slot) => {
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot as usize)
+            }
+            SpriteMainCpuBoundary::TimerCoordinateMoves { slot, state, next_instruction, coordinates } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.advance_sprite_coordinate_moves(coordinates, next_instruction, 8);
+                crate::cycle_ledger::charge_routine(0x06_84c1, 42); // RTS.
+                {
+                    let _timers = crate::cycle_ledger::routine(0x06_83f2);
+                    self.sprite_timers_and_oam_after_coordinates_through_oam_allocation(k);
+                    self.sprite_timers_and_oam_after_oam_allocation(k);
+                }
+                {
+                    let _execute_single = crate::cycle_ledger::routine(0x06_84e2);
+                    crate::cycle_ledger::charge(28 + 16 + 16); // PLA, CMP, BEQ.
+                    self.sprite_execute_single_after_timers(k, state);
+                }
+                self.complete_sprite_main_after_interrupted_slot(k);
             }
             SpriteMainCpuBoundary::AfterTimersAndOam {
                 slot,
@@ -4898,6 +5366,19 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 self.complete_sprite_main_after_interrupted_slot(k);
             }
             SpriteMainCpuBoundary::GuardAnimation { continuation: None, .. } => unreachable!("guard weapon checkpoint did not bind its source locals"),
+            SpriteMainCpuBoundary::RatOamFlagsPending { slot, flags } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.sprite_slot_view(k).state(), 9);
+                self.complete_rat_animation_after_graphics(k, flags);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
+            SpriteMainCpuBoundary::KeeseInactiveCheckPending { slot } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.complete_keese_after_draw(k);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
         }
     }
 
@@ -5170,7 +5651,33 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                             self.charge_sprite_active_main_dispatch(i);
                             self.green_knife_guard_before_recruit_oam_prep(i);
                         }
-                        CachedSpriteCpuInterruption::ExecutingAfterOamAllocation {
+                        CachedSpriteCpuInterruption::ExecutingGuardBeforeShadow {
+                            continuation: None, ..
+                        } => {
+                            self.cached_sprite_slot_mut(i)
+                                .load_cached_into_live(&mut live_slot_backup);
+                            assert_eq!(self.sprite_slot_view(i).state(), 9);
+                            assert!((0x41..=0x44).contains(&self.sprite_slot_view(i).sprite_type()));
+                            let _uncache = crate::cycle_ledger::routine(0x1d_ea00);
+                            crate::cycle_ledger::charge(3_160);
+                            let _wrapper = crate::cycle_ledger::routine(0x06_84da);
+                            crate::cycle_ledger::charge(190);
+                            let _execute_single = self.sprite_execute_single_lane_scope(i, true);
+                            self.sprite_timers_and_oam(i);
+                            self.charge_sprite_active_main_dispatch(i);
+                            let continuation = self.guard_animation_until_checkpoint(
+                                i, crate::GuardAnimationCheckpoint::ShadowOamPending);
+                            boundary = CachedSpriteCpuInterruption::ExecutingGuardBeforeShadow {
+                                slot: i as u8, continuation: Some(continuation),
+                            };
+                        }
+                        CachedSpriteCpuInterruption::ExecutingGuardBeforeShadow {
+                            continuation: Some(_), ..
+                        } => unreachable!("cached guard shadow boundary was already bound"),
+                        CachedSpriteCpuInterruption::ExecutingAfterCoordinates {
+                            state: None, ..
+                        }
+                        | CachedSpriteCpuInterruption::ExecutingAfterOamAllocation {
                             state: None, ..
                         } => {
                             self.cached_sprite_slot_mut(i)
@@ -5182,13 +5689,23 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                             let _wrapper = crate::cycle_ledger::routine(0x06_84da);
                             crate::cycle_ledger::charge(190);
                             let _execute_single = self.sprite_execute_single_lane_scope(i, false);
-                            self.sprite_timers_and_oam_through_oam_allocation(i);
-                            boundary = CachedSpriteCpuInterruption::ExecutingAfterOamAllocation {
-                                slot: i as u8,
-                                state: Some(state),
+                            boundary = if matches!(boundary,
+                                CachedSpriteCpuInterruption::ExecutingAfterCoordinates { .. }) {
+                                self.sprite_timers_and_oam_through_coordinates(i);
+                                CachedSpriteCpuInterruption::ExecutingAfterCoordinates {
+                                    slot: i as u8, state: Some(state),
+                                }
+                            } else {
+                                self.sprite_timers_and_oam_through_oam_allocation(i);
+                                CachedSpriteCpuInterruption::ExecutingAfterOamAllocation {
+                                    slot: i as u8, state: Some(state),
+                                }
                             };
                         }
-                        CachedSpriteCpuInterruption::ExecutingAfterOamAllocation {
+                        CachedSpriteCpuInterruption::ExecutingAfterCoordinates {
+                            state: Some(_), ..
+                        }
+                        | CachedSpriteCpuInterruption::ExecutingAfterOamAllocation {
                             state: Some(_), ..
                         } => unreachable!("cached OAM boundary was already bound"),
                         CachedSpriteCpuInterruption::Restoring { live_fields, .. } => {
@@ -5329,12 +5846,38 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 self.cached_sprite_slot_mut(interrupted_slot)
                     .restore_live_from_backup(&live_slot_backup);
             }
-            CachedSpriteCpuInterruption::ExecutingAfterOamAllocation {
+            CachedSpriteCpuInterruption::ExecutingGuardBeforeShadow {
+                continuation: Some(continuation), ..
+            } => {
+                let _uncache = crate::cycle_ledger::routine(0x1d_ea00);
+                let _wrapper = crate::cycle_ledger::routine(0x06_84da);
+                let _execute_single = crate::cycle_ledger::routine(0x06_84e2);
+                self.complete_guard_animation_at_checkpoint(interrupted_slot, continuation);
+                if self.sprite_slot_view(interrupted_slot).pause() != 0 {
+                    crate::cycle_ledger::charge(38);
+                    self.cached_sprite_slot_mut(interrupted_slot).clear_state();
+                } else {
+                    crate::cycle_ledger::charge(6);
+                }
+                crate::cycle_ledger::charge(1_628);
+                self.cached_sprite_slot_mut(interrupted_slot)
+                    .restore_live_from_backup(&live_slot_backup);
+            }
+            CachedSpriteCpuInterruption::ExecutingGuardBeforeShadow {
+                continuation: None, ..
+            } => unreachable!("cached guard shadow boundary did not bind its native draw"),
+            CachedSpriteCpuInterruption::ExecutingAfterCoordinates {
+                state: Some(state), ..
+            }
+            | CachedSpriteCpuInterruption::ExecutingAfterOamAllocation {
                 state: Some(state), ..
             } => {
                 let _uncache = crate::cycle_ledger::routine(0x1d_ea00);
                 let _wrapper = crate::cycle_ledger::routine(0x06_84da);
                 let _execute_single = crate::cycle_ledger::routine(0x06_84e2);
+                if matches!(boundary, CachedSpriteCpuInterruption::ExecutingAfterCoordinates { .. }) {
+                    self.sprite_timers_and_oam_after_coordinates_through_oam_allocation(interrupted_slot);
+                }
                 self.sprite_timers_and_oam_after_oam_allocation(interrupted_slot);
                 self.sprite_execute_single_after_timers(interrupted_slot, state);
                 if self.sprite_slot_view(interrupted_slot).pause() != 0 {
@@ -5347,7 +5890,10 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 self.cached_sprite_slot_mut(interrupted_slot)
                     .restore_live_from_backup(&live_slot_backup);
             }
-            CachedSpriteCpuInterruption::ExecutingAfterOamAllocation {
+            CachedSpriteCpuInterruption::ExecutingAfterCoordinates {
+                state: None, ..
+            }
+            | CachedSpriteCpuInterruption::ExecutingAfterOamAllocation {
                 state: None, ..
             } => unreachable!("cached OAM boundary did not bind its dispatch state"),
             CachedSpriteCpuInterruption::Restoring { live_fields, .. } => {
@@ -5585,17 +6131,49 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     }
 
     pub(super) fn sprite_timers_and_oam_through_oam_allocation(&mut self, k: usize) {
-        // $06:83F2-8400 JSR Sprite_Get16BitCoords, LDA $e40,x AND #$1f INC ASL
-        // ASL, LDY $0fb3, BEQ not taken (184). The translation inlines
-        // Sprite_Get16BitCoords ($06:84C1, four abs,x/abs moves + RTS, 298,
-        // input independent), so its constant is charged here.
-        crate::cycle_ledger::charge(184);
-        crate::cycle_ledger::charge_routine(0x06_84c1, 298);
-        let x = self.sprite_get_x(k);
-        let y = self.sprite_get_y(k);
-        self.sprite_workspace_mut().set_current_sprite_x(x);
-        self.sprite_workspace_mut().set_current_sprite_y(y);
+        self.sprite_timers_and_oam_through_coordinates(k);
+        self.sprite_timers_and_oam_after_coordinates_through_oam_allocation(k);
+    }
 
+    pub(super) fn sprite_timers_and_oam_through_coordinates(&mut self, k: usize) {
+        // $06:83F2 JSR Sprite_Get16BitCoords (46); the shared callee is four
+        // abs,x/abs coordinate moves and RTS (298). OAM allocation is later.
+        crate::cycle_ledger::charge(46);
+        let x = self.sprite_get_x(k).to_le_bytes();
+        let y = self.sprite_get_y(k).to_le_bytes();
+        self.advance_sprite_coordinate_moves([x[0], x[1], y[0], y[1]], 0, 8);
+        crate::cycle_ledger::charge_routine(0x06_84c1, 42);
+    }
+
+    fn advance_sprite_coordinate_moves(&mut self, coordinates: [u8; 4], from: u8, to: u8) {
+        assert!(from <= to && to <= 8);
+        let _scope = crate::cycle_ledger::routine(0x06_84c1);
+        // Four LDA abs,x / STA abs pairs, all 32 master cycles. Slots are
+        // bounded below 16, so none of the indexed reads crosses a page.
+        for instruction in from..to {
+            crate::cycle_ledger::charge(32);
+            if instruction & 1 == 0 { continue; }
+            let index = usize::from(instruction / 2);
+            let value = coordinates[index];
+            match index {
+                0 => self.sprite_workspace_mut().set_current_sprite_x_low(value),
+                1 => {
+                    let low = self.game_state.sprites.workspace.current_sprite_x_low();
+                    self.sprite_workspace_mut().set_current_sprite_x(u16::from_le_bytes([low, value]));
+                }
+                2 => self.sprite_workspace_mut().set_current_sprite_y_low(value),
+                3 => {
+                    let low = self.game_state.sprites.workspace.current_sprite_y_low();
+                    self.sprite_workspace_mut().set_current_sprite_y(u16::from_le_bytes([low, value]));
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    fn sprite_timers_and_oam_after_coordinates_through_oam_allocation(&mut self, k: usize) {
+        // $06:83F5-8400 LDA $e40,x AND #$1f INC ASL ASL LDY $0fb3 BEQ (138).
+        crate::cycle_ledger::charge(138);
         let num = ((self.sprite_slot_view(k).flags2() & 0x1f).wrapping_add(1)).wrapping_mul(4);
         if self.game_state.oam.has_sprite_sorting() {
             // $06:8402-8405 LDY $f20,x : BEQ (48), then either $06:8407 JSL
@@ -6859,26 +7437,56 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //     sprite_N[k] = 0xff;
     // }
     pub(super) fn sprite_kill_self(&mut self, k: usize) {
-        if (self.sprite_slot_view(k).deflection_bits() & 0x40) == 0
-            && self.game_state.world.location.is_indoors()
-        {
-            return;
+        let mut work = crate::cycle_models::sprite_kill::KillWork::new();
+        while self.retire_sprite_kill_instruction(k, &mut work).is_some() {}
+    }
+
+    fn retire_sprite_kill_instruction(
+        &mut self,
+        k: usize,
+        work: &mut crate::cycle_models::sprite_kill::KillWork,
+    ) -> Option<u32> {
+        use crate::cycle_models::sprite_kill::{Inputs, Publication};
+        let scratch = [self.ram[0], self.ram[1], self.ram[2], self.ram[3]];
+        let pointer = usize::from(u16::from_le_bytes([scratch[1], scratch[2]]));
+        let loaded = if work.reads_loaded() {
+            assert_eq!(scratch[3], 0x7f, "KillSelf load pointer left its WRAM bank");
+            const WRAM_BANK_BYTES: usize = 0x10000;
+            self.ram[WRAM_BANK_BYTES + pointer]
+        } else { 0 };
+        let slot = self.sprite_slot_view(k);
+        let instruction = work.step(Inputs {
+            slot: k as u8, deflection: slot.deflection_bits(),
+            indoors: self.game_state.world.location.indoor_flag(),
+            block: slot.n_word(), scratch, loaded,
+        })?;
+        crate::cycle_ledger::charge_routine(0x09_f1f8, u64::from(instruction.master_cycles));
+        match instruction.publication {
+            Some(Publication::ClearState) => self.sprite_slot_view_mut(k).set_state(0),
+            Some(Publication::ScratchWord { offset, value }) => {
+                let mut workspace = self.sprite_workspace_mut();
+                workspace.set_oam_prep_scratch_byte(offset, value as u8);
+                workspace.set_oam_prep_scratch_byte(offset + 1, (value >> 8) as u8);
+            }
+            Some(Publication::PointerBank(value)) => {
+                self.sprite_workspace_mut().set_oam_prep_scratch_byte(3, value);
+            }
+            Some(Publication::Loaded(value)) => {
+                assert_eq!(scratch[3], 0x7f, "KillSelf store pointer left its WRAM bank");
+                self.store_overworld_sprite_loaded_byte_wrapped(pointer as u16, value);
+            }
+            Some(Publication::BlockLow(value)) => {
+                let word = (self.sprite_slot_view(k).n_word() & 0xff00) | u16::from(value);
+                self.sprite_slot_view_mut(k).set_n_word(word);
+            }
+            Some(Publication::BlockHigh(value)) => {
+                let word = (self.sprite_slot_view(k).n_word() & 0xff) | (u16::from(value) << 8);
+                self.sprite_slot_view_mut(k).set_n_word(word);
+            }
+            Some(Publication::IndoorBlock(value)) => self.sprite_slot_view_mut(k).set_n(value),
+            None => {}
         }
-        let value = 0;
-        self.sprite_slot_view_mut(k).set_state(value);
-        let blk = self.sprite_slot_view(k).n_word();
-        self.sprite_workspace_mut()
-            .set_killed_sprite_load_block(blk);
-        let loadedmask = 0x80 >> (blk & 7);
-        if blk < 0xffff {
-            self.clear_overworld_sprite_loaded_mask_wrapped(blk, loadedmask as u8);
-        }
-        if self.game_state.world.location.is_outdoors() {
-            self.sprite_slot_view_mut(k).set_n_word(0xffff);
-        } else {
-            let value = 0xff;
-            self.sprite_slot_view_mut(k).set_n(value);
-        }
+        Some(instruction.master_cycles)
     }
 
     // void Sprite_HitTimer31(int k) {
@@ -7033,22 +7641,39 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             let slot = self.sprite_slot_view(k);
             crate::cycle_ledger::charge(if slot.state() != 9 {
                 64 + 6 + 28
-            } else if self.game_state.frame.modal_pause_flag != 0 {
-                64 + 48 + 6 + 28
-            } else if self.game_state.frame.submodule != 0 {
-                64 + 48 + 40 + 6 + 28
-            } else if slot.deflection_bits() & 0x80 != 0 {
-                64 + 48 + 40 + 48 + 6 + 42
-            } else if slot.pause() == 0 {
-                64 + 48 + 40 + 48 + 48 + 6 + 42
             } else {
-                64 + 48 + 40 + 48 + 48 + 28
+                64 + self.sprite_pause_test_master_cycles(k)
             });
         }
         if inactive {
             crate::cycle_ledger::charge(28 + 42);
         }
         inactive
+    }
+
+    fn sprite_pause_test_master_cycles(&self, k: usize) -> u64 {
+        if self.game_state.frame.modal_pause_flag != 0 {
+            48 + 6 + 28
+        } else if self.game_state.frame.submodule != 0 {
+            48 + 40 + 6 + 28
+        } else if self.sprite_slot_view(k).deflection_bits() & 0x80 != 0 {
+            48 + 40 + 48 + 6 + 42
+        } else if self.sprite_slot_view(k).pause() == 0 {
+            48 + 40 + 48 + 48 + 6 + 42
+        } else {
+            48 + 40 + 48 + 48 + 28
+        }
+    }
+
+    /// Resume ReturnIfInactive after its state-9 test, at $05:F955.
+    pub(super) fn sprite_return_if_paused_bank5(&self, k: usize) -> bool {
+        let paused = self.sprite_return_if_paused(k);
+        {
+            let _wrapper = crate::cycle_ledger::routine(0x05_f955);
+            crate::cycle_ledger::charge(self.sprite_pause_test_master_cycles(k));
+        }
+        if paused { crate::cycle_ledger::charge(28 + 42); }
+        paused
     }
 
     // bool Sprite_ReturnIfPaused(int k) {  // 86d9f3
@@ -10313,11 +10938,18 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   Sprite_PrepAndDrawSingleLargeNoPrep(k, &info);
     // }
     pub(super) fn sprite_draw_single_large(&mut self, k: usize) {
-        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
-            return;
-        };
-        let mut info = PrepOamCoordsRet { x, y, r4: 0, flags };
-        self.sprite_prep_and_draw_single_large_no_prep(k, &mut info);
+        let mut work = self.begin_single_large_draw(k);
+        while self.retire_single_large_draw_instruction(&mut work).is_some() {}
+    }
+
+    pub(super) fn begin_single_large_draw(
+        &self,
+        k: usize,
+    ) -> SingleLargeDrawContinuation {
+        let mut work = SingleLargeDrawContinuation::new(k,
+            &PrepOamCoordsRet { x: 0, y: 0, r4: 0, flags: 0 });
+        work.prep = Some(CoordinatePrepContinuation::new(true));
+        work
     }
 
     // void Sprite_PrepAndDrawSingleLargeNoPrep(int k, PrepOamCoordsRet *info) {  // 86dc13
@@ -10328,33 +10960,107 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         k: usize,
         info: &mut PrepOamCoordsRet,
     ) {
-        let oam = self.game_state.oam.current_pointer_usize();
-        let chr = self.sprite_single_draw_char(k);
-        self.oam_state_mut().set_entry_x(oam, info.x as u8);
-        if info.y.wrapping_add(0x10) < 0x100 {
-            self.oam_state_mut().set_entry_y(oam, info.y as u8);
-            self.oam_state_mut().set_entry_char(oam, chr);
-            self.oam_state_mut().set_entry_flags(oam, info.flags);
-        }
-        let ext_index = (oam - OAM_BUF) / 4;
-        let value = 2 | u8::from(info.x >= 256);
-        self.oam_state_mut().set_extended_byte(ext_index, value);
-        if self.sprite_slot_view(k).flags3() & 0x10 != 0 {
-            self.sprite_draw_shadow_custom(k, info, 10);
+        let mut work = SingleLargeDrawContinuation::new(k, info);
+        while self.retire_single_large_draw_instruction(&mut work).is_some() {
+            info.y = work.y;
         }
     }
 
-    // void SpriteDraw_Shadow_custom(int k, PrepOamCoordsRet *info, uint8 a) {  // 86dc5c
-    //   ...see sprite.c...
-    // }
+    pub(super) fn retire_single_large_draw_instruction(
+        &mut self,
+        work: &mut SingleLargeDrawContinuation,
+    ) -> Option<u32> {
+        if let Some(prep) = work.prep.as_mut() {
+            if let Some(cycles) = self.retire_coordinate_prep_instruction(usize::from(work.slot), prep) {
+                return Some(cycles);
+            }
+            work.skipped = prep.work.out_of_bounds();
+            work.prep = None;
+            let info = self.prepared_oam_coordinates();
+            work.x = info.x;
+            work.y = info.y;
+            work.flags = info.flags;
+        }
+        if work.skipped { return None; }
+        if let Some(shadow) = work.shadow.as_mut() {
+            let _scope = crate::cycle_ledger::routine(0x06_dc66);
+            let cycles = self.retire_shadow_instruction(shadow);
+            work.y = shadow.y;
+            return cycles;
+        }
+        use crate::cycle_models::sprite_single::{Inputs, Publication};
+        let slot = self.sprite_slot_view(usize::from(work.slot));
+        let index = work.work.table_index();
+        let character_base = SINGLE_LARGE_SPRITE_CHAR_BASE_BY_TYPE.get(index).copied().unwrap_or(0);
+        // $06:DA09's byte table ends at $06:DB03. The last five values of
+        // an 8-bit index address the adjacent type table, exactly as the ROM.
+        let character = SINGLE_LARGE_SPRITE_CHAR_BY_BASE_AND_GFX.get(index).copied()
+            .or_else(|| index.checked_sub(SINGLE_LARGE_SPRITE_CHAR_BY_BASE_AND_GFX.len())
+                .and_then(|index| SINGLE_LARGE_SPRITE_CHAR_BASE_BY_TYPE.get(index).copied()))
+            .unwrap_or(0);
+        let instruction = work.work.step(Inputs {
+            x: work.x, y: work.y, flags: work.flags,
+            sprite_type: slot.sprite_type(), graphics: slot.graphics(), flags3: slot.flags3(),
+            character_base, character,
+            oam_pointer: self.game_state.oam.current_pointer_usize() as u16,
+            extended_pointer: self.game_state.oam.current_extended_pointer_usize() as u16,
+        })?;
+        crate::cycle_ledger::charge_routine(0x06_dc13, u64::from(instruction.master_cycles));
+        match instruction.publication {
+            Some(Publication::OamByte { address, value }) => {
+                let address = usize::from(address);
+                let base = address & !3;
+                let mut oam = self.oam_state_mut();
+                match address & 3 {
+                    0 => oam.set_entry_x(base, value),
+                    1 => oam.set_entry_y(base, value),
+                    2 => oam.set_entry_char(base, value),
+                    3 => oam.set_entry_flags(base, value),
+                    _ => unreachable!(),
+                }
+            }
+            Some(Publication::ExtendedByte { address, value }) => {
+                self.oam_state_mut().set_extended_byte_at(usize::from(address), value);
+            }
+            Some(Publication::EnterShadow) => work.shadow = Some(ShadowOamTail {
+                work: crate::cycle_models::sprite_shadow::ShadowWork::new(10),
+                slot: work.slot, x: work.x, y: work.y, flags: work.flags,
+            }),
+            None => {}
+        }
+        Some(instruction.master_cycles)
+    }
+
+    /// The default-offset far entry at $06:DC54, including its bank wrapper.
+    /// Same-bank and custom-offset callers have different entry work.
+    pub(super) fn sprite_draw_shadow_default_long(
+        &mut self,
+        k: usize,
+        info: &mut PrepOamCoordsRet,
+    ) {
+        let _wrapper = crate::cycle_ledger::routine(0x06_dc54);
+        crate::cycle_ledger::charge(118); // PHB : PHK : PLB : JSR.
+        {
+            let _body = crate::cycle_ledger::routine(0x06_dc64);
+            crate::cycle_ledger::charge(16); // LDA #10.
+            if let Some(tail) = self.sprite_shadow_body_before_extended(k, info, 10) {
+                self.finish_shadow_body(tail);
+            }
+        }
+        crate::cycle_ledger::charge(72); // PLB : RTL after the body returns.
+    }
+
+    // The C helper merges far and same-bank entries. Price their shared
+    // $06:DC66 body here; bank-wrapper work belongs to explicit caller entries.
     pub(super) fn sprite_draw_shadow_custom(
         &mut self,
         k: usize,
         info: &mut PrepOamCoordsRet,
         a: u8,
     ) {
-        if let Some(pending) = self.sprite_draw_shadow_custom_before_extended(k, info, a) {
-            self.finish_shadow_extended_oam_write(pending);
+        let _scope = crate::cycle_ledger::routine(0x06_dc66);
+        if let Some(tail) = self.sprite_shadow_body_before_extended(k, info, a) {
+            self.finish_shadow_body(tail);
         }
     }
 
@@ -10365,48 +11071,90 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         k: usize,
         info: &mut PrepOamCoordsRet,
         a: u8,
-    ) -> Option<crate::game_state::PendingExtendedOamWrite> {
-        let mut y = self.sprite_get_y(k).wrapping_add(u16::from(a));
-        info.y = y;
-        if self.sprite_slot_view(k).pause() != 0
-            || (self.sprite_slot_view(k).state() == 10
-                && self.sprite_slot_view(k).draw_work_byte_3() == 3)
-        {
-            return None;
+    ) -> Option<ShadowOamTail> {
+        let _scope = crate::cycle_ledger::routine(0x06_dc66);
+        self.sprite_shadow_body_before_extended(k, info, a)
+    }
+
+    fn sprite_shadow_body_before_extended(
+        &mut self,
+        k: usize,
+        info: &mut PrepOamCoordsRet,
+        a: u8,
+    ) -> Option<ShadowOamTail> {
+        let mut tail = ShadowOamTail {
+            work: crate::cycle_models::sprite_shadow::ShadowWork::new(a),
+            slot: u8::try_from(k).expect("sprite slot fits a byte"),
+            x: info.x, y: info.y, flags: info.flags,
+        };
+        while self.retire_shadow_instruction(&mut tail).is_some() {
+            info.y = tail.y;
+            if tail.work.at_extended_tail() {
+                return Some(tail);
+            }
         }
-        y = y.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
-        info.y = y;
-        if y.wrapping_add(0x10) >= 0x100 {
-            return None;
-        }
-        let oam = self.game_state.oam.current_pointer_usize()
-            + usize::from(self.sprite_slot_view(k).flags2() & 0x1f) * 4;
-        if self.sprite_slot_view(k).flags3() & 0x20 != 0 {
-            Some(self.oam_state_mut().write_entry_before_extended(
-                oam,
-                info.x,
-                y.wrapping_add(1) as u8,
-                0x38,
-                (info.flags & 0x30) | 8,
-                0,
-            ))
-        } else {
-            Some(self.oam_state_mut().write_entry_before_extended(
-                oam,
-                info.x,
-                y as u8,
-                0x6c,
-                (info.flags & 0x30) | 8,
-                2,
-            ))
-        }
+        None
     }
 
     pub(super) fn finish_shadow_extended_oam_write(
         &mut self,
-        pending: crate::game_state::PendingExtendedOamWrite,
+        tail: ShadowOamTail,
     ) {
-        self.oam_state_mut().finish_pending_extended_write(pending);
+        let _scope = crate::cycle_ledger::routine(0x06_dc66);
+        self.finish_shadow_body(tail);
+    }
+
+    fn finish_shadow_body(&mut self, mut tail: ShadowOamTail) {
+        while self.retire_shadow_instruction(&mut tail).is_some() {}
+    }
+
+    fn retire_shadow_instruction(&mut self, tail: &mut ShadowOamTail) -> Option<u32> {
+        use crate::cycle_models::sprite_shadow::{Inputs, Publication};
+        let slot = self.sprite_slot_view(usize::from(tail.slot));
+        let input = Inputs {
+            world_y: self.sprite_get_y(usize::from(tail.slot)),
+            pause: slot.pause(), state: slot.state(), draw_work: slot.draw_work_byte_3(),
+            scroll_y: self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
+            flags2: slot.flags2(), flags3: slot.flags3(),
+            x: tail.x, y: tail.y, flags: tail.flags,
+            oam_pointer: self.game_state.oam.current_pointer_usize() as u16,
+            extended_pointer: self.game_state.oam.current_extended_pointer_usize() as u16,
+        };
+        let instruction = tail.work.step(input)?;
+        crate::cycle_ledger::charge(u64::from(instruction.master_cycles));
+        match instruction.publication {
+            Some(Publication::YLow(value)) => {
+                tail.y = (tail.y & 0xff00) | u16::from(value);
+                self.sprite_workspace_mut().set_oam_prep_scratch_byte(2, value);
+            }
+            Some(Publication::YHigh(value)) => {
+                tail.y = (tail.y & 0xff) | (u16::from(value) << 8);
+                self.sprite_workspace_mut().set_oam_prep_scratch_byte(3, value);
+            }
+            Some(Publication::Y(value)) => {
+                tail.y = value;
+                let mut workspace = self.sprite_workspace_mut();
+                workspace.set_oam_prep_scratch_byte(2, value as u8);
+                workspace.set_oam_prep_scratch_byte(3, (value >> 8) as u8);
+            }
+            Some(Publication::OamByte { address, value }) => {
+                let address = usize::from(address);
+                let base = address & !3;
+                let mut oam = self.oam_state_mut();
+                match address & 3 {
+                    0 => oam.set_entry_x(base, value),
+                    1 => oam.set_entry_y(base, value),
+                    2 => oam.set_entry_char(base, value),
+                    3 => oam.set_entry_flags(base, value),
+                    _ => unreachable!(),
+                }
+            }
+            Some(Publication::ExtendedByte { address, value }) => {
+                self.oam_state_mut().set_extended_byte_at(usize::from(address), value);
+            }
+            None => {}
+        }
+        Some(instruction.master_cycles)
     }
 
     // void SpriteDraw_SingleSmall(int k) {  // 86dcef

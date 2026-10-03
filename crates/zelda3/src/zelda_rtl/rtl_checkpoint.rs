@@ -204,9 +204,61 @@ impl ZeldaState {
     /// game calls. The execution scheduler represents a suspended 65816 call
     /// stack and is intentionally absent from ordinary playable save states.
     pub fn paired_resume_cpu_boundary_is_quiescent(&self) -> bool {
-        self.game_execution_scheduler.is_idle()
+        self.paired_resume_cpu_boundary_blocker().is_none()
+    }
+
+    /// Explain a refused paired capture without changing the admission rule.
+    /// Save states omit these runtime owners; an idle game scheduler alone
+    /// does not imply that deserialization can resume the same execution.
+    pub fn paired_resume_cpu_boundary_blocker(&self) -> Option<&'static str> {
+        if self.native_cpu_apu_access_pending() {
+            return Some("retained-native-apu-port-access");
+        }
+        if self.native_startup_cpu.as_ref().is_some_and(|cpu| cpu.startup.owns_cpu_clock())
+        {
+            return Some("retained-native-bootstrap-clock");
+        }
+        if self.dialogue_initialization_caller.is_some() {
+            return Some("retained-dialogue-initialization-caller");
+        }
+        if self.dialogue_vwf_drawing.is_some() {
+            return Some("retained-vwf-drawing-instruction");
+        }
+        if self.native_main_wait_cpu_phase.is_some() {
+            // The main caller has returned, but the next NMI still needs the
+            // retained wait instruction, flags, and hardware budget. Neither
+            // the ordinary save nor either timing sidecar retains this phase.
+            return Some("retained-main-wait-cpu-phase");
+        }
+        if matches!(self.dialogue_scroll_phase(),
+            DialogueScrollPhase::CompletionStagedAfterFrozenScanout
+            | DialogueScrollPhase::CompletionStagedAfterSnapshot)
+        {
+            // Apply to both timing sidecars, including original-timing capture.
+            // Their ordinary game payload drops the staged display generation.
+            return Some("staged-dialogue-scroll-publication");
+        }
+        if self.main_loop_caller_phase
+            != crate::cycle_models::main_wait::MainLoopCallerPhase::Waiting
+        {
+            return Some("active-main-loop-caller");
+        }
+        if self.game_state.display.nmi_thread_active || self.poly_job_in_flight
+            || self.poly_job_hold_frames != 0 || self.poly_shadow_run.is_some()
+        {
+            // An idle main caller cannot discard the IRQ worker's live stack.
+            return Some("active-poly-thread");
+        }
+        let quiescent = self.game_execution_scheduler.is_idle()
             && self.active_dungeon_sprite_main_return.is_none()
             && self.active_module09_sprite_main_return.is_none()
+            // The next closing-spotlight iteration consumes its preceding
+            // raster envelope even while the scheduler is idle. That native
+            // continuation is serde-skipped and cannot be dropped on restore.
+            && self.dungeon_exit_spotlight_cpu_entry_envelope.is_none()
+            && self.native_pre_dungeon_animated_graphics.is_none()
+            && self.native_pre_dungeon_tileset_publication.is_none()
+            && self.native_pre_dungeon_palette_cache.is_none()
             // These instruction-timing plans deliberately remain runtime-only:
             // ordinary Zelda save states must not persist an emulated call
             // stack. A paired parity checkpoint therefore cannot be captured
@@ -214,7 +266,14 @@ impl ZeldaState {
             // to `None` and resume the translated continuation without its
             // source-owned NMI schedule.
             && self.dungeon_room_load_cpu_schedule.is_none()
+            && self.native_transition_aux_graphics_progress.is_none()
+            && self.active_dungeon_object_4x2.is_none()
+            && self.pending_dungeon_object_4x2_boundary.is_none()
             && self.dungeon_submodule_cpu_schedule.is_none()
+            // The completed caller can leave the scheduler idle while its
+            // next quadrant's measured CPU advance is already queued. This
+            // runtime-only plan is lost on restore just like an active plan.
+            && self.dungeon_landing_cpu_advance_pending.is_none()
             && self.module09_cpu_schedule.is_none()
             // The translated-only intro thread phase is also a suspended
             // source call stack and is serde-skipped. Capturing it would
@@ -232,7 +291,8 @@ impl ZeldaState {
             && self.poly_completed_upload.is_none()
             // The save-quit reset hold is a suspended Death_Func15 call stack
             // spanning tens of hosts; never checkpoint inside it.
-            && !self.save_quit_reset_hold
+            && !self.save_quit_reset_hold;
+        (!quiescent).then_some("active-translated-continuation")
     }
 
     /// `FinishDungeonPushBlockHandler`: finish the interrupted loop from the
@@ -1036,12 +1096,11 @@ impl ZeldaState {
             // state that second page begins at $1000.
             snapshot.ppu.obj_tile_adr2 = 0x1000;
         }
-        // A high-bit V-counter request is a one-frame raster event. Publish it
-        // in this immutable display snapshot, then advance live simulation to
-        // the consumed state. Rendering must not decide whether game state
-        // advances, and replaying the same snapshot must reproduce the same
-        // scanlines.
-        if self.game_state.display.irq_control_has_vcounter_marker() {
+        // The legacy frame scheduler consumes a one-shot raster request at
+        // publication. A retained CPU instead owns the live flag until its
+        // IRQ handler retires STZ $0128; taking a snapshot cannot consume it.
+        if self.game_state.display.irq_control_has_vcounter_marker()
+            && !self.native_startup_cpu.as_ref().is_some_and(|cpu| cpu.startup.owns_cpu_clock()) {
             self.clear_irq_control_flag();
         }
         if rom_intro_poly_thread_is_active(frame.main_module, frame.submodule) {
@@ -1146,6 +1205,14 @@ impl ZeldaState {
     /// and the modern asset/GPU renderer. The returned value must own anything
     /// it borrows from `game`, because live state is restored before returning.
     pub fn with_display_snapshot<R>(&mut self, capture: impl FnOnce(&mut ZeldaState) -> R) -> R {
+        if self.native_startup_cpu.as_ref()
+            .is_some_and(|cpu| cpu.startup.memory_initialization_pending())
+        {
+            // Reset/upload and Startup_InitializeMemory still own WRAM.
+            // Request flags and packet buffers are not game publications yet;
+            // the hardware PPU is the only display owner at this boundary.
+            return capture(self);
+        }
         if crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some() {
             let live: u64 = self.ppu.vram[0x5800..0x5c00]
                 .iter()
@@ -2018,7 +2085,7 @@ impl ZeldaState {
                         std::mem::take(&mut self.dialogue_fast_forward_hold_pending);
                     if !self.game_over_text_render_loop_active() {
                         self.nmi_prepare_sprites();
-                        self.clear_nmi_update_latch();
+                        self.finish_main_loop_caller_return();
                     }
                     self.capture_display_snapshot();
                     self.interrupt_nmi(input, oam_dma_source, false);
@@ -2063,17 +2130,31 @@ impl ZeldaState {
                     }
                     return true;
                 }
+                let carried_held_nmi_return =
+                    !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                    && self.native_exact_cpu_host_trace.as_ref()
+                        .is_some_and(|trace| trace.caller_returns_after_held_nmi());
+                if carried_held_nmi_return {
+                    // The opt-in CPU owner deferred the preceding handler at
+                    // acceptance. Complete it with $12 still held before the
+                    // saved caller returns; there is no second NMI this host.
+                    // Ordinary native scheduling already consumed that held
+                    // boundary and retains its trailing-NMI ordering below.
+                    self.interrupt_nmi(input, oam_dma_source, false);
+                    self.capture_display_snapshot();
+                }
                 self.finish_pre_main_caller_continuation(continuation);
                 self.dialogue_fast_forward_hold_active = false;
                 self.complete_module0e_interface_after_run();
-                self.nmi_prepare_sprites();
-                self.clear_nmi_update_latch();
-                self.capture_display_snapshot();
-                // The interrupted caller has now reached the ordinary
-                // game-loop boundary. Run its trailing NMI exactly once:
-                // it consumes the preprocessed-audio marker and publishes
-                // the completed BG3 text for the following scanout.
-                self.interrupt_nmi(input, oam_dma_source, false);
+                self.nmi_prepare_sprites_for_main_loop();
+                self.finish_main_loop_caller_return();
+                if carried_held_nmi_return {
+                    self.game_execution_scheduler
+                        .finish_call_stack_at_main_wait_before_nmi();
+                } else {
+                    self.capture_display_snapshot();
+                    self.interrupt_nmi(input, oam_dma_source, false);
+                }
                 self.dialogue_vwf_handler_entry_phase =
                     messaging::VwfHandlerEntryPhase::AfterDeferredCallerSuffix;
                 let main_loop_progress = self.take_original_timing_main_loop_progress();
@@ -2107,7 +2188,7 @@ impl ZeldaState {
                     self.complete_file_select_checkerboard_upload();
                     // Without a live source timeline, retain the translated
                     // scheduler's legacy one-boundary completion policy.
-                    self.clear_nmi_update_latch();
+                    self.finish_main_loop_caller_return();
                     self.capture_display_snapshot();
                     self.interrupt_nmi(input, oam_dma_source, false);
                 }
@@ -2127,7 +2208,7 @@ impl ZeldaState {
                     // Without a live source timeline, retain the translated
                     // scheduler's legacy one-boundary completion policy.
                     self.nmi_prepare_sprites();
-                    self.clear_nmi_update_latch();
+                    self.finish_main_loop_caller_return();
                     self.capture_display_snapshot();
                     self.interrupt_nmi(input, oam_dma_source, false);
                 }
@@ -2383,7 +2464,7 @@ impl ZeldaState {
                 }
                 self.complete_module07_dungeon_after_submodule();
                 self.nmi_prepare_sprites();
-                self.clear_nmi_update_latch();
+                self.finish_main_loop_caller_return();
                 self.set_next_display_obj_scanout(Some(ObjScanoutGenerations {
                     oam: OamScanoutSource::RetainResidentPpuOam,
                     link_obj: GraphicsDmaGeneration::LiveAfterMain,
@@ -2480,7 +2561,7 @@ impl ZeldaState {
                 // before the interrupted first palette pass.
                 self.complete_module07_dungeon_after_submodule();
                 self.nmi_prepare_sprites();
-                self.clear_nmi_update_latch();
+                self.finish_main_loop_caller_return();
                 let animated_bg_operands =
                     rom_spiral_stairs_second_palette_return_uses_host_animated_bg_operands(
                         self.game_state.frame,
@@ -2691,7 +2772,7 @@ impl ZeldaState {
                     return true;
                 }
                 self.nmi_prepare_sprites();
-                self.clear_nmi_update_latch();
+                self.finish_main_loop_caller_return();
                 // Publish the generation whose DMA completed before this
                 // scanout. The resumed CPU suffix may already have authored
                 // the following source words; the NMI path resolves those
@@ -2853,7 +2934,7 @@ impl ZeldaState {
             // The suspended quadrant caller returns with the software latch
             // still set, but the ROM reaches this leading hardware NMI before
             // the next module iteration can replace its upload request.
-            self.clear_nmi_update_latch();
+            self.finish_main_loop_caller_return();
         }
         self.capture_display_snapshot_with_override(Some(scanout.publication));
         if matches!(
@@ -2895,7 +2976,7 @@ impl ZeldaState {
             {
                 self.complete_pending_main_loop_common_suffix_after_module_return();
             }
-            self.clear_nmi_update_latch();
+            self.finish_main_loop_caller_return();
             self.game_execution_scheduler
                 .schedule_pre_main_nmi_resume(PreMainNmiResume::DungeonSupertileQuadrantUploads);
             self.assert_native_frame_state_matches_ram();
@@ -2938,7 +3019,7 @@ impl ZeldaState {
             // an already-latched request; clear it only after the NMI has
             // observed it.
             debug_assert_eq!(resume.nmi_latch_clear_phase(), Some(NmiPhase::AfterNmi));
-            self.clear_nmi_update_latch();
+            self.finish_main_loop_caller_return();
             self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
@@ -3114,7 +3195,7 @@ impl ZeldaState {
             self.set_bg2_y(sprite_return.bg2_y);
             self.set_bg1_x(sprite_return.bg1_x);
             self.set_bg1_y(sprite_return.bg1_y);
-            sprite_return.link_oam = Some(match progress {
+            sprite_return.link_oam = Some(player_oam::LinkOamContinuation::Equipment(match progress {
                 crate::LinkOamStairProgress::PoseSelected => self.link_oam_after_pose_selection(),
                 crate::LinkOamStairProgress::EquipmentSelection => self.link_oam_before_equipment(),
                 crate::LinkOamStairProgress::BodySelection => {
@@ -3125,7 +3206,7 @@ impl ZeldaState {
                     let continuation = self.link_oam_before_equipment();
                     self.link_oam_before_shadow(continuation)
                 }
-            });
+            }));
             self.active_dungeon_sprite_main_return = Some(sprite_return);
         }
         if continued_sprite_main_claims != 0

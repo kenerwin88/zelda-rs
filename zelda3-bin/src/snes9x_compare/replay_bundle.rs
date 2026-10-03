@@ -402,7 +402,7 @@ pub(crate) fn run_snes9x_script(args: &[String]) {
         }
         _ => {
             eprintln!(
-                "usage: zelda3 --run-snes9x-script <snes9x_libretro.dylib> <rom.sfc> <oracle.state> <input.txt> <frames> [--load-sram <path>] [--input-frame-offset <n>] [--save-state <path>] [--dump-wram <path>] [--dump-sram <path>] [--expected-core-sha256 <sha>] [--expected-rom-sha256 <sha>]"
+                "usage: zelda3 --run-snes9x-script <snes9x_libretro.dylib> <rom.sfc> <oracle.state> <input.txt> <frames> [--load-sram <path>] [--input-frame-offset <n>] [--save-state <path>] [--dump-wram <path>] [--dump-sram <path>] [--audio-trace-dir <path>] [--frame-trace-dir <path>] [--expected-core-sha256 <sha>] [--expected-rom-sha256 <sha>]"
             );
             process::exit(2);
         }
@@ -413,6 +413,8 @@ pub(crate) fn run_snes9x_script(args: &[String]) {
     let mut save_state = None::<PathBuf>;
     let mut dump_wram = None::<PathBuf>;
     let mut dump_sram = None::<PathBuf>;
+    let mut audio_trace_dir = None::<PathBuf>;
+    let mut capture_video = false;
     let mut expected_core_sha256 = None::<String>;
     let mut expected_rom_sha256 = None::<String>;
     let mut i = 5usize;
@@ -452,6 +454,14 @@ pub(crate) fn run_snes9x_script(args: &[String]) {
             "--dump-sram" => {
                 dump_sram = Some(PathBuf::from(args.get(i + 1).unwrap_or_else(|| {
                     eprintln!("--dump-sram requires a path");
+                    process::exit(2);
+                })));
+                i += 2;
+            }
+            "--audio-trace-dir" | "--frame-trace-dir" => {
+                capture_video |= args[i] == "--frame-trace-dir";
+                audio_trace_dir = Some(PathBuf::from(args.get(i + 1).unwrap_or_else(|| {
+                    eprintln!("{} requires a path", args[i]);
                     process::exit(2);
                 })));
                 i += 2;
@@ -522,10 +532,68 @@ pub(crate) fn run_snes9x_script(args: &[String]) {
         process::exit(2);
     });
 
-    LIBRETRO_CAPTURE_ENABLED.store(false, Ordering::Relaxed);
+    if let Some(dir) = &audio_trace_dir {
+        fs::create_dir_all(dir).expect("create oracle audio trace directory");
+    }
+    LIBRETRO_CAPTURE_ENABLED.store(audio_trace_dir.is_some(), Ordering::Relaxed);
     for frame in 0..frames {
         let script_frame = input_frame_offset.wrapping_add(frame);
-        oracle.run_frame_discard_with_input(input_script.input_for_frame(script_frame));
+        let input = input_script.input_for_frame(script_frame);
+        if let Some(dir) = &audio_trace_dir {
+            fs::write(dir.join(format!("before-{script_frame}.state")),
+                oracle.serialize_state().expect("serialize oracle audio boundary"))
+                .expect("write oracle audio boundary");
+            let capture = oracle.run_frame_with_input(input);
+            if capture_video {
+                let stride = snes9x_pixel_stride(capture.pixel_format).expect("oracle pixel format");
+                let mut rgba = Vec::with_capacity(
+                    capture.video_width as usize * capture.video_height as usize * 4,
+                );
+                for y in 0..capture.video_height as usize {
+                    for x in 0..capture.video_width as usize {
+                        rgba.extend_from_slice(
+                            &snes9x_rgba_pixel_at(&capture, y * capture.video_pitch + x * stride)
+                                .expect("decode oracle pixel"),
+                        );
+                    }
+                }
+                write_rgba_frame_png(
+                    &dir.join(format!("frame-{script_frame}.png")),
+                    &rgba,
+                    capture.video_width,
+                    capture.video_height,
+                ).expect("write oracle frame");
+                let ppu = serde_json::json!({
+                    "frame": script_frame,
+                    "video_digest": canonical_oracle_video_digest(&capture).expect("oracle video digest"),
+                    "vram_bytes": oracle.memory_bytes(RETRO_MEMORY_VIDEO_RAM),
+                    "cgram": (0..256).map(|i| oracle.debug_ppu_value(2, i)).collect::<Vec<_>>(),
+                    "oam_bytes": (0..544).map(|i| oracle.debug_ppu_value(15, i)).collect::<Vec<_>>(),
+                    "fixed_color": (0..3).map(|i| oracle.debug_ppu_value(4, i)).collect::<Vec<_>>(),
+                    "screen_math_registers": (0..6).map(|i| oracle.debug_ppu_value(16, i)).collect::<Vec<_>>(),
+                    "selected_pixel": (0..10).map(|i| oracle.debug_ppu_value(28, i)).collect::<Vec<_>>(),
+                });
+                fs::write(dir.join(format!("ppu-{script_frame}.json")), ppu.to_string())
+                    .expect("write oracle PPU trace");
+            }
+            let trace = serde_json::json!({
+                "frame": script_frame,
+                "input": input,
+                "audio_digest": canonical_audio_digest(&capture.audio),
+                "audio": capture.audio,
+                "dsp_clock": oracle.debug_dsp_frame_clock(),
+                "dsp_writes": oracle.debug_dsp_writes(),
+                "dsp_register_writes": oracle.debug_dsp_register_writes(),
+                "dsp_samples": oracle.debug_dsp_samples(),
+                "apu_port_writes": oracle.debug_apu_port_writes(),
+                "smp_instructions": oracle.debug_smp_instructions(),
+            });
+            fs::write(dir.join(format!("audio-{script_frame}.json")),
+                serde_json::to_vec(&trace).expect("serialize oracle audio trace"))
+                .expect("write oracle audio trace");
+        } else {
+            oracle.run_frame_discard_with_input(input);
+        }
         let completed = frame + 1;
         if completed % 100_000 == 0 {
             println!("Snes9x script progress {completed}/{frames}");

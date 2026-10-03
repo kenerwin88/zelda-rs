@@ -147,11 +147,11 @@ const DUNG_STAIRS_TABLE_2: usize = 0x06ec;
 /// door_debris_x; the ROM keeps door debris at $03B6). Only a table bound.
 const DUNG_STAIRS_TABLE_2_END: usize = 0x0728;
 
-const DUNGEON_DRAW_OBJECT_OFFSETS_BG1: [u8; DUNGEON_DRAW_LINE_POINTER_BYTES] = [
+pub(crate) const DUNGEON_DRAW_OBJECT_OFFSETS_BG1: [u8; DUNGEON_DRAW_LINE_POINTER_BYTES] = [
     0, 0x20, 0x7e, 2, 0x20, 0x7e, 4, 0x20, 0x7e, 6, 0x20, 0x7e, 0x80, 0x20, 0x7e, 0x82, 0x20, 0x7e,
     0x84, 0x20, 0x7e, 0x86, 0x20, 0x7e, 0, 0x21, 0x7e, 0x80, 0x21, 0x7e, 0, 0x22, 0x7e,
 ];
-const DUNGEON_DRAW_OBJECT_OFFSETS_BG2: [u8; DUNGEON_DRAW_LINE_POINTER_BYTES] = [
+pub(crate) const DUNGEON_DRAW_OBJECT_OFFSETS_BG2: [u8; DUNGEON_DRAW_LINE_POINTER_BYTES] = [
     0, 0x40, 0x7e, 2, 0x40, 0x7e, 4, 0x40, 0x7e, 6, 0x40, 0x7e, 0x80, 0x40, 0x7e, 0x82, 0x40, 0x7e,
     0x84, 0x40, 0x7e, 0x86, 0x40, 0x7e, 0, 0x41, 0x7e, 0x80, 0x41, 0x7e, 0, 0x42, 0x7e,
 ];
@@ -182,6 +182,243 @@ pub(crate) struct DungeonState {
 }
 
 impl DungeonState {
+    pub(crate) fn write_object_tile_word(&mut self, address: usize, value: u16) {
+        match address {
+            0x3f4 => self.environment.somaria_block_bg_check_flag = value as u8,
+            0x47c => self.room_items.replacement_tile_source_x2 = value,
+            0x4b0 => self.door_setup.width_road_address = value,
+            _ => unreachable!("unowned shared object word {address:04x}"),
+        }
+    }
+
+    pub(crate) fn write_object_parser_byte(&mut self, address: usize, value: u8) {
+        let word = match address {
+            0xb2..=0xb3 => &mut self.room_load.draw_width_indicator,
+            0xb4..=0xb5 => &mut self.room_load.draw_height_indicator,
+            0xba..=0xbb => &mut self.room_load.load_ptr_offset,
+            _ => unreachable!("unowned object parser byte {address:04x}"),
+        };
+        let shift = (address & 1) * 8;
+        *word = (*word & !(255 << shift)) | (u16::from(value) << shift);
+    }
+
+    pub(crate) fn write_floor_byte(&mut self, address: usize, value: u8) -> bool {
+        if (DUNG_LINE_PTRS_ROW0..DUNG_LINE_PTRS_ROW0 + DUNGEON_DRAW_LINE_POINTER_BYTES).contains(&address) {
+            self.room_tilemaps.line_pointer_bytes[address - DUNG_LINE_PTRS_ROW0] = value;
+            return true;
+        }
+        let word = match address {
+            0xba..=0xbb => &mut self.room_load.load_ptr_offset,
+            0x46a..=0x46b => &mut self.room_parser.floor_2_filler_tiles,
+            0x490..=0x491 => &mut self.room_parser.floor_1_filler_tiles,
+            0x2000..=0x3fff => &mut self.room_tilemaps.bg2_tiles[(address - 0x2000) / 2],
+            0x4000..=0x5fff => &mut self.room_tilemaps.bg1_tiles[(address - 0x4000) / 2],
+            _ => return false,
+        };
+        let shift = (address & 1) * 8;
+        *word = (*word & !(255 << shift)) | (u16::from(value) << shift);
+        true
+    }
+
+    /// Publish the room caller's cursor, reset tables and child-return state.
+    /// Each byte belongs to its native component before the bus writes WRAM.
+    pub(crate) fn write_room_parent_byte(&mut self, address: usize, value: u8) -> bool {
+        let store_word_byte = |word: &mut u16, byte: usize| {
+            let shift = byte * 8;
+            *word = (*word & !(255 << shift)) | (u16::from(value) << shift);
+        };
+        for list in ALL_DUNGEON_STAIR_LISTS {
+            let base = stair_list_counter_address(list);
+            if address & !1 == base {
+                store_word_byte(&mut self.stair_lists.counters[stair_list_index(list)], address & 1);
+                return true;
+            }
+        }
+        let byte = match address {
+            0xb9 => &mut self.door_setup.active_room_load_ptr_bank,
+            0xc0..=0xdf => &mut self.room_tilemaps.line_pointer_bytes[address - DUNG_LINE_PTRS_ROW0],
+            0x3f4 => &mut self.environment.somaria_block_bg_check_flag,
+            0x430 => &mut self.doors.switch_triggered,
+            0x452 => &mut self.room_effects.blast_wall_x_open,
+            0x453 => &mut self.room_effects.blast_wall_y_open,
+            0x45c => &mut self.room_load.quadrant_upload_index,
+            0x4f0..=0x4ff => &mut self.torch.timers[address - 0x4f0],
+            // These exact reset bytes have no modeled scalar owner. Keep
+            // their native stores in WRAM, including the flag companion bytes.
+            0x420..=0x421 | 0x431 | 0x45d => return true,
+            0x44e..=0x451 => {
+                let (count, positions) = if address < 0x450 {
+                    (&mut self.room_parser.toggle_floor_count_x2, &mut self.room_parser.toggle_floor_positions)
+                } else {
+                    (&mut self.room_parser.toggle_palace_count_x2, &mut self.room_parser.toggle_palace_positions)
+                };
+                store_word_byte(count, address & 1);
+                // With no live toggle slots these bytes belong to the stair
+                // tables. Retire the native toggle view without clearing RAM.
+                if *count == 0 { positions.fill(0); }
+                return true;
+            }
+            _ => {
+                let (word, byte) = match address {
+                    0xb7..=0xb8 => (&mut self.door_setup.active_room_load_ptr, address - 0xb7),
+                    0xba..=0xbb => (&mut self.room_load.load_ptr_offset, address & 1),
+                    0xfc..=0xfd => (&mut self.door_setup.reset_xy_check_flags, address & 1),
+                    0x310..=0x311 => (&mut self.moving_floor.y_velocity, address & 1),
+                    0x312..=0x313 => (&mut self.moving_floor.x_velocity, address & 1),
+                    0x40e..=0x40f => (&mut self.room_parser.room_layout_and_starting_quadrant, address & 1),
+                    0x41a..=0x41b => (&mut self.moving_floor.move_flags, address & 1),
+                    0x422..=0x423 => (&mut self.moving_floor.x_offset, address & 1),
+                    0x424..=0x425 => (&mut self.moving_floor.y_offset, address & 1),
+                    0x428..=0x429 => (&mut self.room_load.header_collision_2_mirror, address & 1),
+                    0x42c..=0x42d => (&mut self.object_tracking.misc_object_index, address & 1),
+                    0x42e..=0x42f => (&mut self.torch.torch_index, address & 1),
+                    0x432..=0x433 => (&mut self.room_parser.star_switch_count_x2, address & 1),
+                    0x436..=0x437 => (&mut self.door_setup.invisible_door_marker, address & 1),
+                    0x454..=0x455 => (&mut self.room_effects.crush_wall_progress, address & 1),
+                    0x456..=0x457 => (&mut self.room_effects.blast_wall_door_index_x2, address & 1),
+                    0x460..=0x461 => (&mut self.doors.current_door_index, address & 1),
+                    0x478..=0x479 => (&mut self.torch.torches_start_index, address & 1),
+                    0x496..=0x497 => (&mut self.room_items.num_chests_x2, address & 1),
+                    0x498..=0x499 => (&mut self.room_items.num_big_key_locks_x2, address & 1),
+                    0x4b0..=0x4b1 => (&mut self.door_setup.width_road_address, address & 1),
+                    0x500..=0x51f => (&mut self.object_tracking.replacement_tile_states[(address - 0x500) / 2], address & 1),
+                    0x520..=0x53f => (&mut self.object_tracking.object_data_positions[(address - 0x520) / 2], address & 1),
+                    0x540..=0x55f => (&mut self.object_tracking.object_tilemap_positions[(address - 0x540) / 2], address & 1),
+                    0x1980..=0x199f => (&mut self.doors.door_types[(address - 0x1980) / 2], address & 1),
+                    0x19a0..=0x19bf => (&mut self.doors.door_tilemap_addresses[(address - 0x19a0) / 2], address & 1),
+                    0x19c0..=0x19df => (&mut self.doors.door_directions[(address - 0x19c0) / 2], address & 1),
+                    0x19e0..=0x19e1 => (&mut self.door_setup.exit_door_count_x2, address & 1),
+                    0x19e2..=0x19e9 => (&mut self.door_setup.exit_door_addresses[(address - 0x19e2) / 2], address & 1),
+                    _ => return false,
+                };
+                store_word_byte(word, byte);
+                return true;
+            }
+        };
+        *byte = value;
+        true
+    }
+
+    /// Publish the header continuation's individual stores, including partial
+    /// pointers and the adjacent-door scan, without reloading a RAM snapshot.
+    pub(crate) fn write_header_byte(&mut self, address: usize, value: u8) -> bool {
+        let byte = match address {
+            0xad => &mut self.room_load.header_collision_2,
+            0xae..=0xaf => &mut self.header.tags[address - 0xae],
+            0xb9 => &mut self.door_setup.active_room_load_ptr_bank,
+            0x414 => &mut self.room_load.bg2_properties,
+            0x46c => &mut self.room_load.header_collision,
+            0x4ba => &mut self.room_load.overlay_to_load,
+            // The header's word STZ also clears the overlay's unmodeled
+            // companion byte. Preserve it in the exact WRAM store below.
+            0x4bb => return true,
+            0x63c..=0x640 => &mut self.header.plane_scratch[address - 0x63c],
+            0x641 => &mut self.environment.movable_block_was_pushed,
+            0x642 => &mut self.environment.water_puzzle_state_changed,
+            0x646 => &mut self.environment.somaria_block_switch_counter,
+            0xc000..=0xc004 => &mut self.header.travel_destinations[address - 0xc000],
+            0xc005 => &mut self.torch.lights_out_request,
+            0xc006 => &mut self.torch.lights_out_request_copy,
+            0xc208 => &mut self.room_load.bg2_properties_backup,
+            _ => {
+                let (word, byte) = match address {
+                    0xb7..=0xb8 => (&mut self.door_setup.active_room_load_ptr, address - 0xb7),
+                    0x110..=0x111 => (&mut self.room_runtime.room_index_x3, address - 0x110),
+                    0x400..=0x401 => (&mut self.doors.opened_doors, address - 0x400),
+                    0x402..=0x403 => (&mut self.savegame_state.state_bits, address - 0x402),
+                    0x408..=0x409 => (&mut self.room_load.quadrants_visited, address - 0x408),
+                    0x468..=0x469 => (&mut self.environment.trapdoors_down, address - 0x468),
+                    0x62c..=0x62d => (&mut self.room_load.loading_bg_offset_h, address - 0x62c),
+                    0x62e..=0x62f => (&mut self.room_load.loading_bg_offset_v, address - 0x62e),
+                    0x68c..=0x68d => (&mut self.doors.opened_doors_including_adjacent, address - 0x68c),
+                    0x1100..=0x1101 => (&mut self.door_setup.adjacent_door_flags, address - 0x1100),
+                    0x1110..=0x1121 => (&mut self.door_setup.adjacent_doors[(address - 0x1110) / 2], address & 1),
+                    0x19a0..=0x19bf => (&mut self.doors.door_tilemap_addresses[(address - 0x19a0) / 2], address & 1),
+                    _ => return false,
+                };
+                let shift = byte * 8;
+                *word = (*word & !(255 << shift)) | (u16::from(value) << shift);
+                return true;
+            }
+        };
+        *byte = value;
+        true
+    }
+
+    pub(crate) fn write_load_parent_byte(&mut self, address: usize, value: u8) -> bool {
+        let byte = match address {
+            0x458 => &mut self.torch.dark_with_lantern,
+            0x45a => &mut self.torch.lit_torches,
+            0x4c7 => &mut self.room_runtime.room_tag_skip_count,
+            0xc005 => &mut self.torch.lights_out_request,
+            0xc006 => &mut self.torch.lights_out_request_copy,
+            0xc017 => &mut self.room_effects.fixed_color_plusminus,
+            _ => {
+                let word = match address & !1 {
+                    0xa2 => &mut self.room_tracking.previous_room_index,
+                    0x402 => &mut self.savegame_state.state_bits,
+                    0x62c => &mut self.room_load.loading_bg_offset_h,
+                    0x62e => &mut self.room_load.loading_bg_offset_v,
+                    _ => return false,
+                };
+                let shift = (address & 1) * 8;
+                *word = (*word & !(255 << shift)) | (u16::from(value) << shift);
+                return true;
+            }
+        };
+        *byte = value;
+        true
+    }
+
+    #[cfg(test)]
+    pub(crate) fn assert_entrance_matches_ram(&self, ram: &[u8]) {
+        assert_eq!(self.room_tracking, DungeonRoomTrackingState::load_from_ram(ram));
+        assert_eq!(self.stair_movement, DungeonStairMovementState::load_from_ram(ram));
+        assert_eq!(self.object_tracking, DungeonObjectTrackingState::load_from_ram(ram));
+        assert_eq!(self.entrance_backup, DungeonEntranceBackupState::load_from_ram(ram));
+        assert_eq!(self.environment, DungeonEnvironmentState::load_from_ram(ram));
+        assert_eq!(self.room_effects, DungeonRoomEffectsState::load_from_ram(ram));
+        assert_eq!(self.movable_blocks, DungeonMovableBlockState::load_from_ram(ram));
+        assert_eq!(self.torch, DungeonTorchState::load_from_ram(ram));
+        assert_eq!(self.room_parser, DungeonRoomParserState::load_from_ram(ram));
+    }
+
+    /// Publish entrance scalars and reset-table bytes at their actual stores.
+    pub(crate) fn write_entrance_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            0x4bc => { self.room_effects.star_tile_phase = value; return true; }
+            // The source clears the adjacent byte as part of its 16-bit STZ.
+            0x4bd | 0xc173 => return true,
+            0xc164..=0xc167 => {
+                self.entrance_backup.exit_tile_themes[address - 0xc164] = value;
+                return true;
+            }
+            0xc172 => {
+                self.environment.orange_blue_barrier_state = value;
+                return true;
+            }
+            _ => {}
+        }
+        let word = match address & !1 {
+            0xa4 => &mut self.stair_movement.current_floor_word,
+            0x48e => &mut self.room_tracking.room_index2,
+            0x698 => &mut self.object_tracking.big_rock_starting_address,
+            0xf580..=0xf7fe => &mut self.room_parser.pot_reveal_masks[(address - 0xf580) / 2],
+            0xf940..=0xfaca => {
+                let offset = address - 0xf940;
+                &mut self.movable_blocks.records[offset / 4][(offset / 2) & 1]
+            }
+            0xfb40..=0xfc5e => &mut self.torch.torch_data_words[(address - 0xfb40) / 2],
+            // These are the copied continuation of the cartridge's tables,
+            // beyond the records scanned by the native block/torch models.
+            0xfacc..=0xfb3e | 0xfc60..=0xfcbe => return true,
+            _ => return false,
+        };
+        let shift = (address & 1) * 8;
+        *word = (*word & !(255 << shift)) | (u16::from(value) << shift);
+        true
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             header: DungeonHeaderState::load_from_ram(ram),
@@ -1868,6 +2105,9 @@ impl DungeonRoomRuntimeState {
     fn clear_reserved_gfx_config(&mut self) {
         self.reserved_gfx_config_word = 0;
     }
+    fn set_reserved_gfx_config_low(&mut self, value: u8) {
+        self.reserved_gfx_config_word=(self.reserved_gfx_config_word&0xff00)|u16::from(value);
+    }
 
     fn skip_room_tags_once(&mut self) {
         self.room_tag_skip_count = self.room_tag_skip_count.wrapping_add(1);
@@ -3550,6 +3790,21 @@ impl<'a> NativeDungeonEntranceBackupBridgeMut<'a> {
 adopting_bridge!(NativeDungeonScratchWordBridgeMut, scratch: DungeonScratchWordState);
 
 impl<'a> NativeDungeonScratchWordBridgeMut<'a> {
+    /// The graphics decompressor aliases the shared C8/CA words with its
+    /// stream pointer and CB count. Publish only the instruction's bytes and
+    /// adopt the overlapping typed words without re-stamping their other halves.
+    pub(crate) fn write_decompression_scratch(&mut self,address:usize,value:u16,width:u8) {
+        assert!((0xc8..=0xcd).contains(&address));
+        assert!(matches!(width,1|2)&&address+usize::from(width)<=0xce);
+        self.write_graphics_scratch(address,value,width);
+    }
+    pub(crate) fn write_graphics_scratch(&mut self,address:usize,value:u16,width:u8) {
+        assert!((0xbf..=0xcd).contains(&address));
+        assert!(matches!(width,1|2)&&address+usize::from(width)<=0xcf);
+        self.ram[address..address+usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        *self.scratch=DungeonScratchWordState::load_from_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
     forward_synced! {
         scratch;
         fn decrement_high() -> u8;
@@ -4073,6 +4328,11 @@ impl<'a> NativeDungeonRoomEffectsBridgeMut<'a> {
 adopting_bridge!(NativeDungeonRoomParserBridgeMut, state: DungeonRoomParserState);
 
 impl<'a> NativeDungeonRoomParserBridgeMut<'a> {
+    pub(crate) fn write_tile_attribute_byte(&mut self, index: usize, value: u8) {
+        self.state.tile_attributes[index] = NativeTile::from_cartridge(value);
+        self.ram[ATTRIBUTES_FOR_TILE_PLAYER + index] = value;
+    }
+
     forward_synced! { state; fn append_star_switch_tile(tilemap_pos: u16) -> usize; }
 
     pub(crate) fn clear_room_parser_words(&mut self, offsets: &[usize]) {
@@ -4137,6 +4397,7 @@ impl<'a> NativeDungeonRoomRuntimeBridgeMut<'a> {
         state;
         fn set_room_index_x3(value: u16);
         fn clear_reserved_gfx_config();
+        fn set_reserved_gfx_config_low(value: u8);
         fn skip_room_tags_once();
         fn clear_room_tag_skip();
         fn set_landing_class(value: u8);

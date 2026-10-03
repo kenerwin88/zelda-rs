@@ -675,12 +675,7 @@ impl ZeldaState {
     }
 
     pub(super) fn guard_main_after_animation(&mut self, k: usize, bak1: u8, bak2: u8) {
-        crate::cycle_ledger::charge(196); // C243-C250 restores pose and tests state.
-        {
-            let mut sprite = self.sprite_slot_view_mut(k);
-            sprite.set_direction(bak2);
-            sprite.set_graphics(bak1);
-        }
+        self.guard_main_restore_animation_pose(k, bak1, bak2);
 
         if self.sprite_slot_view(k).state() == 5 {
             crate::cycle_ledger::charge(40 + if self.game_state.frame.submodule == 0 { 70 } else { 6 + 42 }); // C252-C259 or C226 return.
@@ -694,6 +689,23 @@ impl ZeldaState {
         }
         crate::cycle_ledger::charge(6 + 46); // C250 taken and C25C JSR.
         if self.sprite_return_if_inactive_bank5(k) {
+            return;
+        }
+        self.guard_parry_sword_attacks(k);
+        self.guard_main_after_parry(k);
+    }
+
+    pub(super) fn guard_main_restore_animation_pose(&mut self, k: usize, bak1: u8, bak2: u8) {
+        crate::cycle_ledger::charge(196); // C243-C250 restores pose and tests state.
+        {
+            let mut sprite = self.sprite_slot_view_mut(k);
+            sprite.set_direction(bak2);
+            sprite.set_graphics(bak1);
+        }
+    }
+
+    pub(super) fn guard_main_after_active_state_check(&mut self, k: usize) {
+        if self.sprite_return_if_paused_bank5(k) {
             return;
         }
         self.guard_parry_sword_attacks(k);

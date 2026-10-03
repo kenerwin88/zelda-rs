@@ -2713,6 +2713,60 @@ pub(crate) struct WorldState {
 }
 
 impl WorldState {
+    #[cfg(test)]
+    pub(crate) fn assert_entrance_matches_ram(&self, ram: &[u8]) {
+        assert_eq!(self.location, WorldLocationState::load_from_ram(ram));
+        assert_eq!(self.region, WorldRegionState::load_from_ram(ram));
+        assert_eq!(self.camera_boundaries, WorldCameraBoundariesState::load_from_ram(ram));
+        assert_eq!(self.room_bounds, RoomBoundsState::load_from_ram(ram));
+        assert_eq!(self.transient, WorldTransientState::load_from_ram(ram));
+        assert_eq!(self.palette_theme, WorldPaletteThemeState::load_from_ram(ram));
+        assert_eq!(self.overworld.exit, OverworldExitState::load_from_ram(ram));
+        assert_eq!(self.overworld.map16, OverworldMap16State::load_from_ram(ram));
+    }
+
+    /// Retire a dungeon-entrance byte without importing or projecting other fields.
+    /// Odd word stores in the entrance table can cross a room-boundary word.
+    pub(crate) fn write_entrance_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            0x1b => { self.location.indoor_flag = value; return true; }
+            0xa6 => { self.transient.quadrant_fullsize_x = value; return true; }
+            0xa7 => { self.transient.quadrant_fullsize_y = value; return true; }
+            0xaa1 => { self.palette_theme.main_tile_theme_index = value; return true; }
+            _ => {}
+        }
+        let camera = &mut self.camera_boundaries;
+        let word = match address & !1 {
+            0x8a => &mut self.location.overworld_screen,
+            0x8c => &mut self.region.overlay_index,
+            0xa0 => &mut self.location.dungeon_room,
+            0x600..=0x606 => &mut self.room_bounds.y_bounds[(address - 0x600) / 2],
+            0x608..=0x60e => &mut self.room_bounds.x_bounds[(address - 0x608) / 2],
+            0x610..=0x616 => &mut camera.scroll_targets[(address - 0x610) / 2],
+            0x618 => &mut camera.camera_y_low,
+            0x61a => &mut camera.camera_y_hi,
+            0x61c => &mut camera.camera_x_low,
+            0x61e => &mut camera.camera_x_hi,
+            0x696 => &mut self.region.overworld_entrance_value,
+            0xc140 => &mut self.region.exit_area_index,
+            0xc142 => &mut self.transient.exit_tilemap_layer_copy,
+            0xc14c => &mut self.overworld.exit.exit_screen,
+            0xc14e => &mut self.overworld.map16.exit_src_off,
+            0xc150 => &mut camera.exit_camera_y_low,
+            0xc152 => &mut camera.exit_camera_x_low,
+            0xc154 => &mut camera.exit_room_bounds_y_start,
+            0xc156 => &mut camera.exit_room_bounds_y_end,
+            0xc158 => &mut camera.exit_room_bounds_x_start,
+            0xc15a => &mut camera.exit_room_bounds_x_end,
+            0xc15c..=0xc162 => &mut camera.exit_scroll_targets[(address - 0xc15c) / 2],
+            0xc16a..=0xc170 => &mut camera.exit_scroll_counters[(address - 0xc16a) / 2],
+            _ => return false,
+        };
+        let shift = (address & 1) * 8;
+        *word = (*word & !(255 << shift)) | (u16::from(value) << shift);
+        true
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             location: WorldLocationState::load_from_ram(ram),
@@ -3161,6 +3215,15 @@ impl<'a> NativeWeatherVaneBridgeMut<'a> {
 adopting_bridge!(NativeBirdTravelDestinationBridgeMut, destinations: BirdTravelDestinationsState);
 
 impl<'a> NativeBirdTravelDestinationBridgeMut<'a> {
+    /// Save loading retires the high and low coordinate bytes separately.
+    pub(crate) fn write_destination_byte(&mut self,address:usize,value:u8) {
+        assert!((BIRD_TRAVEL_X_LO..BIRD_TRAVEL_Y_HI+BIRD_TRAVEL_DESTINATION_SLOTS).contains(&address));
+        self.ram[address]=value;
+        let slot=(address-BIRD_TRAVEL_X_LO)%BIRD_TRAVEL_DESTINATION_SLOTS;
+        self.destinations.set_destination(slot,
+            u16::from(self.ram[BIRD_TRAVEL_X_LO+slot]) | u16::from(self.ram[BIRD_TRAVEL_X_HI+slot])<<8,
+            u16::from(self.ram[BIRD_TRAVEL_Y_LO+slot]) | u16::from(self.ram[BIRD_TRAVEL_Y_HI+slot])<<8);
+    }
     forward_synced! { destinations; fn set_destination(slot: usize, x: u16, y: u16); }
 
     pub(crate) fn clear_destination(&mut self, slot: usize) {

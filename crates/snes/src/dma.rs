@@ -48,6 +48,112 @@ impl Default for DmaState {
 }
 
 impl DmaState {
+    /// Execute forward PPU DMA on an already-owned CPU timeline. This narrow
+    /// hardware path is shared with native code; it never executes CPU code.
+    /// The caller owns A-bus reads and B-bus writes at the supplied timestamp.
+    /// HDMA and reverse/I/O DMA require the more general suspended executor.
+    pub fn run_synchronous_forward_ppu(
+        &mut self,
+        clock: &mut crate::CpuMasterTimeline,
+        mask: u8,
+        transfer: impl FnMut(u64, u8, u32, u8),
+    ) {
+        self.run_synchronous_forward_ppu_with_events(clock,mask,transfer,|_|{});
+    }
+
+    /// Native callers retain video events and the channel-end clock needed
+    /// to retime a pending NMI before the outer CPU write drains.
+    pub fn run_synchronous_forward_ppu_with_events(
+        &mut self,
+        clock: &mut crate::CpuMasterTimeline,
+        mask: u8,
+        transfer: impl FnMut(u64, u8, u32, u8),
+        mut event: impl FnMut(crate::cpu_timeline::CpuSynchronousTimelineEvent),
+    ) -> Option<u64> {
+        self.run_synchronous_forward_ppu_with_timed_events(clock, mask, transfer, |e, _| event(e))
+    }
+
+    /// Device owners synchronize at the CPU's processed event time. The
+    /// event itself retains its nominal raster timestamp for presentation.
+    pub fn run_synchronous_forward_ppu_with_timed_events(
+        &mut self,
+        clock: &mut crate::CpuMasterTimeline,
+        mask: u8,
+        mut transfer: impl FnMut(u64, u8, u32, u8),
+        mut event: impl FnMut(crate::cpu_timeline::CpuSynchronousTimelineEvent, u64),
+    ) -> Option<u64> {
+        assert!(!self.dma_busy);
+        assert!(self.channel.iter().all(|c| !c.dma_active && !c.hdma_active));
+        assert_eq!(clock.bus_workload().hdma_stall_master_cycles(), 0);
+        for (i, c) in self.channel.iter().enumerate() {
+            if mask & (1 << i) == 0 { continue; }
+            assert!(!c.from_b && c.b_adr < 0x40);
+            assert!(B_ADR_OFFSETS[usize::from(c.mode)].iter()
+                .all(|offset| u16::from(c.b_adr) + u16::from(*offset) < 0x40));
+        }
+        if mask == 0 {
+            clock.advance_synchronous_after_semantics_with(6, |e, at| {event(e, at.master_cycles());Ok::<_, String>(0)}).unwrap();
+            return None;
+        }
+        // S9xSetCPU DMACPUSync and S9xDoDMA channel setup do not drain
+        // events. Each byte publishes its semantic and counters first.
+        clock.advance_synchronous_without_event_drain(18);
+        let mut channel_end=None;
+        for (i, c) in self.channel.iter_mut().enumerate() {
+            if mask & (1 << i) == 0 { continue; }
+            self.dma_busy = true;
+            c.dma_active = true;
+            clock.advance_synchronous_without_event_drain(8);
+            let mut phase = 0;
+            loop {
+                let a = (u32::from(c.a_bank) << 16) | u32::from(c.a_adr);
+                let b = c.b_adr.wrapping_add(B_ADR_OFFSETS[usize::from(c.mode)][phase]);
+                transfer(clock.clock_master_cycles(), i as u8, a, b);
+                if !c.fixed {
+                    c.a_adr = if c.decrement { c.a_adr.wrapping_sub(1) }
+                        else { c.a_adr.wrapping_add(1) };
+                }
+                c.size = c.size.wrapping_sub(1);
+                clock.advance_synchronous_after_semantics_with(8, |e, at| {event(e, at.master_cycles());Ok::<_, String>(0)}).unwrap();
+                if c.size == 0 { break; }
+                phase = (phase + 1) & 3;
+            }
+            c.dma_active = false;
+            self.dma_busy = false;
+            channel_end=Some(clock.clock_master_cycles());
+        }
+        // The enclosing CPU register write drains after the nested DMA.
+        clock.advance_synchronous_after_semantics_with(6, |e, at| {event(e, at.master_cycles());Ok::<_, String>(0)}).unwrap();
+        channel_end
+    }
+
+    pub fn write_register(&mut self, adr: u16, val: u8) {
+        let c = ((adr & 0x70) >> 4) as usize;
+        let ch = &mut self.channel[c];
+        match adr & 0xf {
+            0x0 => {
+                ch.mode = val & 0x7;
+                ch.fixed = val & 0x8 != 0;
+                ch.decrement = val & 0x10 != 0;
+                ch.unused_bit = val & 0x20 != 0;
+                ch.indirect = val & 0x40 != 0;
+                ch.from_b = val & 0x80 != 0;
+            }
+            0x1 => ch.b_adr = val,
+            0x2 => ch.a_adr = (ch.a_adr & 0xff00) | val as u16,
+            0x3 => ch.a_adr = (ch.a_adr & 0x00ff) | ((val as u16) << 8),
+            0x4 => ch.a_bank = val,
+            0x5 => ch.size = (ch.size & 0xff00) | val as u16,
+            0x6 => ch.size = (ch.size & 0x00ff) | ((val as u16) << 8),
+            0x7 => ch.ind_bank = val,
+            0x8 => ch.table_adr = (ch.table_adr & 0xff00) | val as u16,
+            0x9 => ch.table_adr = (ch.table_adr & 0x00ff) | ((val as u16) << 8),
+            0xa => ch.rep_count = val,
+            0xb | 0xf => ch.unused_byte = val,
+            _ => {}
+        }
+    }
+
     pub const C_SAVELOAD_SIZE: usize = 192;
 
     pub fn new() -> Self {
@@ -469,30 +575,7 @@ impl Snes {
     }
 
     pub(crate) fn dma_write_reg(&mut self, adr: u16, val: u8) {
-        let c = ((adr & 0x70) >> 4) as usize;
-        let ch = &mut self.dma.channel[c];
-        match adr & 0xf {
-            0x0 => {
-                ch.mode = val & 0x7;
-                ch.fixed = val & 0x8 != 0;
-                ch.decrement = val & 0x10 != 0;
-                ch.unused_bit = val & 0x20 != 0;
-                ch.indirect = val & 0x40 != 0;
-                ch.from_b = val & 0x80 != 0;
-            }
-            0x1 => ch.b_adr = val,
-            0x2 => ch.a_adr = (ch.a_adr & 0xff00) | val as u16,
-            0x3 => ch.a_adr = (ch.a_adr & 0x00ff) | ((val as u16) << 8),
-            0x4 => ch.a_bank = val,
-            0x5 => ch.size = (ch.size & 0xff00) | val as u16,
-            0x6 => ch.size = (ch.size & 0x00ff) | ((val as u16) << 8),
-            0x7 => ch.ind_bank = val,
-            0x8 => ch.table_adr = (ch.table_adr & 0xff00) | val as u16,
-            0x9 => ch.table_adr = (ch.table_adr & 0x00ff) | ((val as u16) << 8),
-            0xa => ch.rep_count = val,
-            0xb | 0xf => ch.unused_byte = val,
-            _ => {}
-        }
+        self.dma.write_register(adr, val);
     }
 
     /// `dma_startDma` — for non-HDMA this latches `dma_busy` and adds

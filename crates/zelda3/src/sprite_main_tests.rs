@@ -1,6 +1,38 @@
 use super::*;
 
 #[test]
+fn follower_wrapper_return_instruction_cycles_match_rom() {
+    use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+    let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc"));
+    let Ok(mut rom) = std::fs::read(path) else { return; };
+    if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+    let state = ZeldaState::new();
+    for (entry, stop, stack, expected) in [
+        (0x09_9f91, 0x09_9fc4, &[][..], vec![22, 22, 28, 46]),
+        (0x09_9f97, 0x06_8369, &[0x06, 0x68, 0x83, 0x06][..], vec![28, 44]),
+    ] {
+        let checkpoint = RomCpuCheckpoint {
+            entry_pc: entry, stop_pc: stop,
+            a: 0, x: 0, y: 0, sp: 0x01f8, dp: 0, db: 0x09,
+            carry: false, zero: false, overflow: false, negative: false,
+            interrupt_disable: false, decimal: false, accumulator_is_8_bit: true,
+            index_is_8_bit: true, emulation: false, waiting: false,
+            stack_address: 0x01f9, stack_bytes: stack,
+        };
+        let mut run = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+            &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+        let mut cycles = Vec::new();
+        while !run.is_complete() {
+            cycles.push(run.step().master_cycles);
+            assert!(cycles.len() <= 4);
+        }
+        assert_eq!(cycles, expected, "wrapper entry {entry:06x}");
+    }
+}
+
+#[test]
 fn catfish_medallion_spawn_is_visible_before_its_graphics_decode() {
     let mut atomic = ZeldaState::new();
     atomic.set_main_module(9);
@@ -186,6 +218,46 @@ fn pengator_slide_continuation_does_not_repeat_movement() {
 }
 
 #[test]
+fn offscreen_guard_retains_kill_self_and_draw_scratch_until_resume() {
+    for indoors in [false, true] {
+        for (x, y) in [(0x0130, 0x0050), (0x0040, 0x0130)] {
+            let mut atomic = ZeldaState::new();
+            atomic.set_main_module(9);
+            atomic.set_submodule(0x2e);
+            atomic.set_indoor_flag(u8::from(indoors));
+            atomic.sprite_workspace_mut().set_current_sprite_x(x);
+            atomic.sprite_workspace_mut().set_current_sprite_y(y);
+            atomic.draw_scratch_position_mut().set_low_position(0xab, 0xcd);
+            {
+                let mut sprite = atomic.sprite_slot_view_mut(10);
+                sprite.set_state(9);
+                sprite.set_sprite_type(0x42);
+                sprite.set_direction(0);
+                sprite.set_graphics(11);
+                sprite.set_delay_aux1(1);
+                sprite.set_n_word(0x0012);
+            }
+            let mut staged = atomic.clone();
+            let before = crate::cycle_ledger::master();
+            atomic.guard_main(10);
+            let atomic_cycles = crate::cycle_ledger::master() - before;
+            let before = crate::cycle_ledger::master();
+            let continuation = staged.guard_animation_until_checkpoint(
+                10, crate::GuardAnimationCheckpoint::OffscreenKillSelfPending);
+            assert_eq!(staged.sprite_slot_view(10).state(), 9);
+            assert_eq!(staged.sprite_slot_view(10).pause(), 1);
+            assert_eq!(staged.sprite_slot_view(10).direction(), 3);
+            assert_eq!(staged.sprite_slot_view(10).graphics(), 8);
+            assert_eq!(staged.game_state.sprites.draw_hitbox_work.low_position_word(), 0xcdab);
+            staged.complete_guard_animation_at_checkpoint(10, continuation);
+            assert_eq!(crate::cycle_ledger::master() - before, atomic_cycles);
+            assert_eq!(staged.ram, atomic.ram);
+            assert_eq!(staged.game_state, atomic.game_state);
+        }
+    }
+}
+
+#[test]
 fn active_guard_weapon_coordinates_hold_pose_until_the_draw_returns() {
     use crate::GuardAnimationCheckpoint as Stage;
     let mut checkpoints = vec![
@@ -193,6 +265,7 @@ fn active_guard_weapon_coordinates_hold_pose_until_the_draw_returns() {
         Stage::HeadFlagsPending,
         Stage::DrawReturned,
         Stage::HeadExtendedPending,
+        Stage::ShadowOamPending,
     ];
     for entry in 0..4 {
         checkpoints.extend([
@@ -223,6 +296,8 @@ fn active_guard_weapon_coordinates_hold_pose_until_the_draw_returns() {
             sprite.set_direction(0);
             sprite.set_graphics(11);
             sprite.set_delay_aux1(1);
+            sprite.set_flags2(8);
+            sprite.set_flags3(0x10);
         }
         let mut staged = atomic.clone();
         atomic.guard_main(10);
@@ -233,6 +308,44 @@ fn active_guard_weapon_coordinates_hold_pose_until_the_draw_returns() {
         assert_eq!(staged.sprite_slot_view(10).direction(), 0);
         assert_eq!(staged.sprite_slot_view(10).graphics(), 11);
         assert_eq!(staged.ram, atomic.ram);
+    }
+}
+
+#[test]
+fn guard_pause_test_resume_preserves_restored_pose_and_cycle_ownership() {
+    for (submodule, paused) in [(0, 0), (0, 1), (2, 0)] {
+        let mut atomic = ZeldaState::new();
+        atomic.set_main_module(9);
+        atomic.set_submodule(submodule);
+        atomic.oam_state_mut().set_current_pointer((OAM_BUF + 0x140) as u16);
+        atomic.sprite_set_x(10, 0x40);
+        atomic.sprite_set_y(10, 0x50);
+        {
+            let mut sprite = atomic.sprite_slot_view_mut(10);
+            sprite.set_state(9);
+            sprite.set_sprite_type(0x41);
+            sprite.set_direction(0);
+            sprite.set_graphics(11);
+            sprite.set_delay_aux1(1);
+            sprite.set_flags2(8);
+            sprite.set_flags3(0x10);
+            sprite.set_pause(paused);
+        }
+        let mut staged = atomic.clone();
+        let before = crate::cycle_ledger::master();
+        atomic.guard_main(10);
+        let atomic_cycles = crate::cycle_ledger::master() - before;
+        let before = crate::cycle_ledger::master();
+        let continuation = staged.guard_animation_until_checkpoint(
+            10, crate::GuardAnimationCheckpoint::ActiveStateChecked);
+        assert_eq!(staged.sprite_slot_view(10).direction(), 0);
+        assert_eq!(staged.sprite_slot_view(10).graphics(), 11);
+        let drawn_oam = staged.ram[OAM_BUF..OAM_BUF + 0x200].to_vec();
+        staged.complete_guard_animation_at_checkpoint(10, continuation);
+        assert_eq!(crate::cycle_ledger::master() - before, atomic_cycles);
+        assert_eq!(&staged.ram[OAM_BUF..OAM_BUF + 0x200], drawn_oam.as_slice());
+        assert_eq!(staged.ram, atomic.ram);
+        assert_eq!(staged.game_state, atomic.game_state);
     }
 }
 

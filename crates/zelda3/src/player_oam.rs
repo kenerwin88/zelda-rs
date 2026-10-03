@@ -30,7 +30,44 @@ pub(crate) struct LinkOamEquipmentContinuation {
 pub(crate) struct LinkOamBodyContinuation {
     equipment: LinkOamEquipmentContinuation,
     lower: Option<(usize, u16, u8, u8)>,
-    lower_selection_cycles: u16,
+    progress: LinkOamLowerBodyProgress,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LinkOamContinuation {
+    Equipment(LinkOamEquipmentContinuation),
+    Body(LinkOamBodyContinuation),
+}
+
+/// Source control progress through the lower body's three persistent stores.
+/// Coordinates, flags and destinations remain owned by the native body call.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct LinkOamLowerBodyProgress {
+    cycles: u16,
+    stores: u8,
+}
+
+impl LinkOamLowerBodyProgress {
+    pub(super) fn from_source_pc(pc: u32) -> Option<Self> {
+        let mut progress = Self { cycles: 0, stores: 0 };
+        // m16/x16, no page crossing. The indexed LDA at AA0C includes
+        // the 16-bit index penalty. Costs are checked against the ROM below.
+        for (offset, cost, store) in [
+            (0xa9ed, 14, 0), (0xa9ee, 14, 0), (0xa9ef, 14, 0), (0xa9f0, 14, 0),
+            (0xa9f1, 32, 0), (0xa9f3, 40, 0), (0xa9f6, 24, 0), (0xa9f9, 46, 1),
+            (0xa9fc, 32, 0), (0xa9fe, 14, 0), (0xa9ff, 32, 0), (0xaa01, 14, 0),
+            (0xaa02, 24, 0), (0xaa05, 46, 2), (0xaa08, 14, 0), (0xaa09, 14, 0),
+            (0xaa0a, 14, 0), (0xaa0b, 14, 0), (0xaa0c, 46, 0), (0xaa0f, 24, 0),
+            (0xaa12, 24, 0), (0xaa15, 46, 4),
+        ] {
+            if pc == (0x0d_0000 | offset) { return Some(progress); }
+            progress.cycles += cost;
+            progress.stores |= store;
+        }
+        // AA18 also receives the invisible/blank-body branches, so that PC
+        // alone cannot prove that any lower-body store has run.
+        None
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -3592,6 +3629,13 @@ impl ZeldaState {
         &mut self, continuation: LinkOamEquipmentContinuation, lower_selection_cycles: u16,
     ) -> LinkOamBodyContinuation {
         assert!(lower_selection_cycles <= 56 && lower_selection_cycles % 14 == 0);
+        self.link_oam_before_lower_body_progress(continuation,
+            LinkOamLowerBodyProgress { cycles: lower_selection_cycles, stores: 0 })
+    }
+
+    pub(super) fn link_oam_before_lower_body_progress(
+        &mut self, continuation: LinkOamEquipmentContinuation, progress: LinkOamLowerBodyProgress,
+    ) -> LinkOamBodyContinuation {
         let continuation = if continuation.equipment_complete {
             continuation
         } else {
@@ -3648,7 +3692,7 @@ impl ZeldaState {
                         476
                     }
                     + if ((td << 4) & 0xf000) != 0xf000 {
-                        96 + u64::from(lower_selection_cycles)
+                        96
                     } else {
                         102
                     },
@@ -3668,19 +3712,36 @@ impl ZeldaState {
                     xcoord, ycoord.wrapping_sub(zcoord).wrapping_add(8)));
             }
         }
-        assert!(lower.is_some() || lower_selection_cycles == 0,
+        let body = LinkOamBodyContinuation { equipment: continuation, lower,
+            progress: LinkOamLowerBodyProgress { cycles: 0, stores: 0 } };
+        self.advance_link_oam_lower_body_progress(body, progress)
+    }
+
+    pub(super) fn advance_link_oam_lower_body_progress(
+        &mut self, mut body: LinkOamBodyContinuation, progress: LinkOamLowerBodyProgress,
+    ) -> LinkOamBodyContinuation {
+        assert!(progress.cycles >= body.progress.cycles && progress.cycles <= 556);
+        assert!(body.lower.is_some() || progress.cycles == 0,
             "lower selection cannot execute for an invisible or blank lower body");
-        LinkOamBodyContinuation { equipment: continuation, lower, lower_selection_cycles }
+        crate::cycle_ledger::charge(u64::from(progress.cycles - body.progress.cycles));
+        if let Some((oam_pos, flags, x, y)) = body.lower {
+            let stores = progress.stores & !body.progress.stores;
+            if stores & 1 != 0 { self.set_oam_charnum(oam_pos, flags); }
+            if stores & 2 != 0 { self.set_oam_word_xy(oam_pos, x, y); }
+            if stores & 4 != 0 { self.oam_state_mut().set_extended_byte(oam_pos, 2); }
+        }
+        body.progress = progress;
+        body
     }
 
     pub(super) fn link_oam_after_lower_body(&mut self, body: LinkOamBodyContinuation) {
         if let Some((oam_pos, flags, x, y)) = body.lower {
             // $a9ed..$aa15: the four ASLs precede every lower-body store.
             // Resume their unexecuted CPU work and publish this entry once.
-            crate::cycle_ledger::charge(556 - u64::from(body.lower_selection_cycles));
-            self.set_oam_charnum(oam_pos, flags);
-            self.set_oam_word_xy(oam_pos, x, y);
-            self.oam_state_mut().set_extended_byte(oam_pos, 2);
+            crate::cycle_ledger::charge(556 - u64::from(body.progress.cycles));
+            if body.progress.stores & 1 == 0 { self.set_oam_charnum(oam_pos, flags); }
+            if body.progress.stores & 2 == 0 { self.set_oam_word_xy(oam_pos, x, y); }
+            if body.progress.stores & 4 == 0 { self.oam_state_mut().set_extended_byte(oam_pos, 2); }
         }
         let LinkOamEquipmentContinuation {
             y_coord_backup, submodule, scratch_0_var,
@@ -4155,25 +4216,73 @@ mod equipment_cycle_tests {
         let start = crate::cycle_ledger::master();
         atomic.link_oam_after_equipment(equipment);
         let expected_cycles = crate::cycle_ledger::master() - start;
-        // Every ASL boundary in $a9ed..$a9f1 precedes all lower-entry stores.
-        for completed in [0, 14, 28, 42, 56] {
+        for pc in [0x0d_a9ed, 0x0d_a9ee, 0x0d_a9ef, 0x0d_a9f0, 0x0d_a9f1,
+            0x0d_a9fc, 0x0d_a9fe, 0x0d_aa08, 0x0d_aa15] {
+            let progress = LinkOamLowerBodyProgress::from_source_pc(pc).unwrap();
             let mut split = base.clone();
             let start = crate::cycle_ledger::master();
-            let body = split.link_oam_before_lower_body(equipment, completed);
+            let body = split.link_oam_before_lower_body_progress(equipment, progress);
             let prefix_cycles = crate::cycle_ledger::master() - start;
             let lower = body.lower.unwrap().0;
             let offset = oam_addr(lower);
-            assert_eq!(&split.ram[offset..offset + 4], &base.ram[offset..offset + 4]);
+            for (mask, range) in [(1, offset + 2..offset + 4), (2, offset..offset + 2),
+                (4, 0xa20 + lower..0xa21 + lower)] {
+                let expected = if progress.stores & mask != 0 { &atomic.ram } else { &base.ram };
+                assert_eq!(&split.ram[range.clone()], &expected[range], "pc={pc:06x}");
+            }
+            let prefix_ram = split.ram.clone();
+            let repeated = split.advance_link_oam_lower_body_progress(body, progress);
+            assert_eq!(repeated, body);
+            assert_eq!(split.ram, prefix_ram);
+            assert_eq!(crate::cycle_ledger::master() - start, prefix_cycles);
             let mut changed = split.clone();
             changed.set_oam_charnum(lower - 1, 0x5678);
+            if progress.stores & 1 != 0 { changed.set_oam_charnum(lower, 0x1234); }
             changed.link_oam_after_lower_body(body);
             assert_eq!(read_le_u16(&changed.ram, oam_addr(lower - 1) + 2), 0x5678,
                 "the committed upper entry must not be redrawn on resume");
+            if progress.stores & 1 != 0 {
+                assert_eq!(read_le_u16(&changed.ram, offset + 2), 0x1234,
+                    "the committed lower character must not be redrawn on resume");
+            }
             let start = crate::cycle_ledger::master();
             split.link_oam_after_lower_body(body);
             assert_eq!(prefix_cycles + crate::cycle_ledger::master() - start, expected_cycles);
             assert_eq!(&split.ram[0x800..0xaa0], &atomic.ram[0x800..0xaa0]);
         }
+    }
+
+    #[test]
+    fn lower_body_progress_matches_each_rom_instruction() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc");
+        let rom = std::fs::read(path).expect("development ROM for lower-body cursor validation");
+        for x in [0, 0x98, 0x198] {
+            let state = ZeldaState::new();
+            let checkpoint = RomCpuCheckpoint {
+                entry_pc: 0x0d_a9ed, stop_pc: 0x0d_aa18, a: 0x0300, x, y: 0,
+                sp: 0x01fd, dp: 0, db: 0x0d, carry: false, zero: false,
+                overflow: false, negative: false, interrupt_disable: true,
+                decimal: false, accumulator_is_8_bit: false, index_is_8_bit: false,
+                emulation: false, waiting: false, stack_address: 0x01fe,
+                stack_bytes: &[0xff, 0x7f],
+            };
+            let mut cpu = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+            let mut cycles = 0;
+            let mut stores = 0;
+            for _ in 0..32 {
+                if cpu.is_complete() { break; }
+                let pc = cpu.pc();
+                assert_eq!(LinkOamLowerBodyProgress::from_source_pc(pc),
+                    Some(LinkOamLowerBodyProgress { cycles, stores }), "pc={pc:06x}");
+                cycles += cpu.step().master_cycles as u16;
+                stores |= match pc { 0x0d_a9f9 => 1, 0x0d_aa05 => 2, 0x0d_aa15 => 4, _ => 0 };
+            }
+            assert!(cpu.is_complete());
+            assert_eq!(cycles, 556);
+            assert_eq!(stores, 7);
+        }
+        assert_eq!(LinkOamLowerBodyProgress::from_source_pc(0x0d_aa18), None);
     }
 
     #[test]

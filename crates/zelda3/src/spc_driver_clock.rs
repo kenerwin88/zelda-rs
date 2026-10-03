@@ -7,9 +7,14 @@
 
 #[cfg(test)]
 mod upload_return_tests;
+mod bootstrap;
+pub(crate) use bootstrap::native_bootstrap_origin;
+pub(crate) use bootstrap::NativeBootstrapCpu;
 
 use crate::game_output::{DspWriteEvent, EngineAudioCommandBatch};
 use snes::{apu::ApuState, snes9x_wram_refresh_cycle, CpuFieldTiming};
+use snes::apu::{ApuHostPortProbe, ApuHostPortTiming};
+use snes::snes9x_apu_clock::Snes9xApuClockCheckpoint;
 
 const SPC_DRIVER_START: usize = 0x0800;
 const SPC_DRIVER_END: usize = 0x179e;
@@ -18,6 +23,9 @@ const DRIVER_POLL_PUSH_Y_PC: u16 = 0x0878;
 const DRIVER_POLL_AFTER_PUSH_PC: u16 = 0x0879;
 const MAX_INITIALIZATION_APU_CYCLES: usize = 1_000_000;
 const APU_CYCLES_PER_DSP_SAMPLE: u64 = 32;
+// The power-on DSP starts at phase0 and emits its DAC pair at phase27
+// (Snes9xDspPhaseMachine::run_clock / pinned SPC_DSP echo_27).
+const DSP_CLOCKS_AFTER_OUTPUT: u64 = APU_CYCLES_PER_DSP_SAMPLE - (27 + 1);
 const SNES_MASTER_CLOCKS_PER_SCANLINE: u64 = 1_364;
 const SNES_NTSC_SCANLINES_PER_FRAME: u64 = 262;
 const SNES_SHORT_SCANLINE_MASTER_CLOCKS: u64 = 4;
@@ -57,11 +65,6 @@ const SONG_BANK_LAST_BYTE_VALUE_TO_ACK_POLL_MASTER_CLOCKS: u64 = 82;
 const SONG_BANK_BYTE_ACK_TO_NEXT_COUNTER_MASTER_CLOCKS: u64 = 82;
 const SONG_BANK_TERMINAL_ACK_TO_CLEAR_MASTER_CLOCKS: u64 = 62;
 const SONG_BANK_CLEAR_PORT_MASTER_CLOCKS: u64 = 30;
-// Clean-ROM Snes9x 1.63 reaches the uploaded Zelda SPC entry point at this
-// absolute APU cycle. The translated CPU skips the IPL transfer itself, so the
-// timing clock holds the extracted program dormant until the equivalent
-// lifecycle boundary, then executes the real program from $0800.
-const ROM_BOOTSTRAP_DRIVER_EXECUTION_ORIGIN: u64 = 1_355_567;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DriverPollEvent {
@@ -474,6 +477,16 @@ impl SongBankHostTransfer {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AbsoluteDspEventClock {
     apu: ApuState,
+    // CPU accesses temporarily own the same machine, including a suspended
+    // SPC pseudo-step. A frame window must retire it before serialization.
+    #[serde(skip)]
+    cpu_ports: Option<ApuHostPortTiming>,
+    #[serde(skip)]
+    cpu_port_clock: Option<(Snes9xApuClockCheckpoint, u64)>,
+    #[serde(skip)]
+    // None: nominal owner; Some(None): native no-store branch;
+    // Some(Some(value)): native store already published at its bus deadline.
+    cpu_port_actions: [Option<Option<u8>>; 4],
     startup_template: ApuState,
     absolute_apu_cycle: u64,
     apu_cycle_origin: u64,
@@ -522,6 +535,9 @@ impl AbsoluteDspEventClock {
         let startup_template = apu.clone();
         let mut clock = Self {
             apu,
+            cpu_ports: None,
+            cpu_port_clock: None,
+            cpu_port_actions: [None; 4],
             startup_template,
             absolute_apu_cycle: 0,
             apu_cycle_origin: 0,
@@ -541,22 +557,24 @@ impl AbsoluteDspEventClock {
     }
 
     pub(crate) fn upload_song_bank(&mut self, bank: &[u8]) -> Result<(), String> {
+        if self.cpu_ports.is_some() {
+            return Err("song-bank overlay overlaps a retained CPU/APU access".to_owned());
+        }
         upload_song_bank_to_ram(&mut self.apu.ram, bank)?;
         upload_song_bank_to_ram(&mut self.startup_template.ram, bank)
     }
 
-    pub(crate) fn configure_rom_bootstrap(&mut self) {
-        self.apu = self.startup_template.clone();
+    pub(crate) fn configure_rom_bootstrap(&mut self, origin: &bootstrap::NativeBootstrapOrigin) {
+        // The IPL receiver already owns the driver-entry registers, ports,
+        // RAM, timer phase and absolute cycle count. Replacing it with the
+        // standalone template loses the upload acknowledgement and hardware
+        // state before the first native NMI can read it.
+        self.apu = origin.apu.clone();
+        self.cpu_ports = None;
+        self.cpu_port_clock = Some((origin.apu_clock, u64::from(origin.apu.cycles)));
+        self.cpu_port_actions = [None; 4];
         self.absolute_apu_cycle = 0;
-        self.apu_cycle_origin = ROM_BOOTSTRAP_DRIVER_EXECUTION_ORIGIN;
-        for (timer, frequency) in self.apu.timer.iter_mut().zip([128u64, 128, 16]) {
-            let elapsed_phase = (self.apu_cycle_origin % frequency) as u8;
-            timer.cycles = if elapsed_phase == 0 {
-                0
-            } else {
-                frequency as u8 - elapsed_phase
-            };
-        }
+        self.apu_cycle_origin = 0;
         self.next_poll_boundary = DRIVER_POLL_PUSH_Y_PC;
         self.pending_writes.clear();
         self.pending_main_cpu_port_writes.clear();
@@ -577,6 +595,9 @@ impl AbsoluteDspEventClock {
         samples_per_channel: u32,
         vwf_glyph_tone_boundary_policy: u8,
     ) -> DspClockWindow {
+        self.resume_cpu_ports_for_audio_window(
+            self.absolute_apu_cycle + u64::from(samples_per_channel) * APU_CYCLES_PER_DSP_SAMPLE
+                + SMP_CPU_LOOKAHEAD_CYCLES);
         let frame_start_cycle = self.absolute_apu_cycle;
         let apu_cycles = u64::from(samples_per_channel) * APU_CYCLES_PER_DSP_SAMPLE;
         let frame_end_cycle = frame_start_cycle.wrapping_add(apu_cycles);
@@ -593,7 +614,7 @@ impl AbsoluteDspEventClock {
         }
         self.apu.debug_dsp_write_trace.as_mut().unwrap().clear();
         let mut polls = Vec::new();
-        let host_writes = if self
+        let mut host_writes = if self
             .song_bank_transfer
             .as_ref()
             .is_some_and(SongBankHostTransfer::suppresses_nmi_transport)
@@ -607,7 +628,20 @@ impl AbsoluteDspEventClock {
                 vwf_glyph_tone_boundary_policy,
             )
         };
+        // The timed NMI owns both its stores and its decision not to store.
+        // Finishing an SPC instruction may change an acknowledgement after
+        // that decision. Update legacy command bookkeeping, but do not
+        // re-evaluate a handled port or publish a second nominal store.
+        let handled = std::mem::take(&mut self.cpu_port_actions);
+        for (port, write) in host_writes.writes.iter_mut().enumerate() {
+            if let Some(native_write) = handled[port] { *write = native_write; }
+        }
+        // Later nominal ports inherit the actual native branch's duration,
+        // even though its own store must be excluded from delivery below.
         let host_port_targets = host_port_target_cycles(self.host_frame_index, host_writes);
+        for (port, write) in host_writes.writes.iter_mut().enumerate() {
+            if handled[port].is_some() { *write = None; }
+        }
         let debug_transport = crate::debug_env::var("ZELDA3_DEBUG_SPC_TRANSPORT_FRAME")
             .ok()
             .and_then(|frame| frame.parse::<u64>().ok())
@@ -800,12 +834,12 @@ impl AbsoluteDspEventClock {
         for (absolute_apu_cycle, addr, value) in absolute_writes {
             if absolute_apu_cycle >= frame_end_cycle {
                 self.pending_writes.push((absolute_apu_cycle, addr, value));
-            } else if absolute_apu_cycle >= frame_start_cycle {
-                let relative_apu_cycle = absolute_apu_cycle.saturating_sub(frame_start_cycle);
+            } else if absolute_apu_cycle.saturating_add(DSP_CLOCKS_AFTER_OUTPUT) >= frame_start_cycle {
+                let relative_apu_cycle = i128::from(absolute_apu_cycle) - i128::from(frame_start_cycle);
                 writes.push(DspWriteEvent::new(
                     addr,
                     value,
-                    (relative_apu_cycle / APU_CYCLES_PER_DSP_SAMPLE) as i32,
+                    relative_apu_cycle.div_euclid(i128::from(APU_CYCLES_PER_DSP_SAMPLE)) as i32,
                     (absolute_apu_cycle % APU_CYCLES_PER_DSP_SAMPLE) as u8,
                 ));
             }
@@ -818,7 +852,135 @@ impl AbsoluteDspEventClock {
     }
 
     pub(crate) fn host_acknowledgements(&self) -> [u8; 4] {
-        self.apu.out_ports
+        self.cpu_ports.as_ref().map_or(self.apu.out_ports, |owner| owner.machine().out_ports)
+    }
+
+    pub(crate) fn cpu_port_access_pending(&self) -> bool { self.cpu_ports.is_some() }
+
+    #[cfg(test)]
+    pub(crate) fn cpu_port_owner_for_test(&self) -> ApuHostPortTiming {
+        self.cpu_ports.as_ref().expect("fixture requires a retained APUI owner").clone()
+    }
+
+    /// Access a port owned by this native NMI using retained clock provenance.
+    /// Even a read-only branch retires that port's nominal NMI transport.
+    /// Coarse output execution ahead of this read is rejected rather than
+    /// sampling a future latch or rewinding a second APU copy.
+    pub(crate) fn cpu_port_at(&mut self, master: u64, port: u8, write: Option<u8>) -> Result<u8, String> {
+        let value = self.cpu_main_port_at(master, port, write)?;
+        if let Some(value) = write {
+            self.cpu_port_actions[usize::from(port)] = Some(Some(value));
+        } else {
+            self.cpu_port_actions[usize::from(port)].get_or_insert(None);
+        }
+        Ok(value)
+    }
+
+    /// Main-thread upload accesses do not retire a nominal NMI transport branch.
+    pub(crate) fn cpu_main_port_at(&mut self, master: u64, port: u8, write: Option<u8>) -> Result<u8, String> {
+        if port >= 4 { return Err("invalid native APUI port".to_owned()); }
+        self.retain_cpu_port_owner(master)?;
+        let owner = self.cpu_ports.as_mut().unwrap();
+        if let Some(value) = write {
+            owner.write_cpu_port_at(master, port, value).map_err(|e| e.to_string())?;
+            Ok(value)
+        } else {
+            let value = owner.read_cpu_port_at(master, port).map_err(|e| e.to_string())?;
+            Ok(value)
+        }
+    }
+
+    pub(crate) fn cpu_end_scanline_at(&mut self, master: u64) -> Result<(), String> {
+        self.retain_cpu_port_owner(master)?;
+        self.cpu_ports.as_mut().unwrap().end_scanline_at(master).map_err(|e| e.to_string())
+    }
+
+    fn retain_cpu_port_owner(&mut self, master: u64) -> Result<(), String> {
+        let (c, at_cycle) = self.cpu_ports.as_ref().map_or_else(
+            || self.cpu_port_clock.ok_or("APU lacks a native CPU clock handoff"),
+            |owner| Ok((owner.clock().checkpoint(), self.apu_cycle_origin + u64::from(owner.machine().cycles))),
+        )?;
+        let elapsed = master.checked_sub(c.cpu_reference_master_cycles())
+            .ok_or("native CPU port access moved backwards")?;
+        let due = (u128::from(elapsed) * u128::from(SNES9X_APU_RATIO_NUMERATOR)
+            + u128::from(c.remainder())) / u128::from(SNES9X_APU_RATIO_DENOMINATOR);
+        let due = i128::try_from(due).unwrap();
+        let target = i128::from(at_cycle) + due - i128::from(c.smp_clock());
+        if self.song_bank_transfer.is_some()
+            || self.pending_timed_main_cpu_port_writes.iter().any(|&(at, _, _)| i128::from(at) <= target)
+        {
+            return Err("native APUI access overlaps an undelivered host transfer".to_owned());
+        }
+        if self.cpu_ports.is_none() {
+            let now = self.apu_cycle_origin + u64::from(self.apu.cycles);
+            let executed = now.checked_sub(at_cycle).ok_or("native APU clock moved backwards")?;
+            let credit = c.smp_clock().checked_add(i64::try_from(executed).map_err(|e| e.to_string())?)
+                .ok_or("native SMP credit overflow")?;
+            if executed != 0 && i128::from(credit) > due {
+                return Err("audio window already executed beyond the CPU port deadline".to_owned());
+            }
+            let checkpoint = Snes9xApuClockCheckpoint::new(c.cpu_reference_master_cycles(),
+                c.remainder(), credit).map_err(|e| e.to_string())?;
+            let probe = ApuHostPortProbe::new(std::mem::take(&mut self.apu))
+                .expect("event clock must hand off a completed native SPC instruction");
+            self.cpu_ports = Some(ApuHostPortTiming::new(probe, checkpoint).map_err(|e| e.to_string())?);
+        }
+        Ok(())
+    }
+
+    /// While a native CPU continuation owns time, output consumes its DSP
+    /// writes without running a second, sample-count-driven SMP scheduler.
+    /// Keep a suspended SPC pseudo-step intact for the next CPU port access.
+    pub(crate) fn advance_at_cpu_boundary(&mut self, commands: EngineAudioCommandBatch,
+        samples: u32, policy: u8, master: u64) -> Result<DspClockWindow, String> {
+        self.retain_cpu_port_owner(master)?;
+        let owner = self.cpu_ports.as_mut().unwrap();
+        owner.sync_to(master).map_err(|e| e.to_string())?;
+        let start = self.absolute_apu_cycle;
+        let end = start + u64::from(samples) * APU_CYCLES_PER_DSP_SAMPLE;
+        if self.apu_cycle_origin + u64::from(owner.machine().cycles) + DSP_CLOCKS_AFTER_OUTPUT < end {
+            return Err(format!("audio output exceeds the native CPU's executed SMP work: host={} master={master} output_end={end} executed={}",
+                self.host_frame_index, self.apu_cycle_origin + u64::from(owner.machine().cycles)));
+        }
+        self.host_transport.frame_writes(commands, owner.machine().out_ports,
+            owner.machine().in_ports[3], policy);
+        self.cpu_port_actions = [None; 4];
+        self.pending_writes.extend(owner.take_dsp_register_writes().into_iter()
+            .map(|(at,address,value)| (self.apu_cycle_origin + u64::from(at),address,value)));
+        let mut writes = Vec::new();
+        for (at,address,value) in std::mem::take(&mut self.pending_writes) {
+            if at >= end { self.pending_writes.push((at,address,value)); }
+            else if at.saturating_add(DSP_CLOCKS_AFTER_OUTPUT) >= start {
+                // A register write after the last DAC pair can arrive at the
+                // next CPU synchronization. Retain its raw signed phase; it
+                // must not disappear merely because the host took samples.
+                let offset = (i128::from(at) - i128::from(start))
+                    .div_euclid(i128::from(APU_CYCLES_PER_DSP_SAMPLE));
+                writes.push(DspWriteEvent::new(address,value,offset as i32,(at%32) as u8));
+            }
+        }
+        self.absolute_apu_cycle = end;
+        self.host_frame_index = self.host_frame_index.wrapping_add(1);
+        Ok(DspClockWindow { writes, polls: Vec::new() })
+    }
+
+    fn resume_cpu_ports_for_audio_window(&mut self, target: u64) {
+        if let Some(owner) = &self.cpu_ports {
+            assert!(target >= self.apu_cycle_origin + u64::from(owner.machine().cycles),
+                "audio output window precedes its retained CPU/APU execution");
+        }
+        let Some(mut owner) = self.cpu_ports.take() else { return };
+        owner.finish_instruction().expect("native APU could not resume its CPU access");
+        let checkpoint = owner.clock().checkpoint();
+        self.apu = owner.into_probe().unwrap_or_else(|_| panic!("native APU remained suspended"))
+            .into_machine().unwrap_or_else(|_| panic!("native SPC boundary was lost"));
+        self.cpu_port_clock = Some((checkpoint, self.apu_cycle_origin + u64::from(self.apu.cycles)));
+        // These writes happened during CPU synchronization, before advance's
+        // normal trace window. Keep them until their output window consumes them.
+        if let Some(trace) = self.apu.debug_dsp_write_trace.as_mut() {
+            self.pending_writes.extend(trace.drain(..).map(|(cycle, address, value)|
+                (self.apu_cycle_origin + u64::from(cycle), address, value)));
+        }
     }
 
     pub(crate) fn queue_main_cpu_port_write(&mut self, port: u8, value: u8) {
@@ -904,26 +1066,27 @@ impl AbsoluteDspEventClock {
     }
 
     pub(crate) fn debug_state_summary(&self) -> String {
+        let apu = self.cpu_ports.as_ref().map_or(&self.apu, |owner| owner.machine());
         format!(
             "abs={} origin={} local={} pc={:04x} sp={:02x} a={:02x} x={:02x} y={:02x} z={} c={} t0={},{},{},{},{} ram43={} in={:02x?} out={:02x?} transfer={:?}",
             self.absolute_apu_cycle,
             self.apu_cycle_origin,
-            self.apu.cycles,
-            self.apu.spc.pc,
-            self.apu.spc.sp,
-            self.apu.spc.a,
-            self.apu.spc.x,
-            self.apu.spc.y,
-            self.apu.spc.z,
-            self.apu.spc.c,
-            self.apu.timer[0].cycles,
-            self.apu.timer[0].divider,
-            self.apu.timer[0].target,
-            self.apu.timer[0].counter,
-            self.apu.timer[0].enabled,
-            self.apu.ram[0x43],
-            self.apu.in_ports,
-            self.apu.out_ports,
+            apu.cycles,
+            apu.spc.pc,
+            apu.spc.sp,
+            apu.spc.a,
+            apu.spc.x,
+            apu.spc.y,
+            apu.spc.z,
+            apu.spc.c,
+            apu.timer[0].cycles,
+            apu.timer[0].divider,
+            apu.timer[0].target,
+            apu.timer[0].counter,
+            apu.timer[0].enabled,
+            apu.ram[0x43],
+            apu.in_ports,
+            apu.out_ports,
             self.song_bank_transfer
                 .as_ref()
                 .map(|transfer| transfer.phase),

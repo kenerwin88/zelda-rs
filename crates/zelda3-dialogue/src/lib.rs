@@ -830,6 +830,77 @@ pub fn compile_messages_document(
     Ok(pack_memblk_arrays(&[dialogue_pack]))
 }
 
+/// Preserve the encoding of unchanged messages while keeping authored text
+/// authoritative. Dictionary references affect the original decoder's work
+/// and publication order, even when expanding them produces identical text.
+/// A reference message is reused only after expanding it and comparing every
+/// byte with the newly compiled source. Edited messages use their new bytes.
+pub fn compile_messages_with_reference_encoding(
+    doc: &DialogueMessagesDocument,
+    reference: &[u8],
+) -> Result<Vec<u8>, DialogueSourceCompileError> {
+    let mut messages = compile_messages_to_bytes(doc)?;
+    let invalid = || DialogueSourceCompileError::new(0, "invalid dialogue encoding reference");
+    let packs = unpack_memblk_arrays(reference).ok_or_else(invalid)?;
+    let pack = unpack_memblk_arrays(packs.first().ok_or_else(invalid)?).ok_or_else(invalid)?;
+    let dictionary_bytes = *pack.first().ok_or_else(invalid)?;
+    let dictionary = unpack_memblk_arrays(dictionary_bytes).ok_or_else(invalid)?;
+    let encoded = unpack_memblk_arrays(pack.get(1).ok_or_else(invalid)?).ok_or_else(invalid)?;
+    for (index, message) in messages.iter_mut().enumerate() {
+        let Some(raw) = encoded.get(index) else { continue };
+        let mut expanded = Vec::new();
+        let mut read = 0;
+        while read < raw.len() {
+            let byte = raw[read];
+            if byte >= 0x80 {
+                let word = dictionary.get(usize::from(byte.wrapping_sub(0x88) & 0x7f))
+                    .ok_or_else(invalid)?;
+                expanded.extend_from_slice(word);
+                read += 1;
+            } else {
+                expanded.push(byte);
+                let multibyte = decode_us_dialogue_byte(byte, raw.get(read + 1).copied()).2;
+                read += 1;
+                if multibyte {
+                    expanded.push(*raw.get(read).ok_or_else(invalid)?);
+                    read += 1;
+                }
+            }
+        }
+        if expanded == *message {
+            *message = raw.to_vec();
+        }
+    }
+    let pack = pack_memblk_arrays(&[dictionary_bytes.to_vec(), pack_memblk_arrays(&messages)]);
+    Ok(pack_memblk_arrays(&[pack]))
+}
+
+fn unpack_memblk_arrays(bytes: &[u8]) -> Option<Vec<&[u8]>> {
+    let end = bytes.len().checked_sub(2)?;
+    let marker = usize::from(u16::from_le_bytes(bytes[end..].try_into().ok()?));
+    let (count, width) = if marker < 8192 { (marker, 2) } else { (marker - 8192, 4) };
+    let table = count.checked_mul(width)?;
+    if table > end {
+        return None;
+    }
+    let mut start = table;
+    let mut items = Vec::with_capacity(count + 1);
+    for i in 0..=count {
+        let stop = if i == count { end } else {
+            let field = bytes.get(i * width..(i + 1) * width)?;
+            let relative = if width == 2 { usize::from(u16::from_le_bytes(field.try_into().ok()?)) }
+                else { u32::from_le_bytes(field.try_into().ok()?) as usize };
+            table.checked_add(relative)?
+        };
+        if start > stop || stop > end {
+            return None;
+        }
+        items.push(bytes.get(start..stop)?);
+        start = stop;
+    }
+    Some(items)
+}
+
 /// Compile a [`DialogueMessagesDocument`] into the per-message semantic IR table
 /// (the `kDialogueSourceSemantic` sidecar payload).
 pub fn compile_messages_ir_table(
@@ -882,6 +953,37 @@ fn toml_string_scalar(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reference_encoding_preserves_tokens_only_for_unchanged_source() {
+        let dictionary = pack_memblk_arrays(&[vec![0, 1], vec![0]]);
+        let reference = pack_memblk_arrays(&[pack_memblk_arrays(&[
+            dictionary.clone(),
+            pack_memblk_arrays(&[vec![0x88], vec![0x89, 1]]),
+        ])]);
+        let mut doc = DialogueMessagesDocument {
+            format: FORMAT_DIALOGUE_SOURCE.to_string(),
+            messages: (0..2).map(|id| DialogueMessageEntry { id, text: "AB".into() }).collect(),
+        };
+        assert_eq!(compile_messages_with_reference_encoding(&doc, &reference).unwrap(), reference);
+        doc.messages[0].text = "C".into();
+        let expected = pack_memblk_arrays(&[pack_memblk_arrays(&[
+            dictionary,
+            pack_memblk_arrays(&[vec![2], vec![0x89, 1]]),
+        ])]);
+        assert_eq!(compile_messages_with_reference_encoding(&doc, &reference).unwrap(), expected);
+    }
+
+    #[test]
+    fn reference_encoding_rejects_malformed_tables_and_dictionary_references() {
+        let doc = sample_messages_document();
+        assert!(compile_messages_with_reference_encoding(&doc, &[1, 0]).is_err());
+        let reference = pack_memblk_arrays(&[pack_memblk_arrays(&[
+            pack_memblk_arrays(&[vec![0]]),
+            pack_memblk_arrays(&[vec![0x89]]),
+        ])]);
+        assert!(compile_messages_with_reference_encoding(&doc, &reference).is_err());
+    }
 
     fn sample_messages_document() -> DialogueMessagesDocument {
         DialogueMessagesDocument {

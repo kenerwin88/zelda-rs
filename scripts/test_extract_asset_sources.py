@@ -42,8 +42,47 @@ def compressed_literal(payload: bytes) -> bytes:
 
 
 class ExtractAssetSourcesTests(unittest.TestCase):
+    def test_packed_dungeon_headers_preserve_aliases_unused_bits_and_padding(self) -> None:
+        rom = bytearray(0x78000)
+        start = extract_assets.lorom_offset(0x04F502)
+        for room in range(320):
+            pointer = 0xFFEF if room >= 296 else 0xF782 + room % 2 * 7
+            rom[start + room * 2:start + room * 2 + 2] = pointer.to_bytes(2, "little")
+        rom[start + 640:0x28000] = bytes((i * 17) & 255 for i in range(0xafe - 640))
+        rom[0x28000 - 17:0x28000] = bytes([255]) * 17
+        palette_start = extract_assets.lorom_offset(0x0ED460)
+        palette_end = palette_start + 1024
+        rom[palette_start:palette_end] = bytes((i * 31 + 7) & 255 for i in range(1024))
+        expected = bytes(rom[start:0x28000] + rom[palette_start:palette_end])
+        self.assertEqual(extract_assets.extract_dungeon_header_encoding(bytes(rom)), expected)
+        self.assertEqual(extract_assets.extract_dungeon_header_encoding(bytes(512) + rom), expected)
+        with self.assertRaisesRegex(RuntimeError, "ends before"):
+            extract_assets.extract_dungeon_header_encoding(bytes(rom[:start]))
+        with self.assertRaisesRegex(RuntimeError, "ends before"):
+            extract_assets.extract_dungeon_header_encoding(bytes(rom[:palette_end - 1]))
+        rom[start:start + 2] = b"\0\0"
+        with self.assertRaisesRegex(RuntimeError, "pointer.*outside"):
+            extract_assets.extract_dungeon_header_encoding(bytes(rom))
+
+    def test_enemy_damage_stream_preserves_commands_and_literal_terminators(self) -> None:
+        rom = bytearray(0x20000)
+        start = extract_assets.lorom_offset(0x03E800)
+        # Literal FF is payload; only the final FF is a command terminator.
+        stream = bytes([0x01, 0xFF, 0x31, 0x20, 0xFF, 0x40, 0x12, 0x34,
+                        0x60, 0x7F, 0x80, 0x00, 0x01, 0xE4, 0x20, 0x55, 0xFF])
+        rom[start:start + len(stream)] = stream
+        self.assertEqual(extract_assets.extract_enemy_damage_stream(bytes(rom)), stream)
+        self.assertEqual(extract_assets.extract_enemy_damage_stream(bytes(512) + rom), stream)
+
+    def test_enemy_damage_stream_rejects_output_beyond_buffer(self) -> None:
+        rom = bytearray(0x20000)
+        start = extract_assets.lorom_offset(0x03E800)
+        rom[start:start + 10] = bytes([0xE7, 0xFF, 0x12] * 3 + [0xFF])
+        with self.assertRaisesRegex(RuntimeError, "exceeds its packed buffer"):
+            extract_assets.extract_enemy_damage_stream(bytes(rom))
+
     def test_extracts_spc_driver_program_from_intro_upload(self) -> None:
-        rom = bytearray(0xC9000)
+        rom = bytearray(0xD0000)
         cursor = extract_assets.lorom_offset(0x998000)
 
         def emit_block(target: int, payload: bytes) -> None:
@@ -60,6 +99,9 @@ class ExtractAssetSourcesTests(unittest.TestCase):
         driver = extract_assets.extract_spc_driver_program(bytes(rom))
 
         self.assertEqual(driver, b"\x20\xcd\xcf\xbd")
+        expected = bytes(rom[extract_assets.lorom_offset(0x998000):cursor + 4])
+        self.assertEqual(extract_assets.extract_spc_bootstrap_upload(bytes(rom)), expected)
+        self.assertEqual(extract_assets.extract_spc_bootstrap_upload(bytes(512) + rom), expected)
 
     def test_spc_driver_extraction_requires_entry_point_0800(self) -> None:
         rom = bytearray(0xC9000)
@@ -68,6 +110,23 @@ class ExtractAssetSourcesTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "entry point.*0800"):
             extract_assets.extract_spc_driver_program(bytes(rom))
+
+    def test_runtime_spc_upload_preserves_blocks_across_lorom_banks(self) -> None:
+        rom = bytearray(0x100000)
+        payload = bytes(range(256)) * 128
+        stream = b"\0\x80\0\xd0" + payload + b"\1\0\0\xc0\x37\0\0\0\x08"
+        address = extract_assets.SPC_RUNTIME_UPLOAD_ADDRESSES[0]
+        for value in stream:
+            rom[extract_assets.lorom_offset(address)] = value
+            address = extract_assets.next_lorom_address(address)
+        self.assertEqual(extract_assets.extract_spc_runtime_upload(bytes(rom), 0), stream)
+        self.assertEqual(extract_assets.extract_spc_runtime_upload(bytes(512) + rom, 0), stream)
+        with self.assertRaises(ValueError):
+            extract_assets.extract_spc_runtime_upload(bytes(rom), -1)
+        offset = extract_assets.lorom_offset(extract_assets.SPC_RUNTIME_UPLOAD_ADDRESSES[2])
+        rom[offset:offset + 4] = bytes(4)
+        with self.assertRaisesRegex(RuntimeError, "entry point"):
+            extract_assets.extract_spc_runtime_upload(bytes(rom), 2)
 
     def test_parse_args_defaults_diagnostic_variant_atlas_off(self) -> None:
         original_argv = sys.argv

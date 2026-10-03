@@ -351,6 +351,8 @@ pub(crate) fn initialize_libretro_session(
     skip_oracle_frames: u32,
     compare_video: bool,
     compare_audio: bool,
+    native_timing: bool,
+    source_timing_receipts_enabled: bool,
     audio_comparison: AudioComparisonMode,
     timing: AudioTimingOptions,
     replay_save: Option<&Path>,
@@ -545,6 +547,8 @@ pub(crate) fn initialize_libretro_session(
             serde_json::json!({"mode": "translated_fallback"})
         },
         "timing": {
+            "native_timing_requested": native_timing,
+            "source_timing_receipts_enabled": source_timing_receipts_enabled,
             "fps": oracle.av_info.timing.fps,
             "sample_rate": oracle.av_info.timing.sample_rate,
             "frames_requested": frames,
@@ -619,13 +623,16 @@ pub(crate) fn initialize_libretro_session(
         ""
     };
     let scan_all_flag = if scan_all { " --scan-all" } else { "" };
-    let engine_state_flag = match compare_engine_state_from_frame {
+    let mut engine_state_flag = match compare_engine_state_from_frame {
         Some(start) if start != compare_from_frame => {
             format!(" --compare-engine-state-from-frame {start}")
         }
         Some(_) => String::new(),
         None => " --ignore-engine-state".to_string(),
     };
+    if native_timing {
+        engine_state_flag.push_str(" --native-timing");
+    }
     let replay = format!(
         "#!/bin/sh\nset -eu\ncd {}\nZELDA3_ASSET_PACK={} cargo run -q -p zelda3-bin{} -- --compare-snes9x-oracle {} {} {} --expected-core-sha256 {} --expected-rom-sha256 {} --input-script {}{}{} {} --compare-from-frame {}{}{} --audio-comparison {} --audio-window-ms {} --audio-silence-threshold {} --audio-timing-tolerance-ms {} --audio-envelope-tolerance {} --session-dir {}{}\n",
         shell_single_quote(&repo_root.to_string_lossy()),

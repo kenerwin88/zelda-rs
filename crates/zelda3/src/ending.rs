@@ -20,6 +20,29 @@ use crate::zelda_rtl::sprite::SpriteSpawnInfo;
 mod ending_shared;
 use ending_shared::*;
 
+pub(super) fn native_poly_palette_byte(address: u32) -> Option<u8> {
+    (0x0cc425..0x0cc435).contains(&address).then(|| {
+        let offset=(address-0x0cc425) as usize;
+        POLYHEDRAL_PALETTE[offset/2].to_le_bytes()[offset%2]
+    })
+}
+
+// These are the same native sprite entries used by the semantic owner,
+// encoded as the source's eight-byte records for retained CPU bus reads.
+pub(super) fn native_intro_sprite_table_byte(address: u32) -> Option<u8> {
+    let (base, entries): (u32, &[IntroSpriteEnt]) = match address {
+        0x0cc60f..=0x0cc68e => (0x0cc60f, &ANIMATE_SCENE_SPRITE_DRAW_TRIANGLE_LEFT_ENTRIES),
+        0x0cc68f..=0x0cc70e => (0x0cc68f, &ANIMATE_SCENE_SPRITE_DRAW_TRIANGLE_RIGHT_ENTRIES),
+        0x0cc868..=0x0cc8cf => (0x0cc868, &ANIMATE_SCENE_SPRITE_COPYRIGHT_SPRITE_ENTRIES),
+        0x0cc936..=0x0cc955 => (0x0cc936, &ANIMATE_SCENE_SPRITE_SPARKLE_SPRITE_ENTRIES),
+        _ => return None,
+    };
+    let offset=(address-base) as usize;
+    let (x,y,tile,flags,size)=entries[offset/8];
+    Some(match offset%8 {0=>x as u8,1=>(i16::from(x)>>8) as u8,
+        2=>y as u8,3=>(i16::from(y)>>8) as u8,4=>tile,5=>flags,6=>0,7=>size,_=>unreachable!()})
+}
+
 impl ZeldaState {
     fn apply_dung_pal_info(&mut self, idx: u8) {
         let (_, _, pal2, pal3) = DUNG_PAL_INFOS_ENDING[idx as usize];
@@ -2613,6 +2636,10 @@ impl ZeldaState {
     }
 
     pub(super) fn module00_intro(&mut self) {
+        if self.try_native_intro_title_entry() {
+            self.run_native_intro_clear_until_boundary();
+            return;
+        }
         let skip_at = if self
             .game_state
             .enhanced_features
@@ -2646,6 +2673,10 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_zelda_fadein(&mut self) {
+        if self.try_native_intro_title_entry() {
+            self.run_native_intro_clear_until_boundary();
+            return;
+        }
         self.intro_handle_all_triforce_animations();
         if self.intro_title_fade_defer_suffix_this_frame
             && self.game_state.frame.frame_counter & 1 != 0
@@ -2692,6 +2723,10 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_sword_coming_down(&mut self) {
+        if self.try_native_intro_title_entry() {
+            self.run_native_intro_clear_until_boundary();
+            return;
+        }
         let poly_thread_was_active = self.game_state.display.nmi_thread_active;
         self.intro_handle_all_triforce_animations();
         self.attract_scene_mut().clear_intro_did_run_step();
@@ -2906,24 +2941,31 @@ impl ZeldaState {
 
     pub(super) fn intro_init(&mut self) {
         self.intro_setup_screen();
-        self.set_screen_brightness(15);
-        self.set_subsubmodule(0);
-        self.increment_cgram_update_flag();
-        self.increment_submodule();
-        self.set_sound_effect_2(10);
-        self.intro_init_continue();
+        if self.try_native_intro_first_clear_entry() {
+            self.begin_native_intro_clear();
+        } else {
+            self.set_screen_brightness(15);
+            self.set_subsubmodule(0);
+            self.increment_cgram_update_flag();
+            self.increment_submodule();
+            self.set_sound_effect_2(10);
+            self.intro_init_continue();
+        }
         self.intro_initialization_reset_obj_control_pending = self.rom_startup_timing();
     }
 
     pub(super) fn intro_setup_screen(&mut self) {
-        self.set_core_update_disable_flag(0x80);
-        self.enable_force_blank();
-        self.set_main_screen_layers(16);
-        self.set_sub_screen_layers(0);
-        self.intro_initialize_background_settings();
-        self.set_color_window_selection(0x20);
-        self.set_chr_halfslot_request(20);
+        if !self.try_native_intro_setup_entry() {
+            self.set_core_update_disable_flag(0x80);
+            self.enable_force_blank();
+            self.set_main_screen_layers(16);
+            self.set_sub_screen_layers(0);
+            self.intro_initialize_background_settings();
+            self.set_color_window_selection(0x20);
+            self.set_chr_halfslot_request(20);
+        }
         self.graphics_load_chr_half_slot();
+        if self.try_native_intro_setup_return() { return; }
         self.clear_chr_halfslot_request();
         self.LoadOWMusicIfNeeded();
 
@@ -2949,9 +2991,33 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_init_continue(&mut self) {
+        if self.try_native_intro_darkening_entry() {
+            self.run_native_intro_clear_until_boundary();
+            return;
+        }
+        if self.try_native_intro_follower_entry() {
+            self.run_native_intro_clear_until_boundary();
+            return;
+        }
+        if self.try_native_intro_items_entry() {
+            self.run_native_intro_clear_until_boundary();
+            return;
+        }
+        if self.try_native_intro_text_entry() {
+            self.run_native_intro_clear_until_boundary();
+            return;
+        }
+        if self.try_native_intro_clear_entry(false) {
+            self.begin_native_intro_clear();
+            return;
+        }
         self.intro_display_logo();
         let t = self.game_state.frame.subsubmodule;
         self.increment_subsubmodule();
+        self.intro_init_continue_after_dispatch(t);
+    }
+
+    fn intro_init_continue_after_dispatch(&mut self, t: u8) {
         match t {
             0..=7 => self.intro_clear1kb_blocks_of_wram(),
             8 => self.intro_load_text_pointers_and_palettes(),
@@ -3049,6 +3115,10 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_initialize_triforce_poly_thread(&mut self) {
+        if self.try_native_intro_poly_entry() {
+            self.run_native_intro_clear_until_boundary();
+            return;
+        }
         self.world_palette_theme_mut()
             .set_misc_sprites_graphics_index(8);
         self.load_common_sprites();
@@ -3104,6 +3174,10 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_handle_all_triforce_animations(&mut self) {
+        if self.try_native_intro_animation_entry() {
+            self.run_native_intro_clear_until_boundary();
+            return;
+        }
         self.attract_scene_mut().increment_intro_frame_counter();
         self.intro_animate_triforce();
         self.scene_animate_every_sprite();
@@ -3229,9 +3303,9 @@ impl ZeldaState {
         self.write_intro_x(k, INTRO_SPRITE_TYPE_A_0_X_OFFSETS[k]);
         self.write_intro_y(k, INTRO_SPRITE_TYPE_A_0_Y_OFFSETS[k]);
         self.intro_actor_mut(k)
-            .set_x_velocity(INTRO_SPRITE_TYPE_A_0_X_VELOCITIES[k] as u8);
+            .add_x_velocity(INTRO_SPRITE_TYPE_A_0_X_VELOCITIES[k] as u8);
         self.intro_actor_mut(k)
-            .set_y_velocity(INTRO_SPRITE_TYPE_A_0_Y_VELOCITIES[k] as u8);
+            .add_y_velocity(INTRO_SPRITE_TYPE_A_0_Y_VELOCITIES[k] as u8);
         self.intro_actor_mut(k).increment_init_phase();
     }
 
@@ -3273,9 +3347,9 @@ impl ZeldaState {
     pub(super) fn initialize_scene_sprite_sparkle(&mut self, k: usize) {
         let j = (self.game_state.ending.attract_scene.intro_frame_counter() >> 5 & 3) as usize;
         self.intro_actor_mut(k)
-            .set_x(i16::from(INITIALIZE_SCENE_SPRITE_SPARKLE_X_OFFSETS[j]));
+            .set_x_low(INITIALIZE_SCENE_SPRITE_SPARKLE_X_OFFSETS[j]);
         self.intro_actor_mut(k)
-            .set_y(i16::from(INITIALIZE_SCENE_SPRITE_SPARKLE_Y_OFFSETS[j]));
+            .set_y_low(INITIALIZE_SCENE_SPRITE_SPARKLE_Y_OFFSETS[j]);
         self.intro_actor_mut(k).increment_init_phase();
     }
 

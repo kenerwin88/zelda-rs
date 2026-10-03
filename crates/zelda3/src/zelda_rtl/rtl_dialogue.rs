@@ -732,6 +732,47 @@ impl ZeldaState {
         self.stage_dialogue_scroll_completion_after_return(completed_scanout);
     }
 
+    /// Both ordinary RenderText returns and continued scroll returns enter
+    /// the same packing call. A host return inside it retains the remainder
+    /// instead of publishing the later DMA operands, countdowns and latch.
+    pub(super) fn suspend_dialogue_sprite_preparation_at_native_cpu_return(&mut self) -> bool {
+        if !self.rom_startup_timing()
+            || crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SPRITE_PREP_LIVE_TRIAL").is_none()
+            || self.game_state.frame.main_module != 0x0e
+            || self.game_state.frame.submodule != 2
+        {
+            return false;
+        }
+        let Some(progress) = self.native_exact_cpu_host_trace.as_ref()
+            .and_then(|trace| trace.sprite_preparation_progress_at_host_boundary())
+        else {
+            return false;
+        };
+        if self.pre_main_caller_continuation_is(PreMainCallerContinuation::DialogueVwfReturn) {
+            self.finish_pre_main_caller_continuation(PreMainCallerContinuation::DialogueVwfReturn);
+            self.dialogue_fast_forward_hold_active = false;
+            self.complete_module0e_interface_after_run();
+        }
+        assert!(
+            !self.dialogue_fast_forward_hold_active
+                && !self.game_execution_scheduler.work_is_pending(),
+            "source reached sprite packing before the native dialogue caller returned",
+        );
+        self.suspend_dialogue_sprite_preparation(progress);
+        true
+    }
+
+    pub(super) fn suspend_dialogue_sprite_preparation(&mut self, packing: ExtendedOamPackingProgress) {
+        let progress = SpritePreparationProgress::ExtendedOam(packing);
+        self.nmi_prepare_sprites_through_progress(progress);
+        assert!(self.pending_main_loop_common_suffix.replace(
+            MainLoopCommonSuffixContinuation::ResumeSpritePreparationBytePackingAndClearNmiLatch { progress },
+        ).is_none(), "source sprite packing overlapped another common suffix");
+        self.schedule_live_interrupted_nmi_prepare_sprites_caller_return(
+            NmiPrepareSpritesCpuCaller::DialogueModule0E,
+        );
+    }
+
     pub(super) fn stage_dialogue_scroll_completion_after_return(
         &mut self,
         completed_scanout: DialogueTextScanout,
@@ -1929,7 +1970,7 @@ impl ZeldaState {
                 // outer display boundary stages its text generation only after
                 // preserving the scanout that ended before this publication.
                 self.nmi_prepare_sprites_for_main_loop();
-                self.clear_nmi_update_latch();
+                self.finish_main_loop_caller_return();
             }
             if !matches!(
                 authoritative_main_loop_progress,
@@ -2135,35 +2176,66 @@ impl ZeldaState {
             // eventual caller suffix can tell whether its one sprite-prep
             // pass already ran before suspension.
             self.main_loop_sprite_preparation_completed = false;
+            assert_eq!(
+                self.main_loop_caller_phase,
+                crate::cycle_models::main_wait::MainLoopCallerPhase::Waiting,
+                "fresh main iteration replaced unfinished caller work at host {} module {:02x}/{:02x}",
+                self.frame_ctr_dbg,
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+            );
+            self.main_loop_caller_phase =
+                crate::cycle_models::main_wait::MainLoopCallerPhase::ModuleRouting;
             // ZeldaRunGameLoop's own instructions for one iteration
             // (`$00:8034`), after the `LDA $12 : BEQ` wait spin (waiting is
             // not work and is owned by the timing owner): `CLI : BRA` = 14
-            // + 28, then `INC $1A : JSR ClearOamBuffer : JSL Module_MainRouting
+            // + 22, then `INC $1A : JSR ClearOamBuffer : JSL Module_MainRouting
             // : JSR NMI_PrepareSprites : STZ $12 : BRA` = 38 + 46 + 62 + 46
-            // + 24 + 28 (callee bodies charge themselves).
-            crate::cycle_ledger::charge_routine(0x00_8034, 42 + 244);
-            self.increment_frame_counter();
-            self.dungeon_palette_cpu_advance_pending =
-                if self.rom_startup_timing() && self.game_state.frame.main_module == 7 {
-                    match (
-                        self.game_state.frame.submodule,
-                        self.game_state.frame.subsubmodule,
-                    ) {
-                        (1, 1 | 6) => Some(dungeon_palette_caller_cpu_advance(
-                            self,
-                            DUNGEON_SUBTILE_PALETTE_CPU_ENTRY,
-                        )),
-                        _ => None,
-                    }
-                } else {
-                    None
-                };
-            self.replay_trace_ram_watch("game-loop-after-frame-counter");
-            self.clear_oam_buffer();
-            self.replay_trace_ram_watch("game-loop-after-clear-oam");
+            // + 24 + 22 (callee bodies charge themselves).
+            if !self.try_native_startup_main_entry() {
+                crate::cycle_ledger::charge_routine(0x00_8034, 14 + 22 + 38);
+                self.increment_frame_counter();
+                self.dungeon_palette_cpu_advance_pending =
+                    if self.rom_startup_timing() && self.game_state.frame.main_module == 7 {
+                        match (
+                            self.game_state.frame.submodule,
+                            self.game_state.frame.subsubmodule,
+                        ) {
+                            (1, 1 | 6) => Some(dungeon_palette_caller_cpu_advance(
+                                self,
+                                DUNGEON_SUBTILE_PALETTE_CPU_ENTRY,
+                            )),
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+                self.replay_trace_ram_watch("game-loop-after-frame-counter");
+                crate::cycle_ledger::charge_routine(0x00_8034, 46);
+                self.clear_oam_buffer();
+                self.replay_trace_ram_watch("game-loop-after-clear-oam");
+                crate::cycle_ledger::charge_routine(0x00_8034, 62);
+            }
         }
         self.module_main_routing();
+        if let Some(cpu) = self.native_startup_cpu.as_mut() {
+            if cpu.startup.entered_module_context().is_some() {
+                // A callee which claims this context changes its phase. If
+                // the semantic native callee returned without claiming it,
+                // retire the entry so a later call cannot reuse its clock.
+                cpu.startup.complete_externally();
+            }
+        }
         self.complete_zelda_run_game_loop_after_module_routing();
+        if self.native_startup_cpu.as_ref()
+            .is_some_and(|cpu|cpu.startup.intro_tail_returned_context().is_some()) {
+            // The retained module retired sprite preparation, STZ $12 and
+            // BRA to the wait in this call. The atomic suffix has no work left.
+            assert!(self.main_loop_sprite_preparation_completed);
+            assert_eq!(self.main_loop_caller_phase,
+                crate::cycle_models::main_wait::MainLoopCallerPhase::Waiting);
+            return;
+        }
         if let Some(iteration_returned_to_wait) = authoritative_iteration_returned_to_wait {
             if iteration_returned_to_wait {
                 // The source has now reached ZeldaRunGameLoop's unconditional
@@ -2230,6 +2302,17 @@ impl ZeldaState {
                 return;
             }
         }
+        if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && (self.intro_initialization_work_frames_pending != 0 || self.native_intro_clear_pending())
+        {
+            // Module_MainRouting still owns the intro initialization call.
+            // Its existing continuation retires this suffix when it returns;
+            // clearing $12 here would expose prepared graphics to a held NMI.
+            assert!(self.pending_main_loop_common_suffix.replace(
+                MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch,
+            ).is_none(), "intro initialization overlapped a pending main caller suffix");
+            return;
+        }
         if !self.dialogue_scroll_cpu_is_idle() {
             // The long scroll copy has crossed vblank before the ROM reaches
             // Main_PrepSpritesForNmi or clears $12. Its continuation is resumed
@@ -2240,6 +2323,9 @@ impl ZeldaState {
                     self.frame_ctr_dbg
                 );
             }
+            return;
+        }
+        if self.suspend_dialogue_sprite_preparation_at_native_cpu_return() {
             return;
         }
         if self.rom_startup_timing()
@@ -2301,14 +2387,7 @@ impl ZeldaState {
                     self.dialogue_fast_forward_hold_active = false;
                     self.complete_module0e_interface_after_run();
                 }
-                let progress = SpritePreparationProgress::ExtendedOam(interruption.progress);
-                self.nmi_prepare_sprites_through_progress(progress);
-                assert!(self.pending_main_loop_common_suffix.replace(
-                    MainLoopCommonSuffixContinuation::ResumeSpritePreparationBytePackingAndClearNmiLatch { progress },
-                ).is_none(), "exact CPU sprite preparation overlaps another main-loop suffix");
-                self.schedule_live_interrupted_nmi_prepare_sprites_caller_return(
-                    NmiPrepareSpritesCpuCaller::DialogueModule0E,
-                );
+                self.suspend_dialogue_sprite_preparation(interruption.progress);
                 return;
             }
         }
@@ -2376,7 +2455,7 @@ impl ZeldaState {
             // NMI_PrepareSprites return. A vblank-interrupted VWF slice has
             // reached neither point, so its NMI must observe the still-set
             // latch and skip NMI_DoUpdates (including OAM DMA and joypads).
-            self.clear_nmi_update_latch();
+            self.finish_main_loop_caller_return();
         }
         self.replay_trace_ram_watch("game-loop-exit");
     }

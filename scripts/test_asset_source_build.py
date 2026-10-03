@@ -77,6 +77,21 @@ class AssetSourceBuildTests(unittest.TestCase):
         self.assertEqual(len(sidecars), 1)
         self.assertEqual(len(sidecars[0]), 0x0F9E)
         self.assertEqual(sidecars[0][:4], b"\x20\xcd\xcf\xbd")
+        uploads = [payload for name, payload in assets if name == "kSpcBootstrapUpload"]
+        self.assertEqual(len(uploads), 1)
+        import extract_assets
+        expected = extract_assets.extract_spc_bootstrap_upload((REPO / "saves/zelda3.sfc").read_bytes())
+        self.assertEqual(uploads[0], expected)
+        enemy = [payload for name, payload in assets if name == "kEnemyDamageCompressed"]
+        self.assertEqual(len(enemy), 1)
+        self.assertEqual(enemy[0], extract_assets.extract_enemy_damage_stream((REPO / "saves/zelda3.sfc").read_bytes()))
+        headers = [payload for name, payload in assets if name == "kDungeonHeaderEncoding"]
+        self.assertEqual(len(headers), 1)
+        self.assertEqual(headers[0], extract_assets.extract_dungeon_header_encoding((REPO / "saves/zelda3.sfc").read_bytes()))
+        for bank in range(3):
+            streams = [payload for name, payload in assets if name == f"kSpcRuntimeUpload{bank}"]
+            self.assertEqual(len(streams), 1)
+            self.assertEqual(streams[0], extract_assets.extract_spc_runtime_upload((REPO / "saves/zelda3.sfc").read_bytes(), bank))
 
     def test_build_packs_light_overworld_tilemap_from_json_without_bin(self) -> None:
         if not GENERATED_ASSETS.is_dir():
@@ -132,9 +147,9 @@ class AssetSourceBuildTests(unittest.TestCase):
             self.skipTest(f"missing generated assets: {GENERATED_ASSETS}")
         self.assertTrue((REPO / "assets/dialogue/messages.toml").is_file())
 
-        expected = dialogue_catalog.asset_from_dialogue_source(
-            self._vanilla_dialogue_source()
-        )
+        # Unedited authored text preserves the reference dictionary encoding,
+        # which is observable to the instruction-timed native decoder.
+        expected = (GENERATED_ASSETS / "assets/094-kDialogue.bin").read_bytes()
 
         result = subprocess.run(
             ["cargo", "build", "-p", "zelda3-bin"],
@@ -158,9 +173,7 @@ class AssetSourceBuildTests(unittest.TestCase):
         if not GENERATED_ASSETS.is_dir():
             self.skipTest(f"missing generated assets: {GENERATED_ASSETS}")
 
-        vanilla = dialogue_catalog.asset_from_dialogue_source(
-            self._vanilla_dialogue_source()
-        )
+        vanilla = (GENERATED_ASSETS / "assets/094-kDialogue.bin").read_bytes()
 
         committed = (REPO / "assets/dialogue/messages.toml").read_text()
         override_text, replaced = re.subn(
@@ -188,6 +201,12 @@ class AssetSourceBuildTests(unittest.TestCase):
 
         self.assertEqual(assets[94][0], "kDialogue")
         self.assertNotEqual(assets[94][1], vanilla)
+        updated = dialogue_catalog.catalog_from_assets(assets[94][1], assets[96][1])
+        original = dialogue_catalog.catalog_from_assets(vanilla, assets[96][1])
+        self.assertEqual(updated["messages"][1]["source_text"],
+                         "Changed dialogue for the parity test.")
+        self.assertEqual(updated["messages"][2]["raw_bytes"],
+                         original["messages"][2]["raw_bytes"])
         sidecars = [
             payload for name, payload in assets if name == "kDialogueSourceSemantic"
         ]

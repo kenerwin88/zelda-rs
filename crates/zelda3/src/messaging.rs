@@ -277,7 +277,8 @@ const fn vwf_new_glyph_click_requires_boundary_retention(
     // boundary. A Drawing resume has no entry-phase shift.
     let resume_phase_shift = match handler_entry_glyph_phase {
         VwfGlyphCpuPhase::Entering { .. } => costs.entering_shift,
-        VwfGlyphCpuPhase::PreparingDrawing { .. } => costs.preparing_drawing_shift,
+        VwfGlyphCpuPhase::PreparingDrawing { .. }
+        | VwfGlyphCpuPhase::PreparingDrawingPublished { .. } => costs.preparing_drawing_shift,
         VwfGlyphCpuPhase::Ready | VwfGlyphCpuPhase::Drawing { .. } => 0,
     };
     cycles_left < costs.click + costs.vblank_margin + resume_phase_shift
@@ -331,6 +332,14 @@ pub(crate) enum VwfGlyphCpuPhase {
     Drawing {
         remaining_master_cycles: u32,
     },
+    /// Appended for checkpoint compatibility. The width store has retired;
+    /// the following cursor store may still be pending. Register-only setup
+    /// and all drawing remain owned by this glyph.
+    PreparingDrawingPublished {
+        remaining_master_cycles: u32,
+        drawing_master_cycles: u32,
+        cursor_advanced: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -347,7 +356,15 @@ impl VwfGlyphCpuPhase {
     }
 
     pub(crate) fn vblank_follows_click_before_drawing(self) -> bool {
-        matches!(self, Self::PreparingDrawing { .. })
+        matches!(self, Self::PreparingDrawing { .. } | Self::PreparingDrawingPublished { .. })
+    }
+
+    fn setup_publications(self) -> (bool, bool) {
+        match self {
+            Self::Drawing { .. } => (true, true),
+            Self::PreparingDrawingPublished { cursor_advanced, .. } => (true, cursor_advanced),
+            _ => (false, false),
+        }
     }
 
     /// Consume up to `available` cycles of this glyph; `costs` prices a glyph
@@ -373,6 +390,10 @@ impl VwfGlyphCpuPhase {
             Self::PreparingDrawing {
                 remaining_master_cycles,
                 drawing_master_cycles,
+            } | Self::PreparingDrawingPublished {
+                remaining_master_cycles,
+                drawing_master_cycles,
+                ..
             } => {
                 Self::advance_post_click(remaining_master_cycles, drawing_master_cycles, available)
             }
@@ -474,6 +495,10 @@ impl VwfGlyphCpuPhase {
             Self::PreparingDrawing {
                 remaining_master_cycles,
                 drawing_master_cycles,
+            } | Self::PreparingDrawingPublished {
+                remaining_master_cycles,
+                drawing_master_cycles,
+                ..
             } => remaining_master_cycles + drawing_master_cycles,
             Self::Drawing {
                 remaining_master_cycles,
@@ -559,6 +584,62 @@ impl VwfCpuSliceOutcome {
     }
 }
 
+/// Text_Initialize owns its callees until the final RTS. Phase transitions do
+/// not retire instructions; every call, return and inter-callee instruction
+/// has a separate step. Assets/substitutions are native admission inputs.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct TextInitializationWork {
+    phase: TextInitializationPhase,
+    loaded_module: u8,
+    story: super::load_gfx::StoryGraphicsDecompression,
+    prefix: crate::cycle_models::text_initialize::InitializationPrefix,
+    decoder: crate::cycle_models::text_decode::CharacterBufferWork,
+    tail: crate::cycle_models::text_initialize::InitializationTail,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+enum TextInitializationPhase {
+    Entry(u8),
+    CallPalette,
+    Palette(u8),
+    CallStory,
+    Story,
+    CopyIndex,
+    Prefix,
+    CallDecoder,
+    Decoder,
+    Tail,
+    Complete,
+}
+
+/// The native initializer and its still-open callers. The legacy scheduler
+/// chooses the host slices; this owner preserves instruction progress within
+/// them. It deliberately does not manufacture an entry hardware clock.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DialogueInitializationCallerWork {
+    initialization: TextInitializationWork,
+    phase: DialogueInitializationCallerPhase,
+    render: crate::cycle_models::text_initialize::RenderTextReturn,
+    interface: crate::cycle_models::text_initialize::InterfaceReturn,
+    preparation: super::misc::SpritePreparationWork,
+    preparation_master_cycles: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+enum DialogueInitializationCallerPhase {
+    Initialize,
+    RenderReturn,
+    InterfaceReturn,
+    CallPreparation,
+    Preparation,
+    Return,
+    Complete,
+}
+
+#[cfg(test)]
+#[path = "messaging_clock_tests.rs"]
+mod clock_tests;
+
 #[cfg(test)]
 mod fast_forward_cycle_tests {
     use super::{
@@ -573,6 +654,619 @@ mod fast_forward_cycle_tests {
         VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES, VWF_LATER_LINE_ENTRY_MASTER_CYCLES,
         VWF_RENDER_CHARACTER_LINE_POSITIONS, VWF_RESUMED_FRAME_MASTER_CYCLES,
     };
+
+    pub(super) fn character_decoder_fixture() -> Option<(Vec<u8>, Vec<u8>)> {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let read = |variable: &str, fallback: &str| {
+            if let Some(path) = std::env::var_os(variable) {
+                Some(std::fs::read(&path).unwrap_or_else(|error|
+                    panic!("cannot read explicit {variable} fixture {path:?}: {error}")))
+            } else {
+                std::fs::read(root.join(fallback)).ok()
+            }
+        };
+        let assets = read("ZELDA3_ASSETS", "zelda3_assets.dat")?;
+        let mut rom = read("ZELDA3_ROM", "saves/zelda3.sfc")?;
+        if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+        Some((assets, rom))
+    }
+
+    #[test]
+    fn character_decoder_native_instructions_and_publications_match_all_rom_messages() {
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let Some((assets, rom)) = character_decoder_fixture() else { return };
+        let mut template = crate::zelda_rtl::ZeldaState::new();
+        template.set_assets(&assets).unwrap();
+        let block = template.asset_memblk(94, 0).unwrap();
+        let messages = crate::util::find_index_in_memblk(block, 1).ptr;
+        let marker = u16::from_le_bytes(messages[messages.len() - 2..].try_into().unwrap());
+        let message_count = (marker & 0x1fff) + 1;
+        assert_eq!(message_count, 397, "original US dialogue fixture");
+        let mut cases = 0;
+        let mut instructions = 0;
+        let mut publications = 0;
+        let mut visited = std::collections::BTreeSet::new();
+        for message in 0..message_count {
+            for (scenario, (slot, letters, pairs)) in [
+                (0u16,[0u8;6],[0u8,0]),
+                (2,[0x5f,0x60,0x61,0x76,0x77,0x59],[0x12,0x34]),
+                (4,[0x20,0x59,0x59,0x59,0x59,0x59],[0x99,0x50]),
+                (6,[0x59;6],[0xfa,0xcf]),
+            ].into_iter().enumerate() {
+                let mut state = template.clone();
+                state.ram[0x11200..0x12000].fill(0xa5);
+                state.ram[0x1cd0..0x1cf8].fill(0x5a);
+                state.ram[0x1cf0..0x1cf2].copy_from_slice(&message.to_le_bytes());
+                state.ram[0x1cf2..0x1cf4].copy_from_slice(&pairs);
+                state.sram[0x1ffe..0x2000].copy_from_slice(&slot.to_le_bytes());
+                let start = if slot < 4 {0x3d9} else {0x3d9 + usize::from(slot/2-1)*0x500};
+                for (i,letter) in letters.into_iter().enumerate() {
+                    let packed = u16::from(letter & 15) | (u16::from(letter & 0xf0)<<1);
+                    state.sram[start+i*2..start+i*2+2].copy_from_slice(&packed.to_le_bytes());
+                }
+                state.sync_native_game_state_from_ram();
+                state.dialogue_vwf_dispatch_cursor.src_offs = 0x5a5a;
+                state.dialogue_vwf_dispatch_cursor.next_position = 0x5a;
+                let mut atomic = state.clone();
+                let checkpoint = RomCpuCheckpoint {
+                    entry_pc:0x0e_c4e2,stop_pc:0x0e_8036,
+                    a:0xabc1,x:0x31,y:0x42,sp:0x01fc,dp:0,db:0x0e,
+                    carry:true,zero:false,overflow:true,negative:false,
+                    interrupt_disable:true,decimal:false,
+                    accumulator_is_8_bit:true,index_is_8_bit:true,
+                    emulation:false,waiting:false,stack_address:0x01fd,stack_bytes:&[0x35,0x80],
+                };
+                let mut run = RomCpuTimingRun::new(&rom,&state.ram,&state.sram,
+                    &snes::PpuState::default(),&snes::DmaState::default(),[0;4],checkpoint).unwrap();
+                run.restore_original_dialogue_pointer_table().unwrap();
+                run.enable_cpu_write_trace();
+                let mut expected = state.ram.clone();
+                let mut work = state.native_character_buffer_work()
+                    .unwrap_or_else(|| panic!("unsupported original message {message}"));
+                let mut total = 0u64;
+                loop {
+                    work.roundtrip_progress();
+                    let Some(native) = work.step() else { break };
+                    assert!(!run.is_complete(), "native ran beyond return, message {message}");
+                    let pc = run.pc();
+                    assert_eq!(native.pc,pc,"message {message} scenario {scenario}");
+                    let source = run.step();
+                    assert_eq!(native.master_cycles,source.master_cycles,
+                        "message {message} PC {pc:06x} source_index={:02x}{:02x} output={}",
+                        run.ram_byte(0x1cde),run.ram_byte(0x1cdd),work.output_position());
+                    for (address,value) in run.take_cpu_wram_writes() { expected[address] = value; }
+                    state.retire_character_buffer_instruction(native);
+                    assert_eq!(&state.ram[0x11200..0x12000],&expected[0x11200..0x12000],"message {message} scenario {scenario} PC {pc:06x}");
+                    assert_eq!(&state.ram[0x1cd0..0x1cf8],&expected[0x1cd0..0x1cf8],"message {message} scenario {scenario} PC {pc:06x}");
+                    instructions += 1;
+                    publications += usize::from(native.publication.is_some());
+                    visited.insert(pc);
+                    total += u64::from(source.master_cycles);
+                }
+                assert!(run.is_complete(),"native returned early, message {message} PC {:06x}",run.pc());
+                assert_eq!(work.output_position(),state.game_state.messaging.runtime.dialogue_msg_read_pos());
+                let clock = crate::cycle_ledger::master();
+                atomic.Text_LoadCharacterBuffer();
+                assert_eq!(crate::cycle_ledger::master()-clock,total,"message {message}");
+                assert_eq!(&atomic.ram[0x11200..0x12000],&expected[0x11200..0x12000],"atomic message {message}");
+                assert_eq!(&atomic.ram[0x1cd0..0x1cf8],&expected[0x1cd0..0x1cf8],"atomic message {message}");
+                cases += 1;
+            }
+        }
+        eprintln!("native character decoder: cases={cases} instructions={instructions} publications={publications} source_pcs={}",visited.len());
+        assert_eq!(cases,usize::from(message_count) * 4);
+    }
+
+    #[test]
+    fn character_decoder_choice_callers_own_the_cursor_resets() {
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let Some((assets, rom)) = character_decoder_fixture() else { return };
+        let mut template = crate::zelda_rtl::ZeldaState::new();
+        template.set_assets(&assets).unwrap();
+        for entry_pc in [0x0e_ced6,0x0e_cf53,0x0e_cfc7] {
+            for message in 1..=12u16 {
+                let mut state = template.clone();
+                state.ram[0x11200..0x12000].fill(0xa5);
+                state.ram[0x1cd0..0x1cf8].fill(0x5a);
+                state.ram[0x720..0x728].fill(0xa5);
+                state.ram[0x1cf0..0x1cf2].copy_from_slice(&message.to_le_bytes());
+                state.sram[0x1ffe..0x2000].copy_from_slice(&2u16.to_le_bytes());
+                state.sync_native_game_state_from_ram();
+                state.dialogue_vwf_dispatch_cursor.next_position = 0x5a;
+                let checkpoint = RomCpuCheckpoint {
+                    entry_pc,stop_pc:0x0e_8036,a:0,x:0,y:0,sp:0x01fc,dp:0,db:0x0e,
+                    carry:false,zero:false,overflow:false,negative:false,
+                    interrupt_disable:true,decimal:false,
+                    accumulator_is_8_bit:true,index_is_8_bit:true,
+                    emulation:false,waiting:false,stack_address:0x01fd,stack_bytes:&[0x35,0x80],
+                };
+                let mut run = RomCpuTimingRun::new(&rom,&state.ram,&state.sram,
+                    &snes::PpuState::default(),&snes::DmaState::default(),[0;4],checkpoint).unwrap();
+                run.restore_original_dialogue_pointer_table().unwrap();
+                run.enable_cpu_write_trace();
+                let mut expected = state.ram.clone();
+                let mut total = 0;
+                while !run.is_complete() {
+                    total += u64::from(run.step().master_cycles);
+                    for (address,value) in run.take_cpu_wram_writes() { expected[address]=value; }
+                }
+                let clock = crate::cycle_ledger::master();
+                state.Text_LoadCharacterBuffer();
+                // The decoder has not executed the caller's STZ instructions.
+                assert_ne!(state.game_state.messaging.runtime.dialogue_msg_read_pos(),0);
+                assert_eq!(state.ram[0x1ce6],0x5a);
+                state.reset_choice_text_cursors();
+                state.Text_InitVwfState();
+                // Two caller JSRs and its RTS are outside these three bodies.
+                assert_eq!(crate::cycle_ledger::master()-clock+46+46+42,total);
+                assert_eq!(&state.ram[0x11200..0x12000],&expected[0x11200..0x12000]);
+                assert_eq!(&state.ram[0x1cd0..0x1cf8],&expected[0x1cd0..0x1cf8]);
+                assert_eq!(&state.ram[0x720..0x728],&expected[0x720..0x728]);
+                assert_eq!(state.dialogue_vwf_dispatch_cursor.next_position,0);
+            }
+        }
+    }
+
+    #[test]
+    fn suspended_initialization_keeps_render_text_return_with_its_callee() {
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        use crate::zelda_rtl::{GameWorkContinuation, ZeldaState};
+        let Some((_assets, rom)) = character_decoder_fixture() else { return };
+        let mut state = ZeldaState::new();
+        state.set_rom_startup_timing(true);
+        state.set_main_module(14);
+        state.set_submodule(2);
+        state.game_execution_scheduler.begin_host_frame();
+        state.game_execution_scheduler.begin_main_loop_iteration();
+        state.pending_dialogue_initialization_schedule = Some((1, 1, None));
+        state.ram[0x10000..0x10800].fill(0xa5);
+        let checkpoint = RomCpuCheckpoint {
+            entry_pc: 0x0e_c440, stop_pc: 0x0e_c483,
+            a: 0, x: 0, y: 0, sp: 0x01fc, dp: 0, db: 0,
+            carry: false, zero: false, overflow: false, negative: false,
+            interrupt_disable: false, decimal: false,
+            accumulator_is_8_bit: true, index_is_8_bit: true,
+            emulation: false, waiting: false,
+            stack_address: 0x01fd, stack_bytes: &[0x4d, 0xf8, 0x00],
+        };
+        let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+            &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
+        let mut prefix = 0;
+        for _ in 0..64 {
+            if source.is_complete() { break; }
+            prefix += u64::from(source.step().master_cycles);
+        }
+        assert!(source.is_complete());
+        let before = crate::cycle_ledger::master();
+        state.RenderText();
+        assert_eq!(crate::cycle_ledger::master() - before, prefix,
+            "a suspended Text_Initialize cannot retire RenderText's PLB/RTL");
+        assert_eq!(state.game_execution_scheduler.current_work(), Some(
+            GameWorkContinuation::FinishDialogueInitializationPrefix { caller_nmi_crossings: 1 },
+        ));
+        assert!(state.ram[0x10000..0x10800].iter().all(|&byte| byte == 0xa5));
+
+        // Start at the native clear/caller tail after the decoder returned.
+        // Keep the real nested return stack: Text_Initialize -> C446 PLB/RTL
+        // -> Module0E F84E. Compare the whole tail, including its caller.
+        let checkpoint = RomCpuCheckpoint {
+            entry_pc: 0x0e_c4b7, stop_pc: 0x00_f84e,
+            sp: 0x01f9, db: 0x0e,
+            stack_address: 0x01fa,
+            stack_bytes: &[0x45, 0xc4, 0x00, 0x4d, 0xf8, 0x00],
+            ..checkpoint
+        };
+        let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+            &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
+        let mut suffix = 0;
+        for _ in 0..2000 {
+            if source.is_complete() { break; }
+            suffix += u64::from(source.step().master_cycles);
+        }
+        assert!(source.is_complete());
+        let before = crate::cycle_ledger::master();
+        state.complete_text_initialization_carry_suffix();
+        assert_eq!(crate::cycle_ledger::master() - before, suffix);
+        assert_eq!(&state.ram[0x10000..0x10800], &source.ram()[0x10000..0x10800]);
+        assert_eq!(&state.ram[0x1cd9..0x1ce7], &source.ram()[0x1cd9..0x1ce7]);
+        assert_eq!((state.ram[0x17], state.ram[0x710]), (2, 2));
+        assert_eq!(prefix, 626);
+        assert_eq!(suffix, 56304 + 72);
+    }
+
+    #[test]
+    fn dialogue_and_interface_returns_match_source_at_every_instruction() {
+        use crate::cycle_models::text_initialize::{InterfaceReturn, RenderTextReturn};
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let Some((_assets, rom)) = character_decoder_fixture() else { return };
+        let cases = [0u16, 1, 0x7f, 0xff, 0x100, 0x7fff, 0x8000, 0xffff];
+        for seed in cases {
+            for offset in cases {
+                let mut state = crate::zelda_rtl::ZeldaState::new();
+                state.ram[0x11e..0x126].fill(0xa5);
+                for (address, value) in [(0xe2, seed), (0xe8, seed.wrapping_mul(3)),
+                    (0xe0, seed.wrapping_add(1)), (0xe6, !seed), (0x11a, offset), (0x11c, !offset)] {
+                    state.ram[address..address + 2].copy_from_slice(&value.to_le_bytes());
+                }
+                state.sync_native_game_state_from_ram();
+                let mut atomic = state.clone();
+                let checkpoint = RomCpuCheckpoint {
+                    entry_pc: 0x0e_c446, stop_pc: 0x00_805a,
+                    a: 0xab7f, x: 0x37, y: 0x42, sp: 0x01f8, dp: 0, db: 0x0e,
+                    carry: true, zero: false, overflow: true, negative: false,
+                    interrupt_disable: true, decimal: false,
+                    accumulator_is_8_bit: true, index_is_8_bit: true,
+                    emulation: false, waiting: false,
+                    stack_address: 0x01f9, stack_bytes: &[0, 0x4d, 0xf8, 0, 0x59, 0x80, 0],
+                };
+                let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                    &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
+                source.enable_cpu_write_trace();
+                let mut expected = state.ram.clone();
+                let mut render = RenderTextReturn::default();
+                let mut interface = InterfaceReturn::default();
+                let mut total = 0;
+                for _ in 0..2 {
+                    render = bincode::deserialize(&bincode::serialize(&render).unwrap()).unwrap();
+                    assert_eq!(source.pc(), render.next_pc());
+                    let cost = render.step().unwrap();
+                    assert_eq!(source.step().master_cycles, cost);
+                    assert_eq!(source.pc(), render.next_pc());
+                    total += cost;
+                }
+                assert_eq!(render.step(), None);
+                assert_eq!(u64::from(total), crate::cycle_models::text_initialize::RENDER_TEXT_RETURN_MASTER_CYCLES);
+                for _ in 0..18 {
+                    interface = bincode::deserialize(&bincode::serialize(&interface).unwrap()).unwrap();
+                    let pc = source.pc();
+                    assert_eq!(pc, interface.next_pc());
+                    let cost = state.step_module0e_interface_return(&mut interface).unwrap();
+                    assert_eq!(source.step().master_cycles, cost, "PC {pc:06x}");
+                    assert_eq!(source.pc(), interface.next_pc());
+                    for (address, value) in source.take_cpu_wram_writes() { expected[address] = value; }
+                    assert_eq!(&state.ram[0x11a..0x126], &expected[0x11a..0x126], "PC {pc:06x}");
+                    total += cost;
+                }
+                assert_eq!(state.step_module0e_interface_return(&mut interface), None);
+                assert!(source.is_complete());
+                assert_eq!(total, 650);
+                let clock = crate::cycle_ledger::master();
+                atomic.finish_render_text_return();
+                atomic.complete_module0e_interface_after_run();
+                assert_eq!(crate::cycle_ledger::master() - clock, u64::from(total));
+                assert_eq!(atomic.ram, state.ram);
+            }
+        }
+    }
+
+    #[test]
+    fn interface_return_samples_each_operand_at_its_own_instruction() {
+        use crate::cycle_models::text_initialize::InterfaceReturn;
+        let mut work = InterfaceReturn::default();
+        let mut scroll = [0x7fffu16, 0xffff, 0x100, 0];
+        let mut offsets = [1, 2];
+        let mut stores = Vec::new();
+        while let Some(instruction) = work.step(scroll, offsets) {
+            if let Some(store) = instruction.scroll_store { stores.push(store); }
+            match work.next_pc() {
+                0x00_f852 => { scroll[0] = 0; offsets[0] = 3; } // after LDA, before ADC
+                0x00_f855 => offsets[0] = 0x1234, // sum must survive until STA
+                0x00_f85b => { scroll[1] = 0; offsets[1] = 4; }
+                0x00_f85e => offsets[1] = 0x4321,
+                _ => {}
+            }
+            work = bincode::deserialize(&bincode::serialize(&work).unwrap()).unwrap();
+        }
+        assert_eq!(stores, [(0, 0x8002), (1, 3), (2, 0x1334), (3, 0x4321)]);
+    }
+
+    #[test]
+    fn initialization_call_chain_retains_native_progress_through_all_callees() {
+        use super::TextInitializationPhase::*;
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let Some((assets, rom)) = character_decoder_fixture() else { return };
+        let mut template = crate::zelda_rtl::ZeldaState::new();
+        template.set_assets(&assets).unwrap();
+        let mut instruction_count = 0;
+        let mut restores = 0;
+        for (module, message) in [(14u8, 0x159u16), (20, 1), (20, 12), (7, 66)] {
+            let mut state = template.clone();
+            state.ram[0x1cd0..0x1cf0].fill(0x5a);
+            state.ram[0x720..0x728].fill(0xa5);
+            state.ram[0x10000..0x10800].fill(0xa5);
+            state.ram[0x11200..0x12000].fill(0xa5);
+            state.ram[0x14000..0x15000].fill(0xa5);
+            state.ram[0xc520..0xc530].fill(0xa5);
+            state.ram[0xc007..0xc00b].fill(0x5a);
+            state.ram[0x15] = 0xfe;
+            state.ram[0x17] = 0x35;
+            state.ram[0x710] = 0x71;
+            state.ram[0x10] = module;
+            state.ram[0x1cf0..0x1cf2].copy_from_slice(&message.to_le_bytes());
+            state.ram[0x20..0x22].copy_from_slice(&0x127u16.to_le_bytes());
+            state.ram[0xe8..0xea].copy_from_slice(&0xb0u16.to_le_bytes());
+            state.sram[0x1ffe..0x2000].copy_from_slice(&2u16.to_le_bytes());
+            state.sync_native_game_state_from_ram();
+            state.dialogue_vwf_dispatch_cursor.src_offs = 0x5a5a;
+            state.dialogue_vwf_dispatch_cursor.next_position = 0x5a;
+            let before = state.ram.clone();
+            let mut atomic = state.clone();
+            let mut work = state.native_text_initialization_work().expect("native assets");
+            assert_eq!(state.ram, before, "admission must not publish future work");
+            let checkpoint = RomCpuCheckpoint {
+                entry_pc: 0x0e_c483, stop_pc: 0x0e_8036,
+                a: 0xab7f, x: 0x37, y: 0x42, sp: 0x01fc, dp: 0, db: 0x0e,
+                carry: true, zero: false, overflow: true, negative: false,
+                interrupt_disable: true, decimal: false,
+                accumulator_is_8_bit: true, index_is_8_bit: true,
+                emulation: false, waiting: false,
+                stack_address: 0x01fd, stack_bytes: &[0x35, 0x80],
+            };
+            let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
+            source.restore_original_dialogue_pointer_table().unwrap();
+            source.enable_cpu_write_trace();
+            let mut expected = state.ram.clone();
+            let mut total = 0u64;
+            let mut count = 0;
+            let mut last_phase = work.phase;
+            let mut saw_story_return = false;
+            let mut saw_decoder_return = false;
+            let clock = crate::cycle_ledger::master();
+            for _ in 0..100_000 {
+                if work.phase != last_phase || count % 4096 == 0 {
+                    work = bincode::deserialize(&bincode::serialize(&work).unwrap()).unwrap();
+                    restores += 1;
+                }
+                last_phase = work.phase;
+                let pc = source.pc();
+                let boundary_pc = match work.phase {
+                    Entry(i) => Some([0x0e_c483, 0x0e_c485, 0x0e_c487][usize::from(i)]),
+                    CallPalette => Some(0x0e_c489),
+                    CallStory => Some(0x0e_c48d),
+                    CopyIndex => Some(0x0e_c491),
+                    Prefix => Some(work.prefix.next_pc()),
+                    CallDecoder => Some(0x0e_c4b4),
+                    Tail => Some(work.tail.next_pc()),
+                    Complete => Some(0x0e_8036),
+                    _ => None,
+                };
+                if let Some(expected_pc) = boundary_pc { assert_eq!(pc, expected_pc); }
+                let Some(cycles) = state.step_text_initialization_work(&mut work) else { break };
+                let reference = source.step();
+                assert_eq!(cycles, reference.master_cycles, "module={module} message={message} PC={pc:06x}");
+                for (address, value) in source.take_cpu_wram_writes() { expected[address] = value; }
+                for range in [0x1cd0..0x1cf0, 0x720..0x728, 0x10000..0x10800,
+                    0x11200..0x12000, 0x14000..0x15000, 0xc520..0xc530, 0xc007..0xc00b] {
+                    assert_eq!(&state.ram[range.clone()], &expected[range.clone()],
+                        "module={module} message={message} PC={pc:06x} range={range:x?}");
+                }
+                for address in [0x15, 0x17, 0x710] {
+                    assert_eq!(state.ram[address], expected[address], "PC={pc:06x} address={address:04x}");
+                }
+                if work.phase == CopyIndex {
+                    saw_story_return = true;
+                    assert_eq!(cycles, 44); // RTL retired, LDX #0 still pending
+                    assert_eq!(&state.ram[0x1cd0..0x1cf0], &before[0x1cd0..0x1cf0]);
+                }
+                if work.phase == Tail && last_phase == Decoder {
+                    saw_decoder_return = true;
+                    assert_eq!(cycles, 42); // RTS retired; clear and caller stores still pending
+                    assert_ne!(state.game_state.messaging.runtime.dialogue_msg_read_pos(), 0);
+                    assert_eq!(&state.ram[0x10000..0x10800], &before[0x10000..0x10800]);
+                    assert_eq!((state.ram[0x17], state.ram[0x710]), (0x35, 0x71));
+                }
+                total += u64::from(cycles);
+                count += 1;
+            }
+            assert!(source.is_complete());
+            assert_eq!(work.phase, Complete);
+            assert!(saw_story_return && saw_decoder_return);
+            assert_eq!(crate::cycle_ledger::master() - clock, total);
+            assert_eq!(state.step_text_initialization_work(&mut work), None);
+            let clock = crate::cycle_ledger::master();
+            atomic.Text_Initialize();
+            assert_eq!(crate::cycle_ledger::master() - clock, total);
+            assert_eq!(atomic.ram, state.ram);
+            instruction_count += count;
+            eprintln!("native initialization chain module={module} message={message}: {count} instructions, {total} cycles");
+        }
+        eprintln!("native initialization chain: {instruction_count} source boundaries, {restores} serialized resumes");
+    }
+
+    #[test]
+    fn initialization_call_chain_retains_loaded_module_before_branch() {
+        use super::TextInitializationPhase::*;
+        let Some((assets, _rom)) = character_decoder_fixture() else { return };
+        let mut state = crate::zelda_rtl::ZeldaState::new();
+        state.set_assets(&assets).unwrap();
+        for module in [14, 20] {
+            state.set_main_module(module);
+            let mut work = state.native_text_initialization_work().unwrap();
+            assert_eq!(state.step_text_initialization_work(&mut work), Some(24));
+            state.set_main_module(if module == 20 { 14 } else { 20 });
+            work = bincode::deserialize(&bincode::serialize(&work).unwrap()).unwrap();
+            assert_eq!(state.step_text_initialization_work(&mut work), Some(16));
+            assert_eq!(state.step_text_initialization_work(&mut work), Some(if module == 20 {16} else {22}));
+            assert_eq!(work.phase, if module == 20 { CallPalette } else { CallStory });
+        }
+    }
+
+    #[test]
+    fn initialization_prefix_resumes_at_every_rom_instruction_and_publication() {
+        use crate::cycle_models::text_initialize::InitializationPrefix;
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let Some((_assets, rom)) = character_decoder_fixture() else { return };
+        for (link_y, scroll_y) in [(0u16, 0u16), (0x77, 0), (0x78, 0),
+            (0x79, 0), (0xffff, 0), (0, 0xffff), (0x77, 0xffff), (0xff00, 0xff01)] {
+            for fill in [0u8, 0xa5, 0xff] {
+                let mut state = crate::zelda_rtl::ZeldaState::new();
+                state.ram[0x1cd0..0x1cf0].fill(fill);
+                state.ram[0x720..0x728].fill(fill);
+                state.ram[0x20..0x22].copy_from_slice(&link_y.to_le_bytes());
+                state.ram[0xe8..0xea].copy_from_slice(&scroll_y.to_le_bytes());
+                state.sync_native_game_state_from_ram();
+                state.dialogue_vwf_dispatch_cursor.src_offs = u16::from_le_bytes([fill; 2]);
+                state.dialogue_vwf_dispatch_cursor.next_position = fill;
+                let mut atomic = state.clone();
+                let checkpoint = RomCpuCheckpoint {
+                    entry_pc: 0x0e_c493, stop_pc: 0x0e_c4b4,
+                    a: 0xab7f, x: 0, y: 0x42, sp: 0x01fc, dp: 0, db: 0x0e,
+                    carry: true, zero: false, overflow: true, negative: false,
+                    interrupt_disable: true, decimal: false,
+                    accumulator_is_8_bit: true, index_is_8_bit: true,
+                    emulation: false, waiting: false,
+                    stack_address: 0x01fd, stack_bytes: &[0x35, 0x80],
+                };
+                let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                    &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
+                source.enable_cpu_write_trace();
+                let mut expected = state.ram.clone();
+                let mut work = InitializationPrefix::default();
+                let mut total = 0;
+                let mut count = 0;
+                for _ in 0..200 {
+                    work = bincode::deserialize(&bincode::serialize(&work).unwrap()).unwrap();
+                    let pc = source.pc();
+                    assert_eq!(work.next_pc(), pc);
+                    let Some(native) = state.step_text_initialization_prefix(&mut work) else { break };
+                    let instruction = source.step();
+                    assert_eq!(native.master_cycles, instruction.master_cycles, "PC {pc:06x}");
+                    assert_eq!(work.next_pc(), source.pc(), "PC {pc:06x}");
+                    for (address, value) in source.take_cpu_wram_writes() { expected[address] = value; }
+                    state.retire_text_initialization_prefix_instruction(native);
+                    assert_eq!(&state.ram[0x1cd0..0x1cf0], &expected[0x1cd0..0x1cf0], "PC {pc:06x}");
+                    assert_eq!(&state.ram[0x720..0x728], &expected[0x720..0x728], "PC {pc:06x}");
+                    assert_eq!(state.dialogue_vwf_dispatch_cursor.src_offs,
+                        u16::from_le_bytes([expected[0x1cdd], expected[0x1cde]]));
+                    assert_eq!(state.dialogue_vwf_dispatch_cursor.next_position, expected[0x1ce6]);
+                    total += instruction.master_cycles;
+                    count += 1;
+                }
+                assert!(source.is_complete());
+                assert_eq!((count, total), (191, 4808));
+                assert_eq!(state.step_text_initialization_prefix(&mut work), None);
+                assert_eq!(state.dialogue_vwf_dispatch_cursor, Default::default());
+                let clock = crate::cycle_ledger::master();
+                atomic.text_initialize_module_state_prefix();
+                assert_eq!(crate::cycle_ledger::master() - clock, u64::from(total));
+                assert_eq!(&atomic.ram[0x1cd0..0x1cf0], &expected[0x1cd0..0x1cf0]);
+                assert_eq!(&atomic.ram[0x720..0x728], &expected[0x720..0x728]);
+            }
+        }
+    }
+
+    #[test]
+    fn initialization_prefix_retains_loaded_operands_across_suspension() {
+        use super::{TEXT_INITIALIZATION_DATA, TEXT_POSITIONS};
+        use crate::cycle_models::text_initialize::{InitializationPrefix, PrefixPublication};
+        let mut work = InitializationPrefix::default();
+        let mut data = TEXT_INITIALIZATION_DATA;
+        let mut positions = TEXT_POSITIONS;
+        let mut link_y = 0x70;
+        let mut scroll_y = 0x20;
+        let mut first_store = None;
+        let mut window = None;
+        for _ in 0..200 {
+            let pc = work.next_pc();
+            let Some(instruction) = work.step(link_y, scroll_y, &data, &positions) else { break };
+            match instruction.publication {
+                Some(PrefixPublication::StateByte { index: 0, value }) => first_store = Some(value),
+                Some(PrefixPublication::Window(value)) => window = Some(value),
+                _ => {}
+            }
+            if pc == 0x0e_c493 { data[0] = 0xa5; }
+            if pc == 0x0e_d282 { link_y = 0xffff; scroll_y = 0x30; }
+            if pc == 0x0e_d285 { scroll_y = 0xffff; }
+            if pc == 0x0e_d293 { positions.fill(0xdead); }
+            work = bincode::deserialize(&bincode::serialize(&work).unwrap()).unwrap();
+        }
+        assert_eq!(work.next_pc(), 0x0e_c4b4);
+        assert_eq!(first_store, Some(0));
+        assert_eq!(window, Some(TEXT_POSITIONS[1])); // retained $70 - live $30
+    }
+
+    #[test]
+    fn initialization_tail_resumes_at_every_rom_instruction_and_publication() {
+        use crate::cycle_models::text_initialize::{InitializationTail, Publication};
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../saves/zelda3.sfc"));
+        let Ok(mut rom) = std::fs::read(path) else { return };
+        if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+        for initial_read_position in [0u16, 1, 0xff, 0x100, 0xfffe, 0xffff] {
+            let mut state = crate::zelda_rtl::ZeldaState::new();
+            state.ram[0x10000..0x10800].fill(0xa5);
+            state.ram[0x1cd0..0x1cf0].fill(0x5a);
+            state.ram[0x1cd9..0x1cdb].copy_from_slice(&initial_read_position.to_le_bytes());
+            state.ram[0x17] = 0x35;
+            state.ram[0x710] = 0x71;
+            state.sync_native_game_state_from_ram();
+            state.dialogue_vwf_dispatch_cursor.src_offs = 0x5a5a;
+            state.dialogue_vwf_dispatch_cursor.next_position = 0x5a;
+            let mut atomic = state.clone();
+            let mut expected = state.ram.clone();
+            let checkpoint = RomCpuCheckpoint {
+                entry_pc: 0x0e_c4b7, stop_pc: 0x0e_8036,
+                a: 0xab7f, x: 0x31, y: 0x42, sp: 0x01fc, dp: 0, db: 0x0e,
+                carry: true, zero: false, overflow: true, negative: false,
+                interrupt_disable: true, decimal: false,
+                accumulator_is_8_bit: true, index_is_8_bit: true,
+                emulation: false, waiting: false,
+                stack_address: 0x01fd, stack_bytes: &[0x35, 0x80],
+            };
+            let mut run = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
+            run.enable_cpu_write_trace();
+            let mut work = InitializationTail::default();
+            let mut instructions = 0;
+            let mut stores = 0;
+            let mut total = 0;
+            while work != InitializationTail::Complete {
+                // This serializes only native progress, at every possible
+                // whole-instruction NMI boundary, including the return tail.
+                work = bincode::deserialize(&bincode::serialize(&work).unwrap()).unwrap();
+                let pc = run.pc();
+                assert_eq!(pc, work.next_pc());
+                let native = work.step().unwrap();
+                let source = run.step();
+                assert_eq!(source.master_cycles, native.master_cycles, "PC {pc:06x}");
+                assert_eq!(run.pc(), work.next_pc(), "PC {pc:06x}");
+                for (address, value) in run.take_cpu_wram_writes() {
+                    expected[address] = value;
+                }
+                state.retire_text_initialization_tail_instruction(native);
+                assert_eq!(&state.ram[0x10000..0x10800], &expected[0x10000..0x10800], "PC {pc:06x}");
+                assert_eq!(&state.ram[0x1cd0..0x1cf0], &expected[0x1cd0..0x1cf0], "PC {pc:06x}");
+                assert_eq!(state.ram[0x17], expected[0x17], "PC {pc:06x}");
+                assert_eq!(state.ram[0x710], expected[0x710], "PC {pc:06x}");
+                if let Some(Publication::ClearRenderWord(_)) = native.publication {
+                    stores += 1;
+                    // The final store must leave the loop decision and both
+                    // return paths pending, with no early DMA publication.
+                    if stores == 1008 {
+                        assert_ne!(work, InitializationTail::Complete);
+                        assert_eq!(state.ram[0x17], 0x35);
+                        assert_eq!(state.ram[0x710], 0x71);
+                    }
+                }
+                total += source.master_cycles;
+                instructions += 1;
+            }
+            assert!(run.is_complete());
+            assert_eq!((instructions, stores, total), (1533, 1008, 56304));
+            assert_eq!(work.step(), None);
+            assert_eq!(state.dialogue_vwf_dispatch_cursor, Default::default());
+            assert_eq!(state.game_state.messaging.runtime.dialogue_msg_read_pos(), 0);
+            let clock = crate::cycle_ledger::master();
+            atomic.finish_text_initialization_after_character_buffer();
+            assert_eq!(crate::cycle_ledger::master() - clock, 56304);
+            assert_eq!(&atomic.ram[0x10000..0x10800], &expected[0x10000..0x10800]);
+            assert_eq!(&atomic.ram[0x1cd0..0x1cf0], &expected[0x1cd0..0x1cf0]);
+            assert_eq!((atomic.ram[0x17], atomic.ram[0x710]), (2, 2));
+        }
+    }
 
     #[test]
     fn dialogue_finish_charges_source_tail_and_only_publishes_its_owned_bytes() {
@@ -637,6 +1331,50 @@ mod fast_forward_cycle_tests {
         assert_eq!(vwf_render_glyph_master_cycles(6, 0), 66_000);
         assert_eq!(vwf_render_glyph_master_cycles(6, 5), 42_000);
         assert_eq!(vwf_render_glyph_master_cycles(7, 7), 26_000);
+    }
+
+    #[test]
+    fn glyph_setup_stores_resume_once_before_pixel_drawing() {
+        use crate::cycle_models::vwf::{GLYPH_ADVANCE_STORE_REMAINING, GLYPH_CURSOR_STORE_REMAINING};
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../zelda3_assets.dat");
+        let Ok(assets) = std::fs::read(path) else { return };
+        let mut state = crate::zelda_rtl::ZeldaState::new();
+        state.assets = Some(crate::zelda_rtl::AssetPack::parse(&assets).unwrap());
+        let c = 0x21;
+        let width = state.dialogue_glyph_width(c);
+        assert_eq!(width, 6);
+        let costs = VwfGlyphCosts { click: 0, post_click: 1308, drawing: 1000 };
+        for remaining in [1308, 640, 639, 600, 586, 585, 554, 150, 1, 0] {
+            state.set_vwf_glyph_cursor(17);
+            state.set_vwf_next_glyph_advance_prefix_sum(16, 19);
+            state.set_vwf_next_glyph_advance_prefix_sum(17, 0xa5);
+            let start = VwfGlyphCpuPhase::PreparingDrawing {
+                remaining_master_cycles: costs.post_click, drawing_master_cycles: costs.drawing,
+            };
+            let advance = start.advance(costs.post_click - remaining, costs);
+            let phase = state.publish_vwf_glyph_setup_progress(c, start, advance.next_phase);
+            assert_eq!(state.game_state.messaging.vwf_render.glyph_cursor(),
+                17 + u16::from(remaining < GLYPH_CURSOR_STORE_REMAINING));
+            assert_eq!(state.vwf_glyph_advance_prefix_sum(18),
+                if remaining < GLYPH_ADVANCE_STORE_REMAINING { 25 } else { 0xa5 });
+            // The new appended phase preserves the two publications through
+            // checkpoint serialization without reinterpreting old variants.
+            let encoded = bincode::serialize(&phase).unwrap();
+            let phase: VwfGlyphCpuPhase = bincode::deserialize(&encoded).unwrap();
+            let ram = state.ram.clone();
+            let repeated = state.publish_vwf_glyph_setup_progress(c, phase, phase);
+            assert_eq!(state.ram, ram);
+            let finish = repeated.advance(remaining, costs);
+            assert_eq!(finish.consumed_master_cycles, remaining);
+            let finished = state.publish_vwf_glyph_setup_progress(c, repeated, finish.next_phase);
+            assert_eq!(finished, VwfGlyphCpuPhase::Drawing { remaining_master_cycles: 1000 });
+            assert_eq!(state.game_state.messaging.vwf_render.glyph_cursor(), 18);
+            assert_eq!(state.vwf_glyph_advance_prefix_sum(18), 25);
+        }
+        // V4's original PreparingDrawing representation remains unpublished.
+        let legacy = VwfGlyphCpuPhase::PreparingDrawing { remaining_master_cycles: 150, drawing_master_cycles: 1000 };
+        assert_eq!(&bincode::serialize(&legacy).unwrap()[..4], &2u32.to_le_bytes());
+        assert_eq!(legacy.setup_publications(), (false, false));
     }
 
     #[test]
@@ -742,6 +1480,93 @@ mod fast_forward_cycle_tests {
         assert_eq!(estimated.vblank_margin, 6 * 341 * 4);
         assert_eq!(estimated.entering_shift, VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES);
         assert_eq!(estimated.preparing_drawing_shift, 11_500);
+    }
+
+    #[test]
+    fn vwf_drawing_slices_publish_once_and_retain_the_final_return() {
+        use crate::cycle_models::vwf;
+        let assets = std::fs::read(std::env::var_os("ZELDA3_ASSETS")
+            .expect("native asset fixture")).unwrap();
+        let mut state = crate::zelda_rtl::ZeldaState::new();
+        state.assets = Some(crate::zelda_rtl::AssetPack::parse(&assets).unwrap());
+        let c = 0x21;
+        let width = state.dialogue_glyph_width(c);
+        let rows = state.dialogue_glyph_font_rows(c).unwrap();
+        let x = 3;
+        state.set_vwf_next_glyph_advance_prefix_sum(0, x);
+        state.set_vwf_next_glyph_advance_prefix_sum(1, x + width);
+        state.set_vwf_glyph_cursor(2);
+        state.set_vwf_line_render_offset(0x20);
+        state.messaging_state_mut().set_dialogue_msg_read_pos(0xffff);
+        state.fill_messaging_render_buffer_word_range(0, 2048, 0x5a5a);
+        let mut expected = vec![0x5au8; 0x1000];
+        let events = vwf::glyph_bitmap_writes(width, x, 0x20, rows);
+        let total = vwf::glyph_drawing_master_cycles(width, x, rows) as u32;
+        let mut before = 0;
+        while before < total {
+            let after = (before + 17).min(total - 1);
+            let after = if after == before { total } else { after };
+            state.publish_vwf_glyph_bitmap_range(c, width, x, before, after);
+            for event in events.iter().filter(|event| event.retires_in_slice(before, after)) {
+                use vwf::GlyphBitmapWriteKind::*;
+                match event.kind {
+                    Xor(mask) => expected[event.offset] ^= mask,
+                    Clear(mask) => expected[event.offset] &= !mask,
+                    SetWord(value) => expected[event.offset..event.offset + 2].copy_from_slice(&value.to_le_bytes()),
+                }
+            }
+            assert_eq!(&state.ram[0x10000..0x11000], expected);
+            if after == total - 1 {
+                let work = state.dialogue_vwf_drawing.unwrap();
+                assert!(work.is_complete());
+                assert_eq!(work.elapsed(), total);
+                assert_eq!(state.game_state.messaging.runtime.dialogue_msg_read_pos(), 0);
+                assert_eq!(state.paired_resume_cpu_boundary_blocker(), Some("retained-vwf-drawing-instruction"));
+            }
+            before = after;
+        }
+        assert!(state.dialogue_vwf_drawing.is_none());
+        assert_eq!(state.game_state.messaging.runtime.dialogue_msg_read_pos(), 0);
+    }
+
+    #[test]
+    fn fresh_vwf_budget_preserves_hdma_descriptor_progress_at_entry() {
+        let mut state = crate::zelda_rtl::ZeldaState::new();
+        state.set_hdma_enable_mask(0x80);
+        let channel = &mut state.dma.channel[7];
+        channel.a_bank = 0x7e;
+        channel.a_adr = 0x2000;
+        channel.mode = 1;
+        channel.indirect = true;
+        // Two 127-line repeat descriptors. Their data pointers are native
+        // WRAM operands; timing does not need to execute the PPU transfers.
+        state.ram[0x2000..0x2007].copy_from_slice(&[0xff, 0, 0x30, 0xff, 0, 0x31, 0]);
+        for line in [43u16, 128] {
+            let entry = snes::CpuRasterPosition::new(line, 716);
+            let actual = state.vwf_exact_entry_budget(
+                entry, snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+            ).unwrap();
+            let remaining_lines = 225 - u32::from(line);
+            let span = remaining_lines * 1364 + 12 - 716;
+            // This line's refresh is past; every remaining HDMA line
+            // transfers two bytes. Only the earlier entry still owes the
+            // indirect pointer's two-byte reload at descriptor exhaustion.
+            let refresh = (remaining_lines - 1) * 40;
+            let transfer = remaining_lines * (16 + 8 + 2 * 8 + 2);
+            let reload = if line < 127 { 2 * 8 } else { 0 };
+            assert_eq!(actual.master_cycles, span - refresh - transfer - reload);
+        }
+        // An already-terminated channel costs no bus time after entry.
+        state.ram[0x2000] = 0;
+        let terminated = state.vwf_exact_entry_budget(
+            snes::CpuRasterPosition::new(43, 716),
+            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+        ).unwrap();
+        state.set_hdma_enable_mask(0);
+        assert_eq!(Some(terminated), state.vwf_exact_entry_budget(
+            snes::CpuRasterPosition::new(43, 716),
+            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+        ));
     }
 
     #[test]
@@ -1072,39 +1897,38 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_module0e_interface_after_run(&mut self) {
-        // $00:F84E-$00:F875: the scroll-register copies and RTL (578).
-        crate::cycle_ledger::charge(578);
-        let bg1_x_offset = self.game_state.world.scroll.bg1_x_offset();
-        let bg1_y_offset = self.game_state.world.scroll.bg1_y_offset();
-        let bg2x = self
-            .game_state
-            .display
-            .ppu_scroll_copy
-            .bg2_h_copy2()
-            .wrapping_add(bg1_x_offset);
-        let bg2y = self
-            .game_state
-            .display
-            .ppu_scroll_copy
-            .bg2_v_copy2()
-            .wrapping_add(bg1_y_offset);
-        let bg1x = self
-            .game_state
-            .display
-            .ppu_scroll_copy
-            .bg1_h_copy2()
-            .wrapping_add(bg1_x_offset);
-        let bg1y = self
-            .game_state
-            .display
-            .ppu_scroll_copy
-            .bg1_v_copy2()
-            .wrapping_add(bg1_y_offset);
-        self.set_bg2_h_copy(bg2x);
-        self.set_bg2_v_copy(bg2y);
-        self.set_bg1_h_copy(bg1x);
-        self.set_bg1_v_copy(bg1y);
+        let mut work = crate::cycle_models::text_initialize::InterfaceReturn::default();
+        while self.step_module0e_interface_return(&mut work).is_some() {}
         self.replay_trace_ram_watch("module0e-after-scroll-copy");
+    }
+
+    fn step_module0e_interface_return(
+        &mut self,
+        work: &mut crate::cycle_models::text_initialize::InterfaceReturn,
+    ) -> Option<u32> {
+        let scroll = &self.game_state.display.ppu_scroll_copy;
+        let instruction = work.step(
+            [scroll.bg2_h_copy2(), scroll.bg2_v_copy2(), scroll.bg1_h_copy2(), scroll.bg1_v_copy2()],
+            [self.game_state.world.scroll.bg1_x_offset(), self.game_state.world.scroll.bg1_y_offset()],
+        )?;
+        crate::cycle_ledger::charge(u64::from(instruction.master_cycles));
+        if let Some((axis, value)) = instruction.scroll_store {
+            match axis {
+                0 => self.set_bg2_h_copy(value),
+                1 => self.set_bg2_v_copy(value),
+                2 => self.set_bg1_h_copy(value),
+                3 => self.set_bg1_v_copy(value),
+                _ => unreachable!(),
+            }
+        }
+        Some(instruction.master_cycles)
+    }
+
+    fn finish_render_text_return(&mut self) {
+        let mut work = crate::cycle_models::text_initialize::RenderTextReturn::default();
+        while let Some(cost) = work.step() {
+            crate::cycle_ledger::charge(u64::from(cost));
+        }
     }
 
     pub(super) fn Module_Messaging_0(&mut self) {
@@ -2079,7 +2903,7 @@ impl ZeldaState {
                 self.complete_pending_main_loop_common_suffix_after_module_return();
             } else {
                 self.nmi_prepare_sprites();
-                self.clear_nmi_update_latch();
+                self.finish_main_loop_caller_return();
             }
             self.next_display_obj_scanout_generation = Some(ObjScanoutGenerations::coherent(
                 GraphicsDmaGeneration::HostBoundaryBeforeMain,
@@ -4695,8 +5519,12 @@ impl ZeldaState {
                 _ => {}
             }
         }
-        if fresh_iteration {
-            crate::cycle_ledger::charge(72);
+        if fresh_iteration && !matches!(
+            self.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishDialogueInitializationPrefix { .. }
+                | GameWorkContinuation::FinishDialogueInitializationCallerReturn)
+        ) {
+            self.finish_render_text_return();
         }
     }
 
@@ -4767,22 +5595,203 @@ impl ZeldaState {
             self.stage_dialogue_initialization_obj_scanout();
             return;
         }
+        if let Some(mut work) = self.native_text_initialization_work() {
+            while self.step_text_initialization_work(&mut work).is_some() {}
+        } else {
+            self.complete_text_initialization_prefix();
+            self.complete_text_initialization_suffix();
+        }
+    }
+
+    fn native_text_initialization_work(&self) -> Option<TextInitializationWork> {
+        Some(TextInitializationWork {
+            phase: TextInitializationPhase::Entry(0),
+            loaded_module: 0,
+            story: self.story_graphics_decompression()?,
+            prefix: Default::default(),
+            decoder: self.native_character_buffer_work()?,
+            tail: Default::default(),
+        })
+    }
+
+    fn native_dialogue_initialization_caller_work(&self) -> Option<DialogueInitializationCallerWork> {
+        Some(DialogueInitializationCallerWork {
+            initialization: self.native_text_initialization_work()?,
+            phase: DialogueInitializationCallerPhase::Initialize,
+            render: Default::default(),
+            interface: Default::default(),
+            preparation: Default::default(),
+            preparation_master_cycles: 0,
+        })
+    }
+
+    /// Retire one instruction in the callee/caller chain. A future hardware
+    /// scheduler can stop after any step without reconstructing a call from
+    /// RAM outputs. The current host scheduler stops at its existing seams.
+    fn step_dialogue_initialization_caller(
+        &mut self,
+        work: &mut DialogueInitializationCallerWork,
+    ) -> Option<u32> {
+        use DialogueInitializationCallerPhase::*;
+        loop {
+            let (cost, next) = match work.phase {
+                Initialize => (self.step_text_initialization_work(&mut work.initialization), RenderReturn),
+                RenderReturn => {
+                    let cost = work.render.step();
+                    if let Some(cost) = cost { crate::cycle_ledger::charge(u64::from(cost)); }
+                    (cost, InterfaceReturn)
+                }
+                InterfaceReturn => (self.step_module0e_interface_return(&mut work.interface), CallPreparation),
+                CallPreparation => {
+                    assert_eq!(self.main_loop_caller_phase,
+                        crate::cycle_models::main_wait::MainLoopCallerPhase::ModuleRouting);
+                    self.enter_main_loop_sprite_preparation();
+                    work.phase = Preparation;
+                    return Some(46);
+                }
+                Preparation => {
+                    let _scope = crate::cycle_ledger::routine(0x00_85fc);
+                    let cost = self.step_sprite_preparation_work(&mut work.preparation);
+                    if let Some(cost) = cost {
+                        work.preparation_master_cycles += cost;
+                    } else {
+                        self.last_nmi_prepare_sprites_master_cycles = Some(work.preparation_master_cycles);
+                    }
+                    (cost, Return)
+                }
+                Return => (self.step_main_loop_caller_return(), Complete),
+                Complete => return None,
+            };
+            if cost.is_some() { return cost; }
+            work.phase = next;
+        }
+    }
+
+    pub(super) fn complete_scheduled_text_initialization_prefix(&mut self) {
+        assert!(self.dialogue_initialization_caller.is_none(), "initializer admitted twice");
+        // These other callers have additional semantic work between RenderText
+        // and Module0E's return. Keep their existing owners until composed too.
+        let native_caller = self.game_state.frame.main_module == 14
+            && self.game_state.frame.submodule == 2
+            && self.pending_main_loop_common_suffix.is_none()
+            && !matches!(self.original_timing_owner(), super::OriginalTimingOwner::Live)
+            // The opt-in CPU trial owns a separate partial decoder. Select
+            // that lane by ownership, never by a source cursor's value.
+            && self.native_exact_cpu_owner.is_none();
+        if native_caller {
+            if let Some(mut work) = self.native_dialogue_initialization_caller_work() {
+                while work.initialization.phase != TextInitializationPhase::CallDecoder {
+                    self.step_dialogue_initialization_caller(&mut work).expect("initialization prefix");
+                }
+                self.dialogue_initialization_caller = Some(work);
+                if crate::debug_env::var_os("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some() {
+                    eprintln!("native-dialogue-initialization-caller host={} retained=call-decoder", self.frame_ctr_dbg);
+                }
+                return;
+            }
+        }
         self.complete_text_initialization_prefix();
-        self.complete_text_initialization_suffix();
+    }
+
+    /// Return the retained native call stack to main wait exactly once.
+    /// No wait instruction can run here without an authoritative input clock.
+    pub(super) fn complete_native_dialogue_initialization_caller(&mut self) -> bool {
+        let Some(mut work) = self.dialogue_initialization_caller.take() else { return false };
+        assert!(self.pending_main_loop_common_suffix.is_none(), "two owners of the main caller suffix");
+        assert_eq!(work.initialization.phase, TextInitializationPhase::Tail);
+        while self.step_dialogue_initialization_caller(&mut work).is_some() {}
+        if crate::debug_env::var_os("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some() {
+            eprintln!("native-dialogue-initialization-caller host={} returned=main-wait preparation_cycles={}",
+                self.frame_ctr_dbg, work.preparation_master_cycles);
+        }
+        true
+    }
+
+    /// A scheduler may retain `work` after any returned instruction. This
+    /// adapter never reconstructs elapsed progress from an output byte, an
+    /// NMI count or a source trace. Its caller must retain the hardware clock.
+    fn step_text_initialization_work(&mut self, work: &mut TextInitializationWork) -> Option<u32> {
+        use TextInitializationPhase::*;
+        let (cost, routine, next) = match work.phase {
+            Entry(0) => {
+                work.loaded_module = self.game_state.frame.main_module;
+                (24, 0x0e_c448, Entry(1))
+            }
+            Entry(1) => (16, 0x0e_c448, Entry(2)),
+            Entry(2) => if work.loaded_module == 20 {
+                (16, 0x0e_c448, CallPalette)
+            } else {
+                (22, 0x0e_c448, CallStory)
+            },
+            Entry(_) => unreachable!(),
+            CallPalette => (62, 0x0e_c448, Palette(0)),
+            Palette(i) => {
+                let cost = self.retire_hud_palette_reset_instruction(i);
+                work.phase = if i == 15 { CallStory } else { Palette(i + 1) };
+                return Some(cost);
+            }
+            CallStory => (62, 0x0e_c448, Story),
+            Story => {
+                let instruction = work.story.step(&mut self.ram).expect("active story call");
+                (instruction.master_cycles, instruction.routine,
+                    if work.story.is_complete() { CopyIndex } else { Story })
+            }
+            CopyIndex => {
+                self.begin_text_initialization_state_prefix();
+                (16, 0x0e_c448, Prefix)
+            }
+            Prefix => {
+                let instruction = self.step_text_initialization_prefix(&mut work.prefix)
+                    .expect("active initialization prefix");
+                self.retire_text_initialization_prefix_instruction(instruction);
+                if work.prefix.is_complete() { work.phase = CallDecoder; }
+                return Some(instruction.master_cycles);
+            }
+            CallDecoder => (46, 0x0e_c448, Decoder),
+            Decoder => {
+                let instruction = work.decoder.step().expect("active character decoder");
+                self.retire_character_buffer_instruction(instruction);
+                if work.decoder.is_complete() { work.phase = Tail; }
+                return Some(instruction.master_cycles);
+            }
+            Tail => {
+                let instruction = work.tail.step().expect("active initialization tail");
+                self.retire_text_initialization_tail_instruction(instruction);
+                if work.tail == crate::cycle_models::text_initialize::InitializationTail::Complete {
+                    work.phase = Complete;
+                }
+                return Some(instruction.master_cycles);
+            }
+            Complete => return None,
+        };
+        if routine == 0x0e_c448 {
+            crate::cycle_ledger::charge(u64::from(cost));
+        } else {
+            crate::cycle_ledger::charge_routine(routine, u64::from(cost));
+        }
+        work.phase = next;
+        Some(cost)
     }
 
     pub(super) fn complete_text_initialization_prefix(&mut self) {
+        if let Some(mut work) = self.native_text_initialization_work() {
+            while work.phase != TextInitializationPhase::CallDecoder {
+                self.step_text_initialization_work(&mut work).expect("initialization prefix");
+            }
+            return;
+        }
         // Text_Initialize ($0E:C483): LDA $10 : CMP #$14 : BNE (56, +6 taken
         // outside module $14), JSL ResetHUDPalettes4and5 (62) in module $14,
         // $0E:C48D: JSL Attract_DecompressStoryGFX : LDX #$00 (78); falls
         // into Text_Initialize_initModuleStateLoop. A jump target of
         // Messaging_Text_Near: it charges into that frame, no scope of its own.
         let module_20 = self.game_state.frame.main_module == 20;
-        crate::cycle_ledger::charge(if module_20 { 56 + 62 } else { 56 + 6 } + 78);
+        crate::cycle_ledger::charge(if module_20 { 56 + 62 } else { 56 + 6 } + 62);
         if module_20 {
             self.ResetHUDPalettes4and5();
         }
         self.Attract_DecompressStoryGFX();
+        crate::cycle_ledger::charge(16); // LDX #0 after the callee returns
         self.text_initialize_module_state_prefix();
     }
 
@@ -4799,28 +5808,16 @@ impl ZeldaState {
     }
 
     fn text_initialize_module_state_prefix(&mut self) {
-        // C copies all 32 bytes of TEXT_INITIALIZATION_DATA into the message-state struct at
-        // TEXT_MSGBOX_TOPLEFT_COPY (0x1cd0..0x1cf0). init_msgbox_state_from only models a
-        // subset, leaving unmodeled bytes (notably DIALOGUE_MSG_SRC_OFFS 0x1cdd-0x1cde, a dead
-        // message-DMA-pointer scratch) stale. Mirror C's raw copy so those bytes match too;
-        // the native fields re-project their (identical) values afterward.
-        // $0E:C493-$0E:C49C: 32 passes of the init-data copy (116, `BCC`
-        // taken 31 times; `LDA $D35A,X` stays in its page), then $0E:C49E:
-        // JSR Text_InitVwfState : JSR RenderText_SetDefaultWindowPosition
-        // : REP #$30 : LDA #$387F : AND #$FF00 : ORA #$0180 : STA $1CE2
-        // : SEP #$30 (248; the callees charge themselves).
-        crate::cycle_ledger::charge(32 * 116 + 31 * 6 + 248);
-        self.ram[crate::game_state::constants::TEXT_MSGBOX_TOPLEFT_COPY
-            ..crate::game_state::constants::TEXT_MSGBOX_TOPLEFT_COPY
-                + TEXT_INITIALIZATION_DATA.len()]
-            .copy_from_slice(&TEXT_INITIALIZATION_DATA);
-        self.messaging_state_mut()
-            .init_msgbox_state_from(&TEXT_INITIALIZATION_DATA);
-        // The same copy zeroes $1CDD/$1CE6.
-        self.dialogue_vwf_dispatch_cursor = crate::cycle_models::vwf::DispatchCursor::default();
+        self.begin_text_initialization_state_prefix();
+        let mut work = crate::cycle_models::text_initialize::InitializationPrefix::default();
+        while let Some(instruction) = self.step_text_initialization_prefix(&mut work) {
+            self.retire_text_initialization_prefix_instruction(instruction);
+        }
+    }
+
+    fn begin_text_initialization_state_prefix(&mut self) {
         self.dialogue_character_load_progress = None;
         self.clear_bg3_vwf_glyph_runs();
-        self.Text_InitVwfState();
         // A fresh message's render machine cannot inherit the previous
         // message's suspended-glyph CPU model: the C main thread is inside
         // Text_Initialize here, not the VWF glyph loop. A stale hold routed
@@ -4829,16 +5826,66 @@ impl ZeldaState {
         self.dialogue_vwf_handler_completed_at_endpoint = false;
         self.dialogue_fast_forward_hold_active = false;
         self.dialogue_fast_forward_hold_pending = false;
-        self.RenderText_SetDefaultWindowPosition();
-        self.messaging_state_mut().set_text_tilemap_cur(0x3980);
+    }
+
+    fn step_text_initialization_prefix(
+        &self,
+        work: &mut crate::cycle_models::text_initialize::InitializationPrefix,
+    ) -> Option<crate::cycle_models::text_initialize::PrefixInstruction> {
+        work.step(
+            self.game_state.player.follower_link.y(),
+            self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
+            &TEXT_INITIALIZATION_DATA,
+            &TEXT_POSITIONS,
+        )
+    }
+
+    fn retire_text_initialization_prefix_instruction(
+        &mut self,
+        instruction: crate::cycle_models::text_initialize::PrefixInstruction,
+    ) {
+        use crate::cycle_models::text_initialize::PrefixPublication::*;
+        if instruction.routine == 0x0e_c448 {
+            crate::cycle_ledger::charge(u64::from(instruction.master_cycles));
+        } else {
+            crate::cycle_ledger::charge_routine(instruction.routine, u64::from(instruction.master_cycles));
+        }
+        match instruction.publication {
+            Some(StateByte { index, value }) => {
+                self.messaging_state_mut().initialize_msgbox_byte(index, value);
+                match index {
+                    13 => self.dialogue_vwf_dispatch_cursor.src_offs =
+                        (self.dialogue_vwf_dispatch_cursor.src_offs & 0xff00) | u16::from(value),
+                    14 => self.dialogue_vwf_dispatch_cursor.src_offs =
+                        (self.dialogue_vwf_dispatch_cursor.src_offs & 0xff) | (u16::from(value) << 8),
+                    22 => self.dialogue_vwf_dispatch_cursor.next_position = value,
+                    _ => {}
+                }
+            }
+            Some(ClearVwfByte(index)) => self.vwf_render_mut().clear_state_byte(index),
+            Some(Window(value)) => self.messaging_state_mut().set_text_msgbox_topleft(value),
+            Some(Tilemap(value)) => self.messaging_state_mut().set_text_tilemap_cur(value),
+            None => {}
+        }
     }
 
     pub(super) fn complete_text_initialization_suffix(&mut self) {
+        // $0E:C4B4 JSR Text_LoadCharacterBuffer precedes the callee's work.
+        crate::cycle_ledger::charge(46);
         self.Text_LoadCharacterBuffer();
         self.finish_text_initialization_after_character_buffer();
     }
 
     pub(super) fn prepare_text_character_buffer_for_carry(&mut self) {
+        if let Some(mut work) = self.dialogue_initialization_caller.take() {
+            assert_eq!(work.initialization.phase, TextInitializationPhase::CallDecoder);
+            while work.initialization.phase != TextInitializationPhase::Tail {
+                self.step_dialogue_initialization_caller(&mut work).expect("initialization decoder");
+            }
+            self.dialogue_initialization_caller = Some(work);
+            return;
+        }
+        crate::cycle_ledger::charge(46); // $0E:C4B4, once before the held decoder
         let source_cursor = self.native_exact_cpu_host_trace.as_ref()
             .and_then(|trace| trace.dialogue_decode_cursor_at_return());
         if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_DIALOGUE_LOADER").is_some() {
@@ -4863,27 +5910,50 @@ impl ZeldaState {
         if self.dialogue_character_load_progress.is_some() {
             self.Text_LoadCharacterBuffer();
         }
-        self.messaging_state_mut().clear_dialogue_msg_read_pos();
         self.finish_text_initialization_after_character_buffer();
+        // The scheduler owns RenderText's open call while Text_Initialize is
+        // suspended. Only the returning callee can retire its PLB/RTL; the
+        // initial host must not charge future caller work before the NMI.
+        self.finish_render_text_return();
     }
 
     fn finish_text_initialization_after_character_buffer(&mut self) {
-        // $0E:C4B4: JSR Text_LoadCharacterBuffer : JSR RenderText_Draw_EmptyBuffer
-        // (92; the character-buffer load is priced by cycle_models::text_buffer
-        // from the ROM's message bytes and is not charged here), then
-        // $0E:C4BA: REP #$30 : STZ $1CD9 : SEP #$30 : LDA #$02 : STA $17
-        // : STA $0710 : RTS (198).
-        crate::cycle_ledger::charge(92 + 198);
-        // RenderText_Draw_EmptyBuffer ($0E:D1F9-$0E:D22F): PHB : LDA #$7F
-        // : PHA : PLB : REP #$30 : LDA #$07D0 : TAX (148), 126 passes of the
-        // eight `STZ $xx,X` clears (436, `BPL` taken 125 times), PLB : STZ
-        // $1CDD : INC $1CD9 : SEP #$30 : STZ $1CE6 : RTS (226): 56,060.
-        crate::cycle_ledger::charge_routine(0x0e_d1f9, 148 + 126 * 436 + 125 * 6 + 226);
-        // The same routine zeroes the dispatch cursor the loader had set.
-        self.dialogue_vwf_dispatch_cursor = crate::cycle_models::vwf::DispatchCursor::default();
-        self.clear_messaging_render_buffer_range(0x7e0);
-        self.set_pending_nmi_subroutine(2);
-        self.set_core_update_disable_flag(2);
+        let mut work = crate::cycle_models::text_initialize::InitializationTail::default();
+        while let Some(instruction) = work.step() {
+            self.retire_text_initialization_tail_instruction(instruction);
+        }
+    }
+
+    fn retire_text_initialization_tail_instruction(
+        &mut self,
+        instruction: crate::cycle_models::text_initialize::Instruction,
+    ) {
+        use crate::cycle_models::text_initialize::Publication::*;
+        if instruction.routine == 0x0e_d1f9 {
+            crate::cycle_ledger::charge_routine(instruction.routine, u64::from(instruction.master_cycles));
+        } else {
+            crate::cycle_ledger::charge(u64::from(instruction.master_cycles));
+        }
+        match instruction.publication {
+            Some(ClearRenderWord(offset)) => self.messaging_render_buffer_mut()
+                .set_word_at_byte_offset(usize::from(offset), 0),
+            Some(ClearSourceOffset) => {
+                self.dialogue_vwf_dispatch_cursor.src_offs = 0;
+                self.ram[crate::game_state::constants::DIALOGUE_MSG_SRC_OFFS..crate::game_state::constants::DIALOGUE_MSG_SRC_OFFS + 2].fill(0);
+            }
+            Some(IncrementReadPosition) => {
+                let next = self.game_state.messaging.runtime.dialogue_msg_read_pos().wrapping_add(1);
+                self.messaging_state_mut().set_dialogue_msg_read_pos(next);
+            }
+            Some(ClearNextPosition) => {
+                self.dialogue_vwf_dispatch_cursor.next_position = 0;
+                self.ram[crate::game_state::constants::DIALOGUE_NEXT_POSITION] = 0;
+            }
+            Some(ClearReadPosition) => self.messaging_state_mut().clear_dialogue_msg_read_pos(),
+            Some(RequestTextDma) => self.set_pending_nmi_subroutine(2),
+            Some(DisableCoreUpdate) => self.set_core_update_disable_flag(2),
+            None => {}
+        }
     }
 
     pub(super) fn Text_InitVwfState(&mut self) {
@@ -4905,6 +5975,14 @@ impl ZeldaState {
     }
 
     fn text_load_character_buffer_until(&mut self, limit: Option<usize>) -> u16 {
+        if limit.is_none() && self.dialogue_character_load_progress.is_none() {
+            if let Some(mut work) = self.native_character_buffer_work() {
+                while let Some(instruction) = work.step() {
+                    self.retire_character_buffer_instruction(instruction);
+                }
+                return work.output_position();
+            }
+        }
         let Some(dialogue_blk) = self.asset_memblk(94, self.dialogue_blk_index) else {
             return 0;
         };
@@ -5014,12 +6092,68 @@ impl ZeldaState {
                 pending_output,
             });
         }
-        self.messaging_state_mut().clear_dialogue_msg_read_pos();
+        self.messaging_state_mut().set_dialogue_msg_read_pos(output_cursor as u16);
         // The ROM's loader leaves its encoded input index in $1CDD (dead here,
         // but it selects the render dispatch's comparison path).
         self.dialogue_vwf_dispatch_cursor =
             self.dialogue_vwf_dispatch_cursor.after_character_buffer_load(text_index);
         output_cursor as u16
+    }
+
+    fn native_character_buffer_work(&self) -> Option<crate::cycle_models::text_decode::CharacterBufferWork> {
+        // Extended-language bytecode uses a different command table. Its
+        // existing semantic decoder remains the owner of that asset format.
+        if self.dialogue_flags & 1 != 0 { return None; }
+        let block = self.asset_memblk(94, self.dialogue_blk_index)?;
+        let dictionary = find_index_in_memblk(block, 0);
+        let dictionary: Vec<Vec<u8>> = (0..128)
+            .map(|i| find_index_in_memblk(dictionary, i).ptr.to_vec()).collect();
+        let messages = find_index_in_memblk(block, 1);
+        let message = find_index_in_memblk(messages,
+            usize::from(self.game_state.messaging.dialogue_message_index.value()));
+        // The source save-offset table includes slot zero as the first save,
+        // as well as the usual selected-slot values 2/4/6.
+        let name_start = match self.selected_save_slot_x2() {
+            0 | 2 => 0x3d9,
+            4 => 0x8d9,
+            6 => 0xdd9,
+            _ => return None,
+        };
+        let name = std::array::from_fn(|i| read_le_u16(&self.sram, name_start + i * 2));
+        let pairs = std::array::from_fn::<_, 2, _>(|i|
+            self.game_state.messaging.dialogue_number.packed_digits(i));
+        crate::cycle_models::text_decode::CharacterBufferWork::new(message.ptr, &dictionary, name, &pairs)
+    }
+
+    fn retire_character_buffer_instruction(&mut self,
+        instruction: crate::cycle_models::text_decode::Instruction)
+    {
+        use crate::cycle_models::text_decode::Publication::*;
+        crate::cycle_ledger::charge_routine(instruction.routine, u64::from(instruction.master_cycles));
+        match instruction.publication {
+            Some(Buffer { offset, value, width }) => {
+                self.messaging_text_mut().write_decoded_text_at(0x11200 + usize::from(offset),
+                    &value.to_le_bytes()[..usize::from(width)]);
+            }
+            Some(SourcePosition(value)) => {
+                self.dialogue_vwf_dispatch_cursor.src_offs = value;
+                self.ram[crate::game_state::constants::DIALOGUE_MSG_SRC_OFFS..crate::game_state::constants::DIALOGUE_MSG_SRC_OFFS + 2].copy_from_slice(&value.to_le_bytes());
+            }
+            Some(OutputPosition(value)) => self.messaging_state_mut().set_dialogue_msg_read_pos(value),
+            Some(Window(value)) => self.messaging_state_mut().set_text_render_state(value),
+            Some(Position(value)) => self.messaging_state_mut().set_text_msgbox_topleft(value),
+            Some(Color(value)) => self.messaging_state_mut().set_text_tilemap_cur(value),
+            None => {}
+        }
+    }
+
+    fn reset_choice_text_cursors(&mut self) {
+        // CED9/CF56/CFCA: STZ $1CE6 : STZ $1CD9 : STZ $1CDA.
+        // These belong to the choice caller after the decoder returns.
+        crate::cycle_ledger::charge(3 * 32);
+        self.dialogue_vwf_dispatch_cursor.next_position = 0;
+        self.ram[crate::game_state::constants::DIALOGUE_NEXT_POSITION] = 0;
+        self.messaging_state_mut().clear_dialogue_msg_read_pos();
     }
 
     /// Build the 6-char player name buffer from SRAM (all 6 entries, including trailing 0x59
@@ -5187,7 +6321,7 @@ impl ZeldaState {
         if self.dialogue_fast_forward_hold_active
             && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SPRITE_PREP_LIVE_TRIAL").is_some()
             && self.native_exact_cpu_host_trace.as_ref().is_some_and(|trace| {
-                trace.sprite_preparation_progress_at_return.is_some()
+                trace.sprite_preparation_progress_at_host_boundary().is_some()
             })
         {
             let transition = self.advance_suspended_vwf_to_handler_completion();
@@ -5513,7 +6647,9 @@ impl ZeldaState {
                     remaining_master_cycles: drawing_master_cycles,
                 };
             }
-            VwfGlyphCpuPhase::PreparingDrawing { .. } | VwfGlyphCpuPhase::Drawing { .. } => {}
+            VwfGlyphCpuPhase::PreparingDrawing { .. }
+            | VwfGlyphCpuPhase::PreparingDrawingPublished { .. }
+            | VwfGlyphCpuPhase::Drawing { .. } => {}
             VwfGlyphCpuPhase::Entering { .. } => {
                 panic!("native VWF execution had not committed a source-started glyph prefix")
             }
@@ -5711,6 +6847,7 @@ impl ZeldaState {
             && matches!(
                 self.dialogue_vwf_glyph_cpu_phase,
                 VwfGlyphCpuPhase::PreparingDrawing { .. }
+                | VwfGlyphCpuPhase::PreparingDrawingPublished { .. }
             )
         {
             VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES
@@ -5831,10 +6968,8 @@ impl ZeldaState {
                             // vwf_arr[i]. Time the first glyph from that line's
                             // reset cursor, not the stale prior-line cursor.
                             let entered_cursor = self.game_state.messaging.vwf_render.glyph_cursor_usize();
-                            let glyph_cursor = if exact_costs && entered_cursor != 0 && matches!(
-                                self.dialogue_vwf_glyph_cpu_phase,
-                                VwfGlyphCpuPhase::Drawing { .. }
-                            ) {
+                            let glyph_cursor = if exact_costs && entered_cursor != 0
+                                && self.dialogue_vwf_glyph_cpu_phase.setup_publications().1 {
                                 // Native drawing setup has already advanced
                                 // the cursor. The held row loop still owns
                                 // the preceding glyph's advance and bitmap.
@@ -5902,14 +7037,11 @@ impl ZeldaState {
                                 self.begin_vwf_glyph(param, read_pos as u16);
                             }
                             if exact_costs {
-                                if !matches!(phase_before, VwfGlyphCpuPhase::Drawing { .. })
-                                    && matches!(advance.next_phase,
-                                        VwfGlyphCpuPhase::Drawing { .. } | VwfGlyphCpuPhase::Ready)
-                                {
-                                    self.publish_vwf_glyph_drawing_setup(param);
-                                }
-                                drawing_setup_published = matches!(advance.next_phase,
-                                    VwfGlyphCpuPhase::Drawing { .. } | VwfGlyphCpuPhase::Ready);
+                                self.dialogue_vwf_glyph_cpu_phase = self.publish_vwf_glyph_setup_progress(
+                                    param, phase_before, advance.next_phase,
+                                );
+                                drawing_setup_published = advance.next_phase.is_ready()
+                                    || self.dialogue_vwf_glyph_cpu_phase.setup_publications().1;
                             }
                             if exact_costs && self.dialogue_glyph_font_rows(param).is_some() {
                                 let drawing = glyph_costs.drawing;
@@ -5927,15 +7059,6 @@ impl ZeldaState {
                                 self.publish_vwf_glyph_bitmap_range(
                                     param, width, x, drawn_before, drawn_after,
                                 );
-                                let read_position_write =
-                                    crate::cycle_models::vwf::glyph_read_position_instruction_start(drawing);
-                                if drawn_before <= read_position_write
-                                    && read_position_write < drawn_after
-                                {
-                                    self.messaging_state_mut().set_dialogue_msg_read_pos(
-                                        (read_pos as u16).wrapping_add(1),
-                                    );
-                                }
                                 bitmap_published_incrementally = true;
                             }
                             if !advance.completed {
@@ -6508,17 +7631,42 @@ impl ZeldaState {
         };
         let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
             entry,
-            snes::CpuBusWorkload::with_hdma_stall(self.native_hdma_scanline_stall_master_cycles()),
+            snes::CpuBusWorkload::with_dynamic_hdma(),
             field_timing,
         );
+        // The fresh entry is measured after HDMA has already advanced through
+        // part of this field. Reconstruct its descriptor cursor from native
+        // tables before pricing the remaining bus events. A constant per-line
+        // stall loses indirect-pointer reloads and non-repeat/terminated rows.
+        let mut hdma = snes::HdmaTimingState::new(&self.dma_with_native_hdma_enable());
+        if entry.scanline() != 0 || u32::from(entry.master_cycle()) > snes::HDMA_INIT_CYCLE {
+            hdma.stall(snes::CpuBusEvent::HdmaInit,
+                |address| self.native_hdma_table_byte(address))?;
+            for line in 0..snes::NMI_SCANLINE {
+                if line > u32::from(entry.scanline())
+                    || (line == u32::from(entry.scanline())
+                        && u32::from(entry.master_cycle()) <= snes::HDMA_START_CYCLE)
+                {
+                    break;
+                }
+                hdma.stall(snes::CpuBusEvent::HdmaStart,
+                    |address| self.native_hdma_table_byte(address))?;
+            }
+        }
+        let mut unsupported_hdma_table = false;
+        let mut price_hdma = |event, _: u16| {
+            hdma.stall(event, |address| self.native_hdma_table_byte(address))
+                .unwrap_or_else(|| { unsupported_hdma_table = true; 0 })
+        };
         const PROBE: u32 = 4 * SNES_NTSC_MASTER_CYCLES_PER_FRAME;
-        let master_cycles = match budget.advance_interruptible(PROBE) {
+        let master_cycles = match budget.advance_interruptible_with_hdma(PROBE, &mut price_hdma) {
             CpuWorkAdvance::ReachedBoundary {
                 remaining_work_master_cycles,
                 ..
             } => PROBE - remaining_work_master_cycles,
             CpuWorkAdvance::Complete => PROBE,
         };
+        if unsupported_hdma_table { return None; }
         Some(VwfExactLoopBudget {
             master_cycles,
             since_nmi_master_cycles,
@@ -6539,6 +7687,7 @@ impl ZeldaState {
     }
 
     fn begin_vwf_glyph(&mut self, c: u8, read_pos: u16) {
+        assert!(self.dialogue_vwf_drawing.is_none(), "previous VWF drawing still owns instructions");
         assert!(self.dialogue_vwf_pending_glyph_read_pos.is_none(),
             "a VWF glyph cannot enter while another glyph body is active");
         self.dialogue_vwf_pending_glyph_read_pos = Some(read_pos);
@@ -6579,31 +7728,90 @@ impl ZeldaState {
         let Some(rows) = self.dialogue_glyph_font_rows(c) else {
             return;
         };
-        let line_ptr = usize::from(self.game_state.messaging.vwf_render.line_render_offset());
-        // `drawn_*` are continuous CPU positions at host deadlines. A store
-        // belongs to the slice in which its instruction began.
-        for write in crate::cycle_models::vwf::glyph_bitmap_writes(width, x, line_ptr, rows) {
-            let start = write.instruction_start();
-            if start < drawn_before || start >= drawn_after {
-                continue;
+        use crate::cycle_models::vwf_drawing::{Drawing, Read, Write};
+        let mut work = self.dialogue_vwf_drawing.take().unwrap_or_else(|| {
+            assert_eq!(drawn_before, 0, "VWF drawing continuation was lost");
+            Drawing::new(c, width, x, rows)
+        });
+        // The legacy caller still supplies a scalar cutoff. Retire the whole
+        // instruction that starts before it, and retain both its operands and
+        // elapsed work. Never replay the tail of an instruction after NMI.
+        // This does not supply the missing native caller hardware clock.
+        while work.elapsed() < drawn_after && !work.is_complete() {
+            let instruction = work.step(|operand| match operand {
+                Read::LineOffset => self.game_state.messaging.vwf_render.line_render_offset(),
+                Read::GlyphCursor => self.game_state.messaging.vwf_render.glyph_cursor(),
+                Read::AdvanceWord(cursor) => {
+                    let index = usize::from(cursor);
+                    u16::from_le_bytes([
+                        index.checked_sub(1).map_or_else(
+                            || self.ram[VWF_ARR - 1],
+                            |previous| self.vwf_glyph_advance_prefix_sum(previous),
+                        ),
+                        self.vwf_glyph_advance_prefix_sum(index),
+                    ])
+                }
+                Read::BitmapByte(offset) => u16::from(self.game_state.messaging.render_buffer.byte(usize::from(offset))),
+                Read::ReadPosition => self.game_state.messaging.runtime.dialogue_msg_read_pos(),
+            }).expect("unfinished VWF drawing");
+            match instruction.write {
+                Some(Write::BitmapByte(offset, value)) => self.set_messaging_render_buffer_byte(usize::from(offset), value),
+                Some(Write::BitmapWord(offset, value)) => self.set_messaging_render_buffer_word_at_byte_offset(usize::from(offset), value),
+                Some(Write::ReadPosition(value)) => self.messaging_state_mut().set_dialogue_msg_read_pos(value),
+                None => {}
             }
-            match write.kind {
-                crate::cycle_models::vwf::GlyphBitmapWriteKind::Xor(mask) =>
-                    self.xor_messaging_render_buffer_mask(write.offset, mask),
-                crate::cycle_models::vwf::GlyphBitmapWriteKind::Clear(mask) =>
-                    self.clear_messaging_render_buffer_mask(write.offset, mask),
-                crate::cycle_models::vwf::GlyphBitmapWriteKind::SetWord(value) =>
-                    self.set_messaging_render_buffer_word_at_byte_offset(write.offset, value),
-            }
+        }
+        // A cutoff inside the final RTS has retired it but the legacy scalar
+        // phase still owes its remaining span. Keep the completed owner until
+        // that phase catches up, so it cannot manufacture a fresh row loop.
+        if !work.is_complete() || drawn_after < work.elapsed() {
+            self.dialogue_vwf_drawing = Some(work);
         }
     }
 
     fn publish_vwf_glyph_drawing_setup(&mut self, c: u8) {
         let width = self.dialogue_glyph_width(c);
         let i = self.game_state.messaging.vwf_render.glyph_cursor_usize();
-        self.increment_vwf_glyph_cursor();
         let arrval = self.vwf_glyph_advance_prefix_sum(i);
         self.set_vwf_next_glyph_advance_prefix_sum(i, arrval.wrapping_add(width));
+        self.increment_vwf_glyph_cursor();
+    }
+
+    fn publish_vwf_glyph_setup_progress(
+        &mut self,
+        c: u8,
+        before: VwfGlyphCpuPhase,
+        after: VwfGlyphCpuPhase,
+    ) -> VwfGlyphCpuPhase {
+        use crate::cycle_models::vwf::{GLYPH_ADVANCE_STORE_REMAINING, GLYPH_CURSOR_STORE_REMAINING};
+        let (width_was_stored, cursor_was_stored) = before.setup_publications();
+        let (width_is_stored, cursor_is_stored) = match after {
+            VwfGlyphCpuPhase::Ready | VwfGlyphCpuPhase::Drawing { .. } => (true, true),
+            VwfGlyphCpuPhase::PreparingDrawing { remaining_master_cycles, .. }
+            | VwfGlyphCpuPhase::PreparingDrawingPublished { remaining_master_cycles, .. } => (
+                remaining_master_cycles < GLYPH_ADVANCE_STORE_REMAINING,
+                remaining_master_cycles < GLYPH_CURSOR_STORE_REMAINING,
+            ),
+            VwfGlyphCpuPhase::Entering { .. } => (false, false),
+        };
+        // NMI accepts after the current instruction. A cutoff inside either
+        // store publishes it once, while its cycle debt remains in the phase.
+        if width_is_stored && !width_was_stored {
+            let i = self.game_state.messaging.vwf_render.glyph_cursor_usize();
+            let advance = self.vwf_glyph_advance_prefix_sum(i).wrapping_add(self.dialogue_glyph_width(c));
+            self.set_vwf_next_glyph_advance_prefix_sum(i, advance);
+        }
+        if cursor_is_stored && !cursor_was_stored {
+            self.increment_vwf_glyph_cursor();
+        }
+        match after {
+            VwfGlyphCpuPhase::PreparingDrawing { remaining_master_cycles, drawing_master_cycles }
+            | VwfGlyphCpuPhase::PreparingDrawingPublished { remaining_master_cycles, drawing_master_cycles, .. }
+                if width_is_stored => VwfGlyphCpuPhase::PreparingDrawingPublished {
+                    remaining_master_cycles, drawing_master_cycles, cursor_advanced: cursor_is_stored,
+                },
+            _ => after,
+        }
     }
 
     fn complete_vwf_glyph(
@@ -6801,6 +8009,7 @@ impl ZeldaState {
             self.dialogue_message_index_mut()
                 .set_value(message_base + u16::from(t));
             self.Text_LoadCharacterBuffer();
+            self.reset_choice_text_cursors();
             self.Text_InitVwfState();
         }
     }
@@ -6836,6 +8045,7 @@ impl ZeldaState {
             self.dialogue_message_index_mut()
                 .set_value(u16::from(choice) + 6);
             self.Text_LoadCharacterBuffer();
+            self.reset_choice_text_cursors();
             self.Text_InitVwfState();
         }
     }
@@ -6863,6 +8073,7 @@ impl ZeldaState {
             self.dialogue_message_index_mut()
                 .set_value(u16::from(t) + 9);
             self.Text_LoadCharacterBuffer();
+            self.reset_choice_text_cursors();
             self.Text_InitVwfState();
         }
     }
@@ -7144,8 +8355,8 @@ impl ZeldaState {
                     .word_at_byte_offset(i + 168 * 2);
                 self.set_messaging_render_buffer_word_at_byte_offset(i + 7 * 2, value);
             }
-            for i in (0x34f..=0x3ef).step_by(8) {
-                self.set_messaging_render_buffer_word_at_byte_offset(i * 2, 0);
+            for column in (0..21).rev() {
+                self.set_messaging_render_buffer_word_at_byte_offset(0x69e + column * 16, 0);
             }
             self.scroll_bg3_vwf_glyph_runs_up_one_pixel();
             let source_bank_offset = self

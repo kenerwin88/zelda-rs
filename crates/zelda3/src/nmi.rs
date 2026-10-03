@@ -3,16 +3,20 @@
 use super::*;
 use crate::game_output::{AudioSfxBank, EngineAudioCommand};
 
-// Snes9x's DMA trace at ROM $008aa2/$008adb: first boot NMI source $7e:0000.
-const FIRST_BOOT_NMI_DMA_SOURCE: [u8; 0x40] = [
-    0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x01, 0x80, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-];
-const FIRST_BOOT_NMI_DMA_SOURCE_BYTE_0: usize = 0x0000;
-const FIRST_BOOT_NMI_DMA_SOURCE_BYTE_1: usize = 0x0001;
-const FIRST_BOOT_NMI_DMA_SOURCE_BYTE_2: usize = 0x0002;
+fn native_stripe_source_byte(ram: &[u8], assets: Option<&AssetPack>, address: u32) -> u8 {
+    use crate::cycle_models::nmi_stripes;
+    if let Some(value) = nmi_stripes::table_byte(address) { return value; }
+    if (0x7e0000..0x800000).contains(&address) { return ram[(address-0x7e0000) as usize]; }
+    if address & 0x400000 == 0 && address & 65535 < 0x2000 { return ram[(address&65535) as usize]; }
+    for (asset, start) in nmi_stripes::ASSET_SOURCES {
+        if let Some(data) = assets.and_then(|a| a.asset(asset)) {
+            if let Some(i) = address.checked_sub(start) {
+                if let Some(&value) = data.get(i as usize) { return value; }
+            }
+        }
+    }
+    panic!("unowned stripe source {address:06x}");
+}
 
 // DMA channel 0 is deliberately reused throughout the ROM's NMI handler.
 // Most transfer sites program both of these registers, but the HUD upload at
@@ -27,6 +31,12 @@ const PPU_BBUS_CGRAM_DATA: u8 = 0x22;
 fn idle_music_echo_master_cycles(apu_output: u8, last_music_control: u8) -> u64 {
     if apu_output == last_music_control { 78 + 52 } else { 84 }
 }
+
+// S9xOpcode_NMI in native mode, from Zelda's slow-ROM program banks:
+// MemorySpeed + ONE_CYCLE, PBR/PCH/PCL/P stack writes, then the vector word.
+// Interrupt entry has no opcode fetch; its initial bus-speed charge still
+// costs 8 clocks, rather than the 6 of an ordinary internal cycle.
+pub(super) const NATIVE_NMI_ENTRY_MASTER_CYCLES: u64 = (8 + 6) + 4 * 8 + 2 * 8;
 
 const DMA_BBUS_OFFSETS: [[u8; 4]; 8] = [
     [0, 0, 0, 0],
@@ -60,11 +70,12 @@ pub(super) struct NmiVramCopyPacket<'a> {
 /// DMA transfers performed by one NMI handler run, for the bus time the
 /// CPU spends stalled: the pinned core (`dma_run_to_completion_master_cycles`
 /// in `crates/snes/src/dma.rs`) charges 18 master cycles per DMA run, 8 per
-/// byte and 8 per completed channel; every transfer here is a single-channel
-/// run, so one transfer costs 26 + 8 x bytes.
+/// byte and 8 per channel. One MDMAEN write can select several channels, so
+/// run setup must be counted separately from channel setup.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct NmiDmaAccounting {
-    pub(crate) transfers: u32,
+    pub(crate) runs: u32,
+    pub(crate) channels: u32,
     pub(crate) bytes: u64,
 }
 
@@ -74,7 +85,8 @@ impl NmiDmaAccounting {
     pub(crate) const BYTE_MASTER_CYCLES: u64 = 8;
 
     pub(crate) fn master_cycles(self) -> u64 {
-        u64::from(self.transfers) * (Self::RUN_MASTER_CYCLES + Self::CHANNEL_COMPLETION_MASTER_CYCLES)
+        u64::from(self.runs) * Self::RUN_MASTER_CYCLES
+            + u64::from(self.channels) * Self::CHANNEL_COMPLETION_MASTER_CYCLES
             + self.bytes * Self::BYTE_MASTER_CYCLES
     }
 }
@@ -348,6 +360,47 @@ impl ZeldaState {
         defer_bg_vram_upload: bool,
         animated_bg_operands: Option<GraphicsDmaGeneration>,
     ) {
+        self.interrupt_nmi_with_native_context(input, oam_dma_source,
+            defer_bg_vram_upload, animated_bg_operands, None);
+    }
+
+    pub(super) fn interrupt_nmi_with_native_context(
+        &mut self,
+        input: u16,
+        oam_dma_source: Option<&[u8]>,
+        defer_bg_vram_upload: bool,
+        animated_bg_operands: Option<GraphicsDmaGeneration>,
+        context: Option<(&mut crate::cycle_models::nmi_stack::NativeNmiContext,
+            &mut snes::CpuMasterTimeline)>,
+    ) {
+        self.interrupt_nmi_with_entry_state(input, oam_dma_source, defer_bg_vram_upload,
+            animated_bg_operands, context, false, None, None);
+    }
+
+    pub(super) fn interrupt_accepted_nmi_with_native_context(&mut self, input: u16,
+        context: &mut crate::cycle_models::nmi_stack::NativeNmiContext,
+        clock: &mut snes::CpuMasterTimeline, irq_deadline:Option<u64>) -> Option<crate::cycle_models::poly_interrupt::PolyIrqProgramming> {
+        let mut programming=crate::cycle_models::poly_interrupt::PolyIrqProgramming::default();
+        self.interrupt_nmi_with_entry_state(input, None, false, None, Some((context, clock)), true, Some(&mut programming),irq_deadline);
+        (programming.nmitimen!=0).then_some(programming)
+    }
+
+    /// Return the actual thread selected by RTI and its live IRQ programming.
+    /// The caller must own subsequent worker execution and IRQ acceptance.
+    pub(super) fn interrupt_accepted_poly_nmi_with_native_context(&mut self, input: u16,
+        context: &mut crate::cycle_models::nmi_stack::NativeNmiContext,
+        clock: &mut snes::CpuMasterTimeline) -> crate::cycle_models::poly_interrupt::PolyIrqProgramming {
+        assert!(self.game_state.display.nmi_thread_active);
+        let mut programming=crate::cycle_models::poly_interrupt::PolyIrqProgramming::default();
+        self.interrupt_nmi_with_entry_state(input,None,false,None,Some((context,clock)),true,Some(&mut programming),None);
+        programming
+    }
+
+    fn interrupt_nmi_with_entry_state(&mut self, input: u16, oam_dma_source: Option<&[u8]>,
+        defer_bg_vram_upload: bool, animated_bg_operands: Option<GraphicsDmaGeneration>,
+        context: Option<(&mut crate::cycle_models::nmi_stack::NativeNmiContext, &mut snes::CpuMasterTimeline)>,
+        hardware_entry_completed: bool,
+        thread_programming: Option<&mut crate::cycle_models::poly_interrupt::PolyIrqProgramming>,irq_deadline:Option<u64>) {
         // The host's NMI cost: the handler's ledger charge (its own
         // instructions, NMI_DoUpdates and every annotated callee, the
         // interrupt entry and the RTI) plus the bus time of the DMA
@@ -361,6 +414,10 @@ impl ZeldaState {
             oam_dma_source,
             defer_bg_vram_upload,
             animated_bg_operands,
+            context,
+            hardware_entry_completed,
+            thread_programming,
+            irq_deadline,
         );
         let dma = self.nmi_dma_accounting.take().unwrap_or_default();
         let cpu = crate::cycle_ledger::master() - ledger_before;
@@ -374,8 +431,13 @@ impl ZeldaState {
     /// Count one DMA transfer the NMI handler performs (`bytes` on the
     /// A-bus); a no-op outside the handler.
     pub(super) fn account_nmi_dma_transfer(&mut self, bytes: usize) {
+        self.account_nmi_dma_run(1, bytes);
+    }
+
+    fn account_nmi_dma_run(&mut self, channels: u32, bytes: usize) {
         if let Some(accounting) = self.nmi_dma_accounting.as_mut() {
-            accounting.transfers += 1;
+            accounting.runs += 1;
+            accounting.channels += channels;
             accounting.bytes += bytes as u64;
         }
     }
@@ -386,6 +448,11 @@ impl ZeldaState {
         oam_dma_source: Option<&[u8]>,
         defer_bg_vram_upload: bool,
         animated_bg_operands: Option<GraphicsDmaGeneration>,
+        context: Option<(&mut crate::cycle_models::nmi_stack::NativeNmiContext,
+            &mut snes::CpuMasterTimeline)>,
+        hardware_entry_completed: bool,
+        thread_programming: Option<&mut crate::cycle_models::poly_interrupt::PolyIrqProgramming>,
+        mut irq_deadline:Option<u64>,
     ) {
         // Cycle ledger: Interrupt_NMI ($00:80C9). The data bank is the
         // system bank throughout, so register-window operands are priced
@@ -393,9 +460,9 @@ impl ZeldaState {
         // `LDA $4210` measures 30). Only CPU instructions are charged; DMA
         // transfer time is not.
         let _scope = crate::cycle_ledger::routine(0x00_80c9);
-        // The hardware interrupt entry sequence (vector fetch, PC/P pushes)
-        // is 60 master cycles; the profiler attributes it to this frame.
-        crate::cycle_ledger::charge(60);
+        // Hardware entry belongs to the same accepted NMI as the handler.
+        // Refresh/HDMA remain owned by the timeline, outside this CPU charge.
+        crate::cycle_ledger::charge(NATIVE_NMI_ENTRY_MASTER_CYCLES - if hardware_entry_completed { 62 } else { 0 });
         self.validate_next_original_timing_nmi_update_gate();
         // Ordinary NMI writes cannot re-enter the active field, but an
         // AdvanceStaged publication may already have materialized the next
@@ -409,12 +476,55 @@ impl ZeldaState {
         // so every hardware-NMI entry path has identical provenance.
         self.debug_obj_pipe("nmi_entry", &self.ppu.vram[0x4000..0x4400]);
         self.capture_cpu_schedules_before_nmi(records_trailing_nmi_receipts, input);
+        let forced_blank_at_entry = self.ppu.forced_blank;
+        let mut clocked_header = None;
+        let mut updates_clock = None;
+        let mut context = context.map(|(context, entry_clock)| {
+            assert!(!self.game_state.display.nmi_thread_active || thread_programming.is_some(),
+                "native poly NMI requires a caller to receive IRQ programming");
+            assert!(!self.dma.dma_busy
+                && self.dma.channel.iter().all(|channel| !channel.dma_active && !channel.hdma_active),
+                "native NMI entry clock requires inactive DMA/HDMA");
+            if hardware_entry_completed {
+                context.enter_accepted_handler_clocked(&mut self.ram, entry_clock);
+            } else {
+                context.enter_handler_clocked(&mut self.ram, entry_clock);
+            }
+            assert!(!self.audio_nmi_processed_before_main,
+                "clocked startup NMI must own its unsampled audio latches");
+            let (music_command,music_cycles)=context.music_header(entry_clock,
+                |at,access|self.native_nmi_header_access(at,access));
+            if let Some(command)=music_command {self.zelda_play_msu_audio_track(command);}
+            self.trace_nmi_audio_inputs();
+            let header = context.audio_and_update_gate(entry_clock,
+                |at, access| self.native_nmi_header_access(at, access));
+            // Hardware transactions and latch clears have already happened.
+            // Publish the captured commands to the existing renderer queue
+            // without rereading those cleared latches or resampling the APU.
+            if let Some(value) = header.ambient_write {
+                self.zelda_emit_audio_command(EngineAudioCommand::from_sfx_port_value(
+                    AudioSfxBank::Ambient, value));
+            }
+            for (bank, value) in [AudioSfxBank::Effect1, AudioSfxBank::Effect2]
+                .into_iter().zip(header.effects)
+            {
+                self.zelda_emit_audio_command(EngineAudioCommand::from_sfx_port_value(bank, value));
+            }
+            self.ledger_nmi_audio_parts_cycles = music_cycles + header.ambient_master_cycles;
+            clocked_header = Some(header);
+            if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                eprintln!("native-nmi-prefix pc={:02x}:{:04x} clock={} raster={:?}",
+                    context.bank, context.pc, entry_clock.clock_master_cycles(),
+                    entry_clock.raster_position());
+            }
+            updates_clock = Some(entry_clock);
+            context
+        });
         self.stash_preemptive_poly_thread_nmi_swap();
         let trace_nmi = crate::debug_env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some()
             && debug_hardware_frame_matches(self.frame_ctr_dbg);
         self.ppu.forced_blank_from_scanline = None;
         self.ppu.retain_active_display_history = false;
-        let forced_blank_at_entry = self.ppu.forced_blank;
         let mut prior_active_display_blanking = NmiActiveDisplayBlanking::default();
         if trace_nmi {
             let frame = self.game_state.frame;
@@ -437,15 +547,15 @@ impl ZeldaState {
                 self.nmi_active_display_blanking_candidate
                     .suffix_start_scanline,
                 self.live_link_dma_source(LinkDmaSourceSlot::AnimatedTileUpper),
-                self.ram[FIRST_BOOT_NMI_DMA_SOURCE_BYTE_0],
-                self.ram[FIRST_BOOT_NMI_DMA_SOURCE_BYTE_1],
-                self.ram[FIRST_BOOT_NMI_DMA_SOURCE_BYTE_2],
+                self.ram[0],
+                self.ram[1],
+                self.ram[2],
                 self.ppu.vram.get(0x40b0).copied().unwrap_or(0),
             );
         }
         let joypad_already_sampled = std::mem::take(&mut self.joypad_sampled_before_main);
         let audio_already_processed = std::mem::take(&mut self.audio_nmi_processed_before_main);
-        if !audio_already_processed {
+        if !audio_already_processed && clocked_header.is_none() {
             self.interrupt_nmi_audio_parts();
         }
         // The audio-port blocks ($00:80C9-$00:811B) belong to this NMI even
@@ -459,12 +569,14 @@ impl ZeldaState {
         // `JSR NMI_ReadJoypads`): 130, JSR costs only; both callees charge
         // themselves when annotated. The joypad JSR is charged here even when
         // the engine sampled the joypad before main (the ROM reads it here).
-        crate::cycle_ledger::charge(if self.game_state.display.nmi_update_is_latched() {
+        let calls_updates = clocked_header.map_or_else(
+            || !self.game_state.display.nmi_update_is_latched(), |header| header.calls_updates);
+        crate::cycle_ledger::charge(if !calls_updates {
             310
         } else {
             304 + 130
         });
-        if !self.game_state.display.nmi_update_is_latched() {
+        if calls_updates {
             let bg_vram_load_mode = self.game_state.display.bg_vram_load_mode;
             let stripe_work = match bg_vram_load_mode {
                 1 => stripe_upload_work(self.vram_upload_buffer_remaining()),
@@ -512,8 +624,36 @@ impl ZeldaState {
             self.nmi_forced_blank_scanlines_pending = self
                 .nmi_forced_blank_scanlines_pending
                 .max(blanking.prefix_scanlines);
-            self.latch_nmi_update();
-            self.nmi_do_updates_from(oam_dma_source, defer_bg_vram_upload, animated_bg_operands);
+            if clocked_header.is_none() {
+                self.latch_nmi_update();
+            }
+            if let Some(context) = context.as_deref_mut() {
+                let _updates_scope = crate::cycle_ledger::routine(0x00_89e0);
+                let clock = updates_clock.as_deref_mut().expect("native NMI retains its clock");
+                let core = context.core_graphics_updates(clock,
+                    |clock, access| self.native_nmi_core_access(clock, access));
+                if core.enabled {
+                    self.record_completed_link_obj_dma_for_display_boundary(
+                        LinkDmaSources::load_from_ram(&self.ram), GraphicsDmaGeneration::LiveAfterMain);
+                    self.link_obj_dma_completed_this_frame = true;
+                }
+                if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                    eprintln!("native-nmi-core pc={:02x}:{:04x} clock={} raster={:?}",
+                        context.bank, context.pc, clock.clock_master_cycles(), clock.raster_position());
+                }
+                let maintenance = context.display_maintenance_updates(clock,
+                    |clock, access| self.native_nmi_core_access(clock, access));
+                let return_cycles = context.initial_updates_return(clock,
+                    |clock, access| self.native_nmi_core_access(clock, access));
+                crate::cycle_ledger::charge(core.cpu_master_cycles()
+                    + maintenance.cpu_master_cycles() + return_cycles);
+                if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                    eprintln!("native-nmi-updates-return pc={:02x}:{:04x} clock={} raster={:?}",
+                        context.bank, context.pc, clock.clock_master_cycles(), clock.raster_position());
+                }
+            } else {
+                self.nmi_do_updates_from(oam_dma_source, defer_bg_vram_upload, animated_bg_operands);
+            }
             // NMI_ReadJoypads $00:83D1 (JSR target, m8 x8, data bank $00),
             // one straight block $00:83D1-83F8: STZ $4016, the $4218/$4219
             // reads, the edge filters and RTS. 502: the $4218/$4219 reads are
@@ -523,12 +663,26 @@ impl ZeldaState {
             // before main on this host the read's cost still belongs to this
             // handler, like the audio-port blocks above.
             crate::cycle_ledger::charge_routine(0x00_83d1, 502);
-            if !joypad_already_sampled {
+            if let Some(context) = context.as_deref_mut() {
+                assert!(!joypad_already_sampled,
+                    "clocked startup NMI owns the unsampled input history");
+                let clock = updates_clock.as_deref_mut().expect("native NMI retains its clock");
+                // This startup caller reaches the routine after the hardware
+                // automatic poll has completed. The host input packet uses
+                // serial order; JOY1L/H expose the reversed polled word.
+                let polled = input.reverse_bits();
+                context.read_joypads_clocked(clock,
+                    |_, access| self.native_nmi_joypad_access(polled, access));
+                if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                    eprintln!("native-nmi-joypads-return pc={:02x}:{:04x} clock={} raster={:?}",
+                        context.bank, context.pc, clock.clock_master_cycles(), clock.raster_position());
+                }
+            } else if !joypad_already_sampled {
                 self.nmi_read_joypads(input);
             }
         }
 
-        if self.game_state.display.nmi_thread_active {
+        if self.game_state.display.nmi_thread_active && context.is_none() {
             let frame = self.game_state.frame;
             let timed_intro_poly_worker = self.rom_startup_timing()
                 && rom_intro_poly_thread_is_active(frame.main_module, frame.submodule);
@@ -587,6 +741,7 @@ impl ZeldaState {
         //   `BNE $008200` on the BG mode is taken (+6) unless mode 7, which
         //   instead runs $00:81DC-$00:81FD (368)) + $00:8200 (48 + $00:8205-
         //   $00:8218 (212) when $128 is set, else 54) + $00:821B-$00:822C (354).
+        if context.is_none() || !self.game_state.display.nmi_thread_active {
         crate::cycle_ledger::charge(if self.game_state.display.nmi_thread_active {
             48 + 24 + 2012
         } else {
@@ -596,7 +751,34 @@ impl ZeldaState {
                 + if irq { 48 + 212 } else { 54 }
                 + 354
         });
-        if !thread_holds_registers {
+        }
+        if let Some(context) = context.as_deref_mut() {
+            assert!(!thread_holds_registers, "native startup tail owns its live register publication");
+            let clock = updates_clock.as_deref_mut().expect("native NMI retains its clock");
+            if self.game_state.display.nmi_thread_active {
+                self.native_poly_nmi_tail(context,clock,thread_programming.expect("threaded NMI retains its IRQ owner"));
+            } else {
+                let programming=context.initial_register_tail(clock,
+                    |at, access| {
+                        use crate::cycle_models::nmi_stack::NmiTailAccess as Access;
+                        match access {
+                            // LDA absolute leaves $42 on open bus; bit 7 is the
+                            // scheduler's line at this bus timestamp, acknowledged here.
+                            Access::ReadByte(0x4211)=>(u16::from(irq_deadline.take().is_some_and(|deadline|at>=deadline))<<7)|0x42,
+                            Access::WriteByte(0x4200|0x4207..=0x420a,_)=>0,
+                            _=>self.native_nmi_tail_access(access),
+                        }
+                    });
+                if let Some(programming)=programming {
+                    *thread_programming.expect("ordinary NMI retains its IRQ owner")=programming;
+                }
+            }
+            self.record_completed_ppu_registers_for_display_boundary();
+            if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                eprintln!("native-nmi-rti pc={:02x}:{:04x} clock={} raster={:?}",
+                    context.bank, context.pc, clock.clock_master_cycles(), clock.raster_position());
+            }
+        } else if !thread_holds_registers {
             self.write_ppu_registers();
         }
         if !forced_blank_at_entry && self.ppu.forced_blank {
@@ -637,7 +819,470 @@ impl ZeldaState {
         self.close_display_boundary_dma_receipts();
     }
 
-    pub(super) fn interrupt_nmi_audio_parts(&mut self) {
+    fn native_poly_nmi_tail(&mut self,
+        context: &mut crate::cycle_models::nmi_stack::NativeNmiContext,
+        clock: &mut snes::CpuMasterTimeline,
+        programming: &mut crate::cycle_models::poly_interrupt::PolyIrqProgramming) {
+        use crate::cycle_models::{intro_clear::Access,poly_interrupt::PolyInterrupt};
+        assert!(self.poly_completed_upload.is_none(),"native poly tail requires live buffer ownership");
+        let mut dma=std::mem::take(&mut self.dma);
+        let mut work=PolyInterrupt::nmi();
+        while let Some(cycles)=work.step(context,clock,&mut dma,|at,access| {
+            match access {
+                Access::Read(address,width) => {
+                    let offset=if (0x7e0000..0x800000).contains(&address) {
+                        address as usize-0x7e0000
+                    } else {assert!(address<0x2000);address as usize};
+                    if width==1 {u16::from(self.ram[offset])} else {read_word_from_slice(&self.ram,offset)}
+                }
+                Access::Write(address,value,width) => {
+                    match address {
+                        0x1f0a => {assert_eq!(width,2);self.set_nmi_thread_stack_pointer(value);}
+                        0x1f0c => {assert_eq!((value,width),(0,1));self.clear_pending_polyhedral_update();}
+                        0..=0x1fff => {
+                            self.ram[address as usize..address as usize+usize::from(width)]
+                                .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                        }
+                        0x2100..=0x213f => {assert_eq!(width,1);self.zelda_ppu_write(address,value as u8);}
+                        0x4209 => programming.vertical_timer=(programming.vertical_timer&0x100)|(value&255),
+                        0x420a => programming.vertical_timer=(programming.vertical_timer&255)|((value&1)<<8),
+                        0x4200 => {programming.nmitimen=value as u8;programming.enabled_at=at;}
+                        0x420b => {
+                            assert_eq!((value,width),(1,1));
+                            self.account_nmi_dma_transfer(0x800);
+                            self.mark_effective_dma_vram_range(0x5800..0x5c00);
+                        }
+                        0x420c => assert_eq!(value,0,"native poly tail has no HDMA owner"),
+                        // The retained model owns the DMA register writes.
+                        0x4300..=0x4306 => {},
+                        _=>panic!("unowned poly NMI bus store {address:06x}"),
+                    }
+                    0
+                }
+                Access::Vblank {..}=>panic!("poly NMI crossed another NMI deadline"),
+            }
+        }) {crate::cycle_ledger::charge(cycles);}
+        programming.irq_deadline=work.irq_deadline();
+        self.dma=dma;
+    }
+
+    pub(super) fn run_native_poly_buffer_clear(&mut self,
+        context:&mut crate::cycle_models::nmi_stack::NativeNmiContext,
+        clock:&mut snes::CpuMasterTimeline) {
+        use crate::cycle_models::{intro_clear::Access,poly_interrupt::PolyWait,poly_buffer_clear::{self,PolyBufferClear}};
+        assert_ne!(self.ram[crate::game_state::constants::INTRO_DID_RUN_STEP],0,"poly clear requires a live render request");
+        assert_eq!(self.ram[crate::game_state::constants::NMI_FLAG_UPDATE_POLYHEDRAL],0,"poly clear cannot replace a pending upload");
+        let mut wait=PolyWait::default();
+        let mut bus=|_:u64,access|match access {
+            Access::Read(address,width)=>{
+                if let Some(value)=poly_buffer_clear::table_byte(address) {assert_eq!(width,1);return u16::from(value);}
+                let offset=if (0x7ee800..0x7ef000).contains(&address) {address as usize-0x7e0000}
+                    else {assert!(address<0x2000);address as usize};
+                if width==1 {u16::from(self.ram[offset])}else{read_word_from_slice(&self.ram,offset)}
+            }
+            Access::Write(address,value,width)=>{
+                let offset=if (0x7ee800..0x7ef000).contains(&address) {address as usize-0x7e0000}
+                    else {assert!((0x100..0x2000).contains(&address));address as usize};
+                self.ram[offset..offset+usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);0
+            }
+            Access::Vblank {..}=>panic!("poly clear needs an NMI continuation"),
+        };
+        while !wait.ready() {crate::cycle_ledger::charge(wait.step(context,clock,&mut bus));}
+        let mut clear=PolyBufferClear::default();
+        while let Some(cycles)=clear.step(context,clock,&mut bus) {crate::cycle_ledger::charge(cycles);}
+    }
+
+    /// Carry an idle worker's live LDA/branch through V-IRQ, then restore main.
+    /// The cold initializer requests rendering, so it cannot use this path.
+    /// Later rendering and another NMI require their own retained owners.
+    pub(super) fn run_native_poly_idle_to_irq(&mut self,
+        context:&mut crate::cycle_models::nmi_stack::NativeNmiContext,
+        clock:&mut snes::CpuMasterTimeline,
+        programming:crate::cycle_models::poly_interrupt::PolyIrqProgramming) {
+        use crate::cycle_models::{intro_clear::Access,poly_interrupt::PolyWait};
+        assert_eq!(programming.nmitimen,0xa1);
+        let deadline=programming.irq_deadline.expect("enabled poly V-IRQ has a hardware deadline");
+        let mut wait=PolyWait::default();
+        loop {
+            let cycles=wait.step(context,clock,|_,access| match access {
+                Access::Read(address,1)=>{assert!(matches!(address,0x1f00|0x1f0c));u16::from(self.ram[address as usize])}
+                Access::Vblank {..}=>panic!("poly idle crossed NMI before its IRQ return"),
+                _=>unreachable!("poly wait only reads its live flags"),
+            });
+            crate::cycle_ledger::charge(cycles);
+            if clock.clock_master_cycles()>=deadline && context.p&4==0 {break;}
+            assert!(!wait.ready(),"poly render work requires its native continuation");
+        }
+        assert!(self.accept_native_poly_irq(context,clock,deadline).is_none());
+    }
+
+    pub(super) fn run_native_poly_worker_to_irq(&mut self,
+        work:&mut crate::cycle_models::poly_worker::PolyWorker,
+        context:&mut crate::cycle_models::nmi_stack::NativeNmiContext,
+        clock:&mut snes::CpuMasterTimeline,
+        programming:crate::cycle_models::poly_interrupt::PolyIrqProgramming) {
+        assert_eq!(programming.nmitimen,0xa1);
+        let deadline=programming.irq_deadline.expect("enabled poly V-IRQ has a hardware deadline");
+        // The entry boundary is the handler's RTI, which applies P immediately.
+        let mut irq_masked=context.p&4!=0;
+        while clock.clock_master_cycles()<deadline || irq_masked {
+            let retired=self.step_native_poly_worker(work,context,clock);
+            crate::cycle_ledger::charge(retired.master_cycles);
+            irq_masked=retired.irq_masked;
+        }
+        assert!(self.accept_native_poly_irq(context,clock,deadline).is_none());
+    }
+
+    pub(super) fn accept_native_poly_irq(&mut self,
+        context:&mut crate::cycle_models::nmi_stack::NativeNmiContext,
+        clock:&mut snes::CpuMasterTimeline,deadline:u64) -> Option<u8> {
+        use crate::cycle_models::{intro_clear::Access,poly_interrupt::PolyInterrupt};
+        context.accept_irq_clocked(&mut self.ram,clock);
+        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+            eprintln!("native-poly-irq-enter clock={} raster={:?} deadline={deadline} context={context:?}",
+                clock.clock_master_cycles(),clock.raster_position());
+        }
+        crate::cycle_ledger::charge_routine(0x0082d8,62);
+        let mut dma=std::mem::take(&mut self.dma);
+        let mut irq=PolyInterrupt::irq();
+        let mut irq_pending=true;
+        let mut nmitimen=None;
+        while let Some(cycles)=irq.step_with_beam(context,clock,&mut dma,|_,access,beam| match access {
+            Access::Read(0x4211,1)=>{
+                // TIMEUP preserves the low seven bits from LDA absolute's
+                // last operand fetch. Reading it acknowledges the live line.
+                let value=(u16::from(irq_pending)<<7)|((0x4211u16>>8)&0x7f);
+                irq_pending=false;value
+            }
+            Access::Read(0x4212,1)=>{
+                let beam=beam.expect("HVBJOY requires the processed bus-time beam");
+                // BIT $4212 leaves $42 on open bus from its absolute operand.
+                2|u16::from((225..228).contains(&beam.scanline))
+                    |(u16::from(beam.cycles<4||beam.cycles>=1096)<<6)
+                    |(u16::from(beam.scanline>=225)<<7)
+            }
+            Access::Read(address,width)=>{
+                assert!(address<0x2000);
+                if width==1 {u16::from(self.ram[address as usize])}
+                else {read_word_from_slice(&self.ram,address as usize)}
+            }
+            Access::Write(0x1f0a,value,2)=>{self.set_nmi_thread_stack_pointer(value);0}
+            Access::Write(0x128,value,1)=>{self.set_irq_control_flag(value as u8);0}
+            Access::Write(address @ (0x2111|0x2112),value,1)=>{
+                self.zelda_ppu_write(address,value as u8);0
+            }
+            Access::Write(0x4200,value,1)=>{nmitimen=Some(value as u8);0}
+            Access::Write(address,value,width)=>{
+                assert!(address<0x2000);
+                self.ram[address as usize..address as usize+usize::from(width)]
+                    .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);0
+            }
+            Access::Vblank {..}=>panic!("poly IRQ crossed NMI before its return"),
+        }) {crate::cycle_ledger::charge_routine(0x0082d8,cycles);}
+        assert!(!irq_pending,"poly IRQ did not acknowledge its line");
+        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+            eprintln!("native-poly-irq-return clock={} raster={:?} context={context:?}",
+                clock.clock_master_cycles(),clock.raster_position());
+        }
+        self.dma=dma;
+        nmitimen
+    }
+
+    fn native_nmi_tail_access(&mut self,
+        access: crate::cycle_models::nmi_stack::NmiTailAccess) -> u16 {
+        use crate::cycle_models::nmi_stack::NmiTailAccess as Access;
+        match access {
+            Access::ReadByte(address) => u16::from(self.ram[usize::from(address)]),
+            Access::ReadWord(address) => read_word_from_slice(&self.ram, usize::from(address)),
+            Access::WriteByte(0x420c, value) => {
+                assert_eq!(value, 0, "native startup tail cannot start HDMA");
+                for channel in &mut self.dma.channel { channel.hdma_active = false; }
+                0
+            }
+            Access::WriteByte(address @ 0x2100..=0x213f, value) => {
+                self.zelda_ppu_write(u32::from(address), value); 0
+            }
+            _ => panic!("unsupported native NMI tail access {access:?}"),
+        }
+    }
+
+    fn native_nmi_joypad_access(&mut self, polled: u16,
+        access: crate::cycle_models::nmi_stack::NmiJoypadAccess) -> u16 {
+        use crate::cycle_models::nmi_stack::NmiJoypadAccess as Access;
+        match access {
+            Access::ReadByte(0x4218) => polled & 0xff,
+            Access::ReadByte(0x4219) => polled >> 8,
+            Access::ReadByte(address) => u16::from(self.ram[usize::from(address)]),
+            Access::ReadWord(address) => read_word_from_slice(&self.ram, usize::from(address)),
+            Access::WriteByte(address, value) => {
+                match address {
+                    0 | 1 => self.ram[usize::from(address)] = value,
+                    0xf0 => self.follower_link_state_mut().set_joypad1h_last(value),
+                    0xf2 => self.follower_link_state_mut().set_joypad1l_last(value),
+                    0xf4 => self.follower_link_state_mut().set_filtered_joypad_h(value),
+                    0xf6 => self.follower_link_state_mut().set_filtered_joypad_l(value),
+                    0xf8 => self.follower_link_state_mut().set_joypad1h_last2(value),
+                    0xfa => self.follower_link_state_mut().set_joypad1l_last2(value),
+                    // Automatic polling has already lowered the serial latch.
+                    // STZ does not change the completed JOY1 register word.
+                    0x4016 => assert_eq!(value, 0),
+                    _ => panic!("unsupported native joypad write {address:04x}"),
+                }
+                0
+            }
+            Access::WriteWord(address, value) => {
+                assert!((1..0x1fff).contains(&address));
+                self.ram[usize::from(address)..usize::from(address)+2].copy_from_slice(&value.to_le_bytes());
+                0
+            }
+        }
+    }
+
+    fn native_nmi_core_access(
+        &mut self,
+        clock: &mut snes::CpuMasterTimeline,
+        access: crate::cycle_models::nmi_updates::CoreAccess,
+    ) -> u16 {
+        use crate::cycle_models::nmi_updates::CoreAccess;
+        match access {
+            CoreAccess::Stripe(access) => self.native_nmi_stripe_access(clock, access),
+            CoreAccess::ReadByte(address) => u16::from(self.ram[usize::from(address)]),
+            CoreAccess::ReadWord(address) => read_word_from_slice(&self.ram, usize::from(address)),
+            CoreAccess::WriteByte(address, value) => {
+                match address {
+                    0x17 => { assert_eq!(value, 0); self.take_pending_nmi_subroutine(); }
+                    0x2100..=0x213f => self.zelda_ppu_write(u32::from(address), value),
+                    0x4300..=0x437f => self.dma.write_register(address, value),
+                    _ => panic!("unsupported native NMI core write {address:04x}"),
+                }
+                0
+            }
+            CoreAccess::WriteWord(0x15, 0) => {
+                self.clear_cgram_update_flag(); self.clear_hud_update_flag(); 0
+            }
+            CoreAccess::WriteWord(address, value) => panic!("unsupported native NMI word store {address:04x}={value:04x}"),
+            CoreAccess::Dma(mask) | CoreAccess::AnimatedDma(mask) => {
+                self.native_nmi_core_dma(clock, mask, matches!(access, CoreAccess::AnimatedDma(_)));
+                0
+            }
+            CoreAccess::MaintenanceDma(mask, kind) => {
+                self.native_nmi_maintenance_dma(clock, mask, kind); 0
+            }
+        }
+    }
+
+    fn native_nmi_stripe_access(&mut self, clock: &mut snes::CpuMasterTimeline,
+        access: crate::cycle_models::nmi_stripes::Access) -> u16 {
+        use crate::cycle_models::nmi_stripes::Access;
+        match access {
+            Access::Read(address, width) => {
+                let low = native_stripe_source_byte(&self.ram, self.assets.as_ref(), address);
+                if width == 1 { u16::from(low) } else {
+                    u16::from_le_bytes([low, native_stripe_source_byte(&self.ram, self.assets.as_ref(), address+1)])
+                }
+            }
+            Access::Write(address, value, width) => {
+                if address < 0x2000 {
+                    if address == 0x14 {
+                        assert_eq!((value,width),(0,1));
+                        self.set_bg_vram_load_mode(0);
+                    } else {
+                        self.ram[address as usize..address as usize+usize::from(width)]
+                            .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                    }
+                } else {
+                    assert_eq!(width,1);
+                    match address {
+                        0x2100..=0x213f => self.zelda_ppu_write(address,value as u8),
+                        0x4300..=0x437f => self.dma.write_register(address as u16,value as u8),
+                        _ => panic!("unowned stripe store {address:06x}"),
+                    }
+                }
+                0
+            }
+            Access::Dma(mask) => {
+                assert!(self.ppu.forced_blank);
+                let bytes = self.dma.channel.iter().enumerate().filter(|(i,_)|mask&(1<<i)!=0)
+                    .map(|(_,c)|if c.size==0 {65536}else{usize::from(c.size)}).sum();
+                self.account_nmi_dma_run(mask.count_ones(),bytes);
+                let ram=&self.ram;let assets=self.assets.as_ref();let ppu=&mut self.ppu;
+                let mut words=Vec::new();
+                self.dma.run_synchronous_forward_ppu(clock,mask,|_,_,address,target| {
+                    assert!(matches!(target,0x18|0x19));
+                    words.push(usize::from(ppu.vram_pointer&0x7fff));
+                    ppu.write(target,native_stripe_source_byte(ram,assets,address));
+                });
+                words.sort_unstable();words.dedup();
+                for word in words {self.mark_effective_dma_vram_word(word);}
+                0
+            }
+        }
+    }
+
+    fn native_nmi_maintenance_dma(&mut self, clock: &mut snes::CpuMasterTimeline,
+        mask: u8, kind: crate::cycle_models::nmi_updates::MaintenanceKind) {
+        use crate::cycle_models::nmi_updates::MaintenanceKind;
+        assert!(self.ppu.forced_blank);
+        let mut bytes = 0;
+        for (i, c) in self.dma.channel.iter().enumerate() {
+            if mask & (1 << i) == 0 { continue; }
+            assert!(!c.fixed && !c.decrement);
+            assert!(matches!((c.mode,c.b_adr),(0,0x04)|(0,0x22)|(1,0x18)));
+            bytes += if c.size == 0 { 65536 } else { usize::from(c.size) };
+        }
+        if kind == MaintenanceKind::Palette && self.game_state.frame.main_module != 0
+            && self.cgram_upload_latch.is_none() {
+            self.cgram_upload_latch = Some(self.ppu.cgram.to_vec());
+        }
+        self.account_nmi_dma_run(mask.count_ones(), bytes);
+        let ram = &self.ram;
+        let ppu = &mut self.ppu;
+        let mut written_words = Vec::new();
+        let mut touched_oam = false; let mut touched_cgram = false;
+        self.dma.run_synchronous_forward_ppu(clock, mask, |_, _, address, target| {
+            let bank = address >> 16; let low = address as u16;
+            let value = if matches!(bank,0x7e|0x7f) { ram[(address-0x7e0000) as usize] }
+                else { assert!(bank & 0x40 == 0 && low < 0x2000); ram[usize::from(low)] };
+            match target {
+                0x18|0x19 => written_words.push(usize::from(ppu.vram_pointer & 0x7fff)),
+                0x04 => touched_oam = true,
+                0x22 => touched_cgram = true,
+                _ => unreachable!("validated maintenance DMA destination"),
+            }
+            ppu.write(target,value);
+        });
+        written_words.sort_unstable();
+        written_words.dedup();
+        for &word in &written_words { self.mark_effective_dma_vram_word(word); }
+        if kind == MaintenanceKind::BackgroundCharacters {
+            let mut tiles: Vec<_> = written_words.into_iter().filter(|&w| w < 0x4000)
+                .map(|w| w / 16).collect();
+            tiles.dedup();
+            for tile in tiles {
+                if self.game_state.world.location.indoor_flag() != 0 {
+                    let start = tile * 16;
+                    let hash = crate::chr_source::chr_content_hash32(&self.ppu.vram[start..start + 16]);
+                    self.vram_chr_source.record_tile_content_hash(tile,
+                        crate::chr_source::CHR_KIND_BG_STREAM, hash);
+                } else {
+                    self.tag_stream_generic(tile * 16, 1);
+                }
+            }
+        }
+        if touched_cgram {
+            if kind == MaintenanceKind::Palette { self.commit_palette_provenance_cgram(); }
+            self.record_completed_cgram_dma_for_display_boundary();
+        }
+        if touched_oam {
+            if kind == MaintenanceKind::Oam { self.record_oam_dma_completion(); }
+            else {
+                self.resident_oam_dma = Some(self.ppu.oam.clone());
+                self.record_completed_oam_dma_for_display_boundary();
+            }
+        }
+    }
+
+    fn native_nmi_core_dma(&mut self, clock: &mut snes::CpuMasterTimeline, mask: u8, animated: bool) {
+        assert!(self.ppu.forced_blank, "native graphics DMA needs owned PPU blanking");
+        let channels = self.dma.channel;
+        let mut bytes = 0;
+        for (i, channel) in channels.iter().enumerate() {
+            if mask & (1 << i) != 0 {
+                assert_eq!((channel.mode, channel.b_adr, channel.fixed, channel.decrement),
+                    (1, 0x18, false, false));
+                bytes += if channel.size == 0 { 65536 } else { usize::from(channel.size) };
+            }
+        }
+        self.account_nmi_dma_run(mask.count_ones(), bytes);
+        let mut segments = Vec::new();
+        let mut previous = None;
+        let ram = &self.ram;
+        let graphics = self.assets.as_ref().and_then(|assets| assets.asset(57));
+        let ppu = &mut self.ppu;
+        self.dma.run_synchronous_forward_ppu(clock, mask, |_, channel, address, target| {
+            if previous != Some(channel) {
+                segments.push((usize::from(ppu.vram_pointer & 0x7fff), address,
+                    usize::from(channels[usize::from(channel)].size)));
+                previous = Some(channel);
+            }
+            let bank = address >> 16;
+            let low = address as u16;
+            let value = match bank {
+                0x7e | 0x7f => ram[(address - 0x7e0000) as usize],
+                _ if bank & 0x40 == 0 && low < 0x2000 => ram[usize::from(low)],
+                0x10 if low >= 0x8000 => graphics.expect("native Link DMA requires its graphics asset")[usize::from(low - 0x8000)],
+                _ => panic!("unsupported native core DMA source {address:06x}"),
+            };
+            ppu.write(target, value);
+        });
+        // Receipts and CHR identities describe transfers just performed. They
+        // never copy pixels again or substitute captured main-thread operands.
+        for (dst, source, bytes) in segments {
+            let words = bytes / 2;
+            self.mark_effective_dma_vram_range(dst..dst + words);
+            if animated {
+                if dst == 0x3c00 && source >= 0x7ea680 {
+                    self.vram_chr_source.record_tiles_from(dst, words.div_ceil(16),
+                        crate::chr_source::CHR_KIND_BG_ANIM, self.animated_tile_pack,
+                        ((source - 0x7ea680) / 32) as u16);
+                } else if dst != 0x3c00 {
+                    for i in 0..words / 16 {
+                        let start = dst + i * 16;
+                        let hash = crate::chr_source::chr_content_hash32(&self.ppu.vram[start..start + 16]);
+                        self.vram_chr_source.record_tile_content_hash(start / 16,
+                            crate::chr_source::CHR_KIND_BG_STREAM, hash);
+                    }
+                }
+            } else {
+                let low = source as u16;
+                let source_tile = if source >> 16 == 0x10 && low >= 0x8000 {
+                    (low - 0x8000) / 32
+                } else { crate::chr_source::CHR_LINK_SRC_RAM_FLAG | (low / 32) };
+                let pack = self.game_state.player.follower_link.link_dma_graphics_index_word() >> 1;
+                self.vram_chr_source.record_tiles_from(dst, words.div_ceil(16),
+                    crate::chr_source::CHR_KIND_LINK, pack, source_tile);
+            }
+        }
+    }
+
+    fn native_nmi_header_access(
+        &mut self, at: u64, access: crate::cycle_models::nmi_stack::NmiHeaderAccess,
+    ) -> u8 {
+        use crate::cycle_models::nmi_stack::NmiHeaderAccess::*;
+        match access {
+            Read(address @ 0x2140..=0x2143) => self.native_nmi_port_at(at, (address - 0x2140) as u8, None),
+            Write(address @ 0x2140..=0x2143, value) => self.native_nmi_port_at(at, (address - 0x2140) as u8, Some(value)),
+            Read(address @ (0x12 | 0x12c..=0x12f | 0x131 | 0x133)) => self.ram[usize::from(address)],
+            Write(0x12, value) => { assert_eq!(value, 1); self.latch_nmi_update(); 0 }
+            Write(0x12c,value) => {assert_eq!(value,0);self.set_music_control(value);0}
+            Write(0x130,value) => {self.set_current_music_control(value);0}
+            Write(0x133,value) => {self.set_last_music_control(value);0}
+            Write(0x12d, value) => { assert_eq!(value, 0); self.clear_ambient_sound_effect(); 0 }
+            Write(0x12e, value) => { assert_eq!(value, 0); self.clear_sound_effect_1(); 0 }
+            Write(0x12f, value) => { assert_eq!(value, 0); self.clear_sound_effect_2(); 0 }
+            Write(0x131, value) => {
+                assert_eq!(value, self.game_state.system_signals.ambient_sound_effect());
+                self.save_ambient_sound_effect_as_last();
+                0
+            }
+            Write(0x2100, value) => { self.zelda_ppu_write(0x2100, value); 0 }
+            Write(0x420c, value) => {
+                for (i, channel) in self.dma.channel.iter_mut().enumerate() {
+                    channel.hdma_active = value & (1 << i) != 0;
+                }
+                0
+            }
+            WriteWord(address, value) => {
+                assert!(address < 0x1fff, "native NMI stack escaped low WRAM");
+                self.ram[usize::from(address) + 1] = (value >> 8) as u8;
+                self.ram[usize::from(address)] = value as u8;
+                0
+            }
+            _ => panic!("unsupported native NMI header access {access:?}"),
+        }
+    }
+
+    fn trace_nmi_audio_inputs(&self) {
         if crate::debug_env::var("ZELDA3_DEBUG_AUDIO_NMI_FRAME")
             .ok()
             .and_then(|value| value.parse::<u32>().ok())
@@ -658,6 +1303,10 @@ impl ZeldaState {
                 self.game_state.system_signals.sound_effect_2(),
             );
         }
+    }
+
+    pub(super) fn interrupt_nmi_audio_parts(&mut self) {
+        self.trace_nmi_audio_inputs();
         let music_control = self.game_state.system_signals.music_control();
         // Cycle ledger, Interrupt_NMI music port ($00:80C9-$00:8100):
         // $00:80C9-$00:80DF is 366 (system-bank `LDA $4210`); `BNE $0080EE`
@@ -1374,6 +2023,10 @@ impl ZeldaState {
         for i in 0..self.ppu.oam.len() {
             self.ppu.oam[i] = read_word_from_slice(source, i * 2);
         }
+        self.record_oam_dma_completion();
+    }
+
+    fn record_oam_dma_completion(&mut self) {
         self.resident_oam_dma = Some(self.ppu.oam.clone());
         self.record_completed_oam_dma_for_display_boundary();
         // OAM-law clauses: the real transfer carries the software shadow as
@@ -1990,8 +2643,10 @@ impl ZeldaState {
         source_addr: usize,
         len: usize,
     ) {
-        if self.is_first_boot_nmi_dma_source(source_addr, len) {
-            self.copy_bytes_to_vram(dst_word, &FIRST_BOOT_NMI_DMA_SOURCE, 0, len);
+        // Link graphics DMA uses bank $10. Its low $0000..$1FFF window
+        // mirrors WRAM; only $8000 and above comes from the ROM asset.
+        if source_addr < 0x2000 && len <= 0x2000 - source_addr {
+            self.copy_ram_bytes_to_vram_absolute(dst_word, source_addr, len);
             return;
         }
         if source_addr < 0x8000 {
@@ -2006,27 +2661,7 @@ impl ZeldaState {
         source_addr: usize,
         len: usize,
     ) {
-        // At the first boot NMI, ROM $008aa2 DMA uploads this exact
-        // $7e:0000 source through the startup Link channels. Snes9x records
-        // the bytes as
-        // `00 80 00 ... 00 00 01 80 00 01 ...`. Some of those zero-page
-        // offsets are represented by dedicated native control fields here
-        // (not direct WRAM), so copying them into `ram` would incorrectly
-        // latch/suppress the NMI. Keep that representation, while making the
-        // hardware-visible DMA source exact at the ROM-equivalent sites.
-        if self.is_first_boot_nmi_dma_source(source_addr, len) {
-            self.copy_bytes_to_vram(dst_word, &FIRST_BOOT_NMI_DMA_SOURCE, 0, len);
-            return;
-        }
         self.copy_ram_bytes_to_vram_absolute(dst_word, source_addr, len);
-    }
-
-    fn is_first_boot_nmi_dma_source(&self, source_addr: usize, len: usize) -> bool {
-        self.rom_startup_timing()
-            && self.game_state.frame.main_module == 0
-            && self.game_state.frame.submodule == 0
-            && source_addr == 0
-            && len <= FIRST_BOOT_NMI_DMA_SOURCE.len()
     }
 
     pub(super) fn copy_ram_bytes_to_vram_absolute(
@@ -2454,8 +3089,8 @@ mod nmi_dma_accounting_tests {
     fn dma_bus_time_follows_the_pinned_core_per_run_and_per_byte_costs() {
         assert_eq!(NmiDmaAccounting::default().master_cycles(), 0);
         // One OAM transfer of 544 bytes: 18 + 8 + 544 x 8.
-        assert_eq!(NmiDmaAccounting { transfers: 1, bytes: 544 }.master_cycles(), 26 + 4_352);
+        assert_eq!(NmiDmaAccounting { runs: 1, channels: 1, bytes: 544 }.master_cycles(), 26 + 4_352);
         // Three transfers: each run and channel completion is paid once.
-        assert_eq!(NmiDmaAccounting { transfers: 3, bytes: 0x7e0 + 0x200 + 0x40 }.master_cycles(), 3 * 26 + (0x7e0 + 0x200 + 0x40) * 8);
+        assert_eq!(NmiDmaAccounting { runs: 3, channels: 3, bytes: 0x7e0 + 0x200 + 0x40 }.master_cycles(), 3 * 26 + (0x7e0 + 0x200 + 0x40) * 8);
     }
 }

@@ -22,9 +22,62 @@ use load_gfx_shared::{
 const LOAD_GFX_FEATURES0_MISC_BUG_FIXES: u32 = 4096;
 const LOAD_GFX_FEATURES0_DIM_FLASHES: u32 = 65536;
 
+pub(super) fn native_tileset_table_byte(address: u32) -> Option<u8> {
+    if let Some(offset)=address.checked_sub(0xdb57).filter(|&n|n<144*4) {
+        Some(SPRITE_TILESETS[offset as usize/4][offset as usize%4])
+    } else if let Some(offset)=address.checked_sub(0xdd97).filter(|&n|n<82*4) {
+        Some(AUX_TILESETS[offset as usize/4][offset as usize%4])
+    } else if let Some(offset)=address.checked_sub(0xe073).filter(|&n|n<37*8) {
+        Some(MAIN_TILESETS[offset as usize/8][offset as usize%8])
+    } else {None}
+}
+
+/// Ordered publication in the two-sheet animated overworld loader. Each
+/// conversion cursor counts 16-bit plane stores, not complete tile rows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum AnimatedOverworldGraphicsProgress {
+    FirstSheet(u16),
+    FirstConversion(u16),
+    SecondSheet(u16),
+    SecondConversion(u16),
+    Returned,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum AnimatedDungeonGraphicsProgress {
+    FirstSheet(u16),
+    FirstConversion(u16),
+    SecondSheet(u16),
+    SecondConversion(u16),
+    Rotation(u16),
+    DestinationPublished,
+    Returned,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct AnimatedDungeonGraphicsContinuation {
+    pub progress: AnimatedDungeonGraphicsProgress,
+    rotation_saved_word: u16,
+}
+
+impl Default for AnimatedDungeonGraphicsContinuation {
+    fn default() -> Self {
+        Self { progress: AnimatedDungeonGraphicsProgress::FirstSheet(0), rotation_saved_word: 0 }
+    }
+}
+
+/// Publication within LoadTransAuxGFX's four background and four sprite
+/// sheets. This cursor owns native decoded bytes across an interrupt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct TransitionAuxGraphicsProgress {
+    pub sheet: u8,
+    pub completed_bytes: u16,
+}
+
 /// Native WRAM publication cursor for one graphics sheet. The bytes come from
 /// the translated decoder; the instruction-priced ROM model only determines
 /// when each store becomes visible to an interrupting CPU read.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 struct GraphicsDecompressionCursor {
     destination: usize,
     bytes: Vec<u8>,
@@ -33,9 +86,956 @@ struct GraphicsDecompressionCursor {
     total_master_cycles: u64,
 }
 
+/// The two story sheets and their caller instructions form one synchronous
+/// game-thread operation. An interrupting caller retains this object and its
+/// own hardware clock; decoded bytes and instruction progress stay native.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub(super) struct StoryGraphicsDecompression {
+    sheets: [GraphicsDecompressionCursor; 2],
+    instructions: Vec<StoryGraphicsInstruction>,
+    next_instruction: usize,
+    elapsed_master_cycles: u64,
+}
+
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+pub(super) struct StoryGraphicsInstruction {
+    pub master_cycles: u32,
+    pub routine: u32,
+}
+
+impl StoryGraphicsDecompression {
+    pub(super) fn is_complete(&self) -> bool {
+        self.next_instruction == self.instructions.len()
+    }
+
+    /// Retire a whole instruction, including its native graphics store. The
+    /// final store does not finish the call: all loop/return work remains in
+    /// `instructions` and must retire before the caller continues.
+    pub(super) fn step(&mut self, ram: &mut [u8]) -> Option<StoryGraphicsInstruction> {
+        let instruction = *self.instructions.get(self.next_instruction)?;
+        self.next_instruction += 1;
+        self.elapsed_master_cycles += u64::from(instruction.master_cycles);
+        for sheet in &mut self.sheets {
+            sheet.publish_through(self.elapsed_master_cycles, ram);
+        }
+        Some(instruction)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) enum TilesetGraphicsPublication {
+    Entered,
+    SpriteSelection { slot: usize, value: u8 },
+    Sheet { index: usize, entry_pc: u32, sheet: u16, completed_bytes: u16 },
+    Returned,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct NativeTilesetGraphicsPublication {
+    sprite_sheets: [usize; 4],
+    operations: Vec<(u32, usize, GraphicsDecompressionCursor)>,
+}
+
 #[cfg(test)]
 mod sprite_decompression_cursor_tests {
     use super::*;
+
+    #[test]
+    fn initialize_tilesets_composes_native_callers_selections_and_callee_returns() {
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let Some((template, rom)) = loaded_graphics_test_inputs() else { return };
+        let mut cases = 0;
+        let mut instructions = 0;
+        let mut stores = 0;
+        let mut pcs = std::collections::BTreeSet::new();
+        for main in 0..37u8 {
+            let mut native = template.clone();
+            for (i, byte) in native.ram.iter_mut().enumerate() {
+                *byte = (i as u8).wrapping_mul(37).wrapping_add((i >> 8) as u8);
+            }
+            native.ram[0x10] = if main & 1 == 0 {14} else {1};
+            native.ram[0xaa1] = main;
+            native.ram[0xaa2] = main.wrapping_mul(7) % 82;
+            native.ram[0xaa3] = main.wrapping_mul(11) % 144;
+            // This complete-call matrix covers both common branches. The
+            // common callee separately covers all twelve raw sheets from
+            // identical entry stacks, including mirrored-WRAM sheet 2.
+            native.ram[0xaa4] = [0, 1, 5, 11][main as usize % 4];
+            native.ram[0xc2fc..0xc300].copy_from_slice(&[0, 8, 0x5e, 0x5f]);
+            native.ram[0x1fc..0x1ff].copy_from_slice(&[0x35, 0x80, 0]);
+            native.sync_native_game_state_from_ram();
+            native.ppu.vram.fill(0x5a5a);
+            native.ppu.forced_blank = true;
+            let mut atomic = native.clone();
+            let mut work = native.native_initialize_tilesets_work().unwrap();
+            let checkpoint = RomCpuCheckpoint {
+                entry_pc:0xe19b, stop_pc:0x8036, a:0xabcd, x:0x37, y:0x25,
+                sp:0x01fb, dp:0, db:0, carry:true, zero:false, overflow:true, negative:false,
+                interrupt_disable:true, decimal:false, accumulator_is_8_bit:true,
+                index_is_8_bit:true, emulation:false, waiting:false,
+                stack_address:0x01fc, stack_bytes:&[0x35,0x80,0],
+            };
+            let mut run = RomCpuTimingRun::new(&rom, &native.ram, &native.sram,
+                &native.ppu, &snes::DmaState::default(), [0;4], checkpoint).unwrap();
+            run.enable_cpu_write_trace();
+            let mut expected = native.ram.clone();
+            let mut total = 0;
+            while !run.is_complete() {
+                let pc = run.pc();
+                let cycles = run.step().master_cycles;
+                let instruction = work.step(&native.ram).expect("native initializer returned early");
+                work.roundtrip_progress();
+                assert_eq!(instruction.master_cycles, cycles, "main={main} pc={pc:06x} elapsed={total}");
+                if let Some(native_pc) = instruction.pc { assert_eq!(native_pc, pc); }
+                native.retire_tileset_instruction(instruction);
+                for (address, value) in run.take_cpu_wram_writes() {
+                    expected[address] = value;
+                    if address >= 0x6000 {
+                        assert_eq!(native.ram[address], value, "main={main} pc={pc:06x} address={address:05x}");
+                        stores += 1;
+                    }
+                }
+                assert_eq!(&native.ram[..0x10], &expected[..0x10], "caller DP main={main} pc={pc:06x}");
+                assert_eq!(&native.ppu.vram[..], run.vram(), "main={main} pc={pc:06x}");
+                assert_eq!((native.ppu.vram_pointer, native.ppu.vram_increment, native.ppu.vram_increment_on_high),
+                    run.vram_register_state(), "VRAM registers main={main} pc={pc:06x}");
+                if matches!(pc, 0xe1ae | 0xe21e | 0xe28a | 0xe2cf) {
+                    work = bincode::deserialize(&bincode::serialize(&work).unwrap()).unwrap();
+                }
+                pcs.insert(pc);
+                total += u64::from(cycles);
+                instructions += 1;
+            }
+            assert!(work.step(&native.ram).is_none());
+            assert_eq!(&native.ram[0x6000..], &expected[0x6000..]);
+            let before = crate::cycle_ledger::master();
+            atomic.initialize_tilesets();
+            assert_eq!(crate::cycle_ledger::master() - before, total, "atomic call cost");
+            assert_eq!(&atomic.ram[0x6000..], &expected[0x6000..]);
+            assert_eq!(&atomic.ppu.vram[..], run.vram());
+            cases += 1;
+        }
+        eprintln!("native tileset initializer: cases={cases} instructions={instructions} graphics_stores={stores} source_pcs={}", pcs.len());
+    }
+
+    #[test]
+    fn sheet_loader_work_matches_source_instructions_and_live_buffer_publications() {
+        use crate::cycle_models::graphics_load::SheetWork;
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let Some((template, rom)) = loaded_graphics_test_inputs() else { return };
+        let mut cases = 0;
+        let mut instructions = 0;
+        let mut stores = 0;
+        // Every sprite stream, both destination banks used by real callers,
+        // plus all background conversion branches and scratch destinations.
+        let cases_to_check = (0..103).map(|sheet| (true, sheet, 0, 0, 0x7800))
+            .chain((12..108).map(|sheet| (true, sheet, 0, 0, 0x14000)))
+            .chain((0..114).map(|sheet| (false, sheet, if sheet & 1 == 0 {0x1f} else {0x20}, sheet % 8,
+                if sheet % 3 == 0 {0x6000} else {0x14000})))
+            .chain([0x1f, 0x20].into_iter().flat_map(|theme|
+                (0..8).map(move |slot| (false, 0, theme, slot, 0x14000))));
+        for (sprite, sheet, theme, slot, destination) in cases_to_check {
+            let mut native = template.clone();
+            for (i, byte) in native.ram.iter_mut().enumerate() {
+                *byte = (i as u8).wrapping_mul(73).wrapping_add((i >> 8) as u8);
+            }
+            native.ram[2] = 0x7e + (destination >> 16) as u8;
+            native.ram[0xaa1] = theme;
+            native.ram[0x0f] = slot;
+            native.sync_native_game_state_from_ram();
+            native.ppu.vram.fill(0x5a5a);
+            native.ppu.vram_pointer = 0x2000;
+            native.ppu.vram_increment_on_high = true;
+            native.ppu.forced_blank = true;
+            let mut atomic = native.clone();
+            let stream = if sprite { native.sprite_graphics_decompression_stream(sheet as usize).unwrap() }
+                else { native.asset_bytes(65, sheet as usize).unwrap().to_vec() };
+            let mut work = if sprite { SheetWork::sprite(sheet, destination, &stream) }
+                else { SheetWork::background(sheet, destination, &stream, theme, slot) };
+            let checkpoint = RomCpuCheckpoint {
+                entry_pc: if sprite {0xe583} else if destination == 0x14000 {0xe609} else {0xe60d},
+                stop_pc:0x8036, a:0x7e + (destination >> 16) as u16,
+                x:((destination >> 8) & 0xff) as u16, y:u16::from(sheet), sp:0x01fc, dp:0, db:0,
+                carry:true, zero:false, overflow:true, negative:false,
+                interrupt_disable:true, decimal:false, accumulator_is_8_bit:true,
+                index_is_8_bit:true, emulation:false, waiting:false,
+                stack_address:0x01fd, stack_bytes:&[0x35,0x80],
+            };
+            let mut run = RomCpuTimingRun::new(&rom, &native.ram, &native.sram,
+                &native.ppu, &snes::DmaState::default(), [0;4], checkpoint).unwrap();
+            run.enable_cpu_write_trace();
+            let mut expected = native.ram.clone();
+            let mut total = 0;
+            while !run.is_complete() {
+                let pc = run.pc();
+                let cycles = run.step().master_cycles;
+                let step = work.step(&native.ram).expect("native sheet returned before the source");
+                work.roundtrip_progress();
+                assert_eq!(step.master_cycles, cycles,
+                    "sprite={sprite} sheet={sheet:02x} PC={pc:06x} elapsed={total}");
+                if let Some(native_pc) = step.pc { assert_eq!(native_pc, pc); }
+                native.retire_sheet_load_instruction(0x2000, step);
+                for (address, value) in run.take_cpu_wram_writes() {
+                    expected[address] = value;
+                    if address >= 0x6000 {
+                        assert_eq!(native.ram[address], value,
+                            "sprite={sprite} sheet={sheet:02x} PC={pc:06x} write={address:05x}");
+                        stores += 1;
+                    }
+                }
+                // Decompressor private DP temporaries are outside this
+                // work's contract; its native destination and conversion
+                // source pointer are publications of the enclosing loader.
+                assert_eq!(&native.ram[..3], &expected[..3], "pointer PC={pc:06x}");
+                assert_eq!(&native.ppu.vram[..], run.vram(), "sprite={sprite} sheet={sheet:02x} PC={pc:06x}");
+                total += u64::from(cycles);
+                instructions += 1;
+            }
+            assert!(work.step(&native.ram).is_none());
+            assert_eq!(&native.ram[0x6000..], &expected[0x6000..], "all graphics WRAM sheet={sheet:02x}");
+            let before = crate::cycle_ledger::master();
+            if sprite { atomic.load_sprite_graphics(0x2000, sheet as usize, destination); }
+            else { atomic.load_background_graphics(0x2000, sheet as usize, slot as usize, destination); }
+            assert_eq!(crate::cycle_ledger::master() - before, total, "atomic sheet call cost");
+            assert_eq!(&atomic.ram[0x6000..], &expected[0x6000..], "atomic graphics WRAM");
+            assert_eq!(&atomic.ppu.vram[..], run.vram(), "atomic graphics VRAM");
+            // Checkpoint payload carries the actual instructions and native
+            // loaded byte as well as the phase/index cursor.
+            let mut restored: SheetWork = bincode::deserialize(&bincode::serialize(&work).unwrap()).unwrap();
+            assert!(restored.step(&native.ram).is_none());
+            cases += 1;
+        }
+        eprintln!("native sheet loader: cases={cases} instructions={instructions} graphics_stores={stores}");
+    }
+
+    #[test]
+    fn common_sprite_conversion_preserves_inline_and_contiguous_call_boundaries() {
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let Some((template, rom)) = loaded_graphics_test_inputs() else { return };
+        for module in [0, 1, 14, 20] {
+            for pack in 0..12 {
+                let mut native = template.clone();
+                native.ram[0x10] = module;
+                native.ram[0xaa4] = pack;
+                native.ram[0xbd..0xcf].fill(0xa5);
+                // Both implementations receive the same caller stack at
+                // routine entry. Raw sheet 2 wraps into this mirrored RAM.
+                native.ram[0x1fd..0x1ff].copy_from_slice(&[0x35, 0x80]);
+                native.sync_native_game_state_from_ram();
+                native.ppu.vram.fill(0x5a5a);
+                native.ppu.vram_pointer = 0x4400;
+                native.ppu.vram_increment_on_high = true;
+                native.ppu.forced_blank = true;
+                let checkpoint = RomCpuCheckpoint {
+                    entry_pc:0x00_e6b7, stop_pc:0x00_8036,
+                    a:0xabc1, x:0x7b, y:0x23, sp:0x01fc, dp:0, db:0,
+                    carry:true, zero:false, overflow:true, negative:false,
+                    interrupt_disable:true, decimal:false, accumulator_is_8_bit:true,
+                    index_is_8_bit:true, emulation:false, waiting:false,
+                    stack_address:0x01fd, stack_bytes:&[0x35, 0x80],
+                };
+                let mut run = RomCpuTimingRun::new(&rom, &native.ram, &native.sram,
+                    &native.ppu, &snes::DmaState::default(), [0;4], checkpoint).unwrap();
+                let mut expected_cycles = 0;
+                while !run.is_complete() { expected_cycles += u64::from(run.step().master_cycles); }
+                let before = crate::cycle_ledger::master();
+                native.load_common_sprites();
+                assert_eq!(crate::cycle_ledger::master() - before, expected_cycles, "module={module} pack={pack}");
+                assert_eq!(&native.ppu.vram[..], run.vram(), "module={module} pack={pack}");
+                assert_eq!(&native.ram[0xbd..0xcf], &run.ram()[0xbd..0xcf]);
+            }
+        }
+    }
+
+    #[test]
+    fn tilemap_erase_native_instructions_and_dma_match_all_rom_entries() {
+        use crate::cycle_models::tilemap_erase::{Pattern, Step, TilemapEraseWork};
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let Some((template, rom)) = loaded_graphics_test_inputs() else { return };
+        for pattern in [Pattern::Normal, Pattern::Triforce, Pattern::DungeonMap] {
+            let mut native = template.clone();
+            native.ppu.vram.fill(0x5aa5);
+            native.ppu.vram_pointer = 0x7312;
+            native.ppu.vram_increment = 32;
+            native.ppu.vram_increment_on_high = false;
+            native.ppu.forced_blank = true;
+            let mut work = TilemapEraseWork::new(pattern);
+            let checkpoint = RomCpuCheckpoint {
+                entry_pc:u32::from(work.entry_pc()), stop_pc:0x8036,
+                a:0xabcd, x:0x7b, y:0x23, sp:0x01fc, dp:0, db:0,
+                carry:true, zero:false, overflow:true, negative:false,
+                interrupt_disable:true, decimal:false, accumulator_is_8_bit:true,
+                index_is_8_bit:true, emulation:false, waiting:false,
+                stack_address:0x01fd, stack_bytes:&[0x35,0x80,0],
+            };
+            let mut run = RomCpuTimingRun::new(&rom, &native.ram, &native.sram,
+                &native.ppu, &native.dma, [0;4], checkpoint).unwrap();
+            let mut instructions = 0;
+            let mut bytes = 0;
+            let mut transfers = 0;
+            while let Some(step) = work.step(&native.ram, &native.dma) {
+                let Step::Cpu { pc, master_cycles, .. } = step else { panic!("DMA escaped CPU start"); };
+                assert_eq!(u32::from(pc), run.pc(), "{pattern:?}");
+                let source = run.step();
+                assert_eq!(master_cycles, source.master_cycles, "{pattern:?} PC={pc:04x}");
+                native.retire_tilemap_erase_step(step);
+                let dma_clocks = run.drain_started_dma_master_cycles();
+                if dma_clocks != 0 {
+                    transfers += 1;
+                    let mut transferred = 0;
+                    loop {
+                        let byte = work.step(&native.ram, &native.dma).unwrap();
+                        let Step::DmaByte { last, .. } = byte else { panic!("CPU advanced during DMA"); };
+                        native.retire_tilemap_erase_step(byte);
+                        transferred += 1;
+                        work = bincode::deserialize(&bincode::serialize(&work).unwrap()).unwrap();
+                        if last { break; }
+                    }
+                    assert_eq!(dma_clocks, 26 + transferred * 8);
+                    bytes += transferred;
+                }
+                assert_eq!(&native.ram[..4], &run.ram()[..4], "WRAM PC={pc:04x}");
+                assert_eq!(&native.ppu.vram[..], run.vram(), "VRAM PC={pc:04x}");
+                assert_eq!((native.ppu.vram_pointer, native.ppu.vram_increment,
+                    native.ppu.vram_increment_on_high), run.vram_register_state(), "PPU PC={pc:04x}");
+                assert_eq!(native.dma.save_c_saveload(), run.dma_register_state(), "DMA PC={pc:04x}");
+                instructions += 1;
+                work = bincode::deserialize(&bincode::serialize(&work).unwrap()).unwrap();
+            }
+            assert!(run.is_complete());
+            assert_eq!(transfers, 4);
+            assert_eq!(bytes, 20480);
+            assert_eq!(instructions, if matches!(pattern, Pattern::Normal) {48} else {49});
+        }
+    }
+
+    #[test]
+    fn tilemap_erase_retains_loaded_word_and_publishes_low_then_high_dma_bytes() {
+        use crate::cycle_models::tilemap_erase::{Pattern, Step, TilemapEraseWork};
+        let mut state = ZeldaState::new();
+        state.ppu.vram.fill(0x5aa5);
+        let mut work = TilemapEraseWork::new(Pattern::Normal);
+        let mut byte_count = 0;
+        while let Some(step) = work.step(&state.ram, &state.dma) {
+            state.retire_tilemap_erase_step(step);
+            if let Step::DmaByte { .. } = step {
+                byte_count += 1;
+                if byte_count == 1 {
+                    assert_eq!(state.ppu.vram[0], 0x5aec);
+                    assert_eq!(state.ppu.vram[1], 0x5aa5);
+                    state.ram[0] = 0x34;
+                } else if byte_count == 2 {
+                    assert_eq!(state.ppu.vram[1], 0x5a34);
+                } else if byte_count == 0x4000 {
+                    state.ram[2..4].copy_from_slice(&0x5678u16.to_le_bytes());
+                }
+            }
+            if matches!(step, Step::Cpu { pc: 0x8391, .. }) {
+                state.ram[2..4].copy_from_slice(&0x9999u16.to_le_bytes());
+            }
+            work = bincode::deserialize(&bincode::serialize(&work).unwrap()).unwrap();
+        }
+        assert_eq!(state.ppu.vram[0], 0x01ec);
+        assert_eq!(state.ppu.vram[1], 0x0134);
+        assert!(state.ppu.vram[0x6000..0x6800].iter().all(|&word| word == 0x5678));
+        assert_eq!(&state.ram[..2], &0x5678u16.to_le_bytes());
+    }
+
+    #[test]
+    fn graphics_conversion_native_work_matches_each_rom_instruction_and_publication() {
+        use crate::cycle_models::graphics_convert::{ConversionWork, Publication};
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let Some((template, rom)) = loaded_graphics_test_inputs() else { return };
+        let mut cases = 0;
+        let mut instructions = 0;
+        let mut publications = 0;
+        let mut visited = std::collections::BTreeSet::new();
+        for high in [false, true] {
+            for tiles in [1u8, 2, 64, 128] {
+                for pattern in [0u8, 0x55, 0xff, 0xa7] {
+                    let source: Vec<u8> = (0..usize::from(tiles) * 24 + 1)
+                        .map(|i| if pattern == 0xa7 { (i as u8).wrapping_mul(73).wrapping_add((i / 24) as u8) } else { pattern })
+                        .collect();
+                    let mut native = template.clone();
+                    native.ram[0x14000..0x14000 + source.len()].copy_from_slice(&source);
+                    native.ram[0..3].copy_from_slice(&[0, 0x40, 0x7f]);
+                    native.ram[0xbd..0xcf].fill(0xa5);
+                    native.sync_native_game_state_from_ram();
+                    native.ppu.vram.fill(0x5a5a);
+                    native.ppu.vram_pointer = 0x2000;
+                    native.ppu.vram_increment_on_high = true;
+                    native.ppu.forced_blank = true;
+                    let mut atomic = native.clone();
+                    let checkpoint = RomCpuCheckpoint {
+                        entry_pc: if high {0x00_e5af} else {0x00_e63c}, stop_pc: 0x00_8036,
+                        a:0xabc1, x:0x7b, y:u16::from(tiles - 1), sp:0x01fc, dp:0, db:0,
+                        carry:true, zero:false, overflow:true, negative:false,
+                        interrupt_disable:true, decimal:false, accumulator_is_8_bit:false,
+                        index_is_8_bit:true, emulation:false, waiting:false,
+                        stack_address:0x01fd, stack_bytes:&[0x35, 0x80],
+                    };
+                    let mut run = RomCpuTimingRun::new(&rom, &native.ram, &native.sram,
+                        &native.ppu, &snes::DmaState::default(), [0;4], checkpoint).unwrap();
+                    run.enable_cpu_write_trace();
+                    let mut expected = native.ram.clone();
+                    let mut work = ConversionWork::new(high, &source, tiles);
+                    let mut total = 0;
+                    let mut final_store_at = 0;
+                    while let Some(instruction) = work.step() {
+                        work.roundtrip_progress();
+                        let pc = run.pc();
+                        assert_eq!(instruction.pc, pc, "high={high} tiles={tiles} pattern={pattern}");
+                        let cycles = run.step().master_cycles;
+                        assert_eq!(instruction.master_cycles, cycles, "PC {pc:06x}");
+                        for (address, value) in run.take_cpu_wram_writes() { expected[address] = value; }
+                        native.retire_graphics_conversion_instruction(0x2000, instruction);
+                        if let Some(Publication::SourceOffset(offset)) = instruction.publication {
+                            native.ram[..2].copy_from_slice(&(0x4000 + offset).to_le_bytes());
+                        }
+                        assert_eq!(&native.ram[..3], &expected[..3], "pointer PC {pc:06x}");
+                        assert_eq!(&native.ram[0xbd..0xcf], &expected[0xbd..0xcf], "scratch PC {pc:06x}");
+                        assert_eq!(&native.ppu.vram[..], run.vram(), "VRAM PC {pc:06x}");
+                        instructions += 1;
+                        publications += usize::from(instruction.publication.is_some());
+                        visited.insert(pc);
+                        total += u64::from(cycles);
+                        if matches!(instruction.publication, Some(Publication::VramWord { .. })) {
+                            final_store_at = total;
+                        }
+                    }
+                    assert!(run.is_complete());
+                    assert!(work.step().is_none());
+                    assert!(total > final_store_at, "last VRAM store is not caller completion");
+                    if tiles == 64 {
+                        let before = crate::cycle_ledger::master();
+                        atomic.convert_3_to_4_to_vram(0x2000, &source, chr_source::CHR_KIND_BG, 0, high);
+                        assert_eq!(crate::cycle_ledger::master() - before, total);
+                        assert_eq!(&atomic.ppu.vram[..], run.vram());
+                        assert_eq!(&atomic.ram[0xbd..0xcf], &expected[0xbd..0xcf]);
+                    }
+                    cases += 1;
+                }
+            }
+        }
+        eprintln!("native graphics conversion: cases={cases} instructions={instructions} publications={publications} source_pcs={}", visited.len());
+        assert_eq!(cases, 32);
+    }
+
+    #[test]
+    fn half_slot_work_publications_and_bank_crossing_match_rom() {
+        use crate::rom_cpu_timing::{lorom_offset, RomCpuCheckpoint, RomCpuTimingRun};
+        let Some((template, rom)) = loaded_graphics_test_inputs() else { return };
+        for (sheet, &low) in SPRITE_SOURCE_LOW_WORDS.iter().enumerate() {
+            let hi = rom[lorom_offset(0x00_d0d2 + sheet as u32).unwrap()];
+            let lo = rom[lorom_offset(0x00_d1b1 + sheet as u32).unwrap()];
+            assert_eq!(low, u16::from_le_bytes([lo, hi]), "sheet={sheet}");
+        }
+        for request in 0..=20 {
+            for pack in 0..12 {
+                for indoors in [0, 1] {
+                    for cgram_flag in [0, 255] {
+                        let mut state = template.clone();
+                        state.ram[0xaaa] = request;
+                        state.ram[0xaa4] = pack;
+                        state.ram[0x1b] = indoors;
+                        state.ram[0x8a] = if pack & 1 == 0 { 0 } else { 0x40 };
+                        state.ram[0x15] = cgram_flag;
+                        state.ram[0x16] = 0xa5;
+                        state.ram[0x112] = 0xa5;
+                        state.ram[0x116] = 0xa5;
+                        state.ram[0x11000..0x11400].fill(0xa5);
+                        state.sync_native_game_state_from_ram();
+                        let checkpoint = RomCpuCheckpoint {
+                            entry_pc: 0x00_e3fa, stop_pc: 0x00_8036,
+                            a: 0, x: 0, y: 0, sp: 0x01fb, dp: 0, db: 0,
+                            carry: true, zero: false, overflow: true, negative: false,
+                            interrupt_disable: false, decimal: false,
+                            accumulator_is_8_bit: true, index_is_8_bit: true,
+                            emulation: false, waiting: false,
+                            stack_address: 0x01fc, stack_bytes: &[0x35, 0x80, 0],
+                        };
+                        let mut run = RomCpuTimingRun::new(&rom, &state.ram, &[0; 0x2000],
+                            &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
+                        run.enable_cpu_write_trace();
+                        let mut expected = state.ram.clone();
+                        let mut cycles = 0;
+                        let mut instructions = 0;
+                        while !run.is_complete() {
+                            let pc = run.pc();
+                            let step = run.step();
+                            if pc == 0x00_e3d1 || (0x00_e3fa..=0x00_e4e8).contains(&pc) {
+                                cycles += u64::from(step.master_cycles);
+                            }
+                            for (address, value) in run.take_cpu_wram_writes() { expected[address] = value; }
+                            instructions += 1;
+                            assert!(instructions < 100_000, "half-slot call did not return");
+                        }
+                        let actual = crate::cycle_ledger::measure_routine_self_work(0x00_e3fa,
+                            || state.graphics_load_chr_half_slot());
+                        let label = format!("request={request} pack={pack} indoors={indoors} cgram={cgram_flag}");
+                        assert_eq!(actual, cycles, "{label}");
+                        for range in [0x15..0x18, 0x112..0x113, 0x116..0x117, 0xaa4..0xaa5,
+                            0xaa9..0xaab, 0xab1..0xab2, 0xc300..0xc700, 0x11000..0x11400] {
+                            assert_eq!(&state.ram[range.clone()], &expected[range.clone()], "{label} range={range:x?}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn story_graphics_native_continuation_matches_every_rom_instruction_and_store() {
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let Some((state, rom)) = loaded_graphics_test_inputs() else { return };
+        let mut work = state.story_graphics_decompression().unwrap();
+        let mut native_ram = vec![0; 0x20000];
+        native_ram[0x14000..0x15000].fill(0xa5);
+        let checkpoint = RomCpuCheckpoint {
+            entry_pc: 0x00_d80e, stop_pc: 0x00_8036,
+            a: 0, x: 0, y: 0, sp: 0x01fb, dp: 0, db: 0,
+            carry: false, zero: false, overflow: false, negative: false,
+            interrupt_disable: false, decimal: false,
+            accumulator_is_8_bit: true, index_is_8_bit: true,
+            emulation: false, waiting: false,
+            stack_address: 0x01fc, stack_bytes: &[0x35, 0x80, 0],
+        };
+        let mut run = RomCpuTimingRun::new(&rom, &native_ram, &[0; 0x2000],
+            &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
+        run.enable_cpu_write_trace();
+        let mut expected_ram = native_ram.clone();
+        let mut elapsed = 0;
+        while !run.is_complete() {
+            let pc = run.pc();
+            let expected = run.step().master_cycles;
+            let instruction = work.step(&mut native_ram).expect("native call returned early");
+            assert_eq!(instruction.master_cycles, expected, "pc={pc:06x} elapsed={elapsed}");
+            assert_eq!(instruction.routine, if (0x00_d80e..=0x00_d836).contains(&pc) {
+                0x00_d80e
+            } else if (0x00_e843..=0x00_e852).contains(&pc) {
+                0x00_e843
+            } else { 0x00_e772 }, "pc={pc:06x}");
+            elapsed += u64::from(expected);
+            assert_eq!(work.elapsed_master_cycles, elapsed);
+            for (address, value) in run.take_cpu_wram_writes() {
+                if (0x14000..0x15000).contains(&address) {
+                    expected_ram[address] = value;
+                }
+            }
+            assert_eq!(&native_ram[0x14000..0x15000], &expected_ram[0x14000..0x15000],
+                "graphics publication at pc={pc:06x}");
+        }
+        assert!(work.step(&mut native_ram).is_none());
+        assert!(work.sheets.iter().all(GraphicsDecompressionCursor::is_complete));
+        let mut atomic = state.clone();
+        let before = crate::cycle_ledger::master();
+        atomic.Attract_DecompressStoryGFX();
+        assert_eq!(crate::cycle_ledger::master() - before, elapsed);
+        assert_eq!(&atomic.ram[0x14000..0x15000], &native_ram[0x14000..0x15000]);
+        eprintln!("story graphics: {} instructions, {} stores, {elapsed} CPU master cycles",
+            work.next_instruction, work.sheets.iter().map(|sheet| sheet.next_store).sum::<usize>());
+    }
+
+    #[test]
+    fn story_graphics_resume_preserves_stores_and_return_instructions() {
+        let Some((state, _)) = loaded_graphics_test_inputs() else { return };
+        let mut work = state.story_graphics_decompression().unwrap();
+        let mut expected = state.clone();
+        expected.decompress_sprite_graphics_to_buffer(0x14000, 0x67);
+        expected.decompress_sprite_graphics_to_buffer(0x14800, 0x68);
+        let mut ram = state.ram.clone();
+        let mut resumes = 0;
+        while work.step(&mut ram).is_some() {
+            // Suspend on either side of output and caller boundaries. The
+            // retained object must include work with no remaining stores.
+            let at_boundary = work.sheets.iter().any(|sheet| {
+                sheet.stores.iter().any(|store|
+                    store.after_master_cycles == work.elapsed_master_cycles)
+                    && (sheet.next_store == 1 || sheet.is_complete())
+            }) || work.next_instruction + 1 >= work.instructions.len();
+            if at_boundary || work.next_instruction % 4096 == 0 {
+                let mut resumed = work.clone();
+                let mut resumed_ram = ram.clone();
+                while resumed.step(&mut resumed_ram).is_some() {}
+                assert_eq!(resumed_ram, expected.ram);
+                assert_eq!(resumed.elapsed_master_cycles,
+                    work.instructions.iter().map(|step| u64::from(step.master_cycles)).sum::<u64>());
+                resumes += 1;
+            }
+        }
+        assert!(resumes > 10);
+        eprintln!("story graphics: {resumes} retained progress checkpoints matched completion");
+        let mut retained = ram.clone();
+        retained[0x14000] ^= 0xff;
+        assert!(work.step(&mut retained).is_none());
+        assert_ne!(retained[0x14000], ram[0x14000], "a completed call must not publish again");
+    }
+
+    #[test]
+    fn spotlight_lower_store_resume_keeps_native_value_and_prices_only_remaining_instructions() {
+        use crate::SpotlightTableBuildCheckpoint::{AfterUpperTableWrite, BeforeLowerTableStore};
+        let mut base = ZeldaState::new();
+        base.follower_link_state_mut().set_y(20);
+        base.set_spotlight_window_radius(64);
+        for completed_iterations in [1, 185, 191] {
+            let lower_cursor = 224 - completed_iterations;
+            let mut guard = base.clone();
+            let start = crate::cycle_ledger::master();
+            let guard_build = guard.begin_iris_spotlight_configure_table_at_progress(
+                crate::SpotlightTableBuildProgress {
+                    completed_iterations, checkpoint: AfterUpperTableWrite { lower_cursor },
+                });
+            let guard_prefix = guard.ram.clone();
+            guard.complete_iris_spotlight_table_projection(guard_build);
+            let guard_cycles = crate::cycle_ledger::master() - start;
+            let mut store = base.clone();
+            let start = crate::cycle_ledger::master();
+            let store_build = store.begin_iris_spotlight_configure_table_at_progress(
+                crate::SpotlightTableBuildProgress {
+                    completed_iterations, checkpoint: BeforeLowerTableStore { lower_cursor },
+                });
+            assert_eq!(store.ram, guard_prefix);
+            store.complete_iris_spotlight_table_projection(store_build);
+            // F387..F38D costs86; F38F TAX + F390 LDA costs46. All
+            // of those instructions retired before the F392 store boundary.
+            assert_eq!(crate::cycle_ledger::master() - start + 132, guard_cycles);
+            assert_eq!(store.ram, guard.ram);
+            assert_eq!(store.game_state, guard.game_state);
+        }
+    }
+
+    #[test]
+    fn spotlight_projection_checkpoint_keeps_the_completed_dynamic_table() {
+        let mut base = ZeldaState::new();
+        base.follower_link_state_mut().set_position(120, 200);
+        base.set_spotlight_window_radius(77);
+        base.set_spotlight_window_state(2);
+        let mut atomic = base.clone();
+        atomic.iris_spotlight_configure_table();
+        assert_eq!(atomic.spotlight_hdma_table_dynamic_entry(168), 0xfc04);
+        let mut resumed = base;
+        let build = resumed.begin_iris_spotlight_configure_table_at_progress(
+            crate::SpotlightTableBuildProgress {
+                completed_iterations: 213,
+                checkpoint: crate::SpotlightTableBuildCheckpoint::ProjectionCopy { copied_words: 168 },
+            });
+        assert_eq!(resumed.game_state.display.spotlight_hdma.window_radius(), 77);
+        assert_eq!(&resumed.ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + 480],
+            &atomic.ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + 480]);
+        assert!(resumed.ram[RESERVED_HDMA_TABLE + 336..RESERVED_HDMA_TABLE + 448]
+            .iter().all(|&byte| byte == 0));
+        resumed.complete_iris_spotlight_configure_table(build);
+        assert_eq!(resumed.ram, atomic.ram);
+        assert_eq!(resumed.game_state, atomic.game_state);
+    }
+
+    #[test]
+    fn animated_dungeon_graphics_resume_without_replaying_planes_or_rotation() {
+        use AnimatedDungeonGraphicsProgress::*;
+        let Some((mut base, _)) = loaded_graphics_test_inputs() else { return };
+        base.ram[0x14000..0x14600].fill(0xa5);
+        base.ram[0xa680..0xb280].fill(0x5a);
+        for pack in [0x5b, 0x5d] {
+            let mut atomic = base.clone();
+            let start = crate::cycle_ledger::master();
+            atomic.decompress_animated_dungeon_tiles(pack);
+            let cost = crate::cycle_ledger::master() - start;
+            for target in [FirstSheet(0), FirstSheet(1), FirstSheet(859), FirstSheet(1536),
+                FirstConversion(0), FirstConversion(1), FirstConversion(767), FirstConversion(768),
+                SecondSheet(792), SecondSheet(1536), SecondConversion(1), SecondConversion(768),
+                Rotation(0), Rotation(1), Rotation(2), Rotation(3), Rotation(4), Rotation(511),
+                Rotation(1023), Rotation(1024), DestinationPublished, Returned] {
+                let mut state = base.clone();
+                let mut work = AnimatedDungeonGraphicsContinuation::default();
+                let start = crate::cycle_ledger::master();
+                state.advance_animated_dungeon_graphics(pack, &mut work, target);
+                if target == FirstSheet(859) {
+                    assert!(state.ram[0x1435b..0x14600].iter().all(|&b| b == 0xa5));
+                    assert!(state.ram[0xa680..0xb280].iter().all(|&b| b == 0x5a));
+                }
+                let ram = state.ram.clone();
+                let once = work;
+                state.advance_animated_dungeon_graphics(pack, &mut work, target);
+                assert_eq!(state.ram, ram);
+                assert_eq!(work, once);
+                state.native_pre_dungeon_animated_graphics = Some(work);
+                state.decompress_animated_dungeon_tiles(pack);
+                assert!(state.native_pre_dungeon_animated_graphics.is_none());
+                assert_eq!(crate::cycle_ledger::master() - start, cost);
+                assert_eq!(state.ram, atomic.ram, "pack={pack} target={target:?}");
+                assert_eq!(state.game_state, atomic.game_state);
+            }
+            let mut state = base.clone();
+            let mut work = AnimatedDungeonGraphicsContinuation::default();
+            state.advance_animated_dungeon_graphics(pack, &mut work, Rotation(0));
+            let saved = read_le_u16(&state.ram, 0xa880);
+            state.advance_animated_dungeon_graphics(pack, &mut work, Rotation(1));
+            write_le_u16(&mut state.ram, 0xa880, 0x1234);
+            state.native_pre_dungeon_animated_graphics = Some(work);
+            state.decompress_animated_dungeon_tiles(pack);
+            assert_eq!(read_le_u16(&state.ram, 0xaa80), saved, "rotation must retain its native stack word");
+            assert_eq!(read_le_u16(&state.ram, 0xa880), 0x1234, "completed stores must not replay");
+        }
+    }
+
+    #[test]
+    fn animated_overworld_graphics_resume_at_sheet_and_plane_boundaries() {
+        use AnimatedOverworldGraphicsProgress::*;
+        let Some((mut base, _)) = loaded_graphics_test_inputs() else { return };
+        base.ram[0x14000..0x14600].fill(0xa5);
+        base.ram[0xa680..0xb280].fill(0x5a);
+        for sheet in [0x5a, 0x5c, 0x5e] {
+            let mut atomic = base.clone();
+            let atomic_started = crate::cycle_ledger::master();
+            atomic.DecompressAnimatedOverworldTiles(sheet);
+            let atomic_cost = crate::cycle_ledger::master() - atomic_started;
+            for target in [FirstSheet(645), FirstConversion(1), FirstConversion(1023),
+                SecondSheet(254), SecondConversion(257), Returned] {
+                let mut resumed = base.clone();
+                let mut progress = FirstSheet(0);
+                let resumed_started = crate::cycle_ledger::master();
+                resumed.advance_animated_overworld_graphics(sheet, &mut progress, target);
+                if target == FirstSheet(645) {
+                    let decoded = resumed.decompressed_background_graphics_data(sheet as usize).unwrap();
+                    assert_eq!(&resumed.ram[0x14000..0x14285], &decoded[..645]);
+                    assert!(resumed.ram[0x14285..0x14600].iter().all(|&b| b == 0xa5));
+                }
+                if target == FirstConversion(1) {
+                    assert_eq!(&resumed.ram[0xa680..0xa682], &atomic.ram[0xa680..0xa682]);
+                    assert_eq!(&resumed.ram[0xa690..0xa692], &[0x5a; 2]);
+                }
+                let before_repeat = resumed.ram.clone();
+                resumed.advance_animated_overworld_graphics(sheet, &mut progress, target);
+                assert_eq!(resumed.ram, before_repeat);
+                resumed.native_pre_overworld_animated_graphics = Some(progress);
+                resumed.complete_pre_overworld_animated_graphics(sheet);
+                assert_eq!(crate::cycle_ledger::master() - resumed_started, atomic_cost,
+                    "resuming graphics must charge each native operation exactly once");
+                assert_eq!(resumed.ram, atomic.ram, "sheet={sheet} target={target:?}");
+                assert_eq!(resumed.game_state, atomic.game_state);
+                assert_eq!(resumed.animated_tile_pack, atomic.animated_tile_pack);
+            }
+        }
+    }
+
+    #[test]
+    fn completed_animated_graphics_do_not_replay_scratch_or_plane_stores() {
+        let Some((mut state, _)) = loaded_graphics_test_inputs() else { return };
+        let mut progress = AnimatedOverworldGraphicsProgress::FirstSheet(0);
+        state.advance_animated_overworld_graphics(0x5a, &mut progress, AnimatedOverworldGraphicsProgress::Returned);
+        state.native_pre_overworld_animated_graphics = Some(progress);
+        // Later native work owns this scratch and an already-published plane.
+        state.ram[0x14000] = 0xf3;
+        state.ram[0xa680] = 0x9d;
+        state.complete_pre_overworld_animated_graphics(0x5a);
+        assert_eq!(state.ram[0x14000], 0xf3);
+        assert_eq!(state.ram[0xa680], 0x9d);
+        assert!(state.native_pre_overworld_animated_graphics.is_none());
+    }
+
+    #[test]
+    fn palette_cache_copy_resumes_in_rom_order_and_preserves_provenance() {
+        let mut base = ZeldaState::new();
+        for index in 0..256 {
+            base.set_aux_color_asset(index, (index as u16 * 31) & 0x7fff);
+            base.set_main_color_constant(index, 0x1234);
+        }
+        let mut atomic = base.clone();
+        let aux = atomic.game_state.display.palette_buffer.aux_full_slice().to_vec();
+        atomic.copy_main_full_from_tagged(&aux, PaletteSliceSource::MirrorBank(Bank::Aux));
+        atomic.increment_cgram_update_flag();
+        for cut in [0, 1, 7, 8, 61, 255, 256, 257] {
+            let mut resumed = base.clone();
+            resumed.advance_palette_cache_copy(0, cut);
+            for ordinal in 0..256u16 {
+                let index = usize::from(ordinal % 8) * 32 + usize::from(ordinal / 8);
+                let expected = if ordinal < cut { &atomic.ram } else { &base.ram };
+                assert_eq!(&resumed.ram[0xc500 + index * 2..0xc502 + index * 2],
+                    &expected[0xc500 + index * 2..0xc502 + index * 2]);
+            }
+            if cut <= 256 { assert_eq!(resumed.ram[0x15], base.ram[0x15]); }
+            let before_repeat = resumed.ram.clone();
+            resumed.advance_palette_cache_copy(cut, cut);
+            assert_eq!(resumed.ram, before_repeat);
+            resumed.advance_palette_cache_copy(cut, 257);
+            assert_eq!(resumed.ram, atomic.ram);
+            assert_eq!(resumed.game_state, atomic.game_state);
+            assert_eq!(resumed.palette_mirror_snapshot_bytes(), atomic.palette_mirror_snapshot_bytes());
+        }
+        let mut resumed = base;
+        resumed.advance_palette_cache_copy(0, 1);
+        resumed.set_main_color_constant(0, 0x3210);
+        resumed.advance_palette_cache_copy(1, 257);
+        assert_eq!(&resumed.ram[0xc500..0xc502], &[0x10, 0x32]);
+    }
+
+    #[test]
+    fn pre_dungeon_palette_cache_does_not_replay_completed_loader_prefix() {
+        let Some((mut state, _)) = loaded_graphics_test_inputs() else { return };
+        for (slot, sheet) in [97, 98, 99, 80].into_iter().enumerate() {
+            state.sprite_workspace_mut().set_graphics_subset(slot, sheet);
+        }
+        state.native_pre_dungeon_animated_graphics = Some(AnimatedDungeonGraphicsContinuation {
+            progress: AnimatedDungeonGraphicsProgress::Returned, ..Default::default()
+        });
+        let mut atomic = state.clone();
+        atomic.complete_module_pre_dungeon_before_palette_cache();
+        atomic.overworld_copy_palettes_to_cache();
+        state.advance_pre_dungeon_palette_cache(61);
+        assert!(state.native_pre_dungeon_animated_graphics.is_none());
+        assert!(state.native_pre_dungeon_tileset_publication.is_none());
+        assert!(!state.paired_resume_cpu_boundary_is_quiescent());
+        state.advance_pre_dungeon_palette_cache(257);
+        assert_eq!(state.ram, atomic.ram);
+        assert_eq!(state.game_state, atomic.game_state);
+        assert_eq!(state.palette_mirror_snapshot_bytes(), atomic.palette_mirror_snapshot_bytes());
+        state.set_aux_color_asset(0, 0x3210);
+        state.set_main_color_constant(0, 0x2345);
+        let before = state.ram.clone();
+        state.advance_pre_dungeon_palette_cache(257);
+        assert_eq!(state.ram, before);
+    }
+
+    #[test]
+    fn pre_dungeon_tileset_prefix_and_partial_sheet_have_separate_owners() {
+        let Some((mut state, _)) = loaded_graphics_test_inputs() else { return };
+        for (slot, sheet) in [97, 98, 99, 80].into_iter().enumerate() {
+            state.sprite_workspace_mut().set_graphics_subset(slot, sheet);
+        }
+        // The animated loader has returned; this caller now owns attributes
+        // and the common-sprite selector, but no tileset sheet bytes yet.
+        state.native_pre_dungeon_animated_graphics = Some(AnimatedDungeonGraphicsContinuation {
+            progress: AnimatedDungeonGraphicsProgress::Returned,
+            ..Default::default()
+        });
+        state.world_palette_theme_mut().set_misc_sprites_graphics_index(1);
+        state.ram[0x7800..0x7e00].fill(0xa5);
+        state.advance_pre_dungeon_tileset_publication(&[TilesetGraphicsPublication::Entered]);
+        assert_eq!(state.game_state.world.palette_theme.misc_sprites_graphics_index(), 10);
+        assert!(state.native_pre_dungeon_animated_graphics.is_none());
+        assert!(state.ram[0x7800..0x7e00].iter().all(|&b| b == 0xa5));
+        let plan = state.native_tileset_decompression_operations();
+        let (entry_pc, sheet, cursor) = &plan.operations[0];
+        let events = [
+            TilesetGraphicsPublication::SpriteSelection { slot: 0, value: *sheet as u8 },
+            TilesetGraphicsPublication::Sheet { index: 0, entry_pc: *entry_pc,
+                sheet: *sheet as u16, completed_bytes: 645 },
+        ];
+        state.advance_pre_dungeon_tileset_publication(&events);
+        assert_eq!(&state.ram[0x7800..0x7a85], &cursor.bytes[..645]);
+        assert!(state.ram[0x7a85..0x7e00].iter().all(|&b| b == 0xa5));
+        // A repeated cursor must not replay the prefix or an earlier store.
+        state.ram[0x7800] = 0x32;
+        state.world_palette_theme_mut().set_misc_sprites_graphics_index(3);
+        state.advance_pre_dungeon_tileset_publication(&events);
+        assert_eq!(state.ram[0x7800], 0x32);
+        assert_eq!(state.game_state.world.palette_theme.misc_sprites_graphics_index(), 3);
+        assert!(!state.paired_resume_cpu_boundary_is_quiescent());
+    }
+
+    #[test]
+    fn pre_overworld_tileset_publication_keeps_unwritten_sheet_tails() {
+        let Some((mut state, _)) = loaded_graphics_test_inputs() else { return };
+        for (slot, sheet) in [97, 98, 99, 80].into_iter().enumerate() {
+            state.sprite_workspace_mut().set_graphics_subset(slot, sheet);
+        }
+        let plan = state.native_tileset_decompression_operations();
+        for (slot, &sheet) in plan.sprite_sheets.iter().enumerate() {
+            state.advance_pre_overworld_tileset_publication(&[
+                TilesetGraphicsPublication::SpriteSelection { slot, value: sheet as u8 },
+            ]);
+            assert_eq!(state.game_state.sprites.workspace.graphics_subset(slot), sheet as u8);
+        }
+        for (index, (entry_pc, sheet, cursor)) in plan.operations.iter().enumerate() {
+            for end in [1, 645, 1536] {
+                let original = state.ram.clone();
+                let event = TilesetGraphicsPublication::Sheet {
+                    index, entry_pc: *entry_pc, sheet: *sheet as u16, completed_bytes: end,
+                };
+                state.advance_pre_overworld_tileset_publication(&[event]);
+                let start = cursor.destination;
+                let end = usize::from(end);
+                assert_eq!(&state.ram[start..start + end], &cursor.bytes[..end]);
+                assert_eq!(&state.ram[start + end..start + 1536], &original[start + end..start + 1536]);
+                let once = state.ram.clone();
+                state.advance_pre_overworld_tileset_publication(&[event]);
+                assert_eq!(state.ram, once);
+            }
+        }
+        state.advance_pre_overworld_tileset_publication(&[TilesetGraphicsPublication::Returned]);
+    }
+
+    #[test]
+    fn transition_aux_sheets_resume_without_publishing_the_unwritten_tail() {
+        let Some((base, _)) = loaded_graphics_test_inputs() else { return };
+        for (background_theme, sprite_theme) in [(0, 0), (3, 8), (23, 15), (81, 143)] {
+            let mut state = base.clone();
+            state.ram[crate::game_state::constants::AUX_TILE_THEME_INDEX] = background_theme;
+            state.ram[crate::game_state::constants::SPRITE_GRAPHICS_INDEX] = sprite_theme;
+            state.ram[0x6000..0x9000].fill(0xa5);
+            state.ram[0x412] = 0x55;
+            state.sync_native_game_state_from_ram();
+            let mut atomic = state.clone();
+            atomic.LoadTransAuxGFX();
+            let mut completed = None;
+            for sheet in 0..8 {
+                for completed_bytes in [1, 0x321, 0x600] {
+                    let target = TransitionAuxGraphicsProgress { sheet, completed_bytes };
+                    state.advance_transition_aux_graphics(completed, target);
+                    let end = 0x6000 + usize::from(sheet) * 0x600 + usize::from(completed_bytes);
+                    assert_eq!(&state.ram[0x6000..end], &atomic.ram[0x6000..end]);
+                    assert!(state.ram[end..0x9000].iter().all(|&byte| byte == 0xa5));
+                    assert_eq!(state.ram[0x412], 0x55, "caller suffix must remain pending");
+                    let before_repeat = state.ram.clone();
+                    state.advance_transition_aux_graphics(Some(target), target);
+                    assert_eq!(state.ram, before_repeat);
+                    completed = Some(target);
+                }
+            }
+            state.reset_incremental_vram_upload_counter();
+            assert_eq!(state.ram, atomic.ram);
+            assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
+            assert_eq!(state.game_state.world, atomic.game_state.world);
+        }
+    }
+
+    #[test]
+    fn overworld_aux_caller_consumes_shared_graphics_progress_once() {
+        let Some((base, _)) = loaded_graphics_test_inputs() else { return };
+        for theme in [0, 32] {
+            let mut initial = base.clone();
+            initial.ram[crate::game_state::constants::AUX_TILE_THEME_INDEX] = theme;
+            initial.set_main_module(9);
+            initial.set_submodule(8);
+            initial.ram[0x6000..0x9000].fill(0xa5);
+            initial.ram[0x412] = 0x55;
+            initial.sync_native_game_state_from_ram();
+            let mut atomic = initial.clone();
+            atomic.complete_module09_load_aux_gfx();
+            for sheet in 0..8 {
+                for completed_bytes in [0, 1, 0x321, 0x600] {
+                    let mut state = initial.clone();
+                    let progress = TransitionAuxGraphicsProgress { sheet, completed_bytes };
+                    state.advance_transition_aux_graphics(None, progress);
+                    state.native_transition_aux_graphics_progress = Some(progress);
+                    assert_eq!(state.game_state.frame.submodule, 8);
+                    assert_eq!(state.ram[0x412], 0x55);
+                    state.complete_module09_load_aux_gfx();
+                    assert!(state.native_transition_aux_graphics_progress.is_none());
+                    assert_eq!(state.ram, atomic.ram, "theme={theme} progress={progress:?}");
+                    assert_eq!(state.game_state, atomic.game_state);
+                }
+            }
+            let mut state = initial;
+            let progress = TransitionAuxGraphicsProgress { sheet: 7, completed_bytes: 0x600 };
+            state.advance_transition_aux_graphics(None, progress);
+            state.native_transition_aux_graphics_progress = Some(progress);
+            state.ram[0x6000] ^= 0xff;
+            let retained = state.ram[0x6000];
+            state.LoadTransAuxGFX();
+            assert_eq!(state.ram[0x6000], retained, "returned sheets must not be decoded again");
+        }
+    }
 
     #[test]
     fn stores_become_visible_only_after_their_cpu_instruction() {
@@ -213,6 +1213,16 @@ const FOLLOWER_GFX_DECOMPRESSION_OFFSETS: [usize; 14] = [
 ];
 const SWORD_TYPE_TO_GFX_OFFSETS: [usize; 5] = [0, 0, 0x120, 0x120, 0x120];
 const SHIELD_TYPE_TO_GFX_OFFSETS: [usize; 4] = [0x660, 0x660, 0x6f0, 0x900];
+
+/// Equipment selectors shared by the semantic and retained graphics callers.
+pub(crate) fn native_gear_graphics_table_byte(address: u32) -> Option<u8> {
+    let (offset, table): (usize, &[usize]) = match address {
+        0x00d2be..=0x00d2c7 => ((address - 0x00d2be) as usize, &SWORD_TYPE_TO_GFX_OFFSETS),
+        0x00d300..=0x00d307 => ((address - 0x00d300) as usize, &SHIELD_TYPE_TO_GFX_OFFSETS),
+        _ => return None,
+    };
+    Some((table[offset / 2] as u16).to_le_bytes()[offset & 1])
+}
 
 const INCREMENTAL_VRAM_UPLOAD_DESTINATIONS: [u8; 16] = [
     0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f,
@@ -484,12 +1494,25 @@ impl ZeldaState {
     }
 
     pub(super) fn reset_hud_palettes_4_and_5(&mut self) {
-        for i in 0..8 {
-            self.set_main_color_constant(16 + i, 0);
+        for instruction in 0..16 {
+            self.retire_hud_palette_reset_instruction(instruction);
         }
-        self.set_countdown_word(0);
-        self.set_darkening_or_lightening_screen_word(2);
-        self.increment_cgram_update_flag();
+    }
+
+    /// $00:EB29..EB5D. The initializer retains the instruction index across
+    /// suspension; other callers drain the same owner synchronously.
+    pub(super) fn retire_hud_palette_reset_instruction(&mut self, instruction: u8) -> u32 {
+        let cost = [22, 24, 48, 48, 48, 48, 48, 48, 48, 48, 48, 24, 48, 22, 38, 44]
+            [usize::from(instruction)];
+        crate::cycle_ledger::charge_routine(0x00_eb29, u64::from(cost));
+        match instruction {
+            2..=9 => self.set_main_color_constant(16 + usize::from(instruction - 2), 0),
+            10 => self.set_countdown_word(0),
+            12 => self.set_darkening_or_lightening_screen_word(2),
+            14 => { self.increment_cgram_update_flag(); }
+            _ => {}
+        }
+        cost
     }
 
     pub(super) fn palette_filter_history(&mut self) {
@@ -604,7 +1627,10 @@ impl ZeldaState {
     pub(super) fn overworld_load_all_palettes(&mut self) {
         self.clear_aux_sprite_subpalettes();
         self.clear_main_full();
+        self.overworld_load_all_palettes_after_clear();
+    }
 
+    pub(super) fn overworld_load_all_palettes_after_clear(&mut self) {
         self.set_overworld_palette_mode(5);
         self.world_palette_theme_mut()
             .set_overworld_palette_aux1_hi(3);
@@ -631,6 +1657,11 @@ impl ZeldaState {
     }
 
     pub(super) fn dungeon_load_palettes(&mut self) {
+        self.dungeon_load_palettes_before_cache();
+        self.overworld_copy_palettes_to_cache();
+    }
+
+    pub(super) fn dungeon_load_palettes_before_cache(&mut self) {
         self.clear_overworld_aux_or_main_offset();
         self.palette_bg_and_fixed_color_black();
         self.palette_load_sp0l();
@@ -643,10 +1674,15 @@ impl ZeldaState {
         self.palette_load_link_armor_and_gloves();
         self.palette_load_hud();
         self.palette_load_dungeon_set();
-        self.overworld_load_palettes_inner();
+        self.overworld_load_palettes_before_cache();
     }
 
     pub(super) fn overworld_load_palettes_inner(&mut self) {
+        self.overworld_load_palettes_before_cache();
+        self.overworld_copy_palettes_to_cache();
+    }
+
+    fn overworld_load_palettes_before_cache(&mut self) {
         let main_indoors = self
             .game_state
             .display
@@ -668,7 +1704,6 @@ impl ZeldaState {
         self.set_darkening_or_lightening_screen_word(2);
         self.set_countdown_word(0);
         self.clear_mosaic_target_level_word();
-        self.overworld_copy_palettes_to_cache();
     }
 
     pub(super) fn palette_load_sp0l(&mut self) {
@@ -1212,16 +2247,75 @@ impl ZeldaState {
     }
 
     pub(super) fn erase_tile_maps_normal(&mut self) {
-        self.erase_tile_maps(0x007f, 0x01ec);
+        self.erase_tile_maps(crate::cycle_models::tilemap_erase::Pattern::Normal);
     }
 
     pub(super) fn erase_tile_maps_triforce(&mut self) {
-        self.erase_tile_maps(0x00a9, 0x007f);
+        self.erase_tile_maps(crate::cycle_models::tilemap_erase::Pattern::Triforce);
     }
 
-    pub(super) fn erase_tile_maps(&mut self, r2: u16, r0: u16) {
-        self.ppu.vram[..0x2000].fill(r0);
-        self.ppu.vram[0x6000..0x6800].fill(r2);
+    fn erase_tile_maps(&mut self, pattern: crate::cycle_models::tilemap_erase::Pattern) {
+        let mut work = crate::cycle_models::tilemap_erase::TilemapEraseWork::new(pattern);
+        while let Some(step) = work.step(&self.ram, &self.dma) {
+            self.retire_tilemap_erase_step(step);
+        }
+    }
+
+    pub(super) fn retire_tilemap_erase_step(&mut self, step: crate::cycle_models::tilemap_erase::Step) {
+        use crate::cycle_models::tilemap_erase::Step;
+        match step {
+            Step::Cpu { master_cycles, write, pc } => {
+                crate::cycle_ledger::charge_routine(u32::from(pc), u64::from(master_cycles));
+                if let Some((address, value, word)) = write {
+                    self.write_tilemap_erase_bus_byte(address, value as u8);
+                    if word { self.write_tilemap_erase_bus_byte(address + 1, (value >> 8) as u8); }
+                }
+            }
+            Step::DmaByte { source, register, last } => {
+                // Fixed A-bus mode samples the live byte each transfer; a
+                // retained continuation must not replace this with a fill.
+                self.ppu.write(register, self.ram[usize::from(source)]);
+                let channel = &mut self.dma.channel[1];
+                channel.size = channel.size.wrapping_sub(1);
+                if last {
+                    assert_eq!(channel.size, 0);
+                    channel.dma_active = false;
+                    self.dma.dma_busy = false;
+                }
+            }
+        }
+    }
+
+    fn write_tilemap_erase_bus_byte(&mut self, address: u16, value: u8) {
+        match address {
+            0..=3 => self.ram[usize::from(address)] = value,
+            0x2115..=0x2117 => self.ppu.write(address as u8, value),
+            0x420b => {
+                assert_eq!(value, 2);
+                self.account_nmi_dma_transfer(usize::from(self.dma.channel[1].size));
+                self.dma.channel[1].dma_active = true;
+                self.dma.channel[1].off_index = 0;
+                self.dma.dma_busy = true;
+                self.dma.dma_timer = 0;
+            }
+            0x4310 => {
+                assert_eq!(value, 8);
+                let channel = &mut self.dma.channel[1];
+                channel.mode = 0;
+                channel.fixed = true;
+                channel.decrement = false;
+                channel.indirect = false;
+                channel.from_b = false;
+                channel.unused_bit = false;
+            }
+            0x4311 => self.dma.channel[1].b_adr = value,
+            0x4312 => self.dma.channel[1].a_adr = (self.dma.channel[1].a_adr & 0xff00) | u16::from(value),
+            0x4313 => self.dma.channel[1].a_adr = (self.dma.channel[1].a_adr & 0xff) | (u16::from(value) << 8),
+            0x4314 => self.dma.channel[1].a_bank = value,
+            0x4315 => self.dma.channel[1].size = (self.dma.channel[1].size & 0xff00) | u16::from(value),
+            0x4316 => self.dma.channel[1].size = (self.dma.channel[1].size & 0xff) | (u16::from(value) << 8),
+            _ => panic!("unexpected tilemap erase bus address {address:04x}"),
+        }
     }
 
     pub(super) fn load_default_graphics(&mut self) {
@@ -1264,11 +2358,7 @@ impl ZeldaState {
         }
     }
 
-    /// Pair measured CPU addresses with translated graphics bytes. The CPU
-    /// timing run never supplies a gameplay value to this plan.
-    pub(super) fn build_native_map_graphics_write_plan(
-        &self, timing: NativeMapGraphicsTiming,
-    ) -> NativeMapGraphicsWritePlan {
+    fn native_tileset_decompression_operations(&self) -> NativeTilesetGraphicsPublication {
         let main = load_gfx_main_tileset(
             self.game_state.world.palette_theme.main_tile_theme_index() as usize,
         );
@@ -1305,6 +2395,75 @@ impl ZeldaState {
                 self.background_decompression_cursor(sheet, destination)
                     .expect("map background sheet requires a timed translated decoder")));
         }
+        NativeTilesetGraphicsPublication { sprite_sheets, operations }
+    }
+
+    pub(super) fn advance_pre_overworld_tileset_publication(
+        &mut self,
+        events: &[TilesetGraphicsPublication],
+    ) {
+        if events.is_empty() { return; }
+        let publication = self.native_pre_overworld_tileset_publication.take();
+        self.native_pre_overworld_tileset_publication =
+            Some(self.advance_tileset_publication(publication, events));
+    }
+
+    pub(super) fn advance_pre_dungeon_tileset_publication(
+        &mut self,
+        events: &[TilesetGraphicsPublication],
+    ) {
+        if events.is_empty() { return; }
+        let publication = self.native_pre_dungeon_tileset_publication.take();
+        if publication.is_none() {
+            self.complete_module_pre_dungeon_before_tilesets();
+        }
+        self.native_pre_dungeon_tileset_publication =
+            Some(self.advance_tileset_publication(publication, events));
+    }
+
+    fn advance_tileset_publication(
+        &mut self,
+        publication: Option<NativeTilesetGraphicsPublication>,
+        events: &[TilesetGraphicsPublication],
+    ) -> NativeTilesetGraphicsPublication {
+        let mut publication = publication
+            .unwrap_or_else(|| self.native_tileset_decompression_operations());
+        for event in events {
+            match *event {
+                TilesetGraphicsPublication::Entered => {}
+                TilesetGraphicsPublication::SpriteSelection { slot, value } => {
+                    let native = publication.sprite_sheets[slot] as u8;
+                    assert_eq!(native, value, "source tileset selection disagrees with native theme");
+                    self.sprite_workspace_mut().set_graphics_subset(slot, native);
+                }
+                TilesetGraphicsPublication::Sheet { index, entry_pc, sheet, completed_bytes } => {
+                    let (native_entry, native_sheet, cursor) = &mut publication.operations[index];
+                    assert_eq!(*native_entry, entry_pc);
+                    assert_eq!(*native_sheet, usize::from(sheet), "source tileset sheet disagrees with native selection");
+                    let end = usize::from(completed_bytes);
+                    assert!(cursor.next_store <= end && end <= cursor.bytes.len());
+                    self.copy_decompressed_graphics_to(
+                        cursor.destination + cursor.next_store,
+                        &cursor.bytes[cursor.next_store..end],
+                    );
+                    cursor.next_store = end;
+                }
+                TilesetGraphicsPublication::Returned => {
+                    assert!(publication.operations.iter().all(|(_, _, cursor)| cursor.next_store == cursor.bytes.len()),
+                        "tileset return preceded native decompression completion");
+                }
+            }
+        }
+        publication
+    }
+
+    /// Pair measured CPU addresses with translated graphics bytes. The CPU
+    /// timing run never supplies a gameplay value to this plan.
+    pub(super) fn build_native_map_graphics_write_plan(
+        &self, timing: NativeMapGraphicsTiming,
+    ) -> NativeMapGraphicsWritePlan {
+        let NativeTilesetGraphicsPublication { sprite_sheets, mut operations } =
+            self.native_tileset_decompression_operations();
         assert_eq!(timing.decompressions.len(), operations.len());
         for ((observed_pc, observed_sheet), (pc, sheet, _)) in
             timing.decompressions.iter().zip(&operations)
@@ -1376,173 +2535,93 @@ impl ZeldaState {
         }
     }
 
+    pub(super) fn native_initialize_tilesets_work(&self) -> Option<crate::cycle_models::tilesets::TilesetWork> {
+        use crate::cycle_models::tilesets::{Inputs, TilesetWork};
+        let theme = &self.game_state.world.palette_theme;
+        TilesetWork::initialize(Inputs {
+            module: self.game_state.frame.main_module,
+            misc: theme.misc_sprites_graphics_index(),
+            main: load_gfx_main_tileset(theme.main_tile_theme_index() as usize),
+            aux: load_gfx_aux_tileset(theme.aux_tile_theme_index() as usize),
+            sprites: load_gfx_sprite_tileset(self.game_state.sprites.system.graphics_index() as usize),
+            previous_sprites: std::array::from_fn(|i| self.game_state.sprites.workspace.graphics_subset(i)),
+            main_index: theme.main_tile_theme_index(),
+        }, |sprite, sheet| {
+            if sprite { self.sprite_graphics_decompression_stream(sheet as usize) }
+            else { self.asset_bytes(65, sheet as usize).map(Vec::from) }
+        })
+    }
+
     pub(super) fn initialize_tilesets(&mut self) {
-        let main_tile_set = load_gfx_main_tileset(
-            self.game_state.world.palette_theme.main_tile_theme_index() as usize,
-        );
-        let aux_tile_set = load_gfx_aux_tileset(
-            self.game_state.world.palette_theme.aux_tile_theme_index() as usize,
-        );
-        let sprite_tile_set =
-            load_gfx_sprite_tileset(self.game_state.sprites.system.graphics_index() as usize);
-
-        self.load_common_sprites();
-
-        if sprite_tile_set[0] != 0 {
-            self.sprite_workspace_mut()
-                .set_graphics_subset(0, sprite_tile_set[0]);
+        let Some(mut work) = self.native_initialize_tilesets_work() else { return };
+        while let Some(instruction) = work.step(&self.ram) {
+            self.retire_tileset_instruction(instruction);
         }
-        if sprite_tile_set[1] != 0 {
-            self.sprite_workspace_mut()
-                .set_graphics_subset(1, sprite_tile_set[1]);
+        self.record_common_sprite_provenance();
+        for slot in 0..4 {
+            let pack = self.game_state.sprites.workspace.graphics_subset(slot);
+            self.record_tileset_provenance(0x5000 + slot * 0x400, chr_source::CHR_KIND_SPRITE, pack);
         }
-        if sprite_tile_set[2] != 0 {
-            self.sprite_workspace_mut()
-                .set_graphics_subset(2, sprite_tile_set[2]);
+        let main = load_gfx_main_tileset(self.game_state.world.palette_theme.main_tile_theme_index() as usize);
+        for slot in 0..8 {
+            let pack = if (3..7).contains(&slot) { self.game_state.world.palette_theme.aux_bg_subset(slot - 3) } else { main[slot] };
+            self.record_tileset_provenance(0x2000 + slot * 0x400, chr_source::CHR_KIND_BG, pack);
         }
-        if sprite_tile_set[3] != 0 {
-            self.sprite_workspace_mut()
-                .set_graphics_subset(3, sprite_tile_set[3]);
-        }
-
-        self.load_sprite_graphics(
-            0x5000,
-            self.game_state.sprites.workspace.graphics_subset(0) as usize,
-            0x7800,
-        );
-        self.load_sprite_graphics(
-            0x5400,
-            self.game_state.sprites.workspace.graphics_subset(1) as usize,
-            0x7e00,
-        );
-        self.load_sprite_graphics(
-            0x5800,
-            self.game_state.sprites.workspace.graphics_subset(2) as usize,
-            0x8400,
-        );
-        self.load_sprite_graphics(
-            0x5c00,
-            self.game_state.sprites.workspace.graphics_subset(3) as usize,
-            0x8a00,
-        );
-
-        self.world_palette_theme_mut().set_aux_bg_subset(
-            0,
-            if aux_tile_set[0] != 0 {
-                aux_tile_set[0]
-            } else {
-                main_tile_set[3]
-            },
-        );
-        self.world_palette_theme_mut().set_aux_bg_subset(
-            1,
-            if aux_tile_set[1] != 0 {
-                aux_tile_set[1]
-            } else {
-                main_tile_set[4]
-            },
-        );
-        self.world_palette_theme_mut().set_aux_bg_subset(
-            2,
-            if aux_tile_set[2] != 0 {
-                aux_tile_set[2]
-            } else {
-                main_tile_set[5]
-            },
-        );
-        self.world_palette_theme_mut().set_aux_bg_subset(
-            3,
-            if aux_tile_set[3] != 0 {
-                aux_tile_set[3]
-            } else {
-                main_tile_set[6]
-            },
-        );
-
-        self.load_background_graphics(
-            0x2000,
-            main_tile_set[0] as usize,
-            7,
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-        );
-        self.load_background_graphics(
-            0x2400,
-            main_tile_set[1] as usize,
-            6,
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-        );
-        self.load_background_graphics(
-            0x2800,
-            main_tile_set[2] as usize,
-            5,
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-        );
-        self.load_background_graphics(
-            0x2c00,
-            self.game_state.world.palette_theme.aux_bg_subset(0) as usize,
-            4,
-            0x6000,
-        );
-        self.load_background_graphics(
-            0x3000,
-            self.game_state.world.palette_theme.aux_bg_subset(1) as usize,
-            3,
-            0x6600,
-        );
-        self.load_background_graphics(
-            0x3400,
-            self.game_state.world.palette_theme.aux_bg_subset(2) as usize,
-            2,
-            0x6c00,
-        );
-        self.load_background_graphics(
-            0x3800,
-            self.game_state.world.palette_theme.aux_bg_subset(3) as usize,
-            1,
-            0x7200,
-        );
-        self.load_background_graphics(
-            0x3c00,
-            main_tile_set[7] as usize,
-            0,
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-        );
     }
 
     pub(super) fn load_common_sprites(&mut self) {
-        let misc_pack = self
-            .game_state
-            .world
-            .palette_theme
-            .misc_sprites_graphics_index() as usize;
-        let Some(data) = self.asset_bytes(64, misc_pack).map(Vec::from) else {
-            return;
-        };
-        self.do3_to_4_high_to_vram(0x4400, &data, chr_source::CHR_KIND_SPRITE, misc_pack as u16);
+        let module = self.game_state.frame.main_module;
+        let misc = self.game_state.world.palette_theme.misc_sprites_graphics_index();
+        let Some(mut work) = crate::cycle_models::tilesets::TilesetWork::common(module, misc,
+            |sheet| self.sprite_graphics_decompression_stream(sheet as usize)) else { return };
+        while let Some(instruction) = work.step(&self.ram) {
+            self.retire_tileset_instruction(instruction);
+        }
+        self.record_common_sprite_provenance();
+    }
 
-        if self.game_state.frame.main_module == 1 {
-            self.load_sprite_graphics(
-                0x4800,
-                94,
-                GraphicsDecompressionScratch::primary_buffer_offset(),
-            );
-            self.load_sprite_graphics(
-                0x4c00,
-                95,
-                GraphicsDecompressionScratch::primary_buffer_offset(),
-            );
+    fn record_tileset_provenance(&mut self, destination: usize, kind: u8, pack: u8) {
+        self.vram_chr_source.record_tiles(destination, 64, kind, u16::from(pack));
+        self.vram_chr_preview_source.record_tiles(destination, 64, kind, u16::from(pack));
+        self.tag_stream_content_hash(destination, 64);
+    }
+
+    fn record_common_sprite_provenance(&mut self) {
+        self.record_tileset_provenance(0x4400, chr_source::CHR_KIND_SPRITE,
+            self.game_state.world.palette_theme.misc_sprites_graphics_index());
+        let first = if self.game_state.frame.main_module == 1 {94} else {6};
+        for (destination, pack) in [(0x4800, first), (0x4c00, first + 1)] {
+            self.record_tileset_provenance(destination, chr_source::CHR_KIND_SPRITE, pack);
+        }
+    }
+
+    pub(super) fn retire_tileset_instruction(&mut self, instruction: crate::cycle_models::tilesets::Instruction) {
+        use crate::cycle_models::tilesets::Publication;
+        if let Some(Publication::Graphics { destination, publication }) = instruction.publication {
+            self.retire_sheet_load_instruction(destination, crate::cycle_models::graphics_load::Instruction {
+                master_cycles: instruction.master_cycles, routine: instruction.routine,
+                publication: Some(publication), #[cfg(test)] pc: instruction.pc,
+            });
+            if let crate::cycle_models::graphics_load::Publication::Conversion(
+                crate::cycle_models::graphics_convert::Publication::VramWord { offset, .. }
+            ) = publication {
+                self.ppu.vram_pointer = (destination as u16).wrapping_add(offset).wrapping_add(1);
+            }
             return;
         }
-
-        let Some(data) = self.asset_bytes(64, 6).map(Vec::from) else {
-            return;
-        };
-        self.do3_to_4_low_to_vram(0x4800, &data, chr_source::CHR_KIND_SPRITE, 6);
-
-        let Some(data) = self.asset_bytes(64, 7).map(Vec::from) else {
-            return;
-        };
-        self.do3_to_4_low_to_vram(0x4c00, &data, chr_source::CHR_KIND_SPRITE, 7);
+        let _scope = crate::cycle_ledger::routine(instruction.routine);
+        crate::cycle_ledger::charge(u64::from(instruction.master_cycles));
+        match instruction.publication {
+            Some(Publication::PpuByte { register, value }) => self.ppu.write(register, value),
+            Some(Publication::VramAddress(address)) => {
+                self.ppu.write(0x16, address as u8);
+                self.ppu.write(0x17, (address >> 8) as u8);
+            }
+            Some(Publication::SpriteSubset { slot, value }) => self.sprite_workspace_mut().set_graphics_subset(usize::from(slot), value),
+            Some(Publication::BackgroundSubset { slot, value }) => self.world_palette_theme_mut().set_aux_bg_subset(usize::from(slot), value),
+            Some(Publication::Graphics { .. }) => unreachable!(),
+            None => {}
+        }
     }
 
     pub(super) fn load_sprite_graphics(
@@ -1551,127 +2630,26 @@ impl ZeldaState {
         gfx_pack: usize,
         decompression_buffer_offset: usize,
     ) {
-        if gfx_pack < 12 {
-            // Sheets 0..11 are not real art, but the game still loads them
-            // (the cold-boot intro runs InitializeTilesets with subsets 0 and
-            // 8 still in their boot defaults). Their compressed streams
-            // contain copy commands that reference bytes past the produced
-            // output; on hardware those read the persistent WRAM
-            // decompression buffer, so the junk that lands in OBJ VRAM is a
-            // deterministic function of the buffer's stale contents. Exact
-            // video parity against Snes9x requires reproducing that, so
-            // decompress against the live WRAM buffer and expand the full
-            // 0x600 window (decompressed bytes + stale tail) from it.
-            let Some(compressed) = self.asset_bytes(64, gfx_pack).map(Vec::from) else {
-                return;
-            };
-            self.decompress_graphics_into_wram_buffer(&compressed, decompression_buffer_offset);
-            let window: Vec<u8> = (0..0x600)
-                .map(|i| self.ram[(decompression_buffer_offset + i) & 0xffff])
-                .collect();
-            self.do3_to_4_low_to_vram(dst, &window, chr_source::CHR_KIND_SPRITE, gfx_pack as u16);
-            return;
-        }
-        let Some(data) = self.decompressed_sprite_graphics_data(gfx_pack) else {
-            return;
-        };
-        self.copy_decompressed_graphics_to(decompression_buffer_offset, &data);
-        if matches!(gfx_pack, 0x52 | 0x53 | 0x5a | 0x5b | 0x5c | 0x5e | 0x5f) {
-            self.do3_to_4_high_to_vram(dst, &data, chr_source::CHR_KIND_SPRITE, gfx_pack as u16);
-        } else {
-            self.do3_to_4_low_to_vram(dst, &data, chr_source::CHR_KIND_SPRITE, gfx_pack as u16);
-        }
+        let Some(stream) = self.sprite_graphics_decompression_stream(gfx_pack) else { return };
+        let mut work = crate::cycle_models::graphics_load::SheetWork::sprite(
+            gfx_pack as u8, decompression_buffer_offset, &stream,
+        );
+        self.finish_sheet_load(dst, gfx_pack, chr_source::CHR_KIND_SPRITE, &mut work);
     }
 
-    /// Decompress an LC-LZ2 graphics stream directly into the WRAM
-    /// decompression buffer, mirroring the original routine's addressing:
-    /// output bytes stream into WRAM as they are produced, and copy commands
-    /// read back from the buffer base — including bytes beyond what this
-    /// stream has produced (stale contents from earlier loads). All buffer
-    /// arithmetic wraps at 16 bits like the original's indexed addressing.
-    fn decompress_graphics_into_wram_buffer(&mut self, src: &[u8], buffer_base: usize) {
-        let mut cursor = 0usize;
-        let mut produced = 0usize;
-        macro_rules! push {
-            ($value:expr_2021) => {{
-                let value: u8 = $value;
-                self.ram[(buffer_base + produced) & 0xffff] = value;
-                produced += 1;
-            }};
-        }
-        loop {
-            let Some(mut cmd) = src.get(cursor).copied() else {
-                return;
-            };
-            cursor += 1;
-            if cmd == 0xff {
-                return;
-            }
-            let len = if cmd & 0xe0 != 0xe0 {
-                let len = (cmd & 0x1f) as usize + 1;
-                cmd &= 0xe0;
-                len
-            } else {
-                let Some(next) = src.get(cursor).copied() else {
-                    return;
-                };
-                cursor += 1;
-                let len = next as usize + (((cmd & 3) as usize) << 8) + 1;
-                cmd = (cmd << 3) & 0xe0;
-                len
-            };
-            if cmd == 0 {
-                for _ in 0..len {
-                    let Some(value) = src.get(cursor).copied() else {
-                        return;
-                    };
-                    cursor += 1;
-                    push!(value);
-                }
-            } else if cmd & 0x80 != 0 {
-                let Some(lo) = src.get(cursor).copied() else {
-                    return;
-                };
-                let Some(hi) = src.get(cursor + 1).copied() else {
-                    return;
-                };
-                cursor += 2;
-                let mut offset = lo as usize | ((hi as usize) << 8);
-                for _ in 0..len {
-                    let value = self.ram[(buffer_base + offset) & 0xffff];
-                    push!(value);
-                    offset += 1;
-                }
-            } else if cmd & 0x40 == 0 {
-                let Some(value) = src.get(cursor).copied() else {
-                    return;
-                };
-                cursor += 1;
-                for _ in 0..len {
-                    push!(value);
-                }
-            } else if cmd & 0x20 == 0 {
-                let Some(lo) = src.get(cursor).copied() else {
-                    return;
-                };
-                let Some(hi) = src.get(cursor + 1).copied() else {
-                    return;
-                };
-                cursor += 2;
-                for i in 0..len {
-                    push!(if i & 1 == 0 { lo } else { hi });
-                }
-            } else {
-                let Some(mut value) = src.get(cursor).copied() else {
-                    return;
-                };
-                cursor += 1;
-                for _ in 0..len {
-                    push!(value);
-                    value = value.wrapping_add(1);
-                }
+    /// The first twelve sheets are contiguous raw 3bpp art. When a caller
+    /// passes one to Decomp_spr, it is interpreted as a command stream and
+    /// may read into the following raw sheet before reaching the terminator.
+    /// Reassemble that native asset window instead of truncating at a tile
+    /// sheet boundary or consulting the ROM at runtime.
+    fn sprite_graphics_decompression_stream(&self, sheet: usize) -> Option<Vec<u8>> {
+        let mut stream = self.asset_bytes(64, sheet)?.to_vec();
+        if sheet < 12 {
+            for next in sheet + 1..12 {
+                stream.extend_from_slice(self.asset_bytes(64, next)?);
             }
         }
+        Some(stream)
     }
 
     pub(super) fn load_background_graphics(
@@ -1681,23 +2659,39 @@ impl ZeldaState {
         slot: usize,
         decompression_buffer_offset: usize,
     ) {
-        let Some(data) = self.decompressed_background_graphics_data(gfx_pack) else {
-            return;
-        };
-        self.copy_decompressed_graphics_to(decompression_buffer_offset, &data);
-        let high = if self.game_state.world.palette_theme.main_tile_theme_index() >= 0x20 {
-            matches!(slot, 7 | 2 | 3 | 4)
-        } else {
-            slot >= 4
-        };
-        if high {
-            self.do3_to_4_high_to_vram(dst, &data, chr_source::CHR_KIND_BG, gfx_pack as u16);
-        } else {
-            self.do3_to_4_low_to_vram(dst, &data, chr_source::CHR_KIND_BG, gfx_pack as u16);
+        let Some(stream) = self.asset_bytes(65, gfx_pack) else { return };
+        let mut work = crate::cycle_models::graphics_load::SheetWork::background(
+            gfx_pack as u8, decompression_buffer_offset, stream,
+            self.game_state.world.palette_theme.main_tile_theme_index(), slot as u8,
+        );
+        self.finish_sheet_load(dst, gfx_pack, chr_source::CHR_KIND_BG, &mut work);
+    }
+
+    fn finish_sheet_load(
+        &mut self, dst: usize, pack: usize, kind: u8,
+        work: &mut crate::cycle_models::graphics_load::SheetWork,
+    ) {
+        self.vram_chr_source.record_tiles(dst, 64, kind, pack as u16);
+        self.vram_chr_preview_source.record_tiles(dst, 64, kind, pack as u16);
+        while let Some(instruction) = work.step(&self.ram) {
+            self.retire_sheet_load_instruction(dst, instruction);
         }
+        self.tag_stream_content_hash(dst, 64);
     }
 
     pub(super) fn decompress_animated_dungeon_tiles(&mut self, pack: usize) {
+        if let Some(mut work) = self.native_pre_dungeon_animated_graphics.take() {
+            self.advance_animated_dungeon_graphics(pack, &mut work, AnimatedDungeonGraphicsProgress::Returned);
+            // Publication advances are unpriced; retain the ordinary caller's
+            // aggregate charge without replaying its completed stores.
+            for sheet in [pack, 0x5c] {
+                self.charge_sheet_decompression(DecompressEntry::BackgroundTables, 65, sheet,
+                    GraphicsDecompressionScratch::primary_buffer_offset());
+                let _scope = crate::cycle_ledger::routine(0x00_dfb8);
+                crate::cycle_ledger::charge(32 + 48 * 3736 + 47 * 6 + 42);
+            }
+            return;
+        }
         self.decompress_background_graphics_to_buffer(
             GraphicsDecompressionScratch::primary_buffer_offset(),
             pack,
@@ -1961,133 +2955,140 @@ impl ZeldaState {
     }
 
     pub(super) fn do3_to_4_high_to_vram(
-        &mut self,
-        mut dst: usize,
-        data: &[u8],
-        chr_kind: u8,
-        chr_pack: u16,
+        &mut self, dst: usize, data: &[u8], chr_kind: u8, chr_pack: u16,
     ) {
-        let start = dst;
-        self.vram_chr_source
-            .record_tiles(dst, 64, chr_kind, chr_pack);
-        self.vram_chr_preview_source
-            .record_tiles(dst, 64, chr_kind, chr_pack);
-        let mut src = 0usize;
-        let mut tmp = [0u8; 8];
-        for _ in 0..64 {
-            for i in (0..8).rev() {
-                let lo = data.get(src).copied().unwrap_or(0);
-                let hi = data.get(src + 1).copied().unwrap_or(0);
-                self.ppu.vram[dst] = lo as u16 | ((hi as u16) << 8);
-                tmp[i] = lo | hi;
-                // The ROM keeps this word's combined plane byte in the $BD
-                // scratch word (`AND #$00FF : STA $BD`, $00:E5E0) before
-                // copying it into the line-pointer table; the menu's
-                // first-frame d-pad gate later reads whatever the last
-                // conversion left there (route host 1042435).
-                self.ram[MENU_PREV_JOYPAD_H] = tmp[i];
-                self.ram[MENU_PREV_JOYPAD_H + 1] = 0;
-                self.set_dungeon_line_pointer_row0(i, tmp[i] as u16);
-                dst += 1;
-                src += 2;
-            }
-            for i in (0..8).rev() {
-                let lo = data.get(src).copied().unwrap_or(0);
-                self.ppu.vram[dst] = lo as u16 | (((lo | tmp[i]) as u16) << 8);
-                dst += 1;
-                src += 1;
-            }
-        }
-        // OBJ CHR keyed by (pack, off) is heavily non-injective (subset numbers,
-        // esp. pack 0, are reused with different gfx across areas). Generic BG
-        // CHR is also non-injective because the same 3bpp pack/off can expand via
-        // the high or low conversion depending on theme/slot. Re-tag render
-        // sources by content hash so off-VRAM paths resolve the exact live cell,
-        // while vram_chr_preview_source keeps the raw pack/off for authoring.
-        if matches!(
-            chr_kind,
-            chr_source::CHR_KIND_BG | chr_source::CHR_KIND_SPRITE
-        ) {
-            self.tag_stream_content_hash(start, 64);
-        }
+        self.convert_3_to_4_to_vram(dst, data, chr_kind, chr_pack, true);
     }
 
     pub(super) fn do3_to_4_low_to_vram(
-        &mut self,
-        mut dst: usize,
-        data: &[u8],
-        chr_kind: u8,
-        chr_pack: u16,
+        &mut self, dst: usize, data: &[u8], chr_kind: u8, chr_pack: u16,
     ) {
-        let start = dst;
-        self.vram_chr_source
-            .record_tiles(dst, 64, chr_kind, chr_pack);
-        self.vram_chr_preview_source
-            .record_tiles(dst, 64, chr_kind, chr_pack);
-        let mut src = 0usize;
-        for _ in 0..64 {
-            for _ in 0..8 {
-                self.ppu.vram[dst] = read_word_from_slice(data, src);
-                dst += 1;
-                src += 2;
-            }
-            for _ in 0..8 {
-                self.ppu.vram[dst] = data.get(src).copied().unwrap_or(0) as u16;
-                dst += 1;
-                src += 1;
-            }
+        self.convert_3_to_4_to_vram(dst, data, chr_kind, chr_pack, false);
+    }
+
+    fn convert_3_to_4_to_vram(
+        &mut self, dst: usize, data: &[u8], chr_kind: u8, chr_pack: u16, high: bool,
+    ) {
+        let _scope = crate::cycle_ledger::routine(if high {0x00_e5af} else {0x00_e63c});
+        self.vram_chr_source.record_tiles(dst, 64, chr_kind, chr_pack);
+        self.vram_chr_preview_source.record_tiles(dst, 64, chr_kind, chr_pack);
+        let mut work = crate::cycle_models::graphics_convert::ConversionWork::new(high, data, 64);
+        while let Some(instruction) = work.step() {
+            self.retire_graphics_conversion_instruction(dst, instruction);
         }
-        // See do3_to_4_high_to_vram: content-hash non-injective BG/sprite CHR
-        // for render lookup, preserving raw preview provenance separately.
-        if matches!(
-            chr_kind,
-            chr_source::CHR_KIND_BG | chr_source::CHR_KIND_SPRITE
-        ) {
-            self.tag_stream_content_hash(start, 64);
+        // Keep raw pack provenance for authoring; rendered BG/sprite sheets
+        // use content identities because their pack numbers are non-injective.
+        if matches!(chr_kind, chr_source::CHR_KIND_BG | chr_source::CHR_KIND_SPRITE) {
+            self.tag_stream_content_hash(dst, 64);
+        }
+    }
+
+    fn retire_graphics_conversion_instruction(
+        &mut self, dst: usize, instruction: crate::cycle_models::graphics_convert::Instruction,
+    ) {
+        use crate::cycle_models::graphics_convert::Publication;
+        crate::cycle_ledger::charge(u64::from(instruction.master_cycles));
+        match instruction.publication {
+            Some(Publication::VramWord { offset, value }) => self.ppu.vram[dst + usize::from(offset)] = value,
+            Some(Publication::LineWord { row, value }) => self.set_dungeon_line_pointer_row0(usize::from(row), value),
+            Some(Publication::ScratchWord(value)) => {
+                self.ram[MENU_PREV_JOYPAD_H..MENU_PREV_JOYPAD_H + 2].copy_from_slice(&value.to_le_bytes());
+            }
+            // This slice API has no physical source address. The enclosing
+            // loader owns its pointer; the work exposes every increment for
+            // that caller without inventing an address for a native slice.
+            Some(Publication::SourceOffset(_)) | None => {}
+        }
+    }
+
+    fn retire_sheet_load_instruction(
+        &mut self, dst: usize, instruction: crate::cycle_models::graphics_load::Instruction,
+    ) {
+        use crate::cycle_models::graphics_load::Publication;
+        use crate::cycle_models::graphics_convert::Publication as Conversion;
+        let _scope = crate::cycle_ledger::routine(instruction.routine);
+        crate::cycle_ledger::charge(u64::from(instruction.master_cycles));
+        match instruction.publication {
+            Some(Publication::Byte { address, value }) => self.ram[address] = value,
+            Some(Publication::SourcePointer(value)) => self.ram[..2].copy_from_slice(&value.to_le_bytes()),
+            Some(Publication::Conversion(Conversion::VramWord { offset, value })) =>
+                self.ppu.vram[dst + usize::from(offset)] = value,
+            Some(Publication::Conversion(Conversion::LineWord { row, value })) =>
+                self.set_dungeon_line_pointer_row0(usize::from(row), value),
+            Some(Publication::Conversion(Conversion::ScratchWord(value))) =>
+                self.ram[MENU_PREV_JOYPAD_H..MENU_PREV_JOYPAD_H + 2].copy_from_slice(&value.to_le_bytes()),
+            Some(Publication::Conversion(Conversion::SourceOffset(_))) => unreachable!("sheet owns its source pointer"),
+            None => {}
         }
     }
 
     pub(super) fn graphics_load_chr_half_slot(&mut self) {
+        if self.try_native_intro_half_slot() { return; }
+        let _scope = crate::cycle_ledger::routine(0x00_e3fa);
+        crate::cycle_ledger::charge(48);
         let k = self.game_state.display.chr_halfslot_request;
         if k == 0 {
+            crate::cycle_ledger::charge(6 + 44);
             return;
         }
 
+        crate::cycle_ledger::charge(120); // Bank setup, SP6 lookup and BMI.
         let sp6 = GRAPHICS_LOAD_SP6[k as usize - 1];
         if sp6 >= 0 {
+            crate::cycle_ledger::charge(64);
             self.set_sp6r_indoors(sp6 as u8);
             self.select_overworld_aux_palette_offset();
             if k == 1 {
+                crate::cycle_ledger::charge(158);
                 self.set_sp6r_indoors(10);
                 self.Palette_Load_SpriteEnvironment();
+                crate::cycle_ledger::charge(60); // INC CGRAM flag : BRA.
             } else {
+                crate::cycle_ledger::charge(6 + 110);
                 self.Palette_Load_SpriteEnvironment_Dungeon();
+                crate::cycle_ledger::charge(38);
             }
             self.increment_cgram_update_flag();
+        } else {
+            crate::cycle_ledger::charge(6);
         }
 
+        crate::cycle_ledger::charge(204);
         let mut tilebytes = 0x44;
         self.increment_chr_halfslot_request();
         if self.game_state.display.chr_halfslot_request & 1 != 0 {
+            crate::cycle_ledger::charge(64);
             self.clear_chr_halfslot_request();
             if k != 18 {
+                crate::cycle_ledger::charge(88);
                 tilebytes = 0x46;
                 if k == 2 {
+                    crate::cycle_ledger::charge(32);
                     self.clear_custom_spell_animation();
+                } else {
+                    crate::cycle_ledger::charge(6);
                 }
+            } else {
+                crate::cycle_ledger::charge(6);
             }
+        } else {
+            crate::cycle_ledger::charge(6);
         }
 
+        crate::cycle_ledger::charge(136);
         self.set_nmi_load_target_page(tilebytes);
         self.set_pending_nmi_subroutine(11);
 
         let mut pack = GRAPHICS_HALF_SLOT_PACKS[k as usize - 1] as usize;
         if pack == 1 {
+            crate::cycle_ledger::charge(32);
             pack = self
                 .game_state
                 .world
                 .palette_theme
                 .misc_sprites_graphics_index() as usize;
+        } else {
+            crate::cycle_ledger::charge(6);
         }
         let bank_offset = if tilebytes == 0x46 { 0x300 } else { 0 };
         self.load_chr_half_slot_pack(pack, bank_offset);
@@ -2099,9 +3100,24 @@ impl ZeldaState {
         };
         let data = data.to_vec();
 
+        let Some(&source_low) = SPRITE_SOURCE_LOW_WORDS.get(pack) else { return };
+        let table_page_crossings = [0xf3, 0xd2, 0xb1].into_iter()
+            .filter(|low| low + pack >= 0x100).count();
+        crate::cycle_ledger::charge(358 + 6 * table_page_crossings as u64);
+        let mut plane01 = source_low.wrapping_add(bank_offset as u16);
+
         let mut dst = NMI_BG_CHAR_HALF_BUFFER;
         let mut src = bank_offset;
-        for _ in 0..32 {
+        for tile in 0..32 {
+            crate::cycle_ledger::charge(86);
+            let mut plane2 = plane01.wrapping_add(16);
+            if plane2 == 0 {
+                crate::cycle_ledger::charge(78);
+                plane2 = 0x8000;
+            } else {
+                crate::cycle_ledger::charge(6);
+            }
+            crate::cycle_ledger::charge(56);
             let mut sprite_data = [0u8; 24];
             for byte in &mut sprite_data {
                 let Some(value) = data.get(src).copied() else {
@@ -2112,14 +3128,35 @@ impl ZeldaState {
             }
 
             for i in 0..8 {
+                crate::cycle_ledger::charge(360);
+                plane01 = plane01.wrapping_add(2);
+                if plane01 == 0 {
+                    crate::cycle_ledger::charge(196);
+                    plane01 = plane2.wrapping_add(1);
+                } else {
+                    crate::cycle_ledger::charge(6);
+                }
+                crate::cycle_ledger::charge(314);
+                plane2 = plane2.wrapping_add(1);
+                if plane2 == 0 {
+                    crate::cycle_ledger::charge(220);
+                    plane01 = 0x8000;
+                    plane2 = 0x8010;
+                } else {
+                    crate::cycle_ledger::charge(6);
+                }
                 let lo = sprite_data[i * 2];
                 let hi = sprite_data[i * 2 + 1];
                 let mask = sprite_data[16 + i];
                 self.write_expanded_graphics_tile_row(dst, lo, hi, mask, lo | hi | mask);
                 dst += 2;
+                crate::cycle_ledger::charge(58 + if i != 7 { 6 } else { 0 });
             }
             dst += 16;
+            crate::cycle_ledger::charge(168 + if tile != 31 { 6 } else { 0 });
+            plane01 = plane2;
         }
+        crate::cycle_ledger::charge(94); // SEP : PLB : RTL.
     }
 
     pub(super) fn ApplyPaletteFilter_bounce(&mut self) {
@@ -2153,7 +3190,7 @@ impl ZeldaState {
     }
 
     pub(super) fn EraseTileMaps_dungeonmap(&mut self) {
-        self.erase_tile_maps(0x007f, 0x0300);
+        self.erase_tile_maps(crate::cycle_models::tilemap_erase::Pattern::DungeonMap);
     }
 
     pub(super) fn EnableForceBlank(&mut self) {
@@ -2193,6 +3230,167 @@ impl ZeldaState {
         // Remember the pack filling the animated-tile buffer so the per-frame
         // animated-tile DMA can tag its VRAM slots injectively (CHR_KIND_BG_ANIM).
         self.animated_tile_pack = a as u16;
+    }
+
+    fn publish_animated_graphics_plane_stores(&mut self, base: usize, start: u16, end: u16) {
+        let source = self.graphics_primary_decompression_buffer(0x600);
+        for store in start..end {
+            let row = usize::from(store / 2);
+            let tile = row / 8;
+            let y = row % 8;
+            let dst = base + tile * 32 + y * 2;
+            let src = tile * 24;
+            if store & 1 == 0 {
+                self.ram[dst..dst + 2].copy_from_slice(&source[src + y * 2..src + y * 2 + 2]);
+            } else {
+                self.ram[dst + 16] = source[src + 16 + y];
+                self.ram[dst + 17] = 0;
+            }
+        }
+    }
+
+    pub(super) fn advance_animated_dungeon_graphics(
+        &mut self,
+        pack: usize,
+        work: &mut AnimatedDungeonGraphicsContinuation,
+        target: AnimatedDungeonGraphicsProgress,
+    ) {
+        use AnimatedDungeonGraphicsProgress::*;
+        assert!(work.progress <= target, "animated dungeon graphics moved backward");
+        while work.progress != target {
+            match work.progress {
+                FirstSheet(start) | SecondSheet(start) => {
+                    let first = matches!(work.progress, FirstSheet(_));
+                    let end = match (first, target) {
+                        (true, FirstSheet(end)) | (false, SecondSheet(end)) => end,
+                        _ => 1536,
+                    };
+                    assert!(start <= end && end <= 1536);
+                    let bytes = self.decompressed_background_graphics_data(if first { pack } else { 0x5c })
+                        .expect("animated dungeon graphics require native decoded sheets");
+                    assert_eq!(bytes.len(), 1536);
+                    self.copy_decompressed_graphics_to(0x14000 + usize::from(start),
+                        &bytes[usize::from(start)..usize::from(end)]);
+                    work.progress = if first { FirstSheet(end) } else { SecondSheet(end) };
+                    if work.progress != target {
+                        work.progress = if first { FirstConversion(0) } else { SecondConversion(0) };
+                    }
+                }
+                FirstConversion(start) | SecondConversion(start) => {
+                    let first = matches!(work.progress, FirstConversion(_));
+                    let end = match (first, target) {
+                        (true, FirstConversion(end)) | (false, SecondConversion(end)) => end,
+                        _ => 768,
+                    };
+                    assert!(start <= end && end <= 768);
+                    self.publish_animated_graphics_plane_stores(if first { 0xa680 } else { 0xac80 }, start, end);
+                    work.progress = if first { FirstConversion(end) } else { SecondConversion(end) };
+                    if work.progress != target {
+                        work.progress = if first { SecondSheet(0) } else { Rotation(0) };
+                    }
+                }
+                Rotation(start) => {
+                    let end = if let Rotation(end) = target { end } else { 1024 };
+                    assert!(start <= end && end <= 1024);
+                    const ROTATION_BLOCKS: [usize; 4] = [0xa880, 0xac80, 0xae80, 0xaa80];
+                    for store in start..end {
+                        let offset = usize::from(store / 4) * 2;
+                        let (dst, value) = match store % 4 {
+                            0 => {
+                                work.rotation_saved_word = read_le_u16(&self.ram, ROTATION_BLOCKS[0] + offset);
+                                (0xa880, read_le_u16(&self.ram, ROTATION_BLOCKS[1] + offset))
+                            }
+                            1 => (0xac80, read_le_u16(&self.ram, ROTATION_BLOCKS[2] + offset)),
+                            2 => (0xae80, read_le_u16(&self.ram, ROTATION_BLOCKS[3] + offset)),
+                            _ => (0xaa80, work.rotation_saved_word),
+                        };
+                        write_le_u16(&mut self.ram, dst + offset, value);
+                    }
+                    work.progress = Rotation(end);
+                    if work.progress != target {
+                        self.set_animated_tile_vram_destination_address(DUNGEON_ANIMATED_BG_VRAM_DESTINATION as u16);
+                        work.progress = DestinationPublished;
+                    }
+                }
+                DestinationPublished => work.progress = Returned,
+                Returned => unreachable!("animated dungeon graphics advanced past return"),
+            }
+        }
+    }
+
+    pub(super) fn advance_animated_overworld_graphics(
+        &mut self,
+        sheet: u8,
+        progress: &mut AnimatedOverworldGraphicsProgress,
+        target: AnimatedOverworldGraphicsProgress,
+    ) {
+        use AnimatedOverworldGraphicsProgress::*;
+        assert!(*progress <= target, "animated overworld graphics moved backward");
+        while *progress != target {
+            match *progress {
+                FirstSheet(start) | SecondSheet(start) => {
+                    let first = matches!(*progress, FirstSheet(_));
+                    let end = match (first, target) {
+                        (true, FirstSheet(end)) | (false, SecondSheet(end)) => end,
+                        _ => 1536,
+                    };
+                    assert!(start <= end && end <= 1536);
+                    let data = self.decompressed_background_graphics_data(
+                        usize::from(sheet.wrapping_add(u8::from(!first))),
+                    ).expect("animated overworld graphics require their native sheet");
+                    assert_eq!(data.len(), 1536);
+                    self.copy_decompressed_graphics_to(
+                        GraphicsDecompressionScratch::primary_buffer_offset() + usize::from(start),
+                        &data[usize::from(start)..usize::from(end)],
+                    );
+                    *progress = if first { FirstSheet(end) } else { SecondSheet(end) };
+                    if *progress != target {
+                        *progress = if first { FirstConversion(0) } else { SecondConversion(0) };
+                    }
+                }
+                FirstConversion(start) | SecondConversion(start) => {
+                    let first = matches!(*progress, FirstConversion(_));
+                    let total = if first { 1024 } else { 512 };
+                    let end = match (first, target) {
+                        (true, FirstConversion(end)) | (false, SecondConversion(end)) => end,
+                        _ => total,
+                    };
+                    assert!(start <= end && end <= total);
+                    let base = if first { 0xa680 } else { 0xae80 };
+                    self.publish_animated_graphics_plane_stores(base, start, end);
+                    *progress = if first { FirstConversion(end) } else { SecondConversion(end) };
+                    if *progress != target {
+                        *progress = if first { SecondSheet(0) } else {
+                            self.set_animated_tile_vram_destination_address(
+                                OVERWORLD_ANIMATED_BG_VRAM_DESTINATION as u16,
+                            );
+                            self.animated_tile_pack = u16::from(sheet);
+                            Returned
+                        };
+                    }
+                }
+                Returned => unreachable!("animated graphics cannot advance past return"),
+            }
+        }
+    }
+
+    pub(super) fn complete_pre_overworld_animated_graphics(&mut self, sheet: u8) {
+        let Some(mut progress) = self.native_pre_overworld_animated_graphics.take() else {
+            self.DecompressAnimatedOverworldTiles(sheet);
+            return;
+        };
+        self.advance_animated_overworld_graphics(sheet, &mut progress, AnimatedOverworldGraphicsProgress::Returned);
+        // Prefix publication is unpriced, like the other semantic progress
+        // receipts. Preserve this aggregate caller's original ledger cost
+        // when it retires, without replaying its completed memory stores.
+        for (pack, tiles) in [(sheet, 64u64), (sheet.wrapping_add(1), 32)] {
+            self.charge_sheet_decompression(
+                DecompressEntry::BackgroundTables, 65, usize::from(pack),
+                GraphicsDecompressionScratch::primary_buffer_offset(),
+            );
+            let _scope = crate::cycle_ledger::routine(0x00_dfb8);
+            crate::cycle_ledger::charge(32 + tiles * 3736 + (tiles - 1) * 6 + 42);
+        }
     }
 
     pub(super) fn LoadFollowerGraphics(&mut self) {
@@ -2255,8 +3453,56 @@ impl ZeldaState {
         );
     }
 
+    /// Publish only the completed sheets and the current sheet's written
+    /// prefix. The call's counter-reset suffix remains with its caller.
+    pub(super) fn advance_transition_aux_graphics(
+        &mut self,
+        completed: Option<TransitionAuxGraphicsProgress>,
+        target: TransitionAuxGraphicsProgress,
+    ) {
+        assert!(target.sheet < 8 && target.completed_bytes <= 0x600);
+        let first = completed.map_or(0, |progress| {
+            assert!((progress.sheet, progress.completed_bytes)
+                <= (target.sheet, target.completed_bytes), "aux graphics cursor moved backward");
+            progress.sheet
+        });
+        let backgrounds = load_gfx_aux_tileset(
+            self.game_state.world.palette_theme.aux_tile_theme_index() as usize);
+        let sprites = load_gfx_sprite_tileset(
+            self.game_state.sprites.system.graphics_index() as usize);
+        for sheet in first..=target.sheet {
+            let start = completed.filter(|progress| progress.sheet == sheet)
+                .map_or(0, |progress| progress.completed_bytes);
+            let end = if sheet == target.sheet { target.completed_bytes } else { 0x600 };
+            if start == end { continue; }
+            let data = if sheet < 4 {
+                let pack = backgrounds[usize::from(sheet)];
+                if pack == 0 { continue; }
+                if start == 0 { self.set_aux_bg_subset_pack(usize::from(sheet), pack); }
+                self.decompressed_background_graphics_data(usize::from(pack))
+            } else {
+                let slot = usize::from(sheet - 4);
+                let pack = sprites[slot];
+                if start == 0 && pack != 0 { self.set_sprite_gfx_subset(slot, pack); }
+                self.decompressed_sprite_graphics_data(usize::from(self.sprite_gfx_subset(slot)).max(12))
+            }.expect("transition graphics require native decoded assets");
+            assert_eq!(data.len(), 0x600);
+            self.copy_decompressed_graphics_to(
+                0x6000 + usize::from(sheet) * 0x600 + usize::from(start),
+                &data[usize::from(start)..usize::from(end)],
+            );
+        }
+    }
+
     /// `LoadTransAuxGFX` (`$00:D66E`, entered m8; `REP #$30` at `$D67B`).
     pub(super) fn LoadTransAuxGFX(&mut self) {
+        if let Some(progress) = self.native_transition_aux_graphics_progress.take() {
+            self.advance_transition_aux_graphics(Some(progress), TransitionAuxGraphicsProgress {
+                sheet: 7, completed_bytes: 0x600,
+            });
+            self.reset_incremental_vram_upload_counter();
+            return;
+        }
         let _scope = crate::cycle_ledger::routine(0x00_d66e);
         let p = load_gfx_aux_tileset(
             self.game_state.world.palette_theme.aux_tile_theme_index() as usize
@@ -2383,6 +3629,31 @@ impl ZeldaState {
     /// `Attract_DecompressStoryGFX` (`$00:D80E`, entered m8).
     pub(super) fn Attract_DecompressStoryGFX(&mut self) {
         let _scope = crate::cycle_ledger::routine(0x00_d80e);
+        if let Some(mut work) = self.story_graphics_decompression() {
+            // This entry runs synchronously. The same work object can be
+            // retained by an interruptible caller without decoding again or
+            // rounding its progress to an output byte. Charge each contiguous
+            // callee run once, preserving the ledger's routine ownership.
+            let mut pending = StoryGraphicsInstruction { master_cycles: 0, routine: 0x00_d80e };
+            let charge = |instruction: StoryGraphicsInstruction| {
+                if instruction.routine == 0x00_d80e {
+                    crate::cycle_ledger::charge(u64::from(instruction.master_cycles));
+                } else {
+                    crate::cycle_ledger::charge_routine(instruction.routine,
+                        u64::from(instruction.master_cycles));
+                }
+            };
+            while let Some(instruction) = work.step(&mut self.ram) {
+                if instruction.routine != pending.routine {
+                    charge(pending);
+                    pending = instruction;
+                } else {
+                    pending.master_cycles += instruction.master_cycles;
+                }
+            }
+            charge(pending);
+            return;
+        }
         // $D80E-$D81F: PHB : PHK : PLB, destination $7F:4000 in $00-$02/$05,
         // sheet $67 in $0E.
         crate::cycle_ledger::charge(240);
@@ -2398,6 +3669,51 @@ impl ZeldaState {
         self.decompress_sprite_graphics_to_buffer(0x14800, 0x68);
         // $D835-$D836: PLB : RTL.
         crate::cycle_ledger::charge(72);
+    }
+
+    pub(super) fn story_graphics_decompression(&self) -> Option<StoryGraphicsDecompression> {
+        use crate::cycle_models::decompress::decompress_instruction_timeline;
+        let mut sheets = Vec::with_capacity(2);
+        let mut instructions = Vec::new();
+        let mut elapsed = 0;
+        let append = |instructions: &mut Vec<StoryGraphicsInstruction>, elapsed: &mut u64,
+                      cycles: &[u32]| {
+            for &master_cycles in cycles {
+                instructions.push(StoryGraphicsInstruction { master_cycles, routine: 0x00_d80e });
+                *elapsed += u64::from(master_cycles);
+            }
+        };
+        // $D80E..$D81F: PHB, PHK, PLB, STZ $00, and the destination/sheet setup.
+        append(&mut instructions, &mut elapsed, &[22, 22, 28, 24, 16, 24, 16, 24, 24, 16, 24]);
+        for (sheet, destination) in [(0x67, 0x14000), (0x68, 0x14800)] {
+            // $D821 LDY $0E : JSR Decomp_spr.
+            append(&mut instructions, &mut elapsed, &[24, 46]);
+            let bytes = self.decompressed_sprite_graphics_data(sheet)?;
+            let (cost, mut stores, steps) = decompress_instruction_timeline(
+                DecompressEntry::Sprite, sheet as u8, self.asset_bytes(64, sheet)?,
+                stream_source_offset(DecompressEntry::Sprite, sheet as u8),
+                0x7e_0000 + destination as u32,
+            );
+            for store in &mut stores {
+                store.after_master_cycles += elapsed;
+            }
+            sheets.push(GraphicsDecompressionCursor::new(destination, bytes, stores,
+                elapsed + cost.master)?);
+            instructions.extend(steps.into_iter().map(|step| StoryGraphicsInstruction {
+                master_cycles: step.master_cycles,
+                routine: if step.in_get_next_byte { 0x00_e843 } else { 0x00_e772 },
+            }));
+            elapsed += cost.master;
+            // $D826..$D833: destination += $800, next sheet, loop decision.
+            append(&mut instructions, &mut elapsed,
+                &[24, 14, 16, 24, 38, 24, 16, if sheet == 0x67 { 22 } else { 16 }]);
+        }
+        // $D835 PLB : RTL. These instructions still belong to this call.
+        append(&mut instructions, &mut elapsed, &[28, 44]);
+        Some(StoryGraphicsDecompression {
+            sheets: sheets.try_into().ok()?, instructions,
+            next_instruction: 0, elapsed_master_cycles: 0,
+        })
     }
 
     pub(super) fn AnimateMirrorWarp(&mut self) {
@@ -3644,10 +4960,12 @@ impl ZeldaState {
     }
 
     pub(super) fn Palette_Load_SpriteEnvironment(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x1b_ed6e);
         self.palette_load_sprite_environment();
     }
 
     pub(super) fn Palette_Load_SpriteEnvironment_Dungeon(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x1b_ed72);
         self.palette_load_sprite_environment_dungeon();
     }
 
@@ -4245,18 +5563,16 @@ impl ZeldaState {
                     build.lower_cursor < self.game_state.display.spotlight_hdma.y_upper(),
                     "pending spotlight circle calculation requires the lower cursor inside the iris",
                 );
+                let native_circle_input = self.game_state.display.spotlight_hdma.window_y_buffer_byte();
                 assert_eq!(
-                    self.game_state
-                        .display
-                        .spotlight_hdma
-                        .window_y_buffer_byte(),
+                    native_circle_input,
                     pending_circle_input,
                     "spotlight receipt circle input disagrees with native C state",
                 );
-                if pending_circle_input != 0 {
+                if self.game_state.display.spotlight_hdma.window_y_buffer() != 0 {
                     self.decrement_spotlight_window_y_buffer();
                 }
-                build.pending_circle_input = Some(pending_circle_input);
+                build.pending_circle_input = Some(native_circle_input);
             }
             crate::SpotlightTableBuildCheckpoint::BeforeLowerTableWrite {
                 lower_cursor,
@@ -4291,7 +5607,8 @@ impl ZeldaState {
                 }
                 build.pending_lower_value = Some(circle_value);
             }
-            crate::SpotlightTableBuildCheckpoint::AfterUpperTableWrite { lower_cursor } => {
+            crate::SpotlightTableBuildCheckpoint::AfterUpperTableWrite { lower_cursor }
+            | crate::SpotlightTableBuildCheckpoint::BeforeLowerTableStore { lower_cursor } => {
                 assert!(
                     !build.completed,
                     "spotlight upper-write progress cannot point beyond the completed C table loop",
@@ -4321,7 +5638,13 @@ impl ZeldaState {
                 // The ROM resumes at $F387 (LDA $06, ASL, CMP #$01C0, BCS):
                 // the work above replays the interrupted iteration's earlier
                 // instructions and is not charged again here.
-                crate::cycle_ledger::charge(86);
+                let store_only = matches!(progress.checkpoint,
+                    crate::SpotlightTableBuildCheckpoint::BeforeLowerTableStore { .. });
+                if !store_only {
+                    crate::cycle_ledger::charge(86);
+                } else {
+                    assert!(build.lower_cursor < 224, "lower table store requires an in-range row");
+                }
                 if build.lower_cursor < 224 {
                     build.pending_lower_value = Some(circle_value);
                 } else {
@@ -4490,7 +5813,10 @@ impl ZeldaState {
                 // LDA $08, STA $7F7000,X. (Both producers of this pending
                 // value have already established lower_cursor < 224.)
                 if build.lower_cursor < 224 {
-                    charge(94);
+                    charge(if matches!(build.source_progress.map(|p| p.checkpoint),
+                        Some(crate::SpotlightTableBuildCheckpoint::BeforeLowerTableStore { .. })) {
+                        48 // $F392 STA long,X; TAX and LDA retired before the interruption.
+                    } else { 94 });
                     self.set_spotlight_hdma_table_dynamic_entry(build.lower_cursor as usize, r8);
                 }
                 // $F396-$F39A: LDA $0E, CMP $04, BEQ.
@@ -4874,14 +6200,32 @@ impl ZeldaState {
     }
 
     pub(super) fn overworld_copy_palettes_to_cache(&mut self) {
-        let aux = self
-            .game_state
-            .display
-            .palette_buffer
-            .aux_full_slice()
-            .to_vec();
-        self.copy_main_full_from_tagged(&aux, PaletteSliceSource::MirrorBank(Bank::Aux));
-        self.increment_cgram_update_flag();
+        self.advance_palette_cache_copy(0, 257);
+    }
+
+    /// The ROM interleaves eight 32-word palette columns. The final cursor
+    /// step publishes the CGRAM update only after all 256 words are stored.
+    pub(super) fn advance_palette_cache_copy(&mut self, start: u16, end: u16) {
+        assert!(start <= end && end <= 257);
+        for ordinal in start..end {
+            if ordinal == 256 {
+                self.increment_cgram_update_flag();
+            } else {
+                let index = usize::from(ordinal % 8) * 32 + usize::from(ordinal / 8);
+                self.copy_color((Bank::Aux, index), (Bank::Main, index));
+            }
+        }
+    }
+
+    pub(super) fn advance_pre_dungeon_palette_cache(&mut self, target: u16) {
+        let start = self.native_pre_dungeon_palette_cache.unwrap_or_else(|| {
+            // Reaching the shared cache copy proves this caller's palette
+            // loads are complete. Retire that native prefix exactly once.
+            self.complete_module_pre_dungeon_before_palette_cache();
+            0
+        });
+        self.advance_palette_cache_copy(start, target);
+        self.native_pre_dungeon_palette_cache = Some(target);
     }
 
     pub(super) fn enable_force_blank(&mut self) {

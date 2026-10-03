@@ -1552,22 +1552,17 @@ impl ZeldaState {
                 self.last_presented_obj_vram.is_some(),
             );
         }
-        // Snes9x invalidates decoded 4bpp tiles at the exact VRAM writes, then
-        // lazily decodes them when OBJ evaluation needs them. Preserve the
-        // complete prior cache generation and advance only the two hardware
-        // OBJ name pages from this boundary's observed DMA writes.
+        // A captured or explicitly composed cache owns the unchanged words.
+        // Without one, use this scanout's composed VRAM: main-thread graphics
+        // uploads can have replaced tiles since the last presentation without
+        // appearing in this boundary's NMI receipt. Presentation history alone
+        // cannot retain those old tiles across the upload.
         let mut obj_vram = captured_obj_vram_latch
             .filter(|vram| vram.len() == self.ppu.vram.len())
             .map(<[u16]>::to_vec)
             .or_else(|| {
                 self.ppu
                     .obj_vram_latch
-                    .as_ref()
-                    .filter(|vram| vram.len() == self.ppu.vram.len())
-                    .cloned()
-            })
-            .or_else(|| {
-                self.last_presented_obj_vram
                     .as_ref()
                     .filter(|vram| vram.len() == self.ppu.vram.len())
                     .cloned()
@@ -1653,7 +1648,7 @@ impl ZeldaState {
     /// $40, $20, $00) of `LDA #$F0` and 32 `STA $0801,X`-style stores over
     /// the OAM Y bytes, closed by `TXA : SEC : SBC #$20 : TAX : BPL`.
     /// 16 + 4 x (16 + 32 x 38 + 14 + 14 + 16 + 14) + 3 x 22 + 16 + 42 = 5,300.
-    const CLEAR_OAM_BUFFER_MASTER_CYCLES: u64 = 5_300;
+    pub(super) const CLEAR_OAM_BUFFER_MASTER_CYCLES: u64 = 5_300;
 
     pub(super) fn clear_oam_buffer(&mut self) {
         crate::cycle_ledger::charge_routine(0x00_841e, Self::CLEAR_OAM_BUFFER_MASTER_CYCLES);

@@ -32,6 +32,16 @@ impl ZeldaState {
         // intervening NMI instead of the ordinary main-wait consumer. A CPU
         // snapshot is valid only at its recorded host, never after that work.
         let cpu_host = self.frame_ctr_dbg + u32::from(nmi_is_trailing);
+        if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_DIALOGUE_CPU_PHASE", self.frame_ctr_dbg) {
+            eprintln!("native-main-phase-capture frame={} cpu_host={} trailing={} module={:02x}/{:02x}/{:02x} text={} latch={} hold={} scheduler={:?} scroll={:?} retained={:?}",
+                self.frame_ctr_dbg, cpu_host, nmi_is_trailing,
+                self.game_state.frame.main_module, self.game_state.frame.submodule,
+                self.game_state.frame.subsubmodule, self.game_state.messaging.runtime.module(),
+                self.game_state.display.nmi_update_is_latched(), self.dialogue_fast_forward_hold_active,
+                self.game_execution_scheduler, self.dialogue_scroll_phase(),
+                self.native_main_wait_cpu_phase.as_ref().map(|phase|
+                    (phase.host, phase.checkpoint.entry_pc, phase.budget.raster_position())));
+        }
         if self.native_main_wait_cpu_phase.as_ref().is_some_and(|phase| phase.host < cpu_host) {
             self.native_main_wait_cpu_phase = None;
         }
@@ -646,6 +656,7 @@ impl ZeldaState {
             DungeonSupertileTransitionWork::SpiralRoomInitialization
                 | DungeonSupertileTransitionWork::SpiralBackgroundSync
                 | DungeonSupertileTransitionWork::SpiralRoomCallerResume
+                | DungeonSupertileTransitionWork::SpiralRoomSpriteMain { .. }
                 | DungeonSupertileTransitionWork::SpiralBgCharacters34
         ) {
             debug_assert_eq!(self.game_state.frame.submodule, 0x0e);
@@ -1039,6 +1050,7 @@ impl ZeldaState {
             assert_eq!(self.game_state.frame.subsubmodule, 1);
             self.complete_iris_spotlight_configure_table(build);
             self.complete_deferred_module07_0f_operate_spotlight_suffix();
+            self.complete_deferred_module07_0f_landing_wipe_suffix();
         }
         if self.dungeon_peg_attribute_flip_pending.is_some() {
             if let Some(next) = self.take_original_timing_dungeon_peg_attribute_flip_progress() {
@@ -1166,15 +1178,6 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn schedule_interrupted_overworld_hud_return(
-        &mut self,
-        inventory: HudInventoryResume,
-        animate_hearts: bool,
-    ) {
-        self.schedule_interrupted_overworld_hud_update(
-            HudUpdateResume::Inventory { inventory, animate_hearts });
-    }
-
     pub(super) fn schedule_interrupted_overworld_hud_update(&mut self, hud: HudUpdateResume) {
         self.schedule_interrupted_overworld_suffix_return(OverworldSuffixResume::Hud(hud));
     }
@@ -1240,7 +1243,7 @@ impl ZeldaState {
             self.complete_pending_main_loop_common_suffix_after_module_return();
         } else {
             self.nmi_prepare_sprites();
-            self.clear_nmi_update_latch();
+            self.finish_main_loop_caller_return();
         }
     }
 

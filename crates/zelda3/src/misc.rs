@@ -10,6 +10,39 @@ pub(super) use item_awards::chest_item_alternate;
 #[cfg(test)]
 #[path = "item_award_tests.rs"]
 mod item_award_tests;
+#[cfg(test)]
+#[path = "misc_sprite_dma_tests.rs"]
+mod sprite_dma_tests;
+
+/// One owning call through all four portions of NMI_PrepareSprites. Phase
+/// changes add no instructions and cannot discard a child's loaded operand.
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+pub(super) enum SpritePreparationWork {
+    Packing(crate::cycle_models::oam_pack::ExtendedOamPacking),
+    Sources(crate::cycle_models::sprite_dma::SourceWords),
+    Animations(crate::cycle_models::sprite_dma::Animations),
+    Pointers(crate::cycle_models::sprite_dma::PointerWords),
+    Complete,
+}
+
+impl Default for SpritePreparationWork {
+    fn default() -> Self { Self::Packing(Default::default()) }
+}
+
+impl SpritePreparationWork {
+    pub(super) fn is_complete(self) -> bool { matches!(self, Self::Complete) }
+
+    #[cfg(test)]
+    fn next_pc(self) -> u32 {
+        match self {
+            Self::Packing(work) => work.next_pc(),
+            Self::Sources(work) => work.next_pc(),
+            Self::Animations(work) => work.next_pc(),
+            Self::Pointers(work) => work.next_pc(),
+            Self::Complete => 0x805d, // actual main caller, after its JSR
+        }
+    }
+}
 // Runtime source pointers selected by the ROM's LoadSongBank entry points at
 // $80:8913, $80:8925, and $80:8931. The intro entry at $80:8901 also uploads
 // the resident driver and samples; it is not the runtime overworld bank.
@@ -132,9 +165,7 @@ const LINK_HAND_DMA_BASE_SOURCES: [u16; 27] = [
 const LINK_SWORD_DMA_BASE_SOURCES: [u16; 8] = [
     0x9000, 0x9020, 0x9060, 0x91e0, 0x90a0, 0x90c0, 0x9100, 0x9140,
 ];
-// Bank 3 is the retained equipment selection after the opening Uncle leaves.
-// Name the valid source explicitly; the ROM reaches the same adjacent address
-// through a stale/out-of-range table index.
+// The final shield word is also the first auxiliary-table word.
 const LINK_SHIELD_DMA_BASE_SOURCES: [u16; 4] = [0x9300, 0x9340, 0x9380, 0x9480];
 const LINK_AUX_DMA_BASE_SOURCES: [u16; 128] = [
     0x9480, 0x94c0, 0x94e0, 0x95c0, 0x9500, 0x9520, 0x9540, 0x9480, 0x9640, 0x9680, 0x96a0, 0x9780,
@@ -158,6 +189,36 @@ const LINK_ANIMATED_TILE_DMA_COUNTDOWNS: [u16; 6] = [14, 4, 6, 16, 6, 8];
 const LINK_ANIMATED_TILE_DMA_SOURCE_OFFSETS: [u16; 15] = [
     0, 0x20, 0x40, 0, 0x20, 0x40, 0, 0x40, 0x80, 0, 0x40, 0x80, 0xb340, 0xb400, 0xb4c0,
 ];
+
+// Preserve the contiguous layout of native constant data. The source indexes
+// these tables in bytes, including odd offsets and reads spanning fragments.
+const LINK_DMA_TABLE_FRAGMENTS: &[(u16, &[u16])] = &[
+    (0x8494, &LINK_PUSH_BLOCK_DMA_BASE_SOURCES),
+    (0x849c, &LINK_SWORD_DMA_BASE_SOURCES),
+    (0x84ac, &LINK_SHIELD_DMA_BASE_SOURCES),
+    (0x84b2, &LINK_AUX_DMA_BASE_SOURCES),
+    (0x85b2, &LINK_AUX_DMA_GROUP_OFFSETS),
+    (0x85d2, &LINK_ANIMATED_TILE_DMA_COUNTDOWNS),
+    (0x85de, &LINK_ANIMATED_TILE_DMA_SOURCE_OFFSETS),
+    (0x9396, &LINK_BODY_DMA_BASE_SOURCES),
+    (0x95f4, &LINK_HEAD_DMA_BASE_SOURCES),
+    (0x9852, &LINK_HAND_DMA_BASE_SOURCES),
+];
+
+pub(super) fn link_dma_data_byte(address: u32) -> Option<u8> {
+    LINK_DMA_TABLE_FRAGMENTS.iter().find_map(|&(base, words)| {
+        let offset = address.checked_sub(u32::from(base))? as usize;
+        words.get(offset / 2).map(|word| word.to_le_bytes()[offset & 1])
+    })
+}
+
+fn link_dma_table_word(table: crate::cycle_models::sprite_dma::Table, byte_index: u16) -> u16 {
+    let address = u32::from(table.base()) + u32::from(byte_index);
+    let read = |address| link_dma_data_byte(address).unwrap_or_else(|| {
+        panic!("sprite DMA {table:?} byte index {byte_index:#06x}: native data missing at {address:#08x}")
+    });
+    u16::from_le_bytes([read(address), read(address + 1)])
+}
 
 fn receive_item_tab1_misc(item: u8) -> u8 {
     RECEIVE_ITEM_OAM_EXT_SIZES
@@ -195,6 +256,10 @@ impl ZeldaState {
 
     #[track_caller]
     pub(super) fn get_random_number_with_carry(&mut self) -> crate::rom_random::RomRandomResult {
+        // $0D:BA71: two system-bank PPU reads, ADC $1A, ADC/STA $0FA1,
+        // then RTL. The JSL belongs to the caller. RNG replay supplies the
+        // input/result but does not remove the native routine's CPU work.
+        crate::cycle_ledger::charge_routine(0x0d_ba71, 30 + 30 + 24 + 32 + 32 + 44);
         let before = self.game_state.world.region.rng_seed();
         let result = self.rom_random_replay.take_next().unwrap_or_else(|| {
             let value = before.wrapping_add(self.game_state.frame.frame_counter);
@@ -233,7 +298,34 @@ impl ZeldaState {
         panic!("module_reserved_13 reached");
     }
 
+    pub(crate) fn native_song_upload_data(&self) -> Result<std::collections::BTreeMap<u32, u8>, String> {
+        let assets = self.assets.as_ref().ok_or("native song upload needs assets")?;
+        let mut data = std::collections::BTreeMap::new();
+        for (name, start) in [
+            ("kSpcBootstrapUpload", 0x198000u32),
+            ("kSpcRuntimeUpload0", SONG_BANK_UPLOAD_STREAM_SNES_ADDRS[0]),
+            ("kSpcRuntimeUpload1", SONG_BANK_UPLOAD_STREAM_SNES_ADDRS[1]),
+            ("kSpcRuntimeUpload2", SONG_BANK_UPLOAD_STREAM_SNES_ADDRS[2]),
+        ] {
+            let stream = assets.asset_by_name(name).ok_or_else(|| format!("missing {name}; regenerate assets"))?;
+            for (i, &value) in stream.iter().enumerate() {
+                let offset = (start & 0x7fff) + i as u32;
+                let address = ((start >> 16) + offset / 0x8000) << 16 | 0x8000 | (offset & 0x7fff);
+                if let Some(old) = data.insert(address, value) { assert_eq!(old, value, "overlapping song data"); }
+            }
+        }
+        Ok(data)
+    }
+
     pub(super) fn sound_load_intro_song_bank(&mut self) {
+        // Native caller's upload pointer stores at $8901-$890B. The following
+        // memory initializer preserves its low word; it does not recreate
+        // bytes sampled from a later NMI boundary.
+        self.ram[..3].copy_from_slice(&[0x00, 0x80, 0x19]);
+        if let Some(cpu) = self.native_startup_cpu.as_ref() {
+            // The upload owner advances the bank when its Y cursor wraps.
+            self.ram[..3].copy_from_slice(&cpu.upload_pointer);
+        }
         self.select_song_bank_asset(0);
     }
 
@@ -602,12 +694,96 @@ impl ZeldaState {
     }
 
     pub(super) fn module05_load_file(&mut self) {
+        if self.try_native_load_file_entry() {
+            self.run_native_intro_clear_until_boundary();
+            return;
+        }
         if self.rom_startup_timing() {
             self.begin_selected_game_load();
             return;
         }
 
         self.complete_module05_load_file();
+    }
+
+    /// Publish only the retained load-game parent's stores. Each child has its
+    /// own state owner; returning from a child does not import a source image.
+    pub(crate) fn native_load_file_parent_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        let offset = if (0x7e0000..0x800000).contains(&address) {
+            address as usize - 0x7e0000
+        } else { address as usize };
+        match offset {
+            0x10 | 0x11 | 0x13 | 0x1c | 0x1d | 0x3a | 0x3c | 0x57 |
+            0x94 | 0x95 | 0x99 | 0x9a | 0x9c..=0x9e | 0xa0..=0xa3 | 0xb0 |
+            0x10a | 0x10c | 0x12d | 0x223 | 0x2f0 | 0x402 | 0x458 | 0x45a |
+            0x4aa | 0x4b4 | 0x4c7 | 0x62c | 0x62e | 0xaa4 | 0xaa9 | 0xab1 |
+            0x1cd8 | 0x1cf0 | 0xc005..=0xc00b | 0xc011 | 0xc017 |
+            0xc019 | 0xc01b | 0xc01d | 0xc01f | 0xc021 | 0xc023 | 0xf3cc => {}
+            _ => return false,
+        }
+        assert!(matches!(width, 1 | 2));
+        for byte in 0..usize::from(width) {
+            let at = offset + byte;
+            let v = (value >> (byte * 8)) as u8;
+            let mut owned = self.game_state.dungeon.write_load_parent_byte(at, v);
+            owned |= self.game_state.display.write_load_parent_byte(at, v);
+            owned |= self.game_state.player.follower_link.write_load_parent_byte(at, v);
+            match at {
+                0x10 => self.game_state.frame.set_main_module(v),
+                0x11 => self.game_state.frame.set_submodule(v),
+                0xb0 => self.game_state.frame.set_subsubmodule(v),
+                0x10c => self.game_state.frame.set_saved_module_for_menu(v),
+                0x10a => self.game_state.system_signals.set_game_over_check_flag(v),
+                0x4aa => self.game_state.system_signals.set_restart_check_flag(v),
+                0x12d => self.game_state.system_signals.set_ambient_sound_effect(v),
+                0x12e => self.game_state.system_signals.set_sound_effect_1(v),
+                0xa0..=0xa1 => { assert!(self.game_state.world.write_entrance_byte(at, v)); }
+                0x223 => self.game_state.world.transient.tile_interaction_shared_flag = v,
+                0xaa4 => self.game_state.world.palette_theme.set_misc_sprites_graphics_index(v),
+                0x2f0 => self.game_state.messaging.runtime.message_or_sprite_state_cache = v,
+                0x1cd8 => self.game_state.messaging.runtime.module = v,
+                0x1cf0..=0x1cf1 => {
+                    let index = &mut self.game_state.messaging.dialogue_message_index;
+                    let shift = (at & 1) * 8;
+                    index.set_value((index.value() & !(255 << shift)) | (u16::from(v) << shift));
+                }
+                0xf3cc => self.game_state.sprites.follower_runtime.set_indicator(v),
+                // The palette settings are retained WRAM words read by the
+                // native Agahnim palette functions, not a projected state.
+                0xc019..=0xc024 => {}
+                _ => { assert!(owned, "unowned load-game parent byte {at:04x}"); continue; }
+            }
+        }
+        self.ram[offset..offset + usize::from(width)]
+            .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        true
+    }
+
+    pub(crate) fn native_load_file_data(&self) -> Option<std::collections::BTreeMap<u32, u8>> {
+        let mut data = std::collections::BTreeMap::new();
+        let mut put = |address, value| {
+            if let Some(old) = data.insert(address, value) {
+                assert_eq!(old, value, "overlapping native load-game data {address:06x}");
+            }
+        };
+        for part in [self.native_dungeon_upload_data()?, self.native_dungeon_attribute_data()?,
+            self.native_palette_data()?, self.native_dungeon_sprite_data()?,
+            self.native_song_upload_data().expect("native song upload assets")] {
+            for (address, value) in part { put(address, value); }
+        }
+        for range in [0x02c813..0x02d8b3, 0x02db6e..0x02dc55, 0x04f1de..0x04f4ea] {
+            for address in range { put(address, self.native_dungeon_entrance_table_byte(address)?); }
+        }
+        for (base, asset) in [(0x00fa41, 161), (0x00fb41, 162)] {
+            for (i, &value) in self.asset_raw(asset)?.iter().enumerate() {
+                put(base + i as u32, value);
+            }
+        }
+        for (i, &value) in DUNGEON_DEFAULT_ATTR.iter().enumerate() { put(0x0e9659 + i as u32, value); }
+        for address in (0x00d2be..0x00d2c8).chain(0x00d300..0x00d308) {
+            put(address, super::load_gfx::native_gear_graphics_table_byte(address)?);
+        }
+        Some(data)
     }
 
     pub(super) fn complete_module05_load_file(&mut self) {
@@ -1655,16 +1831,23 @@ impl ZeldaState {
     }
 
     pub(super) fn main_show_text_message(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x0f_fdaa);
+        crate::cycle_ledger::charge(56); // Main-module load, compare and BEQ.
         if self.game_state.frame.main_module != 14 {
+            crate::cycle_ledger::charge(200); // Reset text state and publish module 14/2.
             self.clear_tile_interaction_shared_flag();
             self.messaging_state_mut().clear_module();
             self.set_submodule(2);
             self.save_main_module_for_menu();
             self.set_main_module(14);
+        } else {
+            crate::cycle_ledger::charge(6);
         }
+        crate::cycle_ledger::charge(44); // RTL.
     }
 
     pub(super) fn nmi_prepare_sprites(&mut self) {
+        self.enter_main_loop_sprite_preparation();
         if crate::debug_env::var_os("ZELDA3_DEBUG_PREP").is_some() {
             eprintln!(
                 "[PREP] replay_frame={} fc_dbg={} fc={} cd={:04x} mod={:02x}/{:02x}",
@@ -1689,11 +1872,8 @@ impl ZeldaState {
         let ledger_before = crate::cycle_ledger::master();
         {
             let _scope = crate::cycle_ledger::routine(0x00_85fc);
-            crate::cycle_ledger::charge(16);
-            for group_start in [28usize, 24, 20, 16, 12, 8, 4, 0] {
-                self.nmi_prepare_sprites_pack_extended_oam_group(group_start);
-            }
-            self.nmi_prepare_sprites_after_extended_oam();
+            let mut work = SpritePreparationWork::default();
+            while self.step_sprite_preparation_work(&mut work).is_some() {}
         }
         // The dialogue caller-suffix threshold prices the next
         // NMI_PrepareSprites by this complete call's charge.
@@ -1702,16 +1882,59 @@ impl ZeldaState {
         );
     }
 
+    pub(super) fn step_sprite_preparation_work(&mut self, work: &mut SpritePreparationWork) -> Option<u32> {
+        let cycles = match work {
+            SpritePreparationWork::Packing(child) => {
+                let instruction = child.step(|index| self.game_state.oam.extended_byte(index)).expect("active OAM packing");
+                if let Some((index, value)) = instruction.store {
+                    self.oam_state_mut().set_packed_extended_oam_byte(index, value);
+                }
+                if child.is_complete() { *work = SpritePreparationWork::Sources(Default::default()); }
+                instruction.master_cycles
+            }
+            SpritePreparationWork::Sources(child) => {
+                let instruction = self.step_sprite_dma_source_words(child).expect("active sprite sources");
+                if let Some((index, value)) = instruction.store {
+                    self.display_core_mut().set_sprite_preparation_source_word(index, value);
+                }
+                if child.is_complete() { *work = SpritePreparationWork::Animations(Default::default()); }
+                instruction.master_cycles
+            }
+            SpritePreparationWork::Animations(child) => {
+                let instruction = self.step_sprite_dma_animations(child).expect("active sprite animation");
+                if child.is_complete() { *work = SpritePreparationWork::Pointers(Default::default()); }
+                instruction.master_cycles
+            }
+            SpritePreparationWork::Pointers(child) => {
+                let instruction = self.step_sprite_dma_pointer_words(child).expect("active sprite pointers");
+                if let Some((index, value)) = instruction.store {
+                    self.display_core_mut().set_sprite_preparation_pointer_word(index, value);
+                }
+                if child.is_complete() { *work = SpritePreparationWork::Complete; }
+                instruction.master_cycles
+            }
+            SpritePreparationWork::Complete => return None,
+        };
+        crate::cycle_ledger::charge(u64::from(cycles));
+        Some(cycles)
+    }
+
     fn nmi_prepare_sprites_pack_extended_oam_group(&mut self, group_start: usize) {
         debug_assert!(group_start <= 28 && group_start & 3 == 0);
         // $00:85FE-$00:865A, one pass of the extended-OAM packing loop: 1128
         // (X = Y*4 never carries `LDA $0A23,X` past the $0A page). The closing
         // `BPL $0085FE` is taken (+6) after every group except the last
         // (Y = 0 - 4 sets N).
-        crate::cycle_ledger::charge(if group_start != 0 { 1128 + 6 } else { 1128 });
-        for i in group_start..group_start + 4 {
-            let value = self.game_state.oam.packed_extended_oam_byte(i);
-            self.oam_state_mut().set_packed_extended_oam_byte(i, value);
+        let mut work = crate::cycle_models::oam_pack::PackingGroup::new(group_start as u8);
+        while let Some(instruction) = work.step(|index| self.game_state.oam.extended_byte(index)) {
+            self.retire_extended_oam_packing_instruction(instruction);
+        }
+    }
+
+    fn retire_extended_oam_packing_instruction(&mut self, instruction: crate::cycle_models::oam_pack::Instruction) {
+        crate::cycle_ledger::charge(u64::from(instruction.master_cycles));
+        if let Some((index, value)) = instruction.store {
+            self.oam_state_mut().set_packed_extended_oam_byte(index, value);
         }
     }
 
@@ -1729,6 +1952,7 @@ impl ZeldaState {
         &mut self, progress: ExtendedOamPackingProgress,
     ) {
         progress.validate();
+        self.enter_main_loop_sprite_preparation();
         // Cycle ledger: the prefix of NMI_PrepareSprites ($00:85FC) up to the
         // interrupted packing group; the resume below records the remainder
         // under the same address, so a sliced call appears as two entries.
@@ -1783,6 +2007,7 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_prepare_sprites_through_progress(&mut self, progress: SpritePreparationProgress) {
+        self.enter_main_loop_sprite_preparation();
         match progress {
             SpritePreparationProgress::ExtendedOam(progress) =>
                 self.nmi_prepare_sprites_through_packing_progress(progress),
@@ -1830,134 +2055,53 @@ impl ZeldaState {
 
     fn nmi_prepare_sprites_after_extended_oam(&mut self) {
         self.nmi_prepare_sprites_before_pointer_tail();
-        // $874e-$8780: three source-word pairs, SEP, RTS.
-        crate::cycle_ledger::charge(610);
-        let words = self.nmi_prepare_sprites_pointer_words();
-        self.set_link_head_pointer_dma_sources(words[0], words[1]);
-        self.set_link_body_pointer_dma_sources(words[2], words[3]);
-        self.set_travel_bird_dma_sources(words[4], words[5]);
+        let mut work = crate::cycle_models::sprite_dma::PointerWords::default();
+        while let Some(instruction) = self.step_sprite_dma_pointer_words(&mut work) {
+            crate::cycle_ledger::charge(u64::from(instruction.master_cycles));
+            if let Some((index, value)) = instruction.store {
+                self.display_core_mut().set_sprite_preparation_pointer_word(index, value);
+            }
+        }
     }
 
     fn nmi_prepare_sprites_before_pointer_tail(&mut self) {
-        self.nmi_prepare_sprites_before_pointer_tail_from_source_progress(
-            SpritePreparationSourceProgress { completed_words: 0, master_cycles: 0 });
+        let mut work = crate::cycle_models::sprite_dma::SourceWords::default();
+        while let Some(instruction) = self.step_sprite_dma_source_words(&mut work) {
+            crate::cycle_ledger::charge(u64::from(instruction.master_cycles));
+            if let Some((index, value)) = instruction.store {
+                self.display_core_mut().set_sprite_preparation_source_word(index, value);
+            }
+        }
+        self.nmi_prepare_sprites_animations(0);
+    }
+
+    fn step_sprite_dma_source_words(
+        &self, work: &mut crate::cycle_models::sprite_dma::SourceWords,
+    ) -> Option<crate::cycle_models::sprite_dma::Instruction> {
+        use crate::cycle_models::sprite_dma::Operand;
+        let link = &self.game_state.player.follower_link;
+        work.step(|operand| match operand {
+            Operand::Graphics => link.link_dma_graphics_index_word(),
+            Operand::LeftHand => link.link_dma_left_sprite_bank_word(),
+            Operand::RightHand => link.link_dma_right_sprite_bank_word(),
+            Operand::Sword => u16::from(link.sword_dma_graphics_index()),
+            Operand::Shield => u16::from(link.shield_dma_graphics_index()),
+            // Both source LDA instructions are m16, but their consumers mask
+            // the high byte (AND #$00F8, or ASL followed by eight-bit TAX).
+            Operand::Staging => u16::from(link.link_dma_staging_index()),
+            Operand::PushedBlock => u16::from(self.game_state.player.pushed_block.animation_mode()),
+        }, link_dma_table_word)
     }
 
     fn nmi_prepare_sprites_source_words(&self) -> [u16; 14] {
-        fn link_dma_table_value(table: &[u16], index: usize, table_name: &str) -> u16 {
-            // C indexes these static DMA tables directly; this keeps an invalid
-            // translated index from becoming a silent wrong DMA source.
-            table.get(index).copied().unwrap_or_else(|| {
-                panic!(
-                    "nmi_prepare_sprites {table_name} index {index} out of bounds; table_len={}",
-                    table.len()
-                )
-            })
+        let mut work = crate::cycle_models::sprite_dma::SourceWords::default();
+        let mut words = [0; 14];
+        while let Some(instruction) = self.step_sprite_dma_source_words(&mut work) {
+            if let Some((index, value)) = instruction.store {
+                words[index] = value;
+            }
         }
-
-        let link_dma_graphics_index = (self
-            .game_state
-            .player
-            .follower_link
-            .link_dma_graphics_index_word()
-            >> 1) as usize;
-        let link_dma_left_sprite_bank = (self
-            .game_state
-            .player
-            .follower_link
-            .link_dma_left_sprite_bank_word()
-            >> 1) as usize;
-        let link_dma_right_sprite_bank = (self
-            .game_state
-            .player
-            .follower_link
-            .link_dma_right_sprite_bank_word()
-            >> 1) as usize;
-        let link_dma_sword_sprite_bank = (self
-            .game_state
-            .player
-            .follower_link
-            .sword_dma_graphics_index()
-            >> 1) as usize;
-        let link_dma_shield_sprite_bank = (self
-            .game_state
-            .player
-            .follower_link
-            .shield_dma_graphics_index()
-            >> 1) as usize;
-        let link_dma_staging_index = self
-            .game_state
-            .player
-            .follower_link
-            .link_dma_staging_index() as usize;
-        let link_dma_staging_group = self
-            .game_state
-            .player
-            .follower_link
-            .link_dma_staging_group() as usize;
-
-        let source3 = link_dma_table_value(
-            &LINK_BODY_DMA_BASE_SOURCES,
-            link_dma_graphics_index,
-            "LINK_BODY_DMA_BASE_SOURCES",
-        );
-
-        let source4 = link_dma_table_value(
-            &LINK_HEAD_DMA_BASE_SOURCES,
-            link_dma_graphics_index,
-            "LINK_HEAD_DMA_BASE_SOURCES",
-        );
-
-        let left_hand_source = link_dma_table_value(
-            &LINK_HAND_DMA_BASE_SOURCES,
-            link_dma_left_sprite_bank,
-            "LINK_HAND_DMA_BASE_SOURCES/left_sprite_bank",
-        );
-        let right_hand_source = link_dma_table_value(
-            &LINK_HAND_DMA_BASE_SOURCES,
-            link_dma_right_sprite_bank,
-            "LINK_HAND_DMA_BASE_SOURCES/right_sprite_bank",
-        );
-
-        let source6 = link_dma_table_value(
-            &LINK_SWORD_DMA_BASE_SOURCES,
-            link_dma_sword_sprite_bank,
-            "LINK_SWORD_DMA_BASE_SOURCES",
-        );
-
-        let source7 = if self
-            .game_state
-            .player
-            .follower_link
-            .shield_dma_graphics_index()
-            == 0x8b
-        {
-            0xe099
-        } else {
-            link_dma_table_value(
-                &LINK_SHIELD_DMA_BASE_SOURCES,
-                link_dma_shield_sprite_bank,
-                "LINK_SHIELD_DMA_BASE_SOURCES",
-            )
-        };
-
-        let source8 = link_dma_table_value(
-            &LINK_AUX_DMA_BASE_SOURCES,
-            link_dma_staging_index,
-            "LINK_AUX_DMA_BASE_SOURCES",
-        );
-        let aux_source_lower = source8.wrapping_add(link_dma_table_value(
-            &LINK_AUX_DMA_GROUP_OFFSETS,
-            link_dma_staging_group,
-            "LINK_AUX_DMA_GROUP_OFFSETS",
-        ));
-
-        let source10 = LINK_PUSH_BLOCK_DMA_BASE_SOURCES
-            [(self.game_state.player.pushed_block.animation_mode() & 3) as usize];
-        [source3, source3.wrapping_add(0x200), source4, source4.wrapping_add(0x200),
-            left_hand_source, right_hand_source, source6, source6.wrapping_add(0x180),
-            source7, source7.wrapping_add(0xc0), source8, aux_source_lower,
-            source10, source10.wrapping_add(0x100)]
+        words
     }
 
     fn nmi_prepare_sprites_publish_source_words(&mut self, first: usize, end: usize) {
@@ -1985,36 +2129,59 @@ impl ZeldaState {
         crate::cycle_ledger::charge(master_cycles - u64::from(progress.master_cycles));
         self.nmi_prepare_sprites_publish_source_words(usize::from(progress.completed_words), 14);
 
-        self.nmi_prepare_animated_bg();
-        if self.player_state_mut().decrement_link_dma_countdown() == 0 {
-            let t = self.player_state_mut().advance_link_dma_tile_offset();
-            // $00:8719-$00:8722 (126) with the countdown reaching zero, then
-            // $00:8724-$00:872D (122): the `BNE $008731` is taken (+6) unless
-            // the offset wrapped from 12 to 0, which runs `LDX #$00` (16)
-            // instead; then $00:8731-$00:874B (346, the two `abs,X` reads
-            // never cross a page for X <= 10).
-            crate::cycle_ledger::charge(126 + if t == 0 { 122 + 16 } else { 128 } + 346);
-
-            let index = (t >> 1) as usize;
-            self.player_state_mut()
-                .set_link_dma_countdown(LINK_ANIMATED_TILE_DMA_COUNTDOWNS[index]);
-            let source9 = LINK_ANIMATED_TILE_DMA_SOURCE_OFFSETS[index].wrapping_add(0xb280);
-            self.set_link_animated_tile_dma_sources(source9, source9.wrapping_add(0x60));
-        } else {
-            // $00:8719-$00:8722 with the countdown still nonzero: 126 + 6 for
-            // the taken `BNE $00874E`.
-            crate::cycle_ledger::charge(132);
-        }
+        self.nmi_prepare_sprites_animations(126);
     }
 
-    fn nmi_prepare_sprites_pointer_words(&self) -> [u16; 6] {
-        let bases = [0xb940u16, 0xb940, 0xb540];
-        let pointers = [self.game_state.display.sprite_dma_head_pointer,
-            self.game_state.display.sprite_dma_body_pointer,
-            self.game_state.display.travel_bird_tile_offset];
-        std::array::from_fn(|word| bases[word / 2]
-                .wrapping_add(u16::from(pointers[word / 2]).wrapping_mul(2))
-                .wrapping_add(if word & 1 == 0 { 0 } else { 0x200 }))
+    fn step_sprite_dma_animations(
+        &mut self, work: &mut crate::cycle_models::sprite_dma::Animations,
+    ) -> Option<crate::cycle_models::sprite_dma::AnimationInstruction> {
+        use crate::cycle_models::sprite_dma::{AnimationOperand as Read, AnimationStore as Store};
+        let instruction = work.step(|operand| match operand {
+            Read::BackgroundCountdown => self.game_state.display.bg_tile_animation_countdown,
+            Read::Overlay => u16::from(self.game_state.world.region.overlay_index()),
+            Read::BackgroundOffset => self.player_state_mut().link_dma_source_offset(),
+            Read::LinkCountdown => self.player_state_mut().link_dma_countdown(),
+            Read::LinkOffset => self.player_state_mut().link_dma_tile_offset(),
+        }, link_dma_table_word)?;
+        if let Some((destination, value)) = instruction.store {
+            match destination {
+                Store::BackgroundCountdown => self.reset_bg_tile_animation_countdown(value),
+                Store::BackgroundOffset => self.player_state_mut().set_link_dma_source_offset(value),
+                Store::BackgroundSource => self.set_animated_tile_data_source_address(value),
+                Store::LinkCountdown => self.player_state_mut().set_link_dma_countdown(value),
+                Store::LinkOffset => self.player_state_mut().set_link_dma_tile_offset(value),
+                Store::LinkSourceUpper => self.display_core_mut().set_sprite_preparation_animation_word(0, value),
+                Store::LinkSourceLower => self.display_core_mut().set_sprite_preparation_animation_word(1, value),
+            }
+        }
+        Some(instruction)
+    }
+
+    fn nmi_prepare_sprites_animations(&mut self, mut prepaid_master_cycles: u32) {
+        let mut work = crate::cycle_models::sprite_dma::Animations::default();
+        while let Some(instruction) = self.step_sprite_dma_animations(&mut work) {
+            // Only the legacy source-progress adapter has already charged the
+            // first countdown's load/decrement/store and untaken branch.
+            let prepaid = prepaid_master_cycles.min(instruction.master_cycles);
+            prepaid_master_cycles -= prepaid;
+            crate::cycle_ledger::charge(u64::from(instruction.master_cycles - prepaid));
+        }
+        assert_eq!(prepaid_master_cycles, 0);
+    }
+
+    fn step_sprite_dma_pointer_words(
+        &mut self, work: &mut crate::cycle_models::sprite_dma::PointerWords,
+    ) -> Option<crate::cycle_models::sprite_dma::Instruction> {
+        work.step(|pointer| self.display_core_mut().sprite_preparation_pointer_word(pointer))
+    }
+
+    fn nmi_prepare_sprites_pointer_words(&mut self) -> [u16; 6] {
+        let mut work = crate::cycle_models::sprite_dma::PointerWords::default();
+        let mut words = [0; 6];
+        while let Some(instruction) = self.step_sprite_dma_pointer_words(&mut work) {
+            if let Some((index, value)) = instruction.store { words[index] = value; }
+        }
+        words
     }
 
     fn nmi_prepare_sprites_publish_pointer_words(&mut self, first: usize, end: usize) {
@@ -2024,45 +2191,6 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn nmi_prepare_animated_bg(&mut self) {
-        if self.decrement_bg_tile_animation_countdown() == 0 {
-            let overlay = self.game_state.world.region.overlay_index() as u16;
-            let countdown = if overlay == 0xb5 || overlay == 0xbc {
-                0x17
-            } else {
-                9
-            };
-            self.reset_bg_tile_animation_countdown(countdown);
-
-            // These DMA animation fields live in WRAM and are deliberately
-            // reused by other systems during the attract/text sequence. The
-            // decomp's `Graphics_IncrementalVRAMUpload` reads them directly;
-            // do the same rather than advancing the cached Link projection.
-            let source_offset = self.player_state_mut().advance_link_dma_source_offset();
-            // NMI_PrepareSprites countdown expiry (the `BNE $008719` at
-            // $00:86E8 falls through): $00:86EA-$00:86F1 (80) tests overlay
-            // $B5 (taken BEQ +6, then `LDA #$0017` at $00:86F7, 24); otherwise
-            // $00:86F3-$00:86F5 (32) tests $BC (falls into $00:86F7 for 24,
-            // else the BNE is taken +6). $00:86FA-$00:8709 (174): the source
-            // offset advance; wrapping from $800 runs `LDA #$0000` (24)
-            // instead of the taken BNE (+6). $00:870E-$00:8716 is 126.
-            crate::cycle_ledger::charge(
-                if overlay == 0xb5 {
-                    86 + 24
-                } else if overlay == 0xbc {
-                    80 + 32 + 24
-                } else {
-                    80 + 38
-                } + if source_offset == 0 { 174 + 24 } else { 180 }
-                    + 126,
-            );
-            self.set_animated_tile_data_source_address(0xa680u16.wrapping_add(source_offset));
-        } else {
-            // The `BNE $008719` at $00:86E8 is taken while the countdown
-            // stays nonzero (+6 on the 1768 block charged by the caller).
-            crate::cycle_ledger::charge(6);
-        }
-    }
 
     pub(super) fn module_main_routing(&mut self) {
         // `Module_MainRouting` (`$00:80B5`): `LDY $10`, three `LDA $80xx,Y

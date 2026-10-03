@@ -61,6 +61,60 @@ fn file_select_name_stripes() -> Vec<u8> {
     data
 }
 
+pub(super) fn native_file_select_data_byte(address: u32) -> Option<u8> {
+    match address {
+        // Name-entry data shares the semantic menu tables. The source's
+        // disabled debug-save branch also reads an immutable ROM instruction.
+        0x0083f8..=0x0083f9 => Some([0x60,0xad][(address-0x0083f8)as usize]),
+        0x04f4c6..=0x04f501 => Some(NAME_FILE_INITIAL_SAVE[(address-0x04f4c6)as usize]),
+        0x0cd935..=0x0cd9b4 => Some(NAME_FILE_DO_THE_NAMING_NAME_PLAYER_CHAR_TILE_BY_CURSOR[(address-0x0cd935)as usize]),
+        0x0cd9b5..=0x0cda04 => {
+            let i=(address-0x0cd9b5)as usize;
+            Some(NAME_FILE_DO_THE_NAMING_NAME_PLAYER_VRAM_SETUP_WORDS[i/2].to_le_bytes()[i&1])
+        }
+        0x0cda05..=0x0cda0a => Some(NAME_FILE_CHECK_FOR_SCROLL_INPUT_Y_NAME_ENTRY_Y_SCROLL_STEPS[(address-0x0cda05)as usize]),
+        0x0cda0b..=0x0cda12 => {
+            let i=(address-0x0cda0b)as usize;Some(((i/2)as u16*32).to_le_bytes()[i&1])
+        }
+        0x0cda13..=0x0cda18 => Some(NAME_FILE_DO_THE_NAMING_NAME_PLAYER_X_OFFSETS[(address-0x0cda13)as usize]),
+        0x0cda19..=0x0cda4c => {
+            let i=(address-0x0cda19)as usize;Some(NAME_FILE_DO_THE_NAMING_NAME_PLAYER_CURSOR_X_DELTAS[i/2].to_le_bytes()[i&1])
+        }
+        0x0cdd24..=0x0cdd2f => {
+            let i=(address-0x0cdd24)as usize;Some(NAME_FILE_DRAW_SELECTED_CHARACTER_NAME_ENTRY_CHAR_VRAM_ADDRS[i/2].to_le_bytes()[i&1])
+        }
+        0x0ccd78..=0x0ccd7c => Some(FILE_SELECT_MAIN_FAIRY_Y_OFFSETS[(address-0x0ccd78)as usize]),
+        0x0cd630..=0x0cd63b => {
+            let i=(address-0x0cd630)as usize;
+            let offsets=if i<6 {SELECT_FILE_FUNC17_NAME_VRAM_OFFS}else{SELECT_FILE_FUNC17_HEALTH_VRAM_OFFS};
+            Some((offsets[(i%6)/2]as u16).to_le_bytes()[i&1])
+        }
+        0x0cd698 => Some(0x34),
+        0x0cd699..=0x0cd69b => Some(SELECT_FILE_FUNC5_DRAW_OAMS_Y_OFFSETS[(address-0x0cd699)as usize]),
+        0x0cd69c..=0x0cd69e => Some(SELECT_FILE_FUNC5_DRAW_OAMS_OAM_INDICES[(address-0x0cd69c)as usize]as u8),
+        0x0cd69f..=0x0cd6a2 => Some(SELECT_FILE_FUNC5_DRAW_OAMS_SWORD_CHARS[(address-0x0cd69f)as usize]),
+        0x0cd6a3..=0x0cd6a5 => Some(SELECT_FILE_FUNC5_DRAW_OAMS_SHIELD_CHARS[(address-0x0cd6a3)as usize]),
+        0x0cd6a6..=0x0cd6a8 => Some(SELECT_FILE_FUNC5_DRAW_OAMS_OAM_FLAGS[(address-0x0cd6a6)as usize]),
+        0x0cd6a9..=0x0cd6ab => Some(SELECT_FILE_FUNC5_DRAW_OAMS_OAM_FLAGS2[(address-0x0cd6a9)as usize]),
+        0x0cd6ac..=0x0cd6ae => Some(SELECT_FILE_FUNC5_DRAW_OAMS_OAM_FLAGS3[(address-0x0cd6ac)as usize]),
+        0x0cd7a3..=0x0cd7a4 => Some([0xa8,0xaa][(address-0x0cd7a3)as usize]),
+        0x0cd7cb..=0x0cd7d4 => Some(SELECT_FILE_FUNC6_DRAW_OAMS2_DIGIT_CHARS[(address-0x0cd7cb)as usize]),
+        0x0cd7d5..=0x0cd7d7 => Some(SELECT_FILE_FUNC6_DRAW_OAMS2_OAM_INDICES[(address-0x0cd7d5)as usize]as u8),
+        0x0cd7d8..=0x0cd7da => Some(SELECT_FILE_FUNC6_DRAW_OAMS2_X_OFFSETS[(address-0x0cd7d8)as usize]as u8),
+        0x0cce0f..=0x0cce16 => {
+            let i=(address-0x0cce0f) as usize;
+            Some(SELECT_FILE_FUNC1_BACKGROUND_CHECKERBOARD_TILES[i/2].to_le_bytes()[i&1])
+        }
+        0x0cce17..=0x0cce1a => Some([0x0f,0xce,0x13,0xce][(address-0x0cce17) as usize]),
+        0x0ce1c8..=0x0ce2a7 => Some(MODULE_ERASE_FILE_1_SELECT_FILE_GFX0[(address-0x0ce1c8) as usize]),
+        0x0ce359..=0x0ce455 => {
+            static NAMES: std::sync::OnceLock<Vec<u8>>=std::sync::OnceLock::new();
+            NAMES.get_or_init(file_select_name_stripes).get((address-0x0ce359) as usize).copied()
+        }
+        _=>None,
+    }
+}
+
 fn read_name_player_tab1_byte_word(tab: &[i16; 26], offs: usize) -> u16 {
     let lo = tab[offs / 2].to_le_bytes()[offs & 1] as u16;
     let hi = tab[offs.div_ceil(2)].to_le_bytes()[(offs + 1) & 1] as u16;
@@ -69,6 +123,10 @@ fn read_name_player_tab1_byte_word(tab: &[i16; 26], offs: usize) -> u16 {
 
 impl ZeldaState {
     pub(super) fn module01_file_select(&mut self) {
+        if self.try_native_file_select_entry() {
+            self.run_native_intro_clear_until_boundary();
+            return;
+        }
         self.set_bg3_h_copy2(0);
         self.set_bg3_v_copy2(0);
         match self.game_state.frame.submodule {
@@ -1007,6 +1065,10 @@ impl ZeldaState {
     }
 
     pub(super) fn module04_name_file(&mut self) {
+        if self.try_native_file_select_entry() {
+            self.run_native_intro_clear_until_boundary();
+            return;
+        }
         match self.game_state.frame.submodule {
             0 => self.name_file_erase_save(),
             1 => self.module_name_player_1(),
@@ -1214,12 +1276,8 @@ impl ZeldaState {
         write_le_u16(&mut self.sram, slot_base + 0x020e, 0xf000);
         write_le_u16(&mut self.sram, slot_base + KSRM_OFFS_DIED_COUNTER, 0xffff);
 
-        let mut sram_init_normal = [0u8; 60];
-        sram_init_normal[44] = 0x18;
-        sram_init_normal[45] = 0x18;
-        sram_init_normal[57] = 0xf8;
-        self.sram[slot_base + 0x340..slot_base + 0x340 + sram_init_normal.len()]
-            .copy_from_slice(&sram_init_normal);
+        self.sram[slot_base + 0x340..slot_base + 0x340 + NAME_FILE_INITIAL_SAVE.len()]
+            .copy_from_slice(&NAME_FILE_INITIAL_SAVE);
         self.intro_fix_cksum(slot_base);
         self.zelda_write_sram();
         self.return_to_file_select();

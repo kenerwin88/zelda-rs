@@ -113,6 +113,7 @@ pub(crate) struct HudInventoryConversionResume {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum HudInventoryResume {
     Conversion(HudInventoryConversionResume),
+    ArrowDigits { words: [u16; 2], master_cycles: u16 },
     /// Computed digit and backdrop retained across an instruction boundary in
     /// $0D:FCE0..$0D:FCF9. Resource conversions and bow updates have finished.
     Tail { key: u16, label: u16, master_cycles: u16 },
@@ -129,6 +130,7 @@ pub(crate) enum HudUpdateInterruption {
     Inventory(HudInventoryInterruption),
     /// Completed CPU instruction cycles in the inventory's key-store tail.
     InventoryTail { master_cycles: u16 },
+    ArrowDigits { master_cycles: u16 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -836,6 +838,42 @@ pub(crate) enum SpriteMainCpuBoundary {
         completed_stores: u8,
         continuation: Option<TrinexxHeadDrawContinuation>,
     },
+    /// Shared follower draw in Sprite_Main's prefix. Native execution binds
+    /// the drawing locals; the receipt carries only selector progress.
+    FollowerBodyDraw {
+        head_prefix_cycles: u16,
+        continuation: Option<tagalong::FollowerBodyDrawContinuation>,
+    },
+    /// The timer helper's four byte-coordinate moves, before its RTS. Native
+    /// slot coordinates and the pre-helper dispatch state survive the pause.
+    TimerCoordinateMoves {
+        slot: u8,
+        state: u8,
+        next_instruction: u8,
+        coordinates: [u8; 4],
+    },
+    FollowerHeadCoordinates {
+        prefix: tagalong::FollowerCoordinatePrefix,
+        continuation: Option<tagalong::FollowerBodyDrawContinuation>,
+    },
+    /// Rat graphics are published; the native flags byte awaits its store.
+    RatOamFlagsPending {
+        slot: u8,
+        flags: u8,
+    },
+    /// The follower's pure pose selection precedes OAM allocation/drawing.
+    /// Bind the native call arguments before suspending the Sprite_Main prefix.
+    FollowerAnimationSelection {
+        inputs: Option<(u8, u16, u16)>,
+    },
+    KeeseInactiveCheckPending { slot: u8 },
+    /// Follower_Main returned; only the wrapper's PLB/RTL and the rest of
+    /// Sprite_Main remain. No follower locals or drawing must be replayed.
+    FollowerWrapperReturn { plb_completed: bool },
+    /// Native instruction work, not a source-PC cut. The Cucco call retains
+    /// its draw, slot and post-draw return while Sprite_Main is parked.
+    /// Append new variants to preserve existing serialized boundary tags.
+    CuccoDraw { work: sprite_main_draw::CuccoDrawContinuation },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -1035,6 +1073,11 @@ pub(crate) enum CachedSpriteCpuInterruption {
         live_fields: u8,
     },
     AfterSlot { slot: u8 },
+    ExecutingGuardBeforeShadow {
+        slot: u8,
+        continuation: Option<GuardAnimationContinuation>,
+    },
+    ExecutingAfterCoordinates { slot: u8, state: Option<u8> },
 }
 
 impl CachedSpriteCpuInterruption {
@@ -1045,6 +1088,8 @@ impl CachedSpriteCpuInterruption {
             | Self::ExecutingAntfairyAfterSubtype2Increment { slot, .. }
             | Self::ExecutingGreenKnifeGuardBeforeRecruitOamPrep { slot }
             | Self::ExecutingAfterOamAllocation { slot, .. }
+            | Self::ExecutingAfterCoordinates { slot, .. }
+            | Self::ExecutingGuardBeforeShadow { slot, .. }
             | Self::Restoring { slot, .. } => slot,
         }
     }
@@ -1073,6 +1118,12 @@ impl From<crate::CachedSpriteExecutionProgress> for CachedSpriteCpuInterruption 
                 }
                 crate::CachedSpriteExecutionBodyProgress::AfterOamAllocation => {
                     Self::ExecutingAfterOamAllocation { slot, state: None }
+                }
+                crate::CachedSpriteExecutionBodyProgress::GuardShadowOamPending => {
+                    Self::ExecutingGuardBeforeShadow { slot, continuation: None }
+                }
+                crate::CachedSpriteExecutionBodyProgress::AfterCoordinates => {
+                    Self::ExecutingAfterCoordinates { slot, state: None }
                 }
             },
             crate::CachedSpriteExecutionProgress::Restoring { slot, live_fields } => {
@@ -1243,6 +1294,8 @@ pub(crate) enum DungeonSupertileTransitionWork {
     SpiralRoomCallerResume,
     SpiralBgCharacters34,
     SpiralSpriteGraphics,
+    QuadrantUploadCopy { copy: dungeon::DungeonQuadrantUploadWork },
+    SpiralRoomSpriteMain { boundary: SpriteMainCpuBoundary },
 }
 
 /// Source caller whose stack is suspended inside
@@ -1315,6 +1368,7 @@ impl DungeonSupertileTransitionWork {
             }
             Self::FilteredQuadrantTilemapBuild
             | Self::QuadrantUploadCallerReturn
+            | Self::QuadrantUploadCopy { .. }
             | Self::State13CallerReturn
             | Self::FadedFilterPreCompletionCallerReturn
             | Self::FadedFilterCallerReturn => DUNGEON_SUPERTILE_QUADRANT_TILEMAP_NMI_SLICES,
@@ -1333,7 +1387,8 @@ impl DungeonSupertileTransitionWork {
             }
             Self::FallingBgCharacters34 => DUNGEON_FALLING_BG_CHARACTERS_34_NMI_SLICES,
             Self::FallingSpriteGraphics => DUNGEON_FALLING_SPRITE_GRAPHICS_NMI_SLICES,
-            Self::SpiralRoomCallerResume => DUNGEON_SUPERTILE_CALLER_RESUME_NMI_SLICES,
+            Self::SpiralRoomCallerResume | Self::SpiralRoomSpriteMain { .. } =>
+                DUNGEON_SUPERTILE_CALLER_RESUME_NMI_SLICES,
             Self::SpiralBgCharacters34 => DUNGEON_SPIRAL_BG_CHARACTERS_34_NMI_SLICES,
             Self::SpiralSpriteGraphics => DUNGEON_SPIRAL_SPRITE_GRAPHICS_NMI_SLICES,
         }
@@ -1518,7 +1573,7 @@ pub(crate) struct DungeonSpriteMainReturn {
     pub(crate) bg2_y: u16,
     pub(crate) bg1_x: u16,
     pub(crate) bg1_y: u16,
-    pub(crate) link_oam: Option<player_oam::LinkOamEquipmentContinuation>,
+    pub(crate) link_oam: Option<player_oam::LinkOamContinuation>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2043,6 +2098,9 @@ pub(crate) enum GameWorkContinuation {
     FinishDungeonExitSpotlightControl {
         iteration: SpotlightIteration,
     },
+    /// The subtile caller has passed Sprite_Main and LinkOam, retaining only
+    /// the interrupted HUD update and its ordinary caller suffix.
+    FinishDungeonSubtileHud { hud: HudUpdateResume },
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -2131,6 +2189,7 @@ impl GameWorkContinuation {
                         | ItemReceiptGraphicsContinuation::ResumeAncillaItemReceipt { .. },
                 }
                 | Self::FinishDungeonSubtilePaletteFilter
+                | Self::FinishDungeonSubtileHud { .. }
                 | Self::FinishNmiPrepareSpritesCallerReturn { .. }
                 | Self::FinishOverworldSuffixCallerReturn { .. }
                 | Self::FinishDungeonPostSpriteMainCallerReturn

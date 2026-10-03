@@ -2349,6 +2349,35 @@ fn room_72_state_7_retains_the_exact_dma_latched_oam() {
 }
 
 #[test]
+fn effective_obj_dma_preserves_uploaded_vram_without_a_retained_cache_owner() {
+    let mut state = ZeldaState::new();
+    state.ppu.obj_tile_adr1 = 0x4000;
+    state.ppu.obj_tile_adr2 = 0x5000;
+    state.last_presented_obj_vram = Some(vec![0x1111; state.ppu.vram.len()]);
+    // A main-thread tileset upload replaced the prior presentation's OBJ
+    // graphics. The subsequent NMI only uploads Link's separate tile range.
+    state.ppu.vram.fill(0x2222);
+    state.capture_display_snapshot();
+    state.display_snapshot.as_deref_mut().unwrap().effective_presented_dma =
+        Some(EffectivePresentedDma {
+            vram_writes: vec![(0x4020, 0x3333)],
+            decoded_bg_vram_writes: Vec::new(),
+            completed_oam: None,
+            completed_link_obj_dma: None,
+            completed_cgram: None,
+            completed_ppu_registers: None,
+            completed_dialogue_metadata: None,
+        });
+
+    state.with_display_snapshot(|presented| {
+        let obj = presented.ppu.obj_vram_latch.as_ref().unwrap();
+        assert_eq!(obj[0x4020], 0x3333);
+        assert_eq!(obj[0x5800], 0x2222);
+        assert_eq!(obj[0x5bff], 0x2222);
+    });
+}
+
+#[test]
 fn effective_presented_obj_dma_empty_receipt_does_not_synthesize_a_cache() {
     let mut state = ZeldaState::new();
     state.ppu.vram.fill(0x1111);
