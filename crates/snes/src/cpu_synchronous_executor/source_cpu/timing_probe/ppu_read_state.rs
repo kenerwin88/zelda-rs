@@ -71,7 +71,10 @@ impl SourcePpuReadState {
         self.wrio = value;
     }
 
-    pub(crate) fn read(&mut self, address: u16, beam: CpuSynchronousBeamPosition) -> Option<u8> {
+    /// Read a hardware register at the caller's processed beam position.
+    /// Native continuations can own this state independently of a source CPU
+    /// probe; this operation neither executes instructions nor infers a clock.
+    pub fn read(&mut self, address: u16, beam: CpuSynchronousBeamPosition) -> Option<u8> {
         match address {
             0x2137 => {
                 if self.wrio & 0x80 != 0 {

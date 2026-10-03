@@ -1255,6 +1255,26 @@ const SPOTLIGHT_CIRCLE_X_RADIUS_CURVE: [u8; 129] = [
 ];
 
 impl ZeldaState {
+    pub(crate) fn native_spotlight_table_byte(address: u32) -> Option<u8> {
+        match address {
+            0x00f2fb..=0x00f301 => {
+                Some([0xf8, 0, 0x1b, 0xf8, 0xf0, 0x1b, 0][(address - 0xf2fb) as usize])
+            }
+            0x00f302..=0x00f309 => {
+                let offset = (address - 0xf302) as usize;
+                Some((SPOTLIGHT_DELTA_SIZE[offset / 2] as i16).to_le_bytes()[offset & 1])
+            }
+            0x00f30a..=0x00f311 => {
+                let offset = (address - 0xf30a) as usize;
+                Some(SPOTLIGHT_GOAL[offset / 2].to_le_bytes()[offset & 1])
+            }
+            0x00f44b..=0x00f4cb => {
+                Some(SPOTLIGHT_CIRCLE_X_RADIUS_CURVE[(address - 0xf44b) as usize])
+            }
+            _ => None,
+        }
+    }
+
     fn sprite_gfx_subset(&self, slot: usize) -> u8 {
         self.game_state.sprites.workspace.graphics_subset(slot)
     }
