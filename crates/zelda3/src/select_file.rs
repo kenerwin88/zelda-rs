@@ -61,8 +61,42 @@ fn file_select_name_stripes() -> Vec<u8> {
     data
 }
 
+fn kill_file_target_stripes() -> Vec<u8> {
+    let mut data = Vec::with_capacity(253);
+    for &(addr_hi, addr_lo, first, second) in &[
+        (0x61, 0xa7, 0xe7, None),
+        (0x61, 0xc7, 0xf7, Some(0x91)),
+        (0x62, 0x07, 0xe8, None),
+        (0x62, 0x27, 0xf8, Some(0x91)),
+        (0x62, 0x67, 0xe9, None),
+        (0x62, 0x87, 0xf9, Some(0x91)),
+    ] {
+        data.extend_from_slice(&[addr_hi, addr_lo, 0, 0x25, first, 0x18]);
+        let mut remaining = 18;
+        if let Some(second) = second {
+            data.extend_from_slice(&[second, 0x18]);
+            remaining -= 1;
+        }
+        for _ in 0..remaining {
+            data.extend_from_slice(&[0xa9, 0x18]);
+        }
+    }
+    data.push(0xff);
+    debug_assert_eq!(data.len(), 253);
+    data
+}
+
 pub(super) fn native_file_select_data_byte(address: u32) -> Option<u8> {
     match address {
+        0x0cd416..=0x0cd419 => Some(KILL_FILE_CHOOSE_TARGET_FAIRY_X_OFFSETS[(address-0x0cd416)as usize]),
+        0x0cd41a..=0x0cd41d => Some(KILL_FILE_CHOOSE_TARGET_FAIRY_Y_OFFSETS[(address-0x0cd41a)as usize]),
+        0x0cd41e..=0x0cd482 => Some(KILL_FILE_CHOOSE_TARGET_KILL_FILE_CONFIRM_STRIPE[(address-0x0cd41e)as usize]),
+        0x0cd483..=0x0cd484 => Some([0,12][(address-0x0cd483)as usize]),
+        0x0cd597..=0x0cd598 => Some(SELECT_FILE_FUNC16_FAIRY_Y_OFFSETS[(address-0x0cd597)as usize]),
+        0x0ce53f..=0x0ce63b => {
+            static STRIPES: std::sync::OnceLock<Vec<u8>>=std::sync::OnceLock::new();
+            STRIPES.get_or_init(kill_file_target_stripes).get((address-0x0ce53f)as usize).copied()
+        }
         // Name-entry data shares the semantic menu tables. The source's
         // disabled debug-save branch also reads an immutable ROM instruction.
         0x0083f8..=0x0083f9 => Some([0x60,0xad][(address-0x0083f8)as usize]),
@@ -926,6 +960,10 @@ impl ZeldaState {
     }
 
     pub(super) fn module03_kill_file(&mut self) {
+        if self.try_native_file_select_entry() {
+            self.run_native_intro_clear_until_boundary();
+            return;
+        }
         match self.game_state.frame.submodule {
             0 => self.file_select_erase_triforce(),
             1 => self.module_erase_file_1(),
@@ -962,27 +1000,7 @@ impl ZeldaState {
     }
 
     pub(super) fn kill_file_choose_target(&mut self) {
-        let mut data = Vec::with_capacity(253);
-        for &(addr_hi, addr_lo, first, second) in &[
-            (0x61, 0xa7, 0xe7, None),
-            (0x61, 0xc7, 0xf7, Some(0x91)),
-            (0x62, 0x07, 0xe8, None),
-            (0x62, 0x27, 0xf8, Some(0x91)),
-            (0x62, 0x67, 0xe9, None),
-            (0x62, 0x87, 0xf9, Some(0x91)),
-        ] {
-            data.extend_from_slice(&[addr_hi, addr_lo, 0, 0x25, first, 0x18]);
-            let mut remaining = 18;
-            if let Some(second) = second {
-                data.extend_from_slice(&[second, 0x18]);
-                remaining -= 1;
-            }
-            for _ in 0..remaining {
-                data.extend_from_slice(&[0xa9, 0x18]);
-            }
-        }
-        data.push(0xff);
-        debug_assert_eq!(data.len(), 253);
+        let data = kill_file_target_stripes();
         self.copy_vram_upload_buffer_bytes(0, &data);
         for k in 0..3 {
             if self.game_state.messaging.select_file_menu.save_slot_flag(k) != 0 {

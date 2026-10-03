@@ -135,22 +135,23 @@ enum IntroGraphics {
     FileMenu(super::file_select_erase::FileSelectErase),
     FileStripes(super::file_select_stripes::FileSelectStripes),
     FileActive(super::file_select_main::FileSelectMain),
+    KillFile(super::kill_file::KillFile),
     NameSetup(super::name_file_setup::NameFileSetup),
     NameActive(super::name_file_active::NameFileActive),
 }
 impl IntroGraphics {
     fn complete(&self) -> bool {
-        match self { Self::LoadFile(work) => work.complete(), Self::Items(work) => work.complete(), Self::Follower(work) => work.complete(), Self::Darkening(work)=>work.complete(), Self::Poly(work)=>work.complete(), Self::Animation(work)=>work.complete(), Self::Title(work)=>work.complete(), Self::FileSelect(work)=>work.complete(), Self::FileMenu(work)=>work.complete(), Self::FileStripes(work)=>work.complete(), Self::FileActive(work)=>work.complete(),Self::NameSetup(work)=>work.complete(),Self::NameActive(work)=>work.complete() }
+        match self { Self::LoadFile(work) => work.complete(), Self::Items(work) => work.complete(), Self::Follower(work) => work.complete(), Self::Darkening(work)=>work.complete(), Self::Poly(work)=>work.complete(), Self::Animation(work)=>work.complete(), Self::Title(work)=>work.complete(), Self::FileSelect(work)=>work.complete(), Self::FileMenu(work)=>work.complete(), Self::FileStripes(work)=>work.complete(), Self::FileActive(work)=>work.complete(),Self::KillFile(work)=>work.complete(),Self::NameSetup(work)=>work.complete(),Self::NameActive(work)=>work.complete() }
     }
     fn routine(&self) -> u32 {
-        match self { Self::LoadFile(work) => work.routine(), Self::Items(work) => work.routine(), Self::Follower(work) => work.routine(), Self::Darkening(work)=>work.routine(), Self::Poly(work)=>work.routine(), Self::Animation(work)=>work.routine(), Self::Title(work)=>work.routine(), Self::FileSelect(work)=>work.routine(), Self::FileMenu(work)=>work.routine(), Self::FileStripes(work)=>work.routine(), Self::FileActive(work)=>work.routine(),Self::NameSetup(work)=>work.routine(),Self::NameActive(work)=>work.routine() }
+        match self { Self::LoadFile(work) => work.routine(), Self::Items(work) => work.routine(), Self::Follower(work) => work.routine(), Self::Darkening(work)=>work.routine(), Self::Poly(work)=>work.routine(), Self::Animation(work)=>work.routine(), Self::Title(work)=>work.routine(), Self::FileSelect(work)=>work.routine(), Self::FileMenu(work)=>work.routine(), Self::FileStripes(work)=>work.routine(), Self::FileActive(work)=>work.routine(),Self::KillFile(work)=>work.routine(),Self::NameSetup(work)=>work.routine(),Self::NameActive(work)=>work.routine() }
     }
     fn step(&mut self, cpu: &mut super::nmi_stack::NativeNmiContext, clock: &mut CpuMasterTimeline, dma: &mut snes::DmaState,
         mut bus: impl WorkBus) -> Option<u64> {
         if let Self::LoadFile(work) = self { return work.step(cpu, clock, dma, bus); }
         // Earlier startup owners still expose their memory-only callback API.
         let bus = |at, access| bus.access(at, access);
-        match self { Self::LoadFile(_) => unreachable!(), Self::Items(work) => work.step(cpu, clock, bus), Self::Follower(work) => work.step(cpu, clock, bus),Self::Darkening(work)=>work.step(cpu,clock,dma,bus),Self::Poly(work)=>work.step(cpu,clock,bus),Self::Animation(work)=>work.step(cpu,clock,bus),Self::Title(work)=>work.step(cpu,clock,bus),Self::FileSelect(work)=>work.step(cpu,clock,bus),Self::FileMenu(work)=>work.step(cpu,clock,dma,bus),Self::FileStripes(work)=>work.step(cpu,clock,bus),Self::FileActive(work)=>work.step(cpu,clock,bus),Self::NameSetup(work)=>work.step(cpu,clock,dma,bus),Self::NameActive(work)=>work.step(cpu,clock,bus) }
+        match self { Self::LoadFile(_) => unreachable!(), Self::Items(work) => work.step(cpu, clock, bus), Self::Follower(work) => work.step(cpu, clock, bus),Self::Darkening(work)=>work.step(cpu,clock,dma,bus),Self::Poly(work)=>work.step(cpu,clock,bus),Self::Animation(work)=>work.step(cpu,clock,bus),Self::Title(work)=>work.step(cpu,clock,bus),Self::FileSelect(work)=>work.step(cpu,clock,bus),Self::FileMenu(work)=>work.step(cpu,clock,dma,bus),Self::FileStripes(work)=>work.step(cpu,clock,bus),Self::FileActive(work)=>work.step(cpu,clock,bus),Self::KillFile(work)=>work.step(cpu,clock,bus),Self::NameSetup(work)=>work.step(cpu,clock,dma,bus),Self::NameActive(work)=>work.step(cpu,clock,bus) }
     }
 }
 
@@ -341,11 +342,22 @@ impl Startup {
         matches!(self.intro_graphics, Some(IntroGraphics::LoadFile(_)))
     }
     pub(crate) fn intro_title_active(&self)->bool {matches!(self.intro_graphics,Some(IntroGraphics::Title(_)))}
-    pub(crate) fn file_menu_active(&self)->bool {matches!(self.intro_graphics,Some(IntroGraphics::FileActive(_)))}
+    pub(crate) fn file_menu_active(&self)->bool {matches!(self.intro_graphics,Some(IntroGraphics::FileActive(_)|IntroGraphics::KillFile(_)))}
     pub(crate) fn name_file_active(&self)->bool {matches!(self.intro_graphics,Some(IntroGraphics::NameSetup(_)|IntroGraphics::NameActive(_)))}
     pub(crate) fn enter_file_select(&mut self,context:super::nmi_stack::NativeNmiContext) {
         assert_eq!(context.bank,12);
-        let work=match context.pc {0xcda1=>IntroGraphics::FileSelect(Default::default()),0xcdf2=>IntroGraphics::FileMenu(Default::default()),0xcebd=>IntroGraphics::FileActive(Default::default()),0xda4d=>IntroGraphics::NameActive(Default::default()),0xd89c|0xd911|0xd928=>IntroGraphics::NameSetup(super::name_file_setup::NameFileSetup::new(context.pc)),0xce53|0xcea5|0xceb1=>IntroGraphics::FileStripes(super::file_select_stripes::FileSelectStripes::new(context.pc)),_=>unreachable!()};
+        let work=match context.pc {
+            0xcda1=>IntroGraphics::FileSelect(Default::default()),
+            0xcdf2=>IntroGraphics::FileMenu(Default::default()),
+            0xcdf9=>IntroGraphics::FileMenu(super::file_select_erase::FileSelectErase::erase_triforce()),
+            0xcebd=>IntroGraphics::FileActive(Default::default()),
+            0xd49a=>IntroGraphics::FileActive(super::file_select_main::FileSelectMain::kill_file_setup()),
+            0xd49f|0xd4b1=>IntroGraphics::KillFile(super::kill_file::KillFile::new(context.pc)),
+            0xda4d=>IntroGraphics::NameActive(Default::default()),
+            0xd89c|0xd911|0xd928=>IntroGraphics::NameSetup(super::name_file_setup::NameFileSetup::new(context.pc)),
+            0xce53|0xcea5|0xceb1=>IntroGraphics::FileStripes(super::file_select_stripes::FileSelectStripes::new(context.pc)),
+            _=>unreachable!(),
+        };
         self.enter_intro_graphics(context,work);
     }
     fn enter_intro_graphics(&mut self,context:super::nmi_stack::NativeNmiContext,work:IntroGraphics) {

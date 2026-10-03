@@ -2862,6 +2862,33 @@ fn file_select_menu_choices_match_independent_cold_source_hosts() {
 }
 
 #[test]
+fn kill_file_setup_retains_clock_through_shared_erase_and_stripes() {
+    for stop in [(3,1),(3,2),(3,3)] {
+        compare_native_file_menu_cold_hosts(true,stop,Some(7),0,true,&[0,0,0x10,0,8]);
+    }
+}
+
+#[test]
+fn kill_file_selection_retains_clock_through_live_slot_drawing() {
+    compare_native_file_menu_cold_hosts(true,(3,3),Some(7),16,true,&[0,0,0x10,0,8]);
+}
+
+#[test]
+fn kill_file_confirmation_and_cancel_match_independent_cold_source_hosts() {
+    let menu=[0,0,0x10,0,8];
+    for slot in 0..3 {
+        let mut input=vec![0,0];
+        for _ in 0..slot { input.extend([0x20,0]); }
+        input.extend([8,0,0,8,0]);
+        compare_native_menu_input_cold_hosts(true,(1,1),Some(7),0,true,&menu,&[],&input,Some(slot));
+    }
+    // Cancel from the selection screen, and from the confirmation screen.
+    for input in [&[0,0,0x10,0,8,0][..], &[0,0,8,0,0x20,0,8,0][..]] {
+        compare_native_menu_input_cold_hosts(true,(1,1),Some(7),0,true,&menu,&[],input,None);
+    }
+}
+
+#[test]
 fn name_file_initialization_matches_independent_cold_source_hosts() {
     compare_native_file_menu_cold_hosts(true,(4,1),Some(7),0,false,&[0,0,8]);
 }
@@ -2966,7 +2993,8 @@ fn name_file_confirmation_matches_independent_cold_source_hosts() {
 fn file_select_retained_data_tables_match_source_bytes() {
     let rom=std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc")).unwrap();
     for range in [0x0cce0f..0x0cce1b,0x0ce1c8..0x0ce2a8,0x0ce359..0x0ce456,
-        0x0ccd78..0x0ccd7d,0x0cd630..0x0cd63c,0x0cd698..0x0cd6af,0x0cd7a3..0x0cd7a5,0x0cd7cb..0x0cd7db,
+        0x0ccd78..0x0ccd7d,0x0cd416..0x0cd485,0x0cd597..0x0cd599,0x0ce53f..0x0ce63c,
+        0x0cd630..0x0cd63c,0x0cd698..0x0cd6af,0x0cd7a3..0x0cd7a5,0x0cd7cb..0x0cd7db,
         0x0cd935..0x0cda4d,0x0cdd24..0x0cdd30,0x0083f8..0x0083fa,0x04f4c6..0x04f502] {
         for a in range {assert_eq!(select_file::native_file_select_data_byte(a),Some(rom[(a as usize>>16)*0x8000+(a as usize&0x7fff)]),"file table {a:06x}");}
     }
@@ -2988,7 +3016,11 @@ fn compare_native_file_menu_cold_hosts(public_dispatch: bool,stop:(u8,u8),press_
     compare_native_name_input_cold_hosts(public_dispatch,stop,press_start_in,active_hosts,valid_saves,menu_inputs,&[]);
 }
 
-fn compare_native_name_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press_start_in:Option<u8>,mut active_hosts:usize,valid_saves:bool,menu_inputs:&[u16],name_inputs:&[u16]) {
+fn compare_native_name_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press_start_in:Option<u8>,active_hosts:usize,valid_saves:bool,menu_inputs:&[u16],name_inputs:&[u16]) {
+    compare_native_menu_input_cold_hosts(public_dispatch,stop,press_start_in,active_hosts,valid_saves,menu_inputs,name_inputs,&[],None);
+}
+
+fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press_start_in:Option<u8>,mut active_hosts:usize,valid_saves:bool,menu_inputs:&[u16],name_inputs:&[u16],kill_inputs:&[u16],deleted_slot:Option<usize>) {
     let stop_submodule=if stop.0==0 {stop.1}else{9};
     let load_file_destination = stop == (7, 15);
     let mut load_file_save_copy_checked = false;
@@ -3041,6 +3073,7 @@ fn compare_native_name_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
     let mut menu_host=0;
     let mut naming_irqs=0;
     let mut naming_host=0;
+    let mut kill_host=0;
     let mut naming_irq_finish=[false;3]; // final request, acknowledgement, IRQ disable
     for host in 0..4000 {
         let input=if press_start_in.is_some_and(|submodule|state.game_state.frame.main_module==0 && state.game_state.frame.submodule==submodule
@@ -3049,6 +3082,9 @@ fn compare_native_name_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
                 let input=menu_inputs.get(menu_host).copied().unwrap_or(0);menu_host+=1;input
             }else if (state.game_state.frame.main_module,state.game_state.frame.submodule)==(4,3) {
                 let input=name_inputs.get(naming_host).copied().unwrap_or(0);naming_host+=1;input
+            }else if state.game_state.frame.main_module==3 && matches!(state.game_state.frame.submodule,3|4)
+                && !state.native_intro_clear_pending() {
+                let input=kill_inputs.get(kill_host).copied().unwrap_or(0);kill_host+=1;input
             }else{0};
         source.set_joypad_serial_state(input, 0);
         let mut interrupt_events=Vec::new();
@@ -3153,7 +3189,7 @@ fn compare_native_name_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
             &differences[..differences.len().min(12)]
         );
         assert_eq!(state.sram,source.machine().snes().cart.ram,"SRAM host={host}");
-        if matches!(state.game_state.frame.main_module,1|4) {
+        if matches!(state.game_state.frame.main_module,1|3|4) {
             assert_eq!(state.game_state.sprites.sprite_slots,SpriteSlotsState::load_from_ram(&state.ram),"typed sprite slots host={host}");
             assert_eq!(state.game_state.messaging.select_file_menu,crate::game_state::SelectFileMenuState::load_from_ram(&state.ram),"typed file menu host={host}");
         }
@@ -3222,6 +3258,7 @@ fn compare_native_name_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
         }
         if (state.game_state.frame.main_module,state.game_state.frame.submodule)==stop
             && (name_inputs.is_empty() || naming_host>0)
+            && (kill_inputs.is_empty() || kill_host>0)
             && !(stop.0!=0 && state.native_intro_clear_pending()) {
             if active_hosts != 0 { active_hosts -= 1; continue; }
             if load_file_destination {
@@ -3237,7 +3274,14 @@ fn compare_native_name_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
                 }
             }
             if valid_saves {
-                for slot in 0..3 {assert_eq!(read_le_u16(&state.sram,slot*0x500+0x3e5),0x55aa,"cold fixture must survive source SRAM validation");}
+                for slot in 0..3 {
+                    if deleted_slot==Some(slot) {
+                        assert!(state.sram[slot*0x500..(slot+1)*0x500].iter().all(|&v|v==0));
+                        assert!(state.sram[0xf00+slot*0x500..0xf00+(slot+1)*0x500].iter().all(|&v|v==0));
+                    } else {
+                        assert_eq!(read_le_u16(&state.sram,slot*0x500+0x3e5),0x55aa,"cold fixture must survive source SRAM validation");
+                    }
+                }
                 assert_eq!(state.game_state.inventory.save_progress,crate::game_state::SaveProgressState::load_from_ram(&state.ram));
                 if stop.0==5 {
                     let slot=state.selected_save_slot_index();
@@ -3300,7 +3344,8 @@ fn compare_native_name_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
                 || (stop.0!=0 && state.game_state.frame.main_module==1 && state.game_state.frame.submodule<=5)
                 || (state.game_state.frame.main_module==stop.0 && stop.0!=0 && state.game_state.frame.submodule<=stop.1)
                 || (load_file_destination && state.game_state.frame.main_module==5 && state.game_state.frame.submodule==0)
-                || (!name_inputs.is_empty() && state.game_state.frame.main_module==4 && state.game_state.frame.submodule<=3),
+                || (!name_inputs.is_empty() && state.game_state.frame.main_module==4 && state.game_state.frame.submodule<=3)
+                || (!kill_inputs.is_empty() && state.game_state.frame.main_module==3 && state.game_state.frame.submodule<=4),
             "unexpected intro transition at host {host}: native main={} sub={} pending={} source main={} sub={} CPU={:?}",
             state.game_state.frame.main_module, state.game_state.frame.submodule,
             state.native_intro_clear_pending(), source.machine().snes().ram[0x10],

@@ -77,6 +77,7 @@ pub(crate) mod file_select_palettes;
 pub(crate) mod file_select_stripes;
 pub(crate) mod file_select_draw;
 pub(crate) mod file_select_main;
+pub(crate) mod kill_file;
 pub(crate) mod name_file_setup;
 pub(crate) mod name_file_active;
 pub(crate) mod load_file_common;

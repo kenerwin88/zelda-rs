@@ -27,6 +27,8 @@ pub(crate) enum IntroWork {
 // Immutable entries used by the native setup and column-clear owners.
 pub(crate) fn table_byte(address: u32) -> Option<u8> {
     match address {
+        0x0cd48b..=0x0cd499 => Some([0xf9,0xcd,12,0x53,0xce,12,0x9a,0xd4,12,
+            0x9f,0xd4,12,0xb1,0xd4,12][(address-0x0cd48b) as usize]),
         0x0cd890..=0x0cd89b => Some([0x9c,0xd8,12,0x11,0xd9,12,0x28,0xd9,12,0x4d,0xda,12][(address-0x0cd890)as usize]),
         0x0ccd8b..=0x0ccd9c => Some([0x9d,0xcd,12,0xf2,0xcd,12,0x53,0xce,12,
             0xa5,0xce,12,0xb1,0xce,12,0xbd,0xce,12][(address-0x0ccd8b) as usize]),
@@ -56,6 +58,15 @@ pub(crate) fn enter_name_file(cpu:&mut NativeNmiContext,clock:&mut CpuMasterTime
     let mut w=Work{cpu,clock,bus,cycles:0};
     w.load_dp(0x11);assert!(w.cpu.a&255<=3);
     w.jsl(0xd88f,0,0x879c);w.jump_table_long();
+    w.cycles
+}
+
+pub(crate) fn enter_kill_file(cpu:&mut NativeNmiContext,clock:&mut CpuMasterTimeline,
+    bus:impl FnMut(u64,Access)->u16)->u64 {
+    assert_eq!((cpu.bank,cpu.pc,cpu.db,cpu.d,cpu.p&0x38),(12,0xd485,0,0,0x30));
+    let mut w=Work{cpu,clock,bus,cycles:0};
+    w.load_dp(0x11);assert!(w.cpu.a&255<=4);
+    w.jsl(0xd48a,0,0x879c);w.jump_table_long();
     w.cycles
 }
 

@@ -2220,6 +2220,13 @@ impl ZeldaState {
         self.module_main_routing();
         if let Some(cpu) = self.native_startup_cpu.as_mut() {
             if cpu.startup.entered_module_context().is_some() {
+                if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_DIALOGUE_CPU_PHASE", self.frame_ctr_dbg) {
+                    eprintln!("native-clock-unclaimed-module frame={} module={:02x}/{:02x}/{:02x} field={} position={:?} context={:?}",
+                        self.frame_ctr_dbg, self.game_state.frame.main_module,
+                        self.game_state.frame.submodule, self.game_state.frame.subsubmodule,
+                        cpu.timeline.field_index(), cpu.timeline.raster_position(),
+                        cpu.startup.entered_module_context());
+                }
                 // A callee which claims this context changes its phase. If
                 // the semantic native callee returned without claiming it,
                 // retire the entry so a later call cannot reuse its clock.

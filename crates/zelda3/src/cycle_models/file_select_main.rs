@@ -24,12 +24,18 @@ impl Default for FileSelectMain {
     }
 }
 impl FileSelectMain {
+    /// Erase-file setup joins the same menu cursor and publication owners.
+    pub(crate) fn kill_file_setup() -> Self {
+        Self { pc: 0xd49a, ..Default::default() }
+    }
     pub(crate) fn complete(&self) -> bool {
         self.complete
     }
     pub(crate) fn routine(&self) -> u32 {
         self.child.as_ref().map_or(
-            if self.pc >= 0xcfbb && self.pc <= 0xd052 {
+            if matches!(self.pc, 0xd070..=0xd086 | 0xd49a | 0xd49c | 0xc52e..=0xc532) {
+                0x0cd49a
+            } else if self.pc >= 0xcfbb && self.pc <= 0xd052 {
                 0x0ccfbb
             } else {
                 0x0ccedc
@@ -65,6 +71,38 @@ impl FileSelectMain {
         let x = if w.cpu.p & 0x10 != 0 { 1 } else { 2 };
         w.fetch();
         self.pc = match self.pc {
+            0xd49a | 0xd073 => {
+                w.immediate(if self.pc == 0xd49a { 8 } else { 15 }, 1);
+                self.pc + 2
+            }
+            0xd49c => { w.drain(16); 0xd070 }
+            0xd070 => { w.drain(22); w.push(0xd072, 2); 0xc52e }
+            0xc52e | 0xd075 | 0xd084 => {
+                w.dp_store(match self.pc { 0xc52e => 0x14, 0xd075 => 0x13, _ => 0xc8 }, w.cpu.a & 255, 1);
+                self.pc + 2
+            }
+            0xc530 => { w.dp_increment(0x11, 1, true); 0xc532 }
+            0xc532 => { w.rts(); w.cpu.pc }
+            0xd077 => { w.drain(16); w.write(w.absolute(0x710), 0, 1); 0xd07a }
+            0xd07a => { w.drain(8); w.cpu.x=254; w.flags(w.cpu.x,1); 0xd07c }
+            0xd07c | 0xd07d => {
+                w.drain(6);
+                w.cpu.x=w.cpu.x.wrapping_add(1)&255;
+                w.flags(w.cpu.x,1); self.pc+1
+            }
+            0xd07e => {
+                w.drain(14);
+                let value=w.read(u32::from(0xbfu16.wrapping_add(w.cpu.x)),1);
+                w.load(value,1); 0xd080
+            }
+            0xd080 => { if w.branch(w.cpu.p & ZERO != 0) { 0xd07c } else { 0xd082 } }
+            0xd082 => { w.drain(6); w.load(w.cpu.x,1); 0xd083 }
+            0xd083 => {
+                w.drain(6);
+                w.cpu.p = (w.cpu.p & !CARRY) | (w.cpu.a & 1) as u8;
+                w.load((w.cpu.a & 255) >> 1,1); 0xd084
+            }
+            0xd086 => { w.rtl(); self.complete=true; w.cpu.pc }
             0xcebd | 0xcebe | 0xcfd5 => {
                 w.drain(6);
                 w.push(

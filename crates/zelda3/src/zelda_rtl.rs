@@ -11160,6 +11160,10 @@ pub struct ZeldaState {
     nmi_active_display_blanking_candidate: NmiActiveDisplayBlanking,
     #[serde(skip)]
     active_display_force_blank_event: Option<u8>,
+    /// PPU state consumed before a native main-thread blanking edge. Later
+    /// register writes and blanked VRAM uploads belong to the following field.
+    #[serde(skip)]
+    native_main_force_blank_ppu: Option<Box<PpuState>>,
     /// Current native field's iris history before the first measured NMI.
     /// Reset at each host entry; never used by receipt-owned playback.
     #[serde(skip)]
@@ -13623,6 +13627,7 @@ impl ZeldaState {
             legacy_nmi_forced_blank_from_scanline_pending: None,
             nmi_active_display_blanking_candidate: NmiActiveDisplayBlanking::default(),
             active_display_force_blank_event: None,
+            native_main_force_blank_ppu: None,
             active_native_spotlight_field_scanout: None,
             native_bg3_scroll_scanout: None,
             pending_file_select_force_blank_output_scanline: None,
@@ -13772,6 +13777,7 @@ impl ZeldaState {
         self.pending_map_force_blank_output_scanline = None;
         self.active_native_spotlight_field_scanout = None;
         self.native_bg3_scroll_scanout = None;
+        self.native_main_force_blank_ppu = None;
         self.native_dialogue_fresh_cpu_entry = None;
         self.pending_dungeon_map_room_drawing_nmi_slices = None;
         self.dungeon_map_recovery_saved_hdma_enable = None;
@@ -13884,6 +13890,7 @@ impl ZeldaState {
         self.rom_startup_timing = enabled;
         if !enabled {
             self.native_startup_cpu = None;
+            self.native_main_force_blank_ppu = None;
             self.dialogue_initialization_caller = None;
             if self.frame_ctr_dbg != 0 {
                 self.original_timing_cold_start_eligible = false;
@@ -14221,6 +14228,28 @@ impl ZeldaState {
     fn zelda_ppu_write(&mut self, adr: u32, val: u8) {
         debug_assert!((0x2100..=0x213f).contains(&adr));
         self.ppu.write(adr as u8, val);
+    }
+
+    /// A clocked main-thread INIDISP store cannot erase rows which the PPU
+    /// already rendered. Preserve the bus position separately from the live
+    /// register, just as the native scroll owner preserves its write history.
+    fn native_main_inidisp_write(&mut self, at: u64, value: u8) {
+        if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_DIALOGUE_CPU_PHASE", self.frame_ctr_dbg) {
+            let clock=snes::CpuMasterTimeline::new(at,CpuBusWorkload::default(),CpuFieldTiming::NON_INTERLACE_EVEN);
+            eprintln!("native-inidisp-write frame={} field={} position={:?} value={value:02x} was_blank={} event={:?}",
+                self.frame_ctr_dbg,clock.field_index(),clock.raster_position(),self.ppu.forced_blank,self.active_display_force_blank_event);
+        }
+        if value & 0x80 != 0 && !self.ppu.forced_blank {
+            let clock = snes::CpuMasterTimeline::new(at, CpuBusWorkload::default(),
+                CpuFieldTiming::NON_INTERLACE_EVEN);
+            let (line, cycle) = clock.raster_position().coordinates();
+            let row=force_blank_output_row(line,cycle);
+            if row!=0 {
+                self.native_main_force_blank_ppu=Some(Box::new(self.ppu.clone()));
+            }
+            self.active_display_force_blank_event = Some(row);
+        }
+        self.zelda_ppu_write(0x2100, value);
     }
 
     fn zelda_ppu_write_word(&mut self, adr: u32, val: u16) {
@@ -15175,7 +15204,8 @@ impl ZeldaState {
                             self.sram[i..i+usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
                         }
                         0x2111 | 0x2112 if graphics => {assert_eq!(width,1);self.native_bg3_scroll_write(at, address as u16, value as u8);}
-                        0x2100..=0x213f if graphics => {assert_eq!(width,1);self.ppu.write(address as u8,value as u8);}
+                        0x2100 if graphics => {assert_eq!(width,1);self.native_main_inidisp_write(at,value as u8);}
+                        0x2101..=0x213f if graphics => {assert_eq!(width,1);self.ppu.write(address as u8,value as u8);}
                         0x2140..=0x2143 if load_file => {
                             assert_eq!(width, 1);
                             self.native_main_port_at(at, (address - 0x2140) as u8, Some(value as u8));
@@ -15596,12 +15626,13 @@ impl ZeldaState {
     fn try_native_file_select_entry(&mut self)->bool {
         use crate::cycle_models::intro_entry::{self,Access};
         let name_file=self.game_state.frame.main_module==4;
-        if self.game_state.frame.submodule>if name_file {3}else{5} {return false;}
+        let kill_file=self.game_state.frame.main_module==3;
+        if self.game_state.frame.submodule>if name_file {3}else if kill_file {4}else{5} {return false;}
         let Some(mut context)=self.native_startup_cpu.as_ref()
             .and_then(|cpu|cpu.startup.entered_module_context()) else {return false};
         let mut cpu=self.native_startup_cpu.take().unwrap();
-        let enter=if name_file {intro_entry::enter_name_file}else{intro_entry::enter_file_select};
-        let cycles=enter(&mut context,&mut cpu.timeline,|_,access|match access {
+        let enter=if name_file {intro_entry::enter_name_file}else if kill_file {intro_entry::enter_kill_file}else{intro_entry::enter_file_select};
+        let cycles=enter(&mut context,&mut cpu.timeline,|at,access|match access {
             Access::ReadByte(a)=>u16::from(intro_entry::table_byte(a).unwrap_or_else(||{assert!(a<0x2000);self.ram[a as usize]})),
             Access::ReadWord(a)=>{
                 let read=|a|intro_entry::table_byte(a).unwrap_or_else(||{assert!(a<0x2000);self.ram[a as usize]});
@@ -15613,7 +15644,7 @@ impl ZeldaState {
                     0xea|0xeb=>{let old=read_le_u16(&self.ram,crate::game_state::constants::BG3_V_SCROLL_COPY2);self.set_bg3_v_copy2(if a==0xea {(old&0xff00)|u16::from(value)}else{(old&255)|(u16::from(value)<<8)});}
                     0x13=>self.set_screen_brightness(value),
                     0x9b=>{assert_eq!(value,0);self.clear_hdma_enable_mask();}
-                    0x2100=>self.zelda_ppu_write(u32::from(a),value),
+                    0x2100=>self.native_main_inidisp_write(at,value),
                     0x420c=>{assert_eq!(value,0);for channel in &mut self.dma.channel {channel.hdma_active=false;}}
                     _=>{assert!(matches!(a,0..=5|0x100..=0x1ff));self.ram[usize::from(a)]=value;}
                 };0
@@ -15621,7 +15652,7 @@ impl ZeldaState {
             Access::WriteWord(a,value)=>{assert!(matches!(a,0..=3|0x100..=0x1fe));write_le_u16(&mut self.ram,usize::from(a),value);0}
             Access::WriteLongWord(..)=>unreachable!(),
         });
-        crate::cycle_ledger::charge_routine(if name_file {0x0cd88a}else{0x0ccd7d},cycles);
+        crate::cycle_ledger::charge_routine(if name_file {0x0cd88a}else if kill_file {0x0cd485}else{0x0ccd7d},cycles);
         cpu.startup.enter_file_select(context);self.native_startup_cpu=Some(cpu);true
     }
 
@@ -15710,14 +15741,8 @@ impl ZeldaState {
                             assert_eq!(value, 0);
                             for channel in &mut self.dma.channel { channel.hdma_active = false; }
                         }
-                        0x2100..=0x213f => {
-                            self.zelda_ppu_write(u32::from(address), value);
-                            if address == 0x2100 {
-                                // This startup call blanks during vblank, so the
-                                // following visible field begins blank.
-                                self.active_display_force_blank_event = Some(0);
-                            }
-                        }
+                        0x2100 => self.native_main_inidisp_write(at, value),
+                        0x2101..=0x213f => self.zelda_ppu_write(u32::from(address), value),
                         _ => {
                             assert!(matches!(address, 0..=5 | 0x100..=0x1ff));
                             self.ram[usize::from(address)] = value;

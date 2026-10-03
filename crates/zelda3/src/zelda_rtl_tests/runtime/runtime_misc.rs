@@ -889,6 +889,46 @@ fn module09_item_graphics_boundary_executes_the_vendor_prefix_before_suspending(
 }
 
 #[test]
+fn native_force_blank_store_preserves_already_rendered_rows() {
+    for field in [0,1,30_002,30_003] {
+        for (line,cycle,row) in [(1,500,0),(1,520,1),(57,520,57),(225,600,0)] {
+            let mut state=ZeldaState::new();
+            state.set_main_module(3);
+            state.set_submodule(4);
+            state.ppu.forced_blank=false;
+            state.ppu.brightness=15;
+            state.ppu.vram[0x1000]=0x1234;
+            let at=snes::CpuFieldTiming::NON_INTERLACE_EVEN.master_cycles_at(
+                field,snes::CpuRasterPosition::new(line,cycle));
+            state.native_main_inidisp_write(at,0x80);
+            assert!(state.ppu.forced_blank);
+            assert_eq!(state.active_display_force_blank_event,Some(row));
+            if row!=0 {
+                let prefix=state.native_main_force_blank_ppu.as_ref().unwrap();
+                assert_eq!(prefix.brightness,15);
+                assert_eq!(prefix.vram[0x1000],0x1234);
+                assert!(!prefix.forced_blank);
+                state.ppu.vram[0x1000]=0;
+                assert_eq!(state.native_main_force_blank_ppu.as_ref().unwrap().vram[0x1000],0x1234);
+                state.capture_display_snapshot();
+                let presented=state.with_display_snapshot(|shown| (
+                    shown.ppu.brightness,shown.ppu.vram[0x1000],shown.ppu.forced_blank,
+                    shown.ppu.forced_blank_from_scanline));
+                assert_eq!(presented,(15,0x1234,false,Some(row)));
+                assert!(state.ppu.forced_blank);
+                assert_eq!(state.ppu.vram[0x1000],0);
+            } else {
+                assert!(state.native_main_force_blank_ppu.is_none());
+            }
+            // Repeated stores while blank do not replace the transition with
+            // a later raster position and expose pixels which were never drawn.
+            state.native_main_inidisp_write(at+1364,0x80);
+            assert_eq!(state.active_display_force_blank_event,Some(row));
+        }
+    }
+}
+
+#[test]
 fn deleted_file_return_blanks_after_the_first_active_scanline() {
     let mut state = ZeldaState::new();
     state.set_main_module(3);

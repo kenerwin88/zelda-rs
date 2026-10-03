@@ -1883,6 +1883,15 @@ impl ZeldaState {
             captured_screen_brightness,
             &publication_plan,
         );
+        if let Some(prefix)=self.native_main_force_blank_ppu.as_ref() {
+            // Capture may occur after blanked main-thread uploads. The
+            // already-rendered prefix used the hardware state at INIDISP's
+            // actual bus write, not those later registers or VRAM contents.
+            self.ppu=(**prefix).clone();
+            self.ppu.forced_blank=false;
+            self.ppu.forced_blank_from_scanline=self.active_display_force_blank_event;
+            self.ppu.retain_active_display_history=false;
+        }
         if let Some(field) = self.active_native_spotlight_field_scanout.as_ref() {
             // Main can finish a table copy or disable the iris before capture.
             // Retain the controls and individual rows consumed during this

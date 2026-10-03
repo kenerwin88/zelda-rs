@@ -8712,6 +8712,7 @@ impl ZeldaState {
         }
         self.link_obj_dma_completed_this_frame = false;
         self.active_display_force_blank_event = None;
+        self.native_main_force_blank_ppu = None;
         self.active_native_spotlight_field_scanout = None;
         self.native_bg3_scroll_scanout = None;
         self.last_sprite_main_timing_workload = None;
