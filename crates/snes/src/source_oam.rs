@@ -3,8 +3,11 @@
 
 use crate::source_obj::{range_time_flags, OBJ_LINES};
 
+/// Independently owned OAM bus state. Callers supply ordered register accesses
+/// and timeline events; this port neither executes CPU instructions nor copies
+/// state from a source executor.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct SourceOamPort {
+pub struct SourceOamPort {
     data: Vec<u8>,
     address: u16,
     saved_address: u16,
@@ -35,7 +38,7 @@ pub(crate) struct SourceOamPort {
 }
 
 impl SourceOamPort {
-    pub(crate) fn reset() -> Self {
+    pub fn reset() -> Self {
         Self {
             data: vec![0; 0x220],
             address: 0,
@@ -72,11 +75,11 @@ impl SourceOamPort {
         }
     }
 
-    pub(crate) fn set_v_counter(&mut self, value: u16) {
+    pub fn set_v_counter(&mut self, value: u16) {
         self.v_counter = value;
     }
 
-    pub(crate) fn render_line(&mut self, scanline: u16, odd_field: bool) {
+    pub fn render_line(&mut self, scanline: u16, odd_field: bool) {
         self.v_counter = scanline;
         self.odd_field = odd_field;
         if (1..=self.screen_height).contains(&scanline) {
@@ -84,7 +87,7 @@ impl SourceOamPort {
         }
     }
 
-    pub(crate) fn enter_scanline(&mut self, scanline: u16) {
+    pub fn enter_scanline(&mut self, scanline: u16) {
         self.v_counter = scanline;
         if scanline == 0 {
             self.range_time_over = 0;
@@ -104,7 +107,7 @@ impl SourceOamPort {
         }
     }
 
-    pub(crate) fn stat77_flags(&mut self) -> u8 {
+    pub fn stat77_flags(&mut self) -> u8 {
         self.flush_redraw();
         self.range_time_over
     }
@@ -138,7 +141,7 @@ impl SourceOamPort {
         self.previous_line = self.current_line;
     }
 
-    pub(crate) fn write(&mut self, register: u8, value: u8) {
+    pub fn write(&mut self, register: u8, value: u8) {
         let restore_oam_at_vblank =
             register == 0x00 && self.registers[0] & 0x80 != 0 && self.v_counter == 225;
         if usize::from(register) < self.registers.len() {
@@ -242,7 +245,7 @@ impl SourceOamPort {
         }
     }
 
-    pub(crate) fn read(&mut self) -> u8 {
+    pub fn read(&mut self) -> u8 {
         let index = if self.address & 0x100 != 0 {
             usize::from(self.address & 0x10f) * 2 + usize::from(self.flip)
         } else {

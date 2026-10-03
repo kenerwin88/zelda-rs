@@ -26,6 +26,7 @@ pub mod snes9x_apu_clock;
 pub mod snes9x_apu_timing;
 pub mod snes9x_dsp_phase;
 mod source_oam;
+pub use source_oam::SourceOamPort;
 mod source_obj;
 pub mod tracing;
 

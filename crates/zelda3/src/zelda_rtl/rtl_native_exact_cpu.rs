@@ -3431,6 +3431,18 @@ impl NativeExactCpuOwner {
                         host, step.origin_pc, step.started_at.master_cycles(),
                         step.ended_at.master_cycles(), cpu.raster_position());
                 }
+                if trace_decompression_entry && step.origin_pc == 0x06_8328 {
+                    let ram = &cpu.machine().snes().ram;
+                    let sprites: Vec<_> = (0..16).filter(|&slot| ram[0xdd0 + slot] != 0)
+                        .map(|slot| (slot, ram[0xdd0 + slot], ram[0xe20 + slot])).collect();
+                    let ancilla: Vec<_> = (0..10).filter(|&slot| ram[0xc4a + slot] != 0)
+                        .map(|slot| (slot, ram[0xc4a + slot])).collect();
+                    let overlords: Vec<_> = (0..8).filter(|&slot| ram[0xb00 + slot] != 0)
+                        .map(|slot| (slot, ram[0xb00 + slot])).collect();
+                    eprintln!("native-exact-sprite-entry host={host} at={} module={:02x}/{:02x}/{:02x} indoor={} follower={:02x} garnish={:02x} sprites={sprites:02x?} ancilla={ancilla:02x?} overlords={overlords:02x?}",
+                        step.started_at.master_cycles(), ram[0x10], ram[0x11], ram[0xb0],
+                        ram[0x1b], ram[0xf3cc], ram[0xfb4]);
+                }
                 if trace_decompression_entry
                     && matches!(step.origin_pc, 0x00_e772 | 0x00_e783)
                 {

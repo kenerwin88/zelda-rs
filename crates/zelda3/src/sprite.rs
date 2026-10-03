@@ -6511,6 +6511,16 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         self.sprite_slot_view_mut(k).set_object_priority(value);
     }
 
+    pub(crate) fn native_oam_table_byte(address: u32) -> Option<u8> {
+        let (words, offset): (&[u16], usize) = match address {
+            0x0683c7..=0x0683d2 => (&OAM_RESET_REGION_BASES_OAM_RESET_REGION_BASES, (address - 0x0683c7) as usize),
+            0x0dba9e..=0x0dbaa9 => (&OAM_GET_BUFFER_POSITION_LIMITS, (address - 0x0dba9e) as usize),
+            0x0dbaaa..=0x0dbb09 => (&OAM_GET_BUFFER_POSITION_FALLBACKS, (address - 0x0dbaaa) as usize),
+            _ => return None,
+        };
+        Some(words[offset / 2].to_le_bytes()[offset & 1])
+    }
+
     pub(super) fn oam_get_buffer_position(&mut self, num: u8, y: u8) -> u16 {
         // Cycle ledger: Oam_GetBufferPosition $0D:BB0A (entry m8 x8, JSR
         // target; Y <= 10 and the fallback index stays below 96, so no abs,y

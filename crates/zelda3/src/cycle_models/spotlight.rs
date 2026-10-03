@@ -567,12 +567,71 @@ impl Spotlight {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{
-        intro_clear::Access,
-        native_work::{compare_instruction_with_devices, BeamBus},
-    };
+    use super::super::dungeon_landing::{DungeonLanding, LandingChild};
+    use super::super::{intro_clear::Access, native_work::compare_instruction_with_devices};
     use super::*;
     use snes::apu::{ApuHostPortProbe, ApuHostPortTiming, ApuState};
+    use snes::cpu_timeline::{CpuSynchronousBeamPosition, CpuSynchronousTimelineEvent};
+    use std::cell::{Cell, RefCell};
+
+    enum FixtureWork {
+        Spotlight(Spotlight),
+        Landing(DungeonLanding),
+    }
+    impl FixtureWork {
+        fn finished(&self) -> bool {
+            match self {
+                Self::Spotlight(work) => work.complete(),
+                Self::Landing(work) => work.complete() || work.child().is_some(),
+            }
+        }
+        fn step(
+            &mut self,
+            cpu: &mut NativeNmiContext,
+            clock: &mut CpuMasterTimeline,
+            bus: impl WorkBus,
+        ) {
+            match self {
+                Self::Spotlight(work) => work.step(cpu, clock, bus),
+                Self::Landing(work) => work.step(cpu, clock, bus),
+            }
+            .unwrap();
+        }
+    }
+
+    struct DeviceBus<'a, F> {
+        callback: F,
+        beam: &'a Cell<Option<CpuSynchronousBeamPosition>>,
+        oam: &'a RefCell<snes::SourceOamPort>,
+        apu: &'a RefCell<ApuHostPortTiming>,
+    }
+    impl<F: FnMut(u64, Access) -> u16> WorkBus for DeviceBus<'_, F> {
+        fn access(&mut self, at: u64, access: Access) -> u16 {
+            (self.callback)(at, access)
+        }
+        fn observe_clock(&mut self, clock: &CpuMasterTimeline) {
+            self.beam.set(clock.synchronous_beam_position());
+        }
+        fn timeline_event(&mut self, event: CpuSynchronousTimelineEvent, processed_at: u64) {
+            match event {
+                CpuSynchronousTimelineEvent::RenderLine {
+                    scanline,
+                    odd_field,
+                } => {
+                    self.oam.borrow_mut().render_line(scanline, odd_field);
+                }
+                CpuSynchronousTimelineEvent::HMax {
+                    completed_scanline, ..
+                } => {
+                    self.apu.borrow_mut().end_scanline_at(processed_at).unwrap();
+                    self.oam
+                        .borrow_mut()
+                        .enter_scanline((completed_scanline + 1) % 262);
+                }
+                _ => {}
+            }
+        }
+    }
     fn apu(at: u64) -> ApuHostPortTiming {
         let mut state = ApuState::new();
         state.reset_snes9x_coroutine();
@@ -601,11 +660,12 @@ mod tests {
         let mut copies = 0;
         let mut resets = 0;
         for field in [0, 1, 30_002, 30_003] {
-            for case in 0..40usize {
+            for case in 0..56usize {
                 let entry = match case {
                     0 => 0xf295,
                     1 => 0xf28b,
                     2 => 0xf427,
+                    48..=55 => 0x931d,
                     _ => 0xf312,
                 };
                 // Device-capable isolated source fixture. This is not a cold
@@ -618,6 +678,10 @@ mod tests {
                 machine.ram.fill(0);
                 machine.write(0x2100, 0x80);
                 machine.ram[0x1fd..0x200].copy_from_slice(&[0x59, 0x80, 2]);
+                if case >= 48 {
+                    machine.ram[0x1fd..0x1ff].copy_from_slice(&0x87aeu16.to_le_bytes());
+                    machine.ram[0xb0] = u8::from(case == 49);
+                }
                 for (a, v) in [
                     (0x20, if case % 4 == 0 { 24u16 } else { 80 }),
                     (
@@ -630,8 +694,28 @@ mod tests {
                             64
                         },
                     ),
-                    (0x67c, ((case % 19) * 7) as u16),
-                    (0x67e, if case < 22 { 0 } else { 2 }),
+                    (
+                        0x67c,
+                        if case < 40 {
+                            ((case % 19) * 7) as u16
+                        } else if case % 2 == 0 {
+                            28
+                        } else {
+                            119
+                        },
+                    ),
+                    (
+                        0x67e,
+                        if case < 22 {
+                            0
+                        } else if case < 40 {
+                            2
+                        } else if case % 2 == 0 {
+                            4
+                        } else {
+                            6
+                        },
+                    ),
                     (0x132, if case % 2 == 0 { 0xff } else { 0x11 }),
                     (0x10c, if case % 5 == 0 { 6 } else { 7 }),
                 ] {
@@ -649,7 +733,7 @@ mod tests {
                     y: 7,
                     d: 0,
                     db: 0,
-                    bank: 0,
+                    bank: if case >= 48 { 2 } else { 0 },
                     pc: entry,
                     sp: 0x1fc,
                     p: 0x31,
@@ -665,11 +749,22 @@ mod tests {
                 let mut ram = machine.ram.clone();
                 let mut devices = snes::Snes::new();
                 devices.write(0x2100, 0x80);
-                // Both fixture ports begin with zeroed OAM bytes. The
-                // renderer's ordinary reset uses hidden-sprite sentinels.
-                devices.ppu.oam.fill(0);
+                // Independent hardware owners; no values come from the probe.
+                let oam = RefCell::new(snes::SourceOamPort::reset());
+                oam.borrow_mut().write(0, 0x80);
+                // Exercise actual byte storage and the read flip, rather than
+                // letting an all-zero OAM fixture hide a constant-value stub.
+                for i in 0..544 {
+                    let value = (i as u8).wrapping_mul(37).wrapping_add(case as u8);
+                    machine.write(0x2104, value);
+                    oam.borrow_mut().write(4, value);
+                }
+                machine.write(0x2102, 0);
+                machine.write(0x2103, 0);
+                oam.borrow_mut().write(2, 0);
+                oam.borrow_mut().write(3, 0);
                 let mut reads = snes::SourcePpuReadState::snes9x_reset();
-                let beam = std::cell::Cell::new(None);
+                let beam = Cell::new(None);
                 let timeline = CpuMasterTimeline::at_raster(
                     field,
                     snes::CpuRasterPosition::new(
@@ -681,13 +776,17 @@ mod tests {
                 );
                 let mut source = snes::RomCpuTimingProbe::new(machine, timeline, reads).unwrap();
                 let mut clock = source.timeline().clone();
-                let mut ports = apu(clock.clock_master_cycles());
+                let ports = RefCell::new(apu(clock.clock_master_cycles()));
                 source
                     .attach_apu_port_owner(apu(clock.clock_master_cycles()))
                     .unwrap();
-                let mut work = Spotlight::new(entry);
+                let mut work = if case >= 48 {
+                    FixtureWork::Landing(Default::default())
+                } else {
+                    FixtureWork::Spotlight(Spotlight::new(entry))
+                };
                 for _ in 0..200_000 {
-                    if work.complete() {
+                    if work.finished() {
                         break;
                     }
                     waits += usize::from(cpu.pc == 0xf3a3);
@@ -709,20 +808,27 @@ mod tests {
                             Access::Read(a, width) if (0x2100..0x4400).contains(&a) => {
                                 assert_eq!(width, 1);
                                 let v = if a == 0x2140 {
-                                    ports.read_cpu_port_at(at, 0).unwrap()
+                                    ports.borrow_mut().read_cpu_port_at(at, 0).unwrap()
+                                } else if a == 0x2138 {
+                                    let value = oam.borrow_mut().read();
+                                    reads.open_bus1 = value;
+                                    value
+                                } else if a == 0x213e {
+                                    reads.read_stat77(oam.borrow_mut().stat77_flags())
                                 } else if let Some(v) = reads.read(a as u16, beam.get().unwrap()) {
                                     v
                                 } else {
-                                    let v = devices.read(a);
-                                    if matches!(a, 0x2138 | 0x213e) {
-                                        reads.open_bus1 = v;
-                                    }
-                                    v
+                                    devices.read(a)
                                 };
                                 Some(u16::from(v))
                             }
                             Access::Write(a, v, width) if (0x2100..0x4400).contains(&a) => {
                                 assert_eq!(width, 1);
+                                if (0x2100..0x2140).contains(&a) {
+                                    let mut port = oam.borrow_mut();
+                                    port.set_v_counter(beam.get().unwrap().scanline);
+                                    port.write(a as u8, v as u8);
+                                }
                                 devices.write(a, v as u8);
                                 Some(0)
                             }
@@ -732,18 +838,34 @@ mod tests {
                             work.step(
                                 cpu,
                                 clock,
-                                BeamBus::new(|at, access, current| {
-                                    beam.set(current);
-                                    bus(at, access)
-                                }),
-                            )
-                            .unwrap();
+                                DeviceBus {
+                                    callback: bus,
+                                    beam: &beam,
+                                    oam: &oam,
+                                    apu: &ports,
+                                },
+                            );
                         },
                     );
                     instructions += 1;
                 }
-                assert!(work.complete(), "{field}/{case} stopped {:04x}", cpu.pc);
-                assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, 0x805a, 0x1ff));
+                assert!(work.finished(), "{field}/{case} stopped {:04x}", cpu.pc);
+                if let FixtureWork::Landing(work) = &work {
+                    assert_eq!(
+                        work.child(),
+                        Some(if case == 49 {
+                            LandingChild::Sprites
+                        } else {
+                            LandingChild::PlayerAnimation
+                        })
+                    );
+                    assert!(
+                        !work.complete(),
+                        "a pending child cannot complete the caller"
+                    );
+                } else {
+                    assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, 0x805a, 0x1ff));
+                }
                 assert_eq!(ram, source.snes().ram, "{field}/{case}");
                 assert_eq!(
                     reads,
@@ -757,7 +879,7 @@ mod tests {
                 );
             }
         }
-        assert!(waits > 160 && copies > 0 && resets > 0);
-        eprintln!("160 spotlight fixtures, {instructions} instruction boundaries, {waits} counter polls, {copies} projection words, {resets} reset iterations");
+        assert!(waits > 192 && copies > 0 && resets > 0);
+        eprintln!("192 spotlight and 32 landing caller fixtures, {instructions} instruction boundaries, {waits} counter polls, {copies} projection words, {resets} reset iterations");
     }
 }

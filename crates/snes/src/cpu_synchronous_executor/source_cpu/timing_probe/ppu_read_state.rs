@@ -23,7 +23,7 @@ impl Default for SourcePpuReadState {
 }
 
 impl SourcePpuReadState {
-    pub(crate) fn read_stat77(&mut self, range_time_over: u8) -> u8 {
+    pub fn read_stat77(&mut self, range_time_over: u8) -> u8 {
         // ppu.cpp:S9xGetPPU($213e), pinned M1SNES 5C77 revision 1.
         let value = (self.open_bus1 & 0x10) | range_time_over | 1;
         self.open_bus1 = value;
