@@ -80,6 +80,41 @@ impl ZeldaState {
         true
     }
 
+    /// New-game placement and its blanket child publish their player, scratch,
+    /// and ancilla stores in order, preserving the child coordinate handoff.
+    pub(crate) fn native_opening_player_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        let address = if (0x7e0000..0x800000).contains(&address) {
+            address as usize - 0x7e0000
+        } else { address as usize };
+        match address {
+            0 | 2 => {
+                assert_eq!(width, 2);
+                for (index, byte) in value.to_le_bytes().into_iter().enumerate() {
+                    self.game_state.sprites.workspace.write_zero_page_byte(address + index, byte);
+                }
+            }
+            0x20 | 0x22 => {
+                assert_eq!(width, 2);
+                for (index, byte) in value.to_le_bytes().into_iter().enumerate() {
+                    self.game_state.player.follower_link.write_opening_byte(address + index, byte);
+                }
+            }
+            0x5d | 0x374 | 0x37c | 0x37d => {
+                assert_eq!(width, 1);
+                self.game_state.player.follower_link.write_opening_byte(address, value as u8);
+            }
+            0x280 | 0x3ca | 0xbfa | 0xc04 | 0xc0e | 0xc18 | 0xc4a | 0xc7c | 0xc90 => {
+                // AncillaAdd_Blanket selects slot zero, then its coordinate
+                // child retires the four bytes from the retained DP words.
+                assert_eq!(width, 1);
+                self.game_state.sprites.ancilla_slots.set_shared_byte(address, value as u8);
+            }
+            _ => return false,
+        }
+        self.ram[address..address + usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        true
+    }
+
     /// Room-entry caching publishes its reset bytes and camera/player snapshots
     /// in source order, retaining partial caches across interruption boundaries.
     pub(crate) fn native_room_entry_cache_store(&mut self, address: u32, value: u16, width: u8) -> bool {

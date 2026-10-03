@@ -41,6 +41,10 @@ pub(crate) struct LoadFilePlayer {
     complete: bool,
 }
 impl LoadFilePlayer {
+    pub(crate) fn opening_active(&self) -> bool {
+        matches!(self.routine(), 0x079a2c | 0x098091 | 0x09ad06)
+    }
+
     pub(crate) fn follower_initialization_active(&self) -> bool {
         self.routine() == 0x099efc
     }

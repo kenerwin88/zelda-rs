@@ -7,6 +7,25 @@ use super::*;
 use crate::game_state::native::ram_target::RamTarget;
 
 impl FollowerLinkState {
+    pub(crate) fn write_opening_byte(&mut self, address: usize, value: u8) {
+        match address {
+            LINK_Y_COORD..=0x23 => { assert!(self.write_entrance_byte(address, value)); }
+            LINK_HANDLER_STATE => self.actions.handler_state = value,
+            LINK_COUNTDOWN_FOR_DASH => self.movement.dash_countdown = value,
+            PLAYER_SLEEP_IN_BED_STATE => self.presentation.sleep_in_bed_state = value,
+            LINK_POSE_DURING_OPENING => self.presentation.opening_pose = value,
+            _ => unreachable!("unowned opening player byte {address:05x}"),
+        }
+    }
+
+    pub(crate) fn write_sprite_reset_parent_byte(&mut self, address: usize, value: u8) {
+        match address {
+            LINK_STATE_BITS => self.actions.action_state_bits = value,
+            LINK_PICKING_THROW_STATE => self.actions.picking_throw_state = value,
+            _ => unreachable!("unowned sprite-reset player byte {address:05x}"),
+        }
+    }
+
     pub(crate) fn write_sprite_disable_byte(&mut self, address: usize, value: u8) -> bool {
         match address {
             FLAG_IS_ANCILLA_TO_PICK_UP => self.actions.ancilla_pickup_flag = value,

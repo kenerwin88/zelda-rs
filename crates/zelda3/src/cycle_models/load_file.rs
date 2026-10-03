@@ -54,6 +54,22 @@ impl Default for LoadFile {
     }
 }
 impl LoadFile {
+    pub(crate) fn opening_player_active(&self) -> bool {
+        matches!(&self.child, Some(Child::Player(work)) if work.opening_active())
+    }
+
+    pub(crate) fn sprite_records_active(&self) -> bool {
+        matches!(&self.child, Some(Child::Sprite(work)) if work.records_active())
+    }
+
+    pub(crate) fn sprite_reset_parent_active(&self) -> bool {
+        matches!(&self.child, Some(Child::Sprite(work)) if work.reset_parent_active())
+    }
+
+    pub(crate) fn sprite_cache_active(&self) -> bool {
+        matches!(&self.child, Some(Child::Sprite(work)) if work.cache_active())
+    }
+
     pub(crate) fn sprite_reset_suffix_active(&self) -> bool {
         matches!(&self.child, Some(Child::Sprite(work)) if work.reset_suffix_active())
     }

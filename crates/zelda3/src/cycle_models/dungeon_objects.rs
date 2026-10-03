@@ -5686,6 +5686,10 @@ mod tests {
                 targets.insert(target);
                 let counters: &[u16] = if target == 0x9892 {
                     &[0, 0xff, 0x7fff, 0xffff]
+                } else if target == 0x9a6f {
+                    // Last star slot, both adjacent staircase banks, and the
+                    // original extended-list case retain physical ownership.
+                    &[0, 2, 14, 16, 22, 24, 30]
                 } else {
                     &[0, 2, 30]
                 };

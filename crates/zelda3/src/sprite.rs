@@ -1848,6 +1848,103 @@ impl ZeldaState {
     // void Sprite_DisableAll() {  // 89c22f
     //   ...see sprite.c...
     // }
+    /// Record loading keeps its live pointer, coordinate temporaries and slot
+    /// stores through nested sprite and overlord children. Publish the retired
+    /// bytes directly to their owners without refreshing unrelated slot state.
+    pub(crate) fn native_sprite_record_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        let address = if (0x7e0000..0x800000).contains(&address) {
+            address as usize - 0x7e0000
+        } else { address as usize };
+        if address == 0 {
+            assert_eq!(width, 2);
+            for (index, byte) in value.to_le_bytes().into_iter().enumerate() {
+                assert!(self.game_state.sprites.write_record_byte(index, byte));
+            }
+        } else {
+            if (0x100..=0x1ff).contains(&address) { return false; }
+            assert_eq!(width, 1);
+            let byte = value as u8;
+            if !self.game_state.sprites.write_record_byte(address, byte) {
+                match address {
+                    // The record-stream cursor at $04 has no separate scalar
+                    // owner; its native continuation reads the live RAM byte.
+                    4 => {}
+                    0xfb3 => self.game_state.oam.set_sprite_sorting_setting(byte),
+                    0xfb5 => self.game_state.scratch_counter.set(byte),
+                    0xb00..=0xb47 => {
+                        let mut slot = self.overlord_slot_view_mut((address - 0xb00) & 7);
+                        match (address - 0xb00) / 8 {
+                            0 => slot.set_overlord_type(byte),
+                            1 => slot.set_x_low(byte),
+                            2 => slot.set_x_high(byte),
+                            3 => slot.set_y_low(byte),
+                            4 => slot.set_y_high(byte),
+                            5 => slot.set_gen1(byte),
+                            6 => slot.set_gen2(byte),
+                            7 => slot.set_gen3(byte),
+                            8 => slot.set_floor(byte),
+                            _ => unreachable!(),
+                        }
+                    }
+                    0xcca..=0xcd1 => self.overlord_slot_view_mut(address - 0xcca).set_spawned_area(byte),
+                    _ => return false,
+                }
+            }
+        }
+        self.ram[address..address + usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        true
+    }
+
+    /// The reset caller publishes collision bounds and history before loading
+    /// new records. Its evicted-room store shares the presence-bank views.
+    pub(crate) fn native_sprite_reset_parent_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        let address = if (0x7e0000..0x800000).contains(&address) {
+            address as usize - 0x7e0000
+        } else { address as usize };
+        match address {
+            0 => {
+                assert_eq!(width, 2);
+                for (index, byte) in value.to_le_bytes().into_iter().enumerate() {
+                    self.game_state.sprites.workspace.write_zero_page_byte(index, byte);
+                }
+            }
+            0x308 | 0x309 => {
+                assert_eq!(width, 1);
+                self.game_state.player.follower_link.write_sprite_reset_parent_byte(address, value as u8);
+            }
+            0xfb8 | 0xfba | 0xb80..=0xb86 | 0x1df80..=0x1ef7e => {
+                assert_eq!(width, 2);
+                assert_eq!(address & 1, 0);
+                match address {
+                    0xfb8 => self.game_state.sprites.garnish_runtime.set_sprcoll_x_size(value),
+                    0xfba => self.game_state.sprites.garnish_runtime.set_sprcoll_y_size(value),
+                    _ => for (index, byte) in value.to_le_bytes().into_iter().enumerate() {
+                        if address < 0x1df80 {
+                            self.game_state.dungeon.room_tracking.write_history_byte(address + index - 0xb80, byte);
+                        } else {
+                            assert!(self.game_state.sprites.write_reset_suffix_byte(address + index, byte));
+                        }
+                    },
+                }
+            }
+            _ => return false,
+        }
+        self.ram[address..address + usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        true
+    }
+
+    /// Outgoing cache stores retain both cached slot aliases and system flags
+    /// while the continuation walks the live sprite fields in source order.
+    pub(crate) fn native_sprite_cache_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        let address = if (0x7e0000..0x800000).contains(&address) {
+            address as usize - 0x7e0000
+        } else { address as usize };
+        assert_eq!(width, 1);
+        if !self.game_state.sprites.write_cache_byte(address, value as u8) { return false; }
+        self.ram[address] = value as u8;
+        true
+    }
+
     /// Reset suffix stores follow the completed disable child. Keep the long
     /// descending clears and byte-wise history reset visible to native owners.
     pub(crate) fn native_sprite_reset_suffix_store(&mut self, address: u32, value: u16, width: u8) -> bool {

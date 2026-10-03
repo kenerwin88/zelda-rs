@@ -23,6 +23,18 @@ pub(crate) struct SpriteReset {
     complete: bool,
 }
 impl SpriteReset {
+    pub(crate) fn records_active(&self) -> bool {
+        matches!(self.routine(), 0x09c290 | 0x09c327 | 0x09c345 | 0x09c3e8 | 0x09c871)
+    }
+
+    pub(crate) fn reset_parent_active(&self) -> bool {
+        self.routine() == 0x09c114
+    }
+
+    pub(crate) fn cache_active(&self) -> bool {
+        self.routine() == 0x09c176
+    }
+
     pub(crate) fn reset_suffix_active(&self) -> bool {
         self.routine() == 0x09c44e
     }

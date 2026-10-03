@@ -1857,6 +1857,20 @@ impl ZeldaState {
             return self.native_dungeon_object_parser_store(address, value, width);
         }
         if self.native_dungeon_floor_store(address, value, width) { return true; }
+        let offset = if (0x7e0000..0x800000).contains(&address) {
+            address as usize - 0x7e0000
+        } else { address as usize };
+        // A drawer's indirect row pointer can cross the tilemap boundary.
+        // The adjacent graphics scratch is RAM-backed; preserve those actual
+        // stores without wrapping them into either native tilemap layer.
+        if (crate::game_state::constants::BG_DECOMP_BUFFER_LOAD_GFX
+            ..crate::game_state::constants::GRAPHICS_DECOMP_BUFFER_END).contains(&offset) {
+            assert_eq!(width, 2);
+            assert_eq!(offset & 1, 0);
+            GraphicsDecompressionScratch::copy_to_buffer(
+                &mut self.ram, offset, &value.to_le_bytes());
+            return true;
+        }
         if !matches!(address, 0x3f4 | 0x47c | 0x4b0) { return false; }
         assert_eq!(width, 2);
         self.game_state.dungeon.write_object_tile_word(address as usize, value);
@@ -1965,7 +1979,7 @@ impl ZeldaState {
             return true;
         }
         if !matches!(address, 0xae | 0x42c | 0x42e | 0x432 | 0x45a | 0x496 | 0x498 |
-            0x500..=0x5de | 0x6a0..=0x6b6 | 0x6e0..=0x6ea) { return false; }
+            0x500..=0x5de | 0x6a0..=0x6ea) { return false; }
         assert_eq!(width, 2);
         assert_eq!(address & 1, 0);
         self.game_state.dungeon.write_saved_object_word(address as usize, value);

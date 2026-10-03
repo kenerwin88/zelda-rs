@@ -550,6 +550,10 @@ impl Startup {
                 let mut nmitimen = None;
                 let mut hdma = None;
                 let owner = match graphics {
+                    IntroGraphics::LoadFile(work) if work.opening_player_active() => super::startup_bus::CallerOwner::OpeningPlayer,
+                    IntroGraphics::LoadFile(work) if work.sprite_records_active() => super::startup_bus::CallerOwner::SpriteRecords,
+                    IntroGraphics::LoadFile(work) if work.sprite_reset_parent_active() => super::startup_bus::CallerOwner::SpriteResetParent,
+                    IntroGraphics::LoadFile(work) if work.sprite_cache_active() => super::startup_bus::CallerOwner::SpriteCache,
                     IntroGraphics::LoadFile(work) if work.sprite_reset_suffix_active() => super::startup_bus::CallerOwner::SpriteResetSuffix,
                     IntroGraphics::LoadFile(work) if work.sprite_disable_active() => super::startup_bus::CallerOwner::SpriteDisable,
                     IntroGraphics::LoadFile(work) if work.follower_initialization_active() => super::startup_bus::CallerOwner::FollowerInitialization,

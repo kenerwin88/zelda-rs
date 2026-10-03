@@ -15014,6 +15014,22 @@ impl ZeldaState {
                     let address=if address&0x400000==0 && address&65535<0x2000 {address&65535}else{address};
                     match address {
                         _ if caller_owner == CallerOwner::DungeonEntrance && self.native_dungeon_entrance_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::OpeningPlayer && self.native_opening_player_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::OpeningPlayer && !matches!(address, 0xe | 0x100..=0x1ff) => {
+                            panic!("unowned opening-player store {address:06x}");
+                        }
+                        _ if caller_owner == CallerOwner::SpriteRecords && self.native_sprite_record_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::SpriteRecords && !matches!(address, 0x100..=0x1ff) => {
+                            panic!("unowned sprite-record store {address:06x}");
+                        }
+                        _ if caller_owner == CallerOwner::SpriteResetParent && self.native_sprite_reset_parent_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::SpriteResetParent && !matches!(address, 0..=0xf | 0x100..=0x1ff) => {
+                            panic!("unowned sprite-reset parent store {address:06x}");
+                        }
+                        _ if caller_owner == CallerOwner::SpriteCache && self.native_sprite_cache_store(address, value, width) => {}
+                        _ if caller_owner == CallerOwner::SpriteCache && !matches!(address, 0..=0xf | 0x100..=0x1ff) => {
+                            panic!("unowned sprite-cache store {address:06x}");
+                        }
                         _ if caller_owner == CallerOwner::SpriteResetSuffix && self.native_sprite_reset_suffix_store(address, value, width) => {}
                         _ if caller_owner == CallerOwner::SpriteResetSuffix && !matches!(address, 0..=0xf | 0x100..=0x1ff) => {
                             panic!("unowned sprite-reset suffix store {address:06x}");
@@ -15153,7 +15169,7 @@ impl ZeldaState {
                         0x7ef000..=0x7ef4fe if file_menu => {assert_eq!(width,2);self.write_live_save_word(address as usize-0x7e0000,value);}
                         0xff9 if title => {assert_eq!(width,1);self.attract_scene_mut().set_intro_palette_flash_count(value as u8);}
                         0xd00..=0xffe if graphics => {
-                            assert_eq!((width,value,address&1),(2,0,0));
+                            assert_eq!((width,value,address&1),(2,0,0), "unowned graphics store {address:06x} by {caller_owner:?}");
                             self.ram[address as usize..address as usize+2].fill(0);
                             self.game_state.sprites.sprite_slots=SpriteSlotsState::load_from_ram(&self.ram);
                             if address==0xff8 {self.attract_scene_mut().set_intro_palette_flash_count(0);}

@@ -22,6 +22,10 @@ pub(crate) enum CallerOwner {
     FollowerInitialization,
     SpriteDisable,
     SpriteResetSuffix,
+    SpriteCache,
+    SpriteResetParent,
+    SpriteRecords,
+    OpeningPlayer,
 }
 
 pub(crate) enum StartupAccess {

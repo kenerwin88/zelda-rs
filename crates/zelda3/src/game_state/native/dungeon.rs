@@ -234,7 +234,11 @@ impl DungeonState {
             0x560..=0x5de => {
                 self.room_items.replacement_tilemap_quads[(address & 0x1f) / 2][(address - 0x560) / 0x20] = value;
             }
-            0x6a0..=0x6b6 => self.room_parser.star_switch_tilemap_positions[(address - 0x6a0) / 2] = value,
+            0x6a0..=0x6ae => self.room_parser.star_switch_tilemap_positions[(address - 0x6a0) / 2] = value,
+            // The source indexes the physical list without bounding the star
+            // count. Overflow belongs to the adjacent staircase tables.
+            0x6b0..=0x6b6 => self.stair_lists.inter_staircases[(address - 0x6b0) / 2] = value,
+            0x6b8..=0x6de => self.stair_lists.stairs_table_1[(address - 0x6b8) / 2] = value,
             0x6e0..=0x6ea => self.room_items.chest_locations[(address - 0x6e0) / 2] = value,
             0x42c | 0x42e | 0x432 | 0x496 | 0x498 | 0x500..=0x55e => {
                 for (byte, value) in value.to_le_bytes().into_iter().enumerate() {

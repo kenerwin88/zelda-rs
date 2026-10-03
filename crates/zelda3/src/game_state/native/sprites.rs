@@ -196,6 +196,40 @@ pub(crate) struct SpriteState {
 }
 
 impl SpriteState {
+    pub(crate) fn write_record_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            0..=3 => self.workspace.write_zero_page_byte(address, value),
+            SPRITE_ROOM_ORIGIN_X_HI => self.workspace.set_room_origin_x_high(value),
+            SPRITE_ROOM_ORIGIN_Y_HI => self.workspace.set_room_origin_y_high(value),
+            SPRITE_SHARED_WORK_A => self.workspace.set_shared_scratch_a(value),
+            0xbc0..=0xbcf | 0xd00..=0xd3f | 0xdd0..=0xddf |
+            0xe20..=0xe3f | 0xf20..=0xf2f => self.sprite_slots.set_byte_at(address, value),
+            // A marker applies to the preceding slot with an eight-bit index.
+            // Before the first slot that index wraps; publish the physical
+            // sprite field reached by DIE_ACTION + index, without clamping it.
+            _ if (SPRITE_DIE_ACTION..SPRITE_DIE_ACTION + 0x100).contains(&address)
+                && SpriteSlotsState::field_offsets().any(|offset| offset == address) => {
+                self.sprite_slots.set_byte_at(address, value);
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    pub(crate) fn write_cache_byte(&mut self, address: usize, value: u8) -> bool {
+        if address == ALT_SPRITES_FLAG {
+            self.system.alt_sprites_flag = value;
+        } else if CACHED_SPRITE_ALT_FIELDS.iter().any(|&base| (base..base + 16).contains(&address)) {
+            self.cached_sprites.write_bank_byte(address, value);
+            if address == ALT_SPRITE_SPAWNED_FLAG {
+                self.system.alt_sprite_spawned_flag = value;
+            }
+        } else {
+            return false;
+        }
+        true
+    }
+
     pub(crate) fn write_reset_suffix_byte(&mut self, address: usize, value: u8) -> bool {
         match address {
             SPRITE_ALERT_FLAG => self.system.set_alert_flag(value),
@@ -1471,6 +1505,24 @@ pub(crate) struct CachedSpritesState {
 }
 
 impl CachedSpritesState {
+    fn write_bank_byte(&mut self, address: usize, value: u8) {
+        // The native cache includes borrowed Trinexx slots beyond the source's
+        // sixteen-slot banks. Retire every view that aliases this physical byte.
+        for (index, slot) in self.slots.iter_mut().enumerate() {
+            for (base, field) in [
+                (ALT_SPRITE_STATE, &mut slot.state),
+                (ALT_SPRITE_TYPE, &mut slot.type_byte),
+                (ALT_SPRITE_X_LO, &mut slot.x_low),
+                (ALT_SPRITE_X_HI, &mut slot.x_high),
+                (ALT_SPRITE_Y_LO, &mut slot.y_low),
+                (ALT_SPRITE_Y_HI, &mut slot.y_high),
+                (ALT_SPRITE_GRAPHICS, &mut slot.graphics),
+            ] {
+                if address == base + index { *field = value; }
+            }
+        }
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         let mut state = Self::default();
         for slot in 0..CACHED_SPRITE_SLOT_COUNT {
@@ -2008,6 +2060,10 @@ impl Default for SpriteWorkspaceState {
 }
 
 impl SpriteWorkspaceState {
+    pub(crate) fn write_zero_page_byte(&mut self, offset: usize, value: u8) {
+        self.zero_page_work[offset] = value;
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         let mut graphics_subsets = [0; SPRITE_GRAPHICS_SUBSET_COUNT];
         for (slot, value) in graphics_subsets.iter_mut().enumerate() {

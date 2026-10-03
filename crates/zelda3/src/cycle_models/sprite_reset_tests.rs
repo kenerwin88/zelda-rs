@@ -162,6 +162,9 @@ impl Fixture {
             let ram = &mut self.ram;
             let writes = &mut self.writes;
             let native = &mut self.native;
+            let records_active = owner.records_active();
+            let reset_parent_active = owner.reset_parent_active();
+            let cache_active = owner.cache_active();
             let disable_active = owner.disable_active();
             let reset_suffix_active = owner.reset_suffix_active();
             let mut published = false;
@@ -181,6 +184,14 @@ impl Fixture {
                     };
                     let (access, value) = match access {
                         Access::Read(a, width) => {
+                            if records_active && normalize(a) == 0xfb5 {
+                                assert_eq!(native.game_state.scratch_counter.value(), read(a),
+                                    "{label} pc{origin:06x}: source temporary-Y read retains its native last writer");
+                            }
+                            if records_active && normalize(a) == 0xfb6 {
+                                assert_eq!(native.game_state.sprites.workspace.shared_scratch_a(), read(a),
+                                    "{label} pc{origin:06x}: source temporary-X read retains its native last writer");
+                            }
                             let value = if width == 1 {
                                 u16::from(read(a))
                             } else {
@@ -198,11 +209,17 @@ impl Fixture {
                             };
                             ram[i..i + usize::from(width)]
                                 .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
-                            if (disable_active && native.native_sprite_disable_store(a, value, width))
+                            if (records_active && native.native_sprite_record_store(a, value, width))
+                                || (reset_parent_active && native.native_sprite_reset_parent_store(a, value, width))
+                                || (cache_active && native.native_sprite_cache_store(a, value, width))
+                                || (disable_active && native.native_sprite_disable_store(a, value, width))
                                 || (reset_suffix_active && native.native_sprite_reset_suffix_store(a, value, width)) {
                                 published = true;
                             } else {
-                                if disable_active || reset_suffix_active {
+                                if records_active {
+                                    assert!(matches!(i, 0x100..=0x1ff),
+                                        "{label} pc{origin:06x}: unowned sprite-record store {a:06x}");
+                                } else if reset_parent_active || cache_active || disable_active || reset_suffix_active {
                                     assert!(matches!(i, 0..=0xf | 0x100..=0x1ff),
                                         "{label} pc{origin:06x}: unowned sprite-disable store {a:06x}");
                                 }
@@ -226,6 +243,15 @@ impl Fixture {
             if published {
                 let expected = crate::game_state::GameState::load_from_ram(&self.ram);
                 let native = &self.native.game_state;
+                assert_eq!(native.scratch_counter, expected.scratch_counter,
+                    "{label} pc{origin:06x}: retained record coordinate temporary");
+                assert_eq!(native.oam, expected.oam, "{label}: sprite sorting owner");
+                if cache_active {
+                    assert_eq!(native.sprites.cached_sprites, expected.sprites.cached_sprites,
+                        "{label}: retained cache banks and borrowed slot aliases");
+                    assert_eq!(native.sprites.system, expected.sprites.system,
+                        "{label}: shared cache flags");
+                }
                 assert_eq!(native.sprites.ancilla_slots, expected.sprites.ancilla_slots, "{label}: ancilla slots");
                 assert_eq!(native.sprites.sprite_slots, expected.sprites.sprite_slots, "{label}: live sprite slots");
                 assert_eq!(native.sprites.system.limit_instance(), expected.sprites.system.limit_instance());
@@ -242,7 +268,7 @@ impl Fixture {
                     expected.player.follower_link.ancilla_pickup_flag());
                 assert_eq!(native.player.follower_link.menu_block_flag(),
                     expected.player.follower_link.menu_block_flag());
-                if reset_suffix_active {
+                if reset_parent_active || reset_suffix_active {
                     assert_eq!(native.sprites.system, expected.sprites.system);
                     assert_eq!(native.sprites.overworld_sprite_presence, expected.sprites.overworld_sprite_presence);
                     assert_eq!(native.sprites.overworld_sprite_loaded, expected.sprites.overworld_sprite_loaded);
@@ -250,6 +276,7 @@ impl Fixture {
                     assert_eq!(native.oam, expected.oam);
                     assert_eq!(native.display.hud_runtime, expected.display.hud_runtime);
                     assert_eq!(native.messaging.runtime, expected.messaging.runtime);
+                    assert_eq!(native.player.follower_link, expected.player.follower_link);
                 }
             }
             let c = &self.source.machine().snes().cpu;

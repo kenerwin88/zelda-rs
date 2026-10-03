@@ -149,6 +149,7 @@ impl Fixture {
             let ram = &mut self.ram;
             let writes = &mut self.writes;
             let native = &mut self.native;
+            let opening_active = owner.opening_active();
             let cleanup_active = owner.interactive_cleanup_active();
             let cache_active = owner.room_entry_cache_active();
             let follower_active = owner.follower_initialization_active();
@@ -186,12 +187,16 @@ impl Fixture {
                             };
                             ram[i..i + usize::from(width)]
                                 .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
-                            if (cleanup_active && native.native_interactive_cleanup_store(a, value, width))
+                            if (opening_active && native.native_opening_player_store(a, value, width))
+                                || (cleanup_active && native.native_interactive_cleanup_store(a, value, width))
                                 || (cache_active && native.native_room_entry_cache_store(a, value, width))
                                 || (follower_active && native.native_follower_initialization_store(a, value, width)) {
                                 published = true;
                             } else {
-                                if cleanup_active || cache_active || follower_active {
+                                if opening_active {
+                                    assert!(matches!(i, 0xe | 0x100..=0x1ff),
+                                        "{label} pc{origin:06x}: unowned opening-player store {a:06x}");
+                                } else if cleanup_active || cache_active || follower_active {
                                     assert!(matches!(i, 0..=0xf | 0x100..=0x1ff),
                                         "{label} pc{origin:06x}: unowned interactive store {a:06x}");
                                 }
@@ -214,6 +219,10 @@ impl Fixture {
             assert_eq!(self.native.ram, self.ram, "{label}: native cleanup publications");
             if published {
                 let expected = crate::game_state::GameState::load_from_ram(&self.ram);
+                if opening_active {
+                    assert_eq!(self.native.game_state.sprites.workspace, expected.sprites.workspace,
+                        "{label}: retained blanket coordinate words");
+                }
                 assert_eq!(self.native.game_state.player.follower_link, expected.player.follower_link,
                     "{label} pc{origin:06x}: player cleanup owner");
                 assert_eq!(self.native.game_state.sprites.ancilla_slots, expected.sprites.ancilla_slots,
