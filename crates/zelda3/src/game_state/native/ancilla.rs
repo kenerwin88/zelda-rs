@@ -103,6 +103,21 @@ fn is_ancilla_r_overflow(offset: usize) -> bool {
 }
 
 impl AncillaSlotsState {
+    pub(crate) fn write_instruction_store(&mut self,ram:&mut [u8],address:usize,value:u16,width:u8)->bool {
+        assert!(matches!(width,1|2));
+        if !(address..address+usize::from(width)).all(|at|
+            at!=ANCILLA_G_SLOT9_HOOKSHOT_EFFECT && !is_ancilla_r_overflow(at)
+                && Self::field_offsets().any(|offset|offset==at)) {return false;}
+        for byte in 0..usize::from(width) {
+            let at=address+byte;let v=(value>>(byte*8)) as u8;
+            self.work[Self::work_index(at)]=v;ram[at]=v;
+        }
+        true
+    }
+    pub(crate) fn reload_from_ram(&mut self, ram: &[u8]) {
+        *self = Self::load_from_ram(ram);
+    }
+
     pub(crate) fn set_type(&mut self, slot: usize, value: u8) {
         assert!(slot < ANCILLA_SLOT_COUNT);
         self.set_byte(slot, ANCILLA_TYPE, value);

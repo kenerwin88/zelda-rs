@@ -687,6 +687,55 @@ impl TileDetectionState {
         }
     }
 
+    /// Update a single byte of the retained tile-probe stores.
+    fn write_probe_setup_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            a if a == TILEDETECT_WHICH_Y_POS || a == TILEDETECT_WHICH_Y_POS + 1 => { let shift = (a - TILEDETECT_WHICH_Y_POS) * 8; self.probe_y = (self.probe_y & !(255 << shift)) | (u16::from(value) << shift); }
+            TILE_COLLISION_BITS_PRIMARY => self.tile_collision_bits_primary = value,
+            TILE_COLLISION_BITS_SECONDARY => self.tile_collision_bits_secondary = value,
+            LIFTABLE_TILE_DETECTED_INDEX_DOUBLED => self.liftable_tile_index = value,
+            LIFTABLE_TILE_ACTION_INDEX_PRIMARY => self.liftable_action_index_primary = value,
+            LIFTABLE_TILE_ACTION_INDEX_SECONDARY => self.liftable_action_index_secondary = value,
+            a if a == SCRATCH_0 || a == SCRATCH_0 + 1 => { let shift = (a - SCRATCH_0) * 8; self.interaction_scratch_y = (self.interaction_scratch_y & !(255 << shift)) | (u16::from(value) << shift); }
+            a if a == SCRATCH_1 || a == SCRATCH_1 + 1 => { let shift = (a - SCRATCH_1) * 8; self.interaction_scratch_x = (self.interaction_scratch_x & !(255 << shift)) | (u16::from(value) << shift); }
+            a if a == TILEMAP_LOCATION_CALC_MASK || a == TILEMAP_LOCATION_CALC_MASK + 1 => { let shift = (a - TILEMAP_LOCATION_CALC_MASK) * 8; self.location_calc_mask = (self.location_calc_mask & !(255 << shift)) | (u16::from(value) << shift); }
+            a if a == INDEX_OF_INTERACTING_TILE || a == INDEX_OF_INTERACTING_TILE + 1 => { let shift = (a - INDEX_OF_INTERACTING_TILE) * 8; self.interacting_tile = (self.interacting_tile & !(255 << shift)) | (u16::from(value) << shift); }
+            TILEDETECT_PIT_TILE => self.pit_tile = u16::from(value),
+            a if a == TILEDETECT_DEEPWATER || a == TILEDETECT_DEEPWATER + 1 => { let shift = (a - TILEDETECT_DEEPWATER) * 8; self.deepwater = (self.deepwater & !(255 << shift)) | (u16::from(value) << shift); }
+            a if a == TILEDETECT_NORMAL_TILES || a == TILEDETECT_NORMAL_TILES + 1 => { let shift = (a - TILEDETECT_NORMAL_TILES) * 8; self.normal_tiles = (self.normal_tiles & !(255 << shift)) | (u16::from(value) << shift); }
+            a if a == TILEDETECT_MISC_TILES || a == TILEDETECT_MISC_TILES + 1 => { let shift = (a - TILEDETECT_MISC_TILES) * 8; self.misc_tiles = (self.misc_tiles & !(255 << shift)) | (u16::from(value) << shift); }
+            a if a == TILEDETECT_THICK_GRASS || a == TILEDETECT_THICK_GRASS + 1 => { let shift = (a - TILEDETECT_THICK_GRASS) * 8; self.thick_grass = (self.thick_grass & !(255 << shift)) | (u16::from(value) << shift); }
+            a if a == TILEDETECT_DIAGONAL_TILE || a == TILEDETECT_DIAGONAL_TILE + 1 => { let shift = (a - TILEDETECT_DIAGONAL_TILE) * 8; self.diagonal_tile = (self.diagonal_tile & !(255 << shift)) | (u16::from(value) << shift); }
+            TILEDETECT_STAIR_TILE => self.stair_tile = value,
+            a if a == TILEDETECT_BLOCK_FLAGS_LO || a == TILEDETECT_BLOCK_FLAGS_LO + 1 => { let shift = (a - TILEDETECT_BLOCK_FLAGS_LO) * 8; self.block_flags = (self.block_flags & !(255 << shift)) | (u16::from(value) << shift); }
+            a if a == TILEDETECT_DOOR_DIRECTION_FLAGS || a == TILEDETECT_DOOR_DIRECTION_FLAGS + 1 => { let shift = (a - TILEDETECT_DOOR_DIRECTION_FLAGS) * 8; self.door_direction_flags = (self.door_direction_flags & !(255 << shift)) | (u16::from(value) << shift); }
+            a if a == TILEDETECT_DIAG_STATE || a == TILEDETECT_DIAG_STATE + 1 => { let shift = (a - TILEDETECT_DIAG_STATE) * 8; self.diag_state = (self.diag_state & !(255 << shift)) | (u16::from(value) << shift); }
+            a if a == TILEDETECT_MOVING_FLOOR_TILES || a == TILEDETECT_MOVING_FLOOR_TILES + 1 => { let shift = (a - TILEDETECT_MOVING_FLOOR_TILES) * 8; self.moving_floor_tiles = (self.moving_floor_tiles & !(255 << shift)) | (u16::from(value) << shift); }
+            a if a == TILEDETECT_ICY_FLOOR || a == TILEDETECT_ICY_FLOOR + 1 => { let shift = (a - TILEDETECT_ICY_FLOOR) * 8; self.icy_floor = (self.icy_floor & !(255 << shift)) | (u16::from(value) << shift); }
+            a if a == TILEDETECT_WATER_STAIRCASE || a == TILEDETECT_WATER_STAIRCASE + 1 => { let shift = (a - TILEDETECT_WATER_STAIRCASE) * 8; self.water_staircase = (self.water_staircase & !(255 << shift)) | (u16::from(value) << shift); }
+            a if a == TILEDETECT_SHALLOW_WATER || a == TILEDETECT_SHALLOW_WATER + 1 => { let shift = (a - TILEDETECT_SHALLOW_WATER) * 8; self.shallow_water = (self.shallow_water & !(255 << shift)) | (u16::from(value) << shift); }
+            a if a == TILEDETECT_DESTRUCTION_AFTERMATH || a == TILEDETECT_DESTRUCTION_AFTERMATH + 1 => { let shift = (a - TILEDETECT_DESTRUCTION_AFTERMATH) * 8; self.destruction_aftermath = (self.destruction_aftermath & !(255 << shift)) | (u16::from(value) << shift); }
+            a if a == TILEDETECT_READ_SOMETHING || a == TILEDETECT_READ_SOMETHING + 1 => { let shift = (a - TILEDETECT_READ_SOMETHING) * 8; self.read_something = (self.read_something & !(255 << shift)) | (u16::from(value) << shift); }
+            TILEDETECT_VERTICAL_LEDGE => self.vertical_ledge = value,
+            DETECTION_OF_LEDGE_TILES_HORIZ_UPHORIZ => self.horizontal_ledge = value,
+            TILEDETECT_LEDGES_DOWN_LEFTRIGHT => self.ledges_down_leftright = value,
+            TILEDETECT_DIAGONAL_LEDGE_TILES => self.diagonal_ledge_tiles = value,
+            a if a == TILEDETECT_CHEST || a == TILEDETECT_CHEST + 1 => { let shift = (a - TILEDETECT_CHEST) * 8; self.chest = (self.chest & !(255 << shift)) | (u16::from(value) << shift); }
+            a if a == TILEDETECT_KEY_LOCK_GRAVESTONES || a == TILEDETECT_KEY_LOCK_GRAVESTONES + 1 => { let shift = (a - TILEDETECT_KEY_LOCK_GRAVESTONES) * 8; self.key_lock_gravestones = (self.key_lock_gravestones & !(255 << shift)) | (u16::from(value) << shift); }
+            a if a == TILEDETECT_TILE_TYPE || a == TILEDETECT_TILE_TYPE + 1 => { let shift = (a - TILEDETECT_TILE_TYPE) * 8; self.tile_type = (self.tile_type & !(255 << shift)) | (u16::from(value) << shift); }
+            TILEDETECT_SPIKE_FLOOR_AND_TILE_TRIGGERS => self.spike_floor_and_triggers = value,
+            BITMASK_FOR_DASHABLE_TILES => self.dashable_tiles = value,
+            TILEDETECT_STAIRCASE_CACHE => self.staircase_cache = value,
+            a if a == TILEDETECT_SLOPE_COLLISION_BITS || a == TILEDETECT_SLOPE_COLLISION_BITS + 1 => { let shift = (a - TILEDETECT_SLOPE_COLLISION_BITS) * 8; self.slope_collision_bits = (self.slope_collision_bits & !(255 << shift)) | (u16::from(value) << shift); }
+            a if a == TILEDETECT_COLLISION_BITS || a == TILEDETECT_COLLISION_BITS + 1 => { let shift = (a - TILEDETECT_COLLISION_BITS) * 8; self.collision_bits = (self.collision_bits & !(255 << shift)) | (u16::from(value) << shift); }
+            PLAYER_LAYER_COLLISION_FLAGS => self.layer_collision_flags = value,
+            a if a == TILEDETECT_INROOM_STAIRCASE || a == TILEDETECT_INROOM_STAIRCASE + 1 => { let shift = (a - TILEDETECT_INROOM_STAIRCASE) * 8; self.inroom_staircase = (self.inroom_staircase & !(255 << shift)) | (u16::from(value) << shift); }
+            FALL_HOLE_SCAN_INDEX_LOCAL => self.fall_hole_scan_index = value,
+            _ => return false,
+        }
+        true
+    }
+
     pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         ram.write_word(TILEDETECT_WHICH_Y_POS, self.probe_y);
         ram.write_word(TILEDETECT_WHICH_Y_POS + 2, self.probe_x);
@@ -1335,6 +1384,10 @@ impl TileDetectionState {
 adopting_bridge!(NativeTileDetectionBridgeMut, state: TileDetectionState);
 
 impl<'a> NativeTileDetectionBridgeMut<'a> {
+    pub(crate) fn write_probe_setup_byte(&mut self, address: usize, value: u8) {
+        if self.state.write_probe_setup_byte(address, value) { self.ram[address] = value; }
+    }
+
     forward_synced! {
         state;
         fn set_y_high(value: u8);
@@ -1486,6 +1539,40 @@ pub(crate) struct PushedBlockState {
 }
 
 impl PushedBlockState {
+    /// Retire a source byte without publishing its adjacent slot or field.
+    pub(crate) fn write_instruction_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            PUSHED_BLOCK_MODE => {
+                self.animation_mode = value;
+                return true;
+            }
+            PUSHED_BLOCK_ANIMATION_TIMER => {
+                self.animation_timer = value;
+                return true;
+            }
+            PUSH_BLOCK_DIRECTION => {
+                self.push_direction = value;
+                return true;
+            }
+            _ => {}
+        }
+        for (base, bank) in [
+            (PUSHEDBLOCKS_X_HI, &mut self.x_high),
+            (PUSHEDBLOCKS_X_LO, &mut self.x_low),
+            (PUSHEDBLOCKS_TARGET, &mut self.target),
+            (PUSHEDBLOCKS_Y_HI, &mut self.y_high),
+            (PUSHEDBLOCKS_Y_LO, &mut self.y_low),
+            (PUSHEDBLOCKS_SUBPIXEL, &mut self.subpixel),
+            (PUSHEDBLOCK_FACING_PLAYER, &mut self.facing_player),
+        ] {
+            if (base..base + PUSHED_BLOCK_BANK_LEN).contains(&address) {
+                bank[address - base] = value;
+                return true;
+            }
+        }
+        false
+    }
+
     /// Indexed room-object stores can cross into these adjacent banks. Preserve
     /// both bytes of each physical word, including the unused slot companions.
     pub(crate) fn write_bank_word(&mut self, address: usize, value: u16) -> bool {

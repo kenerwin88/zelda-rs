@@ -8,9 +8,21 @@ use snes::{cpu_timeline::CpuSynchronousTimelineEvent, CpuMasterTimeline};
 /// Ordinary owners need only access timestamps. Device reads such as HVBJOY
 /// also need the CPU's processed beam, sampled at the actual bus semantic.
 pub(crate) trait WorkBus {
+    /// Typed live eligibility for a composed inactive actor return. This is
+    /// ownership metadata, not a CPU bus access or a timing charge.
+    fn inactive_sprite_body_mask(&mut self) -> u16 { 0 }
+
+    /// The actual CLI/BRA return has reached INC $1A. This observes the
+    /// caller boundary without adding a bus transaction or clock charge.
+    fn begin_main_iteration(&mut self, _clock: &CpuMasterTimeline) {}
+
     fn access(&mut self, at: u64, access: Access) -> u16;
     fn observe_clock(&mut self, _clock: &CpuMasterTimeline) {}
     fn end_scanline(&mut self, _at: u64) {}
+    fn retire_event(&mut self, event: CpuSynchronousTimelineEvent, clock: &CpuMasterTimeline) -> u32 {
+        self.timeline_event(event, clock.clock_master_cycles());
+        0
+    }
     fn timeline_event(&mut self, event: CpuSynchronousTimelineEvent, processed_at: u64) {
         if let CpuSynchronousTimelineEvent::HMax {
             completed_field_index,
@@ -84,7 +96,7 @@ pub(super) fn compare_instruction_with_ppu(
 }
 
 #[cfg(test)]
-pub(super) fn compare_instruction_with_devices(
+pub(crate) fn compare_instruction_with_devices(
     label: &str,
     cpu: &mut NativeNmiContext,
     clock: &mut CpuMasterTimeline,
@@ -104,6 +116,9 @@ pub(super) fn compare_instruction_with_devices(
         }
     };
     let operand = (u32::from(cpu.bank) << 16) | u32::from(cpu.pc + 1);
+    // JSR (abs,X) fetches its two operand bytes separately. Both are
+    // instruction fetches, rather than reads owned by the native data bus.
+    let split_jsr_operand=cpu.pc>=0x8000 && rom[((usize::from(cpu.bank)&0x7f)*0x8000)+(usize::from(cpu.pc)&0x7fff)]==0xfc;
     let mut first_read = true;
     let expected = source
         .step()
@@ -116,7 +131,7 @@ pub(super) fn compare_instruction_with_devices(
                 Kind::Read { value, width } => {
                     let operand_fetch = first_read && a.address == operand;
                     first_read = false;
-                    if operand_fetch {
+                    if operand_fetch || (split_jsr_operand && a.address==operand+1) {
                         return None;
                     }
                     (Access::Read(address, width), value)
@@ -462,9 +477,8 @@ impl<B: WorkBus> Work<'_, B> {
         self.cycles += u64::from(n);
         let bus = &mut self.bus;
         self.clock
-            .advance_synchronous_after_semantics_with(n, |event, at| {
-                bus.timeline_event(event, at.master_cycles());
-                Ok::<u32, String>(0)
+            .advance_synchronous_after_semantics_with_clock(n, |event, clock| {
+                Ok::<u32, String>(bus.retire_event(event, clock))
             })
             .unwrap();
     }

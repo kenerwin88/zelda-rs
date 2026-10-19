@@ -122,6 +122,27 @@ pub(super) struct NativeDialogueCallerClock {
     instruction_clocked_by_caller: bool,
 }
 
+/// One instruction stream and its hardware cursor across held glyph NMIs.
+#[derive(Clone, Debug)]
+pub(crate) struct NativeVwfGlyphClock {
+    clock: NativeDialogueCallerClock,
+    glyph: Option<(crate::cycle_models::vwf::GlyphInstructionWork, VwfGlyphCosts)>,
+    transition: Vec<(u32,u32)>,
+    next_transition: usize,
+    nmi_pending: bool,
+    charged_in_slice: u32,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct NativeScrollCopyClock {
+    clock: NativeDialogueCallerClock,
+    instructions: Vec<(u32, u32)>,
+    next_instruction: usize,
+    nmi_pending: bool,
+    sprite_preparation: Option<super::misc::SpritePreparationWork>,
+    sprite_preparation_master_cycles: u32,
+}
+
 impl NativeDialogueCallerClock {
     fn new(budget: super::game_execution_scheduler::CpuCycleBudget, hdma: snes::HdmaTimingState) -> Self {
         Self { budget, hdma, return_x: None, return_y: None, return_a: None,
@@ -683,19 +704,100 @@ enum DialogueInitializationCallerPhase {
 /// Admission requires the caller's actual budget and HDMA cursor; the legacy
 /// initialization entry interval is deliberately not a constructor input.
 /// This is not serializable: paired checkpoints reject the resident caller.
-/// Runtime admission still needs the upstream native entry-clock handoff.
-#[allow(dead_code)]
-struct ClockedDialogueInitializationCaller {
-    work: DialogueInitializationCallerWork,
+#[derive(Clone, Debug)]
+pub(crate) struct ClockedDialogueCaller<W> {
+    work: W,
     clock: Option<NativeDialogueCallerClock>,
     wait: crate::cycle_models::main_wait::MainWait,
     wait_checkpoint: Option<RomCpuCheckpoint>,
     nmi_pending: bool,
 }
 
-#[allow(dead_code)]
-impl ClockedDialogueInitializationCaller {
-    fn new(work: DialogueInitializationCallerWork, clock: NativeDialogueCallerClock) -> Self {
+pub(crate) type ClockedDialogueInitializationCaller = ClockedDialogueCaller<DialogueInitializationCallerWork>;
+pub(crate) type ClockedDialogueReturnCaller = ClockedDialogueCaller<DialogueReturnWork>;
+
+pub(crate) trait NativeDialogueCallerWork {
+    fn step(&mut self,state: &mut ZeldaState) -> Option<u32>;
+}
+
+impl NativeDialogueCallerWork for DialogueInitializationCallerWork {
+    fn step(&mut self,state: &mut ZeldaState) -> Option<u32> {
+        state.step_dialogue_initialization_caller(self)
+    }
+}
+
+#[derive(Clone,Debug,Default)]
+pub(crate) struct DialogueReturnWork {
+    phase: DialogueReturnPhase,
+    render: crate::cycle_models::text_initialize::RenderTextReturn,
+    interface: crate::cycle_models::text_initialize::InterfaceReturn,
+    preparation: super::misc::SpritePreparationWork,
+    preparation_cycles: u32,
+}
+
+#[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
+enum DialogueReturnPhase {
+    #[default]
+    HandlerExit,
+    HandlerStoreRequest,
+    HandlerStoreDisable,
+    HandlerRts,
+    RenderReturn,
+    InterfaceReturn,
+    CallPreparation,
+    Preparation,
+    Return,
+    Complete,
+}
+
+impl NativeDialogueCallerWork for DialogueReturnWork {
+    fn step(&mut self,state: &mut ZeldaState) -> Option<u32> {
+        use DialogueReturnPhase::*;
+        loop {
+            let (cost,next) = match self.phase {
+                HandlerExit => (Some(16),HandlerStoreRequest),
+                HandlerStoreRequest => {
+                    state.set_pending_nmi_subroutine(2);
+                    (Some(24),HandlerStoreDisable)
+                }
+                HandlerStoreDisable => {
+                    state.set_core_update_disable_flag(2);
+                    (Some(32),HandlerRts)
+                }
+                HandlerRts => (Some(42),RenderReturn),
+                RenderReturn => (self.render.step(),InterfaceReturn),
+                InterfaceReturn => (state.step_module0e_interface_return(&mut self.interface),CallPreparation),
+                CallPreparation => {
+                    state.enter_main_loop_sprite_preparation();
+                    self.phase = Preparation;
+                    return Some(46);
+                }
+                Preparation => {
+                    let _scope = crate::cycle_ledger::routine(0x0085fc);
+                    let cost = state.step_sprite_preparation_work(&mut self.preparation);
+                    if let Some(cost) = cost { self.preparation_cycles += cost; }
+                    else { state.last_nmi_prepare_sprites_master_cycles = Some(self.preparation_cycles); }
+                    (cost,Return)
+                }
+                Return => (state.step_main_loop_caller_return(),Complete),
+                Complete => return None,
+            };
+            if let Some(cost) = cost {
+                // Interface/sprite/main helpers own their own ledger charges.
+                if matches!(self.phase,HandlerExit | HandlerStoreRequest | HandlerStoreDisable
+                    | HandlerRts | RenderReturn) { crate::cycle_ledger::charge(u64::from(cost)); }
+                if matches!(self.phase,HandlerExit | HandlerStoreRequest | HandlerStoreDisable | HandlerRts) {
+                    self.phase = next;
+                }
+                return Some(cost);
+            }
+            self.phase = next;
+        }
+    }
+}
+
+impl<W: NativeDialogueCallerWork> ClockedDialogueCaller<W> {
+    fn new(work: W, clock: NativeDialogueCallerClock) -> Self {
         Self { work, clock: Some(clock), wait: Default::default(),
             wait_checkpoint: None, nmi_pending: false }
     }
@@ -708,7 +810,7 @@ impl ClockedDialogueInitializationCaller {
         // but this owner clocks every retired instruction exactly once.
         clock.instruction_clocked_by_caller = true;
         state.native_dialogue_caller_clock = Some(clock);
-        let cycles = if let Some(cycles) = state.step_dialogue_initialization_caller(&mut self.work) {
+        let cycles = if let Some(cycles) = self.work.step(state) {
             cycles
         } else {
             let checkpoint = self.wait_checkpoint.get_or_insert_with(|| {
@@ -1479,6 +1581,175 @@ mod fast_forward_cycle_tests {
     }
 
     #[test]
+    fn scroll_instruction_boundaries_match_source() {
+        use crate::cycle_models::vwf::{scroll_instructions, scroll_master_cycles};
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let (_, rom) = character_decoder_fixture().expect("scroll source fixture");
+        for b_held in [false, true] {
+            for line_counter in [0, 10, 14, 15, 31] {
+                for speed in [0, 1, 2, 4] {
+                    let mut state = crate::zelda_rtl::ZeldaState::new();
+                    state.ram[0xf2] = if b_held { 0x80 } else { 0 };
+                    state.ram[0x1cdf] = line_counter;
+                    state.ram[0x1cea] = speed;
+                    let checkpoint = RomCpuCheckpoint {
+                        entry_pc: 0x0e_cfe2, stop_pc: 0x0e_c9f5,
+                        sp: 0x01fc, db: 0x0e, stack_address: 0x01fd,
+                        stack_bytes: &[0xf4, 0xc9], waiting: false,
+                        ..crate::zelda_rtl::DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+                    };
+                    let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                        &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+                    let mut total = 0;
+                    for (pc, cost) in scroll_instructions(b_held, speed, line_counter) {
+                        assert_eq!(source.pc(), pc,
+                            "held={b_held} speed={speed} counter={line_counter}");
+                        assert_eq!(source.step().master_cycles, cost, "PC {pc:06x}");
+                        total += u64::from(cost);
+                    }
+                    assert!(source.is_complete());
+                    assert_eq!(total, scroll_master_cycles(b_held, speed, line_counter).master);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn scroll_caller_retains_sprite_preparation_across_nmi() {
+        use crate::zelda_rtl::game_execution_scheduler::{CpuCycleBudget, CpuWorkAdvance};
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let (assets, rom) = character_decoder_fixture().expect("scroll caller source fixture");
+        let mut state = crate::zelda_rtl::ZeldaState::new();
+        state.set_assets(&assets).unwrap();
+        state.ram[0x12] = 1;
+        state.ram[0x0aa2] = 0xa0;
+        for (i, byte) in state.ram[0xa20..0xaa0].iter_mut().enumerate() {
+            *byte = (i % 4) as u8;
+        }
+        state.sync_native_game_state_from_ram();
+        state.main_loop_caller_phase = crate::cycle_models::main_wait::MainLoopCallerPhase::ModuleRouting;
+        state.enter_main_loop_sprite_preparation();
+        let budget = CpuCycleBudget::until_next_nmi_acceptance_in_field(
+            30_000, snes::CpuRasterPosition::new(224, 1330),
+            snes::CpuBusWorkload::with_dynamic_hdma());
+        state.native_scroll_copy_clock = Some(super::NativeScrollCopyClock {
+            clock: super::NativeDialogueCallerClock::new(budget.clone(), snes::HdmaTimingState::new(&state.dma)),
+            instructions: Vec::new(), next_instruction: 0, nmi_pending: false,
+            sprite_preparation: Some(Default::default()), sprite_preparation_master_cycles: 0,
+        });
+        let checkpoint = RomCpuCheckpoint {
+            entry_pc: 0x00_85fc, stop_pc: 0x00_8034,
+            sp: 0x01fd, db: 0, stack_address: 0x01fe,
+            stack_bytes: &[0x5c, 0x80], waiting: false,
+            ..crate::zelda_rtl::DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+        };
+        let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+            &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+        let mut source_budget = budget;
+        while crate::zelda_rtl::advance_rom_cpu_step(&mut source, &mut source_budget) == CpuWorkAdvance::Complete {}
+        assert!(!state.advance_clocked_scroll_continuation());
+        let held = state.native_scroll_copy_clock.as_ref().unwrap();
+        assert!(held.nmi_pending);
+        let super::super::misc::SpritePreparationWork::Packing(packing) = held.sprite_preparation.unwrap() else {
+            panic!("fixture must interrupt the packing loop");
+        };
+        assert_eq!(packing.next_pc(), source.pc());
+        assert_eq!(held.clock.budget.raster_position(), source_budget.raster_position());
+        // An isolated handler interval leaves this interrupted routine's
+        // registers and packed bytes unchanged. Both clocks consume it once.
+        source_budget.begin_nmi_handler();
+        assert_eq!(source_budget.advance_instruction(3030), CpuWorkAdvance::Complete);
+        state.resume_scroll_clock_after_nmi(3030);
+        while crate::zelda_rtl::advance_rom_cpu_step(&mut source, &mut source_budget) == CpuWorkAdvance::Complete {}
+        assert!(state.advance_clocked_scroll_continuation());
+        assert!(state.native_scroll_copy_clock.is_none());
+        let phase = state.native_main_wait_cpu_phase.as_ref().unwrap();
+        assert_eq!(phase.checkpoint, source.main_wait_checkpoint(0x805d));
+        assert_eq!(phase.budget.raster_position(), source_budget.raster_position());
+        assert_eq!(&state.ram[0xa00..0xae4], &source.ram()[0xa00..0xae4]);
+    }
+
+    #[test]
+    fn completed_scroll_publishes_the_cursor_read_by_the_next_dispatch() {
+        use crate::cycle_models::vwf::{DispatchCursor, scroll_master_cycles};
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let (_, rom) = character_decoder_fixture().expect("scroll source fixture");
+        for line_counter in [0x0e, 0x0f, 0x1f] {
+            for speed in [0, 1, 2] {
+                let mut state = crate::zelda_rtl::ZeldaState::new();
+                state.ram[0x1cdd..0x1cdf].copy_from_slice(&0x28u16.to_le_bytes());
+                state.ram[0x1ce6] = 5;
+                state.ram[0x1cdf] = line_counter;
+                state.ram[0x1cea] = speed;
+                state.sync_native_game_state_from_ram();
+                state.dialogue_vwf_dispatch_cursor = DispatchCursor { src_offs: 0x28, next_position: 5 };
+                let mut sliced = state.clone();
+                let checkpoint = RomCpuCheckpoint {
+                    entry_pc: 0x0e_cfe2, stop_pc: 0x0e_c9f5,
+                    sp: 0x01fc, db: 0x0e, stack_address: 0x01fd,
+                    stack_bytes: &[0xf4, 0xc9], waiting: false,
+                    ..crate::zelda_rtl::DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+                };
+                let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                    &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+                for _ in 0..50_000 {
+                    if source.is_complete() { break; }
+                    source.step();
+                }
+                assert!(source.is_complete());
+                let expected = scroll_master_cycles(false, speed, line_counter);
+                assert_eq!(state.render_text_scroll_pixels(u16::from(speed) + 1), expected.completed);
+                sliced.native_scroll_copy_cursor = Some(super::NativeScrollCopyCursor {
+                    elapsed_master_cycles: 0, b_held: false, scroll_speed: speed,
+                    starting_line_counter: line_counter,
+                });
+                assert_eq!(sliced.advance_native_scroll_copy(expected.master), expected.completed);
+                for native in [&state, &sliced] {
+                    assert_eq!(&native.ram[0x1cdd..0x1cdf], &source.ram()[0x1cdd..0x1cdf]);
+                    assert_eq!(native.ram[0x1ce6], source.ram()[0x1ce6]);
+                    assert_eq!(native.dialogue_vwf_dispatch_cursor.src_offs,
+                        u16::from_le_bytes(source.ram()[0x1cdd..0x1cdf].try_into().unwrap()));
+                    assert_eq!(native.dialogue_vwf_dispatch_cursor.next_position, source.ram()[0x1ce6]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn native_dispatch_and_line_commands_publish_source_cursor_stores() {
+        use crate::cycle_models::vwf::DispatchCursor;
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let (assets, rom) = character_decoder_fixture().expect("dispatch source fixture");
+        for cursor in [0x100, 0x15, 0x40, 0x62] {
+            for command in [0x74, 0x75, 0x76, 0x7f] {
+                let mut state = crate::zelda_rtl::ZeldaState::new();
+                state.set_assets(&assets).unwrap();
+                state.ram[0x1cdd..0x1cdf].copy_from_slice(&u16::to_le_bytes(cursor));
+                state.ram[0x1ce6] = 7;
+                state.ram[0x1ce9] = 9;
+                state.sync_native_game_state_from_ram();
+                state.dialogue_vwf_dispatch_cursor = DispatchCursor { src_offs: cursor, next_position: 7 };
+                state.messaging_text_mut().load_decoded_dialogue(&[command, 0x7f]);
+                let checkpoint = RomCpuCheckpoint {
+                    entry_pc: 0x0e_c984, stop_pc: 0x0e_c9f5,
+                    sp: 0x01fc, db: 0x0e, waiting: false,
+                    ..crate::zelda_rtl::DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+                };
+                let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                    &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+                for _ in 0..500 {
+                    if source.is_complete() { break; }
+                    source.step();
+                }
+                assert!(source.is_complete());
+                state.render_text_draw_message_characters_slice();
+                assert_eq!(&state.ram[0x1cdd..0x1cdf], &source.ram()[0x1cdd..0x1cdf]);
+                assert_eq!(state.ram[0x1ce6], source.ram()[0x1ce6]);
+            }
+        }
+    }
+
+    #[test]
     fn measured_dialogue_budget_retains_all_four_refresh_phases() {
         let state = crate::zelda_rtl::ZeldaState::new();
         for base in [0, 30_000, 1_581_076] {
@@ -1903,6 +2174,113 @@ mod messaging_shared;
 use messaging_shared::*;
 
 impl ZeldaState {
+    pub(super) fn native_dialogue_has_main_wait_entry(&self, host: u32) -> bool {
+        self.rom_startup_timing()
+            && !matches!(self.original_timing_owner(), super::OriginalTimingOwner::Live)
+            && self.native_exact_cpu_owner.is_none()
+            && self.game_state.frame.main_module == 14
+            && self.game_state.frame.submodule == 2
+            && self.game_state.messaging.runtime.module() == 1
+            && !self.dialogue_fast_forward_hold_active
+            && self.native_main_wait_cpu_phase.as_ref().is_some_and(|phase|
+                phase.host == host && matches!(phase.checkpoint.entry_pc, 0x008034 | 0x008036))
+    }
+
+    fn native_initializer_has_retained_entry(&self) -> bool {
+        self.rom_startup_timing()
+            && !matches!(self.original_timing_owner(), super::OriginalTimingOwner::Live)
+            && self.native_exact_cpu_owner.is_none()
+            && self.game_state.frame.main_module == 14
+            && self.game_state.frame.submodule == 2
+            && self.game_state.messaging.runtime.module() == 0
+            && (self.native_initializer_has_module_entry()
+                || (self.game_execution_scheduler.current_main_iteration_follows_leading_nmi()
+                    && self.native_main_wait_cpu_phase.as_ref().is_some_and(|phase|
+                        phase.host == self.frame_ctr_dbg && matches!(phase.checkpoint.entry_pc, 0x008034 | 0x008036))))
+    }
+
+    fn native_initializer_has_module_entry(&self) -> bool {
+        self.native_startup_cpu.as_ref().is_some_and(|cpu|
+            cpu.module_entry_ledger_mark.is_some()
+                && cpu.startup.entered_module_context().is_some_and(|context|
+                    (context.bank, context.pc) == (0, 0xf800)))
+    }
+
+    /// Resume the saved wait instructions after the actual leading NMI, then
+    /// advance the work already retired by the native main/module prefix.
+    /// The retained clock owns refresh and HDMA; no entry interval is guessed.
+    fn take_native_initializer_entry_clock(&mut self) -> NativeDialogueCallerClock {
+        assert!(self.native_initializer_has_retained_entry());
+        if self.native_initializer_has_module_entry() {
+            let cpu = self.native_startup_cpu.as_ref().unwrap();
+            let mut clock = NativeDialogueCallerClock::new(
+                super::game_execution_scheduler::CpuCycleBudget::from_native_timeline(&cpu.timeline),
+                snes::HdmaTimingState::new(&self.dma_with_native_hdma_enable()),
+            );
+            let prefix = crate::cycle_ledger::master() - cpu.module_entry_ledger_mark.unwrap();
+            assert!(clock.advance(self, u32::try_from(prefix).unwrap()).reached_boundary().is_none(),
+                "interface prefix crossed an unowned NMI before Text_Initialize");
+            if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_DIALOGUE_CPU_PHASE", self.frame_ctr_dbg) {
+                eprintln!("native-module-initializer-entry host={} prefix={} field={} position={:?}",
+                    self.frame_ctr_dbg, prefix, clock.budget.field_index(), clock.budget.raster_position());
+            }
+            let cpu = self.native_startup_cpu.as_mut().unwrap();
+            cpu.module_entry_ledger_mark = None;
+            // The clock now belongs to the native initializer and its caller
+            // return. The old module entry must never be consumed again.
+            cpu.startup.complete_externally();
+            return clock;
+        }
+        self.take_native_main_caller_clock()
+    }
+
+    /// A completed state-0 dungeon transition returns on the same main
+    /// stack as sprite preparation. Keep its leading-NMI wait phase rather
+    /// than seeding the next room loader from a new raster origin.
+    pub(super) fn retain_dungeon_transition_caller_clock(&mut self) {
+        if !self.rom_startup_timing()
+            || matches!(self.original_timing_owner(), super::OriginalTimingOwner::Live)
+            || self.native_exact_cpu_owner.is_some()
+            || !self.game_execution_scheduler.current_main_iteration_follows_leading_nmi()
+            || !self.native_main_wait_cpu_phase.as_ref().is_some_and(|phase|
+                phase.host == self.frame_ctr_dbg && matches!(phase.checkpoint.entry_pc, 0x008034 | 0x008036))
+        {
+            return;
+        }
+        assert!(self.native_dialogue_caller_clock.is_none());
+        self.native_dialogue_caller_clock = Some(self.take_native_main_caller_clock());
+    }
+
+    fn take_native_main_caller_clock(&mut self) -> NativeDialogueCallerClock {
+        let phase = self.native_main_wait_cpu_phase.take().unwrap();
+        let mark = self.ledger_master_at_nmi_acceptance.expect("main caller leading NMI ledger");
+        let mut clock = NativeDialogueCallerClock::new(phase.budget,
+            snes::HdmaTimingState::new(&self.dma_with_native_hdma_enable()));
+        clock.budget.begin_nmi_handler();
+        let nmi = self.last_nmi_handler_master_cycles.unwrap();
+        assert!(clock.advance(self, nmi).reached_boundary().is_none());
+        use crate::cycle_models::main_wait::MainWait;
+        let mut wait = match phase.checkpoint.entry_pc {
+            0x008034 => MainWait::LoadLatch,
+            0x008036 => MainWait::TestLatch { value: phase.checkpoint.a as u8 },
+            _ => unreachable!(),
+        };
+        assert!(self.game_state.display.nmi_update_is_latched());
+        while wait != MainWait::Complete {
+            let step = wait.step(u8::from(self.game_state.display.nmi_update_is_latched()));
+            assert!(clock.advance(self, step.master_cycles).reached_boundary().is_none());
+        }
+        let total = crate::cycle_ledger::master() - mark + self.last_nmi_dma_master_cycles;
+        assert!(clock.advance(self, u32::try_from(total - u64::from(nmi)).unwrap())
+            .reached_boundary().is_none(), "main caller prefix crossed an unowned NMI");
+        if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_DIALOGUE_CPU_PHASE", self.frame_ctr_dbg) {
+            eprintln!("native-main-caller-clock-entry host={} module={:02x}/{:02x}/{:02x} position={:?}",
+                self.frame_ctr_dbg, self.game_state.frame.main_module, self.game_state.frame.submodule,
+                self.game_state.frame.subsubmodule, clock.budget.raster_position());
+        }
+        clock
+    }
+
     pub(super) fn Module0E_Interface(&mut self) {
         // A fast-forward message render slice: the ROM's NMI skips the core
         // game update (sprites/Link) while the main thread finishes the render.
@@ -1912,6 +2290,13 @@ impl ZeldaState {
         // dialogue slice re-enters the translation to reach the suspended
         // handler, which the ROM resumes directly after its RTI.
         let fresh_iteration = !self.dialogue_fast_forward_hold_active;
+        if fresh_iteration {
+            if let Some(cpu) = self.native_startup_cpu.as_mut().filter(|cpu|
+                cpu.startup.entered_module_context().is_some_and(|context|
+                    (context.bank, context.pc) == (0, 0xf800))) {
+                cpu.module_entry_ledger_mark = Some(crate::cycle_ledger::master());
+            }
+        }
         let _scope = fresh_iteration.then(|| crate::cycle_ledger::routine(0x00_f800));
         let charge = |master: u64| {
             if fresh_iteration {
@@ -1979,6 +2364,9 @@ impl ZeldaState {
     /// (Module0E_Interface, Module1B_SpawnSelect) and arm the schedule the
     /// translated `Text_Initialize` consumes.
     fn arm_dialogue_initialization_schedule_if_needed(&mut self) {
+        if self.native_initializer_has_retained_entry() {
+            return;
+        }
         if self.rom_startup_timing()
             && (self.game_state.frame.submodule == 2
                 || (self.game_state.frame.submodule == 11
@@ -2088,6 +2476,7 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_module0e_interface_after_run(&mut self) {
+        if self.native_dialogue_caller_already_returned() { return; }
         let mut work = crate::cycle_models::text_initialize::InterfaceReturn::default();
         while self.step_module0e_interface_return(&mut work).is_some() {}
         self.replay_trace_ram_watch("module0e-after-scroll-copy");
@@ -2116,7 +2505,7 @@ impl ZeldaState {
         Some(instruction.master_cycles)
     }
 
-    fn finish_render_text_return(&mut self) {
+    pub(super) fn finish_render_text_return(&mut self) {
         let mut work = crate::cycle_models::text_initialize::RenderTextReturn::default();
         while let Some(cost) = work.step() {
             crate::cycle_ledger::charge(u64::from(cost));
@@ -2129,7 +2518,8 @@ impl ZeldaState {
             .is_some_and(|clock| clock.instruction_clocked_by_caller) { return; }
         let Some(mut clock) = self.native_dialogue_caller_clock.take() else { return; };
         assert!(clock.advance(self, cycles).reached_boundary().is_none(),
-            "native dialogue caller exhausted its reserved return budget");
+            "native dialogue caller exhausted its reserved return budget at host {} position {:?}",
+            self.frame_ctr_dbg, clock.budget.raster_position());
         self.native_dialogue_caller_clock = Some(clock);
     }
 
@@ -5736,6 +6126,9 @@ impl ZeldaState {
         // PLY` (52) before it pulls the return address. A resumed dialogue
         // slice re-enters the translation without the ROM running any of it.
         let fresh_iteration = !self.dialogue_fast_forward_hold_active;
+        let retained_main_entry = fresh_iteration
+            && self.game_execution_scheduler.current_main_iteration_follows_leading_nmi()
+            && self.native_dialogue_has_main_wait_entry(self.frame_ctr_dbg);
         {
             let _near = fresh_iteration.then(|| {
                 crate::cycle_ledger::charge(118);
@@ -5752,11 +6145,22 @@ impl ZeldaState {
                 _ => {}
             }
         }
-        if (fresh_iteration || self.native_dialogue_caller_clock.is_some()) && !matches!(
+        if (fresh_iteration || self.native_dialogue_caller_clock.is_some())
+            && self.clocked_dialogue_return_caller.is_none() && !self.native_dialogue_caller_already_returned()
+            && !matches!(
             self.game_execution_scheduler.current_work(),
             Some(GameWorkContinuation::FinishDialogueInitializationPrefix { .. }
                 | GameWorkContinuation::FinishDialogueInitializationCallerReturn)
         ) {
+            // Cheap text handlers return without entering the glyph loop.
+            // Their native ledger work belongs to the same retained caller.
+            if fresh_iteration && self.native_dialogue_caller_clock.is_none()
+                && retained_main_entry
+                && !self.dialogue_fast_forward_hold_pending
+                && self.dialogue_scroll_cpu_is_idle()
+            {
+                self.native_dialogue_caller_clock = Some(self.take_native_main_caller_clock());
+            }
             self.finish_render_text_return();
         }
     }
@@ -5772,6 +6176,17 @@ impl ZeldaState {
     }
 
     pub(super) fn Text_Initialize(&mut self) {
+        if self.native_initializer_has_retained_entry() {
+            let work = self.native_dialogue_initialization_caller_work()
+                .expect("native initializer requires its assets and message operands");
+            let clock = self.take_native_initializer_entry_clock();
+            self.pending_dialogue_initialization_schedule = None;
+            assert!(self.clocked_dialogue_initialization_caller.replace(
+                ClockedDialogueInitializationCaller::new(work, clock)).is_none());
+            self.advance_clocked_dialogue_initialization();
+            self.stage_dialogue_initialization_obj_scanout();
+            return;
+        }
         if self.pending_dialogue_initialization_schedule.is_some()
             && self.rom_startup_timing()
             && self.original_timing_main_loop_iteration_returned_to_wait()
@@ -5845,6 +6260,87 @@ impl ZeldaState {
             decoder: self.native_character_buffer_work()?,
             tail: Default::default(),
         })
+    }
+
+    fn advance_clocked_dialogue_initialization(&mut self) {
+        let mut owner = self.clocked_dialogue_initialization_caller.take().unwrap();
+        loop {
+            if owner.step(self).1.reached_boundary().is_some() { break; }
+        }
+        if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_DIALOGUE_CPU_PHASE", self.frame_ctr_dbg) {
+            eprintln!("native-initializer-boundary host={} phase={:?} position={:?}",
+                self.frame_ctr_dbg, owner.work.phase, owner.clock.as_ref().unwrap().budget.raster_position());
+        }
+        if owner.work.phase == DialogueInitializationCallerPhase::Complete {
+            self.main_loop_sprite_preparation_completed = true;
+            self.native_main_wait_cpu_phase = Some(owner.into_main_wait_phase(self, self.frame_ctr_dbg + 1));
+            self.game_execution_scheduler.finish_call_stack_at_main_wait_before_nmi();
+            let scroll = self.bg_scroll_scanout_from_nmi_register_mirrors();
+            self.publish_bg_scroll_for_following_scanout(scroll);
+        } else {
+            self.clocked_dialogue_initialization_caller = Some(owner);
+            // This is the boundary just reached by the native instructions,
+            // not a predicted number of future held frames.
+            self.game_execution_scheduler.schedule_after_current_trailing_nmi(
+                GameWorkContinuation::FinishDialogueInitializationCallerReturn);
+        }
+    }
+
+    pub(super) fn resume_clocked_dialogue_initialization(&mut self, input: u16,
+        oam_dma_source: Option<&[u8]>) -> bool {
+        let Some(mut owner) = self.clocked_dialogue_initialization_caller.take() else { return false };
+        assert_eq!(self.game_execution_scheduler.take_after_current_trailing_nmi(),
+            Some(GameWorkContinuation::FinishDialogueInitializationCallerReturn));
+        let clock = owner.begin_nmi();
+        self.interrupt_nmi(input, oam_dma_source, false);
+        clock.hdma = snes::HdmaTimingState::new(&self.dma_with_native_hdma_enable());
+        assert!(clock.advance(self, self.last_nmi_handler_master_cycles.unwrap())
+            .reached_boundary().is_none());
+        self.capture_display_snapshot();
+        self.clocked_dialogue_initialization_caller = Some(owner);
+        self.advance_clocked_dialogue_initialization();
+        true
+    }
+
+    fn advance_clocked_dialogue_return(&mut self) {
+        let mut owner = self.clocked_dialogue_return_caller.take().unwrap();
+        while owner.step(self).1.reached_boundary().is_none() {}
+        if debug_vwf_budget_for_frame(self.frame_ctr_dbg) {
+            eprintln!("native_dialogue_return_boundary host={} phase={:?} position={:?}",
+                self.frame_ctr_dbg,owner.work.phase,owner.clock.as_ref().unwrap().budget.raster_position());
+        }
+        if owner.work.phase == DialogueReturnPhase::Complete {
+            self.main_loop_sprite_preparation_completed = true;
+            self.native_main_wait_cpu_phase = Some(owner.into_main_wait_phase(self,self.frame_ctr_dbg+1));
+            self.game_execution_scheduler.finish_clocked_call_at_main_wait_before_nmi();
+            self.pending_main_loop_common_suffix = None;
+            let scroll = self.bg_scroll_scanout_from_nmi_register_mirrors();
+            self.publish_bg_scroll_for_following_scanout(scroll);
+        } else {
+            self.clocked_dialogue_return_caller = Some(owner);
+            self.game_execution_scheduler.schedule_after_current_trailing_nmi(
+                GameWorkContinuation::FinishDialogueInitializationCallerReturn);
+        }
+    }
+
+    pub(super) fn resume_clocked_dialogue_return(&mut self,input: u16,
+        oam_dma_source: Option<&[u8]>) -> bool {
+        let Some(mut owner) = self.clocked_dialogue_return_caller.take() else { return false; };
+        assert_eq!(self.game_execution_scheduler.take_after_current_trailing_nmi(),
+            Some(GameWorkContinuation::FinishDialogueInitializationCallerReturn));
+        let clock = owner.begin_nmi();
+        self.interrupt_nmi(input,oam_dma_source,false);
+        clock.hdma = snes::HdmaTimingState::new(&self.dma_with_native_hdma_enable());
+        assert!(clock.advance(self,self.last_nmi_handler_master_cycles.unwrap()).reached_boundary().is_none());
+        self.capture_display_snapshot();
+        self.clocked_dialogue_return_caller = Some(owner);
+        self.advance_clocked_dialogue_return();
+        true
+    }
+
+    fn native_dialogue_caller_already_returned(&self) -> bool {
+        self.main_loop_caller_phase == crate::cycle_models::main_wait::MainLoopCallerPhase::Waiting
+            && self.native_main_wait_cpu_phase.as_ref().is_some_and(|phase| phase.host == self.frame_ctr_dbg+1)
     }
 
     fn native_dialogue_initialization_caller_work(&self) -> Option<DialogueInitializationCallerWork> {
@@ -6328,8 +6824,8 @@ impl ZeldaState {
         self.messaging_state_mut().set_dialogue_msg_read_pos(output_cursor as u16);
         // The ROM's loader leaves its encoded input index in $1CDD (dead here,
         // but it selects the render dispatch's comparison path).
-        self.dialogue_vwf_dispatch_cursor =
-            self.dialogue_vwf_dispatch_cursor.after_character_buffer_load(text_index);
+        self.set_dialogue_vwf_dispatch_cursor(
+            self.dialogue_vwf_dispatch_cursor.after_character_buffer_load(text_index));
         output_cursor as u16
     }
 
@@ -6387,6 +6883,17 @@ impl ZeldaState {
         self.dialogue_vwf_dispatch_cursor.next_position = 0;
         self.ram[crate::game_state::constants::DIALOGUE_NEXT_POSITION] = 0;
         self.messaging_state_mut().clear_dialogue_msg_read_pos();
+    }
+
+    fn set_dialogue_vwf_dispatch_cursor(&mut self, cursor: crate::cycle_models::vwf::DispatchCursor) {
+        // The native dispatcher owns these stores even though the VWF renderer
+        // no longer uses the fixed-width cursor to place glyphs. Its next
+        // caller still reads this WRAM view when selecting the dispatch path.
+        self.dialogue_vwf_dispatch_cursor = cursor;
+        use crate::game_state::constants::{DIALOGUE_MSG_SRC_OFFS, DIALOGUE_NEXT_POSITION};
+        self.ram[DIALOGUE_MSG_SRC_OFFS..DIALOGUE_MSG_SRC_OFFS + 2]
+            .copy_from_slice(&cursor.src_offs.to_le_bytes());
+        self.ram[DIALOGUE_NEXT_POSITION] = cursor.next_position;
     }
 
     /// Build the 6-char player name buffer from SRAM (all 6 entries, including trailing 0x59
@@ -6575,6 +7082,17 @@ impl ZeldaState {
             && !yielded_to_authority
             && self.dialogue_scroll_cpu_is_idle()
             && outcome.caller_suffix_crosses_vblank();
+        if !yielded && self.dialogue_scroll_cpu_is_idle() && caller_suffix_crosses_vblank
+            && self.native_vwf_glyph_clock.is_some() {
+            self.dialogue_fast_forward_hold_pending = false;
+            self.dialogue_fast_forward_hold_active = false;
+            let owner = self.native_vwf_glyph_clock.take().unwrap();
+            assert!(owner.glyph.is_none() && !owner.nmi_pending);
+            self.clocked_dialogue_return_caller = Some(ClockedDialogueReturnCaller::new(
+                DialogueReturnWork::default(),owner.clock));
+            self.advance_clocked_dialogue_return();
+            return;
+        }
         // A long scroll remains inside RenderText_Draw_Scroll; its dedicated
         // pre-main scheduler owns both the preceding NMI publication and the
         // eventual handler epilogue. Ordinary commands still finish here.
@@ -6874,7 +7392,7 @@ impl ZeldaState {
         let drawing_master_cycles = glyph_costs.drawing;
         match self.dialogue_vwf_glyph_cpu_phase {
             VwfGlyphCpuPhase::Ready => {
-                self.dialogue_vwf_dispatch_cursor = dispatch_cursor;
+                self.set_dialogue_vwf_dispatch_cursor(dispatch_cursor);
                 self.begin_vwf_glyph(param, read_pos as u16);
                 self.dialogue_vwf_glyph_cpu_phase = VwfGlyphCpuPhase::Drawing {
                     remaining_master_cycles: drawing_master_cycles,
@@ -7066,6 +7584,118 @@ impl ZeldaState {
 
     /// Runs the interruptible 65816 message loop up to this display boundary
     /// and reports whether vblank owns the glyph loop or its caller suffix.
+    pub(super) fn resume_native_vwf_clock_after_nmi(&mut self, handler_cycles: u32) {
+        let Some(mut owner) = self.native_vwf_glyph_clock.take() else { return; };
+        assert!(owner.nmi_pending, "glyph NMI arrived without an accepted instruction");
+        owner.nmi_pending = false;
+        owner.clock.budget.begin_nmi_handler();
+        owner.clock.hdma = snes::HdmaTimingState::new(&self.dma_with_native_hdma_enable());
+        assert!(owner.clock.advance(self,handler_cycles).reached_boundary().is_none());
+        if debug_vwf_budget_for_frame(self.frame_ctr_dbg) {
+            eprintln!("native_glyph_clock_resume host={} position={:?}",
+                self.frame_ctr_dbg,owner.clock.budget.raster_position());
+        }
+        self.native_vwf_glyph_clock = Some(owner);
+    }
+
+    fn flush_native_vwf_clock(&mut self, consumed: u32) {
+        let Some(mut owner) = self.native_vwf_glyph_clock.take() else { return; };
+        let unclocked = consumed.saturating_sub(owner.charged_in_slice);
+        if unclocked != 0 {
+            assert!(!owner.nmi_pending);
+            owner.nmi_pending = owner.clock.advance(self,unclocked).reached_boundary().is_some();
+            owner.charged_in_slice += unclocked;
+        }
+        self.native_vwf_glyph_clock = Some(owner);
+    }
+
+    fn advance_native_vwf_glyph(&mut self,c: u8,width: u8,x: u8,next_line: bool,
+        costs: VwfGlyphCosts) -> VwfGlyphCpuAdvance {
+        use crate::cycle_models::vwf_drawing::{Read,Write};
+        let mut owner = self.native_vwf_glyph_clock.take().unwrap();
+        assert!(!owner.nmi_pending,"glyph resumed before its held NMI");
+        if owner.glyph.is_none() {
+            assert!(self.dialogue_vwf_glyph_cpu_phase.is_ready());
+            owner.glyph = Some((crate::cycle_models::vwf::GlyphInstructionWork::new(
+                self.dialogue_vwf_dispatch_cursor,c,0,next_line,width,x,
+                self.dialogue_glyph_font_rows(c).expect("native glyph font")),costs));
+        }
+        let (mut work,costs) = owner.glyph.take().unwrap();
+        let mut consumed = 0;
+        let mut entered = false;
+        while !work.is_complete() {
+            let pc = work.next_pc();
+            let instruction = work.step(|operand| match operand {
+                Read::LineOffset => self.game_state.messaging.vwf_render.line_render_offset(),
+                Read::GlyphCursor => self.game_state.messaging.vwf_render.glyph_cursor(),
+                Read::AdvanceWord(cursor) => {
+                    let index = usize::from(cursor);
+                    u16::from_le_bytes([index.checked_sub(1).map_or_else(
+                        || self.ram[VWF_ARR-1],|i| self.vwf_glyph_advance_prefix_sum(i)),
+                        self.vwf_glyph_advance_prefix_sum(index)])
+                }
+                Read::BitmapByte(offset) => u16::from(self.game_state.messaging.render_buffer.byte(usize::from(offset))),
+                Read::ReadPosition => self.game_state.messaging.runtime.dialogue_msg_read_pos(),
+            }).unwrap();
+            let before = self.dialogue_vwf_glyph_cpu_phase;
+            let advance = before.advance(instruction.master_cycles,costs);
+            if advance.entered_function {
+                let read_pos = self.game_state.messaging.runtime.dialogue_msg_read_pos();
+                self.begin_vwf_glyph(c,read_pos);
+                entered = true;
+            }
+            self.dialogue_vwf_glyph_cpu_phase = self.publish_vwf_glyph_setup_progress(c,before,advance.next_phase);
+            if pc == 0x0ec9bb {
+                let (_,cursor) = crate::cycle_models::vwf::dispatch_master_cycles(self.dialogue_vwf_dispatch_cursor,c);
+                self.set_dialogue_vwf_dispatch_cursor(cursor);
+            }
+            match instruction.write {
+                Some(Write::BitmapByte(offset,value)) => self.set_messaging_render_buffer_byte(usize::from(offset),value),
+                Some(Write::BitmapWord(offset,value)) => self.set_messaging_render_buffer_word_at_byte_offset(usize::from(offset),value),
+                Some(Write::ReadPosition(value)) => self.messaging_state_mut().set_dialogue_msg_read_pos(value),
+                None => {},
+            }
+            consumed += instruction.master_cycles;
+            if owner.clock.advance(self,instruction.master_cycles).reached_boundary().is_some() {
+                owner.nmi_pending = true;
+                if debug_vwf_budget_for_frame(self.frame_ctr_dbg) {
+                    eprintln!("native_glyph_clock_nmi host={} retired={pc:06x} next={:06x} position={:?}",
+                        self.frame_ctr_dbg,work.next_pc(),owner.clock.budget.raster_position());
+                }
+                break;
+            }
+        }
+        let completed = work.is_complete();
+        if !completed { owner.glyph = Some((work,costs)); }
+        owner.charged_in_slice += consumed;
+        self.native_vwf_glyph_clock = Some(owner);
+        VwfGlyphCpuAdvance { next_phase: self.dialogue_vwf_glyph_cpu_phase,
+            consumed_master_cycles: consumed,entered_function: entered,completed }
+    }
+
+    fn advance_native_vwf_transition(&mut self) -> (u32,bool) {
+        let mut owner = self.native_vwf_glyph_clock.take().unwrap();
+        let mut consumed = 0;
+        while !owner.nmi_pending && owner.next_transition < owner.transition.len() {
+            let (pc,cycles) = owner.transition[owner.next_transition];
+            owner.next_transition += 1;
+            consumed += cycles;
+            if owner.clock.advance(self,cycles).reached_boundary().is_some() {
+                owner.nmi_pending = true;
+                if debug_vwf_budget_for_frame(self.frame_ctr_dbg) {
+                    eprintln!("native_glyph_transition_nmi host={} retired={pc:06x} position={:?}",
+                        self.frame_ctr_dbg,owner.clock.budget.raster_position());
+                }
+            }
+        }
+        self.dialogue_vwf_transition_remaining_master_cycles = owner.transition[owner.next_transition..]
+            .iter().map(|step| step.1).sum();
+        let boundary = owner.nmi_pending;
+        owner.charged_in_slice += consumed;
+        self.native_vwf_glyph_clock = Some(owner);
+        (consumed,boundary)
+    }
+
     fn render_text_draw_message_characters(&mut self) -> VwfCpuSliceOutcome {
         let debug_vwf_budget = debug_vwf_budget_for_frame(self.frame_ctr_dbg);
         let resuming = self.dialogue_fast_forward_hold_active;
@@ -7114,7 +7744,16 @@ impl ZeldaState {
         let measured_fresh_entry = if resuming { None } else {
             self.native_dialogue_fresh_cpu_entry.take()
         };
-        let exact_budget = if let Some(entry) = measured_fresh_entry {
+        let retained_native_entry = !resuming
+            && self.game_execution_scheduler.current_main_iteration_follows_leading_nmi()
+            && self.native_dialogue_has_main_wait_entry(self.frame_ctr_dbg);
+        if let Some(owner) = self.native_vwf_glyph_clock.as_mut() { owner.charged_in_slice = 0; }
+        let mut exact_budget = if let Some(owner) = self.native_vwf_glyph_clock.as_ref() {
+            self.vwf_exact_native_clock_budget(owner.clock.clone())
+        } else if retained_native_entry {
+            let clock = self.take_native_main_caller_clock();
+            self.vwf_exact_native_clock_budget(clock)
+        } else if let Some(entry) = measured_fresh_entry {
             if debug_vwf_budget {
                 eprintln!("vwf_measured_entry host={} position={entry:?}", self.frame_ctr_dbg);
             }
@@ -7138,7 +7777,7 @@ impl ZeldaState {
         if let Some(budget) = exact_budget.as_ref() {
             cycles_left = budget.master_cycles;
         }
-        let loop_budget = cycles_left;
+        let mut loop_budget = cycles_left;
         if !resuming {
             self.dialogue_vwf_deferred_handler_exits = 0;
         }
@@ -7148,6 +7787,11 @@ impl ZeldaState {
         let mut retain_incomplete_click = false;
         loop {
             if self.dialogue_vwf_transition_remaining_master_cycles != 0 {
+                if self.native_vwf_glyph_clock.is_some() {
+                    let (consumed,boundary) = self.advance_native_vwf_transition();
+                    cycles_left = cycles_left.saturating_sub(consumed);
+                    if boundary { midline_yield = true; break; }
+                }
                 let consumed = cycles_left.min(self.dialogue_vwf_transition_remaining_master_cycles);
                 self.dialogue_vwf_transition_remaining_master_cycles -= consumed;
                 cycles_left -= consumed;
@@ -7181,7 +7825,7 @@ impl ZeldaState {
                     c,
                 );
             if !is_letter {
-                self.dialogue_vwf_dispatch_cursor = dispatched_cursor;
+                self.set_dialogue_vwf_dispatch_cursor(dispatched_cursor);
             }
             // Exact master cycles of this iteration's handler when the native
             // budget runs without timing receipts (zero for the estimates).
@@ -7191,7 +7835,7 @@ impl ZeldaState {
             match cmd {
                 TEXT_CMD_IS_LETTER => {
                     if self.game_state.messaging.runtime.vwf_line_speed_cur() >= 2 {
-                        self.dialogue_vwf_dispatch_cursor = dispatched_cursor;
+                        self.set_dialogue_vwf_dispatch_cursor(dispatched_cursor);
                         exact_command_master_cycles = dispatch_master_cycles
                             + crate::cycle_models::vwf::reduce_speed_master_cycles();
                         self.messaging_state_mut().decrement_vwf_line_speed_cur();
@@ -7246,19 +7890,29 @@ impl ZeldaState {
                                 );
                             }
                             let cycles_before_advance = cycles_left;
-                            if self.dialogue_vwf_glyph_cpu_phase.is_ready() {
-                                self.dialogue_vwf_dispatch_cursor = glyph_dispatch_cursor;
+                            if self.native_vwf_glyph_clock.is_none() && retained_native_entry {
+                                if let Some(clock) = exact_budget.as_mut().and_then(|budget| budget.clock.take()) {
+                                    self.native_vwf_glyph_clock = Some(NativeVwfGlyphClock {
+                                        clock,glyph: None,transition: Vec::new(),next_transition: 0,
+                                        nmi_pending: false,charged_in_slice: 0,
+                                    });
+                                }
                             }
+                            let clocked_glyph = self.native_vwf_glyph_clock.is_some();
+                            if !clocked_glyph && self.dialogue_vwf_glyph_cpu_phase.is_ready() {
+                                self.set_dialogue_vwf_dispatch_cursor(glyph_dispatch_cursor);
+                            }
+                            if clocked_glyph { self.flush_native_vwf_clock(loop_budget-cycles_left); }
                             let retention_costs = self.vwf_click_retention_costs(
                                 glyph_costs,
                                 handler_entry_glyph_phase,
                             );
                             let phase_before = self.dialogue_vwf_glyph_cpu_phase;
-                            let advance = self
-                                .dialogue_vwf_glyph_cpu_phase
-                                .advance(cycles_left, glyph_costs);
+                            let advance = if clocked_glyph {
+                                self.advance_native_vwf_glyph(param,width,x,next_line_pending,glyph_costs)
+                            } else { self.dialogue_vwf_glyph_cpu_phase.advance(cycles_left,glyph_costs) };
                             self.dialogue_vwf_glyph_cpu_phase = advance.next_phase;
-                            cycles_left -= advance.consumed_master_cycles;
+                            cycles_left = cycles_left.saturating_sub(advance.consumed_master_cycles);
                             if advance.entered_function {
                                 // A near-boundary semantic entry can land on
                                 // the far side of vblank in the measured ROM
@@ -7272,16 +7926,21 @@ impl ZeldaState {
                                         handler_entry_glyph_phase,
                                         retention_costs,
                                     );
-                                self.begin_vwf_glyph(param, read_pos as u16);
+                                if !clocked_glyph { self.begin_vwf_glyph(param, read_pos as u16); }
                             }
-                            if exact_costs {
+                            if clocked_glyph {
+                                drawing_setup_published = advance.next_phase.is_ready()
+                                    || self.dialogue_vwf_glyph_cpu_phase.setup_publications().1;
+                                bitmap_published_incrementally = true;
+                            }
+                            if exact_costs && !clocked_glyph {
                                 self.dialogue_vwf_glyph_cpu_phase = self.publish_vwf_glyph_setup_progress(
                                     param, phase_before, advance.next_phase,
                                 );
                                 drawing_setup_published = advance.next_phase.is_ready()
                                     || self.dialogue_vwf_glyph_cpu_phase.setup_publications().1;
                             }
-                            if exact_costs && self.dialogue_glyph_font_rows(param).is_some() {
+                            if exact_costs && !clocked_glyph && self.dialogue_glyph_font_rows(param).is_some() {
                                 let drawing = glyph_costs.drawing;
                                 let drawn_before = match phase_before {
                                     VwfGlyphCpuPhase::Drawing { remaining_master_cycles } =>
@@ -7321,7 +7980,7 @@ impl ZeldaState {
                                 != 0;
                             let (glyph_costs, glyph_dispatch_cursor) =
                                 self.vwf_glyph_costs(param, width, x, next_line_pending);
-                            self.dialogue_vwf_dispatch_cursor = glyph_dispatch_cursor;
+                            self.set_dialogue_vwf_dispatch_cursor(glyph_dispatch_cursor);
                             exact_command_master_cycles = u64::from(glyph_costs.total())
                                 + crate::cycle_models::vwf::RENDER_SINGLE_EPILOGUE_MASTER_CYCLES;
                             self.begin_vwf_glyph(param, read_pos as u16);
@@ -7334,14 +7993,23 @@ impl ZeldaState {
                         command_done = true;
                         if fast_forward {
                             let transition = self.vwf_glyph_transition_master_cycles();
-                            if exact_costs && transition > cycles_left {
+                            if self.native_vwf_glyph_clock.is_some() {
+                                self.dialogue_vwf_pending_glyph_read_pos = None;
+                                let owner = self.native_vwf_glyph_clock.as_mut().unwrap();
+                                owner.transition = crate::cycle_models::vwf::glyph_transition_instructions(self.dialogue_vwf_dispatch_cursor);
+                                owner.next_transition = 0;
+                                let (consumed,boundary) = self.advance_native_vwf_transition();
+                                cycles_left = cycles_left.saturating_sub(consumed);
+                                self.dialogue_vwf_deferred_handler_exits += 1;
+                                if boundary { midline_yield = true; break; }
+                            } else if exact_costs && transition > cycles_left {
                                 self.dialogue_vwf_transition_remaining_master_cycles =
                                     transition - cycles_left;
                                 cycles_left = 0;
                             } else {
                                 cycles_left = cycles_left.saturating_sub(transition);
                             }
-                            if exact_costs {
+                            if exact_costs && self.native_vwf_glyph_clock.is_none() {
                                 self.dialogue_vwf_deferred_handler_exits += 1;
                             }
                             restart_if_zero_speed = true;
@@ -7370,6 +8038,13 @@ impl ZeldaState {
                         crate::cycle_models::vwf::SCROLL_SPEED_MASTER_CYCLES;
                 }
                 TEXT_CMD_SCROLL => {
+                    if self.native_vwf_glyph_clock.is_some() {
+                        self.flush_native_vwf_clock(loop_budget-cycles_left);
+                        let owner = self.native_vwf_glyph_clock.take().unwrap();
+                        assert!(!owner.nmi_pending && owner.glyph.is_none());
+                        exact_budget.as_mut().unwrap().clock = Some(owner.clock);
+                        loop_budget = cycles_left;
+                    }
                     // The ROM call runs its copy passes to completion or to the
                     // scroll speed's limit; the translated scroll may stage the
                     // same passes across hosts, but the call's cost is fixed
@@ -7380,6 +8055,30 @@ impl ZeldaState {
                         self.game_state.messaging.dialogue_source_offset.bank_offset_low_nibble(),
                     )
                     .master;
+                    let speed = self.game_state.messaging.runtime.dialogue_scroll_speed();
+                    let counter = self.game_state.messaging.dialogue_source_offset.bank_offset_low_nibble();
+                    if exact_costs && self.game_state.frame.main_module == 14
+                        && speed == 4 && counter & 15 <= 11
+                        && self.dialogue_live_message_read_position_target.is_none()
+                        && cycles_left >= dispatch_master_cycles as u32
+                        && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SCROLL_COPY_LIVE_TRIAL").is_none()
+                    {
+                        if let Some(mut clock) = exact_budget.as_ref().and_then(|budget| budget.clock.clone()) {
+                            // The already-retired dispatch prefix fits before
+                            // NMI; the copy then owns individual instructions.
+                            let elapsed = loop_budget - cycles_left + dispatch_master_cycles as u32;
+                            assert!(clock.advance(self, elapsed).reached_boundary().is_none());
+                            assert!(self.native_scroll_copy_clock.is_none());
+                            self.native_scroll_copy_clock = Some(NativeScrollCopyClock {
+                                clock, next_instruction: 0, nmi_pending: false,
+                                sprite_preparation: None,
+                                sprite_preparation_master_cycles: 0,
+                                instructions: crate::cycle_models::vwf::scroll_instructions(
+                                    self.game_state.player.follower_link.joypad1l_last() & 0x80 != 0,
+                                    speed, counter),
+                            });
+                        }
+                    }
                     // Both the call and this headroom count CPU work. The
                     // dispatch runs before entry; refresh/HDMA stall time
                     // must not be added back to the raster-derived budget.
@@ -7397,8 +8096,8 @@ impl ZeldaState {
                     self.set_vwf_current_line(VWF_ROW_POSITIONS[idx]);
                     self.request_vwf_next_line(1);
                     command_done = true;
-                    self.dialogue_vwf_dispatch_cursor =
-                        crate::cycle_models::vwf::DispatchCursor::after_set_line(c);
+                    self.set_dialogue_vwf_dispatch_cursor(
+                        crate::cycle_models::vwf::DispatchCursor::after_set_line(c));
                     exact_command_master_cycles = crate::cycle_models::vwf::SET_LINE_MASTER_CYCLES;
                 }
                 TEXT_CMD_WAIT => {
@@ -7585,7 +8284,7 @@ impl ZeldaState {
         } else if authority_boundary_reached {
             VwfCpuSliceOutcome::AuthorityBoundaryReached
         } else {
-            if exact_costs {
+            if exact_costs && self.native_scroll_copy_clock.is_none() {
                 // The call returns: its RTS chain runs the $0E:C9F5 exit
                 // block once more for every restart it made.
                 let deferred = std::mem::take(&mut self.dialogue_vwf_deferred_handler_exits);
@@ -7594,12 +8293,20 @@ impl ZeldaState {
                         .saturating_mul(crate::cycle_models::vwf::HANDLER_EXIT_MASTER_CYCLES as u32),
                 );
             }
-            if resuming && exact_costs && self.dialogue_scroll_cpu_is_idle()
+            if self.native_vwf_glyph_clock.is_some() && cycles_left < caller_suffix_master_cycles {
+                self.flush_native_vwf_clock(loop_budget-cycles_left);
+            }
+            if (resuming || retained_native_entry) && exact_costs && self.dialogue_scroll_cpu_is_idle()
                 && cycles_left >= caller_suffix_master_cycles
                 && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
             {
-                if let Some(mut clock) = exact_budget.and_then(|budget| budget.clock) {
-                    assert!(clock.advance(self, loop_budget - cycles_left).reached_boundary().is_none(),
+                let consumed = loop_budget-cycles_left;
+                let (clock,unclocked) = if let Some(owner) = self.native_vwf_glyph_clock.take() {
+                    assert!(owner.glyph.is_none() && !owner.nmi_pending);
+                    (Some(owner.clock),consumed.saturating_sub(owner.charged_in_slice))
+                } else { (exact_budget.and_then(|budget| budget.clock),consumed) };
+                if let Some(mut clock) = clock {
+                    assert!(clock.advance(self, unclocked).reached_boundary().is_none(),
                         "completed VWF handler crossed its caller boundary");
                     if debug_vwf_budget {
                         eprintln!("vwf_handler_return host={} work={} position={:?}",
@@ -7866,6 +8573,31 @@ impl ZeldaState {
             (entry % snes::MASTER_CYCLES_PER_SCANLINE) as u16,
         );
         self.vwf_exact_measured_entry_budget(entry)
+    }
+
+    /// Derive available work from the caller's actual event cursor and live
+    /// HDMA descriptors. This probe never executes or decodes ROM opcodes.
+    fn vwf_exact_native_clock_budget(&self, clock: NativeDialogueCallerClock) -> Option<VwfExactLoopBudget> {
+        use super::game_execution_scheduler::CpuWorkAdvance;
+        let mut probe = clock.clone();
+        let entry_clock = probe.budget.timeline_master_cycles();
+        const WORK: u32 = 4 * SNES_NTSC_MASTER_CYCLES_PER_FRAME;
+        let advance = probe.budget.advance_interruptible_with_hdma(WORK, |event, _|
+            probe.hdma.stall(event, |address| self.native_hdma_table_byte(address))
+                .expect("native text entry lost its HDMA descriptors"));
+        let CpuWorkAdvance::ReachedBoundary { remaining_work_master_cycles, .. } = advance else {
+            panic!("native text work probe failed to reach its NMI");
+        };
+        let master_cycles = WORK - remaining_work_master_cycles;
+        Some(VwfExactLoopBudget {
+            master_cycles,
+            since_nmi_master_cycles: crate::cycle_ledger::master()
+                - self.ledger_master_at_nmi_acceptance.expect("native caller NMI ledger")
+                + self.last_nmi_dma_master_cycles,
+            stall_master_cycles: u32::try_from(probe.budget.timeline_master_cycles()
+                - entry_clock - u64::from(master_cycles)).unwrap(),
+            clock: Some(clock),
+        })
     }
 
     /// A measured entry can occur on either side of the field wrap. Price
@@ -8471,6 +9203,9 @@ impl ZeldaState {
             });
             if let Some(progress) = source_scroll_progress {
                 self.advance_native_scroll_copy_to_source_progress(progress)
+            } else if self.native_scroll_copy_clock.is_some() {
+                assert!(!self.advance_clocked_scroll_copy(), "long scroll returned before its first NMI");
+                false
             } else {
                 self.advance_native_scroll_copy(cycles_before_vblank.into())
             }
@@ -8516,8 +9251,8 @@ impl ZeldaState {
                     if counter & 0x0f == 0 {
                         self.set_vwf_current_line(4);
                         self.request_vwf_next_line(1);
-                        self.dialogue_vwf_dispatch_cursor =
-                            crate::cycle_models::vwf::DispatchCursor::after_scroll_completion();
+                        self.set_dialogue_vwf_dispatch_cursor(
+                            crate::cycle_models::vwf::DispatchCursor::after_scroll_completion());
                         line_completed = true;
                     }
                 }
@@ -8569,10 +9304,106 @@ impl ZeldaState {
         let Some(cursor) = self.native_scroll_copy_cursor else {
             return false;
         };
-        let total = crate::cycle_models::vwf::scroll_master_cycles(
+        let step = crate::cycle_models::vwf::scroll_master_cycles(
             cursor.b_held, cursor.scroll_speed, cursor.starting_line_counter,
-        ).master;
-        self.advance_native_scroll_copy(total.saturating_sub(cursor.elapsed_master_cycles))
+        );
+        if cursor.elapsed_master_cycles == step.master {
+            self.native_scroll_copy_cursor = None;
+            return step.completed;
+        }
+        self.advance_native_scroll_copy(step.master.saturating_sub(cursor.elapsed_master_cycles))
+    }
+
+    pub(super) fn resume_scroll_clock_after_nmi(&mut self, handler_master_cycles: u32) {
+        let Some(mut work) = self.native_scroll_copy_clock.take() else { return; };
+        assert!(work.nmi_pending, "scroll NMI arrived without an accepted boundary");
+        work.nmi_pending = false;
+        work.clock.budget.begin_nmi_handler();
+        work.clock.hdma = snes::HdmaTimingState::new(&self.dma_with_native_hdma_enable());
+        assert!(work.clock.advance(self, handler_master_cycles).reached_boundary().is_none());
+        if debug_vwf_budget_for_frame(self.frame_ctr_dbg) {
+            eprintln!("scroll_clock_resume host={} position={:?}", self.frame_ctr_dbg, work.clock.budget.raster_position());
+        }
+        self.native_scroll_copy_clock = Some(work);
+    }
+
+    pub(super) fn advance_clocked_scroll_copy(&mut self) -> bool {
+        let mut work = self.native_scroll_copy_clock.take().expect("scroll clock owner");
+        assert!(!work.nmi_pending, "scroll resumed before its held NMI");
+        let mut cursor = self.native_scroll_copy_cursor.expect("scroll store cursor");
+        let mut elapsed = 0u64;
+        while let Some(&(pc, cycles)) = work.instructions.get(work.next_instruction) {
+            work.next_instruction += 1;
+            elapsed += u64::from(cycles);
+            if work.clock.advance(self, cycles).reached_boundary().is_some() {
+                work.nmi_pending = true;
+                if debug_vwf_budget_for_frame(self.frame_ctr_dbg) {
+                    eprintln!("scroll_clock_nmi host={} retired={pc:06x} next={:06x} position={:?}",
+                        self.frame_ctr_dbg, work.instructions.get(work.next_instruction).map_or(0x0e_c9f5, |step| step.0),
+                        work.clock.budget.raster_position());
+                }
+                break;
+            }
+        }
+        self.advance_native_scroll_copy(elapsed);
+        let copy_complete = work.next_instruction == work.instructions.len();
+        if copy_complete {
+            // Keep completion evidence until the semantic caller consumes the
+            // return; it must not execute another group of pixel copies.
+            cursor.elapsed_master_cycles += elapsed;
+            self.native_scroll_copy_cursor = Some(cursor);
+        }
+        let returned = copy_complete && !work.nmi_pending;
+        if returned {
+            assert!(self.native_dialogue_caller_clock.replace(work.clock).is_none());
+            self.dialogue_scroll_remaining_master_cycles = None;
+            for _ in 0..std::mem::take(&mut self.dialogue_vwf_deferred_handler_exits) {
+                self.finish_dialogue_character_render_call();
+            }
+        } else {
+            self.native_scroll_copy_clock = Some(work);
+        }
+        returned
+    }
+
+    pub(super) fn advance_clocked_scroll_continuation(&mut self) -> bool {
+        let mut sprite_cycles = self.native_scroll_copy_clock.as_ref().unwrap()
+            .sprite_preparation_master_cycles;
+        let mut sprite_work = if self.native_scroll_copy_clock.as_ref()
+            .is_some_and(|work| work.sprite_preparation.is_some())
+        {
+            let mut work = self.native_scroll_copy_clock.take().unwrap();
+            assert!(!work.nmi_pending);
+            assert!(self.native_dialogue_caller_clock.replace(work.clock).is_none());
+            work.sprite_preparation.take().unwrap()
+        } else {
+            if !self.advance_clocked_scroll_copy() { return false; }
+            self.complete_module0e_dialogue_scroll_before_common_suffix();
+            self.enter_main_loop_sprite_preparation();
+            super::misc::SpritePreparationWork::default()
+        };
+        // The copy's caller can itself be interrupted in sprite preparation.
+        // Retain that existing work owner, including its partially packed byte.
+        self.native_dialogue_caller_clock.as_mut().unwrap().instruction_clocked_by_caller = true;
+        while let Some(cycles) = self.step_sprite_preparation_work(&mut sprite_work) {
+            sprite_cycles += cycles;
+            let mut clock = self.native_dialogue_caller_clock.take().unwrap();
+            if clock.advance(self, cycles).reached_boundary().is_some() {
+                clock.instruction_clocked_by_caller = false;
+                self.native_scroll_copy_clock = Some(NativeScrollCopyClock {
+                    clock, instructions: Vec::new(), next_instruction: 0,
+                    nmi_pending: true, sprite_preparation: Some(sprite_work),
+                    sprite_preparation_master_cycles: sprite_cycles,
+                });
+                return false;
+            }
+            self.native_dialogue_caller_clock = Some(clock);
+        }
+        self.native_dialogue_caller_clock.as_mut().unwrap().instruction_clocked_by_caller = false;
+        self.main_loop_sprite_preparation_completed = true;
+        self.last_nmi_prepare_sprites_master_cycles = Some(sprite_cycles);
+        self.finish_main_loop_caller_return();
+        true
     }
 
     pub(super) fn dialogue_long_scroll_starts_this_frame(&self) -> bool {
@@ -8631,8 +9462,8 @@ impl ZeldaState {
             if source_bank_offset & 0x0f == 0 {
                 self.set_vwf_current_line(4);
                 self.request_vwf_next_line(1);
-                self.dialogue_vwf_dispatch_cursor =
-                    crate::cycle_models::vwf::DispatchCursor::after_scroll_completion();
+                self.set_dialogue_vwf_dispatch_cursor(
+                    crate::cycle_models::vwf::DispatchCursor::after_scroll_completion());
                 return true;
             }
         }

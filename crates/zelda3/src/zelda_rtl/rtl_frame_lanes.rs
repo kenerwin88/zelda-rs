@@ -2522,6 +2522,7 @@ impl ZeldaState {
             self.complete_ground_item_receipt_tail_once(receipt);
             self.complete_link_receive_item(receipt.item);
             self.player_handler_00_ground_3_after_a_press(true);
+            if self.early_player_ancilla_tail.is_some() {self.handle_somaria_and_graves();}
             self.complete_module07_dungeon_after_submodule();
             assert!(
                 !self
@@ -3122,9 +3123,18 @@ impl ZeldaState {
         if !self.rom_startup_timing()
             || matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
             || self.game_state.frame.main_module != 0x0e
-            || !self.dialogue_scroll_is_copying_remaining_pixels()
+            || (!self.dialogue_scroll_is_copying_remaining_pixels()
+                && self.native_scroll_copy_clock.is_none())
         {
             return false;
+        }
+        if self.native_scroll_copy_clock.is_some() {
+            self.interrupt_nmi(input, oam_dma_source, false);
+            self.capture_display_snapshot();
+            if self.advance_clocked_scroll_continuation() {
+                self.game_execution_scheduler.finish_call_stack_at_main_wait_before_nmi();
+            }
+            return true;
         }
         let Some(remaining) = self.dialogue_scroll_remaining_master_cycles.take() else {
             return false;
@@ -3239,7 +3249,7 @@ impl ZeldaState {
                 // pre-main boundary here before consuming that carry so this
                 // scroll starts from the ROM's $12 == 0 state.
                 self.finish_main_loop_caller_return();
-                self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                self.interrupt_nmi_before_main(input, oam_dma_source.as_deref(), false);
                 // This host scanout includes the upload consumed by the
                 // boundary above, while the CPU state returned below includes
                 // the next upload authored by submodule 2. Capture between
@@ -3389,6 +3399,18 @@ impl ZeldaState {
                         "Module09 accepted a second Sprite_Main NMI before completing the first",
                     );
                     self.display_snapshot = leading_scanout;
+                }
+                if matches!(
+                    self.game_execution_scheduler.current_work(),
+                    Some(GameWorkContinuation::FinishDungeonFallingEntrance { .. })
+                ) {
+                    // The room/graphics loader crosses another vblank before
+                    // returning. Its entry writes, including force blank,
+                    // precede that acceptance even when the module began
+                    // after a leading NMI. The scheduled slices describe the
+                    // remaining crossings after this entry boundary.
+                    self.capture_display_snapshot();
+                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
                 }
                 if self.game_execution_scheduler.current_work()
                     == Some(GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn)
@@ -4905,7 +4927,8 @@ impl ZeldaState {
                 && matches!(continuation, ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
                     ground_apress_tail: Some(_), ..
                 });
-        if native_ground_return {
+        let graphics_handler_already_completed = std::mem::take(&mut self.native_item_graphics_return_after_nmi);
+        if native_ground_return && !graphics_handler_already_completed {
             // The final Held handler interrupts the synchronous decoder,
             // before the ground-item tail authors HUD/chest uploads. Original
             // hosts 4586 and 14076 finish the caller only after that handler.

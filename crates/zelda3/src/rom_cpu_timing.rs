@@ -381,6 +381,24 @@ impl RomCpuTimingRun {
     pub(crate) fn index_y(&self) -> u16 { self.shadow.cpu.y }
     pub(crate) fn accumulator(&self) -> u16 { self.shadow.cpu.a }
 
+    /// Transfer the caller's registers at an existing timing handoff. The
+    /// native callee owns all subsequent instructions and memory accesses.
+    pub(crate) fn native_callee_context(&self) -> crate::cycle_models::nmi_stack::NativeNmiContext {
+        let cpu = &self.shadow.cpu;
+        crate::cycle_models::nmi_stack::NativeNmiContext {
+            a: cpu.a, x: cpu.x, y: cpu.y, d: cpu.dp, db: cpu.db,
+            bank: cpu.k, pc: cpu.pc, sp: cpu.sp, p: cpu.pack_flags(),
+        }
+    }
+
+    pub(crate) fn native_callee_hdma(&self) -> snes::HdmaTimingState {
+        snes::HdmaTimingState::new(&self.shadow.dma)
+    }
+
+    pub(crate) fn install_native_callee_hdma(&mut self, hdma: &snes::HdmaTimingState) {
+        hdma.install_into(&mut self.shadow.dma);
+    }
+
     pub(crate) fn main_wait_checkpoint(&self, stop_pc: u32) -> RomCpuCheckpoint {
         assert!(matches!(self.pc(), 0x00_8034 | 0x00_8036));
         let cpu = &self.shadow.cpu;

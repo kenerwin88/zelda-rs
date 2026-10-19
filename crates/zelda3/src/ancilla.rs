@@ -24,8 +24,17 @@ const ANCILLA_SPRITE_COLLISION_RECOIL_X: [u8; 4] = [0, 0, 0xc0, 0x40];
 const ANCILLA_SPRITE_COLLISION_RECOIL_Y: [u8; 4] = [0xc0, 0x40, 0, 0];
 
 impl ZeldaState {
+    pub(crate) fn native_receipt_animation_table_byte(address:u32)->Option<u8> {
+        match address {
+            0x08c375..=0x08c377=>Some(RECEIVE_ITEM_MILESTONE_GFX_SOURCES[(address-0x08c375) as usize]),
+            0x08c378..=0x08c37a=>Some(RECEIVE_ITEM_MILESTONE_FRAME_TIMERS[(address-0x08c378) as usize]),
+            0x08c37b..=0x08c37d=>Some(RECEIVE_ITEM_CRYSTAL_FRAME_SEQUENCE[(address-0x08c37b) as usize]),
+            _=>None,
+        }
+    }
     pub(crate) fn native_ancilla_oam_table_byte(address: u32) -> Option<u8> {
         match address {
+            0x09849c..=0x0984e7=>Some(WISH_POND_ITEM_OAM_FLAGS[(address-0x09849c) as usize]),
             0x08c003..=0x08c00a => Some(ANCILLA20_BLANKET_BEDSPREAD_CHAR[(address - 0x08c003) as usize]),
             0x08c00b..=0x08c012 => Some(ANCILLA20_BLANKET_BEDSPREAD_FLAGS[(address - 0x08c00b) as usize]),
             0x08f66d..=0x08f670 => Some(ANCILLA_PREP_OAM_COORD_TAGALONG_LAYER_BITS[(address - 0x08f66d) as usize]),
@@ -56,6 +65,11 @@ impl ZeldaState {
             return;
         }
         crate::cycle_ledger::charge(48);
+        self.ancilla_weapon_tink_after_guard();
+    }
+
+    fn ancilla_weapon_tink_after_guard(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x08_8f89);
         self.sprite_system_mut().set_alert_flag(2);
         let anim_delay = self.garnish_state_mut().decrement_repulsespark_anim_delay();
         // $08:8F8E-8F96 LDA #$02 STA $0fdc DEC $0faf BPL (110): a negative
@@ -310,6 +324,10 @@ impl ZeldaState {
             0x41 => 222 + 6,
             _ => 222,
         });
+        self.ancilla_execute_body(ty,k);
+    }
+
+    fn ancilla_execute_body(&mut self, ty: u8, k: usize) {
         match ty {
             0x01 => self.ancilla01_somaria_bullet(k),
             0x02 => self.ancilla02_fire_rod_shot(k),
@@ -3717,11 +3735,14 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla_terminate_select_interactives(&mut self, mut y: u8) -> u8 {
+        let _scope = crate::cycle_ledger::routine(0x09_ac6b);
+        crate::cycle_ledger::charge(88); // PHB/PHK/PLB; LDX #5.
         for i in (0..=5).rev() {
             if let Some(slot) = self.ancilla_interactive_cleanup_slot_prefix(i) {
                 y = slot;
             }
             self.ancilla_interactive_cleanup_slot_finish(i);
+            crate::cycle_ledger::charge(if i == 0 { 30 } else { 36 }); // DEX; BPL.
         }
         self.ancilla_interactive_cleanup_finish();
         y
@@ -3765,41 +3786,63 @@ impl ZeldaState {
 
     /// Returns the slot when it holds the interactive that the caller keeps.
     fn ancilla_interactive_cleanup_slot_prefix(&mut self, i: usize) -> Option<u8> {
+        crate::cycle_ledger::charge(64); // LDA type; CMP #$3E; BNE.
         if self.ancilla_slot_view(i).ancilla_type() == 0x3e {
+            crate::cycle_ledger::charge(14 + 22); // TXY; BRA.
             return Some(i as u8);
-        } else if self.ancilla_slot_view(i).ancilla_type() == 0x2c {
+        }
+        crate::cycle_ledger::charge(6 + 64); // Taken BNE; LDA type; CMP #$2C; BNE.
+        if self.ancilla_slot_view(i).ancilla_type() == 0x2c {
+            crate::cycle_ledger::charge(88);
             self.dungeon_environment_mut()
                 .clear_somaria_block_switch_counter();
             if self.game_state.player.follower_link.defense_flags() & 0x80 != 0 {
+                crate::cycle_ledger::charge(48);
                 self.follower_link_state_mut().clear_defense_flags();
                 self.follower_link_state_mut().set_speed_setting(0);
+            } else {
+                crate::cycle_ledger::charge(6);
             }
+        } else {
+            crate::cycle_ledger::charge(6);
         }
         None
     }
 
     fn ancilla_interactive_cleanup_slot_finish(&mut self, i: usize) {
         if self.ancilla_interactive_cleanup_pickup_test(i) {
+            crate::cycle_ledger::charge(38); // STZ type,X.
             self.ancilla_slot_view_mut(i).set_ancilla_type(0);
         }
     }
 
     fn ancilla_interactive_cleanup_pickup_test(&mut self, i: usize) -> bool {
+        crate::cycle_ledger::charge(48 + 76); // LDA state/BPL; TXA/INC/CMP/branch.
         if sign8(self.game_state.player.follower_link.state_bits()) {
+            crate::cycle_ledger::charge(if i + 1 == self.game_state.player.follower_link.ancilla_pickup_flag() as usize { 6 } else { 22 });
             i + 1 != self.game_state.player.follower_link.ancilla_pickup_flag() as usize
         } else {
+            crate::cycle_ledger::charge(6); // BPL taken.
             if i + 1 == self.game_state.player.follower_link.ancilla_pickup_flag() as usize {
+                crate::cycle_ledger::charge(32);
                 self.follower_link_state_mut().clear_ancilla_pickup_flag();
+            } else {
+                crate::cycle_ledger::charge(6);
             }
             true
         }
     }
 
     fn ancilla_interactive_cleanup_finish(&mut self) {
+        crate::cycle_ledger::charge(64); // Position-mode branch.
         if self.game_state.player.follower_link.position_mode_has(0x10) {
+            crate::cycle_ledger::charge(56);
             self.follower_link_state_mut().set_incapacitated_timer(0);
             self.follower_link_state_mut().clear_position_mode();
+        } else {
+            crate::cycle_ledger::charge(6);
         }
+        crate::cycle_ledger::charge(312); // Reset flags and test hookshot handler.
         self.follower_link_state_mut().clear_flute_countdown();
         self.follower_state_mut().clear_event_flags();
         self.follower_link_state_mut()
@@ -3812,13 +3855,17 @@ impl ZeldaState {
             .clear_player_special_draw_flag();
         self.follower_link_state_mut().clear_electrocute_on_touch();
         if self.game_state.player.follower_link.handler_state() == 19 {
+            crate::cycle_ledger::charge(280);
             self.follower_link_state_mut().clear_handler_state();
             self.follower_link_state_mut()
                 .clear_button_mask_b_y_bits(0x40);
             self.follower_link_state_mut().clear_direction_lock_bits(1);
             self.follower_link_state_mut().clear_position_mode_bits(4);
             self.follower_link_state_mut().clear_hookshot_interlock();
+        } else {
+            crate::cycle_ledger::charge(6);
         }
+        crate::cycle_ledger::charge(72); // PLB; RTL.
     }
 
     pub(super) fn ancilla_allocate_oam_from_region_a_or_d_or_f(
@@ -3840,8 +3887,8 @@ impl ZeldaState {
     pub(super) fn ancilla_prep_oam_coord(&mut self, k: usize) -> (u16, u16) {
         // Cycle ledger: Ancilla_PrepOamCoord $08:F671 (m8 x8, JSR target):
         // layer bits, four abs,x coordinate loads, two 16-bit scroll
-        // subtractions, RTS: 674, input independent (X <= 9, no crossing).
-        crate::cycle_ledger::charge_routine(0x08_f671, 674);
+        // subtractions, RTS: 674. The $0BFA,X read crosses a page at slot 6.
+        crate::cycle_ledger::charge_routine(0x08_f671, 674 + if k >= 6 { 6 } else { 0 });
         let floor = self.ancilla_slot_view(k).floor() as usize;
         self.oam_state_mut()
             .set_priority_word((ANCILLA_PREP_OAM_COORD_TAGALONG_LAYER_BITS[floor] as u16) << 8);
@@ -3854,11 +3901,28 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla_move_x(&mut self, k: usize) {
+        // $08:9080 wraps the shared Y-axis body with X+10, then restores
+        // the live slot through $08:A752. The low-coordinate read crosses
+        // $0BFF for that indexed axis.
+        let _scope = crate::cycle_ledger::routine(0x08_9080);
+        crate::cycle_ledger::charge(208);
+        crate::cycle_ledger::charge_routine(0x08_908b,
+            Self::ancilla_axis_move_master_cycles(k + 10, self.ancilla_slot_view(k).x_velocity()));
         self.ancilla_slot_view_mut(k).move_x();
     }
 
     pub(super) fn ancilla_move_y(&mut self, k: usize) {
+        crate::cycle_ledger::charge_routine(0x08_908b,
+            Self::ancilla_axis_move_master_cycles(k, self.ancilla_slot_view(k).y_velocity()));
         self.ancilla_slot_view_mut(k).move_y();
+    }
+
+    fn ancilla_axis_move_master_cycles(index: usize, velocity: u8) -> u64 {
+        // $08:908B-90B6: fractional carry, signed velocity/16, and two
+        // coordinate stores. BPL replaces ORA/DEY for a positive velocity;
+        // ADC $0BFA,X adds six clocks when the indexed read crosses a page.
+        342 + if velocity & 0x80 == 0 { 6 } else { 30 }
+            + 196 + if index >= 6 { 6 } else { 0 }
     }
 
     pub(super) fn ancilla_move_z(&mut self, k: usize) {
@@ -4371,42 +4435,55 @@ impl ZeldaState {
     }
 
     fn ancilla21_snore(&mut self, k: usize) {
+        // $08:C094 is an Ancilla_ExecuteOne jump target, not a new call.
+        crate::cycle_ledger::charge(68);
         let aux_timer = self.ancilla_slot_view_mut(k).tick_aux_timer();
         if sign8(aux_timer) {
             let item_to_link = self.ancilla_slot_view(k).item_to_link();
+            crate::cycle_ledger::charge(78 + if item_to_link == 2 { 6 } else { 38 } + 54);
             let mut snore = self.ancilla_slot_view_mut(k);
             if item_to_link != 2 {
                 snore.advance_item_to_link();
             }
             snore.set_aux_timer(7);
+        } else {
+            crate::cycle_ledger::charge(6);
         }
 
         let step = self.ancilla_slot_view(k).step();
         let x_velocity = self.ancilla_slot_view_mut(k).add_x_velocity(step);
+        crate::cycle_ledger::charge(132 + if sign8(x_velocity) { 30 } else { 6 } + 32);
         if abs8(x_velocity) >= 8 {
+            crate::cycle_ledger::charge(100);
             self.ancilla_slot_view_mut(k)
                 .set_step((-(step as i8)) as u8);
+        } else {
+            crate::cycle_ledger::charge(6);
         }
 
+        crate::cycle_ledger::charge(92); // The two movement JSRs.
         self.ancilla_move_y(k);
         self.ancilla_move_x(k);
+        crate::cycle_ledger::charge(344 - 92 + if k >= 6 { 6 } else { 0 });
         if self.ancilla_y(k) <= self.game_state.player.follower_link.y().wrapping_sub(24) {
+            crate::cycle_ledger::charge(60);
             self.ancilla_slot_view_mut(k).clear();
+        } else {
+            crate::cycle_ledger::charge(6);
         }
 
+        crate::cycle_ledger::charge(462); // DMA selector, both draw calls, stores, RTS.
         let dma_staging_index =
             ANCILLA21_SNORE_BEDSPREAD_DMA[self.ancilla_slot_view(k).item_to_link() as usize];
         self.follower_link_state_mut()
             .set_link_dma_staging_index(dma_staging_index);
         let (x, y) = self.ancilla_prep_oam_coord(k);
-        self.ancilla_set_oam(
-            self.game_state.oam.current_pointer_usize(),
-            x,
-            y,
-            9,
-            0x24,
-            0,
-        );
+        let oam = self.game_state.oam.current_pointer_usize();
+        let ext = self.ancilla_set_oam_xy(oam, x, y);
+        let mut oam_state = self.oam_state_mut();
+        oam_state.set_entry_char(oam, 9);
+        oam_state.set_entry_flags(oam, 0x24);
+        oam_state.set_extended_byte((oam - OAM_BUF) / 4, ext);
     }
 
     fn ancilla23_link_poof(&mut self, k: usize) {
@@ -7149,14 +7226,21 @@ impl ZeldaState {
         }
     }
 
-    fn ancilla22_item_receipt_draw_and_update(&mut self, k: usize) {
-        let _scope = crate::cycle_ledger::routine(0x08_c5f7);
-        crate::cycle_ledger::charge(86); // SEP : LDA item : CMP #$20 : BNE.
-        if self.ancilla_slot_view(k).item_to_link() == 0x20 {
-            crate::cycle_ledger::charge(84); // STZ z : JSR sparkle.
-            let value = 0;
-            self.ancilla_slot_view_mut(k).set_z(value);
+    fn ancilla22_item_receipt_draw_and_update(&mut self,k:usize) {
+        let _scope=crate::cycle_ledger::routine(0x08_c5f7);
+        crate::cycle_ledger::charge(86);
+        if self.ancilla_slot_view(k).item_to_link()==0x20 {
+            crate::cycle_ledger::charge(84);
+            self.ancilla_slot_view_mut(k).set_z(0);
             self.ancilla_add_occasional_sparkle(k);
+            self.ancilla_receipt_after_sparkle(k);
+        } else {
+            crate::cycle_ledger::charge(6);
+            self.ancilla_receipt_animation_and_draw(k);
+        }
+    }
+    fn ancilla_receipt_after_sparkle(&mut self,k:usize) {
+        let _scope=crate::cycle_ledger::routine(0x08_c606);
             crate::cycle_ledger::charge(46); // System-bank APUI00 read : BNE.
             if self.zelda_read_apui00_for_song_end_poll() == 0 {
                 crate::cycle_ledger::charge(78); // Music store : BRL crystal continuation.
@@ -7165,9 +7249,10 @@ impl ZeldaState {
                 return;
             }
             crate::cycle_ledger::charge(6);
-        } else {
-            crate::cycle_ledger::charge(6);
-        }
+        self.ancilla_receipt_animation_and_draw(k);
+    }
+    fn ancilla_receipt_animation_and_draw(&mut self,k:usize) {
+        let _scope=crate::cycle_ledger::routine(0x08_c613);
         crate::cycle_ledger::charge(86); // C613..C61A: SEP and sword test.
         if self.ancilla_slot_view(k).item_to_link() == 1 {
             crate::cycle_ledger::charge(134); // First crystal frame and step test.
@@ -7243,6 +7328,11 @@ impl ZeldaState {
                 crate::cycle_ledger::charge(6);
             }
         }
+
+        self.ancilla_receipt_coordinates_and_draw(k);
+    }
+    fn ancilla_receipt_coordinates_and_draw(&mut self,k:usize) {
+        let _scope=crate::cycle_ledger::routine(0x08_c681);
         crate::cycle_ledger::charge(46); // JSR adjusted coordinates.
         let (x, y) = self.ancilla_prep_adjusted_oam_coord(k);
         crate::cycle_ledger::charge(146); // Save y+8 for the optional second tile.
@@ -11068,5 +11158,119 @@ impl ZeldaState {
     /// `door_debris_direction[k]` ($03BE,X bytes).
     pub(crate) fn door_debris_direction(&self, slot: usize) -> u8 {
         self.ram[crate::game_state::constants::DOOR_DEBRIS_DIRECTION + slot]
+    }
+}
+
+impl ZeldaState {
+    pub(super) fn finish_native_ancilla_caller(
+        &mut self,
+        tail: crate::cycle_models::dungeon_ancilla::AncillaTail,
+    ) {
+        use crate::cycle_models::dungeon_ancilla::AncillaTail;
+        let _scope = crate::cycle_ledger::routine(0x08_8242);
+        match tail {
+            AncillaTail::ReceiptOamReturned {slot} => {
+                // The body and its real RTS have retired; retain the caller's slot loop and wrapper return.
+                crate::cycle_ledger::charge(72);
+                let _loop=crate::cycle_ledger::routine(0x08_832b);
+                crate::cycle_ledger::charge(30+if slot!=0 {6}else{0});
+                self.ancilla_execute_slots_below(usize::from(slot));
+            }
+            AncillaTail::ReceiptDrawing {slot,tail} => {
+                crate::cycle_ledger::charge(72);
+                let _loop=crate::cycle_ledger::routine(0x08_832b);
+                crate::cycle_ledger::charge(30+if slot!=0 {6}else{0});
+                self.finish_native_receipt_drawing(usize::from(slot),tail);
+                if !self.game_execution_scheduler.work_suspends_translated_call_stack() {
+                    self.ancilla_execute_slots_below(usize::from(slot));
+                }
+            }
+            AncillaTail::Receipt {slot,tail} => {
+                crate::cycle_ledger::charge(72);
+                let _loop=crate::cycle_ledger::routine(0x08_832b);
+                crate::cycle_ledger::charge(30+if slot!=0 {6}else{0});
+                self.finish_native_receipt_prefix(usize::from(slot),tail);
+                if !self.game_execution_scheduler.work_suspends_translated_call_stack() {
+                    self.ancilla_execute_slots_below(usize::from(slot));
+                }
+            }
+            AncillaTail::Returned => {}
+            AncillaTail::Spark => {
+                // Retain the wrapper return and next JSR charges, as the ordinary receipt continuation expects.
+                crate::cycle_ledger::charge(46 + 72);
+                self.ancilla_weapon_tink_after_guard();
+                self.ancilla_execute_all();
+            }
+            AncillaTail::Body { slot, kind, .. } => {
+                crate::cycle_ledger::charge(72);
+                let _loop = crate::cycle_ledger::routine(0x08_832b);
+                // The retained slot loop charges DEX/BPL before a body that can suspend into an item receipt.
+                crate::cycle_ledger::charge(30 + if slot != 0 { 6 } else { 0 });
+                {
+                    let _body = crate::cycle_ledger::routine(0x08_833c);
+                    self.ancilla_execute_body(kind, usize::from(slot));
+                }
+                if !self
+                    .game_execution_scheduler
+                    .work_suspends_translated_call_stack()
+                {
+                    self.ancilla_execute_slots_below(usize::from(slot));
+                }
+            }
+        }
+    }
+}
+
+impl ZeldaState {
+    pub(super) fn finish_native_receipt_prefix(&mut self, k: usize, tail: crate::cycle_models::receipt_prefix::ReceiptTail) {
+        use crate::cycle_models::receipt_prefix::ReceiptTail;
+        let _scope=crate::cycle_ledger::routine(0x08_c38a);
+        match tail {
+            ReceiptTail::Draw => {},
+            ReceiptTail::Message => self.ancilla22_item_receipt_show_message(k),
+            ReceiptTail::Movement => self.ancilla22_item_receipt_move_label_b(k),
+            ReceiptTail::LabelA => {self.ancilla22_item_receipt_label_a(k);return;},
+            ReceiptTail::Finish => {self.ancilla22_item_receipt_finish(k);return;},
+            ReceiptTail::SongPoll => {
+                crate::cycle_ledger::charge(46);
+                if self.zelda_read_apui00_for_song_end_poll()!=0 {
+                    crate::cycle_ledger::charge(74+30);
+                    let v=self.ancilla_slot_view(k).aux_timer().wrapping_add(1);
+                    self.ancilla_slot_view_mut(k).set_aux_timer(v);
+                } else {
+                    crate::cycle_ledger::charge(6+60);
+                    self.ancilla22_item_receipt_show_message(k);
+                }
+            },
+            ReceiptTail::Rupees => {
+                // JSL has already retired; retain its callee, carry branch and caller suffix.
+                let carry=self.ancilla_add_rupees(k);
+                crate::cycle_ledger::charge(16);
+                let sound=if carry {crate::cycle_ledger::charge(6);true} else {
+                    crate::cycle_ledger::charge(64);
+                    if self.ancilla_slot_view(k).item_to_link()!=0x17 {crate::cycle_ledger::charge(6);true}else{false}
+                };
+                if sound {crate::cycle_ledger::charge(62);self.ancilla_sfx3_near(15);crate::cycle_ledger::charge(22);}
+                crate::cycle_ledger::charge(30);
+                self.ancilla22_item_receipt_move_label_b(k);
+            },
+            ReceiptTail::Sound => {
+                self.ancilla_sfx3_near(15);
+                crate::cycle_ledger::charge(22+30);
+                self.ancilla22_item_receipt_move_label_b(k);
+            },
+        }
+        self.ancilla22_item_receipt_draw_and_update(k);
+    }
+}
+
+impl ZeldaState {
+    pub(super) fn finish_native_receipt_drawing(&mut self,k:usize,tail:crate::cycle_models::receipt_drawing::ReceiptDrawingTail) {
+        use crate::cycle_models::receipt_drawing::ReceiptDrawingTail;
+        match tail {
+            ReceiptDrawingTail::Sparkle=>{self.ancilla_add_occasional_sparkle(k);self.ancilla_receipt_after_sparkle(k);},
+            ReceiptDrawingTail::Graphics {source}=>{self.WriteTo4BPPBuffer_at_7F4000(source);crate::cycle_ledger::charge(28);self.ancilla_receipt_coordinates_and_draw(k);},
+            ReceiptDrawingTail::Draw=>{let x=read_le_u16(&self.ram,2);let y=read_le_u16(&self.ram,0);self.ancilla_receive_item_draw(k,x,y);},
+        }
     }
 }

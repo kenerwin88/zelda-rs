@@ -59,6 +59,11 @@ impl ZeldaState {
         {
             return;
         }
+        self.overlord_spawn_boulder_after_guard();
+    }
+
+    pub(super) fn overlord_spawn_boulder_after_guard(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x09_b714);
         let timer = self.garnish_state_mut().increment_boulder_trap_timer();
         // $09:B724-B72C INC $0ffe LDA AND #$3f BNE (110), taken (+6) to the
         // RTS (42) unless the counter wrapped.
@@ -129,7 +134,12 @@ impl ZeldaState {
         // (48) then $09:B78C JSR Overlord_ExecuteSingle (46) or the taken BEQ
         // (+6), and $09:B78F-B790 DEX : BPL (30, +6 taken for slots 7..1).
         crate::cycle_ledger::charge(72 + 16);
-        for i in (0..=7).rev() {
+        self.overlord_execute_slots_below(8);
+    }
+
+    fn overlord_execute_slots_below(&mut self, exclusive: usize) {
+        assert!(exclusive<=8);
+        for i in (0..exclusive).rev() {
             if self.overlord_slot_view(i).overlord_type() != 0 {
                 crate::cycle_ledger::charge(48 + 46);
                 self.overlord_execute_single(i);
@@ -992,5 +1002,30 @@ fn armos_sin(a: u16, b: u8) -> i8 {
         (0u8.wrapping_sub(t)) as i8
     } else {
         t as i8
+    }
+}
+
+impl ZeldaState {
+    pub(super) fn finish_native_overlord_caller(&mut self, tail: crate::cycle_models::dungeon_overlord::OverlordTail) {
+        use crate::cycle_models::dungeon_overlord::OverlordTail;
+        let _scope=crate::cycle_ledger::routine(0x09_b773);
+        match tail {
+            OverlordTail::Returned=>return,
+            OverlordTail::Slot {slot,kind}=>{
+                assert_eq!(self.overlord_slot_view(usize::from(slot)).overlord_type(),kind);
+                // Selected JSR has retired; retain its body, DEX/BPL, lower
+                // slots, next JSR, bank restore and far return exactly once.
+                crate::cycle_ledger::charge(118+if slot==0 {30}else{36});
+                self.overlord_execute_single(usize::from(slot));
+                self.overlord_execute_slots_below(usize::from(slot));
+                self.overlord_spawn_boulder();
+            },
+            OverlordTail::Boulder=>{
+                crate::cycle_ledger::charge(72);
+                self.overlord_spawn_boulder_after_guard();
+            },
+        }
+        crate::cycle_ledger::charge(48);
+        self.archery_game_mut().clear_out_of_arrows();
     }
 }

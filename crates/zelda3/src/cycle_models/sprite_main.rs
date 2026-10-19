@@ -10,12 +10,83 @@ use super::{
 use snes::CpuMasterTimeline;
 
 pub(crate) fn table_byte(address: u32) -> Option<u8> {
-    super::sprite_slot::table_byte(address)
+    super::garnish_single::table_byte(address).or_else(||super::sprite_slot::table_byte(address))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn sprite_main_final_return_matches_source_for_every_halfslot_request() {
+        let rom = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"),
+        )
+        .unwrap();
+        let mut instructions = 0;
+        for request in 0..=255u8 {
+            for status in [0x30, 0x31, 0x71, 0xf3] {
+                let mut machine = snes::Snes::new();
+                machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                machine.ram[0xaaa] = request;
+                machine.ram[0xfc6] = 0x3c;
+                machine.ram[0x1f2..0x1f5].copy_from_slice(&[0x41, 0x88, 2]);
+                let mut cpu = NativeNmiContext {
+                    a: 0xabcd,
+                    x: 7,
+                    y: 13,
+                    d: 0,
+                    db: 0,
+                    bank: 6,
+                    pc: 0x83b9,
+                    sp: 0x1f1,
+                    p: status,
+                };
+                machine.cpu.a = cpu.a;
+                machine.cpu.x = cpu.x;
+                machine.cpu.y = cpu.y;
+                machine.cpu.k = cpu.bank;
+                machine.cpu.pc = cpu.pc;
+                machine.cpu.sp = cpu.sp;
+                machine.cpu.e = false;
+                machine.cpu.unpack_flags(cpu.p);
+                let mut ram = machine.ram.clone();
+                let timeline = CpuMasterTimeline::at_raster(
+                    4586,
+                    snes::CpuRasterPosition::new(76, 1320),
+                    snes::CpuBusWorkload::default(),
+                    snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+                );
+                let mut source = snes::RomCpuTimingProbe::new(
+                    machine,
+                    timeline,
+                    snes::SourcePpuReadState::snes9x_reset(),
+                )
+                .unwrap();
+                let mut clock = source.timeline().clone();
+                let mut work = SpriteMain::after_cached();
+                let mut owned = 0;
+                while !work.complete() {
+                    super::super::native_work::compare_instruction(
+                        &format!("sprite return request={request} status={status:02x}"),
+                        &mut cpu,
+                        &mut clock,
+                        &mut source,
+                        &mut ram,
+                        &rom,
+                        |cpu, clock, bus| {
+                            owned += work.step(cpu, clock, bus).unwrap();
+                        },
+                    );
+                    work = work.clone();
+                    instructions += 1;
+                }
+                assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, 0x8842, 0x1f4));
+                assert_eq!(owned, if request == 0 { 98 } else { 124 });
+                assert_eq!(ram[0xfc6], if request == 0 { 0x3c } else { request });
+            }
+        }
+        eprintln!("Sprite_Main return: 1024 source fixtures, {instructions} instructions");
+    }
     #[test]
     fn sprite_main_callers_match_source_and_retain_active_children() {
         let rom = std::fs::read(
@@ -218,10 +289,18 @@ impl Default for SpriteMain {
     }
 }
 impl SpriteMain {
+    pub(crate) fn after_cached() -> Self { Self::from_entry(0x0683b9) }
+    pub(crate) fn cached_pass()->Self {Self::from_entry(0x0683ae)}
+    pub(crate) fn lower_garnish()->Self {Self::from_entry(0x0683aa)}
+    pub(crate) fn first_slot() -> Self { Self::from_entry(0x0683a1) }
+    pub(crate) fn after_ancilla() -> Self { Self::from_entry(0x068398) }
+    pub(crate) fn after_follower()->Self {Self::from_entry(0x068369)}
+    pub(crate) fn ancilla_child(&self)->Option<u16> {self.ancilla.as_ref().and_then(AncillaMain::child)}
+    pub(crate) fn garnish_upper() -> Self {Self::from_entry(0x09b06e)}
     fn from_entry(pc: u32) -> Self {
         assert!(matches!(
             pc,
-            0x068328 | 0x0684e2 | 0x09b06e | 0x09b07f | 0x099f91 | 0x088242 | 0x09b773 | 0x1de9da
+            0x068328 | 0x068369 | 0x068398 | 0x0683a1 | 0x0683aa | 0x0683ae | 0x0683b9 | 0x0684e2 | 0x09b06e | 0x09b07f | 0x099f91 | 0x088242 | 0x09b773 | 0x1de9da
         ));
         Self {
             pc,
@@ -258,6 +337,16 @@ impl SpriteMain {
                 "ancilla must reach its body handoff"
             );
         }
+        self.finish_call(cpu);
+    }
+    pub(crate) fn take_slot_body(&mut self) -> SpriteSlot {
+        assert_eq!(self.pc, 0x0684e7);
+        self.slot.take().expect("entered native sprite slot")
+    }
+    pub(crate) fn return_from_slot_body(&mut self, cpu: &NativeNmiContext) {
+        assert_eq!(self.pc, 0x0684e7);
+        assert!(self.slot.is_none());
+        assert_eq!((cpu.bank, cpu.pc), (6, 0x83a7));
         self.finish_call(cpu);
     }
     fn finish_call(&mut self, cpu: &NativeNmiContext) {

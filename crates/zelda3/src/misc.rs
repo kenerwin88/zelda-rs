@@ -98,6 +98,16 @@ const RECEIVE_ITEM_GRAPHICS: [u8; 76] = [
     0x0c, 0x38,
 ];
 const LIT_TORCH_COLOR_PLUS_BY_COUNT: [u8; 4] = [31, 8, 4, 0];
+pub(crate) fn native_item_receipt_table_byte(address: u32) -> Option<u8> {
+    match address {
+        0x09836c..=0x0983b7 => Some(RECEIVE_ITEM_DRAW_Y_OFFSETS[(address - 0x09836c) as usize] as u8),
+        0x0983b8..=0x098403 => Some(RECEIVE_ITEM_PALETTE_BITS[(address - 0x0983b8) as usize]),
+        0x098404..=0x09844f => Some(RECEIVE_ITEM_GRAPHICS[(address - 0x098404) as usize]),
+        0x098450..=0x09849b => Some(RECEIVE_ITEM_OAM_EXT_SIZES[(address - 0x098450) as usize]),
+        0x0dbb5b..=0x0dbb5d => Some([0, 0x80, 0x40][(address - 0x0dbb5b) as usize]),
+        _ => None,
+    }
+}
 const ITEM_RECEIPT_BOTTLED_ITEM_IDS: [u8; 7] = [0x16, 0x2b, 0x2c, 0x2d, 0x3d, 0x3c, 0x48];
 const ITEM_RECEIPT_POTION_ITEM_IDS: [u8; 5] = [0x2e, 0x2f, 0x30, 0xff, 0x0e];
 const ARBITRARY_SFX_PAN_BY_SCREEN_COLUMN: [u8; 8] = [0x80, 0x80, 0x80, 0, 0, 0x40, 0x40, 0x40];
@@ -205,7 +215,7 @@ const LINK_DMA_TABLE_FRAGMENTS: &[(u16, &[u16])] = &[
     (0x9852, &LINK_HAND_DMA_BASE_SOURCES),
 ];
 
-pub(super) fn link_dma_data_byte(address: u32) -> Option<u8> {
+pub(crate) fn link_dma_data_byte(address: u32) -> Option<u8> {
     LINK_DMA_TABLE_FRAGMENTS.iter().find_map(|&(base, words)| {
         let offset = address.checked_sub(u32::from(base))? as usize;
         words.get(offset / 2).map(|word| word.to_le_bytes()[offset & 1])
@@ -1455,6 +1465,13 @@ impl ZeldaState {
         } else if gfx == 0x20 || gfx == 0x2d || gfx == 0x2e {
             self.DecompressShieldGraphics();
             self.Palette_Load_Shield();
+        }
+        let receipt = ItemReceiptReturn {
+            ancilla_slot: k as u8, item, chest_position: chest_pos,
+        };
+        if caller == ItemReceiptCaller::GroundApress
+            && self.begin_native_ground_item_graphics(gfx, receipt) {
+            return GameCallStatus::Suspended;
         }
         self.DecodeAnimatedSpriteTile_variable(gfx);
         if (gfx == 6 || gfx == 0x18) && item != 0 {

@@ -294,6 +294,16 @@ impl ZeldaState {
         );
     }
 
+    /// Consume the pending NMI before a fresh main iteration even when its
+    /// display snapshot is captured after the handler. Display receipt
+    /// storage does not determine which CPU continuation owns this boundary.
+    pub(super) fn interrupt_nmi_before_main(
+        &mut self, input: u16, oam_dma_source: Option<&[u8]>, defer_bg_vram_upload: bool,
+    ) {
+        self.interrupt_nmi_with_entry_state(input, oam_dma_source, defer_bg_vram_upload,
+            None, None, false, None, None, Some(false));
+    }
+
     /// Run an NMI at an explicit leading scanout boundary and record its
     /// presentation effects. The snapshot already owns the CPU/register
     /// generation, while vblank DMA completes before its visible scanlines.
@@ -374,14 +384,14 @@ impl ZeldaState {
             &mut snes::CpuMasterTimeline)>,
     ) {
         self.interrupt_nmi_with_entry_state(input, oam_dma_source, defer_bg_vram_upload,
-            animated_bg_operands, context, false, None, None);
+            animated_bg_operands, context, false, None, None, None);
     }
 
     pub(super) fn interrupt_accepted_nmi_with_native_context(&mut self, input: u16,
         context: &mut crate::cycle_models::nmi_stack::NativeNmiContext,
         clock: &mut snes::CpuMasterTimeline, irq_deadline:Option<u64>) -> Option<crate::cycle_models::poly_interrupt::PolyIrqProgramming> {
         let mut programming=crate::cycle_models::poly_interrupt::PolyIrqProgramming::default();
-        self.interrupt_nmi_with_entry_state(input, None, false, None, Some((context, clock)), true, Some(&mut programming),irq_deadline);
+        self.interrupt_nmi_with_entry_state(input, None, false, None, Some((context, clock)), true, Some(&mut programming),irq_deadline, None);
         (programming.nmitimen!=0).then_some(programming)
     }
 
@@ -392,7 +402,7 @@ impl ZeldaState {
         clock: &mut snes::CpuMasterTimeline) -> crate::cycle_models::poly_interrupt::PolyIrqProgramming {
         assert!(self.game_state.display.nmi_thread_active);
         let mut programming=crate::cycle_models::poly_interrupt::PolyIrqProgramming::default();
-        self.interrupt_nmi_with_entry_state(input,None,false,None,Some((context,clock)),true,Some(&mut programming),None);
+        self.interrupt_nmi_with_entry_state(input,None,false,None,Some((context,clock)),true,Some(&mut programming),None, None);
         programming
     }
 
@@ -400,7 +410,8 @@ impl ZeldaState {
         defer_bg_vram_upload: bool, animated_bg_operands: Option<GraphicsDmaGeneration>,
         context: Option<(&mut crate::cycle_models::nmi_stack::NativeNmiContext, &mut snes::CpuMasterTimeline)>,
         hardware_entry_completed: bool,
-        thread_programming: Option<&mut crate::cycle_models::poly_interrupt::PolyIrqProgramming>,irq_deadline:Option<u64>) {
+        thread_programming: Option<&mut crate::cycle_models::poly_interrupt::PolyIrqProgramming>,irq_deadline:Option<u64>,
+        cpu_nmi_is_trailing: Option<bool>) {
         // The host's NMI cost: the handler's ledger charge (its own
         // instructions, NMI_DoUpdates and every annotated callee, the
         // interrupt entry and the RTI) plus the bus time of the DMA
@@ -418,6 +429,7 @@ impl ZeldaState {
             hardware_entry_completed,
             thread_programming,
             irq_deadline,
+            cpu_nmi_is_trailing,
         );
         let dma = self.nmi_dma_accounting.take().unwrap_or_default();
         let cpu = crate::cycle_ledger::master() - ledger_before;
@@ -425,6 +437,8 @@ impl ZeldaState {
         self.last_nmi_dma_master_cycles = dma.master_cycles();
         self.last_nmi_handler_master_cycles =
             Some(u32::try_from(cpu + dma.master_cycles()).unwrap_or(u32::MAX));
+        self.resume_scroll_clock_after_nmi(self.last_nmi_handler_master_cycles.unwrap());
+        self.resume_native_vwf_clock_after_nmi(self.last_nmi_handler_master_cycles.unwrap());
         self.note_native_exact_cpu_translated_nmi_completion();
     }
 
@@ -442,6 +456,21 @@ impl ZeldaState {
         }
     }
 
+    /// One MDMAEN write owns all the channel copies in this group. Copy
+    /// helpers still count the channels and bytes they actually transfer.
+    fn with_nmi_dma_run(&mut self, transfer: impl FnOnce(&mut Self)) {
+        let previous = self.nmi_dma_accounting.take();
+        self.nmi_dma_accounting = previous.map(|_| NmiDmaAccounting::default());
+        transfer(self);
+        let group = self.nmi_dma_accounting.take();
+        self.nmi_dma_accounting = previous;
+        if let (Some(total), Some(group)) = (&mut self.nmi_dma_accounting, group) {
+            total.runs += u32::from(group.channels != 0);
+            total.channels += group.channels;
+            total.bytes += group.bytes;
+        }
+    }
+
     fn interrupt_nmi_with_animated_bg_operands_body(
         &mut self,
         input: u16,
@@ -453,6 +482,7 @@ impl ZeldaState {
         hardware_entry_completed: bool,
         thread_programming: Option<&mut crate::cycle_models::poly_interrupt::PolyIrqProgramming>,
         mut irq_deadline:Option<u64>,
+        cpu_nmi_is_trailing: Option<bool>,
     ) {
         // Cycle ledger: Interrupt_NMI ($00:80C9). The data bank is the
         // system bank throughout, so register-window operands are priced
@@ -471,11 +501,14 @@ impl ZeldaState {
         if records_trailing_nmi_receipts {
             self.begin_trailing_nmi_receipts();
         }
-        // CPU continuation timing must observe the same pre-NMI RAM, latch,
-        // DMA, and raster generation as the real handler. Capture centrally
-        // so every hardware-NMI entry path has identical provenance.
+        // Unclocked callers still capture their legacy scheduling inputs.
+        // A live CPU context already owns this NMI boundary and its children;
+        // measuring another ROM caller here would create a competing owner.
         self.debug_obj_pipe("nmi_entry", &self.ppu.vram[0x4000..0x4400]);
-        self.capture_cpu_schedules_before_nmi(records_trailing_nmi_receipts, input);
+        if context.is_none() {
+            self.capture_cpu_schedules_before_nmi(
+                cpu_nmi_is_trailing.unwrap_or(records_trailing_nmi_receipts), input);
+        }
         let forced_blank_at_entry = self.ppu.forced_blank;
         let mut clocked_header = None;
         let mut updates_clock = None;
@@ -483,8 +516,17 @@ impl ZeldaState {
             assert!(!self.game_state.display.nmi_thread_active || thread_programming.is_some(),
                 "native poly NMI requires a caller to receive IRQ programming");
             assert!(!self.dma.dma_busy
-                && self.dma.channel.iter().all(|channel| !channel.dma_active && !channel.hdma_active),
-                "native NMI entry clock requires inactive DMA/HDMA");
+                && self.dma.channel.iter().all(|channel| !channel.dma_active),
+                "native NMI entry clock requires inactive general DMA");
+            // HDMA stays enabled after the visible field. The source NMI
+            // disables it at its own $420C store, not at interrupt acceptance.
+            // This entry runs during vblank, where no HDMA transfers occur.
+            let enabled_hdma_field = self.dma.channel.iter().any(|channel| channel.hdma_active)
+                .then(|| {
+                    assert!(entry_clock.synchronous_beam_position().unwrap().scanline >= 225,
+                        "late native NMI with active HDMA needs visible-line device events");
+                    entry_clock.field_index()
+                });
             if hardware_entry_completed {
                 context.enter_accepted_handler_clocked(&mut self.ram, entry_clock);
             } else {
@@ -498,6 +540,11 @@ impl ZeldaState {
             self.trace_nmi_audio_inputs();
             let header = context.audio_and_update_gate(entry_clock,
                 |at, access| self.native_nmi_header_access(at, access));
+            if let Some(field) = enabled_hdma_field {
+                assert_eq!(entry_clock.field_index(), field,
+                    "native NMI header crossed HDMA initialization before disabling its channels");
+                assert!(self.dma.channel.iter().all(|channel| !channel.hdma_active));
+            }
             // Hardware transactions and latch clears have already happened.
             // Publish the captured commands to the existing renderer queue
             // without rereading those cleared latches or resampling the APU.
@@ -1006,8 +1053,9 @@ impl ZeldaState {
             Access::ReadByte(address) => u16::from(self.ram[usize::from(address)]),
             Access::ReadWord(address) => read_word_from_slice(&self.ram, usize::from(address)),
             Access::WriteByte(0x420c, value) => {
-                assert_eq!(value, 0, "native startup tail cannot start HDMA");
-                for channel in &mut self.dma.channel { channel.hdma_active = false; }
+                for (i, channel) in self.dma.channel.iter_mut().enumerate() {
+                    channel.hdma_active = value & (1 << i) != 0;
+                }
                 0
             }
             Access::WriteByte(address @ (0x2111 | 0x2112), value) => {
@@ -1064,9 +1112,19 @@ impl ZeldaState {
             CoreAccess::Stripe(access) => self.native_nmi_stripe_access(clock, access),
             CoreAccess::ReadByte(address) => u16::from(self.ram[usize::from(address)]),
             CoreAccess::ReadWord(address) => read_word_from_slice(&self.ram, usize::from(address)),
+            CoreAccess::ReadLongWord(address) => {
+                assert!((0x7f4000..0x7f4080).contains(&address));
+                read_word_from_slice(&self.ram, (address - 0x7e0000) as usize)
+            }
             CoreAccess::WriteByte(address, value) => {
                 match address {
                     0x17 => { assert_eq!(value, 0); self.take_pending_nmi_subroutine(); }
+                    0x710 => { assert_eq!(value, 0); self.clear_core_update_disable_flag(); }
+                    0x420c => {
+                        for (i, channel) in self.dma.channel.iter_mut().enumerate() {
+                            channel.hdma_active = value & (1 << i) != 0;
+                        }
+                    }
                     0x2100..=0x213f => {
                         self.native_ppu_bus_write(clock, address, value);
                         self.zelda_ppu_write(u32::from(address), value);
@@ -1078,6 +1136,10 @@ impl ZeldaState {
             }
             CoreAccess::WriteWord(0x15, 0) => {
                 self.clear_cgram_update_flag(); self.clear_hud_update_flag(); 0
+            }
+            CoreAccess::WriteWord(address @ (0 | 2), value) => {
+                self.ram[usize::from(address)..usize::from(address)+2]
+                    .copy_from_slice(&value.to_le_bytes()); 0
             }
             CoreAccess::WriteWord(address, value) => panic!("unsupported native NMI word store {address:04x}={value:04x}"),
             CoreAccess::Dma(mask) | CoreAccess::AnimatedDma(mask) => {
@@ -2523,34 +2585,57 @@ impl ZeldaState {
         );
 
         if let Some(link_graphics) = self.asset_raw(57).map(Vec::from) {
-            for (dst, source, len) in [
+            // $008A35 and $008A59 each start channels 0..2 together.
+            for transfers in [
                 (0x4100, LinkDmaSourceSlot::BodyBottom, 0x40),
                 (0x4120, LinkDmaSourceSlot::HeadBottom, 0x40),
                 (0x4140, LinkDmaSourceSlot::HandRight, 0x20),
                 (0x4000, LinkDmaSourceSlot::BodyTop, 0x40),
                 (0x4020, LinkDmaSourceSlot::HeadTop, 0x40),
                 (0x4040, LinkDmaSourceSlot::HandLeft, 0x20),
-            ] {
-                // Key the tile by its source identity (offset within the static
-                // Link sprite asset, 32 bytes / 4bpp tile) so distinct pose pieces
-                // that share `(pack, relative-tile)` no longer collide. Asset
-                // offsets use the `0x8000`-relative source address; buffer flag 0.
+            ]
+            .chunks(3)
+            {
+                self.with_nmi_dma_run(|state| {
+                    for &(dst, source, len) in transfers {
+                        // Key the tile by its source identity (offset within the static
+                        // Link sprite asset, 32 bytes / 4bpp tile) so distinct pose pieces
+                        // that share `(pack, relative-tile)` no longer collide. Asset
+                        // offsets use the `0x8000`-relative source address; buffer flag 0.
+                        let src_addr = captured_operands
+                            .map(|operands| usize::from(operands.sources.source(source)))
+                            .unwrap_or_else(|| state.live_link_dma_source(source));
+                        let base_off = (src_addr.saturating_sub(0x8000) >> 5) as u16;
+                        state.copy_asset_bytes_to_vram(dst, &link_graphics, src_addr, len);
+                        state.vram_chr_source.record_tiles_from(
+                            dst,
+                            (len / 2).div_ceil(16),
+                            crate::chr_source::CHR_KIND_LINK,
+                            link_pack,
+                            base_off,
+                        );
+                    }
+                });
+            }
+        }
+
+        let copy_tagged_ram =
+            |state: &mut Self, dst: usize, source: LinkDmaSourceSlot, len: usize| {
                 let src_addr = captured_operands
                     .map(|operands| usize::from(operands.sources.source(source)))
-                    .unwrap_or_else(|| self.live_link_dma_source(source));
-                let base_off = (src_addr.saturating_sub(0x8000) >> 5) as u16;
-                self.copy_asset_bytes_to_vram(dst, &link_graphics, src_addr, len);
-                self.vram_chr_source.record_tiles_from(
+                    .unwrap_or_else(|| state.live_link_dma_source(source));
+                let base_off = crate::chr_source::CHR_LINK_SRC_RAM_FLAG | ((src_addr >> 5) as u16);
+                state.copy_ram_bytes_to_vram(dst, src_addr, len);
+                state.vram_chr_source.record_tiles_from(
                     dst,
                     (len / 2).div_ceil(16),
                     crate::chr_source::CHR_KIND_LINK,
                     link_pack,
                     base_off,
                 );
-            }
-        }
-
-        for (dst, source, len) in [
+            };
+        // $008A9F and $008AD8 each start channels 0..4 together.
+        for transfers in [
             (0x4050, LinkDmaSourceSlot::SwordUpper, 0x40),
             (0x4070, LinkDmaSourceSlot::ShieldUpper, 0x40),
             (0x4090, LinkDmaSourceSlot::AuxUpper, 0x40),
@@ -2561,62 +2646,61 @@ impl ZeldaState {
             (0x4190, LinkDmaSourceSlot::AuxLower, 0x40),
             (0x41b0, LinkDmaSourceSlot::AnimatedTileLower, 0x20),
             (0x41c0, LinkDmaSourceSlot::PushLower, 0x40),
-            (0x4200, LinkDmaSourceSlot::HeadPointerUpper, 0x40),
-            (0x4220, LinkDmaSourceSlot::BodyPointerUpper, 0x40),
-        ] {
-            // WRAM-sourced Link tiles: key by the WRAM source tile offset, tagged
-            // with the buffer flag so they never collide with asset-sourced tiles
-            // (the raw address spaces overlap). See `CHR_LINK_SRC_RAM_FLAG`.
-            let src_addr = captured_operands
-                .map(|operands| usize::from(operands.sources.source(source)))
-                .unwrap_or_else(|| self.live_link_dma_source(source));
-            let base_off = crate::chr_source::CHR_LINK_SRC_RAM_FLAG | ((src_addr >> 5) as u16);
-            self.copy_ram_bytes_to_vram(dst, src_addr, len);
-            self.vram_chr_source.record_tiles_from(
-                dst,
-                (len / 2).div_ceil(16),
-                crate::chr_source::CHR_KIND_LINK,
-                link_pack,
-                base_off,
-            );
+        ]
+        .chunks(5)
+        {
+            self.with_nmi_dma_run(|state| {
+                for &(dst, source, len) in transfers {
+                    copy_tagged_ram(state, dst, source, len);
+                }
+            });
         }
-        if let Some(operands) = captured_operands {
-            self.copy_to_vram_slice(
-                0x4240,
-                &operands.expanded_high_planes[..LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN],
-                LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN,
-            );
-        } else {
-            self.copy_ram_bytes_to_vram_absolute(
-                0x4240,
-                LINK_DMA_EXPANDED_HIGH_PLANES_START,
-                LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN,
-            );
-        }
-        for (dst, source) in [
-            (0x4300, LinkDmaSourceSlot::HeadPointerLower),
-            (0x4320, LinkDmaSourceSlot::BodyPointerLower),
-        ] {
-            let src_addr = captured_operands
-                .map(|operands| usize::from(operands.sources.source(source)))
-                .unwrap_or_else(|| self.live_link_dma_source(source));
-            self.copy_ram_bytes_to_vram(dst, src_addr, 0x40);
-        }
-        if let Some(operands) = captured_operands {
-            self.copy_to_vram_slice(
-                0x4340,
-                &operands.expanded_high_planes[LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN..],
-                LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN,
-            );
-        } else {
-            self.copy_ram_bytes_to_vram_absolute(
-                0x4340,
-                LINK_DMA_EXPANDED_HIGH_PLANES_START + LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN,
-                LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN,
-            );
-        }
+        // $008AFE: two pointer channels and the expanded-plane channel.
+        self.with_nmi_dma_run(|state| {
+            copy_tagged_ram(state, 0x4200, LinkDmaSourceSlot::HeadPointerUpper, 0x40);
+            copy_tagged_ram(state, 0x4220, LinkDmaSourceSlot::BodyPointerUpper, 0x40);
+            if let Some(operands) = captured_operands {
+                state.copy_to_vram_slice(
+                    0x4240,
+                    &operands.expanded_high_planes[..LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN],
+                    LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN,
+                );
+            } else {
+                state.copy_ram_bytes_to_vram_absolute(
+                    0x4240,
+                    LINK_DMA_EXPANDED_HIGH_PLANES_START,
+                    LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN,
+                );
+            }
+        });
+        // $008B22: the matching three lower-plane channels.
+        self.with_nmi_dma_run(|state| {
+            for (dst, source) in [
+                (0x4300, LinkDmaSourceSlot::HeadPointerLower),
+                (0x4320, LinkDmaSourceSlot::BodyPointerLower),
+            ] {
+                let src_addr = captured_operands
+                    .map(|operands| usize::from(operands.sources.source(source)))
+                    .unwrap_or_else(|| state.live_link_dma_source(source));
+                state.copy_ram_bytes_to_vram(dst, src_addr, 0x40);
+            }
+            if let Some(operands) = captured_operands {
+                state.copy_to_vram_slice(
+                    0x4340,
+                    &operands.expanded_high_planes[LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN..],
+                    LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN,
+                );
+            } else {
+                state.copy_ram_bytes_to_vram_absolute(
+                    0x4340,
+                    LINK_DMA_EXPANDED_HIGH_PLANES_START + LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN,
+                    LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN,
+                );
+            }
+        });
 
         if self.game_state.display.has_travel_bird_tile_upload() {
+            // $008B3B and $008B4D each start channel 0 separately.
             for (dst, source) in [
                 (0x40e0, LinkDmaSourceSlot::TravelBirdUpper),
                 (0x41e0, LinkDmaSourceSlot::TravelBirdLower),

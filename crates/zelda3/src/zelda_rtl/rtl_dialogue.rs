@@ -726,6 +726,7 @@ impl ZeldaState {
                 .set_dialogue_msg_read_pos(read_pos.wrapping_add(1));
         }
         self.finish_dialogue_character_render_call();
+        self.finish_render_text_return();
         self.complete_module0e_interface_after_run();
         self.finish_dialogue_scroll_return();
         let completed_scanout = self.dialogue_text_scanout_from_render_buffer();
@@ -2130,6 +2131,7 @@ impl ZeldaState {
         let frame = self.game_state.frame;
         if run_game_loop_prefix
             && self.rom_startup_timing()
+            && !self.retained_native_cpu_owns_clock()
             && frame.main_module == 7
             && ((frame.submodule == 2 && matches!(frame.subsubmodule, 2 | 13 | 14))
                 || (rom_dungeon_landing_wipe_is_active(frame.main_module, frame.submodule)
@@ -2456,6 +2458,11 @@ impl ZeldaState {
             );
         }
         if !self.dialogue_fast_forward_hold_active && !partial_nmi {
+            if run_game_loop_prefix && frame.main_module == 7
+                && frame.submodule == 2 && frame.subsubmodule == 0
+            {
+                self.retain_dungeon_transition_caller_clock();
+            }
             self.nmi_prepare_sprites_for_main_loop();
             self.replay_trace_ram_watch("game-loop-after-prepare-sprites");
             // The ROM clears nmi_boolean only after Module_MainRouting and

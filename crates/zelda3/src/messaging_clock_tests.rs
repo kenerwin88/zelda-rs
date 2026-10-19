@@ -17,6 +17,68 @@ enum Caller {
 }
 
 #[test]
+fn runtime_initializer_keeps_its_clock_and_state_through_held_hosts() {
+    let (assets, rom) = fast_forward_cycle_tests::character_decoder_fixture().unwrap();
+    for field in 30_000..30_004 {
+        let mut state = ZeldaState::new();
+        state.set_assets(&assets).unwrap();
+        state.ram[0x10] = 14;
+        state.ram[0x11] = 2;
+        state.ram[0x12] = 1;
+        state.ram[0x1cf0..0x1cf2].copy_from_slice(&0x159u16.to_le_bytes());
+        state.sync_native_game_state_from_ram();
+        state.main_loop_caller_phase = crate::cycle_models::main_wait::MainLoopCallerPhase::ModuleRouting;
+        let checkpoint = RomCpuCheckpoint {
+            entry_pc: 0x0ec483, stop_pc: 0x008034, sp: 0x01f6, db: 0x0e,
+            a: 0, x: 0, y: 0, zero: false, waiting: false,
+            stack_address: 0x01f7, stack_bytes: &[0x45, 0xc4, 0, 0x4d, 0xf8, 0, 0x59, 0x80, 0],
+            ..super::super::DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+        };
+        let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+            &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+        source.restore_original_dialogue_pointer_table().unwrap();
+        let mut budget = CpuCycleBudget::until_next_nmi_acceptance_in_field(
+            field, CpuRasterPosition::new(58, 1358), CpuBusWorkload::with_dynamic_hdma());
+        let work = state.native_dialogue_initialization_caller_work().unwrap();
+        state.clocked_dialogue_initialization_caller = Some(ClockedDialogueInitializationCaller::new(
+            work, NativeDialogueCallerClock::new(budget.clone(), snes::HdmaTimingState::new(&state.dma))));
+        state.advance_clocked_dialogue_initialization();
+        let mut held_hosts = 0;
+        loop {
+            for _ in 0..200_000 {
+                if super::super::advance_rom_cpu_step(&mut source, &mut budget).reached_boundary().is_some() {
+                    break;
+                }
+            }
+            for range in [0x1cd0..0x1cf0, 0x720..0x728, 0x11a..0x126,
+                0x10000..0x10800, 0x11200..0x12000, 0x14000..0x15000] {
+                for address in range {
+                    assert_eq!(state.ram[address], source.ram_byte(address), "field={field} address={address:05x}");
+                }
+            }
+            if let Some(owner) = state.clocked_dialogue_initialization_caller.as_ref() {
+                assert_eq!(owner.clock.as_ref().unwrap().budget, budget);
+                assert_eq!(state.paired_resume_cpu_boundary_blocker(), Some("retained-dialogue-initialization-caller"));
+                state.frame_ctr_dbg += 1;
+                state.game_execution_scheduler.begin_host_frame();
+                assert!(state.resume_clocked_dialogue_initialization(0, None));
+                super::super::advance_rom_cpu_through_nmi(&mut source, &mut budget);
+                held_hosts += 1;
+                assert!(held_hosts < 10);
+            } else {
+                let phase = state.native_main_wait_cpu_phase.as_ref().unwrap();
+                assert_eq!(phase.budget, budget);
+                assert_eq!(phase.checkpoint, source.main_wait_checkpoint(0x805d));
+                assert_eq!(phase.host, state.frame_ctr_dbg + 1);
+                assert!(state.game_execution_scheduler.returned_main_is_waiting_for_nmi());
+                break;
+            }
+        }
+        assert!(held_hosts > 1);
+    }
+}
+
+#[test]
 fn scheduled_initialization_retains_native_caller_until_return() {
     let Some((assets, _)) = fast_forward_cycle_tests::character_decoder_fixture() else { return };
     let mut state = ZeldaState::new();
@@ -296,4 +358,63 @@ fn native_initialization_caller_keeps_one_clock_across_held_nmis() {
         );
     }
     eprintln!("native clock chain: {fixtures} fixture entries, {boundaries} instructions, {interrupts} held NMI resumes; boundaries={interrupted_callers:?}");
+}
+
+#[test]
+fn glyph_return_caller_keeps_source_clock_and_state_through_held_nmi() {
+    let (assets,rom) = fast_forward_cycle_tests::character_decoder_fixture().unwrap();
+    for field in 30_000..30_004 {
+        for entry in [CpuRasterPosition::new(219,1310),CpuRasterPosition::new(224,1308)] {
+            let mut state = ZeldaState::new();
+            state.set_assets(&assets).unwrap();
+            state.ram[0x10] = 14;
+            state.ram[0x11] = 2;
+            state.ram[0x12] = 1;
+            state.ram[0xaa2] = 0xa0;
+            state.sync_native_game_state_from_ram();
+            state.main_loop_caller_phase = crate::cycle_models::main_wait::MainLoopCallerPhase::ModuleRouting;
+            state.game_execution_scheduler.begin_host_frame();
+            let checkpoint = RomCpuCheckpoint {
+                entry_pc: 0x0ec9f5,stop_pc: 0x008034,sp: 0x1f6,db: 0x0e,
+                stack_address: 0x1f7,stack_bytes: &[0x45,0xc4,0,0x4d,0xf8,0,0x59,0x80,0],
+                waiting: false,..super::super::DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+            };
+            let mut source = RomCpuTimingRun::new(&rom,&state.ram,&state.sram,
+                &state.ppu,&state.dma,[0;4],checkpoint).unwrap();
+            let mut budget = CpuCycleBudget::until_next_nmi_acceptance_in_field(
+                field,entry,CpuBusWorkload::with_dynamic_hdma());
+            state.clocked_dialogue_return_caller = Some(ClockedDialogueReturnCaller::new(
+                DialogueReturnWork::default(),NativeDialogueCallerClock::new(budget.clone(),
+                    snes::HdmaTimingState::new(&state.dma))));
+            state.advance_clocked_dialogue_return();
+            let mut held = 0;
+            loop {
+                for step in 0..200_000 {
+                    if super::super::advance_rom_cpu_step(&mut source,&mut budget).reached_boundary().is_some() { break; }
+                    assert!(step < 199_999,"source return failed to reach NMI");
+                }
+                for range in [0x11a..0x126,0x120..0x130,0x710..0x712,0x800..0xa00,0xa20..0xaa0] {
+                    for address in range { assert_eq!(state.ram[address],source.ram_byte(address),
+                        "field={field} entry={entry:?} address={address:04x}"); }
+                }
+                if let Some(owner) = state.clocked_dialogue_return_caller.as_ref() {
+                    assert_eq!(owner.clock.as_ref().unwrap().budget,budget);
+                    assert_eq!(state.paired_resume_cpu_boundary_blocker(),Some("retained-clocked-dialogue-return-caller"));
+                    state.frame_ctr_dbg += 1;
+                    state.game_execution_scheduler.begin_host_frame();
+                    assert!(state.resume_clocked_dialogue_return(0,None));
+                    super::super::advance_rom_cpu_through_nmi(&mut source,&mut budget);
+                    held += 1;
+                    assert!(held < 3);
+                } else {
+                    let phase = state.native_main_wait_cpu_phase.as_ref().unwrap();
+                    assert_eq!(phase.budget,budget);
+                    assert_eq!(phase.checkpoint,source.main_wait_checkpoint(0x805d));
+                    assert!(state.game_execution_scheduler.returned_main_is_waiting_for_nmi());
+                    break;
+                }
+            }
+            assert!(held > 0);
+        }
+    }
 }

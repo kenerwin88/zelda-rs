@@ -95,19 +95,20 @@ impl MainWait {
         cpu: &mut super::nmi_stack::NativeNmiContext,
         clock: &mut snes::CpuMasterTimeline,
         mut bus: impl FnMut(u64, WaitAccess) -> u8,
+        mut device_event: impl FnMut(snes::cpu_timeline::CpuSynchronousTimelineEvent, &snes::CpuMasterTimeline) -> u32,
     ) -> u32 {
         assert_eq!((cpu.bank, cpu.pc, cpu.d, cpu.p & 0x30),
             (0, self.next_pc() as u16, 0, 0x30));
         clock.advance_synchronous_pcbase_opcode_fetch(8);
-        let drain = |clock: &mut snes::CpuMasterTimeline, cycles, bus: &mut dyn FnMut(u64, WaitAccess) -> u8| {
-            clock.advance_synchronous_after_semantics_with(cycles, |event, _| {
+        let mut drain = |clock: &mut snes::CpuMasterTimeline, cycles, bus: &mut dyn FnMut(u64, WaitAccess) -> u8| {
+            clock.advance_synchronous_after_semantics_with_clock(cycles, |event, clock| {
                 if let snes::cpu_timeline::CpuSynchronousTimelineEvent::HMax {
                     completed_field_index, completed_scanline: 224, event_timestamp, ..
                 } = event {
                     let at = event_timestamp.master_cycles();
                     bus(at, WaitAccess::Vblank { field: completed_field_index, at });
                 }
-                Ok::<u32, String>(0)
+                Ok::<u32, String>(device_event(event, clock))
             }).expect("native main wait clock");
         };
         drain(clock, 8, &mut bus);
@@ -172,6 +173,81 @@ mod tests {
     use super::*;
     use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
 
+    #[test]
+    fn retained_wait_matches_source_bus_and_clock_across_refresh_and_vblank() {
+        use crate::cycle_models::{intro_clear::Access, native_work, nmi_stack::NativeNmiContext};
+        let rom = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"),
+        )
+        .unwrap();
+        let mut instructions = 0;
+        for field in [36707, 36708] {
+            for h in [422, 432, 606, 616] {
+                let mut machine = snes::Snes::new();
+                machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                let mut cpu = NativeNmiContext {
+                    a: 0xb740,
+                    x: 0,
+                    y: 20,
+                    d: 0,
+                    db: 0,
+                    bank: 0,
+                    pc: 0x8034,
+                    sp: 0x1ff,
+                    p: 0xb0,
+                };
+                machine.cpu.a = cpu.a;
+                machine.cpu.x = cpu.x;
+                machine.cpu.y = cpu.y;
+                machine.cpu.sp = cpu.sp;
+                machine.cpu.k = cpu.bank;
+                machine.cpu.pc = cpu.pc;
+                machine.cpu.e = false;
+                machine.cpu.unpack_flags(cpu.p);
+                let mut ram = machine.ram.clone();
+                let timeline = snes::CpuMasterTimeline::at_raster(
+                    field,
+                    snes::CpuRasterPosition::new(54, h),
+                    snes::CpuBusWorkload::default(),
+                    snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+                );
+                let mut source = snes::RomCpuTimingProbe::new(
+                    machine,
+                    timeline,
+                    snes::SourcePpuReadState::snes9x_reset(),
+                )
+                .unwrap();
+                let mut clock = source.timeline().clone();
+                let mut wait = MainWait::default();
+                while clock.raster_position().coordinates().0 < 225
+                    || clock.raster_position().coordinates().1 < 64
+                {
+                    native_work::compare_instruction(
+                        &format!("wait field={field} h={h} pc={:04x}", cpu.pc),
+                        &mut cpu,
+                        &mut clock,
+                        &mut source,
+                        &mut ram,
+                        &rom,
+                        |cpu, clock, bus| {
+                            wait.step_clocked(
+                                cpu,
+                                clock,
+                                |at, access| match access {
+                                    WaitAccess::ReadLatch => bus(at, Access::Read(0x12, 1)) as u8,
+                                    WaitAccess::Vblank { .. } => 0,
+                                },
+                                |_, _| 0,
+                            );
+                        },
+                    );
+                    assert_eq!(u32::from(cpu.pc), wait.next_pc());
+                    instructions += 1;
+                }
+            }
+        }
+        eprintln!("retained main wait: 8 source clock fixtures, {instructions} instructions");
+    }
     #[test]
     fn caller_retains_future_work_until_callee_return() {
         let mut caller = MainLoopCallerPhase::ModuleRouting;

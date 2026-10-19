@@ -997,6 +997,15 @@ impl ZeldaState {
                 .then(|| self.native_startup_cpu.as_ref()
                     .filter(|cpu| cpu.startup.owns_cpu_clock())
                     .map(|cpu| cpu.timeline.clock_master_cycles())).flatten();
+            if crate::debug_env::var("ZELDA3_DEBUG_AUDIO_OWNER_FROM").ok()
+                .and_then(|value| value.parse::<u32>().ok())
+                .is_some_and(|first| self.frame_ctr_dbg >= first)
+            {
+                eprintln!("native-audio-owner frame={} module={} submodule={} cpu_boundary={boundary:?} original_live={} samples={native_samples}",
+                    self.frame_ctr_dbg, self.game_state.frame.main_module,
+                    self.game_state.frame.submodule,
+                    matches!(self.original_timing_owner, OriginalTimingOwnerState::Live));
+            }
             let window = if let Some(master) = boundary {
                 clock.advance_at_cpu_boundary(driver_commands, native_samples,
                     vwf_glyph_tone_crossed_vblank, master).expect("native CPU owns the audio boundary")
@@ -1334,6 +1343,8 @@ impl ZeldaState {
             let (cpu, ppu) = origin.into_parts();
             self.native_startup_cpu = Some(cpu);
             self.native_ppu = Some(ppu);
+            // Reset/upload does not access the CPU arithmetic registers.
+            self.native_cpu_math = crate::cycle_models::native_cpu_math::NativeCpuMath::snes9x_reset();
             if cold_memory {
                 // Pinned S9xReset (cpu.cpp) fills all WRAM with $55. The
                 // native upload and memory initializer own the later stores;

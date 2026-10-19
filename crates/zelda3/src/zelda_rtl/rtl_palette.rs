@@ -683,6 +683,18 @@ impl ZeldaState {
         Some(bytes)
     }
 
+    /// Data operands for the retained overworld palette loaders.
+    pub(crate) fn native_overworld_palette_byte(&self, address: u32) -> Option<u8> {
+        let address=address&0x7f_ffff;
+        const EQUIPMENT_OFFSETS: [u8;18] = [0x0,0x0,0x6,0xc,0x12,0x18,0x1e,0x24,0x2a,0x30,0x36,0x3c,0x42,0x0,0x0,0x8,0x10,0x18];
+        const GLOVE_COLORS: [u8;4] = [0xf6,0x52,0x76,0x3];
+        if (0x1bebb4..0x1bebc6).contains(&address) {return Some(EQUIPMENT_OFFSETS[(address-0x1bebb4) as usize]);}
+        if (0x1bedf5..0x1bedf9).contains(&address) {return Some(GLOVE_COLORS[(address-0x1bedf5) as usize]);}
+        if let Some(value)=crate::cycle_models::intro_palettes::table_byte(address) {return Some(value);}
+        self.palette_asset_word_snes((address&!1)|0x800000)
+            .map(|word|word.to_le_bytes()[(address&1) as usize])
+    }
+
     pub(super) fn palette_asset_word_snes(&self, addr: u32) -> Option<u16> {
         for &(base, asset) in PALETTE_ASSET_SNES_RANGES {
             let Some(byte_offset) = addr.checked_sub(base).map(|offset| offset as usize) else {

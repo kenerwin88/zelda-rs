@@ -31,6 +31,10 @@ pub(crate) fn table_byte(address: u32) -> Option<u8> {
     crate::ZeldaState::native_hud_update_table_byte(address)
 }
 impl HudUpdate {
+    pub(crate) fn refresh_icon() -> Self {
+        Self { pc: 0x0ddb7f, ..Self::default() }
+    }
+
     pub(crate) fn complete(&self) -> bool {
         self.complete
     }

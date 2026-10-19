@@ -304,12 +304,14 @@ impl DungeonState {
         let byte = match address {
             0xb9 => &mut self.door_setup.active_room_load_ptr_bank,
             0xc0..=0xdf => &mut self.room_tilemaps.line_pointer_bytes[address - DUNG_LINE_PTRS_ROW0],
+            0x333 => { self.torch.target = NativeTile::from_cartridge(value); return true; }
             0x3f4 => &mut self.environment.somaria_block_bg_check_flag,
             0x430 => &mut self.doors.switch_triggered,
             0x452 => &mut self.room_effects.blast_wall_x_open,
             0x453 => &mut self.room_effects.blast_wall_y_open,
             0x45c => &mut self.room_load.quadrant_upload_index,
             0x4f0..=0x4ff => &mut self.torch.timers[address - 0x4f0],
+            0x5fc..=0x5fd => &mut self.object_tracking.changeable_object_indices[address - 0x5fc],
             // These exact reset bytes have no modeled scalar owner. Keep
             // their native stores in WRAM, including the flag companion bytes.
             0x420..=0x421 | 0x431 | 0x45d => return true,
@@ -370,17 +372,24 @@ impl DungeonState {
     /// pointers and the adjacent-door scan, without reloading a RAM snapshot.
     pub(crate) fn write_header_byte(&mut self, address: usize, value: u8) -> bool {
         let byte = match address {
+            0xa8 => &mut self.room_load.layout_quadrant_key,
             0xad => &mut self.room_load.header_collision_2,
             0xae..=0xaf => &mut self.header.tags[address - 0xae],
             0xb9 => &mut self.door_setup.active_room_load_ptr_bank,
             0x414 => &mut self.room_load.bg2_properties,
             0x46c => &mut self.room_load.header_collision,
             0x4ba => &mut self.room_load.overlay_to_load,
+            0x4c7 => &mut self.room_runtime.room_tag_skip_count,
             // The header's word STZ also clears the overlay's unmodeled
             // companion byte. Preserve it in the exact WRAM store below.
             0x4bb => return true,
             0x63c..=0x640 => &mut self.header.plane_scratch[address - 0x63c],
             0x641 => &mut self.environment.movable_block_was_pushed,
+            0x466..=0x467 => {
+                let shift=(address & 1)*8;
+                self.environment.block_trap_related_tile=(self.environment.block_trap_related_tile & !(255<<shift)) | (u16::from(value)<<shift);
+                return true;
+            }
             0x642 => &mut self.environment.water_puzzle_state_changed,
             0x646 => &mut self.environment.somaria_block_switch_counter,
             0xc000..=0xc004 => &mut self.header.travel_destinations[address - 0xc000],
@@ -584,6 +593,11 @@ impl Default for DungeonRoomTilemapState {
 }
 
 impl DungeonRoomTilemapState {
+    /// Retire one map word without importing the overlapping line-pointer view.
+    pub(crate) fn write_map_tile_word(&mut self,address:usize,value:u16) {
+        assert!((DUNG_BG2..DUNG_BG1+DUNGEON_ROOM_TILEMAP_WORDS*2).contains(&address));
+        self.set_tile_at_abs(address,value);
+    }
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         let mut state = Self::default();
         for index in 0..DUNGEON_ROOM_TILEMAP_WORDS {

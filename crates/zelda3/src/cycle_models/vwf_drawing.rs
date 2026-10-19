@@ -598,8 +598,7 @@ impl Drawing {
         })
     }
 
-    #[cfg(test)]
-    fn next_pc(self) -> u32 {
+    pub(crate) fn next_pc(self) -> u32 {
         let op = usize::from(self.instruction);
         let pc = match self.phase {
             Phase::Row if self.bottom => [

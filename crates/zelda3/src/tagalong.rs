@@ -670,10 +670,25 @@ impl ZeldaState {
     }
 
     pub(super) fn follower_validate_message_freedom(&self) -> bool {
-        self.game_state
+        // $07:F46F checks handler 0, 4, 17 before the complete item/action OR chain.
+        let _scope = crate::cycle_ledger::routine(0x07_f46f);
+        let handler = self.game_state.player.follower_link.handler_state();
+        let allowed = self
+            .game_state
             .player
             .follower_link
-            .can_open_follower_message()
+            .can_open_follower_message();
+        let guard = match handler {
+            0 => 62,
+            4 => 94,
+            17 => 120,
+            _ => {
+                crate::cycle_ledger::charge(184);
+                return false;
+            }
+        };
+        crate::cycle_ledger::charge(guard + 338 + if allowed { 0 } else { 6 });
+        allowed
     }
 
     pub(super) fn follower_move_towards_link(&mut self) {
@@ -1163,7 +1178,19 @@ impl ZeldaState {
             self.tagalong_draw();
             return;
         }
+        crate::cycle_ledger::charge(46); // $09:A1BB JSR Follower_HandleTrigger.
         self.follower_handle_trigger();
+        // $A1BE-A1CD: the Kiki checks short-circuit in source order.
+        let indicator = self.game_state.sprites.follower_runtime.indicator();
+        crate::cycle_ledger::charge(72);
+        if indicator != 10 {
+            crate::cycle_ledger::charge(6);
+        } else if !self.game_state.player.follower_link.has_auxiliary_state() {
+            crate::cycle_ledger::charge(40 + 6);
+        } else {
+            crate::cycle_ledger::charge(40 + 48
+                + if self.game_state.player.follower_link.blink_countdown() == 0 { 6 } else { 0 });
+        }
         if self.game_state.sprites.follower_runtime.indicator() == 10
             && self.game_state.player.follower_link.has_auxiliary_state()
             && self.game_state.player.follower_link.blink_countdown() != 0
@@ -1184,15 +1211,32 @@ impl ZeldaState {
                     .data_index()
                     .wrapping_add(1)
             };
+            crate::cycle_ledger::charge(78 + if k == 0 { 16 } else { 6 } + 160);
             self.kiki_spawn_handler_b(k as usize);
             self.follower_state_mut().set_indicator(0);
             return;
         }
+        // $A1E4-A204: maiden room/flag checks precede the trigger callee.
+        crate::cycle_ledger::charge(72);
+        if indicator != 6 {
+            crate::cycle_ledger::charge(6);
+        } else if self.game_state.world.location.dungeon_room() != 0xac {
+            crate::cycle_ledger::charge(94 + 6);
+        } else if self.saved_room_flags(101) & 0x100 == 0 {
+            crate::cycle_ledger::charge(94 + 88 + 6);
+        } else {
+            crate::cycle_ledger::charge(94 + 88 + 100);
+        }
         if self.game_state.sprites.follower_runtime.indicator() == 6
             && self.game_state.world.location.dungeon_room() == 0x0ac
             && self.saved_room_flags(101) & 0x100 != 0
-            && self.follower_check_blind_trigger()
+            && {
+                let triggered = self.follower_check_blind_trigger();
+                if !triggered { crate::cycle_ledger::charge(6); }
+                triggered
+            }
         {
+            crate::cycle_ledger::charge(614); // $A206-A239, excluding the spawn callee.
             let k = self.game_state.sprites.follower_runtime.data_index() as usize;
             let x = self.tagalong_x(k);
             let y = self.tagalong_y(k);
@@ -1206,12 +1250,20 @@ impl ZeldaState {
             self.set_music_control(21);
             return;
         }
+        crate::cycle_ledger::charge(94); // $A23A-A241 SEP/LDY/LDA/BNE.
         if self
             .game_state
             .sprites
             .follower_runtime
             .hookshot_interlock_is_clear()
         {
+            crate::cycle_ledger::charge(32); // $A243 CPY/BNE.
+            if !self.game_state.player.follower_link.is_hookshot() {
+                crate::cycle_ledger::charge(6);
+            } else {
+                crate::cycle_ledger::charge(48
+                    + if self.game_state.player.follower_link.has_hookshot_interlock() { 0 } else { 6 });
+            }
             if self.game_state.player.follower_link.is_hookshot()
                 && self
                     .game_state
@@ -1219,17 +1271,23 @@ impl ZeldaState {
                     .follower_link
                     .has_hookshot_interlock()
             {
+                crate::cycle_ledger::charge(70); // $A24C-A251 set interlock/BRA.
                 self.follower_state_mut().set_hookshot_interlock();
                 self.advance_follower_tail();
+                crate::cycle_ledger::charge(30); // $A2AE BRL draw.
                 self.tagalong_draw();
                 return;
             }
         } else {
+            crate::cycle_ledger::charge(6 + 32); // Taken BNE; $A253 CPY/BEQ.
             if self.game_state.player.follower_link.is_hookshot() {
+                crate::cycle_ledger::charge(6);
                 self.advance_follower_tail();
+                crate::cycle_ledger::charge(30);
                 self.tagalong_draw();
                 return;
             }
+            crate::cycle_ledger::charge(80); // $A257-A25D release-index comparison.
             if self
                 .game_state
                 .sprites
@@ -1237,21 +1295,28 @@ impl ZeldaState {
                 .hookshot_release_tail_index()
                 != self.game_state.sprites.follower_runtime.data_index()
             {
-                self.follower_state_mut()
-                    .advance_data_index_wrapping_at_20();
+                crate::cycle_ledger::charge(6);
+                self.advance_follower_data_index();
+                crate::cycle_ledger::charge(30);
                 self.tagalong_draw();
                 return;
             }
+            crate::cycle_ledger::charge(32); // $A25F STZ interlock.
             self.follower_state_mut().clear_hookshot_interlock();
         }
         let k = self.game_state.sprites.follower_runtime.data_index() as usize;
+        let z = self.tagalong_slot(k).z();
+        crate::cycle_ledger::charge(80 + if z == 0 { 6 } else { 16 + if sign8(z) { 6 } else { 0 } });
         if self.tagalong_slot(k).is_above_ground() {
+            crate::cycle_ledger::charge(80); // $A26C-A272 tail-index comparison.
             if self.game_state.sprites.follower_runtime.tail_write_index() != k as u8 {
-                self.follower_state_mut()
-                    .advance_data_index_wrapping_at_20();
+                crate::cycle_ledger::charge(6);
+                self.advance_follower_data_index();
+                crate::cycle_ledger::charge(30);
                 self.tagalong_draw();
                 return;
             }
+            crate::cycle_ledger::charge(286); // $A274-A288 reset height/position.
             let link = self.game_state.player.follower_link;
             let y = link.y();
             let x = link.x();
@@ -1259,13 +1324,18 @@ impl ZeldaState {
             follower.set_z(0);
             follower.set_position(x, y);
         }
+        crate::cycle_ledger::charge(64); // $A28B-A28F velocity test.
         if self.game_state.player.follower_link.is_moving() {
             self.advance_follower_tail();
+        } else {
+            crate::cycle_ledger::charge(6);
         }
+        crate::cycle_ledger::charge(30); // $A2AE BRL draw.
         self.tagalong_draw();
     }
 
     fn advance_follower_tail(&mut self) {
+        crate::cycle_ledger::charge(78); // $A291-A297 subtract lag/BPL.
         let mut t = self
             .game_state
             .sprites
@@ -1273,12 +1343,24 @@ impl ZeldaState {
             .tail_write_index()
             .wrapping_sub(15);
         if sign8(t) {
+            crate::cycle_ledger::charge(30); // CLC/ADC #20.
             t = t.wrapping_add(20);
+        } else {
+            crate::cycle_ledger::charge(6);
         }
+        crate::cycle_ledger::charge(48); // $A29C CMP/BNE.
         if t == self.game_state.sprites.follower_runtime.data_index() {
-            self.follower_state_mut()
-                .advance_data_index_wrapping_at_20();
+            self.advance_follower_data_index();
+        } else {
+            crate::cycle_ledger::charge(6);
         }
+    }
+
+    fn advance_follower_data_index(&mut self) {
+        // $A2A1-A2AB LDX/INX/CPX/BNE, optional LDX #0, STX.
+        let wraps = self.game_state.sprites.follower_runtime.data_index().wrapping_add(1) == 20;
+        crate::cycle_ledger::charge(78 + if wraps { 16 } else { 6 } + 32);
+        self.follower_state_mut().advance_data_index_wrapping_at_20();
     }
 
     pub(super) fn follower_not_following(&mut self) {
@@ -1481,6 +1563,8 @@ impl ZeldaState {
 
     pub(super) fn follower_handle_trigger(&mut self) {
         if self.game_state.frame.submodule != 0 {
+            // $A59E LDA/BNE, $A5CD BRL, $A6CA SEP/RTS.
+            crate::cycle_ledger::charge(24 + 22 + 30 + 22 + 42);
             return;
         }
         let (infos, start, end) = if self.game_state.world.location.is_indoors() {
@@ -2058,11 +2142,11 @@ impl ZeldaState {
     }
 
     fn Ancilla_MoveX(&mut self, k: usize) {
-        self.ancilla_slot_view_mut(k).move_x();
+        self.ancilla_move_x(k);
     }
 
     fn Ancilla_MoveY(&mut self, k: usize) {
-        self.ancilla_slot_view_mut(k).move_y();
+        self.ancilla_move_y(k);
     }
 
     fn Ancilla_ProjectSpeedTowardsPlayer(&self, k: usize, vel: u8) -> ProjectSpeedRet {
@@ -2227,6 +2311,56 @@ mod drawing_cycle_tests {
     use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
 
     #[test]
+    fn follower_transition_movement_matches_source_work_and_state() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc");
+        let rom = std::fs::read(path).expect("development ROM for follower movement validation");
+        for indicator in [1, 6, 10] {
+            for variant in 0..96u8 {
+                let mut state = ZeldaState::new();
+                state.ram[0x10] = 7;
+                state.ram[0x11] = 2; // Trigger returns while the room transition owns execution.
+                state.ram[0xf3cc] = indicator;
+                state.ram[0x2f9] = 1; // Hidden draw isolates the movement and return path.
+                let index = if variant & 1 != 0 { 19 } else { 0 };
+                state.ram[0x2cf] = index;
+                state.ram[0x2d3] = [index, (index + 15) % 20, 16][usize::from(variant / 32)];
+                state.ram[0x2d0] = (variant >> 1) & 1;
+                state.ram[0x2d1] = if variant & 4 != 0 { index } else { 10 };
+                state.ram[0x5d] = if variant & 8 != 0 { 19 } else { 0 };
+                state.ram[0x37e] = (variant >> 2) & 1;
+                state.ram[0x30] = (variant >> 4) & 1;
+                state.ram[0x1a50 + usize::from(index)] = [0, 4, 0xff][usize::from(variant / 32)];
+                state.ram[0x20..0x24].copy_from_slice(&[0x34, 0x12, 0x78, 0x56]);
+                state.sync_native_game_state_from_ram();
+                let checkpoint = RomCpuCheckpoint {
+                    entry_pc: 0x09_a197, stop_pc: 0x09_8000, a: 0, x: 0, y: 0,
+                    sp: 0x01fd, dp: 0, db: 9, carry: false, zero: false,
+                    overflow: false, negative: false, interrupt_disable: true,
+                    decimal: false, accumulator_is_8_bit: true, index_is_8_bit: true,
+                    emulation: false, waiting: false, stack_address: 0x01fe,
+                    stack_bytes: &[0xff, 0x7f],
+                };
+                let mut cpu = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                    &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+                let mut expected = 0u64;
+                for _ in 0..1_000 {
+                    if cpu.is_complete() { break; }
+                    expected += u64::from(cpu.step().master_cycles);
+                }
+                assert!(cpu.is_complete());
+                let before = crate::cycle_ledger::master();
+                state.follower_basic_mover();
+                assert_eq!(crate::cycle_ledger::master() - before, expected,
+                    "indicator={indicator} variant={variant}");
+                for address in (0x2cf..0x2d4).chain(0x1a00..0x1a78) {
+                    assert_eq!(state.ram[address], cpu.ram_byte(address),
+                        "indicator={indicator} variant={variant} address={address:04x}");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn follower_head_selector_cursor_matches_each_rom_instruction() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc");
         let rom = std::fs::read(path).expect("development ROM for follower cursor validation");
@@ -2388,6 +2522,43 @@ mod drawing_cycle_tests {
                     }
                 }
                 }
+                }
+            }
+        }
+    }
+}
+
+impl ZeldaState {
+    pub(crate) fn native_follower_table_byte(address: u32) -> Option<u8> {
+        let offset = address.checked_sub(0x099fb5)? as usize;
+        match offset {
+            0..=2 => Some(TAGALONG_MESSAGE_FOLLOWER_INDICATORS[offset]),
+            3..=8 => {
+                Some(TAGALONG_MESSAGE_TIMERS[(offset - 3) / 2].to_le_bytes()[(offset - 3) & 1])
+            }
+            9..=14 => Some(TAGALONG_MSG[(offset - 9) / 2].to_le_bytes()[(offset - 9) & 1]),
+            _ => None,
+        }
+    }
+}
+
+impl ZeldaState {
+    pub(super) fn finish_native_follower(
+        &mut self,
+        tail: crate::cycle_models::dungeon_follower::FollowerTail,
+    ) {
+        use crate::cycle_models::dungeon_follower::FollowerTail;
+        let _scope = crate::cycle_ledger::routine(0x09_9fc4);
+        match tail {
+            FollowerTail::Returned => {}
+            FollowerTail::Trigger => self.follower_handle_trigger(),
+            FollowerTail::NoTimedMessage => self.follower_no_timed_message(),
+            FollowerTail::Message { index } => {
+                self.Tagalong_Main_ShowTextMessage();
+                // PLY restores the original index, then SEP : CPY : BNE and the real near return.
+                crate::cycle_ledger::charge(28 + 54 + if index == 0 { 42 } else { 6 });
+                if index != 0 {
+                    self.follower_no_timed_message();
                 }
             }
         }

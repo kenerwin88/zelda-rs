@@ -2568,11 +2568,16 @@ struct NativeDialogueCpuEntry {
 
 fn module_cpu_entry_after_leading_nmi(state: &ZeldaState, input: u16, cpu_host: u32, entry_pc: u32,
     phase: Option<NativeMainWaitCpuPhase>) -> CpuRasterPosition {
-    let checkpoint = phase.as_ref().map(|phase| phase.checkpoint).unwrap_or(RomCpuCheckpoint {
-        entry_pc: 0x00_8036, stop_pc: entry_pc, waiting: false,
-        ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
-    });
-    assert_eq!(checkpoint.stop_pc, entry_pc);
+    // The producer preserves the live wait registers and instruction. Its
+    // old probe endpoint is not CPU state: this consumer owns the new
+    // module-entry endpoint, including phases returned by native callers.
+    let checkpoint = RomCpuCheckpoint {
+        stop_pc: entry_pc,
+        ..phase.as_ref().map(|phase| phase.checkpoint).unwrap_or(RomCpuCheckpoint {
+            entry_pc: 0x00_8036, waiting: false,
+            ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+        })
+    };
     let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(&state.rom, &state.ram, &state.sram,
         &state.ppu, &timing_dma, state.zelda_audio_apu_output_ports(), checkpoint)
@@ -2714,8 +2719,20 @@ fn native_main_loop_cpu_run(state: &mut ZeldaState, input: u16, nmi_is_trailing:
 /// the caller's suffix, wait instruction, or raster phase. Interrupted work
 /// remains with its existing dungeon continuation; no private stores escape.
 fn dungeon_main_loop_cpu_phase(state: &mut ZeldaState, input: u16, nmi_is_trailing: bool) {
+    state.native_item_graphics_entry = None;
     let (mut run, mut budget) = native_main_loop_cpu_run(state, input, nmi_is_trailing);
+    let trace = nmi::debug_frame_selection_env_matches(
+        "ZELDA3_DEBUG_DUNGEON_ITERATION_FRAME", state.frame_ctr_dbg);
     for _ in 0..200_000 {
+        if run.pc() == 0x00d4ed && run.stack_return_address() == 0x0987a3
+            && !matches!(run.accumulator() as u8, 6 | 0x18) {
+            state.native_item_graphics_entry = Some(native_item_graphics::NativeItemGraphicsEntry {
+                context: run.native_callee_context(), timeline: budget.retained_native_timeline(),
+                hdma: run.native_callee_hdma(),
+                saved_link_x: None,
+            });
+            return;
+        }
         if run.is_complete() {
             let host = state.frame_ctr_dbg + 1 + u32::from(nmi_is_trailing);
             state.native_main_wait_cpu_phase =
@@ -2723,6 +2740,12 @@ fn dungeon_main_loop_cpu_phase(state: &mut ZeldaState, input: u16, nmi_is_traili
             return;
         }
         let (v, h) = budget.raster_position().coordinates();
+        if trace {
+            eprintln!("native-dungeon-iteration host={} cpu_host={} field={} pc={:06x} v={v} h={h} a={:04x} x={:04x} y={:04x} sp={:04x}",
+                state.frame_ctr_dbg, state.frame_ctr_dbg + u32::from(nmi_is_trailing),
+                budget.field_index(), run.pc(), run.accumulator(), run.index_x(),
+                run.index_y(), run.stack_pointer());
+        }
         run.set_raster_position(v, h);
         if advance_rom_cpu_step(&mut run, &mut budget).reached_boundary().is_some() {
             return;
@@ -2812,9 +2835,13 @@ fn debug_overworld_cpu_pc_matches(pc: u32) -> bool {
 }
 
 fn overworld_main_loop_packing_interruption(state: &mut ZeldaState, input: u16, nmi_is_trailing: bool) -> (Option<SpritePreparationProgress>, Option<HudUpdateInterruption>) {
+    let (run, budget) = native_main_loop_cpu_run(state, input, nmi_is_trailing);
+    overworld_packing_from_run(state, nmi_is_trailing, run, budget)
+}
+
+fn overworld_packing_from_run(state: &mut ZeldaState, nmi_is_trailing: bool, mut run: RomCpuTimingRun, mut budget: CpuCycleBudget) -> (Option<SpritePreparationProgress>, Option<HudUpdateInterruption>) {
     const SPRITE_MAIN_ENTRY_PC: u32 = 0x06_8328;
     const SPRITE_SLOT_RETURN_PC: u32 = 0x06_83a7;
-    let (mut run, mut budget) = native_main_loop_cpu_run(state, input, nmi_is_trailing);
     let trace_iteration = debug_overworld_cpu_iteration_host_matches(state.frame_ctr_dbg);
     if trace_iteration {
         // `$1A` names the iteration this measurement covers, independent of
@@ -3473,6 +3500,12 @@ fn dungeon_exit_spotlight_cpu_plan_at(
                 module_ended_after_second_nmi = true;
             }
             if module_ended_after_second_nmi && run.pc() == 0x00_8051 {
+                if successor_entry.is_none()
+                    && crate::debug_env::var_os("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some()
+                {
+                    eprintln!("[SPOTLIGHT-SUCCESSOR] host={} entry={entry:?} field={} raster={:?}",
+                        state.frame_ctr_dbg, budget.field_index(), budget.raster_position());
+                }
                 successor_entry.get_or_insert(budget.raster_position());
             }
         }
@@ -7872,9 +7905,13 @@ fn dungeon_module_7_cpu_timing(
     // even though `entry` is a post-NMI raster position. Advance an isolated
     // ROM shadow through the real handler first; its mutations affect only
     // the timing run, while the translated engine remains the state owner.
-    let field_timing = CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0);
-    let mut leading_nmi_budget =
-        CpuCycleBudget::at_nmi_acceptance(CpuBusWorkload::with_dynamic_hdma(), field_timing);
+    // A host starts in the preceding physical field's vblank. Preserve
+    // that field, including its short line and WRAM refresh phase, through
+    // the leading handler and the module's interrupted caller.
+    let mut leading_nmi_budget = CpuCycleBudget::at_nmi_acceptance_in_field(
+        native_cpu_field_index_at_entry(state.frame_ctr_dbg, CpuRasterPosition::new(225, 12)),
+        CpuBusWorkload::with_dynamic_hdma(),
+    );
     advance_rom_cpu_through_nmi(&mut run, &mut leading_nmi_budget);
     while run.pc() != checkpoint.entry_pc {
         let (scanline, master_cycle) = leading_nmi_budget.raster_position().coordinates();
@@ -7891,10 +7928,10 @@ fn dungeon_module_7_cpu_timing(
         trace_dungeon_cpu_checkpoint(state, &run, &leading_nmi_budget);
     }
     let mut budget = dispatcher_entry.map_or(leading_nmi_budget, |entry| {
-        CpuCycleBudget::until_next_nmi_acceptance(
+        CpuCycleBudget::until_next_nmi_acceptance_in_field(
+            native_cpu_field_index_at_entry(state.frame_ctr_dbg, entry),
             entry,
             CpuBusWorkload::with_dynamic_hdma(),
-            field_timing,
         )
     });
     const SUBMODULE_DISPATCH_PC: u32 = 0x02_87ac;
@@ -8525,6 +8562,7 @@ fn begin_dungeon_module_cpu_timing_after_leading_nmi(
 ) -> Option<DungeonModuleCpuTiming> {
     let frame = state.game_state.frame;
     (state.rom_startup_timing()
+        && !state.retained_native_cpu_owns_clock()
         && frame.main_module == 7
         && ((frame.submodule == 2 && matches!(frame.subsubmodule, 4..=7))
             || frame.submodule == 0x0f))
@@ -9204,10 +9242,15 @@ use game_execution_scheduler::*;
 mod hud;
 #[path = "load_gfx.rs"]
 mod load_gfx;
+#[cfg(test)]
+pub(crate) use load_gfx::native_animated_item_table_byte;
 #[path = "messaging.rs"]
 mod messaging;
 #[path = "misc.rs"]
 mod misc;
+#[cfg(test)]
+pub(crate) use misc::native_item_receipt_table_byte;
+pub(crate) use misc::link_dma_data_byte;
 #[path = "nmi.rs"]
 mod nmi;
 #[path = "overlord.rs"]
@@ -10375,6 +10418,8 @@ pub struct ZeldaState {
     /// A suspended native Text_Initialize and its unretired caller suffix.
     #[serde(skip)]
     pub(crate) dialogue_initialization_caller: Option<messaging::DialogueInitializationCallerWork>,
+    #[serde(skip)]
+    pub(crate) clocked_dialogue_initialization_caller: Option<messaging::ClockedDialogueInitializationCaller>,
     /// Speed-0 glyph restarts of the current `RenderText_Draw_MessageCharacters`
     /// call whose `$0E:C9F5` exit block the ROM still owes: each `JMP $C984`
     /// leaves the `JSR HandleNext` return on the stack, and the final `RTS`
@@ -10388,6 +10433,12 @@ pub struct ZeldaState {
     /// CPU paired sidecar retains it across a held-scroll host boundary.
     #[serde(skip)]
     pub(crate) native_scroll_copy_cursor: Option<messaging::NativeScrollCopyCursor>,
+    #[serde(skip)]
+    pub(super) native_scroll_copy_clock: Option<messaging::NativeScrollCopyClock>,
+    #[serde(skip)]
+    pub(super) native_vwf_glyph_clock: Option<messaging::NativeVwfGlyphClock>,
+    #[serde(skip)]
+    pub(super) clocked_dialogue_return_caller: Option<messaging::ClockedDialogueReturnCaller>,
     /// The display mask saved by the early dungeon-map configuration while
     /// its `InitializeTilesets` CPU work is held across NMI boundaries.
     #[serde(skip)]
@@ -10616,10 +10667,14 @@ pub struct ZeldaState {
     /// checkpoints do not reconstruct this hardware history.
     #[serde(skip)]
     pub(crate) native_startup_cpu: Option<crate::spc_driver_clock::NativeBootstrapCpu>,
+    #[serde(skip)]
+    native_closing_entry_display_ppu: Option<(u32, Box<PpuState>)>,
     /// Independent bus state stays accessible while a native caller owns
     /// the CPU continuation outside ZeldaState during NMI or DMA.
     #[serde(skip)]
     pub(crate) native_ppu: Option<crate::cycle_models::native_ppu::NativePpuState>,
+    #[serde(skip)]
+    pub(crate) native_cpu_math: crate::cycle_models::native_cpu_math::NativeCpuMath,
     #[serde(skip)]
     intro_memory_darken_frame_delay: u8,
     save_quit_reset_hold: bool,
@@ -10659,6 +10714,50 @@ pub struct ZeldaState {
     active_spiral_aux_graphics: Option<dungeon::AuxGraphicsPublication>,
     #[serde(skip)]
     early_ground_item_receipt_tail: Option<ItemReceiptReturn>,
+    #[serde(skip)]
+    early_ground_link_receive_item_tail: Option<u8>,
+    #[serde(skip)]
+    early_ground_y_item_tail: Option<crate::cycle_models::ground_y_item_prefix::GroundYItemTail>,
+    #[serde(skip)]
+    early_ground_sword_cape_tail: Option<crate::cycle_models::ground_sword_cape_return::GroundSwordCapeTail>,
+    #[serde(skip)]
+    early_ground_movement_tail: Option<crate::cycle_models::ground_movement_prefix::GroundMovementTail>,
+    #[serde(skip)]
+    early_diagonal_collision_tail: Option<crate::cycle_models::diagonal_collision_prefix::DiagonalCollisionTail>,
+    #[serde(skip)]
+    early_vertical_slope_probe: bool,
+    #[serde(skip)]
+    early_ground_velocity_tail: Option<crate::cycle_models::ground_velocity::GroundVelocityTail>,
+    #[serde(skip)]
+    early_cardinal_collision_tail: Option<crate::cycle_models::cardinal_collision_prefix::CardinalCollisionTail>,
+    #[serde(skip)]
+    early_vertical_cardinal_probe: Option<crate::cycle_models::vertical_cardinal_probe::VerticalCardinalHandoff>,
+    #[serde(skip)]
+    early_vertical_response_tail: Option<crate::cycle_models::vertical_collision_response::VerticalResponseTail>,
+    #[serde(skip)]
+    early_vertical_surface_tail: Option<crate::cycle_models::vertical_surface_response::VerticalSurfaceTail>,
+    #[serde(skip)]
+    early_main_tile_probe: Option<crate::cycle_models::main_tile_probe::MainTileHandoff>,
+    #[serde(skip)]
+    early_main_tile_response: Option<crate::cycle_models::main_tile_response::MainTileResponseTail>,
+    #[serde(skip)]
+    early_ground_animation_return: bool,
+    #[serde(skip)]
+    early_ground_camera_tail: Option<crate::cycle_models::ground_camera_return::GroundCameraTail>,
+    #[serde(skip)]
+    early_player_ancilla_tail: Option<crate::cycle_models::player_ancilla_return::PlayerAncillaTail>,
+    #[serde(skip)]
+    early_dungeon_push_caller_tail: Option<crate::cycle_models::dungeon_push_caller_return::PushCallerTail>,
+    #[serde(skip)]
+    early_dungeon_sprite_prefix_tail: Option<crate::cycle_models::dungeon_sprite_prefix::SpritePrefixTail>,
+    #[serde(skip)]
+    native_sprite_timer_handoff: Option<(u8,u8,crate::cycle_models::sprite_timers::SpriteTimersTail)>,
+    #[serde(skip)]
+    early_dungeon_after_push_tail: Option<crate::cycle_models::dungeon_after_push::DungeonAfterPushTail>,
+    #[serde(skip)]
+    early_tile_classifier_tail: Option<crate::cycle_models::tile_classifier::TileClassifierTail>,
+    #[serde(skip)]
+    early_high_tile_classifier_tail: Option<crate::cycle_models::tile_classifier::TileClassifierTail>,
     /// Native loader publications in source order. A later allocation may
     /// reuse a slot before the scan returns, so the final array is insufficient.
     #[serde(skip)]
@@ -10892,6 +10991,14 @@ pub struct ZeldaState {
     native_overworld_packing_progress: Option<SpritePreparationProgress>,
     #[serde(skip)]
     native_main_wait_cpu_phase: Option<NativeMainWaitCpuPhase>,
+    #[serde(skip)]
+    native_item_graphics_entry: Option<native_item_graphics::NativeItemGraphicsEntry>,
+    #[serde(skip)]
+    native_overworld_exit_entry: Option<native_overworld_exit::NativeOverworldExitEntry>,
+    #[serde(skip)]
+    native_item_graphics_owner: Option<native_item_graphics::NativeItemGraphicsOwner>,
+    #[serde(skip)]
+    native_item_graphics_return_after_nmi: bool,
     #[serde(skip)]
     native_dialogue_caller_clock: Option<messaging::NativeDialogueCallerClock>,
     /// Cold source-ordered timing owner is separate from translated WRAM and
@@ -13403,9 +13510,13 @@ impl ZeldaState {
             dialogue_vwf_dispatch_cursor: crate::cycle_models::vwf::DispatchCursor::default(),
             dialogue_character_load_progress: None,
             dialogue_initialization_caller: None,
+            clocked_dialogue_initialization_caller: None,
             dialogue_vwf_deferred_handler_exits: 0,
             dialogue_scroll_remaining_master_cycles: None,
             native_scroll_copy_cursor: None,
+            native_scroll_copy_clock: None,
+            native_vwf_glyph_clock: None,
+            clocked_dialogue_return_caller: None,
             dungeon_map_graphics_saved_hdma_enable: None,
             dungeon_map_recovery_saved_hdma_enable: None,
             silent_ledger_calls_at_nmi_acceptance: 0,
@@ -13465,7 +13576,9 @@ impl ZeldaState {
             intro_initialization_reset_obj_control_pending: false,
             rom_reset_frame_delay: 0,
             native_startup_cpu: None,
+            native_closing_entry_display_ppu: None,
             native_ppu: None,
+            native_cpu_math: crate::cycle_models::native_cpu_math::NativeCpuMath::snes9x_reset(),
             intro_memory_darken_frame_delay: 0,
             save_quit_reset_hold: false,
             save_quit_reset_state_published: false,
@@ -13483,6 +13596,28 @@ impl ZeldaState {
             active_early_dungeon_room_upload: None,
             active_spiral_aux_graphics: None,
             early_ground_item_receipt_tail: None,
+            early_ground_link_receive_item_tail: None,
+            early_ground_y_item_tail: None,
+            early_ground_sword_cape_tail: None,
+            early_ground_movement_tail: None,
+            early_diagonal_collision_tail: None,
+            early_vertical_slope_probe: false,
+            early_ground_velocity_tail: None,
+            early_cardinal_collision_tail: None,
+            early_vertical_cardinal_probe: None,
+            early_vertical_response_tail: None,
+            early_vertical_surface_tail: None,
+            early_main_tile_probe: None,
+            early_main_tile_response: None,
+            early_ground_animation_return: false,
+            early_ground_camera_tail: None,
+            early_player_ancilla_tail: None,
+            early_dungeon_push_caller_tail: None,
+            early_dungeon_sprite_prefix_tail: None,
+            native_sprite_timer_handoff:None,
+            early_dungeon_after_push_tail: None,
+            early_tile_classifier_tail: None,
+            early_high_tile_classifier_tail: None,
             pending_overworld_sprite_activations: None,
             overworld_proximity_scan_saved_scroll: None,
             intro_poly_thread_initialization_phase: 0,
@@ -13548,6 +13683,10 @@ impl ZeldaState {
             pending_main_loop_common_suffix: None,
             native_overworld_packing_progress: None,
             native_main_wait_cpu_phase: None,
+            native_item_graphics_entry: None,
+            native_overworld_exit_entry: None,
+            native_item_graphics_owner: None,
+            native_item_graphics_return_after_nmi: false,
             native_dialogue_caller_clock: None,
             native_exact_cpu_owner: None,
             native_exact_cpu_host_trace: None,
@@ -13710,9 +13849,12 @@ impl ZeldaState {
     }
 
     pub fn zelda_reset(&mut self, preserve_sram: bool) {
+        self.native_cpu_math = crate::cycle_models::native_cpu_math::NativeCpuMath::snes9x_reset();
         self.native_startup_cpu = None;
+        self.native_closing_entry_display_ppu = None;
         self.native_ppu = None;
         self.dialogue_initialization_caller = None;
+        self.clocked_dialogue_initialization_caller = None;
         self.frame_ctr_dbg = 0;
         self.original_timing_owner = if self.rom_startup_timing {
             OriginalTimingOwnerState::PendingColdStart
@@ -13778,11 +13920,34 @@ impl ZeldaState {
         self.active_early_dungeon_room_upload = None;
         self.active_spiral_aux_graphics = None;
         self.early_ground_item_receipt_tail = None;
+        self.early_ground_link_receive_item_tail = None;
+        self.early_ground_y_item_tail = None;
+        self.early_ground_sword_cape_tail = None;
+        self.early_ground_movement_tail = None;
+        self.early_diagonal_collision_tail = None;
+        self.early_vertical_slope_probe = false;
+        self.early_ground_velocity_tail = None;
+        self.early_cardinal_collision_tail = None;
+        self.early_vertical_cardinal_probe = None;
+        self.early_vertical_response_tail = None;
+        self.early_vertical_surface_tail = None;
+        self.early_main_tile_probe = None;
+        self.early_main_tile_response = None;
+        self.early_ground_animation_return = false;
+        self.early_ground_camera_tail = None;
+        self.early_player_ancilla_tail = None;
+        self.early_dungeon_push_caller_tail = None;
+        self.early_dungeon_sprite_prefix_tail = None;
+        self.native_sprite_timer_handoff=None;
+        self.early_dungeon_after_push_tail = None;
+        self.early_tile_classifier_tail = None;
+        self.early_high_tile_classifier_tail = None;
         self.dungeon_submodule_cpu_schedule = None;
         self.pending_map_force_blank_output_scanline = None;
         self.active_native_spotlight_field_scanout = None;
         self.native_bg3_scroll_scanout = None;
         self.native_main_force_blank_ppu = None;
+        self.native_closing_entry_display_ppu = None;
         self.native_dialogue_fresh_cpu_entry = None;
         self.pending_dungeon_map_room_drawing_nmi_slices = None;
         self.dungeon_map_recovery_saved_hdma_enable = None;
@@ -13803,7 +13968,13 @@ impl ZeldaState {
         self.pending_main_loop_common_suffix = None;
         self.native_overworld_packing_progress = None;
         self.native_main_wait_cpu_phase = None;
+        self.native_item_graphics_entry = None;
+        self.native_overworld_exit_entry = None;
+        self.native_item_graphics_owner = None;
+        self.native_item_graphics_return_after_nmi = false;
         self.native_dialogue_caller_clock = None;
+        self.native_vwf_glyph_clock = None;
+        self.clocked_dialogue_return_caller = None;
         self.native_exact_cpu_owner = None;
         self.native_exact_cpu_host_trace = None;
         self.native_exact_cpu_overworld_scan_trial = None;
@@ -13897,7 +14068,9 @@ impl ZeldaState {
             self.native_startup_cpu = None;
             self.native_ppu = None;
             self.native_main_force_blank_ppu = None;
+            self.native_closing_entry_display_ppu = None;
             self.dialogue_initialization_caller = None;
+            self.clocked_dialogue_initialization_caller = None;
             if self.frame_ctr_dbg != 0 {
                 self.original_timing_cold_start_eligible = false;
             }
@@ -13943,7 +14116,13 @@ impl ZeldaState {
             self.native_overworld_song_upload = None;
             self.native_overworld_packing_progress = None;
             self.native_main_wait_cpu_phase = None;
+            self.native_item_graphics_entry = None;
+            self.native_overworld_exit_entry = None;
+            self.native_item_graphics_owner = None;
+            self.native_item_graphics_return_after_nmi = false;
             self.native_dialogue_caller_clock = None;
+        self.native_vwf_glyph_clock = None;
+        self.clocked_dialogue_return_caller = None;
             self.native_exact_cpu_owner = None;
             self.native_exact_cpu_host_trace = None;
             self.native_exact_cpu_overworld_scan_trial = None;
@@ -14889,6 +15068,41 @@ impl ZeldaState {
         self.assert_native_display_state_matches_ram();
     }
 
+    fn adopt_spotlight_main_wait_context(&mut self) {
+        let closing=self.game_state.frame.main_module==15 && self.game_state.world.location.is_indoors();
+        let opening=self.game_state.frame.main_module==16;
+        if !(closing || opening) || self.game_state.frame.submodule > 1
+            || !self.game_execution_scheduler.is_idle()
+            || self.native_startup_cpu.as_ref().is_none_or(|cpu| cpu.startup.owns_cpu_clock())
+            || self.native_ppu.is_none()
+            || !self.native_main_wait_cpu_phase.as_ref().is_some_and(|phase| phase.host == self.frame_ctr_dbg) {
+            return;
+        }
+        if closing && self.game_state.frame.submodule == 0 {
+            // The entry's staged image precedes the leading NMI's uploads.
+            // The retained CPU owns those uploads now, but they cannot
+            // retroactively replace the graphics of the entry field.
+            self.native_closing_entry_display_ppu = Some((self.frame_ctr_dbg, Box::new(self.ppu.clone())));
+        }
+        let phase = self.native_main_wait_cpu_phase.take().unwrap();
+        let c = phase.checkpoint;
+        assert!(!c.emulation && !c.waiting && c.accumulator_is_8_bit && c.index_is_8_bit);
+        let context = crate::cycle_models::nmi_stack::NativeNmiContext {
+            a: c.a, x: c.x, y: c.y, sp: c.sp, d: c.dp, db: c.db,
+            bank: (c.entry_pc >> 16) as u8, pc: c.entry_pc as u16,
+            p: u8::from(c.carry) | (u8::from(c.zero) << 1)
+                | (u8::from(c.interrupt_disable) << 2) | (u8::from(c.decimal) << 3)
+                | 0x30 | (u8::from(c.overflow) << 6) | (u8::from(c.negative) << 7),
+        };
+        let clock = phase.budget.retained_native_timeline().try_native_callee_handoff()
+            .expect("spotlight main wait retains its CPU timeline");
+        let cpu = self.native_startup_cpu.as_mut().unwrap();
+        cpu.startup = crate::cycle_models::startup::Startup::from_retained_main_wait(
+            context, &clock, u64::from(self.frame_ctr_dbg.saturating_sub(1)));
+        cpu.timeline = clock;
+        self.dma = self.dma_with_native_hdma_enable();
+    }
+
     /// None means another owner supplies startup timing; false means this
     /// hardware host ended; true means its leading NMI has completed.
     fn advance_native_startup_host(&mut self, input: u16) -> Option<bool> {
@@ -14896,6 +15110,7 @@ impl ZeldaState {
         if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
             return None;
         }
+        self.adopt_spotlight_main_wait_context();
         if self.native_intro_clear_pending() {
             self.resume_native_intro_clear_host(input);
             if self.native_intro_clear_pending() { return Some(false); }
@@ -14917,7 +15132,9 @@ impl ZeldaState {
                 return Some(false);
             }
             match cpu.startup.step(&mut cpu.timeline, &mut self.ram, &mut self.sram,
-                self.native_ppu.as_mut().expect("cold CPU retains its PPU bus owner")) {
+                self.native_ppu.as_mut().expect("cold CPU retains its PPU bus owner"),
+                |event, clock, ram, ppu| crate::cycle_models::native_hdma::wait_event(
+                    event, clock, ram, ppu, &mut self.dma, &mut self.ppu)) {
                 StartupStep::Instruction => {}
                 StartupStep::ClearWindow => self.zelda_ppu_write_word(0x212e, 0),
                 StartupStep::MemoryComplete => {
@@ -14932,6 +15149,13 @@ impl ZeldaState {
                     return Some(false);
                 }
                 StartupStep::AcceptNmi => {
+                    if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_DIALOGUE_CPU_PHASE", self.frame_ctr_dbg) {
+                        let context = cpu.startup.accepted_context();
+                        let cpu_host = cpu.timeline.field_index() + 2;
+                        eprintln!("native-main-phase-capture frame={} cpu_host={cpu_host} retained=Some(({cpu_host}, {}, {:?}))",
+                            self.frame_ctr_dbg, (u32::from(context.bank) << 16) | u32::from(context.pc),
+                            cpu.timeline.raster_position());
+                    }
                     if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                         eprintln!("native-startup-nmi host={host} clock={} raster={:?} context={:?}",
                             cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position(), cpu.startup.accepted_context());
@@ -14960,7 +15184,9 @@ impl ZeldaState {
                             cpu.startup.install_vertical_irq(programming);
                         }
                     }
-                    let wait_cycles = cpu.startup.return_from_nmi(&mut cpu.timeline, &mut context, &self.ram);
+                    let wait_cycles = cpu.startup.return_from_nmi(&mut cpu.timeline, &mut context, &self.ram,
+                        |event, clock| crate::cycle_models::native_hdma::wait_event(event, clock,
+                            &self.ram, self.native_ppu.as_mut().unwrap(), &mut self.dma, &mut self.ppu));
                     crate::cycle_ledger::charge(u64::from(wait_cycles));
                     if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                         eprintln!("native-main-caller pc={:02x}:{:04x} clock={} raster={:?} context={context:?}",
@@ -14976,6 +15202,11 @@ impl ZeldaState {
 
     fn native_intro_clear_pending(&self) -> bool {
         self.native_startup_cpu.as_ref().is_some_and(|cpu| cpu.startup.intro_clear_pending())
+    }
+
+    fn retained_native_cpu_owns_clock(&self) -> bool {
+        !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && self.native_startup_cpu.as_ref().is_some_and(|cpu| cpu.startup.owns_cpu_clock())
     }
 
     /// An IRQ can select the worker before the next NMI, rather than restore
@@ -15022,8 +15253,21 @@ impl ZeldaState {
         let file_menu=cpu.startup.file_menu_active();
         let name_file=cpu.startup.name_file_active();
         let load_file=cpu.startup.load_file_active();
+        let properties=cpu.startup.properties_active();
+        let screen_build=cpu.startup.screen_build_active();
+        let overlays=cpu.startup.overlays_active() || screen_build;
+        let overlay_streams=overlays.then(|| self.native_overworld_map_stream_data().expect("native overlay map assets"));
+        let properties_sprites=properties.then(|| self.native_overworld_sprite_data().expect("native properties sprite assets"));
+        let properties_songs=properties.then(|| self.native_song_upload_data().expect("native properties song assets"));
+        let dungeon=cpu.startup.dungeon_active();
+        let overworld=cpu.startup.overworld_active();
+        let closing=cpu.startup.closing_active() || cpu.startup.opening_active() || overworld;
+        let sprite_caller=dungeon || closing || overworld;
         let load_data=load_file.then(|| self.native_load_file_data().expect("native load-game assets"));
         let graphics_table=|address| crate::cycle_models::graphics_sources::table_byte(address)
+            .or_else(||crate::cycle_models::overworld_caller::table_byte(address))
+            .or_else(||crate::cycle_models::dungeon_module::table_byte(address))
+            .or_else(||crate::cycle_models::spotlight_caller_return::table_byte(address))
             .or_else(||load_data.as_ref().and_then(|data|data.get(&address).copied()))
             .or_else(||Self::native_load_file_table_byte(address))
             .or_else(||Self::native_load_hud_table_byte(address))
@@ -15040,6 +15284,7 @@ impl ZeldaState {
             .or_else(||crate::cycle_models::intro_sword::table_byte(address))
             .or_else(||crate::cycle_models::triforce_animation::table_byte(address))
             .or_else(||crate::cycle_models::item_graphics_caller::table_byte(address))
+            .or_else(||load_gfx::native_animated_item_table_byte(address))
             .or_else(||crate::cycle_models::follower_graphics::table_byte(address))
             .or_else(||load_gfx::native_tileset_table_byte(address));
         let mut dma=std::mem::take(&mut self.dma);
@@ -15052,7 +15297,23 @@ impl ZeldaState {
                     self.native_cpu_end_scanline_at(at);
                     return 0;
                 }
+                StartupAccess::InactiveSpriteBodies => {
+                    if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_DIALOGUE_CPU_PHASE", self.frame_ctr_dbg) {
+                        let sprite = self.game_state.sprites.sprite_slots.slot(0);
+                        eprintln!("native-closing-actors host={} module={}/{} pause={} sorting={} slot0_state={} type={:02x} e={} a={} dir={} gfx={} b={} ai={} actor_pause={} deflect={:02x}",
+                            self.frame_ctr_dbg, self.game_state.frame.main_module, self.game_state.frame.submodule,
+                            self.game_state.frame.modal_pause_flag, self.game_state.oam.sprite_sorting_setting(),
+                            sprite.state(), sprite.sprite_type(), sprite.e(), sprite.a(), sprite.direction(), sprite.graphics(),
+                            sprite.b(), sprite.ai_state(), sprite.pause(), sprite.deflection_bits());
+                    }
+                    return self.native_inactive_sprite_body_mask();
+                }
+                StartupAccess::EnterSpritePreparation => {
+                    assert_eq!(self.main_loop_caller_phase.enter_sprite_preparation(), 46);
+                    return 0;
+                }
             };
+            if let Some(value) = self.native_cpu_math.access(access) { return value; }
             match access {
                 Access::Read(address, width) => {
                     let address=if address&0x400000==0 && address&65535<0x2000 {address&65535}else{address};
@@ -15062,9 +15323,25 @@ impl ZeldaState {
                     } else if (0x7e0000..=0x7ffffe).contains(&address) {
                         if width==1 {u16::from(self.ram[address as usize-0x7e0000])}
                         else {read_le_u16(&self.ram,address as usize-0x7e0000)}
-                    } else if load_file && (0x2140..=0x2143).contains(&address) {
+                    } else if (load_file || sprite_caller || properties) && (0x2140..=0x2143).contains(&address) {
                         assert_eq!(width, 1);
                         u16::from(self.native_main_port_at(at, (address - 0x2140) as u8, None))
+                    } else if matches!(caller_owner,CallerOwner::Overlays|CallerOwner::ScreenBuild) && address & 0x8000 != 0 && address < 0x7e0000 {
+                        let read = |a| crate::cycle_models::overworld_properties_caller::table_byte(a & 0x7fffff)
+                            .or_else(|| self.native_map32_definition_byte(a))
+                            .or_else(|| self.native_overlay_map8_byte(a))
+                            .or_else(|| self.native_overworld_screen_build_byte(a))
+                            .or_else(|| overlay_streams.as_ref().unwrap().get(&(a & 0x7fffff)).copied())
+                            .unwrap_or_else(|| panic!("unowned overlay data {a:06x}"));
+                        if width == 1 { u16::from(read(address)) }
+                        else { u16::from_le_bytes([read(address),read(address+1)]) }
+                    } else if properties && self.native_properties_data_byte(address,
+                        properties_sprites.as_ref().unwrap(), properties_songs.as_ref().unwrap()).is_some() {
+                        let read = |a| self.native_properties_data_byte(a,
+                            properties_sprites.as_ref().unwrap(), properties_songs.as_ref().unwrap())
+                            .unwrap_or_else(|| panic!("unowned properties data {a:06x}"));
+                        if width == 1 { u16::from(read(address)) }
+                        else { u16::from_le_bytes([read(address), read(address + 1)]) }
                     } else if graphics && (0x700000..0x702000).contains(&address) {
                         let i=(address-0x700000) as usize;
                         if width==1 {u16::from(self.sram[i])} else {read_le_u16(&self.sram,i)}
@@ -15072,15 +15349,20 @@ impl ZeldaState {
                         let read=graphics_table;
                         if width==1 {u16::from(read(address).unwrap())}
                         else {u16::from_le_bytes([read(address).unwrap(),read(address+1).unwrap()])}
+                    } else if overworld && self.native_overworld_exit_table_byte(address).is_some() {
+                        let low = self.native_overworld_exit_table_byte(address).unwrap();
+                        if width == 1 { u16::from(low) } else {
+                            u16::from_le_bytes([low, self.native_overworld_exit_table_byte(address + 1).unwrap()])
+                        }
+                    } else if closing && self.native_dungeon_entrance_table_byte(address).is_some() {
+                        let low = self.native_dungeon_entrance_table_byte(address).unwrap();
+                        if width == 1 { u16::from(low) } else {
+                            u16::from_le_bytes([low, self.native_dungeon_entrance_table_byte(address + 1).unwrap()])
+                        }
                     } else if graphics && (0x108000..0x198000).contains(&address) {
                         let read=|address:u32| {
-                            let offset=|a:u32| ((a>>16)&127)*0x8000+(a&0x7fff);
-                            for &(sprite,sheet,start) in crate::cycle_models::graphics_sources::SOURCES {
-                                let Some(at)=offset(address).checked_sub(offset(start)) else {continue};
-                                let Some(data)=self.asset_bytes(if sprite {64}else{65},sheet) else {continue};
-                                if let Some(&value)=data.get(at as usize) {return value;}
-                            }
-                            panic!("unmapped native graphics source byte {address:06x}");
+                            self.native_graphics_asset_byte(address)
+                                .unwrap_or_else(||panic!("unmapped native graphics source byte {address:06x}"))
                         };
                         if width==1 {u16::from(read(address))}else{u16::from_le_bytes([read(address),read(address+1)])}
                     } else if graphics && (0x03e800..0x040000).contains(&address) {
@@ -15116,7 +15398,7 @@ impl ZeldaState {
                         };
                         if width==1 {u16::from(read(address))} else {u16::from_le_bytes([read(address),read(address+1)])}
                     } else {
-                        assert_eq!(width, 2);
+                        assert_eq!(width, 2, "unmapped native caller read {address:06x}");
                         let low = misc::link_dma_data_byte(address)
                             .unwrap_or_else(|| panic!("unmapped native caller data {address:06x} width={width}"));
                         let high = misc::link_dma_data_byte(address + 1)
@@ -15126,7 +15408,58 @@ impl ZeldaState {
                 }
                 Access::Write(address, value, width) => {
                     let address=if address&0x400000==0 && address&65535<0x2000 {address&65535}else{address};
+                    if caller_owner == CallerOwner::ScreenBuild {
+                        self.native_overworld_screen_build_store(address,value,width)
+                            .unwrap_or_else(|offset|panic!("unowned native screen build store {offset:05x}"));
+                        return 0;
+                    }
+                    if caller_owner == CallerOwner::Overlays {
+                        self.native_overworld_overlays_store(address,value,width)
+                            .unwrap_or_else(|offset| panic!("unowned production overlay store {offset:05x}"));
+                        return 0;
+                    }
+                    if let CallerOwner::Properties(child) = caller_owner {
+                        match address {
+                            0x2140..=0x2143 => {
+                                assert_eq!(width, 1);
+                                self.native_main_port_at(at, (address - 0x2140) as u8, Some(value as u8));
+                            }
+                            0x4200 | 0x420c => { assert_eq!(width, 1); }
+                            _ => self.native_overworld_properties_store(child, address, value, width)
+                                .unwrap_or_else(|offset| panic!("unowned production properties store {offset:05x}, child={child:?}")),
+                        }
+                        return 0;
+                    }
                     match address {
+                        0x494 if overworld => {
+                            assert_eq!(width, 1);
+                            self.world_transient_mut().set_move_overlay_ctr(value as u8);
+                        }
+                        0xe1 | 0xe7 if overworld => {
+                            assert_eq!(width, 1);
+                            let word = (read_le_u16(&self.ram, address as usize - 1) & 255) | (value << 8);
+                            if address == 0xe1 { self.set_bg1_x(word); } else { self.set_bg1_y(word); }
+                        }
+                        _ if overworld && matches!(address, 0x20 | 0x26 | 0x2b | 0x2d..=0x30 | 0x67 | 0x84 | 0x86 | 0x88 | 0x416 | 0x418 | 0x500..=0x53e | 0x618..=0x62a | 0x69a | 0x69e | 0x69f | 0x1100..=0x13ff) => {
+                            self.ram[address as usize..address as usize + usize::from(width)]
+                                .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                            self.native_overworld_exit_store(address as usize, value, width);
+                        }
+                        _ if sprite_caller && (0x7fef80..0x7ff180).contains(&address) => {
+                            for byte in 0..usize::from(width) {
+                                let offset=(address-0x7e0000) as usize+byte;
+                                let v=(value>>(byte*8)) as u8;
+                                assert!(self.game_state.sprites.write_reset_suffix_byte(offset,v));
+                                self.ram[offset]=v;
+                            }
+                        }
+                        _ if closing && self.native_closing_caller_store(address, value, width) => {}
+                        _ if sprite_caller && self.native_dungeon_spotlight_store(address, value, width) => {}
+                        _ if sprite_caller && self.native_player_drawing_store(address, value, width) => {}
+                        _ if sprite_caller && (!matches!(address, 0xae8 | 0xaea) || width == 1)
+                            && self.native_sprite_main_store(address, value, width) => {}
+                        _ if sprite_caller && self.game_state.sprites.ancilla_slots
+                            .write_instruction_store(&mut self.ram,address as usize,value,width) => {}
                         _ if caller_owner == CallerOwner::DungeonEntrance && self.native_dungeon_entrance_store(address, value, width) => {}
                         _ if caller_owner == CallerOwner::OpeningPlayer && self.native_opening_player_store(address, value, width) => {}
                         _ if caller_owner == CallerOwner::OpeningPlayer && !matches!(address, 0xe | 0x100..=0x1ff) => {
@@ -15193,7 +15526,7 @@ impl ZeldaState {
                             panic!("unowned shared object tile store {address:06x}");
                         }
                         _ if caller_owner == CallerOwner::LoadFileParent && self.native_load_file_parent_store(address, value, width) => {}
-                        _ if load_file && self.native_load_hud_store(address, value, width) => {}
+                        _ if (load_file || sprite_caller) && self.native_load_hud_store(address, value, width) => {}
                         _ if load_file && self.native_load_player_initialization_store(address as usize, value, width) => {}
                         0x200 if load_file => {assert_eq!(width,1);self.set_overworld_map_state(value as u8);}
                         0x3f4 if load_file => {assert_eq!((width,value),(1,0));self.dungeon_environment_mut().clear_somaria_block_bg_check_flag();}
@@ -15202,10 +15535,12 @@ impl ZeldaState {
                         0x2f9 if load_file => {assert_eq!(width,1);self.follower_state_mut().set_appearance_none_flag(value as u8);}
                         0x379 if load_file => {assert_eq!((width,value),(1,0));self.follower_link_state_mut().clear_player_pose_draw_counter();}
                         0x3fd if load_file => {assert_eq!(width,1);self.follower_link_state_mut().set_player_special_draw_flag(value as u8);}
-                        0x2cd | 0x2ce if load_file => {
-                            assert_eq!(width,1);
+                        0x2cd | 0x2ce if load_file || sprite_caller => {
+                            assert!(matches!(width, 1 | 2));
                             let old = read_le_u16(&self.ram, crate::game_state::constants::SHARED_MESSAGE_TIMER);
-                            self.start_shared_message_timer(if address == 0x2cd {(old & 0xff00) | value} else {(old & 255) | (value << 8)});
+                            let timer = if width == 2 { assert_eq!(address, 0x2cd); value }
+                                else if address == 0x2cd {(old & 0xff00) | value} else {(old & 255) | (value << 8)};
+                            self.start_shared_message_timer(timer);
                         }
                         0x700000..=0x701ffe if graphics => {
                             let i=(address-0x700000) as usize;
@@ -15301,6 +15636,54 @@ impl ZeldaState {
                                 self.game_state.ending.credits.palace_death_count_digit_step=read_le_u16(&self.ram,crate::game_state::constants::ENDING_WHICH_DUNG);
                             }
                         }
+                        0x42c if dungeon => {
+                            let word = if width == 1 {
+                                (self.game_state.dungeon.object_tracking.misc_object_index() & 0xff00) | (value & 255)
+                            } else { assert_eq!(width, 2); value };
+                            self.dungeon_object_tracking_mut().set_misc_object_index(word);
+                        }
+                        0xc86..=0xc8f if dungeon => {
+                            assert_eq!(width, 1);
+                            self.ancilla_slot_view_mut((address - 0xc86) as usize).set_oam_index(value as u8);
+                        }
+                        0xc68..=0xc71 if dungeon => {
+                            assert_eq!(width, 1);
+                            self.ancilla_slot_view_mut((address - 0xc68) as usize).set_timer(value as u8);
+                        }
+                        0x4b8 if dungeon => {
+                            assert_eq!(width, 2);
+                            self.dungeon_doors_mut().set_door_open_counter(value);
+                        }
+                        0x4c7 if dungeon => {
+                            assert_eq!((width,value),(1,0));
+                            self.dungeon_room_runtime_mut().clear_room_tag_skip();
+                        }
+                        0x618 | 0x61a | 0x61c | 0x61e | 0x620 | 0x622 if dungeon => {
+                            assert_eq!(width, 2);
+                            match address {
+                                0x618 => self.set_camera_y_coord_scroll_low(value),
+                                0x61a => self.set_camera_y_coord_scroll_hi(value),
+                                0x61c => self.set_camera_x_coord_scroll_low(value),
+                                0x61e => self.set_camera_x_coord_scroll_hi(value),
+                                0x620 => self.set_bg1_h_subpixel(value),
+                                0x622 => self.set_bg1_v_subpixel(value),
+                                _ => unreachable!(),
+                            }
+                        }
+                        0xe0 | 0xe2 | 0xe6 | 0xe8 | 0x11e | 0x120 | 0x122 | 0x124 if dungeon || overworld => {
+                            assert_eq!(width, 2);
+                            match address {
+                                0xe0 => self.set_bg1_x(value),
+                                0xe2 => self.set_bg2_x(value),
+                                0xe6 => self.set_bg1_y(value),
+                                0xe8 => self.set_bg2_y(value),
+                                0x11e => self.set_bg2_h_copy(value),
+                                0x120 => self.set_bg1_h_copy(value),
+                                0x122 => self.set_bg2_v_copy(value),
+                                0x124 => self.set_bg1_v_copy(value),
+                                _ => unreachable!(),
+                            }
+                        }
                         0x1c if graphics => {assert_eq!(width,1);self.set_main_screen_layers(value as u8);}
                         0x1d if graphics => {assert_eq!(width,1);self.set_sub_screen_layers(value as u8);}
                         0x99 if graphics => {assert_eq!(width,1);self.set_color_window_selection(value as u8);}
@@ -15317,7 +15700,13 @@ impl ZeldaState {
                                     2=>oam.set_entry_char(entry,value),3=>oam.set_entry_flags(entry,value),_=>unreachable!()}
                             }
                         }
-                        0xa20..=0xa9f if graphics => {assert_eq!(width,1);self.oam_state_mut().set_extended_byte((address-0xa20) as usize,value as u8);}
+                        0xa20..=0xa9f if graphics => {
+                            assert!(address + u32::from(width) <= 0xaa0);
+                            for byte in 0..usize::from(width) {
+                                self.oam_state_mut().set_extended_byte((address-0xa20) as usize + byte,
+                                    (value >> (byte * 8)) as u8);
+                            }
+                        }
                         0xff if graphics => {assert_eq!(width,1);self.set_vertical_irq_trigger(value as u8);}
                         0x15 if graphics => {
                             assert_eq!(width,1);self.increment_cgram_update_flag();
@@ -15493,6 +15882,11 @@ impl ZeldaState {
         self.dma=dma;
         let returned = match boundary {
             IntroClearBoundary::AcceptNmi(mut context) => {
+                if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_DIALOGUE_CPU_PHASE",self.frame_ctr_dbg) {
+                    let cpu_host=cpu.timeline.field_index()+2;
+                    eprintln!("native-main-phase-capture frame={} cpu_host={cpu_host} retained=Some(({cpu_host}, {}, {:?}))",
+                        self.frame_ctr_dbg,(u32::from(context.bank)<<16)|u32::from(context.pc),cpu.timeline.raster_position());
+                }
                 if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                     eprintln!("native-intro-clear-nmi clock={} raster={:?} context={context:?}",
                         cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());
@@ -15626,10 +16020,70 @@ impl ZeldaState {
         }
     }
 
+    fn try_native_screen_build_entry(&mut self)->bool {
+        if (self.game_state.frame.main_module,self.game_state.frame.submodule)!=(8,2) {return false;}
+        let Some(context)=self.native_startup_cpu.as_ref().and_then(|cpu|cpu.startup.entered_module_context()) else {return false;};
+        self.native_startup_cpu.as_mut().unwrap().startup.enter_screen_build(context);
+        true
+    }
+
+    fn try_native_overlays_entry(&mut self) -> bool {
+        if (self.game_state.frame.main_module, self.game_state.frame.submodule) != (8, 1) {return false;}
+        let Some(context) = self.native_startup_cpu.as_ref()
+            .and_then(|cpu| cpu.startup.entered_module_context()) else {return false;};
+        self.native_startup_cpu.as_mut().unwrap().startup.enter_overlays(context);
+        true
+    }
+
+    fn try_native_properties_entry(&mut self) -> bool {
+        if (self.game_state.frame.main_module, self.game_state.frame.submodule) != (8, 0) {
+            return false;
+        }
+        let Some(context) = self.native_startup_cpu.as_ref()
+            .and_then(|cpu| cpu.startup.entered_module_context()) else { return false; };
+        self.native_startup_cpu.as_mut().unwrap().startup.enter_properties(context);
+        true
+    }
+
     fn try_native_load_file_entry(&mut self) -> bool {
         let Some(context) = self.native_startup_cpu.as_ref()
             .and_then(|cpu| cpu.startup.entered_module_context()) else { return false; };
         self.native_startup_cpu.as_mut().unwrap().startup.enter_load_file(context);
+        true
+    }
+
+    fn try_native_dungeon_entry(&mut self) -> bool {
+        let Some(context) = self.native_startup_cpu.as_ref()
+            .and_then(|cpu| cpu.startup.entered_module_context()) else { return false; };
+        self.native_startup_cpu.as_mut().unwrap().startup.enter_dungeon(context);
+        true
+    }
+
+    fn try_native_overworld_entry(&mut self) -> bool {
+        if !matches!(self.game_state.frame.submodule, 10 | 11) { return false; }
+        let Some(context) = self.native_startup_cpu.as_ref()
+            .and_then(|cpu| cpu.startup.entered_module_context()) else { return false; };
+        self.native_startup_cpu.as_mut().unwrap().startup.enter_overworld(context);
+        true
+    }
+
+    fn try_native_opening_entry(&mut self)->bool {
+        if self.game_state.frame.main_module!=16 || self.game_state.frame.submodule>1 {return false;}
+        let Some(context)=self.native_startup_cpu.as_ref().and_then(|cpu|cpu.startup.entered_module_context()) else {return false;};
+        self.native_startup_cpu.as_mut().unwrap().startup.enter_opening(context);
+        true
+    }
+
+    fn try_native_closing_entry(&mut self) -> bool {
+        // Initialization and outdoor movement have explicit native child
+        // boundaries. Admit the indoor table caller from its retained main
+        // dispatch only; a raster envelope cannot supply this call frame.
+        if self.game_state.frame.submodule > 1 || !self.game_state.world.location.is_indoors() {
+            return false;
+        }
+        let Some(context) = self.native_startup_cpu.as_ref()
+            .and_then(|cpu| cpu.startup.entered_module_context()) else { return false; };
+        self.native_startup_cpu.as_mut().unwrap().startup.enter_closing(context);
         true
     }
 
@@ -15672,36 +16126,15 @@ impl ZeldaState {
     }
 
     fn try_native_startup_main_entry(&mut self) -> bool {
-        use crate::cycle_models::main_entry::{self, MainEntryAccess as Access};
+        use crate::cycle_models::main_entry;
         let Some(mut context) = self.native_startup_cpu.as_ref()
             .and_then(|cpu| cpu.startup.main_caller_context()) else { return false };
         let mut cpu = self.native_startup_cpu.take().unwrap();
-        let module = main_entry::enter_module(&mut context, &mut cpu.timeline, |_, access| {
-            match access {
-                Access::ReadByte(address) => u16::from(main_entry::module_table_byte(address)
-                    .unwrap_or_else(|| self.ram[usize::from(address)])),
-                Access::ReadWord(address) => read_word_from_slice(&self.ram, usize::from(address)),
-                Access::WriteByte(address, value) => {
-                    match address {
-                        0x1a => self.frame_state_mut().set_frame_counter(value),
-                        3..=5 => self.ram[usize::from(address)] = value,
-                        0x0801..=0x09fd => {
-                            assert_eq!(address & 3, 1); assert_eq!(value, 0xf0);
-                            self.oam_state_mut().hide_sprite_row(usize::from(address - 0x0801) / 4);
-                        }
-                        _ => {
-                            assert!(address < 0x2000, "native main stack escaped WRAM");
-                            self.ram[usize::from(address)] = value;
-                        }
-                    }
-                    0
-                }
-                Access::WriteWord(address, value) => {
-                    assert!(address < 0x1fff, "native main stack escaped WRAM");
-                    self.ram[usize::from(address)..usize::from(address)+2].copy_from_slice(&value.to_le_bytes()); 0
-                }
-            }
-        });
+        let mut hdma = snes::HdmaTimingState::new(&self.dma);
+        let module = main_entry::enter_module_with_bus(&mut context, &mut cpu.timeline,
+            native_spotlight_caller::SpotlightDeviceBus::new(native_spotlight_caller::SpotlightCallerBus {
+                state: self, hdma: &mut hdma, nmi_deadline: &mut None,
+            }));
         assert_eq!(module, self.game_state.frame.main_module);
         crate::cycle_ledger::charge_routine(0x00_8034, 14 + 22 + 38 + 46 + 62);
         crate::cycle_ledger::charge_routine(0x00_841e, Self::CLEAR_OAM_BUFFER_MASTER_CYCLES);
@@ -16122,6 +16555,11 @@ impl ZeldaState {
         // (route host 154795, the post-game-over dialogue).
         self.dialogue_fast_forward_hold_active = false;
         match continuation {
+            MainLoopCommonSuffixContinuation::ReturnedToMainWait => {
+                assert!(self.main_loop_sprite_preparation_completed);
+                assert_eq!(self.main_loop_caller_phase, crate::cycle_models::main_wait::MainLoopCallerPhase::Waiting);
+                assert_eq!(self.ram[NMI_BOOLEAN], 0);
+            }
             MainLoopCommonSuffixContinuation::ResumeSpritePreparationBytePackingAndClearNmiLatch { progress } => {
                 assert!(!self.main_loop_sprite_preparation_completed);
                 self.nmi_prepare_sprites_resume_after_progress(progress);
@@ -16178,8 +16616,36 @@ impl ZeldaState {
 
     fn finish_ground_movement_tail(&mut self, clear_vel_after: bool) {
         self.link_handle_diagonal_collision();
-        self.link_handle_velocity();
-        self.link_handle_cardinal_collision();
+        self.finish_ground_movement_after_diagonal(clear_vel_after);
+    }
+
+    fn finish_ground_movement_after_diagonal(&mut self, clear_vel_after: bool) {
+        use crate::cycle_models::ground_velocity::GroundVelocityTail;
+        match self.early_ground_velocity_tail.take() {
+            None => self.link_handle_velocity(),
+            Some(GroundVelocityTail::Complete) => {}
+            Some(GroundVelocityTail::Swim) => self.handle_swim_stroke_and_subpixels(),
+            Some(GroundVelocityTail::Subpixels { x, y }) => {
+                self.player_something_with_velocity_tired_or_swim(x, y)
+            }
+        }
+        if let Some(tail) = self.early_cardinal_collision_tail.take() {
+            self.finish_native_cardinal_collision(tail);
+        } else {
+            self.link_handle_cardinal_collision();
+        }
+        if std::mem::take(&mut self.early_ground_animation_return) {
+            use crate::cycle_models::ground_camera_return::GroundCameraTail;
+            match self.early_ground_camera_tail.take() {
+                Some(GroundCameraTail::Returned) => {
+                    if !self.game_state.world.location.is_outdoors() && self.game_state.player.follower_link.doorway_state()==0 {self.apply_links_movement_to_camera_called=true;}
+                }
+                Some(GroundCameraTail::Doors) => self.handle_door_transitions(),
+                Some(GroundCameraTail::Scroll) => self.finish_camera_after_native_page_deltas(),
+                None => self.finish_ground_movement_camera_after_pit_clear(),
+            }
+            return;
+        }
         self.link_handle_moving_animation_full_long_entry();
         if clear_vel_after {
             self.finish_ground_movement_clear_vel_tail();
@@ -16458,6 +16924,14 @@ mod rtl_dungeon;
 mod rtl_frame_lanes;
 mod rtl_nmi;
 mod rtl_native_exact_cpu;
+#[path = "zelda_rtl/native_item_graphics.rs"]
+mod native_item_graphics;
+mod native_dungeon_main_return;
+mod native_overworld_exit;
+mod native_overworld_properties;
+mod native_overworld_overlays;
+mod native_spotlight_caller;
+mod native_push_blocks;
 mod rtl_oam_compose_lanes;
 mod rtl_oam_obj;
 mod rtl_original_timing;

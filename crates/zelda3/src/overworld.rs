@@ -73,6 +73,57 @@ const OVERWORLD_DOOR_ANIM_TILES: [u16; 56] = [
 ];
 
 impl ZeldaState {
+    /// Immutable data operands used by the native dungeon-exit caller.
+    pub(crate) fn native_overworld_exit_table_byte(&self, address: u32) -> Option<u8> {
+        let address = address & 0x7f_ffff;
+        // The packaged palette table differs at this byte. CPU data reads
+        // retain the cartridge operand without changing the renderer asset.
+        if address == 0x00fd4d { return Some(0); }
+        if (0x00fda4..0x00fe1c).contains(&address) {
+            return Some(BACKGROUND_PALETTE_READ_EXTENSION[(address-0x00fda4) as usize]);
+        }
+        for (base, length, asset) in [
+            (0x02dd8a,158,131), (0x02de28,79,130), (0x02de77,158,132),
+            (0x02df15,158,134), (0x02dfb3,158,133), (0x02e051,158,136),
+            (0x02e0ef,158,135), (0x02e18d,158,138), (0x02e22b,158,137),
+            (0x02e2c9,79,141), (0x02e318,79,142), (0x02e367,158,139),
+            (0x02e405,158,140), (0x00fc9c,128,108),
+            (0x00fd1c,136,109),
+            (0x02c303,256,111), (0x02c403,96,112),
+        ] {
+            if (base..base+length).contains(&address) {
+                return self.asset_raw(asset)?.get((address-base) as usize).copied();
+            }
+        }
+        if (0x02a9c4..0x02aac4).contains(&address) {
+            return Some(SPECIAL_SCREEN_OFFSET_BYTES[(address-0x02a9c4) as usize]);
+        }
+        for (base, words) in [
+            (0x02a8c4,OVERWORLD_AREA_BASE_Y.as_slice()),
+            (0x02a944,OVERWORLD_AREA_BASE_X.as_slice()),
+            (0x02bee2,OVERWORLD_VERTICAL_SCROLL_TARGETS.as_slice()),
+            (0x02bf62,OVERWORLD_HORIZONTAL_SCROLL_TARGETS.as_slice()),
+            (0x02bfe2,OVERWORLD_AREA_HEIGHTS_BY_SIZE.as_slice()),
+            (0x02bfe6,OVERWORLD_AREA_WIDTHS_BY_SIZE.as_slice()),
+            (0x02bfea,OVERWORLD_VERTICAL_SCROLL_SPANS_BY_SIZE.as_slice()),
+            (0x02bfee,OVERWORLD_HORIZONTAL_SCROLL_SPANS_BY_SIZE.as_slice()),
+        ] {
+            if let Some(offset)=address.checked_sub(base).map(|x|x as usize) {
+                if let Some(word)=words.get(offset/2) {
+                    return Some(word.to_le_bytes()[offset%2]);
+                }
+            }
+        }
+        if address==0x00d8f4 {return Some(VARIOUS_PACKS_OVERWORLD[6]);}
+        if address==0x00d8fc {return Some(VARIOUS_PACKS_OVERWORLD[14]);}
+        for (base, big, small) in [(0x02a844,0x20,0),(0x02a884,3,1)] {
+            if (base..base+64).contains(&address) {
+                return Some(if self.asset_raw(107)?.get((address-base) as usize)? == &0 {big} else {small});
+            }
+        }
+        None
+    }
+
     pub fn parity_probe_overworld_screen(&mut self, screen: u16) -> u16 {
         self.set_indoor_flag(0);
         self.set_overworld_area_index_word(screen);
@@ -121,6 +172,10 @@ impl ZeldaState {
     }
 
     pub(super) fn PreOverworld_LoadProperties(&mut self) {
+        if self.try_native_properties_entry() {
+            self.run_native_intro_clear_until_boundary();
+            return;
+        }
         if self.game_state.frame.main_module == 8 {
             if let Some(entry) = self.spotlight_successor_cpu_entry_envelope.take() {
                 if self.resident_song_bank_is_dungeon() {
@@ -845,6 +900,10 @@ impl ZeldaState {
     }
 
     pub(super) fn PreOverworld_LoadOverlays(&mut self) {
+        if self.try_native_overlays_entry() {
+            self.run_native_intro_clear_until_boundary();
+            return;
+        }
         self.set_ambient_sound_effect(5);
         // The ROM reaches the screen-specific ambient selection two scanlines
         // later, before LoadOverworldOverlay becomes the interruptible part of
@@ -1069,6 +1128,10 @@ impl ZeldaState {
     }
 
     pub(super) fn Module09_Overworld(&mut self) {
+        if self.try_native_overworld_entry() {
+            self.run_native_intro_clear_until_boundary();
+            return;
+        }
         let entry_frame = (
             self.game_state.frame.main_module,
             self.game_state.frame.submodule,
@@ -3402,6 +3465,10 @@ impl ZeldaState {
     }
 
     pub(super) fn Module10_SpotlightOpen(&mut self) {
+        if self.try_native_opening_entry() {
+            self.run_native_intro_clear_until_boundary();
+            return;
+        }
         let live_table_progress = self.take_original_timing_spotlight_table_build_progress();
         let live_goal_caller_returned =
             self.take_original_timing_overworld_spotlight_goal_caller_returned();
@@ -3654,6 +3721,10 @@ impl ZeldaState {
     }
 
     pub(super) fn Module0F_SpotlightClose(&mut self) {
+        if self.try_native_closing_entry() {
+            self.run_native_intro_clear_until_boundary();
+            return;
+        }
         let live_table_progress = self.take_original_timing_spotlight_table_build_progress();
         if let Some(receipt) = live_table_progress {
             assert!(
@@ -5654,6 +5725,53 @@ impl ZeldaState {
 
     }
 
+    pub(crate) fn native_map32_definition_byte(&self, address: u32) -> Option<u8> {
+        let address = address & 0x7fffff;
+        for (base, asset) in [(0x038000, 60), (0x03b400, 61), (0x048000, 62), (0x04b400, 63)] {
+            if let Some(offset) = address.checked_sub(base) {
+                if let Some(value) = self.asset_raw(asset)?.get(offset as usize) {
+                    return Some(*value);
+                }
+            }
+        }
+        None
+    }
+
+    pub(crate) fn native_overworld_map_stream_data(&self) -> Option<std::collections::BTreeMap<u32,u8>> {
+        use crate::cycle_models::overworld_map_streams::{HIGH,LOW};
+        let mut data=std::collections::BTreeMap::new();
+        for (base,asset,pointers) in [(0x02f94d,105,HIGH.as_slice()),(0x02fb2d,106,LOW.as_slice())] {
+            for (screen,&pointer) in pointers.iter().enumerate() {
+                for (byte,value) in pointer.to_le_bytes()[..3].iter().copied().enumerate() {
+                    data.insert(base+screen as u32*3+byte as u32,value);
+                }
+                let stream=self.asset_memblk(asset,screen)?;
+                for (i,&value) in stream.ptr.iter().enumerate() {
+                    let offset=(pointer&0x7fff)+i as u32;
+                    let at=(((pointer>>16)+offset/0x8000)<<16|0x8000|(offset&0x7fff))&0x7fffff;
+                    if let Some(old)=data.insert(at,value) {assert_eq!(old,value,"shared overworld map stream {at:06x}");}
+                }
+            }
+        }
+        Some(data)
+    }
+
+    pub(crate) fn native_overlay_map8_byte(&self,address:u32)->Option<u8> {
+        let address=address&0x7fffff;
+        match address {0x02f889|0x02f88a|0x02f88c=>return Some(0),0x02f88b=>return Some(32),_=>{}}
+        self.asset_raw(70)?.get(address.checked_sub(0x0f8000)? as usize).copied()
+    }
+
+    pub(crate) fn native_overworld_screen_build_byte(&self,address:u32)->Option<u8> {
+        let address=address&0x7fffff;
+        if (0x02f88d..0x02f94d).contains(&address) {
+            return self.asset_raw(107)?.get((address-0x02f88d) as usize).copied();
+        }
+        let offset=address.checked_sub(0x02edc5)? as usize;
+        SECONDARY_OVERLAY_BY_OVERWORLD_SCREEN.get(offset/2)
+            .map(|word|word.to_le_bytes()[offset%2])
+    }
+
     pub(super) fn OverworldLoad_LoadSubOverlayMap32(&mut self) {
         let si = self.game_state.world.location.overworld_screen_index() as i32;
         self.Overworld_DecompressAndDrawOneQuadrant(0x4000, si);
@@ -6713,6 +6831,10 @@ impl ZeldaState {
     }
 
     pub(super) fn Module08_02_LoadAndAdvance(&mut self) {
+        if self.try_native_screen_build_entry() {
+            self.run_native_intro_clear_until_boundary();
+            return;
+        }
         if self.begin_pre_overworld_screen_build_work() {
             return;
         }
@@ -7463,6 +7585,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module09_0A_WalkFromExiting_FacingDown(&mut self) {
+        if self.begin_native_overworld_exit(crate::cycle_models::overworld_exit_walk::ExitWalkDirection::Down) {return;}
         self.follower_link_state_mut().set_last_direction(4);
         self.link_handle_moving_animation_full_long_entry();
         let link_y = self.game_state.player.follower_link.y().wrapping_add(1);
@@ -7481,6 +7604,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module09_0B_WalkFromExiting_FacingUp(&mut self) {
+        if self.begin_native_overworld_exit(crate::cycle_models::overworld_exit_walk::ExitWalkDirection::Up) {return;}
         self.link_handle_moving_animation_full_long_entry();
         let link_y = self.game_state.player.follower_link.y().wrapping_sub(1);
         self.follower_link_state_mut().set_y(link_y);

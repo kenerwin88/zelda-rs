@@ -62,6 +62,7 @@ impl LoadFilePlayer {
             entry,
             0x01fec1
                 | 0x028aef
+                | 0x028b0c
                 | 0x0ffd22
                 | 0x028d71
                 | 0x0afd90

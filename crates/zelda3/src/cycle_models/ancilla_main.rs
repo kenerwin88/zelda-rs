@@ -41,6 +41,7 @@ impl Default for AncillaMain {
     }
 }
 impl AncillaMain {
+    pub(crate) fn set_oam_xy() -> Self { Self::from_entry(0xf6e1) }
     fn from_entry(pc: u16) -> Self {
         assert!(matches!(pc, 0x833c | 0xc013 | 0xf671 | 0xf6e1));
         Self {

@@ -17,11 +17,6 @@ const SUBMODULES: [u16; 27] = [
 ];
 
 pub(crate) fn table_byte(address: u32) -> Option<u8> {
-    // JSR (abs,X) fetches its operand as separate bytes. Retain the second
-    // byte's bus access as well as the data-table read and caller-stack store.
-    if address == 0x0287ae {
-        return Some(0x87);
-    }
     let (words, offset): (&[u16], usize) = match address {
         0x0afe70..=0x0afe7f => (&LAYERS, (address - 0x0afe70) as usize),
         0x02876c..=0x0287a1 => (&SUBMODULES, (address - 0x02876c) as usize),
@@ -122,8 +117,8 @@ impl DungeonDispatch {
             0x0287ac | 0x0afe84 => {
                 if pc == 0x0287ac {
                     w.drain(8);
-                    assert_eq!(w.read(0x0287ae, 1), 0x87);
                     w.drain(6);
+                    w.drain(8);
                 } else {
                     w.operand_then_internal(2);
                 }
@@ -457,7 +452,7 @@ mod tests {
                 );
             }
         }
-        assert_eq!(table_byte(0x0287ae), Some(rom[0x107ae]));
+        assert_eq!(table_byte(0x0287ae), None);
         let mut instructions = 0;
         for field in [0, 1, 30_002, 30_003] {
             for layer in 0..8 {

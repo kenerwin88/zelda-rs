@@ -7,32 +7,49 @@ use super::{
 };
 use snes::CpuMasterTimeline;
 
-// Adjacent immutable bytes addressed by the byte-sized animation index past
-// the nominal delay table. They are lookup data only, never executed/decoded.
-// Keeping the complete indexed window preserves raw byte wrap and page-cross
-// behavior without clamping the live animation step to a guessed valid range.
-const DELAY_ADJACENT_DATA: [u8; 232] = [
-    0x8b, 0x4b, 0xab, 0xa9, 0x04, 0x85, 0x26, 0x80, 0x03, 0x8b, 0x4b, 0xab, 0xa5, 0x5d, 0xc9, 0x04,
-    0xd0, 0x03, 0x82, 0x48, 0x01, 0xa5, 0x26, 0xd0, 0x03, 0x82, 0xd6, 0x00, 0x85, 0x00, 0xad, 0x4a,
-    0x03, 0xf0, 0x05, 0xad, 0x40, 0x03, 0x85, 0x00, 0xa5, 0x50, 0xd0, 0x3e, 0xa5, 0x6a, 0xf0, 0x15,
-    0xa5, 0x6c, 0xf0, 0x06, 0x0a, 0x29, 0xfc, 0xa8, 0x80, 0x15, 0xa5, 0x2f, 0x4a, 0xaa, 0xa5, 0x00,
-    0x3d, 0x71, 0xe6, 0xd0, 0x25, 0xa0, 0x04, 0xa5, 0x00, 0x29, 0x0c, 0xf0, 0x02, 0xa0, 0x00, 0xc0,
-    0x04, 0xf0, 0x08, 0xa5, 0x00, 0x29, 0x04, 0xd0, 0x08, 0x80, 0x08, 0xa5, 0x00, 0x29, 0x01, 0xf0,
-    0x02, 0xc8, 0xc8, 0x84, 0x2f, 0x80, 0x03, 0x8b, 0x4b, 0xab, 0xad, 0x72, 0x03, 0xf0, 0x03, 0x82,
-    0x80, 0x01, 0xa5, 0x2f, 0x4a, 0xaa, 0xa5, 0x5e, 0xc9, 0x06, 0xd0, 0x07, 0x8a, 0x18, 0x69, 0x04,
-    0xaa, 0x80, 0x10, 0xad, 0x4a, 0x03, 0xf0, 0x0b, 0xa5, 0xf0, 0x29, 0x0f, 0xf0, 0x60, 0x8a, 0x18,
-    0x69, 0x04, 0xaa, 0xa5, 0x5d, 0xc9, 0x17, 0xd0, 0x03, 0x82, 0x95, 0x00, 0xa5, 0x11, 0xc9, 0x0e,
-    0xf0, 0x26, 0xc9, 0x12, 0xf0, 0x04, 0xc9, 0x13, 0xd0, 0x04, 0xa2, 0x0c, 0x80, 0x1a, 0xad, 0x08,
-    0x03, 0x29, 0x80, 0xd0, 0x13, 0xa5, 0x48, 0x29, 0x8d, 0xf0, 0x04, 0xa2, 0x0c, 0x80, 0x09, 0xad,
-    0x51, 0x03, 0xd0, 0x04, 0xa5, 0x3c, 0xf0, 0x2c, 0xa5, 0x2e, 0xc9, 0x06, 0xb0, 0x20, 0xad, 0xf5,
-    0x02, 0xc9, 0x02, 0xf0, 0x19, 0xbd, 0x75, 0xe6, 0x85, 0x00, 0xa5, 0x2d, 0x18, 0x69, 0x01, 0x85,
-    0x2d, 0xc5, 0x00, 0x90, 0x0d, 0x64, 0x2d, 0xa5,
-];
-pub(crate) fn table_byte(address: u32) -> Option<u8> {
-    if (0x07e69d..0x07e785).contains(&address) {
-        return Some(DELAY_ADJACENT_DATA[(address - 0x07e69d) as usize]);
-    }
+pub(crate) fn table_byte(address:u32)->Option<u8> {
     crate::ZeldaState::native_player_animation_table_byte(address)
+}
+
+/// CPU work for atomic callers of the same native animation owner. Only
+/// its small operand workspace is private; refresh, HDMA and the caller's
+/// raster remain owned by the enclosing main-loop clock. This does not
+/// decode or execute ROM, or publish the model's writes into gameplay.
+pub(crate) fn full_entry_master_cycles(ram: &[u8]) -> u64 {
+    use super::intro_clear::Access;
+    let mut operands: [u8; 0x400] = ram[..0x400].try_into().unwrap();
+    // The routine reads no incoming A/X/Y/flags before defining them. Its
+    // bank save and far return use ordinary WRAM stack accesses throughout.
+    let mut cpu = NativeNmiContext {
+        a: 0, x: 0, y: 0, d: 0, db: 0, bank: 7, pc: 0xe6a6, sp: 0x1fc, p: 0x30,
+    };
+    let mut clock = CpuMasterTimeline::at_raster(0, snes::CpuRasterPosition::new(0, 0),
+        snes::CpuBusWorkload::default(), snes::CpuFieldTiming::NON_INTERLACE_EVEN);
+    clock.begin_synchronous_timeline().unwrap();
+    let mut work = PlayerAnimation::default();
+    let mut cycles = 0;
+    while let Some(step) = work.step(&mut cpu, &mut clock, |_, access| match access {
+        Access::Read(address, width) => {
+            let read = |address: u32| table_byte(address).unwrap_or_else(|| {
+                assert!((address as u16) < 0x400);
+                operands[usize::from(address as u16)]
+            });
+            let low = read(address);
+            if width == 1 { u16::from(low) }
+            else { u16::from_le_bytes([low, read(address + 1)]) }
+        }
+        Access::Write(address, value, width) => {
+            let offset = usize::from(address as u16);
+            assert!(offset + usize::from(width) <= operands.len());
+            operands[offset] = value as u8;
+            if width == 2 { operands[offset + 1] = (value >> 8) as u8; }
+            0
+        }
+        Access::Vblank { .. } => unreachable!("animation cannot span a field"),
+    }) {
+        cycles += step;
+    }
+    cycles
 }
 
 #[cfg(test)]
@@ -44,13 +61,14 @@ mod tests {
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"),
         )
         .unwrap();
-        for a in (0x07e671..0x07e785).chain(0x07e842..0x07e888) {
+        for a in (0x07e671..0x07e69d).chain(0x07e842..0x07e888) {
             assert_eq!(
                 table_byte(a),
                 Some(rom[(a >> 16) as usize * 0x8000 + (a as usize & 0x7fff)]),
                 "animation table {a:06x}"
             );
         }
+        for a in [0x07e69d,0x07e6a6,0x07e704,0x07e785,0x07e888] {assert_eq!(table_byte(a),None);}
         let mut instructions = 0;
         let mut visited = std::collections::BTreeSet::new();
         for entry in [0xe69d, 0xe6a6, 0xe704] {
@@ -70,15 +88,11 @@ mod tests {
                     };
                     ram[0x50] = if mode == 14 { 0x80 } else { 0 };
                     ram[0x6a] = (case & 1) as u8;
-                    ram[0x6c] = [0, 1, 2, 3, 4, 255][case / 4 % 6];
-                    ram[0x2f] = if mode == 15 {
-                        case as u8
-                    } else {
-                        (case % 4 * 2) as u8
-                    };
+                    ram[0x6c] = [0, 1, 2][case / 4 % 3];
+                    ram[0x2f]=(case%4*2) as u8;
                     ram[0x2d] = [0, 1, 2, 3, 7, 15, 254, 255][case / 4 % 8];
-                    ram[0x2e] = case as u8;
-                    ram[0x5e] = if matches!(mode, 12 | 13) { 6 } else { 0 };
+                    ram[0x2e] = (case%9) as u8;
+                    ram[0x5e] = if mode==12 { 6 } else { 0 };
                     ram[0x34a] = u8::from(matches!(mode, 11 | 13));
                     ram[0x340] = [0, 1, 2, 4, 8, 12, 15, 255][case / 8 % 8];
                     ram[0x372] = u8::from(mode == 1 || mode == 15);
@@ -156,6 +170,7 @@ mod tests {
                                 work.step(cpu, clock, bus).unwrap();
                             },
                         );
+                        work=work.clone();
                         instructions += 1;
                     }
                     assert!(work.complete());
@@ -183,6 +198,7 @@ impl Default for PlayerAnimation {
     }
 }
 impl PlayerAnimation {
+    pub(crate) fn facing_down() -> Self { Self::new(0xe69d) }
     fn new(pc: u16) -> Self {
         assert!(matches!(pc, 0xe69d | 0xe6a6 | 0xe704));
         Self {

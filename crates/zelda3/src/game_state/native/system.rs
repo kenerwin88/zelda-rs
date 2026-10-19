@@ -356,6 +356,10 @@ impl SystemSignalsState {
         self.update_hud_flag = 0;
     }
 
+    pub(crate) fn set_hud_update_flag(&mut self, value: u8) {
+        self.update_hud_flag = value;
+    }
+
     pub(crate) fn increment_cgram_update_flag(&mut self) -> u8 {
         self.update_cgram_flag = self.update_cgram_flag.wrapping_add(1);
         self.update_cgram_flag
@@ -363,6 +367,10 @@ impl SystemSignalsState {
 
     pub(crate) fn clear_cgram_update_flag(&mut self) {
         self.update_cgram_flag = 0;
+    }
+
+    pub(crate) fn set_cgram_update_flag(&mut self, value: u8) {
+        self.update_cgram_flag = value;
     }
 
     pub(crate) fn set_bugs_fixed(&mut self, value: u8) {
@@ -543,6 +551,7 @@ impl<'a> NativeSystemSignalsBridgeMut<'a> {
         system_signals;
         fn increment_hud_update_flag() -> u8;
         fn clear_hud_update_flag();
+        fn set_hud_update_flag(value: u8);
         fn increment_cgram_update_flag() -> u8;
         fn clear_cgram_update_flag();
         fn set_bugs_fixed(value: u8);

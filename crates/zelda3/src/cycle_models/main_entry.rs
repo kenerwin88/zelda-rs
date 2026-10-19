@@ -3,6 +3,7 @@
 
 use super::nmi_stack::{NativeNmiContext, CARRY, NEGATIVE, ZERO};
 use snes::CpuMasterTimeline;
+use super::{intro_clear::Access, native_work::WorkBus};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum MainEntryAccess {
@@ -34,6 +35,28 @@ pub(crate) fn enter_module(
     clock: &mut CpuMasterTimeline,
     bus: impl FnMut(u64, MainEntryAccess) -> u16,
 ) -> u8 {
+    enter_module_with_bus(cpu, clock, EntryBus(bus))
+}
+
+struct EntryBus<F>(F);
+impl<F: FnMut(u64, MainEntryAccess) -> u16> WorkBus for EntryBus<F> {
+    fn access(&mut self, at: u64, access: Access) -> u16 {
+        let access = match access {
+            Access::Read(address, 1) => MainEntryAccess::ReadByte(address as u16),
+            Access::Read(address, 2) => MainEntryAccess::ReadWord(address as u16),
+            Access::Write(address, value, 1) => MainEntryAccess::WriteByte(address as u16, value as u8),
+            Access::Write(address, value, 2) => MainEntryAccess::WriteWord(address as u16, value),
+            _ => unreachable!(),
+        };
+        (self.0)(at, access)
+    }
+}
+
+pub(crate) fn enter_module_with_bus(
+    cpu: &mut NativeNmiContext,
+    clock: &mut CpuMasterTimeline,
+    bus: impl WorkBus,
+) -> u8 {
     assert_eq!(
         (cpu.bank, cpu.pc, cpu.db, cpu.d, cpu.p & 0x38),
         (0, 0x8038, 0, 0, 0x30)
@@ -45,6 +68,7 @@ pub(crate) fn enter_module(
     w.fetch();
     w.drain(8);
     w.drain(6); // BRA $8051
+    w.bus.begin_main_iteration(w.clock);
     w.fetch();
     w.drain(8); // INC $1A
     let counter = w.read_byte(0x1a);
@@ -145,13 +169,14 @@ struct Entry<'a, B> {
     bus: B,
 }
 
-impl<B: FnMut(u64, MainEntryAccess) -> u16> Entry<'_, B> {
+impl<B: WorkBus> Entry<'_, B> {
     fn fetch(&mut self) {
         self.clock.advance_synchronous_pcbase_opcode_fetch(8);
     }
     fn drain(&mut self, cycles: u32) {
+        let bus = &mut self.bus;
         self.clock
-            .advance_synchronous_after_semantics_with(cycles, |_, _| Ok::<u32, String>(0))
+            .advance_synchronous_after_semantics_with_clock(cycles, |event, clock| Ok::<u32, String>(bus.retire_event(event, clock)))
             .expect("native main entry clock");
     }
     fn byte_flags(&mut self, value: u8) {
@@ -160,34 +185,26 @@ impl<B: FnMut(u64, MainEntryAccess) -> u16> Entry<'_, B> {
             | if value == 0 { ZERO } else { 0 };
     }
     fn read_byte(&mut self, address: u16) -> u8 {
-        let value = (self.bus)(
-            self.clock.clock_master_cycles(),
-            MainEntryAccess::ReadByte(address),
-        ) as u8;
+        self.bus.observe_clock(self.clock);
+        let value = self.bus.access(self.clock.clock_master_cycles(), Access::Read(u32::from(address), 1)) as u8;
         self.drain(8);
         value
     }
     fn read_word(&mut self, address: u16) -> u16 {
-        let value = (self.bus)(
-            self.clock.clock_master_cycles(),
-            MainEntryAccess::ReadWord(address),
-        );
+        self.bus.observe_clock(self.clock);
+        let value = self.bus.access(self.clock.clock_master_cycles(), Access::Read(u32::from(address), 2));
         self.drain(16);
         value
     }
     fn write_byte(&mut self, address: u16, value: u8) {
-        (self.bus)(
-            self.clock.clock_master_cycles(),
-            MainEntryAccess::WriteByte(address, value),
-        );
+        self.bus.observe_clock(self.clock);
+        self.bus.access(self.clock.clock_master_cycles(), Access::Write(u32::from(address), u16::from(value), 1));
         self.drain(8);
     }
     fn push_word(&mut self, value: u16) {
         assert!((1..0x2000).contains(&self.cpu.sp));
-        (self.bus)(
-            self.clock.clock_master_cycles(),
-            MainEntryAccess::WriteWord(self.cpu.sp - 1, value),
-        );
+        self.bus.observe_clock(self.clock);
+        self.bus.access(self.clock.clock_master_cycles(), Access::Write(u32::from(self.cpu.sp - 1), value, 2));
         self.drain(16);
         self.cpu.sp = self.cpu.sp.wrapping_sub(2);
     }

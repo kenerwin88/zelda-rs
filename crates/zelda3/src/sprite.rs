@@ -1,6 +1,7 @@
 // Methods ported from zelda3/src/sprite.c and included inside ZeldaState.
 
 use super::*;
+use crate::game_state::constants::{SPR_RANGED_BASED_TOGGLER};
 use crate::tile_definition::{EntityCollision, NativeTile};
 use crate::types::{
     project_speed_from_differences, sign16, sign8, PairU8, Point16U, PointU8, ProjectSpeedRet,
@@ -1848,6 +1849,131 @@ impl ZeldaState {
     // void Sprite_DisableAll() {  // 89c22f
     //   ...see sprite.c...
     // }
+    /// Sprite_Main's caller stores publish through the same owners as its
+    /// ordinary entry, without running any later caller or child work early.
+    pub(crate) fn native_sprite_main_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        match address {
+            0xae8 => {
+                assert_eq!(width, 1);
+                self.set_sprite_dma_head_pointer(value as u8);
+                return true;
+            }
+            0xaea => {
+                assert_eq!(width, 1);
+                self.set_sprite_dma_body_pointer(value as u8);
+                return true;
+            }
+            0xfb7 => {
+                assert_eq!(width,1);
+                self.game_state.sprites.system.set_ranged_based_toggler(value as u8);
+                self.ram[SPR_RANGED_BASED_TOGGLER]=value as u8;return true;
+            }
+            0xfb5 => {assert_eq!(width,1);self.temp_counter_mut().set(value as u8);return true;}
+            0x223 => {
+                assert_eq!((width, value), (1, 0));
+                self.clear_tile_interaction_shared_flag();
+                return true;
+            }
+            0x1cd8 => {
+                assert_eq!(width, 1);
+                self.messaging_state_mut().set_module(value as u8);
+                return true;
+            }
+            0x1cf0 | 0x1cf1 => {
+                assert!(width == 1 || (address == 0x1cf0 && width == 2));
+                let old = self.game_state.messaging.dialogue_message_index.value();
+                let shift = (address & 1) * 8;
+                self.dialogue_message_index_mut().set_value(if width == 2 { value }
+                    else { (old & !(255 << shift)) | ((value & 255) << shift) });
+                return true;
+            }
+            0x10c => {
+                assert_eq!(width, 1);
+                self.set_saved_module_for_menu(value as u8);
+                return true;
+            }
+            _ => {}
+        }
+        if matches!(address, 0x20..=0x23 | 0x40..=0x41 | 0x46 | 0x4d | 0x5e | 0x68..=0x69 | 0xb7c..=0xb7f | 0xfc2..=0xfc5) {
+            assert!(width == 1 || (width == 2 && matches!(address,0x20|0x22|0xb7c|0xb7e|0xfc2|0xfc4)));
+            for byte in 0..usize::from(width) {
+                let address = address as usize + byte;
+                let value = (value >> (byte * 8)) as u8;
+                assert!(self.game_state.player.follower_link.write_sprite_player_byte(address, value));
+                self.ram[address] = value;
+            }
+            return true;
+        }
+        if (0xcfe..0xd00).contains(&address) {
+            assert!(address + u32::from(width) <= 0xd00);
+            for byte in 0..usize::from(width) {
+                let address = address as usize + byte;
+                let value = (value >> (byte * 8)) as u8;
+                self.game_state.sprites.workspace.write_draw_priority_byte(address == 0xcff, value);
+                self.ram[address] = value;
+            }
+            return true;
+        }
+        if (0xfa8..0xfac).contains(&address) {
+            assert!(address + u32::from(width) <= 0xfac);
+            for byte in 0..usize::from(width) {
+                let address = address as usize + byte;
+                let value = (value >> (byte * 8)) as u8;
+                self.game_state.sprites.draw_hitbox_work.write_instruction_byte(address, value);
+                self.ram[address] = value;
+            }
+            return true;
+        }
+        if self.game_state.sprites.sprite_slots.write_instruction_store(&mut self.ram, address as usize, value, width) {
+            return true;
+        }
+        if (0xfd8..0xfdc).contains(&address) {
+            assert!(address + u32::from(width) <= 0xfdc);
+            for byte in 0..usize::from(width) {
+                let address = address as usize + byte;
+                let shift = (address & 1) * 8;
+                let old = read_le_u16(&self.ram, address & !1);
+                let word = (old & !(255 << shift)) | (((value >> (byte * 8)) & 255) << shift);
+                if address < 0xfda { self.sprite_workspace_mut().set_current_sprite_x(word); }
+                else { self.sprite_workspace_mut().set_current_sprite_y(word); }
+            }
+            return true;
+        }
+        if (0xfe0..0xff8).contains(&address) {
+            assert_eq!((width, address & 1), (2, 0));
+            if address < 0xfec {
+                self.oam_state_mut().set_region_base_word((address as usize - 0xfe0) / 2, value);
+            } else {
+                self.oam_state_mut().set_region_alloc_counter((address as usize - 0xfec) / 2, value);
+            }
+            return true;
+        }
+        if !matches!(address, 0x47 | 0x314 | 0x377 | 0x379 | 0x69e | 0x69f | 0xb7b | 0xb9a | 0xfa0 | 0xfab | 0xfb2 | 0xfc6 | 0xfdc | 0xffa | 0xfff) {
+            return false;
+        }
+        assert_eq!(width, 1);
+        let value = value as u8;
+        match address {
+            0xffa => self.sprite_system_mut().set_alt_sprites_flag(value),
+            0xfff => self.set_dark_world_region_index(value),
+            0xfb2 => self.sprite_workspace_mut().set_pickup_slot_cache(value),
+            0xfab => self.hitbox_scratch_offset_mut().set_x_high_offset(value),
+            0xfa0 => self.sprite_system_mut().set_cur_object_index(value),
+            0xfc6 => self.sprite_system_mut().set_chr_halfslot_state(value),
+            0xfdc => self.sprite_system_mut().set_alert_flag(value),
+            0x47 => self.sprite_battle_mut().set_damaging_enemies_timer(value),
+            0x314 => self.follower_link_state_mut().set_sprite_pickup_flag(value),
+            0x377 => self.follower_link_state_mut().set_pull_action_state(value),
+            0x379 => { assert_eq!(value, 0); self.follower_link_state_mut().clear_player_pose_draw_counter(); }
+            0xb7b => { assert_eq!(value, 0); self.follower_link_state_mut().clear_prevent_movement(); }
+            0xb9a => { assert_eq!(value, 0); self.archery_game_mut().clear_out_of_arrows(); }
+            0x69e => { assert_eq!(value, 0); self.clear_overworld_vertical_scroll_delta_low(); }
+            0x69f => self.set_overworld_horizontal_scroll_delta_low(value),
+            _ => unreachable!(),
+        }
+        true
+    }
+
     /// Record loading keeps its live pointer, coordinate temporaries and slot
     /// stores through nested sprite and overlord children. Publish the retired
     /// bytes directly to their owners without refreshing unrelated slot state.
@@ -2584,6 +2710,61 @@ impl ZeldaState {
                 }
             }
         }
+    }
+
+    /// Bind the packed overworld sprite lists to their physical data addresses.
+    /// The reload worker consumes these records without cartridge instructions.
+    pub(crate) fn native_overworld_sprite_data(&self) -> Option<std::collections::BTreeMap<u32, u8>> {
+        use crate::cycle_models::overworld_sprite_reload_data::{EARLY, RESCUE, LATE, EMPTY_LIST};
+        let offsets = self.asset_raw(159)?;
+        let records = self.asset_raw(160)?;
+        let mut data = std::collections::BTreeMap::new();
+        let mut put = |address, value| {
+            if let Some(old) = data.insert(address, value) {
+                assert_eq!(old, value, "overlapping overworld sprite data {address:06x}");
+            }
+        };
+        for (stage, (base, pointers)) in [(0x09c881, &EARLY), (0x09c901, &RESCUE), (0x09ca21, &LATE)]
+            .into_iter().enumerate()
+        {
+            for (screen, pointer) in pointers.iter().enumerate() {
+                for (byte, value) in pointer.to_le_bytes().into_iter().enumerate() {
+                    put(base + (screen * 2 + byte) as u32, value);
+                }
+                // The initial-world physical table has only 64 entries. Its
+                // remaining reads alias the following rescue-world table;
+                // packed initial-world slots 64..143 are intentionally empty.
+                let packed_index = if stage == 0 && screen >= 64 {
+                    144 + screen - 64
+                } else {
+                    stage * 144 + screen
+                };
+                let start = usize::from(read_word_from_slice(offsets, packed_index * 2));
+                let mut end = start;
+                while *records.get(end)? != 0xff { end += 3; }
+                // Secondary cells of large areas have no packed list, while
+                // their physical pointer aliases the primary area's list.
+                // Bind that shared list from its nonempty packed owner.
+                if end == start && *pointer != EMPTY_LIST { continue; }
+                for (byte, &value) in records.get(start..=end)?.iter().enumerate() {
+                    put(0x090000 + u32::from(*pointer) + byte as u32, value);
+                }
+            }
+        }
+        for (i, &value) in OVERWORLD_AREA_SPRCOLL_SIZES.iter().enumerate() {
+            put(0x09c635 + i as u32, value);
+        }
+        for (i, value) in [0x10, 0xf0, 0x01, 0xff].into_iter().enumerate() {
+            put(0x09c5b7 + i as u32, value);
+        }
+        for bit in 0..8 { put(0x09c731 + bit, 0x80 >> bit); }
+        for pointers in [&EARLY, &RESCUE, &LATE] {
+            for pointer in pointers {
+                assert!(data.contains_key(&(0x090000 + u32::from(*pointer))),
+                    "unbound overworld sprite list {pointer:04x}");
+            }
+        }
+        Some(data)
     }
 
     /// Bind existing native records and properties at their physical data
@@ -3369,6 +3550,37 @@ impl ZeldaState {
         // Cycle ledger: Sprite_Main $06:8328 prefix (m8 x8 throughout). The
         // routine scope is opened by the entry points (`sprite_main`,
         // `resume_sprite_main_before_first_slot_prefix`).
+        if let Some(tail) = self.early_dungeon_sprite_prefix_tail.take() {
+            use crate::cycle_models::dungeon_sprite_prefix::SpritePrefixTail;
+            match tail {
+                SpritePrefixTail::Proximity => {
+                    self.sprite_proximity_activation();
+                    self.sprite_main_prefix_after_proximity();
+                }
+                SpritePrefixTail::Garnish => {
+                    self.garnish_execute_upper_slots();
+                    self.replay_trace_ram_watch("sprite-after-garnish-upper");
+                    self.sprite_main_prefix_after_garnish();
+                }
+                SpritePrefixTail::AfterAncilla(tail)=>{
+                    self.finish_native_ancilla_caller(tail);
+                    if !self.game_execution_scheduler.work_suspends_translated_call_stack() {self.complete_sprite_main_prefix_after_ancilla();}
+                }
+                SpritePrefixTail::AfterOverlord(tail)=>self.finish_native_overlord_caller(tail),
+                SpritePrefixTail::AfterSlots(_)|SpritePrefixTail::Returned=>{},
+                SpritePrefixTail::AfterLowerGarnish(_)|SpritePrefixTail::AfterCachedSprites(_)=>{},
+                SpritePrefixTail::AfterFollower(tail)=>{
+                    self.sprite_main_prefix_with_follower(Some(tail));
+                }
+                SpritePrefixTail::AfterGarnish(tail)=>{
+                    self.finish_native_garnish_caller(tail);
+                    self.replay_trace_ram_watch("sprite-after-garnish-upper");
+                    self.sprite_main_prefix_after_garnish();
+                }
+
+            }
+            return;
+        }
         if self.game_state.world.location.is_outdoors() {
             // $06:8328-832A LDA $1b : BNE not taken (40) + $06:832C-833E five
             // STZ + JSL Sprite_ProximityActivation (222; the callee charges
@@ -3382,6 +3594,10 @@ impl ZeldaState {
             // $06:8328-832A with BNE taken.
             crate::cycle_ledger::charge(40 + 6);
         }
+        self.sprite_main_prefix_after_proximity();
+    }
+
+    fn sprite_main_prefix_after_proximity(&mut self) {
         let dark_world = u8::from(self.game_state.inventory.save_progress.dark_world_state() != 0);
         // $06:833F-8348 PHB PHK PLB LDY LDA long BEQ (144): BEQ taken when the
         // save is light world (+6), else $06:834A INY (14).
@@ -3397,28 +3613,55 @@ impl ZeldaState {
             // $06:834B-8350 with BNE taken.
             crate::cycle_ledger::charge(72 + 6);
         }
-        // $06:835E-8365 JSR Oam_ResetRegionBases and the two JSLs to
-        // garnish/follower (46 + 62 + 62). The caller suffix follows return.
-        crate::cycle_ledger::charge(170);
+        // $06:835E-8364 JSR Oam_ResetRegionBases and the JSL to
+        // garnish (46 + 62). The follower call follows garnish return.
+        crate::cycle_ledger::charge(108);
         self.oam_reset_region_bases();
         self.replay_trace_ram_watch("sprite-after-oam-reset");
         self.garnish_execute_upper_slots();
         self.replay_trace_ram_watch("sprite-after-garnish-upper");
+        self.sprite_main_prefix_after_garnish();
+    }
+
+    fn sprite_main_prefix_after_garnish(&mut self) {
+        crate::cycle_ledger::charge(62); // JSL Tagalong_Main_ after garnish returns.
+        self.sprite_main_prefix_with_follower(None);
+    }
+
+    fn sprite_main_prefix_with_follower(
+        &mut self,
+        native_tail: Option<crate::cycle_models::dungeon_follower::FollowerTail>,
+    ) {
+        if native_tail == Some(crate::cycle_models::dungeon_follower::FollowerTail::Returned) {
+            self.complete_sprite_main_prefix_after_follower();
+            return;
+        }
         {
             // Tagalong_Main_ $09:9F91, the JSL target wrapping Follower_Main:
             // PHB PHK PLB JSR $09:9FC4 (118); PLB RTL remain below the call.
             let _tagalong = crate::cycle_ledger::routine(0x09_9f91);
-            crate::cycle_ledger::charge(118);
+            if native_tail.is_none() {
+                crate::cycle_ledger::charge(118);
+            }
             let parked_work = self.game_execution_scheduler.current_work();
-            self.follower_main();
+            if let Some(tail) = native_tail {
+                self.finish_native_follower(tail);
+            } else {
+                self.follower_main();
+            }
             if self.game_execution_scheduler.current_work() != parked_work
-                && self.game_execution_scheduler.work_suspends_translated_call_stack() {
+                && self
+                    .game_execution_scheduler
+                    .work_suspends_translated_call_stack()
+            {
                 return;
             }
             if let Some(boundary @ SpriteMainCpuBoundary::FollowerWrapperReturn { plb_completed }) =
                 self.sprite_main_cpu_boundary
             {
-                if plb_completed { crate::cycle_ledger::charge(28); }
+                if plb_completed {
+                    crate::cycle_ledger::charge(28);
+                }
                 self.sprite_main_cpu_boundary = None;
                 let slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
                 let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
@@ -3429,7 +3672,6 @@ impl ZeldaState {
         }
         self.complete_sprite_main_prefix_after_follower();
     }
-
     pub(super) fn complete_sprite_main_prefix_after_follower(&mut self) {
         // $06:8369-837B pickup-flag moves, hitbox high byte and timer test.
         crate::cycle_ledger::charge(200);
@@ -3716,7 +3958,23 @@ impl ZeldaState {
         // boundary suspends records its charge up to the suspension; the
         // continuation entries open their own scope for the remainder.
         let _scope = crate::cycle_ledger::routine(0x06_8328);
+        let native_returned = self.early_dungeon_sprite_prefix_tail
+            == Some(crate::cycle_models::dungeon_sprite_prefix::SpritePrefixTail::Returned);
+        let native_slots = match self.early_dungeon_sprite_prefix_tail {
+            Some(crate::cycle_models::dungeon_sprite_prefix::SpritePrefixTail::AfterSlots(tail))=>Some(tail),
+            Some(crate::cycle_models::dungeon_sprite_prefix::SpritePrefixTail::AfterLowerGarnish(_)|crate::cycle_models::dungeon_sprite_prefix::SpritePrefixTail::AfterCachedSprites(_))=>Some(crate::cycle_models::dungeon_sprite_slots::SpriteSlotsTail::LowerGarnish),
+            _=>None,
+        };
+        let native_lower_garnish=match self.early_dungeon_sprite_prefix_tail {
+            Some(crate::cycle_models::dungeon_sprite_prefix::SpritePrefixTail::AfterLowerGarnish(tail))=>Some(tail),
+            _=>None,
+        };
+        let native_cached=match self.early_dungeon_sprite_prefix_tail {
+            Some(crate::cycle_models::dungeon_sprite_prefix::SpritePrefixTail::AfterCachedSprites(tail))=>Some(tail),
+            _=>None,
+        };
         self.sprite_main_prefix();
+        if native_returned { return; }
         if self
             .game_execution_scheduler
             .work_suspends_translated_call_stack()
@@ -3728,7 +3986,12 @@ impl ZeldaState {
         let trace_sprite_slots = ZeldaState::parse_trace_env_u32("ZELDA3_REPLAY_RAM_WATCH_FRAME")
             .is_some_and(|frame| self.trace_frame_matches(frame));
 
-        for k in (0..16).rev() {
+        let slot_count=match native_slots {
+            Some(crate::cycle_models::dungeon_sprite_slots::SpriteSlotsTail::AfterTimers {slot,..})=>usize::from(slot)+1,
+            Some(crate::cycle_models::dungeon_sprite_slots::SpriteSlotsTail::LowerGarnish)=>0,
+            None=>16,
+        };
+        for k in (0..slot_count).rev() {
             self.sprite_system_mut().set_cur_object_index(k as u8);
             // $06:83A1-83A4 STX $0fa0 : JSR Sprite_ExecuteSingle (78). The
             // DEX : BPL tail is charged once the slot completes, either below
@@ -3736,7 +3999,14 @@ impl ZeldaState {
             // boundary lane suspends this slot. The lanes that enter the slot
             // through `sprite_timers_and_oam` directly do not charge the
             // Sprite_ExecuteSingle entry and dispatch blocks.
-            crate::cycle_ledger::charge(78);
+            let captured_state=match native_slots {
+                Some(crate::cycle_models::dungeon_sprite_slots::SpriteSlotsTail::AfterTimers {slot,state,tail}) if usize::from(slot)==k=>Some((state,tail)),
+                _=>None,
+            };
+            if let Some((state,tail))=captured_state {
+                assert!(self.native_sprite_timer_handoff.is_none());
+                self.native_sprite_timer_handoff=Some((k as u8,state,tail));
+            } else {crate::cycle_ledger::charge(78);}
             if trace_sprite_slots {
                 self.replay_trace_ram_watch(&format!("sprite-before-execute-single slot={k}"));
             }
@@ -4229,7 +4499,11 @@ impl ZeldaState {
                         | SpriteMainCpuCaller::Module09 { .. }
                 ));
             }
-            self.sprite_execute_single(k);
+            if let Some((state,tail))=captured_state {
+                self.sprite_execute_single_after_native_timers(k,state,tail);
+            } else {
+                self.sprite_execute_single(k);
+            }
             if enters_big_key_graphics {
                 assert!(
                     matches!(
@@ -4287,7 +4561,7 @@ impl ZeldaState {
                 self.replay_trace_ram_watch(&format!("sprite-after-execute-single slot={k}"));
             }
         }
-        self.complete_sprite_main_after_all_slots();
+        self.complete_sprite_main_after_all_slots_with_native_suffix(native_lower_garnish,native_cached);
         if self.game_execution_scheduler.work_suspends_translated_call_stack() {
             return;
         }
@@ -5547,6 +5821,21 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     }
 
     fn complete_sprite_main_after_all_slots(&mut self) {
+        self.complete_sprite_main_after_all_slots_with_lower_garnish(None);
+    }
+
+    fn complete_sprite_main_after_all_slots_with_lower_garnish(
+        &mut self,
+        native: Option<crate::cycle_models::dungeon_lower_garnish::LowerGarnishTail>,
+    ) {
+        self.complete_sprite_main_after_all_slots_with_native_suffix(native, None);
+    }
+
+    fn complete_sprite_main_after_all_slots_with_native_suffix(
+        &mut self,
+        native: Option<crate::cycle_models::dungeon_lower_garnish::LowerGarnishTail>,
+        cached: Option<crate::cycle_models::dungeon_cached_sprites::CachedSpritesTail>,
+    ) {
         // Every Sprite_Main body reaching its slot-zero return crosses this
         // boundary, whether it ran whole or resumed from a saved CPU slot, so
         // the one claimed source return is consumed here exactly once.
@@ -5565,12 +5854,29 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         // Sprite_Main suffix $06:83AA-83BC: JSL Garnish lower slots, STZ
         // $069f, STZ $069e, PLB, JSL ExecuteCachedSprites, LDA $0aaa, BEQ
         // not taken (264; the callees charge their own bodies).
-        crate::cycle_ledger::charge(264);
-        self.garnish_execute_lower_slots();
-        self.clear_overworld_vertical_scroll_delta_low();
-        self.set_overworld_horizontal_scroll_delta_low(0);
-        self.execute_cached_sprites();
-        if self.game_execution_scheduler.work_suspends_translated_call_stack() {
+        if let Some(tail) = cached {
+            // The native pass retired the scroll clears, PLB, JSL and cache guards/scan.
+            crate::cycle_ledger::charge(48); // LDA $0aaa : BEQ not taken.
+            if let crate::cycle_models::dungeon_cached_sprites::CachedSpritesTail::Loaded { slot, backup,state,timer } =
+                tail
+            {
+                self.execute_cached_sprites_after_native_entry(slot,&backup,state,timer);
+            }
+        } else {
+            crate::cycle_ledger::charge(if native.is_some() { 202 } else { 264 });
+            if let Some(tail) = native {
+                self.finish_native_lower_garnish(tail);
+            } else {
+                self.garnish_execute_lower_slots();
+            }
+            self.clear_overworld_vertical_scroll_delta_low();
+            self.set_overworld_horizontal_scroll_delta_low(0);
+            self.execute_cached_sprites();
+        }
+        if self
+            .game_execution_scheduler
+            .work_suspends_translated_call_stack()
+        {
             return;
         }
         if self.game_state.display.has_chr_halfslot_request() {
@@ -5597,6 +5903,11 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         let st = self.sprite_slot_view(k).state();
         // $06:84E2-84E5 LDA $dd0,x : BEQ Sprite_inactiveSprite (48).
         crate::cycle_ledger::charge(48);
+        self.sprite_execute_single_after_entry(k,st);
+    }
+
+    fn sprite_execute_single_after_entry(&mut self,k:usize,st:u8) {
+        let _scope = crate::cycle_ledger::routine(0x06_84e2);
         if st != 0 {
             // $06:84E7-84EE PHA, JSR Sprite_TimersAndOam, PLA, CMP #$09, BEQ
             // not taken (128; the callee charges its own body).
@@ -5661,9 +5972,12 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         dispatched: bool,
     ) -> crate::cycle_ledger::RoutineScope {
         let scope = crate::cycle_ledger::routine(0x06_84e2);
-        crate::cycle_ledger::charge(48 + 128);
+        let native = self
+            .native_sprite_timer_handoff
+            .filter(|(slot, ..)| usize::from(*slot) == k);
+        crate::cycle_ledger::charge(if native.is_some() { 60 } else { 48 + 128 });
         if dispatched {
-            if self.sprite_slot_view(k).state() == 9 {
+            if native.map_or_else(|| self.sprite_slot_view(k).state(), |(_, state, _)| state) == 9 {
                 crate::cycle_ledger::charge(6 + 24);
             } else {
                 crate::cycle_ledger::charge(62);
@@ -5685,28 +5999,53 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   ...see sprite.c...
     // }
     pub(super) fn execute_cached_sprites(&mut self) {
+        self.execute_cached_sprites_from_native_slot(None,None,None);
+    }
+
+    fn execute_cached_sprites_after_native_entry(
+        &mut self,
+        slot: u8,
+        backup: &[u8; 24],
+        state: u8,
+        timer: crate::cycle_models::sprite_timers::SpriteTimersTail,
+    ) {
+        self.execute_cached_sprites_from_native_slot(
+            Some(slot),
+            Some(backup),
+            Some((state, timer)),
+        );
+    }
+
+    fn execute_cached_sprites_from_native_slot(
+        &mut self,
+        native_slot: Option<u8>,
+        native_backup: Option<&[u8; 24]>,
+        native_timer: Option<(u8, crate::cycle_models::sprite_timers::SpriteTimersTail)>,
+    ) {
         // Cycle ledger: ExecuteCachedSprites $1D:E9DA (m8 x8). The ROM tests
         // the four exit conditions in order; each is a block plus a taken BEQ
         // into $1D:E9FC STZ $0ffa : RTL (76).
         let _scope = crate::cycle_ledger::routine(0x1d_e9da);
-        crate::cycle_ledger::charge(if self.game_state.world.location.is_outdoors() {
-            40 + 6 + 76 // $1D:E9DA-E9DC LDA $1b : BEQ taken
-        } else if self.game_state.frame.submodule == 0 {
-            40 + 40 + 6 + 76 // + $1D:E9DE-E9E0 LDA $11 : BEQ taken
-        } else if self.game_state.frame.submodule == 14 {
-            40 + 40 + 32 + 6 + 76 // + $1D:E9E2-E9E4 CMP #$0e : BEQ taken
-        } else if self.game_state.sprites.system.alt_sprites_flag() == 0 {
-            40 + 40 + 32 + 48 + 6 + 76 // + $1D:E9E6-E9E9 LDA $0ffa : BEQ taken
-        } else {
-            40 + 40 + 32 + 48 + 16 // all four fall through + $1D:E9EB LDX #$0f
-        });
-        if self.game_state.world.location.is_outdoors()
-            || self.game_state.frame.submodule == 0
-            || self.game_state.frame.submodule == 14
-            || self.game_state.sprites.system.alt_sprites_flag() == 0
-        {
-            self.sprite_system_mut().clear_alt_sprites_flag();
-            return;
+        if native_slot.is_none() {
+            crate::cycle_ledger::charge(if self.game_state.world.location.is_outdoors() {
+                40 + 6 + 76 // $1D:E9DA-E9DC LDA $1b : BEQ taken
+            } else if self.game_state.frame.submodule == 0 {
+                40 + 40 + 6 + 76 // + $1D:E9DE-E9E0 LDA $11 : BEQ taken
+            } else if self.game_state.frame.submodule == 14 {
+                40 + 40 + 32 + 6 + 76 // + $1D:E9E2-E9E4 CMP #$0e : BEQ taken
+            } else if self.game_state.sprites.system.alt_sprites_flag() == 0 {
+                40 + 40 + 32 + 48 + 6 + 76 // + $1D:E9E6-E9E9 LDA $0ffa : BEQ taken
+            } else {
+                40 + 40 + 32 + 48 + 16 // all four fall through + $1D:E9EB LDX #$0f
+            });
+            if self.game_state.world.location.is_outdoors()
+                || self.game_state.frame.submodule == 0
+                || self.game_state.frame.submodule == 14
+                || self.game_state.sprites.system.alt_sprites_flag() == 0
+            {
+                self.sprite_system_mut().clear_alt_sprites_flag();
+                return;
+            }
         }
         let interruption = self.take_dungeon_cached_sprite_cpu_interruption();
         if crate::zelda_rtl::debug_cached_sprite_cpu_for_host(self.frame_ctr_dbg) {
@@ -5718,16 +6057,24 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 self.game_state.frame.subsubmodule,
             );
         }
-        for i in (0..16usize).rev() {
+        for i in (0..native_slot.map_or(16, |slot| usize::from(slot) + 1)).rev() {
             self.sprite_system_mut().set_cur_object_index(i as u8);
+            let loaded_backup = native_backup.filter(|_| native_slot == Some(i as u8));
+            let loaded_timer = native_timer.filter(|_| native_slot == Some(i as u8));
+            if let Some((state, tail)) = loaded_timer {
+                assert!(self.native_sprite_timer_handoff.is_none());
+                self.native_sprite_timer_handoff = Some((i as u8, state, tail));
+            }
             // $1D:E9ED-E9F3 STX $0fa0, LDA $1d00,x, BEQ (80): an active cached
             // slot falls into $1D:E9F5 JSR UncacheAndExecuteSprite (46), an
             // inactive one takes the BEQ (+6). The $1D:E9F8-E9F9 DEX : BPL
             // tail (30, +6 taken) follows the slot below.
-            if self.cached_sprite_slot(i).is_active() {
-                crate::cycle_ledger::charge(80 + 46);
-            } else {
-                crate::cycle_ledger::charge(80 + 6);
+            if native_slot != Some(i as u8) {
+                if self.cached_sprite_slot(i).is_active() {
+                    crate::cycle_ledger::charge(80 + 46);
+                } else {
+                    crate::cycle_ledger::charge(80 + 6);
+                }
             }
             if self.cached_sprite_slot(i).is_active()
                 || interruption.is_some_and(|(boundary, _)|
@@ -5741,22 +6088,23 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                     match boundary {
                         CachedSpriteCpuInterruption::AfterSlot { .. } => {
                             if self.cached_sprite_slot(i).is_active() {
-                                self.uncache_and_execute_sprite(i);
+                                self.uncache_and_execute_sprite_with_loaded_backup(i,loaded_backup,loaded_timer);
                             }
                         }
                         CachedSpriteCpuInterruption::Loading { copied_fields, .. } => {
-                            self.cached_sprite_slot_mut(i)
-                                .load_cached_fields_into_live_before_nmi(
-                                    &mut live_slot_backup,
-                                    usize::from(copied_fields),
-                                );
+                            if let Some(backup)=loaded_backup {
+                                live_slot_backup=*backup;
+                                // Native work already retired all 24 field copies.
+                                boundary=CachedSpriteCpuInterruption::Loading {slot:i as u8,copied_fields:24};
+                            } else {
+                                self.cached_sprite_slot_mut(i).load_cached_fields_into_live_before_nmi(&mut live_slot_backup,usize::from(copied_fields));
+                            }
                         }
                         CachedSpriteCpuInterruption::ExecutingAntfairyAfterSubtype2Increment {
                             continuation: None,
                             ..
                         } => {
-                            self.cached_sprite_slot_mut(i)
-                                .load_cached_into_live(&mut live_slot_backup);
+                            self.load_cached_sprite_unless_native(i,&mut live_slot_backup,loaded_backup);
                             assert_eq!(
                                 self.sprite_slot_view(i).state(),
                                 9,
@@ -5768,9 +6116,9 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                             // Sprite_ExecuteSingle when the NMI lands; the
                             // restore half runs in the continuation.
                             let _uncache = crate::cycle_ledger::routine(0x1d_ea00);
-                            crate::cycle_ledger::charge(3_160);
+                            crate::cycle_ledger::charge(if loaded_backup.is_some() {48}else{3_160});
                             let _wrapper = crate::cycle_ledger::routine(0x06_84da);
-                            crate::cycle_ledger::charge(190);
+                            crate::cycle_ledger::charge(if loaded_timer.is_some() {72}else{190});
                             let _execute_single = self.sprite_execute_single_lane_scope(i, true);
                             self.sprite_timers_and_oam(i);
                             let continuation = self.antfairy_draw_continuation(i);
@@ -5787,14 +6135,13 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                             "cached Antfairy boundary was already bound before entering its native call site"
                         ),
                         CachedSpriteCpuInterruption::ExecutingGreenKnifeGuardBeforeRecruitOamPrep { .. } => {
-                            self.cached_sprite_slot_mut(i)
-                                .load_cached_into_live(&mut live_slot_backup);
+                            self.load_cached_sprite_unless_native(i,&mut live_slot_backup,loaded_backup);
                             assert_eq!(self.sprite_slot_view(i).state(), 9);
                             assert_eq!(self.sprite_slot_view(i).sprite_type(), 0x4b);
                             let _uncache = crate::cycle_ledger::routine(0x1d_ea00);
-                            crate::cycle_ledger::charge(3_160);
+                            crate::cycle_ledger::charge(if loaded_backup.is_some() {48}else{3_160});
                             let _wrapper = crate::cycle_ledger::routine(0x06_84da);
-                            crate::cycle_ledger::charge(190);
+                            crate::cycle_ledger::charge(if loaded_timer.is_some() {72}else{190});
                             let _execute_single = self.sprite_execute_single_lane_scope(i, true);
                             self.sprite_timers_and_oam(i);
                             self.charge_sprite_active_main_dispatch(i);
@@ -5803,14 +6150,13 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                         CachedSpriteCpuInterruption::ExecutingGuardBeforeShadow {
                             continuation: None, ..
                         } => {
-                            self.cached_sprite_slot_mut(i)
-                                .load_cached_into_live(&mut live_slot_backup);
+                            self.load_cached_sprite_unless_native(i,&mut live_slot_backup,loaded_backup);
                             assert_eq!(self.sprite_slot_view(i).state(), 9);
                             assert!((0x41..=0x44).contains(&self.sprite_slot_view(i).sprite_type()));
                             let _uncache = crate::cycle_ledger::routine(0x1d_ea00);
-                            crate::cycle_ledger::charge(3_160);
+                            crate::cycle_ledger::charge(if loaded_backup.is_some() {48}else{3_160});
                             let _wrapper = crate::cycle_ledger::routine(0x06_84da);
-                            crate::cycle_ledger::charge(190);
+                            crate::cycle_ledger::charge(if loaded_timer.is_some() {72}else{190});
                             let _execute_single = self.sprite_execute_single_lane_scope(i, true);
                             self.sprite_timers_and_oam(i);
                             self.charge_sprite_active_main_dispatch(i);
@@ -5829,14 +6175,13 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                         | CachedSpriteCpuInterruption::ExecutingAfterOamAllocation {
                             state: None, ..
                         } => {
-                            self.cached_sprite_slot_mut(i)
-                                .load_cached_into_live(&mut live_slot_backup);
+                            self.load_cached_sprite_unless_native(i,&mut live_slot_backup,loaded_backup);
                             let state = self.sprite_slot_view(i).state();
                             assert_ne!(state, 0);
                             let _uncache = crate::cycle_ledger::routine(0x1d_ea00);
-                            crate::cycle_ledger::charge(3_160);
+                            crate::cycle_ledger::charge(if loaded_backup.is_some() {48}else{3_160});
                             let _wrapper = crate::cycle_ledger::routine(0x06_84da);
-                            crate::cycle_ledger::charge(190);
+                            crate::cycle_ledger::charge(if loaded_timer.is_some() {72}else{190});
                             let _execute_single = self.sprite_execute_single_lane_scope(i, false);
                             boundary = if matches!(boundary,
                                 CachedSpriteCpuInterruption::ExecutingAfterCoordinates { .. }) {
@@ -5858,13 +6203,12 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                             state: Some(_), ..
                         } => unreachable!("cached OAM boundary was already bound"),
                         CachedSpriteCpuInterruption::Restoring { live_fields, .. } => {
-                            self.cached_sprite_slot_mut(i)
-                                .load_cached_into_live(&mut live_slot_backup);
+                            self.load_cached_sprite_unless_native(i,&mut live_slot_backup,loaded_backup);
                             {
                                 // $06:84DA Sprite_ExecuteSingle_ long-call wrapper
                                 // (PHB PHK PLB JSR PLB RTL, 190).
                                 let _wrapper = crate::cycle_ledger::routine(0x06_84da);
-                                crate::cycle_ledger::charge(190);
+                                crate::cycle_ledger::charge(if loaded_timer.is_some() {72}else{190});
                                 self.sprite_execute_single(i);
                             }
                             if self.sprite_slot_view(i).pause() != 0 {
@@ -5906,7 +6250,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                     return;
                 }
                 if self.cached_sprite_slot(i).is_active() {
-                    self.uncache_and_execute_sprite(i);
+                    self.uncache_and_execute_sprite_with_loaded_backup(i,loaded_backup,loaded_timer);
                 }
             }
             // $1D:E9F8-E9F9 DEX : BPL (30), taken (+6) for every slot but 0.
@@ -6085,21 +6429,47 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   ...see sprite.c...
     // }
     pub(super) fn uncache_and_execute_sprite(&mut self, k: usize) {
+        self.uncache_and_execute_sprite_with_loaded_backup(k,None,None);
+    }
+
+    fn load_cached_sprite_unless_native(
+        &mut self,
+        k: usize,
+        backup: &mut [u8; 24],
+        native: Option<&[u8; 24]>,
+    ) {
+        if let Some(native) = native {
+            *backup = *native;
+        } else {
+            self.cached_sprite_slot_mut(k).load_cached_into_live(backup);
+        }
+    }
+
+    fn uncache_and_execute_sprite_with_loaded_backup(
+        &mut self,
+        k: usize,
+        native: Option<&[u8; 24]>,
+        timer: Option<(u8, crate::cycle_models::sprite_timers::SpriteTimersTail)>,
+    ) {
         // Cycle ledger: UncacheAndExecuteSprite $1D:EA00 (m8 x8, X <= 15 so
         // no abs,x page crossing). $1D:EA00-EB01: 24 backup pushes, 24 cached
         // field loads into the live slot, JSL Sprite_ExecuteSingle_ (62),
         // LDA $f00,x, BEQ not taken: 3,160.
         let _scope = crate::cycle_ledger::routine(0x1d_ea00);
-        crate::cycle_ledger::charge(3_160);
+        crate::cycle_ledger::charge(if native.is_some() { 48 } else { 3_160 });
         let mut bak = [0u8; 24];
-        self.cached_sprite_slot_mut(k)
-            .load_cached_into_live(&mut bak);
+        self.load_cached_sprite_unless_native(k, &mut bak, native);
         {
             // $06:84DA Sprite_ExecuteSingle_ long-call wrapper (PHB PHK PLB
             // JSR Sprite_ExecuteSingle PLB RTL, 190).
             let _wrapper = crate::cycle_ledger::routine(0x06_84da);
-            crate::cycle_ledger::charge(190);
-            self.sprite_execute_single(k);
+            if let Some((state, tail)) = timer {
+                crate::cycle_ledger::charge(72); // Retained PLB and RTL of long wrapper.
+                self.sprite_execute_single_after_native_timers(k, state, tail);
+            } else {
+                crate::cycle_ledger::charge(190);
+                self.sprite_execute_single(k);
+            }
         }
         if self.sprite_slot_view(k).pause() != 0 {
             // $1D:EB03 STZ $1d00,x (38).
@@ -6237,6 +6607,13 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   ...see sprite.c...
     // }
     pub(super) fn sprite_timers_and_oam(&mut self, k: usize) {
+        if let Some((slot, _, tail)) = self.native_sprite_timer_handoff {
+            if usize::from(slot) == k {
+                self.native_sprite_timer_handoff = None;
+                self.finish_native_sprite_timers(k, tail);
+                return;
+            }
+        }
         // Cycle ledger: Sprite_TimersAndOam $06:83F2 (m8 x8, X <= 15 so no
         // abs,x page crossing). The blocks are charged inside the pieces
         // below so the CPU-boundary lanes that run a piece charge that piece;
@@ -6456,21 +6833,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 } else {
                     crate::cycle_ledger::charge(6);
                 }
-                // $06:8481-8486 LDA $ce2,x CMP #$fb BCS (64): not taken into
-                // $06:8488-848E LDA ASL AND STA (100), else taken (+6).
-                if self.sprite_slot_view(k).incoming_damage() < 251 {
-                    crate::cycle_ledger::charge(64 + 100);
-                    let value =
-                        ((u16::from(self.sprite_slot_view(k).hit_timer()) * 2) & 0x0e) as u8;
-                    self.sprite_slot_view_mut(k).set_object_priority(value);
-                } else {
-                    crate::cycle_ledger::charge(64 + 6);
-                }
-                // $06:8491-8494 DEC $ef0,x : BRA (74; BRA's 22 already
-                // includes the taken cycles).
-                crate::cycle_ledger::charge(74);
-                let value = self.sprite_slot_view(k).hit_timer().wrapping_sub(1);
-                self.sprite_slot_view_mut(k).set_hit_timer(value);
+                self.sprite_timers_and_oam_finish_hit_timer(k);
             } else {
                 // BEQ taken (+6) into $06:8496-8499 STZ $ef0,x STZ $b89,x (76).
                 crate::cycle_ledger::charge(6 + 76);
@@ -6480,6 +6843,54 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 self.sprite_slot_view_mut(k).set_object_priority(value);
             }
         }
+    }
+
+    fn sprite_timers_and_oam_finish_hit_timer(&mut self, k: usize) {
+        // $06:8481-8486 LDA $ce2,x CMP #$fb BCS (64): not taken into
+        // $06:8488-848E LDA ASL AND STA (100), else taken (+6).
+        if self.sprite_slot_view(k).incoming_damage() < 251 {
+            crate::cycle_ledger::charge(64 + 100);
+            let value = ((u16::from(self.sprite_slot_view(k).hit_timer()) * 2) & 0x0e) as u8;
+            self.sprite_slot_view_mut(k).set_object_priority(value);
+        } else {
+            crate::cycle_ledger::charge(64 + 6);
+        }
+        // $06:8491-8494 DEC $ef0,x : BRA (74; BRA's 22 already
+        // includes the taken cycles).
+        crate::cycle_ledger::charge(74);
+        let value = self.sprite_slot_view(k).hit_timer().wrapping_sub(1);
+        self.sprite_slot_view_mut(k).set_hit_timer(value);
+    }
+
+    pub(super) fn finish_native_sprite_timers(
+        &mut self,
+        k: usize,
+        tail: crate::cycle_models::sprite_timers::SpriteTimersTail,
+    ) {
+        use crate::cycle_models::sprite_timers::SpriteTimersTail;
+        if let SpriteTimersTail::Recoil(tail) = tail {
+            let _timers = crate::cycle_ledger::routine(0x06_83f2);
+            self.finish_native_sprite_recoil(k,tail);
+            self.sprite_timers_and_oam_finish_hit_timer(k);
+            self.sprite_timers_and_oam_after_hit_through_timer_decrements(k);
+            self.sprite_timers_and_oam_after_timer_decrements(k);
+        }
+    }
+
+    fn sprite_execute_single_after_native_timers(
+        &mut self,
+        k: usize,
+        state: u8,
+        tail: crate::cycle_models::sprite_timers::SpriteTimersTail,
+    ) {
+        let _single = crate::cycle_ledger::routine(0x06_84e2);
+        if let Some((slot, saved, saved_tail)) = self.native_sprite_timer_handoff {
+            assert_eq!((usize::from(slot), saved, saved_tail), (k, state, tail));
+            self.native_sprite_timer_handoff = None;
+        }
+        self.finish_native_sprite_timers(k, tail);
+        crate::cycle_ledger::charge(60); // Saved state PLA, CMP #9, untaken BEQ.
+        self.sprite_execute_single_after_timers(k, state);
     }
 
     fn sprite_timers_and_oam_after_hit_through_timer_decrements(&mut self, k: usize) {
@@ -7408,9 +7819,14 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         // DEX CPX #$0e BNE 92 with the BNE taken fourteen times, RTS 42:
         // 1,522), else the BEQ is taken (+6); then $09:B07E RTL (44).
         let _scope = crate::cycle_ledger::routine(0x09_b06e);
-        crate::cycle_ledger::charge(110);
+        crate::cycle_ledger::charge(62);
         self.handle_screen_flash();
+        self.garnish_execute_upper_after_flash();
+    }
 
+    fn garnish_execute_upper_after_flash(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x09_b06e);
+        crate::cycle_ledger::charge(48); // LDA active : BEQ after the actual flash return.
         if self.game_state.sprites.garnish_runtime.active_type() != 0 {
             crate::cycle_ledger::charge(146);
             let _slots = crate::cycle_ledger::routine(0x09_b08c);
@@ -7424,6 +7840,36 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             crate::cycle_ledger::charge(6);
         }
         crate::cycle_ledger::charge(44);
+    }
+
+    fn finish_native_garnish_caller(
+        &mut self,
+        tail: crate::cycle_models::dungeon_garnish::GarnishTail,
+    ) {
+        use crate::cycle_models::dungeon_garnish::GarnishTail;
+        match tail {
+            GarnishTail::Returned => {}
+            GarnishTail::PaletteRestore
+            | GarnishTail::PaletteWhiten
+            | GarnishTail::PaletteFromFlash => {
+                self.finish_native_screen_flash(tail);
+                self.garnish_execute_upper_after_flash();
+            }
+            GarnishTail::Slot { slot, kind } => {
+                let _outer = crate::cycle_ledger::routine(0x09_b06e);
+                let _loop = crate::cycle_ledger::routine(0x09_b08c);
+                {
+                    let _single = crate::cycle_ledger::routine(0x09_b0b6);
+                    self.garnish_execute_single_after_type(usize::from(slot), kind);
+                }
+                crate::cycle_ledger::charge(46 + if slot > 15 { 6 } else { 0 }); // DEX : CPX : BNE after the selected body.
+                for k in (15..usize::from(slot)).rev() {
+                    crate::cycle_ledger::charge(if k > 15 { 98 } else { 92 });
+                    self.garnish_execute_single(k);
+                }
+                crate::cycle_ledger::charge(42 + 28 + 44); // Real loop RTS, restored DB, outer RTL.
+            }
+        }
     }
 
     // void Garnish_ExecuteLowerSlots() {  // 89b097
@@ -7472,6 +7918,11 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             return;
         }
         crate::cycle_ledger::charge(88);
+        self.garnish_execute_single_after_type(k,type_);
+    }
+
+    fn garnish_execute_single_after_type(&mut self, k: usize, type_: u8) {
+        assert_ne!(type_, 0);
         // $09:B0BF-B0C1 CMP #$05 : BEQ (32): type 5 takes it (+6) to the
         // countdown test; else $09:B0C3-B0C8 LDA $11 ORA $0fc1 BNE (72),
         // taken (+6) past the countdown when a submodule or pause is active.
@@ -7526,7 +7977,10 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             self.oam_allocate_from_region_a(sprsize);
         }
         crate::cycle_ledger::charge(240 + 42);
+        self.garnish_execute_body(k,type_);
+    }
 
+    fn garnish_execute_body(&mut self,k:usize,type_:u8) {
         match type_ {
             1 => self.garnish01_fire_snake_tail(k),
             2 => self.garnish02_mothula_beam_trail(k),
@@ -10483,13 +10937,56 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   ...see sprite.c...
     // }
     pub(super) fn sprite_mini_moldorm_recoil(&mut self, k: usize) {
+        let _scope = crate::cycle_ledger::routine(0x06_eec8);
         if self.sprite_slot_view(k).state() < 9 {
+            crate::cycle_ledger::charge(112); // LDA/CMP/BCC taken and actual RTS.
             return;
         }
-        let sprite_state = self.sprite_slot_view(k).state();
-        self.temp_counter_mut().set(sprite_state);
-
+        let state = self.sprite_slot_view(k).state();
+        self.temp_counter_mut().set(state);
         let dmg = self.sprite_slot_view(k).incoming_damage();
+        if dmg >= 251 {
+            crate::cycle_ledger::charge(if dmg == 253 { 160 } else { 198 });
+            self.sprite_mini_moldorm_recoil_after_classification(k, dmg);
+            return;
+        }
+        let health = self.sprite_slot_view(k).health();
+        let t = i32::from(health) - i32::from(dmg);
+        self.sprite_slot_view_mut(k).set_health(t as u8);
+        self.sprite_slot_view_mut(k).set_incoming_damage(0);
+        // Classification and actual health arithmetic through the return or
+        // the first death-processing instruction, independently Source checked.
+        crate::cycle_ledger::charge(if t > 0 {
+            462
+        } else if t == 0 {
+            404
+        } else {
+            414
+        });
+        if t <= 0 {
+            self.sprite_mini_moldorm_recoil_after_health(k);
+        }
+    }
+
+    pub(super) fn finish_native_sprite_recoil(
+        &mut self,
+        k: usize,
+        tail: crate::cycle_models::sprite_recoil::RecoilTail,
+    ) {
+        use crate::cycle_models::sprite_recoil::RecoilTail;
+        let _scope = crate::cycle_ledger::routine(0x06_eec8);
+        match tail {
+            RecoilTail::Burn => self.sprite_mini_moldorm_recoil_after_classification(k, 253),
+            RecoilTail::Stun(dmg) => self.sprite_mini_moldorm_recoil_after_classification(k, dmg),
+            RecoilTail::Death => self.sprite_mini_moldorm_recoil_after_health(k),
+            RecoilTail::Returned => {
+                unreachable!("actual native return already resumed the timer caller")
+            }
+        }
+    }
+
+    fn sprite_mini_moldorm_recoil_after_classification(&mut self, k: usize, dmg: u8) {
+        assert!(dmg >= 251);
         if dmg == 253 {
             let value = 0;
             self.sprite_slot_view_mut(k).set_incoming_damage(value);
@@ -10535,16 +11032,9 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             }
             return;
         }
+    }
 
-        let t = i32::from(self.sprite_slot_view(k).health()) - i32::from(dmg);
-        let value = t as u8;
-        self.sprite_slot_view_mut(k).set_health(value);
-        let value = 0;
-        self.sprite_slot_view_mut(k).set_incoming_damage(value);
-        if t > 0 {
-            return;
-        }
-
+    fn sprite_mini_moldorm_recoil_after_health(&mut self, k: usize) {
         if self.sprite_slot_view(k).die_action() == 0 {
             if self.sprite_slot_view(k).state() == 11 {
                 let value = 3;
@@ -10695,7 +11185,6 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             self.sprite_mini_moldorm_recoil_out_common(k);
         }
     }
-
     fn sprite_mini_moldorm_recoil_out_common(&mut self, k: usize) {
         self.follower_link_state_mut().increment_menu_block_flag();
         self.sprite_mini_moldorm_recoil_out_common2(k);
@@ -12409,6 +12898,9 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   main_module_index = 14;
     // }
     pub(super) fn sprite_show_message_minimal_c(&mut self) {
+        // $05:FA8E-FAA1: three absolute stores, two immediates, three
+        // direct-page accesses and the actual RTL (m8 x8, slow ROM).
+        crate::cycle_ledger::charge_routine(0x05_fa8e, 244);
         self.clear_tile_interaction_shared_flag();
         self.messaging_state_mut().clear_module();
         let main_module = self.game_state.frame.main_module;
@@ -12573,7 +13065,18 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   return Sprite_CheckIfOverlordsClear();
     // }
     pub(super) fn sprite_check_if_screen_is_clear(&self) -> bool {
+        let _scope = crate::cycle_ledger::routine(0x09_af32);
+        crate::cycle_ledger::charge(38); // $AF32..$AF33: PHX, LDX #15.
         for i in (0..=15usize).rev() {
+            crate::cycle_ledger::charge(48); // $AF35..$AF38: state and BEQ.
+            if self.sprite_slot_view(i).state() == 0 {
+                crate::cycle_ledger::charge(6); // $AF38: taken BEQ.
+            } else {
+                crate::cycle_ledger::charge(64); // $AF3A..$AF3F: flags and BNE.
+                if self.sprite_slot_view(i).flags4() & 0x40 != 0 {
+                    crate::cycle_ledger::charge(6); // $AF3F: taken BNE.
+                }
+            }
             if self.sprite_slot_view(i).state() != 0
                 && (self.sprite_slot_view(i).flags4() & 0x40) == 0
             {
@@ -12583,11 +13086,23 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 let y = self
                     .sprite_get_y(i)
                     .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
+                crate::cycle_ledger::charge(128); // $AF41..$AF4B: X subtraction and BNE.
+                if x >= 256 {
+                    crate::cycle_ledger::charge(6); // $AF4B: taken BNE skips Y.
+                } else {
+                    crate::cycle_ledger::charge(128); // $AF4D..$AF57: Y subtraction and BNE.
+                    if y >= 256 {
+                        crate::cycle_ledger::charge(6); // $AF57: taken BNE.
+                    }
+                }
                 if x < 256 && y < 256 {
+                    crate::cycle_ledger::charge(86); // $AF59..$AF5B: restore X, CLC, RTL.
                     return false;
                 }
             }
+            crate::cycle_ledger::charge(if i == 0 { 30 } else { 36 }); // $AF5C..$AF5D: DEX, BPL.
         }
+        crate::cycle_ledger::charge(22); // $AF5F: BRA, sharing this caller's saved X.
         self.sprite_check_if_overlords_clear()
     }
 
@@ -12617,13 +13132,22 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     //   return true;
     // }
     pub(super) fn sprite_check_if_overlords_clear(&self) -> bool {
+        // Screen/room checks branch here with X already saved on their stack.
+        crate::cycle_ledger::charge(16); // $AF76: LDX #7.
         for i in (0..=7usize).rev() {
+            crate::cycle_ledger::charge(64); // $AF78..$AF7D: type and first comparison.
+            if self.overlord_slot_view(i).overlord_type() != 0x14 {
+                crate::cycle_ledger::charge(32); // $AF7F..$AF81: second comparison.
+            }
             if self.overlord_slot_view(i).overlord_type() == 0x14
                 || self.overlord_slot_view(i).overlord_type() == 0x18
             {
+                crate::cycle_ledger::charge(6 + 86); // Taken BEQ, $AF70..$AF72 return.
                 return false;
             }
+            crate::cycle_ledger::charge(if i == 0 { 30 } else { 36 }); // $AF83..$AF84: DEX, BPL.
         }
+        crate::cycle_ledger::charge(86); // $AF86..$AF88: restore X, SEC, RTL.
         true
     }
 
@@ -12692,3 +13216,23 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
 #[cfg(test)]
 #[path = "sprite_tests.rs"]
 mod tests;
+
+impl ZeldaState {
+    fn finish_native_lower_garnish(&mut self,tail:crate::cycle_models::dungeon_lower_garnish::LowerGarnishTail) {
+        use crate::cycle_models::dungeon_lower_garnish::LowerGarnishTail;
+        match tail {
+            LowerGarnishTail::Returned=>{},
+            LowerGarnishTail::Body {slot,kind,..}=>{
+                let _outer=crate::cycle_ledger::routine(0x09_b07f);
+                let _slots=crate::cycle_ledger::routine(0x09_b097);
+                {let _single=crate::cycle_ledger::routine(0x09_b0b6);self.garnish_execute_body(usize::from(slot),kind);}
+                crate::cycle_ledger::charge(if slot==0 {30}else{36});
+                for k in (0..usize::from(slot)).rev() {
+                    crate::cycle_ledger::charge(if k==0 {76}else{82});
+                    self.garnish_execute_single(k);
+                }
+                crate::cycle_ledger::charge(42+28+44);
+            },
+        }
+    }
+}

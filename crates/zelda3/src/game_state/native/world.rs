@@ -2712,6 +2712,55 @@ pub(crate) struct WorldState {
 }
 
 impl WorldState {
+    pub(crate) fn write_overlay_byte(&mut self,address:usize,value:u8)->bool {
+        if address==0xc21b {self.overworld.transition.previous_screen_transition=value;return true;}
+        if address==0xc21c {return true;} // Companion byte retained by the source word store.
+        let (word,byte)=match address {
+            0x410..=0x411=>(&mut self.overworld.transition.edge_direction_bits,address-0x410),
+            0x416..=0x417=>(&mut self.overworld.transition.direction_bits,address-0x416),
+            0x418..=0x419=>(&mut self.overworld.transition.screen_transition,address-0x418),
+            0xc213..=0xc214=>(&mut self.region.previous_screen_index,address-0xc213),
+            0xc215..=0xc216=>(&mut self.overworld.map16.previous_load.src_off,address-0xc215),
+            0xc217..=0xc218=>(&mut self.overworld.map16.previous_load.y_unit,address-0xc217),
+            0xc219..=0xc21a=>(&mut self.overworld.map16.previous_load.dst_off,address-0xc219),
+            0xc21d..=0xc21e=>(&mut self.overworld.transition.previous_direction_bits,address-0xc21d),
+            0xc21f..=0xc220=>(&mut self.overworld.transition.previous_direction_bits2,address-0xc21f),
+            _=>return false,
+        };
+        let shift=byte*8;*word=(*word&!(255<<shift))|(u16::from(value)<<shift);true
+    }
+
+    /// Publish one retired overworld-properties byte to its scalar or table owner.
+    pub(crate) fn write_properties_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            0xaa0 => { self.palette_theme.overworld_tile_theme_index = value; return true; }
+            0xaa2 => { self.palette_theme.aux_tile_theme_index = value; return true; }
+            0xab4 => { self.palette_theme.overworld_palette_aux1_hi = value; return true; }
+            0x714 => { self.overworld.screen_size.big_area_backup = value; return true; }
+            0x15b00..=0x15b9f => {
+                self.overworld.config_table.set_music(address - 0x15b00, value);
+                return true;
+            }
+            _ => {}
+        }
+        let word = match address & !1 {
+            0x84 => &mut self.overworld.map16.active_load.src_off,
+            0x86 => &mut self.overworld.map16.active_load.dst_off,
+            0x88 => &mut self.overworld.map16.active_load.y_unit,
+            0x624..=0x62a => &mut self.camera_boundaries.scroll_counters[(address - 0x624) / 2],
+            0x708 => &mut self.scroll.overworld_offset_base_y,
+            0x70a => &mut self.scroll.overworld_offset_mask_y,
+            0x70c => &mut self.scroll.overworld_offset_base_x,
+            0x70e => &mut self.scroll.overworld_offset_mask_x,
+            0x712 => &mut self.overworld.screen_size.big_area,
+            0x716 => &mut self.overworld.screen_size.right_bottom_scroll_bound,
+            _ => return false,
+        };
+        let shift = (address & 1) * 8;
+        *word = (*word & !(255 << shift)) | (u16::from(value) << shift);
+        true
+    }
+
     #[cfg(test)]
     pub(crate) fn assert_entrance_matches_ram(&self, ram: &[u8]) {
         assert_eq!(self.location, WorldLocationState::load_from_ram(ram));

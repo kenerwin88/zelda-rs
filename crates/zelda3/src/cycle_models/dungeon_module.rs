@@ -90,7 +90,8 @@ impl DungeonModule {
         if self.complete() {
             return None;
         }
-        assert!(self.child().is_none(), "dungeon child still owns the CPU");
+        assert!(self.child().is_none(), "dungeon child {:?} still owns the CPU at {cpu:?}, field={} raster={:?}",
+            self.child(), clock.field_index(), clock.raster_position());
         self.entry_sp.get_or_insert(cpu.sp);
         match &mut self.phase {
             Phase::Dispatch(work) => {

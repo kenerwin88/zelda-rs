@@ -20,6 +20,7 @@ impl<'a, B> NativePpuBus<'a, B> {
 }
 
 impl<B: WorkBus> WorkBus for NativePpuBus<'_, B> {
+    fn inactive_sprite_body_mask(&mut self) -> u16 { self.bus.inactive_sprite_body_mask() }
     fn observe_clock(&mut self, clock: &CpuMasterTimeline) {
         if let Some(ppu) = self.ppu.as_mut() { ppu.synchronize(clock); }
         self.beam = clock.synchronous_beam_position();
@@ -27,6 +28,15 @@ impl<B: WorkBus> WorkBus for NativePpuBus<'_, B> {
     }
 
     fn access(&mut self, at: u64, access: Access) -> u16 {
+        if let Access::Read(address, 1) = access {
+            if address & 0x400000 == 0 && (0x2137..=0x213f).contains(&(address as u16)) {
+                if let Some(ppu) = self.ppu.as_mut() {
+                    if let Some(value) = ppu.read(address as u16, self.beam.expect("PPU read observes its clock")) {
+                        return u16::from(value);
+                    }
+                }
+            }
+        }
         if let Access::Write(address, value, width) = access {
             if address & 0x400000 == 0 && matches!(address as u16, 0x2100..=0x213f | 0x4201) {
                 assert_eq!(width, 1, "native PPU stores require byte boundaries");
@@ -45,6 +55,9 @@ impl<B: WorkBus> WorkBus for NativePpuBus<'_, B> {
     }
 
     fn end_scanline(&mut self, at: u64) { self.bus.end_scanline(at); }
+    fn retire_event(&mut self, event: CpuSynchronousTimelineEvent, clock: &CpuMasterTimeline) -> u32 {
+        self.bus.retire_event(event, clock)
+    }
     fn timeline_event(&mut self, event: CpuSynchronousTimelineEvent, at: u64) {
         self.bus.timeline_event(event, at);
     }
@@ -63,6 +76,9 @@ pub(crate) struct NativePpuState {
     oam: snes::SourceOamPort,
     reads: snes::SourcePpuReadState,
     events: CpuSynchronousEventObserver,
+    window_positions: [u8; 4],
+    window_scanlines: Box<[[u8; 4]; 224]>,
+    window_field: Option<u64>,
 }
 
 impl NativePpuState {
@@ -71,13 +87,38 @@ impl NativePpuState {
             oam: snes::SourceOamPort::reset(),
             reads: snes::SourcePpuReadState::snes9x_reset(),
             events: clock.synchronous_event_observer(),
+            window_positions: [1, 0, 1, 0],
+            window_scanlines: Box::new([[1, 0, 1, 0]; 224]),
+            window_field: None,
         }
     }
 
     pub(crate) fn synchronize(&mut self, clock: &CpuMasterTimeline) {
         let oam = &mut self.oam;
+        let windows = self.window_positions;
+        let rows = &mut self.window_scanlines;
+        let field = &mut self.window_field;
         clock.observe_processed_synchronous_events(&mut self.events,
-            |event| Self::timeline_event(oam, event));
+            |event| {
+                Self::timeline_event(oam, event);
+                match event {
+                    CpuSynchronousTimelineEvent::RenderLine { scanline: scanline @ 1..=224, .. } => {
+                        rows[usize::from(scanline - 1)] = windows;
+                    }
+                    CpuSynchronousTimelineEvent::HMax { completed_scanline: 224, completed_field_index, .. } => {
+                        *field = Some(completed_field_index);
+                    }
+                    CpuSynchronousTimelineEvent::HMax { completed_scanline: 261, .. } => *field = None,
+                    _ => {}
+                }
+            });
+    }
+
+    /// Values consumed by the completed visible field. A late HDMA transfer
+    /// or CPU table copy must not rewrite rows that have already rendered.
+    pub(crate) fn window_scanlines(&mut self, clock: &CpuMasterTimeline) -> Option<&[[u8; 4]; 224]> {
+        self.synchronize(clock);
+        (self.window_field == Some(clock.field_index())).then_some(&self.window_scanlines)
     }
 
     fn timeline_event(oam: &mut snes::SourceOamPort, event: CpuSynchronousTimelineEvent) {
@@ -113,6 +154,9 @@ impl NativePpuState {
     }
 
     pub(crate) fn write(&mut self, address: u16, value: u8, beam: CpuSynchronousBeamPosition) {
+        if (0x2126..=0x2129).contains(&address) {
+            self.window_positions[usize::from(address - 0x2126)] = value;
+        }
         if (0x2100..=0x2133).contains(&address) {
             self.oam.set_v_counter(beam.scanline);
             self.oam.write(address as u8, value);

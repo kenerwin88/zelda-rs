@@ -46,6 +46,25 @@ impl Default for OamState {
 }
 
 impl OamState {
+    /// Publish one actual retired shadow or bytewise extension store.
+    pub(crate) fn write_drawing_byte(&mut self, address: usize, value: u8) -> bool {
+        let word = match address & !1 {
+            OAM_PRIORITY_VALUE => Some(&mut self.priority_value),
+            0x90 => Some(&mut self.current_pointer),
+            0x92 => Some(&mut self.current_extended_pointer),
+            base @ 0xfe0..=0xfea => Some(&mut self.region_base[(base-0xfe0)/2]),
+            base @ 0xfec..=0xff6 => Some(&mut self.region_alloc[(base-0xfec)/2]),
+            _ => None,
+        };
+        if let Some(word)=word {
+            let shift=(address&1)*8;
+            *word=(*word & !(255<<shift)) | (u16::from(value)<<shift);
+            return true;
+        }
+        self.set_shadow_byte(address, value) || self.set_bytewise_extended_byte(address, value)
+            || ((EXTENDED_OAM..BYTEWISE_EXTENDED_OAM).contains(&address)
+                && self.set_packed_extended_byte(address-EXTENDED_OAM,value))
+    }
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         let mut state = Self {
             priority_value: read_le_u16(ram, OAM_PRIORITY_VALUE),

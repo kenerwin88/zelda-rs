@@ -8,6 +8,7 @@ use snes::CpuMasterTimeline;
 pub(crate) enum CoreAccess {
     ReadByte(u16),
     ReadWord(u16),
+    ReadLongWord(u32),
     WriteByte(u16, u8),
     WriteWord(u16, u16),
     /// Owns the nested hardware transfer and enclosing six-clock CPU write.
@@ -23,6 +24,7 @@ pub(crate) enum MaintenanceKind {
     Palette,
     Oam,
     BackgroundCharacters,
+    SubscreenOverlay,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -175,7 +177,7 @@ impl NativeNmiContext {
         assert_eq!(packets, 0, "native initial NMI has no packet continuation");
         work.branch(true);
         let dispatch = work.read_dp(0x17);
-        assert!(matches!(dispatch, 0 | 11), "native NMI has no owner for dispatch {dispatch}");
+        assert!(matches!(dispatch, 0 | 4 | 11), "native NMI has no owner for dispatch {dispatch}");
         work.fetch();
         work.drain(6); // ASL A
         work.cpu.p = (work.cpu.p & !CARRY) | (dispatch >> 7);
@@ -193,7 +195,9 @@ impl NativeNmiContext {
         work.drain(16);
         work.drain(6);
         work.drain(16);
-        if dispatch == 11 {
+        if dispatch == 4 {
+            work.subscreen_overlay();
+        } else if dispatch == 11 {
             // NMI_UpdateBGCharHalf ($8F45): live target page, WRAM source.
             work.read_a(0x116);
             work.store(0x2117, work.cpu.a as u8);
@@ -231,6 +235,7 @@ impl NativeNmiContext {
         // The previous fixed return cost included the taken stripe-gate BEQ.
         302 + if stripe == 0 { 22 } else { 16 + stripe_cycles }
             + if dispatch == 11 { 480 - 42 } else { 0 }
+            + if dispatch == 4 { 14192 } else { 0 }
     }
 
     /// Execute $89E0 through $8B67. DMA consumes the live programmed channel
@@ -474,6 +479,18 @@ mod tests {
         }
     }
 
+    #[test]
+    fn subscreen_overlay_dispatch_matches_rom_bus_hardware_and_clock() {
+        let Some(rom) = rom() else { return };
+        for palette in [0, 1] {
+            for position in [(225, 510), (240, 1350), (261, 1300)] {
+                for odd in [false, true] {
+                    compare_case(&rom, position, odd, None, 0, palette, (1, 0x18), 4, 0);
+                }
+            }
+        }
+    }
+
     fn compare_case(
         rom: &[u8],
         (v, h): (u16, u16),
@@ -560,6 +577,10 @@ mod tests {
             for access in source.step().unwrap().accesses {
                 let a = access.address as u16;
                 let op = match access.kind {
+                    SourceCpuBusAccessKind::Read { width: 2, .. }
+                        if (0x7f4000..0x7f4080).contains(&access.address) => {
+                        CoreAccess::ReadLongWord(access.address)
+                    }
                     SourceCpuBusAccessKind::Read { width: 1, .. } if access.address < 0x2000 => {
                         CoreAccess::ReadByte(a)
                     }
@@ -577,7 +598,7 @@ mod tests {
                     SourceCpuBusAccessKind::Write { value, width: 1 }
                         if access.address < 0x2000
                             || (0x2100..0x2140).contains(&a)
-                            || (0x4300..0x4380).contains(&a) =>
+                            || a == 0x420c || (0x4300..0x4380).contains(&a) =>
                     {
                         CoreAccess::WriteByte(a, value as u8)
                     }
@@ -603,6 +624,10 @@ mod tests {
                 CoreAccess::ReadWord(a) => {
                     u16::from_le_bytes([ram[usize::from(a)], ram[usize::from(a) + 1]])
                 }
+                CoreAccess::ReadLongWord(a) => {
+                    let at = (a - 0x7e0000) as usize;
+                    u16::from_le_bytes([ram[at], ram[at+1]])
+                }
                 CoreAccess::WriteWord(a, value) => {
                     ram[usize::from(a)..usize::from(a) + 2].copy_from_slice(&value.to_le_bytes());
                     0
@@ -610,6 +635,10 @@ mod tests {
                 CoreAccess::WriteByte(a, value) => {
                     if a < 0x2000 {
                         ram[usize::from(a)] = value
+                    } else if a == 0x420c {
+                        for (i, channel) in dma.channel.iter_mut().enumerate() {
+                            channel.hdma_active = value & (1 << i) != 0;
+                        }
                     } else if a >= 0x4300 {
                         dma.write_register(a, value)
                     } else {
@@ -642,7 +671,8 @@ mod tests {
             let result = native.display_maintenance_updates(&mut clock, &mut bus);
             assert_eq!((result.hud, result.palette), (hud != 0, palette != 0));
             assert_eq!(native.initial_updates_return(&mut clock, &mut bus),
-                324 + if dispatch == 11 { 438 } else { 0 });
+                324 + if dispatch == 11 { 438 } else { 0 }
+                    + if dispatch == 4 { 14192 } else { 0 });
         }
         let label =
             format!("core={core:?} hud={hud} palette={palette} mode={mode} dispatch={dispatch} page={page} v={v} h={h} odd={odd}");
@@ -704,6 +734,69 @@ mod tests {
 }
 
 impl<F: FnMut(&mut CpuMasterTimeline, CoreAccess) -> u16> CoreUpdates<'_, F> {
+    /// $8D62-$8E05, including every DMA and the M16 write to $420C.
+    fn subscreen_overlay(&mut self) {
+        self.lda(0x7f);
+        self.store(0x4304, 0x7f);
+        self.lda(0x80);
+        self.store(0x2115, 0x80);
+        self.fetch(); self.drain(14); // REP #$31
+        self.cpu.p &= !(ACCUMULATOR_BYTE | INDEX_BYTE | CARRY);
+        self.lda_word(0x2000);
+        self.store_word(0x4302, self.cpu.a);
+        self.ldx(0);
+        self.lda_word(0x80);
+        self.branch(true); // BRA $8DAE
+        self.store_dp_word(2, self.cpu.a);
+        self.lda_word(0x1801);
+        self.store_word(0x4300, self.cpu.a);
+        self.lda_word(1);
+        self.store_dp_word(0, self.cpu.a);
+        self.ldy(0x80);
+        loop {
+            for offset in [0, 2, 4, 6] {
+                self.fetch(); self.drain(24);
+                self.cpu.a = (self.bus)(self.clock,
+                    CoreAccess::ReadLongWord(0x7f4000 + u32::from(self.cpu.x) + offset));
+                self.drain(16);
+                self.index_flags(self.cpu.a);
+                self.store_word(0x2116, self.cpu.a);
+                self.sty(0x4305);
+                self.fetch(); self.drain(8);
+                self.cpu.a = (self.bus)(self.clock, CoreAccess::ReadWord(0));
+                self.drain(16); self.index_flags(self.cpu.a);
+                self.maintenance_dma(self.cpu.a as u8, MaintenanceKind::SubscreenOverlay);
+                (self.bus)(self.clock, CoreAccess::WriteByte(0x420c, (self.cpu.a >> 8) as u8));
+                self.drain(6);
+            }
+            self.fetch(); self.drain(6); // TXA
+            self.cpu.a = self.cpu.x; self.index_flags(self.cpu.a);
+            self.fetch(); self.drain(16); // ADC #$0008
+            let sum = u32::from(self.cpu.a) + 8 + u32::from(self.cpu.p & CARRY);
+            self.cpu.p = (self.cpu.p & !(CARRY | 0x40))
+                | if sum > 0xffff { CARRY } else { 0 }
+                | if (!(self.cpu.a ^ 8) & (self.cpu.a ^ sum as u16) & 0x8000) != 0 { 0x40 } else { 0 };
+            self.cpu.a = sum as u16; self.index_flags(self.cpu.a);
+            self.fetch(); self.drain(6); // TAX
+            self.cpu.x = self.cpu.a; self.index_flags(self.cpu.x);
+            self.fetch(); self.drain(8); // CMP $02
+            let limit = (self.bus)(self.clock, CoreAccess::ReadWord(2));
+            self.drain(16);
+            self.cpu.p = (self.cpu.p & !CARRY) | if self.cpu.a >= limit { CARRY } else { 0 };
+            self.index_flags(self.cpu.a.wrapping_sub(limit));
+            self.branch(self.cpu.p & ZERO == 0);
+            if self.cpu.p & ZERO != 0 { break; }
+        }
+        self.fetch(); self.drain(14); // SEP #$30
+        self.cpu.p |= ACCUMULATOR_BYTE | INDEX_BYTE;
+        self.cpu.x &= 0xff; self.cpu.y &= 0xff;
+        self.store(0x710, 0);
+    }
+    fn store_dp_word(&mut self, address: u16, value: u16) {
+        self.fetch(); self.drain(8);
+        (self.bus)(self.clock, CoreAccess::WriteWord(address, value));
+        self.drain(16);
+    }
     fn byte_flags(&mut self, value: u8) {
         self.cpu.p = (self.cpu.p & !(ZERO | NEGATIVE))
             | if value == 0 { ZERO } else { 0 }
@@ -795,7 +888,7 @@ impl<F: FnMut(&mut CpuMasterTimeline, CoreAccess) -> u16> CoreUpdates<'_, F> {
         self.fetch();
         self.drain(16);
         (self.bus)(self.clock, CoreAccess::WriteByte(address, value));
-        self.drain(6);
+        self.drain(if address < 0x2000 { 8 } else { 6 });
     }
     fn store_word(&mut self, address: u16, value: u16) {
         self.fetch();

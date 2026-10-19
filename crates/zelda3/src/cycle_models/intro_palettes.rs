@@ -164,6 +164,9 @@ impl IntroPalettes {
         let loader = match entry {
             0x1bec77 => Loader::SpriteLeft,
             0x1bec9e => Loader::SpriteMain,
+            0x1beec7 => Loader::BgMain,
+            0x1beee8 => Loader::Bg1,
+            0x1bef0c => Loader::Bg2,
             0x1bed72 => Loader::Environment,
             0x1bee74 => Loader::Dungeon,
             0x1beea8 => Loader::Bg3,
@@ -177,6 +180,10 @@ impl IntroPalettes {
         }
     }
     /// The caller retains the real JSR return while this owner performs the copy.
+    pub(crate) fn from_backdrop_store() -> Self {
+        Self { phase: Phase::Backdrop(2), call: u8::MAX, copy_return: None }
+    }
+
     pub(crate) fn from_copy(entry: u32) -> Self {
         Self {
             phase: match entry {

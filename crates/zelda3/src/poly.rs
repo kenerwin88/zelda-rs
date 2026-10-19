@@ -206,8 +206,8 @@ impl ZeldaState {
     pub(super) fn run_native_poly_vertices(&mut self,
         context:&mut crate::cycle_models::nmi_stack::NativeNmiContext,
         clock:&mut snes::CpuMasterTimeline)->crate::cycle_models::poly_vertices::PolyDivider {
-        use crate::cycle_models::{intro_clear::Access,poly_vertices::{PolyDivider,PolyVertices}};
-        let mut work=PolyVertices::default();let mut divider=PolyDivider::default();
+        use crate::cycle_models::{intro_clear::Access,poly_vertices::PolyVertices};
+        let mut work=PolyVertices::default();let mut divider=self.native_cpu_math.clone();
         while let Some(cycles)=work.step(context,clock,|_,access| {
             if let Some(value)=divider.access(access){return value;}
             match access {
@@ -226,6 +226,7 @@ impl ZeldaState {
                 Access::Vblank {..}=>panic!("poly vertices need an NMI continuation"),
             }
         }) {crate::cycle_ledger::charge(cycles);}
+        self.native_cpu_math = divider.clone();
         divider
     }
 
@@ -271,7 +272,9 @@ impl ZeldaState {
         use crate::cycle_models::{intro_clear::Access,poly_buffer_clear};
         let mut native_ppu = self.native_ppu.take();
         let result = work.step(context,clock,
-            crate::cycle_models::native_ppu::NativePpuBus::new(&mut native_ppu, |_,access| match access {
+            crate::cycle_models::native_ppu::NativePpuBus::new(&mut native_ppu, |_,access| {
+            if let Some(value) = self.native_cpu_math.access(access) { return value; }
+            match access {
             Access::Read(address,width)=>{
                 if let Some(low)=Self::native_poly_table_byte(address).or_else(||poly_buffer_clear::table_byte(address)) {
                     return if width==1 {u16::from(low)} else {u16::from_le_bytes([low,Self::native_poly_table_byte(address+1).expect("native poly table word")])};
@@ -299,7 +302,7 @@ impl ZeldaState {
                 0
             }
             Access::Vblank {field,at}=>{vblank(field,at);0},
-        }));
+        }}));
         if let Some(ppu) = native_ppu.as_mut() { ppu.synchronize(clock); }
         self.native_ppu = native_ppu;
         result

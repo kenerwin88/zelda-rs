@@ -195,6 +195,19 @@ pub(crate) struct GarnishRuntimeState {
 }
 
 impl GarnishRuntimeState {
+    pub(crate) fn write_collision_byte(&mut self, address: usize, value: u8) -> bool {
+        let word = match address & !1 {
+            0xfb8 => &mut self.sprite_collision_x_size,
+            0xfba => &mut self.sprite_collision_y_size,
+            0xfbc => &mut self.sprite_collision_x_base,
+            0xfbe => &mut self.sprite_collision_y_base,
+            _ => return false,
+        };
+        let shift = (address & 1) * 8;
+        *word = (*word & !(255 << shift)) | (u16::from(value) << shift);
+        true
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             active_type: ram.get(GARNISH_ACTIVE).copied().unwrap_or(0),
@@ -361,6 +374,10 @@ impl GarnishRuntimeState {
 
     pub(crate) fn clear_boulder_trap_count(&mut self) {
         self.boulder_trap_count = 0;
+    }
+
+    pub(crate) fn set_boulder_trap_count(&mut self, value: u8) {
+        self.boulder_trap_count = value;
     }
 
     pub(crate) fn increment_boulder_trap_count(&mut self) {

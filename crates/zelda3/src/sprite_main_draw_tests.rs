@@ -5,6 +5,55 @@ fn fresh_state() -> ZeldaState {
     ZeldaState::new()
 }
 
+#[test]
+fn paused_rat_animation_and_double_return_cost_match_source() {
+    use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+    let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc"));
+    let Ok(mut rom) = std::fs::read(path) else { return };
+    if rom.len() % 0x400 == 0x200 { rom.drain(..0x200); }
+    for animation in 0..8 {
+        for (state, submodule, modal_pause) in [(9, 2, 0), (9, 0, 1), (8, 0, 0)] {
+            let mut native = cucco_draw_fixture(0);
+            native.set_submodule(submodule);
+            native.ram[0x0fc1] = modal_pause;
+            native.sync_native_game_state_from_ram();
+            {
+                let mut slot = native.sprite_slot_view_mut(2);
+                slot.set_sprite_type(0x6d);
+                slot.set_state(state);
+                slot.set_a(animation);
+            }
+            let checkpoint = RomCpuCheckpoint {
+                entry_pc: 0x05_a8b0, stop_pc: 0x05_ffff,
+                a: 0, x: 2, y: 0, sp: 0x01fc, dp: 0, db: 5,
+                carry: true, zero: false, overflow: false, negative: false,
+                interrupt_disable: false, decimal: false,
+                accumulator_is_8_bit: true, index_is_8_bit: true,
+                emulation: false, waiting: false,
+                stack_address: 0x01fd, stack_bytes: &[0xfe, 0xff],
+            };
+            let mut source = RomCpuTimingRun::new(&rom, &native.ram, &[0; 0x2000],
+                &native.ppu, &native.dma, [0; 4], checkpoint).unwrap();
+            let mut expected = 0u64;
+            for _ in 0..1000 {
+                if source.is_complete() { break; }
+                expected += u64::from(source.step().master_cycles);
+            }
+            assert!(source.is_complete(), "paused rat did not return");
+            let before = crate::cycle_ledger::master();
+            native.sprite_6_d_rat(2);
+            assert_eq!(crate::cycle_ledger::master() - before, expected,
+                "animation={animation} state={state} submodule={submodule} modal={modal_pause}");
+            for address in (0x800..0xaa0).chain([0xdc2, 0xf52]) {
+                assert_eq!(native.ram[address], source.ram_byte(address),
+                    "animation={animation} address={address:04x}");
+            }
+        }
+    }
+}
+
 fn cucco_draw_fixture(velocity: u8) -> ZeldaState {
     let mut state = fresh_state();
     state.ram[0x0fd8..0x0fda].copy_from_slice(&0x20u16.to_le_bytes());

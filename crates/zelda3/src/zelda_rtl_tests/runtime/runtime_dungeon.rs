@@ -5,6 +5,125 @@ use super::*;
 use crate::tile_definition::NativeTile;
 
 #[test]
+fn supertile_final_caller_matches_source_cycles_and_byte_writes() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    // Cover every boss-table search position, both fixed music commands,
+    // ordinary rooms, door/save branches, and screen/overlord early exits.
+    let rooms = [18u16, 2, 33, 200, 51, 7, 32, 6, 90, 41, 144, 222, 164, 172, 13, 0x107];
+    for room in rooms {
+        for variant in 0..64u8 {
+            let mut state = ZeldaState::new();
+            state.ram[0x10] = 7;
+            state.ram[0x11] = 2;
+            state.ram[0xb0] = 15;
+            state.ram[0xa0..0xa2].copy_from_slice(&room.to_le_bytes());
+            state.ram[0x403] = (variant & 3) << 4;
+            state.ram[0x468] = (variant >> 2) & 1;
+            state.ram[0x469] = 0x5a;
+            state.ram[0x68e..0x692].copy_from_slice(&[0x41, 0x72, 0x83, 0x94]);
+            state.ram[0x12c] = 0x77;
+            for address in [0x20, 0x22, 0xe2, 0xe8, 0x600, 0x604, 0x608, 0x60c,
+                0x610, 0x612, 0x614, 0x616, 0x618, 0x61c, 0xa6, 0xa9] {
+                let value = (address as u16).wrapping_mul(37).wrapping_add(u16::from(variant));
+                state.ram[address..address + 2].copy_from_slice(&value.to_le_bytes());
+            }
+            state.ram[0x2f] = 4;
+            state.ram[0xee] = 1;
+            state.ram[0x476] = 2;
+            state.ram[0x6c] = 0x80;
+            state.ram[0xa4] = 0xff;
+            let slot = usize::from(variant & 15);
+            state.ram[0xdd0 + slot] = 9;
+            state.ram[0xf60 + slot] = if variant & 8 != 0 { 0x40 } else { 0 };
+            for (lo, hi, scroll, outside) in [(0xd10, 0xd30, 0xe2, variant & 16 != 0),
+                (0xd00, 0xd20, 0xe8, variant & 32 != 0)] {
+                let position = u16::from_le_bytes([state.ram[scroll], state.ram[scroll + 1]])
+                    .wrapping_add(if outside { 256 } else { 255 });
+                state.ram[lo + slot] = position as u8;
+                state.ram[hi + slot] = (position >> 8) as u8;
+            }
+            state.ram[0xb00 + usize::from(variant & 7)] = [0, 0x14, 0x18][usize::from(variant % 3)];
+            state.sync_native_game_state_from_ram();
+            let checkpoint = RomCpuCheckpoint {
+                entry_pc: 0x028bae, stop_pc: 0x0287af, sp: 0x1fa, db: 2,
+                waiting: false, stack_address: 0x1fb, stack_bytes: &[0xae, 0x87],
+                ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+            };
+            let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+            let mut source_cycles = 0u64;
+            for _ in 0..2000 {
+                if source.is_complete() { break; }
+                source_cycles += u64::from(source.step().master_cycles);
+            }
+            assert!(source.is_complete(), "room={room} variant={variant}");
+            let start = crate::cycle_ledger::master();
+            state.Dungeon_InterRoomTrans_State15();
+            assert_eq!(crate::cycle_ledger::master() - start, source_cycles,
+                "room={room} variant={variant}");
+            for range in [0x10..0x100, 0x200..0x700, 0xc180..0xc1ab] {
+                for address in range {
+                    assert_eq!(state.ram[address], source.ram_byte(address),
+                        "room={room} variant={variant} address={address:05x}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn supertile_transition_initialization_matches_source_work() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let assets = std::fs::read(std::env::var_os("ZELDA3_ASSETS")
+        .map(std::path::PathBuf::from).unwrap_or_else(|| root.join("zelda3_assets.dat"))).unwrap();
+    for variant in 0..128u8 {
+        let mut state = ZeldaState::new();
+        state.set_assets(&assets).unwrap();
+        state.ram[0x10] = 7;
+        state.ram[0x11] = 2;
+        state.ram[0x26] = if variant & 64 != 0 { 4 } else { 0 };
+        state.ram[0x2d] = 3;
+        state.ram[0x2e] = 8;
+        state.ram[0x458] = variant & 1;
+        state.ram[0x372] = (variant >> 1) & 1;
+        state.ram[0x308] = if variant & 4 != 0 { 0x80 } else { 0 };
+        state.ram[0x2ec] = variant % 7;
+        state.ram[0x48] = if variant & 8 != 0 { 0x80 } else { 0 };
+        state.ram[0x37a] = if variant & 16 != 0 { 0x10 } else { 4 };
+        state.ram[0x5d] = if variant & 32 != 0 { 19 } else { 0 };
+        state.ram[0xc4a..0xc50].copy_from_slice(&[0, 0x2c, 0x3e, 0x2c, 1, 0x3e]);
+        for (i, byte) in state.ram[0xc300..0xc500].iter_mut().enumerate() {
+            *byte = (i as u8).wrapping_add(variant);
+        }
+        state.sync_native_game_state_from_ram();
+        let checkpoint = RomCpuCheckpoint {
+            entry_pc: 0x028a26, stop_pc: 0x0287af, sp: 0x1fa, db: 2,
+            waiting: false, stack_address: 0x1fb, stack_bytes: &[0xae, 0x87],
+            ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
+        };
+        let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+            &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
+        let mut source_cycles = 0u64;
+        for _ in 0..20_000 {
+            if source.is_complete() { break; }
+            source_cycles += u64::from(source.step().master_cycles);
+        }
+        assert!(source.is_complete());
+        let mark = crate::cycle_ledger::master();
+        state.Module07_02_SupertileTransition();
+        assert_eq!(crate::cycle_ledger::master() - mark, source_cycles, "variant={variant}");
+        for range in [0x10..0x100, 0x200..0x500, 0xc4a..0xc50, 0xc007..0xc013, 0xc500..0xc700] {
+            for address in range {
+                assert_eq!(state.ram[address], source.ram_byte(address),
+                    "variant={variant} address={address:05x}");
+            }
+        }
+    }
+}
+
+#[test]
 fn overworld_suffix_retains_both_source_busy_loop_instruction_edges() {
     // Original $00:8034 LDA $12; $8036 BEQ $8034. The pinned CPU uses
     // 24 clocks for the direct-page load and 22 for the taken branch.
@@ -80,6 +199,33 @@ fn native_main_wait_phase_expires_after_an_intervening_nmi_owner() {
     state.frame_ctr_dbg = 2;
     state.capture_cpu_schedules_before_nmi(true, 0);
     assert!(state.native_main_wait_cpu_phase.is_none());
+}
+
+#[test]
+fn leading_nmi_keeps_cpu_phase_when_display_snapshot_follows_handler() {
+    let mut leading = ZeldaState::new();
+    leading.frame_ctr_dbg = 42;
+    leading.latch_nmi_update();
+    let budget = CpuCycleBudget::at_nmi_acceptance_in_field(
+        40, CpuBusWorkload::with_dynamic_hdma());
+    leading.native_main_wait_cpu_phase = Some(NativeMainWaitCpuPhase {
+        host: 42, checkpoint: DUNGEON_MAIN_WAIT_CPU_CHECKPOINT, budget: budget.clone(),
+    });
+    assert!(leading.active_effective_dma_writes.is_none());
+    let mut trailing = leading.clone();
+    leading.interrupt_nmi_before_main(0, None, false);
+    trailing.interrupt_nmi(0, None, false);
+    let retained = leading.native_main_wait_cpu_phase.as_ref().unwrap();
+    assert_eq!(retained.host, 42);
+    assert_eq!(retained.budget, budget);
+    assert_eq!(retained.checkpoint, DUNGEON_MAIN_WAIT_CPU_CHECKPOINT);
+    assert!(trailing.native_main_wait_cpu_phase.is_none());
+    // Both handlers have the same display publication policy. Only the
+    // leading handler belongs to the pending main-wait CPU continuation.
+    assert_eq!(leading.ram, trailing.ram);
+    assert_eq!(leading.ppu.vram, trailing.ppu.vram);
+    assert_eq!(leading.ppu.oam, trailing.ppu.oam);
+    assert_eq!(leading.last_nmi_handler_master_cycles, trailing.last_nmi_handler_master_cycles);
 }
 
 #[test]

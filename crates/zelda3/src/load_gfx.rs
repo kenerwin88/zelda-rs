@@ -1207,6 +1207,12 @@ pub(super) const fn animated_sprite_tile_secondary_sheet(tile: u8) -> u8 {
     }
 }
 
+pub(crate) fn native_animated_item_table_byte(address: u32) -> Option<u8> {
+    let offset = address.checked_sub(0xd469)? as usize;
+    let value = *ANIMATED_SPRITE_TILE_SOURCE_OFFSETS.get(offset / 2)? as u16;
+    Some(value.to_le_bytes()[offset & 1])
+}
+
 const ITEM_ANIMATION_GFX_SOURCE_GROUPS: [usize; 10] = [0, 11, 8, 38, 42, 45, 34, 3, 33, 46];
 const FOLLOWER_GFX_DECOMPRESSION_OFFSETS: [usize; 14] = [
     0, 0x600, 0x300, 0x300, 0x300, 0, 0, 0x900, 0x600, 0x600, 0x900, 0x900, 0x600, 0x900,
@@ -1255,6 +1261,32 @@ const SPOTLIGHT_CIRCLE_X_RADIUS_CURVE: [u8; 129] = [
 ];
 
 impl ZeldaState {
+    pub(crate) fn native_overworld_palette_selection_byte(address: u32) -> Option<u8> {
+        let address=address&0x7f_ffff;
+        if (0x0ed504..0x0ed580).contains(&address) {
+            let offset=(address-0x0ed504) as usize;
+            return Some(if offset%4==3 {255} else {OW_BG_PAL_INFO[offset/4*3+offset%4] as u8});
+        }
+        if (0x0ed580..0x0ed5a8).contains(&address) {
+            return Some(OW_SPR_PAL_INFO[(address-0x0ed580) as usize] as u8);
+        }
+        None
+    }
+
+    /// Native graphics tables and compressed streams at their data addresses.
+    pub(crate) fn native_graphics_asset_byte(&self, address: u32) -> Option<u8> {
+        let address=address&0x7f_ffff;
+        if let Some(value)=crate::cycle_models::graphics_sources::table_byte(address)
+            .or_else(||native_tileset_table_byte(address)) {return Some(value);}
+        let offset=|a:u32|((a>>16)&127)*0x8000+(a&0x7fff);
+        for &(sprite,sheet,start) in crate::cycle_models::graphics_sources::SOURCES {
+            let Some(at)=offset(address).checked_sub(offset(start)) else {continue};
+            let Some(data)=self.asset_bytes(if sprite {64}else{65},sheet) else {continue};
+            if let Some(&value)=data.get(at as usize) {return Some(value);}
+        }
+        None
+    }
+
     pub(crate) fn native_spotlight_table_byte(address: u32) -> Option<u8> {
         match address {
             0x00f2fb..=0x00f301 => {
@@ -3052,6 +3084,13 @@ impl ZeldaState {
             return;
         }
 
+        self.graphics_load_chr_half_slot_after_request(k);
+    }
+
+    /// Resume at E3FF after the native request load and branch.
+    pub(super) fn graphics_load_chr_half_slot_after_request(&mut self, k:u8) {
+        assert_ne!(k,0);
+        let _scope = crate::cycle_ledger::routine(0x00_e3fa);
         crate::cycle_ledger::charge(120); // Bank setup, SP6 lookup and BMI.
         let sp6 = GRAPHICS_LOAD_SP6[k as usize - 1];
         if sp6 >= 0 {
@@ -5058,6 +5097,31 @@ impl ZeldaState {
 }
 
 impl ZeldaState {
+    pub(super) fn finish_native_screen_flash(
+        &mut self,
+        tail: crate::cycle_models::dungeon_garnish::GarnishTail,
+    ) {
+        use crate::cycle_models::dungeon_garnish::GarnishTail;
+        let _scope = crate::cycle_ledger::routine(0x1d_e9b6);
+        match tail {
+            GarnishTail::PaletteRestore => {
+                self.palette_restore_bg_and_hud();
+                crate::cycle_ledger::charge(44);
+            }
+            GarnishTail::PaletteWhiten => {
+                self.filter_majorly_whiten_bg();
+                crate::cycle_ledger::charge(22 + 38 + 44);
+                self.increment_cgram_update_flag();
+            }
+            GarnishTail::PaletteFromFlash => {
+                self.palette_restore_bg_from_flash();
+                crate::cycle_ledger::charge(38 + 44);
+                self.increment_cgram_update_flag();
+            }
+            _ => unreachable!("flash resumes only at a selected palette child"),
+        }
+    }
+
     pub(super) fn handle_screen_flash(&mut self) {
         // Cycle ledger: HandleScreenFlash $1D:E9B6 (m8 x8, JSL target).
         let _scope = crate::cycle_ledger::routine(0x1d_e9b6);
@@ -6220,6 +6284,11 @@ impl ZeldaState {
     }
 
     pub(super) fn overworld_copy_palettes_to_cache(&mut self) {
+        // $02:C769: setup, 32 interleaved eight-word copies, loop branches,
+        // and the final CGRAM publication/return. Partial-copy callers own
+        // their instruction progress separately.
+        let _scope = crate::cycle_ledger::routine(0x02_c769);
+        crate::cycle_ledger::charge(38 + 32 * 828 + 31 * 6 + 102);
         self.advance_palette_cache_copy(0, 257);
     }
 

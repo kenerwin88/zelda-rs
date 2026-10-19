@@ -1,7 +1,6 @@
 //! One retained poly thread. IRQ exchanges the live CPU stack without replacing
 //! this progress; the next NMI resumes the same partially drawn polygon.
 use super::{
-    intro_clear::Access,
     native_work::{Work, WorkBus},
     nmi_stack::NativeNmiContext,
     poly_buffer_clear::PolyBufferClear,
@@ -10,25 +9,9 @@ use super::{
     poly_raster::PolyRaster,
     poly_rotation::PolyRotation,
     poly_shape::PolyShape,
-    poly_vertices::{PolyDivider, PolyVertices},
+    poly_vertices::PolyVertices,
 };
 use snes::CpuMasterTimeline;
-
-struct DividerBus<'a, B> {
-    divider: &'a mut PolyDivider,
-    bus: B,
-}
-
-impl<B: WorkBus> WorkBus for DividerBus<'_, B> {
-    fn access(&mut self, at: u64, access: Access) -> u16 {
-        self.divider.access(access).unwrap_or_else(|| self.bus.access(at, access))
-    }
-    fn observe_clock(&mut self, clock: &CpuMasterTimeline) { self.bus.observe_clock(clock); }
-    fn end_scanline(&mut self, at: u64) { self.bus.end_scanline(at); }
-    fn timeline_event(&mut self, event: snes::cpu_timeline::CpuSynchronousTimelineEvent, at: u64) {
-        self.bus.timeline_event(event, at);
-    }
-}
 
 pub(crate) struct WorkerInstruction {
     pub(crate) master_cycles: u64,
@@ -53,23 +36,20 @@ enum Phase {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct PolyWorker {
     phase: Phase,
-    pub(crate) divider: PolyDivider,
 }
 impl Default for PolyWorker {
     fn default() -> Self {
         Self {
             phase: Phase::Wait(PolyWait::default()),
-            divider: PolyDivider::default(),
         }
     }
 }
 impl PolyWorker {
     #[cfg(test)]
-    pub(crate) fn from_pending_faces(faces: PolyFaces, divider: PolyDivider) -> Self {
+    pub(crate) fn from_pending_faces(faces: PolyFaces) -> Self {
         assert!(faces.raster_pending());
         Self {
             phase: Phase::Faces(faces),
-            divider,
         }
     }
 
@@ -122,7 +102,7 @@ impl PolyWorker {
             Phase::Raster { raster, .. } => raster.defers_irq_mask_change(),
             _ => false,
         }.then_some(cpu.p & 4 != 0);
-        let access = DividerBus { divider: &mut self.divider, bus };
+        let access = bus;
         let master_cycles = match &mut self.phase {
             Phase::Wait(work) => work.step(cpu, clock, access),
             Phase::Clear(work) => work.step(cpu, clock, access).unwrap(),

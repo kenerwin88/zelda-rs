@@ -729,6 +729,18 @@ impl CpuMasterTimeline {
         Ok(())
     }
 
+    /// Transfer a legacy caller after a fully retired instruction. Preserve
+    /// its physical clock and reject event windows whose ownership cannot be
+    /// reconstructed. This bridge is unnecessary for synchronous callers.
+    pub fn try_native_callee_handoff(&self) -> Result<Self, CpuSynchronousTimelineStartError> {
+        let mut next = self.clone();
+        if matches!(next.mode, CpuTimelineMode::Legacy) {
+            next.mode = CpuTimelineMode::Unclaimed;
+        }
+        next.begin_synchronous_timeline()?;
+        Ok(next)
+    }
+
     /// Charge one complete Snes9x `AddCycles` transaction after its semantic,
     /// then drain every due event using `Cycles >= NextEvent`. The callback
     /// observes the transaction's access-end clock, including overshoot, and
@@ -738,6 +750,17 @@ impl CpuMasterTimeline {
         &mut self,
         work_master_cycles: u32,
         mut observe_event: impl FnMut(CpuSynchronousTimelineEvent, CpuMasterTimestamp) -> Result<u32, E>,
+    ) -> Result<(), E> {
+        self.advance_synchronous_after_semantics_with_clock(work_master_cycles, |event, clock| {
+            observe_event(event, clock.timestamp())
+        })
+    }
+
+    /// Device handlers need the processed event cursor as well as elapsed time.
+    pub fn advance_synchronous_after_semantics_with_clock<E>(
+        &mut self,
+        work_master_cycles: u32,
+        mut observe_event: impl FnMut(CpuSynchronousTimelineEvent, &Self) -> Result<u32, E>,
     ) -> Result<(), E> {
         let CpuTimelineMode::Synchronous(mut cursor) = self.mode else {
             panic!("synchronous CPU work requires begin_synchronous_timeline")
@@ -752,7 +775,7 @@ impl CpuMasterTimeline {
             // Keep the current event owned until its fallible handler succeeds.
             // Clocks returned by the handler are intentionally not drained
             // recursively; the outer loop observes them after it returns.
-            let handler_master_cycles = observe_event(event, self.timestamp())?;
+            let handler_master_cycles = observe_event(event, self)?;
             self.mode = CpuTimelineMode::Synchronous(next_cursor);
             if matches!(event, CpuSynchronousTimelineEvent::HMax { .. }) {
                 self.wram_refresh_cycle = snes9x_wram_refresh_cycle(
@@ -774,6 +797,38 @@ impl CpuMasterTimeline {
             cursor = next_cursor;
         }
         Ok(())
+    }
+
+    /// Consume interruptible CPU work through a retained synchronous cursor.
+    /// Unlike instruction retirement, this span has no opcode fetch. Events
+    /// already due at entry remain owned and drain before additional work.
+    pub fn advance_synchronous_interruptible_until_with<E>(
+        &mut self,
+        deadline_master_cycles: u64,
+        mut work_master_cycles: u32,
+        mut observe_event: impl FnMut(CpuSynchronousTimelineEvent, &Self) -> Result<u32, E>,
+    ) -> Result<CpuTimelineDeadlineAdvance, E> {
+        loop {
+            let CpuTimelineMode::Synchronous(cursor) = self.mode else {
+                panic!("native interruptible work requires a synchronous timeline")
+            };
+            if self.clock_master_cycles >= deadline_master_cycles {
+                return Ok(CpuTimelineDeadlineAdvance::ReachedDeadline {
+                    remaining_work_master_cycles: work_master_cycles,
+                });
+            }
+            if cursor.master_cycles <= self.clock_master_cycles {
+                self.advance_synchronous_after_semantics_with_clock(0, &mut observe_event)?;
+                continue;
+            }
+            if work_master_cycles == 0 {
+                return Ok(CpuTimelineDeadlineAdvance::Complete);
+            }
+            let distance = cursor.master_cycles.min(deadline_master_cycles) - self.clock_master_cycles;
+            let consumed = u64::from(work_master_cycles).min(distance) as u32;
+            self.advance_synchronous_without_event_drain(consumed);
+            work_master_cycles -= consumed;
+        }
     }
 
     /// Pinned Snes9x's direct `PCBase` opcode fetch increments `CPU.Cycles`
@@ -1395,6 +1450,43 @@ mod tests {
             timeline.raster_position(),
             CpuRasterPosition::new(100, 1_206)
         );
+    }
+
+    #[test]
+    fn native_callee_handoff_preserves_retired_clock_and_future_event_cursor() {
+        for field in [0, 1, 2, 3, LONG_TIMELINE_FIELD] {
+            for (v, h) in [(14, 966), (224, 1310), (240, 1320), (261, 1300)] {
+                let mut legacy = at_raster(field, CpuRasterPosition::new(v, h - 16),
+                    CpuBusWorkload::default(), CpuFieldTiming::NON_INTERLACE_EVEN);
+                legacy.advance_work_unbounded(16);
+                let mut native = legacy.try_native_callee_handoff().unwrap();
+                assert_eq!(native.timestamp(), legacy.timestamp());
+                assert_eq!(native.raster_position(), legacy.raster_position());
+                let mut source_cursor = at_raster(field, CpuRasterPosition::new(v, h),
+                    CpuBusWorkload::default(), CpuFieldTiming::NON_INTERLACE_EVEN);
+                source_cursor.begin_synchronous_timeline().unwrap();
+                assert_eq!(native, source_cursor);
+                native.advance_synchronous_pcbase_opcode_fetch(8);
+                source_cursor.advance_synchronous_pcbase_opcode_fetch(8);
+                let mut native_events = Vec::new();
+                let mut source_events = Vec::new();
+                native.advance_synchronous_after_semantics_with(1800, |event, at| {
+                    native_events.push((event, at)); Ok::<u32, ()>(0)
+                }).unwrap();
+                source_cursor.advance_synchronous_after_semantics_with(1800, |event, at| {
+                    source_events.push((event, at)); Ok::<u32, ()>(0)
+                }).unwrap();
+                assert_eq!(native_events, source_events);
+                assert_eq!(native, source_cursor);
+            }
+        }
+        let mut ambiguous = at_raster(0, CpuRasterPosition::new(100, 536),
+            CpuBusWorkload::default(), CpuFieldTiming::NON_INTERLACE_EVEN);
+        ambiguous.advance_work_unbounded(2);
+        let saved = ambiguous.clone();
+        assert!(matches!(ambiguous.try_native_callee_handoff(),
+            Err(CpuSynchronousTimelineStartError::AmbiguousEventState { .. })));
+        assert_eq!(ambiguous, saved);
     }
 
     #[test]

@@ -142,6 +142,7 @@ pub(crate) fn table_byte(address: u32) -> Option<u8> {
         .or_else(|| super::push_block_drawing::table_byte(address))
         .or_else(|| super::floor_indicator::table_byte(address))
         .or_else(|| super::hud_update::table_byte(address))
+        .or_else(|| super::dungeon_interactions::table_byte(address))
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CommonChild {
@@ -151,6 +152,11 @@ pub(crate) enum CommonChild {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum OwnedChild {
+    RoomBoundary(RoomBoundary),
+    Interactions(super::dungeon_interactions::DungeonInteractions),
+    RoomTags(RoomTags),
+    Camera(super::dungeon_camera::DungeonCamera),
+    HalfSlot(super::half_slot::HalfSlot),
     PushBlocks(DungeonPushBlocks),
     Sprites(SpriteMain),
     LinkOam(LinkOam),
@@ -181,6 +187,20 @@ impl Default for DungeonCommon {
     }
 }
 impl DungeonCommon {
+    pub(crate) fn after_sprites() -> Self {
+        Self { pc: 0x8842, ..Self::default() }
+    }
+    pub(crate) fn routine(&self) -> u32 {
+        match self.owned {
+            Some(OwnedChild::LinkOam(_)) => 0x0da18e,
+            Some(OwnedChild::Hud(_)) => 0x0ddb75,
+            Some(OwnedChild::FloorIndicator(_)) => 0x0afd0c,
+            _ => 0x0287a2,
+        }
+    }
+    pub(crate) fn sprite_scroll() -> Self {
+        Self { pc: 0x87e5, ..Self::default() }
+    }
     pub(crate) fn child(&self) -> Option<CommonChild> {
         self.child
     }
@@ -194,6 +214,34 @@ impl DungeonCommon {
             .take()
             .expect("common caller has a pending child");
         match self.owned.as_mut() {
+            Some(OwnedChild::RoomBoundary(work)) => {
+                assert_eq!(child, CommonChild::Call(work.pending_body().unwrap()));
+                assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, self.pc, self.return_sp));
+                self.owned = None;
+            }
+            Some(OwnedChild::Interactions(work)) => {
+                assert_eq!(child, CommonChild::Call(work.pending_body().unwrap()));
+                if work.pending_body()==Some(0x01f4a6) {
+                    assert_eq!(cpu.sp,self.return_sp-4);
+                    work.resume_torch_return(cpu);
+                } else {
+                    assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, self.pc, self.return_sp));
+                    self.owned = None;
+                }
+            }
+            Some(OwnedChild::RoomTags(work)) => {
+                assert!(work.body_pending());
+                assert_eq!(child, CommonChild::Call(0x01c302));
+                assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, self.pc, self.return_sp));
+                self.owned = None;
+            }
+            Some(OwnedChild::Camera(_)) => unreachable!("camera owns its complete body"),
+            Some(OwnedChild::HalfSlot(work)) => {
+                assert!(work.body_pending());
+                assert_eq!(child, CommonChild::Call(0x00e3ff));
+                assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, self.pc, self.return_sp));
+                self.owned = None;
+            }
             Some(OwnedChild::PushBlocks(work)) => {
                 assert_eq!(child, CommonChild::PushBlock(work.child().unwrap()));
                 work.return_from_child(cpu);
@@ -230,6 +278,23 @@ impl DungeonCommon {
         assert!(self.child.is_none(), "common child still owns the CPU");
         if let Some(owned) = self.owned.as_mut() {
             let (cycles, complete, child) = match owned {
+                OwnedChild::RoomBoundary(w) => {
+                    let cycles=w.step(cpu,clock,bus);
+                    (cycles,w.complete,w.pending_body().map(CommonChild::Call))
+                }
+                OwnedChild::Interactions(w) => {
+                    let cycles=w.step(cpu,clock,bus);
+                    (cycles,w.complete(),w.pending_body().map(CommonChild::Call))
+                }
+                OwnedChild::RoomTags(w) => {
+                    let cycles=w.step(cpu,clock,bus);
+                    (cycles,w.complete,w.body_pending().then_some(CommonChild::Call(0x01c302)))
+                }
+                OwnedChild::Camera(w) => { let cycles=w.step(cpu,clock,bus); (cycles,w.complete(),None) }
+                OwnedChild::HalfSlot(w) => {
+                    let cycles = w.step(cpu, clock, bus);
+                    (cycles, w.complete(), w.body_pending().then_some(CommonChild::Call(0x00e3ff)))
+                }
                 OwnedChild::PushBlocks(w) => {
                     let cycles = w.step(cpu, clock, bus);
                     (cycles, w.complete(), w.child().map(CommonChild::PushBlock))
@@ -322,12 +387,27 @@ impl DungeonCommon {
                         self.owned = Some(OwnedChild::PushBlocks(Default::default()));
                         0x01d81b
                     }
-                    0x87ba => 0x00e3fa,
-                    0x87be => 0x02ba31,
-                    0x87c5 => 0x01c2fd,
-                    0x87cd => 0x01ce70,
+                    0x87ba => {
+                        self.owned = Some(OwnedChild::HalfSlot(Default::default()));
+                        0x00e3fa
+                    }
+                    0x87be => {
+                        self.owned = Some(OwnedChild::Camera(Default::default()));
+                        0x02ba31
+                    }
+                    0x87c5 => {
+                        self.owned = Some(OwnedChild::RoomTags(RoomTags { pc: 0xc2fd, complete: false }));
+                        0x01c2fd
+                    }
+                    0x87cd => {
+                        self.owned = Some(OwnedChild::Interactions(Default::default()));
+                        0x01ce70
+                    }
                     0x87d6 => 0x01d6c1,
-                    0x87de => 0x02885e,
+                    0x87de => {
+                        self.owned = Some(OwnedChild::RoomBoundary(RoomBoundary {pc:0x885e,complete:false}));
+                        0x02885e
+                    }
                     0x87e1 => {
                         self.owned = Some(OwnedChild::Lamp(Default::default()));
                         0x00f567
@@ -461,6 +541,59 @@ impl DungeonCommon {
         if self.owned.is_none() && self.child.is_none() {
             w.cpu.pc = self.pc;
         }
+        Some(w.cycles)
+    }
+}
+
+/// Stationary movement checks retire their real RTS. Movement retains the
+/// selected axis body and the original stack for the transition owner.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct RoomBoundary { pc: u16, complete: bool }
+impl RoomBoundary {
+    fn pending_body(&self) -> Option<u32> {
+        matches!(self.pc,0x8867|0x8888).then_some(0x020000|u32::from(self.pc))
+    }
+    fn step(&mut self, cpu: &mut NativeNmiContext, clock: &mut CpuMasterTimeline,
+        bus: impl WorkBus) -> Option<u64> {
+        if self.complete {return None;}
+        assert!(self.pending_body().is_none());
+        assert_eq!((cpu.bank,cpu.pc,cpu.d,cpu.db,cpu.p&0x18),(2,self.pc,0,0,0x10));
+        let mut w=Work {cpu,clock,bus,cycles:0};w.fetch();
+        self.pc=match self.pc {
+            0x885e|0x88be=>{w.width(0x20,self.pc==0x885e);self.pc+2}
+            0x8860|0x8881=>{let value=w.dp_read(if self.pc==0x8860 {0x30} else {0x31},2);w.load(value,2);self.pc+2}
+            0x8862|0x8883=>{w.mask(255,2);self.pc+3}
+            0x8865=>if w.branch(w.cpu.p&ZERO!=0) {0x8881} else {0x8867},
+            0x8886=>if w.branch(w.cpu.p&ZERO!=0) {0x88be} else {0x8888},
+            0x88c0=>{w.rts();self.complete=true;w.cpu.pc}
+            _=>unreachable!(),
+        };
+        w.cpu.pc=self.pc;Some(w.cycles)
+    }
+}
+
+/// The room-tag skip flag is consumed by the routine itself, even on its
+/// skipped path. An enabled tag body retains the real post-branch boundary.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct RoomTags { pc: u16, complete: bool }
+
+impl RoomTags {
+    fn body_pending(&self) -> bool { self.pc==0xc302 && !self.complete }
+    fn step(&mut self, cpu: &mut NativeNmiContext, clock: &mut CpuMasterTimeline,
+        bus: impl WorkBus) -> Option<u64> {
+        if self.complete {return None;}
+        assert!(!self.body_pending(),"room-tag body still owns the CPU");
+        assert_eq!((cpu.bank,cpu.pc,cpu.db,cpu.p&0x38),(1,self.pc,0,0x30));
+        let mut w=Work {cpu,clock,bus,cycles:0};
+        w.fetch();
+        self.pc=match self.pc {
+            0xc2fd=>{w.drain(16);let value=w.read(0x4c7,1);w.load(value,1);0xc300}
+            0xc300=>if w.branch(w.cpu.p&ZERO==0) {0xc31b} else {0xc302},
+            0xc31b=>{w.drain(16);w.write(0x4c7,0,1);0xc31e}
+            0xc31e=>{w.rtl();self.complete=true;w.cpu.pc}
+            _=>unreachable!(),
+        };
+        w.cpu.pc=self.pc;
         Some(w.cycles)
     }
 }

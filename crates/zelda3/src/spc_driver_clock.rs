@@ -916,8 +916,13 @@ impl AbsoluteDspEventClock {
             let executed = now.checked_sub(at_cycle).ok_or("native APU clock moved backwards")?;
             let credit = c.smp_clock().checked_add(i64::try_from(executed).map_err(|e| e.to_string())?)
                 .ok_or("native SMP credit overflow")?;
-            if executed != 0 && i128::from(credit) > due {
-                return Err("audio window already executed beyond the CPU port deadline".to_owned());
+            // Finishing the earlier native SPC instruction already charged
+            // its positive credit. Keep that carried credit at import; only
+            // new bulk work beyond the elapsed CPU allowance is a violation.
+            let carried_credit = i128::from(c.smp_clock().max(0));
+            if executed != 0 && i128::from(credit) - carried_credit > due {
+                return Err(format!("audio window already executed beyond the CPU port deadline: host={} master={master} reference={} executed={executed} credit={credit} due={due} apu_now={now} apu_reference={at_cycle}",
+                    self.host_frame_index, c.cpu_reference_master_cycles()));
             }
             let checkpoint = Snes9xApuClockCheckpoint::new(c.cpu_reference_master_cycles(),
                 c.remainder(), credit).map_err(|e| e.to_string())?;

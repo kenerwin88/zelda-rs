@@ -262,8 +262,7 @@ impl SpriteState {
             SPRITE_RESET_WORK_B => self.workspace.set_reset_scratch_b(value),
             GARNISH_ACTIVE => self.garnish_runtime.set_active_type(value),
             OVERWORLD_BOULDER_TRAP_COUNT => {
-                assert_eq!(value, 0);
-                self.garnish_runtime.clear_boulder_trap_count();
+                self.garnish_runtime.set_boulder_trap_count(value);
             }
             _ => return false,
         }
@@ -569,6 +568,21 @@ impl SpriteSlotsState {
             .iter()
             .copied()
             .flat_map(|(base, width)| (0..width).map(move |offset| base + offset))
+    }
+
+    /// A retained sprite instruction owns only its addressed field bytes.
+    pub(crate) fn write_instruction_store(&mut self, ram: &mut [u8], address: usize, value: u16, width: u8) -> bool {
+        assert!(matches!(width, 1 | 2));
+        if !(address..address + usize::from(width)).all(|at|
+            SPRITE_SLOTS_FIELD_RANGES.iter().any(|&(base, len)| (base..base + len).contains(&at))) {
+            return false;
+        }
+        for byte in 0..usize::from(width) {
+            let value = (value >> (byte * 8)) as u8;
+            self.set_byte_at(address + byte, value);
+            ram[address + byte] = value;
+        }
+        true
     }
 
     fn work_index(offset: usize) -> usize {
@@ -1915,7 +1929,7 @@ impl SpriteSystemState {
         self.alert_flag
     }
 
-    fn set_graphics_index(&mut self, value: u8) {
+    pub(crate) fn set_graphics_index(&mut self, value: u8) {
         self.graphics_index = value;
     }
 
@@ -1947,6 +1961,10 @@ impl SpriteSystemState {
 
     fn clear_alt_sprites_flag(&mut self) {
         self.alt_sprites_flag = 0;
+    }
+
+    pub(crate) fn set_ranged_based_toggler(&mut self,value:u8) {
+        self.ranged_based_toggler=value;
     }
 
     fn increment_ranged_based_toggler(&mut self) {
@@ -2260,6 +2278,11 @@ impl SpriteWorkspaceState {
 
     fn set_draw_priority_override_low(&mut self, value: u8) {
         self.draw_priority_override = (self.draw_priority_override & 0xff00) | u16::from(value);
+    }
+
+    pub(crate) fn write_draw_priority_byte(&mut self, high: bool, value: u8) {
+        let shift = usize::from(high) * 8;
+        self.draw_priority_override = (self.draw_priority_override & !(255 << shift)) | (u16::from(value) << shift);
     }
 
     fn set_current_sprite_x(&mut self, value: u16) {
@@ -3014,6 +3037,16 @@ pub(crate) struct SpriteDrawHitboxWorkState {
 }
 
 impl SpriteDrawHitboxWorkState {
+    pub(crate) fn write_instruction_byte(&mut self, address: usize, value: u8) {
+        match address {
+            DRAW_WORK_POSITION_X => self.draw_position_x = value,
+            DRAW_WORK_POSITION_Y => self.draw_position_y = value,
+            HITBOX_WORK_Y_OFFSET => self.hitbox_y_offset = value,
+            DRAW_WORK_FLAGS_HI => self.draw_flags_or_hitbox_x_offset = value,
+            _ => unreachable!("unowned sprite drawing byte {address:04x}"),
+        }
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         debug_assert_eq!(DRAW_WORK_FLAGS_HI, HITBOX_WORK_X_OFFSET);
         Self {

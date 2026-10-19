@@ -858,6 +858,10 @@ impl ZeldaState {
         &mut self,
         frame: crate::game_state::FrameState,
     ) {
+        if self.native_item_graphics_owner.is_some() {
+            // The retained decoder's clocked handler samples these ports.
+            return;
+        }
         if !self.rom_startup_timing() {
             return;
         }

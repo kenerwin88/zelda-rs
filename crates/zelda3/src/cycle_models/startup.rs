@@ -65,7 +65,7 @@ mod tests {
                         let mut startup = Startup::after_upload(&clock);
                         startup.phase = Phase::Accepted(wait);
                         startup.context = Some(context);
-                        let cycles = startup.return_from_nmi(&mut clock, &mut context, &ram);
+                        let cycles = startup.return_from_nmi(&mut clock, &mut context, &ram, |_, _| 0);
                         assert_eq!(cycles, match wait { MainWait::LoadLatch => 40,
                             MainWait::TestLatch { value: 0 } => 62, _ => 16 });
                         let cpu = &source.snes().cpu;
@@ -124,6 +124,13 @@ pub(crate) enum IntroClearBoundary {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum IntroGraphics {
+    Overworld(super::overworld_module::OverworldModule),
+    Properties(super::overworld_properties_caller::OverworldPropertiesCaller),
+    Overlays(super::overworld_overlays_caller::OverworldOverlaysCaller),
+    ScreenBuild(super::overworld_screen_build::OverworldScreenBuild),
+    Closing(super::spotlight_caller_return::ClosingSpotlight),
+    Opening(super::spotlight_caller_return::OpeningSpotlight),
+    Dungeon(super::dungeon_module::DungeonModule),
     LoadFile(super::load_file::LoadFile),
     Items(super::item_graphics_caller::ItemGraphics),
     Follower(super::follower_graphics::FollowerGraphics),
@@ -141,15 +148,37 @@ enum IntroGraphics {
 }
 impl IntroGraphics {
     fn complete(&self) -> bool {
-        match self { Self::LoadFile(work) => work.complete(), Self::Items(work) => work.complete(), Self::Follower(work) => work.complete(), Self::Darkening(work)=>work.complete(), Self::Poly(work)=>work.complete(), Self::Animation(work)=>work.complete(), Self::Title(work)=>work.complete(), Self::FileSelect(work)=>work.complete(), Self::FileMenu(work)=>work.complete(), Self::FileStripes(work)=>work.complete(), Self::FileActive(work)=>work.complete(),Self::KillFile(work)=>work.complete(),Self::NameSetup(work)=>work.complete(),Self::NameActive(work)=>work.complete() }
+        match self { Self::Overworld(work) => work.complete(), Self::Opening(work) => work.complete(), Self::ScreenBuild(work) => work.complete(), Self::Overlays(work) => work.complete(), Self::Properties(work) => work.complete(), Self::Closing(work) => work.complete(), Self::Dungeon(work) => work.complete(), Self::LoadFile(work) => work.complete(), Self::Items(work) => work.complete(), Self::Follower(work) => work.complete(), Self::Darkening(work)=>work.complete(), Self::Poly(work)=>work.complete(), Self::Animation(work)=>work.complete(), Self::Title(work)=>work.complete(), Self::FileSelect(work)=>work.complete(), Self::FileMenu(work)=>work.complete(), Self::FileStripes(work)=>work.complete(), Self::FileActive(work)=>work.complete(),Self::KillFile(work)=>work.complete(),Self::NameSetup(work)=>work.complete(),Self::NameActive(work)=>work.complete() }
     }
     fn routine(&self) -> u32 {
-        match self { Self::LoadFile(work) => work.routine(), Self::Items(work) => work.routine(), Self::Follower(work) => work.routine(), Self::Darkening(work)=>work.routine(), Self::Poly(work)=>work.routine(), Self::Animation(work)=>work.routine(), Self::Title(work)=>work.routine(), Self::FileSelect(work)=>work.routine(), Self::FileMenu(work)=>work.routine(), Self::FileStripes(work)=>work.routine(), Self::FileActive(work)=>work.routine(),Self::KillFile(work)=>work.routine(),Self::NameSetup(work)=>work.routine(),Self::NameActive(work)=>work.routine() }
+        match self { Self::Overworld(work) => work.routine(), Self::Opening(_) => 0x029ad7, Self::ScreenBuild(_) => 0x0283bf, Self::Overlays(_) => 0x0283bf, Self::Properties(_) => 0x0283bf, Self::Closing(_) => 0x029982, Self::Dungeon(_) => 0x0287a2, Self::LoadFile(work) => work.routine(), Self::Items(work) => work.routine(), Self::Follower(work) => work.routine(), Self::Darkening(work)=>work.routine(), Self::Poly(work)=>work.routine(), Self::Animation(work)=>work.routine(), Self::Title(work)=>work.routine(), Self::FileSelect(work)=>work.routine(), Self::FileMenu(work)=>work.routine(), Self::FileStripes(work)=>work.routine(), Self::FileActive(work)=>work.routine(),Self::KillFile(work)=>work.routine(),Self::NameSetup(work)=>work.routine(),Self::NameActive(work)=>work.routine() }
     }
     fn step(&mut self, cpu: &mut super::nmi_stack::NativeNmiContext, clock: &mut CpuMasterTimeline, dma: &mut snes::DmaState,
         bus: impl WorkBus) -> Option<u64> {
+        if let Self::ScreenBuild(work) = self {
+            assert!(!work.event_overlay_pending(), "native screen build event overlay requires its child owner");
+            return work.step(cpu, clock, super::native_hdma::HdmaBus { dma, bus });
+        }
+        if let Self::Overlays(work) = self {
+            return work.step(cpu, clock, super::native_hdma::HdmaBus { dma, bus });
+        }
+        if let Self::Properties(work) = self {
+            return work.step(cpu, clock, super::native_hdma::HdmaBus { dma, bus });
+        }
         if let Self::LoadFile(work) = self { return work.step(cpu, clock, dma, bus); }
-        match self { Self::LoadFile(_) => unreachable!(), Self::Items(work) => work.step(cpu, clock, bus), Self::Follower(work) => work.step(cpu, clock, bus),Self::Darkening(work)=>work.step(cpu,clock,dma,bus),Self::Poly(work)=>work.step(cpu,clock,bus),Self::Animation(work)=>work.step(cpu,clock,bus),Self::Title(work)=>work.step(cpu,clock,bus),Self::FileSelect(work)=>work.step(cpu,clock,bus),Self::FileMenu(work)=>work.step(cpu,clock,dma,bus),Self::FileStripes(work)=>work.step(cpu,clock,bus),Self::FileActive(work)=>work.step(cpu,clock,bus),Self::KillFile(work)=>work.step(cpu,clock,bus),Self::NameSetup(work)=>work.step(cpu,clock,dma,bus),Self::NameActive(work)=>work.step(cpu,clock,bus) }
+        if let Self::Overworld(work) = self {
+            return work.step(cpu, clock, super::native_hdma::HdmaBus { dma, bus });
+        }
+        if let Self::Dungeon(work) = self {
+            return work.step(cpu, clock, super::native_hdma::HdmaBus { dma, bus });
+        }
+        if let Self::Opening(work) = self {
+            return work.step(cpu, clock, super::native_hdma::HdmaBus { dma, bus }).map(|(cycles, _)| cycles);
+        }
+        if let Self::Closing(work) = self {
+            return work.step(cpu, clock, super::native_hdma::HdmaBus { dma, bus }).map(|(cycles, _)| cycles);
+        }
+        match self { Self::Overworld(_) => unreachable!(), Self::Opening(_) => unreachable!(), Self::ScreenBuild(_) => unreachable!(), Self::Overlays(_) => unreachable!(), Self::Properties(_) => unreachable!(), Self::Closing(work) => work.step(cpu, clock, bus).map(|(cycles, _)| cycles), Self::Dungeon(work) => work.step(cpu, clock, bus), Self::LoadFile(_) => unreachable!(), Self::Items(work) => work.step(cpu, clock, bus), Self::Follower(work) => work.step(cpu, clock, bus),Self::Darkening(work)=>work.step(cpu,clock,dma,bus),Self::Poly(work)=>work.step(cpu,clock,bus),Self::Animation(work)=>work.step(cpu,clock,bus),Self::Title(work)=>work.step(cpu,clock,bus),Self::FileSelect(work)=>work.step(cpu,clock,bus),Self::FileMenu(work)=>work.step(cpu,clock,dma,bus),Self::FileStripes(work)=>work.step(cpu,clock,bus),Self::FileActive(work)=>work.step(cpu,clock,bus),Self::KillFile(work)=>work.step(cpu,clock,bus),Self::NameSetup(work)=>work.step(cpu,clock,dma,bus),Self::NameActive(work)=>work.step(cpu,clock,bus) }
     }
 }
 
@@ -176,6 +205,34 @@ pub(crate) struct Startup {
 }
 
 impl Startup {
+    pub(crate) fn from_retained_main_wait(context: super::nmi_stack::NativeNmiContext,
+        clock: &CpuMasterTimeline, host: u64) -> Self {
+        assert_eq!((context.bank, context.sp, context.db, context.d, context.p & 0x38),
+            (0, 0x1ff, 0, 0, 0x30));
+        let wait = match context.pc {
+            0x8034 => MainWait::LoadLatch,
+            0x8036 => MainWait::TestLatch { value: context.a as u8 },
+            _ => panic!("retained caller is outside main wait"),
+        };
+        let mut startup = Self::after_upload(clock);
+        startup.phase = Phase::Wait(wait);
+        startup.context = Some(context);
+        startup.next_host = host;
+        startup.nmi_enabled = true;
+        // This producer stopped at the actual NMI acceptance boundary.
+        // Keep that boundary on its existing timeline; do not re-seed H=12.
+        startup.nmi_deadline = Some(clock.clock_master_cycles());
+        startup
+    }
+    #[cfg(test)]
+    pub(crate) fn from_main_caller_for_test(context: super::nmi_stack::NativeNmiContext, clock: &CpuMasterTimeline) -> Self {
+        assert_eq!((context.bank, context.pc, context.sp), (0, 0x8038, 0x1ff));
+        let mut startup = Self::after_upload(clock);
+        startup.phase = Phase::Complete;
+        startup.context = Some(context);
+        startup.nmi_enabled = true;
+        startup
+    }
     pub(crate) fn after_upload(clock: &CpuMasterTimeline) -> Self {
         Self {
             phase: Phase::CallMemory,
@@ -332,12 +389,68 @@ impl Startup {
         assert_eq!(context.bank,12);
         self.enter_intro_graphics(context,IntroGraphics::Title(super::intro_title::IntroTitle::new(context.pc)));
     }
+    pub(crate) fn enter_opening(&mut self,context:super::nmi_stack::NativeNmiContext) {
+        assert_eq!((context.bank,context.pc,context.sp),(2,0x9ad7,0x1fc));
+        self.enter_intro_graphics(context,IntroGraphics::Opening(super::spotlight_caller_return::OpeningSpotlight::from_module_entry()));
+    }
+    pub(crate) fn opening_active(&self)->bool {
+        matches!(self.intro_graphics,Some(IntroGraphics::Opening(_)))
+    }
+    pub(crate) fn enter_screen_build(&mut self,context:super::nmi_stack::NativeNmiContext) {
+        assert_eq!((context.bank,context.pc,context.sp),(2,0x83bf,0x1fc));
+        self.enter_intro_graphics(context,IntroGraphics::ScreenBuild(Default::default()));
+    }
+    pub(crate) fn screen_build_active(&self)->bool {
+        matches!(self.intro_graphics,Some(IntroGraphics::ScreenBuild(_)))
+    }
+    pub(crate) fn enter_overlays(&mut self, context: super::nmi_stack::NativeNmiContext) {
+        assert_eq!((context.bank, context.pc, context.sp), (2, 0x83bf, 0x1fc));
+        self.enter_intro_graphics(context, IntroGraphics::Overlays(Default::default()));
+    }
+    pub(crate) fn overlays_active(&self) -> bool {
+        matches!(self.intro_graphics, Some(IntroGraphics::Overlays(_)))
+    }
+    pub(crate) fn enter_properties(&mut self, context: super::nmi_stack::NativeNmiContext) {
+        assert_eq!((context.bank, context.pc, context.sp), (2, 0x83bf, 0x1fc));
+        self.enter_intro_graphics(context, IntroGraphics::Properties(Default::default()));
+    }
+    pub(crate) fn properties_active(&self) -> bool {
+        matches!(self.intro_graphics, Some(IntroGraphics::Properties(_)))
+    }
     pub(crate) fn enter_load_file(&mut self, context: super::nmi_stack::NativeNmiContext) {
         assert_eq!((context.bank, context.pc), (2, 0x8136));
         self.enter_intro_graphics(context, IntroGraphics::LoadFile(Default::default()));
     }
     pub(crate) fn load_file_active(&self) -> bool {
         matches!(self.intro_graphics, Some(IntroGraphics::LoadFile(_)))
+    }
+    pub(crate) fn enter_overworld(&mut self, context: super::nmi_stack::NativeNmiContext) {
+        assert_eq!((context.bank, context.pc, context.sp), (2, 0xa475, 0x1fc));
+        self.enter_intro_graphics(context, IntroGraphics::Overworld(Default::default()));
+    }
+    pub(crate) fn overworld_active(&self) -> bool {
+        matches!(self.intro_graphics, Some(IntroGraphics::Overworld(_)))
+    }
+    pub(crate) fn enter_dungeon(&mut self, context: super::nmi_stack::NativeNmiContext) {
+        assert_eq!((context.bank, context.pc), (2, 0x87a2));
+        self.enter_intro_graphics(context, IntroGraphics::Dungeon(Default::default()));
+    }
+    pub(crate) fn dungeon_active(&self) -> bool {
+        matches!(self.intro_graphics, Some(IntroGraphics::Dungeon(_)))
+    }
+    pub(crate) fn enter_closing(&mut self, context: super::nmi_stack::NativeNmiContext) {
+        assert_eq!((context.bank, context.pc, context.sp), (2, 0x9982, 0x1fc));
+        self.enter_intro_graphics(context, IntroGraphics::Closing(
+            super::spotlight_caller_return::ClosingSpotlight::from_module_entry()));
+    }
+    pub(crate) fn closing_active(&self) -> bool {
+        matches!(self.intro_graphics, Some(IntroGraphics::Closing(_)))
+    }
+    pub(crate) fn closing_entry_graphics_field(&self) -> Option<u64> {
+        match &self.intro_graphics {
+            Some(IntroGraphics::Closing(work)) => work.entry_graphics_field(),
+            _ => None,
+        }
     }
     pub(crate) fn intro_title_active(&self)->bool {matches!(self.intro_graphics,Some(IntroGraphics::Title(_)))}
     pub(crate) fn file_menu_active(&self)->bool {matches!(self.intro_graphics,Some(IntroGraphics::FileActive(_)|IntroGraphics::KillFile(_)))}
@@ -408,6 +521,12 @@ impl Startup {
     }
 
     pub(crate) fn intro_sprite_prefix_master_cycles(&self) -> u64 {
+        if let Some(IntroGraphics::Closing(work)) = &self.intro_graphics {
+            return work.sprite_preparation_master_cycles();
+        }
+        if let Some(IntroGraphics::Opening(work)) = &self.intro_graphics {
+            return work.sprite_preparation_master_cycles();
+        }
         self.intro_packing.body_master_cycles() + self.intro_source_master_cycles + self.intro_tail.body_master_cycles()
     }
 
@@ -544,6 +663,10 @@ impl Startup {
             if std::mem::take(&mut self.host_return_pending) { return IntroClearBoundary::HostReturn; }
             let mut vblank = None;
             if let Some(graphics)=self.intro_graphics.as_mut().filter(|work|!work.complete()) {
+                if matches!(graphics, IntroGraphics::Closing(_)|IntroGraphics::Opening(_))
+                    && (self.context.unwrap().bank, self.context.unwrap().pc) == (0, 0x805a) {
+                    bus(clock.clock_master_cycles(), StartupAccess::EnterSpritePreparation);
+                }
                 let routine=graphics.routine();
                 let palette_source=if matches!(graphics,IntroGraphics::Poly(_)) && routine==0x0cc3bd {
                     super::intro_palettes::PaletteSource::Asset
@@ -561,6 +684,9 @@ impl Startup {
                 let mut nmitimen = None;
                 let mut hdma = None;
                 let owner = match graphics {
+                    IntroGraphics::ScreenBuild(_) => super::startup_bus::CallerOwner::ScreenBuild,
+                    IntroGraphics::Overlays(_) => super::startup_bus::CallerOwner::Overlays,
+                    IntroGraphics::Properties(work) => super::startup_bus::CallerOwner::Properties(work.active_child()),
                     IntroGraphics::LoadFile(work) if work.opening_player_active() => super::startup_bus::CallerOwner::OpeningPlayer,
                     IntroGraphics::LoadFile(work) if work.sprite_records_active() => super::startup_bus::CallerOwner::SpriteRecords,
                     IntroGraphics::LoadFile(work) if work.sprite_reset_parent_active() => super::startup_bus::CallerOwner::SpriteResetParent,
@@ -596,11 +722,13 @@ impl Startup {
                     self.vertical_irq = None;
                 }
                 if let Some(mask) = hdma {
-                    assert_eq!(mask, 0, "load-game callers only disable HDMA");
-                    for channel in &mut dma.channel { channel.hdma_active = false; }
+                    for (i, channel) in dma.channel.iter_mut().enumerate() {
+                        channel.hdma_active = mask & (1 << i) != 0;
+                    }
                 }
                 crate::cycle_ledger::charge_routine(routine,cycles);
                 let complete=graphics.complete();
+                let closing=matches!(graphics, IntroGraphics::Closing(_)|IntroGraphics::Opening(_));
                 let dma_end=match graphics {IntroGraphics::LoadFile(work)=>work.take_dma_end(),IntroGraphics::Darkening(work)=>work.take_dma_end(),IntroGraphics::FileMenu(work)=>work.take_dma_end(),IntroGraphics::NameSetup(work)=>work.take_dma_end(),_=>None};
                 self.note_wait_vblank(vblank);
                 if enable_in_vblank {
@@ -611,7 +739,13 @@ impl Startup {
                 if let Some(end)=dma_end.filter(|_|self.nmi_deadline.is_some()) {
                     self.nmi_deadline=Some(end+u64::from(snes::SNES9X_NMI_GENERAL_DMA_DELAY_MASTER_CYCLES));
                 }
-                if complete {self.phase=Phase::IntroClearReturned;return IntroClearBoundary::Returned;}
+                if complete {
+                    if closing {
+                        self.phase = Phase::IntroTailReturned;
+                        return IntroClearBoundary::Tail;
+                    }
+                    self.phase=Phase::IntroClearReturned;return IntroClearBoundary::Returned;
+                }
                 continue;
             }
             if let Some(text)=self.intro_text.as_mut().filter(|text|!text.caller_complete()) {
@@ -642,27 +776,27 @@ impl Startup {
             let tail = sources && self.intro_sources.is_complete();
             let mut routine = if !packing { 0x0c_c1a0 }
                 else if self.intro_packing.pending_call() { 0x00_8034 } else { 0x00_85fc };
-            let cycles = if tail {
-                self.intro_tail.step(self.context.as_mut().unwrap(),clock,|at,access| {
-                    if let super::intro_clear::Access::Vblank {field,at}=access {vblank=Some((field,at));}
-                    bus(at,StartupAccess::Memory(access,super::intro_palettes::PaletteSource::Constant,super::startup_bus::CallerOwner::Startup))
-                }).map(|(cycles,owner)| {routine=owner;cycles})
-            } else if sources {
-                self.intro_sources.step_clocked(self.context.as_mut().unwrap(), clock, |at, access| {
-                    if let super::intro_clear::Access::Vblank { field, at } = access { vblank = Some((field, at)); }
-                    bus(at,StartupAccess::Memory(access,super::intro_palettes::PaletteSource::Constant,super::startup_bus::CallerOwner::Startup))
-                })
-            } else if packing {
-                self.intro_packing.step(self.context.as_mut().unwrap(), clock, |at, access| {
-                    use super::{intro_clear::Access, oam_pack::BusAccess};
-                    let access = match access {
-                        BusAccess::Read(a) => Access::Read(u32::from(a), 1),
-                        BusAccess::Write(a, v, w) => Access::Write(u32::from(a), v, w),
-                        BusAccess::Vblank { field, at } => Access::Vblank { field, at },
-                    };
-                    if let Access::Vblank { field, at } = access { vblank = Some((field, at)); }
-                    bus(at,StartupAccess::Memory(access,super::intro_palettes::PaletteSource::Constant,super::startup_bus::CallerOwner::Startup))
-                })
+            let cycles = if packing {
+                let mut nmitimen = None;
+                let mut hdma = None;
+                let bus = super::native_hdma::HdmaBus {
+                    dma,
+                    bus: super::native_ppu::NativePpuBus::new(ppu, CallerBus {
+                        callback: &mut bus,
+                        palette: super::intro_palettes::PaletteSource::Constant,
+                        owner: super::startup_bus::CallerOwner::Startup,
+                        vblank: &mut vblank, nmitimen: &mut nmitimen, hdma: &mut hdma,
+                        in_vblank: false,
+                    }),
+                };
+                if tail {
+                    self.intro_tail.step(self.context.as_mut().unwrap(), clock, bus)
+                        .map(|(cycles, owner)| { routine = owner; cycles })
+                } else if sources {
+                    self.intro_sources.step_clocked(self.context.as_mut().unwrap(), clock, bus)
+                } else {
+                    self.intro_packing.step_with_bus(self.context.as_mut().unwrap(), clock, bus)
+                }
             } else {
                 self.intro_clear.step(self.context.as_mut().unwrap(), clock, |at, access| {
                     if let super::intro_clear::Access::Vblank { field, at } = access { vblank = Some((field, at)); }
@@ -725,6 +859,7 @@ impl Startup {
         ram: &mut [u8],
         sram: &mut [u8],
         ppu: &mut super::native_ppu::NativePpuState,
+        mut device_event: impl FnMut(CpuSynchronousTimelineEvent, &CpuMasterTimeline, &[u8], &mut super::native_ppu::NativePpuState) -> u32,
     ) -> StartupStep {
         // Snes9x checks the interrupt deadline before its SCAN_KEYS host exit.
         if self
@@ -758,7 +893,7 @@ impl Startup {
                         0
                     }
                 }
-            });
+            }, |event, clock| device_event(event, clock, ram, ppu));
             ppu.synchronize(clock);
             self.note_wait_vblank(vblank);
             if matches!(self.phase,Phase::Wait(MainWait::Complete)) {
@@ -856,7 +991,8 @@ impl Startup {
     /// Resume the saved wait instruction on the same clock after actual RTI.
     /// A suspended BEQ uses its pre-NMI flags; only LDA rereads the live latch.
     pub(crate) fn return_from_nmi(&mut self, clock: &mut CpuMasterTimeline,
-        context: &mut super::nmi_stack::NativeNmiContext, ram: &[u8]) -> u32 {
+        context: &mut super::nmi_stack::NativeNmiContext, ram: &[u8],
+        mut device_event: impl FnMut(CpuSynchronousTimelineEvent, &CpuMasterTimeline) -> u32) -> u32 {
         let (Phase::Accepted(mut wait) | Phase::WaitHandler(mut wait)) = self.phase else {
             panic!("startup return without accepted NMI")
         };
@@ -875,7 +1011,7 @@ impl Startup {
                     vblank = Some((field, at));
                     0
                 }
-            });
+            }, &mut device_event);
             self.note_wait_vblank(vblank);
         }
         self.context = Some(*context);

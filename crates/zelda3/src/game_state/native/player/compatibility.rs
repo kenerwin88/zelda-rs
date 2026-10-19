@@ -7,6 +7,113 @@ use super::*;
 use crate::game_state::native::ram_target::RamTarget;
 
 impl FollowerLinkState {
+    pub(crate) fn write_properties_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            LINK_IS_BUNNY => self.actions.bunny_state = value,
+            LINK_IS_BUNNY_MIRROR => self.actions.bunny_mirror = value,
+            LINK_NEED_FOR_POOF_FOR_TRANSFORM => self.actions.transform_poof_needed = value,
+            DRAW_WATER_RIPPLES_OR_GRASS => self.presentation.water_ripple_or_grass_state = value,
+            0x3f5..=0x3f6 => {
+                let shift = (address - 0x3f5) * 8;
+                self.actions.temp_bunny_timer = (self.actions.temp_bunny_timer & !(255 << shift))
+                    | (u16::from(value) << shift);
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// Block collision and its camera continuation publish only retired bytes.
+    pub(crate) fn write_push_block_byte(&mut self, address: usize, value: u8) -> bool {
+        if matches!(address, 0x20..=0x23 | 0x40..=0x41 | 0x68..=0x69) {
+            return self.write_sprite_player_byte(address, value);
+        }
+        if matches!(address, LINK_QUADRANT_X | LINK_QUADRANT_Y) {
+            return self.write_entrance_byte(address, value);
+        }
+        match address {
+            LINK_RECOIL_TIMER => self.movement.recoil_timer = value,
+            LINK_ACTUAL_Y_VELOCITY => self.movement.actual_y_velocity = value,
+            LINK_ACTUAL_X_VELOCITY => self.movement.actual_x_velocity = value,
+            LINK_Y_VELOCITY => self.movement.y_velocity = value,
+            LINK_X_VELOCITY => self.movement.x_velocity = value,
+            PLAYER_DEFENSE_FLAGS => self.actions.defense_flags = value,
+            LINK_CANT_CHANGE_DIRECTION => self.movement.direction_lock = value,
+            LINK_DIRECTION => self.movement.direction = value,
+            LINK_STATE_BITS => self.actions.action_state_bits = value,
+            LINK_PICKING_THROW_STATE => self.actions.picking_throw_state = value,
+            Y_BUTTON_ACTION_TIMER => self.actions.y_button_action_timer = value,
+            LINK_GRABBING_WALL => self.movement.grabbing_wall = value,
+            FORCE_MOVE_ANY_DIRECTION | 0x4a => {
+                let shift = (address - FORCE_MOVE_ANY_DIRECTION) * 8;
+                self.movement.force_move_any_direction = (self.movement.force_move_any_direction
+                    & !(255 << shift))
+                    | (u16::from(value) << shift);
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// Sprite execution caches player coordinates and stops movement for
+    /// dialogue. Preserve partial words through an interrupt between stores.
+    pub(crate) fn write_sprite_player_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            LINK_X_COORD_SAFE_RETURN_HI => {
+                self.movement.safe_return_x = (self.movement.safe_return_x & 255) | (u16::from(value) << 8);
+            }
+            LINK_Y_COORD_SAFE_RETURN_HI => {
+                self.movement.safe_return_y = (self.movement.safe_return_y & 255) | (u16::from(value) << 8);
+            }
+            LINK_X_PAGE_MOVEMENT_DELTA => self.movement.x_page_movement_delta = value,
+            LINK_Y_PAGE_MOVEMENT_DELTA => self.movement.y_page_movement_delta = value,
+            LINK_SPEED_SETTING => self.movement.speed_setting = value,
+            LINK_AUXILIARY_STATE => self.actions.auxiliary_state = value,
+            LINK_INCAPACITATED_TIMER => self.actions.incapacitated_timer = value,
+            _ => {
+                let word = match address & !1 {
+                    LINK_X_COORD => &mut self.movement.x,
+                    LINK_Y_COORD => &mut self.movement.y,
+                    DRAG_PLAYER_X => &mut self.movement.drag_player_x,
+                    DRAG_PLAYER_Y => &mut self.movement.drag_player_y,
+                    LINK_X_COORD_PREV => &mut self.movement.previous_x,
+                    LINK_Y_COORD_PREV => &mut self.movement.previous_y,
+                    _ => return false,
+                };
+                let shift = (address & 1) * 8;
+                *word = (*word & !(255 << shift)) | (u16::from(value) << shift);
+            }
+        }
+        true
+    }
+
+    pub(crate) fn write_drawing_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            LINK_LAST_DIRECTION => self.movement.last_direction = value,
+            LINK_FACING => self.movement.facing = value,
+            LINK_FACING_MIRROR => self.movement.facing_mirror = value,
+            LINK_FRAME_CHANGE_COUNTER => self.presentation.frame_change_counter = value,
+            LINK_ANIMATION_STEPS => self.presentation.animation_step = value,
+            PLAYER_OAM_X_OFFSET => self.presentation.oam_x_offset = value,
+            PLAYER_OAM_Y_OFFSET => self.presentation.oam_y_offset = value,
+            LINK_DMA_SWORD_GRAPHICS_INDEX => self.presentation.sword_dma_graphics_index = value,
+            LINK_DMA_SHIELD_GRAPHICS_INDEX => self.presentation.shield_dma_graphics_index = value,
+            LINK_DMA_STAGING_INDEX => self.presentation.link_dma_staging_index = value,
+            _ => {
+                let word = match address & !1 {
+                    LINK_Y_COORD => &mut self.movement.y,
+                    LINK_DMA_LEFT_SPRITE_BANK_INDEX => &mut self.presentation.link_dma_left_sprite_bank,
+                    LINK_DMA_RIGHT_SPRITE_BANK_INDEX => &mut self.presentation.link_dma_right_sprite_bank,
+                    LINK_PALETTE_BITS_OF_OAM => &mut self.presentation.palette_bits_of_oam,
+                    _ => return false,
+                };
+                let shift = (address & 1) * 8;
+                *word = (*word & !(255 << shift)) | (u16::from(value) << shift);
+            }
+        }
+        true
+    }
+
     pub(crate) fn write_opening_byte(&mut self, address: usize, value: u8) {
         match address {
             LINK_Y_COORD..=0x23 => { assert!(self.write_entrance_byte(address, value)); }
@@ -776,6 +883,119 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         }
         self.ram[address..address + usize::from(width)]
             .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        self.debug_assert_matches_ram();
+    }
+
+    /// Preserve each diagonal collision store across an interrupted room relocation.
+    pub(crate) fn write_diagonal_collision_store(&mut self, address: usize, value: u16, width: u8) {
+        match address {
+            0x318 | 0x31a => {
+                assert_eq!(width, 2);
+                if address == 0x318 { self.state.movement.moving_floor_y = value; }
+                else { self.state.movement.moving_floor_x = value; }
+            }
+            _ => {
+                assert_eq!(width, 1);
+                match address {
+                    0x42 => self.state.movement.direction_mask_a = value as u8,
+                    0x43 => self.state.movement.direction_mask_b = value as u8,
+                    0x66 => self.state.movement.last_direction_moved_towards = value as u8,
+                    0x6a => self.state.movement.num_orthogonal_directions = value as u8,
+                    0xee => self.state.movement.floor = value as u8,
+                    _ => panic!("unowned diagonal collision store {address:04x}"),
+                }
+            }
+        }
+        self.ram[address..address + usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        self.debug_assert_matches_ram();
+    }
+
+    /// Publish each main tile response byte, preserving adjacent state at interrupts.
+    pub(crate) fn write_main_tile_response_store(&mut self,address:usize,value:u8) {
+        match address {
+            0x2cb=>self.state.movement.swimming_countdown=value,
+            0x32a=>self.state.movement.swim_fast_state=value,
+            0x34f=>self.state.movement.hard_swim_stroke=value,
+            0x340=>self.state.movement.swim_direction_flags=value,
+            0x345=>self.state.movement.deep_water_state=value,
+            0x34a=>self.state.movement.movement_flag=value,
+            0x351=>self.state.presentation.water_ripple_or_grass_state=value,
+            0x2db=>self.state.movement.whirlpool_trigger=value,
+            0x2ed=>self.state.actions.item_pickup_in_progress=value,
+            0x56=>self.state.actions.bunny_state=value,
+            0x2e0=>self.state.actions.bunny_mirror=value,
+            0x3f7=>self.state.actions.transform_poof_needed=value,
+            0x3f5|0x3f6=>{
+                let shift=(address-0x3f5)*8;
+                self.state.actions.temp_bunny_timer=(self.state.actions.temp_bunny_timer&!(255<<shift))|(u16::from(value)<<shift);
+            }
+            _=>panic!("unowned main tile response store {address:04x}"),
+        }
+        self.ram[address]=value;
+        self.debug_assert_matches_ram();
+    }
+
+    /// Publish the individual ground direction stores without changing their neighbors.
+    pub(crate) fn write_ground_movement_store(&mut self, address: usize, value: u8) {
+        match address {
+            0x2a => self.state.movement.y_subpixel = value,
+            0x2b => self.state.movement.x_subpixel = value,
+            0x6b => self.state.movement.moving_against_diag_tile = value,
+            0x371 => self.state.movement.push_fatigue_timer = value,
+            0x375 => self.state.movement.jump_ledge_timer = value,
+            _ => panic!("unowned ground movement store {address:04x}"),
+        }
+        self.ram[address] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    /// Publish the byte stores in velocity selection and the fractional axis loop.
+    pub(crate) fn write_ground_velocity_store(&mut self, address: usize, value: u8) {
+        let byte_word = |word: &mut u16, high: bool| {
+            *word = if high {
+                (*word & 255) | (u16::from(value) << 8)
+            } else {
+                (*word & 0xff00) | u16::from(value)
+            };
+        };
+        match address {
+            0x20..=0x21 => byte_word(&mut self.state.movement.y, address == 0x21),
+            0x22..=0x23 => byte_word(&mut self.state.movement.x, address == 0x23),
+            0x24..=0x25 => byte_word(&mut self.state.movement.z, address == 0x25),
+            0x27 => self.state.movement.actual_y_velocity = value,
+            0x28 => self.state.movement.actual_x_velocity = value,
+            0x29 => self.state.movement.z_velocity = value,
+            0x3e | 0x40 => byte_word(&mut self.state.movement.safe_return_y, address == 0x40),
+            0x3f | 0x41 => byte_word(&mut self.state.movement.safe_return_x, address == 0x41),
+            0x57 => self.state.movement.speed_modifier = value,
+            0x68 => self.state.movement.y_page_movement_delta = value,
+            0x69 => self.state.movement.x_page_movement_delta = value,
+            _ => panic!("unowned ground velocity store {address:04x}"),
+        }
+        self.ram[address] = value;
+        self.debug_assert_matches_ram();
+    }
+
+    /// Preserve split coordinate-cache writes at the cardinal kickback entry.
+    pub(crate) fn write_cardinal_collision_store(&mut self, address: usize, value: u8) {
+        match address {
+            0x6d => self.state.movement.moving_against_diag_deadlocked = value,
+            0x315 => self.state.movement.tile_collision_flag = value,
+            0x2dc..=0x2df => {
+                let word = if address < 0x2de {
+                    &mut self.state.movement.copied_x
+                } else {
+                    &mut self.state.movement.copied_y
+                };
+                *word = if address & 1 == 0 {
+                    (*word & 0xff00) | u16::from(value)
+                } else {
+                    (*word & 255) | (u16::from(value) << 8)
+                };
+            }
+            _ => panic!("unowned cardinal collision store {address:04x}"),
+        }
+        self.ram[address] = value;
         self.debug_assert_matches_ram();
     }
 

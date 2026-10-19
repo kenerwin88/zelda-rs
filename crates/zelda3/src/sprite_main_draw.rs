@@ -14171,6 +14171,9 @@ impl ZeldaState {
     /// The byte belongs to this native call, including across an NMI before
     /// $05:A8C1's store; the flags and drawing have not been published yet.
     pub(super) fn rat_animation_until_oam_flags_store(&mut self, k: usize) -> u8 {
+        // $05:A8B0-A8BE: LDY, LDA, STA, LDA, AND, ORA. The animation
+        // tables and the sixteen sprite slots stay within their pages.
+        crate::cycle_ledger::charge(32 + 32 + 38 + 32 + 16 + 32);
         let j = usize::from(self.sprite_slot_view(k).a());
         let value = RAT_GRAPHICS_BY_ANIM_STATE[j];
         self.sprite_slot_view_mut(k).set_graphics(value);
@@ -14178,9 +14181,16 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_rat_animation_after_graphics(&mut self, k: usize, flags: u8) {
+        // $05:A8C1 STA flags; $05:A8C4 JSL the bank-6 drawing wrapper.
+        crate::cycle_ledger::charge(38 + 62);
         self.sprite_slot_view_mut(k).set_oam_flags(flags);
-        self.sprite_draw_single_large(k);
-        if self.sprite_return_if_inactive(k) {
+        {
+            let _wrapper = crate::cycle_ledger::routine(0x06_dbf0);
+            crate::cycle_ledger::charge(190); // PHB; PHK; PLB; JSR; PLB; RTL.
+            self.sprite_draw_single_large(k);
+        }
+        crate::cycle_ledger::charge(46); // $05:A8C8 JSR Sprite_ReturnIfInactive_.
+        if self.sprite_return_if_inactive_bank5(k) {
             return;
         }
         if self.sprite_return_if_recoiling(k) {

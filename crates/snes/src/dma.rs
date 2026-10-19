@@ -279,6 +279,122 @@ impl DmaState {
     }
 }
 
+/// One byte access by the HDMA device; the caller supplies its live bus.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HdmaBusAccess {
+    Read(u32),
+    Write(u32, u8),
+}
+
+impl DmaState {
+    /// Retire one synchronous HDMA event, including descriptor reloads and
+    /// transfers. Returned clocks are added by the CPU event scheduler after
+    /// these semantics, as in the pinned source. No CPU code is executed.
+    pub fn run_synchronous_hdma(
+        &mut self,
+        event: CpuBusEvent,
+        mut access: impl FnMut(HdmaBusAccess) -> u8,
+    ) -> u32 {
+        self.hdma_timer = 0;
+        let mut cycles = 0u32;
+        let mut any = false;
+        match event {
+            CpuBusEvent::HdmaInit => {
+                for i in 0..8 {
+                    let higher_active = self.channel[i + 1..].iter().any(|c| c.hdma_active);
+                    let channel = &mut self.channel[i];
+                    if !channel.hdma_active {
+                        channel.do_transfer = false;
+                        channel.terminated = false;
+                        continue;
+                    }
+                    any = true;
+                    channel.dma_active = false;
+                    channel.off_index = 0;
+                    channel.table_adr = channel.a_adr;
+                    let bank = u32::from(channel.a_bank) << 16;
+                    let rep = access(HdmaBusAccess::Read(bank | u32::from(channel.table_adr)));
+                    channel.rep_count = rep;
+                    channel.terminated = rep == 0;
+                    channel.table_adr = channel.table_adr.wrapping_add(1);
+                    cycles += 8;
+                    if channel.indirect {
+                        if rep == 0 && !higher_active {
+                            channel.table_adr = channel.table_adr.wrapping_sub(1);
+                        }
+                        let lo = access(HdmaBusAccess::Read(bank | u32::from(channel.table_adr)));
+                        channel.table_adr = channel.table_adr.wrapping_add(1);
+                        let hi = access(HdmaBusAccess::Read(bank | u32::from(channel.table_adr)));
+                        channel.table_adr = channel.table_adr.wrapping_add(1);
+                        channel.size = u16::from(lo) | (u16::from(hi) << 8);
+                        cycles += if rep == 0 && !higher_active { 8 } else { 16 };
+                    }
+                    channel.do_transfer = true;
+                }
+            }
+            CpuBusEvent::HdmaStart => {
+                for i in 0..8 {
+                    if !self.channel[i].hdma_active || self.channel[i].terminated {
+                        continue;
+                    }
+                    any = true;
+                    let higher_active = self.channel[i + 1..]
+                        .iter()
+                        .any(|c| c.hdma_active && !c.terminated);
+                    let channel = &mut self.channel[i];
+                    channel.dma_active = false;
+                    channel.off_index = 0;
+                    cycles += 8;
+                    if channel.do_transfer {
+                        let len = TRANSFER_LENGTH[channel.mode as usize];
+                        cycles += 8 * u32::from(len);
+                        for phase in 0..len {
+                            let a_address = if channel.indirect {
+                                let address = (u32::from(channel.ind_bank) << 16) | u32::from(channel.size);
+                                channel.size = channel.size.wrapping_add(1);
+                                address
+                            } else {
+                                let address = (u32::from(channel.a_bank) << 16) | u32::from(channel.table_adr);
+                                channel.table_adr = channel.table_adr.wrapping_add(1);
+                                address
+                            };
+                            let b_address = 0x2100 | u32::from(channel.b_adr.wrapping_add(
+                                B_ADR_OFFSETS[usize::from(channel.mode)][usize::from(phase)]));
+                            let (source, destination) = if channel.from_b { (b_address, a_address) } else { (a_address, b_address) };
+                            let value = access(HdmaBusAccess::Read(source));
+                            access(HdmaBusAccess::Write(destination, value));
+                        }
+                    }
+                    channel.rep_count = channel.rep_count.wrapping_sub(1);
+                    channel.do_transfer = channel.rep_count & 0x80 != 0;
+                    if channel.rep_count & 0x7f == 0 {
+                        let bank = u32::from(channel.a_bank) << 16;
+                        let next = access(HdmaBusAccess::Read(bank | u32::from(channel.table_adr)));
+                        channel.table_adr = channel.table_adr.wrapping_add(1);
+                        channel.rep_count = next;
+                        if channel.indirect {
+                            if next == 0 && !higher_active {
+                                channel.table_adr = channel.table_adr.wrapping_sub(1);
+                            }
+                            let lo = access(HdmaBusAccess::Read(bank | u32::from(channel.table_adr)));
+                            channel.table_adr = channel.table_adr.wrapping_add(1);
+                            let hi = access(HdmaBusAccess::Read(bank | u32::from(channel.table_adr)));
+                            channel.table_adr = channel.table_adr.wrapping_add(1);
+                            channel.size = u16::from(lo) | (u16::from(hi) << 8);
+                            cycles += if next == 0 && !higher_active { 8 } else { 16 };
+                        }
+                        channel.terminated = next == 0;
+                        channel.do_transfer = true;
+                    }
+                }
+            }
+            CpuBusEvent::WramRefresh => unreachable!("refresh is not HDMA"),
+        }
+        if any { cycles += 16; }
+        cycles + u32::from(cycles != 0) * 2
+    }
+}
+
 /// HDMA bus timing without a PPU transfer. This owns a copy of the channel
 /// cursors so a translated CPU budget can price the same descriptor reloads
 /// as the source machine without constructing a second SNES.
@@ -288,6 +404,12 @@ pub struct HdmaTimingState {
 }
 
 impl HdmaTimingState {
+    /// Preserve descriptor cursors when an instruction owner hands its clock
+    /// back to the surrounding CPU. No transfer or timing work is replayed.
+    pub fn install_into(&self, dma: &mut DmaState) {
+        dma.channel = self.channels;
+    }
+
     pub fn new(dma: &DmaState) -> Self {
         Self { channels: dma.channel }
     }
@@ -878,6 +1000,65 @@ mod saveload_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_hdma_device_matches_source_transfers_and_descriptor_reload() {
+        for mode in 0..8 {
+            for indirect in [false, true] {
+                for reverse in [false, true] {
+                    for mask in [0u8, 1, 0x80, 0x81] {
+                        for terminal in [false, true] {
+                            let mut source = Snes::new();
+                            for (i, value) in source.ram.iter_mut().enumerate() {
+                                *value = (i as u8).wrapping_mul(37).wrapping_add(11);
+                            }
+                            for i in 0..8 {
+                                let channel = &mut source.dma.channel[i];
+                                channel.hdma_active = mask & (1 << i) != 0;
+                                channel.mode = mode;
+                                channel.indirect = indirect;
+                                channel.from_b = reverse;
+                                channel.a_bank = 0x7e;
+                                channel.a_adr = 0x1000 + i as u16 * 64;
+                                channel.ind_bank = 0x7e;
+                                channel.b_adr = if reverse { 0x38 } else { 0x0d };
+                                let len = usize::from(TRANSFER_LENGTH[usize::from(mode)]);
+                                let mut table = if indirect {
+                                    vec![0x82, 0x00, 0x20, 1, 0x08, 0x20, 0, 0]
+                                } else {
+                                    let mut table = vec![0x82];
+                                    table.extend((0..len*2).map(|v| (v as u8).wrapping_add(3)));
+                                    table.push(1);
+                                    table.extend((0..len).map(|v| (v as u8).wrapping_add(29)));
+                                    table.extend([0, 0]);
+                                    table
+                                };
+                                if terminal { table[0] = 0; }
+                                let at = usize::from(channel.a_adr);
+                                source.ram[at..at+table.len()].copy_from_slice(&table);
+                            }
+                            // Independent device fixture. Neither lane executes CPU code
+                            // or obtains register/data values from the other's result.
+                            let mut native_bus = source.clone();
+                            let mut native = native_bus.dma.clone();
+                            for event in [CpuBusEvent::HdmaInit, CpuBusEvent::HdmaStart,
+                                CpuBusEvent::HdmaStart, CpuBusEvent::HdmaStart, CpuBusEvent::HdmaStart] {
+                                let actual = native.run_synchronous_hdma(event, |access| match access {
+                                    HdmaBusAccess::Read(address) => native_bus.read(address),
+                                    HdmaBusAccess::Write(address, value) => {native_bus.write(address, value);0}
+                                });
+                                let expected = source.synchronous_hdma_stall(event);
+                                assert_eq!(actual, expected, "{mode}/{indirect}/{reverse}/{mask}/{terminal}/{event:?}");
+                                assert_eq!(native.save_c_saveload(), source.dma.save_c_saveload());
+                                assert_eq!(native_bus.ram, source.ram);
+                                assert_eq!(native_bus.ppu.save_c_saveload(), source.ppu.save_c_saveload());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn hdma_timing_shadow_matches_source_descriptor_progression() {

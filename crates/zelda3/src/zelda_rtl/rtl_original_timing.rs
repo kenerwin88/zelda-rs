@@ -9066,6 +9066,15 @@ impl ZeldaState {
             debug_host_path_early_return(self.frame_ctr_dbg, line!());
             return;
         }
+        if self.resume_native_ground_item_graphics(input, oam_dma_source.as_deref()) {
+            return;
+        }
+        if self.resume_clocked_dialogue_return(input, oam_dma_source.as_deref()) {
+            return;
+        }
+        if self.resume_clocked_dialogue_initialization(input, oam_dma_source.as_deref()) {
+            return;
+        }
         if self.lane_scheduled_finish_sprite_main_boundary(input, oam_dma_source.clone()) {
             return;
         }

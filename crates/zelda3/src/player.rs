@@ -3,6 +3,7 @@
 use super::misc::chest_item_alternate;
 use super::sprite::SpriteSpawnInfo;
 use super::*;
+use crate::game_state::constants::{BIT9_OF_XCOORD, FORCE_MOVE_ANY_DIRECTION, OAM_PRIORITY_VALUE, OAM_PRIORITY_VALUE_2, SORT_SPRITES_OFFSET_INTO_OAM_BUFFER};
 use crate::game_state::{
     CollisionAxis, CollisionDirection, CollisionOrder, MovementProbeKind, PlayerAxis,
 };
@@ -75,6 +76,64 @@ impl ZeldaState {
             42
         };
         self.set_submodule(submodule);
+    }
+
+    /// Retained animation and LinkOam publish only their live store, including
+    /// byte writes to words shared with the tile and OAM owners.
+    pub(crate) fn native_player_drawing_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        let address = address as usize;
+        if matches!(address, 0x31f | 0x355 | 0x356) {
+            assert_eq!(width, 1);
+            match address {
+                0x31f => self.follower_link_state_mut().set_blink_countdown(value as u8),
+                0x355 => self.follower_link_state_mut().set_secondary_water_grass_timer(value as u8),
+                0x356 => self.follower_link_state_mut().set_primary_water_grass_timer(value as u8),
+                _ => unreachable!(),
+            }
+            return true;
+        }
+        if matches!(address, 0x20..=0x21 | 0x26 | 0x2d..=0x2f | 0x44..=0x45 | 0x102..=0x105 | 0x107..=0x109 | 0x323 | 0x346..=0x347) {
+            for byte in 0..usize::from(width) {
+                let value_byte = (value >> (byte * 8)) as u8;
+                if address + byte == 0x10a {
+                    self.game_state.system_signals.set_game_over_check_flag(value_byte);
+                } else {
+                    assert!(self.game_state.player.follower_link.write_drawing_byte(address + byte, value_byte), "drawing store address={address:05x} value={value:04x} width={width} byte={byte}");
+                }
+            }
+            self.ram[address..address+usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+            return true;
+        }
+        let (base, old) = match address {
+            0x64..=0x65 => (0x64, read_le_u16(&self.ram, OAM_PRIORITY_VALUE)),
+            0x72..=0x77 => (address & !1, read_le_u16(&self.ram, address & !1)),
+            0x90..=0x93 => (address & !1, read_le_u16(&self.ram, address & !1)),
+            0x100..=0x101 => (0x100, read_le_u16(&self.ram, LINK_DMA_GRAPHICS_INDEX)),
+            0x352..=0x353 => (0x352, read_le_u16(&self.ram, SORT_SPRITES_OFFSET_INTO_OAM_BUFFER)),
+            0x35d..=0x35e => (0x35d, read_le_u16(&self.ram, OAM_PRIORITY_VALUE_2)),
+            0x3fa..=0x3fb => (0x3fa, read_le_u16(&self.ram, BIT9_OF_XCOORD)),
+            0x354 => {assert_eq!(width, 1);self.oam_state_mut().set_player_oam_computed_value(value as u8);return true;}
+            _ => return false,
+        };
+        assert!(address + usize::from(width) <= base + 2);
+        let word = if width == 2 { value } else {
+            let shift = (address-base)*8;
+            (old & !(255 << shift)) | ((value & 255) << shift)
+        };
+        match base {
+            0x64 => self.oam_state_mut().set_priority_word(word),
+            0x72 => self.tile_detect_position_mut().set_interaction_scratch_y(word),
+            0x74 => self.tile_detect_position_mut().set_interaction_scratch_x(word),
+            0x76 => self.tile_detect_position_mut().set_interacting_tile(word),
+            0x90 => self.oam_state_mut().set_current_pointer(word),
+            0x92 => self.oam_state_mut().set_current_extended_pointer(word),
+            0x100 => self.follower_link_state_mut().set_link_dma_graphics_index_word(word),
+            0x352 => self.oam_state_mut().set_sort_sprites_offset(word),
+            0x35d => self.oam_state_mut().set_priority_value_2(word),
+            0x3fa => self.follower_link_state_mut().set_bit9_of_xcoord_word(word),
+            _ => unreachable!(),
+        }
+        true
     }
 
     pub(crate) fn native_load_player_initialization_store(&mut self, address: usize, value: u16, width: u8) -> bool {
@@ -703,6 +762,8 @@ impl ZeldaState {
     }
 
     pub(super) fn link_handle_moving_animation_full_long_entry(&mut self) {
+        crate::cycle_ledger::charge_routine(0x07_e6a6,
+            crate::cycle_models::player_animation::full_entry_master_cycles(&self.ram));
         if self.game_state.player.follower_link.handler_state() == 4 {
             self.link_handle_moving_animation_swimming();
             return;
@@ -1639,12 +1700,12 @@ impl ZeldaState {
 
     pub(super) fn link_check_for_edge_screen_transition(&mut self) -> bool {
         let _scope = crate::cycle_ledger::routine(0x07_f439);
-        if self
+        if !self
             .game_state
             .player
             .follower_link
             .is_edge_transition_blocked_by_handler_state()
-            || self.game_state.player.follower_link.incapacitated_timer() == 0
+            && self.game_state.player.follower_link.incapacitated_timer() == 0
         {
             return false;
         }
@@ -1657,20 +1718,43 @@ impl ZeldaState {
 
     pub(super) fn player_limit_directions_inner(&mut self) {
         self.follower_link_state_mut().reset_direction_limits();
+        self.player_limit_directions_after_reset(None);
+    }
 
+    fn player_limit_directions_after_reset(&mut self, native_vertical_probe: Option<CollisionDirection>) {
         let direction = self.game_state.player.follower_link.direction();
         if direction & 0x0c != 0 {
-            self.follower_link_state_mut()
-                .increment_orthogonal_direction_count();
-            let probe_direction =
-                CollisionDirection::along(CollisionAxis::Vertical, direction & 8 != 0);
-            self.follower_link_state_mut()
-                .set_last_direction_moved_towards(probe_direction.legacy_value());
+            let probe_direction = native_vertical_probe.unwrap_or_else(|| {
+                self.follower_link_state_mut().increment_orthogonal_direction_count();
+                let probe_direction = CollisionDirection::along(CollisionAxis::Vertical, direction & 8 != 0);
+                self.follower_link_state_mut().set_last_direction_moved_towards(probe_direction.legacy_value());
+                probe_direction
+            });
+            if std::mem::take(&mut self.early_vertical_slope_probe) {
+                assert!(native_vertical_probe.is_some());
+                let y = read_le_u16(&self.ram, 0);
+                let low_x = read_le_u16(&self.ram, 2);
+                let high_x = read_le_u16(&self.ram, 4);
+                use crate::cycle_models::tile_classifier::TileClassifierTail;
+                match self.early_tile_classifier_tail.take() {
+                    Some(TileClassifierTail::Complete) => {}
+                    Some(TileClassifierTail::Effect {tile, offset}) => self.tile_detect_execute_definition(
+                        crate::tile_definition::NativeTile::from_cartridge(tile), offset, 1, true),
+                    Some(TileClassifierTail::OutdoorAttribute) | None => self.tile_detection_execute(low_x, y, 1),
+                }
+                match self.early_high_tile_classifier_tail.take() {
+                    Some(TileClassifierTail::Complete) => {}
+                    Some(TileClassifierTail::Effect {tile, offset}) => self.tile_detect_execute_definition(
+                        crate::tile_definition::NativeTile::from_cartridge(tile), offset, 2, true),
+                    Some(TileClassifierTail::OutdoorAttribute) | None => self.tile_detection_execute(high_x, y, 2),
+                }
+            } else {
             self.detect_player_movement(
                 CollisionAxis::Vertical,
                 probe_direction,
                 MovementProbeKind::Slope,
             );
+            }
 
             let r14 = self.game_state.player.tile_detection.collision_bits();
             if r14 & 0x30 != 0
@@ -1729,14 +1813,18 @@ impl ZeldaState {
             }
         }
 
+        self.player_limit_directions_after_vertical(None);
+    }
+
+    fn player_limit_directions_after_vertical(&mut self, native_horizontal_probe: Option<CollisionDirection>) {
         let direction = self.game_state.player.follower_link.direction();
-        if direction & 0x0c != 0 && direction & 3 != 0 {
-            self.follower_link_state_mut()
-                .increment_orthogonal_direction_count();
-            let probe_direction =
-                CollisionDirection::along(CollisionAxis::Horizontal, direction & 2 != 0);
-            self.follower_link_state_mut()
-                .set_last_direction_moved_towards(probe_direction.legacy_value());
+        if native_horizontal_probe.is_some() || (direction & 0x0c != 0 && direction & 3 != 0) {
+            let probe_direction = native_horizontal_probe.unwrap_or_else(|| {
+                self.follower_link_state_mut().increment_orthogonal_direction_count();
+                let direction = CollisionDirection::along(CollisionAxis::Horizontal, direction & 2 != 0);
+                self.follower_link_state_mut().set_last_direction_moved_towards(direction.legacy_value());
+                direction
+            });
             self.detect_player_movement(
                 CollisionAxis::Horizontal,
                 probe_direction,
@@ -2414,6 +2502,10 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_link_receive_item(&mut self, item: u8) {
+        if let Some(native_item) = self.early_ground_link_receive_item_tail.take() {
+            assert_eq!(native_item, item, "native Link receipt returned to another caller");
+            return;
+        }
         if item != 0x20 && item != 0x37 && item != 0x38 && item != 0x39 {
             self.hud_refresh_icon();
         }
@@ -2521,6 +2613,14 @@ impl ZeldaState {
             self.tile_detect_position_mut().set_collision_bits(bak);
         }
 
+        self.finish_pushing_bonking_snaps_y_after_initial_bonk(r14, used_swim_axis_reprobe);
+    }
+
+    fn finish_pushing_bonking_snaps_y_after_initial_bonk(
+        &mut self,
+        r14: u16,
+        used_swim_axis_reprobe: bool,
+    ) {
         self.follower_link_state_mut().set_pit_correction_active();
 
         if !used_swim_axis_reprobe {
@@ -2583,12 +2683,15 @@ impl ZeldaState {
             self.repel_dash();
         }
 
+        self.finish_pushing_bonking_snaps_y_after_final_bonk();
+    }
+
+    fn finish_pushing_bonking_snaps_y_after_final_bonk(&mut self) {
         if self.handle_pushing_bonking_dragstate_tail() {
             return;
         }
         self.handle_pushing_bonking_snaps_return();
     }
-
     pub(super) fn handle_pushing_bonking_snaps_x(&mut self) {
         let r14 = self.game_state.player.tile_detection.collision_bits();
         if r14 & 7 == 0 {
@@ -2878,6 +2981,17 @@ impl ZeldaState {
     }
 
     pub(super) fn tile_detect_main_handler(&mut self, item: u8) {
+        if let Some(handoff)=self.early_main_tile_probe.take() {
+            assert_eq!(item,handoff.item);
+            use crate::cycle_models::tile_classifier::TileClassifierTail;
+            match handoff.classifier {
+                TileClassifierTail::Complete=>{},
+                TileClassifierTail::Effect {tile,offset}=>self.tile_detect_execute_definition(crate::tile_definition::NativeTile::from_cartridge(tile),offset,1,true),
+                TileClassifierTail::OutdoorAttribute=>self.tile_detection_execute(handoff.x,handoff.y,1),
+            }
+            if item!=5 {self.finish_main_tile_response();}
+            return;
+        }
         self.tile_detect_position_mut().clear_pit_tile();
         self.tile_detect_reset_state();
 
@@ -2918,6 +3032,10 @@ impl ZeldaState {
             return;
         }
 
+        self.finish_main_tile_response();
+    }
+
+    fn finish_main_tile_response(&mut self) {
         if self.game_state.player.tile_detection.thick_grass() & 0x10 != 0 {
             let tx = self.game_state.player.follower_link.x() & 0x0f;
             let ty = self.game_state.player.follower_link.y().wrapping_add(8) & 0x0f;
@@ -3109,6 +3227,10 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .set_last_direction_moved_towards(direction.legacy_value());
         self.detect_player_movement(axis, direction, MovementProbeKind::Cardinal);
+        self.finish_movement_collision_response(axis);
+    }
+
+    fn finish_movement_collision_response(&mut self, axis: CollisionAxis) {
         match (axis, self.game_state.world.location.is_indoors()) {
             (CollisionAxis::Vertical, true) => {
                 self.start_movement_collision_checks_y_handle_indoors()
@@ -3125,6 +3247,193 @@ impl ZeldaState {
         }
     }
 
+    fn finish_native_vertical_surface(
+        &mut self,
+        tail: crate::cycle_models::vertical_surface_response::VerticalSurfaceTail,
+    ) {
+        use crate::cycle_models::vertical_surface_response::VerticalSurfaceTail;
+        match tail {
+            VerticalSurfaceTail::Returned => {
+                unreachable!("completed surface response resumes its native parent")
+            }
+            VerticalSurfaceTail::SurfaceEffect => self.finish_indoor_y_collision_tail(),
+            VerticalSurfaceTail::StairDash => {
+                self.link_cancel_dash();
+                if self
+                    .game_state
+                    .player
+                    .follower_link
+                    .last_direction_moved_towards()
+                    & 2
+                    == 0
+                {
+                    self.follower_link_state_mut().arm_stair_speed_modifier();
+                } else if !self.finish_indoor_collision_shared_tail(true) {
+                    self.handle_pushing_bonking_snaps_y();
+                }
+            }
+            VerticalSurfaceTail::Damage => {
+                self.link_cancel_dash();
+                self.link_force_unequip_cape_quietly();
+                self.link_apply_tile_rebound();
+            }
+            VerticalSurfaceTail::PushBlock => {
+                let flags = self.game_state.player.tile_detection.block_flags();
+                self.handle_indoor_pushblock_timeout_after_cache(true, flags);
+                self.handle_pushing_bonking_snaps_y();
+            }
+            VerticalSurfaceTail::ResetSwim => self.handle_pushing_bonking_snaps_y(),
+            VerticalSurfaceTail::Bonk {
+                return_pc,
+                saved_collision_low,
+                smash_done,
+            } => {
+                if !smash_done {
+                    self.link_bonk_and_smash();
+                }
+                self.repel_dash();
+                if return_pc == 0xbde5 {
+                    let collision = (self.game_state.player.tile_detection.collision_bits()
+                        & 0xff00)
+                        | u16::from(saved_collision_low.unwrap());
+                    self.tile_detect_position_mut()
+                        .set_collision_bits(collision);
+                    self.finish_pushing_bonking_snaps_y_after_initial_bonk(collision, false);
+                } else {
+                    assert!(matches!(return_pc, 0xbe3b | 0xbe60));
+                    assert!(saved_collision_low.is_none());
+                    self.finish_pushing_bonking_snaps_y_after_final_bonk();
+                }
+            }
+            VerticalSurfaceTail::Nudge => {
+                let delta = self.ram[0] as i8;
+                let x = self
+                    .game_state
+                    .player
+                    .follower_link
+                    .x()
+                    .wrapping_add(delta as i16 as u16);
+                self.follower_link_state_mut().set_x(x);
+                self.handle_nudging(delta);
+            }
+        }
+    }
+
+    fn finish_native_vertical_response(
+        &mut self,
+        tail: crate::cycle_models::vertical_collision_response::VerticalResponseTail,
+    ) {
+        use crate::cycle_models::vertical_collision_response::VerticalResponseTail;
+        match tail {
+            VerticalResponseTail::Returned => {
+                unreachable!("completed vertical response must resume its CPU parent")
+            }
+            VerticalResponseTail::Outdoor => {
+                self.start_movement_collision_checks_y_handle_outdoors()
+            }
+            VerticalResponseTail::Doorway { perpendicular } => {
+                self.link_add_in_velocity_y();
+                if perpendicular {
+                    self.change_axis_of_perpendicular_door_movement_y();
+                } else {
+                    if self.game_state.player.follower_link.tile_coll_flag() & 2 == 0 {
+                        self.follower_link_state_mut().clear_direction_lock_bits(2);
+                        self.set_room_transitioning_flags(0);
+                        let force = read_le_u16(&self.ram, FORCE_MOVE_ANY_DIRECTION) & 0xff00;
+                        self.follower_link_state_mut()
+                            .set_force_move_any_direction(force);
+                    }
+                    self.finish_indoor_y_collision_after_setup();
+                }
+            }
+            VerticalResponseTail::DoorSnap { velocity_done } => {
+                if !velocity_done {
+                    self.link_add_in_velocity_y_falling();
+                }
+                self.calculate_snap_scratch_y();
+                self.follower_link_state_mut().clear_doorway_state();
+                let bits = self.game_state.player.tile_detection.collision_bits();
+                if bits & 0x20 != 0
+                    && bits & 1 == 0
+                    && self.game_state.player.follower_link.x() & 7 == 1
+                {
+                    let x = self.game_state.player.follower_link.x() & !7;
+                    self.follower_link_state_mut().set_x(x);
+                }
+                if self.game_state.player.follower_link.tile_coll_flag() & 2 == 0 {
+                    self.follower_link_state_mut().clear_direction_lock_bits(2);
+                }
+            }
+            VerticalResponseTail::Slope => {
+                self.flag_moving_into_slopes_y();
+                if self
+                    .game_state
+                    .player
+                    .follower_link
+                    .moving_against_diag_tile()
+                    & 15
+                    == 0
+                {
+                    self.finish_indoor_y_collision_after_slope();
+                }
+            }
+            VerticalResponseTail::Chest { collision } => {
+                let mut chest_position = 0;
+                let _ = self.OpenChestForItem(
+                    self.game_state.player.tile_detection.tile_type() as u8,
+                    &mut chest_position,
+                );
+                self.tile_detect_position_mut().clear_tile_type();
+                self.tile_detect_position_mut()
+                    .set_collision_bits(collision);
+                self.finish_indoor_collision_common(true);
+            }
+            VerticalResponseTail::Rupee { tile_deleted } => {
+                if !tile_deleted {
+                    let y = read_le_u16(&self.ram, 0);
+                    let x = read_le_u16(&self.ram, 2);
+                    self.Dungeon_DeleteRupeeTile(x, y);
+                }
+                self.ancilla_sfx3_near(10);
+                self.finish_indoor_collision_after_rupees(true);
+            }
+            VerticalResponseTail::SurfaceTail => {
+                if let Some(tail) = self.early_vertical_surface_tail.take() {
+                    self.finish_native_vertical_surface(tail);
+                } else {
+                    self.finish_indoor_y_collision_tail();
+                }
+            }
+        }
+    }
+    fn finish_vertical_cardinal_probe(
+        &mut self,
+        handoff: crate::cycle_models::vertical_cardinal_probe::VerticalCardinalHandoff,
+    ) {
+        use crate::cycle_models::tile_classifier::TileClassifierTail;
+        assert!(handoff.direction <= 1);
+        for index in 0..3 {
+            let bits = 1u16 << index;
+            match handoff.samples[index] {
+                Some(TileClassifierTail::Complete) => {}
+                Some(TileClassifierTail::Effect { tile, offset }) => self
+                    .tile_detect_execute_definition(
+                        crate::tile_definition::NativeTile::from_cartridge(tile),
+                        offset,
+                        bits,
+                        true,
+                    ),
+                Some(TileClassifierTail::OutdoorAttribute) | None => {
+                    self.tile_detection_execute(handoff.x[index], handoff.y, bits)
+                }
+            }
+        }
+        if let Some(tail) = self.early_vertical_response_tail.take() {
+            self.finish_native_vertical_response(tail);
+        } else {
+            self.finish_movement_collision_response(CollisionAxis::Vertical);
+        }
+    }
     pub(super) fn start_movement_collision_checks_y_handle_indoors(&mut self) {
         let mut r14 = self.game_state.player.tile_detection.collision_bits();
         if self
@@ -3938,6 +4247,10 @@ impl ZeldaState {
                 .set_force_move_any_direction(0);
         }
 
+        self.finish_indoor_y_collision_after_setup();
+    }
+
+    fn finish_indoor_y_collision_after_setup(&mut self) {
         if self.game_state.player.tile_detection.collision_bits() & 7 == 0
             && self.game_state.player.tile_detection.slope_collision_bits() & 5 != 0
         {
@@ -3955,6 +4268,10 @@ impl ZeldaState {
             }
         }
 
+        self.finish_indoor_y_collision_after_slope();
+    }
+
+    fn finish_indoor_y_collision_after_slope(&mut self) {
         self.follower_link_state_mut()
             .clear_moving_against_diag_tile();
         if self.game_state.player.tile_detection.key_lock_gravestones() & 0x20 != 0 {
@@ -4034,6 +4351,11 @@ impl ZeldaState {
             self.ancilla_sfx3_near(10);
         }
 
+        self.finish_indoor_collision_after_rupees(y_axis);
+    }
+
+    fn finish_indoor_collision_after_rupees(&mut self, y_axis: bool) {
+        let r14 = self.game_state.player.tile_detection.collision_bits();
         let moving_floor_flags = self
             .game_state
             .dungeon
@@ -4062,7 +4384,6 @@ impl ZeldaState {
             self.finish_indoor_x_collision_tail();
         }
     }
-
     fn finish_indoor_y_collision_tail(&mut self) {
         if (self.game_state.player.tile_detection.vertical_ledge() & 7) == 7
             && self.run_ledge_hop_timer()
@@ -4256,13 +4577,17 @@ impl ZeldaState {
             }
         }
 
+        self.finish_indoor_collision_shared_tail_after_damage(y_axis);
+        false
+    }
+
+    fn finish_indoor_collision_shared_tail_after_damage(&mut self, y_axis: bool) {
         if self.game_state.dungeon.room_load.header_collision() == 0
             || self.game_state.dungeon.room_load.header_collision() == 4
             || !self.game_state.player.follower_link.is_on_lower_level()
         {
             self.handle_indoor_pushblock_timeout(y_axis);
         }
-        false
     }
 
     fn handle_indoor_pushblock_timeout(&mut self, y_axis: bool) {
@@ -4277,66 +4602,72 @@ impl ZeldaState {
         {
             self.tile_detect_position_mut()
                 .set_staircase_cache(block_flags as u8);
-            self.follower_link_state_mut()
-                .decrement_gravestone_push_timeout();
-            if !(self
-                .game_state
-                .player
-                .follower_link
-                .gravestone_push_timeout() as i8)
-                .is_negative()
-            {
-                return;
-            }
-            let mut bits = block_flags;
-            for i in (0..=15).rev() {
-                if bits & 0x8000 != 0 {
-                    let idx = self.find_free_moving_block_slot(i);
-                    if idx != 0xff {
-                        let slot = idx as usize;
-                        self.tile_detect_position_mut()
-                            .set_collision_bits(idx as u16);
-                        if !self.initialize_push_block(idx, i * 2) {
-                            self.sprite_dungeon_draw_single_push_block(slot * 2);
-                            self.tile_detect_position_mut().set_collision_bits(4);
-                            let facing = self
-                                .game_state
-                                .player
-                                .follower_link
-                                .last_direction_moved_towards()
-                                * 2;
-                            self.pushed_block_mut().set_facing_player(slot, facing);
-                            self.pushed_block_mut().set_push_direction(facing);
-                            let target = if y_axis {
-                                let y_lo = self.game_state.player.pushed_block.y_low(slot);
-                                y_lo.wrapping_sub(u8::from(
-                                    self.game_state
-                                        .player
-                                        .follower_link
-                                        .last_direction_moved_towards()
-                                        == 1,
-                                ))
-                            } else {
-                                let x_lo = self.game_state.player.pushed_block.x_low(slot);
-                                x_lo.wrapping_sub(u8::from(
-                                    self.game_state
-                                        .player
-                                        .follower_link
-                                        .last_direction_moved_towards()
-                                        != 2,
-                                ))
-                            } & 0x0f;
-                            self.pushed_block_mut().set_target_low(slot, target);
-                        }
-                    }
-                }
-                bits <<= 1;
-            }
+            self.handle_indoor_pushblock_timeout_after_cache(y_axis, block_flags);
+            return;
         }
         self.follower_link_state_mut()
             .set_gravestone_push_timeout(21);
     }
 
+    fn handle_indoor_pushblock_timeout_after_cache(&mut self, y_axis: bool, block_flags: u16) {
+        self.follower_link_state_mut()
+            .decrement_gravestone_push_timeout();
+        if !(self
+            .game_state
+            .player
+            .follower_link
+            .gravestone_push_timeout() as i8)
+            .is_negative()
+        {
+            return;
+        }
+        let mut bits = block_flags;
+        for i in (0..=15).rev() {
+            if bits & 0x8000 != 0 {
+                let idx = self.find_free_moving_block_slot(i);
+                if idx != 0xff {
+                    let slot = idx as usize;
+                    self.tile_detect_position_mut()
+                        .set_collision_bits(idx as u16);
+                    if !self.initialize_push_block(idx, i * 2) {
+                        self.sprite_dungeon_draw_single_push_block(slot * 2);
+                        self.tile_detect_position_mut().set_collision_bits(4);
+                        let facing = self
+                            .game_state
+                            .player
+                            .follower_link
+                            .last_direction_moved_towards()
+                            * 2;
+                        self.pushed_block_mut().set_facing_player(slot, facing);
+                        self.pushed_block_mut().set_push_direction(facing);
+                        let target = if y_axis {
+                            let y_lo = self.game_state.player.pushed_block.y_low(slot);
+                            y_lo.wrapping_sub(u8::from(
+                                self.game_state
+                                    .player
+                                    .follower_link
+                                    .last_direction_moved_towards()
+                                    == 1,
+                            ))
+                        } else {
+                            let x_lo = self.game_state.player.pushed_block.x_low(slot);
+                            x_lo.wrapping_sub(u8::from(
+                                self.game_state
+                                    .player
+                                    .follower_link
+                                    .last_direction_moved_towards()
+                                    != 2,
+                            ))
+                        } & 0x0f;
+                        self.pushed_block_mut().set_target_low(slot, target);
+                    }
+                }
+            }
+            bits <<= 1;
+        }
+        self.follower_link_state_mut()
+            .set_gravestone_push_timeout(21);
+    }
     pub(super) fn link_handle_liftables(&mut self) -> u8 {
         self.tile_detect_position_mut().clear_pit_tile();
         self.tile_detect_reset_state();
@@ -4574,6 +4905,30 @@ impl ZeldaState {
         tile_attrs[(map8 & 0x01ff) as usize]
     }
 
+    fn finish_native_diagonal_collision(&mut self, tail: crate::cycle_models::diagonal_collision_prefix::DiagonalCollisionTail) {
+        match tail {
+            crate::cycle_models::diagonal_collision_prefix::DiagonalCollisionTail::Complete => {}
+            crate::cycle_models::diagonal_collision_prefix::DiagonalCollisionTail::HorizontalProbe { primary_layer, direction } => {
+                assert!(matches!(direction, 2 | 3));
+                self.player_limit_directions_after_vertical(Some(CollisionDirection::from_legacy(direction)));
+                if primary_layer {
+                    self.create_velocity_from_moving_background();
+                    self.follower_link_state_mut().mask_direction(0x0f);
+                    self.player_limit_directions_inner();
+                }
+            }
+            crate::cycle_models::diagonal_collision_prefix::DiagonalCollisionTail::VerticalProbe { primary_layer, direction } => {
+                assert!(direction <= 1);
+                self.player_limit_directions_after_reset(Some(CollisionDirection::from_legacy(direction)));
+                if primary_layer {
+                    self.create_velocity_from_moving_background();
+                    self.follower_link_state_mut().mask_direction(0x0f);
+                    self.player_limit_directions_inner();
+                }
+            }
+        }
+    }
+
     pub(super) fn link_handle_diagonal_collision(&mut self) {
         if self.check_if_room_needs_double_layer_check() {
             self.player_limit_directions_inner();
@@ -4597,6 +4952,10 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .cache_copied_position_from_current();
 
+        self.link_handle_diagonal_kickback_after_cache();
+    }
+
+    fn link_handle_diagonal_kickback_after_cache(&mut self) {
         self.detect_player_movement(
             CollisionAxis::Horizontal,
             CollisionDirection::along(
@@ -4727,39 +5086,115 @@ impl ZeldaState {
     }
 
     fn check_primary_collision_layer(&mut self) {
-        let mut order = CollisionOrder::VerticalFirst;
+        let order = CollisionOrder::VerticalFirst;
         if self.game_state.dungeon.room_load.header_collision() >= 2
             && self.game_state.dungeon.room_load.header_collision() != 3
         {
             self.follower_link_state_mut().set_tile_coll_flag(2);
             self.player_tile_detect_nearby();
-            let collision_bits = self.game_state.player.tile_detection.collision_bits() as u8;
-            self.tile_detect_position_mut()
-                .set_tile_collision_bits_primary(collision_bits);
-            if self
-                .game_state
-                .player
-                .tile_detection
-                .tile_collision_bits_primary()
-                != 0
-            {
-                let floor_x_velocity =
-                    self.game_state.dungeon.moving_floor.floor_x_velocity_low() as u16;
-                let floor_y_velocity =
-                    self.game_state.dungeon.moving_floor.floor_y_velocity_low() as u16;
-                self.follower_link_state_mut()
-                    .add_movement_velocity_delta(floor_x_velocity, floor_y_velocity);
-                order = CollisionOrder::for_moving_floor(
-                    self.game_state.player.tile_detection.collision_bits() as u8,
-                    self.game_state.player.follower_link.x_velocity(),
-                    self.game_state.player.follower_link.y_velocity(),
-                    self.game_state.dungeon.moving_floor.floor_y_velocity_low() as i8,
-                );
-            }
+            self.check_primary_collision_layer_after_nearby();
+            return;
         }
         self.run_slope_collision_checks(order);
     }
 
+    fn check_primary_collision_layer_after_nearby(&mut self) {
+        let mut order = CollisionOrder::VerticalFirst;
+        let collision_bits = self.game_state.player.tile_detection.collision_bits() as u8;
+        self.tile_detect_position_mut()
+            .set_tile_collision_bits_primary(collision_bits);
+        if self
+            .game_state
+            .player
+            .tile_detection
+            .tile_collision_bits_primary()
+            != 0
+        {
+            let floor_x_velocity =
+                self.game_state.dungeon.moving_floor.floor_x_velocity_low() as u16;
+            let floor_y_velocity =
+                self.game_state.dungeon.moving_floor.floor_y_velocity_low() as u16;
+            self.follower_link_state_mut()
+                .add_movement_velocity_delta(floor_x_velocity, floor_y_velocity);
+            order = CollisionOrder::for_moving_floor(
+                self.game_state.player.tile_detection.collision_bits() as u8,
+                self.game_state.player.follower_link.x_velocity(),
+                self.game_state.player.follower_link.y_velocity(),
+                self.game_state.dungeon.moving_floor.floor_y_velocity_low() as i8,
+            );
+        }
+        self.run_slope_collision_checks(order);
+    }
+
+    pub(super) fn finish_native_cardinal_collision(
+        &mut self,
+        tail: crate::cycle_models::cardinal_collision_prefix::CardinalCollisionTail,
+    ) {
+        use crate::cycle_models::cardinal_collision_prefix::CardinalCollisionTail;
+        match tail {
+            CardinalCollisionTail::KickbackHorizontal { direction } => {
+                assert!(matches!(direction, 2 | 3));
+                self.link_handle_diagonal_kickback_after_cache();
+                if self
+                    .game_state
+                    .player
+                    .follower_link
+                    .moving_against_diag_deadlocked()
+                    == 0
+                    && self.check_if_room_needs_double_layer_check()
+                {
+                    self.check_primary_collision_layer();
+                    self.create_velocity_from_moving_background();
+                }
+                self.finish_cardinal_collision_after_primary();
+            }
+            CardinalCollisionTail::PrimaryFootprint => {
+                self.player_tile_detect_nearby();
+                self.check_primary_collision_layer_after_nearby();
+                self.create_velocity_from_moving_background();
+                self.finish_cardinal_collision_after_primary();
+            }
+            CardinalCollisionTail::FinalFootprint { collision_two } => {
+                self.player_tile_detect_nearby();
+                self.finish_cardinal_collision_after_nearby(collision_two);
+            }
+            CardinalCollisionTail::SlopeChecks {
+                primary_layer,
+                horizontal_first,
+                vertical_completed,
+            } => {
+                if vertical_completed {
+                    assert!(self.early_vertical_cardinal_probe.is_none());
+                    self.start_movement_collision_checks(CollisionAxis::Horizontal);
+                } else if let Some(handoff) = self.early_vertical_cardinal_probe.take() {
+                    self.finish_vertical_cardinal_probe(handoff);
+                    if !horizontal_first
+                        && !CollisionAxis::Horizontal.blocked_by_slope(
+                            self.game_state
+                                .player
+                                .follower_link
+                                .moving_against_diag_tile(),
+                        )
+                    {
+                        self.start_movement_collision_checks(CollisionAxis::Horizontal);
+                    }
+                } else {
+                    self.run_slope_collision_checks(if horizontal_first {
+                        CollisionOrder::HorizontalFirst
+                    } else {
+                        CollisionOrder::VerticalFirst
+                    });
+                }
+                if primary_layer {
+                    self.create_velocity_from_moving_background();
+                    self.finish_cardinal_collision_after_primary();
+                } else {
+                    self.finish_cardinal_collision_after_checks();
+                }
+            }
+            CardinalCollisionTail::MainHandler => self.finish_cardinal_collision_after_checks(),
+        }
+    }
     pub(super) fn link_handle_cardinal_collision(&mut self) {
         self.tile_detect_position_mut().clear_diag_state();
         self.tile_detect_position_mut().clear_diagonal_tile();
@@ -4787,12 +5222,41 @@ impl ZeldaState {
             self.create_velocity_from_moving_background();
         }
 
+        self.finish_cardinal_collision_after_primary();
+    }
+
+    fn finish_cardinal_collision_after_primary(&mut self) {
         let collision = self.game_state.dungeon.room_load.header_collision();
         let moved = (self.game_state.player.follower_link.x_velocity()
             | self.game_state.player.follower_link.y_velocity())
             != 0;
         if collision == 2 {
             self.player_tile_detect_nearby();
+            self.finish_cardinal_collision_after_nearby(true);
+            return;
+        } else if collision == 3 {
+            self.follower_link_state_mut().set_tile_coll_flag(1);
+            self.run_slope_collision_checks(CollisionOrder::HorizontalFirst);
+        } else if collision == 4 || moved {
+            self.follower_link_state_mut().set_tile_coll_flag(1);
+            self.run_slope_collision_checks(CollisionOrder::VerticalFirst);
+        } else if !self
+            .game_state
+            .player
+            .follower_link
+            .is_edge_transition_blocked_by_handler_state()
+            && self.game_state.player.follower_link.handler_state() != 19
+        {
+            self.player_tile_detect_nearby();
+            self.finish_cardinal_collision_after_nearby(false);
+            return;
+        }
+
+        self.finish_cardinal_collision_after_checks();
+    }
+
+    fn finish_cardinal_collision_after_nearby(&mut self, collision_two: bool) {
+        if collision_two {
             if (self.game_state.player.tile_detection.collision_bits() as u8
                 | self
                     .game_state
@@ -4819,20 +5283,7 @@ impl ZeldaState {
             }
             self.follower_link_state_mut().set_tile_coll_flag(1);
             self.run_slope_collision_checks(CollisionOrder::VerticalFirst);
-        } else if collision == 3 {
-            self.follower_link_state_mut().set_tile_coll_flag(1);
-            self.run_slope_collision_checks(CollisionOrder::HorizontalFirst);
-        } else if collision == 4 || moved {
-            self.follower_link_state_mut().set_tile_coll_flag(1);
-            self.run_slope_collision_checks(CollisionOrder::VerticalFirst);
-        } else if !self
-            .game_state
-            .player
-            .follower_link
-            .is_edge_transition_blocked_by_handler_state()
-            && self.game_state.player.follower_link.handler_state() != 19
-        {
-            self.player_tile_detect_nearby();
+        } else {
             if self.game_state.player.tile_detection.pit_tile() & 0x0f != 0 {
                 self.follower_link_state_mut().set_handler_state(1);
                 if !self.game_state.player.follower_link.is_running() {
@@ -4840,8 +5291,26 @@ impl ZeldaState {
                 }
             }
         }
+        self.finish_cardinal_collision_after_checks();
+    }
 
-        self.tile_detect_main_handler(0);
+    fn finish_cardinal_collision_after_checks(&mut self) {
+        if let Some(tail)=self.early_main_tile_response.take() {
+            let probe=self.early_main_tile_probe.take().expect("native main response requires a completed probe");
+            assert_eq!(probe.item,0);
+            assert_eq!(probe.classifier,crate::cycle_models::tile_classifier::TileClassifierTail::Complete);
+            use crate::cycle_models::main_tile_response::MainTileResponseTail;
+            match tail {
+                MainTileResponseTail::Returned=>return,
+                MainTileResponseTail::WhirlpoolIndoor|MainTileResponseTail::WhirlpoolOutdoor=>self.finish_main_tile_response(),
+                MainTileResponseTail::Sound(sound)=>{self.ancilla_sfx2_near(sound);},
+                MainTileResponseTail::Damage=>self.link_cancel_dash(),
+            }
+        } else {self.tile_detect_main_handler(0);}
+        self.finish_cardinal_collision_after_main();
+    }
+
+    fn finish_cardinal_collision_after_main(&mut self) {
         if self
             .game_state
             .player
@@ -4894,7 +5363,6 @@ impl ZeldaState {
             }
         }
     }
-
     pub(super) fn link_state_recoil(&mut self) {
         let old_x = self.game_state.player.follower_link.x();
         let old_y = self.game_state.player.follower_link.y();
@@ -5701,6 +6169,12 @@ impl ZeldaState {
 
         self.follower_link_state_mut().set_item_receipt_method(1);
 
+        // HandleAPress saves twice the original chest item-table index,
+        // including when an owned item is replaced with its alternate.
+        if let Some(entry) = &mut self.native_item_graphics_entry {
+            entry.saved_link_x = Some(item.wrapping_mul(2));
+        }
+
         if let Some((equipment, alternate)) = chest_item_alternate(item) {
             if self.game_state.inventory.items.equipment(equipment) != 0 {
                 item = alternate;
@@ -6102,6 +6576,19 @@ impl ZeldaState {
             self.dungeon_light_torch();
             self.ancilla_add_lamp_flame(0x2f, 2);
         }
+        self.finish_lamp_item();
+    }
+
+    fn link_item_lamp_after_native_magic_entry(&mut self) {
+        if self.link_check_magic_cost(6) {
+            self.ancilla_add_magic_powder(0x1a, 0);
+            self.dungeon_light_torch();
+            self.ancilla_add_lamp_flame(0x2f, 2);
+        }
+        self.finish_lamp_item();
+    }
+
+    fn finish_lamp_item(&mut self) {
         self.follower_link_state_mut().clear_item_in_hand();
         self.follower_link_state_mut().set_button_mask_b_y(0);
         self.follower_link_state_mut().set_button_b_frames(0);
@@ -6350,6 +6837,15 @@ impl ZeldaState {
             }
         }
 
+        self.link_select_and_dispatch_y_item(item);
+        self.follower_link_state_mut().set_joypad1h_last(old_down);
+        self.follower_link_state_mut()
+            .set_filtered_joypad_h(old_pressed);
+        self.player_resources_mut()
+            .set_equipped_bottle_index(old_bottle);
+    }
+
+    fn link_select_and_dispatch_y_item(&mut self, item: u8) {
         if !self.game_state.player.follower_link.has_item_in_hand()
             && !self.game_state.player.follower_link.has_position_mode()
         {
@@ -6363,7 +6859,11 @@ impl ZeldaState {
             self.follower_link_state_mut().set_selected_rod(rod);
         }
 
-        match self.game_state.player.follower_link.current_item_active() {
+        self.link_dispatch_y_item(self.game_state.player.follower_link.current_item_active());
+    }
+
+    fn link_dispatch_y_item(&mut self, item: u8) {
+        match item {
             0 => {}
             1 => self.link_item_bombs(),
             2 => self.link_item_boomerang(),
@@ -6386,17 +6886,8 @@ impl ZeldaState {
             20 => self.link_item_mirror(),
             21 => self.link_item_shovel(),
             // C Link_HandleYItem asserts outside item slots 0..=21.
-            _ => panic!(
-                "Link_HandleYItem current_item_active {}",
-                self.game_state.player.follower_link.current_item_active()
-            ),
+            _ => panic!("Link_HandleYItem current_item_active {}", item),
         }
-
-        self.follower_link_state_mut().set_joypad1h_last(old_down);
-        self.follower_link_state_mut()
-            .set_filtered_joypad_h(old_pressed);
-        self.player_resources_mut()
-            .set_equipped_bottle_index(old_bottle);
     }
 
     pub(super) fn link_item_ether(&mut self) {
@@ -7848,28 +8339,38 @@ impl ZeldaState {
     }
 
     pub(super) fn handle_somaria_and_graves(&mut self) {
+        if let Some(tail)=self.early_player_ancilla_tail.take() {self.finish_native_player_ancilla_scan(tail);return;}
+
         let _scope = crate::cycle_ledger::routine(0x07_8689);
         crate::cycle_ledger::charge(40); // Indoor gate.
         if self.game_state.world.location.is_outdoors() {
             crate::cycle_ledger::charge(48); // Grave latch gate.
             if self.game_state.player.follower_link.hookshot_grave_latch() {
                 crate::cycle_ledger::charge(16); // LDX #4.
-                for i in (0..5).rev() {
-                    crate::cycle_ledger::charge(64);
-                    if self.ancilla_slot_view(i).ancilla_type() == 0x24 {
-                        crate::cycle_ledger::charge(62);
-                        self.gravestone_move(i);
-                    } else {
-                        crate::cycle_ledger::charge(6);
-                    }
-                    crate::cycle_ledger::charge(30 + if i != 0 { 6 } else { 0 }); // DEX : BPL.
-                }
+                self.finish_grave_scan_below(5);
             } else {
                 crate::cycle_ledger::charge(6);
             }
         } else {
             crate::cycle_ledger::charge(6);
         }
+        self.finish_somaria_scan();
+    }
+
+    fn finish_grave_scan_below(&mut self, slot: usize) {
+        for i in (0..slot).rev() {
+            crate::cycle_ledger::charge(64);
+            if self.ancilla_slot_view(i).ancilla_type() == 0x24 {
+                crate::cycle_ledger::charge(62);
+                self.gravestone_move(i);
+            } else {
+                crate::cycle_ledger::charge(6);
+            }
+            crate::cycle_ledger::charge(30 + if i != 0 { 6 } else { 0 });
+        }
+    }
+
+    fn finish_somaria_scan(&mut self) {
         crate::cycle_ledger::charge(16); // Somaria scan starts independently at slot 4.
         for i in (0..5).rev() {
             crate::cycle_ledger::charge(64);
@@ -7882,6 +8383,24 @@ impl ZeldaState {
             crate::cycle_ledger::charge(6 + 30 + if i != 0 { 6 } else { 0 });
         }
         crate::cycle_ledger::charge(42);
+
+    }
+
+    pub(super) fn finish_native_player_ancilla_scan(&mut self, tail: crate::cycle_models::player_ancilla_return::PlayerAncillaTail) {
+        use crate::cycle_models::player_ancilla_return::PlayerAncillaTail;
+        match tail {
+            PlayerAncillaTail::Returned => {},
+            PlayerAncillaTail::Grave(slot) => {
+                self.gravestone_move(slot as usize);
+                crate::cycle_ledger::charge(30 + if slot!=0 {6} else {0});
+                self.finish_grave_scan_below(slot as usize);
+                self.finish_somaria_scan();
+            }
+            PlayerAncillaTail::Somaria(slot) => {
+                self.somaria_block_handle_player_interaction(slot as usize);
+                crate::cycle_ledger::charge(22 + 42);
+            }
+        }
     }
 
     pub(super) fn link_state_on_ice(&mut self) {
@@ -9999,17 +10518,58 @@ impl ZeldaState {
     /// decompression the ROM blocks on (see the ground_apress_tail receipt).
     pub(super) fn player_handler_00_ground_3_after_a_press(&mut self, ran_a_press: bool) {
         let mut clear_vel_after = false;
-        if ran_a_press
-            && !self.game_state.player.follower_link.has_action_state()
-            && !self
-                .game_state
-                .player
-                .follower_link
-                .has_grabbing_wall_state()
-            && !self.game_state.player.follower_link.has_pull_action_state()
-            && self.game_state.player.follower_link.handler_state() != 17
-        {
-            self.link_handle_y_item();
+        let native_y_tail = self.early_ground_y_item_tail.take();
+        let native_sword_cape_tail = self.early_ground_sword_cape_tail.take();
+        if let Some(tail) = self.early_ground_movement_tail.take() {
+            assert!(ran_a_press && native_y_tail.is_some());
+            assert_eq!(native_sword_cape_tail, Some(crate::cycle_models::ground_sword_cape_return::GroundSwordCapeTail::Movement));
+            match tail {
+                crate::cycle_models::ground_movement_prefix::GroundMovementTail::Recoil => self.link_handle_recoil_and_timer(false),
+                crate::cycle_models::ground_movement_prefix::GroundMovementTail::Swimming => self.link_handle_swim_movements(),
+                crate::cycle_models::ground_movement_prefix::GroundMovementTail::Collision { clear_vel_after } => {
+                    if let Some(tail) = self.early_diagonal_collision_tail.take() {
+                        self.finish_native_diagonal_collision(tail);
+                        self.finish_ground_movement_after_diagonal(clear_vel_after);
+                    } else {
+                        self.finish_ground_movement_tail(clear_vel_after);
+                    }
+                },
+            }
+            return;
+        }
+        use crate::cycle_models::ground_sword_cape_return::GroundSwordCapeTail;
+        if let Some(tail) = native_sword_cape_tail {
+            assert!(native_y_tail.is_some());
+            if tail == GroundSwordCapeTail::ClearMovement {
+                self.finish_ground_movement_camera_tail();
+                return;
+            }
+        }
+        if native_y_tail.is_some() {
+            assert!(ran_a_press, "native Y-item continuation requires its A-press caller");
+        }
+        let run_y_item = match native_y_tail {
+            Some(crate::cycle_models::ground_y_item_prefix::GroundYItemTail::SkipYItem) => false,
+            Some(_) => true,
+            None => ran_a_press
+                && !self.game_state.player.follower_link.has_action_state()
+                && !self.game_state.player.follower_link.has_grabbing_wall_state()
+                && !self.game_state.player.follower_link.has_pull_action_state()
+                && self.game_state.player.follower_link.handler_state() != 17,
+        };
+        if run_y_item {
+            use crate::cycle_models::{ground_y_item_prefix::GroundYItemTail, y_item_dispatch::YItemChild};
+            match native_y_tail {
+                Some(GroundYItemTail::AfterYItem) => {}
+                Some(GroundYItemTail::YItemChild(YItemChild::Item(item))) => self.link_dispatch_y_item(item),
+                Some(GroundYItemTail::YItemChild(YItemChild::ForceUnequipCape)) => {
+                    self.link_force_unequip_cape();
+                    self.link_select_and_dispatch_y_item(self.game_state.player.follower_link.current_item_y());
+                }
+                Some(GroundYItemTail::LampMagic) => self.link_item_lamp_after_native_magic_entry(),
+                Some(GroundYItemTail::SkipYItem) => unreachable!(),
+                None => self.link_handle_y_item(),
+            }
             if self
                 .game_state
                 .enhanced_features
@@ -10021,8 +10581,14 @@ impl ZeldaState {
                 self.finish_ground_movement_clear_vel_tail();
                 return;
             }
-            if self.game_state.inventory.save_progress.progress_indicator() != 0 {
-                self.link_handle_sword_cooldown();
+            if self.game_state.inventory.save_progress.progress_indicator() != 0
+                && !matches!(native_sword_cape_tail, Some(GroundSwordCapeTail::Movement | GroundSwordCapeTail::ForceUnequipCape)) {
+                match native_sword_cape_tail {
+                    Some(GroundSwordCapeTail::CheckSwordSwing | GroundSwordCapeTail::SwordSwingActive) => self.link_check_for_sword_swing(),
+                    Some(GroundSwordCapeTail::SwordControls) => self.handle_sword_controls(),
+                    None => self.link_handle_sword_cooldown(),
+                    _ => unreachable!(),
+                }
                 if self.game_state.player.follower_link.handler_state() == 3 {
                     self.finish_ground_movement_clear_vel_tail();
                     return;
@@ -10031,7 +10597,12 @@ impl ZeldaState {
         }
 
         let _ = &mut clear_vel_after;
-        self.link_handle_cape_passive_lift_check();
+        match native_sword_cape_tail {
+            Some(GroundSwordCapeTail::Movement) => {}
+            Some(GroundSwordCapeTail::ForceUnequipCape) => self.link_force_unequip_cape(),
+            Some(GroundSwordCapeTail::ClearMovement) => unreachable!(),
+            _ => self.link_handle_cape_passive_lift_check(),
+        }
         if self.game_state.player.follower_link.incapacitated_timer() != 0 {
             self.follower_link_state_mut()
                 .clear_moving_against_diag_tile();
@@ -10365,6 +10936,11 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .set_page_movement_deltas(y_delta, x_delta);
 
+        self.finish_camera_after_native_page_deltas();
+    }
+
+    pub(super) fn finish_camera_after_native_page_deltas(&mut self) {
+        self.apply_links_movement_to_camera_called = true;
         if self.game_state.player.follower_link.x_page_movement_delta() != 0 {
             if self
                 .game_state

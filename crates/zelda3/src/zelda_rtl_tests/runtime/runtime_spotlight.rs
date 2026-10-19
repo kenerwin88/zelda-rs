@@ -4,6 +4,52 @@
 use super::*;
 
 #[test]
+fn native_closing_entry_stages_pre_nmi_hardware_without_rewinding_live_ppu() {
+    for had_prior_staged_image in [false, true] {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.set_main_module(15);
+    state.set_submodule(0);
+    state.frame_ctr_dbg = 10;
+    state.ppu.oam[204] = 0xd974;
+    state.ppu.cgram[1] = 0x1234;
+    state.ppu.vram[0x4000] = 0x5678;
+    let before_nmi = Box::new(state.ppu.clone());
+    if had_prior_staged_image {
+        state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::AdvanceStaged);
+    }
+
+    state.frame_ctr_dbg = 11;
+    state.native_closing_entry_display_ppu = Some((11, before_nmi));
+    state.ppu.oam[204] = 0xe974;
+    state.ppu.cgram[1] = 0x2345;
+    state.ppu.vram[0x4000] = 0x6789;
+    state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::AdvanceStaged);
+    assert!(state.native_closing_entry_display_ppu.is_none());
+    let staged = state.deferred_display_snapshot.as_ref().unwrap();
+    assert_eq!((staged.ppu.oam[204], staged.ppu.cgram[1], staged.ppu.vram[0x4000]),
+        (0xd974, 0x1234, 0x5678));
+    assert_eq!(staged.oam_scanout_source, OamScanoutSource::RetainPreviousPresented);
+    assert_eq!((state.ppu.oam[204], state.ppu.cgram[1], state.ppu.vram[0x4000]),
+        (0xe974, 0x2345, 0x6789));
+    if !had_prior_staged_image {
+        let current = state.display_snapshot.as_ref().unwrap();
+        assert_eq!((current.ppu.oam[204], current.ppu.cgram[1], current.ppu.vram[0x4000]),
+            (0xe974, 0x2345, 0x6789));
+    }
+
+    state.frame_ctr_dbg = 12;
+    state.set_submodule(1);
+    state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::AdvanceStaged);
+    let active = state.display_snapshot.as_ref().unwrap();
+    assert_eq!((active.ppu.oam[204], active.ppu.cgram[1], active.ppu.vram[0x4000]),
+        (0xd974, 0x1234, 0x5678));
+    assert_eq!((state.ppu.oam[204], state.ppu.cgram[1], state.ppu.vram[0x4000]),
+        (0xe974, 0x2345, 0x6789));
+    }
+}
+
+#[test]
 fn interrupted_spotlight_entry_keeps_oam_from_before_the_held_nmi() {
     // Original run 11444 is interrupted at $F38F, V=225/C=16 with $12=1.
     // $805D returns at V=29/C=370 in the following field; only the NMI

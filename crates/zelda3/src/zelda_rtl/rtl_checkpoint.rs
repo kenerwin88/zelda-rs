@@ -218,11 +218,24 @@ impl ZeldaState {
         {
             return Some("retained-native-bootstrap-clock");
         }
-        if self.dialogue_initialization_caller.is_some() {
+        if self.dialogue_initialization_caller.is_some()
+            || self.clocked_dialogue_initialization_caller.is_some() {
             return Some("retained-dialogue-initialization-caller");
         }
         if self.dialogue_vwf_drawing.is_some() {
             return Some("retained-vwf-drawing-instruction");
+        }
+        if self.clocked_dialogue_return_caller.is_some() {
+            return Some("retained-clocked-dialogue-return-caller");
+        }
+        if self.native_item_graphics_owner.is_some() {
+            return Some("retained-native-item-graphics");
+        }
+        if self.native_vwf_glyph_clock.is_some() {
+            return Some("retained-native-vwf-glyph-clock");
+        }
+        if self.native_scroll_copy_clock.is_some() {
+            return Some("retained-scroll-copy-clock");
         }
         if self.native_main_wait_cpu_phase.is_some() {
             // The main caller has returned, but the next NMI still needs the
@@ -405,7 +418,10 @@ impl ZeldaState {
         // The native frame identifies the CPU publication phase. It can
         // deliberately lag a direct WRAM module handoff until NMI resumes.
         let frame = self.game_state.frame;
+        let native_closing_entry_return = self.native_startup_cpu.as_ref().is_some_and(|cpu|
+            cpu.startup.closing_entry_graphics_field() == Some(cpu.timeline.field_index()));
         let publication = publication_override.unwrap_or_else(|| {
+            if native_closing_entry_return { return DisplaySnapshotPublication::AdvanceStaged; }
             if rom_attract_world_map_display_is_one_frame_deferred(
                 frame.main_module,
                 frame.submodule,
@@ -1071,6 +1087,24 @@ impl ZeldaState {
         if let Some(explicit_obj_cache_vram) = snapshot.explicit_obj_cache_vram.as_ref() {
             snapshot.ppu.obj_vram_latch = Some(explicit_obj_cache_vram.clone());
         }
+        let mut native_closing_current_capture = None;
+        if let Some((host, ppu)) = self.native_closing_entry_display_ppu.take() {
+            assert_eq!(host, self.frame_ctr_dbg, "closing entry graphics must stage in their captured host");
+            assert_eq!(publication, DisplaySnapshotPublication::AdvanceStaged);
+            // A first entry can have no preceding staged image. Its current
+            // scanout still owns the completed leading NMI; only the image
+            // retained across the entry's held NMI uses the older hardware.
+            if self.deferred_display_snapshot.is_none() {
+                native_closing_current_capture = Some(snapshot.clone());
+            }
+            snapshot.ppu = *ppu;
+            snapshot.oam_scanout_source = OamScanoutSource::RetainPreviousPresented;
+            snapshot.vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
+            snapshot.animated_bg_scanout_generation = AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi;
+            snapshot.host_boundary_animated_bg_scanout = self.pre_nmi_animated_bg_scanout.clone();
+            snapshot.link_obj_scanout_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+            snapshot.link_obj_source_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+        }
         let nmi_forced_blank_scanlines =
             std::mem::take(&mut self.nmi_forced_blank_scanlines_pending);
         snapshot.ppu.forced_blank_scanlines = nmi_forced_blank_scanlines;
@@ -1124,7 +1158,8 @@ impl ZeldaState {
                         staged.oam_scanout_source,
                     );
                 }
-                self.display_snapshot = previous.or_else(|| self.deferred_display_snapshot.clone());
+                self.display_snapshot = previous.or(native_closing_current_capture)
+                    .or_else(|| self.deferred_display_snapshot.clone());
             }
             DisplaySnapshotPublication::PublishCaptured => {
                 self.deferred_display_snapshot = None;

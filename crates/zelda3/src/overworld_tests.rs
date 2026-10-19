@@ -157,6 +157,7 @@ fn map8_conversion_resumes_at_stripe_header_plane_and_row_tail_boundaries() {
         write_le_u16(&mut base.ram, 0x2000 + i * 2, ((i * 7) & 0xfff) as u16);
     }
     base.ram[0x12000..0x14080].fill(0xa5);
+    base.sync_native_game_state_from_ram();
     for (page, page_base, upload_base) in [
         (OverworldMap16SourcePage::Main, 0x2000, 0),
         (OverworldMap16SourcePage::Overlay, 0x4000, 0x1000),
@@ -211,8 +212,8 @@ fn map8_conversion_resumes_at_stripe_header_plane_and_row_tail_boundaries() {
                     // caller retires. Completion must not redraw that prefix.
                     resumed.set_overworld_map16_stripe_word(0, 0xffff);
                     expected.set_overworld_map16_stripe_word(0, 0xffff);
-                    resumed.ram[0x12000] = 0xf3;
-                    expected.ram[0x12000] = 0xf3;
+                    resumed.dungeon_bg2_attributes_mut().set_bg2_attr(0, 0xf3);
+                    expected.dungeon_bg2_attributes_mut().set_bg2_attr(0, 0xf3);
                 }
                 resumed.native_overworld_map8 = Some(cursor);
                 resumed.Map16ToMap8(page, i32::from(upload_base));

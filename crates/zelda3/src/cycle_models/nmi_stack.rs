@@ -25,7 +25,7 @@ impl EntryBus {
             Self::RegisterAccess => 6,
             Self::Read { width, .. } | Self::Write { width, .. } => 8 * width,
         };
-        // This entry owner requires inactive DMA/HDMA. Refresh and raster
+        // The caller excludes active DMA and due HDMA transfers. Refresh and raster
         // rollover are timeline events, not extra cycles charged by the NMI.
         clock
             .advance_synchronous_after_semantics_with(u32::from(cycles), |_, _| {
@@ -250,6 +250,8 @@ mod tests {
                         for (i, b) in ram.iter_mut().enumerate() { *b = (i ^ (i >> 8) ^ usize::from(status)) as u8; }
                         ram[0x12a] = 0; ram[0x128] = irq; ram[0x9b] = 0;
                         ram[0x94] = mode; ram[0x13] = 0x80 | (status & 15);
+                        // Zelda's CGWSEL mirror never enables direct color.
+                        ram[0x99] &= !1;
                         // Actual live NMI save layout: DB,D,Y,X,A,P,PC,PB.
                         ram[0x1f3..0x200].copy_from_slice(&[
                             0x7e, 0x34, 0x12, 0x78, 0x56, 0xbc, 0x9a, 0xf0, 0xde,
@@ -1075,7 +1077,7 @@ impl NativeNmiContext {
     }
 
     /// Advance an already accepted native NMI through `$00:80D9`. The caller
-    /// must own the incoming clock and prove DMA/HDMA inactive. This does not
+    /// must own the incoming clock and exclude DMA and due HDMA transfers. This does not
     /// advance the audio-port block, updates, register tail, or return.
     pub(crate) fn enter_handler_clocked(&mut self, ram: &mut [u8], clock: &mut CpuMasterTimeline) {
         self.enter_handler_with_bus(ram, |transaction, _| transaction.advance(clock));

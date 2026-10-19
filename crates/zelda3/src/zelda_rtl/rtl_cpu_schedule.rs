@@ -53,6 +53,32 @@ impl ZeldaState {
         let frame = self.game_state.frame;
         if self.rom_startup_timing()
             && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && frame.main_module == 9 && matches!(frame.submodule, 10 | 11)
+            && !self.game_state.display.nmi_update_is_latched()
+            && self.game_execution_scheduler.is_idle()
+            && !self.game_state.enhanced_features.has(u32::MAX)
+        {
+            self.native_overworld_exit_entry = None;
+            let target = if frame.submodule == 10 {0x02ac8f} else {0x02acc2};
+            let retain_return_phase = self.native_main_wait_cpu_phase.as_ref()
+                .is_some_and(|phase| phase.host == cpu_host);
+            let (mut run, mut budget) = native_main_loop_cpu_run(self,input,nmi_is_trailing);
+            for _ in 0..50000 {
+                if run.pc() == target {
+                    if let Ok(timeline) = budget.retained_native_timeline().try_native_callee_handoff() {
+                        self.native_overworld_exit_entry = Some(native_overworld_exit::NativeOverworldExitEntry {
+                            host:cpu_host,input,retain_return_phase,context:run.native_callee_context(),timeline,hdma:run.native_callee_hdma(),
+                        });
+                    }
+                    break;
+                }
+                if run.is_complete() {break;}
+                let (v,h) = budget.raster_position().coordinates();run.set_raster_position(v,h);
+                if advance_rom_cpu_step(&mut run,&mut budget) != CpuWorkAdvance::Complete {break;}
+            }
+        }
+        if self.rom_startup_timing()
+            && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
             && frame.main_module == 7 && frame.submodule == 0
             && !self.game_state.display.nmi_update_is_latched()
             && self.game_execution_scheduler.is_idle()
@@ -67,6 +93,7 @@ impl ZeldaState {
             && self.game_execution_scheduler.is_idle()
             && !self.dialogue_fast_forward_hold_active
             && self.native_dialogue_fresh_cpu_entry.is_none()
+            && !self.native_dialogue_has_main_wait_entry(cpu_host)
         {
             dialogue_main_loop_cpu_phase(self, input, nmi_is_trailing);
         }

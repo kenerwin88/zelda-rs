@@ -117,6 +117,7 @@ fn native_intro_module_keeps_its_main_suffix_until_the_continuation_returns() {
         state.ending_scratch_mut().set_primary_word(0x1ffe);
         state.ending_scratch_mut().set_secondary_word(0x1bfe);
         state.latch_nmi_update();
+        state.game_execution_scheduler.begin_host_frame();
         state.zelda_run_game_loop();
         assert!(state.intro_initialization_work_frames_pending != 0);
         assert_eq!(state.main_loop_caller_phase, MainLoopCallerPhase::ModuleRouting);
@@ -126,6 +127,7 @@ fn native_intro_module_keeps_its_main_suffix_until_the_continuation_returns() {
             Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch));
         let frame = state.game_state.frame;
         while state.intro_initialization_work_frames_pending != 0 {
+            state.game_execution_scheduler.begin_host_frame();
             assert!(state.lane_intro_initialization_work_frames(0, None));
         }
         assert_eq!(state.game_state.frame, frame);
@@ -234,6 +236,7 @@ fn vwf_caller_return_respects_which_nmi_handler_is_still_owned() {
         state.set_pending_nmi_subroutine(2);
         state.dialogue_fast_forward_hold_active = true;
         state.schedule_pre_main_caller_continuation(PreMainCallerContinuation::DialogueVwfReturn);
+        state.game_execution_scheduler.begin_host_frame();
         if carried_handler {
             state.native_exact_cpu_host_trace = Some(NativeExactCpuHostTrace {
                 nmi_completions: vec![NativeExactCpuNmiCompletion {

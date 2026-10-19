@@ -222,6 +222,10 @@ impl FollowerRuntimeState {
         self.event_flags = 0;
     }
 
+    pub(crate) fn set_event_flags(&mut self, value: u8) {
+        self.event_flags = value;
+    }
+
     pub(crate) fn or_event_flags(&mut self, value: u8) {
         self.event_flags |= value;
     }

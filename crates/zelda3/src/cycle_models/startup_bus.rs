@@ -5,6 +5,9 @@ use snes::CpuMasterTimeline;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CallerOwner {
     Startup,
+    Overlays,
+    ScreenBuild,
+    Properties(Option<super::pre_overworld_properties::PropertiesChild>),
     LoadFileParent,
     DungeonEntrance,
     DungeonHeader,
@@ -31,6 +34,8 @@ pub(crate) enum CallerOwner {
 pub(crate) enum StartupAccess {
     Memory(Access, PaletteSource, CallerOwner),
     EndScanline,
+    InactiveSpriteBodies,
+    EnterSpritePreparation,
 }
 
 pub(super) struct CallerBus<'a, F> {
@@ -44,6 +49,9 @@ pub(super) struct CallerBus<'a, F> {
 }
 
 impl<F: FnMut(u64, StartupAccess) -> u16> WorkBus for CallerBus<'_, F> {
+    fn inactive_sprite_body_mask(&mut self) -> u16 {
+        (self.callback)(0, StartupAccess::InactiveSpriteBodies)
+    }
     fn observe_clock(&mut self, clock: &CpuMasterTimeline) {
         self.in_vblank = clock.synchronous_beam_position().unwrap().scanline >= 225;
     }

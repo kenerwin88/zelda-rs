@@ -81,6 +81,7 @@ pub(crate) enum PreMainCallerContinuation {
 /// publish display memory or joypads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum MainLoopCommonSuffixContinuation {
+    ReturnedToMainWait,
     PrepareSpritesAndClearNmiLatch,
     ResumeSpritePreparationExtendedOamPackingAndClearNmiLatch { next_group_start: u8 },
     ResumeSpritePreparationBytePackingAndClearNmiLatch { progress: SpritePreparationProgress },

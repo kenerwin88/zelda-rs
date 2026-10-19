@@ -13,7 +13,6 @@ use snes::CpuMasterTimeline;
 pub(crate) fn table_byte(address: u32) -> Option<u8> {
     match address {
         0x029319..=0x02931c => Some([0x2d, 0x93, 0x34, 0x93][(address - 0x029319) as usize]),
-        0x029323 => Some(0x93),
         _ => super::player_animation::table_byte(address)
             .or_else(|| super::link_oam::table_byte(address)),
     }
@@ -146,8 +145,10 @@ impl DungeonLanding {
             }
             0x9321 => {
                 w.drain(8);
-                assert_eq!(w.read(0x029323, 1), 0x93);
                 w.drain(6);
+                // JSR (abs,X)'s high operand byte is an instruction fetch,
+                // after the internal cycle; it is not table data on WorkBus.
+                w.drain(8);
                 let target = w.read(0x029319 + u32::from(w.cpu.x), 2);
                 w.push(0x9323, 2);
                 target
@@ -234,7 +235,8 @@ mod tests {
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"),
         )
         .unwrap();
-        for a in [0x029319, 0x02931a, 0x02931b, 0x02931c, 0x029323] {
+        assert_eq!(table_byte(0x029323), None);
+        for a in [0x029319, 0x02931a, 0x02931b, 0x02931c] {
             assert_eq!(
                 table_byte(a),
                 Some(rom[(a >> 16) as usize * 0x8000 + (a as usize & 0x7fff)])

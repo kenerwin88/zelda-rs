@@ -317,6 +317,95 @@ pub(crate) fn render_single_click_master_cycles(c: u8) -> u64 {
     }
 }
 
+/// Native instruction boundaries from the glyph loop head through its click
+/// store. Capturing these steps lets a suspended glyph retain the instruction
+/// which accepts NMI instead of splitting an aggregate CPU span at H=12.
+/// No ROM bytes or timing receipts are consulted.
+pub(crate) fn glyph_click_instructions(
+    mut cursor: DispatchCursor, c: u8, speed_cur: u8,
+) -> (Vec<(u32, u32)>, DispatchCursor) {
+    assert!(c < 0x66 && speed_cur < 2);
+    let mut steps = Vec::new();
+    let mut add = |pc: u32, cycles: u32| steps.push((pc, cycles));
+    loop {
+        for (pc, cycles) in [(0xc984,22),(0xc986,40),(0xc989,24),(0xc98c,24)] {
+            add(0x0e0000 | pc, cycles);
+        }
+        if cursor.src_offs >= 0x63 {
+            for (pc, cycles) in [(0xc98f,16),(0xc991,24),(0xc994,40),(0xc997,22)] {
+                add(0x0e0000 | pc, cycles);
+            }
+            cursor = DispatchCursor::default();
+        } else {
+            add(0x0ec98f,22); add(0x0ec999,24);
+            let clamp_two = (0x3b..0x50).contains(&cursor.src_offs);
+            add(0x0ec99c,if cursor.src_offs < 0x3b {22} else {16});
+            if cursor.src_offs >= 0x3b {
+                add(0x0ec99e,24); add(0x0ec9a1,if clamp_two {16} else {22});
+            }
+            if clamp_two {
+                for (pc, cycles) in [(0xc9a3,24),(0xc9a6,40),(0xc9a9,22)] {
+                    add(0x0e0000 | pc, cycles);
+                }
+                cursor.src_offs = 0x50; cursor.next_position = 0;
+            } else {
+                add(0x0ec9ab,24);
+                add(0x0ec9ae,if cursor.src_offs < 0x13 {22} else {16});
+                if cursor.src_offs >= 0x13 {
+                    add(0x0ec9b0,24);
+                    add(0x0ec9b3,if cursor.src_offs >= 0x28 {22} else {16});
+                    if cursor.src_offs < 0x28 {
+                        add(0x0ec9b5,24); add(0x0ec9b8,40);
+                        cursor.src_offs = 0x28; cursor.next_position = 0;
+                    }
+                }
+            }
+        }
+        add(0x0ec9bb,40); add(0x0ec9be,24);
+        add(0x0ec9c1,if cursor.src_offs == 0x12 {22} else {16});
+        if cursor.src_offs != 0x12 {
+            add(0x0ec9c3,24); add(0x0ec9c6,if cursor.src_offs == 0x3a {22} else {16});
+            if cursor.src_offs != 0x3a {
+                add(0x0ec9c8,24); add(0x0ec9cb,if cursor.src_offs == 0x62 {16} else {22});
+            }
+        }
+        if matches!(cursor.src_offs,0x12 | 0x3a | 0x62) {
+            for (pc, cycles) in [(0xc9cd,40),(0xc9d0,24),(0xc9d3,24)] {
+                add(0x0e0000 | pc, cycles);
+            }
+            if cursor.next_position & 7 >= 6 {
+                add(0x0ec9d6,16); add(0x0ec9d8,62); add(0x0ec9db,22);
+                cursor.src_offs = cursor.src_offs.wrapping_add(1);
+                continue;
+            }
+            add(0x0ec9d6,22);
+        }
+        break;
+    }
+    for (pc, cycles) in [(0xc9dd,40),(0xc9e0,48),(0xc9e4,24),(0xc9e7,14),
+        (0xc9e8,24),(0xc9eb,16),(0xc9ed,24),(0xc9f0,22),(0xc9f2,46),(0xc9fd,62)] {
+        add(0x0e0000 | pc,cycles);
+    }
+    const LOCAL_JUMP: [(u32,u32);15] = [(0x8781,24),(0x8783,28),(0x8784,24),
+        (0x8786,22),(0x8788,24),(0x878b,14),(0x878c,14),(0x878d,36),
+        (0x878e,32),(0x8790,14),(0x8791,56),(0x8793,32),(0x8795,22),
+        (0x8797,24),(0x8799,48)];
+    for (pc,cycles) in LOCAL_JUMP { add(pc,cycles); }
+    for (pc,cycles) in [(0xca6c,32),(0xca6f,16),(0xca71,22),(0xca75,62)] {
+        add(0x0e0000 | pc,cycles);
+    }
+    for (pc,cycles) in LOCAL_JUMP { add(pc,cycles); }
+    if speed_cur == 0 { add(0x0eca99,46); }
+    for (pc,cycles) in [(0xcab8,22),(0xcaba,40),(0xcabd,40),(0xcac1,16),
+        (0xcac3,if c == 0x59 {22} else {16})] { add(0x0e0000 | pc,cycles); }
+    if c != 0x59 {
+        for (pc,cycles) in [(0xcac5,22),(0xcac7,16),(0xcac9,32)] {
+            add(0x0e0000 | pc,cycles);
+        }
+    }
+    (steps,cursor)
+}
+
 /// The engine's **click** phase: from the message-loop head `$0E:C984`
 /// through the click store, up to `$0E:CACC`, for glyph `c` at line speed
 /// `speed_cur` (0 or 1). Replaces `VWF_GLYPH_CLICK_MASTER_CYCLES`. Returns
@@ -326,13 +415,92 @@ pub(crate) fn glyph_click_master_cycles(
     c: u8,
     speed_cur: u8,
 ) -> (u64, DispatchCursor) {
-    let (dispatch, cursor) = dispatch_master_cycles(cursor, c);
-    (
-        dispatch
-            + letter_handler_prefix_master_cycles(speed_cur)
-            + render_single_click_master_cycles(c),
-        cursor,
-    )
+    let (instructions, cursor) = glyph_click_instructions(cursor, c, speed_cur);
+    (instructions.into_iter().map(|(_, cycles)| u64::from(cycles)).sum(), cursor)
+}
+
+/// Instructions after the click through the first drawing row. The line
+/// selector is always one of 0, 2, 4, so its table reads stay on page $CB.
+pub(crate) fn glyph_post_click_instructions(c: u8, next_line_pending: bool) -> Vec<(u32,u32)> {
+    let mut steps = Vec::new();
+    let mut add = |pc: u32, cycles: u32| steps.push((0x0e0000 | pc,cycles));
+    for (pc,cycles) in [(0xcacc,22),(0xcace,40),(0xcad1,14),(0xcad2,14),
+        (0xcad3,22),(0xcad5,46),(0xcb5e,22),(0xcb60,22),(0xcb61,22),
+        (0xcb62,28),(0xcb63,22),(0xcb65,40),(0xcb68,if next_line_pending {16} else {22})] {
+        add(pc,cycles);
+    }
+    if next_line_pending {
+        for (pc,cycles) in [(0xcb6a,32),(0xcb6d,40),(0xcb70,40),(0xcb73,40),
+            (0xcb76,40),(0xcb79,40)] { add(pc,cycles); }
+    }
+    for (pc,cycles) in [(0xcb7c,22),(0xcb7e,22),(0xcb80,24),(0xcb82,40),
+        (0xcb85,40),(0xcb89,22),(0xcb8b,14),(0xcb8c,if c >= 0x21 {38} else {32}),
+        (0xcb8f,24),(0xcb91,32),(0xcb94,14),(0xcb95,40),(0xcb99,40),
+        (0xcb9d,14),(0xcb9e,32),(0xcba1,14),(0xcba2,16),(0xcba4,14),
+        (0xcba5,24),(0xcba7,14),(0xcba8,16),(0xcbaa,24),(0xcbac,24),
+        (0xcbae,24),(0xcbb0,22),(0xcbb2,24),(0xcbb5,32),(0xcbb7,16),
+        (0xcbb9,24),(0xcbbb,22),(0xcbbd,48),(0xcbc1,24),(0xcbc4,14),
+        (0xcbc5,32),(0xcbc7,24),(0xcbca,32),(0xcbcc,14),(0xcbcd,14),
+        (0xcbce,14),(0xcbcf,14),(0xcbd0,14)] { add(pc,cycles); }
+    steps
+}
+
+/// A glyph's retained instruction cursor. Native callers supply live operands
+/// and publish setup writes as each setup instruction retires. The drawing
+/// child retains its loaded bitmap operands and emits its own stores.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub(crate) struct GlyphInstructionWork {
+    entry: Vec<(u32,u32)>,
+    next_entry: usize,
+    drawing: super::vwf_drawing::Drawing,
+    elapsed: u32,
+}
+
+impl GlyphInstructionWork {
+    pub(crate) fn new(cursor: DispatchCursor, c: u8, speed: u8, next_line_pending: bool,
+        width: u8, advance: u8, rows: [u16;16]) -> Self {
+        let (mut entry,_) = glyph_click_instructions(cursor,c,speed);
+        entry.extend(glyph_post_click_instructions(c,next_line_pending));
+        Self { entry, next_entry: 0,
+            drawing: super::vwf_drawing::Drawing::new(c,width,advance,rows), elapsed: 0 }
+    }
+
+    pub(crate) fn next_pc(&self) -> u32 {
+        self.entry.get(self.next_entry).map_or_else(|| self.drawing.next_pc(),|step| step.0)
+    }
+
+    pub(crate) fn elapsed(&self) -> u32 { self.elapsed }
+
+    pub(crate) fn is_complete(&self) -> bool { self.drawing.is_complete() }
+
+    pub(crate) fn step(&mut self, read: impl FnMut(super::vwf_drawing::Read) -> u16)
+        -> Option<super::vwf_drawing::Instruction> {
+        let instruction = if let Some(&(_,master_cycles)) = self.entry.get(self.next_entry) {
+            self.next_entry += 1;
+            super::vwf_drawing::Instruction { master_cycles, write: None }
+        } else { self.drawing.step(read)? };
+        self.elapsed += instruction.master_cycles;
+        Some(instruction)
+    }
+}
+
+/// RenderSingle's epilogue and the speed-zero caller's restart or return.
+pub(crate) fn glyph_transition_instructions(cursor: DispatchCursor) -> Vec<(u32,u32)> {
+    let mut steps = vec![(0x0ecad8,32),(0x0ecadb,32),(0x0ecade,42),
+        (0x0eca9c,22),(0x0eca9e,40),(0x0ecaa1,24)];
+    let end = matches!(cursor.src_offs,0x13 | 0x3b | 0x63);
+    steps.push((0x0ecaa4,if cursor.src_offs == 0x13 {22} else {16}));
+    if cursor.src_offs != 0x13 {
+        steps.push((0x0ecaa6,24));
+        steps.push((0x0ecaa9,if cursor.src_offs == 0x3b {22} else {16}));
+        if cursor.src_offs != 0x3b {
+            steps.push((0x0ecaab,24));
+            steps.push((0x0ecaae,if cursor.src_offs == 0x63 {22} else {16}));
+        }
+    }
+    if end { steps.extend([(0x0ecab5,22),(0x0ecab7,42)]); }
+    else { steps.extend([(0x0ecab0,22),(0x0ecab2,24)]); }
+    steps
 }
 
 /// The engine's **post-click entry** phase: `$0E:CACC..$0E:CAD7`
@@ -939,6 +1107,45 @@ pub(crate) enum ScrollCopyStoreKind {
     Copy { destination: usize, source: usize },
     Clear { destination: usize },
     PassCompleted,
+}
+
+/// Retired instructions of the native scroll call. Unlike the aggregate
+/// store timeline, these boundaries retain the instruction which crosses
+/// NMI eligibility. All paths depend on the call's captured speed/counter.
+pub(crate) fn scroll_instructions(b_held: bool, speed: u8, line_counter: u8) -> Vec<(u32, u32)> {
+    let mut steps = Vec::new();
+    let mut add = |pc: u32, cycles: u32| steps.push((0x0e_0000 | pc, cycles));
+    for (pc, cycles) in [(0xcfe2,22),(0xcfe3,16),(0xcfe5,22),(0xcfe6,28),
+        (0xcfe7,24),(0xcfe9,16),(0xcfeb,if b_held {16} else {22})] { add(pc,cycles); }
+    if b_held { add(0xcfed,40); add(0xcff1,22); } else { add(0xcff3,40); }
+    add(0xcff7,24);
+    let mut counter = line_counter;
+    for pass in 0..=speed {
+        add(0xcff9,22); add(0xcffb,32);
+        for tile in 0..126 {
+            add(0xcffd,32);
+            for word in 0..8 { add(0xcfff+word*6,46); add(0xd002+word*6,46); }
+            for (pc,cycles) in [(0xd02f,32),(0xd031,14),(0xd032,24),(0xd035,32),
+                (0xd037,24),(0xd03a,if tile==125 {16} else {22})] { add(pc,cycles); }
+        }
+        for column in 0..21 { add(0xd03c+column*3,40); }
+        for (pc,cycles) in [(0xd07b,22),(0xd07d,40),(0xd081,14),(0xd082,16),
+            (0xd084,40),(0xd088,16)] { add(pc,cycles); }
+        counter=counter.wrapping_add(1);
+        let completed=counter&15==0;
+        add(0xd08a,if completed {16} else {22});
+        if completed {
+            for (pc,cycles) in [(0xd08c,22),(0xd08e,48),(0xd092,14),(0xd093,24),
+                (0xd096,48),(0xd09a,24),(0xd09d,48),(0xd0a1,48),(0xd0a5,48),
+                (0xd0a9,24),(0xd0ac,48),(0xd0b0,22),(0xd0b2,16),(0xd0b4,40),
+                (0xd0b8,24)] { add(pc,cycles); }
+        }
+        add(0xd0ba,38);
+        if completed || pass==speed { add(0xd0bc,22); break; }
+        add(0xd0bc,16); add(0xd0be,24);
+    }
+    add(0xd0c1,28); add(0xd0c2,42);
+    steps
 }
 
 pub(crate) fn scroll_copy_stores(
@@ -1573,6 +1780,155 @@ mod tests {
             mismatches.push(format!("{label}: modeled {modeled:?} measured {measured}"));
         }
         true
+    }
+
+    #[test]
+    fn glyph_click_steps_match_each_source_instruction_and_clamp() {
+        let rom = test_rom().expect("glyph instruction comparison requires ROM");
+        for src_offs in 0..=0x64 {
+            for next_position in [0, 5, 6, 7, 0xff] {
+                for speed_cur in [0, 1] {
+                    for c in [0, 8, 0x21, 0x59, 0x62] {
+                        let mut state = state_with(0);
+                        state.cursor = DispatchCursor { src_offs, next_position };
+                        state.speed_cur = speed_cur;
+                        let (instructions, cursor) = glyph_click_instructions(state.cursor,c,speed_cur);
+                        let (dispatch,cursor_expected) = dispatch_master_cycles(state.cursor,c);
+                        let total: u64 = instructions.iter().map(|(_,cycles)| u64::from(*cycles)).sum();
+                        assert_eq!(cursor,cursor_expected);
+                        assert_eq!(total,dispatch + letter_handler_prefix_master_cycles(speed_cur)
+                            + render_single_click_master_cycles(c));
+                        let mut source = shadow_run(&rom,&state,&[c,0x7f],0).unwrap();
+                        source.enable_cpu_write_trace();
+                        let mut writes = Vec::new();
+                        for (pc,cycles) in instructions {
+                            assert_eq!(source.pc(),pc,"src={src_offs} pos={next_position} speed={speed_cur} c={c}");
+                            assert_eq!(source.step().master_cycles,cycles,"pc={pc:06x}");
+                            writes.extend(source.take_cpu_wram_writes());
+                        }
+                        assert_eq!(source.pc(),0x0ecacc);
+                        let mut expected_ram = [0u8;3];
+                        expected_ram[..2].copy_from_slice(&src_offs.to_le_bytes());
+                        expected_ram[2] = next_position;
+                        for (address,value) in writes {
+                            match address {
+                                0x1cdd => expected_ram[0] = value,
+                                0x1cde => expected_ram[1] = value,
+                                0x1ce6 => expected_ram[2] = value,
+                                _ => {},
+                            }
+                        }
+                        assert_eq!(cursor.src_offs,u16::from_le_bytes([expected_ram[0],expected_ram[1]]));
+                        assert_eq!(cursor.next_position,expected_ram[2]);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn glyph_instruction_work_matches_source_after_every_serialized_boundary() {
+        use super::super::vwf_drawing::{Read,Write};
+        let rom = test_rom().expect("glyph continuation comparison requires ROM");
+        let (font,widths) = font_and_widths(&rom);
+        for c in 0..0x63u8 {
+            for advance in [0,7,8,127,255] {
+                for pending in [false,true] {
+                    let mut state = state_with(0);
+                    state.cursor = DispatchCursor { src_offs: 0x12,next_position: 6 };
+                    state.speed_cur = 0;
+                    state.next_line_pending = pending;
+                    state.current_line = (c % 3) * 2;
+                    state.glyph_cursor = 17;
+                    state.advance[17] = advance;
+                    let mut source = shadow_run(&rom,&state,&[c,0x7f],0).unwrap();
+                    source.enable_cpu_write_trace();
+                    let rows = glyph_font_rows(&font,c);
+                    let width = widths[usize::from(c)];
+                    let actual_advance = if pending {0} else {advance};
+                    let mut work = GlyphInstructionWork::new(state.cursor,c,0,pending,
+                        width,actual_advance,rows);
+                    let mut ram = vec![0u8;0x20000];
+                    ram[0x724..0x726].copy_from_slice(&17u16.to_le_bytes());
+                    ram[0xc230..0xc330].copy_from_slice(&state.advance);
+                    let mut elapsed = 0u64;
+                    while !work.is_complete() {
+                        work = bincode::deserialize(&bincode::serialize(&work).unwrap()).unwrap();
+                        let pc = source.pc();
+                        assert_eq!(work.next_pc(),pc,"c={c} advance={advance} pending={pending}");
+                        let instruction = work.step(|read| {
+                            let address = match read {
+                                Read::LineOffset => 0x726,
+                                Read::GlyphCursor => 0x724,
+                                Read::AdvanceWord(cursor) => 0xc22f+usize::from(cursor),
+                                Read::ReadPosition => 0x1cd9,
+                                Read::BitmapByte(offset) => 0x10000+usize::from(offset),
+                            };
+                            u16::from_le_bytes([ram[address],ram[address+1]])
+                        }).unwrap();
+                        let step = source.step();
+                        assert_eq!(instruction.master_cycles,step.master_cycles,"pc={pc:06x}");
+                        elapsed += u64::from(step.master_cycles);
+                        let writes = source.take_cpu_wram_writes();
+                        if let Some(write) = instruction.write {
+                            let (address,bytes) = match write {
+                                Write::BitmapByte(offset,value) => (0x10000+usize::from(offset),vec![value]),
+                                Write::BitmapWord(offset,value) => (0x10000+usize::from(offset),value.to_le_bytes().to_vec()),
+                                Write::ReadPosition(value) => (0x1cd9,value.to_le_bytes().to_vec()),
+                            };
+                            for (offset,value) in bytes.into_iter().enumerate() {
+                                assert!(writes.contains(&(address+offset,value)),"pc={pc:06x}");
+                            }
+                        }
+                        // Setup semantics belong to the caller; feed their
+                        // independently executed publications into the child.
+                        for (address,value) in writes { ram[address]=value; }
+                        assert_eq!(u64::from(work.elapsed()),elapsed);
+                        assert_eq!(work.next_pc(),source.pc(),"pc={pc:06x}");
+                    }
+                    let (click,_) = glyph_click_master_cycles(state.cursor,c,0);
+                    assert_eq!(elapsed,click+glyph_post_click_setup_master_cycles(c,pending)
+                        +glyph_drawing_master_cycles(width,actual_advance,rows));
+                    let transition = glyph_transition_instructions(DispatchCursor {
+                        src_offs: u16::from_le_bytes([ram[0x1cdd],ram[0x1cde]]),next_position: ram[0x1ce6] });
+                    for (pc,cycles) in transition {
+                        assert_eq!(source.pc(),pc);
+                        assert_eq!(source.step().master_cycles,cycles);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn glyph_transition_steps_match_source_restart_and_all_return_branches() {
+        let rom = test_rom().expect("glyph transition comparison requires ROM");
+        for src_offs in (0..=0x100u16).chain([0xffff]) {
+            let cursor = DispatchCursor { src_offs,next_position: 0 };
+            let (continuation,restarted) = render_all_continuation_master_cycles(cursor);
+            let instructions = glyph_transition_instructions(cursor);
+            let mut ram = vec![0u8;0x20000];
+            ram[0x1cdd..0x1cdf].copy_from_slice(&src_offs.to_le_bytes());
+            ram[0x1cd6] = 7;
+            let checkpoint = RomCpuCheckpoint {
+                entry_pc: 0x0ecad8,stop_pc: if restarted {0x0ec984} else {0x0ec9f5},
+                a: 0x3400,x: 0x83,y: 0x97,sp: 0x1fb,dp: 0,db: 0x0e,
+                carry: false,zero: false,overflow: false,negative: true,
+                interrupt_disable: true,decimal: false,accumulator_is_8_bit: true,
+                index_is_8_bit: true,emulation: false,waiting: false,
+                stack_address: 0x1fc,stack_bytes: &[0x9b,0xca,0xf4,0xc9],
+            };
+            let mut source = RomCpuTimingRun::new(&rom,&ram,&[0;0x2000],
+                &snes::PpuState::default(),&snes::DmaState::default(),[0;4],checkpoint).unwrap();
+            let mut total = 0u64;
+            for (pc,cycles) in instructions {
+                assert_eq!(source.pc(),pc,"src_offs={src_offs}");
+                assert_eq!(source.step().master_cycles,cycles,"pc={pc:06x}");
+                total += u64::from(cycles);
+            }
+            assert!(source.is_complete());
+            assert_eq!(total,RENDER_SINGLE_EPILOGUE_MASTER_CYCLES+continuation);
+        }
     }
 
     #[test]

@@ -5,6 +5,52 @@
 use super::*;
 
 impl ZeldaState {
+    /// Publish only the live CPU store; shared scratch and table bytes keep
+    /// their source addresses and are not copied from a completed frame.
+    pub(super) fn native_dungeon_spotlight_store(&mut self, address: u32, value: u16, width: u8) -> bool {
+        match address {
+            0x1b00..=0x1cbf => {
+                // The retained CPU and HDMA read the physical table. The
+                // semantic display owner keeps its table in relocated WRAM;
+                // publish each actual store there too, including partial words.
+                assert!(matches!(width, 1 | 2));
+                assert!(address + u32::from(width) <= 0x1cc0);
+                for (byte, value) in value.to_le_bytes().into_iter().take(usize::from(width)).enumerate() {
+                    let offset = address as usize + byte;
+                    self.ram[offset] = value;
+                    let index = (offset - 0x1b00) / 2;
+                    let word = read_le_u16(&self.ram, offset & !1);
+                    self.set_spotlight_hdma_table_dynamic_entry(index, word);
+                }
+            }
+            0x670 | 0x674 | 0x676 | 0x67a | 0x67c | 0x67e => {
+                assert_eq!(width, 2);
+                match address {
+                    0x670 => self.set_spotlight_window_x_center(value),
+                    0x674 => self.set_spotlight_y_lower(value),
+                    0x676 => self.set_spotlight_y_upper(value),
+                    0x67a => self.set_spotlight_window_y_buffer(value),
+                    0x67c => self.set_spotlight_window_radius(value),
+                    0x67e => self.set_spotlight_window_state(value),
+                    _ => unreachable!(),
+                }
+            }
+            0x96..=0x98 | 0x1e | 0x1f => {
+                assert_eq!(width, 1);
+                match address {
+                    0x96 => self.set_bg12_window_selection(value as u8),
+                    0x97 => self.set_bg34_window_selection(value as u8),
+                    0x98 => self.set_object_color_window_selection(value as u8),
+                    0x1e => self.set_main_screen_window_layers(value as u8),
+                    0x1f => self.set_sub_screen_window_layers(value as u8),
+                    _ => unreachable!(),
+                }
+            }
+            _ => return false,
+        }
+        true
+    }
+
     pub(super) fn begin_dungeon_landing_spotlight_publication(
         &mut self,
         entry_started_after_leading_nmi: bool,

@@ -719,6 +719,8 @@ mod tests {
         ram[0x12a] = 1;
         ram[0x1f0c] = pending;
         ram[0x9b] = 0;
+        // Keep randomized mirrors within the game's PPU programming domain.
+        ram[0x99] &= !1;
         ram[0x13] = 0x80;
         ram[0xff] = 255;
         let saved = if irq { 0x1f2usize } else { 0x1f31 };

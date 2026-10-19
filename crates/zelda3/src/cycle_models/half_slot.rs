@@ -3,6 +3,49 @@
 use super::nmi_stack::{NativeNmiContext, CARRY, NEGATIVE, ZERO};
 use snes::CpuMasterTimeline;
 
+/// Shared half-slot request check. A requested conversion keeps its actual
+/// bank-zero entry boundary; an idle request retires the source's own RTL.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct HalfSlot {
+    pc: u16,
+    complete: bool,
+}
+
+impl Default for HalfSlot {
+    fn default() -> Self { Self { pc: 0xe3fa, complete: false } }
+}
+
+impl HalfSlot {
+    pub(crate) fn complete(&self) -> bool { self.complete }
+    pub(crate) fn body_pending(&self) -> bool { self.pc == 0xe3ff && !self.complete }
+
+    pub(crate) fn step(&mut self, cpu: &mut NativeNmiContext, clock: &mut CpuMasterTimeline,
+        bus: impl super::native_work::WorkBus) -> Option<u64> {
+        if self.complete { return None; }
+        assert!(!self.body_pending(), "requested half-slot conversion still owns the CPU");
+        assert_eq!((cpu.bank, cpu.pc, cpu.d, cpu.db, cpu.p & 0x18), (0, self.pc, 0, 0, 0x10));
+        let mut w = super::native_work::Work { cpu, clock, bus, cycles: 0 };
+        w.fetch();
+        self.pc = match self.pc {
+            0xe3fa => {
+                w.drain(16);
+                w.cpu.x = w.read(0xaaa, 1);
+                w.flags(w.cpu.x, 1);
+                0xe3fd
+            }
+            0xe3fd => if w.branch(w.cpu.p & ZERO != 0) { 0xe3d1 } else { 0xe3ff },
+            0xe3d1 => {
+                w.rtl();
+                self.complete = true;
+                w.cpu.pc
+            }
+            _ => unreachable!(),
+        };
+        w.cpu.pc = self.pc;
+        Some(w.cycles)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Access {
     Read { address: u32, width: u8 },
@@ -408,6 +451,31 @@ mod tests {
         CartType, CpuBusWorkload, CpuFieldTiming, CpuRasterPosition, RomCpuTimingProbe, Snes,
         SourceCpuBusAccessKind as Kind, SourcePpuReadState,
     };
+
+    #[test]
+    fn shared_half_slot_request_check_matches_source_bus_and_real_return() {
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc")).unwrap();
+        for request in [0, 1, 20, 255] {
+            let mut machine = Snes::new();
+            machine.cart.load(CartType::LoRom, &rom, 0x2000);
+            machine.ram[0xaaa] = request;
+            machine.ram[0x1fa..0x1fd].copy_from_slice(&[0xbd, 0x87, 2]);
+            let mut cpu = NativeNmiContext { a: 0x1100, x: 152, y: 6, d: 0, db: 0, bank: 0, pc: 0xe3fa, sp: 0x1f9, p: 0x33 };
+            machine.cpu.a=cpu.a; machine.cpu.x=cpu.x; machine.cpu.y=cpu.y;
+            machine.cpu.pc=cpu.pc; machine.cpu.sp=cpu.sp; machine.cpu.e=false; machine.cpu.unpack_flags(cpu.p);
+            let mut ram=machine.ram.clone();
+            let clock=CpuMasterTimeline::at_raster(12, CpuRasterPosition::new(224,1300), CpuBusWorkload::default(), CpuFieldTiming::NON_INTERLACE_EVEN);
+            let mut source=RomCpuTimingProbe::new(machine,clock,SourcePpuReadState::snes9x_reset()).unwrap();
+            let mut clock=source.timeline().clone();
+            let mut work=HalfSlot::default();
+            while !work.complete() && !work.body_pending() {
+                super::super::native_work::compare_instruction("shared half-slot", &mut cpu, &mut clock,
+                    &mut source, &mut ram, &rom, |cpu,clock,bus| { work.step(cpu,clock,bus).unwrap(); });
+            }
+            assert_eq!(work.complete(),request==0);
+            assert_eq!((cpu.bank,cpu.pc,cpu.sp),if request==0 {(2,0x87be,0x1fc)} else {(0,0xe3ff,0x1f9)});
+        }
+    }
 
     fn ram_offset(address: u32) -> Option<usize> {
         if (0x7e0000..0x800000).contains(&address) {

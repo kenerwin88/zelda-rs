@@ -69,9 +69,6 @@ mod tests {
             }
         }
     }
-    fn word(ram: &mut [u8], at: usize, value: u16) {
-        ram[at..at + 2].copy_from_slice(&value.to_le_bytes());
-    }
     #[test]
     fn push_blocks_retain_live_loop_tiles_motion_falling_and_real_returns() {
         let rom = std::fs::read(
@@ -103,71 +100,7 @@ mod tests {
                     *b = (i as u8).wrapping_mul(13).wrapping_add(case as u8);
                 }
                 let r = &mut machine.ram;
-                r[0x11] = if mode == 6 { 0 } else { 15 };
-                r[0x67] = (case % 16) as u8;
-                r[0x2f] = (case % 4 * 2) as u8;
-                r[0x02c3] = (case % 4) as u8;
-                r[0x02c4] = [0, 1, 0x7f, 0x80, 0xff][case % 5];
-                r[0x05fc] = 1;
-                r[0x05fd] = 2;
-                for index in 0..2 {
-                    let y = index * 2;
-                    word(r, 0x05f8 + y, (case % 4 * 2) as u16);
-                    word(r, 0x05e8 + y, (case % 16) as u16);
-                    r[0x05e4 + y] = (case as u8).wrapping_mul(11);
-                    r[0x05e0 + y] = 1;
-                    r[0x05f0 + y] = (case as u8).wrapping_mul(7);
-                    r[0x05ec + y] = 2;
-                }
-                // Exercise both overlapping and separated Link/block edges,
-                // including the collision routine's live coordinate rewrite.
-                let delta = (case / 16) as i16 - 12;
-                let link_y = (u16::from(r[0x05f0]) | 0x200).wrapping_add_signed(delta);
-                let link_x = (u16::from(r[0x05e4]) | 0x100).wrapping_add_signed(delta);
-                word(r, 0x20, link_y);
-                word(r, 0x22, link_x);
-                for slot in 0..16 {
-                    r[0x0dd0 + slot] = if (slot + case) % 3 == 0 { 9 } else { 8 };
-                    r[0x0d10 + slot] = r[0x05e4].wrapping_add((slot * 2) as u8);
-                    r[0x0d30 + slot] = 1;
-                    r[0x0d00 + slot] = r[0x05f0].wrapping_add((slot * 2) as u8);
-                    r[0x0d20 + slot] = 2;
-                }
-                let index = if mode == 8 { 0xfe } else { 0 };
-                let end = if mode == 0 || mode == 8 {
-                    0
-                } else {
-                    2 * (case % 8 + 1)
-                };
-                word(r, 0x042c, index as u16);
-                word(r, 0x0478, end as u16);
-                word(r, 0x0474, (case % 4 * 2) as u16);
-                word(r, 0x1000, (case % 8 * 24) as u16);
-                for y in (0..16).step_by(2).chain(std::iter::once(0xfe)) {
-                    let record = match mode {
-                        1 => 0,
-                        2 => 1,
-                        3 | 6 => 2,
-                        4 | 8 => 4,
-                        5 => [3, 5, 0xffff, 0x8000][case % 4],
-                        7 => 3,
-                        _ => 0,
-                    };
-                    word(r, 0x0500 + y, record);
-                    let pos = ((case * 130 + y * 8) & 0x1ffe) as u16
-                        | if case & 16 != 0 { 0x4000 } else { 0 };
-                    word(r, 0x0540 + y, pos);
-                    word(r, 0x0520 + y, (case % 64 * 4) as u16);
-                    let attr = [0x20, 0x23, 0x00, 0xff][case % 4];
-                    r[0x12000 + ((pos & 0x3fff) >> 1) as usize] = attr;
-                    for off in [0x0560, 0x0580, 0x05a0, 0x05c0] {
-                        word(r, off + y, ((case * 37 + off) & 0xffff) as u16);
-                    }
-                }
-                // The wrap case isolates the source's two byte-wide INCs after RTL.
-                if mode == 8 {
-                    word(r, 0x05fe, 4);
-                }
+                seed_case(r, case, mode);
                 r[0x1fc] = 0xb5;
                 r[0x1fd] = 0x87;
                 r[0x1fe] = 2;
@@ -312,6 +245,10 @@ pub(crate) fn table_byte(address: u32) -> Option<u8> {
         .or_else(|| super::indoor_camera::table_byte(address))
 }
 impl DungeonPushBlocks {
+    #[cfg(test)]
+    pub(crate) fn pit_check_entry() -> Self {
+        Self { pc: 0x01d7fd, ..Self::default() }
+    }
     pub(crate) fn complete(&self) -> bool {
         self.complete
     }
@@ -1728,5 +1665,76 @@ impl DungeonPushBlocks {
         w.cpu.bank = (self.pc >> 16) as u8;
         w.cpu.pc = self.pc as u16;
         Some(w.cycles)
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn seed_case(r: &mut [u8], case: usize, mode: usize) {
+    fn word(r: &mut [u8], at: usize, value: u16) {
+        r[at..at + 2].copy_from_slice(&value.to_le_bytes());
+    }
+    r[0x11] = if mode == 6 { 0 } else { 15 };
+    r[0x67] = (case % 16) as u8;
+    r[0x2f] = (case % 4 * 2) as u8;
+    r[0x02c3] = (case % 4) as u8;
+    r[0x02c4] = [0, 1, 0x7f, 0x80, 0xff][case % 5];
+    r[0x05fc] = 1;
+    r[0x05fd] = 2;
+    for index in 0..2 {
+        let y = index * 2;
+        word(r, 0x05f8 + y, (case % 4 * 2) as u16);
+        word(r, 0x05e8 + y, (case % 16) as u16);
+        r[0x05e4 + y] = (case as u8).wrapping_mul(11);
+        r[0x05e0 + y] = 1;
+        r[0x05f0 + y] = (case as u8).wrapping_mul(7);
+        r[0x05ec + y] = 2;
+    }
+    // Exercise both overlapping and separated Link/block edges,
+    // including the collision routine's live coordinate rewrite.
+    let delta = (case / 16) as i16 - 12;
+    let link_y = (u16::from(r[0x05f0]) | 0x200).wrapping_add_signed(delta);
+    let link_x = (u16::from(r[0x05e4]) | 0x100).wrapping_add_signed(delta);
+    word(r, 0x20, link_y);
+    word(r, 0x22, link_x);
+    for slot in 0..16 {
+        r[0x0dd0 + slot] = if (slot + case) % 3 == 0 { 9 } else { 8 };
+        r[0x0d10 + slot] = r[0x05e4].wrapping_add((slot * 2) as u8);
+        r[0x0d30 + slot] = 1;
+        r[0x0d00 + slot] = r[0x05f0].wrapping_add((slot * 2) as u8);
+        r[0x0d20 + slot] = 2;
+    }
+    let index = if mode == 8 { 0xfe } else { 0 };
+    let end = if mode == 0 || mode == 8 {
+        0
+    } else {
+        2 * (case % 8 + 1)
+    };
+    word(r, 0x042c, index as u16);
+    word(r, 0x0478, end as u16);
+    word(r, 0x0474, (case % 4 * 2) as u16);
+    word(r, 0x1000, (case % 8 * 24) as u16);
+    for y in (0..16).step_by(2).chain(std::iter::once(0xfe)) {
+        let record = match mode {
+            1 => 0,
+            2 => 1,
+            3 | 6 => 2,
+            4 | 8 => 4,
+            5 => [3, 5, 0xffff, 0x8000][case % 4],
+            7 => 3,
+            _ => 0,
+        };
+        word(r, 0x0500 + y, record);
+        let pos = ((case * 130 + y * 8) & 0x1ffe) as u16 | if case & 16 != 0 { 0x4000 } else { 0 };
+        word(r, 0x0540 + y, pos);
+        word(r, 0x0520 + y, (case % 64 * 4) as u16);
+        let attr = [0x20, 0x23, 0x00, 0xff][case % 4];
+        r[0x12000 + ((pos & 0x3fff) >> 1) as usize] = attr;
+        for off in [0x0560, 0x0580, 0x05a0, 0x05c0] {
+            word(r, off + y, ((case * 37 + off) & 0xffff) as u16);
+        }
+    }
+    // The wrap case isolates the source's two byte-wide INCs after RTL.
+    if mode == 8 {
+        word(r, 0x05fe, 4);
     }
 }

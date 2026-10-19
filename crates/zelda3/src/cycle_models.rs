@@ -7,10 +7,25 @@
 //! See docs/parity/romless-exact-play.md.
 
 pub(crate) mod cucco;
+pub(crate) mod dungeon_overlord;
+pub(crate) mod dungeon_sprite_slots;
+pub(crate) mod dungeon_lower_garnish;
+pub(crate) mod dungeon_cached_sprites;
+pub(crate) mod cached_sprite_load;
+pub(crate) mod sprite_timers;
+pub(crate) mod sprite_recoil;
+pub(crate) mod garnish_single;
 pub(crate) mod decompress;
 pub(crate) mod graphics_convert;
 pub(crate) mod graphics_load;
 pub(crate) mod main_wait;
+pub(crate) mod overworld_exit_walk;
+pub(crate) mod pre_overworld_properties;
+pub(crate) mod overworld_dungeon_exit;
+pub(crate) mod overworld_song_list;
+pub(crate) mod overworld_camera;
+pub(crate) mod overworld_map_scroll;
+pub(crate) mod overworld_stripes;
 pub(crate) mod nmi_stack;
 pub(crate) mod nmi_updates;
 pub(crate) mod nmi_stripes;
@@ -34,12 +49,20 @@ pub(crate) mod text_decode;
 pub(crate) mod text_initialize;
 pub(crate) mod text_pointers;
 pub(crate) mod intro_palettes;
+pub(crate) mod overworld_screen_palettes;
+pub(crate) mod overworld_area_palettes;
+pub(crate) mod overworld_fixed_scroll;
+pub(crate) mod overworld_sprite_reload;
+pub(crate) mod overworld_properties_caller;
+pub(crate) mod mirror_portal;
+pub(crate) mod overworld_sprite_reload_data;
 pub(crate) mod follower_graphics;
 pub(crate) mod default_graphics;
 pub(crate) mod native_tilemap_erase;
 #[cfg(test)]
 mod native_bus_tests;
 pub(crate) mod animated_dungeon_graphics;
+pub(crate) mod animated_overworld_graphics;
 pub(crate) mod ppu_plane_conversion;
 pub(crate) mod native_tileset_sheet;
 pub(crate) mod common_sprite_graphics;
@@ -49,6 +72,24 @@ pub(crate) mod graphics_sources;
 pub(crate) mod native_work;
 pub(crate) mod item_graphics;
 pub(crate) mod item_graphics_caller;
+pub(crate) mod animated_item_graphics;
+pub(crate) mod item_receipt_return;
+pub(crate) mod link_receive_item_return;
+pub(crate) mod ground_item_apress_return;
+pub(crate) mod y_item_dispatch;
+pub(crate) mod y_item_button_guard;
+pub(crate) mod y_item_lamp;
+pub(crate) mod ground_y_item_prefix;
+pub(crate) mod ground_sword_cape_return;
+pub(crate) mod ground_movement_prefix;
+pub(crate) mod ground_velocity;
+pub(crate) mod cardinal_collision_prefix;
+pub(crate) mod vertical_cardinal_probe;
+pub(crate) mod vertical_collision_response;
+pub(crate) mod vertical_surface_response;
+pub(crate) mod diagonal_collision_prefix;
+pub(crate) mod vertical_slope_probe;
+pub(crate) mod tile_classifier;
 pub(crate) mod native_decompress;
 pub(crate) mod tilesets;
 pub(crate) mod tilemap_erase;
@@ -83,9 +124,23 @@ pub(crate) mod kill_file;
 pub(crate) mod dungeon_dispatch;
 pub(crate) mod dungeon_landing;
 pub(crate) mod dungeon_push_blocks;
+pub(crate) mod dungeon_push_caller_return;
 pub(crate) mod dungeon_common;
+pub(crate) mod dungeon_main_return;
+pub(crate) mod spotlight_caller_return;
+pub(crate) mod dungeon_camera;
+pub(crate) mod dungeon_interactions;
+pub(crate) mod dungeon_interaction_caller;
+pub(crate) mod dungeon_edge_caller;
+pub(crate) mod dungeon_lamp_caller;
+pub(crate) mod dungeon_sprite_scroll;
+pub(crate) mod dungeon_push_drawing;
+pub(crate) mod dungeon_sprite_prefix;
+pub(crate) mod dungeon_garnish;
 pub(crate) mod dungeon_module;
 pub(crate) mod native_ppu;
+pub(crate) mod native_cpu_math;
+pub(crate) mod native_hdma;
 pub(crate) mod push_block_drawing;
 pub(crate) mod floor_indicator;
 pub(crate) mod hud_update;
@@ -120,6 +175,7 @@ pub(crate) mod dungeon_visited;
 pub(crate) mod sprite_reset;
 pub(crate) mod sprite_main;
 pub(crate) mod sprite_slot;
+pub(crate) mod sprite_kill_self;
 pub(crate) mod sprite_drawing;
 pub(crate) mod player_animation;
 pub(crate) mod link_oam;
@@ -130,3 +186,47 @@ pub(crate) mod load_file_state;
 pub(crate) mod gear_graphics;
 pub(crate) mod enemy_damage;
 pub(crate) mod sram_validate;
+
+pub(crate) mod main_tile_probe;
+
+pub(crate) mod main_tile_response;
+
+pub(crate) mod ground_animation_return;
+pub(crate) mod ground_camera_return;
+pub(crate) mod player_ancilla_return;
+
+pub(crate) mod dungeon_after_push;
+
+pub(crate) mod dungeon_room_tags;
+
+pub(crate) mod dungeon_follower;
+
+pub(crate) mod dungeon_ancilla;
+
+pub(crate) mod receipt_prefix;
+
+pub(crate) mod ancilla_axis;
+pub(crate) mod receipt_movement;
+
+pub(crate) mod receipt_drawing;
+
+pub(crate) mod receipt_oam;
+pub(crate) mod overworld_overlays;
+pub(crate) mod map32_definition;
+pub(crate) mod map32_interlace;
+pub(crate) mod overworld_map_streams;
+pub(crate) mod overlay_quadrant;
+pub(crate) mod overworld_quadrants;
+pub(crate) mod overworld_screen_build;
+pub(crate) mod overworld_sprite_proximity;
+pub(crate) mod sprite_single_data;
+pub(crate) mod overlay_map8;
+pub(crate) mod overlay_map_loader;
+pub(crate) mod overworld_overlays_caller;
+pub(crate) mod overworld_caller;
+pub(crate) mod overworld_exit_chain;
+pub(crate) mod overworld_module;
+pub(crate) mod overworld_player;
+pub(crate) mod link_main;
+pub(crate) mod link_normal_prefix;
+pub(crate) mod link_transform_guard;

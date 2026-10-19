@@ -279,13 +279,19 @@ impl ZeldaState {
     /// Publish the retained HUD caller's individual stores through their owners.
     pub(crate) fn native_load_hud_store(&mut self, address: u32, value: u16, width: u8) -> bool {
         match address {
+            0x4ca => { assert_eq!(width, 1); self.player_resources_mut().set_low_health_beep_timer(value as u8); }
+            0xcfd => {
+                assert_eq!(width, 1);
+                self.game_state.display.hud_runtime.set_rupee_sfx_sound_delay(value as u8);
+                self.ram[address as usize] = value as u8;
+            }
             0x202 => {assert_eq!(width,1);self.save_progress_mut().set_hud_current_item(value as u8);}
             0x203 => {assert_eq!(width,1);self.save_progress_mut().set_hud_current_item_high(value as u8);}
             0x204 => {assert_eq!((width,value),(1,0));self.save_progress_mut().clear_post_message_refresh_flag();}
             0x303 => {assert_eq!(width,1);self.follower_link_state_mut().set_current_item_y(value as u8);}
             0x7ef340 => {assert_eq!(width,1);self.inventory_items_mut().set_inventory_item(0,value as u8);}
             0x7ef36f => {assert_eq!(width,1);self.player_resources_mut().set_keys(value as u8);}
-            0x16 => {assert_eq!(width,1);assert_eq!(self.increment_hud_update_flag(),value as u8);}
+            0x16 => {assert_eq!(width,1);self.system_signals_mut().set_hud_update_flag(value as u8);}
             0x7ec700..=0x7ec87f => {
                 let offset=(address-0x7ec700) as usize;
                 assert!(matches!(width,1|2));
@@ -617,7 +623,8 @@ impl ZeldaState {
         // $0D:DC80-$0D:DC8F (184, `CMP $DB60,X` stays in its page; `BCS`
         // taken +6 at full health); $0D:DC91-$0D:DC94 `LDA $04CA; BNE` (48,
         // taken 54 into `DEC $04CA` (46)); $0D:DC96-$0D:DC99 `LDA $012E; BNE`
-        // (48, taken 54); $0D:DC9B-$0D:DCA2 (96). The ROM always writes the
+        // (48, taken 54); $0D:DC9B-$0D:DCA2 (96), then the fallthrough
+        // $0D:DCA5 `DEC $04CA` (46). The ROM always writes the
         // beep sound here; the low-health-beep feature only mutes the engine.
         crate::cycle_ledger::charge({
             let resources = &self.game_state.inventory.player_resources;
@@ -632,7 +639,7 @@ impl ZeldaState {
             } else if self.game_state.system_signals.has_sound_effect_1() {
                 48 + 56 + 184 + 48 + 54
             } else {
-                48 + 56 + 184 + 48 + 48 + 96
+                48 + 56 + 184 + 48 + 48 + 96 + 46
             }
         });
         if !self.game_state.player.follower_link.is_immobilized()
@@ -1666,11 +1673,16 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_animate_heart_refill(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x0d_f14f);
         let cd = self.hud_state().heart_refill_countdown().wrapping_sub(1);
         self.set_heart_refill_countdown(cd);
         if cd != 0 {
+            // $F14F-$F160: scratch pointer, DEC countdown and taken BNE;
+            // $F1B1-$F1B2: CLC and the actual near return.
+            crate::cycle_ledger::charge(210 + 56);
             return;
         }
+        crate::cycle_ledger::charge(204 + 202); // untaken BNE, then $F162-$F171
         let mut n =
             (((u16::from(self.game_state.inventory.player_resources.current_health() & !7))
                 .wrapping_sub(1)
@@ -1678,8 +1690,12 @@ impl ZeldaState {
                 << 1) as usize;
         let mut p = hudxy(20, 1);
         if n >= 20 {
+            // Untaken BCC and the second-row pointer adjustment $F176-$F180.
+            crate::cycle_ledger::charge(16 + 140);
             n -= 20;
             p += 0x20;
+        } else {
+            crate::cycle_ledger::charge(22); // BCC $F182
         }
         n &= 0xff;
         self.set_heart_refill_countdown(1);
@@ -1691,9 +1707,15 @@ impl ZeldaState {
         );
         let subpos = subpos.wrapping_add(1) & 3;
         self.set_heart_refill_anim_subpos(subpos);
+        // $F182-$F1A4: tile byte stores and animation subposition.
+        crate::cycle_ledger::charge(452);
         if subpos == 0 {
+            // Untaken BNE, SEP, the rebuild JSR, STZ animation, CLC and RTS.
+            crate::cycle_ledger::charge(16 + 22 + 46 + 32 + 56);
             self.hud_rebuild();
             self.clear_is_doing_heart_animation();
+        } else {
+            crate::cycle_ledger::charge(22 + 56);
         }
     }
 
@@ -1726,19 +1748,32 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_rebuild(&mut self) {
-        if self.hud_state().tile_word(hudxy(8, 2)) == 0 {
+        if !self.game_state.enhanced_features.has(FEATURE_CARRY_MORE_RUPEES) {
+            // $FA7C copies all 330 template bytes, including the inventory
+            // labels. The standard digit updater leaves those labels intact.
             for i in 0..165 {
-                self.hud_buffer_set(i, 0x207f);
+                let address = 0x0dfe77 + (i * 2) as u32;
+                let word = u16::from_le_bytes([
+                    Self::native_load_hud_table_byte(address).unwrap(),
+                    Self::native_load_hud_table_byte(address + 1).unwrap(),
+                ]);
+                self.hud_buffer_set(i, word);
             }
+        } else {
+            if self.hud_state().tile_word(hudxy(8, 2)) == 0 {
+                for i in 0..165 {
+                    self.hud_buffer_set(i, 0x207f);
+                }
+            }
+            self.draw_hud_components(HUD_TILE_INDICES_BUFFER, 0, &HUD_TILEMAP_LEFT_PART, 8, 6);
+            self.draw_hud_components(
+                HUD_TILE_INDICES_BUFFER,
+                hudxy(20, 0),
+                &HUD_TILEMAP_RIGHT_PART,
+                12,
+                5,
+            );
         }
-        self.draw_hud_components(HUD_TILE_INDICES_BUFFER, 0, &HUD_TILEMAP_LEFT_PART, 8, 6);
-        self.draw_hud_components(
-            HUD_TILE_INDICES_BUFFER,
-            hudxy(20, 0),
-            &HUD_TILEMAP_RIGHT_PART,
-            12,
-            5,
-        );
         self.hud_update_hearts();
         self.hud_update_magic();
         self.hud_update_inventory();
@@ -1825,6 +1860,18 @@ impl ZeldaState {
     }
 
     fn hud_update_item_box(&mut self) {
+        // $FAFD-$FB38 owns bow normalization and the silver-arrow label.
+        // Inventory digits ($FC5B onward) do not write either one.
+        let bow = self.game_state.inventory.items.bow();
+        if bow != 0 {
+            let has_arrows = self.game_state.inventory.player_resources.arrows() != 0;
+            let value = if bow >= 3 {
+                self.hud_buffer_set(hudxy(15, 0), 0x2486);
+                self.hud_buffer_set(hudxy(16, 0), 0x2487);
+                if has_arrows { 4 } else { 3 }
+            } else if has_arrows { 2 } else { 1 };
+            self.inventory_items_mut().set_inventory_item(0, value);
+        }
         if self.game_state.inventory.save_progress.hud_current_item() != 0 {
             let icon = self
                 .hud_get_icon_for_item(self.game_state.inventory.save_progress.hud_current_item());
@@ -1954,34 +2001,38 @@ impl ZeldaState {
 
             let inv_offs = usize::from(d[0] == 0x90);
             let dst = hudxy(8, 0);
-            for i in 0..12 {
-                // The port refreshes the inventory backdrop here. Numeric
-                // slots still belong to their previous conversion until the
-                // source's digit stores below; do not transiently erase them.
-                if i != 10 {
-                    self.hud_buffer_set(
-                        dst + hudxy(i, 0),
-                        HUD_INVENTORY_BACKGROUND_TILES[inv_offs + i],
-                    );
+            // The ROM's refill caller updates digits, not the inventory
+            // backdrop or bow icon. The expanded wallet owns its extra column.
+            if self.game_state.enhanced_features.has(FEATURE_CARRY_MORE_RUPEES) {
+                for i in 0..12 {
+                    // The port refreshes the inventory backdrop here. Numeric
+                    // slots still belong to their previous conversion until the
+                    // source's digit stores below; do not transiently erase them.
+                    if i != 10 {
+                        self.hud_buffer_set(
+                            dst + hudxy(i, 0),
+                            HUD_INVENTORY_BACKGROUND_TILES[inv_offs + i],
+                        );
+                    }
+                    if !matches!(i, 4 | 5 | 7 | 8 | 10) {
+                        self.hud_buffer_set(
+                            dst + hudxy(i, 1),
+                            HUD_INVENTORY_BACKGROUND_TILES[13 + inv_offs + i],
+                        );
+                    }
                 }
-                if !matches!(i, 4 | 5 | 7 | 8 | 10) {
-                    self.hud_buffer_set(
-                        dst + hudxy(i, 1),
-                        HUD_INVENTORY_BACKGROUND_TILES[13 + inv_offs + i],
-                    );
-                }
-            }
-            let bow = self.game_state.inventory.items.bow();
-            if bow != 0 {
-                let has_arrows = self.game_state.inventory.player_resources.arrows() != 0;
-                if bow >= 3 {
-                    self.hud_buffer_set(hudxy(15, 0), 0x2486);
-                    self.hud_buffer_set(hudxy(16, 0), 0x2487);
-                    self.inventory_items_mut()
-                        .set_inventory_item(0, if has_arrows { 4 } else { 3 });
-                } else {
-                    self.inventory_items_mut()
-                        .set_inventory_item(0, if has_arrows { 2 } else { 1 });
+                let bow = self.game_state.inventory.items.bow();
+                if bow != 0 {
+                    let has_arrows = self.game_state.inventory.player_resources.arrows() != 0;
+                    if bow >= 3 {
+                        self.hud_buffer_set(hudxy(15, 0), 0x2486);
+                        self.hud_buffer_set(hudxy(16, 0), 0x2487);
+                        self.inventory_items_mut()
+                            .set_inventory_item(0, if has_arrows { 4 } else { 3 });
+                    } else {
+                        self.inventory_items_mut()
+                            .set_inventory_item(0, if has_arrows { 2 } else { 1 });
+                    }
                 }
             }
 
@@ -2135,8 +2186,9 @@ impl ZeldaState {
         crate::cycle_ledger::charge(u64::from(end - completed));
         if completed < 150 && end >= 150 {
             self.hud_buffer_set(hudxy(18, 1), key);
-            // Preserve the port's backdrop refresh alongside the key store.
-            self.hud_buffer_set(hudxy(18, 0), label);
+            if self.game_state.enhanced_features.has(FEATURE_CARRY_MORE_RUPEES) {
+                self.hud_buffer_set(hudxy(18, 0), label);
+            }
         }
         if blank && completed < 238 && end >= 238 {
             self.hud_buffer_set(hudxy(18, 0), 0x247f);
@@ -2825,8 +2877,8 @@ mod tests {
             Some(HudUpdateInterruption::InventoryTail { master_cycles: 102 });
         let resume = state.hud_update_inventory_from(None).unwrap();
         assert!(matches!(resume, HudInventoryResume::Tail { key: 0x2493, master_cycles: 102, .. }));
-        assert_eq!(state.game_state.inventory.items.bow(), 2,
-            "the bow update belongs before the tail's NMI boundary");
+        assert_eq!(state.game_state.inventory.items.bow(), 1,
+            "standard inventory digits preserve the bow state");
         assert_eq!(state.hud_state().tile_word(hudxy(18, 1)), 0x5a5a);
         assert!(state.native_overworld_hud_interruption.is_none());
         // Changed inputs make an accidental whole-inventory re-run visible.
@@ -2836,7 +2888,7 @@ mod tests {
         let before = state.ram.clone();
         assert!(state.hud_update_inventory_from(Some(resume)).is_none());
         assert_eq!(state.hud_state().tile_word(hudxy(18, 1)), 0x2493);
-        assert_eq!(state.game_state.inventory.items.bow(), 2);
+        assert_eq!(state.game_state.inventory.items.bow(), 1);
         assert_eq!(state.hud_state().tile_word(hudxy(9, 1)), 0x1234);
         assert!(state.ram.iter().zip(&before).enumerate().all(|(address, (a, b))|
             a == b || (0xc764..0xc766).contains(&address) || (0xc724..0xc726).contains(&address)),

@@ -570,6 +570,7 @@ mod tests {
     use super::super::dungeon_landing::DungeonLanding;
     use super::super::dungeon_module::{DungeonChild, DungeonModule};
     use super::super::dungeon_common::CommonChild;
+    use super::super::spotlight_caller_return::{ClosingSpotlight, OpeningSpotlight};
     use super::super::{intro_clear::Access, native_work::compare_instruction_with_devices};
     use super::*;
     use snes::apu::{ApuHostPortProbe, ApuHostPortTiming, ApuState};
@@ -580,6 +581,8 @@ mod tests {
         Spotlight(Spotlight),
         Landing(DungeonLanding),
         Dungeon(DungeonModule),
+        Opening(OpeningSpotlight),
+        Closing(ClosingSpotlight),
     }
     impl FixtureWork {
         fn finished(&self) -> bool {
@@ -587,6 +590,8 @@ mod tests {
                 Self::Spotlight(work) => work.complete(),
                 Self::Landing(work) => work.complete() || work.child().is_some(),
                 Self::Dungeon(work) => work.complete() || work.child().is_some(),
+                Self::Opening(work) => work.complete(),
+                Self::Closing(work) => work.complete() || work.child().is_some() || work.sprite_tail().is_some(),
             }
         }
         fn step(
@@ -601,6 +606,14 @@ mod tests {
                 Self::Dungeon(work) => {
                     *work = work.clone();
                     work.step(cpu, clock, bus)
+                }
+                Self::Opening(work) => {
+                    *work = work.clone();
+                    work.step(cpu, clock, bus).map(|(cycles, _)| cycles)
+                }
+                Self::Closing(work) => {
+                    *work = work.clone();
+                    work.step(cpu, clock, bus).map(|(cycles, _)| cycles)
                 }
             }
             .unwrap();
@@ -656,14 +669,23 @@ mod tests {
         let mut resets = 0;
         let mut dungeon_returns = 0;
         let mut dungeon_children = 0;
+        let mut opening_returns = 0;
+        let mut opening_goals = 0;
+        let mut opening_entries = 0;
+        let mut opening_instructions = 0;
+        let mut closing_instructions = 0;
+        let mut closing_returns = 0;
         for field in [0, 1, 30_002, 30_003] {
-            for case in 0..88usize {
+            for case in 0..184usize {
                 let entry = match case {
                     0 => 0xf295,
                     1 => 0xf28b,
                     2 => 0xf427,
                     48..=55 => 0x931d,
                     56..=87 => 0x87a2,
+                    88..=151 => 0x9adb,
+                    152..=167 => 0x9986,
+                    168..=183 => 0x9982,
                     _ => 0xf312,
                 };
                 // Device-capable isolated source fixture. This is not a cold
@@ -743,7 +765,7 @@ mod tests {
                 machine.ram[0x1d] = 2;
                 machine.ram[0x8a] = 0x22;
                 machine.ram[0x15b22] = 0x31;
-                if case >= 56 {
+                if (56..88).contains(&case) {
                     let r = &mut machine.ram;
                     r[0x10] = 7;
                     r[0x11] = 15;
@@ -767,6 +789,33 @@ mod tests {
                     r[0x2f] = ((case / 2) % 4 * 2) as u8;
                     r[0x4a0] = [0, 1, 63, 191][case % 4];
                     r[0x428] = ((case / 2) & 1) as u8;
+                }
+                if (88..152).contains(&case) {
+                    let n = (case - 88) % 32;
+                    let r = &mut machine.ram;
+                    r[0x10] = 16;
+                    r[0x11] = u8::from(case < 120);
+                    r[0x10c] = 9;
+                    r[0x1b] = 0;
+                    r[0x67c..0x67e].copy_from_slice(&[0u16, 28, 118, 119][n % 4].to_le_bytes());
+                    r[0x67e..0x680].copy_from_slice(&2u16.to_le_bytes());
+                    r[0xa0..0xa2].copy_from_slice(&[0x20u16, 0x120, 0x21, 0xffff][n / 4 % 4].to_le_bytes());
+                    r[0x8a..0x8c].copy_from_slice(&[3u16, 5, 7, 0x43, 0x45, 0x47, 0, 0xffff][n / 4].to_le_bytes());
+                    r[0x2f] = (n / 8 * 2) as u8;
+                    r[0x696] = u8::from(n & 8 != 0);
+                    r[0x698..0x69a].copy_from_slice(&[0u16, 1, 0x8001, 0xff00][n / 8].to_le_bytes());
+                    r[0x1fb..0x200].copy_from_slice(&[0x5a, 0xa5, 0x59, 0x80, 0]);
+                }
+                if case >= 152 {
+                    let r = &mut machine.ram;
+                    r[0x10] = 15;
+                    r[0x11] = 1;
+                    r[0x1b] = 1;
+                    r[0x10c] = 9;
+                    r[0x2f] = ((case - 152) % 16 / 4 * 2) as u8;
+                    r[0x67c..0x67e].copy_from_slice(&[0u16, 28, 118, 119][case % 4].to_le_bytes());
+                    r[0x67e..0x680].copy_from_slice(&2u16.to_le_bytes());
+                    r[0x1fd..0x200].copy_from_slice(&[0x59, 0x80, 0]);
                 }
                 let mut cpu = NativeNmiContext {
                     a: 0xab01,
@@ -825,7 +874,12 @@ mod tests {
                 source
                     .attach_apu_port_owner(apu(clock.clock_master_cycles()))
                     .unwrap();
-                let mut work = if case >= 56 {
+                let mut work = if case >= 152 {
+                    FixtureWork::Closing(if case >= 168 { ClosingSpotlight::from_module_entry() }
+                        else { ClosingSpotlight::after_sprite_return() })
+                } else if case >= 88 {
+                    FixtureWork::Opening(OpeningSpotlight::from_sprite_return())
+                } else if case >= 56 {
                     FixtureWork::Dungeon(Default::default())
                 } else if case >= 48 {
                     FixtureWork::Landing(Default::default())
@@ -878,8 +932,11 @@ mod tests {
                                 let mut value = 0u16;
                                 for i in 0..width {
                                     let at = a + u32::from(i);
-                                    let byte = super::super::dungeon_module::table_byte(at)
-                                        .unwrap_or_else(|| panic!("unowned dungeon table {at:06x}"));
+                                    let byte = if case >= 88 {
+                                        super::super::spotlight_caller_return::table_byte(at)
+                                    } else {
+                                        super::super::dungeon_module::table_byte(at)
+                                    }.unwrap_or_else(|| panic!("unowned fixture table {at:06x}"));
                                     assert_eq!(byte, rom[(at >> 16) as usize * 0x8000
                                         + (at as usize & 0x7fff)]);
                                     value |= u16::from(byte) << (i * 8);
@@ -902,6 +959,8 @@ mod tests {
                         },
                     );
                     instructions += 1;
+                    opening_instructions += usize::from((88..152).contains(&case));
+                    closing_instructions += usize::from(case >= 152);
                 }
                 assert!(work.finished(), "{field}/{case} stopped {:04x}", cpu.pc);
                 if let FixtureWork::Dungeon(work) = &work {
@@ -911,13 +970,29 @@ mod tests {
                         assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, 0x805a, 0x1ff));
                     } else {
                         dungeon_children += 1;
-                        assert_eq!(work.child(), Some(DungeonChild::Common(CommonChild::Call(0x00e3fa))));
-                        assert_eq!((cpu.bank, cpu.pc, cpu.sp), (0, 0xe3fa, 0x1f9));
+                        assert_eq!(work.child(), Some(DungeonChild::Common(CommonChild::Call(0x01c302))));
+                        assert_eq!((cpu.bank, cpu.pc, cpu.sp), (1, 0xc302, 0x1f9));
                     }
                 } else if let FixtureWork::Landing(work) = &work {
                     assert!(work.complete());
                     assert_eq!(work.child(), None);
                     assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, 0x87af, 0x1fe));
+                } else if let FixtureWork::Opening(work) = &work {
+                    assert!(work.complete());
+                    assert_eq!((cpu.bank, cpu.pc, cpu.sp), (0, 0x8034, 0x1ff));
+                    let goal = case < 120 && (case - 88) % 4 == 3;
+                    assert_eq!(ram[0x10], if goal { 9 } else { 16 });
+                    assert_eq!(ram[0x11], if goal {
+                        [0, 11, 10, 10, 9, 9, 9, 9][(case - 88) / 4]
+                    } else { 1 });
+                    opening_returns += 1;
+                    opening_goals += usize::from(goal);
+                    opening_entries += usize::from(case >= 120);
+                } else if let FixtureWork::Closing(work) = &work {
+                    assert!(work.complete());
+                    assert_eq!(work.child(), None);
+                    assert_eq!((cpu.bank, cpu.pc, cpu.sp), (0, 0x8034, 0x1ff));
+                    closing_returns += 1;
                 } else {
                     assert_eq!((cpu.bank, cpu.pc, cpu.sp), (2, 0x805a, 0x1ff));
                 }
@@ -937,6 +1012,8 @@ mod tests {
         }
         assert!(waits > 192 && copies > 0 && resets > 0);
         assert!(dungeon_returns > 0 && dungeon_children > 0);
-        eprintln!("192 spotlight, 32 landing and 128 connected dungeon fixtures, {instructions} instruction boundaries, {waits} counter polls, {copies} projection words, {resets} reset iterations, {dungeon_returns} dungeon returns, {dungeon_children} retained child boundaries");
+        assert_eq!((opening_returns, opening_goals, opening_entries), (256, 32, 128));
+        assert_eq!(closing_returns, 128);
+        eprintln!("192 spotlight, 32 landing, 128 connected dungeon, {opening_returns} opening and {closing_returns} closing caller fixtures, {instructions} instruction boundaries ({opening_instructions} opening, {closing_instructions} closing), {waits} counter polls, {copies} projection words, {resets} reset iterations, {dungeon_returns} dungeon returns, {dungeon_children} retained child boundaries, {opening_goals} opening goals, {opening_entries} opening entries");
     }
 }

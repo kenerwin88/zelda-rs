@@ -2169,6 +2169,8 @@ impl PpuScrollCopyState {
             0xe2 => &mut self.bg2_h_copy2,
             0xe6 => &mut self.bg1_v_copy2,
             0xe8 => &mut self.bg2_v_copy2,
+            0x620 => &mut self.bg1_h_subpixel,
+            0x622 => &mut self.bg1_v_subpixel,
             0x11e => &mut self.bg2_h_copy,
             0x120 => &mut self.bg1_h_copy,
             0x122 => &mut self.bg2_v_copy,
@@ -2911,6 +2913,31 @@ pub(crate) struct DisplayState {
 }
 
 impl DisplayState {
+    pub(crate) fn write_properties_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            0x134..=0x135 => {
+                let shift = (address & 1) * 8;
+                self.animated_tile_vram_destination_address =
+                    (self.animated_tile_vram_destination_address & !(255 << shift))
+                    | (u16::from(value) << shift);
+            }
+            0x412 => self.incremental_vram_upload_counter = value,
+            0xaac => self.palette_buffer.sprite_palette_0_left = value,
+            0xaad => self.palette_buffer.sprite_palette_5_left = value,
+            0xaae => self.palette_buffer.sprite_palette_6_left = value,
+            0xab6 => self.palette_buffer.main_palette_indoors = value,
+            0xab2 => self.palette_buffer.hud_palette = value,
+            0xab3 => self.palette_buffer.overworld_palette_mode = value,
+            0xab5 => self.palette_buffer.overworld_aux2_bg_palettes_5_to_7_high = value,
+            0xab8 => self.palette_buffer.overworld_aux3_bg_palette_7_low = value,
+            0xc20a => self.overworld_palette_backup.main_indoors = value,
+            0xc20b => self.overworld_palette_backup.aux3_bg_palette_7 = value,
+            0xc20c => self.overworld_palette_backup.main_indoors_copy = value,
+            _ => return false,
+        }
+        true
+    }
+
     pub(crate) fn write_load_parent_byte(&mut self, address: usize, value: u8) -> bool {
         let byte = match address {
             0x13 => &mut self.screen_brightness,

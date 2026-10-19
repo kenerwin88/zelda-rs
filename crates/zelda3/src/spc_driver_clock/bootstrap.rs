@@ -30,6 +30,8 @@ pub(crate) struct NativeBootstrapCpu {
     pub(crate) upload_pointer: [u8; 3],
     pub(crate) startup: crate::cycle_models::startup::Startup,
     pub(crate) poly_worker: Option<crate::cycle_models::poly_worker::PolyWorker>,
+    /// Native module entry precedes its translated prefix's ledger work.
+    pub(crate) module_entry_ledger_mark: Option<u64>,
 }
 
 impl NativeBootstrapOrigin {
@@ -282,6 +284,7 @@ impl<F: FnMut(PortAccess)> ColdUpload<F> {
             cpu: NativeBootstrapCpu {
                 startup: crate::cycle_models::startup::Startup::after_upload(&self.timeline),
                 poly_worker: None,
+                module_entry_ledger_mark: None,
                 timeline: self.timeline,
                 upload_pointer: [0x00, 0x80, self.upload_bank],
             },
@@ -326,14 +329,14 @@ mod tests {
         let mut instructions = 0;
         let context = loop {
             assert!(instructions < 100_000);
-            let step = cpu.startup.step(&mut cpu.timeline, &mut ram, &mut sram, &mut ppu);
+            let step = cpu.startup.step(&mut cpu.timeline, &mut ram, &mut sram, &mut ppu, |_, _, _, _| 0);
             match step {
                 StartupStep::Instruction | StartupStep::ClearWindow => {
                     let receipt = source.step().unwrap();
                     instructions += 1;
                     if receipt.accepted_interrupt.is_some() {
                         assert_eq!(cpu.startup.step(&mut cpu.timeline, &mut ram, &mut sram,
-                            &mut ppu), StartupStep::AcceptNmi);
+                            &mut ppu, |_, _, _, _| 0), StartupStep::AcceptNmi);
                         let mut context = cpu.startup.accepted_context();
                         context.accept_interrupt_clocked(&mut ram, &mut cpu.timeline);
                         assert_eq!(cpu.timeline, *source.machine().timeline());
@@ -395,6 +398,52 @@ mod tests {
         assert_eq!(clock.apu.save_c_saveload_prefix(), expected.save_c_saveload_prefix());
         assert_eq!(bincode::serialize(&clock.apu.spc).unwrap(),
             bincode::serialize(&expected.spc).unwrap());
+    }
+
+    #[test]
+    fn native_cpu_port_import_keeps_carried_credit_and_rejects_new_future_work() {
+        use super::super::{AbsoluteDspEventClock, SPC_DRIVER_START, SPC_DRIVER_END,
+            SNES9X_APU_RATIO_NUMERATOR, SNES9X_APU_RATIO_DENOMINATOR};
+        use snes::snes9x_apu_clock::{Snes9xApuClockCheckpoint, Snes9xApuClockState};
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+        let origin = ColdUpload::run(&rom[0xc8000..0xd5337], |_| {}).unwrap().into_origin().unwrap();
+        let mut template = AbsoluteDspEventClock::new(
+            &origin.apu.ram[SPC_DRIVER_START..SPC_DRIVER_END], &[0, 0]).unwrap();
+        template.configure_rom_bootstrap(&origin);
+        for carried in [0, 1, 2, 7] {
+            let mut actual = template.clone();
+            let reference = origin.apu_clock.cpu_reference_master_cycles();
+            let c = Snes9xApuClockCheckpoint::new(reference, origin.apu_clock.remainder(), carried).unwrap();
+            let before = u64::from(actual.apu.cycles);
+            actual.cpu_port_clock = Some((c, before));
+            for _ in 0..64 { actual.apu.run_cycle_sequenced_instruction_without_dsp(); }
+            let executed = u64::from(actual.apu.cycles) - before;
+            let scaled = executed * SNES9X_APU_RATIO_DENOMINATOR - u64::from(c.remainder());
+            let master = reference + scaled.div_ceil(SNES9X_APU_RATIO_NUMERATOR);
+            let mut source_clock = Snes9xApuClockState::from_checkpoint(
+                Snes9xApuClockCheckpoint::new(reference, c.remainder(), carried + executed as i64).unwrap()).unwrap();
+            source_clock.sync_to(master, || panic!("carried credit must not replay SPC work")).unwrap();
+            let expected_state = actual.apu.save_c_saveload_prefix();
+            let expected_ports = actual.apu.out_ports;
+            let mut future = actual.clone();
+            for port in 0..4 {
+                assert_eq!(actual.cpu_port_at(master, port, None).unwrap(), expected_ports[usize::from(port)]);
+            }
+            let owner = actual.cpu_ports.as_ref().unwrap();
+            assert_eq!(owner.clock().checkpoint(), source_clock.checkpoint());
+            assert_eq!(owner.machine().save_c_saveload_prefix(), expected_state);
+            assert_eq!(owner.machine().cycles, before as u32 + executed as u32);
+            // Additional bulk execution has no earlier native provenance.
+            // Reject it without moving ports, registers, or the import clock.
+            future.apu.run_cycle_sequenced_instruction_without_dsp();
+            let before_rejection = future.apu.save_c_saveload_prefix();
+            assert!(future.cpu_port_at(master, 0, Some(0x55)).unwrap_err()
+                .contains("audio window already executed beyond the CPU port deadline"));
+            assert!(future.cpu_ports.is_none());
+            assert_eq!(future.apu.save_c_saveload_prefix(), before_rejection);
+            assert_eq!(future.cpu_port_clock, Some((c, before)));
+        }
     }
 
     #[test]

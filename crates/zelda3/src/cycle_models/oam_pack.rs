@@ -191,7 +191,24 @@ impl CallerPacking {
         &mut self,
         cpu: &mut super::nmi_stack::NativeNmiContext,
         clock: &mut snes::CpuMasterTimeline,
-        bus: impl FnMut(u64, BusAccess) -> u16,
+        mut bus: impl FnMut(u64, BusAccess) -> u16,
+    ) -> Option<u64> {
+        self.step_with_bus(cpu, clock, |at, access| {
+            use super::intro_clear::Access;
+            bus(at, match access {
+                Access::Read(address, 1) => BusAccess::Read(address as u16),
+                Access::Write(address, value, width) => BusAccess::Write(address as u16, value, width),
+                Access::Vblank { field, at } => BusAccess::Vblank { field, at },
+                _ => unreachable!("OAM packing reads bytes"),
+            })
+        })
+    }
+
+    pub(crate) fn step_with_bus(
+        &mut self,
+        cpu: &mut super::nmi_stack::NativeNmiContext,
+        clock: &mut snes::CpuMasterTimeline,
+        bus: impl super::native_work::WorkBus,
     ) -> Option<u64> {
         use super::nmi_stack::{CARRY, NEGATIVE};
         if self.complete() {
@@ -215,9 +232,10 @@ impl CallerPacking {
         w.fetch();
         if !self.called {
             // JSR abs pushes the actual caller's return word after its operands.
-            w.drain(16 + 6);
+            w.drain(16);
+            w.drain(6);
             let returned = w.cpu.pc.wrapping_add(2);
-            (w.bus)(
+            w.access(
                 w.clock.clock_master_cycles(),
                 BusAccess::Write(w.cpu.sp - 1, returned, 2),
             );
@@ -248,7 +266,7 @@ impl CallerPacking {
                 .step(|index| {
                     assert_eq!(u16::from(start) * 4, w.cpu.x);
                     w.drain(16);
-                    let value = (w.bus)(
+                    let value = w.access(
                         w.clock.clock_master_cycles(),
                         BusAccess::Read(0xa20 + index as u16),
                     );
@@ -257,8 +275,9 @@ impl CallerPacking {
                 })
                 .unwrap();
             if let Some((index, value)) = result.store {
-                w.drain(16 + 6);
-                (w.bus)(
+                w.drain(16);
+                w.drain(6);
+                w.access(
                     w.clock.clock_master_cycles(),
                     BusAccess::Write(0xa00 + index as u16, u16::from(value), 1),
                 );
@@ -266,7 +285,10 @@ impl CallerPacking {
             } else if instruction == 52 {
                 assert_eq!(w.cpu.y, u16::from(start.wrapping_sub(4)));
                 assert_eq!(w.cpu.p & NEGATIVE != 0, start == 0);
-                w.drain(result.master_cycles - 8);
+                // BPL fetches its operand before the taken-branch cycle.
+                // A scanline event between them must see the first endpoint.
+                w.drain(8);
+                if result.master_cycles == 22 { w.drain(6); }
             } else {
                 if w.cycles == 8 {
                     w.drain(result.master_cycles - 8);
@@ -310,7 +332,15 @@ struct ClockedWork<'a, B> {
     bus: B,
     cycles: u64,
 }
-impl<B: FnMut(u64, BusAccess) -> u16> ClockedWork<'_, B> {
+impl<B: super::native_work::WorkBus> ClockedWork<'_, B> {
+    fn access(&mut self, at: u64, access: BusAccess) -> u16 {
+        use super::intro_clear::Access;
+        self.bus.access(at, match access {
+            BusAccess::Read(address) => Access::Read(u32::from(address), 1),
+            BusAccess::Write(address, value, width) => Access::Write(u32::from(address), value, width),
+            BusAccess::Vblank { field, at } => Access::Vblank { field, at },
+        })
+    }
     fn fetch(&mut self) {
         self.cycles += 8;
         self.clock.advance_synchronous_pcbase_opcode_fetch(8);
@@ -319,23 +349,8 @@ impl<B: FnMut(u64, BusAccess) -> u16> ClockedWork<'_, B> {
         self.cycles += u64::from(n);
         let bus = &mut self.bus;
         self.clock
-            .advance_synchronous_after_semantics_with(n, |event, _| {
-                if let snes::cpu_timeline::CpuSynchronousTimelineEvent::HMax {
-                    completed_field_index,
-                    completed_scanline: 224,
-                    event_timestamp,
-                    ..
-                } = event
-                {
-                    bus(
-                        event_timestamp.master_cycles(),
-                        BusAccess::Vblank {
-                            field: completed_field_index,
-                            at: event_timestamp.master_cycles(),
-                        },
-                    );
-                }
-                Ok::<u32, String>(0)
+            .advance_synchronous_after_semantics_with_clock(n, |event, clock| {
+                Ok::<u32, String>(bus.retire_event(event, clock))
             })
             .unwrap();
     }

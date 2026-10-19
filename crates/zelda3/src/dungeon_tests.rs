@@ -855,6 +855,7 @@ fn quadrant_copy_after_trailing_nmi_returns_without_running_another_handler() {
     for words in [0, 900, 1024] {
         let mut state = ZeldaState::new();
         state.restore_live_rom_timing_after_checkpoint();
+        state.game_execution_scheduler.begin_host_frame();
         state.set_animated_tile_data_source_address(0xa680);
         state.set_indoor_flag(1);
         state.set_main_module(7);
@@ -1008,4 +1009,2595 @@ fn dungeon_load_room_resets_floor_velocity_words() {
 
     assert_eq!(read_le_u16(&state.ram, DUNG_FLOOR_Y_VEL_DUNGEON), 0);
     assert_eq!(read_le_u16(&state.ram, DUNG_FLOOR_X_VEL), 0);
+}
+
+#[test]
+fn native_interaction_handoffs_skip_owned_timers_probes_and_calls() {
+    use crate::cycle_models::{
+        dungeon_interaction_caller::{DungeonInteractionCaller, InteractionTail},
+        intro_clear::Access,
+        nmi_stack::NativeNmiContext,
+    };
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let path = std::env::var_os("ZELDA3_ASSETS")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| root.join("zelda3_assets.dat"));
+    let assets = std::fs::read(path).expect("assets required for native interaction handoffs");
+    let mut count = 0;
+    let mut tails = [0usize; 6];
+    for case in 0..192usize {
+        let mut expected = ZeldaState::new();
+        expected.set_assets(&assets).unwrap();
+        crate::cycle_models::dungeon_interaction_caller::seed_case(&mut expected.ram, case);
+        expected.ram[0x10] = 7;
+        expected.ram[0x1b] = 1;
+        expected.ram[0x3c] = if case / 6 & 1 == 0 { 4 } else { 3 };
+        expected.ram[0x44] = (case as u8).wrapping_mul(17);
+        expected.ram[0x45] = 255;
+        for k in 0..16 {
+            expected.ram[0x19c0 + k * 2] = (case / 6 % 4) as u8;
+            expected.ram[0x1980 + k * 2] = if case / 6 & 1 == 0 { 0x32 } else { 0 };
+            expected.ram[0x19a0 + k * 2..0x19a2 + k * 2]
+                .copy_from_slice(&(0x800 + k as u16 * 4).to_le_bytes());
+        }
+        if case % 6 == 4 {
+            expected.ram[0x23] = if case / 6 & 1 == 0 { 12 } else { 9 };
+            expected.ram[0x68c..0x68e].fill(if case / 6 & 2 != 0 { 255 } else { 0 });
+        }
+        expected.sync_native_game_state_from_ram();
+        let mut actual = expected.clone();
+        actual.rom.clear();
+        let mut cpu = NativeNmiContext {
+            a: 0x1111,
+            x: 255,
+            y: 8,
+            d: 0,
+            db: 0,
+            bank: 2,
+            pc: 0x87c9,
+            sp: 0x1fc,
+            p: 0x32,
+        };
+        let mut clock = snes::CpuMasterTimeline::at_raster(
+            4586,
+            snes::CpuRasterPosition::new(49, 1298),
+            snes::CpuBusWorkload::default(),
+            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        clock.begin_synchronous_timeline().unwrap();
+        let mut work = DungeonInteractionCaller::default();
+        let mut owned = 0;
+        while work.tail().is_none() {
+            owned += work
+                .step(&mut cpu, &mut clock, |_, access| match access {
+                    Access::Read(a, width) => {
+                        if let Some(low) = crate::cycle_models::dungeon_interactions::table_byte(a)
+                        {
+                            u16::from(low)
+                                | if width == 2 {
+                                    u16::from(
+                                        crate::cycle_models::dungeon_interactions::table_byte(
+                                            a + 1,
+                                        )
+                                        .unwrap(),
+                                    ) << 8
+                                } else {
+                                    0
+                                }
+                        } else {
+                            let offset = if a >= 0x7e0000 {
+                                a as usize - 0x7e0000
+                            } else {
+                                a as usize
+                            };
+                            u16::from(actual.ram[offset])
+                                | if width == 2 {
+                                    u16::from(actual.ram[offset + 1]) << 8
+                                } else {
+                                    0
+                                }
+                        }
+                    }
+                    Access::Write(a, value, width) => {
+                        let offset = if a >= 0x7e0000 {
+                            a as usize - 0x7e0000
+                        } else {
+                            a as usize
+                        };
+                        actual.ram[offset..offset + width as usize]
+                            .copy_from_slice(&value.to_le_bytes()[..width as usize]);
+                        actual.native_dungeon_camera_store(offset, value, width);
+                        0
+                    }
+                    Access::Vblank { .. } => 0,
+                })
+                .unwrap();
+        }
+        let tail = work.tail().unwrap();
+        tails[match tail {
+            InteractionTail::Lamp => 0,
+            InteractionTail::Returned => 1,
+            InteractionTail::TorchExpired { .. } => 2,
+            InteractionTail::KeyDoor { .. } => 3,
+            InteractionTail::EyeDoor => 4,
+            InteractionTail::Slash => 5,
+        }] += 1;
+        let before = crate::cycle_ledger::master();
+        expected.complete_module07_room_maintenance_after_room_tags();
+        let full = crate::cycle_ledger::master() - before;
+        let before = crate::cycle_ledger::master();
+        actual.finish_native_dungeon_interactions(tail);
+        let remaining = crate::cycle_ledger::master() - before;
+        let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
+        let diffs = actual
+            .ram
+            .iter()
+            .zip(&expected.ram)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(
+            diffs.is_empty(),
+            "case={case} tail={tail:?} RAM differences {diffs:x?}"
+        );
+        let mut a = vec![0xa5; snes::WRAM_SIZE];
+        let mut b = a.clone();
+        actual.game_state.write_to_ram(&mut a);
+        expected.game_state.write_to_ram(&mut b);
+        let diffs = a
+            .iter()
+            .zip(&b)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(
+            diffs.is_empty(),
+            "case={case} tail={tail:?} native differences {diffs:x?}"
+        );
+        assert_eq!(
+            full - remaining,
+            owned,
+            "owned instructions omitted case={case} tail={tail:?}"
+        );
+        assert!(actual.rom.is_empty());
+        count += 1;
+    }
+    assert_eq!(tails, [32; 6]);
+    println!("native interaction handoffs: {count} fixtures, all six tails, completed timers/probes/calls never replayed");
+}
+
+#[test]
+fn edge_predicate_all_handler_states_and_recoil_publications_match_source() {
+    use crate::cycle_models::nmi_stack::CARRY;
+    let rom = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"),
+    )
+    .unwrap();
+    for handler in 0..=255u8 {
+        for timer in [0u8, 1, 255] {
+            let mut state = ZeldaState::new();
+            state.ram[0x5d] = handler;
+            state.ram[0x46] = timer;
+            state.ram[0x27..0x29].copy_from_slice(&[255, 127]);
+            state.ram[0x20..0x24].copy_from_slice(&[7, 2, 233, 4]);
+            state.ram[0xfc2..0xfc6].copy_from_slice(&[0xef, 0xbe, 0x23, 1]);
+            state.sync_native_game_state_from_ram();
+            let mut machine = snes::Snes::new();
+            machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+            machine.ram.copy_from_slice(&state.ram);
+            machine.ram[0x1f8..0x1fb].copy_from_slice(&[0xa7, 0x88, 2]);
+            machine.cpu.k = 7;
+            machine.cpu.pc = 0xf439;
+            machine.cpu.sp = 0x1f7;
+            machine.cpu.e = false;
+            machine.cpu.unpack_flags(0x30);
+            let clock = snes::CpuMasterTimeline::at_raster(
+                4586,
+                snes::CpuRasterPosition::new(50, 372),
+                snes::CpuBusWorkload::default(),
+                snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+            );
+            let mut source = snes::RomCpuTimingProbe::new(
+                machine,
+                clock,
+                snes::SourcePpuReadState::snes9x_reset(),
+            )
+            .unwrap();
+            for _ in 0..100 {
+                if (source.snes().cpu.k, source.snes().cpu.pc) == (2, 0x88a8) {
+                    break;
+                }
+                source.step().unwrap();
+            }
+            assert_eq!((source.snes().cpu.k, source.snes().cpu.pc), (2, 0x88a8));
+            let blocked = state.link_check_for_edge_screen_transition();
+            assert_eq!(
+                blocked,
+                source.snes().cpu.pack_flags() & CARRY != 0,
+                "handler={handler} timer={timer}"
+            );
+            let mut projected = state.ram.clone();
+            state
+                .game_state
+                .player
+                .follower_link
+                .write_to_ram(&mut projected);
+            for (a, b) in [(0x20, 0x24), (0x27, 0x29), (0x2c6, 0x2c7)] {
+                assert_eq!(
+                    &state.ram[a..b],
+                    &source.snes().ram[a..b],
+                    "handler={handler} timer={timer}"
+                );
+                assert_eq!(&projected[a..b], &state.ram[a..b]);
+            }
+        }
+    }
+    println!("edge predicate: 768 source fixtures, all handler bytes and zero/nonzero incapacitation timers");
+}
+
+#[test]
+fn native_edge_handoffs_preserve_remaining_caller_and_do_not_repeat_predicate() {
+    use crate::cycle_models::{
+        dungeon_edge_caller::{DungeonEdgeCaller, EdgeTail},
+        intro_clear::Access,
+        nmi_stack::NativeNmiContext,
+    };
+    let mut tails = [0usize; 3];
+    let mut count = 0;
+    for case in 0..192usize {
+        let kind = case % 6;
+        let mut expected = ZeldaState::new();
+        for (a, v) in [
+            (0x10, 7u8),
+            (0x1b, 1),
+            (0x454, if kind == 1 { 1 } else { 0 }),
+            (0x455, 255),
+            (0x67, 15),
+            (0x27, 255),
+            (0x28, 127),
+        ] {
+            expected.ram[a] = v;
+        }
+        expected.ram[0x20..0x24].copy_from_slice(&[0, 1, 0, 1]);
+        for (a, v) in [
+            (0x600, 0u16),
+            (0x602, 256),
+            (0x604, 256),
+            (0x606, 512),
+            (0x608, 0),
+            (0x60a, 256),
+            (0x60c, 256),
+            (0x60e, 512),
+            (0xa0, 0x12),
+            (0xa2, 0x12),
+        ] {
+            expected.ram[a..a + 2].copy_from_slice(&v.to_le_bytes());
+        }
+        if kind >= 2 {
+            let dir = kind - 2;
+            if dir < 2 {
+                expected.ram[0x31] = 1;
+                expected.ram[0x22..0x24]
+                    .copy_from_slice(&(if dir == 0 { 489u16 } else { 7 }).to_le_bytes());
+            } else {
+                expected.ram[0x30] = 1;
+                expected.ram[0x20..0x22]
+                    .copy_from_slice(&(if dir == 2 { 476u16 } else { 3 }).to_le_bytes());
+            }
+        }
+        expected.ram[0x5d] = if case / 6 % 2 == 0 { 0 } else { 3 };
+        expected.ram[0x46] = if case / 6 % 4 == 2 { 1 } else { 0 };
+        expected.ram[0xfc2..0xfc6].copy_from_slice(&[0xef, 0xbe, 0x23, 1]);
+        expected.sync_native_game_state_from_ram();
+        let mut actual = expected.clone();
+        actual.rom.clear();
+        let mut cpu = NativeNmiContext {
+            a: 0x2100,
+            x: 255,
+            y: 8,
+            d: 0,
+            db: 0,
+            bank: 2,
+            pc: 0x87d1,
+            sp: 0x1fc,
+            p: 0x30,
+        };
+        let mut clock = snes::CpuMasterTimeline::at_raster(
+            4586,
+            snes::CpuRasterPosition::new(50, 372),
+            snes::CpuBusWorkload::default(),
+            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        clock.begin_synchronous_timeline().unwrap();
+        let mut work = DungeonEdgeCaller::default();
+        let mut owned_caller = 0;
+        while work.tail().is_none() {
+            let predicate = work.routine() == 0x07f439;
+            let cycles = work
+                .step(&mut cpu, &mut clock, |_, access| match access {
+                    Access::Read(a, width) => {
+                        let a = (a & 65535) as usize;
+                        u16::from(actual.ram[a])
+                            | if width == 2 {
+                                u16::from(actual.ram[a + 1]) << 8
+                            } else {
+                                0
+                            }
+                    }
+                    Access::Write(a, value, width) => {
+                        let a = (a & 65535) as usize;
+                        actual.ram[a..a + width as usize]
+                            .copy_from_slice(&value.to_le_bytes()[..width as usize]);
+                        actual.native_dungeon_camera_store(a, value, width);
+                        0
+                    }
+                    Access::Vblank { .. } => 0,
+                })
+                .unwrap();
+            if !predicate {
+                owned_caller += cycles;
+            }
+        }
+        let tail = work.tail().unwrap();
+        tails[match tail {
+            EdgeTail::Lamp => 0,
+            EdgeTail::BlastWall => 1,
+            EdgeTail::Movement { .. } => 2,
+        }] += 1;
+        let before = crate::cycle_ledger::master();
+        expected.complete_module07_room_maintenance_after_interactions();
+        let full = crate::cycle_ledger::master() - before;
+        let before = crate::cycle_ledger::master();
+        actual.finish_native_dungeon_edge(tail);
+        let remaining = crate::cycle_ledger::master() - before;
+        let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
+        let diffs = actual
+            .ram
+            .iter()
+            .zip(&expected.ram)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} tail={tail:?} RAM {diffs:x?}");
+        let mut a = vec![0xa5; snes::WRAM_SIZE];
+        let mut b = a.clone();
+        actual.game_state.write_to_ram(&mut a);
+        expected.game_state.write_to_ram(&mut b);
+        let diffs = a
+            .iter()
+            .zip(&b)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(
+            diffs.is_empty(),
+            "case={case} tail={tail:?} native {diffs:x?}"
+        );
+        assert_eq!(full-remaining,owned_caller,"case={case} tail={tail:?}: caller pricing excludes the previously unpriced predicate body");
+        count += 1;
+    }
+    assert!(tails.iter().all(|n| *n > 0));
+    println!("native edge handoffs: {count} fixtures, tails={tails:?}, owned guards/calls and recoil predicate never replayed");
+}
+
+#[test]
+fn native_lamp_handoff_preserves_sprite_suffix_without_replaying_cone_work() {
+    use crate::cycle_models::{
+        dungeon_after_push::DungeonAfterPushTail, dungeon_lamp_caller::DungeonLampCaller,
+        intro_clear::Access, nmi_stack::NativeNmiContext,
+    };
+    for case in 0..192usize {
+        let mut expected = ZeldaState::new();
+        crate::cycle_models::dungeon_lamp_caller::seed_case(&mut expected.ram, case * 37);
+        expected.ram[0x10] = 7;
+        expected.ram[0x1b] = 1;
+        expected.ram[0x11] = if case % 3 == 0 { 20 } else { 17 };
+        expected.sync_native_game_state_from_ram();
+        let mut actual = expected.clone();
+        actual.rom.clear();
+        let mut cpu = NativeNmiContext {
+            a: 0xab00,
+            x: 3,
+            y: 7,
+            d: 0,
+            db: 0,
+            bank: 2,
+            pc: 0x87e1,
+            sp: 0x1fc,
+            p: 0x30,
+        };
+        let mut clock = snes::CpuMasterTimeline::at_raster(
+            4586,
+            snes::CpuRasterPosition::new(50, 794),
+            snes::CpuBusWorkload::default(),
+            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        clock.begin_synchronous_timeline().unwrap();
+        let mut work = DungeonLampCaller::default();
+        let mut owned = 46;
+        while !work.complete() {
+            owned += work
+                .step(&mut cpu, &mut clock, |_, access| match access {
+                    Access::Read(a, width) => {
+                        if let Some(v) = crate::cycle_models::lamp_cone::table_byte(a) {
+                            u16::from(v)
+                                | if width == 2 {
+                                    u16::from(
+                                        crate::cycle_models::lamp_cone::table_byte(a + 1).unwrap(),
+                                    ) << 8
+                                } else {
+                                    0
+                                }
+                        } else {
+                            let a = (a & 65535) as usize;
+                            u16::from(actual.ram[a])
+                                | if width == 2 {
+                                    u16::from(actual.ram[a + 1]) << 8
+                                } else {
+                                    0
+                                }
+                        }
+                    }
+                    Access::Write(a, v, width) => {
+                        let a = (a & 65535) as usize;
+                        actual.ram[a..a + width as usize]
+                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        actual.native_dungeon_camera_store(a, v, width);
+                        0
+                    }
+                    Access::Vblank { .. } => 0,
+                })
+                .unwrap();
+        }
+        actual.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::AfterLamp);
+        let before = crate::cycle_ledger::master();
+        expected.complete_module07_dungeon_after_push_block_handler(true);
+        let full = crate::cycle_ledger::master() - before;
+        let before = crate::cycle_ledger::master();
+        actual.complete_module07_dungeon_after_push_block_handler(true);
+        let remaining = crate::cycle_ledger::master() - before;
+        let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
+        let diffs = actual
+            .ram
+            .iter()
+            .zip(&expected.ram)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} RAM {diffs:x?}");
+        let mut a = vec![0xa5; snes::WRAM_SIZE];
+        let mut b = a.clone();
+        actual.game_state.write_to_ram(&mut a);
+        expected.game_state.write_to_ram(&mut b);
+        let diffs = a
+            .iter()
+            .zip(&b)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} native {diffs:x?}");
+        assert_eq!(full - remaining, owned, "case={case}: no owned lamp replay");
+    }
+    println!("native lamp handoff: 192 fixtures, source scrolls and sprite suffix match, guard/call/cone work omitted");
+}
+
+#[test]
+fn native_sprite_scroll_handoff_preserves_drawing_suffix_without_replaying_offsets() {
+    use crate::cycle_models::{
+        dungeon_after_push::DungeonAfterPushTail, dungeon_sprite_scroll::DungeonSpriteScroll,
+        intro_clear::Access, nmi_stack::NativeNmiContext,
+    };
+    for case in 0..192usize {
+        let mut expected = ZeldaState::new();
+        crate::cycle_models::dungeon_sprite_scroll::seed_case(&mut expected.ram, case * 17);
+        expected.ram[0x10] = 7;
+        expected.ram[0x1b] = 1;
+        expected.ram[0x11] = if case % 3 == 0 { 20 } else { 17 };
+        expected.sync_native_game_state_from_ram();
+        let mut actual = expected.clone();
+        actual.rom.clear();
+        let mut cpu = NativeNmiContext {
+            a: 0xab00,
+            x: 3,
+            y: 7,
+            d: 0,
+            db: 0,
+            bank: 2,
+            pc: 0x87e5,
+            sp: 0x1fc,
+            p: 0x30,
+        };
+        let mut clock = snes::CpuMasterTimeline::at_raster(
+            4586,
+            snes::CpuRasterPosition::new(50, 954),
+            snes::CpuBusWorkload::default(),
+            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        clock.begin_synchronous_timeline().unwrap();
+        let mut work = DungeonSpriteScroll::default();
+        let mut owned = 0;
+        while work.saved().is_none() {
+            owned += work
+                .step(&mut cpu, &mut clock, |_, access| match access {
+                    Access::Read(a, width) => {
+                        let a = (a & 65535) as usize;
+                        u16::from(actual.ram[a])
+                            | if width == 2 {
+                                u16::from(actual.ram[a + 1]) << 8
+                            } else {
+                                0
+                            }
+                    }
+                    Access::Write(a, v, width) => {
+                        let a = (a & 65535) as usize;
+                        actual.ram[a..a + width as usize]
+                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        actual.native_dungeon_camera_store(a, v, width);
+                        0
+                    }
+                    Access::Vblank { .. } => 0,
+                })
+                .unwrap();
+        }
+        actual.early_dungeon_after_push_tail =
+            Some(DungeonAfterPushTail::BeforeDrawing(work.saved().unwrap()));
+        expected.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::AfterLamp);
+        let before = crate::cycle_ledger::master();
+        expected.complete_module07_dungeon_after_push_block_handler(true);
+        let full = crate::cycle_ledger::master() - before;
+        let before = crate::cycle_ledger::master();
+        actual.complete_module07_dungeon_after_push_block_handler(true);
+        let remaining = crate::cycle_ledger::master() - before;
+        let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
+        let diffs = actual
+            .ram
+            .iter()
+            .zip(&expected.ram)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} RAM {diffs:x?}");
+        let mut a = vec![0xa5; snes::WRAM_SIZE];
+        let mut b = a.clone();
+        actual.game_state.write_to_ram(&mut a);
+        expected.game_state.write_to_ram(&mut b);
+        let diffs = a
+            .iter()
+            .zip(&b)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} native {diffs:x?}");
+        assert_eq!(
+            full - remaining,
+            owned,
+            "case={case}: no owned sprite scroll replay"
+        );
+    }
+    println!("native sprite scroll handoff: 192 fixtures, saved words and drawing suffix match, scroll work omitted");
+}
+
+#[test]
+fn native_push_drawing_handoff_preserves_sprite_suffix_without_replaying_oam() {
+    use crate::cycle_models::{
+        dungeon_after_push::DungeonAfterPushTail, dungeon_push_drawing::DungeonPushDrawing,
+        intro_clear::Access, nmi_stack::NativeNmiContext,
+    };
+    for case in 0..192usize {
+        let mut expected = ZeldaState::new();
+        crate::cycle_models::dungeon_push_drawing::seed_case(&mut expected.ram, case * 13);
+        expected.ram[0x10] = 7;
+        expected.ram[0x1b] = 1;
+        expected.ram[0x11] = if case % 3 == 0 { 20 } else { 17 };
+        let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
+            bg2_x: case as u16 * 113,
+            bg2_y: case as u16 * 229,
+            bg1_x: case as u16 * 71,
+            bg1_y: case as u16 * 127,
+        };
+        for (at, word) in [
+            (0x1fb, saved.bg2_x),
+            (0x1f9, saved.bg2_y),
+            (0x1f7, saved.bg1_x),
+            (0x1f5, saved.bg1_y),
+        ] {
+            expected.ram[at..at + 2].copy_from_slice(&word.to_le_bytes());
+        }
+        expected.sync_native_game_state_from_ram();
+        let mut actual = expected.clone();
+        actual.rom.clear();
+        let mut cpu = NativeNmiContext {
+            a: 0xab00,
+            x: 3,
+            y: 7,
+            d: 0,
+            db: 0,
+            bank: 2,
+            pc: 0x8838,
+            sp: 0x1f4,
+            p: 0x10,
+        };
+        let mut clock = snes::CpuMasterTimeline::at_raster(
+            4586,
+            snes::CpuRasterPosition::new(51, 478),
+            snes::CpuBusWorkload::default(),
+            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        clock.begin_synchronous_timeline().unwrap();
+        let mut work = DungeonPushDrawing::default();
+        let mut owned = 0;
+        while !work.complete() {
+            owned += work
+                .step(&mut cpu, &mut clock, |_, access| match access {
+                    Access::Read(a,width) => {
+                        if let Some(v)=crate::cycle_models::push_block_drawing::table_byte(a) {
+                            u16::from(v) | if width==2 {u16::from(crate::cycle_models::push_block_drawing::table_byte(a+1).unwrap())<<8} else {0}
+                        } else {
+                            let a=(a&65535) as usize;
+                            u16::from(actual.ram[a]) | if width==2 {u16::from(actual.ram[a+1])<<8} else {0}
+                        }
+                    }
+                    Access::Write(a, v, width) => {
+                        let a = (a & 65535) as usize;
+                        actual.ram[a..a + width as usize]
+                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        actual.native_push_block_store(a, v, width);
+                        0
+                    }
+                    Access::Vblank { .. } => 0,
+                })
+                .unwrap();
+        }
+        actual.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::AfterDrawing(saved));
+        expected.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::BeforeDrawing(saved));
+        let before = crate::cycle_ledger::master();
+        expected.complete_module07_dungeon_after_push_block_handler(true);
+        let full = crate::cycle_ledger::master() - before;
+        let before = crate::cycle_ledger::master();
+        actual.complete_module07_dungeon_after_push_block_handler(true);
+        let remaining = crate::cycle_ledger::master() - before;
+        let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
+        let diffs = actual
+            .ram
+            .iter()
+            .zip(&expected.ram)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} RAM {diffs:x?}");
+        let mut a = vec![0xa5; snes::WRAM_SIZE];
+        let mut b = a.clone();
+        actual.game_state.write_to_ram(&mut a);
+        expected.game_state.write_to_ram(&mut b);
+        let diffs = a
+            .iter()
+            .zip(&b)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} native {diffs:x?}");
+        assert_eq!(
+            full - remaining,
+            owned,
+            "case={case}: no owned push drawing replay"
+        );
+    }
+    println!("native push drawing handoff: 192 fixtures, OAM and sprite suffix match, drawing work omitted");
+}
+
+#[test]
+fn native_sprite_prefix_handoff_preserves_all_remaining_sprite_work_without_reset_replay() {
+    use crate::cycle_models::{
+        dungeon_after_push::DungeonAfterPushTail, dungeon_sprite_prefix::DungeonSpritePrefix,
+        intro_clear::Access, nmi_stack::NativeNmiContext,
+    };
+    for case in 0..192usize {
+        let mut expected = ZeldaState::new();
+        crate::cycle_models::dungeon_sprite_prefix::seed_case(&mut expected.ram, case * 13);
+        expected.ram[0x10] = 7;
+
+        let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
+            bg2_x: case as u16 * 113,
+            bg2_y: case as u16 * 229,
+            bg1_x: case as u16 * 71,
+            bg1_y: case as u16 * 127,
+        };
+        for (at, word) in [
+            (0x1fb, saved.bg2_x),
+            (0x1f9, saved.bg2_y),
+            (0x1f7, saved.bg1_x),
+            (0x1f5, saved.bg1_y),
+        ] {
+            expected.ram[at..at + 2].copy_from_slice(&word.to_le_bytes());
+        }
+        expected.sync_native_game_state_from_ram();
+        let mut actual = expected.clone();
+        actual.rom.clear();
+        let mut cpu = NativeNmiContext {
+            a: 0xab00,
+            x: 3,
+            y: 7,
+            d: 0,
+            db: 0,
+            bank: 2,
+            pc: 0x883e,
+            sp: 0x1f4,
+            p: 0x30,
+        };
+        let mut clock = snes::CpuMasterTimeline::at_raster(
+            4586,
+            snes::CpuRasterPosition::new(51, 832),
+            snes::CpuBusWorkload::default(),
+            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        clock.begin_synchronous_timeline().unwrap();
+        let mut work = DungeonSpritePrefix::default();
+        let mut owned = 0;
+        while work.tail().is_none() {
+            owned += work
+                .step(&mut cpu, &mut clock, |_, access| match access {
+                    Access::Read(a, width) => {
+                        if let Some(v) = crate::cycle_models::sprite_main::table_byte(a) {
+                            u16::from(v)
+                                | if width == 2 {
+                                    u16::from(
+                                        crate::cycle_models::sprite_main::table_byte(a + 1)
+                                            .unwrap(),
+                                    ) << 8
+                                } else {
+                                    0
+                                }
+                        } else {
+                            let a = (a & 65535) as usize;
+                            u16::from(actual.ram[a])
+                                | if width == 2 {
+                                    u16::from(actual.ram[a + 1]) << 8
+                                } else {
+                                    0
+                                }
+                        }
+                    }
+                    Access::Write(a, v, width) => {
+                        let a = (a & 65535) as usize;
+                        actual.ram[a..a + width as usize]
+                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        actual.native_push_block_store(a, v, width);
+                        0
+                    }
+                    Access::Vblank { .. } => 0,
+                })
+                .unwrap();
+        }
+        actual.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: work.tail().unwrap(),
+        });
+        expected.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::AfterDrawing(saved));
+        let before = crate::cycle_ledger::master();
+        expected.complete_module07_dungeon_after_push_block_handler(true);
+        let full = crate::cycle_ledger::master() - before;
+        let before = crate::cycle_ledger::master();
+        actual.complete_module07_dungeon_after_push_block_handler(true);
+        let remaining = crate::cycle_ledger::master() - before;
+        let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
+        let diffs = actual
+            .ram
+            .iter()
+            .zip(&expected.ram)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} RAM {diffs:x?}");
+        let mut a = vec![0xa5; snes::WRAM_SIZE];
+        let mut b = a.clone();
+        actual.game_state.write_to_ram(&mut a);
+        expected.game_state.write_to_ram(&mut b);
+        let diffs = a
+            .iter()
+            .zip(&b)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} native {diffs:x?}");
+        assert_eq!(
+            full - remaining,
+            owned,
+            "case={case}: no owned sprite prefix replay"
+        );
+    }
+    println!("native sprite prefix handoff: 192 fixtures, both worlds, remaining sprite work matches, completed reset and calls omitted");
+}
+
+
+#[test]
+fn native_garnish_handoff_preserves_remaining_palette_and_slot_work_once() {
+    use crate::cycle_models::{
+        dungeon_after_push::DungeonAfterPushTail, dungeon_garnish::DungeonGarnish,
+        dungeon_sprite_prefix::SpritePrefixTail, intro_clear::Access, nmi_stack::NativeNmiContext,
+    };
+    for case in 0..528usize {
+        let mut expected = ZeldaState::new();
+        expected.ram[0x1b] = 1;
+        expected.ram[0x11] = 0;
+        expected.ram[0xfb4] = u8::from(case / 88 != 0);
+        expected.ram[0xff9] = [0, 0, 1, 3, 2, 0][case / 88];
+        expected.ram[0x1ee..0x1f1].copy_from_slice(&[0x64, 0x83, 6]);
+        expected.ram[0x10] = 7;
+
+        let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
+            bg2_x: case as u16 * 113,
+            bg2_y: case as u16 * 229,
+            bg1_x: case as u16 * 71,
+            bg1_y: case as u16 * 127,
+        };
+        for (at, word) in [
+            (0x1fb, saved.bg2_x),
+            (0x1f9, saved.bg2_y),
+            (0x1f7, saved.bg1_x),
+            (0x1f5, saved.bg1_y),
+        ] {
+            expected.ram[at..at + 2].copy_from_slice(&word.to_le_bytes());
+        }
+        for i in 0..256usize {
+            let aux = ((i * 97 + case * 31) & 0x7fff) as u16;
+            let main = ((i * 211 + case * 13) & 0x7fff) as u16;
+            expected.ram[0xc300 + i * 2..0xc302 + i * 2].copy_from_slice(&aux.to_le_bytes());
+            expected.ram[0xc500 + i * 2..0xc502 + i * 2].copy_from_slice(&main.to_le_bytes());
+        }
+        expected.sync_native_game_state_from_ram();
+        expected.oam_reset_region_bases();
+        if case / 88 == 5 {
+            let k = 15 + case % 15;
+            let mut slot = expected.garnish_slot_view_mut(k);
+            let kind = 1 + (case % 22) as u8;
+            slot.set_garnish_type(kind);
+            slot.set_countdown(if kind == 16 { 16 } else { [0, 1, 3, 7][case / 22 % 4] });
+            slot.set_oam_flags(if kind == 15 { 7 } else { 0 });
+            slot.set_x_low(128);
+            slot.set_y_low(96);
+        }
+        let mut actual = expected.clone();
+        actual.rom.clear();
+        let mut cpu = NativeNmiContext {
+            a: 0xab00,
+            x: 3,
+            y: 7,
+            d: 0,
+            db: 6,
+            bank: 9,
+            pc: 0xb06e,
+            sp: 0x1ed,
+            p: 0x30,
+        };
+        let mut clock = snes::CpuMasterTimeline::at_raster(
+            4586,
+            snes::CpuRasterPosition::new(52, 1166),
+            snes::CpuBusWorkload::default(),
+            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        clock.begin_synchronous_timeline().unwrap();
+        let mut work = DungeonGarnish::default();
+        let mut owned = 0;
+        while work.tail().is_none() {
+            owned += work
+                .step(&mut cpu, &mut clock, |_, access| match access {
+                    Access::Read(a, width) => {
+                        if let Some(v) = crate::cycle_models::sprite_main::table_byte(a) {
+                            u16::from(v)
+                                | if width == 2 {
+                                    u16::from(
+                                        crate::cycle_models::sprite_main::table_byte(a + 1)
+                                            .unwrap(),
+                                    ) << 8
+                                } else {
+                                    0
+                                }
+                        } else {
+                            let a = (a & if matches!(a >> 16, 0x7e | 0x7f) {
+                                0x1ffff
+                            } else {
+                                0xffff
+                            }) as usize;
+                            u16::from(actual.ram[a])
+                                | if width == 2 {
+                                    u16::from(actual.ram[a + 1]) << 8
+                                } else {
+                                    0
+                                }
+                        }
+                    }
+                    Access::Write(a, v, width) => {
+                        let a = (a & if matches!(a >> 16, 0x7e | 0x7f) {
+                            0x1ffff
+                        } else {
+                            0xffff
+                        }) as usize;
+                        actual.ram[a..a + width as usize]
+                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        actual.native_push_block_store(a, v, width);
+                        0
+                    }
+                    Access::Vblank { .. } => 0,
+                })
+                .unwrap();
+        }
+        actual.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: SpritePrefixTail::AfterGarnish(work.tail().unwrap()),
+        });
+        expected.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: SpritePrefixTail::Garnish,
+        });
+        let before = crate::cycle_ledger::master();
+        expected.complete_module07_dungeon_after_push_block_handler(true);
+        let full = crate::cycle_ledger::master() - before;
+        let before = crate::cycle_ledger::master();
+        actual.complete_module07_dungeon_after_push_block_handler(true);
+        let remaining = crate::cycle_ledger::master() - before;
+        let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
+        let diffs = actual
+            .ram
+            .iter()
+            .zip(&expected.ram)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} RAM {diffs:x?}");
+        let mut a = vec![0xa5; snes::WRAM_SIZE];
+        let mut b = a.clone();
+        actual.game_state.write_to_ram(&mut a);
+        expected.game_state.write_to_ram(&mut b);
+        let diffs = a
+            .iter()
+            .zip(&b)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} native {diffs:x?}");
+        assert_eq!(
+            full - remaining,
+            owned,
+            "case={case}: no owned garnish caller replay"
+        );
+    }
+    println!(
+        "native garnish handoff: 528 fixtures, palette and slot suffix match, caller work omitted"
+    );
+}
+
+#[test]
+fn native_follower_handoff_preserves_remaining_trigger_movement_and_dialogue_once() {
+    use crate::cycle_models::{
+        dungeon_after_push::DungeonAfterPushTail, dungeon_follower::DungeonFollower,
+        dungeon_sprite_prefix::SpritePrefixTail, intro_clear::Access, nmi_stack::NativeNmiContext,
+    };
+    for case in 0..384usize {
+        let mut expected = ZeldaState::new();
+        crate::cycle_models::dungeon_follower::seed_case(&mut expected.ram, case * 17);
+        expected.ram[0xf3cc] = [0, 5, 9, 10, 14, 1, 12, 13][case % 8];
+        expected.ram[0x1b] = 1;
+        expected.ram[0x10] = 7;
+        expected.ram[0x307] = 1; // A live item guard requires a valid rod selection for the remaining player draw.
+        expected.ram[0x5d] = [0, 4, 17][case % 3];
+        let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
+            bg2_x: case as u16 * 113,
+            bg2_y: case as u16 * 229,
+            bg1_x: case as u16 * 71,
+            bg1_y: case as u16 * 127,
+        };
+        for (at, word) in [
+            (0x1fb, saved.bg2_x),
+            (0x1f9, saved.bg2_y),
+            (0x1f7, saved.bg1_x),
+            (0x1f5, saved.bg1_y),
+        ] {
+            expected.ram[at..at + 2].copy_from_slice(&word.to_le_bytes());
+        }
+        for i in 0..256usize {
+            let aux = ((i * 97 + case * 31) & 0x7fff) as u16;
+            let main = ((i * 211 + case * 13) & 0x7fff) as u16;
+            expected.ram[0xc300 + i * 2..0xc302 + i * 2].copy_from_slice(&aux.to_le_bytes());
+            expected.ram[0xc500 + i * 2..0xc502 + i * 2].copy_from_slice(&main.to_le_bytes());
+        }
+        expected.sync_native_game_state_from_ram();
+        expected.oam_reset_region_bases();
+        let mut actual = expected.clone();
+        actual.rom.clear();
+        let mut cpu = NativeNmiContext {
+            a: 0xab00,
+            x: 3,
+            y: 7,
+            d: 0,
+            db: 6,
+            bank: 6,
+            pc: 0x8365,
+            sp: 0x1f0,
+            p: 0x30,
+        };
+        let mut clock = snes::CpuMasterTimeline::at_raster(
+            4586,
+            snes::CpuRasterPosition::new(55, 1280),
+            snes::CpuBusWorkload::default(),
+            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        clock.begin_synchronous_timeline().unwrap();
+        let mut work = DungeonFollower::default();
+        let mut owned = 0;
+        while work.tail().is_none() {
+            owned += work
+                .step(&mut cpu, &mut clock, |_, access| match access {
+                    Access::Read(a, width) => {
+                        if let Some(v) = ZeldaState::native_follower_table_byte(a) {
+                            u16::from(v)
+                                | if width == 2 {
+                                    u16::from(
+                                        ZeldaState::native_follower_table_byte(a + 1).unwrap(),
+                                    ) << 8
+                                } else {
+                                    0
+                                }
+                        } else {
+                            let a = (a & if matches!(a >> 16, 0x7e | 0x7f) {
+                                0x1ffff
+                            } else {
+                                0xffff
+                            }) as usize;
+                            u16::from(actual.ram[a])
+                                | if width == 2 {
+                                    u16::from(actual.ram[a + 1]) << 8
+                                } else {
+                                    0
+                                }
+                        }
+                    }
+                    Access::Write(a, v, width) => {
+                        let a = (a & if matches!(a >> 16, 0x7e | 0x7f) {
+                            0x1ffff
+                        } else {
+                            0xffff
+                        }) as usize;
+                        actual.ram[a..a + width as usize]
+                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        actual.native_push_block_store(a, v, width);
+                        0
+                    }
+                    Access::Vblank { .. } => 0,
+                })
+                .unwrap();
+        }
+        actual.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: SpritePrefixTail::AfterFollower(work.tail().unwrap()),
+        });
+        expected.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: SpritePrefixTail::AfterGarnish(
+                crate::cycle_models::dungeon_garnish::GarnishTail::Returned,
+            ),
+        });
+        let before = crate::cycle_ledger::master();
+        expected.complete_module07_dungeon_after_push_block_handler(true);
+        let full = crate::cycle_ledger::master() - before;
+        let before = crate::cycle_ledger::master();
+        actual.complete_module07_dungeon_after_push_block_handler(true);
+        let remaining = crate::cycle_ledger::master() - before;
+        let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
+        let diffs = actual
+            .ram
+            .iter()
+            .zip(&expected.ram)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} RAM {diffs:x?}");
+        let mut a = vec![0xa5; snes::WRAM_SIZE];
+        let mut b = a.clone();
+        actual.game_state.write_to_ram(&mut a);
+        expected.game_state.write_to_ram(&mut b);
+        let diffs = a
+            .iter()
+            .zip(&b)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} native {diffs:x?}");
+        assert_eq!(
+            full - remaining,
+            owned,
+            "case={case}: no owned follower caller replay"
+        );
+    }
+    println!(
+        "native follower handoff: 384 fixtures, trigger movement and dialogue suffix match, caller work omitted"
+    );
+}
+
+#[test]
+fn native_ancilla_handoff_preserves_remaining_spark_effects_and_receipt_once() {
+    use crate::cycle_models::{
+        dungeon_after_push::DungeonAfterPushTail, dungeon_ancilla::DungeonAncilla,
+        dungeon_sprite_prefix::SpritePrefixTail, intro_clear::Access, nmi_stack::NativeNmiContext,
+    };
+    for case in 0..384usize {
+        let mut expected = ZeldaState::new();
+        crate::cycle_models::dungeon_ancilla::seed_case(&mut expected.ram, case * 17);
+        expected.ram[0x1b] = 1;
+        expected.ram[0x10] = 7;
+        expected.ram[0x307] = 1;
+        expected.ram[0x5d] = 0;
+        expected.ram[0xc4a..0xc54].fill(0);
+        expected.ram[0xfac] = 0;
+        if (64..128).contains(&case) {
+            expected.ram[0xfac] = [1, 2, 3, 9, 255][case % 5];
+            expected.ram[0xfaf] = [0, 1, 128, 255][case % 4];
+            expected.ram[0xfad] = 128;
+            expected.ram[0xfae] = 96;
+            expected.ram[0xb68] = (case % 2) as u8;
+        } else if case >= 128 {
+            let k = case % 10;
+            expected.ram[0xc4a + k] = [3, 6, 0x0a, 0x13, 0x16, 0x20, 0x21, 0x22][case / 32 % 8];
+            expected.ram[0xc68 + k] = [0, 1, 3, 7][case % 4];
+        }
+        let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
+            bg2_x: case as u16 * 113,
+            bg2_y: case as u16 * 229,
+            bg1_x: case as u16 * 71,
+            bg1_y: case as u16 * 127,
+        };
+        for (at, word) in [
+            (0x1fb, saved.bg2_x),
+            (0x1f9, saved.bg2_y),
+            (0x1f7, saved.bg1_x),
+            (0x1f5, saved.bg1_y),
+        ] {
+            expected.ram[at..at + 2].copy_from_slice(&word.to_le_bytes());
+        }
+        for i in 0..256usize {
+            let aux = ((i * 97 + case * 31) & 0x7fff) as u16;
+            let main = ((i * 211 + case * 13) & 0x7fff) as u16;
+            expected.ram[0xc300 + i * 2..0xc302 + i * 2].copy_from_slice(&aux.to_le_bytes());
+            expected.ram[0xc500 + i * 2..0xc502 + i * 2].copy_from_slice(&main.to_le_bytes());
+        }
+        expected.sync_native_game_state_from_ram();
+        expected.oam_reset_region_bases();
+        let mut actual = expected.clone();
+        actual.rom.clear();
+        let mut cpu = NativeNmiContext {
+            a: 0xab00,
+            x: 3,
+            y: 7,
+            d: 0,
+            db: 6,
+            bank: 6,
+            pc: 0x8369,
+            sp: 0x1f0,
+            p: 0x30,
+        };
+        let mut clock = snes::CpuMasterTimeline::at_raster(
+            4586,
+            snes::CpuRasterPosition::new(56, 946),
+            snes::CpuBusWorkload::default(),
+            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        clock.begin_synchronous_timeline().unwrap();
+        let mut work = DungeonAncilla::default();
+        let mut owned = 0;
+        while work.tail().is_none() {
+            owned += work
+                .step(&mut cpu, &mut clock, |_, access| match access {
+                    Access::Read(a, width) => {
+                        if let Some(v) = crate::cycle_models::sprite_main::table_byte(a) {
+                            u16::from(v)
+                                | if width == 2 {
+                                    u16::from(
+                                        crate::cycle_models::sprite_main::table_byte(a + 1)
+                                            .unwrap(),
+                                    ) << 8
+                                } else {
+                                    0
+                                }
+                        } else {
+                            let a = (a & if matches!(a >> 16, 0x7e | 0x7f) {
+                                0x1ffff
+                            } else {
+                                0xffff
+                            }) as usize;
+                            u16::from(actual.ram[a])
+                                | if width == 2 {
+                                    u16::from(actual.ram[a + 1]) << 8
+                                } else {
+                                    0
+                                }
+                        }
+                    }
+                    Access::Write(a, v, width) => {
+                        let a = (a & if matches!(a >> 16, 0x7e | 0x7f) {
+                            0x1ffff
+                        } else {
+                            0xffff
+                        }) as usize;
+                        actual.ram[a..a + width as usize]
+                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        actual.native_push_block_store(a, v, width);
+                        0
+                    }
+                    Access::Vblank { .. } => 0,
+                })
+                .unwrap();
+        }
+        actual.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: SpritePrefixTail::AfterAncilla(work.tail().unwrap()),
+        });
+        expected.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: SpritePrefixTail::AfterFollower(
+                crate::cycle_models::dungeon_follower::FollowerTail::Returned,
+            ),
+        });
+        let before = crate::cycle_ledger::master();
+        expected.complete_module07_dungeon_after_push_block_handler(true);
+        let full = crate::cycle_ledger::master() - before;
+        let before = crate::cycle_ledger::master();
+        actual.complete_module07_dungeon_after_push_block_handler(true);
+        let remaining = crate::cycle_ledger::master() - before;
+        let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
+        let diffs = actual
+            .ram
+            .iter()
+            .zip(&expected.ram)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} RAM {diffs:x?}");
+        let mut a = vec![0xa5; snes::WRAM_SIZE];
+        let mut b = a.clone();
+        actual.game_state.write_to_ram(&mut a);
+        expected.game_state.write_to_ram(&mut b);
+        let diffs = a
+            .iter()
+            .zip(&b)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} native {diffs:x?}");
+        assert_eq!(
+            full - remaining,
+            owned,
+            "case={case}: no owned ancilla caller replay"
+        );
+    }
+    println!(
+        "native ancilla handoff: 384 fixtures, spark effects and receipt suffix match, caller work omitted"
+    );
+}
+
+#[test]
+fn native_ancilla_receipt_drawing_handoff_preserves_complete_sprite_caller_once() {
+    use crate::cycle_models::{
+        dungeon_after_push::DungeonAfterPushTail, dungeon_ancilla::DungeonAncilla,
+        dungeon_sprite_prefix::SpritePrefixTail, intro_clear::Access, nmi_stack::NativeNmiContext,
+    };
+    for case in 0..384usize {
+        let mut expected = ZeldaState::new();
+        crate::cycle_models::dungeon_ancilla::seed_case(&mut expected.ram, case * 17);
+        expected.ram[0x1b] = 1;
+        expected.ram[0x10] = 7;
+        expected.ram[0x307] = 1;
+        expected.ram[0x5d] = 0;
+        expected.ram[0xc4a..0xc54].fill(0);
+        expected.ram[0xfac] = 0;
+        if (64..128).contains(&case) {
+            expected.ram[0xfac] = [1, 2, 3, 9, 255][case % 5];
+            expected.ram[0xfaf] = [0, 1, 128, 255][case % 4];
+            expected.ram[0xfad] = 128;
+            expected.ram[0xfae] = 96;
+            expected.ram[0xb68] = (case % 2) as u8;
+        } else if case >= 128 {
+            let k = case % 10;
+            expected.ram[0xc4a+k]=0x22;
+            expected.ram[0xc54+k]=1;
+            expected.ram[0x3b1+k]=56;
+            expected.ram[0xc5e+k]=[1,0x20,0x34,0x35,0x36,9,0x17,0x42][case%8];
+            expected.ram[0x3a4+k]=(case%3) as u8;
+            expected.ram[0x39f+k]=0;
+            expected.ram[0xc68 + k] = [0, 1, 3, 7][case % 4];
+        }
+        let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
+            bg2_x: case as u16 * 113,
+            bg2_y: case as u16 * 229,
+            bg1_x: case as u16 * 71,
+            bg1_y: case as u16 * 127,
+        };
+        for (at, word) in [
+            (0x1fb, saved.bg2_x),
+            (0x1f9, saved.bg2_y),
+            (0x1f7, saved.bg1_x),
+            (0x1f5, saved.bg1_y),
+        ] {
+            expected.ram[at..at + 2].copy_from_slice(&word.to_le_bytes());
+        }
+        for i in 0..256usize {
+            let aux = ((i * 97 + case * 31) & 0x7fff) as u16;
+            let main = ((i * 211 + case * 13) & 0x7fff) as u16;
+            expected.ram[0xc300 + i * 2..0xc302 + i * 2].copy_from_slice(&aux.to_le_bytes());
+            expected.ram[0xc500 + i * 2..0xc502 + i * 2].copy_from_slice(&main.to_le_bytes());
+        }
+        expected.sync_native_game_state_from_ram();
+        expected.oam_reset_region_bases();
+        let mut actual = expected.clone();
+        actual.rom.clear();
+        let mut cpu = NativeNmiContext {
+            a: 0xab00,
+            x: 3,
+            y: 7,
+            d: 0,
+            db: 6,
+            bank: 6,
+            pc: 0x8369,
+            sp: 0x1f0,
+            p: 0x30,
+        };
+        let mut clock = snes::CpuMasterTimeline::at_raster(
+            4586,
+            snes::CpuRasterPosition::new(56, 946),
+            snes::CpuBusWorkload::default(),
+            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        clock.begin_synchronous_timeline().unwrap();
+        let mut work = DungeonAncilla::default().with_native_receipt(true);
+        let mut owned = 0;
+        while work.tail().is_none() {
+            owned += work
+                .step(&mut cpu, &mut clock, |_, access| match access {
+                    Access::Read(a, width) => {
+                        if let Some(v) = crate::cycle_models::sprite_main::table_byte(a).or_else(||ZeldaState::native_receipt_animation_table_byte(a)) {
+                            u16::from(v)
+                                | if width == 2 {
+                                    u16::from(
+                                        crate::cycle_models::sprite_main::table_byte(a + 1)
+                                            .unwrap(),
+                                    ) << 8
+                                } else {
+                                    0
+                                }
+                        } else {
+                            let a = (a & if matches!(a >> 16, 0x7e | 0x7f) {
+                                0x1ffff
+                            } else {
+                                0xffff
+                            }) as usize;
+                            u16::from(actual.ram[a])
+                                | if width == 2 {
+                                    u16::from(actual.ram[a + 1]) << 8
+                                } else {
+                                    0
+                                }
+                        }
+                    }
+                    Access::Write(a, v, width) => {
+                        let a = (a & if matches!(a >> 16, 0x7e | 0x7f) {
+                            0x1ffff
+                        } else {
+                            0xffff
+                        }) as usize;
+                        actual.ram[a..a + width as usize]
+                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        actual.native_push_block_store(a, v, width);
+                        0
+                    }
+                    Access::Vblank { .. } => 0,
+                })
+                .unwrap();
+        }
+        actual.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: SpritePrefixTail::AfterAncilla(work.tail().unwrap()),
+        });
+        expected.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: SpritePrefixTail::AfterFollower(
+                crate::cycle_models::dungeon_follower::FollowerTail::Returned,
+            ),
+        });
+        let before = crate::cycle_ledger::master();
+        expected.complete_module07_dungeon_after_push_block_handler(true);
+        let full = crate::cycle_ledger::master() - before;
+        let before = crate::cycle_ledger::master();
+        actual.complete_module07_dungeon_after_push_block_handler(true);
+        let remaining = crate::cycle_ledger::master() - before;
+        let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
+        let diffs = actual
+            .ram
+            .iter()
+            .zip(&expected.ram)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} RAM {diffs:x?}");
+        let mut a = vec![0xa5; snes::WRAM_SIZE];
+        let mut b = a.clone();
+        actual.game_state.write_to_ram(&mut a);
+        expected.game_state.write_to_ram(&mut b);
+        let diffs = a
+            .iter()
+            .zip(&b)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} native {diffs:x?}");
+        assert_eq!(
+            full - remaining,
+            owned,
+            "case={case}: no owned ancilla caller replay"
+        );
+    }
+    println!(
+        "native ancilla receipt drawing caller: 384 fixtures, selected drawing and complete sprite suffix match, caller work omitted"
+    );
+}
+
+#[test]
+fn native_ancilla_receipt_oam_handoff_preserves_complete_sprite_caller_without_body_replay() {
+    use crate::cycle_models::{
+        dungeon_after_push::DungeonAfterPushTail, dungeon_ancilla::DungeonAncilla,
+        dungeon_sprite_prefix::SpritePrefixTail, intro_clear::Access, nmi_stack::NativeNmiContext,
+    };
+    for case in 0..384usize {
+        let mut expected = ZeldaState::new();
+        crate::cycle_models::dungeon_ancilla::seed_case(&mut expected.ram, case * 17);
+        expected.ram[0x1b] = 1;
+        expected.ram[0x10] = 7;
+        expected.ram[0x307] = 1;
+        expected.ram[0x5d] = 0;
+        expected.ram[0xc4a..0xc54].fill(0);
+        expected.ram[0xfac] = 0;
+        if (64..128).contains(&case) {
+            expected.ram[0xfac] = [1, 2, 3, 9, 255][case % 5];
+            expected.ram[0xfaf] = [0, 1, 128, 255][case % 4];
+            expected.ram[0xfad] = 128;
+            expected.ram[0xfae] = 96;
+            expected.ram[0xb68] = (case % 2) as u8;
+        } else if case >= 128 {
+            let k = case % 10;
+            expected.ram[0xc4a+k]=0x22;
+            expected.ram[0xc54+k]=1;
+            expected.ram[0x3b1+k]=56;
+            expected.ram[0xc5e+k]=[1,0x20,0x34,0x35,0x36,9,0x17,0x42][case%8];
+            expected.ram[0x3a4+k]=(case%3) as u8;
+            expected.ram[0x39f+k]=0;
+            expected.ram[0xc68 + k] = [0, 1, 3, 7][case % 4];
+        }
+        let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
+            bg2_x: case as u16 * 113,
+            bg2_y: case as u16 * 229,
+            bg1_x: case as u16 * 71,
+            bg1_y: case as u16 * 127,
+        };
+        for (at, word) in [
+            (0x1fb, saved.bg2_x),
+            (0x1f9, saved.bg2_y),
+            (0x1f7, saved.bg1_x),
+            (0x1f5, saved.bg1_y),
+        ] {
+            expected.ram[at..at + 2].copy_from_slice(&word.to_le_bytes());
+        }
+        for i in 0..256usize {
+            let aux = ((i * 97 + case * 31) & 0x7fff) as u16;
+            let main = ((i * 211 + case * 13) & 0x7fff) as u16;
+            expected.ram[0xc300 + i * 2..0xc302 + i * 2].copy_from_slice(&aux.to_le_bytes());
+            expected.ram[0xc500 + i * 2..0xc502 + i * 2].copy_from_slice(&main.to_le_bytes());
+        }
+        expected.sync_native_game_state_from_ram();
+        expected.oam_reset_region_bases();
+        // Slots6..9 retain the incoming drawing pointers rather than allocate them.
+        expected.oam_state_mut().set_current_pointer(0x800);
+        expected.oam_state_mut().set_current_extended_pointer(0xa20);
+        let mut actual = expected.clone();
+        actual.rom.clear();
+        let mut cpu = NativeNmiContext {
+            a: 0xab00,
+            x: 3,
+            y: 7,
+            d: 0,
+            db: 6,
+            bank: 6,
+            pc: 0x8369,
+            sp: 0x1f0,
+            p: 0x30,
+        };
+        let mut clock = snes::CpuMasterTimeline::at_raster(
+            4586,
+            snes::CpuRasterPosition::new(56, 946),
+            snes::CpuBusWorkload::default(),
+            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        clock.begin_synchronous_timeline().unwrap();
+        let mut work = DungeonAncilla::default().with_native_receipt(true).with_native_oam(true);
+        let mut owned = 0;
+        while work.tail().is_none() {
+            owned += work
+                .step(&mut cpu, &mut clock, |_, access| match access {
+                    Access::Read(a, width) => {
+                        if let Some(v) = crate::cycle_models::sprite_main::table_byte(a).or_else(||ZeldaState::native_receipt_animation_table_byte(a)).or_else(||crate::zelda_rtl::misc::native_item_receipt_table_byte(a)) {
+                            u16::from(v)
+                                | if width == 2 {
+                                    u16::from(
+                                        crate::cycle_models::sprite_main::table_byte(a + 1)
+                                            .unwrap(),
+                                    ) << 8
+                                } else {
+                                    0
+                                }
+                        } else {
+                            let a = (a & if matches!(a >> 16, 0x7e | 0x7f) {
+                                0x1ffff
+                            } else {
+                                0xffff
+                            }) as usize;
+                            u16::from(actual.ram[a])
+                                | if width == 2 {
+                                    u16::from(actual.ram[a + 1]) << 8
+                                } else {
+                                    0
+                                }
+                        }
+                    }
+                    Access::Write(a, v, width) => {
+                        let a = (a & if matches!(a >> 16, 0x7e | 0x7f) {
+                            0x1ffff
+                        } else {
+                            0xffff
+                        }) as usize;
+                        actual.ram[a..a + width as usize]
+                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        actual.native_push_block_store(a, v, width);
+                        0
+                    }
+                    Access::Vblank { .. } => 0,
+                })
+                .unwrap();
+        }
+        actual.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: SpritePrefixTail::AfterAncilla(work.tail().unwrap()),
+        });
+        expected.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: SpritePrefixTail::AfterFollower(
+                crate::cycle_models::dungeon_follower::FollowerTail::Returned,
+            ),
+        });
+        let before = crate::cycle_ledger::master();
+        expected.complete_module07_dungeon_after_push_block_handler(true);
+        let full = crate::cycle_ledger::master() - before;
+        let before = crate::cycle_ledger::master();
+        actual.complete_module07_dungeon_after_push_block_handler(true);
+        let remaining = crate::cycle_ledger::master() - before;
+        // $74 is the Source palette local, verified instruction by instruction.
+        let excluded = |i: usize| i < 0x10 || i==0x74 || (0x1c0..0x200).contains(&i);
+        let diffs = actual
+            .ram
+            .iter()
+            .zip(&expected.ram)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} RAM {diffs:x?}");
+        let mut a = vec![0xa5; snes::WRAM_SIZE];
+        let mut b = a.clone();
+        actual.game_state.write_to_ram(&mut a);
+        expected.game_state.write_to_ram(&mut b);
+        let diffs = a
+            .iter()
+            .zip(&b)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} native {diffs:x?}");
+        assert_eq!(
+            full - remaining,
+            owned,
+            "case={case}: no owned ancilla caller replay"
+        );
+    }
+    println!(
+        "native ancilla receipt OAM caller: 384 fixtures, selected drawing and complete sprite suffix match, caller work omitted"
+    );
+}
+
+#[test]
+fn native_ancilla_slot_return_preserves_complete_sprite_caller_without_loop_replay() {
+    use crate::cycle_models::{
+        dungeon_after_push::DungeonAfterPushTail, dungeon_ancilla::DungeonAncilla,
+        dungeon_sprite_prefix::SpritePrefixTail, intro_clear::Access, nmi_stack::NativeNmiContext,
+    };
+    for case in 0..384usize {
+        let mut expected = ZeldaState::new();
+        crate::cycle_models::dungeon_ancilla::seed_case(&mut expected.ram, case * 17);
+        expected.ram[0x1b] = 1;
+        expected.ram[0x10] = 7;
+        expected.ram[0x307] = 1;
+        expected.ram[0x5d] = 0;
+        expected.ram[0xc4a..0xc54].fill(0);
+        expected.ram[0xfac] = 0;
+        if (64..128).contains(&case) {
+            expected.ram[0xfac] = [1, 2, 3, 9, 255][case % 5];
+            expected.ram[0xfaf] = [0, 1, 128, 255][case % 4];
+            expected.ram[0xfad] = 128;
+            expected.ram[0xfae] = 96;
+            expected.ram[0xb68] = (case % 2) as u8;
+        } else if case >= 128 {
+            let k = case % 10;
+            expected.ram[0xc4a+k]=0x22;
+            expected.ram[0xc54+k]=1;
+            expected.ram[0x3b1+k]=56;
+            expected.ram[0xc5e+k]=[1,0x20,0x34,0x35,0x36,9,0x17,0x42][case%8];
+            expected.ram[0x3a4+k]=(case%3) as u8;
+            expected.ram[0x39f+k]=0;
+            expected.ram[0xc68 + k] = [0, 1, 3, 7][case % 4];
+        }
+        if case >= 128 {
+            crate::cycle_models::dungeon_ancilla::seed_slot_return_case(&mut expected.ram, case);
+        }
+        let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
+            bg2_x: case as u16 * 113,
+            bg2_y: case as u16 * 229,
+            bg1_x: case as u16 * 71,
+            bg1_y: case as u16 * 127,
+        };
+        for (at, word) in [
+            (0x1fb, saved.bg2_x),
+            (0x1f9, saved.bg2_y),
+            (0x1f7, saved.bg1_x),
+            (0x1f5, saved.bg1_y),
+        ] {
+            expected.ram[at..at + 2].copy_from_slice(&word.to_le_bytes());
+        }
+        for i in 0..256usize {
+            let aux = ((i * 97 + case * 31) & 0x7fff) as u16;
+            let main = ((i * 211 + case * 13) & 0x7fff) as u16;
+            expected.ram[0xc300 + i * 2..0xc302 + i * 2].copy_from_slice(&aux.to_le_bytes());
+            expected.ram[0xc500 + i * 2..0xc502 + i * 2].copy_from_slice(&main.to_le_bytes());
+        }
+        expected.sync_native_game_state_from_ram();
+        expected.oam_reset_region_bases();
+        // Slots6..9 retain the incoming drawing pointers rather than allocate them.
+        expected.oam_state_mut().set_current_pointer(0x800);
+        expected.oam_state_mut().set_current_extended_pointer(0xa20);
+        let mut actual = expected.clone();
+        actual.rom.clear();
+        let mut cpu = NativeNmiContext {
+            a: 0xab00,
+            x: 3,
+            y: 7,
+            d: 0,
+            db: 6,
+            bank: 6,
+            pc: 0x8369,
+            sp: 0x1f0,
+            p: 0x30,
+        };
+        let mut clock = snes::CpuMasterTimeline::at_raster(
+            4586,
+            snes::CpuRasterPosition::new(56, 946),
+            snes::CpuBusWorkload::default(),
+            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        clock.begin_synchronous_timeline().unwrap();
+        let mut work = DungeonAncilla::default().with_native_receipt(true).with_native_oam(true).with_native_slot_return(true);
+        let mut owned = 0;
+        while work.tail().is_none() {
+            owned += work
+                .step(&mut cpu, &mut clock, |_, access| match access {
+                    Access::Read(a, width) => {
+                        if let Some(v) = crate::cycle_models::sprite_main::table_byte(a).or_else(||ZeldaState::native_receipt_animation_table_byte(a)).or_else(||crate::zelda_rtl::misc::native_item_receipt_table_byte(a)) {
+                            u16::from(v)
+                                | if width == 2 {
+                                    u16::from(
+                                        crate::cycle_models::sprite_main::table_byte(a + 1)
+                                            .unwrap(),
+                                    ) << 8
+                                } else {
+                                    0
+                                }
+                        } else {
+                            let a = (a & if matches!(a >> 16, 0x7e | 0x7f) {
+                                0x1ffff
+                            } else {
+                                0xffff
+                            }) as usize;
+                            u16::from(actual.ram[a])
+                                | if width == 2 {
+                                    u16::from(actual.ram[a + 1]) << 8
+                                } else {
+                                    0
+                                }
+                        }
+                    }
+                    Access::Write(a, v, width) => {
+                        let a = (a & if matches!(a >> 16, 0x7e | 0x7f) {
+                            0x1ffff
+                        } else {
+                            0xffff
+                        }) as usize;
+                        actual.ram[a..a + width as usize]
+                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        actual.native_push_block_store(a, v, width);
+                        0
+                    }
+                    Access::Vblank { .. } => 0,
+                })
+                .unwrap();
+        }
+        actual.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: SpritePrefixTail::AfterAncilla(work.tail().unwrap()),
+        });
+        expected.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: SpritePrefixTail::AfterFollower(
+                crate::cycle_models::dungeon_follower::FollowerTail::Returned,
+            ),
+        });
+        let before = crate::cycle_ledger::master();
+        expected.complete_module07_dungeon_after_push_block_handler(true);
+        let full = crate::cycle_ledger::master() - before;
+        let before = crate::cycle_ledger::master();
+        actual.complete_module07_dungeon_after_push_block_handler(true);
+        let remaining = crate::cycle_ledger::master() - before;
+        // $74 is the Source palette local, verified instruction by instruction.
+        let excluded = |i: usize| i < 0x10 || i==0x74 || (0x1c0..0x200).contains(&i);
+        let diffs = actual
+            .ram
+            .iter()
+            .zip(&expected.ram)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} RAM {diffs:x?}");
+        let mut a = vec![0xa5; snes::WRAM_SIZE];
+        let mut b = a.clone();
+        actual.game_state.write_to_ram(&mut a);
+        expected.game_state.write_to_ram(&mut b);
+        let diffs = a
+            .iter()
+            .zip(&b)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} native {diffs:x?}");
+        assert_eq!(
+            full - remaining,
+            owned,
+            "case={case}: no owned ancilla caller replay"
+        );
+    }
+    println!(
+        "native ancilla slot return caller: 384 fixtures, selected drawing and complete sprite suffix match, caller work omitted"
+    );
+}
+
+#[test]
+fn native_dungeon_overlord_handoff_preserves_complete_sprite_caller_without_header_replay() {
+    use crate::cycle_models::{
+        dungeon_after_push::DungeonAfterPushTail, dungeon_overlord::DungeonOverlord,
+        dungeon_sprite_prefix::SpritePrefixTail, intro_clear::Access, nmi_stack::NativeNmiContext,
+    };
+    for case in 0..384usize {
+        let mut expected = ZeldaState::new();
+        crate::cycle_models::dungeon_ancilla::seed_case(&mut expected.ram, case * 17);
+        expected.ram[0x1b] = 1;
+        expected.ram[0x10] = 7;
+        expected.ram[0x307] = 1;
+        expected.ram[0x5d] = 0;
+        expected.ram[0xc4a..0xc54].fill(0);
+        expected.ram[0xfac] = 0;
+        if (64..128).contains(&case) {
+            expected.ram[0xfac] = [1, 2, 3, 9, 255][case % 5];
+            expected.ram[0xfaf] = [0, 1, 128, 255][case % 4];
+            expected.ram[0xfad] = 128;
+            expected.ram[0xfae] = 96;
+            expected.ram[0xb68] = (case % 2) as u8;
+        } else if case >= 128 {
+            let k = case % 10;
+            expected.ram[0xc4a+k]=0x22;
+            expected.ram[0xc54+k]=1;
+            expected.ram[0x3b1+k]=56;
+            expected.ram[0xc5e+k]=[1,0x20,0x34,0x35,0x36,9,0x17,0x42][case%8];
+            expected.ram[0x3a4+k]=(case%3) as u8;
+            expected.ram[0x39f+k]=0;
+            expected.ram[0xc68 + k] = [0, 1, 3, 7][case % 4];
+        }
+        crate::cycle_models::dungeon_overlord::seed_case(&mut expected.ram,case*17);
+        for k in 0..8 { if expected.ram[0xb00+k]!=0 {expected.ram[0xb00+k]=1;} }
+        let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
+            bg2_x: case as u16 * 113,
+            bg2_y: case as u16 * 229,
+            bg1_x: case as u16 * 71,
+            bg1_y: case as u16 * 127,
+        };
+        for (at, word) in [
+            (0x1fb, saved.bg2_x),
+            (0x1f9, saved.bg2_y),
+            (0x1f7, saved.bg1_x),
+            (0x1f5, saved.bg1_y),
+        ] {
+            expected.ram[at..at + 2].copy_from_slice(&word.to_le_bytes());
+        }
+        for i in 0..256usize {
+            let aux = ((i * 97 + case * 31) & 0x7fff) as u16;
+            let main = ((i * 211 + case * 13) & 0x7fff) as u16;
+            expected.ram[0xc300 + i * 2..0xc302 + i * 2].copy_from_slice(&aux.to_le_bytes());
+            expected.ram[0xc500 + i * 2..0xc502 + i * 2].copy_from_slice(&main.to_le_bytes());
+        }
+        expected.sync_native_game_state_from_ram();
+        expected.oam_reset_region_bases();
+        // Slots6..9 retain the incoming drawing pointers rather than allocate them.
+        expected.oam_state_mut().set_current_pointer(0x800);
+        expected.oam_state_mut().set_current_extended_pointer(0xa20);
+        let mut actual = expected.clone();
+        actual.rom.clear();
+        let mut cpu = NativeNmiContext {
+            a: 0xab00,
+            x: 3,
+            y: 7,
+            d: 0,
+            db: 6,
+            bank: 6,
+            pc: 0x8398,
+            sp: 0x1f0,
+            p: 0x30,
+        };
+        let mut clock = snes::CpuMasterTimeline::at_raster(
+            4586,
+            snes::CpuRasterPosition::new(68, 1262),
+            snes::CpuBusWorkload::default(),
+            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        clock.begin_synchronous_timeline().unwrap();
+        let mut work = DungeonOverlord::default();
+        let mut owned = 0;
+        while work.tail().is_none() {
+            owned += work
+                .step(&mut cpu, &mut clock, |_, access| match access {
+                    Access::Read(a, width) => {
+                        if let Some(v) = crate::cycle_models::sprite_main::table_byte(a).or_else(||ZeldaState::native_receipt_animation_table_byte(a)).or_else(||crate::zelda_rtl::misc::native_item_receipt_table_byte(a)) {
+                            u16::from(v)
+                                | if width == 2 {
+                                    u16::from(
+                                        crate::cycle_models::sprite_main::table_byte(a + 1)
+                                            .unwrap(),
+                                    ) << 8
+                                } else {
+                                    0
+                                }
+                        } else {
+                            let a = (a & if matches!(a >> 16, 0x7e | 0x7f) {
+                                0x1ffff
+                            } else {
+                                0xffff
+                            }) as usize;
+                            u16::from(actual.ram[a])
+                                | if width == 2 {
+                                    u16::from(actual.ram[a + 1]) << 8
+                                } else {
+                                    0
+                                }
+                        }
+                    }
+                    Access::Write(a, v, width) => {
+                        let a = (a & if matches!(a >> 16, 0x7e | 0x7f) {
+                            0x1ffff
+                        } else {
+                            0xffff
+                        }) as usize;
+                        actual.ram[a..a + width as usize]
+                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        actual.native_push_block_store(a, v, width);
+                        0
+                    }
+                    Access::Vblank { .. } => 0,
+                })
+                .unwrap();
+        }
+        actual.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: SpritePrefixTail::AfterOverlord(work.tail().unwrap()),
+        });
+        expected.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: SpritePrefixTail::AfterAncilla(
+                crate::cycle_models::dungeon_ancilla::AncillaTail::Returned,
+            ),
+        });
+        let before = crate::cycle_ledger::master();
+        expected.complete_module07_dungeon_after_push_block_handler(true);
+        let full = crate::cycle_ledger::master() - before;
+        let before = crate::cycle_ledger::master();
+        actual.complete_module07_dungeon_after_push_block_handler(true);
+        let remaining = crate::cycle_ledger::master() - before;
+        // CPU scratch and real stacks are verified instruction by instruction.
+        let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
+        let diffs = actual
+            .ram
+            .iter()
+            .zip(&expected.ram)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} RAM {diffs:x?}");
+        let mut a = vec![0xa5; snes::WRAM_SIZE];
+        let mut b = a.clone();
+        actual.game_state.write_to_ram(&mut a);
+        expected.game_state.write_to_ram(&mut b);
+        let diffs = a
+            .iter()
+            .zip(&b)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} native {diffs:x?}");
+        assert_eq!(
+            full - remaining,
+            owned,
+            "case={case}: no owned ancilla caller replay"
+        );
+    }
+    println!(
+        "native dungeon overlord caller: 384 fixtures, selected slots and boulder and complete sprite suffix match, caller work omitted"
+    );
+}
+
+#[test]
+fn native_dungeon_sprite_slots_handoff_preserves_complete_sprite_caller_without_loop_replay() {
+    use crate::cycle_models::{
+        dungeon_after_push::DungeonAfterPushTail, dungeon_sprite_slots::DungeonSpriteSlots,
+        dungeon_sprite_prefix::SpritePrefixTail, intro_clear::Access, nmi_stack::NativeNmiContext,
+    };
+    for case in 0..392usize {
+        let mut expected = ZeldaState::new();
+        crate::cycle_models::dungeon_ancilla::seed_case(&mut expected.ram, case * 17);
+        expected.ram[0x1b] = 1;
+        expected.ram[0x10] = 7;
+        expected.ram[0x307] = 1;
+        expected.ram[0x5d] = 0;
+        expected.ram[0xc4a..0xc54].fill(0);
+        expected.ram[0xfac] = 0;
+        if (64..128).contains(&case) {
+            expected.ram[0xfac] = [1, 2, 3, 9, 255][case % 5];
+            expected.ram[0xfaf] = [0, 1, 128, 255][case % 4];
+            expected.ram[0xfad] = 128;
+            expected.ram[0xfae] = 96;
+            expected.ram[0xb68] = (case % 2) as u8;
+        } else if case >= 128 {
+            let k = case % 10;
+            expected.ram[0xc4a+k]=0x22;
+            expected.ram[0xc54+k]=1;
+            expected.ram[0x3b1+k]=56;
+            expected.ram[0xc5e+k]=[1,0x20,0x34,0x35,0x36,9,0x17,0x42][case%8];
+            expected.ram[0x3a4+k]=(case%3) as u8;
+            expected.ram[0x39f+k]=0;
+            expected.ram[0xc68 + k] = [0, 1, 3, 7][case % 4];
+        }
+        crate::cycle_models::dungeon_sprite_slots::seed_case(&mut expected.ram,case);
+        expected.ram[0x11]=17; // Freeze active bodies; all eleven real states still dispatch.
+        for k in 0..16 { expected.ram[0xe20+k]=0x73;expected.ram[0xef0+k]=0; }
+        let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
+            bg2_x: case as u16 * 113,
+            bg2_y: case as u16 * 229,
+            bg1_x: case as u16 * 71,
+            bg1_y: case as u16 * 127,
+        };
+        for (at, word) in [
+            (0x1fb, saved.bg2_x),
+            (0x1f9, saved.bg2_y),
+            (0x1f7, saved.bg1_x),
+            (0x1f5, saved.bg1_y),
+        ] {
+            expected.ram[at..at + 2].copy_from_slice(&word.to_le_bytes());
+        }
+        for i in 0..256usize {
+            let aux = ((i * 97 + case * 31) & 0x7fff) as u16;
+            let main = ((i * 211 + case * 13) & 0x7fff) as u16;
+            expected.ram[0xc300 + i * 2..0xc302 + i * 2].copy_from_slice(&aux.to_le_bytes());
+            expected.ram[0xc500 + i * 2..0xc502 + i * 2].copy_from_slice(&main.to_le_bytes());
+        }
+        if case >= 384 {
+            expected.ram[0xfb3] = 0;
+            expected.ram[0xdd0..0xde0].fill(0);
+            expected.ram[0xfc1] = 1;
+            for slot in [0,14,15] {
+                expected.ram[0xdd0+slot]=9;
+                expected.ram[0xe20+slot]=if slot==15 {0x76} else {0x73};
+                expected.ram[0xe90+slot]=if slot==14 {2} else if slot==0 {1} else {0};
+                expected.ram[0xe40+slot]=if slot==15 {1} else if slot==14 {3} else {2};
+                expected.ram[0xdc0+slot]=(case % 2) as u8;
+                expected.ram[0xde0+slot]=(case / 2 % 2) as u8;
+            }
+        }
+        expected.sync_native_game_state_from_ram();
+        for k in 0..16 { expected.sprite_slot_view_mut(k).set_delay_main(16); }
+        if (352..384).contains(&case) {
+            // Enter Module07, then change modules inside the native message
+            // callee. The already-entered caller must still finish its suffix.
+            expected.set_submodule(0);
+            expected.set_modal_pause_flag(0);
+            expected.set_dark_world_region_index(0);
+            for k in 0..16 { expected.sprite_slot_view_mut(k).set_state(0); }
+            let k = case % 16;
+            expected.sprite_slot_view_mut(k).set_state(9);
+            expected.sprite_slot_view_mut(k).set_sprite_type(0x7a);
+            expected.sprite_slot_view_mut(k).set_hit_timer(31);
+            expected.sprite_slot_view_mut(k).set_health(0);
+            expected.sprite_slot_view_mut(k).set_incoming_damage(10);
+        }
+        expected.oam_reset_region_bases();
+        // Slots6..9 retain the incoming drawing pointers rather than allocate them.
+        expected.oam_state_mut().set_current_pointer(0x800);
+        expected.oam_state_mut().set_current_extended_pointer(0xa20);
+        let mut actual = expected.clone();
+        actual.rom.clear();
+        let mut cpu = NativeNmiContext {
+            a: 0xab00,
+            x: 15,
+            y: 7,
+            d: 0,
+            db: 6,
+            bank: 6,
+            pc: 0x83a1,
+            sp: 0x1f0,
+            p: 0x30,
+        };
+        let mut clock = snes::CpuMasterTimeline::at_raster(
+            4586,
+            snes::CpuRasterPosition::new(69, 452),
+            snes::CpuBusWorkload::default(),
+            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        clock.begin_synchronous_timeline().unwrap();
+        let mut work = DungeonSpriteSlots::default().with_inactive_slot_bodies(if case >= 384 {(1<<15)|(1<<14)|1} else {0});
+        let mut owned = 0;
+        while work.tail().is_none() {
+            owned += work
+                .step(&mut cpu, &mut clock, |_, access| match access {
+                    Access::Read(a, width) => {
+                        if let Some(v) = crate::cycle_models::sprite_main::table_byte(a).or_else(||ZeldaState::native_oam_table_byte(a)).or_else(||ZeldaState::native_receipt_animation_table_byte(a)).or_else(||crate::zelda_rtl::misc::native_item_receipt_table_byte(a)) {
+                            u16::from(v)
+                                | if width == 2 {
+                                    u16::from(
+                                        crate::cycle_models::sprite_main::table_byte(a + 1).or_else(||ZeldaState::native_oam_table_byte(a + 1))
+                                            .unwrap(),
+                                    ) << 8
+                                } else {
+                                    0
+                                }
+                        } else {
+                            let a = (a & if matches!(a >> 16, 0x7e | 0x7f) {
+                                0x1ffff
+                            } else {
+                                0xffff
+                            }) as usize;
+                            u16::from(actual.ram[a])
+                                | if width == 2 {
+                                    u16::from(actual.ram[a + 1]) << 8
+                                } else {
+                                    0
+                                }
+                        }
+                    }
+                    Access::Write(a, v, width) => {
+                        let a = (a & if matches!(a >> 16, 0x7e | 0x7f) {
+                            0x1ffff
+                        } else {
+                            0xffff
+                        }) as usize;
+                        actual.ram[a..a + width as usize]
+                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        actual.native_push_block_store(a, v, width);
+                        0
+                    }
+                    Access::Vblank { .. } => 0,
+                })
+                .unwrap();
+        }
+        actual.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: SpritePrefixTail::AfterSlots(work.tail().unwrap()),
+        });
+        expected.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: SpritePrefixTail::AfterOverlord(
+                crate::cycle_models::dungeon_overlord::OverlordTail::Returned,
+            ),
+        });
+        let before = crate::cycle_ledger::master();
+        expected.complete_module07_dungeon_after_push_block_handler(true);
+        let full = crate::cycle_ledger::master() - before;
+        let before = crate::cycle_ledger::master();
+        actual.complete_module07_dungeon_after_push_block_handler(true);
+        let remaining = crate::cycle_ledger::master() - before;
+        // CPU scratch and real stacks are verified instruction by instruction.
+        let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
+        let diffs = actual
+            .ram
+            .iter()
+            .zip(&expected.ram)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} RAM {diffs:x?}");
+        let mut a = vec![0xa5; snes::WRAM_SIZE];
+        let mut b = a.clone();
+        actual.game_state.write_to_ram(&mut a);
+        expected.game_state.write_to_ram(&mut b);
+        let diffs = a
+            .iter()
+            .zip(&b)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} native {diffs:x?}");
+        assert_eq!(
+            full - remaining,
+            owned,
+            "case={case}: no owned ancilla caller replay"
+        );
+    }
+    println!(
+        "native dungeon sprite slots caller: 392 fixtures, inactive and all active states and complete sprite suffix match, caller work omitted"
+    );
+}
+
+#[test]
+fn native_lower_garnish_handoff_preserves_countdown_allocation_and_complete_sprite_suffix_once() {
+    use crate::cycle_models::{
+        dungeon_after_push::DungeonAfterPushTail, dungeon_lower_garnish::DungeonLowerGarnish,
+        dungeon_sprite_prefix::SpritePrefixTail, intro_clear::Access, nmi_stack::NativeNmiContext,
+    };
+    for case in 0..660usize {
+        let mut expected = ZeldaState::new();
+        expected.ram[0x1b] = 1;
+        expected.ram[0x11] = 0;
+        expected.ram[0xfb4]=u8::from(case>=60);
+        expected.ram[0x1ee..0x1f1].fill(0);
+        expected.ram[0x10] = 7;
+
+        let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
+            bg2_x: case as u16 * 113,
+            bg2_y: case as u16 * 229,
+            bg1_x: case as u16 * 71,
+            bg1_y: case as u16 * 127,
+        };
+        for (at, word) in [
+            (0x1fb, saved.bg2_x),
+            (0x1f9, saved.bg2_y),
+            (0x1f7, saved.bg1_x),
+            (0x1f5, saved.bg1_y),
+        ] {
+            expected.ram[at..at + 2].copy_from_slice(&word.to_le_bytes());
+        }
+        for i in 0..256usize {
+            let aux = ((i * 97 + case * 31) & 0x7fff) as u16;
+            let main = ((i * 211 + case * 13) & 0x7fff) as u16;
+            expected.ram[0xc300 + i * 2..0xc302 + i * 2].copy_from_slice(&aux.to_le_bytes());
+            expected.ram[0xc500 + i * 2..0xc502 + i * 2].copy_from_slice(&main.to_le_bytes());
+        }
+        expected.sync_native_game_state_from_ram();
+        expected.oam_reset_region_bases();
+        if case>=60 {
+            let k=case%15;let kind=(case/15%22+1) as u8;
+            let mut slot=expected.garnish_slot_view_mut(k);
+            slot.set_garnish_type(kind);
+            slot.set_countdown(if kind==13 {1}else if kind==16 {16}else{[0,1,3,7][case/330%4]});
+            slot.set_oam_flags(if kind==15 {7}else{0});slot.set_x_low(128);slot.set_y_low(96);
+        }
+        let mut actual = expected.clone();
+        actual.rom.clear();
+        let mut cpu = NativeNmiContext {
+            a: 0xab00,
+            x: 3,
+            y: 7,
+            d: 0,
+            db: 6,
+            bank: 6,
+            pc: 0x83aa,
+            sp: 0x1f0,
+            p: 0x30,
+        };
+        let mut clock = snes::CpuMasterTimeline::at_raster(
+            4586,
+            snes::CpuRasterPosition::new(73, 278),
+            snes::CpuBusWorkload::default(),
+            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        clock.begin_synchronous_timeline().unwrap();
+        let mut work = DungeonLowerGarnish::default();
+        let mut owned = 0;
+        while work.tail().is_none() {
+            owned += work
+                .step(&mut cpu, &mut clock, |_, access| match access {
+                    Access::Read(a, width) => {
+                        if let Some(v) = crate::cycle_models::sprite_main::table_byte(a) {
+                            u16::from(v)
+                                | if width == 2 {
+                                    u16::from(
+                                        crate::cycle_models::sprite_main::table_byte(a + 1)
+                                            .unwrap(),
+                                    ) << 8
+                                } else {
+                                    0
+                                }
+                        } else {
+                            let a = (a & if matches!(a >> 16, 0x7e | 0x7f) {
+                                0x1ffff
+                            } else {
+                                0xffff
+                            }) as usize;
+                            u16::from(actual.ram[a])
+                                | if width == 2 {
+                                    u16::from(actual.ram[a + 1]) << 8
+                                } else {
+                                    0
+                                }
+                        }
+                    }
+                    Access::Write(a, v, width) => {
+                        let a = (a & if matches!(a >> 16, 0x7e | 0x7f) {
+                            0x1ffff
+                        } else {
+                            0xffff
+                        }) as usize;
+                        actual.ram[a..a + width as usize]
+                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        actual.native_push_block_store(a, v, width);
+                        0
+                    }
+                    Access::Vblank { .. } => 0,
+                })
+                .unwrap();
+        }
+        actual.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: SpritePrefixTail::AfterLowerGarnish(work.tail().unwrap()),
+        });
+        expected.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: SpritePrefixTail::AfterSlots(crate::cycle_models::dungeon_sprite_slots::SpriteSlotsTail::LowerGarnish),
+        });
+        let before = crate::cycle_ledger::master();
+        expected.complete_module07_dungeon_after_push_block_handler(true);
+        let full = crate::cycle_ledger::master() - before;
+        let before = crate::cycle_ledger::master();
+        actual.complete_module07_dungeon_after_push_block_handler(true);
+        let remaining = crate::cycle_ledger::master() - before;
+        let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
+        let diffs = actual
+            .ram
+            .iter()
+            .zip(&expected.ram)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} RAM {diffs:x?}");
+        let mut a = vec![0xa5; snes::WRAM_SIZE];
+        let mut b = a.clone();
+        actual.game_state.write_to_ram(&mut a);
+        expected.game_state.write_to_ram(&mut b);
+        let diffs = a
+            .iter()
+            .zip(&b)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} native {diffs:x?}");
+        assert_eq!(
+            full - remaining,
+            owned,
+            "case={case}: no owned garnish caller replay"
+        );
+    }
+    println!(
+        "native lower garnish handoff: 660 fixtures, countdown allocator dispatch and complete sprite suffix match, caller work omitted"
+    );
+}
+
+#[test]
+fn native_cached_sprites_handoff_preserves_cache_execution_restore_and_complete_suffix_once() {
+    use crate::cycle_models::{
+        dungeon_after_push::DungeonAfterPushTail, dungeon_cached_sprites::DungeonCachedSprites,
+        dungeon_sprite_prefix::SpritePrefixTail, intro_clear::Access, nmi_stack::NativeNmiContext,
+    };
+    for case in 0..384usize {
+        let mut expected = ZeldaState::new();
+        expected.ram[0x1b] = 1;
+        expected.ram[0x11] = [0,1,14,17][case%4];
+        expected.ram[0xffa] = [0,1,255][case/4%3];
+        expected.ram[0xfb4]=0;
+        expected.ram[0x1f1]=0;
+        expected.ram[0x1f2..0x1f5].copy_from_slice(&[0x41,0x88,2]);
+        expected.ram[0xaaa]=(case as u8).wrapping_mul(13);
+        expected.ram[0x69e..0x6a2].copy_from_slice(&[7,9,11,13]);
+        expected.ram[0x1ee..0x1f1].fill(0);
+        expected.ram[0x10] = 7;
+
+        let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
+            bg2_x: case as u16 * 113,
+            bg2_y: case as u16 * 229,
+            bg1_x: case as u16 * 71,
+            bg1_y: case as u16 * 127,
+        };
+        for (at, word) in [
+            (0x1fb, saved.bg2_x),
+            (0x1f9, saved.bg2_y),
+            (0x1f7, saved.bg1_x),
+            (0x1f5, saved.bg1_y),
+        ] {
+            expected.ram[at..at + 2].copy_from_slice(&word.to_le_bytes());
+        }
+        for i in 0..256usize {
+            let aux = ((i * 97 + case * 31) & 0x7fff) as u16;
+            let main = ((i * 211 + case * 13) & 0x7fff) as u16;
+            expected.ram[0xc300 + i * 2..0xc302 + i * 2].copy_from_slice(&aux.to_le_bytes());
+            expected.ram[0xc500 + i * 2..0xc502 + i * 2].copy_from_slice(&main.to_le_bytes());
+        }
+        expected.sync_native_game_state_from_ram();
+        expected.oam_reset_region_bases();
+        // State 3 owns a valid falling sprite body. Pause keeps its countdown
+        // stable; varied cached pause flags exercise cache-state clearing.
+        let k=case/12%16;
+        for (i,&base) in crate::game_state::constants::CACHED_SPRITE_LIVE_FIELDS.iter().enumerate() {
+            expected.ram[base+k]=(i as u8).wrapping_mul(17).wrapping_add(case as u8);
+        }
+        expected.ram[0xdd0+k]=(case%11+1) as u8;
+        expected.ram[0x1d00+k]=if case>=360 {0}else{3};
+        expected.ram[0x1d10+k]=0;
+        expected.ram[0x1d20+k]=128;
+        expected.ram[0x1d40+k]=96;
+        expected.ram[0xf00+k]=(case/192) as u8;
+        expected.sync_native_game_state_from_ram();
+        let mut actual = expected.clone();
+        actual.rom.clear();
+        let mut cpu = NativeNmiContext {
+            a: 0xab00,
+            x: 3,
+            y: 7,
+            d: 0,
+            db: 6,
+            bank: 6,
+            pc: 0x83ae,
+            sp: 0x1f0,
+            p: 0x30,
+        };
+        let mut clock = snes::CpuMasterTimeline::at_raster(
+            4586,
+            snes::CpuRasterPosition::new(76, 54),
+            snes::CpuBusWorkload::default(),
+            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        clock.begin_synchronous_timeline().unwrap();
+        let mut work = DungeonCachedSprites::default();
+        let mut owned = 0;
+        let mut return_work: Option<crate::cycle_models::sprite_main::SpriteMain> = None;
+        loop {
+            let mut bus = |_:u64, access:Access| match access {
+                    Access::Read(a, width) => {
+                        if let Some(v) = crate::cycle_models::sprite_main::table_byte(a).or_else(||ZeldaState::native_oam_table_byte(a)) {
+                            u16::from(v)
+                                | if width == 2 {
+                                    u16::from(
+                                        crate::cycle_models::sprite_main::table_byte(a + 1).or_else(||ZeldaState::native_oam_table_byte(a + 1))
+                                            .unwrap(),
+                                    ) << 8
+                                } else {
+                                    0
+                                }
+                        } else {
+                            let a = (a & if matches!(a >> 16, 0x7e | 0x7f) {
+                                0x1ffff
+                            } else {
+                                0xffff
+                            }) as usize;
+                            u16::from(actual.ram[a])
+                                | if width == 2 {
+                                    u16::from(actual.ram[a + 1]) << 8
+                                } else {
+                                    0
+                                }
+                        }
+                    }
+                    Access::Write(a, v, width) => {
+                        let a = (a & if matches!(a >> 16, 0x7e | 0x7f) {
+                            0x1ffff
+                        } else {
+                            0xffff
+                        }) as usize;
+                        actual.ram[a..a + width as usize]
+                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        actual.native_push_block_store(a, v, width);
+                        0
+                    }
+                    Access::Vblank { .. } => 0,
+                };
+            if let Some(ret) = return_work.as_mut() {
+                owned += ret.step(&mut cpu,&mut clock,&mut bus).unwrap();
+                if ret.complete() {
+                    assert_eq!((cpu.bank,cpu.pc,cpu.sp),(2,0x8842,0x1f4));
+                    break;
+                }
+            } else {
+                owned += work.step(&mut cpu,&mut clock,&mut bus).unwrap();
+                match work.tail() {
+                    Some(crate::cycle_models::dungeon_cached_sprites::CachedSpritesTail::Returned)=>
+                        return_work=Some(crate::cycle_models::sprite_main::SpriteMain::after_cached()),
+                    Some(_)=>break,
+                    None=>{},
+                }
+            }
+        }
+        actual.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: if return_work.is_some() {SpritePrefixTail::Returned} else {SpritePrefixTail::AfterCachedSprites(work.tail().unwrap())},
+        });
+        expected.early_dungeon_after_push_tail = Some(DungeonAfterPushTail::SpritePrefix {
+            saved,
+            tail: SpritePrefixTail::AfterLowerGarnish(crate::cycle_models::dungeon_lower_garnish::LowerGarnishTail::Returned),
+        });
+        let before = crate::cycle_ledger::master();
+        expected.complete_module07_dungeon_after_push_block_handler(true);
+        let full = crate::cycle_ledger::master() - before;
+        let before = crate::cycle_ledger::master();
+        actual.complete_module07_dungeon_after_push_block_handler(true);
+        let remaining = crate::cycle_ledger::master() - before;
+        let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
+        let diffs = actual
+            .ram
+            .iter()
+            .zip(&expected.ram)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} RAM {diffs:x?}");
+        let mut a = vec![0xa5; snes::WRAM_SIZE];
+        let mut b = a.clone();
+        actual.game_state.write_to_ram(&mut a);
+        expected.game_state.write_to_ram(&mut b);
+        let diffs = a
+            .iter()
+            .zip(&b)
+            .enumerate()
+            .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
+            .take(16)
+            .collect::<Vec<_>>();
+        assert!(diffs.is_empty(), "case={case} native {diffs:x?}");
+        assert_eq!(
+            full - remaining,
+            owned,
+            "case={case}: no owned cached caller replay"
+        );
+    }
+    println!(
+        "native cached sprites handoff: 384 fixtures, cached execution restore and complete sprite suffix match, caller work omitted"
+    );
+}
+
+#[test]
+fn native_sprite_timers_handoffs_preserve_message_recoil_and_module_change_once() {
+    use crate::cycle_models::{sprite_timers::{SpriteTimers,SpriteTimersTail},intro_clear::Access,nmi_stack::NativeNmiContext};
+    let mut tails=[0;3];
+    for case in 0..384usize {
+        let k=case%16;let mode=case/16%3;let st=[9,10,11][case/48%3];
+        let mut expected=ZeldaState::new();
+        expected.ram[0x10]=7;expected.ram[0x1b]=1;expected.ram[0xfa0]=k as u8;
+        expected.ram[0xdd0+k]=st;expected.ram[0xe20+k]=if mode==1 {0x7a}else{0x73};
+        expected.ram[0xef0+k]=[0,31,24][mode];expected.ram[0xe50+k]=0;expected.ram[0xce2+k]=10;
+        expected.ram[0xd10+k]=128;expected.ram[0xd00+k]=96;
+        expected.ram[0xfb3]=(case/144%2) as u8;expected.ram[0xf20+k]=(case/72%2) as u8;
+        expected.ram[0xee]=if case/96%2==0 {0}else{3};
+        expected.ram[0xe40+k]=(case%32) as u8;
+        for (i,a) in [0xdf0,0xe00,0xe10,0xee0,0xf10].into_iter().enumerate() {expected.ram[a+k]=[0,1,128,255][(case+i)%4];}
+        expected.sync_native_game_state_from_ram();expected.oam_reset_region_bases();
+        let mut actual=expected.clone();actual.rom.clear();
+        let mut cpu=NativeNmiContext {a:0xab00|u16::from(st),x:k as u16,y:7,d:0,db:6,bank:6,pc:0x84e7,sp:0x1ee,p:0x30};
+        let mut clock=snes::CpuMasterTimeline::at_raster(4586,snes::CpuRasterPosition::new(76,54),snes::CpuBusWorkload::default(),snes::CpuFieldTiming::NON_INTERLACE_EVEN);
+        clock.begin_synchronous_timeline().unwrap();
+        let mut work=SpriteTimers::after_entry(st);let mut owned=0;
+        while work.tail().is_none() {
+            owned+=work.step(&mut cpu,&mut clock,|_,access|match access {
+                Access::Read(a,width)=>{
+                    let read=|a:u32|->u8 {
+                        crate::cycle_models::sprite_main::table_byte(a).or_else(||ZeldaState::native_oam_table_byte(a)).unwrap_or_else(||actual.ram[(a&if matches!(a>>16,0x7e|0x7f) {0x1ffff}else{0xffff}) as usize])
+                    };
+                    u16::from(read(a))|if width==2 {u16::from(read(a+1))<<8}else{0}
+                },
+                Access::Write(a,v,width)=>{let a=(a&if matches!(a>>16,0x7e|0x7f) {0x1ffff}else{0xffff}) as usize;actual.ram[a..a+width as usize].copy_from_slice(&v.to_le_bytes()[..width as usize]);actual.native_push_block_store(a,v,width);0},
+                Access::Vblank {..}=>0,
+            }).unwrap();
+        }
+        let tail=work.tail().unwrap();assert_eq!(tail,[SpriteTimersTail::Returned,SpriteTimersTail::Returned,SpriteTimersTail::Recoil(crate::cycle_models::sprite_recoil::RecoilTail::Death)][mode]);tails[mode]+=1;
+        if mode != 2 {
+            assert_eq!((cpu.bank,cpu.pc,cpu.sp,cpu.db),(6,0x84eb,0x1ed,6));
+            assert_eq!(actual.ram[0x1ee],st,"original state remains on the actual caller stack");
+        }
+        let before=crate::cycle_ledger::master();crate::cycle_ledger::charge(if case%2==0 {68}else{128});expected.sprite_timers_and_oam(k);let full=crate::cycle_ledger::master()-before;
+        let before=crate::cycle_ledger::master();if case%2==0 {actual.finish_native_sprite_timers(k,tail);}else{
+            actual.native_sprite_timer_handoff=Some((k as u8,st,tail));
+            let _scope=actual.sprite_execute_single_lane_scope(k,false);
+            actual.sprite_timers_and_oam(k);
+            assert!(actual.native_sprite_timer_handoff.is_none());
+        }let remaining=crate::cycle_ledger::master()-before;
+        let excluded=|i:usize|i<0x10||(0x1c0..0x200).contains(&i);
+        for (i,(a,b)) in actual.ram.iter().zip(&expected.ram).enumerate() {assert!(excluded(i)||a==b,"case={case} RAM {i:05x}: {a:02x}/{b:02x}");}
+        let mut a=vec![0xa5;snes::WRAM_SIZE];let mut b=a.clone();actual.game_state.write_to_ram(&mut a);expected.game_state.write_to_ram(&mut b);
+        for (i,(a,b)) in a.iter().zip(&b).enumerate() {assert!(excluded(i)||a==b,"case={case} native {i:05x}: {a:02x}/{b:02x}");}
+        assert_eq!(full-remaining,owned,"case={case} no timer prefix replay");
+    }
+    println!("native sprite timer helper handoffs:384 fixtures, modes={tails:?},256 actual timer returns including128 message cases,128 retained recoil calls, module changes and all remaining helper work match");
+}
+
+#[test]
+fn native_recoil_prefix_handoffs_preserve_health_damage_and_remaining_bodies_once() {
+    use crate::cycle_models::{sprite_recoil::{SpriteRecoil,RecoilTail},intro_clear::Access,nmi_stack::NativeNmiContext};
+    let mut tails=[0;4];
+    for case in 0..1728usize {
+        let k=case%16;let st=(case/16%12) as u8;
+        let dmg=[0,10,250,251,253,254,255,1,252][case/192%9];
+        let health=[0,10,255][case%3];
+        let mut expected=ZeldaState::new();expected.ram[0x10]=7;
+        expected.ram[0xdd0+k]=st;expected.ram[0xce2+k]=dmg;expected.ram[0xe50+k]=health;
+        expected.ram[0xe20+k]=if case%5==0 {0x23}else{0x73};
+        expected.ram[0xd10+k]=128;expected.ram[0xd00+k]=96;
+        expected.ram[0xe40+k]=(case%32) as u8;expected.ram[0xef0+k]=24;
+        expected.ram[0x1ea..0x1ec].copy_from_slice(&[0x80,0x84]);
+        expected.sync_native_game_state_from_ram();let mut actual=expected.clone();actual.rom.clear();
+        let mut cpu=NativeNmiContext{a:0xabcd,x:k as u16,y:7,d:0,db:6,bank:6,pc:0xeec8,sp:0x1e9,p:0x30};
+        let mut clock=snes::CpuMasterTimeline::at_raster(4586,snes::CpuRasterPosition::new(76,1200),snes::CpuBusWorkload::default(),snes::CpuFieldTiming::NON_INTERLACE_EVEN);clock.begin_synchronous_timeline().unwrap();
+        let mut work=SpriteRecoil::default();let mut owned=0;
+        while work.tail().is_none(){owned+=work.step(&mut cpu,&mut clock,|_,access|match access{
+            Access::Read(a,width)=>{let i=(a&0xffff) as usize;u16::from(actual.ram[i])|if width==2{u16::from(actual.ram[i+1])<<8}else{0}},
+            Access::Write(a,v,width)=>{let i=(a&0xffff) as usize;actual.ram[i..i+width as usize].copy_from_slice(&v.to_le_bytes()[..width as usize]);actual.native_push_block_store(i,v,width);0},
+            Access::Vblank{..}=>0,
+        }).unwrap();}
+        let tail=work.tail().unwrap();tails[match tail{RecoilTail::Returned=>0,RecoilTail::Burn=>1,RecoilTail::Stun(_)=>2,RecoilTail::Death=>3}]+=1;
+        let before=crate::cycle_ledger::master();expected.sprite_mini_moldorm_recoil(k);let full=crate::cycle_ledger::master()-before;
+        let before=crate::cycle_ledger::master();if tail!=RecoilTail::Returned{actual.finish_native_sprite_recoil(k,tail);}let remaining=crate::cycle_ledger::master()-before;
+        let excluded=|i:usize|i<16||(0x1c0..0x200).contains(&i);
+        for(i,(a,b))in actual.ram.iter().zip(&expected.ram).enumerate(){assert!(excluded(i)||a==b,"recoil case={case} RAM {i:05x}: {a:02x}/{b:02x}");}
+        let mut a=vec![0xa5;snes::WRAM_SIZE];let mut b=a.clone();actual.game_state.write_to_ram(&mut a);expected.game_state.write_to_ram(&mut b);
+        for(i,(a,b))in a.iter().zip(&b).enumerate(){assert!(excluded(i)||a==b,"recoil case={case} native {i:05x}: {a:02x}/{b:02x}");}
+        assert_eq!(full-remaining,owned,"recoil case={case} actual owned prefix omitted once");
+    }
+    assert!(tails.iter().all(|n|*n>0));println!("native recoil semantic handoffs:1728 fixtures, tails={tails:?}, ROM empty, full remaining RAM/native state and owned cycles match");
 }

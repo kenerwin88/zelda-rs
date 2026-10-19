@@ -178,3 +178,28 @@ fn hookshot_missing_ancilla_preserves_underflowed_spin_timer() {
     assert_eq!(state.ram[LINK_DELAY_TIMER_SPIN_ATTACK], 0xff);
     assert_eq!(state.ram[BUTTON_B_FRAMES], 9);
 }
+
+#[test]
+fn native_shield_dma_word_store_publishes_the_adjacent_staging_byte() {
+    let mut state = ZeldaState::new();
+    state.rom.clear();
+    state.ram[0x107..0x10b].copy_from_slice(&[0x17, 0x28, 0x39, 0x4a]);
+    state.sync_native_game_state_from_ram();
+    // Live LinkOam $0d:ac39 stores A=$5002 with M=16 at $0108.
+    assert!(state.native_player_drawing_store(0x108, 0x5002, 2));
+    assert_eq!(&state.ram[0x107..0x10b], &[0x17, 2, 0x50, 0x4a]);
+    let mut published = state.ram.clone();
+    published[0x108..0x10a].fill(0);
+    state.game_state.write_to_ram(&mut published);
+    assert_eq!(&published[0x107..0x10b], &[0x17, 2, 0x50, 0x4a]);
+    assert!(state.native_player_drawing_store(0x109, 0xc9, 1));
+    state.game_state.write_to_ram(&mut published);
+    assert_eq!(&published[0x107..0x10b], &[0x17, 2, 0xc9, 0x4a]);
+    // Other LinkOam branches store a word at109, including the neighboring
+    // game-over byte. Both typed domains must serialize the retired word.
+    state.ram[0x10b] = 0x63;
+    assert!(state.native_player_drawing_store(0x109, 0xa541, 2));
+    state.game_state.write_to_ram(&mut published);
+    assert_eq!(&published[0x107..0x10b], &[0x17, 2, 0x41, 0xa5]);
+    assert_eq!(state.ram[0x10b], 0x63);
+}

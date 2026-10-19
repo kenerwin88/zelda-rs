@@ -2499,6 +2499,24 @@ mod runtime_dungeon_roles;
 mod runtime_entity_tiles;
 #[path = "zelda_rtl_tests/runtime/runtime_entrance_backup.rs"]
 mod runtime_entrance_backup;
+#[path = "zelda_rtl_tests/runtime/runtime_native_overworld_dungeon_exit.rs"]
+mod runtime_native_overworld_dungeon_exit;
+#[path = "zelda_rtl_tests/runtime/runtime_native_properties_graphics.rs"]
+mod runtime_native_properties_graphics;
+#[path = "zelda_rtl_tests/runtime/runtime_native_screen_palettes.rs"]
+mod runtime_native_screen_palettes;
+#[path = "zelda_rtl_tests/runtime/runtime_native_area_palettes.rs"]
+mod runtime_native_area_palettes;
+#[path = "zelda_rtl_tests/runtime/runtime_native_sprite_reload.rs"]
+mod runtime_native_sprite_reload;
+#[path = "zelda_rtl_tests/runtime/runtime_native_properties_player.rs"]
+mod runtime_native_properties_player;
+#[path = "zelda_rtl_tests/runtime/runtime_native_properties_caller.rs"]
+mod runtime_native_properties_caller;
+#[path = "zelda_rtl_tests/runtime/runtime_native_map32_definition.rs"]
+mod runtime_native_map32_definition;
+#[path = "zelda_rtl_tests/runtime/runtime_native_mirror_portal.rs"]
+mod runtime_native_mirror_portal;
 #[path = "zelda_rtl_tests/runtime/runtime_boss_prize_countdown.rs"]
 mod runtime_boss_prize_countdown;
 #[path = "zelda_rtl_tests/runtime/runtime_water_hdma_window.rs"]
@@ -2707,7 +2725,7 @@ fn native_intro_through_poly_worker_irq_matches_full_cold_source_hosts() {
             assert_eq!(state.ppu.m7_matrix,source.machine().snes().ppu.m7_matrix);
             assert_eq!(state.ppu.m7_prev,source.machine().snes().ppu.m7_prev);
             assert!(cpu.timeline.clock_master_cycles()<programming.irq_deadline.unwrap());
-            let mut worker=crate::cycle_models::poly_worker::PolyWorker::from_pending_faces(faces,divider);
+            let mut worker=crate::cycle_models::poly_worker::PolyWorker::from_pending_faces(faces);
             for count in 0..100000 {
                 let irq_return=(source.machine().snes().cpu.k,source.machine().snes().cpu.pc)==(0,0x8332);
                 assert!(count<99999,"source did not return from the polygon V-IRQ");
@@ -2722,7 +2740,7 @@ fn native_intro_through_poly_worker_irq_matches_full_cold_source_hosts() {
             assert_eq!(state.ram,source.machine().snes().ram);
             assert_eq!(state.ppu.m7_matrix,source.machine().snes().ppu.m7_matrix);
             assert_eq!(state.ppu.m7_prev,source.machine().snes().ppu.m7_prev);
-            assert_eq!((worker.divider.dividend,worker.divider.quotient,worker.divider.remainder),
+            assert_eq!((state.native_cpu_math.dividend,state.native_cpu_math.quotient,state.native_cpu_math.remainder),
                 (source.machine().snes().divide_a,source.machine().snes().divide_result,source.machine().snes().multiply_result));
             // The same chain is now reachable through the default scheduler.
             // Compare that entry independently from the component calls above.
@@ -2903,6 +2921,16 @@ fn load_file_entry_matches_independent_cold_source_hosts() {
 }
 
 #[test]
+fn dungeon_landing_matches_independent_cold_source_hosts() {
+    compare_native_file_menu_cold_hosts(true,(7,15),Some(7),3,true,&[0,0,8]);
+}
+
+#[test]
+fn dungeon_landing_into_dialogue_matches_independent_cold_source_hosts() {
+    compare_native_file_menu_cold_hosts(true,(14,2),Some(7),0,true,&[0,0,8]);
+}
+
+#[test]
 fn load_file_player_publications_match_source_after_each_instruction() {
     use crate::cycle_models::{intro_clear::Access, load_file_state::LoadFileState, nmi_stack::NativeNmiContext};
     let mut rom=std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc")).unwrap();
@@ -3024,7 +3052,7 @@ fn compare_native_name_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
 
 fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press_start_in:Option<u8>,mut active_hosts:usize,valid_saves:bool,menu_inputs:&[u16],name_inputs:&[u16],kill_inputs:&[u16],deleted_slot:Option<usize>) {
     let stop_submodule=if stop.0==0 {stop.1}else{9};
-    let load_file_destination = stop == (7, 15);
+    let load_file_destination = matches!(stop.0, 7 | 14);
     let mut load_file_save_copy_checked = false;
     let mut load_file_destination_writes = Vec::new();
     let path = std::env::var_os("ZELDA3_ASSETS").expect("cold intro test requires embedded assets");
@@ -3070,6 +3098,12 @@ fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
     }
     let mut source =
         snes::Snes9xColdCpuExecutor::from_lorom_reset_with_sram(&rom, Some(&state.sram)).unwrap();
+    let mut source_window_events = source.machine().timeline().synchronous_event_observer();
+    let mut source_window_rows = [[1, 0, 1, 0]; 224];
+    // The port relocates its display table out of the ROM's physical WRAM
+    // table. Derive that projection independently from source bus stores;
+    // the production state never consumes this expected-value buffer.
+    let mut source_spotlight_projection = [0u8; 448];
     let mut compared = 0;
     let mut last_source_irq = None;
     let mut menu_host=0;
@@ -3093,9 +3127,37 @@ fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
         let mut source_scroll_ppu = source.machine().snes().ppu.clone();
         let mut source_scroll_writes = Vec::new();
         source
-            .run_until_main_loop_return_with(|receipt| {
+            .run_until_main_loop_return_with_quiescent_step_hook(|receipt, source| {
+                // Independently sample the source device after the instruction
+                // that drains RenderLine. Window writes after that event would
+                // make this sampler ambiguous, so reject that case explicitly.
+                let clock = source.machine().timeline();
+                let ppu = &source.machine().snes().ppu;
+                clock.observe_processed_synchronous_events(&mut source_window_events, |event| {
+                    if let snes::cpu_timeline::CpuSynchronousTimelineEvent::RenderLine {
+                        scanline: scanline @ 1..=224, ..
+                    } = event {
+                        let at = clock.master_cycles_at_raster(clock.field_index(),
+                            snes::CpuRasterPosition::new(scanline, snes::cpu_timeline::SNES9X_RENDER_CYCLE as u16));
+                        assert!(!receipt.accesses.iter().any(|a| matches!(a.kind, snes::SourceCpuBusAccessKind::Write { .. })
+                            && a.address & 0x400000 == 0 && (0x2126..=0x2129).contains(&(a.address & 0xffff))
+                            && a.timestamp.master_cycles() >= at), "source window sample crosses a later CPU write");
+                        source_window_rows[usize::from(scanline - 1)] =
+                            [ppu.window1_left, ppu.window1_right, ppu.window2_left, ppu.window2_right];
+                    }
+                });
                 if receipt.accepted_interrupt.is_some() {interrupt_events.push(format!("{:?} at {:?} pc={:06x}",receipt.accepted_interrupt,receipt.started_at,receipt.origin_pc));}
                 for access in &receipt.accesses {
+                    if matches!(receipt.origin_pc, 0x00f3bb | 0x00f42f | 0x00f432 | 0x00f435 | 0x00f438 | 0x00f43b | 0x00f43e | 0x00f441) {
+                        if let snes::SourceCpuBusAccessKind::Write { value, width } = access.kind {
+                            let offset = (access.address & 0xffff) as usize;
+                            if (0x1b00..0x1cc0).contains(&offset) {
+                                let start = offset - 0x1b00;
+                                source_spotlight_projection[start..start + usize::from(width)]
+                                    .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                            }
+                        }
+                    }
                     if let snes::SourceCpuBusAccessKind::Write{value,..}=access.kind {
                         if access.address & 0x400000 == 0
                             && (0x210d..=0x2114).contains(&(access.address & 0xffff)) {
@@ -3121,6 +3183,7 @@ fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
                     last_source_irq = Some((host, irq, receipt.origin_pc, receipt.started_at));
                     if state.game_state.frame.main_module==4 && state.ram[0x128]==1 {naming_irqs+=1;}
                 }
+                Ok::<(), snes::SourceCpuError>(())
             })
             .unwrap();
         if public_dispatch {
@@ -3143,6 +3206,11 @@ fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
             Some("retained-native-apu-port-access" | "retained-native-bootstrap-clock")),
             "checkpoint would discard the retained CPU at host={host}");
         state.native_ppu.as_mut().unwrap().assert_matches_source(&cpu.timeline, source.machine());
+        let math = &state.native_cpu_math;
+        let source_math = source.machine().snes();
+        assert_eq!((math.multiplicand, math.dividend, math.quotient, math.remainder),
+            (source_math.multiply_a, source_math.divide_a, source_math.divide_result, source_math.multiply_result),
+            "CPU arithmetic hardware host={host}");
         let c = &source.machine().snes().cpu;
         if cpu.timeline != *source.machine().timeline() {
             eprintln!("source interrupt events host={host}: {interrupt_events:?}");
@@ -3182,8 +3250,13 @@ fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
             .iter()
             .zip(&source.machine().snes().ram)
             .enumerate()
-            .filter(|(_, (a, b))| a != b)
-            .map(|(i, (a, b))| (i, *a, *b))
+            .filter_map(|(i, (&actual, &physical))| {
+                let base = crate::game_state::constants::HDMA_TABLE_DYNAMIC;
+                let expected = if (base..base + source_spotlight_projection.len()).contains(&i) {
+                    source_spotlight_projection[i - base]
+                } else { physical };
+                (actual != expected).then_some((i, actual, expected))
+            })
             .collect();
         assert!(
             differences.is_empty(),
@@ -3218,6 +3291,14 @@ fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
         assert_eq!((state.ppu.scroll_prev, state.ppu.scroll_prev2),
             (source.machine().snes().ppu.scroll_prev, source.machine().snes().ppu.scroll_prev2),
             "scroll latch host={host}");
+        if load_file_destination && matches!(state.game_state.frame.main_module, 7 | 14) {
+            let native_rows = state.with_display_snapshot(|state| state.ppu_scanline_windows());
+            for (row, expected) in source_window_rows.iter().enumerate() {
+                let actual = native_rows[row];
+                assert_eq!([actual.0, actual.1, actual.2, actual.3], *expected,
+                    "native dungeon window scanout host={host} row={row}");
+            }
+        }
         if state.native_bg3_scroll_scanout.is_some() {
             // Observe source register writes independently of the native IRQ
             // owner. Sample their retained values at each hardware render event,
@@ -3334,7 +3415,13 @@ fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
                 a:c.a,x:c.x,y:c.y,d:c.dp,db:c.db,bank:c.k,pc:c.pc,sp:c.sp,p:c.pack_flags()
             }));
             assert_eq!(cpu.timeline, *source.machine().timeline());
-            assert_eq!(state.ram, source.machine().snes().ram);
+            let mut expected_ram = source.machine().snes().ram.clone();
+            let base = crate::game_state::constants::HDMA_TABLE_DYNAMIC;
+            expected_ram[base..base + source_spotlight_projection.len()]
+                .copy_from_slice(&source_spotlight_projection);
+            assert_eq!(state.ram.iter().zip(&expected_ram).enumerate()
+                .find(|(_, (actual, expected))| actual != expected), None,
+                "physical RAM and relocated spotlight publication after following NMI");
             assert_eq!(state.ppu.vram, source.machine().snes().ppu.vram);
             assert_eq!(state.ppu.cgram, source.machine().snes().ppu.cgram);
             assert_eq!(state.ppu.oam, source.machine().snes().ppu.oam);
@@ -3347,6 +3434,7 @@ fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
                 || (stop.0!=0 && state.game_state.frame.main_module==1 && state.game_state.frame.submodule<=5)
                 || (state.game_state.frame.main_module==stop.0 && stop.0!=0 && state.game_state.frame.submodule<=stop.1)
                 || (load_file_destination && state.game_state.frame.main_module==5 && state.game_state.frame.submodule==0)
+                || (load_file_destination && state.game_state.frame.main_module==7 && state.game_state.frame.submodule==15)
                 || (!name_inputs.is_empty() && state.game_state.frame.main_module==4 && state.game_state.frame.submodule<=3)
                 || (!kill_inputs.is_empty() && state.game_state.frame.main_module==3 && state.game_state.frame.submodule<=4),
             "unexpected intro transition at host {host}: native main={} sub={} pending={} source main={} sub={} CPU={:?}",

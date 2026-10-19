@@ -46,7 +46,7 @@ impl SpriteReset {
     pub(crate) fn from_entry(entry: u32) -> Self {
         assert!(matches!(
             entry,
-            0x09c114 | 0x09c176 | 0x09c22f | 0x09c290 | 0x09c327 | 0x09c3e8 | 0x09c44e
+            0x09c114 | 0x09c176 | 0x09c22f | 0x09c290 | 0x09c327 | 0x09c3e8 | 0x09c44e | 0x09c452
         ));
         Self {
             pc: entry as u16,

@@ -11,6 +11,8 @@ use super::{
 };
 use snes::CpuMasterTimeline;
 pub(crate) fn table_byte(address: u32) -> Option<u8> {
+    if (0x06f139..0x06f145).contains(&address) {return Some([4,6,0,2,6,4,0,0,4,6,0,2][(address-0x06f139) as usize]);}
+    if (0x05af71..0x05af75).contains(&address) {return Some([0,0x40,0xc0,0x80][(address-0x05af71) as usize]);}
     let entry = match address {
         0x05db95..=0x05db9a => Some((&[0xde2c, 0xdce6, 0xdb9b][..], 0x05db95)),
         0x05de3a..=0x05de3d => Some((&[0xde3e, 0xdf19][..], 0x05de3a)),
@@ -27,6 +29,7 @@ pub(crate) fn table_byte(address: u32) -> Option<u8> {
     }
     crate::ZeldaState::native_uncle_prep_table_byte(address)
         .or_else(|| super::sprite_drawing::table_byte(address))
+        .or_else(|| super::sprite_kill_self::table_byte(address))
         .or_else(|| crate::ZeldaState::native_sprite_property_table_byte(address))
         .or_else(|| super::ancilla_main::table_byte(address))
         .or_else(|| super::indoor_camera::table_byte(address))
@@ -62,9 +65,12 @@ pub(crate) struct SpriteSlot {
     allocator: Option<OamAllocate>,
     dispatch: Dispatch,
     drawing: Option<SpriteDrawing>,
+    kill_self: Option<super::sprite_kill_self::SpriteKillSelf>,
     camera: Option<super::indoor_camera::IndoorCamera>,
     child: Option<SlotChild>,
     complete: bool,
+    inactive_zelda: bool,
+    mirror_active: bool,
 }
 impl Default for SpriteSlot {
     fn default() -> Self {
@@ -79,11 +85,15 @@ impl SpriteSlot {
             allocator: None,
             dispatch: Dispatch::State,
             drawing: None,
+            kill_self: None,
             camera: None,
             child: None,
             complete: false,
+            inactive_zelda: false,
+            mirror_active: pc==0x05af75,
         }
     }
+    pub(crate) fn with_inactive_zelda(mut self) -> Self { self.inactive_zelda = true; self }
     pub(crate) fn child(&self) -> Option<SlotChild> {
         self.child
     }
@@ -129,6 +139,14 @@ impl SpriteSlot {
             return None;
         }
         assert!(self.child.is_none(), "sprite slot child still owns the CPU");
+        if let Some(kill_self) = self.kill_self.as_mut() {
+            let cycles = kill_self.step(cpu, clock, bus);
+            if kill_self.complete() {
+                self.drawing.as_mut().expect("drawing retains kill caller").return_from_child(cpu);
+                self.kill_self = None;
+            }
+            return cycles;
+        }
         if let Some(camera) = self.camera.as_mut() {
             let cycles = camera.step(cpu, clock, bus);
             self.child = camera.child().map(SlotChild::RoomTransition);
@@ -144,7 +162,11 @@ impl SpriteSlot {
                 self.drawing = None;
                 self.accept_return(cpu, Some(true));
             } else if let Some(child) = drawing.child() {
-                self.child = Some(SlotChild::Drawing(child));
+                if (self.inactive_zelda || self.mirror_active) && child == DrawingChild::KillSelf {
+                    self.kill_self = Some(Default::default());
+                } else {
+                    self.child = Some(SlotChild::Drawing(child));
+                }
             }
             return cycles;
         }
@@ -173,6 +195,153 @@ impl SpriteSlot {
         let xmask = if x == 1 { 255 } else { 65535 };
         w.fetch();
         self.pc = match pc {
+            0x06f70a | 0x06f831=>{w.immediate(if pc==0x06f70a {8} else {128},1);pc+2}
+            0x06f70c | 0x06f70e | 0x06f715 | 0x06f71b | 0x06f721 | 0x06f727 | 0x06f802 | 0x06f80a | 0x06f818 | 0x06f823 | 0x06f828 | 0x06f82d | 0x06f833 | 0x06f843 | 0x06f84a=>{w.dp_store(match pc {0x06f70c=>2,0x06f70e=>3,0x06f715=>0,0x06f71b=>8,0x06f721=>1,0x06f727=>9,0x06f802=>4,0x06f80a|0x06f833=>0xa,0x06f818=>5,0x06f823=>0xb,0x06f828=>6,0x06f82d=>7,0x06f843=>0xf,_=>0xc},w.cpu.a&255,1);pc+2}
+            0x06f710 | 0x06f717 | 0x06f71d | 0x06f723 | 0x06f850=>{let v=w.dp_read(match pc {0x06f710=>0x22,0x06f717=>0x23,0x06f71d=>0x20,0x06f723=>0x21,_=>0xc},1);w.load(v,1);pc+2}
+            0x06f712 | 0x06f7fe | 0x06f80f | 0x06f840 | 0x06f84d | 0x06f858=>{w.clear_carry();pc+1}
+            0x06f713 | 0x06f719 | 0x06f71f | 0x06f725 | 0x06f84e | 0x06f852=>{w.drain(8);w.adc_byte(match pc {0x06f713=>4,0x06f71f=>8,0x06f84e=>128,_=>0});pc+2}
+            0x06f729 | 0x06f830 | 0x06f835 | 0x06f863=>{w.rts();self.accept_return(w.cpu,Some(false));self.pc}
+            0x06f7ef | 0x06f7f5 | 0x06f7fb | 0x06f804 | 0x06f80c | 0x06f815 | 0x06f81a=>{w.drain(16);let at=match pc {0x06f7ef|0x06f815=>0xf70,0x06f7f5=>0xf60,0x06f7fb=>0xd10,0x06f804=>0xd30,0x06f80c=>0xd00,_=>0xd20};let v=w.read(w.absolute(at)+u32::from(w.cpu.x),1);if pc==0x06f815 {w.sbc(v,1);} else {w.load(v,1);}pc+3}
+            0x06f7f2=>{if w.branch(w.cpu.p&NEGATIVE!=0) {0x06f831} else {pc+2}}
+            0x06f7f4=>{w.drain(6);w.push(w.cpu.y,1);pc+1}
+            0x06f7f8=>{w.mask(31,1);pc+2}
+            0x06f7fa=>{w.drain(6);w.cpu.y=w.cpu.a&255;w.flags(w.cpu.y,1);pc+1}
+            0x06f7ff | 0x06f807 | 0x06f810 | 0x06f820 | 0x06f825 | 0x06f82a=>{w.drain(16);let base=match pc {0x06f7ff=>0xf72f,0x06f807=>0xf74f,0x06f810=>0xf78f,0x06f820=>0xf7af,0x06f825=>0xf76f,_=>0xf7cf};let v=w.read(w.absolute(base)+u32::from(w.cpu.y),1);if matches!(pc,0x06f825|0x06f82a) {w.load(v,1);} else {w.adc_byte(v);}pc+3}
+            0x06f813 | 0x06f83f=>{w.drain(6);w.push(u16::from(w.cpu.p),1);pc+1}
+            0x06f814 | 0x06f83b=>{w.drain(6);w.cpu.p|=CARRY;pc+1}
+            0x06f81d=>{w.drain(8);w.sbc(0,1);pc+2}
+            0x06f81f | 0x06f845=>{w.drain(12);w.cpu.p=w.pull(1) as u8;pc+1}
+            0x06f82f=>{w.drain(12);w.cpu.y=w.pull(1);w.flags(w.cpu.y,1);pc+1}
+            0x06f836=>{w.drain(6);w.push(w.cpu.x,1);pc+1}
+            0x06f837=>{w.drain(8);w.cpu.x=1;w.flags(1,1);pc+2}
+            0x06f839 | 0x06f83c | 0x06f841 | 0x06f846 | 0x06f848 | 0x06f856 | 0x06f859=>{w.drain(8);w.drain(6);let base=match pc {0x06f839=>4,0x06f83c=>0,0x06f841|0x06f859=>6,0x06f846=>0xa,0x06f848=>8,_=>2};let v=w.read(base+u32::from(w.cpu.x),1);if matches!(pc,0x06f83c|0x06f848) {w.sbc(v,1);} else if matches!(pc,0x06f841|0x06f859) {w.adc_byte(v);} else {w.load(v,1);}pc+2}
+            0x06f83e=>{w.drain(6);w.push(w.cpu.a&255,1);pc+1}
+            0x06f84c=>{w.drain(12);let v=w.pull(1);w.load(v,1);pc+1}
+            0x06f854=>{if w.branch(w.cpu.p&ZERO==0) {0x06f862} else {pc+2}}
+            0x06f85b=>{let v=w.dp_read(0xf,1);let a=w.cpu.a&255;w.cpu.p=(w.cpu.p&!CARRY)|u8::from(a>=v);w.flags(a.wrapping_sub(v)&255,1);pc+2}
+            0x06f85d=>{if w.branch(w.cpu.p&CARRY==0) {0x06f862} else {pc+2}}
+            0x06f85f=>{w.decrement_x();w.cpu.x&=255;w.flags(w.cpu.x,1);pc+1}
+            0x06f860=>{if w.branch(w.cpu.p&NEGATIVE==0) {0x06f839} else {pc+2}}
+            0x06f862=>{w.drain(12);w.cpu.x=w.pull(1);w.flags(w.cpu.x,1);pc+1}
+            0x06f184 | 0x06f1b1 | 0x06f1c7=>{w.drain(16);let at=match pc {0x06f184=>0xbe0,0x06f1b1=>0xe20,_=>0xde0};let v=w.read(w.absolute(at)+u32::from(w.cpu.x),1);w.load(v,1);pc+3}
+            0x06f187=>{w.mask(0x20,1);pc+2}
+            0x06f189 | 0x06f18f=>{if w.branch(w.cpu.p&ZERO!=0) {0x06f1e2} else {pc+2}}
+            0x06f18b=>{w.drain(24);let v=w.read(0x7ef35a,1);w.load(v,1);pc+4}
+            0x06f191 | 0x06f1cc | 0x06f1d4=>{w.drain(16);w.drain(6);w.write(w.absolute(if pc==0x06f1cc {0xde0} else {0xdd0})+u32::from(w.cpu.x),if pc==0x06f191 {0} else {w.cpu.a&255},1);pc+3}
+            0x06f194=>{let v=w.dp_read(0x2f,1);w.load(v,1);pc+2}
+            0x06f196=>{w.cpu.y=w.dp_read(0x3c,1);w.flags(w.cpu.y,1);pc+2}
+            0x06f198=>{if w.branch(w.cpu.p&ZERO!=0) {0x06f19f} else {pc+2}}
+            0x06f19a=>{w.drain(6);let a=w.cpu.a&255;w.cpu.p=(w.cpu.p&!CARRY)|((a&1) as u8);w.load(a>>1,1);pc+1}
+            0x06f19b=>{w.drain(6);w.cpu.y=w.cpu.a&255;w.flags(w.cpu.y,1);pc+1}
+            0x06f19c | 0x06f1a2=>{w.drain(16);let v=w.read(w.absolute(if pc==0x06f19c {0xf13d} else {0xf141})+u32::from(w.cpu.y),1);if pc==0x06f19c {w.load(v,1);} else {let a=w.cpu.a&255;w.cpu.p=(w.cpu.p&!CARRY)|u8::from(a>=v);w.flags(a.wrapping_sub(v)&255,1);}pc+3}
+            0x06f19f=>{w.drain(16);let v=w.read(w.absolute(0xde0)+u32::from(w.cpu.x),1);w.cpu.y=v;w.flags(v,1);pc+3}
+            0x06f1a5=>{if w.branch(w.cpu.p&ZERO==0) {0x06f1e2} else {pc+2}}
+            0x06f1a7 | 0x06f1b8 | 0x06f1d2=>{w.immediate(match pc {0x06f1a7=>6,0x06f1b8=>0x26,_=>9},1);pc+2}
+            0x06f1a9 | 0x06f1ad | 0x06f1ba | 0x06f1c4=>{let far=pc!=0x06f1c4;let target=match pc {0x06f1a9=>0x0dbb7c,0x06f1ad=>0x06f6d5,0x06f1ba=>0x0dbb8a,_=>0x06d9d5};let width=if far {3} else {2};w.operand_then_internal(width);if far {w.push(u16::from(w.cpu.bank),1);}w.push(pc as u16+u16::from(width),2);self.calls.push(Call{returned:pc+1+u32::from(width),far});self.child=Some(SlotChild::Active(target));target}
+            0x06f1b4 | 0x06f1c0 | 0x06f1d9 | 0x06f1dd=>{w.compare_immediate(match pc {0x06f1b4=>0x95,0x06f1c0=>0x9b,0x06f1d9=>0x1b,_=>0xc},1);pc+2}
+            0x06f1b6 | 0x06f1c2=>{if w.branch(w.cpu.p&ZERO==0) {if pc==0x06f1b6 {0x06f1c0} else {0x06f1d9}} else {pc+2}}
+            0x06f1be=>{w.clear_carry();pc+1}
+            0x06f1ca=>{w.drain(8);w.load((w.cpu.a&255)^1,1);pc+2}
+            0x06f1cf=>{w.drain(16);w.drain(6);let at=w.absolute(0xd80)+u32::from(w.cpu.x);let v=w.read(at,1).wrapping_add(1)&255;w.drain(6);w.flags(v,1);w.write(at,v,1);pc+3}
+            0x06f1db | 0x06f1df=>{if w.branch(w.cpu.p&ZERO!=0) {if pc==0x06f1db {0x06f1f3} else {0x06f1ec}} else {pc+2}}
+            0x06f1f3=>{w.drain(16);self.child=Some(SlotChild::Active(0x06e25a));0x06e25a}
+            0x06f129 | 0x06f12a=>{w.drain(6);w.push(u16::from(if pc==0x06f129 {w.cpu.db} else {w.cpu.bank}),1);pc+1}
+            0x06f12b | 0x06f12f=>{w.drain(12);w.cpu.db=w.pull(1) as u8;w.flags(u16::from(w.cpu.db),1);pc+1}
+            0x06f130=>{w.rtl();self.accept_return(w.cpu,Some(true));self.pc}
+            0x06f12c | 0x06f16c | 0x06f161 | 0x06f164 | 0x06f167 | 0x06f1e2=>{
+                let target=match pc {0x06f12c=>0x06f154,0x06f16c=>0x06f1f6,0x06f161=>0x06f70a,0x06f164=>0x06f7ef,0x06f167=>0x06f836,_=>0x06f3db};
+                w.operand_then_internal(2);w.push(pc as u16+2,2);self.calls.push(Call{returned:pc+3,far:false});
+                if pc==0x06f1e2 {self.child=Some(SlotChild::Active(target));}target
+            }
+            0x06f154=>{w.drain(16);let v=w.read(w.absolute(0xee),1);w.load(v,1);pc+3}
+            0x06f157=>{w.drain(16);let v=w.read(w.absolute(0xf20)+u32::from(w.cpu.x),1);let a=w.cpu.a&255;w.cpu.p=(w.cpu.p&!CARRY)|u8::from(a>=v);w.flags(a.wrapping_sub(v)&255,1);pc+3}
+            0x06f15a | 0x06f178=>{if w.branch(w.cpu.p&ZERO==0) {0x06f1d7} else {pc+2}}
+            0x06f15c | 0x06f16f | 0x06f1e5 | 0x06f1f6=>{w.drain(16);let at=match pc {0x06f15c=>0xf60,0x06f16f=>0xe40,0x06f1e5=>0xe20,_=>0xf70};let v=w.read(w.absolute(at)+u32::from(w.cpu.x),1);w.load(v,1);pc+3}
+            0x06f15f=>{if w.branch(w.cpu.p&ZERO!=0) {0x06f16c} else {pc+2}}
+            0x06f16a=>{w.branch(true);0x06f16f}
+            0x06f172=>{if w.branch(w.cpu.p&NEGATIVE!=0) {0x06f1bf} else {pc+2}}
+            0x06f174=>{if w.branch(w.cpu.p&CARRY==0) {0x06f1d7} else {pc+2}}
+            0x06f176=>{let v=w.dp_read(0x4d,1);w.load(v,1);pc+2}
+            0x06f17a | 0x06f17f=>{w.drain(16);let v=w.read(w.absolute(if pc==0x06f17a {0x2e0} else {0x308}),1);w.load(v,1);pc+3}
+            0x06f17d=>{if w.branch(w.cpu.p&ZERO==0) {0x06f1e2} else {pc+2}}
+            0x06f182=>{if w.branch(w.cpu.p&NEGATIVE!=0) {0x06f1e2} else {pc+2}}
+            0x06f1e8=>{w.compare_immediate(0xc,1);pc+2}
+            0x06f1ea=>{if w.branch(w.cpu.p&ZERO==0) {0x06f1ef} else {pc+2}}
+            0x06f1ec=>{w.operand_then_internal(2);w.push(pc as u16+2,2);self.calls.push(Call{returned:pc+3,far:false});self.child=Some(SlotChild::Active(0x06efda));0x06efda}
+            0x06f1d7 | 0x06f226=>{w.clear_carry();pc+1}
+            0x06f1ef | 0x06f222=>{w.drain(6);w.cpu.p|=CARRY;pc+1}
+            0x06f1bf | 0x06f1d8 | 0x06f1e1 | 0x06f1f0 | 0x06f223 | 0x06f227=>{w.rts();self.accept_return(w.cpu,Some(false));self.pc}
+            0x06f1f9 | 0x06f1fb=>{w.dp_store(if pc==0x06f1f9 {0xc} else {0xd},if pc==0x06f1f9 {w.cpu.a&255} else {0},1);pc+2}
+            0x06f1fd=>{w.width(0x20,true);pc+2}
+            0x06f220 | 0x06f224=>{w.width(0x20,false);pc+2}
+            0x06f1ff | 0x06f20e=>{let v=w.dp_read(if pc==0x06f1ff {0x22} else {0x20},2);w.load(v,2);pc+2}
+            0x06f201 | 0x06f210=>{w.drain(6);w.cpu.p|=CARRY;pc+1}
+            0x06f202 | 0x06f211=>{w.drain(16);let v=w.read(w.absolute(if pc==0x06f202 {0xfd8} else {0xfda}),2);w.sbc(v,2);pc+3}
+            0x06f205 | 0x06f214 | 0x06f217=>{w.clear_carry();pc+1}
+            0x06f206 | 0x06f218=>{w.drain(16);w.adc(if pc==0x06f206 {11} else {16});pc+3}
+            0x06f209 | 0x06f21b=>{w.compare_immediate(if pc==0x06f209 {23} else {24},2);pc+3}
+            0x06f20c | 0x06f21e=>{if w.branch(w.cpu.p&CARRY!=0) {0x06f224} else {pc+2}}
+            0x06f215=>{let v=w.dp_read(0xc,2);w.adc(v);pc+2}
+            0x07f4d0=>{w.drain(6);w.push(w.cpu.x,1);pc+1}
+            0x07f4d1=>{let v=w.dp_read(0x4d,1);w.load(v,1);pc+2}
+            0x07f4d3 | 0x07f4d8=>{w.drain(16);let v=w.read(w.absolute(if pc==0x07f4d3 {0x2da} else {0x308}),1);w.load(if pc==0x07f4d3 {(w.cpu.a&255)|v} else {v},1);pc+3}
+            0x07f4db=>{w.mask(128,1);pc+2}
+            0x07f4d6 | 0x07f4dd=>{if w.branch(w.cpu.p&ZERO==0) {0x07f4ee} else {pc+2}}
+            0x07f4df=>{w.drain(8);w.cpu.x=4;w.flags(4,1);pc+2}
+            0x07f4e1=>{w.drain(16);let v=w.read(w.absolute(0xc4a)+u32::from(w.cpu.x),1);w.load(v,1);pc+3}
+            0x07f4e4=>{w.compare_immediate(0x27,1);pc+2}
+            0x07f4e6=>{if w.branch(w.cpu.p&ZERO!=0) {0x07f4ee} else {pc+2}}
+            0x07f4e8=>{w.decrement_x();w.cpu.x&=255;w.flags(w.cpu.x,1);pc+1}
+            0x07f4e9=>{if w.branch(w.cpu.p&NEGATIVE==0) {0x07f4e1} else {pc+2}}
+            0x07f4eb | 0x07f4ee=>{w.drain(12);w.cpu.x=w.pull(1);w.flags(w.cpu.x,1);pc+1}
+            0x07f4ec=>{w.clear_carry();pc+1}
+            0x07f4ef=>{w.drain(6);w.cpu.p|=CARRY;pc+1}
+            0x07f4ed | 0x07f4f0=>{w.rtl();self.accept_return(w.cpu,Some(true));self.pc}
+            0x05b5c3 | 0x05b5c4=>{w.drain(6);w.push(u16::from(if pc==0x05b5c3 {w.cpu.db} else {w.cpu.bank}),1);pc+1}
+            0x05b5c5 | 0x05b5c9=>{w.drain(12);w.cpu.db=w.pull(1) as u8;w.flags(u16::from(w.cpu.db),1);pc+1}
+            0x05b5ca=>{w.rtl();self.accept_return(w.cpu,Some(true));self.pc}
+            0x05b5d3=>{w.drain(16);let v=w.read(w.absolute(0xe20)+u32::from(w.cpu.x),1);w.load(v,1);pc+3}
+            0x05b5d6=>{w.drain(6);w.cpu.p|=CARRY;pc+1}
+            0x05b5d7=>{w.drain(8);w.sbc(0x41,1);pc+2}
+            0x05b5d9=>{w.width(0x30,true);pc+2}
+            0x05b5db=>{w.mask(255,2);pc+3}
+            0x05b5de=>{w.shift_left(2);pc+1}
+            0x05b5df=>{w.drain(6);w.cpu.y=w.cpu.a;w.flags(w.cpu.y,2);pc+1}
+            0x05b5e0=>{w.drain(16);w.drain(6);let v=w.read(w.absolute(0xb5e8)+u32::from(w.cpu.y),2);w.load(v,2);pc+3}
+            0x05b5e3=>{w.drain(6);w.load(w.cpu.a.wrapping_sub(1),2);pc+1}
+            0x05b5e4=>{w.drain(6);w.push(w.cpu.a,2);pc+1}
+            0x05b5e5=>{w.width(0x30,false);pc+2}
+            0x05b5e7=>{w.rts();let target=(u32::from(w.cpu.bank)<<16)|u32::from(w.cpu.pc);if target==0x05af75 {self.mirror_active=true;} else {self.child=Some(SlotChild::Active(target));}target}
+            0x05af75=>{w.drain(24);let v=w.read(0x7ef3ca,1);w.load(v,1);pc+4}
+            0x05af79 | 0x05afbf | 0x05afc4 | 0x05aff4=>{let to=match pc {0x05af79=>0x05afdf,0x05aff4=>0x05affb,_=>0x05aff1};if w.branch(w.cpu.p&ZERO==0) {to} else {pc+2}}
+            0x05af7b | 0x05af82 | 0x05af96 | 0x05afd9=>{let v=w.dp_read(match pc {0x05af7b|0x05afd9=>0x8a,0x05af82=>0x11,_=>0x1a},1);w.load(v,1);pc+2}
+            0x05af7d | 0x05af84 | 0x05af8b=>{w.compare_immediate(match pc {0x05af7d=>0x80,0x05af84=>0x23,_=>3},1);pc+2}
+            0x05af7f | 0x05afac | 0x05afb2=>{let take=if pc==0x05afac {w.cpu.p&CARRY!=0} else {w.cpu.p&CARRY==0};let to=match pc {0x05af7f=>0x05af82,0x05afac=>0x05b018,_=>0x05afe4};if w.branch(take) {to} else {pc+2}}
+            0x05af86 | 0x05afb7=>{if w.branch(w.cpu.p&ZERO!=0) {if pc==0x05af86 {0x05af93} else {0x05aff1}} else {pc+2}}
+            0x05af8d=>{if w.branch(w.cpu.p&CARRY!=0) {0x05af93} else {pc+2}}
+            0x05af88 | 0x05afb9 | 0x05afbc | 0x05afc1 | 0x05affb | 0x05b001 | 0x05b007 | 0x05b010=>{w.drain(16);let at=match pc {0x05af88=>0xfc6,0x05afb9=>0x37b,0x05afbc=>0x31f,0x05afc1=>0x2e4,0x05affb=>0x1abf,0x05b001=>0x1acf,0x05b007=>0x1adf,_=>0x1aef};let v=w.read(w.absolute(at),1);if pc==0x05afbc {w.load((w.cpu.a&255)|v,1);} else {w.load(v,1);}pc+3}
+            0x05af98 | 0x05af99=>{w.drain(6);let a=w.cpu.a&255;w.cpu.p=(w.cpu.p&!CARRY)|((a&1) as u8);w.load(a>>1,1);pc+1}
+            0x05af9a | 0x05afa0 | 0x05afdb | 0x05afec=>{w.mask(match pc {0x05af9a=>3,0x05afa0=>0x3f,0x05afdb=>0x40,_=>255},1);pc+2}
+            0x05af9c=>{w.drain(6);w.cpu.y=w.cpu.a&255;w.flags(w.cpu.y,1);pc+1}
+            0x05af9d | 0x05afb4 | 0x05afe9=>{w.drain(16);let v=w.read(w.absolute(if pc==0x05afb4 {0xd90} else {0xf50})+u32::from(w.cpu.x),1);w.load(v,1);pc+3}
+            0x05afa2=>{w.drain(16);let v=w.read(w.absolute(0xaf71)+u32::from(w.cpu.y),1);w.load((w.cpu.a&255)|v,1);pc+3}
+            0x05afa5 | 0x05afe6 | 0x05afee | 0x05aff8 | 0x05affe | 0x05b004 | 0x05b00d | 0x05b015=>{w.drain(16);w.drain(6);let at=match pc {0x05afa5|0x05afee=>0xf50,0x05afe6|0x05aff8=>0xd90,0x05affe=>0xd10,0x05b004=>0xd30,0x05b00d=>0xd00,_=>0xd20};w.write(w.absolute(at)+u32::from(w.cpu.x),w.cpu.a&255,1);pc+3}
+            0x05afc6 | 0x05afca | 0x05afd5 | 0x05afe4 | 0x05aff6=>{w.immediate(match pc {0x05afc6=>0x23,0x05afd5=>0x14,_=>1},1);pc+2}
+            0x05afc8 | 0x05afd7 | 0x05afdd=>{w.dp_store(match pc {0x05afc8=>0x11,0x05afd7=>0x5d,_=>0x7b},w.cpu.a&255,1);pc+2}
+            0x05afcc=>{w.drain(16);w.write(w.absolute(0x2db),w.cpu.a&255,1);pc+3}
+            0x05afcf | 0x05afd1 | 0x05afd3=>{w.dp_store(match pc {0x05afcf=>0xb0,0x05afd1=>0x27,_=>0x28},0,1);pc+2}
+            0x05afdf=>{w.drain(16);w.drain(6);w.write(w.absolute(0xdd0)+u32::from(w.cpu.x),0,1);pc+3}
+            0x05afe2=>{w.branch(true);0x05aff1}
+            0x05aff1=>{w.drain(16);w.drain(6);let at=w.absolute(0xda0)+u32::from(w.cpu.x);let v=w.read(at,1).wrapping_add(1)&255;w.drain(6);w.flags(v,1);w.write(at,v,1);pc+3}
+            0x05b00a=>{w.clear_carry();pc+1}
+            0x05b00b | 0x05b013=>{w.drain(8);w.adc_byte(if pc==0x05b00b {8} else {0});pc+2}
+            0x05dc8a | 0x05dc8e | 0x05dc97 | 0x05dc9d => {w.immediate(match pc {0x05dc8a=>0x6a,0x05dc8e=>0xdc,0x05dc97=>16,_=>4},1);pc+2}
+            0x05dc8c | 0x05dc90 => {w.dp_store(if pc==0x05dc8c {8} else {9},w.cpu.a & 255,1);pc+2}
+            0x05dc92 | 0x05dce6 => {w.drain(16);let v=w.read(w.absolute(if pc==0x05dc92 {0xdb0} else {0xd90})+u32::from(w.cpu.x),1);w.load(v,1);pc+3}
+            0x05dc95 | 0x05dce9 => {if w.branch(w.cpu.p & ZERO == 0) {if pc==0x05dc95 {0x05dc9d} else {0x05dcef}} else {pc+2}}
+            0x05dc99 => {w.operand_then_internal(3);w.push(5,1);w.push(pc as u16+3,2);w.cpu.bank=13;w.cpu.pc=0xba84;self.allocator=Some(OamAllocate::new(0xba84));pc+4}
+            0x05dc9f => {w.drain(16);0x058ab1}
+
             0x0684e7 | 0x068453 | 0x06927f => {
                 w.drain(6);
                 let m = if pc == 0x06927f { 2 } else { 1 };
@@ -254,9 +423,24 @@ impl SpriteSlot {
                     _ => 0x05daf7,
                 }
             }
-            0x0684e8 | 0x0683f2 | 0x068475 | 0x06847e | 0x06864d | 0x0db818 | 0x06bfe5
-            | 0x06bfe0 | 0x05da2c | 0x05da46 | 0x05da8f | 0x05db89 | 0x05de30 | 0x05de2c => {
+            0x05db9b | 0x05db9e | 0x05dcef | 0x058ab1 | 0x05dceb | 0x06c067 | 0x05ec99 | 0x05ec9e | 0x05eca2 | 0x0684e8 | 0x0683f2 | 0x068475 | 0x06847e | 0x06864d | 0x0db818 | 0x06bfe5
+            | 0x06bfe0 | 0x05da2c | 0x05da46 | 0x05da8f | 0x05db89 | 0x05de30 | 0x05de2c
+            | 0x06bfea | 0x05b5c6 | 0x05af8f | 0x05af93 | 0x05afa8 | 0x05afae => {
                 let (target, far, child) = match pc {
+                    0x06bfea=>(0x05b5c3,true,None),
+                    0x05b5c6=>(0x05b5d3,false,None),
+                    0x05af8f=>(0x06dbf0,true,None),
+                    0x05af93=>(0x05f94e,false,None),
+                    0x05afa8=>(0x07f4d0,true,None),
+                    0x05afae=>(0x06f129,true,None),
+                    0x05db9b => (0x05dc8a,false,None),
+                    0x05db9e | 0x05dcef => (0x05f94e,false,None),
+                    0x058ab1 => (0x05df6c,true,None),
+                    0x05dceb => (0x0dcf31,true,None),
+                    0x06c067 => (0x05ec96, true, None),
+                    0x05ec99 => (0x05ec9e, false, None),
+                    0x05ec9e => (0x0dce5f, true, None),
+                    0x05eca2 => (0x05f94e, false, None),
                     0x0684e8 => (0x0683f2, false, None),
                     0x0683f2 => (0x0684c1, false, None),
                     0x068475 => (0x05fa8e, true, Some(SlotChild::AgahnimBalls)),
@@ -283,7 +467,7 @@ impl SpriteSlot {
                     far,
                 });
                 self.child = child;
-                if pc == 0x05de2c {
+                if matches!(pc, 0x05de2c | 0x05ec9e | 0x058ab1 | 0x05dceb | 0x05af8f) {
                     self.drawing = Some(SpriteDrawing::new(target));
                 }
                 target
@@ -645,7 +829,7 @@ impl SpriteSlot {
                 let low = w.read(0, 2);
                 let bank = w.read(2, 1);
                 let target = (u32::from(bank) << 16) | u32::from(low);
-                if !matches!(target, 0x06864d | 0x06bfe5 | 0x05de2c
+                if !(self.inactive_zelda && matches!(target,0x05db9b|0x05dce6)) && !matches!(target, 0x06864d | 0x06bfe5 | 0x05de2c
                     | 0x05de3e | 0x05df19 | 0x05de52 | 0x05de72 | 0x05de9a
                     | 0x05deb4 | 0x05def8 | 0x05df26 | 0x05df44 | 0x05df43) {
                     self.child = Some(match self.dispatch {
@@ -671,7 +855,7 @@ impl SpriteSlot {
             0x069282 => {
                 w.rts();
                 let target = (u32::from(w.cpu.bank) << 16) | u32::from(w.cpu.pc);
-                if target != 0x06bfe0 {
+                if !matches!(target,0x06bfe0|0x06bfea) && !(self.inactive_zelda && target == 0x06c067) {
                     self.child = Some(SlotChild::Active(target));
                 }
                 target
@@ -747,7 +931,7 @@ impl SpriteSlot {
                 pc + 1
             }
             0x0684d9 | 0x0684b8 | 0x0db8f0 | 0x0db870 | 0x06bfe9 | 0x06bfe4 | 0x05da30
-            | 0x05da66 | 0x05daf6 | 0x05db0c | 0x05db1e | 0x05db22 => {
+            | 0x05da66 | 0x05daf6 | 0x05db0c | 0x05db1e | 0x05db22 | 0x06bfee | 0x05af81 | 0x05b018 => {
                 let far = matches!(pc, 0x0db8f0 | 0x0db870 | 0x05da30);
                 if far {
                     w.rtl();
@@ -757,19 +941,19 @@ impl SpriteSlot {
                 self.accept_return(w.cpu, Some(far));
                 self.pc
             }
-            0x05db86 | 0x05db87 => {
+            0x05ec96 | 0x05ec97 | 0x05db86 | 0x05db87 => {
                 w.drain(6);
-                let bank = if pc == 0x05db86 { w.cpu.db } else { w.cpu.bank };
+                let bank = if matches!(pc, 0x05db86 | 0x05ec96) { w.cpu.db } else { w.cpu.bank };
                 w.push(u16::from(bank), 1);
                 pc + 1
             }
-            0x05db88 | 0x05db8c => {
+            0x05ec98 | 0x05ec9c | 0x05db88 | 0x05db8c => {
                 w.drain(12);
                 w.cpu.db = w.pull(1) as u8;
                 w.flags(u16::from(w.cpu.db), 1);
                 pc + 1
             }
-            0x05db8d => {
+            0x05ec9d | 0x05db8d => {
                 w.rtl();
                 self.accept_return(w.cpu, Some(true));
                 self.pc
@@ -819,7 +1003,7 @@ impl SpriteSlot {
                 }
                 pc + 1
             }
-            0x05f96a => {
+            0x058ab5 | 0x06c06b | 0x05f96a => {
                 w.rts();
                 self.accept_return(w.cpu, Some(false));
                 self.pc
@@ -1585,7 +1769,7 @@ impl SpriteSlot {
                 w.width(operand as u8, false);
                 next
             }
-            _ => unreachable!("sprite slot {pc:06x}"),
+            _ => unreachable!("sprite slot {pc:06x} context={:?}", w.cpu),
         };
         if self.allocator.is_none() {
             w.cpu.bank = (self.pc >> 16) as u8;
@@ -1652,6 +1836,23 @@ mod tests {
             ram[0xfe0 + region * 2..0xfe2 + region * 2].copy_from_slice(&base.to_le_bytes());
             ram[0xfec + region * 2..0xfee + region * 2]
                 .copy_from_slice(&(case as u16).wrapping_add(0xfff8).to_le_bytes());
+        }
+        if kind==0x6c {
+            ram[0xf3ca]=if case%4==0 {1} else {0};
+            ram[0x8a]=[0x1b,0x40,0x80,0xff][case/4%4];
+            ram[0xfc6]=(case/16%4) as u8;
+            for (at,value) in [(0xe2,0u16),(0xe8,0),(0xfd8,[0u16,0x100,0xffff,0x400][case%4]),(0xfda,[0u16,0x100,0xffff,0x400][case/4%4]),(0x90,0x840),(0x92,0xa30)] {ram[at..at+2].copy_from_slice(&value.to_le_bytes());}
+        }
+        if kind==0x6c && case>=128 {
+            ram[0xf3ca]=0;ram[0x8a]=0x1b;ram[0xfc6]=0;ram[0xfc1]=0;ram[0x11]=0;
+            ram[0x4d]=0;ram[0x2da]=0;ram[0x308]=0;ram[0xc4a..0xc4f].fill(0);
+            ram[0xf70+slot]=if case<160 {(case as u8&1)*16} else {[0,16,128,255][case%4]};ram[0xe60+slot]=0;ram[0xf60+slot]=if case<192 {0x40|(case as u8&31)} else {0};ram[0xee]=0;ram[0xf20+slot]=0;
+            ram[0xfd8..0xfda].copy_from_slice(&0x70u16.to_le_bytes());
+            ram[0xfda..0xfdc].copy_from_slice(&0x100u16.to_le_bytes());
+        }
+        if kind==0x6c && case>=192 {
+            ram[0x22..0x24].copy_from_slice(&0x70u16.to_le_bytes());
+            ram[0x20..0x22].copy_from_slice(&0x100u16.to_le_bytes());
         }
         let far = matches!(entry, 0x0db818 | 0x05da29 | 0x05db86);
         let mut cpu = NativeNmiContext {
@@ -1721,6 +1922,22 @@ mod tests {
         }
         (instructions, work.child())
     }
+    #[test]
+    fn mirror_active_dispatch_drawing_and_physical_returns_match_source() {
+        let rom=rom();let mut boundaries=0;let mut complete=0;let mut children=0;
+        for a in (0x05b5e8..0x05b648).chain(0x06da09..0x06db09).chain(0x06db04..0x06dc04).chain(0x06f72f..0x06f7ef) {
+            assert_eq!(super::super::sprite_single_data::table_byte(a),Some(rom[(a>>16) as usize*0x8000+(a as usize&0x7fff)]));
+        }
+        for slot in 0..16 {
+            for case in 0..256 {
+                let (n,child)=run(&rom,0x06bfea,slot,0x6c,9,case,[0,1,30002,30003][case%4]);
+                boundaries+=n;if child.is_none() {complete+=1;} else {children+=1;}
+            }
+        }
+        assert!(complete>0);assert!(children>0);
+        eprintln!("mirror active Source cases=4096 boundaries={boundaries} completed={complete} explicit children={children}");
+    }
+
     #[test]
     fn sprite_slot_timers_and_dispatch_match_source_for_every_slot_and_state() {
         let rom = rom();

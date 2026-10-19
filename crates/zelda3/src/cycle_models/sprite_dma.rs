@@ -234,7 +234,7 @@ impl SourceWords {
         &mut self,
         cpu: &mut super::nmi_stack::NativeNmiContext,
         clock: &mut snes::CpuMasterTimeline,
-        bus: impl FnMut(u64, super::intro_clear::Access) -> u16,
+        bus: impl super::native_work::WorkBus,
     ) -> Option<u64> {
         use super::nmi_stack::CARRY;
         if self.is_complete() {
@@ -288,7 +288,7 @@ impl SourceWords {
                 if indexed {
                     w.drain(6);
                 }
-                let value = (w.bus)(
+                let value = w.bus.access(
                     w.clock.clock_master_cycles(),
                     super::intro_clear::Access::Read(address, width),
                 );
@@ -299,7 +299,7 @@ impl SourceWords {
             .unwrap();
         if let Some((index, value)) = instruction.store {
             w.drain(16);
-            (w.bus)(
+            w.bus.access(
                 w.clock.clock_master_cycles(),
                 super::intro_clear::Access::Write(
                     u32::from(SOURCE_WORD_ADDRESSES[index]),
@@ -310,7 +310,10 @@ impl SourceWords {
             w.drain(16);
         } else {
             if w.cycles == 8 {
-                w.drain(instruction.master_cycles - 8);
+                if matches!(op, 0 | 17) {
+                    w.drain(8);
+                    w.drain(6);
+                } else { w.drain(instruction.master_cycles - 8); }
             }
             match op {
                 0 => {
@@ -381,7 +384,7 @@ struct SourceClock<'a, B> {
     bus: B,
     cycles: u64,
 }
-impl<B: FnMut(u64, super::intro_clear::Access) -> u16> SourceClock<'_, B> {
+impl<B: super::native_work::WorkBus> SourceClock<'_, B> {
     fn fetch(&mut self) {
         self.cycles += 8;
         self.clock.advance_synchronous_pcbase_opcode_fetch(8);
@@ -390,23 +393,8 @@ impl<B: FnMut(u64, super::intro_clear::Access) -> u16> SourceClock<'_, B> {
         self.cycles += u64::from(n);
         let bus = &mut self.bus;
         self.clock
-            .advance_synchronous_after_semantics_with(n, |event, _| {
-                if let snes::cpu_timeline::CpuSynchronousTimelineEvent::HMax {
-                    completed_field_index,
-                    completed_scanline: 224,
-                    event_timestamp,
-                    ..
-                } = event
-                {
-                    bus(
-                        event_timestamp.master_cycles(),
-                        super::intro_clear::Access::Vblank {
-                            field: completed_field_index,
-                            at: event_timestamp.master_cycles(),
-                        },
-                    );
-                }
-                Ok::<u32, String>(0)
+            .advance_synchronous_after_semantics_with_clock(n, |event, clock| {
+                Ok::<u32, String>(bus.retire_event(event, clock))
             })
             .unwrap();
     }
@@ -755,7 +743,7 @@ impl Animations {
         &mut self,
         cpu: &mut super::nmi_stack::NativeNmiContext,
         clock: &mut snes::CpuMasterTimeline,
-        bus: impl FnMut(u64, super::intro_clear::Access) -> u16,
+        bus: impl super::native_work::WorkBus,
     ) -> Option<u64> {
         use super::intro_clear::Access;
         use super::nmi_stack::{CARRY, ZERO};
@@ -809,8 +797,9 @@ impl Animations {
                         )
                     }
                 };
-                w.drain(operands + extra);
-                let value = (w.bus)(w.clock.clock_master_cycles(), Access::Read(address, width));
+                w.drain(operands);
+                if extra != 0 { w.drain(extra); }
+                let value = w.bus.access(w.clock.clock_master_cycles(), Access::Read(address, width));
                 w.drain(u32::from(width) * 8);
                 loaded = Some(value);
                 value
@@ -819,14 +808,17 @@ impl Animations {
         if let Some((destination, value)) = instruction.store {
             let address = destination.address();
             w.drain(if address > 0xffff { 24 } else { 16 });
-            (w.bus)(
+            w.bus.access(
                 w.clock.clock_master_cycles(),
                 Access::Write(address, value, 2),
             );
             w.drain(16);
         } else {
             if w.cycles == 8 {
-                w.drain(instruction.master_cycles - 8);
+                if matches!(op, 3 | 7 | 9 | 16 | 25 | 31) {
+                    w.drain(8);
+                    if instruction.master_cycles == 22 { w.drain(6); }
+                } else { w.drain(instruction.master_cycles - 8); }
             }
             match op {
                 3 | 7 | 9 | 16 | 25 | 31 => {}
@@ -878,7 +870,7 @@ impl PointerWords {
         &mut self,
         cpu: &mut super::nmi_stack::NativeNmiContext,
         clock: &mut snes::CpuMasterTimeline,
-        bus: impl FnMut(u64, super::intro_clear::Access) -> u16,
+        bus: impl super::native_work::WorkBus,
     ) -> Option<u64> {
         use super::intro_clear::Access;
         use super::nmi_stack::CARRY;
@@ -911,7 +903,7 @@ impl PointerWords {
         let instruction = self
             .step(|pair| {
                 w.drain(16);
-                let value = (w.bus)(
+                let value = w.bus.access(
                     w.clock.clock_master_cycles(),
                     Access::Read([0xae8, 0xaea, 0xaf4][pair], 2),
                 );
@@ -921,7 +913,7 @@ impl PointerWords {
             .unwrap();
         if let Some((index, value)) = instruction.store {
             w.drain(16);
-            (w.bus)(
+            w.bus.access(
                 w.clock.clock_master_cycles(),
                 Access::Write(u32::from(POINTER_WORD_ADDRESSES[index]), value, 2),
             );
@@ -929,7 +921,7 @@ impl PointerWords {
         } else if op == 19 {
             // Actual RTS: pull the caller word, then increment its PC.
             w.drain(12);
-            let returned = (w.bus)(
+            let returned = w.bus.access(
                 w.clock.clock_master_cycles(),
                 Access::Read(u32::from(w.cpu.sp.wrapping_add(1)), 2),
             );
@@ -939,7 +931,8 @@ impl PointerWords {
             w.drain(6);
         } else {
             if w.cycles == 8 {
-                w.drain(instruction.master_cycles - 8);
+                if op == 18 { w.drain(8); w.drain(6); }
+                else { w.drain(instruction.master_cycles - 8); }
             }
             if op == 18 {
                 w.cpu.p |= 0x20;
@@ -975,7 +968,7 @@ impl PointerWords {
     }
 }
 
-impl<B: FnMut(u64, super::intro_clear::Access) -> u16> SourceClock<'_, B> {
+impl<B: super::native_work::WorkBus> SourceClock<'_, B> {
     fn adc_flags(&mut self, lhs: u16, rhs: u16, carry: bool, value: u16) {
         use super::nmi_stack::CARRY;
         self.cpu.p = (self.cpu.p & !(CARRY | 0x40))
@@ -1008,7 +1001,7 @@ impl MainSpriteTail {
         &mut self,
         cpu: &mut super::nmi_stack::NativeNmiContext,
         clock: &mut snes::CpuMasterTimeline,
-        bus: impl FnMut(u64, super::intro_clear::Access) -> u16,
+        bus: impl super::native_work::WorkBus,
     ) -> Option<(u64, u32)> {
         if self.complete() {
             return None;
@@ -1039,7 +1032,7 @@ impl MainSpriteTail {
             w.fetch();
             w.drain(8);
             if self.caller_instruction == 0 {
-                (w.bus)(
+                w.bus.access(
                     w.clock.clock_master_cycles(),
                     super::intro_clear::Access::Write(0x12, 0, 1),
                 );

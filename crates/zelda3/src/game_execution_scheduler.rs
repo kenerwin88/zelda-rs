@@ -8,7 +8,8 @@ use super::{
 };
 pub(super) use snes::{CpuBusEvent, CpuBusWorkload, CpuFieldTiming, CpuRasterPosition};
 use snes::{
-    CpuMasterTimeline, CpuSynchronousMachine, CpuTimelineDeadlineAdvance, CpuTimelineEvent,
+    CpuMasterTimeline, CpuSynchronousMachine, CpuSynchronousTimelineEvent,
+    CpuTimelineDeadlineAdvance, CpuTimelineEvent,
     RomCpuProbeAdvance, SourceCpuAcceptedInterrupt, SourceCpuStepReceipt, NMI_SCANLINE,
     SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES,
     SNES9X_NMI_GENERAL_DMA_DELAY_MASTER_CYCLES, WRAM_REFRESH_STALL_MASTER_CYCLES,
@@ -117,10 +118,44 @@ pub(super) struct CpuCycleBudget {
 }
 
 impl CpuCycleBudget {
+    pub(super) fn retained_native_timeline(&self) -> CpuMasterTimeline {
+        self.timeline.clone()
+    }
     /// Borrow the exact CPU's already-running timeline. No raster re-seed or
     /// provisional bus work is allowed when this machine is the clock owner.
     pub(super) fn from_source_cpu(machine: &CpuSynchronousMachine) -> Self {
-        let timeline = machine.timeline().clone();
+        Self::from_retained_timeline(machine.timeline().clone(), true)
+    }
+
+    /// Transfer a native caller's existing event cursor and physical field.
+    /// A raster position alone cannot reconstruct pending bus events.
+    pub(super) fn from_native_timeline(timeline: &CpuMasterTimeline) -> Self {
+        Self::from_retained_timeline(timeline.clone(), false)
+    }
+
+    /// Let a fixed native owner retire its real bus transactions on this
+    /// cursor. Observe the deadline only after the indivisible instruction.
+    pub(super) fn retire_native_instruction<T>(
+        &mut self,
+        instruction: impl FnOnce(&mut CpuMasterTimeline) -> T,
+    ) -> (T, CpuWorkAdvance) {
+        assert!(!self.source_observation_active);
+        assert!(self.poly_thread_irq.is_none());
+        assert!(self.timeline.synchronous_beam_position().is_some());
+        let before = self.timeline.clock_master_cycles();
+        assert!(before < self.deadline.master_cycles);
+        let result = instruction(&mut self.timeline);
+        assert!(self.timeline.clock_master_cycles() > before);
+        let advance = if self.timeline.clock_master_cycles() >= self.deadline.master_cycles {
+            CpuWorkAdvance::ReachedBoundary {
+                boundary: self.deadline.boundary,
+                remaining_work_master_cycles: 0,
+            }
+        } else { CpuWorkAdvance::Complete };
+        (result, advance)
+    }
+
+    fn from_retained_timeline(timeline: CpuMasterTimeline, source_observation_active: bool) -> Self {
         let mut field = timeline.field_index();
         let mut boundary = timeline.master_cycles_at_raster(
             field,
@@ -140,7 +175,7 @@ impl CpuCycleBudget {
                 master_cycles: boundary,
             },
             poly_thread_irq: None,
-            source_observation_active: true,
+            source_observation_active,
             source_nmi_boundary_pending: false,
             poly_thread_free_fields: (0, 0),
         }
@@ -309,7 +344,21 @@ impl CpuCycleBudget {
         mut hdma_stall: impl FnMut(CpuBusEvent, u16) -> u32,
     ) -> CpuWorkAdvance {
         debug_assert!(self.timeline.clock_master_cycles() < self.deadline.master_cycles);
-        let advance = self.timeline.advance_interruptible_until_with(
+        let advance = if self.timeline.synchronous_beam_position().is_some() {
+            assert!(!self.source_observation_active,
+                "source-owned spans must be observed after source execution");
+            let dynamic_hdma = self.timeline.bus_workload().dynamic_hdma();
+            self.timeline.advance_synchronous_interruptible_until_with(
+                self.deadline.master_cycles, work_master_cycles,
+                |event, clock| Ok::<_, std::convert::Infallible>(match event {
+                    CpuSynchronousTimelineEvent::Bus(
+                        event @ (CpuBusEvent::HdmaInit | CpuBusEvent::HdmaStart)
+                    ) if dynamic_hdma => hdma_stall(event,
+                        clock.synchronous_beam_position().unwrap().scanline),
+                    _ => 0,
+                }),
+            ).unwrap()
+        } else { self.timeline.advance_interruptible_until_with(
             self.deadline.master_cycles,
             work_master_cycles,
             |event, scanline| match event {
@@ -319,7 +368,7 @@ impl CpuCycleBudget {
                     hdma_stall(event, scanline),
                 CpuTimelineEvent::ShortScanline => 0,
             },
-        );
+        ) };
         match advance {
             CpuTimelineDeadlineAdvance::Complete => CpuWorkAdvance::Complete,
             CpuTimelineDeadlineAdvance::ReachedDeadline { remaining_work_master_cycles } =>
@@ -334,6 +383,9 @@ impl CpuCycleBudget {
     /// instruction is observed immediately after it completes.
     pub(super) fn advance_instruction(&mut self, instruction_master_cycles: u32) -> CpuWorkAdvance {
         debug_assert!(self.timeline.clock_master_cycles() < self.deadline.master_cycles);
+        if self.timeline.synchronous_beam_position().is_some() {
+            return self.advance_instruction_with_hdma(instruction_master_cycles, |_, _| 0);
+        }
         self.advance_atomic_work(instruction_master_cycles)
     }
 
@@ -349,6 +401,33 @@ impl CpuCycleBudget {
         let bus = self.timeline.bus_workload();
         let dynamic_hdma = bus.dynamic_hdma();
         let fixed_hdma_stall = u32::from(bus.hdma_stall_master_cycles());
+        if self.timeline.synchronous_beam_position().is_some() {
+            assert!(!self.source_observation_active,
+                "source-owned instructions must be observed after source execution");
+            assert!(self.poly_thread_irq.is_none(),
+                "a native synchronous caller must own its IRQ continuation");
+            if instruction_master_cycles != 0 {
+                assert!(instruction_master_cycles >= 8, "native opcode fetch requires eight clocks");
+                self.timeline.advance_synchronous_pcbase_opcode_fetch(8);
+                self.timeline.advance_synchronous_after_semantics_with_clock(
+                    instruction_master_cycles - 8,
+                    |event, clock| Ok::<_, std::convert::Infallible>(match event {
+                        CpuSynchronousTimelineEvent::Bus(
+                            event @ (CpuBusEvent::HdmaInit | CpuBusEvent::HdmaStart)
+                        ) if dynamic_hdma => hdma_stall(event,
+                            clock.synchronous_beam_position().unwrap().scanline),
+                        // The timeline itself charges refresh and fixed HDMA.
+                        _ => 0,
+                    }),
+                ).unwrap();
+            }
+            return if self.timeline.clock_master_cycles() >= self.deadline.master_cycles {
+                CpuWorkAdvance::ReachedBoundary {
+                    boundary: self.deadline.boundary,
+                    remaining_work_master_cycles: 0,
+                }
+            } else { CpuWorkAdvance::Complete };
+        }
         self.timeline
             .advance_work_unbounded_with(
                 instruction_master_cycles,
@@ -506,7 +585,16 @@ impl CpuCycleBudget {
             CpuRasterBoundary::CpuNmiAcceptance,
             "general-DMA NMI deferral requires a CPU acceptance deadline",
         );
-        self.timeline.advance_work_unbounded(dma_master_cycles);
+        if self.timeline.synchronous_beam_position().is_some() {
+            // DMA has no opcode fetch. Keep the retained event cursor while
+            // retiring the already-priced transfer and its fixed bus events.
+            assert!(!self.source_observation_active);
+            self.timeline.advance_synchronous_after_semantics_with_clock(
+                dma_master_cycles, |_, _| Ok::<_, std::convert::Infallible>(0),
+            ).unwrap();
+        } else {
+            self.timeline.advance_work_unbounded(dma_master_cycles);
+        }
         self.steal_poly_thread_slice();
         if self.timeline.clock_master_cycles() >= self.deadline.master_cycles {
             self.deadline.master_cycles = self
@@ -597,6 +685,10 @@ impl CpuCycleBudget {
 
     pub(super) fn field_index(&self) -> u64 {
         self.timeline.field_index()
+    }
+
+    pub(super) fn timeline_master_cycles(&self) -> u64 {
+        self.timeline.clock_master_cycles()
     }
 
     pub(super) fn raster_position(&self) -> CpuRasterPosition {
@@ -1278,6 +1370,14 @@ impl GameExecutionScheduler {
         ));
         debug_assert!(!self.work_suspends_translated_call_stack());
         self.cpu_host_phase = CpuHostPhase::ReturnedToMainLoopBeforeNmi;
+    }
+
+    /// A resident native caller may finish during the translated module call
+    /// or while resuming a suspended stack. Both leave its next NMI ahead.
+    pub(super) fn finish_clocked_call_at_main_wait_before_nmi(&mut self) {
+        if self.cpu_host_phase == CpuHostPhase::MainLoopRunning {
+            self.main_iteration_follows_leading_nmi = true;
+        } else { self.finish_call_stack_at_main_wait_before_nmi(); }
     }
 
     pub(super) fn main_return_requires_leading_nmi(self) -> bool {
@@ -2081,6 +2181,44 @@ mod cpu_timing_tests {
             source_observation_active: false,
             source_nmi_boundary_pending: false,
             poly_thread_free_fields: (0, 0),
+        }
+    }
+
+    #[test]
+    fn native_caller_handoff_keeps_the_source_event_cursor() {
+        // Transfer after real opcode fetch/internal work, including a pending
+        // HMax and refresh edge. Re-seeding from V/H loses that event cursor.
+        for entry in [CpuRasterPosition::new(224, 1330), CpuRasterPosition::new(255, 1350),
+            CpuRasterPosition::new(100, 532), CpuRasterPosition::new(240, 1338)] {
+            let mut source = source_probe_at_with_nmi(entry, &[0xea; 64], false);
+            for _ in 0..3 { source.step().unwrap(); }
+            let mut budget = CpuCycleBudget::from_native_timeline(source.timeline());
+            assert_eq!(&budget.timeline, source.timeline());
+            assert!(!budget.source_observation_active);
+            for _ in 0..32 {
+                source.step().unwrap();
+                let advance = budget.advance_instruction(14); // Slow-ROM NOP.
+                assert_eq!(budget.timeline.clock_master_cycles(), source.timeline().clock_master_cycles(),
+                    "entry={entry:?}");
+                assert_eq!(budget.raster_position(), source.timeline().raster_position());
+                if advance.reached_boundary().is_some() { break; }
+            }
+        }
+    }
+
+    #[test]
+    fn native_interruptible_spans_keep_refresh_and_pending_hmax_ownership() {
+        for entry in [CpuRasterPosition::new(100, 532),
+            CpuRasterPosition::new(255, 1350), CpuRasterPosition::new(240, 1338)] {
+            let mut source = source_probe_at_with_nmi(entry, &[0xea; 64], false);
+            for _ in 0..3 { source.step().unwrap(); }
+            let mut budget = CpuCycleBudget::from_native_timeline(source.timeline());
+            for _ in 0..32 {
+                source.step().unwrap();
+                assert_eq!(budget.advance_interruptible_with_hdma(14, |_, _| 0),
+                    CpuWorkAdvance::Complete);
+                assert_eq!(&budget.timeline, source.timeline(), "entry={entry:?}");
+            }
         }
     }
 

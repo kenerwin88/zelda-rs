@@ -298,6 +298,26 @@ impl ZeldaState {
         Self::simple_hdma_get_ptr_from_ram(&self.ram, p)
     }
 
+    /// Immutable descriptor bytes shared by the translated setup and a
+    /// retained CPU's real HDMA bus. Transfer operands still come from WRAM.
+    pub(crate) fn native_hdma_descriptor_byte(address: u32) -> Option<u8> {
+        for (base, bytes) in [
+            (0x0cfa87, ATTRACT_BG_DMA_SETUP.as_slice()),
+            (0x0cfa94, ATTRACT_TILEMAP_DMA_SETUP.as_slice()),
+            (0x0ebd53, ENDING_HDMA_SETUP.as_slice()),
+            (0x00f2fb, SPOTLIGHT_INDIRECT_HDMA_SETUP.as_slice()),
+            (0x0abdcf, MAP_MODE_HDMA_SETUP_NEAR.as_slice()),
+            (0x0abdd6, MAP_MODE_HDMA_SETUP_FAR.as_slice()),
+            (0x0abddd, ATTRACT_INDIRECT_HDMA_SETUP.as_slice()),
+            (0x02c80c, PRAYING_SCENE_HDMA_SETUP.as_slice()),
+        ] {
+            if let Some(byte) = address.checked_sub(base).and_then(|at| bytes.get(at as usize)) {
+                return Some(*byte);
+            }
+        }
+        None
+    }
+
     pub(super) fn simple_hdma_get_ptr_from_ram(ram: &[u8], p: u32) -> Option<Vec<u8>> {
         match p {
             0x0cfa87 => Some(ATTRACT_BG_DMA_SETUP.to_vec()),
@@ -530,6 +550,29 @@ impl ZeldaState {
         self.ppu.m7_matrix = saved_m7_matrix;
         self.ppu.m7_prev = saved_m7_prev;
 
+        if let (Some(cpu), Some(ppu)) = (&self.native_startup_cpu, &mut self.native_ppu) {
+            if cpu.startup.owns_cpu_clock() {
+                let rows=ppu.window_scanlines(&cpu.timeline);
+                if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_NATIVE_WINDOW_SCANOUT",self.frame_ctr_dbg) {
+                    eprintln!("native-window-scanout host={} field={} raster={:?} available={} module={}/{} radius={}",
+                        self.frame_ctr_dbg,cpu.timeline.field_index(),cpu.timeline.raster_position(),rows.is_some(),
+                        self.game_state.frame.main_module,self.game_state.frame.submodule,
+                        self.game_state.display.spotlight_hdma.window_radius());
+                    if let Some(rows)=rows {eprintln!("native-window-rows host={} rows={rows:?}",self.frame_ctr_dbg);}
+                    eprintln!("native-scanout-oam host={} words={:?}",self.frame_ctr_dbg,self.ppu.oam);
+                    eprintln!("native-scanout-cgram host={} colors={:?}",self.frame_ctr_dbg,self.ppu.cgram);
+                    eprintln!("native-scanout-vram host={} words={:?}",self.frame_ctr_dbg,self.ppu.vram);
+                    eprintln!("native-scanout-registers host={} windowed={:?} windowsel={} enabled={:?}",
+                        self.frame_ctr_dbg,self.ppu.screen_windowed,self.ppu.windowsel,self.ppu.screen_enabled);
+                }
+                if let Some(rows) = rows {
+                    for (line, &[left1, right1, left2, right2]) in result.iter_mut().zip(rows) {
+                        (line.0, line.1, line.2, line.3) = (left1, right1, left2, right2);
+                    }
+                }
+            }
+        }
+
         if let Some(history) = self.native_bg3_scroll_scanout.as_ref() {
             let clock = &self.native_startup_cpu.as_ref().expect("native scroll retains its CPU clock").timeline;
             let mut writes = history.writes.iter().peekable();
@@ -666,6 +709,10 @@ impl ZeldaState {
 
     pub(super) fn finish_ground_movement_camera_tail(&mut self) {
         self.follower_link_state_mut().clear_pit_correction();
+        self.finish_ground_movement_camera_after_pit_clear();
+    }
+
+    pub(super) fn finish_ground_movement_camera_after_pit_clear(&mut self) {
         if self.apply_links_movement_to_camera_called && self.game_state.enhanced_features.has(4096)
         {
             return;
