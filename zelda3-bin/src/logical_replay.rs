@@ -1146,6 +1146,8 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             fs::create_dir_all(dir).expect("create --dump-wram directory");
             fs::write(dir.join(format!("engine-{target}.bin")), &game.ram[..WRAM_LEN]).expect("write engine WRAM");
             fs::write(dir.join(format!("rom-{target}.bin")), &images.image).expect("write ROM WRAM");
+            let vram: Vec<u8> = game.vram().iter().flat_map(|word| word.to_le_bytes()).collect();
+            fs::write(dir.join(format!("engine-{target}.vram")), vram).expect("write engine VRAM");
         }
         for (written, &byte) in written.iter_mut().zip(&images.image) {
             *written |= byte != POWER_ON_FILL;

@@ -31,8 +31,8 @@
 //! iteration then carries that picture's RGB hash and `host-pictures.txt`
 //! lists it per host for checking against the cache (it matches Snes9x on
 //! most frames; it is a diagnostic, not the authority).
-//! `ZELDA3_LEDGER_FRAMES=<lo>-<hi>` (implies pictures) writes
-//! `frames/host-<n>.ppm`.
+//! `ZELDA3_LEDGER_FRAMES=<lo>-<hi>[,...]` draws just those windows and writes
+//! `frames/host-<n>.ppm`, plus the PPU registers and VRAM beside it.
 
 use sha2::{Digest, Sha256};
 use snes::{Snes9xColdCpuExecutor, SourceCpuAcceptedInterrupt, SourceCpuBusAccessKind};
@@ -219,22 +219,36 @@ fn main() -> Result<(), Box<dyn Error>> {
     if seed_every.is_some() {
         fs::create_dir_all(out_dir.join("seeds"))?;
     }
-    let frame_hosts = env::var("ZELDA3_LEDGER_FRAMES")
+    let frame_hosts: Vec<(usize, usize)> = env::var("ZELDA3_LEDGER_FRAMES")
         .ok()
         .map(|value| {
-            let (lo, hi) = value.split_once('-').unwrap_or((&value, &value));
-            Ok::<_, Box<dyn Error>>((lo.parse::<usize>()?, hi.parse::<usize>()?))
+            value
+                .split(',')
+                .map(|range| {
+                    let (lo, hi) = range.split_once('-').unwrap_or((range, range));
+                    Ok::<_, Box<dyn Error>>((lo.parse::<usize>()?, hi.parse::<usize>()?))
+                })
+                .collect::<Result<_, _>>()
         })
-        .transpose()?;
+        .transpose()?
+        .unwrap_or_default();
     // `ZELDA3_LEDGER_WATCH=<wram offset hex>[,...]` prints every CPU write to
     // those WRAM bytes with the iteration, host and writing PC.
     let watch: Vec<u32> = env::var("ZELDA3_LEDGER_WATCH")
         .map(|value| value.split(',').filter_map(|a| u32::from_str_radix(a.trim_start_matches("0x"), 16).ok()).collect())
         .unwrap_or_default();
     let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset_with_sram(&rom, Some(&sram))?;
-    let render_pictures = frame_hosts.is_some() || env::var_os("ZELDA3_LEDGER_PICTURES").is_some();
-    cpu.enable_frame_capture(render_pictures);
-    if frame_hosts.is_some() {
+    let render_every = env::var_os("ZELDA3_LEDGER_PICTURES").is_some();
+    let render_pictures = !frame_hosts.is_empty() || render_every;
+    // `ZELDA3_LEDGER_FRAMES` alone draws only from a few hosts before each
+    // window to its end: the line renderer needs no earlier pictures, and
+    // drawing every frame from reset makes a deep window take hours.
+    let rendering_at = |host: usize| {
+        render_every || frame_hosts.iter().any(|&(lo, hi)| (lo.saturating_sub(3)..=hi + 1).contains(&host))
+    };
+    let mut rendering = rendering_at(0);
+    cpu.enable_frame_capture(rendering);
+    if !frame_hosts.is_empty() {
         fs::create_dir_all(out_dir.join("frames"))?;
     }
     let mut host_pictures = render_pictures
@@ -285,6 +299,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             check_host = host;
             stall_reported = false;
         }
+        if rendering != rendering_at(host) {
+            rendering = !rendering;
+            cpu.enable_frame_capture(rendering);
+        }
         cpu.set_libretro_joypad_words(host_buttons, 0);
         let mut failure: Option<Box<dyn Error>> = None;
         let result = cpu.run_until_main_loop_return_with_quiescent_step_hook(
@@ -301,7 +319,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         }
                         format!("{:x}", digest.finalize())
                     });
-                    if frame_hosts.is_some_and(|(lo, hi)| (lo..=hi).contains(&host)) {
+                    if frame_hosts.iter().any(|&(lo, hi)| (lo..=hi).contains(&host)) {
                         let mut ppm = b"P6\n256 224\n255\n".to_vec();
                         for pixel in frame.chunks_exact(4) {
                             ppm.extend_from_slice(&[pixel[2], pixel[1], pixel[0]]);
@@ -313,7 +331,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let state = serde_json::json!({
                             "fixed_color": [ppu.fixed_color_r, ppu.fixed_color_g, ppu.fixed_color_b],
                             "cgram": ppu.cgram,
+                            "bg": ppu.bg_layer,
+                            "mode": ppu.mode,
                         });
+                        let vram: Vec<u8> = ppu.vram.iter().flat_map(|word| word.to_le_bytes()).collect();
+                        if let Err(error) = fs::write(out_dir.join("frames").join(format!("host-{host}.vram")), vram) {
+                            failure = Some(error.into());
+                        }
                         if let Err(error) = fs::write(
                             out_dir.join("frames").join(format!("host-{host}.json")),
                             state.to_string(),
