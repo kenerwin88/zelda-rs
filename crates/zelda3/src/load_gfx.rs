@@ -1602,7 +1602,17 @@ impl ZeldaState {
                 ^ 2;
             self.set_darkening_or_lightening_screen_word(mode);
             if mode != 0 {
-                self.attract_scene_mut().increment_legend_flag();
+                // $00:EBBE `INC $27` (16-bit): the attract legend flag in
+                // module $14, Link's actual Y/X velocity word elsewhere.
+                if self.game_state.frame.main_module == 0x14 {
+                    self.attract_scene_mut().increment_legend_flag();
+                } else {
+                    let link = self.game_state.player.follower_link;
+                    let [y, x] = u16::from_le_bytes([link.actual_y_velocity(), link.actual_x_velocity()])
+                        .wrapping_add(1)
+                        .to_le_bytes();
+                    self.follower_link_state_mut().set_actual_velocity_xy(x, y);
+                }
             }
         } else {
             self.set_countdown_word(countdown);

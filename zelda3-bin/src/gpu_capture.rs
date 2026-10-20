@@ -948,12 +948,12 @@ impl NativeWindowOracleRenderer {
     }
 
     /// `finish_game_video_digest` that also returns the frame's packed RGBA
-    /// rows (no debug capture or timing).
+    /// rows (no timing).
     pub(crate) fn finish_game_video_digest_with_rgba(
         &mut self,
         queued: QueuedGpuVideoDigest,
     ) -> Result<(parity::av::VideoDigest, Vec<u8>), String> {
-        self.frontend.finish_modern_gpu_target_readback(queued.ticket, |readback| {
+        let (digest, rgba) = self.frontend.finish_modern_gpu_target_readback(queued.ticket, |readback| {
             let mut digest = parity::evidence::Sha256Digest::new();
             digest.update_rgb_from_rgba(readback.rows());
             (
@@ -962,9 +962,14 @@ impl NativeWindowOracleRenderer {
                     height: readback.height(),
                     sha256: digest.finish(),
                 },
-                readback.rows().flat_map(|row| row.iter().copied()).collect(),
+                readback.rows().flat_map(|row| row.iter().copied()).collect::<Vec<u8>>(),
             )
-        })
+        })?;
+        if let Some(path) = queued.debug_capture_path {
+            crate::image_output::write_rgba_frame_png(&path, &rgba, digest.width, digest.height)
+                .map_err(|error| error.to_string())?;
+        }
+        Ok((digest, rgba))
     }
 
     pub(crate) fn render_game_rgba_with_capture(
