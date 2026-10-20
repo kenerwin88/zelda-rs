@@ -7777,6 +7777,12 @@ impl ZeldaState {
         if let Some(budget) = exact_budget.as_ref() {
             cycles_left = budget.master_cycles;
         }
+        if self.lag_free {
+            // The cartridge's iteration does not end at the next NMI: a render
+            // that overruns it lags and finishes in the same iteration.
+            exact_budget = None;
+            cycles_left = u32::MAX;
+        }
         let mut loop_budget = cycles_left;
         if !resuming {
             self.dialogue_vwf_deferred_handler_exits = 0;

@@ -355,6 +355,12 @@ impl ModernAudioCommandQueue {
         }
     }
 
+    /// Total pushes so far and the ports of the newest one.
+    fn last_push(&self) -> (u8, [u8; 4]) {
+        let pos = self.write_position.wrapping_sub(1) & 0xf;
+        (self.total_writes, self.write_history[pos as usize].legacy_ports())
+    }
+
     fn pop(&mut self) {
         if self.write_count != 0 {
             let pos = self.write_position.wrapping_sub(self.write_count) & 0xf;
@@ -850,6 +856,13 @@ impl ZeldaState {
         }
     }
 
+    /// Total APU port pushes so far and the ports of the newest one (music,
+    /// ambient, SFX1, SFX2): the command stream the cartridge's NMI writes
+    /// to `$2140-$2143`.
+    pub fn zelda_last_pushed_apu_ports(&self) -> (u8, [u8; 4]) {
+        self.audio.modern.queue.last_push()
+    }
+
     fn zelda_pop_apu_state(&mut self) {
         self.audio.modern.queue.pop();
     }
@@ -874,6 +887,17 @@ impl ZeldaState {
     /// offset of this read. The timing receipt never supplies the port value:
     /// Zelda's deterministic SPC program remains its sole owner.
     pub(crate) fn zelda_read_apui00_for_song_end_poll(&mut self) -> u8 {
+        if let Some((reads, extra)) = self.apui00_poll_replay.as_mut() {
+            // Consecutive polls of an unchanged port read the same value; the
+            // last observed value holds until the iteration ends.
+            if reads.len() > 1 {
+                return reads.pop_front().unwrap();
+            }
+            if let Some(&value) = reads.front() {
+                return value;
+            }
+            *extra += 1;
+        }
         let current = self.game_state.system_signals.apui00();
         let sample_offset = if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
         {

@@ -152,6 +152,11 @@ impl LiveGpuFrameCapture {
     }
 
     pub(crate) fn from_game_at_comparison_frame(game: &mut ZeldaState, comparison_frame: u32) -> Self {
+        if game.lag_free() {
+            // A lag-free frame shows exactly what its own NMI wrote; the
+            // display snapshot composes generations for lagged host frames.
+            return Self::from_current_game_with_probe_frame(game, Some(comparison_frame));
+        }
         game.with_display_snapshot(|game| {
             Self::from_current_game_with_probe_frame(game, Some(comparison_frame))
         })

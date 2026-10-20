@@ -10518,6 +10518,17 @@ pub struct ZeldaState {
     #[serde(default)]
     #[serde(skip)]
     rom_startup_timing: bool,
+    /// Lag-free play: each frame runs one complete main-loop iteration. Work
+    /// the cartridge spreads over lag frames (a long glyph render) finishes
+    /// inside the iteration instead of being sliced to the ROM's CPU budget.
+    #[serde(skip)]
+    pub(crate) lag_free: bool,
+    /// Lag-free logical replay: the cartridge's `$2140` reads for the current
+    /// iteration, consumed by the song-end polls in order. The port's value
+    /// depends on how much SPC time elapsed, which lag changes; replaying the
+    /// cartridge's observation separates logic parity from audio timing.
+    #[serde(skip)]
+    pub(crate) apui00_poll_replay: Option<(std::collections::VecDeque<u8>, u32)>,
     /// Runtime-only exact original timing machine and lifecycle provenance.
     /// Positional ZeldaState/bincode checkpoints remain byte-identical; bound
     /// exact persistence belongs to a separately versioned timing sidecar.
@@ -13545,6 +13556,8 @@ impl ZeldaState {
             dialogue_font_blk_index: 0,
             dialogue_flags: 0,
             rom_startup_timing: false,
+            lag_free: false,
+            apui00_poll_replay: None,
             original_timing_owner: OriginalTimingOwnerState::Disabled,
             original_timing_cold_start_eligible: true,
             original_timing_host_dispatch_active: false,
@@ -14057,6 +14070,33 @@ impl ZeldaState {
         self.deferred_display_snapshot = None;
         self.native_module09_sprite_nmi_acceptance_snapshot = None;
         self.emu_synchronize_whole_state();
+    }
+
+    /// Run each frame as one complete main-loop iteration (see `lag_free`).
+    pub fn set_lag_free(&mut self, enabled: bool) {
+        self.lag_free = enabled;
+    }
+
+    pub fn lag_free(&self) -> bool {
+        self.lag_free
+    }
+
+    /// The translated work still scheduled for a later frame, if any. A
+    /// lag-free frame finishes its iteration, so any pending work names a
+    /// remaining place where the engine spreads cartridge work over frames.
+    pub fn pending_game_work_debug(&self) -> Option<String> {
+        self.game_execution_scheduler
+            .work_is_pending()
+            .then(|| format!("{:?}", self.game_execution_scheduler.current_work()))
+    }
+
+    /// Install the cartridge's distinct `$2140` values for the next
+    /// iteration; returns how many of the previous iteration's values were
+    /// never reached (its last value may be read any number of times) and how
+    /// many polls it made with none installed.
+    pub fn replace_apui00_poll_frame(&mut self, reads: Vec<u8>) -> (usize, u32) {
+        let previous = self.apui00_poll_replay.replace((reads.into(), 0));
+        previous.map_or((0, 0), |(left, extra)| (left.len().saturating_sub(1), extra))
     }
 
     pub fn set_rom_startup_timing(&mut self, enabled: bool) {
@@ -14646,6 +14686,36 @@ impl ZeldaState {
         oam: &[u8],
         host_frame: u32,
     ) -> Result<(), String> {
+        self.seed_memory_from_foreign_image(wram, vram, sram, cgram, oam, host_frame)?;
+        self.set_rom_startup_timing(true);
+        // Re-arm the live original-timing owner cold at this host: the first
+        // installed receipts belong to host `host_frame`, nothing is carried.
+        self.restore_original_timing_resume_checkpoint(crate::OriginalTimingResumeCheckpoint {
+            schema: crate::OriginalTimingResumeCheckpoint::SCHEMA,
+            last_consumed_host_call: Some(u64::from(host_frame).saturating_sub(1)),
+            nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
+            dungeon_exit_spotlight_entry_return_pending: false,
+            pre_dungeon_return_pending: None,
+            item_receipt_live_link_dma_host: None,
+        })
+        .map_err(|error| format!("seeded state could not re-arm live timing: {error:?}"))?;
+        Ok(())
+    }
+
+    /// Replace WRAM, VRAM, SRAM, CGRAM and OAM with a foreign machine image
+    /// and rebuild the native mirrors from it, leaving ROM startup timing off.
+    /// The lag-free logical replay seeds segments with this directly; the
+    /// oracle-seeded segment start above additionally re-arms live timing.
+    pub fn seed_memory_from_foreign_image(
+        &mut self,
+        wram: &[u8],
+        vram: &[u8],
+        sram: &[u8],
+        cgram: &[u16],
+        oam: &[u8],
+        host_frame: u32,
+    ) -> Result<(), String> {
         if wram.len() != self.ram.len() {
             return Err(format!(
                 "seed WRAM has {} bytes, expected {}",
@@ -14692,7 +14762,6 @@ impl ZeldaState {
         self.set_rom_startup_timing(false);
         self.frame_ctr_dbg = host_frame;
         self.state_recorder.replay_frame_counter = host_frame;
-        self.set_rom_startup_timing(true);
         // The spotlight HDMA dynamic table lives in WRAM ($1B00 scratch is a
         // C save-time projection which a foreign WRAM image never holds), so
         // the native table is rebuilt from WRAM below; no saveload copy.
@@ -14704,18 +14773,6 @@ impl ZeldaState {
         self.assert_native_display_state_matches_ram();
         self.sync_overworld_map16_state_from_ram();
         self.emu_synchronize_whole_state();
-        // Re-arm the live original-timing owner cold at this host: the first
-        // installed receipts belong to host `host_frame`, nothing is carried.
-        self.restore_original_timing_resume_checkpoint(crate::OriginalTimingResumeCheckpoint {
-            schema: crate::OriginalTimingResumeCheckpoint::SCHEMA,
-            last_consumed_host_call: Some(u64::from(host_frame).saturating_sub(1)),
-            nmi_publication_pending: false,
-            pending_nmi_update_gate: None,
-            dungeon_exit_spotlight_entry_return_pending: false,
-            pre_dungeon_return_pending: None,
-            item_receipt_live_link_dma_host: None,
-        })
-        .map_err(|error| format!("seeded state could not re-arm live timing: {error:?}"))?;
         Ok(())
     }
 

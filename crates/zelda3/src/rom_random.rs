@@ -130,9 +130,30 @@ pub(crate) struct RomRandomReplay {
     /// belong to an earlier execution frame by design.
     carried: usize,
     first_frame_drift: Option<(u32, u32)>,
+    /// Lag-free logical replay: one iteration's samples at a time, and a draw
+    /// past them is counted (and answered with zero) instead of panicking.
+    lenient_extra_draws: Option<u32>,
 }
 
 impl RomRandomReplay {
+    /// Replace the queue with exactly one iteration's samples, returning how
+    /// many of the previous iteration's samples went unconsumed and how many
+    /// draws it made past its samples.
+    pub(crate) fn replace_with_frame(&mut self, samples: Vec<RomRandomSample>, execution_frame: u32) -> (usize, u32) {
+        let unconsumed = if self.enabled { self.samples.len() } else { 0 };
+        let extra = self.lenient_extra_draws.replace(0).unwrap_or(0);
+        self.enabled = true;
+        self.current_execution_frame = None;
+        self.next_execution_frame = execution_frame;
+        self.first_frame_drift = None;
+        self.carried = 0;
+        self.samples = samples
+            .into_iter()
+            .map(|sample| RomRandomSample { execution_frame, ..sample })
+            .collect();
+        (unconsumed, extra)
+    }
+
     pub(crate) fn install(&mut self, samples: Vec<RomRandomSample>, start_execution_frame: u32) {
         // Samples the previous host left unconsumed were carried on purpose
         // (`ZeldaState::finish_rom_random_replay_through` accepted them while
@@ -180,6 +201,17 @@ impl RomRandomReplay {
             .expect("ROM random replay consumed outside a host frame");
         let caller = std::panic::Location::caller();
         let Some(sample) = self.samples.pop_front() else {
+            if let Some(extra) = self.lenient_extra_draws.as_mut() {
+                *extra += 1;
+                if crate::debug_env::var_os("ZELDA3_DEBUG_ROM_RANDOM_TRACE").is_some() {
+                    eprintln!(
+                        "rom_random_extra frame={execution_frame} callsite={}:{}",
+                        caller.file(),
+                        caller.line(),
+                    );
+                }
+                return Some(RomRandomResult::new(0, false));
+            }
             if crate::debug_env::var_os("ZELDA3_DEBUG_ALLOW_UNEXPECTED_ROM_RANDOM").is_some() {
                 eprintln!(
                     "unexpected_rom_random frame={execution_frame} callsite={}:{} fallback=00 carry=0",

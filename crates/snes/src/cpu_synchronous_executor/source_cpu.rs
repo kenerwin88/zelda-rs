@@ -310,6 +310,17 @@ impl Snes9xColdCpuExecutor {
     }
 
     /// OAM captured at the most recent source-ordered VBlank presentation.
+    /// Report every frame the source timeline scans out, optionally drawing
+    /// it (see `Snes::enable_frame_capture`).
+    pub fn enable_frame_capture(&mut self, render: bool) {
+        self.machine.snes.enable_frame_capture(render);
+    }
+
+    /// The most recently completed frame (empty when not rendering), if any.
+    pub fn take_captured_frame(&mut self) -> Option<Vec<u8>> {
+        self.machine.snes.take_captured_frame()
+    }
+
     pub fn presented_oam(&self) -> &[u8] {
         self.machine
             .snes

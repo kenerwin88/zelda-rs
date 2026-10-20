@@ -1054,7 +1054,11 @@ impl ZeldaState {
             self.save_progress_mut()
                 .set_hud_current_item_slot(btn_index, item);
             let jh = self.game_state.player.follower_link.filtered_joypad_h();
-            self.set_prev_joypad_h(jh);
+            // $0D:DF6E branches past the `STA $BD` when no direction moved
+            // the cursor, so a lone Select or Y press leaves $BD clear.
+            if jh & (JOYPAD_HIGH_UP | JOYPAD_HIGH_DOWN | JOYPAD_HIGH_LEFT | JOYPAD_HIGH_RIGHT) != 0 {
+                self.set_prev_joypad_h(jh);
+            }
             if item != old_item {
                 self.set_flashing_circle_timer(16);
                 self.set_sound_effect_2(32);
@@ -1075,7 +1079,9 @@ impl ZeldaState {
 
     pub(super) fn hud_update_hud(&mut self) {
         self.increment_overworld_map_state();
-        self.hud_rebuild();
+        // $0D:DFAC JSR $FA85 enters past Hud_Rebuild's template MVN, so the
+        // floor indicator words the menu blanked stay blank until close.
+        self.hud_update_only();
         self.hud_update_equipped_item();
     }
 
@@ -1774,6 +1780,11 @@ impl ZeldaState {
                 5,
             );
         }
+        self.hud_update_only();
+    }
+
+    /// `$0D:FA85`: Hud_Rebuild's tail without the template copy.
+    pub(super) fn hud_update_only(&mut self) {
         self.hud_update_hearts();
         self.hud_update_magic();
         self.hud_update_inventory();

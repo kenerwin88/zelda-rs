@@ -50,6 +50,7 @@ impl ZeldaState {
             .decrement_address()
     }
 
+    #[track_caller]
     pub(crate) fn set_bg_vram_load_mode(&mut self, value: u8) {
         self.display_core_mut().set_bg_vram_load_mode(value);
     }
@@ -64,6 +65,7 @@ impl ZeldaState {
             .clear_pending_tilemap_update_destination();
     }
 
+    #[track_caller]
     pub(crate) fn clear_bg_vram_load_mode(&mut self) {
         self.display_core_mut().clear_bg_vram_load_mode();
     }

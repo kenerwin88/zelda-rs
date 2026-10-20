@@ -3330,9 +3330,9 @@ impl ZeldaState {
         loop {
             let idx = (r6 & 0xf) as usize;
             let x = info.x.wrapping_add(GIANT_MOLDORM_EYE_X_OFFSETS[idx] as u16);
-            let y = info.y.wrapping_add(GIANT_MOLDORM_EYE_Y_OFFSETS[idx] as u16);
+            let y = moldorm_eye_oam_y(info.y, GIANT_MOLDORM_EYE_Y_OFFSETS[idx] as u16);
             let cf_idx = ((r6 + r7 as i32) & 0xf) as usize;
-            self.set_oam_helper0_at(
+            self.set_oam_helper1_at(
                 oam,
                 x,
                 y,
@@ -16085,10 +16085,11 @@ impl ZeldaState {
         let mut base = self.sprite_slot_view(k).direction().wrapping_sub(1);
         for _ in (0..2).rev() {
             let idx = usize::from(base & 0x0f);
-            self.set_oam_helper0_at(
+            let y = moldorm_eye_oam_y(info_y, MOLDORM_DRAW_Y_OFFSETS[idx] as i16 as u16);
+            self.set_oam_helper1_at(
                 oam,
                 info_x.wrapping_add(MOLDORM_DRAW_X_OFFSETS[idx] as i16 as u16),
-                info_y.wrapping_add(MOLDORM_DRAW_Y_OFFSETS[idx] as i16 as u16),
+                y,
                 0x4d,
                 info_flags,
                 0,
@@ -16913,3 +16914,12 @@ impl ZeldaState {
 #[cfg(test)]
 #[path = "sprite_main_draw_tests.rs"]
 mod tests;
+
+/// The OAM y of a Moldorm eye. Both eye loops (`$1D:F856` Mini Moldorm,
+/// `$1D:DBD3` Giant Moldorm) follow the eye offset's `ADC` with `ADC #$0010`
+/// and no `CLC`, so that addition's carry joins the off-screen test; every
+/// other sprite clip test clears carry first (C `ClampYForOam`).
+fn moldorm_eye_oam_y(base_y: u16, offset: u16) -> u8 {
+    let (y, carry) = base_y.overflowing_add(offset);
+    if y.wrapping_add(0x10 + u16::from(carry)) < 0x100 { y as u8 } else { 0xf0 }
+}

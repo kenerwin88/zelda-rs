@@ -13347,11 +13347,14 @@ impl ZeldaState {
         }
         self.stage_pending_dialogue_scroll_completion_after_captured_boundary();
         self.replay_trace_ram_watch("before-nmi");
-        let defer_interface_exit_bg_upload = interface_exit_bg_upload_misses_current_scanout(
-            frame.main_module,
-            self.game_state.frame.main_module,
-            self.game_state.display.has_bg_vram_load(),
-        );
+        // A host frame can miss the interface exit stripe; a lag-free frame's
+        // own NMI consumes it, as the cartridge's next iteration does.
+        let defer_interface_exit_bg_upload = !self.lag_free
+            && interface_exit_bg_upload_misses_current_scanout(
+                frame.main_module,
+                self.game_state.frame.main_module,
+                self.game_state.display.has_bg_vram_load(),
+            );
         let defer_room_82_sprite_conversion_nmi = self.rom_startup_timing()
             && run_what & crate::RUN_MAIN != 0
             && rom_room_82_sprite_conversion_defers_trailing_nmi(

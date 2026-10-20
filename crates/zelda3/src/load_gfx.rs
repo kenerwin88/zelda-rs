@@ -2911,9 +2911,10 @@ impl ZeldaState {
                 let lo = data.get(src + i * 2).copied().unwrap_or(0);
                 let hi = data.get(src + i * 2 + 1).copied().unwrap_or(0);
                 let u = data.get(src2 + i).copied().unwrap_or(0);
-                // Expand3To4High parks `(t | t >> 8) & 0xff` in the $BD
-                // scratch word ($00:D640) before merging the third plane.
-                self.ram[MENU_PREV_JOYPAD_H] = lo | hi;
+                // Expand3To4High parks the third-plane byte in the $BD scratch
+                // word (`LDA [$03] : AND #$00FF : STA $BD`, $00:D63B).
+                crate::types::ww_check(MENU_PREV_JOYPAD_H, 2, "Expand3To4High scratch", u32::from(u));
+                self.ram[MENU_PREV_JOYPAD_H] = u;
                 self.ram[MENU_PREV_JOYPAD_H + 1] = 0;
                 self.write_expanded_graphics_tile_row(dst, lo, hi, u, lo | hi | u);
                 dst += 2;
@@ -3044,6 +3045,7 @@ impl ZeldaState {
             Some(Publication::VramWord { offset, value }) => self.ppu.vram[dst + usize::from(offset)] = value,
             Some(Publication::LineWord { row, value }) => self.set_dungeon_line_pointer_row0(usize::from(row), value),
             Some(Publication::ScratchWord(value)) => {
+                crate::types::ww_check(MENU_PREV_JOYPAD_H, 2, "graphics conversion scratch", u32::from(value));
                 self.ram[MENU_PREV_JOYPAD_H..MENU_PREV_JOYPAD_H + 2].copy_from_slice(&value.to_le_bytes());
             }
             // This slice API has no physical source address. The enclosing
@@ -3067,8 +3069,10 @@ impl ZeldaState {
                 self.ppu.vram[dst + usize::from(offset)] = value,
             Some(Publication::Conversion(Conversion::LineWord { row, value })) =>
                 self.set_dungeon_line_pointer_row0(usize::from(row), value),
-            Some(Publication::Conversion(Conversion::ScratchWord(value))) =>
-                self.ram[MENU_PREV_JOYPAD_H..MENU_PREV_JOYPAD_H + 2].copy_from_slice(&value.to_le_bytes()),
+            Some(Publication::Conversion(Conversion::ScratchWord(value))) => {
+                crate::types::ww_check(MENU_PREV_JOYPAD_H, 2, "sheet conversion scratch", u32::from(value));
+                self.ram[MENU_PREV_JOYPAD_H..MENU_PREV_JOYPAD_H + 2].copy_from_slice(&value.to_le_bytes());
+            }
             Some(Publication::Conversion(Conversion::SourceOffset(_))) => unreachable!("sheet owns its source pointer"),
             None => {}
         }

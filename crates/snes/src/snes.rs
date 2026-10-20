@@ -26,6 +26,11 @@ pub struct Snes {
     /// `write_b_bus`; the translated renderer never reads this state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     source_oam: Option<SourceOamPort>,
+    /// Opt-in picture capture: each visible scanline is drawn with the PPU's
+    /// registers as they stand when the source timeline renders it (HDMA
+    /// included), and a completed 256x224 RGBA frame is kept until taken.
+    #[serde(skip)]
+    frame_capture: Option<FrameCapture>,
     pub dma: DmaState,
     pub cart: Cart,
     pub input1: InputState,
@@ -85,6 +90,52 @@ pub struct Snes {
     pub ram_adr: u32,
 }
 
+#[derive(Clone, Debug, Default)]
+struct FrameCapture {
+    /// Draw pixels; otherwise only frame completion is reported (an empty
+    /// frame), which costs nothing.
+    render: bool,
+    drawing: bool,
+    completed: Option<Vec<u8>>,
+}
+
+impl FrameCapture {
+    const WIDTH: usize = 256;
+    const HEIGHT: usize = 224;
+
+    fn render_line(&mut self, ppu: &mut PpuState, scanline: u16) {
+        let line = usize::from(scanline);
+        if !self.render {
+            if line == Self::HEIGHT {
+                self.completed = Some(Vec::new());
+            }
+            return;
+        }
+        // The line renderer pads each row with the widescreen margins.
+        let margin = usize::from(ppu.extra_left_right);
+        let width = Self::WIDTH + 2 * margin;
+        if line == 1 {
+            let mut pixels = vec![0u8; width * Self::HEIGHT * 4];
+            ppu.begin_drawing(&mut pixels, width * 4, ppu.render_flags);
+            ppu.run_line(0);
+            self.drawing = true;
+        }
+        if !self.drawing || line == 0 || line > Self::HEIGHT {
+            return;
+        }
+        ppu.run_line(scanline as i32);
+        if line == Self::HEIGHT {
+            self.drawing = false;
+            self.completed = ppu.render_buffer.take().map(|padded| {
+                padded
+                    .chunks_exact(width * 4)
+                    .flat_map(|row| row[margin * 4..(margin + Self::WIDTH) * 4].iter().copied())
+                    .collect()
+            });
+        }
+    }
+}
+
 impl Snes {
     pub(crate) fn enable_source_oam_port(&mut self) {
         self.source_oam = Some(SourceOamPort::reset());
@@ -109,6 +160,24 @@ impl Snes {
         if let Some(port) = self.source_oam.as_mut() {
             port.render_line(scanline, odd_field);
         }
+        if let Some(capture) = self.frame_capture.as_mut() {
+            capture.render_line(&mut self.ppu, scanline);
+        }
+    }
+
+    /// Report every frame the source timeline scans out, drawing its pixels
+    /// when `render` is set (an empty frame otherwise).
+    pub fn enable_frame_capture(&mut self, render: bool) {
+        self.frame_capture = Some(FrameCapture {
+            render,
+            ..FrameCapture::default()
+        });
+    }
+
+    /// The most recently completed frame (256x224 BGRA, or empty when not
+    /// rendering), if any.
+    pub fn take_captured_frame(&mut self) -> Option<Vec<u8>> {
+        self.frame_capture.as_mut()?.completed.take()
     }
 
     pub(crate) fn source_oam_enter_scanline(&mut self, scanline: u16) {
@@ -135,6 +204,7 @@ impl Snes {
             apu: ApuState::new(),
             ppu: PpuState::new(),
             source_oam: None,
+            frame_capture: None,
             dma: DmaState::new(),
             cart: Cart::new(),
             input1: InputState::new(),

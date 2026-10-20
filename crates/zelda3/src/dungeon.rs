@@ -2142,6 +2142,9 @@ impl ZeldaState {
             self.dungeon_room_parser_mut()
                 .clear_room_parser_words(&[offset]);
         }
+        // $01:877D `STZ $068A` sits in the same clear block; the water window's
+        // alternate radius belongs to the display state, not the room parser.
+        self.water_hdma_window_mut().set_window_y_radius_alt(0);
         // The clear loop zeroes the blast-wall flag/progress RAM bytes (0x452 FLAG_X,
         // 0x453 FLAG_Y, 0x454 CRUSH_WALL_PROGRESS, 0x456 CRUSH_WALL_DOOR_INDEX_X2) but
         // clear_room_parser_words only touches RAM + the room parser, leaving the
@@ -11187,7 +11190,9 @@ impl ZeldaState {
         }
 
         crate::cycle_ledger::charge(6); // Taken BPL belongs to this semantic prefix.
-        self.dungeon_detect_staircase_after_landing(head, u16::from(attr2) | (pos & 0xff00));
+        // $01:C386 `TAY` copies the accumulator's hidden high byte, last set
+        // by the head lookup's 16-bit address (`ADC #$0080` when facing up).
+        self.dungeon_detect_staircase_after_landing(head, u16::from(attr2) | (at_pos as u16 & 0xff00));
     }
 
     pub(super) fn dungeon_detect_staircase_after_landing(

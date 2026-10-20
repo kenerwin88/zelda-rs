@@ -8591,15 +8591,44 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         {
             return;
         }
-        let damage_type = self.game_state.sprite_battle.damage_type_determiner() as usize;
+        let damage_type = self.game_state.sprite_battle.damage_type_determiner();
+        let dmg = self.sprite_calculated_damage(k, damage_type);
+        self.sprite_give_damage(k, dmg, a);
+    }
+
+    fn sprite_calculated_damage(&self, k: usize, damage_type: u8) -> u8 {
+        let damage_type = usize::from(damage_type);
         let enemy_damage_index = self.sprite_slot_view(k).sprite_type() as usize * 16 + damage_type;
-        let dmg = SPRITE_APPLY_CALCULATED_DAMAGE_ENEMY_CONTACT_DAMAGE_BY_TYPE[(damage_type * 8)
+        SPRITE_APPLY_CALCULATED_DAMAGE_ENEMY_CONTACT_DAMAGE_BY_TYPE[(damage_type * 8)
             | self
                 .game_state
                 .sprites
                 .enemy_damage_subclasses
-                .entry(enemy_damage_index) as usize];
-        self.sprite_give_damage(k, dmg, a);
+                .entry(enemy_damage_index) as usize]
+    }
+
+    /// The carry `Sprite_Func15(k, a)` ($06:ED25) returns with on the paths
+    /// that leave the sprite's incoming damage clear, for `a` 0 or 7 (taken
+    /// before the call). `$06:ED0B ADC #$04` adds it into the repulse spark's
+    /// x without `CLC`. The magic-powder transformations (damage $F9/$FA) are
+    /// not modeled and count as clear.
+    fn sprite_func15_carry_out(&self, k: usize, a: u8) -> bool {
+        let sprite = self.sprite_slot_view(k);
+        let ty = sprite.sprite_type();
+        if sprite.flags3() & 0x40 != 0 {
+            return false; // `CPY #8` with a < 8.
+        }
+        if ty >= 0xd8 {
+            return true; // `CMP #$D8 : BCC`.
+        }
+        match self.sprite_calculated_damage(k, a) {
+            // `CMP #$0A` on the damage class, or the stun table's
+            // `CPY #$09` / `CPY #$53` / `CPY #$18` on the sprite type.
+            0 => sprite.flags() & 4 != 0 && (ty == 9 || ty >= 0x18),
+            // `LDA $0DD0,X : CMP #$0B : BEQ` into the clearing tail.
+            dmg if dmg >= 0xfe && sprite.state() == 11 => true,
+            _ => false,
+        }
     }
 
     // void Sprite_GiveDamage(int k, uint8 dmg, uint8 r0_hit_timer) {  // 86edc5
@@ -10910,6 +10939,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             return;
         }
 
+        let carry = (a == 0 || a == 7) && self.sprite_func15_carry_out(k, a);
         self.sprite_func15(k, a);
         if a != 0 && a != 7 {
             return;
@@ -10922,7 +10952,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         self.garnish_state_mut().set_repulsespark_timer(5);
         let j = self.game_state.sprites.workspace.shared_scratch_a() as usize;
         let ancilla = self.ancilla_slot_view(j);
-        let x_low = ancilla.x_low().wrapping_add(4);
+        let x_low = ancilla.x_low().wrapping_add(4 + u8::from(carry));
         let y_low = ancilla.y_low();
         self.garnish_state_mut().set_repulsespark_x_lo(x_low);
         self.garnish_state_mut().set_repulsespark_y_lo(y_low);

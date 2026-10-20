@@ -148,6 +148,15 @@ impl ZeldaState {
             .copy_saveload_buffer_to_dynamic_table_ram(224);
     }
 
+    /// Adopt a cartridge WRAM image's live HDMA table. The cartridge builds
+    /// its spotlight/mirror table at `$1B00`, where the port keeps only a
+    /// save-time copy; seeding the port from a cartridge image must move it
+    /// into the port's dynamic table.
+    pub fn adopt_cartridge_hdma_table(&mut self) {
+        self.restore_spotlight_hdma_from_saveload_buffer();
+        self.sync_native_game_state_from_ram();
+    }
+
     pub(super) fn backup_spotlight_hdma_to_saveload_buffer(&mut self) {
         self.spotlight_hdma_mut()
             .backup_dynamic_table_to_saveload_buffer(224);

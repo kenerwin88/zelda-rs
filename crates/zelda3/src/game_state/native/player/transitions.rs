@@ -35,7 +35,8 @@ impl FollowerLinkState {
         self.actions.sprite_pickup_flag = 0;
         self.actions.clear_pull_for_rupees_sprite_need();
         self.movement.clear_near_moveable_statue();
-        self.actions.spin_attack_step_counter = 0;
+        // $07:F1FA Link_ResetProperties_C leaves $79 (the spin charge) alone;
+        // a death mid-charge keeps it through the game-over sequence.
         // Reset C publishes these flags too. Keep native state coherent here
         // instead of relying on the cancellation entry to reload them from RAM.
         self.actions.electrocute_on_touch = 0;

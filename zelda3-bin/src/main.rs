@@ -23,6 +23,7 @@ mod input_script;
 mod libretro_core;
 mod libretro_timeline;
 mod live_input_recording;
+mod logical_replay;
 mod overworld_dump_commands;
 mod play_commands;
 mod play_renderer;
@@ -328,6 +329,10 @@ fn main() {
     }
     if args.get(1).map(String::as_str) == Some("--replay-save") {
         run_replay_save(&args[2..]);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--logical-replay") {
+        logical_replay::run_logical_replay(&args[2..]);
         return;
     }
     if args.get(1).map(String::as_str) == Some("--coverage-probe") {

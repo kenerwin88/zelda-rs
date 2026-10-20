@@ -834,7 +834,9 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
 
     /// Publish one retained Link_Initialize store. A reset may be interrupted
     /// between any two stores, so unrelated player fields stay untouched.
+    #[track_caller]
     pub(crate) fn write_initialization_store(&mut self, address: usize, value: u16, width: u8) {
+        crate::types::ww_check(address, usize::from(width), "player initialization store", u32::from(value));
         if matches!(address, 0x326 | 0x328) {
             assert_eq!(width, 2);
             self.state.movement.swim_stroke_frame_counters[(address - 0x326) / 2] = value;

@@ -4947,13 +4947,17 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         value
     }
 
+    #[track_caller]
     pub(crate) fn set_bg_vram_load_mode(&mut self, value: u8) {
+        crate::types::ww_check(NMI_LOAD_BG_FROM_VRAM, 1, "bg-vram-load-set", u32::from(value));
         self.display.set_bg_vram_load_mode(value);
         self.ram[NMI_LOAD_BG_FROM_VRAM] = value;
         self.debug_assert_bg_vram_load_mode_matches_ram();
     }
 
+    #[track_caller]
     pub(crate) fn clear_bg_vram_load_mode(&mut self) {
+        crate::types::ww_check(NMI_LOAD_BG_FROM_VRAM, 1, "bg-vram-load-clear", 0);
         self.display.clear_bg_vram_load_mode();
         self.ram[NMI_LOAD_BG_FROM_VRAM] = 0;
         self.debug_assert_bg_vram_load_mode_matches_ram();

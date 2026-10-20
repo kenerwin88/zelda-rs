@@ -573,6 +573,17 @@ impl ZeldaState {
             .install(samples, start_execution_frame);
     }
 
+    /// Lag-free logical replay: install exactly the next iteration's
+    /// cartridge RNG outputs. Returns the previous iteration's unconsumed
+    /// samples and its draws past its samples (answered with zero).
+    pub fn replace_rom_random_frame(
+        &mut self,
+        samples: Vec<crate::RomRandomSample>,
+        execution_frame: u32,
+    ) -> (usize, u32) {
+        self.rom_random_replay.replace_with_frame(samples, execution_frame)
+    }
+
     pub fn finish_rom_random_replay(&self) -> Result<(), String> {
         self.rom_random_replay.finish()
     }

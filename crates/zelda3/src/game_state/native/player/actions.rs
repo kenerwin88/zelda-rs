@@ -516,7 +516,9 @@ impl PlayerActionsState {
         self.sword_delay_timer
     }
 
+    #[track_caller]
     pub(super) fn clear_spin_attack_step_counter(&mut self) {
+        crate::types::ww_check(0x79, 1, "spin_attack_step_counter", 0);
         self.spin_attack_step_counter = 0;
     }
 

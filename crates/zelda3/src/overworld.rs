@@ -3135,10 +3135,16 @@ impl ZeldaState {
                         );
                     return;
                 }
+                // Untimed: `FindPartnerWhirlpoolExit` reloads the sprites in
+                // place, then `Overworld_LoadOverlays2` runs to completion in
+                // this iteration. (The LoadOverlays2 step belongs to the timed
+                // path above, which still has to publish its deferred reload.)
                 self.FindPartnerWhirlpoolExit();
                 self.dungeon_room_load_mut().set_draw_width_indicator(0);
-                let _ = self.prepare_overworld_load_overlays();
-                self.run_or_schedule_module09_long_load(Module09LongLoadStep::LoadOverlays2, 8);
+                if !self.prepare_overworld_load_overlays() {
+                    self.finish_overworld_load_overlays();
+                    self.complete_module09_load_overlays_case_tail();
+                }
             }
             4 | 6 => {
                 self.set_pending_nmi_subroutine(13);
@@ -6250,6 +6256,10 @@ impl ZeldaState {
                 "Module09 reload caller returned before its native scan");
         }
         self.pending_overworld_sprite_activations = None;
+        if self.lag_free && self.pending_overworld_sprite_reload_slots.is_none() {
+            // A lag-free reload ran in place: the live slots are final.
+            return;
+        }
         let rebuilt_slots = self
             .pending_overworld_sprite_reload_slots
             .take()

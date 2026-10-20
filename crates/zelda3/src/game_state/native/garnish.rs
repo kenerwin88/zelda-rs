@@ -344,11 +344,15 @@ impl GarnishRuntimeState {
         self.repulsespark_anim_delay
     }
 
+    #[track_caller]
     pub(crate) fn set_repulsespark_x_lo(&mut self, value: u8) {
+        crate::types::ww_check(REPULSESPARK_X_LO, 1, "repulsespark_x_lo", u32::from(value));
         self.repulsespark_x_low = value;
     }
 
+    #[track_caller]
     pub(crate) fn set_repulsespark_y_lo(&mut self, value: u8) {
+        crate::types::ww_check(REPULSESPARK_Y_LO, 1, "repulsespark_y_lo", u32::from(value));
         self.repulsespark_y_low = value;
     }
 
