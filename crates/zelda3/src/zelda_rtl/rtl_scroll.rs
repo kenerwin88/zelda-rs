@@ -671,6 +671,23 @@ impl ZeldaState {
         result
     }
 
+    /// `$00:FE2E`: the mirror warp writes only `$4360`/`$4370` (transfer
+    /// unit and B-bus register). Both channels keep the table address and
+    /// banks the previous HDMA effect left, so after the world map BG1 reads
+    /// the map's perspective table instead of the wave table.
+    pub(super) fn hdma_set_transfer_only(&mut self, transfer_unit: u8, reg6: u8, reg7: u8) {
+        for (channel, reg) in [(6, reg6), (7, reg7)] {
+            let ch = &mut self.dma.channel[channel];
+            ch.mode = transfer_unit & 7;
+            ch.fixed = transfer_unit & 8 != 0;
+            ch.decrement = transfer_unit & 0x10 != 0;
+            ch.unused_bit = transfer_unit & 0x20 != 0;
+            ch.indirect = transfer_unit & 0x40 != 0;
+            ch.from_b = transfer_unit & 0x80 != 0;
+            ch.b_adr = reg;
+        }
+    }
+
     pub(super) fn hdma_setup(
         &mut self,
         addr6: u32,

@@ -2736,7 +2736,7 @@ impl ZeldaState {
 
         self.mirror_warp_scratch_mut().initialize_hdma_wave_state();
 
-        self.hdma_setup(0xf2fb, 0xf2fb, 0x42, 0x0d, 0x0f, 0);
+        self.hdma_set_transfer_only(0x42, 0x0d, 0x0f);
 
         let value = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
         for i in 0..240 {
