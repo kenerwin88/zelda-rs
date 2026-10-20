@@ -785,9 +785,26 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_become_follower(&mut self, k: usize) {
+        let y = self.Tagalong_Sprite_GetY(k);
+        let x = self.Tagalong_Sprite_GetX(k);
+        self.sprite_become_follower_from_position(x, y);
+    }
+
+    /// `$06:B2B3` calls Sprite_BecomeFollower with the X that
+    /// `LoadFollowerGraphics` ($00:D423) returns, `$40` (its `LDX #$2940`
+    /// before `SEP #$30`), so the follower starts from `$0D00,X`/`$0D10,X`:
+    /// sprite slot 0's velocity and subpixel bytes.
+    pub(super) fn sprite_become_follower_after_graphics_load(&mut self) {
+        let slot = self.sprite_slot_view(0);
+        let y = u16::from_le_bytes([slot.y_velocity(), slot.y_subpixel()]);
+        let x = u16::from_le_bytes([slot.x_velocity(), slot.x_subpixel()]);
+        self.sprite_become_follower_from_position(x, y);
+    }
+
+    fn sprite_become_follower_from_position(&mut self, x: u16, y: u16) {
         self.follower_state_mut().set_appearance_none_flag(0);
-        let y = self.Tagalong_Sprite_GetY(k).wrapping_sub(6);
-        let x = self.Tagalong_Sprite_GetX(k).wrapping_add(1);
+        let y = y.wrapping_sub(6);
+        let x = x.wrapping_add(1);
         let layer_bits = self.game_state.player.follower_link.floor_layer_bits() | 1;
         let mut follower = self.tagalong_slot_mut(0);
         follower.set_position(x, y);

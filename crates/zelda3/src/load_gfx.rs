@@ -4808,11 +4808,19 @@ impl ZeldaState {
                         a = 0x20;
                         if self.game_state.dungeon.room_load.bg2_properties() == 2 {
                             self.Palette_AssertTranslucencySwap();
+                            a = 0x70;
                             if self.game_state.world.location.dungeon_room_index() == 13 {
                                 self.clear_agahnim_palette_settings(6);
                                 self.Palette_LoadAgahnim();
+                                // Palette_LoadAgahnim returns with X = $D0 (its
+                                // last copy ends at $01D0, then SEP #$30), and
+                                // $02:A251 indexes the lit-torch table with it:
+                                // the byte at $02:A2B5 is $85.
+                                self.set_color_math_control(a);
+                                self.set_overworld_fixed_color_adjustment(0x85);
+                                self.finish_dungeon_translucency_and_palette();
+                                return;
                             }
-                            a = 0x70;
                         }
                     }
                 }
@@ -4826,6 +4834,10 @@ impl ZeldaState {
                 .copied()
                 .unwrap_or(0),
         );
+        self.finish_dungeon_translucency_and_palette();
+    }
+
+    fn finish_dungeon_translucency_and_palette(&mut self) {
         self.set_countdown(31);
         self.clear_mosaic_target_level();
         self.set_darkening_or_lightening_screen(2);

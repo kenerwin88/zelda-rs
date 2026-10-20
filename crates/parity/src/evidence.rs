@@ -89,6 +89,7 @@ pub fn sha256_bytes(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
+#[derive(Clone)]
 pub struct Sha256Digest(Sha256);
 
 impl Sha256Digest {

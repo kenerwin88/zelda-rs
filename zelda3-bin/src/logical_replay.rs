@@ -459,6 +459,42 @@ struct VideoCheck {
     poly_active: std::collections::HashMap<usize, bool>,
     first_mismatch: Option<(u64, usize)>,
     total: VideoTally,
+    /// The last finished frame's RGBA (iteration index, pixels).
+    previous: Option<(usize, Vec<u8>)>,
+    /// A missed frame waiting for its successor's pixels to test for a tear.
+    held: Option<HeldVideo>,
+}
+
+struct HeldVideo {
+    index: usize,
+    oracle_frame: usize,
+    actual: VideoDigest,
+    rgba: Vec<u8>,
+    previous: Option<(usize, Vec<u8>)>,
+}
+
+/// Whether some row split of `top` over `bottom` (rows `[0, s)` from `top`,
+/// the rest from `bottom`) hashes to `expected`: the cartridge changed a PPU
+/// register mid-frame (a raster race the lag-free engine does not copy).
+fn torn_composite_matches(top: &[u8], bottom: &[u8], width: u32, expected: &VideoDigest) -> bool {
+    let row = width as usize * 4;
+    if top.len() != bottom.len() || row == 0 {
+        return false;
+    }
+    let rows = top.len() / row;
+    let mut prefix = parity::evidence::Sha256Digest::new();
+    for split in 1..rows {
+        prefix.update_rgb_from_rgba([&top[(split - 1) * row..split * row]]);
+        if top[(split - 1) * row..split * row] == bottom[(split - 1) * row..split * row] {
+            continue;
+        }
+        let mut digest = prefix.clone();
+        digest.update_rgb_from_rgba(bottom[split * row..].chunks(row));
+        if digest.finish() == expected.sha256 {
+            return true;
+        }
+    }
+    false
 }
 
 impl VideoCheck {
@@ -492,6 +528,8 @@ impl VideoCheck {
             poly_active: Default::default(),
             first_mismatch: None,
             total: VideoTally::default(),
+            previous: None,
+            held: None,
         }
     }
 
@@ -529,29 +567,66 @@ impl VideoCheck {
         while !self.pending.is_empty() {
             self.finish_one(iterations, segment);
         }
+        if let Some(held) = self.held.take() {
+            self.classify_held(iterations, segment, held, None);
+        }
+        self.previous = None;
+    }
+
+    fn oracle_digest(&self, iterations: &[Iteration], index: Option<usize>) -> Option<&VideoDigest> {
+        index
+            .and_then(|index| self.oracle_frame(iterations, index))
+            .and_then(|frame| self.oracle[frame].as_ref())
     }
 
     fn finish_one(&mut self, iterations: &[Iteration], segment: &mut Segment) {
         let pending = self.pending.pop_front().expect("pending video frame");
-        let actual = self.renderer.finish_game_video_digest(pending.queued).unwrap_or_else(|error| {
+        let (actual, rgba) = self.renderer.finish_game_video_digest_with_rgba(pending.queued).unwrap_or_else(|error| {
             eprintln!("video readback failed: {error}");
             process::exit(1);
         });
-        let oracle_at = |index: Option<usize>| {
-            index
-                .and_then(|index| self.oracle_frame(iterations, index))
-                .and_then(|frame| self.oracle[frame].as_ref())
-        };
         let index = pending.iteration_index;
-        let class = if Some(&actual) == oracle_at(Some(index)) {
-            "match"
-        } else if Some(&actual) == oracle_at(index.checked_add(1)) {
-            "early"
-        } else if Some(&actual) == oracle_at(index.checked_sub(1)) {
-            "late"
-        } else if self.poly_active.remove(&index).unwrap_or(false) {
+        if let Some(held) = self.held.take() {
+            let next = (held.index + 1 == index).then_some(rgba.as_slice());
+            self.classify_held(iterations, segment, held, next);
+        }
+        let class = if Some(&actual) == self.oracle_digest(iterations, Some(index)) {
+            Some("match")
+        } else if Some(&actual) == self.oracle_digest(iterations, index.checked_add(1)) {
+            Some("early")
+        } else if Some(&actual) == self.oracle_digest(iterations, index.checked_sub(1)) {
+            Some("late")
+        } else {
+            None
+        };
+        let previous = self.previous.replace((index, rgba.clone()));
+        match class {
+            Some(class) => self.record(iterations, segment, index, pending.oracle_frame, &actual, class),
+            None => {
+                self.held = Some(HeldVideo {
+                    index,
+                    oracle_frame: pending.oracle_frame,
+                    actual,
+                    rgba,
+                    previous: previous.filter(|(previous, _)| previous + 1 == index),
+                })
+            }
+        }
+    }
+
+    /// Classify a frame that matched neither its picture nor a neighbour's,
+    /// once its successor's pixels (`next`) are known.
+    fn classify_held(&mut self, iterations: &[Iteration], segment: &mut Segment, held: HeldVideo, next: Option<&[u8]>) {
+        let index = held.index;
+        let torn = self.oracle_digest(iterations, Some(index)).is_some_and(|expected| {
+            next.is_some_and(|next| torn_composite_matches(next, &held.rgba, held.actual.width, expected))
+                || held.previous.as_ref().is_some_and(|(_, previous)| {
+                    torn_composite_matches(&held.rgba, previous, held.actual.width, expected)
+                })
+        });
+        let class = if self.poly_active.remove(&index).unwrap_or(false) {
             "content_poly"
-        } else if iterations[index].nmi_overran_vblank() {
+        } else if torn || iterations[index].nmi_overran_vblank() {
             "content_tear"
         } else if [index, index + 1]
             .iter()
@@ -561,6 +636,19 @@ impl VideoCheck {
         } else {
             "content"
         };
+        self.record(iterations, segment, index, held.oracle_frame, &held.actual, class);
+    }
+
+    fn record(
+        &mut self,
+        iterations: &[Iteration],
+        segment: &mut Segment,
+        index: usize,
+        oracle_frame: usize,
+        actual: &VideoDigest,
+        class: &str,
+    ) {
+        self.poly_active.remove(&index);
         for tally in [&mut self.total, &mut segment.video] {
             tally.compared += 1;
             match class {
@@ -578,11 +666,11 @@ impl VideoCheck {
         }
         if class != "match" {
             let iteration = &iterations[index];
-            self.first_mismatch.get_or_insert((iteration.index, pending.oracle_frame));
+            self.first_mismatch.get_or_insert((iteration.index, oracle_frame));
             if self.print_misses {
                 println!(
                     "logical-video-miss iteration={} oracle_frame={} lag_nmis={} class={class} sha256={}",
-                    iteration.index, pending.oracle_frame, iteration.lag_nmis, actual.sha256
+                    iteration.index, oracle_frame, iteration.lag_nmis, actual.sha256
                 );
             }
         }

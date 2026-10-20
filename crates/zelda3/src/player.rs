@@ -3461,9 +3461,13 @@ impl ZeldaState {
                         self.change_axis_of_perpendicular_door_movement_y();
                         return;
                     }
+                    // $07:BA5E `BRL $BAF4`: past the doorway and lock clears.
+                    self.finish_indoor_y_collision_after_setup();
+                    return;
                 } else if self.game_state.player.tile_detection.door_direction_flags() != 0 {
+                    // $07:BA6E `BRA $BAE3`: the lock clears, keeping the doorway.
                     self.link_add_in_velocity_y();
-                    self.finish_indoor_y_collision();
+                    self.finish_indoor_y_collision_keeping_doorway();
                     return;
                 }
             }
@@ -3556,12 +3560,17 @@ impl ZeldaState {
                     .follower_link
                     .num_orthogonal_directions()
                     == 0
-                && (self.game_state.dungeon.room_load.header_collision() != 3
-                    || !self.game_state.player.follower_link.is_on_lower_level())
             {
-                self.snap_on_x();
-                let spd = self.change_axis_of_perpendicular_door_movement_x();
-                self.handle_nudging_in_a_door(spd);
+                if self.game_state.dungeon.room_load.header_collision() != 3
+                    || !self.game_state.player.follower_link.is_on_lower_level()
+                {
+                    self.snap_on_x();
+                    let spd = self.change_axis_of_perpendicular_door_movement_x();
+                    self.handle_nudging_in_a_door(spd);
+                    return;
+                }
+                // $07:C52E `BRL $C59E`: past the doorway and lock clears.
+                self.finish_indoor_x_collision_after_setup();
                 return;
             }
 
@@ -3610,6 +3619,11 @@ impl ZeldaState {
                 .set_force_move_any_direction(0);
         }
 
+        self.finish_indoor_x_collision_after_setup();
+    }
+
+    /// `$07:C59E`: the slope and tile checks after the doorway clears.
+    fn finish_indoor_x_collision_after_setup(&mut self) {
         if self.game_state.player.tile_detection.collision_bits() & 2 == 0
             && self.game_state.player.tile_detection.slope_collision_bits() & 5 != 0
         {
@@ -4241,6 +4255,13 @@ impl ZeldaState {
     fn finish_indoor_y_collision(&mut self) {
         if self.game_state.player.follower_link.tile_coll_flag() & 2 == 0 {
             self.follower_link_state_mut().clear_doorway_state();
+        }
+        self.finish_indoor_y_collision_keeping_doorway();
+    }
+
+    /// `$07:BAE3`: the movement-lock clears without the doorway clear.
+    fn finish_indoor_y_collision_keeping_doorway(&mut self) {
+        if self.game_state.player.follower_link.tile_coll_flag() & 2 == 0 {
             self.follower_link_state_mut().clear_direction_lock_bits(2);
             self.set_room_transitioning_flags(0);
             self.follower_link_state_mut()

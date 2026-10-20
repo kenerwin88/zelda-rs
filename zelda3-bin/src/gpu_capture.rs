@@ -947,6 +947,26 @@ impl NativeWindowOracleRenderer {
         Ok(digest)
     }
 
+    /// `finish_game_video_digest` that also returns the frame's packed RGBA
+    /// rows (no debug capture or timing).
+    pub(crate) fn finish_game_video_digest_with_rgba(
+        &mut self,
+        queued: QueuedGpuVideoDigest,
+    ) -> Result<(parity::av::VideoDigest, Vec<u8>), String> {
+        self.frontend.finish_modern_gpu_target_readback(queued.ticket, |readback| {
+            let mut digest = parity::evidence::Sha256Digest::new();
+            digest.update_rgb_from_rgba(readback.rows());
+            (
+                parity::av::VideoDigest {
+                    width: readback.width(),
+                    height: readback.height(),
+                    sha256: digest.finish(),
+                },
+                readback.rows().flat_map(|row| row.iter().copied()).collect(),
+            )
+        })
+    }
+
     pub(crate) fn render_game_rgba_with_capture(
         &mut self,
         game: &mut ZeldaState,

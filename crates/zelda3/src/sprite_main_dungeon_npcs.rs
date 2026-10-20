@@ -2920,7 +2920,7 @@ impl ZeldaState {
         } else {
             self.follower_state_mut().set_indicator(7);
             self.load_follower_graphics();
-            self.sprite_become_follower(k);
+            self.sprite_become_follower_after_graphics_load();
             self.sprite_slot_view_mut(k).set_state(0);
         }
     }
