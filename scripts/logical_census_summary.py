@@ -58,6 +58,7 @@ for seg in segments:
         tot['panicked_segments'] += 1
     wram_clean = 'wram' in seg and seg['wram'] == 'clean'
     tot['wram_clean_segments'] += wram_clean
+    tot['wram_lag'] += num(seg, 'wram_lag')
     video = seg.get('video', '0/0').split('/')
     matched, compared = int(video[0]), int(video[1])
     content = num(seg, 'content')
@@ -66,14 +67,14 @@ for seg in segments:
     tot['video_match'] += matched
     tot['video_compared'] += compared
     tot['video_content'] += content
-    for key in ('apu_commands.rom', 'apu_commands.unmatched', 'apu_commands.engine'):
-        tot[key] += num(seg, key)
-    tot['apu_rom_unmatched'] += num(seg, 'unmatched') if 'apu_commands.unmatched' not in seg else 0
+    for key in ('engine', 'engine_unmatched', 'rom', 'rom_unmatched', 'unmatched_lag', 'unmatched_poly', 'rearmed'):
+        tot['apu_' + key] += num(seg, key) + num(seg, 'apu_commands.' + key)
     tot['rng_unconsumed'] += num(seg, 'rng.unconsumed')
     tot['rng_extra'] += num(seg, 'rng.extra')
     tot['apu_reads_unconsumed'] += num(seg, 'apu_reads.unconsumed')
     tot['apu_reads_extra'] += num(seg, 'apu_reads.extra')
     clean = (wram_clean and content == 0 and num(seg, 'early') + num(seg, 'late') <= 2
+             and num(seg, 'engine_unmatched') + num(seg, 'rom_unmatched') == 0
              and num(seg, 'rng.extra') == 0 and num(seg, 'rng.unconsumed') == 0)
     tot['fully_clean_segments'] += clean
     if not wram_clean and 'address' in seg:
@@ -89,13 +90,18 @@ print(f"timing-defined (intro/attract) segments: {tot['timing_defined_segments']
       f"({tot['timing_defined_iterations']} iterations), reported apart")
 print(f"segments {tot['segments']}  iterations {tot['iterations']}  fully clean {tot['fully_clean_segments']}  "
       f"wram-clean {tot['wram_clean_segments']}  panicked {tot['panicked_segments']}  "
-      f"polygon-thread iterations {tot['poly_iterations']} (wram differed {tot['poly_wram_diverged']})")
+      f"polygon-thread iterations {tot['poly_iterations']} (wram differed {tot['poly_wram_diverged']})  "
+      f"lag iterations with wram differences {tot['wram_lag']}")
 print(f"video {tot['video_match']}/{tot['video_compared']} ({100 * tot['video_match'] / vc:.2f}%)  "
       f"early {tot['video_early']}  late {tot['video_late']}  during-lag {tot['video_content_lag']}  "
       f"polygon-thread {tot['video_content_poly']}  torn {tot['video_content_tear']}  content {tot['video_content']} "
       f"({100 * tot['video_content'] / vc:.2f}%)")
 print(f"rng unconsumed {tot['rng_unconsumed']}  extra {tot['rng_extra']}  |  "
       f"apu reads unconsumed {tot['apu_reads_unconsumed']}  extra {tot['apu_reads_extra']}")
+print(f"apu commands engine {tot['apu_engine']} (unmatched {tot['apu_engine_unmatched']})  "
+      f"rom {tot['apu_rom']} (unmatched {tot['apu_rom_unmatched']})  "
+      f"lag-only {tot['apu_unmatched_lag']}  polygon-thread {tot['apu_unmatched_poly']}  "
+      f"held re-sends {tot['apu_rearmed']}")
 print('first WRAM divergence by (module, variable):')
 for (module, name), count in by_first.most_common(40):
     print(f'  {count:4d}  module {module}  {name}  e.g. segment {examples[(module, name)]}')

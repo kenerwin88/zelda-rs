@@ -2845,6 +2845,13 @@ impl ZeldaState {
         self.set_window_layer_masks(0x33, 3, 0x33, main_layers, sub_layers);
         self.set_hdma_enable_mask(0x80);
         self.clear_spotlight_hdma_table_dynamic(240);
+        // $02:C7E5 clears its table at $1B00-$1CDF in place, dialogue state
+        // at $1CD0 included. The port keeps the live table elsewhere, so clear
+        // those bytes and reload the messaging owners from them.
+        let messaging = &self.game_state.messaging;
+        messaging.write_to_ram(&mut self.ram[..]);
+        self.ram[crate::game_state::constants::SAVELOAD_HDMA_TABLE..][..0x1e0].fill(0);
+        self.game_state.messaging = crate::game_state::MessagingState::load_from_ram(&self.ram);
     }
 
     pub(super) fn DesertPrayer_InitializeIrisHDMA(&mut self) {

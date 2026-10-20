@@ -6425,7 +6425,21 @@ impl ZeldaState {
             .room_tilemap_word(base, dsto)
     }
 
+    /// A room drawer's `$7E2000,X` access past the end of BG1 lands in the
+    /// RAM-backed graphics scratch at `$6000` (e.g. `$01:B1A4` raising door
+    /// priority near the bottom of the lower layer); the ROM reads and writes
+    /// those bytes like any other.
+    fn room_tilemap_spill(base: usize, dsto: u16) -> Option<usize> {
+        let offset = base + dsto as usize * 2;
+        (matches!(base, ROOM_BG1_TILEMAP_BASE | ROOM_BG2_TILEMAP_BASE)
+            && offset >= crate::game_state::constants::BG_DECOMP_BUFFER_LOAD_GFX)
+            .then_some(offset)
+    }
+
     pub(super) fn room_read_bg1(&self, dsto: u16) -> u16 {
+        if let Some(offset) = Self::room_tilemap_spill(ROOM_BG1_TILEMAP_BASE, dsto) {
+            return read_word_from_slice(&self.ram, offset);
+        }
         self.game_state
             .dungeon
             .room_tilemaps
@@ -6433,6 +6447,9 @@ impl ZeldaState {
     }
 
     pub(super) fn room_read_bg2(&self, dsto: u16) -> u16 {
+        if let Some(offset) = Self::room_tilemap_spill(ROOM_BG2_TILEMAP_BASE, dsto) {
+            return read_word_from_slice(&self.ram, offset);
+        }
         self.game_state
             .dungeon
             .room_tilemaps
@@ -6441,6 +6458,10 @@ impl ZeldaState {
 
     #[track_caller]
     pub(super) fn room_write_bg(&mut self, base: usize, dsto: u16, tile: u16) {
+        if let Some(offset) = Self::room_tilemap_spill(base, dsto) {
+            GraphicsDecompressionScratch::copy_to_buffer(&mut self.ram, offset, &tile.to_le_bytes());
+            return;
+        }
         self.dungeon_room_tilemaps_mut()
             .set_room_tilemap_word(base, dsto, tile);
     }

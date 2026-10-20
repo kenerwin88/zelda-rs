@@ -2601,7 +2601,8 @@ impl ZeldaState {
             return;
         } else if attr < 0x52 {
             26
-        } else if attr < 0x54 {
+        } else if attr == 0x54 {
+            // $1B:BF3C is `CMP #$54 : BEQ`, so only $54 takes $11.
             17
         } else if attr < 0x58 {
             5

@@ -9,6 +9,7 @@ impl ZeldaState {
         RamPlayerStateViewMut::new(&mut self.ram)
     }
 
+    #[track_caller]
     pub(crate) fn set_sound_effect_1_with_link_pan(&mut self, effect: u8) {
         let sound_effect = self.link_calculate_sfx_pan() | effect;
         self.set_sound_effect_1(sound_effect);
@@ -19,6 +20,7 @@ impl ZeldaState {
         self.set_sound_effect_2(sound_effect);
     }
 
+    #[track_caller]
     pub(crate) fn set_sound_effect_1_with_ancilla_pan(&mut self, slot: usize, effect: u8) {
         let sound_effect = self.ancilla_calculate_sfx_pan(slot) | effect;
         self.set_sound_effect_1(sound_effect);
@@ -29,6 +31,7 @@ impl ZeldaState {
         self.set_sound_effect_2(sound_effect);
     }
 
+    #[track_caller]
     pub(crate) fn set_sound_effect_1_with_sprite_pan(&mut self, slot: usize, effect: u8) {
         let sound_effect = self.sprite_calculate_sfx_pan(slot) | effect;
         self.set_sound_effect_1(sound_effect);

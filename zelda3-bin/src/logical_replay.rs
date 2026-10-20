@@ -295,6 +295,8 @@ struct Segment {
     /// Polygon-thread iterations whose WRAM differed: the thread paces Main
     /// (sprites wait on its steps), so these are timing-defined.
     poly_diverged: u64,
+    /// Iterations with ROM lag NMIs whose WRAM differed.
+    lag_diverged: u64,
     /// The engine carried over from the previous segment instead of seeding.
     continued: bool,
     /// Latest iteration with a WRAM, RNG, APU command or video content miss.
@@ -327,6 +329,11 @@ struct AudioTally {
     /// a lag NMI sent a command that Main replaced later in the same
     /// iteration, which a lag-free frame never transmits.
     rom_unmatched_lag: u64,
+    /// Unmatched commands (either side) while the polygon thread runs: its
+    /// sound effects follow the NMI-clocked thread, so they are timing-defined.
+    unmatched_poly: u64,
+    /// ROM music/ambient re-sends while the engine's port holds the value.
+    rom_rearmed: u64,
     /// Iterations whose port writes are a song-bank upload, not commands.
     rom_upload_iterations: u64,
 }
@@ -352,6 +359,7 @@ impl Segment {
             start_module: None,
             poly_iterations: 0,
             poly_diverged: 0,
+            lag_diverged: 0,
             continued: false,
             last_problem: None,
             deferred_work_frames: 0,
@@ -397,12 +405,14 @@ impl Segment {
             String::new()
         };
         let audio = format!(
-            " apu_commands engine={} unmatched={} rom={} unmatched={} unmatched_lag={} uploads={}",
+            " apu_commands engine={} engine_unmatched={} rom={} rom_unmatched={} unmatched_lag={} unmatched_poly={} rearmed={} uploads={}",
             self.audio.engine_commands,
             self.audio.engine_unmatched,
             self.audio.rom_commands,
             self.audio.rom_unmatched,
             self.audio.rom_unmatched_lag,
+            self.audio.unmatched_poly,
+            self.audio.rom_rearmed,
             self.audio.rom_upload_iterations
         );
         let panicked = self
@@ -410,7 +420,7 @@ impl Segment {
             .map(|iteration| format!(" panicked={iteration}"))
             .unwrap_or_default();
         println!(
-            "logical-segment start={} iterations={} {wram}{video}{audio} rng unconsumed={} extra={}{panicked} start_module={:02x} apu_reads unconsumed={} extra={} seeded={} deferred_work={}",
+            "logical-segment start={} iterations={} {wram}{video}{audio} rng unconsumed={} extra={}{panicked} start_module={:02x} apu_reads unconsumed={} extra={} seeded={} deferred_work={} wram_lag={}",
             self.start,
             self.iterations,
             self.rng_unconsumed,
@@ -419,7 +429,8 @@ impl Segment {
             self.apu_reads_unconsumed,
             self.apu_reads_extra,
             !self.continued,
-            self.deferred_work_frames
+            self.deferred_work_frames,
+            self.lag_diverged
         );
         if self.poly_iterations != 0 {
             println!(
@@ -973,13 +984,17 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         // of a seeded segment re-sends the restored song, and the last
         // iteration has no successor to hold its commands.
         let audio_checked = (segment.iterations != 0 || segment.continued) && index + 1 < iterations.len();
+        // `images.image` still holds iteration k - 1 here.
+        let audio_poly = images.image[NMI_THREAD_ACTIVE] != 0 || game.ram[NMI_THREAD_ACTIVE] != 0;
         for command in engine_commands.iter().filter(|_| audio_checked) {
             segment.audio.engine_commands += 1;
             let found = [index, index + 1].iter().any(|&i| {
                 rom_commands.get(i).is_some_and(|rom| rom.contains(command))
                     || iterations.get(i).is_some_and(|rom| rom.apu_writes.len() > APU_UPLOAD_WRITES)
             });
-            if !found {
+            if !found && audio_poly {
+                segment.audio.unmatched_poly += 1;
+            } else if !found {
                 segment.audio.engine_unmatched += 1;
                 segment.problem_at(iteration.index);
                 if audio_reported < report {
@@ -1003,8 +1018,25 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             }
             segment.audio.rom_commands += 1;
             if !(previous_engine_commands.contains(&command) || engine_commands.contains(&command)) {
-                if iteration.lag_nmis != 0 {
+                // The NMI clears the music/ambient port once the SPC echoes
+                // it ($00:8108), and the game re-sends the held value. When
+                // the echo lands depends on SPC timing, so a re-send the
+                // engine's port still holds is the same sound continuing.
+                if command.0 < 2 && engine_ports[usize::from(command.0)] == command.1 {
+                    segment.audio.rom_rearmed += 1;
+                    continue;
+                }
+                // The same command sent during the lag NMIs of the two
+                // previous iterations: the ROM repeats it across the lag.
+                let repeated_after_lag = (index.saturating_sub(2)..index).any(|i| {
+                    iterations[i].lag_nmis != 0 && iterations[i].apu_writes.contains(&command)
+                });
+                if iteration.lag_nmis != 0 || repeated_after_lag {
                     segment.audio.rom_unmatched_lag += 1;
+                    continue;
+                }
+                if audio_poly {
+                    segment.audio.unmatched_poly += 1;
                     continue;
                 }
                 segment.audio.rom_unmatched += 1;
@@ -1041,7 +1073,11 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 compared_now[lo..=hi].fill(false);
             }
         }
-        let poly_active = images.image[NMI_THREAD_ACTIVE] != 0 || game.ram[NMI_THREAD_ACTIVE] != 0;
+        // The iteration that ends a timing-defined stretch still carries its
+        // state; the replay reseeds at the next one (the resync point).
+        let poly_active = images.image[NMI_THREAD_ACTIVE] != 0
+            || game.ram[NMI_THREAD_ACTIVE] != 0
+            || resync.contains(&(iteration.index + 1));
         if poly_active {
             segment.poly_iterations += 1;
             for &(lo, hi) in POLY_THREAD_RANGES {
@@ -1069,11 +1105,19 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             clean += 1;
             continue;
         }
-        segment.problem_at(iteration.index);
         if poly_active {
+            segment.problem_at(iteration.index);
             segment.poly_diverged += 1;
             continue;
         }
+        // The ROM's lag NMIs already ran the queued NMI work (uploads, `$12`)
+        // that the lag-free frame runs at its own boundary. A difference that
+        // persists shows up again on the next lag-free iteration.
+        if iteration.lag_nmis != 0 {
+            segment.lag_diverged += 1;
+            continue;
+        }
+        segment.problem_at(iteration.index);
         segment.diverged += 1;
         segment.first_divergence.get_or_insert((
             iteration.index,

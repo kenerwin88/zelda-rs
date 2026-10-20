@@ -12024,7 +12024,9 @@ impl ZeldaState {
         self.system_signals_mut().set_ambient_sound_effect(value);
     }
 
+    #[track_caller]
     pub(crate) fn set_sound_effect_1(&mut self, value: u8) {
+        crate::types::ww_check(0x12e, 1, "sound_effect_1", u32::from(value));
         self.system_signals_mut().set_sound_effect_1(value);
     }
 
