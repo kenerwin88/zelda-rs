@@ -97,6 +97,10 @@ const PORT_REPRESENTATION: &[(usize, usize, &str)] = &[
     (0x0fa8, 0x0fa9, "DRAW_WORK_POSITION_X/Y (per-sprite draw scratch)"),
     (0x1b00, 0x1ccf, "SAVELOAD_HDMA_TABLE (ROM spotlight table)"),
     (0x1cdd, 0x1cdf, "DIALOGUE_MSG_SRC_OFFS"),
+    // The thread's go byte, stack and rasterizer state are only meaningful
+    // while it runs; Polyhedral_InitializeThread rebuilds them, and the ROM
+    // leaves a CPU thread stack the native thread does not have.
+    (0x1f00, 0x1ffd, "polygon thread workspace outside the thread"),
     (0x1dba0, 0x1dd7f, "HDMA_TABLE_DYNAMIC (port spotlight table)"),
 ];
 
@@ -239,8 +243,11 @@ impl PolyUploads {
         hasher.finish()
     }
 
-    fn push(list: &mut Vec<(u64, u64)>, iteration: u64, ram: &[u8]) {
-        if ram[NMI_FLAG_UPDATE_POLYHEDRAL] == 0 {
+    /// `require_flag`: the ROM thread draws across frames, so only a
+    /// bitmap whose upload is pending is complete; the engine draws a whole
+    /// bitmap in one call (and may upload it in the same frame).
+    fn push(list: &mut Vec<(u64, u64)>, iteration: u64, ram: &[u8], require_flag: bool) {
+        if require_flag && ram[NMI_FLAG_UPDATE_POLYHEDRAL] == 0 {
             return;
         }
         let hash = Self::bitmap_hash(ram);
@@ -258,8 +265,8 @@ impl PolyUploads {
         }
         self.start.get_or_insert(iteration);
         self.end = iteration;
-        Self::push(&mut self.rom, iteration, rom_pre_nmi);
-        Self::push(&mut self.engine, iteration, engine);
+        Self::push(&mut self.rom, iteration, rom_pre_nmi, true);
+        Self::push(&mut self.engine, iteration, engine, false);
     }
 
     fn finish(&mut self) {
@@ -275,6 +282,12 @@ impl PolyUploads {
             } else {
                 first_unmatched = Some(iteration);
                 break;
+            }
+        }
+        if zelda3::debug_env::is_set("ZELDA3_LOGICAL_POLY_LIST") {
+            for (side, list) in [("rom", &self.rom), ("engine", &self.engine)] {
+                let iterations: Vec<String> = list.iter().map(|(iteration, _)| iteration.to_string()).collect();
+                println!("logical-poly-list side={side} iterations={}", iterations.join(","));
             }
         }
         let distinct = self.rom.iter().map(|&(_, hash)| hash).collect::<std::collections::HashSet<_>>().len();
@@ -1214,6 +1227,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     // Bytes that began to differ in an iteration with lag NMIs and have not
     // matched since: the lag's effect still carried in WRAM.
     let mut lag_carried: std::collections::BTreeSet<usize> = Default::default();
+    let mut previous_poly_active = false;
     let mut written: Vec<bool> = images.image.iter().map(|&byte| byte != POWER_ON_FILL).collect();
     let mut segment = Segment::starting(0);
     let mut audio_buffer = vec![0i16; AUDIO_SAMPLES * 2];
@@ -1525,10 +1539,15 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             || resync.contains(&(iteration.index + 1));
         if poly_active {
             segment.poly_iterations += 1;
+        }
+        // The thread's last bitmap outlives the stretch by an iteration
+        // (whether the ROM finished it before the thread stopped is timing).
+        if poly_active || previous_poly_active {
             for &(lo, hi) in POLY_THREAD_RANGES {
                 compared_now[lo..=hi].fill(false);
             }
         }
+        previous_poly_active = poly_active;
         if let Some(video) = video.as_mut() {
             video.poly_active.insert(index, poly_active);
         }

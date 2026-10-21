@@ -284,10 +284,11 @@ impl ZeldaState {
                 self.poly_shadow_master = 0;
                 self.poly_completed_upload = None;
             }
-            let use_timed_worker = self.rom_startup_timing
+            let use_timed_worker = (self.rom_startup_timing
                 && (rom_intro_poly_thread_is_active(frame.main_module, frame.submodule)
                     || dungeon_poly_thread
-                    || triforce_room_poly_thread);
+                    || triforce_room_poly_thread))
+                || (self.lag_free && rom_intro_poly_thread_is_active(frame.main_module, frame.submodule));
             let incremental_shadow = (dungeon_poly_thread || triforce_room_poly_thread)
                 && std::env::var("ZELDA3_POLY_SHADOW_INCREMENTAL").map_or(true, |v| v != "0");
             if incremental_shadow {

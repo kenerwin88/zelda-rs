@@ -404,7 +404,9 @@ impl ZeldaState {
         self.assert_native_world_location_state_matches_ram();
         self.assert_native_display_state_matches_ram();
         let frame = &self.game_state.frame;
-        let use_timed_poly_worker = self.rom_startup_timing
+        // Lag-free frames pace the intro's thread by each frame's render
+        // cost as the ROM timing does, not by the V-IRQ line counter.
+        let use_timed_poly_worker = (self.rom_startup_timing || self.lag_free)
             && rom_intro_poly_thread_is_active(frame.main_module, frame.submodule);
         let title_fade_poly_thread =
             self.rom_startup_timing && frame.main_module == 0 && frame.submodule == 5;
