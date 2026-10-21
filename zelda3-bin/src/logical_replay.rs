@@ -481,6 +481,7 @@ struct PendingVideo {
     iteration_index: usize,
     oracle_frame: usize,
     queued: QueuedGpuVideoDigest,
+    capture: LiveGpuFrameCapture,
 }
 
 /// Renders engine frames and checks them against the oracle cache's frame
@@ -507,6 +508,7 @@ struct HeldVideo {
     actual: VideoDigest,
     rgba: Vec<u8>,
     previous: Option<(usize, Vec<u8>)>,
+    capture: LiveGpuFrameCapture,
 }
 
 /// Whether some row split of `top` over `bottom` (rows `[0, s)` from `top`,
@@ -585,7 +587,7 @@ impl VideoCheck {
             return;
         };
         let capture = LiveGpuFrameCapture::from_game_at_comparison_frame(game, oracle_frame as u32);
-        let queued = self.renderer.queue_capture_video_digest(capture).unwrap_or_else(|error| {
+        let queued = self.renderer.queue_capture_video_digest(capture.clone()).unwrap_or_else(|error| {
             eprintln!("video submission failed: {error}");
             process::exit(1);
         });
@@ -593,6 +595,7 @@ impl VideoCheck {
             iteration_index: index,
             oracle_frame,
             queued,
+            capture,
         });
         if self.pending.len() == renderer::MODERN_GPU_READBACK_PIPELINE_DEPTH {
             self.finish_one(iterations, segment);
@@ -623,7 +626,7 @@ impl VideoCheck {
         });
         let index = pending.iteration_index;
         if let Some(held) = self.held.take() {
-            let next = (held.index + 1 == index).then_some(rgba.as_slice());
+            let next = (held.index + 1 == index).then_some((rgba.as_slice(), &pending.capture));
             self.classify_held(iterations, segment, held, next);
         }
         let class = if Some(&actual) == self.oracle_digest(iterations, Some(index)) {
@@ -645,6 +648,7 @@ impl VideoCheck {
                     actual,
                     rgba,
                     previous: previous.filter(|(previous, _)| previous + 1 == index),
+                    capture: pending.capture,
                 })
             }
         }
@@ -652,8 +656,16 @@ impl VideoCheck {
 
     /// Classify a frame that matched neither its picture nor a neighbour's,
     /// once its successor's pixels (`next`) are known.
-    fn classify_held(&mut self, iterations: &[Iteration], segment: &mut Segment, held: HeldVideo, next: Option<&[u8]>) {
+    fn classify_held(
+        &mut self,
+        iterations: &[Iteration],
+        segment: &mut Segment,
+        held: HeldVideo,
+        next: Option<(&[u8], &LiveGpuFrameCapture)>,
+    ) {
         let index = held.index;
+        let next_capture = next.map(|(_, capture)| capture);
+        let next = next.map(|(rgba, _)| rgba);
         let torn = self.oracle_digest(iterations, Some(index)).is_some_and(|expected| {
             next.is_some_and(|next| torn_composite_matches(next, &held.rgba, held.actual.width, expected))
                 || held.previous.as_ref().is_some_and(|(_, previous)| {
@@ -670,6 +682,25 @@ impl VideoCheck {
                 // a fade-out): the frame's top, then black.
                 || torn_composite_matches(&held.rgba, &vec![0; held.rgba.len()], held.actual.width, expected)
         });
+        // The next main rewriting an HDMA table in place (bottom-up, like
+        // the mirror wave) while this frame is drawn: the lower lines read
+        // the next frame's table over this frame's picture.
+        let torn = torn
+            || next_capture.is_some_and(|next_capture| {
+                let Some(expected) = self.oracle_digest(iterations, Some(index)).cloned() else {
+                    return false;
+                };
+                let hybrid = held.capture.with_line_registers_from(next_capture);
+                let queued = self.renderer.queue_capture_video_digest(hybrid).unwrap_or_else(|error| {
+                    eprintln!("video submission failed: {error}");
+                    process::exit(1);
+                });
+                let (actual, rgba) = self.renderer.finish_game_video_digest_with_rgba(queued).unwrap_or_else(|error| {
+                    eprintln!("video readback failed: {error}");
+                    process::exit(1);
+                });
+                actual == expected || torn_composite_matches(&held.rgba, &rgba, held.actual.width, &expected)
+            });
         let class = if self.poly_active.remove(&index).unwrap_or(false) {
             "content_poly"
         } else if torn || iterations[index].nmi_overran_vblank() {

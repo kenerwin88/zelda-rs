@@ -11,6 +11,7 @@ use std::time::Instant;
 use crate::image_output::decode_rgba_png;
 use platform::{NativeFrontend, NativeFrontendOptions};
 use renderer::{GpuFrame, RawScanlineFrame};
+use renderer::gpu_frame::RawScanlineRegs;
 use serde::Deserialize;
 use snes::ppu::PpuRenderFlags;
 use zelda3::ZeldaState;
@@ -41,6 +42,7 @@ impl std::ops::Deref for GpuRgbaReadbackFrame {
 const PLAYER_IS_INDOORS: usize = 0x001b;
 const MAIN_MODULE_INDEX: usize = 0x10;
 
+#[derive(Clone)]
 pub struct LiveGpuFrameCapture {
     comparison_frame: Option<u32>,
     host_frame: u32,
@@ -463,6 +465,46 @@ impl LiveGpuFrameCapture {
 
     pub(crate) fn comparison_frame(&self) -> Option<u32> {
         self.comparison_frame
+    }
+
+    /// This frame drawn with `other`'s HDMA-written line registers: the
+    /// picture when main rewrites an HDMA table for the next frame before the
+    /// beam reaches the lower lines. Only registers that vary down `other`'s
+    /// frame (windows, main-screen layers, scroll) are taken, so a register
+    /// written once per frame keeps this frame's value.
+    pub(crate) fn with_line_registers_from(&self, other: &Self) -> Self {
+        fn varies<T: PartialEq>(lines: &RawScanlineFrame, field: impl Fn(&RawScanlineRegs) -> T) -> bool {
+            let first = field(&lines[0]);
+            lines.iter().any(|line| field(line) != first)
+        }
+        let next = &other.raw_scanlines;
+        let windows = [
+            varies(next, |line| line.0),
+            varies(next, |line| line.1),
+            varies(next, |line| line.2),
+            varies(next, |line| line.3),
+            varies(next, |line| line.4),
+        ];
+        let h_scroll: [bool; 4] = std::array::from_fn(|bg| varies(next, |line| line.5[bg]));
+        let v_scroll: [bool; 4] = std::array::from_fn(|bg| varies(next, |line| line.6[bg]));
+        let mut capture = self.clone();
+        for (line, next) in capture.raw_scanlines.iter_mut().zip(next.iter()) {
+            let mut bytes = [&mut line.0, &mut line.1, &mut line.2, &mut line.3, &mut line.4];
+            for (index, byte) in bytes.iter_mut().enumerate() {
+                if windows[index] {
+                    **byte = [next.0, next.1, next.2, next.3, next.4][index];
+                }
+            }
+            for bg in 0..4 {
+                if h_scroll[bg] {
+                    line.5[bg] = next.5[bg];
+                }
+                if v_scroll[bg] {
+                    line.6[bg] = next.6[bg];
+                }
+            }
+        }
+        capture
     }
 
     pub(crate) fn host_frame(&self) -> u32 {

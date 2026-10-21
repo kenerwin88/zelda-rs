@@ -471,8 +471,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                         for byte in 0..u32::from(width) {
                             if watch.contains(&(offset + byte)) {
                                 eprintln!(
-                                    "ledger-watch iteration={} host={host} pc={:06x} wram={:05x} value={:02x}",
-                                    iteration.index, step.origin_pc, offset + byte, (value >> (8 * byte)) as u8,
+                                    "ledger-watch iteration={} host={host} line={} pc={:06x} wram={:05x} value={:02x}",
+                                    iteration.index,
+                                    exec.machine().timeline().raster_position().scanline(),
+                                    step.origin_pc,
+                                    offset + byte,
+                                    (value >> (8 * byte)) as u8,
                                 );
                             }
                         }
