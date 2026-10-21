@@ -1109,7 +1109,10 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         // iteration has no successor to hold its commands.
         let audio_checked = (segment.iterations != 0 || segment.continued) && index + 1 < iterations.len();
         // `images.image` still holds iteration k - 1 here.
-        let audio_poly = images.image[NMI_THREAD_ACTIVE] != 0 || game.ram[NMI_THREAD_ACTIVE] != 0;
+        let audio_poly = images.image[NMI_THREAD_ACTIVE] != 0
+            || game.ram[NMI_THREAD_ACTIVE] != 0
+            || timing_defined(&images.image)
+            || timing_defined(&game.ram);
         for command in engine_commands.iter().filter(|_| audio_checked) {
             segment.audio.engine_commands += 1;
             let found = [index, index + 1].iter().any(|&i| {
@@ -1208,8 +1211,12 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         }
         // The iteration that ends a timing-defined stretch still carries its
         // state; the replay reseeds at the next one (the resync point).
+        // The intro and attract modules (after a save-and-quit too) run on
+        // the NMI clock as well.
         let poly_active = images.image[NMI_THREAD_ACTIVE] != 0
             || game.ram[NMI_THREAD_ACTIVE] != 0
+            || timing_defined(&images.image)
+            || timing_defined(&game.ram)
             || resync.contains(&(iteration.index + 1));
         if poly_active {
             segment.poly_iterations += 1;
