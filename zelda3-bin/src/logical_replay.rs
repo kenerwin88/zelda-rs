@@ -698,15 +698,7 @@ impl VideoCheck {
                 let Some(expected) = self.oracle_digest(iterations, Some(index)).cloned() else {
                     return false;
                 };
-                let hybrid = held.capture.with_line_registers_from(next_capture);
-                let queued = self.renderer.queue_capture_video_digest(hybrid).unwrap_or_else(|error| {
-                    eprintln!("video submission failed: {error}");
-                    process::exit(1);
-                });
-                let (actual, rgba) = self.renderer.finish_game_video_digest_with_rgba(queued).unwrap_or_else(|error| {
-                    eprintln!("video readback failed: {error}");
-                    process::exit(1);
-                });
+                let (actual, rgba) = self.render_now(held.capture.with_line_registers_from(next_capture));
                 actual == expected || torn_composite_matches(&held.rgba, &rgba, held.actual.width, &expected)
             });
         let class = if self.poly_active.remove(&index).unwrap_or(false) {
@@ -722,6 +714,19 @@ impl VideoCheck {
             "content"
         };
         self.record(iterations, segment, index, held.oracle_frame, &held.actual, class);
+    }
+
+    /// Render one capture outside the pipeline (a readback slot is free
+    /// whenever a held frame is classified).
+    fn render_now(&mut self, capture: LiveGpuFrameCapture) -> (VideoDigest, Vec<u8>) {
+        let queued = self.renderer.queue_capture_video_digest(capture).unwrap_or_else(|error| {
+            eprintln!("video submission failed: {error}");
+            process::exit(1);
+        });
+        self.renderer.finish_game_video_digest_with_rgba(queued).unwrap_or_else(|error| {
+            eprintln!("video readback failed: {error}");
+            process::exit(1);
+        })
     }
 
     fn record(
