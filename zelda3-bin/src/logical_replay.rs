@@ -659,6 +659,9 @@ impl VideoCheck {
                 || held.previous.as_ref().is_some_and(|(_, previous)| {
                     torn_composite_matches(&held.rgba, previous, held.actual.width, expected)
                 })
+                // Main turning forced blank on mid-frame (the last step of
+                // a fade-out): the frame's top, then black.
+                || torn_composite_matches(&held.rgba, &vec![0; held.rgba.len()], held.actual.width, expected)
         });
         let class = if self.poly_active.remove(&index).unwrap_or(false) {
             "content_poly"

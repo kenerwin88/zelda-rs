@@ -237,6 +237,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     let watch: Vec<u32> = env::var("ZELDA3_LEDGER_WATCH")
         .map(|value| value.split(',').filter_map(|a| u32::from_str_radix(a.trim_start_matches("0x"), 16).ok()).collect())
         .unwrap_or_default();
+    // `ZELDA3_LEDGER_PPU_WRITES=<lo>-<hi>` prints every CPU write to the PPU
+    // registers and the DMA/HDMA enables in those hosts, with the beam
+    // position: the probe for a picture that differs on a few lines only.
+    let ppu_write_hosts = env::var("ZELDA3_LEDGER_PPU_WRITES")
+        .ok()
+        .map(|value| {
+            let (lo, hi) = value.split_once('-').unwrap_or((&value, &value));
+            Ok::<_, Box<dyn Error>>((lo.parse::<usize>()?, hi.parse::<usize>()?))
+        })
+        .transpose()?;
     let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset_with_sram(&rom, Some(&sram))?;
     let render_every = env::var_os("ZELDA3_LEDGER_PICTURES").is_some();
     let render_pictures = !frame_hosts.is_empty() || render_every;
@@ -471,6 +481,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                         continue;
                     }
                     let register = access.address & 0xffff;
+                    if ppu_write_hosts.is_some_and(|(lo, hi)| (lo..=hi).contains(&host))
+                        && let SourceCpuBusAccessKind::Write { value, width } = access.kind
+                        && ((0x2100..=0x2133).contains(&register) || matches!(register, 0x420b | 0x420c))
+                    {
+                        let snes = exec.machine().snes();
+                        eprintln!(
+                            "ledger-ppu iteration={} host={host} v={} h={} pc={:06x} reg={register:04x} value={value:0w$x}",
+                            iteration.index, snes.v_pos, snes.h_pos, step.origin_pc, w = usize::from(width) * 2,
+                        );
+                    }
                     match access.kind {
                         SourceCpuBusAccessKind::Read { value, width } => {
                             if in_open_handler && register == 0x4218 {
