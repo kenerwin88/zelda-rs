@@ -1119,6 +1119,9 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             || game.ram[NMI_THREAD_ACTIVE] != 0
             || timing_defined(&images.image)
             || timing_defined(&game.ram);
+        // A WRAM byte a lag moved (a sound delay counter) is still apart:
+        // the commands it times are moved with it.
+        let lag_carrying = !lag_carried.is_empty();
         for command in engine_commands.iter().filter(|_| audio_checked) {
             segment.audio.engine_commands += 1;
             let found = [index, index + 1].iter().any(|&i| {
@@ -1127,6 +1130,8 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             });
             if !found && audio_poly {
                 segment.audio.unmatched_poly += 1;
+            } else if !found && lag_carrying {
+                segment.audio.rom_unmatched_lag += 1;
             } else if !found {
                 segment.audio.engine_unmatched += 1;
                 segment.problem_at(iteration.index);
@@ -1171,7 +1176,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 let repeated_after_lag = (index.saturating_sub(2)..index).any(|i| {
                     iterations[i].lag_nmis != 0 && iterations[i].apu_writes.iter().any(same_effect)
                 });
-                if iteration.lag_nmis != 0 || repeated_after_lag {
+                if iteration.lag_nmis != 0 || repeated_after_lag || lag_carrying {
                     segment.audio.rom_unmatched_lag += 1;
                     continue;
                 }
