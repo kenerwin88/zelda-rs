@@ -2092,8 +2092,17 @@ impl PpuState {
                 }
                 if self.half_color && (second_layer != 5 || !self.add_subscreen) {
                     r >>= 1;
-                    g >>= 1;
                     b >>= 1;
+                    if self.subtract_color {
+                        g >>= 1;
+                    } else {
+                        // Snes9x averages packed RGB565: green is widened to
+                        // six bits (top bit copied into the low one) before
+                        // the half-add, as the engine's finalize shader does.
+                        let primary = ((color >> 5) & 0x1f) as i32;
+                        let widen = |g: i32| (g << 1) | (g >> 4);
+                        g = (widen(primary) + widen(g2)) >> 2;
+                    }
                 }
                 color = r.clamp(0, 31) as u16
                     | ((g.clamp(0, 31) as u16) << 5)
