@@ -4590,7 +4590,9 @@ impl ZeldaState {
     }
 
     pub(super) fn Attract_SetUpConclusionHDMA(&mut self) {
-        self.hdma_setup(0x0abddd, 0x0abddd, 0x42, 0x1b, 0x1e, 0);
+        // $0A:BC33 points only channel 7 at the table; channel 6 keeps the
+        // world map's ($0A:BDCF, indirect bank $0A) for later effects.
+        self.hdma_setup(0, 0x0abddd, 0x42, 0x1b, 0x1e, 0);
         self.set_hdma_enable_mask(0x80);
         self.set_bg_mode(9);
         self.clear_core_update_disable_flag();
