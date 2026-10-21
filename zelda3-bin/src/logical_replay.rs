@@ -743,9 +743,30 @@ impl VideoCheck {
                 let Some(expected) = self.oracle_digest(iterations, Some(index)).cloned() else {
                     return false;
                 };
-                let hybrid = held.capture.with_line_registers_differing(repointed, next_capture);
-                let (actual, rgba) = self.render_now(hybrid);
-                actual == expected || torn_composite_matches(&rgba, &held.rgba, held.actual.width, &expected)
+                // The two channels need not switch on the same line, so each
+                // subset of the table-driven registers is tried, over this
+                // frame and over the next (when the next main's other writes
+                // all land before line 0).
+                let fields = next_capture.line_register_fields_differing(repointed);
+                if fields.count_ones() > 4 {
+                    return false;
+                }
+                let field_bits: Vec<u16> = (0..16).map(|bit| 1 << bit).filter(|bit| fields & bit != 0).collect();
+                (1u16..1 << field_bits.len()).any(|subset| {
+                    let chosen = field_bits
+                        .iter()
+                        .enumerate()
+                        .filter(|(index, _)| subset & 1 << index != 0)
+                        .fold(0, |mask, (_, bit)| mask | bit);
+                    let (actual, rgba) = self.render_now(held.capture.with_line_register_fields(repointed, chosen));
+                    if actual == expected || torn_composite_matches(&rgba, &held.rgba, held.actual.width, &expected) {
+                        return true;
+                    }
+                    next.is_some_and(|next| {
+                        let (_, rgba) = self.render_now(next_capture.with_line_register_fields(repointed, chosen));
+                        torn_composite_matches(&rgba, next, held.actual.width, &expected)
+                    })
+                })
             });
         let class = if self.poly_active.remove(&index).unwrap_or(false) {
             "content_poly"

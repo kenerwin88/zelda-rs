@@ -143,6 +143,23 @@ fn compare_presents_window() -> bool {
     std::env::var_os("ZELDA3_COMPARE_OFFSCREEN").is_none_or(|value| value == "0")
 }
 
+/// One line-register field as comparable words (see
+/// `LiveGpuFrameCapture::line_register_fields_differing`).
+fn line_register_field(line: &RawScanlineRegs, field: usize) -> [i32; 8] {
+    let mut words = [0; 8];
+    match field {
+        0 => words[0] = line.0.into(),
+        1 => words[0] = line.1.into(),
+        2 => words[0] = line.2.into(),
+        3 => words[0] = line.3.into(),
+        4 => words[0] = line.4.into(),
+        5..=8 => words[0] = line.5[field - 5].into(),
+        9..=12 => words[0] = line.6[field - 9].into(),
+        _ => words = line.7.map(i32::from),
+    }
+    words
+}
+
 impl LiveGpuFrameCapture {
     pub fn from_game(game: &mut ZeldaState) -> Self {
         game.with_display_snapshot(|game| Self::from_current_game_with_probe_frame(game, None))
@@ -467,30 +484,36 @@ impl LiveGpuFrameCapture {
         self.comparison_frame
     }
 
-    /// This frame drawn with the line registers in which `lines` differs
-    /// from `reference`'s own: the registers an HDMA table writes when
-    /// `lines` is `reference`'s channel setup over other table contents.
-    pub(crate) fn with_line_registers_differing(&self, lines: &RawScanlineFrame, reference: &Self) -> Self {
+    /// The line-register fields (bit per field: windows and main-screen
+    /// layers 0-4, BG H scroll 5-8, BG V scroll 9-12, Mode 7 matrix 13) in
+    /// which `lines` differs from this frame's own on some line.
+    pub(crate) fn line_register_fields_differing(&self, lines: &RawScanlineFrame) -> u16 {
+        lines
+            .iter()
+            .zip(self.raw_scanlines.iter())
+            .map(|(alternate, own)| {
+                (0..14).filter(|&field| line_register_field(alternate, field) != line_register_field(own, field)).fold(0, |mask, field| mask | 1 << field)
+            })
+            .fold(0, |mask, line| mask | line)
+    }
+
+    /// This frame drawn with the `fields` (see `line_register_fields_differing`)
+    /// taken from `lines`: the registers an HDMA table writes when `lines` is
+    /// a channel setup reading other table contents.
+    pub(crate) fn with_line_register_fields(&self, lines: &RawScanlineFrame, fields: u16) -> Self {
         let mut capture = self.clone();
-        for ((line, alternate), own) in capture.raw_scanlines.iter_mut().zip(lines.iter()).zip(reference.raw_scanlines.iter()) {
-            for (field, (alternate, own)) in [&mut line.0, &mut line.1, &mut line.2, &mut line.3, &mut line.4]
-                .into_iter()
-                .zip([(alternate.0, own.0), (alternate.1, own.1), (alternate.2, own.2), (alternate.3, own.3), (alternate.4, own.4)])
-            {
-                if alternate != own {
-                    *field = alternate;
+        for (line, alternate) in capture.raw_scanlines.iter_mut().zip(lines.iter()) {
+            for field in (0..14).filter(|field| fields & 1 << field != 0) {
+                match field {
+                    0 => line.0 = alternate.0,
+                    1 => line.1 = alternate.1,
+                    2 => line.2 = alternate.2,
+                    3 => line.3 = alternate.3,
+                    4 => line.4 = alternate.4,
+                    5..=8 => line.5[field - 5] = alternate.5[field - 5],
+                    9..=12 => line.6[field - 9] = alternate.6[field - 9],
+                    _ => line.7 = alternate.7,
                 }
-            }
-            for bg in 0..4 {
-                if alternate.5[bg] != own.5[bg] {
-                    line.5[bg] = alternate.5[bg];
-                }
-                if alternate.6[bg] != own.6[bg] {
-                    line.6[bg] = alternate.6[bg];
-                }
-            }
-            if alternate.7 != own.7 {
-                line.7 = alternate.7;
             }
         }
         capture
