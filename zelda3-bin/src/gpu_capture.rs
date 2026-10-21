@@ -470,7 +470,7 @@ impl LiveGpuFrameCapture {
     /// This frame drawn with `other`'s HDMA-written line registers: the
     /// picture when main rewrites an HDMA table for the next frame before the
     /// beam reaches the lower lines. Only registers that vary down `other`'s
-    /// frame (windows, main-screen layers, scroll) are taken, so a register
+    /// frame (windows, main-screen layers, scroll, the Mode 7 matrix) are taken, so a register
     /// written once per frame keeps this frame's value.
     pub(crate) fn with_line_registers_from(&self, other: &Self) -> Self {
         fn varies<T: PartialEq>(lines: &RawScanlineFrame, field: impl Fn(&RawScanlineRegs) -> T) -> bool {
@@ -487,6 +487,7 @@ impl LiveGpuFrameCapture {
         ];
         let h_scroll: [bool; 4] = std::array::from_fn(|bg| varies(next, |line| line.5[bg]));
         let v_scroll: [bool; 4] = std::array::from_fn(|bg| varies(next, |line| line.6[bg]));
+        let matrix = varies(next, |line| line.7);
         let mut capture = self.clone();
         for (line, next) in capture.raw_scanlines.iter_mut().zip(next.iter()) {
             let mut bytes = [&mut line.0, &mut line.1, &mut line.2, &mut line.3, &mut line.4];
@@ -502,6 +503,9 @@ impl LiveGpuFrameCapture {
                 if v_scroll[bg] {
                     line.6[bg] = next.6[bg];
                 }
+            }
+            if matrix {
+                line.7 = next.7;
             }
         }
         capture

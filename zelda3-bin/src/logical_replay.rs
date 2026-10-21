@@ -681,6 +681,14 @@ impl VideoCheck {
                 // Main turning forced blank on mid-frame (the last step of
                 // a fade-out): the frame's top, then black.
                 || torn_composite_matches(&held.rgba, &vec![0; held.rgba.len()], held.actual.width, expected)
+                // The next main writing a register in vblank before line 0
+                // (forced blank as a fade-out completes): the whole picture
+                // already shows the next iteration's.
+                || next.is_some_and(|next| {
+                    let mut digest = parity::evidence::Sha256Digest::new();
+                    digest.update_rgb_from_rgba(next.chunks(held.actual.width as usize * 4));
+                    digest.finish() == expected.sha256
+                })
         });
         // The next main rewriting an HDMA table in place (bottom-up, like
         // the mirror wave) while this frame is drawn: the lower lines read
