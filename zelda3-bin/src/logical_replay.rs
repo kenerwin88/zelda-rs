@@ -238,6 +238,37 @@ fn parse_ranges(text: &str) -> Vec<(usize, usize)> {
 }
 
 /// Diverging WRAM as merged address ranges (gaps of up to four bytes join).
+const OAM_BUFFER: usize = 0x0800;
+const EXTENDED_OAM: usize = 0x0a00;
+const BYTEWISE_EXTENDED_OAM: usize = 0x0a20;
+
+/// Extended OAM bits of a slot nothing drew this frame. The ROM's drawers
+/// build a slot's bits as `LDA #$02 : ORA $75` ($09:ABF4 and others), so an
+/// undrawn slot can keep stale scratch bits the port never had; the slot is
+/// hidden (Y `$E0`-`$F0`) in both images, and drawing it rewrites them.
+fn hide_undrawn_extended_oam(actual: &[u8], expected: &[u8], compared: &mut [bool]) {
+    let hidden = |slot: usize| {
+        [actual, expected].iter().all(|ram| (0xe0..=0xf0).contains(&ram[OAM_BUFFER + slot * 4 + 1]))
+    };
+    for slot in 0..128 {
+        if hidden(slot) {
+            compared[BYTEWISE_EXTENDED_OAM + slot] = false;
+        }
+    }
+    for packed in 0..32 {
+        let address = EXTENDED_OAM + packed;
+        let mut differing = actual[address] ^ expected[address];
+        for quarter in 0..4 {
+            if hidden(packed * 4 + quarter) {
+                differing &= !(3 << (quarter * 2));
+            }
+        }
+        if differing == 0 {
+            compared[address] = false;
+        }
+    }
+}
+
 fn diff_ranges(actual: &[u8], expected: &[u8], compared: &[bool]) -> Vec<(usize, usize)> {
     let mut ranges: Vec<(usize, usize)> = Vec::new();
     for (address, (a, e)) in actual.iter().zip(expected).enumerate() {
@@ -1187,6 +1218,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         if let Some(video) = video.as_mut() {
             video.poly_active.insert(index, poly_active);
         }
+        hide_undrawn_extended_oam(&game.ram, &images.image, &mut compared_now);
         let ranges = diff_ranges(&game.ram, &images.image, &compared_now);
         for &(lo, hi) in &ranges {
             for address in lo..=hi {
