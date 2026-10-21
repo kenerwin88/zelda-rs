@@ -8299,7 +8299,7 @@ impl ZeldaState {
         // The atomic frontend's RUN_POLY alternation does not apply here.
         // The dungeon and Triforce-room V-IRQ threads render a slice every
         // host regardless of the frontend's poly/main alternation.
-        let dungeon_poly_thread_host = self.rom_startup_timing()
+        let dungeon_poly_thread_host = (self.rom_startup_timing() || self.lag_free)
             && (self.dungeon_poly_thread_is_active() || self.triforce_room_poly_thread_is_active());
         if dungeon_poly_thread_host {
             self.zelda_run_poly_loop();

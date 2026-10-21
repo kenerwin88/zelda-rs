@@ -1228,6 +1228,23 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     // matched since: the lag's effect still carried in WRAM.
     let mut lag_carried: std::collections::BTreeSet<usize> = Default::default();
     let mut previous_poly_active = false;
+    let mut watch_master = 0u64;
+    // `ZELDA3_LOGICAL_WATCH=<hex addr>,...` with `ZELDA3_LOGICAL_WATCH_ITERS=lo-hi`
+    // prints those WRAM bytes on both sides after each iteration in range.
+    let logical_watch: Option<(Vec<usize>, u64, u64)> = zelda3::debug_env::var("ZELDA3_LOGICAL_WATCH").ok().map(|addresses| {
+        let addresses = addresses
+            .split(',')
+            .filter_map(|address| usize::from_str_radix(address.trim().trim_start_matches("0x"), 16).ok())
+            .collect();
+        let (lo, hi) = zelda3::debug_env::var("ZELDA3_LOGICAL_WATCH_ITERS")
+            .ok()
+            .and_then(|range| {
+                let (lo, hi) = range.split_once('-')?;
+                Some((lo.parse().ok()?, hi.parse().ok()?))
+            })
+            .unwrap_or((0, u64::MAX));
+        (addresses, lo, hi)
+    });
     let mut written: Vec<bool> = images.image.iter().map(|&byte| byte != POWER_ON_FILL).collect();
     let mut segment = Segment::starting(0);
     let mut audio_buffer = vec![0i16; AUDIO_SAMPLES * 2];
@@ -1506,6 +1523,20 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         }
         if !images.advance() {
             break;
+        }
+        if let Some((watch, lo, hi)) = logical_watch.as_ref()
+            && (*lo..=*hi).contains(&iteration.index)
+        {
+            let bytes = |ram: &[u8]| watch.iter().map(|&address| format!("{:02x}", ram[address])).collect::<Vec<_>>().join(" ");
+            let master = zelda3::cycle_ledger::master();
+            println!(
+                "logical-watch iteration={} lag_nmis={} master={} rom=[{}] engine=[{}]",
+                iteration.index,
+                iteration.lag_nmis,
+                master - std::mem::replace(&mut watch_master, master),
+                bytes(&images.image),
+                bytes(&game.ram)
+            );
         }
         if let Some((target, dir)) = dump_wram.as_ref().filter(|(target, _)| *target == iteration.index) {
             fs::create_dir_all(dir).expect("create --dump-wram directory");

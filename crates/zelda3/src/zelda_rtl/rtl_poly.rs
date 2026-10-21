@@ -284,12 +284,14 @@ impl ZeldaState {
                 self.poly_shadow_master = 0;
                 self.poly_completed_upload = None;
             }
-            let use_timed_worker = (self.rom_startup_timing
+            // Lag-free frames pace every thread by its render cost as the ROM
+            // timing does; the incremental ROM-CPU shadow needs the cartridge.
+            let use_timed_worker = (self.rom_startup_timing || self.lag_free)
                 && (rom_intro_poly_thread_is_active(frame.main_module, frame.submodule)
                     || dungeon_poly_thread
-                    || triforce_room_poly_thread))
-                || (self.lag_free && rom_intro_poly_thread_is_active(frame.main_module, frame.submodule));
-            let incremental_shadow = (dungeon_poly_thread || triforce_room_poly_thread)
+                    || triforce_room_poly_thread);
+            let incremental_shadow = !self.lag_free
+                && (dungeon_poly_thread || triforce_room_poly_thread)
                 && std::env::var("ZELDA3_POLY_SHADOW_INCREMENTAL").map_or(true, |v| v != "0");
             if incremental_shadow {
                 if live_timing && self.poly_job_in_flight {
@@ -357,7 +359,9 @@ impl ZeldaState {
                         self.game_state.display.has_pending_polyhedral_update(),
                     );
                 }
-                if dungeon_poly_thread && !self.poly_job_in_flight {
+                // Lag-free, the ROM's startup hosts are lag NMIs of the
+                // activating iteration: the thread starts at once.
+                if dungeon_poly_thread && !self.poly_job_in_flight && !self.lag_free {
                     // The maiden activates the thread inside Sprite_Main (route
                     // host 413550, counted by `activate_nmi_thread`); the IRQ
                     // thread's first slice, which writes the crystal config,
@@ -443,7 +447,16 @@ impl ZeldaState {
                                 .clamp(1, 16) as u8
                         };
                         self.poly_dungeon_current_frame_slices = slices;
-                        slices - 1
+                        // Lag-free, the activating iteration's lag NMIs (five
+                        // at every crystal activation on the route: the ROM
+                        // main is held while the thread starts) already gave
+                        // the first frame its two slices after the four-host
+                        // startup.
+                        if self.lag_free && self.poly_dungeon_frames_rendered == 1 {
+                            slices.saturating_sub(3)
+                        } else {
+                            slices - 1
+                        }
                     } else if triforce_room_poly_thread {
                         // The thread owns the scanlines from the NMI's return
                         // to the V-IRQ line each host; the exact render cost
