@@ -104,11 +104,13 @@ const MODE_REPRESENTATION: &[(usize, usize, fn(&[u8]) -> bool, &str)] = &[
     // Overworld scrolling (modules 09 and 0b) stages map16 tiles at $1100 for
     // its VRAM upload; the port builds that upload natively, and the staged
     // bytes linger through outdoor transitions and menus. Indoors the bytes
-    // are door state and stay compared. A long map16 update ($02:F45A,
-    // `STA $1100,Y` with Y carried across strips) runs on through the VWF
-    // tile buffer (dialogue rewrites it before use) up to the dungeon door
-    // table at $1980.
-    (0x1100, 0x197f, |ram| ram[PLAYER_IS_INDOORS] == 0, "UVRAM_DATA_OVERWORLD (overworld upload staging)"),
+    // are door state and stay compared.
+    (0x1100, 0x1233, |ram| ram[PLAYER_IS_INDOORS] == 0, "UVRAM_DATA_OVERWORLD (overworld upload staging)"),
+    // A long map16 update ($02:F45A, `STA $1100,Y` with Y carried across
+    // strips) runs on through the VWF tile buffer (dialogue rewrites it
+    // before use) up to the dungeon door table at $1980; the staged bytes
+    // linger indoors too.
+    (0x1234, 0x197f, |_| true, "overworld upload staging over the VWF tile buffer"),
 ];
 
 const PLAYER_IS_INDOORS: usize = 0x1b;
