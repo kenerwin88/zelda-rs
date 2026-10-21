@@ -10523,6 +10523,20 @@ pub struct ZeldaState {
     /// inside the iteration instead of being sliced to the ROM's CPU budget.
     #[serde(skip)]
     pub(crate) lag_free: bool,
+    /// Lag-free: the frame's ROM-equivalent CPU cost (cycle ledger plus the
+    /// glyph renderer's modelled cost), from which the frames the cartridge
+    /// would have taken follow while a preemptive polygon thread runs.
+    #[serde(skip)]
+    pub(crate) lag_free_frame_master_start: u64,
+    #[serde(skip)]
+    pub(crate) lag_free_vwf_master: u64,
+    /// Lag-free: thread slices the last iteration's lag frames would have
+    /// given the preemptive polygon thread, applied at its next step.
+    #[serde(skip)]
+    pub(crate) lag_free_thread_credit: u8,
+    /// Lag-free: the last frame's ROM-equivalent main cost.
+    #[serde(skip)]
+    pub(crate) lag_free_last_main_master: u64,
     /// Lag-free logical replay: the cartridge's `$2140` reads for the current
     /// iteration, consumed by the song-end polls in order. The port's value
     /// depends on how much SPC time elapsed, which lag changes; replaying the
@@ -13559,6 +13573,10 @@ impl ZeldaState {
             dialogue_flags: 0,
             rom_startup_timing: false,
             lag_free: false,
+            lag_free_frame_master_start: 0,
+            lag_free_vwf_master: 0,
+            lag_free_thread_credit: 0,
+            lag_free_last_main_master: 0,
             apui00_poll_replay: None,
             original_timing_owner: OriginalTimingOwnerState::Disabled,
             original_timing_cold_start_eligible: true,

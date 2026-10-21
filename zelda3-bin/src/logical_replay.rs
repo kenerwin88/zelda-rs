@@ -229,6 +229,8 @@ struct PolyUploads {
     end: u64,
     /// (iteration, bitmap hash), consecutive repeats dropped.
     rom: Vec<(u64, u64)>,
+    /// The ROM's `POLY_CONFIG1` ($1F02) with each upload.
+    rom_config1: Vec<u8>,
     engine: Vec<(u64, u64)>,
     stretches: u64,
     rom_total: u64,
@@ -265,7 +267,11 @@ impl PolyUploads {
         }
         self.start.get_or_insert(iteration);
         self.end = iteration;
+        let before = self.rom.len();
         Self::push(&mut self.rom, iteration, rom_pre_nmi, true);
+        if self.rom.len() != before {
+            self.rom_config1.push(rom_pre_nmi[0x1f02]);
+        }
         Self::push(&mut self.engine, iteration, engine, false);
     }
 
@@ -289,6 +295,8 @@ impl PolyUploads {
                 let iterations: Vec<String> = list.iter().map(|(iteration, _)| iteration.to_string()).collect();
                 println!("logical-poly-list side={side} iterations={}", iterations.join(","));
             }
+            let config1: Vec<String> = self.rom_config1.iter().map(|value| value.to_string()).collect();
+            println!("logical-poly-list side=rom-config1 values={}", config1.join(","));
         }
         let distinct = self.rom.iter().map(|&(_, hash)| hash).collect::<std::collections::HashSet<_>>().len();
         println!(
@@ -303,6 +311,7 @@ impl PolyUploads {
         self.rom_matched += matched;
         self.rom.clear();
         self.engine.clear();
+        self.rom_config1.clear();
     }
 }
 
@@ -1530,10 +1539,11 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             let bytes = |ram: &[u8]| watch.iter().map(|&address| format!("{:02x}", ram[address])).collect::<Vec<_>>().join(" ");
             let master = zelda3::cycle_ledger::master();
             println!(
-                "logical-watch iteration={} lag_nmis={} master={} rom=[{}] engine=[{}]",
+                "logical-watch iteration={} lag_nmis={} master={} main={} rom=[{}] engine=[{}]",
                 iteration.index,
                 iteration.lag_nmis,
                 master - std::mem::replace(&mut watch_master, master),
+                game.lag_free_last_main_master(),
                 bytes(&images.image),
                 bytes(&game.ram)
             );

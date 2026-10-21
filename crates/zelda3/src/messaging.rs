@@ -8292,6 +8292,9 @@ impl ZeldaState {
                     .saturating_sub(self.silent_ledger_calls_at_nmi_acceptance),
             );
         }
+        if self.lag_free {
+            self.lag_free_vwf_master += u64::from(loop_budget - cycles_left);
+        }
         if midline_yield {
             VwfCpuSliceOutcome::InterruptedMidGlyph {
                 retain_incomplete_click,

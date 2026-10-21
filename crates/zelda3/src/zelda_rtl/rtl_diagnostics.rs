@@ -340,6 +340,10 @@ impl ZeldaState {
         let replay_input_override =
             replay_input_override.map(|input| Self::sanitize_frame_inputs(input as i32));
         self.frame_ctr_dbg = self.frame_ctr_dbg.wrapping_add(1);
+        if self.lag_free {
+            self.lag_free_frame_master_start = crate::cycle_ledger::master();
+            self.lag_free_vwf_master = 0;
+        }
         self.replay_trace_ram_watch("frame-entry");
         let mut state_recorder = std::mem::take(&mut self.state_recorder);
         let is_replay = state_recorder.replay_mode;
@@ -563,6 +567,9 @@ impl ZeldaState {
         }
         self.replay_trace_ram_watch("after-apu");
         self.finish_original_timing_host_dispatch(owns_original_timing_dispatch);
+        if self.lag_free {
+            self.credit_lag_free_thread_slices();
+        }
         is_replay
     }
 
