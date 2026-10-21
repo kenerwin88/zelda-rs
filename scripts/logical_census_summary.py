@@ -91,7 +91,7 @@ print(f"timing-defined (intro/attract) segments: {tot['timing_defined_segments']
 print(f"segments {tot['segments']}  iterations {tot['iterations']}  fully clean {tot['fully_clean_segments']}  "
       f"wram-clean {tot['wram_clean_segments']}  panicked {tot['panicked_segments']}  "
       f"polygon-thread iterations {tot['poly_iterations']} (wram differed {tot['poly_wram_diverged']})  "
-      f"lag iterations with wram differences {tot['wram_lag']}")
+      f"lag-caused wram differences (iterations) {tot['wram_lag']}")
 print(f"video {tot['video_match']}/{tot['video_compared']} ({100 * tot['video_match'] / vc:.2f}%)  "
       f"early {tot['video_early']}  late {tot['video_late']}  during-lag {tot['video_content_lag']}  "
       f"polygon-thread {tot['video_content_poly']}  torn {tot['video_content_tear']}  content {tot['video_content']} "

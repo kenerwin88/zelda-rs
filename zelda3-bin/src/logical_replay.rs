@@ -914,6 +914,9 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         .map(|cache| VideoCheck::load(cache, video_host_offset, video_misses));
     // Per address: iterations diverged, first diverging iteration.
     let mut histogram = vec![(0u64, 0u64); WRAM_LEN];
+    // Bytes that began to differ in an iteration with lag NMIs and have not
+    // matched since: the lag's effect still carried in WRAM.
+    let mut lag_carried: std::collections::BTreeSet<usize> = Default::default();
     let mut written: Vec<bool> = images.image.iter().map(|&byte| byte != POWER_ON_FILL).collect();
     let mut segment = Segment::starting(0);
     let mut audio_buffer = vec![0i16; AUDIO_SAMPLES * 2];
@@ -1240,6 +1243,15 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 }
             }
         }
+        let differing: Vec<usize> = ranges
+            .iter()
+            .flat_map(|&(lo, hi)| lo..=hi)
+            .filter(|&address| compared_now[address] && game.ram[address] != images.image[address])
+            .collect();
+        lag_carried.retain(|address| differing.binary_search(address).is_ok());
+        if iteration.lag_nmis != 0 {
+            lag_carried.extend(differing.iter().copied());
+        }
         segment.start_module.get_or_insert(images.image[0x10]);
         segment.iterations += 1;
         if ranges.is_empty() {
@@ -1253,8 +1265,9 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         }
         // The ROM's lag NMIs already ran the queued NMI work (uploads, `$12`)
         // that the lag-free frame runs at its own boundary. A difference that
-        // persists shows up again on the next lag-free iteration.
-        if iteration.lag_nmis != 0 {
+        // persists shows up again on the next lag-free iteration, and a
+        // counter the lag moved stays apart until it reconverges.
+        if iteration.lag_nmis != 0 || differing.iter().all(|address| lag_carried.contains(address)) {
             segment.lag_diverged += 1;
             continue;
         }
