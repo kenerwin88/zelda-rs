@@ -452,6 +452,38 @@ impl ZeldaState {
     /// Simulate 224 HDMA scanlines and capture per-scanline window boundaries and
     /// main-screen layer-enable register (TM / screen_enabled[0]).
     ///
+    /// The HDMA enable mask main last published (HDMAEN copy).
+    pub fn hdma_enable_mask(&self) -> u8 {
+        self.game_state.display.hdma_enable_mask
+    }
+
+    /// `ppu_scanline_windows` with HDMA channels 6/7 and the enable mask
+    /// replaced, reading `ram` (when given) in place of the current WRAM:
+    /// the picture an HDMA setup draws over another frame's tables.
+    pub fn ppu_scanline_windows_with_hdma(
+        &mut self,
+        channels: [snes::dma::DmaChannel; 2],
+        hdma_enable_mask: u8,
+        ram: Option<&mut Vec<u8>>,
+    ) -> Box<[(u8, u8, u8, u8, u8, [u16; 4], [u16; 4], [i16; 8], bool); 224]> {
+        let saved_channels = [self.dma.channel[6], self.dma.channel[7]];
+        let saved_mask = self.game_state.display.hdma_enable_mask;
+        [self.dma.channel[6], self.dma.channel[7]] = channels;
+        self.game_state.display.hdma_enable_mask = hdma_enable_mask;
+        let lines = match ram {
+            Some(ram) => {
+                std::mem::swap(&mut self.ram, ram);
+                let lines = self.ppu_scanline_windows();
+                std::mem::swap(&mut self.ram, ram);
+                lines
+            }
+            None => self.ppu_scanline_windows(),
+        };
+        [self.dma.channel[6], self.dma.channel[7]] = saved_channels;
+        self.game_state.display.hdma_enable_mask = saved_mask;
+        lines
+    }
+
     /// Returns `(window1_left, window1_right, window2_left, window2_right,
     /// screen_enabled_main, bg_h_scroll, bg_v_scroll, mode7_matrix)` per scanline.
     /// ALttP writes TM via HDMA to enable/disable layers (OBJ, BG3, etc.) on a

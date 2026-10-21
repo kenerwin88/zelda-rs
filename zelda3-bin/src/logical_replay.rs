@@ -486,6 +486,9 @@ struct PendingVideo {
     /// When this iteration re-pointed HDMA channel 6/7: its line registers
     /// with the new channel setup reading the previous iteration's tables.
     repointed_over_previous_tables: Option<Box<RawScanlineFrame>>,
+    /// When this iteration changed the HDMA setup: the previous iteration's
+    /// setup reading this iteration's tables.
+    previous_setup_over_tables: Option<Box<RawScanlineFrame>>,
 }
 
 /// Renders engine frames and checks them against the oracle cache's frame
@@ -504,8 +507,9 @@ struct VideoCheck {
     previous: Option<(usize, Vec<u8>)>,
     /// A missed frame waiting for its successor's pixels to test for a tear.
     held: Option<HeldVideo>,
-    /// The last queued iteration's WRAM and HDMA channel 6/7 setup.
-    last_hdma: Option<(usize, Vec<u8>, [snes::dma::DmaChannel; 2])>,
+    /// The last queued iteration's WRAM, HDMA channel 6/7 setup and enable
+    /// mask.
+    last_hdma: Option<(usize, Vec<u8>, [snes::dma::DmaChannel; 2], u8)>,
 }
 
 struct HeldVideo {
@@ -536,6 +540,45 @@ fn torn_composite_matches(top: &[u8], bottom: &[u8], width: u32, expected: &Vide
         digest.update_rgb_from_rgba(bottom[split * row..].chunks(row));
         if digest.finish() == expected.sha256 {
             return true;
+        }
+    }
+    false
+}
+
+/// Whether rows `[0, a)` of `top`, `[a, b)` of `middle` and the rest of
+/// `bottom` hash to `expected` for some `a <= b`: two HDMA channels whose
+/// tables the next main rewrites cross the beam on different lines.
+fn torn_three_way_matches(top: &[u8], middle: &[u8], bottom: &[u8], width: u32, expected: &VideoDigest) -> bool {
+    let row = width as usize * 4;
+    if top.len() != bottom.len() || middle.len() != bottom.len() || row == 0 {
+        return false;
+    }
+    let rows = top.len() / row;
+    fn line(image: &[u8], row: usize, y: usize) -> &[u8] {
+        &image[y * row..(y + 1) * row]
+    }
+    let mut prefix = parity::evidence::Sha256Digest::new();
+    for a in 0..=rows {
+        if a > 0 {
+            prefix.update_rgb_from_rgba([line(top, row, a - 1)]);
+        }
+        // Skip a split equal to the next one (the rows agree).
+        if a < rows && line(top, row, a) == line(middle, row, a) {
+            continue;
+        }
+        let mut with_middle = prefix.clone();
+        for b in a..=rows {
+            if b > a {
+                with_middle.update_rgb_from_rgba([line(middle, row, b - 1)]);
+            }
+            if b < rows && line(middle, row, b) == line(bottom, row, b) {
+                continue;
+            }
+            let mut digest = with_middle.clone();
+            digest.update_rgb_from_rgba((b..rows).map(|y| line(bottom, row, y)));
+            if digest.finish() == expected.sha256 {
+                return true;
+            }
         }
     }
     false
@@ -599,27 +642,31 @@ impl VideoCheck {
             process::exit(1);
         });
         let channels = [game.dma.channel[6], game.dma.channel[7]];
+        let mask = game.hdma_enable_mask();
         let setup = |channel: &snes::dma::DmaChannel| {
             (channel.b_adr, channel.a_adr, channel.a_bank, channel.ind_bank, channel.mode, channel.indirect)
         };
-        let repointed_over_previous_tables = match self.last_hdma.as_mut() {
-            Some((last, ram, last_channels))
-                if *last + 1 == index && channels.iter().zip(last_channels.iter()).any(|(a, b)| setup(a) != setup(b)) =>
+        let (repointed_over_previous_tables, previous_setup_over_tables) = match self.last_hdma.as_mut() {
+            Some((last, ram, last_channels, last_mask))
+                if *last + 1 == index
+                    && (*last_mask != mask
+                        || channels.iter().zip(last_channels.iter()).any(|(a, b)| setup(a) != setup(b))) =>
             {
-                std::mem::swap(&mut game.ram, ram);
-                let lines = game.ppu_scanline_windows();
-                std::mem::swap(&mut game.ram, ram);
-                Some(lines)
+                (
+                    Some(game.ppu_scanline_windows_with_hdma(channels, mask, Some(ram))),
+                    Some(game.ppu_scanline_windows_with_hdma(*last_channels, *last_mask, None)),
+                )
             }
-            _ => None,
+            _ => (None, None),
         };
         match self.last_hdma.as_mut() {
-            Some((last, ram, last_channels)) => {
+            Some((last, ram, last_channels, last_mask)) => {
                 *last = index;
                 ram.copy_from_slice(&game.ram);
                 *last_channels = channels;
+                *last_mask = mask;
             }
-            None => self.last_hdma = Some((index, game.ram.clone(), channels)),
+            None => self.last_hdma = Some((index, game.ram.clone(), channels, mask)),
         }
         self.pending.push_back(PendingVideo {
             iteration_index: index,
@@ -627,6 +674,7 @@ impl VideoCheck {
             queued,
             capture,
             repointed_over_previous_tables,
+            previous_setup_over_tables,
         });
         if self.pending.len() == renderer::MODERN_GPU_READBACK_PIPELINE_DEPTH {
             self.finish_one(iterations, segment);
@@ -638,7 +686,7 @@ impl VideoCheck {
             self.finish_one(iterations, segment);
         }
         if let Some(held) = self.held.take() {
-            self.classify_held(iterations, segment, held, None, None);
+            self.classify_held(iterations, segment, held, None, None, None);
         }
         self.previous = None;
     }
@@ -659,7 +707,8 @@ impl VideoCheck {
         if let Some(held) = self.held.take() {
             let next = (held.index + 1 == index).then_some((rgba.as_slice(), &pending.capture));
             let repointed = next.and(pending.repointed_over_previous_tables.as_deref());
-            self.classify_held(iterations, segment, held, next, repointed);
+            let previous_setup = next.and(pending.previous_setup_over_tables.as_deref());
+            self.classify_held(iterations, segment, held, next, repointed, previous_setup);
         }
         let class = if Some(&actual) == self.oracle_digest(iterations, Some(index)) {
             Some("match")
@@ -695,6 +744,7 @@ impl VideoCheck {
         held: HeldVideo,
         next: Option<(&[u8], &LiveGpuFrameCapture)>,
         repointed: Option<&RawScanlineFrame>,
+        previous_setup: Option<&RawScanlineFrame>,
     ) {
         let index = held.index;
         let next_capture = next.map(|(_, capture)| capture);
@@ -733,6 +783,35 @@ impl VideoCheck {
                 };
                 let (actual, rgba) = self.render_now(held.capture.with_line_registers_from(next_capture));
                 actual == expected || torn_composite_matches(&held.rgba, &rgba, held.actual.width, &expected)
+            });
+        // The next main's last pass over an HDMA table before it turns the
+        // channel off (the mirror dewave settling): the lower lines read the
+        // rewritten table through this frame's setup.
+        let torn = torn
+            || previous_setup.is_some_and(|lines| {
+                let Some(expected) = self.oracle_digest(iterations, Some(index)).cloned() else {
+                    return false;
+                };
+                let fields = held.capture.line_register_fields_differing(lines);
+                if fields == 0 || fields.count_ones() > 4 {
+                    return false;
+                }
+                let (actual, full) = self.render_now(held.capture.with_line_register_fields(lines, fields));
+                if actual == expected || torn_composite_matches(&held.rgba, &full, held.actual.width, &expected) {
+                    return true;
+                }
+                // Two channels crossing the beam on different lines: a band
+                // where only some of the registers read the rewritten table.
+                let field_bits: Vec<u16> = (0..16).map(|bit| 1 << bit).filter(|bit| fields & bit != 0).collect();
+                (1u16..(1 << field_bits.len()) - 1).any(|subset| {
+                    let chosen = field_bits
+                        .iter()
+                        .enumerate()
+                        .filter(|(index, _)| subset & 1 << index != 0)
+                        .fold(0, |mask, (_, bit)| mask | bit);
+                    let (_, middle) = self.render_now(held.capture.with_line_register_fields(lines, chosen));
+                    torn_three_way_matches(&held.rgba, &middle, &full, held.actual.width, &expected)
+                })
             });
         // The next main re-pointing an HDMA channel in vblank and then
         // rewriting its table from the top while this frame is drawn (the
