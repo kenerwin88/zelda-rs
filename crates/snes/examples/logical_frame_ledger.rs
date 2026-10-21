@@ -32,7 +32,7 @@
 //! lists it per host for checking against the cache (it matches Snes9x on
 //! most frames; it is a diagnostic, not the authority).
 //! `ZELDA3_LEDGER_FRAMES=<lo>-<hi>[,...]` draws just those windows and writes
-//! `frames/host-<n>.ppm`, plus the PPU registers and VRAM beside it.
+//! `frames/host-<n>.ppm`, plus the PPU registers, OAM and VRAM beside it.
 
 use sha2::{Digest, Sha256};
 use snes::{Snes9xColdCpuExecutor, SourceCpuAcceptedInterrupt, SourceCpuBusAccessKind};
@@ -333,6 +333,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             "cgram": ppu.cgram,
                             "bg": ppu.bg_layer,
                             "mode": ppu.mode,
+                            "oam": ppu.oam,
                         });
                         let vram: Vec<u8> = ppu.vram.iter().flat_map(|word| word.to_le_bytes()).collect();
                         if let Err(error) = fs::write(out_dir.join("frames").join(format!("host-{host}.vram")), vram) {
