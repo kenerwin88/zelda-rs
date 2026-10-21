@@ -485,10 +485,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                         && let SourceCpuBusAccessKind::Write { value, width } = access.kind
                         && ((0x2100..=0x2133).contains(&register) || matches!(register, 0x420b | 0x420c))
                     {
-                        let snes = exec.machine().snes();
+                        let raster = exec.machine().timeline().raster_position();
                         eprintln!(
-                            "ledger-ppu iteration={} host={host} v={} h={} pc={:06x} reg={register:04x} value={value:0w$x}",
-                            iteration.index, snes.v_pos, snes.h_pos, step.origin_pc, w = usize::from(width) * 2,
+                            "ledger-ppu iteration={} host={host} v={} pc={:06x} reg={register:04x} value={value:0w$x}",
+                            iteration.index, raster.scanline(), step.origin_pc, w = usize::from(width) * 2,
                         );
                     }
                     match access.kind {
