@@ -11,6 +11,7 @@
 //!        [--offset K] [--report N] [--ignore lo-hi,...] [--histogram PATH]
 //!        [--seed-every N] [--video CACHE_DIR [--video-host-offset D] [--video-misses]]
 //!        [--apu-trace lo-hi] [--start K] [--dump-wram K:DIR] [--live-apu-reads]
+//!        [--poly-uploads]
 //!
 //! The cartridge's `$2140` reads (song-end polls) are replayed per iteration
 //! like the RNG: their values depend on elapsed SPC time, which lag changes.
@@ -180,6 +181,8 @@ struct WramImages {
     decoder: zstd::Decoder<'static, BufReader<fs::File>>,
     image: Vec<u8>,
     delta: Vec<u8>,
+    /// The other image stream (pre- or post-NMI), advanced in step.
+    companion: Option<Box<WramImages>>,
 }
 
 impl WramImages {
@@ -192,6 +195,7 @@ impl WramImages {
             decoder: zstd::Decoder::new(file).expect("zstd decoder"),
             image: vec![0; WRAM_LEN],
             delta: vec![0; WRAM_LEN],
+            companion: None,
         }
     }
 
@@ -202,7 +206,90 @@ impl WramImages {
         for (byte, delta) in self.image.iter_mut().zip(&self.delta) {
             *byte ^= delta;
         }
-        true
+        self.companion.as_mut().is_none_or(|companion| companion.advance())
+    }
+}
+
+/// `NMI_FLAG_UPDATE_POLYHEDRAL`: the polygon thread finished a bitmap that
+/// the next NMI uploads from [`POLYHEDRAL_BUFFER`].
+const NMI_FLAG_UPDATE_POLYHEDRAL: usize = 0x1f0c;
+const POLYHEDRAL_BUFFER: std::ops::Range<usize> = 0xe800..0xf000;
+
+/// The polygon thread's uploads across one timing-defined stretch, on both
+/// sides. When each bitmap reaches the screen depends on the thread's CPU
+/// time, but the bitmaps themselves do not: every ROM upload must appear,
+/// in order, among the engine's (which may also draw steps the ROM skipped).
+#[derive(Default)]
+struct PolyUploads {
+    start: Option<u64>,
+    end: u64,
+    /// (iteration, bitmap hash), consecutive repeats dropped.
+    rom: Vec<(u64, u64)>,
+    engine: Vec<(u64, u64)>,
+    stretches: u64,
+    rom_total: u64,
+    rom_matched: u64,
+}
+
+impl PolyUploads {
+    fn bitmap_hash(ram: &[u8]) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        ram[POLYHEDRAL_BUFFER].hash(&mut hasher);
+        hasher.finish()
+    }
+
+    fn push(list: &mut Vec<(u64, u64)>, iteration: u64, ram: &[u8]) {
+        if ram[NMI_FLAG_UPDATE_POLYHEDRAL] == 0 {
+            return;
+        }
+        let hash = Self::bitmap_hash(ram);
+        if list.last().is_none_or(|&(_, last)| last != hash) {
+            list.push((iteration, hash));
+        }
+    }
+
+    /// Record iteration `iteration`: `rom_pre_nmi` is the ROM's WRAM as its
+    /// closing NMI is taken, `engine` the engine's once its frame ran.
+    fn observe(&mut self, iteration: u64, poly_active: bool, rom_pre_nmi: &[u8], engine: &[u8]) {
+        if !poly_active {
+            self.finish();
+            return;
+        }
+        self.start.get_or_insert(iteration);
+        self.end = iteration;
+        Self::push(&mut self.rom, iteration, rom_pre_nmi);
+        Self::push(&mut self.engine, iteration, engine);
+    }
+
+    fn finish(&mut self) {
+        let Some(start) = self.start.take() else {
+            return;
+        };
+        let mut engine = self.engine.iter().peekable();
+        let mut matched = 0;
+        let mut first_unmatched = None;
+        for &(iteration, hash) in &self.rom {
+            if engine.by_ref().any(|&(_, engine_hash)| engine_hash == hash) {
+                matched += 1;
+            } else {
+                first_unmatched = Some(iteration);
+                break;
+            }
+        }
+        let distinct = self.rom.iter().map(|&(_, hash)| hash).collect::<std::collections::HashSet<_>>().len();
+        println!(
+            "logical-poly-uploads start={start} end={} rom={} rom_distinct={distinct} engine={} matched={matched} first_unmatched={}",
+            self.end,
+            self.rom.len(),
+            self.engine.len(),
+            first_unmatched.map_or("none".to_owned(), |iteration| iteration.to_string()),
+        );
+        self.stretches += 1;
+        self.rom_total += self.rom.len() as u64;
+        self.rom_matched += matched;
+        self.rom.clear();
+        self.engine.clear();
     }
 }
 
@@ -1007,6 +1094,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     let mut start_at: u64 = 0;
     let mut apu_read_replay = true;
     let mut eager_seed = false;
+    let mut poly_uploads: Option<PolyUploads> = None;
     let mut dump_wram: Option<(u64, PathBuf)> = None;
     let mut index = 0;
     while index < args.len() {
@@ -1035,6 +1123,11 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                     process::exit(2);
                 });
                 dump_wram = Some((iteration.parse().expect("--dump-wram iteration"), PathBuf::from(dir)));
+            }
+            "--poly-uploads" => {
+                poly_uploads = Some(PolyUploads::default());
+                index += 1;
+                continue;
             }
             "--eager-seed" => {
                 eager_seed = true;
@@ -1089,6 +1182,10 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         .map(|text| text.lines().filter_map(|line| line.parse().ok()).collect())
         .unwrap_or_default();
     let mut images = WramImages::open(&ledger.join(format!("wram-{image_kind}-nmi.xor.zst")));
+    if poly_uploads.is_some() {
+        let other = if image_kind == "pre" { "post" } else { "pre" };
+        images.companion = Some(Box::new(WramImages::open(&ledger.join(format!("wram-{other}-nmi.xor.zst")))));
+    }
     // Image j of either stream belongs to the j-th wait-loop NMI, which opens
     // iteration j; image j+1 is the state once iteration j has finished.
     if !images.advance() {
@@ -1435,6 +1532,13 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         if let Some(video) = video.as_mut() {
             video.poly_active.insert(index, poly_active);
         }
+        if let Some(poly_uploads) = poly_uploads.as_mut() {
+            let rom_pre_nmi = match images.companion.as_deref() {
+                Some(companion) if image_kind != "pre" => &companion.image,
+                _ => &images.image,
+            };
+            poly_uploads.observe(iteration.index, poly_active, rom_pre_nmi, &game.ram);
+        }
         hide_undrawn_extended_oam(&game.ram, &images.image, &mut compared_now);
         let ranges = diff_ranges(&game.ram, &images.image, &compared_now);
         for &(lo, hi) in &ranges {
@@ -1530,6 +1634,13 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         });
     }
     println!("logical replay: {clean} clean iteration(s); first WRAM divergence {first_divergence:?}");
+    if let Some(poly_uploads) = poly_uploads.as_mut() {
+        poly_uploads.finish();
+        println!(
+            "logical poly uploads: {} stretch(es), {}/{} ROM bitmaps found in order among the engine's",
+            poly_uploads.stretches, poly_uploads.rom_matched, poly_uploads.rom_total
+        );
+    }
     if let Some(video) = video {
         let total = &video.total;
         println!(
