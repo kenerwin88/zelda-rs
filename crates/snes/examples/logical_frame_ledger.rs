@@ -238,7 +238,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .map(|value| value.split(',').filter_map(|a| u32::from_str_radix(a.trim_start_matches("0x"), 16).ok()).collect())
         .unwrap_or_default();
     // `ZELDA3_LEDGER_PPU_WRITES=<lo>-<hi>` prints every CPU write to the PPU
-    // registers and the DMA/HDMA enables in those hosts, with the beam
+    // registers, the DMA/HDMA enables and channel registers in those hosts, with the beam
     // position: the probe for a picture that differs on a few lines only.
     let ppu_write_hosts = env::var("ZELDA3_LEDGER_PPU_WRITES")
         .ok()
@@ -487,7 +487,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let register = access.address & 0xffff;
                     if ppu_write_hosts.is_some_and(|(lo, hi)| (lo..=hi).contains(&host))
                         && let SourceCpuBusAccessKind::Write { value, width } = access.kind
-                        && ((0x2100..=0x2133).contains(&register) || matches!(register, 0x420b | 0x420c))
+                        && ((0x2100..=0x2133).contains(&register)
+                            || matches!(register, 0x420b | 0x420c)
+                            || (0x4300..=0x437f).contains(&register))
                     {
                         let raster = exec.machine().timeline().raster_position();
                         eprintln!(

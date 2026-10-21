@@ -47,6 +47,7 @@ use crate::{
     snes9x_compare::acquire_snes9x_compare_lock_mode,
 };
 use parity::av::VideoDigest;
+use renderer::RawScanlineFrame;
 use std::{
     collections::VecDeque,
     fs,
@@ -482,6 +483,9 @@ struct PendingVideo {
     oracle_frame: usize,
     queued: QueuedGpuVideoDigest,
     capture: LiveGpuFrameCapture,
+    /// When this iteration re-pointed HDMA channel 6/7: its line registers
+    /// with the new channel setup reading the previous iteration's tables.
+    repointed_over_previous_tables: Option<Box<RawScanlineFrame>>,
 }
 
 /// Renders engine frames and checks them against the oracle cache's frame
@@ -500,6 +504,8 @@ struct VideoCheck {
     previous: Option<(usize, Vec<u8>)>,
     /// A missed frame waiting for its successor's pixels to test for a tear.
     held: Option<HeldVideo>,
+    /// The last queued iteration's WRAM and HDMA channel 6/7 setup.
+    last_hdma: Option<(usize, Vec<u8>, [snes::dma::DmaChannel; 2])>,
 }
 
 struct HeldVideo {
@@ -568,6 +574,7 @@ impl VideoCheck {
             total: VideoTally::default(),
             previous: None,
             held: None,
+            last_hdma: None,
         }
     }
 
@@ -591,11 +598,35 @@ impl VideoCheck {
             eprintln!("video submission failed: {error}");
             process::exit(1);
         });
+        let channels = [game.dma.channel[6], game.dma.channel[7]];
+        let setup = |channel: &snes::dma::DmaChannel| {
+            (channel.b_adr, channel.a_adr, channel.a_bank, channel.ind_bank, channel.mode, channel.indirect)
+        };
+        let repointed_over_previous_tables = match self.last_hdma.as_mut() {
+            Some((last, ram, last_channels))
+                if *last + 1 == index && channels.iter().zip(last_channels.iter()).any(|(a, b)| setup(a) != setup(b)) =>
+            {
+                std::mem::swap(&mut game.ram, ram);
+                let lines = game.ppu_scanline_windows();
+                std::mem::swap(&mut game.ram, ram);
+                Some(lines)
+            }
+            _ => None,
+        };
+        match self.last_hdma.as_mut() {
+            Some((last, ram, last_channels)) => {
+                *last = index;
+                ram.copy_from_slice(&game.ram);
+                *last_channels = channels;
+            }
+            None => self.last_hdma = Some((index, game.ram.clone(), channels)),
+        }
         self.pending.push_back(PendingVideo {
             iteration_index: index,
             oracle_frame,
             queued,
             capture,
+            repointed_over_previous_tables,
         });
         if self.pending.len() == renderer::MODERN_GPU_READBACK_PIPELINE_DEPTH {
             self.finish_one(iterations, segment);
@@ -607,7 +638,7 @@ impl VideoCheck {
             self.finish_one(iterations, segment);
         }
         if let Some(held) = self.held.take() {
-            self.classify_held(iterations, segment, held, None);
+            self.classify_held(iterations, segment, held, None, None);
         }
         self.previous = None;
     }
@@ -627,7 +658,8 @@ impl VideoCheck {
         let index = pending.iteration_index;
         if let Some(held) = self.held.take() {
             let next = (held.index + 1 == index).then_some((rgba.as_slice(), &pending.capture));
-            self.classify_held(iterations, segment, held, next);
+            let repointed = next.and(pending.repointed_over_previous_tables.as_deref());
+            self.classify_held(iterations, segment, held, next, repointed);
         }
         let class = if Some(&actual) == self.oracle_digest(iterations, Some(index)) {
             Some("match")
@@ -662,6 +694,7 @@ impl VideoCheck {
         segment: &mut Segment,
         held: HeldVideo,
         next: Option<(&[u8], &LiveGpuFrameCapture)>,
+        repointed: Option<&RawScanlineFrame>,
     ) {
         let index = held.index;
         let next_capture = next.map(|(_, capture)| capture);
@@ -700,6 +733,19 @@ impl VideoCheck {
                 };
                 let (actual, rgba) = self.render_now(held.capture.with_line_registers_from(next_capture));
                 actual == expected || torn_composite_matches(&held.rgba, &rgba, held.actual.width, &expected)
+            });
+        // The next main re-pointing an HDMA channel in vblank and then
+        // rewriting its table from the top while this frame is drawn (the
+        // mirror warp's first frame): the top lines read the old table
+        // through the new channel setup.
+        let torn = torn
+            || next_capture.zip(repointed).is_some_and(|(next_capture, repointed)| {
+                let Some(expected) = self.oracle_digest(iterations, Some(index)).cloned() else {
+                    return false;
+                };
+                let hybrid = held.capture.with_line_registers_differing(repointed, next_capture);
+                let (actual, rgba) = self.render_now(hybrid);
+                actual == expected || torn_composite_matches(&rgba, &held.rgba, held.actual.width, &expected)
             });
         let class = if self.poly_active.remove(&index).unwrap_or(false) {
             "content_poly"

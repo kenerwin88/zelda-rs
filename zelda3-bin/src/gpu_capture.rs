@@ -467,6 +467,35 @@ impl LiveGpuFrameCapture {
         self.comparison_frame
     }
 
+    /// This frame drawn with the line registers in which `lines` differs
+    /// from `reference`'s own: the registers an HDMA table writes when
+    /// `lines` is `reference`'s channel setup over other table contents.
+    pub(crate) fn with_line_registers_differing(&self, lines: &RawScanlineFrame, reference: &Self) -> Self {
+        let mut capture = self.clone();
+        for ((line, alternate), own) in capture.raw_scanlines.iter_mut().zip(lines.iter()).zip(reference.raw_scanlines.iter()) {
+            for (field, (alternate, own)) in [&mut line.0, &mut line.1, &mut line.2, &mut line.3, &mut line.4]
+                .into_iter()
+                .zip([(alternate.0, own.0), (alternate.1, own.1), (alternate.2, own.2), (alternate.3, own.3), (alternate.4, own.4)])
+            {
+                if alternate != own {
+                    *field = alternate;
+                }
+            }
+            for bg in 0..4 {
+                if alternate.5[bg] != own.5[bg] {
+                    line.5[bg] = alternate.5[bg];
+                }
+                if alternate.6[bg] != own.6[bg] {
+                    line.6[bg] = alternate.6[bg];
+                }
+            }
+            if alternate.7 != own.7 {
+                line.7 = alternate.7;
+            }
+        }
+        capture
+    }
+
     /// This frame drawn with `other`'s HDMA-written line registers: the
     /// picture when main rewrites an HDMA table for the next frame before the
     /// beam reaches the lower lines. Only registers that vary down `other`'s
