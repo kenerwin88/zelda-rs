@@ -1116,8 +1116,15 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 }
                 // The same command sent during the lag NMIs of the two
                 // previous iterations: the ROM repeats it across the lag.
+                // On the effect ports the pan bits (6-7) may differ: two
+                // callers in one Main pass each queue the effect when a lag
+                // NMI sends and clears the first in between, while lag-free
+                // the second finds the queue byte taken ($0D:BB8A).
+                let same_effect = |sent: &(u8, u8)| {
+                    sent.0 == command.0 && (sent.1 == command.1 || (command.0 != 0 && sent.1 & 0x3f == command.1 & 0x3f))
+                };
                 let repeated_after_lag = (index.saturating_sub(2)..index).any(|i| {
-                    iterations[i].lag_nmis != 0 && iterations[i].apu_writes.contains(&command)
+                    iterations[i].lag_nmis != 0 && iterations[i].apu_writes.iter().any(same_effect)
                 });
                 if iteration.lag_nmis != 0 || repeated_after_lag {
                     segment.audio.rom_unmatched_lag += 1;
