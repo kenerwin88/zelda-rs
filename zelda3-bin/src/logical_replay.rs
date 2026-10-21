@@ -659,6 +659,13 @@ impl VideoCheck {
                 || held.previous.as_ref().is_some_and(|(_, previous)| {
                     torn_composite_matches(&held.rgba, previous, held.actual.width, expected)
                 })
+                // Main rewriting an HDMA table for the next frame while this
+                // one is drawn (the mirror wave, the swamp water window):
+                // the lower lines already follow the next frame's table.
+                || next.is_some_and(|next| torn_composite_matches(&held.rgba, next, held.actual.width, expected))
+                || held.previous.as_ref().is_some_and(|(_, previous)| {
+                    torn_composite_matches(previous, &held.rgba, held.actual.width, expected)
+                })
                 // Main turning forced blank on mid-frame (the last step of
                 // a fade-out): the frame's top, then black.
                 || torn_composite_matches(&held.rgba, &vec![0; held.rgba.len()], held.actual.width, expected)
