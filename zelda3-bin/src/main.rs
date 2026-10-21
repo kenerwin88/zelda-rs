@@ -35,6 +35,7 @@ mod sheet_dump_commands;
 mod smp_opcode_ledger;
 mod snes9x_apu_tools;
 mod snes9x_compare;
+mod snes9x_frame_dump;
 mod snes9x_presented_bg_scroll;
 mod snes9x_presented_bg_tilemaps;
 mod snes9x_presented_dialogue_text;
@@ -249,6 +250,10 @@ fn main() {
     }
     if args.get(1).map(String::as_str) == Some("--compare-bootstrap-apu-startup") {
         run_compare_bootstrap_apu_startup(&args[2..]);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--snes9x-dump-frames") {
+        snes9x_frame_dump::run_snes9x_dump_frames(&args[2..]);
         return;
     }
     if args.get(1).map(String::as_str) == Some("--dump-frame") {
