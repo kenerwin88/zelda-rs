@@ -273,6 +273,17 @@ fn spike_block_check_statue_collision_filters_by_frame_parity_and_overlap() {
 }
 
 #[test]
+fn yellow_stalfos_animate_reads_past_the_table_like_the_rom() {
+    // An uninitialized D of 0x24 (route frame 91107) reads the ROM code after
+    // kYellowStalfos_Gfx2 and gets 0xB0, with or without a cartridge image.
+    let mut s = fresh_state();
+    let k = 2;
+    s.sprite_slot_view_mut(k).set_direction(0x24);
+    s.yellow_stalfos_animate(k);
+    assert_eq!(s.sprite_slot_view(k).graphics(), 0xb0);
+}
+
+#[test]
 fn yellow_stalfos_animate_maps_d_to_gfx2() {
     // YellowStalfos_Animate: graphics = kYellowStalfos_Gfx2[D];
     // flags3 has bit 0x40 cleared.
