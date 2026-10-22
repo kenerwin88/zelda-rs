@@ -1238,6 +1238,10 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     let mut lag_carried: std::collections::BTreeSet<usize> = Default::default();
     let mut previous_poly_active = false;
     let mut watch_master = 0u64;
+    let zero_input: Option<(u64, u64)> = zelda3::debug_env::var("ZELDA3_LOGICAL_ZERO_INPUT").ok().and_then(|range| {
+        let (lo, hi) = range.split_once('-')?;
+        Some((lo.parse().ok()?, hi.parse().ok()?))
+    });
     let mut watch_silent = 0u64;
     // `ZELDA3_LOGICAL_WATCH=<hex addr>,...` with `ZELDA3_LOGICAL_WATCH_ITERS=lo-hi`
     // prints those WRAM bytes on both sides after each iteration in range.
@@ -1347,6 +1351,12 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             .and_then(|iteration| iteration.joypad)
             .map(libretro_word)
             .unwrap_or(0);
+        // `ZELDA3_LOGICAL_ZERO_INPUT=lo-hi` drops the pad in those iterations:
+        // whether a stretch's outcome depends on the player's input.
+        let input = match zero_input {
+            Some((lo, hi)) if (lo..=hi).contains(&(iteration_index.max(0) as u64)) => 0,
+            _ => input,
+        };
         // Each frame draws exactly its iteration's RNG outputs; a draw the ROM
         // did not make, or an output left unused, is a divergence to count.
         let (unconsumed, extra) = game.replace_rom_random_frame(rng_samples(iteration, frame as u32), frame as u32);
