@@ -575,7 +575,11 @@ impl ZeldaState {
             .poly_completed_upload
             .as_ref()
             .is_some_and(|(host, _)| *host < self.frame_ctr_dbg);
+        // Lag-free, the thread runs only while the NMI hands it the CPU
+        // ($012A): leaving the intro mid-render (save-and-quit back to the
+        // file select) must not finish that render into the menu's frame.
         let can_run_poly = self.game_state.ending.attract_scene.intro_did_run_step() != 0
+            && (!self.lag_free || self.game_state.display.nmi_thread_active)
             && (!self.game_state.display.has_pending_polyhedral_update()
                 || pending_upload_precedes_this_slot);
         let live_timing = matches!(self.original_timing_owner, OriginalTimingOwnerState::Live);
@@ -668,10 +672,14 @@ impl ZeldaState {
             }
             // Lag-free frames pace every thread by its render cost as the ROM
             // timing does; the incremental ROM-CPU shadow needs the cartridge.
+            // Lag-free, any active thread is paced by its render cost: a
+            // module that ends the thread (the intro's exit to the file
+            // select) still gives it only its phase before clearing $012A.
             let use_timed_worker = (self.rom_startup_timing || self.lag_free)
                 && (rom_intro_poly_thread_is_active(frame.main_module, frame.submodule)
                     || dungeon_poly_thread
-                    || triforce_room_poly_thread);
+                    || triforce_room_poly_thread
+                    || (self.lag_free && self.game_state.display.nmi_thread_active));
             let incremental_shadow = !self.lag_free
                 && (dungeon_poly_thread || triforce_room_poly_thread)
                 && std::env::var("ZELDA3_POLY_SHADOW_INCREMENTAL").map_or(true, |v| v != "0");

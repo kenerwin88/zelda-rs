@@ -2877,7 +2877,10 @@ impl ZeldaState {
                 frame.main_module,
                 frame.submodule,
             );
-            if self.nmi_poly_upload_from_deferred || !intro_poly {
+            // Lag-free frames present after their NMI's uploads: no
+            // pre-upload image to hold (a held one outlived the intro and
+            // drew stale OBJ tiles over the file select).
+            if self.nmi_poly_upload_from_deferred || !intro_poly || self.lag_free {
                 self.set_obj_vram_latch_traced(None);
             } else if let Some(display_vram) = display_vram {
                 self.obj_vram_latch_generation = self.obj_vram_latch_generation.wrapping_add(1);
