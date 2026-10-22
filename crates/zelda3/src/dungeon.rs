@@ -6588,6 +6588,14 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_PrepareNextRoomQuadrantUpload(&mut self) {
+        // $00:913F..91C3: 254 setup, 128 passes of the eight-word copy
+        // (918, BNE taken on 15 of every 16), eight row steps (172, BNE
+        // taken on seven) and the 332-cycle tail with its RTL; the copy is
+        // the same for every quadrant.
+        crate::cycle_ledger::charge_routine(
+            0x00_913f,
+            254 + 128 * 918 + 120 * 6 + 8 * 172 + 7 * 6 + 332,
+        );
         let quadrant = self.game_state.dungeon.room_load.quadrant_upload_index() as usize;
         let work = self.begin_dungeon_quadrant_upload(ROOM_BG2_TILEMAP_BASE, quadrant, 0);
         self.complete_dungeon_quadrant_upload(work);
@@ -6645,7 +6653,10 @@ impl ZeldaState {
 
     pub(super) fn WaterFlood_BuildOneQuadrantForVRAM(&mut self) {
         assert_ne!(self.game_state.dungeon.header.primary_header_tag(), 25);
-        self.TileMapPrep_NotWaterOnTag();
+        let _scope = crate::cycle_ledger::routine(0x00_91c4);
+        // $00:91C4..91C8, BNE taken into TileMapPrep_NotWaterOnTag.
+        crate::cycle_ledger::charge(56 + 6);
+        self.tile_map_prep_not_water_on_tag_body();
     }
 
     pub(super) fn FloodDam_PrepTiles_init(&mut self) {
@@ -6783,6 +6794,14 @@ impl ZeldaState {
     }
 
     pub(super) fn TileMapPrep_NotWaterOnTag(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x00_91d3);
+        self.tile_map_prep_not_water_on_tag_body();
+    }
+
+    fn tile_map_prep_not_water_on_tag_body(&mut self) {
+        // $00:91D3..9251: the $00:913F copy over the BG1 tilemap, with the
+        // 268-cycle tail (target page + $10) and its RTL.
+        crate::cycle_ledger::charge(254 + 128 * 918 + 120 * 6 + 8 * 172 + 7 * 6 + 268);
         self.Dungeon_PrepareNextRoomQuadrantUploadFrom(
             ROOM_BG1_TILEMAP_BASE,
             self.game_state.dungeon.room_load.quadrant_upload_index() as usize,
@@ -13752,8 +13771,16 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_18_RescuedMaiden(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x02_980a);
+        // $02:980A LDA $B0, JSL JumpTableLocal; its PLY frame owns 52 cycles.
+        crate::cycle_ledger::charge(24 + 62);
+        crate::cycle_ledger::charge_routine(0x00_8781, 52);
+        crate::cycle_ledger::charge(414 - 52);
         match self.game_state.frame.subsubmodule {
             0 => {
+                // $02:9826..9840 PrepareForCrystalCutscene (JSL
+                // PaletteFilter_RestoreBGSubstractiveStrict, colour copy, test).
+                crate::cycle_ledger::charge(294);
                 self.PaletteFilter_RestoreBGSubstractiveStrict();
                 self.copy_color(
                     (zelda3_palette::Bank::Main, 32),
@@ -13766,6 +13793,8 @@ impl ZeldaState {
                     .darkening_or_lightening_screen()
                     != 0xff
                 {
+                    // BNE $9887 taken, RTS.
+                    crate::cycle_ledger::charge(6 + 42);
                     return;
                 }
                 if let Some(progress) =
@@ -13785,9 +13814,16 @@ impl ZeldaState {
                     }
                     return;
                 }
+                // $02:9842..9887: 1,024 passes of the eight-store clear (452,
+                // BNE taken on all but the last), the scroll/quadrant resets
+                // and the RTS.
+                crate::cycle_ledger::charge(70 + 1_024 * 452 + 1_023 * 6 + 284 + 42);
                 self.complete_rescued_maiden_tilemap_clear(0);
             }
             1 => {
+                // $02:9888..9899 BuildCrystalCutsceneTilemap (JSL
+                // PaletteFilter_Crystal).
+                crate::cycle_ledger::charge(220);
                 self.PaletteFilter_Crystal();
                 self.set_sub_screen_layers(1);
                 self.follower_link_state_mut().set_immobilized_flag(2);
@@ -13798,6 +13834,14 @@ impl ZeldaState {
                     .expect("rescued maiden room must be a boss room")
                     .checked_sub(4)
                     .expect("rescued maiden boss room index must select a crystal slot");
+                // $02:989B scans the eight boss rooms at $02:895C from X=$0C
+                // down (92 per pass, BNE taken until the match), then $98A3,
+                // four rows of eight stores (56 + 8 x 288, BPL taken seven
+                // times, 274, BNE taken three times) and $98E2's RTS.
+                let scan = 7 - j as u64;
+                crate::cycle_ledger::charge(
+                    scan * 92 + (scan - 1) * 6 + 190 + 4 * (56 + 8 * 288 + 7 * 6 + 274) + 3 * 6 + 102,
+                );
                 let mut dsto = DUNGEON_CRYSTAL_CUTSCENE_TILE_BASES[j] >> 1;
                 let mut tile = 0u16;
                 for _ in 0..4 {
@@ -13811,9 +13855,19 @@ impl ZeldaState {
                 }
                 self.increment_subsubmodule();
             }
-            2 | 4 | 6 | 8 => self.Dungeon_InterRoomTrans_notDarkRoom(),
-            3 | 5 | 7 | 9 => self.Dungeon_InterRoomTrans_State4(),
+            2 | 4 | 6 | 8 => {
+                // $02:8AB3 (JSL WaterFlood_BuildOneQuadrantForVRAM, INC $B0, RTS).
+                crate::cycle_ledger::charge(142);
+                self.Dungeon_InterRoomTrans_notDarkRoom()
+            }
+            3 | 5 | 7 | 9 => {
+                // $02:8AC8 (JSL Dungeon_PrepareNextRoomQuadrantUpload, INC $B0, RTS).
+                crate::cycle_ledger::charge(142);
+                self.Dungeon_InterRoomTrans_State4()
+            }
             10 => {
+                // $02:98E7 StartCrystalCutscene (INC $012A, two JSLs, RTS).
+                crate::cycle_ledger::charge(260);
                 if let Some(progress) =
                     self.take_original_timing_rescued_maiden_initialization_progress()
                 {
@@ -15527,6 +15581,11 @@ impl ZeldaState {
     }
 
     fn crystal_cutscene_initialize_before_follower_graphics(&mut self) {
+        // CrystalCutscene_Initialize $1E:CCE3..CD47 (JSL target), all of it
+        // here; the translation splits it at SpawnMaiden's
+        // LoadFollowerGraphics, so the second half reopens the scope.
+        let _scope = crate::cycle_ledger::routine(0x1e_cce3);
+        crate::cycle_ledger::charge(1_296);
         self.set_color_math_control(0x33);
         self.set_countdown(0);
         self.set_darkening_or_lightening_screen(0);
@@ -15543,6 +15602,14 @@ impl ZeldaState {
     }
 
     fn crystal_cutscene_spawn_maiden_before_follower_graphics(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x1e_cd48);
+        // $1E:CD48..CD90: clear the sixteen sprite states (68 per pass, BPL
+        // taken fifteen times), spawn and set up the maiden; then $CD92 for
+        // room $18 (palace index $18) or BNE taken into $CD9B.
+        crate::cycle_ledger::charge(
+            32 + 16 * 68 + 15 * 6 + 770
+                + if self.game_state.inventory.save_progress.palace_index_x2() == 24 { 92 } else { 6 + 16 },
+        );
         self.sprite_system_mut().fill_live_states(0);
         let mut info = SpriteSpawnInfo::default();
         let j = self.sprite_spawn_dynamically(0, 0xab, &mut info);
@@ -15570,6 +15637,10 @@ impl ZeldaState {
     }
 
     fn crystal_cutscene_spawn_maiden_after_follower_graphics(&mut self) {
+        // $1E:CD9D..CDD8: the follower-graphics call and the floor offsets.
+        let _initialize = crate::cycle_ledger::routine(0x1e_cce3);
+        let _scope = crate::cycle_ledger::routine(0x1e_cd48);
+        crate::cycle_ledger::charge(752);
         self.follower_state_mut().set_indicator(0);
 
         let floor_x = self
@@ -15589,6 +15660,7 @@ impl ZeldaState {
 
     fn crystal_cutscene_initialize_after_follower_graphics(&mut self) {
         self.crystal_cutscene_spawn_maiden_after_follower_graphics();
+        let _initialize = crate::cycle_ledger::routine(0x1e_cce3);
         self.crystal_cutscene_initialize_polyhedral();
     }
 

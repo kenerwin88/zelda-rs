@@ -644,6 +644,8 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_ab_crystal_maiden(&mut self, k: usize) {
+        // $1E:CE03..CE20: runs inside SpriteActive3_Main's scope.
+        crate::cycle_ledger::charge(376);
         let x = self
             .game_state
             .sprites
@@ -660,8 +662,15 @@ impl ZeldaState {
         self.sprite_workspace_mut().set_current_sprite_y(y);
 
         if self.sprite_slot_view(k).ai_state() >= 3 {
+            // $1E:CE22 JSL CrystalMaiden_Draw.
+            crate::cycle_ledger::charge(62);
             self.crystal_maiden_draw(k);
+        } else {
+            // BCC $CE26 taken.
+            crate::cycle_ledger::charge(6);
         }
+        // $1E:CE26..CE2E
+        crate::cycle_ledger::charge(96);
         self.activate_nmi_thread();
         if crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some() {
             eprintln!(
@@ -675,48 +684,97 @@ impl ZeldaState {
             );
         }
         if self.game_state.ending.attract_scene.intro_did_run_step() == 0 {
+            // $1E:CE30..CE35 (JSR, LDA/STA $1F00) and the RTS.
+            crate::cycle_ledger::charge(94 + 42);
             self.crystal_maiden_run_cutscene(k);
             self.mark_poly_thread_go();
+        } else {
+            // BNE $CE38 taken, RTS.
+            crate::cycle_ledger::charge(6 + 42);
         }
     }
 
     pub(super) fn crystal_maiden_run_cutscene(&mut self, k: usize) {
+        let _scope = crate::cycle_ledger::routine(0x1e_ce39);
+        // $1E:CE39..CE47
+        crate::cycle_ledger::charge(186);
         self.sprite_slot_view_mut(k).increment_e();
         self.poly_runtime_mut().add_angle_b(6);
         if self.game_state.frame.submodule != 0 {
+            // $1E:CE49 RTS.
+            crate::cycle_ledger::charge(42);
             return;
         }
 
+        // BEQ $CE4A taken, LDA $0D80,x, JSL JumpTableLocal; its PLY frame
+        // owns 52 cycles. Every handler below ends in the RTS that leaves
+        // this routine.
+        crate::cycle_ledger::charge(6 + 32 + 62);
+        crate::cycle_ledger::charge_routine(0x00_8781, 52);
+        crate::cycle_ledger::charge(414 - 52);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
+                // $1E:CE63 CrystalMaiden_DisableSubscreen.
+                crate::cycle_ledger::charge(118);
                 self.set_sub_screen_layers(0);
                 self.sprite_slot_view_mut(k).increment_ai_state();
             }
             1 => {
+                // $1E:CE69 CrystalMaiden_EnableSubscreen.
+                crate::cycle_ledger::charge(134);
                 self.set_sub_screen_layers(1);
                 self.sprite_slot_view_mut(k).increment_ai_state();
             }
             2 => {
+                // $1E:CE71 CrystalMaiden_WaitForCrystalGrowth.
+                crate::cycle_ledger::charge(64);
                 if self.game_state.poly.runtime.config1() < 6 {
+                    // $1E:CE78..CE7E
+                    crate::cycle_ledger::charge(126);
                     self.poly_runtime_mut().clear_config1();
                     self.sprite_slot_view_mut(k).increment_ai_state();
                 } else {
+                    // BCS $CE7F taken, $1E:CE7F..CE86.
+                    crate::cycle_ledger::charge(6 + 80);
                     self.poly_runtime_mut().subtract_config1(3);
                     if self.game_state.poly.runtime.config1() >= 64 {
+                        // $1E:CE88..CE91 (JSL Sprite_SpawnSparkleAncilla), RTS.
+                        crate::cycle_ledger::charge(158 + 42);
                         self.ancilla_add_sword_charge_sparkle_from_ancilla(
                             self.sprite_slot_view(k).a() as usize,
                         );
+                    } else {
+                        // BCC $CE92 taken, RTS.
+                        crate::cycle_ledger::charge(6 + 42);
                     }
                 }
             }
             3 => {
+                // $1E:CE93 CrystalMaiden_Emerge: INC $0D80,x, then falls
+                // into $CE96.
+                crate::cycle_ledger::charge(52);
                 self.sprite_slot_view_mut(k).increment_ai_state();
                 self.crystal_maiden_palette_filter_step(k);
             }
             4 => self.crystal_maiden_palette_filter_step(k),
             5 => {
+                // $1E:CECE CrystalMaiden_GiveSpeech: Y = $040C - $0A.
+                crate::cycle_ledger::charge(108);
                 let mut j =
                     i32::from(self.game_state.inventory.save_progress.palace_index_x2()) - 10;
+                if j == 2 {
+                    // $1E:CED9..CEDF, then $CEE1 or BCS taken.
+                    crate::cycle_ledger::charge(72);
+                    crate::cycle_ledger::charge(
+                        if self.game_state.inventory.save_progress.map_icons_indicator() < 7 {
+                            56
+                        } else {
+                            6
+                        },
+                    );
+                } else {
+                    crate::cycle_ledger::charge(6);
+                }
                 if j == 2
                     && self
                         .game_state
@@ -727,30 +785,64 @@ impl ZeldaState {
                 {
                     self.save_progress_mut().set_map_icons_indicator(7);
                 }
+                // $1E:CEE7..CEE9
+                crate::cycle_ledger::charge(32);
+                if j == 14 {
+                    // $1E:CEEB..CEF3, then LDY #$10 or BEQ taken.
+                    crate::cycle_ledger::charge(88);
+                    crate::cycle_ledger::charge(
+                        if (self.game_state.inventory.player_resources.crystal_flags() & 0x7f)
+                            != 0x7f
+                        {
+                            16
+                        } else {
+                            6
+                        },
+                    );
+                } else {
+                    crate::cycle_ledger::charge(6);
+                }
                 if j == 14
                     && (self.game_state.inventory.player_resources.crystal_flags() & 0x7f) != 0x7f
                 {
                     j = 16;
                 }
+                // $1E:CEF7..CF0F (JSL Sprite_ShowMessageUnconditional).
+                crate::cycle_ledger::charge(320);
                 self.sprite_show_message_unconditional(CRYSTAL_MAIDEN_MSGS[(j >> 1) as usize]);
                 self.sprite_slot_view_mut(k).increment_ai_state();
                 if (self.game_state.inventory.player_resources.crystal_flags() & 0x7f) == 0x7f {
+                    // $1E:CF11..CF13, RTS.
+                    crate::cycle_ledger::charge(56 + 42);
                     self.save_progress_mut().set_map_icons_indicator(8);
+                } else {
+                    // BNE $CF17 taken, RTS.
+                    crate::cycle_ledger::charge(6 + 42);
                 }
             }
             6 => {
+                // $1E:CF18 CrystalMaiden_DoYouUnderstand.
+                crate::cycle_ledger::charge(188);
                 self.sprite_show_message_unconditional(0x13a);
                 self.sprite_slot_view_mut(k).increment_ai_state();
             }
             7 => {
+                // $1E:CF24 CrystalMaiden_GoodLuckKid.
+                crate::cycle_ledger::charge(48);
                 if self.multiselect_choice().value() != 0 {
+                    // $1E:CF29..CF2E
+                    crate::cycle_ledger::charge(96);
                     self.sprite_slot_view_mut(k).set_ai_state(5);
                 } else {
+                    // BEQ $CF2F taken, $1E:CF2F..CF3A.
+                    crate::cycle_ledger::charge(6 + 188);
                     self.sprite_show_message_unconditional(0x139);
                     self.sprite_slot_view_mut(k).increment_ai_state();
                 }
             }
             8 => {
+                // $1E:CF3B CrystalMaiden_KickOutOfDungeon.
+                crate::cycle_ledger::charge(216);
                 self.set_sub_screen_layers(0);
                 self.prepare_dungeon_exit_from_boss_fight();
                 self.sprite_slot_view_mut(k).set_state(0);
@@ -760,16 +852,28 @@ impl ZeldaState {
     }
 
     fn crystal_maiden_palette_filter_step(&mut self, k: usize) {
+        // $1E:CE96..CE9B
+        crate::cycle_ledger::charge(64);
         if self.sprite_slot_view(k).e() & 1 == 0 {
+            // $1E:CE9D..CEA7 (JSL PaletteFilter_SP5F).
+            crate::cycle_ledger::charge(168);
             self.PaletteFilter_SP5F();
             if self.game_state.display.palette_filter.countdown() == 0 {
+                // $1E:CEA9..CEB9, RTS.
+                crate::cycle_ledger::charge(212 + 42);
                 self.sprite_slot_view_mut(k).increment_ai_state();
                 self.follower_link_state_mut().immobilize();
                 self.follower_link_state_mut().set_receive_item_index(0);
                 self.follower_link_state_mut().clear_item_hold_pose();
                 self.follower_link_state_mut().clear_animation_step();
                 self.follower_link_state_mut().set_facing(0);
+            } else {
+                // BNE $CEBB taken, RTS.
+                crate::cycle_ledger::charge(6 + 42);
             }
+        } else {
+            // BNE $CEBB taken, RTS.
+            crate::cycle_ledger::charge(6 + 42);
         }
     }
 

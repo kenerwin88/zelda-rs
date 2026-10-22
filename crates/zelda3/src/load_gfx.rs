@@ -1635,6 +1635,21 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_filter_restore_additive(&mut self, from: usize, to: usize) {
+        // $00:EDCA (JSR target): per colour 378, each channel that differs
+        // from the target steps ($EDED/$EDFE/$EE0F, 66; BEQ taken, 6, when
+        // equal), 138 for the store and BNE taken back on all but the last;
+        // 32 entry, 42 RTS.
+        let _scope = crate::cycle_ledger::routine(0x00_edca);
+        let palette = &self.game_state.display.palette_buffer;
+        let mut cost = 32 + 42;
+        for i in from >> 1..to >> 1 {
+            let (c, d) = (palette.main_color(i), palette.aux_color(i));
+            cost += 378 + 120 + 120 + 138 + 6;
+            for mask in [0x001f, 0x03e0, 0x7c00] {
+                cost += if c & mask != d & mask { 66 } else { 6 };
+            }
+        }
+        crate::cycle_ledger::charge(cost - 6);
         self.transform_main_range(from >> 1, to >> 1, PaletteTransform::RestoreAdditiveStep);
     }
 
@@ -4140,6 +4155,9 @@ impl ZeldaState {
     }
 
     pub(super) fn PaletteFilter_Crystal(&mut self) {
+        // $00:EBCF..EBF1: 102, eight colour clears (92, BPL taken seven
+        // times) and the 224-cycle tail with its RTL.
+        crate::cycle_ledger::charge_routine(0x00_ebcf, 102 + 8 * 92 + 7 * 6 + 224);
         self.set_sub_screen_layers(1);
         self.PaletteFilter_WishPonds_Inner();
     }
@@ -4994,6 +5012,9 @@ impl ZeldaState {
     }
 
     pub(super) fn Palette_AssertTranslucencySwap(&mut self) {
+        // $0E:D657..D6B8: 86, eight passes of the three-band swap (1,122,
+        // BNE taken seven times) and the 104-cycle tail with its RTL.
+        crate::cycle_ledger::charge_routine(0x0e_d657, 86 + 8 * 1_122 + 7 * 6 + 104);
         self.Palette_SetTranslucencySwap(true);
     }
 

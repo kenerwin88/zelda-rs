@@ -10551,6 +10551,15 @@ pub struct ZeldaState {
     /// Lag-free: this frame's main cost when it set the thread's go byte.
     #[serde(skip)]
     pub(crate) lag_free_go_master: Option<u64>,
+    /// Lag-free: this frame's lag phases already ran (at its closing NMI).
+    #[serde(skip)]
+    pub(crate) lag_free_lag_phases_run: bool,
+    /// Lag-free: the SPC's port-0 echo of the last acknowledged music
+    /// command, which the driver holds until the next one (the engine's
+    /// acknowledgement latch clears after a frame or two); `None` until one
+    /// is seen, when `$133` stands for it.
+    #[serde(skip)]
+    pub(crate) lag_free_music_echo: Option<u8>,
     /// Lag-free logical replay: the cartridge's `$2140` reads for the current
     /// iteration, consumed by the song-end polls in order. The port's value
     /// depends on how much SPC time elapsed, which lag changes; replaying the
@@ -13595,6 +13604,8 @@ impl ZeldaState {
             lag_free_nmi_uploaded_poly: false,
             lag_free_thread_activation_master: None,
             lag_free_go_master: None,
+            lag_free_lag_phases_run: false,
+            lag_free_music_echo: None,
             apui00_poll_replay: None,
             original_timing_owner: OriginalTimingOwnerState::Disabled,
             original_timing_cold_start_eligible: true,

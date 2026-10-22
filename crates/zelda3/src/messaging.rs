@@ -8464,6 +8464,19 @@ impl ZeldaState {
         }
     }
 
+    /// The HDMA initialisation at the top of the field: 18 cycles of
+    /// overhead, 8 per enabled channel (its first line-counter byte) and 16
+    /// more for an indirect channel's address.
+    pub(crate) fn native_hdma_init_stall_master_cycles(&self) -> u16 {
+        let mut stall = 0u16;
+        for (index, channel) in self.dma.channel.iter().enumerate() {
+            if self.game_state.display.is_hdma_channel_enabled(index) {
+                stall += 8 + if channel.indirect { 16 } else { 0 };
+            }
+        }
+        if stall != 0 { stall + 18 } else { 0 }
+    }
+
     fn native_hdma_table_byte(&self, address: u32) -> Option<u8> {
         let bank = (address >> 16) as u8;
         let offset = address as u16;

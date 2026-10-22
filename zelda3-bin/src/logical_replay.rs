@@ -1550,12 +1550,13 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             let bytes = |ram: &[u8]| watch.iter().map(|&address| format!("{:02x}", ram[address])).collect::<Vec<_>>().join(" ");
             let master = zelda3::cycle_ledger::master();
             println!(
-                "logical-watch iteration={} host={} lag_nmis={} master={} main={} nmi={:?} silent={} rom=[{}] engine=[{}]",
+                "logical-watch iteration={} host={} lag_nmis={} master={} main={} vwf={} nmi={:?} silent={} rom=[{}] engine=[{}]",
                 iteration.index,
                 game.frame_ctr_dbg,
                 iteration.lag_nmis,
                 master - std::mem::replace(&mut watch_master, master),
                 game.lag_free_last_main_master(),
+                game.lag_free_vwf_master(),
                 game.last_nmi_handler_master_cycles(),
                 {
                     let silent = zelda3::cycle_ledger::silent_calls();

@@ -417,6 +417,11 @@ impl ZeldaState {
         // interrupt entry and the RTI) plus the bus time of the DMA
         // transfers it ran, during which the CPU is stalled. The native
         // dialogue budget subtracts it from the frame a resumed host owns.
+        // Lag-free, the thread's lag phases come between main's end and this
+        // closing NMI: a bitmap they finish is this NMI's upload.
+        if self.lag_free_native_poly_thread() && !self.lag_free_lag_phases_run {
+            self.lag_free_poly_thread_lag_phases();
+        }
         let ledger_before = crate::cycle_ledger::master();
         self.silent_ledger_calls_at_nmi_acceptance = crate::cycle_ledger::silent_calls();
         self.nmi_dma_accounting = Some(NmiDmaAccounting::default());
@@ -1418,9 +1423,18 @@ impl ZeldaState {
         //   $00:80FD (32, only below $F2) and $00:8100 (32).
         // The cost is stashed rather than charged so the NMI handler scope
         // receives it even when this runs before main.
+        let mut music_echo = self.zelda_audio_apu_output_ports()[0];
+        if self.lag_free {
+            if music_echo != 0 {
+                self.lag_free_music_echo = Some(music_echo);
+            }
+            music_echo = self
+                .lag_free_music_echo
+                .unwrap_or(self.game_state.system_signals.last_music_control());
+        }
         let ledger_music_cycles: u64 = if music_control == 0 {
             366 + idle_music_echo_master_cycles(
-                self.zelda_audio_apu_output_ports()[0],
+                music_echo,
                 self.game_state.system_signals.last_music_control(),
             )
         } else if music_control == self.game_state.system_signals.last_music_control() {
@@ -1442,15 +1456,20 @@ impl ZeldaState {
         let ambient_sound_effect = self.game_state.system_signals.ambient_sound_effect();
         // Ambient port ($00:8103-$00:811B): `LDA $12D; BNE` is 48 (54 taken).
         // $12D != 0: $00:8115-$00:811B (94). $12D == 0: $00:8108-$00:810E
-        // (78) compares the $2141 echo with $131; equal (the engine's
-        // acknowledged-command predicate below) runs $00:8110-$00:8113 (52),
-        // else the BNE is taken (84).
+        // (78) compares the $2141 echo with $131; equal runs
+        // $00:8110-$00:8113 (52), else the BNE is taken (84). Priced from the
+        // current APU output latch, as the clocked header reads it.
+        if crate::debug_env::var_os("ZELDA3_DEBUG_NMI_AUDIO_COST").is_some() {
+            eprintln!("[NMI-AUDIO-COST] host={} ports={:02x?} last_music={:02x} last_ambient={:02x} ambient={:02x}",
+                self.frame_ctr_dbg, self.zelda_audio_apu_output_ports(),
+                self.game_state.system_signals.last_music_control(),
+                self.game_state.system_signals.last_ambient_sound_effect(), ambient_sound_effect);
+        }
         let ledger_ambient_cycles: u64 = if ambient_sound_effect != 0 {
             54 + 94
-        } else if self.zelda_audio_command_acknowledged(EngineAudioCommand::from_sfx_port_value(
-            AudioSfxBank::Ambient,
-            self.game_state.system_signals.last_ambient_sound_effect(),
-        )) {
+        } else if self.zelda_audio_apu_output_ports()[1]
+            == self.game_state.system_signals.last_ambient_sound_effect()
+        {
             48 + 78 + 52
         } else {
             48 + 84

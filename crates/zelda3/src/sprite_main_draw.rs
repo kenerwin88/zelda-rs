@@ -2590,6 +2590,22 @@ impl ZeldaState {
     // void SpriteActive_Main(int k) {  // 869271
     pub(super) fn sprite_active_main(&mut self, k: usize) {
         self.charge_sprite_active_main_dispatch(k);
+        // Types $79-$BC and $BD-$D7 dispatch to the bank-6 bounces
+        // $06:BFEF/BFF4 (JSL ... RTS, 104, charged into the open scope) into
+        // SpriteActive3_MainLong $1E:8B11 / SpriteActive4_MainLong $1D:C21A
+        // (PHB PHK PLB JSR ... PLB RTL, 190). Their SpriteActive3/4_Main
+        // ($1E:8B19 / $1D:C222) is a second RTS dispatch (290) whose handler
+        // runs inside its frame, so the handler charges into that scope.
+        let (long, main) = match self.sprite_slot_view(k).sprite_type() {
+            0x79..=0xbc => (0x1e_8b11, 0x1e_8b19),
+            0xbd..=0xd7 => (0x1d_c21a, 0x1d_c222),
+            _ => return self.sprite_active_main_dispatch(k),
+        };
+        crate::cycle_ledger::charge(104);
+        let _long = crate::cycle_ledger::routine(long);
+        crate::cycle_ledger::charge(190);
+        let _main = crate::cycle_ledger::routine(main);
+        crate::cycle_ledger::charge(290);
         self.sprite_active_main_dispatch(k);
     }
 

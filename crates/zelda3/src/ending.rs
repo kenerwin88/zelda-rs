@@ -881,12 +881,18 @@ impl ZeldaState {
 
     #[rustfmt::skip]
     fn animate_scene_sprite_add_objects_to_oam_buffer_with_offset(&mut self, k: usize, entries: &[IntroSpriteEnt], x_delta: i16, y_delta: i16) {
+        // $0C:C972 (JSR target): 520 setup, per entry 454 + the Y clip
+        // ($C9BD's 70, or BCC taken) + 654, BNE taken back on all but the
+        // last, then the 92-cycle exit.
+        let _scope = crate::cycle_ledger::routine(0x0c_c972);
+        crate::cycle_ledger::charge(520 + 92 + (entries.len() as u64).saturating_sub(1) * 6);
         let x = self.intro_actor(k).x();
         let y = self.intro_actor(k).y();
         let mut oam = self.allocate_intro_sprite_oam_entries(entries.len());
         for &(x_off, y_off, charnum, flags, ext) in entries {
             let obj_x = x.wrapping_add((x_off as i16).wrapping_add(x_delta) as u16);
             let obj_y = y.wrapping_add((y_off as i16).wrapping_add(y_delta) as u16);
+            crate::cycle_ledger::charge(454 + if obj_y.wrapping_add(0x10) >= 0x100 { 70 } else { 6 } + 654);
             self.set_oam_helper0_at(oam, obj_x, obj_y, charnum, flags, ext);
             oam += 4;
         }
@@ -2592,6 +2598,8 @@ impl ZeldaState {
     }
 
     pub(super) fn crystal_cutscene_initialize_polyhedral(&mut self) {
+        // $1E:CDD9..CE02, straight-line.
+        crate::cycle_ledger::charge_routine(0x1e_cdd9, 458);
         self.poly_runtime_mut().set_config1(156);
         self.poly_runtime_mut().set_color_mode(1);
         self.activate_nmi_thread();
@@ -3168,6 +3176,10 @@ impl ZeldaState {
     }
 
     pub(super) fn polyhedral_initialize_thread(&mut self) {
+        // $09:F7DE..F80F: 748 straight-line, the first byte of each MVN
+        // included; 52 per further byte of the 254-byte clear and the
+        // 13-byte thread context copy.
+        crate::cycle_ledger::charge_routine(0x09_f7de, 748 + 52 * (253 + 12));
         self.clear_poly_thread_work_area();
         self.set_nmi_thread_stack_pointer(0x1f31);
         self.write_poly_thread_init_bytes();

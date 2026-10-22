@@ -98,6 +98,10 @@ impl CpuRasterPosition {
 pub struct CpuBusWorkload {
     hdma_stall_master_cycles: u16,
     dynamic_hdma: bool,
+    /// The HDMA initialisation at the top of each field (0 unless set; not
+    /// serialized, so checkpoints keep their layout).
+    #[serde(skip)]
+    hdma_init_stall_master_cycles: u16,
 }
 
 impl CpuBusWorkload {
@@ -105,6 +109,7 @@ impl CpuBusWorkload {
         Self {
             hdma_stall_master_cycles,
             dynamic_hdma: false,
+            hdma_init_stall_master_cycles: 0,
         }
     }
 
@@ -112,7 +117,13 @@ impl CpuBusWorkload {
         Self {
             hdma_stall_master_cycles: 0,
             dynamic_hdma: true,
+            hdma_init_stall_master_cycles: 0,
         }
+    }
+
+    /// The same workload with the field-top HDMA initialisation stall.
+    pub const fn with_hdma_init_stall(self, hdma_init_stall_master_cycles: u16) -> Self {
+        Self { hdma_init_stall_master_cycles, ..self }
     }
 
     pub const fn hdma_stall_master_cycles(self) -> u16 {
@@ -635,10 +646,11 @@ impl CpuMasterTimeline {
 
     pub fn advance_work_unbounded(&mut self, work_master_cycles: u32) {
         let hdma_stall_master_cycles = self.bus.hdma_stall_master_cycles;
+        let hdma_init_stall_master_cycles = self.bus.hdma_init_stall_master_cycles;
         self.advance_work_unbounded_with(work_master_cycles, |event, _| match event {
             CpuTimelineEvent::Bus(CpuBusEvent::WramRefresh) => WRAM_REFRESH_STALL_MASTER_CYCLES,
             CpuTimelineEvent::Bus(CpuBusEvent::HdmaStart) => u32::from(hdma_stall_master_cycles),
-            CpuTimelineEvent::Bus(CpuBusEvent::HdmaInit) => 0,
+            CpuTimelineEvent::Bus(CpuBusEvent::HdmaInit) => u32::from(hdma_init_stall_master_cycles),
             CpuTimelineEvent::ShortScanline => 0,
         });
     }
@@ -948,7 +960,7 @@ impl CpuMasterTimeline {
             (
                 HDMA_INIT_CYCLE,
                 CpuSynchronousTimelineEvent::Bus(CpuBusEvent::HdmaInit),
-                scanline == 0 && self.bus.dynamic_hdma,
+                scanline == 0 && (self.bus.dynamic_hdma || self.bus.hdma_init_stall_master_cycles != 0),
             ),
             (
                 SNES9X_RENDER_CYCLE,
@@ -1051,7 +1063,9 @@ impl CpuMasterTimeline {
             CpuTimelineEvent::Bus(CpuBusEvent::HdmaStart) => {
                 u32::from(self.bus.hdma_stall_master_cycles)
             }
-            CpuTimelineEvent::Bus(CpuBusEvent::HdmaInit) => 0,
+            CpuTimelineEvent::Bus(CpuBusEvent::HdmaInit) => {
+                u32::from(self.bus.hdma_init_stall_master_cycles)
+            }
             CpuTimelineEvent::ShortScanline => 0,
         }
     }

@@ -46,11 +46,11 @@ const POLY_THREAD_FRAME_MASTER_CYCLES: u64 = 357_368;
 /// and the V-IRQ handler (acceptance to the stack swap's RTI).
 const POLY_THREAD_NMI_RASTER_CYCLE: u16 = 86;
 const POLY_THREAD_IRQ_HANDLER_MASTER_CYCLES: u64 = 742;
-/// The handler's entry and exit, which the NMI cost model does not charge
-/// (the ROM's 26,506 against the model's 25,626), and the bitmap upload
-/// routine `$00:9347` beyond its DMA (43,844 against 42,036 with it).
-const POLY_THREAD_NMI_UNCHARGED_MASTER_CYCLES: u64 = 880;
-const POLY_THREAD_UPLOAD_UNCHARGED_MASTER_CYCLES: u64 = 928;
+/// `NMI_UpdateIRQGFX` ($00:9347), which the thread's NMI path runs and the
+/// NMI cost model does not charge: LDA $1F0C/BEQ taken/RTS (96), or the
+/// bitmap DMA's setup with its system-bank register stores (544).
+const POLY_THREAD_NMI_UPDATE_IRQ_GFX_MASTER_CYCLES: u64 = 96;
+const POLY_THREAD_NMI_UPDATE_IRQ_GFX_UPLOAD_MASTER_CYCLES: u64 = 544;
 /// A lag frame's NMI (main unfinished): the thread path alone, and with the
 /// bitmap upload.
 const POLY_THREAD_LAG_NMI_MASTER_CYCLES: u64 = 3_284;
@@ -120,21 +120,41 @@ impl ZeldaState {
     pub(super) fn lag_free_run_poly_thread_phase(&mut self, nmi_master_cycles: u64) {
         let mut thread = self.lag_free_poly_thread.take().unwrap_or_default();
         let (nmi_at, deadline) = self.poly_thread_phase_window(thread.field);
-        let mut clock = snes::CpuMasterTimeline::new(
-            nmi_at + nmi_master_cycles,
-            snes::CpuBusWorkload::with_hdma_stall(self.native_hdma_scanline_stall_master_cycles()),
-            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
-        );
-        clock
-            .begin_synchronous_timeline()
-            .expect("a fresh polygon-thread clock claims its synchronous timeline");
+        // A long NMI can return inside a bus stall (the HDMA initialisation
+        // at the next field's first line); the thread resumes when it ends.
+        let mut start = nmi_at + nmi_master_cycles;
+        let mut clock = loop {
+            let mut clock = snes::CpuMasterTimeline::new(
+                start,
+                snes::CpuBusWorkload::with_hdma_stall(self.native_hdma_scanline_stall_master_cycles())
+                    .with_hdma_init_stall(self.native_hdma_init_stall_master_cycles()),
+                snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+            );
+            match clock.begin_synchronous_timeline() {
+                Ok(()) => break clock,
+                Err(snes::cpu_timeline::CpuSynchronousTimelineStartError::AmbiguousEventState { .. }) => start += 1,
+                Err(error) => panic!("a fresh polygon-thread clock claims its synchronous timeline: {error:?}"),
+            }
+        };
         crate::cycle_ledger::muted(|| {
             let mut irq_masked = thread.context.p & 4 != 0;
+            let step_trace = crate::debug_env::var_os("ZELDA3_DEBUG_POLY_STEPS").is_some();
             while clock.clock_master_cycles() < deadline || irq_masked {
+                let (pc, before) = ((u32::from(thread.context.bank) << 16) | u32::from(thread.context.pc), clock.clock_master_cycles());
                 let retired = self.step_native_poly_worker(&mut thread.worker, &mut thread.context, &mut clock);
+                if step_trace {
+                    eprintln!("[POLY-STEP] host={} pc={pc:06x} start={} end={}", self.frame_ctr_dbg,
+                        before - nmi_at, clock.clock_master_cycles() - nmi_at);
+                }
                 irq_masked = retired.irq_masked;
             }
         });
+        if crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+            eprintln!("[POLY-PHASE] host={} field={} nmi_cost={nmi_master_cycles} start={} budget={} ran={} pc={:02x}{:04x} go={} upload={}",
+                self.frame_ctr_dbg, thread.field, start - nmi_at, deadline.saturating_sub(start),
+                clock.clock_master_cycles() - start, thread.context.bank, thread.context.pc,
+                self.ram[0x1f00], self.ram[0x1f0c]);
+        }
         thread.field += 1;
         self.lag_free_poly_thread = Some(thread);
     }
@@ -143,10 +163,33 @@ impl ZeldaState {
     /// the previous iteration.
     pub(super) fn lag_free_poly_thread_leading_phase(&mut self) {
         let uploaded = std::mem::take(&mut self.lag_free_nmi_uploaded_poly);
-        let nmi = u64::from(self.last_nmi_handler_master_cycles.unwrap_or(0))
-            + POLY_THREAD_NMI_UNCHARGED_MASTER_CYCLES
-            + if uploaded { POLY_THREAD_UPLOAD_UNCHARGED_MASTER_CYCLES } else { 0 };
+        let field = self.lag_free_poly_thread.as_ref().map_or(0, |thread| thread.field);
+        let nmi = self.poly_thread_nmi_wall_master_cycles(field, Some(uploaded));
         self.lag_free_run_poly_thread_phase(nmi);
+    }
+
+    /// The NMI handler's wall time from its acceptance in thread field
+    /// `field`: its modelled cost (instructions and DMA) and
+    /// `NMI_UpdateIRQGFX` on the thread's path (`None` before the thread
+    /// runs), stretched by the WRAM refresh of every line it spans.
+    fn poly_thread_nmi_wall_master_cycles(&self, field: u64, uploaded: Option<bool>) -> u64 {
+        let (nmi_at, _) = self.poly_thread_phase_window(field);
+        // The phase window's NMI point follows the hardware entry, which the
+        // handler's cost includes.
+        let work = u64::from(self.last_nmi_handler_master_cycles.unwrap_or(0))
+                .saturating_sub(crate::zelda_rtl::nmi::NATIVE_NMI_ENTRY_MASTER_CYCLES)
+            + match uploaded {
+                Some(true) => POLY_THREAD_NMI_UPDATE_IRQ_GFX_UPLOAD_MASTER_CYCLES,
+                Some(false) => POLY_THREAD_NMI_UPDATE_IRQ_GFX_MASTER_CYCLES,
+                None => 0,
+            };
+        let mut clock = snes::CpuMasterTimeline::new(
+            nmi_at,
+            snes::CpuBusWorkload::default(),
+            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        clock.advance_work_unbounded(u32::try_from(work).unwrap_or(u32::MAX));
+        clock.clock_master_cycles() - nmi_at
     }
 
     /// Main's store of the thread's go byte (`$1F00` = 1, the step it hands
@@ -169,7 +212,8 @@ impl ZeldaState {
     /// first are lag frames, each a thread phase after a lag NMI. Main owns
     /// the whole frame (less the NMI) until it activates the thread; only the
     /// NMIs after that return into the thread.
-    pub(super) fn lag_free_poly_thread_lag_phases(&mut self) {
+    pub(crate) fn lag_free_poly_thread_lag_phases(&mut self) {
+        self.lag_free_lag_phases_run = true;
         let cost = self.lag_free_main_master();
         self.lag_free_last_main_master = cost;
         let threaded = self.poly_thread_main_master_cycles_per_frame().max(1);
@@ -179,9 +223,9 @@ impl ZeldaState {
         let mut done = 0u64;
         let mut active = activation.is_none();
         loop {
+            let field = self.lag_free_poly_thread.as_ref().map_or(0, |thread| thread.field);
             let unthreaded = (POLY_THREAD_FRAME_MASTER_CYCLES
-                - u64::from(self.last_nmi_handler_master_cycles.unwrap_or(0))
-                - POLY_THREAD_NMI_UNCHARGED_MASTER_CYCLES)
+                - self.poly_thread_nmi_wall_master_cycles(field, None))
                 .saturating_sub(u64::from(snes::NMI_SCANLINE) * self.poly_thread_line_stall_master_cycles());
             done += if active { threaded } else { unthreaded };
             if activation.is_some_and(|at| done >= at) {
@@ -210,12 +254,27 @@ impl ZeldaState {
                 continue;
             }
             let nmi = if self.ram[crate::game_state::constants::NMI_FLAG_UPDATE_POLYHEDRAL] != 0 {
+                self.lag_free_poly_lag_nmi_upload();
                 POLY_THREAD_LAG_NMI_UPLOAD_MASTER_CYCLES
             } else {
                 POLY_THREAD_LAG_NMI_MASTER_CYCLES
             };
             self.lag_free_run_poly_thread_phase(nmi);
         }
+    }
+
+    /// A lag NMI's `NMI_UpdateIRQGFX`: the finished bitmap goes to VRAM
+    /// $5800 and `$1F0C` clears, so the thread starts its next render and
+    /// the lag NMIs after it only swap.
+    fn lag_free_poly_lag_nmi_upload(&mut self) {
+        let bitmap = match self.poly_completed_upload.take() {
+            Some((_, completed)) => completed,
+            None => self.polyhedral_tile_buffer().to_vec(),
+        };
+        for i in 0..0x400 {
+            self.ppu.vram[0x5800 + i] = u16::from_le_bytes([bitmap[i * 2], bitmap[i * 2 + 1]]);
+        }
+        self.clear_pending_polyhedral_update();
     }
 
     pub fn intro_poly_upload_delay(&self) -> u8 {
@@ -390,13 +449,19 @@ impl ZeldaState {
         self.lag_free_last_main_master
     }
 
+    /// Lag-free: this frame's glyph-renderer cost, which the cycle ledger
+    /// does not carry (the renderer prices itself with its own model).
+    pub fn lag_free_vwf_master(&self) -> u64 {
+        self.lag_free_vwf_master
+    }
+
     /// The last NMI handler's modelled cost (ledger plus DMA bus time).
     pub fn last_nmi_handler_master_cycles(&self) -> Option<u32> {
         self.last_nmi_handler_master_cycles
     }
 
     pub(super) fn credit_lag_free_thread_slices(&mut self) {
-        const MAIN_MASTER_CYCLES_PER_THREADED_FRAME: u64 = 237_000;
+        const MAIN_MASTER_CYCLES_PER_THREADED_FRAME: u64 = 240_000;
         self.lag_free_thread_credit = 0;
         if !(self.dungeon_poly_thread_is_active() || self.triforce_room_poly_thread_is_active()) {
             return;

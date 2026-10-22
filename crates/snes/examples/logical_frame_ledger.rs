@@ -243,22 +243,44 @@ fn main() -> Result<(), Box<dyn Error>> {
     // `ZELDA3_LEDGER_THREAD_TRACE=<lo>-<hi>` prints every accepted NMI and IRQ
     // in those hosts with the beam line and the interrupted PC: which of the
     // main loop and the polygon thread each interrupt preempted.
-    // `ZELDA3_LEDGER_PROFILE=<lo>-<hi>` (iterations) attributes the main
+    // `ZELDA3_LEDGER_PROFILE=<lo>-<hi>[,...]` (iterations) attributes the main
     // thread's own instruction cycles to the subroutine running them (call
     // frames from JSR/JSL, left when the stack rises above them), outside
     // interrupt handlers and the polygon thread's stack, and prints
     // `ledger-profile iteration=<k> routine=<pc> master=<cycles>` at the end:
     // the measurement a cycle-ledger annotation is checked against.
-    let profile_iterations = env::var("ZELDA3_LEDGER_PROFILE")
-        .ok()
-        .and_then(|value| {
-            let (lo, hi) = value.split_once('-')?;
-            Some((lo.parse::<u64>().ok()?, hi.parse::<u64>().ok()?))
-        });
+    let profile_iterations: Vec<(u64, u64)> = env::var("ZELDA3_LEDGER_PROFILE")
+        .map(|value| {
+            value
+                .split(',')
+                .filter_map(|range| {
+                    let (lo, hi) = range.split_once('-')?;
+                    Some((lo.parse::<u64>().ok()?, hi.parse::<u64>().ok()?))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     let mut profile_stack: Vec<(u32, u16)> = Vec::new();
     let mut profile_depth = 0usize;
     let mut profile_main_active = false;
     let mut profile: std::collections::BTreeMap<(u64, u32), u64> = Default::default();
+    // `ZELDA3_LEDGER_NMI_PROFILE=<lo>-<hi>` (hosts) does the same for the
+    // NMI handler, from its acceptance to its RTI, with each frame's wall
+    // time beside its bus cycles (DMA runs inside the storing instruction):
+    // `ledger-nmi-profile host=<h> routine=<pc> master=<cycles> wall=<cycles>`.
+    let nmi_profile_hosts = env::var("ZELDA3_LEDGER_NMI_PROFILE").ok().and_then(|value| {
+        let (lo, hi) = value.split_once('-')?;
+        Some((lo.parse::<u64>().ok()?, hi.parse::<u64>().ok()?))
+    });
+    let mut nmi_profile_stack: Vec<(u32, u16)> = Vec::new();
+    let mut nmi_profile_depth = 0usize;
+    let mut nmi_profile: std::collections::BTreeMap<(u64, u32), (u64, u64)> = Default::default();
+    // `ZELDA3_LEDGER_STEP_TRACE=<lo>-<hi>` (hosts): every instruction's
+    // origin PC and start/end master cycle (`ledger-step`).
+    let step_trace_hosts = env::var("ZELDA3_LEDGER_STEP_TRACE").ok().and_then(|value| {
+        let (lo, hi) = value.split_once('-')?;
+        Some((lo.parse::<u64>().ok()?, hi.parse::<u64>().ok()?))
+    });
     let thread_trace_hosts = env::var("ZELDA3_LEDGER_THREAD_TRACE")
         .ok()
         .and_then(|value| {
@@ -403,23 +425,39 @@ fn main() -> Result<(), Box<dyn Error>> {
                 // the depth falls back to zero. The polygon thread switches
                 // stacks inside the NMI and need not return through it: an
                 // opening handler still open at the next NMI closes there.
-                if let Some((lo, hi)) = profile_iterations {
+                if !profile_iterations.is_empty() {
                     let cpu = &exec.machine().snes().cpu;
                     let main_stack = cpu.sp >> 8 == 0x01;
                     let iteration = current.as_ref().map(|iteration| iteration.index);
                     if step.origin_pc == 0x00_8038 {
+                        // Main's iteration always starts outside every
+                        // handler: a handler left by a stack swap or a reset
+                        // (no RTI) must not keep the depth raised.
                         profile_main_active = true;
+                        profile_depth = 0;
                     }
                     if profile_depth == 0 && main_stack && profile_main_active {
-                        if let Some(iteration) = iteration.filter(|index| (lo..=hi).contains(index)) {
+                        if let Some(iteration) = iteration
+                            .filter(|index| profile_iterations.iter().any(|&(lo, hi)| (lo..=hi).contains(index)))
+                        {
+                            // The instruction's own bus cycles, as the cycle
+                            // ledger prices them: WRAM refresh and HDMA stalls
+                            // drained between transactions are the timeline's,
+                            // and an accepted interrupt's entry is not this
+                            // instruction's.
                             let end = match step.accepted_interrupt {
                                 Some(SourceCpuAcceptedInterrupt::Nmi { started_at, .. })
                                 | Some(SourceCpuAcceptedInterrupt::Irq { started_at, .. }) => started_at,
                                 None => step.ended_at,
                             };
+                            let cycles: u64 = step
+                                .transactions
+                                .iter()
+                                .filter(|transaction| transaction.started_at < end)
+                                .map(|transaction| u64::from(transaction.duration_master_cycles))
+                                .sum();
                             let routine = profile_stack.last().map_or(0x00_8038, |frame| frame.0);
-                            *profile.entry((iteration, routine)).or_default() +=
-                                end.master_cycles().saturating_sub(step.started_at.master_cycles());
+                            *profile.entry((iteration, routine)).or_default() += cycles;
                         }
                     }
                     if step.origin_pc == 0x00_805d {
@@ -435,6 +473,55 @@ fn main() -> Result<(), Box<dyn Error>> {
                         }
                         while profile_stack.last().is_some_and(|frame| cpu.sp > frame.1) {
                             profile_stack.pop();
+                        }
+                    }
+                }
+                if step_trace_hosts.is_some_and(|(lo, hi)| (lo..=hi).contains(&(host as u64))) {
+                    let raster = exec.raster_position();
+                    eprintln!(
+                        "ledger-step host={host} pc={:06x} start={} end={} line={} irq={}",
+                        step.origin_pc,
+                        step.started_at.master_cycles(),
+                        step.ended_at.master_cycles(),
+                        raster.scanline(),
+                        step.accepted_interrupt.is_some(),
+                    );
+                }
+                if nmi_profile_hosts.is_some_and(|(lo, hi)| (lo..=hi).contains(&(host as u64))) {
+                    let cpu = &exec.machine().snes().cpu;
+                    if nmi_profile_depth > 0 {
+                        let end = match step.accepted_interrupt {
+                            Some(SourceCpuAcceptedInterrupt::Nmi { started_at, .. })
+                            | Some(SourceCpuAcceptedInterrupt::Irq { started_at, .. }) => started_at,
+                            None => step.ended_at,
+                        };
+                        let cycles: u64 = step
+                            .transactions
+                            .iter()
+                            .filter(|transaction| transaction.started_at < end)
+                            .map(|transaction| u64::from(transaction.duration_master_cycles))
+                            .sum();
+                        let wall = end.master_cycles().saturating_sub(step.started_at.master_cycles());
+                        let routine = nmi_profile_stack.last().map_or(0x00_80c9, |frame| frame.0);
+                        let entry = nmi_profile.entry((host as u64, routine)).or_default();
+                        entry.0 += cycles;
+                        entry.1 += wall;
+                    }
+                    if matches!(step.accepted_interrupt, Some(SourceCpuAcceptedInterrupt::Nmi { .. })) {
+                        nmi_profile_depth = 1;
+                        nmi_profile_stack.clear();
+                    } else if nmi_profile_depth > 0 {
+                        if step.accepted_interrupt.is_some() {
+                            nmi_profile_depth += 1;
+                        } else if step.opcode == RTI {
+                            nmi_profile_depth -= 1;
+                        } else if nmi_profile_depth == 1 {
+                            if matches!(step.opcode, 0x20 | 0xfc | 0x22) {
+                                nmi_profile_stack.push(((u32::from(cpu.k) << 16) | u32::from(cpu.pc), cpu.sp));
+                            }
+                            while nmi_profile_stack.last().is_some_and(|frame| cpu.sp > frame.1) {
+                                nmi_profile_stack.pop();
+                            }
                         }
                     }
                 }
@@ -677,6 +764,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     post_nmi.finish()?;
     if let Some(file) = resync.as_mut() {
         file.flush()?;
+    }
+    for ((host, routine), (master, wall)) in &nmi_profile {
+        eprintln!("ledger-nmi-profile host={host} routine={routine:06x} master={master} wall={wall}");
     }
     for ((iteration, routine), master) in &profile {
         eprintln!("ledger-profile iteration={iteration} routine={routine:06x} master={master}");

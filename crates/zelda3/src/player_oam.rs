@@ -4204,6 +4204,9 @@ impl ZeldaState {
     }
 
     fn link_oam_draw_foot_object(&mut self, r4loc: usize, mut oam_x: u8, mut oam_y: u8) {
+        let _scope = crate::cycle_ledger::routine(0x0d_aed1);
+        // $0D:AED1..AEDC
+        crate::cycle_ledger::charge(126);
         let primary = self
             .game_state
             .player
@@ -4214,6 +4217,8 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .set_primary_water_grass_timer(primary);
         if primary >= 9 {
+            // $0D:AEDE..AEEC
+            crate::cycle_ledger::charge(158);
             self.follower_link_state_mut()
                 .set_primary_water_grass_timer(0);
             let secondary = self
@@ -4226,10 +4231,21 @@ impl ZeldaState {
             self.follower_link_state_mut()
                 .set_secondary_water_grass_timer(secondary);
             if secondary == 3 {
+                // $0D:AEEE
+                crate::cycle_ledger::charge(32);
                 self.follower_link_state_mut()
                     .set_secondary_water_grass_timer(0);
+            } else {
+                // BNE $AEF1 taken.
+                crate::cycle_ledger::charge(6);
             }
+        } else {
+            // BCC $AEF1 taken.
+            crate::cycle_ledger::charge(6);
         }
+        // $0D:AEF1..AF2E. Every indexed table here ($AECD, $98DB, $98E7,
+        // $A11C, the $A0FC shadow-index table) stays within its page.
+        crate::cycle_ledger::charge(760);
         let i = self.game_state.player.follower_link.facing_mirror_index()
             + kShieldTypeToOffs[self.game_state.inventory.items.shield_type() as usize] as usize;
         oam_x = add_i8(oam_x, kOffsToShadowGivenDir_X[i]);
@@ -4244,6 +4260,24 @@ impl ZeldaState {
             .water_ripple_or_grass_state()
             == 2
         {
+            // $0D:AF30..AF3F scans the seven bytes at $AECA from Y=6 down
+            // for $0354 and clears $8D on a match; $AF41 overwrites $8D
+            // either way, so the translation only charges the scan.
+            const FOOT_SCAN_TABLE: [u8; 7] = [0x0a, 0x02, 0x0e, 0x04, 0x04, 0x08, 0x08];
+            let computed = self.game_state.oam.player_oam_computed_value();
+            let scan = match (0..7).rev().position(|y| FOOT_SCAN_TABLE[y] == computed) {
+                // Unmatched passes: 80 + 6 (BNE) + 30 + 6 (BPL); match: 80 + 46.
+                Some(misses) => 16 + misses as u64 * 122 + 126,
+                // Seven misses, the last BPL falls through.
+                None => 16 + 6 * 122 + 116,
+            };
+            // $0D:AF41..AF45, then $AF47 (30) or BCC taken, $AF4A..AF56.
+            let step_cost = if self.game_state.player.follower_link.animation_step() >= 3 {
+                30
+            } else {
+                6
+            };
+            crate::cycle_ledger::charge(scan + 56 + step_cost + 170);
             let yv = if self.game_state.player.follower_link.animation_step() >= 3 {
                 self.game_state
                     .player
@@ -4256,6 +4290,8 @@ impl ZeldaState {
             self.set_overlay_high(yv.wrapping_mul(4));
             yv.wrapping_add(8) as usize
         } else {
+            // BNE $AF58 taken, $0D:AF58..AF5F.
+            crate::cycle_ledger::charge(6 + 96);
             let timer = self
                 .game_state
                 .player
@@ -4264,6 +4300,8 @@ impl ZeldaState {
             self.set_overlay_high(timer.wrapping_mul(4));
             5 + timer as usize
         };
+        // $0D:AF60..AF9C
+        crate::cycle_ledger::charge(836);
         if yv >= 11 {
             self.set_oam_charnum(oam_pos, self.game_state.oam.priority_value_2());
             self.set_oam_charnum(oam_pos + 1, 0x00ae | self.game_state.oam.priority_value_2());

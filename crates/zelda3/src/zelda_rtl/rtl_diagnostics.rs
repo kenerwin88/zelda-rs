@@ -344,6 +344,7 @@ impl ZeldaState {
             self.lag_free_frame_master_start = crate::cycle_ledger::master();
             self.lag_free_vwf_master = 0;
             self.lag_free_go_master = None;
+            self.lag_free_lag_phases_run = false;
         }
         self.replay_trace_ram_watch("frame-entry");
         let mut state_recorder = std::mem::take(&mut self.state_recorder);
@@ -569,7 +570,9 @@ impl ZeldaState {
         self.replay_trace_ram_watch("after-apu");
         self.finish_original_timing_host_dispatch(owns_original_timing_dispatch);
         if self.lag_free_native_poly_thread() {
-            self.lag_free_poly_thread_lag_phases();
+            if !self.lag_free_lag_phases_run {
+                self.lag_free_poly_thread_lag_phases();
+            }
         } else if self.lag_free {
             self.lag_free_poly_thread = None;
             self.credit_lag_free_thread_slices();
