@@ -11787,6 +11787,54 @@ fn tolerate_unconsumed_song_end_poll_for_diagnostics() -> bool {
 }
 
 impl ZeldaState {
+    /// Single definition of regression state (ledger schema 1).
+    /// Hashes WRAM and SRAM, then explicit native owners/control fields using
+    /// fixed-width little-endian bincode streamed into FNV-1a (no allocation).
+    /// This is deliberately not a checkpoint or a hash of Rust memory layout.
+    /// Excludes immutable assets/ROM, PPU/display queues, audio internals and
+    /// most serde-skipped timing continuations. PCM is checked by the ledger.
+    /// Extend this definition/version when migrating ownership away from WRAM.
+    pub fn canonical_state_hash(&self) -> u64 {
+        struct Digest(u64);
+        impl std::io::Write for Digest {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                for &byte in bytes {
+                    self.0 = (self.0 ^ u64::from(byte)).wrapping_mul(0x100000001b3);
+                }
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        use std::io::Write;
+        let mut digest = Digest(0xcbf29ce484222325);
+        digest.write_all(b"zelda3-state-v1").unwrap();
+        digest.write_all(&self.ram).unwrap();
+        digest.write_all(&self.sram).unwrap();
+        bincode::serialize_into(
+            &mut digest,
+            &(
+                &self.game_state,
+                self.initialized,
+                self.apply_links_movement_to_camera_called,
+                self.wanted_zelda_features,
+                self.previous_host_controller_input,
+                self.dialogue_blk_index as u64,
+                self.dialogue_font_blk_index as u64,
+                self.dialogue_flags,
+                &self.dialogue_scroll_continuation,
+                self.dialogue_fast_forward_hold_pending,
+                self.dialogue_fast_forward_hold_active,
+                self.lag_free,
+                self.lag_free_thread_credit,
+                self.gloves_color,
+            ),
+        )
+        .expect("regression state serialization");
+        digest.0
+    }
+
     /// Legacy player entry points observe compatibility writes before mutation.
     /// Equipment is owned by inventory; magic imports only its amount here.
     pub(crate) fn follower_link_state_mut(&mut self) -> NativeFollowerLinkBridgeMut<'_> {

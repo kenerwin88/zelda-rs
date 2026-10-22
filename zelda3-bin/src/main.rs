@@ -45,6 +45,7 @@ mod snes9x_record_commands;
 mod snes9x_route_recorder;
 mod snes9x_segment_matrix;
 mod snes9x_semantic_receipts;
+mod state_ledger;
 use libretro_core::*;
 use snes9x_apu_tools::*;
 use snes9x_compare::*;
@@ -546,6 +547,16 @@ fn run_headless(args: &[String]) {
 
 fn run_standalone_smoke(args: &[String]) {
     let frames: u32 = args.first().map(|s| s.parse().unwrap_or(2)).unwrap_or(2);
+    let options = args.get(1..).unwrap_or_default();
+    let lag_free = options.iter().any(|arg| arg == "--lag-free");
+    let ledger_options: Vec<_> = options.iter().filter(|arg| *arg != "--lag-free").cloned().collect();
+    let mut state_ledger = state_ledger::Ledger::open(&ledger_options)
+        .unwrap_or_else(|e| { eprintln!("state ledger: {e}"); process::exit(2) });
+    if state_ledger.is_some() && args.first().is_none_or(|value| value.parse::<u32>().is_err()) {
+        eprintln!("state ledger requires an explicit valid frame count");
+        process::exit(2);
+    }
+    let started = std::time::Instant::now();
     // `ZELDA3_SMOKE_INPUT_PULSE=<mask>` presses the joypad mask for eight of
     // every sixteen frames, enough to walk the ROM-less build from the title
     // through the file select into the game.
@@ -559,6 +570,10 @@ fn run_standalone_smoke(args: &[String]) {
     // so the ROM-less build can be walked into the game's dialogue modules.
     let ledger_inputs: Vec<u16> = env::var_os("ZELDA3_SMOKE_INPUT_LEDGER")
         .map(|path| {
+            if state_ledger.is_some() {
+                return state_ledger::route_inputs(std::path::Path::new(&path), frames)
+                    .unwrap_or_else(|e| { eprintln!("state ledger inputs: {e}"); process::exit(2) });
+            }
             let text = fs::read_to_string(&path).unwrap_or_else(|e| {
                 eprintln!("failed to read {path:?}: {e}");
                 process::exit(2);
@@ -579,6 +594,10 @@ fn run_standalone_smoke(args: &[String]) {
         Ok(rom_path) => load_play_state(&rom_path),
         Err(_) => load_romless_play_state(),
     };
+    // Match logical_replay's fresh-engine initialization, before SRAM and frame 0.
+    if lag_free {
+        game.set_lag_free(true);
+    }
     // `ZELDA3_SMOKE_KEEP_SRAM=1` keeps the loaded save so the pulse can enter
     // a saved game (the spawn-select dialogue) instead of the name entry.
     if env::var_os("ZELDA3_SMOKE_KEEP_SRAM").is_none() {
@@ -613,7 +632,21 @@ fn run_standalone_smoke(args: &[String]) {
         game.zelda_discard_unused_audio_frames();
         // Present the frame the way the play loop does (without a GPU), so the
         // display publication pipeline runs and the walk matches real play.
-        let _ = crate::gpu_capture::capture_gpu_frame_from_game(&mut game);
+        let display = crate::gpu_capture::capture_gpu_frame_from_game(&mut game);
+        if let Some(ledger) = &mut state_ledger {
+            if frame % ledger.interval == 0 || frame + 1 == frames {
+                let record = ledger.capture(frame, input, &game, &audio, &display);
+                ledger.observe(&record).unwrap_or_else(|e| {
+                    eprintln!("{e}"); process::exit(1)
+                });
+            }
+        }
+    }
+
+    if let Some(ledger) = state_ledger {
+        ledger.finish().unwrap_or_else(|e| { eprintln!("state ledger: {e}"); process::exit(1) });
+        let seconds = started.elapsed().as_secs_f64();
+        eprintln!("state ledger completed frames={frames} seconds={seconds:.3} fps={:.1}", f64::from(frames) / seconds);
     }
 
     println!(
