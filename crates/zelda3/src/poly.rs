@@ -264,15 +264,34 @@ impl ZeldaState {
         self.step_native_poly_worker_with_vblank(work,context,clock,|_,_|panic!("poly worker reached NMI before its scheduled V-IRQ"))
     }
 
+    /// [`Self::step_native_poly_worker`] on a dynamic-HDMA clock, the
+    /// lag-free thread's HDMA view pricing each HDMA event.
+    pub(super) fn step_native_poly_worker_with_hdma(&mut self,
+        work:&mut crate::cycle_models::poly_worker::PolyWorker,
+        context:&mut crate::cycle_models::nmi_stack::NativeNmiContext,
+        clock:&mut snes::CpuMasterTimeline,
+        hdma:&mut crate::zelda_rtl::rtl_poly::LagFreePolyHdma) -> crate::cycle_models::poly_worker::WorkerInstruction {
+        self.step_native_poly_worker_on(work,context,clock,Some(hdma),|_,_|panic!("poly worker reached NMI before its scheduled V-IRQ"))
+    }
+
     pub(super) fn step_native_poly_worker_with_vblank(&mut self,
         work:&mut crate::cycle_models::poly_worker::PolyWorker,
         context:&mut crate::cycle_models::nmi_stack::NativeNmiContext,
         clock:&mut snes::CpuMasterTimeline,
+        vblank:impl FnMut(u64,u64)) -> crate::cycle_models::poly_worker::WorkerInstruction {
+        self.step_native_poly_worker_on(work,context,clock,None,vblank)
+    }
+
+    fn step_native_poly_worker_on(&mut self,
+        work:&mut crate::cycle_models::poly_worker::PolyWorker,
+        context:&mut crate::cycle_models::nmi_stack::NativeNmiContext,
+        clock:&mut snes::CpuMasterTimeline,
+        hdma:Option<&mut crate::zelda_rtl::rtl_poly::LagFreePolyHdma>,
         mut vblank:impl FnMut(u64,u64)) -> crate::cycle_models::poly_worker::WorkerInstruction {
         use crate::cycle_models::{intro_clear::Access,poly_buffer_clear};
         let mut native_ppu = self.native_ppu.take();
-        let result = work.step(context,clock,
-            crate::cycle_models::native_ppu::NativePpuBus::new(&mut native_ppu, |_,access| {
+        let result = work.step(context,clock, HdmaPricedBus { hdma,
+            bus: crate::cycle_models::native_ppu::NativePpuBus::new(&mut native_ppu, |_,access| {
             if let Some(value) = self.native_cpu_math.access(access) { return value; }
             match access {
             Access::Read(address,width)=>{
@@ -302,7 +321,7 @@ impl ZeldaState {
                 0
             }
             Access::Vblank {field,at}=>{vblank(field,at);0},
-        }}));
+        }})});
         if let Some(ppu) = native_ppu.as_mut() { ppu.synchronize(clock); }
         self.native_ppu = native_ppu;
         result
@@ -746,4 +765,29 @@ mod native_tables_tests {
             assert_eq!(ZeldaState::native_poly_table_byte(address),Some(rom[9*0x8000+(address as usize&0x7fff)]));
         }
     }
+}
+
+/// The worker's bus with HDMA bus time priced by the lag-free thread's HDMA
+/// view (on a dynamic-HDMA clock); everything else goes to the inner bus.
+struct HdmaPricedBus<'h, B> {
+    hdma: Option<&'h mut crate::zelda_rtl::rtl_poly::LagFreePolyHdma>,
+    bus: B,
+}
+
+impl<B: crate::cycle_models::native_work::WorkBus> crate::cycle_models::native_work::WorkBus for HdmaPricedBus<'_, B> {
+    fn inactive_sprite_body_mask(&mut self) -> u16 { self.bus.inactive_sprite_body_mask() }
+    fn begin_main_iteration(&mut self, clock: &snes::CpuMasterTimeline) { self.bus.begin_main_iteration(clock) }
+    fn access(&mut self, at: u64, access: crate::cycle_models::intro_clear::Access) -> u16 { self.bus.access(at, access) }
+    fn observe_clock(&mut self, clock: &snes::CpuMasterTimeline) { self.bus.observe_clock(clock) }
+    fn end_scanline(&mut self, at: u64) { self.bus.end_scanline(at) }
+    fn retire_event(&mut self, event: snes::cpu_timeline::CpuSynchronousTimelineEvent, clock: &snes::CpuMasterTimeline) -> u32 {
+        let cycles = self.bus.retire_event(event, clock);
+        match (event, self.hdma.as_deref_mut()) {
+            (snes::cpu_timeline::CpuSynchronousTimelineEvent::Bus(bus @ (snes::CpuBusEvent::HdmaInit | snes::CpuBusEvent::HdmaStart)), Some(hdma)) => {
+                cycles + hdma.run(bus)
+            }
+            _ => cycles,
+        }
+    }
+    fn timeline_event(&mut self, event: snes::cpu_timeline::CpuSynchronousTimelineEvent, at: u64) { self.bus.timeline_event(event, at) }
 }

@@ -414,6 +414,30 @@ impl HdmaTimingState {
         Self { channels: dma.channel }
     }
 
+    /// An HDMAEN ($420C) write: it sets each channel's enable and nothing
+    /// else, so a channel enabled after the field's initialisation resumes
+    /// from its previous cursors.
+    pub fn set_enable_mask(&mut self, mask: u8) {
+        for (index, channel) in self.channels.iter_mut().enumerate() {
+            channel.hdma_active = mask & (1 << index) != 0;
+        }
+    }
+
+    /// Take each channel's programmed registers from `dma` where they were
+    /// reprogrammed, keeping the cursors of the channels that were not.
+    pub fn adopt_registers(&mut self, dma: &DmaState) {
+        for (shadow, live) in self.channels.iter_mut().zip(dma.channel.iter()) {
+            let programming = |c: &DmaChannel| {
+                (c.mode, c.b_adr, c.a_adr, c.a_bank, c.ind_bank, c.indirect, c.from_b)
+            };
+            if programming(shadow) != programming(live) {
+                let enabled = shadow.hdma_active;
+                *shadow = *live;
+                shadow.hdma_active = enabled;
+            }
+        }
+    }
+
     /// Returns None when the caller cannot supply a table byte. A translated
     /// budget must then decline an exact answer rather than invent bus time.
     pub fn stall(

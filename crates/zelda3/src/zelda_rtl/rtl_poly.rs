@@ -16,6 +16,55 @@ pub(crate) struct LagFreePolyThread {
     worker: crate::cycle_models::poly_worker::PolyWorker,
     context: crate::cycle_models::nmi_stack::NativeNmiContext,
     field: u64,
+    hdma: Option<LagFreePolyHdma>,
+}
+
+/// Lag-free: the thread's view of the HDMA channels, which steal bus time
+/// from it on every visible line. HDMA keeps running through main's lines,
+/// and each thread NMI turns it off (`$00:8135`) and back on (`$00:82C4`,
+/// [`POLY_THREAD_HDMA_ENABLE_BEFORE_RTI`] before its RTI). A long NMI (the
+/// bitmap upload) therefore re-enables it after the field's line-0
+/// initialisation, and the channels resume from their previous cursors.
+/// Transfers only advance cursors; nothing is written.
+#[derive(Clone, Debug)]
+pub(crate) struct LagFreePolyHdma {
+    timing: snes::HdmaTimingState,
+    /// The field whose per-line events run next, and the next such line.
+    field: u64,
+    line: u16,
+    /// WRAM at the phase's start, for table bytes.
+    ram: Vec<u8>,
+}
+
+/// `STA $420C` at `$00:82C4` to the thread's first instruction: the store's
+/// own write cycle, then REP/TSC/TAX/LDA/TCS/STX/PLB/PLD/PLY/PLX/PLA/RTI.
+const POLY_THREAD_HDMA_ENABLE_BEFORE_RTI: u64 = 368;
+
+impl LagFreePolyHdma {
+    /// One HDMA event: its bus stall, with the cursors advanced.
+    pub(crate) fn run(&mut self, event: snes::CpuBusEvent) -> u32 {
+        let ram = &self.ram;
+        let cycles = self.timing.stall(event, |address| hdma_table_byte(ram, address)).unwrap_or(0);
+        match event {
+            snes::CpuBusEvent::HdmaInit => self.line = 0,
+            snes::CpuBusEvent::HdmaStart => self.line += 1,
+            snes::CpuBusEvent::WramRefresh => {}
+        }
+        cycles
+    }
+}
+
+fn hdma_table_byte(ram: &[u8], address: u32) -> Option<u8> {
+    let bank = (address >> 16) as u8;
+    let offset = address as u16;
+    if bank == 0x7e || bank == 0x7f {
+        return ram.get(usize::from(bank - 0x7e) * 0x10000 + usize::from(offset)).copied();
+    }
+    if (bank & 0x7f) < 0x40 && offset < 0x2000 {
+        return ram.get(usize::from(offset)).copied();
+    }
+    ZeldaState::native_spotlight_table_byte(address)
+        .or_else(|| ZeldaState::native_hdma_descriptor_byte(address))
 }
 
 impl Default for LagFreePolyThread {
@@ -36,6 +85,7 @@ impl Default for LagFreePolyThread {
                 p: 0x30,
             },
             field: 0,
+            hdma: None,
         }
     }
 }
@@ -120,14 +170,20 @@ impl ZeldaState {
     pub(super) fn lag_free_run_poly_thread_phase(&mut self, nmi_master_cycles: u64) {
         let mut thread = self.lag_free_poly_thread.take().unwrap_or_default();
         let (nmi_at, deadline) = self.poly_thread_phase_window(thread.field);
+        let mut hdma = thread.hdma.take().unwrap_or_else(|| LagFreePolyHdma {
+            timing: snes::HdmaTimingState::new(&self.dma),
+            field: thread.field,
+            line: 0,
+            ram: Vec::new(),
+        });
         // A long NMI can return inside a bus stall (the HDMA initialisation
         // at the next field's first line); the thread resumes when it ends.
         let mut start = nmi_at + nmi_master_cycles;
+        self.lag_free_poly_hdma_through_nmi(&mut hdma, thread.field, start);
         let mut clock = loop {
             let mut clock = snes::CpuMasterTimeline::new(
                 start,
-                snes::CpuBusWorkload::with_hdma_stall(self.native_hdma_scanline_stall_master_cycles())
-                    .with_hdma_init_stall(self.native_hdma_init_stall_master_cycles()),
+                snes::CpuBusWorkload::with_dynamic_hdma(),
                 snes::CpuFieldTiming::NON_INTERLACE_EVEN,
             );
             match clock.begin_synchronous_timeline() {
@@ -141,7 +197,7 @@ impl ZeldaState {
             let step_trace = crate::debug_env::var_os("ZELDA3_DEBUG_POLY_STEPS").is_some();
             while clock.clock_master_cycles() < deadline || irq_masked {
                 let (pc, before) = ((u32::from(thread.context.bank) << 16) | u32::from(thread.context.pc), clock.clock_master_cycles());
-                let retired = self.step_native_poly_worker(&mut thread.worker, &mut thread.context, &mut clock);
+                let retired = self.step_native_poly_worker_with_hdma(&mut thread.worker, &mut thread.context, &mut clock, &mut hdma);
                 if step_trace {
                     eprintln!("[POLY-STEP] host={} pc={pc:06x} start={} end={}", self.frame_ctr_dbg,
                         before - nmi_at, clock.clock_master_cycles() - nmi_at);
@@ -156,7 +212,43 @@ impl ZeldaState {
                 self.ram[0x1f00], self.ram[0x1f0c]);
         }
         thread.field += 1;
+        thread.hdma = Some(hdma);
         self.lag_free_poly_thread = Some(thread);
+    }
+
+    /// Bring the thread's HDMA view from its last event up to `start`, the
+    /// thread's first instruction after the NMI of `field`: main's remaining
+    /// lines of `field`, the NMI's disable, and its re-enable relative to
+    /// the next field's line-0 initialisation and first lines.
+    fn lag_free_poly_hdma_through_nmi(&self, hdma: &mut LagFreePolyHdma, field: u64, start: u64) {
+        use snes::{CpuBusEvent, CpuRasterPosition, cpu_timeline::{HDMA_INIT_CYCLE, HDMA_START_CYCLE}};
+        let base = snes::CpuMasterTimeline::new(0, snes::CpuBusWorkload::default(), snes::CpuFieldTiming::NON_INTERLACE_EVEN);
+        let at = |field: u64, line: u16, cycle: u32| base.master_cycles_at_raster(field, CpuRasterPosition::new(line, cycle as u16));
+        hdma.ram.clone_from(&self.ram);
+        hdma.timing.adopt_registers(&self.dma);
+        let enabled = self.game_state.display.hdma_enable_mask;
+        if hdma.field == field {
+            while u32::from(hdma.line) < snes::NMI_SCANLINE {
+                hdma.run(CpuBusEvent::HdmaStart);
+            }
+        }
+        hdma.timing.set_enable_mask(0);
+        hdma.field = field + 1;
+        hdma.line = 0;
+        let enable_at = start.saturating_sub(POLY_THREAD_HDMA_ENABLE_BEFORE_RTI);
+        let init_at = at(field + 1, 0, HDMA_INIT_CYCLE);
+        if init_at >= start {
+            hdma.timing.set_enable_mask(enabled);
+            return;
+        }
+        if enable_at < init_at {
+            hdma.timing.set_enable_mask(enabled);
+        }
+        hdma.run(CpuBusEvent::HdmaInit);
+        hdma.timing.set_enable_mask(enabled);
+        while u32::from(hdma.line) < snes::NMI_SCANLINE && at(field + 1, hdma.line, HDMA_START_CYCLE) < start {
+            hdma.run(CpuBusEvent::HdmaStart);
+        }
     }
 
     /// The thread's phase before this frame's main: after the NMI that closed
@@ -248,8 +340,22 @@ impl ZeldaState {
         }
         for idle in phase_plan {
             if idle {
-                if let Some(thread) = self.lag_free_poly_thread.as_mut() {
+                // The thread waits for the go byte, but HDMA still runs.
+                if let Some(mut thread) = self.lag_free_poly_thread.take() {
+                    if let Some(mut hdma) = thread.hdma.take() {
+                        let (nmi_at, deadline) = self.poly_thread_phase_window(thread.field);
+                        self.lag_free_poly_hdma_through_nmi(&mut hdma, thread.field, nmi_at + POLY_THREAD_LAG_NMI_MASTER_CYCLES);
+                        let base = snes::CpuMasterTimeline::new(0, snes::CpuBusWorkload::default(), snes::CpuFieldTiming::NON_INTERLACE_EVEN);
+                        while u32::from(hdma.line) < snes::NMI_SCANLINE
+                            && base.master_cycles_at_raster(hdma.field, snes::CpuRasterPosition::new(hdma.line,
+                                snes::cpu_timeline::HDMA_START_CYCLE as u16)) < deadline
+                        {
+                            hdma.run(snes::CpuBusEvent::HdmaStart);
+                        }
+                        thread.hdma = Some(hdma);
+                    }
                     thread.field += 1;
+                    self.lag_free_poly_thread = Some(thread);
                 }
                 continue;
             }
