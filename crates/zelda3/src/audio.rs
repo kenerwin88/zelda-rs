@@ -1374,7 +1374,12 @@ impl ZeldaState {
                 // native upload and memory initializer own the later stores;
                 // untouched words retain this reset value. Asset reloads and
                 // resumed states must not replay the machine reset.
+                if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                    eprintln!("native-startup-reset-fill host={}", self.frame_ctr_dbg);
+                }
                 self.ram.fill(0x55);
+                self.reset_fill_pending = true;
+                self.boot_memory_initialized = false;
                 self.sync_native_game_state_from_ram();
             }
         }

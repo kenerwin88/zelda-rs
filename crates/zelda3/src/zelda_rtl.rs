@@ -10560,6 +10560,17 @@ pub struct ZeldaState {
     /// is seen, when `$133` stands for it.
     #[serde(skip)]
     pub(crate) lag_free_music_echo: Option<u8>,
+    /// WRAM still holds the pinned reset's $55 fill: `Startup_InitializeMemory`
+    /// has not cleared it and no animated-tile source has been stored, so
+    /// WRAM-derived "has boot run" tests (a zero source word) cannot be
+    /// trusted. Set only by that cold reset fill.
+    #[serde(skip)]
+    pub(crate) reset_fill_pending: bool,
+    /// `Startup_InitializeMemory` already cleared WRAM before the first NMI
+    /// (the ROM runs it before enabling NMI); the host-driven boot that
+    /// follows the NMI then skips it.
+    #[serde(skip)]
+    pub(crate) boot_memory_initialized: bool,
     /// Lag-free logical replay: the cartridge's `$2140` reads for the current
     /// iteration, consumed by the song-end polls in order. The port's value
     /// depends on how much SPC time elapsed, which lag changes; replaying the
@@ -12795,8 +12806,15 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_animated_tile_data_source_address(&mut self, value: u16) {
+        self.reset_fill_pending = false;
         self.display_core_mut()
             .set_animated_tile_data_source_address(value);
+    }
+
+    /// The animated-tile source, unless its WRAM word still holds the reset
+    /// fill.
+    pub(crate) fn initialized_animated_tile_data_source(&self) -> bool {
+        !self.reset_fill_pending && self.game_state.display.has_animated_tile_data_source()
     }
 
     pub(crate) fn set_travel_bird_tile_offset(&mut self, value: u8) {
@@ -13606,6 +13624,8 @@ impl ZeldaState {
             lag_free_go_master: None,
             lag_free_lag_phases_run: false,
             lag_free_music_echo: None,
+            reset_fill_pending: false,
+            boot_memory_initialized: false,
             apui00_poll_replay: None,
             original_timing_owner: OriginalTimingOwnerState::Disabled,
             original_timing_cold_start_eligible: true,
@@ -14306,7 +14326,10 @@ impl ZeldaState {
         } else if self.original_timing_cold_start_eligible && self.frame_ctr_dbg == 0 {
             self.original_timing_owner = OriginalTimingOwnerState::PendingColdStart;
             self.zelda_set_rom_startup_audio_phase(true);
+            // Before the cold reset fill, WRAM is still zero: no animated
+            // tile source means the ROM's boot initialization is ahead.
             if !self.game_state.display.has_animated_tile_data_source() {
+                self.boot_memory_initialized = false;
                 self.rom_reset_frame_delay = configured_rom_reset_frame_delay();
             }
         } else {
@@ -14434,6 +14457,19 @@ impl ZeldaState {
 
     pub fn set_rom(&mut self, rom: &[u8]) {
         self.rom = strip_copier_header(rom).to_vec();
+    }
+
+    /// Receipt-driven replays boot from zeroed WRAM instead of the pinned
+    /// reset's $55 fill. Their intro initialization runs each WRAM-clear
+    /// step a frame before the ROM does; on zeroed memory that is invisible,
+    /// on the reset fill it shows as stray sprites from frame 82. Call before
+    /// the first host; a no-op once boot has started.
+    pub fn use_zeroed_reset_wram_for_receipt_replay(&mut self) {
+        if self.frame_ctr_dbg == 0 && self.reset_fill_pending {
+            self.ram.fill(0);
+            self.reset_fill_pending = false;
+            self.sync_native_game_state_from_ram();
+        }
     }
 
     pub fn set_assets(&mut self, assets: &[u8]) -> Result<(), String> {
@@ -15127,9 +15163,37 @@ impl ZeldaState {
     }
 
     fn zelda_initialization_code(&mut self) {
-        self.sound_load_intro_song_bank();
-        self.startup_initialize_memory();
+        if self.boot_memory_initialized {
+            // Reset's song-bank call and the memory initializer already ran
+            // their WRAM effects before the first NMI; the startup CPU owner
+            // still accounts for the call.
+            self.select_song_bank_asset(0);
+            self.complete_startup_memory_cpu();
+        } else {
+            self.sound_load_intro_song_bank();
+            self.startup_initialize_memory();
+        }
         self.finish_rom_bootstrap_initialization();
+    }
+
+    /// `Startup_InitializeMemory`'s WRAM/SRAM effects without a CPU clock,
+    /// for a host-driven boot whose first NMI precedes the rest of its
+    /// initialization. Leaves the native startup owner untouched.
+    pub(super) fn startup_initialize_memory_before_first_nmi(&mut self) {
+        // Reset runs Sound_LoadIntroSongBank first; the clear below keeps
+        // only the low word of its upload pointer.
+        self.store_intro_song_upload_pointer();
+        const STARTUP_RETURN_WORD: usize = 0x1fe;
+        write_le_u16(&mut self.ram, STARTUP_RETURN_WORD, 0x802e);
+        let mut work = crate::cycle_models::startup_memory::StartupMemoryWork::default();
+        loop {
+            let clear_window = work.clears_window_mask();
+            if work.step(&mut self.ram, &mut self.sram).is_none() { break }
+            if clear_window { self.zelda_ppu_write_word(0x212e, 0); }
+        }
+        self.boot_memory_initialized = true;
+        self.reset_fill_pending = false;
+        self.finish_startup_memory_publication();
     }
 
     fn finish_rom_bootstrap_initialization(&mut self) {
@@ -15139,7 +15203,26 @@ impl ZeldaState {
         self.assert_native_display_state_matches_ram();
     }
 
+    /// The startup CPU owner's side of `Startup_InitializeMemory` (its call
+    /// and per-step clock, then external completion) for a boot whose WRAM
+    /// effects already ran before the first NMI.
+    fn complete_startup_memory_cpu(&mut self) {
+        let Some(mut cpu) = self.native_startup_cpu.take() else { return };
+        cpu.timeline.advance_synchronous_after_semantics_with(46, |_, _| Ok::<u32, String>(0))
+            .expect("native startup call clock");
+        let (mut ram, mut sram) = (self.ram.clone(), self.sram.clone());
+        let mut work = crate::cycle_models::startup_memory::StartupMemoryWork::default();
+        while let Some(cycles) = work.step(&mut ram, &mut sram) {
+            cpu.timeline.advance_synchronous_after_semantics_with(cycles, |_, _| Ok::<u32, String>(0))
+                .expect("native startup memory clock");
+        }
+        cpu.startup.complete_externally();
+        self.native_startup_cpu = Some(cpu);
+    }
+
     fn startup_initialize_memory(&mut self) {
+        self.boot_memory_initialized = true;
+        self.reset_fill_pending = false;
         let mut cpu = self.native_startup_cpu.take();
         // Reset's JSR owns this return word. The callee saves it before its
         // descending stores overwrite the stack, and restores it before RTS.
@@ -15168,6 +15251,9 @@ impl ZeldaState {
     }
 
     fn finish_startup_memory_publication(&mut self) {
+        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+            eprintln!("native-startup-memory-complete host={} ram12={:02x}", self.frame_ctr_dbg, self.ram[0x12]);
+        }
         self.sync_native_game_state_from_ram();
         self.initialize_palette_mirror_from_buffers();
         self.assert_native_world_location_state_matches_ram();

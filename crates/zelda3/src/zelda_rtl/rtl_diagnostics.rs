@@ -370,7 +370,7 @@ impl ZeldaState {
                     1,
                 );
             }
-            if self.game_state.display.has_animated_tile_data_source() {
+            if self.initialized_animated_tile_data_source() {
                 if self.game_state.system_signals.bugs_fixed() < BUGFIX_LATEST
                     && !self.rom_startup_timing
                 {

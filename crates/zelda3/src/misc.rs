@@ -328,15 +328,19 @@ impl ZeldaState {
     }
 
     pub(super) fn sound_load_intro_song_bank(&mut self) {
-        // Native caller's upload pointer stores at $8901-$890B. The following
-        // memory initializer preserves its low word; it does not recreate
-        // bytes sampled from a later NMI boundary.
+        self.store_intro_song_upload_pointer();
+        self.select_song_bank_asset(0);
+    }
+
+    /// Native caller's upload pointer stores at $8901-$890B. The following
+    /// memory initializer preserves its low word; it does not recreate
+    /// bytes sampled from a later NMI boundary.
+    pub(super) fn store_intro_song_upload_pointer(&mut self) {
         self.ram[..3].copy_from_slice(&[0x00, 0x80, 0x19]);
         if let Some(cpu) = self.native_startup_cpu.as_ref() {
             // The upload owner advances the bank when its Y cursor wraps.
             self.ram[..3].copy_from_slice(&cpu.upload_pointer);
         }
-        self.select_song_bank_asset(0);
     }
 
     pub(super) fn load_overworld_songs(&mut self) {
@@ -392,7 +396,7 @@ impl ZeldaState {
         }
     }
 
-    fn select_song_bank_asset(&mut self, asset: usize) {
+    pub(super) fn select_song_bank_asset(&mut self, asset: usize) {
         self.select_modern_sample_bank(asset as u8);
     }
 

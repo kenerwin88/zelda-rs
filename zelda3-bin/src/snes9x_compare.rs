@@ -1216,7 +1216,9 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
         // the timing flag.
         (crate::load_romless_play_state(), 0)
     } else {
-        (load_default_play_state(), 0)
+        let mut game = load_default_play_state();
+        game.use_zeroed_reset_wram_for_receipt_replay();
+        (game, 0)
     };
     let rom_timing_off = std::env::var_os("ZELDA3_CACHED_AV_ROM_TIMING_OFF").is_some();
     let cache_end_frame = identity

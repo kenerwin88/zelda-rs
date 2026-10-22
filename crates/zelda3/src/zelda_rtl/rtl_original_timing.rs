@@ -2809,7 +2809,9 @@ impl ZeldaState {
             assert_eq!(
                 expected_gates.first().copied(),
                 Some(native_gate),
-                "an uninterrupted main-loop host's leading handler disagrees with the native NMI latch",
+                "an uninterrupted main-loop host's leading handler disagrees with the native NMI latch \
+                 (host {}, $12 = {:02x}, native latch {:02x})",
+                self.frame_ctr_dbg, self.ram[0x12], self.game_state.display.nmi_update_latch,
             );
         }
 
@@ -8754,9 +8756,7 @@ impl ZeldaState {
             // host boundary. A main-thread module switch cannot retroactively
             // move a leading NMI behind the CPU work it already preceded.
             let animated_tile = self
-                .game_state
-                .display
-                .has_animated_tile_data_source()
+                .initialized_animated_tile_data_source()
                 .then(|| {
                     let source_address = self.game_state.display.animated_tile_data_source_usize();
                     let destination_address = self
@@ -8825,6 +8825,11 @@ impl ZeldaState {
                 return;
             }
             self.rom_reset_frame_delay = self.rom_reset_frame_delay.saturating_sub(1);
+            if self.rom_reset_frame_delay == 0 && !self.boot_memory_initialized {
+                // The ROM clears WRAM before it enables NMI; the next host's
+                // leading NMI must see the cleared latch, not the reset fill.
+                self.startup_initialize_memory_before_first_nmi();
+            }
             self.capture_display_snapshot();
             debug_host_path_early_return(self.frame_ctr_dbg, line!());
             return;
@@ -8975,7 +8980,7 @@ impl ZeldaState {
             return;
         }
         let initialized_audio_bank_this_frame =
-            !self.game_state.display.has_animated_tile_data_source()
+            !self.initialized_animated_tile_data_source()
                 && self.native_startup_cpu.as_ref().is_none_or(|cpu| cpu.startup.pending());
         // Ordinary live NMI samples the preceding audio commands before main;
         // measured interrupted callers can instead assign that ownership to

@@ -34,7 +34,7 @@ impl ZeldaState {
     }
 
     pub(super) fn capture_animated_bg_scanout(&self) -> Option<AnimatedBgScanout> {
-        if !self.rom_startup_timing() || !self.game_state.display.has_animated_tile_data_source() {
+        if !self.rom_startup_timing() || !self.initialized_animated_tile_data_source() {
             return None;
         }
         let destination_address = self
