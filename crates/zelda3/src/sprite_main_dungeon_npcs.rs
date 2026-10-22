@@ -676,7 +676,7 @@ impl ZeldaState {
         }
         if self.game_state.ending.attract_scene.intro_did_run_step() == 0 {
             self.crystal_maiden_run_cutscene(k);
-            self.attract_scene_mut().mark_intro_did_run_step();
+            self.mark_poly_thread_go();
         }
     }
 

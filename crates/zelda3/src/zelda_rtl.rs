@@ -10537,6 +10537,20 @@ pub struct ZeldaState {
     /// Lag-free: the last frame's ROM-equivalent main cost.
     #[serde(skip)]
     pub(crate) lag_free_last_main_master: u64,
+    /// Lag-free: the preemptive polygon thread, run instruction by
+    /// instruction through each frame's thread phase (see
+    /// `lag_free_run_poly_thread_phase`).
+    #[serde(skip)]
+    pub(crate) lag_free_poly_thread: Option<rtl_poly::LagFreePolyThread>,
+    /// Lag-free: the last NMI uploaded a finished polygon bitmap.
+    #[serde(skip)]
+    pub(crate) lag_free_nmi_uploaded_poly: bool,
+    /// Lag-free: this frame's main cost when it activated the NMI thread.
+    #[serde(skip)]
+    pub(crate) lag_free_thread_activation_master: Option<u64>,
+    /// Lag-free: this frame's main cost when it set the thread's go byte.
+    #[serde(skip)]
+    pub(crate) lag_free_go_master: Option<u64>,
     /// Lag-free logical replay: the cartridge's `$2140` reads for the current
     /// iteration, consumed by the song-end polls in order. The port's value
     /// depends on how much SPC time elapsed, which lag changes; replaying the
@@ -13577,6 +13591,10 @@ impl ZeldaState {
             lag_free_vwf_master: 0,
             lag_free_thread_credit: 0,
             lag_free_last_main_master: 0,
+            lag_free_poly_thread: None,
+            lag_free_nmi_uploaded_poly: false,
+            lag_free_thread_activation_master: None,
+            lag_free_go_master: None,
             apui00_poll_replay: None,
             original_timing_owner: OriginalTimingOwnerState::Disabled,
             original_timing_cold_start_eligible: true,

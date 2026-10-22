@@ -1238,6 +1238,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     let mut lag_carried: std::collections::BTreeSet<usize> = Default::default();
     let mut previous_poly_active = false;
     let mut watch_master = 0u64;
+    let mut watch_silent = 0u64;
     // `ZELDA3_LOGICAL_WATCH=<hex addr>,...` with `ZELDA3_LOGICAL_WATCH_ITERS=lo-hi`
     // prints those WRAM bytes on both sides after each iteration in range.
     let logical_watch: Option<(Vec<usize>, u64, u64)> = zelda3::debug_env::var("ZELDA3_LOGICAL_WATCH").ok().map(|addresses| {
@@ -1539,11 +1540,17 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             let bytes = |ram: &[u8]| watch.iter().map(|&address| format!("{:02x}", ram[address])).collect::<Vec<_>>().join(" ");
             let master = zelda3::cycle_ledger::master();
             println!(
-                "logical-watch iteration={} lag_nmis={} master={} main={} rom=[{}] engine=[{}]",
+                "logical-watch iteration={} host={} lag_nmis={} master={} main={} nmi={:?} silent={} rom=[{}] engine=[{}]",
                 iteration.index,
+                game.frame_ctr_dbg,
                 iteration.lag_nmis,
                 master - std::mem::replace(&mut watch_master, master),
                 game.lag_free_last_main_master(),
+                game.last_nmi_handler_master_cycles(),
+                {
+                    let silent = zelda3::cycle_ledger::silent_calls();
+                    silent - std::mem::replace(&mut watch_silent, silent)
+                },
                 bytes(&images.image),
                 bytes(&game.ram)
             );

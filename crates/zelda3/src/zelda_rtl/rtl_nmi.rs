@@ -119,6 +119,12 @@ impl ZeldaState {
             // scheduling varies with the activation host's CPU/NMI phase.
             self.poly_dungeon_thread_startup_hold = Some(6);
             self.poly_dungeon_activation_host = self.frame_ctr_dbg;
+            if self.lag_free {
+                self.lag_free_thread_activation_master = Some(
+                    crate::cycle_ledger::master().saturating_sub(self.lag_free_frame_master_start)
+                        + self.lag_free_vwf_master,
+                );
+            }
         }
         self.display_core_mut().activate_nmi_thread();
     }

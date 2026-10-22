@@ -240,6 +240,31 @@ fn main() -> Result<(), Box<dyn Error>> {
     // `ZELDA3_LEDGER_PPU_WRITES=<lo>-<hi>` prints every CPU write to the PPU
     // registers, the DMA/HDMA enables and channel registers in those hosts, with the beam
     // position: the probe for a picture that differs on a few lines only.
+    // `ZELDA3_LEDGER_THREAD_TRACE=<lo>-<hi>` prints every accepted NMI and IRQ
+    // in those hosts with the beam line and the interrupted PC: which of the
+    // main loop and the polygon thread each interrupt preempted.
+    // `ZELDA3_LEDGER_PROFILE=<lo>-<hi>` (iterations) attributes the main
+    // thread's own instruction cycles to the subroutine running them (call
+    // frames from JSR/JSL, left when the stack rises above them), outside
+    // interrupt handlers and the polygon thread's stack, and prints
+    // `ledger-profile iteration=<k> routine=<pc> master=<cycles>` at the end:
+    // the measurement a cycle-ledger annotation is checked against.
+    let profile_iterations = env::var("ZELDA3_LEDGER_PROFILE")
+        .ok()
+        .and_then(|value| {
+            let (lo, hi) = value.split_once('-')?;
+            Some((lo.parse::<u64>().ok()?, hi.parse::<u64>().ok()?))
+        });
+    let mut profile_stack: Vec<(u32, u16)> = Vec::new();
+    let mut profile_depth = 0usize;
+    let mut profile_main_active = false;
+    let mut profile: std::collections::BTreeMap<(u64, u32), u64> = Default::default();
+    let thread_trace_hosts = env::var("ZELDA3_LEDGER_THREAD_TRACE")
+        .ok()
+        .and_then(|value| {
+            let (lo, hi) = value.split_once('-')?;
+            Some((lo.parse::<usize>().ok()?, hi.parse::<usize>().ok()?))
+        });
     let ppu_write_hosts = env::var("ZELDA3_LEDGER_PPU_WRITES")
         .ok()
         .map(|value| {
@@ -378,6 +403,81 @@ fn main() -> Result<(), Box<dyn Error>> {
                 // the depth falls back to zero. The polygon thread switches
                 // stacks inside the NMI and need not return through it: an
                 // opening handler still open at the next NMI closes there.
+                if let Some((lo, hi)) = profile_iterations {
+                    let cpu = &exec.machine().snes().cpu;
+                    let main_stack = cpu.sp >> 8 == 0x01;
+                    let iteration = current.as_ref().map(|iteration| iteration.index);
+                    if step.origin_pc == 0x00_8038 {
+                        profile_main_active = true;
+                    }
+                    if profile_depth == 0 && main_stack && profile_main_active {
+                        if let Some(iteration) = iteration.filter(|index| (lo..=hi).contains(index)) {
+                            let end = match step.accepted_interrupt {
+                                Some(SourceCpuAcceptedInterrupt::Nmi { started_at, .. })
+                                | Some(SourceCpuAcceptedInterrupt::Irq { started_at, .. }) => started_at,
+                                None => step.ended_at,
+                            };
+                            let routine = profile_stack.last().map_or(0x00_8038, |frame| frame.0);
+                            *profile.entry((iteration, routine)).or_default() +=
+                                end.master_cycles().saturating_sub(step.started_at.master_cycles());
+                        }
+                    }
+                    if step.origin_pc == 0x00_805d {
+                        profile_main_active = false;
+                    }
+                    if step.accepted_interrupt.is_some() {
+                        profile_depth += 1;
+                    } else if step.opcode == RTI {
+                        profile_depth = profile_depth.saturating_sub(1);
+                    } else if main_stack {
+                        if matches!(step.opcode, 0x20 | 0xfc | 0x22) {
+                            profile_stack.push(((u32::from(cpu.k) << 16) | u32::from(cpu.pc), cpu.sp));
+                        }
+                        while profile_stack.last().is_some_and(|frame| cpu.sp > frame.1) {
+                            profile_stack.pop();
+                        }
+                    }
+                }
+                if thread_trace_hosts.is_some_and(|(lo, hi)| (lo..=hi).contains(&host)) {
+                    let accepted = match step.accepted_interrupt {
+                        Some(SourceCpuAcceptedInterrupt::Nmi { interrupted_pc, .. }) => Some(("nmi", interrupted_pc)),
+                        Some(SourceCpuAcceptedInterrupt::Irq { interrupted_pc, .. }) => Some(("irq", interrupted_pc)),
+                        None => None,
+                    };
+                    // Main's iteration: released at $00:8038 (CLI), done at
+                    // $00:805D (STZ $12) before it spins in the wait loop.
+                    if matches!(step.origin_pc, 0x00_8038 | 0x00_805d) && step.accepted_interrupt.is_none() {
+                        let raster = exec.machine().timeline().raster_position();
+                        eprintln!(
+                            "ledger-thread host={host} {} line={} dot={} abs={}",
+                            if step.origin_pc == 0x00_8038 { "main_start" } else { "main_done" },
+                            raster.scanline(),
+                            raster.master_cycle(),
+                            exec.machine().timeline().timestamp().master_cycles(),
+                        );
+                    }
+                    if step.opcode == RTI && step.accepted_interrupt.is_none() {
+                        let raster = exec.machine().timeline().raster_position();
+                        eprintln!(
+                            "ledger-thread host={host} rti line={} dot={} abs={}",
+                            raster.scanline(),
+                            raster.master_cycle(),
+                            exec.machine().timeline().timestamp().master_cycles(),
+                        );
+                    }
+                    if let Some((kind, pc)) = accepted {
+                        let raster = exec.machine().timeline().raster_position();
+                        eprintln!(
+                            "ledger-thread host={host} {kind} line={} dot={} abs={} pc={pc:06x} main_done={} go={:02x} upload={:02x}",
+                            raster.scanline(),
+                            raster.master_cycle(),
+                            exec.machine().timeline().timestamp().master_cycles(),
+                            exec.machine().snes().ram[NMI_BOOLEAN],
+                            exec.machine().snes().ram[0x1f00],
+                            exec.machine().snes().ram[0x1f0c],
+                        );
+                    }
+                }
                 let nmi_accepted = matches!(step.accepted_interrupt, Some(SourceCpuAcceptedInterrupt::Nmi { .. }));
                 let stale_opening = nmi_accepted && opening.is_some();
                 let handler_returned = stale_opening
@@ -471,9 +571,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                         for byte in 0..u32::from(width) {
                             if watch.contains(&(offset + byte)) {
                                 eprintln!(
-                                    "ledger-watch iteration={} host={host} line={} pc={:06x} wram={:05x} value={:02x}",
+                                    "ledger-watch iteration={} host={host} line={} abs={} pc={:06x} wram={:05x} value={:02x}",
                                     iteration.index,
                                     exec.machine().timeline().raster_position().scanline(),
+                                    exec.machine().timeline().timestamp().master_cycles(),
                                     step.origin_pc,
                                     offset + byte,
                                     (value >> (8 * byte)) as u8,
@@ -576,6 +677,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     post_nmi.finish()?;
     if let Some(file) = resync.as_mut() {
         file.flush()?;
+    }
+    for ((iteration, routine), master) in &profile {
+        eprintln!("ledger-profile iteration={iteration} routine={routine:06x} master={master}");
     }
     println!("logical ledger wrote {emitted} complete iterations over {host_calls} host calls");
     Ok(())

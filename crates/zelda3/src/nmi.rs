@@ -2866,6 +2866,7 @@ impl ZeldaState {
             }
             self.nmi_poly_upload_from_deferred = false;
             self.clear_pending_polyhedral_update();
+            self.lag_free_nmi_uploaded_poly = true;
             if crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some() {
                 let sum: u64 = self.ppu.vram[0x5800..0x5c00]
                     .iter()

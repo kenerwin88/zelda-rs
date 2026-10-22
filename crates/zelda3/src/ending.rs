@@ -985,7 +985,7 @@ impl ZeldaState {
             }
             _ => {}
         }
-        self.attract_scene_mut().mark_intro_did_run_step();
+        self.mark_poly_thread_go();
         self.resume_intro_triangle_motion();
         self.attract_scene_mut().increment_intro_frame_counter();
     }
@@ -996,7 +996,7 @@ impl ZeldaState {
         if self.game_state.ending.attract_scene.intro_did_run_step() == 0 {
             self.poly_runtime_mut().add_angle_b(3);
             self.poly_runtime_mut().add_angle_a(1);
-            self.attract_scene_mut().mark_intro_did_run_step();
+            self.mark_poly_thread_go();
         }
         self.scene_animate_every_sprite();
     }
@@ -2595,7 +2595,7 @@ impl ZeldaState {
         self.poly_runtime_mut().set_config1(156);
         self.poly_runtime_mut().set_color_mode(1);
         self.activate_nmi_thread();
-        self.attract_scene_mut().mark_intro_did_run_step();
+        self.mark_poly_thread_go();
         self.poly_runtime_mut().set_base_x(32);
         self.poly_runtime_mut().set_base_y(32);
         self.poly_runtime_mut().set_shape_depth_bias_low(32);
@@ -2607,7 +2607,7 @@ impl ZeldaState {
 }
 
 fn break_triforce_handle_poly(state: &mut ZeldaState) {
-    state.attract_scene_mut().mark_intro_did_run_step();
+    state.mark_poly_thread_go();
     state.resume_intro_triangle_motion();
     state.attract_scene_mut().increment_intro_frame_counter();
 }
@@ -3148,7 +3148,7 @@ impl ZeldaState {
         self.poly_runtime_mut().set_color_mode(1);
         self.poly_runtime_mut().set_model(1);
         self.activate_nmi_thread();
-        self.attract_scene_mut().mark_intro_did_run_step();
+        self.mark_poly_thread_go();
         if self.rom_startup_timing() {
             self.intro_poly_upload_delay = configured_intro_thread_start_delay();
         }
@@ -3190,12 +3190,12 @@ impl ZeldaState {
             && self.intro_poly_upload_delay != 0
         {
             self.intro_poly_upload_delay = self.intro_poly_upload_delay.saturating_sub(1);
-            self.attract_scene_mut().mark_intro_did_run_step();
+            self.mark_poly_thread_go();
             return;
         }
         if self.game_state.ending.attract_scene.intro_did_run_step() == 0 {
             self.intro_run_step();
-            self.attract_scene_mut().mark_intro_did_run_step();
+            self.mark_poly_thread_go();
         }
     }
 

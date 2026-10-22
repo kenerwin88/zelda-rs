@@ -4,7 +4,209 @@
 
 use super::*;
 
+/// Lag-free: the cartridge's preemptive polygon thread (the crystal
+/// maiden's and the Triforce room's). Each frame the NMI handler returns into
+/// the thread, which keeps the CPU until the V-IRQ hands it back to main
+/// (`$00:822D` / `$00:831F` swap the stack with `$1F0A`); main then runs to the
+/// next NMI, and an iteration that needs more than one frame lags, giving the
+/// thread another phase. The native worker runs the thread's own code
+/// instruction by instruction through exactly those phases.
+#[derive(Clone, Debug)]
+pub(crate) struct LagFreePolyThread {
+    worker: crate::cycle_models::poly_worker::PolyWorker,
+    context: crate::cycle_models::nmi_stack::NativeNmiContext,
+    field: u64,
+}
+
+impl Default for LagFreePolyThread {
+    fn default() -> Self {
+        // Polyhedral_InitializeThread's bootstrap frame ($1F32): DB $09,
+        // D $1F00, A/X/Y 0, P $30, PC $09:F81D, popped to SP $1F3E.
+        Self {
+            worker: Default::default(),
+            context: crate::cycle_models::nmi_stack::NativeNmiContext {
+                a: 0,
+                x: 0,
+                y: 0,
+                d: 0x1f00,
+                db: 0x09,
+                bank: 0x09,
+                pc: 0xf81d,
+                sp: 0x1f3e,
+                p: 0x30,
+            },
+            field: 0,
+        }
+    }
+}
+
+/// A frame (NTSC, non-interlaced) in master cycles.
+const POLY_THREAD_FRAME_MASTER_CYCLES: u64 = 357_368;
+/// The NMI's acceptance on line 225 (raster cycle 86 on the route's ledger)
+/// and the V-IRQ handler (acceptance to the stack swap's RTI).
+const POLY_THREAD_NMI_RASTER_CYCLE: u16 = 86;
+const POLY_THREAD_IRQ_HANDLER_MASTER_CYCLES: u64 = 742;
+/// The handler's entry and exit, which the NMI cost model does not charge
+/// (the ROM's 26,506 against the model's 25,626), and the bitmap upload
+/// routine `$00:9347` beyond its DMA (43,844 against 42,036 with it).
+const POLY_THREAD_NMI_UNCHARGED_MASTER_CYCLES: u64 = 880;
+const POLY_THREAD_UPLOAD_UNCHARGED_MASTER_CYCLES: u64 = 928;
+/// A lag frame's NMI (main unfinished): the thread path alone, and with the
+/// bitmap upload.
+const POLY_THREAD_LAG_NMI_MASTER_CYCLES: u64 = 3_284;
+const POLY_THREAD_LAG_NMI_UPLOAD_MASTER_CYCLES: u64 = 20_622;
+
 impl ZeldaState {
+    /// Lag-free: this frame's main-loop cost, ROM-equivalent: the cycle
+    /// ledger from the frame's start to its NMI's acceptance (the NMI's own
+    /// charges are not main's) plus the glyph renderer's modelled cost.
+    pub(super) fn lag_free_main_master(&self) -> u64 {
+        let end = self
+            .ledger_master_at_nmi_acceptance
+            .filter(|&at| at >= self.lag_free_frame_master_start)
+            .unwrap_or_else(crate::cycle_ledger::master);
+        end.saturating_sub(self.lag_free_frame_master_start) + self.lag_free_vwf_master
+    }
+
+    /// Lag-free and a preemptive polygon thread running, with
+    /// `ZELDA3_LAG_FREE_POLY_NATIVE` set: the native worker owns the thread.
+    /// Its phases are exact; main's lag frames still depend on the cycle
+    /// ledger's main-loop cost, which undercharges the crystal rooms (an
+    /// ordinary frame 55.7k against the ROM's 64.5k), so the frame-hold
+    /// model with the ledger's per-angle tables stays the default.
+    pub(super) fn lag_free_native_poly_thread(&self) -> bool {
+        self.lag_free
+            && (self.dungeon_poly_thread_is_active() || self.triforce_room_poly_thread_is_active())
+            && crate::debug_env::var_os("ZELDA3_LAG_FREE_POLY_NATIVE").is_some()
+    }
+
+    /// The NMI's acceptance and the V-IRQ deadline that ends the thread's
+    /// phase in thread field `field`.
+    fn poly_thread_phase_window(&self, field: u64) -> (u64, u64) {
+        let timing = snes::CpuFieldTiming::NON_INTERLACE_EVEN;
+        let base = snes::CpuMasterTimeline::new(0, snes::CpuBusWorkload::default(), timing);
+        let nmi_at = base.master_cycles_at_raster(
+            field,
+            snes::CpuRasterPosition::new(snes::NMI_SCANLINE as u16, POLY_THREAD_NMI_RASTER_CYCLE),
+        );
+        let at_nmi = snes::CpuMasterTimeline::new(nmi_at, snes::CpuBusWorkload::default(), timing);
+        let virq = u16::from(self.game_state.display.vertical_irq_trigger);
+        let deadline = snes::cpu_timeline::vertical_irq_deadline(&at_nmi, virq, false)
+            .map_or(nmi_at, |deadline| deadline.master_cycles());
+        (nmi_at, deadline)
+    }
+
+    /// Main's master cycles per frame while the thread runs: the frame less
+    /// the thread's NMI-to-V-IRQ share and the V-IRQ handler.
+    fn poly_thread_main_master_cycles_per_frame(&self) -> u64 {
+        let field = self.lag_free_poly_thread.as_ref().map_or(0, |thread| thread.field);
+        let (nmi_at, deadline) = self.poly_thread_phase_window(field);
+        let (next_nmi, _) = self.poly_thread_phase_window(field + 1);
+        (next_nmi - nmi_at).saturating_sub(deadline - nmi_at + POLY_THREAD_IRQ_HANDLER_MASTER_CYCLES)
+    }
+
+    /// One thread phase: from the NMI handler's return, `nmi_master_cycles`
+    /// after its acceptance, to the V-IRQ that hands the CPU back to main.
+    pub(super) fn lag_free_run_poly_thread_phase(&mut self, nmi_master_cycles: u64) {
+        let mut thread = self.lag_free_poly_thread.take().unwrap_or_default();
+        let (nmi_at, deadline) = self.poly_thread_phase_window(thread.field);
+        let mut clock = snes::CpuMasterTimeline::new(
+            nmi_at + nmi_master_cycles,
+            snes::CpuBusWorkload::default(),
+            snes::CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        clock
+            .begin_synchronous_timeline()
+            .expect("a fresh polygon-thread clock claims its synchronous timeline");
+        crate::cycle_ledger::muted(|| {
+            let mut irq_masked = thread.context.p & 4 != 0;
+            while clock.clock_master_cycles() < deadline || irq_masked {
+                let retired = self.step_native_poly_worker(&mut thread.worker, &mut thread.context, &mut clock);
+                irq_masked = retired.irq_masked;
+            }
+        });
+        thread.field += 1;
+        self.lag_free_poly_thread = Some(thread);
+    }
+
+    /// The thread's phase before this frame's main: after the NMI that closed
+    /// the previous iteration.
+    pub(super) fn lag_free_poly_thread_leading_phase(&mut self) {
+        let uploaded = std::mem::take(&mut self.lag_free_nmi_uploaded_poly);
+        let nmi = u64::from(self.last_nmi_handler_master_cycles.unwrap_or(0))
+            + POLY_THREAD_NMI_UNCHARGED_MASTER_CYCLES
+            + if uploaded { POLY_THREAD_UPLOAD_UNCHARGED_MASTER_CYCLES } else { 0 };
+        self.lag_free_run_poly_thread_phase(nmi);
+    }
+
+    /// Main's store of the thread's go byte (`$1F00` = 1, the step it hands
+    /// the thread). Lag-free, the frame's main cost at the first store from
+    /// 0 decides which lag frames' thread phases still find the thread idle.
+    pub(crate) fn mark_poly_thread_go(&mut self) {
+        if self.lag_free
+            && self.lag_free_go_master.is_none()
+            && self.ram[crate::game_state::constants::INTRO_DID_RUN_STEP] == 0
+        {
+            self.lag_free_go_master = Some(
+                crate::cycle_ledger::master().saturating_sub(self.lag_free_frame_master_start)
+                    + self.lag_free_vwf_master,
+            );
+        }
+        self.attract_scene_mut().mark_intro_did_run_step();
+    }
+
+    /// After this frame's main: the frames it would have taken beyond the
+    /// first are lag frames, each a thread phase after a lag NMI. Main owns
+    /// the whole frame (less the NMI) until it activates the thread; only the
+    /// NMIs after that return into the thread.
+    pub(super) fn lag_free_poly_thread_lag_phases(&mut self) {
+        let cost = self.lag_free_main_master();
+        self.lag_free_last_main_master = cost;
+        let threaded = self.poly_thread_main_master_cycles_per_frame().max(1);
+        let activation = self.lag_free_thread_activation_master.take();
+        let mut phases = 0;
+        let mut phase_plan: Vec<bool> = Vec::new();
+        let mut done = 0u64;
+        let mut active = activation.is_none();
+        loop {
+            let unthreaded = POLY_THREAD_FRAME_MASTER_CYCLES
+                - u64::from(self.last_nmi_handler_master_cycles.unwrap_or(0))
+                - POLY_THREAD_NMI_UNCHARGED_MASTER_CYCLES;
+            done += if active { threaded } else { unthreaded };
+            if activation.is_some_and(|at| done >= at) {
+                active = true;
+            }
+            if done >= cost {
+                break;
+            }
+            if active {
+                // A lag NMI before main stored the go byte finds the thread
+                // still waiting for it.
+                let idle = self.lag_free_go_master.is_some_and(|go| done < go);
+                phase_plan.push(idle);
+                phases += 1;
+            }
+        }
+        if crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+            eprintln!("[POLY-LAGFREE] host={} cost={cost} activation={activation:?} go_at={:?} phases={phases} go={} upload={}",
+                self.frame_ctr_dbg, self.lag_free_go_master, self.ram[0x1f00], self.ram[0x1f0c]);
+        }
+        for idle in phase_plan {
+            if idle {
+                if let Some(thread) = self.lag_free_poly_thread.as_mut() {
+                    thread.field += 1;
+                }
+                continue;
+            }
+            let nmi = if self.ram[crate::game_state::constants::NMI_FLAG_UPDATE_POLYHEDRAL] != 0 {
+                POLY_THREAD_LAG_NMI_UPLOAD_MASTER_CYCLES
+            } else {
+                POLY_THREAD_LAG_NMI_MASTER_CYCLES
+            };
+            self.lag_free_run_poly_thread_phase(nmi);
+        }
+    }
+
     pub fn intro_poly_upload_delay(&self) -> u8 {
         self.intro_poly_upload_delay
     }
@@ -177,12 +379,19 @@ impl ZeldaState {
         self.lag_free_last_main_master
     }
 
+    /// The last NMI handler's modelled cost (ledger plus DMA bus time).
+    pub fn last_nmi_handler_master_cycles(&self) -> Option<u32> {
+        self.last_nmi_handler_master_cycles
+    }
+
     pub(super) fn credit_lag_free_thread_slices(&mut self) {
         const MAIN_MASTER_CYCLES_PER_THREADED_FRAME: u64 = 237_000;
         self.lag_free_thread_credit = 0;
         if !(self.dungeon_poly_thread_is_active() || self.triforce_room_poly_thread_is_active()) {
             return;
         }
+        // The frame's whole ledger delta (its NMI included): the
+        // 233.5k-241k range was fitted on it.
         let cost = crate::cycle_ledger::master().saturating_sub(self.lag_free_frame_master_start)
             + self.lag_free_vwf_master;
         self.lag_free_last_main_master = cost;
@@ -257,6 +466,10 @@ impl ZeldaState {
     }
 
     pub(super) fn zelda_run_poly_loop(&mut self) {
+        if self.lag_free_native_poly_thread() {
+            self.lag_free_poly_thread_leading_phase();
+            return;
+        }
         /// Crystal scanlines the maiden's IRQ poly thread rasterizes per host.
         const DUNGEON_POLY_THREAD_SCANLINES_PER_HOST: u32 = 32;
         /// Per-frame setup of the crystal thread, in scanline equivalents,
