@@ -96,13 +96,23 @@ impl ZeldaState {
         (nmi_at, deadline)
     }
 
-    /// Main's master cycles per frame while the thread runs: the frame less
-    /// the thread's NMI-to-V-IRQ share and the V-IRQ handler.
+    /// Main's work per frame while the thread runs, in the cycle ledger's
+    /// instruction cycles: the frame less the thread's NMI-to-V-IRQ share and
+    /// the V-IRQ handler, less the bus stalls on main's lines (the WRAM
+    /// refresh every line, HDMA every visible line).
     fn poly_thread_main_master_cycles_per_frame(&self) -> u64 {
         let field = self.lag_free_poly_thread.as_ref().map_or(0, |thread| thread.field);
         let (nmi_at, deadline) = self.poly_thread_phase_window(field);
         let (next_nmi, _) = self.poly_thread_phase_window(field + 1);
-        (next_nmi - nmi_at).saturating_sub(deadline - nmi_at + POLY_THREAD_IRQ_HANDLER_MASTER_CYCLES)
+        let wall = (next_nmi - nmi_at).saturating_sub(deadline - nmi_at + POLY_THREAD_IRQ_HANDLER_MASTER_CYCLES);
+        let lines = u64::from(snes::NMI_SCANLINE).saturating_sub(u64::from(self.game_state.display.vertical_irq_trigger));
+        wall.saturating_sub(lines * self.poly_thread_line_stall_master_cycles())
+    }
+
+    /// Bus stalls per visible line: the WRAM refresh and the enabled HDMA
+    /// channels' transfers.
+    fn poly_thread_line_stall_master_cycles(&self) -> u64 {
+        u64::from(snes::WRAM_REFRESH_STALL_MASTER_CYCLES) + u64::from(self.native_hdma_scanline_stall_master_cycles())
     }
 
     /// One thread phase: from the NMI handler's return, `nmi_master_cycles`
@@ -112,7 +122,7 @@ impl ZeldaState {
         let (nmi_at, deadline) = self.poly_thread_phase_window(thread.field);
         let mut clock = snes::CpuMasterTimeline::new(
             nmi_at + nmi_master_cycles,
-            snes::CpuBusWorkload::default(),
+            snes::CpuBusWorkload::with_hdma_stall(self.native_hdma_scanline_stall_master_cycles()),
             snes::CpuFieldTiming::NON_INTERLACE_EVEN,
         );
         clock
@@ -169,9 +179,10 @@ impl ZeldaState {
         let mut done = 0u64;
         let mut active = activation.is_none();
         loop {
-            let unthreaded = POLY_THREAD_FRAME_MASTER_CYCLES
+            let unthreaded = (POLY_THREAD_FRAME_MASTER_CYCLES
                 - u64::from(self.last_nmi_handler_master_cycles.unwrap_or(0))
-                - POLY_THREAD_NMI_UNCHARGED_MASTER_CYCLES;
+                - POLY_THREAD_NMI_UNCHARGED_MASTER_CYCLES)
+                .saturating_sub(u64::from(snes::NMI_SCANLINE) * self.poly_thread_line_stall_master_cycles());
             done += if active { threaded } else { unthreaded };
             if activation.is_some_and(|at| done >= at) {
                 active = true;
