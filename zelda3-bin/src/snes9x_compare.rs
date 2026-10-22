@@ -1918,6 +1918,8 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
             "cached A/V diagnostic: ROM random consumption had already drifted by the first A/V mismatch: {error}"
         );
     }
+    // The final paired frontier is a resume convenience: a route whose last
+    // frame ends inside an unserializable ROM-call continuation still passed.
     let paired_frontier =
         (matched && compare_video && compare_audio && frames_completed == cache_end_frame).then(
             || {
@@ -1931,12 +1933,13 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
                     frames_completed,
                     &game,
                 )
-                .unwrap_or_else(|error| {
-                    eprintln!("failed to write cached A/V paired frontier: {error}");
-                    process::exit(1);
+                .map_err(|error| {
+                    eprintln!("cached A/V paired frontier not written: {error}");
                 })
+                .ok()
             },
-        );
+        )
+        .flatten();
     let candidate_manifest = serde_json::json!({
         "schema": 1,
         "kind": "zelda3-rust-only-cached-snes9x-av-replay",
