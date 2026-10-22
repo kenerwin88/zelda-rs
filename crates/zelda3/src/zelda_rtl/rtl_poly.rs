@@ -118,16 +118,17 @@ impl ZeldaState {
         end.saturating_sub(self.lag_free_frame_master_start) + self.lag_free_vwf_master
     }
 
-    /// Lag-free and a preemptive polygon thread running, with
-    /// `ZELDA3_LAG_FREE_POLY_NATIVE` set: the native worker owns the thread.
-    /// Its phases are exact; main's lag frames still depend on the cycle
-    /// ledger's main-loop cost, which undercharges the crystal rooms (an
-    /// ordinary frame 55.7k against the ROM's 64.5k), so the frame-hold
-    /// model with the ledger's per-angle tables stays the default.
+    /// Lag-free and a preemptive polygon thread running (the crystal
+    /// maidens' and the Triforce room's): the native worker owns the thread
+    /// and runs it through the cartridge's own schedule, its lag frames
+    /// derived from main's cycle-ledger cost. Every crystal cutscene and the
+    /// Triforce room match the ROM ledger iteration for iteration.
+    /// `ZELDA3_LAG_FREE_POLY_TABLES` falls back to the per-angle frame
+    /// tables for comparison.
     pub(super) fn lag_free_native_poly_thread(&self) -> bool {
         self.lag_free
             && (self.dungeon_poly_thread_is_active() || self.triforce_room_poly_thread_is_active())
-            && crate::debug_env::var_os("ZELDA3_LAG_FREE_POLY_NATIVE").is_some()
+            && crate::debug_env::var_os("ZELDA3_LAG_FREE_POLY_TABLES").is_none()
     }
 
     /// The NMI's acceptance and the V-IRQ deadline that ends the thread's

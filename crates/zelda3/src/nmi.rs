@@ -1423,14 +1423,11 @@ impl ZeldaState {
         //   $00:80FD (32, only below $F2) and $00:8100 (32).
         // The cost is stashed rather than charged so the NMI handler scope
         // receives it even when this runs before main.
+        // Lag-free: the driver keeps echoing the song it acknowledged, which
+        // is $133 once the engine's transient acknowledgement latch clears.
         let mut music_echo = self.zelda_audio_apu_output_ports()[0];
-        if self.lag_free {
-            if music_echo != 0 {
-                self.lag_free_music_echo = Some(music_echo);
-            }
-            music_echo = self
-                .lag_free_music_echo
-                .unwrap_or(self.game_state.system_signals.last_music_control());
+        if self.lag_free && music_echo == 0 {
+            music_echo = self.game_state.system_signals.last_music_control();
         }
         let ledger_music_cycles: u64 = if music_control == 0 {
             366 + idle_music_echo_master_cycles(
@@ -1467,9 +1464,13 @@ impl ZeldaState {
         }
         let ledger_ambient_cycles: u64 = if ambient_sound_effect != 0 {
             54 + 94
-        } else if self.zelda_audio_apu_output_ports()[1]
-            == self.game_state.system_signals.last_ambient_sound_effect()
-        {
+        } else if {
+            // Lag-free, as for the music port: the driver keeps echoing the
+            // ambient command it acknowledged.
+            let echo = self.zelda_audio_apu_output_ports()[1];
+            let last = self.game_state.system_signals.last_ambient_sound_effect();
+            echo == last || (self.lag_free && echo == 0)
+        } {
             48 + 78 + 52
         } else {
             48 + 84

@@ -10554,12 +10554,6 @@ pub struct ZeldaState {
     /// Lag-free: this frame's lag phases already ran (at its closing NMI).
     #[serde(skip)]
     pub(crate) lag_free_lag_phases_run: bool,
-    /// Lag-free: the SPC's port-0 echo of the last acknowledged music
-    /// command, which the driver holds until the next one (the engine's
-    /// acknowledgement latch clears after a frame or two); `None` until one
-    /// is seen, when `$133` stands for it.
-    #[serde(skip)]
-    pub(crate) lag_free_music_echo: Option<u8>,
     /// WRAM still holds the pinned reset's $55 fill: `Startup_InitializeMemory`
     /// has not cleared it and no animated-tile source has been stored, so
     /// WRAM-derived "has boot run" tests (a zero source word) cannot be
@@ -13671,7 +13665,6 @@ impl ZeldaState {
             lag_free_thread_activation_master: None,
             lag_free_go_master: None,
             lag_free_lag_phases_run: false,
-            lag_free_music_echo: None,
             reset_fill_pending: false,
             boot_memory_initialized: false,
             apui00_poll_replay: None,
