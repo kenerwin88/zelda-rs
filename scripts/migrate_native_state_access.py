@@ -172,7 +172,8 @@ DIRECT_SINGLE_ARG_GAME_STATE_ACCESSOR_RE = re.compile(
 
 
 def default_paths() -> list[Path]:
-    return sorted(path for path in SRC_ROOT.glob("*.rs") if path.is_file())
+    paths = [*SRC_ROOT.glob("*.rs"), *(SRC_ROOT / "dungeon").glob("*.rs")]
+    return sorted(path for path in paths if path.is_file())
 
 
 def is_game_state_access_layer(path: Path) -> bool:
@@ -418,7 +419,7 @@ def parse_args() -> argparse.Namespace:
         "paths",
         nargs="*",
         type=Path,
-        help="Rust files to scan or rewrite; defaults to crates/zelda3/src/*.rs",
+        help="Rust files to scan or rewrite; defaults to src/*.rs and src/dungeon/*.rs",
     )
     return parser.parse_args()
 

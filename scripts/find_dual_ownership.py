@@ -500,7 +500,8 @@ def report_clear_coherence(byte_owners, consts):
     write_to_ram-overlap scan can't see (the clear is a direct ram[] write, not a
     write_to_ram). Reports each cleared address's real owner.
     """
-    src = (CRATE_SRC / "dungeon.rs").read_text(errors="replace")
+    paths = [CRATE_SRC / "dungeon.rs", *sorted((CRATE_SRC / "dungeon").glob("*.rs"))]
+    src = "\n".join(path.read_text(errors="replace") for path in paths)
     print("\n################  ROOM-LOAD CLEAR COHERENCE  ################")
     print("(addresses cleared via clear_room_parser_words but owned by another "
           "native state → stale field re-projects)\n")
