@@ -114,9 +114,9 @@ impl ZeldaState {
         self.set_indoor_flag(1);
         self.set_dungeon_room(room);
         self.dungeon_room_tracking_mut().set_room_index2_word(room);
-        self.ram[MAIN_MODULE] = 0x07;
-        self.ram[SUBMODULE] = 0x00;
-        self.ram[SUBSUBMODULE] = 0x00;
+        self.write_wram_byte(MAIN_MODULE, 0x07);
+        self.write_wram_byte(SUBMODULE, 0x00);
+        self.write_wram_byte(SUBSUBMODULE, 0x00);
 
         self.ram[SPRITE_STATE..SPRITE_STATE + 16].fill(0);
         self.ram[SPRITE_TYPE..SPRITE_TYPE + 16].fill(0);

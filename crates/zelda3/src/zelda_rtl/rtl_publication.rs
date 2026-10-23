@@ -314,7 +314,7 @@ impl ZeldaState {
         captured_screen_brightness: u8,
         plan: &DisplayPublicationPlan,
     ) {
-        let captured_frame = crate::game_state::FrameState::load_from_ram(&self.ram);
+        let captured_frame = self.game_state.frame;
         live_forced_blank_from_scanline =
             live_forced_blank_from_scanline.or(self.ppu.forced_blank_from_scanline);
         if live_forced_blank && live_forced_blank_from_scanline.is_none() {

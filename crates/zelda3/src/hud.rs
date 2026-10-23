@@ -2686,8 +2686,8 @@ mod tests {
                         state.ram[0xa5] = floor_high;
                         state.ram[0xa0] = if variant & 1 == 0 { 2 } else { 3 };
                         state.write_wram_byte(0xf3c5, if variant & 2 == 0 { 0 } else { 2 });
-                        state.ram[0x12d] = 0xa5;
-                        state.ram[0x16] = 255;
+                        state.write_wram_byte(0x12d, 0xa5);
+                        state.write_wram_byte(0x16, 255);
                         state.sync_native_game_state_from_ram();
                         let checkpoint = RomCpuCheckpoint {
                             entry_pc: 0x0a_fd0c, stop_pc: 0x00_8036,
@@ -2867,7 +2867,7 @@ mod tests {
             split.native_overworld_hud_interruption = Some(HudUpdateInterruption::ArrowDigits { master_cycles: edge });
             let start = crate::cycle_ledger::master();
             let hud = split.hud_refill_logic_until_interruption().unwrap();
-            assert_eq!(split.ram[0x16], 0, "HUD publication flag must remain pending");
+            assert_eq!(split.read_wram_byte(0x16), 0, "HUD publication flag must remain pending");
             let rupees = split.game_state.inventory.player_resources.rupees_actual();
             split.resume_overworld_hud_update(hud);
             assert_eq!(crate::cycle_ledger::master() - start, cycles);
@@ -2966,13 +2966,13 @@ mod tests {
         split.hud_refill_logic();
         assert_eq!(split.game_state.inventory.player_resources.rupees_actual(), 1);
         assert!((0..160).all(|i| split.hud_state().tile_word(i) == 0x5a5a));
-        assert_eq!(split.ram[0x16], 0, "HUD flag belongs to the callee return");
+        assert_eq!(split.read_wram_byte(0x16), 0, "HUD flag belongs to the callee return");
         assert!(split.native_overworld_hud_interruption.is_none());
         split.resume_overworld_hud_update(HudUpdateResume::BeforeHearts);
         assert_eq!(crate::cycle_ledger::master() - start, expected_cycles);
         assert_eq!(split.game_state.inventory.player_resources.rupees_actual(), 1,
             "resuming hearts must not repeat the resource refill prefix");
-        assert_eq!(split.ram[0x16], baseline.ram[0x16]);
+        assert_eq!(split.read_wram_byte(0x16), baseline.read_wram_byte(0x16));
         assert_eq!((0..160).map(|i| split.hud_state().tile_word(i)).collect::<Vec<_>>(),
             (0..160).map(|i| baseline.hud_state().tile_word(i)).collect::<Vec<_>>());
     }

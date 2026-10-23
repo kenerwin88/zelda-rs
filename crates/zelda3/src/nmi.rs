@@ -3,11 +3,11 @@
 use super::*;
 use crate::game_output::{AudioSfxBank, EngineAudioCommand};
 
-fn native_stripe_source_byte(ram: &[u8], assets: Option<&AssetPack>, address: u32) -> u8 {
+fn native_stripe_source_byte(ram: impl Fn(usize) -> u8, assets: Option<&AssetPack>, address: u32) -> u8 {
     use crate::cycle_models::nmi_stripes;
     if let Some(value) = nmi_stripes::table_byte(address) { return value; }
-    if (0x7e0000..0x800000).contains(&address) { return ram[(address-0x7e0000) as usize]; }
-    if address & 0x400000 == 0 && address & 65535 < 0x2000 { return ram[(address&65535) as usize]; }
+    if (0x7e0000..0x800000).contains(&address) { return ram((address-0x7e0000) as usize); }
+    if address & 0x400000 == 0 && address & 65535 < 0x2000 { return ram((address&65535) as usize); }
     for (asset, start) in nmi_stripes::ASSET_SOURCES {
         if let Some(data) = assets.and_then(|a| a.asset(asset)) {
             if let Some(i) = address.checked_sub(start) {
@@ -892,15 +892,14 @@ impl ZeldaState {
                     let offset=if (0x7e0000..0x800000).contains(&address) {
                         address as usize-0x7e0000
                     } else {assert!(address<0x2000);address as usize};
-                    if width==1 {u16::from(self.ram[offset])} else {read_word_from_slice(&self.ram,offset)}
+                    if width==1 {u16::from(self.read_wram_byte(offset))} else {self.read_wram_image_word(offset, 2)}
                 }
                 Access::Write(address,value,width) => {
                     match address {
                         0x1f0a => {assert_eq!(width,2);self.set_nmi_thread_stack_pointer(value);}
                         0x1f0c => {assert_eq!((value,width),(0,1));self.clear_pending_polyhedral_update();}
                         0..=0x1fff => {
-                            self.ram[address as usize..address as usize+usize::from(width)]
-                                .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                            for byte in 0..usize::from(width) { self.write_wram_byte(address as usize + byte, value.to_le_bytes()[byte]); }
                         }
                         0x2100..=0x213f => {assert_eq!(width,1);self.zelda_ppu_write(address,value as u8);}
                         0x4209 => programming.vertical_timer=(programming.vertical_timer&0x100)|(value&255),
@@ -939,12 +938,12 @@ impl ZeldaState {
                 if let Some(value)=poly_buffer_clear::table_byte(address) {assert_eq!(width,1);return u16::from(value);}
                 let offset=if (0x7ee800..0x7ef000).contains(&address) {address as usize-0x7e0000}
                     else {assert!(address<0x2000);address as usize};
-                if width==1 {u16::from(self.ram[offset])}else{read_word_from_slice(&self.ram,offset)}
+                if width==1 {u16::from(self.read_wram_byte(offset))}else{self.read_wram_image_word(offset, 2)}
             }
             Access::Write(address,value,width)=>{
                 let offset=if (0x7ee800..0x7ef000).contains(&address) {address as usize-0x7e0000}
                     else {assert!((0x100..0x2000).contains(&address));address as usize};
-                self.ram[offset..offset+usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);0
+                for byte in 0..usize::from(width) { self.write_wram_byte(offset + byte, value.to_le_bytes()[byte]); }0
             }
             Access::Vblank {..}=>panic!("poly clear needs an NMI continuation"),
         };
@@ -966,7 +965,7 @@ impl ZeldaState {
         let mut wait=PolyWait::default();
         loop {
             let cycles=wait.step(context,clock,|_,access| match access {
-                Access::Read(address,1)=>{assert!(matches!(address,0x1f00|0x1f0c));u16::from(self.ram[address as usize])}
+                Access::Read(address,1)=>{assert!(matches!(address,0x1f00|0x1f0c));u16::from(self.read_wram_byte(address as usize))}
                 Access::Vblank {..}=>panic!("poly idle crossed NMI before its IRQ return"),
                 _=>unreachable!("poly wait only reads its live flags"),
             });
@@ -1027,8 +1026,8 @@ impl ZeldaState {
             }
             Access::Read(address,width)=>{
                 assert!(address<0x2000);
-                if width==1 {u16::from(self.ram[address as usize])}
-                else {read_word_from_slice(&self.ram,address as usize)}
+                if width==1 {u16::from(self.read_wram_byte(address as usize))}
+                else {self.read_wram_image_word(address as usize, 2)}
             }
             Access::Write(0x1f0a,value,2)=>{self.set_nmi_thread_stack_pointer(value);0}
             Access::Write(0x128,value,1)=>{self.set_irq_control_flag(value as u8);0}
@@ -1039,8 +1038,7 @@ impl ZeldaState {
             Access::Write(0x4200,value,1)=>{nmitimen=Some(value as u8);0}
             Access::Write(address,value,width)=>{
                 assert!(address<0x2000);
-                self.ram[address as usize..address as usize+usize::from(width)]
-                    .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);0
+                for byte in 0..usize::from(width) { self.write_wram_byte(address as usize + byte, value.to_le_bytes()[byte]); }0
             }
             Access::Vblank {..}=>panic!("poly IRQ crossed NMI before its return"),
         }))) {crate::cycle_ledger::charge_routine(0x0082d8,cycles);}
@@ -1059,8 +1057,8 @@ impl ZeldaState {
         access: crate::cycle_models::nmi_stack::NmiTailAccess) -> u16 {
         use crate::cycle_models::nmi_stack::NmiTailAccess as Access;
         match access {
-            Access::ReadByte(address) => u16::from(self.ram[usize::from(address)]),
-            Access::ReadWord(address) => read_word_from_slice(&self.ram, usize::from(address)),
+            Access::ReadByte(address) => u16::from(self.read_wram_byte(usize::from(address))),
+            Access::ReadWord(address) => self.read_wram_image_word(usize::from(address), 2),
             Access::WriteByte(0x420c, value) => {
                 for (i, channel) in self.dma.channel.iter_mut().enumerate() {
                     channel.hdma_active = value & (1 << i) != 0;
@@ -1085,11 +1083,11 @@ impl ZeldaState {
         match access {
             Access::ReadByte(0x4218) => polled & 0xff,
             Access::ReadByte(0x4219) => polled >> 8,
-            Access::ReadByte(address) => u16::from(self.ram[usize::from(address)]),
-            Access::ReadWord(address) => read_word_from_slice(&self.ram, usize::from(address)),
+            Access::ReadByte(address) => u16::from(self.read_wram_byte(usize::from(address))),
+            Access::ReadWord(address) => self.read_wram_image_word(usize::from(address), 2),
             Access::WriteByte(address, value) => {
                 match address {
-                    0 | 1 => self.ram[usize::from(address)] = value,
+                    0 | 1 => self.write_wram_byte(usize::from(address), value),
                     0xf0 => self.follower_link_state_mut().set_joypad1h_last(value),
                     0xf2 => self.follower_link_state_mut().set_joypad1l_last(value),
                     0xf4 => self.follower_link_state_mut().set_filtered_joypad_h(value),
@@ -1105,7 +1103,7 @@ impl ZeldaState {
             }
             Access::WriteWord(address, value) => {
                 assert!((1..0x1fff).contains(&address));
-                self.ram[usize::from(address)..usize::from(address)+2].copy_from_slice(&value.to_le_bytes());
+                self.write_wram_word(usize::from(address), value);
                 0
             }
         }
@@ -1119,11 +1117,11 @@ impl ZeldaState {
         use crate::cycle_models::nmi_updates::CoreAccess;
         match access {
             CoreAccess::Stripe(access) => self.native_nmi_stripe_access(clock, access),
-            CoreAccess::ReadByte(address) => u16::from(self.ram[usize::from(address)]),
-            CoreAccess::ReadWord(address) => read_word_from_slice(&self.ram, usize::from(address)),
+            CoreAccess::ReadByte(address) => u16::from(self.read_wram_byte(usize::from(address))),
+            CoreAccess::ReadWord(address) => self.read_wram_image_word(usize::from(address), 2),
             CoreAccess::ReadLongWord(address) => {
                 assert!((0x7f4000..0x7f4080).contains(&address));
-                read_word_from_slice(&self.ram, (address - 0x7e0000) as usize)
+                self.read_wram_image_word((address - 0x7e0000) as usize, 2)
             }
             CoreAccess::WriteByte(address, value) => {
                 match address {
@@ -1147,8 +1145,7 @@ impl ZeldaState {
                 self.clear_cgram_update_flag(); self.clear_hud_update_flag(); 0
             }
             CoreAccess::WriteWord(address @ (0 | 2), value) => {
-                self.ram[usize::from(address)..usize::from(address)+2]
-                    .copy_from_slice(&value.to_le_bytes()); 0
+                self.write_wram_word(usize::from(address), value); 0
             }
             CoreAccess::WriteWord(address, value) => panic!("unsupported native NMI word store {address:04x}={value:04x}"),
             CoreAccess::Dma(mask) | CoreAccess::AnimatedDma(mask) => {
@@ -1166,9 +1163,9 @@ impl ZeldaState {
         use crate::cycle_models::nmi_stripes::Access;
         match access {
             Access::Read(address, width) => {
-                let low = native_stripe_source_byte(&self.ram, self.assets.as_ref(), address);
+                let low = native_stripe_source_byte(|offset| self.read_wram_byte(offset), self.assets.as_ref(), address);
                 if width == 1 { u16::from(low) } else {
-                    u16::from_le_bytes([low, native_stripe_source_byte(&self.ram, self.assets.as_ref(), address+1)])
+                    u16::from_le_bytes([low, native_stripe_source_byte(|offset| self.read_wram_byte(offset), self.assets.as_ref(), address+1)])
                 }
             }
             Access::Write(address, value, width) => {
@@ -1177,8 +1174,7 @@ impl ZeldaState {
                         assert_eq!((value,width),(0,1));
                         self.set_bg_vram_load_mode(0);
                     } else {
-                        self.ram[address as usize..address as usize+usize::from(width)]
-                            .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                        for byte in 0..usize::from(width) { self.write_wram_byte(address as usize + byte, value.to_le_bytes()[byte]); }
                     }
                 } else {
                     assert_eq!(width,1);
@@ -1198,13 +1194,13 @@ impl ZeldaState {
                 let bytes = self.dma.channel.iter().enumerate().filter(|(i,_)|mask&(1<<i)!=0)
                     .map(|(_,c)|if c.size==0 {65536}else{usize::from(c.size)}).sum();
                 self.account_nmi_dma_run(mask.count_ones(),bytes);
-                let ram=&self.ram;let assets=self.assets.as_ref();let ppu=&mut self.ppu;
+                let ram=self.wram_image().into_owned();let assets=self.assets.as_ref();let ppu=&mut self.ppu;
                 let bus_ppu = &mut self.native_ppu;
                 let mut words=Vec::new();
                 self.dma.run_synchronous_forward_ppu_with_clock(clock,mask,|clock,_,address,target| {
                     assert!(matches!(target,0x18|0x19));
                     words.push(usize::from(ppu.vram_pointer&0x7fff));
-                    let value = native_stripe_source_byte(ram,assets,address);
+                    let value = native_stripe_source_byte(|offset| ram[offset],assets,address);
                     if let Some(ppu) = bus_ppu { ppu.write_clocked(clock, 0x2100 | u16::from(target), value); }
                     ppu.write(target,value);
                 }, |_, _| {});
@@ -1231,7 +1227,7 @@ impl ZeldaState {
             self.cgram_upload_latch = Some(self.ppu.cgram.to_vec());
         }
         self.account_nmi_dma_run(mask.count_ones(), bytes);
-        let ram = &self.ram;
+        let ram = self.wram_image().into_owned();
         let ppu = &mut self.ppu;
         let bus_ppu = &mut self.native_ppu;
         let mut written_words = Vec::new();
@@ -1294,7 +1290,7 @@ impl ZeldaState {
         self.account_nmi_dma_run(mask.count_ones(), bytes);
         let mut segments = Vec::new();
         let mut previous = None;
-        let ram = &self.ram;
+        let ram = self.wram_image().into_owned();
         let graphics = self.assets.as_ref().and_then(|assets| assets.asset(57));
         let ppu = &mut self.ppu;
         let bus_ppu = &mut self.native_ppu;
@@ -1353,7 +1349,7 @@ impl ZeldaState {
         match access {
             Read(address @ 0x2140..=0x2143) => self.native_nmi_port_at(at, (address - 0x2140) as u8, None),
             Write(address @ 0x2140..=0x2143, value) => self.native_nmi_port_at(at, (address - 0x2140) as u8, Some(value)),
-            Read(address @ (0x12 | 0x12c..=0x12f | 0x131 | 0x133)) => self.ram[usize::from(address)],
+            Read(address @ (0x12 | 0x12c..=0x12f | 0x131 | 0x133)) => self.read_wram_byte(usize::from(address)),
             Write(0x12, value) => { assert_eq!(value, 1); self.latch_nmi_update(); 0 }
             Write(0x12c,value) => {assert_eq!(value,0);self.set_music_control(value);0}
             Write(0x130,value) => {self.set_current_music_control(value);0}
@@ -1378,8 +1374,8 @@ impl ZeldaState {
             }
             WriteWord(address, value) => {
                 assert!(address < 0x1fff, "native NMI stack escaped low WRAM");
-                self.ram[usize::from(address) + 1] = (value >> 8) as u8;
-                self.ram[usize::from(address)] = value as u8;
+                self.write_wram_byte(usize::from(address) + 1, (value >> 8) as u8);
+                self.write_wram_byte(usize::from(address), value as u8);
                 0
             }
             _ => panic!("unsupported native NMI header access {access:?}"),
@@ -2812,7 +2808,7 @@ impl ZeldaState {
         source_addr: usize,
         len: usize,
     ) {
-        let source = self.vram_dma_source_bytes(source_addr, len).to_vec();
+        let source = self.vram_dma_source_bytes(source_addr, len);
         if source.len() < len {
             return;
         }

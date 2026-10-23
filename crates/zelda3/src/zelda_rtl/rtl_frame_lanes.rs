@@ -185,7 +185,6 @@ impl ZeldaState {
                 if before.publication_pending_at_exit {
                     self.capture_and_carry_original_timing_nmi_publication_at_host_return();
                 }
-                self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();
                 return true;
@@ -278,7 +277,6 @@ impl ZeldaState {
                 if lifecycle.publication_pending_at_exit {
                     self.capture_and_carry_original_timing_nmi_publication_at_host_return();
                 }
-                self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();
                 debug_host_path_early_return(self.frame_ctr_dbg, line!());
@@ -535,7 +533,6 @@ impl ZeldaState {
                     // the start of the following host (route host 91641).
                     self.capture_and_carry_original_timing_nmi_publication_at_host_return();
                 }
-                self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();
                 return true;
@@ -765,7 +762,6 @@ impl ZeldaState {
                     let returned_scroll = self.bg_scroll_scanout_from_nmi_register_mirrors();
                     self.publish_bg_scroll_for_following_scanout(returned_scroll);
                 }
-                self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();
                 debug_host_path_early_return(self.frame_ctr_dbg, line!());
@@ -841,7 +837,6 @@ impl ZeldaState {
                 if before.publication_pending_at_exit {
                     self.capture_and_carry_original_timing_nmi_publication_at_host_return();
                 }
-                self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();
                 return true;
@@ -889,7 +884,6 @@ impl ZeldaState {
                     );
                     self.game_execution_scheduler
                         .schedule_post_trailing_nmi(continuation);
-                    self.assert_native_frame_state_matches_ram();
                     self.assert_native_world_location_state_matches_ram();
                     self.assert_native_display_state_matches_ram();
                     return true;
@@ -990,7 +984,6 @@ impl ZeldaState {
                     if before.publication_pending_at_exit {
                         self.capture_and_carry_original_timing_nmi_publication_at_host_return();
                     }
-                    self.assert_native_frame_state_matches_ram();
                     self.assert_native_world_location_state_matches_ram();
                     self.assert_native_display_state_matches_ram();
                     return true;
@@ -1020,7 +1013,6 @@ impl ZeldaState {
             self.capture_display_snapshot();
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             self.complete_post_trailing_nmi_continuation(continuation, input, false, false);
-            self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
             debug_host_path_early_return(self.frame_ctr_dbg, line!());
@@ -1500,7 +1492,6 @@ impl ZeldaState {
                 [],
                 "terminal spotlight execution retained source authority",
             );
-            self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
             debug_host_path_early_return(self.frame_ctr_dbg, line!());
@@ -1611,7 +1602,6 @@ impl ZeldaState {
                     ),
                 "an idle terminal caller retained its claimed dialogue endpoint",
             );
-            self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
             return true;
@@ -1799,7 +1789,6 @@ impl ZeldaState {
                 if pending_publication_before_main {
                     self.capture_and_carry_original_timing_nmi_publication_at_host_return();
                 }
-                self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();
                 return true;
@@ -1820,7 +1809,6 @@ impl ZeldaState {
             if accepts_nmi_at_return {
                 self.capture_and_carry_original_timing_nmi_publication_at_host_return();
             }
-            self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
             return true;
@@ -2549,7 +2537,6 @@ impl ZeldaState {
                 // its acceptance host owns the scanout that handler refines.
                 self.capture_and_carry_original_timing_nmi_publication_at_host_return();
             }
-            self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
             return true;
@@ -2658,7 +2645,6 @@ impl ZeldaState {
                         };
                 }
             }
-            self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
             return true;
@@ -2771,7 +2757,6 @@ impl ZeldaState {
                         PreMainNmiResume::DungeonSupertileQuadrantUploads,
                     );
                 }
-                self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();
                 return true;
@@ -2800,7 +2785,6 @@ impl ZeldaState {
                 // iteration authors another palette and core-DMA request.
                 self.game_execution_scheduler.finish_call_stack_at_main_wait_before_nmi();
             }
-            self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
             return true;
@@ -2931,7 +2915,6 @@ impl ZeldaState {
                     "continued extended-OAM progress lost its existing common suffix",
                 );
                 self.capture_and_carry_original_timing_nmi_publication_at_host_return();
-                self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();
                 return true;
@@ -3105,7 +3088,6 @@ impl ZeldaState {
                 );
                 self.capture_and_carry_original_timing_nmi_publication_at_host_return();
             }
-            self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
             return true;
@@ -3209,7 +3191,6 @@ impl ZeldaState {
                     false,
                 );
                 self.zelda_run_game_loop_after_leading_nmi();
-                self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();
                 return true;
@@ -3232,7 +3213,6 @@ impl ZeldaState {
                     self.game_execution_scheduler.current_work(),
                     Some(GameWorkContinuation::FinishItemReceiptGraphics { .. })
                 ));
-                self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();
                 return true;
@@ -3259,7 +3239,6 @@ impl ZeldaState {
                 self.zelda_run_game_loop_after_leading_nmi();
                 self.replay_trace_ram_watch("after-game-loop");
                 debug_assert!(self.dialogue_scroll_is_copying_remaining_pixels());
-                self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();
                 return true;
@@ -3296,7 +3275,6 @@ impl ZeldaState {
                         PreMainNmiResume::DungeonSupertileQuadrantUploads,
                     );
                 }
-                self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();
                 return true;
@@ -3326,7 +3304,6 @@ impl ZeldaState {
                     false,
                 );
                 self.zelda_run_game_loop_after_leading_nmi();
-                self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();
                 return true;
@@ -3465,7 +3442,7 @@ impl ZeldaState {
                             .is_some_and(|remaining| remaining != 0));
                     }
                 }
-                self.assert_native_frame_state_matches_ram();
+
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();
                 return true;

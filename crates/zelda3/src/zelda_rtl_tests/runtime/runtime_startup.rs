@@ -117,7 +117,7 @@ fn save_quit_intro_memory_return_does_not_repeat_initialization() {
     staged.death_func15_save_quit_reset_state_before_dungeon_info_clear();
     assert_eq!(staged.ram[0x13], disable);
     assert_eq!(staged.game_state, atomic.game_state);
-    assert_eq!(staged.ram, *atomic.wram_image());
+    assert_eq!(*staged.wram_image(), *atomic.wram_image());
 }
 
 #[test]
@@ -962,11 +962,11 @@ fn live_save_menu_initialization_holds_then_executes_the_c_endpoint_once() {
             ),
         ],
     ));
-    let ram_before = held.ram.to_vec();
+    let ram_before = held.wram_image().into_owned();
 
     held.module0e_0b_save_menu();
 
-    assert_eq!(held.ram.as_slice(), ram_before.as_slice());
+    assert_eq!(held.wram_image().as_ref(), ram_before.as_slice());
     assert!(held
         .original_timing_semantic_receipts
         .as_ref()
@@ -989,7 +989,7 @@ fn live_save_menu_initialization_holds_then_executes_the_c_endpoint_once() {
     ));
     held.module0e_0b_save_menu();
 
-    assert_eq!(held.ram.as_slice(), expected.wram_image().as_ref());
+    assert_eq!(held.wram_image().as_ref(), expected.wram_image().as_ref());
     assert_eq!(held.game_state.frame, expected.game_state.frame);
     assert_eq!(
         held.game_state.messaging.runtime,
@@ -1808,9 +1808,9 @@ fn intro_poly_suspended_caller_follows_exact_hosts_222_through_225() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
     state.rom_reset_frame_delay = 0;
-    state.ram[crate::game_state::constants::MAIN_MODULE] = 0;
-    state.ram[crate::game_state::constants::SUBMODULE] = 2;
-    state.ram[crate::game_state::constants::SUBSUBMODULE] = 26;
+    state.write_wram_byte(crate::game_state::constants::MAIN_MODULE, 0);
+    state.write_wram_byte(crate::game_state::constants::SUBMODULE, 2);
+    state.write_wram_byte(crate::game_state::constants::SUBSUBMODULE, 26);
     state.sync_native_game_state_from_ram();
     let sprite_packs = (0..9)
         .map(|pack| vec![pack as u8 + 1; 0x600])
@@ -2116,9 +2116,9 @@ fn intro_poly_phase_arms_and_retires_one_common_suffix_owner() {
     state.original_timing_owner =
         OriginalTimingOwnerState::Unavailable(OriginalTimingUnavailableReason::ProgressedState);
     state.rom_reset_frame_delay = 0;
-    state.ram[crate::game_state::constants::MAIN_MODULE] = 0;
-    state.ram[crate::game_state::constants::SUBMODULE] = 2;
-    state.ram[crate::game_state::constants::SUBSUBMODULE] = 26;
+    state.write_wram_byte(crate::game_state::constants::MAIN_MODULE, 0);
+    state.write_wram_byte(crate::game_state::constants::SUBMODULE, 2);
+    state.write_wram_byte(crate::game_state::constants::SUBSUBMODULE, 26);
     state.sync_native_game_state_from_ram();
     state.set_animated_tile_data_source_address(1);
     state.intro_poly_thread_initialization_phase = 3;

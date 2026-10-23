@@ -194,7 +194,7 @@ fn save_load_transfer_state_loads_from_and_projects_to_ram() {
     assert_eq!(transfer.source_offset_usize(), 0x1234);
 
     transfer.set_source_offset(0x4567);
-    transfer.write_to_ram(&mut ram);
+    transfer.write_to_ram(&mut ram, 0);
 
     assert_eq!(read_le_u16(&ram, SAVE_LOAD_SOURCE_OFFSET), 0x4567);
 }
@@ -206,7 +206,7 @@ fn native_save_load_transfer_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 
     let mut transfer = SaveLoadTransferState::load_from_ram(&ram);
     {
-        let mut bridge = NativeSaveLoadTransferBridgeMut::new(&mut transfer, &mut ram);
+        let mut bridge = NativeSaveLoadTransferBridgeMut::new(&mut transfer, &mut ram, 0);
         bridge.set_source_offset(0x4567);
     }
 
@@ -260,7 +260,7 @@ fn native_dungeon_map_display_bridge_syncs_seeded_ram_and_dual_writes_changes() 
 
     let mut display = DungeonMapDisplayState::load_from_ram(&ram);
     {
-        let mut bridge = NativeDungeonMapDisplayBridgeMut::new(&mut display, &mut ram);
+        let mut bridge = NativeDungeonMapDisplayBridgeMut::new(&mut display, &mut ram, 0);
         bridge.reset_marker_offsets();
         bridge.shift_marker_x_left();
         bridge.set_location_marker_base_y(0x77);

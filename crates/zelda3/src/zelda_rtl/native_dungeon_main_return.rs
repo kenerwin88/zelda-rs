@@ -288,7 +288,7 @@ mod tests {
         let mut instructions = 0;
         for case in 0..64usize {
             let mut expected = ZeldaState::new();
-            expected.ram[0x10] = 7;
+            expected.write_wram_byte(0x10, 7);
             expected.ram[0x1b] = 1;
             expected.ram[0x5fc] = 1;
             expected.ram[0x5fd] = 2;
@@ -296,7 +296,7 @@ mod tests {
             expected.ram[0x540..0x542].copy_from_slice(&0x280u16.to_le_bytes());
             expected.ram[0x474] = (case % 4 * 2) as u8;
             expected.ram[0x2f] = (case % 4 * 2) as u8;
-            expected.ram[0x11] = if case & 1 != 0 { 15 } else { 0 };
+            expected.write_wram_byte(0x11, if case & 1 != 0 { 15 } else { 0 });
             expected.ram[0x6c] = u8::from(case & 2 != 0);
             expected.ram[0x454] = u8::from(case & 4 != 0);
             expected.ram[0x428] = u8::from(case & 8 != 0);

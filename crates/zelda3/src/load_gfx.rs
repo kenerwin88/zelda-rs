@@ -154,7 +154,7 @@ mod sprite_decompression_cursor_tests {
                 *byte = (i as u8).wrapping_mul(37).wrapping_add((i >> 8) as u8);
             }
     { let image = native.ram.clone(); native.import_wram_image(&image); }
-            native.ram[0x10] = if main & 1 == 0 {14} else {1};
+            native.write_wram_byte(0x10, if main & 1 == 0 {14} else {1});
             native.ram[0xaa1] = main;
             native.ram[0xaa2] = main.wrapping_mul(7) % 82;
             native.ram[0xaa3] = main.wrapping_mul(11) % 144;
@@ -176,15 +176,15 @@ mod sprite_decompression_cursor_tests {
                 index_is_8_bit:true, emulation:false, waiting:false,
                 stack_address:0x01fc, stack_bytes:&[0x35,0x80,0],
             };
-            let mut run = RomCpuTimingRun::new(&rom, &native.ram, &native.sram,
+            let mut run = RomCpuTimingRun::new(&rom, &native.wram_image(), &native.sram,
                 &native.ppu, &snes::DmaState::default(), [0;4], checkpoint).unwrap();
             run.enable_cpu_write_trace();
-            let mut expected = native.ram.clone();
+            let mut expected = native.wram_image().into_owned();
             let mut total = 0;
             while !run.is_complete() {
                 let pc = run.pc();
                 let cycles = run.step().master_cycles;
-                let instruction = work.step(&native.ram).expect("native initializer returned early");
+                let instruction = work.step(|address| native.read_wram_byte(address)).expect("native initializer returned early");
                 work.roundtrip_progress();
                 assert_eq!(instruction.master_cycles, cycles, "main={main} pc={pc:06x} elapsed={total}");
                 if let Some(native_pc) = instruction.pc { assert_eq!(native_pc, pc); }
@@ -207,7 +207,7 @@ mod sprite_decompression_cursor_tests {
                 total += u64::from(cycles);
                 instructions += 1;
             }
-            assert!(work.step(&native.ram).is_none());
+            assert!(work.step(|address| native.read_wram_byte(address)).is_none());
             assert_eq!(&native.ram[0x6000..], &expected[0x6000..]);
             let before = crate::cycle_ledger::master();
             atomic.initialize_tilesets();
@@ -263,15 +263,15 @@ mod sprite_decompression_cursor_tests {
                 index_is_8_bit:true, emulation:false, waiting:false,
                 stack_address:0x01fd, stack_bytes:&[0x35,0x80],
             };
-            let mut run = RomCpuTimingRun::new(&rom, &native.ram, &native.sram,
+            let mut run = RomCpuTimingRun::new(&rom, &native.wram_image(), &native.sram,
                 &native.ppu, &snes::DmaState::default(), [0;4], checkpoint).unwrap();
             run.enable_cpu_write_trace();
-            let mut expected = native.ram.clone();
+            let mut expected = native.wram_image().into_owned();
             let mut total = 0;
             while !run.is_complete() {
                 let pc = run.pc();
                 let cycles = run.step().master_cycles;
-                let step = work.step(&native.ram).expect("native sheet returned before the source");
+                let step = work.step(|address| native.read_wram_byte(address)).expect("native sheet returned before the source");
                 work.roundtrip_progress();
                 assert_eq!(step.master_cycles, cycles,
                     "sprite={sprite} sheet={sheet:02x} PC={pc:06x} elapsed={total}");
@@ -293,7 +293,7 @@ mod sprite_decompression_cursor_tests {
                 total += u64::from(cycles);
                 instructions += 1;
             }
-            assert!(work.step(&native.ram).is_none());
+            assert!(work.step(|address| native.read_wram_byte(address)).is_none());
             assert_eq!(&native.ram[0x6000..], &expected[0x6000..], "all graphics WRAM sheet={sheet:02x}");
             let before = crate::cycle_ledger::master();
             if sprite { atomic.load_sprite_graphics(0x2000, sheet as usize, destination); }
@@ -304,7 +304,7 @@ mod sprite_decompression_cursor_tests {
             // Checkpoint payload carries the actual instructions and native
             // loaded byte as well as the phase/index cursor.
             let mut restored: SheetWork = bincode::deserialize(&bincode::serialize(&work).unwrap()).unwrap();
-            assert!(restored.step(&native.ram).is_none());
+            assert!(restored.step(|address| native.read_wram_byte(address)).is_none());
             cases += 1;
         }
         eprintln!("native sheet loader: cases={cases} instructions={instructions} graphics_stores={stores}");
@@ -317,7 +317,7 @@ mod sprite_decompression_cursor_tests {
         for module in [0, 1, 14, 20] {
             for pack in 0..12 {
                 let mut native = template.clone();
-                native.ram[0x10] = module;
+                native.write_wram_byte(0x10, module);
                 native.ram[0xaa4] = pack;
                 native.ram[0xbd..0xcf].fill(0xa5);
                 // Both implementations receive the same caller stack at
@@ -336,7 +336,7 @@ mod sprite_decompression_cursor_tests {
                     index_is_8_bit:true, emulation:false, waiting:false,
                     stack_address:0x01fd, stack_bytes:&[0x35, 0x80],
                 };
-                let mut run = RomCpuTimingRun::new(&rom, &native.ram, &native.sram,
+                let mut run = RomCpuTimingRun::new(&rom, &native.wram_image(), &native.sram,
                     &native.ppu, &snes::DmaState::default(), [0;4], checkpoint).unwrap();
                 let mut expected_cycles = 0;
                 while !run.is_complete() { expected_cycles += u64::from(run.step().master_cycles); }
@@ -370,7 +370,7 @@ mod sprite_decompression_cursor_tests {
                 index_is_8_bit:true, emulation:false, waiting:false,
                 stack_address:0x01fd, stack_bytes:&[0x35,0x80,0],
             };
-            let mut run = RomCpuTimingRun::new(&rom, &native.ram, &native.sram,
+            let mut run = RomCpuTimingRun::new(&rom, &native.wram_image(), &native.sram,
                 &native.ppu, &native.dma, [0;4], checkpoint).unwrap();
             let mut instructions = 0;
             let mut bytes = 0;
@@ -476,10 +476,10 @@ mod sprite_decompression_cursor_tests {
                         index_is_8_bit:true, emulation:false, waiting:false,
                         stack_address:0x01fd, stack_bytes:&[0x35, 0x80],
                     };
-                    let mut run = RomCpuTimingRun::new(&rom, &native.ram, &native.sram,
+                    let mut run = RomCpuTimingRun::new(&rom, &native.wram_image(), &native.sram,
                         &native.ppu, &snes::DmaState::default(), [0;4], checkpoint).unwrap();
                     run.enable_cpu_write_trace();
-                    let mut expected = native.ram.clone();
+                    let mut expected = native.wram_image().into_owned();
                     let mut work = ConversionWork::new(high, &source, tiles);
                     let mut total = 0;
                     let mut final_store_at = 0;
@@ -541,8 +541,8 @@ mod sprite_decompression_cursor_tests {
                         state.ram[0xaa4] = pack;
                         state.ram[0x1b] = indoors;
                         state.ram[0x8a] = if pack & 1 == 0 { 0 } else { 0x40 };
-                        state.ram[0x15] = cgram_flag;
-                        state.ram[0x16] = 0xa5;
+                        state.write_wram_byte(0x15, cgram_flag);
+                        state.write_wram_byte(0x16, 0xa5);
                         state.ram[0x112] = 0xa5;
                         state.ram[0x116] = 0xa5;
                         state.ram[0x11000..0x11400].fill(0xa5);
@@ -556,10 +556,10 @@ mod sprite_decompression_cursor_tests {
                             emulation: false, waiting: false,
                             stack_address: 0x01fc, stack_bytes: &[0x35, 0x80, 0],
                         };
-                        let mut run = RomCpuTimingRun::new(&rom, &state.ram, &[0; 0x2000],
+                        let mut run = RomCpuTimingRun::new(&rom, &state.wram_image(), &[0; 0x2000],
                             &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
                         run.enable_cpu_write_trace();
-                        let mut expected = state.ram.clone();
+                        let mut expected = state.wram_image().into_owned();
                         let mut cycles = 0;
                         let mut instructions = 0;
                         while !run.is_complete() {
@@ -578,7 +578,7 @@ mod sprite_decompression_cursor_tests {
                         assert_eq!(actual, cycles, "{label}");
                         for range in [0x15..0x18, 0x112..0x113, 0x116..0x117, 0xaa4..0xaa5,
                             0xaa9..0xaab, 0xab1..0xab2, 0xc300..0xc700, 0x11000..0x11400] {
-                            assert_eq!(&state.ram[range.clone()], &expected[range.clone()], "{label} range={range:x?}");
+                            assert_eq!(&state.wram_image()[range.clone()], &expected[range.clone()], "{label} range={range:x?}");
                         }
                     }
                 }
@@ -764,7 +764,7 @@ mod sprite_decompression_cursor_tests {
                 state.decompress_animated_dungeon_tiles(pack);
                 assert!(state.native_pre_dungeon_animated_graphics.is_none());
                 assert_eq!(crate::cycle_ledger::master() - start, cost);
-                assert_eq!(state.ram, atomic.ram, "pack={pack} target={target:?}");
+                assert_eq!(*state.wram_image(), *atomic.wram_image(), "pack={pack} target={target:?}");
                 assert_eq!(state.game_state, atomic.game_state);
             }
             let mut state = base.clone();
@@ -855,7 +855,7 @@ mod sprite_decompression_cursor_tests {
                 assert_eq!(&resumed.ram[0xc500 + index * 2..0xc502 + index * 2],
                     &expected[0xc500 + index * 2..0xc502 + index * 2]);
             }
-            if cut <= 256 { assert_eq!(resumed.ram[0x15], base.ram[0x15]); }
+            if cut <= 256 { assert_eq!(resumed.ram[0x15], base.read_wram_byte(0x15)); }
             let before_repeat = resumed.ram.clone();
             resumed.advance_palette_cache_copy(cut, cut);
             assert_eq!(resumed.ram, before_repeat);
@@ -888,7 +888,7 @@ mod sprite_decompression_cursor_tests {
         assert!(state.native_pre_dungeon_tileset_publication.is_none());
         assert!(!state.paired_resume_cpu_boundary_is_quiescent());
         state.advance_pre_dungeon_palette_cache(257);
-        assert_eq!(state.ram, atomic.ram);
+        assert_eq!(*state.wram_image(), *atomic.wram_image());
         assert_eq!(state.game_state, atomic.game_state);
         assert_eq!(state.palette_mirror_snapshot_bytes(), atomic.palette_mirror_snapshot_bytes());
         state.set_aux_color_asset(0, 0x3210);
@@ -995,7 +995,7 @@ mod sprite_decompression_cursor_tests {
                 }
             }
             state.reset_incremental_vram_upload_counter();
-            assert_eq!(state.ram, atomic.ram);
+            assert_eq!(*state.wram_image(), *atomic.wram_image());
             assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
             assert_eq!(state.game_state.world, atomic.game_state.world);
         }
@@ -1024,7 +1024,7 @@ mod sprite_decompression_cursor_tests {
                     assert_eq!(state.ram[0x412], 0x55);
                     state.complete_module09_load_aux_gfx();
                     assert!(state.native_transition_aux_graphics_progress.is_none());
-                    assert_eq!(state.ram, atomic.ram, "theme={theme} progress={progress:?}");
+                    assert_eq!(*state.wram_image(), *atomic.wram_image(), "theme={theme} progress={progress:?}");
                     assert_eq!(state.game_state, atomic.game_state);
                 }
             }
@@ -2646,7 +2646,7 @@ impl ZeldaState {
 
     pub(super) fn initialize_tilesets(&mut self) {
         let Some(mut work) = self.native_initialize_tilesets_work() else { return };
-        while let Some(instruction) = work.step(&self.ram) {
+        while let Some(instruction) = work.step(|address| self.read_wram_byte(address)) {
             self.retire_tileset_instruction(instruction);
         }
         self.record_common_sprite_provenance();
@@ -2666,7 +2666,7 @@ impl ZeldaState {
         let misc = self.game_state.world.palette_theme.misc_sprites_graphics_index();
         let Some(mut work) = crate::cycle_models::tilesets::TilesetWork::common(module, misc,
             |sheet| self.sprite_graphics_decompression_stream(sheet as usize)) else { return };
-        while let Some(instruction) = work.step(&self.ram) {
+        while let Some(instruction) = work.step(|address| self.read_wram_byte(address)) {
             self.retire_tileset_instruction(instruction);
         }
         self.record_common_sprite_provenance();
@@ -2765,7 +2765,7 @@ impl ZeldaState {
     ) {
         self.vram_chr_source.record_tiles(dst, 64, kind, pack as u16);
         self.vram_chr_preview_source.record_tiles(dst, 64, kind, pack as u16);
-        while let Some(instruction) = work.step(&self.ram) {
+        while let Some(instruction) = work.step(|address| self.read_wram_byte(address)) {
             self.retire_sheet_load_instruction(dst, instruction);
         }
         self.tag_stream_content_hash(dst, 64);

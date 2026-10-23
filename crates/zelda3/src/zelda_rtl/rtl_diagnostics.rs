@@ -149,7 +149,7 @@ impl ZeldaState {
             return;
         }
         let watched_addr = Self::parse_trace_env_u32("ZELDA3_REPLAY_RAM_WATCH_ADDR")
-            .and_then(|addr| self.ram.get(addr as usize).map(|value| (addr, *value)));
+            .and_then(|addr| ((addr as usize) < self.ram.len()).then(|| (addr, self.read_wram_byte(addr as usize))));
         let frame = &self.game_state.frame;
         eprintln!("ram-watch-work frame={} {label} work={:?} slices_remaining={:?} suffix={:?}",
             self.frame_ctr_dbg, self.game_execution_scheduler.current_work(),
@@ -209,15 +209,6 @@ impl ZeldaState {
 
     pub fn debug_snes9x_intro_step_hold_alternate(&self) -> bool {
         self.snes9x_intro_step_hold_alternate
-    }
-
-    #[track_caller]
-    pub(crate) fn assert_native_frame_state_matches_ram(&self) {
-        debug_assert_eq!(
-            self.game_state.frame,
-            crate::game_state::FrameState::load_from_ram(&self.ram),
-            "native frame state diverged from compatibility RAM",
-        );
     }
 
     #[track_caller]
@@ -407,7 +398,7 @@ impl ZeldaState {
         self.state_recorder = state_recorder;
 
         self.sync_native_game_state_from_ram();
-        self.assert_native_frame_state_matches_ram();
+
         self.assert_native_world_location_state_matches_ram();
         self.assert_native_display_state_matches_ram();
         let frame = &self.game_state.frame;

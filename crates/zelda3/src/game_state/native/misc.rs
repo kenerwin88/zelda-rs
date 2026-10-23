@@ -345,12 +345,12 @@ impl SaveLoadTransferState {
         }
     }
 
-    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
+    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R, main_module: u8) {
         // 0x0000 is the save-transfer source offset in file-select code, but
         // module 7 reuses it for sprite/OAM scratch. The save-transfer model is
         // inactive there; projecting its stale offset would overwrite the live
         // dungeon scratch value after the sprite owner has published it.
-        if ram.read_byte(MAIN_MODULE) != 7 {
+        if main_module != 7 {
             ram.write_word(SAVE_LOAD_SOURCE_OFFSET, self.source_offset);
         }
     }
@@ -368,7 +368,22 @@ impl SaveLoadTransferState {
     }
 }
 
-adopting_bridge!(NativeSaveLoadTransferBridgeMut, transfer: SaveLoadTransferState);
+pub(crate) struct NativeSaveLoadTransferBridgeMut<'a> {
+    transfer: &'a mut SaveLoadTransferState,
+    ram: &'a mut [u8],
+    main_module: u8,
+}
+
+impl<'a> NativeSaveLoadTransferBridgeMut<'a> {
+    pub(crate) fn new(transfer: &'a mut SaveLoadTransferState, ram: &'a mut [u8], main_module: u8) -> Self {
+        *transfer = SaveLoadTransferState::load_from_ram(ram);
+        Self { transfer, ram, main_module }
+    }
+
+    fn sync(&mut self) {
+        self.transfer.write_to_ram(&mut super::ram_target::DiffTarget::new(self.ram), self.main_module);
+    }
+}
 
 impl<'a> NativeSaveLoadTransferBridgeMut<'a> {
     forward_synced! { transfer; fn set_source_offset(value: u16); }
@@ -391,7 +406,7 @@ pub(crate) struct DungeonMapDisplayState {
 }
 
 impl DungeonMapDisplayState {
-    pub(crate) fn report_incoherent_with_ram(&self, ram: &[u8]) -> Vec<&'static str> {
+    pub(crate) fn report_incoherent_with_ram(&self, ram: &[u8], main_module: u8) -> Vec<&'static str> {
         let fresh = Self::load_from_ram(ram);
         let mut out = Vec::new();
         macro_rules! check {
@@ -403,7 +418,7 @@ impl DungeonMapDisplayState {
         }
         check!(scroll_draw_offset);
         check!(scroll_input);
-        if ram_byte(ram, MAIN_MODULE) != 7 {
+        if main_module != 7 {
             check!(marker_x_offset);
             check!(marker_y_offset);
         }
@@ -619,13 +634,29 @@ impl DungeonMapDisplayState {
     }
 }
 
-adopting_bridge!(NativeDungeonMapDisplayBridgeMut, display: DungeonMapDisplayState);
+pub(crate) struct NativeDungeonMapDisplayBridgeMut<'a> {
+    display: &'a mut DungeonMapDisplayState,
+    ram: &'a mut [u8],
+    main_module: u8,
+}
+
+impl<'a> NativeDungeonMapDisplayBridgeMut<'a> {
+    pub(crate) fn new(display: &'a mut DungeonMapDisplayState, ram: &'a mut [u8], main_module: u8) -> Self {
+        *display = DungeonMapDisplayState::load_from_ram(ram);
+        Self { display, ram, main_module }
+    }
+
+    fn sync(&mut self) {
+        self.display.write_to_ram(&mut super::ram_target::DiffTarget::new(self.ram));
+        debug_assert_eq!(*self.display, DungeonMapDisplayState::load_from_ram(self.ram));
+    }
+}
 
 impl<'a> NativeDungeonMapDisplayBridgeMut<'a> {
     fn sync_marker_offsets(&mut self) {
         // 0x0fa8/0x0faa are dungeon-map marker offsets outside module 7, but
         // dungeon hitbox work bytes while the dungeon module is active.
-        if ram_byte(self.ram, MAIN_MODULE) == 7 {
+        if self.main_module == 7 {
             return;
         }
         self.display.write_marker_offsets_to_ram(self.ram);

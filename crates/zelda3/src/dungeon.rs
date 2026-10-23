@@ -277,7 +277,7 @@ mod floor_draw_tests {
         staged.complete_straight_room_initialization_after_room_load();
         assert!(staged.active_early_dungeon_floor_draw.is_none());
         assert!(staged.native_transition_aux_graphics_progress.is_none());
-        assert_eq!(staged.ram, eager.ram);
+        assert_eq!(*staged.wram_image(), *eager.wram_image());
         assert_eq!(staged.game_state, eager.game_state);
     }
 
@@ -351,7 +351,7 @@ mod floor_draw_tests {
                 assert!(state.advance_dungeon_object_draw_one(&mut work));
                 assert_eq!(work.completed_objects(), 3);
                 assert!(state.active_dungeon_object_4x2.is_none());
-                assert_eq!(state.ram, eager.ram);
+                assert_eq!(*state.wram_image(), *eager.wram_image());
                 assert_eq!(state.game_state.dungeon, eager.game_state.dungeon);
             }
         }
@@ -419,7 +419,7 @@ mod floor_draw_tests {
                     emulation: false, waiting: false, stack_address: 0x01fd,
                     stack_bytes: &[0xff, 0x7f, 0],
                 };
-                let mut cpu = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                let mut cpu = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
                     &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
                 cpu.enable_cpu_write_trace();
                 let mut work = state.begin_dungeon_quadrant_upload(ROOM_BG2_TILEMAP_BASE,
@@ -448,7 +448,7 @@ mod floor_draw_tests {
                     assert_eq!(state.ram[address], cpu.ram()[address]);
                 }
                 eager.dungeon_prepare_next_room_quadrant_upload();
-                assert_eq!(state.ram, eager.ram);
+                assert_eq!(*state.wram_image(), *eager.wram_image());
                 assert_eq!(state.game_state, eager.game_state);
             }
         }

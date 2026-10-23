@@ -353,14 +353,14 @@ impl TilesetWork {
         });
     }
 
-    pub(crate) fn step(&mut self, ram: &[u8]) -> Option<Instruction> {
+    pub(crate) fn step(&mut self, read: impl Fn(usize) -> u8) -> Option<Instruction> {
         while let Some(operation) = self.operations.get_mut(self.next) {
             let step = match operation {
                 Operation::Caller { instructions, next } => {
                     instructions.get(*next).copied().inspect(|_| *next += 1)
                 }
                 Operation::Sheet { work, destination } => {
-                    work.step(ram).map(|step| convert_step(step, *destination))
+                    work.step(&read).map(|step| convert_step(step, *destination))
                 }
                 Operation::RawConversion {
                     work,
@@ -373,7 +373,7 @@ impl TilesetWork {
                         let byte = |offset: usize| {
                             let low = ((*base as usize & 0xffff) + offset) & 0xffff;
                             if low < 0x2000 {
-                                ram[low]
+                                read(low)
                             } else {
                                 source.get(offset).copied().unwrap_or(0)
                             }

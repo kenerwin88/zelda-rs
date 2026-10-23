@@ -119,7 +119,7 @@ use zelda3::{config::parse_config_file_context, ZeldaState, RUN_MAIN, RUN_POLY};
 /// 23 (2026-10-23): inventory resources/equipment are authoritative owners;
 /// older checkpoints can contain native fields saved before deferred adoption.
 /// 24 (2026-10-23): save-progress records/runtime bytes are authoritative too.
-const PLAY_CRASH_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSPC24";
+const PLAY_CRASH_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSPC26";
 const ACTION_TILE_X: [i16; 4] = [7, 7, -3, 16];
 const ACTION_TILE_Y: [i16; 4] = [6, 24, 12, 12];
 pub(crate) const TRACE_MAIN_MODULE_INDEX: usize = 0x10;
@@ -3016,21 +3016,24 @@ mod tests {
     #[test]
     fn route_coverage_frame_reads_route_surface_ids_from_ram() {
         let mut game = ZeldaState::default();
-        game.ram[TRACE_MAIN_MODULE_INDEX] = 0x07;
-        game.ram[TRACE_SUBMODULE_INDEX] = 0x02;
-        game.ram[TRACE_SUBSUBMODULE_INDEX] = 0x03;
-        game.ram[0x1b] = 1;
-        game.ram[0x48e] = 0xa4;
-        game.ram[0x48f] = 0x00;
-        game.ram[0x8a] = 0x40;
-        game.ram[0x8b] = 0x00;
-        game.ram[0x0dd0] = 9;
-        game.ram[0x0e20] = 0xcb;
-        game.ram[0x0dd1] = 0;
-        game.ram[0x0e21] = 0xcc;
-        game.ram[0x0c4a] = 0x05;
-        game.ram[0x0c5e] = 0x12;
-        game.ram[0x0202] = 0x11;
+        let mut image = game.wram_image().into_owned();
+        image[TRACE_MAIN_MODULE_INDEX] = 0x07;
+        image[TRACE_SUBMODULE_INDEX] = 0x02;
+        image[TRACE_SUBSUBMODULE_INDEX] = 0x03;
+        image[0x1b] = 1;
+        image[0x48e] = 0xa4;
+        image[0x48f] = 0x00;
+        image[0x8a] = 0x40;
+        image[0x8b] = 0x00;
+        image[0x0dd0] = 9;
+        image[0x0e20] = 0xcb;
+        image[0x0dd1] = 0;
+        image[0x0e21] = 0xcc;
+        image[0x0c4a] = 0x05;
+        image[0x0c5e] = 0x12;
+        image[0x0202] = 0x11;
+
+        game.import_wram_image(&image);
 
         let frame = route_coverage_frame_from_game(42, &game);
 

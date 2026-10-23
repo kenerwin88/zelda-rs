@@ -21,7 +21,7 @@ fn selected_game_entrance_scroll_suspends_before_display_mirrors() {
             put_test_asset(&mut data, &mut ranges, index, bytes);
         }
         state.assets = Some(AssetPack::from_data_ranges(data, ranges));
-        state.ram[RESTART_CHECK_FLAG] = 1;
+        state.write_wram_byte(RESTART_CHECK_FLAG, 1);
         state.sync_native_game_state_from_ram();
         state.set_bg2_v_copy(0x1234);
         state
@@ -45,7 +45,7 @@ fn selected_game_entrance_scroll_suspends_before_display_mirrors() {
     assert!(staged.pending_selected_game_entrance.is_some());
     staged.module_pre_dungeon_initial_entrance();
     assert!(staged.pending_selected_game_entrance.is_none());
-    assert_eq!(staged.ram, *atomic.wram_image());
+    assert_eq!(*staged.wram_image(), *atomic.wram_image());
 }
 
 #[test]
@@ -67,7 +67,7 @@ fn selected_game_entrance_before_selection_preserves_link_until_the_source_retur
     assert_eq!(staged.game_state.player.follower_link.y(), 0x058b);
     staged.module_pre_dungeon_initial_entrance();
     assert_eq!(staged.game_state, atomic.game_state);
-    assert_eq!(staged.ram, *atomic.wram_image());
+    assert_eq!(*staged.wram_image(), *atomic.wram_image());
 }
 
 #[test]
@@ -1209,7 +1209,7 @@ fn pre_overworld_overlay_cpu_schedule_counts_source_caller_crossings() {
     state.set_submodule(1);
     state.set_overworld_screen_word(0x13);
     state.write_wram_byte(0xf3c5, 2);
-    state.ram[FRAME_COUNTER] = 15;
+    state.write_wram_byte(FRAME_COUNTER, 15);
     state.sync_native_game_state_from_ram();
     // Snes9x calls the overlay on run37687, crosses four Held NMIs,
     // and clears $12 on run37691 at V144/C354. The old six-slice estimate
@@ -1249,7 +1249,7 @@ fn pre_overworld_screen_build_cpu_schedule_counts_source_caller_crossings() {
     state.set_submodule(2);
     state.set_overworld_screen_word(0x13);
     state.write_wram_byte(0xf3c5, 2);
-    state.ram[FRAME_COUNTER] = 15;
+    state.write_wram_byte(FRAME_COUNTER, 15);
     state.sync_native_game_state_from_ram();
     let before = state.wram_image().into_owned();
     let (nmis, crossings) = pre_overworld_screen_build_cpu_plan(&state);

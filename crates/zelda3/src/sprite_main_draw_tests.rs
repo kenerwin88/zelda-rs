@@ -17,7 +17,7 @@ fn paused_rat_animation_and_double_return_cost_match_source() {
         for (state, submodule, modal_pause) in [(9, 2, 0), (9, 0, 1), (8, 0, 0)] {
             let mut native = cucco_draw_fixture(0);
             native.set_submodule(submodule);
-            native.ram[0x0fc1] = modal_pause;
+            native.write_wram_byte(0x0fc1, modal_pause);
             native.sync_native_game_state_from_ram();
             {
                 let mut slot = native.sprite_slot_view_mut(2);

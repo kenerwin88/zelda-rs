@@ -283,7 +283,7 @@ impl ZeldaState {
                 .is_none_or(|receipts| receipts.semantic().is_empty()),
             "a resumed post-NMI caller return left typed lifecycle receipts unconsumed",
         );
-        self.assert_native_frame_state_matches_ram();
+
         self.assert_native_world_location_state_matches_ram();
         self.assert_native_display_state_matches_ram();
         true

@@ -934,11 +934,11 @@ mod fast_forward_cycle_tests {
                     accumulator_is_8_bit:true,index_is_8_bit:true,
                     emulation:false,waiting:false,stack_address:0x01fd,stack_bytes:&[0x35,0x80],
                 };
-                let mut run = RomCpuTimingRun::new(&rom,&state.ram,&state.sram,
+                let mut run = RomCpuTimingRun::new(&rom,&state.wram_image(),&state.sram,
                     &snes::PpuState::default(),&snes::DmaState::default(),[0;4],checkpoint).unwrap();
                 run.restore_original_dialogue_pointer_table().unwrap();
                 run.enable_cpu_write_trace();
-                let mut expected = state.ram.clone();
+                let mut expected = state.wram_image().into_owned();
                 let mut work = state.native_character_buffer_work()
                     .unwrap_or_else(|| panic!("unsupported original message {message}"));
                 let mut total = 0u64;
@@ -998,11 +998,11 @@ mod fast_forward_cycle_tests {
                     accumulator_is_8_bit:true,index_is_8_bit:true,
                     emulation:false,waiting:false,stack_address:0x01fd,stack_bytes:&[0x35,0x80],
                 };
-                let mut run = RomCpuTimingRun::new(&rom,&state.ram,&state.sram,
+                let mut run = RomCpuTimingRun::new(&rom,&state.wram_image(),&state.sram,
                     &snes::PpuState::default(),&snes::DmaState::default(),[0;4],checkpoint).unwrap();
                 run.restore_original_dialogue_pointer_table().unwrap();
                 run.enable_cpu_write_trace();
-                let mut expected = state.ram.clone();
+                let mut expected = state.wram_image().into_owned();
                 let mut total = 0;
                 while !run.is_complete() {
                     total += u64::from(run.step().master_cycles);
@@ -1047,7 +1047,7 @@ mod fast_forward_cycle_tests {
             emulation: false, waiting: false,
             stack_address: 0x01fd, stack_bytes: &[0x4d, 0xf8, 0x00],
         };
-        let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+        let mut source = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
             &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
         let mut prefix = 0;
         for _ in 0..64 {
@@ -1074,7 +1074,7 @@ mod fast_forward_cycle_tests {
             stack_bytes: &[0x45, 0xc4, 0x00, 0x4d, 0xf8, 0x00],
             ..checkpoint
         };
-        let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+        let mut source = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
             &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
         let mut suffix = 0;
         for _ in 0..2000 {
@@ -1117,10 +1117,10 @@ mod fast_forward_cycle_tests {
                     emulation: false, waiting: false,
                     stack_address: 0x01f9, stack_bytes: &[0, 0x4d, 0xf8, 0, 0x59, 0x80, 0],
                 };
-                let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                let mut source = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
                     &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
                 source.enable_cpu_write_trace();
-                let mut expected = state.ram.clone();
+                let mut expected = state.wram_image().into_owned();
                 let mut render = RenderTextReturn::default();
                 let mut interface = InterfaceReturn::default();
                 let mut total = 0;
@@ -1152,7 +1152,7 @@ mod fast_forward_cycle_tests {
                 atomic.finish_render_text_return();
                 atomic.complete_module0e_interface_after_run();
                 assert_eq!(crate::cycle_ledger::master() - clock, u64::from(total));
-                assert_eq!(atomic.ram, state.ram);
+                assert_eq!(*atomic.wram_image(), *state.wram_image());
             }
         }
     }
@@ -1196,10 +1196,10 @@ mod fast_forward_cycle_tests {
             state.ram[0x14000..0x15000].fill(0xa5);
             state.ram[0xc520..0xc530].fill(0xa5);
             state.ram[0xc007..0xc00b].fill(0x5a);
-            state.ram[0x15] = 0xfe;
+            state.write_wram_byte(0x15, 0xfe);
             state.ram[0x17] = 0x35;
             state.ram[0x710] = 0x71;
-            state.ram[0x10] = module;
+            state.write_wram_byte(0x10, module);
             state.ram[0x1cf0..0x1cf2].copy_from_slice(&message.to_le_bytes());
             state.ram[0x20..0x22].copy_from_slice(&0x127u16.to_le_bytes());
             state.ram[0xe8..0xea].copy_from_slice(&0xb0u16.to_le_bytes());
@@ -1220,11 +1220,11 @@ mod fast_forward_cycle_tests {
                 emulation: false, waiting: false,
                 stack_address: 0x01fd, stack_bytes: &[0x35, 0x80],
             };
-            let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+            let mut source = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
                 &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
             source.restore_original_dialogue_pointer_table().unwrap();
             source.enable_cpu_write_trace();
-            let mut expected = state.ram.clone();
+            let mut expected = state.wram_image().into_owned();
             let mut total = 0u64;
             let mut count = 0;
             let mut last_phase = work.phase;
@@ -1260,7 +1260,7 @@ mod fast_forward_cycle_tests {
                         "module={module} message={message} PC={pc:06x} range={range:x?}");
                 }
                 for address in [0x15, 0x17, 0x710] {
-                    assert_eq!(state.ram[address], expected[address], "PC={pc:06x} address={address:04x}");
+                    assert_eq!(state.read_wram_byte(address), expected[address], "PC={pc:06x} address={address:04x}");
                 }
                 if work.phase == CopyIndex {
                     saw_story_return = true;
@@ -1285,7 +1285,7 @@ mod fast_forward_cycle_tests {
             let clock = crate::cycle_ledger::master();
             atomic.text_initialize();
             assert_eq!(crate::cycle_ledger::master() - clock, total);
-            assert_eq!(atomic.ram, state.ram);
+            assert_eq!(*atomic.wram_image(), *state.wram_image());
             instruction_count += count;
             eprintln!("native initialization chain module={module} message={message}: {count} instructions, {total} cycles");
         }
@@ -1336,10 +1336,10 @@ mod fast_forward_cycle_tests {
                     emulation: false, waiting: false,
                     stack_address: 0x01fd, stack_bytes: &[0x35, 0x80],
                 };
-                let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                let mut source = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
                     &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
                 source.enable_cpu_write_trace();
-                let mut expected = state.ram.clone();
+                let mut expected = state.wram_image().into_owned();
                 let mut work = InitializationPrefix::default();
                 let mut total = 0;
                 let mut count = 0;
@@ -1424,7 +1424,7 @@ mod fast_forward_cycle_tests {
             state.dialogue_vwf_dispatch_cursor.src_offs = 0x5a5a;
             state.dialogue_vwf_dispatch_cursor.next_position = 0x5a;
             let mut atomic = state.clone();
-            let mut expected = state.ram.clone();
+            let mut expected = state.wram_image().into_owned();
             let checkpoint = RomCpuCheckpoint {
                 entry_pc: 0x0e_c4b7, stop_pc: 0x0e_8036,
                 a: 0xab7f, x: 0x31, y: 0x42, sp: 0x01fc, dp: 0, db: 0x0e,
@@ -1434,7 +1434,7 @@ mod fast_forward_cycle_tests {
                 emulation: false, waiting: false,
                 stack_address: 0x01fd, stack_bytes: &[0x35, 0x80],
             };
-            let mut run = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+            let mut run = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
                 &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
             run.enable_cpu_write_trace();
             let mut work = InitializationTail::default();
@@ -1492,7 +1492,7 @@ mod fast_forward_cycle_tests {
         state.set_main_module(14);
         state.set_submodule(2);
         state.game_state.frame.saved_module_for_menu = 9;
-        state.ram[0x010c] = 9;
+        state.write_wram_byte(0x010c, 9);
         state.messaging_state_mut().set_module(1);
         state.messaging_state_mut().set_text_msgbox_topleft(0x61a4);
         let before = state.ram.clone();
@@ -1502,7 +1502,7 @@ mod fast_forward_cycle_tests {
         assert_eq!(crate::cycle_ledger::master() - clock, 942);
         assert_eq!(&state.ram[0x1002..0x100a], &[0x61, 0xa4, 0x42, 0x2e, 0x7f, 0x38, 0xff, 0xff]);
         assert_eq!(&state.ram[0x1cd0..0x1cd2], &0x61a4u16.to_le_bytes());
-        assert_eq!((state.ram[0x10], state.ram[0x11], state.ram[0x14], state.ram[0x1cd8]), (9, 0, 1, 0));
+        assert_eq!((state.read_wram_byte(0x10), state.read_wram_byte(0x11), state.ram[0x14], state.ram[0x1cd8]), (9, 0, 1, 0));
         for (address, (old, new)) in before.iter().zip(state.ram.iter()).enumerate() {
             if !matches!(address, 0x10 | 0x11 | 0x14 | 0x1cd8 | 0x1cd0..=0x1cd1 | 0x1002..=0x1009) {
                 assert_eq!(old, new, "unexpected finish write at ${address:05x}");
@@ -1540,7 +1540,7 @@ mod fast_forward_cycle_tests {
                     stack_bytes: &[0x45, 0xc4, 0x00, 0x4d, 0xf8, 0x00, 0x59, 0x80, 0x00],
                     ..crate::zelda_rtl::DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
                 };
-                let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                let mut source = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
                     &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
                 let mut source_budget = budget;
                 loop {
@@ -1598,7 +1598,7 @@ mod fast_forward_cycle_tests {
                         stack_bytes: &[0xf4, 0xc9], waiting: false,
                         ..crate::zelda_rtl::DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
                     };
-                    let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                    let mut source = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
                         &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
                     let mut total = 0;
                     for (pc, cost) in scroll_instructions(b_held, speed, line_counter) {
@@ -1643,7 +1643,7 @@ mod fast_forward_cycle_tests {
             stack_bytes: &[0x5c, 0x80], waiting: false,
             ..crate::zelda_rtl::DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
         };
-        let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+        let mut source = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
             &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
         let mut source_budget = budget;
         while crate::zelda_rtl::advance_rom_cpu_step(&mut source, &mut source_budget) == CpuWorkAdvance::Complete {}
@@ -1690,7 +1690,7 @@ mod fast_forward_cycle_tests {
                     stack_bytes: &[0xf4, 0xc9], waiting: false,
                     ..crate::zelda_rtl::DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
                 };
-                let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                let mut source = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
                     &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
                 for _ in 0..50_000 {
                     if source.is_complete() { break; }
@@ -1735,7 +1735,7 @@ mod fast_forward_cycle_tests {
                     sp: 0x01fc, db: 0x0e, waiting: false,
                     ..crate::zelda_rtl::DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
                 };
-                let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                let mut source = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
                     &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
                 for _ in 0..500 {
                     if source.is_complete() { break; }

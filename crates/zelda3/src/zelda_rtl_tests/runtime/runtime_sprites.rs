@@ -485,7 +485,7 @@ fn sprite_main_slot_boundary_refinement_and_resume_equal_atomic_c_order() {
     refined.advance_sprite_main_after_slot_boundary(4, 3);
     refined.complete_sprite_main_after_interrupted_slot(3);
 
-    assert_eq!(refined.ram, *atomic.wram_image());
+    assert_eq!(*refined.wram_image(), *atomic.wram_image());
     assert_eq!(refined.game_state.sprites, atomic.game_state.sprites);
 }
 
@@ -2427,7 +2427,7 @@ fn subtile_hud_refinement_preserves_interrupt_and_runs_sprite_prefix_once() {
     let work = state.game_execution_scheduler.current_work().unwrap();
     let GameWorkContinuation::FinishDungeonSubtileHud { hud } = work else { panic!("lost HUD caller") };
     assert_ne!(read_le_u16(&state.wram_image(), 0x100), 0xffff);
-    assert_eq!(state.ram[0x16], 0);
+    assert_eq!(state.read_wram_byte(0x16), 0);
     let prefix = state.wram_image().into_owned();
     state.refine_dungeon_subtile_caller_to_hud_arrow_digits(78);
     assert_eq!(*state.wram_image(), prefix);

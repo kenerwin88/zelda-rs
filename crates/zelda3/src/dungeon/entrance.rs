@@ -107,8 +107,7 @@ impl ZeldaState {
             }
             _ => return false,
         }
-        self.ram[offset..offset + usize::from(width)]
-            .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        for byte in 0..usize::from(width) { self.write_wram_byte(offset + byte, value.to_le_bytes()[byte]); }
         true
     }
 

@@ -14,15 +14,15 @@ fn supertile_final_caller_matches_source_cycles_and_byte_writes() {
     for room in rooms {
         for variant in 0..64u8 {
             let mut state = ZeldaState::new();
-            state.ram[0x10] = 7;
-            state.ram[0x11] = 2;
-            state.ram[0xb0] = 15;
+            state.write_wram_byte(0x10, 7);
+            state.write_wram_byte(0x11, 2);
+            state.write_wram_byte(0xb0, 15);
             state.ram[0xa0..0xa2].copy_from_slice(&room.to_le_bytes());
             state.ram[0x403] = (variant & 3) << 4;
             state.ram[0x468] = (variant >> 2) & 1;
             state.ram[0x469] = 0x5a;
             state.ram[0x68e..0x692].copy_from_slice(&[0x41, 0x72, 0x83, 0x94]);
-            state.ram[0x12c] = 0x77;
+            state.write_wram_byte(0x12c, 0x77);
             for address in [0x20, 0x22, 0xe2, 0xe8, 0x600, 0x604, 0x608, 0x60c,
                 0x610, 0x612, 0x614, 0x616, 0x618, 0x61c, 0xa6, 0xa9] {
                 let value = (address as u16).wrapping_mul(37).wrapping_add(u16::from(variant));
@@ -81,8 +81,8 @@ fn supertile_transition_initialization_matches_source_work() {
     for variant in 0..128u8 {
         let mut state = ZeldaState::new();
         state.set_assets(&assets).unwrap();
-        state.ram[0x10] = 7;
-        state.ram[0x11] = 2;
+        state.write_wram_byte(0x10, 7);
+        state.write_wram_byte(0x11, 2);
         state.ram[0x26] = if variant & 64 != 0 { 4 } else { 0 };
         state.ram[0x2d] = 3;
         state.ram[0x2e] = 8;
@@ -222,7 +222,7 @@ fn leading_nmi_keeps_cpu_phase_when_display_snapshot_follows_handler() {
     assert!(trailing.native_main_wait_cpu_phase.is_none());
     // Both handlers have the same display publication policy. Only the
     // leading handler belongs to the pending main-wait CPU continuation.
-    assert_eq!(leading.ram, trailing.ram);
+    assert_eq!(*leading.wram_image(), *trailing.wram_image());
     assert_eq!(leading.ppu.vram, trailing.ppu.vram);
     assert_eq!(leading.ppu.oam, trailing.ppu.oam);
     assert_eq!(leading.last_nmi_handler_master_cycles, trailing.last_nmi_handler_master_cycles);
@@ -1863,7 +1863,7 @@ fn trinexx_final_phase_draw_checkpoints_resume_to_the_atomic_draw() {
                     state.begin_trinexx_final_phase_draw_checkpoint(0, segment, stage);
                 state.resume_trinexx_final_phase_draw(0, segment, stage, continuation);
                 assert_eq!(
-                    *state.wram_image(), atomic.ram,
+                    *state.wram_image(), *atomic.wram_image(),
                     "ai {ai_state} segment {segment} stage {stage}"
                 );
                 assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
@@ -1955,7 +1955,7 @@ fn trinexx_final_phase_tile_collision_checkpoints_resume_to_the_atomic_phase() {
         assert_eq!(state.sprite_slot_view(0).a(), 4);
         state.resume_trinexx_final_phase_tile_collision(0, probes_completed);
         assert_eq!(
-            *state.wram_image(), atomic.ram,
+            *state.wram_image(), *atomic.wram_image(),
             "probes {probes_completed} {x_velocity} {y_velocity}"
         );
         assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
@@ -3475,7 +3475,7 @@ fn deferred_landing_goal_retains_animation_and_both_link_oam_callers() {
         assert_eq!(deferred.game_state.frame.submodule, 0);
         assert_eq!(deferred.game_state.player.follower_link.blink_countdown(), blink - 2);
         assert_eq!(deferred.game_state, eager.game_state);
-        assert_eq!(deferred.ram, eager.ram);
+        assert_eq!(*deferred.wram_image(), *eager.wram_image());
     }
 }
 
@@ -5082,11 +5082,11 @@ fn dungeon_falling_entry_retains_the_pre_transition_obj_generation() {
     state.ppu.vram[0x4000] = 0x1234;
     state.capture_display_snapshot();
 
-    // The ROM module switch reaches WRAM before the native frame projection is
-    // synchronized by NMI. Exercise that real publication-boundary ownership.
-    state.ram[crate::game_state::constants::MAIN_MODULE] = 0x11;
-    state.ram[crate::game_state::constants::SUBMODULE] = 0;
-    assert_eq!(state.game_state.frame.main_module, 9);
+    // The ROM module switch retires directly into the frame owner; the older
+    // display snapshot still retains the preceding mode generation.
+    state.write_wram_byte(crate::game_state::constants::MAIN_MODULE, 0x11);
+    state.write_wram_byte(crate::game_state::constants::SUBMODULE, 0);
+    assert_eq!(state.game_state.frame.main_module, 0x11);
     state.ppu.oam[204] = 0xf08a;
     state.ppu.vram[0x4000] = 0x5678;
     state.capture_display_snapshot();

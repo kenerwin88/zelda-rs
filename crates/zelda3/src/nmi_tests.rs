@@ -10,8 +10,8 @@ fn held_nmi_reported_cycles_match_source_handler_and_rti() {
         for mode in [1, 9, 7] {
             let mut state = ZeldaState::new();
             state.ram.fill(0);
-            state.ram[0x10] = 14;
-            state.ram[0x11] = 2;
+            state.write_wram_byte(0x10, 14);
+            state.write_wram_byte(0x11, 2);
             state.ram[0x12] = u8::from(held);
             state.ram[0x710] = 2;
             state.ram[0x94] = mode;
@@ -110,12 +110,12 @@ fn native_nmi_header_bus_writes_keep_typed_latches_and_hardware_owned() {
     let mut clock = snes::CpuMasterTimeline::new(0, Default::default(), snes::CpuFieldTiming::NON_INTERLACE_EVEN);
     clock.begin_synchronous_timeline().unwrap();
     s.native_ppu = Some(crate::cycle_models::native_ppu::NativePpuState::reset(&clock));
-    s.ram[0x12d] = 0x37;
-    s.ram[0x12e] = 0x5a;
-    s.ram[0x12f] = 0xa5;
+    s.write_wram_byte(0x12d, 0x37);
+    s.write_wram_byte(0x12e, 0x5a);
+    s.write_wram_byte(0x12f, 0xa5);
     s.ram[0x13] = 0x0f;
     s.sync_native_game_state_from_ram();
-    let mut expected = s.ram.clone();
+    let mut expected = s.wram_image().into_owned();
     s.ppu.forced_blank = false;
     for channel in &mut s.dma.channel { channel.hdma_active = true; }
     assert_eq!(s.native_nmi_header_access(&clock, Read(0x12d)), 0x37);
@@ -127,7 +127,7 @@ fn native_nmi_header_bus_writes_keep_typed_latches_and_hardware_owned() {
     expected[0x1f1..0x1f3].copy_from_slice(&[0x40, 0x81]);
     s.native_nmi_header_access(&clock, Write(0x2100, 0x80));
     s.native_nmi_header_access(&clock, Write(0x420c, 0));
-    assert_eq!(s.ram, expected);
+    assert_eq!(*s.wram_image(), expected);
     assert_eq!(s.game_state.system_signals.last_ambient_sound_effect(), 0x37);
     assert_eq!(s.game_state.system_signals.ambient_sound_effect(), 0);
     assert_eq!(s.game_state.system_signals.sound_effect_1(), 0);

@@ -8688,10 +8688,10 @@ impl ZeldaState {
                 self.ram[LINK_Y_SUBPIXEL],
                 self.ram[LINK_HANDLER_STATE],
                 self.ram[LINK_AUXILIARY_STATE],
-                self.ram[FRAME_COUNTER],
-                self.ram[MAIN_MODULE],
-                self.ram[SUBMODULE],
-                self.ram[SUBSUBMODULE],
+                self.read_wram_byte(FRAME_COUNTER),
+                self.read_wram_byte(MAIN_MODULE),
+                self.read_wram_byte(SUBMODULE),
+                self.read_wram_byte(SUBSUBMODULE),
             );
         }
         self.game_execution_scheduler.begin_host_frame();
@@ -8718,7 +8718,6 @@ impl ZeldaState {
         self.active_native_spotlight_field_scanout = None;
         self.native_bg3_scroll_scanout = None;
         self.last_sprite_main_timing_workload = None;
-        self.assert_native_frame_state_matches_ram();
         self.assert_native_world_location_state_matches_ram();
         self.assert_native_display_state_matches_ram();
         self.replay_trace_ram_watch("run-frame-entry");
@@ -8857,7 +8856,6 @@ impl ZeldaState {
                     state.intro_initialization_reset_obj_control_pending = false;
                 },
             );
-            self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
             debug_host_path_early_return(self.frame_ctr_dbg, line!());
@@ -9004,7 +9002,6 @@ impl ZeldaState {
                 oam_dma_source.as_deref(),
                 |_| {},
             );
-            self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
             debug_host_path_early_return(self.frame_ctr_dbg, line!());
@@ -9036,7 +9033,6 @@ impl ZeldaState {
                 .finish_call_stack_at_main_wait_before_nmi();
             let returned_scroll = self.bg_scroll_scanout_from_nmi_register_mirrors();
             self.publish_bg_scroll_for_following_scanout(returned_scroll);
-            self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
             debug_host_path_early_return(self.frame_ctr_dbg, line!());
@@ -9065,7 +9061,6 @@ impl ZeldaState {
                     .is_none_or(|receipts| receipts.semantic().is_empty()),
                 "a return-only dialogue slice left typed lifecycle receipts unconsumed",
             );
-            self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
             debug_host_path_early_return(self.frame_ctr_dbg, line!());
@@ -9340,7 +9335,6 @@ impl ZeldaState {
                             self.game_execution_scheduler.is_idle(),
                             "the source-proven file-select caller return must retire its scheduler continuation",
                         );
-                        self.assert_native_frame_state_matches_ram();
                         self.assert_native_world_location_state_matches_ram();
                         self.assert_native_display_state_matches_ram();
                         return;
@@ -9500,7 +9494,6 @@ impl ZeldaState {
                         if plan.nmi.publication_pending_at_exit {
                             self.capture_and_carry_original_timing_nmi_publication_at_host_return();
                         }
-                        self.assert_native_frame_state_matches_ram();
                         self.assert_native_world_location_state_matches_ram();
                         self.assert_native_display_state_matches_ram();
                         return;
@@ -9599,7 +9592,6 @@ impl ZeldaState {
                                 .is_some_and(|receipts| receipts.semantic.is_empty()),
                             "selected-game terminal return left unowned semantic receipts",
                         );
-                        self.assert_native_frame_state_matches_ram();
                         self.assert_native_world_location_state_matches_ram();
                         self.assert_native_display_state_matches_ram();
                         return;
@@ -11931,7 +11923,6 @@ impl ZeldaState {
                 }
                 _ => unreachable!(),
             }
-            self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
             return;
@@ -11983,7 +11974,6 @@ impl ZeldaState {
                 false,
                 authoritative_scheduled_caller_return_timeline.is_some(),
             );
-            self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
             return;
@@ -12193,7 +12183,6 @@ impl ZeldaState {
                             .finish_call_stack_at_main_wait_before_nmi();
                         let returned_scroll = self.bg_scroll_scanout_from_nmi_register_mirrors();
                         self.publish_bg_scroll_for_following_scanout(returned_scroll);
-                        self.assert_native_frame_state_matches_ram();
                         self.assert_native_world_location_state_matches_ram();
                         self.assert_native_display_state_matches_ram();
                         return;
@@ -13069,7 +13058,6 @@ impl ZeldaState {
                 self.game_execution_scheduler
                     .finish_call_stack_at_main_wait_before_nmi();
                 self.prepare_dungeon_cpu_advance_after_returned_main_wait();
-                self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();
                 return;
@@ -13395,7 +13383,7 @@ impl ZeldaState {
             self.finish_main_loop_caller_return();
         }
         self.replay_trace_ram_watch("after-nmi");
-        self.assert_native_frame_state_matches_ram();
+
         self.assert_native_world_location_state_matches_ram();
         self.assert_native_display_state_matches_ram();
         self.sync_overworld_map16_state_from_ram();

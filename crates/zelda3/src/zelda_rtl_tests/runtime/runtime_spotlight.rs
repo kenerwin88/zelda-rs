@@ -3328,7 +3328,7 @@ fn completed_spotlight_entry_does_not_schedule_a_second_return() {
     deferred.complete_dungeon_exit_spotlight_entry(table, iteration);
     state.complete_dungeon_exit_spotlight_entry_returned(table, iteration);
     assert_eq!(state.game_state, deferred.game_state);
-    assert_eq!(*state.wram_image(), deferred.ram);
+    assert_eq!(*state.wram_image(), *deferred.wram_image());
     assert!(state.game_execution_scheduler.is_idle());
     assert!(matches!(
         deferred.game_execution_scheduler.current_work(),

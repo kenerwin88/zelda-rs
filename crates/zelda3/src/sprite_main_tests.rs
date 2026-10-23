@@ -55,7 +55,7 @@ fn catfish_medallion_spawn_is_visible_before_its_graphics_decode() {
     assert_eq!(staged.sprite_slot_view(11).graphics(), 0);
     staged.complete_catfish_medallion_graphics(11);
     assert_eq!(staged.game_state, atomic.game_state);
-    assert_eq!(staged.ram, *atomic.wram_image());
+    assert_eq!(*staged.wram_image(), *atomic.wram_image());
 }
 
 #[test]
@@ -128,7 +128,7 @@ fn buzzblob_x_subpixel_resume_does_not_repeat_its_direction_prefix() {
         staged.sprite_move_y(11);
         staged.buzzblob_after_movement(11);
         assert_eq!(staged.game_state, atomic.game_state);
-        assert_eq!(staged.ram, *atomic.wram_image());
+        assert_eq!(*staged.wram_image(), *atomic.wram_image());
     }
 }
 
@@ -159,7 +159,7 @@ fn kholdstare_damage_continuation_preserves_completed_movement() {
     assert_eq!(staged.sprite_slot_view(0).x_velocity(), 6);
     staged.kholdstare_after_movement(0);
     assert_eq!(staged.sprite_slot_view(0).subtype2(), 7);
-    assert_eq!(staged.ram, *atomic.wram_image());
+    assert_eq!(*staged.wram_image(), *atomic.wram_image());
 }
 
 #[test]
@@ -184,7 +184,7 @@ fn antifairy_bounce_continuation_preserves_movement_and_animation_prefix() {
     assert_eq!(staged.sprite_slot_view(0).subtype2(), 1);
     staged.sprite_bounce_from_tile_collision(0);
     assert_eq!(staged.sprite_slot_view(0).subtype2(), 1);
-    assert_eq!(staged.ram, *atomic.wram_image());
+    assert_eq!(*staged.wram_image(), *atomic.wram_image());
 }
 
 #[test]
@@ -214,7 +214,7 @@ fn pengator_slide_continuation_does_not_repeat_movement() {
     assert_eq!(staged.sprite_slot_view(6).ai_state(), 3);
     staged.pengator_after_movement(6);
     assert_eq!(staged.sprite_slot_view(6).y_low(), 0x4f);
-    assert_eq!(staged.ram, *atomic.wram_image());
+    assert_eq!(*staged.wram_image(), *atomic.wram_image());
 }
 
 #[test]
@@ -251,7 +251,7 @@ fn offscreen_guard_retains_kill_self_and_draw_scratch_until_resume() {
             assert_eq!(staged.game_state.sprites.draw_hitbox_work.low_position_word(), 0xcdab);
             staged.complete_guard_animation_at_checkpoint(10, continuation);
             assert_eq!(crate::cycle_ledger::master() - before, atomic_cycles);
-            assert_eq!(staged.ram, *atomic.wram_image());
+            assert_eq!(*staged.wram_image(), *atomic.wram_image());
             assert_eq!(staged.game_state, atomic.game_state);
         }
     }
@@ -307,7 +307,7 @@ fn active_guard_weapon_coordinates_hold_pose_until_the_draw_returns() {
         staged.complete_guard_animation_at_checkpoint(10, continuation);
         assert_eq!(staged.sprite_slot_view(10).direction(), 0);
         assert_eq!(staged.sprite_slot_view(10).graphics(), 11);
-        assert_eq!(staged.ram, *atomic.wram_image());
+        assert_eq!(*staged.wram_image(), *atomic.wram_image());
     }
 }
 
@@ -344,7 +344,7 @@ fn guard_pause_test_resume_preserves_restored_pose_and_cycle_ownership() {
         staged.complete_guard_animation_at_checkpoint(10, continuation);
         assert_eq!(crate::cycle_ledger::master() - before, atomic_cycles);
         assert_eq!(&staged.ram[OAM_BUF..OAM_BUF + 0x200], drawn_oam.as_slice());
-        assert_eq!(staged.ram, *atomic.wram_image());
+        assert_eq!(*staged.wram_image(), *atomic.wram_image());
         assert_eq!(staged.game_state, atomic.game_state);
     }
 }

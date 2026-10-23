@@ -81,13 +81,11 @@ impl ZeldaState {
         if matches!(address, 0x20..=0x21 | 0x26 | 0x2d..=0x2f | 0x44..=0x45 | 0x102..=0x105 | 0x107..=0x109 | 0x323 | 0x346..=0x347) {
             for byte in 0..usize::from(width) {
                 let value_byte = (value >> (byte * 8)) as u8;
-                if address + byte == 0x10a {
-                    self.game_state.system_signals.set_game_over_check_flag(value_byte);
-                } else {
+                if address + byte != 0x10a {
                     assert!(self.game_state.player.follower_link.write_drawing_byte(address + byte, value_byte), "drawing store address={address:05x} value={value:04x} width={width} byte={byte}");
                 }
             }
-            self.ram[address..address+usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+            for byte in 0..usize::from(width) { self.write_wram_byte(address + byte, value.to_le_bytes()[byte]); }
             return true;
         }
         let (base, old) = match address {
@@ -169,7 +167,7 @@ impl ZeldaState {
             }
             _ => return false,
         }
-        self.ram[address..address + usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        for byte in 0..usize::from(width) { self.write_wram_byte(address + byte, value.to_le_bytes()[byte]); }
         true
     }
 
@@ -224,7 +222,7 @@ impl ZeldaState {
                 _ => unreachable!(),
             }
         }
-        self.ram[address..address + usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        for byte in 0..usize::from(width) { self.write_wram_byte(address + byte, value.to_le_bytes()[byte]); }
         true
     }
 

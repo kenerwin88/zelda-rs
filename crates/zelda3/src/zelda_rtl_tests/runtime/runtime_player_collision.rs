@@ -48,6 +48,8 @@ fn player_collision_matches_frozen_runtime_effects() {
             digest.update(&state.wram_image());
             let mut projected = vec![0xa5; WRAM_SIZE];
             state.game_state.write_to_ram(&mut projected);
+        state.game_state.frame.encode_into_image(&mut projected);
+        state.game_state.system_signals.encode_into_image(&mut projected);
         state.game_state.inventory.player_resources.export_owned(&mut projected);
         state.game_state.inventory.items.export_owned(&mut projected);
         state.game_state.inventory.save_progress.export_runtime_to_image(&mut projected);
@@ -313,7 +315,7 @@ fn native_dungeon_push_caller_return_skips_owned_reset_loop_and_receipts() {
         for native_loop in [false,true] {
         let prepare=|| {
             let mut state=ZeldaState::new();
-            state.ram[0x10]=7;state.ram[0x11]=15;state.ram[0x1b]=1;
+            state.write_wram_byte(0x10, 7);state.write_wram_byte(0x11, 15);state.ram[0x1b]=1;
             let end=(case%17*2) as u16;
             state.ram[0x478..0x47a].copy_from_slice(&end.to_le_bytes());
             for i in 0..16 {
@@ -356,7 +358,7 @@ fn native_active_push_blocks_resume_room_child_without_replaying_prior_blocks_or
                 for case in 0..8u16 {
                     let prepare=|| {
                         let mut state=ZeldaState::new();
-                        state.ram[0x10]=7;state.ram[0x11]=0;state.ram[0x1b]=1;
+                        state.write_wram_byte(0x10, 7);state.write_wram_byte(0x11, 0);state.ram[0x1b]=1;
                         state.ram[0xa0..0xa2].copy_from_slice(&31u16.to_le_bytes());
                         state.ram[0xa9]=u8::from(target==0x02b6cd);
                         state.ram[0xaa]=if target==0x02b81c {2} else {0};
@@ -414,7 +416,7 @@ fn native_player_ancilla_return_resumes_selected_child_and_remaining_slots() {
         for indoors in [0u8,1] {
             let prepare=|| {
                 let mut state=ZeldaState::new();
-                state.ram[0x11]=(pattern&1) as u8;state.ram[0xfa0]=0xa5;state.ram[0x2f]=4;
+                state.write_wram_byte(0x11, (pattern&1) as u8);state.ram[0xfa0]=0xa5;state.ram[0x2f]=4;
                 state.ram[0x1b]=indoors;state.ram[0x3e9]=1;
                 let mut p=pattern;
                 for slot in 0..5 {
@@ -451,13 +453,13 @@ fn native_dungeon_after_push_handoffs_skip_owned_guards_half_slot_and_camera() {
         ] {
             let prepare = || {
                 let mut state = ZeldaState::new();
-                state.ram[0x10] = 7;
+                state.write_wram_byte(0x10, 7);
                 state.ram[0x1b] = 1;
-                state.ram[0x11] = if tail == DungeonAfterPushTail::Lamp {
+                state.write_wram_byte(0x11, if tail == DungeonAfterPushTail::Lamp {
                     15
                 } else {
                     0
-                };
+                });
                 crate::cycle_models::dungeon_camera::seed_case(
                     &mut state.ram,
                     [0, 1, 3, 253, 255][case % 5],
@@ -526,8 +528,8 @@ fn native_room_tag_handoffs_skip_owned_probe_and_selected_calls() {
             let head = [0x26u8, 0x38, 0x39, 0x5e, 0x5f][case % 5];
             let prepare = || {
                 let mut state = ZeldaState::new();
-                state.ram[0x10] = 7;
-                state.ram[0x11] = 0;
+                state.write_wram_byte(0x10, 7);
+                state.write_wram_byte(0x11, 0);
                 state.ram[0x1b] = 1;
                 state.ram[0xa0..0xa2].copy_from_slice(&0x31u16.to_le_bytes());
                 state.ram[0x20..0x24].copy_from_slice(&[0, 1, 0, 2]);

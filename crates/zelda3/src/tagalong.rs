@@ -2247,8 +2247,8 @@ mod drawing_cycle_tests {
         for indicator in [1, 6, 10] {
             for variant in 0..96u8 {
                 let mut state = ZeldaState::new();
-                state.ram[0x10] = 7;
-                state.ram[0x11] = 2; // Trigger returns while the room transition owns execution.
+                state.write_wram_byte(0x10, 7);
+                state.write_wram_byte(0x11, 2); // Trigger returns while the room transition owns execution.
                 state.ram[0xf3cc] = indicator;
                 state.ram[0x2f9] = 1; // Hidden draw isolates the movement and return path.
                 let index = if variant & 1 != 0 { 19 } else { 0 };
@@ -2270,7 +2270,7 @@ mod drawing_cycle_tests {
                     emulation: false, waiting: false, stack_address: 0x01fe,
                     stack_bytes: &[0xff, 0x7f],
                 };
-                let mut cpu = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                let mut cpu = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
                     &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
                 let mut expected = 0u64;
                 for _ in 0..1_000 {
@@ -2307,7 +2307,7 @@ mod drawing_cycle_tests {
                     emulation: false, waiting: false, stack_address: 0x01fe,
                     stack_bytes: &[0xff, 0x7f],
                 };
-                let mut cpu = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                let mut cpu = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
                     &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
                 let mut cycles = 0;
                 for _ in 0..32 {
@@ -2380,7 +2380,7 @@ mod drawing_cycle_tests {
             let boundary = bincode::deserialize(&encoded).unwrap();
             staged.complete_sprite_main_after_cpu_boundary(boundary);
             assert_eq!(crate::cycle_ledger::master() - start, eager_cycles);
-            assert_eq!(staged.ram, eager.ram);
+            assert_eq!(*staged.wram_image(), *eager.wram_image());
             assert_eq!(staged.game_state, eager.game_state);
         }
     }
@@ -2427,7 +2427,7 @@ mod drawing_cycle_tests {
                         state.tagalong_slot_mut(0).set_layer_bits(layer);
                         state.game_state.write_to_ram(&mut state.ram);
                         let (address, value) = [(0x1a, 0), (0x30, 1), (0x372, 1), (0x2e4, 1), (0xf3d3, 1), (0x33c, 1), (0x1a50, 4), (0x2f9, 1), (0xabd, 1), (0x1a, 7)][variant];
-                        state.ram[address] = value;
+                        state.write_wram_byte(address, value);
                         state.sync_native_game_state_from_ram();
                         let checkpoint = RomCpuCheckpoint {
                             entry_pc: 0x09_a907, stop_pc: 0x09_8000, a: 0, x: 0, y: 0,
@@ -2437,7 +2437,7 @@ mod drawing_cycle_tests {
                             emulation: false, waiting: false, stack_address: 0x01fe,
                             stack_bytes: &[0xff, 0x7f],
                         };
-                        let mut cpu = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                        let mut cpu = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
                             &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
                         let mut expected = 0u64;
                         for _ in 0..10_000 {

@@ -61,26 +61,42 @@ impl MsuResumeInfoState {
         }
     }
 
-    fn write_to_ram_slot<R: RamTarget + ?Sized>(self, ram: &mut R, slot: MsuResumeSlot) {
-        let offset = slot.offset();
-        if offset + 28 > ram.len() {
-            return;
+    fn owned_byte(&self, index: usize) -> u8 {
+        match index {
+            0..=3 => self.tag.to_le_bytes()[index - 0],
+            4..=7 => self.offset.to_le_bytes()[index - 4],
+            8..=11 => self.samples_until_repeat.to_le_bytes()[index - 8],
+            12..=13 => self.range_cur.to_le_bytes()[index - 12],
+            14..=15 => self.range_repeat.to_le_bytes()[index - 14],
+            16..=23 => self.initial_packet_bytes.to_le_bytes()[index - 16],
+            24..=24 => self.orig_track.to_le_bytes()[index - 24],
+            25..=25 => self.actual_track.to_le_bytes()[index - 25],
+            _ => unreachable!("MSU resume byte"),
         }
-        ram.write_range(offset..offset + 4, &(self.tag).to_le_bytes());
-        ram.write_range(offset + 4..offset + 4 + 4, &(self.offset).to_le_bytes());
-        ram.write_range(
-            offset + 8..offset + 8 + 4,
-            &(self.samples_until_repeat).to_le_bytes(),
-        );
-        ram.write_word(offset + 12, self.range_cur);
-        ram.write_word(offset + 14, self.range_repeat);
-        ram.write_range(
-            offset + 16..offset + 16 + 8,
-            &(self.initial_packet_bytes).to_le_bytes(),
-        );
-        ram.write_byte(offset + 24, self.orig_track);
-        ram.write_byte(offset + 25, self.actual_track);
     }
+
+    fn write_owned_byte(&mut self, index: usize, value: u8) {
+        macro_rules! replace_byte {
+            ($field:ident, $ty:ty, $lo:expr) => {{
+                let mut bytes = self.$field.to_le_bytes();
+                bytes[index - $lo] = value;
+                self.$field = <$ty>::from_le_bytes(bytes);
+            }};
+        }
+        match index {
+            0..=3 => replace_byte!(tag, u32, 0),
+            4..=7 => replace_byte!(offset, u32, 4),
+            8..=11 => replace_byte!(samples_until_repeat, u32, 8),
+            12..=13 => replace_byte!(range_cur, u16, 12),
+            14..=15 => replace_byte!(range_repeat, u16, 14),
+            16..=23 => replace_byte!(initial_packet_bytes, u64, 16),
+            24..=24 => replace_byte!(orig_track, u8, 24),
+            25..=25 => replace_byte!(actual_track, u8, 25),
+            _ => unreachable!("MSU resume byte"),
+        }
+    }
+
+
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -138,30 +154,74 @@ impl SystemSignalsState {
         }
     }
 
-    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
-        ram.write_byte(MUSIC_CONTROL, self.music_control);
-        ram.write_byte(CURRENT_MUSIC_CONTROL, self.current_music_control);
-        ram.write_byte(LAST_MUSIC_CONTROL, self.last_music_control);
-        ram.write_byte(QUEUED_MUSIC_CONTROL, self.queued_music_control);
-        ram.write_byte(RESIDENT_SONG_BANK_KIND, self.resident_song_bank_kind);
-        ram.write_byte(SOUND_EFFECT_1, self.sound_effect_1);
-        ram.write_byte(SOUND_EFFECT_2, self.sound_effect_2);
-        ram.write_byte(SOUND_EFFECT_AMBIENT, self.ambient_sound_effect);
-        ram.write_byte(SOUND_EFFECT_AMBIENT_LAST, self.last_ambient_sound_effect);
-        ram.write_byte(MSU_VOLUME, self.msu_volume);
-        ram.write_byte(RAM_APUI00, self.apui00);
-        ram.write_byte(RAW_SFX_PAN_VALUE, self.raw_sfx_pan_value);
-        ram.write_byte(FLAG_UPDATE_CGRAM_IN_NMI, self.update_cgram_flag);
-        ram.write_byte(FLAG_UPDATE_HUD_IN_NMI, self.update_hud_flag);
-        ram.write_byte(GAME_OVER_CHECK_FLAG, self.game_over_check_flag);
-        ram.write_byte(RESTART_CHECK_FLAG, self.restart_check_flag);
-        ram.write_byte(RAM_BUGS_FIXED, self.bugs_fixed);
-        ram.write_byte(DEATH_BACKUP_CURRENT_MUSIC, self.death_backup_current_music);
-        ram.write_byte(DEATH_BACKUP_AMBIENT_SOUND, self.death_backup_ambient_sound);
-        self.msu_resume_primary
-            .write_to_ram_slot(ram, MsuResumeSlot::Primary);
-        self.msu_resume_alternate
-            .write_to_ram_slot(ram, MsuResumeSlot::Alternate);
+    pub(crate) fn owned_byte(&self, address: usize) -> Option<u8> {
+        Some(match address {
+            MUSIC_CONTROL => self.music_control,
+            CURRENT_MUSIC_CONTROL => self.current_music_control,
+            LAST_MUSIC_CONTROL => self.last_music_control,
+            QUEUED_MUSIC_CONTROL => self.queued_music_control,
+            RESIDENT_SONG_BANK_KIND => self.resident_song_bank_kind,
+            SOUND_EFFECT_1 => self.sound_effect_1,
+            SOUND_EFFECT_2 => self.sound_effect_2,
+            SOUND_EFFECT_AMBIENT => self.ambient_sound_effect,
+            SOUND_EFFECT_AMBIENT_LAST => self.last_ambient_sound_effect,
+            MSU_VOLUME => self.msu_volume,
+            RAM_APUI00 => self.apui00,
+            RAW_SFX_PAN_VALUE => self.raw_sfx_pan_value,
+            FLAG_UPDATE_CGRAM_IN_NMI => self.update_cgram_flag,
+            FLAG_UPDATE_HUD_IN_NMI => self.update_hud_flag,
+            GAME_OVER_CHECK_FLAG => self.game_over_check_flag,
+            RESTART_CHECK_FLAG => self.restart_check_flag,
+            RAM_BUGS_FIXED => self.bugs_fixed,
+            DEATH_BACKUP_CURRENT_MUSIC => self.death_backup_current_music,
+            DEATH_BACKUP_AMBIENT_SOUND => self.death_backup_ambient_sound,
+            a if (MSU_RESUME_INFO_ALT..MSU_RESUME_INFO_ALT + 26).contains(&a) => self.msu_resume_alternate.owned_byte(a - MSU_RESUME_INFO_ALT),
+            a if (MSU_RESUME_INFO..MSU_RESUME_INFO + 26).contains(&a) => self.msu_resume_primary.owned_byte(a - MSU_RESUME_INFO),
+            _ => return None,
+        })
+    }
+
+    pub(crate) fn write_owned_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            MUSIC_CONTROL => self.music_control = value,
+            CURRENT_MUSIC_CONTROL => self.current_music_control = value,
+            LAST_MUSIC_CONTROL => self.last_music_control = value,
+            QUEUED_MUSIC_CONTROL => self.queued_music_control = value,
+            RESIDENT_SONG_BANK_KIND => self.resident_song_bank_kind = value,
+            SOUND_EFFECT_1 => self.sound_effect_1 = value,
+            SOUND_EFFECT_2 => self.sound_effect_2 = value,
+            SOUND_EFFECT_AMBIENT => self.ambient_sound_effect = value,
+            SOUND_EFFECT_AMBIENT_LAST => self.last_ambient_sound_effect = value,
+            MSU_VOLUME => self.msu_volume = value,
+            RAM_APUI00 => self.apui00 = value,
+            RAW_SFX_PAN_VALUE => self.raw_sfx_pan_value = value,
+            FLAG_UPDATE_CGRAM_IN_NMI => self.update_cgram_flag = value,
+            FLAG_UPDATE_HUD_IN_NMI => self.update_hud_flag = value,
+            GAME_OVER_CHECK_FLAG => self.game_over_check_flag = value,
+            RESTART_CHECK_FLAG => self.restart_check_flag = value,
+            RAM_BUGS_FIXED => self.bugs_fixed = value,
+            DEATH_BACKUP_CURRENT_MUSIC => self.death_backup_current_music = value,
+            DEATH_BACKUP_AMBIENT_SOUND => self.death_backup_ambient_sound = value,
+            a if (MSU_RESUME_INFO_ALT..MSU_RESUME_INFO_ALT + 26).contains(&a) => self.msu_resume_alternate.write_owned_byte(a - MSU_RESUME_INFO_ALT, value),
+            a if (MSU_RESUME_INFO..MSU_RESUME_INFO + 26).contains(&a) => self.msu_resume_primary.write_owned_byte(a - MSU_RESUME_INFO, value),
+            _ => return false,
+        }
+        true
+    }
+
+    pub(crate) fn export_owned_range(&self, image: &mut [u8], lo: usize, hi: usize) {
+        for address in lo..=hi { image[address] = self.owned_byte(address).expect("system signal range"); }
+    }
+
+    pub(crate) fn import_owned_range(&mut self, image: &[u8], lo: usize, hi: usize) {
+        for address in lo..=hi { assert!(self.write_owned_byte(address, image[address])); }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn encode_into_image(&self, image: &mut [u8]) {
+        for range in crate::zelda_rtl::NATIVE_OWNED_WRAM.iter().filter(|r| r.owner == "SystemSignalsState") {
+            self.export_owned_range(image, range.lo, range.hi);
+        }
     }
 
     pub(crate) fn apui00_offset() -> usize {
@@ -451,7 +511,7 @@ impl SystemWorkArea {
     }
 
     pub(crate) fn clear_intro_wram_block_columns(
-        ram: &mut [u8],
+        mut clear_word: impl FnMut(usize),
         start_offset: u16,
         stop_offset: u16,
     ) -> u16 {
@@ -460,8 +520,7 @@ impl SystemWorkArea {
             for block in 0..15 {
                 let base =
                     INTRO_CLEAR_BLOCK_BASE + offset as usize + block * INTRO_CLEAR_BLOCK_STRIDE;
-                ram[base] = 0;
-                ram[base + 1] = 0;
+                clear_word(base);
             }
             offset = offset.wrapping_sub(2);
             if offset == stop_offset {
@@ -501,69 +560,7 @@ impl<'a> NativeSystemWorkAreaBridgeMut<'a> {
         start_offset: u16,
         stop_offset: u16,
     ) -> u16 {
-        SystemWorkArea::clear_intro_wram_block_columns(self.ram, start_offset, stop_offset)
-    }
-}
-
-adopting_bridge!(NativeSystemSignalsBridgeMut, system_signals: SystemSignalsState);
-
-impl<'a> NativeSystemSignalsBridgeMut<'a> {
-    forward_synced! {
-        system_signals;
-        fn set_music_control(value: u8);
-        fn set_current_music_control(value: u8);
-        fn set_last_music_control(value: u8);
-        fn set_queued_music_control(value: u8);
-        fn select_overworld_song_bank();
-        fn select_dungeon_song_bank();
-        fn set_ambient_sound_effect(value: u8);
-        fn set_sound_effect_1(value: u8);
-        fn set_sound_effect_2(value: u8);
-        fn set_apui00(value: u8);
-        fn set_msu_volume(value: u8);
-        fn set_msu_resume_info(slot: MsuResumeSlot, info: MsuResumeInfoState);
-        fn set_sound_effect_1_word(value: u16);
-        fn set_ambient_sound_effect_word(value: u16);
-        fn clear_sound_effect_1();
-        fn clear_sound_effect_2();
-        fn clear_ambient_sound_effect();
-    }
-
-    pub(crate) fn queue_sound_effect_1_if_empty(&mut self, value: u8) -> bool {
-        if self.system_signals.queue_sound_effect_1_if_empty(value) {
-            self.sync();
-            true
-        } else {
-            false
-        }
-    }
-
-    pub(crate) fn queue_sound_effect_2_if_empty(&mut self, value: u8) -> bool {
-        if self.system_signals.queue_sound_effect_2_if_empty(value) {
-            self.sync();
-            true
-        } else {
-            false
-        }
-    }
-
-    forward_synced! {
-        system_signals;
-        fn increment_hud_update_flag() -> u8;
-        fn clear_hud_update_flag();
-        fn set_hud_update_flag(value: u8);
-        fn increment_cgram_update_flag() -> u8;
-        fn clear_cgram_update_flag();
-        fn set_bugs_fixed(value: u8);
-        fn save_current_music_as_last();
-        fn save_ambient_sound_effect_as_last();
-        fn clear_game_over_check_flag();
-        fn clear_restart_check_flag();
-        fn set_restart_check_flag(value: u8);
-        fn set_raw_sfx_pan_value(value: u8);
-        fn increment_game_over_check_flag();
-        fn set_death_backup_current_music(value: u8);
-        fn set_death_backup_ambient_sound(value: u8);
+        SystemWorkArea::clear_intro_wram_block_columns(|base| self.ram[base..base + 2].fill(0), start_offset, stop_offset)
     }
 }
 

@@ -373,7 +373,7 @@ fn sprite_dma_animations_match_source_at_every_instruction() {
                         let before = crate::cycle_ledger::master();
                         prepaid.nmi_prepare_sprites_animations(126);
                         assert_eq!(crate::cycle_ledger::master() - before + 126, total);
-                        assert_eq!(prepaid.ram, *state.wram_image());
+                        assert_eq!(*prepaid.wram_image(), *state.wram_image());
                         cases += 1;
                     }
                 }

@@ -5822,7 +5822,7 @@ mod tests {
         assert_eq!(state.game_state.display.ppu_scroll_copy.bg2_h_copy2(), 0x0120);
         state.complete_module09_load_new_sprites_after_reload();
         assert_eq!(state.begin_module09_sprite_main(), expected_scroll);
-        assert_eq!(state.ram, atomic.ram);
+        assert_eq!(*state.wram_image(), *atomic.wram_image());
         assert_eq!(state.game_state, atomic.game_state);
         let once = state.ram.clone();
         state.advance_native_exact_cpu_overworld_live_scan();
@@ -5869,7 +5869,7 @@ mod tests {
         state.advance_native_exact_cpu_overworld_live_scan();
         state.complete_overworld_proximity_scan_continuation();
         assert!(state.native_exact_cpu_overworld_live_scan.is_none());
-        assert_eq!(state.ram, atomic.ram);
+        assert_eq!(*state.wram_image(), *atomic.wram_image());
         assert_eq!(state.game_state, atomic.game_state);
     }
 

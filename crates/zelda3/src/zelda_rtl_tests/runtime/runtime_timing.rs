@@ -3726,7 +3726,7 @@ fn helmasaur_hard_hat_tile_collision_checkpoints_resume_to_the_atomic_body() {
             state.begin_helmasaur_hard_hat_tile_collision_checkpoint(0, stage);
             state.resume_helmasaur_hard_hat_tile_collision(0, stage);
             assert_eq!(
-                *state.wram_image(), atomic.ram,
+                *state.wram_image(), *atomic.wram_image(),
                 "{x_velocity:#x}/{y_velocity:#x} {stage:?}"
             );
             assert_eq!(state.game_state.sprites, atomic.game_state.sprites);

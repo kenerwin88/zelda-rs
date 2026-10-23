@@ -362,7 +362,7 @@ fn zero_hit_timer_clear_does_not_publish_priority_early() {
         staged.sprite_slot_view_mut(0).set_object_priority(0);
         staged.sprite_timers_and_oam_after_hit_through_timer_decrements(0);
         staged.sprite_timers_and_oam_after_timer_decrements(0);
-        assert_eq!(staged.ram, *atomic.wram_image());
+        assert_eq!(*staged.wram_image(), *atomic.wram_image());
     }
 }
 
@@ -393,7 +393,7 @@ fn main_timer_boundary_leaves_auxiliary_countdowns_pending() {
         staged.sprite_timers_and_oam_after_main_and_aux1_through_primary_timer_decrements(0);
         staged.sprite_timers_and_oam_after_primary_through_timer_decrements(0);
         staged.sprite_timers_and_oam_after_timer_decrements(0);
-        assert_eq!(staged.ram, *atomic.wram_image());
+        assert_eq!(*staged.wram_image(), *atomic.wram_image());
     }
 }
 
@@ -1370,7 +1370,7 @@ fn coordinate_prefix_defers_allocation_and_timer_decrements() {
     assert_eq!(crate::cycle_ledger::master() - start, atomic_cycles);
     assert_eq!(staged.sprite_slot_view(3).delay_main(), 8);
     assert_eq!(staged.sprite_slot_view(3).delay_aux1(), 6);
-    assert_eq!(staged.ram, *atomic.wram_image());
+    assert_eq!(*staged.wram_image(), *atomic.wram_image());
     assert_eq!(staged.game_state, atomic.game_state);
 }
 

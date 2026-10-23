@@ -29,7 +29,7 @@ use crate::game_state::constants::{
 };
 use crate::game_state::{
     lanmola_flat_trail_entry_from_ram, ArmosKnightHomePositionMut, BossHomePositionRead,
-    CachedSpriteRead, CompatibilityBytesView, CompatibilityBytesViewMut, DungeonStairList,
+    CachedSpriteRead, DungeonStairList,
     FollowerLinkState, GameState, GarnishSlotMut, GarnishSlotView, GraphicsDecompressionScratch,
     HappinessPondRupeeSnapshot, HudStateRead, HudTilemapState, IntroActorRead,
     LanmolaFlatTrailEntry, LinkDmaSourceSlot, LinkDmaSources, MsuResumeInfoState, MsuResumeSlot,
@@ -58,7 +58,7 @@ use crate::game_state::{
     NativeDungeonTorchBridgeMut, NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
     NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
     NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut, NativeFollowerLinkBridgeMut,
-    NativeFollowerRuntimeBridgeMut, NativeFrameStateBridgeMut, NativeGarnishRuntimeBridgeMut,
+    NativeFollowerRuntimeBridgeMut, NativeGarnishRuntimeBridgeMut,
     NativeHappinessPondRupeeBridgeMut, NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
     NativeIntroActorBridgeMut, NativeIntroSceneBridgeMut, NativeIntroSwordBridgeMut,
     NativeInventoryItemsBridgeMut, NativeLanmolaSegmentMotionBridgeMut,
@@ -83,7 +83,7 @@ use crate::game_state::{
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
     NativeSpriteSlotBridgeMut, NativeSpriteSlotView, NativeSpriteSystemBridgeMut,
     NativeSpriteWorkspaceBridgeMut, NativeSwamolaHistoryBridgeMut, NativeSwamolaTargetBridgeMut,
-    NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut,
+    NativeSwimAccelerationBridgeMut, NativeTagalongSlotBridgeMut,
     NativeTileDetectionBridgeMut, NativeTowerSealBridgeMut, NativeTowerSealOrbitBridgeMut,
     NativeTowerSealSparkleBridgeMut, NativeTrinexxPaletteBridgeMut,
     NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut,
@@ -11845,9 +11845,6 @@ impl ZeldaState {
         pub(crate) fn enhanced_features_mut() -> NativeEnhancedFeaturesBridgeMut {
             game_state.enhanced_features
         }
-        pub(crate) fn system_signals_mut() -> NativeSystemSignalsBridgeMut {
-            game_state.system_signals
-        }
         pub(crate) fn special_exit_position_mut() -> NativeSpecialExitPositionBridgeMut {
             game_state.player.special_exit_position
         }
@@ -11880,9 +11877,6 @@ impl ZeldaState {
         }
         pub(crate) fn player_resources_mut() -> NativePlayerResourcesBridgeMut {
             game_state.inventory.player_resources
-        }
-        pub(crate) fn frame_state_mut() -> NativeFrameStateBridgeMut {
-            game_state.frame
         }
         fn world_location_mut() -> NativeWorldLocationBridgeMut {
             game_state.world.location
@@ -12176,14 +12170,8 @@ impl ZeldaState {
         self.system_signals_mut().increment_game_over_check_flag();
     }
 
-    fn compatibility_ram_range(&self, offset: usize, len: usize) -> &[u8] {
-        CompatibilityBytesView::new(&self.ram).range(offset, len)
-    }
-
     fn set_compatibility_ram_byte(&mut self, offset: usize, value: u8) {
-        if !self.game_state.inventory.write_owned_byte(offset, value) {
-            CompatibilityBytesViewMut::new(&mut self.ram).set_byte_at(offset, value);
-        }
+        self.write_wram_byte(offset, value);
     }
 
     zelda_ppu_scroll_copy_methods! {
@@ -12921,18 +12909,28 @@ impl ZeldaState {
         pub(crate) fn dungeon_movable_blocks_mut() -> NativeDungeonMovableBlockBridgeMut {
             game_state.dungeon.movable_blocks
         }
-        pub(crate) fn dungeon_map_mut() -> NativeDungeonMapDisplayBridgeMut {
-            game_state.dungeon_map_display
-        }
         pub(crate) fn scratch_word_mut() -> NativeDungeonScratchWordBridgeMut {
             game_state.dungeon.scratch_word
         }
         pub(crate) fn ending_scratch_mut() -> NativeDungeonScratchWordBridgeMut {
             game_state.dungeon.scratch_word
         }
-        pub(crate) fn save_load_scratch_mut() -> NativeSaveLoadTransferBridgeMut {
-            game_state.save_load_transfer
-        }
+    }
+
+    pub(crate) fn system_signals_mut(&mut self) -> &mut SystemSignalsState {
+        &mut self.game_state.system_signals
+    }
+
+    pub(crate) fn frame_state_mut(&mut self) -> &mut crate::game_state::FrameState {
+        &mut self.game_state.frame
+    }
+
+    pub(crate) fn dungeon_map_mut(&mut self) -> NativeDungeonMapDisplayBridgeMut<'_> {
+        NativeDungeonMapDisplayBridgeMut::new(&mut self.game_state.dungeon_map_display, &mut self.ram, self.game_state.frame.main_module)
+    }
+
+    pub(crate) fn save_load_scratch_mut(&mut self) -> NativeSaveLoadTransferBridgeMut<'_> {
+        NativeSaveLoadTransferBridgeMut::new(&mut self.game_state.save_load_transfer, &mut self.ram, self.game_state.frame.main_module)
     }
 
     #[track_caller]
@@ -13557,10 +13555,14 @@ impl ZeldaState {
         let palette_provenance = std::mem::take(&mut self.game_state.display.palette_provenance);
         // Refresh legacy mirrors while preserving the live native owners.
         // External seeds/checkpoints use import_wram_image before this refresh.
+        let frame = self.game_state.frame;
+        let system_signals = self.game_state.system_signals;
         let resources = self.game_state.inventory.player_resources;
         let items = self.game_state.inventory.items;
         let save_progress = self.game_state.inventory.save_progress.clone();
         self.game_state = GameState::load_from_ram(&self.ram);
+        self.game_state.frame = frame;
+        self.game_state.system_signals = system_signals;
         self.game_state.inventory.player_resources = resources;
         self.game_state.inventory.items = items;
         self.game_state.inventory.save_progress = save_progress;
@@ -13941,7 +13943,6 @@ impl ZeldaState {
         };
         state.initialize();
         state.sync_native_game_state_from_ram();
-        state.assert_native_frame_state_matches_ram();
         state.assert_native_world_location_state_matches_ram();
         state.assert_native_display_state_matches_ram();
         state
@@ -15864,7 +15865,7 @@ impl ZeldaState {
                         0xff9 if title => {assert_eq!(width,1);self.attract_scene_mut().set_intro_palette_flash_count(value as u8);}
                         0xd00..=0xffe if graphics => {
                             assert_eq!((width,value,address&1),(2,0,0), "unowned graphics store {address:06x} by {caller_owner:?}");
-                            self.ram[address as usize..address as usize+2].fill(0);
+                            self.write_wram_word(address as usize, 0);
                             self.game_state.sprites.sprite_slots=SpriteSlotsState::load_from_ram(&self.ram);
                             if address==0xff8 {self.attract_scene_mut().set_intro_palette_flash_count(0);}
                         }
@@ -15953,7 +15954,7 @@ impl ZeldaState {
                         0xff if graphics => {assert_eq!(width,1);self.set_vertical_irq_trigger(value as u8);}
                         0x15 if graphics => {
                             assert_eq!(width,1);self.increment_cgram_update_flag();
-                            assert_eq!(self.ram[crate::game_state::constants::FLAG_UPDATE_CGRAM_IN_NMI],value as u8);
+                            assert_eq!(self.read_wram_byte(crate::game_state::constants::FLAG_UPDATE_CGRAM_IN_NMI),value as u8);
                         }
                         0x12a if graphics => {assert_eq!(width,1);match value{0=>self.deactivate_nmi_thread(),1=>self.activate_nmi_thread(),_=>panic!("invalid native thread state {value}")}}
                         0x1e00..=0x1fff if graphics => self.write_native_intro_poly_state(address as usize,value,width),
@@ -16054,7 +16055,7 @@ impl ZeldaState {
                             self.display_core_mut().set_sprite_preparation_pointer_word(word,value);
                         }
                         0..=0x0f | 0x0100..=0x01ff => {
-                            self.ram[address as usize..address as usize + usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                            for byte in 0..usize::from(width) { self.write_wram_byte(address as usize + byte, value.to_le_bytes()[byte]); }
                             if (file_menu || name_file) && address<2 {
                                 let offset=read_le_u16(&self.ram,0);
                                 self.game_state.save_load_transfer.set_source_offset(offset);
@@ -16347,9 +16348,9 @@ impl ZeldaState {
                 self.native_ppu_bus_write(clock, address, value);
             }
             match access {
-            Access::ReadByte(a)=>u16::from(intro_entry::table_byte(a).unwrap_or_else(||{assert!(a<0x2000);self.ram[a as usize]})),
+            Access::ReadByte(a)=>u16::from(intro_entry::table_byte(a).unwrap_or_else(||{assert!(a<0x2000);self.read_wram_byte(a as usize)})),
             Access::ReadWord(a)=>{
-                let read=|a|intro_entry::table_byte(a).unwrap_or_else(||{assert!(a<0x2000);self.ram[a as usize]});
+                let read=|a|intro_entry::table_byte(a).unwrap_or_else(||{assert!(a<0x2000);self.read_wram_byte(a as usize)});
                 u16::from_le_bytes([read(a),read(a+1)])
             }
             Access::WriteByte(a,value)=>{
@@ -16360,10 +16361,10 @@ impl ZeldaState {
                     0x9b=>{assert_eq!(value,0);self.clear_hdma_enable_mask();}
                     0x2100=>self.native_main_inidisp_write(at,value),
                     0x420c=>{assert_eq!(value,0);for channel in &mut self.dma.channel {channel.hdma_active=false;}}
-                    _=>{assert!(matches!(a,0..=5|0x100..=0x1ff));self.ram[usize::from(a)]=value;}
+                    _=>{assert!(matches!(a,0..=5|0x100..=0x1ff));self.write_wram_byte(usize::from(a),value);}
                 };0
             }
-            Access::WriteWord(a,value)=>{assert!(matches!(a,0..=3|0x100..=0x1fe));write_le_u16(&mut self.ram,usize::from(a),value);0}
+            Access::WriteWord(a,value)=>{assert!(matches!(a,0..=3|0x100..=0x1fe));self.write_wram_word(usize::from(a),value);0}
             Access::WriteLongWord(..)=>unreachable!(),
         }});
         crate::cycle_ledger::charge_routine(if name_file {0x0cd88a}else if kill_file {0x0cd485}else{0x0ccd7d},cycles);
@@ -16414,9 +16415,9 @@ impl ZeldaState {
             }
             match access {
                 Access::ReadByte(address) => u16::from(intro_entry::table_byte(address)
-                    .unwrap_or_else(|| self.ram[address as usize])),
+                    .unwrap_or_else(|| self.read_wram_byte(address as usize))),
                 Access::ReadWord(address) => {
-                    let read = |a| intro_entry::table_byte(a).unwrap_or_else(|| self.ram[a as usize]);
+                    let read = |a| intro_entry::table_byte(a).unwrap_or_else(|| self.read_wram_byte(a as usize));
                     u16::from_le_bytes([read(address), read(address + 1)])
                 }
                 Access::WriteByte(address, value) => {
@@ -16442,7 +16443,7 @@ impl ZeldaState {
                         0x2101..=0x213f => self.zelda_ppu_write(u32::from(address), value),
                         _ => {
                             assert!(matches!(address, 0..=5 | 0x100..=0x1ff));
-                            self.ram[usize::from(address)] = value;
+                            self.write_wram_byte(usize::from(address), value);
                         }
                     }
                     0
@@ -16450,7 +16451,7 @@ impl ZeldaState {
                 Access::WriteLongWord(..) => unreachable!("intro prefix has no long stores"),
                 Access::WriteWord(address, value) => {
                     assert!(matches!(address, 0..=3 | 0x100..=0x1fe));
-                    self.ram[usize::from(address)..usize::from(address)+2].copy_from_slice(&value.to_le_bytes());
+                    self.write_wram_word(usize::from(address), value);
                     0
                 }
             }
@@ -16485,7 +16486,7 @@ impl ZeldaState {
                             art[offset as usize]
                         } else {
                             assert!(a < 0x2000, "unowned intro graphics read {a:06x}");
-                            self.ram[a as usize]
+                            self.read_wram_byte(a as usize)
                         }
                     };
                     let low = read(address);
@@ -16506,8 +16507,8 @@ impl ZeldaState {
                         }
                         _ => {
                             assert!(matches!(address, 0..=0xc | 0x100..=0x1ff));
-                            self.ram[address as usize] = value as u8;
-                            if width == 2 { self.ram[address as usize+1] = (value >> 8) as u8; }
+                            self.write_wram_byte(address as usize, value as u8);
+                            if width == 2 { self.write_wram_byte(address as usize+1, (value >> 8) as u8); }
                         }
                     }
                     0
@@ -16541,11 +16542,11 @@ impl ZeldaState {
             match access {
                 Access::ReadByte(address) => {
                     assert!(address < 0x2000);
-                    u16::from(self.ram[address as usize])
+                    u16::from(self.read_wram_byte(address as usize))
                 }
                 Access::ReadWord(address) => {
                     assert!(address < 0x1fff);
-                    crate::types::read_le_u16(&self.ram, address as usize)
+                    self.read_wram_image_word(address as usize, 2)
                 }
                 Access::WriteByte(0xaaa, value) => { self.set_chr_halfslot_request(value); 0 }
                 Access::WriteByte(address @ 0x2115..=0x2119, value) => {
@@ -16555,8 +16556,7 @@ impl ZeldaState {
                     match address {
                         0xc8 => self.ending_scratch_mut().set_primary_word(value),
                         0xca => self.ending_scratch_mut().set_secondary_word(value),
-                        0x100..=0x1fe => self.ram[usize::from(address)..usize::from(address)+2]
-                            .copy_from_slice(&value.to_le_bytes()),
+                        0x100..=0x1fe => self.write_wram_word(usize::from(address), value),
                         _ => panic!("unowned intro setup word store {address:04x}"),
                     }
                     0
@@ -16657,7 +16657,7 @@ impl ZeldaState {
             let read = |address: u32| {
                 intro_entry::table_byte(address).unwrap_or_else(|| {
                     assert!(address < 0x2000, "unowned intro caller read {address:06x}");
-                    self.ram[address as usize]
+                    self.read_wram_byte(address as usize)
                 })
             };
             match access {
@@ -16670,7 +16670,7 @@ impl ZeldaState {
                         0x11 => self.set_submodule(value),
                         0x15 => {
                             self.increment_cgram_update_flag();
-                            assert_eq!(self.ram[crate::game_state::constants::FLAG_UPDATE_CGRAM_IN_NMI], value, "palette update owner diverged from its operand");
+                            assert_eq!(self.read_wram_byte(crate::game_state::constants::FLAG_UPDATE_CGRAM_IN_NMI), value, "palette update owner diverged from its operand");
                         }
                         0x12f => self.set_sound_effect_2(value),
                         0x800..=0x80f => {
@@ -16687,14 +16687,14 @@ impl ZeldaState {
                         0xa20..=0xa23 => self.oam_state_mut().set_extended_byte(usize::from(address - 0xa20), value),
                         _ => {
                             assert!(matches!(address, 0..=5 | 0x100..=0x1ff));
-                            self.ram[usize::from(address)] = value;
+                            self.write_wram_byte(usize::from(address), value);
                         }
                     }
                     0
                 }
                 Access::WriteWord(address, value) => {
                     assert!(matches!(address, 0..=3 | 0x100..=0x1fe));
-                    self.ram[usize::from(address)..usize::from(address)+2].copy_from_slice(&value.to_le_bytes());
+                    self.write_wram_word(usize::from(address), value);
                     0
                 }
                 Access::WriteLongWord(..) => unreachable!("intro caller has no long stores"),
@@ -17003,7 +17003,7 @@ impl ZeldaState {
 
     fn clear_intro_wram_block_columns(&mut self, start_offset: u16, stop_offset: u16) -> u16 {
         let next_offset = SystemWorkArea::clear_intro_wram_block_columns(
-            &mut self.ram,
+            |base| self.write_wram_word(base, 0),
             start_offset,
             stop_offset,
         );
@@ -17013,11 +17013,7 @@ impl ZeldaState {
 
     #[cfg(test)]
     fn debug_compatibility_ram_u32(&self, offset: usize) -> u32 {
-        let bytes = self.compatibility_ram_range(offset, 4);
-        u32::from(bytes[0])
-            | (u32::from(bytes[1]) << 8)
-            | (u32::from(bytes[2]) << 16)
-            | (u32::from(bytes[3]) << 24)
+        u32::from_le_bytes(std::array::from_fn(|byte| self.read_wram_byte(offset + byte)))
     }
 }
 

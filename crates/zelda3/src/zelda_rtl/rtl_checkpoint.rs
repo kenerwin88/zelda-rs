@@ -713,7 +713,7 @@ impl ZeldaState {
         // Unlike the CPU phase above, transition identity belongs to the WRAM
         // generation copied into this snapshot. Keep both meanings explicit:
         // collapsing them regresses the later staged landing-wipe cadence.
-        let captured_frame = crate::game_state::FrameState::load_from_ram(&self.ram);
+        let captured_frame = self.game_state.frame;
         let captured_messaging = crate::game_state::MessagingState::load_from_ram(&self.ram);
         let published_frame = self
             .display_snapshot
@@ -1321,6 +1321,7 @@ impl ZeldaState {
         let diagnostics = DisplayDiagnostics::from_env();
 
         let snapshot_frame = crate::game_state::FrameState::load_from_ram(&display.ram);
+        let snapshot_system_signals = SystemSignalsState::load_from_ram(&display.ram);
         let snapshot_attract_scene =
             crate::game_state::AttractSceneState::load_from_ram(&display.ram);
         let snapshot_messaging = crate::game_state::MessagingState::load_from_ram(&display.ram);
@@ -1410,7 +1411,7 @@ impl ZeldaState {
                 snapshot_attract_scene.sequence(),
                 snapshot_attract_scene.state(),
             );
-        let live_frame = crate::game_state::FrameState::load_from_ram(&self.ram);
+        let live_frame = self.game_state.frame;
         let host_entry_frame = self
             .pre_main_graphics_dma
             .as_ref()
@@ -1646,7 +1647,14 @@ impl ZeldaState {
                 live_forced_blank_from_scanline,
             );
         }
-        std::mem::swap(&mut self.ram, &mut display.ram);
+        // Composition borrows a detached snapshot generation. Keep live backing
+        // storage aside; the outgoing snapshot must contain an exported image,
+        // and native mode decisions must use the captured generation's owner.
+        let live_image = self.wram_image().into_owned();
+        let captured_image = std::mem::replace(&mut display.ram, live_image);
+        let saved_ram = std::mem::replace(&mut self.ram, captured_image);
+        self.game_state.frame = snapshot_frame;
+        self.game_state.system_signals = snapshot_system_signals;
         std::mem::swap(&mut self.ppu, &mut display.ppu);
         std::mem::swap(&mut self.dma, &mut display.dma);
         std::mem::swap(&mut self.vram_chr_source, &mut display.vram_chr_source);
@@ -2088,7 +2096,7 @@ impl ZeldaState {
         self.active_presented_mode7_transform = saved_presented_mode7_transform;
         self.active_presented_window_mask = saved_presented_window_mask;
 
-        std::mem::swap(&mut self.ram, &mut display.ram);
+        self.ram = saved_ram;
         std::mem::swap(&mut self.ppu, &mut display.ppu);
         std::mem::swap(&mut self.dma, &mut display.dma);
         std::mem::swap(&mut self.vram_chr_source, &mut display.vram_chr_source);
@@ -2937,7 +2945,6 @@ impl ZeldaState {
                     PreMainNmiResume::DungeonSupertileQuadrantUploads,
                 );
             }
-            self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
             return true;
@@ -3003,7 +3010,6 @@ impl ZeldaState {
                 self.game_execution_scheduler
                     .finish_call_stack_at_main_wait_before_nmi();
             }
-            self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
             return true;
@@ -3023,7 +3029,6 @@ impl ZeldaState {
             self.finish_main_loop_caller_return();
             self.game_execution_scheduler
                 .schedule_pre_main_nmi_resume(PreMainNmiResume::DungeonSupertileQuadrantUploads);
-            self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
             return true;
@@ -3049,7 +3054,6 @@ impl ZeldaState {
             self.game_execution_scheduler.schedule_pre_main_nmi_resume(
                 PreMainNmiResume::DungeonSupertileQuadrantUploadsAfterHeldNmi,
             );
-            self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
             return true;
@@ -3064,7 +3068,6 @@ impl ZeldaState {
             // observed it.
             debug_assert_eq!(resume.nmi_latch_clear_phase(), Some(NmiPhase::AfterNmi));
             self.finish_main_loop_caller_return();
-            self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
             return true;
@@ -3130,7 +3133,7 @@ impl ZeldaState {
             self.active_display_obj_generation =
                 DisplayObjGeneration::RetainCapturedMemory { oam, vram };
         }
-        self.assert_native_frame_state_matches_ram();
+
         self.assert_native_world_location_state_matches_ram();
         self.assert_native_display_state_matches_ram();
         true

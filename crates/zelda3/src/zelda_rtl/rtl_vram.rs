@@ -272,10 +272,10 @@ impl ZeldaState {
             .bg1_wall_bottom_tilemap_buffer(&self.ram)
     }
 
-    pub(crate) fn vram_dma_source_bytes(&self, source_addr: usize, len: usize) -> &[u8] {
-        self.game_state
-            .display
-            .vram_dma_source_bytes(&self.ram, source_addr, len)
+    pub(crate) fn vram_dma_source_bytes(&self, source_addr: usize, len: usize) -> Vec<u8> {
+        let start = source_addr.min(self.ram.len());
+        let end = source_addr.saturating_add(len).min(self.ram.len());
+        (start..end).map(|address| self.read_wram_byte(address)).collect()
     }
 
     #[track_caller]
@@ -406,7 +406,7 @@ impl ZeldaState {
             .pre_main_graphics_dma
             .as_ref()
             .map(|graphics| graphics.entry_frame)
-            .unwrap_or_else(|| crate::game_state::FrameState::load_from_ram(&self.ram));
+            .unwrap_or_else(|| self.game_state.frame);
         let following_frame = crate::game_state::FrameState::load_from_ram(&following.ram);
         let host_boundary_link_obj_vram = self
             .pre_main_graphics_dma
@@ -695,7 +695,7 @@ impl ZeldaState {
             .pre_main_graphics_dma
             .as_ref()
             .map(|graphics| graphics.entry_frame)
-            .unwrap_or_else(|| crate::game_state::FrameState::load_from_ram(&self.ram));
+            .unwrap_or_else(|| self.game_state.frame);
         let following_frame = crate::game_state::FrameState::load_from_ram(&following.ram);
         let following_room = crate::game_state::WorldLocationState::load_from_ram(&following.ram)
             .dungeon_room_index();

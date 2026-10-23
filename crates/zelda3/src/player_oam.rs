@@ -4404,7 +4404,7 @@ mod equipment_cycle_tests {
                 emulation: false, waiting: false, stack_address: 0x01fe,
                 stack_bytes: &[0xff, 0x7f],
             };
-            let mut cpu = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+            let mut cpu = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
                 &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
             let mut cycles = 0;
             let mut stores = 0;
@@ -4446,7 +4446,7 @@ mod equipment_cycle_tests {
                         emulation: false, waiting: false, stack_address: 0x01fe,
                         stack_bytes: &[0xff, 0x7f],
                     };
-                    let mut cpu = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                    let mut cpu = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
                         &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
                     let mut expected = 0u64;
                     for _ in 0..1000 {

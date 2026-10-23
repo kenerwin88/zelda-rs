@@ -47,7 +47,6 @@ mod sprites;
 mod system;
 mod world;
 
-use crate::game_state::constants::MAIN_MODULE;
 
 pub(crate) use display::{
     palette_provenance_check_mode, DisplayState, GraphicsDecompressionScratch, HudStateRead,
@@ -90,7 +89,7 @@ pub(crate) use ending::{
     AttractSceneState, EndingState, IntroActorRead, IntroActorState, NativeAttractSceneBridgeMut,
     NativeEndingCreditBridgeMut, NativeIntroActorBridgeMut, NativeIntroSceneBridgeMut,
 };
-pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
+pub(crate) use frame::FrameState;
 pub(crate) use inventory::{
     DungeonItem, EquipmentItem, InventoryState, NativeDungeonKeySlotsBridgeMut,
     NativeInventoryItemsBridgeMut, NativeMirrorWarpBridgeMut, NativePlayerResourcesBridgeMut,
@@ -146,7 +145,7 @@ pub(crate) use sprites::{
     ANCILLA_SLOT_COUNT, OVERWORLD_SPRITE_FLAG_COUNT,
 };
 pub(crate) use system::{
-    MsuResumeInfoState, MsuResumeSlot, NativeSystemSignalsBridgeMut, SystemSignalsState,
+    MsuResumeInfoState, MsuResumeSlot, SystemSignalsState,
     SystemWorkArea,
 };
 #[cfg(test)]
@@ -303,11 +302,7 @@ impl GameState {
         // and the 0xb69 world.transient overrun until the group was split).
         let split = crate::debug_env::var!("ZELDA3_SCRATCH_CONFLICT_SPLIT").unwrap_or_default();
         let split: Vec<&str> = split.split(',').map(|s| s.trim()).collect();
-        let all: [(&'static str, &dyn Fn(&mut [u8])); 27] = [
-            ("frame", &|r: &mut [u8]| self.frame.write_to_ram(r)),
-            ("system_signals", &|r: &mut [u8]| {
-                self.system_signals.write_to_ram(r)
-            }),
+        let all: [(&'static str, &dyn Fn(&mut [u8])); 25] = [
             ("enhanced_features", &|r: &mut [u8]| {
                 self.enhanced_features.write_to_ram(r)
             }),
@@ -328,7 +323,7 @@ impl GameState {
                 self.memorized_tiles.write_to_ram(r)
             }),
             ("save_load_transfer", &|r: &mut [u8]| {
-                self.save_load_transfer.write_to_ram(r)
+                self.save_load_transfer.write_to_ram(r, self.frame.main_module)
             }),
             ("dungeon_map_display", &|r: &mut [u8]| {
                 self.dungeon_map_display.write_to_ram(r)
@@ -437,8 +432,6 @@ impl GameState {
                 }
             };
         }
-        check!(frame);
-        check!(system_signals);
         check!(enhanced_features);
         check!(scratch_counter);
         check!(minigame);
@@ -447,11 +440,11 @@ impl GameState {
         check!(sprite_battle);
         check!(memorized_tiles);
         check!(dungeon_secret);
-        if ram_byte(ram, MAIN_MODULE) != 7 {
+        if self.frame.main_module != 7 {
             check!(save_load_transfer);
         }
         if self.dungeon_map_display != fresh.dungeon_map_display {
-            out.extend(self.dungeon_map_display.report_incoherent_with_ram(ram));
+            out.extend(self.dungeon_map_display.report_incoherent_with_ram(ram, self.frame.main_module));
         }
         // sprites/dungeon/world are the most composite/bug-prone states — drill to the leaf so a
         // faithful leaf (e.g. sprite_slots, world.location) flagging stands out from intentionally
@@ -465,9 +458,9 @@ impl GameState {
         check!(player);
         check!(inventory);
         if self.world != fresh.world {
-            out.extend(self.world.report_incoherent_with_ram(ram));
+            out.extend(self.world.report_incoherent_with_ram(ram, self.frame.main_module));
             if self.world.transient != fresh.world.transient {
-                out.extend(self.world.transient.report_incoherent_with_ram(ram));
+                out.extend(self.world.transient.report_incoherent_with_ram(ram, self.frame.main_module));
             }
         }
         check!(poly);
@@ -480,8 +473,6 @@ impl GameState {
     }
 
     pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
-        self.frame.write_to_ram(ram);
-        self.system_signals.write_to_ram(ram);
         self.enhanced_features.write_to_ram(ram);
         self.scratch_counter.write_to_ram(ram);
         self.minigame.write_to_ram(ram);
@@ -492,7 +483,7 @@ impl GameState {
         // DUNGEON_SECRET_PENDING_KIND / OVERWORLD_SECRET_SUBST_CTR are mode-reused
         // scratch. The explicit dungeon-secret bridge owns write-through updates, but
         // the frame-wide projection must preserve C's stale scratch bytes.
-        self.save_load_transfer.write_to_ram(ram);
+        self.save_load_transfer.write_to_ram(ram, self.frame.main_module);
         self.dungeon_map_display.write_to_ram(ram);
         self.dungeon.write_to_ram(ram);
         self.sprites.write_to_ram(ram);

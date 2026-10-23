@@ -62,7 +62,7 @@ fn native_startup_host_continuation_enters_its_module_once_after_rti() {
         }
         if host == 80 {
             assert_eq!(state.ram[0x100], 0);
-            assert_eq!(state.ram[0x15], 1);
+            assert_eq!(state.read_wram_byte(0x15), 1);
             // Initialization does not write the animated BG source. It must
             // remain a real DMA operand, not a boot-completion sentinel.
             assert!(!state.game_state.display.has_animated_tile_data_source());
@@ -438,7 +438,7 @@ fn native_startup_retains_derived_clock_and_memory_ownership() {
     assert_eq!(&state.wram_image()[..3], &[0, 0x80, 0]);
     assert_eq!(read_le_u16(&state.wram_image(), 0x1fe), 0x802e);
     assert_eq!(state.ram[0x13], 0x80);
-    assert_eq!(state.ram[0x15], 1);
+    assert_eq!(state.read_wram_byte(0x15), 1);
     assert_eq!(read_le_u16(&state.wram_image(), 0xc00d), 0x5555);
     assert_eq!(read_le_u16(&state.wram_image(), 0xc013), 0x5555);
     for word in 0..256 {
@@ -3115,7 +3115,7 @@ fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
     let mut naming_irq_finish=[false;3]; // final request, acknowledgement, IRQ disable
     for host in 0..4000 {
         let input=if press_start_in.is_some_and(|submodule|state.game_state.frame.main_module==0 && state.game_state.frame.submodule==submodule
-            && state.ram[0xc007]==0 && (submodule!=8 || (1..255).contains(&state.ram[0xb0]))) {8}
+            && state.ram[0xc007]==0 && (submodule!=8 || (1..255).contains(&state.read_wram_byte(0xb0)))) {8}
             else if (state.game_state.frame.main_module,state.game_state.frame.submodule)==(1,5) && !state.native_intro_clear_pending() {
                 let input=menu_inputs.get(menu_host).copied().unwrap_or(0);menu_host+=1;input
             }else if (state.game_state.frame.main_module,state.game_state.frame.submodule)==(4,3) {

@@ -22,8 +22,8 @@ fn runtime_initializer_keeps_its_clock_and_state_through_held_hosts() {
     for field in 30_000..30_004 {
         let mut state = ZeldaState::new();
         state.set_assets(&assets).unwrap();
-        state.ram[0x10] = 14;
-        state.ram[0x11] = 2;
+        state.write_wram_byte(0x10, 14);
+        state.write_wram_byte(0x11, 2);
         state.ram[0x12] = 1;
         state.ram[0x1cf0..0x1cf2].copy_from_slice(&0x159u16.to_le_bytes());
         state.sync_native_game_state_from_ram();
@@ -83,8 +83,8 @@ fn scheduled_initialization_retains_native_caller_until_return() {
     let Some((assets, _)) = fast_forward_cycle_tests::character_decoder_fixture() else { return };
     let mut state = ZeldaState::new();
     state.set_assets(&assets).unwrap();
-    state.ram[0x10] = 14;
-    state.ram[0x11] = 2;
+    state.write_wram_byte(0x10, 14);
+    state.write_wram_byte(0x11, 2);
     state.ram[0x12] = 1;
     state.ram[0x1cf0..0x1cf2].copy_from_slice(&0x159u16.to_le_bytes());
     state.sync_native_game_state_from_ram();
@@ -99,7 +99,7 @@ fn scheduled_initialization_retains_native_caller_until_return() {
     state.prepare_text_character_buffer_for_carry();
     assert_eq!(state.dialogue_initialization_caller.as_ref().unwrap().initialization.phase,
         TextInitializationPhase::Tail);
-    assert_eq!(*state.wram_image(), legacy.ram, "held decoder publication");
+    assert_eq!(*state.wram_image(), *legacy.wram_image(), "held decoder publication");
     assert_eq!(state.paired_resume_cpu_boundary_blocker(),
         Some("retained-dialogue-initialization-caller"));
     state.interrupt_nmi_with_animated_bg_operands(0, None, false, None);
@@ -113,7 +113,7 @@ fn scheduled_initialization_retains_native_caller_until_return() {
     state.complete_post_trailing_nmi_continuation(
         GameWorkContinuation::FinishDialogueInitializationCallerReturn, 0, false, false);
     assert!(state.dialogue_initialization_caller.is_none());
-    assert_eq!(*state.wram_image(), legacy.ram, "completed native caller publication");
+    assert_eq!(*state.wram_image(), *legacy.wram_image(), "completed native caller publication");
     assert_eq!(state.last_nmi_prepare_sprites_master_cycles, legacy.last_nmi_prepare_sprites_master_cycles);
     assert_eq!(state.main_loop_caller_phase,
         crate::cycle_models::main_wait::MainLoopCallerPhase::Waiting);
@@ -147,8 +147,8 @@ fn native_initialization_caller_keeps_one_clock_across_held_nmis() {
                     fixtures += 1;
                     let mut state = ZeldaState::new();
                     state.set_assets(&assets).unwrap();
-                    state.ram[0x10] = 14;
-                    state.ram[0x11] = 2;
+                    state.write_wram_byte(0x10, 14);
+                    state.write_wram_byte(0x11, 2);
                     state.ram[0x12] = 1;
                     state.ram[0x1cf0..0x1cf2].copy_from_slice(&0x159u16.to_le_bytes());
                     state.sync_native_game_state_from_ram();
@@ -367,8 +367,8 @@ fn glyph_return_caller_keeps_source_clock_and_state_through_held_nmi() {
         for entry in [CpuRasterPosition::new(219,1310),CpuRasterPosition::new(224,1308)] {
             let mut state = ZeldaState::new();
             state.set_assets(&assets).unwrap();
-            state.ram[0x10] = 14;
-            state.ram[0x11] = 2;
+            state.write_wram_byte(0x10, 14);
+            state.write_wram_byte(0x11, 2);
             state.ram[0x12] = 1;
             state.ram[0xaa2] = 0xa0;
             state.sync_native_game_state_from_ram();

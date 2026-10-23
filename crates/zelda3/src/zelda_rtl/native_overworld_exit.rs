@@ -40,12 +40,12 @@ mod tests {
                 let mut actual = ZeldaState::new();
                 actual.assets = Some(AssetPack::parse(&assets).unwrap());
                 actual.rom.clear();
-                actual.ram[0x10] = 9;
-                actual.ram[0x11] = if direction == ExitWalkDirection::Down {
+                actual.write_wram_byte(0x10, 9);
+                actual.write_wram_byte(0x11, if direction == ExitWalkDirection::Down {
                     10
                 } else {
                     11
-                };
+                });
                 actual.ram[0x20..0x22]
                     .copy_from_slice(&[0u16, 1, 255, 65535][case % 4].to_le_bytes());
                 actual.ram[0x69a] = [0, 1, 2, 255][case / 4 % 4];
@@ -79,7 +79,7 @@ mod tests {
                 );
                 let mut machine = snes::Snes::new();
                 machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
-                machine.ram.copy_from_slice(&actual.ram);
+                machine.ram.copy_from_slice(&actual.wram_image());
                 machine.cpu.a = cpu.a;
                 machine.cpu.x = cpu.x;
                 machine.cpu.y = cpu.y;
@@ -130,7 +130,7 @@ mod tests {
                     );
                     assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
                     assert!(
-                        actual.ram == source.snes().ram,
+                        *actual.wram_image() == source.snes().ram,
                         "case={case} pc={pc:04x} RAM"
                     );
                     instructions += 1;
@@ -150,7 +150,7 @@ mod tests {
                 let mut a = actual.ram.clone();
                 let mut b = a.clone();
                 let publish = |state: &GameState, ram: &mut Vec<u8>| {
-                    state.frame.write_to_ram(ram);
+                    state.frame.encode_into_image(ram);
                     state.player.write_to_ram(ram);
                     state.world.write_to_ram(ram);
                     state.display.write_to_ram(ram);

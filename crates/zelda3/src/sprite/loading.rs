@@ -226,7 +226,7 @@ impl ZeldaState {
                 let address = address as usize + byte;
                 let value = (value >> (byte * 8)) as u8;
                 assert!(self.game_state.player.follower_link.write_sprite_player_byte(address, value));
-                self.ram[address] = value;
+                self.write_wram_byte(address, value);
             }
             return true;
         }
@@ -236,7 +236,7 @@ impl ZeldaState {
                 let address = address as usize + byte;
                 let value = (value >> (byte * 8)) as u8;
                 self.game_state.sprites.workspace.write_draw_priority_byte(address == 0xcff, value);
-                self.ram[address] = value;
+                self.write_wram_byte(address, value);
             }
             return true;
         }
@@ -246,7 +246,7 @@ impl ZeldaState {
                 let address = address as usize + byte;
                 let value = (value >> (byte * 8)) as u8;
                 self.game_state.sprites.draw_hitbox_work.write_instruction_byte(address, value);
-                self.ram[address] = value;
+                self.write_wram_byte(address, value);
             }
             return true;
         }
@@ -343,7 +343,7 @@ impl ZeldaState {
                 }
             }
         }
-        self.ram[address..address + usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        for byte in 0..usize::from(width) { self.write_wram_byte(address + byte, value.to_le_bytes()[byte]); }
         true
     }
 
@@ -381,7 +381,7 @@ impl ZeldaState {
             }
             _ => return false,
         }
-        self.ram[address..address + usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        for byte in 0..usize::from(width) { self.write_wram_byte(address + byte, value.to_le_bytes()[byte]); }
         true
     }
 
@@ -393,7 +393,7 @@ impl ZeldaState {
         } else { address as usize };
         assert_eq!(width, 1);
         if !self.game_state.sprites.write_cache_byte(address, value as u8) { return false; }
-        self.ram[address] = value as u8;
+        self.write_wram_byte(address, value as u8);
         true
     }
 
@@ -416,7 +416,7 @@ impl ZeldaState {
                 _ => unreachable!("unowned sprite-reset suffix byte {address:05x}"),
             }
         }
-        self.ram[address] = byte;
+        self.write_wram_byte(address, byte);
         true
     }
 
@@ -445,7 +445,7 @@ impl ZeldaState {
                 _ => unreachable!("unowned sprite-disable byte {address:05x}"),
             }
         }
-        self.ram[address] = value as u8;
+        self.write_wram_byte(address, value as u8);
         true
     }
 

@@ -10,6 +10,8 @@ fn tile_attributes_match_frozen_runtime_effects() {
     let hash_projection = |digest: &mut Sha256, state: &ZeldaState| {
         let mut projected = vec![0xa5; WRAM_SIZE];
         state.game_state.write_to_ram(&mut projected);
+        state.game_state.frame.encode_into_image(&mut projected);
+        state.game_state.system_signals.encode_into_image(&mut projected);
         state.game_state.inventory.player_resources.export_owned(&mut projected);
         state.game_state.inventory.items.export_owned(&mut projected);
         state.game_state.inventory.save_progress.export_runtime_to_image(&mut projected);

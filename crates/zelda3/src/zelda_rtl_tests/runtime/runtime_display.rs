@@ -1109,7 +1109,7 @@ fn palette_direction_toggle_defers_countdown_clear_and_substage_publication() {
         atomic.set_mosaic_target_level(target);
         atomic.set_darkening_or_lightening_screen_word(direction);
         let mut staged = atomic.clone();
-        let cgram_requests = staged.ram[0x15];
+        let cgram_requests = staged.read_wram_byte(0x15);
         atomic.apply_palette_filter_bounce();
         staged.apply_palette_filter_bounce_through_direction_toggle();
         assert_eq!(
@@ -1125,10 +1125,10 @@ fn palette_direction_toggle_defers_countdown_clear_and_substage_publication() {
             exposed_countdown
         );
         assert_eq!(staged.game_state.frame.subsubmodule, 15);
-        assert_eq!(staged.ram[0x15], cgram_requests);
+        assert_eq!(staged.read_wram_byte(0x15), cgram_requests);
         staged.complete_apply_palette_filter_bounce_after_direction_toggle();
         assert_eq!(staged.game_state.frame.subsubmodule, 16);
-        assert_eq!(staged.ram, *atomic.wram_image());
+        assert_eq!(*staged.wram_image(), *atomic.wram_image());
     }
 }
 

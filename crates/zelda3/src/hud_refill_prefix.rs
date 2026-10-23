@@ -41,8 +41,8 @@ mod tests {
                 let mut state = ZeldaState::new();
                 state.write_wram_byte(0xf373, filler);
                 state.write_wram_byte(0xf36e, magic);
-                state.ram[0x1a] = frame;
-                state.ram[0x12e] = sound;
+                state.write_wram_byte(0x1a, frame);
+                state.write_wram_byte(0x12e, sound);
                 state.ram[0xcfd] = delay;
                 { let mut image = state.wram_image().into_owned(); image[0xf362..0xf364].copy_from_slice(&actual.to_le_bytes()); state.import_wram_image(&image); }
                 { let mut image = state.wram_image().into_owned(); image[0xf360..0xf362].copy_from_slice(&goal.to_le_bytes()); state.import_wram_image(&image); }
@@ -153,7 +153,7 @@ mod tests {
             atomic.player_resources_mut().set_magic_filler(2);
             atomic.player_resources_mut().set_rupees_goal(1);
             atomic.game_state.frame.frame_counter = 3;
-            atomic.ram[0x1a] = 3;
+            atomic.write_wram_byte(0x1a, 3);
             let mut split = atomic.clone();
             let start = crate::cycle_ledger::master();
             atomic.hud_refill_logic_until_interruption();
@@ -163,7 +163,7 @@ mod tests {
             let start = crate::cycle_ledger::master();
             let resume = split.hud_refill_logic_until_interruption().unwrap();
             assert!(matches!(resume, HudUpdateResume::RefillPrefix(_)));
-            assert_eq!(split.ram[0x16], 0);
+            assert_eq!(split.read_wram_byte(0x16), 0);
             split.resume_overworld_hud_update(resume);
             assert_eq!(crate::cycle_ledger::master() - start, total);
             assert_eq!(*split.wram_image(), *atomic.wram_image());

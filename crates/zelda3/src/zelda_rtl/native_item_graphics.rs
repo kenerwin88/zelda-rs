@@ -91,7 +91,7 @@ mod tests {
             state.ram[0x1ec..0x1f1].copy_from_slice(&[0x24, 7, 0xb9, 0xb5, 7]);
             state.ram[0x1f1..0x1f5].copy_from_slice(&[0x40, 0x9c, 0xb2, 0x81]);
             state.ram[0x1f5..0x1fd].copy_from_slice(&[0x1b, 0x80, 0, 0x4a, 0x89, 2, 0xae, 0x87]);
-            state.ram[0x11]=submodule;
+            state.write_wram_byte(0x11, submodule);
             state.ram[0xaaa]=0;
             state.ram[0xae..0xb0].fill(0);
             state.ram[0x4c7]=0;
@@ -5860,7 +5860,7 @@ mod sword_cape_bus_tests {
                     .write_to_ram(&mut published);
                 assert_eq!(published, *state.wram_image(), "tile case={case} pc={pc:04x}");
                 let mut published = state.wram_image().into_owned();
-                state.game_state.frame.write_to_ram(&mut published);
+                state.game_state.frame.encode_into_image(&mut published);
                 assert_eq!(
                     &published[0x10..0x12],
                     &state.wram_image()[0x10..0x12],
@@ -5899,7 +5899,7 @@ mod sword_cape_bus_tests {
             }
     { let image = state.ram.clone(); state.import_wram_image(&image); }
             state.ram[0xb7b] = 0;
-            state.ram[0x11] = 0;
+            state.write_wram_byte(0x11, 0);
             state.ram[0x5d] = 0;
             state.ram[0x34a] = 0;
             state.ram[0x372] = 0;

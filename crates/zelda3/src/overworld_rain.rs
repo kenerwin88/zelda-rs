@@ -33,7 +33,7 @@ mod tests {
                     state.ram[0x8a] = screen;
                     state.write_wram_byte(0xf3c5, progress);
                     state.ram[0xf2f0] = event;
-                    state.ram[0x1a] = frame;
+                    state.write_wram_byte(0x1a, frame);
                     state.ram[0x494] = counter;
                     state.ram[0xe0..0xe2].copy_from_slice(&0xffaau16.to_le_bytes());
                     state.ram[0xe6..0xe8].copy_from_slice(&0xfebbu16.to_le_bytes());

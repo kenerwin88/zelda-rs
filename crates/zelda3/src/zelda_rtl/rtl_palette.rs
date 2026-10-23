@@ -371,7 +371,7 @@ impl ZeldaState {
             .pre_main_graphics_dma
             .as_ref()
             .map(|graphics| graphics.entry_frame)
-            .unwrap_or_else(|| crate::game_state::FrameState::load_from_ram(&self.ram));
+            .unwrap_or_else(|| self.game_state.frame);
         let following_frame = crate::game_state::FrameState::load_from_ram(&following.ram);
         let following_room = crate::game_state::WorldLocationState::load_from_ram(&following.ram)
             .dungeon_room_index();

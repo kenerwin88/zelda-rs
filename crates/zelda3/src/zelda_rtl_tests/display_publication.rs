@@ -2606,7 +2606,7 @@ fn retained_oam_scanout_without_new_work_keeps_the_last_published_oam() {
 fn retained_oam_scanout_publishes_completed_dma_when_main_iteration_finishes() {
     let mut state = ZeldaState::new();
     state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
-    state.ram[crate::game_state::constants::FRAME_COUNTER] = 0x10;
+    state.write_wram_byte(crate::game_state::constants::FRAME_COUNTER, 0x10);
 
     let mut following = captured_display_snapshot();
     following.ram[crate::game_state::constants::FRAME_COUNTER] = 0x11;
@@ -2665,7 +2665,7 @@ fn interrupted_sprite_main_scanout_publishes_its_partial_shadow_dma() {
 fn resident_oam_scanout_does_not_advance_after_its_nmi_was_already_consumed() {
     let mut state = ZeldaState::new();
     state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
-    state.ram[crate::game_state::constants::FRAME_COUNTER] = 0x10;
+    state.write_wram_byte(crate::game_state::constants::FRAME_COUNTER, 0x10);
 
     let mut following = captured_display_snapshot();
     following.ram[crate::game_state::constants::FRAME_COUNTER] = 0x11;
@@ -2685,7 +2685,7 @@ fn resident_oam_scanout_does_not_advance_after_its_nmi_was_already_consumed() {
 fn resident_oam_scanout_keeps_independent_live_link_generation() {
     let mut state = ZeldaState::new();
     state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
-    state.ram[crate::game_state::constants::FRAME_COUNTER] = 0x10;
+    state.write_wram_byte(crate::game_state::constants::FRAME_COUNTER, 0x10);
 
     let mut following = captured_display_snapshot();
     following.ram[crate::game_state::constants::FRAME_COUNTER] = 0x11;
@@ -2724,7 +2724,7 @@ fn captured_oam_scanout_does_not_advance_to_a_later_completed_dma() {
 fn captured_oam_scanout_rejects_a_later_dma_when_main_iteration_finishes() {
     let mut state = ZeldaState::new();
     state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
-    state.ram[crate::game_state::constants::FRAME_COUNTER] = 0x10;
+    state.write_wram_byte(crate::game_state::constants::FRAME_COUNTER, 0x10);
 
     let mut following = captured_display_snapshot();
     following.ram[crate::game_state::constants::FRAME_COUNTER] = 0x11;
@@ -2744,7 +2744,7 @@ fn captured_oam_scanout_rejects_a_later_dma_when_main_iteration_finishes() {
 fn captured_oam_scanout_with_pending_nmi_publishes_the_queued_shadow() {
     let mut state = ZeldaState::new();
     state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
-    state.ram[crate::game_state::constants::FRAME_COUNTER] = 0x10;
+    state.write_wram_byte(crate::game_state::constants::FRAME_COUNTER, 0x10);
 
     let mut following = captured_display_snapshot();
     following.ram[crate::game_state::constants::FRAME_COUNTER] = 0x11;
@@ -2767,7 +2767,7 @@ fn captured_oam_scanout_with_pending_nmi_publishes_the_queued_shadow() {
 fn retained_oam_scanout_publishes_the_queue_after_a_completed_main_iteration() {
     let mut state = ZeldaState::new();
     state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
-    state.ram[crate::game_state::constants::FRAME_COUNTER] = 0x10;
+    state.write_wram_byte(crate::game_state::constants::FRAME_COUNTER, 0x10);
 
     let mut following = captured_display_snapshot();
     following.ram[crate::game_state::constants::FRAME_COUNTER] = 0x11;
@@ -2981,9 +2981,9 @@ fn room_71_subtile_shutter_publishes_only_the_live_link_head_cache() {
     // swap. Distinct body and head markers make a reversed call direction
     // observable without a full-route replay.
     let mut state = ZeldaState::new();
-    state.ram[crate::game_state::constants::MAIN_MODULE] = 7;
-    state.ram[crate::game_state::constants::SUBMODULE] = 1;
-    state.ram[crate::game_state::constants::SUBSUBMODULE] = 7;
+    state.write_wram_byte(crate::game_state::constants::MAIN_MODULE, 7);
+    state.write_wram_byte(crate::game_state::constants::SUBMODULE, 1);
+    state.write_wram_byte(crate::game_state::constants::SUBSUBMODULE, 7);
     state.ppu.vram[0x4000] = 0x1111;
     state.ppu.vram[0x4020] = 0x2222;
 
@@ -3490,9 +3490,9 @@ fn subtile_shutter_handoff_decodes_live_obj_page_without_advancing_raw_vram() {
 fn room_71_supertile_room_load_decodes_the_live_obj_page() {
     let mut state = ZeldaState::new();
     state.ppu.vram[0x4032] = 0x1111;
-    state.ram[crate::game_state::constants::MAIN_MODULE] = 7;
-    state.ram[crate::game_state::constants::SUBMODULE] = 2;
-    state.ram[crate::game_state::constants::SUBSUBMODULE] = 15;
+    state.write_wram_byte(crate::game_state::constants::MAIN_MODULE, 7);
+    state.write_wram_byte(crate::game_state::constants::SUBMODULE, 2);
+    state.write_wram_byte(crate::game_state::constants::SUBSUBMODULE, 15);
 
     let mut following = captured_display_snapshot();
     following.ram[crate::game_state::constants::MAIN_MODULE] = 7;
@@ -3514,9 +3514,9 @@ fn room_71_supertile_room_load_decodes_the_live_obj_page() {
 fn room_71_subtile_room_load_uses_live_obj_only_after_the_visible_guard_boundary() {
     let mut state = ZeldaState::new();
     state.ppu.vram[0x4032] = 0x1111;
-    state.ram[crate::game_state::constants::MAIN_MODULE] = 7;
-    state.ram[crate::game_state::constants::SUBMODULE] = 1;
-    state.ram[crate::game_state::constants::SUBSUBMODULE] = 7;
+    state.write_wram_byte(crate::game_state::constants::MAIN_MODULE, 7);
+    state.write_wram_byte(crate::game_state::constants::SUBMODULE, 1);
+    state.write_wram_byte(crate::game_state::constants::SUBSUBMODULE, 7);
 
     let mut following = captured_display_snapshot();
     following.ram[crate::game_state::constants::MAIN_MODULE] = 7;

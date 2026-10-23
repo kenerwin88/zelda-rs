@@ -67,7 +67,7 @@ fn system_signals_state_loads_from_and_projects_to_ram() {
     system_signals.set_msu_resume_info(MsuResumeSlot::Alternate, alternate_resume);
 
     let mut projected = vec![0; WRAM_SIZE];
-    system_signals.write_to_ram(&mut projected);
+    system_signals.encode_into_image(&mut projected);
     let reloaded = SystemSignalsState::load_from_ram(&projected);
     assert_eq!(
         reloaded.msu_resume_info(MsuResumeSlot::Primary),
@@ -140,7 +140,7 @@ fn system_signals_state_owns_sound_and_update_behavior() {
 }
 
 #[test]
-fn native_system_signals_bridge_dual_writes_changes_from_native_state() {
+fn native_system_signals_mutations_keep_backing_unchanged() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[CURRENT_MUSIC_CONTROL] = 0x12;
     ram[SOUND_EFFECT_AMBIENT] = 0x05;
@@ -151,8 +151,9 @@ fn native_system_signals_bridge_dual_writes_changes_from_native_state() {
     ram[GAME_OVER_CHECK_FLAG] = 7;
 
     let mut system_signals = SystemSignalsState::load_from_ram(&ram);
+    let backing = ram.clone();
     {
-        let mut bridge = NativeSystemSignalsBridgeMut::new(&mut system_signals, &mut ram);
+        let bridge = &mut system_signals;
         assert!(bridge.queue_sound_effect_1_if_empty(0x2d));
         assert!(bridge.queue_sound_effect_2_if_empty(0x1b));
         assert!(!bridge.queue_sound_effect_1_if_empty(0x33));
@@ -178,18 +179,7 @@ fn native_system_signals_bridge_dual_writes_changes_from_native_state() {
     assert_eq!(system_signals.restart_check_flag(), 9);
     assert_eq!(system_signals.death_backup_current_music(), 0x21);
     assert_eq!(system_signals.death_backup_ambient_sound(), 0x22);
-    assert_eq!(ram[SOUND_EFFECT_1], 0x56);
-    assert_eq!(ram[SOUND_EFFECT_2], 0x34);
-    assert_eq!(ram[SOUND_EFFECT_AMBIENT], 0x07);
-    assert_eq!(ram[LAST_MUSIC_CONTROL], 0x12);
-    assert_eq!(ram[SOUND_EFFECT_AMBIENT_LAST], 0x07);
-    assert_eq!(ram[FLAG_UPDATE_CGRAM_IN_NMI], 0);
-    assert_eq!(ram[FLAG_UPDATE_HUD_IN_NMI], 2);
-    assert_eq!(ram[GAME_OVER_CHECK_FLAG], 0);
-    assert_eq!(ram[RESTART_CHECK_FLAG], 9);
-    assert_eq!(ram[RAW_SFX_PAN_VALUE], 0x80);
-    assert_eq!(ram[DEATH_BACKUP_CURRENT_MUSIC], 0x21);
-    assert_eq!(ram[DEATH_BACKUP_AMBIENT_SOUND], 0x22);
+    assert_eq!(ram, backing);
 }
 
 #[test]

@@ -82,13 +82,13 @@ pub struct MusicControlState {
 impl MusicControlState {
     pub fn from_game(game: &ZeldaState) -> Self {
         Self {
-            apui00: game.ram[0x0648],
-            music_control: game.ram[0x012c],
-            sound_effect_ambient: game.ram[0x012d],
-            sound_effect_1: game.ram[0x012e],
-            sound_effect_2: game.ram[0x012f],
-            queued_music_control: game.ram[0x0132],
-            last_music_control: game.ram[0x0133],
+            apui00: game.read_wram_byte(0x0648),
+            music_control: game.read_wram_byte(0x012c),
+            sound_effect_ambient: game.read_wram_byte(0x012d),
+            sound_effect_1: game.read_wram_byte(0x012e),
+            sound_effect_2: game.read_wram_byte(0x012f),
+            queued_music_control: game.read_wram_byte(0x0132),
+            last_music_control: game.read_wram_byte(0x0133),
         }
     }
 

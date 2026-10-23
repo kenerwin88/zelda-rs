@@ -62,7 +62,7 @@ fn somaria_and_gravestone_scan_work_and_slot_order_match_rom() {
                     let mut state = ZeldaState::new();
                     state.ram[0x1b] = indoors;
                     state.ram[0x3e9] = latch;
-                    state.ram[0x11] = submodule;
+                    state.write_wram_byte(0x11, submodule);
                     state.ram[0xfa0] = 0xa5;
                     state.ram[0x2f] = 4;
                     let mut slots = pattern;
@@ -96,7 +96,7 @@ fn link_main_caller_work_and_saved_position_match_rom() {
         for coordinate in [0u16, 0x7fff, 0xffff] {
             let mut state = ZeldaState::new();
             state.ram[0x2e4] = immobilized;
-            state.ram[0xfc1] = 17;
+            state.write_wram_byte(0xfc1, 17);
             state.ram[0x20..0x22].copy_from_slice(&coordinate.to_le_bytes());
             state.ram[0x22..0x24].copy_from_slice(&coordinate.wrapping_add(1).to_le_bytes());
             state.sync_native_game_state_from_ram();
@@ -183,7 +183,10 @@ fn hookshot_missing_ancilla_preserves_underflowed_spin_timer() {
 fn native_shield_dma_word_store_publishes_the_adjacent_staging_byte() {
     let mut state = ZeldaState::new();
     state.rom.clear();
-    state.ram[0x107..0x10b].copy_from_slice(&[0x17, 0x28, 0x39, 0x4a]);
+    let mut image = state.wram_image().into_owned();
+    image[0x107..0x10b].copy_from_slice(&[0x17, 0x28, 0x39, 0x4a]);
+    state.import_wram_image(&image);
+    state.ram[0x10a] = 0x5a;
     state.sync_native_game_state_from_ram();
     // Live LinkOam $0d:ac39 stores A=$5002 with M=16 at $0108.
     assert!(state.native_player_drawing_store(0x108, 0x5002, 2));
@@ -191,15 +194,19 @@ fn native_shield_dma_word_store_publishes_the_adjacent_staging_byte() {
     let mut published = state.wram_image().into_owned();
     published[0x108..0x10a].fill(0);
     state.game_state.write_to_ram(&mut published);
+    state.game_state.system_signals.encode_into_image(&mut published);
     assert_eq!(&published[0x107..0x10b], &[0x17, 2, 0x50, 0x4a]);
     assert!(state.native_player_drawing_store(0x109, 0xc9, 1));
     state.game_state.write_to_ram(&mut published);
+    state.game_state.system_signals.encode_into_image(&mut published);
     assert_eq!(&published[0x107..0x10b], &[0x17, 2, 0xc9, 0x4a]);
     // Other LinkOam branches store a word at109, including the neighboring
     // game-over byte. Both typed domains must serialize the retired word.
     state.ram[0x10b] = 0x63;
     assert!(state.native_player_drawing_store(0x109, 0xa541, 2));
     state.game_state.write_to_ram(&mut published);
+    state.game_state.system_signals.encode_into_image(&mut published);
     assert_eq!(&published[0x107..0x10b], &[0x17, 2, 0x41, 0xa5]);
     assert_eq!(state.ram[0x10b], 0x63);
+    assert_eq!(state.ram[0x10a], 0x5a, "owned game-over byte must stay unpublished");
 }

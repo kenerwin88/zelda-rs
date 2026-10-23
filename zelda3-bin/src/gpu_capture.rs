@@ -2745,10 +2745,12 @@ mod tests {
             crate::developer_room_commands::load_developer_destination("preset-dev-sandbox")
                 .expect("developer sandbox should load");
         game.set_current_dialogue_message_id(0xc8);
-        game.ram[MESSAGING_MODULE] = 0;
-        game.ram[SUBMODULE_INDEX] = 2;
-        game.ram[SAVED_MODULE_FOR_MENU] = game.ram[MAIN_MODULE_INDEX];
-        game.ram[MAIN_MODULE_INDEX] = 14;
+        let mut image = game.wram_image().into_owned();
+        image[MESSAGING_MODULE] = 0;
+        image[SUBMODULE_INDEX] = 2;
+        image[SAVED_MODULE_FOR_MENU] = image[MAIN_MODULE_INDEX];
+        image[MAIN_MODULE_INDEX] = 14;
+        game.import_wram_image(&image);
 
         let repo_root = repo_root();
         let resources =

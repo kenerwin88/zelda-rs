@@ -2164,7 +2164,7 @@ impl Default for WorldTransientState {
 }
 
 impl WorldTransientState {
-    pub(crate) fn report_incoherent_with_ram(&self, ram: &[u8]) -> Vec<&'static str> {
+    pub(crate) fn report_incoherent_with_ram(&self, ram: &[u8], main_module: u8) -> Vec<&'static str> {
         let fresh = Self::load_from_ram(ram);
         let mut out = Vec::new();
         macro_rules! check {
@@ -2200,7 +2200,7 @@ impl WorldTransientState {
         check!(overworld_hole_scan_step);
         // In the dungeon module the window is the object replacement table,
         // owned by DungeonObjectTrackingState; the stripe copy is stale there.
-        if ram_byte(ram, MAIN_MODULE) != 7
+        if main_module != 7
             && self.overworld_map16_stripe != fresh.overworld_map16_stripe
         {
             out.push("world.transient.overworld_map16_stripe");
@@ -2830,7 +2830,7 @@ impl WorldState {
 
     /// Leaf-level coherence drill-down (see GameState::report_incoherent_with_ram):
     /// returns "world.<leaf>" for each sub-state that has drifted out of sync with RAM.
-    pub(crate) fn report_incoherent_with_ram(&self, ram: &[u8]) -> Vec<&'static str> {
+    pub(crate) fn report_incoherent_with_ram(&self, ram: &[u8], main_module: u8) -> Vec<&'static str> {
         let fresh = Self::load_from_ram(ram);
         let mut out = Vec::new();
         macro_rules! check {
@@ -2846,7 +2846,7 @@ impl WorldState {
         check!(palette_theme);
         check!(region);
         if self.transient != fresh.transient {
-            out.extend(self.transient.report_incoherent_with_ram(ram));
+            out.extend(self.transient.report_incoherent_with_ram(ram, main_module));
         }
         check!(overworld);
         check!(room_bounds);

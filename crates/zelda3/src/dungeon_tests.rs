@@ -56,8 +56,8 @@ fn torch_door_branches_work_and_publications_match_rom() {
     let Ok(assets) = std::fs::read(path) else { return };
     let mut template = ZeldaState::new();
     template.set_assets(&assets).unwrap();
-    template.ram[0x10] = 7;
-    template.ram[0x1a] = 1; // Timer prefix has its own independent all-values test.
+    template.write_wram_byte(0x10, 7);
+    template.write_wram_byte(0x1a, 1); // Timer prefix has its own independent all-values test.
     template.ram[0x1b] = 1;
     template.ram[0x436] = 0x80;
     template.ram[0x20..0x22].copy_from_slice(&256u16.to_le_bytes());
@@ -275,9 +275,9 @@ fn dungeon_layer_effect_work_and_owned_state_match_rom() {
         for variation in 0u16..512 {
             let mut state = ZeldaState::new();
             state.ram[0xad] = effect;
-            state.ram[0x1a] = variation as u8;
-            state.ram[0x15] = if variation & 32 != 0 { 255 } else { 0 };
-            state.ram[0x16] = 0xa5;
+            state.write_wram_byte(0x1a, variation as u8);
+            state.write_wram_byte(0x15, if variation & 32 != 0 { 255 } else { 0 });
+            state.write_wram_byte(0x16, 0xa5);
             state.ram[0x403] = if variation & 128 != 0 { 128 } else { 0 };
             for (address, value) in [(0x41a, variation & 0x10f),
                 (0x41c, [0u16, 0x7fff, 0x8000, 0xffff][variation as usize % 4]),
@@ -328,7 +328,7 @@ fn dungeon_player_control_menu_fallthrough_and_caller_work_match_rom() {
                     for progress in [0, 1] {
                         for map_state in [0, 5] {
                             let mut state = ZeldaState::new();
-                            state.ram[0x10] = 7;
+                            state.write_wram_byte(0x10, 7);
                             state.ram[0x1b] = 1;
                             state.ram[0x112] = gates & 1;
                             state.ram[0x2e4] = gates & 2;
@@ -343,7 +343,7 @@ fn dungeon_player_control_menu_fallthrough_and_caller_work_match_rom() {
                             state.ram[0x1ce8] = 3;
                             state.ram[0x1cf4] = 9;
                             state.ram[0x1cf0] = 0x55;
-                            state.ram[0xb0] = 0xa5;
+                            state.write_wram_byte(0xb0, 0xa5);
                             state.sync_native_game_state_from_ram();
                             let checkpoint = RomCpuCheckpoint {
                                 entry_pc: 0x02_88de, stop_pc: 0x02_8036,
@@ -401,7 +401,7 @@ fn dungeon_screen_edge_caller_work_and_transition_state_match_rom() {
                     for incapacitated in [0, 1] {
                         for direction in [0, 3, 12, 15] {
                             let mut state = staircase_fixture(&rom, direction, 0, 0, 0);
-                            state.ram[0x10] = module;
+                            state.write_wram_byte(0x10, module);
                             state.ram[0x20..0x22].copy_from_slice(&(512 + y).to_le_bytes());
                             state.ram[0x22..0x24].copy_from_slice(&(1024 + x).to_le_bytes());
                             state.ram[0x30] = velocities & 1;
@@ -453,7 +453,7 @@ fn dungeon_screen_edge_caller_work_and_transition_state_match_rom() {
 fn staircase_fixture(rom: &[u8], direction: u8, floor: u8, head: u8, landing: u8) -> ZeldaState {
     use crate::rom_cpu_timing::lorom_offset;
     let mut state = ZeldaState::new();
-    state.ram[0x10] = 7;
+    state.write_wram_byte(0x10, 7);
     state.ram[0x67] = direction;
     state.ram[0xee] = floor;
     for (address, word) in [(0x20, 632u16), (0x22, 1152), (0xa0, 0x12), (0xa2, 0x12),
@@ -787,7 +787,7 @@ fn torch_timer_prefix_cost_and_timer_writes_match_rom() {
     }
     for (case, (frame, spell, timers)) in cases.into_iter().enumerate() {
         let mut state = ZeldaState::new();
-        state.ram[0x1a] = frame;
+        state.write_wram_byte(0x1a, frame);
         state.ram[0x112] = spell;
         state.ram[0x4f0..0x500].copy_from_slice(&timers);
         state.sync_native_game_state_from_ram();
@@ -1029,7 +1029,7 @@ fn native_interaction_handoffs_skip_owned_timers_probes_and_calls() {
         let mut expected = ZeldaState::new();
         expected.set_assets(&assets).unwrap();
         { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_interaction_caller::seed_case(&mut image, case); expected.import_wram_image(&image); }
-        expected.ram[0x10] = 7;
+        expected.write_wram_byte(0x10, 7);
         expected.ram[0x1b] = 1;
         expected.ram[0x3c] = if case / 6 & 1 == 0 { 4 } else { 3 };
         expected.ram[0x44] = (case as u8).wrapping_mul(17);
@@ -1258,7 +1258,7 @@ fn native_edge_handoffs_preserve_remaining_caller_and_do_not_repeat_predicate() 
             (0x27, 255),
             (0x28, 127),
         ] {
-            expected.ram[a] = v;
+            expected.write_wram_byte(a, v);
         }
         expected.ram[0x20..0x24].copy_from_slice(&[0, 1, 0, 1]);
         for (a, v) in [
@@ -1393,9 +1393,9 @@ fn native_lamp_handoff_preserves_sprite_suffix_without_replaying_cone_work() {
     for case in 0..192usize {
         let mut expected = ZeldaState::new();
         { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_lamp_caller::seed_case(&mut image, case * 37); expected.import_wram_image(&image); }
-        expected.ram[0x10] = 7;
+        expected.write_wram_byte(0x10, 7);
         expected.ram[0x1b] = 1;
-        expected.ram[0x11] = if case % 3 == 0 { 20 } else { 17 };
+        expected.write_wram_byte(0x11, if case % 3 == 0 { 20 } else { 17 });
         expected.sync_native_game_state_from_ram();
         let mut actual = expected.clone();
         actual.rom.clear();
@@ -1495,9 +1495,9 @@ fn native_sprite_scroll_handoff_preserves_drawing_suffix_without_replaying_offse
     for case in 0..192usize {
         let mut expected = ZeldaState::new();
         { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_sprite_scroll::seed_case(&mut image, case * 17); expected.import_wram_image(&image); }
-        expected.ram[0x10] = 7;
+        expected.write_wram_byte(0x10, 7);
         expected.ram[0x1b] = 1;
-        expected.ram[0x11] = if case % 3 == 0 { 20 } else { 17 };
+        expected.write_wram_byte(0x11, if case % 3 == 0 { 20 } else { 17 });
         expected.sync_native_game_state_from_ram();
         let mut actual = expected.clone();
         actual.rom.clear();
@@ -1592,9 +1592,9 @@ fn native_push_drawing_handoff_preserves_sprite_suffix_without_replaying_oam() {
     for case in 0..192usize {
         let mut expected = ZeldaState::new();
         { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_push_drawing::seed_case(&mut image, case * 13); expected.import_wram_image(&image); }
-        expected.ram[0x10] = 7;
+        expected.write_wram_byte(0x10, 7);
         expected.ram[0x1b] = 1;
-        expected.ram[0x11] = if case % 3 == 0 { 20 } else { 17 };
+        expected.write_wram_byte(0x11, if case % 3 == 0 { 20 } else { 17 });
         let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
             bg2_x: case as u16 * 113,
             bg2_y: case as u16 * 229,
@@ -1701,7 +1701,7 @@ fn native_sprite_prefix_handoff_preserves_all_remaining_sprite_work_without_rese
     for case in 0..192usize {
         let mut expected = ZeldaState::new();
         { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_sprite_prefix::seed_case(&mut image, case * 13); expected.import_wram_image(&image); }
-        expected.ram[0x10] = 7;
+        expected.write_wram_byte(0x10, 7);
 
         let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
             bg2_x: case as u16 * 113,
@@ -1826,11 +1826,11 @@ fn native_garnish_handoff_preserves_remaining_palette_and_slot_work_once() {
     for case in 0..528usize {
         let mut expected = ZeldaState::new();
         expected.ram[0x1b] = 1;
-        expected.ram[0x11] = 0;
+        expected.write_wram_byte(0x11, 0);
         expected.ram[0xfb4] = u8::from(case / 88 != 0);
         expected.ram[0xff9] = [0, 0, 1, 3, 2, 0][case / 88];
         expected.ram[0x1ee..0x1f1].copy_from_slice(&[0x64, 0x83, 6]);
-        expected.ram[0x10] = 7;
+        expected.write_wram_byte(0x10, 7);
 
         let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
             bg2_x: case as u16 * 113,
@@ -1986,7 +1986,7 @@ fn native_follower_handoff_preserves_remaining_trigger_movement_and_dialogue_onc
         { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_follower::seed_case(&mut image, case * 17); expected.import_wram_image(&image); }
         expected.ram[0xf3cc] = [0, 5, 9, 10, 14, 1, 12, 13][case % 8];
         expected.ram[0x1b] = 1;
-        expected.ram[0x10] = 7;
+        expected.write_wram_byte(0x10, 7);
         expected.ram[0x307] = 1; // A live item guard requires a valid rod selection for the remaining player draw.
         expected.ram[0x5d] = [0, 4, 17][case % 3];
         let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
@@ -2133,7 +2133,7 @@ fn native_ancilla_handoff_preserves_remaining_spark_effects_and_receipt_once() {
         let mut expected = ZeldaState::new();
         { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_ancilla::seed_case(&mut image, case * 17); expected.import_wram_image(&image); }
         expected.ram[0x1b] = 1;
-        expected.ram[0x10] = 7;
+        expected.write_wram_byte(0x10, 7);
         expected.ram[0x307] = 1;
         expected.ram[0x5d] = 0;
         expected.ram[0xc4a..0xc54].fill(0);
@@ -2294,7 +2294,7 @@ fn native_ancilla_receipt_drawing_handoff_preserves_complete_sprite_caller_once(
         let mut expected = ZeldaState::new();
         { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_ancilla::seed_case(&mut image, case * 17); expected.import_wram_image(&image); }
         expected.ram[0x1b] = 1;
-        expected.ram[0x10] = 7;
+        expected.write_wram_byte(0x10, 7);
         expected.ram[0x307] = 1;
         expected.ram[0x5d] = 0;
         expected.ram[0xc4a..0xc54].fill(0);
@@ -2460,7 +2460,7 @@ fn native_ancilla_receipt_oam_handoff_preserves_complete_sprite_caller_without_b
         let mut expected = ZeldaState::new();
         { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_ancilla::seed_case(&mut image, case * 17); expected.import_wram_image(&image); }
         expected.ram[0x1b] = 1;
-        expected.ram[0x10] = 7;
+        expected.write_wram_byte(0x10, 7);
         expected.ram[0x307] = 1;
         expected.ram[0x5d] = 0;
         expected.ram[0xc4a..0xc54].fill(0);
@@ -2630,7 +2630,7 @@ fn native_ancilla_slot_return_preserves_complete_sprite_caller_without_loop_repl
         let mut expected = ZeldaState::new();
         { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_ancilla::seed_case(&mut image, case * 17); expected.import_wram_image(&image); }
         expected.ram[0x1b] = 1;
-        expected.ram[0x10] = 7;
+        expected.write_wram_byte(0x10, 7);
         expected.ram[0x307] = 1;
         expected.ram[0x5d] = 0;
         expected.ram[0xc4a..0xc54].fill(0);
@@ -2803,7 +2803,7 @@ fn native_dungeon_overlord_handoff_preserves_complete_sprite_caller_without_head
         let mut expected = ZeldaState::new();
         { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_ancilla::seed_case(&mut image, case * 17); expected.import_wram_image(&image); }
         expected.ram[0x1b] = 1;
-        expected.ram[0x10] = 7;
+        expected.write_wram_byte(0x10, 7);
         expected.ram[0x307] = 1;
         expected.ram[0x5d] = 0;
         expected.ram[0xc4a..0xc54].fill(0);
@@ -2975,7 +2975,7 @@ fn native_dungeon_sprite_slots_handoff_preserves_complete_sprite_caller_without_
         let mut expected = ZeldaState::new();
         { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_ancilla::seed_case(&mut image, case * 17); expected.import_wram_image(&image); }
         expected.ram[0x1b] = 1;
-        expected.ram[0x10] = 7;
+        expected.write_wram_byte(0x10, 7);
         expected.ram[0x307] = 1;
         expected.ram[0x5d] = 0;
         expected.ram[0xc4a..0xc54].fill(0);
@@ -2997,7 +2997,7 @@ fn native_dungeon_sprite_slots_handoff_preserves_complete_sprite_caller_without_
             expected.ram[0xc68 + k] = [0, 1, 3, 7][case % 4];
         }
         { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_sprite_slots::seed_case(&mut image, case); expected.import_wram_image(&image); }
-        expected.ram[0x11]=17; // Freeze active bodies; all eleven real states still dispatch.
+        expected.write_wram_byte(0x11, 17); // Freeze active bodies; all eleven real states still dispatch.
         for k in 0..16 { expected.ram[0xe20+k]=0x73;expected.ram[0xef0+k]=0; }
         let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
             bg2_x: case as u16 * 113,
@@ -3022,7 +3022,7 @@ fn native_dungeon_sprite_slots_handoff_preserves_complete_sprite_caller_without_
         if case >= 384 {
             expected.ram[0xfb3] = 0;
             expected.ram[0xdd0..0xde0].fill(0);
-            expected.ram[0xfc1] = 1;
+            expected.write_wram_byte(0xfc1, 1);
             for slot in [0,14,15] {
                 expected.ram[0xdd0+slot]=9;
                 expected.ram[0xe20+slot]=if slot==15 {0x76} else {0x73};
@@ -3175,10 +3175,10 @@ fn native_lower_garnish_handoff_preserves_countdown_allocation_and_complete_spri
     for case in 0..660usize {
         let mut expected = ZeldaState::new();
         expected.ram[0x1b] = 1;
-        expected.ram[0x11] = 0;
+        expected.write_wram_byte(0x11, 0);
         expected.ram[0xfb4]=u8::from(case>=60);
         expected.ram[0x1ee..0x1f1].fill(0);
-        expected.ram[0x10] = 7;
+        expected.write_wram_byte(0x10, 7);
 
         let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
             bg2_x: case as u16 * 113,
@@ -3329,7 +3329,7 @@ fn native_cached_sprites_handoff_preserves_cache_execution_restore_and_complete_
     for case in 0..384usize {
         let mut expected = ZeldaState::new();
         expected.ram[0x1b] = 1;
-        expected.ram[0x11] = [0,1,14,17][case%4];
+        expected.write_wram_byte(0x11, [0,1,14,17][case%4]);
         expected.ram[0xffa] = [0,1,255][case/4%3];
         expected.ram[0xfb4]=0;
         expected.ram[0x1f1]=0;
@@ -3337,7 +3337,7 @@ fn native_cached_sprites_handoff_preserves_cache_execution_restore_and_complete_
         expected.ram[0xaaa]=(case as u8).wrapping_mul(13);
         expected.ram[0x69e..0x6a2].copy_from_slice(&[7,9,11,13]);
         expected.ram[0x1ee..0x1f1].fill(0);
-        expected.ram[0x10] = 7;
+        expected.write_wram_byte(0x10, 7);
 
         let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
             bg2_x: case as u16 * 113,
@@ -3506,7 +3506,7 @@ fn native_sprite_timers_handoffs_preserve_message_recoil_and_module_change_once(
     for case in 0..384usize {
         let k=case%16;let mode=case/16%3;let st=[9,10,11][case/48%3];
         let mut expected=ZeldaState::new();
-        expected.ram[0x10]=7;expected.ram[0x1b]=1;expected.ram[0xfa0]=k as u8;
+        expected.write_wram_byte(0x10, 7);expected.ram[0x1b]=1;expected.ram[0xfa0]=k as u8;
         expected.ram[0xdd0+k]=st;expected.ram[0xe20+k]=if mode==1 {0x7a}else{0x73};
         expected.ram[0xef0+k]=[0,31,24][mode];expected.ram[0xe50+k]=0;expected.ram[0xce2+k]=10;
         expected.ram[0xd10+k]=128;expected.ram[0xd00+k]=96;
@@ -3524,11 +3524,11 @@ fn native_sprite_timers_handoffs_preserve_message_recoil_and_module_change_once(
             owned+=work.step(&mut cpu,&mut clock,|_,access|match access {
                 Access::Read(a,width)=>{
                     let read=|a:u32|->u8 {
-                        crate::cycle_models::sprite_main::table_byte(a).or_else(||ZeldaState::native_oam_table_byte(a)).unwrap_or_else(||actual.ram[(a&if matches!(a>>16,0x7e|0x7f) {0x1ffff}else{0xffff}) as usize])
+                        crate::cycle_models::sprite_main::table_byte(a).or_else(||ZeldaState::native_oam_table_byte(a)).unwrap_or_else(||actual.read_wram_byte((a&if matches!(a>>16,0x7e|0x7f) {0x1ffff}else{0xffff}) as usize))
                     };
                     u16::from(read(a))|if width==2 {u16::from(read(a+1))<<8}else{0}
                 },
-                Access::Write(a,v,width)=>{let a=(a&if matches!(a>>16,0x7e|0x7f) {0x1ffff}else{0xffff}) as usize;actual.ram[a..a+width as usize].copy_from_slice(&v.to_le_bytes()[..width as usize]);actual.native_push_block_store(a,v,width);0},
+                Access::Write(a,v,width)=>{let a=(a&if matches!(a>>16,0x7e|0x7f) {0x1ffff}else{0xffff}) as usize;for byte in 0..width as usize { actual.write_wram_byte(a+byte,v.to_le_bytes()[byte]); }actual.native_push_block_store(a,v,width);0},
                 Access::Vblank {..}=>0,
             }).unwrap();
         }
@@ -3561,7 +3561,7 @@ fn native_recoil_prefix_handoffs_preserve_health_damage_and_remaining_bodies_onc
         let k=case%16;let st=(case/16%12) as u8;
         let dmg=[0,10,250,251,253,254,255,1,252][case/192%9];
         let health=[0,10,255][case%3];
-        let mut expected=ZeldaState::new();expected.ram[0x10]=7;
+        let mut expected=ZeldaState::new();expected.write_wram_byte(0x10, 7);
         expected.ram[0xdd0+k]=st;expected.ram[0xce2+k]=dmg;expected.ram[0xe50+k]=health;
         expected.ram[0xe20+k]=if case%5==0 {0x23}else{0x73};
         expected.ram[0xd10+k]=128;expected.ram[0xd00+k]=96;

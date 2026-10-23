@@ -145,7 +145,7 @@ fn item_receipt_message_selection_work_matches_rom() {
                     for pieces in 0..4 {
                         let mut state = ZeldaState::new();
                         let slot = 4;
-                        state.ram[0x10] = 7;
+                        state.write_wram_byte(0x10, 7);
                         state.ram[0x1b] = indoors;
                         state.ram[0xa0..0xa2].copy_from_slice(&(room as u16).to_le_bytes());
                         state.ram[0xc5e + slot] = item;
@@ -175,8 +175,8 @@ fn item_receipt_countdown_through_message_matches_rom() {
         for aux in 1..=24 {
             for submodule in [0, 2, 9, 11, 43] {
                 let mut state = ZeldaState::new();
-                state.ram[0x10] = 7;
-                state.ram[0x11] = submodule;
+                state.write_wram_byte(0x10, 7);
+                state.write_wram_byte(0x11, submodule);
                 state.ram[0x1b] = 1;
                 state.ram[0xa0] = 0x20;
                 state.ram[0xc5e + slot] = 0x3f;
@@ -203,8 +203,8 @@ fn item_receipt_message_entry_and_already_open_return_match_rom() {
     let Some(rom) = item_receipt_test_rom() else { return };
     for module in 0..=27 {
         let mut state = ZeldaState::new();
-        state.ram[0x10] = module;
-        state.ram[0x11] = 9;
+        state.write_wram_byte(0x10, module);
+        state.write_wram_byte(0x11, 9);
         state.ram[0x223] = 0x5a;
         state.ram[0x1cd8] = 3;
         state.ram[0xc5e + 4] = 0x3f;
@@ -260,7 +260,7 @@ fn item_receipt_animation_and_initial_countdown_work_match_rom() {
                 for timer in [1, 16, 17, 18] {
                     let mut state = ZeldaState::new();
                     let slot = 4;
-                    state.ram[0x10] = 7;
+                    state.write_wram_byte(0x10, 7);
                     state.ram[0xc5e + slot] = item;
                     state.ram[0xc54 + slot] = step;
                     state.ram[0xc68 + slot] = timer;
@@ -372,7 +372,7 @@ fn native_receipt_prefix_handoff_preserves_selected_body_once_and_omits_owned_di
     for case in 0..384usize {
         let k=case%10;
         let mut expected=ZeldaState::new();
-        expected.ram[0x10]=7;expected.ram[0x1b]=1;expected.ram[0x307]=1;
+        expected.write_wram_byte(0x10, 7);expected.ram[0x1b]=1;expected.ram[0x307]=1;
         expected.ram[0x2e4]=1;
         expected.ram[0xc4a+k]=0x22;
         expected.ram[0xc04+k]=128;expected.ram[0xbfa+k]=96;
@@ -430,7 +430,7 @@ fn native_receipt_movement_handoff_preserves_drawing_once_and_omits_owned_dispat
     for case in 0..384usize {
         let k=case%10;
         let mut expected=ZeldaState::new();
-        expected.ram[0x10]=7;expected.ram[0x1b]=1;expected.ram[0x307]=1;
+        expected.write_wram_byte(0x10, 7);expected.ram[0x1b]=1;expected.ram[0x307]=1;
         expected.ram[0x2e4]=1;
         expected.ram[0xc4a+k]=0x22;
         expected.ram[0xc04+k]=128;expected.ram[0xbfa+k]=96;
@@ -517,14 +517,14 @@ fn native_receipt_drawing_handoff_preserves_sparkle_graphics_and_oam_once() {
     for case in 0..512usize {
         let k=case%10;let mut expected=ZeldaState::new();
         { let mut image = expected.wram_image().into_owned(); crate::cycle_models::receipt_drawing::seed_case(&mut image, case*277%145920); expected.import_wram_image(&image); }
-        expected.ram[0x10]=7;expected.ram[0x1b]=1;expected.ram[0x307]=1;
+        expected.write_wram_byte(0x10, 7);expected.ram[0x1b]=1;expected.ram[0x307]=1;
         expected.ram[0xc4a+k]=0x22;expected.ram[0xc54+k]=(case%4) as u8;expected.ram[0x14]=(case%8) as u8;
         expected.ram[0xc04+k]=128;expected.ram[0xc18+k]=0;expected.ram[0xbfa+k]=96;expected.ram[0xc0e+k]=0;
         expected.ram[0xc7c+k]=(case%4) as u8;
         expected.ram[0xc68+k]=[0,15,16,255][case%4];expected.ram[0x3a4+k]=(case%3) as u8;expected.ram[0x39f+k]=0;
         expected.ram[0xc5e+k]=match case/64 {0=>[0,1,2,3,4,0x17,0x37,0x45][case%8],1=>0x20,2=>1,_=>[0x34,0x35,0x36][case%3]};
         if (192..256).contains(&case){expected.ram[0x39f+k]=1;}
-        expected.ram[0x11e..0x126].fill(0);expected.ram[0x12e]=0;
+        expected.ram[0x11e..0x126].fill(0);expected.write_wram_byte(0x12e, 0);
         expected.sync_native_game_state_from_ram();expected.oam_reset_region_bases();
         let mut actual=expected.clone();actual.rom.clear();
         let mut cpu=NativeNmiContext {a:0xab00,x:k as u16,y:7,d:0,db:8,bank:8,pc:0xc5f7,sp:0x1e8,p:0x30};

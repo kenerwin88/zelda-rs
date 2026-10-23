@@ -185,7 +185,7 @@ impl SheetWork {
     /// sample live native RAM at LDA, retaining that value until the later
     /// STA. Conversion starts only after decompression returns and reads
     /// each word at its instruction, including the unmodified native tail.
-    pub(crate) fn step(&mut self, ram: &[u8]) -> Option<Instruction> {
+    pub(crate) fn step(&mut self, read: impl Fn(usize) -> u8) -> Option<Instruction> {
         loop {
             match self.progress.phase {
                 0 | 2 => {
@@ -207,7 +207,7 @@ impl SheetWork {
                                 // Long indirect indexed addressing carries into
                                 // the next bank; only Y itself wraps at 16 bits.
                                 self.progress.back_reference =
-                                    ram[self.destination + usize::from(offset)];
+                                    read(self.destination + usize::from(offset));
                                 None
                             }
                             Some(DecompressAction::StoreBackReference(offset)) => {
@@ -244,7 +244,7 @@ impl SheetWork {
                     let step = conversion.step_with_reader(|offset| {
                         let address = (self.destination & !0xffff)
                             | ((self.destination + usize::from(offset)) & 0xffff);
-                        u16::from_le_bytes([ram[address], ram[address + 1]])
+                        u16::from_le_bytes([read(address), read(address + 1)])
                     })?;
                     let publication = step.publication.map(|p| match p {
                         ConversionPublication::SourceOffset(offset) => Publication::SourcePointer(
@@ -316,7 +316,7 @@ mod tests {
         ram[0x0800] = 0x5a; // A 16-bit address wrap would read the wrong bank.
         let mut work = SheetWork::sprite(12, 0x7800, &[0x80, 0, 0x90, 0xff]);
         loop {
-            let step = work.step(&ram).unwrap();
+            let step = work.step(|address| ram[address]).unwrap();
             if let Some(Publication::Byte { address, value }) = step.publication {
                 ram[address] = value;
             }
@@ -334,9 +334,9 @@ mod tests {
         ram[0x10800] = 0x99; // An intervening native owner changes the buffer.
         let mut restored: SheetWork = bincode::deserialize(&payload).unwrap();
         for _ in 0..2 {
-            assert!(restored.step(&ram).unwrap().publication.is_none()); // TYX, PLY
+            assert!(restored.step(|address| ram[address]).unwrap().publication.is_none()); // TYX, PLY
         }
-        let store = restored.step(&ram).unwrap();
+        let store = restored.step(|address| ram[address]).unwrap();
         assert!(matches!(
             store.publication,
             Some(Publication::Byte {
@@ -346,7 +346,7 @@ mod tests {
         ));
         ram[0x7800] = 0x33; // Later owner; completed store must never replay.
         let mut tail_instructions = 0;
-        while let Some(step) = restored.step(&ram) {
+        while let Some(step) = restored.step(|address| ram[address]) {
             if let Some(Publication::Byte { address, value }) = step.publication {
                 assert_ne!(address, 0x7800);
                 ram[address] = value;

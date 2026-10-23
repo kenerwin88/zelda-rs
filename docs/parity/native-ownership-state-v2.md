@@ -363,3 +363,152 @@ Audit evidence: `whoowns-frame-main.txt` and `dual-progress-boundary.txt` in the
 same `/tmp/zelda3-ownership-2c.zP2HU7` directory. The accepted work remains ten
 registered ranges / 747 bytes, checkpoint magic `Z3RSPC24`. Final
 `git diff --check` passes. No commit or push was performed.
+
+## Step 2d: FrameState
+
+FrameState exclusively owns `00010..00011`, `0001a`, `000b0`, `0010c`, and
+`00fc1`: six bytes in five narrow registry ranges, fifteen ranges / 753 bytes
+overall. Its master projection, adopting bridge, eager publications,
+re-adoption, and frame-versus-backing assertions are removed. Callers borrow
+the owner directly; existing write-watchpoints live on its methods. Legacy
+mirror refreshes preserve the live frame owner.
+
+Save-transfer publication and dungeon-map marker synchronization receive the
+module explicitly from ZeldaState. The three coherence mode gates also use
+native context. Live mode decisions no longer consume backing `$0010/$0011`.
+Imports, detached source machines, and retained display images still decode
+their own cartridge-format images.
+
+The byte/word gateway retires frame stores, including words spanning owned
+and unowned bytes. Generic startup/NMI accesses and DMA sources use owner-aware
+reads or exported images. Link graphics' separate DMA slice helper gathers
+only the requested bytes. Tileset and sheet cycle models accept byte readers:
+wrapped low-WRAM art and back-references sample the owner at the instruction,
+without cloning WRAM per instruction. Source fixtures and zelda3-bin
+diagnostics use exported images.
+
+Display composition keeps the original backing buffer aside, supplies an
+exported live image to the outgoing snapshot, and installs the captured frame
+owner while composing that generation. It restores the original native state
+and backing buffer afterward, preserving distinct captured/live mode contexts.
+
+Checkpoint magic is `Z3RSPC25`. Positional fields are unchanged, but older
+checkpoints can contain frame mirrors awaiting adoption and are rejected.
+Fixtures seed and compare owners or exported images; frozen golden data is
+unchanged. New regressions cover split stores with poisoned backing and both
+mode-gated publishers with native module 7 versus poisoned backing `$0010`.
+
+### Frame verification
+
+Base: `6d75a672d0686dd8790369af75d68b7acfcbaf2d`, branch `codex/native-truth`,
+with uncommitted changes. Artifacts: `/tmp/zelda3-ownership-2d`. Executable:
+`zelda3-frame25-final`, SHA-256
+`3f76e293b4def5c31db287effdd2194527af1294f1327c0f88658355c9bce25b`.
+`frame25-source.patch` retains the source changes. The supplied native2 baselines
+in `/tmp/zelda3-ownership-2c.zP2HU7` were reused without re-blessing; their
+compressed hashes remain `18b58a3f...4d8ba77` and `469e85e8...0bcf01`.
+
+| Mode | Normal, 200k records + EOF | Poison, 200k records + EOF |
+|---|---|---|
+| default | matched, 275.211 s | matched, 252.512 s |
+| lag-free | matched, 238.111 s | matched, 198.145 s |
+
+- The 20k lag-free coherence smoke matches the accepted 440,700-entry set
+  exactly: zero new and zero removed `(frame, step, domain)` tuples. See
+  `coherence-frame25-comparison.json` and `coherent-frame25.log`.
+- Parity binary build passes without warnings. Final library test compilation
+  passes with exactly 24 warnings (`lib-no-run-frame25-wire-fixtures.log`). Release
+  check without default features passes without warnings (`release-final25.log`).
+- Full library acceptance: SNES 504 passed / 7 ignored; Zelda 2,453 passed /
+  3 ignored / only the known spotlight-caller-return failure (983.08 seconds).
+  See `tests-frame25-accepted.log`. Frozen projection fixtures explicitly encode
+  the six frame bytes; spotlight fixtures construct an external seed image
+  before importing it. Their original inputs and frozen golden files are unchanged.
+- Audit: 111 to 110 projecting structs, 83 to 82 master-reachable projections.
+  Existing 60 overlap bytes, nine informational bridge overlaps, zero high-risk
+  overlaps, and exit 1 are unchanged (`dual-frame25-final.txt`).
+- `python3 scripts/loc.py HEAD` before and after reports 558,636 production Rust
+  lines at the unchanged HEAD. The tracked working tree has 558,613 by the same
+  nonblank-line/file classification: a reduction of 23. `git diff --check` passes.
+
+These are bounded Rust regression checks. No GPU, external Snes9x execution,
+oracle-cache writes, commits, pushes, `cargo fmt`, or repository one-off scripts
+were used. FrameState is accepted; SystemSignalsState verification follows.
+
+
+## Step 2d — SystemSignalsState sole ownership
+
+SystemSignalsState owns 71 bytes: 19 scalar signal bytes and the 26 meaningful
+bytes in each MSU resume record. Twelve additional registry ranges bring the
+pilot to 27 disjoint ranges / 824 bytes. MSU trailing reserved bytes and the
+space between records remain ordinary WRAM. Partial word stores replace only
+the addressed little-endian byte, including mixed owned/unowned words.
+
+The adopting bridge, master/scratch projections, and backing-coherence assertions
+are removed. Callers mutate the owner directly; legacy refreshes preserve it.
+Display composition installs the captured signals alongside the captured frame
+owner, then restores the live native state and original backing buffer.
+Replay watches and diagnostic dumps read through the gateway or exported images;
+the unused compatibility view and its range-copy adapter are deleted.
+
+The source-store audit also caught final backing copies after native stores in
+the entrance, load-file parent, room-entry, and player drawing paths. Those
+copies now retire bytes through the gateway, including the previously claimed
+frame bytes. Graphics scratch clearing handles the frame pause byte through the
+word gateway. The intro column-clear helper accepts a word-clear callback, so
+its large WRAM clear also reaches the two native MSU records. Regression checks
+cover poisoned MSU backing during that clear and the player drawing word crossing
+into the game-over byte. These final boundary corrections are included in the
+cumulative SystemSignalsState proof below; the earlier Frame-only executable
+predates them.
+
+Checkpoint magic is now `Z3RSPC26`; old checkpoints with pending signal mirrors
+are rejected. Frozen fixture data is unchanged. Fixtures construct external
+seed images before import and compare exported images or native fields.
+
+### System verification
+
+Final executable: `/tmp/zelda3-ownership-2d/zelda3-system26-final`, SHA-256
+`40b8cdfa755b9481ea9abdcb5acff7d9781d062d7047e1acfd0a09f9b34ba9a0`.
+Earlier `system26` and `system26-boundary` runs are superseded by this final
+executable. The supplied 2c baselines are unchanged (compressed SHA-256 hashes
+`18b58a3f887457d770918497218eaf7eb39360e1d04ed789c8b04b0ff4d8ba77` and
+`469e85e833da6d734fa09cf7060df9e9dd63ea1030d3c65f804d11f5904bcf01`).
+
+- The final 20k lag-free coherence smoke matches the accepted 440,700-entry set
+  exactly: zero new and zero removed tuples (`coherence-system26-final-comparison.json`).
+- Parity binary build passes without warnings (`build-system26-final.log`).
+  Library test compilation passes with exactly 24 warnings
+  (`lib-no-run-system26-final-fixtures.log`). Release check without default
+  features passes without warnings (`release-system26-final.log`).
+- Six focused fixture/ownership checks pass (`focused-system26-final-fixtures-current.log`).
+- Audit: 110 to 109 projecting structs and 82 to 81 master-reachable projections.
+  Existing 60 overlap bytes, nine informational bridge overlaps, zero high-risk
+  overlaps, and exit 1 are unchanged (`dual-system26-final.txt`).
+- `python3 scripts/loc.py HEAD` before and after reports 558,636 production Rust
+  lines at unchanged HEAD. The tracked working tree has 558,655 by the same
+  classification: System adds 42 after Frame's reduction of 23, a net increase
+  of 19 from 2c. Inline test modules count as production under this script.
+
+| Mode | Normal, 200k records + EOF | Poison, 200k records + EOF |
+|---|---|---|
+| default | matched, 226.399 s | matched, 280.070 s |
+| lag-free | matched, 201.554 s | matched, 288.173 s |
+
+See `compare-system26-final-*.log`.
+
+Full library acceptance (`tests-system26-final-accepted.log`): SNES 504 passed /
+7 ignored; Zelda 2,454 passed / 3 ignored / only the known
+`spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`
+failure (960.31 seconds). Its unchanged assertion at line 410 reports
+`Some(1047868)` versus `Some(170442)`. The command was
+`ZELDA3_ASSETS=$PWD/zelda3_assets.dat cargo test --profile parity -p zelda3 -p snes --lib`.
+The final graphics fixture correction changes only its expected-image seed;
+the pinned production executable is unchanged.
+
+`native-ownership-2d-final.patch` retains the cumulative source/report diff in
+the artifact directory. `git diff --check` passes. Branch and HEAD remain
+`codex/native-truth` / `6d75a672d0686dd8790369af75d68b7acfcbaf2d`.
+Both requested owners are complete under these bounded Rust regression gates.
+No GPU, external Snes9x execution, oracle-cache writes, commits, pushes,
+`cargo fmt`, or repository one-off scripts were used.

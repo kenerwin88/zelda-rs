@@ -300,7 +300,9 @@ fn write_developer_room_palette_from_source(game: &mut ZeldaState, source: &Zeld
     for (index, color) in source.ppu.cgram.iter().copied().enumerate() {
         write_le_u16(&mut game.ram, MAIN_PALETTE_BUFFER + index * 2, color);
     }
-    game.ram[FLAG_UPDATE_CGRAM_IN_NMI] = 1;
+    let mut image = game.wram_image().into_owned();
+    image[FLAG_UPDATE_CGRAM_IN_NMI] = 1;
+    game.import_wram_image(&image);
 }
 
 fn copy_developer_room_chr_from_source(game: &mut ZeldaState, source: &ZeldaState) {
@@ -834,7 +836,7 @@ mod tests {
         assert_eq!(frame, 0);
         assert_eq!(game.ram[PLAYER_IS_INDOORS], 1);
         assert_eq!(read_le_u16(&game.ram, 0x48e), 0x01ff);
-        assert_eq!(game.ram[MUSIC_CONTROL], DEVELOPER_ROOM_KAKARIKO_MUSIC);
+        assert_eq!(game.wram_image()[MUSIC_CONTROL], DEVELOPER_ROOM_KAKARIKO_MUSIC);
 
         let location = current_developer_location_from_ram(&game.ram, frame);
         assert_eq!(location.location, "ROOM 01FF");
@@ -846,16 +848,16 @@ mod tests {
         let (mut game, _) = load_developer_destination("preset-dev-sandbox")
             .expect("sandbox preset should load from JSON-backed synthetic room");
 
-        assert_eq!(game.ram[MUSIC_CONTROL], DEVELOPER_ROOM_KAKARIKO_MUSIC);
+        assert_eq!(game.wram_image()[MUSIC_CONTROL], DEVELOPER_ROOM_KAKARIKO_MUSIC);
 
         game.zelda_run_frame(0);
 
-        assert_eq!(game.ram[MUSIC_CONTROL], 0);
+        assert_eq!(game.wram_image()[MUSIC_CONTROL], 0);
         assert_eq!(
-            game.ram[CURRENT_MUSIC_CONTROL],
+            game.wram_image()[CURRENT_MUSIC_CONTROL],
             DEVELOPER_ROOM_KAKARIKO_MUSIC
         );
-        assert_eq!(game.ram[LAST_MUSIC_CONTROL], DEVELOPER_ROOM_KAKARIKO_MUSIC);
+        assert_eq!(game.wram_image()[LAST_MUSIC_CONTROL], DEVELOPER_ROOM_KAKARIKO_MUSIC);
     }
 
     #[test]

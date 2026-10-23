@@ -296,29 +296,30 @@ mod tests {
             actual.set_assets(&assets).unwrap();
             actual.rom.clear();
             actual.import_wram_image(&vec![0; actual.ram.len()]);
-            actual.ram[0x10] = module;
-            actual.ram[0x11] = submodule;
-            actual.ram[0x1b] = u8::from(!opening);
-            actual.ram[0x10c] = 9;
-            actual.ram[0x2cd..0x2cf].copy_from_slice(&16u16.to_le_bytes());
-            actual.ram[0x20..0x24].copy_from_slice(&[0x70, 1, 0x40, 2]);
-            actual.ram[0x67c..0x67e].copy_from_slice(&radius.to_le_bytes());
-            actual.ram[0x67e..0x680].copy_from_slice(&2u16.to_le_bytes());
+                    let mut image = actual.wram_image().into_owned();
+            image[0x10] = module;
+            image[0x11] = submodule;
+            image[0x1b] = u8::from(!opening);
+            image[0x10c] = 9;
+            image[0x2cd..0x2cf].copy_from_slice(&16u16.to_le_bytes());
+            image[0x20..0x24].copy_from_slice(&[0x70, 1, 0x40, 2]);
+            image[0x67c..0x67e].copy_from_slice(&radius.to_le_bytes());
+            image[0x67e..0x680].copy_from_slice(&2u16.to_le_bytes());
             if paused {
                 // Exercise the source's per-actor pause and submodule gates
                 // with the global modal-pause flag clear.
                 for slot in [0, 14, 15] {
-                    actual.ram[0xdd0 + slot] = 9;
-                    actual.ram[0xe20 + slot] = if slot == 15 { 0x76 } else { 0x73 };
-                    actual.ram[0xe90 + slot] = if slot == 14 { 2 } else if slot == 0 { 1 } else { 0 };
-                    actual.ram[0xf00 + slot] = if submodule == 0 { 2 } else { 0 };
+                    image[0xdd0 + slot] = 9;
+                    image[0xe20 + slot] = if slot == 15 { 0x76 } else { 0x73 };
+                    image[0xe90 + slot] = if slot == 14 { 2 } else if slot == 0 { 1 } else { 0 };
+                    image[0xf00 + slot] = if submodule == 0 { 2 } else { 0 };
                     // On-screen drawing clears actor pause before the inactive
                     // return helper. Off-screen drawing sets it again, which
                     // is the per-actor gate exercised by this fixture.
-                    if submodule == 0 { actual.ram[0xd30 + slot] = 2; }
+                    if submodule == 0 { image[0xd30 + slot] = 2; }
                 }
             }
-            { let image = actual.ram.clone(); actual.import_wram_image(&image); }
+            actual.import_wram_image(&image);
                     actual.sync_native_game_state_from_ram();
             if paused {
                 for (address, value) in [(0x4370, 0x42), (0x4371, 0x1b),
@@ -393,8 +394,8 @@ mod tests {
             assert_eq!(retained.timeline, *source.timeline());
             let start = crate::game_state::constants::HDMA_TABLE_DYNAMIC;
             let end = start + 0x1c0;
-            assert_eq!(&actual.ram[..start], &source.snes().ram[..start]);
-            assert_eq!(&actual.ram[end..], &source.snes().ram[end..]);
+            assert_eq!(&actual.wram_image()[..start], &source.snes().ram[..start]);
+            assert_eq!(&actual.wram_image()[end..], &source.snes().ram[end..]);
             assert_eq!(&actual.ram[start..end], &source.snes().ram[0x1b00..0x1cc0]);
             let source_state=crate::game_state::GameState::load_from_ram(&source.snes().ram);
             assert_eq!(actual.game_state.sprites.ancilla_slots,source_state.sprites.ancilla_slots);
@@ -469,7 +470,8 @@ mod tests {
                         else { ZeldaState::new() };
                     actual.rom.clear();
                     actual.import_wram_image(&vec![0; actual.ram.len()]);
-                    let r = &mut actual.ram;
+                    let mut image = actual.wram_image().into_owned();
+                    let r = &mut image;
                     r[0x10] = module;
                     r[0x11] = submodule;
                     r[0x1b] = 0;
@@ -509,31 +511,31 @@ mod tests {
                         *b = (i as u8).wrapping_mul(37) ^ case as u8;
                     }
                     if module == 15 {
-                        actual.ram[0x1b] = 1;
-                        actual.ram[0x1fb..0x1fd].copy_from_slice(&[0x8c, 0x99]);
+                        image[0x1b] = 1;
+                        image[0x1fb..0x1fd].copy_from_slice(&[0x8c, 0x99]);
                     }
                     if full_table {
-                        actual.ram[0x10c] = 9;
+                        image[0x10c] = 9;
                         if from_entry && case & 8 != 0 {
                             // Closing suspends actors without changing their
                             // real Sprite_Main call frame or descending loop.
-                            actual.ram[0xfc1] = 1;
+                            image[0xfc1] = 1;
                             for slot in [0, 14, 15] {
-                                actual.ram[0xdd0 + slot] = 9;
-                                actual.ram[0xe20 + slot] = if slot == 15 { 0x76 } else { 0x73 };
-                                actual.ram[0xe90 + slot] = if slot == 14 { 2 } else if slot == 0 { 1 } else { 0 };
-                                actual.ram[0xde0 + slot] = (case % 2) as u8;
-                                actual.ram[0xdc0 + slot] = (case / 4 % 2) as u8;
-                                actual.ram[0xd10 + slot] = (case as u8).wrapping_mul(7);
-                                actual.ram[0xd00 + slot] = (case as u8).wrapping_mul(11);
+                                image[0xdd0 + slot] = 9;
+                                image[0xe20 + slot] = if slot == 15 { 0x76 } else { 0x73 };
+                                image[0xe90 + slot] = if slot == 14 { 2 } else if slot == 0 { 1 } else { 0 };
+                                image[0xde0 + slot] = (case % 2) as u8;
+                                image[0xdc0 + slot] = (case / 4 % 2) as u8;
+                                image[0xd10 + slot] = (case as u8).wrapping_mul(7);
+                                image[0xd00 + slot] = (case as u8).wrapping_mul(11);
                             }
                         }
-                        actual.ram[0x67c..0x67e].copy_from_slice(&[0u16, 28, 118, 119][case % 4].to_le_bytes());
-                        actual.ram[0x67e..0x680].copy_from_slice(&2u16.to_le_bytes());
-                        actual.ram[0x1fd..0x200].copy_from_slice(&[0x59, 0x80, 0]);
+                        image[0x67c..0x67e].copy_from_slice(&[0u16, 28, 118, 119][case % 4].to_le_bytes());
+                        image[0x67e..0x680].copy_from_slice(&2u16.to_le_bytes());
+                        image[0x1fd..0x200].copy_from_slice(&[0x59, 0x80, 0]);
                         if case & 4 != 0 {
                             // Channel7 reads the changing physical window table.
-                            actual.ram[0x1800..0x1804].copy_from_slice(&[0x81, 0, 0x1b, 0]);
+                            image[0x1800..0x1804].copy_from_slice(&[0x81, 0, 0x1b, 0]);
                             for (address, value) in [(0x4370, 0x41), (0x4371, 0x26),
                                 (0x4372, 0), (0x4373, 0x18), (0x4374, 0), (0x4377, 0)] {
                                 actual.dma.write_register(address, value);
@@ -548,7 +550,7 @@ mod tests {
                             channel.terminated = false;
                         }
                     }
-                    { let image = actual.ram.clone(); actual.import_wram_image(&image); }
+                    actual.import_wram_image(&image);
                     actual.sync_native_game_state_from_ram();
                     let mut cpu = NativeNmiContext {
                         a: 0x1200,
@@ -694,8 +696,8 @@ mod tests {
                         fresh.game_state.player.follower_link
                     );
                     let publish = |s: &GameState, r: &mut Vec<u8>| {
-                        s.frame.write_to_ram(r);
-                        s.system_signals.write_to_ram(r);
+                        s.frame.encode_into_image(r);
+                        s.system_signals.encode_into_image(r);
                         s.player.write_to_ram(r);
                         s.world.write_to_ram(r);
                         s.display.write_to_ram(r);
