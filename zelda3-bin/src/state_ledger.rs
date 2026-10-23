@@ -35,6 +35,7 @@ impl Record {
     ) -> Self {
         // Hash the sample wire representation, never native-endian memory.
         let audio = audio.iter().flat_map(|sample| sample.to_le_bytes());
+        let image = game.wram_image();
         Self {
             schema: 2,
             frame,
@@ -45,9 +46,9 @@ impl Record {
             sram: format!("{:016x}", super::fnv1a64(&game.sram)),
             audio: format!("{:016x}", hash_bytes(audio)),
             rgb: None,
-            main: game.ram[0x10],
-            sub: game.ram[0x11],
-            room: u16::from_le_bytes([game.ram[0xa0], game.ram[0xa1]]),
+            main: image[0x10],
+            sub: image[0x11],
+            room: u16::from_le_bytes([image[0xa0], image[0xa1]]),
         }
     }
 

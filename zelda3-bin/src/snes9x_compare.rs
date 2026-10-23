@@ -1617,7 +1617,7 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
             if debug_wram_frames.contains(&record.frame) {
                 fs::write(
                     output.join(format!("rust_wram_frame_{}.bin", record.frame)),
-                    &game.ram[..],
+                    &game.wram_image()[..],
                 )
                 .unwrap_or_else(|error| {
                     eprintln!("failed to write Rust WRAM capture: {error}");
@@ -1853,7 +1853,7 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
     // replayed frame, as in the live compare, for byte-diffing the cold cached
     // lineage against an oracle WRAM capture at the same frame.
     if let Some(path) = env::var_os("ZELDA3_REPLAY_WRAM_DUMP") {
-        if let Err(error) = fs::write(&path, &game.ram[..]) {
+        if let Err(error) = fs::write(&path, &game.wram_image()[..]) {
             eprintln!("failed to write WRAM dump to {path:?}: {error}");
         }
     }
@@ -3553,9 +3553,9 @@ pub(crate) fn run_compare_libretro_oracle(
         // dominated the comparison loop; the receipt only needs the pre-frame
         // WRAM and one debug value, and the failure-artifact writer only needs
         // the full state while the poly thread is pending.
-        let poly_pending = game.ram[0x1f00] != 0;
+        let poly_pending = game.wram_image()[0x1f00] != 0;
         let pre_game = poly_pending.then(|| game.clone());
-        let pre_ram = game.ram.to_vec();
+        let pre_ram = game.wram_image().to_vec();
         let pre_load_remaining_nmi_slices =
             game.zelda_debug_selected_game_load_remaining_nmi_slices();
         stage(0, &mut stage_ns, &mut stage_mark);
@@ -3757,16 +3757,16 @@ pub(crate) fn run_compare_libretro_oracle(
                     |ram: &[u8], address: usize| ram.get(address).copied().unwrap_or_default();
                 eprintln!(
                     "[ENGINE] f={frame_index} rust main={:02x} sub={:02x} subsub={:02x} fc={:02x} y={:04x} x={:04x} ysub={:02x} yvel={:02x} bg2={:04x},{:04x} | oracle main={:02x} sub={:02x} subsub={:02x} fc={:02x} y={:04x} x={:04x} ysub={:02x} yvel={:02x} bg2={:04x},{:04x}",
-                    byte(&game.ram, 0x10),
-                    byte(&game.ram, 0x11),
-                    byte(&game.ram, 0xb0),
-                    byte(&game.ram, 0x1a),
-                    word(&game.ram, 0x20),
-                    word(&game.ram, 0x22),
-                    byte(&game.ram, 0x2a),
-                    byte(&game.ram, 0x27),
-                    word(&game.ram, 0xe2),
-                    word(&game.ram, 0xe8),
+                    byte(&game.wram_image(), 0x10),
+                    byte(&game.wram_image(), 0x11),
+                    byte(&game.wram_image(), 0xb0),
+                    byte(&game.wram_image(), 0x1a),
+                    word(&game.wram_image(), 0x20),
+                    word(&game.wram_image(), 0x22),
+                    byte(&game.wram_image(), 0x2a),
+                    byte(&game.wram_image(), 0x27),
+                    word(&game.wram_image(), 0xe2),
+                    word(&game.wram_image(), 0xe8),
                     byte(oracle_ram, 0x10),
                     byte(oracle_ram, 0x11),
                     byte(oracle_ram, 0xb0),
@@ -3781,14 +3781,14 @@ pub(crate) fn run_compare_libretro_oracle(
                 if let Some(slot) = engine_state_dump_sprite {
                     eprintln!(
                         "[ENGINE-SPR] f={frame_index} slot={slot} rust st={:02x} ty={:02x} delay={:02x} ai={:02x} x={:02x}{:02x} y={:02x}{:02x} | oracle st={:02x} ty={:02x} delay={:02x} ai={:02x} x={:02x}{:02x} y={:02x}{:02x}",
-                        byte(&game.ram, 0x0dd0 + slot),
-                        byte(&game.ram, 0x0e20 + slot),
-                        byte(&game.ram, 0x0df0 + slot),
-                        byte(&game.ram, 0x0d80 + slot),
-                        byte(&game.ram, 0x0d30 + slot),
-                        byte(&game.ram, 0x0d10 + slot),
-                        byte(&game.ram, 0x0d20 + slot),
-                        byte(&game.ram, 0x0d00 + slot),
+                        byte(&game.wram_image(), 0x0dd0 + slot),
+                        byte(&game.wram_image(), 0x0e20 + slot),
+                        byte(&game.wram_image(), 0x0df0 + slot),
+                        byte(&game.wram_image(), 0x0d80 + slot),
+                        byte(&game.wram_image(), 0x0d30 + slot),
+                        byte(&game.wram_image(), 0x0d10 + slot),
+                        byte(&game.wram_image(), 0x0d20 + slot),
+                        byte(&game.wram_image(), 0x0d00 + slot),
                         byte(oracle_ram, 0x0dd0 + slot),
                         byte(oracle_ram, 0x0e20 + slot),
                         byte(oracle_ram, 0x0df0 + slot),
@@ -3805,7 +3805,7 @@ pub(crate) fn run_compare_libretro_oracle(
                         .map(|&address| {
                             format!(
                                 "{address:05x}={:02x}|{:02x}",
-                                byte(&game.ram, address),
+                                byte(&game.wram_image(), address),
                                 byte(oracle_ram, address),
                             )
                         })
@@ -3816,7 +3816,7 @@ pub(crate) fn run_compare_libretro_oracle(
                     );
                 }
             }
-            let mismatches = compact_engine_state_mismatches(&game.ram, oracle_ram);
+            let mismatches = compact_engine_state_mismatches(&game.wram_image(), oracle_ram);
             if !mismatches.is_empty() {
                 if engine_state_scan_all {
                     engine_state_divergences.push((frame_index, mismatches));
@@ -3899,42 +3899,42 @@ pub(crate) fn run_compare_libretro_oracle(
         if trace_poly_sched {
             eprintln!(
                 "poly frame={frame_index} main={:02x} sub={:02x} subsub={:02x} fc={:02x} step={:02x} timer={:02x} iframe={:02x} did={:02x} flag={:02x} defer={} started={} sched={:02x} hold={} phase={} alt={} cfg={:02x} a={:02x} b={:02x} tri0=({:02x}{:02x},{:02x}{:02x};{:02x},{:02x}) tri1=({:02x}{:02x},{:02x}{:02x};{:02x},{:02x}) tri2=({:02x}{:02x},{:02x}{:02x};{:02x},{:02x})",
-                game.ram[0x10],
-                game.ram[0x11],
-                game.ram[0xb0],
-                game.ram[0x1a],
-                game.ram[0x1e00],
-                game.ram[0x1e01],
-                game.ram[0x1e0a],
-                game.ram[0x1f00],
-                game.ram[0x1f0c],
+                game.wram_image()[0x10],
+                game.wram_image()[0x11],
+                game.wram_image()[0xb0],
+                game.wram_image()[0x1a],
+                game.wram_image()[0x1e00],
+                game.wram_image()[0x1e01],
+                game.wram_image()[0x1e0a],
+                game.wram_image()[0x1f00],
+                game.wram_image()[0x1f0c],
                 game.debug_nmi_poly_upload_deferred(),
                 game.debug_nmi_poly_upload_started(),
                 game.debug_snes9x_poly_scheduler_counter(),
                 game.debug_snes9x_hold_intro_step_this_frame(),
                 game.debug_snes9x_intro_step_carry_phase_active(),
                 game.debug_snes9x_intro_step_hold_alternate(),
-                game.ram[0x1f02],
-                game.ram[0x1f04],
-                game.ram[0x1f05],
-                game.ram[0x1e38],
-                game.ram[0x1e30],
-                game.ram[0x1e50],
-                game.ram[0x1e48],
-                game.ram[0x1e58],
-                game.ram[0x1e60],
-                game.ram[0x1e39],
-                game.ram[0x1e31],
-                game.ram[0x1e51],
-                game.ram[0x1e49],
-                game.ram[0x1e59],
-                game.ram[0x1e61],
-                game.ram[0x1e3a],
-                game.ram[0x1e32],
-                game.ram[0x1e52],
-                game.ram[0x1e4a],
-                game.ram[0x1e5a],
-                game.ram[0x1e62],
+                game.wram_image()[0x1f02],
+                game.wram_image()[0x1f04],
+                game.wram_image()[0x1f05],
+                game.wram_image()[0x1e38],
+                game.wram_image()[0x1e30],
+                game.wram_image()[0x1e50],
+                game.wram_image()[0x1e48],
+                game.wram_image()[0x1e58],
+                game.wram_image()[0x1e60],
+                game.wram_image()[0x1e39],
+                game.wram_image()[0x1e31],
+                game.wram_image()[0x1e51],
+                game.wram_image()[0x1e49],
+                game.wram_image()[0x1e59],
+                game.wram_image()[0x1e61],
+                game.wram_image()[0x1e3a],
+                game.wram_image()[0x1e32],
+                game.wram_image()[0x1e52],
+                game.wram_image()[0x1e4a],
+                game.wram_image()[0x1e5a],
+                game.wram_image()[0x1e62],
             );
         }
         let mut capture = if let Some(capture) = early_oracle_capture {
@@ -3999,7 +3999,7 @@ pub(crate) fn run_compare_libretro_oracle(
                         }),
                 );
                 write_display_oracle_receipt(&mut detail, frame_index, "after", &oracle, &mut game);
-                fs::write(dir.join("obj_state_first_rust_wram.bin"), &game.ram).unwrap_or_else(
+                fs::write(dir.join("obj_state_first_rust_wram.bin"), &game.wram_image()).unwrap_or_else(
                     |error| {
                         eprintln!("failed to dump first OBJ-divergence Rust WRAM: {error}");
                         process::exit(1);
@@ -4044,7 +4044,7 @@ pub(crate) fn run_compare_libretro_oracle(
         // with `scripts/snes9x_boot_contract.py` rather than the CLI's
         // zero-based input index.
         let contract_frame = frame_index.saturating_add(1);
-        let rust_boundary = BootBoundaryState::from_ram(contract_frame, "after", &game.ram);
+        let rust_boundary = BootBoundaryState::from_ram(contract_frame, "after", &game.wram_image());
         if let Some(trace) = rust_boot_contract.as_mut() {
             serde_json::to_writer(&mut *trace, &rust_boundary).unwrap_or_else(|error| {
                 eprintln!("failed to write Rust boot-contract frame: {error}");
@@ -4154,7 +4154,7 @@ pub(crate) fn run_compare_libretro_oracle(
                 });
             fs::write(
                 dir.join(format!("rust_wram_frame_{frame_index}.bin")),
-                &game.ram,
+                &game.wram_image(),
             )
             .unwrap_or_else(|error| {
                 eprintln!("failed to write Rust WRAM capture: {error}");
@@ -4262,7 +4262,7 @@ pub(crate) fn run_compare_libretro_oracle(
         if debug_sprite_frames.contains(&frame_index) {
             // Follower/tagalong tracking probe: slot-0 sprite state both sides.
             let oracle_ram = oracle.memory_bytes(RETRO_MEMORY_SYSTEM_RAM).unwrap_or(&[]);
-            let g = |a: usize| game.ram.get(a).copied().unwrap_or(0);
+            let g = |a: usize| game.wram_image().get(a).copied().unwrap_or(0);
             let o = |a: usize| oracle_ram.get(a).copied().unwrap_or(0xff);
             // Slot 0's full motion/AI witness. Keep this aligned with the
             // `sprite_slots` receipt below so a visual failure can be walked
@@ -4300,28 +4300,28 @@ pub(crate) fn run_compare_libretro_oracle(
                     0xffff
                 }
             };
-            let rp_r = u16::from_le_bytes([game.ram[0x1cd9], game.ram[0x1cda]]);
+            let rp_r = u16::from_le_bytes([game.wram_image()[0x1cd9], game.wram_image()[0x1cda]]);
             eprintln!(
                 "text_probe frame={frame_index} fc_r={:02x} fc_o={fc_oracle:02x}{} rst_r={:02x} rst_o={:02x} rp_r={rp_r:04x} rp_o={:04x} coreDis_r={:02x} coreDis_o={:02x}",
-                game.ram[0x1a],
-                if game.ram[0x1a] != fc_oracle { "  FCd" } else { "" },
-                game.ram[0x1cd4], mo(0x1cd4),
+                game.wram_image()[0x1a],
+                if game.wram_image()[0x1a] != fc_oracle { "  FCd" } else { "" },
+                game.wram_image()[0x1cd4], mo(0x1cd4),
                 mow(0x1cd9),
-                game.ram[0x1ccd], mo(0x1ccd),
+                game.wram_image()[0x1ccd], mo(0x1ccd),
             );
         }
         if debug_vram_frames.contains(&frame_index) {
             // Palette-phase probe: end-frame WRAM main palette buffer entry 23 on
             // both sides, plus our displayed (snapshot-composed) CGRAM entry 23.
             let oracle_ram = oracle.memory_bytes(RETRO_MEMORY_SYSTEM_RAM).unwrap_or(&[]);
-            let ours = u16::from_le_bytes([game.ram[0xc500 + 46], game.ram[0xc500 + 47]]);
+            let ours = u16::from_le_bytes([game.wram_image()[0xc500 + 46], game.wram_image()[0xc500 + 47]]);
             let theirs = if oracle_ram.len() > 0xc52f {
                 u16::from_le_bytes([oracle_ram[0xc500 + 46], oracle_ram[0xc500 + 47]])
             } else {
                 0xdead
             };
             let displayed = game.with_display_snapshot(|snapshot| snapshot.ppu.cgram[23]);
-            let thread_rust = game.ram[0x12a];
+            let thread_rust = game.wram_image()[0x12a];
             let thread_oracle = if oracle_ram.len() > 0x12a {
                 oracle_ram[0x12a]
             } else {
@@ -4433,13 +4433,13 @@ pub(crate) fn run_compare_libretro_oracle(
                     eprintln!("{oracle_name} did not expose system RAM for shield DMA tracing");
                     process::exit(1);
                 });
-            let rust_index = game.ram[0x0108];
+            let rust_index = game.wram_image()[0x0108];
             let oracle_index = oracle_ram[0x0108];
-            let rust_source = u16::from_le_bytes([game.ram[0x0ac4], game.ram[0x0ac5]]);
+            let rust_source = u16::from_le_bytes([game.wram_image()[0x0ac4], game.wram_image()[0x0ac5]]);
             let oracle_source = u16::from_le_bytes([oracle_ram[0x0ac4], oracle_ram[0x0ac5]]);
-            let rust_sword_index = game.ram[0x0107];
+            let rust_sword_index = game.wram_image()[0x0107];
             let oracle_sword_index = oracle_ram[0x0107];
-            let rust_sword_source = u16::from_le_bytes([game.ram[0x0ac2], game.ram[0x0ac3]]);
+            let rust_sword_source = u16::from_le_bytes([game.wram_image()[0x0ac2], game.wram_image()[0x0ac3]]);
             let oracle_sword_source = u16::from_le_bytes([oracle_ram[0x0ac2], oracle_ram[0x0ac3]]);
             let trace = (
                 rust_index,
@@ -4454,29 +4454,29 @@ pub(crate) fn run_compare_libretro_oracle(
             if previous_shield_dma_trace != Some(trace) {
                 eprintln!(
                     "shield-dma frame={frame_index} input={input:04x} main={:02x}/{:02x} shield-index={rust_index:02x}/{oracle_index:02x} shield-source={rust_source:04x}/{oracle_source:04x} sword-index={rust_sword_index:02x}/{oracle_sword_index:02x} sword-source={rust_sword_source:04x}/{oracle_sword_source:04x} facing={:02x}/{:02x} pose={:02x}/{:02x} step={:04x}/{:04x} shield={:02x}/{:02x} progress={:02x}/{:02x}",
-                    game.ram[0x10],
-                    game.ram[0x11],
-                    game.ram[0x002f],
+                    game.wram_image()[0x10],
+                    game.wram_image()[0x11],
+                    game.wram_image()[0x002f],
                     oracle_ram[0x002f],
-                    game.ram[0x0354],
+                    game.wram_image()[0x0354],
                     oracle_ram[0x0354],
-                    u16::from_le_bytes([game.ram[0x0076], game.ram[0x0077]]),
+                    u16::from_le_bytes([game.wram_image()[0x0076], game.wram_image()[0x0077]]),
                     u16::from_le_bytes([oracle_ram[0x0076], oracle_ram[0x0077]]),
-                    game.ram[0xf35a],
+                    game.wram_image()[0xf35a],
                     oracle_ram[0xf35a],
-                    game.ram[0xf3c5],
+                    game.wram_image()[0xf3c5],
                     oracle_ram[0xf3c5],
                 );
                 previous_shield_dma_trace = Some(trace);
             }
             let uncle_trace = (
-                game.ram[0x0dd0],
+                game.wram_image()[0x0dd0],
                 oracle_ram[0x0dd0],
-                game.ram[0x0de0],
+                game.wram_image()[0x0de0],
                 oracle_ram[0x0de0],
-                game.ram[0x0dc0],
+                game.wram_image()[0x0dc0],
                 oracle_ram[0x0dc0],
-                game.ram[0x0d80],
+                game.wram_image()[0x0d80],
                 oracle_ram[0x0d80],
             );
             if previous_uncle_trace != Some(uncle_trace) {
@@ -5910,7 +5910,7 @@ pub(crate) fn run_compare_libretro_oracle(
                         "rust_checkpoint_sample_offset": modern_audio_state
                             .1
                             .debug_checkpoint_sample_offset(),
-                        "rust_dialogue_decoded_text": game.ram.get(0x11200..0x11300),
+                        "rust_dialogue_decoded_text": game.wram_image().get(0x11200..0x11300),
                         "rust_dialogue_vwf_widths": game.dialogue_vwf_widths(),
                         "rust_modern_voice_7_sample_data": modern_audio_state
                             .1
@@ -5951,7 +5951,7 @@ pub(crate) fn run_compare_libretro_oracle(
                 capture.video_width,
                 capture.video_height,
                 &pre_ram,
-                &game.ram,
+                &game.wram_image(),
                 pre_load_remaining_nmi_slices,
                 game.zelda_debug_selected_game_load_remaining_nmi_slices(),
                 game.zelda_debug_game_execution_scheduler(),
@@ -6058,7 +6058,7 @@ pub(crate) fn run_compare_libretro_oracle(
             let oracle_pixel = snes9x_rgba_pixel_at(&capture, snes9x_offset).unwrap_or([0; 4]);
             println!(
                 "pixel frame={frame_index} xy=({x},{y}) rust={rust_pixel:02x?} {oracle_name}={oracle_pixel:02x?} main={:02x} sub={:02x} subsub={:02x} inidisp={:02x} rust_bg_pal3=[{rust_bg_pal3}] oracle_bg_pal3=[{oracle_bg_pal3}] rust_bg_pal4=[{rust_bg_pal4}] oracle_bg_pal4=[{oracle_bg_pal4}] rust_obj_pal90=[{rust_obj_pal}] oracle_obj_pal90=[{oracle_obj_pal}]",
-                game.ram[0x10], game.ram[0x11], game.ram[0xb0], game.ram[0x13],
+                game.wram_image()[0x10], game.wram_image()[0x11], game.wram_image()[0xb0], game.wram_image()[0x13],
             );
             println!("pixel displayed_ppu frame={frame_index} {displayed_ppu}");
             let oracle_obj_control = (0..5)
@@ -6328,7 +6328,7 @@ pub(crate) fn run_compare_libretro_oracle(
                     if oracle_before_state_frame != frame_index {
                         eprintln!(
                             "{oracle_name} video divergence at frame {frame_index}: {video_diff}; input={input:04x}; ports={ports:02x?}; main={:02x} sub={:02x} subsub={:02x}",
-                            game.ram[0x10], game.ram[0x11], game.ram[0xb0],
+                            game.wram_image()[0x10], game.wram_image()[0x11], game.wram_image()[0xb0],
                         );
                         eprintln!(
                             "detailed pre-frame artifacts require a focused replay beginning at frame {frame_index}; the authoritative cold run does not serialize Snes9x in flight"
@@ -6419,7 +6419,7 @@ pub(crate) fn run_compare_libretro_oracle(
                         .ok();
                         eprintln!(
                         "{oracle_name} video divergence at frame {frame_index}: {video_diff}; input={input:04x}; ports={ports:02x?}; main={:02x} sub={:02x} subsub={:02x}",
-                        game.ram[0x10], game.ram[0x11], game.ram[0xb0],
+                        game.wram_image()[0x10], game.wram_image()[0x11], game.wram_image()[0xb0],
                     );
                         eprintln!("rust audio:  {:?}", rust_stats);
                         eprintln!("{oracle_name} audio: {:?}", oracle_stats);
@@ -6840,7 +6840,7 @@ fn write_host_feature_row(
     receipts: &zelda3::OriginalTimingHostReceipts,
 ) {
     use zelda3::OriginalTimingSemanticReceipt as R;
-    let ram = &game.ram;
+    let ram = &game.wram_image();
     let mut held = false;
     let mut interrupted = false;
     let mut continued = false;

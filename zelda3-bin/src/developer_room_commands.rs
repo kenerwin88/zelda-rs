@@ -442,8 +442,8 @@ pub(crate) fn run_dump_developer_destination(args: &[String]) {
     println!(
         "dumped developer destination {id} frames={frames} start_frame={start_frame} to {}; main={:02x}; sub={:02x}; mode={}; screen={:02x}/{:02x}; bg1_tm={:04x}; bg1_chr={:04x}; cgram_nonzero={}; oam_nonzero={}",
         out_path.display(),
-        game.ram[0x10],
-        game.ram[0x11],
+        game.wram_image()[0x10],
+        game.wram_image()[0x11],
         game.ppu.bg_mode(),
         game.ppu.screen_enabled[0],
         game.ppu.screen_enabled[1],

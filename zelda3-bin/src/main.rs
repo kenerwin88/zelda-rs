@@ -625,9 +625,9 @@ fn run_standalone_smoke(args: &[String]) {
         if frame % 100 == 0 && env::var_os("ZELDA3_SMOKE_TRACE").is_some() {
             eprintln!(
                 "smoke frame={frame} main={:#04x} sub={:#04x} ram_fnv1a64={:016x}",
-                game.ram[0x10],
-                game.ram[0x11],
-                fnv1a64(&game.ram)
+                game.wram_image()[0x10],
+                game.wram_image()[0x11],
+                fnv1a64(&game.wram_image())
             );
         }
         game.zelda_render_audio(&mut audio, 735, 2);
@@ -653,8 +653,8 @@ fn run_standalone_smoke(args: &[String]) {
 
     println!(
         "standalone smoke completed frames={frames} main_module={:#04x} ram_fnv1a64={:016x} sram_fnv1a64={:016x}",
-        game.ram[0x10],
-        fnv1a64(&game.ram),
+        game.wram_image()[0x10],
+        fnv1a64(&game.wram_image()),
         fnv1a64(&game.sram)
     );
 }
@@ -697,8 +697,8 @@ fn print_asset_gpu_smoke_progress(
     ) = renderer.validation_cache_stats();
     eprintln!(
         "{label} asset GPU smoke progress frames={frames} main={:02x}; sub={:02x}; mode={}; screen={:02x}/{:02x}; validation_cache_hits={cache_hits}; validation_cache_misses={cache_misses}; validation_cache_entries={cache_entries}; validation_key_ms={cache_key_ms}; validation_miss_ms={cache_miss_ms}; validation_bg_extract_ms={bg_extract_ms}; validation_sprite_extract_ms={sprite_extract_ms}; validation_stats_ms={stats_ms}",
-        game.ram[0x10],
-        game.ram[0x11],
+        game.wram_image()[0x10],
+        game.wram_image()[0x11],
         game.ppu.bg_mode(),
         game.ppu.screen_enabled[0],
         game.ppu.screen_enabled[1],
@@ -943,8 +943,8 @@ fn run_replay_save(args: &[String]) {
         println!(
             "replay-save asset GPU smoke passed frames={} main={:02x}; sub={:02x}; mode={}; screen={:02x}/{:02x}; cgram_nonzero={}; oam_nonzero={}; validation_cache_hits={}; validation_cache_misses={}; validation_cache_entries={}; validation_key_ms={}; validation_miss_ms={}; validation_bg_extract_ms={}; validation_sprite_extract_ms={}; validation_stats_ms={}",
             frames,
-            game.ram[0x10],
-            game.ram[0x11],
+            game.wram_image()[0x10],
+            game.wram_image()[0x11],
             game.ppu.bg_mode(),
             game.ppu.screen_enabled[0],
             game.ppu.screen_enabled[1],
@@ -1006,36 +1006,36 @@ fn run_replay_save(args: &[String]) {
         println!("dumped replay-save frame to {}", path.display());
     }
 
-    let debirando_slot = (0..16).find(|&k| game.ram[0x0e20 + k] == 0x63);
+    let debirando_slot = (0..16).find(|&k| game.wram_image()[0x0e20 + k] == 0x63);
     let debirando_summary = debirando_slot.map_or_else(
         || "none".to_string(),
         |k| {
             format!(
                 "k{} st={:02x} ai={:02x} gfx={:02x} head={} headst={:02x} delay={:02x} floor={:02x} xy={:04x}/{:04x} vel={:02x}/{:02x} ab={:02x}/{:02x}",
                 k,
-                game.ram[0x0dd0 + k],
-                game.ram[0x0d80 + k],
-                game.ram[0x0dc0 + k],
-                game.ram[0x0eb0 + k],
-                game.ram[0x0dd0 + usize::from(game.ram[0x0eb0 + k])],
-                game.ram[0x0df0 + k],
-                game.ram[0x0f20 + k],
-                u16::from_le_bytes([game.ram[0x0d10 + k], game.ram[0x0d30 + k]]),
-                u16::from_le_bytes([game.ram[0x0d00 + k], game.ram[0x0d20 + k]]),
-                game.ram[0x0d50 + k],
-                game.ram[0x0d40 + k],
-                game.ram[0x0da0 + k],
-                game.ram[0x0d90 + k],
+                game.wram_image()[0x0dd0 + k],
+                game.wram_image()[0x0d80 + k],
+                game.wram_image()[0x0dc0 + k],
+                game.wram_image()[0x0eb0 + k],
+                game.wram_image()[0x0dd0 + usize::from(game.wram_image()[0x0eb0 + k])],
+                game.wram_image()[0x0df0 + k],
+                game.wram_image()[0x0f20 + k],
+                u16::from_le_bytes([game.wram_image()[0x0d10 + k], game.wram_image()[0x0d30 + k]]),
+                u16::from_le_bytes([game.wram_image()[0x0d00 + k], game.wram_image()[0x0d20 + k]]),
+                game.wram_image()[0x0d50 + k],
+                game.wram_image()[0x0d40 + k],
+                game.wram_image()[0x0da0 + k],
+                game.wram_image()[0x0d90 + k],
             )
         },
     );
-    let room_index2 = u16::from_le_bytes([game.ram[0x48e], game.ram[0x48f]]);
+    let room_index2 = u16::from_le_bytes([game.wram_image()[0x48e], game.wram_image()[0x48f]]);
     let room_mask = replay_save_room_mask(&game, room_index2);
     let room_history = [
-        u16::from_le_bytes([game.ram[0xb80], game.ram[0xb81]]),
-        u16::from_le_bytes([game.ram[0xb82], game.ram[0xb83]]),
-        u16::from_le_bytes([game.ram[0xb84], game.ram[0xb85]]),
-        u16::from_le_bytes([game.ram[0xb86], game.ram[0xb87]]),
+        u16::from_le_bytes([game.wram_image()[0xb80], game.wram_image()[0xb81]]),
+        u16::from_le_bytes([game.wram_image()[0xb82], game.wram_image()[0xb83]]),
+        u16::from_le_bytes([game.wram_image()[0xb84], game.wram_image()[0xb85]]),
+        u16::from_le_bytes([game.wram_image()[0xb86], game.wram_image()[0xb87]]),
     ];
     let history_masks = room_history.map(|room| {
         if room == 0xffff {
@@ -1044,26 +1044,26 @@ fn run_replay_save(args: &[String]) {
             replay_save_room_mask(&game, room)
         }
     });
-    let msg_read_pos = read_le_u16(&game.ram, 0x1cd9) as usize;
+    let msg_read_pos = read_le_u16(&game.wram_image(), 0x1cd9) as usize;
     let msg_buffer_pos = 0x11200 + msg_read_pos;
-    let msg_buffer_0 = game.ram.get(msg_buffer_pos).copied().unwrap_or(0);
-    let msg_buffer_1 = game.ram.get(msg_buffer_pos + 1).copied().unwrap_or(0);
-    let action_facing = usize::from((game.ram[0x2f] >> 1) & 3);
-    let tilemap_mask = read_le_u16(&game.ram, 0x00ec);
-    let action_y0 = read_le_u16(&game.ram, 0x20).wrapping_add(ACTION_TILE_Y[action_facing] as u16)
+    let msg_buffer_0 = game.wram_image().get(msg_buffer_pos).copied().unwrap_or(0);
+    let msg_buffer_1 = game.wram_image().get(msg_buffer_pos + 1).copied().unwrap_or(0);
+    let action_facing = usize::from((game.wram_image()[0x2f] >> 1) & 3);
+    let tilemap_mask = read_le_u16(&game.wram_image(), 0x00ec);
+    let action_y0 = read_le_u16(&game.wram_image(), 0x20).wrapping_add(ACTION_TILE_Y[action_facing] as u16)
         & tilemap_mask;
-    let action_y1 = read_le_u16(&game.ram, 0x20).wrapping_add(20) & tilemap_mask;
-    let action_x0 = (read_le_u16(&game.ram, 0x22)
+    let action_y1 = read_le_u16(&game.wram_image(), 0x20).wrapping_add(20) & tilemap_mask;
+    let action_x0 = (read_le_u16(&game.wram_image(), 0x22)
         .wrapping_add(ACTION_TILE_X[action_facing] as u16)
         & tilemap_mask)
         >> 3;
-    let action_x1 = (read_le_u16(&game.ram, 0x22).wrapping_add(8) & tilemap_mask) >> 3;
-    let action_attr0 = if game.ram[0x1b] != 0 {
+    let action_x1 = (read_le_u16(&game.wram_image(), 0x22).wrapping_add(8) & tilemap_mask) >> 3;
+    let action_attr0 = if game.wram_image()[0x1b] != 0 {
         0xff
     } else {
         game.overworld_tile_attribute_at_location(action_x0, action_y0)
     };
-    let action_attr1 = if game.ram[0x1b] != 0 {
+    let action_attr1 = if game.wram_image()[0x1b] != 0 {
         0xff
     } else {
         game.overworld_tile_attribute_at_location(action_x1, action_y1)
@@ -1072,7 +1072,7 @@ fn run_replay_save(args: &[String]) {
     // Stable byte-level WRAM dump for deterministic old-vs-new diffing (no
     // bisection): `ZELDA3_REPLAY_WRAM_DUMP=<path>` writes the full 128KB WRAM.
     if let Some(path) = std::env::var_os("ZELDA3_REPLAY_WRAM_DUMP") {
-        if let Err(e) = std::fs::write(&path, &game.ram[..]) {
+        if let Err(e) = std::fs::write(&path, &game.wram_image()[..]) {
             eprintln!("failed to write WRAM dump to {path:?}: {e}");
         }
     }
@@ -1106,18 +1106,18 @@ fn run_replay_save(args: &[String]) {
     println!(
         "replay-save completed frames={frames} active={} ending={} fc=0x{:02x} rng=0x{:02x} ramhash=0x{:08x} ram0=0x{:08x} ram1=0x{:08x} ram2=0x{:08x} ram3=0x{:08x} ram4=0x{:08x} ram5=0x{:08x} ram6=0x{:08x} ram7=0x{:08x} sramhash=0x{:08x} roommask=0x{:04x} hist={:04x},{:04x},{:04x},{:04x} histmask={:04x},{:04x},{:04x},{:04x} main={} sub={} subsub={} adc=0x{:04x} saved={} map={} msgmod={} indoors={} room=0x{:04x} ow=0x{:04x} msg=0x{:04x} msgpos=0x{:04x} msgb=0x{:02x}/0x{:02x} textrs=0x{:02x} wait=0x{:04x}/0x{:02x} immob=0x{:02x} x=0x{:04x} y=0x{:04x} subpix=0x{:02x}/0x{:02x} hp=0x{:02x} item=0x{:02x} cur_y=0x{:02x} active_item=0x{:02x} hand=0x{:02x} bow=0x{:02x} boom=0x{:02x} big=0x{:04x} keys=0x{:02x} sram3=0x{:02x} joyh=0x{:02x} joyl=0x{:02x} fh=0x{:02x} fl=0x{:02x} dir=0x{:02x} face=0x{:02x} state=0x{:02x} inwater=0x{:02x} aux=0x{:02x} ph_timer=0x{:02x} incap=0x{:02x} lflag=0x{:02x} recoil=0x{:02x} drag=0x{:02x} grab=0x{:02x} abtn=0x{:02x} by=0x{:02x} anim={}/{} var30d=0x{:02x} follower=0x{:02x} foltimer=0x{:04x} folvar={}/{}/{}/{} folevt=0x{:02x} trans={} dirbits=0x{:02x} dirbits2=0x{:02x} tctr={} owcnt={} b69c=0x{:02x} vx=0x{:02x} vy=0x{:02x} bg3v=0x{:04x} yvel=0x{:02x} door=0x{:02x} speed=0x{:02x}/0x{:02x} lspeed=0x{:02x}/0x{:02x} dash=0x{:02x} cdf=0x{:02x} last=0x{:02x} dlast=0x{:02x} orth=0x{:02x} force=0x{:04x} prevent=0x{:02x} dragxy=0x{:04x}/0x{:04x} rtrans=0x{:02x} tcoll=0x{:02x} col=0x{:02x},0x{:02x} bugs=0x{:02x} feat=0x{:08x} wanted=0x{:08x} z=0x{:02x} vz=0x{:02x} vzcopy=0x{:02x} below=0x{:02x} tile=0x{:04x} action=0x{:02x} interact=0x{:02x},{:02x},{:02x} read=0x{:04x} a0=0x{:02x} a1=0x{:02x} chest=0x{:04x} keylock=0x{:02x} srm=0x{:02x} mark0=0x{:04x} chk0={} bak0=0x{:04x} bchk0={} r16=0x{:02x} arr1={},{},{} sel3=0x{:02x} sel4=0x{:02x} sel5=0x{:02x} sel9=0x{:02x} sel11=0x{:02x} ptimer=0x{:02x} bframes=0x{:02x} r14=0x{:04x} r12=0x{:04x} misc=0x{:04x} pit=0x{:02x} spike=0x{:02x} vledge=0x{:02x} stair=0x{:02x} deep=0x{:04x} normal=0x{:04x} debirando={}",
         game.state_recorder.replay_mode,
-        u8::from(game.ram[0x10] == 26),
-        game.ram[0x1a],
-        game.ram[0x0fa1],
-        replay_checksum_ram_range(&game.ram, 0, game.ram.len()),
-        replay_checksum_ram_range(&game.ram, 0x00000, 0x4000),
-        replay_checksum_ram_range(&game.ram, 0x04000, 0x4000),
-        replay_checksum_ram_range(&game.ram, 0x08000, 0x4000),
-        replay_checksum_ram_range(&game.ram, 0x0c000, 0x4000),
-        replay_checksum_ram_range(&game.ram, 0x10000, 0x4000),
-        replay_checksum_ram_range(&game.ram, 0x14000, 0x4000),
-        replay_checksum_ram_range(&game.ram, 0x18000, 0x4000),
-        replay_checksum_ram_range(&game.ram, 0x1c000, 0x4000),
+        u8::from(game.wram_image()[0x10] == 26),
+        game.wram_image()[0x1a],
+        game.wram_image()[0x0fa1],
+        replay_checksum_ram_range(&game.wram_image(), 0, game.wram_image().len()),
+        replay_checksum_ram_range(&game.wram_image(), 0x00000, 0x4000),
+        replay_checksum_ram_range(&game.wram_image(), 0x04000, 0x4000),
+        replay_checksum_ram_range(&game.wram_image(), 0x08000, 0x4000),
+        replay_checksum_ram_range(&game.wram_image(), 0x0c000, 0x4000),
+        replay_checksum_ram_range(&game.wram_image(), 0x10000, 0x4000),
+        replay_checksum_ram_range(&game.wram_image(), 0x14000, 0x4000),
+        replay_checksum_ram_range(&game.wram_image(), 0x18000, 0x4000),
+        replay_checksum_ram_range(&game.wram_image(), 0x1c000, 0x4000),
         replay_checksum_bytes(&game.sram),
         room_mask,
         room_history[0],
@@ -1128,140 +1128,140 @@ fn run_replay_save(args: &[String]) {
         history_masks[1],
         history_masks[2],
         history_masks[3],
-        game.ram[0x10],
-        game.ram[0x11],
-        game.ram[0xb0],
-        u16::from_le_bytes([game.ram[0xadc], game.ram[0xadd]]),
-        game.ram[0x10c],
-        game.ram[0x200],
-        game.ram[0x1cd8],
-        game.ram[0x1b],
-        u16::from_le_bytes([game.ram[0xa0], game.ram[0xa1]]),
-        u16::from_le_bytes([game.ram[0x8a], game.ram[0x8b]]),
-        u16::from_le_bytes([game.ram[0x1cf0], game.ram[0x1cf1]]),
-        u16::from_le_bytes([game.ram[0x1cd9], game.ram[0x1cda]]),
+        game.wram_image()[0x10],
+        game.wram_image()[0x11],
+        game.wram_image()[0xb0],
+        u16::from_le_bytes([game.wram_image()[0xadc], game.wram_image()[0xadd]]),
+        game.wram_image()[0x10c],
+        game.wram_image()[0x200],
+        game.wram_image()[0x1cd8],
+        game.wram_image()[0x1b],
+        u16::from_le_bytes([game.wram_image()[0xa0], game.wram_image()[0xa1]]),
+        u16::from_le_bytes([game.wram_image()[0x8a], game.wram_image()[0x8b]]),
+        u16::from_le_bytes([game.wram_image()[0x1cf0], game.wram_image()[0x1cf1]]),
+        u16::from_le_bytes([game.wram_image()[0x1cd9], game.wram_image()[0x1cda]]),
         msg_buffer_0,
         msg_buffer_1,
-        game.ram[0x1cd4],
-        u16::from_le_bytes([game.ram[0x1ce0], game.ram[0x1ce1]]),
-        game.ram[0x1ce9],
-        game.ram[0x2e4],
-        u16::from_le_bytes([game.ram[0x22], game.ram[0x23]]),
-        u16::from_le_bytes([game.ram[0x20], game.ram[0x21]]),
-        game.ram[0x2b],
-        game.ram[0x2a],
-        game.ram[0xf36d],
-        game.ram[0x0202],
-        game.ram[0x0303],
-        game.ram[0x0304],
-        game.ram[0x0301],
-        game.ram[0xf340],
-        game.ram[0xf341],
-        u16::from_le_bytes([game.ram[0xf366], game.ram[0xf367]]),
-        game.ram[0xf36f],
-        game.ram[0xf3c9],
-        game.ram[0xf0],
-        game.ram[0xf2],
-        game.ram[0xf4],
-        game.ram[0xf6],
-        game.ram[0x67],
-        game.ram[0x2f],
-        game.ram[0x5d],
-        game.ram[0x345],
-        game.ram[0x4d],
-        game.ram[0x300],
-        game.ram[0x46],
-        game.ram[0x34a],
-        game.ram[0x2c6],
-        game.ram[0x48],
-        game.ram[0x376],
-        game.ram[0x3b],
-        game.ram[0x3a],
-        game.ram[0x30a],
-        game.ram[0x30b],
-        game.ram[0x30d],
-        game.ram[0xf3cc],
-        read_le_u16(&game.ram, 0x2cd),
-        game.ram[0x2d3],
-        game.ram[0x2cf],
-        game.ram[0x2d0],
-        game.ram[0x2f9],
-        game.ram[0x2f2],
-        game.ram[0x418],
-        game.ram[0x410],
-        game.ram[0x416],
-        game.ram[0x126],
-        game.ram[0x69a],
-        game.ram[0x69c],
-        game.ram[0x28],
-        game.ram[0x27],
-        read_le_u16(&game.ram, 0x00ea),
-        game.ram[0x30],
-        game.ram[0x6c],
-        game.ram[0x1cd5],
-        game.ram[0x1cd6],
-        game.ram[0x5e],
-        game.ram[0x57],
-        game.ram[0x0374],
-        game.ram[0x1cdf],
-        game.ram[0x66],
-        game.ram[0x26],
-        game.ram[0x6a],
-        u16::from_le_bytes([game.ram[0x49], game.ram[0x4a]]),
-        game.ram[0xb7b],
-        u16::from_le_bytes([game.ram[0xb7c], game.ram[0xb7d]]),
-        u16::from_le_bytes([game.ram[0xb7e], game.ram[0xb7f]]),
-        game.ram[0xef],
-        game.ram[0x315],
-        game.ram[0x316],
-        game.ram[0x317],
-        game.ram[0x64a],
+        game.wram_image()[0x1cd4],
+        u16::from_le_bytes([game.wram_image()[0x1ce0], game.wram_image()[0x1ce1]]),
+        game.wram_image()[0x1ce9],
+        game.wram_image()[0x2e4],
+        u16::from_le_bytes([game.wram_image()[0x22], game.wram_image()[0x23]]),
+        u16::from_le_bytes([game.wram_image()[0x20], game.wram_image()[0x21]]),
+        game.wram_image()[0x2b],
+        game.wram_image()[0x2a],
+        game.wram_image()[0xf36d],
+        game.wram_image()[0x0202],
+        game.wram_image()[0x0303],
+        game.wram_image()[0x0304],
+        game.wram_image()[0x0301],
+        game.wram_image()[0xf340],
+        game.wram_image()[0xf341],
+        u16::from_le_bytes([game.wram_image()[0xf366], game.wram_image()[0xf367]]),
+        game.wram_image()[0xf36f],
+        game.wram_image()[0xf3c9],
+        game.wram_image()[0xf0],
+        game.wram_image()[0xf2],
+        game.wram_image()[0xf4],
+        game.wram_image()[0xf6],
+        game.wram_image()[0x67],
+        game.wram_image()[0x2f],
+        game.wram_image()[0x5d],
+        game.wram_image()[0x345],
+        game.wram_image()[0x4d],
+        game.wram_image()[0x300],
+        game.wram_image()[0x46],
+        game.wram_image()[0x34a],
+        game.wram_image()[0x2c6],
+        game.wram_image()[0x48],
+        game.wram_image()[0x376],
+        game.wram_image()[0x3b],
+        game.wram_image()[0x3a],
+        game.wram_image()[0x30a],
+        game.wram_image()[0x30b],
+        game.wram_image()[0x30d],
+        game.wram_image()[0xf3cc],
+        read_le_u16(&game.wram_image(), 0x2cd),
+        game.wram_image()[0x2d3],
+        game.wram_image()[0x2cf],
+        game.wram_image()[0x2d0],
+        game.wram_image()[0x2f9],
+        game.wram_image()[0x2f2],
+        game.wram_image()[0x418],
+        game.wram_image()[0x410],
+        game.wram_image()[0x416],
+        game.wram_image()[0x126],
+        game.wram_image()[0x69a],
+        game.wram_image()[0x69c],
+        game.wram_image()[0x28],
+        game.wram_image()[0x27],
+        read_le_u16(&game.wram_image(), 0x00ea),
+        game.wram_image()[0x30],
+        game.wram_image()[0x6c],
+        game.wram_image()[0x1cd5],
+        game.wram_image()[0x1cd6],
+        game.wram_image()[0x5e],
+        game.wram_image()[0x57],
+        game.wram_image()[0x0374],
+        game.wram_image()[0x1cdf],
+        game.wram_image()[0x66],
+        game.wram_image()[0x26],
+        game.wram_image()[0x6a],
+        u16::from_le_bytes([game.wram_image()[0x49], game.wram_image()[0x4a]]),
+        game.wram_image()[0xb7b],
+        u16::from_le_bytes([game.wram_image()[0xb7c], game.wram_image()[0xb7d]]),
+        u16::from_le_bytes([game.wram_image()[0xb7e], game.wram_image()[0xb7f]]),
+        game.wram_image()[0xef],
+        game.wram_image()[0x315],
+        game.wram_image()[0x316],
+        game.wram_image()[0x317],
+        game.wram_image()[0x64a],
         u32::from_le_bytes([
-            game.ram[0x64c],
-            game.ram[0x64d],
-            game.ram[0x64e],
-            game.ram[0x64f],
+            game.wram_image()[0x64c],
+            game.wram_image()[0x64d],
+            game.wram_image()[0x64e],
+            game.wram_image()[0x64f],
         ]),
         game.wanted_zelda_features,
-        game.ram[0x24],
-        game.ram[0x29],
-        game.ram[0x2c7],
-        game.ram[0x114],
-        u16::from_le_bytes([game.ram[0x2ea], game.ram[0x2eb]]),
-        game.ram[0x36c],
-        game.ram[0x368],
-        game.ram[0x369],
-        game.ram[0x36a],
-        u16::from_le_bytes([game.ram[0x366], game.ram[0x367]]),
+        game.wram_image()[0x24],
+        game.wram_image()[0x29],
+        game.wram_image()[0x2c7],
+        game.wram_image()[0x114],
+        u16::from_le_bytes([game.wram_image()[0x2ea], game.wram_image()[0x2eb]]),
+        game.wram_image()[0x36c],
+        game.wram_image()[0x368],
+        game.wram_image()[0x369],
+        game.wram_image()[0x36a],
+        u16::from_le_bytes([game.wram_image()[0x366], game.wram_image()[0x367]]),
         action_attr0,
         action_attr1,
-        read_le_u16(&game.ram, 0x02e5),
-        game.ram[0x2e7],
+        read_le_u16(&game.wram_image(), 0x02e5),
+        game.wram_image()[0x2e7],
         read_le_u16(&game.sram, 0x1ffe),
         read_le_u16(&game.sram, 0x03e5),
         u8::from(replay_sram_checksum_ok(&game.sram, 0)),
         read_le_u16(&game.sram, 0x12e5),
         u8::from(replay_sram_checksum_ok(&game.sram, 0x0f00)),
-        game.ram[0xc8],
-        u16::from_le_bytes([game.ram[0x00bf], game.ram[0x00c0]]),
-        u16::from_le_bytes([game.ram[0x00c1], game.ram[0x00c2]]),
-        u16::from_le_bytes([game.ram[0x00c3], game.ram[0x00c4]]),
-        game.ram[0xb10],
-        game.ram[0xb12],
-        game.ram[0xb15],
-        game.ram[0xb13],
-        game.ram[0xb14],
-        game.ram[0x371],
-        game.ram[0x3c],
-        u16::from_le_bytes([game.ram[0xe], game.ram[0xf]]),
-        u16::from_le_bytes([game.ram[0xc], game.ram[0xd]]),
-        u16::from_le_bytes([game.ram[0x2f6], game.ram[0x2f7]]),
-        game.ram[0x59],
-        game.ram[0x2e8],
-        game.ram[0x36d],
-        game.ram[0x58],
-        u16::from_le_bytes([game.ram[0x341], game.ram[0x342]]),
-        u16::from_le_bytes([game.ram[0x343], game.ram[0x344]]),
+        game.wram_image()[0xc8],
+        u16::from_le_bytes([game.wram_image()[0x00bf], game.wram_image()[0x00c0]]),
+        u16::from_le_bytes([game.wram_image()[0x00c1], game.wram_image()[0x00c2]]),
+        u16::from_le_bytes([game.wram_image()[0x00c3], game.wram_image()[0x00c4]]),
+        game.wram_image()[0xb10],
+        game.wram_image()[0xb12],
+        game.wram_image()[0xb15],
+        game.wram_image()[0xb13],
+        game.wram_image()[0xb14],
+        game.wram_image()[0x371],
+        game.wram_image()[0x3c],
+        u16::from_le_bytes([game.wram_image()[0xe], game.wram_image()[0xf]]),
+        u16::from_le_bytes([game.wram_image()[0xc], game.wram_image()[0xd]]),
+        u16::from_le_bytes([game.wram_image()[0x2f6], game.wram_image()[0x2f7]]),
+        game.wram_image()[0x59],
+        game.wram_image()[0x2e8],
+        game.wram_image()[0x36d],
+        game.wram_image()[0x58],
+        u16::from_le_bytes([game.wram_image()[0x341], game.wram_image()[0x342]]),
+        u16::from_le_bytes([game.wram_image()[0x343], game.wram_image()[0x344]]),
         debirando_summary,
     );
     if std::env::var_os("ZELDA3_REPLAY_SPRITE_DUMP").is_some() {
@@ -1288,7 +1288,7 @@ fn run_replay_save(args: &[String]) {
     if std::env::var_os("ZELDA3_REPLAY_RNG_DUMP").is_some() {
         println!(
             "rng seed=0x{:02x} frame_counter=0x{:02x}",
-            game.ram[0x0fa1], game.ram[0x1a]
+            game.wram_image()[0x0fa1], game.wram_image()[0x1a]
         );
     }
     if std::env::var_os("ZELDA3_REPLAY_ROOM_HISTORY_DUMP").is_some() {
@@ -1456,10 +1456,10 @@ pub(crate) fn print_replay_save_panic_report(
     panic_info: &CapturedPanic,
 ) {
     let sr = &game.state_recorder;
-    let packet = &game.ram[0x1000..0x1010];
-    let packet_dst = u16::from_le_bytes([game.ram[0x1000], game.ram[0x1001]]);
-    let packet_vmain = game.ram[0x1002];
-    let packet_len = game.ram[0x1003];
+    let packet = &game.wram_image()[0x1000..0x1010];
+    let packet_dst = u16::from_le_bytes([game.wram_image()[0x1000], game.wram_image()[0x1001]]);
+    let packet_vmain = game.wram_image()[0x1002];
+    let packet_len = game.wram_image()[0x1003];
     eprintln!(
         "replay-save panic frame={frames} \
          panic={} location={} \
@@ -1479,13 +1479,13 @@ pub(crate) fn print_replay_save_panic_report(
         sr.replay_cmd,
         sr.frames_since_last,
         sr.last_inputs,
-        game.ram[0x18],
-        game.ram[0x17],
+        game.wram_image()[0x18],
+        game.wram_image()[0x17],
         packet_dst,
         packet_vmain,
         packet_len,
         packet,
-        TraceState::from_ram(&game.ram, sr.last_inputs, select_run_what(&game.ram)),
+        TraceState::from_ram(&game.wram_image(), sr.last_inputs, select_run_what(&game.wram_image())),
     );
 }
 
@@ -1591,7 +1591,7 @@ pub(crate) fn write_play_crash_report(
     } else {
         ("after_panic", "unavailable", "disabled".to_string())
     };
-    let trace = TraceState::from_ram(&game.ram, input, run_what);
+    let trace = TraceState::from_ram(&game.wram_image(), input, run_what);
     let panic_message = panic_info
         .map(|info| info.message.as_str())
         .unwrap_or("unknown");
@@ -1618,14 +1618,14 @@ pub(crate) fn write_play_crash_report(
          link_dma={}\n\
          checkpoint={}\n",
         game.frame_ctr_dbg,
-        fnv1a64(&game.ram),
+        fnv1a64(&game.wram_image()),
         fnv1a64(&game.sram),
         game.ppu.bg_mode(),
         game.ppu.screen_enabled[0],
         game.ppu.screen_enabled[1],
         game.ppu.forced_blank,
         game.ppu.brightness,
-        format_link_dma_trace(&game.ram),
+        format_link_dma_trace(&game.wram_image()),
         checkpoint_path,
     );
     let report = if backtrace.is_empty() {
@@ -1885,7 +1885,7 @@ fn run_replay_crash(args: &[String]) {
         "replaying crash checkpoint {} from host_frame {}; trace={}; live_ppu={}; visible_ppu={}",
         crash_path.display(),
         checkpoint.host_frame,
-        TraceState::from_ram(&game.ram, checkpoint.input, checkpoint.run_what),
+        TraceState::from_ram(&game.wram_image(), checkpoint.input, checkpoint.run_what),
         format_render_ppu_summary(&game),
         visible_ppu,
     );
@@ -1898,7 +1898,7 @@ fn run_replay_crash(args: &[String]) {
         let run_what = if local_frame == 0 {
             checkpoint.run_what
         } else {
-            select_run_what(&game.ram)
+            select_run_what(&game.wram_image())
         };
         let host_frame = checkpoint.host_frame.wrapping_add(local_frame);
         let pre_frame_game = game.clone();
@@ -1931,7 +1931,7 @@ fn run_replay_crash(args: &[String]) {
     println!(
         "replay completed {frames} frame(s) from host_frame {}; ram_fnv1a64={:016x}",
         checkpoint.host_frame,
-        fnv1a64(&game.ram)
+        fnv1a64(&game.wram_image())
     );
 }
 
@@ -1999,19 +1999,19 @@ fn run_smoke_render(args: &[String]) {
         .join(",");
     println!(
         "smoke-render completed {frames} frame(s); nonzero_pixels={nonzero_pixels}; audio_nonzero={audio_nonzero}; audio_peak={audio_peak}; apui00={:02x}; music={:02x}/{:02x}/{:02x}; {}; frame={}; main={:02x}; sub={:02x}; subsub={:02x}; anim={:04x}; bugs={:02x}; nmi_thread={:02x}; stack={:04x}; forced_blank={}; brightness={}; mode={}; screen={:02x}/{:02x}; vram_nonzero={}; cgram_nonzero={}; cgram_indices=[{}]; oam_nonzero={}; obj_pixels=[{}]; first_cgram={:04x},{:04x},{:04x},{:04x}; obj_cgram={:04x},{:04x},{:04x},{:04x}; oam0={:04x},{:04x},{:04x},{:04x}",
-        game.ram[0x0648],
-        game.ram[0x012c],
-        game.ram[0x0130],
-        game.ram[0x0133],
+        game.wram_image()[0x0648],
+        game.wram_image()[0x012c],
+        game.wram_image()[0x0130],
+        game.wram_image()[0x0133],
         game.zelda_audio_debug_summary(),
         frames,
-        game.ram[0x10],
-        game.ram[0x11],
-        game.ram[0xb0],
-        u16::from_le_bytes([game.ram[0x0adc], game.ram[0x0add]]),
-        game.ram[0x064a],
-        game.ram[0x012a],
-        u16::from_le_bytes([game.ram[0x1f0a], game.ram[0x1f0b]]),
+        game.wram_image()[0x10],
+        game.wram_image()[0x11],
+        game.wram_image()[0xb0],
+        u16::from_le_bytes([game.wram_image()[0x0adc], game.wram_image()[0x0add]]),
+        game.wram_image()[0x064a],
+        game.wram_image()[0x012a],
+        u16::from_le_bytes([game.wram_image()[0x1f0a], game.wram_image()[0x1f0b]]),
         game.ppu.forced_blank,
         game.ppu.brightness,
         game.ppu.bg_mode(),

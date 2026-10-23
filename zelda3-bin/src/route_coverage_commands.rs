@@ -12,25 +12,25 @@ pub(crate) fn route_coverage_frame_from_game(
     frame: u32,
     game: &ZeldaState,
 ) -> parity::coverage::CoverageFrame {
-    let indoors = game.ram[PLAYER_IS_INDOORS] != 0;
+    let indoors = game.wram_image()[PLAYER_IS_INDOORS] != 0;
     let sprite_types = (0..16)
-        .filter(|&k| game.ram[0x0dd0 + k] != 0)
-        .map(|k| game.ram[0x0e20 + k])
+        .filter(|&k| game.wram_image()[0x0dd0 + k] != 0)
+        .map(|k| game.wram_image()[0x0e20 + k])
         .collect();
     let ancilla_types = (0..10)
-        .map(|k| game.ram[0x0c4a + k])
+        .map(|k| game.wram_image()[0x0c4a + k])
         .filter(|&ty| ty != 0)
         .collect();
     parity::coverage::CoverageFrame {
         frame,
-        main_module: game.ram[TRACE_MAIN_MODULE_INDEX],
-        submodule: game.ram[TRACE_SUBMODULE_INDEX],
-        subsubmodule: game.ram[TRACE_SUBSUBMODULE_INDEX],
-        indoor_room: indoors.then(|| read_le_u16(&game.ram, 0x48e)),
-        overworld_screen: (!indoors).then(|| read_le_u16(&game.ram, 0x8a)),
+        main_module: game.wram_image()[TRACE_MAIN_MODULE_INDEX],
+        submodule: game.wram_image()[TRACE_SUBMODULE_INDEX],
+        subsubmodule: game.wram_image()[TRACE_SUBSUBMODULE_INDEX],
+        indoor_room: indoors.then(|| read_le_u16(&game.wram_image(), 0x48e)),
+        overworld_screen: (!indoors).then(|| read_le_u16(&game.wram_image(), 0x8a)),
         sprite_types,
         ancilla_types,
-        active_item: (game.ram[0x0202] != 0).then_some(game.ram[0x0202]),
+        active_item: (game.wram_image()[0x0202] != 0).then_some(game.wram_image()[0x0202]),
     }
 }
 

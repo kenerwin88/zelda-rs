@@ -226,7 +226,9 @@ impl ZeldaState {
         use snes::{CpuBusEvent, CpuRasterPosition, cpu_timeline::{HDMA_INIT_CYCLE, HDMA_START_CYCLE}};
         let base = snes::CpuMasterTimeline::new(0, snes::CpuBusWorkload::default(), snes::CpuFieldTiming::NON_INTERLACE_EVEN);
         let at = |field: u64, line: u16, cycle: u32| base.master_cycles_at_raster(field, CpuRasterPosition::new(line, cycle as u16));
-        hdma.ram.clone_from(&self.ram);
+        // The HDMA timing bus keeps a detached cartridge image. Its reads
+        // cannot consult exclusive owners' poisoned backing bytes.
+        self.wram_image().as_ref().clone_into(&mut hdma.ram);
         hdma.timing.adopt_registers(&self.dma);
         let enabled = self.game_state.display.hdma_enable_mask;
         if hdma.field == field {
@@ -524,7 +526,7 @@ impl ZeldaState {
         const THREAD_WORK_RANGE: std::ops::Range<usize> = 0x1f10..0x2000;
         const THREAD_BITMAP_RANGE: std::ops::Range<usize> = 0xe800..0xf000;
         let timing_dma = self.dma_with_native_hdma_enable();
-        let mut ram_image = self.ram.to_vec();
+        let mut ram_image = self.wram_image().into_owned();
         if let Some(saved) = self.triforce_poly_shadow_ram.as_ref() {
             ram_image[THREAD_WORK_RANGE].copy_from_slice(&saved[THREAD_WORK_RANGE]);
             ram_image[THREAD_BITMAP_RANGE].copy_from_slice(&saved[THREAD_BITMAP_RANGE]);

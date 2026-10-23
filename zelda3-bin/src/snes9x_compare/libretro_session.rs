@@ -1105,7 +1105,7 @@ pub(crate) fn finalize_libretro_session(
         magic: *PLAY_CRASH_CHECKPOINT_MAGIC,
         host_frame: 0,
         input: input_history.last().map(|(_, input)| *input).unwrap_or(0),
-        run_what: select_run_what(&game.ram),
+        run_what: select_run_what(&game.wram_image()),
         game: game.clone(),
     };
     fs::write(
@@ -1120,7 +1120,7 @@ pub(crate) fn finalize_libretro_session(
     // the compare harness: the full 128KB Rust WRAM at the final compared
     // frame, for byte-diffing against the oracle savestate's RAM block.
     if let Some(path) = std::env::var_os("ZELDA3_REPLAY_WRAM_DUMP") {
-        if let Err(e) = fs::write(&path, &game.ram[..]) {
+        if let Err(e) = fs::write(&path, &game.wram_image()[..]) {
             eprintln!("failed to write WRAM dump to {path:?}: {e}");
         }
     }
@@ -1473,7 +1473,7 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
         .flat_map(|word| word.to_le_bytes())
         .collect::<Vec<_>>();
     fs::write(dir.join("rust_after_vram.bin"), &rust_vram)?;
-    fs::write(dir.join("rust_after_ram.bin"), &post_game.ram)?;
+    fs::write(dir.join("rust_after_ram.bin"), &post_game.wram_image())?;
 
     // Preserve the exact composed state that both Rust renderers saw.  The
     // live post-frame PPU can already contain registers and memory authored for
@@ -1655,7 +1655,7 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
         input: format!("0x{input:04x}"),
         run_what: None,
         message,
-        trace_mine: Some(TraceState::from_ram(&post_game.ram, input, RUN_MAIN).to_string()),
+        trace_mine: Some(TraceState::from_ram(&post_game.wram_image(), input, RUN_MAIN).to_string()),
         trace_theirs: oracle_system_ram
             .map(|ram| TraceState::from_ram(ram, input, RUN_MAIN).to_string()),
         ppu_mine: Some(visible_ppu_summary),

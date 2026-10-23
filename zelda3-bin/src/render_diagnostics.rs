@@ -57,7 +57,7 @@ pub(crate) fn format_render_ppu_summary(state: &ZeldaState) -> String {
         ppu.bg_layer[3].tile_adr,
         if ppu.bg_layer[3].tilemap_wider { 64 } else { 32 },
         if ppu.bg_layer[3].tilemap_higher { 64 } else { 32 },
-        state.ram[0x9b],
+        state.wram_image()[0x9b],
         state.dma.channel[6].a_bank,
         state.dma.channel[6].a_adr,
         state.dma.channel[6].b_adr,

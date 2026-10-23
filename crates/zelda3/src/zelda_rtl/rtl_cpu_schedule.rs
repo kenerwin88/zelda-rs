@@ -1310,7 +1310,7 @@ impl ZeldaState {
     ) -> NativeMapGraphicsTiming {
         let timing_dma = self.dma_with_native_hdma_enable();
         let mut run = RomCpuTimingRun::new(
-            &self.rom, &self.ram, &self.sram, &self.ppu, &timing_dma,
+            &self.rom, &self.wram_image(), &self.sram, &self.ppu, &timing_dma,
             self.zelda_audio_apu_output_ports(),
             RomCpuCheckpoint { stop_pc: 0x00_805a, ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT },
         ).expect("map graphics timing probe needs the development ROM");
@@ -1398,7 +1398,7 @@ impl ZeldaState {
     fn probe_dungeon_map_recovery_restore_schedule(&self, input: u16) {
         let timing_dma = self.dma_with_native_hdma_enable();
         let mut run = RomCpuTimingRun::new(
-            &self.rom, &self.ram, &self.sram, &self.ppu, &timing_dma,
+            &self.rom, &self.wram_image(), &self.sram, &self.ppu, &timing_dma,
             self.zelda_audio_apu_output_ports(),
             RomCpuCheckpoint { stop_pc: 0x00_805a, ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT },
         ).expect("map recovery timing probe needs the development ROM");

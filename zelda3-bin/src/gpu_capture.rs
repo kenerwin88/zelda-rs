@@ -301,13 +301,13 @@ impl LiveGpuFrameCapture {
             );
         }
         if zelda3::debug_env::var_os!("ZELDA3_DEBUG_BG3_PUBLICATION").is_some()
-            && game.ram[MAIN_MODULE_INDEX] == 14
-            && game.ram[0x11] == 1
+            && game.wram_image()[MAIN_MODULE_INDEX] == 14
+            && game.wram_image()[0x11] == 1
         {
-            let authored = u16::from_le_bytes([game.ram[0x00ea], game.ram[0x00eb]]) & 0x03ff;
+            let authored = u16::from_le_bytes([game.wram_image()[0x00ea], game.wram_image()[0x00eb]]) & 0x03ff;
             eprintln!(
                 "bg3_publication authored={authored:04x} visible={:04x} main={:02x} sub={:02x}",
-                ppu.bg_layer[2].v_scroll, game.ram[MAIN_MODULE_INDEX], game.ram[0x11],
+                ppu.bg_layer[2].v_scroll, game.wram_image()[MAIN_MODULE_INDEX], game.wram_image()[0x11],
             );
         }
         let source_entries = game.vram_chr_source().as_slice().to_vec();
@@ -435,17 +435,17 @@ impl LiveGpuFrameCapture {
             Vec::new()
         };
         let mode7_source_chars = game.mode7_character_source().map(<[u8]>::to_vec);
-        let main_module = game.ram[MAIN_MODULE_INDEX];
-        let player_indoors = game.ram[PLAYER_IS_INDOORS];
+        let main_module = game.wram_image()[MAIN_MODULE_INDEX];
+        let player_indoors = game.wram_image()[PLAYER_IS_INDOORS];
         let cgram_provenance = game.cgram_provenance_snapshot();
         Self {
             comparison_frame,
             host_frame: game.frame_ctr_dbg,
             hardware_startup_transient: snes9x_boot_material(
                 game.frame_ctr_dbg,
-                game.ram[MAIN_MODULE_INDEX],
-                game.ram[MAIN_MODULE_INDEX + 1],
-                game.ram[MAIN_MODULE_INDEX + 2],
+                game.wram_image()[MAIN_MODULE_INDEX],
+                game.wram_image()[MAIN_MODULE_INDEX + 1],
+                game.wram_image()[MAIN_MODULE_INDEX + 2],
                 game.ppu.brightness,
             ),
             ppu,
@@ -1883,7 +1883,7 @@ impl crate::play_renderer::PlayRendererBackend for GpuPlayRenderer {
                 eprintln!(
                     "asset_coverage_missing main={:02x} sub={:02x} mode={} obj=({:04x},{:04x}) {} patterns=[{}]",
                     capture.main_module,
-                    game.ram[0x11],
+                    game.wram_image()[0x11],
                     gpu_frame.mode,
                     gpu_frame.obj.tile_adr1,
                     gpu_frame.obj.tile_adr2,

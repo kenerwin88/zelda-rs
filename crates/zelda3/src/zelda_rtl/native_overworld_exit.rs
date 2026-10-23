@@ -418,9 +418,11 @@ impl ZeldaState {
             stack_bytes: &[],
         };
         let dma = self.dma_with_native_hdma_enable();
+        // The retained source successor receives an exported cartridge image.
+        // Its speculative WRAM is not a replacement for native gameplay.
         let mut run = RomCpuTimingRun::new(
             &self.rom,
-            &self.ram,
+            &self.wram_image(),
             &self.sram,
             &self.ppu,
             &dma,

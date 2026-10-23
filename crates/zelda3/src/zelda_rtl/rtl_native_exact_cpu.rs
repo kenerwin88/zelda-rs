@@ -1037,8 +1037,10 @@ impl ZeldaState {
     }
 
     pub(super) fn record_native_exact_cpu_overworld_scan_expected_state(&mut self) {
+        let image = self.native_exact_cpu_overworld_scan_trial.as_ref()
+            .map(|_| self.wram_image().into_owned());
         if let Some(trial) = self.native_exact_cpu_overworld_scan_trial.as_mut() {
-            trial.expected_final_ram = Some(self.ram.clone());
+            trial.expected_final_ram = image;
             trial.expected_final_game_state = Some(Box::new(self.game_state.clone()));
         }
     }
@@ -3959,6 +3961,9 @@ impl ZeldaState {
         let diagnose_ownership =
             crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_OWNERSHIP").is_some();
         let diagnostic_scroll_phase = diagnose_ownership.then(|| self.dialogue_scroll_phase());
+        // Trial/rebase reads are a cartridge image; source CPU writes remain
+        // private to its machine and must not be imported into native play.
+        let native_wram_image = self.wram_image().into_owned();
         let owner = if let Some(owner) = self.native_exact_cpu_owner.as_mut() {
             owner
         } else {
@@ -4043,7 +4048,7 @@ impl ZeldaState {
         let mut trial_instructions = Vec::new();
         let trial = if trial_host {
             let trial_ram = Self::native_exact_cpu_trial_ram(
-                &self.ram,
+                &native_wram_image,
                 self.game_execution_scheduler.current_work(),
                 self.native_exact_cpu_landing_spotlight_build.is_some(),
             );

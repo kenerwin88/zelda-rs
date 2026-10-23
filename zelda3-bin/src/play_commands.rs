@@ -406,7 +406,7 @@ fn run_play_with_state(mut game: ZeldaState) {
         }
         if host_menu.is_open() {
             host_menu.set_current_developer_location(current_developer_location_from_ram(
-                &game.ram, host_frame,
+                &game.wram_image(), host_frame,
             ));
             renderer.present_menu_overlay(&host_menu);
             continue;
@@ -414,7 +414,7 @@ fn run_play_with_state(mut game: ZeldaState) {
         if !game_started {
             game_started = true;
         }
-        let run_what = select_run_what(&game.ram);
+        let run_what = select_run_what(&game.wram_image());
         if let Some(recording) = input_recording.as_mut() {
             recording
                 .record(host_frame, live_input)
@@ -450,35 +450,35 @@ fn run_play_with_state(mut game: ZeldaState) {
         }
         let trace_state = (
             live_input,
-            game.ram[TRACE_JOYPAD1H_LAST],
-            game.ram[TRACE_JOYPAD1L_LAST],
-            game.ram[TRACE_FILTERED_JOYPAD_H],
-            game.ram[TRACE_FILTERED_JOYPAD_L],
-            game.ram[TRACE_SELECTFILE_VAR3],
-            game.ram[TRACE_SELECTFILE_VAR5],
-            game.ram[TRACE_SELECTFILE_VAR7],
-            game.ram[TRACE_SELECTFILE_VAR9],
-            game.ram[TRACE_SELECTFILE_VAR10],
-            game.ram[TRACE_SELECTFILE_VAR11],
-            game.ram[TRACE_SELECTFILE_ARR2_1],
+            game.wram_image()[TRACE_JOYPAD1H_LAST],
+            game.wram_image()[TRACE_JOYPAD1L_LAST],
+            game.wram_image()[TRACE_FILTERED_JOYPAD_H],
+            game.wram_image()[TRACE_FILTERED_JOYPAD_L],
+            game.wram_image()[TRACE_SELECTFILE_VAR3],
+            game.wram_image()[TRACE_SELECTFILE_VAR5],
+            game.wram_image()[TRACE_SELECTFILE_VAR7],
+            game.wram_image()[TRACE_SELECTFILE_VAR9],
+            game.wram_image()[TRACE_SELECTFILE_VAR10],
+            game.wram_image()[TRACE_SELECTFILE_VAR11],
+            game.wram_image()[TRACE_SELECTFILE_ARR2_1],
         );
         if trace_live_input && trace_state != last_traced_live_input {
             eprintln!(
                 "live-input host_frame={host_frame} input=0x{live_input:04x} joyh=0x{:02x} joyl=0x{:02x} fh=0x{:02x} fl=0x{:02x} main={} sub={} subsub={} sel3={} sel5={} sel7={} sel9={} sel10={} sel11={} arr2_1={}",
-                game.ram[TRACE_JOYPAD1H_LAST],
-                game.ram[TRACE_JOYPAD1L_LAST],
-                game.ram[TRACE_FILTERED_JOYPAD_H],
-                game.ram[TRACE_FILTERED_JOYPAD_L],
-                game.ram[TRACE_MAIN_MODULE_INDEX],
-                game.ram[TRACE_SUBMODULE_INDEX],
-                game.ram[TRACE_SUBSUBMODULE_INDEX],
-                game.ram[TRACE_SELECTFILE_VAR3],
-                game.ram[TRACE_SELECTFILE_VAR5],
-                game.ram[TRACE_SELECTFILE_VAR7],
-                game.ram[TRACE_SELECTFILE_VAR9],
-                game.ram[TRACE_SELECTFILE_VAR10],
-                game.ram[TRACE_SELECTFILE_VAR11],
-                game.ram[TRACE_SELECTFILE_ARR2_1],
+                game.wram_image()[TRACE_JOYPAD1H_LAST],
+                game.wram_image()[TRACE_JOYPAD1L_LAST],
+                game.wram_image()[TRACE_FILTERED_JOYPAD_H],
+                game.wram_image()[TRACE_FILTERED_JOYPAD_L],
+                game.wram_image()[TRACE_MAIN_MODULE_INDEX],
+                game.wram_image()[TRACE_SUBMODULE_INDEX],
+                game.wram_image()[TRACE_SUBSUBMODULE_INDEX],
+                game.wram_image()[TRACE_SELECTFILE_VAR3],
+                game.wram_image()[TRACE_SELECTFILE_VAR5],
+                game.wram_image()[TRACE_SELECTFILE_VAR7],
+                game.wram_image()[TRACE_SELECTFILE_VAR9],
+                game.wram_image()[TRACE_SELECTFILE_VAR10],
+                game.wram_image()[TRACE_SELECTFILE_VAR11],
+                game.wram_image()[TRACE_SELECTFILE_ARR2_1],
             );
             last_traced_live_input = trace_state;
         }

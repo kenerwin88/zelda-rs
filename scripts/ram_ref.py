@@ -83,6 +83,31 @@ def address_defs():
     return sorted(out, key=lambda x: x[1])
 
 
+def native_owned_ranges():
+    """Exclusive storage registry, not the legacy write_to_ram mirror map.
+
+    Registry addresses are literal inclusive WRAM offsets, so this parser
+    and the engine use the same declarations. Reject unsupported syntax
+    instead of silently omitting an owner from the tooling.
+    """
+    path = ROOT / "crates/zelda3/src/zelda_rtl/rtl_wram.rs"
+    text = path.read_text()
+    body = re.search(r"const NATIVE_OWNED_WRAM[^=]*=\s*&\[(.*?)\];", text, re.S).group(1)
+    records = re.findall(
+        r'NativeOwnedWramRange\s*\{\s*lo:\s*(0x[0-9a-fA-F_]+|\d+)\s*,\s*'
+        r'hi:\s*(0x[0-9a-fA-F_]+|\d+)\s*,\s*owner:\s*"([^"]+)"', body)
+    if len(records) != body.count("NativeOwnedWramRange"):
+        raise ValueError("unsupported native WRAM registry declaration")
+    ranges = [(int(lo.replace('_', ''), 0), int(hi.replace('_', ''), 0), owner)
+              for lo, hi, owner in records]
+    next_address = 0
+    for lo, hi, owner in ranges:
+        if not next_address <= lo <= hi < 0x20000:
+            raise ValueError(f"invalid native WRAM range for {owner}")
+        next_address = hi + 1
+    return ranges
+
+
 def names_at(addr: int):
     """All ram-indexed constant names whose address == addr."""
     return [n for (n, a) in address_defs() if a == addr]

@@ -1060,7 +1060,9 @@ impl ZeldaState {
             stack_bytes: &[],
         };
         let timing_dma = self.dma_with_native_hdma_enable();
-        let mut ram_image = self.ram.to_vec();
+        // Detached NMI oracle: compose its gate overrides on a complete
+        // cartridge image; its instruction writes remain in the probe.
+        let mut ram_image = self.wram_image().into_owned();
         ram_image[0x1f0c] = if poly_upload_pending { 0xff } else { 0 };
         if let Some(latch_held) = latch_held {
             ram_image[0x12] = u8::from(latch_held);

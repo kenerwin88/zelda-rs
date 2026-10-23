@@ -677,7 +677,7 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                         }
                         let palette_row = ((entry_word >> 10) & 7) as u8;
                         let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(
-                            game.ram.get(PLAYER_IS_INDOORS).copied().unwrap_or(0),
+                            game.wram_image().get(PLAYER_IS_INDOORS).copied().unwrap_or(0),
                         );
                         let preview_src = game.vram_chr_preview_source().get(slot);
                         let usage_src =
@@ -700,9 +700,9 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                                 h ^= b as u32;
                                 h = h.wrapping_mul(0x0100_0193);
                             }
-                            let module = game.ram.get(0x10).copied().unwrap_or(0);
-                            let submodule = game.ram.get(0x11).copied().unwrap_or(0);
-                            let indoor = game.ram.get(0x1b).copied().unwrap_or(0);
+                            let module = game.wram_image().get(0x10).copied().unwrap_or(0);
+                            let submodule = game.wram_image().get(0x11).copied().unwrap_or(0);
+                            let indoor = game.wram_image().get(0x1b).copied().unwrap_or(0);
                             let anim_pack = game.animated_tile_pack;
                             let e = watch_patterns.entry(h).or_insert((
                                 cur_frame, cur_frame, 0, slot, module, submodule, indoor, anim_pack,

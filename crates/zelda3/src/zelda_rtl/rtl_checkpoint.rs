@@ -972,7 +972,7 @@ impl ZeldaState {
             .expect("display snapshot epoch overflow");
         let mut snapshot = Box::new(DisplaySnapshot {
             publication_epoch: self.display_snapshot_epoch,
-            ram: self.ram.clone(),
+            ram: self.wram_image().into_owned(),
             ppu: resident_ppu,
             dma: self.dma.clone(),
             vram_chr_source: self.vram_chr_source.clone(),

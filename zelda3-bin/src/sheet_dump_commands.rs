@@ -238,7 +238,7 @@ pub(crate) fn run_dump_dungeon_sheet_png(args: &[String]) {
     let mut index_by_rgba: HashMap<Vec<u8>, usize> = HashMap::new();
 
     let mut collect_dungeon_bg_tiles = |game: &ZeldaState| {
-        let main_module = game.ram[TRACE_MAIN_MODULE_INDEX];
+        let main_module = game.wram_image()[TRACE_MAIN_MODULE_INDEX];
         // Only process dungeon frames.
         if main_module != 7 && main_module != 16 {
             return;

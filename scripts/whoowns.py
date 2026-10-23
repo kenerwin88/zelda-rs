@@ -37,6 +37,9 @@ def main():
         sys.exit("usage: whoowns.py <addr>")
     addr = int(sys.argv[1], 0)
     print(f"=== 0x{addr:05x} ===\n")
+    exclusive = [owner for lo, hi, owner in ref.native_owned_ranges() if lo <= addr <= hi]
+    print("storage: " + (exclusive[0] + " (native only; use wram_image)"
+                         if exclusive else "ZeldaState.ram (legacy mirrors may exist)"))
 
     # 1. Constant covering this address (the reference semantics)
     cover = ref.covering(addr)

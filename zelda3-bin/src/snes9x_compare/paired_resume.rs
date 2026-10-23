@@ -502,7 +502,7 @@ pub(crate) fn write_cached_av_paired_resume_from_sources(
             magic: *PLAY_CRASH_CHECKPOINT_MAGIC,
             host_frame: frame,
             input: 0,
-            run_what: select_run_what(&game.ram),
+            run_what: select_run_what(&game.wram_image()),
             game: game.clone(),
         };
         let rust_bytes = bincode::serialize(&rust_state)
@@ -872,7 +872,7 @@ pub(crate) fn write_paired_resume_capture(
         magic: *PLAY_CRASH_CHECKPOINT_MAGIC,
         host_frame: capture.frame,
         input: 0,
-        run_what: select_run_what(&game.ram),
+        run_what: select_run_what(&game.wram_image()),
         game: game.clone(),
     };
     let rust_bytes = bincode::serialize(&rust_state)?;

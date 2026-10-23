@@ -308,6 +308,9 @@ impl Drop for RomCpuTimingRun {
 }
 
 impl RomCpuTimingRun {
+    /// Detached cartridge boundary: callers pass ZeldaState::wram_image (or
+    /// an explicitly composed derivative). This machine copies the image;
+    /// speculative CPU writes must never be imported wholesale into gameplay.
     pub(crate) fn new(
         rom: &[u8],
         ram: &[u8],

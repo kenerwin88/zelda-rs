@@ -27,22 +27,22 @@ pub(crate) fn replay_checksum_ram_range(ram: &[u8], start: usize, size: usize) -
 pub(crate) fn replay_save_ancilla_dump(game: &ZeldaState) -> String {
     let mut out = String::from("ancilla");
     for k in 0..10 {
-        if game.ram[0x0c4a + k] == 0 && game.ram[0x0c5e + k] == 0 && game.ram[0x03b1 + k] == 0 {
+        if game.wram_image()[0x0c4a + k] == 0 && game.wram_image()[0x0c5e + k] == 0 && game.wram_image()[0x03b1 + k] == 0 {
             continue;
         }
         out.push_str(&format!(
             " [{k}:t=0x{:02x} x=0x{:04x} y=0x{:04x} xv=0x{:02x} yv=0x{:02x} step=0x{:02x} aux=0x{:02x} item=0x{:02x} arr3=0x{:02x} floor=0x{:02x} floor2=0x{:02x}]",
-            game.ram[0x0c4a + k],
-            u16::from_le_bytes([game.ram[0x0c04 + k], game.ram[0x0c18 + k]]),
-            u16::from_le_bytes([game.ram[0x0bfa + k], game.ram[0x0c0e + k]]),
-            game.ram[0x0c2c + k],
-            game.ram[0x0c22 + k],
-            game.ram[0x0c54 + k],
-            game.ram[0x03b1 + k],
-            game.ram[0x0c5e + k],
-            game.ram[0x039f + k],
-            game.ram[0x0c7c + k],
-            game.ram[0x03ca + k],
+            game.wram_image()[0x0c4a + k],
+            u16::from_le_bytes([game.wram_image()[0x0c04 + k], game.wram_image()[0x0c18 + k]]),
+            u16::from_le_bytes([game.wram_image()[0x0bfa + k], game.wram_image()[0x0c0e + k]]),
+            game.wram_image()[0x0c2c + k],
+            game.wram_image()[0x0c22 + k],
+            game.wram_image()[0x0c54 + k],
+            game.wram_image()[0x03b1 + k],
+            game.wram_image()[0x0c5e + k],
+            game.wram_image()[0x039f + k],
+            game.wram_image()[0x0c7c + k],
+            game.wram_image()[0x03ca + k],
         ));
     }
     out
@@ -54,7 +54,7 @@ pub(crate) fn replay_save_ram_page_dump(game: &ZeldaState) -> String {
         let start = page * 0x400;
         out.push_str(&format!(
             " [{start:05x}=0x{:08x}]",
-            replay_checksum_ram_range(&game.ram, start, 0x400)
+            replay_checksum_ram_range(&game.wram_image(), start, 0x400)
         ));
     }
     out
@@ -63,7 +63,7 @@ pub(crate) fn replay_save_ram_page_dump(game: &ZeldaState) -> String {
 pub(crate) fn replay_save_ram0400_dump(game: &ZeldaState) -> String {
     let mut out = String::from("ram0400");
     for index in 0x400..0x800 {
-        let byte = game.ram[index];
+        let byte = game.wram_image()[index];
         if byte != 0 {
             out.push_str(&format!(" [{index:04x}=0x{byte:02x}]"));
         }
@@ -74,7 +74,7 @@ pub(crate) fn replay_save_ram0400_dump(game: &ZeldaState) -> String {
 pub(crate) fn replay_save_ram0000_dump(game: &ZeldaState) -> String {
     let mut out = String::from("ram0000");
     for index in 0x000..0x400 {
-        let byte = game.ram[index];
+        let byte = game.wram_image()[index];
         if byte != 0 {
             out.push_str(&format!(" [{index:04x}=0x{byte:02x}]"));
         }
@@ -92,13 +92,13 @@ pub(crate) fn replay_save_requested_ram_page_dump(game: &ZeldaState) -> Option<S
             |hex| usize::from_str_radix(hex, 16).ok(),
         )?;
     let start = parsed & !0x3ff;
-    if start >= game.ram.len() {
+    if start >= game.wram_image().len() {
         return None;
     }
-    let end = (start + 0x400).min(game.ram.len());
+    let end = (start + 0x400).min(game.wram_image().len());
     let mut out = format!("ram-page-bytes page=0x{start:05x}");
     for index in start..end {
-        let byte = game.ram[index];
+        let byte = game.wram_image()[index];
         if byte != 0 {
             out.push_str(&format!(" [{index:05x}=0x{byte:02x}]"));
         }
@@ -108,15 +108,15 @@ pub(crate) fn replay_save_requested_ram_page_dump(game: &ZeldaState) -> Option<S
 
 pub(crate) fn replay_save_room_mask(game: &ZeldaState, room: u16) -> u16 {
     let offset = 0x1df80 + usize::from(room) * 2;
-    u16::from_le_bytes([game.ram[offset], game.ram[offset + 1]])
+    u16::from_le_bytes([game.wram_image()[offset], game.wram_image()[offset + 1]])
 }
 
 fn replay_save_room_history(game: &ZeldaState) -> [u16; 4] {
     [
-        u16::from_le_bytes([game.ram[0xb80], game.ram[0xb81]]),
-        u16::from_le_bytes([game.ram[0xb82], game.ram[0xb83]]),
-        u16::from_le_bytes([game.ram[0xb84], game.ram[0xb85]]),
-        u16::from_le_bytes([game.ram[0xb86], game.ram[0xb87]]),
+        u16::from_le_bytes([game.wram_image()[0xb80], game.wram_image()[0xb81]]),
+        u16::from_le_bytes([game.wram_image()[0xb82], game.wram_image()[0xb83]]),
+        u16::from_le_bytes([game.wram_image()[0xb84], game.wram_image()[0xb85]]),
+        u16::from_le_bytes([game.wram_image()[0xb86], game.wram_image()[0xb87]]),
     ]
 }
 
@@ -135,20 +135,20 @@ pub(crate) fn replay_save_garnish_dump(game: &ZeldaState) -> String {
 
     let mut out = String::from("garnish");
     for k in 0..30 {
-        if game.ram[GARNISH_TYPE + k] == 0 && game.ram[GARNISH_COUNTDOWN + k] == 0 {
+        if game.wram_image()[GARNISH_TYPE + k] == 0 && game.wram_image()[GARNISH_COUNTDOWN + k] == 0 {
             continue;
         }
         out.push_str(&format!(
             " [{k}:t=0x{:02x} cd=0x{:02x} x=0x{:04x} y=0x{:04x} xv=0x{:02x} yv=0x{:02x} spr=0x{:02x} floor=0x{:02x} oam=0x{:02x}]",
-            game.ram[GARNISH_TYPE + k],
-            game.ram[GARNISH_COUNTDOWN + k],
-            u16::from_le_bytes([game.ram[GARNISH_X_LO + k], game.ram[GARNISH_X_HI + k]]),
-            u16::from_le_bytes([game.ram[GARNISH_Y_LO + k], game.ram[GARNISH_Y_HI + k]]),
-            game.ram[GARNISH_X_VEL + k],
-            game.ram[GARNISH_Y_VEL + k],
-            game.ram[GARNISH_SPRITE + k],
-            game.ram[GARNISH_FLOOR + k],
-            game.ram[GARNISH_OAM_FLAGS + k],
+            game.wram_image()[GARNISH_TYPE + k],
+            game.wram_image()[GARNISH_COUNTDOWN + k],
+            u16::from_le_bytes([game.wram_image()[GARNISH_X_LO + k], game.wram_image()[GARNISH_X_HI + k]]),
+            u16::from_le_bytes([game.wram_image()[GARNISH_Y_LO + k], game.wram_image()[GARNISH_Y_HI + k]]),
+            game.wram_image()[GARNISH_X_VEL + k],
+            game.wram_image()[GARNISH_Y_VEL + k],
+            game.wram_image()[GARNISH_SPRITE + k],
+            game.wram_image()[GARNISH_FLOOR + k],
+            game.wram_image()[GARNISH_OAM_FLAGS + k],
         ));
     }
     out
@@ -168,7 +168,7 @@ pub(crate) fn replay_save_room_history_dump(game: &ZeldaState) -> String {
 }
 
 pub(crate) fn replay_save_room_mask_dump(game: &ZeldaState) -> String {
-    let current_room = u16::from_le_bytes([game.ram[0x48e], game.ram[0x48f]]);
+    let current_room = u16::from_le_bytes([game.wram_image()[0x48e], game.wram_image()[0x48f]]);
     let mut out = format!(
         "room-masks current=0x{:04x} current_room=0x{:04x}",
         replay_save_room_mask(game, current_room),
@@ -188,17 +188,17 @@ pub(crate) fn replay_save_room_mask_dump(game: &ZeldaState) -> String {
 pub(crate) fn replay_save_overlord_dump(game: &ZeldaState) -> String {
     let mut out = String::from("overlords");
     for k in 0..8 {
-        if game.ram[0x0b00 + k] == 0 {
+        if game.wram_image()[0x0b00 + k] == 0 {
             continue;
         }
         out.push_str(&format!(
             " [{k}:t=0x{:02x} x=0x{:04x} y=0x{:04x} floor=0x{:02x} gen1=0x{:02x} gen2=0x{:02x}]",
-            game.ram[0x0b00 + k],
-            u16::from_le_bytes([game.ram[0x0b08 + k], game.ram[0x0b10 + k]]),
-            u16::from_le_bytes([game.ram[0x0b18 + k], game.ram[0x0b20 + k]]),
-            game.ram[0x0b40 + k],
-            game.ram[0x0b28 + k],
-            game.ram[0x0b30 + k],
+            game.wram_image()[0x0b00 + k],
+            u16::from_le_bytes([game.wram_image()[0x0b08 + k], game.wram_image()[0x0b10 + k]]),
+            u16::from_le_bytes([game.wram_image()[0x0b18 + k], game.wram_image()[0x0b20 + k]]),
+            game.wram_image()[0x0b40 + k],
+            game.wram_image()[0x0b28 + k],
+            game.wram_image()[0x0b30 + k],
         ));
     }
     out
@@ -207,28 +207,28 @@ pub(crate) fn replay_save_overlord_dump(game: &ZeldaState) -> String {
 pub(crate) fn replay_save_sprite_dump(game: &ZeldaState) -> String {
     let mut out = String::from("sprites");
     for k in 0..16 {
-        if game.ram[0x0dd0 + k] == 0 && game.ram[0x0e20 + k] == 0 {
+        if game.wram_image()[0x0dd0 + k] == 0 && game.wram_image()[0x0e20 + k] == 0 {
             continue;
         }
         out.push_str(&format!(
             " [{k}:t=0x{:02x} st=0x{:02x} ai=0x{:02x} head=0x{:02x} sub=0x{:02x} x=0x{:04x} y=0x{:04x} d=0x{:02x} c=0x{:02x} e=0x{:02x} f=0x{:02x} n=0x{:04x} delay=0x{:02x} bump=0x{:02x} hp=0x{:02x} hit=0x{:02x} give=0x{:02x}]",
-            game.ram[0x0e20 + k],
-            game.ram[0x0dd0 + k],
-            game.ram[0x0d80 + k],
-            game.ram[0x0eb0 + k],
-            game.ram[0x0e80 + k],
-            u16::from_le_bytes([game.ram[0x0d10 + k], game.ram[0x0d30 + k]]),
-            u16::from_le_bytes([game.ram[0x0d00 + k], game.ram[0x0d20 + k]]),
-            game.ram[0x0de0 + k],
-            game.ram[0x0db0 + k],
-            game.ram[0x0e90 + k],
-            game.ram[0x0ea0 + k],
-            u16::from_le_bytes([game.ram[0x0bc0 + k * 2], game.ram[0x0bc0 + k * 2 + 1]]),
-            game.ram[0x0df0 + k],
-            game.ram[0x0cd2 + k],
-            game.ram[0x0e50 + k],
-            game.ram[0x0ef0 + k],
-            game.ram[0x0ce2 + k],
+            game.wram_image()[0x0e20 + k],
+            game.wram_image()[0x0dd0 + k],
+            game.wram_image()[0x0d80 + k],
+            game.wram_image()[0x0eb0 + k],
+            game.wram_image()[0x0e80 + k],
+            u16::from_le_bytes([game.wram_image()[0x0d10 + k], game.wram_image()[0x0d30 + k]]),
+            u16::from_le_bytes([game.wram_image()[0x0d00 + k], game.wram_image()[0x0d20 + k]]),
+            game.wram_image()[0x0de0 + k],
+            game.wram_image()[0x0db0 + k],
+            game.wram_image()[0x0e90 + k],
+            game.wram_image()[0x0ea0 + k],
+            u16::from_le_bytes([game.wram_image()[0x0bc0 + k * 2], game.wram_image()[0x0bc0 + k * 2 + 1]]),
+            game.wram_image()[0x0df0 + k],
+            game.wram_image()[0x0cd2 + k],
+            game.wram_image()[0x0e50 + k],
+            game.wram_image()[0x0ef0 + k],
+            game.wram_image()[0x0ce2 + k],
         ));
     }
     out
@@ -237,25 +237,25 @@ pub(crate) fn replay_save_sprite_dump(game: &ZeldaState) -> String {
 pub(crate) fn replay_save_door_dump(game: &ZeldaState) -> String {
     let mut out = format!(
         "doors opened=0x{:04x} opened_adj=0x{:04x} cur=0x{:04x} toggles={:04x}/{:04x} floor={:04x},{:04x} palace={:04x},{:04x} exit_count=0x{:04x} exits={:04x},{:04x},{:04x},{:04x}",
-        u16::from_le_bytes([game.ram[0x400], game.ram[0x401]]),
-        u16::from_le_bytes([game.ram[0x68c], game.ram[0x68d]]),
-        u16::from_le_bytes([game.ram[0x68e], game.ram[0x68f]]),
-        u16::from_le_bytes([game.ram[0x44e], game.ram[0x44f]]),
-        u16::from_le_bytes([game.ram[0x450], game.ram[0x451]]),
-        u16::from_le_bytes([game.ram[0x6c0], game.ram[0x6c1]]),
-        u16::from_le_bytes([game.ram[0x6c2], game.ram[0x6c3]]),
-        u16::from_le_bytes([game.ram[0x6d0], game.ram[0x6d1]]),
-        u16::from_le_bytes([game.ram[0x6d2], game.ram[0x6d3]]),
-        u16::from_le_bytes([game.ram[0x19e0], game.ram[0x19e1]]),
-        u16::from_le_bytes([game.ram[0x19e2], game.ram[0x19e3]]),
-        u16::from_le_bytes([game.ram[0x19e4], game.ram[0x19e5]]),
-        u16::from_le_bytes([game.ram[0x19e6], game.ram[0x19e7]]),
-        u16::from_le_bytes([game.ram[0x19e8], game.ram[0x19e9]]),
+        u16::from_le_bytes([game.wram_image()[0x400], game.wram_image()[0x401]]),
+        u16::from_le_bytes([game.wram_image()[0x68c], game.wram_image()[0x68d]]),
+        u16::from_le_bytes([game.wram_image()[0x68e], game.wram_image()[0x68f]]),
+        u16::from_le_bytes([game.wram_image()[0x44e], game.wram_image()[0x44f]]),
+        u16::from_le_bytes([game.wram_image()[0x450], game.wram_image()[0x451]]),
+        u16::from_le_bytes([game.wram_image()[0x6c0], game.wram_image()[0x6c1]]),
+        u16::from_le_bytes([game.wram_image()[0x6c2], game.wram_image()[0x6c3]]),
+        u16::from_le_bytes([game.wram_image()[0x6d0], game.wram_image()[0x6d1]]),
+        u16::from_le_bytes([game.wram_image()[0x6d2], game.wram_image()[0x6d3]]),
+        u16::from_le_bytes([game.wram_image()[0x19e0], game.wram_image()[0x19e1]]),
+        u16::from_le_bytes([game.wram_image()[0x19e2], game.wram_image()[0x19e3]]),
+        u16::from_le_bytes([game.wram_image()[0x19e4], game.wram_image()[0x19e5]]),
+        u16::from_le_bytes([game.wram_image()[0x19e6], game.wram_image()[0x19e7]]),
+        u16::from_le_bytes([game.wram_image()[0x19e8], game.wram_image()[0x19e9]]),
     );
     for k in 0..16 {
-        let addr = u16::from_le_bytes([game.ram[0x19a0 + k * 2], game.ram[0x19a1 + k * 2]]);
-        let kind = u16::from_le_bytes([game.ram[0x1980 + k * 2], game.ram[0x1981 + k * 2]]);
-        let dir = u16::from_le_bytes([game.ram[0x19c0 + k * 2], game.ram[0x19c1 + k * 2]]);
+        let addr = u16::from_le_bytes([game.wram_image()[0x19a0 + k * 2], game.wram_image()[0x19a1 + k * 2]]);
+        let kind = u16::from_le_bytes([game.wram_image()[0x1980 + k * 2], game.wram_image()[0x1981 + k * 2]]);
+        let dir = u16::from_le_bytes([game.wram_image()[0x19c0 + k * 2], game.wram_image()[0x19c1 + k * 2]]);
         if addr != 0 || kind != 0 || dir != 0 {
             out.push_str(&format!(
                 " [{k}:type=0x{kind:04x} addr=0x{addr:04x} dir=0x{dir:04x}]"
@@ -282,7 +282,7 @@ pub(crate) fn replay_save_dungeon_attr_dump(game: &ZeldaState) -> String {
     for pos in base..(base + 5).min(0x2000) {
         out.push_str(&format!(
             " [0x{pos:04x}=0x{:02x}]",
-            game.ram[DUNG_BG2_ATTR_TABLE + pos]
+            game.wram_image()[DUNG_BG2_ATTR_TABLE + pos]
         ));
     }
     out
@@ -295,7 +295,7 @@ pub(crate) fn replay_save_dungmap_dump(game: &ZeldaState) -> String {
     const DUNG_MAP_TAB21: [u16; 3] = [137, 167, 79];
     const DUNG_MAP_TAB22: [u16; 3] = [169, 119, 190];
 
-    let palace = read_le_u16(&game.ram, 0x040c);
+    let palace = read_le_u16(&game.wram_image(), 0x040c);
     let raw_dung = usize::from(palace >> 1);
     let valid_dung = raw_dung < DUNG_MAP_TAB5.len();
     let dung = if valid_dung {
@@ -308,8 +308,8 @@ pub(crate) fn replay_save_dungmap_dump(game: &ZeldaState) -> String {
     } else {
         0
     };
-    let floor1 = t5.wrapping_add(game.ram[0x00a4]);
-    let mut room = read_le_u16(&game.ram, 0x00a0);
+    let floor1 = t5.wrapping_add(game.wram_image()[0x00a4]);
+    let mut room = read_le_u16(&game.wram_image(), 0x00a0);
     for i in 0..3 {
         if room == DUNG_MAP_TAB21[i] {
             room = DUNG_MAP_TAB22[i];
@@ -336,50 +336,50 @@ pub(crate) fn replay_save_dungmap_dump(game: &ZeldaState) -> String {
     }
     format!(
         "dungmap state={} init={} floor=0x{:04x} idx=0x{:04x} palace=0x{:04x} room=0x{:04x} link=0x{:04x}/0x{:04x} dung={} t5=0x{:02x} floor1=0x{:02x} found={} vars=0x{:02x},0x{:04x},0x{:04x},0x{:04x},0x{:04x},0x{:04x},0x{:04x} layout={}",
-        game.ram[0x0200],
-        game.ram[0x020d],
-        read_le_u16(&game.ram, 0x020e),
-        read_le_u16(&game.ram, 0x0211),
-        read_le_u16(&game.ram, 0x040c),
-        read_le_u16(&game.ram, 0x00a0),
-        read_le_u16(&game.ram, 0x0022),
-        read_le_u16(&game.ram, 0x0020),
+        game.wram_image()[0x0200],
+        game.wram_image()[0x020d],
+        read_le_u16(&game.wram_image(), 0x020e),
+        read_le_u16(&game.wram_image(), 0x0211),
+        read_le_u16(&game.wram_image(), 0x040c),
+        read_le_u16(&game.wram_image(), 0x00a0),
+        read_le_u16(&game.wram_image(), 0x0022),
+        read_le_u16(&game.wram_image(), 0x0020),
         raw_dung,
         t5,
         floor1,
         found,
-        game.ram[0x0210],
-        read_le_u16(&game.ram, 0x0215),
-        read_le_u16(&game.ram, 0x0213),
-        read_le_u16(&game.ram, 0x0217),
-        read_le_u16(&game.ram, 0x0cf5),
-        read_le_u16(&game.ram, 0x0fa8),
-        read_le_u16(&game.ram, 0x0faa),
+        game.wram_image()[0x0210],
+        read_le_u16(&game.wram_image(), 0x0215),
+        read_le_u16(&game.wram_image(), 0x0213),
+        read_le_u16(&game.wram_image(), 0x0217),
+        read_le_u16(&game.wram_image(), 0x0cf5),
+        read_le_u16(&game.wram_image(), 0x0fa8),
+        read_le_u16(&game.wram_image(), 0x0faa),
         layout_bytes,
     )
 }
 
 pub(crate) fn replay_save_message_dump(game: &ZeldaState) -> String {
-    let read_pos = read_le_u16(&game.ram, 0x1cd9) as usize;
+    let read_pos = read_le_u16(&game.wram_image(), 0x1cd9) as usize;
     let mut bytes = String::new();
     for k in 0..8 {
         if k != 0 {
             bytes.push(',');
         }
         let index = 0x11200 + read_pos + k;
-        let byte = game.ram.get(index).copied().unwrap_or(0);
+        let byte = game.wram_image().get(index).copied().unwrap_or(0);
         bytes.push_str(&format!("{byte:02x}"));
     }
     format!(
         "message msgmod={} msg=0x{:04x} read=0x{:04x} state=0x{:02x} wait=0x{:04x}/0x{:02x} speed=0x{:02x}/0x{:02x} bytes={}",
-        game.ram[0x1cd8],
-        read_le_u16(&game.ram, 0x1cf0),
+        game.wram_image()[0x1cd8],
+        read_le_u16(&game.wram_image(), 0x1cf0),
         read_pos,
-        game.ram[0x1cd4],
-        read_le_u16(&game.ram, 0x1ce0),
-        game.ram[0x1ce9],
-        game.ram[0x1cd5],
-        game.ram[0x1cd6],
+        game.wram_image()[0x1cd4],
+        read_le_u16(&game.wram_image(), 0x1ce0),
+        game.wram_image()[0x1ce9],
+        game.wram_image()[0x1cd5],
+        game.wram_image()[0x1cd6],
         bytes,
     )
 }
@@ -392,36 +392,36 @@ pub(crate) fn replay_save_palette_dump(game: &ZeldaState) -> String {
         }
         words.push_str(&format!(
             "{:04x}/{:04x}",
-            read_le_u16(&game.ram, 0x0c300 + k * 2),
-            read_le_u16(&game.ram, 0x0c500 + k * 2),
+            read_le_u16(&game.wram_image(), 0x0c300 + k * 2),
+            read_le_u16(&game.wram_image(), 0x0c500 + k * 2),
         ));
     }
-    let armor = game.ram[0x0f35b];
-    let gloves = game.ram[0x0f354];
+    let armor = game.wram_image()[0x0f35b];
+    let gloves = game.wram_image()[0x0f354];
     let armor_word = usize::from(armor) * 15 + 12;
     let armorfd = game.replay_asset_word(81, armor_word).unwrap_or(0xffff);
     let gloveclr0 = game.replay_gloves_color(0);
     let gloveclr1 = game.replay_gloves_color(1);
     format!(
         "palette aux=0x{:08x} main=0x{:08x} flag=0x{:02x} filter=0x{:04x} auxmain=0x{:04x} mainind=0x{:02x} sp0=0x{:02x} sp5=0x{:02x} sp6=0x{:02x} sp6r=0x{:02x} hud=0x{:02x} owmode=0x{:02x} sword=0x{:02x} shield=0x{:02x} armor=0x{:02x} gloves=0x{:02x} palfd={:04x}/{:04x} armorfd={:04x} gloveclr={:04x}/{:04x} words={}",
-        replay_checksum_ram_range(&game.ram, 0x0c300, 0x200),
-        replay_checksum_ram_range(&game.ram, 0x0c500, 0x200),
-        game.ram[0x0015],
-        read_le_u16(&game.ram, 0x0c007),
-        read_le_u16(&game.ram, 0x0aa8),
-        game.ram[0x0ab6],
-        game.ram[0x0aac],
-        game.ram[0x0aad],
-        game.ram[0x0aae],
-        game.ram[0x0ab1],
-        game.ram[0x0ab2],
-        game.ram[0x0ab3],
-        game.ram[0x0f359],
-        game.ram[0x0f35a],
+        replay_checksum_ram_range(&game.wram_image(), 0x0c300, 0x200),
+        replay_checksum_ram_range(&game.wram_image(), 0x0c500, 0x200),
+        game.wram_image()[0x0015],
+        read_le_u16(&game.wram_image(), 0x0c007),
+        read_le_u16(&game.wram_image(), 0x0aa8),
+        game.wram_image()[0x0ab6],
+        game.wram_image()[0x0aac],
+        game.wram_image()[0x0aad],
+        game.wram_image()[0x0aae],
+        game.wram_image()[0x0ab1],
+        game.wram_image()[0x0ab2],
+        game.wram_image()[0x0ab3],
+        game.wram_image()[0x0f359],
+        game.wram_image()[0x0f35a],
         armor,
         gloves,
-        read_le_u16(&game.ram, 0x0c300 + 0xfd * 2),
-        read_le_u16(&game.ram, 0x0c500 + 0xfd * 2),
+        read_le_u16(&game.wram_image(), 0x0c300 + 0xfd * 2),
+        read_le_u16(&game.wram_image(), 0x0c500 + 0xfd * 2),
         armorfd,
         gloveclr0,
         gloveclr1,

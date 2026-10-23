@@ -776,11 +776,11 @@ impl VideoCheck {
         match self.last_hdma.as_mut() {
             Some((last, ram, last_channels, last_mask)) => {
                 *last = index;
-                ram.copy_from_slice(&game.ram);
+                ram.copy_from_slice(&game.wram_image());
                 *last_channels = channels;
                 *last_mask = mask;
             }
-            None => self.last_hdma = Some((index, game.ram.clone(), channels, mask)),
+            None => self.last_hdma = Some((index, game.wram_image().into_owned(), channels, mask)),
         }
         self.pending.push_back(PendingVideo {
             iteration_index: index,
@@ -1309,7 +1309,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 let continues = !eager_seed
                     && iteration.index != start_at
                     && !segment.diverged_from_rom(iteration.index)
-                    && !(at_resync && timing_defined(&game.ram));
+                    && !(at_resync && timing_defined(&game.wram_image()));
                 if continues && at_resync && iteration.index % every != 0 {
                     // In step after the stretch: the segment carries on.
                 } else if continues {
@@ -1376,8 +1376,8 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 println!(
                     "logical-rng iteration={} unconsumed={unconsumed} extra={extra} module={:02x}/{:02x}",
                     iteration_index - 1,
-                    game.ram[0x10],
-                    game.ram[0x11]
+                    game.wram_image()[0x10],
+                    game.wram_image()[0x11]
                 );
             }
         }
@@ -1433,7 +1433,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             if deferred_work_reported.insert(label) {
                 println!(
                     "logical-deferred-work iteration={} module={:02x}/{:02x} work={work}",
-                    iteration_index, game.ram[0x10], game.ram[0x11]
+                    iteration_index, game.wram_image()[0x10], game.wram_image()[0x11]
                 );
             }
         }
@@ -1453,7 +1453,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 iteration.index,
                 pushes != last_apu_push_before,
                 iteration.apu_writes,
-                &game.ram[0x12c..0x130],
+                &game.wram_image()[0x12c..0x130],
             );
         }
         while rom_commands.len() <= index + 1 && rom_commands.len() < iterations.len() {
@@ -1466,9 +1466,9 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         let audio_checked = (segment.iterations != 0 || segment.continued) && index + 1 < iterations.len();
         // `images.image` still holds iteration k - 1 here.
         let audio_poly = images.image[NMI_THREAD_ACTIVE] != 0
-            || game.ram[NMI_THREAD_ACTIVE] != 0
+            || game.wram_image()[NMI_THREAD_ACTIVE] != 0
             || timing_defined(&images.image)
-            || timing_defined(&game.ram);
+            || timing_defined(&game.wram_image());
         // A WRAM byte a lag moved (a sound delay counter) is still apart:
         // the commands it times are moved with it.
         let lag_carrying = !lag_carried.is_empty();
@@ -1568,12 +1568,12 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                     silent - std::mem::replace(&mut watch_silent, silent)
                 },
                 bytes(&images.image),
-                bytes(&game.ram)
+                bytes(&game.wram_image())
             );
         }
         if let Some((target, dir)) = dump_wram.as_ref().filter(|(target, _)| *target == iteration.index) {
             fs::create_dir_all(dir).expect("create --dump-wram directory");
-            fs::write(dir.join(format!("engine-{target}.bin")), &game.ram[..WRAM_LEN]).expect("write engine WRAM");
+            fs::write(dir.join(format!("engine-{target}.bin")), &game.wram_image()[..WRAM_LEN]).expect("write engine WRAM");
             fs::write(dir.join(format!("rom-{target}.bin")), &images.image).expect("write ROM WRAM");
             let vram: Vec<u8> = game.vram().iter().flat_map(|word| word.to_le_bytes()).collect();
             fs::write(dir.join(format!("engine-{target}.vram")), vram).expect("write engine VRAM");
@@ -1597,9 +1597,9 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         // The intro and attract modules (after a save-and-quit too) run on
         // the NMI clock as well.
         let poly_active = images.image[NMI_THREAD_ACTIVE] != 0
-            || game.ram[NMI_THREAD_ACTIVE] != 0
+            || game.wram_image()[NMI_THREAD_ACTIVE] != 0
             || timing_defined(&images.image)
-            || timing_defined(&game.ram)
+            || timing_defined(&game.wram_image())
             || resync.contains(&(iteration.index + 1));
         if poly_active {
             segment.poly_iterations += 1;
@@ -1620,13 +1620,13 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 Some(companion) if image_kind != "pre" => &companion.image,
                 _ => &images.image,
             };
-            poly_uploads.observe(iteration.index, poly_active, rom_pre_nmi, &game.ram);
+            poly_uploads.observe(iteration.index, poly_active, rom_pre_nmi, &game.wram_image());
         }
-        hide_undrawn_extended_oam(&game.ram, &images.image, &mut compared_now);
-        let ranges = diff_ranges(&game.ram, &images.image, &compared_now);
+        hide_undrawn_extended_oam(&game.wram_image(), &images.image, &mut compared_now);
+        let ranges = diff_ranges(&game.wram_image(), &images.image, &compared_now);
         for &(lo, hi) in &ranges {
             for address in lo..=hi {
-                if game.ram[address] != images.image[address] && compared_now[address] {
+                if game.wram_image()[address] != images.image[address] && compared_now[address] {
                     let slot = &mut histogram[address];
                     if slot.0 == 0 {
                         slot.1 = iteration.index;
@@ -1638,7 +1638,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         let differing: Vec<usize> = ranges
             .iter()
             .flat_map(|&(lo, hi)| lo..=hi)
-            .filter(|&address| compared_now[address] && game.ram[address] != images.image[address])
+            .filter(|&address| compared_now[address] && game.wram_image()[address] != images.image[address])
             .collect();
         lag_carried.retain(|address| differing.binary_search(address).is_ok());
         if iteration.lag_nmis != 0 {
@@ -1683,7 +1683,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                     let end = hi.min(lo + 7);
                     format!(
                         "{lo:05x}-{hi:05x} rust={} rom={}",
-                        hex(&game.ram[lo..=end]),
+                        hex(&game.wram_image()[lo..=end]),
                         hex(&images.image[lo..=end])
                     )
                 })

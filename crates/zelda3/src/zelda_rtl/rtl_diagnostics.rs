@@ -46,7 +46,7 @@ impl ZeldaState {
             std::fs::write(root.join(format!("{}-{name}.bin", self.frame_ctr_dbg)), bytes)
                 .expect("write presented CHR identities");
         }
-        std::fs::write(root.join(format!("{}-ram.bin", self.frame_ctr_dbg)), &self.ram)
+        std::fs::write(root.join(format!("{}-ram.bin", self.frame_ctr_dbg)), &self.wram_image())
             .expect("write presented-state RAM");
         let scroll: Vec<_> = self.ppu.bg_layer.iter().map(|bg| (bg.h_scroll, bg.v_scroll)).collect();
         let mut scanout = self.clone();
@@ -333,6 +333,7 @@ impl ZeldaState {
         inputs: i32,
         replay_input_override: Option<u16>,
     ) -> bool {
+        self.poison_owned_wram();
         self.rom_random_replay.begin_frame();
         let raw_inputs = inputs as u16;
         let raw_replay_input_override = replay_input_override;
@@ -576,6 +577,7 @@ impl ZeldaState {
         } else if self.lag_free {
             self.lag_free_poly_thread = None;
         }
+        self.poison_owned_wram();
         is_replay
     }
 

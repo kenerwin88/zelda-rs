@@ -63,6 +63,11 @@ def main():
             if original.get(key, False if key == 'rgb' else None) != provenance[key]:
                 parser.error(f'baseline launch mismatch: {key}')
     env = {key: value for key, value in os.environ.items() if not key.startswith('ZELDA3_')}
+    # Poison changes backing storage only. Preserve this deliberate audit flag
+    # while continuing to isolate all other runtime/debug configuration.
+    for flag in ['ZELDA3_POISON_OWNED_WRAM']:
+        if flag in os.environ:
+            env[flag] = os.environ[flag]
     env.update(ZELDA3_SMOKE_INPUT_LEDGER=str(inputs), ZELDA3_SMOKE_SRAM=str(sram))
     if args.rom:
         env['ZELDA3_SMOKE_ROM'] = str(args.rom.resolve())
@@ -80,7 +85,8 @@ def main():
         result = subprocess.run(command, cwd=ROOT, env=env)
         seconds = time.monotonic() - started
     print(f'{args.action}: mode={args.mode} exit={result.returncode} frames={args.frames} '
-          f'seconds={seconds:.3f}' + (f' fps={args.frames / seconds:.1f}' if result.returncode == 0 else ''), flush=True)
+          f'seconds={seconds:.3f}' + (f' fps={args.frames / seconds:.1f}' if result.returncode == 0 else '')
+          + f" poison_owned_wram={env.get('ZELDA3_POISON_OWNED_WRAM', '0')}", flush=True)
     if result.returncode:
         raise SystemExit(result.returncode)
     if args.action == 'record':

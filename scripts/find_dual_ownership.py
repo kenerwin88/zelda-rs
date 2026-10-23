@@ -776,6 +776,15 @@ def main():
           f"({len(master_reachable & set(owner_intervals))} reachable from "
           f"GameState::write_to_ram, {len(bridge_synced & set(owner_intervals))} more "
           f"re-projected only by a bridge sync); {len(real_bytes)} overlapping bytes")
+    native_ranges = ref.native_owned_ranges()
+    print(f"exclusive native storage: {len(native_ranges)} range(s), "
+          f"{sum(hi - lo + 1 for lo, hi, _ in native_ranges)} byte(s)")
+    # Registration does not excuse a live legacy publisher. Keep such bytes
+    # visible in the overlap report until the publisher itself is removed.
+    for lo, hi, owner in native_ranges:
+        publishers = sorted({s for a in range(lo, hi + 1) for s in live_owners(a)})
+        if publishers:
+            print(f"  ERROR: native-only {owner} still published by {', '.join(publishers)}")
     if suppressed_bytes:
         print(f"  ruled out: {len(suppressed_bytes)} byte(s) whose co-owners are never "
               f"projected ({', '.join(unreachable_owners)})")

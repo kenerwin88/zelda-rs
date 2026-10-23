@@ -876,8 +876,8 @@ pub(crate) fn capture_obj_state_ledger_receipt(
     )?;
     Some(ObjStateLedgerReceipt {
         frame,
-        modeled_wram_mismatches: compact_engine_state_mismatches(&game.ram, oracle_wram),
-        wram: hashed_byte_domain(&game.ram, oracle_wram),
+        modeled_wram_mismatches: compact_engine_state_mismatches(&game.wram_image(), oracle_wram),
+        wram: hashed_byte_domain(&game.wram_image(), oracle_wram),
         raw_obj_vram: hashed_byte_domain(&rust_obj_vram, oracle_obj_vram),
         live_oam: hashed_i32_domain(&rust_live_oam, &oracle_live_oam),
         presented_oam: hashed_i32_domain(&rust_presented_oam, &oracle_presented_oam),

@@ -2330,7 +2330,7 @@ pub(super) fn dialogue_initialization_cpu_plan(
     };
     let mut run = RomCpuTimingRun::new(
         &state.rom,
-        &state.ram,
+        &state.wram_image(),
         &state.sram,
         &state.ppu,
         &timing_dma,
@@ -2579,7 +2579,7 @@ fn module_cpu_entry_after_leading_nmi(state: &ZeldaState, input: u16, cpu_host: 
         })
     };
     let timing_dma = state.dma_with_native_hdma_enable();
-    let mut run = RomCpuTimingRun::new(&state.rom, &state.ram, &state.sram,
+    let mut run = RomCpuTimingRun::new(&state.rom, &state.wram_image(), &state.sram,
         &state.ppu, &timing_dma, state.zelda_audio_apu_output_ports(), checkpoint)
         .expect("module entry CPU timing requires the development ROM");
     run.set_joypad_input(input);
@@ -2610,7 +2610,7 @@ fn overworld_map_graphics_cpu_nmi_slices(state: &ZeldaState, input: u16) -> (u8,
         ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
     };
     let timing_dma = state.dma_with_native_hdma_enable();
-    let mut run = RomCpuTimingRun::new(&state.rom, &state.ram, &state.sram,
+    let mut run = RomCpuTimingRun::new(&state.rom, &state.wram_image(), &state.sram,
         &state.ppu, &timing_dma, state.zelda_audio_apu_output_ports(), checkpoint)
         .expect("overworld map CPU timing requires the development ROM");
     run.set_joypad_input(input);
@@ -2695,7 +2695,7 @@ fn native_main_loop_cpu_run(state: &mut ZeldaState, input: u16, nmi_is_trailing:
     });
     assert_eq!(checkpoint.stop_pc, 0x00_805d);
     let timing_dma = state.dma_with_native_hdma_enable();
-    let mut run = RomCpuTimingRun::new(&state.rom, &state.ram, &state.sram,
+    let mut run = RomCpuTimingRun::new(&state.rom, &state.wram_image(), &state.sram,
         &state.ppu, &timing_dma, state.zelda_audio_apu_output_ports(), checkpoint)
         .expect("overworld CPU timing requires the loaded Zelda ROM");
     run.set_joypad_input(input);
@@ -3268,7 +3268,7 @@ fn overworld_upload_suffix_interruption(
         ..DUNGEON_PALETTE_CALLER_CPU_CHECKPOINT
     };
     let dma = state.dma_with_native_hdma_enable();
-    let mut run = RomCpuTimingRun::new(&state.rom, &state.ram, &state.sram,
+    let mut run = RomCpuTimingRun::new(&state.rom, &state.wram_image(), &state.sram,
         &state.ppu, &dma, state.zelda_audio_apu_output_ports(), checkpoint)
         .expect("upload suffix timing requires the loaded development ROM");
     run.enable_cpu_write_trace();
@@ -3387,7 +3387,7 @@ fn spotlight_cpu_timing_ram(state: &ZeldaState, checkpoint: RomCpuCheckpoint) ->
     // publishes it to the hardware table at $7e:1b00. Seed both original-ROM
     // buffers from the translated live owner before running the isolated CPU.
     let table_bytes = SPOTLIGHT_VISIBLE_SCANLINES * 2;
-    let mut rom_ram = state.ram.clone();
+    let mut rom_ram = state.wram_image().into_owned();
     // Only the overworld checkpoint re-executes INC $1A at $00:8051.
     // Module0F starts at $02:9982 after that instruction: the cold source
     // entry has counter 168, not 167, at V=255/C=480 (run 11443).
@@ -4077,7 +4077,7 @@ fn dungeon_room_load_cpu_plan(
     let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(
         &state.rom,
-        &state.ram,
+        &state.wram_image(),
         &state.sram,
         &state.ppu,
         &timing_dma,
@@ -4442,7 +4442,7 @@ fn dungeon_submodule_cpu_schedule(state: &ZeldaState) -> DungeonSubmoduleCpuSche
 fn map_fade_cpu_blank_scanline(state: &ZeldaState, input: u16) -> u8 {
     let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(
-        &state.rom, &state.ram, &state.sram, &state.ppu, &timing_dma,
+        &state.rom, &state.wram_image(), &state.sram, &state.ppu, &timing_dma,
         state.zelda_audio_apu_output_ports(),
         RomCpuCheckpoint {
             // EnableForceBlank's STA $2100 has completed at this checkpoint.
@@ -4490,7 +4490,7 @@ fn force_blank_output_row(scanline: u16, master_cycle: u16) -> u8 {
 fn dungeon_map_room_drawing_cpu_nmi_slices(state: &ZeldaState) -> u8 {
     let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(
-        &state.rom, &state.ram, &state.sram, &state.ppu, &timing_dma,
+        &state.rom, &state.wram_image(), &state.sram, &state.ppu, &timing_dma,
         state.zelda_audio_apu_output_ports(),
         DUNGEON_MAIN_WAIT_CPU_CHECKPOINT,
     ).expect("dungeon-map drawing CPU timing requires the development ROM");
@@ -4530,7 +4530,7 @@ fn straight_interroom_reset_cpu_progress(
     let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(
         &state.rom,
-        &state.ram,
+        &state.wram_image(),
         &state.sram,
         &state.ppu,
         &timing_dma,
@@ -4617,7 +4617,7 @@ fn dungeon_submodule_cpu_schedule_plan(
     let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(
         &state.rom,
-        &state.ram,
+        &state.wram_image(),
         &state.sram,
         &state.ppu,
         &timing_dma,
@@ -4890,7 +4890,7 @@ fn pre_overworld_load_cpu_plan(
 ) -> (u8, Vec<u16>, Vec<bool>, Vec<PreOverworldScreenBuildCrossing>) {
     let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(
-        &state.rom, &state.ram, &state.sram, &state.ppu, &timing_dma,
+        &state.rom, &state.wram_image(), &state.sram, &state.ppu, &timing_dma,
         state.zelda_audio_apu_output_ports(), DUNGEON_MAIN_WAIT_CPU_CHECKPOINT,
     ).expect("pre-overworld overlay timing requires the loaded Zelda ROM");
     let mut budget = CpuCycleBudget::at_nmi_acceptance(
@@ -4998,7 +4998,7 @@ fn module09_cpu_schedule(
     let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(
         &state.rom,
-        &state.ram,
+        &state.wram_image(),
         &state.sram,
         &state.ppu,
         &timing_dma,
@@ -7890,7 +7890,7 @@ fn dungeon_module_7_cpu_timing(
     let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(
         &state.rom,
-        &state.ram,
+        &state.wram_image(),
         &state.sram,
         &state.ppu,
         &timing_dma,
@@ -8643,7 +8643,7 @@ fn dungeon_palette_caller_cpu_advance(
     let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(
         &state.rom,
-        &state.ram,
+        &state.wram_image(),
         &state.sram,
         &state.ppu,
         &timing_dma,
@@ -11800,7 +11800,7 @@ impl ZeldaState {
         use std::io::Write;
         let mut digest = Digest(0xcbf29ce484222325);
         digest.write_all(b"zelda3-state-v1").unwrap();
-        digest.write_all(&self.ram).unwrap();
+        digest.write_all(&self.wram_image()).unwrap();
         digest.write_all(&self.sram).unwrap();
         bincode::serialize_into(
             &mut digest,
@@ -13568,7 +13568,9 @@ impl ZeldaState {
         // outside the bridge; `load_snes_state` reconstitutes the mirror after
         // resync to cover it.
         let palette_provenance = std::mem::take(&mut self.game_state.display.palette_provenance);
-        self.game_state = GameState::load_from_ram(&self.ram);
+        // Legacy mirrors still refresh here. Exclusive owners are decoded
+        // from their exported image, never from poisoned backing bytes.
+        self.game_state = GameState::load_from_ram(&self.wram_image());
         self.game_state.display.palette_provenance = palette_provenance;
     }
 
@@ -14539,11 +14541,13 @@ impl ZeldaState {
     /// skeletal. Future ports should land behind this entry point so the
     /// lockstep oracle starts validating them immediately.
     pub fn run_frame_internal(&mut self, input: u16, run_what: u8) {
+        self.poison_owned_wram();
         crate::rom_cpu_timing::note_rom_cpu_profile_host(self.frame_ctr_dbg);
         let owns_original_timing_dispatch = self.begin_original_timing_host_dispatch(input);
         self.run_frame_internal_after_original_timing(input, run_what);
         self.finish_original_timing_host_dispatch(owns_original_timing_dispatch);
         crate::cycle_ledger::flush_host(self.frame_ctr_dbg);
+        self.poison_owned_wram();
     }
 
     pub fn zelda_run_frame_internal(&mut self, input: u16, run_what: u8) {
@@ -14564,7 +14568,8 @@ impl ZeldaState {
     fn emu_sync_memory_region(&mut self, offset: usize, n: usize) {
         debug_assert!(offset < WRAM_SIZE);
         debug_assert!(offset + n <= WRAM_SIZE);
-        let bytes = self.compatibility_ram_range(offset, n).to_vec();
+        // External emulator callbacks consume the cartridge image.
+        let bytes = self.wram_image()[offset..offset + n].to_vec();
         if let Some(emu_memory_ptr) = self.emu_memory_ptr.as_mut() {
             if emu_memory_ptr.len() < WRAM_SIZE {
                 emu_memory_ptr.resize(WRAM_SIZE, 0);
@@ -14868,7 +14873,7 @@ impl ZeldaState {
                 self.sram.len()
             ));
         }
-        self.ram.copy_from_slice(wram);
+        self.import_wram_image(wram);
         self.sram[..sram.len()].copy_from_slice(sram);
         self.ppu.vram = vram
             .chunks_exact(2)
@@ -15226,7 +15231,12 @@ impl ZeldaState {
         let mut work = crate::cycle_models::startup_memory::StartupMemoryWork::default();
         loop {
             let clear_window = work.clears_window_mask();
-            if work.step(&mut self.ram, &mut self.sram).is_none() { break }
+            // StartupMemoryWork executes the cartridge's raw clear/transfer
+            // stores. Retire owned bytes before any native callback resumes.
+            self.export_owned_wram_to_ram();
+            let step = work.step(&mut self.ram, &mut self.sram);
+            self.import_owned_wram_from_ram();
+            if step.is_none() { break }
             if clear_window { self.zelda_ppu_write_word(0x212e, 0); }
         }
         self.boot_memory_initialized = true;
@@ -15248,7 +15258,7 @@ impl ZeldaState {
         let Some(mut cpu) = self.native_startup_cpu.take() else { return };
         cpu.timeline.advance_synchronous_after_semantics_with(46, |_, _| Ok::<u32, String>(0))
             .expect("native startup call clock");
-        let (mut ram, mut sram) = (self.ram.clone(), self.sram.clone());
+        let (mut ram, mut sram) = (self.wram_image().into_owned(), self.sram.clone());
         let mut work = crate::cycle_models::startup_memory::StartupMemoryWork::default();
         while let Some(cycles) = work.step(&mut ram, &mut sram) {
             cpu.timeline.advance_synchronous_after_semantics_with(cycles, |_, _| Ok::<u32, String>(0))
@@ -15273,7 +15283,12 @@ impl ZeldaState {
         let mut work = crate::cycle_models::startup_memory::StartupMemoryWork::default();
         loop {
             let clear_window = work.clears_window_mask();
-            let Some(cycles) = work.step(&mut self.ram, &mut self.sram) else { break };
+            // Clocked startup has the same raw-memory boundary as the
+            // unclocked bootstrap above, one source step at a time.
+            self.export_owned_wram_to_ram();
+            let step = work.step(&mut self.ram, &mut self.sram);
+            self.import_owned_wram_from_ram();
+            let Some(cycles) = step else { break };
             if clear_window { self.zelda_ppu_write_word(0x212e, 0); }
             if let Some(clock) = cpu.as_mut().map(|cpu| &mut cpu.timeline) {
                 clock.advance_synchronous_after_semantics_with(cycles, |_, _| Ok::<u32, String>(0))
@@ -15361,10 +15376,15 @@ impl ZeldaState {
                 self.native_startup_cpu=Some(cpu);
                 return Some(false);
             }
-            match cpu.startup.step(&mut cpu.timeline, &mut self.ram, &mut self.sram,
+            // The retained startup CPU and its HDMA bus borrow raw WRAM for
+            // one step. Import before dispatching the returned native action.
+            self.export_owned_wram_to_ram();
+            let step = cpu.startup.step(&mut cpu.timeline, &mut self.ram, &mut self.sram,
                 self.native_ppu.as_mut().expect("cold CPU retains its PPU bus owner"),
                 |event, clock, ram, ppu| crate::cycle_models::native_hdma::wait_event(
-                    event, clock, ram, ppu, &mut self.dma, &mut self.ppu)) {
+                    event, clock, ram, ppu, &mut self.dma, &mut self.ppu));
+            self.import_owned_wram_from_ram();
+            match step {
                 StartupStep::Instruction => {}
                 StartupStep::ClearWindow => self.zelda_ppu_write_word(0x212e, 0),
                 StartupStep::MemoryComplete => {
@@ -15414,9 +15434,12 @@ impl ZeldaState {
                             cpu.startup.install_vertical_irq(programming);
                         }
                     }
-                    let wait_cycles = cpu.startup.return_from_nmi(&mut cpu.timeline, &mut context, &self.ram,
+                    // RTI/wait and its HDMA bus observe one cartridge image
+                    // after the native NMI handler has retired its writes.
+                    let image = self.wram_image().into_owned();
+                    let wait_cycles = cpu.startup.return_from_nmi(&mut cpu.timeline, &mut context, &image,
                         |event, clock| crate::cycle_models::native_hdma::wait_event(event, clock,
-                            &self.ram, self.native_ppu.as_mut().unwrap(), &mut self.dma, &mut self.ppu));
+                            &image, self.native_ppu.as_mut().unwrap(), &mut self.dma, &mut self.ppu));
                     crate::cycle_ledger::charge(u64::from(wait_cycles));
                     if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                         eprintln!("native-main-caller pc={:02x}:{:04x} clock={} raster={:?} context={context:?}",
@@ -15548,11 +15571,9 @@ impl ZeldaState {
                 Access::Read(address, width) => {
                     let address=if address&0x400000==0 && address&65535<0x2000 {address&65535}else{address};
                     if address < 0x2000 {
-                        if width == 1 { u16::from(self.ram[address as usize]) }
-                        else { read_le_u16(&self.ram, address as usize) }
+                        self.read_wram_image_word(address as usize, width)
                     } else if (0x7e0000..=0x7ffffe).contains(&address) {
-                        if width==1 {u16::from(self.ram[address as usize-0x7e0000])}
-                        else {read_le_u16(&self.ram,address as usize-0x7e0000)}
+                        self.read_wram_image_word(address as usize-0x7e0000, width)
                     } else if (load_file || sprite_caller || properties) && (0x2140..=0x2143).contains(&address) {
                         assert_eq!(width, 1);
                         u16::from(self.native_main_port_at(at, (address - 0x2140) as u8, None))
@@ -17174,6 +17195,8 @@ mod rtl_scroll;
 mod rtl_spotlight;
 mod rtl_types_display;
 mod rtl_vram;
+mod rtl_wram;
+pub use rtl_wram::{NativeOwnedWramRange, NATIVE_OWNED_WRAM};
 pub use rtl_types_display::*;
 mod rtl_types_cpu_plans;
 pub(crate) use rtl_types_cpu_plans::*;

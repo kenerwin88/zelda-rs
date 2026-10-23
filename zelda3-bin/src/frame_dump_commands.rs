@@ -132,8 +132,8 @@ fn print_asset_gpu_smoke_progress(
     ) = renderer.validation_cache_stats();
     eprintln!(
         "{label} asset GPU smoke progress frames={frames} main={:02x}; sub={:02x}; mode={}; screen={:02x}/{:02x}; validation_cache_hits={cache_hits}; validation_cache_misses={cache_misses}; validation_cache_entries={cache_entries}; validation_key_ms={cache_key_ms}; validation_miss_ms={cache_miss_ms}; validation_bg_extract_ms={bg_extract_ms}; validation_sprite_extract_ms={sprite_extract_ms}; validation_stats_ms={stats_ms}",
-        game.ram[0x10],
-        game.ram[0x11],
+        game.wram_image()[0x10],
+        game.wram_image()[0x11],
         game.ppu.bg_mode(),
         game.ppu.screen_enabled[0],
         game.ppu.screen_enabled[1],
@@ -206,8 +206,8 @@ pub(crate) fn run_smoke_asset_gpu(args: &[String]) {
         options.frames,
         start_frame,
         start_frame.wrapping_add(options.frames),
-        game.ram[0x10],
-        game.ram[0x11],
+        game.wram_image()[0x10],
+        game.wram_image()[0x11],
         game.ppu.bg_mode(),
         game.ppu.screen_enabled[0],
         game.ppu.screen_enabled[1],
@@ -324,8 +324,8 @@ pub(crate) fn run_dump_frame(args: &[String]) {
     println!(
         "dumped frame {frames} to {}; main={:02x}; sub={:02x}; mode={}; screen={:02x}/{:02x}; cgram_nonzero={}; oam_nonzero={}",
         out_path.display(),
-        game.ram[0x10],
-        game.ram[0x11],
+        game.wram_image()[0x10],
+        game.wram_image()[0x11],
         game.ppu.bg_mode(),
         game.ppu.screen_enabled[0],
         game.ppu.screen_enabled[1],
@@ -424,9 +424,9 @@ pub(crate) fn run_scan_replay_checkpoints(args: &[String]) {
             eprintln!("failed to load {}: {e}", path.display());
             continue;
         }
-        let indoors = game.ram[PLAYER_IS_INDOORS] != 0;
-        let room = read_le_u16(&game.ram, 0x48e);
-        let screen = read_le_u16(&game.ram, 0x8a);
+        let indoors = game.wram_image()[PLAYER_IS_INDOORS] != 0;
+        let room = read_le_u16(&game.wram_image(), 0x48e);
+        let screen = read_le_u16(&game.wram_image(), 0x8a);
         if target_screen.is_some_and(|target| indoors || screen != target) {
             continue;
         }
@@ -434,8 +434,8 @@ pub(crate) fn run_scan_replay_checkpoints(args: &[String]) {
             "{} indoors={} room=0x{room:04x} ow=0x{screen:04x} main={:02x} sub={:02x} mode={} screen={:02x}/{:02x} bg1_tm={:04x} bg1_chr={:04x} bg2_tm={:04x} bg2_chr={:04x} cgram_nonzero={} vram_nonzero={}",
             path.display(),
             indoors,
-            game.ram[0x10],
-            game.ram[0x11],
+            game.wram_image()[0x10],
+            game.wram_image()[0x11],
             game.ppu.bg_mode(),
             game.ppu.screen_enabled[0],
             game.ppu.screen_enabled[1],
@@ -506,10 +506,10 @@ pub(crate) fn run_dump_replay_checkpoint_ppu(args: &[String]) {
         "dumped replay checkpoint {} frames={frames} to {}; indoors={} ow=0x{:04x} main={:02x} sub={:02x} mode={} screen={:02x}/{:02x} bg1_tm={:04x} bg1_chr={:04x}",
         checkpoint_path.display(),
         out_path.display(),
-        game.ram[PLAYER_IS_INDOORS] != 0,
-        read_le_u16(&game.ram, 0x8a),
-        game.ram[0x10],
-        game.ram[0x11],
+        game.wram_image()[PLAYER_IS_INDOORS] != 0,
+        read_le_u16(&game.wram_image(), 0x8a),
+        game.wram_image()[0x10],
+        game.wram_image()[0x11],
         game.ppu.bg_mode(),
         game.ppu.screen_enabled[0],
         game.ppu.screen_enabled[1],

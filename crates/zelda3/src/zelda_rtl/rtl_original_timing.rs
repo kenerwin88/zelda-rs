@@ -13429,7 +13429,7 @@ impl ZeldaState {
         const THREAD_WORK_RANGE: std::ops::Range<usize> = 0x1f10..0x2000;
         const THREAD_BITMAP_RANGE: std::ops::Range<usize> = 0xe800..0xf000;
         let timing_dma = self.dma_with_native_hdma_enable();
-        let mut ram_image = self.ram.to_vec();
+        let mut ram_image = self.wram_image().into_owned();
         if let Some(saved) = self.triforce_poly_shadow_ram.as_ref() {
             ram_image[THREAD_WORK_RANGE].copy_from_slice(&saved[THREAD_WORK_RANGE]);
             ram_image[THREAD_BITMAP_RANGE].copy_from_slice(&saved[THREAD_BITMAP_RANGE]);
@@ -13609,7 +13609,7 @@ impl ZeldaState {
                 let mut saved = self
                     .triforce_poly_shadow_ram
                     .take()
-                    .unwrap_or_else(|| self.ram.to_vec());
+                    .unwrap_or_else(|| self.wram_image().into_owned());
                 saved[THREAD_WORK_RANGE].copy_from_slice(&run.ram()[THREAD_WORK_RANGE]);
                 saved[THREAD_BITMAP_RANGE].copy_from_slice(&run.ram()[THREAD_BITMAP_RANGE]);
                 self.triforce_poly_shadow_ram = Some(saved);

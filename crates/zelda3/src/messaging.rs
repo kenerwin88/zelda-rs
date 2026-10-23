@@ -3236,7 +3236,8 @@ impl ZeldaState {
         let offs = self.selected_save_slot_offset();
         // Observe the published image at this source boundary. It includes all
         // owners and reserved bytes without maintaining a second native save bank.
-        let save = crate::game_state::save_format::LiveSave::from_wram(&self.ram);
+        let image = self.wram_image().into_owned();
+        let save = crate::game_state::save_format::LiveSave::from_wram(&image);
         save.copy_to_sram(&mut self.sram, offs);
         save.sum_words(0..completed_checksum_words, 0)
     }
@@ -3252,7 +3253,9 @@ impl ZeldaState {
             completed_checksum_words <= total_checksum_words,
             "SaveGameFile checksum continuation exceeds the source save block",
         );
-        let sum = crate::game_state::save_format::LiveSave::from_wram(&self.ram).sum_words(
+        // Re-export at continuation, after any intervening NMI. Never reuse
+        // the image that supplied the earlier SRAM copies/checksum prefix.
+        let sum = crate::game_state::save_format::LiveSave::from_wram(&self.wram_image()).sum_words(
             completed_checksum_words..total_checksum_words,
             accumulated_word_sum,
         );
