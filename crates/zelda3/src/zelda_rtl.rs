@@ -10530,10 +10530,6 @@ pub struct ZeldaState {
     pub(crate) lag_free_frame_master_start: u64,
     #[serde(skip)]
     pub(crate) lag_free_vwf_master: u64,
-    /// Lag-free: thread slices the last iteration's lag frames would have
-    /// given the preemptive polygon thread, applied at its next step.
-    #[serde(skip)]
-    pub(crate) lag_free_thread_credit: u8,
     /// Lag-free: the last frame's ROM-equivalent main cost.
     #[serde(skip)]
     pub(crate) lag_free_last_main_master: u64,
@@ -11821,7 +11817,9 @@ impl ZeldaState {
                 self.dialogue_fast_forward_hold_pending,
                 self.dialogue_fast_forward_hold_active,
                 self.lag_free,
-                self.lag_free_thread_credit,
+                // Schema v1 slot of the retired lag-free thread-slice credit
+                // (always 0 since the native thread became the default).
+                0u8,
                 self.gloves_color,
             ),
         )
@@ -13658,7 +13656,6 @@ impl ZeldaState {
             lag_free: false,
             lag_free_frame_master_start: 0,
             lag_free_vwf_master: 0,
-            lag_free_thread_credit: 0,
             lag_free_last_main_master: 0,
             lag_free_poly_thread: None,
             lag_free_nmi_uploaded_poly: false,

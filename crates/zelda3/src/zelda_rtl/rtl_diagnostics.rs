@@ -575,7 +575,6 @@ impl ZeldaState {
             }
         } else if self.lag_free {
             self.lag_free_poly_thread = None;
-            self.credit_lag_free_thread_slices();
         }
         is_replay
     }

@@ -123,12 +123,9 @@ impl ZeldaState {
     /// and runs it through the cartridge's own schedule, its lag frames
     /// derived from main's cycle-ledger cost. Every crystal cutscene and the
     /// Triforce room match the ROM ledger iteration for iteration.
-    /// `ZELDA3_LAG_FREE_POLY_TABLES` falls back to the per-angle frame
-    /// tables for comparison.
     pub(super) fn lag_free_native_poly_thread(&self) -> bool {
         self.lag_free
             && (self.dungeon_poly_thread_is_active() || self.triforce_room_poly_thread_is_active())
-            && crate::debug_env::var_os("ZELDA3_LAG_FREE_POLY_TABLES").is_none()
     }
 
     /// The NMI's acceptance and the V-IRQ deadline that ends the thread's
@@ -189,7 +186,11 @@ impl ZeldaState {
             );
             match clock.begin_synchronous_timeline() {
                 Ok(()) => break clock,
-                Err(snes::cpu_timeline::CpuSynchronousTimelineStartError::AmbiguousEventState { .. }) => start += 1,
+                // Inside a bus stall the thread resumes when it ends; on a
+                // render event (no bus time) the event is retired before the
+                // thread's first instruction, as Snes9x drains due events.
+                Err(snes::cpu_timeline::CpuSynchronousTimelineStartError::AmbiguousEventState { .. }
+                    | snes::cpu_timeline::CpuSynchronousTimelineStartError::AmbiguousRenderEvent { .. }) => start += 1,
                 Err(error) => panic!("a fresh polygon-thread clock claims its synchronous timeline: {error:?}"),
             }
         };
@@ -567,87 +568,6 @@ impl ZeldaState {
         self.last_nmi_handler_master_cycles
     }
 
-    pub(super) fn credit_lag_free_thread_slices(&mut self) {
-        const MAIN_MASTER_CYCLES_PER_THREADED_FRAME: u64 = 240_000;
-        self.lag_free_thread_credit = 0;
-        if !(self.dungeon_poly_thread_is_active() || self.triforce_room_poly_thread_is_active()) {
-            return;
-        }
-        // The frame's whole ledger delta (its NMI included): the
-        // 233.5k-241k range was fitted on it.
-        let cost = crate::cycle_ledger::master().saturating_sub(self.lag_free_frame_master_start)
-            + self.lag_free_vwf_master;
-        self.lag_free_last_main_master = cost;
-        let frames = cost.div_ceil(MAIN_MASTER_CYCLES_PER_THREADED_FRAME).max(1);
-        // The thread's step at the start of the next frame stands for this
-        // iteration's first slice and completes a frame only once it enters
-        // with nothing left, so an iteration of n > 1 frames credits all n.
-        // The activating iteration's first four frames start the thread
-        // instead (its first slice runs four hosts after the maiden
-        // activates it).
-        let credit = if self.poly_dungeon_activation_host == self.frame_ctr_dbg {
-            frames.saturating_sub(4)
-        } else {
-            frames - 1
-        };
-        self.lag_free_thread_credit = credit.min(u64::from(u8::MAX)) as u8;
-    }
-
-    /// Lag-free: the crystal cutscene's (module 07) frames (by crystal size
-    /// `POLY_CONFIG1`) that run one slice longer in the palaces whose maiden room costs the main loop
-    /// more (palace index x2 $0E, $10, $16; 6-12k master cycles per
-    /// iteration). The route's ROM ledger shows two cutscene cadences only,
-    /// identical apart from these frames; the scanline cost model reproduces
-    /// the other one exactly.
-    ///
-    /// Palace $18's maiden room (72-76k per iteration) also leaves the thread
-    /// one slice short of its first frame by the end of the activating
-    /// iteration (four lag NMIs there against five elsewhere).
-    fn lag_free_crystal_cutscene_extra_slice(&self, main_module: u8) -> u8 {
-        if !self.lag_free || main_module != 0x07 {
-            return 0;
-        }
-        let palace = self.game_state.inventory.save_progress.palace_index_x2();
-        let heavier_room = matches!(palace, 0x0e | 0x10 | 0x16)
-            && matches!(self.game_state.poly.runtime.config1(), 0x21 | 0x1e | 0x06);
-        let short_first_frame = palace == 0x18 && self.poly_dungeon_frames_rendered == 1;
-        u8::from(heavier_room || short_first_frame)
-    }
-
-    /// Lag-free: the frames the maiden's crystal takes through her dialogue
-    /// (module 0E), one main-loop iteration each when none lags. The render
-    /// depends only on the crystal's angle, which turns 6 per maiden step
-    /// (`SPRITE_E` of her slot, 128 steps a turn): the route's ROM ledger
-    /// gives every angle's frame count, identical in all seven crystal
-    /// sequences (1,428 passes). The cycle estimate alone misplaces the
-    /// angles whose cost sits on a frame boundary.
-    ///
-    /// A step iteration whose main loop costs 150k master cycles or more
-    /// lets the thread start inside it: the frames whose cost sits in the
-    /// bottom fifth of their count then finish one iteration sooner (17 of
-    /// the 65 such passes on the route; the other 48 sit at 0.77 or more).
-    fn lag_free_crystal_dialogue_frames(&self) -> u8 {
-        const FRAMES_BY_ANGLE: [u8; 128] = [
-            7, 6, 6, 6, 5, 6, 5, 6, 6, 6, 7, 7, 6, 6, 6, 5,
-            6, 5, 6, 6, 7, 7, 7, 7, 6, 6, 6, 6, 5, 6, 6, 7,
-            7, 7, 7, 6, 5, 6, 5, 5, 6, 6, 7, 7, 6, 6, 6, 5,
-            6, 5, 6, 6, 6, 7, 7, 6, 6, 5, 5, 6, 6, 6, 6, 7,
-            7, 7, 6, 6, 5, 6, 6, 6, 6, 6, 7, 7, 7, 6, 6, 5,
-            6, 5, 6, 6, 6, 7, 7, 6, 6, 6, 5, 6, 5, 6, 6, 6,
-            7, 6, 6, 6, 5, 6, 5, 6, 6, 6, 7, 7, 7, 6, 6, 5,
-            6, 5, 6, 6, 6, 7, 7, 7, 6, 6, 5, 6, 5, 6, 6, 6,
-        ];
-        const MAIDEN_SLOT: usize = 15;
-        let step = self.sprite_slot_view(MAIDEN_SLOT).e();
-        let frames = FRAMES_BY_ANGLE[usize::from(step & 0x7f)];
-        // Position of the render cost within its frame count, by the cycle
-        // estimate fitted over the same passes: ceil((est + 15000) / 13500).
-        let position = (f64::from(self.last_poly_work.estimated_65816_cycles()) + 15_000.0) / 13_500.0
-            - f64::from(frames - 1);
-        let heavy_step = self.lag_free_last_main_master >= 150_000;
-        if heavy_step && position < 0.2 { frames - 1 } else { frames }
-    }
-
     pub(super) fn zelda_run_poly_loop(&mut self) {
         if self.lag_free_native_poly_thread() {
             self.lag_free_poly_thread_leading_phase();
@@ -937,17 +857,12 @@ impl ZeldaState {
                             let cost = (i64::from(self.last_poly_work.estimated_65816_cycles())
                                 + setup)
                                 .max(1);
-                            if self.lag_free {
-                                self.lag_free_crystal_dialogue_frames()
-                            } else {
-                                ((cost + budget - 1) / budget).clamp(1, 16) as u8
-                            }
+                            ((cost + budget - 1) / budget).clamp(1, 16) as u8
                         } else {
                             (scanlines + DUNGEON_POLY_THREAD_SETUP_SCANLINES)
                                 .div_ceil(DUNGEON_POLY_THREAD_SCANLINES_PER_HOST)
                                 .clamp(1, 16) as u8
                         };
-                        let slices = slices + self.lag_free_crystal_cutscene_extra_slice(frame.main_module);
                         self.poly_dungeon_current_frame_slices = slices;
                         slices - 1
                     } else if triforce_room_poly_thread {
@@ -994,12 +909,6 @@ impl ZeldaState {
                             self.last_poly_work,
                         );
                     }
-                }
-                // Lag-free, the previous iteration's lag frames already ran
-                // slices of the frame in flight.
-                if self.lag_free && self.poly_job_in_flight {
-                    let credit = std::mem::take(&mut self.lag_free_thread_credit);
-                    self.poly_job_hold_frames = self.poly_job_hold_frames.saturating_sub(credit);
                 }
                 if self.poly_job_hold_frames != 0 {
                     self.poly_job_hold_frames -= 1;
