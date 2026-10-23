@@ -19,7 +19,7 @@ fn overworld_upload_command_hands_off_at_the_source_port_bus_access() {
     };
     for (entry, access) in [(CpuRasterPosition::new(31, 808), CpuRasterPosition::new(31, 832)),
         (CpuRasterPosition::new(178, 870), CpuRasterPosition::new(178, 894))] {
-        let make_run = || RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+        let make_run = || RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
             &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
         let mut source = make_run();
         assert_eq!(source.step().master_cycles, 30);
@@ -51,7 +51,7 @@ fn random_routine_work_matches_source_instructions_without_pricing_its_caller() 
             waiting: false,
             ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
         };
-        let mut run = RomCpuTimingRun::new(&rom, &state.ram, &[0; 0x2000],
+        let mut run = RomCpuTimingRun::new(&rom, &state.wram_image(), &[0; 0x2000],
             &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
         let mut source_cycles = 0;
         for (pc, cycles) in [(0x0d_ba71, 30), (0x0d_ba74, 30), (0x0d_ba77, 24),
@@ -197,7 +197,7 @@ fn native_main_wait_preserves_rom_nmi_phase_across_raster_boundaries() {
         for even in [false, true] {
             for bus in [CpuBusWorkload::default(), CpuBusWorkload::with_hdma_stall(42),
                 CpuBusWorkload::with_dynamic_hdma()] {
-                let make_run = || RomCpuTimingRun::new(&rom, &state.ram, &[0; 0x2000],
+                let make_run = || RomCpuTimingRun::new(&rom, &state.wram_image(), &[0; 0x2000],
                     &snes::PpuState::default(), &dma, [0; 4], checkpoint).unwrap();
                 let mut expected = make_run();
                 let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
@@ -314,7 +314,7 @@ fn partial_scroll_clear_preserves_the_roms_descending_store_boundary() {
     }
     assert!(!state.finish_native_scroll_copy());
     assert!(state.native_scroll_copy_cursor.is_none());
-    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(*state.wram_image(), *atomic.wram_image());
     assert_eq!(state.game_state, atomic.game_state);
 }
 
@@ -473,7 +473,7 @@ fn interactive_cleanup_type_clear_preserves_completed_pickup_test() {
         );
         state.ancilla_interactive_cleanup_at_type_clear(slot);
         assert_eq!(state.game_state, atomic.game_state);
-        assert_eq!(state.ram, atomic.ram);
+        assert_eq!(*state.wram_image(), *atomic.wram_image());
     }
 }
 
@@ -854,7 +854,7 @@ fn run4799_and_run4819_terminal_preflight_is_failure_atomic() {
         let scheduler_before = state.game_execution_scheduler;
         let suffix_before = state.pending_main_loop_common_suffix;
         let game_before = state.game_state.clone();
-        let ram_before = state.ram.clone();
+        let ram_before = state.wram_image().into_owned();
         let sidecars_before = (
             state.original_timing_nmi_publication_pending,
             state.original_timing_pending_nmi_update_gate,
@@ -878,7 +878,7 @@ fn run4799_and_run4819_terminal_preflight_is_failure_atomic() {
             "{label}"
         );
         assert_eq!(state.game_state, game_before, "{label}");
-        assert_eq!(state.ram, ram_before, "{label}");
+        assert_eq!(*state.wram_image(), ram_before, "{label}");
         assert_eq!(
             (
                 state.original_timing_nmi_publication_pending,
@@ -1340,7 +1340,7 @@ fn active_cucco_x_checkpoint_resumes_without_replaying_movement() {
     resumed.complete_active_cucco_after_x(1, 0);
     resumed.sprite_main_cpu_boundary = None;
 
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state, atomic.game_state);
 }
 
@@ -1403,7 +1403,7 @@ fn active_cucco_y_subpixel_checkpoint_resumes_without_replaying_movement() {
     resumed.complete_active_cucco_after_y_subpixel(5, 0, y_low, y_high);
     resumed.sprite_main_cpu_boundary = None;
 
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state, atomic.game_state);
 }
 
@@ -1466,7 +1466,7 @@ fn master_sword_light_beam_move_xy_checkpoints_resume_without_replaying_stores()
         assert_eq!(observed, checkpoint);
         resumed.complete_master_sword_light_beam_movement(2, checkpoint, continuation);
         resumed.sprite_main_cpu_boundary = None;
-        assert_eq!(resumed.ram, atomic.ram, "checkpoint {checkpoint:?}");
+        assert_eq!(*resumed.wram_image(), *atomic.wram_image(), "checkpoint {checkpoint:?}");
         assert_eq!(
             resumed.game_state, atomic.game_state,
             "checkpoint {checkpoint:?}"
@@ -1530,7 +1530,7 @@ fn master_sword_replacement_spawn_resumes_after_the_exact_helper_prefix() {
     }
     resumed.sprite_main_cpu_boundary = None;
 
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state, atomic.game_state);
 }
 
@@ -1969,7 +1969,7 @@ fn repeated_idle_continued_host_retains_the_one_source_common_suffix() {
 
     assert_eq!(state.game_state.frame.frame_counter, frame_counter);
     assert_eq!(
-        state.ram[OAM_BUF], 0x6a,
+        state.read_wram_byte(OAM_BUF), 0x6a,
         "CallStackContinued must not replay ZeldaRunGameLoop's ClearOamBuffer prefix",
     );
     assert_eq!(
@@ -2775,7 +2775,7 @@ fn state_recorder_replays_patch_bytes_and_can_stop() {
 
     assert_eq!(state.state_recorder_read_next_replay_state(&mut sr), 0);
     assert_eq!(
-        &state.ram[0x10020..0x10025],
+        &state.wram_image()[0x10020..0x10025],
         &[0xaa, 0xbb, 0xcc, 0xdd, 0xee]
     );
     assert!(!sr.replay_mode);
@@ -2867,7 +2867,7 @@ fn zelda_run_frame_sanitizes_inputs_and_records_features() {
     assert!(!was_replay);
     assert_eq!(state.frame_ctr_dbg, 1);
     assert_eq!(state.state_recorder.last_inputs, 0x00a1);
-    assert_eq!(state.ram[RAM_BUGS_FIXED], BUGFIX_LATEST);
+    assert_eq!(state.read_wram_byte(RAM_BUGS_FIXED), BUGFIX_LATEST);
     assert_eq!(
         state.debug_compatibility_ram_u32(ENHANCED_FEATURES0),
         0x1000
@@ -2914,10 +2914,10 @@ fn perform_dash_sets_start_dash_state_and_tagalong_timeout() {
     assert_eq!(state.game_state.player.follower_link.button_mask_b_y(), 0);
     assert_eq!(state.game_state.player.follower_link.state_bits(), 0);
     assert_eq!(state.game_state.player.follower_link.item_in_hand(), 0);
-    assert_eq!(state.ram[PLAYER_DEFENSE_FLAGS], 0);
+    assert_eq!(state.read_wram_byte(PLAYER_DEFENSE_FLAGS), 0);
     assert_eq!(link_test_byte(&state, LINK_MOVING_AGAINST_DIAG_TILE), 0);
     assert_eq!(state.game_state.player.follower_link.speed_setting(), 0);
-    assert_eq!(read_le_u16(&state.ram, TIMER_TAGALONG_REACQUIRE), 64);
+    assert_eq!(read_le_u16(&state.wram_image(), TIMER_TAGALONG_REACQUIRE), 64);
 }
 
 #[test]
@@ -2992,7 +2992,7 @@ fn link_velocity_coordinate_boundary_resumes_to_the_atomic_c_result() {
     assert_eq!(link_test_byte(&resumed, LINK_Y_VEL), 0);
     resumed.complete_link_move_position_after_coordinates(position_return);
 
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
 }
 
 #[test]
@@ -3085,7 +3085,7 @@ fn cape_item_activation_and_no_magic_prompt_match_c_state() {
     state.link_item_cape();
 
     assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 1);
-    assert_eq!(state.ram[CAPE_DECREMENT_COUNTER], 8);
+    assert_eq!(state.read_wram_byte(CAPE_DECREMENT_COUNTER), 8);
     assert_eq!(link_test_byte(&state, LINK_BUNNY_TRANSFORM_TIMER), 20);
     assert_eq!(state.game_state.system_signals.sound_effect_1() & 0x3f, 20);
     assert_eq!(
@@ -3225,8 +3225,8 @@ fn hookshot_item_and_timeout_state_match_core_state() {
         state.game_state.messaging.runtime.game_over_letter_cursor(),
         4
     );
-    assert_eq!(state.ram[ANCILLA_X_VEL + 4], 0xc0);
-    assert_eq!(read_le_u16(&state.ram, ANCILLA_X_LO + 4), 0x00fc);
+    assert_eq!(state.read_wram_byte(ANCILLA_X_VEL + 4), 0xc0);
+    assert_eq!(read_le_u16(&state.wram_image(), ANCILLA_X_LO + 4), 0x00fc);
 
     state.ancilla_slot_view_mut(4).set_ancilla_type(0);
     set_link_test_byte(&mut state, LINK_DELAY_TIMER_SPIN_ATTACK, 0);
@@ -3263,7 +3263,7 @@ fn cane_of_byrna_start_and_finish_match_timer_state() {
     state.ram[PLAYER_HANDLER_TIMER] = 2;
     state.link_item_cane_of_byrna();
 
-    assert_eq!(state.ram[PLAYER_HANDLER_TIMER], 0);
+    assert_eq!(state.read_wram_byte(PLAYER_HANDLER_TIMER), 0);
     assert_eq!(
         state.game_state.player.follower_link.button_mask_b_y() & 0x40,
         0
@@ -3286,7 +3286,7 @@ fn zapped_state_advances_timer_and_finishes_on_eighth_pulse() {
 
     state.link_state_zapped();
 
-    assert_eq!(state.ram[PLAYER_HANDLER_TIMER], 0);
+    assert_eq!(state.read_wram_byte(PLAYER_HANDLER_TIMER), 0);
     assert_eq!(state.game_state.player.follower_link.handler_state(), 0);
     assert_eq!(link_test_byte(&state, LINK_DISABLE_SPRITE_DAMAGE), 0);
     assert_eq!(link_test_byte(&state, LINK_ELECTROCUTE_ON_TOUCH), 0);
@@ -3592,7 +3592,7 @@ fn boulder_movement_checkpoints_resume_to_the_atomic_body() {
             panic!("Boulder movement boundary did not bind its continuation");
         };
         state.complete_boulder_movement(12, checkpoint, continuation);
-        assert_eq!(state.ram, atomic.ram, "{checkpoint:?}");
+        assert_eq!(*state.wram_image(), *atomic.wram_image(), "{checkpoint:?}");
         assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
     }
 }
@@ -3620,7 +3620,7 @@ fn initialize_prep_move_y_checkpoints_resume_to_the_atomic_body() {
             state.sprite_module_initialize_properties(6);
             let continuation = state.sprite_prep_move_y_through_checkpoint(6, checkpoint);
             state.sprite_prep_move_y_from_checkpoint(6, checkpoint, continuation);
-            assert_eq!(state.ram, atomic.ram, "{sprite_type:#x} {checkpoint:?}");
+            assert_eq!(*state.wram_image(), *atomic.wram_image(), "{sprite_type:#x} {checkpoint:?}");
             assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
         }
     }
@@ -3648,7 +3648,7 @@ fn laser_eye_draw_prologue_checkpoint_resumes_to_the_atomic_body() {
         atomic.sprite_95_laser_eye_left(8);
         assert!(state.sprite_95_laser_eye_until_draw_prologue(8));
         state.sprite_95_laser_eye_after_draw_prologue(8);
-        assert_eq!(state.ram, atomic.ram, "{head_direction} {ai_state}");
+        assert_eq!(*state.wram_image(), *atomic.wram_image(), "{head_direction} {ai_state}");
         assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
     }
 }
@@ -3694,7 +3694,7 @@ fn zora_fireball_movement_checkpoints_resume_to_the_atomic_body() {
             panic!("Zora fireball movement boundary did not bind its continuation");
         };
         state.complete_zora_fireball_movement(13, checkpoint, continuation);
-        assert_eq!(state.ram, atomic.ram, "{checkpoint:?}");
+        assert_eq!(*state.wram_image(), *atomic.wram_image(), "{checkpoint:?}");
         assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
     }
 }
@@ -3726,7 +3726,7 @@ fn helmasaur_hard_hat_tile_collision_checkpoints_resume_to_the_atomic_body() {
             state.begin_helmasaur_hard_hat_tile_collision_checkpoint(0, stage);
             state.resume_helmasaur_hard_hat_tile_collision(0, stage);
             assert_eq!(
-                state.ram, atomic.ram,
+                *state.wram_image(), atomic.ram,
                 "{x_velocity:#x}/{y_velocity:#x} {stage:?}"
             );
             assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
@@ -3767,7 +3767,7 @@ fn sidenexx_neck_target_checkpoints_resume_to_the_atomic_loop() {
         let continuation = state.begin_sidenexx_neck_target_checkpoint(1, step);
         assert_eq!(state.sprite_slot_view(1).ai_state(), 2);
         state.resume_sidenexx_neck_target(1, step, continuation);
-        assert_eq!(state.ram, atomic.ram, "step {step}");
+        assert_eq!(*state.wram_image(), *atomic.wram_image(), "step {step}");
         assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
     }
     for step in [0u8, 27, 54, 55] {
@@ -3781,7 +3781,7 @@ fn sidenexx_neck_target_checkpoints_resume_to_the_atomic_loop() {
             if step == 55 { 1 } else { 2 }
         );
         state.resume_sidenexx_neck_target(1, step, continuation);
-        assert_eq!(state.ram, atomic.ram, "reached step {step}");
+        assert_eq!(*state.wram_image(), *atomic.wram_image(), "reached step {step}");
         assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
     }
 }
@@ -3867,7 +3867,7 @@ fn absorbable_horizontal_lookup_keeps_movement_and_defers_bounce_suffix() {
     state.sprite_main_cpu_boundary = None;
     state.sprite_absorbable_after_horizontal_lookup(0);
     assert_eq!(state.game_state, atomic.game_state);
-    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(*state.wram_image(), *atomic.wram_image());
 }
 
 #[test]
@@ -3900,7 +3900,7 @@ fn absorbable_vertical_lookup_keeps_movement_and_defers_bounce_suffix() {
     state.sprite_main_cpu_boundary = None;
     state.sprite_absorbable_after_vertical_lookup(0);
     assert_eq!(state.game_state, atomic.game_state);
-    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(*state.wram_image(), *atomic.wram_image());
 }
 
 #[test]
@@ -3940,7 +3940,7 @@ fn absorbable_loaded_attribute_keeps_movement_and_defers_bounce_suffix() {
     state.sprite_main_cpu_boundary = None;
     state.sprite_absorbable_after_vertical_attribute_loaded(0);
     assert_eq!(state.game_state, atomic.game_state);
-    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(*state.wram_image(), *atomic.wram_image());
 }
 
 #[test]
@@ -4268,7 +4268,7 @@ fn cached_antfairy_body_checkpoint_publishes_then_resumes_without_reincrementing
 
     resumed.complete_cached_sprite_main_after_interrupted_slot(boundary, &live_slot_backup);
 
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state.sprites, atomic.game_state.sprites);
 }
 
@@ -4313,7 +4313,7 @@ fn cached_coordinates_precede_allocation_and_retain_the_displaced_slot() {
         panic!("coordinate return lost the cached sprite caller");
     };
     resumed.complete_cached_sprite_main_after_interrupted_slot(boundary, &live_slot_backup);
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state.sprites, atomic.game_state.sprites);
 }
 
@@ -4352,7 +4352,7 @@ fn cached_restore_keeps_unrestored_live_fields_and_the_completed_body() {
     assert_eq!(resumed.game_state.oam, atomic.game_state.oam,
         "the cached body and allocation have already completed");
     for address in &CACHED_SPRITE_LIVE_FIELDS[18..] {
-        assert_eq!(resumed.ram[address + slot], base.ram[address + slot]);
+        assert_eq!(resumed.read_wram_byte(address + slot), base.ram[address + slot]);
     }
     let Some(GameWorkContinuation::FinishDungeonCachedSpriteMain {
         boundary, live_slot_backup, ..
@@ -4360,7 +4360,7 @@ fn cached_restore_keeps_unrestored_live_fields_and_the_completed_body() {
         panic!("reverse restore must retain its native live-slot backup");
     };
     resumed.complete_cached_sprite_main_after_interrupted_slot(boundary, &live_slot_backup);
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state.sprites, atomic.game_state.sprites);
 }
 
@@ -4412,8 +4412,8 @@ fn cached_guard_retains_the_swap_and_pose_until_shadow_and_restore_return() {
     assert_eq!(resumed.sprite_slot_view(2).flags2(), 8);
     assert_eq!(resumed.sprite_slot_view(2).graphics(), 8);
     let shadow = resumed.game_state.oam.current_pointer_usize() + 8 * 4;
-    assert_eq!(resumed.ram[shadow + 2], 0xcc, "shadow must remain unpublished");
-    assert_eq!(atomic.ram[shadow + 2], 0x6c);
+    assert_eq!(resumed.read_wram_byte(shadow + 2), 0xcc, "shadow must remain unpublished");
+    assert_eq!(atomic.read_wram_byte(shadow + 2), 0x6c);
     let Some(GameWorkContinuation::FinishDungeonCachedSpriteMain {
         boundary, live_slot_backup, ..
     }) = resumed.game_execution_scheduler.current_work() else {
@@ -4422,7 +4422,7 @@ fn cached_guard_retains_the_swap_and_pose_until_shadow_and_restore_return() {
     resumed.complete_cached_sprite_main_after_interrupted_slot(boundary, &live_slot_backup);
     assert_eq!(resumed.sprite_slot_view(2).sprite_type(), 0x4b);
     assert_eq!(resumed.sprite_slot_view(2).flags2(), 2);
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state.sprites, atomic.game_state.sprites);
 }
 

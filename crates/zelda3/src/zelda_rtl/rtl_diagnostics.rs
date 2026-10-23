@@ -88,7 +88,7 @@ impl ZeldaState {
                 return;
             }
         }
-        let mut bad = self.game_state.report_incoherent_with_ram(&self.ram);
+        let mut bad = self.game_state.report_incoherent_with_ram(&self.wram_image());
         // Some states legitimately diverge mid-frame (gated/mode-reuse projections, the
         // cached-sprite shadow). Pass a comma-separated allow-list in
         // ZELDA3_ASSERT_COHERENT_IGNORE to suppress that baseline so `=panic` aborts only

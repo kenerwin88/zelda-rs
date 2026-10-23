@@ -1456,7 +1456,7 @@ fn dungeon_dialogue_render_entry_decodes_host_link_obj_cache_only() {
         entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
         entry_link_handler_state: 0,
         animated_tile: None,
-        link_operands: PreMainLinkDmaOperands::capture(&state.ram),
+        link_operands: PreMainLinkDmaOperands::capture(&state.wram_image()),
         obj_vram: state.ppu.vram.clone(),
         oam_shadow: vec![0; state.ppu.oam.len() * 2],
     });
@@ -1582,7 +1582,7 @@ fn effective_presented_dma_advances_only_written_vram_words_and_obj_cache() {
         LinkDmaSourceSlot::HeadTop.ram_address(),
         0xcd80,
     );
-    let completed_link_sources = LinkDmaSources::load_from_ram(&state.ram);
+    let completed_link_sources = LinkDmaSources::load_from_ram(&state.wram_image());
     state.record_completed_link_obj_dma_for_display_boundary(
         completed_link_sources,
         GraphicsDmaGeneration::LiveAfterMain,
@@ -1807,7 +1807,7 @@ fn host_boundary_obj_cache_retains_both_hardware_name_pages() {
         entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
         entry_link_handler_state: 0,
         animated_tile: None,
-        link_operands: PreMainLinkDmaOperands::capture(&state.ram),
+        link_operands: PreMainLinkDmaOperands::capture(&state.wram_image()),
         obj_vram: host_boundary_vram,
         oam_shadow: vec![0; state.ppu.oam.len() * 2],
     });
@@ -3208,11 +3208,11 @@ fn resumed_big_key_graphics_return_publishes_completed_link_tiles() {
     following.ppu.vram[0x4002] = 0x0f1f;
     following.ppu.vram[0x2000] = 0x5678;
     let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
-    let cpu_ram = state.ram.clone();
+    let cpu_ram = state.wram_image().into_owned();
     state.compose_display_vram(&following, &plan, None);
     assert_eq!(state.ppu.vram[0x4001..0x4003], [0x000f, 0x0f1f]);
     assert_eq!(state.ppu.vram[0x2000], 0x1234, "OBJ completion does not advance BG memory");
-    assert_eq!(state.ram, cpu_ram);
+    assert_eq!(*state.wram_image(), cpu_ram);
     assert_eq!(plan.oam_scanout_source, OamScanoutSource::ComposeLiveAfterNmi);
     assert_eq!(state.next_display_obj_scanout_generation.unwrap().link_obj,
         GraphicsDmaGeneration::LiveAfterMain);
@@ -3784,7 +3784,7 @@ fn brightness_entry_authors_retained_link_pages_from_captured_dma_operands() {
         entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
         entry_link_handler_state: 0,
         animated_tile: None,
-        link_operands: PreMainLinkDmaOperands::capture(&state.ram),
+        link_operands: PreMainLinkDmaOperands::capture(&state.wram_image()),
         obj_vram: state.ppu.vram.clone(),
         oam_shadow: vec![0; state.ppu.oam.len() * 2],
     });
@@ -3953,7 +3953,7 @@ fn room_82_horizontal_state3_boundaries_publish_entry_oam_after_cache_compositio
         entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
         entry_link_handler_state: 0,
         animated_tile: None,
-        link_operands: PreMainLinkDmaOperands::capture(&state.ram),
+        link_operands: PreMainLinkDmaOperands::capture(&state.wram_image()),
         obj_vram: state.ppu.vram.clone(),
         oam_shadow: entry_oam_shadow,
     });
@@ -4032,7 +4032,7 @@ fn room_82_horizontal_quadrant_filter_entry_publishes_host_boundary_oam() {
         entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
         entry_link_handler_state: 0,
         animated_tile: None,
-        link_operands: PreMainLinkDmaOperands::capture(&state.ram),
+        link_operands: PreMainLinkDmaOperands::capture(&state.wram_image()),
         obj_vram: state.ppu.vram.clone(),
         oam_shadow: host_boundary_oam,
     });
@@ -4075,7 +4075,7 @@ fn room_82_horizontal_first_scroll_releases_stale_capture_to_host_boundary_oam()
         entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
         entry_link_handler_state: 0,
         animated_tile: None,
-        link_operands: PreMainLinkDmaOperands::capture(&state.ram),
+        link_operands: PreMainLinkDmaOperands::capture(&state.wram_image()),
         obj_vram: state.ppu.vram.clone(),
         oam_shadow: host_boundary_oam,
     });
@@ -4125,7 +4125,7 @@ fn room_82_horizontal_first_scroll_host_boundary_survives_final_publication() {
         entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
         entry_link_handler_state: 0,
         animated_tile: None,
-        link_operands: PreMainLinkDmaOperands::capture(&state.ram),
+        link_operands: PreMainLinkDmaOperands::capture(&state.wram_image()),
         obj_vram: state.ppu.vram.clone(),
         oam_shadow: host_boundary_oam,
     });
@@ -4221,7 +4221,7 @@ fn link_cache_changes_only_from_a_completed_dma_receipt() {
 fn ordinary_trailing_link_dma_does_not_reenter_the_captured_display_owner() {
     let mut state = ZeldaState::new();
     state.capture_display_snapshot();
-    let mut ram = state.ram.clone();
+    let mut ram = state.wram_image().into_owned();
     write_le_u16(&mut ram, LinkDmaSourceSlot::HeadTop.ram_address(), 0xcd80);
     let completed_sources = LinkDmaSources::load_from_ram(&ram);
 
@@ -4277,7 +4277,7 @@ fn main_phase_change_keeps_its_completed_leading_animated_upload() {
             entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
             entry_link_handler_state: 0,
             animated_tile: None,
-            link_operands: PreMainLinkDmaOperands::capture(&state.ram),
+            link_operands: PreMainLinkDmaOperands::capture(&state.wram_image()),
             obj_vram: state.ppu.vram.clone(),
             oam_shadow: vec![0; state.ppu.oam.len() * 2],
         });
@@ -4819,7 +4819,7 @@ fn queued_published_oam_source_uses_its_host_boundary_payload() {
         entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
         entry_link_handler_state: 0,
         animated_tile: None,
-        link_operands: PreMainLinkDmaOperands::capture(&state.ram),
+        link_operands: PreMainLinkDmaOperands::capture(&state.wram_image()),
         obj_vram: state.ppu.vram.clone(),
         oam_shadow: vec![0x22; state.ppu.oam.len() * 2],
     });

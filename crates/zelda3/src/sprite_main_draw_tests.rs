@@ -34,7 +34,7 @@ fn paused_rat_animation_and_double_return_cost_match_source() {
                 emulation: false, waiting: false,
                 stack_address: 0x01fd, stack_bytes: &[0xfe, 0xff],
             };
-            let mut source = RomCpuTimingRun::new(&rom, &native.ram, &[0; 0x2000],
+            let mut source = RomCpuTimingRun::new(&rom, &native.wram_image(), &[0; 0x2000],
                 &native.ppu, &native.dma, [0; 4], checkpoint).unwrap();
             let mut expected = 0u64;
             for _ in 0..1000 {
@@ -47,7 +47,7 @@ fn paused_rat_animation_and_double_return_cost_match_source() {
             assert_eq!(crate::cycle_ledger::master() - before, expected,
                 "animation={animation} state={state} submodule={submodule} modal={modal_pause}");
             for address in (0x800..0xaa0).chain([0xdc2, 0xf52]) {
-                assert_eq!(native.ram[address], source.ram_byte(address),
+                assert_eq!(native.read_wram_byte(address), source.ram_byte(address),
                     "animation={animation} address={address:04x}");
             }
         }
@@ -98,12 +98,12 @@ fn cucco_draw_from_entry_matches_source_at_each_retained_instruction() {
                     emulation: false, waiting: false,
                     stack_address: 0x01fd, stack_bytes: &[0x35, 0x80],
                 };
-                let mut source = RomCpuTimingRun::new(&rom, &native.ram, &[0; 0x2000],
+                let mut source = RomCpuTimingRun::new(&rom, &native.wram_image(), &[0; 0x2000],
                     &native.ppu, &native.dma, [0; 4], checkpoint).unwrap();
-                let initial_ram = native.ram.clone();
+                let initial_ram = native.wram_image().into_owned();
                 let before = crate::cycle_ledger::master();
                 let mut work = native.begin_cucco_draw(2);
-                assert_eq!(native.ram, initial_ram, "admission cannot publish facing or prep");
+                assert_eq!(*native.wram_image(), initial_ram, "admission cannot publish facing or prep");
                 assert_eq!(crate::cycle_ledger::master(), before, "admission cannot consume unbudgeted work");
                 let mut cycles = 0u64;
                 let mut steps = 0;
@@ -124,7 +124,7 @@ fn cucco_draw_from_entry_matches_source_at_each_retained_instruction() {
                         .chain([0xdd2, 0xf02, 0xf52, 0xfa8, 0xfa9, 0xbc4, 0xbc5, 0x1ef80])
                     {
                         if flags_waiting && address == 0xf52 { continue; }
-                        assert_eq!(native.ram[address], source.ram_byte(address),
+                        assert_eq!(native.read_wram_byte(address), source.ram_byte(address),
                             "case={cases} PC={pc:06x} address={address:05x}");
                     }
                     match pc {
@@ -189,14 +189,14 @@ fn cucco_draw_retains_caller_across_each_native_clock_boundary() {
         assert!(boundaries < 150);
     }
     assert!(boundaries > 40);
-    assert_eq!(&native.ram[0x800..0xaa0], &expected_oam);
+    assert_eq!(&native.wram_image()[0x800..0xaa0], &expected_oam);
     let retired = crate::cycle_ledger::master();
     assert_eq!(native.advance_cucco_draw(&mut work, None), CpuWorkAdvance::Complete);
     assert_eq!(crate::cycle_ledger::master(), retired, "a returned callee has no work left");
     native.complete_cucco_draw(work);
     assert_eq!(native.sprite_slot_view(2).sprite_type(), 0x3d);
     assert_eq!(native.sprite_slot_view(2).delay_main(), 48);
-    assert_eq!(&native.ram[0x800..0xaa0], &expected_oam, "caller return must not redraw");
+    assert_eq!(&native.wram_image()[0x800..0xaa0], &expected_oam, "caller return must not redraw");
     assert!(native.game_state.display.nmi_update_is_latched(), "Cucco does not own the main caller latch");
 }
 
@@ -272,7 +272,7 @@ fn cucco_native_budget_suspends_sprite_main_and_preserves_module09_return() {
         state.complete_post_trailing_nmi_continuation(
             GameWorkContinuation::FinishSpriteMain { boundary, caller: saved_caller },
             0, false, false);
-        assert_eq!(state.ram, atomic.ram, "remaining={remaining}");
+        assert_eq!(*state.wram_image(), *atomic.wram_image(), "remaining={remaining}");
         assert_eq!(state.game_state, atomic.game_state, "remaining={remaining}");
         assert_eq!(state.sprite_slot_view(3).delay_main(), 23, "upper slots must not run again");
         assert!(state.active_module09_sprite_main_return.is_none());
@@ -295,12 +295,12 @@ fn shadow_draw_extended_oam_tail_resumes_after_ordinary_entry() {
 
     let pending = split.sprite_draw_shadow_custom_before_extended(2, &mut split_info, 10)
         .expect("visible shadow has an extended-OAM tail");
-    assert_eq!(&split.ram[OAM_BUF..OAM_BUF + 4], &[0x23, 0x2a, 0x6c, 0x28]);
+    assert_eq!(&split.wram_image()[OAM_BUF..OAM_BUF + 4], &[0x23, 0x2a, 0x6c, 0x28]);
     assert_eq!(split.game_state.oam.extended_byte(0), 0);
     split.finish_shadow_extended_oam_write(pending);
 
     atomic.sprite_draw_shadow_custom(2, &mut atomic_info, 10);
-    assert_eq!(split.ram, atomic.ram);
+    assert_eq!(*split.wram_image(), *atomic.wram_image());
     assert_eq!(split.game_state, atomic.game_state);
     assert_eq!(split_info.y, atomic_info.y);
     assert_eq!(split.game_state.oam.extended_byte(0), 3);
@@ -636,8 +636,8 @@ fn witch_accept_shroom_sets_room_word_powder_bit() {
     s.witch_accept_shroom(k);
 
     assert_eq!(s.game_state.inventory.items.mushroom(), 0);
-    assert_eq!(read_le_u16(&s.ram, SAVE_DUNG_INFO + 0x109 * 2), 0x0082);
-    assert_eq!(s.ram[SAVE_DUNG_INFO + 0x109], 0);
+    assert_eq!(s.saved_room_flags(0x109), 0x0082);
+    assert_eq!(s.read_wram_byte(SAVE_DUNG_INFO + 0x109), 0);
 }
 
 #[test]

@@ -53,7 +53,7 @@ fn large_draw_retains_coordinate_prep_and_kill_self_at_each_source_instruction()
                                 emulation: false, waiting: false,
                                 stack_address: 0x01fd, stack_bytes: &[0x35, 0x80],
                             };
-                            let mut source = RomCpuTimingRun::new(&rom, &native.ram, &[0; 0x2000],
+                            let mut source = RomCpuTimingRun::new(&rom, &native.wram_image(), &[0; 0x2000],
                                 &native.ppu, &native.dma, [0; 4], checkpoint).unwrap();
                             let mut work = native.begin_single_large_draw(k);
                             let mut steps = 0;
@@ -75,7 +75,7 @@ fn large_draw_retains_coordinate_prep_and_kill_self_at_each_source_instruction()
                                     address, 0xdd0 + k, 0xf00 + k, 0xfa8, 0xfa9,
                                     0xbc0 + k, 0xbc0 + k * 2, 0xbc1 + k * 2,
                                 ]) {
-                                    assert_eq!(native.ram[address], source.ram_byte(address),
+                                    assert_eq!(native.read_wram_byte(address), source.ram_byte(address),
                                         "case={cases} PC={pc:06x} address={address:05x}");
                                 }
                                 // Native inputs changed after their source loads must not
@@ -150,12 +150,12 @@ fn single_large_draw_retains_source_order_table_reads_and_shadow_return() {
                         emulation: false, waiting: false,
                         stack_address: 0x01fd, stack_bytes: &[0x35, 0x80],
                     };
-                    let mut run = RomCpuTimingRun::new(&rom, &native.ram, &[0; 0x2000],
+                    let mut run = RomCpuTimingRun::new(&rom, &native.wram_image(), &[0; 0x2000],
                         &native.ppu, &native.dma, [0; 4], checkpoint).unwrap();
                     run.enable_cpu_write_trace();
                     let info = PrepOamCoordsRet { x, y, r4: 0, flags: 0xb7 };
                     let mut work = SingleLargeDrawContinuation::new(k, &info);
-                    let mut expected = native.ram.clone();
+                    let mut expected = native.wram_image().into_owned();
                     while !run.is_complete() {
                         let pc = run.pc();
                         if work.shadow.is_none() {
@@ -179,7 +179,7 @@ fn single_large_draw_retains_source_order_table_reads_and_shadow_return() {
                         assert_eq!(native.retire_single_large_draw_instruction(&mut work), Some(source_cycles),
                             "case {cases}, PC={pc:06x}");
                         assert_eq!(crate::cycle_ledger::master() - before, u64::from(source_cycles));
-                        assert_eq!(&native.ram[0x800..0xaa0], &expected[0x800..0xaa0],
+                        assert_eq!(&native.wram_image()[0x800..0xaa0], &expected[0x800..0xaa0],
                             "case {cases}, PC={pc:06x}: publications");
                         assert_eq!(work.y, u16::from_le_bytes([expected[2], expected[3]]));
                         // Changes after source loads must not change the saved
@@ -257,12 +257,12 @@ fn shadow_work_and_split_publication_match_rom_branches() {
                             stack_address: if far_entry { 0x01fc } else { 0x01fd },
                             stack_bytes: if far_entry { &[0x35, 0x80, 0] } else { &[0x35, 0x80] },
                         };
-                        let mut run = RomCpuTimingRun::new(&rom, &initial.ram, &[0; 0x2000],
+                        let mut run = RomCpuTimingRun::new(&rom, &initial.wram_image(), &[0; 0x2000],
                             &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint)
                             .unwrap();
                         run.enable_cpu_write_trace();
-                        let mut expected = initial.ram.clone();
-                        let mut work_ram = initial.ram.clone();
+                        let mut expected = initial.wram_image().into_owned();
+                        let mut work_ram = initial.wram_image().into_owned();
                         let mut work = ShadowWork::new(offset);
                         let mut boundary = None;
                         let mut cycles = 0u64;
@@ -319,7 +319,7 @@ fn shadow_work_and_split_publication_match_rom_branches() {
                                 let (prefix_cycles, prefix_oam) = boundary.as_ref().unwrap();
                                 assert_eq!(crate::cycle_ledger::master() - before, *prefix_cycles,
                                     "case {cases}: prefix");
-                                assert_eq!(&native.ram[0x800..0xaa0], prefix_oam, "case {cases}: prefix OAM");
+                                assert_eq!(&native.wram_image()[0x800..0xaa0], prefix_oam, "case {cases}: prefix OAM");
                                 // NMI/caller changes must not select a different
                                 // suffix after the ordinary entry was published.
                                 native.sprite_slot_view_mut(slot).set_flags3(if small { 0 } else { 0x20 });
@@ -328,7 +328,7 @@ fn shadow_work_and_split_publication_match_rom_branches() {
                         }
                         assert_eq!(crate::cycle_ledger::master() - before, cycles,
                             "case {cases}: far={far_entry} offset={offset} pause={pause} state={sprite_state} small={small} y={screen_y:04x}");
-                        assert_eq!(&native.ram[0x800..0xaa0], &expected[0x800..0xaa0], "case {cases}: final OAM");
+                        assert_eq!(&native.wram_image()[0x800..0xaa0], &expected[0x800..0xaa0], "case {cases}: final OAM");
                         assert_eq!(info.y, u16::from_le_bytes([expected[2], expected[3]]), "case {cases}: Y");
                         cases += 1;
                     }
@@ -362,7 +362,7 @@ fn zero_hit_timer_clear_does_not_publish_priority_early() {
         staged.sprite_slot_view_mut(0).set_object_priority(0);
         staged.sprite_timers_and_oam_after_hit_through_timer_decrements(0);
         staged.sprite_timers_and_oam_after_timer_decrements(0);
-        assert_eq!(staged.ram, atomic.ram);
+        assert_eq!(staged.ram, *atomic.wram_image());
     }
 }
 
@@ -393,7 +393,7 @@ fn main_timer_boundary_leaves_auxiliary_countdowns_pending() {
         staged.sprite_timers_and_oam_after_main_and_aux1_through_primary_timer_decrements(0);
         staged.sprite_timers_and_oam_after_primary_through_timer_decrements(0);
         staged.sprite_timers_and_oam_after_timer_decrements(0);
-        assert_eq!(staged.ram, atomic.ram);
+        assert_eq!(staged.ram, *atomic.wram_image());
     }
 }
 
@@ -834,7 +834,7 @@ fn mirror_portal_reset_preserves_coordinates_until_the_spawn_returns() {
         resumed.sprite_resume_mirror_portal_reset(15, completed_stores);
         atomic.sprite_initialize_mirror_portal();
         assert_eq!(resumed.game_state, atomic.game_state);
-        assert_eq!(resumed.ram, atomic.ram);
+        assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     }
 }
 
@@ -858,7 +858,7 @@ fn mirror_portal_load_properties_preserves_coordinates_until_the_spawn_returns()
         resumed.sprite_resume_mirror_portal_load_properties(15, completed_stores);
         atomic.sprite_initialize_mirror_portal();
         assert_eq!(resumed.game_state, atomic.game_state);
-        assert_eq!(resumed.ram, atomic.ram);
+        assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     }
 }
 
@@ -1226,7 +1226,7 @@ fn kill_self_publishes_source_pointer_bank_and_cycles() {
                     emulation: false, waiting: false,
                     stack_address: 0x01fd, stack_bytes: &[0xff, 0x7f, 0],
                 };
-                let mut source = RomCpuTimingRun::new(&rom, &native.ram, &[0; 0x2000],
+                let mut source = RomCpuTimingRun::new(&rom, &native.wram_image(), &[0; 0x2000],
                     &native.ppu, &native.dma, [0; 4], checkpoint).unwrap();
                 let mut atomic = native.clone();
                 let mut work = crate::cycle_models::sprite_kill::KillWork::new();
@@ -1249,7 +1249,7 @@ fn kill_self_publishes_source_pointer_bank_and_cycles() {
                         // must leave that change alone; STA must overwrite it
                         // with the retained source load on the following step.
                         if pc == 0x09_f22e && checked == address { continue; }
-                        assert_eq!(native.ram[checked], source.ram_byte(checked),
+                        assert_eq!(native.read_wram_byte(checked), source.ram_byte(checked),
                             "case={cases} PC={pc:06x} block={block:04x} indoors={indoors} deflection={deflection:02x} address={checked:05x}");
                     }
                     if pc == 0x09_f22c {
@@ -1260,7 +1260,7 @@ fn kill_self_publishes_source_pointer_bank_and_cycles() {
                 assert_eq!(native.retire_sprite_kill_instruction(k, &mut work), None);
                 assert_eq!(crate::cycle_ledger::master() - before, cycles, "case={cases}");
                 atomic.sprite_kill_self(k);
-                assert_eq!(native.ram, atomic.ram);
+                assert_eq!(*native.wram_image(), *atomic.wram_image());
                 cases += 1;
             }
         }
@@ -1370,7 +1370,7 @@ fn coordinate_prefix_defers_allocation_and_timer_decrements() {
     assert_eq!(crate::cycle_ledger::master() - start, atomic_cycles);
     assert_eq!(staged.sprite_slot_view(3).delay_main(), 8);
     assert_eq!(staged.sprite_slot_view(3).delay_aux1(), 6);
-    assert_eq!(staged.ram, atomic.ram);
+    assert_eq!(staged.ram, *atomic.wram_image());
     assert_eq!(staged.game_state, atomic.game_state);
 }
 
@@ -1414,7 +1414,7 @@ fn coordinate_prep_preserves_source_scratch_ownership_on_each_bounds_branch() {
                             emulation: false, waiting: false,
                             stack_address: 0x01fd, stack_bytes: &[0xff, 0x7f, 0],
                         };
-                        let mut source = RomCpuTimingRun::new(&rom, &native.ram, &[0; 0x2000],
+                        let mut source = RomCpuTimingRun::new(&rom, &native.wram_image(), &[0; 0x2000],
                             &native.ppu, &native.dma, [0; 4], checkpoint).unwrap();
                         let mut cycles = 0u64;
                         let mut instructions = 0;
@@ -1431,7 +1431,7 @@ fn coordinate_prep_preserves_source_scratch_ownership_on_each_bounds_branch() {
                         assert_eq!((ret.x, ret.y), (word(0), word(2)),
                             "x={x:04x} y={y:04x} scratch={scratch:04x} height={height} flags4={flags4:02x}");
                         for address in [0, 1, 2, 3, 4, 5, 0x0fa8, 0x0fa9, 0x0f00 + k] {
-                            assert_eq!(native.ram[address], source.ram_byte(address),
+                            assert_eq!(native.read_wram_byte(address), source.ram_byte(address),
                                 "publication {address:04x} case={cases}");
                         }
                         assert_eq!(ret.flags, source.ram_byte(5));

@@ -184,7 +184,7 @@ fn whole_module08_overlay_dispatch_and_publication_match_original_without_native
         machine.cpu.dp=cpu.d;machine.cpu.db=cpu.db;machine.cpu.k=cpu.bank;
         machine.cpu.pc=cpu.pc;machine.cpu.sp=cpu.sp;machine.cpu.e=false;machine.cpu.unpack_flags(cpu.p);
         let mut ram=machine.ram.clone();
-        let mut published=state.clone();published.ram.copy_from_slice(&ram);published.sync_native_game_state_from_ram();
+        let mut published=state.clone();published.import_wram_image(&ram);published.sync_native_game_state_from_ram();
         let clock=CpuMasterTimeline::at_raster(case as u64,
             [snes::CpuRasterPosition::new(100,532),snes::CpuRasterPosition::new(224,1338),
              snes::CpuRasterPosition::new(261,1350)][case%3],
@@ -212,7 +212,7 @@ fn whole_module08_overlay_dispatch_and_publication_match_original_without_native
                     caller.step(cpu,clock,bus).unwrap();
                 });
             assert_eq!(ram,source.snes().ram,"{label}");
-            assert_eq!(published.ram,ram,"overlay store mirror; {label}");boundaries+=1;
+            assert_eq!(*published.wram_image(),ram,"overlay store mirror; {label}");boundaries+=1;
         }
         assert!(caller.complete());assert_eq!((cpu.bank,cpu.pc,cpu.sp),(0,0x805a,0x1ff));
         let mut expected=crate::game_state::GameState::load_from_ram(&ram);
@@ -308,7 +308,7 @@ fn whole_module08_full_screen_build_matches_original_without_native_rom() {
         machine.cpu.dp=cpu.d;machine.cpu.db=cpu.db;machine.cpu.k=cpu.bank;
         machine.cpu.pc=cpu.pc;machine.cpu.sp=cpu.sp;machine.cpu.e=false;machine.cpu.unpack_flags(cpu.p);
         let mut ram=machine.ram.clone();
-        let mut published=state.clone();published.ram.copy_from_slice(&ram);published.sync_native_game_state_from_ram();
+        let mut published=state.clone();published.import_wram_image(&ram);published.sync_native_game_state_from_ram();
         
         let clock=CpuMasterTimeline::at_raster(case as u64,
             [snes::CpuRasterPosition::new(100,532),snes::CpuRasterPosition::new(224,1338),
@@ -338,7 +338,7 @@ fn whole_module08_full_screen_build_matches_original_without_native_rom() {
                     caller.step(cpu,clock,bus).unwrap();
                 });
             assert_eq!(ram,source.snes().ram,"{label}");
-            assert_eq!(published.ram,ram,"screen build store mirror; {label}");
+            assert_eq!(*published.wram_image(),ram,"screen build store mirror; {label}");
             boundaries+=1;
         }
         assert!(caller.complete());assert_eq!((cpu.bank,cpu.pc,cpu.sp),(0,0x805a,0x1ff));

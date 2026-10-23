@@ -31,7 +31,7 @@ mod tests {
                 for counter in [0, 1, 2, 3, 255] {
                     let mut state = ZeldaState::new();
                     state.ram[0x8a] = screen;
-                    state.ram[0xf3c5] = progress;
+                    state.write_wram_byte(0xf3c5, progress);
                     state.ram[0xf2f0] = event;
                     state.ram[0x1a] = frame;
                     state.ram[0x494] = counter;
@@ -47,10 +47,10 @@ mod tests {
                         index_is_8_bit: true, emulation: false, waiting: false,
                         stack_address: 0x01fd, stack_bytes: &[0x59, 0x80, 0x00],
                     };
-                    let mut run = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                    let mut run = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
                         &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
                     run.enable_cpu_write_trace();
-                    let mut expected = state.ram.clone();
+                    let mut expected = state.wram_image().into_owned();
                     let mut rain = OverworldRainContinuation::new();
                     let mut edges = vec![rain.pc];
                     let mut total = 0;
@@ -71,7 +71,7 @@ mod tests {
                         assert_eq!(u16::from(rain.x), run.index_x(), "PC {pc:06x}");
                         assert_eq!(run.pc(), if rain.pc == 0 { 0x00_805a }
                             else { 0x02_0000 | u32::from(rain.pc) });
-                        assert_eq!(state.ram, expected, "stores after PC {pc:06x}");
+                        assert_eq!(*state.wram_image(), expected, "stores after PC {pc:06x}");
                         edges.push(rain.pc);
                         assert!(edges.len() <= 50);
                     }
@@ -82,7 +82,7 @@ mod tests {
                         cursor.advance_to(&mut split, edge);
                         cursor.finish(&mut split);
                         assert_eq!(crate::cycle_ledger::master() - start, total);
-                        assert_eq!(split.ram, expected, "resume at {edge:04x}");
+                        assert_eq!(*split.wram_image(), expected, "resume at {edge:04x}");
                         assert_eq!(split.game_state, state.game_state);
                     }
                 }
@@ -98,7 +98,7 @@ mod tests {
     #[test]
     fn rain_continuation_keeps_loaded_progress_and_completed_side_effects() {
         let mut state = ZeldaState::new();
-        state.ram[0xf3c5] = 2;
+        state.write_wram_byte(0xf3c5, 2);
         state.sync_native_game_state_from_ram();
         let mut rain = OverworldRainContinuation::new();
         rain.advance_to(&mut state, 0xa4d7);

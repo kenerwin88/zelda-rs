@@ -45,13 +45,16 @@ fn player_collision_matches_frozen_runtime_effects() {
                 _ => unreachable!(),
             }
             let mut digest = Sha256::new();
-            digest.update(&state.ram);
+            digest.update(&state.wram_image());
             let mut projected = vec![0xa5; WRAM_SIZE];
             state.game_state.write_to_ram(&mut projected);
+        state.game_state.inventory.player_resources.export_owned(&mut projected);
+        state.game_state.inventory.items.export_owned(&mut projected);
+        state.game_state.inventory.save_progress.export_runtime_to_image(&mut projected);
             // The frozen projection predates ownership of the item index's
             // high byte. Check it explicitly, retaining every old hash byte.
             let high = crate::game_state::constants::HUD_CUR_ITEM_HIGH;
-            assert_eq!(projected[high], state.ram[high]);
+            assert_eq!(projected[high], state.read_wram_byte(high));
             projected[high] = 0xa5;
             digest.update(&projected);
             cases.push_str(&format!("{seed}/{operation}: {:x}\n", digest.finalize()));
@@ -71,6 +74,7 @@ fn collision_test_state(seed: u32, operation: u8) -> ZeldaState {
             rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
             *byte = (rng >> 24) as u8;
         }
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
     }
     state.ram[PLAYER_IS_INDOORS] = 1;
     state.ram[LINK_IS_ON_LOWER_LEVEL] = (seed % 3) as u8;
@@ -89,6 +93,8 @@ fn collision_test_state(seed: u32, operation: u8) -> ZeldaState {
     {
         *byte = [0, 1, 0x10, 0x11, 0x12, 0x13][(i + seed as usize) % 6];
     }
+    let seed_image = state.ram.clone();
+    state.import_wram_image(&seed_image);
     state.sync_native_game_state_from_ram();
     state.game_state.enhanced_features = Default::default();
     state
@@ -144,7 +150,7 @@ fn slope_checks_reconsider_the_second_axis_after_the_first() {
                 }
                 actual.run_slope_collision_checks(order);
                 assert_eq!(
-                    actual.ram, expected.ram,
+                    *actual.wram_image(), expected.ram,
                     "seed={seed}, flags={flags}, order={order:?}"
                 );
                 assert_eq!(actual.game_state.player, expected.game_state.player);
@@ -173,7 +179,7 @@ fn native_completed_vertical_axis_handoff_runs_only_the_remaining_horizontal_axi
             vertical_completed: true,
         });
         assert_eq!(
-            actual.ram, expected.ram,
+            *actual.wram_image(), expected.ram,
             "completed vertical axis seed={seed}"
         );
         assert_eq!(actual.game_state.player, expected.game_state.player);
@@ -195,12 +201,12 @@ fn native_completed_main_tile_probe_preserves_classification_and_reset_neighbors
         // Item five has no response body. Its completed native classifier
         // must survive the semantic return without another reset or lookup.
         state.early_main_tile_probe=Some(MainTileHandoff {item:5,x:seed as u16,y:0,classifier:TileClassifierTail::Complete});
-        let before=state.ram.clone();
+        let before=state.wram_image().into_owned();
         let mut projected_before=vec![0xa5;WRAM_SIZE];
         state.game_state.write_to_ram(&mut projected_before);
         state.tile_detect_main_handler(5);
         assert!(state.early_main_tile_probe.is_none());
-        assert_eq!(state.ram,before,"seed={seed}");
+        assert_eq!(*state.wram_image(),before,"seed={seed}");
         let mut projected_after=vec![0xa5;WRAM_SIZE];
         state.game_state.write_to_ram(&mut projected_after);
         assert_eq!(projected_after,projected_before,"seed={seed}");
@@ -214,13 +220,13 @@ fn native_completed_main_tile_response_and_cardinal_return_do_not_replay_effects
         let mut state=collision_test_state(seed,4);
         state.early_main_tile_probe=Some(MainTileHandoff {item:0,x:seed as u16,y:0,classifier:TileClassifierTail::Complete});
         state.early_main_tile_response=Some(MainTileResponseTail::Returned);
-        let before=state.ram.clone();
+        let before=state.wram_image().into_owned();
         let mut projected_before=vec![0xa5;WRAM_SIZE];
         state.game_state.write_to_ram(&mut projected_before);
         state.finish_native_cardinal_collision(CardinalCollisionTail::MainHandler);
         assert!(state.early_main_tile_probe.is_none());
         assert!(state.early_main_tile_response.is_none());
-        assert_eq!(state.ram,before,"seed={seed}");
+        assert_eq!(*state.wram_image(),before,"seed={seed}");
         let mut projected_after=vec![0xa5;WRAM_SIZE];
         state.game_state.write_to_ram(&mut projected_after);
         assert_eq!(projected_after,projected_before,"seed={seed}");
@@ -241,13 +247,13 @@ fn native_ground_animation_return_skips_animation_receipt_and_completed_cleanup(
         state.early_main_tile_probe=Some(MainTileHandoff {item:0,x:0,y:0,classifier:TileClassifierTail::Complete});
         state.early_main_tile_response=Some(MainTileResponseTail::Returned);
         state.early_ground_animation_return=true;
-        let before=state.ram.clone();
+        let before=state.wram_image().into_owned();
         let mut projected_before=vec![0xa5;WRAM_SIZE];
         state.game_state.write_to_ram(&mut projected_before);
         let cycles_before=crate::cycle_ledger::master();
         state.finish_ground_movement_after_diagonal(true);
         assert!(!state.early_ground_animation_return);
-        assert_eq!(state.ram,before,"seed={seed}");
+        assert_eq!(*state.wram_image(),before,"seed={seed}");
         let mut projected_after=vec![0xa5;WRAM_SIZE];
         state.game_state.write_to_ram(&mut projected_after);
         assert_eq!(projected_after,projected_before,"seed={seed}");
@@ -270,7 +276,7 @@ fn native_ground_camera_return_skips_owned_camera_and_ground_effects() {
         state.early_main_tile_probe=Some(MainTileHandoff {item:0,x:0,y:0,classifier:TileClassifierTail::Complete});
         state.early_main_tile_response=Some(MainTileResponseTail::Returned);
         state.early_ground_animation_return=true;
-        let before=state.ram.clone();
+        let before=state.wram_image().into_owned();
         let mut projected_before=vec![0xa5;WRAM_SIZE];
         state.game_state.write_to_ram(&mut projected_before);
         let cycles_before=crate::cycle_ledger::master();
@@ -278,7 +284,7 @@ fn native_ground_camera_return_skips_owned_camera_and_ground_effects() {
         assert!(!state.early_ground_animation_return);
         assert!(state.early_ground_camera_tail.is_none());
         assert!(state.apply_links_movement_to_camera_called);
-        assert_eq!(state.ram,before,"seed={seed}");
+        assert_eq!(*state.wram_image(),before,"seed={seed}");
         let mut projected_after=vec![0xa5;WRAM_SIZE];
         state.game_state.write_to_ram(&mut projected_after);
         assert_eq!(projected_after,projected_before,"seed={seed}");
@@ -291,10 +297,10 @@ fn native_player_ancilla_return_preserves_completed_scan_without_receipts() {
     for seed in 0..64 {
         let mut state=collision_test_state(seed,4);
         state.early_player_ancilla_tail=Some(crate::cycle_models::player_ancilla_return::PlayerAncillaTail::Returned);
-        let before=state.ram.clone();let cycles=crate::cycle_ledger::master();
+        let before=state.wram_image().into_owned();let cycles=crate::cycle_ledger::master();
         let mut typed=vec![0xa5;WRAM_SIZE];state.game_state.write_to_ram(&mut typed);
         state.handle_somaria_and_graves();
-        assert!(state.early_player_ancilla_tail.is_none());assert_eq!(state.ram,before);
+        assert!(state.early_player_ancilla_tail.is_none());assert_eq!(*state.wram_image(),before);
         let mut after=vec![0xa5;WRAM_SIZE];state.game_state.write_to_ram(&mut after);
         assert_eq!(typed,after);assert_eq!(crate::cycle_ledger::master(),cycles);
     }
@@ -327,7 +333,7 @@ fn native_dungeon_push_caller_return_skips_owned_reset_loop_and_receipts() {
         actual.complete_module07_dungeon_after_submodule();
         let actual_cycles=crate::cycle_ledger::master()-before;
         assert!(actual.early_dungeon_push_caller_tail.is_none());
-        assert_eq!(actual.ram,expected.ram,"case={case}");
+        assert_eq!(*actual.wram_image(),*expected.wram_image(),"case={case}");
         let mut a=vec![0xa5;WRAM_SIZE];let mut b=a.clone();
         actual.game_state.write_to_ram(&mut a);expected.game_state.write_to_ram(&mut b);
         assert_eq!(a,b,"typed case={case}");
@@ -386,7 +392,7 @@ fn native_active_push_blocks_resume_room_child_without_replaying_prior_blocks_or
                     expected.dungeon_object_tracking_mut().set_misc_object_index(4);
                     expected.dungeon_push_block_handler_until(u16::MAX);
                     actual.finish_native_dungeon_push_handler(PushCallerTail::RoomTransition(target));
-                    assert_eq!(actual.ram,expected.ram,"target={target:06x} arrived={arrived} tile={tile:02x} case={case}");
+                    assert_eq!(*actual.wram_image(),*expected.wram_image(),"target={target:06x} arrived={arrived} tile={tile:02x} case={case}");
                     let mut a=vec![0xa5;WRAM_SIZE];let mut b=a.clone();
                     actual.game_state.write_to_ram(&mut a);expected.game_state.write_to_ram(&mut b);
                     assert_eq!(a,b,"typed target={target:06x} arrived={arrived} tile={tile:02x} case={case}");
@@ -425,7 +431,7 @@ fn native_player_ancilla_return_resumes_selected_child_and_remaining_slots() {
             expected.handle_somaria_and_graves();
             actual.early_player_ancilla_tail=Some(tail);actual.handle_somaria_and_graves();
             assert!(actual.early_player_ancilla_tail.is_none());
-            assert_eq!(actual.ram,expected.ram,"pattern={pattern} indoors={indoors} tail={tail:?}");
+            assert_eq!(*actual.wram_image(),*expected.wram_image(),"pattern={pattern} indoors={indoors} tail={tail:?}");
             let mut a=vec![0xa5;WRAM_SIZE];let mut b=a.clone();
             actual.game_state.write_to_ram(&mut a);expected.game_state.write_to_ram(&mut b);
             assert_eq!(a,b,"typed pattern={pattern} indoors={indoors} tail={tail:?}");
@@ -488,7 +494,7 @@ fn native_dungeon_after_push_handoffs_skip_owned_guards_half_slot_and_camera() {
             actual.complete_module07_dungeon_after_push_block_handler(true);
             let actual_cycles = crate::cycle_ledger::master() - before;
             assert!(actual.early_dungeon_after_push_tail.is_none());
-            assert_eq!(actual.ram, expected.ram, "case={case} tail={tail:?}");
+            assert_eq!(*actual.wram_image(), *expected.wram_image(), "case={case} tail={tail:?}");
             let mut a = vec![0xa5; WRAM_SIZE];
             let mut b = a.clone();
             actual.game_state.write_to_ram(&mut a);
@@ -619,9 +625,9 @@ fn native_room_tag_handoffs_skip_owned_probe_and_selected_calls() {
             actual.complete_module07_dungeon_after_push_block_handler(true);
             let actual_cycles = crate::cycle_ledger::master() - before;
             let diffs = actual
-                .ram
+                .wram_image()
                 .iter()
-                .zip(expected.ram.iter())
+                .zip(expected.wram_image().iter())
                 .enumerate()
                 .filter_map(|(i, (a, b))| (a != b).then_some((i, *a, *b)))
                 .take(16)

@@ -153,6 +153,7 @@ mod sprite_decompression_cursor_tests {
             for (i, byte) in native.ram.iter_mut().enumerate() {
                 *byte = (i as u8).wrapping_mul(37).wrapping_add((i >> 8) as u8);
             }
+    { let image = native.ram.clone(); native.import_wram_image(&image); }
             native.ram[0x10] = if main & 1 == 0 {14} else {1};
             native.ram[0xaa1] = main;
             native.ram[0xaa2] = main.wrapping_mul(7) % 82;
@@ -239,6 +240,7 @@ mod sprite_decompression_cursor_tests {
             for (i, byte) in native.ram.iter_mut().enumerate() {
                 *byte = (i as u8).wrapping_mul(73).wrapping_add((i >> 8) as u8);
             }
+    { let image = native.ram.clone(); native.import_wram_image(&image); }
             native.ram[2] = 0x7e + (destination >> 16) as u8;
             native.ram[0xaa1] = theme;
             native.ram[0x0f] = slot;

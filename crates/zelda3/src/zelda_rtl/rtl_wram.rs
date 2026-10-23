@@ -16,8 +16,38 @@ pub struct NativeOwnedWramRange {
 }
 
 /// Sorted, disjoint ranges whose bytes no longer live in ZeldaState::ram.
-/// Empty during the export-format pilot: legacy mirrors are NOT sole owners.
-pub const NATIVE_OWNED_WRAM: &[NativeOwnedWramRange] = &[];
+pub const NATIVE_OWNED_WRAM: &[NativeOwnedWramRange] = &[
+    NativeOwnedWramRange { lo: 0x00202, hi: 0x00204, owner: "SaveProgressState",
+        export_owned: |s, image| s.game_state.inventory.export_owned_range(image, 0x00202, 0x00204),
+        import_owned: |s, image| s.game_state.inventory.import_owned_range(image, 0x00202, 0x00204) },
+    NativeOwnedWramRange { lo: 0x0040c, hi: 0x0040c, owner: "SaveProgressState",
+        export_owned: |s, image| s.game_state.inventory.export_owned_range(image, 0x0040c, 0x0040c),
+        import_owned: |s, image| s.game_state.inventory.import_owned_range(image, 0x0040c, 0x0040c) },
+    NativeOwnedWramRange { lo: 0x004ca, hi: 0x004ca, owner: "PlayerResourcesState",
+        export_owned: |s, image| s.game_state.inventory.export_owned_range(image, 0x004ca, 0x004ca),
+        import_owned: |s, image| s.game_state.inventory.import_owned_range(image, 0x004ca, 0x004ca) },
+    NativeOwnedWramRange { lo: 0x00656, hi: 0x00658, owner: "SaveProgressState",
+        export_owned: |s, image| s.game_state.inventory.export_owned_range(image, 0x00656, 0x00658),
+        import_owned: |s, image| s.game_state.inventory.import_owned_range(image, 0x00656, 0x00658) },
+    NativeOwnedWramRange { lo: 0x0f000, hi: 0x0f27f, owner: "SaveProgressState",
+        export_owned: |s, image| s.game_state.inventory.export_owned_range(image, 0x0f000, 0x0f27f),
+        import_owned: |s, image| s.game_state.inventory.import_owned_range(image, 0x0f000, 0x0f27f) },
+    NativeOwnedWramRange { lo: 0x0f340, hi: 0x0f377, owner: "InventoryItemsState + PlayerResourcesState",
+        export_owned: |s, image| s.game_state.inventory.export_owned_range(image, 0x0f340, 0x0f377),
+        import_owned: |s, image| s.game_state.inventory.import_owned_range(image, 0x0f340, 0x0f377) },
+    NativeOwnedWramRange { lo: 0x0f379, hi: 0x0f37b, owner: "PlayerResourcesState",
+        export_owned: |s, image| s.game_state.inventory.export_owned_range(image, 0x0f379, 0x0f37b),
+        import_owned: |s, image| s.game_state.inventory.import_owned_range(image, 0x0f379, 0x0f37b) },
+    NativeOwnedWramRange { lo: 0x0f3c5, hi: 0x0f3ca, owner: "SaveProgressState",
+        export_owned: |s, image| s.game_state.inventory.export_owned_range(image, 0x0f3c5, 0x0f3ca),
+        import_owned: |s, image| s.game_state.inventory.import_owned_range(image, 0x0f3c5, 0x0f3ca) },
+    NativeOwnedWramRange { lo: 0x0f3e7, hi: 0x0f406, owner: "SaveProgressState",
+        export_owned: |s, image| s.game_state.inventory.export_owned_range(image, 0x0f3e7, 0x0f406),
+        import_owned: |s, image| s.game_state.inventory.import_owned_range(image, 0x0f3e7, 0x0f406) },
+    NativeOwnedWramRange { lo: 0x0f4fe, hi: 0x0f4ff, owner: "SaveProgressState",
+        export_owned: |s, image| s.game_state.inventory.export_owned_range(image, 0x0f4fe, 0x0f4ff),
+        import_owned: |s, image| s.game_state.inventory.import_owned_range(image, 0x0f4fe, 0x0f4ff) },
+];
 
 impl ZeldaState {
     /// Complete cartridge-format WRAM, borrowing the backing bytes when there
@@ -49,10 +79,9 @@ impl ZeldaState {
     /// Live source-bus read. Export at the access, rather than keeping a stale
     /// image across native callbacks or an NMI acceptance.
     pub(super) fn read_wram_image_word(&self, address: usize, width: u8) -> u16 {
-        let image = self.wram_image();
         match width {
-            1 => u16::from(image[address]),
-            2 => u16::from_le_bytes([image[address], image[address + 1]]),
+            1 => u16::from(self.read_wram_byte(address)),
+            2 => u16::from_le_bytes([self.read_wram_byte(address), self.read_wram_byte(address + 1)]),
             _ => panic!("invalid WRAM bus read width {width}"),
         }
     }
@@ -70,25 +99,18 @@ impl ZeldaState {
         self.ram[next..].copy_from_slice(&image[next..]);
     }
 
-    /// Temporary materialization for an in-place cartridge/cycle-model call.
-    /// Pair with import_owned_wram_from_ram before native execution resumes.
-    pub(super) fn export_owned_wram_to_ram(&mut self) {
-        if NATIVE_OWNED_WRAM.is_empty() { return; }
-        let image = self.wram_image().into_owned();
-        for range in NATIVE_OWNED_WRAM {
-            self.ram[range.lo..=range.hi].copy_from_slice(&image[range.lo..=range.hi]);
-        }
+    pub(crate) fn read_wram_byte(&self, address: usize) -> u8 {
+        self.game_state.inventory.owned_byte(address).unwrap_or_else(|| self.ram[address])
     }
 
-    /// Retire raw machine writes at the same boundary as materialization.
-    /// Read-only shadow probes use wram_image and never import speculative RAM.
-    pub(super) fn import_owned_wram_from_ram(&mut self) {
-        if NATIVE_OWNED_WRAM.is_empty() { return; }
-        let image = self.ram.clone();
-        for range in NATIVE_OWNED_WRAM {
-            (range.import_owned)(self, &image);
+    pub(crate) fn write_wram_byte(&mut self, address: usize, value: u8) {
+        if !self.game_state.inventory.write_owned_byte(address, value) { self.ram[address] = value; }
+    }
+
+    pub(crate) fn write_wram_word(&mut self, address: usize, value: u16) {
+        for (byte, value) in value.to_le_bytes().into_iter().enumerate() {
+            self.write_wram_byte(address + byte, value);
         }
-        self.poison_owned_wram();
     }
 
     pub(super) fn poison_owned_wram(&mut self) {
@@ -120,11 +142,11 @@ mod tests {
         let mut state = ZeldaState::new();
         state.ram[0x1a] = 7;
         state.game_state.frame.frame_counter = 3;
-        assert!(matches!(state.wram_image(), Cow::Borrowed(_)));
-        assert_eq!(&*state.wram_image(), &state.ram);
+        assert!(matches!(state.wram_image_with_registry(&[]), Cow::Borrowed(_)));
+        assert_eq!(&*state.wram_image_with_registry(&[]), &state.ram);
         let mut image = state.ram.clone();
         image[0x1a] = 9;
-        state.import_wram_image(&image);
+        state.import_wram_image_with_registry(&image, &[]);
         assert_eq!(state.ram, image);
         assert_eq!(state.game_state.frame.frame_counter, 3);
     }
@@ -176,7 +198,7 @@ mod tests {
         let mut state = ZeldaState::new();
         state.ram[0x1a] = 7;
         let before = state.canonical_state_hash();
-        state.game_state = crate::game_state::GameState::load_from_ram(&state.ram);
+        state.sync_native_game_state_from_ram();
         assert_eq!(before, state.canonical_state_hash());
         state.ram[0x1a] = 8;
         assert_ne!(before, state.canonical_state_hash());
@@ -189,22 +211,39 @@ mod tests {
     }
 
     #[test]
-    fn live_save_transfer_defers_resource_adoption() {
-        use crate::game_state::constants::{LINK_ITEM_BOMBS, LINK_MAGIC_POWER};
+    fn properties_stores_retire_owned_bytes_without_backing_publication() {
+        use crate::cycle_models::pre_overworld_properties::PropertiesChild;
+        let mut state = ZeldaState::new();
+        for address in [0x202, 0x203, 0x40c, 0x4ca, 0xf340, 0xf36f] {
+            state.ram[address] = 0xa5;
+        }
+        for (address, value) in [(0x202, 7), (0x203, 9), (0x4ca, 31), (0x7ef340, 2), (0x7ef36f, 4)] {
+            state.native_overworld_properties_store(None, address, value, 1).unwrap();
+            let offset = if address >= 0x7e0000 { address as usize - 0x7e0000 } else { address as usize };
+            assert_eq!(state.read_wram_byte(offset), value as u8);
+            assert_eq!(state.ram[offset], 0xa5);
+        }
+        state.native_overworld_properties_store(Some(PropertiesChild::DungeonExit), 0x40c, 0x9b17, 2).unwrap();
+        assert_eq!(state.read_wram_image_word(0x40c, 2), 0x9b17);
+        assert_eq!(state.ram[0x40c], 0xa5);
+        assert_eq!(state.ram[0x40d], 0x9b);
+    }
+
+    #[test]
+    fn live_save_transfer_retires_resources_at_each_source_word() {
         let mut state = ZeldaState::new();
         state.player_resources_mut().set_bombs(7);
         state.player_magic_mut().set_magic_power(41);
-        state.clear_live_save();
-        // The existing live-save boundary intentionally imports progress
-        // only. Immediately adopting resources changes the legacy native mirror;
-        // exporting the old native fields instead changes the WRAM image.
-        assert_eq!(state.game_state.inventory.player_resources.bombs(), 7);
+        state.ram[0xf343] = 0xa5;
+        state.ram[0xf36e] = 0xa5;
+        state.write_live_save_word(0xf342, 0x0901);
+        assert_eq!(state.game_state.inventory.player_resources.bombs(), 9);
         assert_eq!(state.game_state.inventory.player_resources.magic.amount(), 41);
-        assert_eq!(state.wram_image()[LINK_ITEM_BOMBS], 0);
-        assert_eq!(state.wram_image()[LINK_MAGIC_POWER], 0);
-        let old_hash = state.canonical_state_hash();
-        state.game_state.inventory.player_resources =
-            crate::game_state::InventoryState::load_from_ram(&state.ram).player_resources;
-        assert_eq!(state.canonical_state_hash(), old_hash);
+        assert_eq!(state.wram_image()[0xf342..0xf344], [1, 9]);
+        assert_eq!(state.ram[0xf343], 0xa5);
+        state.clear_live_save();
+        assert_eq!(state.game_state.inventory.player_resources.bombs(), 0);
+        assert_eq!(state.game_state.inventory.player_resources.magic.amount(), 0);
+        assert_eq!(state.ram[0xf36e], 0xa5);
     }
 }

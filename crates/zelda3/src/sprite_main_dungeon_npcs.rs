@@ -15,7 +15,6 @@ use super::*;
 
 // Local mirrors of sprite-RAM addresses that are not yet exposed through
 // `zelda_rtl.rs`. The C declarations live in `src/variables.h`.
-const SRAM_PROGRESS_INDICATOR_3: usize = 0x0f3c9;
 // Feature flag bit (features.h:40).
 const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
 // hud.h:8.

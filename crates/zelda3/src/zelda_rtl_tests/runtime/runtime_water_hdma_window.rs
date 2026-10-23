@@ -13,14 +13,14 @@ fn environment_setters_do_not_restamp_the_water_hdma_window() {
         state.game_state.display.water_hdma_window.window_y_radius(),
         0x30
     );
-    assert_eq!(read_le_u16(&state.ram, WATER_HDMA_WINDOW_Y_RADIUS), 0x30);
+    assert_eq!(read_le_u16(&state.wram_image(), WATER_HDMA_WINDOW_Y_RADIUS), 0x30);
 
     // An unrelated dungeon environment mutation in the same frame.
     state.dungeon_environment_mut().set_trapdoors_down(1);
-    assert_eq!(read_le_u16(&state.ram, WATER_HDMA_WINDOW_Y_RADIUS), 0x30);
+    assert_eq!(read_le_u16(&state.wram_image(), WATER_HDMA_WINDOW_Y_RADIUS), 0x30);
 
     state.project_native_game_state_to_ram();
-    assert_eq!(read_le_u16(&state.ram, WATER_HDMA_WINDOW_Y_RADIUS), 0x30);
+    assert_eq!(read_le_u16(&state.wram_image(), WATER_HDMA_WINDOW_Y_RADIUS), 0x30);
     assert_eq!(
         state.game_state.display.water_hdma_window.window_y_radius(),
         0x30

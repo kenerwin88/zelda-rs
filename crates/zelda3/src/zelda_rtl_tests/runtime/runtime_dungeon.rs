@@ -50,7 +50,7 @@ fn supertile_final_caller_matches_source_cycles_and_byte_writes() {
                 waiting: false, stack_address: 0x1fb, stack_bytes: &[0xae, 0x87],
                 ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
             };
-            let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+            let mut source = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
                 &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
             let mut source_cycles = 0u64;
             for _ in 0..2000 {
@@ -64,7 +64,7 @@ fn supertile_final_caller_matches_source_cycles_and_byte_writes() {
                 "room={room} variant={variant}");
             for range in [0x10..0x100, 0x200..0x700, 0xc180..0xc1ab] {
                 for address in range {
-                    assert_eq!(state.ram[address], source.ram_byte(address),
+                    assert_eq!(state.read_wram_byte(address), source.ram_byte(address),
                         "room={room} variant={variant} address={address:05x}");
                 }
             }
@@ -103,7 +103,7 @@ fn supertile_transition_initialization_matches_source_work() {
             waiting: false, stack_address: 0x1fb, stack_bytes: &[0xae, 0x87],
             ..DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
         };
-        let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+        let mut source = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
             &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
         let mut source_cycles = 0u64;
         for _ in 0..20_000 {
@@ -116,7 +116,7 @@ fn supertile_transition_initialization_matches_source_work() {
         assert_eq!(crate::cycle_ledger::master() - mark, source_cycles, "variant={variant}");
         for range in [0x10..0x100, 0x200..0x500, 0xc4a..0xc50, 0xc007..0xc013, 0xc500..0xc700] {
             for address in range {
-                assert_eq!(state.ram[address], source.ram_byte(address),
+                assert_eq!(state.read_wram_byte(address), source.ram_byte(address),
                     "variant={variant} address={address:05x}");
             }
         }
@@ -236,7 +236,7 @@ fn parity_probe_direct_entrance_loads_room_from_entrance_assets() {
     let room = state.parity_probe_direct_entrance(0x2a);
 
     assert_eq!(room, 0x0122);
-    assert_eq!(read_le_u16(&state.ram, 0x048e), 0x0122);
+    assert_eq!(read_le_u16(&state.wram_image(), 0x048e), 0x0122);
     assert_eq!(state.ram[0x001b], 1);
 }
 
@@ -247,8 +247,8 @@ fn parity_probe_dungeon_room_marks_room_as_indoor_surface() {
     let room = state.parity_probe_dungeon_room(0x002d);
 
     assert_eq!(room, 0x002d);
-    assert_eq!(read_le_u16(&state.ram, 0x048e), 0x002d);
-    assert_eq!(read_le_u16(&state.ram, 0x00a0), 0x002d);
+    assert_eq!(read_le_u16(&state.wram_image(), 0x048e), 0x002d);
+    assert_eq!(read_le_u16(&state.wram_image(), 0x00a0), 0x002d);
     assert_eq!(state.ram[0x001b], 1);
 }
 
@@ -759,23 +759,23 @@ fn cache_camera_properties_if_outdoors_snapshots_scroll_state() {
         0x6666
     );
     assert_eq!(
-        read_le_u16(&state.ram, UP_DOWN_SCROLL_TARGET_CACHED),
+        read_le_u16(&state.wram_image(), UP_DOWN_SCROLL_TARGET_CACHED),
         0x7777
     );
     assert_eq!(
-        read_le_u16(&state.ram, LEFT_RIGHT_SCROLL_TARGET_END_CACHED),
+        read_le_u16(&state.wram_image(), LEFT_RIGHT_SCROLL_TARGET_END_CACHED),
         0x8888
     );
     assert_eq!(
-        read_le_u16(&state.ram, CAMERA_Y_COORD_SCROLL_LOW_CACHED),
+        read_le_u16(&state.wram_image(), CAMERA_Y_COORD_SCROLL_LOW_CACHED),
         0x9999
     );
-    assert_eq!(state.ram[QUADRANT_FULLSIZE_Y_CACHED], 2);
+    assert_eq!(state.read_wram_byte(QUADRANT_FULLSIZE_Y_CACHED), 2);
     assert_eq!(link_test_byte(&state, LINK_QUADRANT_Y_CACHED), 2);
     assert_eq!(link_test_byte(&state, LINK_DIRECTION_FACING_CACHED), 8);
     assert_eq!(link_test_byte(&state, LINK_IS_ON_LOWER_LEVEL_CACHED), 1);
-    assert_eq!(state.ram[IS_STANDING_IN_DOORWAY_CACHED], 2);
-    assert_eq!(state.ram[DUNG_CUR_FLOOR_CACHED], 0xff);
+    assert_eq!(state.read_wram_byte(IS_STANDING_IN_DOORWAY_CACHED), 2);
+    assert_eq!(state.read_wram_byte(DUNG_CUR_FLOOR_CACHED), 0xff);
 }
 
 #[test]
@@ -793,8 +793,8 @@ fn dungeon_layer_change_updates_floor_room_and_visited_flags() {
     assert_eq!(state.game_state.world.location.dungeon_room(), 0x0114);
     assert_eq!(link_test_byte(&state, LINK_IS_ON_LOWER_LEVEL_MIRROR), 1);
     assert_eq!(state.game_state.player.follower_link.lower_level_state(), 1);
-    assert_eq!(state.ram[ABOUT_TO_JUMP_OFF_LEDGE], 0);
-    assert_ne!(read_le_u16(&state.ram, DUNG_QUADRANTS_VISITED), 0);
+    assert_eq!(state.read_wram_byte(ABOUT_TO_JUMP_OFF_LEDGE), 0);
+    assert_ne!(read_le_u16(&state.wram_image(), DUNG_QUADRANTS_VISITED), 0);
 
     state
         .dungeon_stair_movement_mut()
@@ -857,7 +857,7 @@ fn native_dungeon_map_drawing_consumes_its_measured_interruptions() {
                 expected.set_dungeon_room_index(room);
                 expected.complete_dungeon_map_room_drawing();
                 assert!(state.game_execution_scheduler.is_idle());
-                assert_eq!(state.ram.as_slice(), expected.ram.as_slice());
+                assert_eq!(state.wram_image().as_ref(), expected.wram_image().as_ref());
             } else {
                 for _ in 1..nmi_slices {
                     assert_ne!(
@@ -975,7 +975,7 @@ fn dungeon_map_room_drawing_consumes_same_host_iteration_return_without_room_sel
         state.module0e_03_01_03_draw_rooms();
 
         assert!(state.game_execution_scheduler.is_idle());
-        assert_eq!(state.ram.as_slice(), expected.ram.as_slice());
+        assert_eq!(state.wram_image().as_ref(), expected.wram_image().as_ref());
         assert!(state
             .original_timing_semantic_receipts
             .as_ref()
@@ -1143,25 +1143,25 @@ fn rescued_maiden_tilemap_clear_resumes_from_the_exact_source_store() {
     state.apply_rescued_maiden_tilemap_clear_stores(0, 3797);
     for quadrant in 0..4 {
         assert_eq!(
-            read_le_u16(&state.ram, DUNG_BG2 + (quadrant * 0x400 + 474) * 2),
+            read_le_u16(&state.wram_image(), DUNG_BG2 + (quadrant * 0x400 + 474) * 2),
             0x01ec,
         );
     }
-    assert_eq!(read_le_u16(&state.ram, DUNG_BG1 + 474 * 2), 0x01ec);
+    assert_eq!(read_le_u16(&state.wram_image(), DUNG_BG1 + 474 * 2), 0x01ec);
     for quadrant in 1..4 {
         assert_eq!(
-            read_le_u16(&state.ram, DUNG_BG1 + (quadrant * 0x400 + 474) * 2),
+            read_le_u16(&state.wram_image(), DUNG_BG1 + (quadrant * 0x400 + 474) * 2),
             0,
         );
     }
     for base in [DUNG_BG2, DUNG_BG1] {
         for quadrant in 0..4 {
             assert_eq!(
-                read_le_u16(&state.ram, base + (quadrant * 0x400 + 473) * 2),
+                read_le_u16(&state.wram_image(), base + (quadrant * 0x400 + 473) * 2),
                 0x01ec,
             );
             assert_eq!(
-                read_le_u16(&state.ram, base + (quadrant * 0x400 + 475) * 2),
+                read_le_u16(&state.wram_image(), base + (quadrant * 0x400 + 475) * 2),
                 0,
             );
         }
@@ -1170,8 +1170,8 @@ fn rescued_maiden_tilemap_clear_resumes_from_the_exact_source_store() {
     state.complete_rescued_maiden_tilemap_clear(3797);
     assert_eq!(state.game_state.frame.subsubmodule, 1);
     for base in [DUNG_BG2, DUNG_BG1] {
-        assert_eq!(read_le_u16(&state.ram, base), 0x01ec);
-        assert_eq!(read_le_u16(&state.ram, base + (0x1000 - 1) * 2), 0x01ec,);
+        assert_eq!(read_le_u16(&state.wram_image(), base), 0x01ec);
+        assert_eq!(read_le_u16(&state.wram_image(), base + (0x1000 - 1) * 2), 0x01ec,);
     }
 }
 
@@ -1260,11 +1260,11 @@ fn rescued_maiden_initialization_preserves_exact_decompression_prefix() {
 
     let sheet = state.decompressed_sprite_graphics_data(0x66).unwrap();
     assert_eq!(
-        &state.ram[SECONDARY_DECOMP_BUFFER_LOAD_GFX..SECONDARY_DECOMP_BUFFER_LOAD_GFX + 1027],
+        &state.wram_image()[SECONDARY_DECOMP_BUFFER_LOAD_GFX..SECONDARY_DECOMP_BUFFER_LOAD_GFX + 1027],
         &sheet[..1027],
     );
     assert_eq!(
-        state.ram[SECONDARY_DECOMP_BUFFER_LOAD_GFX + 1027],
+        state.read_wram_byte(SECONDARY_DECOMP_BUFFER_LOAD_GFX + 1027),
         0,
         "the source-unwritten sheet tail must remain untouched",
     );
@@ -1493,8 +1493,8 @@ fn straight_bg_conversion_return_leaves_uploads_for_the_next_open_nmi() {
     assert_eq!(state.game_state.frame.subsubmodule, 4);
     assert_eq!(state.game_state.frame.frame_counter, 0xa5);
     assert!(!state.game_state.display.nmi_update_is_latched());
-    assert_eq!(state.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX], 9);
-    assert_eq!(state.ram[crate::game_state::constants::NMI_DISABLE_CORE_UPDATES], 9);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::NMI_SUBROUTINE_INDEX), 9);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::NMI_DISABLE_CORE_UPDATES), 9);
     state.game_execution_scheduler.begin_host_frame();
     assert!(state.game_execution_scheduler.main_return_requires_leading_nmi());
 }
@@ -1523,8 +1523,8 @@ fn quadrant_upload_return_leaves_uploads_for_the_next_open_nmi() {
     assert_eq!(state.game_state.frame.subsubmodule, 12);
     assert_eq!(state.game_state.frame.frame_counter, 0xa5);
     assert!(!state.game_state.display.nmi_update_is_latched());
-    assert_eq!(state.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX], 9);
-    assert_eq!(state.ram[crate::game_state::constants::NMI_DISABLE_CORE_UPDATES], 9);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::NMI_SUBROUTINE_INDEX), 9);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::NMI_DISABLE_CORE_UPDATES), 9);
     state.game_execution_scheduler.begin_host_frame();
     assert!(state.game_execution_scheduler.main_return_requires_leading_nmi());
 }
@@ -1560,10 +1560,10 @@ fn quadrant_preparation_interruption_retains_and_retires_the_whole_suffix() {
     state.complete_module07_dungeon_after_submodule_caller();
     assert_eq!(state.pending_main_loop_common_suffix,
         Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch));
-    assert_eq!(state.ram[crate::game_state::constants::BG_TILE_ANIMATION_COUNTDOWN], 4);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::BG_TILE_ANIMATION_COUNTDOWN), 4);
     state.run_frame_internal_after_original_timing(0, crate::RUN_MAIN);
     assert!(state.pending_main_loop_common_suffix.is_none());
-    assert_eq!(state.ram[crate::game_state::constants::BG_TILE_ANIMATION_COUNTDOWN], 3);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::BG_TILE_ANIMATION_COUNTDOWN), 3);
     assert_eq!(state.game_state.frame.frame_counter, 3);
     assert!(!state.game_state.display.nmi_update_is_latched());
 }
@@ -1602,7 +1602,7 @@ fn quadrant_preparation_body_interruption_keeps_the_completed_caller_before_nmi(
             caller: NmiPrepareSpritesCpuCaller::DungeonModule07,
         },
     ));
-    assert_eq!(state.ram[crate::game_state::constants::BG_TILE_ANIMATION_COUNTDOWN], 4);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::BG_TILE_ANIMATION_COUNTDOWN), 4);
     state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
         phase: ModuleCpuPhase::CompleteBeforeNmi, resumed_phase: None,
         submodule_nmi_slices: 0, subsubmodule: 13, palette_countdown: 0,
@@ -1619,10 +1619,10 @@ fn quadrant_preparation_body_interruption_keeps_the_completed_caller_before_nmi(
         .explicit_obj_cache_vram.as_ref().unwrap()[0x4020], 0x1111);
     assert!(state.next_display_obj_cache_vram.is_none());
     assert!(state.next_display_obj_scanout_generation.is_none());
-    assert_eq!(state.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX], 1);
-    assert_eq!(state.ram[crate::game_state::constants::NMI_DISABLE_CORE_UPDATES], 1);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::NMI_SUBROUTINE_INDEX), 1);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::NMI_DISABLE_CORE_UPDATES), 1);
     assert!(state.pending_main_loop_common_suffix.is_none());
-    assert_eq!(state.ram[crate::game_state::constants::BG_TILE_ANIMATION_COUNTDOWN], 3);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::BG_TILE_ANIMATION_COUNTDOWN), 3);
     assert_eq!(state.game_state.frame.frame_counter, 3);
     assert!(!state.game_state.display.nmi_update_is_latched());
 }
@@ -1684,7 +1684,7 @@ fn native_straight_reset_preserves_the_measured_prefix_until_resume() {
                 Some(GameWorkStep::Complete(GameWorkContinuation::FinishStraightInterroomSpriteReset { progress })),
             );
             state.dungeon_resume_reset_sprites_after_cpu_progress(progress);
-            assert_eq!(state.ram, atomic.ram);
+            assert_eq!(*state.wram_image(), *atomic.wram_image());
             assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
         }
     }
@@ -1729,7 +1729,7 @@ fn straight_interroom_sprite_reset_uses_the_live_semantic_progress_token() {
         panic!("straight-interroom reset continuation lost its semantic token");
     };
     state.dungeon_resume_reset_sprites_after_cpu_progress(progress);
-    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(*state.wram_image(), *atomic.wram_image());
     assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
 
     let mut without_receipt = ZeldaState::new();
@@ -1775,8 +1775,8 @@ fn straight_interroom_reset_refines_its_semantic_prefix_at_the_accepting_nmi() {
     assert!(state.ram[ANCILLA_TYPE..ANCILLA_TYPE + 10]
         .iter()
         .all(|&value| value == 0));
-    assert_eq!(state.ram[FLAG_IS_ANCILLA_TO_PICK_UP], 0);
-    assert_eq!(state.ram[SPRITE_LIMIT_INSTANCE], 9);
+    assert_eq!(state.read_wram_byte(FLAG_IS_ANCILLA_TO_PICK_UP), 0);
+    assert_eq!(state.read_wram_byte(SPRITE_LIMIT_INSTANCE), 9);
 
     state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
         1,
@@ -1790,7 +1790,7 @@ fn straight_interroom_reset_refines_its_semantic_prefix_at_the_accepting_nmi() {
     assert_eq!(refined, limit);
     state.dungeon_resume_reset_sprites_after_cpu_progress(refined);
 
-    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(*state.wram_image(), *atomic.wram_image());
     assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
 }
 
@@ -1817,7 +1817,7 @@ fn pre_dungeon_garnish_clear_publishes_only_completed_descending_stores() {
         progress: SpriteResetAllProgress::SpriteDisableAllCompleted,
         boundary: OriginalTimingBoundary::HostReturn,
     });
-    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(*state.wram_image(), *atomic.wram_image());
     assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
     assert_eq!(
         state.game_execution_scheduler.current_work(),
@@ -1863,7 +1863,7 @@ fn trinexx_final_phase_draw_checkpoints_resume_to_the_atomic_draw() {
                     state.begin_trinexx_final_phase_draw_checkpoint(0, segment, stage);
                 state.resume_trinexx_final_phase_draw(0, segment, stage, continuation);
                 assert_eq!(
-                    state.ram, atomic.ram,
+                    *state.wram_image(), atomic.ram,
                     "ai {ai_state} segment {segment} stage {stage}"
                 );
                 assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
@@ -1923,7 +1923,7 @@ fn agahnim_motion_blur_spawn_checkpoints_resume_to_the_atomic_body() {
             Some(SpriteMainCpuBoundary::AgahnimMotionBlurSpawn { bound: true, .. })
         ));
         state.resume_agahnim_motion_blur_spawn(1, 3, progress);
-        assert_eq!(state.ram, atomic.ram, "{progress:?}");
+        assert_eq!(*state.wram_image(), *atomic.wram_image(), "{progress:?}");
         assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
     }
 }
@@ -1955,7 +1955,7 @@ fn trinexx_final_phase_tile_collision_checkpoints_resume_to_the_atomic_phase() {
         assert_eq!(state.sprite_slot_view(0).a(), 4);
         state.resume_trinexx_final_phase_tile_collision(0, probes_completed);
         assert_eq!(
-            state.ram, atomic.ram,
+            *state.wram_image(), atomic.ram,
             "probes {probes_completed} {x_velocity} {y_velocity}"
         );
         assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
@@ -2009,7 +2009,7 @@ fn trinexx_death_explosion_spawn_checkpoints_resume_to_the_atomic_explosion() {
         state.begin_trinexx_death_explosion_spawn_checkpoint(0, 13, progress);
         assert_eq!(state.sprite_slot_view(13).sprite_type(), 0);
         state.resume_trinexx_death_explosion_spawn(0, 13, progress);
-        assert_eq!(state.ram, atomic.ram, "{progress:?}");
+        assert_eq!(*state.wram_image(), *atomic.wram_image(), "{progress:?}");
         assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
     }
 }
@@ -2038,7 +2038,7 @@ fn trinexx_breath_tile_collision_checkpoint_resumes_to_the_atomic_breath() {
         assert_eq!(state.sprite_slot_view(12).subtype2(), 0x33);
         assert_eq!(state.sprite_slot_view(12).state(), 9);
         state.trinexx_breath_after_tile_collision(12);
-        assert_eq!(state.ram, atomic.ram, "breath type {sprite_type:#x}");
+        assert_eq!(*state.wram_image(), *atomic.wram_image(), "breath type {sprite_type:#x}");
         assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
         assert_eq!(state.game_state.oam, atomic.game_state.oam);
     }
@@ -2067,7 +2067,7 @@ fn trinexx_head_draw_checkpoint_keeps_coordinates_and_remaining_oam_stores() {
         assert_eq!(draw.next_segment, segment);
         assert_eq!(draw.oam, OAM_BUF + (usize::from(segment) + 4) * 4);
         state.resume_sidenexx_head_draw(2, draw);
-        assert_eq!(state.ram, atomic.ram, "segment {segment}");
+        assert_eq!(*state.wram_image(), *atomic.wram_image(), "segment {segment}");
         assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
         assert_eq!(state.game_state.oam, atomic.game_state.oam);
     }
@@ -2112,10 +2112,10 @@ fn trinexx_first_part_keeps_unwritten_oam_and_position_bytes_pending() {
         }
         if completed == 19 {
             assert_eq!(state.game_state.oam.extended_byte(3), 0);
-            assert_eq!(state.ram[OAM_BUF + 15], atomic.ram[OAM_BUF + 15]);
+            assert_eq!(state.read_wram_byte(OAM_BUF + 15), atomic.read_wram_byte(OAM_BUF + 15));
         }
         state.resume_sidenexx_head_draw(2, draw);
-        assert_eq!(state.ram, atomic.ram, "first-part store {completed}");
+        assert_eq!(*state.wram_image(), *atomic.wram_image(), "first-part store {completed}");
         assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
         assert_eq!(state.game_state.oam, atomic.game_state.oam);
     }
@@ -2150,10 +2150,10 @@ fn every_dungeon_reset_caller_prefix_resumes_to_the_atomic_c_endpoint() {
             DungeonResetSpritesCpuProgress::LoadStarted
                 | DungeonResetSpritesCpuProgress::LoadBeforeOrigin
         ) {
-            let prefix_ram = state.ram.clone();
+            let prefix_ram = state.wram_image().into_owned();
             assert!(state.dungeon_advance_reset_sprites_cpu_progress(progress, progress));
             assert_eq!(
-                state.ram, prefix_ram,
+                *state.wram_image(), prefix_ram,
                 "an unchanged source checkpoint must not replay writes"
             );
         }
@@ -2194,7 +2194,7 @@ fn every_dungeon_reset_caller_prefix_resumes_to_the_atomic_c_endpoint() {
         }
         state.dungeon_resume_reset_sprites_after_cpu_progress(progress);
 
-        assert_eq!(state.ram, atomic.ram, "RAM mismatch after {progress:?}");
+        assert_eq!(*state.wram_image(), *atomic.wram_image(), "RAM mismatch after {progress:?}");
         assert_eq!(
             state.game_state.sprites, atomic.game_state.sprites,
             "native sprite mismatch after {progress:?}",
@@ -2257,22 +2257,22 @@ fn c_dungeon_cache_trans_sprites_resumes_after_slot15_state_clear() {
     state.dungeon_reset_sprites_through_cpu_progress(progress);
 
     assert_eq!(
-        state.ram[CachedSpriteCacheField::StateClear.alt_address() + 15],
+        state.read_wram_byte(CachedSpriteCacheField::StateClear.alt_address() + 15),
         0,
     );
     assert_eq!(
-        state.ram[CachedSpriteCacheField::Type.alt_address() + 15],
+        state.read_wram_byte(CachedSpriteCacheField::Type.alt_address() + 15),
         0xa5,
     );
     assert_eq!(
-        state.ram[CachedSpriteCacheField::StateClear.alt_address() + 14],
+        state.read_wram_byte(CachedSpriteCacheField::StateClear.alt_address() + 14),
         0xa5,
     );
     assert_eq!(state.sprite_slot_view(15).state(), 9);
 
     state.dungeon_resume_reset_sprites_after_cpu_progress(progress);
     atomic.dungeon_reset_sprites();
-    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(*state.wram_image(), *atomic.wram_image());
     assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
 }
 
@@ -2313,28 +2313,28 @@ fn c_dungeon_cache_trans_sprites_resumes_after_room50_slot3_flags2() {
 
     for slot in 4..16 {
         assert_eq!(
-            state.ram[CachedSpriteCacheField::IgnoreProjectile.alt_address() + slot],
+            state.read_wram_byte(CachedSpriteCacheField::IgnoreProjectile.alt_address() + slot),
             0x80 + slot as u8,
         );
     }
     assert_eq!(
-        state.ram[CachedSpriteCacheField::Flags2.alt_address() + 3],
+        state.read_wram_byte(CachedSpriteCacheField::Flags2.alt_address() + 3),
         0x13,
     );
     assert_eq!(
-        state.ram[CachedSpriteCacheField::Floor.alt_address() + 3],
+        state.read_wram_byte(CachedSpriteCacheField::Floor.alt_address() + 3),
         0xa5,
         "the field after the ROM checkpoint has not committed",
     );
     assert_eq!(
-        state.ram[CachedSpriteCacheField::StateClear.alt_address() + 2],
+        state.read_wram_byte(CachedSpriteCacheField::StateClear.alt_address() + 2),
         0xa5,
         "the next descending cache slot has not started at the ROM boundary",
     );
 
     state.dungeon_resume_reset_sprites_after_cpu_progress(progress);
     atomic.dungeon_reset_sprites();
-    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(*state.wram_image(), *atomic.wram_image());
     assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
 }
 
@@ -2425,7 +2425,7 @@ fn c_dungeon_reset_sprites_resumes_after_the_rom_observed_y_checkpoint() {
     state.interrupt_nmi(0, None, false);
     assert_eq!(state.game_state.frame.frame_counter, 0xf8);
     assert_eq!(state.game_state.display.pending_nmi_subroutine, 24);
-    assert_eq!(&state.ram[OAM_BUF..OAM_BUF + 0x220], shadow_oam);
+    assert_eq!(&state.wram_image()[OAM_BUF..OAM_BUF + 0x220], shadow_oam);
     assert_eq!(state.ppu.oam, resident_oam);
     assert_eq!(state.resident_oam_dma, resident_oam_dma);
     assert_eq!(state.oam_law_pending, pending_oam_law);
@@ -2499,10 +2499,10 @@ fn dungeon_sprite_loader_resumes_each_field_boundary_with_native_record_values()
             assert_eq!(state.sprite_get_y(1), 0x0190);
             assert_eq!(state.sprite_get_x(1), 0x7777);
             // Only the preceding record has published X scratch.
-            assert_eq!(state.ram[crate::game_state::constants::TEMP_COUNTER + 1], 0x21);
+            assert_eq!(state.read_wram_byte(crate::game_state::constants::TEMP_COUNTER + 1), 0x21);
         }
         state.dungeon_resume_reset_sprites_after_cpu_progress(progress);
-        assert_eq!(state.ram, atomic.ram, "resumed RAM after {field:?}");
+        assert_eq!(*state.wram_image(), *atomic.wram_image(), "resumed RAM after {field:?}");
         assert_eq!(state.game_state.sprites, atomic.game_state.sprites,
             "resumed native sprite state after {field:?}");
     }
@@ -2730,7 +2730,7 @@ fn dungeon_push_block_checkpoint_preserves_the_common_callers_scroll_locals() {
     state.run_module07_sprite_main_caller(dungeon);
     atomic.complete_module07_dungeon_after_submodule();
     assert_eq!(state.game_state, atomic.game_state);
-    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(*state.wram_image(), *atomic.wram_image());
 }
 
 #[test]
@@ -2837,7 +2837,7 @@ fn overworld_link_shadow_checkpoint_restores_the_temporary_stair_y() {
     state.link_oam_after_equipment(continuation);
     assert_eq!(state.game_state.player.follower_link.y(), 0x80);
     assert_eq!(state.game_state, atomic.game_state);
-    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(*state.wram_image(), *atomic.wram_image());
 }
 
 #[test]
@@ -2946,8 +2946,8 @@ fn spiral_return_main_loop_reentry_advances_frame_and_clears_oam() {
     state.oam_state_mut().set_entry_y(OAM_BUF, 0x44);
     state.begin_spiral_stair_return_main_loop_reentry();
 
-    assert_eq!(FrameState::load_from_ram(&state.ram).frame_counter, 0x13);
-    assert_eq!(state.ram[OAM_BUF + 1], 0xf0);
+    assert_eq!(FrameState::load_from_ram(&state.wram_image()).frame_counter, 0x13);
+    assert_eq!(state.read_wram_byte(OAM_BUF + 1), 0xf0);
 }
 
 #[test]
@@ -3512,7 +3512,7 @@ fn dungeon_landing_goal_authors_final_circle_before_resetting_the_live_table() {
             .all(|word| word == [0x00, 0xff])
     );
     assert_eq!(
-        &state.ram[RESERVED_HDMA_TABLE..RESERVED_HDMA_TABLE + ZeldaState::HDMA_DYNAMIC_TABLE_LEN],
+        &state.wram_image()[RESERVED_HDMA_TABLE..RESERVED_HDMA_TABLE + ZeldaState::HDMA_DYNAMIC_TABLE_LEN],
         reserved,
         "the reset is a later live-table generation, not a rewrite of the final circle",
     );
@@ -3581,7 +3581,7 @@ fn interrupted_dungeon_exit_build_retains_the_c_suffix() {
     // Link/OAM suffix remain on the interrupted call stack.
     assert_ne!(state.spotlight_hdma_table_dynamic_entry(0), 0x00ff);
     assert_eq!(
-        read_le_u16(&state.ram, RESERVED_HDMA_TABLE),
+        read_le_u16(&state.wram_image(), RESERVED_HDMA_TABLE),
         state.spotlight_hdma_table_dynamic_entry(0),
     );
     assert_eq!(
@@ -3612,7 +3612,7 @@ fn interrupted_dungeon_exit_build_retains_the_c_suffix() {
         state.game_state.display.spotlight_hdma.window_radius(),
         0x69
     );
-    assert_eq!(read_le_u16(&state.ram, LINK_DMA_COUNTDOWN), 9);
+    assert_eq!(read_le_u16(&state.wram_image(), LINK_DMA_COUNTDOWN), 9);
     assert_eq!(state.game_state.display.bg_tile_animation_countdown, 7);
 }
 
@@ -3704,7 +3704,7 @@ fn interrupted_dungeon_exit_build_runs_the_unfinished_c_main_loop_sprite_prep() 
         state.game_state.display.spotlight_hdma.window_radius(),
         0x69
     );
-    assert_eq!(read_le_u16(&state.ram, LINK_DMA_COUNTDOWN), 8);
+    assert_eq!(read_le_u16(&state.wram_image(), LINK_DMA_COUNTDOWN), 8);
     assert_eq!(state.game_state.display.bg_tile_animation_countdown, 6);
 }
 
@@ -4654,7 +4654,7 @@ fn peg_attribute_flip_checkpoint_publishes_exact_bank_prefix_then_resumes() {
     );
     resumed.complete_dungeon_peg_attribute_flip_after_progress(next);
 
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(
         resumed.game_state.dungeon.bg2_attributes,
         atomic.game_state.dungeon.bg2_attributes,
@@ -4724,7 +4724,7 @@ fn selectable_peg_attribute_flip_resumes_state_8_only_after_source_return() {
     );
 
     resumed.complete_dungeon_after_submodule_cpu_caller_return();
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(
         resumed.game_state.dungeon.bg2_attributes,
         atomic.game_state.dungeon.bg2_attributes,
@@ -5007,7 +5007,7 @@ fn spiral_palette_callers_finish_held_nmi_before_authoring_the_next_palette() {
         state.game_execution_scheduler.begin_host_frame();
         assert!(state.game_execution_scheduler.main_return_requires_leading_nmi());
         state.interrupt_nmi(0, None, false);
-        assert_eq!(state.ppu.cgram[0x20], read_le_u16(&state.ram, MAIN_PALETTE_BUFFER + 0x40));
+        assert_eq!(state.ppu.cgram[0x20], read_le_u16(&state.wram_image(), MAIN_PALETTE_BUFFER + 0x40));
         assert!(!state.game_state.system_signals.should_update_cgram());
     }
 }
@@ -5600,7 +5600,7 @@ fn parked_dungeon_sprite_main_terminal_return_retires_the_pending_suffix_once() 
     assert!(state.pending_main_loop_common_suffix.is_none());
     state.complete_pending_main_loop_common_suffix_after_module_return();
 
-    assert_eq!(read_le_u16(&state.ram, LINK_DMA_COUNTDOWN), 8);
+    assert_eq!(read_le_u16(&state.wram_image(), LINK_DMA_COUNTDOWN), 8);
     assert_eq!(state.game_state.display.bg_tile_animation_countdown, 6);
 
     // Control: without a pending typed suffix the parked caller still runs

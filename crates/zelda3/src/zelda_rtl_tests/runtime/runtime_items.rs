@@ -62,11 +62,11 @@ fn suspended_item_graphics_keep_the_active_ppu_scroll_generation() {
             completed_dialogue_metadata: None,
         });
         let plan = DisplayPublicationPlan::resolve(&snapshot, DisplayPublicationSignals::default());
-        let cpu_ram = state.ram.clone();
+        let cpu_ram = state.wram_image().into_owned();
         state.compose_display_registers(&snapshot, &plan);
         state.compose_effective_presented_ppu_registers(&snapshot, plan.bg_scroll_source);
         assert_eq!(BgScrollRegisterScanout::capture(&state.ppu), active_scroll);
-        assert_eq!(state.ram, cpu_ram, "presentation cannot rewind the software camera");
+        assert_eq!(*state.wram_image(), cpu_ram, "presentation cannot rewind the software camera");
         assert_eq!(snapshot.ppu.bg_layer[0].h_scroll, 237);
         assert_eq!(state.next_display_bg_scroll_generation, DisplayBgScrollGeneration::default());
     }
@@ -1004,10 +1004,10 @@ fn item_receipt_places_chest_item_with_c_offsets() {
     set_link_test_byte(&mut state, LINK_RECEIVEITEM_INDEX, 0);
     state.ancilla_add_item_receipt(0x22, 4, 0x0182);
 
-    assert_eq!(state.ram[ANCILLA_X_LO + 4], 0x0c);
-    assert_eq!(state.ram[ANCILLA_X_HI + 4], 0x12);
-    assert_eq!(state.ram[ANCILLA_Y_LO + 4], 0x13);
-    assert_eq!(state.ram[ANCILLA_Y_HI + 4], 0x34);
+    assert_eq!(state.read_wram_byte(ANCILLA_X_LO + 4), 0x0c);
+    assert_eq!(state.read_wram_byte(ANCILLA_X_HI + 4), 0x12);
+    assert_eq!(state.read_wram_byte(ANCILLA_Y_LO + 4), 0x13);
+    assert_eq!(state.read_wram_byte(ANCILLA_Y_HI + 4), 0x34);
 }
 
 #[test]
@@ -1037,7 +1037,7 @@ fn receive_item_enters_hold_item_state_for_normal_receipts() {
         state.game_state.player.follower_link.incapacitated_timer(),
         0
     );
-    assert_eq!(state.ram[COUNTDOWN_FOR_BLINK], 0);
+    assert_eq!(state.read_wram_byte(COUNTDOWN_FOR_BLINK), 0);
     assert_eq!(link_test_byte(&state, LINK_RECEIVEITEM_INDEX), 0x20);
     assert_eq!(link_test_byte(&state, LINK_ITEM_HOLDING_TIMER), 0x60);
     assert_eq!(state.game_state.player.follower_link.state_bits(), 0);
@@ -1055,7 +1055,7 @@ fn receive_item_enters_hold_item_state_for_normal_receipts() {
     assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION), 0);
     assert_eq!(state.game_state.player.follower_link.item_in_hand(), 0);
     assert_eq!(state.game_state.player.follower_link.position_mode(), 0);
-    assert_eq!(state.ram[PLAYER_HANDLER_TIMER], 0);
+    assert_eq!(state.read_wram_byte(PLAYER_HANDLER_TIMER), 0);
     assert_eq!(state.game_state.player.follower_link.handler_state(), 21);
     assert_eq!(link_test_byte(&state, LINK_POSE_FOR_ITEM), 2);
     assert_eq!(link_test_byte(&state, LINK_DISABLE_SPRITE_DAMAGE), 1);
@@ -1070,7 +1070,7 @@ fn bottled_item_receipt_fills_first_open_bottle() {
     state.item_receipt_give_bottled_item(0x2f);
 
     assert_eq!(link_test_byte(&state, LINK_ITEM_BOTTLE_INFO), 4);
-    assert_eq!(state.ram[LINK_ITEM_BOTTLE_INFO + 1], 4);
+    assert_eq!(state.read_wram_byte(LINK_ITEM_BOTTLE_INFO + 1), 4);
 }
 
 #[test]
@@ -1128,7 +1128,7 @@ fn every_sprite_disable_receipt_prefix_resumes_to_the_atomic_c_endpoint() {
         state.dungeon_reset_sprites_through_cpu_progress(progress);
         state.dungeon_resume_reset_sprites_after_cpu_progress(progress);
 
-        assert_eq!(state.ram, atomic.ram, "RAM mismatch after {phase:?}");
+        assert_eq!(*state.wram_image(), *atomic.wram_image(), "RAM mismatch after {phase:?}");
         assert_eq!(
             state.game_state.sprites, atomic.game_state.sprites,
             "native sprite mismatch after {phase:?}",
@@ -1190,7 +1190,7 @@ fn snes9x_semantic_receipt_survives_the_typed_sprite_reset_continuation() {
     state.dungeon_resume_reset_sprites_after_cpu_progress(resumed);
     atomic.dungeon_reset_sprites();
 
-    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(*state.wram_image(), *atomic.wram_image());
     assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
     assert!(state
         .take_original_timing_dungeon_reset_sprites_progress()
@@ -1769,7 +1769,7 @@ fn terminal_ground_item_receipt_preflight_is_failure_atomic() {
         let receipts_before = state.original_timing_semantic_receipts.clone();
         let scheduler_before = state.game_execution_scheduler;
         let suffix_before = state.pending_main_loop_common_suffix;
-        let ram_before = state.ram.clone();
+        let ram_before = state.wram_image().into_owned();
         let ppu_before = (
             state.ppu.vram.clone(),
             state.ppu.oam.clone(),
@@ -1814,7 +1814,7 @@ fn terminal_ground_item_receipt_preflight_is_failure_atomic() {
         assert_eq!(state.original_timing_semantic_receipts, receipts_before);
         assert_eq!(state.game_execution_scheduler, scheduler_before);
         assert_eq!(state.pending_main_loop_common_suffix, suffix_before);
-        assert_eq!(state.ram, ram_before);
+        assert_eq!(*state.wram_image(), ram_before);
         assert_eq!(
             (
                 state.ppu.vram.clone(),
@@ -2192,11 +2192,11 @@ fn live_dungeon_exit_projection_receipt_suspends_the_entry_suffix() {
     assert_eq!(state.game_state.frame.submodule, 0);
     assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 126);
     assert_eq!(
-        read_le_u16(&state.ram, RESERVED_HDMA_TABLE + 156 * 2),
+        read_le_u16(&state.wram_image(), RESERVED_HDMA_TABLE + 156 * 2),
         state.spotlight_hdma_table_dynamic_entry(156),
     );
     assert_eq!(
-        read_le_u16(&state.ram, RESERVED_HDMA_TABLE + 157 * 2),
+        read_le_u16(&state.wram_image(), RESERVED_HDMA_TABLE + 157 * 2),
         0x5a5a,
     );
     let Some(GameWorkContinuation::FinishDungeonExitSpotlightEntry {
@@ -2215,7 +2215,7 @@ fn live_dungeon_exit_projection_receipt_suspends_the_entry_suffix() {
     assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 119);
     for index in 0..224 {
         assert_eq!(
-            read_le_u16(&state.ram, RESERVED_HDMA_TABLE + index * 2),
+            read_le_u16(&state.wram_image(), RESERVED_HDMA_TABLE + index * 2),
             state.spotlight_hdma_table_dynamic_entry(index),
         );
     }
@@ -2414,7 +2414,7 @@ fn animated_bg_operand_generation_is_explicit_not_receipt_owned() {
             destination_address: DESTINATION,
             data: state.ram[CAPTURED_SOURCE..CAPTURED_SOURCE + 0x400].to_vec(),
         }),
-        link_operands: PreMainLinkDmaOperands::capture(&state.ram),
+        link_operands: PreMainLinkDmaOperands::capture(&state.wram_image()),
         obj_vram: state.ppu.vram.clone(),
         oam_shadow: vec![0; state.ppu.oam.len() * 2],
     });
@@ -2707,7 +2707,7 @@ fn cached_sprite_restore_receipt_resumes_to_the_atomic_c_endpoint() {
     resumed
         .complete_cached_sprite_main_after_interrupted_slot(scheduled_boundary, &live_slot_backup);
 
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state.sprites, atomic.game_state.sprites);
 }
 
@@ -2926,11 +2926,11 @@ fn live_iteration_receipt_supersedes_poly_only_legacy_dispatch_guess() {
         .map(|i| state.game_state.oam.packed_extended_oam_byte(i))
         .collect::<Vec<_>>();
     assert_eq!(
-        state.ram[packed_extended_oam..packed_extended_oam + 8],
+        state.wram_image()[packed_extended_oam..packed_extended_oam + 8],
         [0x5a; 8]
     );
     assert_eq!(
-        state.ram[packed_extended_oam + 8..packed_extended_oam + 32],
+        state.wram_image()[packed_extended_oam + 8..packed_extended_oam + 32],
         expected_packed_extended_oam[8..],
     );
     assert_eq!(state.game_state.display.bg_tile_animation_countdown, 5);
@@ -2963,7 +2963,7 @@ fn live_iteration_receipt_supersedes_poly_only_legacy_dispatch_guess() {
     assert_eq!(state.game_state.frame.frame_counter, 106);
     assert_eq!(state.game_state.frame.subsubmodule, 41);
     assert_eq!(
-        state.ram[packed_extended_oam..packed_extended_oam + 32],
+        state.wram_image()[packed_extended_oam..packed_extended_oam + 32],
         expected_packed_extended_oam,
     );
     assert_eq!(state.game_state.display.bg_tile_animation_countdown, 4);

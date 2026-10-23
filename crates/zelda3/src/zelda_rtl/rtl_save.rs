@@ -26,13 +26,9 @@ impl ZeldaState {
         } else {
             // Extended indices are source aliases into other save domains.
             // Preserve the single-word write and their existing import timing.
-            self.export_owned_wram_to_ram();
-            crate::game_state::save_format::write_indexed_word(&mut self.ram, room, flags);
-            self.import_owned_wram_from_ram();
-            // A word can also straddle named progress fields or counters.
-            // Import at this explicit cross-domain transfer boundary.
-            self.game_state.inventory.save_progress =
-                crate::game_state::SaveProgressState::load_from_ram(&self.ram);
+            if room < crate::game_state::save_format::SAVE_BLOCK_BYTES / 2 {
+                self.write_wram_word(SAVE_DUNG_INFO + room * 2, flags);
+            }
         }
     }
 
@@ -42,41 +38,25 @@ impl ZeldaState {
         value
     }
 
-    // Whole-save transfers are explicit compatibility boundaries. Refresh the
-    // progress owner here; other owners retain their existing frame/import
-    // schedule, including the source-ordered writes following CopySaveToWRAM.
     pub(crate) fn clear_live_save(&mut self) {
-        // Whole-save codec boundary. Exclusive owners adopt raw writes here;
-        // legacy resource mirrors retain the deferred import documented above.
-        self.export_owned_wram_to_ram();
-        crate::game_state::save_format::clear_live_save(&mut self.ram);
-        self.import_owned_wram_from_ram();
-        self.game_state.inventory.save_progress =
-            crate::game_state::SaveProgressState::load_from_ram(&self.ram);
+        for address in (0xf000..0xf500).step_by(2) { self.write_live_save_word(address, 0); }
     }
 
-    pub(crate) fn clear_live_save_word(&mut self,address:usize) {
-        self.write_live_save_word(address,0);
+    pub(crate) fn clear_live_save_word(&mut self, address: usize) {
+        self.write_live_save_word(address, 0);
     }
 
-    /// Retire one word of a save transfer and adopt its progress aliases.
-    pub(crate) fn write_live_save_word(&mut self,address:usize,value:u16) {
-        assert!((0xf000..0xf500).contains(&address)&&address&1==0);
-        // Retained cartridge save transfers retire one word at a time, before
-        // an intervening NMI can observe the next checksum slice.
-        self.export_owned_wram_to_ram();
-        self.ram[address..address+2].copy_from_slice(&value.to_le_bytes());
-        self.import_owned_wram_from_ram();
-        self.game_state.inventory.save_progress =
-            crate::game_state::SaveProgressState::load_from_ram(&self.ram);
+    /// Retire precisely this source word, including words split across owners.
+    pub(crate) fn write_live_save_word(&mut self, address: usize, value: u16) {
+        assert!((0xf000..0xf500).contains(&address) && address & 1 == 0);
+        self.write_wram_word(address, value);
     }
 
     pub(crate) fn replace_live_save(&mut self, source: &[u8]) {
-        self.export_owned_wram_to_ram();
-        crate::game_state::save_format::replace_live_save(&mut self.ram, source);
-        self.import_owned_wram_from_ram();
-        self.game_state.inventory.save_progress =
-            crate::game_state::SaveProgressState::load_from_ram(&self.ram);
+        assert_eq!(source.len(), crate::game_state::save_format::SAVE_BLOCK_BYTES);
+        for offset in (0..source.len()).step_by(2) {
+            self.write_live_save_word(0xf000 + offset, u16::from_le_bytes([source[offset], source[offset + 1]]));
+        }
     }
 
     pub(crate) fn selected_save_slot_x2(&self) -> u16 {
@@ -231,15 +211,6 @@ impl ZeldaState {
 
     pub(crate) fn clear_select_file_save_slot_flags(&mut self) {
         self.select_file_menu_mut().clear_save_slot_flags();
-    }
-
-    #[track_caller]
-    pub(crate) fn assert_native_save_progress_matches_ram(&self) {
-        debug_assert_eq!(
-            self.game_state.inventory.save_progress,
-            crate::game_state::SaveProgressState::load_from_ram(&self.ram),
-            "native save-progress state diverged from compatibility RAM",
-        );
     }
 
     pub fn save_func(ctx_in: &mut ByteArray, data: &mut [u8]) {

@@ -17,7 +17,7 @@ fn link_dma_reads_live_wram_in_both_source_banks() {
             state.copy_asset_bytes_to_vram(0x4000, &[0xee; 0x40], address, 0x40);
             state.copy_ram_bytes_to_vram(0x4100, address, 0x40);
             for word in 0..0x20 {
-                let expected = read_le_u16(&state.ram, address + word * 2);
+                let expected = read_le_u16(&state.wram_image(), address + word * 2);
                 assert_eq!(state.ppu.vram[0x4000 + word], expected);
                 assert_eq!(state.ppu.vram[0x4100 + word], expected);
             }

@@ -195,11 +195,11 @@ fn entity_tile_lookup_selects_the_floor_layer_and_only_the_probe_publishes() {
         state.game_state.sprites.workspace.tile(),
         NativeTile::SPIKE_CACTUS
     );
-    assert_eq!(state.ram[SPRITE_TILETYPE], 0x44);
+    assert_eq!(state.read_wram_byte(SPRITE_TILETYPE), 0x44);
 
     assert_eq!(state.probe_entity_tile(1, x, y), (tile(0x72), 0x0128));
     assert_eq!(state.game_state.sprites.workspace.tile(), tile(0x72));
-    assert_eq!(state.ram[SPRITE_TILETYPE], 0x72);
+    assert_eq!(state.read_wram_byte(SPRITE_TILETYPE), 0x72);
 
     // Outdoors the map8 catalog answers, with the slope orientation bit,
     // and the returned x is the map8 column.
@@ -212,7 +212,7 @@ fn entity_tile_lookup_selects_the_floor_layer_and_only_the_probe_publishes() {
     );
     assert_eq!(state.probe_entity_tile(0, x, 0x28), (tile(0x11), 4));
     assert_eq!(state.game_state.sprites.workspace.tile(), tile(0x11));
-    assert_eq!(state.ram[SPRITE_TILETYPE], 0x11);
+    assert_eq!(state.read_wram_byte(SPRITE_TILETYPE), 0x11);
 }
 
 #[test]
@@ -230,7 +230,7 @@ fn guard_probe_reads_the_map16_attribute_outdoors_and_publishes_it() {
             state.game_state.sprites.workspace.tile(),
             tile(map16_attribute)
         );
-        assert_eq!(state.ram[SPRITE_TILETYPE], map16_attribute);
+        assert_eq!(state.read_wram_byte(SPRITE_TILETYPE), map16_attribute);
     }
 
     let mut state = ZeldaState::new();

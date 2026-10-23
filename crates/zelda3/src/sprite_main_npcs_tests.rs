@@ -247,7 +247,7 @@ fn sprite_bottle_vendor_giving_marks_bottle_bought_and_charges_rupees() {
     state.sprite_bottle_vendor(k);
 
     assert_eq!(state.sprite_slot_view(k).ai_state(), 0);
-    assert_eq!(state.ram[SRAM_PROGRESS_INDICATOR_3_NPCS] & 2, 2);
+    assert_eq!(state.read_wram_byte(SRAM_PROGRESS_INDICATOR_3_NPCS) & 2, 2);
     assert_eq!(
         state.game_state.inventory.player_resources.rupees_goal(),
         50

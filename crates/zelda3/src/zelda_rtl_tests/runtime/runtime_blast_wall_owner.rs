@@ -12,9 +12,9 @@ fn blast_wall_trigger_writes_reach_the_entrance_effects_owner() {
     state.blast_wall_scratch_mut().set_direction(4);
     state.blast_wall_scratch_mut().set_center(0x0123, 0x0045);
 
-    assert_eq!(state.ram[BLAST_WALL_DIRECTION], 4);
-    assert_eq!(read_le_u16(&state.ram, BLAST_WALL_CENTER_X), 0x0123);
-    assert_eq!(read_le_u16(&state.ram, BLAST_WALL_CENTER_Y), 0x0045);
+    assert_eq!(state.read_wram_byte(BLAST_WALL_DIRECTION), 4);
+    assert_eq!(read_le_u16(&state.wram_image(), BLAST_WALL_CENTER_X), 0x0123);
+    assert_eq!(read_le_u16(&state.wram_image(), BLAST_WALL_CENTER_Y), 0x0045);
     assert_eq!(
         state.game_state.effects.entrance_effects.blast_wall_direction(),
         4
@@ -24,7 +24,7 @@ fn blast_wall_trigger_writes_reach_the_entrance_effects_owner() {
     state
         .dungeon_room_effects_mut()
         .set_moving_wall_dot_pointer(1);
-    assert_eq!(state.ram[BLAST_WALL_DIRECTION], 4);
-    assert_eq!(read_le_u16(&state.ram, BLAST_WALL_CENTER_X), 0x0123);
-    assert_eq!(read_le_u16(&state.ram, BLAST_WALL_CENTER_Y), 0x0045);
+    assert_eq!(state.read_wram_byte(BLAST_WALL_DIRECTION), 4);
+    assert_eq!(read_le_u16(&state.wram_image(), BLAST_WALL_CENTER_X), 0x0123);
+    assert_eq!(read_le_u16(&state.wram_image(), BLAST_WALL_CENTER_Y), 0x0045);
 }

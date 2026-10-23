@@ -54,20 +54,6 @@ impl<'a> LiveSave<'a> {
     }
 }
 
-pub(crate) fn write_indexed_word(ram: &mut [u8], index: usize, value: u16) {
-    if index < SAVE_BLOCK_BYTES / 2 {
-        write_le_u16(ram, SAVE_DUNG_INFO + index * 2, value);
-    }
-}
-
-pub(crate) fn replace_live_save(ram: &mut [u8], source: &[u8]) {
-    ram[SAVE_DUNG_INFO..SAVE_DUNG_INFO + SAVE_BLOCK_BYTES].copy_from_slice(source);
-}
-
-pub(crate) fn clear_live_save(ram: &mut [u8]) {
-    ram[SAVE_DUNG_INFO..SAVE_DUNG_INFO + SAVE_BLOCK_BYTES].fill(0);
-}
-
 pub(crate) fn write_sram_checksum(sram: &mut [u8], slot_offset: usize, checksum: u16) {
     for offset in [slot_offset, slot_offset + BACKUP_OFFSET] {
         if let Some(save) = sram.get_mut(offset..offset + SAVE_BLOCK_BYTES) {

@@ -13,10 +13,10 @@ fn check_torch_door_call(rom: &[u8], mut state: ZeldaState, label: &str,
         emulation: false, waiting: false,
         stack_address: 0x01fc, stack_bytes: &[0x35, 0x80, 0],
     };
-    let mut run = RomCpuTimingRun::new(rom, &state.ram, &[0; 0x2000],
+    let mut run = RomCpuTimingRun::new(rom, &state.wram_image(), &[0; 0x2000],
         &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
     run.enable_cpu_write_trace();
-    let mut expected = state.ram.clone();
+    let mut expected = state.wram_image().into_owned();
     let mut own_writes = std::collections::BTreeSet::new();
     let mut cycles = 0;
     let mut instructions = 0;
@@ -43,7 +43,7 @@ fn check_torch_door_call(rom: &[u8], mut state: ZeldaState, label: &str,
         own_writes.extend(range);
     }
     for address in own_writes {
-        assert_eq!(state.ram[address], expected[address], "{label} address={address:05x}");
+        assert_eq!(state.read_wram_byte(address), expected[address], "{label} address={address:05x}");
     }
 }
 
@@ -77,8 +77,8 @@ fn torch_door_branches_work_and_publications_match_rom() {
                         state.ram[0x2f] = facing;
                         state.ram[0x1980 + slot * 2] = kind;
                         state.ram[0x19c0 + slot * 2] = (facing / 2 + if scenario & 8 != 0 { 1 } else { 0 }) & 3;
-                        state.ram[0xf36f] = scenario & 1;
-                        state.ram[0xf367] = if scenario & 2 != 0 { 0x80 } else { 0 };
+                        state.write_wram_byte(0xf36f, scenario & 1);
+                        state.write_wram_byte(0xf367, if scenario & 2 != 0 { 0x80 } else { 0 });
                         state.ram[0x4b9] = if scenario & 4 != 0 { 1 } else { 0 };
                         state.ram[0xee] = (scenario >> 2) & 1;
                         // Independent ROM coordinate tables in data bank00.
@@ -252,7 +252,7 @@ fn dungeon_push_block_scan_and_shared_draw_match_rom() {
                     state.sync_native_game_state_from_ram();
                     let entry = if variant < 4 { 0x07_f0ac } else { 0x07_f0d9 };
                     let slot_word = u16::from(variant.saturating_sub(4)) * 2;
-                    let (cycles, expected) = dungeon_render_source(&rom, &state.ram, entry, slot_word);
+                    let (cycles, expected) = dungeon_render_source(&rom, &state.wram_image(), entry, slot_word);
                     let actual = crate::cycle_ledger::measure_routine_self_work(entry, || {
                         if variant < 4 { state.sprite_dungeon_draw_all_push_blocks(); }
                         else { state.sprite_dungeon_draw_single_push_block(slot_word as usize); }
@@ -260,7 +260,7 @@ fn dungeon_push_block_scan_and_shared_draw_match_rom() {
                     let label = format!("mode={mode} coordinate={coordinate} scroll={scroll} variant={variant}");
                     assert_eq!(actual, cycles, "{label}");
                     for range in [0x90..0x94, 0x800..0xaa0, 0xfe0..0xfec] {
-                        assert_eq!(&state.ram[range.clone()], &expected[range.clone()], "{label} range={range:x?}");
+                        assert_eq!(&state.wram_image()[range.clone()], &expected[range.clone()], "{label} range={range:x?}");
                     }
                 }
             }
@@ -300,13 +300,13 @@ fn dungeon_layer_effect_work_and_owned_state_match_rom() {
             let floor_color = if variation & 64 != 0 { 0x2940u16 } else { 0 };
             state.ram[0xc3f6..0xc3f8].copy_from_slice(&floor_color.to_le_bytes());
             state.sync_native_game_state_from_ram();
-            let (cycles, expected) = dungeon_render_source(&rom, &state.ram, 0x0a_fe80, 0);
+            let (cycles, expected) = dungeon_render_source(&rom, &state.wram_image(), 0x0a_fe80, 0);
             let actual = crate::cycle_ledger::measure_routine_self_work(0x0a_fe80,
                 || state.dungeon_handle_layer_effect());
             assert_eq!(actual, cycles, "effect={effect} variation={variation}");
             for range in [0x15..0x17, 0x1d..0x1e, 0x9a..0x9b, 0xad..0xae,
                 0xe0..0xea, 0x310..0x314, 0x41a..0x426, 0x4c5..0x4c7, 0xc300..0xc700] {
-                assert_eq!(&state.ram[range.clone()], &expected[range.clone()],
+                assert_eq!(&state.wram_image()[range.clone()], &expected[range.clone()],
                     "effect={effect} variation={variation} range={range:x?}");
             }
         }
@@ -336,9 +336,9 @@ fn dungeon_player_control_menu_fallthrough_and_caller_work_match_rom() {
                             state.ram[0xf4] = if buttons & 1 != 0 { 0x10 } else { 0 };
                             state.ram[0xf6] = if buttons & 2 != 0 { 0x40 } else { 0 };
                             state.ram[0xf0] = if buttons & 4 != 0 { 0x20 } else { 0 };
-                            state.ram[0x40c] = palace;
+                            state.write_wram_byte(0x40c, palace);
                             state.ram[0xa0..0xa2].copy_from_slice(&room.to_le_bytes());
-                            state.ram[0xf3c5] = progress;
+                            state.write_wram_byte(0xf3c5, progress);
                             state.ram[0x200] = map_state;
                             state.ram[0x1ce8] = 3;
                             state.ram[0x1cf4] = 9;
@@ -354,10 +354,10 @@ fn dungeon_player_control_menu_fallthrough_and_caller_work_match_rom() {
                                 emulation: false, waiting: false,
                                 stack_address: 0x01fd, stack_bytes: &[0x35, 0x80],
                             };
-                            let mut run = RomCpuTimingRun::new(&rom, &state.ram, &[0; 0x2000],
+                            let mut run = RomCpuTimingRun::new(&rom, &state.wram_image(), &[0; 0x2000],
                                 &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
                             run.enable_cpu_write_trace();
-                            let mut expected = state.ram.clone();
+                            let mut expected = state.wram_image().into_owned();
                             let mut cycles = 0;
                             let mut instructions = 0;
                             while !run.is_complete() {
@@ -376,7 +376,7 @@ fn dungeon_player_control_menu_fallthrough_and_caller_work_match_rom() {
                             assert_eq!(actual, cycles, "{label}");
                             for range in [0x10..0x14, 0xb0..0xb1, 0x10c..0x10d, 0x200..0x201,
                                 0x1ce8..0x1ce9, 0x1cf0..0x1cf2, 0x1cf4..0x1cf5, 0xfc1..0xfc6] {
-                                assert_eq!(&state.ram[range.clone()], &expected[range.clone()], "{label} range={range:x?}");
+                                assert_eq!(&state.wram_image()[range.clone()], &expected[range.clone()], "{label} range={range:x?}");
                             }
                         }
                     }
@@ -417,10 +417,10 @@ fn dungeon_screen_edge_caller_work_and_transition_state_match_rom() {
                                 emulation: false, waiting: false,
                                 stack_address: 0x01fd, stack_bytes: &[0x35, 0x80],
                             };
-                            let mut run = RomCpuTimingRun::new(&rom, &state.ram, &[0; 0x2000],
+                            let mut run = RomCpuTimingRun::new(&rom, &state.wram_image(), &[0; 0x2000],
                                 &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
                             run.enable_cpu_write_trace();
-                            let mut expected = state.ram.clone();
+                            let mut expected = state.wram_image().into_owned();
                             let mut cycles = 0;
                             let mut instructions = 0;
                             while !run.is_complete() {
@@ -440,7 +440,7 @@ fn dungeon_screen_edge_caller_work_and_transition_state_match_rom() {
                             for range in [0x10..0x14, 0x20..0x24, 0x30..0x32, 0x46..0x47,
                                 0x67..0x68, 0xa0..0xa4, 0xa9..0xab, 0xe2..0xe4, 0xe8..0xea,
                                 0x600..0x610] {
-                                assert_eq!(&state.ram[range.clone()], &expected[range.clone()], "{label} range={range:x?}");
+                                assert_eq!(&state.wram_image()[range.clone()], &expected[range.clone()], "{label} range={range:x?}");
                             }
                         }
                     }
@@ -490,10 +490,10 @@ fn check_staircase_against_rom(rom: &[u8], mut state: ZeldaState, label: &str) {
         emulation: false, waiting: false,
         stack_address: 0x01fd, stack_bytes: &[0x35, 0x80],
     };
-    let mut run = RomCpuTimingRun::new(rom, &state.ram, &[0; 0x2000],
+    let mut run = RomCpuTimingRun::new(rom, &state.wram_image(), &[0; 0x2000],
         &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
     run.enable_cpu_write_trace();
-    let mut expected = state.ram.clone();
+    let mut expected = state.wram_image().into_owned();
     let mut own_cycles = 0;
     let mut instructions = 0;
     while !run.is_complete() {
@@ -510,7 +510,7 @@ fn check_staircase_against_rom(rom: &[u8], mut state: ZeldaState, label: &str) {
     for range in [0x10..0x14, 0x20..0x24, 0x3a..0x3e, 0x48..0x49, 0x50..0x51,
         0xa0..0xa4, 0xb0..0xb1, 0x12e..0x12f, 0x371..0x372, 0x462..0x465,
         0x48a..0x48b, 0x492..0x493, 0xe2..0xe4, 0xe8..0xea, 0x600..0x610] {
-        assert_eq!(&state.ram[range.clone()], &expected[range.clone()], "{label} range={range:x?}");
+        assert_eq!(&state.wram_image()[range.clone()], &expected[range.clone()], "{label} range={range:x?}");
     }
 }
 
@@ -597,10 +597,10 @@ fn dungeon_camera_work_and_scroll_publications_match_rom() {
                     emulation: false, waiting: false,
                     stack_address: 0x01fd, stack_bytes: &[0x35, 0x80],
                 };
-                let mut run = RomCpuTimingRun::new(&rom, &state.ram, &[0; 0x2000],
+                let mut run = RomCpuTimingRun::new(&rom, &state.wram_image(), &[0; 0x2000],
                     &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
                 run.enable_cpu_write_trace();
-                let mut expected = state.ram.clone();
+                let mut expected = state.wram_image().into_owned();
                 let mut cycles = 0u64;
                 let mut instructions = 0;
                 while !run.is_complete() {
@@ -615,7 +615,7 @@ fn dungeon_camera_work_and_scroll_publications_match_rom() {
                 assert_eq!(crate::cycle_ledger::master() - before, cycles,
                     "vy={vy} vx={vx} scenario={scenario}");
                 for range in [0xe0..0xea, 0x618..0x624] {
-                    assert_eq!(&state.ram[range.clone()], &expected[range],
+                    assert_eq!(&state.wram_image()[range.clone()], &expected[range],
                         "vy={vy} vx={vx} scenario={scenario}");
                 }
             }
@@ -650,7 +650,7 @@ fn module07_scroll_caller_work_and_saved_words_match_rom() {
                 ] { native.ram[address..address + 2].copy_from_slice(&word.to_le_bytes()); }
                 native.ram[0x428] = collision;
                 native.sync_native_game_state_from_ram();
-                let mut expected = native.ram.clone();
+                let mut expected = native.wram_image().into_owned();
                 let mut saved = None;
                 for restoring in [false, true] {
                     if restoring {
@@ -689,8 +689,8 @@ fn module07_scroll_caller_work_and_saved_words_match_rom() {
                     }
                     assert_eq!(crate::cycle_ledger::master() - before, cycles,
                         "collision={collision} coordinate={coordinate:04x} offset={offset:04x} restoring={restoring}");
-                    assert_eq!(&native.ram[0xe0..0xea], &expected[0xe0..0xea]);
-                    assert_eq!(&native.ram[0x11e..0x126], &expected[0x11e..0x126]);
+                    assert_eq!(&native.wram_image()[0xe0..0xea], &expected[0xe0..0xea]);
+                    assert_eq!(&native.wram_image()[0x11e..0x126], &expected[0x11e..0x126]);
                 }
             }
         }
@@ -721,12 +721,12 @@ fn room_tag_caller_and_empty_returns_match_rom_for_every_skip_value() {
             emulation: false, waiting: false,
             stack_address: 0x01fc, stack_bytes: &[0x35, 0x80, 0],
         };
-        let mut run = RomCpuTimingRun::new(&rom, &state.ram, &[0; 0x2000],
+        let mut run = RomCpuTimingRun::new(&rom, &state.wram_image(), &[0; 0x2000],
             &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint)
             .unwrap();
         run.enable_cpu_write_trace();
         let mut source_cycles = 0;
-        let mut source_ram = state.ram.clone();
+        let mut source_ram = state.wram_image().into_owned();
         let mut steps = 0;
         let mut in_staircase = false;
         while !run.is_complete() {
@@ -752,7 +752,7 @@ fn room_tag_caller_and_empty_returns_match_rom_for_every_skip_value() {
         state.dungeon_handle_room_tags();
         assert_eq!(crate::cycle_ledger::master() - before - staircase_cycles,
             source_cycles, "skip {skip}");
-        assert_eq!(&state.ram[0xe..0x10], &source_ram[0xe..0x10], "skip {skip}");
+        assert_eq!(&state.wram_image()[0xe..0x10], &source_ram[0xe..0x10], "skip {skip}");
         assert_eq!(state.ram[0x4c7], source_ram[0x4c7], "skip {skip}");
     }
 }
@@ -799,7 +799,7 @@ fn torch_timer_prefix_cost_and_timer_writes_match_rom() {
             accumulator_is_8_bit: true, index_is_8_bit: true,
             emulation: false, waiting: false, stack_address: 0, stack_bytes: &[],
         };
-        let mut run = RomCpuTimingRun::new(&rom, &state.ram, &[0; 0x2000],
+        let mut run = RomCpuTimingRun::new(&rom, &state.wram_image(), &[0; 0x2000],
             &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint)
             .unwrap();
         run.enable_cpu_write_trace();
@@ -841,7 +841,7 @@ fn torch_timer_prefix_cost_and_timer_writes_match_rom() {
         state.dungeon_process_torch_timers();
         assert_eq!(crate::cycle_ledger::master() - before - callee_cycles,
             source_cycles, "case {case}: frame={frame} spell={spell} timers={timers:?}");
-        assert_eq!(&state.ram[0x4f0..0x500], &source_timers,
+        assert_eq!(&state.wram_image()[0x4f0..0x500], &source_timers,
             "case {case}: timer publication");
         for (slot, timer) in source_timers.into_iter().enumerate() {
             assert_eq!(state.game_state.dungeon.torch.timer(slot), timer,
@@ -876,8 +876,8 @@ fn quadrant_copy_after_trailing_nmi_returns_without_running_another_handler() {
         assert_eq!(state.game_state.frame.frame_counter, 0xa5);
         assert_eq!(state.game_state.dungeon.room_load.quadrant_upload_index(), 4);
         assert!(!state.game_state.display.nmi_update_is_latched());
-        assert_eq!(state.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX], 1);
-        assert_eq!(state.ram[crate::game_state::constants::NMI_DISABLE_CORE_UPDATES], 1);
+        assert_eq!(state.read_wram_byte(crate::game_state::constants::NMI_SUBROUTINE_INDEX), 1);
+        assert_eq!(state.read_wram_byte(crate::game_state::constants::NMI_DISABLE_CORE_UPDATES), 1);
         assert_eq!(state.ppu.vram, vram, "the following Open NMI owns the upload");
         state.game_execution_scheduler.begin_host_frame();
         assert!(state.game_execution_scheduler.main_return_requires_leading_nmi());
@@ -1007,8 +1007,8 @@ fn dungeon_load_room_resets_floor_velocity_words() {
 
     state.dungeon_load_room_reset_floor_velocity();
 
-    assert_eq!(read_le_u16(&state.ram, DUNG_FLOOR_Y_VEL_DUNGEON), 0);
-    assert_eq!(read_le_u16(&state.ram, DUNG_FLOOR_X_VEL), 0);
+    assert_eq!(read_le_u16(&state.wram_image(), DUNG_FLOOR_Y_VEL_DUNGEON), 0);
+    assert_eq!(read_le_u16(&state.wram_image(), DUNG_FLOOR_X_VEL), 0);
 }
 
 #[test]
@@ -1028,7 +1028,7 @@ fn native_interaction_handoffs_skip_owned_timers_probes_and_calls() {
     for case in 0..192usize {
         let mut expected = ZeldaState::new();
         expected.set_assets(&assets).unwrap();
-        crate::cycle_models::dungeon_interaction_caller::seed_case(&mut expected.ram, case);
+        { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_interaction_caller::seed_case(&mut image, case); expected.import_wram_image(&image); }
         expected.ram[0x10] = 7;
         expected.ram[0x1b] = 1;
         expected.ram[0x3c] = if case / 6 & 1 == 0 { 4 } else { 3 };
@@ -1090,7 +1090,7 @@ fn native_interaction_handoffs_skip_owned_timers_probes_and_calls() {
                             } else {
                                 a as usize
                             };
-                            u16::from(actual.ram[offset])
+                            u16::from(actual.read_wram_byte(offset))
                                 | if width == 2 {
                                     u16::from(actual.ram[offset + 1]) << 8
                                 } else {
@@ -1130,9 +1130,9 @@ fn native_interaction_handoffs_skip_owned_timers_probes_and_calls() {
         let remaining = crate::cycle_ledger::master() - before;
         let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
         let diffs = actual
-            .ram
+            .wram_image()
             .iter()
-            .zip(&expected.ram)
+            .zip(expected.wram_image().iter())
             .enumerate()
             .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
             .take(16)
@@ -1186,7 +1186,7 @@ fn edge_predicate_all_handler_states_and_recoil_publications_match_source() {
             state.sync_native_game_state_from_ram();
             let mut machine = snes::Snes::new();
             machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.ram[0x1f8..0x1fb].copy_from_slice(&[0xa7, 0x88, 2]);
             machine.cpu.k = 7;
             machine.cpu.pc = 0xf439;
@@ -1218,7 +1218,7 @@ fn edge_predicate_all_handler_states_and_recoil_publications_match_source() {
                 source.snes().cpu.pack_flags() & CARRY != 0,
                 "handler={handler} timer={timer}"
             );
-            let mut projected = state.ram.clone();
+            let mut projected = state.wram_image().into_owned();
             state
                 .game_state
                 .player
@@ -1226,11 +1226,11 @@ fn edge_predicate_all_handler_states_and_recoil_publications_match_source() {
                 .write_to_ram(&mut projected);
             for (a, b) in [(0x20, 0x24), (0x27, 0x29), (0x2c6, 0x2c7)] {
                 assert_eq!(
-                    &state.ram[a..b],
+                    &state.wram_image()[a..b],
                     &source.snes().ram[a..b],
                     "handler={handler} timer={timer}"
                 );
-                assert_eq!(&projected[a..b], &state.ram[a..b]);
+                assert_eq!(&projected[a..b], &state.wram_image()[a..b]);
             }
         }
     }
@@ -1319,9 +1319,9 @@ fn native_edge_handoffs_preserve_remaining_caller_and_do_not_repeat_predicate() 
                 .step(&mut cpu, &mut clock, |_, access| match access {
                     Access::Read(a, width) => {
                         let a = (a & 65535) as usize;
-                        u16::from(actual.ram[a])
+                        u16::from(actual.read_wram_byte(a))
                             | if width == 2 {
-                                u16::from(actual.ram[a + 1]) << 8
+                                u16::from(actual.read_wram_byte(a + 1)) << 8
                             } else {
                                 0
                             }
@@ -1354,9 +1354,9 @@ fn native_edge_handoffs_preserve_remaining_caller_and_do_not_repeat_predicate() 
         let remaining = crate::cycle_ledger::master() - before;
         let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
         let diffs = actual
-            .ram
+            .wram_image()
             .iter()
-            .zip(&expected.ram)
+            .zip(expected.wram_image().iter())
             .enumerate()
             .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
             .take(16)
@@ -1392,7 +1392,7 @@ fn native_lamp_handoff_preserves_sprite_suffix_without_replaying_cone_work() {
     };
     for case in 0..192usize {
         let mut expected = ZeldaState::new();
-        crate::cycle_models::dungeon_lamp_caller::seed_case(&mut expected.ram, case * 37);
+        { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_lamp_caller::seed_case(&mut image, case * 37); expected.import_wram_image(&image); }
         expected.ram[0x10] = 7;
         expected.ram[0x1b] = 1;
         expected.ram[0x11] = if case % 3 == 0 { 20 } else { 17 };
@@ -1434,9 +1434,9 @@ fn native_lamp_handoff_preserves_sprite_suffix_without_replaying_cone_work() {
                                 }
                         } else {
                             let a = (a & 65535) as usize;
-                            u16::from(actual.ram[a])
+                            u16::from(actual.read_wram_byte(a))
                                 | if width == 2 {
-                                    u16::from(actual.ram[a + 1]) << 8
+                                    u16::from(actual.read_wram_byte(a + 1)) << 8
                                 } else {
                                     0
                                 }
@@ -1444,8 +1444,7 @@ fn native_lamp_handoff_preserves_sprite_suffix_without_replaying_cone_work() {
                     }
                     Access::Write(a, v, width) => {
                         let a = (a & 65535) as usize;
-                        actual.ram[a..a + width as usize]
-                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        for (byte, value) in v.to_le_bytes()[..width as usize].iter().copied().enumerate() { actual.write_wram_byte(a + byte, value); }
                         actual.native_dungeon_camera_store(a, v, width);
                         0
                     }
@@ -1462,9 +1461,9 @@ fn native_lamp_handoff_preserves_sprite_suffix_without_replaying_cone_work() {
         let remaining = crate::cycle_ledger::master() - before;
         let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
         let diffs = actual
-            .ram
+            .wram_image()
             .iter()
-            .zip(&expected.ram)
+            .zip(expected.wram_image().iter())
             .enumerate()
             .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
             .take(16)
@@ -1495,7 +1494,7 @@ fn native_sprite_scroll_handoff_preserves_drawing_suffix_without_replaying_offse
     };
     for case in 0..192usize {
         let mut expected = ZeldaState::new();
-        crate::cycle_models::dungeon_sprite_scroll::seed_case(&mut expected.ram, case * 17);
+        { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_sprite_scroll::seed_case(&mut image, case * 17); expected.import_wram_image(&image); }
         expected.ram[0x10] = 7;
         expected.ram[0x1b] = 1;
         expected.ram[0x11] = if case % 3 == 0 { 20 } else { 17 };
@@ -1527,17 +1526,16 @@ fn native_sprite_scroll_handoff_preserves_drawing_suffix_without_replaying_offse
                 .step(&mut cpu, &mut clock, |_, access| match access {
                     Access::Read(a, width) => {
                         let a = (a & 65535) as usize;
-                        u16::from(actual.ram[a])
+                        u16::from(actual.read_wram_byte(a))
                             | if width == 2 {
-                                u16::from(actual.ram[a + 1]) << 8
+                                u16::from(actual.read_wram_byte(a + 1)) << 8
                             } else {
                                 0
                             }
                     }
                     Access::Write(a, v, width) => {
                         let a = (a & 65535) as usize;
-                        actual.ram[a..a + width as usize]
-                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        for (byte, value) in v.to_le_bytes()[..width as usize].iter().copied().enumerate() { actual.write_wram_byte(a + byte, value); }
                         actual.native_dungeon_camera_store(a, v, width);
                         0
                     }
@@ -1556,9 +1554,9 @@ fn native_sprite_scroll_handoff_preserves_drawing_suffix_without_replaying_offse
         let remaining = crate::cycle_ledger::master() - before;
         let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
         let diffs = actual
-            .ram
+            .wram_image()
             .iter()
-            .zip(&expected.ram)
+            .zip(expected.wram_image().iter())
             .enumerate()
             .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
             .take(16)
@@ -1593,7 +1591,7 @@ fn native_push_drawing_handoff_preserves_sprite_suffix_without_replaying_oam() {
     };
     for case in 0..192usize {
         let mut expected = ZeldaState::new();
-        crate::cycle_models::dungeon_push_drawing::seed_case(&mut expected.ram, case * 13);
+        { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_push_drawing::seed_case(&mut image, case * 13); expected.import_wram_image(&image); }
         expected.ram[0x10] = 7;
         expected.ram[0x1b] = 1;
         expected.ram[0x11] = if case % 3 == 0 { 20 } else { 17 };
@@ -1642,13 +1640,12 @@ fn native_push_drawing_handoff_preserves_sprite_suffix_without_replaying_oam() {
                             u16::from(v) | if width==2 {u16::from(crate::cycle_models::push_block_drawing::table_byte(a+1).unwrap())<<8} else {0}
                         } else {
                             let a=(a&65535) as usize;
-                            u16::from(actual.ram[a]) | if width==2 {u16::from(actual.ram[a+1])<<8} else {0}
+                            u16::from(actual.read_wram_byte(a)) | if width==2 {u16::from(actual.ram[a+1])<<8} else {0}
                         }
                     }
                     Access::Write(a, v, width) => {
                         let a = (a & 65535) as usize;
-                        actual.ram[a..a + width as usize]
-                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        for (byte, value) in v.to_le_bytes()[..width as usize].iter().copied().enumerate() { actual.write_wram_byte(a + byte, value); }
                         actual.native_push_block_store(a, v, width);
                         0
                     }
@@ -1666,9 +1663,9 @@ fn native_push_drawing_handoff_preserves_sprite_suffix_without_replaying_oam() {
         let remaining = crate::cycle_ledger::master() - before;
         let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
         let diffs = actual
-            .ram
+            .wram_image()
             .iter()
-            .zip(&expected.ram)
+            .zip(expected.wram_image().iter())
             .enumerate()
             .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
             .take(16)
@@ -1703,7 +1700,7 @@ fn native_sprite_prefix_handoff_preserves_all_remaining_sprite_work_without_rese
     };
     for case in 0..192usize {
         let mut expected = ZeldaState::new();
-        crate::cycle_models::dungeon_sprite_prefix::seed_case(&mut expected.ram, case * 13);
+        { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_sprite_prefix::seed_case(&mut image, case * 13); expected.import_wram_image(&image); }
         expected.ram[0x10] = 7;
 
         let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
@@ -1759,9 +1756,9 @@ fn native_sprite_prefix_handoff_preserves_all_remaining_sprite_work_without_rese
                                 }
                         } else {
                             let a = (a & 65535) as usize;
-                            u16::from(actual.ram[a])
+                            u16::from(actual.read_wram_byte(a))
                                 | if width == 2 {
-                                    u16::from(actual.ram[a + 1]) << 8
+                                    u16::from(actual.read_wram_byte(a + 1)) << 8
                                 } else {
                                     0
                                 }
@@ -1769,8 +1766,7 @@ fn native_sprite_prefix_handoff_preserves_all_remaining_sprite_work_without_rese
                     }
                     Access::Write(a, v, width) => {
                         let a = (a & 65535) as usize;
-                        actual.ram[a..a + width as usize]
-                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        for (byte, value) in v.to_le_bytes()[..width as usize].iter().copied().enumerate() { actual.write_wram_byte(a + byte, value); }
                         actual.native_push_block_store(a, v, width);
                         0
                     }
@@ -1791,9 +1787,9 @@ fn native_sprite_prefix_handoff_preserves_all_remaining_sprite_work_without_rese
         let remaining = crate::cycle_ledger::master() - before;
         let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
         let diffs = actual
-            .ram
+            .wram_image()
             .iter()
-            .zip(&expected.ram)
+            .zip(expected.wram_image().iter())
             .enumerate()
             .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
             .take(16)
@@ -1910,9 +1906,9 @@ fn native_garnish_handoff_preserves_remaining_palette_and_slot_work_once() {
                             } else {
                                 0xffff
                             }) as usize;
-                            u16::from(actual.ram[a])
+                            u16::from(actual.read_wram_byte(a))
                                 | if width == 2 {
-                                    u16::from(actual.ram[a + 1]) << 8
+                                    u16::from(actual.read_wram_byte(a + 1)) << 8
                                 } else {
                                     0
                                 }
@@ -1924,8 +1920,7 @@ fn native_garnish_handoff_preserves_remaining_palette_and_slot_work_once() {
                         } else {
                             0xffff
                         }) as usize;
-                        actual.ram[a..a + width as usize]
-                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        for (byte, value) in v.to_le_bytes()[..width as usize].iter().copied().enumerate() { actual.write_wram_byte(a + byte, value); }
                         actual.native_push_block_store(a, v, width);
                         0
                     }
@@ -1949,9 +1944,9 @@ fn native_garnish_handoff_preserves_remaining_palette_and_slot_work_once() {
         let remaining = crate::cycle_ledger::master() - before;
         let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
         let diffs = actual
-            .ram
+            .wram_image()
             .iter()
-            .zip(&expected.ram)
+            .zip(expected.wram_image().iter())
             .enumerate()
             .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
             .take(16)
@@ -1988,7 +1983,7 @@ fn native_follower_handoff_preserves_remaining_trigger_movement_and_dialogue_onc
     };
     for case in 0..384usize {
         let mut expected = ZeldaState::new();
-        crate::cycle_models::dungeon_follower::seed_case(&mut expected.ram, case * 17);
+        { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_follower::seed_case(&mut image, case * 17); expected.import_wram_image(&image); }
         expected.ram[0xf3cc] = [0, 5, 9, 10, 14, 1, 12, 13][case % 8];
         expected.ram[0x1b] = 1;
         expected.ram[0x10] = 7;
@@ -2057,9 +2052,9 @@ fn native_follower_handoff_preserves_remaining_trigger_movement_and_dialogue_onc
                             } else {
                                 0xffff
                             }) as usize;
-                            u16::from(actual.ram[a])
+                            u16::from(actual.read_wram_byte(a))
                                 | if width == 2 {
-                                    u16::from(actual.ram[a + 1]) << 8
+                                    u16::from(actual.read_wram_byte(a + 1)) << 8
                                 } else {
                                     0
                                 }
@@ -2071,8 +2066,7 @@ fn native_follower_handoff_preserves_remaining_trigger_movement_and_dialogue_onc
                         } else {
                             0xffff
                         }) as usize;
-                        actual.ram[a..a + width as usize]
-                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        for (byte, value) in v.to_le_bytes()[..width as usize].iter().copied().enumerate() { actual.write_wram_byte(a + byte, value); }
                         actual.native_push_block_store(a, v, width);
                         0
                     }
@@ -2098,9 +2092,9 @@ fn native_follower_handoff_preserves_remaining_trigger_movement_and_dialogue_onc
         let remaining = crate::cycle_ledger::master() - before;
         let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
         let diffs = actual
-            .ram
+            .wram_image()
             .iter()
-            .zip(&expected.ram)
+            .zip(expected.wram_image().iter())
             .enumerate()
             .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
             .take(16)
@@ -2137,7 +2131,7 @@ fn native_ancilla_handoff_preserves_remaining_spark_effects_and_receipt_once() {
     };
     for case in 0..384usize {
         let mut expected = ZeldaState::new();
-        crate::cycle_models::dungeon_ancilla::seed_case(&mut expected.ram, case * 17);
+        { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_ancilla::seed_case(&mut image, case * 17); expected.import_wram_image(&image); }
         expected.ram[0x1b] = 1;
         expected.ram[0x10] = 7;
         expected.ram[0x307] = 1;
@@ -2219,9 +2213,9 @@ fn native_ancilla_handoff_preserves_remaining_spark_effects_and_receipt_once() {
                             } else {
                                 0xffff
                             }) as usize;
-                            u16::from(actual.ram[a])
+                            u16::from(actual.read_wram_byte(a))
                                 | if width == 2 {
-                                    u16::from(actual.ram[a + 1]) << 8
+                                    u16::from(actual.read_wram_byte(a + 1)) << 8
                                 } else {
                                     0
                                 }
@@ -2233,8 +2227,7 @@ fn native_ancilla_handoff_preserves_remaining_spark_effects_and_receipt_once() {
                         } else {
                             0xffff
                         }) as usize;
-                        actual.ram[a..a + width as usize]
-                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        for (byte, value) in v.to_le_bytes()[..width as usize].iter().copied().enumerate() { actual.write_wram_byte(a + byte, value); }
                         actual.native_push_block_store(a, v, width);
                         0
                     }
@@ -2260,9 +2253,9 @@ fn native_ancilla_handoff_preserves_remaining_spark_effects_and_receipt_once() {
         let remaining = crate::cycle_ledger::master() - before;
         let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
         let diffs = actual
-            .ram
+            .wram_image()
             .iter()
-            .zip(&expected.ram)
+            .zip(expected.wram_image().iter())
             .enumerate()
             .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
             .take(16)
@@ -2299,7 +2292,7 @@ fn native_ancilla_receipt_drawing_handoff_preserves_complete_sprite_caller_once(
     };
     for case in 0..384usize {
         let mut expected = ZeldaState::new();
-        crate::cycle_models::dungeon_ancilla::seed_case(&mut expected.ram, case * 17);
+        { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_ancilla::seed_case(&mut image, case * 17); expected.import_wram_image(&image); }
         expected.ram[0x1b] = 1;
         expected.ram[0x10] = 7;
         expected.ram[0x307] = 1;
@@ -2386,9 +2379,9 @@ fn native_ancilla_receipt_drawing_handoff_preserves_complete_sprite_caller_once(
                             } else {
                                 0xffff
                             }) as usize;
-                            u16::from(actual.ram[a])
+                            u16::from(actual.read_wram_byte(a))
                                 | if width == 2 {
-                                    u16::from(actual.ram[a + 1]) << 8
+                                    u16::from(actual.read_wram_byte(a + 1)) << 8
                                 } else {
                                     0
                                 }
@@ -2400,8 +2393,7 @@ fn native_ancilla_receipt_drawing_handoff_preserves_complete_sprite_caller_once(
                         } else {
                             0xffff
                         }) as usize;
-                        actual.ram[a..a + width as usize]
-                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        for (byte, value) in v.to_le_bytes()[..width as usize].iter().copied().enumerate() { actual.write_wram_byte(a + byte, value); }
                         actual.native_push_block_store(a, v, width);
                         0
                     }
@@ -2427,9 +2419,9 @@ fn native_ancilla_receipt_drawing_handoff_preserves_complete_sprite_caller_once(
         let remaining = crate::cycle_ledger::master() - before;
         let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
         let diffs = actual
-            .ram
+            .wram_image()
             .iter()
-            .zip(&expected.ram)
+            .zip(expected.wram_image().iter())
             .enumerate()
             .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
             .take(16)
@@ -2466,7 +2458,7 @@ fn native_ancilla_receipt_oam_handoff_preserves_complete_sprite_caller_without_b
     };
     for case in 0..384usize {
         let mut expected = ZeldaState::new();
-        crate::cycle_models::dungeon_ancilla::seed_case(&mut expected.ram, case * 17);
+        { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_ancilla::seed_case(&mut image, case * 17); expected.import_wram_image(&image); }
         expected.ram[0x1b] = 1;
         expected.ram[0x10] = 7;
         expected.ram[0x307] = 1;
@@ -2556,9 +2548,9 @@ fn native_ancilla_receipt_oam_handoff_preserves_complete_sprite_caller_without_b
                             } else {
                                 0xffff
                             }) as usize;
-                            u16::from(actual.ram[a])
+                            u16::from(actual.read_wram_byte(a))
                                 | if width == 2 {
-                                    u16::from(actual.ram[a + 1]) << 8
+                                    u16::from(actual.read_wram_byte(a + 1)) << 8
                                 } else {
                                     0
                                 }
@@ -2570,8 +2562,7 @@ fn native_ancilla_receipt_oam_handoff_preserves_complete_sprite_caller_without_b
                         } else {
                             0xffff
                         }) as usize;
-                        actual.ram[a..a + width as usize]
-                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        for (byte, value) in v.to_le_bytes()[..width as usize].iter().copied().enumerate() { actual.write_wram_byte(a + byte, value); }
                         actual.native_push_block_store(a, v, width);
                         0
                     }
@@ -2598,9 +2589,9 @@ fn native_ancilla_receipt_oam_handoff_preserves_complete_sprite_caller_without_b
         // $74 is the Source palette local, verified instruction by instruction.
         let excluded = |i: usize| i < 0x10 || i==0x74 || (0x1c0..0x200).contains(&i);
         let diffs = actual
-            .ram
+            .wram_image()
             .iter()
-            .zip(&expected.ram)
+            .zip(expected.wram_image().iter())
             .enumerate()
             .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
             .take(16)
@@ -2637,7 +2628,7 @@ fn native_ancilla_slot_return_preserves_complete_sprite_caller_without_loop_repl
     };
     for case in 0..384usize {
         let mut expected = ZeldaState::new();
-        crate::cycle_models::dungeon_ancilla::seed_case(&mut expected.ram, case * 17);
+        { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_ancilla::seed_case(&mut image, case * 17); expected.import_wram_image(&image); }
         expected.ram[0x1b] = 1;
         expected.ram[0x10] = 7;
         expected.ram[0x307] = 1;
@@ -2730,9 +2721,9 @@ fn native_ancilla_slot_return_preserves_complete_sprite_caller_without_loop_repl
                             } else {
                                 0xffff
                             }) as usize;
-                            u16::from(actual.ram[a])
+                            u16::from(actual.read_wram_byte(a))
                                 | if width == 2 {
-                                    u16::from(actual.ram[a + 1]) << 8
+                                    u16::from(actual.read_wram_byte(a + 1)) << 8
                                 } else {
                                     0
                                 }
@@ -2744,8 +2735,7 @@ fn native_ancilla_slot_return_preserves_complete_sprite_caller_without_loop_repl
                         } else {
                             0xffff
                         }) as usize;
-                        actual.ram[a..a + width as usize]
-                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        for (byte, value) in v.to_le_bytes()[..width as usize].iter().copied().enumerate() { actual.write_wram_byte(a + byte, value); }
                         actual.native_push_block_store(a, v, width);
                         0
                     }
@@ -2772,9 +2762,9 @@ fn native_ancilla_slot_return_preserves_complete_sprite_caller_without_loop_repl
         // $74 is the Source palette local, verified instruction by instruction.
         let excluded = |i: usize| i < 0x10 || i==0x74 || (0x1c0..0x200).contains(&i);
         let diffs = actual
-            .ram
+            .wram_image()
             .iter()
-            .zip(&expected.ram)
+            .zip(expected.wram_image().iter())
             .enumerate()
             .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
             .take(16)
@@ -2811,7 +2801,7 @@ fn native_dungeon_overlord_handoff_preserves_complete_sprite_caller_without_head
     };
     for case in 0..384usize {
         let mut expected = ZeldaState::new();
-        crate::cycle_models::dungeon_ancilla::seed_case(&mut expected.ram, case * 17);
+        { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_ancilla::seed_case(&mut image, case * 17); expected.import_wram_image(&image); }
         expected.ram[0x1b] = 1;
         expected.ram[0x10] = 7;
         expected.ram[0x307] = 1;
@@ -2834,7 +2824,7 @@ fn native_dungeon_overlord_handoff_preserves_complete_sprite_caller_without_head
             expected.ram[0x39f+k]=0;
             expected.ram[0xc68 + k] = [0, 1, 3, 7][case % 4];
         }
-        crate::cycle_models::dungeon_overlord::seed_case(&mut expected.ram,case*17);
+        { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_overlord::seed_case(&mut image, case*17); expected.import_wram_image(&image); }
         for k in 0..8 { if expected.ram[0xb00+k]!=0 {expected.ram[0xb00+k]=1;} }
         let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
             bg2_x: case as u16 * 113,
@@ -2903,9 +2893,9 @@ fn native_dungeon_overlord_handoff_preserves_complete_sprite_caller_without_head
                             } else {
                                 0xffff
                             }) as usize;
-                            u16::from(actual.ram[a])
+                            u16::from(actual.read_wram_byte(a))
                                 | if width == 2 {
-                                    u16::from(actual.ram[a + 1]) << 8
+                                    u16::from(actual.read_wram_byte(a + 1)) << 8
                                 } else {
                                     0
                                 }
@@ -2917,8 +2907,7 @@ fn native_dungeon_overlord_handoff_preserves_complete_sprite_caller_without_head
                         } else {
                             0xffff
                         }) as usize;
-                        actual.ram[a..a + width as usize]
-                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        for (byte, value) in v.to_le_bytes()[..width as usize].iter().copied().enumerate() { actual.write_wram_byte(a + byte, value); }
                         actual.native_push_block_store(a, v, width);
                         0
                     }
@@ -2945,9 +2934,9 @@ fn native_dungeon_overlord_handoff_preserves_complete_sprite_caller_without_head
         // CPU scratch and real stacks are verified instruction by instruction.
         let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
         let diffs = actual
-            .ram
+            .wram_image()
             .iter()
-            .zip(&expected.ram)
+            .zip(expected.wram_image().iter())
             .enumerate()
             .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
             .take(16)
@@ -2984,7 +2973,7 @@ fn native_dungeon_sprite_slots_handoff_preserves_complete_sprite_caller_without_
     };
     for case in 0..392usize {
         let mut expected = ZeldaState::new();
-        crate::cycle_models::dungeon_ancilla::seed_case(&mut expected.ram, case * 17);
+        { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_ancilla::seed_case(&mut image, case * 17); expected.import_wram_image(&image); }
         expected.ram[0x1b] = 1;
         expected.ram[0x10] = 7;
         expected.ram[0x307] = 1;
@@ -3007,7 +2996,7 @@ fn native_dungeon_sprite_slots_handoff_preserves_complete_sprite_caller_without_
             expected.ram[0x39f+k]=0;
             expected.ram[0xc68 + k] = [0, 1, 3, 7][case % 4];
         }
-        crate::cycle_models::dungeon_sprite_slots::seed_case(&mut expected.ram,case);
+        { let mut image = expected.wram_image().into_owned(); crate::cycle_models::dungeon_sprite_slots::seed_case(&mut image, case); expected.import_wram_image(&image); }
         expected.ram[0x11]=17; // Freeze active bodies; all eleven real states still dispatch.
         for k in 0..16 { expected.ram[0xe20+k]=0x73;expected.ram[0xef0+k]=0; }
         let saved = crate::cycle_models::dungeon_sprite_scroll::SavedSpriteScroll {
@@ -3105,9 +3094,9 @@ fn native_dungeon_sprite_slots_handoff_preserves_complete_sprite_caller_without_
                             } else {
                                 0xffff
                             }) as usize;
-                            u16::from(actual.ram[a])
+                            u16::from(actual.read_wram_byte(a))
                                 | if width == 2 {
-                                    u16::from(actual.ram[a + 1]) << 8
+                                    u16::from(actual.read_wram_byte(a + 1)) << 8
                                 } else {
                                     0
                                 }
@@ -3119,8 +3108,7 @@ fn native_dungeon_sprite_slots_handoff_preserves_complete_sprite_caller_without_
                         } else {
                             0xffff
                         }) as usize;
-                        actual.ram[a..a + width as usize]
-                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        for (byte, value) in v.to_le_bytes()[..width as usize].iter().copied().enumerate() { actual.write_wram_byte(a + byte, value); }
                         actual.native_push_block_store(a, v, width);
                         0
                     }
@@ -3147,9 +3135,9 @@ fn native_dungeon_sprite_slots_handoff_preserves_complete_sprite_caller_without_
         // CPU scratch and real stacks are verified instruction by instruction.
         let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
         let diffs = actual
-            .ram
+            .wram_image()
             .iter()
-            .zip(&expected.ram)
+            .zip(expected.wram_image().iter())
             .enumerate()
             .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
             .take(16)
@@ -3263,9 +3251,9 @@ fn native_lower_garnish_handoff_preserves_countdown_allocation_and_complete_spri
                             } else {
                                 0xffff
                             }) as usize;
-                            u16::from(actual.ram[a])
+                            u16::from(actual.read_wram_byte(a))
                                 | if width == 2 {
-                                    u16::from(actual.ram[a + 1]) << 8
+                                    u16::from(actual.read_wram_byte(a + 1)) << 8
                                 } else {
                                     0
                                 }
@@ -3277,8 +3265,7 @@ fn native_lower_garnish_handoff_preserves_countdown_allocation_and_complete_spri
                         } else {
                             0xffff
                         }) as usize;
-                        actual.ram[a..a + width as usize]
-                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        for (byte, value) in v.to_le_bytes()[..width as usize].iter().copied().enumerate() { actual.write_wram_byte(a + byte, value); }
                         actual.native_push_block_store(a, v, width);
                         0
                     }
@@ -3302,9 +3289,9 @@ fn native_lower_garnish_handoff_preserves_countdown_allocation_and_complete_spri
         let remaining = crate::cycle_ledger::master() - before;
         let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
         let diffs = actual
-            .ram
+            .wram_image()
             .iter()
-            .zip(&expected.ram)
+            .zip(expected.wram_image().iter())
             .enumerate()
             .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
             .take(16)
@@ -3429,9 +3416,9 @@ fn native_cached_sprites_handoff_preserves_cache_execution_restore_and_complete_
                             } else {
                                 0xffff
                             }) as usize;
-                            u16::from(actual.ram[a])
+                            u16::from(actual.read_wram_byte(a))
                                 | if width == 2 {
-                                    u16::from(actual.ram[a + 1]) << 8
+                                    u16::from(actual.read_wram_byte(a + 1)) << 8
                                 } else {
                                     0
                                 }
@@ -3443,8 +3430,7 @@ fn native_cached_sprites_handoff_preserves_cache_execution_restore_and_complete_
                         } else {
                             0xffff
                         }) as usize;
-                        actual.ram[a..a + width as usize]
-                            .copy_from_slice(&v.to_le_bytes()[..width as usize]);
+                        for (byte, value) in v.to_le_bytes()[..width as usize].iter().copied().enumerate() { actual.write_wram_byte(a + byte, value); }
                         actual.native_push_block_store(a, v, width);
                         0
                     }
@@ -3482,9 +3468,9 @@ fn native_cached_sprites_handoff_preserves_cache_execution_restore_and_complete_
         let remaining = crate::cycle_ledger::master() - before;
         let excluded = |i: usize| i < 0x10 || (0x1c0..0x200).contains(&i);
         let diffs = actual
-            .ram
+            .wram_image()
             .iter()
-            .zip(&expected.ram)
+            .zip(expected.wram_image().iter())
             .enumerate()
             .filter_map(|(i, (a, b))| (!excluded(i) && a != b).then_some((i, *a, *b)))
             .take(16)
@@ -3559,7 +3545,7 @@ fn native_sprite_timers_handoffs_preserve_message_recoil_and_module_change_once(
             assert!(actual.native_sprite_timer_handoff.is_none());
         }let remaining=crate::cycle_ledger::master()-before;
         let excluded=|i:usize|i<0x10||(0x1c0..0x200).contains(&i);
-        for (i,(a,b)) in actual.ram.iter().zip(&expected.ram).enumerate() {assert!(excluded(i)||a==b,"case={case} RAM {i:05x}: {a:02x}/{b:02x}");}
+        for (i,(a,b)) in actual.wram_image().iter().zip(expected.wram_image().iter()).enumerate() {assert!(excluded(i)||a==b,"case={case} RAM {i:05x}: {a:02x}/{b:02x}");}
         let mut a=vec![0xa5;snes::WRAM_SIZE];let mut b=a.clone();actual.game_state.write_to_ram(&mut a);expected.game_state.write_to_ram(&mut b);
         for (i,(a,b)) in a.iter().zip(&b).enumerate() {assert!(excluded(i)||a==b,"case={case} native {i:05x}: {a:02x}/{b:02x}");}
         assert_eq!(full-remaining,owned,"case={case} no timer prefix replay");
@@ -3594,7 +3580,7 @@ fn native_recoil_prefix_handoffs_preserve_health_damage_and_remaining_bodies_onc
         let before=crate::cycle_ledger::master();expected.sprite_mini_moldorm_recoil(k);let full=crate::cycle_ledger::master()-before;
         let before=crate::cycle_ledger::master();if tail!=RecoilTail::Returned{actual.finish_native_sprite_recoil(k,tail);}let remaining=crate::cycle_ledger::master()-before;
         let excluded=|i:usize|i<16||(0x1c0..0x200).contains(&i);
-        for(i,(a,b))in actual.ram.iter().zip(&expected.ram).enumerate(){assert!(excluded(i)||a==b,"recoil case={case} RAM {i:05x}: {a:02x}/{b:02x}");}
+        for(i,(a,b))in actual.wram_image().iter().zip(expected.wram_image().iter()).enumerate(){assert!(excluded(i)||a==b,"recoil case={case} RAM {i:05x}: {a:02x}/{b:02x}");}
         let mut a=vec![0xa5;snes::WRAM_SIZE];let mut b=a.clone();actual.game_state.write_to_ram(&mut a);expected.game_state.write_to_ram(&mut b);
         for(i,(a,b))in a.iter().zip(&b).enumerate(){assert!(excluded(i)||a==b,"recoil case={case} native {i:05x}: {a:02x}/{b:02x}");}
         assert_eq!(full-remaining,owned,"recoil case={case} actual owned prefix omitted once");

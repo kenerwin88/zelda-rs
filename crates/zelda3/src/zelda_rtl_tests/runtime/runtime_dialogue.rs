@@ -26,7 +26,7 @@ fn current_dialogue_message_id_setter_updates_native_state_and_ram() {
     state.set_current_dialogue_message_id(0x00c8);
 
     assert_eq!(state.current_dialogue_message_id(), 0x00c8);
-    assert_eq!(read_le_u16(&state.ram, DIALOGUE_MESSAGE_INDEX), 0x00c8);
+    assert_eq!(read_le_u16(&state.wram_image(), DIALOGUE_MESSAGE_INDEX), 0x00c8);
 }
 
 #[test]
@@ -1057,7 +1057,7 @@ fn carried_terminal_return_without_a_suspended_vwf_keeps_the_empty_cpu_closure()
 fn dless_suspended_vwf_terminal_preflight_is_failure_atomic() {
     fn assert_rejected(mut state: ZeldaState) {
         let scheduler_before = state.game_execution_scheduler;
-        let ram_before = state.ram.clone();
+        let ram_before = state.wram_image().into_owned();
         let receipts_before = state.original_timing_semantic_receipts.clone();
         let gates_before = state.original_timing_expected_nmi_update_gates.clone();
         let suffix_before = state.pending_main_loop_common_suffix;
@@ -1095,7 +1095,7 @@ fn dless_suspended_vwf_terminal_preflight_is_failure_atomic() {
         }));
         assert!(result.is_err());
         assert_eq!(state.game_execution_scheduler, scheduler_before);
-        assert_eq!(state.ram, ram_before);
+        assert_eq!(*state.wram_image(), ram_before);
         assert_eq!(state.original_timing_semantic_receipts, receipts_before);
         assert_eq!(
             state.original_timing_expected_nmi_update_gates,
@@ -1359,7 +1359,7 @@ fn terminal_idle_dialogue_endpoint_preflight_is_failure_atomic() {
             .unwrap();
         mutate_installed_state(&mut state);
         let scheduler_before = state.game_execution_scheduler;
-        let ram_before = state.ram.clone();
+        let ram_before = state.wram_image().into_owned();
         let receipts_before = state.original_timing_semantic_receipts.clone();
         let gates_before = state.original_timing_expected_nmi_update_gates.clone();
         let suffix_before = state.pending_main_loop_common_suffix;
@@ -1385,7 +1385,7 @@ fn terminal_idle_dialogue_endpoint_preflight_is_failure_atomic() {
         }));
         assert!(result.is_err());
         assert_eq!(state.game_execution_scheduler, scheduler_before);
-        assert_eq!(state.ram, ram_before);
+        assert_eq!(*state.wram_image(), ram_before);
         assert_eq!(state.original_timing_semantic_receipts, receipts_before);
         assert_eq!(
             state.original_timing_expected_nmi_update_gates,
@@ -3368,11 +3368,11 @@ fn dialogue_exit_bg_packet_waits_for_the_following_nmi() {
     state.set_bg_vram_load_mode(1);
 
     state.interrupt_nmi(0, None, true);
-    assert_eq!(state.ram[NMI_LOAD_BG_FROM_VRAM], 1);
+    assert_eq!(state.read_wram_byte(NMI_LOAD_BG_FROM_VRAM), 1);
 
     state.clear_nmi_update_latch();
     state.interrupt_nmi(0, None, false);
-    assert_eq!(state.ram[NMI_LOAD_BG_FROM_VRAM], 0);
+    assert_eq!(state.read_wram_byte(NMI_LOAD_BG_FROM_VRAM), 0);
 }
 
 #[test]

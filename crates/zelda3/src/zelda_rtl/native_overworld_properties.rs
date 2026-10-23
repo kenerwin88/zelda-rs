@@ -46,8 +46,9 @@ impl ZeldaState {
             self.ppu.write(address as u8, value as u8);
             return Ok(());
         }
-        self.ram[offset..offset + usize::from(width)]
-            .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        for (byte, value) in value.to_le_bytes().into_iter().take(usize::from(width)).enumerate() {
+            self.write_wram_byte(offset + byte, value);
+        }
         if (0xc300..0xc700).contains(&offset) {
             assert_eq!(width, 2);
             assert_eq!(offset & 1, 0);
@@ -214,8 +215,9 @@ impl ZeldaState {
                 }
             }
         }
-        self.ram[offset..offset + usize::from(width)]
-            .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        for (byte, value) in value.to_le_bytes().into_iter().take(usize::from(width)).enumerate() {
+            self.write_wram_byte(offset + byte, value);
+        }
         Ok(())
     }
 }

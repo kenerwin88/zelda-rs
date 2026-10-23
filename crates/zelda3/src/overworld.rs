@@ -1590,7 +1590,7 @@ impl ZeldaState {
         // no sprite logic: this staging walk must not leak any CPU-visible
         // mutation (a walking soldier stepped one extra time at route host
         // 115867). Keep only the staged OAM shadow; restore everything else.
-        let ram_before_provisional_walk = self.ram.clone();
+        let ram_before_provisional_walk = self.wram_image().into_owned();
         let game_state_before_provisional_walk = self.game_state.clone();
         self.sprite_main();
         assert_eq!(
@@ -1599,7 +1599,7 @@ impl ZeldaState {
         );
         self.original_timing_sprite_main_return_claims_remaining = source_claim_scope;
         let staged_oam = self.ram[crate::game_state::constants::OAM_BUF..][..0x220].to_vec();
-        self.ram.copy_from_slice(&ram_before_provisional_walk);
+        self.import_wram_image(&ram_before_provisional_walk);
         self.game_state = game_state_before_provisional_walk;
         self.ram[crate::game_state::constants::OAM_BUF..][..0x220].copy_from_slice(&staged_oam);
         // The restored native state predates the staged shadow; re-adopt the
@@ -1622,12 +1622,12 @@ impl ZeldaState {
         // caller return, so their CPU-visible side effects (the water/grass
         // ripple timers advanced twice per transition, route frame 442751;
         // refill counters) must not leak. Keep only the staged OAM shadow.
-        let ram_before_provisional_suffix = self.ram.clone();
+        let ram_before_provisional_suffix = self.wram_image().into_owned();
         let game_state_before_provisional_suffix = self.game_state.clone();
         self.link_oam_main();
         self.hud_refill_logic();
         let staged_oam = self.ram[crate::game_state::constants::OAM_BUF..][..0x220].to_vec();
-        self.ram.copy_from_slice(&ram_before_provisional_suffix);
+        self.import_wram_image(&ram_before_provisional_suffix);
         self.game_state = game_state_before_provisional_suffix;
         self.ram[crate::game_state::constants::OAM_BUF..][..0x220].copy_from_slice(&staged_oam);
         self.game_state.oam.reload_staged_shadow_from_ram(&self.ram);

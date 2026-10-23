@@ -29,16 +29,16 @@ fn initial_scroll_resumes_without_replaying_stripes_or_coordinate_tails() {
                 let pending = resumed.ram[0x1102..0x1950].to_vec();
                 resumed.advance_initial_scroll_cursor(&mut cursor, cut);
                 if cut <= 32 {
-                    assert_eq!(&resumed.ram[0x1102..0x1950], &pending,
+                    assert_eq!(&resumed.wram_image()[0x1102..0x1950], &pending,
                         "stripe source stores must not publish map8 output");
                 }
-                let once = resumed.ram.clone();
+                let once = resumed.wram_image().into_owned();
                 resumed.advance_initial_scroll_cursor(&mut cursor, cut);
-                assert_eq!(resumed.ram, once);
+                assert_eq!(*resumed.wram_image(), once);
                 resumed.native_initial_scroll = Some(cursor);
                 resumed.CreateInitialNewScreenMapToScroll();
                 assert!(resumed.native_initial_scroll.is_none());
-                assert_eq!(resumed.ram, expected.ram, "small={small} dir={direction} cut={cut}");
+                assert_eq!(*resumed.wram_image(), *expected.wram_image(), "small={small} dir={direction} cut={cut}");
                 assert_eq!(resumed.game_state, expected.game_state);
             }
             let mut completed = initial.clone();
@@ -60,7 +60,7 @@ fn initial_scroll_resumes_without_replaying_stripes_or_coordinate_tails() {
                     (actual.buffer_and_build_map16_stripes_y(7), frozen.reference_BufferAndBuildMap16Stripes_Y(7))
                 };
                 assert_eq!(a, b);
-                assert_eq!(actual.ram, frozen.ram);
+                assert_eq!(*actual.wram_image(), frozen.ram);
                 assert_eq!(actual.game_state, frozen.game_state);
             }
         }
@@ -94,26 +94,26 @@ fn quadrant_publication_resumes_each_word_without_redrawing_completed_tiles() {
                 let tile = (store % 1024) / 4;
                 let pos = [0, 0x40, 0x1000, 0x1040][quadrant]
                     + (tile / 16) * 256 + (tile % 16) * 4 + [0, 128, 2, 130][store % 4];
-                prefix[pos..pos + 2].copy_from_slice(&expected.ram[0x2000 + pos..0x2002 + pos]);
+                prefix[pos..pos + 2].copy_from_slice(&expected.wram_image()[0x2000 + pos..0x2002 + pos]);
             }
-            assert_eq!(&resumed.ram[0x2000..0x4000], &prefix, "screen={screen} cut={cut}");
-            let once = resumed.ram.clone();
+            assert_eq!(&resumed.wram_image()[0x2000..0x4000], &prefix, "screen={screen} cut={cut}");
+            let once = resumed.wram_image().into_owned();
             resumed.advance_overworld_quadrant_cursor(&mut cursor, cut);
-            assert_eq!(resumed.ram, once);
+            assert_eq!(*resumed.wram_image(), once);
             resumed.native_overworld_quadrants = Some(cursor);
             resumed.overworld_decompress_and_draw_all_quadrants();
             assert!(resumed.native_overworld_quadrants.is_none());
-            assert_eq!(resumed.ram, expected.ram, "screen={screen} cut={cut}");
+            assert_eq!(*resumed.wram_image(), *expected.wram_image(), "screen={screen} cut={cut}");
             assert_eq!(resumed.game_state, expected.game_state);
         }
         let mut cursor = expected.begin_overworld_quadrant_cursor();
         expected.advance_overworld_quadrant_cursor(&mut cursor, 4096);
         expected.dungeon_room_tilemaps_mut().set_bg2_tile_by_byte_pos(0, 0x1234);
         expected.ram[0x14400] = 0x79;
-        let completed = expected.ram.clone();
+        let completed = expected.wram_image().into_owned();
         expected.native_overworld_quadrants = Some(cursor);
         expected.overworld_decompress_and_draw_all_quadrants();
-        assert_eq!(expected.ram, completed);
+        assert_eq!(*expected.wram_image(), completed);
     }
 }
 
@@ -142,7 +142,7 @@ fn turtle_rock_vram_common_terminates_nmi_upload_data() {
     state.turtle_rock_vram_common(0x10);
 
     assert_eq!(state.vram_upload_buffer_byte(6), 0xff);
-    assert_eq!(state.ram[UVRAM_DATA_OVERWORLD + 6], 0);
+    assert_eq!(state.read_wram_byte(UVRAM_DATA_OVERWORLD + 6), 0);
 }
 
 #[test]
@@ -175,7 +175,7 @@ fn map8_conversion_resumes_at_stripe_header_plane_and_row_tail_boundaries() {
             for row in 0..32 {
                 for i in 0..32 {
                     let offset = src.wrapping_sub(0x410).wrapping_add(i * 2) & 0x1fff;
-                    let value = read_le_u16(&initial.ram, page_base + usize::from(offset));
+                    let value = read_le_u16(&initial.wram_image(), page_base + usize::from(offset));
                     expected.set_overworld_map16_stripe_word(usize::from((destination + i) & 31), value);
                 }
                 for half in 0..2 {
@@ -201,11 +201,11 @@ fn map8_conversion_resumes_at_stripe_header_plane_and_row_tail_boundaries() {
                 let mut cursor = resumed.begin_overworld_map8_cursor(page, upload_base);
                 resumed.advance_overworld_map8_cursor(&mut cursor, cut);
                 if cut <= 32 {
-                    assert_eq!(&resumed.ram[0x12000..0x14080], &initial.ram[0x12000..0x14080]);
+                    assert_eq!(&resumed.wram_image()[0x12000..0x14080], &initial.wram_image()[0x12000..0x14080]);
                 }
-                let once = resumed.ram.clone();
+                let once = resumed.wram_image().into_owned();
                 resumed.advance_overworld_map8_cursor(&mut cursor, cut);
-                assert_eq!(resumed.ram, once);
+                assert_eq!(*resumed.wram_image(), once);
                 let mut expected = expected.clone();
                 if cut == OVERWORLD_MAP8_TOTAL_STEPS {
                     // The next owner may reuse completed output before this
@@ -218,7 +218,7 @@ fn map8_conversion_resumes_at_stripe_header_plane_and_row_tail_boundaries() {
                 resumed.native_overworld_map8 = Some(cursor);
                 resumed.Map16ToMap8(page, i32::from(upload_base));
                 assert!(resumed.native_overworld_map8.is_none());
-                assert_eq!(resumed.ram, expected.ram, "page={page:?} cut={cut}");
+                assert_eq!(*resumed.wram_image(), *expected.wram_image(), "page={page:?} cut={cut}");
                 assert_eq!(resumed.game_state, expected.game_state, "page={page:?} cut={cut}");
             }
         }

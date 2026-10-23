@@ -77,6 +77,7 @@ fn native_tile_writes_publish_exact_pairs_and_survive_layer_spills_and_restore()
     for (index, byte) in game.ram.iter_mut().enumerate() {
         *byte = index.wrapping_mul(73) as u8;
     }
+    { let image = game.ram.clone(); game.import_wram_image(&image); }
     game.sync_native_game_state_from_ram();
     for offset in [0, 63, 0x0fff, 0x1000, 0x1ffe] {
         for attribute in 0..=u8::MAX {
@@ -84,12 +85,12 @@ fn native_tile_writes_publish_exact_pairs_and_survive_layer_spills_and_restore()
                 NativeTile::from_cartridge(attribute),
                 NativeTile::from_cartridge(attribute.wrapping_add(31)),
             ];
-            let mut expected = game.ram.clone();
+            let mut expected = game.wram_image().into_owned();
             expected[DUNGEON_BG2_ATTR_TABLE + offset..DUNGEON_BG2_ATTR_TABLE + offset + 2]
                 .copy_from_slice(&pair.map(NativeTile::cartridge_attribute));
             game.dungeon_bg2_attributes_mut()
                 .set_bg2_tiles(offset, pair);
-            assert_eq!(game.ram, expected);
+            assert_eq!(*game.wram_image(), expected);
             assert_eq!(
                 game.game_state.dungeon.bg2_attributes.bg2_tile(offset),
                 pair[0]

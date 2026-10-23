@@ -127,7 +127,7 @@ mod tests {
             machine.cpu.unpack_flags(cpu.p);
             let mut ram = machine.ram.clone();
             let mut state = crate::ZeldaState::new();
-            state.ram.copy_from_slice(&ram);
+            state.import_wram_image(&ram);
             state.sync_native_game_state_from_ram();
             let (v, h) = if case & 1 == 0 {
                 (224, 1338)
@@ -193,7 +193,7 @@ mod tests {
                     },
                 );
                 assert_eq!(ram, source.snes().ram, "{label}");
-                assert_eq!(state.ram, ram, "native publication: {label}");
+                assert_eq!(*state.wram_image(), ram, "native publication: {label}");
                 state.game_state.world.assert_entrance_matches_ram(&ram);
                 state.game_state.dungeon.assert_entrance_matches_ram(&ram);
                 assert_eq!(state.game_state.player, crate::game_state::PlayerState::load_from_ram(&ram), "{label}");

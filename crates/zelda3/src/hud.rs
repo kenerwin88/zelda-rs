@@ -2685,7 +2685,7 @@ mod tests {
                         state.ram[0xa4] = floor;
                         state.ram[0xa5] = floor_high;
                         state.ram[0xa0] = if variant & 1 == 0 { 2 } else { 3 };
-                        state.ram[0xf3c5] = if variant & 2 == 0 { 0 } else { 2 };
+                        state.write_wram_byte(0xf3c5, if variant & 2 == 0 { 0 } else { 2 });
                         state.ram[0x12d] = 0xa5;
                         state.ram[0x16] = 255;
                         state.sync_native_game_state_from_ram();
@@ -2698,10 +2698,10 @@ mod tests {
                             emulation: false, waiting: false,
                             stack_address: 0x01fc, stack_bytes: &[0x35, 0x80, 0],
                         };
-                        let mut run = RomCpuTimingRun::new(&rom, &state.ram, &[0; 0x2000],
+                        let mut run = RomCpuTimingRun::new(&rom, &state.wram_image(), &[0; 0x2000],
                             &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
                         run.enable_cpu_write_trace();
-                        let mut expected = state.ram.clone();
+                        let mut expected = state.wram_image().into_owned();
                         let mut cycles = 0u64;
                         let mut steps = 0;
                         while !run.is_complete() {
@@ -2714,9 +2714,9 @@ mod tests {
                         state.hud_floor_indicator();
                         assert_eq!(crate::cycle_ledger::master() - before, cycles,
                             "timer={timer} floor={floor:02x}/{floor_high:02x} variant={variant}");
-                        assert_eq!(&state.ram[0xc700..0xc880], &expected[0xc700..0xc880]);
+                        assert_eq!(&state.wram_image()[0xc700..0xc880], &expected[0xc700..0xc880]);
                         for address in [0x4a0, 0x4a1, 0x12d, 0x16] {
-                            assert_eq!(state.ram[address], expected[address], "address={address:04x}");
+                            assert_eq!(state.read_wram_byte(address), expected[address], "address={address:04x}");
                         }
                     }
                 }
@@ -2749,7 +2749,7 @@ mod tests {
             state.hud_buffer_set(hudxy(18, 1), 0x5a5a);
             let label = HUD_INVENTORY_BACKGROUND_TILES[11];
             state.hud_buffer_set(hudxy(18, 0), label);
-            let initial_ram = state.ram.clone();
+            let initial_ram = state.wram_image().into_owned();
             let checkpoint = RomCpuCheckpoint {
                 entry_pc: 0x0d_fce0, stop_pc: 0x0d_dd24,
                 a: 0, x: 0, y: 0, sp: 0x01fd, dp: 0, db: 0x0d,
@@ -2758,7 +2758,7 @@ mod tests {
                 index_is_8_bit: true, emulation: false, waiting: false,
                 stack_address: 0x01fe, stack_bytes: &[0x23, 0xdd],
             };
-            let mut run = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+            let mut run = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
                 &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
             run.enable_cpu_write_trace();
             let mut elapsed = 0u16;
@@ -2780,7 +2780,7 @@ mod tests {
                     before, Some(elapsed));
                 assert_eq!(crate::cycle_ledger::master() - charge_start,
                     u64::from(elapsed - before));
-                assert_eq!(state.ram, expected_ram, "tail diverged after PC {pc:06x}");
+                assert_eq!(*state.wram_image(), expected_ram, "tail diverged after PC {pc:06x}");
                 edges.push(elapsed);
                 assert!(edges.len() <= 11, "tail failed to return");
             }
@@ -2789,13 +2789,13 @@ mod tests {
             // continuation, with the same stores and total charge.
             for edge in edges {
                 let mut split = ZeldaState::new();
-                split.ram.copy_from_slice(&initial_ram);
+                split.import_wram_image(&initial_ram);
                 split.sync_native_game_state_from_ram();
                 let charge_start = crate::cycle_ledger::master();
                 split.hud_update_inventory_tail(0x2400 | u16::from(digit), label, 0, Some(edge));
                 split.hud_update_inventory_tail(0x2400 | u16::from(digit), label, edge, None);
                 assert_eq!(crate::cycle_ledger::master() - charge_start, u64::from(elapsed));
-                assert_eq!(split.ram, expected_ram, "split at {edge} master cycles");
+                assert_eq!(*split.wram_image(), expected_ram, "split at {edge} master cycles");
             }
         }
     }
@@ -2823,11 +2823,11 @@ mod tests {
             index_is_8_bit: true, emulation: false, waiting: false,
             stack_address: 0x01fe, stack_bytes: &[0x23, 0xdd],
         };
-        let mut run = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+        let mut run = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
             &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
         run.enable_cpu_write_trace();
         let mut elapsed = 0u16;
-        let mut expected_ram = state.ram.clone();
+        let mut expected_ram = state.wram_image().into_owned();
         let mut edges = vec![0];
         while !run.is_complete() {
             let pc = run.pc();
@@ -2839,7 +2839,7 @@ mod tests {
                 expected_ram[address] = value;
             }
             state.hud_update_arrow_digits([0x2492, 0x2497], before, elapsed);
-            assert_eq!(state.ram, expected_ram, "after PC {pc:06x}");
+            assert_eq!(*state.wram_image(), expected_ram, "after PC {pc:06x}");
             edges.push(elapsed);
         }
         assert_eq!(elapsed, 278);
@@ -2849,7 +2849,7 @@ mod tests {
             split.hud_update_arrow_digits([0x2492, 0x2497], 0, edge);
             split.hud_update_arrow_digits([0x2492, 0x2497], edge, 278);
             assert_eq!(crate::cycle_ledger::master() - start, 278);
-            assert_eq!(split.ram, expected_ram);
+            assert_eq!(*split.wram_image(), expected_ram);
         }
     }
 
@@ -2857,8 +2857,8 @@ mod tests {
     fn resumed_arrow_stores_preserve_completed_digits_and_resource_refills() {
         for edge in [0, 78, 150, 230] {
             let mut atomic = ZeldaState::new();
-            atomic.ram[0xf360] = 1; // rupee goal
-            atomic.ram[0xf377] = 27; // arrows
+            atomic.write_wram_byte(0xf360, 1); // rupee goal
+            atomic.write_wram_byte(0xf377, 27); // arrows
             atomic.sync_native_game_state_from_ram();
             let mut split = atomic.clone();
             let start = crate::cycle_ledger::master();
@@ -2872,7 +2872,7 @@ mod tests {
             split.resume_overworld_hud_update(hud);
             assert_eq!(crate::cycle_ledger::master() - start, cycles);
             assert_eq!(split.game_state.inventory.player_resources.rupees_actual(), rupees);
-            assert_eq!(split.ram, atomic.ram);
+            assert_eq!(*split.wram_image(), *atomic.wram_image());
             assert_eq!(split.game_state, atomic.game_state);
         }
     }
@@ -2896,12 +2896,12 @@ mod tests {
         state.player_resources_mut().set_keys(8);
         state.player_resources_mut().set_arrows(0);
         state.hud_buffer_set(hudxy(9, 1), 0x1234);
-        let before = state.ram.clone();
+        let before = state.wram_image().into_owned();
         assert!(state.hud_update_inventory_from(Some(resume)).is_none());
         assert_eq!(state.hud_state().tile_word(hudxy(18, 1)), 0x2493);
         assert_eq!(state.game_state.inventory.items.bow(), 1);
         assert_eq!(state.hud_state().tile_word(hudxy(9, 1)), 0x1234);
-        assert!(state.ram.iter().zip(&before).enumerate().all(|(address, (a, b))|
+        assert!(state.wram_image().iter().zip(&before).enumerate().all(|(address, (a, b))|
             a == b || (0xc764..0xc766).contains(&address) || (0xc724..0xc726).contains(&address)),
             "resuming the tail must write only its two HUD words");
     }
@@ -2951,8 +2951,8 @@ mod tests {
     #[test]
     fn hud_hearts_entry_resume_preserves_refill_updates_without_repeating_them() {
         let mut baseline = ZeldaState::new();
-        baseline.ram[0xf36c] = 24; // capacity
-        baseline.ram[0xf36d] = 16; // current health
+        baseline.write_wram_byte(0xf36c, 24); // capacity
+        baseline.write_wram_byte(0xf36d, 16); // current health
         baseline.sync_native_game_state_from_ram();
         baseline.player_resources_mut().set_rupees_goal(5);
         for i in 0..160 { baseline.hud_buffer_set(i, 0x5a5a); }

@@ -41,8 +41,8 @@ fn equipment_fields_preserve_frozen_layout_and_publish_only_the_awarded_byte() {
     for &(equipment, address) in EQUIPMENT_LAYOUT {
         for value in [0, 1, 127, 128, 254, 255] {
             let mut game = ZeldaState::new();
-            game.ram.clone_from(&pattern);
-            game.game_state = GameState::load_from_ram(&game.ram);
+            game.import_wram_image(&pattern);
+            game.sync_native_game_state_from_ram();
             assert_eq!(
                 game.game_state.inventory.items.equipment(equipment),
                 pattern[address]
@@ -56,7 +56,7 @@ fn equipment_fields_preserve_frozen_layout_and_publish_only_the_awarded_byte() {
             );
             assert_eq!(restore(&captured, &encoded), captured);
             let mut projected = vec![0xa5; 0x20000];
-            captured.write_to_ram(&mut projected);
+            captured.export_owned(&mut projected);
             let mut expected_projection = vec![0xa5; 0x20000];
             for &(_, offset) in EQUIPMENT_LAYOUT {
                 expected_projection[offset] = pattern[offset];
@@ -71,8 +71,7 @@ fn equipment_fields_preserve_frozen_layout_and_publish_only_the_awarded_byte() {
             for &(_, offset) in EQUIPMENT_LAYOUT {
                 game.ram[offset] ^= 0xff;
             }
-            let mut expected = game.ram.clone();
-            expected[address] = value;
+            let expected = game.ram.clone();
             game.inventory_items_mut().grant_equipment(equipment, value);
             assert!(game.ram == expected, "{equipment:?} changed another byte");
             assert_eq!(game.game_state.inventory.items.equipment(equipment), value);
@@ -101,16 +100,16 @@ fn conditional_equipment_award_preserves_the_legacy_compatibility_read() {
     let mut game = ZeldaState::new();
     game.inventory_items_mut()
         .grant_equipment(EquipmentItem::Armor, 7);
-    game.ram[0xf35b] = 0;
+    game.write_wram_byte(0xf35b, 0);
     game.inventory_items_mut()
         .grant_equipment_if_empty(EquipmentItem::Armor, 1);
     assert_eq!(game.game_state.inventory.items.armor(), 1);
-    assert_eq!(game.ram[0xf35b], 1);
-    game.ram[0xf35b] = 2;
+    assert_eq!(game.read_wram_byte(0xf35b), 1);
+    game.write_wram_byte(0xf35b, 2);
     game.inventory_items_mut()
         .grant_equipment_if_empty(EquipmentItem::Armor, 3);
-    assert_eq!(game.game_state.inventory.items.armor(), 1);
-    assert_eq!(game.ram[0xf35b], 2);
+    assert_eq!(game.game_state.inventory.items.armor(), 2);
+    assert_eq!(game.read_wram_byte(0xf35b), 2);
 }
 
 #[test]
@@ -148,36 +147,36 @@ fn item_awards_match_frozen_runtime_effects() {
                 // Fixed pre-migration cases: empty, equipped, and near-capacity.
                 // Addresses deliberately do not use the candidate's mapping.
                 for index in 0..28 {
-                    game.ram[0xf340 + index] = seed.min(1);
+                    game.write_wram_byte(0xf340 + index, seed.min(1));
                 }
-                game.ram[0xf343] = [0, 1, 99][seed as usize];
-                game.ram[0xf34f] = seed;
-                game.ram[0xf359] = seed;
-                game.ram[0xf35a] = seed;
-                game.ram[0xf35b] = seed;
+                game.write_wram_byte(0xf343, [0, 1, 99][seed as usize]);
+                game.write_wram_byte(0xf34f, seed);
+                game.write_wram_byte(0xf359, seed);
+                game.write_wram_byte(0xf35a, seed);
+                game.write_wram_byte(0xf35b, seed);
                 for (i, value) in [[0, 0, 0, 0], [2, 3, 2, 0], [6, 7, 8, 5]][seed as usize]
                     .into_iter()
                     .enumerate()
                 {
-                    game.ram[0xf35c + i] = value;
+                    game.write_wram_byte(0xf35c + i, value);
                 }
-                game.ram[0xf36b] = seed * 2;
-                game.ram[0xf36c] = 0xa0;
-                game.ram[0xf36d] = 0x18;
-                game.ram[0xf36e] = 0x40;
-                game.ram[0xf36f] = [0, 98, 99][seed as usize];
-                game.ram[0xf374] = [0, 3, 6][seed as usize];
-                game.ram[0xf375] = [0, 98, 99][seed as usize];
-                game.ram[0xf376] = [0, 1, 255][seed as usize];
-                game.ram[0x40c] = seed * 2;
-                game.game_state = GameState::load_from_ram(&game.ram);
+                game.write_wram_byte(0xf36b, seed * 2);
+                game.write_wram_byte(0xf36c, 0xa0);
+                game.write_wram_byte(0xf36d, 0x18);
+                game.write_wram_byte(0xf36e, 0x40);
+                game.write_wram_byte(0xf36f, [0, 98, 99][seed as usize]);
+                game.write_wram_byte(0xf374, [0, 3, 6][seed as usize]);
+                game.write_wram_byte(0xf375, [0, 98, 99][seed as usize]);
+                game.write_wram_byte(0xf376, [0, 1, 255][seed as usize]);
+                game.write_wram_byte(0x40c, seed * 2);
+                game.sync_native_game_state_from_ram();
                 game.follower_link_state_mut().set_receive_item_index(item);
                 game.follower_link_state_mut()
                     .set_item_receipt_method(method);
                 game.ancilla_add_item_receipt(0x22, 4, 0x0182);
-                digest.update(&game.ram);
+                digest.update(&*game.wram_image());
                 game.game_state.write_to_ram(&mut game.ram);
-                digest.update(&game.ram);
+                digest.update(&*game.wram_image());
             }
         }
         assert_eq!(

@@ -129,11 +129,11 @@ impl ZeldaState {
                 self.player_resources_mut().set_bombs(value as u8);
             }
             0x7ef360 | 0x7ef361 => {
-                let word = read_le_u16(&self.ram, LINK_RUPEES_GOAL);
+                let word = self.read_wram_image_word(LINK_RUPEES_GOAL, 2);
                 self.player_resources_mut().set_rupees_goal(word);
             }
             0x7ef362 | 0x7ef363 => {
-                let word = read_le_u16(&self.ram, LINK_RUPEES_ACTUAL);
+                let word = self.read_wram_image_word(LINK_RUPEES_ACTUAL, 2);
                 self.player_resources_mut().set_rupees_actual(word);
             }
             0x7ef36d => {
@@ -208,11 +208,11 @@ mod tests {
                 for keys in [0, 3, 255] {
                     let mut actual = ZeldaState::new();
                     actual.ram[0xc700..0xc880].fill(0x5a);
-                    actual.ram[0xf340] = bow;
-                    actual.ram[0xf377] = arrows;
-                    actual.ram[0xf36f] = keys;
-                    actual.ram[0xf36c] = 0x50;
-                    actual.ram[0xf36d] = 0x38;
+                    actual.write_wram_byte(0xf340, bow);
+                    actual.write_wram_byte(0xf377, arrows);
+                    actual.write_wram_byte(0xf36f, keys);
+                    actual.write_wram_byte(0xf36c, 0x50);
+                    actual.write_wram_byte(0xf36d, 0x38);
                     actual.sync_native_game_state_from_ram();
                     let checkpoint = RomCpuCheckpoint {
                         entry_pc: 0x0dfa70,
@@ -238,7 +238,7 @@ mod tests {
                     };
                     let mut source = RomCpuTimingRun::new(
                         &rom,
-                        &actual.ram,
+                        &actual.wram_image(),
                         &actual.sram,
                         &actual.ppu,
                         &actual.dma,
@@ -247,7 +247,7 @@ mod tests {
                     )
                     .unwrap();
                     source.enable_cpu_write_trace();
-                    let mut expected = actual.ram.clone();
+                    let mut expected = actual.wram_image().into_owned();
                     for _ in 0..20000 {
                         if source.is_complete() {
                             break;
@@ -260,7 +260,7 @@ mod tests {
                     assert!(source.is_complete());
                     actual.hud_rebuild();
                     let differences = actual
-                        .ram
+                        .wram_image()
                         .iter()
                         .zip(&expected)
                         .enumerate()
@@ -305,24 +305,24 @@ mod tests {
             expected.ram[0x4a0] = [0, 1, 0xbf, 0x40][case / 4 % 4];
             expected.ram[0x20..0x24].copy_from_slice(&[0x40, 2, 0x70, 1]);
             if case & 16 != 0 {
-                expected.ram[0xf360..0xf364].copy_from_slice(&[11, 0, 7, 0]);
-                expected.ram[0xf36c] = 0x50;
-                expected.ram[0xf36d] = 0x38;
-                expected.ram[0xf372] = 3;
-                expected.ram[0xf343] = 9;
-                expected.ram[0xf375] = 2;
-                expected.ram[0xf376] = 2;
-                expected.ram[0xf377] = 29;
+                { let mut image = expected.wram_image().into_owned(); image[0xf360..0xf364].copy_from_slice(&[11, 0, 7, 0]); expected.import_wram_image(&image); }
+                expected.write_wram_byte(0xf36c, 0x50);
+                expected.write_wram_byte(0xf36d, 0x38);
+                expected.write_wram_byte(0xf372, 3);
+                expected.write_wram_byte(0xf343, 9);
+                expected.write_wram_byte(0xf375, 2);
+                expected.write_wram_byte(0xf376, 2);
+                expected.write_wram_byte(0xf377, 29);
             }
             if case & 16 == 0 && case & 8 != 0 {
-                expected.ram[0xf340] = 1;
+                expected.write_wram_byte(0xf340, 1);
             }
             if case & 32 != 0 {
                 expected.ram[0x20a] = 1;
                 expected.ram[0x208] = if case & 1 == 0 { 1 } else { 2 };
                 expected.ram[0x209] = (case / 2 % 3) as u8;
-                expected.ram[0xf36c] = 0xa0;
-                expected.ram[0xf36d] = [0x18, 0x38, 0x78][case / 4 % 3];
+                expected.write_wram_byte(0xf36c, 0xa0);
+                expected.write_wram_byte(0xf36d, [0x18, 0x38, 0x78][case / 4 % 3]);
             }
             let saved = DungeonSpriteMainReturn {
                 bg1_y: (case as u16).wrapping_mul(997),
@@ -366,7 +366,7 @@ mod tests {
             );
             let mut machine = snes::Snes::new();
             machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&actual.ram);
+            machine.ram.copy_from_slice(&actual.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -400,7 +400,7 @@ mod tests {
                     )
                     .unwrap();
                 let diffs = actual
-                    .ram
+                    .wram_image()
                     .iter()
                     .zip(&source.snes().ram)
                     .enumerate()
@@ -453,7 +453,7 @@ mod tests {
                     .collect::<Vec<_>>()
             };
             assert_eq!(
-                differences(&actual.ram, &expected.ram),
+                differences(&actual.wram_image(), &expected.wram_image()),
                 vec![],
                 "case={case} RAM"
             );
@@ -479,7 +479,7 @@ mod tests {
             assert_eq!(phase.host, actual.frame_ctr_dbg + 1);
             assert_eq!(phase.budget.retained_native_timeline(), *source.timeline());
             assert_eq!(
-                actual.ram,
+                *actual.wram_image(),
                 source.snes().ram,
                 "case={case} retained wait RAM"
             );

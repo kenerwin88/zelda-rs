@@ -39,13 +39,13 @@ mod tests {
                 (65535, 0, 0),
             ] {
                 let mut state = ZeldaState::new();
-                state.ram[0xf373] = filler;
-                state.ram[0xf36e] = magic;
+                state.write_wram_byte(0xf373, filler);
+                state.write_wram_byte(0xf36e, magic);
                 state.ram[0x1a] = frame;
                 state.ram[0x12e] = sound;
                 state.ram[0xcfd] = delay;
-                state.ram[0xf362..0xf364].copy_from_slice(&actual.to_le_bytes());
-                state.ram[0xf360..0xf362].copy_from_slice(&goal.to_le_bytes());
+                { let mut image = state.wram_image().into_owned(); image[0xf362..0xf364].copy_from_slice(&actual.to_le_bytes()); state.import_wram_image(&image); }
+                { let mut image = state.wram_image().into_owned(); image[0xf360..0xf362].copy_from_slice(&goal.to_le_bytes()); state.import_wram_image(&image); }
                 state.sync_native_game_state_from_ram();
                 let initial = state.clone();
                 let checkpoint = RomCpuCheckpoint {
@@ -56,10 +56,10 @@ mod tests {
                     index_is_8_bit: true, emulation: false, waiting: false,
                     stack_address: 0x01fe, stack_bytes: &[],
                 };
-                let mut run = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+                let mut run = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
                     &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
                 run.enable_cpu_write_trace();
-                let mut expected_ram = state.ram.clone();
+                let mut expected_ram = state.wram_image().into_owned();
                 let mut prefix = HudRefillPrefix::new();
                 let mut edges = vec![prefix.pc];
                 let mut total = 0;
@@ -78,7 +78,7 @@ mod tests {
                     assert_eq!(crate::cycle_ledger::master() - start, cycles, "PC {pc:06x}");
                     assert_eq!(prefix.a, run.accumulator(), "retained value after PC {pc:06x}");
                     assert_eq!(run.pc(), 0x0d_0000 | u32::from(prefix.pc));
-                    assert_eq!(state.ram, expected_ram, "stores after PC {pc:06x}");
+                    assert_eq!(*state.wram_image(), expected_ram, "stores after PC {pc:06x}");
                     edges.push(prefix.pc);
                     assert!(edges.len() <= 60);
                 }
@@ -89,7 +89,7 @@ mod tests {
                     cursor.advance_to(&mut split, edge);
                     cursor.finish(&mut split);
                     assert_eq!(crate::cycle_ledger::master() - start, total);
-                    assert_eq!(split.ram, expected_ram, "resume at {edge:04x}");
+                    assert_eq!(*split.wram_image(), expected_ram, "resume at {edge:04x}");
                     assert_eq!(split.game_state, state.game_state);
                 }
             }
@@ -166,7 +166,7 @@ mod tests {
             assert_eq!(split.ram[0x16], 0);
             split.resume_overworld_hud_update(resume);
             assert_eq!(crate::cycle_ledger::master() - start, total);
-            assert_eq!(split.ram, atomic.ram);
+            assert_eq!(*split.wram_image(), *atomic.wram_image());
             assert_eq!(split.game_state, atomic.game_state);
         }
     }

@@ -93,10 +93,10 @@ fn interrupted_spotlight_entry_keeps_oam_from_before_the_held_nmi() {
         plan.oam_scanout_source,
         OamScanoutSource::RetainPreviousPresented,
     );
-    let cpu_ram = state.ram.clone();
+    let cpu_ram = state.wram_image().into_owned();
     state.compose_display_oam(&snapshot, &plan);
     assert_eq!(state.ppu.oam, resident);
-    assert_eq!(state.ram, cpu_ram, "scanout must not rewind CPU work");
+    assert_eq!(*state.wram_image(), cpu_ram, "scanout must not rewind CPU work");
     assert_eq!(snapshot.ppu.oam, following_dma, "the next DMA remains intact");
     assert!(
         state.next_display_obj_scanout_generation.is_none(),
@@ -152,7 +152,7 @@ fn unfinished_spotlight_rows_do_not_replace_the_published_hardware_table() {
         assert_eq!(&displayed[0][..448], &expected);
         assert_eq!(state.hdma_dynamic_table_bytes(), working, "presentation must not undo CPU work");
         assert_eq!(
-            &state.ram[RESERVED_HDMA_TABLE..RESERVED_HDMA_TABLE + 448],
+            &state.wram_image()[RESERVED_HDMA_TABLE..RESERVED_HDMA_TABLE + 448],
             &published[..448],
         );
     }
@@ -185,14 +185,14 @@ fn retained_spotlight_snapshot_consumes_the_current_field_hdma_receipt() {
     state.spotlight_scanout_after_active_field = Some(
         LiveSpotlightScanout::capture(&state).with_authoritative_rom_hdma_words(&following_words),
     );
-    let cpu_ram = state.ram.clone();
+    let cpu_ram = state.wram_image().into_owned();
     state.capture_display_snapshot_with_override(Some(DisplaySnapshotPublication::RetainPublished));
     let snapshot = state.display_snapshot.as_ref().unwrap();
     assert_eq!(snapshot.ppu.oam[0], 0x1234);
     assert_eq!(snapshot.ppu.vram[0], 0x5678);
     let active_bytes: Vec<_> = active_words.iter().flat_map(|word| word.to_le_bytes()).collect();
     assert_eq!(&snapshot.effective_spotlight_hdma_tables()[0][..448], active_bytes);
-    assert_eq!(state.ram, cpu_ram);
+    assert_eq!(*state.wram_image(), cpu_ram);
     assert!(!snapshot.accepts_nmi_dma_receipts);
     state.capture_display_snapshot_with_override(Some(DisplaySnapshotPublication::PublishCaptured));
     let following_bytes: Vec<_> = following_words.iter().flat_map(|word| word.to_le_bytes()).collect();
@@ -212,14 +212,14 @@ fn spotlight_cpu_checkpoints_preserve_the_source_frame_counter_phase() {
     let mut state = ZeldaState::new();
     for counter in [176, 168, 0] {
         state.set_frame_counter(counter);
-        let original = state.ram.clone();
+        let original = state.wram_image().into_owned();
         for (checkpoint, expected_counter) in [
             (DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT, counter),
             (OVERWORLD_SPOTLIGHT_CPU_CHECKPOINT, counter.wrapping_sub(1)),
         ] {
             let seeded = spotlight_cpu_timing_ram(&state, checkpoint);
             assert_eq!(seeded[0x1a], expected_counter);
-            assert_eq!(state.ram, original, "shadow seeding must not mutate gameplay");
+            assert_eq!(*state.wram_image(), original, "shadow seeding must not mutate gameplay");
             // The source buffers are 224 visible words at $7E:1B00 and
             // $7F:7000. No other caller state belongs to the relocation.
             for address in 0..original.len() {
@@ -252,7 +252,7 @@ fn spotlight_cpu_row_checkpoint_counts_original_rom_pairs() {
     };
     let mut run = RomCpuTimingRun::new(
         &state.rom,
-        &state.ram,
+        &state.wram_image(),
         &state.sram,
         &state.ppu,
         &state.dma,
@@ -716,7 +716,7 @@ fn terminal_spotlight_caller_preflight_is_failure_atomic() {
         let receipts_before = state.original_timing_semantic_receipts.clone();
         let scheduler_before = state.game_execution_scheduler;
         let suffix_before = state.pending_main_loop_common_suffix;
-        let ram_before = state.ram.clone();
+        let ram_before = state.wram_image().into_owned();
         let ppu_before = (
             state.ppu.vram.clone(),
             state.ppu.oam.clone(),
@@ -757,7 +757,7 @@ fn terminal_spotlight_caller_preflight_is_failure_atomic() {
         assert_eq!(state.original_timing_semantic_receipts, receipts_before);
         assert_eq!(state.game_execution_scheduler, scheduler_before);
         assert_eq!(state.pending_main_loop_common_suffix, suffix_before);
-        assert_eq!(state.ram, ram_before);
+        assert_eq!(*state.wram_image(), ram_before);
         assert_eq!(
             (
                 state.ppu.vram.clone(),
@@ -1005,7 +1005,7 @@ fn live_fresh_dungeon_exit_spotlight_iteration_stops_at_the_source_nmi_checkpoin
         ],
     ));
     assert_eq!(state.game_state.frame.main_module, 0x0f);
-    assert_eq!(state.ram[crate::game_state::constants::MAIN_MODULE], 0x0f);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::MAIN_MODULE), 0x0f);
 
     let mut timeline_probe = state.clone();
     assert!(timeline_probe
@@ -1231,7 +1231,7 @@ fn run4789_terminal_spotlight_build_preflight_is_failure_atomic() {
         let scheduler_before = state.game_execution_scheduler;
         let suffix_before = state.pending_main_loop_common_suffix;
         let game_before = state.game_state.clone();
-        let ram_before = state.ram.clone();
+        let ram_before = state.wram_image().into_owned();
         let dma_before = bincode::serialize(&state.dma).unwrap();
         let ppu_before = (
             state.ppu.vram.clone(),
@@ -1295,7 +1295,7 @@ fn run4789_terminal_spotlight_build_preflight_is_failure_atomic() {
         assert_eq!(state.game_execution_scheduler, scheduler_before);
         assert_eq!(state.pending_main_loop_common_suffix, suffix_before);
         assert_eq!(state.game_state, game_before);
-        assert_eq!(state.ram, ram_before);
+        assert_eq!(*state.wram_image(), ram_before);
         assert_eq!(bincode::serialize(&state.dma).unwrap(), dma_before);
         assert_eq!(
             (
@@ -1854,7 +1854,7 @@ fn run4786_spotlight_build_link_oam_preflight_is_failure_atomic() {
         let scheduler_before = state.game_execution_scheduler;
         let suffix_before = state.pending_main_loop_common_suffix;
         let game_before = state.game_state.clone();
-        let ram_before = state.ram.clone();
+        let ram_before = state.wram_image().into_owned();
         let dma_before = bincode::serialize(&state.dma).unwrap();
         let ppu_before = (
             state.ppu.vram.clone(),
@@ -1916,7 +1916,7 @@ fn run4786_spotlight_build_link_oam_preflight_is_failure_atomic() {
         assert_eq!(state.game_execution_scheduler, scheduler_before);
         assert_eq!(state.pending_main_loop_common_suffix, suffix_before);
         assert_eq!(state.game_state, game_before);
-        assert_eq!(state.ram, ram_before);
+        assert_eq!(*state.wram_image(), ram_before);
         assert_eq!(bincode::serialize(&state.dma).unwrap(), dma_before);
         assert_eq!(
             (
@@ -2063,7 +2063,7 @@ fn spotlight_link_oam_does_not_complete_a_non_build_caller() {
 
     let scheduler_before = state.game_execution_scheduler;
     let receipts_before = state.original_timing_semantic_receipts.clone();
-    let ram_before = state.ram.clone();
+    let ram_before = state.wram_image().into_owned();
     let game_before = state.game_state.clone();
     let ppu_before = (
         state.ppu.vram.clone(),
@@ -2076,7 +2076,7 @@ fn spotlight_link_oam_does_not_complete_a_non_build_caller() {
         .is_none());
     assert_eq!(state.game_execution_scheduler, scheduler_before);
     assert_eq!(state.original_timing_semantic_receipts, receipts_before);
-    assert_eq!(state.ram, ram_before);
+    assert_eq!(*state.wram_image(), ram_before);
     assert_eq!(state.game_state, game_before);
     assert_eq!(
         (
@@ -2430,7 +2430,7 @@ fn terminal_dungeon_spotlight_caller_preflight_is_failure_atomic() {
         let slices_before = state
             .game_execution_scheduler
             .scheduled_work_slices_remaining();
-        let ram_before = state.ram.clone();
+        let ram_before = state.wram_image().into_owned();
         let receipts_before = state.original_timing_semantic_receipts.clone();
         let snapshot_before = state.display_snapshot.as_ref().map(|snapshot| {
             (
@@ -2462,7 +2462,7 @@ fn terminal_dungeon_spotlight_caller_preflight_is_failure_atomic() {
                 .scheduled_work_slices_remaining(),
             slices_before,
         );
-        assert_eq!(state.ram, ram_before);
+        assert_eq!(*state.wram_image(), ram_before);
         assert_eq!(state.original_timing_semantic_receipts, receipts_before);
         assert_eq!(
             state.display_snapshot.as_ref().map(|snapshot| (
@@ -2514,7 +2514,7 @@ fn terminal_dungeon_spotlight_caller_preflight_is_failure_atomic() {
         receipts: OriginalTimingHostReceipts,
     ) {
         let scheduler_before = state.game_execution_scheduler;
-        let ram_before = state.ram.clone();
+        let ram_before = state.wram_image().into_owned();
         let receipts_before = state.original_timing_semantic_receipts.clone();
         let snapshot_before = state.display_snapshot.as_ref().map(|snapshot| {
             (
@@ -2533,7 +2533,7 @@ fn terminal_dungeon_spotlight_caller_preflight_is_failure_atomic() {
             .install_original_timing_host_receipts(receipts)
             .is_err());
         assert_eq!(state.game_execution_scheduler, scheduler_before);
-        assert_eq!(state.ram, ram_before);
+        assert_eq!(*state.wram_image(), ram_before);
         assert_eq!(state.original_timing_semantic_receipts, receipts_before);
         assert_eq!(
             state.display_snapshot.as_ref().map(|snapshot| (
@@ -2885,7 +2885,7 @@ fn live_spotlight_link_position_boundary_resumes_the_complete_c_leaf_once() {
         };
         resumed.complete_dungeon_exit_spotlight_link_movement(iteration, caller_returned);
 
-        assert_eq!(resumed.ram, atomic.ram);
+        assert_eq!(*resumed.wram_image(), *atomic.wram_image());
         assert_eq!(
             matches!(
                 resumed.game_execution_scheduler.current_work(),
@@ -3035,7 +3035,7 @@ fn live_spotlight_actual_velocity_boundaries_do_not_replay_velocity_selection() 
                 false,
             );
 
-            assert_eq!(resumed.ram, atomic.ram);
+            assert_eq!(*resumed.wram_image(), *atomic.wram_image());
             assert!(resumed
                 .original_timing_semantic_receipts
                 .as_ref()
@@ -3119,7 +3119,7 @@ fn live_spotlight_entry_return_stops_at_its_exact_link_subpixel_boundary() {
         false,
     );
 
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert!(resumed
         .original_timing_semantic_receipts
         .as_ref()
@@ -3192,7 +3192,7 @@ fn live_spotlight_coordinate_low_boundary_preserves_pending_high_byte_carry() {
         false,
     );
 
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert!(resumed
         .original_timing_semantic_receipts
         .as_ref()
@@ -3269,7 +3269,7 @@ fn live_spotlight_post_coordinate_boundary_resumes_only_later_axes() {
         false,
     );
 
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
 }
 
 #[test]
@@ -3328,7 +3328,7 @@ fn completed_spotlight_entry_does_not_schedule_a_second_return() {
     deferred.complete_dungeon_exit_spotlight_entry(table, iteration);
     state.complete_dungeon_exit_spotlight_entry_returned(table, iteration);
     assert_eq!(state.game_state, deferred.game_state);
-    assert_eq!(state.ram, deferred.ram);
+    assert_eq!(*state.wram_image(), deferred.ram);
     assert!(state.game_execution_scheduler.is_idle());
     assert!(matches!(
         deferred.game_execution_scheduler.current_work(),
@@ -3411,7 +3411,7 @@ fn native_close_entry_retains_its_second_interrupt_inside_link_movement() {
         Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow {
             pass: 0, ..
         })));
-    assert_eq!(&state.ram[0x800..0xa20], shadow.as_slice());
+    assert_eq!(&state.wram_image()[0x800..0xa20], shadow.as_slice());
     assert!(!state.main_loop_sprite_preparation_completed);
     assert!(state.game_state.display.nmi_update_is_latched());
 }
@@ -3637,7 +3637,7 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
 fn interrupted_spotlight_suffix_matches_c_writes_and_stages_the_rom_receipt() {
     let mut state = ZeldaState::new();
     let measured = std::array::from_fn(|row| 0x00ff_u16.wrapping_add(row as u16));
-    let ram_before = state.ram.clone();
+    let ram_before = state.wram_image().into_owned();
 
     state.spotlight_internal_after_table_during_active_rom_field(&measured);
 
@@ -3646,7 +3646,7 @@ fn interrupted_spotlight_suffix_matches_c_writes_and_stages_the_rom_receipt() {
     // provenance is hardware state and must not manufacture another RAM write.
     let changed_ram = ram_before
         .iter()
-        .zip(&state.ram)
+        .zip(state.wram_image().iter())
         .enumerate()
         .filter_map(|(address, (&before, &after))| (before != after).then_some((address, after)))
         .collect::<Vec<_>>();
@@ -3737,7 +3737,7 @@ fn spotlight_table_completion_defers_control_clears_and_link_movement() {
     };
     resumed.complete_dungeon_exit_spotlight_link_and_oam(iteration, true);
     assert_eq!(resumed.game_execution_scheduler.current_work(), None);
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state, atomic.game_state);
 }
 
@@ -3773,7 +3773,7 @@ fn semantic_spotlight_circle_checkpoint_resumes_to_the_atomic_c_endpoint() {
     );
     assert!(!resumed.complete_iris_spotlight_configure_table(build));
 
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state, atomic.game_state);
 }
 
@@ -3808,7 +3808,7 @@ fn semantic_spotlight_iteration_start_checkpoint_resumes_to_the_atomic_c_endpoin
     let resumed_completed = resumed.complete_iris_spotlight_configure_table(build);
 
     assert_eq!(resumed_completed, atomic_completed);
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state, atomic.game_state);
 }
 
@@ -3841,7 +3841,7 @@ fn semantic_spotlight_loop_test_checkpoint_resumes_to_the_atomic_c_endpoint() {
     let resumed_completed = resumed.complete_iris_spotlight_configure_table(build);
 
     assert_eq!(resumed_completed, atomic_completed);
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state, atomic.game_state);
 }
 
@@ -3874,7 +3874,7 @@ fn semantic_spotlight_loop_test_with_offscreen_lower_row_resumes_to_c_endpoint()
     let resumed_completed = resumed.complete_iris_spotlight_configure_table(build);
 
     assert_eq!(resumed_completed, atomic_completed);
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state, atomic.game_state);
 }
 
@@ -3907,7 +3907,7 @@ fn semantic_spotlight_lower_cursor_checkpoint_resumes_to_the_atomic_c_endpoint()
     let resumed_completed = resumed.complete_iris_spotlight_configure_table(build);
 
     assert_eq!(resumed_completed, atomic_completed);
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state, atomic.game_state);
 }
 
@@ -3958,7 +3958,7 @@ fn semantic_spotlight_lower_write_checkpoint_resumes_without_replaying_the_upper
     );
     assert!(resumed.complete_iris_spotlight_configure_table(build));
 
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state, atomic.game_state);
 }
 
@@ -3989,18 +3989,18 @@ fn semantic_spotlight_projection_checkpoint_resumes_without_replaying_its_prefix
         },
     );
     assert_eq!(
-        read_le_u16(&resumed.ram, RESERVED_HDMA_TABLE + 156 * 2),
+        read_le_u16(&resumed.wram_image(), RESERVED_HDMA_TABLE + 156 * 2),
         resumed.spotlight_hdma_table_dynamic_entry(156),
         "the last source-published projection word is visible at the checkpoint",
     );
     assert_eq!(
-        read_le_u16(&resumed.ram, RESERVED_HDMA_TABLE + 157 * 2),
+        read_le_u16(&resumed.wram_image(), RESERVED_HDMA_TABLE + 157 * 2),
         0x5a5a,
         "the first unexecuted projection word remains pending",
     );
     assert!(!resumed.complete_iris_spotlight_configure_table(build));
 
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state, atomic.game_state);
 }
 
@@ -4036,7 +4036,7 @@ fn suspended_landing_spotlight_retains_sprite_preparation_until_caller_return() 
         completed_iterations: 213,
         checkpoint: crate::SpotlightTableBuildCheckpoint::ProjectionCopy { copied_words: 168 },
     });
-    assert_eq!(&resumed.ram[0xacc..0xae0], dma_before);
+    assert_eq!(&resumed.wram_image()[0xacc..0xae0], dma_before);
     assert!(resumed.game_state.display.nmi_update_is_latched());
     assert!(!resumed.main_loop_sprite_preparation_completed);
     assert_eq!(resumed.game_state.player.follower_link.animation_step(), 8);
@@ -4047,11 +4047,11 @@ fn suspended_landing_spotlight_retains_sprite_preparation_until_caller_return() 
     assert!(resumed.main_loop_sprite_preparation_completed);
     assert_eq!(resumed.game_state.player.follower_link.animation_step(), 1);
     assert!(resumed.pending_main_loop_common_suffix.is_none());
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state, atomic.game_state);
-    let completed = resumed.ram.clone();
+    let completed = resumed.wram_image().into_owned();
     resumed.complete_pending_main_loop_common_suffix_after_module_return();
-    assert_eq!(resumed.ram, completed, "a retired suffix must not run twice");
+    assert_eq!(*resumed.wram_image(), completed, "a retired suffix must not run twice");
 }
 
 #[test]
@@ -4121,7 +4121,7 @@ fn authoritative_recurring_spotlight_return_finishes_the_existing_c_caller_once(
     assert_eq!(state.game_state.player.follower_link.y(), 1702);
     assert_eq!(state.game_state.player.follower_link.y_velocity(), 0);
     assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 105);
-    assert_eq!(read_le_u16(&state.ram, LINK_DMA_COUNTDOWN), 8);
+    assert_eq!(read_le_u16(&state.wram_image(), LINK_DMA_COUNTDOWN), 8);
     assert_eq!(state.game_state.display.bg_tile_animation_countdown, 6);
 }
 
@@ -4194,7 +4194,7 @@ fn authoritative_recurring_spotlight_link_oam_receipt_retains_only_caller_suffix
     assert_eq!(state.game_state.player.follower_link.y(), 1702);
     assert_eq!(state.game_state.player.follower_link.y_velocity(), 0);
     assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 105);
-    assert_eq!(read_le_u16(&state.ram, LINK_DMA_COUNTDOWN), 9);
+    assert_eq!(read_le_u16(&state.wram_image(), LINK_DMA_COUNTDOWN), 9);
     assert_eq!(state.game_state.display.bg_tile_animation_countdown, 7);
     assert!(state
         .original_timing_semantic_receipts
@@ -4286,7 +4286,7 @@ fn authoritative_recurring_spotlight_link_oam_then_return_finishes_caller_once()
     assert_eq!(state.game_state.player.follower_link.y(), 1702);
     assert_eq!(state.game_state.player.follower_link.y_velocity(), 0);
     assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 105);
-    assert_eq!(read_le_u16(&state.ram, LINK_DMA_COUNTDOWN), 8);
+    assert_eq!(read_le_u16(&state.wram_image(), LINK_DMA_COUNTDOWN), 8);
     assert_eq!(state.game_state.display.bg_tile_animation_countdown, 6);
     assert!(state
         .original_timing_semantic_receipts
@@ -4326,7 +4326,7 @@ fn authoritative_spotlight_return_then_new_iteration_runs_both_in_source_order()
         )],
     ));
     assert_eq!(state.game_state.frame.frame_counter, 0xba);
-    assert_eq!(state.ram[crate::game_state::constants::FRAME_COUNTER], 0xba);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::FRAME_COUNTER), 0xba);
     assert!(state.initialized);
 
     state.run_frame_internal_after_original_timing(0, crate::RUN_MAIN);
@@ -4407,7 +4407,7 @@ fn authoritative_spotlight_return_then_interrupted_iteration_runs_fresh_main_onc
     // the only replacement continuation; replaying the iteration would tick
     // FRAME_COUNTER twice and collide with this continuation.
     assert_eq!(state.game_state.frame.frame_counter, 0x7a);
-    assert_eq!(state.ram[crate::game_state::constants::FRAME_COUNTER], 0x7a);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::FRAME_COUNTER), 0x7a);
     assert!(matches!(
         state.game_execution_scheduler.current_work(),
         Some(GameWorkContinuation::FinishSpotlightIteration { .. })
@@ -4442,11 +4442,11 @@ fn authoritative_recurring_spotlight_preserves_leading_and_trailing_nmi_order() 
     state.set_bg_tile_animation_countdown(3);
     state.sync_native_game_state_from_ram();
     assert_eq!(state.game_state.frame.frame_counter, 0x79);
-    assert_eq!(state.ram[crate::game_state::constants::FRAME_COUNTER], 0x79);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::FRAME_COUNTER), 0x79);
     assert_eq!(state.game_state.frame.main_module, 0x0f);
-    assert_eq!(state.ram[crate::game_state::constants::MAIN_MODULE], 0x0f);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::MAIN_MODULE), 0x0f);
     assert_eq!(state.game_state.frame.submodule, 1);
-    assert_eq!(state.ram[crate::game_state::constants::SUBMODULE], 1);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::SUBMODULE), 1);
     state.display_snapshot = None;
     state.original_timing_owner = OriginalTimingOwnerState::Live;
     state.original_timing_expected_nmi_update_gates = vec![NmiUpdateGate::Open];
@@ -4493,7 +4493,7 @@ fn authoritative_recurring_spotlight_preserves_leading_and_trailing_nmi_order() 
     assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 7);
     // LinkOam interrupted the C call before ZeldaRunGameLoop could reach
     // NMI_PrepareSprites, so neither source countdown advances on this host.
-    assert_eq!(read_le_u16(&state.ram, LINK_DMA_COUNTDOWN), 3);
+    assert_eq!(read_le_u16(&state.wram_image(), LINK_DMA_COUNTDOWN), 3);
     assert_eq!(state.game_state.display.bg_tile_animation_countdown, 3);
     assert!(state.game_state.display.nmi_update_is_latched());
     assert!(matches!(
@@ -4609,7 +4609,7 @@ fn authoritative_recurring_spotlight_preserves_leading_and_trailing_nmi_order() 
     assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 7);
     // The resumed caller reaches NMI_PrepareSprites exactly once after the
     // held NMI and before the ordinary trailing NMI.
-    assert_eq!(read_le_u16(&state.ram, LINK_DMA_COUNTDOWN), 2);
+    assert_eq!(read_le_u16(&state.wram_image(), LINK_DMA_COUNTDOWN), 2);
     assert_eq!(state.game_state.display.bg_tile_animation_countdown, 2);
     assert!(!state.game_state.display.nmi_update_is_latched());
     assert!(state.original_timing_nmi_publication_pending);
@@ -4653,7 +4653,7 @@ fn live_recurring_overworld_spotlight_preserves_a_same_host_fresh_iteration() {
         SpotlightIteration::opening(),
     );
     assert_eq!(state.game_state.frame.frame_counter, 0xd4);
-    assert_eq!(state.ram[crate::game_state::constants::FRAME_COUNTER], 0xd4);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::FRAME_COUNTER), 0xd4);
 
     // The source completes that saved call, enters ZeldaRunGameLoop again in
     // the same host interval, then accepts NMI while the next table build is
@@ -4777,7 +4777,7 @@ fn live_overworld_spotlight_link_oam_receipt_owns_the_atomic_leaf_once() {
     state.run_frame_internal_after_original_timing(0, crate::RUN_MAIN);
 
     assert_eq!(state.game_state.frame.frame_counter, 0x12);
-    assert_eq!(state.ram[crate::game_state::constants::FRAME_COUNTER], 0x12);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::FRAME_COUNTER), 0x12);
     assert!(matches!(
         state.game_execution_scheduler.current_work(),
         Some(GameWorkContinuation::FinishSpotlightIteration { .. })

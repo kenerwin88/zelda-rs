@@ -22,7 +22,7 @@ fn held_nmi_reported_cycles_match_source_handler_and_rti() {
                 interrupt_disable: true, decimal: false, accumulator_is_8_bit: true,
                 index_is_8_bit: true, emulation: false, waiting: false,
                 stack_address: 0x1fc, stack_bytes: &[0x32, 0x36, 0x80, 0] };
-            let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+            let mut source = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
                 &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
             let mut source_cycles = 62u64;
             for _ in 0..2000 {
@@ -69,7 +69,7 @@ fn link_dma_accounting_matches_source_mdma_groups_and_payloads() {
                 emulation: false, waiting: false,
                 stack_address: 0x01fd, stack_bytes: &[0x40, 0x81],
             };
-            let mut source = RomCpuTimingRun::new(&rom, &native.ram, &native.sram,
+            let mut source = RomCpuTimingRun::new(&rom, &native.wram_image(), &native.sram,
                 &native.ppu, &native.dma, [0; 4], checkpoint).unwrap();
             let mut runs = 0;
             let mut master = 0u64;
@@ -81,7 +81,7 @@ fn link_dma_accounting_matches_source_mdma_groups_and_payloads() {
                 master += u64::from(dma);
             }
             assert!(source.is_complete(), "Link DMA did not reach animated-BG setup");
-            let operands = captured.then(|| PreMainLinkDmaOperands::capture(&native.ram));
+            let operands = captured.then(|| PreMainLinkDmaOperands::capture(&native.wram_image()));
             if captured {
                 // The selected generation owns these operands, including the
                 // staged planes, even when the live main thread changes them.

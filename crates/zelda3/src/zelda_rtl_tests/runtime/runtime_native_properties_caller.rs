@@ -80,7 +80,7 @@ fn module08_properties_composition_consumes_real_near_and_far_frames() {
         machine.cpu.unpack_flags(cpu.p);
         let mut ram = machine.ram.clone();
         let mut published = state.clone();
-        published.ram.copy_from_slice(&ram);
+        published.import_wram_image(&ram);
         published.sync_native_game_state_from_ram();
         let mut ppu = machine.ppu.clone();
         let clock = CpuMasterTimeline::at_raster(
@@ -182,9 +182,9 @@ fn module08_properties_composition_consumes_real_near_and_far_frames() {
             assert_eq!(published.game_state.player.follower_link.y(), crate::types::read_le_u16(&ram, 0x20), "typed player Y; {label}");
             assert_eq!(published.game_state.frame.saved_module_for_menu, ram[0x10c], "typed saved module; {label}");
             assert_eq!(published.game_state.sprites.workspace.graphics_subset(1), ram[0xc2fd], "typed graphics subset; {label}");
-            if published.ram != ram {
+            if *published.wram_image() != ram {
                 let differences: Vec<_> = published
-                    .ram
+                    .wram_image()
                     .iter()
                     .zip(&ram)
                     .enumerate()

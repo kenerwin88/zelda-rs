@@ -109,8 +109,9 @@ impl WorkBus for SpotlightCallerBus<'_> {
         if let Access::Write(address, value, width) = access {
             if (0x7f7000..=0x7f72ff).contains(&address) {
                 let offset = (address - 0x7e0000) as usize;
-                self.state.ram[offset..offset + usize::from(width)]
-                    .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                for (byte, value) in value.to_le_bytes().into_iter().take(usize::from(width)).enumerate() {
+                    self.state.write_wram_byte(offset + byte, value);
+                }
                 return 0;
             }
             let address = if address & 0x400000 == 0 && address & 65535 < 0x2000 {
@@ -120,15 +121,17 @@ impl WorkBus for SpotlightCallerBus<'_> {
             };
             if self.state.native_dungeon_spotlight_store(address, value, width) {
                 let offset = address as usize;
-                self.state.ram[offset..offset + usize::from(width)]
-                    .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                for (byte, value) in value.to_le_bytes().into_iter().take(usize::from(width)).enumerate() {
+                    self.state.write_wram_byte(offset + byte, value);
+                }
                 return 0;
             }
             if (!matches!(address, 0xae8 | 0xaea) || width == 1)
                 && self.state.native_sprite_main_store(address, value, width) {
                 let offset = address as usize;
-                self.state.ram[offset..offset + usize::from(width)]
-                    .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                for (byte, value) in value.to_le_bytes().into_iter().take(usize::from(width)).enumerate() {
+                    self.state.write_wram_byte(offset + byte, value);
+                }
                 return 0;
             }
             if self.state.native_closing_caller_store(address, value, width) { return 0; }
@@ -193,8 +196,9 @@ impl ZeldaState {
                 | 0x69a
                 | 0x1f0c) { return false; }
         let offset = address as usize;
-        self.ram[offset..offset + usize::from(width)]
-            .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        for (byte, value) in value.to_le_bytes().into_iter().take(usize::from(width)).enumerate() {
+            self.write_wram_byte(offset + byte, value);
+        }
         self.native_spotlight_caller_store(address, value, width);
         true
     }
@@ -291,7 +295,7 @@ mod tests {
             actual.set_rom_startup_timing(true);
             actual.set_assets(&assets).unwrap();
             actual.rom.clear();
-            actual.ram.fill(0);
+            actual.import_wram_image(&vec![0; actual.ram.len()]);
             actual.ram[0x10] = module;
             actual.ram[0x11] = submodule;
             actual.ram[0x1b] = u8::from(!opening);
@@ -314,7 +318,8 @@ mod tests {
                     if submodule == 0 { actual.ram[0xd30 + slot] = 2; }
                 }
             }
-            actual.sync_native_game_state_from_ram();
+            { let image = actual.ram.clone(); actual.import_wram_image(&image); }
+                    actual.sync_native_game_state_from_ram();
             if paused {
                 for (address, value) in [(0x4370, 0x42), (0x4371, 0x1b),
                     (0x4372, 0xdd), (0x4373, 0xbd), (0x4374, 10), (0x4377, 0)] {
@@ -344,7 +349,7 @@ mod tests {
             let clock = retained.timeline.clone();
             actual.native_main_port_at(clock.clock_master_cycles(), 0, None);
             let mut machine = snes::Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap().machine().snes().clone();
-            machine.ram.copy_from_slice(&actual.ram);
+            machine.ram.copy_from_slice(&actual.wram_image());
             machine.dma = actual.dma.clone();
             machine.nmi_enabled = true;
             machine.cpu.a = context.a;
@@ -463,7 +468,7 @@ mod tests {
                     let mut actual = if full_table { template.as_ref().unwrap().clone() }
                         else { ZeldaState::new() };
                     actual.rom.clear();
-                    actual.ram.fill(0);
+                    actual.import_wram_image(&vec![0; actual.ram.len()]);
                     let r = &mut actual.ram;
                     r[0x10] = module;
                     r[0x11] = submodule;
@@ -543,6 +548,7 @@ mod tests {
                             channel.terminated = false;
                         }
                     }
+                    { let image = actual.ram.clone(); actual.import_wram_image(&image); }
                     actual.sync_native_game_state_from_ram();
                     let mut cpu = NativeNmiContext {
                         a: 0x1200,
@@ -563,7 +569,7 @@ mod tests {
                         machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
                         machine
                     };
-                    machine.ram.copy_from_slice(&actual.ram);
+                    machine.ram.copy_from_slice(&actual.wram_image());
                     if full_table { machine.dma = actual.dma.clone(); }
                     machine.cpu.a = cpu.a;
                     machine.cpu.x = cpu.x;
@@ -651,10 +657,10 @@ mod tests {
                             // source's physical table, and every other byte directly.
                             let start = crate::game_state::constants::HDMA_TABLE_DYNAMIC;
                             let end = start + 0x1c0;
-                            actual.ram[..start] == reference[..start]
-                                && actual.ram[end..] == reference[end..]
-                                && actual.ram[start..end] == reference[0x1b00..0x1cc0]
-                        } else { actual.ram == *reference };
+                            actual.wram_image()[..start] == reference[..start]
+                                && actual.wram_image()[end..] == reference[end..]
+                                && actual.wram_image()[start..end] == reference[0x1b00..0x1cc0]
+                        } else { *actual.wram_image() == *reference };
                         assert!(ram_matches,
                             "module={module} submodule={submodule} case={case} pc={pc:06x} RAM");
                         if full_table {

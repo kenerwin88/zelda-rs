@@ -5,7 +5,9 @@ impl ZeldaState {
     pub(super) fn native_overworld_screen_build_store(&mut self,address:u32,value:u16,width:u8)->Result<(),usize> {
         let address=if address&0x400000==0 && address&65535<0x2000 {address&65535} else {address};
         let offset=if (0x7e0000..0x800000).contains(&address) {address as usize-0x7e0000} else {address as usize};
-        self.ram[offset..offset+usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        for (byte, value) in value.to_le_bytes().into_iter().take(usize::from(width)).enumerate() {
+            self.write_wram_byte(offset + byte, value);
+        }
         match offset {
             0x2000..=0x5fff=>{
                 for byte in 0..usize::from(width) {
@@ -25,14 +27,18 @@ impl ZeldaState {
             0xb0=>self.game_state.frame.set_subsubmodule(value as u8),
             _=>return self.native_overworld_overlays_store(address,value,width),
         }
-        self.ram[offset..offset+usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        for (byte, value) in value.to_le_bytes().into_iter().take(usize::from(width)).enumerate() {
+            self.write_wram_byte(offset + byte, value);
+        }
         Ok(())
     }
     pub(super) fn native_overworld_overlays_store(&mut self,address:u32,value:u16,width:u8)->Result<(),usize> {
         let address=if address&0x400000==0 && address&65535<0x2000 {address&65535} else {address};
         let offset=if (0x7e0000..0x800000).contains(&address) {address as usize-0x7e0000} else {address as usize};
         assert!(matches!(width,1|2));
-        self.ram[offset..offset+usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        for (byte, value) in value.to_le_bytes().into_iter().take(usize::from(width)).enumerate() {
+            self.write_wram_byte(offset + byte, value);
+        }
         if (0x500..0x540).contains(&offset) {
             for byte in 0..usize::from(width) {
                 let at=offset+byte;
@@ -61,7 +67,9 @@ impl ZeldaState {
                 _=>return Err(at),
             }
         }
-        self.ram[offset..offset+usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+        for (byte, value) in value.to_le_bytes().into_iter().take(usize::from(width)).enumerate() {
+            self.write_wram_byte(offset + byte, value);
+        }
         Ok(())
     }
 }

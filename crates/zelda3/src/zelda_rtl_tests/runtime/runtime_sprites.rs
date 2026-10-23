@@ -14,9 +14,9 @@ fn ancilla_slot_accessors_keep_native_state_and_ram_synced() {
     assert_eq!(state.ancilla_slot_view(3).x_velocity(), 0x80);
     assert_eq!(state.ancilla_slot_view(3).x_low(), 0x44);
     assert_eq!(state.ancilla_slot_view(0).ancilla_type(), 1);
-    assert_eq!(state.ram[ANCILLA_X_VELOCITY + 3], 0x80);
-    assert_eq!(state.ram[ANCILLA_X_LO + 3], 0x44);
-    assert_eq!(state.ram[ANCILLA_TYPE], 1);
+    assert_eq!(state.read_wram_byte(ANCILLA_X_VELOCITY + 3), 0x80);
+    assert_eq!(state.read_wram_byte(ANCILLA_X_LO + 3), 0x44);
+    assert_eq!(state.read_wram_byte(ANCILLA_TYPE), 1);
 }
 
 #[test]
@@ -29,9 +29,9 @@ fn credits_module_sets_oam_region_words_like_c() {
 
     state.module1_a_credits();
 
-    assert_eq!(read_le_u16(&state.ram, 0x0fe0), 0x0030);
-    assert_eq!(read_le_u16(&state.ram, 0x0fe2), 0x01d0);
-    assert_eq!(read_le_u16(&state.ram, 0x0fe4), 0x0000);
+    assert_eq!(read_le_u16(&state.wram_image(), 0x0fe0), 0x0030);
+    assert_eq!(read_le_u16(&state.wram_image(), 0x0fe2), 0x01d0);
+    assert_eq!(read_le_u16(&state.wram_image(), 0x0fe4), 0x0000);
 }
 
 #[test]
@@ -70,7 +70,7 @@ fn credits_prep_resets_sprite_properties_before_scene_setup() {
         SPRITE_FLAGS5,
         SPRITE_DEFL_BITS,
     ] {
-        assert_eq!(state.ram[base + k], 0, "base ${base:04x}");
+        assert_eq!(state.read_wram_byte(base + k), 0, "base ${base:04x}");
     }
 }
 
@@ -89,7 +89,7 @@ fn run4786_link_oam_completes_the_build_before_run4787_finishes_its_suffix() {
         }) if pending == iteration
     ));
     assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 112);
-    assert_eq!(read_le_u16(&state.ram, LINK_DMA_COUNTDOWN), 9);
+    assert_eq!(read_le_u16(&state.wram_image(), LINK_DMA_COUNTDOWN), 9);
     assert_eq!(state.game_state.display.bg_tile_animation_countdown, 7);
     assert_eq!(state.display_snapshot_epoch, run4786_epoch + 2);
     assert_eq!(
@@ -170,7 +170,7 @@ fn run4786_link_oam_completes_the_build_before_run4787_finishes_its_suffix() {
         radius_before_return,
         "the terminal LinkOam suffix must not replay the spotlight table body",
     );
-    assert_eq!(read_le_u16(&state.ram, LINK_DMA_COUNTDOWN), 8);
+    assert_eq!(read_le_u16(&state.wram_image(), LINK_DMA_COUNTDOWN), 8);
     assert_eq!(state.game_state.display.bg_tile_animation_countdown, 6);
     assert_eq!(state.display_snapshot_epoch, run4787_epoch + 1);
     assert_eq!(
@@ -450,7 +450,7 @@ fn wallmaster_descending_clear_retains_the_unwritten_prefix_and_resumes_exactly(
             .sprite_workspace_mut()
             .clear_where_in_room_range(remaining..4096);
         assert_eq!(
-            &state.ram[0x1df80..0x1df80 + remaining],
+            &state.wram_image()[0x1df80..0x1df80 + remaining],
             &original[..remaining]
         );
         assert!(state.ram[0x1df80 + remaining..0x1ef80]
@@ -463,7 +463,7 @@ fn wallmaster_descending_clear_retains_the_unwritten_prefix_and_resumes_exactly(
             },
         );
         assert_eq!(state.game_state, atomic.game_state);
-        assert_eq!(state.ram, atomic.ram);
+        assert_eq!(*state.wram_image(), *atomic.wram_image());
     }
 }
 
@@ -485,7 +485,7 @@ fn sprite_main_slot_boundary_refinement_and_resume_equal_atomic_c_order() {
     refined.advance_sprite_main_after_slot_boundary(4, 3);
     refined.complete_sprite_main_after_interrupted_slot(3);
 
-    assert_eq!(refined.ram, atomic.ram);
+    assert_eq!(refined.ram, *atomic.wram_image());
     assert_eq!(refined.game_state.sprites, atomic.game_state.sprites);
 }
 
@@ -592,7 +592,7 @@ fn live_module09_link_oam_boundary_resumes_to_the_atomic_c_endpoint() {
 
     resumed.complete_post_trailing_nmi_continuation(continuation, 0, false, false);
 
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state, atomic.game_state);
 }
 
@@ -648,7 +648,7 @@ fn cucco_animation_publication_then_lift_tail_matches_atomic_sprite_endpoint() {
     resumed.complete_cucco_after_graphics_publication(6, CuccoSubtypeContinuation::ActiveC);
     resumed.sprite_main_cpu_boundary = None;
 
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state, atomic.game_state);
 }
 
@@ -705,7 +705,7 @@ fn state10_cucco_subtype_checkpoint_resumes_to_the_atomic_sprite_endpoint() {
     resumed.complete_cucco_after_subtype_increments(5, 3, 3, CuccoSubtypeContinuation::State10);
     resumed.sprite_main_cpu_boundary = None;
 
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state, atomic.game_state);
 }
 
@@ -758,7 +758,7 @@ fn fleeing_cucco_movement_checkpoint_resumes_to_the_atomic_sprite_endpoint() {
     resumed.complete_cucco_flee_after_movement(5, 0);
     resumed.sprite_main_cpu_boundary = None;
 
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state, atomic.game_state);
 }
 
@@ -1072,14 +1072,14 @@ fn sprite_reset_all_semantic_split_resumes_without_replaying_disable() {
         "the semantic checkpoint must include every completed C disable",
     );
     assert_eq!(
-        state.ram[crate::game_state::constants::SORT_SPRITES_SETTING],
+        state.read_wram_byte(crate::game_state::constants::SORT_SPRITES_SETTING),
         5,
         "Sprite_ResetAll_noDisable must remain pending at the checkpoint",
     );
 
     state.sprite_reset_all_no_disable();
 
-    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(*state.wram_image(), *atomic.wram_image());
     assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
 }
 
@@ -1108,7 +1108,7 @@ fn lanmola_draw_prefix_checkpoints_resume_to_the_atomic_draw() {
             assert_eq!(state.sprite_slot_view(2).graphics(), 0);
         }
         state.resume_lanmola_draw_prefix(2, completed);
-        assert_eq!(state.ram, atomic.ram, "completed {completed}");
+        assert_eq!(*state.wram_image(), *atomic.wram_image(), "completed {completed}");
         assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
     }
 }
@@ -1127,11 +1127,11 @@ fn lanmola_draw_prefix_stores_keep_flat_trail_bytes_past_the_moldorm_model() {
     assert!(j >= 128);
     state.lanmola_draw_prefix_stores(k, 3, 5);
     assert_eq!(
-        state.ram[crate::game_state::constants::MOLDORM_HISTORY_X_LO + j],
+        state.read_wram_byte(crate::game_state::constants::MOLDORM_HISTORY_X_LO + j),
         0x77
     );
     assert_eq!(
-        state.ram[crate::game_state::constants::MOLDORM_HISTORY_Y_LO + j],
+        state.read_wram_byte(crate::game_state::constants::MOLDORM_HISTORY_Y_LO + j),
         0x4c
     );
 }
@@ -1210,7 +1210,7 @@ fn room_load_sprite_prefix_interruption_publishes_the_completed_dungeon_caller()
     assert_eq!(scroll.bg1_v_copy(), 0x0a0b);
     assert_eq!(scroll.bg2_h_copy(), 0x2348);
     assert_eq!(scroll.bg2_v_copy(), 0x345b);
-    assert_eq!(read_le_u16(&state.ram, 0x124), 0x0a0b);
+    assert_eq!(read_le_u16(&state.wram_image(), 0x124), 0x0a0b);
     let caller = state.active_dungeon_sprite_main_return.unwrap();
     assert_eq!((caller.bg1_x, caller.bg1_y), (0x1234, 0x0a06));
     assert_eq!((caller.bg2_x, caller.bg2_y), (0x2345, 0x3456));
@@ -1274,7 +1274,7 @@ fn sprite_disable_resumes_after_each_exact_state_clear() {
         }
         state.complete_sprite_disable_after_states(slot);
         assert_eq!(state.game_state, atomic.game_state);
-        assert_eq!(state.ram, atomic.ram);
+        assert_eq!(*state.wram_image(), *atomic.wram_image());
     }
 }
 
@@ -1312,7 +1312,7 @@ fn super_bomb_purchase_pays_once_before_suspended_follower_graphics() {
         200
     );
     assert_eq!(state.game_state, atomic.game_state);
-    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(*state.wram_image(), *atomic.wram_image());
 }
 
 #[test]
@@ -1415,11 +1415,11 @@ fn reload_return_transfers_scroll_and_sprite_ownership_without_replaying_the_pre
         state.refine_sprite_main_to_coordinate_moves(0, next_instruction);
         assert_eq!(state.sprite_slot_view(0).delay_main(), 80);
         assert_eq!(state.game_execution_scheduler.scheduled_work_slices_remaining(), slices);
-        let ram = state.ram.clone();
+        let ram = state.wram_image().into_owned();
         let scheduler = state.game_execution_scheduler;
         state.refine_module09_reload_to_sprite_main(source_boundary);
         state.refine_sprite_main_to_coordinate_moves(0, next_instruction);
-        assert_eq!(state.ram, ram);
+        assert_eq!(*state.wram_image(), ram);
         assert_eq!(state.game_execution_scheduler, scheduler);
         assert_eq!(state.active_module09_sprite_main_return, Some(caller));
         let Some(GameWorkContinuation::FinishSpriteMain {
@@ -1428,7 +1428,7 @@ fn reload_return_transfers_scroll_and_sprite_ownership_without_replaying_the_pre
         assert_eq!(caller_boundary, source_boundary);
         state.game_execution_scheduler.finish_work();
         state.complete_sprite_main_after_cpu_boundary(boundary);
-        assert_eq!(state.ram, atomic.ram, "resumed coordinate instruction {next_instruction}");
+        assert_eq!(*state.wram_image(), *atomic.wram_image(), "resumed coordinate instruction {next_instruction}");
         assert_eq!(state.game_state, atomic.game_state);
     }
     }
@@ -1465,19 +1465,19 @@ fn timer_coordinate_continuation_preserves_each_store_and_resumes_once() {
         let mut expected = [0xaa, 0xbb, 0xcc, 0xdd];
         let count = usize::from(next_instruction / 2);
         expected[..count].copy_from_slice(&[0x34, 0x12, 0x78, 0x56][..count]);
-        assert_eq!(&state.ram[0xfd8..0xfdc], &expected, "instruction {next_instruction}");
+        assert_eq!(&state.wram_image()[0xfd8..0xfdc], &expected, "instruction {next_instruction}");
         assert_eq!(state.sprite_slot_view(0).delay_main(), 80);
         assert_eq!(state.game_state.oam.region_base_word(0), 0x30);
         assert_eq!(state.game_execution_scheduler.scheduled_work_slices_remaining(), slices);
-        let ram = state.ram.clone();
+        let ram = state.wram_image().into_owned();
         let scheduler = state.game_execution_scheduler;
         state.refine_sprite_main_to_coordinate_moves(0, next_instruction);
-        assert_eq!(state.ram, ram);
+        assert_eq!(*state.wram_image(), ram);
         assert_eq!(state.game_execution_scheduler, scheduler);
         let Some(GameWorkContinuation::FinishSpriteMain { boundary, .. }) = scheduler.current_work()
             else { panic!("coordinate continuation lost its sprite caller") };
         state.complete_sprite_main_after_cpu_boundary(boundary);
-        assert_eq!(state.ram, atomic.ram, "resumed instruction {next_instruction}");
+        assert_eq!(*state.wram_image(), *atomic.wram_image(), "resumed instruction {next_instruction}");
     }
 }
 
@@ -1503,8 +1503,8 @@ fn timer_return_refinement_preserves_the_caller_and_does_not_tick_twice() {
     let slices = state.game_execution_scheduler.scheduled_work_slices_remaining();
     let before_nmi = state.game_execution_scheduler.resumed_call_stack_is_before_nmi();
     state.refine_sprite_main_to_timer_return(0);
-    assert_eq!(read_le_u16(&state.ram, 0x0fd8), 0x0470);
-    assert_eq!(read_le_u16(&state.ram, 0x0fda), 0x1234);
+    assert_eq!(read_le_u16(&state.wram_image(), 0x0fd8), 0x0470);
+    assert_eq!(read_le_u16(&state.wram_image(), 0x0fda), 0x1234);
     assert_eq!(state.sprite_slot_view(0).delay_main(), 79);
     assert_eq!(state.game_execution_scheduler.current_work(),
         Some(GameWorkContinuation::FinishSpriteMain {
@@ -1513,10 +1513,10 @@ fn timer_return_refinement_preserves_the_caller_and_does_not_tick_twice() {
         }));
     assert_eq!(state.game_execution_scheduler.scheduled_work_slices_remaining(), slices);
     assert_eq!(state.game_execution_scheduler.resumed_call_stack_is_before_nmi(), before_nmi);
-    let ram = state.ram.clone();
+    let ram = state.wram_image().into_owned();
     let scheduler = state.game_execution_scheduler;
     state.refine_sprite_main_to_timer_return(0);
-    assert_eq!(state.ram, ram);
+    assert_eq!(*state.wram_image(), ram);
     assert_eq!(state.game_execution_scheduler, scheduler);
 }
 
@@ -1549,8 +1549,8 @@ fn rat_entry_refinement_preserves_pending_flags_and_ticks_the_slot_once() {
     let slices = state.game_execution_scheduler.scheduled_work_slices_remaining();
     let before_nmi = state.game_execution_scheduler.resumed_call_stack_is_before_nmi();
     state.refine_sprite_main_to_rat_oam_flags_store(1);
-    assert_eq!(read_le_u16(&state.ram, 0x0fd8), 0x40);
-    assert_eq!(read_le_u16(&state.ram, 0x0fda), 0x50);
+    assert_eq!(read_le_u16(&state.wram_image(), 0x0fd8), 0x40);
+    assert_eq!(read_le_u16(&state.wram_image(), 0x0fda), 0x50);
     assert_eq!(state.sprite_slot_view(1).delay_main(), 79);
     assert_eq!(state.sprite_slot_view(1).oam_flags(), 0x20);
     assert_eq!(state.sprite_slot_view(1).graphics(), atomic.sprite_slot_view(1).graphics());
@@ -1560,13 +1560,13 @@ fn rat_entry_refinement_preserves_pending_flags_and_ticks_the_slot_once() {
     }) = state.game_execution_scheduler.current_work() else { panic!("lost rat continuation") };
     assert_eq!(state.game_execution_scheduler.scheduled_work_slices_remaining(), slices);
     assert_eq!(state.game_execution_scheduler.resumed_call_stack_is_before_nmi(), before_nmi);
-    let ram = state.ram.clone();
+    let ram = state.wram_image().into_owned();
     let scheduler = state.game_execution_scheduler;
     state.refine_sprite_main_to_rat_oam_flags_store(1);
-    assert_eq!(state.ram, ram);
+    assert_eq!(*state.wram_image(), ram);
     assert_eq!(state.game_execution_scheduler, scheduler);
     state.complete_rat_animation_after_graphics(1, flags);
-    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(*state.wram_image(), *atomic.wram_image());
     assert_eq!(state.game_state, atomic.game_state);
 }
 
@@ -1606,13 +1606,13 @@ fn keese_inactive_boundary_preserves_drawing_and_allocates_only_once() {
     }));
     assert_eq!(state.game_execution_scheduler.scheduled_work_slices_remaining(), slices);
     assert_eq!(state.game_execution_scheduler.resumed_call_stack_is_before_nmi(), before_nmi);
-    let ram = state.ram.clone();
+    let ram = state.wram_image().into_owned();
     let scheduler = state.game_execution_scheduler;
     state.refine_sprite_main_to_keese_inactive_check(1);
-    assert_eq!(state.ram, ram);
+    assert_eq!(*state.wram_image(), ram);
     assert_eq!(state.game_execution_scheduler, scheduler);
     state.complete_keese_after_draw(1);
-    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(*state.wram_image(), *atomic.wram_image());
     assert_eq!(state.game_state, atomic.game_state);
 }
 
@@ -1652,13 +1652,13 @@ fn guard_pause_refinement_publishes_allocation_once_and_retains_nmi_owner() {
     }) = state.game_execution_scheduler.current_work() else { panic!("lost guard continuation") };
     assert_eq!(state.game_execution_scheduler.scheduled_work_slices_remaining(), slices);
     assert_eq!(state.game_execution_scheduler.resumed_call_stack_is_before_nmi(), before_nmi);
-    let ram = state.ram.clone();
+    let ram = state.wram_image().into_owned();
     let scheduler = state.game_execution_scheduler;
     state.refine_sprite_main_to_guard_checkpoint(1, crate::GuardAnimationCheckpoint::ActiveStateChecked);
-    assert_eq!(state.ram, ram);
+    assert_eq!(*state.wram_image(), ram);
     assert_eq!(state.game_execution_scheduler, scheduler);
     state.complete_guard_animation_at_checkpoint(1, continuation);
-    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(*state.wram_image(), *atomic.wram_image());
     assert_eq!(state.game_state, atomic.game_state);
 }
 
@@ -2361,8 +2361,8 @@ fn sprite_conversion_cached_return_retires_before_the_next_quadrant_nmi() {
     assert_eq!(state.game_state.frame.subsubmodule, 4);
     assert_eq!(state.game_state.frame.frame_counter, 0xd5);
     assert!(!state.game_state.display.nmi_update_is_latched());
-    assert_eq!(state.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX], 1);
-    assert_eq!(state.ram[crate::game_state::constants::NMI_DISABLE_CORE_UPDATES], 1);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::NMI_SUBROUTINE_INDEX), 1);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::NMI_DISABLE_CORE_UPDATES), 1);
     assert_eq!(state.dungeon_landing_cpu_advance_pending, Some(next));
     state.game_execution_scheduler.begin_host_frame();
     assert!(state.game_execution_scheduler.main_return_requires_leading_nmi());
@@ -2387,22 +2387,22 @@ fn parked_dungeon_link_oam_retains_body_and_caller_after_graphics_selection() {
 
     state.refine_dungeon_link_oam_to_body_selection();
     assert_eq!(state.game_execution_scheduler.current_work(), Some(work));
-    assert_ne!(read_le_u16(&state.ram, 0x100), 0xffff);
+    assert_ne!(read_le_u16(&state.wram_image(), 0x100), 0xffff);
     let held = state.active_dungeon_sprite_main_return.unwrap();
     assert!(held.link_oam.is_some());
-    let prefix_ram = state.ram.clone();
+    let prefix_ram = state.wram_image().into_owned();
     state.refine_dungeon_link_oam_to_body_selection();
-    assert_eq!(state.ram, prefix_ram, "a held prefix must not execute twice");
+    assert_eq!(*state.wram_image(), prefix_ram, "a held prefix must not execute twice");
     let progress = player_oam::LinkOamLowerBodyProgress::from_source_pc(0x0d_a9fe).unwrap();
     state.refine_dungeon_link_oam_body_progress(Some(progress));
     assert_eq!(state.game_execution_scheduler.current_work(), Some(work));
     let held = state.active_dungeon_sprite_main_return.unwrap();
     assert!(matches!(held.link_oam, Some(player_oam::LinkOamContinuation::Body(_))));
-    let partial_ram = state.ram.clone();
+    let partial_ram = state.wram_image().into_owned();
     state.refine_dungeon_link_oam_body_progress(Some(progress));
-    assert_eq!(state.ram, partial_ram, "restating body progress must not repeat stores");
+    assert_eq!(*state.wram_image(), partial_ram, "restating body progress must not repeat stores");
     state.complete_module07_link_oam_after_sprite_main(held);
-    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(*state.wram_image(), *atomic.wram_image());
     assert_eq!(state.game_state, atomic.game_state);
     state.game_execution_scheduler.begin_host_frame();
     assert_eq!(state.game_execution_scheduler.advance_work_one_nmi_slice(),
@@ -2426,16 +2426,16 @@ fn subtile_hud_refinement_preserves_interrupt_and_runs_sprite_prefix_once() {
     state.refine_dungeon_subtile_caller_to_hud_arrow_digits(78);
     let work = state.game_execution_scheduler.current_work().unwrap();
     let GameWorkContinuation::FinishDungeonSubtileHud { hud } = work else { panic!("lost HUD caller") };
-    assert_ne!(read_le_u16(&state.ram, 0x100), 0xffff);
+    assert_ne!(read_le_u16(&state.wram_image(), 0x100), 0xffff);
     assert_eq!(state.ram[0x16], 0);
-    let prefix = state.ram.clone();
+    let prefix = state.wram_image().into_owned();
     state.refine_dungeon_subtile_caller_to_hud_arrow_digits(78);
-    assert_eq!(state.ram, prefix);
+    assert_eq!(*state.wram_image(), prefix);
     state.game_execution_scheduler.begin_host_frame();
     assert_eq!(state.game_execution_scheduler.advance_work_one_nmi_slice(), Some(GameWorkStep::Complete(work)));
     state.resume_overworld_hud_update(hud);
     state.complete_module07_after_hud_refill();
-    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(*state.wram_image(), *atomic.wram_image());
     assert_eq!(state.game_state, atomic.game_state);
 }
 
@@ -2470,16 +2470,16 @@ fn spiral_follower_return_preserves_pending_nmi_and_resumes_prefix_once() {
                 work: DungeonSupertileTransitionWork::SpiralRoomSpriteMain { boundary },
             };
             assert_eq!(state.game_execution_scheduler.current_work(), Some(work));
-            let prefix_ram = state.ram.clone();
+            let prefix_ram = state.wram_image().into_owned();
             state.refine_dungeon_spiral_caller_to_sprite_prefix(boundary);
-            assert_eq!(state.ram, prefix_ram);
+            assert_eq!(*state.wram_image(), prefix_ram);
             state.game_execution_scheduler.begin_host_frame();
             assert_eq!(state.game_execution_scheduler.advance_work_one_nmi_slice(), Some(GameWorkStep::Complete(work)));
             state.complete_sprite_main_after_cpu_boundary(boundary);
             let caller = state.active_dungeon_sprite_main_return.take().unwrap();
             state.complete_module07_after_sprite_main(caller);
             assert_eq!(crate::cycle_ledger::master() - start, expected_cycles);
-            assert_eq!(state.ram, atomic.ram);
+            assert_eq!(*state.wram_image(), *atomic.wram_image());
             assert_eq!(state.game_state, atomic.game_state);
         }
     }
@@ -2565,8 +2565,8 @@ fn dungeon_sprite_preparation_return_leaves_uploads_for_the_following_nmi() {
     assert_eq!(state.game_state.frame.subsubmodule, 5);
     assert_eq!(state.game_state.frame.frame_counter, 0xfb);
     assert!(!state.game_state.display.nmi_update_is_latched());
-    assert_eq!(state.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX], 1);
-    assert_eq!(state.ram[crate::game_state::constants::NMI_DISABLE_CORE_UPDATES], 1);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::NMI_SUBROUTINE_INDEX), 1);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::NMI_DISABLE_CORE_UPDATES), 1);
     assert!(state.next_display_obj_memory_generation.is_none());
     assert_eq!(state.dungeon_landing_cpu_advance_pending, Some(next));
     assert!(state.game_execution_scheduler.is_idle());
@@ -2619,8 +2619,8 @@ fn quadrant_link_oam_return_keeps_queued_uploads_until_the_next_open_nmi() {
         assert_eq!(state.game_state.frame.subsubmodule, step);
         assert_eq!(state.game_state.frame.frame_counter, 0x5e);
         assert!(!state.game_state.display.nmi_update_is_latched());
-        assert_eq!(state.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX], 1);
-        assert_eq!(state.ram[crate::game_state::constants::NMI_DISABLE_CORE_UPDATES], 1);
+        assert_eq!(state.read_wram_byte(crate::game_state::constants::NMI_SUBROUTINE_INDEX), 1);
+        assert_eq!(state.read_wram_byte(crate::game_state::constants::NMI_DISABLE_CORE_UPDATES), 1);
         assert_eq!(state.dungeon_landing_cpu_advance_pending, Some(next));
         let display = state.display_snapshot.as_ref().unwrap();
         let source = DisplayedBgScrollSource::resolve(display.bg_scroll_generation, false, false, false);
@@ -2849,7 +2849,7 @@ fn every_extended_oam_cursor_resumes_to_the_atomic_sprite_preparation_endpoint()
                 0x5a
             };
             assert_eq!(
-                split.ram[packed_extended_oam + i],
+                split.read_wram_byte(packed_extended_oam + i),
                 expected,
                 "cursor {next_group_start} published the wrong prefix at byte {i}",
             );
@@ -2877,7 +2877,7 @@ fn game_loop_clears_oam_y_slots_and_keeps_nmi_update_latched() {
     assert_eq!(state.game_state.frame.frame_counter, 1);
     assert!(state.game_state.display.nmi_update_is_latched());
     for i in 4..128 {
-        assert_eq!(state.ram[OAM_BUF + i * 4 + 1], 0xf0);
+        assert_eq!(state.read_wram_byte(OAM_BUF + i * 4 + 1), 0xf0);
     }
 }
 
@@ -2906,8 +2906,8 @@ fn sprite_preparation_source_interruption_defers_countdowns_and_preserves_stores
     split.nmi_prepare_sprites_through_progress(progress);
     let prefix_cost = crate::cycle_ledger::master() - before;
     for (word, &address) in addresses.iter().enumerate() {
-        assert_eq!(read_le_u16(&split.ram, address), if word < 3 {
-            read_le_u16(&atomic.ram, address)
+        assert_eq!(read_le_u16(&split.wram_image(), address), if word < 3 {
+            read_le_u16(&atomic.wram_image(), address)
         } else { 0x5555 });
     }
     assert_eq!(split.game_state.display.bg_tile_animation_countdown, 1);
@@ -2953,7 +2953,7 @@ fn sprite_preparation_pointer_interruption_preserves_stores_and_countdowns() {
         split.nmi_prepare_sprites_through_progress(progress);
         let prefix_cost = crate::cycle_ledger::master() - before;
         for (word, &address) in addresses.iter().enumerate() {
-            assert_eq!(read_le_u16(&split.ram, address),
+            assert_eq!(read_le_u16(&split.wram_image(), address),
                 if word < words { expected[word] } else { 0x5555 });
         }
         assert_eq!(split.game_state.display.bg_tile_animation_countdown,
@@ -2995,7 +2995,7 @@ fn source_mid_group_sprite_packing_preserves_committed_bytes_and_remaining_cost(
     let prefix_cost = crate::cycle_ledger::master() - before;
     assert_eq!(prefix_cost, 7232);
     for i in 0..32 {
-        assert_eq!(split.ram[crate::game_state::constants::EXTENDED_OAM + i],
+        assert_eq!(split.read_wram_byte(crate::game_state::constants::EXTENDED_OAM + i),
             if i >= 8 || i == 4 { 0x39 } else { 0x5a }, "packed byte {i}");
     }
     assert_eq!(split.game_state.display.bg_tile_animation_countdown, 5);
@@ -3031,8 +3031,8 @@ fn dialogue_packing_return_preserves_countdown_and_latch_until_resume() {
     assert_eq!(state.game_state.display.bg_tile_animation_countdown, 5);
     assert!(state.game_state.display.nmi_update_is_latched());
     assert!(!state.main_loop_sprite_preparation_completed);
-    assert_eq!(state.ram[packed + 20], 0);
-    assert_eq!(state.ram[packed + 21], 0x5a);
+    assert_eq!(state.read_wram_byte(packed + 20), 0);
+    assert_eq!(state.read_wram_byte(packed + 21), 0x5a);
     assert!(!state.paired_resume_cpu_boundary_is_quiescent());
     let continuation = GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn {
         caller: NmiPrepareSpritesCpuCaller::DialogueModule0E,
@@ -3102,9 +3102,9 @@ fn graphics_half_slot_transforms_uncompressed_sprite_pack() {
 
     assert_eq!(state.game_state.display.nmi_load_target_page(), 0x46);
     assert_eq!(state.game_state.display.pending_nmi_subroutine, 11);
-    assert_eq!(&state.ram[0x11000..0x11004], &[0, 1, 2, 3]);
-    assert_eq!(&state.ram[0x11010..0x11014], &[16, 17, 17, 19]);
-    assert_eq!(&state.ram[0x11020..0x11024], &[24, 25, 26, 27]);
+    assert_eq!(&state.wram_image()[0x11000..0x11004], &[0, 1, 2, 3]);
+    assert_eq!(&state.wram_image()[0x11010..0x11014], &[16, 17, 17, 19]);
+    assert_eq!(&state.wram_image()[0x11020..0x11024], &[24, 25, 26, 27]);
 }
 
 #[test]
@@ -3116,7 +3116,7 @@ fn intro_submodule_one_continues_memory_clear_and_logo_oam() {
     assert_eq!(state.game_state.frame.submodule, 1);
     assert_eq!(state.game_state.frame.subsubmodule, 2);
     assert_eq!(
-        &state.ram[OAM_BUF..OAM_BUF + 16],
+        &state.wram_image()[OAM_BUF..OAM_BUF + 16],
         &[
             0x60, 0x68, 0x69, 0x32, 0x70, 0x68, 0x6b, 0x32, 0x80, 0x68, 0x6d, 0x32, 0x88, 0x68,
             0x6e, 0x32
@@ -3206,7 +3206,7 @@ fn ancilla_allocation_rotation_follows_the_rom_past_the_five_slots() {
         "walks 8,7,6,5,4 through raw RAM, then reuses the sparkle in slot 3"
     );
     assert_eq!(state.ancilla_alloc_rotate(), 3);
-    assert_eq!(state.ram[ANCILLA_ALLOC_ROTATE], 3);
+    assert_eq!(state.read_wram_byte(ANCILLA_ALLOC_ROTATE), 3);
     assert_eq!(
         state.ancilla_slot_view(2).work_byte_25(),
         3,
@@ -3245,7 +3245,7 @@ fn intro_sprite_initializers_preserve_live_fields_like_source() {
                 native.intro_actor_mut(slot).set_init_phase(seed);
                 native.ram[0x1e0a] = seed;
                 native.game_state.ending =
-                    crate::game_state::EndingState::load_from_ram(&native.ram);
+                    crate::game_state::EndingState::load_from_ram(&native.wram_image());
                 native.ram[0x1fb..0x1fd].copy_from_slice(&[0x20, 0xc4]);
                 let checkpoint = RomCpuCheckpoint {
                     entry_pc,
@@ -3271,7 +3271,7 @@ fn intro_sprite_initializers_preserve_live_fields_like_source() {
                 };
                 let mut source = RomCpuTimingRun::new(
                     &rom,
-                    &native.ram,
+                    &native.wram_image(),
                     &native.sram,
                     &native.ppu,
                     &native.dma,
@@ -3290,14 +3290,14 @@ fn intro_sprite_initializers_preserve_live_fields_like_source() {
                 }
                 for address in 0..native.ram.len() {
                     assert_eq!(
-                        native.ram[address],
+                        native.read_wram_byte(address),
                         source.ram_byte(address),
                         "entry={entry_pc:06x} slot={slot} seed={seed} address={address:05x}"
                     );
                 }
                 assert_eq!(
                     native.game_state.ending,
-                    crate::game_state::EndingState::load_from_ram(&native.ram)
+                    crate::game_state::EndingState::load_from_ram(&native.wram_image())
                 );
             }
         }

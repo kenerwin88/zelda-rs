@@ -148,7 +148,7 @@ impl Fixture {
         let ppu = source.machine().snes().ppu.clone();
         let dma = source.machine().snes().dma.clone();
         let mut native = crate::ZeldaState::new();
-        native.ram.copy_from_slice(&ram);
+        native.import_wram_image(&ram);
         native.sync_native_game_state_from_ram();
         Self {
             native,
@@ -301,7 +301,7 @@ impl Fixture {
             }),
         );
         self.apu.assert_matches(&self.source, label);
-        assert_eq!(self.native.ram, self.ram, "{label}: native publication bytes");
+        assert_eq!(*self.native.wram_image(), self.ram, "{label}: native publication bytes");
         if published {
             let state = &self.native.game_state;
             assert_eq!(state.display.pending_nmi_subroutine, self.ram[0x17]);

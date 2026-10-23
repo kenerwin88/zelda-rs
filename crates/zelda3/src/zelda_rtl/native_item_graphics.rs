@@ -82,6 +82,7 @@ mod tests {
             for (i, byte) in state.ram.iter_mut().enumerate() {
                 *byte = (i ^ (i >> 7)) as u8;
             }
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
             state.ram[0x1e2..0x1e5].copy_from_slice(&[0xa3, 0x87, 9]);
             state.ram[0x1e5..0x1ec].copy_from_slice(&[4, 0x1b, 0x70, 7, 0x0a, 0x9a, 7]);
             state.ram[0x72] = 0x14;
@@ -110,8 +111,8 @@ mod tests {
             state.ram[0x478..0x47a].copy_from_slice(&6u16.to_le_bytes());
             state.ram[0x500..0x506].fill(0x11);
             state.ram[0x36c] = 5;
-            state.ram[0xf340..0xf37c].fill(0);
-            state.ram[0xf34a] = 1;
+            { let mut image = state.wram_image().into_owned(); image[0xf340..0xf37c].fill(0); state.import_wram_image(&image); }
+            state.write_wram_byte(0xf34a, 1);
             for address in [
                 0x308, 0x376, 0x377, 0x5d, 0x3c, 0x3a, 0x2e0, 0x3fc, 0x301, 0x37a, 0x6c, 0x46,
                 0xf4, 0x2e1, 0x34a, 0x49, 0x46c, 0x372, 0x5e,
@@ -122,11 +123,11 @@ mod tests {
             state.ram[0x2f]=0;
             state.ram[0x304] = 9;
             state.ram[0xf0] = if vertical_probe { 8 } else { 1 };
-            state.ram[0xf3c5] = 0;
-            state.ram[0xf36c] = 24;
-            state.ram[0xf36d] = 24;
-            state.ram[0xf36f] = 255;
-            state.ram[0x202..0x205].fill(0);
+            state.write_wram_byte(0xf3c5, 0);
+            state.write_wram_byte(0xf36c, 24);
+            state.write_wram_byte(0xf36d, 24);
+            state.write_wram_byte(0xf36f, 255);
+            { let mut image = state.wram_image().into_owned(); image[0x202..0x205].fill(0); state.import_wram_image(&image); }
             state.ram[0x12000..0x14000].fill(0);
             state.ram[0x1b] = 1;
             for address in [0xb7b, 0x5b, 0x57, 0x351, 0x3f3] {
@@ -148,7 +149,7 @@ mod tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = context.a;
             machine.cpu.x = context.x;
             machine.cpu.y = context.y;
@@ -485,9 +486,9 @@ mod tests {
                     "pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "pc={pc:04x}");
-                if state.ram != source.snes().ram {
+                if *state.wram_image() != source.snes().ram {
                     let differences = state
-                        .ram
+                        .wram_image()
                         .iter()
                         .zip(source.snes().ram.iter())
                         .enumerate()
@@ -560,11 +561,11 @@ mod tests {
             state.ram.fill(0);
             state.ram[0x303] = 9;
             state.ram[0x304] = if variant == 3 { 8 } else { 9 };
-            state.ram[0xf34a] = u8::from(variant != 1);
+            state.write_wram_byte(0xf34a, u8::from(variant != 1));
             state.ram[0xf4] = if variant == 0 { 0 } else { 0x40 };
             state.ram[0x50] = 0xa5;
             if variant == 3 {
-                state.ram[0xf34c] = 2;
+                state.write_wram_byte(0xf34c, 2);
                 state.ram[0x3a] = 0x40;
             }
             state.sync_native_game_state_from_ram();
@@ -581,7 +582,7 @@ mod tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -640,7 +641,7 @@ mod tests {
                 );
                 assert_eq!(clock, *source.timeline(), "variant={variant} pc={pc:04x}");
                 assert_eq!(
-                    state.ram,
+                    *state.wram_image(),
                     source.snes().ram,
                     "variant={variant} pc={pc:04x}"
                 );
@@ -696,7 +697,7 @@ mod sword_cape_bus_tests {
             state.ram.fill(0);
             state.ram[0x2e3] = if case == 0 { 1 } else { 0 };
             state.ram[0x372] = 1;
-            state.ram[0xf3c5] = 1;
+            state.write_wram_byte(0xf3c5, 1);
             state.ram[0x5d] = if case == 2 { 3 } else { 0 };
             state.ram[0x30] = 0xa5;
             state.ram[0x31] = 0x5a;
@@ -707,12 +708,12 @@ mod sword_cape_bus_tests {
                 state.ram[0x303] = 19;
                 state.ram[0x304] = 19;
                 state.ram[0x4c] = if case == 3 { 2 } else { 1 };
-                state.ram[0xf37b] = (case - 3) % 3;
-                state.ram[0xf36e] = match case {
+                state.write_wram_byte(0xf37b, (case - 3) % 3);
+                state.write_wram_byte(0xf36e, match case {
                     6 => 1,
                     7 => 0,
                     _ => 2,
-                };
+                });
             }
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
@@ -728,7 +729,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -786,9 +787,9 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
                 let link = &state.game_state.player.follower_link;
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 link.write_to_ram(&mut published);
                 assert_eq!(published[0x2e3], state.ram[0x2e3]);
                 assert_eq!(link.cape_decrement_counter(), state.ram[0x4c]);
@@ -796,7 +797,7 @@ mod sword_cape_bus_tests {
                 assert_eq!(link.x_velocity(), state.ram[0x31]);
                 assert_eq!(
                     state.game_state.inventory.player_resources.magic.amount(),
-                    state.ram[0xf36e]
+                    state.read_wram_byte(0xf36e)
                 );
                 count += 1;
             }
@@ -819,6 +820,7 @@ mod sword_cape_bus_tests {
             for (i, byte) in state.ram.iter_mut().enumerate() {
                 *byte = (i ^ (i >> 7)) as u8;
             }
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
             for a in [
                 0x46, 0x377, 0x2e1, 0x376, 0x308, 0x309, 0x301, 0x37a, 0x3c, 0x3a, 0x34a, 0x49,
             ] {
@@ -861,7 +863,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -919,9 +921,9 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
                 let link = &state.game_state.player.follower_link;
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 link.write_to_ram(&mut published);
                 for address in [
                     0x26, 0x2a, 0x2b, 0x2e, 0x30, 0x31, 0x3b, 0x48, 0x50, 0x67, 0x6b, 0x308, 0x309,
@@ -932,13 +934,13 @@ mod sword_cape_bus_tests {
                         "typed player case={case} pc={pc:04x} address={address:04x}"
                     );
                 }
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
                     .swim_acceleration
                     .write_to_ram(&mut published);
-                assert_eq!(&published[0x32b..0x340], &state.ram[0x32b..0x340]);
+                assert_eq!(&published[0x32b..0x340], &state.wram_image()[0x32b..0x340]);
                 count += 1;
             }
             assert!(state.rom.is_empty());
@@ -960,6 +962,7 @@ mod sword_cape_bus_tests {
             for (i, byte) in state.ram.iter_mut().enumerate() {
                 *byte = (i ^ (i >> 7)) as u8;
             }
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
             state.ram[0x1f3..0x1f5].copy_from_slice(&[0xbd, 0x82]);
             state.ram[0x46c] = [0, 1, 2, 3, 4, 5, 128, 255][(case / 2) as usize];
             state.ram[0x67] = if case & 1 == 0 { 8 } else { 0 };
@@ -979,7 +982,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -1037,9 +1040,9 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
                 let link = &state.game_state.player.follower_link;
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 link.write_to_ram(&mut published);
                 for address in [
                     0x20, 0x21, 0x22, 0x23, 0x30, 0x31, 0x42, 0x43, 0x66, 0x67, 0x6a, 0xee, 0x318,
@@ -1050,13 +1053,13 @@ mod sword_cape_bus_tests {
                         "typed case={case} pc={pc:04x} address={address:04x}"
                     );
                 }
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .sprites
                     .workspace
                     .write_to_ram(&mut published);
-                assert_eq!(&published[0..4], &state.ram[0..4]);
+                assert_eq!(&published[0..4], &state.wram_image()[0..4]);
                 count += 1;
             }
             assert!(state.rom.is_empty());
@@ -1078,6 +1081,7 @@ mod sword_cape_bus_tests {
             for (i, byte) in state.ram.iter_mut().enumerate() {
                 *byte = (i ^ (i >> 7)) as u8;
             }
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
             let primary_layer = case & 1 != 0;
             state.ram[0x1f1..0x1f5].copy_from_slice(&[0x56, 0xb6, 0xbd, 0x82]);
             state.ram[0xe] = (case / 2) as u8;
@@ -1107,7 +1111,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -1165,9 +1169,9 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
                 let link = &state.game_state.player.follower_link;
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 link.write_to_ram(&mut published);
                 for address in [
                     0x302, 0x6b, 0x20, 0x21, 0x22, 0x23, 0x30, 0x31, 0x42, 0x43, 0x66, 0x67, 0x6a,
@@ -1178,7 +1182,7 @@ mod sword_cape_bus_tests {
                         "typed case={case} pc={pc:04x} address={address:04x}"
                     );
                 }
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -1186,16 +1190,16 @@ mod sword_cape_bus_tests {
                     .write_to_ram(&mut published);
                 assert_eq!(
                     &published[0x32b..0x340],
-                    &state.ram[0x32b..0x340],
+                    &state.wram_image()[0x32b..0x340],
                     "swim case={case} pc={pc:04x}"
                 );
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .sprites
                     .workspace
                     .write_to_ram(&mut published);
-                assert_eq!(&published[0..4], &state.ram[0..4]);
+                assert_eq!(&published[0..4], &state.wram_image()[0..4]);
                 count += 1;
             }
             assert!(state.rom.is_empty());
@@ -1217,6 +1221,7 @@ mod sword_cape_bus_tests {
             for (i, byte) in state.ram.iter_mut().enumerate() {
                 *byte = (i ^ (i >> 7)) as u8;
             }
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
             state.ram[0x6b] = [0, 0x10, 0x20, 0x30][(case & 3) as usize];
             state.ram[0x30] = [0, 1, 127, 128, 255][(case as usize / 4) % 5];
             state.ram[0x31] = [0, 1, 127, 128, 255][(case as usize / 20) % 5];
@@ -1256,7 +1261,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -1318,9 +1323,9 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
                 let link = &state.game_state.player.follower_link;
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 link.write_to_ram(&mut published);
                 for address in [
                     0x20, 0x21, 0x22, 0x23, 0x30, 0x31, 0x6b, 0x6d, 0xee, 0x5d, 0x5e, 0x31f, 0x2dc,
@@ -1331,7 +1336,7 @@ mod sword_cape_bus_tests {
                         "typed case={case} pc={pc:04x} address={address:04x}"
                     );
                 }
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -1339,17 +1344,17 @@ mod sword_cape_bus_tests {
                     .write_to_ram(&mut published);
                 assert_eq!(
                     &published[0x32b..0x340],
-                    &state.ram[0x32b..0x340],
+                    &state.wram_image()[0x32b..0x340],
                     "swim case={case} pc={pc:04x}"
                 );
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .sprites
                     .workspace
                     .write_to_ram(&mut published);
-                assert_eq!(&published[0..4], &state.ram[0..4]);
-                let mut published = state.ram.clone();
+                assert_eq!(&published[0..4], &state.wram_image()[0..4]);
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -1382,6 +1387,7 @@ mod sword_cape_bus_tests {
             for (i, byte) in state.ram.iter_mut().enumerate() {
                 *byte = (i ^ (i >> 7)) as u8;
             }
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
             state.ram[0x1ef..0x1f1].copy_from_slice(&[0x5e, 0xb9]);
             state.ram[0x30] = if case % 16 == 0 {
                 0
@@ -1420,7 +1426,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -1491,9 +1497,9 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
                 let link = &state.game_state.player.follower_link;
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 link.write_to_ram(&mut published);
                 for address in [0x20, 0x21, 0x22, 0x23, 0x49, 0x4a, 0x66] {
                     assert_eq!(
@@ -1501,7 +1507,7 @@ mod sword_cape_bus_tests {
                         "typed case={case} pc={pc:04x} address={address:04x}"
                     );
                 }
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -1509,23 +1515,23 @@ mod sword_cape_bus_tests {
                     .write_to_ram(&mut published);
                 assert_eq!(
                     &published[0x32b..0x340],
-                    &state.ram[0x32b..0x340],
+                    &state.wram_image()[0x32b..0x340],
                     "swim case={case} pc={pc:04x}"
                 );
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .sprites
                     .workspace
                     .write_to_ram(&mut published);
-                assert_eq!(&published[0..4], &state.ram[0..4]);
-                let mut published = state.ram.clone();
+                assert_eq!(&published[0..4], &state.wram_image()[0..4]);
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
                     .tile_detection
                     .write_to_ram(&mut published);
-                assert_eq!(published, state.ram, "tile case={case} pc={pc:04x}");
+                assert_eq!(published, *state.wram_image(), "tile case={case} pc={pc:04x}");
                 count += 1;
                 classifiers = classifiers.clone();
                 if work.child_ready() && classifiers[sample].is_some() {
@@ -1555,6 +1561,7 @@ mod sword_cape_bus_tests {
             for (i, byte) in state.ram.iter_mut().enumerate() {
                 *byte = (i ^ (i >> 7)) as u8;
             }
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
             state.ram[0x1f1..0x1f3].copy_from_slice(&[0xd7,0xb8]);
             state.ram[0x2f]=((case&3)*2) as u8;
             state.ram[0x30] = if case % 16 == 0 {
@@ -1594,7 +1601,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -1664,9 +1671,9 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
                 let link = &state.game_state.player.follower_link;
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 link.write_to_ram(&mut published);
                 for address in [0x20, 0x21, 0x22, 0x23, 0x49, 0x4a, 0x66] {
                     assert_eq!(
@@ -1674,7 +1681,7 @@ mod sword_cape_bus_tests {
                         "typed case={case} pc={pc:04x} address={address:04x}"
                     );
                 }
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -1682,23 +1689,23 @@ mod sword_cape_bus_tests {
                     .write_to_ram(&mut published);
                 assert_eq!(
                     &published[0x32b..0x340],
-                    &state.ram[0x32b..0x340],
+                    &state.wram_image()[0x32b..0x340],
                     "swim case={case} pc={pc:04x}"
                 );
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .sprites
                     .workspace
                     .write_to_ram(&mut published);
-                assert_eq!(&published[0..4], &state.ram[0..4]);
-                let mut published = state.ram.clone();
+                assert_eq!(&published[0..4], &state.wram_image()[0..4]);
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
                     .tile_detection
                     .write_to_ram(&mut published);
-                assert_eq!(published, state.ram, "tile case={case} pc={pc:04x}");
+                assert_eq!(published, *state.wram_image(), "tile case={case} pc={pc:04x}");
                 count += 1;
                 classifier = classifier.clone();
                 if work.child_ready() && classifier.is_some() {
@@ -1728,7 +1735,10 @@ mod sword_cape_bus_tests {
             for (i, byte) in state.ram.iter_mut().enumerate() {
                 *byte = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::main_tile_response::seed_case(&mut state.ram,((case>>5)*17) as u8,(case&31) as u8);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::main_tile_response::seed_case(&mut image,((case>>5)*17) as u8,(case&31) as u8); state.import_wram_image(&image); }
             let pc=0xd104;
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
@@ -1744,7 +1754,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -1802,9 +1812,9 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
                 let link = &state.game_state.player.follower_link;
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 link.write_to_ram(&mut published);
                 for address in [0x20,0x21,0x22,0x23,0x26,0x30,0x31,0x49,0x4a,0x56,0x5d,0x66,0x67,0x6b,0x2cb,0x2db,0x2ed,0x2e0,0x31f,0x32a,0x340,0x345,0x34a,0x34f,0x351,0x373,0x3f5,0x3f6,0x3f7] {
                     assert_eq!(
@@ -1812,7 +1822,7 @@ mod sword_cape_bus_tests {
                         "typed case={case} pc={pc:04x} address={address:04x}"
                     );
                 }
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -1820,23 +1830,23 @@ mod sword_cape_bus_tests {
                     .write_to_ram(&mut published);
                 assert_eq!(
                     &published[0x32b..0x340],
-                    &state.ram[0x32b..0x340],
+                    &state.wram_image()[0x32b..0x340],
                     "swim case={case} pc={pc:04x}"
                 );
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .sprites
                     .workspace
                     .write_to_ram(&mut published);
-                assert_eq!(&published[0..4], &state.ram[0..4]);
-                let mut published = state.ram.clone();
+                assert_eq!(&published[0..4], &state.wram_image()[0..4]);
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
                     .tile_detection
                     .write_to_ram(&mut published);
-                assert!(published==state.ram,"tile case={case} pc={pc:04x} first_difference={:?}",published.iter().zip(&state.ram).position(|(a,b)|a!=b));
+                assert!(published==*state.wram_image(),"tile case={case} pc={pc:04x} first_difference={:?}",published.iter().zip(state.wram_image().iter()).position(|(a,b)|a!=b));
                 count += 1;
 
             }
@@ -1859,7 +1869,10 @@ mod sword_cape_bus_tests {
             for (i, byte) in state.ram.iter_mut().enumerate() {
                 *byte = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::ground_animation_return::seed_case(&mut state.ram,((case>>5)*17) as usize,(case&31) as usize);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::ground_animation_return::seed_case(&mut image,((case>>5)*17) as usize,(case&31) as usize); state.import_wram_image(&image); }
             let pc=0x82c5;
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
@@ -1875,7 +1888,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -1933,9 +1946,9 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
                 let link = &state.game_state.player.follower_link;
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 link.write_to_ram(&mut published);
                 for address in [0x20,0x21,0x22,0x23,0x26,0x2d,0x2e,0x2f,0x30,0x31,0x302,0x303] {
                     assert_eq!(
@@ -1943,7 +1956,7 @@ mod sword_cape_bus_tests {
                         "typed case={case} pc={pc:04x} address={address:04x}"
                     );
                 }
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -1951,23 +1964,23 @@ mod sword_cape_bus_tests {
                     .write_to_ram(&mut published);
                 assert_eq!(
                     &published[0x32b..0x340],
-                    &state.ram[0x32b..0x340],
+                    &state.wram_image()[0x32b..0x340],
                     "swim case={case} pc={pc:04x}"
                 );
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .sprites
                     .workspace
                     .write_to_ram(&mut published);
-                assert_eq!(&published[0..4], &state.ram[0..4]);
-                let mut published = state.ram.clone();
+                assert_eq!(&published[0..4], &state.wram_image()[0..4]);
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
                     .tile_detection
                     .write_to_ram(&mut published);
-                assert!(published==state.ram,"tile case={case} pc={pc:04x} first_difference={:?}",published.iter().zip(&state.ram).position(|(a,b)|a!=b));
+                assert!(published==*state.wram_image(),"tile case={case} pc={pc:04x} first_difference={:?}",published.iter().zip(state.wram_image().iter()).position(|(a,b)|a!=b));
                 count += 1;
 
             }
@@ -1990,7 +2003,10 @@ mod sword_cape_bus_tests {
             for (i, byte) in state.ram.iter_mut().enumerate() {
                 *byte = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::ground_animation_return::seed_case(&mut state.ram,((case>>5)*17) as usize,(case&31) as usize);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::ground_animation_return::seed_case(&mut image,((case>>5)*17) as usize,(case&31) as usize); state.import_wram_image(&image); }
             state.ram[0x1b]=(case&1) as u8;
             state.ram[0x6c]=((case/2)%3) as u8;
             state.ram[0x21]=case as u8;state.ram[0x23]=(case>>3) as u8;
@@ -2012,7 +2028,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -2070,9 +2086,9 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
                 let link = &state.game_state.player.follower_link;
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 link.write_to_ram(&mut published);
                 for address in [0x20,0x21,0x22,0x23,0x26,0x2d,0x2e,0x2f,0x30,0x31,0x302,0x303,0x68,0x69] {
                     assert_eq!(
@@ -2080,7 +2096,7 @@ mod sword_cape_bus_tests {
                         "typed case={case} pc={pc:04x} address={address:04x}"
                     );
                 }
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -2088,23 +2104,23 @@ mod sword_cape_bus_tests {
                     .write_to_ram(&mut published);
                 assert_eq!(
                     &published[0x32b..0x340],
-                    &state.ram[0x32b..0x340],
+                    &state.wram_image()[0x32b..0x340],
                     "swim case={case} pc={pc:04x}"
                 );
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .sprites
                     .workspace
                     .write_to_ram(&mut published);
-                assert_eq!(&published[0..4], &state.ram[0..4]);
-                let mut published = state.ram.clone();
+                assert_eq!(&published[0..4], &state.wram_image()[0..4]);
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
                     .tile_detection
                     .write_to_ram(&mut published);
-                assert!(published==state.ram,"tile case={case} pc={pc:04x} first_difference={:?}",published.iter().zip(&state.ram).position(|(a,b)|a!=b));
+                assert!(published==*state.wram_image(),"tile case={case} pc={pc:04x} first_difference={:?}",published.iter().zip(state.wram_image().iter()).position(|(a,b)|a!=b));
                 count += 1;
 
             }
@@ -2127,8 +2143,13 @@ mod sword_cape_bus_tests {
             for (i, byte) in state.ram.iter_mut().enumerate() {
                 *byte = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::ground_animation_return::seed_case(&mut state.ram,((case>>5)*17) as usize,(case&31) as usize);
-            crate::cycle_models::player_ancilla_return::seed_case(&mut state.ram,case as usize,case as usize%32);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::ground_animation_return::seed_case(&mut image,((case>>5)*17) as usize,(case&31) as usize); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::player_ancilla_return::seed_case(&mut image,case as usize,case as usize%32); state.import_wram_image(&image); }
             let pc=0x801c;
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
@@ -2144,7 +2165,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -2202,9 +2223,9 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
                 let link = &state.game_state.player.follower_link;
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 link.write_to_ram(&mut published);
                 for address in [0x20,0x21,0x22,0x23,0x26,0x2d,0x2e,0x2f,0x30,0x31,0x302,0x303,0x68,0x69] {
                     assert_eq!(
@@ -2212,7 +2233,7 @@ mod sword_cape_bus_tests {
                         "typed case={case} pc={pc:04x} address={address:04x}"
                     );
                 }
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -2220,23 +2241,23 @@ mod sword_cape_bus_tests {
                     .write_to_ram(&mut published);
                 assert_eq!(
                     &published[0x32b..0x340],
-                    &state.ram[0x32b..0x340],
+                    &state.wram_image()[0x32b..0x340],
                     "swim case={case} pc={pc:04x}"
                 );
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .sprites
                     .workspace
                     .write_to_ram(&mut published);
-                assert_eq!(&published[0..4], &state.ram[0..4]);
-                let mut published = state.ram.clone();
+                assert_eq!(&published[0..4], &state.wram_image()[0..4]);
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
                     .tile_detection
                     .write_to_ram(&mut published);
-                assert!(published==state.ram,"tile case={case} pc={pc:04x} first_difference={:?}",published.iter().zip(&state.ram).position(|(a,b)|a!=b));
+                assert!(published==*state.wram_image(),"tile case={case} pc={pc:04x} first_difference={:?}",published.iter().zip(state.wram_image().iter()).position(|(a,b)|a!=b));
                 count += 1;
 
             }
@@ -2259,6 +2280,7 @@ mod sword_cape_bus_tests {
             for (i, byte) in state.ram.iter_mut().enumerate() {
                 *byte = (i ^ (i >> 7)) as u8;
             }
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
             state.ram[0x1fb..0x1fd].copy_from_slice(&[0xae,0x87]);
             state.ram[0x42c]=case as u8;
             state.ram[0x42d]=if case & 3 == 0 {case as u8} else {0};
@@ -2287,7 +2309,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -2347,15 +2369,15 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published=state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published=state.wram_image().into_owned();
                 state.game_state.dungeon.write_to_ram(&mut published);
-                assert_eq!(&published[0x42c..0x42e],&state.ram[0x42c..0x42e],"index case={case} pc={pc:04x}");
-                assert_eq!(&published[0x500..0x600],&state.ram[0x500..0x600],"records case={case} pc={pc:04x}");
+                assert_eq!(&published[0x42c..0x42e],&state.wram_image()[0x42c..0x42e],"index case={case} pc={pc:04x}");
+                assert_eq!(&published[0x500..0x600],&state.wram_image()[0x500..0x600],"records case={case} pc={pc:04x}");
                 count += 1;
 
             }
-            assert_eq!(&state.ram[0x500..0x600],&original_records);
+            assert_eq!(&state.wram_image()[0x500..0x600],&original_records);
             use crate::cycle_models::dungeon_push_caller_return::PushCallerTail;
             assert_eq!(work.tail(),Some(if native_handler {PushCallerTail::Returned} else {PushCallerTail::Handler}));
             assert!(state.rom.is_empty());
@@ -2377,7 +2399,10 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::dungeon_garnish::seed_case(&mut state.ram, case * 17);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::dungeon_garnish::seed_case(&mut image, case * 17); state.import_wram_image(&image); }
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
                 a: 0x1111,
@@ -2392,7 +2417,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -2451,8 +2476,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state.game_state.write_to_ram(&mut published);
                 state.game_state.oam.write_to_ram(&mut published);
                 state
@@ -2489,7 +2514,7 @@ mod sword_cape_bus_tests {
                 for (start,end) in [(0xff9,0xffa),(0xfa0,0xfa1),(0x1f5,0x1fd)] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "native garnish case={case} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
@@ -2513,7 +2538,10 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::dungeon_follower::seed_case(&mut state.ram, case * 17);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::dungeon_follower::seed_case(&mut image, case * 17); state.import_wram_image(&image); }
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
                 a: 0x1111,
@@ -2528,7 +2556,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -2587,8 +2615,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state.game_state.write_to_ram(&mut published);
                 state.game_state.oam.write_to_ram(&mut published);
                 state
@@ -2625,7 +2653,7 @@ mod sword_cape_bus_tests {
                 for (start,end) in [(0x2cd,0x2cf),(0x1cf0,0x1cf2),(0x1f5,0x1fd)] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "native follower case={case} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
@@ -2649,7 +2677,10 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::dungeon_ancilla::seed_case(&mut state.ram, case * 17);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::dungeon_ancilla::seed_case(&mut image, case * 17); state.import_wram_image(&image); }
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
                 a: 0x1111,
@@ -2664,7 +2695,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -2723,8 +2754,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state.game_state.write_to_ram(&mut published);
                 state.game_state.oam.write_to_ram(&mut published);
                 state
@@ -2758,11 +2789,11 @@ mod sword_cape_bus_tests {
                     .display
                     .ppu_scroll_copy
                     .write_to_ram(&mut published);
-                assert_eq!(state.game_state.oam.priority_word(),read_le_u16(&state.ram,0x64),"native priority case={case} pc={pc:04x}");
+                assert_eq!(state.game_state.oam.priority_word(),read_le_u16(&state.wram_image(),0x64),"native priority case={case} pc={pc:04x}");
                 for (start,end) in [(0x47,0x48),(0x314,0x315),(0x377,0x37a),(0xb7b,0xb7c),(0xfb2,0xfb3),(0xfa8,0xfac),(0xfdc,0xfdd),(0xc68,0xc72),(0xc86,0xc90),(0xfa0,0xfa1),(0x90,0x94),(0x800,0xaa0),(0xfe0,0xff8),(0x1f5,0x1fd)] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "native ancilla case={case} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
@@ -2787,7 +2818,10 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::dungeon_overlord::seed_case(&mut state.ram, case * 17);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::dungeon_overlord::seed_case(&mut image, case * 17); state.import_wram_image(&image); }
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
                 a: 0x1111,
@@ -2802,7 +2836,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -2861,8 +2895,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state.game_state.write_to_ram(&mut published);
                 state.game_state.oam.write_to_ram(&mut published);
                 state
@@ -2896,11 +2930,11 @@ mod sword_cape_bus_tests {
                     .display
                     .ppu_scroll_copy
                     .write_to_ram(&mut published);
-                assert_eq!(state.game_state.oam.priority_word(),read_le_u16(&state.ram,0x64),"native priority case={case} pc={pc:04x}");
+                assert_eq!(state.game_state.oam.priority_word(),read_le_u16(&state.wram_image(),0x64),"native priority case={case} pc={pc:04x}");
                 for (start,end) in [(0xb9a,0xb9b),(0xb00,0xb08),(0xffd,0xfff),(0x47,0x48),(0x314,0x315),(0x377,0x37a),(0xb7b,0xb7c),(0xfb2,0xfb3),(0xfa8,0xfac),(0xfdc,0xfdd),(0xc68,0xc72),(0xc86,0xc90),(0xfa0,0xfa1),(0x90,0x94),(0x800,0xaa0),(0xfe0,0xff8),(0x1f5,0x1fd)] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "native ancilla case={case} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
@@ -2925,7 +2959,10 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::dungeon_lower_garnish::seed_case(&mut state.ram, case * 139);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::dungeon_lower_garnish::seed_case(&mut image, case * 139); state.import_wram_image(&image); }
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
                 a: 0x1111,
@@ -2940,7 +2977,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -2999,8 +3036,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state.game_state.write_to_ram(&mut published);
                 state.game_state.oam.write_to_ram(&mut published);
                 state
@@ -3034,11 +3071,11 @@ mod sword_cape_bus_tests {
                     .display
                     .ppu_scroll_copy
                     .write_to_ram(&mut published);
-                assert_eq!(state.game_state.oam.priority_word(),read_le_u16(&state.ram,0x64),"native priority case={case} pc={pc:04x}");
+                assert_eq!(state.game_state.oam.priority_word(),read_le_u16(&state.wram_image(),0x64),"native priority case={case} pc={pc:04x}");
                 for (start,end) in [(0x1f800,0x1f81e),(0x1f90e,0x1f92c),(0xfa0,0xfa1),(0xb9a,0xb9b),(0xb00,0xb08),(0xffd,0xfff),(0x47,0x48),(0x314,0x315),(0x377,0x37a),(0xb7b,0xb7c),(0xfb2,0xfb3),(0xfa8,0xfac),(0xfdc,0xfdd),(0xc68,0xc72),(0xc86,0xc90),(0xfa0,0xfa1),(0x90,0x94),(0x800,0xaa0),(0xfe0,0xff8),(0x1f5,0x1fd)] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "native ancilla case={case} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
@@ -3063,7 +3100,10 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::dungeon_cached_sprites::seed_case(&mut state.ram, case * 7);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::dungeon_cached_sprites::seed_case(&mut image, case * 7); state.import_wram_image(&image); }
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
                 a: 0x1111,
@@ -3078,7 +3118,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -3137,8 +3177,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state.game_state.write_to_ram(&mut published);
                 state.game_state.oam.write_to_ram(&mut published);
                 state
@@ -3173,10 +3213,10 @@ mod sword_cape_bus_tests {
                     .ppu_scroll_copy
                     .write_to_ram(&mut published);
                 for (start,end) in [(0x69e,0x6a0),(0xfa0,0xfa1),(0xffa,0xffb),(0x1ec,0x1fd)] {
-                    assert_eq!(&published[start..end],&state.ram[start..end],"case={case} pc={pc:04x} range={start:04x}");
+                    assert_eq!(&published[start..end],&state.wram_image()[start..end],"case={case} pc={pc:04x} range={start:04x}");
                 }
                 for &base in &crate::game_state::constants::CACHED_SPRITE_LIVE_FIELDS {
-                    assert_eq!(&published[base..base+16],&state.ram[base..base+16],"case={case} pc={pc:04x} sprite field={base:05x}");
+                    assert_eq!(&published[base..base+16],&state.wram_image()[base..base+16],"case={case} pc={pc:04x} sprite field={base:05x}");
                 }
                 count += 1;
             }
@@ -3199,7 +3239,10 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::dungeon_sprite_slots::seed_case(&mut state.ram, case * 17);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::dungeon_sprite_slots::seed_case(&mut image, case * 17); state.import_wram_image(&image); }
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
                 a: 0x1111,
@@ -3214,7 +3257,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -3273,8 +3316,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state.game_state.write_to_ram(&mut published);
                 state.game_state.oam.write_to_ram(&mut published);
                 state
@@ -3308,19 +3351,19 @@ mod sword_cape_bus_tests {
                     .display
                     .ppu_scroll_copy
                     .write_to_ram(&mut published);
-                assert_eq!(state.game_state.oam.priority_word(),read_le_u16(&state.ram,0x64),"native priority case={case} pc={pc:04x}");
+                assert_eq!(state.game_state.oam.priority_word(),read_le_u16(&state.wram_image(),0x64),"native priority case={case} pc={pc:04x}");
                 for (start,end) in [(0xbc0,0xbe0),(0xfa0,0xfa1),(0xb9a,0xb9b),(0xb00,0xb08),(0xffd,0xfff),(0x47,0x48),(0x314,0x315),(0x377,0x37a),(0xb7b,0xb7c),(0xfb2,0xfb3),(0xfa8,0xfac),(0xfdc,0xfdd),(0xc68,0xc72),(0xc86,0xc90),(0xfa0,0xfa1),(0x90,0x94),(0x800,0xaa0),(0xfe0,0xff8),(0x1f5,0x1fd)] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "native ancilla case={case} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
                 for base in crate::game_state::constants::CACHED_SPRITE_LIVE_FIELDS.into_iter().chain([0xe00,0xe10,0xee0,0xef0,0xf10]) {
-                    assert_eq!(&published[base..base+16],&state.ram[base..base+16],"case={case} pc={pc:04x} field={base:05x}");
+                    assert_eq!(&published[base..base+16],&state.wram_image()[base..base+16],"case={case} pc={pc:04x} field={base:05x}");
                 }
                 for (start,end) in [(0xfd8,0xfdc),(0x90,0x94),(0xfe0,0xff8)] {
-                    assert_eq!(&published[start..end],&state.ram[start..end],"case={case} pc={pc:04x} caller={start:05x}");
+                    assert_eq!(&published[start..end],&state.wram_image()[start..end],"case={case} pc={pc:04x} caller={start:05x}");
                 }
                 count += 1;
             }
@@ -3343,6 +3386,7 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
             crate::cycle_models::dungeon_ancilla::seed_slot_return_case(&mut state.ram, case);
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
@@ -3358,7 +3402,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -3417,8 +3461,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state.game_state.write_to_ram(&mut published);
                 state.game_state.oam.write_to_ram(&mut published);
                 state
@@ -3452,11 +3496,11 @@ mod sword_cape_bus_tests {
                     .display
                     .ppu_scroll_copy
                     .write_to_ram(&mut published);
-                assert_eq!(state.game_state.oam.priority_word(),read_le_u16(&state.ram,0x64),"native priority case={case} pc={pc:04x}");
+                assert_eq!(state.game_state.oam.priority_word(),read_le_u16(&state.wram_image(),0x64),"native priority case={case} pc={pc:04x}");
                 for (start,end) in [(0,4),(0xbfa,0xc4a),(0xc54,0xc5e),(0x3b1,0x3bb),(0x3a4,0x3ae),(0x39f,0x3a9),(0xbf0,0xbfa),(0x47,0x48),(0x314,0x315),(0x377,0x37a),(0xb7b,0xb7c),(0xfb2,0xfb3),(0xfa8,0xfac),(0xfdc,0xfdd),(0xc68,0xc72),(0xc86,0xc90),(0xfa0,0xfa1),(0x90,0x94),(0x800,0xaa0),(0xfe0,0xff8),(0x1f5,0x1fd)] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "native ancilla case={case} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
@@ -3483,7 +3527,10 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::receipt_prefix::seed_case(&mut state.ram, case * 131);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::receipt_prefix::seed_case(&mut image, case * 131); state.import_wram_image(&image); }
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
                 a: 0x1111,
@@ -3498,7 +3545,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -3557,8 +3604,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state.game_state.write_to_ram(&mut published);
                 state.game_state.oam.write_to_ram(&mut published);
                 state
@@ -3595,7 +3642,7 @@ mod sword_cape_bus_tests {
                 for (start,end) in [(0x3b1,0x3bb),(0xc68,0xc72),(0xfc1,0xfc2),(0xf3cc,0xf3cd),(0x2cd,0x2cf),(0x1f5,0x1fd)] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "native ancilla case={case} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
@@ -3620,7 +3667,10 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::receipt_oam::seed_case(&mut state.ram, case * 5003);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::receipt_oam::seed_case(&mut image, case * 5003); state.import_wram_image(&image); }
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
                 a: 0x1111,
@@ -3635,7 +3685,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -3694,8 +3744,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state.game_state.write_to_ram(&mut published);
                 state.game_state.oam.write_to_ram(&mut published);
                 state
@@ -3732,7 +3782,7 @@ mod sword_cape_bus_tests {
                 for (start,end) in [(0,4),(0x90,0x94),(0x800,0xaa0),(0x1f5,0x1fd)] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "native ancilla case={case} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
@@ -3757,7 +3807,10 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::receipt_drawing::seed_case(&mut state.ram, case * 139);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::receipt_drawing::seed_case(&mut image, case * 139); state.import_wram_image(&image); }
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
                 a: 0x1111,
@@ -3772,7 +3825,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -3831,8 +3884,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state.game_state.write_to_ram(&mut published);
                 state.game_state.oam.write_to_ram(&mut published);
                 state
@@ -3869,11 +3922,11 @@ mod sword_cape_bus_tests {
                 for (start,end) in [(0,4),(0x29e,0x2a8),(0x39f,0x3ae),(0xbf0,0xbfa),(0x1f5,0x1fd)] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "native ancilla case={case} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
-                assert_eq!(state.game_state.oam.priority_word(),read_le_u16(&state.ram,0x64),"priority case={case} pc={pc:04x}");
+                assert_eq!(state.game_state.oam.priority_word(),read_le_u16(&state.wram_image(),0x64),"priority case={case} pc={pc:04x}");
                 count += 1;
             }
             assert!(state.rom.is_empty());
@@ -3895,7 +3948,10 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::ancilla_axis::seed_case(&mut state.ram, case * 41);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::ancilla_axis::seed_case(&mut image, case * 41); state.import_wram_image(&image); }
             state.ram[0x1e9..0x1eb].copy_from_slice(&0x8035u16.to_le_bytes());
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
@@ -3911,7 +3967,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -3970,8 +4026,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state.game_state.write_to_ram(&mut published);
                 state.game_state.oam.write_to_ram(&mut published);
                 state
@@ -4008,7 +4064,7 @@ mod sword_cape_bus_tests {
                 for (start,end) in [(0xbfa,0xc4a),(0x1f5,0x1fd)] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "native ancilla case={case} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
@@ -4033,7 +4089,10 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::receipt_movement::seed_case(&mut state.ram, case * 563);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::receipt_movement::seed_case(&mut image, case * 563); state.import_wram_image(&image); }
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
                 a: 0x1111,
@@ -4048,7 +4107,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -4107,8 +4166,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state.game_state.write_to_ram(&mut published);
                 state.game_state.oam.write_to_ram(&mut published);
                 state
@@ -4145,7 +4204,7 @@ mod sword_cape_bus_tests {
                 for (start,end) in [(0xbfa,0xc4a),(0x1f5,0x1fd)] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "native ancilla case={case} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
@@ -4170,7 +4229,10 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::dungeon_sprite_prefix::seed_case(&mut state.ram, case * 17);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::dungeon_sprite_prefix::seed_case(&mut image, case * 17); state.import_wram_image(&image); }
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
                 a: 0x1111,
@@ -4185,7 +4247,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -4243,8 +4305,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state.game_state.write_to_ram(&mut published);
                 state.game_state.oam.write_to_ram(&mut published);
                 state
@@ -4291,7 +4353,7 @@ mod sword_cape_bus_tests {
                 ] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "native sprite prefix case={case} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
@@ -4316,7 +4378,10 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::dungeon_push_drawing::seed_case(&mut state.ram, case * 17);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::dungeon_push_drawing::seed_case(&mut image, case * 17); state.import_wram_image(&image); }
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
                 a: 0x1111,
@@ -4331,7 +4396,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -4388,8 +4453,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state.game_state.oam.write_to_ram(&mut published);
                 state
                     .game_state
@@ -4426,7 +4491,7 @@ mod sword_cape_bus_tests {
                 ] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "native push drawing case={case} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
@@ -4451,7 +4516,10 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::dungeon_sprite_scroll::seed_case(&mut state.ram, case * 17);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::dungeon_sprite_scroll::seed_case(&mut image, case * 17); state.import_wram_image(&image); }
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
                 a: 0x1111,
@@ -4466,7 +4534,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -4524,8 +4592,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -4550,7 +4618,7 @@ mod sword_cape_bus_tests {
                 for (start, end) in [(0, 4), (0xe0, 0xea), (0x11e, 0x126), (0x72, 0x76)] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "native sprite scroll case={case} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
@@ -4575,7 +4643,10 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::dungeon_lamp_caller::seed_case(&mut state.ram, case * 13);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::dungeon_lamp_caller::seed_case(&mut image, case * 13); state.import_wram_image(&image); }
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
                 a: 0x1111,
@@ -4590,7 +4661,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -4647,8 +4718,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -4673,7 +4744,7 @@ mod sword_cape_bus_tests {
                 for (start, end) in [(0, 4), (0xe0, 0xea), (0x72, 0x76)] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "native lamp case={case} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
@@ -4698,7 +4769,10 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::dungeon_edge_caller::seed_case(&mut state.ram, case);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::dungeon_edge_caller::seed_case(&mut image, case); state.import_wram_image(&image); }
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
                 a: 0x1111,
@@ -4713,7 +4787,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -4772,8 +4846,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -4793,7 +4867,7 @@ mod sword_cape_bus_tests {
                 for (start,end) in [(0,4),(0x20,0x24),(0x27,0x29),(0x2c6,0x2c7),(0x72,0x76)] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "native edge case={case} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
@@ -4818,7 +4892,10 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::dungeon_interaction_caller::seed_case(&mut state.ram, case);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::dungeon_interaction_caller::seed_case(&mut image, case); state.import_wram_image(&image); }
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
                 a: 0x1111,
@@ -4833,7 +4910,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -4892,8 +4969,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -4920,7 +4997,7 @@ mod sword_cape_bus_tests {
                 ] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "native interactions case={case} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
@@ -4945,7 +5022,10 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::dungeon_room_tags::seed_case(&mut state.ram, case % 64, case / 64);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::dungeon_room_tags::seed_case(&mut image, case % 64, case / 64); state.import_wram_image(&image); }
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
                 a: 0x1111,
@@ -4960,7 +5040,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -5017,8 +5097,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -5033,7 +5113,7 @@ mod sword_cape_bus_tests {
                 for (start, end) in [(0, 4), (0xe, 0x10), (0x72,0x76), (0x20, 0x24), (0x4c7, 0x4c8)] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "native room tags case={case} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
@@ -5059,7 +5139,10 @@ mod sword_cape_bus_tests {
             for (i, b) in state.ram.iter_mut().enumerate() {
                 *b = (i ^ (i >> 7)) as u8;
             }
-            crate::cycle_models::dungeon_after_push::seed_case(&mut state.ram, case * 17);
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
+            { let mut image = state.wram_image().into_owned();
+
+            crate::cycle_models::dungeon_after_push::seed_case(&mut image, case * 17); state.import_wram_image(&image); }
             state.sync_native_game_state_from_ram();
             let mut cpu = NativeNmiContext {
                 a: 0x1111,
@@ -5074,7 +5157,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -5131,8 +5214,8 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .display
@@ -5146,7 +5229,7 @@ mod sword_cape_bus_tests {
                 for (start, end) in [(0xe0, 0xe4), (0xe6, 0xea), (0x618, 0x624)] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "native camera case={case} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
@@ -5175,6 +5258,7 @@ mod sword_cape_bus_tests {
             for (i, byte) in state.ram.iter_mut().enumerate() {
                 *byte = (i ^ (i >> 7)) as u8;
             }
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
             crate::cycle_models::dungeon_push_blocks::seed_case(
                 &mut state.ram,
                 case as usize,
@@ -5215,7 +5299,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -5296,12 +5380,12 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
                 assert_eq!(
                     state.game_state.display.bg_vram_load_mode, state.ram[0x14],
                     "VRAM request fixture={fixture} pc={pc:04x}"
                 );
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state.game_state.dungeon.write_to_ram(&mut published);
                 for (start, end) in [
                     (0xa8, 0xa9),
@@ -5317,11 +5401,11 @@ mod sword_cape_bus_tests {
                 ] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "dungeon fixture={fixture} pc={pc:04x} range={start:05x}..{end:05x}"
                     );
                 }
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -5329,15 +5413,15 @@ mod sword_cape_bus_tests {
                     .write_to_ram(&mut published);
                 assert_eq!(
                     &published[0x5e0..0x5fc],
-                    &state.ram[0x5e0..0x5fc],
+                    &state.wram_image()[0x5e0..0x5fc],
                     "block banks fixture={fixture} pc={pc:04x}"
                 );
                 assert_eq!(
                     &published[0x2c3..0x2c5],
-                    &state.ram[0x2c3..0x2c5],
+                    &state.wram_image()[0x2c3..0x2c5],
                     "block animation fixture={fixture} pc={pc:04x}"
                 );
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -5356,11 +5440,11 @@ mod sword_cape_bus_tests {
                 ] {
                     assert_eq!(
                         &published[start..end],
-                        &state.ram[start..end],
+                        &state.wram_image()[start..end],
                         "player fixture={fixture} pc={pc:04x} range={start:04x}..{end:04x}"
                     );
                 }
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .world
@@ -5368,7 +5452,7 @@ mod sword_cape_bus_tests {
                     .write_to_ram(&mut published);
                 assert_eq!(
                     &published[0x600..0x610],
-                    &state.ram[0x600..0x610],
+                    &state.wram_image()[0x600..0x610],
                     "bounds fixture={fixture} pc={pc:04x}"
                 );
                 state
@@ -5378,23 +5462,13 @@ mod sword_cape_bus_tests {
                     .write_to_ram(&mut published);
                 assert_eq!(
                     &published[0xea0..0xeb0],
-                    &state.ram[0xea0..0xeb0],
+                    &state.wram_image()[0xea0..0xeb0],
                     "sprite recoil timer fixture={fixture} pc={pc:04x}"
                 );
                 assert_eq!(
                     &published[0xf30..0xf50],
-                    &state.ram[0xf30..0xf50],
+                    &state.wram_image()[0xf30..0xf50],
                     "sprite recoil fixture={fixture} pc={pc:04x}"
-                );
-                state
-                    .game_state
-                    .inventory
-                    .save_progress
-                    .write_to_ram(&mut published);
-                assert_eq!(
-                    &published[0xf000..0xf280],
-                    &state.ram[0xf000..0xf280],
-                    "visited fixture={fixture} pc={pc:04x}"
                 );
                 count += 1;
             }
@@ -5450,6 +5524,7 @@ mod sword_cape_bus_tests {
             for (i, byte) in state.ram.iter_mut().enumerate() {
                 *byte = (i ^ (i >> 7)) as u8;
             }
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
             state.ram[0x1ef..0x1f1].copy_from_slice(&[0x5e, 0xb9]);
             state.ram[0x1b] = u8::from(((case >> 4) as u8) & 8 == 0);
             state.ram[0x308] = if ((case >> 4) as u8) & 4 == 0 { 0 } else { 128 };
@@ -5477,8 +5552,7 @@ mod sword_cape_bus_tests {
             state.ram[0x66] = ((case as u8) >> 6) & 1;
             let values = [0u16, 0xffff, 0x7fff, 0x8000, 0xff, 0xff00, 0x5555, 0xaaaa];
             for (n, address) in [0x20, 0x22, 0xf360].into_iter().enumerate() {
-                state.ram[address..address + 2]
-                    .copy_from_slice(&values[(((case as u8) as usize) + n) % 8].to_le_bytes());
+                state.write_wram_word(address, values[(((case as u8) as usize) + n) % 8]);
             }
             let pc = 0xba2e;
             state.sync_native_game_state_from_ram();
@@ -5495,7 +5569,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -5553,9 +5627,9 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
                 let link = &state.game_state.player.follower_link;
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 link.write_to_ram(&mut published);
                 for address in [0x20, 0x21, 0x22, 0x23, 0x49, 0x4a, 0x50, 0x6b, 0x6c, 0x3f3] {
                     assert_eq!(
@@ -5563,7 +5637,7 @@ mod sword_cape_bus_tests {
                         "typed case={case} pc={pc:04x} address={address:04x}"
                     );
                 }
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -5571,36 +5645,25 @@ mod sword_cape_bus_tests {
                     .write_to_ram(&mut published);
                 assert_eq!(
                     &published[0x32b..0x340],
-                    &state.ram[0x32b..0x340],
+                    &state.wram_image()[0x32b..0x340],
                     "swim case={case} pc={pc:04x}"
                 );
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .sprites
                     .workspace
                     .write_to_ram(&mut published);
-                assert_eq!(&published[0..4], &state.ram[0..4]);
-                let mut published = state.ram.clone();
+                assert_eq!(&published[0..4], &state.wram_image()[0..4]);
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
                     .tile_detection
                     .write_to_ram(&mut published);
-                assert_eq!(published, state.ram, "tile case={case} pc={pc:04x}");
+                assert_eq!(published, *state.wram_image(), "tile case={case} pc={pc:04x}");
                 count += 1;
-                let mut published = state.ram.clone();
-                state
-                    .game_state
-                    .inventory
-                    .player_resources
-                    .write_to_ram(&mut published);
-                assert_eq!(
-                    &published[0xf360..0xf362],
-                    &state.ram[0xf360..0xf362],
-                    "resources case={case} pc={pc:04x}"
-                );
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .world
@@ -5630,6 +5693,7 @@ mod sword_cape_bus_tests {
             for (i, byte) in state.ram.iter_mut().enumerate() {
                 *byte = (i ^ (i >> 7)) as u8;
             }
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
             state.ram[0x1ef..0x1f1].copy_from_slice(&[0x5e, 0xb9]);
             state.ram[0x36d] = if ((case >> 4) as u8) & 3 == 1 {
                 7
@@ -5655,7 +5719,7 @@ mod sword_cape_bus_tests {
             state.ram[0x2e8] = ((case as u8) >> 5) & 7;
             state.ram[0x31f] = (case as u8) & 1;
             state.ram[0x55] = ((case >> 4) as u8) & 2;
-            state.ram[0xf35b] = ((case as u8) >> 6) % 3;
+            state.write_wram_byte(0xf35b, ((case as u8) >> 6) % 3);
             state.ram[0x46c] = (((case >> 4) as u8) >> 1) % 5;
             state.ram[0xee] = ((case >> 4) as u8) & 1;
             state.ram[0x5f] = if ((case >> 4) as u8) & 8 != 0 {
@@ -5682,8 +5746,7 @@ mod sword_cape_bus_tests {
             state.ram[0x2ef] = (case as u8) & 0x70;
             let values = [0u16, 0xffff, 0x7fff, 0x8000, 0xff, 0xff00, 0x5555, 0xaaaa];
             for (n, address) in [0x20, 0x22, 0x51].into_iter().enumerate() {
-                state.ram[address..address + 2]
-                    .copy_from_slice(&values[(((case as u8) as usize) + n) % 8].to_le_bytes());
+                state.write_wram_word(address, values[(((case as u8) as usize) + n) % 8]);
             }
             let pc = 0xbbe6;
             state.sync_native_game_state_from_ram();
@@ -5700,7 +5763,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -5758,9 +5821,9 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
                 let link = &state.game_state.player.follower_link;
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 link.write_to_ram(&mut published);
                 for address in [
                     0x20, 0x21, 0x22, 0x23, 0x49, 0x4a, 0x48, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x57,
@@ -5771,7 +5834,7 @@ mod sword_cape_bus_tests {
                         "typed case={case} pc={pc:04x} address={address:04x}"
                     );
                 }
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -5779,43 +5842,32 @@ mod sword_cape_bus_tests {
                     .write_to_ram(&mut published);
                 assert_eq!(
                     &published[0x32b..0x340],
-                    &state.ram[0x32b..0x340],
+                    &state.wram_image()[0x32b..0x340],
                     "swim case={case} pc={pc:04x}"
                 );
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .sprites
                     .workspace
                     .write_to_ram(&mut published);
-                assert_eq!(&published[0..4], &state.ram[0..4]);
-                let mut published = state.ram.clone();
+                assert_eq!(&published[0..4], &state.wram_image()[0..4]);
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
                     .tile_detection
                     .write_to_ram(&mut published);
-                assert_eq!(published, state.ram, "tile case={case} pc={pc:04x}");
-                let mut published = state.ram.clone();
+                assert_eq!(published, *state.wram_image(), "tile case={case} pc={pc:04x}");
+                let mut published = state.wram_image().into_owned();
                 state.game_state.frame.write_to_ram(&mut published);
                 assert_eq!(
                     &published[0x10..0x12],
-                    &state.ram[0x10..0x12],
+                    &state.wram_image()[0x10..0x12],
                     "frame case={case} pc={pc:04x}"
                 );
                 count += 1;
-                let mut published = state.ram.clone();
-                state
-                    .game_state
-                    .inventory
-                    .player_resources
-                    .write_to_ram(&mut published);
-                assert_eq!(
-                    &published[0xf360..0xf362],
-                    &state.ram[0xf360..0xf362],
-                    "resources case={case} pc={pc:04x}"
-                );
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .world
@@ -5845,6 +5897,7 @@ mod sword_cape_bus_tests {
             for (i, byte) in state.ram.iter_mut().enumerate() {
                 *byte = (i ^ (i >> 7)) as u8;
             }
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
             state.ram[0xb7b] = 0;
             state.ram[0x11] = 0;
             state.ram[0x5d] = 0;
@@ -5899,7 +5952,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -5957,9 +6010,9 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
                 let link = &state.game_state.player.follower_link;
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 link.write_to_ram(&mut published);
                 for address in [
                     0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x3e, 0x3f,
@@ -5970,7 +6023,7 @@ mod sword_cape_bus_tests {
                         "typed case={case} pc={pc:04x} address={address:04x}"
                     );
                 }
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -5978,17 +6031,17 @@ mod sword_cape_bus_tests {
                     .write_to_ram(&mut published);
                 assert_eq!(
                     &published[0x32b..0x340],
-                    &state.ram[0x32b..0x340],
+                    &state.wram_image()[0x32b..0x340],
                     "swim case={case} pc={pc:04x}"
                 );
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .sprites
                     .workspace
                     .write_to_ram(&mut published);
-                assert_eq!(&published[0..4], &state.ram[0..4]);
-                let mut published = state.ram.clone();
+                assert_eq!(&published[0..4], &state.wram_image()[0..4]);
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -5996,7 +6049,7 @@ mod sword_cape_bus_tests {
                     .write_to_ram(&mut published);
                 assert_eq!(
                     &published[0x41c..0x41e],
-                    &state.ram[0x41c..0x41e],
+                    &state.wram_image()[0x41c..0x41e],
                     "conveyor case={case} pc={pc:04x}"
                 );
                 count += 1;
@@ -6020,6 +6073,7 @@ mod sword_cape_bus_tests {
             for (i, byte) in state.ram.iter_mut().enumerate() {
                 *byte = (i ^ (i >> 7)) as u8;
             }
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
             let x = [0xffffu16, 0xfff8, 0x7fff, 0x1ff][(case >> 2) as usize];
             let y = x.rotate_left(case as u32);
             state.ram[0x20..0x22].copy_from_slice(&y.to_le_bytes());
@@ -6041,7 +6095,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -6099,12 +6153,12 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
                 let link = &state.game_state.player.follower_link;
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 link.write_to_ram(&mut published);
                 assert_eq!(published[0x5a], state.ram[0x5a]);
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -6116,7 +6170,7 @@ mod sword_cape_bus_tests {
                 ] {
                     assert_eq!(
                         &published[address..address + 2],
-                        &state.ram[address..address + 2],
+                        &state.wram_image()[address..address + 2],
                         "typed case={case} pc={pc:04x} address={address:04x}"
                     );
                 }
@@ -6126,15 +6180,15 @@ mod sword_cape_bus_tests {
                         .dungeon
                         .environment
                         .moving_floor_check_flags(),
-                    read_le_u16(&state.ram, 0x3f1)
+                    read_le_u16(&state.wram_image(), 0x3f1)
                 );
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .sprites
                     .workspace
                     .write_to_ram(&mut published);
-                assert_eq!(&published[0..0x10], &state.ram[0..0x10]);
+                assert_eq!(&published[0..0x10], &state.wram_image()[0..0x10]);
                 count += 1;
             }
             assert!(state.rom.is_empty());
@@ -6156,6 +6210,7 @@ mod sword_cape_bus_tests {
             for (i, byte) in state.ram.iter_mut().enumerate() {
                 *byte = (i ^ (i >> 7)) as u8;
             }
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
             let tile = (case / 2) as u8;
             let x = 16u16;
             let y = 24u16;
@@ -6188,7 +6243,7 @@ mod sword_cape_bus_tests {
             };
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
-            machine.ram.copy_from_slice(&state.ram);
+            machine.ram.copy_from_slice(&state.wram_image());
             machine.cpu.a = cpu.a;
             machine.cpu.x = cpu.x;
             machine.cpu.y = cpu.y;
@@ -6246,9 +6301,9 @@ mod sword_cape_bus_tests {
                     "case={case} pc={pc:04x}"
                 );
                 assert_eq!(clock, *source.timeline(), "case={case} pc={pc:04x}");
-                assert_eq!(state.ram, source.snes().ram, "case={case} pc={pc:04x}");
+                assert_eq!(*state.wram_image(), source.snes().ram, "case={case} pc={pc:04x}");
                 let link = &state.game_state.player.follower_link;
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 link.write_to_ram(&mut published);
                 for address in [0x49, 0x4a, 0x114, 0x5a] {
                     assert_eq!(
@@ -6256,7 +6311,7 @@ mod sword_cape_bus_tests {
                         "link case={case} pc={pc:04x} address={address:04x}"
                     );
                 }
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .player
@@ -6269,7 +6324,7 @@ mod sword_cape_bus_tests {
                 ] {
                     assert_eq!(
                         &published[address..address + 2],
-                        &state.ram[address..address + 2],
+                        &state.wram_image()[address..address + 2],
                         "typed case={case} pc={pc:04x} address={address:04x}"
                     );
                 }
@@ -6279,15 +6334,15 @@ mod sword_cape_bus_tests {
                         .dungeon
                         .environment
                         .moving_floor_check_flags(),
-                    read_le_u16(&state.ram, 0x3f1)
+                    read_le_u16(&state.wram_image(), 0x3f1)
                 );
-                let mut published = state.ram.clone();
+                let mut published = state.wram_image().into_owned();
                 state
                     .game_state
                     .sprites
                     .workspace
                     .write_to_ram(&mut published);
-                assert_eq!(&published[0..4], &state.ram[0..4]);
+                assert_eq!(&published[0..4], &state.wram_image()[0..4]);
                 count += 1;
             }
             assert!(state.rom.is_empty());
@@ -6438,10 +6493,10 @@ impl ItemBus<'_> {
             address
         };
         if address < 0x2000 {
-            return self.state.ram[address as usize];
+            return self.state.read_wram_byte(address as usize);
         }
         if (0x7e0000..0x800000).contains(&address) {
-            return self.state.ram[address as usize - 0x7e0000];
+            return self.state.read_wram_byte(address as usize - 0x7e0000);
         }
         if let Some(value) = crate::cycle_models::graphics_sources::table_byte(address)
             .or_else(|| load_gfx::native_animated_item_table_byte(address))
@@ -6779,8 +6834,9 @@ impl WorkBus for ItemBus<'_> {
                         _ => {}
                     }
                 }
-                self.state.ram[offset..offset + usize::from(width)]
-                    .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                for (byte, value) in value.to_le_bytes()[..usize::from(width)].iter().enumerate() {
+                    self.state.write_wram_byte(offset + byte, *value);
+                }
                 if self.publish_push {self.state.native_push_block_store(offset,value,width);}
                 if self.publish_dungeon_camera {self.state.native_dungeon_camera_store(offset,value,width);}
                 if self.publish_probe && width == 1 && matches!(offset, 0x0e | 0x59 | 0x322 | 0x2c2) {
@@ -6891,7 +6947,7 @@ impl WorkBus for ItemBus<'_> {
                     } else {
                         return scroll_hdma_descriptor_byte(address);
                     };
-                    self.state.ram.get(offset).copied()
+                    (offset < self.state.ram.len()).then(|| self.state.read_wram_byte(offset))
                 })
                 .expect("native item graphics lost its HDMA operands"),
             _ => {

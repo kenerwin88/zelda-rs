@@ -747,7 +747,7 @@ mod tests {
         let mut instructions = 0;
         for (case, (entry, mut ram)) in fixtures.iter().cloned().enumerate() {
             let mut state = crate::ZeldaState::new();
-            state.ram.copy_from_slice(&ram);
+            state.import_wram_image(&ram);
             state.sync_native_game_state_from_ram();
             let mut machine = Snes::new();
             machine.cart.load(CartType::LoRom, &rom, 0x2000);
@@ -837,7 +837,7 @@ mod tests {
                     },
                 );
                 assert_eq!(ram, source.snes().ram, "{label}");
-                assert_eq!(state.ram, ram, "native HUD publication {label}");
+                assert_eq!(*state.wram_image(), ram, "native HUD publication {label}");
                 assert_eq!(state.game_state.display.hud_tilemap,crate::game_state::HudTilemapState::load_from_ram(&ram),"HUD owner {label}");
                 assert_eq!(state.game_state.inventory,crate::game_state::InventoryState::load_from_ram(&ram),"inventory owners {label}");
                 assert_eq!(state.game_state.player.follower_link,crate::game_state::FollowerLinkState::load_from_ram(&ram),"player owner {label}");

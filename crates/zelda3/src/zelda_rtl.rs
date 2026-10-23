@@ -11827,27 +11827,13 @@ impl ZeldaState {
         digest.0
     }
 
-    /// Legacy player entry points observe compatibility writes before mutation.
-    /// Equipment is owned by inventory; magic imports only its amount here.
+    /// Player compatibility operations borrow only their remaining WRAM domain.
     pub(crate) fn follower_link_state_mut(&mut self) -> NativeFollowerLinkBridgeMut<'_> {
-        self.game_state
-            .inventory
-            .items
-            .import_player_capabilities(&self.ram);
-        self.game_state
-            .inventory
-            .player_resources
-            .magic
-            .import_amount(&self.ram);
         NativeFollowerLinkBridgeMut::new(&mut self.game_state.player.follower_link, &mut self.ram)
     }
 
     pub(crate) fn player_magic_mut(&mut self) -> crate::game_state::NativePlayerMagicBridgeMut<'_> {
         // Preserve the former player entry observation while its raw writers remain.
-        self.game_state
-            .inventory
-            .items
-            .import_player_capabilities(&self.ram);
         self.game_state.player.follower_link = FollowerLinkState::load_from_ram(&self.ram);
         crate::game_state::NativePlayerMagicBridgeMut::new(
             &mut self.game_state.inventory.player_resources.magic,
@@ -12101,10 +12087,9 @@ impl ZeldaState {
         }
     }
 
-    /// Consume the save-layout observation at the original cost-check boundary.
+    /// Observe the live magic owner at the original cost-check boundary.
     pub(crate) fn magic_consumption_level(&mut self) -> u8 {
         let magic = &mut self.game_state.inventory.player_resources.magic;
-        magic.import_consumption_level(&self.ram);
         magic.consumption_level()
     }
 
@@ -12196,7 +12181,9 @@ impl ZeldaState {
     }
 
     fn set_compatibility_ram_byte(&mut self, offset: usize, value: u8) {
-        CompatibilityBytesViewMut::new(&mut self.ram).set_byte_at(offset, value);
+        if !self.game_state.inventory.write_owned_byte(offset, value) {
+            CompatibilityBytesViewMut::new(&mut self.ram).set_byte_at(offset, value);
+        }
     }
 
     zelda_ppu_scroll_copy_methods! {
@@ -13568,9 +13555,15 @@ impl ZeldaState {
         // outside the bridge; `load_snes_state` reconstitutes the mirror after
         // resync to cover it.
         let palette_provenance = std::mem::take(&mut self.game_state.display.palette_provenance);
-        // Legacy mirrors still refresh here. Exclusive owners are decoded
-        // from their exported image, never from poisoned backing bytes.
-        self.game_state = GameState::load_from_ram(&self.wram_image());
+        // Refresh legacy mirrors while preserving the live native owners.
+        // External seeds/checkpoints use import_wram_image before this refresh.
+        let resources = self.game_state.inventory.player_resources;
+        let items = self.game_state.inventory.items;
+        let save_progress = self.game_state.inventory.save_progress.clone();
+        self.game_state = GameState::load_from_ram(&self.ram);
+        self.game_state.inventory.player_resources = resources;
+        self.game_state.inventory.items = items;
+        self.game_state.inventory.save_progress = save_progress;
         self.game_state.display.palette_provenance = palette_provenance;
     }
 
@@ -13951,7 +13944,6 @@ impl ZeldaState {
         state.assert_native_frame_state_matches_ram();
         state.assert_native_world_location_state_matches_ram();
         state.assert_native_display_state_matches_ram();
-        state.assert_native_save_progress_matches_ram();
         state
     }
 
@@ -14010,7 +14002,7 @@ impl ZeldaState {
         self.ppu.reset();
         self.bg3_vwf_glyph_runs.clear();
         self.bg3_vwf_glyph_run_dialogue_offsets.clear();
-        self.ram.fill(0);
+        self.import_wram_image(&vec![0; self.ram.len()]);
         if !preserve_sram {
             self.sram.fill(0);
         }
@@ -14506,7 +14498,7 @@ impl ZeldaState {
     /// the first host; a no-op once boot has started.
     pub fn use_zeroed_reset_wram_for_receipt_replay(&mut self) {
         if self.frame_ctr_dbg == 0 && self.reset_fill_pending {
-            self.ram.fill(0);
+            self.import_wram_image(&vec![0; self.ram.len()]);
             self.reset_fill_pending = false;
             self.sync_native_game_state_from_ram();
         }
@@ -15233,9 +15225,9 @@ impl ZeldaState {
             let clear_window = work.clears_window_mask();
             // StartupMemoryWork executes the cartridge's raw clear/transfer
             // stores. Retire owned bytes before any native callback resumes.
-            self.export_owned_wram_to_ram();
-            let step = work.step(&mut self.ram, &mut self.sram);
-            self.import_owned_wram_from_ram();
+            let mut image = self.wram_image().into_owned();
+            let step = work.step(&mut image, &mut self.sram);
+            self.import_wram_image(&image);
             if step.is_none() { break }
             if clear_window { self.zelda_ppu_write_word(0x212e, 0); }
         }
@@ -15285,9 +15277,9 @@ impl ZeldaState {
             let clear_window = work.clears_window_mask();
             // Clocked startup has the same raw-memory boundary as the
             // unclocked bootstrap above, one source step at a time.
-            self.export_owned_wram_to_ram();
-            let step = work.step(&mut self.ram, &mut self.sram);
-            self.import_owned_wram_from_ram();
+            let mut image = self.wram_image().into_owned();
+            let step = work.step(&mut image, &mut self.sram);
+            self.import_wram_image(&image);
             let Some(cycles) = step else { break };
             if clear_window { self.zelda_ppu_write_word(0x212e, 0); }
             if let Some(clock) = cpu.as_mut().map(|cpu| &mut cpu.timeline) {
@@ -15378,12 +15370,12 @@ impl ZeldaState {
             }
             // The retained startup CPU and its HDMA bus borrow raw WRAM for
             // one step. Import before dispatching the returned native action.
-            self.export_owned_wram_to_ram();
-            let step = cpu.startup.step(&mut cpu.timeline, &mut self.ram, &mut self.sram,
+            let mut image = self.wram_image().into_owned();
+            let step = cpu.startup.step(&mut cpu.timeline, &mut image, &mut self.sram,
                 self.native_ppu.as_mut().expect("cold CPU retains its PPU bus owner"),
                 |event, clock, ram, ppu| crate::cycle_models::native_hdma::wait_event(
                     event, clock, ram, ppu, &mut self.dma, &mut self.ppu));
-            self.import_owned_wram_from_ram();
+            self.import_wram_image(&image);
             match step {
                 StartupStep::Instruction => {}
                 StartupStep::ClearWindow => self.zelda_ppu_write_word(0x212e, 0),
@@ -16116,7 +16108,9 @@ impl ZeldaState {
                         0x7e2000..=0x7ffffe => {
                             let offset = address as usize - 0x7e0000;
                             crate::types::ww_check(offset, usize::from(width), "native_intro_store", u32::from(value));
-                            self.ram[offset..offset+usize::from(width)].copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                            for (byte, value) in value.to_le_bytes()[..usize::from(width)].iter().enumerate() {
+                                self.write_wram_byte(offset + byte, *value);
+                            }
                         }
                         _ => panic!("unowned intro clear store {address:06x}"),
                     }

@@ -166,7 +166,7 @@ fn scratch_word_high_does_not_alias_nmi_subroutine_index() {
 fn new_state_exposes_first_nmi_link_dma_source() {
     let state = ZeldaState::new();
 
-    assert_eq!(&state.ram[0..3], &[0x00, 0x80, 0x00]);
+    assert_eq!(&state.wram_image()[0..3], &[0x00, 0x80, 0x00]);
 }
 
 #[test]
@@ -418,7 +418,7 @@ fn fleeing_cucco_third_increment_checkpoint_preserves_graphics_until_publication
     resumed.complete_cucco_after_subtype_increments(5, 3, 5, CuccoSubtypeContinuation::Flee);
     resumed.sprite_main_cpu_boundary = None;
 
-    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(*resumed.wram_image(), *atomic.wram_image());
     assert_eq!(resumed.game_state, atomic.game_state);
 }
 
@@ -805,14 +805,14 @@ fn load_actual_gear_palettes_applies_enhanced_glove_color() {
     state.load_actual_gear_palettes();
 
     assert_eq!(
-        read_le_u16(&state.ram, AUX_PALETTE_BUFFER + 0xfd * 2),
+        read_le_u16(&state.wram_image(), AUX_PALETTE_BUFFER + 0xfd * 2),
         0x0376
     );
     assert_eq!(
-        read_le_u16(&state.ram, MAIN_PALETTE_BUFFER + 0xfd * 2),
+        read_le_u16(&state.wram_image(), MAIN_PALETTE_BUFFER + 0xfd * 2),
         0x0376
     );
-    assert_eq!(state.ram[FLAG_UPDATE_CGRAM_IN_NMI], 2);
+    assert_eq!(state.read_wram_byte(FLAG_UPDATE_CGRAM_IN_NMI), 2);
 }
 
 #[test]
@@ -1128,7 +1128,7 @@ fn palette_direction_toggle_defers_countdown_clear_and_substage_publication() {
         assert_eq!(staged.ram[0x15], cgram_requests);
         staged.complete_apply_palette_filter_bounce_after_direction_toggle();
         assert_eq!(staged.game_state.frame.subsubmodule, 16);
-        assert_eq!(staged.ram, atomic.ram);
+        assert_eq!(staged.ram, *atomic.wram_image());
     }
 }
 
@@ -1167,7 +1167,7 @@ fn module09_scroll_prefix_retains_the_pending_vertical_pair() {
     state.complete_module09_final_scroll_pair();
     assert_eq!(state.game_state.display.ppu_scroll_copy.bg1_v_copy2(), 405);
     assert_eq!(state.game_state, atomic.game_state);
-    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(*state.wram_image(), *atomic.wram_image());
 }
 
 #[test]
@@ -1468,7 +1468,7 @@ fn measured_nmi_prepare_interruption_records_captured_dma_for_active_scanout_onc
         entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
         entry_link_handler_state: 0,
         animated_tile: Some(captured_dma),
-        link_operands: PreMainLinkDmaOperands::capture(&state.ram),
+        link_operands: PreMainLinkDmaOperands::capture(&state.wram_image()),
         obj_vram: state.ppu.vram.clone(),
         oam_shadow: vec![0; state.ppu.oam.len() * 2],
     });
@@ -1686,7 +1686,7 @@ fn name_player_tilemap_finishes_after_the_intervening_nmi_slice() {
         state.pre_main_caller_continuation_is(PreMainCallerContinuation::NamePlayerTilemapUpload)
     );
     assert!(state.rom_load_partial_nmi_this_frame);
-    assert_eq!(state.ram[NMI_LOAD_BG_FROM_VRAM], 0);
+    assert_eq!(state.read_wram_byte(NMI_LOAD_BG_FROM_VRAM), 0);
 
     state.run_frame_internal(0, crate::RUN_MAIN);
 
@@ -1695,11 +1695,11 @@ fn name_player_tilemap_finishes_after_the_intervening_nmi_slice() {
         .game_execution_scheduler
         .pre_main_caller_continuation()
         .is_none());
-    assert_eq!(state.ram[NMI_LOAD_BG_FROM_VRAM], 0);
+    assert_eq!(state.read_wram_byte(NMI_LOAD_BG_FROM_VRAM), 0);
     let terminator = state.game_state.display.vram_upload_buffer_base()
         + 4
         + select_file::SELECT_FILE_CHECKERBOARD_TILE_COUNT * 2;
-    assert_eq!(read_le_u16(&state.ram, terminator), 0xffff);
+    assert_eq!(read_le_u16(&state.wram_image(), terminator), 0xffff);
 }
 
 #[test]
@@ -2251,7 +2251,7 @@ fn nmi_operand_consumption_preserves_the_scanout_plan() {
         entry_plan,
         entry_link_handler_state: 0,
         animated_tile: None,
-        link_operands: PreMainLinkDmaOperands::capture(&state.ram),
+        link_operands: PreMainLinkDmaOperands::capture(&state.wram_image()),
         obj_vram: state.ppu.vram.clone(),
         oam_shadow: state.sprite_oam_shadow_buffer().to_vec(),
     });
@@ -2284,7 +2284,7 @@ fn leading_nmi_uses_the_captured_link_high_plane_staging_buffers() {
         entry_plan,
         entry_link_handler_state: 0,
         animated_tile: None,
-        link_operands: PreMainLinkDmaOperands::capture(&state.ram),
+        link_operands: PreMainLinkDmaOperands::capture(&state.wram_image()),
         obj_vram: state.ppu.vram.clone(),
         oam_shadow: state.sprite_oam_shadow_buffer().to_vec(),
     });

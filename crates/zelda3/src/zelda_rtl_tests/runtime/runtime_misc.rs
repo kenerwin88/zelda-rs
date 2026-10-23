@@ -6,7 +6,7 @@ use super::*;
 #[test]
 fn owns_oracle_compared_memory_regions() {
     let state = ZeldaState::new();
-    assert_eq!(state.ram.len(), WRAM_SIZE);
+    assert_eq!(state.wram_image().len(), WRAM_SIZE);
     assert_eq!(state.sram.len(), SRAM_SIZE);
     assert_eq!(state.vram().len(), VRAM_WORDS);
 }
@@ -24,8 +24,8 @@ fn screen_layer_helpers_write_the_display_owner_through() {
 
     assert_eq!(state.game_state.display.main_screen_layers, 0x16);
     assert_eq!(state.game_state.display.sub_screen_layers, 0x01);
-    assert_eq!(state.ram[TM_COPY], 0x16);
-    assert_eq!(state.ram[TS_COPY], 0x01);
+    assert_eq!(state.read_wram_byte(TM_COPY), 0x16);
+    assert_eq!(state.read_wram_byte(TS_COPY), 0x01);
     state.assert_native_display_state_matches_ram();
 }
 
@@ -55,7 +55,7 @@ fn player_layer_collision_helpers_preserve_unrelated_flags() {
         true,
     );
     assert_eq!(
-        state.ram[crate::game_state::constants::PLAYER_LAYER_COLLISION_FLAGS],
+        state.read_wram_byte(crate::game_state::constants::PLAYER_LAYER_COLLISION_FLAGS),
         0xf1
     );
     assert!(!state
@@ -66,7 +66,7 @@ fn player_layer_collision_helpers_preserve_unrelated_flags() {
         true,
     );
     assert_eq!(
-        state.ram[crate::game_state::constants::PLAYER_LAYER_COLLISION_FLAGS],
+        state.read_wram_byte(crate::game_state::constants::PLAYER_LAYER_COLLISION_FLAGS),
         0xf3
     );
     assert!(state
@@ -77,7 +77,7 @@ fn player_layer_collision_helpers_preserve_unrelated_flags() {
         false,
     );
     assert_eq!(
-        state.ram[crate::game_state::constants::PLAYER_LAYER_COLLISION_FLAGS],
+        state.read_wram_byte(crate::game_state::constants::PLAYER_LAYER_COLLISION_FLAGS),
         0xf2
     );
     assert!(!state
@@ -168,12 +168,12 @@ fn multi_patch_and_patch_command_update_ram_and_log() {
     state.state_recoder_multi_patch_patch(&mut sr, &mut mp, 0x21, 0xbb);
     ZeldaState::state_recoder_multi_patch_commit(&mut sr, &mut mp);
 
-    assert_eq!(&state.ram[0x20..0x22], &[0xaa, 0xbb]);
+    assert_eq!(&state.wram_image()[0x20..0x22], &[0xaa, 0xbb]);
     assert_eq!(sr.log.data, vec![0xc4, 0x00, 0x20, 0xaa, 0xbb]);
 
     state.patch_command('w');
-    assert_eq!(state.ram[0xf372], 80);
-    assert_eq!(state.ram[0xf373], 80);
+    assert_eq!(state.read_wram_byte(0xf372), 80);
+    assert_eq!(state.read_wram_byte(0xf373), 80);
     assert!(!state.state_recorder.log.data.is_empty());
 }
 
@@ -352,12 +352,12 @@ fn link_initialize_applies_misc_bugfix_cleanup() {
         state.game_state.player.follower_link.button_mask_b_y() & 0x40,
         0
     );
-    assert_eq!(state.ram[ABOUT_TO_JUMP_OFF_LEDGE], 0);
+    assert_eq!(state.read_wram_byte(ABOUT_TO_JUMP_OFF_LEDGE), 0);
     assert_eq!(link_test_byte(&state, LINK_IS_NEAR_MOVEABLE_STATUE), 0);
     assert_eq!(link_test_byte(&state, LINK_ON_CONVEYOR_BELT), 0);
     assert_eq!(link_test_byte(&state, LINK_FLAG_MOVING), 0);
-    assert_eq!(read_le_u16(&state.ram, BG1_Y_OFFSET), 0);
-    assert_eq!(read_le_u16(&state.ram, BG1_X_OFFSET), 0);
+    assert_eq!(read_le_u16(&state.wram_image(), BG1_Y_OFFSET), 0);
+    assert_eq!(read_le_u16(&state.wram_image(), BG1_X_OFFSET), 0);
     assert_eq!(state.game_state.player.follower_link.handler_state(), 23);
     assert_eq!(link_test_byte(&state, LINK_IS_BUNNY), 1);
     assert_eq!(link_test_byte(&state, LINK_IS_BUNNY_MIRROR), 1);
@@ -395,10 +395,10 @@ fn swim_momentum_sets_direction_and_starting_accel() {
 
     state.link_set_momentum();
 
-    assert_eq!(read_le_u16(&state.ram, SWIM_STROKE_FRAME_COUNTER), 8);
+    assert_eq!(read_le_u16(&state.wram_image(), SWIM_STROKE_FRAME_COUNTER), 8);
     assert_eq!(state.game_state.player.swim_acceleration.mode(0), 2);
     assert_eq!(state.game_state.player.swim_acceleration.max_speed(0), 240);
-    assert_eq!(read_le_u16(&state.ram, SWIM_STROKE_FRAME_COUNTER + 2), 8);
+    assert_eq!(read_le_u16(&state.wram_image(), SWIM_STROKE_FRAME_COUNTER + 2), 8);
     assert_eq!(state.game_state.player.swim_acceleration.mode(2), 0);
     assert_eq!(
         state
@@ -428,10 +428,10 @@ fn swimming_handler_starts_hard_stroke_and_advances_swim_animation() {
 
     assert_eq!(link_test_byte(&state, LINK_FRAME_CHANGE_COUNTER), 0);
     assert_eq!(state.game_state.player.follower_link.animation_step(), 1);
-    assert_eq!(state.ram[SWIM_STROKE_ANIM_STEP], 0);
+    assert_eq!(state.read_wram_byte(SWIM_STROKE_ANIM_STEP), 0);
     assert_eq!(link_test_byte(&state, LINK_SWIM_HARD_STROKE), 0x80);
     assert_eq!(link_test_byte(&state, LINK_MAYBE_SWIM_FASTER), 1);
-    assert_eq!(state.ram[SWIMMING_COUNTDOWN], 6);
+    assert_eq!(state.read_wram_byte(SWIMMING_COUNTDOWN), 6);
     assert_eq!(state.game_state.system_signals.sound_effect_1() & 0x3f, 37);
     assert_eq!(
         state.game_state.player.follower_link.swim_direction_flags(),
@@ -541,7 +541,7 @@ fn bug_net_start_and_finish_match_c_timer_table() {
 
     state.link_item_net();
 
-    assert_eq!(state.ram[PLAYER_HANDLER_TIMER], 9);
+    assert_eq!(state.read_wram_byte(PLAYER_HANDLER_TIMER), 9);
     assert_eq!(link_test_byte(&state, LINK_DELAY_TIMER_SPIN_ATTACK), 2);
     assert_eq!(state.game_state.player.follower_link.position_mode(), 16);
     assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 1, 1);
@@ -556,7 +556,7 @@ fn bug_net_start_and_finish_match_c_timer_table() {
         state.game_state.player.follower_link.item_action_step_var(),
         0
     );
-    assert_eq!(state.ram[PLAYER_HANDLER_TIMER], 0);
+    assert_eq!(state.read_wram_byte(PLAYER_HANDLER_TIMER), 0);
     assert_eq!(
         state.game_state.player.follower_link.button_mask_b_y() & 0x40,
         0
@@ -584,7 +584,7 @@ fn bug_net_right_facing_finish_does_not_read_past_timer_table() {
         state.game_state.player.follower_link.item_action_step_var(),
         0
     );
-    assert_eq!(state.ram[PLAYER_HANDLER_TIMER], 0);
+    assert_eq!(state.read_wram_byte(PLAYER_HANDLER_TIMER), 0);
     assert_eq!(
         state.game_state.player.follower_link.button_mask_b_y() & 0x40,
         0
@@ -618,7 +618,7 @@ fn tile_main_handler_shallow_water_sets_ripple_and_slosh_sound() {
         1
     );
     assert_eq!(state.game_state.system_signals.sound_effect_1() & 0x3f, 28);
-    assert_eq!(state.ram[RAW_SFX_PAN_VALUE], 28);
+    assert_eq!(state.read_wram_byte(RAW_SFX_PAN_VALUE), 28);
 }
 
 #[test]
@@ -812,7 +812,7 @@ fn happiness_pond_payment_precedes_graphics_and_is_not_replayed() {
         );
         state.complete_happiness_pond_rupee_graphics(5);
         assert_eq!(state.game_state, atomic.game_state);
-        assert_eq!(state.ram, atomic.ram);
+        assert_eq!(*state.wram_image(), *atomic.wram_image());
     }
 }
 

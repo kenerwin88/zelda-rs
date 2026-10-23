@@ -18,11 +18,11 @@ fn action_reset_updates_native_fields_without_a_repairing_import() {
         LINK_CAPE_MODE,
         RELATED_TO_HOOKSHOT,
     ] {
-        assert_eq!(state.ram[address], 0, "reset C's original byte store");
+        assert_eq!(state.read_wram_byte(address), 0, "reset C's original byte store");
     }
     assert_eq!(
         state.game_state.player.follower_link,
-        crate::game_state::FollowerLinkState::load_from_ram(&state.ram),
+        crate::game_state::FollowerLinkState::load_from_ram(&state.wram_image()),
         "the transition must model every player byte it publishes"
     );
 }

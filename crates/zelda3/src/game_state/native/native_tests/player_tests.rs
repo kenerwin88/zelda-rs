@@ -504,7 +504,7 @@ fn player_resources_state_loads_from_and_projects_to_ram() {
     assert_eq!(resources.low_health_beep_timer(), 0x33);
 
     let mut projected = vec![0; WRAM_SIZE];
-    resources.write_to_ram(&mut projected);
+    resources.export_owned(&mut projected);
     assert_eq!(PlayerResourcesState::load_from_ram(&projected), resources);
 }
 
@@ -542,14 +542,12 @@ fn native_player_resources_bridge_syncs_seeded_ram_and_dual_writes_changes() {
     assert_eq!(resources.ability_flags(), 0x04);
     assert_eq!(resources.crystal_flags(), 0x20);
     assert_eq!(resources.pendant_flags(), 0x07);
-    assert_eq!(ram[LINK_ITEM_BOMBS], 3);
-    assert_eq!(ram[LINK_NUM_ARROWS], 7);
-    assert_eq!(read_le_u16(&ram, LINK_HEARTS_FILLER), 0x0101);
-    assert_eq!(read_le_u16(&ram, LINK_RUPEES_GOAL), 75);
-    assert_eq!(ram[LINK_NUM_KEYS], 0);
-    assert_eq!(ram[LINK_ABILITY_FLAGS], 0x04);
-    assert_eq!(ram[LINK_HAS_CRYSTALS], 0x20);
-    assert_eq!(ram[LINK_WHICH_PENDANTS], 0x07);
+    // Setters leave cartridge backing bytes untouched.
+    assert_eq!(ram[LINK_ITEM_BOMBS], 1);
+    assert_eq!(ram[LINK_NUM_ARROWS], 2);
+    assert_eq!(read_le_u16(&ram, LINK_HEARTS_FILLER), 0x00ff);
+    assert_eq!(read_le_u16(&ram, LINK_RUPEES_GOAL), 10);
+    assert_eq!(ram[LINK_NUM_KEYS], 0xff);
 }
 
 #[test]
@@ -593,6 +591,9 @@ fn player_components_preserve_frozen_projection_and_mutations() {
         let mut projected = vec![0xa5; WRAM_SIZE];
         player.write_to_ram(&mut projected);
         inventory.write_to_ram(&mut projected);
+        inventory.player_resources.export_owned(&mut projected);
+        inventory.items.export_owned(&mut projected);
+        inventory.save_progress.export_runtime_to_image(&mut projected);
         let mut digest = Sha256::new();
         hash_projection(&mut digest, &projected, &ram);
         {
@@ -611,6 +612,9 @@ fn player_components_preserve_frozen_projection_and_mutations() {
         digest.update(&ram);
         player.write_to_ram(&mut projected);
         inventory.write_to_ram(&mut projected);
+        inventory.player_resources.export_owned(&mut projected);
+        inventory.items.export_owned(&mut projected);
+        inventory.save_progress.export_runtime_to_image(&mut projected);
         hash_projection(&mut digest, &projected, &ram);
         cases.push_str(&format!("{seed}: {:x}\n", digest.finalize()));
     }

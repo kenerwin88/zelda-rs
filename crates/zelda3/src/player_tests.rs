@@ -74,13 +74,13 @@ fn somaria_and_gravestone_scan_work_and_slot_order_match_rom() {
                         state.ram[0xc04 + k] = 100;
                     }
                     state.sync_native_game_state_from_ram();
-                    let (cycles, expected) = player_caller_source(&rom, &state.ram, 0x07_8689);
+                    let (cycles, expected) = player_caller_source(&rom, &state.wram_image(), 0x07_8689);
                     let actual = crate::cycle_ledger::measure_routine_self_work(0x07_8689,
                         || state.handle_somaria_and_graves());
                     assert_eq!(actual, cycles, "indoors={indoors} latch={latch} submodule={submodule} pattern={pattern}");
                     for range in [0xc4a..0xc4f, 0xbfa..0xbff, 0xc0e..0xc13, 0xc22..0xc27,
                         0xc36..0xc3b, 0x2f..0x30, 0x3e9..0x3ea, 0xfa0..0xfa1] {
-                        assert_eq!(&state.ram[range.clone()], &expected[range.clone()],
+                        assert_eq!(&state.wram_image()[range.clone()], &expected[range.clone()],
                             "indoors={indoors} latch={latch} submodule={submodule} pattern={pattern} range={range:x?}");
                     }
                 }
@@ -100,11 +100,11 @@ fn link_main_caller_work_and_saved_position_match_rom() {
             state.ram[0x20..0x22].copy_from_slice(&coordinate.to_le_bytes());
             state.ram[0x22..0x24].copy_from_slice(&coordinate.wrapping_add(1).to_le_bytes());
             state.sync_native_game_state_from_ram();
-            let (cycles, expected) = player_caller_source(&rom, &state.ram, 0x07_8000);
+            let (cycles, expected) = player_caller_source(&rom, &state.wram_image(), 0x07_8000);
             let actual = crate::cycle_ledger::measure_routine_self_work(0x07_8000,
                 || state.link_main());
             assert_eq!(actual, cycles, "immobilized={immobilized} coordinate={coordinate}");
-            assert_eq!(&state.ram[0xfc1..0xfc6], &expected[0xfc1..0xfc6]);
+            assert_eq!(&state.wram_image()[0xfc1..0xfc6], &expected[0xfc1..0xfc6]);
         }
     }
 }
@@ -132,13 +132,13 @@ fn gravestone_barrier_work_and_drag_state_owner_match_rom() {
                                 state.ram[0x48] = flags;
                                 state.ram[0x49] = 0xa5;
                                 state.sync_native_game_state_from_ram();
-                                let (cycles, expected) = player_caller_source(&rom, &state.ram, 0x08_ee57);
+                                let (cycles, expected) = player_caller_source(&rom, &state.wram_image(), 0x08_ee57);
                                 let before = crate::cycle_ledger::master();
                                 state.gravestone_act_as_barrier(0);
                                 assert_eq!(crate::cycle_ledger::master() - before, cycles,
                                     "coordinate={coordinate} dx={dx} dy={dy} facing={facing} vy={vy} vx={vx} flags={flags}");
                                 for range in [0x20..0x24, 0x2f..0x32, 0x48..0x4a] {
-                                    assert_eq!(&state.ram[range.clone()], &expected[range.clone()],
+                                    assert_eq!(&state.wram_image()[range.clone()], &expected[range.clone()],
                                         "coordinate={coordinate} dx={dx} dy={dy} facing={facing} vy={vy} vx={vx} flags={flags} range={range:x?}");
                                 }
                             }
@@ -160,8 +160,8 @@ fn link_splash_upon_landing_suppresses_recoil_other_deep_water_splash() {
 
     state.link_splash_upon_landing();
 
-    assert_eq!(state.ram[LINK_HANDLER_STATE], 4);
-    assert_eq!(state.ram[ANCILLA_TYPE + 4], 0);
+    assert_eq!(state.read_wram_byte(LINK_HANDLER_STATE), 4);
+    assert_eq!(state.read_wram_byte(ANCILLA_TYPE + 4), 0);
 }
 
 #[test]
@@ -174,9 +174,9 @@ fn hookshot_missing_ancilla_preserves_underflowed_spin_timer() {
 
     state.link_state_hookshotting();
 
-    assert_eq!(state.ram[LINK_HANDLER_STATE], 0);
-    assert_eq!(state.ram[LINK_DELAY_TIMER_SPIN_ATTACK], 0xff);
-    assert_eq!(state.ram[BUTTON_B_FRAMES], 9);
+    assert_eq!(state.read_wram_byte(LINK_HANDLER_STATE), 0);
+    assert_eq!(state.read_wram_byte(LINK_DELAY_TIMER_SPIN_ATTACK), 0xff);
+    assert_eq!(state.read_wram_byte(BUTTON_B_FRAMES), 9);
 }
 
 #[test]
@@ -187,8 +187,8 @@ fn native_shield_dma_word_store_publishes_the_adjacent_staging_byte() {
     state.sync_native_game_state_from_ram();
     // Live LinkOam $0d:ac39 stores A=$5002 with M=16 at $0108.
     assert!(state.native_player_drawing_store(0x108, 0x5002, 2));
-    assert_eq!(&state.ram[0x107..0x10b], &[0x17, 2, 0x50, 0x4a]);
-    let mut published = state.ram.clone();
+    assert_eq!(&state.wram_image()[0x107..0x10b], &[0x17, 2, 0x50, 0x4a]);
+    let mut published = state.wram_image().into_owned();
     published[0x108..0x10a].fill(0);
     state.game_state.write_to_ram(&mut published);
     assert_eq!(&published[0x107..0x10b], &[0x17, 2, 0x50, 0x4a]);

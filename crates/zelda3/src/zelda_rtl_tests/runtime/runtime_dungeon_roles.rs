@@ -231,14 +231,14 @@ fn room_tag_switch_probes_require_a_uniform_cell() {
 fn torch_target_keeps_its_byte_and_only_torches_light() {
     let mut state = ZeldaState::new();
     state.dungeon_torch_mut().set_target(NativeTile::torch(5));
-    assert_eq!(state.ram[DUNGEON_TORCH_ATTR], 0xc5);
+    assert_eq!(state.read_wram_byte(DUNGEON_TORCH_ATTR), 0xc5);
     assert!(state.game_state.dungeon.torch.targets_torch());
     assert_eq!(state.game_state.dungeon.torch.attr_index(), 5);
     state.dungeon_torch_mut().set_target(tile(0x75));
-    assert_eq!(state.ram[DUNGEON_TORCH_ATTR], 0x75);
+    assert_eq!(state.read_wram_byte(DUNGEON_TORCH_ATTR), 0x75);
     assert!(!state.game_state.dungeon.torch.targets_torch());
     assert_eq!(state.game_state.dungeon.torch.attr_index(), 5);
     state.dungeon_torch_mut().clear_target();
-    assert_eq!(state.ram[DUNGEON_TORCH_ATTR], 0);
+    assert_eq!(state.read_wram_byte(DUNGEON_TORCH_ATTR), 0);
     assert_eq!(state.game_state.dungeon.torch.target(), NativeTile::GROUND);
 }

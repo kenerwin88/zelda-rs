@@ -112,7 +112,7 @@ fn sprite_dma_source_words_match_source_at_every_instruction() {
         };
         let mut source = RomCpuTimingRun::new(
             &rom,
-            &state.ram,
+            &state.wram_image(),
             &state.sram,
             &snes::PpuState::default(),
             &snes::DmaState::default(),
@@ -121,7 +121,7 @@ fn sprite_dma_source_words_match_source_at_every_instruction() {
         )
         .unwrap();
         source.enable_cpu_write_trace();
-        let mut expected = state.ram.clone();
+        let mut expected = state.wram_image().into_owned();
         let mut work = SourceWords::default();
         let mut stores = Vec::new();
         let mut total = 0;
@@ -145,7 +145,7 @@ fn sprite_dma_source_words_match_source_at_every_instruction() {
             for (address, value) in source.take_cpu_wram_writes() {
                 expected[address] = value;
             }
-            assert_eq!(state.ram, expected, "fixture={fixture} PC={pc:06x}");
+            assert_eq!(*state.wram_image(), expected, "fixture={fixture} PC={pc:06x}");
             total += instruction.master_cycles;
         }
         assert!(source.is_complete());
@@ -245,7 +245,7 @@ fn sprite_dma_production_call_matches_source_state_and_cost() {
         };
         let mut source = RomCpuTimingRun::new(
             &rom,
-            &state.ram,
+            &state.wram_image(),
             &state.sram,
             &snes::PpuState::default(),
             &snes::DmaState::default(),
@@ -254,7 +254,7 @@ fn sprite_dma_production_call_matches_source_state_and_cost() {
         )
         .unwrap();
         source.enable_cpu_write_trace();
-        let mut expected = state.ram.clone();
+        let mut expected = state.wram_image().into_owned();
         let mut source_cost = 0;
         for _ in 0..1000 {
             if source.is_complete() {
@@ -273,7 +273,7 @@ fn sprite_dma_production_call_matches_source_state_and_cost() {
             source_cost,
             "seed={seed}"
         );
-        assert_eq!(state.ram, expected, "seed={seed}");
+        assert_eq!(*state.wram_image(), expected, "seed={seed}");
     }
 }
 
@@ -330,7 +330,7 @@ fn sprite_dma_animations_match_source_at_every_instruction() {
                         };
                         let mut source = RomCpuTimingRun::new(
                             &rom,
-                            &state.ram,
+                            &state.wram_image(),
                             &state.sram,
                             &snes::PpuState::default(),
                             &snes::DmaState::default(),
@@ -339,7 +339,7 @@ fn sprite_dma_animations_match_source_at_every_instruction() {
                         )
                         .unwrap();
                         source.enable_cpu_write_trace();
-                        let mut expected = state.ram.clone();
+                        let mut expected = state.wram_image().into_owned();
                         let mut work = Animations::default();
                         let mut total = 0u64;
                         loop {
@@ -361,7 +361,7 @@ fn sprite_dma_animations_match_source_at_every_instruction() {
                             for (address, value) in source.take_cpu_wram_writes() {
                                 expected[address] = value;
                             }
-                            assert_eq!(state.ram, expected, "case={cases} PC={pc:06x}");
+                            assert_eq!(*state.wram_image(), expected, "case={cases} PC={pc:06x}");
                             total += u64::from(instruction.master_cycles);
                             boundaries += 1;
                         }
@@ -369,11 +369,11 @@ fn sprite_dma_animations_match_source_at_every_instruction() {
                         let before = crate::cycle_ledger::master();
                         atomic.nmi_prepare_sprites_animations(0);
                         assert_eq!(crate::cycle_ledger::master() - before, total);
-                        assert_eq!(atomic.ram, state.ram);
+                        assert_eq!(*atomic.wram_image(), *state.wram_image());
                         let before = crate::cycle_ledger::master();
                         prepaid.nmi_prepare_sprites_animations(126);
                         assert_eq!(crate::cycle_ledger::master() - before + 126, total);
-                        assert_eq!(prepaid.ram, state.ram);
+                        assert_eq!(prepaid.ram, *state.wram_image());
                         cases += 1;
                     }
                 }
@@ -488,7 +488,7 @@ fn sprite_dma_pointer_words_match_source_for_every_word_value() {
         };
         let mut source = RomCpuTimingRun::new(
             &rom,
-            &state.ram,
+            &state.wram_image(),
             &state.sram,
             &snes::PpuState::default(),
             &snes::DmaState::default(),
@@ -497,7 +497,7 @@ fn sprite_dma_pointer_words_match_source_for_every_word_value() {
         )
         .unwrap();
         source.enable_cpu_write_trace();
-        let mut expected = state.ram.clone();
+        let mut expected = state.wram_image().into_owned();
         let mut work = PointerWords::default();
         let mut stores = Vec::new();
         let mut total = 0;
@@ -532,7 +532,7 @@ fn sprite_dma_pointer_words_match_source_for_every_word_value() {
         assert!(source.is_complete());
         assert_eq!(state.step_sprite_dma_pointer_words(&mut work), None);
         assert_eq!(stores, atomic_words);
-        assert_eq!(state.ram, expected, "seed={seed}");
+        assert_eq!(*state.wram_image(), expected, "seed={seed}");
     }
 }
 
@@ -640,7 +640,7 @@ fn sprite_preparation_composed_call_returns_through_real_main_caller() {
         };
         let mut source = RomCpuTimingRun::new(
             &rom,
-            &state.ram,
+            &state.wram_image(),
             &state.sram,
             &snes::PpuState::default(),
             &snes::DmaState::default(),
@@ -649,7 +649,7 @@ fn sprite_preparation_composed_call_returns_through_real_main_caller() {
         )
         .unwrap();
         source.enable_cpu_write_trace();
-        let mut expected = state.ram.clone();
+        let mut expected = state.wram_image().into_owned();
         let before = crate::cycle_ledger::master();
         state.enter_main_loop_sprite_preparation();
         let mut total = u64::from(source.step().master_cycles);
@@ -678,7 +678,7 @@ fn sprite_preparation_composed_call_returns_through_real_main_caller() {
             for (address, value) in source.take_cpu_wram_writes() {
                 expected[address] = value;
             }
-            assert_eq!(state.ram, expected, "seed={seed} PC={pc:06x}");
+            assert_eq!(*state.wram_image(), expected, "seed={seed} PC={pc:06x}");
             total += u64::from(cycles);
             boundaries += 1;
         }
@@ -695,7 +695,7 @@ fn sprite_preparation_composed_call_returns_through_real_main_caller() {
             for (address, value) in source.take_cpu_wram_writes() {
                 expected[address] = value;
             }
-            assert_eq!(state.ram, expected);
+            assert_eq!(*state.wram_image(), expected);
             total += u64::from(cost);
             boundaries += 1;
         }
@@ -706,7 +706,7 @@ fn sprite_preparation_composed_call_returns_through_real_main_caller() {
         atomic.nmi_prepare_sprites_for_main_loop();
         atomic.finish_main_loop_caller_return();
         assert_eq!(crate::cycle_ledger::master() - before, total);
-        assert_eq!(atomic.ram, state.ram);
+        assert_eq!(*atomic.wram_image(), *state.wram_image());
         let mut wait = MainWait::default();
         for _ in 0..2 {
             wait = bincode::deserialize(&bincode::serialize(&wait).unwrap()).unwrap();

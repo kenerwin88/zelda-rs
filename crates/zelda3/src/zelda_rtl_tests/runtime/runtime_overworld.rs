@@ -45,7 +45,7 @@ fn selected_game_entrance_scroll_suspends_before_display_mirrors() {
     assert!(staged.pending_selected_game_entrance.is_some());
     staged.module_pre_dungeon_initial_entrance();
     assert!(staged.pending_selected_game_entrance.is_none());
-    assert_eq!(staged.ram, atomic.ram);
+    assert_eq!(staged.ram, *atomic.wram_image());
 }
 
 #[test]
@@ -67,7 +67,7 @@ fn selected_game_entrance_before_selection_preserves_link_until_the_source_retur
     assert_eq!(staged.game_state.player.follower_link.y(), 0x058b);
     staged.module_pre_dungeon_initial_entrance();
     assert_eq!(staged.game_state, atomic.game_state);
-    assert_eq!(staged.ram, atomic.ram);
+    assert_eq!(staged.ram, *atomic.wram_image());
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn parity_probe_overworld_screen_loads_screen_properties() {
     let screen = state.parity_probe_overworld_screen(0x005a);
 
     assert_eq!(screen, 0x005a);
-    assert_eq!(read_le_u16(&state.ram, 0x008a), 0x005a);
+    assert_eq!(read_le_u16(&state.wram_image(), 0x008a), 0x005a);
     assert_eq!(state.ram[0x001b], 0);
 }
 
@@ -216,7 +216,7 @@ fn live_overworld_load_overlays_keeps_entry_sprite_slots_until_source_return() {
     assert_eq!(
         (
             state.game_state.display.ppu_scroll_copy.bg2_h_copy2(),
-            read_le_u16(&state.ram, BG2_X_SCROLL),
+            read_le_u16(&state.wram_image(), BG2_X_SCROLL),
         ),
         (0x034e, 0x034e),
     );
@@ -292,7 +292,7 @@ fn live_pre_overworld_properties_applies_source_proximity_scan_coordinate() {
     assert_eq!(
         (
             state.game_state.display.ppu_scroll_copy.bg2_h_copy2(),
-            read_le_u16(&state.ram, BG2_X_SCROLL),
+            read_le_u16(&state.wram_image(), BG2_X_SCROLL),
         ),
         (0x0720, 0x0720),
     );
@@ -305,7 +305,7 @@ fn live_pre_overworld_properties_applies_source_proximity_scan_coordinate() {
     assert_eq!(
         (
             state.game_state.display.ppu_scroll_copy.bg2_h_copy2(),
-            read_le_u16(&state.ram, BG2_X_SCROLL),
+            read_le_u16(&state.wram_image(), BG2_X_SCROLL),
             state.overworld_horizontal_scroll_delta_low(),
         ),
         (0x0700, 0x0700, 0x34),
@@ -930,7 +930,7 @@ fn item_tile_behavior_routes_overworld_attr_to_tile_execute() {
     state.tile_detect_main_handler(1);
 
     assert_eq!(state.game_state.player.tile_detection.collision_bits(), 0);
-    assert_eq!(read_le_u16(&state.ram, TILEDETECT_NORMAL_TILES), 1);
+    assert_eq!(read_le_u16(&state.wram_image(), TILEDETECT_NORMAL_TILES), 1);
 }
 
 #[test]
@@ -1208,19 +1208,19 @@ fn pre_overworld_overlay_cpu_schedule_counts_source_caller_crossings() {
     state.set_main_module(8);
     state.set_submodule(1);
     state.set_overworld_screen_word(0x13);
-    state.ram[0xf3c5] = 2;
+    state.write_wram_byte(0xf3c5, 2);
     state.ram[FRAME_COUNTER] = 15;
     state.sync_native_game_state_from_ram();
     // Snes9x calls the overlay on run37687, crosses four Held NMIs,
     // and clears $12 on run37691 at V144/C354. The old six-slice estimate
     // keeps this caller alive two extra hosts. Only the ROM shadow runs;
     // its map/graphics writes must not publish into the live game.
-    let before = state.ram.clone();
+    let before = state.wram_image().into_owned();
     let (nmis, tile_counts, decoder_started) = pre_overworld_overlays_cpu_plan(&state);
     assert_eq!(nmis, 4);
     assert_eq!(tile_counts, [117, 256, 256, 256]);
     assert_eq!(decoder_started, [true; 4]);
-    assert_eq!(state.ram, before);
+    assert_eq!(*state.wram_image(), before);
     // PreOverworld_LoadOverlays skips the map decoder for ordinary special
     // areas (the C $0182/$0183 branch). This zero-crossing return must not
     // leave a measurement for the next overworld load to consume.
@@ -1248,10 +1248,10 @@ fn pre_overworld_screen_build_cpu_schedule_counts_source_caller_crossings() {
     state.set_main_module(8);
     state.set_submodule(2);
     state.set_overworld_screen_word(0x13);
-    state.ram[0xf3c5] = 2;
+    state.write_wram_byte(0xf3c5, 2);
     state.ram[FRAME_COUNTER] = 15;
     state.sync_native_game_state_from_ram();
-    let before = state.ram.clone();
+    let before = state.wram_image().into_owned();
     let (nmis, crossings) = pre_overworld_screen_build_cpu_plan(&state);
     assert_eq!(nmis, 15);
     assert_eq!(crossings.len(), usize::from(nmis));
@@ -1259,7 +1259,7 @@ fn pre_overworld_screen_build_cpu_schedule_counts_source_caller_crossings() {
     assert_eq!(crossings[9].copied[3], [256, 0]);
     assert_eq!(crossings[9].tiles, 768);
     assert_eq!(crossings[12].tiles, 1024);
-    assert_eq!(state.ram, before);
+    assert_eq!(*state.wram_image(), before);
 
     state.set_rom_startup_timing(true);
     let mut atomic = state.clone();
@@ -1272,7 +1272,7 @@ fn pre_overworld_screen_build_cpu_schedule_counts_source_caller_crossings() {
     }
     state.complete_pre_overworld_screen_build();
     assert_eq!(state.game_state.frame, atomic.game_state.frame);
-    if let Some((offset, (&actual, &expected))) = state.ram.iter().zip(&atomic.ram)
+    if let Some((offset, (&actual, &expected))) = state.wram_image().iter().zip(atomic.wram_image().iter())
         .enumerate().find(|(_, (actual, expected))| actual != expected) {
         panic!("screen-build staged WRAM differs at {offset:05x}: {actual:02x} != {expected:02x}");
     }
@@ -1631,19 +1631,19 @@ fn overworld_mosaic_sprite_graphics_defers_its_source_suffix() {
         state.game_execution_scheduler.current_work(),
         Some(GameWorkContinuation::FinishOverworldMosaicSpriteGraphics),
     );
-    assert_eq!(state.ram[INIDISP_COPY], 0);
-    assert_eq!(state.ram[HDMAEN_COPY], 0);
-    assert_eq!(state.ram[MOSAIC_TARGET_LEVEL], 31);
-    assert_eq!(state.ram[PALETTE_FILTER_COUNTDOWN], 0);
-    assert_eq!(state.ram[SUBSUBMODULE], 0);
+    assert_eq!(state.read_wram_byte(INIDISP_COPY), 0);
+    assert_eq!(state.read_wram_byte(HDMAEN_COPY), 0);
+    assert_eq!(state.read_wram_byte(MOSAIC_TARGET_LEVEL), 31);
+    assert_eq!(state.read_wram_byte(PALETTE_FILTER_COUNTDOWN), 0);
+    assert_eq!(state.read_wram_byte(SUBSUBMODULE), 0);
 
     state.complete_overworld_mosaic_sprite_graphics();
 
-    assert_eq!(state.ram[INIDISP_COPY], 0x0f);
-    assert_eq!(state.ram[HDMAEN_COPY], 0x80);
-    assert_eq!(state.ram[MOSAIC_TARGET_LEVEL], 0);
-    assert_eq!(state.ram[PALETTE_FILTER_COUNTDOWN], 30);
-    assert_eq!(state.ram[SUBSUBMODULE], 1);
+    assert_eq!(state.read_wram_byte(INIDISP_COPY), 0x0f);
+    assert_eq!(state.read_wram_byte(HDMAEN_COPY), 0x80);
+    assert_eq!(state.read_wram_byte(MOSAIC_TARGET_LEVEL), 0);
+    assert_eq!(state.read_wram_byte(PALETTE_FILTER_COUNTDOWN), 30);
+    assert_eq!(state.read_wram_byte(SUBSUBMODULE), 1);
 }
 
 #[test]

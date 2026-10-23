@@ -16,13 +16,13 @@ fn ancilla_axis_movement_matches_source_carry_sign_and_indexed_page_costs() {
                         state.ram[0xc36 + index] = subpixel;
                         state.ram[0xfa0] = slot as u8;
                         state.sync_native_game_state_from_ram();
-                        let (cycles, expected) = run_item_receipt_source(&rom, &state.ram,
+                        let (cycles, expected) = run_item_receipt_source(&rom, &state.wram_image(),
                             if x_axis { 0x089080 } else { 0x08908b }, 0x088036, slot);
                         let before = crate::cycle_ledger::master();
                         if x_axis { state.ancilla_move_x(slot); } else { state.ancilla_move_y(slot); }
                         assert_eq!(crate::cycle_ledger::master() - before, cycles,
                             "slot={slot} x_axis={x_axis} velocity={velocity} subpixel={subpixel}");
-                        assert_eq!(&state.ram[0xbfa..0xc4a], &expected[0xbfa..0xc4a],
+                        assert_eq!(&state.wram_image()[0xbfa..0xc4a], &expected[0xbfa..0xc4a],
                             "slot={slot} x_axis={x_axis} velocity={velocity} subpixel={subpixel}");
                     }
                 }
@@ -57,14 +57,14 @@ fn snore_matches_source_timer_velocity_deletion_and_oam_branches() {
             state.ram[0xfa0] = slot as u8;
             state.ram[0x820..0x828].fill(0x5a);
             state.sync_native_game_state_from_ram();
-            let (cycles, expected) = run_item_receipt_source(&rom, &state.ram,
+            let (cycles, expected) = run_item_receipt_source(&rom, &state.wram_image(),
                 0x08c094, 0x088036, slot);
             let before = crate::cycle_ledger::master();
             state.ancilla21_snore(slot);
             assert_eq!(crate::cycle_ledger::master() - before, cycles,
                 "slot={slot} variant={variant}");
             for range in [0x3b1..0x3bb, 0xbfa..0xc68, 0x820..0x824, 0xa28..0xa29, 0x109..0x10a] {
-                assert_eq!(&state.ram[range.clone()], &expected[range],
+                assert_eq!(&state.wram_image()[range.clone()], &expected[range],
                     "slot={slot} variant={variant}");
             }
         }
@@ -124,12 +124,12 @@ fn item_receipt_drawing_matches_rom_for_all_items_and_clipping_branches() {
                 state.ram[0xbf0 + slot] = 5;
                 state.ram[0x820..0x828].fill(0x5a);
                 state.sync_native_game_state_from_ram();
-                let (cycles, expected) = run_item_receipt_source(&rom, &state.ram, 0x08_c690, 0x08_8036, slot);
+                let (cycles, expected) = run_item_receipt_source(&rom, &state.wram_image(), 0x08_c690, 0x08_8036, slot);
                 let before = crate::cycle_ledger::master();
                 state.ancilla_receive_item_draw(slot, x, y);
                 assert_eq!(crate::cycle_ledger::master() - before, cycles, "item={item} x={x} y={y}");
-                assert_eq!(&state.ram[0x820..0x828], &expected[0x820..0x828], "item={item} x={x} y={y}");
-                assert_eq!(&state.ram[0xa28..0xa2a], &expected[0xa28..0xa2a]);
+                assert_eq!(&state.wram_image()[0x820..0x828], &expected[0x820..0x828], "item={item} x={x} y={y}");
+                assert_eq!(&state.wram_image()[0xa28..0xa2a], &expected[0xa28..0xa2a]);
             }
         }
     }
@@ -150,16 +150,16 @@ fn item_receipt_message_selection_work_matches_rom() {
                         state.ram[0xa0..0xa2].copy_from_slice(&(room as u16).to_le_bytes());
                         state.ram[0xc5e + slot] = item;
                         state.ram[0xc54 + slot] = step;
-                        state.ram[0xf374] = flags;
-                        state.ram[0xf36b] = pieces;
+                        state.write_wram_byte(0xf374, flags);
+                        state.write_wram_byte(0xf36b, pieces);
                         state.sync_native_game_state_from_ram();
-                        let (cycles, expected) = run_item_receipt_source(&rom, &state.ram, 0x08_c546, 0x08_c5f7, slot);
+                        let (cycles, expected) = run_item_receipt_source(&rom, &state.wram_image(), 0x08_c546, 0x08_c5f7, slot);
                         let before = crate::cycle_ledger::master();
                         state.ancilla22_item_receipt_show_message(slot);
                         assert_eq!(crate::cycle_ledger::master() - before, cycles,
                             "item={item} step={step} indoors={indoors} room={room:x} flags={flags} pieces={pieces}");
                         for address in [0x10, 0x11, 0x12, 0x012d, 0x1cf0, 0x1cf1] {
-                            assert_eq!(state.ram[address], expected[address], "item={item} address={address:x}");
+                            assert_eq!(state.read_wram_byte(address), expected[address], "item={item} address={address:x}");
                         }
                     }
                 }
@@ -185,13 +185,13 @@ fn item_receipt_countdown_through_message_matches_rom() {
                 state.ram[0x90..0x92].copy_from_slice(&0x800u16.to_le_bytes());
                 state.ram[0x92..0x94].copy_from_slice(&0xa20u16.to_le_bytes());
                 state.sync_native_game_state_from_ram();
-                let (cycles, expected) = run_item_receipt_source(&rom, &state.ram, 0x08_c38a, 0x08_8036, slot);
+                let (cycles, expected) = run_item_receipt_source(&rom, &state.wram_image(), 0x08_c38a, 0x08_8036, slot);
                 let before = crate::cycle_ledger::master();
                 state.ancilla22_item_receipt(slot);
                 assert_eq!(crate::cycle_ledger::master() - before, cycles,
                     "slot={slot} aux={aux} submodule={submodule}");
                 for range in [0x10..0x14, 0x3b1..0x3b6, 0xc68..0xc6d, 0x800..0x808, 0xa20..0xa22, 0x1cf0..0x1cf2] {
-                    assert_eq!(&state.ram[range.clone()], &expected[range], "slot={slot} aux={aux} submodule={submodule}");
+                    assert_eq!(&state.wram_image()[range.clone()], &expected[range], "slot={slot} aux={aux} submodule={submodule}");
                 }
             }
         }
@@ -210,12 +210,12 @@ fn item_receipt_message_entry_and_already_open_return_match_rom() {
         state.ram[0xc5e + 4] = 0x3f;
         state.ram[0xc54 + 4] = 1;
         state.sync_native_game_state_from_ram();
-        let (cycles, expected) = run_item_receipt_source(&rom, &state.ram, 0x08_c546, 0x08_c5f7, 4);
+        let (cycles, expected) = run_item_receipt_source(&rom, &state.wram_image(), 0x08_c546, 0x08_c5f7, 4);
         let before = crate::cycle_ledger::master();
         state.ancilla22_item_receipt_show_message(4);
         assert_eq!(crate::cycle_ledger::master() - before, cycles, "module={module}");
         for address in [0x10, 0x11, 0x10c, 0x223, 0x1cd8] {
-            assert_eq!(state.ram[address], expected[address], "module={module} address={address:x}");
+            assert_eq!(state.read_wram_byte(address), expected[address], "module={module} address={address:x}");
         }
     }
 }
@@ -241,13 +241,13 @@ fn item_receipt_animation_and_initial_countdown_work_match_rom() {
                         state.ram[0x90..0x92].copy_from_slice(&0x800u16.to_le_bytes());
                         state.ram[0x92..0x94].copy_from_slice(&0xa20u16.to_le_bytes());
                         state.sync_native_game_state_from_ram();
-                        let (cycles, expected) = run_item_receipt_source(&rom, &state.ram, 0x08_c5f7, 0x08_8036, slot);
+                        let (cycles, expected) = run_item_receipt_source(&rom, &state.wram_image(), 0x08_c5f7, 0x08_8036, slot);
                         let before = crate::cycle_ledger::master();
                         state.ancilla22_item_receipt_draw_and_update(slot);
                         assert_eq!(crate::cycle_ledger::master() - before, cycles,
                             "item={item} step={step} timer={timer} frame_timer={frame_timer} frame={frame}");
                         for range in [0x39f..0x3a9, 0xbf0..0xbf5, 0x800..0x808, 0xa20..0xa22] {
-                            assert_eq!(&state.ram[range.clone()], &expected[range]);
+                            assert_eq!(&state.wram_image()[range.clone()], &expected[range]);
                         }
                     }
                 }
@@ -268,13 +268,13 @@ fn item_receipt_animation_and_initial_countdown_work_match_rom() {
                     state.ram[0x90..0x92].copy_from_slice(&0x800u16.to_le_bytes());
                     state.ram[0x92..0x94].copy_from_slice(&0xa20u16.to_le_bytes());
                     state.sync_native_game_state_from_ram();
-                    let (cycles, expected) = run_item_receipt_source(&rom, &state.ram, 0x08_c38a, 0x08_8036, slot);
+                    let (cycles, expected) = run_item_receipt_source(&rom, &state.wram_image(), 0x08_c38a, 0x08_8036, slot);
                     let before = crate::cycle_ledger::master();
                     state.ancilla22_item_receipt(slot);
                     assert_eq!(crate::cycle_ledger::master() - before, cycles,
                         "item={item} step={step} aux={aux} timer={timer}");
                     for range in [0x10..0x14, 0x2cd..0x2cf, 0x3b1..0x3b6, 0x800..0x808, 0x1cf0..0x1cf2, 0xf3cc..0xf3cd] {
-                        assert_eq!(&state.ram[range.clone()], &expected[range]);
+                        assert_eq!(&state.wram_image()[range.clone()], &expected[range]);
                     }
                 }
             }
@@ -313,11 +313,11 @@ fn adjusted_oam_coordinate_work_matches_rom_including_slot_page_crossing() {
                         emulation: false, waiting: false,
                         stack_address: 0x01fd, stack_bytes: &[0x35, 0x80],
                     };
-                    let mut run = RomCpuTimingRun::new(&rom, &state.ram, &[0; 0x2000],
+                    let mut run = RomCpuTimingRun::new(&rom, &state.wram_image(), &[0; 0x2000],
                         &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint)
                         .unwrap();
                     run.enable_cpu_write_trace();
-                    let mut expected = state.ram.clone();
+                    let mut expected = state.wram_image().into_owned();
                     let mut cycles = 0u64;
                     let mut steps = 0;
                     while !run.is_complete() {
@@ -331,7 +331,7 @@ fn adjusted_oam_coordinate_work_matches_rom_including_slot_page_crossing() {
                     assert_eq!(crate::cycle_ledger::master() - before, cycles, "slot={slot} floor={floor}");
                     assert_eq!(actual, (u16::from_le_bytes([expected[2], expected[3]]),
                         u16::from_le_bytes([expected[0], expected[1]])), "slot={slot} floor={floor}");
-                    assert_eq!(&state.ram[0x64..0x66], &expected[0x64..0x66]);
+                    assert_eq!(&state.wram_image()[0x64..0x66], &expected[0x64..0x66]);
                 }
             }
         }
@@ -391,7 +391,7 @@ fn native_receipt_prefix_handoff_preserves_selected_body_once_and_omits_owned_di
         }
         // Resource and message inputs remain valid while every helper selection is covered.
         expected.ram[0x40a..0x40c].copy_from_slice(&0x20u16.to_le_bytes());
-        expected.ram[0xf36c]=24;expected.ram[0xf36d]=24;
+        expected.write_wram_byte(0xf36c, 24);expected.write_wram_byte(0xf36d, 24);
         expected.sync_native_game_state_from_ram();expected.oam_reset_region_bases();
         let mut actual=expected.clone();actual.rom.clear();
         let mut cpu=NativeNmiContext {a:0xab00,x:k as u16,y:7,d:0,db:8,bank:8,pc:0xc38a,sp:0x1e8,p:0x30};
@@ -400,7 +400,7 @@ fn native_receipt_prefix_handoff_preserves_selected_body_once_and_omits_owned_di
         let mut work=ReceiptPrefix::default();let mut owned=0;
         while work.tail().is_none() {
             owned+=work.step(&mut cpu,&mut clock,|_,access| match access {
-                Access::Read(a,width)=>{let a=(a & if matches!(a>>16,0x7e|0x7f){0x1ffff}else{0xffff}) as usize;u16::from(actual.ram[a])|if width==2 {u16::from(actual.ram[a+1])<<8}else{0}},
+                Access::Read(a,width)=>{let a=(a & if matches!(a>>16,0x7e|0x7f){0x1ffff}else{0xffff}) as usize;u16::from(actual.read_wram_byte(a))|if width==2 {u16::from(actual.ram[a+1])<<8}else{0}},
                 Access::Write(a,v,width)=>{let a=(a & if matches!(a>>16,0x7e|0x7f){0x1ffff}else{0xffff}) as usize;actual.ram[a..a+width as usize].copy_from_slice(&v.to_le_bytes()[..width as usize]);actual.native_push_block_store(a,v,width);0},
                 Access::Vblank {..}=>0,
             }).unwrap();
@@ -410,7 +410,7 @@ fn native_receipt_prefix_handoff_preserves_selected_body_once_and_omits_owned_di
         let before=crate::cycle_ledger::master();expected.ancilla22_item_receipt(k);let full=crate::cycle_ledger::master()-before;
         let before=crate::cycle_ledger::master();actual.finish_native_receipt_prefix(k,tail);let remaining=crate::cycle_ledger::master()-before;
         let excluded=|i:usize| i<16 || (0x1c0..=0x1ff).contains(&i);
-        let diffs=actual.ram.iter().zip(&expected.ram).enumerate().filter_map(|(i,(a,b))|(!excluded(i)&&a!=b).then_some((i,*a,*b))).take(16).collect::<Vec<_>>();
+        let diffs=actual.wram_image().iter().zip(expected.wram_image().iter()).enumerate().filter_map(|(i,(a,b))|(!excluded(i)&&a!=b).then_some((i,*a,*b))).take(16).collect::<Vec<_>>();
         assert!(diffs.is_empty(),"case={case} tail={tail:?} RAM {diffs:x?}");
         let mut a=vec![0xa5;snes::WRAM_SIZE];let mut b=a.clone();actual.game_state.write_to_ram(&mut a);expected.game_state.write_to_ram(&mut b);
         let diffs=a.iter().zip(&b).enumerate().filter_map(|(i,(a,b))|(!excluded(i)&&a!=b).then_some((i,*a,*b))).take(16).collect::<Vec<_>>();
@@ -449,7 +449,7 @@ fn native_receipt_movement_handoff_preserves_drawing_once_and_omits_owned_dispat
         }
         // Resource and message inputs remain valid while every helper selection is covered.
         expected.ram[0x40a..0x40c].copy_from_slice(&0x20u16.to_le_bytes());
-        expected.ram[0xf36c]=24;expected.ram[0xf36d]=24;
+        expected.write_wram_byte(0xf36c, 24);expected.write_wram_byte(0xf36d, 24);
         expected.sync_native_game_state_from_ram();expected.oam_reset_region_bases();
         let mut actual=expected.clone();actual.rom.clear();
         let mut cpu=NativeNmiContext {a:0xab00,x:k as u16,y:7,d:0,db:8,bank:8,pc:0xc38a,sp:0x1e8,p:0x30};
@@ -458,7 +458,7 @@ fn native_receipt_movement_handoff_preserves_drawing_once_and_omits_owned_dispat
         let mut work=ReceiptPrefix::default().with_native_movement(true);let mut owned=0;
         while work.tail().is_none() {
             owned+=work.step(&mut cpu,&mut clock,|_,access| match access {
-                Access::Read(a,width)=>{let a=(a & if matches!(a>>16,0x7e|0x7f){0x1ffff}else{0xffff}) as usize;u16::from(actual.ram[a])|if width==2 {u16::from(actual.ram[a+1])<<8}else{0}},
+                Access::Read(a,width)=>{let a=(a & if matches!(a>>16,0x7e|0x7f){0x1ffff}else{0xffff}) as usize;u16::from(actual.read_wram_byte(a))|if width==2 {u16::from(actual.ram[a+1])<<8}else{0}},
                 Access::Write(a,v,width)=>{let a=(a & if matches!(a>>16,0x7e|0x7f){0x1ffff}else{0xffff}) as usize;actual.ram[a..a+width as usize].copy_from_slice(&v.to_le_bytes()[..width as usize]);actual.native_push_block_store(a,v,width);0},
                 Access::Vblank {..}=>0,
             }).unwrap();
@@ -468,7 +468,7 @@ fn native_receipt_movement_handoff_preserves_drawing_once_and_omits_owned_dispat
         let before=crate::cycle_ledger::master();expected.ancilla22_item_receipt(k);let full=crate::cycle_ledger::master()-before;
         let before=crate::cycle_ledger::master();actual.finish_native_receipt_prefix(k,tail);let remaining=crate::cycle_ledger::master()-before;
         let excluded=|i:usize| i<16 || (0x1c0..=0x1ff).contains(&i);
-        let diffs=actual.ram.iter().zip(&expected.ram).enumerate().filter_map(|(i,(a,b))|(!excluded(i)&&a!=b).then_some((i,*a,*b))).take(16).collect::<Vec<_>>();
+        let diffs=actual.wram_image().iter().zip(expected.wram_image().iter()).enumerate().filter_map(|(i,(a,b))|(!excluded(i)&&a!=b).then_some((i,*a,*b))).take(16).collect::<Vec<_>>();
         assert!(diffs.is_empty(),"case={case} tail={tail:?} RAM {diffs:x?}");
         let mut a=vec![0xa5;snes::WRAM_SIZE];let mut b=a.clone();actual.game_state.write_to_ram(&mut a);expected.game_state.write_to_ram(&mut b);
         let diffs=a.iter().zip(&b).enumerate().filter_map(|(i,(a,b))|(!excluded(i)&&a!=b).then_some((i,*a,*b))).take(16).collect::<Vec<_>>();
@@ -487,7 +487,7 @@ fn native_ancilla_axis_matches_semantic_motion_and_complete_near_return_cycles()
     for case in 0..2048usize {
         let fixture=(case/2)*41;let k=fixture%10;let x_axis=case%2==0;
         let mut expected=ZeldaState::new();
-        crate::cycle_models::ancilla_axis::seed_case(&mut expected.ram,fixture);
+        { let mut image = expected.wram_image().into_owned(); crate::cycle_models::ancilla_axis::seed_case(&mut image, fixture); expected.import_wram_image(&image); }
         expected.ram[0x1e9..0x1eb].copy_from_slice(&0x8035u16.to_le_bytes());
         expected.sync_native_game_state_from_ram();let mut actual=expected.clone();actual.rom.clear();
         let mut cpu=NativeNmiContext {a:0xab00,x:k as u16,y:7,d:0,db:8,bank:8,pc:if x_axis {0x9080}else{0x908b},sp:0x1e8,p:0x30};
@@ -495,15 +495,15 @@ fn native_ancilla_axis_matches_semantic_motion_and_complete_near_return_cycles()
         clock.begin_synchronous_timeline().unwrap();let mut work=AncillaAxis::new(0x8036);let mut owned=0;
         while !work.complete() {
             owned+=work.step(&mut cpu,&mut clock,|_,access| match access {
-                Access::Read(a,width)=>{let a=(a & 0xffff) as usize;u16::from(actual.ram[a])|if width==2 {u16::from(actual.ram[a+1])<<8}else{0}},
+                Access::Read(a,width)=>{let a=(a & 0xffff) as usize;u16::from(actual.read_wram_byte(a))|if width==2 {u16::from(actual.ram[a+1])<<8}else{0}},
                 Access::Write(a,v,width)=>{let a=(a & 0xffff) as usize;actual.ram[a..a+width as usize].copy_from_slice(&v.to_le_bytes()[..width as usize]);actual.native_push_block_store(a,v,width);0},
                 Access::Vblank {..}=>0,
             }).unwrap();work=work.clone();
         }
         let before=crate::cycle_ledger::master();if x_axis {expected.ancilla_move_x(k)}else{expected.ancilla_move_y(k)};let full=crate::cycle_ledger::master()-before;
         assert_eq!(owned,full,"case={case} x_axis={x_axis}");
-        assert_eq!(&actual.ram[0xbfa..0xc4a],&expected.ram[0xbfa..0xc4a],"case={case}");
-        let mut a=actual.ram.clone();let mut b=expected.ram.clone();actual.game_state.sprites.ancilla_slots.write_to_ram(&mut a);expected.game_state.sprites.ancilla_slots.write_to_ram(&mut b);
+        assert_eq!(&actual.wram_image()[0xbfa..0xc4a],&expected.wram_image()[0xbfa..0xc4a],"case={case}");
+        let mut a=actual.wram_image().into_owned();let mut b=expected.wram_image().into_owned();actual.game_state.sprites.ancilla_slots.write_to_ram(&mut a);expected.game_state.sprites.ancilla_slots.write_to_ram(&mut b);
         assert_eq!(&a[0xbfa..0xc4a],&b[0xbfa..0xc4a],"case={case} native");
         assert_eq!((cpu.pc,cpu.sp,cpu.x),(0x8036,0x1ea,k as u16));assert!(actual.rom.is_empty());
     }
@@ -516,7 +516,7 @@ fn native_receipt_drawing_handoff_preserves_sparkle_graphics_and_oam_once() {
     let mut tails=[0;3];let mut graphics=std::collections::BTreeSet::new();
     for case in 0..512usize {
         let k=case%10;let mut expected=ZeldaState::new();
-        crate::cycle_models::receipt_drawing::seed_case(&mut expected.ram,case*277%145920);
+        { let mut image = expected.wram_image().into_owned(); crate::cycle_models::receipt_drawing::seed_case(&mut image, case*277%145920); expected.import_wram_image(&image); }
         expected.ram[0x10]=7;expected.ram[0x1b]=1;expected.ram[0x307]=1;
         expected.ram[0xc4a+k]=0x22;expected.ram[0xc54+k]=(case%4) as u8;expected.ram[0x14]=(case%8) as u8;
         expected.ram[0xc04+k]=128;expected.ram[0xc18+k]=0;expected.ram[0xbfa+k]=96;expected.ram[0xc0e+k]=0;
@@ -534,7 +534,7 @@ fn native_receipt_drawing_handoff_preserves_sparkle_graphics_and_oam_once() {
             owned+=work.step(&mut cpu,&mut clock,|_,access| match access {
                 Access::Read(a,width)=>{
                     if let Some(v)=ZeldaState::native_receipt_animation_table_byte(a).or_else(||ZeldaState::native_ancilla_oam_table_byte(a)) {u16::from(v)}else{
-                        let a=(a & if matches!(a>>16,0x7e|0x7f){0x1ffff}else{0xffff}) as usize;u16::from(actual.ram[a])|if width==2{u16::from(actual.ram[a+1])<<8}else{0}
+                        let a=(a & if matches!(a>>16,0x7e|0x7f){0x1ffff}else{0xffff}) as usize;u16::from(actual.read_wram_byte(a))|if width==2{u16::from(actual.ram[a+1])<<8}else{0}
                     }
                 },
                 Access::Write(a,v,width)=>{let a=(a & 0xffff) as usize;actual.ram[a..a+width as usize].copy_from_slice(&v.to_le_bytes()[..width as usize]);actual.native_push_block_store(a,v,width);0},
@@ -545,7 +545,7 @@ fn native_receipt_drawing_handoff_preserves_sparkle_graphics_and_oam_once() {
         let before=crate::cycle_ledger::master();expected.ancilla22_item_receipt_draw_and_update(k);let full=crate::cycle_ledger::master()-before;
         let before=crate::cycle_ledger::master();actual.finish_native_receipt_drawing(k,tail);let remaining=crate::cycle_ledger::master()-before;
         let excluded=|i:usize| i<16 || (0x1c0..=0x1ff).contains(&i);
-        let diffs=actual.ram.iter().zip(&expected.ram).enumerate().filter_map(|(i,(a,b))|(!excluded(i)&&a!=b).then_some((i,*a,*b))).take(16).collect::<Vec<_>>();assert!(diffs.is_empty(),"case={case} tail={tail:?} RAM {diffs:x?}");
+        let diffs=actual.wram_image().iter().zip(expected.wram_image().iter()).enumerate().filter_map(|(i,(a,b))|(!excluded(i)&&a!=b).then_some((i,*a,*b))).take(16).collect::<Vec<_>>();assert!(diffs.is_empty(),"case={case} tail={tail:?} RAM {diffs:x?}");
         let mut a=vec![0xa5;snes::WRAM_SIZE];let mut b=a.clone();actual.game_state.write_to_ram(&mut a);expected.game_state.write_to_ram(&mut b);
         let diffs=a.iter().zip(&b).enumerate().filter_map(|(i,(a,b))|(!excluded(i)&&a!=b).then_some((i,*a,*b))).take(16).collect::<Vec<_>>();assert!(diffs.is_empty(),"case={case} tail={tail:?} native {diffs:x?}");
         assert_eq!(full-remaining,owned,"case={case} tail={tail:?}: no owned animation or coordinate replay");assert!(actual.rom.is_empty());
@@ -559,14 +559,14 @@ fn native_receipt_oam_preserves_semantic_tiles_and_all_body_return_cycles() {
     use crate::cycle_models::{receipt_oam::ReceiptOam,intro_clear::Access,nmi_stack::NativeNmiContext};
     for case in 0..1536usize {
         let fixture=case*103;let k=fixture%10;let mut expected=ZeldaState::new();
-        crate::cycle_models::receipt_oam::seed_case(&mut expected.ram,fixture);
+        { let mut image = expected.wram_image().into_owned(); crate::cycle_models::receipt_oam::seed_case(&mut image, fixture); expected.import_wram_image(&image); }
         expected.sync_native_game_state_from_ram();let mut actual=expected.clone();actual.rom.clear();
-        let x=read_le_u16(&expected.ram,2);let y=read_le_u16(&expected.ram,0);let oam=read_le_u16(&expected.ram,0x90) as usize;
+        let x=read_le_u16(&expected.wram_image(),2);let y=read_le_u16(&expected.wram_image(),0);let oam=read_le_u16(&expected.wram_image(),0x90) as usize;
         let mut cpu=NativeNmiContext{a:0xab00,x:k as u16,y:7,d:0,db:8,bank:8,pc:0xc690,sp:0x1e8,p:0x30};
         let mut clock=snes::CpuMasterTimeline::at_raster(4586,snes::CpuRasterPosition::new(60,1252),snes::CpuBusWorkload::default(),snes::CpuFieldTiming::NON_INTERLACE_EVEN);clock.begin_synchronous_timeline().unwrap();let mut work=ReceiptOam::default();let mut owned=0;
         while !work.complete() {
             owned+=work.step(&mut cpu,&mut clock,|_,access| match access {
-                Access::Read(a,width)=>{if let Some(v)=ZeldaState::native_ancilla_oam_table_byte(a).or_else(||crate::zelda_rtl::misc::native_item_receipt_table_byte(a)){u16::from(v)}else{let a=(a&0xffff) as usize;u16::from(actual.ram[a])|if width==2{u16::from(actual.ram[a+1])<<8}else{0}}},
+                Access::Read(a,width)=>{if let Some(v)=ZeldaState::native_ancilla_oam_table_byte(a).or_else(||crate::zelda_rtl::misc::native_item_receipt_table_byte(a)){u16::from(v)}else{let a=(a&0xffff) as usize;u16::from(actual.read_wram_byte(a))|if width==2{u16::from(actual.ram[a+1])<<8}else{0}}},
                 Access::Write(a,v,width)=>{let a=(a&0xffff) as usize;actual.ram[a..a+width as usize].copy_from_slice(&v.to_le_bytes()[..width as usize]);actual.native_push_block_store(a,v,width);0},
                 Access::Vblank{..}=>0,
             }).unwrap();work=work.clone();
@@ -574,7 +574,7 @@ fn native_receipt_oam_preserves_semantic_tiles_and_all_body_return_cycles() {
         let before=crate::cycle_ledger::master();let end=expected.ancilla_receive_item_draw(k,x,y);let full=crate::cycle_ledger::master()-before;
         // $74 is the source palette local; the semantic helper uses a Rust local.
         let excluded=|i:usize|i<16 || i==0x74 || (0x1c0..=0x1ff).contains(&i);
-        let diffs=actual.ram.iter().zip(&expected.ram).enumerate().filter_map(|(i,(a,b))|(!excluded(i)&&a!=b).then_some((i,*a,*b))).take(16).collect::<Vec<_>>();assert!(diffs.is_empty(),"case={case} RAM {diffs:x?}");
+        let diffs=actual.wram_image().iter().zip(expected.wram_image().iter()).enumerate().filter_map(|(i,(a,b))|(!excluded(i)&&a!=b).then_some((i,*a,*b))).take(16).collect::<Vec<_>>();assert!(diffs.is_empty(),"case={case} RAM {diffs:x?}");
         let mut a=vec![0xa5;snes::WRAM_SIZE];let mut b=a.clone();actual.game_state.write_to_ram(&mut a);expected.game_state.write_to_ram(&mut b);
         let diffs=a.iter().zip(&b).enumerate().filter_map(|(i,(a,b))|(!excluded(i)&&a!=b).then_some((i,*a,*b))).take(16).collect::<Vec<_>>();assert!(diffs.is_empty(),"case={case} native {diffs:x?}");
         assert_eq!(owned,full,"case={case}: all OAM body and helper return cycles owned");assert_eq!(end,oam+cpu.y as usize);assert_eq!((cpu.pc,cpu.sp,cpu.x),(0x8338,0x1ea,k as u16));assert!(actual.rom.is_empty());

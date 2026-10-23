@@ -97,7 +97,7 @@ use sheet_dump_commands::{run_dump_dungeon_sheet_png, run_dump_sprite_sheet_png}
 use snes::{consts::PPU_EXTRA_LEFT_RIGHT, cpu_run_opcode, load_rom, Snes};
 use zelda3::{config::parse_config_file_context, ZeldaState, RUN_MAIN, RUN_POLY};
 
-/// Positional-bincode checkpoint layout version. Bump the trailing number
+/// Positional-bincode checkpoint layout/ownership version. Bump the trailing number
 /// whenever a serialized `ZeldaState` field is added, removed or reordered;
 /// older `rust.z3state` files are then rejected with a clear message instead
 /// of failing mid-decode. 06 (2026-09-08): save progress owns named fields
@@ -116,7 +116,10 @@ use zelda3::{config::parse_config_file_context, ZeldaState, RUN_MAIN, RUN_POLY};
 /// (2026-09-10): the attract scene no longer mirrors the mode-7 zoom timer and
 /// the dungeon room items no longer mirror the map-state word. 21
 /// (2026-09-10): the dungeon environment no longer mirrors the water counter.
-const PLAY_CRASH_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSPC22";
+/// 23 (2026-10-23): inventory resources/equipment are authoritative owners;
+/// older checkpoints can contain native fields saved before deferred adoption.
+/// 24 (2026-10-23): save-progress records/runtime bytes are authoritative too.
+const PLAY_CRASH_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSPC24";
 const ACTION_TILE_X: [i16; 4] = [7, 7, -3, 16];
 const ACTION_TILE_Y: [i16; 4] = [6, 24, 12, 12];
 pub(crate) const TRACE_MAIN_MODULE_INDEX: usize = 0x10;
@@ -2706,6 +2709,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn checkpoint_rejects_pre_ownership_resource_mirrors() {
+        let path = std::env::temp_dir().join(format!(
+            "zelda3-pre-ownership-checkpoint-{}", std::process::id()));
+        fs::write(&path, b"Z3RSPC22").unwrap();
+        let error = match load_play_crash_checkpoint(&path) {
+            Ok(_) => panic!("pre-ownership checkpoint was accepted"),
+            Err(error) => error.to_string(),
+        };
+        let _ = fs::remove_file(path);
+        assert!(error.contains("re-create it with the current binary"), "{error}");
+    }
+
+    #[test]
     fn play_crash_report_only_writes_replay_checkpoint_with_pre_frame_snapshot() {
         let mut game = ZeldaState::new();
         game.frame_ctr_dbg = 41;
@@ -2737,7 +2753,7 @@ mod tests {
             assert!(report.contains("test backtrace"));
             assert!(report.contains(&format!(
                 "trace={}",
-                TraceState::from_ram(&snapshot.unwrap_or(&game).ram, 0x80, 1)
+                TraceState::from_ram(&snapshot.unwrap_or(&game).wram_image(), 0x80, 1)
             )));
             if snapshot.is_some() {
                 assert!(report.contains("checkpoint_state=before_crashing_frame\n"));
@@ -2747,7 +2763,7 @@ mod tests {
                 assert_eq!(checkpoint.input, 0x80);
                 assert_eq!(checkpoint.run_what, 1);
                 assert_eq!(checkpoint.game.frame_ctr_dbg, 41);
-                assert_eq!(checkpoint.game.ram, pre_frame_game.ram);
+                assert_eq!(checkpoint.game.wram_image(), pre_frame_game.wram_image());
                 fs::remove_file(state_path).unwrap();
             } else {
                 assert!(report.contains("diagnostic_state=after_panic\n"));

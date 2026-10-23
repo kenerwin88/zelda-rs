@@ -1,6 +1,5 @@
 use super::ram_byte;
 use crate::game_state::constants::{LINK_MAGIC_CONSUMPTION, LINK_MAGIC_FILLER, LINK_MAGIC_POWER};
-use crate::game_state::native::ram_target::RamTarget;
 
 /// Native magic ownership. The cartridge layout is confined to the import and
 /// publication methods; arithmetic deliberately retains the original byte rules.
@@ -42,21 +41,22 @@ impl PlayerMagicState {
         self.consumption_level = value;
     }
 
-    // These distinct observation/publication boundaries preserve legacy save
-    // transfers while consumers are migrated. Resource edits must not re-stamp
-    // the amount: its publication historically belongs to player operations.
-    pub(crate) fn import_amount(&mut self, ram: &[u8]) {
-        self.amount = ram_byte(ram, LINK_MAGIC_POWER);
+    pub(crate) fn owned_byte(&self, address: usize) -> Option<u8> {
+        match address {
+            LINK_MAGIC_POWER => Some(self.amount),
+            LINK_MAGIC_FILLER => Some(self.refill),
+            LINK_MAGIC_CONSUMPTION => Some(self.consumption_level),
+            _ => None,
+        }
     }
-    pub(crate) fn import_consumption_level(&mut self, ram: &[u8]) {
-        self.consumption_level = ram_byte(ram, LINK_MAGIC_CONSUMPTION);
-    }
-    pub(super) fn publish_amount<R: RamTarget + ?Sized>(&self, ram: &mut R) {
-        ram.write_byte(LINK_MAGIC_POWER, self.amount);
-    }
-    pub(super) fn publish_resource_fields<R: RamTarget + ?Sized>(&self, ram: &mut R) {
-        ram.write_byte(LINK_MAGIC_CONSUMPTION, self.consumption_level);
-        ram.write_byte(LINK_MAGIC_FILLER, self.refill);
+    pub(crate) fn write_owned_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            LINK_MAGIC_POWER => self.amount = value,
+            LINK_MAGIC_FILLER => self.refill = value,
+            LINK_MAGIC_CONSUMPTION => self.consumption_level = value,
+            _ => return false,
+        }
+        true
     }
 
     fn spend(&mut self, cost: u8) -> bool {
@@ -77,37 +77,28 @@ impl PlayerMagicState {
 
 pub(crate) struct NativePlayerMagicBridgeMut<'a> {
     magic: &'a mut PlayerMagicState,
-    ram: &'a mut [u8],
 }
 
 impl<'a> NativePlayerMagicBridgeMut<'a> {
-    pub(crate) fn new(magic: &'a mut PlayerMagicState, ram: &'a mut [u8]) -> Self {
-        magic.import_amount(ram);
-        Self { magic, ram }
+    pub(crate) fn new(magic: &'a mut PlayerMagicState, _ram: &'a mut [u8]) -> Self {
+        Self { magic }
     }
     pub(crate) fn spend_magic(&mut self, cost: u8) -> bool {
         let spent = self.magic.spend(cost);
-        if spent {
-            self.magic.publish_amount(self.ram);
-        }
         spent
     }
     pub(crate) fn refund_magic(&mut self, cost: u8, clamp_full: bool) {
         self.magic.refund(cost, clamp_full);
-        self.magic.publish_amount(self.ram);
     }
     pub(crate) fn decrement_magic_power(&mut self) -> u8 {
         self.magic.amount = self.magic.amount.wrapping_sub(1);
-        self.magic.publish_amount(self.ram);
         self.magic.amount
     }
     pub(crate) fn set_magic_power(&mut self, value: u8) {
         self.magic.amount = value;
-        self.magic.publish_amount(self.ram);
     }
     pub(crate) fn increment_magic_power(&mut self) {
         self.magic.amount = self.magic.amount.wrapping_add(1);
-        self.magic.publish_amount(self.ram);
     }
 }
 
@@ -116,38 +107,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn magic_publication_is_scoped_and_snapshots_are_independent() {
+    fn magic_owner_ignores_backing_storage_and_snapshots_are_independent() {
         let mut ram = vec![0xa5; 0x20000];
-        ram[LINK_MAGIC_POWER] = 41;
-        ram[LINK_MAGIC_FILLER] = 7;
-        ram[LINK_MAGIC_CONSUMPTION] = 2;
-        let mut magic = PlayerMagicState::load_from_ram(&ram);
-        let snapshot = bincode::serialize(&magic).unwrap();
-        assert_eq!(snapshot.len(), 3);
-        let saved: PlayerMagicState = bincode::deserialize(&snapshot).unwrap();
-        let mut expected = ram.clone();
-        {
-            let mut bridge = NativePlayerMagicBridgeMut::new(&mut magic, &mut ram);
-            assert!(bridge.spend_magic(9));
-            bridge.refund_magic(3, false);
-        }
-        expected[LINK_MAGIC_POWER] = 35;
-        assert_eq!(ram, expected);
-        assert_eq!(saved.amount(), 41);
-        assert_eq!((saved.refill(), saved.consumption_level()), (7, 2));
-
-        // Resource publication must not overwrite an amount updated by a legacy
-        // save transfer between import boundaries.
-        ram[LINK_MAGIC_POWER] = 66;
-        magic.set_refill(0x80);
-        magic.set_consumption_level(1);
-        magic.publish_resource_fields(&mut ram);
-        expected[LINK_MAGIC_POWER] = 66;
-        expected[LINK_MAGIC_FILLER] = 0x80;
-        expected[LINK_MAGIC_CONSUMPTION] = 1;
-        assert_eq!(ram, expected);
-        magic.import_amount(&ram);
-        assert_eq!(magic.amount(), 66);
+        let mut magic = PlayerMagicState { amount: 41, refill: 7, consumption_level: 2 };
+        let saved = magic;
+        let before = ram.clone();
+        let mut bridge = NativePlayerMagicBridgeMut::new(&mut magic, &mut ram);
+        assert!(bridge.spend_magic(9));
+        bridge.refund_magic(3, false);
+        assert_eq!(magic.amount(), 35);
+        assert_eq!(ram, before);
+        assert_eq!((saved.amount(), saved.refill(), saved.consumption_level()), (41, 7, 2));
     }
 
     #[test]

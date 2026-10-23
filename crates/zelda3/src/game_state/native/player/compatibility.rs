@@ -1543,9 +1543,9 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn land_after_splash(&mut self) {
+    pub(crate) fn land_after_splash(&mut self, has_moon_pearl: bool) {
         let handler_state = if self.ram[LINK_IS_BUNNY_MIRROR] != 0 {
-            if self.ram[LINK_ITEM_MOON_PEARL] != 0 {
+            if has_moon_pearl {
                 3
             } else {
                 23
@@ -1581,8 +1581,8 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn reset_after_damaging_pit(&mut self) {
-        let handler_state = if self.ram[LINK_IS_BUNNY] != 0 && self.ram[LINK_ITEM_MOON_PEARL] == 0 {
+    pub(crate) fn reset_after_damaging_pit(&mut self, has_moon_pearl: bool) {
+        let handler_state = if self.ram[LINK_IS_BUNNY] != 0 && !has_moon_pearl {
             23
         } else {
             0

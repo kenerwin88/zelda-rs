@@ -10,10 +10,13 @@ fn tile_attributes_match_frozen_runtime_effects() {
     let hash_projection = |digest: &mut Sha256, state: &ZeldaState| {
         let mut projected = vec![0xa5; WRAM_SIZE];
         state.game_state.write_to_ram(&mut projected);
+        state.game_state.inventory.player_resources.export_owned(&mut projected);
+        state.game_state.inventory.items.export_owned(&mut projected);
+        state.game_state.inventory.save_progress.export_runtime_to_image(&mut projected);
         // Preserve the historical projection hash and independently check the
         // newly owned high byte. The full live RAM digest still includes it.
         let high = crate::game_state::constants::HUD_CUR_ITEM_HIGH;
-        assert_eq!(projected[high], state.ram[high]);
+        assert_eq!(projected[high], state.read_wram_byte(high));
         projected[high] = 0xa5;
         digest.update(&projected);
     };
@@ -25,13 +28,13 @@ fn tile_attributes_match_frozen_runtime_effects() {
         let mut digest = Sha256::new();
         for context in 0..32u32 {
             let mut state = tile_behavior_test_state(context);
-            let initial_ram = state.ram.clone();
+            let initial_ram = state.wram_image().into_owned();
             let initial_native = state.game_state.clone();
             for bits in [0, 1, 2, 4, 8, 0x0f, 0xf0, 0xffff] {
-                state.ram.copy_from_slice(&initial_ram);
+                state.import_wram_image(&initial_ram);
                 state.game_state = initial_native.clone();
                 state.tile_detect_execute_inner(tile, 0x100, bits, indoors);
-                digest.update(&state.ram);
+                digest.update(&state.wram_image());
                 hash_projection(&mut digest, &state);
             }
         }
@@ -56,7 +59,7 @@ fn tile_attributes_match_frozen_runtime_effects() {
         let mut state = tile_behavior_test_state(seed);
         state.tile_detect_reset_state();
         let mut digest = Sha256::new();
-        digest.update(&state.ram);
+        digest.update(&state.wram_image());
         hash_projection(&mut digest, &state);
         cases.push_str(&format!("reset/{seed}: {:x}\n", digest.finalize()));
     }
@@ -73,6 +76,7 @@ fn tile_behavior_test_state(context: u32) -> ZeldaState {
         rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
         *byte = (rng >> 24) as u8;
     }
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
     state.ram[CHEAT_WALK_THROUGH_WALLS] = u8::from(context & 16 != 0);
     state.ram[DUNGEON_BG2_ATTR_TABLE + 0x140] = if context & 8 != 0 { 0x60 } else { 0 };
     for chest in 0..6 {
@@ -89,6 +93,8 @@ fn tile_behavior_test_state(context: u32) -> ZeldaState {
         DUNG_SAVEGAME_STATE_BITS,
         if context & 2 != 0 { 0x8000 } else { 0 },
     );
+    let seed_image = state.ram.clone();
+    state.import_wram_image(&seed_image);
     state.sync_native_game_state_from_ram();
     state
 }

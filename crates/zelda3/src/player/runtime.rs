@@ -331,14 +331,11 @@ impl ZeldaState {
 
     pub(in crate::zelda_rtl) fn link_reset_state_after_damaging_pit(&mut self) {
         self.link_reset_swimming_state();
-        self.follower_link_state_mut().reset_after_damaging_pit();
+        let has_moon_pearl = self.game_state.inventory.items.has_moon_pearl();
+        self.follower_link_state_mut().reset_after_damaging_pit(has_moon_pearl);
     }
 
     pub(super) fn link_state_bunny_recache(&mut self) {
-        self.game_state
-            .inventory
-            .items
-            .import_player_capabilities(&self.ram);
         let has_moon_pearl = self.game_state.inventory.items.has_moon_pearl();
         self.follower_link_state_mut()
             .recache_bunny_state(has_moon_pearl);
@@ -362,7 +359,8 @@ impl ZeldaState {
                 self.link_state_bunny_recache();
                 return;
             }
-            self.follower_link_state_mut().land_after_splash();
+            let has_moon_pearl = self.game_state.inventory.items.has_moon_pearl();
+            self.follower_link_state_mut().land_after_splash(has_moon_pearl);
         } else if self.game_state.player.follower_link.is_in_deep_water() {
             if self.game_state.player.follower_link.handler_state()
                 != LINK_SPLASH_UPON_LANDING_PLAYER_HANDLER_STATE_RECOIL_OTHER
@@ -370,9 +368,11 @@ impl ZeldaState {
                 self.ancilla_add_splash(21, 0);
             }
             self.link_force_unequip_cape_quietly();
-            self.follower_link_state_mut().land_after_splash();
+            let has_moon_pearl = self.game_state.inventory.items.has_moon_pearl();
+            self.follower_link_state_mut().land_after_splash(has_moon_pearl);
         } else {
-            self.follower_link_state_mut().land_after_splash();
+            let has_moon_pearl = self.game_state.inventory.items.has_moon_pearl();
+            self.follower_link_state_mut().land_after_splash(has_moon_pearl);
         }
     }
 

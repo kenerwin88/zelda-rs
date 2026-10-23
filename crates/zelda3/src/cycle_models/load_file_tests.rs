@@ -128,7 +128,7 @@ fn load_file_composes_all_destinations_with_live_children() {
         let mut dma = source.machine().snes().dma.clone();
         let mut work = LoadFile::default();
         let mut state = crate::ZeldaState::new();
-        state.ram.copy_from_slice(&ram);
+        state.import_wram_image(&ram);
         state.sync_native_game_state_from_ram();
         let mut dma_count = 0;
         let mut count = 0;
@@ -253,7 +253,7 @@ fn load_file_composes_all_destinations_with_live_children() {
             assert_eq!(ram, source.machine().snes().ram, "{label}");
             if parent {
                 parent_instructions += 1;
-                assert_eq!(state.ram, ram, "parent publication {label}");
+                assert_eq!(*state.wram_image(), ram, "parent publication {label}");
                 assert!(state.game_state == crate::game_state::GameState::load_from_ram(&ram),
                     "{label}: native owners {:?}", state.game_state.report_incoherent_with_ram(&ram));
             } else if work.parent_active() {
@@ -261,7 +261,7 @@ fn load_file_composes_all_destinations_with_live_children() {
                 // supplies its independently computed native WRAM as the next
                 // segment's input; no source RAM feeds the candidate. Full
                 // production child publication is a separate integration gate.
-                state.ram.copy_from_slice(&ram);
+                state.import_wram_image(&ram);
                 state.sync_native_game_state_from_ram();
                 native_child_returns += 1;
             }

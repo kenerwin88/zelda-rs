@@ -26,18 +26,18 @@ fn native_cold_display_preserves_hardware_before_memory_initialization() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
     state.set_assets(&std::fs::read(path).unwrap()).unwrap();
-    assert_eq!(state.ram[crate::game_state::constants::NMI_COPY_PACKETS_FLAG], 0x55);
+    assert_eq!(state.read_wram_byte(crate::game_state::constants::NMI_COPY_PACKETS_FLAG), 0x55);
     for host in 0..=80 {
         state.frame_ctr_dbg = host + 1;
         assert_eq!(state.advance_native_startup_host(0), Some(false));
         state.capture_display_snapshot();
         let uninitialized = state.native_startup_cpu.as_ref().unwrap().startup.memory_initialization_pending();
-        let ram = state.ram.clone();
+        let ram = state.wram_image().into_owned();
         let ppu = bincode::serialize(&state.ppu).unwrap();
         for _ in 0..2 {
             let shown = state.with_display_snapshot(|game| bincode::serialize(&game.ppu).unwrap());
             if uninitialized { assert_eq!(shown, ppu, "pre-initializer display has no game-authored DMA requests"); }
-            assert_eq!(state.ram, ram, "capture cannot author reset RAM");
+            assert_eq!(*state.wram_image(), ram, "capture cannot author reset RAM");
             assert_eq!(bincode::serialize(&state.ppu).unwrap(), ppu);
         }
     }
@@ -90,7 +90,7 @@ fn native_startup_host_continuation_enters_its_module_once_after_rti() {
     assert_eq!((caller.bank, caller.pc, caller.sp, caller.a), (0, 0x8038, 0x1ff, 1));
     // The native tail does not perform the semantic helper's extra CHR-base stores.
     assert_eq!(state.ppu.bg_layer.map(|bg| bg.tile_adr), [0x1000, 0x3000, 0x5000, 0x6000]);
-    assert_eq!(&state.ram[0..2], &[0x10, 0x82]);
+    assert_eq!(&state.wram_image()[0..2], &[0x10, 0x82]);
     let input = state.game_state.player.follower_link;
     assert_eq!((input.joypad1l_last(), input.joypad1h_last()), (0x10, 0x82));
     assert_eq!((input.joypad1l_last2(), input.joypad1h_last2()), (0x10, 0x82));
@@ -103,7 +103,7 @@ fn native_startup_host_continuation_enters_its_module_once_after_rti() {
     assert_eq!((oam.mode, oam.b_adr, oam.a_bank, oam.a_adr, oam.size), (0, 4, 0, 0xa20, 0));
     assert_eq!((palette.mode, palette.b_adr, palette.a_bank, palette.a_adr, palette.size),
         (0, 0x22, 0x7e, 0xc700, 0));
-    assert_eq!(&state.ram[0x15..0x17], &[0, 0]);
+    assert_eq!(&state.wram_image()[0x15..0x17], &[0, 0]);
     assert!(!state.game_state.system_signals.should_update_hud());
     assert!(!state.game_state.system_signals.should_update_cgram());
     assert!(!cpu.startup.pending());
@@ -113,7 +113,7 @@ fn native_startup_host_continuation_enters_its_module_once_after_rti() {
     assert_eq!(state.ppu.vram[0], 0x8000);
     assert_eq!(state.ppu.vram[9], 0x8001);
     assert_eq!(&state.zelda_debug_apu_write_ports()[2..], &[1, 2]);
-    assert_eq!(&state.ram[0x12e..0x130], &[0, 0]);
+    assert_eq!(&state.wram_image()[0x12e..0x130], &[0, 0]);
     assert_eq!(state.game_state.system_signals.sound_effect_1(), 0);
     assert_eq!(state.game_state.system_signals.sound_effect_2(), 0);
     assert_eq!(state.advance_native_startup_host(0), None);
@@ -122,11 +122,11 @@ fn native_startup_host_continuation_enters_its_module_once_after_rti() {
     assert!(state.try_native_startup_main_entry());
     assert_eq!(state.game_state.frame.frame_counter, 1);
     for index in 0..128 {
-        assert_eq!(&state.ram[0x800 + index * 4..0x804 + index * 4], &[index as u8, 0xf0, 0x23, 0x31]);
+        assert_eq!(&state.wram_image()[0x800 + index * 4..0x804 + index * 4], &[index as u8, 0xf0, 0x23, 0x31]);
     }
     assert_eq!(state.ppu.oam, presented_oam, "CPU buffer clear cannot republish OAM");
-    assert_eq!(&state.ram[3..6], &[0x20, 0xc1, 0x0c]);
-    assert_eq!(&state.ram[0x1fd..0x200], &[0x59, 0x80, 0]);
+    assert_eq!(&state.wram_image()[3..6], &[0x20, 0xc1, 0x0c]);
+    assert_eq!(&state.wram_image()[0x1fd..0x200], &[0x59, 0x80, 0]);
     let cpu = state.native_startup_cpu.as_ref().unwrap();
     assert!(cpu.startup.main_caller_context().is_none());
     let module = cpu.startup.entered_module_context().unwrap();
@@ -135,9 +135,9 @@ fn native_startup_host_continuation_enters_its_module_once_after_rti() {
     assert_eq!(cpu.timeline.clock_master_cycles(), 28_939_174);
     assert_eq!(cpu.timeline.raster_position(), snes::CpuRasterPosition::new(256, 710));
     let clock = cpu.timeline.clone();
-    let ram = state.ram.clone();
+    let ram = state.wram_image().into_owned();
     assert!(!state.try_native_startup_main_entry(), "native caller work must execute once");
-    assert_eq!(state.ram, ram);
+    assert_eq!(*state.wram_image(), ram);
     assert_eq!(state.native_startup_cpu.as_ref().unwrap().timeline, clock);
     state.ppu.forced_blank = false;
     state.ppu.brightness = 7;
@@ -148,8 +148,8 @@ fn native_startup_host_continuation_enters_its_module_once_after_rti() {
     assert_eq!(state.ppu.obj_tile_adr1, 0x4000);
     assert_eq!(state.ppu.bg_layer.map(|bg| bg.tile_adr), [0x2000, 0x2000, 0x7000, 0]);
     assert_eq!((state.game_state.display.screen_brightness, state.game_state.display.chr_halfslot_request), (0x80, 20));
-    assert_eq!(&state.ram[0..3], &[0x5d, 0xc1, 0x0c]);
-    assert_eq!(&state.ram[0x1f7..0x200], &[0x23, 0x80, 2, 0x60, 0xc1, 12, 0x59, 0x80, 0]);
+    assert_eq!(&state.wram_image()[0..3], &[0x5d, 0xc1, 0x0c]);
+    assert_eq!(&state.wram_image()[0x1f7..0x200], &[0x23, 0x80, 2, 0x60, 0xc1, 12, 0x59, 0x80, 0]);
     let cpu = state.native_startup_cpu.as_ref().unwrap();
     assert!(cpu.startup.entered_module_context().is_none());
     let graphics = cpu.startup.intro_half_slot_context().unwrap();
@@ -157,10 +157,10 @@ fn native_startup_host_continuation_enters_its_module_once_after_rti() {
         (0, 0xe3fa, 0x1f6, 0x0c14, 0xe0, 0));
     assert!(cpu.timeline.clock_master_cycles() > clock.clock_master_cycles());
     let clock = cpu.timeline.clone();
-    let ram = state.ram.clone();
+    let ram = state.wram_image().into_owned();
     let ppu = bincode::serialize(&state.ppu).unwrap();
     assert!(!state.try_native_intro_setup_entry(), "native setup must execute once");
-    assert_eq!(state.ram, ram);
+    assert_eq!(*state.wram_image(), ram);
     assert_eq!(bincode::serialize(&state.ppu).unwrap(), ppu);
     assert_eq!(state.native_startup_cpu.as_ref().unwrap().timeline, clock);
     let rom_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc");
@@ -169,7 +169,7 @@ fn native_startup_host_continuation_enters_its_module_once_after_rti() {
     assert_eq!(state.asset_bytes(64, 9).unwrap()[0], rom[0x8a600]);
     let mut machine = snes::Snes::new();
     machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
-    machine.ram.copy_from_slice(&state.ram);
+    machine.ram.copy_from_slice(&state.wram_image());
     machine.ppu = state.ppu.clone();
     machine.cpu.a = graphics.a; machine.cpu.x = graphics.x; machine.cpu.y = graphics.y;
     machine.cpu.sp = graphics.sp; machine.cpu.pc = graphics.pc;
@@ -183,7 +183,7 @@ fn native_startup_host_continuation_enters_its_module_once_after_rti() {
         source.step().unwrap();
     }
     assert!(state.try_native_intro_half_slot());
-    assert_eq!(state.ram, source.snes().ram, "native asset bus and typed publications must match ROM");
+    assert_eq!(*state.wram_image(), source.snes().ram, "native asset bus and typed publications must match ROM");
     assert_eq!(bincode::serialize(&state.ppu).unwrap(), ppu, "conversion writes WRAM, not PPU memory");
     let cpu = state.native_startup_cpu.as_ref().unwrap();
     assert_eq!(cpu.timeline, *source.timeline());
@@ -194,9 +194,9 @@ fn native_startup_host_continuation_enters_its_module_once_after_rti() {
         (expected.a, expected.x, expected.y, expected.sp, expected.pc, expected.k, expected.db, expected.dp, expected.pack_flags()));
     assert_eq!(state.game_state.display.chr_halfslot_request, 0);
     let clock = cpu.timeline.clone();
-    let ram = state.ram.clone();
+    let ram = state.wram_image().into_owned();
     assert!(!state.try_native_intro_half_slot(), "native half-slot must execute once");
-    assert_eq!(state.ram, ram);
+    assert_eq!(*state.wram_image(), ram);
     assert_eq!(state.native_startup_cpu.as_ref().unwrap().timeline, clock);
     for step in 0..256 {
         if (source.snes().cpu.k, source.snes().cpu.pc) == (12, 0xc161) { break; }
@@ -204,7 +204,7 @@ fn native_startup_host_continuation_enters_its_module_once_after_rti() {
         source.step().unwrap();
     }
     assert!(state.try_native_intro_setup_return());
-    assert_eq!(state.ram, source.snes().ram, "setup typed palette and scratch publications must match ROM");
+    assert_eq!(*state.wram_image(), source.snes().ram, "setup typed palette and scratch publications must match ROM");
     assert_eq!(bincode::serialize(&state.ppu).unwrap(), bincode::serialize(&source.snes().ppu).unwrap());
     let cpu = state.native_startup_cpu.as_ref().unwrap();
     assert_eq!(cpu.timeline, *source.timeline());
@@ -215,10 +215,10 @@ fn native_startup_host_continuation_enters_its_module_once_after_rti() {
         (expected.a, expected.x, expected.y, expected.sp, expected.pc, expected.k, expected.db, expected.dp, expected.pack_flags()));
     assert_eq!(&state.ppu.vram[0x27f0..0x2801], &[0; 17]);
     let clock = cpu.timeline.clone();
-    let ram = state.ram.clone();
+    let ram = state.wram_image().into_owned();
     let ppu = bincode::serialize(&state.ppu).unwrap();
     assert!(!state.try_native_intro_setup_return(), "native setup return must execute once");
-    assert_eq!(state.ram, ram);
+    assert_eq!(*state.wram_image(), ram);
     assert_eq!(bincode::serialize(&state.ppu).unwrap(), ppu);
     assert_eq!(state.native_startup_cpu.as_ref().unwrap().timeline, clock);
 
@@ -228,7 +228,7 @@ fn native_startup_host_continuation_enters_its_module_once_after_rti() {
         source.step().unwrap();
     }
     assert!(state.try_native_intro_first_clear_entry());
-    assert_eq!(state.ram, source.snes().ram, "typed intro/OAM stores must match source before the first clear");
+    assert_eq!(*state.wram_image(), source.snes().ram, "typed intro/OAM stores must match source before the first clear");
     assert_eq!(bincode::serialize(&state.ppu).unwrap(), ppu, "logo writes CPU OAM buffers only");
     let cpu = state.native_startup_cpu.as_ref().unwrap();
     assert_eq!(cpu.timeline, *source.timeline());
@@ -243,14 +243,14 @@ fn native_startup_host_continuation_enters_its_module_once_after_rti() {
     assert!(state.game_state.system_signals.should_update_cgram());
     assert_eq!(state.game_state.system_signals.sound_effect_2(), 10);
     let clock = cpu.timeline.clone();
-    let ram = state.ram.clone();
+    let ram = state.wram_image().into_owned();
     assert!(!state.try_native_intro_first_clear_entry());
-    assert_eq!(state.ram, ram);
+    assert_eq!(*state.wram_image(), ram);
     assert_eq!(state.native_startup_cpu.as_ref().unwrap().timeline, clock);
 
     let mut machine = snes::Snes::new();
     machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
-    machine.ram.copy_from_slice(&state.ram);
+    machine.ram.copy_from_slice(&state.wram_image());
     machine.cpu = source.snes().cpu.clone();
     machine.ppu = state.ppu.clone();
     machine.nmi_enabled = true;
@@ -270,7 +270,7 @@ fn native_startup_host_continuation_enters_its_module_once_after_rti() {
     state.begin_native_intro_clear();
     assert!(state.native_intro_clear_pending());
     assert_eq!(state.intro_initialization_work_frames_pending, 0, "native work cannot use a host-count hold");
-    assert_eq!(state.ram, clear_source.snes().ram, "only stores before hardware NMI acceptance may be published");
+    assert_eq!(*state.wram_image(), clear_source.snes().ram, "only stores before hardware NMI acceptance may be published");
     assert_eq!(state.ram[0x3c00], ram[0x3c00], "future clear column must remain untouched");
     assert_eq!(bincode::serialize(&state.ppu).unwrap(), ppu);
     let cpu = state.native_startup_cpu.as_ref().unwrap();
@@ -288,7 +288,7 @@ fn native_startup_host_continuation_enters_its_module_once_after_rti() {
         clear_source.accept_native_nmi().unwrap();
         let mut accepted_probe = state.clone();
         assert!(!accepted_probe.run_native_intro_clear_until_boundary());
-        assert_eq!(accepted_probe.ram, clear_source.snes().ram);
+        assert_eq!(*accepted_probe.wram_image(), clear_source.snes().ram);
         assert_eq!(accepted_probe.native_startup_cpu.as_ref().unwrap().timeline, *clear_source.timeline());
     }
     state.frame_ctr_dbg += 1;
@@ -307,10 +307,10 @@ fn native_startup_host_continuation_enters_its_module_once_after_rti() {
     assert_eq!((returned.a, returned.x, returned.y, returned.sp, returned.pc, returned.p),
         (expected.a, expected.x, expected.y, expected.sp, expected.pc, expected.pack_flags()));
     assert_eq!(state.native_startup_cpu.as_ref().unwrap().timeline, *clear_source.timeline());
-    assert_eq!(&state.ram[0xa00..0xa20], &clear_source.snes().ram[0xa00..0xa20]);
-    assert_eq!(&state.ram[0xac0..0xadc], &clear_source.snes().ram[0xac0..0xadc]);
-    assert_eq!(state.ram,clear_source.snes().ram,"complete sprite caller RAM ownership");
-    assert_eq!(&state.ram[0x1fe..0x200], &clear_source.snes().ram[0x1fe..0x200]);
+    assert_eq!(&state.wram_image()[0xa00..0xa20], &clear_source.snes().ram[0xa00..0xa20]);
+    assert_eq!(&state.wram_image()[0xac0..0xadc], &clear_source.snes().ram[0xac0..0xadc]);
+    assert_eq!(*state.wram_image(),clear_source.snes().ram,"complete sprite caller RAM ownership");
+    assert_eq!(&state.wram_image()[0x1fe..0x200], &clear_source.snes().ram[0x1fe..0x200]);
     assert_eq!(state.intro_initialization_work_frames_pending, 0);
     assert!(state.pending_main_loop_common_suffix.is_none());
     for block in 1..=15 {
@@ -356,7 +356,7 @@ fn native_next_intro_nmi_matches_full_cold_source_owner() {
     }
     let cpu = state.native_startup_cpu.as_ref().unwrap();
     assert_eq!(cpu.timeline, *source.machine().timeline());
-    assert_eq!(state.ram, source.machine().snes().ram, "cold RAM at wait host return");
+    assert_eq!(*state.wram_image(), source.machine().snes().ram, "cold RAM at wait host return");
     for step in 0..20000 {
         let cpu = &source.machine().snes().cpu;
         if cpu.k == 0 && cpu.pc == 0x8038 { break; }
@@ -371,7 +371,7 @@ fn native_next_intro_nmi_matches_full_cold_source_owner() {
     assert_eq!((returned.a, returned.x, returned.y, returned.sp, returned.pc, returned.p),
         (expected.a, expected.x, expected.y, expected.sp, expected.pc, expected.pack_flags()));
     assert_eq!(cpu.timeline, *source.machine().timeline());
-    assert_eq!(state.ram, source.machine().snes().ram, "next cold native NMI RAM ownership");
+    assert_eq!(*state.wram_image(), source.machine().snes().ram, "next cold native NMI RAM ownership");
     assert_eq!(state.ppu.cgram, source.machine().snes().ppu.cgram, "next NMI palette DMA");
     assert_eq!(state.ppu.vram, source.machine().snes().ppu.vram, "next NMI graphics DMA");
     state.native_ppu.as_mut().unwrap().assert_matches_source(&cpu.timeline, source.machine());
@@ -400,7 +400,7 @@ fn native_repeated_intro_clears_match_full_cold_source_hosts() {
         if host < 82 { continue; }
         let cpu = state.native_startup_cpu.as_ref().unwrap();
         assert_eq!(cpu.timeline, *source.machine().timeline(), "host={host}");
-        let diffs: Vec<_> = state.ram.iter().zip(&source.machine().snes().ram).enumerate()
+        let diffs: Vec<_> = state.wram_image().iter().zip(&source.machine().snes().ram).enumerate()
             .filter(|(_, (a,b))| a != b).map(|(i,(a,b))| (i,*a,*b)).collect();
         assert!(diffs.is_empty(), "host={host} RAM differences={} first={:?}",diffs.len(),&diffs[..diffs.len().min(8)]);
         assert_eq!(state.ppu.vram, source.machine().snes().ppu.vram, "VRAM host={host}");
@@ -423,24 +423,24 @@ fn native_startup_retains_derived_clock_and_memory_ownership() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
     state.set_assets(&assets).unwrap();
-    assert!(state.ram.iter().all(|&byte| byte == 0x55), "native cold reset must initialize the full WRAM bank pair");
+    assert!(state.wram_image().iter().all(|&byte| byte == 0x55), "native cold reset must initialize the full WRAM bank pair");
     assert_eq!(state.native_startup_cpu.as_ref().unwrap().timeline.clock_master_cycles(), 28_396_112);
     assert_eq!(state.paired_resume_cpu_boundary_blocker(), Some("retained-native-bootstrap-clock"));
     // The initializer owns its store footprint, not every byte of low WRAM.
     write_le_u16(&mut state.ram, 0x400, 0xbeef);
-    let before_reload = state.ram.clone();
+    let before_reload = state.wram_image().into_owned();
     state.set_assets(&assets).unwrap();
-    assert_eq!(state.ram, before_reload, "asset reload must not repeat cold WRAM reset");
+    assert_eq!(*state.wram_image(), before_reload, "asset reload must not repeat cold WRAM reset");
     state.zelda_initialization_code();
     assert_eq!(state.native_startup_cpu.as_ref().unwrap().timeline.clock_master_cycles(), 28_617_174);
     assert_ne!(state.paired_resume_cpu_boundary_blocker(), Some("retained-native-bootstrap-clock"));
-    assert_eq!(read_le_u16(&state.ram, 0x400), 0xbeef);
-    assert_eq!(&state.ram[..3], &[0, 0x80, 0]);
-    assert_eq!(read_le_u16(&state.ram, 0x1fe), 0x802e);
+    assert_eq!(read_le_u16(&state.wram_image(), 0x400), 0xbeef);
+    assert_eq!(&state.wram_image()[..3], &[0, 0x80, 0]);
+    assert_eq!(read_le_u16(&state.wram_image(), 0x1fe), 0x802e);
     assert_eq!(state.ram[0x13], 0x80);
     assert_eq!(state.ram[0x15], 1);
-    assert_eq!(read_le_u16(&state.ram, 0xc00d), 0x5555);
-    assert_eq!(read_le_u16(&state.ram, 0xc013), 0x5555);
+    assert_eq!(read_le_u16(&state.wram_image(), 0xc00d), 0x5555);
+    assert_eq!(read_le_u16(&state.wram_image(), 0xc013), 0x5555);
     for word in 0..256 {
         let value = if word == 0 { 0 } else { 0x5555 };
         assert_eq!(state.game_state.display.palette_provenance.0.main[word],
@@ -449,9 +449,9 @@ fn native_startup_retains_derived_clock_and_memory_ownership() {
     let mut progressed = state.clone();
     progressed.frame_ctr_dbg = 1;
     progressed.clear_spc_driver_clock();
-    let before_reload = progressed.ram.clone();
+    let before_reload = progressed.wram_image().into_owned();
     progressed.set_assets(&assets).unwrap();
-    assert_eq!(progressed.ram, before_reload, "progressed states cannot acquire cold reset values");
+    assert_eq!(*progressed.wram_image(), before_reload, "progressed states cannot acquire cold reset values");
     state.set_rom_startup_timing(false);
     assert!(state.native_startup_cpu.is_none());
 }
@@ -535,19 +535,19 @@ fn exact_timing_test_rom(opcode: u8) -> Vec<u8> {
 }
 
 fn link_test_byte(state: &ZeldaState, addr: usize) -> u8 {
-    state.ram[addr]
+    state.read_wram_byte(addr)
 }
 
 fn set_link_test_byte(state: &mut ZeldaState, addr: usize, value: u8) {
-    state.ram[addr] = value;
+    state.write_wram_byte(addr, value);
 }
 
 fn link_test_word(state: &ZeldaState, addr: usize) -> u16 {
-    read_le_u16(&state.ram, addr)
+    state.read_wram_image_word(addr, 2)
 }
 
 fn set_link_test_word(state: &mut ZeldaState, addr: usize, value: u16) {
-    write_le_u16(&mut state.ram, addr, value);
+    state.write_wram_word(addr, value);
 }
 
 fn put_test_asset(data: &mut Vec<u8>, ranges: &mut [(usize, usize)], index: usize, bytes: Vec<u8>) {
@@ -2611,7 +2611,7 @@ fn native_intro_through_poly_worker_irq_matches_full_cold_source_hosts() {
         }
         assert_eq!(cpu.timeline,*source.machine().timeline(),"host={host}");
         state.native_ppu.as_mut().unwrap().assert_matches_source(&cpu.timeline, source.machine());
-        let differences:Vec<_>=state.ram.iter().zip(&source.machine().snes().ram).enumerate()
+        let differences:Vec<_>=state.wram_image().iter().zip(&source.machine().snes().ram).enumerate()
             .filter(|(_, (a,b))|a!=b).map(|(i,(a,b))|(i,*a,*b)).collect();
         assert!(differences.is_empty(),"host={host} RAM count={} first={:?}",differences.len(),&differences[..differences.len().min(8)]);
         assert_eq!(state.ppu.vram,source.machine().snes().ppu.vram,"VRAM host={host}");
@@ -2651,7 +2651,7 @@ fn native_intro_through_poly_worker_irq_matches_full_cold_source_hosts() {
             assert_eq!(context,crate::cycle_models::nmi_stack::NativeNmiContext {
                 a:c.a,x:c.x,y:c.y,d:c.dp,db:c.db,bank:c.k,pc:c.pc,sp:c.sp,p:c.pack_flags()});
             assert_eq!(cpu.timeline,*source.machine().timeline());
-            let differences:Vec<_>=state.ram.iter().zip(&source.machine().snes().ram).enumerate()
+            let differences:Vec<_>=state.wram_image().iter().zip(&source.machine().snes().ram).enumerate()
                 .filter(|(_, (a,b))|a!=b).map(|(i,(a,b))|(i,*a,*b)).collect();
             assert!(differences.is_empty(),"poly NMI RAM count={} first={:?}",differences.len(),&differences[..differences.len().min(8)]);
             assert_eq!(state.ppu.vram,source.machine().snes().ppu.vram);
@@ -2665,7 +2665,7 @@ fn native_intro_through_poly_worker_irq_matches_full_cold_source_hosts() {
             let c=&source.machine().snes().cpu;
             assert_eq!(context,crate::cycle_models::nmi_stack::NativeNmiContext {
                 a:c.a,x:c.x,y:c.y,d:c.dp,db:c.db,bank:c.k,pc:c.pc,sp:c.sp,p:c.pack_flags()});
-            assert_eq!(state.ram,source.machine().snes().ram);
+            assert_eq!(*state.wram_image(),source.machine().snes().ram);
             assert!(state.ram[0xe800..0xf000].iter().all(|&b|b==0));
             for count in 0..100 {
                 if (source.machine().snes().cpu.k,source.machine().snes().cpu.pc)==(9,0xf82c) {break;}
@@ -2677,8 +2677,8 @@ fn native_intro_through_poly_worker_irq_matches_full_cold_source_hosts() {
             let c=&source.machine().snes().cpu;
             assert_eq!(context,crate::cycle_models::nmi_stack::NativeNmiContext {
                 a:c.a,x:c.x,y:c.y,d:c.dp,db:c.db,bank:c.k,pc:c.pc,sp:c.sp,p:c.pack_flags()});
-            assert_eq!(state.ram,source.machine().snes().ram);
-            assert_eq!(state.game_state.poly,crate::game_state::PolyState::load_from_ram(&state.ram));
+            assert_eq!(*state.wram_image(),source.machine().snes().ram);
+            assert_eq!(state.game_state.poly,crate::game_state::PolyState::load_from_ram(&state.wram_image()));
             for count in 0..100 {
                 if (source.machine().snes().cpu.k,source.machine().snes().cpu.pc)==(9,0xf82f) {break;}
                 assert!(count<99,"source did not return from poly rotation setup");
@@ -2689,8 +2689,8 @@ fn native_intro_through_poly_worker_irq_matches_full_cold_source_hosts() {
             let c=&source.machine().snes().cpu;
             assert_eq!(context,crate::cycle_models::nmi_stack::NativeNmiContext {
                 a:c.a,x:c.x,y:c.y,d:c.dp,db:c.db,bank:c.k,pc:c.pc,sp:c.sp,p:c.pack_flags()});
-            assert_eq!(state.ram,source.machine().snes().ram);
-            assert_eq!(state.game_state.poly,crate::game_state::PolyState::load_from_ram(&state.ram));
+            assert_eq!(*state.wram_image(),source.machine().snes().ram);
+            assert_eq!(state.game_state.poly,crate::game_state::PolyState::load_from_ram(&state.wram_image()));
             assert_eq!(state.ppu.m7_matrix,source.machine().snes().ppu.m7_matrix);
             assert_eq!(state.ppu.m7_prev,source.machine().snes().ppu.m7_prev);
             for count in 0..5000 {
@@ -2703,8 +2703,8 @@ fn native_intro_through_poly_worker_irq_matches_full_cold_source_hosts() {
             let c=&source.machine().snes().cpu;
             assert_eq!(context,crate::cycle_models::nmi_stack::NativeNmiContext {
                 a:c.a,x:c.x,y:c.y,d:c.dp,db:c.db,bank:c.k,pc:c.pc,sp:c.sp,p:c.pack_flags()});
-            assert_eq!(state.ram,source.machine().snes().ram);
-            assert_eq!(state.game_state.poly,crate::game_state::PolyState::load_from_ram(&state.ram));
+            assert_eq!(*state.wram_image(),source.machine().snes().ram);
+            assert_eq!(state.game_state.poly,crate::game_state::PolyState::load_from_ram(&state.wram_image()));
             assert_eq!(state.ppu.m7_matrix,source.machine().snes().ppu.m7_matrix);
             assert_eq!(state.ppu.m7_prev,source.machine().snes().ppu.m7_prev);
             assert_eq!((divider.dividend,divider.quotient,divider.remainder),
@@ -2720,8 +2720,8 @@ fn native_intro_through_poly_worker_irq_matches_full_cold_source_hosts() {
             let c=&source.machine().snes().cpu;
             assert_eq!(context,crate::cycle_models::nmi_stack::NativeNmiContext {
                 a:c.a,x:c.x,y:c.y,d:c.dp,db:c.db,bank:c.k,pc:c.pc,sp:c.sp,p:c.pack_flags()});
-            assert_eq!(state.ram,source.machine().snes().ram);
-            assert_eq!(state.game_state.poly,crate::game_state::PolyState::load_from_ram(&state.ram));
+            assert_eq!(*state.wram_image(),source.machine().snes().ram);
+            assert_eq!(state.game_state.poly,crate::game_state::PolyState::load_from_ram(&state.wram_image()));
             assert_eq!(state.ppu.m7_matrix,source.machine().snes().ppu.m7_matrix);
             assert_eq!(state.ppu.m7_prev,source.machine().snes().ppu.m7_prev);
             assert!(cpu.timeline.clock_master_cycles()<programming.irq_deadline.unwrap());
@@ -2737,7 +2737,7 @@ fn native_intro_through_poly_worker_irq_matches_full_cold_source_hosts() {
             let c=&source.machine().snes().cpu;
             assert_eq!(context,crate::cycle_models::nmi_stack::NativeNmiContext {
                 a:c.a,x:c.x,y:c.y,d:c.dp,db:c.db,bank:c.k,pc:c.pc,sp:c.sp,p:c.pack_flags()});
-            assert_eq!(state.ram,source.machine().snes().ram);
+            assert_eq!(*state.wram_image(),source.machine().snes().ram);
             assert_eq!(state.ppu.m7_matrix,source.machine().snes().ppu.m7_matrix);
             assert_eq!(state.ppu.m7_prev,source.machine().snes().ppu.m7_prev);
             assert_eq!((state.native_cpu_math.dividend,state.native_cpu_math.quotient,state.native_cpu_math.remainder),
@@ -2756,7 +2756,7 @@ fn native_intro_through_poly_worker_irq_matches_full_cold_source_hosts() {
             let c=&source.machine().snes().cpu;
             assert_eq!(scheduled_cpu.startup.main_caller_context().unwrap(),crate::cycle_models::nmi_stack::NativeNmiContext {
                 a:c.a,x:c.x,y:c.y,d:c.dp,db:c.db,bank:c.k,pc:c.pc,sp:c.sp,p:c.pack_flags()});
-            assert_eq!(scheduled.ram,source.machine().snes().ram);
+            assert_eq!(*scheduled.wram_image(),source.machine().snes().ram);
             assert_eq!(scheduled_cpu.poly_worker.as_ref(),Some(&worker));
             return;
         }
@@ -2778,6 +2778,7 @@ fn native_idle_poly_irq_matches_hardware_acceptance_and_main_restore() {
         while source.machine().timestamp().master_cycles()<100*1364+510 {source.step().unwrap();}
         let mut state=ZeldaState::new();
         for (i,b) in state.ram.iter_mut().enumerate(){*b=(i^(i>>7)) as u8;}
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
         state.ram[0x12a]=1;state.ram[0x1f00]=0;state.ram[0x1f0c]=0;
         state.ram[0x1f0a..0x1f0c].copy_from_slice(&0x1f2u16.to_le_bytes());
         state.ram[0x1f3..0x200].copy_from_slice(&[0,0,0,0x78,0x56,0x34,0x12,0xef,0xcd,0,0x34,0x80,0]);
@@ -2788,7 +2789,7 @@ fn native_idle_poly_irq_matches_hardware_acceptance_and_main_restore() {
         registers.db=context.db;registers.k=context.bank;registers.pc=context.pc;registers.sp=context.sp;
         registers.e=false;registers.unpack_flags(context.p);
         let sram=source.machine().snes().cart.ram.clone();
-        source.rebase_private_timing_state_at(source.machine().timestamp(),&registers,&state.ram,&sram).unwrap();
+        source.rebase_private_timing_state_at(source.machine().timestamp(),&registers,&state.wram_image(),&sram).unwrap();
         let mut clock=source.machine().timeline().clone();
         let programming=PolyIrqProgramming {vertical_timer:0x90,nmitimen:0xa1,enabled_at:0,
             irq_deadline:snes::cpu_timeline::vertical_irq_deadline(&clock,0x90,false).map(|at|at.master_cycles())};
@@ -2797,7 +2798,7 @@ fn native_idle_poly_irq_matches_hardware_acceptance_and_main_restore() {
         let c=&source.machine().snes().cpu;
         assert_eq!(context,NativeNmiContext {a:c.a,x:c.x,y:c.y,d:c.dp,db:c.db,bank:c.k,pc:c.pc,sp:c.sp,p:c.pack_flags()});
         assert_eq!(clock,*source.machine().timeline());
-        assert_eq!(state.ram,source.machine().snes().ram);
+        assert_eq!(*state.wram_image(),source.machine().snes().ram);
         assert_eq!(state.game_state.display.nmi_thread_stack_pointer,0x1f31);
     }
 }
@@ -2941,6 +2942,7 @@ fn load_file_player_publications_match_source_after_each_instruction() {
         while source.machine().timestamp().master_cycles()<1364 {source.step().unwrap();}
         let mut state=ZeldaState::new();
         for (i,b) in state.ram.iter_mut().enumerate(){*b=(i as u8).wrapping_mul(7)^seed;}
+    { let image = state.ram.clone(); state.import_wram_image(&image); }
         state.ram[0x1fb..0x1fe].copy_from_slice(&[0x59,0x80,0]);
         state.sync_native_game_state_from_ram();
         let mut cpu=NativeNmiContext {a:0xab00|u16::from(seed),x:0x71,y:0x83,d:0,db:2,bank:7,pc:0xf13c,sp:0x1fa,p:0x31};
@@ -2948,7 +2950,7 @@ fn load_file_player_publications_match_source_after_each_instruction() {
         registers.a=cpu.a;registers.x=cpu.x;registers.y=cpu.y;registers.dp=cpu.d;registers.db=cpu.db;
         registers.k=cpu.bank;registers.pc=cpu.pc;registers.sp=cpu.sp;registers.e=false;registers.unpack_flags(cpu.p);
         let sram=source.machine().snes().cart.ram.clone();
-        source.rebase_private_timing_state_at(source.machine().timestamp(),&registers,&state.ram,&sram).unwrap();
+        source.rebase_private_timing_state_at(source.machine().timestamp(),&registers,&state.wram_image(),&sram).unwrap();
         let mut clock=source.machine().timeline().clone();
         let mut work=LoadFileState::new(0x07f13c);
         while !work.complete() {
@@ -2958,7 +2960,7 @@ fn load_file_player_publications_match_source_after_each_instruction() {
                 Access::Read(address,width)=>{
                     let address=(address&65535)as usize;
                     assert!(address<0x2000);
-                    if width==1 {u16::from(state.ram[address])}else{read_le_u16(&state.ram,address)}
+                    if width==1 {u16::from(state.ram[address])}else{read_le_u16(&state.wram_image(),address)}
                 }
                 Access::Write(address,value,width)=>{
                     let address=(address&65535)as usize;
@@ -2974,8 +2976,8 @@ fn load_file_player_publications_match_source_after_each_instruction() {
             let c=&source.machine().snes().cpu;
             assert_eq!(cpu,NativeNmiContext{a:c.a,x:c.x,y:c.y,d:c.dp,db:c.db,bank:c.k,pc:c.pc,sp:c.sp,p:c.pack_flags()},"CPU after {pc:04x}");
             assert_eq!(clock,*source.machine().timeline(),"clock after {pc:04x}");
-            assert_eq!(state.ram,source.machine().snes().ram,"publication after {pc:04x}");
-            let projected=crate::game_state::PlayerState::load_from_ram(&state.ram);
+            assert_eq!(*state.wram_image(),source.machine().snes().ram,"publication after {pc:04x}");
+            let projected=crate::game_state::PlayerState::load_from_ram(&state.wram_image());
             assert_eq!(state.game_state.player.follower_link,projected.follower_link,"native player after {pc:04x}");
             assert_eq!(state.game_state.player.swim_acceleration,projected.swim_acceleration,"native swim after {pc:04x}");
             instructions+=1;
@@ -3215,7 +3217,7 @@ fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
         if cpu.timeline != *source.machine().timeline() {
             eprintln!("source interrupt events host={host}: {interrupt_events:?}");
             let differences: Vec<_> = state
-                .ram
+                .wram_image()
                 .iter()
                 .zip(&source.machine().snes().ram)
                 .enumerate()
@@ -3246,7 +3248,7 @@ fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
             "CPU host={host}"
         );
         let differences: Vec<_> = state
-            .ram
+            .wram_image()
             .iter()
             .zip(&source.machine().snes().ram)
             .enumerate()
@@ -3266,8 +3268,8 @@ fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
         );
         assert_eq!(state.sram,source.machine().snes().cart.ram,"SRAM host={host}");
         if matches!(state.game_state.frame.main_module,1|3|4) {
-            assert_eq!(state.game_state.sprites.sprite_slots,SpriteSlotsState::load_from_ram(&state.ram),"typed sprite slots host={host}");
-            assert_eq!(state.game_state.messaging.select_file_menu,crate::game_state::SelectFileMenuState::load_from_ram(&state.ram),"typed file menu host={host}");
+            assert_eq!(state.game_state.sprites.sprite_slots,SpriteSlotsState::load_from_ram(&state.wram_image()),"typed sprite slots host={host}");
+            assert_eq!(state.game_state.messaging.select_file_menu,crate::game_state::SelectFileMenuState::load_from_ram(&state.wram_image()),"typed file menu host={host}");
         }
         assert_eq!(
             state.ppu.vram,
@@ -3324,7 +3326,7 @@ fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
         if state.game_state.frame.main_module == 0 {
             assert_eq!(
                 state.game_state.ending,
-                crate::game_state::EndingState::load_from_ram(&state.ram),
+                crate::game_state::EndingState::load_from_ram(&state.wram_image()),
                 "typed ending host={host}"
             );
         }
@@ -3333,12 +3335,12 @@ fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
             && state.game_state.frame.main_module == 5 {
             let slot = state.selected_save_slot_index();
             assert_eq!(slot, menu_inputs.iter().filter(|&&v| v == 0x20).count());
-            assert_eq!(&state.ram[0xf000..0xf500], &state.sram[slot*0x500..slot*0x500+0x500],
+            assert_eq!(&state.wram_image()[0xf000..0xf500], &state.sram[slot*0x500..slot*0x500+0x500],
                 "selected save must be copied before LoadFile mutates live inventory");
             load_file_save_copy_checked = true;
         }
         if state.game_state.frame.main_module==0 && stop_submodule>=7 && state.game_state.frame.submodule>=5 {
-            assert_eq!(state.game_state.intro_sword,crate::game_state::IntroSwordState::load_from_ram(&state.ram),"typed sword host={host}");
+            assert_eq!(state.game_state.intro_sword,crate::game_state::IntroSwordState::load_from_ram(&state.wram_image()),"typed sword host={host}");
         }
         if (state.game_state.frame.main_module,state.game_state.frame.submodule)==stop
             && (name_inputs.is_empty() || naming_host>0)
@@ -3351,7 +3353,7 @@ fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
                     "the source LoadFile caller must publish the requested destination before returning");
             }
             if stop.0==4 && stop.1>=1 {
-                assert_eq!(read_le_u16(&state.ram,0x200)as usize,menu_inputs.iter().filter(|&&v|v==0x20).count()*0x500);
+                assert_eq!(read_le_u16(&state.wram_image(),0x200)as usize,menu_inputs.iter().filter(|&&v|v==0x20).count()*0x500);
                 if stop.1>=3 {
                     assert!(naming_irqs>0,"keyboard setup did not exercise its live scanline IRQ");
                     eprintln!("name keyboard setup compared {naming_irqs} IRQ acceptances with the naming request active");
@@ -3366,11 +3368,11 @@ fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
                         assert_eq!(read_le_u16(&state.sram,slot*0x500+0x3e5),0x55aa,"cold fixture must survive source SRAM validation");
                     }
                 }
-                assert_eq!(state.game_state.inventory.save_progress,crate::game_state::SaveProgressState::load_from_ram(&state.ram));
+                assert_eq!(state.game_state.inventory.save_progress,crate::game_state::SaveProgressState::load_from_ram(&state.wram_image()));
                 if stop.0==5 {
                     let slot=state.selected_save_slot_index();
                     assert_eq!(slot,menu_inputs.iter().filter(|&&v|v==0x20).count());
-                    assert_eq!(&state.ram[0xf000..0xf500],&state.sram[slot*0x500..slot*0x500+0x500]);
+                    assert_eq!(&state.wram_image()[0xf000..0xf500],&state.sram[slot*0x500..slot*0x500+0x500]);
                 }
             }
             if !name_inputs.is_empty() && stop==(1,1) {
@@ -3419,7 +3421,7 @@ fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press
             let base = crate::game_state::constants::HDMA_TABLE_DYNAMIC;
             expected_ram[base..base + source_spotlight_projection.len()]
                 .copy_from_slice(&source_spotlight_projection);
-            assert_eq!(state.ram.iter().zip(&expected_ram).enumerate()
+            assert_eq!(state.wram_image().iter().zip(&expected_ram).enumerate()
                 .find(|(_, (actual, expected))| actual != expected), None,
                 "physical RAM and relocated spotlight publication after following NMI");
             assert_eq!(state.ppu.vram, source.machine().snes().ppu.vram);

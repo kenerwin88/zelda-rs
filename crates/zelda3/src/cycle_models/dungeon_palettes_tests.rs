@@ -147,7 +147,7 @@ impl Fixture {
         let clock = source.machine().timeline().clone();
         let visited_native = matches!(owner, Owner::Visited(_)).then(|| {
             let mut native = crate::ZeldaState::new();
-            native.ram.copy_from_slice(&ram);
+            native.import_wram_image(&ram);
             native.sync_native_game_state_from_ram();
             native
         });
@@ -272,7 +272,7 @@ impl Fixture {
                 .unwrap();
             assert_eq!(actual, expected, "{label} pc{origin:06x}");
             if let Some(native) = self.visited_native.as_ref() {
-                assert_eq!(native.ram, self.ram, "{label}: native visited publications");
+                assert_eq!(*native.wram_image(), self.ram, "{label}: native visited publications");
                 if published {
                     let expected = crate::game_state::GameState::load_from_ram(&self.ram);
                     assert_eq!(native.game_state.dungeon.room_load, expected.dungeon.room_load,

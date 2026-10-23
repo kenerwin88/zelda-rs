@@ -55,7 +55,7 @@ fn reset_can_preserve_sram() {
 
     state.reset(true);
 
-    assert_eq!(state.ram[1], 0);
+    assert_eq!(state.read_wram_byte(1), 0);
     assert_eq!(state.sram[1], 2);
     assert_eq!(state.vram()[1], 0);
 }
@@ -117,7 +117,7 @@ fn save_quit_intro_memory_return_does_not_repeat_initialization() {
     staged.death_func15_save_quit_reset_state_before_dungeon_info_clear();
     assert_eq!(staged.ram[0x13], disable);
     assert_eq!(staged.game_state, atomic.game_state);
-    assert_eq!(staged.ram, atomic.ram);
+    assert_eq!(staged.ram, *atomic.wram_image());
 }
 
 #[test]
@@ -989,7 +989,7 @@ fn live_save_menu_initialization_holds_then_executes_the_c_endpoint_once() {
     ));
     held.module0e_0b_save_menu();
 
-    assert_eq!(held.ram.as_slice(), expected.ram.as_slice());
+    assert_eq!(held.ram.as_slice(), expected.wram_image().as_ref());
     assert_eq!(held.game_state.frame, expected.game_state.frame);
     assert_eq!(
         held.game_state.messaging.runtime,
@@ -1065,7 +1065,7 @@ fn snes_state_save_load_roundtrips_runtime_regions() {
             y_unit: 0x000e
         }
     );
-    assert_eq!(state.ram[HDMA_TABLE_DYNAMIC], 0xab);
+    assert_eq!(state.read_wram_byte(HDMA_TABLE_DYNAMIC), 0xab);
     assert_eq!(state.sram[0x22], 0x34);
     assert_eq!(state.ppu.cgram[7], 0x2468);
     assert!(state.ppu.bg_layer[1].tilemap_higher);
@@ -1165,7 +1165,7 @@ fn damaging_pit_reset_restores_ground_or_permabunny_state() {
     assert_eq!(link_test_byte(&state, LINK_IS_IN_DEEP_WATER), 0);
     assert_eq!(link_test_byte(&state, LINK_DISABLE_SPRITE_DAMAGE), 0);
     assert_eq!(state.game_state.player.follower_link.pit_data_index(), 0);
-    assert_eq!(state.ram[SWIMMING_COUNTDOWN], 0);
+    assert_eq!(state.read_wram_byte(SWIMMING_COUNTDOWN), 0);
     assert_eq!(
         state
             .game_state
@@ -1199,7 +1199,7 @@ fn set_to_deep_water_resets_swim_state_and_latches_direction() {
     );
     assert_eq!(state.game_state.player.follower_link.grabbing_wall(), 0);
     assert_eq!(state.game_state.player.follower_link.speed_setting(), 0);
-    assert_eq!(state.ram[SWIMMING_COUNTDOWN], 0);
+    assert_eq!(state.read_wram_byte(SWIMMING_COUNTDOWN), 0);
     assert_eq!(state.game_state.player.swim_acceleration.acceleration(0), 0);
 }
 
@@ -1249,7 +1249,7 @@ fn reset_all_acceleration_clears_swim_accel_pairs() {
         );
     }
     for offset in [SWIM_STROKE_FRAME_COUNTER, SWIM_STROKE_FRAME_COUNTER + 2] {
-        assert_eq!(read_le_u16(&state.ram, offset), 0);
+        assert_eq!(read_le_u16(&state.wram_image(), offset), 0);
     }
     assert_eq!(
         state
@@ -1276,7 +1276,7 @@ fn swim_movement_without_input_resets_idle_flag_moving_state() {
 
     assert_eq!(link_test_byte(&state, LINK_Y_VEL), 0);
     assert_eq!(link_test_byte(&state, LINK_X_VEL), 0);
-    assert_eq!(state.ram[PLAYER_DEFENSE_FLAGS] & 0x0f, 0);
+    assert_eq!(state.read_wram_byte(PLAYER_DEFENSE_FLAGS) & 0x0f, 0);
     assert_eq!(
         state
             .game_state
@@ -1285,7 +1285,7 @@ fn swim_movement_without_input_resets_idle_flag_moving_state() {
             .speed_active_flag(0),
         0
     );
-    assert_eq!(state.ram[PIT_CORRECTION_ACTIVE_FLAG], 0);
+    assert_eq!(state.read_wram_byte(PIT_CORRECTION_ACTIVE_FLAG), 0);
 }
 
 #[test]
@@ -1351,22 +1351,22 @@ fn first_frame_runs_startup_writes() {
 
     state.run_frame_internal(0, crate::RUN_MAIN);
 
-    assert_eq!(read_le_u16(&state.ram, ANIMATED_TILE_DATA_SRC), 0xa680);
+    assert_eq!(read_le_u16(&state.wram_image(), ANIMATED_TILE_DATA_SRC), 0xa680);
     assert_eq!(
         state.game_state.display.animated_tile_data_source_address,
         0xa680
     );
     // Exact Snes9x DMA trace at the first NMI upload: channels 3 and 8 read
     // from $7E:0000. These pointers remain zero until ROM code assigns them.
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_9), 0);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_14), 0);
-    assert_eq!(&state.ram[0..3], &[0x00, 0x80, 0x00]);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_9), 0);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_14), 0);
+    assert_eq!(&state.wram_image()[0..3], &[0x00, 0x80, 0x00]);
     assert_eq!(state.game_state.display.screen_brightness, 15);
-    assert_eq!(state.ram[FLAG_UPDATE_CGRAM_IN_NMI], 0);
+    assert_eq!(state.read_wram_byte(FLAG_UPDATE_CGRAM_IN_NMI), 0);
     assert_eq!(read_le_u16(&state.sram, 0x03e5), 0x55aa);
     assert_eq!(read_le_u16(&state.sram, 0x08e5), 0);
     assert_eq!(state.selected_save_slot_x2(), 0);
-    assert_eq!(read_le_u16(&state.ram, MAIN_PALETTE_BUFFER), 0);
+    assert_eq!(read_le_u16(&state.wram_image(), MAIN_PALETTE_BUFFER), 0);
 }
 
 #[test]
@@ -2493,7 +2493,7 @@ fn live_file_select_waiting_uses_all_four_source_continuation_shapes() {
 fn live_file_select_waiting_publishes_only_the_committed_low_wram_clear_prefix() {
     let mut state = live_file_select_waiting_state(false, false, 0, 968);
     state.ram[0x0d00..0x1000].fill(0x5a);
-    state.game_state.sprites.sprite_slots = SpriteSlotsState::load_from_ram(&state.ram);
+    state.game_state.sprites.sprite_slots = SpriteSlotsState::load_from_ram(&state.wram_image());
     let progress = FileSelectGraphicsLowWramClearProgress {
         word_offset: 0xfe,
         completed_page_stores: 1,
@@ -2510,13 +2510,13 @@ fn live_file_select_waiting_publishes_only_the_committed_low_wram_clear_prefix()
 
     state.run_frame_internal(0, crate::RUN_MAIN);
 
-    assert_eq!(&state.ram[0x0dfe..0x0e00], &[0, 0]);
-    assert_eq!(&state.ram[0x0efe..0x0f00], &[0x5a, 0x5a]);
-    assert_eq!(&state.ram[0x0ffe..0x1000], &[0x5a, 0x5a]);
+    assert_eq!(&state.wram_image()[0x0dfe..0x0e00], &[0, 0]);
+    assert_eq!(&state.wram_image()[0x0efe..0x0f00], &[0x5a, 0x5a]);
+    assert_eq!(&state.wram_image()[0x0ffe..0x1000], &[0x5a, 0x5a]);
     assert_eq!(state.ram[0x0dfc], 0x5a);
     assert_eq!(
         state.game_state.sprites.sprite_slots,
-        SpriteSlotsState::load_from_ram(&state.ram),
+        SpriteSlotsState::load_from_ram(&state.wram_image()),
     );
     assert!(state.original_timing_semantic_receipts.is_none());
 }
@@ -2526,7 +2526,7 @@ fn file_select_low_wram_clear_precedes_its_trailing_held_acceptance() {
     // Cold pinned-ROM host1019: [Held, Handler, ClearReturned, Held, Continued].
     let mut state = live_file_select_waiting_state(false, true, 0, 1019);
     state.ram[0x0d00..0x1000].fill(0x5a);
-    state.game_state.sprites.sprite_slots = SpriteSlotsState::load_from_ram(&state.ram);
+    state.game_state.sprites.sprite_slots = SpriteSlotsState::load_from_ram(&state.wram_image());
     state
         .original_timing_semantic_receipts
         .as_mut()
@@ -4231,38 +4231,38 @@ fn first_intro_step_matches_top_level_state_writes() {
         0x17fe
     );
     assert_eq!(
-        &state.ram[OAM_BUF..OAM_BUF + 16],
+        &state.wram_image()[OAM_BUF..OAM_BUF + 16],
         &[
             0x60, 0x68, 0x69, 0x32, 0x70, 0x68, 0x6b, 0x32, 0x80, 0x68, 0x6d, 0x32, 0x88, 0x68,
             0x6e, 0x32
         ]
     );
     assert_eq!(
-        &state.ram[BYTEWISE_EXTENDED_OAM..BYTEWISE_EXTENDED_OAM + 4],
+        &state.wram_image()[BYTEWISE_EXTENDED_OAM..BYTEWISE_EXTENDED_OAM + 4],
         &[2; 4]
     );
-    assert_eq!(state.ram[EXTENDED_OAM], 0xaa);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_3), 0x8080);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_0), 0x8280);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_4), 0x8840);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_1), 0x8a40);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_5), 0x9a40);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_2), 0x9a40);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_6), 0x9000);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_11), 0x9180);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_7), 0x9300);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_12), 0x93c0);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_8), 0x9480);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_13), 0x9560);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_10), 0xa480);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_15), 0xa580);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_16), 0xb940);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_18), 0xbb40);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_17), 0xb940);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_19), 0xbb40);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_20), 0xb540);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_21), 0xb740);
-    assert_eq!(read_le_u16(&state.ram, BG_TILE_ANIMATION_COUNTDOWN), 0xffff);
+    assert_eq!(state.read_wram_byte(EXTENDED_OAM), 0xaa);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_3), 0x8080);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_0), 0x8280);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_4), 0x8840);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_1), 0x8a40);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_5), 0x9a40);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_2), 0x9a40);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_6), 0x9000);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_11), 0x9180);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_7), 0x9300);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_12), 0x93c0);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_8), 0x9480);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_13), 0x9560);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_10), 0xa480);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_15), 0xa580);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_16), 0xb940);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_18), 0xbb40);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_17), 0xb940);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_19), 0xbb40);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_20), 0xb540);
+    assert_eq!(read_le_u16(&state.wram_image(), DMA_SOURCE_ADDR_21), 0xb740);
+    assert_eq!(read_le_u16(&state.wram_image(), BG_TILE_ANIMATION_COUNTDOWN), 0xffff);
     assert_eq!(link_test_word(&state, LINK_DMA_COUNTDOWN), 0xffff);
     assert_eq!(state.ppu.cgram[144], 0x7fff);
 }
@@ -4289,10 +4289,10 @@ fn intro_fade_in_bg_start_skips_to_file_select_loader() {
     assert_eq!(state.game_state.system_signals.music_control(), 0xf1);
     assert_eq!(state.game_state.frame.main_module, 1);
     assert_eq!(state.game_state.frame.submodule, 0);
-    assert_eq!(state.ram[RESTART_CHECK_FLAG], 1);
+    assert_eq!(state.read_wram_byte(RESTART_CHECK_FLAG), 1);
     assert_eq!(link_test_byte(&state, LINK_Y_COORD), 0);
-    assert_eq!(state.ram[LINK_Y_COORD + 0x6f], 0);
-    assert_eq!(state.ram[SAVE_DUNG_INFO], 0);
+    assert_eq!(state.read_wram_byte(LINK_Y_COORD + 0x6f), 0);
+    assert_eq!(state.read_wram_byte(SAVE_DUNG_INFO), 0);
 }
 
 #[test]

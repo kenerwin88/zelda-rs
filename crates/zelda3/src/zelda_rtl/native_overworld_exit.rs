@@ -179,10 +179,10 @@ struct ExitBus<'a> {
 impl ExitBus<'_> {
     fn read(&self, address: u32) -> u8 {
         if address & 0x400000 == 0 && address & 65535 < 0x2000 {
-            return self.state.ram[(address & 65535) as usize];
+            return self.state.read_wram_byte((address & 65535) as usize);
         }
         if (0x7e0000..0x800000).contains(&address) {
-            return self.state.ram[(address - 0x7e0000) as usize];
+            return self.state.read_wram_byte((address - 0x7e0000) as usize);
         }
         crate::cycle_models::player_animation::table_byte(address)
             .or_else(|| crate::cycle_models::overworld_camera::table_byte(address))
@@ -222,8 +222,9 @@ impl WorkBus for ExitBus<'_> {
                 } else {
                     panic!("exit store {a:06x}")
                 };
-                self.state.ram[offset..offset + usize::from(width)]
-                    .copy_from_slice(&value.to_le_bytes()[..usize::from(width)]);
+                for (byte, value) in value.to_le_bytes().into_iter().take(usize::from(width)).enumerate() {
+                    self.state.write_wram_byte(offset + byte, value);
+                }
                 self.state.native_overworld_exit_store(offset, value, width);
                 0
             }

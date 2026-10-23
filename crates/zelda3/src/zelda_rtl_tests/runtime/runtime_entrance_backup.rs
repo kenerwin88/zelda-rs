@@ -32,10 +32,10 @@ fn overworld_restore_reads_the_entrance_backup_owner() {
 
     state.LoadCachedEntranceProperties();
 
-    assert_eq!(state.ram[OVERWORLD_TILE_THEME_INDEX], 0x21);
-    assert_eq!(state.ram[MAIN_TILE_THEME_INDEX], 0x22);
-    assert_eq!(state.ram[AUX_TILE_THEME_INDEX], 0x23);
-    assert_eq!(state.ram[SPRITE_GRAPHICS_INDEX], 0x24);
+    assert_eq!(state.read_wram_byte(OVERWORLD_TILE_THEME_INDEX), 0x21);
+    assert_eq!(state.read_wram_byte(MAIN_TILE_THEME_INDEX), 0x22);
+    assert_eq!(state.read_wram_byte(AUX_TILE_THEME_INDEX), 0x23);
+    assert_eq!(state.read_wram_byte(SPRITE_GRAPHICS_INDEX), 0x24);
     assert_eq!(
         state.game_state.world.palette_theme.main_tile_theme_index(),
         0x22

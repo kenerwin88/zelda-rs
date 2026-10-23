@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn inventory_items_state_loads_from_and_projects_to_ram() {
+fn inventory_items_state_import_export_roundtrip() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[LINK_ITEM_BOW] = 7;
     ram[LINK_ITEM_BOW + 2] = 1;
@@ -16,18 +16,19 @@ fn inventory_items_state_loads_from_and_projects_to_ram() {
     assert_eq!(items.bottle(2), 5);
 
     let mut projected = vec![0; WRAM_SIZE];
-    items.write_to_ram(&mut projected);
+    items.export_owned(&mut projected);
     assert_eq!(InventoryItemsState::load_from_ram(&projected), items);
 }
 
 #[test]
-fn native_inventory_items_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+fn native_inventory_items_bridge_changes_only_the_owner() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[LINK_ITEM_MOON_PEARL] = 1;
     ram[LINK_BOTTLE_INFO] = 2;
     ram[LINK_BOTTLE_INFO + 2] = 2;
 
     let mut items = InventoryItemsState::load_from_ram(&ram);
+    let backing = ram.clone();
     {
         let mut bridge = NativeInventoryItemsBridgeMut::new(&mut items, &mut ram);
         bridge.set_inventory_item(0, 3);
@@ -43,12 +44,7 @@ fn native_inventory_items_bridge_syncs_seeded_ram_and_dual_writes_changes() {
     assert_eq!(items.bottle(0), 5);
     assert_eq!(items.bottle(1), 6);
     assert_eq!(items.bottle(2), 8);
-    assert_eq!(ram[LINK_ITEM_BOW], 3);
-    assert_eq!(ram[LINK_ITEM_BOW + 2], 1);
-    assert_eq!(ram[LINK_ITEM_MOON_PEARL], 1);
-    assert_eq!(ram[LINK_BOTTLE_INFO], 5);
-    assert_eq!(ram[LINK_BOTTLE_INFO + 1], 6);
-    assert_eq!(ram[LINK_BOTTLE_INFO + 2], 8);
+    assert_eq!(ram, backing);
 }
 
 #[test]
@@ -66,7 +62,8 @@ fn native_inventory_items_have_no_resource_copies_to_mask_in_coherence_check() {
         bridge.set_inventory_item(0, 2);
     }
 
-    assert_eq!(ram[LINK_ITEM_BOW], 2);
+    assert_eq!(items.bow(), 2);
+    assert_eq!(ram[LINK_ITEM_BOW], 0);
     assert_eq!(ram[LINK_ITEM_BOMBS], 3);
     assert_eq!(ram[LINK_ITEM_BOTTLE_INDEX], 1);
 }
@@ -239,7 +236,7 @@ fn save_progress_state_loads_from_and_projects_to_ram() {
     progress.set_dungeon_info_checksum(0x5a5a);
     progress.increment_pending_death_save_counter();
     progress.set_total_death_save_counter(0x0045);
-    progress.write_to_ram(&mut ram);
+    progress.export_runtime_to_image(&mut ram);
     progress.encode_progress_to_ram(&mut ram);
 
     assert_eq!(ram[CUR_PALACE_INDEX_X2], 8);
@@ -254,7 +251,7 @@ fn save_progress_state_loads_from_and_projects_to_ram() {
 }
 
 #[test]
-fn native_save_progress_bridge_syncs_seeded_ram_and_dual_writes_changes() {
+fn native_save_progress_bridge_changes_only_the_owner() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[SRAM_PROGRESS_FLAGS] = 0x10;
     ram[SRAM_PROGRESS_INDICATOR_3] = 0xff;
@@ -262,6 +259,7 @@ fn native_save_progress_bridge_syncs_seeded_ram_and_dual_writes_changes() {
     write_le_u16(&mut ram, SAVE_DUNG_INFO + 2, 0x0001);
 
     let mut progress = SaveProgressState::load_from_ram(&ram);
+    let backing = ram.clone();
     {
         let mut bridge = NativeSaveProgressBridgeMut::new(&mut progress, &mut ram);
         bridge.set_palace_index_x2(0xff);
@@ -300,21 +298,9 @@ fn native_save_progress_bridge_syncs_seeded_ram_and_dual_writes_changes() {
     assert_eq!(progress.pending_death_save_counter(), 0);
     assert_eq!(progress.total_death_save_counter(), 0x0055);
     assert_eq!(progress.dungeon_info_word(1), 0x0101);
-    assert_eq!(ram[CUR_PALACE_INDEX_X2], 0xfe);
-    assert_eq!(ram[WHICH_STARTING_POINT], 5);
-    assert_eq!(ram[SRAM_PROGRESS_INDICATOR], 3);
-    assert_eq!(ram[SRAM_PROGRESS_FLAGS], 0x22);
-    assert_eq!(ram[SRAM_PROGRESS_INDICATOR_3], 0x0f);
-    assert_eq!(ram[SAVEGAME_MAP_ICONS_INDICATOR], 6);
-    assert_eq!(ram[SAVEGAME_IS_DARKWORLD], 0);
-    assert_eq!(ram[HUD_CUR_ITEM], 2);
-    assert_eq!(ram[HUD_CUR_ITEM_R], 7);
-    assert_eq!(read_le_u16(&ram, DEATHS_PER_PALACE + 2), 0x0044);
-    assert_eq!(read_le_u16(&ram, PENDING_DEATH_SAVE_COUNTER), 0);
-    assert_eq!(read_le_u16(&ram, TOTAL_DEATH_SAVE_COUNTER), 0x0055);
-    assert_eq!(read_le_u16(&ram, SAVE_DUNG_INFO + 2), 0x0101);
-    assert_eq!(read_le_u16(&ram, SAVE_DUNG_INFO + 0x4fe), 0x1234);
-    assert_eq!(ram[HUD_POST_MESSAGE_REFRESH_FLAG], 0);
+    assert_eq!(progress.owned_byte(SAVE_DUNG_INFO + 0x4fe), Some(0x34));
+    assert_eq!(progress.owned_byte(SAVE_DUNG_INFO + 0x4ff), Some(0x12));
+    assert_eq!(ram, backing, "owner edits must not publish backing RAM");
 }
 
 #[test]
@@ -329,6 +315,7 @@ fn native_save_progress_bridge_composes_edits_after_explicit_import() {
     write_le_u16(&mut ram, SAVE_DUNG_INFO + 2, 0x0001);
 
     let mut progress = SaveProgressState::load_from_ram(&ram);
+    let backing = ram.clone();
 
     {
         let mut bridge = NativeSaveProgressBridgeMut::new(&mut progress, &mut ram);
@@ -347,12 +334,7 @@ fn native_save_progress_bridge_composes_edits_after_explicit_import() {
     assert_eq!(progress.hud_current_item(), 2);
     assert_eq!(progress.dungeon_info_word(1), 0x0101);
 
-    // ...and every edit still wrote through to RAM.
-    assert_eq!(ram[CUR_PALACE_INDEX_X2], 8);
-    assert_eq!(ram[SRAM_PROGRESS_FLAGS], 0x30);
-    assert_eq!(ram[SRAM_PROGRESS_INDICATOR_3], 0x0f);
-    assert_eq!(ram[HUD_CUR_ITEM], 2);
-    assert_eq!(read_le_u16(&ram, SAVE_DUNG_INFO + 2), 0x0101);
+    assert_eq!(ram, backing, "the imported image remains external storage");
 }
 
 #[test]
@@ -371,7 +353,7 @@ fn save_progress_projection_leaves_the_live_save_block_alone() {
     write_le_u16(&mut ram, LINK_RUPEES_GOAL, 0x0123);
 
     progress.set_palace_index_x2(6);
-    progress.write_to_ram(&mut ram);
+    progress.export_runtime_to_image(&mut ram);
 
     assert_eq!(ram[CUR_PALACE_INDEX_X2], 6, "own bytes still project");
     assert_eq!(ram[LINK_MAGIC_POWER], 0x50);

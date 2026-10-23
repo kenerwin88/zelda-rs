@@ -9,7 +9,7 @@ fn room_effects_setters_do_not_restamp_the_boss_prize_countdown() {
     let mut state = ZeldaState::new();
 
     state.world_transient_mut().begin_boss_prize_graphics_countdown();
-    assert_eq!(state.ram[BOSS_PRIZE_GRAPHICS_COUNTDOWN], 128);
+    assert_eq!(state.read_wram_byte(BOSS_PRIZE_GRAPHICS_COUNTDOWN), 128);
     assert_eq!(
         state.game_state.world.transient.boss_prize_graphics_countdown(),
         128
@@ -18,17 +18,17 @@ fn room_effects_setters_do_not_restamp_the_boss_prize_countdown() {
     state
         .world_transient_mut()
         .decrement_boss_prize_graphics_countdown();
-    assert_eq!(state.ram[BOSS_PRIZE_GRAPHICS_COUNTDOWN], 127);
+    assert_eq!(state.read_wram_byte(BOSS_PRIZE_GRAPHICS_COUNTDOWN), 127);
 
     // A room-effects mutation in the same frame re-projects that state's bytes.
     state
         .dungeon_room_effects_mut()
         .set_moving_wall_dot_pointer(1);
-    assert_eq!(state.ram[BOSS_PRIZE_GRAPHICS_COUNTDOWN], 127);
+    assert_eq!(state.read_wram_byte(BOSS_PRIZE_GRAPHICS_COUNTDOWN), 127);
 
     // The master projection publishes the owner's value, not a stale copy.
     state.project_native_game_state_to_ram();
-    assert_eq!(state.ram[BOSS_PRIZE_GRAPHICS_COUNTDOWN], 127);
+    assert_eq!(state.read_wram_byte(BOSS_PRIZE_GRAPHICS_COUNTDOWN), 127);
     assert_eq!(
         state.game_state.world.transient.boss_prize_graphics_countdown(),
         127

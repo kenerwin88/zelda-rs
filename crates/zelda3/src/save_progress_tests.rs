@@ -13,6 +13,9 @@ fn save_progress_effects_match_frozen_baseline() {
         for (index, byte) in game.ram.iter_mut().enumerate() {
             *byte = (index as u16).wrapping_mul(37).wrapping_add(seed * 13) as u8;
         }
+    { let image = game.ram.clone(); game.import_wram_image(&image); }
+        let seed_image = game.ram.clone();
+        game.import_wram_image(&seed_image);
         game.sync_native_game_state_from_ram();
         let mut digest = Sha256::new();
         for room in 0..320 {
@@ -43,24 +46,21 @@ fn save_progress_effects_match_frozen_baseline() {
         game.save_progress_mut()
             .set_total_death_save_counter(0xffff);
         game.save_progress_mut().set_dungeon_info_checksum(0x5a5a);
-        digest.update(&game.ram);
-        game.game_state
-            .inventory
-            .save_progress
-            .write_to_ram(&mut game.ram);
-        digest.update(&game.ram);
+        digest.update(&game.wram_image());
+        // The former runtime publication is now an unchanged wire observation.
+        digest.update(&game.wram_image());
         let save: Vec<u8> = (0..0x500)
             .map(|i| (i as u16 * 19 + seed * 7) as u8)
             .collect();
         game.replace_live_save(&save);
-        digest.update(&game.ram);
+        digest.update(&game.wram_image());
         game.save_progress_mut().request_post_message_refresh();
-        digest.update(&game.ram);
+        digest.update(&game.wram_image());
         game.clear_live_save();
-        digest.update(&game.ram);
+        digest.update(&game.wram_image());
         game.save_progress_mut().set_progress_indicator(2);
         game.save_progress_mut().or_dungeon_info_word(0x109, 0x82);
-        digest.update(&game.ram);
+        digest.update(&game.wram_image());
         results.push_str(&format!("{:x}\n", digest.finalize()));
     }
     assert_eq!(
@@ -143,6 +143,9 @@ fn native_progress_owns_only_its_records_and_mutates_without_save_bank_reload() 
     for (index, byte) in game.ram.iter_mut().enumerate() {
         *byte = (index * 37 + index / 251) as u8;
     }
+    { let image = game.ram.clone(); game.import_wram_image(&image); }
+    let seed_image = game.ram.clone();
+    game.import_wram_image(&seed_image);
     game.sync_native_game_state_from_ram();
     let captured = game.game_state.inventory.save_progress.clone();
     let encoded = bincode::serialize(&captured).unwrap();
@@ -162,7 +165,7 @@ fn native_progress_owns_only_its_records_and_mutates_without_save_bank_reload() 
         0xf3e7..0xf407,
         0xf4fe..0xf500,
     ] {
-        expected[range.clone()].copy_from_slice(&game.ram[range]);
+        expected[range.clone()].copy_from_slice(&game.wram_image()[range]);
     }
     assert_eq!(
         projected, expected,
@@ -173,7 +176,7 @@ fn native_progress_owns_only_its_records_and_mutates_without_save_bank_reload() 
     game.ram[0xf3c6] ^= 0xff;
     game.ram[0xf27e] ^= 0xff;
     game.player_resources_mut().set_current_health(0x38);
-    let foreign_before = game.ram[0xf280..0xf3c5].to_vec();
+    let foreign_before = game.wram_image()[0xf280..0xf3c5].to_vec();
     game.save_progress_mut().or_progress_flags(0x80);
     game.save_progress_mut().or_dungeon_info_word(319, 0x8000);
     assert_eq!(
@@ -187,9 +190,9 @@ fn native_progress_owns_only_its_records_and_mutates_without_save_bank_reload() 
             .dungeon_info_word(319),
         old_room | 0x8000
     );
-    assert_eq!(game.ram[0xf3c6], old_flags | 0x80);
-    assert_eq!(read_le_u16(&game.ram, 0xf27e), old_room | 0x8000);
-    assert_eq!(&game.ram[0xf280..0xf3c5], foreign_before);
+    assert_eq!(game.read_wram_byte(0xf3c6), old_flags | 0x80);
+    assert_eq!(read_le_u16(&game.wram_image(), 0xf27e), old_room | 0x8000);
+    assert_eq!(&game.wram_image()[0xf280..0xf3c5], foreign_before);
     assert_eq!(
         bincode::serialize(&captured).unwrap(),
         encoded,
@@ -204,9 +207,8 @@ fn extended_room_indices_preserve_the_source_save_word_contract() {
     let pattern: Vec<u8> = (0..0x20000).map(|i| (i * 37 + i / 251) as u8).collect();
     for room in 0..=640 {
         let mut game = ZeldaState::new();
-        game.ram.clone_from(&pattern);
+        game.import_wram_image(&pattern);
         game.sync_native_game_state_from_ram();
-        let resources_before = game.game_state.inventory.player_resources.clone();
         let before = if room < 640 {
             read_le_u16(&pattern, 0xf000 + room * 2)
         } else {
@@ -220,7 +222,7 @@ fn extended_room_indices_preserve_the_source_save_word_contract() {
             write_le_u16(&mut expected, 0xf000 + room * 2, flags);
         }
         assert_eq!(
-            game.ram, expected,
+            *game.wram_image(), expected,
             "room index {room}: missing or extra write"
         );
         assert_eq!(
@@ -229,11 +231,12 @@ fn extended_room_indices_preserve_the_source_save_word_contract() {
         );
         assert_eq!(
             game.game_state.inventory.save_progress,
-            crate::game_state::SaveProgressState::load_from_ram(&game.ram)
+            crate::game_state::SaveProgressState::load_from_ram(&game.wram_image())
         );
         assert_eq!(
-            game.game_state.inventory.player_resources, resources_before,
-            "aliased resource writes must retain their original import timing"
+            game.game_state.inventory.player_resources,
+            crate::game_state::InventoryState::load_from_ram(&expected).player_resources,
+            "aliased resource writes retire at the source word"
         );
     }
 }

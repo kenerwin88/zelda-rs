@@ -1,7 +1,8 @@
 # Native ownership pilot: state v2
 
-Step 2a, with the optional step 2b export change. Step 2c is deliberately pending
-reviewer full-route v2 baselines. No native ownership ranges are enabled.
+Step 2a, with the optional step 2b export change, landed in `6fe0b9fb`.
+The original verification below predates production ownership ranges. Current
+step 2c results follow at the end of this document.
 
 ## Hash contract and audit
 
@@ -169,3 +170,196 @@ done
 No GPU or Snes9x execution, oracle-cache writes, commits, pushes, `cargo fmt`,
 engine field migrations, or repository one-off scripts were used. The reviewer
 must record full-route v2 baselines before step 2c proceeds.
+
+## Step 2c: resources and equipment
+
+The first owner now stores its live bytes only in native fields:
+
+| Owner | Inclusive ranges | Bytes |
+|---|---|---:|
+| PlayerResourcesState, including magic | `004ca`, `0f343`, `0f34f`, `0f360..0f377`, `0f379..0f37b` | 30 |
+| InventoryItemsState | `0f340..0f342`, `0f344..0f34e`, `0f350..0f35f` | 30 |
+
+The registry combines these disjoint fields into three contiguous ranges:
+`004ca`, `0f340..0f377`, and `0f379..0f37b`. Its narrow codecs read/write
+individual owner bytes, including either half of native words. Equipment,
+bottles, and the reserved equipment byte are lossless. Bombs and bottle selection
+remain in resources. Neither owner has a competing projection in the ownership
+audit.
+
+Migration counts: 44 production resource mutators, 10 production equipment
+mutators, five magic mutators, and eight test-only setters now change the owner
+without publishing RAM. Thirteen raw address-reading sites were redirected:
+five menu inventory scans, the wishing-pond lookup, two bunny capability checks,
+two dungeon-return rupee reads, and three ItemBus/HDMA reads. The existing
+semantic HUD, sprite, and ancilla consumers continue reading these same owners.
+
+Deleted synchronization includes 46 resource `sync()` calls and their coherence
+assertions, four equipment bulk publications and the award-byte publication,
+five magic publications, both master projections, and six deferred import calls.
+Magic's import/publication helpers and equipment capability re-adoption are gone.
+External image seeding still uses the registry codecs. Legacy refreshes preserve
+the live resource/equipment structs.
+
+Save clear, replacement, and extended room-word aliases retire each source word
+through the byte owners. A mixed equipment/resource word is visible immediately;
+there is no later resource adoption. Checksum portions still export at their
+observation points. Startup cycle instructions use temporary wire images and
+retire them before native callbacks; they never materialize owned values into
+backing RAM. Cold `$55` fill, zero resets, replay patches, and both provisional
+overworld rollback paths also respect the ownership boundary.
+
+`PLAY_CRASH_CHECKPOINT_MAGIC` is `Z3RSPC23`. Field layout is unchanged, but old
+paired checkpoints may contain native resource fields saved before deferred
+adoption. They must be rejected rather than treated as authoritative owners.
+The old-header rejection test passes.
+
+### Resource-owner verification
+
+Artifacts: `/tmp/zelda3-ownership-2c.zP2HU7`. Baselines were recorded for
+200,000 frames per mode using the unchanged `target/state-ledger/zelda3-native2`
+executable, SHA-256 `5c6f61a47e27dcbfde4358f4949a351a60ea101cceb02f9b88fc5dc5b0ba2618`.
+Their compressed SHA-256 values remain the default and lag-free values listed
+in the original v2 verification above.
+
+Final owner executable: `zelda3-resources23` in that artifact directory,
+SHA-256 `a377750b763b603b5e4e68b7a23e35c2d79d58622134307560a1d5393c37363c`.
+
+| Mode | Normal comparison | Poison comparison |
+|---|---|---|
+| default | 200,000 records + EOF matched, 244.745 s | 200,000 records + EOF matched, 308.426 s |
+| lag-free | 200,000 records + EOF matched, 240.654 s | 200,000 records + EOF matched, 308.224 s |
+
+The 20k lag-free coherence smoke reports zero new `(frame, step, domain)`
+entries: 440,709 before versus 440,700 after, removing nine inventory entries.
+See `coherence-owner23-comparison.json` and the paired logs.
+
+- Parity binary build: passed without warnings.
+- Parity Zelda library test compilation: passed with the same 24 warnings.
+- Release check without default features: passed without warnings.
+- Full SNES/Zelda library suite: SNES 504 passed / 7 ignored; Zelda 2,450
+  passed / 3 ignored / only the known spotlight-caller-return failure. It is the
+  unchanged line-410 `Some(1047868)` versus `Some(170442)` mismatch. The Zelda
+  run completed in 902.96 seconds; see `tests-resources-final-gate.log`.
+- Dual-ownership audit: 114 to 112 projecting structs, 86 to 84 master-reachable
+  structs, zero to three registered ranges / 60 bytes. Existing 60 overlap bytes,
+  nine informational bridge overlaps, and zero high-risk same-mode overlaps are
+  unchanged; the script retains its existing exit 1.
+- `git diff --check`: passed.
+
+Updated tests seed owned bytes through the registry or owner setters, compare
+complete cartridge images with `wram_image()`, and use owner-aware byte reads
+inside scalar assertion loops. This includes native inventory/player/magic
+tests; item-award, player-component, player-collision, tile-behavior, and
+save-progress frozen receipts; HUD/refill and dungeon-return tests; the item and
+spotlight bus fixtures; and source-cycle/runtime snapshot comparisons. Frozen
+golden files were not changed. The save-alias test now requires immediate
+resource retirement instead of the obsolete deferred mirror expectation.
+
+These are bounded Rust regression checks, not a full-route or external A/V
+claim. No GPU, external Snes9x execution, oracle-cache writes, commits, pushes,
+`cargo fmt`, or repository one-off scripts were used.
+
+## Step 2c: save-progress owner
+
+SaveProgressState adds 687 exclusive bytes, with these inclusive ranges:
+`00202..00204`, `0040c`, `00656..00658`, `0f000..0f27f`,
+`0f3c5..0f3ca`, `0f3e7..0f406`, and `0f4fe..0f4ff`. The complete registry
+now has ten ranges and 747 bytes. This includes 320 room words, fourteen palace
+death words, the two death counters, checksum, six story bytes, and seven HUD/
+runtime bytes. The byte codec preserves the untouched half of every word,
+including the odd-address death records and words split between domains.
+
+All 25 bridge mutators now write only the owner. The four byte/word/HUD/room
+publication helpers, runtime master projection, seven-byte constructor import,
+live-save re-adoption, and save-progress RAM coherence assertions are removed.
+The shared live word reader uses the same owner-aware byte lookup as ItemBus.
+Room aliases, clear/copy words, checkpoints, and source-cycle accesses therefore
+observe the current owner at the access point. Unregistered save bytes still use
+backing RAM.
+
+The final boundary audit also redirects eleven generic store sites (two properties,
+one exit bus, four overlay, four spotlight) and both exit-bus WRAM read sites
+through the byte gateway. In particular, the properties caller's `$040c` word
+previously published the owned low byte both before and after its semantic store.
+A regression now checks six owned byte destinations, unchanged poisoned backing
+storage, and immediate visibility of the unowned `$040d` companion byte. This
+candidate supersedes the initial progress24 binary and repeats its full matrix.
+
+The former out-of-range HUD-slot implementation briefly held a clamped R mirror
+while publishing the primary selection into the R wire byte. The sole owner now
+holds that published value immediately. Frozen save receipts remain unchanged.
+`PLAY_CRASH_CHECKPOINT_MAGIC` is `Z3RSPC24`: older checkpoints can retain deferred
+progress-runtime mirrors even though the positional field layout is unchanged.
+
+Verification executable: `/tmp/zelda3-ownership-2c.zP2HU7/zelda3-progress24-boundary`,
+SHA-256 `3e8092de3181a7d3325eafbd38caa6d77533958feb1abf3ded80242aebc540f8`.
+The original pinned native2 baselines are reused without re-blessing.
+
+| Mode | Normal comparison | Poison comparison |
+|---|---|---|
+| default | 200,000 records + EOF matched, 200.958 s | 200,000 records + EOF matched, 197.152 s |
+| lag-free | 200,000 records + EOF matched, 207.834 s | 200,000 records + EOF matched, 193.363 s |
+
+- The final 20k lag-free coherence smoke has zero new reports and the same
+  440,700 `(frame, step, domain)` entries as the accepted resource-owner run.
+  See `coherence-progress-boundary-comparison.json` and the paired logs.
+- The final parity binary build passes without warnings. Library test compilation
+  retains exactly the same 24 warning headings. The final release check without
+  default features passes without warnings (20.42 seconds).
+- Full library acceptance: SNES 504 passed / 7 ignored; Zelda 2,451 passed /
+  3 ignored / only the known spotlight-caller-return failure (1,005.78 seconds).
+  The failure is the unchanged line-410 `Some(1047868)` versus `Some(170442)`.
+  See `tests-progress-boundary.log`. Repaired fixtures cover sprite-prefix
+  handoff, staged overworld screen comparison, rain instruction/resume edges,
+  witch room-word flags, smithy progress flags, and room-tag handoff. The latter
+  now compares both exported images, including owned `$04ca`. All six repairs
+  and the new properties no-publication regression pass in this full run.
+- The ownership audit moves 112 to 111 projecting structs and 84 to 83 master
+  projections. Its existing 60 overlap bytes, nine informational bridge overlaps,
+  zero high-risk overlaps, and exit 1 remain unchanged.
+
+Fixture updates preserve the original source inputs: seed generators write an
+external cartridge image and import it through the registry. Custom fixture
+buses use owner-aware reads and stores. Complete comparisons use exported images;
+individual byte assertions use the fast byte accessor. The native progress
+bridge tests now require backing RAM to stay unchanged. Historical standalone
+projection hashes explicitly export the seven runtime bytes into their test
+buffers. No frozen golden data was changed.
+
+## Step 2c stop: frame ownership needs explicit mode context
+
+Stopped at FrameState, before changing its storage or registering any of its six
+bytes: `00010..00011`, `0001a`, `000b0`, `0010c`, and `00fc1`.
+SystemSignalsState is also unchanged; it was not advanced past this stopping point.
+
+This is a cross-owner API dependency, rather than an overlapping FrameState
+projection reported by the ownership scanner:
+
+- `SaveLoadTransferState::write_to_ram` (`native/misc.rs:348`) reads
+  `RamTarget::read_byte(MAIN_MODULE)` to decide whether `$0000` is save-transfer
+  state or active dungeon sprite/OAM scratch. The master currently publishes
+  FrameState first (`native.rs:483`), implicitly supplying this mode context.
+- `NativeDungeonMapDisplayBridgeMut::sync_marker_offsets` (`native/misc.rs:625`)
+  reads backing `ram[$0010]` before publishing `$0fa8/$0faa`. In module 7 these
+  bytes are live dungeon hitbox work, not the map's stale marker offsets.
+  The adopting bridge holds only the map state and `&mut [u8]`, with no
+  FrameState reference or explicit mode parameter.
+- Three further mode gates in coherence reporting (`native.rs:450`,
+  `native/misc.rs:406`, and `native/world.rs:2203`) also consume the same byte.
+  These gates must receive the actual owner context when migrated.
+
+With native `main_module = 7` and poisoned backing `$0010 = $a5`, the current
+save-transfer projector takes its non-dungeon branch and writes `$0000`; the map
+bridge likewise takes its marker-publication branch and overwrites hitbox work.
+This follows directly from the two guards above. Removing frame publication and
+adding a narrow frame codec cannot repair those consumers: both APIs lack access
+to the frame owner. Re-exporting frame bytes into RAM would violate sole storage.
+The prerequisite is to thread explicit native mode context through these
+projector/bridge APIs and their callers, then migrate every frame reader/writer
+and run a separate ownership matrix. No partial frame conversion was retained.
+
+Audit evidence: `whoowns-frame-main.txt` and `dual-progress-boundary.txt` in the
+same `/tmp/zelda3-ownership-2c.zP2HU7` directory. The accepted work remains ten
+registered ranges / 747 bytes, checkpoint magic `Z3RSPC24`. Final
+`git diff --check` passes. No commit or push was performed.

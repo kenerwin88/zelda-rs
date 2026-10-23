@@ -32,7 +32,7 @@ fn overworld_proximity_scan_can_pause_inside_a_column_and_resume() {
     let staged_checks = staged.finish_overworld_proximity_cell_scan(scan);
 
     assert_eq!(staged_checks, expected_checks);
-    assert_eq!(staged.ram, atomic.ram);
+    assert_eq!(staged.ram, *atomic.wram_image());
     assert_eq!(
         staged.game_state.display.ppu_scroll_copy.bg2_h_copy2(),
         0x1234
@@ -81,7 +81,7 @@ fn overworld_reload_caller_resumes_without_repeating_presence_or_reset() {
     let actual = staged.finish_overworld_sprite_reload_scan(work);
 
     assert_eq!(actual, expected);
-    assert_eq!(staged.ram, atomic.ram);
+    assert_eq!(staged.ram, *atomic.wram_image());
     assert_eq!(staged.overworld_horizontal_scroll_delta_low(), 2);
 }
 
@@ -230,7 +230,7 @@ fn standard_guard_parry_checkpoint_keeps_the_second_body_pending() {
             continuation,
         );
         assert_eq!(staged.game_state, atomic.game_state);
-        assert_eq!(staged.ram, atomic.ram);
+        assert_eq!(staged.ram, *atomic.wram_image());
         assert_eq!(staged.game_state.frame.submodule, 0x25);
         assert_eq!(staged.sprite_slot_view(10).deflection_bits(), 0x20);
     }
@@ -273,7 +273,7 @@ fn standard_guard_patrol_checkpoint_restores_initializer_after_each_nested_call(
             continuation,
         );
         assert_eq!(staged.game_state, atomic.game_state);
-        assert_eq!(staged.ram, atomic.ram);
+        assert_eq!(staged.ram, *atomic.wram_image());
         assert_eq!(staged.game_state.frame.submodule, 0x25);
         assert_eq!(staged.sprite_slot_view(10).deflection_bits(), 0x20);
     }
@@ -312,7 +312,7 @@ fn hog_spear_initializer_body_return_preserves_nested_caller() {
         );
         staged.complete_guard_animation_at_checkpoint(10, continuation);
         assert_eq!(staged.game_state, atomic.game_state);
-        assert_eq!(staged.ram, atomic.ram);
+        assert_eq!(staged.ram, *atomic.wram_image());
         assert_eq!(staged.game_state.frame.submodule, 0x23);
     }
 }
@@ -355,7 +355,7 @@ fn standard_guard_tile_collision_checkpoint_restores_initializer_after_each_nest
             continuation,
         );
         assert_eq!(staged.game_state, atomic.game_state);
-        assert_eq!(staged.ram, atomic.ram);
+        assert_eq!(staged.ram, *atomic.wram_image());
         assert_eq!(staged.game_state.frame.submodule, 0x25);
         assert_eq!(staged.sprite_slot_view(10).deflection_bits(), 0x20);
     }

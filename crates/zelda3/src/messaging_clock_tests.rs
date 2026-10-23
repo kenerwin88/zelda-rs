@@ -34,7 +34,7 @@ fn runtime_initializer_keeps_its_clock_and_state_through_held_hosts() {
             stack_address: 0x01f7, stack_bytes: &[0x45, 0xc4, 0, 0x4d, 0xf8, 0, 0x59, 0x80, 0],
             ..super::super::DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
         };
-        let mut source = RomCpuTimingRun::new(&rom, &state.ram, &state.sram,
+        let mut source = RomCpuTimingRun::new(&rom, &state.wram_image(), &state.sram,
             &state.ppu, &state.dma, [0; 4], checkpoint).unwrap();
         source.restore_original_dialogue_pointer_table().unwrap();
         let mut budget = CpuCycleBudget::until_next_nmi_acceptance_in_field(
@@ -53,7 +53,7 @@ fn runtime_initializer_keeps_its_clock_and_state_through_held_hosts() {
             for range in [0x1cd0..0x1cf0, 0x720..0x728, 0x11a..0x126,
                 0x10000..0x10800, 0x11200..0x12000, 0x14000..0x15000] {
                 for address in range {
-                    assert_eq!(state.ram[address], source.ram_byte(address), "field={field} address={address:05x}");
+                    assert_eq!(state.read_wram_byte(address), source.ram_byte(address), "field={field} address={address:05x}");
                 }
             }
             if let Some(owner) = state.clocked_dialogue_initialization_caller.as_ref() {
@@ -99,7 +99,7 @@ fn scheduled_initialization_retains_native_caller_until_return() {
     state.prepare_text_character_buffer_for_carry();
     assert_eq!(state.dialogue_initialization_caller.as_ref().unwrap().initialization.phase,
         TextInitializationPhase::Tail);
-    assert_eq!(state.ram, legacy.ram, "held decoder publication");
+    assert_eq!(*state.wram_image(), legacy.ram, "held decoder publication");
     assert_eq!(state.paired_resume_cpu_boundary_blocker(),
         Some("retained-dialogue-initialization-caller"));
     state.interrupt_nmi_with_animated_bg_operands(0, None, false, None);
@@ -113,7 +113,7 @@ fn scheduled_initialization_retains_native_caller_until_return() {
     state.complete_post_trailing_nmi_continuation(
         GameWorkContinuation::FinishDialogueInitializationCallerReturn, 0, false, false);
     assert!(state.dialogue_initialization_caller.is_none());
-    assert_eq!(state.ram, legacy.ram, "completed native caller publication");
+    assert_eq!(*state.wram_image(), legacy.ram, "completed native caller publication");
     assert_eq!(state.last_nmi_prepare_sprites_master_cycles, legacy.last_nmi_prepare_sprites_master_cycles);
     assert_eq!(state.main_loop_caller_phase,
         crate::cycle_models::main_wait::MainLoopCallerPhase::Waiting);
@@ -196,7 +196,7 @@ fn native_initialization_caller_keeps_one_clock_across_held_nmis() {
                     };
                     let mut source = RomCpuTimingRun::new(
                         &rom,
-                        &state.ram,
+                        &state.wram_image(),
                         &state.sram,
                         &state.ppu,
                         &timing_dma,
@@ -284,7 +284,7 @@ fn native_initialization_caller_keeps_one_clock_across_held_nmis() {
                                 ] {
                                     for address in range {
                                         assert_eq!(
-                                            state.ram[address],
+                                            state.read_wram_byte(address),
                                             source.ram_byte(address),
                                             "caller return address={address:05x}"
                                         );
@@ -330,7 +330,7 @@ fn native_initialization_caller_keeps_one_clock_across_held_nmis() {
                             ] {
                                 for address in range {
                                     assert_eq!(
-                                        state.ram[address],
+                                        state.read_wram_byte(address),
                                         source.ram_byte(address),
                                         "entry={entry:?} NMI address={address:05x}"
                                     );
@@ -379,7 +379,7 @@ fn glyph_return_caller_keeps_source_clock_and_state_through_held_nmi() {
                 stack_address: 0x1f7,stack_bytes: &[0x45,0xc4,0,0x4d,0xf8,0,0x59,0x80,0],
                 waiting: false,..super::super::DUNGEON_MAIN_WAIT_CPU_CHECKPOINT
             };
-            let mut source = RomCpuTimingRun::new(&rom,&state.ram,&state.sram,
+            let mut source = RomCpuTimingRun::new(&rom,&state.wram_image(),&state.sram,
                 &state.ppu,&state.dma,[0;4],checkpoint).unwrap();
             let mut budget = CpuCycleBudget::until_next_nmi_acceptance_in_field(
                 field,entry,CpuBusWorkload::with_dynamic_hdma());
@@ -394,7 +394,7 @@ fn glyph_return_caller_keeps_source_clock_and_state_through_held_nmi() {
                     assert!(step < 199_999,"source return failed to reach NMI");
                 }
                 for range in [0x11a..0x126,0x120..0x130,0x710..0x712,0x800..0xa00,0xa20..0xaa0] {
-                    for address in range { assert_eq!(state.ram[address],source.ram_byte(address),
+                    for address in range { assert_eq!(state.read_wram_byte(address),source.ram_byte(address),
                         "field={field} entry={entry:?} address={address:04x}"); }
                 }
                 if let Some(owner) = state.clocked_dialogue_return_caller.as_ref() {

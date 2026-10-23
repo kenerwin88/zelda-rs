@@ -340,5 +340,5 @@ fn returning_smithy_homecoming_state1_clears_immobilized() {
     s.smithy_homecoming(k);
     assert!(!s.game_state.player.follower_link.is_immobilized());
     assert_eq!(s.sprite_slot_view(k).direction(), 1);
-    assert_eq!(s.ram[SRAM_PROGRESS_INDICATOR_3] & 32, 32);
+    assert_eq!(s.game_state.inventory.save_progress.progress_indicator_3() & 32, 32);
 }

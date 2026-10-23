@@ -10,7 +10,7 @@ use crate::types::read_le_u16;
 fn overworld_big_door_reads_the_dungeon_door_owner() {
     let mut state = ZeldaState::new();
     state.dungeon_doors_mut().set_door_animation_step(3);
-    assert_eq!(read_le_u16(&state.ram, DOOR_ANIMATION_STEP_INDICATOR), 3);
+    assert_eq!(read_le_u16(&state.wram_image(), DOOR_ANIMATION_STEP_INDICATOR), 3);
 
     state.module09_09_open_big_door_from_exiting();
 

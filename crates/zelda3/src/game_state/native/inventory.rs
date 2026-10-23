@@ -30,10 +30,7 @@ impl InventoryState {
 
     pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
         self.dungeon_key_slots.write_to_ram(ram);
-        self.player_resources.write_to_ram(ram);
         self.mirror_warp.write_to_ram(ram);
-        self.save_progress.write_to_ram(ram);
-        self.items.write_to_ram(ram);
     }
 }
 
@@ -47,9 +44,6 @@ macro_rules! equipment_fields {
         impl EquipmentItem {
             pub(crate) fn from_inventory_index(index: usize) -> Option<Self> {
                 match index { $($index => Some(Self::$kind),)+ _ => None }
-            }
-            fn inventory_index(self) -> usize {
-                match self { $(Self::$kind => $index,)+ }
             }
         }
 
@@ -70,9 +64,25 @@ macro_rules! equipment_fields {
                     bottles: std::array::from_fn(|i| ram_byte(ram, LINK_BOTTLE_INFO + i)),
                 }
             }
-            pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
-                $(ram.write_byte(LINK_ITEM_BOW + $index, self.$field);)+
-                ram.write_range(LINK_BOTTLE_INFO..LINK_BOTTLE_INFO + BOTTLE_SLOT_COUNT, &self.bottles);
+            #[cfg(test)]
+            pub(crate) fn export_owned(&self, image: &mut [u8]) {
+                $(image[LINK_ITEM_BOW + $index] = self.$field;)+
+                image[LINK_BOTTLE_INFO..LINK_BOTTLE_INFO + BOTTLE_SLOT_COUNT].copy_from_slice(&self.bottles);
+            }
+            fn owned_byte(&self, address: usize) -> Option<u8> {
+                match address {
+                    $(a if a == LINK_ITEM_BOW + $index => Some(self.$field),)+
+                    a if (LINK_BOTTLE_INFO..LINK_BOTTLE_INFO + BOTTLE_SLOT_COUNT).contains(&a) => Some(self.bottles[a - LINK_BOTTLE_INFO]),
+                    _ => None,
+                }
+            }
+            fn write_owned_byte(&mut self, address: usize, value: u8) -> bool {
+                match address {
+                    $(a if a == LINK_ITEM_BOW + $index => self.$field = value,)+
+                    a if (LINK_BOTTLE_INFO..LINK_BOTTLE_INFO + BOTTLE_SLOT_COUNT).contains(&a) => self.bottles[a - LINK_BOTTLE_INFO] = value,
+                    _ => return false,
+                }
+                true
             }
             pub(crate) fn equipment(&self, item: EquipmentItem) -> u8 {
                 match item { $(EquipmentItem::$kind => self.$field,)+ }
@@ -219,13 +229,6 @@ impl InventoryItemsState {
         self.flippers != 0
     }
 
-    /// Legacy player entry can follow a save transfer or overlapping save-word
-    /// write. Observe those two capabilities in their sole native owner.
-    pub(crate) fn import_player_capabilities(&mut self, ram: &[u8]) {
-        self.flippers = ram_byte(ram, LINK_ITEM_FLIPPERS);
-        self.moon_pearl = ram_byte(ram, LINK_ITEM_MOON_PEARL);
-    }
-
     pub(crate) fn flippers(&self) -> u8 {
         self.flippers
     }
@@ -287,37 +290,26 @@ impl InventoryItemsState {
 
 pub(crate) struct NativeInventoryItemsBridgeMut<'a> {
     items: &'a mut InventoryItemsState,
-    ram: &'a mut [u8],
 }
 
 impl<'a> NativeInventoryItemsBridgeMut<'a> {
-    pub(crate) fn new(items: &'a mut InventoryItemsState, ram: &'a mut [u8]) -> Self {
-        Self { items, ram }
+    pub(crate) fn new(items: &'a mut InventoryItemsState, _ram: &'a mut [u8]) -> Self {
+        Self { items }
     }
 
-    fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.items, InventoryItemsState::load_from_ram(self.ram));
-    }
-
-    /// Publish just the awarded equipment byte at the existing compatibility
-    /// boundary. Do not restamp unrelated inventory bytes during an award.
     pub(crate) fn grant_equipment(&mut self, item: EquipmentItem, value: u8) {
         self.items.set_equipment(item, value);
-        self.ram[LINK_ITEM_BOW + item.inventory_index()] = value;
     }
 
     pub(crate) fn grant_equipment_if_empty(&mut self, item: EquipmentItem, value: u8) {
-        // Preserve the legacy conditional's observation point while remaining
-        // raw-memory consumers are migrated.
-        if self.ram[LINK_ITEM_BOW + item.inventory_index()] == 0 {
+        // Observe the current equipment at the source conditional.
+        if self.items.equipment(item) == 0 {
             self.grant_equipment(item, value);
         }
     }
 
     pub(crate) fn set_inventory_item(&mut self, index: usize, value: u8) {
         self.items.set_inventory_item(index, value);
-        self.items.write_to_ram(self.ram);
-        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_mushroom(&mut self, value: u8) {
@@ -368,25 +360,15 @@ impl<'a> NativeInventoryItemsBridgeMut<'a> {
 
     pub(crate) fn set_bottle(&mut self, index: usize, value: u8) {
         self.items.set_bottle(index, value);
-        self.items.write_to_ram(self.ram);
-        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn fill_first_empty_bottle_with(&mut self, value: u8) -> bool {
         let filled = self.items.fill_first_empty_bottle_with(value);
-        if filled {
-            self.items.write_to_ram(self.ram);
-        }
-        self.debug_assert_matches_ram();
         filled
     }
 
     pub(crate) fn replace_first_empty_bottle_with(&mut self, value: u8) -> bool {
         let replaced = self.items.replace_first_empty_bottle_with(value);
-        if replaced {
-            self.items.write_to_ram(self.ram);
-        }
-        self.debug_assert_matches_ram();
         replaced
     }
 }
@@ -630,6 +612,13 @@ pub(crate) struct PlayerResourcesState {
 }
 
 impl PlayerResourcesState {
+    #[cfg(test)]
+    pub(crate) fn export_owned(&self, image: &mut [u8]) {
+        for address in [0x4ca, 0xf343, 0xf34f].into_iter().chain(0xf360..=0xf377).chain(0xf379..=0xf37b) {
+            image[address] = self.owned_byte(address).unwrap();
+        }
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             magic: PlayerMagicState::load_from_ram(ram),
@@ -658,38 +647,81 @@ impl PlayerResourcesState {
         }
     }
 
-    pub(crate) fn write_to_ram<R: RamTarget + ?Sized>(&self, ram: &mut R) {
-        self.magic.publish_amount(ram);
-        self.publish_resource_fields(ram);
+    pub(crate) fn owned_byte(&self, address: usize) -> Option<u8> {
+        match address {
+            LINK_ITEM_BOMBS => Some(self.bombs),
+            LINK_ITEM_BOTTLE_INDEX => Some(self.equipped_bottle_index),
+            a if (LINK_RUPEES_GOAL..LINK_RUPEES_GOAL + 2).contains(&a) => Some(self.rupees_goal.to_le_bytes()[a - LINK_RUPEES_GOAL]),
+            a if (LINK_RUPEES_ACTUAL..LINK_RUPEES_ACTUAL + 2).contains(&a) => Some(self.rupees_actual.to_le_bytes()[a - LINK_RUPEES_ACTUAL]),
+            a if (LINK_COMPASS..LINK_COMPASS + 2).contains(&a) => Some(self.compass_flags.to_le_bytes()[a - LINK_COMPASS]),
+            a if (LINK_BIGKEY..LINK_BIGKEY + 2).contains(&a) => Some(self.big_key_flags.to_le_bytes()[a - LINK_BIGKEY]),
+            a if (LINK_DUNGEON_MAP..LINK_DUNGEON_MAP + 2).contains(&a) => Some(self.dungeon_map_flags.to_le_bytes()[a - LINK_DUNGEON_MAP]),
+            LINK_RUPEES_IN_POND => Some(self.rupees_in_pond),
+            LINK_HEART_PIECES => Some(self.heart_pieces),
+            LINK_HEALTH_CAPACITY => Some(self.health_capacity),
+            LINK_CURRENT_HEALTH => Some(self.current_health),
+            LINK_NUM_KEYS => Some(self.keys),
+            LINK_BOMB_UPGRADES => Some(self.bomb_upgrade_level),
+            LINK_ARROW_UPGRADES => Some(self.arrow_upgrade_level),
+            LINK_HEARTS_FILLER => Some(self.heart_filler),
+            LINK_WHICH_PENDANTS => Some(self.pendant_flags),
+            LINK_BOMB_FILLER => Some(self.bomb_filler),
+            LINK_ARROW_REFILL_COUNTER => Some(self.arrow_filler),
+            LINK_NUM_ARROWS => Some(self.arrows),
+            LINK_ABILITY_FLAGS => Some(self.ability_flags),
+            LINK_HAS_CRYSTALS => Some(self.crystal_flags),
+            LINK_LOWLIFE_COUNTDOWN_TIMER_BEEP => Some(self.low_health_beep_timer),
+            _ => self.magic.owned_byte(address),
+        }
     }
 
-    fn publish_resource_fields<R: RamTarget + ?Sized>(&self, ram: &mut R) {
-        self.magic.publish_resource_fields(ram);
-        ram.write_byte(LINK_ITEM_BOMBS, self.bombs);
-        ram.write_byte(LINK_ITEM_BOTTLE_INDEX, self.equipped_bottle_index);
-        ram.write_word(LINK_RUPEES_GOAL, self.rupees_goal);
-        ram.write_word(LINK_RUPEES_ACTUAL, self.rupees_actual);
-        ram.write_word(LINK_COMPASS, self.compass_flags);
-        ram.write_word(LINK_BIGKEY, self.big_key_flags);
-        ram.write_word(LINK_DUNGEON_MAP, self.dungeon_map_flags);
-        ram.write_byte(LINK_RUPEES_IN_POND, self.rupees_in_pond);
-        ram.write_byte(LINK_HEART_PIECES, self.heart_pieces);
-        ram.write_byte(LINK_HEALTH_CAPACITY, self.health_capacity);
-        ram.write_byte(LINK_CURRENT_HEALTH, self.current_health);
-        ram.write_byte(LINK_NUM_KEYS, self.keys);
-        ram.write_byte(LINK_BOMB_UPGRADES, self.bomb_upgrade_level);
-        ram.write_byte(LINK_ARROW_UPGRADES, self.arrow_upgrade_level);
-        ram.write_byte(LINK_HEARTS_FILLER, self.heart_filler);
-        ram.write_byte(LINK_WHICH_PENDANTS, self.pendant_flags);
-        ram.write_byte(LINK_BOMB_FILLER, self.bomb_filler);
-        ram.write_byte(LINK_ARROW_REFILL_COUNTER, self.arrow_filler);
-        ram.write_byte(LINK_NUM_ARROWS, self.arrows);
-        ram.write_byte(LINK_ABILITY_FLAGS, self.ability_flags);
-        ram.write_byte(LINK_HAS_CRYSTALS, self.crystal_flags);
-        ram.write_byte(
-            LINK_LOWLIFE_COUNTDOWN_TIMER_BEEP,
-            self.low_health_beep_timer,
-        );
+    pub(crate) fn write_owned_byte(&mut self, address: usize, value: u8) -> bool {
+        match address {
+            LINK_ITEM_BOMBS => self.bombs = value,
+            LINK_ITEM_BOTTLE_INDEX => self.equipped_bottle_index = value,
+            a if (LINK_RUPEES_GOAL..LINK_RUPEES_GOAL + 2).contains(&a) => {
+                let mut bytes = self.rupees_goal.to_le_bytes();
+                bytes[a - LINK_RUPEES_GOAL] = value;
+                self.rupees_goal = u16::from_le_bytes(bytes);
+            }
+            a if (LINK_RUPEES_ACTUAL..LINK_RUPEES_ACTUAL + 2).contains(&a) => {
+                let mut bytes = self.rupees_actual.to_le_bytes();
+                bytes[a - LINK_RUPEES_ACTUAL] = value;
+                self.rupees_actual = u16::from_le_bytes(bytes);
+            }
+            a if (LINK_COMPASS..LINK_COMPASS + 2).contains(&a) => {
+                let mut bytes = self.compass_flags.to_le_bytes();
+                bytes[a - LINK_COMPASS] = value;
+                self.compass_flags = u16::from_le_bytes(bytes);
+            }
+            a if (LINK_BIGKEY..LINK_BIGKEY + 2).contains(&a) => {
+                let mut bytes = self.big_key_flags.to_le_bytes();
+                bytes[a - LINK_BIGKEY] = value;
+                self.big_key_flags = u16::from_le_bytes(bytes);
+            }
+            a if (LINK_DUNGEON_MAP..LINK_DUNGEON_MAP + 2).contains(&a) => {
+                let mut bytes = self.dungeon_map_flags.to_le_bytes();
+                bytes[a - LINK_DUNGEON_MAP] = value;
+                self.dungeon_map_flags = u16::from_le_bytes(bytes);
+            }
+            LINK_RUPEES_IN_POND => self.rupees_in_pond = value,
+            LINK_HEART_PIECES => self.heart_pieces = value,
+            LINK_HEALTH_CAPACITY => self.health_capacity = value,
+            LINK_CURRENT_HEALTH => self.current_health = value,
+            LINK_NUM_KEYS => self.keys = value,
+            LINK_BOMB_UPGRADES => self.bomb_upgrade_level = value,
+            LINK_ARROW_UPGRADES => self.arrow_upgrade_level = value,
+            LINK_HEARTS_FILLER => self.heart_filler = value,
+            LINK_WHICH_PENDANTS => self.pendant_flags = value,
+            LINK_BOMB_FILLER => self.bomb_filler = value,
+            LINK_ARROW_REFILL_COUNTER => self.arrow_filler = value,
+            LINK_NUM_ARROWS => self.arrows = value,
+            LINK_ABILITY_FLAGS => self.ability_flags = value,
+            LINK_HAS_CRYSTALS => self.crystal_flags = value,
+            LINK_LOWLIFE_COUNTDOWN_TIMER_BEEP => self.low_health_beep_timer = value,
+            _ => return self.magic.write_owned_byte(address, value),
+        }
+        true
     }
 
     pub(crate) fn magic_filler(&self) -> u8 {
@@ -831,24 +863,11 @@ impl PlayerResourcesState {
 
 pub(crate) struct NativePlayerResourcesBridgeMut<'a> {
     resources: &'a mut PlayerResourcesState,
-    ram: &'a mut [u8],
 }
 
 impl<'a> NativePlayerResourcesBridgeMut<'a> {
-    pub(crate) fn new(resources: &'a mut PlayerResourcesState, ram: &'a mut [u8]) -> Self {
-        Self { resources, ram }
-    }
-
-    fn sync(&mut self) {
-        self.resources.publish_resource_fields(self.ram);
-        let mut published = PlayerResourcesState::load_from_ram(self.ram);
-        published.magic = self.resources.magic;
-        debug_assert_eq!(*self.resources, published);
-        debug_assert_eq!(self.resources.magic.refill(), self.ram[LINK_MAGIC_FILLER]);
-        debug_assert_eq!(
-            self.resources.magic.consumption_level(),
-            self.ram[LINK_MAGIC_CONSUMPTION]
-        );
+    pub(crate) fn new(resources: &'a mut PlayerResourcesState, _ram: &'a mut [u8]) -> Self {
+        Self { resources }
     }
 
     pub(crate) fn grant_dungeon_item(&mut self, item: DungeonItem, mask: u16) {
@@ -857,259 +876,213 @@ impl<'a> NativePlayerResourcesBridgeMut<'a> {
             DungeonItem::BigKey => self.resources.big_key_flags |= mask,
             DungeonItem::Map => self.resources.dungeon_map_flags |= mask,
         }
-        self.sync();
     }
 
     pub(crate) fn set_magic_consumption_level(&mut self, value: u8) {
         self.resources.magic.set_consumption_level(value);
-        self.sync();
     }
 
     pub(crate) fn set_magic_filler(&mut self, value: u8) {
         self.resources.magic.set_refill(value);
-        self.sync();
     }
 
     pub(crate) fn clear_magic_filler(&mut self) {
         self.resources.magic.set_refill(0);
-        self.sync();
     }
 
     pub(crate) fn decrement_magic_filler(&mut self) {
         self.resources.magic.decrement_refill();
-        self.sync();
     }
 
     pub(crate) fn decrement_bomb_filler(&mut self) {
         self.resources.bomb_filler = self.resources.bomb_filler.wrapping_sub(1);
-        self.sync();
     }
 
     pub(crate) fn set_bomb_filler(&mut self, value: u8) {
         self.resources.bomb_filler = value;
-        self.sync();
     }
 
     pub(crate) fn increment_bomb_filler_by(&mut self, value: u8) {
         self.resources.bomb_filler = self.resources.bomb_filler.wrapping_add(value);
-        self.sync();
     }
 
     pub(crate) fn set_bombs(&mut self, value: u8) {
         self.resources.bombs = value;
-        self.sync();
     }
 
     pub(crate) fn increment_bombs(&mut self) {
         self.resources.bombs = self.resources.bombs.wrapping_add(1);
-        self.sync();
     }
 
     pub(crate) fn decrement_bombs(&mut self) -> u8 {
         self.resources.bombs = self.resources.bombs.wrapping_sub(1);
         let value = self.resources.bombs;
-        self.sync();
         value
     }
 
     pub(crate) fn increment_health_capacity_by(&mut self, value: u8) -> u8 {
         self.resources.health_capacity = self.resources.health_capacity.wrapping_add(value);
         let capacity = self.resources.health_capacity;
-        self.sync();
         capacity
     }
 
     pub(crate) fn increment_heart_filler_by(&mut self, value: u8) {
         self.resources.heart_filler = self.resources.heart_filler.wrapping_add(value);
-        self.sync();
     }
 
     pub(crate) fn increment_heart_filler_word_by(&mut self, value: u16) -> u16 {
         let hearts = self.resources.heart_filler_word().wrapping_add(value);
         self.resources.heart_filler = hearts as u8;
         self.resources.magic.set_refill((hearts >> 8) as u8);
-        self.sync();
         hearts
     }
 
     pub(crate) fn increment_magic_filler_by(&mut self, value: u8) {
         self.resources.magic.add_refill(value);
-        self.sync();
     }
 
     pub(crate) fn add_ability_flags(&mut self, flags: u8) {
         self.resources.ability_flags |= flags;
-        self.sync();
     }
 
     pub(crate) fn add_crystal_flags(&mut self, flags: u8) {
         self.resources.crystal_flags |= flags;
-        self.sync();
     }
 
     #[cfg(test)]
     pub(crate) fn set_crystal_flags(&mut self, flags: u8) {
         self.resources.crystal_flags = flags;
-        self.sync();
     }
 
     pub(crate) fn set_pendant_flags(&mut self, flags: u8) {
         self.resources.pendant_flags = flags;
-        self.sync();
     }
 
     pub(crate) fn decrement_arrow_filler(&mut self) {
         self.resources.arrow_filler = self.resources.arrow_filler.wrapping_sub(1);
-        self.sync();
     }
 
     pub(crate) fn set_arrow_filler(&mut self, value: u8) {
         self.resources.arrow_filler = value;
-        self.sync();
     }
 
     pub(crate) fn increment_arrow_filler_by(&mut self, value: u8) {
         self.resources.arrow_filler = self.resources.arrow_filler.wrapping_add(value);
-        self.sync();
     }
 
     pub(crate) fn increment_arrows(&mut self) {
         self.resources.arrows = self.resources.arrows.wrapping_add(1);
-        self.sync();
     }
 
     pub(crate) fn increment_arrows_by(&mut self, value: u8) {
         self.resources.arrows = self.resources.arrows.wrapping_add(value);
-        self.sync();
     }
 
     pub(crate) fn set_arrows(&mut self, value: u8) {
         self.resources.arrows = value;
-        self.sync();
     }
 
     pub(crate) fn decrement_arrows(&mut self) -> u8 {
         self.resources.arrows = self.resources.arrows.wrapping_sub(1);
         let value = self.resources.arrows;
-        self.sync();
         value
     }
 
     pub(crate) fn set_current_health(&mut self, value: u8) {
         self.resources.current_health = value;
-        self.sync();
     }
 
     pub(crate) fn increment_current_health_by(&mut self, value: u8) {
         self.resources.current_health = self.resources.current_health.wrapping_add(value);
-        self.sync();
     }
 
     pub(crate) fn decrement_current_health_by(&mut self, value: u8) -> u8 {
         self.resources.current_health = self.resources.current_health.wrapping_sub(value);
         let health = self.resources.current_health;
-        self.sync();
         health
     }
 
     pub(crate) fn set_heart_filler(&mut self, value: u8) {
         self.resources.heart_filler = value;
-        self.sync();
     }
 
     pub(crate) fn decrement_heart_filler_by(&mut self, value: u8) {
         self.resources.heart_filler = self.resources.heart_filler.wrapping_sub(value);
-        self.sync();
     }
 
     pub(crate) fn decrement_low_health_beep_timer(&mut self) {
         self.resources.low_health_beep_timer = self.resources.low_health_beep_timer.wrapping_sub(1);
-        self.sync();
     }
 
     pub(crate) fn set_low_health_beep_timer(&mut self, value: u8) {
         self.resources.low_health_beep_timer = value;
-        self.sync();
     }
 
     pub(crate) fn set_equipped_bottle_index(&mut self, value: u8) {
         self.resources.equipped_bottle_index = value;
-        self.sync();
     }
 
     pub(crate) fn set_rupees_goal(&mut self, value: u16) {
         self.resources.rupees_goal = value;
-        self.sync();
     }
 
     pub(crate) fn set_rupees_actual(&mut self, value: u16) {
         self.resources.rupees_actual = value;
-        self.sync();
     }
 
     #[cfg(test)]
     pub(crate) fn add_rupees_goal(&mut self, value: u16) -> u16 {
         self.resources.rupees_goal = self.resources.rupees_goal.wrapping_add(value);
         let rupees = self.resources.rupees_goal;
-        self.sync();
         rupees
     }
 
     pub(crate) fn subtract_rupees_goal(&mut self, value: u16) -> u16 {
         self.resources.rupees_goal = self.resources.rupees_goal.wrapping_sub(value);
         let rupees = self.resources.rupees_goal;
-        self.sync();
         rupees
     }
 
     pub(crate) fn set_keys(&mut self, value: u8) {
         self.resources.keys = value;
-        self.sync();
     }
 
     pub(crate) fn increment_keys(&mut self) -> u8 {
         self.resources.keys = self.resources.keys.wrapping_add(1);
         let keys = self.resources.keys;
-        self.sync();
         keys
     }
 
     pub(crate) fn decrement_keys(&mut self) -> u8 {
         self.resources.keys = self.resources.keys.wrapping_sub(1);
         let keys = self.resources.keys;
-        self.sync();
         keys
     }
 
     pub(crate) fn advance_heart_piece_count(&mut self) -> u8 {
         self.resources.heart_pieces = self.resources.heart_pieces.wrapping_add(1) & 3;
         let heart_pieces = self.resources.heart_pieces;
-        self.sync();
         heart_pieces
     }
 
     pub(crate) fn add_rupees_to_pond(&mut self, value: u8) -> u8 {
         self.resources.rupees_in_pond = self.resources.rupees_in_pond.wrapping_add(value);
         let pond = self.resources.rupees_in_pond;
-        self.sync();
         pond
     }
 
     pub(crate) fn subtract_pond_reward_threshold(&mut self) -> u8 {
         self.resources.rupees_in_pond = self.resources.rupees_in_pond.wrapping_sub(100);
         let pond = self.resources.rupees_in_pond;
-        self.sync();
         pond
     }
 
     pub(crate) fn set_bomb_upgrade_level(&mut self, value: u8) {
         self.resources.bomb_upgrade_level = value;
-        self.sync();
     }
 
     pub(crate) fn set_arrow_upgrade_level(&mut self, value: u8) {
         self.resources.arrow_upgrade_level = value;
-        self.sync();
     }
 }
 
@@ -1157,3 +1130,23 @@ non_wram_hash! { DungeonKeySlotsState {
     children: [],
     metadata: [],
 } }
+
+impl InventoryState {
+    pub(crate) fn owned_byte(&self, address: usize) -> Option<u8> {
+        self.player_resources.owned_byte(address).or_else(|| self.items.owned_byte(address))
+            .or_else(|| self.save_progress.owned_byte(address))
+    }
+
+    pub(crate) fn write_owned_byte(&mut self, address: usize, value: u8) -> bool {
+        self.player_resources.write_owned_byte(address, value) || self.items.write_owned_byte(address, value)
+            || self.save_progress.write_owned_byte(address, value)
+    }
+
+    pub(crate) fn export_owned_range(&self, image: &mut [u8], lo: usize, hi: usize) {
+        for address in lo..=hi { image[address] = self.owned_byte(address).expect("registered inventory byte"); }
+    }
+
+    pub(crate) fn import_owned_range(&mut self, image: &[u8], lo: usize, hi: usize) {
+        for address in lo..=hi { assert!(self.write_owned_byte(address, image[address])); }
+    }
+}

@@ -100,7 +100,7 @@ impl Fixture {
             .unwrap();
         let clock = source.machine().timeline().clone();
         let mut native = crate::ZeldaState::new();
-        native.ram.copy_from_slice(&ram);
+        native.import_wram_image(&ram);
         native.sync_native_game_state_from_ram();
         Self {
             native,
@@ -216,7 +216,7 @@ impl Fixture {
                 })
                 .unwrap();
             assert_eq!(actual, expected, "{label} pc{origin:06x}");
-            assert_eq!(self.native.ram, self.ram, "{label}: native cleanup publications");
+            assert_eq!(*self.native.wram_image(), self.ram, "{label}: native cleanup publications");
             if published {
                 let expected = crate::game_state::GameState::load_from_ram(&self.ram);
                 if opening_active {

@@ -1377,7 +1377,7 @@ impl ZeldaState {
                 if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                     eprintln!("native-startup-reset-fill host={}", self.frame_ctr_dbg);
                 }
-                self.ram.fill(0x55);
+                self.import_wram_image(&vec![0x55; self.ram.len()]);
                 self.reset_fill_pending = true;
                 self.boot_memory_initialized = false;
                 self.sync_native_game_state_from_ram();
