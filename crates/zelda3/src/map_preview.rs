@@ -26,8 +26,8 @@ pub fn dungeon_snapshot(
     game.parity_probe_dungeon_load_and_draw(u16::from(entrance));
     game.palette_load_dungeon_set();
     game.init_load_default_tile_attr();
-    game.Dungeon_LoadCustomTileAttr();
-    game.Dungeon_LoadAttributeTable();
+    game.dungeon_load_custom_tile_attr();
+    game.dungeon_load_attribute_table();
     let tiles = &game.game_state.dungeon.room_tilemaps;
     let attributes = &game.game_state.dungeon.bg2_attributes;
     Ok(DungeonSnapshot {

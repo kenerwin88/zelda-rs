@@ -23,12 +23,12 @@ fn boss_prize_tag_retries_until_an_ancilla_slot_frees() {
         state.ancilla_slot_view_mut(k).set_ancilla_type(BOMB);
     }
 
-    state.RoomTag_GetHeartForPrize(0);
+    state.room_tag_get_heart_for_prize(0);
     assert_eq!(prize_slot(&state), None);
     assert_ne!(state.game_state.dungeon.header.header_tag(0), 0);
 
     state.ancilla_slot_view_mut(2).set_ancilla_type(0);
-    state.RoomTag_GetHeartForPrize(0);
+    state.room_tag_get_heart_for_prize(0);
     assert_eq!(prize_slot(&state), Some(2));
     assert_eq!(state.game_state.dungeon.header.header_tag(0), 0);
 }

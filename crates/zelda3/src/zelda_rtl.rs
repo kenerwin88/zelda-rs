@@ -16918,7 +16918,7 @@ impl ZeldaState {
         let dst = self.game_state.display.current_vram_upload_data_address();
         for (i, &tile_pos) in positions.iter().enumerate() {
             let base = dst + i * 6;
-            let addr = self.Dungeon_MapVramAddr(tile_pos);
+            let addr = self.dungeon_map_vram_addr(tile_pos);
             self.write_vram_upload_absolute_word(base, addr);
             self.write_vram_upload_absolute_word(base + 2, 0x0100);
             self.write_vram_upload_absolute_word(base + 4, src[i]);
@@ -16926,7 +16926,7 @@ impl ZeldaState {
         self.write_vram_upload_absolute_word(dst + 24, 0xffff);
         self.advance_vram_upload_cursor_by(24);
         self.set_bg_vram_load_mode(1);
-        self.Dungeon_FlagRoomData_Quadrants();
+        self.dungeon_flag_room_data_quadrants();
         if self.game_state.system_signals.sound_effect_2() == 0 {
             self.set_sound_effect_2(14);
         }

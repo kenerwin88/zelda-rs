@@ -59,7 +59,7 @@ fn supertile_final_caller_matches_source_cycles_and_byte_writes() {
             }
             assert!(source.is_complete(), "room={room} variant={variant}");
             let start = crate::cycle_ledger::master();
-            state.Dungeon_InterRoomTrans_State15();
+            state.dungeon_inter_room_trans_state15();
             assert_eq!(crate::cycle_ledger::master() - start, source_cycles,
                 "room={room} variant={variant}");
             for range in [0x10..0x100, 0x200..0x700, 0xc180..0xc1ab] {
@@ -112,7 +112,7 @@ fn supertile_transition_initialization_matches_source_work() {
         }
         assert!(source.is_complete());
         let mark = crate::cycle_ledger::master();
-        state.Module07_02_SupertileTransition();
+        state.module07_02_supertile_transition();
         assert_eq!(crate::cycle_ledger::master() - mark, source_cycles, "variant={variant}");
         for range in [0x10..0x100, 0x200..0x500, 0xc4a..0xc50, 0xc007..0xc013, 0xc500..0xc700] {
             for address in range {
@@ -289,7 +289,7 @@ fn fat_stair_background_conversion_retains_its_caller_step() {
         state.set_main_module(7);
         state.set_submodule(submodule);
         state.set_subsubmodule(3);
-        state.DungeonTransition_TriggerBGC34UpdateAndAdvance();
+        state.dungeon_transition_trigger_bgc34_update_and_advance();
         assert_eq!(state.game_state.frame.subsubmodule, 3);
         assert_eq!(
             state.game_execution_scheduler.current_work(),
@@ -1202,7 +1202,7 @@ fn rescued_maiden_source_checkpoint_parks_the_real_module_caller() {
         state.game_execution_scheduler.begin_host_frame();
         state.game_execution_scheduler.begin_main_loop_iteration();
 
-        state.Module07_18_RescuedMaiden();
+        state.module07_18_rescued_maiden();
 
         assert_eq!(state.game_state.frame.subsubmodule, 0);
         assert_eq!(
@@ -1256,7 +1256,7 @@ fn rescued_maiden_initialization_preserves_exact_decompression_prefix() {
     state.game_execution_scheduler.begin_host_frame();
     state.game_execution_scheduler.begin_main_loop_iteration();
 
-    state.Module07_18_RescuedMaiden();
+    state.module07_18_rescued_maiden();
 
     let sheet = state.decompressed_sprite_graphics_data(0x66).unwrap();
     assert_eq!(
@@ -1554,7 +1554,7 @@ fn quadrant_preparation_interruption_retains_and_retires_the_whole_suffix() {
         sprite_main_boundary: None,
         cached_sprite_interruption: None,
     });
-    state.Dungeon_InterRoomTrans_State13();
+    state.dungeon_inter_room_trans_state13();
     assert!(state.dungeon_state_12_caller_suffix_nmi_pending);
     assert!(state.game_execution_scheduler.is_idle());
     state.complete_module07_dungeon_after_submodule_caller();
@@ -1593,7 +1593,7 @@ fn quadrant_preparation_body_interruption_keeps_the_completed_caller_before_nmi(
         sprite_main_boundary: None,
         cached_sprite_interruption: None,
     });
-    state.Dungeon_InterRoomTrans_State13();
+    state.dungeon_inter_room_trans_state13();
     assert!(state.dungeon_nmi_prepare_sprites_return_pending);
     assert!(state.game_execution_scheduler.is_idle());
     state.complete_module07_dungeon_after_submodule_caller();
@@ -2849,7 +2849,7 @@ fn room_72_quadrant_builder_completes_inside_rom_timed_dispatcher_iteration() {
     state.set_subsubmodule(5);
     state.set_dungeon_room_index(0x72);
 
-    state.Dungeon_InterRoomTrans_notDarkRoom();
+    state.dungeon_inter_room_trans_not_dark_room();
 
     assert_eq!(state.game_state.frame.subsubmodule, 6);
     assert!(state.paired_resume_cpu_boundary_is_quiescent());
@@ -2913,7 +2913,7 @@ fn filtered_state_11_quadrant_work_is_not_room_specific() {
             }
         ));
 
-        state.Dungeon_InterRoomTrans_State9();
+        state.dungeon_inter_room_trans_state9();
 
         assert_eq!(state.game_state.frame.subsubmodule, 11);
         assert_eq!(
@@ -3371,7 +3371,7 @@ fn pre_dungeon_publishes_entrance_before_scheduled_room_construction() {
     expected.assets = Some(probe_entrance_asset_pack(0, 0x0061));
     expected.set_which_entrance(0);
     expected.save_progress_mut().set_progress_indicator(2);
-    expected.Dungeon_LoadEntrance();
+    expected.dungeon_load_entrance();
     let expected_room = expected.game_state.world.location.dungeon_room();
     let expected_x = expected.game_state.player.follower_link.x();
     let expected_y = expected.game_state.player.follower_link.y();
@@ -3459,10 +3459,10 @@ fn deferred_landing_goal_retains_animation_and_both_link_oam_callers() {
         deferred.set_rom_startup_timing(true);
         deferred.capture_display_snapshot();
 
-        eager.Module07_0F_LandingWipe();
+        eager.module07_0f_landing_wipe();
         eager.complete_module07_dungeon_after_submodule();
 
-        deferred.Module07_0F_LandingWipe();
+        deferred.module07_0f_landing_wipe();
         assert!(deferred.dungeon_landing_goal_transition_pending);
         assert_eq!(deferred.game_state.frame.submodule, 0x0f);
         assert_eq!(deferred.game_state.player.follower_link.blink_countdown(), blink);
@@ -4401,7 +4401,7 @@ fn dungeon_faded_filter_second_pass_resumes_without_a_new_main_iteration() {
         cached_sprite_interruption: None,
     });
 
-    state.Module07_02_FadedFilter();
+    state.module07_02_faded_filter();
 
     assert_eq!(state.game_state.display.palette_filter.countdown(), 1);
     assert_eq!(
@@ -4466,7 +4466,7 @@ fn resumed_dungeon_fade_runs_the_next_iteration_after_a_leading_nmi() {
             cached_sprite_interruption: None,
         });
 
-        state.Module07_02_FadedFilter();
+        state.module07_02_faded_filter();
 
         assert_eq!(
             state
@@ -4515,7 +4515,7 @@ fn nmi_inside_sprite_preparation_resumes_without_replaying_dungeon_main() {
     });
     let entry_frame_counter = state.game_state.frame.frame_counter;
 
-    state.Module07_02_FadedFilter();
+    state.module07_02_faded_filter();
     assert!(state.resume_pre_main_caller_continuation(0, None));
 
     assert_eq!(state.game_state.frame.frame_counter, entry_frame_counter);
@@ -4542,7 +4542,7 @@ fn completed_dungeon_fade_waits_for_leading_nmi_before_state_three() {
     state.set_mosaic_target_level(31);
     state.dungeon_torch_mut().set_lights_out_request(1);
 
-    state.Module07_02_FadedFilter();
+    state.module07_02_faded_filter();
 
     assert_eq!(state.game_state.frame.subsubmodule, 3);
     assert_eq!(state.game_state.display.palette_filter.countdown(), 0);
@@ -4582,7 +4582,7 @@ fn peg_attribute_flip_checkpoint_publishes_exact_bank_prefix_then_resumes() {
     }
 
     let mut atomic = base.clone();
-    atomic.Module07_16_UpdatePegs();
+    atomic.module07_16_update_pegs();
 
     let progress = crate::DungeonPegAttributeFlipProgressReceipt {
         index: 0x0594,
@@ -4596,7 +4596,7 @@ fn peg_attribute_flip_checkpoint_publishes_exact_bank_prefix_then_resumes() {
         0,
         vec![OriginalTimingSemanticReceipt::DungeonPegAttributeFlipProgress(progress)],
     ));
-    resumed.Module07_16_UpdatePegs();
+    resumed.module07_16_update_pegs();
 
     assert_eq!(resumed.game_state.frame.submodule, 0x16);
     assert_eq!(resumed.game_state.frame.subsubmodule, 0x10);
@@ -4681,7 +4681,7 @@ fn selectable_peg_attribute_flip_resumes_state_8_only_after_source_return() {
     }
 
     let mut atomic = base.clone();
-    atomic.Module07_02_SupertileTransition();
+    atomic.module07_02_supertile_transition();
     atomic.complete_module07_dungeon_after_submodule();
 
     let progress = crate::DungeonPegAttributeFlipProgressReceipt {
@@ -4698,7 +4698,7 @@ fn selectable_peg_attribute_flip_resumes_state_8_only_after_source_return() {
     ));
     let link_before = resumed.game_state.player.follower_link.x();
     let bg2_before = resumed.game_state.display.ppu_scroll_copy.bg2_h_copy2();
-    resumed.Module07_02_SupertileTransition();
+    resumed.module07_02_supertile_transition();
 
     assert_eq!(resumed.overworld_map_state(), 5);
     assert_eq!(resumed.game_state.player.follower_link.x(), link_before);
@@ -4844,7 +4844,7 @@ fn spiral_stair_double_palette_pass_resumes_without_a_new_main_iteration() {
         .dungeon_stair_movement_mut()
         .set_staircase_move_counter(8);
 
-    state.Module07_0E_02_ApplyFilterIf();
+    state.module07_0e_02_apply_filter_if();
 
     assert_eq!(state.game_state.display.palette_filter.countdown(), 1);
     assert_eq!(
@@ -4890,7 +4890,7 @@ fn spiral_stair_grayscale_pass_resumes_on_its_second_palette_walk() {
     state.set_subsubmodule(15);
     state.set_countdown_word(0);
 
-    state.Dungeon_DoubleApplyAndIncrementGrayscale();
+    state.dungeon_double_apply_and_increment_grayscale();
 
     assert_eq!(state.game_state.display.palette_filter.countdown(), 1);
     assert_eq!(
@@ -4940,7 +4940,7 @@ fn straight_interroom_grayscale_pass_uses_the_shared_second_palette_return() {
     state.set_subsubmodule(14);
     state.set_countdown_word(0);
 
-    state.Dungeon_DoubleApplyAndIncrementGrayscale();
+    state.dungeon_double_apply_and_increment_grayscale();
 
     assert_eq!(state.game_state.display.palette_filter.countdown(), 1);
     assert_eq!(
@@ -5516,7 +5516,7 @@ fn native_straight_fadeout_uses_the_measured_caller_phase() {
                 submodule_nmi_slices: 0, subsubmodule: 1, palette_countdown: 1,
                 sprite_main_boundary: None, cached_sprite_interruption: None,
             });
-            state.Module07_11_StraightInterroomStairs();
+            state.module07_11_straight_interroom_stairs();
             assert!(state.dungeon_landing_cpu_advance_pending.is_none());
             assert!(state.game_execution_scheduler.is_idle(),
                 "a caller interruption cannot park before Sprite_Main");

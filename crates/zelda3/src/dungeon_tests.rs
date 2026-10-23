@@ -302,7 +302,7 @@ fn dungeon_layer_effect_work_and_owned_state_match_rom() {
             state.sync_native_game_state_from_ram();
             let (cycles, expected) = dungeon_render_source(&rom, &state.ram, 0x0a_fe80, 0);
             let actual = crate::cycle_ledger::measure_routine_self_work(0x0a_fe80,
-                || state.Dungeon_HandleLayerEffect());
+                || state.dungeon_handle_layer_effect());
             assert_eq!(actual, cycles, "effect={effect} variation={variation}");
             for range in [0x15..0x17, 0x1d..0x1e, 0x9a..0x9b, 0xad..0xae,
                 0xe0..0xea, 0x310..0x314, 0x41a..0x426, 0x4c5..0x4c7, 0xc300..0xc700] {
@@ -434,7 +434,7 @@ fn dungeon_screen_edge_caller_work_and_transition_state_match_rom() {
                                 assert!(instructions < 100_000, "screen edge did not return");
                             }
                             let actual = crate::cycle_ledger::measure_routine_self_work(0x02_885e,
-                                || state.Dungeon_TryScreenEdgeTransition());
+                                || state.dungeon_try_screen_edge_transition());
                             let label = format!("x={x} y={y} velocities={velocities} module={module} incapacitated={incapacitated} direction={direction}");
                             assert_eq!(actual, cycles, "{label}");
                             for range in [0x10..0x14, 0x20..0x24, 0x30..0x32, 0x46..0x47,
@@ -505,7 +505,7 @@ fn check_staircase_against_rom(rom: &[u8], mut state: ZeldaState, label: &str) {
         assert!(instructions < 20_000, "staircase did not return: {label}");
     }
     let actual_cycles = crate::cycle_ledger::measure_routine_self_work(0x01_c329,
-        || state.Dungeon_DetectStaircase());
+        || state.dungeon_detect_staircase());
     assert_eq!(actual_cycles, own_cycles, "{label}");
     for range in [0x10..0x14, 0x20..0x24, 0x3a..0x3e, 0x48..0x49, 0x50..0x51,
         0xa0..0xa4, 0xb0..0xb1, 0x12e..0x12f, 0x371..0x372, 0x462..0x465,
@@ -746,7 +746,7 @@ fn room_tag_caller_and_empty_returns_match_rom_for_every_skip_value() {
             assert!(steps < 100_000, "skip {skip}: caller did not return");
         }
         let before = crate::cycle_ledger::master();
-        if skip == 0 { state.clone().Dungeon_DetectStaircase(); }
+        if skip == 0 { state.clone().dungeon_detect_staircase(); }
         let staircase_cycles = crate::cycle_ledger::master() - before;
         let before = crate::cycle_ledger::master();
         state.dungeon_handle_room_tags();
@@ -831,7 +831,7 @@ fn torch_timer_prefix_cost_and_timer_writes_match_rom() {
                     callees.dungeon_torch_mut().set_timer(slot, timer - 1);
                     if timer == 1 {
                         callees.dungeon_torch_mut().set_target(NativeTile::torch(slot));
-                        callees.Dungeon_ExtinguishTorch();
+                        callees.dungeon_extinguish_torch();
                     }
                 }
             }
@@ -979,7 +979,7 @@ fn room_draw_all_objects_clears_width_height_before_terminator() {
         .set_draw_dimensions_words(0x4000, 0x2000);
     write_le_u16(&mut state.ram, DUNG_LOAD_PTR_OFFS, 0);
 
-    state.RoomData_DrawObjects_from(&[0xff, 0xff]);
+    state.room_data_draw_objects_from(&[0xff, 0xff]);
 
     assert_eq!(
         state

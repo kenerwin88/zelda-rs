@@ -3045,7 +3045,7 @@ impl ZeldaState {
                 && !self.game_state.player.follower_link.has_auxiliary_state()
             {
                 if self.game_state.world.location.is_indoors() {
-                    self.Dungeon_FlagRoomData_Quadrants();
+                    self.dungeon_flag_room_data_quadrants();
                     self.ancilla_sfx2_near(0x33);
                     self.follower_link_state_mut().set_speed_setting(0);
                     self.set_submodule(21);
@@ -3392,7 +3392,7 @@ impl ZeldaState {
                 if !tile_deleted {
                     let y = read_le_u16(&self.ram, 0);
                     let x = read_le_u16(&self.ram, 2);
-                    self.Dungeon_DeleteRupeeTile(x, y);
+                    self.dungeon_delete_rupee_tile(x, y);
                 }
                 self.ancilla_sfx3_near(10);
                 self.finish_indoor_collision_after_rupees(true);
@@ -4368,7 +4368,7 @@ impl ZeldaState {
                 .follower_link
                 .x()
                 .wrapping_add(FINISH_INDOOR_COLLISION_COMMON_RUPEE_X_OFFSETS[dir] as u16);
-            self.Dungeon_DeleteRupeeTile(x, y);
+            self.dungeon_delete_rupee_tile(x, y);
             self.ancilla_sfx3_near(10);
         }
 
@@ -4717,7 +4717,7 @@ impl ZeldaState {
         };
 
         if self.game_state.world.location.is_indoors() {
-            let liftable = self.Dungeon_CheckForAndIDLiftableTile();
+            let liftable = self.dungeon_check_for_and_id_liftable_tile();
             if liftable != 0xffff {
                 self.tile_detect_position_mut()
                     .set_liftable_action_index_primary(
@@ -6158,7 +6158,7 @@ impl ZeldaState {
 
     pub(super) fn link_perform_read(&mut self) {
         let message = if self.game_state.world.location.is_indoors() {
-            self.Dungeon_GetTeleMsg(self.game_state.world.location.dungeon_room() as usize)
+            self.dungeon_get_tele_msg(self.game_state.world.location.dungeon_room() as usize)
         } else if self.game_state.inventory.save_progress.progress_indicator() < 2 {
             0x003a
         } else {
@@ -6320,7 +6320,7 @@ impl ZeldaState {
                     self.dungeon_secret_scratch_mut().clear_pending_kind();
                     let (what, x, y) = if self.game_state.world.location.is_indoors() {
                         let mut pt = Point16U { x: 0, y: 0 };
-                        let what = self.Dungeon_LiftAndReplaceLiftable(&mut pt);
+                        let what = self.dungeon_lift_and_replace_liftable(&mut pt);
                         (what, pt.x, pt.y)
                     } else {
                         let mut pt = Point16U { x: 0, y: 0 };
@@ -7231,7 +7231,7 @@ impl ZeldaState {
             if self.game_state.player.follower_link.is_menu_blocked() {
                 return;
             }
-            self.Mirror_SaveRoomData();
+            self.mirror_save_room_data();
             if self.game_state.system_signals.sound_effect_1() != 60 {
                 self.dungeon_object_tracking_mut()
                     .clear_changeable_object_index(0);
@@ -7493,7 +7493,7 @@ impl ZeldaState {
             {
                 self.follower_link_state_mut().toggle_lower_level_state();
             }
-            self.Dungeon_FlagRoomData_Quadrants();
+            self.dungeon_flag_room_data_quadrants();
         }
 
         self.player_tile_detect_nearby();
@@ -10725,7 +10725,7 @@ impl ZeldaState {
             } else {
                 let (attr, x, y) = if self.game_state.world.location.is_indoors() {
                     let mut pt = Point16U { x: 0, y: 0 };
-                    let attr = self.Dungeon_LiftAndReplaceLiftable(&mut pt);
+                    let attr = self.dungeon_lift_and_replace_liftable(&mut pt);
                     (attr, pt.x, pt.y)
                 } else {
                     let mut pt = Point16U { x: 0, y: 0 };
@@ -10916,9 +10916,9 @@ impl ZeldaState {
                 .x_page_movement_delta_signed()
                 .is_negative()
             {
-                self.Dung_StartInterRoomTrans_Left_Plus();
+                self.dung_start_inter_room_trans_left_plus();
             } else {
-                self.HandleEdgeTransitionMovementEast_RightBy8();
+                self.handle_edge_transition_movement_east_right_by8();
             }
         } else if self.game_state.player.follower_link.y_page_movement_delta() != 0 {
             self.follower_link_state_mut().set_y_button_action_timer(0);
@@ -10931,9 +10931,9 @@ impl ZeldaState {
                 .y_page_movement_delta_signed()
                 .is_negative()
             {
-                self.Dungeon_StartInterRoomTrans_Up();
+                self.dungeon_start_inter_room_trans_up();
             } else {
-                self.HandleEdgeTransitionMovementSouth_DownBy16();
+                self.handle_edge_transition_movement_south_down_by16();
             }
         }
     }
@@ -10970,9 +10970,9 @@ impl ZeldaState {
                 .x_page_movement_delta_signed()
                 .is_negative()
             {
-                self.AdjustQuadrantAndCamera_left();
+                self.adjust_quadrant_and_camera_left();
             } else {
-                self.AdjustQuadrantAndCamera_right();
+                self.adjust_quadrant_and_camera_right();
             }
         }
         if self.game_state.player.follower_link.y_page_movement_delta() != 0 {
@@ -10983,9 +10983,9 @@ impl ZeldaState {
                 .y_page_movement_delta_signed()
                 .is_negative()
             {
-                self.AdjustQuadrantAndCamera_up();
+                self.adjust_quadrant_and_camera_up();
             } else {
-                self.AdjustQuadrantAndCamera_down();
+                self.adjust_quadrant_and_camera_down();
             }
         }
     }

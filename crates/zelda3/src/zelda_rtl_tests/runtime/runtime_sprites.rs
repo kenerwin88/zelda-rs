@@ -1005,7 +1005,7 @@ fn edge_transition_recoil_guard_restores_previous_position() {
     set_link_test_word(&mut state, LINK_X_COORD_PREV, 0x0088);
     set_link_test_word(&mut state, LINK_Y_COORD_PREV, 0x0099);
 
-    state.Dungeon_TryScreenEdgeTransition();
+    state.dungeon_try_screen_edge_transition();
 
     assert_eq!(state.game_state.player.follower_link.actual_x_velocity(), 0);
     assert_eq!(state.game_state.player.follower_link.actual_y_velocity(), 0);
@@ -1770,7 +1770,7 @@ fn state_13_nmi_after_sprite_main_resumes_only_the_common_suffix() {
         state.game_execution_scheduler.begin_host_frame();
         state.game_execution_scheduler.begin_main_loop_iteration();
 
-        state.Dungeon_InterRoomTrans_State13();
+        state.dungeon_inter_room_trans_state13();
         assert_eq!(state.game_state.frame.subsubmodule, 13);
         assert!(state.dungeon_post_sprite_main_return_pending);
         assert!(state.game_execution_scheduler.is_idle());
@@ -2019,7 +2019,7 @@ fn faded_filter_uses_the_interior_sprite_boundary_as_the_single_nmi_owner() {
     state.game_execution_scheduler.begin_host_frame();
     state.game_execution_scheduler.begin_main_loop_iteration();
 
-    state.Module07_02_FadedFilter();
+    state.module07_02_faded_filter();
 
     assert_eq!(state.game_state.frame.subsubmodule, 3);
     assert_eq!(state.game_execution_scheduler.pre_main_nmi_resume(), None);
@@ -2126,7 +2126,7 @@ fn landing_nmi_inside_link_oam_resumes_only_the_common_suffix() {
     state.game_execution_scheduler.begin_host_frame();
     state.game_execution_scheduler.begin_main_loop_iteration();
 
-    state.Module07_02_FadedFilter();
+    state.module07_02_faded_filter();
     assert_eq!(state.game_state.frame.subsubmodule, 15);
     assert!(state.dungeon_post_sprite_main_return_pending);
 
@@ -2181,7 +2181,7 @@ fn landing_nmi_inside_sprite_main_resumes_at_the_cpu_slot_boundary() {
     state.game_execution_scheduler.begin_host_frame();
     state.game_execution_scheduler.begin_main_loop_iteration();
 
-    state.Module07_02_FadedFilter();
+    state.module07_02_faded_filter();
     assert_eq!(state.game_state.frame.subsubmodule, 15);
     assert_eq!(
         state.sprite_main_cpu_boundary,

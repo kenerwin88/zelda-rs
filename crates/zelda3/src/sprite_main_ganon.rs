@@ -1433,12 +1433,12 @@ impl ZeldaState {
     fn ganon_extinguish_torch_adjust_translucency_for_ganon(&mut self) {
         self.palette_assert_translucency_swap_with_cycle_charge();
         self.dungeon_torch_mut().set_target(NativeTile::torch(0));
-        self.Dungeon_ExtinguishTorch();
+        self.dungeon_extinguish_torch();
     }
 
     fn ganon_extinguish_torch_for_ganon(&mut self) {
         self.dungeon_torch_mut().set_target(NativeTile::torch(1));
-        self.Dungeon_ExtinguishTorch();
+        self.dungeon_extinguish_torch();
     }
 
     fn ganon_draw_emit_body_oam_for_ganon(&mut self, k: usize, info: (u16, u16, u8)) {

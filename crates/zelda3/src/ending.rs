@@ -172,7 +172,7 @@ impl ZeldaState {
         self.erase_tile_maps_normal();
         let i = (self.game_state.frame.submodule >> 1) as usize;
         self.set_which_entrance_word(ENDING_SCENE_ENTRANCES[i]);
-        self.Dungeon_LoadEntrance();
+        self.dungeon_load_entrance();
         self.dungeon_torch_mut().clear_lit_torches();
         self.dungeon_torch_mut().clear_dungeon_dark_with_lantern();
     }
@@ -182,7 +182,7 @@ impl ZeldaState {
     /// advance, and the sprite setup land at the return host (1564808).
     fn credits_load_scene_dungeon_rest(&mut self) {
         let i = (self.game_state.frame.submodule >> 1) as usize;
-        self.Dungeon_LoadAndDrawRoom();
+        self.dungeon_load_and_draw_room();
         self.decompress_animated_dungeon_tiles(
             DUNG_ANIMATED_TILES
                 [self.game_state.world.palette_theme.main_tile_theme_index() as usize]

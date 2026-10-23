@@ -952,7 +952,7 @@ impl ZeldaState {
         // The C call's spiral-stairs adjust publishes Link's coordinates,
         // camera, and room bounds before the first held vblank; only the
         // room-load tail waits for the terminal return.
-        self.Dungeon_AdjustAfterSpiralStairs();
+        self.dungeon_adjust_after_spiral_stairs();
         self.game_execution_scheduler.schedule_work(
             GameWorkContinuation::FinishDungeonFallingRoomInitialization,
             1,

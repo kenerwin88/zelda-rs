@@ -963,7 +963,7 @@ impl ZeldaState {
                 self.save_progress_mut().set_which_starting_point(2);
                 self.SavePalaceDeaths();
                 self.follower_state_mut().set_indicator(1);
-                self.Dungeon_FlagRoomData_Quadrants();
+                self.dungeon_flag_room_data_quadrants();
                 self.sprite_become_follower(k);
                 self.sprite_slot_view_mut(k).set_state(0);
                 self.set_music_control(16);

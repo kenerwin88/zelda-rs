@@ -2608,7 +2608,7 @@ impl ZeldaState {
     /// ROM: `Module0E_05_DesertPrayer`
     pub(super) fn module0e_05_desert_prayer(&mut self) {
         match self.game_state.frame.subsubmodule {
-            0 => self.ResetTransitionPropsAndAdvance_ResetInterface(),
+            0 => self.reset_transition_props_and_advance_reset_interface(),
             1 => self.apply_palette_filter_bounce(),
             2 => {
                 if let Some(
@@ -3923,7 +3923,7 @@ impl ZeldaState {
     fn death_func15_before_sprite_reset(&mut self) {
         self.set_music_control(0xf1);
         if self.game_state.world.location.is_indoors() {
-            self.Dungeon_FlagRoomData_Quadrants();
+            self.dungeon_flag_room_data_quadrants();
         }
         self.AdjustLinkBunnyStatus();
         if self.game_state.inventory.save_progress.progress_indicator() < 3 {
@@ -4152,7 +4152,7 @@ impl ZeldaState {
             self.set_chr_halfslot_request(1);
             self.graphics_load_chr_half_slot();
             let fixed_color = self.game_state.dungeon.room_effects.fixed_color_plusminus();
-            self.Dungeon_ApproachFixedColor_variable(fixed_color);
+            self.dungeon_approach_fixed_color_variable(fixed_color);
             self.increment_submodule();
         }
         self.revival_fairy_main();
@@ -5957,9 +5957,9 @@ impl ZeldaState {
             self.dungeon_room_load_mut().clear_quadrant_upload_index();
         }
         for _ in completed_quadrants.unwrap_or(0)..4 {
-            self.WaterFlood_BuildOneQuadrantForVRAM();
+            self.water_flood_build_one_quadrant_for_vram();
             self.upload_tilemap_now();
-            self.Dungeon_PrepareNextRoomQuadrantUpload();
+            self.dungeon_prepare_next_room_quadrant_upload();
             self.upload_tilemap_now();
         }
         assert_eq!(self.game_state.dungeon.room_load.quadrant_upload_index(), 0x10);

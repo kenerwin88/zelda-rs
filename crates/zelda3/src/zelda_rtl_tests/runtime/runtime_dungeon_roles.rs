@@ -178,7 +178,7 @@ fn room_tag_switch_probes_require_a_uniform_cell() {
         let mut state = ZeldaState::new();
         state.set_indoor_flag(1);
         state.follower_link_state_mut().set_position(0x100, 0x100);
-        let p = state.RoomTag_GetTilemapCoords() as usize;
+        let p = state.room_tag_get_tilemap_coords() as usize;
         let mut map = state.dungeon_bg2_attributes_mut();
         map.set_bg2_attr(p, word[0]);
         map.set_bg2_attr(p + 1, word[1]);
@@ -187,42 +187,42 @@ fn room_tag_switch_probes_require_a_uniform_cell() {
         state
     }
     assert_eq!(
-        probe_state([0x23, 0x23], [0x23, 0x23]).RoomTag_MaybeCheckShutters(),
+        probe_state([0x23, 0x23], [0x23, 0x23]).room_tag_maybe_check_shutters(),
         Some(NativeTile::PRESSURE_PLATE)
     );
     assert_eq!(
-        probe_state([0x24, 0x24], [0x24, 0x24]).RoomTag_MaybeCheckShutters(),
+        probe_state([0x24, 0x24], [0x24, 0x24]).room_tag_maybe_check_shutters(),
         Some(tile(0x24))
     );
     assert_eq!(
-        probe_state([0x25, 0x25], [0x25, 0x25]).RoomTag_MaybeCheckShutters(),
+        probe_state([0x25, 0x25], [0x25, 0x25]).room_tag_maybe_check_shutters(),
         None,
         "the second held variant is not a shutter switch"
     );
     assert_eq!(
-        probe_state([0x23, 0x24], [0x23, 0x24]).RoomTag_MaybeCheckShutters(),
+        probe_state([0x23, 0x24], [0x23, 0x24]).room_tag_maybe_check_shutters(),
         None,
         "mixed cells never match the original whole-word compare"
     );
     assert_eq!(
-        probe_state([0x23, 0x23], [0x23, 0x00]).RoomTag_MaybeCheckShutters(),
+        probe_state([0x23, 0x23], [0x23, 0x00]).room_tag_maybe_check_shutters(),
         None,
         "the lower row must repeat the switch"
     );
     assert_eq!(
-        probe_state([0x3b, 0x3b], [0x3b, 0x3b]).RoomTag_CheckForPressedSwitch(),
+        probe_state([0x3b, 0x3b], [0x3b, 0x3b]).room_tag_check_for_pressed_switch(),
         Some(true)
     );
     assert_eq!(
-        probe_state([0x3a, 0x3a], [0x3a, 0x3a]).RoomTag_CheckForPressedSwitch(),
+        probe_state([0x3a, 0x3a], [0x3a, 0x3a]).room_tag_check_for_pressed_switch(),
         Some(false)
     );
     assert_eq!(
-        probe_state([0x23, 0x23], [0x23, 0x23]).RoomTag_CheckForPressedSwitch(),
+        probe_state([0x23, 0x23], [0x23, 0x23]).room_tag_check_for_pressed_switch(),
         Some(false)
     );
     assert_eq!(
-        probe_state([0x24, 0x24], [0x24, 0x24]).RoomTag_CheckForPressedSwitch(),
+        probe_state([0x24, 0x24], [0x24, 0x24]).room_tag_check_for_pressed_switch(),
         None
     );
 }

@@ -346,8 +346,8 @@ impl ZeldaState {
             if self.game_state.world.location.is_indoors() {
                 let room = self.game_state.world.location.dungeon_room_index();
                 self.dungeon_room_tracking_mut().set_room_index_prev(room);
-                self.Dungeon_FlagRoomData_Quadrants();
-                if self.Dungeon_IsPitThatHurtsPlayer() {
+                self.dungeon_flag_room_data_quadrants();
+                if self.dungeon_is_pit_that_hurts_player() {
                     self.dungeon_pit_do_damage();
                     return;
                 }

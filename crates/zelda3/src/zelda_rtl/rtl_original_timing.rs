@@ -12300,7 +12300,7 @@ impl ZeldaState {
                             self.complete_module11_02_load_entrance();
                         }
                         DungeonFallingEntranceWork::SpriteGraphics => {
-                            self.DungeonTransition_LoadSpriteGFX();
+                            self.dungeon_transition_load_sprite_gfx();
                         }
                     }
                     // Both calls return through Module11 and the ordinary game

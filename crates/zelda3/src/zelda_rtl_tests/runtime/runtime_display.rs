@@ -1193,7 +1193,7 @@ fn state_13_keeps_preparation_and_module_return_continuations_distinct() {
             cached_sprite_interruption: None,
         });
 
-        state.Dungeon_InterRoomTrans_State13();
+        state.dungeon_inter_room_trans_state13();
 
         assert_eq!(state.game_state.frame.subsubmodule, 13);
         if phase == ModuleCpuPhase::InterruptedInNmiPrepareSprites {
@@ -1258,7 +1258,7 @@ fn state_13_finishes_common_module_suffix_when_rom_run_completes_before_nmi() {
         cached_sprite_interruption: None,
     });
 
-    state.Dungeon_InterRoomTrans_State13();
+    state.dungeon_inter_room_trans_state13();
 
     assert_eq!(state.game_state.frame.subsubmodule, 13);
     assert!(state.game_execution_scheduler.is_idle());
@@ -1724,7 +1724,7 @@ fn penultimate_landing_palette_zero_suspends_its_pre_completion_caller_return() 
         cached_sprite_interruption: None,
     });
 
-    state.Module07_02_FadedFilter();
+    state.module07_02_faded_filter();
 
     assert_eq!(state.game_state.display.palette_filter.countdown(), 0);
     assert_eq!(state.game_state.frame.subsubmodule, 14);

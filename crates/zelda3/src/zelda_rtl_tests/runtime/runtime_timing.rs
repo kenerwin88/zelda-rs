@@ -4448,7 +4448,7 @@ fn interrupted_landing_fades_suspend_their_caller_return_before_state_fifteen_ma
             cached_sprite_interruption: None,
         });
 
-        state.Module07_02_FadedFilter();
+        state.module07_02_faded_filter();
 
         assert_eq!(state.game_state.frame.subsubmodule, 15, "room={room:#04x}");
         assert_eq!(
@@ -4502,7 +4502,7 @@ fn completed_landing_fade_without_cpu_interruption_returns_atomically() {
         cached_sprite_interruption: None,
     });
 
-    state.Module07_02_FadedFilter();
+    state.module07_02_faded_filter();
 
     assert_eq!(state.game_state.frame.subsubmodule, 15);
     assert_eq!(state.game_state.display.palette_filter.countdown(), 0);
@@ -4533,7 +4533,7 @@ fn landing_fade_no_request_suspends_only_the_state_fifteen_caller_return() {
         cached_sprite_interruption: None,
     });
 
-    state.Module07_02_FadedFilter();
+    state.module07_02_faded_filter();
 
     assert_eq!(state.game_state.frame.subsubmodule, 15);
     assert_eq!(

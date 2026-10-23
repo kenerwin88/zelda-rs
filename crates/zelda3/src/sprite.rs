@@ -7645,7 +7645,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         if self.garnish_slot_view(k).countdown() == 0x50
             && (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0
         {
-            self.Dungeon_UpdateTileMapWithCommonTile(
+            self.dungeon_update_tile_map_with_common_tile(
                 self.garnish_get_x(k),
                 self.garnish_get_y(k).wrapping_sub(16),
                 18,
@@ -7703,7 +7703,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         if j == 0x1e {
             j = self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag;
             if j == 0 {
-                self.Dungeon_UpdateTileMapWithCommonTile(
+                self.dungeon_update_tile_map_with_common_tile(
                     self.garnish_get_x(k),
                     self.garnish_get_y(k).wrapping_sub(16),
                     4,

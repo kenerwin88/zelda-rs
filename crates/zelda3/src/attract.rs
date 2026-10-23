@@ -266,13 +266,9 @@ impl ZeldaState {
         self.attract_prep_finish();
     }
 
-    pub(super) fn dungeon_load_and_draw_entrance_room(&mut self, room: u8) {
-        self.Dungeon_LoadAndDrawEntranceRoom(room);
-    }
-
     #[rustfmt::skip]
     pub(super) fn dungeon_save_and_load_load_all_palettes(&mut self, a: u8, k: u8) {
-        self.Dungeon_SaveAndLoadAllPalettes(a, k);
+        self.dungeon_save_and_load_all_palettes(a, k);
     }
 
     pub(super) fn attract_scene_end_of_story(&mut self) {

@@ -324,7 +324,7 @@ impl ZeldaState {
         self.follower_link_state_mut().clear_movement_velocity();
         self.follower_link_state_mut()
             .clear_water_ripple_or_grass_state();
-        self.Dungeon_ResetTorchBackgroundAndPlayerInner();
+        self.dungeon_reset_torch_background_and_player_inner();
         if self.game_state.inventory.items.moon_pearl() == 0
             && self.game_state.inventory.save_progress.dark_world_state() != 0
         {
@@ -2092,7 +2092,7 @@ impl ZeldaState {
             0 => {
                 let screen = self.game_state.world.location.overworld_screen_index() as usize;
                 self.set_overworld_event_bits(screen, 0x20);
-                self.Dungeon_ApproachFixedColor_variable(0);
+                self.dungeon_approach_fixed_color_variable(0);
                 self.turtle_rock_vram_common(0x10);
             }
             1 => self.turtle_rock_vram_common(0x14),
@@ -2363,7 +2363,7 @@ impl ZeldaState {
         self.dungeon_stair_movement_mut().restore_cached_floor();
         self.follower_link_state_mut().set_visibility_status(0);
         self.follower_link_state_mut().set_blink_countdown(0x90);
-        self.Dungeon_PlayBlipAndCacheQuadrantVisits();
+        self.dungeon_play_blip_and_cache_quadrant_visits();
         self.follower_link_state_mut()
             .clear_sprite_damage_disable_timer();
         self.link_reset_state_after_damaging_pit();
@@ -3085,7 +3085,7 @@ impl ZeldaState {
     /// `Sprite_ReloadAll_Overworld` returns.
     fn mirror_warp_finish_after_sprite_reload(&mut self) {
         self.link_item_reset_from_overworld_things();
-        self.Dungeon_ResetTorchBackgroundAndPlayerInner();
+        self.dungeon_reset_torch_background_and_player_inner();
         self.mirror_warp_finish_after_player_reset();
     }
 
@@ -3116,7 +3116,7 @@ impl ZeldaState {
             0
         );
         self.link_item_reset_from_overworld_things();
-        self.Dungeon_ResetTorchBackgroundAndPlayerInner();
+        self.dungeon_reset_torch_background_and_player_inner();
         self.follower_link_state_mut().set_handler_state(20);
         self.sprite_begin_mirror_portal_reset(slot, completed_stores);
     }
@@ -3131,7 +3131,7 @@ impl ZeldaState {
             0
         );
         self.link_item_reset_from_overworld_things();
-        self.Dungeon_ResetTorchBackgroundAndPlayerInner();
+        self.dungeon_reset_torch_background_and_player_inner();
         self.follower_link_state_mut().set_handler_state(20);
         self.sprite_begin_mirror_portal_load_properties(slot, completed_stores);
     }
@@ -4970,7 +4970,7 @@ impl ZeldaState {
 
     pub(super) fn complete_bird_travel_position_after_sprite_reload(&mut self) {
         self.follower_link_state_mut().clear_doorway_state();
-        self.Dungeon_ResetTorchBackgroundAndPlayerInner();
+        self.dungeon_reset_torch_background_and_player_inner();
     }
 
     /// ROM: `Overworld_LoadBirdTravelPosPrefix`
@@ -6476,7 +6476,7 @@ impl ZeldaState {
             return;
         }
 
-        self.Dungeon_ResetTorchBackgroundAndPlayerInner();
+        self.dungeon_reset_torch_background_and_player_inner();
         let mut map16 = self.overworld_map16_src_off();
         map16 &= SPECIAL_SWITCH_MAP16_MASKS[y_idx];
         let pushed = (current_area.wrapping_add_signed(SPECIAL_SWITCH_AREA_DELTAS[y_idx]) >> 1)
@@ -7316,7 +7316,7 @@ impl ZeldaState {
                         self.set_music_control(0xf1);
                     }
                 }
-                self.ResetTransitionPropsAndAdvance_ResetInterface();
+                self.reset_transition_props_and_advance_reset_interface();
             }
             1 => self.apply_palette_filter_bounce(),
             _ => {

@@ -2611,9 +2611,9 @@ impl ZeldaState {
             } else {
                 assert_eq!(self.native_map_recovery_quadrants_started,
                     Some(plan.next_quadrant_write - 1));
-                self.WaterFlood_BuildOneQuadrantForVRAM();
+                self.water_flood_build_one_quadrant_for_vram();
                 self.upload_tilemap_now();
-                self.Dungeon_PrepareNextRoomQuadrantUpload();
+                self.dungeon_prepare_next_room_quadrant_upload();
                 self.upload_tilemap_now();
                 self.native_map_recovery_quadrants_started = Some(plan.next_quadrant_write);
             }

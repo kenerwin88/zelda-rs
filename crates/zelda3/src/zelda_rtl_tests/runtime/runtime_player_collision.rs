@@ -373,14 +373,14 @@ fn native_active_push_blocks_resume_room_child_without_replaying_prior_blocks_or
                     let mut expected=prepare();let mut actual=prepare();
                     let before=actual.game_state.player.pushed_block;
                     match target {
-                        0x02b62e => expected.HandleEdgeTransitionMovementEast_RightBy8(),
-                        0x02b6cd => expected.Dung_StartInterRoomTrans_Left_Plus(),
-                        0x02b76e => expected.HandleEdgeTransitionMovementSouth_DownBy16(),
-                        0x02b81c => expected.Dungeon_StartInterRoomTrans_Up(),
+                        0x02b62e => expected.handle_edge_transition_movement_east_right_by8(),
+                        0x02b6cd => expected.dung_start_inter_room_trans_left_plus(),
+                        0x02b76e => expected.handle_edge_transition_movement_south_down_by16(),
+                        0x02b81c => expected.dungeon_start_inter_room_trans_up(),
                         _ => unreachable!(),
                     }
                     if arrived {
-                        expected.PushBlock_CheckForPit(2);
+                        expected.push_block_check_for_pit(2);
                         expected.dungeon_object_tracking_mut().advance_object_record(1);
                     }
                     expected.dungeon_object_tracking_mut().set_misc_object_index(4);

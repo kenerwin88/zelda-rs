@@ -1151,7 +1151,7 @@ impl ZeldaState {
         if self.overworld_map_state() == 0 {
             self.follower_link_state_mut()
                 .clear_button_mask_b_y_bits(0x40);
-            self.Dungeon_ResetTorchBackgroundAndPlayerInner();
+            self.dungeon_reset_torch_background_and_player_inner();
             self.follower_link_state_mut().set_facing(2);
             self.follower_link_state_mut().set_last_direction(2 << 1);
             self.increment_hud_update_flag();
@@ -1703,7 +1703,7 @@ impl ZeldaState {
 
     pub(super) fn wall_master_send_player_through_reset_fixed_prefix(&mut self) {
         self.save_dungeon_keys_misc();
-        self.Dungeon_FlagRoomData_Quadrants();
+        self.dungeon_flag_room_data_quadrants();
         self.sprite_disable_all();
         self.sprite_reset_all_no_disable_fixed_prefix();
     }
@@ -1754,7 +1754,7 @@ impl ZeldaState {
         y: u16,
     ) -> crate::tile_definition::NativeTile {
         let attribute = if self.game_state.world.location.is_indoors() {
-            self.HandleItemTileAction_Dungeon(x, y)
+            self.handle_item_tile_action_dungeon(x, y)
         } else {
             self.overworld_tool_and_tile_interaction(x, y) as u8
         };
@@ -2262,7 +2262,7 @@ impl ZeldaState {
             14 => self.module0e_interface(),
             15 => self.module0f_spotlight_close(),
             16 => self.module10_spotlight_open(),
-            17 => self.Module11_DungeonFallingEntrance(),
+            17 => self.module11_dungeon_falling_entrance(),
             18 => self.module12_game_over(),
             19 => self.module13_boss_victory_pendant(),
             20 => self.module14_attract(),
